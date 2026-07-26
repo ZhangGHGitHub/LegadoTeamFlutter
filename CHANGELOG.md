@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Multi-Agent parallel development scheme (5 roles: Rust-Core/Rust-Infra/Flutter-UI/Integration/QA)
+- Module ownership matrix and branch protocol (`feature/{agent}-{task}`)
+- Daily sync rhythm (08:00 cutoff) and quality gates
+- legado-core: download_manager module, read_state chapter preloading
+- legado-server: download handler + route expansion
+
+### Changed
+- Agent configs specialized with role-specific prompts and responsibility zones
+- rust-ci.yml: exclude legado-ffi from workspace checks (requires Flutter toolchain)
+- flutter-ci.yml: pin Flutter 3.41.7, add test step
+- All workflows: upgrade actions/checkout to v7 (Node.js 24 compat)
+
+### Fixed
+- Rust CI failure (exit 101): legado-ffi needs Flutter/Dart toolchain not available in Rust CI
+- Flutter CI failure (exit 1): unspecified Flutter version didn't satisfy `sdk: ^3.11.5`
+- Node.js 20 deprecation warnings in GitHub Actions
+
 ## [2.0.0] - 2026-07-26
 
 ### Added
