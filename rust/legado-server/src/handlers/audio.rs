@@ -242,6 +242,9 @@ mod tests {
         let state = Arc::new(AppState {
             db: tokio::sync::Mutex::new(db),
             search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            download_manager: tokio::sync::Mutex::new(
+                legado_core::download_manager::DownloadManager::new(3),
+            ),
         });
         crate::routes::create_router(state)
     }

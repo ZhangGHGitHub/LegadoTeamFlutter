@@ -239,6 +239,9 @@ mod tests {
         Arc::new(AppState {
             db: Mutex::new(db),
             search_cancelled: Arc::new(AtomicBool::new(false)),
+            download_manager: tokio::sync::Mutex::new(
+                legado_core::download_manager::DownloadManager::new(3),
+            ),
         })
     }
 

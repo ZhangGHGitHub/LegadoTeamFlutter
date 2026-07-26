@@ -230,3 +230,134 @@
 4. **Phase D（3 个月）**：完成平台集成，下线旧 Android 原生代码
 
 每阶段有可交付成果，风险分散，Rust 代码在 JNI 和 FFI 两种通道中复用。
+
+---
+
+## 多 Agent 并行开发方案
+
+### 设计原则
+
+- **模块隔离**：每个 Agent 负责独立 crate/目录，避免文件冲突
+- **接口先行**：跨模块依赖先定义 trait/接口，再并行实现
+- **每日同步**：每天早上 8:00 前停止开发，同步进度并合并成果
+- **文档交接**：每次会话结束前更新 README 和 PROGRESS.md
+
+### Agent 角色分工
+
+| Agent | 职责范围 | 对应目录 | 分支前缀 |
+|-------|----------|----------|----------|
+| **Rust-Core** | legado-core / legado-parser / legado-book | `rust/legado-core/`、`rust/legado-parser/`、`rust/legado-book/` | `feature/rust-core-*` |
+| **Rust-Infra** | legado-net / legado-js / legado-db / legado-server | `rust/legado-net/`、`rust/legado-js/`、`rust/legado-db/`、`rust/legado-server/` | `feature/rust-infra-*` |
+| **Flutter-UI** | Flutter 全部页面 / Widget / 状态管理 | `flutter_legado/lib/` | `feature/flutter-*` |
+| **Integration** | legado-ffi / CI/CD / 构建脚本 / Android 桥接 | `rust/legado-ffi/`、`.github/`、`Makefile` | `feature/integration-*` |
+| **QA** | 测试 / 代码审查 / 文档验证 | 跨模块（只读 + 测试文件） | `fix/qa-*` |
+
+### 模块责任区矩阵
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Rust-Core Agent                                             │
+│  legado-core (models/crypto/layout/audio/web_book)           │
+│  legado-parser (rule_analyzer/html/xpath/jsonpath/regex)     │
+│  legado-book (epub/txt/mobi/pdf/export)                      │
+├─────────────────────────────────────────────────────────────┤
+│  Rust-Infra Agent                                            │
+│  legado-net (client/cookie/middleware/rss/webdav)            │
+│  legado-js (quickjs/host_api/engine_pool/sandbox)            │
+│  legado-db (schema/repository/migration/import)              │
+│  legado-server (axum/handlers/routes/web-dist)               │
+├─────────────────────────────────────────────────────────────┤
+│  Flutter-UI Agent                                            │
+│  flutter_legado/lib/src/screens/ (18 页面)                    │
+│  flutter_legado/lib/src/providers/ (状态管理)                 │
+│  flutter_legado/lib/src/services/ (服务层)                    │
+│  flutter_legado/lib/src/widgets/ (复用组件)                   │
+├─────────────────────────────────────────────────────────────┤
+│  Integration Agent                                           │
+│  legado-ffi (bridge/api/frb_generated)                       │
+│  .github/workflows/ (CI/CD)                                  │
+│  Makefile / scripts/ (构建编排)                               │
+│  flutter_legado/android/ (平台桥接)                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 分支与合并协议
+
+```
+main (master)
+ │
+ ├── feature/rust-core-txt-search      ← Rust-Core Agent
+ ├── feature/rust-infra-mcp-server     ← Rust-Infra Agent
+ ├── feature/flutter-audio-player      ← Flutter-UI Agent
+ ├── feature/integration-android-build ← Integration Agent
+ └── fix/qa-regression-tests           ← QA Agent
+```
+
+**规则**：
+1. 每个任务创建独立分支，命名格式：`{prefix}/{agent}-{task-name}`
+2. 分支内可自由提交，合并到 main 前必须通过 CI
+3. **跨模块接口变更**需在 main 上先合并接口定义，再各分支 rebase
+4. 合并顺序：接口层 (core) → 实现层 (net/js/db) → 出口层 (ffi) → UI 层 (flutter)
+
+### 每日协作节奏
+
+```
+┌───────────────────────────────────────────────────────────┐
+│ 时间          │ 活动                                       │
+├───────────────────────────────────────────────────────────┤
+│ 会话开始      │ 读取 PROGRESS.md + README 了解当前状态      │
+│ 开发期间      │ 各 Agent 在独立分支并行工作                 │
+│ 07:30        │ 停止新功能开发，进入同步窗口                 │
+│ 07:30-08:00  │ 合并分支 → 运行全量测试 → 更新文档          │
+│ 08:00        │ 截止，确保 main 分支绿色                    │
+└───────────────────────────────────────────────────────────┘
+```
+
+### 冲突避免策略
+
+| 场景 | 策略 |
+|------|------|
+| 两个 Agent 需修改同一文件 | 由模块所有者执行，另一个 Agent 提 issue/需求 |
+| 新增公共类型（legado-core） | Rust-Core 先行定义并合并，其他 Agent rebase |
+| FFI 接口变更 | Integration Agent 统一维护，其他 Agent 提需求 |
+| Cargo.toml 依赖变更 | 各自 crate 内独立管理，workspace 级变更由 Integration 处理 |
+| Flutter 共享 Widget | Flutter-UI 统一维护，避免多人修改 |
+
+### 当前剩余任务并行分配
+
+| 任务 | 分配 Agent | 分支 | 依赖 |
+|------|-----------|------|------|
+| 解压缩 API (JsExt 5.2) | Rust-Infra | `feature/rust-infra-archive-api` | 无 |
+| ReadBook 章节预加载 (JsExt 6.1) | Rust-Core | `feature/rust-core-read-preload` | 无 |
+| AudioPlay 预加载 (JsExt 6.2) | Rust-Core | `feature/rust-core-audio-preload` | 无 |
+| MCP Server 实现 | Rust-Infra | `feature/rust-infra-mcp-server` | 无 |
+| 听书播放器完整实现 | Flutter-UI | `feature/flutter-audio-player` | AudioPlay 预加载 |
+| 本地 TXT 分词搜索 | Rust-Core | `feature/rust-core-txt-search` | 无 |
+| Android 实机编译验证 | Integration | `feature/integration-android-build` | 无 |
+| Cronet QUIC 优化 | Rust-Infra | `feature/rust-infra-quic` | 无 |
+
+**并行窗口分析**：
+- **第一波（全并行）**：解压缩 API + ReadBook 预加载 + AudioPlay 预加载 + MCP Server + TXT 搜索 + Android 验证
+- **第二波（依赖第一波）**：听书播放器（依赖 AudioPlay）+ Cronet QUIC
+- **最大并行度**：6 个任务同时执行
+
+### 质量门禁
+
+每次合并到 main 前必须通过：
+```bash
+# Rust
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
+
+# Flutter
+cd flutter_legado && flutter analyze && flutter test
+
+# QuickJS（如涉及 legado-js）
+cargo test -p legado-js --features quickjs
+```
+
+QA Agent 负责：
+- 审查跨模块 PR 的接口一致性
+- 验证 PROGRESS.md 与实际代码状态一致
+- 回归测试（确保 534/613 测试不减少）

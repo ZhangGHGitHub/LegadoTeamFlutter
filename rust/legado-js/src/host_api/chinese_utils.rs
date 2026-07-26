@@ -157,9 +157,8 @@ static T2S_MAP: LazyLock<HashMap<char, char>> = LazyLock::new(|| {
 });
 
 /// 简体→繁体 映射表（反向）
-static S2T_MAP: LazyLock<HashMap<char, char>> = LazyLock::new(|| {
-    T2S_MAP.iter().map(|(&t, &s)| (s, t)).collect()
-});
+static S2T_MAP: LazyLock<HashMap<char, char>> =
+    LazyLock::new(|| T2S_MAP.iter().map(|(&t, &s)| (s, t)).collect());
 
 /// t2s(text) — 繁体转简体
 ///

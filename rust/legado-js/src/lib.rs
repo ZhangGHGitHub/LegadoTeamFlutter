@@ -34,11 +34,11 @@ pub use context::JsContext;
 #[cfg(feature = "quickjs")]
 pub use engine::QuickJsEngine;
 pub use engine::{CompiledScript, JsEngine, JsValue, StubJsEngine};
+#[cfg(feature = "quickjs")]
+pub use engine_pool::EnginePool;
 pub use host_api::HostEnv;
 pub use sandbox::{SandboxConfig, SandboxState, SandboxStats};
 pub use scope::{ScopeData, SharedScopeManager};
-#[cfg(feature = "quickjs")]
-pub use engine_pool::EnginePool;
 pub use source_engine::{CallResult, JsSourceConfig, JsSourceEngine};
 
 /// 创建一个默认配置的 JS 源执行器（使用占位引擎）

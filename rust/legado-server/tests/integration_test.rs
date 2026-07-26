@@ -10,6 +10,7 @@ use serde_json::json;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
 
+use legado_core::download_manager::DownloadManager;
 use legado_server::routes::create_router;
 use legado_server::state::AppState;
 
@@ -19,6 +20,7 @@ fn make_test_state() -> Arc<AppState> {
     Arc::new(AppState {
         db: Mutex::new(db),
         search_cancelled: Arc::new(AtomicBool::new(false)),
+        download_manager: Mutex::new(DownloadManager::new(3)),
     })
 }
 

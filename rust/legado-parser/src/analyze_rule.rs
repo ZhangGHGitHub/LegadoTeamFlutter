@@ -307,9 +307,10 @@ impl AnalyzeRule {
         // JSON 内容
         if ((trimmed.starts_with('{') && trimmed.ends_with('}'))
             || (trimmed.starts_with('[') && trimmed.ends_with(']')))
-            && serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
-                return RuleType::Json;
-            }
+            && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+        {
+            return RuleType::Json;
+        }
 
         // XML/XHTML 内容
         if trimmed.starts_with("<?xml") || trimmed.starts_with("<?XML") {

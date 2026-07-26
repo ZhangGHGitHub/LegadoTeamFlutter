@@ -87,14 +87,23 @@ mod tests {
             make_cached(1, "book1", "http://example.com/ch1", 1000),
             make_cached(2, "book1", "http://example.com/ch2", 2000),
         ];
-        assert!(CacheBookManager::is_cached(&chapters, "http://example.com/ch1"));
-        assert!(CacheBookManager::is_cached(&chapters, "http://example.com/ch2"));
+        assert!(CacheBookManager::is_cached(
+            &chapters,
+            "http://example.com/ch1"
+        ));
+        assert!(CacheBookManager::is_cached(
+            &chapters,
+            "http://example.com/ch2"
+        ));
     }
 
     #[test]
     fn test_is_cached_false() {
         let chapters = vec![make_cached(1, "book1", "http://example.com/ch1", 1000)];
-        assert!(!CacheBookManager::is_cached(&chapters, "http://example.com/ch99"));
+        assert!(!CacheBookManager::is_cached(
+            &chapters,
+            "http://example.com/ch99"
+        ));
     }
 
     #[test]
@@ -130,7 +139,7 @@ mod tests {
         let chapters = vec![
             make_cached(1, "book1", "ch1", now - 2 * day_ms), // 2天前
             make_cached(2, "book1", "ch2", now - 10 * day_ms), // 10天前
-            make_cached(3, "book2", "ch3", now - 1 * day_ms), // 1天前
+            make_cached(3, "book2", "ch3", now - day_ms),     // 1天前
         ];
         // 清理超过 5 天的
         let expired = CacheBookManager::should_cleanup(&chapters, 5, now);

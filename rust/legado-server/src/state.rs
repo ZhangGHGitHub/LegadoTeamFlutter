@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use legado_core::download_manager::DownloadManager;
 use legado_db::Database;
 
 /// 全局共享状态，通过 `Arc<AppState>` 在 axum 路由间共享
@@ -12,6 +13,8 @@ pub struct AppState {
     pub db: Mutex<Database>,
     /// 搜索取消标志（简化版，使用 AtomicBool）
     pub search_cancelled: Arc<AtomicBool>,
+    /// 下载管理器
+    pub download_manager: Mutex<DownloadManager>,
 }
 
 /// 状态类型别名，方便在 handler 签名中使用

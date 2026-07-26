@@ -110,8 +110,7 @@ pub fn http_head(url: &str) -> Result<String, String> {
             .head(url, None)
             .await
             .map_err(|e| format!("httpHead error: {}", e))?;
-        serde_json::to_string(&resp.headers)
-            .map_err(|e| format!("httpHead serialize error: {}", e))
+        serde_json::to_string(&resp.headers).map_err(|e| format!("httpHead serialize error: {}", e))
     })
 }
 
@@ -120,8 +119,8 @@ pub fn http_head(url: &str) -> Result<String, String> {
 /// 支持通过 JSON 配置 method / url / headers / body / timeout_ms。
 /// 对应 Kotlin 端 `ajax(url)` 和 `connect(url, header, timeout)` 的通用版本。
 pub fn ajax(options_json: &str) -> Result<String, String> {
-    let opts: HttpOptions =
-        serde_json::from_str(options_json).map_err(|e| format!("ajax parse options error: {}", e))?;
+    let opts: HttpOptions = serde_json::from_str(options_json)
+        .map_err(|e| format!("ajax parse options error: {}", e))?;
 
     if opts.url.is_empty() {
         return Err("ajax: url is required".to_string());
@@ -222,10 +221,7 @@ mod tests {
         let result = http_get("https://httpbin.org/headers", Some(headers));
         if let Ok(body) = result {
             if is_valid_response(&body) {
-                assert!(
-                    body.contains("X-Custom-Header"),
-                    "响应应包含自定义请求头"
-                );
+                assert!(body.contains("X-Custom-Header"), "响应应包含自定义请求头");
             }
         }
     }
@@ -251,8 +247,7 @@ mod tests {
     fn test_http_head() {
         let result = http_head("https://httpbin.org/get");
         if let Ok(headers_json) = result {
-            let parsed: Result<HashMap<String, String>, _> =
-                serde_json::from_str(&headers_json);
+            let parsed: Result<HashMap<String, String>, _> = serde_json::from_str(&headers_json);
             assert!(parsed.is_ok(), "httpHead 应返回有效 JSON");
         }
     }
@@ -348,7 +343,10 @@ mod tests {
         let valid = r#"{"Authorization": "Bearer token123"}"#;
         let map = parse_headers(Some(valid));
         assert!(map.is_some());
-        assert_eq!(map.unwrap().get("Authorization").unwrap(), "Bearer token123");
+        assert_eq!(
+            map.unwrap().get("Authorization").unwrap(),
+            "Bearer token123"
+        );
 
         // 无效 JSON 返回 None
         let map = parse_headers(Some("not json"));

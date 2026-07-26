@@ -81,9 +81,7 @@ impl UmdParser {
         chapters
             .get(index)
             .map(|ch| ch.content.clone())
-            .ok_or_else(|| {
-                LegadoError::BookParse(format!("UMDD 章节索引越界: {index}"))
-            })
+            .ok_or_else(|| LegadoError::BookParse(format!("UMDD 章节索引越界: {index}")))
     }
 
     /// 从文件路径解析 UMD，返回元数据与章节列表
@@ -144,10 +142,7 @@ impl UmdParser {
     }
 
     /// 获取指定索引的章节内容
-    pub fn get_chapter_content_by_index<'a>(
-        chapters: &'a [UmdChapter],
-        index: usize,
-    ) -> Option<&'a str> {
+    pub fn get_chapter_content_by_index(chapters: &[UmdChapter], index: usize) -> Option<&str> {
         chapters.get(index).map(|ch| ch.content.as_str())
     }
 }
@@ -156,10 +151,7 @@ impl UmdParser {
 ///
 /// 例如 `chapter1.html` → `chapter1`，`content.htm` → `content`
 fn chapter_title_from_name(name: &str) -> String {
-    let base = name
-        .rsplit_once('/')
-        .map(|(_, file)| file)
-        .unwrap_or(name);
+    let base = name.rsplit_once('/').map(|(_, file)| file).unwrap_or(name);
     base.rsplit_once('.')
         .map(|(stem, _)| stem.to_string())
         .unwrap_or_else(|| base.to_string())

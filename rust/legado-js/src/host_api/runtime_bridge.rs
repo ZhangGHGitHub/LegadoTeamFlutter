@@ -11,9 +11,7 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 /// 获取或创建全局 tokio Runtime
 pub fn get_runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| {
-        Runtime::new().expect("Failed to create tokio runtime")
-    })
+    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))
 }
 
 /// 在 JS 线程中同步执行异步操作

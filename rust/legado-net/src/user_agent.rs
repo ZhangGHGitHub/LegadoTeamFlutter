@@ -158,10 +158,7 @@ mod tests {
 
     #[test]
     fn test_random_returns_valid_agent() {
-        let rotator = UserAgentRotator::with_agents(vec![
-            "UA-X".to_string(),
-            "UA-Y".to_string(),
-        ]);
+        let rotator = UserAgentRotator::with_agents(vec!["UA-X".to_string(), "UA-Y".to_string()]);
         let ua = rotator.random();
         assert!(ua == "UA-X" || ua == "UA-Y");
     }
@@ -192,9 +189,9 @@ mod tests {
         use crate::middleware::MiddlewareChain;
         use std::sync::atomic::AtomicUsize;
 
-        let rotator = Arc::new(UserAgentRotator::with_agents(vec![
-            "TestUA/1.0".to_string(),
-        ]));
+        let rotator = Arc::new(UserAgentRotator::with_agents(
+            vec!["TestUA/1.0".to_string()],
+        ));
         let mut chain = MiddlewareChain::new();
         chain.add(UserAgentMiddleware::new(rotator));
 

@@ -51,7 +51,10 @@ pub async fn export_book(
     let db = state.db.lock().await;
     let book_repo = BookRepository::new(db.connection());
     let book = book_repo.find_by_url(&req.book_url)?.ok_or_else(|| {
-        ApiError(LegadoError::Internal(format!("书籍不存在: {}", req.book_url)))
+        ApiError(LegadoError::Internal(format!(
+            "书籍不存在: {}",
+            req.book_url
+        )))
     })?;
 
     // 查询章节列表
@@ -131,7 +134,10 @@ pub async fn export_info(
     let db = state.db.lock().await;
     let book_repo = BookRepository::new(db.connection());
     let book = book_repo.find_by_url(&req.book_url)?.ok_or_else(|| {
-        ApiError(LegadoError::Internal(format!("书籍不存在: {}", req.book_url)))
+        ApiError(LegadoError::Internal(format!(
+            "书籍不存在: {}",
+            req.book_url
+        )))
     })?;
 
     let chapter_repo = BookChapterRepository::new(db.connection());

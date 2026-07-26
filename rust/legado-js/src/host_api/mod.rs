@@ -14,9 +14,9 @@ pub mod json_utils;
 #[cfg(feature = "quickjs")]
 pub mod network;
 pub mod platform;
+pub mod regex_utils;
 #[cfg(feature = "quickjs")]
 pub mod runtime_bridge;
-pub mod regex_utils;
 pub mod string_utils;
 pub mod time_utils;
 pub mod variable_store;

@@ -90,9 +90,8 @@ fn build_engine() -> WebBookEngine<FfiStubFetcher> {
 pub fn webbook_search(source_json: &str, query: &str, page: i32) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
     let engine = build_engine();
-    let results: Vec<WebSearchResult> = runtime::block_on(async {
-        engine.search(&source, query, page).await
-    })?;
+    let results: Vec<WebSearchResult> =
+        runtime::block_on(async { engine.search(&source, query, page).await })?;
     serde_json::to_string(&results).map_err(LegadoError::Serialization)
 }
 
@@ -105,9 +104,8 @@ pub fn webbook_search(source_json: &str, query: &str, page: i32) -> LegadoResult
 pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
     let engine = build_engine();
-    let info: WebBookInfo = runtime::block_on(async {
-        engine.get_book_info(&source, book_url).await
-    })?;
+    let info: WebBookInfo =
+        runtime::block_on(async { engine.get_book_info(&source, book_url).await })?;
     serde_json::to_string(&info).map_err(LegadoError::Serialization)
 }
 
@@ -120,9 +118,8 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
 pub fn webbook_chapters(source_json: &str, book_url: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
     let engine = build_engine();
-    let chapters: Vec<WebChapter> = runtime::block_on(async {
-        engine.get_chapters(&source, book_url).await
-    })?;
+    let chapters: Vec<WebChapter> =
+        runtime::block_on(async { engine.get_chapters(&source, book_url).await })?;
     serde_json::to_string(&chapters).map_err(LegadoError::Serialization)
 }
 
@@ -190,7 +187,9 @@ mod tests {
 
     #[test]
     fn test_webbook_content_api() {
-        let chapter_json = serde_json::to_string(&WebChapter::new(0, "第一章", "https://example.com/ch/1")).unwrap();
+        let chapter_json =
+            serde_json::to_string(&WebChapter::new(0, "第一章", "https://example.com/ch/1"))
+                .unwrap();
         let content = webbook_content(&make_source_json(), &chapter_json).unwrap();
         assert!(!content.is_empty());
     }

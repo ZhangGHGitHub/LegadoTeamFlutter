@@ -75,67 +75,66 @@ pub fn list_variable_keys() -> Result<Vec<String>, String> {
 mod tests {
     use super::*;
 
-    fn reset_store() {
-        clear_variables().unwrap();
-    }
-
     #[test]
     fn test_set_and_get_variable() {
-        reset_store();
-        set_variable("foo", "bar").unwrap();
-        assert_eq!(get_variable("foo").unwrap(), Some("bar".to_string()));
+        set_variable("var_set_get", "bar").unwrap();
+        assert_eq!(
+            get_variable("var_set_get").unwrap(),
+            Some("bar".to_string())
+        );
     }
 
     #[test]
     fn test_get_nonexistent_variable() {
-        reset_store();
-        assert_eq!(get_variable("nonexistent").unwrap(), None);
+        assert_eq!(get_variable("var_never_exists_xyz").unwrap(), None);
     }
 
     #[test]
     fn test_overwrite_variable() {
-        reset_store();
-        set_variable("key", "v1").unwrap();
-        set_variable("key", "v2").unwrap();
-        assert_eq!(get_variable("key").unwrap(), Some("v2".to_string()));
+        let key = "var_overwrite";
+        set_variable(key, "v1").unwrap();
+        set_variable(key, "v2").unwrap();
+        assert_eq!(get_variable(key).unwrap(), Some("v2".to_string()));
     }
 
     #[test]
     fn test_remove_variable() {
-        reset_store();
-        set_variable("to_remove", "value").unwrap();
-        let removed = remove_variable("to_remove").unwrap();
+        let key = "var_remove_target";
+        set_variable(key, "value").unwrap();
+        let removed = remove_variable(key).unwrap();
         assert_eq!(removed, Some("value".to_string()));
-        assert_eq!(get_variable("to_remove").unwrap(), None);
+        assert_eq!(get_variable(key).unwrap(), None);
     }
 
     #[test]
     fn test_clear_variables() {
-        reset_store();
-        set_variable("a", "1").unwrap();
-        set_variable("b", "2").unwrap();
+        let key_a = "var_clear_a";
+        let key_b = "var_clear_b";
+        set_variable(key_a, "1").unwrap();
+        set_variable(key_b, "2").unwrap();
         clear_variables().unwrap();
-        assert_eq!(get_variable("a").unwrap(), None);
-        assert_eq!(get_variable("b").unwrap(), None);
+        assert_eq!(get_variable(key_a).unwrap(), None);
+        assert_eq!(get_variable(key_b).unwrap(), None);
     }
 
     #[test]
     fn test_list_variable_keys() {
-        reset_store();
-        set_variable("x", "1").unwrap();
-        set_variable("y", "2").unwrap();
+        set_variable("var_list_x", "1").unwrap();
+        set_variable("var_list_y", "2").unwrap();
         let keys = list_variable_keys().unwrap();
-        // Due to parallel tests sharing global state, just check our keys are present
-        assert!(keys.contains(&"x".to_string()));
-        assert!(keys.contains(&"y".to_string()));
+        assert!(keys.contains(&"var_list_x".to_string()));
+        assert!(keys.contains(&"var_list_y".to_string()));
     }
 
     #[test]
     fn test_get_variable_store_handle() {
         let store = get_variable_store();
         let mut guard = store.lock().unwrap();
-        guard.insert("handle_test".to_string(), "ok".to_string());
+        guard.insert("var_handle_test".to_string(), "ok".to_string());
         drop(guard);
-        assert_eq!(get_variable("handle_test").unwrap(), Some("ok".to_string()));
+        assert_eq!(
+            get_variable("var_handle_test").unwrap(),
+            Some("ok".to_string())
+        );
     }
 }

@@ -261,11 +261,7 @@ impl SourceChecker {
     }
 
     /// 目录检查：请求书籍详情页并提取目录
-    async fn do_toc_check(
-        &self,
-        source: &BookSource,
-        book_url: &str,
-    ) -> Result<String, String> {
+    async fn do_toc_check(&self, source: &BookSource, book_url: &str) -> Result<String, String> {
         let resp = self
             .client
             .get(book_url, parse_headers(source.header.as_deref()))
@@ -286,11 +282,7 @@ impl SourceChecker {
     }
 
     /// 内容检查：请求章节内容
-    async fn do_content_check(
-        &self,
-        source: &BookSource,
-        chapter_url: &str,
-    ) -> Result<(), String> {
+    async fn do_content_check(&self, source: &BookSource, chapter_url: &str) -> Result<(), String> {
         let resp = self
             .client
             .get(chapter_url, parse_headers(source.header.as_deref()))
@@ -318,11 +310,7 @@ impl SourceChecker {
     }
 
     /// 从搜索结果页提取第一个书籍链接
-    fn extract_first_book_url(
-        &self,
-        body: &str,
-        source: &BookSource,
-    ) -> Result<String, String> {
+    fn extract_first_book_url(&self, body: &str, source: &BookSource) -> Result<String, String> {
         // 如果有 bookUrlPattern，用正则提取
         if let Some(ref pattern) = source.book_url_pattern {
             if let Ok(re) = regex::Regex::new(pattern) {
@@ -344,8 +332,7 @@ impl SourceChecker {
         _source: &BookSource,
     ) -> Result<String, String> {
         // 简化实现：提取第一个 href 链接作为章节 URL
-        extract_first_href(body)
-            .ok_or_else(|| "no chapter link found in detail page".to_string())
+        extract_first_href(body).ok_or_else(|| "no chapter link found in detail page".to_string())
     }
 }
 
@@ -362,8 +349,7 @@ fn parse_headers(header: Option<&str>) -> Option<std::collections::HashMap<Strin
         return None;
     }
     // 尝试 JSON 解析
-    if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(header_str)
-    {
+    if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(header_str) {
         return Some(map);
     }
     // 回退：按行解析 "Key: Value" 格式
@@ -429,10 +415,8 @@ mod tests {
     fn test_build_search_url() {
         let checker = make_checker();
         let source = make_test_source();
-        let url = checker.build_search_url(
-            source.search_url.as_ref().unwrap(),
-            &checker.config.keyword,
-        );
+        let url =
+            checker.build_search_url(source.search_url.as_ref().unwrap(), &checker.config.keyword);
         assert!(url.contains("search?q="));
         assert!(url.contains(urlencoding::encode(DEFAULT_KEYWORD).as_ref()));
     }
@@ -440,20 +424,14 @@ mod tests {
     #[test]
     fn test_build_search_url_double_brace() {
         let checker = make_checker();
-        let url = checker.build_search_url(
-            "https://example.com/search?q={{key}}",
-            "hello",
-        );
+        let url = checker.build_search_url("https://example.com/search?q={{key}}", "hello");
         assert!(url.contains("search?q=hello"));
     }
 
     #[test]
     fn test_build_search_url_search_key() {
         let checker = make_checker();
-        let url = checker.build_search_url(
-            "https://example.com/search?q={searchKey}",
-            "world",
-        );
+        let url = checker.build_search_url("https://example.com/search?q={searchKey}", "world");
         assert!(url.contains("search?q=world"));
     }
 

@@ -122,7 +122,7 @@ mod tests {
             custom_ca: Some("test-ca".to_string()),
         };
         let cloned = cfg.clone();
-        assert_eq!(cloned.verify, false);
+        assert!(!cloned.verify);
         assert_eq!(cloned.custom_ca, Some("test-ca".to_string()));
     }
 }

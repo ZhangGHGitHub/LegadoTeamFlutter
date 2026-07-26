@@ -38,7 +38,7 @@ pub fn set_cookie(tag: &str, key: &str, value: &str) {
     let mut store = GLOBAL_COOKIES.lock().unwrap();
     store
         .entry(tag.to_string())
-        .or_insert_with(HashMap::new)
+        .or_default()
         .insert(key.to_string(), value.to_string());
 }
 
@@ -60,43 +60,43 @@ mod tests {
 
     #[test]
     fn test_set_and_get_cookie() {
-        clear_all_cookies();
-        set_cookie("source1", "session", "abc123");
-        assert_eq!(get_cookie_by_key("source1", "session"), "abc123");
-        assert!(get_cookie("source1").contains("session=abc123"));
+        let tag = "cookie_set_get";
+        set_cookie(tag, "session", "abc123");
+        assert_eq!(get_cookie_by_key(tag, "session"), "abc123");
+        assert!(get_cookie(tag).contains("session=abc123"));
     }
 
     #[test]
     fn test_multiple_cookies() {
-        clear_all_cookies();
-        set_cookie("source1", "session", "abc");
-        set_cookie("source1", "token", "xyz");
-        let all = get_cookie("source1");
+        let tag = "cookie_multi";
+        set_cookie(tag, "session", "abc");
+        set_cookie(tag, "token", "xyz");
+        let all = get_cookie(tag);
         assert!(all.contains("session=abc"));
         assert!(all.contains("token=xyz"));
     }
 
     #[test]
     fn test_tag_isolation() {
-        clear_all_cookies();
-        set_cookie("source1", "key", "val1");
-        set_cookie("source2", "key", "val2");
-        assert_eq!(get_cookie_by_key("source1", "key"), "val1");
-        assert_eq!(get_cookie_by_key("source2", "key"), "val2");
+        let tag1 = "cookie_iso_1";
+        let tag2 = "cookie_iso_2";
+        set_cookie(tag1, "key", "val1");
+        set_cookie(tag2, "key", "val2");
+        assert_eq!(get_cookie_by_key(tag1, "key"), "val1");
+        assert_eq!(get_cookie_by_key(tag2, "key"), "val2");
     }
 
     #[test]
     fn test_missing_cookie() {
-        clear_all_cookies();
-        assert_eq!(get_cookie_by_key("nonexistent", "key"), "");
-        assert_eq!(get_cookie("nonexistent"), "");
+        assert_eq!(get_cookie_by_key("cookie_never_set", "key"), "");
+        assert_eq!(get_cookie("cookie_never_set"), "");
     }
 
     #[test]
     fn test_clear_cookies() {
-        clear_all_cookies();
-        set_cookie("source1", "key", "val");
-        clear_cookies("source1");
-        assert_eq!(get_cookie("source1"), "");
+        let tag = "cookie_clear_target";
+        set_cookie(tag, "key", "val");
+        clear_cookies(tag);
+        assert_eq!(get_cookie(tag), "");
     }
 }

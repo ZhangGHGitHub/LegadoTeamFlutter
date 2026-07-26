@@ -17,6 +17,7 @@ pub enum ExportFormat {
 
 impl ExportFormat {
     /// 从字符串解析导出格式
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "txt" => Some(Self::Txt),
@@ -120,16 +121,16 @@ impl BookExporter {
         let mut zip = ZipWriter::new(buf);
 
         // 1. mimetype（不压缩，必须是第一个文件）
-        let stored = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let stored =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         zip.start_file("mimetype", stored)
             .map_err(|e| format!("EPUB 写入失败: {e}"))?;
         zip.write_all(b"application/epub+zip")
             .map_err(|e| format!("EPUB 写入失败: {e}"))?;
 
         // 2. META-INF/container.xml
-        let deflate = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let deflate =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         zip.start_file("META-INF/container.xml", deflate)
             .map_err(|e| format!("EPUB 写入失败: {e}"))?;
         zip.write_all(epub_container_xml().as_bytes())
@@ -173,10 +174,7 @@ impl BookExporter {
         let mut html = String::new();
         html.push_str("<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n");
         html.push_str("<meta charset=\"UTF-8\">\n");
-        html.push_str(&format!(
-            "<title>{}</title>\n",
-            html_escape(&data.title)
-        ));
+        html.push_str(&format!("<title>{}</title>\n", html_escape(&data.title)));
         html.push_str("<style>\n");
         html.push_str(HTML_CSS);
         html.push_str("</style>\n</head>\n<body>\n");
@@ -216,10 +214,7 @@ impl BookExporter {
                 "  <div class=\"chapter\" id=\"chapter-{}\">\n",
                 ch.index
             ));
-            html.push_str(&format!(
-                "    <h2>{}</h2>\n",
-                html_escape(&ch.title)
-            ));
+            html.push_str(&format!("    <h2>{}</h2>\n", html_escape(&ch.title)));
             // 将段落转换为 <p> 标签
             for para in ch.content.split('\n') {
                 let trimmed = para.trim();
@@ -311,7 +306,9 @@ fn epub_content_opf(data: &ExportData) -> String {
 
     // manifest
     opf.push_str("  <manifest>\n");
-    opf.push_str("    <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>\n");
+    opf.push_str(
+        "    <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>\n",
+    );
     opf.push_str("    <item id=\"style\" href=\"style.css\" media-type=\"text/css\"/>\n");
     for ch in &data.chapters {
         opf.push_str(&format!(
@@ -324,10 +321,7 @@ fn epub_content_opf(data: &ExportData) -> String {
     // spine
     opf.push_str("  <spine toc=\"ncx\">\n");
     for ch in &data.chapters {
-        opf.push_str(&format!(
-            "    <itemref idref=\"chapter_{}\"/>\n",
-            ch.index
-        ));
+        opf.push_str(&format!("    <itemref idref=\"chapter_{}\"/>\n", ch.index));
     }
     opf.push_str("  </spine>\n");
     opf.push_str("</package>\n");

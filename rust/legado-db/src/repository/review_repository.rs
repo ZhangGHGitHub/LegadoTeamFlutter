@@ -90,11 +90,7 @@ impl<'a> ReviewRepository<'a> {
     }
 
     /// 删除某本书某章节的所有评论
-    pub fn delete_by_chapter(
-        &self,
-        book_url: &str,
-        chapter_index: i32,
-    ) -> LegadoResult<usize> {
+    pub fn delete_by_chapter(&self, book_url: &str, chapter_index: i32) -> LegadoResult<usize> {
         let count = self
             .conn
             .execute(

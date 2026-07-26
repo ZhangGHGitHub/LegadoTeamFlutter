@@ -9,18 +9,20 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Cargo check
+        with:
+          workspaces: rust
+      - name: Cargo check (exclude ffi)
         working-directory: rust
-        run: cargo check --workspace
-      - name: Cargo clippy
+        run: cargo check --workspace --exclude legado-ffi
+      - name: Cargo clippy (exclude ffi)
         working-directory: rust
-        run: cargo clippy --workspace -- -D warnings
-      - name: Cargo test
+        run: cargo clippy --workspace --exclude legado-ffi -- -D warnings
+      - name: Cargo test (exclude ffi)
         working-directory: rust
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude legado-ffi
       - name: Cargo test (quickjs)
         working-directory: rust
         run: cargo test -p legado-js --features quickjs

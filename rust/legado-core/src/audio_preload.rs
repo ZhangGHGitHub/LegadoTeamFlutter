@@ -48,7 +48,9 @@ impl AudioPreloadStore {
 
     /// 获取预加载结果
     pub fn get(&self, chapter_index: i32) -> Option<&PreloadEntry> {
-        self.entries.iter().find(|e| e.chapter_index == chapter_index)
+        self.entries
+            .iter()
+            .find(|e| e.chapter_index == chapter_index)
     }
 
     /// 清空
@@ -118,10 +120,7 @@ impl AudioDiskCache {
         // 简单策略：当缓存超过 max_size 时，删除最早的文件
         let mut removed = 0;
         if let Ok(entries) = std::fs::read_dir(&self.cache_dir) {
-            let mut files: Vec<_> = entries
-                .flatten()
-                .filter(|e| e.path().is_file())
-                .collect();
+            let mut files: Vec<_> = entries.flatten().filter(|e| e.path().is_file()).collect();
             files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
 
             let mut total_size: u64 = files
@@ -197,6 +196,7 @@ impl PlaylistManager {
         self.chapters.get(self.current_index)
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<&AudioChapterInfo> {
         if self.current_index + 1 < self.chapters.len() {
             self.current_index += 1;

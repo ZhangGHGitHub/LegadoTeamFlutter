@@ -136,14 +136,16 @@ impl LegadoClient {
             .map(|c| Arc::new(RetryExecutor::new(c.clone())));
 
         // UA 轮换器
-        let ua_rotator = config.user_agents.as_ref().map(|agents| {
-            Arc::new(UserAgentRotator::with_agents(agents.clone()))
-        });
+        let ua_rotator = config
+            .user_agents
+            .as_ref()
+            .map(|agents| Arc::new(UserAgentRotator::with_agents(agents.clone())));
 
         // 代理池
-        let proxy_pool = config.proxies.as_ref().map(|proxies| {
-            Arc::new(ProxyPool::new(proxies.clone()))
-        });
+        let proxy_pool = config
+            .proxies
+            .as_ref()
+            .map(|proxies| Arc::new(ProxyPool::new(proxies.clone())));
 
         // 构建中间件链
         let middleware_chain = {
@@ -608,10 +610,7 @@ mod tests {
     #[test]
     fn test_build_client_with_user_agents() {
         let cfg = LegadoClientConfig {
-            user_agents: Some(vec![
-                "UA-Test/1.0".to_string(),
-                "UA-Test/2.0".to_string(),
-            ]),
+            user_agents: Some(vec!["UA-Test/1.0".to_string(), "UA-Test/2.0".to_string()]),
             ..Default::default()
         };
         let client = LegadoClient::new(cfg).unwrap();

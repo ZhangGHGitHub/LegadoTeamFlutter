@@ -98,11 +98,8 @@ pub trait BookSourceFetcher: Send + Sync {
     ///
     /// - `source`: 书源配置
     /// - `book_url`: 书籍详情页 URL
-    async fn get_book_info(
-        &self,
-        source: &BookSource,
-        book_url: &str,
-    ) -> LegadoResult<WebBookInfo>;
+    async fn get_book_info(&self, source: &BookSource, book_url: &str)
+        -> LegadoResult<WebBookInfo>;
 
     /// 获取章节列表
     ///
@@ -118,11 +115,7 @@ pub trait BookSourceFetcher: Send + Sync {
     ///
     /// - `source`: 书源配置
     /// - `chapter`: 目标章节（含 URL 等信息）
-    async fn get_content(
-        &self,
-        source: &BookSource,
-        chapter: &WebChapter,
-    ) -> LegadoResult<String>;
+    async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String>;
 }
 
 // ─── Mock Fetcher ─────────────────────────────────────────────────────────────
@@ -174,7 +167,9 @@ impl BookSourceFetcher for MockBookSourceFetcher {
     ) -> LegadoResult<Vec<WebSearchResult>> {
         let mut queue = self.search_results.lock().unwrap();
         if queue.is_empty() {
-            Err(LegadoError::Internal("MockBookSourceFetcher: no search result queued".into()))
+            Err(LegadoError::Internal(
+                "MockBookSourceFetcher: no search result queued".into(),
+            ))
         } else {
             queue.remove(0)
         }
@@ -187,7 +182,9 @@ impl BookSourceFetcher for MockBookSourceFetcher {
     ) -> LegadoResult<WebBookInfo> {
         let mut queue = self.info_results.lock().unwrap();
         if queue.is_empty() {
-            Err(LegadoError::Internal("MockBookSourceFetcher: no info result queued".into()))
+            Err(LegadoError::Internal(
+                "MockBookSourceFetcher: no info result queued".into(),
+            ))
         } else {
             queue.remove(0)
         }
@@ -200,7 +197,9 @@ impl BookSourceFetcher for MockBookSourceFetcher {
     ) -> LegadoResult<Vec<WebChapter>> {
         let mut queue = self.chapter_results.lock().unwrap();
         if queue.is_empty() {
-            Err(LegadoError::Internal("MockBookSourceFetcher: no chapter result queued".into()))
+            Err(LegadoError::Internal(
+                "MockBookSourceFetcher: no chapter result queued".into(),
+            ))
         } else {
             queue.remove(0)
         }
@@ -213,7 +212,9 @@ impl BookSourceFetcher for MockBookSourceFetcher {
     ) -> LegadoResult<String> {
         let mut queue = self.content_results.lock().unwrap();
         if queue.is_empty() {
-            Err(LegadoError::Internal("MockBookSourceFetcher: no content result queued".into()))
+            Err(LegadoError::Internal(
+                "MockBookSourceFetcher: no content result queued".into(),
+            ))
         } else {
             queue.remove(0)
         }
@@ -412,8 +413,18 @@ mod tests {
     async fn test_search_returns_results() {
         let mock = MockBookSourceFetcher::new();
         mock.push_search(Ok(vec![
-            WebSearchResult::new("三体", "刘慈欣", "https://example.com/book/1", "https://example.com"),
-            WebSearchResult::new("黑暗森林", "刘慈欣", "https://example.com/book/2", "https://example.com"),
+            WebSearchResult::new(
+                "三体",
+                "刘慈欣",
+                "https://example.com/book/1",
+                "https://example.com",
+            ),
+            WebSearchResult::new(
+                "黑暗森林",
+                "刘慈欣",
+                "https://example.com/book/2",
+                "https://example.com",
+            ),
         ]));
         let engine = WebBookEngine::new(mock);
         let source = make_test_source();
@@ -448,7 +459,9 @@ mod tests {
     async fn test_search_page_zero_normalized_to_one() {
         let mock = MockBookSourceFetcher::new();
         // 注入一个结果，page 参数由 fetcher 接收，这里只验证不崩溃
-        mock.push_search(Ok(vec![WebSearchResult::new("书A", "作者A", "url1", "src1")]));
+        mock.push_search(Ok(vec![WebSearchResult::new(
+            "书A", "作者A", "url1", "src1",
+        )]));
         let engine = WebBookEngine::new(mock);
         let source = make_test_source();
 
@@ -475,11 +488,19 @@ mod tests {
     #[tokio::test]
     async fn test_get_book_info_success() {
         let mock = MockBookSourceFetcher::new();
-        mock.push_info(Ok(WebBookInfo::new("三体", "刘慈欣", "https://example.com/book/1", "https://example.com/book/1")));
+        mock.push_info(Ok(WebBookInfo::new(
+            "三体",
+            "刘慈欣",
+            "https://example.com/book/1",
+            "https://example.com/book/1",
+        )));
         let engine = WebBookEngine::new(mock);
         let source = make_test_source();
 
-        let info = engine.get_book_info(&source, "https://example.com/book/1").await.unwrap();
+        let info = engine
+            .get_book_info(&source, "https://example.com/book/1")
+            .await
+            .unwrap();
         assert_eq!(info.name, "三体");
         assert_eq!(info.author, "刘慈欣");
     }
@@ -550,7 +571,10 @@ mod tests {
         let engine = WebBookEngine::new(mock);
         let source = make_test_source();
 
-        let chapters = engine.get_chapters(&source, "https://example.com/book/1").await.unwrap();
+        let chapters = engine
+            .get_chapters(&source, "https://example.com/book/1")
+            .await
+            .unwrap();
         assert_eq!(chapters.len(), 3);
         assert_eq!(chapters[0].index, 0);
         assert_eq!(chapters[2].index, 2);

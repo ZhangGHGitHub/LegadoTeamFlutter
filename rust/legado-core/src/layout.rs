@@ -236,7 +236,7 @@ mod tests {
         // 构造一段足够长的文本，确保超过一页
         let text = "这是一段很长的文本内容用来测试分页功能是否正确工作";
         let pages = engine.paginate(text);
-        assert!(pages.len() >= 1, "Should have at least one page");
+        assert!(!pages.is_empty(), "Should have at least one page");
         // 检查页码连续
         for (i, page) in pages.iter().enumerate() {
             assert_eq!(page.index, i);

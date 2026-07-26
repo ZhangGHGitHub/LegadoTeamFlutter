@@ -617,13 +617,31 @@ cargo test --workspace test_search
 
 ## 版本控制与发布流程
 
+### 版本管理规范
+
+#### 版本号
+- Rust crates: 语义化版本（SemVer），当前 0.2.0
+- Flutter app: 语义化版本 + 构建号，当前 2.0.0+2
+- 格式: MAJOR.MINOR.PATCH（不兼容变更.新功能.修复）
+
+#### 发布流程
+1. 更新各 Cargo.toml 和 pubspec.yaml 版本号
+2. 更新 CHANGELOG.md
+3. git tag vX.Y.Z
+4. GitHub Release 自动生成 Release Notes
+
+#### CHANGELOG 维护
+- 格式遵循 [Keep a Changelog](https://keepachangelog.com/)
+- 每次 PR 需在 CHANGELOG 对应版本下添加条目
+- 分类: Added / Changed / Fixed / Breaking Changes
+
 ### 版本号规范
 
 | 组件 | 版本格式 | 当前版本 | 说明 |
 |------|----------|----------|------|
 | 整体项目 | `vX.Y.Z` | v4.0.0-alpha | 语义化版本，Git tag 格式 |
-| Rust crate | `X.Y.Z` | 0.1.0 | 各 crate 独立版本，workspace 统一发布时同步递增 |
-| Flutter | `X.Y.Z+build` | 1.0.0+1 | pubspec.yaml 中维护，build 号递增 |
+| Rust crate | `X.Y.Z` | 0.2.0 | 各 crate 独立版本，workspace 统一发布时同步递增 |
+| Flutter | `X.Y.Z+build` | 2.0.0+2 | pubspec.yaml 中维护，build 号递增 |
 | Android（旧） | `3.YYMMDDHH` | 自动生成 | 历史遗留格式，仅旧架构使用 |
 
 ### 语义化版本规则

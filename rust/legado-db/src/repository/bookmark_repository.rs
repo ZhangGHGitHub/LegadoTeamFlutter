@@ -89,7 +89,11 @@ impl<'a> BookmarkRepository<'a> {
     }
 
     /// 按章节查询书签
-    pub fn get_by_chapter(&self, book_name: &str, chapter_index: i32) -> LegadoResult<Vec<Bookmark>> {
+    pub fn get_by_chapter(
+        &self,
+        book_name: &str,
+        chapter_index: i32,
+    ) -> LegadoResult<Vec<Bookmark>> {
         let mut stmt = self
             .conn
             .prepare(
@@ -211,7 +215,8 @@ mod tests {
         let repo = BookmarkRepository::new(db.connection());
         repo.insert(&make_bookmark("book1", 0, "ch0 text")).unwrap();
         repo.insert(&make_bookmark("book1", 1, "ch1 text")).unwrap();
-        repo.insert(&make_bookmark("book1", 0, "ch0 text2")).unwrap();
+        repo.insert(&make_bookmark("book1", 0, "ch0 text2"))
+            .unwrap();
 
         let ch0 = repo.get_by_chapter("book1", 0).unwrap();
         assert_eq!(ch0.len(), 2);
@@ -233,7 +238,8 @@ mod tests {
     fn test_search() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = BookmarkRepository::new(db.connection());
-        repo.insert(&make_bookmark("book1", 0, "hello world")).unwrap();
+        repo.insert(&make_bookmark("book1", 0, "hello world"))
+            .unwrap();
         repo.insert(&make_bookmark("book1", 1, "goodbye")).unwrap();
 
         let results = repo.search("hello").unwrap();

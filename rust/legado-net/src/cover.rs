@@ -331,7 +331,7 @@ mod tests {
 
         // 设置文件的修改时间为很久以前
         let filetime = filetime::FileTime::from_unix_time(0, 0);
-        for entry in walk_files(&cache.cache_dir()) {
+        for entry in walk_files(cache.cache_dir()) {
             filetime::set_file_mtime(&entry, filetime).ok();
         }
 

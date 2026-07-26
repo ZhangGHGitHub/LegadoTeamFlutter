@@ -147,10 +147,9 @@ impl XPathParser {
                         depth += 1;
                     }
                 }
-                '/' if in_tag
-                    && chars.peek() == Some(&'>') => {
-                        self_closing = true;
-                    }
+                '/' if in_tag && chars.peek() == Some(&'>') => {
+                    self_closing = true;
+                }
                 _ => {}
             }
             last_ch = ch;

@@ -114,17 +114,13 @@ pub async fn list_repos() -> Json<Value> {
 /// GET /api/sources/updates — 检查书源更新
 ///
 /// 从所有仓库获取远程书源列表，与本地对比，返回需要更新的书源。
-pub async fn check_updates(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, ApiError> {
+pub async fn check_updates(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
     let repos = default_repos();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .danger_accept_invalid_certs(true)
         .build()
-        .map_err(|e| {
-            legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}"))
-        })?;
+        .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
 
     // 获取本地书源列表
     let local_sources = {
@@ -161,14 +157,14 @@ pub async fn execute_update(
         .timeout(std::time::Duration::from_secs(60))
         .danger_accept_invalid_certs(true)
         .build()
-        .map_err(|e| {
-            legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}"))
-        })?;
+        .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
 
     // 下载远程书源
-    let response = client.get(&req.repo_url).send().await.map_err(|e| {
-        legado_core::LegadoError::Network(format!("请求仓库失败: {e}"))
-    })?;
+    let response = client
+        .get(&req.repo_url)
+        .send()
+        .await
+        .map_err(|e| legado_core::LegadoError::Network(format!("请求仓库失败: {e}")))?;
 
     if !response.status().is_success() {
         return Err(ApiError(legado_core::LegadoError::Network(format!(
@@ -177,14 +173,14 @@ pub async fn execute_update(
         ))));
     }
 
-    let body = response.text().await.map_err(|e| {
-        legado_core::LegadoError::Network(format!("读取响应失败: {e}"))
-    })?;
+    let body = response
+        .text()
+        .await
+        .map_err(|e| legado_core::LegadoError::Network(format!("读取响应失败: {e}")))?;
 
     // 解析远程书源 JSON
-    let remote_sources: Vec<Value> = serde_json::from_str(&body).map_err(|e| {
-        legado_core::LegadoError::Internal(format!("解析书源 JSON 失败: {e}"))
-    })?;
+    let remote_sources: Vec<Value> = serde_json::from_str(&body)
+        .map_err(|e| legado_core::LegadoError::Internal(format!("解析书源 JSON 失败: {e}")))?;
 
     // 获取本地书源 URL 集合
     let local_urls: std::collections::HashSet<String> = {
@@ -225,9 +221,8 @@ pub async fn execute_update(
         .collect();
 
     if !sources_to_import.is_empty() {
-        let import_json = serde_json::to_string(&sources_to_import).map_err(|e| {
-            legado_core::LegadoError::Internal(format!("序列化书源失败: {e}"))
-        })?;
+        let import_json = serde_json::to_string(&sources_to_import)
+            .map_err(|e| legado_core::LegadoError::Internal(format!("序列化书源失败: {e}")))?;
 
         let db = state.db.lock().await;
         match RoomImporter::import_book_sources(db.connection(), &import_json) {
@@ -406,6 +401,9 @@ mod tests {
         Arc::new(AppState {
             db: Mutex::new(db),
             search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            download_manager: tokio::sync::Mutex::new(
+                legado_core::download_manager::DownloadManager::new(3),
+            ),
         })
     }
 

@@ -64,16 +64,11 @@ pub async fn cache_chapters(
         cached_count += 1;
     }
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "cached": cached_count })),
-    ))
+    Ok((StatusCode::CREATED, Json(json!({ "cached": cached_count }))))
 }
 
 /// GET /api/cache/stats — 缓存统计
-pub async fn cache_stats(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, ApiError> {
+pub async fn cache_stats(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
     let db = state.db.lock().await;
     let repo = CacheBookRepository::new(db.connection());
     let stats = repo.get_stats()?;
@@ -99,6 +94,7 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::routes::create_router;
+    use legado_core::download_manager::DownloadManager;
     use tokio::sync::Mutex;
 
     fn make_test_state() -> Arc<AppState> {
@@ -106,6 +102,7 @@ mod tests {
         Arc::new(AppState {
             db: Mutex::new(db),
             search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            download_manager: Mutex::new(DownloadManager::new(3)),
         })
     }
 

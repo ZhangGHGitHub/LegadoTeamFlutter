@@ -522,11 +522,7 @@ impl AnalyzeUrl {
     /// 编码查询参数
     fn encode_query_params(query: &str) -> String {
         // 检查是否已经编码过（包含 %XX 形式）
-        if query.contains('%')
-            && Regex::new(r"%[0-9A-Fa-f]{2}")
-                .unwrap()
-                .is_match(query)
-        {
+        if query.contains('%') && Regex::new(r"%[0-9A-Fa-f]{2}").unwrap().is_match(query) {
             return query.to_string();
         }
         // 对每个 key=value 对的 key 和 value 分别编码
@@ -771,12 +767,8 @@ mod tests {
         vars.insert("keyword".to_string(), "rust编程".to_string());
         vars.insert("type".to_string(), "book".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://example.com/search?q={keyword}&t={type}",
-            &vars,
-            1,
-        )
-        .unwrap();
+        let url =
+            AnalyzeUrl::parse("https://example.com/search?q={keyword}&t={type}", &vars, 1).unwrap();
         assert_eq!(
             url.url(),
             "https://example.com/search?q=rust%E7%BC%96%E7%A8%8B&t=book"
@@ -838,16 +830,9 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("q".to_string(), "hello world".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://example.com/search?q={q|urlencode}",
-            &vars,
-            1,
-        )
-        .unwrap();
-        assert_eq!(
-            url.url(),
-            "https://example.com/search?q=hello%20world"
-        );
+        let url =
+            AnalyzeUrl::parse("https://example.com/search?q={q|urlencode}", &vars, 1).unwrap();
+        assert_eq!(url.url(), "https://example.com/search?q=hello%20world");
     }
 
     #[test]
@@ -855,12 +840,7 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("data".to_string(), "hello".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://example.com/api?d={data|base64}",
-            &vars,
-            1,
-        )
-        .unwrap();
+        let url = AnalyzeUrl::parse("https://example.com/api?d={data|base64}", &vars, 1).unwrap();
         assert_eq!(url.url(), "https://example.com/api?d=aGVsbG8%3D");
     }
 
@@ -869,12 +849,7 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("pwd".to_string(), "123456".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://example.com/api?h={pwd|md5}",
-            &vars,
-            1,
-        )
-        .unwrap();
+        let url = AnalyzeUrl::parse("https://example.com/api?h={pwd|md5}", &vars, 1).unwrap();
         assert_eq!(
             url.url(),
             "https://example.com/api?h=e10adc3949ba59abbe56e057f20f883e"
@@ -886,18 +861,11 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("val".to_string(), "test value".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://example.com/api?v={val|base64|urlencode}",
-            &vars,
-            1,
-        )
-        .unwrap();
+        let url = AnalyzeUrl::parse("https://example.com/api?v={val|base64|urlencode}", &vars, 1)
+            .unwrap();
         // base64("test value") = "dGVzdCB2YWx1ZQ=="
         // urlencode("dGVzdCB2YWx1ZQ==") = "dGVzdCB2YWx1ZQ%3D%3D"
-        assert_eq!(
-            url.url(),
-            "https://example.com/api?v=dGVzdCB2YWx1ZQ%3D%3D"
-        );
+        assert_eq!(url.url(), "https://example.com/api?v=dGVzdCB2YWx1ZQ%3D%3D");
     }
 
     // --- 4. POST body 模板 ---
@@ -961,12 +929,8 @@ mod tests {
         vars.insert("token".to_string(), "abc123".to_string());
         vars.insert("q".to_string(), "rust lang".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://${host}/search?q={q|urlencode}&t={token}",
-            &vars,
-            1,
-        )
-        .unwrap();
+        let url = AnalyzeUrl::parse("https://${host}/search?q={q|urlencode}&t={token}", &vars, 1)
+            .unwrap();
         assert_eq!(
             url.url(),
             "https://api.example.com/search?q=rust%20lang&t=abc123"
@@ -979,13 +943,11 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("bookName".to_string(), "Rust编程".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://example.com/search?q={{bookName}}",
-            &vars,
-            1,
-        )
-        .unwrap();
-        assert_eq!(url.url(), "https://example.com/search?q=Rust%E7%BC%96%E7%A8%8B");
+        let url = AnalyzeUrl::parse("https://example.com/search?q={{bookName}}", &vars, 1).unwrap();
+        assert_eq!(
+            url.url(),
+            "https://example.com/search?q=Rust%E7%BC%96%E7%A8%8B"
+        );
     }
 
     // --- 8. 绝对 URL 拼接 ---
@@ -1077,10 +1039,7 @@ mod tests {
 
     #[test]
     fn test_apply_pipes_base64() {
-        assert_eq!(
-            AnalyzeUrl::apply_pipes("hello", &["base64"]),
-            "aGVsbG8="
-        );
+        assert_eq!(AnalyzeUrl::apply_pipes("hello", &["base64"]), "aGVsbG8=");
     }
 
     #[test]
@@ -1110,12 +1069,7 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("category".to_string(), "fiction".to_string());
 
-        let url = AnalyzeUrl::parse(
-            "https://example.com/books/<category>/list",
-            &vars,
-            1,
-        )
-        .unwrap();
+        let url = AnalyzeUrl::parse("https://example.com/books/<category>/list", &vars, 1).unwrap();
         assert_eq!(url.url(), "https://example.com/books/fiction/list");
     }
 }

@@ -267,12 +267,10 @@ impl JsSourceEngine {
                     cached.clone()
                 } else {
                     let c = engine_guard.compile(&call_expr)?;
-                    self.script_cache
-                        .insert(call_expr.clone(), c.clone());
+                    self.script_cache.insert(call_expr.clone(), c.clone());
                     c
                 };
-                let result =
-                    engine_guard.execute_compiled_with_bindings(&compiled, &bindings)?;
+                let result = engine_guard.execute_compiled_with_bindings(&compiled, &bindings)?;
 
                 return Ok(Self::normalize_result(&result));
             }

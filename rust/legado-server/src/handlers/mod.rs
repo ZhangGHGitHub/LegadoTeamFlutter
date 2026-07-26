@@ -3,6 +3,7 @@
 pub mod audio;
 pub mod bookshelf;
 pub mod cache;
+pub mod download;
 pub mod export;
 pub mod health;
 pub mod reader;

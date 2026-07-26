@@ -235,7 +235,10 @@ mod tests {
         updated.size_bytes = 4096;
         repo.update(&updated).unwrap();
 
-        let result = repo.get_by_chapter_url("http://ex.com/ch1").unwrap().unwrap();
+        let result = repo
+            .get_by_chapter_url("http://ex.com/ch1")
+            .unwrap()
+            .unwrap();
         assert_eq!(result.content, "updated content");
         assert_eq!(result.size_bytes, 4096);
     }

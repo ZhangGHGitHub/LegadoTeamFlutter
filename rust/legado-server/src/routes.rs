@@ -1,6 +1,6 @@
 //! 路由组装
 
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
@@ -48,10 +48,19 @@ fn api_routes() -> Router<Arc<AppState>> {
             put(handlers::source::update_source).delete(handlers::source::delete_source),
         )
         .route("/sources/check", post(handlers::source_check::check_source))
-        .route("/sources/check-batch", post(handlers::source_check::check_batch))
+        .route(
+            "/sources/check-batch",
+            post(handlers::source_check::check_batch),
+        )
         .route("/sources/repos", get(handlers::source_update::list_repos))
-        .route("/sources/updates", get(handlers::source_update::check_updates))
-        .route("/sources/update", post(handlers::source_update::execute_update))
+        .route(
+            "/sources/updates",
+            get(handlers::source_update::check_updates),
+        )
+        .route(
+            "/sources/update",
+            post(handlers::source_update::execute_update),
+        )
         .route("/search", post(handlers::search::search_books))
         .route("/search/multi", post(handlers::search::search_multi))
         .route("/search/cancel", post(handlers::search::cancel_search))
@@ -78,7 +87,19 @@ fn api_routes() -> Router<Arc<AppState>> {
         .route("/cache/stats", get(handlers::cache::cache_stats))
         .route(
             "/cache/book/{book_url}",
-            axum::routing::delete(handlers::cache::delete_book_cache),
+            delete(handlers::cache::delete_book_cache),
+        )
+        // 下载管理
+        .route("/download/add", post(handlers::download::add_download))
+        .route("/download/pause", post(handlers::download::pause_downloads))
+        .route(
+            "/download/resume",
+            post(handlers::download::resume_downloads),
+        )
+        .route("/download/status", get(handlers::download::download_status))
+        .route(
+            "/download/{id}",
+            delete(handlers::download::remove_download),
         )
         // 段评/本章热评
         .route(
@@ -95,6 +116,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::Request;
     use axum::http::StatusCode;
+    use legado_core::download_manager::DownloadManager;
     use tokio::sync::Mutex;
     use tower::ServiceExt;
 
@@ -103,6 +125,7 @@ mod tests {
         Arc::new(AppState {
             db: Mutex::new(db),
             search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            download_manager: Mutex::new(DownloadManager::new(3)),
         })
     }
 

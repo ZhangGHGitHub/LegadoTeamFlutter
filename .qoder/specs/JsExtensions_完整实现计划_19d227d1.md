@@ -213,6 +213,36 @@
 - 阶段 6 与阶段 2-5 可并行
 - 阶段 1.3 独立可并行
 
+## 并行开发分工（多 Agent 模式）
+
+### 未完成任务的 Agent 分配
+
+| 任务 | 分配 Agent | 分支 | 状态 |
+|------|-----------|------|------|
+| Task 5.2: 解压缩 API | **Rust-Infra** | `feature/rust-infra-archive-api` | 待开发 |
+| Task 6.1: ReadBook 章节预加载 | **Rust-Core** | `feature/rust-core-read-preload` | 待开发 |
+| Task 6.2: AudioPlay 预加载优化 | **Rust-Core** | `feature/rust-core-audio-preload` | 待开发 |
+
+### 并行约束
+
+- Task 5.2 和 Task 6.1/6.2 **完全独立**，可同时开发
+- Task 6.1 和 6.2 均修改 `legado-core`，由同一 Agent (Rust-Core) 串行完成以避免冲突
+- Task 5.2 修改 `legado-js`，由 Rust-Infra 独立处理
+- 合并顺序：Rust-Core (6.1/6.2) 先合并 → Rust-Infra (5.2) 后合并（无依赖但减少冲突）
+
+### 接口约定
+
+Task 6.1/6.2 需在 `legado-core/src/lib.rs` 新增公开模块：
+```rust
+pub mod read_state;    // Task 6.1: ReadBook 三章滑动窗口
+pub mod audio_preload; // Task 6.2: AudioPlay LRU 预加载
+```
+
+Task 5.2 需在 `legado-js/src/host_api/` 新增：
+```rust
+pub mod archive_utils; // unzipFile / getZipStringContent / un7zFile / unrarFile
+```
+
 ## 预期成果
 - java 命名空间修复 → 所有标准书源 JS 可运行
 - 网络栈统一 → 连接复用 + 限流 + 重试，ajaxAll 并发提速 N 倍

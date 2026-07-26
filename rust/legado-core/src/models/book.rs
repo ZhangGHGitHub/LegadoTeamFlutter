@@ -236,6 +236,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_book_serde_roundtrip() {
         let mut book = Book::default();
         book.book_url = "https://example.com/book/1".to_string();
@@ -288,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_book_with_read_config() {
         let mut book = Book::default();
         book.read_config = Some(ReadConfig {

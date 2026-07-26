@@ -289,7 +289,8 @@ mod impl_encoding {
         let encoding = encoding_rs::Encoding::for_label(encoding_name.as_bytes())
             .ok_or_else(|| format!("Unsupported charset: {}", encoding_name))?;
         let (bytes, _enc, _had_errors) = encoding.encode(s);
-        let arr: Vec<serde_json::Value> = bytes.iter().map(|&b| serde_json::Value::from(b)).collect();
+        let arr: Vec<serde_json::Value> =
+            bytes.iter().map(|&b| serde_json::Value::from(b)).collect();
         serde_json::to_string(&arr).map_err(|e| format!("JSON serialize error: {}", e))
     }
 
@@ -298,8 +299,8 @@ mod impl_encoding {
     /// 对应 Kotlin: `bytesToStr(bytes, charset)`
     /// 输入为 JSON 数组格式，如 "[72,101,108,108,111]"
     pub fn bytes_to_str(bytes_json: &str, charset: Option<&str>) -> Result<String, String> {
-        let arr: Vec<i64> = serde_json::from_str(bytes_json)
-            .map_err(|e| format!("JSON parse error: {}", e))?;
+        let arr: Vec<i64> =
+            serde_json::from_str(bytes_json).map_err(|e| format!("JSON parse error: {}", e))?;
         let bytes: Vec<u8> = arr.iter().map(|&v| v as u8).collect();
         let encoding_name = charset.unwrap_or("UTF-8");
         let encoding = encoding_rs::Encoding::for_label(encoding_name.as_bytes())
@@ -533,7 +534,9 @@ mod tests {
         assert!(!result.is_empty());
         // Verify it's valid base64 by decoding
         use base64::Engine;
-        let decoded = base64::engine::general_purpose::STANDARD.decode(&result).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&result)
+            .unwrap();
         assert_eq!(decoded.len(), 32); // SHA-256 output is 32 bytes
     }
 

@@ -33,11 +33,17 @@ pub struct ReviewFilter;
 impl ReviewFilter {
     /// 从评论列表中筛选本章热评
     pub fn hot_reviews(reviews: &[ChapterReview]) -> Vec<&ChapterReview> {
-        reviews.iter().filter(|r| r.is_chapter_hot_review()).collect()
+        reviews
+            .iter()
+            .filter(|r| r.is_chapter_hot_review())
+            .collect()
     }
 
     /// 从评论列表中筛选指定段落的段评
-    pub fn paragraph_reviews(reviews: &[ChapterReview], paragraph_index: i32) -> Vec<&ChapterReview> {
+    pub fn paragraph_reviews(
+        reviews: &[ChapterReview],
+        paragraph_index: i32,
+    ) -> Vec<&ChapterReview> {
         reviews
             .iter()
             .filter(|r| r.paragraph_index == paragraph_index)
@@ -46,7 +52,7 @@ impl ReviewFilter {
 
     /// 按点赞数降序排列
     pub fn sort_by_likes(reviews: &mut [ChapterReview]) {
-        reviews.sort_by(|a, b| b.like_count.cmp(&a.like_count));
+        reviews.sort_by_key(|r| std::cmp::Reverse(r.like_count));
     }
 }
 

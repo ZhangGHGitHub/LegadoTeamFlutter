@@ -159,10 +159,7 @@ impl<'a> ReplaceRuleRepository<'a> {
             // 检查 scope 匹配：scope 为空或 "global" 时全局生效
             // scope 包含书籍名称时对特定书籍生效
             if let Some(scope) = &rule.scope {
-                if !scope.is_empty()
-                    && scope != "global"
-                    && !scope.contains(book_name)
-                {
+                if !scope.is_empty() && scope != "global" && !scope.contains(book_name) {
                     continue;
                 }
             }
@@ -175,7 +172,9 @@ impl<'a> ReplaceRuleRepository<'a> {
                 // 正则替换
                 match regex::Regex::new(&rule.pattern) {
                     Ok(re) => {
-                        result = re.replace_all(&result, rule.replacement.as_str()).to_string();
+                        result = re
+                            .replace_all(&result, rule.replacement.as_str())
+                            .to_string();
                     }
                     Err(_) => {
                         // 正则表达式无效，跳过此规则

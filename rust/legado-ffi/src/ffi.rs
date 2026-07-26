@@ -345,7 +345,9 @@ pub mod ffi {
         page: i32,
     ) -> Result<String, BridgeError> {
         Ok(crate::api::web_book::webbook_search(
-            &source_json, &query, page,
+            &source_json,
+            &query,
+            page,
         )?)
     }
 
@@ -353,25 +355,18 @@ pub mod ffi {
     ///
     /// `source_json` — BookSource JSON 字符串
     /// `book_url` — 书籍详情页 URL
-    pub fn webbook_info(
-        source_json: String,
-        book_url: String,
-    ) -> Result<String, BridgeError> {
-        Ok(crate::api::web_book::webbook_info(
-            &source_json, &book_url,
-        )?)
+    pub fn webbook_info(source_json: String, book_url: String) -> Result<String, BridgeError> {
+        Ok(crate::api::web_book::webbook_info(&source_json, &book_url)?)
     }
 
     /// 获取章节列表（返回 JSON 数组）
     ///
     /// `source_json` — BookSource JSON 字符串
     /// `book_url` — 书籍详情页 URL
-    pub fn webbook_chapters(
-        source_json: String,
-        book_url: String,
-    ) -> Result<String, BridgeError> {
+    pub fn webbook_chapters(source_json: String, book_url: String) -> Result<String, BridgeError> {
         Ok(crate::api::web_book::webbook_chapters(
-            &source_json, &book_url,
+            &source_json,
+            &book_url,
         )?)
     }
 
@@ -384,7 +379,8 @@ pub mod ffi {
         chapter_json: String,
     ) -> Result<String, BridgeError> {
         Ok(crate::api::web_book::webbook_content(
-            &source_json, &chapter_json,
+            &source_json,
+            &chapter_json,
         )?)
     }
 

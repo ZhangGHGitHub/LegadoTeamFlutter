@@ -149,7 +149,11 @@ impl Middleware for ProxyMiddleware {
     async fn handle(&self, request: RequestBuilder, next: Next) -> LegadoResult<Response> {
         // 记录当前使用的代理信息（不修改请求本身，因为 reqwest 代理在 Client 层设置）
         if let Some(proxy) = self.pool.next() {
-            log::debug!("Proxy middleware: using proxy {} ({:?})", proxy.url, proxy.proxy_type);
+            log::debug!(
+                "Proxy middleware: using proxy {} ({:?})",
+                proxy.url,
+                proxy.proxy_type
+            );
         } else {
             log::debug!("Proxy middleware: proxy pool is empty, no proxy applied");
         }
@@ -159,9 +163,8 @@ impl Middleware for ProxyMiddleware {
 
 /// 将 ProxyConfig 转换为 reqwest::Proxy
 pub fn to_reqwest_proxy(config: &ProxyConfig) -> Result<reqwest::Proxy, LegadoError> {
-    reqwest::Proxy::all(&config.url).map_err(|e| {
-        LegadoError::Network(format!("Invalid proxy URL '{}': {}", config.url, e))
-    })
+    reqwest::Proxy::all(&config.url)
+        .map_err(|e| LegadoError::Network(format!("Invalid proxy URL '{}': {}", config.url, e)))
 }
 
 #[cfg(test)]
@@ -170,10 +173,22 @@ mod tests {
 
     #[test]
     fn test_proxy_type_from_url() {
-        assert_eq!(ProxyType::from_url("http://proxy.example.com:8080"), ProxyType::Http);
-        assert_eq!(ProxyType::from_url("https://proxy.example.com:443"), ProxyType::Https);
-        assert_eq!(ProxyType::from_url("socks5://127.0.0.1:1080"), ProxyType::Socks5);
-        assert_eq!(ProxyType::from_url("SOCKS5://127.0.0.1:1080"), ProxyType::Socks5);
+        assert_eq!(
+            ProxyType::from_url("http://proxy.example.com:8080"),
+            ProxyType::Http
+        );
+        assert_eq!(
+            ProxyType::from_url("https://proxy.example.com:443"),
+            ProxyType::Https
+        );
+        assert_eq!(
+            ProxyType::from_url("socks5://127.0.0.1:1080"),
+            ProxyType::Socks5
+        );
+        assert_eq!(
+            ProxyType::from_url("SOCKS5://127.0.0.1:1080"),
+            ProxyType::Socks5
+        );
     }
 
     #[test]
@@ -218,9 +233,7 @@ mod tests {
 
     #[test]
     fn test_proxy_pool_len() {
-        let pool = ProxyPool::new(vec![
-            ProxyConfig::from_url("http://p1:8080"),
-        ]);
+        let pool = ProxyPool::new(vec![ProxyConfig::from_url("http://p1:8080")]);
         assert_eq!(pool.len(), 1);
         assert!(!pool.is_empty());
     }

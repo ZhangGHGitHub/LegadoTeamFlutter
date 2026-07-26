@@ -31,7 +31,10 @@ pub fn create_symmetric_crypto(
     match algo.as_str() {
         "AES" => {
             if mode != "CBC" && mode != "ECB" && mode != "NONE" {
-                return Err(format!("Unsupported AES mode: {}. Supported: CBC, ECB", mode));
+                return Err(format!(
+                    "Unsupported AES mode: {}. Supported: CBC, ECB",
+                    mode
+                ));
             }
             Ok(format!("AES/{}", mode))
         }

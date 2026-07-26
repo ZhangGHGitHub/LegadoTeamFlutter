@@ -7,12 +7,18 @@ const NOT_SUPPORTED: &str = "[ERROR] This API is not supported in Rust runtime";
 
 /// webView — 需要 Android WebView
 pub fn web_view(url: &str) -> String {
-    format!("[ERROR] webView not supported in Rust runtime. URL: {}", url)
+    format!(
+        "[ERROR] webView not supported in Rust runtime. URL: {}",
+        url
+    )
 }
 
 /// webViewGetSource — 需要 Android WebView
 pub fn web_view_get_source(url: &str) -> String {
-    format!("[ERROR] webViewGetSource not supported in Rust runtime. URL: {}", url)
+    format!(
+        "[ERROR] webViewGetSource not supported in Rust runtime. URL: {}",
+        url
+    )
 }
 
 /// webViewGetOverrideUrl
@@ -22,12 +28,18 @@ pub fn web_view_get_override_url() -> String {
 
 /// startBrowser — 需要 Android Intent
 pub fn start_browser(url: &str) -> String {
-    format!("[ERROR] startBrowser not supported in Rust runtime. URL: {}", url)
+    format!(
+        "[ERROR] startBrowser not supported in Rust runtime. URL: {}",
+        url
+    )
 }
 
 /// openUrl — 需要 Android Intent
 pub fn open_url(url: &str) -> String {
-    format!("[ERROR] openUrl not supported in Rust runtime. URL: {}", url)
+    format!(
+        "[ERROR] openUrl not supported in Rust runtime. URL: {}",
+        url
+    )
 }
 
 /// toast — 需要 Android Toast
@@ -39,7 +51,10 @@ pub fn toast(msg: &str) -> String {
 
 /// getVerificationCode — 需要 Android WebView + 人机交互
 pub fn get_verification_code(url: &str) -> String {
-    format!("[ERROR] getVerificationCode not supported in Rust runtime. URL: {}", url)
+    format!(
+        "[ERROR] getVerificationCode not supported in Rust runtime. URL: {}",
+        url
+    )
 }
 
 /// androidId — 需要 Android Context

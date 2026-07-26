@@ -139,6 +139,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_book_source_serde_roundtrip() {
         let mut bs = BookSource::default();
         bs.book_source_url = "https://example.com".to_string();
@@ -187,6 +188,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_book_source_with_nested_rules() {
         use super::super::rule::SearchRule;
         let mut bs = BookSource::default();

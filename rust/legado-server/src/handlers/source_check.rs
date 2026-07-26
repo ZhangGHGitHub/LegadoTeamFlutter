@@ -15,8 +15,8 @@ use tokio::task;
 use crate::error::ApiError;
 use crate::state::AppState;
 use legado_core::models::BookSource;
-use legado_net::source_checker::{CheckResult, CheckerConfig, SourceChecker};
 use legado_net::client::{LegadoClient, LegadoClientConfig};
+use legado_net::source_checker::{CheckResult, CheckerConfig, SourceChecker};
 
 /// 单个书源检查请求
 #[derive(Debug, Deserialize)]
@@ -73,7 +73,7 @@ pub async fn check_batch(
     Json(req): Json<CheckBatchRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let keyword = req.keyword.clone();
-    let concurrency = req.concurrency.unwrap_or(5).max(1).min(20);
+    let concurrency = req.concurrency.unwrap_or(5).clamp(1, 20);
 
     // 使用信号量控制并发
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
@@ -153,6 +153,9 @@ mod tests {
         Arc::new(AppState {
             db: Mutex::new(db),
             search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            download_manager: tokio::sync::Mutex::new(
+                legado_core::download_manager::DownloadManager::new(3),
+            ),
         })
     }
 
@@ -219,10 +222,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(
-            resp.status() == StatusCode::OK
-                || resp.status() == StatusCode::BAD_GATEWAY
-        );
+        assert!(resp.status() == StatusCode::OK || resp.status() == StatusCode::BAD_GATEWAY);
     }
 
     #[test]

@@ -156,6 +156,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_rss_source_serde_roundtrip() {
         let mut rss = RssSource::default();
         rss.source_url = "https://rss.example.com".to_string();

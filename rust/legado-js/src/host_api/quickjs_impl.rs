@@ -33,8 +33,8 @@ pub fn register_all_apis<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoErro
     let globals = ctx.globals();
 
     // 创建 java 命名空间对象
-    let java = rquickjs::Object::new(ctx.clone())
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    let java =
+        rquickjs::Object::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     register_encoding_apis(ctx, &java, &globals)?;
     register_string_apis(ctx, &java, &globals)?;
@@ -232,13 +232,10 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "strToBytes",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |s: String, charset: Opt<String>| -> String {
-                encoding::str_to_bytes(&s, charset.0.as_deref())
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |s: String, charset: Opt<String>| -> String {
+            encoding::str_to_bytes(&s, charset.0.as_deref())
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -625,8 +622,7 @@ fn register_file_apis<'js>(
         globals,
         "getTxtInFolder",
         rquickjs::Function::new(ctx.clone(), |folder_path: String| -> String {
-            file_utils::get_txt_in_folder(&folder_path)
-                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            file_utils::get_txt_in_folder(&folder_path).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -734,13 +730,10 @@ fn register_network_apis<'js>(
         java,
         globals,
         "httpGet",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |url: String, headers: Opt<String>| -> String {
-                network::http_get(&url, headers.0.as_deref())
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |url: String, headers: Opt<String>| -> String {
+            network::http_get(&url, headers.0.as_deref())
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -797,15 +790,12 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "getCookie",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |tag: String, key: Opt<String>| -> String {
-                match key.0 {
-                    Some(k) => cookie_store::get_cookie_by_key(&tag, &k),
-                    None => cookie_store::get_cookie(&tag),
-                }
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |tag: String, key: Opt<String>| -> String {
+            match key.0 {
+                Some(k) => cookie_store::get_cookie_by_key(&tag, &k),
+                None => cookie_store::get_cookie(&tag),
+            }
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1093,7 +1083,9 @@ mod tests {
         let engine = make_engine();
         // AES 加密后解密应还原
         let result = engine
-            .eval("java.aesDecrypt(java.aesEncrypt('hello', '0123456789abcdef'), '0123456789abcdef')")
+            .eval(
+                "java.aesDecrypt(java.aesEncrypt('hello', '0123456789abcdef'), '0123456789abcdef')",
+            )
             .unwrap();
         assert_eq!(result, "hello");
     }
@@ -1122,8 +1114,12 @@ mod tests {
     fn test_java_get_cookie() {
         let engine = make_engine();
         // 先 setCookie 再 getCookie
-        engine.eval("java.setCookie('test_tag', 'session=abc123')").unwrap();
-        let result = engine.eval("java.getCookie('test_tag', 'session')").unwrap();
+        engine
+            .eval("java.setCookie('test_tag', 'session=abc123')")
+            .unwrap();
+        let result = engine
+            .eval("java.getCookie('test_tag', 'session')")
+            .unwrap();
         assert_eq!(result, "abc123");
         // 清理
         engine.eval("java.clearCookies('test_tag')").unwrap();
@@ -1185,7 +1181,9 @@ mod tests {
     #[test]
     fn test_java_bytes_to_str() {
         let engine = make_engine();
-        let result = engine.eval("java.bytesToStr('[72,101,108,108,111]')").unwrap();
+        let result = engine
+            .eval("java.bytesToStr('[72,101,108,108,111]')")
+            .unwrap();
         assert_eq!(result, "Hello");
     }
 

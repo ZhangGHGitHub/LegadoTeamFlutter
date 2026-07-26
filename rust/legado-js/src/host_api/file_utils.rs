@@ -443,11 +443,7 @@ mod tests {
         setup_sandbox();
         // 尝试通过 .. 逃逸沙箱
         let result = resolve_safe_path("../../etc/passwd");
-        assert!(
-            result.is_err(),
-            "路径穿越应被阻止, got: {:?}",
-            result
-        );
+        assert!(result.is_err(), "路径穿越应被阻止, got: {:?}", result);
         let err_msg = result.unwrap_err();
         assert!(
             err_msg.contains("Path traversal blocked"),
@@ -493,11 +489,7 @@ mod tests {
         };
         let result = resolve_safe_path(outside);
         // 绝对路径在沙箱外，parent 存在且不在沙箱内 → 应被阻止
-        assert!(
-            result.is_err(),
-            "沙箱外绝对路径应被阻止, got: {:?}",
-            result
-        );
+        assert!(result.is_err(), "沙箱外绝对路径应被阻止, got: {:?}", result);
     }
 
     #[test]
@@ -505,11 +497,7 @@ mod tests {
         setup_sandbox();
         // 嵌套路径穿越
         let result = resolve_safe_path("subdir/../../..");
-        assert!(
-            result.is_err(),
-            "嵌套路径穿越应被阻止, got: {:?}",
-            result
-        );
+        assert!(result.is_err(), "嵌套路径穿越应被阻止, got: {:?}", result);
     }
 
     // ---- readTxtFile 编码测试 ----

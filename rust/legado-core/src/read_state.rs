@@ -50,7 +50,7 @@ pub struct ReadBookState {
     fail_threshold: i32,
 
     /// 预下载配置
-    pre_download_ahead: i32,  // 前向预下载章节数
+    pre_download_ahead: i32, // 前向预下载章节数
     pre_download_behind: i32, // 后向预下载章节数（默认 5）
 }
 

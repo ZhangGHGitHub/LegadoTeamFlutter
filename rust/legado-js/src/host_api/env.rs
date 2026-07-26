@@ -127,11 +127,13 @@ mod tests {
         let env_a = HostEnv::with_source_tag("source_a");
         let env_b = HostEnv::with_source_tag("source_b");
 
-        env_a.variables
+        env_a
+            .variables
             .lock()
             .unwrap()
             .insert("k".to_string(), "a_val".to_string());
-        env_b.variables
+        env_b
+            .variables
             .lock()
             .unwrap()
             .insert("k".to_string(), "b_val".to_string());

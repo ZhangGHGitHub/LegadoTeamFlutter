@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 
 use crate::routes::create_router;
 use crate::state::AppState;
+use legado_core::download_manager::DownloadManager;
 
 /// 服务器配置
 pub struct ServerConfig {
@@ -32,6 +33,7 @@ pub async fn start_server(config: ServerConfig) -> Result<(), Box<dyn std::error
     let state = Arc::new(AppState {
         db: Mutex::new(db),
         search_cancelled: Arc::new(AtomicBool::new(false)),
+        download_manager: Mutex::new(DownloadManager::new(3)),
     });
 
     let router = create_router(state);
@@ -75,6 +77,7 @@ mod tests {
         let state = Arc::new(AppState {
             db: Mutex::new(db),
             search_cancelled: Arc::new(AtomicBool::new(false)),
+            download_manager: Mutex::new(DownloadManager::new(3)),
         });
         let router = create_router(state);
 

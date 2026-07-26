@@ -13,38 +13,28 @@ mod impl_html_format {
 
     // 预编译正则
     // 注意: regex crate 不支持反向引用，所以分别匹配 script 和 style
-    static SCRIPT_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)<script[^>]*>.*?</script\s*>").unwrap()
-    });
-    static STYLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)<style[^>]*>.*?</style\s*>").unwrap()
-    });
-    static COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?s)<!--[^>]*?-->").unwrap()
-    });
+    static SCRIPT_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<script[^>]*>.*?</script\s*>").unwrap());
+    static STYLE_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<style[^>]*>.*?</style\s*>").unwrap());
+    static COMMENT_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?s)<!--[^>]*?-->").unwrap());
     static WRAP_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)</?(?:div|p|br|hr|h\d|article|dd|dl|li|ul|ol|table|tr|td|th|section|header|footer|blockquote|figure|figcaption)[^>]*>").unwrap()
     });
     // 注意: regex crate 不支持 lookahead，简化正则
-    static ALL_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"</?[a-zA-Z][^<>]*>").unwrap()
-    });
-    static NBSP_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(&nbsp;)+").unwrap()
-    });
-    static ESP_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(&ensp;|&emsp;)").unwrap()
-    });
+    static ALL_TAG_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"</?[a-zA-Z][^<>]*>").unwrap());
+    static NBSP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(&nbsp;)+").unwrap());
+    static ESP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(&ensp;|&emsp;)").unwrap());
     static NO_PRINT_RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(&thinsp;|&zwnj;|&zwj;|\u{2009}|\u{200C}|\u{200D})").unwrap()
     });
     // 合并多个连续换行符为单个换行符
-    static MULTI_NEWLINE_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"[ \t]*(?:\n[ \t]*)+").unwrap()
-    });
-    static LEADING_TRAILING_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"^[\n\s]+|[\n\s]+$").unwrap()
-    });
+    static MULTI_NEWLINE_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"[ \t]*(?:\n[ \t]*)+").unwrap());
+    static LEADING_TRAILING_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[\n\s]+|[\n\s]+$").unwrap());
 
     /// 解码常见 HTML 实体
     fn decode_entities(s: &str) -> String {

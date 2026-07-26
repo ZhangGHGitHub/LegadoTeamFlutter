@@ -678,7 +678,11 @@ mod quickjs_tests {
 
         // 简单计算——应在超时前完成
         let result = engine.eval("var sum = 0; for (var i = 0; i < 1000; i++) { sum += i; } sum");
-        assert!(result.is_ok(), "Normal execution should not timeout: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Normal execution should not timeout: {:?}",
+            result
+        );
         assert_eq!(result.unwrap(), "499500");
 
         // 字符串操作
