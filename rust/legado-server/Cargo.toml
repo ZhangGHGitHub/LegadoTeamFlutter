@@ -1,0 +1,25 @@
+[package]
+name = "legado-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+legado-core = { path = "../legado-core" }
+legado-db = { path = "../legado-db" }
+legado-parser = { path = "../legado-parser" }
+legado-net = { path = "../legado-net" }
+legado-book = { path = "../legado-book" }
+
+axum = { version = "0.8", features = ["ws", "json"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+base64 = { workspace = true }
+urlencoding = "2.1"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

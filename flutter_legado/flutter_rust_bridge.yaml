@@ -1,0 +1,9 @@
+# flutter_rust_bridge 代码生成配置
+#
+# 运行代码生成:
+#   cd flutter_legado && dart run flutter_rust_bridge_codegen generate
+
+rust_input: crate::ffi
+rust_root: ../rust/legado-ffi/
+dart_output: lib/src/bridge/
+dart_entrypoint_class_name: RustLib

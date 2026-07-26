@@ -1,0 +1,16 @@
+[package]
+name = "legado-parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+legado-core = { path = "../legado-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+scraper = "0.22"
+sxd-xpath = "0.4"
+sxd-document = "0.3"
+regex = "1"
+base64 = { workspace = true }
+md-5 = "0.10"
+urlencoding = "2"

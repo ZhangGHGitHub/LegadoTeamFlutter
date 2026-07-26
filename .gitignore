@@ -18,3 +18,24 @@ package-lock.json
 .kotlin/
 .cxx
 .vscode
+
+# Rust
+rust/target/
+rust/**/*.rs.bk
+
+# Flutter
+flutter_legado/.dart_tool/
+flutter_legado/.flutter-plugins
+flutter_legado/.flutter-plugins-dependencies
+flutter_legado/.packages
+flutter_legado/build/
+flutter_legado/.pub-cache/
+flutter_legado/.pub/
+flutter_legado/pubspec.lock
+!flutter_legado/pubspec.yaml
+
+# Generated
+flutter_legado/lib/src/bridge/frb_generated.dart
+flutter_legado/lib/src/bridge/frb_generated.io.dart
+flutter_legado/lib/src/bridge/frb_generated.web.dart
+flutter_legado/android/app/src/main/jniLibs/

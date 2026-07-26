@@ -1,0 +1,26 @@
+name: Rust CI
+on:
+  push:
+    paths: ['rust/**']
+  pull_request:
+    paths: ['rust/**']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cargo check
+        working-directory: rust
+        run: cargo check --workspace
+      - name: Cargo clippy
+        working-directory: rust
+        run: cargo clippy --workspace -- -D warnings
+      - name: Cargo test
+        working-directory: rust
+        run: cargo test --workspace
+      - name: Cargo test (quickjs)
+        working-directory: rust
+        run: cargo test -p legado-js --features quickjs

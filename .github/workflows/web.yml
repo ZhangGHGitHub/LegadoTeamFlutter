@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  UPSTREAM_REPOSITORY: LegadoTeam/legado
+  UPSTREAM_REPOSITORY: ZhangGHGitHub/LegadoTeamFlutter
 
 jobs:
   build:

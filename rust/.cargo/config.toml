@@ -1,0 +1,24 @@
+[source.crates-io]
+replace-with = "ustc"
+
+[source.ustc]
+registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
+
+# Android NDK cross-compilation targets
+# Requires ANDROID_NDK_HOME environment variable to be set
+
+[target.aarch64-linux-android]
+# linker = "aarch64-linux-android-clang"  # Uncomment when NDK is installed
+
+[target.armv7-linux-androideabi]
+# linker = "armv7a-linux-androideabi-clang"  # Uncomment when NDK is installed
+
+[target.x86_64-linux-android]
+# linker = "x86_64-linux-android-clang"  # Uncomment when NDK is installed
+
+[target.i686-linux-android]
+# linker = "i686-linux-android-clang"  # Uncomment when NDK is installed
+
+[build]
+# Default target for development (comment out for Android builds)
+# target = "aarch64-linux-android"

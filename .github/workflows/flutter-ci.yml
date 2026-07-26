@@ -1,0 +1,21 @@
+name: Flutter CI
+on:
+  push:
+    paths: ['flutter_legado/**']
+  pull_request:
+    paths: ['flutter_legado/**']
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Flutter pub get
+        working-directory: flutter_legado
+        run: flutter pub get
+      - name: Flutter analyze
+        working-directory: flutter_legado
+        run: flutter analyze

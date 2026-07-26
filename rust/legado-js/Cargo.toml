@@ -1,0 +1,64 @@
+[package]
+name = "legado-js"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+legado-core = { path = "../legado-core" }
+
+# rquickjs 是重型依赖（需编译 QuickJS C 代码），设为可选 feature
+# 启用方式: cargo build --features quickjs
+# 注意："bindgen" 需要 libclang；已移除，使用预生成的绑定
+rquickjs = { version = "0.9", features = ["parallel", "classes", "properties", "loader", "chrono", "macro"], optional = true }
+
+# 编解码与加密 crate（可选，随 quickjs feature 一起启用）
+md-5     = { version = "0.10", optional = true }
+sha1     = { version = "0.10", optional = true }
+sha2     = { version = "0.10", optional = true }
+hmac     = { version = "0.12", optional = true }
+base64   = { version = "0.22", optional = true }
+hex      = { version = "0.4", optional = true }
+lru      = { version = "0.12" }
+percent-encoding = { version = "2", optional = true }
+
+# 新增：字符串、JSON、正则、时间、UUID 工具
+encoding_rs   = { version = "0.8", optional = true }
+regex         = { version = "1", optional = true }
+chrono        = { version = "0.4", optional = true }
+serde_json    = { version = "1", optional = true }
+serde         = { version = "1", features = ["derive"], optional = true }
+jsonpath-rust = { version = "0.7", optional = true }
+uuid          = { version = "1", features = ["v4"], optional = true }
+url           = { version = "2", optional = true }
+
+# futures 流式并发（用于 ajaxAll 有界并发）
+futures       = { version = "0.3", optional = true }
+
+# tokio 运行时桥接（用于在 JS 线程中调用 legado-net 异步 API）
+tokio         = { version = "1", features = ["rt-multi-thread", "sync"], optional = true }
+legado-net    = { path = "../legado-net", optional = true }
+
+[features]
+default = []
+quickjs = [
+    "dep:rquickjs",
+    "dep:md-5",
+    "dep:sha1",
+    "dep:sha2",
+    "dep:hmac",
+    "dep:base64",
+    "dep:hex",
+
+    "dep:percent-encoding",
+    "dep:encoding_rs",
+    "dep:regex",
+    "dep:chrono",
+    "dep:serde_json",
+    "dep:serde",
+    "dep:jsonpath-rust",
+    "dep:uuid",
+    "dep:url",
+    "dep:futures",
+    "dep:tokio",
+    "dep:legado-net",
+]
