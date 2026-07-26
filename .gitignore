@@ -23,7 +23,7 @@ package-lock.json
 rust/target/
 rust/**/*.rs.bk
 
-# Flutter
+# Flutter (keep pubspec.lock for reproducible CI builds)
 flutter_legado/.dart_tool/
 flutter_legado/.flutter-plugins
 flutter_legado/.flutter-plugins-dependencies
@@ -31,7 +31,6 @@ flutter_legado/.packages
 flutter_legado/build/
 flutter_legado/.pub-cache/
 flutter_legado/.pub/
-flutter_legado/pubspec.lock
 !flutter_legado/pubspec.yaml
 
 # Generated
