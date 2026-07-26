@@ -13,6 +13,7 @@ analyzer:
   exclude:
     - "**/*.freezed.dart"
     - "**/*.g.dart"
+    - "lib/src/bridge/**"
   errors:
     invalid_annotation_target: ignore
 
