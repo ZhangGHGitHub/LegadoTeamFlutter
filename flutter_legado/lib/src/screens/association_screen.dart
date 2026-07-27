@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -624,17 +625,23 @@ class _AssociationScreenState extends State<AssociationScreen> {
         await provider.loadFromUrl(url);
         break;
       case ImportSource.file:
-        // 文件选择需要通过文件选择器，这里简化处理
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('文件导入功能开发中')),
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['json', 'txt'],
         );
-        return;
+        if (result == null || result.files.isEmpty) return;
+        final path = result.files.single.path;
+        if (path == null) return;
+        await provider.loadFromFile(path);
+        break;
       case ImportSource.clipboard:
         await provider.loadFromClipboard();
         break;
       case ImportSource.qrCode:
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('扫码导入功能开发中')),
+          const SnackBar(
+            content: Text('扫码功能需要移动设备，Windows 桌面端不支持'),
+          ),
         );
         return;
     }

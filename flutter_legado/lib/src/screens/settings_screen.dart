@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/reader_provider.dart' show ReaderBackground;
@@ -250,13 +251,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.description),
             title: Text(AppStrings.license),
             subtitle: const Text('GPL-3.0'),
-            onTap: () {},
+            onTap: () => showLicensePage(
+              context: context,
+              applicationName: 'Legado',
+              applicationVersion: '2.0.0',
+              applicationLegalese: 'GPL-3.0 License',
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.code),
             title: Text(AppStrings.projectUrl),
             subtitle: const Text('github.com/gedoor/legado'),
-            onTap: () {},
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final uri = Uri.parse('https://github.com/gedoor/legado');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              } else {
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('https://github.com/gedoor/legado')),
+                );
+              }
+            },
           ),
           const SizedBox(height: 24),
         ],

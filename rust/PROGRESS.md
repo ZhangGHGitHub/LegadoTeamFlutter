@@ -1,19 +1,19 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-07-27
+> 最后更新：2026-07-28
 
 ---
 
 ## 总览
 
-- **已完成**：107 / 107 原子任务（100%）
+- **已完成**：109 / 109 原子任务（100%）
 - **测试状态**：cargo test 1225 passed（默认）/ 1392 passed（含 QuickJS）| flutter test 30 passed | flutter analyze 0 issues
 - **QuickJS feature**：309 tests passed
 - **里程碑**：🎉 Flutter FFI bridge 全部接通，端到端流程可用
 
 ---
 
-## 已完成（107/107 原子任务）
+## 已完成（109/109 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -206,6 +206,19 @@
 - 书签/替换规则：内存桩 → FFI 持久化（SQLite）
 - 换源 UI：ChangeSourceScreen 完整搜索/应用流程
 - AutoTask：mock → REST API（/api/auto-tasks CRUD）
+- 质量门禁：cargo test 1225 passed / clippy 0 warnings / flutter test 30 passed / flutter analyze 0 issues
+
+### 阶段 14：Flutter UI 打磨与阅读器增强（Task #108-#109） ✅
+
+- [x] Task #108: 设置/书源/关联/书籍信息 UI 增强 — 设置页 License 页面 + 项目 URL 启动器；书源登录 SharedPreferences 持久化；关联导入 FilePicker 文件选择 + QR 平台提示；书籍信息 share_plus 分享集成
+- [x] Task #109: 阅读器增强 — 目录搜索过滤、章节预加载（前后各 2 章）、退出时保存阅读进度
+
+**阶段 14 关键成果：**
+- 设置增强：开源许可页面 + 项目主页一键跳转
+- 书源登录：登录状态 SharedPreferences 持久化，重启不丢失
+- 关联导入：FilePicker 真实文件选择（替代文本输入）+ 平台适配提示
+- 书籍分享：share_plus 集成，支持分享书名/作者/简介
+- 阅读器：目录内搜索过滤 + 章节预加载（±2 章）+ 退出进度保存
 - 质量门禁：cargo test 1225 passed / clippy 0 warnings / flutter test 30 passed / flutter analyze 0 issues
 
 ---

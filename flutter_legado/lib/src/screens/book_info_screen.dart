@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../providers/bookshelf_provider.dart';
@@ -57,10 +58,25 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
           IconButton(
             icon: const Icon(Icons.share),
             tooltip: '分享',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('分享功能开发中')),
-              );
+            onPressed: () async {
+              try {
+                final data = await _future;
+                final book = data.book;
+                if (book == null) return;
+                final buffer = StringBuffer('《${book.name}》');
+                if (book.author.isNotEmpty) {
+                  buffer.write(' 作者：${book.author}');
+                }
+                final intro = book.customIntro ?? book.intro;
+                if (intro != null && intro.isNotEmpty) {
+                  final shortIntro =
+                      intro.length > 100 ? '${intro.substring(0, 100)}...' : intro;
+                  buffer.write('\n$shortIntro');
+                }
+                await Share.share(buffer.toString());
+              } catch (_) {
+                // 书籍信息未加载完成时忽略
+              }
             },
           ),
         ],

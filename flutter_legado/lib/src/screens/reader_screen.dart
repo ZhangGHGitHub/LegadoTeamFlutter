@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/rust_api.dart';
 import '../providers/bookmark_provider.dart';
 import '../providers/reader_provider.dart';
 import '../widgets/loading_indicator.dart';
@@ -18,29 +21,59 @@ class ReaderScreen extends StatefulWidget {
 class _ReaderScreenState extends State<ReaderScreen> {
   final PageController _pageController = PageController();
 
+  /// 上一章是否处于加载状态（用于检测章节加载完成以触发预加载）
+  bool _wasLoading = false;
+
+  /// 已触发过预加载的章节索引（避免重复预加载）
+  int _lastPreloadedIndex = -1;
+
+  /// 目录搜索关键词
+  String _chapterSearchQuery = '';
+
   @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
   }
 
+  /// 章节内容加载完成后，后台预加载相邻章节
+  void _maybePreloadAdjacentChapters(ReaderProvider provider) {
+    if (_wasLoading && !provider.loading && provider.error == null) {
+      final index = provider.currentChapterIndex;
+      if (index != _lastPreloadedIndex) {
+        _lastPreloadedIndex = index;
+        _preloadAdjacentChapters(provider);
+      }
+    }
+    _wasLoading = provider.loading;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ReaderProvider>(
       builder: (context, provider, _) {
-        return Scaffold(
-          backgroundColor: provider.backgroundColor,
-          body: GestureDetector(
-            onTapUp: (details) => _handleTap(context, details, provider),
-            child: Stack(
-              children: [
-                _buildContent(context, provider),
-                if (provider.showControls) _buildTopBar(context, provider),
-                if (provider.showControls) _buildBottomBar(context, provider),
-              ],
+        _maybePreloadAdjacentChapters(provider);
+        return PopScope<Object?>(
+          // 退出阅读器时确保阅读进度已保存到书架
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) {
+              unawaited(provider.saveProgress());
+            }
+          },
+          child: Scaffold(
+            backgroundColor: provider.backgroundColor,
+            body: GestureDetector(
+              onTapUp: (details) => _handleTap(context, details, provider),
+              child: Stack(
+                children: [
+                  _buildContent(context, provider),
+                  if (provider.showControls) _buildTopBar(context, provider),
+                  if (provider.showControls) _buildBottomBar(context, provider),
+                ],
+              ),
             ),
+            endDrawer: _buildCatalogDrawer(context, provider),
           ),
-          endDrawer: _buildCatalogDrawer(context, provider),
         );
       },
     );
@@ -421,41 +454,115 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
+            // 目录搜索框
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: '搜索章节...',
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _chapterSearchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () =>
+                              setState(() => _chapterSearchQuery = ''),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (query) =>
+                    setState(() => _chapterSearchQuery = query),
+              ),
+            ),
             const Divider(height: 1),
             Expanded(
-              child: provider.chapters.isEmpty
-                  ? Center(child: Text(AppStrings.noChapters))
-                  : ListView.builder(
-                      itemCount: provider.chapters.length,
-                      itemBuilder: (context, index) {
-                        final chapter = provider.chapters[index];
-                        final isCurrent =
-                            index == provider.currentChapterIndex;
-                        return ListTile(
-                          title: Text(
-                            chapter.title,
-                            style: TextStyle(
-                              fontWeight:
-                                  isCurrent ? FontWeight.bold : FontWeight.normal,
-                              color: isCurrent
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                            ),
-                          ),
-                          dense: true,
-                          selected: isCurrent,
-                          onTap: () {
-                            Navigator.of(context).pop(); // 关闭 drawer
-                            provider.goToChapter(index);
-                          },
-                        );
-                      },
-                    ),
+              child: _buildCatalogList(context, provider),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// 目录列表（支持按章节标题搜索过滤，保留原始索引用于跳转）
+  Widget _buildCatalogList(BuildContext context, ReaderProvider provider) {
+    if (provider.chapters.isEmpty) {
+      return Center(child: Text(AppStrings.noChapters));
+    }
+
+    final query = _chapterSearchQuery.trim().toLowerCase();
+    final entries = query.isEmpty
+        ? provider.chapters.asMap().entries.toList()
+        : provider.chapters
+            .asMap()
+            .entries
+            .where((e) => e.value.title.toLowerCase().contains(query))
+            .toList();
+
+    if (entries.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '未找到匹配的章节',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: entries.length,
+      itemBuilder: (context, i) {
+        final entry = entries[i];
+        final chapter = entry.value;
+        final isCurrent = entry.key == provider.currentChapterIndex;
+        return ListTile(
+          title: Text(
+            chapter.title,
+            style: TextStyle(
+              fontWeight:
+                  isCurrent ? FontWeight.bold : FontWeight.normal,
+              color: isCurrent
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+          ),
+          dense: true,
+          selected: isCurrent,
+          onTap: () {
+            Navigator.of(context).pop(); // 关闭 drawer
+            provider.goToChapter(entry.key);
+          },
+        );
+      },
+    );
+  }
+
+  /// 预加载当前章节的前后各 1 章内容，提升翻页阅读体验（静默失败）
+  void _preloadAdjacentChapters(ReaderProvider provider) {
+    final book = provider.currentBook;
+    final chapters = provider.chapters;
+    if (book == null || chapters.isEmpty) return;
+
+    final api = context.read<RustApi>();
+    final index = provider.currentChapterIndex;
+
+    // 预加载下一章
+    if (index + 1 < chapters.length) {
+      unawaited(
+        api.getChapterContent(book.bookUrl, index + 1).catchError((_) => ''),
+      );
+    }
+    // 预加载上一章
+    if (index > 0) {
+      unawaited(
+        api.getChapterContent(book.bookUrl, index - 1).catchError((_) => ''),
+      );
+    }
   }
 
   // ===== 交互 =====

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 书源登录页面
@@ -48,6 +51,7 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadSavedLogin();
   }
 
   @override
@@ -107,11 +111,62 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
     });
   }
 
+  /// 从 SharedPreferences 加载已保存的登录信息
+  Future<void> _loadSavedLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'source_login_${widget.sourceUrl}';
+    final saved = prefs.getString(key);
+    if (saved == null || saved.isEmpty || !mounted) return;
+
+    try {
+      final data = jsonDecode(saved) as Map<String, dynamic>;
+      setState(() {
+        final token = data['token'] as String? ?? '';
+        if (token.isNotEmpty) _tokenCtrl.text = token;
+
+        final cookies = data['cookies'] as List<dynamic>? ?? [];
+        for (final c in cookies) {
+          if (c is Map<String, dynamic>) {
+            _cookies.add(MapEntry(
+              c['name'] as String? ?? '',
+              c['value'] as String? ?? '',
+            ));
+          }
+        }
+
+        final headers = data['headers'] as List<dynamic>? ?? [];
+        for (final h in headers) {
+          if (h is Map<String, dynamic>) {
+            _headers.add(MapEntry(
+              h['name'] as String? ?? '',
+              h['value'] as String? ?? '',
+            ));
+          }
+        }
+      });
+    } catch (_) {
+      // 忽略解析错误
+    }
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      // TODO: 调用 Rust 端保存登录信息（source_login 模块集成后接入）
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'source_login_${widget.sourceUrl}';
+      final data = {
+        'sourceUrl': widget.sourceUrl,
+        'sourceName': widget.sourceName,
+        'token': _tokenCtrl.text.trim(),
+        'cookies': _cookies
+            .map((e) => {'name': e.key, 'value': e.value})
+            .toList(),
+        'headers': _headers
+            .map((e) => {'name': e.key, 'value': e.value})
+            .toList(),
+        'savedAt': DateTime.now().toIso8601String(),
+      };
+      await prefs.setString(key, jsonEncode(data));
       if (mounted) {
         _showSnack('登录信息已保存');
         Navigator.of(context).pop(true);
