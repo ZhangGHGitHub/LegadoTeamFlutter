@@ -4,8 +4,10 @@
 
 pub mod book_export;
 pub mod book_import;
+pub mod bookmark_api;
 pub mod bookshelf;
 pub mod reader;
+pub mod replace_rule_api;
 pub mod rss;
 pub mod search;
 pub mod source;

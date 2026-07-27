@@ -228,6 +228,32 @@ pub mod ffi {
         )?)
     }
 
+    /// 从网络刷新书籍目录（返回 JSON 章节列表）
+    ///
+    /// `book_url` — 书籍详情页 URL
+    /// `source_url` — 书源 URL
+    pub fn reader_refresh_toc(book_url: String, source_url: String) -> Result<String, BridgeError> {
+        let resp = crate::api::reader::refresh_toc(&book_url, &source_url)?;
+        to_json(&resp)
+    }
+
+    /// 获取章节正文内容（在线抓取，带 DB 缓存，返回真实正文文本）
+    ///
+    /// `book_url` — 书籍 URL
+    /// `chapter_url` — 章节 URL
+    /// `source_url` — 书源 URL
+    pub fn reader_fetch_content(
+        book_url: String,
+        chapter_url: String,
+        source_url: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::reader::fetch_chapter_content(
+            &book_url,
+            &chapter_url,
+            &source_url,
+        )?)
+    }
+
     // ─── 书籍导入 ─────────────────────────────────────────────
 
     /// 检测书籍文件格式（JSON）
@@ -409,5 +435,117 @@ pub mod ffi {
         use legado_js::JsEngine;
         let result_str = engine.eval(&script)?;
         Ok(result_str)
+    }
+
+    // ─── 书签管理 ─────────────────────────────────────────────
+
+    /// 获取书籍的所有书签（JSON 数组）
+    pub fn bookmark_get_all(book_name: String) -> Result<String, BridgeError> {
+        let bookmarks = crate::api::bookmark_api::get_bookmarks(&book_name)?;
+        to_json(&bookmarks)
+    }
+
+    /// 添加书签，返回书签 id
+    pub fn bookmark_add(
+        book_name: String,
+        book_author: String,
+        chapter_index: i32,
+        chapter_pos: i32,
+        chapter_name: String,
+        book_text: String,
+        content: String,
+    ) -> Result<i64, BridgeError> {
+        let id = crate::api::bookmark_api::add_bookmark(
+            &book_name,
+            &book_author,
+            chapter_index,
+            chapter_pos,
+            &chapter_name,
+            &book_text,
+            &content,
+        )?;
+        Ok(id)
+    }
+
+    /// 删除书签
+    pub fn bookmark_delete(bookmark_id: i64) -> Result<(), BridgeError> {
+        crate::api::bookmark_api::delete_bookmark(bookmark_id)?;
+        Ok(())
+    }
+
+    /// 搜索书签（JSON 数组）
+    pub fn bookmark_search(keyword: String) -> Result<String, BridgeError> {
+        let bookmarks = crate::api::bookmark_api::search_bookmarks(&keyword)?;
+        to_json(&bookmarks)
+    }
+
+    /// 获取所有书签（JSON 数组）
+    pub fn bookmark_list() -> Result<String, BridgeError> {
+        let bookmarks = crate::api::bookmark_api::get_all_bookmarks()?;
+        to_json(&bookmarks)
+    }
+
+    // ─── 替换规则管理 ─────────────────────────────────────────
+
+    /// 获取所有替换规则（JSON 数组）
+    pub fn replace_rule_list() -> Result<String, BridgeError> {
+        let rules = crate::api::replace_rule_api::get_replace_rules()?;
+        to_json(&rules)
+    }
+
+    /// 添加替换规则，返回规则 id
+    pub fn replace_rule_add(
+        name: String,
+        pattern: String,
+        replacement: String,
+        is_regex: bool,
+        scope: String,
+    ) -> Result<i64, BridgeError> {
+        let id = crate::api::replace_rule_api::add_replace_rule(
+            &name,
+            &pattern,
+            &replacement,
+            is_regex,
+            &scope,
+        )?;
+        Ok(id)
+    }
+
+    /// 更新替换规则
+    pub fn replace_rule_update(
+        rule_id: i64,
+        name: String,
+        pattern: String,
+        replacement: String,
+        is_regex: bool,
+        is_enabled: bool,
+    ) -> Result<(), BridgeError> {
+        crate::api::replace_rule_api::update_replace_rule(
+            rule_id,
+            &name,
+            &pattern,
+            &replacement,
+            is_regex,
+            is_enabled,
+        )?;
+        Ok(())
+    }
+
+    /// 删除替换规则
+    pub fn replace_rule_delete(rule_id: i64) -> Result<(), BridgeError> {
+        crate::api::replace_rule_api::delete_replace_rule(rule_id)?;
+        Ok(())
+    }
+
+    /// 获取启用的替换规则（JSON 数组，用于阅读时应用）
+    pub fn replace_rule_enabled() -> Result<String, BridgeError> {
+        let rules = crate::api::replace_rule_api::get_enabled_rules()?;
+        to_json(&rules)
+    }
+
+    /// 启用/禁用替换规则
+    pub fn replace_rule_set_enabled(rule_id: i64, enabled: bool) -> Result<(), BridgeError> {
+        crate::api::replace_rule_api::set_rule_enabled(rule_id, enabled)?;
+        Ok(())
     }
 }

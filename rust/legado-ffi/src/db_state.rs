@@ -37,3 +37,14 @@ where
         .ok_or_else(|| LegadoError::Database("数据库尚未初始化，请先调用 db_open".into()))?;
     f(db)
 }
+
+/// 测试专用：确保全局数据库已初始化（仅执行一次，并行安全）
+#[cfg(test)]
+pub fn ensure_test_db() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let db = legado_db::init_in_memory_database().expect("Failed to init test database");
+        init_database(db);
+    });
+}

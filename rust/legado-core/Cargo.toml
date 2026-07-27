@@ -15,6 +15,6 @@ ecb = { workspace = true }
 des = { workspace = true }
 base64 = { workspace = true }
 md5 = "0.7"
+regex = "1"
 
 [dev-dependencies]
-regex = "1"

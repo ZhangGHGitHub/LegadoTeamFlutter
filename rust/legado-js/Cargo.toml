@@ -25,11 +25,14 @@ percent-encoding = { version = "2", optional = true }
 encoding_rs   = { version = "0.8", optional = true }
 regex         = { version = "1", optional = true }
 chrono        = { version = "0.4", optional = true }
-serde_json    = { version = "1", optional = true }
-serde         = { version = "1", features = ["derive"], optional = true }
+serde_json    = { version = "1" }
+serde         = { version = "1", features = ["derive"] }
 jsonpath-rust = { version = "0.7", optional = true }
 uuid          = { version = "1", features = ["v4"], optional = true }
 url           = { version = "2", optional = true }
+
+# 解压缩（ZIP）
+zip           = { version = "2", optional = true }
 
 # futures 流式并发（用于 ajaxAll 有界并发）
 futures       = { version = "0.3", optional = true }
@@ -53,11 +56,11 @@ quickjs = [
     "dep:encoding_rs",
     "dep:regex",
     "dep:chrono",
-    "dep:serde_json",
-    "dep:serde",
+
     "dep:jsonpath-rust",
     "dep:uuid",
     "dep:url",
+    "dep:zip",
     "dep:futures",
     "dep:tokio",
     "dep:legado-net",

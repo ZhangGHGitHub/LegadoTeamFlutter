@@ -3,6 +3,8 @@
 //! 将所有宿主 API 按功能分类注册到 JS 上下文中，
 //! 参考 Kotlin 端 `JsExtensions` 接口的方法分组。
 
+#[cfg(feature = "quickjs")]
+pub mod archive_utils;
 pub mod chinese_utils;
 pub mod cookie_store;
 pub mod crypto_api;
@@ -17,6 +19,7 @@ pub mod platform;
 pub mod regex_utils;
 #[cfg(feature = "quickjs")]
 pub mod runtime_bridge;
+pub mod source_callback;
 pub mod string_utils;
 pub mod time_utils;
 pub mod variable_store;

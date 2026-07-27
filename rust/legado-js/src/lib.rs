@@ -25,6 +25,7 @@ pub mod context;
 pub mod engine;
 pub mod engine_pool;
 pub mod host_api;
+pub mod js_source;
 pub mod sandbox;
 pub mod scope;
 pub mod source_engine;

@@ -6,6 +6,7 @@ pub mod html;
 pub mod jsonpath;
 pub mod regex_engine;
 pub mod rule_analyzer;
+pub mod rule_complete;
 pub mod xpath;
 
 pub use analyze_rule::{AnalyzeRule, RuleType};

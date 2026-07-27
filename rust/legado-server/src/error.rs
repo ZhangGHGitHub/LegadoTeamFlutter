@@ -7,6 +7,7 @@ use serde_json::json;
 use legado_core::LegadoError;
 
 /// API 错误包装类型，实现 `IntoResponse` 以便在 axum handler 中直接返回
+#[derive(Debug)]
 pub struct ApiError(pub LegadoError);
 
 impl IntoResponse for ApiError {

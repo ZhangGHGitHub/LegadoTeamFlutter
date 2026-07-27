@@ -50,6 +50,10 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 cached_chapters 表失败: {e}")))?;
     conn.execute_batch(CREATE_CHAPTER_REVIEWS)
         .map_err(|e| LegadoError::Database(format!("创建 chapter_reviews 表失败: {e}")))?;
+    conn.execute_batch(CREATE_RULE_SUBS)
+        .map_err(|e| LegadoError::Database(format!("创建 rule_subs 表失败: {e}")))?;
+    conn.execute_batch(CREATE_CACHES)
+        .map_err(|e| LegadoError::Database(format!("创建 caches 表失败: {e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -415,6 +419,29 @@ CREATE TABLE IF NOT EXISTS chapter_reviews (
     like_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_chapter_reviews_book_chapter ON chapter_reviews(book_url, chapter_index);
+";
+
+pub const CREATE_RULE_SUBS: &str = "
+CREATE TABLE IF NOT EXISTS rule_subs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    sub_type TEXT NOT NULL DEFAULT 'bookSource',
+    last_update INTEGER NOT NULL DEFAULT 0,
+    version TEXT DEFAULT '',
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+);
+";
+
+pub const CREATE_CACHES: &str = "
+CREATE TABLE IF NOT EXISTS caches (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    deadline INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_caches_deadline ON caches(deadline);
 ";
 
 /// 索引定义

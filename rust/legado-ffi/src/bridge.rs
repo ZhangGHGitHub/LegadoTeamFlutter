@@ -325,6 +325,34 @@ pub unsafe extern "C" fn ffi_reader_get_content(
     }))
 }
 
+/// 从网络刷新书籍目录
+#[no_mangle]
+pub unsafe extern "C" fn ffi_reader_refresh_toc(
+    book_url: *const c_char,
+    source_url: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let book = c_char_to_str(book_url)?;
+        let source = c_char_to_str(source_url)?;
+        crate::api::reader::refresh_toc(book, source)
+    }))
+}
+
+/// 获取章节正文内容（在线抓取，带 DB 缓存）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_reader_fetch_content(
+    book_url: *const c_char,
+    chapter_url: *const c_char,
+    source_url: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let book = c_char_to_str(book_url)?;
+        let chapter = c_char_to_str(chapter_url)?;
+        let source = c_char_to_str(source_url)?;
+        crate::api::reader::fetch_chapter_content(book, chapter, source)
+    }))
+}
+
 // ─── 书籍导入 FFI 函数 ──────────────────────────────────────
 
 /// 检测书籍文件格式
@@ -484,6 +512,133 @@ pub unsafe extern "C" fn ffi_source_switch_apply(
         let src = c_char_to_str(new_source_url)?;
         let dst = c_char_to_str(new_book_url)?;
         crate::api::source_switch::switch_book_source(url, src, dst)
+    }))
+}
+
+// ─── 书签管理 FFI 函数 ──────────────────────────────────────
+
+/// 获取书籍的所有书签
+#[no_mangle]
+pub unsafe extern "C" fn ffi_bookmark_get_all(book_name: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let name = c_char_to_str(book_name)?;
+        crate::api::bookmark_api::get_bookmarks(name)
+    }))
+}
+
+/// 添加书签
+#[no_mangle]
+pub unsafe extern "C" fn ffi_bookmark_add(
+    book_name: *const c_char,
+    book_author: *const c_char,
+    chapter_index: i32,
+    chapter_pos: i32,
+    chapter_name: *const c_char,
+    book_text: *const c_char,
+    content: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let name = c_char_to_str(book_name)?;
+        let author = c_char_to_str(book_author)?;
+        let ch_name = c_char_to_str(chapter_name)?;
+        let text = c_char_to_str(book_text)?;
+        let note = c_char_to_str(content)?;
+        crate::api::bookmark_api::add_bookmark(
+            name, author, chapter_index, chapter_pos, ch_name, text, note,
+        )
+    }))
+}
+
+/// 删除书签
+#[no_mangle]
+pub extern "C" fn ffi_bookmark_delete(bookmark_id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::bookmark_api::delete_bookmark(bookmark_id)?;
+        Ok::<_, LegadoError>("ok".to_string())
+    }))
+}
+
+/// 搜索书签
+#[no_mangle]
+pub unsafe extern "C" fn ffi_bookmark_search(keyword: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let kw = c_char_to_str(keyword)?;
+        crate::api::bookmark_api::search_bookmarks(kw)
+    }))
+}
+
+/// 获取所有书签
+#[no_mangle]
+pub extern "C" fn ffi_bookmark_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::bookmark_api::get_all_bookmarks))
+}
+
+// ─── 替换规则管理 FFI 函数 ────────────────────────────────────
+
+/// 获取所有替换规则
+#[no_mangle]
+pub extern "C" fn ffi_replace_rule_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::replace_rule_api::get_replace_rules))
+}
+
+/// 添加替换规则
+#[no_mangle]
+pub unsafe extern "C" fn ffi_replace_rule_add(
+    name: *const c_char,
+    pattern: *const c_char,
+    replacement: *const c_char,
+    is_regex: bool,
+    scope: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let n = c_char_to_str(name)?;
+        let p = c_char_to_str(pattern)?;
+        let r = c_char_to_str(replacement)?;
+        let s = c_char_to_str(scope)?;
+        crate::api::replace_rule_api::add_replace_rule(n, p, r, is_regex, s)
+    }))
+}
+
+/// 更新替换规则
+#[no_mangle]
+pub unsafe extern "C" fn ffi_replace_rule_update(
+    rule_id: i64,
+    name: *const c_char,
+    pattern: *const c_char,
+    replacement: *const c_char,
+    is_regex: bool,
+    is_enabled: bool,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let n = c_char_to_str(name)?;
+        let p = c_char_to_str(pattern)?;
+        let r = c_char_to_str(replacement)?;
+        crate::api::replace_rule_api::update_replace_rule(rule_id, n, p, r, is_regex, is_enabled)?;
+        Ok::<_, LegadoError>("ok".to_string())
+    }))
+}
+
+/// 删除替换规则
+#[no_mangle]
+pub extern "C" fn ffi_replace_rule_delete(rule_id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::replace_rule_api::delete_replace_rule(rule_id)?;
+        Ok::<_, LegadoError>("ok".to_string())
+    }))
+}
+
+/// 获取启用的替换规则
+#[no_mangle]
+pub extern "C" fn ffi_replace_rule_enabled() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::replace_rule_api::get_enabled_rules))
+}
+
+/// 启用/禁用替换规则
+#[no_mangle]
+pub extern "C" fn ffi_replace_rule_set_enabled(rule_id: i64, enabled: bool) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::replace_rule_api::set_rule_enabled(rule_id, enabled)?;
+        Ok::<_, LegadoError>("ok".to_string())
     }))
 }
 

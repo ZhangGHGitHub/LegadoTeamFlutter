@@ -59,12 +59,16 @@ impl HtmlParser {
             sub_analyzer.trim();
             let sub_rules = sub_analyzer.split_rule(&["@"]);
 
-            let items = if sub_rules.len() <= 1 {
+            // 处理 `selector@attr` 模式：如果最后一段是属性/模式名而非 CSS 选择器，
+            // 则将其与上一段合并，由 parse_last_rule 处理属性提取。
+            let (effective_rules, is_single) = Self::resolve_at_chain(&sub_rules);
+
+            let items = if is_single {
                 // 单级：直接在文档上选择
                 self.extract_from_doc(&document, rule, default_mode)
             } else {
                 // 多级链式选择器：逐级下钻（不重复解析 HTML）
-                self.extract_chained(&document, &sub_rules, default_mode)
+                self.extract_chained(&document, &effective_rules, default_mode)
             };
 
             if !items.is_empty() {
@@ -151,10 +155,18 @@ impl HtmlParser {
                     }
                 }
             }
+        } else if Selector::parse(selector_str).is_err() {
+            // 选择器无效，可能是属性名（如 "href"、"src"）
+            // 将最后一段视为属性名，从当前元素提取该属性
+            for elem in &current_elements {
+                if let Some(text) = self.extract_from_element(*elem, "attr", selector_str) {
+                    if !text.is_empty() && !items.contains(&text) {
+                        items.push(text);
+                    }
+                }
+            }
         } else {
-            let Ok(selector) = Selector::parse(selector_str) else {
-                return items;
-            };
+            let selector = Selector::parse(selector_str).unwrap();
             for elem in &current_elements {
                 for child in elem.select(&selector) {
                     if let Some(text) = self.extract_from_element(child, extract_mode, &attr_name) {
@@ -275,6 +287,59 @@ impl HtmlParser {
                 merged.extend(group);
             }
             merged
+        }
+    }
+
+    /// 解析 `@` 分割后的规则链，区分“链式选择器”和“属性提取后缀”
+    ///
+    /// 规则：
+    /// - `.name@href` → 单级选择器 + 属性提取（非链）
+    /// - `div.list@.item@text` → 链式 [div.list, .item] + 模式 text
+    /// - `div@.item@href` → 链式 [div, .item] + 属性 href
+    ///
+    /// 返回 (effective_rules, is_single)：
+    /// - is_single=true: 单级选择器，由 extract_from_doc 处理
+    /// - is_single=false: 多级链，由 extract_chained 处理
+    fn resolve_at_chain<'a>(sub_rules: &[&'a str]) -> (Vec<&'a str>, bool) {
+        if sub_rules.len() <= 1 {
+            return (sub_rules.to_vec(), true);
+        }
+
+        let last = sub_rules[sub_rules.len() - 1].trim();
+
+        // 判断最后一段是否为提取模式/属性名（而非 CSS 选择器）
+        let is_extraction_suffix = matches!(
+            last,
+            "text" | "textNodes" | "ownText" | "html" | "all" | "href" | "src" | "alt" | "title"
+                | "value" | "data-src" | "data-original" | "content"
+        ) || (!last.is_empty()
+            && !last.contains('.')
+            && !last.contains('#')
+            && !last.contains('[')
+            && !last.contains('>')
+            && !last.contains('~')
+            && !last.contains('+')
+            && !last.contains(':')
+            && !last.contains('*')
+            && !last.contains(' '));
+
+        if is_extraction_suffix {
+            // 最后一段是属性/模式名，不是选择器
+            if sub_rules.len() == 2 {
+                // 例如 [".name", "href"] → 单级选择器 ".name@href"
+                // 返回 is_single=true，由 extract_from_doc + parse_last_rule 处理
+                (sub_rules.to_vec(), true)
+            } else {
+                // 例如 ["div", ".item", "href"] → 链式 [div, .item] + 属性 href
+                // 将属性名合并回最后一个选择器：".item@href"
+                // 但由于生命周期限制，我们返回去掉最后一段的 rules，
+                // 并在 extract_chained 中通过 parse_last_rule 处理
+                // 这里直接返回包含属性后缀的完整规则链
+                (sub_rules.to_vec(), false)
+            }
+        } else {
+            // 最后一段是有效选择器，正常链式处理
+            (sub_rules.to_vec(), false)
         }
     }
 }

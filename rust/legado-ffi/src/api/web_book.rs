@@ -15,7 +15,7 @@ use crate::runtime;
 
 /// FFI 侧占位 Fetcher，与 server 侧 Stub 类似，
 /// 待 AnalyUrl + LegadoClient 完善后替换为真实实现。
-struct FfiStubFetcher;
+pub struct FfiStubFetcher;
 
 impl BookSourceFetcher for FfiStubFetcher {
     async fn search(
@@ -74,7 +74,7 @@ impl BookSourceFetcher for FfiStubFetcher {
     }
 }
 
-fn build_engine() -> WebBookEngine<FfiStubFetcher> {
+pub fn build_engine() -> WebBookEngine<FfiStubFetcher> {
     WebBookEngine::new(FfiStubFetcher)
 }
 

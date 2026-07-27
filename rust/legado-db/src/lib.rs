@@ -8,9 +8,11 @@
 //! - `import`: Room JSON 数据导入工具
 
 pub mod connection;
+pub mod default_data;
 pub mod import;
 pub mod migration;
 pub mod repository;
+pub mod rule_big_data;
 pub mod schema;
 
 pub use connection::Database;
@@ -22,9 +24,17 @@ pub use repository::book_repository::BookRepository;
 pub use repository::book_source_repository::BookSourceRepository;
 pub use repository::bookmark_repository::BookmarkRepository;
 pub use repository::cache_book_repository::CacheBookRepository;
+pub use repository::cache_repository::CacheRepository;
+pub use repository::cookie_repository::CookieRepository;
 pub use repository::reading_stats_repository::ReadingStatsRepository;
 pub use repository::replace_rule_repository::ReplaceRuleRepository;
 pub use repository::review_repository::ReviewRepository;
+pub use repository::rss_article_repository::{RssArticleRecord, RssArticleRepository};
+pub use repository::rss_read_record_repository::RssReadRecordRepository;
+pub use repository::rss_star_repository::{RssStarRecord, RssStarRepository};
+pub use repository::rule_sub_repository::{RuleSubRecord, RuleSubRepository};
+pub use repository::search_keyword_repository::SearchKeywordRepository;
+pub use repository::txt_toc_rule_repository::{TxtTocRuleRecord, TxtTocRuleRepository};
 pub use schema::SCHEMA_VERSION;
 
 use legado_core::LegadoResult;

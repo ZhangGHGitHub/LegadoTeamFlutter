@@ -7,11 +7,15 @@ use tower_http::services::ServeDir;
 
 use crate::handlers;
 use crate::state::AppState;
+use crate::ws;
 
 /// 创建完整的应用路由，注入共享状态
 pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         .nest("/api", api_routes())
+        // MCP API（顶层路径，不在 /api 前缀下）
+        .route("/mcp/tools", get(handlers::mcp::get_tools))
+        .route("/mcp/call", post(handlers::mcp::call_tool))
         // 静态文件服务 — 提供 Web 前端资源（fallback 处理非 API 请求）
         .fallback_service(ServeDir::new("web-dist"))
         .with_state(state)
@@ -107,6 +111,91 @@ fn api_routes() -> Router<Arc<AppState>> {
             get(handlers::review::get_reviews),
         )
         .route("/reviews", post(handlers::review::create_review))
+        // Debug API
+        .route("/debug/start", post(handlers::debug::start_debug))
+        .route(
+            "/debug/log/{session_id}",
+            get(handlers::debug::get_debug_log),
+        )
+        .route("/debug/sessions", get(handlers::debug::list_sessions))
+        .route("/debug/step", post(handlers::debug::add_step))
+        .route("/debug/complete", post(handlers::debug::complete_session))
+        // Read Aloud API
+        .route(
+            "/read-aloud/start",
+            post(handlers::read_aloud_handler::start),
+        )
+        .route(
+            "/read-aloud/pause",
+            post(handlers::read_aloud_handler::pause),
+        )
+        .route(
+            "/read-aloud/resume",
+            post(handlers::read_aloud_handler::resume),
+        )
+        .route("/read-aloud/stop", post(handlers::read_aloud_handler::stop))
+        .route(
+            "/read-aloud/status",
+            get(handlers::read_aloud_handler::status),
+        )
+        .route("/read-aloud/next", post(handlers::read_aloud_handler::next))
+        .route("/read-aloud/seek", post(handlers::read_aloud_handler::seek))
+        // Rule Update API
+        .route("/rule-update/subs", get(handlers::rule_update::list_subs))
+        .route(
+            "/rule-update/check",
+            post(handlers::rule_update::check_update),
+        )
+        .route(
+            "/rule-update/apply",
+            post(handlers::rule_update::apply_update),
+        )
+        // TOC Update API
+        .route(
+            "/bookshelf/update-toc",
+            post(handlers::toc_update::start_toc_update),
+        )
+        .route(
+            "/bookshelf/update-toc/progress",
+            get(handlers::toc_update::get_toc_update_progress),
+        )
+        .route(
+            "/bookshelf/update-toc/stop",
+            post(handlers::toc_update::stop_toc_update),
+        )
+        // Auto Task API
+        .route(
+            "/auto-tasks",
+            get(handlers::auto_task_handler::list_tasks)
+                .post(handlers::auto_task_handler::create_task),
+        )
+        .route(
+            "/auto-tasks/{id}",
+            put(handlers::auto_task_handler::update_task)
+                .delete(handlers::auto_task_handler::delete_task),
+        )
+        .route(
+            "/auto-tasks/{id}/run",
+            post(handlers::auto_task_handler::run_task),
+        )
+        .route(
+            "/auto-tasks/import",
+            post(handlers::auto_task_handler::import_tasks),
+        )
+        .route(
+            "/auto-tasks/export",
+            get(handlers::auto_task_handler::export_tasks),
+        )
+        // WebSocket 实时通道
+        .route("/ws/search", get(ws::search_ws::ws_search))
+        .route(
+            "/ws/debug/book-source",
+            get(ws::debug_ws::ws_debug_book_source),
+        )
+        .route(
+            "/ws/debug/rss-source",
+            get(ws::debug_ws::ws_debug_rss_source),
+        )
 }
 
 #[cfg(test)]

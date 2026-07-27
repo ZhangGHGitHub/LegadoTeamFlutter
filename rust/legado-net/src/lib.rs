@@ -20,13 +20,16 @@
 pub mod client;
 pub mod cookie_store;
 pub mod cover;
+pub mod direct_link_upload;
 pub mod middleware;
 pub mod proxy;
 pub mod rate_limit;
+pub mod remote_book;
 pub mod request;
 pub mod response;
 pub mod retry;
 pub mod rss;
+pub mod rule_update_client;
 pub mod source_checker;
 pub mod ssl_config;
 pub mod url_template;
@@ -45,6 +48,10 @@ pub use request::{LegadoRequest, Method};
 pub use response::LegadoResponse;
 pub use retry::{RetryConfig, RetryExecutor};
 pub use rss::{fetch_feed, parse_feed, RssArticle, RssFeed};
+pub use rule_update_client::{
+    fetch_subscription, merge_subscription, should_update, MergeResult, RuleSubscription,
+    UpdateResult,
+};
 pub use source_checker::{CheckResult, CheckerConfig, SourceChecker};
 pub use ssl_config::SslConfig;
 pub use url_template::{parse_url_template, ParsedUrl, UrlOption};
