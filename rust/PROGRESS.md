@@ -6,14 +6,14 @@
 
 ## 总览
 
-- **已完成**：103 / 103 原子任务（100%）
-- **测试状态**：cargo test 1225 passed（默认）/ 1392 passed（含 QuickJS）| flutter test 19 passed | flutter analyze 0 issues
+- **已完成**：107 / 107 原子任务（100%）
+- **测试状态**：cargo test 1225 passed（默认）/ 1392 passed（含 QuickJS）| flutter test 30 passed | flutter analyze 0 issues
 - **QuickJS feature**：309 tests passed
-- **里程碑**：🎉 Kotlin 核心逻辑已全部移植完成，核心端到端流程已接通
+- **里程碑**：🎉 Flutter FFI bridge 全部接通，端到端流程可用
 
 ---
 
-## 已完成（103/103 原子任务）
+## 已完成（107/107 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -192,6 +192,22 @@
 - 核心端到端流程已接通：书架→搜索→目录→正文→书签→替换规则 全链路可用
 - 质量门禁：cargo test 1225 passed / clippy 0 warnings / flutter test 19 passed / flutter analyze 0 issues
 
+### 阶段 13：Flutter UI 集成（Task #104-#107） ✅
+
+- [x] Task #104: flutter_rust_bridge codegen — 53 个 Dart binding（原 32 个，新增 21 个覆盖书签/替换规则/在线阅读/换源/AutoTask）
+- [x] Task #105: 在线阅读链路修复 — ReaderProvider 检测 JSON metadata，通过 FFI 获取真实章节内容；book_info refreshToc 调用网络刷新目录
+- [x] Task #106: 书签/替换规则 FFI 替换内存桩 — BookmarkProvider + ReplaceRuleProvider 全部改用 FFI 持久化
+- [x] Task #107: 换源 UI + AutoTask REST 后端 — ChangeSourceScreen 换源搜索/应用流程；AutoTaskProvider 从 mock 切换为 REST API
+
+**阶段 13 关键成果：**
+- 🎉 **Flutter FFI bridge 全部接通，端到端流程可用**
+- Dart bindings：53 个（+21），rust_api.dart 零 TODO/桩
+- 在线阅读：ReaderProvider → FFI fetchChapterContent → 真实网络内容
+- 书签/替换规则：内存桩 → FFI 持久化（SQLite）
+- 换源 UI：ChangeSourceScreen 完整搜索/应用流程
+- AutoTask：mock → REST API（/api/auto-tasks CRUD）
+- 质量门禁：cargo test 1225 passed / clippy 0 warnings / flutter test 30 passed / flutter analyze 0 issues
+
 ---
 
 ## 测试分布
@@ -206,7 +222,7 @@
 | legado-db | 161 | Schema v95 + 17 Repository + MigrationRegistry + RoomImporter + DefaultData + 集成测试 |
 | legado-ffi | 43 | 43+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook + 书签 + 替换规则 + 在线阅读 API |
 | legado-server | 139 | axum HTTP + 49 REST 端点 + 3 WS 端点 + 静态文件 + TTS + RSS + WebBook + Debug + ReadAloud + MCP + TocUpdate + AutoTask + Download + 集成测试 |
-| **合计** | **1225**（默认）/ **1392**（quickjs） | Flutter: 19 tests |
+| **合计** | **1225**（默认）/ **1392**（quickjs） | Flutter: 30 tests |
 
 ---
 

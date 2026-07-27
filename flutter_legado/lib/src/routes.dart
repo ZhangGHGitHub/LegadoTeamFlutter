@@ -5,6 +5,7 @@ import 'screens/audio_screen.dart';
 import 'screens/auto_task_screen.dart';
 import 'screens/book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
+import 'screens/change_source_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/reading_stats_screen.dart';
 import 'screens/reader_screen.dart';
@@ -28,6 +29,7 @@ class AppRoutes {
   static const rss = '/rss';
   static const audio = '/audio';
   static const bookInfo = '/book_info';
+  static const changeSource = '/change_source';
   static const readingStats = '/reading_stats';
   static const bookmarks = '/bookmarks';
   static const replaceRules = '/replace_rules';
@@ -58,6 +60,23 @@ class AppRoutes {
           final args = ModalRoute.of(context)?.settings.arguments;
           final bookUrl = args is String ? args : '';
           return BookInfoScreen(bookUrl: bookUrl);
+        },
+        changeSource: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is Map<String, String>) {
+            return ChangeSourceScreen(
+              bookUrl: args['bookUrl'] ?? '',
+              bookName: args['bookName'] ?? '',
+              author: args['author'] ?? '',
+              currentSourceUrl: args['currentSourceUrl'] ?? '',
+            );
+          }
+          return const ChangeSourceScreen(
+            bookUrl: '',
+            bookName: '',
+            author: '',
+            currentSourceUrl: '',
+          );
         },
         readingStats: (_) => const ReadingStatsScreen(),
         bookmarks: (_) => const BookmarkScreen(),

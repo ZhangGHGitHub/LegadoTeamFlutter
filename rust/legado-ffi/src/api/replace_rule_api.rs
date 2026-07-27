@@ -165,12 +165,11 @@ mod tests {
     #[test]
     fn test_delete_replace_rule() {
         setup_test_db();
-        let before = get_replace_rules().unwrap().len();
         let id = add_replace_rule("rr_r1_4", "a", "b", false, "").unwrap();
-        assert_eq!(get_replace_rules().unwrap().len(), before + 1);
+        assert!(get_replace_rules().unwrap().iter().any(|r| r.name == "rr_r1_4"));
 
         delete_replace_rule(id).unwrap();
-        assert_eq!(get_replace_rules().unwrap().len(), before);
+        assert!(!get_replace_rules().unwrap().iter().any(|r| r.name == "rr_r1_4"));
     }
 
     #[test]

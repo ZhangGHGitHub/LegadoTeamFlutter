@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
@@ -345,145 +346,151 @@ class RustApi {
   }
 
   // ===== 书签 =====
-  // TODO: 运行 flutter_rust_bridge codegen 后替换为 bridge.bookmarkXxx() 调用
-  // Rust FFI 已实现: bookmark_get_all, bookmark_add, bookmark_delete, bookmark_search, bookmark_list
-  // codegen 后对应: bridge.bookmarkGetAll(bookName:), bridge.bookmarkAdd(...), bridge.bookmarkDelete(bookmarkId:), bridge.bookmarkSearch(keyword:)
-
-  /// 本地书签缓存（codegen 前的 fallback 实现）
-  final List<Bookmark> _bookmarkCache = [];
 
   /// 获取书签列表（按书名）
   Future<List<Bookmark>> getBookmarks(String bookName) async {
-    // TODO: codegen 后替换为:
-    // final json = await bridge.bookmarkGetAll(bookName: bookName);
-    // final list = jsonDecode(json) as List;
-    // return list.map((e) => Bookmark.fromJson(e as Map<String, dynamic>)).toList();
-    return _bookmarkCache
-        .where((b) => b.bookName == bookName)
-        .toList()
-      ..sort((a, b) => b.time.compareTo(a.time));
+    try {
+      final jsonStr = await bridge.bookmarkGetAll(bookName: bookName);
+      final list = jsonDecode(jsonStr) as List;
+      return list
+          .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw RustApiException('获取书签失败: $e');
+    }
   }
 
   /// 获取所有书签
   Future<List<Bookmark>> getAllBookmarks() async {
-    // TODO: codegen 后替换为:
-    // final json = await bridge.bookmarkList();
-    // final list = jsonDecode(json) as List;
-    // return list.map((e) => Bookmark.fromJson(e as Map<String, dynamic>)).toList();
-    return List.from(_bookmarkCache)
-      ..sort((a, b) => b.time.compareTo(a.time));
+    try {
+      final jsonStr = await bridge.bookmarkList();
+      final list = jsonDecode(jsonStr) as List;
+      return list
+          .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw RustApiException('获取所有书签失败: $e');
+    }
   }
 
-  /// 添加书签
+  /// 添加书签，返回带 ID 的书签
   Future<Bookmark> addBookmark(Bookmark bookmark) async {
-    // TODO: codegen 后替换为:
-    // final id = await bridge.bookmarkAdd(
-    //   bookName: bookmark.bookName,
-    //   bookAuthor: bookmark.bookAuthor,
-    //   chapterIndex: bookmark.chapterIndex,
-    //   chapterPos: bookmark.chapterPos,
-    //   chapterName: bookmark.chapterName,
-    //   bookText: bookmark.bookText,
-    //   content: bookmark.content,
-    // );
-    // return bookmark.copyWith(id: id, time: DateTime.now().millisecondsSinceEpoch ~/ 1000);
-    final bm = bookmark.copyWith(
-      id: DateTime.now().millisecondsSinceEpoch,
-      time: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-    );
-    _bookmarkCache.add(bm);
-    return bm;
+    try {
+      final id = await bridge.bookmarkAdd(
+        bookName: bookmark.bookName,
+        bookAuthor: bookmark.bookAuthor,
+        chapterIndex: bookmark.chapterIndex,
+        chapterPos: bookmark.chapterPos,
+        chapterName: bookmark.chapterName,
+        bookText: bookmark.bookText,
+        content: bookmark.content,
+      );
+      return bookmark.copyWith(
+        id: id,
+        time: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      );
+    } catch (e) {
+      throw RustApiException('添加书签失败: $e');
+    }
   }
 
   /// 删除书签
   Future<void> deleteBookmark(int id) async {
-    // TODO: codegen 后替换为: await bridge.bookmarkDelete(bookmarkId: id);
-    _bookmarkCache.removeWhere((b) => b.id == id);
+    try {
+      await bridge.bookmarkDelete(bookmarkId: id);
+    } catch (e) {
+      throw RustApiException('删除书签失败: $e');
+    }
   }
 
   /// 搜索书签
   Future<List<Bookmark>> searchBookmarks(String keyword) async {
-    // TODO: codegen 后替换为:
-    // final json = await bridge.bookmarkSearch(keyword: keyword);
-    // final list = jsonDecode(json) as List;
-    // return list.map((e) => Bookmark.fromJson(e as Map<String, dynamic>)).toList();
-    final kw = keyword.toLowerCase();
-    return _bookmarkCache
-        .where((b) =>
-            b.bookText.toLowerCase().contains(kw) ||
-            b.content.toLowerCase().contains(kw) ||
-            b.chapterName.toLowerCase().contains(kw))
-        .toList()
-      ..sort((a, b) => b.time.compareTo(a.time));
+    try {
+      final jsonStr = await bridge.bookmarkSearch(keyword: keyword);
+      final list = jsonDecode(jsonStr) as List;
+      return list
+          .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw RustApiException('搜索书签失败: $e');
+    }
   }
 
   // ===== 替换规则 =====
-  // TODO: 运行 flutter_rust_bridge codegen 后替换为 bridge.replaceRuleXxx() 调用
-  // Rust FFI 已实现: replace_rule_list, replace_rule_add, replace_rule_update, replace_rule_delete, replace_rule_enabled, replace_rule_set_enabled
-
-  /// 本地替换规则缓存（codegen 前的 fallback 实现）
-  final List<ReplaceRule> _replaceRuleCache = [];
 
   /// 获取所有替换规则
   Future<List<ReplaceRule>> getReplaceRules() async {
-    // TODO: codegen 后替换为:
-    // final json = await bridge.replaceRuleList();
-    // final list = jsonDecode(json) as List;
-    // return list.map((e) => ReplaceRule.fromJson(e as Map<String, dynamic>)).toList();
-    return List.from(_replaceRuleCache)
-      ..sort((a, b) => a.order.compareTo(b.order));
+    try {
+      final jsonStr = await bridge.replaceRuleList();
+      final list = jsonDecode(jsonStr) as List;
+      return list
+          .map((e) => ReplaceRule.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw RustApiException('获取替换规则失败: $e');
+    }
   }
 
   /// 获取启用的替换规则
   Future<List<ReplaceRule>> getEnabledReplaceRules() async {
-    // TODO: codegen 后替换为:
-    // final json = await bridge.replaceRuleEnabled();
-    // final list = jsonDecode(json) as List;
-    // return list.map((e) => ReplaceRule.fromJson(e as Map<String, dynamic>)).toList();
-    return _replaceRuleCache.where((r) => r.isEnabled).toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
+    try {
+      final jsonStr = await bridge.replaceRuleEnabled();
+      final list = jsonDecode(jsonStr) as List;
+      return list
+          .map((e) => ReplaceRule.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw RustApiException('获取启用替换规则失败: $e');
+    }
   }
 
-  /// 添加替换规则
+  /// 添加替换规则，返回带 ID 的规则
   Future<ReplaceRule> addReplaceRule(ReplaceRule rule) async {
-    // TODO: codegen 后替换为:
-    // final id = await bridge.replaceRuleAdd(
-    //   name: rule.name, pattern: rule.pattern, replacement: rule.replacement,
-    //   isRegex: rule.isRegex, scope: rule.scope ?? '',
-    // );
-    // return rule.copyWith(id: id);
-    final r = rule.copyWith(
-      id: DateTime.now().millisecondsSinceEpoch,
-    );
-    _replaceRuleCache.add(r);
-    return r;
+    try {
+      final id = await bridge.replaceRuleAdd(
+        name: rule.name,
+        pattern: rule.pattern,
+        replacement: rule.replacement,
+        isRegex: rule.isRegex,
+        scope: rule.scope ?? '',
+      );
+      return rule.copyWith(id: id);
+    } catch (e) {
+      throw RustApiException('添加替换规则失败: $e');
+    }
   }
 
   /// 更新替换规则
   Future<void> updateReplaceRule(ReplaceRule rule) async {
-    // TODO: codegen 后替换为:
-    // await bridge.replaceRuleUpdate(
-    //   ruleId: rule.id, name: rule.name, pattern: rule.pattern,
-    //   replacement: rule.replacement, isRegex: rule.isRegex, isEnabled: rule.isEnabled,
-    // );
-    final idx = _replaceRuleCache.indexWhere((r) => r.id == rule.id);
-    if (idx >= 0) {
-      _replaceRuleCache[idx] = rule;
+    try {
+      await bridge.replaceRuleUpdate(
+        ruleId: rule.id,
+        name: rule.name,
+        pattern: rule.pattern,
+        replacement: rule.replacement,
+        isRegex: rule.isRegex,
+        isEnabled: rule.isEnabled,
+      );
+    } catch (e) {
+      throw RustApiException('更新替换规则失败: $e');
     }
   }
 
   /// 删除替换规则
   Future<void> deleteReplaceRule(int id) async {
-    // TODO: codegen 后替换为: await bridge.replaceRuleDelete(ruleId: id);
-    _replaceRuleCache.removeWhere((r) => r.id == id);
+    try {
+      await bridge.replaceRuleDelete(ruleId: id);
+    } catch (e) {
+      throw RustApiException('删除替换规则失败: $e');
+    }
   }
 
   /// 启用/禁用替换规则
   Future<void> setReplaceRuleEnabled(int id, bool enabled) async {
-    // TODO: codegen 后替换为: await bridge.replaceRuleSetEnabled(ruleId: id, enabled: enabled);
-    final idx = _replaceRuleCache.indexWhere((r) => r.id == id);
-    if (idx >= 0) {
-      _replaceRuleCache[idx] = _replaceRuleCache[idx].copyWith(isEnabled: enabled);
+    try {
+      await bridge.replaceRuleSetEnabled(ruleId: id, enabled: enabled);
+    } catch (e) {
+      throw RustApiException('设置替换规则启用状态失败: $e');
     }
   }
 
@@ -515,8 +522,6 @@ class RustApi {
   }
 
   // ===== 在线阅读（网络抓取） =====
-  // TODO: 运行 flutter_rust_bridge codegen 后替换为 bridge.readerRefreshToc() / bridge.readerFetchContent()
-  // Rust FFI 已实现: reader_refresh_toc(book_url, source_url), reader_fetch_content(book_url, chapter_url, source_url)
 
   /// 从网络刷新书籍目录
   ///
@@ -524,25 +529,16 @@ class RustApi {
   /// [sourceUrl] 书源 URL
   /// 返回章节列表（JSON 解析后的 BookChapter 列表）
   Future<List<BookChapter>> refreshToc(String bookUrl, String sourceUrl) async {
-    // TODO: codegen 后替换为:
-    // final json = await bridge.readerRefreshToc(bookUrl: bookUrl, sourceUrl: sourceUrl);
-    // final list = jsonDecode(json) as List;
-    // return list.map((e) => BookChapter.fromJson(e as Map<String, dynamic>)).toList();
     try {
-      final response = await http.post(
-        Uri.parse('$_serverBaseUrl/api/reader/refresh-toc'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'book_url': bookUrl, 'source_url': sourceUrl}),
+      final jsonStr = await bridge.readerRefreshToc(
+        bookUrl: bookUrl,
+        sourceUrl: sourceUrl,
       );
-      if (response.statusCode == 200) {
-        final list = jsonDecode(response.body) as List;
-        return list
-            .map((e) => BookChapter.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-      throw RustApiException('刷新目录失败: ${response.statusCode}');
+      final list = jsonDecode(jsonStr) as List;
+      return list
+          .map((e) => BookChapter.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (e) {
-      if (e is RustApiException) rethrow;
       throw RustApiException('刷新目录失败: $e');
     }
   }
@@ -558,36 +554,27 @@ class RustApi {
     String chapterUrl,
     String sourceUrl,
   ) async {
-    // TODO: codegen 后替换为:
-    // return await bridge.readerFetchContent(
-    //   bookUrl: bookUrl, chapterUrl: chapterUrl, sourceUrl: sourceUrl,
-    // );
     try {
-      final response = await http.post(
-        Uri.parse('$_serverBaseUrl/api/reader/fetch-content'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'book_url': bookUrl,
-          'chapter_url': chapterUrl,
-          'source_url': sourceUrl,
-        }),
+      return await bridge.readerFetchContent(
+        bookUrl: bookUrl,
+        chapterUrl: chapterUrl,
+        sourceUrl: sourceUrl,
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data['content'] as String? ?? '';
-      }
-      throw RustApiException('获取章节内容失败: ${response.statusCode}');
     } catch (e) {
-      if (e is RustApiException) rethrow;
-      throw RustApiException('获取章节内容失败: $e');
+      throw RustApiException('获取正文失败: $e');
     }
   }
 
   // ===== 设置 =====
 
-  /// 获取设置（Rust 侧暂未实现，预留接口）
+  /// 获取设置（Rust 侧暂未实现，返回默认配置）
   Future<Map<String, dynamic>> getSettings() async {
-    return {};
+    return {
+      'theme': 'system',
+      'fontSize': 18.0,
+      'lineSpacing': 1.5,
+      'autoCheckUpdate': true,
+    };
   }
 
   /// 更新设置（Rust 侧暂未实现，预留接口）
@@ -674,6 +661,43 @@ class RustApi {
   /// 设置本地服务器 URL
   void setServerBaseUrl(String url) {
     _serverBaseUrl = url;
+  }
+
+  // TODO: 待 Rust FFI 实现 http_tts_list / http_tts_add 后替换为 bridge 调用
+  static const _kHttpTtsKey = 'http_tts_list';
+
+  /// 获取所有 HTTP TTS 朗读引擎
+  Future<List<HttpTts>> getHttpTts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_kHttpTtsKey);
+      if (jsonStr == null || jsonStr.isEmpty) return [];
+      final list = jsonDecode(jsonStr) as List;
+      return list
+          .map((e) => HttpTts.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw RustApiException('获取 HTTP TTS 失败: $e');
+    }
+  }
+
+  /// 添加 HTTP TTS 朗读引擎
+  Future<HttpTts> addHttpTts(HttpTts tts) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = await getHttpTts();
+      final newTts = tts.copyWith(
+        id: DateTime.now().millisecondsSinceEpoch,
+      );
+      list.add(newTts);
+      await prefs.setString(
+        _kHttpTtsKey,
+        jsonEncode(list.map((e) => e.toJson()).toList()),
+      );
+      return newTts;
+    } catch (e) {
+      throw RustApiException('添加 HTTP TTS 失败: $e');
+    }
   }
 
   /// TTS 文本转语音（通过 HTTP 调用本地服务器）

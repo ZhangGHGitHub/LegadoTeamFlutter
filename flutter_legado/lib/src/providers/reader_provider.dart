@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
@@ -227,10 +229,33 @@ class ReaderProvider extends ChangeNotifier {
   Future<void> _loadChapterContent() async {
     if (_currentBook == null || _chapters.isEmpty) return;
     try {
-      _chapterContent = await _api.getChapterContent(
+      final content = await _api.getChapterContent(
         _currentBook!.bookUrl,
         _currentChapterIndex,
       );
+
+      // 检查是否是 JSON 元数据（在线书籍）
+      if (content.startsWith('{') && content.contains('chapter_url')) {
+        try {
+          final meta = jsonDecode(content) as Map<String, dynamic>;
+          final chapterUrl = meta['chapter_url'] as String? ?? '';
+          final sourceUrl = _currentBook!.origin; // 书源 URL
+          if (chapterUrl.isNotEmpty && sourceUrl.isNotEmpty) {
+            // 在线书籍：通过 FFI 获取真实正文
+            _chapterContent = await _api.fetchChapterContent(
+              _currentBook!.bookUrl,
+              chapterUrl,
+              sourceUrl,
+            );
+          } else {
+            _chapterContent = content;
+          }
+        } catch (_) {
+          _chapterContent = content; // fallback
+        }
+      } else {
+        _chapterContent = content; // 本地书籍直接使用
+      }
     } catch (e) {
       _error = e.toString();
       _chapterContent = '';

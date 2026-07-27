@@ -24,6 +24,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   late Future<_BookInfoData> _future;
   final TextEditingController _searchCtrl = TextEditingController();
   String _filter = '';
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -315,9 +316,44 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => setState(() => _future = _loadData()),
+                    onPressed: _isLoading
+                        ? null
+                        : () async {
+                            setState(() => _isLoading = true);
+                            try {
+                              final api = context.read<RustApi>();
+                              final chapters = await api.refreshToc(
+                                book.bookUrl,
+                                book.origin,
+                              );
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        Text('目录已更新，共 ${chapters.length} 章')),
+                              );
+                              setState(() => _future = _loadData());
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('更新失败: $e')),
+                              );
+                            } finally {
+                              if (mounted) {
+                                setState(() => _isLoading = false);
+                              }
+                            }
+                          },
                     icon: const Icon(Icons.refresh, size: 18),
                     label: const Text('更新目录'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showChangeSourceDialog(book),
+                    icon: const Icon(Icons.swap_horiz, size: 18),
+                    label: const Text('换源'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -347,6 +383,29 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
         : book;
     readerProvider.openBook(bookToRead);
     Navigator.pushNamed(context, AppRoutes.reader);
+  }
+
+  /// 打开换源页面，换源成功后用新的 bookUrl 重新加载详情页
+  Future<void> _showChangeSourceDialog(Book book) async {
+    final newBookUrl = await Navigator.pushNamed<String>(
+      context,
+      AppRoutes.changeSource,
+      arguments: {
+        'bookUrl': book.bookUrl,
+        'bookName': book.name,
+        'author': book.author,
+        'currentSourceUrl': book.origin,
+      },
+    );
+    if (!mounted) return;
+    // 换源成功后 bookUrl 会变化，需要用新 URL 替换当前详情页
+    if (newBookUrl != null && newBookUrl.isNotEmpty) {
+      Navigator.pushReplacementNamed(
+        context,
+        AppRoutes.bookInfo,
+        arguments: newBookUrl,
+      );
+    }
   }
 
   void _addToBookshelf(BuildContext context, Book book) async {

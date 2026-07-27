@@ -94,6 +94,21 @@ Future<String> searchBooks({
   sourceUrlsJson: sourceUrlsJson,
 );
 
+/// 多源并行搜索（返回 JSON 数组）
+///
+/// `query` — 搜索关键词
+/// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
+Future<String> searchMulti({
+  required String query,
+  required String sourceUrlsJson,
+}) => RustLib.instance.api.crateFfiFfiSearchMulti(
+  query: query,
+  sourceUrlsJson: sourceUrlsJson,
+);
+
+/// 取消正在进行的搜索
+Future<void> searchCancel() => RustLib.instance.api.crateFfiFfiSearchCancel();
+
 /// 获取书籍的章节列表（JSON）
 Future<String> readerGetChapters({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiReaderGetChapters(bookUrl: bookUrl);
@@ -107,6 +122,33 @@ Future<String> readerGetContent({
 }) => RustLib.instance.api.crateFfiFfiReaderGetContent(
   bookUrl: bookUrl,
   chapterIndex: chapterIndex,
+);
+
+/// 从网络刷新书籍目录（返回 JSON 章节列表）
+///
+/// `book_url` — 书籍详情页 URL
+/// `source_url` — 书源 URL
+Future<String> readerRefreshToc({
+  required String bookUrl,
+  required String sourceUrl,
+}) => RustLib.instance.api.crateFfiFfiReaderRefreshToc(
+  bookUrl: bookUrl,
+  sourceUrl: sourceUrl,
+);
+
+/// 获取章节正文内容（在线抓取，带 DB 缓存，返回真实正文文本）
+///
+/// `book_url` — 书籍 URL
+/// `chapter_url` — 章节 URL
+/// `source_url` — 书源 URL
+Future<String> readerFetchContent({
+  required String bookUrl,
+  required String chapterUrl,
+  required String sourceUrl,
+}) => RustLib.instance.api.crateFfiFfiReaderFetchContent(
+  bookUrl: bookUrl,
+  chapterUrl: chapterUrl,
+  sourceUrl: sourceUrl,
 );
 
 /// 检测书籍文件格式（JSON）
@@ -137,6 +179,33 @@ Future<void> rssDeleteSource({required String sourceUrl}) =>
 Future<String> rssFetchArticles({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssFetchArticles(sourceUrl: sourceUrl);
 
+/// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）
+///
+/// `book_name` — 当前书籍名称
+/// `author` — 当前作者
+Future<String> sourceSwitchSearch({
+  required String bookName,
+  required String author,
+}) => RustLib.instance.api.crateFfiFfiSourceSwitchSearch(
+  bookName: bookName,
+  author: author,
+);
+
+/// 切换到新书源（返回更新后的书籍 JSON）
+///
+/// `book_url` — 当前书籍的 bookUrl
+/// `new_source_url` — 新书源的 URL
+/// `new_book_url` — 新书源中该书籍的详情页 URL
+Future<String> sourceSwitchApply({
+  required String bookUrl,
+  required String newSourceUrl,
+  required String newBookUrl,
+}) => RustLib.instance.api.crateFfiFfiSourceSwitchApply(
+  bookUrl: bookUrl,
+  newSourceUrl: newSourceUrl,
+  newBookUrl: newBookUrl,
+);
+
 /// HTTP GET 请求，返回 JSON 格式的响应
 Future<String> httpGet({required String url}) =>
     RustLib.instance.api.crateFfiFfiHttpGet(url: url);
@@ -144,6 +213,57 @@ Future<String> httpGet({required String url}) =>
 /// HTTP POST 请求，返回 JSON 格式的响应
 Future<String> httpPost({required String url, required String body}) =>
     RustLib.instance.api.crateFfiFfiHttpPost(url: url, body: body);
+
+/// 搜索书籍（书源规则驱动，返回 JSON 数组）
+///
+/// `source_json` — BookSource JSON 字符串
+/// `query` — 搜索关键词
+/// `page` — 页码（从 1 开始）
+Future<String> webbookSearch({
+  required String sourceJson,
+  required String query,
+  required int page,
+}) => RustLib.instance.api.crateFfiFfiWebbookSearch(
+  sourceJson: sourceJson,
+  query: query,
+  page: page,
+);
+
+/// 获取书籍详情（返回 WebBookInfo JSON）
+///
+/// `source_json` — BookSource JSON 字符串
+/// `book_url` — 书籍详情页 URL
+Future<String> webbookInfo({
+  required String sourceJson,
+  required String bookUrl,
+}) => RustLib.instance.api.crateFfiFfiWebbookInfo(
+  sourceJson: sourceJson,
+  bookUrl: bookUrl,
+);
+
+/// 获取章节列表（返回 JSON 数组）
+///
+/// `source_json` — BookSource JSON 字符串
+/// `book_url` — 书籍详情页 URL
+Future<String> webbookChapters({
+  required String sourceJson,
+  required String bookUrl,
+}) => RustLib.instance.api.crateFfiFfiWebbookChapters(
+  sourceJson: sourceJson,
+  bookUrl: bookUrl,
+);
+
+/// 获取章节正文内容
+///
+/// `source_json` — BookSource JSON 字符串
+/// `chapter_json` — WebChapter JSON 字符串
+Future<String> webbookContent({
+  required String sourceJson,
+  required String chapterJson,
+}) => RustLib.instance.api.crateFfiFfiWebbookContent(
+  sourceJson: sourceJson,
+  chapterJson: chapterJson,
+);
 
 /// 使用规则解析内容，返回 JSON 格式的结果
 Future<String> parseRule({
@@ -159,3 +279,90 @@ Future<String> parseRule({
 /// 执行 JS 脚本，返回结果字符串
 Future<String> jsEval({required String script}) =>
     RustLib.instance.api.crateFfiFfiJsEval(script: script);
+
+/// 获取书籍的所有书签（JSON 数组）
+Future<String> bookmarkGetAll({required String bookName}) =>
+    RustLib.instance.api.crateFfiFfiBookmarkGetAll(bookName: bookName);
+
+/// 添加书签，返回书签 id
+Future<PlatformInt64> bookmarkAdd({
+  required String bookName,
+  required String bookAuthor,
+  required int chapterIndex,
+  required int chapterPos,
+  required String chapterName,
+  required String bookText,
+  required String content,
+}) => RustLib.instance.api.crateFfiFfiBookmarkAdd(
+  bookName: bookName,
+  bookAuthor: bookAuthor,
+  chapterIndex: chapterIndex,
+  chapterPos: chapterPos,
+  chapterName: chapterName,
+  bookText: bookText,
+  content: content,
+);
+
+/// 删除书签
+Future<void> bookmarkDelete({required PlatformInt64 bookmarkId}) =>
+    RustLib.instance.api.crateFfiFfiBookmarkDelete(bookmarkId: bookmarkId);
+
+/// 搜索书签（JSON 数组）
+Future<String> bookmarkSearch({required String keyword}) =>
+    RustLib.instance.api.crateFfiFfiBookmarkSearch(keyword: keyword);
+
+/// 获取所有书签（JSON 数组）
+Future<String> bookmarkList() => RustLib.instance.api.crateFfiFfiBookmarkList();
+
+/// 获取所有替换规则（JSON 数组）
+Future<String> replaceRuleList() =>
+    RustLib.instance.api.crateFfiFfiReplaceRuleList();
+
+/// 添加替换规则，返回规则 id
+Future<PlatformInt64> replaceRuleAdd({
+  required String name,
+  required String pattern,
+  required String replacement,
+  required bool isRegex,
+  required String scope,
+}) => RustLib.instance.api.crateFfiFfiReplaceRuleAdd(
+  name: name,
+  pattern: pattern,
+  replacement: replacement,
+  isRegex: isRegex,
+  scope: scope,
+);
+
+/// 更新替换规则
+Future<void> replaceRuleUpdate({
+  required PlatformInt64 ruleId,
+  required String name,
+  required String pattern,
+  required String replacement,
+  required bool isRegex,
+  required bool isEnabled,
+}) => RustLib.instance.api.crateFfiFfiReplaceRuleUpdate(
+  ruleId: ruleId,
+  name: name,
+  pattern: pattern,
+  replacement: replacement,
+  isRegex: isRegex,
+  isEnabled: isEnabled,
+);
+
+/// 删除替换规则
+Future<void> replaceRuleDelete({required PlatformInt64 ruleId}) =>
+    RustLib.instance.api.crateFfiFfiReplaceRuleDelete(ruleId: ruleId);
+
+/// 获取启用的替换规则（JSON 数组，用于阅读时应用）
+Future<String> replaceRuleEnabled() =>
+    RustLib.instance.api.crateFfiFfiReplaceRuleEnabled();
+
+/// 启用/禁用替换规则
+Future<void> replaceRuleSetEnabled({
+  required PlatformInt64 ruleId,
+  required bool enabled,
+}) => RustLib.instance.api.crateFfiFfiReplaceRuleSetEnabled(
+  ruleId: ruleId,
+  enabled: enabled,
+);
