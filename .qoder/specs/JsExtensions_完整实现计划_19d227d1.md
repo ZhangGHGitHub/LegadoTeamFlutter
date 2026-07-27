@@ -254,4 +254,60 @@ pub mod archive_utils; // unzipFile / getZipStringContent / un7zFile / unrarFile
 1. **1:1 复刻 Android 平台 API**（Sam 评估）：webView/toast/openUrl 等约 15 个方法在 Rust 端无法实现，采用明确错误提示桩化，避免虚假兼容
 2. **保留 ureq 同步栈**（Alex 评估）：每请求新建连接池、无中间件、无并发，性能代价过高，必须统一为 legado-net
 3. **直接修改已有测试添加 java 前缀**（Sam 评估）：破坏裸全局兼容性，采用双挂载方案保留两种调用方式
-4. **升级 rquickjs 获取字节码**（Alex 评估）：0.9 字节码 API 不成熟，先做引擎池化+源码缓存作为兜底
+4. **升级 rquickjs 获取字节码**（Alex 评估）：0.9 字节码 API 不成熟，先做引擎池化+源码缓存作为兖底
+
+---
+
+## 实现状态审计（2026-07-26）
+
+### 各阶段完成度
+
+| 阶段 | 子任务 | 实际文件 | 状态 |
+|------|--------|----------|------|
+| 1.1 清理死代码 + HostEnv | `env.rs` 4.3KB | ✅ 完成 |
+| 1.2 java 命名空间双挂载 | `quickjs_impl.rs` 36KB + `register.rs` | ✅ 完成 |
+| 1.3 超时中断修复 | `engine.rs`（绝对 deadline） | ✅ 完成 |
+| 2.1 LegadoClient 桥接 | `runtime_bridge.rs` 1.2KB | ✅ 完成 |
+| 2.2 重写 network.rs | `network.rs` 12.7KB（LegadoClient） | ✅ 完成 |
+| 3.1 引擎池化 | `engine_pool.rs` | ✅ 完成 |
+| 3.2 LRU 作用域缓存 | `scope.rs`（lru crate） | ✅ 完成 |
+| 4.1 Crypto JS 桥接 | `crypto_api.rs` 8KB | ✅ 完成 |
+| 4.2 Cookie API | `cookie_store.rs` 3KB | ✅ 完成 |
+| 4.3 摘要 + 编解码 | `encoding.rs` 20KB | ✅ 完成 |
+| 4.4 字符串/文本 | `string_utils.rs` 14.6KB + `html_format.rs` 9.8KB + `chinese_utils.rs` 12.2KB | ✅ 完成 |
+| 5.1 文件沙箱 | `file_utils.rs` 20.4KB | ✅ 完成 |
+| **5.2 解压缩 API** | `archive_utils.rs` 13KB | ⚠️ zip 完成，**7z/rar 为桩** |
+| 6.1 ReadBook 预加载 | `legado-core/read_state.rs` 15.6KB | ✅ 完成 |
+| 6.2 AudioPlay 预加载 | `legado-core/audio_preload.rs` 12.3KB | ✅ 完成 |
+| 7.1 平台桩 | `platform.rs` 2.6KB（12 个桩） | ✅ 完成 |
+| 7.2 文档 | PROGRESS/README/DEVELOPMENT | ✅ 完成 |
+
+### 总体完成度：~95%
+
+**唯一未完成项**：Task 5.2 中的 7z/rar 解压缩为桩实现（依赖 sevenz-rust/unrar crate 成熟度评估）。
+
+### 宿主 API 文件清单（实际）
+
+```
+host_api/
+├── archive_utils.rs   13KB  — zip 解压 + 7z/rar 桩
+├── chinese_utils.rs   12KB  — 繁简转换（~500 字映射表）
+├── cookie_store.rs     3KB  — getCookie/setCookie
+├── crypto_api.rs       8KB  — AES/DES/RC4 + transformation 解析
+├── encoding.rs        20KB  — MD5/SHA/Base64/Hex/HMAC/URL
+├── env.rs              4KB  — HostEnv 共享环境
+├── file_utils.rs      20KB  — 沙箱文件操作
+├── html_format.rs     10KB  — HTML 标签清理
+├── json_utils.rs       6KB  — jsonPath/jsonGetString/toJson
+├── mod.rs              1KB  — 模块导出
+├── network.rs         13KB  — ajax/get/post/head/ajaxAll (LegadoClient)
+├── platform.rs         3KB  — 12 个平台桩
+├── quickjs_impl.rs    36KB  — QuickJS 注册主入口（java 命名空间）
+├── regex_utils.rs      6KB  — regExp/regExpReplace/regExpFindAll
+├── register.rs         1KB  — mount_dual 双挂载宏
+├── runtime_bridge.rs   1KB  — tokio Runtime 桥接
+├── source_callback.rs 10KB  — 书源回调 API
+├── string_utils.rs    15KB  — 字符串工具 15+ 函数
+├── time_utils.rs       5KB  — 时间格式化
+└── variable_store.rs   4KB  — 变量存储
+```
