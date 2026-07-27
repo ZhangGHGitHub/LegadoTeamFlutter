@@ -92,6 +92,20 @@ class BookshelfProvider extends ChangeNotifier {
     }
   }
 
+  /// 导入本地书籍到书架（EPUB/TXT/MOBI/PDF/UMD）
+  ///
+  /// 成功后将返回的书籍加入列表并通知 UI；
+  /// 失败时异常向上抛出，由 UI 层负责提示。
+  Future<Book> importLocalBook(String filePath) async {
+    final book = await _api.importLocalBook(filePath);
+    _books = [
+      ..._books.where((b) => b.bookUrl != book.bookUrl),
+      book,
+    ];
+    notifyListeners();
+    return book;
+  }
+
   Future<void> removeBook(String bookUrl) async {
     try {
       await _api.deleteBook(bookUrl);

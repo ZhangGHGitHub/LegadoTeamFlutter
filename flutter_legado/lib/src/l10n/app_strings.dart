@@ -99,6 +99,7 @@ class AppStrings {
   static String get noProxy => _get('不使用代理', 'No Proxy');
   static String get requestTimeout => _get('请求超时', 'Request Timeout');
   static String get seconds30 => _get('30 秒', '30 seconds');
+  static String get secondsUnit => _get('秒', 's');
   static String get backupData => _get('备份数据', 'Backup Data');
   static String get backupDataDesc => _get('备份书架和书源到本地', 'Backup bookshelf and sources locally');
   static String get restoreData => _get('恢复数据', 'Restore Data');
@@ -113,6 +114,8 @@ class AppStrings {
   static String get confirmClearCache =>
       _get('确定要清除所有缓存数据吗？', 'Are you sure you want to clear all cached data?');
   static String get cacheCleared => _get('缓存已清除', 'Cache cleared');
+  static String get clearCacheInDev =>
+      _get('清除缓存功能开发中（后端接口未就绪）', 'Clear cache is under development (backend API not ready)');
   static String get version => _get('版本', 'Version');
   static String get license => _get('开源协议', 'License');
   static String get projectUrl => _get('项目地址', 'Project URL');

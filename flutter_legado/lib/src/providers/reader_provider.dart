@@ -34,6 +34,7 @@ class ReaderProvider extends ChangeNotifier {
   Book? _currentBook;
   List<BookChapter> _chapters = [];
   int _currentChapterIndex = 0;
+  int _currentChapterPos = 0;
   String _chapterContent = '';
   bool _loading = false;
   String? _error;
@@ -50,6 +51,7 @@ class ReaderProvider extends ChangeNotifier {
   Book? get currentBook => _currentBook;
   List<BookChapter> get chapters => _chapters;
   int get currentChapterIndex => _currentChapterIndex;
+  int get currentChapterPos => _currentChapterPos;
   String get chapterContent => _chapterContent;
   bool get loading => _loading;
   String? get error => _error;
@@ -115,33 +117,42 @@ class ReaderProvider extends ChangeNotifier {
 
   Future<void> nextChapter() async {
     if (!hasNextChapter) return;
+    await _saveProgress();
     _currentChapterIndex++;
+    _currentChapterPos = 0;
     _loading = true;
     notifyListeners();
     await _loadChapterContent();
     _loading = false;
     notifyListeners();
+    await _saveProgress();
   }
 
   Future<void> prevChapter() async {
     if (!hasPreviousChapter) return;
+    await _saveProgress();
     _currentChapterIndex--;
+    _currentChapterPos = 0;
     _loading = true;
     notifyListeners();
     await _loadChapterContent();
     _loading = false;
     notifyListeners();
+    await _saveProgress();
   }
 
   Future<void> goToChapter(int index) async {
     if (index < 0 || index >= _chapters.length) return;
+    await _saveProgress();
     _currentChapterIndex = index;
+    _currentChapterPos = 0;
     _loading = true;
     _showControls = false;
     notifyListeners();
     await _loadChapterContent();
     _loading = false;
     notifyListeners();
+    await _saveProgress();
   }
 
   void toggleControls() {
@@ -181,6 +192,36 @@ class ReaderProvider extends ChangeNotifier {
     _pageTurnMode = mode;
     _settings.setFlipMode(mode.index);
     notifyListeners();
+  }
+
+  /// 更新当前阅读位置（由 UI 层滚动/翻页时调用）
+  void updatePosition(int position) {
+    _currentChapterPos = position;
+  }
+
+  /// 保存当前阅读进度到后端
+  Future<void> saveProgress() async {
+    await _saveProgress();
+  }
+
+  @override
+  void dispose() {
+    // 退出前保存进度（fire-and-forget，dispose 不能 await）
+    _saveProgress();
+    super.dispose();
+  }
+
+  Future<void> _saveProgress() async {
+    if (_currentBook == null) return;
+    try {
+      await _api.updateReadingProgress(
+        bookUrl: _currentBook!.bookUrl,
+        chapterIndex: _currentChapterIndex,
+        chapterPos: _currentChapterPos,
+      );
+    } catch (_) {
+      // 保存失败不阻断阅读流程
+    }
   }
 
   Future<void> _loadChapterContent() async {

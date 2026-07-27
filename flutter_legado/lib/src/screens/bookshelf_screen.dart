@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -442,9 +443,49 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     }
   }
 
-  void _addLocalBook(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppStrings.featureInDev)),
+  /// 选择本地书籍文件并导入书架
+  Future<void> _addLocalBook(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<BookshelfProvider>();
+    final errorColor = Theme.of(context).colorScheme.error;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['epub', 'txt', 'mobi', 'pdf', 'umd'],
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    var successCount = 0;
+    final failures = <String>[];
+    for (final file in result.files) {
+      final path = file.path;
+      if (path == null) {
+        failures.add(file.name);
+        continue;
+      }
+      try {
+        await provider.importLocalBook(path);
+        successCount++;
+      } catch (_) {
+        failures.add(file.name);
+      }
+    }
+
+    // 刷新书架，确保与后端数据一致
+    await provider.loadBooks();
+
+    final messages = <String>[];
+    if (successCount > 0) messages.add('已导入 $successCount 本书籍');
+    if (failures.isNotEmpty) {
+      messages.add('${failures.length} 本导入失败：${failures.join('、')}');
+    }
+    if (messages.isEmpty) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(messages.join('；')),
+        backgroundColor: successCount == 0 ? errorColor : null,
+      ),
     );
   }
 

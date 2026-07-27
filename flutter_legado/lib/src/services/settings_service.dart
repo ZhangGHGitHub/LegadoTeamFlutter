@@ -140,6 +140,55 @@ class SettingsService {
     await prefs.setString(_keyLocale, locale);
   }
 
+  // ===== 网络设置：代理 =====
+
+  static const _keyProxyType = 'net_proxy_type'; // none / http / socks5
+  static const _keyProxyHost = 'net_proxy_host';
+  static const _keyProxyPort = 'net_proxy_port';
+  static const _keyRequestTimeout = 'net_request_timeout';
+
+  Future<String> getProxyType() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyProxyType) ?? 'none';
+  }
+
+  Future<void> setProxyType(String type) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyProxyType, type);
+  }
+
+  Future<String> getProxyHost() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyProxyHost) ?? '';
+  }
+
+  Future<void> setProxyHost(String host) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyProxyHost, host);
+  }
+
+  Future<int> getProxyPort() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyProxyPort) ?? 0;
+  }
+
+  Future<void> setProxyPort(int port) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyProxyPort, port);
+  }
+
+  // ===== 网络设置：请求超时（秒） =====
+
+  Future<int> getRequestTimeout() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyRequestTimeout) ?? 30;
+  }
+
+  Future<void> setRequestTimeout(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyRequestTimeout, seconds);
+  }
+
   // ===== WebDAV 云同步配置 =====
 
   static const _keyWebDavUrl = 'sync_webdav_url';

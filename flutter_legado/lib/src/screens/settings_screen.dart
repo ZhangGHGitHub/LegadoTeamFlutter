@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
+import '../providers/reader_provider.dart' show ReaderBackground;
 import '../routes.dart';
 import '../services/backup_service.dart';
 import '../services/rust_api.dart';
@@ -24,6 +25,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _backupLoading = false;
   bool _restoreLoading = false;
 
+  // 默认阅读设置当前值
+  double _fontSize = 18.0;
+  double _lineHeight = 1.6;
+  int _bgColorIndex = 0;
+
+  // 网络设置当前值
+  String _proxyType = 'none'; // none / http / socks5
+  String _proxyHost = '';
+  int _proxyPort = 0;
+  int _timeoutSeconds = 30;
+
   // WebDAV 配置控制器
   final _webDavUrlController = TextEditingController();
   final _webDavUserController = TextEditingController();
@@ -35,6 +47,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadThemeMode();
     _loadLocale();
+    _loadReadSettings();
+    _loadNetworkSettings();
     _initSyncConfig();
   }
 
@@ -73,6 +87,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _loadReadSettings() async {
+    _fontSize = await _settingsService.getFontSize();
+    _lineHeight = await _settingsService.getLineHeight();
+    _bgColorIndex = await _settingsService.getBgColorIndex();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadNetworkSettings() async {
+    _proxyType = await _settingsService.getProxyType();
+    _proxyHost = await _settingsService.getProxyHost();
+    _proxyPort = await _settingsService.getProxyPort();
+    _timeoutSeconds = await _settingsService.getRequestTimeout();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -100,20 +129,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.text_fields),
             title: Text(AppStrings.defaultFontSize),
-            subtitle: const Text('18'),
-            onTap: () {},
+            subtitle: Text(_fontSize.toStringAsFixed(0)),
+            onTap: () => _showDefaultReadSettings(context),
           ),
           ListTile(
             leading: const Icon(Icons.format_line_spacing),
             title: Text(AppStrings.defaultLineHeight),
-            subtitle: const Text('1.6x'),
-            onTap: () {},
+            subtitle: Text('${_lineHeight.toStringAsFixed(1)}x'),
+            onTap: () => _showDefaultReadSettings(context),
           ),
           ListTile(
             leading: const Icon(Icons.palette),
             title: Text(AppStrings.defaultBgColor),
-            subtitle: Text(AppStrings.whiteColor),
-            onTap: () {},
+            subtitle: Text(_bgColorLabel),
+            onTap: () => _showDefaultReadSettings(context),
           ),
           ListTile(
             leading: const Icon(Icons.bar_chart),
@@ -128,14 +157,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.wifi),
             title: Text(AppStrings.proxySettings),
-            subtitle: Text(AppStrings.noProxy),
-            onTap: () {},
+            subtitle: Text(_proxyLabel),
+            onTap: () => _showProxySettings(context),
           ),
           ListTile(
             leading: const Icon(Icons.timer),
             title: Text(AppStrings.requestTimeout),
-            subtitle: Text(AppStrings.seconds30),
-            onTap: () {},
+            subtitle: Text('$_timeoutSeconds ${AppStrings.secondsUnit}'),
+            onTap: () => _showTimeoutSettings(context),
           ),
           const Divider(),
 
@@ -267,6 +296,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return AppStrings.langEnglish;
       default:
         return AppStrings.langSystem;
+    }
+  }
+
+  String get _bgColorLabel {
+    if (_bgColorIndex >= 0 && _bgColorIndex < ReaderBackground.labels.length) {
+      return ReaderBackground.labels[_bgColorIndex];
+    }
+    return AppStrings.whiteColor;
+  }
+
+  String get _proxyLabel {
+    switch (_proxyType) {
+      case 'http':
+        return _proxyHost.isEmpty ? 'HTTP' : 'HTTP · $_proxyHost:$_proxyPort';
+      case 'socks5':
+        return _proxyHost.isEmpty
+            ? 'SOCKS5'
+            : 'SOCKS5 · $_proxyHost:$_proxyPort';
+      default:
+        return AppStrings.noProxy;
     }
   }
 
@@ -433,8 +482,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
+              // TODO(FFI): RustApi.clearCache() 接口就绪后改为后端调用
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(AppStrings.cacheCleared)),
+                SnackBar(content: Text(AppStrings.clearCacheInDev)),
               );
             },
             child: Text(AppStrings.confirm),
@@ -442,6 +492,277 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  // ===== 默认阅读设置 / 网络设置对话框 =====
+
+  /// 默认阅读设置：字体大小、行距、背景色
+  void _showDefaultReadSettings(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    var fontSize = _fontSize;
+    var lineHeight = _lineHeight;
+    var bgIndex = _bgColorIndex;
+
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(AppStrings.readingSettingsTitle),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 字体大小
+                  Text(
+                    '${AppStrings.fontSizeLabel}: ${fontSize.toStringAsFixed(0)}',
+                    style: Theme.of(ctx).textTheme.bodyMedium,
+                  ),
+                  Slider(
+                    value: fontSize,
+                    min: 12,
+                    max: 32,
+                    divisions: 20,
+                    label: fontSize.round().toString(),
+                    onChanged: (v) => setDialogState(() => fontSize = v),
+                  ),
+                  const SizedBox(height: 8),
+                  // 行距
+                  Text(AppStrings.lineHeightLabel,
+                      style: Theme.of(ctx).textTheme.bodyMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final value in const [1.2, 1.6, 2.0, 2.5])
+                        ChoiceChip(
+                          label: Text('${value}x'),
+                          selected: lineHeight == value,
+                          onSelected: (_) =>
+                              setDialogState(() => lineHeight = value),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // 背景色（与阅读器预设保持一致）
+                  Text(AppStrings.bgColor,
+                      style: Theme.of(ctx).textTheme.bodyMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 12,
+                    children:
+                        List.generate(ReaderBackground.presets.length, (i) {
+                      final color = ReaderBackground.presets[i];
+                      final isSelected = bgIndex == i;
+                      return GestureDetector(
+                        onTap: () => setDialogState(() => bgIndex = i),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isSelected
+                                      ? Theme.of(ctx).colorScheme.primary
+                                      : Colors.grey.shade300,
+                                  width: isSelected ? 3 : 1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              ReaderBackground.labels[i],
+                              style: Theme.of(ctx).textTheme.labelSmall,
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppStrings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(AppStrings.save),
+            ),
+          ],
+        ),
+      ),
+    ).then((saved) async {
+      if (saved != true) return;
+      setState(() {
+        _fontSize = fontSize;
+        _lineHeight = lineHeight;
+        _bgColorIndex = bgIndex;
+      });
+      await _settingsService.setFontSize(fontSize);
+      await _settingsService.setLineHeight(lineHeight);
+      await _settingsService.setBgColorIndex(bgIndex);
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.configSaved)),
+      );
+    });
+  }
+
+  /// 代理设置：类型（无/HTTP/SOCKS5）+ 地址 + 端口
+  void _showProxySettings(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    var proxyType = _proxyType;
+    final hostController = TextEditingController(text: _proxyHost);
+    final portController = TextEditingController(
+      text: _proxyPort > 0 ? '$_proxyPort' : '',
+    );
+
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(AppStrings.proxySettings),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'none', label: Text('无')),
+                      ButtonSegment(value: 'http', label: Text('HTTP')),
+                      ButtonSegment(value: 'socks5', label: Text('SOCKS5')),
+                    ],
+                    selected: {proxyType},
+                    onSelectionChanged: (selected) =>
+                        setDialogState(() => proxyType = selected.first),
+                  ),
+                  if (proxyType != 'none') ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: hostController,
+                      decoration: const InputDecoration(
+                        labelText: '代理地址',
+                        hintText: '127.0.0.1',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.dns),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: portController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '端口',
+                        hintText: '7890',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.numbers),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppStrings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(AppStrings.save),
+            ),
+          ],
+        ),
+      ),
+    ).then((saved) async {
+      final host = hostController.text.trim();
+      final port = int.tryParse(portController.text.trim()) ?? 0;
+      hostController.dispose();
+      portController.dispose();
+      if (saved != true) return;
+
+      if (proxyType != 'none' && (host.isEmpty || port <= 0 || port > 65535)) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('请填写有效的代理地址和端口')),
+        );
+        return;
+      }
+
+      final effectiveHost = proxyType == 'none' ? '' : host;
+      final effectivePort = proxyType == 'none' ? 0 : port;
+      setState(() {
+        _proxyType = proxyType;
+        _proxyHost = effectiveHost;
+        _proxyPort = effectivePort;
+      });
+      await _settingsService.setProxyType(proxyType);
+      await _settingsService.setProxyHost(effectiveHost);
+      await _settingsService.setProxyPort(effectivePort);
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.configSaved)),
+      );
+    });
+  }
+
+  /// 请求超时设置：5–60 秒滑块
+  void _showTimeoutSettings(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    var seconds = _timeoutSeconds.clamp(5, 60).toDouble();
+
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(AppStrings.requestTimeout),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${seconds.round()} ${AppStrings.secondsUnit}',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+              Slider(
+                value: seconds,
+                min: 5,
+                max: 60,
+                divisions: 55,
+                label: '${seconds.round()}',
+                onChanged: (v) => setDialogState(() => seconds = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppStrings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(AppStrings.save),
+            ),
+          ],
+        ),
+      ),
+    ).then((saved) async {
+      if (saved != true) return;
+      setState(() => _timeoutSeconds = seconds.round());
+      await _settingsService.setRequestTimeout(seconds.round());
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.configSaved)),
+      );
+    });
   }
 
   // ===== 云同步 UI 构建 =====
