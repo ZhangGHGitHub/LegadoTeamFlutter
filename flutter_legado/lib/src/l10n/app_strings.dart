@@ -62,7 +62,7 @@ class AppStrings {
   static String get confirmDeleteBook =>
       _get('确定要从书架中删除', 'Are you sure you want to delete');
   static String get checkingUpdate => _get('正在检查更新...', 'Checking for updates...');
-  static String get featureInDev => _get('功能开发中：选择本地书籍文件', 'Feature in development: select local book file');
+  static String get selectLocalBook => _get('选择本地书籍文件', 'Select local book file');
 
   // 书源
   static String get importSources => _get('导入书源', 'Import Sources');
@@ -114,8 +114,6 @@ class AppStrings {
   static String get confirmClearCache =>
       _get('确定要清除所有缓存数据吗？', 'Are you sure you want to clear all cached data?');
   static String get cacheCleared => _get('缓存已清除', 'Cache cleared');
-  static String get clearCacheInDev =>
-      _get('清除缓存功能开发中（后端接口未就绪）', 'Clear cache is under development (backend API not ready)');
   static String get version => _get('版本', 'Version');
   static String get license => _get('开源协议', 'License');
   static String get projectUrl => _get('项目地址', 'Project URL');

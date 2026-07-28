@@ -123,6 +123,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(_localeLabel),
             onTap: () => _showLocalePicker(context),
           ),
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('主题配置'),
+            subtitle: const Text('字体、行距、背景色综合设置'),
+            onTap: () => Navigator.pushNamed(context, AppRoutes.themeConfig),
+          ),
           const Divider(),
 
           // ===== 阅读设置 =====
@@ -150,6 +156,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('阅读统计'),
             subtitle: const Text('查看阅读时长与书籍分布'),
             onTap: () => Navigator.pushNamed(context, AppRoutes.readingStats),
+          ),
+          ListTile(
+            leading: const Icon(Icons.record_voice_over_outlined),
+            title: const Text('朗读引擎'),
+            subtitle: const Text('HTTP TTS 引擎管理'),
+            onTap: () => Navigator.pushNamed(context, AppRoutes.readAloudConfig),
           ),
           const Divider(),
 
