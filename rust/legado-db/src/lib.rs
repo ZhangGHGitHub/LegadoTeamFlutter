@@ -27,6 +27,7 @@ pub use repository::bookmark_repository::BookmarkRepository;
 pub use repository::cache_book_repository::CacheBookRepository;
 pub use repository::cache_repository::CacheRepository;
 pub use repository::cookie_repository::CookieRepository;
+pub use repository::http_tts_repository::{HttpTts, HttpTtsRepository};
 pub use repository::read_record_repository::{ReadRecord, ReadRecordRepository};
 pub use repository::reading_stats_repository::ReadingStatsRepository;
 pub use repository::replace_rule_repository::ReplaceRuleRepository;

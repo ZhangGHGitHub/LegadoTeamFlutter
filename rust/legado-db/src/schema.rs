@@ -54,6 +54,8 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 rule_subs 表失败: {e}")))?;
     conn.execute_batch(CREATE_CACHES)
         .map_err(|e| LegadoError::Database(format!("创建 caches 表失败: {e}")))?;
+    conn.execute_batch(CREATE_HTTP_TTS)
+        .map_err(|e| LegadoError::Database(format!("创建 http_tts 表失败: {e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -442,6 +444,17 @@ CREATE TABLE IF NOT EXISTS caches (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_caches_deadline ON caches(deadline);
+";
+
+pub const CREATE_HTTP_TTS: &str = "
+CREATE TABLE IF NOT EXISTS http_tts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    content_type TEXT DEFAULT '',
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+);
 ";
 
 /// 索引定义

@@ -425,23 +425,29 @@ class RustApi {
   Future<String> refreshToc(String bookUrl, String sourceUrl) =>
       bridge.readerRefreshToc(bookUrl: bookUrl, sourceUrl: sourceUrl);
 
-  // ========== 配置操作（FFI 尚未暴露） ==========
+  // ========== 配置操作 ==========
 
   /// 获取配置值
-  Future<String?> getConfig(String key) =>
-      throw UnimplementedError('config_get FFI not yet exposed');
+  Future<String?> getConfig(String key) async {
+    final v = await bridge.configGet(key: key);
+    return v.isEmpty ? null : v;
+  }
 
   /// 设置配置值
-  Future<void> setConfig(String key, String value) =>
-      throw UnimplementedError('config_set FFI not yet exposed');
+  Future<void> setConfig(String key, String value) async {
+    await bridge.configSet(key: key, value: value);
+  }
 
-  /// 删除配置
+  /// 删除配置（FFI 尚未暴露）
   Future<void> deleteConfig(String key) =>
       throw UnimplementedError('config_delete FFI not yet exposed');
 
   /// 获取所有配置
-  Future<Map<String, String>> getAllConfigs() =>
-      throw UnimplementedError('config_get_all FFI not yet exposed');
+  Future<Map<String, String>> getAllConfigs() async {
+    final json = await bridge.configGetAll();
+    final m = jsonDecode(json) as Map<String, dynamic>;
+    return m.map((k, v) => MapEntry(k, v.toString()));
+  }
 
   // ========== 备份操作（FFI 尚未暴露） ==========
 
@@ -453,23 +459,34 @@ class RustApi {
   Future<void> restore(String backupPath) =>
       throw UnimplementedError('restore FFI not yet exposed');
 
-  // ========== 阅读记录（FFI 尚未暴露） ==========
+  // ========== 阅读记录 ==========
 
   /// 获取所有阅读记录
-  Future<List<ReadRecord>> getReadRecords() =>
-      throw UnimplementedError('read_record_get_all FFI not yet exposed');
+  Future<List<ReadRecord>> getReadRecords() async {
+    final json = await bridge.readRecordList();
+    final list = jsonDecode(json) as List<dynamic>;
+    return list
+        .map((e) => ReadRecord.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 
   /// 更新阅读记录
-  Future<void> putReadRecord(ReadRecord record) =>
-      throw UnimplementedError('read_record_put FFI not yet exposed');
+  Future<void> putReadRecord(ReadRecord record) async {
+    await bridge.readRecordUpsert(
+      bookName: record.bookName,
+      readTime: record.readTime,
+    );
+  }
 
   /// 删除阅读记录
-  Future<void> deleteReadRecord(String bookName) =>
-      throw UnimplementedError('read_record_delete FFI not yet exposed');
+  Future<void> deleteReadRecord(String bookName) async {
+    await bridge.readRecordDelete(bookName: bookName);
+  }
 
   /// 清空阅读记录
-  Future<void> clearReadRecords() =>
-      throw UnimplementedError('read_record_clear FFI not yet exposed');
+  Future<void> clearReadRecords() async {
+    await bridge.readRecordClear();
+  }
 
   // ========== RSS 收藏操作 ==========
 
@@ -500,23 +517,41 @@ class RustApi {
   /// 判断是否已收藏
   Future<bool> isStarred(String link) => bridge.rssStarIsStarred(link: link);
 
-  // ========== 书籍分组（FFI 尚未暴露） ==========
+  // ========== 书籍分组 ==========
 
   /// 获取所有书籍分组
-  Future<List<BookGroup>> getBookGroups() =>
-      throw UnimplementedError('book_group_get_all FFI not yet exposed');
+  Future<List<BookGroup>> getBookGroups() async {
+    final json = await bridge.bookGroupList();
+    final list = jsonDecode(json) as List<dynamic>;
+    return list
+        .map((e) => BookGroup.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 
   /// 添加书籍分组
-  Future<BookGroup> addBookGroup(BookGroup group) =>
-      throw UnimplementedError('book_group_add FFI not yet exposed');
+  Future<BookGroup> addBookGroup(BookGroup group) async {
+    final id = await bridge.bookGroupAdd(
+      groupName: group.groupName,
+      cover: group.cover ?? '',
+      order: group.order,
+    );
+    return group.copyWith(groupId: id.toInt());
+  }
 
   /// 更新书籍分组
-  Future<void> updateBookGroup(BookGroup group) =>
-      throw UnimplementedError('book_group_update FFI not yet exposed');
+  Future<void> updateBookGroup(BookGroup group) async {
+    await bridge.bookGroupUpdate(
+      id: group.groupId,
+      groupName: group.groupName,
+      cover: group.cover ?? '',
+      order: group.order,
+    );
+  }
 
   /// 删除书籍分组
-  Future<void> deleteBookGroup(int groupId) =>
-      throw UnimplementedError('book_group_delete FFI not yet exposed');
+  Future<void> deleteBookGroup(int groupId) async {
+    await bridge.bookGroupDelete(id: groupId);
+  }
 
   // ========== 搜索历史 ==========
 
@@ -544,15 +579,18 @@ class RustApi {
     await bridge.searchHistoryClear();
   }
 
-  // ========== 缓存管理（FFI 尚未暴露） ==========
+  // ========== 缓存管理 ==========
 
   /// 获取缓存大小
-  Future<int> getCacheSize() =>
-      throw UnimplementedError('cache_size FFI not yet exposed');
+  Future<int> getCacheSize() async {
+    final size = await bridge.cacheGetSize();
+    return size.toInt();
+  }
 
   /// 清除缓存
-  Future<void> clearCache() =>
-      throw UnimplementedError('cache_clear FFI not yet exposed');
+  Future<void> clearCache() async {
+    await bridge.cacheClear();
+  }
 
   // ========== WebBook 操作 ==========
 
@@ -636,59 +674,100 @@ class RustApi {
   Future<String> exportBook(String bookUrl, String format, String outDir) =>
       throw UnimplementedError('book_export FFI not yet exposed');
 
-  // ========== 阅读统计（FFI 尚未暴露） ==========
+  // ========== 阅读统计 ==========
 
   /// 获取今日阅读统计
-  Future<ReadingStatsToday> getTodayReadingStats() =>
-      throw UnimplementedError('reading_stats_today FFI not yet exposed');
+  Future<ReadingStatsToday> getTodayReadingStats() async {
+    final json = await bridge.statsToday();
+    final m = jsonDecode(json) as Map<String, dynamic>;
+    return ReadingStatsToday(
+      totalSeconds: m['totalSeconds'] as int? ?? 0,
+      bookCount: m['bookCount'] as int? ?? 0,
+      durationSeconds: m['durationSeconds'] as int? ?? 0,
+      wordCount: m['wordCount'] as int? ?? 0,
+      readingSpeed: (m['readingSpeed'] as num? ?? 0).toDouble(),
+    );
+  }
 
   /// 获取每日阅读统计
-  Future<Map<String, int>> getDailyReadingStats({required int days}) =>
-      throw UnimplementedError('reading_stats_get_daily FFI not yet exposed');
+  Future<Map<String, int>> getDailyReadingStats({required int days}) async {
+    final json = await bridge.statsDaily(days: days);
+    final list = jsonDecode(json) as List<dynamic>;
+    final result = <String, int>{};
+    for (final e in list) {
+      final m = e as Map<String, dynamic>;
+      result[m['date'] as String? ?? ''] = m['seconds'] as int? ?? 0;
+    }
+    return result;
+  }
 
   /// 获取书籍阅读统计
-  Future<Map<String, int>> getBookReadingStats() =>
-      throw UnimplementedError('reading_stats_get_book FFI not yet exposed');
+  Future<Map<String, int>> getBookReadingStats() async {
+    final json = await bridge.statsByBook();
+    final list = jsonDecode(json) as List<dynamic>;
+    final result = <String, int>{};
+    for (final e in list) {
+      final m = e as Map<String, dynamic>;
+      result[m['bookName'] as String? ?? ''] = m['seconds'] as int? ?? 0;
+    }
+    return result;
+  }
 
   /// 获取阅读热力图
-  Future<Map<String, int>> getReadingHeatmap({required int days}) =>
-      throw UnimplementedError('reading_stats_heatmap FFI not yet exposed');
+  Future<Map<String, int>> getReadingHeatmap({required int days}) async {
+    final json = await bridge.statsHeatmap(days: days);
+    final list = jsonDecode(json) as List<dynamic>;
+    final result = <String, int>{};
+    for (final e in list) {
+      final m = e as Map<String, dynamic>;
+      result[m['date'] as String? ?? ''] = m['seconds'] as int? ?? 0;
+    }
+    return result;
+  }
 
-  /// 记录阅读时长
+  /// 记录阅读时长（FFI 尚未暴露）
   Future<void> recordReadingTime(String bookName, int seconds) =>
       throw UnimplementedError('reading_stats_record FFI not yet exposed');
 
-  // ========== HTTP TTS（FFI 尚未暴露） ==========
+  // ========== HTTP TTS ==========
 
   /// 获取所有 HTTP TTS 配置
-  Future<List<HttpTts>> getHttpTts() =>
-      throw UnimplementedError('http_tts_get_all FFI not yet exposed');
+  Future<List<HttpTts>> getHttpTts() async {
+    final json = await bridge.httpTtsList();
+    final list = jsonDecode(json) as List<dynamic>;
+    return list
+        .map((e) => HttpTts.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 
   /// 获取所有 HTTP TTS 配置（别名）
-  Future<List<HttpTts>> getHttpTtsList() =>
-      throw UnimplementedError('http_tts_get_all FFI not yet exposed');
+  Future<List<HttpTts>> getHttpTtsList() => getHttpTts();
 
   /// 添加 HTTP TTS 配置
-  Future<HttpTts> addHttpTts(HttpTts tts) =>
-      throw UnimplementedError('http_tts_add FFI not yet exposed');
+  Future<HttpTts> addHttpTts(HttpTts tts) async {
+    final id = await bridge.httpTtsAdd(name: tts.name, url: tts.url);
+    return tts.copyWith(id: id.toInt());
+  }
 
   /// 更新 HTTP TTS 配置
-  Future<void> updateHttpTts(HttpTts tts) =>
-      throw UnimplementedError('http_tts_update FFI not yet exposed');
+  Future<void> updateHttpTts(HttpTts tts) async {
+    await bridge.httpTtsUpdate(id: tts.id, name: tts.name, url: tts.url);
+  }
 
   /// 删除 HTTP TTS 配置
-  Future<void> deleteHttpTts(int id) =>
-      throw UnimplementedError('http_tts_delete FFI not yet exposed');
+  Future<void> deleteHttpTts(int id) async {
+    await bridge.httpTtsDelete(id: id);
+  }
 
-  /// 导入 HTTP TTS 配置
+  /// 导入 HTTP TTS 配置（FFI 尚未暴露）
   Future<int> importHttpTts(String json) =>
       throw UnimplementedError('http_tts_import FFI not yet exposed');
 
-  /// 导出 HTTP TTS 配置
+  /// 导出 HTTP TTS 配置（FFI 尚未暴露）
   Future<String> exportHttpTts() =>
       throw UnimplementedError('http_tts_export FFI not yet exposed');
 
-  // ========== 音频播放（FFI 尚未暴露） ==========
+  // ========== 音频播放 ==========
 
   /// TTS 朗读（FFI 尚未暴露）
   Future<void> audioSpeak({
@@ -701,7 +780,7 @@ class RustApi {
   }) =>
       throw UnimplementedError('audio_speak FFI not yet exposed');
 
-  /// 获取章节媒体信息
+  /// 获取章节媒体信息（FFI 尚未暴露）
   Future<Map<String, dynamic>> getAudioChapterMedia(
     String bookUrl,
     int chapterIndex,
@@ -709,16 +788,29 @@ class RustApi {
       throw UnimplementedError('audio_get_chapter_media FFI not yet exposed');
 
   /// 获取音频播放进度
-  Future<Map<String, dynamic>?> getAudioProgress(String bookUrl) =>
-      throw UnimplementedError('audio_get_progress FFI not yet exposed');
+  Future<Map<String, dynamic>?> getAudioProgress(
+    String bookUrl,
+    int chapterIndex,
+  ) async {
+    final pos = await bridge.audioGetProgress(
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+    );
+    return {'position': pos.toInt(), 'chapterIndex': chapterIndex};
+  }
 
   /// 保存音频播放进度
   Future<void> saveAudioProgress(
     String bookUrl,
     int chapterIndex,
     int positionMs,
-  ) =>
-      throw UnimplementedError('audio_save_progress FFI not yet exposed');
+  ) async {
+    await bridge.audioSaveProgress(
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+      position: positionMs,
+    );
+  }
 
   // ========== 用户管理（FFI 尚未暴露） ==========
 

@@ -409,3 +409,149 @@ Future<void> replaceRuleSetEnabled({
   ruleId: ruleId,
   enabled: enabled,
 );
+
+/// 获取所有阅读记录（JSON 数组）
+Future<String> readRecordList() =>
+    RustLib.instance.api.crateFfiFfiReadRecordList();
+
+/// 添加/更新阅读记录，返回阅读时长
+Future<PlatformInt64> readRecordUpsert({
+  required String bookName,
+  required PlatformInt64 readTime,
+}) => RustLib.instance.api.crateFfiFfiReadRecordUpsert(
+  bookName: bookName,
+  readTime: readTime,
+);
+
+/// 删除阅读记录
+Future<bool> readRecordDelete({required String bookName}) =>
+    RustLib.instance.api.crateFfiFfiReadRecordDelete(bookName: bookName);
+
+/// 清空所有阅读记录
+Future<bool> readRecordClear() =>
+    RustLib.instance.api.crateFfiFfiReadRecordClear();
+
+/// 获取所有书籍分组（JSON 数组）
+Future<String> bookGroupList() =>
+    RustLib.instance.api.crateFfiFfiBookGroupList();
+
+/// 添加书籍分组，返回新分组 ID
+Future<PlatformInt64> bookGroupAdd({
+  required String groupName,
+  required String cover,
+  required int order,
+}) => RustLib.instance.api.crateFfiFfiBookGroupAdd(
+  groupName: groupName,
+  cover: cover,
+  order: order,
+);
+
+/// 更新书籍分组
+Future<bool> bookGroupUpdate({
+  required PlatformInt64 id,
+  required String groupName,
+  required String cover,
+  required int order,
+}) => RustLib.instance.api.crateFfiFfiBookGroupUpdate(
+  id: id,
+  groupName: groupName,
+  cover: cover,
+  order: order,
+);
+
+/// 删除书籍分组
+Future<bool> bookGroupDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiBookGroupDelete(id: id);
+
+/// 设置分组显示状态
+Future<bool> bookGroupSetShow({
+  required PlatformInt64 id,
+  required bool show_,
+}) => RustLib.instance.api.crateFfiFfiBookGroupSetShow(id: id, show_: show_);
+
+/// 获取今日阅读统计（JSON）
+Future<String> statsToday() => RustLib.instance.api.crateFfiFfiStatsToday();
+
+/// 获取最近 N 天每日统计（JSON 数组）
+Future<String> statsDaily({required int days}) =>
+    RustLib.instance.api.crateFfiFfiStatsDaily(days: days);
+
+/// 获取按书籍分组的统计（JSON 数组）
+Future<String> statsByBook() => RustLib.instance.api.crateFfiFfiStatsByBook();
+
+/// 获取阅读热力图数据（JSON 数组）
+Future<String> statsHeatmap({required int days}) =>
+    RustLib.instance.api.crateFfiFfiStatsHeatmap(days: days);
+
+/// 获取缓存总大小（字节）
+Future<PlatformInt64> cacheGetSize() =>
+    RustLib.instance.api.crateFfiFfiCacheGetSize();
+
+/// 清空所有缓存
+Future<bool> cacheClear() => RustLib.instance.api.crateFfiFfiCacheClear();
+
+/// 获取章节缓存内容
+Future<String> cacheGetChapter({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiCacheGetChapter(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
+/// 获取配置项
+Future<String> configGet({required String key}) =>
+    RustLib.instance.api.crateFfiFfiConfigGet(key: key);
+
+/// 设置配置项
+Future<bool> configSet({required String key, required String value}) =>
+    RustLib.instance.api.crateFfiFfiConfigSet(key: key, value: value);
+
+/// 获取所有配置（JSON 对象）
+Future<String> configGetAll() => RustLib.instance.api.crateFfiFfiConfigGetAll();
+
+/// 获取所有 HTTP TTS 源（JSON 数组）
+Future<String> httpTtsList() => RustLib.instance.api.crateFfiFfiHttpTtsList();
+
+/// 添加 HTTP TTS 源，返回新 ID
+Future<PlatformInt64> httpTtsAdd({required String name, required String url}) =>
+    RustLib.instance.api.crateFfiFfiHttpTtsAdd(name: name, url: url);
+
+/// 更新 HTTP TTS 源
+Future<bool> httpTtsUpdate({
+  required PlatformInt64 id,
+  required String name,
+  required String url,
+}) =>
+    RustLib.instance.api.crateFfiFfiHttpTtsUpdate(id: id, name: name, url: url);
+
+/// 删除 HTTP TTS 源
+Future<bool> httpTtsDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiHttpTtsDelete(id: id);
+
+/// 设置 HTTP TTS 源启用/禁用
+Future<bool> httpTtsSetEnabled({
+  required PlatformInt64 id,
+  required bool enabled,
+}) =>
+    RustLib.instance.api.crateFfiFfiHttpTtsSetEnabled(id: id, enabled: enabled);
+
+/// 获取音频播放进度（毫秒）
+Future<PlatformInt64> audioGetProgress({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiAudioGetProgress(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
+/// 保存音频播放进度
+Future<bool> audioSaveProgress({
+  required String bookUrl,
+  required int chapterIndex,
+  required PlatformInt64 position,
+}) => RustLib.instance.api.crateFfiFfiAudioSaveProgress(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  position: position,
+);

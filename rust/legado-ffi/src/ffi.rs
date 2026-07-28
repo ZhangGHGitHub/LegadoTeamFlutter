@@ -613,4 +613,183 @@ pub mod ffi {
         crate::api::replace_rule_api::set_rule_enabled(rule_id, enabled)?;
         Ok(())
     }
+
+    // ─── 阅读记录 ─────────────────────────────────────
+
+    /// 获取所有阅读记录（JSON 数组）
+    pub fn read_record_list() -> Result<String, BridgeError> {
+        let records = crate::api::read_record_api::get_read_records()?;
+        to_json(&records)
+    }
+
+    /// 添加/更新阅读记录，返回阅读时长
+    pub fn read_record_upsert(book_name: String, read_time: i64) -> Result<i64, BridgeError> {
+        let rt = crate::api::read_record_api::upsert_read_record(&book_name, read_time)?;
+        Ok(rt)
+    }
+
+    /// 删除阅读记录
+    pub fn read_record_delete(book_name: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::read_record_api::delete_read_record(&book_name)?;
+        Ok(ok)
+    }
+
+    /// 清空所有阅读记录
+    pub fn read_record_clear() -> Result<bool, BridgeError> {
+        let ok = crate::api::read_record_api::clear_read_records()?;
+        Ok(ok)
+    }
+
+    // ─── 书籍分组 ─────────────────────────────────────
+
+    /// 获取所有书籍分组（JSON 数组）
+    pub fn book_group_list() -> Result<String, BridgeError> {
+        let groups = crate::api::book_group_api::get_book_groups()?;
+        to_json(&groups)
+    }
+
+    /// 添加书籍分组，返回新分组 ID
+    pub fn book_group_add(group_name: String, cover: String, order: i32) -> Result<i64, BridgeError> {
+        let id = crate::api::book_group_api::add_book_group(&group_name, &cover, order)?;
+        Ok(id)
+    }
+
+    /// 更新书籍分组
+    pub fn book_group_update(
+        id: i64,
+        group_name: String,
+        cover: String,
+        order: i32,
+    ) -> Result<bool, BridgeError> {
+        let ok = crate::api::book_group_api::update_book_group(id, &group_name, &cover, order)?;
+        Ok(ok)
+    }
+
+    /// 删除书籍分组
+    pub fn book_group_delete(id: i64) -> Result<bool, BridgeError> {
+        let ok = crate::api::book_group_api::delete_book_group(id)?;
+        Ok(ok)
+    }
+
+    /// 设置分组显示状态
+    pub fn book_group_set_show(id: i64, show: bool) -> Result<bool, BridgeError> {
+        let ok = crate::api::book_group_api::set_book_group_show(id, show)?;
+        Ok(ok)
+    }
+
+    // ─── 阅读统计 ─────────────────────────────────────
+
+    /// 获取今日阅读统计（JSON）
+    pub fn stats_today() -> Result<String, BridgeError> {
+        let stats = crate::api::reading_stats_api::get_today_stats()?;
+        to_json(&stats)
+    }
+
+    /// 获取最近 N 天每日统计（JSON 数组）
+    pub fn stats_daily(days: i32) -> Result<String, BridgeError> {
+        let stats = crate::api::reading_stats_api::get_daily_stats(days)?;
+        to_json(&stats)
+    }
+
+    /// 获取按书籍分组的统计（JSON 数组）
+    pub fn stats_by_book() -> Result<String, BridgeError> {
+        let stats = crate::api::reading_stats_api::get_book_stats()?;
+        to_json(&stats)
+    }
+
+    /// 获取阅读热力图数据（JSON 数组）
+    pub fn stats_heatmap(days: i32) -> Result<String, BridgeError> {
+        let data = crate::api::reading_stats_api::get_reading_heatmap(days)?;
+        to_json(&data)
+    }
+
+    // ─── 缓存管理 ─────────────────────────────────────
+
+    /// 获取缓存总大小（字节）
+    pub fn cache_get_size() -> Result<i64, BridgeError> {
+        let size = crate::api::cache_api::get_cache_size()?;
+        Ok(size)
+    }
+
+    /// 清空所有缓存
+    pub fn cache_clear() -> Result<bool, BridgeError> {
+        let ok = crate::api::cache_api::clear_cache()?;
+        Ok(ok)
+    }
+
+    /// 获取章节缓存内容
+    pub fn cache_get_chapter(book_url: String, chapter_index: i32) -> Result<String, BridgeError> {
+        let content = crate::api::cache_api::get_chapter_cache(&book_url, chapter_index)?;
+        Ok(content)
+    }
+
+    // ─── 配置管理 ─────────────────────────────────────
+
+    /// 获取配置项
+    pub fn config_get(key: String) -> Result<String, BridgeError> {
+        let value = crate::api::config_api::get_config(&key)?;
+        Ok(value)
+    }
+
+    /// 设置配置项
+    pub fn config_set(key: String, value: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::config_api::set_config(&key, &value)?;
+        Ok(ok)
+    }
+
+    /// 获取所有配置（JSON 对象）
+    pub fn config_get_all() -> Result<String, BridgeError> {
+        let config = crate::api::config_api::get_all_config()?;
+        to_json(&config)
+    }
+
+    // ─── HTTP TTS 朗读源 ───────────────────────────────────
+
+    /// 获取所有 HTTP TTS 源（JSON 数组）
+    pub fn http_tts_list() -> Result<String, BridgeError> {
+        let list = crate::api::http_tts_api::get_http_tts_list()?;
+        to_json(&list)
+    }
+
+    /// 添加 HTTP TTS 源，返回新 ID
+    pub fn http_tts_add(name: String, url: String) -> Result<i64, BridgeError> {
+        let id = crate::api::http_tts_api::add_http_tts(&name, &url)?;
+        Ok(id)
+    }
+
+    /// 更新 HTTP TTS 源
+    pub fn http_tts_update(id: i64, name: String, url: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::http_tts_api::update_http_tts(id, &name, &url)?;
+        Ok(ok)
+    }
+
+    /// 删除 HTTP TTS 源
+    pub fn http_tts_delete(id: i64) -> Result<bool, BridgeError> {
+        let ok = crate::api::http_tts_api::delete_http_tts(id)?;
+        Ok(ok)
+    }
+
+    /// 设置 HTTP TTS 源启用/禁用
+    pub fn http_tts_set_enabled(id: i64, enabled: bool) -> Result<bool, BridgeError> {
+        let ok = crate::api::http_tts_api::set_http_tts_enabled(id, enabled)?;
+        Ok(ok)
+    }
+
+    // ─── 音频播放进度 ───────────────────────────────────
+
+    /// 获取音频播放进度（毫秒）
+    pub fn audio_get_progress(book_url: String, chapter_index: i32) -> Result<i64, BridgeError> {
+        let pos = crate::api::audio_api::get_audio_progress(&book_url, chapter_index)?;
+        Ok(pos)
+    }
+
+    /// 保存音频播放进度
+    pub fn audio_save_progress(
+        book_url: String,
+        chapter_index: i32,
+        position: i64,
+    ) -> Result<bool, BridgeError> {
+        let ok = crate::api::audio_api::save_audio_progress(&book_url, chapter_index, position)?;
+        Ok(ok)
+    }
 }

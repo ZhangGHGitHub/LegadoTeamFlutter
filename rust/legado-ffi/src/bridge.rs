@@ -734,6 +734,260 @@ pub extern "C" fn ffi_replace_rule_set_enabled(rule_id: i64, enabled: bool) -> *
     }))
 }
 
+// ─── 阅读记录 FFI 函数 ─────────────────────────────────────
+
+/// 获取所有阅读记录
+#[no_mangle]
+pub extern "C" fn ffi_read_record_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::read_record_api::get_read_records))
+}
+
+/// 添加/更新阅读记录
+#[no_mangle]
+pub unsafe extern "C" fn ffi_read_record_upsert(
+    book_name: *const c_char,
+    read_time: i64,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let name = c_char_to_str(book_name)?;
+        crate::api::read_record_api::upsert_read_record(name, read_time)
+    }))
+}
+
+/// 删除阅读记录
+#[no_mangle]
+pub unsafe extern "C" fn ffi_read_record_delete(book_name: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let name = c_char_to_str(book_name)?;
+        crate::api::read_record_api::delete_read_record(name)
+    }))
+}
+
+/// 清空所有阅读记录
+#[no_mangle]
+pub extern "C" fn ffi_read_record_clear() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::read_record_api::clear_read_records()
+    }))
+}
+
+// ─── 书籍分组 FFI 函数 ─────────────────────────────────────
+
+/// 获取所有书籍分组
+#[no_mangle]
+pub extern "C" fn ffi_book_group_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::book_group_api::get_book_groups))
+}
+
+/// 添加书籍分组
+#[no_mangle]
+pub unsafe extern "C" fn ffi_book_group_add(
+    group_name: *const c_char,
+    cover: *const c_char,
+    order: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let name = c_char_to_str(group_name)?;
+        let cov = c_char_to_str(cover)?;
+        crate::api::book_group_api::add_book_group(name, cov, order)
+    }))
+}
+
+/// 更新书籍分组
+#[no_mangle]
+pub unsafe extern "C" fn ffi_book_group_update(
+    id: i64,
+    group_name: *const c_char,
+    cover: *const c_char,
+    order: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let name = c_char_to_str(group_name)?;
+        let cov = c_char_to_str(cover)?;
+        crate::api::book_group_api::update_book_group(id, name, cov, order)
+    }))
+}
+
+/// 删除书籍分组
+#[no_mangle]
+pub extern "C" fn ffi_book_group_delete(id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::book_group_api::delete_book_group(id)
+    }))
+}
+
+/// 设置分组显示状态
+#[no_mangle]
+pub extern "C" fn ffi_book_group_set_show(id: i64, show: bool) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::book_group_api::set_book_group_show(id, show)
+    }))
+}
+
+// ─── 阅读统计 FFI 函数 ─────────────────────────────────────
+
+/// 获取今日阅读统计
+#[no_mangle]
+pub extern "C" fn ffi_stats_today() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::reading_stats_api::get_today_stats))
+}
+
+/// 获取最近 N 天每日统计
+#[no_mangle]
+pub extern "C" fn ffi_stats_daily(days: i32) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::reading_stats_api::get_daily_stats(days)
+    }))
+}
+
+/// 获取按书籍分组的统计
+#[no_mangle]
+pub extern "C" fn ffi_stats_by_book() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::reading_stats_api::get_book_stats))
+}
+
+/// 获取阅读热力图数据
+#[no_mangle]
+pub extern "C" fn ffi_stats_heatmap(days: i32) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::reading_stats_api::get_reading_heatmap(days)
+    }))
+}
+
+// ─── 缓存管理 FFI 函数 ─────────────────────────────────────
+
+/// 获取缓存总大小
+#[no_mangle]
+pub extern "C" fn ffi_cache_get_size() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::cache_api::get_cache_size))
+}
+
+/// 清空所有缓存
+#[no_mangle]
+pub extern "C" fn ffi_cache_clear() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::cache_api::clear_cache))
+}
+
+/// 获取章节缓存内容
+#[no_mangle]
+pub unsafe extern "C" fn ffi_cache_get_chapter(
+    book_url: *const c_char,
+    chapter_index: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::cache_api::get_chapter_cache(url, chapter_index)
+    }))
+}
+
+// ─── 配置管理 FFI 函数 ─────────────────────────────────────
+
+/// 获取配置项
+#[no_mangle]
+pub unsafe extern "C" fn ffi_config_get(key: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let k = c_char_to_str(key)?;
+        crate::api::config_api::get_config(k)
+    }))
+}
+
+/// 设置配置项
+#[no_mangle]
+pub unsafe extern "C" fn ffi_config_set(
+    key: *const c_char,
+    value: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let k = c_char_to_str(key)?;
+        let v = c_char_to_str(value)?;
+        crate::api::config_api::set_config(k, v)
+    }))
+}
+
+/// 获取所有配置
+#[no_mangle]
+pub extern "C" fn ffi_config_get_all() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::config_api::get_all_config))
+}
+
+// ─── HTTP TTS 朗读源 FFI 函数 ───────────────────────────────────
+
+/// 获取所有 HTTP TTS 源
+#[no_mangle]
+pub extern "C" fn ffi_http_tts_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::http_tts_api::get_http_tts_list))
+}
+
+/// 添加 HTTP TTS 源
+#[no_mangle]
+pub unsafe extern "C" fn ffi_http_tts_add(
+    name: *const c_char,
+    url: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let n = c_char_to_str(name)?;
+        let u = c_char_to_str(url)?;
+        crate::api::http_tts_api::add_http_tts(n, u)
+    }))
+}
+
+/// 更新 HTTP TTS 源
+#[no_mangle]
+pub unsafe extern "C" fn ffi_http_tts_update(
+    id: i64,
+    name: *const c_char,
+    url: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let n = c_char_to_str(name)?;
+        let u = c_char_to_str(url)?;
+        crate::api::http_tts_api::update_http_tts(id, n, u)
+    }))
+}
+
+/// 删除 HTTP TTS 源
+#[no_mangle]
+pub extern "C" fn ffi_http_tts_delete(id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::http_tts_api::delete_http_tts(id)
+    }))
+}
+
+/// 设置 HTTP TTS 源启用/禁用
+#[no_mangle]
+pub extern "C" fn ffi_http_tts_set_enabled(id: i64, enabled: bool) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::http_tts_api::set_http_tts_enabled(id, enabled)
+    }))
+}
+
+// ─── 音频播放进度 FFI 函数 ───────────────────────────────────
+
+/// 获取音频播放进度
+#[no_mangle]
+pub unsafe extern "C" fn ffi_audio_get_progress(
+    book_url: *const c_char,
+    chapter_index: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::audio_api::get_audio_progress(url, chapter_index)
+    }))
+}
+
+/// 保存音频播放进度
+#[no_mangle]
+pub unsafe extern "C" fn ffi_audio_save_progress(
+    book_url: *const c_char,
+    chapter_index: i32,
+    position: i64,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::audio_api::save_audio_progress(url, chapter_index, position)
+    }))
+}
+
 // ─── 向后兼容的旧函数名 ────────────────────────────────────
 
 #[no_mangle]
