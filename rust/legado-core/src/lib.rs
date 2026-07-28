@@ -5,6 +5,7 @@ pub mod audio_cache;
 pub mod audio_preload;
 pub mod auto_task;
 pub mod cache_book;
+pub mod chinese_convert;
 pub mod content_help;
 pub mod content_processor;
 pub mod cron;

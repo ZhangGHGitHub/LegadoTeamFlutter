@@ -496,12 +496,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(AppStrings.cancel),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              // TODO(FFI): RustApi.clearCache() 接口就绪后改为后端调用
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(AppStrings.clearCacheInDev)),
-              );
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                final api = context.read<RustApi>();
+                await api.clearCache();
+                messenger.showSnackBar(
+                  SnackBar(content: Text(AppStrings.cacheCleared)),
+                );
+              } catch (e) {
+                messenger.showSnackBar(
+                  SnackBar(content: Text('清除缓存失败: $e')),
+                );
+              }
             },
             child: Text(AppStrings.confirm),
           ),

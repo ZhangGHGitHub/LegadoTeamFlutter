@@ -3,6 +3,8 @@
 //! 参考 Kotlin `AnalyzeRule.kt`，实现统一调度，根据规则前缀或内容类型
 //! 自动选择 HTML(CSS)、XPath、JsonPath、正则 解析引擎。
 
+use std::sync::Arc;
+
 use legado_core::LegadoResult;
 
 use crate::html::HtmlParser;
@@ -10,6 +12,15 @@ use crate::jsonpath::JsonPathParser;
 use crate::regex_engine::RegexEngine;
 use crate::rule_analyzer::RuleAnalyzer;
 use crate::xpath::XPathParser;
+
+/// JavaScript 执行器 trait
+///
+/// 由调用方注入具体实现（如 legado-js 的 QuickJS 引擎），
+/// 解决 legado-parser 与 legado-js 之间的循环依赖问题。
+pub trait JsExecutor: Send + Sync {
+    /// 执行 JavaScript 代码，返回结果字符串
+    fn execute_js(&self, js_code: &str) -> Result<String, String>;
+}
 
 /// 规则类型枚举
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +51,8 @@ pub struct AnalyzeRule {
     cached_content_type: Option<RuleType>,
     /// 内容是否为 JSON 的快速标志
     is_json: bool,
+    /// 可选的 JS 执行器（通过回调注入模式解决跨 crate 循环依赖）
+    js_executor: Option<Arc<dyn JsExecutor>>,
 }
 
 impl AnalyzeRule {
@@ -56,7 +69,24 @@ impl AnalyzeRule {
             regex_engine: RegexEngine::new(),
             cached_content_type: Some(content_type),
             is_json,
+            js_executor: None,
         }
+    }
+
+    /// 创建带有 JS 执行器的规则解析器
+    pub fn with_js_executor(
+        content: String,
+        base_url: String,
+        executor: Arc<dyn JsExecutor>,
+    ) -> Self {
+        let mut rule = Self::new(content, base_url);
+        rule.js_executor = Some(executor);
+        rule
+    }
+
+    /// 设置 JS 执行器
+    pub fn set_js_executor(&mut self, executor: Arc<dyn JsExecutor>) {
+        self.js_executor = Some(executor);
     }
 
     /// 设置解析内容
@@ -109,11 +139,7 @@ impl AnalyzeRule {
             RuleType::Xpath => self.xpath_parser.parse_xpath(&self.content, actual_rule),
             RuleType::Json => self.resolve_json_with_inner(actual_rule),
             RuleType::Regex => self.regex_engine.regex_match(&self.content, actual_rule),
-            RuleType::Js => {
-                // TODO: 调用 JS 引擎执行规则（通过 legado-js crate）
-                // 暂时返回空结果，避免跨 crate 依赖循环
-                Ok(vec![])
-            }
+            RuleType::Js => self.execute_js_rule(actual_rule),
             RuleType::Auto => {
                 let detected = self.detect_rule_type_for_content(actual_rule);
                 match detected {
@@ -171,6 +197,31 @@ impl AnalyzeRule {
     }
 
     // --- 内部方法 ---
+
+    /// 执行 JS 规则
+    ///
+    /// 如果已注入 JsExecutor，则调用其执行 JS 代码；
+    /// 否则降级返回空结果。
+    fn execute_js_rule(&self, js_code: &str) -> LegadoResult<Vec<String>> {
+        if let Some(executor) = &self.js_executor {
+            match executor.execute_js(js_code) {
+                Ok(result) => {
+                    if result.is_empty() {
+                        Ok(vec![])
+                    } else {
+                        Ok(vec![result])
+                    }
+                }
+                Err(e) => Err(legado_core::LegadoError::JsEngine(format!(
+                    "JS 执行失败: {}",
+                    e
+                ))),
+            }
+        } else {
+            // 无执行器时降级返回空结果
+            Ok(vec![])
+        }
+    }
 
     /// 解析 JsonPath 规则，支持 `{$.rule}` 内嵌规则替换
     fn resolve_json_with_inner(&self, rule: &str) -> LegadoResult<Vec<String>> {
@@ -442,5 +493,89 @@ mod tests {
         let result = rule.get_strings("//item").unwrap();
         assert!(!result.is_empty());
         assert_eq!(result[0], "test");
+    }
+
+    // --- JsExecutor 测试 ---
+
+    /// Mock JS 执行器，简单返回固定结果
+    struct MockJsExecutor {
+        result: String,
+    }
+
+    impl JsExecutor for MockJsExecutor {
+        fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+            Ok(self.result.clone())
+        }
+    }
+
+    /// 总是失败的 Mock JS 执行器
+    struct FailingJsExecutor;
+
+    impl JsExecutor for FailingJsExecutor {
+        fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+            Err("模拟执行失败".to_string())
+        }
+    }
+
+    #[test]
+    fn test_js_rule_without_executor_returns_empty() {
+        let rule = AnalyzeRule::new("some content".to_string(), String::new());
+        let result = rule.get_strings("@js:result").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_js_rule_with_executor() {
+        let executor = Arc::new(MockJsExecutor {
+            result: "执行结果".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            "some content".to_string(),
+            String::new(),
+            executor,
+        );
+        let result = rule.get_strings("@js:result").unwrap();
+        assert_eq!(result, vec!["执行结果"]);
+    }
+
+    #[test]
+    fn test_js_rule_with_empty_result() {
+        let executor = Arc::new(MockJsExecutor {
+            result: String::new(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            "some content".to_string(),
+            String::new(),
+            executor,
+        );
+        let result = rule.get_strings("@js:result").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_js_rule_with_failing_executor() {
+        let executor = Arc::new(FailingJsExecutor);
+        let rule = AnalyzeRule::with_js_executor(
+            "some content".to_string(),
+            String::new(),
+            executor,
+        );
+        let result = rule.get_strings("@js:result");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_js_executor() {
+        let mut rule = AnalyzeRule::new("some content".to_string(), String::new());
+        // 无执行器时返回空
+        assert!(rule.get_strings("@js:x").unwrap().is_empty());
+
+        // 设置执行器后正常工作
+        let executor = Arc::new(MockJsExecutor {
+            result: "injected".to_string(),
+        });
+        rule.set_js_executor(executor);
+        let result = rule.get_strings("@js:x").unwrap();
+        assert_eq!(result, vec!["injected"]);
     }
 }

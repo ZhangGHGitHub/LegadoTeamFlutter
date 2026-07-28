@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'models/models.dart';
 import 'screens/association_screen.dart';
 import 'screens/audio_screen.dart';
 import 'screens/auto_task_screen.dart';
@@ -15,6 +16,8 @@ import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/source_screen.dart';
 import 'screens/source_edit_screen.dart';
+import 'screens/rss_source_edit_screen.dart';
+import 'screens/source_debug_screen.dart';
 import 'screens/source_discover_screen.dart';
 
 /// 路由配置
@@ -35,6 +38,8 @@ class AppRoutes {
   static const replaceRules = '/replace_rules';
   static const autoTasks = '/auto_tasks';
   static const association = '/association';
+  static const sourceDebug = '/sources/debug';
+  static const rssSourceEdit = '/rss/edit';
   // rssArticles 和 rssArticleDetail 通过 Navigator.push 传参，不在此注册
 
   static Map<String, WidgetBuilder> get routes => {
@@ -83,5 +88,15 @@ class AppRoutes {
         replaceRules: (_) => const ReplaceRulesScreen(),
         autoTasks: (_) => const AutoTaskScreen(),
         association: (_) => const AssociationScreen(),
+        sourceDebug: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final sourceUrl = args is String ? args : null;
+          return SourceDebugScreen(sourceUrl: sourceUrl);
+        },
+        rssSourceEdit: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final source = args is RssSource ? args : null;
+          return RssSourceEditScreen(source: source);
+        },
       };
 }

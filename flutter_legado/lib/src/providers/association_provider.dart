@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/rust_api.dart';
 import '../services/source_import_service.dart';
@@ -425,13 +426,63 @@ class AssociationProvider extends ChangeNotifier {
 
   /// 导入主题配置
   Future<ImportResult> _importTheme() async {
-    // 主题配置导入（预留实现）
+    var success = 0;
+    var failed = 0;
+    final errors = <String>[];
+
+    for (final item in _previewItems) {
+      if (item is! Map<String, dynamic>) {
+        failed++;
+        errors.add('无效的主题配置格式');
+        continue;
+      }
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+
+        // 解析并应用主题配置字段
+        if (item.containsKey('themeMode')) {
+          final mode = item['themeMode'] as String? ?? 'system';
+          await prefs.setString('app_theme_mode', mode);
+        }
+        if (item.containsKey('fontSize')) {
+          final size = (item['fontSize'] as num?)?.toDouble();
+          if (size != null && size > 0) {
+            await prefs.setDouble('reader_font_size', size);
+          }
+        }
+        if (item.containsKey('lineHeight')) {
+          final height = (item['lineHeight'] as num?)?.toDouble();
+          if (height != null && height > 0) {
+            await prefs.setDouble('reader_line_height', height);
+          }
+        }
+        if (item.containsKey('bgColorIndex')) {
+          final index = (item['bgColorIndex'] as num?)?.toInt();
+          if (index != null && index >= 0) {
+            await prefs.setInt('reader_bg_color_index', index);
+          }
+        }
+        if (item.containsKey('brightness')) {
+          final brightness = (item['brightness'] as num?)?.toDouble();
+          if (brightness != null) {
+            await prefs.setDouble('reader_brightness', brightness);
+          }
+        }
+
+        success++;
+      } catch (e) {
+        failed++;
+        errors.add('导入主题配置失败：$e');
+      }
+    }
+
     return ImportResult(
       total: _previewItems.length,
-      success: 0,
-      failed: 0,
-      skipped: _previewItems.length,
-      errors: ['主题配置导入功能开发中'],
+      success: success,
+      failed: failed,
+      skipped: 0,
+      errors: errors,
     );
   }
 }

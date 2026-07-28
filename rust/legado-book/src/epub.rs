@@ -40,6 +40,8 @@ struct OpfData {
     toc_id: Option<String>,
     /// OPF 文件在 ZIP 中的目录前缀（含尾部 '/'）
     base_path: String,
+    /// 封面 manifest item id（来自 <meta name="cover" content="..."/>）
+    cover_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -55,12 +57,13 @@ impl EpubParser {
             .map_err(|e| LegadoError::BookParse(format!("ZIP 打开失败: {e}")))?;
 
         let opf = read_opf(&mut archive)?;
+        let cover = extract_cover(&mut archive, &opf);
         Ok(BookMetadata {
             title: opf.title,
             author: opf.creator,
             description: opf.description,
             format: BookFormat::Epub,
-            cover: None, // TODO: 提取封面图片
+            cover,
         })
     }
 
@@ -224,6 +227,24 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
                                 .push(String::from_utf8_lossy(&attr.value).to_string());
                         }
                     }
+                } else if in_metadata && local == "meta" {
+                    // EPUB2: <meta name="cover" content="cover-image-id"/>
+                    let mut name_attr = String::new();
+                    let mut content_attr = String::new();
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"name" => {
+                                name_attr = String::from_utf8_lossy(&attr.value).to_string()
+                            }
+                            b"content" => {
+                                content_attr = String::from_utf8_lossy(&attr.value).to_string()
+                            }
+                            _ => {}
+                        }
+                    }
+                    if name_attr == "cover" && !content_attr.is_empty() {
+                        data.cover_id = Some(content_attr);
+                    }
                 }
             }
             Ok(Event::Text(ref e)) => {
@@ -341,6 +362,124 @@ fn parse_ncx_xml(xml: &str) -> LegadoResult<HashMap<String, String>> {
         buf.clear();
     }
     Ok(map)
+}
+
+/// 从 EPUB ZIP 包中提取封面图片字节
+///
+/// 查找优先级：
+/// 1. OPF metadata 中 `<meta name="cover" content="id"/>` 引用的 manifest 图片项
+/// 2. manifest 中 id 或 href 含 "cover" 且 media-type 为 image 的项
+/// 3. 常见封面路径（OEBPS/cover.jpg, OEBPS/images/cover.jpg 等）
+fn extract_cover<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    opf: &OpfData,
+) -> Option<Vec<u8>> {
+    // 策略 1: 通过 meta cover_id 在 manifest 中查找
+    if let Some(ref cover_id) = opf.cover_id {
+        if let Some((href, media_type)) = opf.manifest.get(cover_id) {
+            if media_type.starts_with("image/") {
+                let path = normalize_path(&opf.base_path, href);
+                if let Ok(bytes) = read_zip_entry_bytes(archive, &path) {
+                    if !bytes.is_empty() {
+                        return Some(bytes);
+                    }
+                }
+            }
+        }
+        // cover_id 可能指向一个 XHTML 包装页，尝试在 manifest 中找同名图片
+        // 例如 cover_id="cover" 但 manifest 中有 "cover-image"
+        let img_id = format!("{cover_id}-image");
+        if let Some((href, media_type)) = opf.manifest.get(&img_id) {
+            if media_type.starts_with("image/") {
+                let path = normalize_path(&opf.base_path, href);
+                if let Ok(bytes) = read_zip_entry_bytes(archive, &path) {
+                    if !bytes.is_empty() {
+                        return Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    // 策略 2: 遍历 manifest，查找 id 或 href 含 "cover" 的图片项
+    let mut candidates: Vec<&(String, String)> = opf
+        .manifest
+        .iter()
+        .filter(|(id, (href, media_type))| {
+            media_type.starts_with("image/")
+                && (id.to_lowercase().contains("cover")
+                    || href.to_lowercase().contains("cover"))
+        })
+        .map(|(_, v)| v)
+        .collect();
+    // 优先选择 href 中包含 "cover" 的
+    candidates.sort_by(|a, b| {
+        let a_score = cover_score(&a.0);
+        let b_score = cover_score(&b.0);
+        b_score.cmp(&a_score)
+    });
+    for (href, _) in candidates {
+        let path = normalize_path(&opf.base_path, href);
+        if let Ok(bytes) = read_zip_entry_bytes(archive, &path) {
+            if !bytes.is_empty() {
+                return Some(bytes);
+            }
+        }
+    }
+
+    // 策略 3: 尝试常见封面文件路径
+    let common_paths = [
+        "OEBPS/cover.jpg",
+        "OEBPS/cover.jpeg",
+        "OEBPS/cover.png",
+        "OEBPS/images/cover.jpg",
+        "OEBPS/images/cover.jpeg",
+        "OEBPS/images/cover.png",
+        "OEBPS/Images/cover.jpg",
+        "cover.jpg",
+        "cover.jpeg",
+        "cover.png",
+        "images/cover.jpg",
+        "Images/cover.jpg",
+    ];
+    for path in &common_paths {
+        if let Ok(bytes) = read_zip_entry_bytes(archive, path) {
+            if !bytes.is_empty() {
+                return Some(bytes);
+            }
+        }
+    }
+
+    None
+}
+
+/// 为封面候选路径计算优先级分数
+fn cover_score(href: &str) -> u8 {
+    let lower = href.to_lowercase();
+    let mut score = 0u8;
+    if lower.contains("cover") {
+        score += 2;
+    }
+    if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        score += 1;
+    }
+    score
+}
+
+/// 读取 ZIP 中指定路径的二进制内容
+fn read_zip_entry_bytes<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    name: &str,
+) -> LegadoResult<Vec<u8>> {
+    let name_norm = name.replace('\\', "/");
+    let mut entry = archive
+        .by_name(&name_norm)
+        .map_err(|_| LegadoError::BookParse(format!("ZIP 中未找到: {name_norm}")))?;
+    let mut buf = Vec::new();
+    entry
+        .read_to_end(&mut buf)
+        .map_err(|e| LegadoError::BookParse(format!("读取 ZIP 条目失败: {e}")))?;
+    Ok(buf)
 }
 
 /// 读取 ZIP 中指定路径的文本内容
@@ -506,5 +645,53 @@ mod tests {
     fn test_parse_container_xml_missing_rootfile() {
         let xml = r#"<?xml version="1.0"?><container version="1.0"></container>"#;
         assert!(parse_container_xml(xml).is_err());
+    }
+
+    #[test]
+    fn test_cover_score() {
+        assert_eq!(cover_score("images/cover.jpg"), 3); // cover + jpg
+        assert_eq!(cover_score("images/cover.png"), 2); // cover only
+        assert_eq!(cover_score("images/photo.jpg"), 1); // jpg only
+        assert_eq!(cover_score("images/photo.png"), 0); // nothing
+    }
+
+    #[test]
+    fn test_parse_opf_xml_with_cover_meta() {
+        let opf_xml = r#"<?xml version="1.0"?>
+<package version="2.0">
+  <metadata>
+    <dc:title>测试书籍</dc:title>
+    <meta name="cover" content="cover-image"/>
+  </metadata>
+  <manifest>
+    <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg"/>
+    <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#;
+        let opf = parse_opf_xml(opf_xml, "OEBPS/".to_string()).unwrap();
+        assert_eq!(opf.cover_id, Some("cover-image".to_string()));
+        assert_eq!(opf.title, "测试书籍");
+        assert!(opf.manifest.contains_key("cover-image"));
+    }
+
+    #[test]
+    fn test_parse_opf_xml_without_cover_meta() {
+        let opf_xml = r#"<?xml version="1.0"?>
+<package version="2.0">
+  <metadata>
+    <dc:title>无封面</dc:title>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#;
+        let opf = parse_opf_xml(opf_xml, String::new()).unwrap();
+        assert_eq!(opf.cover_id, None);
     }
 }

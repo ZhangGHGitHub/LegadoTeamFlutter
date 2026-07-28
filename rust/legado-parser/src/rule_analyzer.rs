@@ -469,6 +469,8 @@ impl<'a> RuleAnalyzer<'a> {
             ("regex", &rule[8..])
         } else if lower.starts_with("@regex:") {
             ("regex", &rule[7..])
+        } else if lower.starts_with("@js:") {
+            ("js", &rule[4..])
         } else {
             ("", rule)
         }

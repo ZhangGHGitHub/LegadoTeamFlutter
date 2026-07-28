@@ -9,7 +9,7 @@ pub mod rule_analyzer;
 pub mod rule_complete;
 pub mod xpath;
 
-pub use analyze_rule::{AnalyzeRule, RuleType};
+pub use analyze_rule::{AnalyzeRule, JsExecutor, RuleType};
 pub use analyze_url::{AnalyzeUrl, RequestMethod, UrlOption};
 pub use html::HtmlParser;
 pub use jsonpath::JsonPathParser;

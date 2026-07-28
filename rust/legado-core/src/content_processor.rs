@@ -152,16 +152,14 @@ impl ContentProcessor {
         }
     }
 
-    /// 繁体转简体（桩实现，后续集成 chinese_utils）
+    /// 繁体转简体
     fn traditional_to_simplified(content: &str) -> String {
-        // TODO: 集成 chinese_utils::t2s
-        content.to_string()
+        crate::chinese_convert::traditional_to_simplified(content)
     }
 
-    /// 简体转繁体（桩实现，后续集成 chinese_utils）
+    /// 简体转繁体
     fn simplified_to_traditional(content: &str) -> String {
-        // TODO: 集成 chinese_utils::s2t
-        content.to_string()
+        crate::chinese_convert::simplified_to_traditional(content)
     }
 
     /// 应用替换规则
@@ -464,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn test_chinese_convert_stub() {
+    fn test_chinese_convert_t2s() {
         let config = ProcessorConfig {
             chinese_convert: Some("t2s".to_string()),
             ..noop_config()
@@ -472,7 +470,20 @@ mod tests {
         let processor = ContentProcessor::new(config);
         let content = "測試內容";
         let result = processor.process(content, "", &no_rules());
-        // 桩实现返回原文
+        // 繁体转简体
+        assert_eq!(result, "测试内容");
+    }
+
+    #[test]
+    fn test_chinese_convert_s2t() {
+        let config = ProcessorConfig {
+            chinese_convert: Some("s2t".to_string()),
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config);
+        let content = "测试内容";
+        let result = processor.process(content, "", &no_rules());
+        // 简体转繁体
         assert_eq!(result, "測試內容");
     }
 

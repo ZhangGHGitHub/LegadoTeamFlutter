@@ -599,19 +599,21 @@ cargo test --workspace test_search
 
 ---
 
-## 测试统计（2026-07-26）
+## 测试统计（2026-07-28）
 
 | Crate | 测试数（默认） | 测试数（quickjs） | 备注 |
 |-------|---------------|-------------------|------|
-| legado-core | 126 | 126 | 数据模型、规则、加密、排版、换源、WebBook、CacheBook |
-| legado-parser | 53 | 53 | 4 解析器 + AnalyzeRule + AnalyzeUrl 完整模板 |
-| legado-net | 140 | 140 | HTTP、Cookie、RSS、WebDAV、并发去重、UA/代理/SSL、SourceChecker |
-| legado-js | 34 | 113 | 默认 34 + QuickJS 额外 79（含 platform 桩 2 tests） |
-| legado-book | 36 | 36 | EPUB/TXT/MOBI/PDF |
-| legado-db | 74 | 74 | Schema + 7 Repository + 集成测试 |
-| legado-ffi | 14 | 14 | 30+ FFI 导出 + 换源 + WebBook |
-| legado-server | 57 | 57 | axum + 20+ REST + Web SPA + WebBook + SourceCheck |
-| **合计** | **534** | **613** | Flutter: 15 tests |
+| legado-core | 441 | 441 | 数据模型、规则、加密、排版、换源、WebBook、CacheBook、ReadState、AudioPreload |
+| legado-parser | 67 | 67 | 4 解析器 + AnalyzeRule + AnalyzeUrl + RuleComplete |
+| legado-net | 168 | 168 | HTTP、Cookie、RSS、WebDAV、并发去重、UA/代理/SSL、SourceChecker |
+| legado-js | 142 | 309 | 默认 142 + QuickJS 额外 167（含宿主 API + 沙箱 + SourceEngine） |
+| legado-book | 64 | 64 | EPUB/TXT/MOBI/PDF + 导出服务 |
+| legado-db | 161 | 161 | Schema v95 + 17 Repository + Migration + RoomImporter |
+| legado-ffi | 43 | 43 | 43+ FFI 导出 + 换源 + WebBook + 书签 + 替换规则 |
+| legado-server | 139 | 139 | axum + 49 REST + 3 WS + MCP + 集成测试 |
+| **合计** | **1225** | **1392** | Flutter: 30 tests |
+
+> **总计**：Rust 1225（默认）+ QuickJS 309 + Flutter 30 = **1564 tests**
 
 ---
 

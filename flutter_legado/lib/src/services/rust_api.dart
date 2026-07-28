@@ -131,7 +131,7 @@ class RustApi {
   /// 检查书籍更新（对比本地章节数与网络最新章节数）
   ///
   /// 返回 Map：{'hasUpdate': bool, 'newChapterCount': int, 'latestChapter': String}
-  // TODO: 待 Rust 侧实现 bookshelf_check_update 后替换为单一 FFI 调用
+  /// 注：Rust 侧尚未提供 bookshelf_check_update 单一 FFI，当前通过组合调用实现。
   Future<Map<String, dynamic>> checkUpdate(String bookUrl) async {
     try {
       final book = await getBook(bookUrl);
@@ -791,10 +791,10 @@ class RustApi {
   }
 
   // ===== 备份与恢复 =====
-  // TODO: 待 Rust 侧实现 backup/restore FFI 后替换
+  // 注：Rust 侧尚未提供 backup/restore FFI，当前通过组合已有 FFI 调用实现。
 
   // ===== 阅读记录 =====
-  // TODO: 待 Rust 侧实现 read_record FFI 后替换
+  // 注：Rust 侧尚未提供 read_record FFI，暂用 SharedPreferences 本地持久化。
   static const _kReadRecordKey = 'read_record_list';
 
   /// 获取阅读记录列表
@@ -855,8 +855,8 @@ class RustApi {
     }
   }
 
-  // ===== RSS 订阅 =====
-  // TODO: 待 Rust 侧实现 rss_star FFI 后替换
+  // ===== RSS 收藏 =====
+  // 注：Rust 侧尚未提供 rss_star FFI，暂用 SharedPreferences 本地持久化。
   static const _kRssStarKey = 'rss_star_list';
 
   /// 获取 RSS 收藏/订阅文章列表
@@ -898,7 +898,7 @@ class RustApi {
   }
 
   // ===== 书籍分组 =====
-  // TODO: 待 Rust 侧实现 book_group FFI 后替换
+  // 注：Rust 侧尚未提供 book_group FFI，暂用 SharedPreferences 本地持久化。
   static const _kBookGroupKey = 'book_group_list';
 
   /// 获取所有书籍分组
@@ -1255,7 +1255,7 @@ class RustApi {
     _serverBaseUrl = url;
   }
 
-  // TODO: 待 Rust FFI 实现 http_tts_list / http_tts_add 后替换为 bridge 调用
+  // 注：Rust 侧尚未提供 http_tts FFI，暂用 SharedPreferences 本地持久化。
   static const _kHttpTtsKey = 'http_tts_list';
 
   /// 获取所有 HTTP TTS 朗读引擎
@@ -1326,7 +1326,6 @@ class RustApi {
   }
 
   /// 批量导入 HTTP TTS 朗读引擎，返回成功导入数量
-  // TODO: 待 Rust 侧实现 http_tts_import 后替换为 FFI 调用
   Future<int> importTts(String jsonArray) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1353,7 +1352,6 @@ class RustApi {
   }
 
   /// 导出所有 HTTP TTS 朗读引擎为 JSON 数组字符串
-  // TODO: 待 Rust 侧实现 http_tts_export 后替换为 FFI 调用
   Future<String> exportTts() async {
     try {
       final list = await getHttpTts();
