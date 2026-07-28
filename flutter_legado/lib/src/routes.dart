@@ -19,6 +19,8 @@ import 'screens/source_edit_screen.dart';
 import 'screens/rss_source_edit_screen.dart';
 import 'screens/source_debug_screen.dart';
 import 'screens/source_discover_screen.dart';
+import 'screens/read_aloud_config_screen.dart';
+import 'screens/theme_config_screen.dart';
 
 /// 路由配置
 class AppRoutes {
@@ -40,6 +42,8 @@ class AppRoutes {
   static const association = '/association';
   static const sourceDebug = '/sources/debug';
   static const rssSourceEdit = '/rss/edit';
+  static const readAloudConfig = '/read_aloud_config';
+  static const themeConfig = '/theme_config';
   // rssArticles 和 rssArticleDetail 通过 Navigator.push 传参，不在此注册
 
   static Map<String, WidgetBuilder> get routes => {
@@ -98,5 +102,7 @@ class AppRoutes {
           final source = args is RssSource ? args : null;
           return RssSourceEditScreen(source: source);
         },
+        readAloudConfig: (_) => const ReadAloudConfigScreen(),
+        themeConfig: (_) => const ThemeConfigScreen(),
       };
 }
