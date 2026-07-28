@@ -50,7 +50,10 @@ mod tests {
     fn test_cache_apis() {
         crate::db_state::ensure_test_db();
 
-        // 初始缓存大小为 0
+        // 先清空缓存确保测试隔离
+        clear_cache().unwrap();
+
+        // 清空后缓存大小为 0
         let size = get_cache_size().unwrap();
         assert_eq!(size, 0);
 

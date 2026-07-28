@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/association_provider.dart';
+import '../routes.dart';
 
 /// 统一关联导入页面
 ///
@@ -30,6 +31,23 @@ class _AssociationScreenState extends State<AssociationScreen> {
       appBar: AppBar(
         title: const Text('关联导入'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: '扫码导入',
+            onPressed: () async {
+              final navigator = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
+              final result = await navigator.pushNamed<String>(
+                AppRoutes.qrcode,
+              );
+              if (result != null && result.isNotEmpty) {
+                _urlController.text = result;
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('扫码内容已填入，请继续导入流程')),
+                );
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '重置',

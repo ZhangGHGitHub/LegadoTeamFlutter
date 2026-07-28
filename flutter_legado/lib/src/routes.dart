@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'models/models.dart';
 import 'screens/about_screen.dart';
 import 'screens/association_screen.dart';
+import 'screens/browser_screen.dart';
+import 'screens/dict_screen.dart';
 import 'screens/audio_screen.dart';
 import 'screens/auto_task_screen.dart';
 import 'screens/book_group_screen.dart';
@@ -11,8 +13,10 @@ import 'screens/bookmark_screen.dart';
 import 'screens/change_cover_screen.dart';
 import 'screens/change_source_screen.dart';
 import 'screens/discover_screen.dart';
+import 'screens/font_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/import_screen.dart';
+import 'screens/qrcode_screen.dart';
 import 'screens/search_content_screen.dart';
 import 'screens/reading_stats_screen.dart';
 import 'screens/reader_screen.dart';
@@ -29,6 +33,7 @@ import 'screens/source_discover_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
 import 'screens/theme_config_screen.dart';
 import 'screens/txt_toc_rules_screen.dart';
+import 'screens/welcome_screen.dart';
 
 /// 路由配置
 class AppRoutes {
@@ -60,6 +65,11 @@ class AppRoutes {
   static const rssFavorites = '/rss/favorites';
   static const changeCover = '/change_cover';
   static const txtTocRules = '/txt_toc_rules';
+  static const dict = '/dict';
+  static const fonts = '/fonts';
+  static const qrcode = '/qrcode';
+  static const welcome = '/welcome';
+  static const browser = '/browser';
   // rssArticles 和 rssArticleDetail 通过 Navigator.push 传参，不在此注册
 
   static Map<String, WidgetBuilder> get routes => {
@@ -147,5 +157,14 @@ class AppRoutes {
           return const ChangeCoverScreen(bookUrl: '', bookName: '');
         },
         txtTocRules: (_) => const TxtTocRulesScreen(),
+        dict: (_) => const DictScreen(),
+        fonts: (_) => const FontScreen(),
+        qrcode: (_) => const QrcodeScreen(),
+        welcome: (_) => const WelcomeScreen(),
+        browser: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final url = args is String ? args : null;
+          return BrowserScreen(initialUrl: url);
+        },
       };
 }

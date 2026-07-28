@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../providers/source_provider.dart';
+import '../routes.dart';
 import '../services/rust_api.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -328,6 +329,12 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
             ],
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.menu_book_outlined),
+              tooltip: '字典查询',
+              onPressed: () =>
+                  Navigator.pushNamed(context, AppRoutes.dict),
+            ),
             TextButton.icon(
               icon: const Icon(Icons.save),
               label: const Text('保存'),

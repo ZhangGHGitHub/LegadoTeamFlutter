@@ -172,6 +172,18 @@ pub struct Book {
     /// 同步时间
     #[serde(default, rename = "syncTime")]
     pub sync_time: i64,
+    /// 书籍详情页HTML
+    #[serde(skip_serializing_if = "Option::is_none", rename = "infoHtml")]
+    pub info_html: Option<String>,
+    /// 目录页HTML
+    #[serde(skip_serializing_if = "Option::is_none", rename = "tocHtml")]
+    pub toc_html: Option<String>,
+    /// 下载URL列表(JSON)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "downloadUrls")]
+    pub download_urls: Option<String>,
+    /// 封面原始URL
+    #[serde(skip_serializing_if = "Option::is_none", rename = "coverOrigin")]
+    pub cover_origin: Option<String>,
 }
 
 impl Default for Book {
@@ -210,6 +222,10 @@ impl Default for Book {
             variable: None,
             read_config: None,
             sync_time: 0,
+            info_html: None,
+            toc_html: None,
+            download_urls: None,
+            cover_origin: None,
         }
     }
 }

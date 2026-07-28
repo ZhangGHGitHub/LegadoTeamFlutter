@@ -129,6 +129,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text('字体、行距、背景色综合设置'),
             onTap: () => Navigator.pushNamed(context, AppRoutes.themeConfig),
           ),
+          ListTile(
+            leading: const Icon(Icons.font_download_outlined),
+            title: const Text('字体管理'),
+            subtitle: const Text('系统字体切换与自定义字体导入'),
+            onTap: () => Navigator.pushNamed(context, AppRoutes.fonts),
+          ),
           const Divider(),
 
           // ===== 阅读设置 =====

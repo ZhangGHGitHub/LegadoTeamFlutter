@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
@@ -1073,59 +1072,45 @@ class RustApi {
 
   // ========== 用户管理 ==========
 
-  /// 获取所有用户（使用 SharedPreferences 存储）
+  /// 获取所有用户
   Future<List<Map<String, dynamic>>> getUsers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString('legado_users') ?? '[]';
-    final list = jsonDecode(jsonStr) as List<dynamic>;
-    return list.map((e) => e as Map<String, dynamic>).toList();
+    final json = await bridge.userGetAll();
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
-  /// 保存用户（使用 SharedPreferences 存储）
-  Future<Map<String, dynamic>> saveUser(Map<String, dynamic> user) async {
-    final prefs = await SharedPreferences.getInstance();
-    final users = await getUsers();
-    final username = user['username'] as String? ?? '';
-    users.removeWhere((u) => u['username'] == username);
-    users.add(user);
-    await prefs.setString('legado_users', jsonEncode(users));
-    return user;
+  /// 保存用户，返回用户 ID
+  Future<int> saveUser({
+    required String username,
+    required String password,
+    required String sourceUrl,
+  }) async {
+    final id = await bridge.userSave(
+      username: username,
+      password: password,
+      sourceUrl: sourceUrl,
+    );
+    return id.toInt();
   }
 
   /// 删除用户
-  Future<void> deleteUser(String username) async {
-    final prefs = await SharedPreferences.getInstance();
-    final users = await getUsers();
-    users.removeWhere((u) => u['username'] == username);
-    await prefs.setString('legado_users', jsonEncode(users));
-    // 同时清除该用户的登录状态
-    await prefs.remove('legado_login_$username');
-  }
+  Future<bool> deleteUser(String username) =>
+      bridge.userDelete(username: username);
 
-  /// 检查登录状态（检查是否有存储的 cookie）
-  Future<bool> checkLoginStatus(String sourceUrl) async {
-    final prefs = await SharedPreferences.getInstance();
-    final cookie = prefs.getString('legado_cookie_$sourceUrl');
-    return cookie != null && cookie.isNotEmpty;
-  }
+  /// 用户登录
+  Future<bool> userLogin({
+    required String username,
+    required String password,
+  }) =>
+      bridge.userLogin(username: username, password: password);
 
-  /// 登录（待 FFI 实现完整登录流程，当前存储凭据）
-  Future<String> login(String sourceUrl, String username, String password) async {
-    final prefs = await SharedPreferences.getInstance();
-    // 存储登录信息（实际登录需通过书源 loginUrl 完成）
-    await prefs.setString('legado_login_$sourceUrl', jsonEncode({
-      'username': username,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    }));
-    return jsonEncode({'success': true, 'sourceUrl': sourceUrl});
-  }
+  /// 用户登出
+  Future<bool> userLogout(String username) =>
+      bridge.userLogout(username: username);
 
-  /// 退出登录（清除存储的登录信息）
-  Future<void> logout(String sourceUrl) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('legado_login_$sourceUrl');
-    await prefs.remove('legado_cookie_$sourceUrl');
-  }
+  /// 检查登录状态
+  Future<bool> checkLoginStatus(String username) =>
+      bridge.userCheckLogin(username: username);
 }
 
 /// 搜索结果包装

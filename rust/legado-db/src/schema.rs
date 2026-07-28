@@ -56,6 +56,12 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 caches 表失败: {e}")))?;
     conn.execute_batch(CREATE_HTTP_TTS)
         .map_err(|e| LegadoError::Database(format!("创建 http_tts 表失败: {e}")))?;
+    conn.execute_batch(CREATE_USERS)
+        .map_err(|e| LegadoError::Database(format!("创建 users 表失败: {e}")))?;
+    conn.execute_batch(CREATE_DICT_RULES)
+        .map_err(|e| LegadoError::Database(format!("创建 dict_rules 表失败: {e}")))?;
+    conn.execute_batch(CREATE_KEYBOARD_ASSISTS)
+        .map_err(|e| LegadoError::Database(format!("创建 keyboard_assists 表失败: {e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -103,6 +109,10 @@ CREATE TABLE IF NOT EXISTS books (
     variable TEXT,
     readConfig TEXT,
     syncTime INTEGER NOT NULL DEFAULT 0,
+    infoHtml TEXT DEFAULT '',
+    tocHtml TEXT DEFAULT '',
+    downloadUrls TEXT DEFAULT '',
+    coverOrigin TEXT DEFAULT '',
     PRIMARY KEY(bookUrl)
 );
 ";
@@ -454,6 +464,41 @@ CREATE TABLE IF NOT EXISTS http_tts (
     content_type TEXT DEFAULT '',
     is_enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL
+);
+";
+
+pub const CREATE_USERS: &str = "
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT DEFAULT '',
+    source_url TEXT DEFAULT '',
+    token TEXT DEFAULT '',
+    is_logged_in INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+";
+
+pub const CREATE_DICT_RULES: &str = "
+CREATE TABLE IF NOT EXISTS dict_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    url_rule TEXT DEFAULT '',
+    show_rule TEXT DEFAULT '',
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+";
+
+pub const CREATE_KEYBOARD_ASSISTS: &str = "
+CREATE TABLE IF NOT EXISTS keyboard_assists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT DEFAULT '',
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0
 );
 ";
 

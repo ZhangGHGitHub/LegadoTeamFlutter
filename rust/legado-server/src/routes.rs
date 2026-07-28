@@ -199,11 +199,11 @@ fn api_routes() -> Router<Arc<AppState>> {
         .route("/ws/search", get(ws::search_ws::ws_search))
         .route(
             "/ws/debug/book-source",
-            get(ws::debug_ws::ws_debug_book_source),
+            get(ws::book_source_debug::ws_book_source_debug),
         )
         .route(
             "/ws/debug/rss-source",
-            get(ws::debug_ws::ws_debug_rss_source),
+            get(ws::rss_source_debug::ws_rss_source_debug),
         )
 }
 

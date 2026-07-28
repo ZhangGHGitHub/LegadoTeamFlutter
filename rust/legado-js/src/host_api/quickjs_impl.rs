@@ -20,8 +20,9 @@
 use legado_core::LegadoError;
 
 use crate::host_api::{
-    chinese_utils, cookie_store, crypto_api, encoding, file_utils, html_format, json_utils,
-    network, regex_utils, register::mount_dual, string_utils, time_utils, variable_store,
+    chinese_utils, concurrency_api, config_api, cookie_store, crypto_api, encoding, file_utils,
+    html_format, json_utils, misc_api, network, regex_utils, register::mount_dual, string_utils,
+    time_utils, variable_store,
 };
 use rquickjs::function::Opt;
 
@@ -49,6 +50,9 @@ pub fn register_all_apis<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoErro
     register_crypto_apis(ctx, &java, &globals)?;
     register_html_apis(ctx, &java, &globals)?;
     register_chinese_apis(ctx, &java, &globals)?;
+    register_config_apis(ctx, &java, &globals)?;
+    register_concurrency_apis(ctx, &java, &globals)?;
+    register_misc_apis(ctx, &java, &globals)?;
 
     // 将 java 命名空间对象注册到全局
     globals
@@ -1006,6 +1010,215 @@ fn register_chinese_apis<'js>(
         "s2t",
         rquickjs::Function::new(ctx.clone(), |text: String| -> String {
             chinese_utils::s2t(&text)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    Ok(())
+}
+
+/// 注册配置读取 API
+///
+/// 对应 Kotlin 端 `JsExtensions` 中的 getReadBookConfig / getThemeConfig / getThemeMode /
+/// getWebViewUA / androidId 等方法。
+fn register_config_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+    globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    // getReadBookConfig() -> String
+    mount_dual(
+        java,
+        globals,
+        "getReadBookConfig",
+        rquickjs::Function::new(ctx.clone(), || -> String {
+            config_api::get_read_book_config()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getThemeConfig() -> String
+    mount_dual(
+        java,
+        globals,
+        "getThemeConfig",
+        rquickjs::Function::new(ctx.clone(), || -> String {
+            config_api::get_theme_config()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getThemeMode() -> String
+    mount_dual(
+        java,
+        globals,
+        "getThemeMode",
+        rquickjs::Function::new(ctx.clone(), || -> String {
+            config_api::get_theme_mode()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getWebViewUA() -> String
+    mount_dual(
+        java,
+        globals,
+        "getWebViewUA",
+        rquickjs::Function::new(ctx.clone(), || -> String {
+            config_api::get_web_view_ua()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // androidId() -> String
+    mount_dual(
+        java,
+        globals,
+        "androidId",
+        rquickjs::Function::new(ctx.clone(), || -> String {
+            config_api::get_android_id()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    Ok(())
+}
+
+/// 注册并发控制 API
+///
+/// 对应 Kotlin 端 `JsExtensions` 中的 singleFlight / lock / tick 方法。
+fn register_concurrency_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+    globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    // singleFlight(key, waitMs, fJs) -> String
+    mount_dual(
+        java,
+        globals,
+        "singleFlight",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |key: String, wait_ms: i64, f_js: String| -> String {
+                concurrency_api::single_flight(key, wait_ms, f_js)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // lock(key, waitMs) -> Boolean
+    mount_dual(
+        java,
+        globals,
+        "lock",
+        rquickjs::Function::new(ctx.clone(), |key: String, wait_ms: i64| -> bool {
+            concurrency_api::lock(key, wait_ms)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // tick(key) -> Int
+    mount_dual(
+        java,
+        globals,
+        "tick",
+        rquickjs::Function::new(ctx.clone(), |key: String| -> i64 {
+            concurrency_api::tick(key)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    Ok(())
+}
+
+/// 注册杂项 API
+///
+/// 对应 Kotlin 端 `JsExtensions` 中的 connect / getSource / getTag /
+/// ajaxTestAll / toUrl / toast / logType 等方法。
+fn register_misc_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+    globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    // connect(url, header) -> String
+    mount_dual(
+        java,
+        globals,
+        "connect",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, header: Opt<String>| -> String {
+                misc_api::connect(&url, header.0.as_deref().unwrap_or(""))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getSource(sourceUrl) -> String
+    mount_dual(
+        java,
+        globals,
+        "getSource",
+        rquickjs::Function::new(ctx.clone(), |source_url: String| -> String {
+            misc_api::get_source(&source_url)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getTag(tagName) -> String
+    mount_dual(
+        java,
+        globals,
+        "getTag",
+        rquickjs::Function::new(ctx.clone(), |tag_name: String| -> String {
+            misc_api::get_tag(&tag_name)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // ajaxTestAll(urls) -> String
+    mount_dual(
+        java,
+        globals,
+        "ajaxTestAll",
+        rquickjs::Function::new(ctx.clone(), |urls: String| -> String {
+            misc_api::ajax_test_all(&urls)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // toUrl(path, query) -> String
+    mount_dual(
+        java,
+        globals,
+        "toUrl",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |path: String, query: Opt<String>| -> String {
+                misc_api::to_url(&path, query.0.as_deref().unwrap_or(""))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // toast(msg) -> String
+    mount_dual(
+        java,
+        globals,
+        "toast",
+        rquickjs::Function::new(ctx.clone(), |msg: String| -> String {
+            misc_api::toast(&msg)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // logType(value) -> String
+    mount_dual(
+        java,
+        globals,
+        "logType",
+        rquickjs::Function::new(ctx.clone(), |value: String| -> String {
+            misc_api::log_type(&value)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;

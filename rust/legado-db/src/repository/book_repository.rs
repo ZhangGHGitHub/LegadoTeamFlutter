@@ -27,7 +27,8 @@ impl<'a> BookRepository<'a> {
                         \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
-                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime
+                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
+                        infoHtml, tocHtml, downloadUrls, coverOrigin
                  FROM books WHERE bookUrl = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -53,7 +54,8 @@ impl<'a> BookRepository<'a> {
                         \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
-                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime
+                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
+                        infoHtml, tocHtml, downloadUrls, coverOrigin
                  FROM books WHERE name = ?1 AND author = ?2",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -155,7 +157,8 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                         \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
-                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime
+                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
+                        infoHtml, tocHtml, downloadUrls, coverOrigin
                  FROM books ORDER BY \"order\" ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -182,9 +185,11 @@ impl<'a> Repository<Book> for BookRepository<'a> {
               \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
               lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
               durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
-              wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime)
+              wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
+              infoHtml, tocHtml, downloadUrls, coverOrigin)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,
-                     ?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33)",
+                     ?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,
+                     ?34,?35,?36,?37)",
                 params![
                     item.book_url,
                     item.toc_url,
@@ -219,6 +224,10 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                     item.variable,
                     read_config_json,
                     item.sync_time,
+                    item.info_html,
+                    item.toc_html,
+                    item.download_urls,
+                    item.cover_origin,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
@@ -273,6 +282,10 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
         variable: row.get(30)?,
         read_config,
         sync_time: row.get(32)?,
+        info_html: row.get(33)?,
+        toc_html: row.get(34)?,
+        download_urls: row.get(35)?,
+        cover_origin: row.get(36)?,
     })
 }
 

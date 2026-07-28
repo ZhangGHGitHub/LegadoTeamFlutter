@@ -6,6 +6,8 @@
 #[cfg(feature = "quickjs")]
 pub mod archive_utils;
 pub mod chinese_utils;
+pub mod concurrency_api;
+pub mod config_api;
 pub mod cookie_store;
 pub mod crypto_api;
 pub mod encoding;
@@ -13,6 +15,7 @@ pub mod env;
 pub mod file_utils;
 pub mod html_format;
 pub mod json_utils;
+pub mod misc_api;
 #[cfg(feature = "quickjs")]
 pub mod network;
 pub mod platform;

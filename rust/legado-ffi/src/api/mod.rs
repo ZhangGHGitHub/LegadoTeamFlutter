@@ -23,4 +23,5 @@ pub mod search_history_api;
 pub mod server_api;
 pub mod source;
 pub mod source_switch;
+pub mod user_api;
 pub mod web_book;

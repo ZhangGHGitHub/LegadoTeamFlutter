@@ -838,4 +838,46 @@ pub mod ffi {
     pub fn server_status() -> String {
         crate::api::server_api::server_status()
     }
+
+    // ─── 用户管理 ─────────────────────────────────────
+
+    /// 获取所有用户（JSON 数组）
+    pub fn user_get_all() -> Result<String, BridgeError> {
+        let json = crate::api::user_api::get_users()?;
+        Ok(json)
+    }
+
+    /// 保存用户，返回用户 ID
+    pub fn user_save(
+        username: String,
+        password: String,
+        source_url: String,
+    ) -> Result<i64, BridgeError> {
+        let id = crate::api::user_api::save_user(&username, &password, &source_url)?;
+        Ok(id)
+    }
+
+    /// 删除用户
+    pub fn user_delete(username: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::user_api::delete_user(&username)?;
+        Ok(ok)
+    }
+
+    /// 用户登录
+    pub fn user_login(username: String, password: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::user_api::login(&username, &password)?;
+        Ok(ok)
+    }
+
+    /// 用户登出
+    pub fn user_logout(username: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::user_api::logout(&username)?;
+        Ok(ok)
+    }
+
+    /// 检查登录状态
+    pub fn user_check_login(username: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::user_api::check_login_status(&username)?;
+        Ok(ok)
+    }
 }

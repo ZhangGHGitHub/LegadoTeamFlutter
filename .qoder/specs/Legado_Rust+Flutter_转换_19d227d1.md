@@ -410,7 +410,7 @@ QA Agent 负责：
 | 维度 | 现状 | 缺口 |
 |------|------|------|
 | Flutter 测试 | 6 文件 / 15 tests | 无阅读器深度测试、无网络 mock、无集成测试 |
-| Android 实机 | 从未执行 | 交叉编译→APK→真机全链路未验证 |
+| Android 实机 | 已验证 | 交叉编译→APK→雷电模拟器(x86_64) 全链路已跑通 |
 | 端到端流程 | 未跑通 | 书源导入→搜索→阅读全流程不可用 |
 | CI 发布 | 仅手动 | 缺 Flutter APK 构建 + Rust 交叉编译自动发布 |
 
@@ -420,7 +420,7 @@ QA Agent 负责：
 |---|------|------|------|
 | 1 | 阅读器深度实现（翻页动画/排版/段评/朗读条） | Flutter reader | 4-6 周 |
 | 2 | FFI 补齐 audio/auto_task/stats/sync API | legado-ffi | 1-2 周 |
-| 3 | Android 实机编译验证 | Integration | 1 周 |
+| 3 | Android 实机编译验证 | Integration | ✅ 已完成 |
 | 4 | 书源编辑器完善（JS 源/调试/验证） | Flutter source_edit | 2-3 周 |
 | 5 | RSS 阅读深度实现（WebView/JS/收藏） | Flutter rss | 2 周 |
 | 6 | Flutter 测试覆盖提升 | test/ | 2 周 |
@@ -428,3 +428,74 @@ QA Agent 负责：
 | 8 | 书源调试页面 | Flutter 新增 | 1 周 |
 | 9 | 主框架/导航完善 | Flutter home | 1 周 |
 | 10 | CI 自动发布流程 | .github/workflows | 1 周 |
+
+---
+
+## Android 构建流程（已验证）
+
+### 环境要求
+
+| 工具 | 路径/版本 | 用途 |
+|------|----------|------|
+| Android NDK | `D:\Android\ndk\28.2.13676358` | Rust 交叉编译链接器 |
+| Rust targets | `aarch64-linux-android`, `x86_64-linux-android`, `armv7-linux-androideabi` | 多架构编译 |
+| Flutter | 系统 PATH | APK 构建 |
+| ADB | `D:\Android\platform-tools\adb.exe` | 安装/调试 |
+
+### 一键构建
+
+```powershell
+cd flutter_legado
+.\scripts\build-apk.ps1                    # 构建 debug APK 并安装到设备
+.\scripts\build-apk.ps1 -Targets "x86_64"  # 仅编译模拟器架构（更快）
+.\scripts\build-apk.ps1 -SkipRust          # 跳过 Rust 编译（.so 已存在）
+.\scripts\build-apk.ps1 -Release           # Release 模式
+```
+
+### 手动分步构建
+
+```powershell
+# Step 1: Rust 交叉编译（自动复制 .so 到 jniLibs）
+cd rust
+.\scripts\build-android.ps1 -Mode release -Targets "aarch64,x86_64"
+
+# Step 2: Flutter 构建 APK
+cd ..\flutter_legado
+flutter build apk --debug
+
+# Step 3: 安装到设备
+D:\Android\platform-tools\adb.exe install -r build\app\outputs\flutter-apk\app-debug.apk
+D:\Android\platform-tools\adb.exe shell am start -n "io.legado.flutter_legado/io.legado.flutter.MainActivity"
+```
+
+### 构建链路说明
+
+```
+rust/scripts/build-android.ps1
+  ├─ 自动检测 NDK 路径
+  ├─ 设置 CC/AR 环境变量（NDK clang）
+  ├─ cargo build --release --target <triple> -p legado-ffi
+  └─ 复制 .so → flutter_legado/android/app/src/main/jniLibs/<abi>/
+
+flutter build apk
+  ├─ build.gradle.kts 配置 jniLibs.srcDirs("src/main/jniLibs")
+  ├─ 自动检测：若 jniLibs 为空，Gradle copyRustLibs 任务从 rust/target 复制
+  └─ APK 打包包含 lib/<abi>/liblegado_ffi.so
+```
+
+### 关键技术决策
+
+| 决策 | 原因 |
+|------|------|
+| reqwest `default-features = false` + `rustls-tls` | 避免 OpenSSL 交叉编译（需 Perl，本机未安装） |
+| rustls 替代 native-tls | 纯 Rust TLS，无 C 依赖，Android 交叉编译零障碍 |
+| .so 不入库（.gitignore） | 二进制产物 ~22MB/架构，由构建脚本生成 |
+| jniLibs 标准目录 | Gradle 自动打包，无需额外配置 |
+
+### 验证记录
+
+- ✅ x86_64-linux-android 编译成功（雷电模拟器 ABI）
+- ✅ aarch64-linux-android 编译成功（真机 ABI）
+- ✅ APK 包含 liblegado_ffi.so（x86_64: 22.3MB, arm64-v8a: 22.7MB）
+- ✅ 雷电模拟器安装启动零错误，FFI 初始化成功
+- ✅ Windows `cargo check -p legado-ffi` 通过（不影响桌面端）

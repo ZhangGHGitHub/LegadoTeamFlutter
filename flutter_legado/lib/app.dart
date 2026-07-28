@@ -4,7 +4,10 @@ import 'src/routes.dart';
 
 /// Legado App 入口 Widget
 class LegadoApp extends StatelessWidget {
-  const LegadoApp({super.key});
+  /// 初始路由（首次启动时为欢迎页）
+  final String initialRoute;
+
+  const LegadoApp({super.key, this.initialRoute = AppRoutes.home});
 
   @override
   Widget build(BuildContext context) {
@@ -14,6 +17,7 @@ class LegadoApp extends StatelessWidget {
       theme: _buildLightTheme(),
       darkTheme: _buildDarkTheme(),
       themeMode: ThemeMode.system,
+      initialRoute: initialRoute,
       routes: AppRoutes.routes,
     );
   }

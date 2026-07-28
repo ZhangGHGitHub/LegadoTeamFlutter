@@ -14,7 +14,7 @@ axum = { version = "0.8", features = ["ws", "json"] }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2", "charset"] }
 base64 = { workspace = true }
 urlencoding = "2.1"
 tower-http = { version = "0.6", features = ["cors", "fs"] }

@@ -577,3 +577,36 @@ Future<String> serverStop() => RustLib.instance.api.crateFfiFfiServerStop();
 
 /// 获取服务器状态（JSON）
 Future<String> serverStatus() => RustLib.instance.api.crateFfiFfiServerStatus();
+
+/// 获取所有用户（JSON 数组）
+Future<String> userGetAll() => RustLib.instance.api.crateFfiFfiUserGetAll();
+
+/// 保存用户，返回用户 ID
+Future<PlatformInt64> userSave({
+  required String username,
+  required String password,
+  required String sourceUrl,
+}) => RustLib.instance.api.crateFfiFfiUserSave(
+  username: username,
+  password: password,
+  sourceUrl: sourceUrl,
+);
+
+/// 删除用户
+Future<bool> userDelete({required String username}) =>
+    RustLib.instance.api.crateFfiFfiUserDelete(username: username);
+
+/// 用户登录
+Future<bool> userLogin({required String username, required String password}) =>
+    RustLib.instance.api.crateFfiFfiUserLogin(
+      username: username,
+      password: password,
+    );
+
+/// 用户登出
+Future<bool> userLogout({required String username}) =>
+    RustLib.instance.api.crateFfiFfiUserLogout(username: username);
+
+/// 检查登录状态
+Future<bool> userCheckLogin({required String username}) =>
+    RustLib.instance.api.crateFfiFfiUserCheckLogin(username: username);

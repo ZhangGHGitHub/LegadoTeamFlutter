@@ -1050,6 +1050,74 @@ pub extern "C" fn ffi_server_status() -> *mut c_char {
     }
 }
 
+// ─── 用户管理 ────────────────────────────────────────
+
+/// 获取所有用户
+#[no_mangle]
+pub extern "C" fn ffi_user_get_all() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| crate::api::user_api::get_users()))
+}
+
+/// 保存用户
+#[no_mangle]
+pub unsafe extern "C" fn ffi_user_save(
+    username: *const c_char,
+    password: *const c_char,
+    source_url: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let u = c_char_to_str(username)?;
+        let p = c_char_to_str(password)?;
+        let s = c_char_to_str(source_url)?;
+        crate::api::user_api::save_user(u, p, s)
+    });
+    to_ffi_response(result)
+}
+
+/// 删除用户
+#[no_mangle]
+pub unsafe extern "C" fn ffi_user_delete(username: *const c_char) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let u = c_char_to_str(username)?;
+        crate::api::user_api::delete_user(u)
+    });
+    to_ffi_response(result)
+}
+
+/// 用户登录
+#[no_mangle]
+pub unsafe extern "C" fn ffi_user_login(
+    username: *const c_char,
+    password: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let u = c_char_to_str(username)?;
+        let p = c_char_to_str(password)?;
+        crate::api::user_api::login(u, p)
+    });
+    to_ffi_response(result)
+}
+
+/// 用户登出
+#[no_mangle]
+pub unsafe extern "C" fn ffi_user_logout(username: *const c_char) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let u = c_char_to_str(username)?;
+        crate::api::user_api::logout(u)
+    });
+    to_ffi_response(result)
+}
+
+/// 检查登录状态
+#[no_mangle]
+pub unsafe extern "C" fn ffi_user_check_login(username: *const c_char) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let u = c_char_to_str(username)?;
+        crate::api::user_api::check_login_status(u)
+    });
+    to_ffi_response(result)
+}
+
 // ─── 向后兼容的旧函数名 ────────────────────────────────────
 
 #[no_mangle]
