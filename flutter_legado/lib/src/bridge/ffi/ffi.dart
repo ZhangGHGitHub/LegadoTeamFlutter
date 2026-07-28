@@ -555,3 +555,25 @@ Future<bool> audioSaveProgress({
   chapterIndex: chapterIndex,
   position: position,
 );
+
+/// 创建备份到指定路径，返回备份文件路径
+Future<String> backupCreate({required String path}) =>
+    RustLib.instance.api.crateFfiFfiBackupCreate(path: path);
+
+/// 从备份文件恢复，返回恢复统计（JSON）
+Future<String> backupRestore({required String path}) =>
+    RustLib.instance.api.crateFfiFfiBackupRestore(path: path);
+
+/// 列出备份文件（JSON 数组）
+Future<String> backupList({required String dir}) =>
+    RustLib.instance.api.crateFfiFfiBackupList(dir: dir);
+
+/// 启动 legado-server，返回状态消息
+Future<String> serverStart({required int port}) =>
+    RustLib.instance.api.crateFfiFfiServerStart(port: port);
+
+/// 停止服务器
+Future<String> serverStop() => RustLib.instance.api.crateFfiFfiServerStop();
+
+/// 获取服务器状态（JSON）
+Future<String> serverStatus() => RustLib.instance.api.crateFfiFfiServerStatus();

@@ -792,4 +792,41 @@ pub mod ffi {
         let ok = crate::api::audio_api::save_audio_progress(&book_url, chapter_index, position)?;
         Ok(ok)
     }
+
+    // ─── 备份/恢复 ───────────────────────────────────────
+
+    /// 创建备份到指定路径，返回备份文件路径
+    pub fn backup_create(path: String) -> Result<String, BridgeError> {
+        let result = crate::api::backup_api::backup_create(&path)?;
+        Ok(result)
+    }
+
+    /// 从备份文件恢复，返回恢复统计（JSON）
+    pub fn backup_restore(path: String) -> Result<String, BridgeError> {
+        let result = crate::api::backup_api::backup_restore(&path)?;
+        Ok(result)
+    }
+
+    /// 列出备份文件（JSON 数组）
+    pub fn backup_list(dir: String) -> String {
+        crate::api::backup_api::backup_list(&dir)
+    }
+
+    // ─── 服务器管理 ─────────────────────────────────────
+
+    /// 启动 legado-server，返回状态消息
+    pub fn server_start(port: u16) -> Result<String, BridgeError> {
+        let msg = crate::api::server_api::server_start(port)?;
+        Ok(msg)
+    }
+
+    /// 停止服务器
+    pub fn server_stop() -> String {
+        crate::api::server_api::server_stop()
+    }
+
+    /// 获取服务器状态（JSON）
+    pub fn server_status() -> String {
+        crate::api::server_api::server_status()
+    }
 }

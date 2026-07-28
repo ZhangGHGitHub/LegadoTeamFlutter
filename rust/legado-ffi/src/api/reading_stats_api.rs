@@ -108,7 +108,7 @@ pub fn get_book_stats() -> LegadoResult<Vec<BookStatsDto>> {
                 total_word_count: words,
             })
             .collect();
-        result.sort_by(|a, b| b.total_reading_time_ms.cmp(&a.total_reading_time_ms));
+        result.sort_by_key(|b| std::cmp::Reverse(b.total_reading_time_ms));
         Ok(result)
     })
 }

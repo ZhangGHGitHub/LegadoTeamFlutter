@@ -13,6 +13,7 @@ legado-net = { path = "../legado-net" }
 legado-js = { path = "../legado-js" }
 legado-book = { path = "../legado-book" }
 legado-db = { path = "../legado-db" }
+legado-server = { path = "../legado-server" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

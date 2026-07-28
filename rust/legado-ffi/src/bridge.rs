@@ -988,6 +988,66 @@ pub unsafe extern "C" fn ffi_audio_save_progress(
     }))
 }
 
+// ─── 备份/恢复 FFI 函数 ─────────────────────────────────────
+
+/// 创建备份
+#[no_mangle]
+pub unsafe extern "C" fn ffi_backup_create(path: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        crate::api::backup_api::backup_create(p)
+    }))
+}
+
+/// 从备份恢复
+#[no_mangle]
+pub unsafe extern "C" fn ffi_backup_restore(path: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        crate::api::backup_api::backup_restore(p)
+    }))
+}
+
+/// 列出备份文件
+#[no_mangle]
+pub unsafe extern "C" fn ffi_backup_list(dir: *const c_char) -> *mut c_char {
+    match catch_unwind(|| {
+        let d = c_char_to_str(dir).unwrap_or("");
+        crate::api::backup_api::backup_list(d)
+    }) {
+        Ok(result) => to_c_char(&result),
+        Err(_) => to_c_char("[]"),
+    }
+}
+
+// ─── 服务器管理 FFI 函数 ───────────────────────────────────
+
+/// 启动服务器
+#[no_mangle]
+pub extern "C" fn ffi_server_start(port: u16) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::server_api::server_start(port)
+    }))
+}
+
+/// 停止服务器
+#[no_mangle]
+pub extern "C" fn ffi_server_stop() -> *mut c_char {
+    match catch_unwind(crate::api::server_api::server_stop) {
+        Ok(result) => to_c_char(&result),
+        Err(_) => to_c_char("Server stop failed"),
+    }
+}
+
+/// 获取服务器状态
+#[no_mangle]
+pub extern "C" fn ffi_server_status() -> *mut c_char {
+    match catch_unwind(crate::api::server_api::server_status) {
+        Ok(result) => to_c_char(&result),
+        Err(_) => to_c_char(r#"{"running":false,"port":0}"#),
+    }
+}
+
 // ─── 向后兼容的旧函数名 ────────────────────────────────────
 
 #[no_mangle]
