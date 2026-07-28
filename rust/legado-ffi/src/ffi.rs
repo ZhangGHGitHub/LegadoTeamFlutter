@@ -300,6 +300,58 @@ pub mod ffi {
         to_json(&articles)
     }
 
+    // ─── RSS 收藏 ────────────────────────────────────────
+
+    /// 获取所有 RSS 收藏（JSON 数组）
+    pub fn rss_star_list() -> Result<String, BridgeError> {
+        let stars = crate::api::rss_star_api::get_rss_stars()?;
+        to_json(&stars)
+    }
+
+    /// 添加 RSS 收藏，返回收藏时间戳
+    pub fn rss_star_add(source_url: String, title: String, link: String) -> Result<i64, BridgeError> {
+        let ts = crate::api::rss_star_api::add_rss_star(&source_url, &title, &link)?;
+        Ok(ts)
+    }
+
+    /// 取消 RSS 收藏（按 link 删除）
+    pub fn rss_star_delete(link: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::rss_star_api::delete_rss_star(&link)?;
+        Ok(ok)
+    }
+
+    /// 判断是否已收藏
+    pub fn rss_star_is_starred(link: String) -> Result<bool, BridgeError> {
+        let starred = crate::api::rss_star_api::is_rss_starred(&link)?;
+        Ok(starred)
+    }
+
+    // ─── 搜索历史 ────────────────────────────────────────
+
+    /// 获取最近搜索历史（JSON 数组）
+    pub fn search_history_list(limit: i32) -> Result<String, BridgeError> {
+        let history = crate::api::search_history_api::get_search_history(limit)?;
+        to_json(&history)
+    }
+
+    /// 添加搜索关键词，返回时间戳
+    pub fn search_history_add(keyword: String, book_name: String) -> Result<i64, BridgeError> {
+        let ts = crate::api::search_history_api::add_search_keyword(&keyword, &book_name)?;
+        Ok(ts)
+    }
+
+    /// 删除搜索关键词
+    pub fn search_history_delete(keyword: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::search_history_api::delete_search_keyword(&keyword)?;
+        Ok(ok)
+    }
+
+    /// 清空搜索历史
+    pub fn search_history_clear() -> Result<bool, BridgeError> {
+        let ok = crate::api::search_history_api::clear_search_history()?;
+        Ok(ok)
+    }
+
     // ─── 换源 ───────────────────────────────────────────────
 
     /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）
@@ -429,12 +481,25 @@ pub mod ffi {
 
     // ─── JS 引擎 ──────────────────────────────────────────────
 
-    /// 执行 JS 脚本，返回结果字符串
+    /// 执行 JS 脚本，返回结果字符串（启用 quickjs feature 时使用真实引擎）
+    #[cfg(feature = "quickjs")]
     pub fn js_eval(script: String) -> Result<String, BridgeError> {
-        let engine = legado_js::StubJsEngine::new();
+        use legado_js::engine::QuickJsEngine;
         use legado_js::JsEngine;
-        let result_str = engine.eval(&script)?;
-        Ok(result_str)
+        use legado_js::SandboxConfig;
+        let engine = QuickJsEngine::new(SandboxConfig::permissive())
+            .map_err(|e| BridgeError { message: e.to_string() })?;
+        let result = engine.eval(&script)?;
+        Ok(result)
+    }
+
+    /// 执行 JS 脚本（未启用 quickjs 时返回错误）
+    #[cfg(not(feature = "quickjs"))]
+    pub fn js_eval(script: String) -> Result<String, BridgeError> {
+        let _ = &script;
+        Err(BridgeError {
+            message: "QuickJS engine not enabled".to_string(),
+        })
     }
 
     // ─── 书签管理 ─────────────────────────────────────────────

@@ -418,6 +418,87 @@ pub unsafe extern "C" fn ffi_rss_fetch_articles(source_url: *const c_char) -> *m
     }))
 }
 
+// ─── RSS 收藏 FFI 函数 ─────────────────────────────────────
+
+/// 获取所有 RSS 收藏
+#[no_mangle]
+pub extern "C" fn ffi_rss_star_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::rss_star_api::get_rss_stars))
+}
+
+/// 添加 RSS 收藏
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_star_add(
+    source_url: *const c_char,
+    title: *const c_char,
+    link: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(source_url)?;
+        let t = c_char_to_str(title)?;
+        let l = c_char_to_str(link)?;
+        crate::api::rss_star_api::add_rss_star(url, t, l)
+    }))
+}
+
+/// 取消 RSS 收藏
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_star_delete(link: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let l = c_char_to_str(link)?;
+        crate::api::rss_star_api::delete_rss_star(l)
+    }))
+}
+
+/// 判断是否已收藏
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_star_is_starred(link: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let l = c_char_to_str(link)?;
+        crate::api::rss_star_api::is_rss_starred(l)
+    }))
+}
+
+// ─── 搜索历史 FFI 函数 ─────────────────────────────────────
+
+/// 获取最近搜索历史
+#[no_mangle]
+pub extern "C" fn ffi_search_history_list(limit: i32) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::search_history_api::get_search_history(limit)
+    }))
+}
+
+/// 添加搜索关键词
+#[no_mangle]
+pub unsafe extern "C" fn ffi_search_history_add(
+    keyword: *const c_char,
+    book_name: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let kw = c_char_to_str(keyword)?;
+        let bn = c_char_to_str(book_name)?;
+        crate::api::search_history_api::add_search_keyword(kw, bn)
+    }))
+}
+
+/// 删除搜索关键词
+#[no_mangle]
+pub unsafe extern "C" fn ffi_search_history_delete(keyword: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let kw = c_char_to_str(keyword)?;
+        crate::api::search_history_api::delete_search_keyword(kw)
+    }))
+}
+
+/// 清空搜索历史
+#[no_mangle]
+pub extern "C" fn ffi_search_history_clear() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::search_history_api::clear_search_history()
+    }))
+}
+
 // ─── HTTP FFI 函数 ──────────────────────────────────────────
 
 /// HTTP GET 请求
@@ -473,16 +554,27 @@ pub unsafe extern "C" fn ffi_parse_rule(
 
 // ─── JS 引擎 FFI 函数 ───────────────────────────────────────
 
-/// 执行 JS 脚本
+/// 执行 JS 脚本（启用 quickjs feature 时使用真实引擎）
+#[cfg(feature = "quickjs")]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_js_eval(script: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let script_str = c_char_to_str(script)?;
-        let engine = legado_js::StubJsEngine::new();
+        use legado_js::engine::QuickJsEngine;
         use legado_js::JsEngine;
+        use legado_js::SandboxConfig;
+        let engine = QuickJsEngine::new(SandboxConfig::permissive())?;
         let result_str = engine.eval(script_str)?;
         Ok::<_, LegadoError>(serde_json::json!({ "result": result_str }))
     }))
+}
+
+/// 执行 JS 脚本（未启用 quickjs 时返回错误）
+#[cfg(not(feature = "quickjs"))]
+#[no_mangle]
+pub unsafe extern "C" fn ffi_js_eval(script: *const c_char) -> *mut c_char {
+    let _ = script;
+    FfiResponse::<()>::failure(-1, "QuickJS engine not enabled").into_raw()
 }
 
 // ─── 换源 FFI 函数 ──────────────────────────────────────────────

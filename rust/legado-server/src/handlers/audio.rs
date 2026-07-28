@@ -66,6 +66,21 @@ pub enum PlayAction {
     SetMode { mode: PlayMode },
 }
 
+/// 章节媒体请求
+#[derive(Debug, Deserialize)]
+pub struct ChapterMediaRequest {
+    pub book_url: String,
+    pub chapter_index: i32,
+}
+
+/// 章节媒体响应
+#[derive(Debug, Serialize)]
+pub struct ChapterMediaResponse {
+    pub media_url: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub title: String,
+}
+
 /// 播放控制请求
 #[derive(Debug, Deserialize)]
 pub struct PlayControlRequest {
@@ -220,6 +235,21 @@ pub async fn play_control(
     }))
 }
 
+/// POST /api/audio/chapter-media — 获取章节音频媒体信息
+pub async fn get_chapter_media(
+    State(_state): State<Arc<AppState>>,
+    Json(req): Json<ChapterMediaRequest>,
+) -> Result<Json<ChapterMediaResponse>, ApiError> {
+    // 当前为简化实现，返回空媒体信息
+    // 完整实现需要解析书源规则获取实际音频 URL
+    let title = format!("Chapter {}", req.chapter_index + 1);
+    Ok(Json(ChapterMediaResponse {
+        media_url: None,
+        duration_ms: None,
+        title,
+    }))
+}
+
 /// 辅助：向 URL 追加 query 参数
 fn append_query(url: &str, key: &str, value: &str) -> String {
     let encoded_value = urlencoding::encode(value);
@@ -345,5 +375,33 @@ mod tests {
             result2,
             "https://tts.example.com/speak?voice=zh-CN&speed=2.0"
         );
+    }
+
+    #[tokio::test]
+    async fn test_audio_chapter_media_endpoint() {
+        let app = make_test_router();
+        let body = serde_json::json!({
+            "book_url": "https://example.com/book/1",
+            "chapter_index": 0
+        });
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/audio/chapter-media")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.get("title").is_some());
+        assert_eq!(json["title"], "Chapter 1");
     }
 }

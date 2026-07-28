@@ -18,6 +18,7 @@ pub mod search;
 pub mod source;
 pub mod source_check;
 pub mod source_update;
+pub mod stats;
 pub mod toc_update;
 pub mod tts;
 pub mod web_book;

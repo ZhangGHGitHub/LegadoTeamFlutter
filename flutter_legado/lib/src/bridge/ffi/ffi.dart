@@ -179,6 +179,49 @@ Future<void> rssDeleteSource({required String sourceUrl}) =>
 Future<String> rssFetchArticles({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssFetchArticles(sourceUrl: sourceUrl);
 
+/// 获取所有 RSS 收藏（JSON 数组）
+Future<String> rssStarList() => RustLib.instance.api.crateFfiFfiRssStarList();
+
+/// 添加 RSS 收藏，返回收藏时间戳
+Future<PlatformInt64> rssStarAdd({
+  required String sourceUrl,
+  required String title,
+  required String link,
+}) => RustLib.instance.api.crateFfiFfiRssStarAdd(
+  sourceUrl: sourceUrl,
+  title: title,
+  link: link,
+);
+
+/// 取消 RSS 收藏（按 link 删除）
+Future<bool> rssStarDelete({required String link}) =>
+    RustLib.instance.api.crateFfiFfiRssStarDelete(link: link);
+
+/// 判断是否已收藏
+Future<bool> rssStarIsStarred({required String link}) =>
+    RustLib.instance.api.crateFfiFfiRssStarIsStarred(link: link);
+
+/// 获取最近搜索历史（JSON 数组）
+Future<String> searchHistoryList({required int limit}) =>
+    RustLib.instance.api.crateFfiFfiSearchHistoryList(limit: limit);
+
+/// 添加搜索关键词，返回时间戳
+Future<PlatformInt64> searchHistoryAdd({
+  required String keyword,
+  required String bookName,
+}) => RustLib.instance.api.crateFfiFfiSearchHistoryAdd(
+  keyword: keyword,
+  bookName: bookName,
+);
+
+/// 删除搜索关键词
+Future<bool> searchHistoryDelete({required String keyword}) =>
+    RustLib.instance.api.crateFfiFfiSearchHistoryDelete(keyword: keyword);
+
+/// 清空搜索历史
+Future<bool> searchHistoryClear() =>
+    RustLib.instance.api.crateFfiFfiSearchHistoryClear();
+
 /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）
 ///
 /// `book_name` — 当前书籍名称
@@ -276,7 +319,7 @@ Future<String> parseRule({
   ruleType: ruleType,
 );
 
-/// 执行 JS 脚本，返回结果字符串
+/// 执行 JS 脚本（未启用 quickjs 时返回错误）
 Future<String> jsEval({required String script}) =>
     RustLib.instance.api.crateFfiFfiJsEval(script: script);
 

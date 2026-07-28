@@ -2,12 +2,14 @@
 
 pub mod auto_task_repository;
 pub mod book_chapter_repository;
+pub mod book_group_repository;
 pub mod book_repository;
 pub mod book_source_repository;
 pub mod bookmark_repository;
 pub mod cache_book_repository;
 pub mod cache_repository;
 pub mod cookie_repository;
+pub mod read_record_repository;
 pub mod reading_stats_repository;
 pub mod replace_rule_repository;
 pub mod review_repository;

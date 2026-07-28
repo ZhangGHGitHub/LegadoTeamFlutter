@@ -54,7 +54,7 @@ impl SingleFlight {
         );
 
         let state = {
-            let mut map = self.flights.lock().unwrap();
+            let mut map = self.flights.lock().unwrap_or_else(|e| e.into_inner());
             map.entry(key.to_string())
                 .or_insert_with(|| {
                     Arc::new(FlightState {
@@ -67,17 +67,17 @@ impl SingleFlight {
                 .clone()
         };
 
-        let entry_epoch = { *state.epoch.lock().unwrap() };
+        let entry_epoch = { *state.epoch.lock().unwrap_or_else(|e| e.into_inner()) };
 
         // 尝试成为执行者
         {
-            let mut running = state.running.lock().unwrap();
+            let mut running = state.running.lock().unwrap_or_else(|e| e.into_inner());
             if *running {
                 // 已有执行者，等待结果
                 let deadline = Instant::now() + Duration::from_millis(wait_ms);
-                let mut result_guard = state.result.lock().unwrap();
+                let mut result_guard = state.result.lock().unwrap_or_else(|e| e.into_inner());
                 loop {
-                    if *state.epoch.lock().unwrap() != entry_epoch {
+                    if *state.epoch.lock().unwrap_or_else(|e| e.into_inner()) != entry_epoch {
                         // 结果已更新
                         return result_guard.clone();
                     }
@@ -89,7 +89,7 @@ impl SingleFlight {
                     let (guard, timeout) =
                         state.notify.wait_timeout(result_guard, remaining).unwrap();
                     result_guard = guard;
-                    if timeout.timed_out() && *state.epoch.lock().unwrap() == entry_epoch {
+                    if timeout.timed_out() && *state.epoch.lock().unwrap_or_else(|e| e.into_inner()) == entry_epoch {
                         return None;
                     }
                 }
@@ -103,15 +103,15 @@ impl SingleFlight {
 
         // 存储结果并通知
         {
-            let mut result_guard = state.result.lock().unwrap();
+            let mut result_guard = state.result.lock().unwrap_or_else(|e| e.into_inner());
             *result_guard = Some(result.clone());
         }
         {
-            let mut epoch = state.epoch.lock().unwrap();
+            let mut epoch = state.epoch.lock().unwrap_or_else(|e| e.into_inner());
             *epoch += 1;
         }
         {
-            let mut running = state.running.lock().unwrap();
+            let mut running = state.running.lock().unwrap_or_else(|e| e.into_inner());
             *running = false;
         }
         state.notify.notify_all();
@@ -154,7 +154,7 @@ impl SourceLock {
         );
 
         let entry = {
-            let mut map = self.locks.lock().unwrap();
+            let mut map = self.locks.lock().unwrap_or_else(|e| e.into_inner());
             map.entry(key.to_string())
                 .or_insert_with(|| {
                     Arc::new(LockEntry {
@@ -260,8 +260,8 @@ impl TickCounter {
 
     /// 自增计数并返回新值
     pub fn tick(&self, key: &str) -> u64 {
-        let mut map = self.counters.lock().unwrap();
-        let mut order = self.order.lock().unwrap();
+        let mut map = self.counters.lock().unwrap_or_else(|e| e.into_inner());
+        let mut order = self.order.lock().unwrap_or_else(|e| e.into_inner());
 
         if !map.contains_key(key) && map.len() >= self.max_entries {
             // LRU 淘汰最早的 key
@@ -282,17 +282,17 @@ impl TickCounter {
 
     /// 获取当前计数值
     pub fn get(&self, key: &str) -> u64 {
-        self.counters.lock().unwrap().get(key).copied().unwrap_or(0)
+        self.counters.lock().unwrap_or_else(|e| e.into_inner()).get(key).copied().unwrap_or(0)
     }
 
     /// 当前条目数
     pub fn len(&self) -> usize {
-        self.counters.lock().unwrap().len()
+        self.counters.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// 是否为空
     pub fn is_empty(&self) -> bool {
-        self.counters.lock().unwrap().is_empty()
+        self.counters.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
     }
 }
 

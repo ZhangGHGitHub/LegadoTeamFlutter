@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1195885461;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 164986119;
 
 // Section: executor
 
@@ -1220,6 +1220,140 @@ fn wire__crate__ffi__ffi__rss_list_sources_impl(
         },
     )
 }
+fn wire__crate__ffi__ffi__rss_star_add_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "rss_star_add",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_source_url = <String>::sse_decode(&mut deserializer);
+            let api_title = <String>::sse_decode(&mut deserializer);
+            let api_link = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok =
+                        crate::ffi::ffi::rss_star_add(api_source_url, api_title, api_link)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__rss_star_delete_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "rss_star_delete",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_link = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::rss_star_delete(api_link)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__rss_star_is_starred_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "rss_star_is_starred",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_link = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::rss_star_is_starred(api_link)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__rss_star_list_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "rss_star_list",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::rss_star_list()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__ffi__search_books_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1283,6 +1417,139 @@ fn wire__crate__ffi__ffi__search_cancel_impl(
                     let output_ok = Result::<_, ()>::Ok({
                         crate::ffi::ffi::search_cancel();
                     })?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__search_history_add_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "search_history_add",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_keyword = <String>::sse_decode(&mut deserializer);
+            let api_book_name = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok =
+                        crate::ffi::ffi::search_history_add(api_keyword, api_book_name)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__search_history_clear_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "search_history_clear",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::search_history_clear()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__search_history_delete_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "search_history_delete",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_keyword = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::search_history_delete(api_keyword)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__search_history_list_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "search_history_list",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_limit = <i32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::search_history_list(api_limit)?;
                     Ok(output_ok)
                 })())
             }
@@ -1974,25 +2241,33 @@ fn pde_ffi_dispatcher_primary_impl(
         32 => wire__crate__ffi__ffi__rss_delete_source_impl(port, ptr, rust_vec_len, data_len),
         33 => wire__crate__ffi__ffi__rss_fetch_articles_impl(port, ptr, rust_vec_len, data_len),
         34 => wire__crate__ffi__ffi__rss_list_sources_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__ffi__ffi__search_books_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__ffi__ffi__search_cancel_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__ffi__ffi__search_multi_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__ffi__ffi__source_add_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__ffi__ffi__source_delete_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__ffi__ffi__source_disable_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__ffi__ffi__source_enable_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__ffi__ffi__source_export_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__ffi__ffi__source_import_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__ffi__ffi__source_list_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__ffi__ffi__source_list_enabled_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__ffi__ffi__source_switch_apply_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__ffi__ffi__source_switch_search_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__ffi__ffi__source_update_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__ffi__ffi__rss_star_add_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__ffi__ffi__rss_star_delete_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__ffi__ffi__rss_star_is_starred_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__ffi__ffi__rss_star_list_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__ffi__ffi__search_books_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__ffi__ffi__search_cancel_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__ffi__ffi__search_history_add_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__ffi__ffi__search_history_clear_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__ffi__ffi__search_history_delete_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__ffi__ffi__search_history_list_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__ffi__ffi__search_multi_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__ffi__ffi__source_add_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__ffi__ffi__source_delete_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__ffi__ffi__source_disable_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__ffi__ffi__source_enable_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__ffi__ffi__source_export_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__ffi__ffi__source_import_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__ffi__ffi__source_list_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__ffi__ffi__source_list_enabled_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__ffi__ffi__source_switch_apply_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__ffi__ffi__source_switch_search_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__ffi__ffi__source_update_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

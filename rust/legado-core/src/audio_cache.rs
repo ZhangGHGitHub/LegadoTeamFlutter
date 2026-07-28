@@ -95,25 +95,25 @@ impl AudioCacheManager {
 
     /// 检查章节是否已缓存
     pub fn is_cached(&self, chapter_url: &str) -> bool {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         entries.get(chapter_url).is_some_and(|e| e.is_complete)
     }
 
     /// 获取缓存文件路径
     pub fn get_cache_path(&self, chapter_url: &str) -> Option<PathBuf> {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         entries.get(chapter_url).map(|e| e.file_path.clone())
     }
 
     /// 添加缓存条目
     pub fn add_entry(&self, entry: AudioCacheEntry) {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         entries.insert(entry.chapter_url.clone(), entry);
     }
 
     /// 移除缓存条目
     pub fn remove_entry(&self, chapter_url: &str) -> Result<(), String> {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = entries.remove(chapter_url) {
             if entry.file_path.exists() {
                 std::fs::remove_file(&entry.file_path).map_err(|e| e.to_string())?;
@@ -124,7 +124,7 @@ impl AudioCacheManager {
 
     /// 获取缓存状态
     pub fn status(&self) -> AudioCacheStatus {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let total_entries = entries.len();
         let total_size: u64 = entries.values().map(|e| e.file_size).sum();
         let books: std::collections::HashSet<&str> =
@@ -145,7 +145,7 @@ impl AudioCacheManager {
     pub fn cleanup_expired(&self) -> usize {
         let now = now_millis();
         let max_age_ms = self.policy.max_age_days * 24 * 3600 * 1000;
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let expired: Vec<String> = entries
             .iter()
             .filter(|(_, e)| now - e.cached_at > max_age_ms)
@@ -165,7 +165,7 @@ impl AudioCacheManager {
 
     /// LRU 清理（按最后访问时间）
     pub fn cleanup_lru(&self, target_count: usize) -> usize {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         if entries.len() <= target_count {
             return 0;
         }
@@ -191,14 +191,14 @@ impl AudioCacheManager {
 
     /// 添加下载任务到队列
     pub fn enqueue_download(&self, item: CacheDownloadItem) {
-        self.download_queue.lock().unwrap().push(item);
+        self.download_queue.lock().unwrap_or_else(|e| e.into_inner()).push(item);
     }
 
     /// 获取待下载数量
     pub fn pending_count(&self) -> usize {
         self.download_queue
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .filter(|i| i.status == DownloadStatus::Pending)
             .count()
@@ -222,13 +222,13 @@ impl AudioCacheManager {
 
     /// 按书籍获取缓存条目数
     pub fn entries_for_book(&self, book_url: &str) -> usize {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         entries.values().filter(|e| e.book_url == book_url).count()
     }
 
     /// 清除指定书籍的所有缓存
     pub fn clear_book_cache(&self, book_url: &str) -> usize {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let keys: Vec<String> = entries
             .iter()
             .filter(|(_, e)| e.book_url == book_url)
@@ -247,7 +247,7 @@ impl AudioCacheManager {
 
     /// 更新最后访问时间
     pub fn touch(&self, chapter_url: &str) {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = entries.get_mut(chapter_url) {
             entry.last_accessed = now_millis();
         }
@@ -255,7 +255,7 @@ impl AudioCacheManager {
 
     /// 检查是否需要触发清理
     pub fn needs_cleanup(&self) -> bool {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let total_size: u64 = entries.values().map(|e| e.file_size).sum();
         let threshold =
             (self.policy.max_cache_size_bytes as f64 * self.policy.cleanup_threshold) as u64;
@@ -469,7 +469,7 @@ mod tests {
         let mgr = AudioCacheManager::new(test_dir(), AudioCachePolicy::default());
         mgr.add_entry(make_entry("ch1", "book1", 0, 1024, 1000));
         mgr.touch("ch1");
-        let entries = mgr.entries.lock().unwrap();
+        let entries = mgr.entries.lock().unwrap_or_else(|e| e.into_inner());
         let entry = entries.get("ch1").unwrap();
         assert!(entry.last_accessed > 1000);
     }

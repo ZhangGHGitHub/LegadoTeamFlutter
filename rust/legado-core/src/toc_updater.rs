@@ -86,7 +86,7 @@ impl TocUpdater {
 
     /// 开始批量更新
     pub fn start_batch(&self, requests: Vec<TocUpdateRequest>) {
-        let mut progress = self.progress.lock().unwrap();
+        let mut progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         progress.total = requests.len();
         progress.completed = 0;
         progress.failed = 0;
@@ -108,7 +108,7 @@ impl TocUpdater {
 
     /// 标记单本开始更新
     pub fn mark_updating(&self, book_url: &str) {
-        let mut progress = self.progress.lock().unwrap();
+        let mut progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(r) = progress.results.iter_mut().find(|r| r.book_url == book_url) {
             r.status = UpdateState::Updating;
             progress.updating += 1;
@@ -117,7 +117,7 @@ impl TocUpdater {
 
     /// 标记单本更新完成
     pub fn mark_completed(&self, book_url: &str, new_chapters: i32) {
-        let mut progress = self.progress.lock().unwrap();
+        let mut progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(r) = progress.results.iter_mut().find(|r| r.book_url == book_url) {
             r.status = UpdateState::Completed;
             r.new_chapters = new_chapters;
@@ -129,7 +129,7 @@ impl TocUpdater {
 
     /// 标记单本更新失败
     pub fn mark_failed(&self, book_url: &str, error: &str) {
-        let mut progress = self.progress.lock().unwrap();
+        let mut progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(r) = progress.results.iter_mut().find(|r| r.book_url == book_url) {
             r.status = UpdateState::Failed;
             r.error = Some(error.to_string());
@@ -140,18 +140,18 @@ impl TocUpdater {
 
     /// 完成批量更新
     pub fn finish_batch(&self) {
-        let mut progress = self.progress.lock().unwrap();
+        let mut progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         progress.is_running = false;
     }
 
     /// 获取当前进度
     pub fn get_progress(&self) -> BatchUpdateProgress {
-        self.progress.lock().unwrap().clone()
+        self.progress.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// 获取需要更新的书籍（Pending 状态）
     pub fn pending_requests(&self) -> Vec<String> {
-        let progress = self.progress.lock().unwrap();
+        let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         progress
             .results
             .iter()
@@ -162,13 +162,13 @@ impl TocUpdater {
 
     /// 是否可以开始新任务（并发控制）
     pub fn can_start_next(&self) -> bool {
-        let progress = self.progress.lock().unwrap();
+        let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         progress.is_running && progress.updating < self.max_concurrent
     }
 
     /// 重置进度
     pub fn reset(&self) {
-        let mut progress = self.progress.lock().unwrap();
+        let mut progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         *progress = BatchUpdateProgress {
             total: 0,
             completed: 0,

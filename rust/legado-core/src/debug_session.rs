@@ -143,7 +143,7 @@ impl Debugger {
             started_at: now_millis(),
             completed_at: None,
         };
-        self.sessions.lock().unwrap().push(session);
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner()).push(session);
         id
     }
 
@@ -152,7 +152,7 @@ impl Debugger {
         if let Some(session) = self
             .sessions
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter_mut()
             .find(|s| s.id == session_id)
         {
@@ -165,7 +165,7 @@ impl Debugger {
         if let Some(session) = self
             .sessions
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter_mut()
             .find(|s| s.id == session_id)
         {
@@ -178,7 +178,7 @@ impl Debugger {
     pub fn get_session(&self, session_id: &str) -> Option<DebugSession> {
         self.sessions
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .find(|s| s.id == session_id)
             .cloned()
@@ -186,7 +186,7 @@ impl Debugger {
 
     /// 获取调试日志（格式化输出）
     pub fn get_log(&self, session_id: &str) -> String {
-        let sessions = self.sessions.lock().unwrap();
+        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(session) = sessions.iter().find(|s| s.id == session_id) {
             let mut log = format!("=== Debug Session: {} ===\n", session.source_name);
             log.push_str(&format!("Source: {}\n", session.source_url));
@@ -226,12 +226,12 @@ impl Debugger {
 
     /// 列出所有调试会话
     pub fn list_sessions(&self) -> Vec<DebugSession> {
-        self.sessions.lock().unwrap().clone()
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// 删除指定会话
     pub fn remove_session(&self, session_id: &str) -> bool {
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let len_before = sessions.len();
         sessions.retain(|s| s.id != session_id);
         sessions.len() < len_before
@@ -239,7 +239,7 @@ impl Debugger {
 
     /// 清除所有已完成的会话
     pub fn clear_completed(&self) -> usize {
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let len_before = sessions.len();
         sessions.retain(|s| s.status == "running");
         len_before - sessions.len()
