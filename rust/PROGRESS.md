@@ -6,14 +6,14 @@
 
 ## 总览
 
-- **已完成**：125 / 125 原子任务（100%）
-- **测试状态**：cargo test 1244 passed（默认，exclude ffi）/ 1553 passed（含 QuickJS + FFI）| flutter test 108 passed | flutter analyze 0 issues
+- **已完成**：129 / 129 原子任务（100%）
+- **测试状态**：cargo test 1244 passed（默认，exclude ffi）/ 1553 passed（含 QuickJS + FFI）| flutter test 151 passed | flutter analyze 0 issues
 - **QuickJS feature**：309 tests passed | legado-ffi：57 tests passed
-- **里程碑**：🎉 UnimplementedError 清零 + backup/server FFI 6 新函数 + codegen 重新生成 + 125 任务全部完成
+- **里程碑**：🎉 Flutter UI 完善（15 屏幕 + 10 组件）+ APK 构建成功 + 模拟器安装验证通过
 
 ---
 
-## 已完成（125/125 原子任务）
+## 已完成（129/129 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -281,6 +281,21 @@
 - codegen 重新生成：flutter_rust_bridge_codegen generate 最新绑定
 - 质量门禁：cargo test 1244 passed / legado-ffi 57 passed / quickjs 309 passed / clippy 0 warnings / flutter test 108 passed / flutter analyze 0 issues
 
+### 阶段 19：Flutter UI 完善 + APK 构建（Task #126-#129） ✅
+
+- [x] Task #126: AndroidManifest 修复 + APK 构建成功（android:label 冲突修复 + flutter build apk --debug 通过）
+- [x] Task #127: P0-P1 屏幕补全（ImportBookScreen 本地导入 + BookGroupScreen 分组管理 + SearchContentScreen 书内搜索 + ReaderConfigScreen 阅读设置）
+- [x] Task #128: P1-P2 屏幕补全（AboutScreen 关于 + DiscoverScreen 发现 + RssFavoritesScreen RSS 收藏 + ChangeCoverScreen 换封面 + TxtTocRulesScreen TXT 目录规则 + Home 新增发现 Tab）
+- [x] Task #129: 通用组件库（10 个可复用 Widget：SearchBarWidget/SourceCard/BookGridItem/TagChip/SwipeAction/LoadingOverlay/CustomProgress/AppBottomSheet/BadgeWidget/ChapterTile + 43 个组件测试）
+
+**阶段 19 关键成果：**
+- 🎉 **APK 构建 + 模拟器安装成功**：flutter build apk --debug + adb install 验证通过
+- 屏幕总数：6 → 15（+9 个新屏幕）
+- 组件库：10 个可复用 Widget + 43 个组件测试
+- Flutter 测试：108 → 151（+43）
+- Home 导航：新增「发现」Tab（书架/发现/搜索/设置 四 Tab）
+- 质量门禁：cargo test 1244 passed / clippy 0 warnings / flutter test 151 passed / flutter analyze 0 issues
+
 ---
 
 ## 测试分布
@@ -295,7 +310,7 @@
 | legado-db | 177 | Schema v95 + 20 Repository（+HttpTts）+ MigrationRegistry + RoomImporter + DefaultData + 集成测试 |
 | legado-ffi | 57 tests / 79+ 函数 | 79+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) API |
 | legado-server | 143 | axum HTTP + 51 REST 端点 + 3 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
-| **合计** | **1244**（默认，exclude ffi）/ **1553**（含 ffi + quickjs） | Flutter: 108 tests |
+| **合计** | **1244**（默认，exclude ffi）/ **1553**（含 ffi + quickjs） | Flutter: 151 tests |
 
 ---
 
@@ -303,7 +318,7 @@
 
 ### 中优先级
 
-- [ ] Android 实机编译验证
+- [x] Android 模拟器编译验证（2026-07-29 完成：APK build + adb install 成功）
 
 ### 低优先级
 

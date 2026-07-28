@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 
 import 'models/models.dart';
+import 'screens/about_screen.dart';
 import 'screens/association_screen.dart';
 import 'screens/audio_screen.dart';
 import 'screens/auto_task_screen.dart';
+import 'screens/book_group_screen.dart';
 import 'screens/book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
+import 'screens/change_cover_screen.dart';
 import 'screens/change_source_screen.dart';
+import 'screens/discover_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/import_screen.dart';
+import 'screens/search_content_screen.dart';
 import 'screens/reading_stats_screen.dart';
 import 'screens/reader_screen.dart';
 import 'screens/replace_rules_screen.dart';
+import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
@@ -21,6 +28,7 @@ import 'screens/source_debug_screen.dart';
 import 'screens/source_discover_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
 import 'screens/theme_config_screen.dart';
+import 'screens/txt_toc_rules_screen.dart';
 
 /// 路由配置
 class AppRoutes {
@@ -44,6 +52,14 @@ class AppRoutes {
   static const rssSourceEdit = '/rss/edit';
   static const readAloudConfig = '/read_aloud_config';
   static const themeConfig = '/theme_config';
+  static const importBooks = '/import_books';
+  static const bookGroups = '/book_groups';
+  static const searchContent = '/search_content';
+  static const about = '/about';
+  static const discover = '/discover';
+  static const rssFavorites = '/rss/favorites';
+  static const changeCover = '/change_cover';
+  static const txtTocRules = '/txt_toc_rules';
   // rssArticles 和 rssArticleDetail 通过 Navigator.push 传参，不在此注册
 
   static Map<String, WidgetBuilder> get routes => {
@@ -104,5 +120,32 @@ class AppRoutes {
         },
         readAloudConfig: (_) => const ReadAloudConfigScreen(),
         themeConfig: (_) => const ThemeConfigScreen(),
+        importBooks: (_) => const ImportScreen(),
+        bookGroups: (_) => const BookGroupScreen(),
+        searchContent: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is Map<String, String>) {
+            return SearchContentScreen(
+              bookUrl: args['bookUrl'] ?? '',
+              bookName: args['bookName'] ?? '',
+            );
+          }
+          return const SearchContentScreen(bookUrl: '', bookName: '');
+        },
+        about: (_) => const AboutScreen(),
+        discover: (_) => const DiscoverScreen(),
+        rssFavorites: (_) => const RssFavoritesScreen(),
+        changeCover: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is Map<String, String>) {
+            return ChangeCoverScreen(
+              bookUrl: args['bookUrl'] ?? '',
+              bookName: args['bookName'] ?? '',
+              currentCover: args['coverUrl'],
+            );
+          }
+          return const ChangeCoverScreen(bookUrl: '', bookName: '');
+        },
+        txtTocRules: (_) => const TxtTocRulesScreen(),
       };
 }

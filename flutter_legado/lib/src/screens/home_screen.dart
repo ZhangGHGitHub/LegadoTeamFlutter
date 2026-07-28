@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
 import 'bookshelf_screen.dart';
+import 'discover_screen.dart';
 import 'rss_screen.dart';
 import 'settings_screen.dart';
 
@@ -18,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const _tabs = [
     BookshelfScreen(),
+    DiscoverScreen(),
     RssScreen(),
     SettingsScreen(),
   ];
@@ -39,6 +41,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.library_books_outlined),
             selectedIcon: const Icon(Icons.library_books),
             label: AppStrings.bookshelf,
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore),
+            label: '发现',
           ),
           const NavigationDestination(
             icon: Icon(Icons.rss_feed_outlined),

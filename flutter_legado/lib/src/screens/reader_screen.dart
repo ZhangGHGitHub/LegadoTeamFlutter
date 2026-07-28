@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
+import '../routes.dart';
 import '../services/rust_api.dart';
 import '../providers/bookmark_provider.dart';
 import '../providers/reader_provider.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
+import 'reader_config_panel.dart';
 
 /// 阅读器页面
 class ReaderScreen extends StatefulWidget {
@@ -20,6 +22,7 @@ class ReaderScreen extends StatefulWidget {
 
 class _ReaderScreenState extends State<ReaderScreen> {
   final PageController _pageController = PageController();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   /// 上一章是否处于加载状态（用于检测章节加载完成以触发预加载）
   bool _wasLoading = false;
@@ -30,8 +33,46 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// 目录搜索关键词
   String _chapterSearchQuery = '';
 
+  /// 阅读器高级配置（自动翻页/点击区域/段距/状态栏）
+  ReaderAdvancedConfig _advConfig = ReaderAdvancedConfig();
+
+  /// 自动翻页定时器
+  Timer? _autoTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAdvancedConfig();
+  }
+
+  Future<void> _loadAdvancedConfig() async {
+    final config = await ReaderAdvancedConfig.load();
+    if (!mounted) return;
+    setState(() => _advConfig = config);
+    _syncAutoTimer();
+  }
+
+  /// 根据配置同步自动翻页定时器
+  void _syncAutoTimer() {
+    _autoTimer?.cancel();
+    _autoTimer = null;
+    final cfg = _advConfig;
+    if (!cfg.autoPageTurn) return;
+    final seconds = cfg.autoPageTurnInterval.round().clamp(3, 120);
+    _autoTimer = Timer.periodic(Duration(seconds: seconds), (_) {
+      if (!mounted) return;
+      final provider = context.read<ReaderProvider>();
+      if (cfg.autoPageTurnForward) {
+        provider.nextChapter();
+      } else {
+        provider.prevChapter();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _autoTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -61,12 +102,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
             }
           },
           child: Scaffold(
+            key: _scaffoldKey,
             backgroundColor: provider.backgroundColor,
             body: GestureDetector(
               onTapUp: (details) => _handleTap(context, details, provider),
               child: Stack(
                 children: [
                   _buildContent(context, provider),
+                  if (!provider.showControls) _buildStatusStrip(context, provider),
                   if (provider.showControls) _buildTopBar(context, provider),
                   if (provider.showControls) _buildBottomBar(context, provider),
                 ],
@@ -130,14 +173,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 ),
               ),
             if (provider.chapterContent.isNotEmpty)
-              Text(
-                provider.chapterContent,
-                style: TextStyle(
-                  fontSize: provider.fontSize,
-                  height: provider.lineHeight,
-                  color: textColor,
-                ),
-              )
+              _buildParagraphs(provider, provider.chapterContent, textColor)
             else if (!provider.loading)
               Center(
                 child: Padding(
@@ -232,14 +268,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ),
             ),
           if (content.isNotEmpty)
-            Text(
-              content,
-              style: TextStyle(
-                fontSize: provider.fontSize,
-                height: provider.lineHeight,
-                color: textColor,
-              ),
-            )
+            _buildParagraphs(provider, content, textColor)
           else if (!provider.loading)
             Center(
               child: Padding(
@@ -311,6 +340,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     );
                   },
                 ),
+                // 正文搜索
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: '搜索正文',
+                  onPressed: () => _openContentSearch(context, provider),
+                ),
                 // 书签按钮
                 IconButton(
                   icon: const Icon(Icons.bookmark_add_outlined),
@@ -319,7 +354,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_vert),
-                  onPressed: () {},
+                  tooltip: '高级设置',
+                  onPressed: () => _openAdvancedConfig(context),
                 ),
               ],
             ),
@@ -601,10 +637,131 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final tapX = details.globalPosition.dx;
 
-    // 点击中间区域：切换控制栏
-    if (tapX > screenWidth * 0.3 && tapX < screenWidth * 0.7) {
-      provider.toggleControls();
+    // 根据点击区域配置执行对应功能
+    TapAction action;
+    if (tapX < screenWidth * 0.3) {
+      action = _advConfig.leftAction;
+    } else if (tapX > screenWidth * 0.7) {
+      action = _advConfig.rightAction;
+    } else {
+      action = _advConfig.centerAction;
     }
+    _performTapAction(action, provider);
+  }
+
+  void _performTapAction(TapAction action, ReaderProvider provider) {
+    switch (action) {
+      case TapAction.none:
+        break;
+      case TapAction.prevPage:
+        provider.prevChapter();
+      case TapAction.nextPage:
+        provider.nextChapter();
+      case TapAction.toggleControls:
+        provider.toggleControls();
+      case TapAction.openCatalog:
+        _scaffoldKey.currentState?.openEndDrawer();
+    }
+  }
+
+  /// 打开正文搜索页面
+  void _openContentSearch(BuildContext context, ReaderProvider provider) {
+    final book = provider.currentBook;
+    if (book == null) return;
+    Navigator.pushNamed(
+      context,
+      AppRoutes.searchContent,
+      arguments: {'bookUrl': book.bookUrl, 'bookName': book.name},
+    );
+  }
+
+  /// 打开高级设置面板，配置变更后实时应用
+  Future<void> _openAdvancedConfig(BuildContext context) async {
+    await ReaderConfigPanel.show(
+      context,
+      config: _advConfig,
+      onChanged: (cfg) {
+        _advConfig = cfg;
+        _syncAutoTimer();
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  /// 按段落渲染正文，应用配置的段落间距
+  Widget _buildParagraphs(ReaderProvider provider, String content, Color textColor) {
+    final spacing = _advConfig.paragraphSpacing;
+    final paragraphs = content.split('\n');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final p in paragraphs)
+          Padding(
+            padding: EdgeInsets.only(bottom: spacing),
+            child: Text(
+              p.isEmpty ? ' ' : p,
+              style: TextStyle(
+                fontSize: provider.fontSize,
+                height: provider.lineHeight,
+                color: textColor,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 隐藏控制栏时顶部的状态提示栏（电量/时间/进度/章节名）
+  Widget _buildStatusStrip(BuildContext context, ReaderProvider provider) {
+    final cfg = _advConfig;
+    if (!cfg.showBattery && !cfg.showTime && !cfg.showProgress && !cfg.showChapterName) {
+      return const SizedBox.shrink();
+    }
+    final isDark = provider.backgroundColor == ReaderBackground.dark;
+    final color = isDark ? const Color(0xFFBBBBBB) : const Color(0xFF888888);
+    final now = DateTime.now();
+    final time =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final progress = '${(provider.readingProgress * 100).toStringAsFixed(1)}%';
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: DefaultTextStyle(
+            style: TextStyle(fontSize: 11, color: color),
+            child: Row(
+              children: [
+                if (cfg.showBattery) ...[
+                  Icon(Icons.battery_std, size: 12, color: color),
+                  const SizedBox(width: 4),
+                ],
+                if (cfg.showTime) ...[
+                  Text(time),
+                  const SizedBox(width: 10),
+                ],
+                const Spacer(),
+                if (cfg.showChapterName)
+                  Flexible(
+                    child: Text(
+                      provider.currentChapter?.title ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                if (cfg.showProgress) ...[
+                  const SizedBox(width: 10),
+                  Text(progress),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _showSettingsSheet(BuildContext context, ReaderProvider provider) {

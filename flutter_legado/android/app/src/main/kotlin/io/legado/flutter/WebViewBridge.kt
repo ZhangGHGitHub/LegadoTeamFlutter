@@ -7,6 +7,7 @@ import android.os.Looper
 import android.webkit.*
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * WebView 桥接 — 用于执行需要 WebView 的 JS（如反爬虫验证页面）
@@ -25,24 +26,50 @@ class WebViewBridge {
         private const val TIMEOUT_MS = 30_000L
     }
 
+    /** 包装 MethodChannel.Result，防止重复回复 */
+    private class SafeResult(private val result: MethodChannel.Result) {
+        private val completed = AtomicBoolean(false)
+
+        val isCompleted: Boolean get() = completed.get()
+
+        fun success(value: Any?) {
+            if (completed.compareAndSet(false, true)) {
+                result.success(value)
+            }
+        }
+
+        fun error(code: String, message: String?, details: Any?) {
+            if (completed.compareAndSet(false, true)) {
+                result.error(code, message, details)
+            }
+        }
+
+        fun notImplemented() {
+            if (completed.compareAndSet(false, true)) {
+                result.notImplemented()
+            }
+        }
+    }
+
     fun handleMethodCall(call: MethodCall, result: MethodChannel.Result, context: Context) {
+        val safeResult = SafeResult(result)
         when (call.method) {
             "loadUrl" -> {
                 val url = call.argument<String>("url")
-                    ?: return result.error("ARG_ERROR", "url is required", null)
+                    ?: return safeResult.error("ARG_ERROR", "url is required", null)
                 val js = call.argument<String>("javaScript")
-                loadUrlWithJs(url, js, result, context)
+                loadUrlWithJs(url, js, safeResult, context)
             }
             "evaluateJs" -> {
                 val js = call.argument<String>("javaScript")
-                    ?: return result.error("ARG_ERROR", "javaScript is required", null)
-                evaluateJs(js, result)
+                    ?: return safeResult.error("ARG_ERROR", "javaScript is required", null)
+                evaluateJs(js, safeResult)
             }
             "close" -> {
                 destroy()
-                result.success(null)
+                safeResult.success(null)
             }
-            else -> result.notImplemented()
+            else -> safeResult.notImplemented()
         }
     }
 
@@ -50,7 +77,7 @@ class WebViewBridge {
     private fun loadUrlWithJs(
         url: String,
         js: String?,
-        result: MethodChannel.Result,
+        result: SafeResult,
         context: Context
     ) {
         handler.post {
@@ -115,7 +142,7 @@ class WebViewBridge {
         }
     }
 
-    private fun evaluateJs(js: String, result: MethodChannel.Result) {
+    private fun evaluateJs(js: String, result: SafeResult) {
         handler.post {
             if (webView == null) {
                 result.error("NO_WEBVIEW", "WebView not initialized. Call loadUrl first.", null)
@@ -126,7 +153,7 @@ class WebViewBridge {
     }
 
     @Suppress("DEPRECATION")
-    private fun evaluateJsInternal(js: String, result: MethodChannel.Result) {
+    private fun evaluateJsInternal(js: String, result: SafeResult) {
         webView?.evaluateJavascript(js) { value ->
             if (!result.isCompleted) {
                 result.success(value)

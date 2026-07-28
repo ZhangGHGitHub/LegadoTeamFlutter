@@ -58,6 +58,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           onSelected: (value) => _handleMenuAction(context, value),
           itemBuilder: (_) => [
             PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
+            PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
+            PopupMenuItem(value: 'groups', child: Text('分组管理')),
             PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
             PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
             const PopupMenuDivider(),
@@ -495,6 +497,12 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppStrings.checkingUpdate)),
         );
+        break;
+      case 'import':
+        Navigator.pushNamed(context, AppRoutes.importBooks);
+        break;
+      case 'groups':
+        Navigator.pushNamed(context, AppRoutes.bookGroups);
         break;
       case 'manage':
         // 进入管理模式
