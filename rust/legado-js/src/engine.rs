@@ -323,7 +323,7 @@ mod quickjs_engine {
                 .map_err(|e| LegadoError::JsEngine(format!("Failed to create Runtime: {}", e)))?;
 
             // 设置内存限制（字节）
-            runtime.set_memory_limit(config.max_memory_bytes as usize);
+            runtime.set_memory_limit(config.max_memory_bytes);
 
             // 设置超时中断：handler 在每次 JS 指令时被调用，检查是否超时
             // 使用固定 epoch 作为时间基准，deadline 存储为相对于 epoch 的绝对纳秒数

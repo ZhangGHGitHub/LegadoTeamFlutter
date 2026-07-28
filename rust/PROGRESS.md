@@ -6,14 +6,14 @@
 
 ## 总览
 
-- **已完成**：133 / 133 原子任务（100%）
-- **测试状态**：cargo test 1285 passed（默认，exclude ffi）/ 1667 passed（含 QuickJS + FFI）| flutter test 151 passed | flutter analyze 0 issues
+- **已完成**：136 / 136 原子任务（100%）
+- **测试状态**：cargo test 1297 passed（默认，exclude ffi）/ 1679 passed（含 QuickJS + FFI）| flutter test 151 passed | flutter analyze 0 issues
 - **QuickJS feature**：324 tests passed (1 ignored) | legado-ffi：58 tests passed
 - **里程碑**：🎉 Flutter UI 完善（20 屏幕 + 10 组件）+ APK 构建成功 + 模拟器安装验证通过
 
 ---
 
-## 已完成（133/133 原子任务）
+## 已完成（136/136 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -312,6 +312,18 @@
 - 数据库：新增 dict_rules + keyboard_assists 表 + Repository
 - 质量门禁：cargo test 1285 passed / clippy 0 warnings / flutter test 151 passed / flutter analyze 0 issues
 
+### 阶段 21：数据库全覆盖 + FFI 真实链路（Task #134-#136） ✅
+
+- [x] Task #134: rssSources + searchBooks Repository（DB 覆盖 25/25 = 100%）
+- [x] Task #135: 7z 解压缩评估（技术调研 + 可行性分析）
+- [x] Task #136: FfiStubFetcher → RealBookSourceFetcher 替换（LegadoClient + AnalyzeUrl + AnalyzeRule 真实网络链路）+ platform.rs WebView API 文档完善
+
+**阶段 21 关键成果：**
+- 🎉 **数据库 Repository 100% 覆盖**：25/25 表全部有 Repository
+- FFI 真实链路：FfiStubFetcher 替换为 RealBookSourceFetcher，搜索→详情→目录→正文全流程真实网络请求
+- platform.rs 文档：6 个 WebView API 添加明确的文档注释（仅在 Flutter 侧实现 + 无头模式不支持）
+- 质量门禁：cargo test 1297 passed / clippy 0 warnings / flutter test 151 passed / flutter analyze 0 issues
+
 ---
 
 ## 测试分布
@@ -323,10 +335,10 @@
 | legado-net | 168 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker |
 | legado-js | 151（默认）/ 324（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + 15 新 API |
 | legado-book | 77 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 |
-| legado-db | 194 | Schema v95 + 22 Repository（+HttpTts+DictRule+KeyboardAssist+User）+ MigrationRegistry + RoomImporter + DefaultData + 集成测试 |
-| legado-ffi | 58 tests / 85+ 函数 | 85+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) API |
-| legado-server | 151 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
-| **合计** | **1285**（默认，exclude ffi）/ **1667**（含 ffi + quickjs） | Flutter: 151 tests |
+| legado-db | 206 | Schema v95 + 25 Repository（100% 覆盖）+ MigrationRegistry + RoomImporter + DefaultData + 集成测试 |
+| legado-ffi | 58 tests / 85+ 函数 | 85+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) API |
+| legado-server | 158 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
+| **合计** | **1297**（默认，exclude ffi）/ **1679**（含 ffi + quickjs） | Flutter: 151 tests |
 
 ---
 

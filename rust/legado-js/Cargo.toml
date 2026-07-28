@@ -31,8 +31,9 @@ jsonpath-rust = { version = "0.7", optional = true }
 uuid          = { version = "1", features = ["v4"], optional = true }
 url           = { version = "2", optional = true }
 
-# 解压缩（ZIP）
+# 解压缩（ZIP / 7z）
 zip           = { version = "2", optional = true }
+sevenz-rust2  = { version = "0.12", optional = true }
 
 # futures 流式并发（用于 ajaxAll 有界并发）
 futures       = { version = "0.3", optional = true }
@@ -61,6 +62,7 @@ quickjs = [
     "dep:uuid",
     "dep:url",
     "dep:zip",
+    "dep:sevenz-rust2",
     "dep:futures",
     "dep:tokio",
     "dep:legado-net",

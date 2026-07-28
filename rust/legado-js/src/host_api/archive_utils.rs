@@ -2,7 +2,8 @@
 //!
 //! 对应 Kotlin `ArchiveUtils.kt`，提供 ZIP / 7z / RAR 解压能力。
 //! - ZIP：使用 `zip` crate 完整实现
-//! - 7z / RAR：Rust 生态暂无稳定方案，桩化返回错误
+//! - 7z：使用 `sevenz-rust2` crate 纯 Rust 实现（需 quickjs feature）
+//! - RAR：Rust 生态无纯 Rust 实现，桩化返回错误
 
 use std::fs;
 use std::io::Read;
@@ -102,16 +103,47 @@ pub fn get_zip_byte_array_content(zip_path: &str, entry_name: &str) -> Result<Ve
 
 /// un7zFile(7zPath, outputPath?) — 解压 7z 文件
 ///
-/// 当前 Rust 生态中 sevenz-rust 尚不够成熟，桩化返回错误。
+/// 使用 `sevenz-rust2` 纯 Rust 实现解压 7z 格式文件。
+/// 支持 LZMA/LZMA2/COPY 等编解码器。
+/// 返回解压目标目录路径。
+#[cfg(feature = "quickjs")]
+pub fn un7z_file(seven_z_path: &str, output_path: Option<&str>) -> Result<String, String> {
+    let src = Path::new(seven_z_path);
+    if !src.exists() {
+        return Err(format!("7z file not found: {}", src.display()));
+    }
+
+    let out_dir = match output_path {
+        Some(p) => p.to_string(),
+        None => {
+            let stem = src
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("un7zipped");
+            let parent = src.parent().unwrap_or(Path::new("."));
+            parent.join(stem).to_string_lossy().to_string()
+        }
+    };
+
+    sevenz_rust2::decompress_file(src, &out_dir)
+        .map_err(|e| format!("7z decompression failed: {e}"))?;
+
+    Ok(out_dir)
+}
+
+/// un7zFile — 无 quickjs feature 时的回退桩
+#[cfg(not(feature = "quickjs"))]
 pub fn un7z_file(_seven_z_path: &str, _output_path: Option<&str>) -> Result<String, String> {
-    Err("[ERROR] 7z decompression not supported in Rust runtime".to_string())
+    Err("[ERROR] 7z decompression requires 'quickjs' feature (sevenz-rust2)".to_string())
 }
 
 /// unrarFile(rarPath, outputPath?) — 解压 RAR 文件
 ///
-/// 当前 Rust 生态中 unrar 绑定不够成熟，桩化返回错误。
+/// RAR 解压 — 当前 Rust 生态无纯 Rust RAR 实现。
+/// `unrar` crate 需要 unrar C 库（libunrar），交叉编译困难。
+/// 建议通过 Flutter 侧调用平台原生 RAR 解压（Android: libarchive, iOS: UnrarKit）。
 pub fn unrar_file(_rar_path: &str, _output_path: Option<&str>) -> Result<String, String> {
-    Err("[ERROR] RAR decompression not supported in Rust runtime".to_string())
+    Err("[ERROR] RAR decompression requires platform-native library. Use Flutter-side implementation.".to_string())
 }
 
 /// unArchiveFile(archivePath, outputPath?) — 通用解压（自动检测格式）
@@ -277,12 +309,12 @@ mod tests {
     }
 
     #[test]
-    fn test_un7z_file_stub() {
-        let result = un7z_file("some.7z", None);
+    fn test_un7z_file_not_found() {
+        let result = un7z_file("/nonexistent/path.7z", None);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("7z decompression not supported"));
+        let err = result.unwrap_err();
+        // quickjs feature 启用时报 "not found"，否则报 feature 提示
+        assert!(err.contains("not found") || err.contains("quickjs"));
     }
 
     #[test]
@@ -291,7 +323,7 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .contains("RAR decompression not supported"));
+            .contains("RAR decompression requires platform-native library"));
     }
 
     #[test]
@@ -355,5 +387,102 @@ mod tests {
         assert_eq!(magic, "Rar");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ============================================================
+    // 7z 解压测试（需要 quickjs feature 启用 sevenz-rust2）
+    // ============================================================
+
+    /// 辅助：创建包含指定文件的测试 7z 压缩包，返回 7z 文件路径
+    #[cfg(feature = "quickjs")]
+    fn create_test_7z(entries: &[(&str, &[u8])]) -> String {
+        let dir = std::env::temp_dir().join(format!("legado_7z_src_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+
+        // 先创建源文件
+        for (name, content) in entries {
+            let file_path = dir.join(name);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&file_path, content).unwrap();
+        }
+
+        // 压缩为 7z
+        let seven_z_path = std::env::temp_dir()
+            .join(format!("legado_7z_archive_{}", uuid()))
+            .join("test.7z");
+        if let Some(parent) = seven_z_path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        sevenz_rust2::compress_to_path(&dir, &seven_z_path).unwrap();
+
+        // 清理源文件目录
+        let _ = fs::remove_dir_all(&dir);
+
+        seven_z_path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_un7z_file_basic() {
+        let seven_z_path = create_test_7z(&[
+            ("hello.txt", b"Hello 7z World"),
+            ("sub/data.bin", &[0xCA, 0xFE, 0xBA, 0xBE]),
+        ]);
+
+        let out_dir = std::env::temp_dir().join(format!("legado_7z_out_{}", uuid()));
+        let result = un7z_file(&seven_z_path, Some(out_dir.to_str().unwrap()));
+        assert!(result.is_ok(), "un7z_file failed: {:?}", result.err());
+
+        let out = result.unwrap();
+        assert!(Path::new(&out).join("hello.txt").exists());
+        assert!(Path::new(&out).join("sub/data.bin").exists());
+
+        let content = fs::read_to_string(Path::new(&out).join("hello.txt")).unwrap();
+        assert_eq!(content, "Hello 7z World");
+
+        let bin = fs::read(Path::new(&out).join("sub/data.bin")).unwrap();
+        assert_eq!(bin, vec![0xCA, 0xFE, 0xBA, 0xBE]);
+
+        // 清理
+        let _ = fs::remove_dir_all(&out);
+        let _ = fs::remove_dir_all(Path::new(&seven_z_path).parent().unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_un7z_file_default_output() {
+        let seven_z_path = create_test_7z(&[("readme.md", b"# 7z Test")]);
+        let result = un7z_file(&seven_z_path, None);
+        assert!(result.is_ok(), "un7z_file failed: {:?}", result.err());
+
+        let out = result.unwrap();
+        // 默认输出目录为 7z 同目录下 "test" 文件夹
+        assert!(out.ends_with("test"), "output dir should end with 'test', got: {out}");
+        assert!(Path::new(&out).join("readme.md").exists());
+
+        let content = fs::read_to_string(Path::new(&out).join("readme.md")).unwrap();
+        assert_eq!(content, "# 7z Test");
+
+        let _ = fs::remove_dir_all(&out);
+        let _ = fs::remove_dir_all(Path::new(&seven_z_path).parent().unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_un_archive_file_7z() {
+        let seven_z_path = create_test_7z(&[("content.txt", b"auto detect 7z")]);
+        let out_dir = std::env::temp_dir().join(format!("legado_unarchive7z_{}", uuid()));
+        let result = un_archive_file(&seven_z_path, Some(out_dir.to_str().unwrap()));
+        assert!(result.is_ok(), "un_archive_file 7z failed: {:?}", result.err());
+
+        let out = result.unwrap();
+        assert!(Path::new(&out).join("content.txt").exists());
+        let content = fs::read_to_string(Path::new(&out).join("content.txt")).unwrap();
+        assert_eq!(content, "auto detect 7z");
+
+        let _ = fs::remove_dir_all(&out);
+        let _ = fs::remove_dir_all(Path::new(&seven_z_path).parent().unwrap());
     }
 }
