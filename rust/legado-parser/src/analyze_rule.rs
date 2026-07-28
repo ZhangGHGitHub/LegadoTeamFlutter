@@ -529,11 +529,8 @@ mod tests {
         let executor = Arc::new(MockJsExecutor {
             result: "执行结果".to_string(),
         });
-        let rule = AnalyzeRule::with_js_executor(
-            "some content".to_string(),
-            String::new(),
-            executor,
-        );
+        let rule =
+            AnalyzeRule::with_js_executor("some content".to_string(), String::new(), executor);
         let result = rule.get_strings("@js:result").unwrap();
         assert_eq!(result, vec!["执行结果"]);
     }
@@ -543,11 +540,8 @@ mod tests {
         let executor = Arc::new(MockJsExecutor {
             result: String::new(),
         });
-        let rule = AnalyzeRule::with_js_executor(
-            "some content".to_string(),
-            String::new(),
-            executor,
-        );
+        let rule =
+            AnalyzeRule::with_js_executor("some content".to_string(), String::new(), executor);
         let result = rule.get_strings("@js:result").unwrap();
         assert!(result.is_empty());
     }
@@ -555,11 +549,8 @@ mod tests {
     #[test]
     fn test_js_rule_with_failing_executor() {
         let executor = Arc::new(FailingJsExecutor);
-        let rule = AnalyzeRule::with_js_executor(
-            "some content".to_string(),
-            String::new(),
-            executor,
-        );
+        let rule =
+            AnalyzeRule::with_js_executor("some content".to_string(), String::new(), executor);
         let result = rule.get_strings("@js:result");
         assert!(result.is_err());
     }

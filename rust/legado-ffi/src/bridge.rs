@@ -636,7 +636,13 @@ pub unsafe extern "C" fn ffi_bookmark_add(
         let text = c_char_to_str(book_text)?;
         let note = c_char_to_str(content)?;
         crate::api::bookmark_api::add_bookmark(
-            name, author, chapter_index, chapter_pos, ch_name, text, note,
+            name,
+            author,
+            chapter_index,
+            chapter_pos,
+            ch_name,
+            text,
+            note,
         )
     }))
 }
@@ -670,7 +676,9 @@ pub extern "C" fn ffi_bookmark_list() -> *mut c_char {
 /// 获取所有替换规则
 #[no_mangle]
 pub extern "C" fn ffi_replace_rule_list() -> *mut c_char {
-    to_ffi_response(catch_unwind(crate::api::replace_rule_api::get_replace_rules))
+    to_ffi_response(catch_unwind(
+        crate::api::replace_rule_api::get_replace_rules,
+    ))
 }
 
 /// 添加替换规则
@@ -722,7 +730,9 @@ pub extern "C" fn ffi_replace_rule_delete(rule_id: i64) -> *mut c_char {
 /// 获取启用的替换规则
 #[no_mangle]
 pub extern "C" fn ffi_replace_rule_enabled() -> *mut c_char {
-    to_ffi_response(catch_unwind(crate::api::replace_rule_api::get_enabled_rules))
+    to_ffi_response(catch_unwind(
+        crate::api::replace_rule_api::get_enabled_rules,
+    ))
 }
 
 /// 启用/禁用替换规则
@@ -893,10 +903,7 @@ pub unsafe extern "C" fn ffi_config_get(key: *const c_char) -> *mut c_char {
 
 /// 设置配置项
 #[no_mangle]
-pub unsafe extern "C" fn ffi_config_set(
-    key: *const c_char,
-    value: *const c_char,
-) -> *mut c_char {
+pub unsafe extern "C" fn ffi_config_set(key: *const c_char, value: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let k = c_char_to_str(key)?;
         let v = c_char_to_str(value)?;
@@ -920,10 +927,7 @@ pub extern "C" fn ffi_http_tts_list() -> *mut c_char {
 
 /// 添加 HTTP TTS 源
 #[no_mangle]
-pub unsafe extern "C" fn ffi_http_tts_add(
-    name: *const c_char,
-    url: *const c_char,
-) -> *mut c_char {
+pub unsafe extern "C" fn ffi_http_tts_add(name: *const c_char, url: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let n = c_char_to_str(name)?;
         let u = c_char_to_str(url)?;
@@ -1025,9 +1029,7 @@ pub unsafe extern "C" fn ffi_backup_list(dir: *const c_char) -> *mut c_char {
 /// 启动服务器
 #[no_mangle]
 pub extern "C" fn ffi_server_start(port: u16) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        crate::api::server_api::server_start(port)
-    }))
+    to_ffi_response(catch_unwind(|| crate::api::server_api::server_start(port)))
 }
 
 /// 停止服务器

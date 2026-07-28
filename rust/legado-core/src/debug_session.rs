@@ -143,7 +143,10 @@ impl Debugger {
             started_at: now_millis(),
             completed_at: None,
         };
-        self.sessions.lock().unwrap_or_else(|e| e.into_inner()).push(session);
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(session);
         id
     }
 
@@ -226,7 +229,10 @@ impl Debugger {
 
     /// 列出所有调试会话
     pub fn list_sessions(&self) -> Vec<DebugSession> {
-        self.sessions.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// 删除指定会话

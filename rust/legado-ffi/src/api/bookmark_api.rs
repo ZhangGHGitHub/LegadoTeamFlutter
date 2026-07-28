@@ -85,7 +85,16 @@ mod tests {
     #[test]
     fn test_add_and_get_bookmarks() {
         setup_test_db();
-        let id = add_bookmark("bm_测试书籍_1", "作者A", 0, 100, "第一章", "书签文本", "备注").unwrap();
+        let id = add_bookmark(
+            "bm_测试书籍_1",
+            "作者A",
+            0,
+            100,
+            "第一章",
+            "书签文本",
+            "备注",
+        )
+        .unwrap();
         assert!(id > 0);
 
         let bookmarks = get_bookmarks("bm_测试书籍_1").unwrap();
@@ -121,7 +130,16 @@ mod tests {
     #[test]
     fn test_search_bookmarks() {
         setup_test_db();
-        add_bookmark("bm_书A_4", "作者", 0, 0, "第一章", "unique_hello_world_4", "").unwrap();
+        add_bookmark(
+            "bm_书A_4",
+            "作者",
+            0,
+            0,
+            "第一章",
+            "unique_hello_world_4",
+            "",
+        )
+        .unwrap();
         add_bookmark("bm_书A_4", "作者", 1, 0, "第二章", "goodbye_4", "").unwrap();
 
         let results = search_bookmarks("unique_hello_world_4").unwrap();

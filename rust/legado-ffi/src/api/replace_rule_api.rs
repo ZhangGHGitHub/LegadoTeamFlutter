@@ -166,10 +166,16 @@ mod tests {
     fn test_delete_replace_rule() {
         setup_test_db();
         let id = add_replace_rule("rr_r1_4", "a", "b", false, "").unwrap();
-        assert!(get_replace_rules().unwrap().iter().any(|r| r.name == "rr_r1_4"));
+        assert!(get_replace_rules()
+            .unwrap()
+            .iter()
+            .any(|r| r.name == "rr_r1_4"));
 
         delete_replace_rule(id).unwrap();
-        assert!(!get_replace_rules().unwrap().iter().any(|r| r.name == "rr_r1_4"));
+        assert!(!get_replace_rules()
+            .unwrap()
+            .iter()
+            .any(|r| r.name == "rr_r1_4"));
     }
 
     #[test]
@@ -192,15 +198,24 @@ mod tests {
         let id = add_replace_rule("rr_r1_6", "a", "b", false, "").unwrap();
 
         // 默认启用
-        assert!(get_enabled_rules().unwrap().iter().any(|r| r.name == "rr_r1_6"));
+        assert!(get_enabled_rules()
+            .unwrap()
+            .iter()
+            .any(|r| r.name == "rr_r1_6"));
 
         // 禁用
         set_rule_enabled(id, false).unwrap();
-        assert!(!get_enabled_rules().unwrap().iter().any(|r| r.name == "rr_r1_6"));
+        assert!(!get_enabled_rules()
+            .unwrap()
+            .iter()
+            .any(|r| r.name == "rr_r1_6"));
 
         // 重新启用
         set_rule_enabled(id, true).unwrap();
-        assert!(get_enabled_rules().unwrap().iter().any(|r| r.name == "rr_r1_6"));
+        assert!(get_enabled_rules()
+            .unwrap()
+            .iter()
+            .any(|r| r.name == "rr_r1_6"));
     }
 
     #[test]

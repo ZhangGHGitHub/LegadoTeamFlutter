@@ -103,8 +103,12 @@ mod tests {
         crate::db_state::ensure_test_db();
 
         // 添加收藏
-        let ts = add_rss_star("https://rss.example.com", "Test Article", "https://link.com/1")
-            .unwrap();
+        let ts = add_rss_star(
+            "https://rss.example.com",
+            "Test Article",
+            "https://link.com/1",
+        )
+        .unwrap();
         assert!(ts > 0);
 
         // 判断已收藏

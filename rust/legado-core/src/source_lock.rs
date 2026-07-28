@@ -89,7 +89,9 @@ impl SingleFlight {
                     let (guard, timeout) =
                         state.notify.wait_timeout(result_guard, remaining).unwrap();
                     result_guard = guard;
-                    if timeout.timed_out() && *state.epoch.lock().unwrap_or_else(|e| e.into_inner()) == entry_epoch {
+                    if timeout.timed_out()
+                        && *state.epoch.lock().unwrap_or_else(|e| e.into_inner()) == entry_epoch
+                    {
                         return None;
                     }
                 }
@@ -282,17 +284,28 @@ impl TickCounter {
 
     /// 获取当前计数值
     pub fn get(&self, key: &str) -> u64 {
-        self.counters.lock().unwrap_or_else(|e| e.into_inner()).get(key).copied().unwrap_or(0)
+        self.counters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(key)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// 当前条目数
     pub fn len(&self) -> usize {
-        self.counters.lock().unwrap_or_else(|e| e.into_inner()).len()
+        self.counters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     /// 是否为空
     pub fn is_empty(&self) -> bool {
-        self.counters.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        self.counters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 }
 

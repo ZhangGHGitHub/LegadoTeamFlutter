@@ -139,22 +139,34 @@ impl MockBookSourceFetcher {
 
     /// 注入搜索响应
     pub fn push_search(&self, result: LegadoResult<Vec<WebSearchResult>>) {
-        self.search_results.lock().unwrap_or_else(|e| e.into_inner()).push(result);
+        self.search_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(result);
     }
 
     /// 注入书籍详情响应
     pub fn push_info(&self, result: LegadoResult<WebBookInfo>) {
-        self.info_results.lock().unwrap_or_else(|e| e.into_inner()).push(result);
+        self.info_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(result);
     }
 
     /// 注入章节列表响应
     pub fn push_chapters(&self, result: LegadoResult<Vec<WebChapter>>) {
-        self.chapter_results.lock().unwrap_or_else(|e| e.into_inner()).push(result);
+        self.chapter_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(result);
     }
 
     /// 注入章节内容响应
     pub fn push_content(&self, result: LegadoResult<String>) {
-        self.content_results.lock().unwrap_or_else(|e| e.into_inner()).push(result);
+        self.content_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(result);
     }
 }
 
@@ -165,7 +177,10 @@ impl BookSourceFetcher for MockBookSourceFetcher {
         _query: &str,
         _page: i32,
     ) -> LegadoResult<Vec<WebSearchResult>> {
-        let mut queue = self.search_results.lock().unwrap_or_else(|e| e.into_inner());
+        let mut queue = self
+            .search_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if queue.is_empty() {
             Err(LegadoError::Internal(
                 "MockBookSourceFetcher: no search result queued".into(),
@@ -195,7 +210,10 @@ impl BookSourceFetcher for MockBookSourceFetcher {
         _source: &BookSource,
         _book_url: &str,
     ) -> LegadoResult<Vec<WebChapter>> {
-        let mut queue = self.chapter_results.lock().unwrap_or_else(|e| e.into_inner());
+        let mut queue = self
+            .chapter_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if queue.is_empty() {
             Err(LegadoError::Internal(
                 "MockBookSourceFetcher: no chapter result queued".into(),
@@ -210,7 +228,10 @@ impl BookSourceFetcher for MockBookSourceFetcher {
         _source: &BookSource,
         _chapter: &WebChapter,
     ) -> LegadoResult<String> {
-        let mut queue = self.content_results.lock().unwrap_or_else(|e| e.into_inner());
+        let mut queue = self
+            .content_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if queue.is_empty() {
             Err(LegadoError::Internal(
                 "MockBookSourceFetcher: no content result queued".into(),

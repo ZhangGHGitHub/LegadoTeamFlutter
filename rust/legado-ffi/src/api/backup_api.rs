@@ -140,9 +140,8 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
     // 写入文件
     let json = serde_json::to_string_pretty(&backup_data)
         .map_err(|e| LegadoError::Internal(format!("备份序列化失败: {e}")))?;
-    fs::write(path, &json).map_err(|e| {
-        LegadoError::Io(std::io::Error::other(format!("写入备份文件失败: {e}")))
-    })?;
+    fs::write(path, &json)
+        .map_err(|e| LegadoError::Io(std::io::Error::other(format!("写入备份文件失败: {e}"))))?;
 
     Ok(path.to_string())
 }
@@ -151,9 +150,8 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
 ///
 /// 读取 JSON 文件，逐条恢复各表数据，返回恢复统计。
 pub fn backup_restore(path: &str) -> LegadoResult<String> {
-    let content = fs::read_to_string(path).map_err(|e| {
-        LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}")))
-    })?;
+    let content = fs::read_to_string(path)
+        .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
 
     let backup: BackupData = serde_json::from_str(&content)
         .map_err(|e| LegadoError::Internal(format!("备份文件解析失败: {e}")))?;
@@ -284,32 +282,25 @@ pub fn backup_list(dir: &str) -> String {
 }
 
 /// 收集 RSS 源（直接 SQL）
-fn collect_rss_sources(
-    conn: &rusqlite::Connection,
-) -> LegadoResult<Vec<serde_json::Value>> {
+fn collect_rss_sources(conn: &rusqlite::Connection) -> LegadoResult<Vec<serde_json::Value>> {
     let mut stmt = conn
         .prepare("SELECT * FROM rssSources ORDER BY customOrder ASC")
         .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
-    let columns: Vec<String> = stmt
-        .column_names()
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let rows = stmt
         .query_map([], |row| {
             let mut map = serde_json::Map::new();
             for (i, col) in columns.iter().enumerate() {
-                let val: rusqlite::types::Value = row.get(i).unwrap_or(rusqlite::types::Value::Null);
+                let val: rusqlite::types::Value =
+                    row.get(i).unwrap_or(rusqlite::types::Value::Null);
                 let json_val = match val {
                     rusqlite::types::Value::Null => serde_json::Value::Null,
                     rusqlite::types::Value::Integer(v) => serde_json::Value::Number(v.into()),
-                    rusqlite::types::Value::Real(v) => {
-                        serde_json::Number::from_f64(v)
-                            .map(serde_json::Value::Number)
-                            .unwrap_or(serde_json::Value::Null)
-                    }
+                    rusqlite::types::Value::Real(v) => serde_json::Number::from_f64(v)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null),
                     rusqlite::types::Value::Text(v) => serde_json::Value::String(v),
                     rusqlite::types::Value::Blob(v) => {
                         use base64::Engine;
@@ -328,10 +319,7 @@ fn collect_rss_sources(
 }
 
 /// 插入 RSS 源（直接 SQL）
-fn insert_rss_source(
-    conn: &rusqlite::Connection,
-    source: &RssSource,
-) -> LegadoResult<()> {
+fn insert_rss_source(conn: &rusqlite::Connection, source: &RssSource) -> LegadoResult<()> {
     conn.execute(
         "INSERT OR REPLACE INTO rssSources (sourceUrl, sourceName, sourceIcon, sourceGroup,
             enabled, customOrder, type)

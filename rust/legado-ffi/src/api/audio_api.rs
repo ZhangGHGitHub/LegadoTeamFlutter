@@ -23,7 +23,11 @@ pub fn get_audio_progress(book_url: &str, chapter_index: i32) -> LegadoResult<i6
 }
 
 /// 保存音频播放进度（毫秒）
-pub fn save_audio_progress(book_url: &str, chapter_index: i32, position: i64) -> LegadoResult<bool> {
+pub fn save_audio_progress(
+    book_url: &str,
+    chapter_index: i32,
+    position: i64,
+) -> LegadoResult<bool> {
     with_database(|db| {
         let repo = CacheRepository::new(db.connection());
         let key = format!("{}{}:{}", AUDIO_PROGRESS_PREFIX, book_url, chapter_index);

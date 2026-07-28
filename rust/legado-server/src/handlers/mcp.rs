@@ -437,10 +437,7 @@ async fn call_add_to_bookshelf(
     args: &serde_json::Value,
 ) -> Result<serde_json::Value, JsonRpcError> {
     let book_url = args.get("book_url").and_then(|v| v.as_str()).unwrap_or("");
-    let book_name = args
-        .get("book_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let book_name = args.get("book_name").and_then(|v| v.as_str()).unwrap_or("");
     let author = args.get("author").and_then(|v| v.as_str()).unwrap_or("");
     let source_url = args
         .get("source_url")
@@ -673,10 +670,7 @@ async fn call_add_bookmark(
     state: &AppState,
     args: &serde_json::Value,
 ) -> Result<serde_json::Value, JsonRpcError> {
-    let book_name = args
-        .get("book_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let book_name = args.get("book_name").and_then(|v| v.as_str()).unwrap_or("");
     if book_name.is_empty() {
         return Err(JsonRpcError {
             code: -32602,
@@ -684,10 +678,7 @@ async fn call_add_bookmark(
         });
     }
 
-    let book_text = args
-        .get("book_text")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let book_text = args.get("book_text").and_then(|v| v.as_str()).unwrap_or("");
     if book_text.is_empty() {
         return Err(JsonRpcError {
             code: -32602,

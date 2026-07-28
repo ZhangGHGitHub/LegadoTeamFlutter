@@ -191,7 +191,10 @@ impl AudioCacheManager {
 
     /// 添加下载任务到队列
     pub fn enqueue_download(&self, item: CacheDownloadItem) {
-        self.download_queue.lock().unwrap_or_else(|e| e.into_inner()).push(item);
+        self.download_queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(item);
     }
 
     /// 获取待下载数量

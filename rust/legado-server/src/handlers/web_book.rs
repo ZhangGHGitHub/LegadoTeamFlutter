@@ -105,10 +105,13 @@ impl RealBookSourceFetcher {
     }
 
     /// 解析书源 header 字段为请求头
-    fn parse_source_headers(source: &BookSource) -> Option<std::collections::HashMap<String, String>> {
-        source.header.as_ref().and_then(|h| {
-            serde_json::from_str::<std::collections::HashMap<String, String>>(h).ok()
-        })
+    fn parse_source_headers(
+        source: &BookSource,
+    ) -> Option<std::collections::HashMap<String, String>> {
+        source
+            .header
+            .as_ref()
+            .and_then(|h| serde_json::from_str::<std::collections::HashMap<String, String>>(h).ok())
     }
 
     /// 根据 AnalyzeUrl 解析结果发起 HTTP 请求，返回响应体文本
@@ -127,7 +130,11 @@ impl RealBookSourceFetcher {
         // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
         let mut headers = source_headers.cloned().unwrap_or_default();
         headers.extend(analyze_url.headers().clone());
-        let headers_opt = if headers.is_empty() { None } else { Some(headers) };
+        let headers_opt = if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        };
 
         let response = match analyze_url.method() {
             RequestMethod::Post => {
@@ -191,7 +198,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         );
 
         // 2. 发起 HTTP 请求
-        let body = self.fetch_url(&analyze_url, source_headers.as_ref()).await?;
+        let body = self
+            .fetch_url(&analyze_url, source_headers.as_ref())
+            .await?;
 
         // 3. 使用搜索规则解析结果
         let search_rule = source.rule_search.as_ref();
@@ -216,10 +225,16 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
             let name_rule = search_rule.and_then(|r| r.name.as_deref()).unwrap_or("");
             let author_rule = search_rule.and_then(|r| r.author.as_deref()).unwrap_or("");
-            let book_url_rule = search_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("");
-            let cover_url_rule = search_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("");
+            let book_url_rule = search_rule
+                .and_then(|r| r.book_url.as_deref())
+                .unwrap_or("");
+            let cover_url_rule = search_rule
+                .and_then(|r| r.cover_url.as_deref())
+                .unwrap_or("");
             let intro_rule = search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("");
-            let last_chapter_rule = search_rule.and_then(|r| r.last_chapter.as_deref()).unwrap_or("");
+            let last_chapter_rule = search_rule
+                .and_then(|r| r.last_chapter.as_deref())
+                .unwrap_or("");
 
             let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
             if name.is_empty() {
@@ -230,15 +245,29 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             let book_url = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
             let cover_url = {
                 let v = elem_analyzer.get_string(cover_url_rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             };
             let intro = {
                 let v = elem_analyzer.get_string(intro_rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             };
             let latest_chapter = {
-                let v = elem_analyzer.get_string(last_chapter_rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                let v = elem_analyzer
+                    .get_string(last_chapter_rule)
+                    .unwrap_or_default();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             };
 
             results.push(WebSearchResult {
@@ -281,28 +310,44 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.intro.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             })
             .unwrap_or(None);
         let cover_url = info_rule
             .and_then(|r| r.cover_url.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             })
             .unwrap_or(None);
         let toc_url = info_rule
             .and_then(|r| r.toc_url.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { book_url.to_string() } else { v }
+                if v.is_empty() {
+                    book_url.to_string()
+                } else {
+                    v
+                }
             })
             .unwrap_or_else(|| book_url.to_string());
         let last_chapter = info_rule
             .and_then(|r| r.last_chapter.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             })
             .unwrap_or(None);
         let categories = info_rule
@@ -312,7 +357,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 if v.is_empty() {
                     vec![]
                 } else {
-                    v.split([',', '，', ' ']).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                    v.split([',', '，', ' '])
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
                 }
             })
             .unwrap_or_default();
@@ -345,7 +393,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.toc_url.as_deref())
             .map(|rule| {
                 let v = info_analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { book_url.to_string() } else { v }
+                if v.is_empty() {
+                    book_url.to_string()
+                } else {
+                    v
+                }
             })
             .unwrap_or_else(|| book_url.to_string());
 
@@ -378,8 +430,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         for (index, elem) in elements.iter().enumerate() {
             let elem_analyzer = AnalyzeRule::new(elem.clone(), toc_url.clone());
 
-            let name_rule = toc_rule.and_then(|r| r.chapter_name.as_deref()).unwrap_or("");
-            let url_rule = toc_rule.and_then(|r| r.chapter_url.as_deref()).unwrap_or("");
+            let name_rule = toc_rule
+                .and_then(|r| r.chapter_name.as_deref())
+                .unwrap_or("");
+            let url_rule = toc_rule
+                .and_then(|r| r.chapter_url.as_deref())
+                .unwrap_or("");
             let vip_rule = toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or("");
 
             let title = elem_analyzer.get_string(name_rule).unwrap_or_default();
@@ -414,7 +470,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求章节页面
-        let body = self.fetch_simple(&chapter.url, source_headers.as_ref()).await?;
+        let body = self
+            .fetch_simple(&chapter.url, source_headers.as_ref())
+            .await?;
 
         // 2. 使用正文规则解析
         let content_rule = source.rule_content.as_ref();
@@ -651,8 +709,7 @@ mod tests {
 
         // 真实实现：网络可达时 200，不可达时 502
         assert!(
-            resp.status() == StatusCode::OK
-                || resp.status() == StatusCode::BAD_GATEWAY,
+            resp.status() == StatusCode::OK || resp.status() == StatusCode::BAD_GATEWAY,
             "unexpected status: {}",
             resp.status()
         );
@@ -683,8 +740,7 @@ mod tests {
 
         // 真实实现：网络可达时 200，不可达时 502
         assert!(
-            resp.status() == StatusCode::OK
-                || resp.status() == StatusCode::BAD_GATEWAY,
+            resp.status() == StatusCode::OK || resp.status() == StatusCode::BAD_GATEWAY,
             "unexpected status: {}",
             resp.status()
         );
@@ -720,8 +776,7 @@ mod tests {
 
         // 真实实现：网络可达时 200，不可达时 502
         assert!(
-            resp.status() == StatusCode::OK
-                || resp.status() == StatusCode::BAD_GATEWAY,
+            resp.status() == StatusCode::OK || resp.status() == StatusCode::BAD_GATEWAY,
             "unexpected status: {}",
             resp.status()
         );

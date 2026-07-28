@@ -310,8 +310,19 @@ impl HtmlParser {
         // 判断最后一段是否为提取模式/属性名（而非 CSS 选择器）
         let is_extraction_suffix = matches!(
             last,
-            "text" | "textNodes" | "ownText" | "html" | "all" | "href" | "src" | "alt" | "title"
-                | "value" | "data-src" | "data-original" | "content"
+            "text"
+                | "textNodes"
+                | "ownText"
+                | "html"
+                | "all"
+                | "href"
+                | "src"
+                | "alt"
+                | "title"
+                | "value"
+                | "data-src"
+                | "data-original"
+                | "content"
         ) || (!last.is_empty()
             && !last.contains('.')
             && !last.contains('#')

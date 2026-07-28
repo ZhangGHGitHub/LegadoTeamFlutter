@@ -146,7 +146,10 @@ impl TocUpdater {
 
     /// 获取当前进度
     pub fn get_progress(&self) -> BatchUpdateProgress {
-        self.progress.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.progress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// 获取需要更新的书籍（Pending 状态）

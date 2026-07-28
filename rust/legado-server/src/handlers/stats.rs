@@ -26,9 +26,7 @@ fn today_start_ms() -> i64 {
 }
 
 /// GET /api/stats/today — 今日阅读统计
-pub async fn get_today_stats(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, ApiError> {
+pub async fn get_today_stats(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
     let db = state.db.lock().await;
     let repo = ReadingStatsRepository::new(db.connection());
 
@@ -79,9 +77,7 @@ pub async fn get_daily_stats(
 }
 
 /// GET /api/stats/books — 各书籍阅读统计
-pub async fn get_books_stats(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, ApiError> {
+pub async fn get_books_stats(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
     let db = state.db.lock().await;
     let repo = ReadingStatsRepository::new(db.connection());
 
@@ -92,7 +88,10 @@ pub async fn get_books_stats(
     let mut book_map: HashMap<String, Vec<&legado_core::reading_stats::ReadingSession>> =
         HashMap::new();
     for session in &sessions {
-        book_map.entry(session.book_url.clone()).or_default().push(session);
+        book_map
+            .entry(session.book_url.clone())
+            .or_default()
+            .push(session);
     }
 
     let books_stats: Vec<Value> = book_map

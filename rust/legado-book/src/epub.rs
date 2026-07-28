@@ -233,9 +233,7 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
                     let mut content_attr = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"name" => {
-                                name_attr = String::from_utf8_lossy(&attr.value).to_string()
-                            }
+                            b"name" => name_attr = String::from_utf8_lossy(&attr.value).to_string(),
                             b"content" => {
                                 content_attr = String::from_utf8_lossy(&attr.value).to_string()
                             }
@@ -407,8 +405,7 @@ fn extract_cover<R: Read + std::io::Seek>(
         .iter()
         .filter(|(id, (href, media_type))| {
             media_type.starts_with("image/")
-                && (id.to_lowercase().contains("cover")
-                    || href.to_lowercase().contains("cover"))
+                && (id.to_lowercase().contains("cover") || href.to_lowercase().contains("cover"))
         })
         .map(|(_, v)| v)
         .collect();

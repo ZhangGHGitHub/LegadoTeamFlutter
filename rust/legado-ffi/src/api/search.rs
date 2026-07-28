@@ -470,8 +470,7 @@ mod tests {
         );
 
         let results =
-            parse_search_response(html, "https://www.example.com/search?q=test", &source)
-                .unwrap();
+            parse_search_response(html, "https://www.example.com/search?q=test", &source).unwrap();
 
         assert_eq!(results.len(), 2);
 
@@ -484,7 +483,10 @@ mod tests {
             Some("https://www.example.com/covers/1.jpg".to_string())
         );
         assert_eq!(results[0].intro, Some("这里是简介".to_string()));
-        assert_eq!(results[0].latest_chapter, Some("第100章 大结局".to_string()));
+        assert_eq!(
+            results[0].latest_chapter,
+            Some("第100章 大结局".to_string())
+        );
         assert_eq!(results[0].source_url, "https://www.example.com");
         assert_eq!(results[0].source_name, "测试书源");
 
@@ -550,15 +552,8 @@ mod tests {
     fn test_parse_empty_response() {
         let html = r#"<html><body><p>没有找到相关书籍</p></body></html>"#;
 
-        let source = make_source_with_rules(
-            ".book-item",
-            ".name",
-            ".author",
-            ".name@href",
-            "",
-            "",
-            "",
-        );
+        let source =
+            make_source_with_rules(".book-item", ".name", ".author", ".name@href", "", "", "");
 
         let results =
             parse_search_response(html, "https://www.example.com/search", &source).unwrap();
@@ -633,11 +628,7 @@ mod tests {
         assert!(url.url().contains("斗破苍穹") || url.url().contains("%E6%96%97"));
 
         // {{key}} 替换
-        let url2 = build_search_url(
-            "https://www.example.com/search?q={{key}}",
-            "三体",
-            &source,
-        );
+        let url2 = build_search_url("https://www.example.com/search?q={{key}}", "三体", &source);
         assert!(url2.url().contains("三体") || url2.url().contains("%E4%B8%89"));
 
         // searchKey 替换
@@ -700,18 +691,10 @@ mod tests {
             </div>
         </body></html>"#;
 
-        let source = make_source_with_rules(
-            ".book-item",
-            ".name",
-            ".author",
-            ".name@href",
-            "",
-            "",
-            "",
-        );
+        let source =
+            make_source_with_rules(".book-item", ".name", ".author", ".name@href", "", "", "");
 
-        let results =
-            parse_search_response(html, "https://www.example.com", &source).unwrap();
+        let results = parse_search_response(html, "https://www.example.com", &source).unwrap();
 
         // 第一条无书名被跳过，只剩第二条
         assert_eq!(results.len(), 1);

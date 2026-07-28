@@ -76,7 +76,10 @@ impl<'a> ReadRecordRepository<'a> {
     pub fn delete_by_book_name(&self, book_name: &str) -> LegadoResult<bool> {
         let affected = self
             .conn
-            .execute("DELETE FROM readRecord WHERE bookName = ?1", params![book_name])
+            .execute(
+                "DELETE FROM readRecord WHERE bookName = ?1",
+                params![book_name],
+            )
             .map_err(|e| LegadoError::Database(format!("删除阅读记录失败: {e}")))?;
         Ok(affected > 0)
     }

@@ -236,12 +236,8 @@ fn read_mobi_header(file: &mut File, records: &[RecordEntry]) -> LegadoResult<Mo
 
         // 检测 KF8 格式：mobi type 字段在 extra[0..4]
         if mobi_extra.len() >= 4 {
-            let mobi_type = u32::from_be_bytes([
-                mobi_extra[0],
-                mobi_extra[1],
-                mobi_extra[2],
-                mobi_extra[3],
-            ]);
+            let mobi_type =
+                u32::from_be_bytes([mobi_extra[0], mobi_extra[1], mobi_extra[2], mobi_extra[3]]);
             // type 8 = KF8 (AZW3)
             if mobi_type == 8 {
                 is_kf8 = true;

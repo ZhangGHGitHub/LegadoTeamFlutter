@@ -309,7 +309,11 @@ pub mod ffi {
     }
 
     /// 添加 RSS 收藏，返回收藏时间戳
-    pub fn rss_star_add(source_url: String, title: String, link: String) -> Result<i64, BridgeError> {
+    pub fn rss_star_add(
+        source_url: String,
+        title: String,
+        link: String,
+    ) -> Result<i64, BridgeError> {
         let ts = crate::api::rss_star_api::add_rss_star(&source_url, &title, &link)?;
         Ok(ts)
     }
@@ -487,8 +491,9 @@ pub mod ffi {
         use legado_js::engine::QuickJsEngine;
         use legado_js::JsEngine;
         use legado_js::SandboxConfig;
-        let engine = QuickJsEngine::new(SandboxConfig::permissive())
-            .map_err(|e| BridgeError { message: e.to_string() })?;
+        let engine = QuickJsEngine::new(SandboxConfig::permissive()).map_err(|e| BridgeError {
+            message: e.to_string(),
+        })?;
         let result = engine.eval(&script)?;
         Ok(result)
     }
@@ -649,7 +654,11 @@ pub mod ffi {
     }
 
     /// 添加书籍分组，返回新分组 ID
-    pub fn book_group_add(group_name: String, cover: String, order: i32) -> Result<i64, BridgeError> {
+    pub fn book_group_add(
+        group_name: String,
+        cover: String,
+        order: i32,
+    ) -> Result<i64, BridgeError> {
         let id = crate::api::book_group_api::add_book_group(&group_name, &cover, order)?;
         Ok(id)
     }
