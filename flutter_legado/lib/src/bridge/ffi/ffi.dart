@@ -499,6 +499,18 @@ Future<String> cacheGetChapter({
   chapterIndex: chapterIndex,
 );
 
+/// 获取缓存书籍数量
+Future<int> cacheGetBookCount() =>
+    RustLib.instance.api.crateFfiFfiCacheGetBookCount();
+
+/// 获取缓存章节数量
+Future<int> cacheGetChapterCount() =>
+    RustLib.instance.api.crateFfiFfiCacheGetChapterCount();
+
+/// 清除指定时间之前的缓存
+Future<bool> cacheClearBefore({required int beforeTimestampMs}) =>
+    RustLib.instance.api.crateFfiFfiCacheClearBefore(beforeTimestampMs: beforeTimestampMs);
+
 /// 获取配置项
 Future<String> configGet({required String key}) =>
     RustLib.instance.api.crateFfiFfiConfigGet(key: key);

@@ -12,7 +12,6 @@ import 'screens/book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
 import 'screens/change_cover_screen.dart';
 import 'screens/change_source_screen.dart';
-import 'screens/discover_screen.dart';
 import 'screens/font_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/import_screen.dart';
@@ -35,6 +34,7 @@ import 'screens/read_aloud_config_screen.dart';
 import 'screens/theme_config_screen.dart';
 import 'screens/txt_toc_rules_screen.dart';
 import 'screens/video_screen.dart';
+import 'screens/webdav_settings_screen.dart';
 import 'screens/welcome_screen.dart';
 
 /// 路由配置
@@ -64,7 +64,7 @@ class AppRoutes {
   static const bookGroups = '/book_groups';
   static const searchContent = '/search_content';
   static const about = '/about';
-  static const discover = '/discover';
+  // discover 路由已删除（原版不存在的功能）
   static const rssFavorites = '/rss/favorites';
   static const changeCover = '/change_cover';
   static const txtTocRules = '/txt_toc_rules';
@@ -74,10 +74,11 @@ class AppRoutes {
   static const welcome = '/welcome';
   static const browser = '/browser';
   static const video = '/video';
+  static const webdavSettings = '/webdav_settings';
   // rssArticles 和 rssArticleDetail 通过 Navigator.push 传参，不在此注册
 
   static Map<String, WidgetBuilder> get routes => {
-        home: (_) => const HomeScreen(),
+      home: (_) => const HomeScreen(),
         reader: (_) => const ReaderScreen(),
         readerComic: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
@@ -152,7 +153,7 @@ class AppRoutes {
           return const SearchContentScreen(bookUrl: '', bookName: '');
         },
         about: (_) => const AboutScreen(),
-        discover: (_) => const DiscoverScreen(),
+        
         rssFavorites: (_) => const RssFavoritesScreen(),
         changeCover: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
@@ -185,5 +186,6 @@ class AppRoutes {
           }
           return const VideoScreen(videoUrl: '');
         },
+        webdavSettings: (_) => const WebDavSettingsScreen(),
       };
 }

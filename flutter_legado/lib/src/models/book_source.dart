@@ -56,3 +56,9 @@ class BookSource with _$BookSource {
   factory BookSource.fromJson(Map<String, dynamic> json) =>
       _$BookSourceFromJson(json);
 }
+
+// Extension for groupName alias (matches Android's BookSource.groupName)
+extension BookSourceExtension on BookSource {
+  /// 书源分组别名（映射到 bookSourceGroup）
+  String? get groupName => bookSourceGroup;
+}

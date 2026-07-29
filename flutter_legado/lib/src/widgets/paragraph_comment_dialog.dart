@@ -17,12 +17,16 @@ class ParagraphCommentDialog extends StatefulWidget {
   final int chapterIndex;
   final String chapterTitle;
 
+  /// 段落索引（-1 表示章节级评论，>=0 表示指定段落的评论）
+  final int paragraphIndex;
+
   const ParagraphCommentDialog({
     super.key,
     required this.api,
     required this.bookUrl,
     required this.chapterIndex,
     required this.chapterTitle,
+    this.paragraphIndex = -1,
   });
 
   @override
@@ -59,9 +63,18 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
         widget.chapterIndex,
       );
       final list = jsonDecode(json) as List<dynamic>;
-      _reviews = list
+      var reviews = list
           .map((e) => _ReviewItem.fromJson(e as Map<String, dynamic>))
           .toList();
+      // 按段落索引过滤（paragraphIndex >= 0 时仅显示该段落的评论）
+      if (widget.paragraphIndex >= 0) {
+        reviews = reviews
+            .where((r) => r.paragraphIndex == widget.paragraphIndex)
+            .toList();
+      }
+      // 按点赞数降序排列
+      reviews.sort((a, b) => b.likeCount.compareTo(a.likeCount));
+      _reviews = reviews;
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -78,6 +91,7 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
       await widget.api.reviewAdd(
         bookUrl: widget.bookUrl,
         chapterIndex: widget.chapterIndex,
+        paragraphIndex: widget.paragraphIndex,
         content: content,
         author: 'user',
       );
@@ -127,7 +141,9 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
               children: [
                 Expanded(
                   child: Text(
-                    '${widget.chapterTitle} · 评论',
+                    widget.paragraphIndex >= 0
+                        ? '${widget.chapterTitle} · 第${widget.paragraphIndex + 1}段评论'
+                        : '${widget.chapterTitle} · 评论',
                     style: theme.textTheme.titleMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -433,6 +449,7 @@ Future<void> showParagraphCommentDialog(
   required String bookUrl,
   required int chapterIndex,
   required String chapterTitle,
+  int paragraphIndex = -1,
 }) {
   return showModalBottomSheet(
     context: context,
@@ -443,6 +460,7 @@ Future<void> showParagraphCommentDialog(
       bookUrl: bookUrl,
       chapterIndex: chapterIndex,
       chapterTitle: chapterTitle,
+      paragraphIndex: paragraphIndex,
     ),
   );
 }

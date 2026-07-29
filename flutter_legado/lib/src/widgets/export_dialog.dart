@@ -115,6 +115,7 @@ class _ExportDialogState extends State<ExportDialog> {
             // 进度指示器
             if (_status == ExportStatus.exporting) ...[
               _buildProgressIndicator(),
+              const SizedBox(height: 16),
             ],
 
             // 操作按钮

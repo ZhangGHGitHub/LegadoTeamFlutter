@@ -50,6 +50,11 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    // AndroidX Media（MediaSessionCompat + 音频焦点管理）
+    implementation("androidx.media:media:1.7.0")
+}
+
 // 自动检测并复制 Rust FFI .so 文件（当 jniLibs 为空时从 rust/target 复制）
 val rustTargetDir = file("${rootDir}/../../rust/target")
 val jniLibsDir = file("src/main/jniLibs")
