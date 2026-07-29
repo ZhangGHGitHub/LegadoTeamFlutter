@@ -28,7 +28,7 @@ impl RegexEngine {
     }
 
     /// 使用正则表达式匹配文本，返回所有匹配的捕获组
-    /// 每个匹配返回一个 Vec<String>，其中第一个元素是完整匹配，后续是各捕获组
+    /// 每个匹配返回一个 `Vec<String>`，其中第一个元素是完整匹配，后续是各捕获组
     pub fn regex_match_groups(&self, text: &str, pattern: &str) -> LegadoResult<Vec<Vec<String>>> {
         if pattern.is_empty() {
             return Ok(vec![]);

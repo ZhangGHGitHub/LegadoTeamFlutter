@@ -2,6 +2,7 @@
 //!
 //! 各子模块实现具体的业务操作，由 bridge.rs 的 FFI 函数调用。
 
+pub mod archive_import_api;
 pub mod audio_api;
 pub mod backup_api;
 pub mod book_export;
@@ -13,6 +14,7 @@ pub mod cache_api;
 pub mod config_api;
 pub mod download_api;
 pub mod http_tts_api;
+pub mod quic_api;
 pub mod read_record_api;
 pub mod reader;
 pub mod reading_stats_api;

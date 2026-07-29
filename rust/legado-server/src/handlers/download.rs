@@ -48,6 +48,11 @@ pub async fn add_download(
         created_at: now,
         completed_at: None,
         error: None,
+        fail_count: 0,
+        last_retry_at: None,
+        next_retry_at: None,
+        downloaded_bytes: 0,
+        max_retry_count: 3,
     };
 
     mgr.add_task(task);
@@ -254,6 +259,11 @@ mod tests {
                 created_at: 1000,
                 completed_at: None,
                 error: None,
+                fail_count: 0,
+                last_retry_at: None,
+                next_retry_at: None,
+                downloaded_bytes: 0,
+                max_retry_count: 3,
             };
             mgr.add_task(task);
         }

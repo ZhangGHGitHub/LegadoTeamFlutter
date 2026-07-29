@@ -732,6 +732,24 @@ pub mod ffi {
         Ok(content)
     }
 
+    /// 获取缓存书籍数量
+    pub fn cache_get_book_count() -> Result<i32, BridgeError> {
+        let count = crate::api::cache_api::get_cache_book_count()?;
+        Ok(count)
+    }
+
+    /// 获取缓存章节数量
+    pub fn cache_get_chapter_count() -> Result<i32, BridgeError> {
+        let count = crate::api::cache_api::get_cache_chapter_count()?;
+        Ok(count)
+    }
+
+    /// 清除指定时间之前的缓存
+    pub fn cache_clear_before(before_timestamp_ms: i64) -> Result<bool, BridgeError> {
+        crate::api::cache_api::clear_cache_before(before_timestamp_ms)?;
+        Ok(true)
+    }
+
     // ─── 配置管理 ─────────────────────────────────────
 
     /// 获取配置项

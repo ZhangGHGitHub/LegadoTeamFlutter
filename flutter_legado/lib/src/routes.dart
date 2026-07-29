@@ -29,7 +29,6 @@ import 'screens/source_screen.dart';
 import 'screens/source_edit_screen.dart';
 import 'screens/rss_source_edit_screen.dart';
 import 'screens/source_debug_screen.dart';
-import 'screens/source_discover_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
 import 'screens/theme_config_screen.dart';
 import 'screens/txt_toc_rules_screen.dart';
@@ -45,7 +44,6 @@ class AppRoutes {
   static const search = '/search';
   static const sources = '/sources';
   static const sourceEdit = '/sources/edit';
-  static const sourceDiscover = '/sources/discover';
   static const settings = '/settings';
   static const rss = '/rss';
   static const audio = '/audio';
@@ -88,7 +86,6 @@ class AppRoutes {
         search: (_) => const SearchScreen(),
         sources: (_) => const SourceScreen(),
         sourceEdit: (_) => const SourceEditScreen(),
-        sourceDiscover: (_) => const SourceDiscoverScreen(),
         settings: (_) => const SettingsScreen(),
         rss: (_) => const RssScreen(),
         audio: (context) {

@@ -5,7 +5,7 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use legado_core::download_manager::{DownloadManager, PreloadStrategy};
+use legado_core::download_manager::{DownloadManager, PreloadStrategy, PRELOAD_TRIGGER_THRESHOLD};
 use legado_core::models::{DownloadStatus, DownloadTask};
 use legado_core::{LegadoError, LegadoResult};
 
@@ -65,6 +65,11 @@ pub fn download_add_task(
             .as_millis() as i64,
         completed_at: None,
         error: None,
+        fail_count: 0,
+        last_retry_at: None,
+        next_retry_at: None,
+        downloaded_bytes: 0,
+        max_retry_count: 3,
     };
     with_manager(|mgr| {
         let id = mgr.add_task(task);
@@ -169,11 +174,12 @@ pub fn download_get_progress(task_id: &str) -> LegadoResult<f64> {
 /// 设置最大重试次数
 ///
 /// # 参数
-/// - `limit`: 最大重试次数
+/// - `limit`: 最大重试次数（默认 3）
 pub fn download_set_retry_limit(limit: i32) -> LegadoResult<()> {
-    // TODO: 实现重试限制配置
-    // 目前仅作为预留 API
-    Ok(())
+    with_manager(|mgr| {
+        mgr.set_max_retry_count(limit.max(0) as u32);
+        Ok(())
+    })
 }
 
 /// 强制重试任务
@@ -240,6 +246,54 @@ pub fn download_get_retry_stats(task_id: &str) -> LegadoResult<String> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// 断点续传相关 API
+// ---------------------------------------------------------------------------
+
+/// 更新已下载字节数（断点续传）
+pub fn download_update_bytes(task_id: &str, bytes: i64) -> LegadoResult<()> {
+    with_manager(|mgr| {
+        mgr.update_downloaded_bytes(task_id, bytes);
+        Ok(())
+    })
+}
+
+/// 获取断点续传 Range 头
+///
+/// 返回 HTTP Range 请求头值，用于断点续传。
+/// 如果未下载任何字节，返回空字符串。
+pub fn download_get_range_header(task_id: &str) -> LegadoResult<String> {
+    with_manager(|mgr| {
+        Ok(mgr.get_range_header(task_id).unwrap_or_default())
+    })
+}
+
+/// 重置断点续传状态（服务端不支持 Range 时调用）
+pub fn download_reset_progress(task_id: &str) -> LegadoResult<()> {
+    with_manager(|mgr| {
+        mgr.reset_download_progress(task_id);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 预下载触发条件 API
+// ---------------------------------------------------------------------------
+
+/// 判断是否应触发预下载
+///
+/// 当阅读进度达到 80% 时触发预下载。
+pub fn download_should_trigger_preload(reading_progress: f64) -> LegadoResult<bool> {
+    with_manager(|mgr| {
+        Ok(mgr.should_trigger_preload(reading_progress))
+    })
+}
+
+/// 获取预下载触发阈值
+pub fn download_get_preload_threshold() -> f64 {
+    PRELOAD_TRIGGER_THRESHOLD
+}
+
 /// 标记任务失败（带重试）
 pub fn download_fail_task_with_retry(task_id: &str, error: String) -> LegadoResult<()> {
     with_manager(|mgr| {
@@ -285,5 +339,8 @@ fn task_to_json(task: &DownloadTask) -> serde_json::Value {
         "created_at": task.created_at,
         "completed_at": task.completed_at,
         "error": task.error,
+        "fail_count": task.fail_count,
+        "downloaded_bytes": task.downloaded_bytes,
+        "max_retry_count": task.max_retry_count,
     })
 }

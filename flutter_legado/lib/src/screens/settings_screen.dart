@@ -234,12 +234,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // ===== 其他 =====
           _buildSectionHeader(context, AppStrings.otherSettings),
           ListTile(
-            leading: const Icon(Icons.explore),
-            title: const Text('发现'),
-            subtitle: const Text('推荐书籍与书源发现'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.discover),
-          ),
-          ListTile(
             leading: const Icon(Icons.cloud_sync),
             title: const Text('WebDAV 同步'),
             subtitle: const Text('连接测试、同步进度与自动同步配置'),

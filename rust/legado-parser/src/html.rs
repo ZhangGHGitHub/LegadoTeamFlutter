@@ -360,3 +360,173 @@ impl Default for HtmlParser {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_HTML: &str = r#"
+    <html>
+    <body>
+        <div class="list">
+            <a href="https://example.com/1" class="item">第一章</a>
+            <a href="https://example.com/2" class="item">第二章</a>
+            <a href="https://example.com/3" class="item">第三章</a>
+        </div>
+        <div class="info">
+            <span id="title">测试书籍</span>
+            <span class="author">作者名</span>
+        </div>
+        <p class="content">段落一</p>
+        <p class="content">段落二</p>
+        <img src="cover.jpg" alt="封面" />
+    </body>
+    </html>
+    "#;
+
+    #[test]
+    fn test_get_text_basic() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, ".item").unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], "第一章");
+        assert_eq!(result[1], "第二章");
+        assert_eq!(result[2], "第三章");
+    }
+
+    #[test]
+    fn test_get_text_by_id() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "#title").unwrap();
+        assert_eq!(result, vec!["测试书籍"]);
+    }
+
+    #[test]
+    fn test_get_text_empty_selector() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_text_no_match() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, ".nonexistent").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_attr_href() {
+        let parser = HtmlParser::new();
+        let result = parser.get_attr(SAMPLE_HTML, ".item", "href").unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], "https://example.com/1");
+    }
+
+    #[test]
+    fn test_get_attr_src() {
+        let parser = HtmlParser::new();
+        let result = parser.get_attr(SAMPLE_HTML, "img", "src").unwrap();
+        assert_eq!(result, vec!["cover.jpg"]);
+    }
+
+    #[test]
+    fn test_get_attr_empty_selector() {
+        let parser = HtmlParser::new();
+        let result = parser.get_attr(SAMPLE_HTML, "", "href").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_attr_nonexistent() {
+        let parser = HtmlParser::new();
+        let result = parser.get_attr(SAMPLE_HTML, ".item", "data-xxx").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_html_with_attr_extraction() {
+        let parser = HtmlParser::new();
+        let result = parser.parse_html(SAMPLE_HTML, ".item@href").unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(result[0].contains("example.com/1"));
+    }
+
+    #[test]
+    fn test_parse_html_text_mode() {
+        let parser = HtmlParser::new();
+        let result = parser.parse_html(SAMPLE_HTML, ".item@text").unwrap();
+        assert_eq!(result[0], "第一章");
+    }
+
+    #[test]
+    fn test_get_elements_html() {
+        let parser = HtmlParser::new();
+        let result = parser.get_elements(SAMPLE_HTML, "#title").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("测试书籍"));
+    }
+
+    #[test]
+    fn test_multiple_paragraphs() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "p.content").unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], "段落一");
+        assert_eq!(result[1], "段落二");
+    }
+
+    #[test]
+    fn test_deduplication() {
+        let html = r#"<div><span>重复</span><span>重复</span><span>不同</span></div>"#;
+        let parser = HtmlParser::new();
+        let result = parser.get_text(html, "span").unwrap();
+        // 相同文本应去重
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_or_operator() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "#title||.nonexist").unwrap();
+        assert_eq!(result, vec!["测试书籍"]);
+    }
+
+    #[test]
+    fn test_and_operator() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "#title&&.author").unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"测试书籍".to_string()));
+        assert!(result.contains(&"作者名".to_string()));
+    }
+
+    #[test]
+    fn test_invalid_css_selector() {
+        let parser = HtmlParser::new();
+        let result = parser.get_attr(SAMPLE_HTML, "[[[invalid", "href");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let parser = HtmlParser::default();
+        let result = parser.get_text("<p>hello</p>", "p").unwrap();
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_nested_elements() {
+        let html = r#"<div class="outer"><div class="inner"><span>内容</span></div></div>"#;
+        let parser = HtmlParser::new();
+        let result = parser.get_text(html, ".outer .inner span").unwrap();
+        assert_eq!(result, vec!["内容"]);
+    }
+
+    #[test]
+    fn test_img_alt_attr() {
+        let parser = HtmlParser::new();
+        let result = parser.get_attr(SAMPLE_HTML, "img", "alt").unwrap();
+        assert_eq!(result, vec!["封面"]);
+    }
+}

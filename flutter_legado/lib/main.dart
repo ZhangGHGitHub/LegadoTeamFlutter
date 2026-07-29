@@ -6,12 +6,12 @@ import 'app.dart';
 import 'src/providers/auto_task_provider.dart';
 import 'src/providers/bookmark_provider.dart';
 import 'src/providers/bookshelf_provider.dart';
-import 'src/providers/discover_provider.dart';
 import 'src/providers/reader_provider.dart';
 import 'src/providers/reading_stats_provider.dart';
 import 'src/providers/replace_rule_provider.dart';
 import 'src/providers/rss_provider.dart';
 import 'src/providers/search_provider.dart';
+import 'src/providers/explore_provider.dart';
 import 'src/providers/source_provider.dart';
 import 'src/providers/sync_provider.dart';
 import 'src/routes.dart';
@@ -54,6 +54,9 @@ void main() async {
           create: (_) => SourceProvider(rustApi),
         ),
         ChangeNotifierProvider(
+          create: (_) => ExploreProvider(rustApi),
+        ),
+        ChangeNotifierProvider(
           create: (_) => RssProvider(rustApi),
         ),
         ChangeNotifierProvider(
@@ -70,9 +73,6 @@ void main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => AutoTaskProvider(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => DiscoverProvider(rustApi),
         ),
       ],
       child: LegadoApp(initialRoute: initialRoute),

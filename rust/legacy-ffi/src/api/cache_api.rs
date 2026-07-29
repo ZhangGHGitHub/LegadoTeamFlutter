@@ -22,7 +22,7 @@ pub fn clear_cache() -> LegadoResult<bool> {
         let conn = db.connection();
         // 清空 cached_chapters 表
         conn.execute("DELETE FROM cached_chapters", [])
-            .map_err(|e| legado_core::LegadoError::Database(format!("清空缓存失败: {e}")))?;
+            .map_err(|e| legado_core::LegadoError::Database(format!("清空缓存失败：{e}")))?;
         // 同时清空通用 KV 缓存
         let cache_repo = CacheRepository::new(conn);
         cache_repo.clear()?;
@@ -96,5 +96,19 @@ mod tests {
 
         // 清空缓存不报错
         assert!(clear_cache().unwrap());
+    }
+
+    #[test]
+    fn test_cache_counts() {
+        crate::db_state::ensure_test_db();
+
+        // 清空后计数为 0
+        clear_cache().unwrap();
+        assert_eq!(get_cache_book_count().unwrap(), 0);
+        assert_eq!(get_cache_chapter_count().unwrap(), 0);
+
+        // 清空过期缓存应该正常执行
+        let deleted = clear_cache_before(1000).unwrap();
+        assert_eq!(deleted, 0);
     }
 }

@@ -5,8 +5,6 @@
 
 use legado_core::LegadoResult;
 use legado_net::webdav::{BookSyncManager, WebDavClient, WebDavConfig};
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
 
 /// 同步结果统计
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

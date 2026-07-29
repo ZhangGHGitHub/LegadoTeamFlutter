@@ -23,6 +23,7 @@ pub mod cover;
 pub mod direct_link_upload;
 pub mod middleware;
 pub mod proxy;
+pub mod quic;
 pub mod rate_limit;
 pub mod remote_book;
 pub mod request;

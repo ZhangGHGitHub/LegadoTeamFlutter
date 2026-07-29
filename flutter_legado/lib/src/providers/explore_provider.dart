@@ -45,7 +45,11 @@ class ExploreProvider extends ChangeNotifier {
 
     try {
       final sources = await _api.getBookSources();
-      _bookSources = sources;
+      // 对齐 Android 原版 ExploreFragment：仅保留启用发现且 exploreUrl 非空的书源
+      _bookSources = sources.where((s) => 
+        s.enabledExplore && 
+        (s.exploreUrl != null && s.exploreUrl!.trim().isNotEmpty)
+      ).toList();
       
       // 收集所有分组
       _groups = _bookSources

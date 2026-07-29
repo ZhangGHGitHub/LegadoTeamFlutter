@@ -1,5 +1,31 @@
 //! legado-book: 书籍格式解析器（EPUB/MOBI/TXT/PDF/UMD）
+//!
+//! 提供统一的本地书籍解析接口，支持多种格式：
+//!
+//! - [`epub`] — EPUB 格式解析（ZIP + OPF + NCX）
+//! - [`txt`] — TXT 纯文本解析（自动检测编码 + 智能分章）
+//! - [`mobi`] — MOBI/AZW 格式解析（PDB + EXTH 元数据）
+//! - [`pdf`] — PDF 格式解析（基于 lopdf）
+//! - [`umd`] — UMD 格式解析
+//! - [`export`] — 书籍导出（TXT/EPUB/HTML）
+//! - [`txt_search`] — 本地 TXT 分词搜索
+//!
+//! # Examples
+//!
+//! ```rust
+//! use legado_book::{LocalBook, BookFormat};
+//!
+//! // 检测文件格式
+//! let format = LocalBook::detect_format("novel.epub").unwrap();
+//! assert_eq!(format, BookFormat::Epub);
+//!
+//! // 解析元数据（需要真实文件）
+//! // let metadata = LocalBook::parse("path/to/book.epub").unwrap();
+//! // println!("书名: {}", metadata.title);
+//! ```
 
+pub mod archive;
+pub mod encoding;
 pub mod epub;
 pub mod export;
 pub mod mobi;

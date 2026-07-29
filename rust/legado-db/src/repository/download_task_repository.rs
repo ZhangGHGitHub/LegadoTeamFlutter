@@ -166,6 +166,8 @@ fn row_to_download_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTas
         fail_count: row.get(11)?,
         last_retry_at: row.get(12)?,
         next_retry_at: row.get(13)?,
+        downloaded_bytes: row.get::<_, Option<i64>>(14).unwrap_or(Some(0)).unwrap_or(0),
+        max_retry_count: row.get::<_, Option<i64>>(15).unwrap_or(Some(3)).unwrap_or(3) as u32,
     })
 }
 
@@ -191,6 +193,8 @@ mod tests {
             fail_count: 0,
             last_retry_at: None,
             next_retry_at: None,
+            downloaded_bytes: 0,
+            max_retry_count: 3,
         }
     }
 

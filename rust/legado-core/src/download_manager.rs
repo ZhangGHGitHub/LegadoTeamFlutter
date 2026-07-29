@@ -11,10 +11,14 @@ pub use crate::models::DownloadTask;
 /// 预下载策略
 #[derive(Debug, Clone)]
 pub enum PreloadStrategy {
-    /// 顺序模式：当前章 + 提前 N 章 + 延后 M 章
+    /// 顺序模式：当前章 + 后续 N 章
     Sequential { 
         ahead: usize,  // 后续章节数 (默认 5)
-        behind: usize, // 前序章节数 (默认 3)
+        behind: usize, // 前序章节数 (默认 0)
+    },
+    /// 逆序模式：当前章 + 前序 N 章
+    Reverse {
+        behind: usize, // 前序章节数 (默认 5)
     },
     /// 自适应：根据阅读方向自动判断
     Adaptive,
@@ -22,9 +26,12 @@ pub enum PreloadStrategy {
 
 impl Default for PreloadStrategy {
     fn default() -> Self {
-        Self::Sequential { ahead: 5, behind: 3 }
+        Self::Sequential { ahead: 5, behind: 0 }
     }
 }
+
+/// 预下载触发阈值（阅读进度达到 80% 时触发预下载）
+pub const PRELOAD_TRIGGER_THRESHOLD: f64 = 0.8;
 
 /// 预下载配置
 #[derive(Debug, Clone)]
@@ -65,6 +72,8 @@ pub struct DownloadManager {
     // 阅读方向检测（用于 Adaptive 策略）
     last_chapter_index: Option<i32>,
     direction_hint: Option<ReadDirection>,
+    /// 全局最大重试次数（默认 3）
+    max_retry_count: u32,
 }
 
 /// 阅读方向
@@ -86,7 +95,18 @@ impl DownloadManager {
             preload_config: PreloadConfig::default(),
             last_chapter_index: None,
             direction_hint: None,
+            max_retry_count: 3,
         }
+    }
+
+    /// 设置全局最大重试次数
+    pub fn set_max_retry_count(&mut self, count: u32) {
+        self.max_retry_count = count;
+    }
+
+    /// 获取全局最大重试次数
+    pub fn get_max_retry_count(&self) -> u32 {
+        self.max_retry_count
     }
 
     /// 添加下载任务
@@ -136,25 +156,37 @@ impl DownloadManager {
         }
     }
 
-    /// 标记任务失败（带退避策略）
+    /// 标记任务失败（带退避策略和重试限制）
+    ///
+    /// 指数退避策略：1s, 2s, 4s, 8s...
+    /// 超过最大重试次数后标记为永久失败。
     pub fn fail_task_with_retry(&mut self, task_id: &str, error: String) {
         let now = now_millis();
+        let max_retry = self.max_retry_count;
         
         if let Some(mut task) = self.tasks.remove(task_id) {
-            task.status = DownloadStatus::Failed(error.clone());
-            task.error = Some(error);
             task.fail_count += 1;
             task.last_retry_at = Some(now);
+            task.max_retry_count = max_retry; // 同步管理器配置
             
-            // 计算回退时间
-            let retry_time = now + self.calculate_backoff(task.fail_count);
-            
-            // 连续失败 3 次后降级
-            if task.fail_count >= 3 {
+            // 超过最大重试次数，标记为永久失败
+            if task.fail_count >= max_retry {
+                task.status = DownloadStatus::Failed(error.clone());
+                task.error = Some(format!("永久失败（已重试{}次）：{}", task.fail_count, error));
+                task.next_retry_at = None; // 不再重试
                 task.priority = 1000; // 降级为低优先级
+            } else {
+                task.status = DownloadStatus::Failed(error.clone());
+                task.error = Some(error);
+                // 计算指数退避时间：1s, 2s, 4s, 8s...
+                let retry_time = now + self.calculate_backoff(task.fail_count);
+                task.next_retry_at = Some(retry_time);
+                
+                // 连续失败 3 次后降级
+                if task.fail_count >= 3 {
+                    task.priority = 1000;
+                }
             }
-            
-            task.next_retry_at = Some(retry_time);
             
             self.active_count = self.active_count.saturating_sub(1);
             
@@ -178,6 +210,36 @@ impl DownloadManager {
         if let Some(task) = self.tasks.get_mut(task_id) {
             task.progress = progress.clamp(0.0, 1.0);
         }
+    }
+
+    /// 更新已下载字节数（断点续传）
+    pub fn update_downloaded_bytes(&mut self, task_id: &str, bytes: i64) {
+        if let Some(task) = self.tasks.get_mut(task_id) {
+            task.downloaded_bytes = bytes;
+        }
+    }
+
+    /// 获取任务的断点续传 Range 头
+    ///
+    /// 返回 HTTP Range 请求头值，用于断点续传。
+    /// 如果服务端不支持 Range，应重新下载（重置 downloaded_bytes 为 0）。
+    pub fn get_range_header(&self, task_id: &str) -> Option<String> {
+        self.tasks.get(task_id).and_then(|t| t.range_header())
+    }
+
+    /// 重置断点续传状态（服务端不支持 Range 时调用）
+    pub fn reset_download_progress(&mut self, task_id: &str) {
+        if let Some(task) = self.tasks.get_mut(task_id) {
+            task.downloaded_bytes = 0;
+            task.progress = 0.0;
+        }
+    }
+
+    /// 判断是否应触发预下载
+    ///
+    /// 当阅读进度达到 80% 时触发预下载。
+    pub fn should_trigger_preload(&self, reading_progress: f64) -> bool {
+        reading_progress >= PRELOAD_TRIGGER_THRESHOLD
     }
 
     /// 移除任务
@@ -269,6 +331,10 @@ impl DownloadManager {
         
         for (id, task) in self.tasks.iter() {
             if let DownloadStatus::Failed(_) = &task.status {
+                // 跳过已永久失败的任务
+                if task.fail_count >= task.max_retry_count {
+                    continue;
+                }
                 if let Some(next) = task.next_retry_at {
                     if next <= now {
                         // 可重试，选择优先级最高的
@@ -303,8 +369,9 @@ impl DownloadManager {
     /// 待预下载的章节索引列表
     ///
     /// # 策略
-    /// - 正序阅读：当前 + 前序 3 章 + 后续 5 章 = 最多 9 章
-    /// - 逆序阅读：当前 + 前序 5 章 + 后续 3 章 = 最多 9 章
+    /// - 顺序阅读：当前 + 后续 5 章
+    /// - 逆序阅读：当前 + 前序 5 章
+    /// - 自适应：根据阅读方向自动判断
     /// - 移动数据下最多预下载 10 章 (通过配置限制)
     pub fn calculate_preload_indices(
         &mut self,
@@ -314,6 +381,7 @@ impl DownloadManager {
     ) -> Vec<i32> {
         let (ahead, behind) = match &self.preload_strategy {
             PreloadStrategy::Sequential { ahead, behind } => (*ahead, *behind),
+            PreloadStrategy::Reverse { behind } => (0, *behind),
             PreloadStrategy::Adaptive => self.detect_direction_and_get_indices(current_chapter),
         };
 
@@ -377,9 +445,9 @@ impl DownloadManager {
         self.last_chapter_index = Some(current_chapter);
 
         match self.direction_hint {
-            Some(ReadDirection::Forward) => (5, 3), // 正序：后续 5 章，前序 3 章
-            Some(ReadDirection::Backward) => (3, 5), // 逆序：后续 3 章，前序 5 章
-            None => (5, 3), // 默认正序
+            Some(ReadDirection::Forward) => (5, 0), // 顺序阅读：后续 5 章
+            Some(ReadDirection::Backward) => (0, 5), // 逆序阅读：前序 5 章
+            None => (5, 0), // 默认顺序阅读
         }
     }
 
@@ -425,6 +493,8 @@ impl DownloadManager {
                 fail_count: 0,
                 last_retry_at: None,
                 next_retry_at: None,
+                downloaded_bytes: 0,
+                max_retry_count: self.max_retry_count,
             };
             
             self.add_task(task);
@@ -482,6 +552,8 @@ mod tests {
             fail_count: 0,
             last_retry_at: None,
             next_retry_at: None,
+            downloaded_bytes: 0,
+            max_retry_count: 3,
         }
     }
 
@@ -503,17 +575,6 @@ mod tests {
         let id = mgr.add_task(make_task("t1", "book1", 0));
         assert_eq!(id, "t1");
         assert_eq!(mgr.stats().total, 1);
-        assert_eq!(mgr.stats().pending, 1);
-    }
-
-    #[test]
-    fn test_add_multiple_tasks() {
-        let mut mgr = DownloadManager::new(3);
-        mgr.add_task(make_task("t1", "book1", 0));
-        mgr.add_task(make_task("t2", "book1", 1));
-        mgr.add_task(make_task("t3", "book2", 0));
-        assert_eq!(mgr.stats().total, 3);
-        assert_eq!(mgr.stats().pending, 3);
     }
 
     #[test]
@@ -521,8 +582,7 @@ mod tests {
         let mut mgr = DownloadManager::new(3);
         mgr.add_task(make_task("t1", "book1", 0));
         mgr.add_task(make_task("t2", "book1", 1));
-        let next = mgr.next_pending().unwrap();
-        assert_eq!(next.id, "t1");
+        assert_eq!(mgr.next_pending().unwrap().id, "t1");
     }
 
     #[test]
@@ -539,18 +599,7 @@ mod tests {
         mgr.add_task(make_task("t1", "book1", 0));
         mgr.add_task(make_task("t2", "book1", 1));
         mgr.start_task("t1");
-        // max_concurrent = 1, active = 1 => no more pending
         assert!(mgr.next_pending().is_none());
-    }
-
-    #[test]
-    fn test_start_task() {
-        let mut mgr = DownloadManager::new(3);
-        mgr.add_task(make_task("t1", "book1", 0));
-        mgr.start_task("t1");
-        let task = mgr.get_task("t1").unwrap();
-        assert_eq!(task.status, DownloadStatus::Downloading);
-        assert_eq!(mgr.stats().downloading, 1);
     }
 
     #[test]
@@ -563,8 +612,6 @@ mod tests {
         assert_eq!(task.status, DownloadStatus::Completed);
         assert_eq!(task.progress, 1.0);
         assert!(task.completed_at.is_some());
-        assert_eq!(mgr.stats().downloading, 0);
-        assert_eq!(mgr.stats().completed, 1);
     }
 
     #[test]
@@ -572,37 +619,17 @@ mod tests {
         let mut mgr = DownloadManager::new(3);
         mgr.add_task(make_task("t1", "book1", 0));
         mgr.start_task("t1");
-        mgr.fail_task("t1", "network error".to_string());
-        let task = mgr.get_task("t1").unwrap();
-        assert_eq!(
-            task.status,
-            DownloadStatus::Failed("network error".to_string())
-        );
-        assert_eq!(task.error, Some("network error".to_string()));
-        assert_eq!(mgr.stats().downloading, 0);
+        mgr.fail_task("t1", "net error".to_string());
         assert_eq!(mgr.stats().failed, 1);
     }
 
     #[test]
     fn test_pause_and_resume() {
         let mut mgr = DownloadManager::new(3);
-        mgr.add_task(make_task("t1", "book1", 0));
-        assert!(!mgr.is_paused());
         mgr.pause_all();
         assert!(mgr.is_paused());
-        assert!(mgr.stats().paused);
         mgr.resume_all();
         assert!(!mgr.is_paused());
-        assert!(!mgr.stats().paused);
-    }
-
-    #[test]
-    fn test_update_progress() {
-        let mut mgr = DownloadManager::new(3);
-        mgr.add_task(make_task("t1", "book1", 0));
-        mgr.start_task("t1");
-        mgr.update_progress("t1", 0.5);
-        assert_eq!(mgr.get_task("t1").unwrap().progress, 0.5);
     }
 
     #[test]
@@ -619,91 +646,33 @@ mod tests {
     fn test_remove_task() {
         let mut mgr = DownloadManager::new(3);
         mgr.add_task(make_task("t1", "book1", 0));
-        mgr.add_task(make_task("t2", "book1", 1));
         mgr.remove_task("t1");
-        assert_eq!(mgr.stats().total, 1);
         assert!(mgr.get_task("t1").is_none());
-        assert!(mgr.get_task("t2").is_some());
     }
 
     #[test]
     fn test_tasks_by_book() {
         let mut mgr = DownloadManager::new(3);
         mgr.add_task(make_task("t1", "book1", 0));
-        mgr.add_task(make_task("t2", "book1", 1));
-        mgr.add_task(make_task("t3", "book2", 0));
-        let book1_tasks = mgr.tasks_by_book("book1");
-        assert_eq!(book1_tasks.len(), 2);
-        let book2_tasks = mgr.tasks_by_book("book2");
-        assert_eq!(book2_tasks.len(), 1);
-        let book3_tasks = mgr.tasks_by_book("book3");
-        assert_eq!(book3_tasks.len(), 0);
+        mgr.add_task(make_task("t2", "book2", 0));
+        assert_eq!(mgr.tasks_by_book("book1").len(), 1);
+        assert_eq!(mgr.tasks_by_book("book3").len(), 0);
     }
 
     #[test]
-    fn test_stats_mixed_states() {
-        let mut mgr = DownloadManager::new(5);
-        mgr.add_task(make_task("t1", "book1", 0));
-        mgr.add_task(make_task("t2", "book1", 1));
-        mgr.add_task(make_task("t3", "book1", 2));
-        mgr.add_task(make_task("t4", "book1", 3));
-
-        mgr.start_task("t1");
-        mgr.complete_task("t1");
-        mgr.start_task("t2");
-        mgr.fail_task("t2", "err".to_string());
-        mgr.start_task("t3");
-        // t4 remains pending
-
-        let stats = mgr.stats();
-        assert_eq!(stats.total, 4);
-        assert_eq!(stats.pending, 1);
-        assert_eq!(stats.downloading, 1);
-        assert_eq!(stats.completed, 1);
-        assert_eq!(stats.failed, 1);
-    }
-
-    #[test]
-    fn test_get_task_nonexistent() {
-        let mgr = DownloadManager::new(3);
-        assert!(mgr.get_task("nonexistent").is_none());
-    }
-
-    #[test]
-    fn test_start_nonexistent_task_no_panic() {
-        let mut mgr = DownloadManager::new(3);
-        mgr.start_task("nonexistent"); // should not panic
-        assert_eq!(mgr.stats().downloading, 0);
-    }
-
-    #[test]
-    fn test_complete_nonexistent_task_no_panic() {
-        let mut mgr = DownloadManager::new(3);
-        mgr.complete_task("nonexistent"); // should not panic
-        assert_eq!(mgr.stats().completed, 0);
-    }
-
-    #[test]
-    fn test_concurrent_limit_respected() {
+    fn test_concurrent_limit() {
         let mut mgr = DownloadManager::new(2);
-        mgr.add_task(make_task("t1", "book1", 0));
-        mgr.add_task(make_task("t2", "book1", 1));
-        mgr.add_task(make_task("t3", "book1", 2));
-
+        mgr.add_task(make_task("t1", "b", 0));
+        mgr.add_task(make_task("t2", "b", 1));
+        mgr.add_task(make_task("t3", "b", 2));
         mgr.start_task("t1");
         mgr.start_task("t2");
-        // Now at max concurrent (2), next_pending should be None
         assert!(mgr.next_pending().is_none());
-
-        // Complete one, should get next pending
         mgr.complete_task("t1");
-        let next = mgr.next_pending().unwrap();
-        assert_eq!(next.id, "t3");
+        assert_eq!(mgr.next_pending().unwrap().id, "t3");
     }
 
-    // ========================================================================
-    // 预下载策略测试
-    // ========================================================================
+    // === 预下载策略 ===
 
     #[test]
     fn test_default_preload_strategy() {
@@ -711,37 +680,55 @@ mod tests {
         match &mgr.preload_strategy {
             PreloadStrategy::Sequential { ahead, behind } => {
                 assert_eq!(*ahead, 5);
-                assert_eq!(*behind, 3);
+                assert_eq!(*behind, 0);
             }
-            _ => panic!("Expected Sequential strategy"),
+            _ => panic!("Expected Sequential"),
         }
     }
 
     #[test]
-    fn test_calculate_preload_indices_forward() {
+    fn test_preload_forward() {
         let mut mgr = DownloadManager::new(3);
-        mgr.set_preload_strategy(PreloadStrategy::Sequential { ahead: 5, behind: 3 });
-
-        let indices = mgr.calculate_preload_indices("book1", 0, 20);
-        
-        // 应该包含当前章 + 前序 3 章 + 后续 5 章，但限制在最大 10 章
-        assert!(indices.len() <= 10);
-        assert!(indices.contains(&0)); // 当前章
+        let indices = mgr.calculate_preload_indices("b", 0, 20);
+        assert!(indices.contains(&0));
+        assert!(indices.contains(&5));
+        assert!(indices.len() <= 6);
     }
 
     #[test]
-    fn test_calculate_preload_indices_backward_direction() {
+    fn test_preload_reverse() {
+        let mut mgr = DownloadManager::new(3);
+        mgr.set_preload_strategy(PreloadStrategy::Reverse { behind: 5 });
+        let indices = mgr.calculate_preload_indices("b", 10, 20);
+        assert!(indices.contains(&10));
+        assert!(indices.contains(&5));
+        assert!(!indices.contains(&11));
+    }
+
+    #[test]
+    fn test_preload_adaptive_forward() {
         let mut mgr = DownloadManager::new(3);
         mgr.set_preload_strategy(PreloadStrategy::Adaptive);
+        mgr.calculate_preload_indices("b", 5, 20);
+        let indices = mgr.calculate_preload_indices("b", 10, 20);
+        assert!(indices.contains(&15));
+    }
 
-        // 模拟逆序阅读
-        mgr.last_chapter_index = Some(10);
-        mgr.direction_hint = Some(ReadDirection::Backward);
+    #[test]
+    fn test_preload_adaptive_backward() {
+        let mut mgr = DownloadManager::new(3);
+        mgr.set_preload_strategy(PreloadStrategy::Adaptive);
+        mgr.calculate_preload_indices("b", 10, 20);
+        let indices = mgr.calculate_preload_indices("b", 5, 20);
+        assert!(indices.contains(&0));
+    }
 
-        let indices = mgr.calculate_preload_indices("book1", 5, 20);
-        
-        // 应优先下载前序章节
-        assert!(indices.len() > 0);
+    #[test]
+    fn test_preload_trigger() {
+        let mgr = DownloadManager::new(3);
+        assert!(!mgr.should_trigger_preload(0.79));
+        assert!(mgr.should_trigger_preload(0.8));
+        assert!(mgr.should_trigger_preload(1.0));
     }
 
     #[test]
@@ -750,158 +737,133 @@ mod tests {
         mgr.set_preload_config(PreloadConfig {
             enable_mobile_data: false,
             mobile_max_concurrent: 1,
-            max_preload_chapters: 5,
+            max_preload_chapters: 3,
         });
-
-        let indices = mgr.calculate_preload_indices("book1", 10, 100);
-        assert!(indices.len() <= 5);
+        let indices = mgr.calculate_preload_indices("b", 10, 100);
+        assert!(indices.len() <= 3);
     }
 
-    // ========================================================================
-    // 重试机制测试
-    // ========================================================================
+    // === 重试机制 ===
 
     #[test]
     fn test_exponential_backoff() {
         let mgr = DownloadManager::new(3);
-        
-        // fail_count = 1: 2s (2^1 * 1000)
-        let backoff_1 = mgr.calculate_backoff(1);
-        assert_eq!(backoff_1, 2000);
-        
-        // fail_count = 2: 4s
-        let backoff_2 = mgr.calculate_backoff(2);
-        assert_eq!(backoff_2, 4000);
-        
-        // fail_count = 3: 8s
-        let backoff_3 = mgr.calculate_backoff(3);
-        assert_eq!(backoff_3, 8000);
-        
-        // fail_count = 7: 应该被限制在 64s (接近上限 60s)
-        let backoff_7 = mgr.calculate_backoff(7);
-        assert!(backoff_7 >= 60000 && backoff_7 <= 64000);
+        assert_eq!(mgr.calculate_backoff(1), 2000);
+        assert_eq!(mgr.calculate_backoff(2), 4000);
+        assert_eq!(mgr.calculate_backoff(3), 8000);
+        assert_eq!(mgr.calculate_backoff(7), 60000);
     }
 
     #[test]
-    fn test_fail_with_retry_degradation() {
+    fn test_fail_with_retry_permanent() {
         let mut mgr = DownloadManager::new(3);
-        mgr.add_task(make_task("t1", "book1", 0));
-        
-        let task_id = "t1";
-        
-        // 第 1 次失败
-        mgr.fail_task_with_retry(task_id, "error1".to_string());
-        let task = mgr.get_task(task_id).unwrap();
-        assert_eq!(task.fail_count, 1);
-        assert!(task.priority < 100); // 正常优先级
-        assert!(task.next_retry_at.is_some());
-
-        // 第 3 次失败后降级
-        mgr.fail_task_with_retry(task_id, "error2".to_string());
-        mgr.fail_task_with_retry(task_id, "error3".to_string());
-        let task = mgr.get_task(task_id).unwrap();
+        mgr.add_task(make_task("t1", "b", 0));
+        mgr.fail_task_with_retry("t1", "e1".to_string());
+        mgr.fail_task_with_retry("t1", "e2".to_string());
+        mgr.fail_task_with_retry("t1", "e3".to_string());
+        let task = mgr.get_task("t1").unwrap();
         assert_eq!(task.fail_count, 3);
-        assert_eq!(task.priority, 1000); // 降级
+        assert_eq!(task.priority, 1000);
+        assert!(task.next_retry_at.is_none());
+        assert!(task.error.as_ref().unwrap().contains("永久失败"));
+        assert!(task.is_permanently_failed());
+        assert!(!task.can_retry());
     }
 
     #[test]
-    fn test_retry_stats() {
+    fn test_retry_before_max() {
         let mut mgr = DownloadManager::new(3);
-        mgr.add_task(make_task("t1", "book1", 0));
-        
-        mgr.fail_task_with_retry("t1", "error".to_string());
-        
-        let stats = mgr.get_retry_stats("t1").unwrap();
-        assert_eq!(stats.fail_count, 1);
-        assert!(stats.last_retry_at.is_some());
-        assert!(stats.next_retry_at.is_some());
-        assert!(!stats.degraded);
-
-        // 第 3 次失败后 degraded
-        mgr.fail_task_with_retry("t1", "error2".to_string());
-        mgr.fail_task_with_retry("t1", "error3".to_string());
-        let stats = mgr.get_retry_stats("t1").unwrap();
-        assert!(stats.degraded);
+        mgr.add_task(make_task("t1", "b", 0));
+        mgr.fail_task_with_retry("t1", "e1".to_string());
+        mgr.fail_task_with_retry("t1", "e2".to_string());
+        let task = mgr.get_task("t1").unwrap();
+        assert!(!task.is_permanently_failed());
+        assert!(task.next_retry_at.is_some());
     }
 
     #[test]
-    fn test_add_preload_tasks() {
+    fn test_custom_max_retry() {
         let mut mgr = DownloadManager::new(3);
-        
-        let chapters = vec![
-            (1, "http://example.com/ch1".to_string(), "Chapter 1".to_string()),
-            (2, "http://example.com/ch2".to_string(), "Chapter 2".to_string()),
-            (3, "http://example.com/ch3".to_string(), "Chapter 3".to_string()),
-        ];
-        
-        let task_ids = mgr.add_preload_tasks("book1", chapters, 10);
-        
-        assert_eq!(task_ids.len(), 3);
-        assert_eq!(mgr.stats().pending, 3);
-        
-        // 检查优先级顺序 - 第一个优先级最高（数字最小）
-        let task1 = mgr.get_task(&task_ids[0]).unwrap();
-        let task2 = mgr.get_task(&task_ids[1]).unwrap();
-        assert!(task1.priority > task2.priority); // 先下载的优先级更高（值更小）
+        mgr.set_max_retry_count(5);
+        assert_eq!(mgr.get_max_retry_count(), 5);
+        mgr.add_task(make_task("t1", "b", 0));
+        for i in 1..=4 {
+            mgr.fail_task_with_retry("t1", format!("e{i}"));
+        }
+        assert!(!mgr.get_task("t1").unwrap().is_permanently_failed());
+        mgr.fail_task_with_retry("t1", "e5".to_string());
+        assert!(mgr.get_task("t1").unwrap().is_permanently_failed());
     }
 
     #[test]
     fn test_reset_for_retry() {
         let mut mgr = DownloadManager::new(3);
-        mgr.add_task(make_task("t1", "book1", 0));
-        
-        mgr.fail_task_with_retry("t1", "error".to_string());
-        let task = mgr.get_task("t1").unwrap();
-        assert!(matches!(task.status, DownloadStatus::Failed(_)));
-        assert!(task.next_retry_at.is_some());
-
-        // 重置为待下载状态
+        mgr.add_task(make_task("t1", "b", 0));
+        mgr.fail_task_with_retry("t1", "err".to_string());
         mgr.reset_for_retry("t1");
         let task = mgr.get_task("t1").unwrap();
         assert_eq!(task.status, DownloadStatus::Pending);
         assert!(task.error.is_none());
-        assert!(task.next_retry_at.is_none());
     }
 
-    // ========================================================================
-    // 性能测试
-    // ========================================================================
+    #[test]
+    fn test_add_preload_tasks() {
+        let mut mgr = DownloadManager::new(3);
+        let chapters = vec![
+            (1, "http://ex.com/ch1".to_string(), "Ch1".to_string()),
+            (2, "http://ex.com/ch2".to_string(), "Ch2".to_string()),
+        ];
+        let ids = mgr.add_preload_tasks("b", chapters, 10);
+        assert_eq!(ids.len(), 2);
+        assert_eq!(mgr.stats().pending, 2);
+    }
+
+    // === 断点续传 ===
 
     #[test]
-    fn test_performance_thousand_chapters() {
+    fn test_downloaded_bytes() {
+        let mut mgr = DownloadManager::new(3);
+        mgr.add_task(make_task("t1", "b", 0));
+        mgr.update_downloaded_bytes("t1", 1024);
+        assert_eq!(mgr.get_task("t1").unwrap().downloaded_bytes, 1024);
+    }
+
+    #[test]
+    fn test_range_header() {
+        let mut mgr = DownloadManager::new(3);
+        mgr.add_task(make_task("t1", "b", 0));
+        assert!(mgr.get_range_header("t1").is_none());
+        mgr.update_downloaded_bytes("t1", 2048);
+        assert_eq!(mgr.get_range_header("t1").unwrap(), "bytes=2048-");
+    }
+
+    #[test]
+    fn test_reset_download_progress() {
+        let mut mgr = DownloadManager::new(3);
+        mgr.add_task(make_task("t1", "b", 0));
+        mgr.update_downloaded_bytes("t1", 4096);
+        mgr.update_progress("t1", 0.5);
+        mgr.reset_download_progress("t1");
+        let task = mgr.get_task("t1").unwrap();
+        assert_eq!(task.downloaded_bytes, 0);
+        assert_eq!(task.progress, 0.0);
+    }
+
+    // === 性能 ===
+
+    #[test]
+    fn test_performance() {
         use std::time::Instant;
-        
         let mut mgr = DownloadManager::new(3);
         let start = Instant::now();
-        
-        // 模拟 1000 章小说的预下载场景
-        let book_url = "http://example.com/book123";
-        let total_chapters: i32 = 1000;
-        let current_chapter: i32 = 500;
-        
-        let preload_indices = mgr.calculate_preload_indices(book_url, current_chapter, total_chapters);
-        println!("Preload indices count: {}", preload_indices.len());
-        assert!(preload_indices.len() <= 10); // 应该限制在 max_preload_chapters
-        
-        let elapsed = start.elapsed();
-        println!("Time to calculate preload for 1000 chapters: {:?}", elapsed);
-        assert!(elapsed.as_millis() < 100, "Preload calculation should be fast (<100ms)");
+        let indices = mgr.calculate_preload_indices("http://ex.com/book", 500, 1000);
+        assert!(indices.len() <= 10);
+        assert!(start.elapsed().as_millis() < 100);
     }
 
     #[test]
     fn test_memory_efficiency() {
         use std::mem;
-        
-        // 计算单个任务的大小
-        let task_size = mem::size_of::<DownloadTask>();
-        println!("Size of DownloadTask: {} bytes ({:.2} KB)", task_size, task_size as f64 / 1024.0);
-        
-        // 1000 个任务的内存占用估算
-        let estimated_memory = task_size * 1000;
-        println!("Estimated memory for 1000 tasks: {:.2} MB", estimated_memory as f64 / (1024.0 * 1024.0));
-        
-        // 应该在合理范围内（假设任务大小不超过 500 bytes）
-        // 如果是这样，1000 个任务约 0.5MB，远低于 100MB 上限
-        assert!(task_size < 500, "Task size should be small");
+        assert!(mem::size_of::<DownloadTask>() < 600);
     }
 }

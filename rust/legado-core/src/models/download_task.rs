@@ -54,6 +54,11 @@ pub struct DownloadTask {
     pub last_retry_at: Option<i64>,
     /// 下次允许重试的时间 (毫秒时间戳)，用于实现延迟重试
     pub next_retry_at: Option<i64>,
+    // 断点续传元数据
+    /// 已下载的字节数，用于断点续传
+    pub downloaded_bytes: i64,
+    /// 最大重试次数 (默认 3)，超过后标记为永久失败
+    pub max_retry_count: u32,
 }
 
 impl DownloadTask {
@@ -102,6 +107,8 @@ impl DownloadTask {
             fail_count: 0,
             last_retry_at: None,
             next_retry_at: None,
+            downloaded_bytes: 0,
+            max_retry_count: 3,
         }
     }
 
@@ -117,13 +124,38 @@ impl DownloadTask {
     ///
     /// 如果满足以下条件则返回 true:
     /// - 状态为 Failed
+    /// - 失败次数未超过最大重试次数
     /// - next_retry_at 为空或已过时
     pub fn can_retry(&self) -> bool {
         matches!(self.status, DownloadStatus::Failed(_))
+            && self.fail_count < self.max_retry_count
             && self
                 .next_retry_at
                 .map(|t| t <= Self::now_millis())
                 .unwrap_or(true)
+    }
+
+    /// 检查是否已超过最大重试次数（永久失败）
+    pub fn is_permanently_failed(&self) -> bool {
+        matches!(self.status, DownloadStatus::Failed(_))
+            && self.fail_count >= self.max_retry_count
+    }
+
+    /// 更新已下载字节数（断点续传）
+    pub fn update_downloaded_bytes(&mut self, bytes: i64) {
+        self.downloaded_bytes = bytes;
+    }
+
+    /// 构建 HTTP Range 请求头值（断点续传）
+    ///
+    /// 如果已有部分下载，返回 `bytes={downloaded_bytes}-` 格式；
+    /// 否则返回 None 表示从头下载。
+    pub fn range_header(&self) -> Option<String> {
+        if self.downloaded_bytes > 0 {
+            Some(format!("bytes={}-", self.downloaded_bytes))
+        } else {
+            None
+        }
     }
 
     /// 设置重试时间（使用指数退避算法）

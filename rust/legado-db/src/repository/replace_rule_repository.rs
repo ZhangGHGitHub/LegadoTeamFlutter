@@ -150,7 +150,7 @@ impl<'a> ReplaceRuleRepository<'a> {
 
     /// 对文本应用匹配的替换规则
     ///
-    /// [book_name] 用于过滤 scope 相关的规则，传入书籍名称以便匹配 book 范围的规则。
+    /// `book_name` 用于过滤 scope 相关的规则，传入书籍名称以便匹配 book 范围的规则。
     pub fn apply_rules(&self, text: &str, book_name: &str) -> LegadoResult<String> {
         let rules = self.get_enabled_rules()?;
         let mut result = text.to_string();

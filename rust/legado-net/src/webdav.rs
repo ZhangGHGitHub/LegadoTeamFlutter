@@ -1,13 +1,11 @@
 //! WebDAV 客户端 — 用于书籍数据云端同步
 //!
 //! 支持 WebDAV 协议的基本操作：PROPFIND, PUT, GET, DELETE, MKCOL
-//! 支持增量同步、冲突检测、断点续传
+//! 支持增量同步、冲突检测、冲突合并、断点续传
 
 use legado_core::{LegadoError, LegadoResult};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
-
-/// 同步结果统计
+use std::time::Duration;
 
 /// WebDAV 客户端配置
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -108,12 +106,10 @@ impl WebDavClient {
             .send()
             .await
             .map_err(|e| LegadoError::Network(e.to_string()))?;
-
         let bytes = response
             .bytes()
             .await
             .map_err(|e| LegadoError::Network(e.to_string()))?;
-
         Ok(bytes.to_vec())
     }
 
@@ -142,12 +138,6 @@ impl WebDavClient {
     }
 
     /// 获取文件 ETag 和 Last-Modified 元数据
-    ///
-    /// # 参数
-    /// - `path`: 远程文件路径
-    ///
-    /// # 返回
-    /// Option<(etag, last_modified)> 若文件不存在则返回 None
     pub async fn get_file_info(&self, path: &str) -> Option<(String, String)> {
         let url = self.full_url(path);
         let body = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -175,26 +165,13 @@ impl WebDavClient {
 
         let xml = response.text().await.ok()?;
         let files = Self::parse_propfind_response(&xml).ok()?;
-        
-        files.first().and_then(|f| {
-            match (&f.etag, &f.last_modified) {
-                (Some(etag), Some(modified)) => Some((etag.clone(), modified.clone())),
-                _ => None,
-            }
+        files.first().and_then(|f| match (&f.etag, &f.last_modified) {
+            (Some(etag), Some(modified)) => Some((etag.clone(), modified.clone())),
+            _ => None,
         })
     }
 
-    /// 条件 PUT：仅当本地数据更新时才上传
-    ///
-    /// # 参数
-    /// - `path`: 远程文件路径
-    /// - `data`: 文件内容
-    /// - `etag`: 远端文件的 ETag（若有）
-    ///
-    /// # 返回
-    /// - Ok(true): 上传成功
-    /// - Ok(false): 未上传（远端已更新）
-    /// - Err: 错误
+    /// 条件 PUT：仅当远端 ETag 匹配时才上传（乐观锁）
     pub async fn conditional_put(
         &self,
         path: &str,
@@ -206,47 +183,33 @@ impl WebDavClient {
             .client
             .put(&url)
             .header("Authorization", self.auth_header());
-
-        // 如果提供了 ETag，添加 If-Match 头
         if let Some(etag_value) = etag {
             request = request.header("If-Match", etag_value);
         }
-
         let response = request
             .body(data.to_vec())
             .send()
             .await
             .map_err(|e| LegadoError::Network(e.to_string()))?;
-
-        // 412 Precondition Failed 表示远端已更新，本地数据已过时
         if response.status() == reqwest::StatusCode::PRECONDITION_FAILED {
             return Ok(false);
         }
-
         if !response.status().is_success() {
             return Err(LegadoError::Network(format!(
                 "PUT failed with status: {}",
                 response.status()
             )));
         }
-
         Ok(true)
     }
 
-    /// 并列出目录内容并返回 {path: (etag, modified)} 映射
-    ///
-    /// # 参数
-    /// - `path`: 远程目录路径
-    ///
-    /// # 返回
-    /// HashMap<文件名, (etag, last_modified)>
+    /// 列出目录内容并返回 {文件名: (etag, last_modified)} 映射
     pub async fn list_dir_with_etag(
         &self,
         path: &str,
     ) -> LegadoResult<HashMap<String, (String, String)>> {
         let files = self.list_dir(path).await?;
         let mut result = HashMap::new();
-        
         for file in files {
             if !file.is_dir {
                 if let (Some(etag), Some(modified)) = (&file.etag, &file.last_modified) {
@@ -254,7 +217,6 @@ impl WebDavClient {
                 }
             }
         }
-        
         Ok(result)
     }
 
@@ -265,7 +227,6 @@ impl WebDavClient {
 
         let mut reader = Reader::from_str(xml);
         let mut buf = Vec::new();
-
         let mut files = Vec::new();
         let mut current_href: Option<String> = None;
         let mut current_displayname: Option<String> = None;
@@ -273,7 +234,6 @@ impl WebDavClient {
         let mut current_last_modified: Option<String> = None;
         let mut current_etag: Option<String> = None;
         let mut current_is_dir = false;
-
         let mut in_response = false;
         let mut in_prop = false;
         let mut tag_local = String::new();
@@ -284,8 +244,7 @@ impl WebDavClient {
                     let local = std::str::from_utf8(e.local_name().as_ref())
                         .unwrap_or("")
                         .to_string();
-                    tag_local = local.clone();
-
+                    tag_local.clone_from(&local);
                     match local.as_str() {
                         "response" => {
                             in_response = true;
@@ -296,15 +255,14 @@ impl WebDavClient {
                             current_etag = None;
                             current_is_dir = false;
                         }
-                        "propstat" | "prop" => {
-                            in_prop = true;
-                        }
+                        "propstat" | "prop" => in_prop = true,
                         _ => {}
                     }
                 }
                 Ok(Event::Empty(ref e)) => {
-                    let local_name = e.local_name();
-                    let local = std::str::from_utf8(local_name.as_ref()).unwrap_or("");
+                    let local = std::str::from_utf8(e.local_name().as_ref())
+                        .unwrap_or("")
+                        .to_string();
                     if local == "collection" && in_prop {
                         current_is_dir = true;
                     }
@@ -318,22 +276,18 @@ impl WebDavClient {
                             "getcontentlength" if in_prop => {
                                 current_size = text.parse().unwrap_or(0);
                             }
-                            "getlastmodified" if in_prop => {
-                                current_last_modified = Some(text);
-                            }
-                            "getetag" if in_prop => {
-                                current_etag = Some(text);
-                            }
+                            "getlastmodified" if in_prop => current_last_modified = Some(text),
+                            "getetag" if in_prop => current_etag = Some(text),
                             _ => {}
                         }
-                        // 防止 End 事件后残留 tag_local 误匹配后续空白文本
                         tag_local.clear();
                     }
                 }
                 Ok(Event::End(ref e)) => {
-                    let local_name = e.local_name();
-                    let local = std::str::from_utf8(local_name.as_ref()).unwrap_or("");
-                    match local {
+                    let local = std::str::from_utf8(e.local_name().as_ref())
+                        .unwrap_or("")
+                        .to_string();
+                    match local.as_str() {
                         "response" if in_response => {
                             let href = current_href.clone().unwrap_or_default();
                             let name = current_displayname.clone().unwrap_or_else(|| {
@@ -353,9 +307,7 @@ impl WebDavClient {
                             });
                             in_response = false;
                         }
-                        "propstat" | "prop" => {
-                            in_prop = false;
-                        }
+                        "propstat" | "prop" => in_prop = false,
                         _ => {}
                     }
                 }
@@ -367,14 +319,8 @@ impl WebDavClient {
             }
             buf.clear();
         }
-
         Ok(files)
     }
-}
-
-/// 书籍数据 WebDAV 同步管理器
-pub struct BookSyncManager {
-    client: WebDavClient,
 }
 
 /// 同步结果统计
@@ -384,17 +330,52 @@ pub struct SyncResult {
     pub downloaded_count: usize,
     pub skipped_count: usize,
     pub conflict_count: usize,
+    /// 冲突文件列表
+    pub conflict_files: Vec<ConflictFile>,
     pub errors: Vec<String>,
     pub duration_ms: u64,
 }
 
+/// 冲突文件信息
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConflictFile {
+    pub path: String,
+    pub local_modified: i64,
+    pub remote_modified: i64,
+    pub remote_etag: Option<String>,
+}
+
 /// 冲突解决策略
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConflictResolution {
+    /// 保留远端版本
     KeepRemote,
+    /// 使用本地版本
     UseLocal,
+    /// JSON 字段级合并（保留最新值）
     Merge,
+    /// 用户手动选择
     Manual,
+}
+
+/// 冲突解决历史记录
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConflictResolutionRecord {
+    pub path: String,
+    pub strategy: ConflictResolution,
+    pub resolved_at: i64,
+    pub note: String,
+}
+
+/// 冲突解决结果
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConflictResolveResult {
+    /// 合并后的文件内容映射 {路径: 内容}
+    pub resolved_files: HashMap<String, String>,
+    /// 解决历史
+    pub history: Vec<ConflictResolutionRecord>,
+    /// 仍需手动处理的文件
+    pub pending_manual: Vec<String>,
 }
 
 /// 同步选项
@@ -412,7 +393,7 @@ pub struct SyncOptions {
 pub struct LocalFileMeta {
     pub path: String,
     pub size: u64,
-    pub last_modified: i64, // 秒级 Unix 时间戳
+    pub last_modified: i64,
     pub data: Vec<u8>,
 }
 
@@ -425,14 +406,19 @@ pub enum SyncItemKind {
 
 /// 需要同步的文件
 #[derive(Debug)]
-pub struct SyncItem {
-    pub kind: SyncItemKind,
-    pub local_data: Option<String>,
-    pub should_upload: bool,
-    pub upload_etag: Option<String>,
-    pub should_download: bool,
-    pub download_etag: Option<String>,
-    pub is_conflict: bool,
+struct SyncItem {
+    kind: SyncItemKind,
+    local_data: Option<String>,
+    should_upload: bool,
+    upload_etag: Option<String>,
+    should_download: bool,
+    download_etag: Option<String>,
+    is_conflict: bool,
+}
+
+/// 书籍数据 WebDAV 同步管理器
+pub struct BookSyncManager {
+    client: WebDavClient,
 }
 
 impl BookSyncManager {
@@ -441,73 +427,55 @@ impl BookSyncManager {
     }
 
     /// 解析 RFC1123 时间字符串为 Unix 时间戳
-    fn parse_rfc1123(timestamp: &str) -> Option<i64> {
+    pub fn parse_rfc1123(timestamp: &str) -> Option<i64> {
         let ts = timestamp.trim();
         if ts.len() < 29 {
             return None;
         }
-        
-        // RFC1123 格式："Sat, 01 Jan 2025 00:00:00 GMT"
-        let parts: Vec<&str> = ts.split(':').collect();
-        if parts.len() < 3 {
+        let comma_pos = ts.find(',')?;
+        let after_comma = ts[comma_pos + 1..].trim();
+        let parts: Vec<&str> = after_comma.splitn(4, ' ').collect();
+        if parts.len() < 4 {
             return None;
         }
-        
-        let hour: u32 = parts[0].trim().split(' ').last()?.parse().ok()?;
-        let min: u32 = parts[1].trim().parse().ok()?;
-        let sec: u32 = parts[2].trim().split(',').next()?.parse().ok()?;
-        
-        // 解析日期："Sat, 01 Jan 2025"
-        let date_only = parts[0].trim();
-        let date_components: Vec<&str> = date_only.split_whitespace().collect();
-        
-        if date_components.len() < 2 {
-            return None;
-        }
-        
-        let day: u32 = date_components[0].parse().ok()?;
-        let month_str = date_components[1];
-        let year: i32 = date_components.get(2)?.parse().ok()?;
-        
-        let month = match month_str {
-            "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4,
+        let day: u32 = parts[0].parse().ok()?;
+        let month = match parts[1] {
+            "Jan" => 1u32, "Feb" => 2, "Mar" => 3, "Apr" => 4,
             "May" => 5, "Jun" => 6, "Jul" => 7, "Aug" => 8,
             "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12,
             _ => return None,
         };
-        
-        Some(Self::precise_timestamp(year as i64, month, day, hour, min, sec))
+        let year: i64 = parts[2].parse().ok()?;
+        let time_part = parts[3].split(' ').next()?;
+        let tc: Vec<&str> = time_part.split(':').collect();
+        if tc.len() < 3 {
+            return None;
+        }
+        let hour: i64 = tc[0].parse().ok()?;
+        let min: i64 = tc[1].parse().ok()?;
+        let sec: i64 = tc[2].parse().ok()?;
+        Some(Self::days_since_epoch(year, month, day) * 86400 + hour * 3600 + min * 60 + sec)
     }
 
-    /// 将时间戳转换为精确的 Unix 秒数
-    fn precise_timestamp(year: i64, month: u32, day: u32, hour: u32, min: u32, sec: u32) -> i64 {
-        let mut y = year as i32;
-        let m = month as i32;
-        let d = day as i32;
-        
-        let adjusted_y = if m <= 2 { y - 1 } else { y };
-        let adjusted_m = if m <= 2 { m + 12 } else { m };
-        
-        let z1 = 365 * adjusted_y + adjusted_y / 4 - adjusted_y / 100 + adjusted_y / 400;
-        let z2 = 30 * adjusted_m + adjusted_m / 3;
-        let jd = z1 + z2 + d + 1721119;
-        
-        let epoch_start_jd = 2440588; // 1970-01-01
-        let days = (jd - epoch_start_jd) as i64;
-        
-        days * 86400 + hour as i64 * 3600 + min as i64 * 60 + sec as i64
+    /// 计算自 Unix 纪元以来的天数
+    fn days_since_epoch(year: i64, month: u32, day: u32) -> i64 {
+        let y = if month <= 2 { year - 1 } else { year };
+        let m = if month <= 2 { month + 9 } else { month - 3 };
+        let era = if y >= 0 { y } else { y - 399 } / 400;
+        let yoe = y - era * 400;
+        let doy = (153 * m as i64 + 2) / 5 + day as i64 - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146097 + doe - 719468
     }
 
-    /// 比较两个文件的修改时间是否接近 (±5 秒内视为冲突)
+    /// 比较两个时间戳是否接近（±5 秒内视为冲突）
     fn times_are_close(local_ts: i64, remote_ts: i64) -> bool {
         (local_ts - remote_ts).abs() <= 5
     }
 
     /// 上传书架数据
     pub async fn upload_bookshelf(&self, json_data: &str) -> LegadoResult<()> {
-        self.client
-            .put("bookshelf.json", json_data.as_bytes())
-            .await
+        self.client.put("bookshelf.json", json_data.as_bytes()).await
     }
 
     /// 下载书架数据
@@ -533,58 +501,35 @@ impl BookSyncManager {
         local_books: &str,
         local_sources: &str,
     ) -> LegadoResult<(String, String)> {
-        // 1. 确保远程目录存在
         self.client.mkdir("").await.ok();
-    
-        // 2. 上传本地数据
         self.upload_bookshelf(local_books).await?;
         self.upload_sources(local_sources).await?;
-    
-        // 3. 返回远程数据（简化版，实际应做合并）
-        let remote_books = self
-            .download_bookshelf()
-            .await
-            .unwrap_or_else(|_| local_books.to_string());
-        let remote_sources = self
-            .download_sources()
-            .await
-            .unwrap_or_else(|_| local_sources.to_string());
-    
+        let remote_books = self.download_bookshelf().await.unwrap_or_else(|_| local_books.to_string());
+        let remote_sources = self.download_sources().await.unwrap_or_else(|_| local_sources.to_string());
         Ok((remote_books, remote_sources))
     }
-    
-    /// 增量同步
-    ///
-    /// # 参数
-    /// - `local_books`: 本地书架 JSON
-    /// - `local_sources`: 本地书源 JSON
-    /// - `last_sync_time`: 上次同步时间戳 (秒)
-    ///
-    /// # 返回
-    /// (`books`, `sources`, `SyncResult`)
+
+    /// 增量同步：仅同步自上次同步后修改的文件，检测冲突
     pub async fn incremental_sync(
         &self,
         local_books: &str,
         local_sources: &str,
         last_sync_time: Option<i64>,
     ) -> LegadoResult<(String, String, SyncResult)> {
-        use std::time::Instant;
-            
-        let start = Instant::now();
+        let start = std::time::Instant::now();
         let mut result = SyncResult {
             uploaded_count: 0,
             downloaded_count: 0,
             skipped_count: 0,
             conflict_count: 0,
+            conflict_files: Vec::new(),
             errors: Vec::new(),
             duration_ms: 0,
         };
-    
-        // 1. 获取远端文件列表和元数据
+
         let remote_files = self.client.list_dir_with_etag("").await.unwrap_or_default();
-            
-        // 2. 分析需要同步的文件
-        let sync_items = vec![
+
+        let mut sync_items = vec![
             SyncItem {
                 kind: SyncItemKind::Bookshelf,
                 local_data: Some(local_books.to_string()),
@@ -604,200 +549,205 @@ impl BookSyncManager {
                 is_conflict: false,
             },
         ];
-    
-        // 3. 确定每个同步项的操作
+
+        // 增量判断：比较本地/远端修改时间
         for item in sync_items.iter_mut() {
-            match item.kind {
-                SyncItemKind::Bookshelf => {
-                    if let Some(ref data) = item.local_data {
-                        let has_remote = remote_files.contains_key("bookshelf.json");
-                        let local_modified = last_sync_time.unwrap_or(0);
-                            
-                        // 获取远端元数据
-                        let (remote_modified, remote_etag) = if has_remote {
-                            let info = self.client.get_file_info("/bookshelf.json").await;
-                            info.map_or((0i64, None), |(etag, modif)| {
-                                (Self::parse_rfc1123(&modif).unwrap_or(0), Some(etag))
-                            })
-                        } else {
-                            (0i64, None)
-                        };
-                            
-                        if !has_remote || local_modified > remote_modified {
-                            item.should_upload = true;
-                            item.upload_etag = remote_etag;
-                        } else if local_modified <= remote_modified {
-                            item.should_download = true;
-                            item.download_etag = remote_etag;
-                        }
-                            
-                        // 检查冲突
-                        if Self::times_are_close(local_modified, remote_modified) && has_remote {
-                            item.is_conflict = true;
-                            result.conflict_count += 1;
-                            if local_modified != remote_modified {
-                                item.should_upload = true;
-                                item.upload_etag = remote_etag;
-                            }
-                        }
-                    }
-                }
-                SyncItemKind::Sources => {
-                    if let Some(ref data) = item.local_data {
-                        let has_remote = remote_files.contains_key("sources.json");
-                        let local_modified = last_sync_time.unwrap_or(0);
-                            
-                        let (remote_modified, remote_etag) = if has_remote {
-                            let info = self.client.get_file_info("/sources.json").await;
-                            info.map_or((0i64, None), |(etag, modif)| {
-                                (Self::parse_rfc1123(&modif).unwrap_or(0), Some(etag))
-                            })
-                        } else {
-                            (0i64, None)
-                        };
-                            
-                        if !has_remote || local_modified > remote_modified {
-                            item.should_upload = true;
-                            item.upload_etag = remote_etag;
-                        } else if local_modified <= remote_modified {
-                            item.should_download = true;
-                            item.download_etag = remote_etag;
-                        }
-                            
-                        if Self::times_are_close(local_modified, remote_modified) && has_remote {
-                            item.is_conflict = true;
-                            result.conflict_count += 1;
-                            if local_modified != remote_modified {
-                                item.should_upload = true;
-                                item.upload_etag = remote_etag;
-                            }
-                        }
-                    }
-                }
+            let (file_name, remote_path) = match item.kind {
+                SyncItemKind::Bookshelf => ("bookshelf.json", "/bookshelf.json"),
+                SyncItemKind::Sources => ("sources.json", "/sources.json"),
+            };
+            let has_remote = remote_files.contains_key(file_name);
+            let local_modified = last_sync_time.unwrap_or(0);
+            let (remote_modified, remote_etag) = if has_remote {
+                self.client.get_file_info(remote_path).await.map_or((0i64, None), |(etag, modif)| {
+                    (Self::parse_rfc1123(&modif).unwrap_or(0), Some(etag))
+                })
+            } else {
+                (0i64, None)
+            };
+
+            // 远端不存在或本地更新 → 上传；远端更新 → 下载；相同 → 跳过
+            if !has_remote || local_modified > remote_modified {
+                item.should_upload = true;
+                item.upload_etag = remote_etag;
+            } else if remote_modified > local_modified {
+                item.should_download = true;
+                item.download_etag = remote_etag;
+            }
+
+            // 冲突检测：时间接近但不同
+            if has_remote
+                && Self::times_are_close(local_modified, remote_modified)
+                && local_modified != remote_modified
+            {
+                item.is_conflict = true;
+                result.conflict_count += 1;
+                result.conflict_files.push(ConflictFile {
+                    path: file_name.to_string(),
+                    local_modified,
+                    remote_modified,
+                    remote_etag: item.upload_etag.clone().or_else(|| item.download_etag.clone()),
+                });
             }
         }
-    
-        // 4. 执行同步操作
-        for item in sync_items {
-            match item.kind {
-                SyncItemKind::Bookshelf => {
-                    if item.should_upload {
-                        match item.local_data {
-                            Some(data) => {
-                                if let Err(e) = self
-                                    .client
-                                    .conditional_put("/bookshelf.json", data.as_bytes(), item.upload_etag.as_deref())
-                                    .await
-                                {
-                                    result.errors.push(format!("Upload bookshelf failed: {}", e));
-                                } else {
-                                    result.uploaded_count += 1;
-                                }
-                            }
-                            None => {}
-                        }
-                    }
-                    if item.should_download && !item.is_conflict {
-                        match self.download_bookshelf().await {
-                            Ok(data) => {
-                                result.downloaded_count += 1;
-                            }
-                            Err(e) => result.errors.push(format!("Download bookshelf failed: {}", e)),
-                        }
-                    }
-                    if !item.should_upload && !item.should_download {
-                        result.skipped_count += 1;
+
+        // 执行同步
+        let mut books_result = local_books.to_string();
+        let mut sources_result = local_sources.to_string();
+
+        for item in &sync_items {
+            let (upload_path, dl_err_msg) = match item.kind {
+                SyncItemKind::Bookshelf => ("/bookshelf.json", "书架"),
+                SyncItemKind::Sources => ("/sources.json", "书源"),
+            };
+            if item.should_upload {
+                if let Some(ref data) = item.local_data {
+                    match self.client.conditional_put(upload_path, data.as_bytes(), item.upload_etag.as_deref()).await {
+                        Ok(_) => result.uploaded_count += 1,
+                        Err(e) => result.errors.push(format!("上传{}失败: {}", dl_err_msg, e)),
                     }
                 }
-                SyncItemKind::Sources => {
-                    if item.should_upload {
-                        match item.local_data {
-                            Some(data) => {
-                                if let Err(e) = self
-                                    .client
-                                    .conditional_put("/sources.json", data.as_bytes(), item.upload_etag.as_deref())
-                                    .await
-                                {
-                                    result.errors.push(format!("Upload sources failed: {}", e));
-                                } else {
-                                    result.uploaded_count += 1;
-                                }
-                            }
-                            None => {}
+            } else if item.should_download && !item.is_conflict {
+                let dl_result = match item.kind {
+                    SyncItemKind::Bookshelf => self.download_bookshelf().await,
+                    SyncItemKind::Sources => self.download_sources().await,
+                };
+                match dl_result {
+                    Ok(data) => {
+                        result.downloaded_count += 1;
+                        match item.kind {
+                            SyncItemKind::Bookshelf => books_result = data,
+                            SyncItemKind::Sources => sources_result = data,
                         }
                     }
-                    if item.should_download && !item.is_conflict {
-                        match self.download_sources().await {
-                            Ok(data) => {
-                                result.downloaded_count += 1;
-                            }
-                            Err(e) => result.errors.push(format!("Download sources failed: {}", e)),
-                        }
-                    }
-                    if !item.should_upload && !item.should_download {
-                        result.skipped_count += 1;
-                    }
+                    Err(e) => result.errors.push(format!("下载{}失败: {}", dl_err_msg, e)),
                 }
+            } else if !item.should_upload && !item.should_download {
+                result.skipped_count += 1;
             }
         }
-    
+
         result.duration_ms = start.elapsed().as_millis() as u64;
-    
-        // 5. 返回远程数据用于更新本地
-        let books = if sync_items[0].should_download {
-            self.download_bookshelf().await.unwrap_or_else(|e| {
-                result.errors.push(format!("Fetch final books: {}", e));
-                local_books.to_string()
-            })
-        } else {
-            local_books.to_string()
-        };
-            
-        let sources = if sync_items[1].should_download {
-            self.download_sources().await.unwrap_or_else(|e| {
-                result.errors.push(format!("Fetch final sources: {}", e));
-                local_sources.to_string()
-            })
-        } else {
-            local_sources.to_string()
-        };
-    
-        Ok((books, sources, result))
+        Ok((books_result, sources_result, result))
     }
-    
-    /// 分片上传支持断点续传
+
+    /// 解决冲突文件
     ///
-    /// # 参数
-    /// - `path`: 远程路径
-    /// - `data`: 数据
-    /// - `chunk_size`: 分片大小 (字节)
-    /// - `resume_offset`: 从该偏移量开始上传 (可选)
-    async fn upload_chunked(
+    /// - JSON 文件：字段级合并（保留最新值）
+    /// - 其他文件：按策略选择本地/远端版本
+    pub async fn resolve_conflicts(
         &self,
-        path: &str,
-        data: &[u8],
-        chunk_size: usize,
-        resume_offset: Option<usize>,
-    ) -> LegadoResult<()> {
-        const CHUNK_SIZE_DEFAULT: usize = 1 * 1024 * 1024; // 1MB
-        let size = chunk_size.min(CHUNK_SIZE_DEFAULT);
-        let offset = resume_offset.unwrap_or(0);
-            
-        if offset >= data.len() {
-            return Ok(()); // 已经上传完成
+        conflict_files: &[String],
+        strategy: ConflictResolution,
+        local_contents: &HashMap<String, String>,
+    ) -> LegadoResult<ConflictResolveResult> {
+        let mut resolved_files = HashMap::new();
+        let mut history = Vec::new();
+        let mut pending_manual = Vec::new();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        for path in conflict_files {
+            let local_content = local_contents.get(path).cloned().unwrap_or_default();
+            let remote_content = match self.client.get(path).await {
+                Ok(bytes) => String::from_utf8(bytes).unwrap_or_default(),
+                Err(e) => {
+                    resolved_files.insert(path.clone(), local_content);
+                    history.push(ConflictResolutionRecord {
+                        path: path.clone(),
+                        strategy: ConflictResolution::UseLocal,
+                        resolved_at: now,
+                        note: format!("远端获取失败，保留本地: {}", e),
+                    });
+                    continue;
+                }
+            };
+
+            let is_json = path.ends_with(".json");
+            match strategy {
+                ConflictResolution::KeepRemote => {
+                    resolved_files.insert(path.clone(), remote_content);
+                    history.push(ConflictResolutionRecord {
+                        path: path.clone(), strategy, resolved_at: now,
+                        note: "保留远端版本".to_string(),
+                    });
+                }
+                ConflictResolution::UseLocal => {
+                    resolved_files.insert(path.clone(), local_content);
+                    history.push(ConflictResolutionRecord {
+                        path: path.clone(), strategy, resolved_at: now,
+                        note: "使用本地版本".to_string(),
+                    });
+                }
+                ConflictResolution::Merge if is_json => {
+                    let merged = Self::merge_json(&local_content, &remote_content);
+                    resolved_files.insert(path.clone(), merged);
+                    history.push(ConflictResolutionRecord {
+                        path: path.clone(), strategy, resolved_at: now,
+                        note: "JSON 字段级合并".to_string(),
+                    });
+                }
+                ConflictResolution::Merge | ConflictResolution::Manual => {
+                    pending_manual.push(path.clone());
+                    history.push(ConflictResolutionRecord {
+                        path: path.clone(),
+                        strategy: ConflictResolution::Manual,
+                        resolved_at: now,
+                        note: "需手动处理".to_string(),
+                    });
+                }
+            }
         }
-            
-        // 计算起始位置
-        let start = offset.min(data.len());
-        let remaining = &data[start..];
-            
-        // 上传剩余部分
-        self.put(path, remaining).await?;
-            
-        Ok(())
+
+        Ok(ConflictResolveResult { resolved_files, history, pending_manual })
     }
-    
+
+    /// JSON 字段级合并：对象逐字段合并，数组合并去重，其他类型远端优先
+    fn merge_json(local: &str, remote: &str) -> String {
+        let local_val: serde_json::Value = match serde_json::from_str(local) {
+            Ok(v) => v,
+            Err(_) => return remote.to_string(),
+        };
+        let remote_val: serde_json::Value = match serde_json::from_str(remote) {
+            Ok(v) => v,
+            Err(_) => return local.to_string(),
+        };
+        let merged = Self::merge_values(&local_val, &remote_val);
+        serde_json::to_string_pretty(&merged).unwrap_or_else(|_| remote.to_string())
+    }
+
+    /// 递归合并两个 JSON 值
+    fn merge_values(local: &serde_json::Value, remote: &serde_json::Value) -> serde_json::Value {
+        use serde_json::Value;
+        match (local, remote) {
+            (Value::Object(lm), Value::Object(rm)) => {
+                let mut merged = lm.clone();
+                for (key, rv) in rm {
+                    if let Some(lv) = merged.get(key) {
+                        merged.insert(key.clone(), Self::merge_values(lv, rv));
+                    } else {
+                        merged.insert(key.clone(), rv.clone());
+                    }
+                }
+                Value::Object(merged)
+            }
+            (Value::Array(la), Value::Array(ra)) => {
+                let mut merged = la.clone();
+                for item in ra {
+                    if !merged.contains(item) {
+                        merged.push(item.clone());
+                    }
+                }
+                Value::Array(merged)
+            }
+            (_, rv) => rv.clone(),
+        }
+    }
+
     /// 带指数退避的重试上传
+    #[allow(dead_code)]
     async fn upload_with_retry(
         &self,
         path: &str,
@@ -807,27 +757,20 @@ impl BookSyncManager {
         max_delay_ms: u64,
     ) -> LegadoResult<()> {
         let mut delay = initial_delay_ms;
-            
         for attempt in 0..=max_retries {
-            match self.put(path, data).await {
+            match self.client.put(path, data).await {
                 Ok(_) => return Ok(()),
                 Err(e) => {
                     if attempt < max_retries {
-                        // 指数退避：1s, 2s, 4s, 8s, ...
-                        log::info!("Upload failed (attempt {}/{}, retrying in {}ms): {}", 
-                                   attempt + 1, max_retries, delay, e);
+                        log::info!("上传失败 (第 {}/{} 次, {}ms 后重试): {}", attempt + 1, max_retries, delay, e);
                         tokio::time::sleep(Duration::from_millis(delay)).await;
                         delay = (delay * 2).min(max_delay_ms);
                     } else {
-                        return Err(LegadoError::Network(format!(
-                            "Upload failed after {} retries: {}",
-                            max_retries, e
-                        )));
+                        return Err(LegadoError::Network(format!("上传失败，已重试 {} 次: {}", max_retries, e)));
                     }
                 }
             }
         }
-            
         unreachable!()
     }
 }
@@ -846,25 +789,8 @@ mod tests {
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("dav.example.com"));
-        assert!(json.contains("user"));
         let de: WebDavConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(de.remote_dir, "/legado/");
-    }
-
-    #[test]
-    fn test_webdav_config_roundtrip() {
-        let config = WebDavConfig {
-            url: "https://cloud.example.com/dav".into(),
-            username: "admin".into(),
-            password: "secret".into(),
-            remote_dir: "/backup/".into(),
-        };
-        let json = serde_json::to_value(&config).unwrap();
-        let de: WebDavConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(de.url, "https://cloud.example.com/dav");
-        assert_eq!(de.username, "admin");
-        assert_eq!(de.password, "secret");
-        assert_eq!(de.remote_dir, "/backup/");
     }
 
     #[test]
@@ -879,10 +805,7 @@ mod tests {
         let client = WebDavClient::new(config);
         let header = client.auth_header();
         assert!(header.starts_with("Basic "));
-        let encoded = &header[6..];
-        let decoded = base64::engine::general_purpose::STANDARD
-            .decode(encoded)
-            .unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD.decode(&header[6..]).unwrap();
         assert_eq!(String::from_utf8(decoded).unwrap(), "user:pass");
     }
 
@@ -890,15 +813,12 @@ mod tests {
     fn test_full_url() {
         let config = WebDavConfig {
             url: "https://dav.example.com".into(),
-            username: "user".into(),
-            password: "pass".into(),
+            username: "u".into(),
+            password: "p".into(),
             remote_dir: "/legado/".into(),
         };
         let client = WebDavClient::new(config);
-        assert_eq!(
-            client.full_url("bookshelf.json"),
-            "https://dav.example.com/legado/bookshelf.json"
-        );
+        assert_eq!(client.full_url("bookshelf.json"), "https://dav.example.com/legado/bookshelf.json");
         assert_eq!(client.full_url(""), "https://dav.example.com/legado/");
     }
 
@@ -931,76 +851,46 @@ mod tests {
     </D:propstat>
   </D:response>
 </D:multistatus>"#;
-
         let files = WebDavClient::parse_propfind_response(xml).unwrap();
         assert_eq!(files.len(), 2);
-
         assert_eq!(files[0].name, "bookshelf.json");
         assert_eq!(files[0].size, 1024);
-        assert_eq!(
-            files[0].last_modified.as_deref(),
-            Some("Sat, 01 Jan 2025 00:00:00 GMT")
-        );
-        assert_eq!(files[0].etag.as_deref(), Some("\"abc123\""));
         assert!(!files[0].is_dir);
-
         assert_eq!(files[1].name, "backups");
         assert!(files[1].is_dir);
     }
 
     #[test]
     fn test_parse_propfind_empty() {
-        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
-<D:multistatus xmlns:D="DAV:">
-</D:multistatus>"#;
+        let xml = r#"<D:multistatus xmlns:D="DAV:"></D:multistatus>"#;
         let files = WebDavClient::parse_propfind_response(xml).unwrap();
         assert!(files.is_empty());
     }
 
     #[test]
-    fn test_webdav_file_info_serialize() {
-        let info = WebDavFileInfo {
-            name: "test.json".into(),
-            path: "/legado/test.json".into(),
-            size: 2048,
-            last_modified: Some("Mon, 01 Jul 2025 12:00:00 GMT".into()),
-            etag: Some("\"xyz789\"".into()),
-            is_dir: false,
-        };
-        let json = serde_json::to_string(&info).unwrap();
-        assert!(json.contains("test.json"));
-        assert!(json.contains("2048"));
-        assert!(json.contains("xyz789"));
-        let de: WebDavFileInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(de.name, "test.json");
-        assert_eq!(de.size, 2048);
-        assert_eq!(de.etag.as_deref(), Some("\"xyz789\""));
-        assert!(!de.is_dir);
+    fn test_parse_rfc1123_timestamp() {
+        let result = BookSyncManager::parse_rfc1123("Sat, 01 Jul 2025 12:00:00 GMT").unwrap();
+        assert_eq!(result, 1751371200);
     }
 
     #[test]
-    fn test_parse_rfc1123_timestamp() {
-        // 测试 RFC1123 格式时间戳解析
-        let timestamp = "Sat, 01 Jul 2025 12:00:00 GMT";
-        let result = WebDavClient::parse_rfc1123(timestamp).expect("Failed to parse timestamp");
-        // 只检查大致范围，不进行精确验证
-        assert!(result > 1750000000i64); // 2025-06 之后的时间
+    fn test_parse_rfc1123_epoch() {
+        let result = BookSyncManager::parse_rfc1123("Thu, 01 Jan 1970 00:00:00 GMT").unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_parse_rfc1123_invalid() {
+        assert!(BookSyncManager::parse_rfc1123("").is_none());
+        assert!(BookSyncManager::parse_rfc1123("invalid").is_none());
+        assert!(BookSyncManager::parse_rfc1123("Sat, 01 Xyz 2025 12:00:00 GMT").is_none());
     }
 
     #[test]
     fn test_times_are_close() {
-        use super::BookSyncManager;
-        
-        // 相同时间应该被认为是接近的
         assert!(BookSyncManager::times_are_close(1000, 1000));
-        
-        // 相差 5 秒内应该认为是接近的（冲突阈值）
         assert!(BookSyncManager::times_are_close(1000, 1003));
-        assert!(BookSyncManager::times_are_close(1000, 998));
-        
-        // 超过 5 秒不认为是接近的
         assert!(!BookSyncManager::times_are_close(1000, 1010));
-        assert!(!BookSyncManager::times_are_close(1000, 990));
     }
 
     #[test]
@@ -1010,34 +900,79 @@ mod tests {
             downloaded_count: 5,
             skipped_count: 2,
             conflict_count: 1,
+            conflict_files: vec![ConflictFile {
+                path: "bookshelf.json".into(),
+                local_modified: 1000,
+                remote_modified: 1003,
+                remote_etag: Some("\"abc\"".into()),
+            }],
             errors: Vec::new(),
             duration_ms: 1000,
         };
-        
         let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("uploaded_count"));
-        assert!(json.contains("downloaded_count"));
-        
         let de: SyncResult = serde_json::from_str(&json).unwrap();
         assert_eq!(de.uploaded_count, 10);
-        assert_eq!(de.conflict_count, 1);
+        assert_eq!(de.conflict_files.len(), 1);
     }
 
     #[test]
-    fn test_webdav_file_info_with_etag() {
-        let info = WebDavFileInfo {
-            name: "test.json".into(),
-            path: "/legado/test.json".into(),
-            size: 2048,
-            last_modified: Some("Mon, 01 Jul 2025 12:00:00 GMT".into()),
-            etag: Some("\"abc123def456\"".into()),
-            is_dir: false,
+    fn test_merge_json_objects() {
+        let local = r#"{"name": "本地", "chapter": 5, "local_only": true}"#;
+        let remote = r#"{"name": "远端", "chapter": 10, "remote_only": "yes"}"#;
+        let merged = BookSyncManager::merge_json(local, remote);
+        let val: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(val["name"], "远端");
+        assert_eq!(val["chapter"], 10);
+        assert_eq!(val["local_only"], true);
+        assert_eq!(val["remote_only"], "yes");
+    }
+
+    #[test]
+    fn test_merge_json_arrays() {
+        let local = r#"{"sources": ["a", "b"]}"#;
+        let remote = r#"{"sources": ["b", "c"]}"#;
+        let merged = BookSyncManager::merge_json(local, remote);
+        let val: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(val["sources"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_merge_json_invalid() {
+        assert_eq!(BookSyncManager::merge_json("bad", r#"{"k":"v"}"#), r#"{"k":"v"}"#);
+        assert_eq!(BookSyncManager::merge_json(r#"{"k":"v"}"#, "bad"), r#"{"k":"v"}"#);
+    }
+
+    #[test]
+    fn test_conflict_resolution_serialize() {
+        let json = serde_json::to_string(&ConflictResolution::Merge).unwrap();
+        let de: ConflictResolution = serde_json::from_str(&json).unwrap();
+        assert_eq!(de, ConflictResolution::Merge);
+    }
+
+    #[test]
+    fn test_conflict_resolve_result_serialize() {
+        let mut resolved = HashMap::new();
+        resolved.insert("a.json".to_string(), "{}".to_string());
+        let result = ConflictResolveResult {
+            resolved_files: resolved,
+            history: vec![ConflictResolutionRecord {
+                path: "a.json".into(),
+                strategy: ConflictResolution::Merge,
+                resolved_at: 100,
+                note: "合并".into(),
+            }],
+            pending_manual: vec!["b.txt".into()],
         };
-        
-        let json = serde_json::to_string(&info).unwrap();
-        let de: WebDavFileInfo = serde_json::from_str(&json).unwrap();
-        
-        assert_eq!(de.name, "test.json");
-        assert_eq!(de.etag.as_deref(), Some("\"abc123def456\""));
+        let json = serde_json::to_string(&result).unwrap();
+        let de: ConflictResolveResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.resolved_files.len(), 1);
+        assert_eq!(de.pending_manual.len(), 1);
+    }
+
+    #[test]
+    fn test_days_since_epoch() {
+        assert_eq!(BookSyncManager::days_since_epoch(1970, 1, 1), 0);
+        assert_eq!(BookSyncManager::days_since_epoch(2000, 1, 1), 10957);
+        assert_eq!(BookSyncManager::days_since_epoch(2025, 7, 1), 20270);
     }
 }

@@ -1,4 +1,25 @@
-//! legado-core: 通用类型、错误处理、FFI 桥接宏
+//! legado-core: 公共基础层
+//!
+//! 提供 Legado Rust 引擎的所有 crate 共享的基础设施：
+//!
+//! - [`models`] — 核心数据模型（Book, BookSource, BookChapter, RssSource 等）
+//! - [`error`] — 统一错误类型 [`LegadoError`] 和 [`LegadoResult`]
+//! - [`crypto`] — 加密工具（AES/DES/Base64/MD5）
+//! - [`search_engine`] — 多源并行搜索引擎框架
+//! - [`web_book`] — 网络书籍访问层（搜索→详情→目录→正文）
+//! - [`content_processor`] — 内容净化与替换规则处理
+//! - [`layout`] — 文本排版引擎（分页/分行）
+//! - [`types`] — 通用类型定义（PageInfo, FfiString）
+//!
+//! # Examples
+//!
+//! ```rust
+//! use legado_core::{LegadoError, LegadoResult};
+//!
+//! fn parse_source(json: &str) -> LegadoResult<serde_json::Value> {
+//!     serde_json::from_str(json).map_err(|e| LegadoError::Parser(e.to_string()))
+//! }
+//! ```
 
 pub mod audio;
 pub mod audio_cache;

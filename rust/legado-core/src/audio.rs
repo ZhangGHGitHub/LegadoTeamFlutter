@@ -53,6 +53,36 @@ pub enum PlayMode {
     Shuffle,
 }
 
+impl PlayMode {
+    /// 切换到下一个播放模式（循环）
+    /// 对应 Kotlin AudioPlayMode.next()
+    pub fn next(&self) -> Self {
+        match self {
+            PlayMode::Sequential => PlayMode::SingleLoop,
+            PlayMode::SingleLoop => PlayMode::Shuffle,
+            PlayMode::Shuffle => PlayMode::Sequential,
+        }
+    }
+
+    /// 获取播放模式的序号（用于持久化）
+    pub fn ordinal(&self) -> i32 {
+        match self {
+            PlayMode::Sequential => 0,
+            PlayMode::SingleLoop => 1,
+            PlayMode::Shuffle => 2,
+        }
+    }
+
+    /// 从序号恢复播放模式
+    pub fn from_ordinal(ord: i32) -> Self {
+        match ord {
+            1 => PlayMode::SingleLoop,
+            2 => PlayMode::Shuffle,
+            _ => PlayMode::Sequential,
+        }
+    }
+}
+
 /// 播放状态
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PlayerState {
@@ -171,6 +201,54 @@ impl AudioPlaylist {
     pub fn mode(&self) -> PlayMode {
         self.mode
     }
+}
+
+/// 将播放模式写入 readConfig JSON（对应 Kotlin String?.withAudioPlayMode）
+///
+/// 读取现有 readConfig JSON，设置 playMode 字段，返回更新后的 JSON 字符串
+pub fn with_audio_play_mode(read_config: Option<&str>, play_mode: i32) -> String {
+    let mut config: serde_json::Value = read_config
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .filter(|v: &serde_json::Value| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({}));
+    config["playMode"] = serde_json::json!(play_mode);
+    serde_json::to_string(&config).unwrap_or_else(|_| format!("{{\"playMode\":{play_mode}}}"))
+}
+
+/// 解析听书书籍（对应 Kotlin resolveAudioPlayBook）
+///
+/// 用于修复听书通知恢复错误书籍的问题：
+/// - 如果请求的 bookUrl 为空，返回缓存书籍（如果有效）
+/// - 如果缓存书籍的 URL 匹配请求，直接返回缓存
+/// - 否则通过 find_book 查找正确的书籍
+pub fn resolve_audio_play_book<T, F>(
+    requested_book_url: Option<&str>,
+    cached_book: Option<T>,
+    book_url_of: impl Fn(&T) -> &str,
+    find_book: F,
+) -> Option<T>
+where
+    F: Fn(&str) -> Option<T>,
+{
+    let target_url = match requested_book_url {
+        Some(url) if !url.trim().is_empty() => url,
+        _ => {
+            // 无请求 URL，返回缓存（如果有效）
+            return cached_book.filter(|b| !book_url_of(b).is_empty());
+        }
+    };
+
+    // 缓存书籍 URL 匹配，直接返回
+    if let Some(cached) = cached_book {
+        if book_url_of(&cached) == target_url {
+            return Some(cached);
+        }
+        // 不匹配，通过 find_book 查找
+        return find_book(target_url).filter(|b| book_url_of(b) == target_url);
+    }
+
+    // 无缓存，直接查找
+    find_book(target_url).filter(|b| book_url_of(b) == target_url)
 }
 
 #[cfg(test)]
@@ -308,5 +386,144 @@ mod tests {
             let json = serde_json::to_string(state).unwrap();
             let _de: PlayerState = serde_json::from_str(&json).unwrap();
         }
+    }
+
+    // ─── PlayMode::next / ordinal / from_ordinal 测试 ─────────
+
+    #[test]
+    fn test_play_mode_next_cycles() {
+        assert_eq!(PlayMode::Sequential.next(), PlayMode::SingleLoop);
+        assert_eq!(PlayMode::SingleLoop.next(), PlayMode::Shuffle);
+        assert_eq!(PlayMode::Shuffle.next(), PlayMode::Sequential);
+    }
+
+    #[test]
+    fn test_play_mode_ordinal_roundtrip() {
+        for mode in [PlayMode::Sequential, PlayMode::SingleLoop, PlayMode::Shuffle] {
+            let ord = mode.ordinal();
+            assert_eq!(PlayMode::from_ordinal(ord), mode);
+        }
+    }
+
+    #[test]
+    fn test_play_mode_from_ordinal_unknown() {
+        // 未知序号默认为 Sequential
+        assert_eq!(PlayMode::from_ordinal(99), PlayMode::Sequential);
+        assert_eq!(PlayMode::from_ordinal(-1), PlayMode::Sequential);
+    }
+
+    // ─── with_audio_play_mode 测试 ────────────────────────
+
+    #[test]
+    fn test_with_audio_play_mode_none_config() {
+        let result = with_audio_play_mode(None, 2);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["playMode"], 2);
+    }
+
+    #[test]
+    fn test_with_audio_play_mode_existing_config() {
+        let config = r#"{"fontSize":16,"playMode":0}"#;
+        let result = with_audio_play_mode(Some(config), 1);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["playMode"], 1);
+        assert_eq!(parsed["fontSize"], 16);
+    }
+
+    #[test]
+    fn test_with_audio_play_mode_invalid_json() {
+        let result = with_audio_play_mode(Some("not json"), 2);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["playMode"], 2);
+    }
+
+    // ─── resolve_audio_play_book 测试 ─────────────────────
+
+    #[test]
+    fn test_resolve_no_url_returns_cached() {
+        let cached = Some(("book1".to_string(), "url1".to_string()));
+        let result = resolve_audio_play_book(
+            None,
+            cached,
+            |b| b.1.as_str(),
+            |_| None::<(String, String)>,
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().0, "book1");
+    }
+
+    #[test]
+    fn test_resolve_blank_url_returns_cached() {
+        let cached = Some(("book1".to_string(), "url1".to_string()));
+        let result = resolve_audio_play_book(
+            Some("  "),
+            cached,
+            |b| b.1.as_str(),
+            |_| None::<(String, String)>,
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().0, "book1");
+    }
+
+    #[test]
+    fn test_resolve_matching_cached() {
+        let cached = Some(("book1".to_string(), "url1".to_string()));
+        let result = resolve_audio_play_book(
+            Some("url1"),
+            cached,
+            |b| b.1.as_str(),
+            |_| None::<(String, String)>,
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().0, "book1");
+    }
+
+    #[test]
+    fn test_resolve_mismatched_cached_uses_find() {
+        let cached = Some(("book1".to_string(), "url1".to_string()));
+        let result = resolve_audio_play_book(
+            Some("url2"),
+            cached,
+            |b| b.1.as_str(),
+            |url| {
+                if url == "url2" {
+                    Some(("book2".to_string(), "url2".to_string()))
+                } else {
+                    None
+                }
+            },
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().0, "book2");
+    }
+
+    #[test]
+    fn test_resolve_no_cached_uses_find() {
+        let result = resolve_audio_play_book(
+            Some("url1"),
+            None::<(String, String)>,
+            |b| b.1.as_str(),
+            |url| {
+                if url == "url1" {
+                    Some(("book1".to_string(), "url1".to_string()))
+                } else {
+                    None
+                }
+            },
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().0, "book1");
+    }
+
+    #[test]
+    fn test_resolve_find_returns_wrong_url() {
+        let result = resolve_audio_play_book(
+            Some("url1"),
+            None::<(String, String)>,
+            |b| b.1.as_str(),
+            |_| Some(("book_wrong".to_string(), "url_other".to_string())),
+        );
+        // find_book 返回的书籍 URL 不匹配，应被过滤
+        assert!(result.is_none());
     }
 }

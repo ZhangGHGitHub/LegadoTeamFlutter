@@ -1,11 +1,29 @@
 //! legado-db: 数据库层（基于 rusqlite）
 //!
 //! 提供完整的 SQLite 数据库访问能力，包括：
-//! - `connection`: 连接管理与 PRAGMA 配置（含自动迁移）
-//! - `schema`: 全量表结构 DDL（v95）
-//! - `repository`: Repository 模式的数据访问层（books / book_sources / chapters）
-//! - `migration`: 基于版本号的增量迁移框架（MigrationRegistry）
-//! - `import`: Room JSON 数据导入工具
+//!
+//! - [`connection`] — 连接管理与 PRAGMA 配置（含自动迁移）
+//! - [`schema`] — 全量表结构 DDL（v95，25 张表）
+//! - [`repository`] — Repository 模式的数据访问层（25 个 Repository）
+//! - [`migration`] — 基于版本号的增量迁移框架（MigrationRegistry）
+//! - [`import`] — Room JSON 数据导入工具
+//! - [`default_data`] — 默认数据导入（JSON 格式）
+//!
+//! # Examples
+//!
+//! ```rust
+//! use legado_db::init_in_memory_database;
+//!
+//! // 初始化内存数据库（用于测试）
+//! let db = init_in_memory_database().unwrap();
+//! let conn = db.connection();
+//!
+//! // 执行查询
+//! let count: i64 = conn
+//!     .query_row("SELECT COUNT(*) FROM books", [], |row| row.get(0))
+//!     .unwrap_or(0);
+//! assert_eq!(count, 0);
+//! ```
 
 pub mod connection;
 pub mod default_data;

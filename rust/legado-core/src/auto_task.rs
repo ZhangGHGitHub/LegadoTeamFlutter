@@ -1,8 +1,14 @@
 //! 自动任务执行层
-//! 移植自 Kotlin AutoTaskProtocol + AutoTaskRunner + AutoTaskSchedulePolicy
+//! 移植自 Kotlin AutoTaskProtocol + AutoTaskRunner + AutoTaskSchedulePolicy + AutoTask
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// 书籍更新任务生成器标识（对应 Kotlin AutoTask.BOOK_UPDATE_GENERATOR）
+pub const BOOK_UPDATE_GENERATOR: &str = "bookUpdate";
+
+/// 默认 cron 表达式（每30分钟）
+pub const DEFAULT_CRON: &str = "*/30 * * * *";
 
 /// 任务动作类型
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -305,11 +311,35 @@ impl AutoTaskSchedulePolicy {
     }
 }
 
+/// 自动任务规则（对应 Kotlin AutoTaskRule 实体）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoTaskRule {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enable: bool,
+    pub cron: Option<String>,
+    #[serde(default)]
+    pub script: String,
+    #[serde(default)]
+    pub custom_order: i32,
+    #[serde(default)]
+    pub last_run_at: i64,
+    pub last_result: Option<String>,
+    pub last_error: Option<String>,
+    pub last_log: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// 任务导入/导出
 pub struct AutoTaskExporter;
 
 impl AutoTaskExporter {
-    /// 导出任务为 JSON（剥离运行时字段）
+    /// 导出任务为 JSON（剥离运行时字段和排序字段）
+    /// 对应 Kotlin AutoTask.exportJson
     pub fn export_json(tasks: &[serde_json::Value]) -> String {
         let cleaned: Vec<serde_json::Value> =
             tasks.iter().map(Self::strip_runtime_fields).collect();
@@ -342,10 +372,107 @@ impl AutoTaskExporter {
         Err("Invalid JSON format for task import".to_string())
     }
 
-    /// 剥离运行时字段（lastRunAt, lastResult, lastError, lastLog）
+    /// 准备导入任务（合并本地运行时状态）
+    /// 对应 Kotlin prepareImportedAutoTasks
+    ///
+    /// 合并策略：
+    /// - 如果本地存在同 ID 任务，保留本地的 customOrder 和运行时状态
+    /// - 如果导入数据中有重复 ID，后出现的覆盖先出现的
+    /// - 新任务分配递增的 customOrder
+    pub fn prepare_imported_tasks(
+        local_tasks: &[AutoTaskRule],
+        imported_tasks: Vec<serde_json::Value>,
+    ) -> Vec<serde_json::Value> {
+        let local_by_id: HashMap<&str, &AutoTaskRule> = local_tasks
+            .iter()
+            .map(|t| (t.id.as_str(), t))
+            .collect();
+
+        let max_order = local_tasks
+            .iter()
+            .map(|t| t.custom_order)
+            .max()
+            .unwrap_or(-1);
+        let mut next_order = max_order + 1;
+
+        let mut imported_by_id: Vec<(String, serde_json::Value)> = Vec::new();
+        let mut seen_ids: HashMap<String, usize> = HashMap::new();
+
+        for imported in imported_tasks {
+            let id = imported
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if id.is_empty() {
+                continue;
+            }
+
+            let local = local_by_id.get(id.as_str());
+            let order = local
+                .map(|t| t.custom_order)
+                .or_else(|| {
+                    seen_ids.get(&id).map(|&idx| {
+                        imported_by_id[idx]
+                            .1
+                            .get("customOrder")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0) as i32
+                    })
+                })
+                .unwrap_or_else(|| {
+                    let o = next_order;
+                    next_order += 1;
+                    o
+                });
+
+            // 合并运行时状态：优先使用本地状态
+            let state_source = local.map(|t| {
+                serde_json::json!({
+                    "lastRunAt": t.last_run_at,
+                    "lastResult": t.last_result,
+                    "lastError": t.last_error,
+                    "lastLog": t.last_log,
+                })
+            });
+
+            let mut merged = if let Some(obj) = imported.as_object() {
+                obj.clone()
+            } else {
+                continue;
+            };
+            merged.insert(
+                "customOrder".to_string(),
+                serde_json::Value::Number(order.into()),
+            );
+
+            // 保留运行时状态
+            if let Some(state) = state_source {
+                for key in ["lastRunAt", "lastResult", "lastError", "lastLog"] {
+                    if let Some(val) = state.get(key) {
+                        merged.insert(key.to_string(), val.clone());
+                    }
+                }
+            }
+
+            let merged_value = serde_json::Value::Object(merged);
+            if let Some(&idx) = seen_ids.get(&id) {
+                imported_by_id[idx] = (id.clone(), merged_value);
+            } else {
+                let idx = imported_by_id.len();
+                seen_ids.insert(id.clone(), idx);
+                imported_by_id.push((id, merged_value));
+            }
+        }
+
+        imported_by_id.into_iter().map(|(_, v)| v).collect()
+    }
+
+    /// 剥离运行时字段和排序字段（customOrder, lastRunAt, lastResult, lastError, lastLog）
     fn strip_runtime_fields(task: &serde_json::Value) -> serde_json::Value {
         if let Some(obj) = task.as_object() {
             let mut cleaned = obj.clone();
+            cleaned.remove("customOrder");
             cleaned.remove("lastRunAt");
             cleaned.remove("lastResult");
             cleaned.remove("lastError");
@@ -355,6 +482,145 @@ impl AutoTaskExporter {
             task.clone()
         }
     }
+}
+
+/// 批量更新 cron 表达式（纯逻辑层，返回受影响的 ID 列表）
+/// 对应 Kotlin AutoTask.updateCron + AutoTaskRuleDao.updateCron
+pub fn update_cron_batch(
+    rules: &mut [AutoTaskRule],
+    ids: &[String],
+    cron: &str,
+) -> Vec<String> {
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let id_set: std::collections::HashSet<&str> =
+        ids.iter().map(|s| s.as_str()).collect();
+    let mut changed = Vec::new();
+    for rule in rules.iter_mut() {
+        if id_set.contains(rule.id.as_str()) {
+            rule.cron = Some(cron.to_string());
+            changed.push(rule.id.clone());
+        }
+    }
+    changed
+}
+
+/// 规范化脚本（去除 @js: 前缀或 <js></js> 包裹）
+/// 对应 Kotlin AutoTask.normalizeScript
+pub fn normalize_script(script: &str) -> String {
+    let trimmed = script.trim();
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("@js:") {
+        trimmed[4..].trim().to_string()
+    } else if lower.starts_with("<js>") && lower.ends_with("</js>") {
+        trimmed[4..trimmed.len() - 5].trim().to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// 生成书籍更新任务 ID（MD5 前16位）
+/// 对应 Kotlin AutoTask.bookUpdateTaskId
+pub fn book_update_task_id(book_url: &str) -> String {
+    let digest = format!("{:x}", md5::compute(book_url.as_bytes()));
+    let short = &digest[..16.min(digest.len())];
+    format!("book_update:{short}")
+}
+
+/// 构建书籍更新定时任务
+/// 对应 Kotlin AutoTask.buildBookUpdateTask
+pub fn build_book_update_task(
+    book_url: &str,
+    book_name: &str,
+    book_author: &str,
+    name: &str,
+) -> AutoTaskRule {
+    let action = serde_json::json!({
+        "type": "refreshToc",
+        "bookUrl": book_url,
+        "bookName": book_name,
+        "bookAuthor": book_author,
+        "generatedBy": BOOK_UPDATE_GENERATOR,
+        "respectCanUpdate": true,
+        "notify": {"enable": true, "minCount": 1}
+    });
+    AutoTaskRule {
+        id: book_update_task_id(book_url),
+        name: name.to_string(),
+        enable: true,
+        cron: Some(DEFAULT_CRON.to_string()),
+        script: format!("({})", serde_json::to_string(&action).unwrap_or_default()),
+        custom_order: 0,
+        last_run_at: 0,
+        last_result: None,
+        last_error: None,
+        last_log: None,
+    }
+}
+
+/// 从任务列表中查找书籍更新任务
+/// 对应 Kotlin AutoTask.findBookUpdateTask
+///
+/// 优先按 ID 精确匹配，其次按书名+作者匹配
+pub fn find_book_update_task<'a>(
+    tasks: &'a [AutoTaskRule],
+    book_url: &str,
+    book_name: &str,
+    book_author: &str,
+) -> Option<&'a AutoTaskRule> {
+    // 优先按 ID 匹配
+    let target_id = book_update_task_id(book_url);
+    if let Some(found) = tasks.iter().find(|t| t.id == target_id) {
+        return Some(found);
+    }
+    // 其次按书名+作者匹配
+    let matches: Vec<&AutoTaskRule> = tasks
+        .iter()
+        .filter(|t| {
+            generated_book_identity(t)
+                .map(|(n, a)| n == book_name && a == book_author)
+                .unwrap_or(false)
+        })
+        .collect();
+    if matches.len() == 1 {
+        Some(matches[0])
+    } else {
+        None
+    }
+}
+
+/// 从任务脚本中提取书籍标识（书名, 作者）
+/// 对应 Kotlin AutoTask.generatedBookIdentity
+fn generated_book_identity(task: &AutoTaskRule) -> Option<(String, String)> {
+    if !task.id.starts_with("book_update:") {
+        return None;
+    }
+    let script = normalize_script(&task.script);
+    if !script.starts_with('(') || !script.ends_with(')') {
+        return None;
+    }
+    let json_str = &script[1..script.len() - 1];
+    let action: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    if action.get("generatedBy").and_then(|v| v.as_str()) != Some(BOOK_UPDATE_GENERATOR) {
+        return None;
+    }
+    let name = action.get("bookName")?.as_str()?.to_string();
+    let author = action
+        .get("bookAuthor")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    Some((name, author))
+}
+
+/// 判断书籍是否允许刷新目录
+/// 对应 Kotlin AutoTaskProtocol.canRefreshBookToc
+///
+/// - can_update: 书籍本身的 canUpdate 标志
+/// - respect_can_update: 任务是否尊重 canUpdate 标志
+pub fn can_refresh_book_toc(can_update: bool, respect_can_update: bool) -> bool {
+    can_update || !respect_can_update
 }
 
 #[cfg(test)]
@@ -600,6 +866,7 @@ mod tests {
             "id": "1",
             "name": "test",
             "script": "var x=1;",
+            "customOrder": 5,
             "lastRunAt": 12345,
             "lastResult": "ok",
             "lastError": null,
@@ -610,6 +877,7 @@ mod tests {
         let obj = &parsed[0];
         assert_eq!(obj["id"], "1");
         assert_eq!(obj["name"], "test");
+        assert!(obj.get("customOrder").is_none());
         assert!(obj.get("lastRunAt").is_none());
         assert!(obj.get("lastResult").is_none());
         assert!(obj.get("lastError").is_none());
@@ -641,5 +909,240 @@ mod tests {
     fn test_import_json_invalid() {
         let result = AutoTaskExporter::import_json("not json at all");
         assert!(result.is_err());
+    }
+
+    // ─── prepare_imported_tasks 测试 ─────────────────────
+
+    #[test]
+    fn test_prepare_imported_tasks_preserves_local_state() {
+        let local = vec![AutoTaskRule {
+            id: "t1".to_string(),
+            name: "本地任务".to_string(),
+            enable: true,
+            cron: Some("*/30 * * * *".to_string()),
+            script: "old".to_string(),
+            custom_order: 5,
+            last_run_at: 999,
+            last_result: Some("ok".to_string()),
+            last_error: None,
+            last_log: Some("log".to_string()),
+        }];
+        let imported = vec![serde_json::json!({
+            "id": "t1",
+            "name": "导入任务",
+            "script": "new"
+        })];
+        let result = AutoTaskExporter::prepare_imported_tasks(&local, imported);
+        assert_eq!(result.len(), 1);
+        // 保留本地 customOrder
+        assert_eq!(result[0]["customOrder"], 5);
+        // 保留本地运行时状态
+        assert_eq!(result[0]["lastRunAt"], 999);
+        assert_eq!(result[0]["lastResult"], "ok");
+        assert_eq!(result[0]["lastLog"], "log");
+        // 使用导入的 script
+        assert_eq!(result[0]["script"], "new");
+    }
+
+    #[test]
+    fn test_prepare_imported_tasks_new_task_gets_order() {
+        let local = vec![AutoTaskRule {
+            id: "t1".to_string(),
+            name: "已有".to_string(),
+            enable: true,
+            cron: None,
+            script: String::new(),
+            custom_order: 3,
+            last_run_at: 0,
+            last_result: None,
+            last_error: None,
+            last_log: None,
+        }];
+        let imported = vec![serde_json::json!({
+            "id": "t2",
+            "name": "新任务",
+            "script": "x"
+        })];
+        let result = AutoTaskExporter::prepare_imported_tasks(&local, imported);
+        assert_eq!(result.len(), 1);
+        // 新任务 customOrder = max(3) + 1 = 4
+        assert_eq!(result[0]["customOrder"], 4);
+    }
+
+    // ─── update_cron_batch 测试 ────────────────────────
+
+    #[test]
+    fn test_update_cron_batch() {
+        let mut rules = vec![
+            AutoTaskRule {
+                id: "a".to_string(),
+                name: "A".to_string(),
+                enable: true,
+                cron: Some("*/30 * * * *".to_string()),
+                script: String::new(),
+                custom_order: 0,
+                last_run_at: 0,
+                last_result: None,
+                last_error: None,
+                last_log: None,
+            },
+            AutoTaskRule {
+                id: "b".to_string(),
+                name: "B".to_string(),
+                enable: true,
+                cron: Some("0 8 * * *".to_string()),
+                script: String::new(),
+                custom_order: 1,
+                last_run_at: 0,
+                last_result: None,
+                last_error: None,
+                last_log: None,
+            },
+        ];
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let changed = update_cron_batch(&mut rules, &ids, "0 */6 * * *");
+        assert_eq!(changed.len(), 2);
+        assert_eq!(rules[0].cron, Some("0 */6 * * *".to_string()));
+        assert_eq!(rules[1].cron, Some("0 */6 * * *".to_string()));
+    }
+
+    #[test]
+    fn test_update_cron_batch_empty_ids() {
+        let mut rules = vec![AutoTaskRule {
+            id: "a".to_string(),
+            name: "A".to_string(),
+            enable: true,
+            cron: Some("*/30 * * * *".to_string()),
+            script: String::new(),
+            custom_order: 0,
+            last_run_at: 0,
+            last_result: None,
+            last_error: None,
+            last_log: None,
+        }];
+        let changed = update_cron_batch(&mut rules, &[], "0 8 * * *");
+        assert!(changed.is_empty());
+        assert_eq!(rules[0].cron, Some("*/30 * * * *".to_string()));
+    }
+
+    // ─── normalize_script 测试 ─────────────────────────
+
+    #[test]
+    fn test_normalize_script_plain() {
+        assert_eq!(normalize_script("  var x = 1;  "), "var x = 1;");
+    }
+
+    #[test]
+    fn test_normalize_script_js_prefix() {
+        assert_eq!(normalize_script("@js: var x = 1;"), "var x = 1;");
+    }
+
+    #[test]
+    fn test_normalize_script_js_tag() {
+        assert_eq!(normalize_script("<js>var x = 1;</js>"), "var x = 1;");
+    }
+
+    // ─── book_update_task 测试 ─────────────────────────
+
+    #[test]
+    fn test_book_update_task_id_deterministic() {
+        let id1 = book_update_task_id("https://example.com/book/1");
+        let id2 = book_update_task_id("https://example.com/book/1");
+        assert_eq!(id1, id2);
+        assert!(id1.starts_with("book_update:"));
+        assert_eq!(id1.len(), "book_update:".len() + 16);
+    }
+
+    #[test]
+    fn test_build_book_update_task() {
+        let task = build_book_update_task(
+            "https://example.com/book/1",
+            "测试书籍",
+            "作者A",
+            "更新测试书籍",
+        );
+        assert!(task.id.starts_with("book_update:"));
+        assert_eq!(task.name, "更新测试书籍");
+        assert_eq!(task.cron, Some(DEFAULT_CRON.to_string()));
+        // script 应为 JSON 包裹在括号中
+        assert!(task.script.starts_with('('));
+        assert!(task.script.ends_with(')'));
+        let json_str = &task.script[1..task.script.len() - 1];
+        let action: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        assert_eq!(action["type"], "refreshToc");
+        assert_eq!(action["bookUrl"], "https://example.com/book/1");
+        assert_eq!(action["bookName"], "测试书籍");
+        assert_eq!(action["generatedBy"], BOOK_UPDATE_GENERATOR);
+    }
+
+    #[test]
+    fn test_find_book_update_task_by_id() {
+        let task = build_book_update_task(
+            "https://example.com/book/1",
+            "测试书籍",
+            "作者A",
+            "更新",
+        );
+        let tasks = vec![task];
+        let found = find_book_update_task(
+            &tasks,
+            "https://example.com/book/1",
+            "测试书籍",
+            "作者A",
+        );
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "更新");
+    }
+
+    #[test]
+    fn test_find_book_update_task_by_name_author() {
+        // 模拟一个 ID 不匹配但书名作者匹配的任务
+        let task = build_book_update_task(
+            "https://old-url.com/book/1",
+            "测试书籍",
+            "作者A",
+            "更新",
+        );
+        let tasks = vec![task];
+        // 使用不同的 bookUrl 查找，但书名作者相同
+        let found = find_book_update_task(
+            &tasks,
+            "https://new-url.com/book/1",
+            "测试书籍",
+            "作者A",
+        );
+        assert!(found.is_some());
+    }
+
+    #[test]
+    fn test_find_book_update_task_not_found() {
+        let task = build_book_update_task(
+            "https://example.com/book/1",
+            "测试书籍",
+            "作者A",
+            "更新",
+        );
+        let tasks = vec![task];
+        let found = find_book_update_task(
+            &tasks,
+            "https://other.com/book/2",
+            "其他书籍",
+            "作者B",
+        );
+        assert!(found.is_none());
+    }
+
+    // ─── can_refresh_book_toc 测试 ─────────────────────
+
+    #[test]
+    fn test_can_refresh_book_toc() {
+        // canUpdate=true, respectCanUpdate=true → 允许
+        assert!(can_refresh_book_toc(true, true));
+        // canUpdate=false, respectCanUpdate=true → 不允许
+        assert!(!can_refresh_book_toc(false, true));
+        // canUpdate=false, respectCanUpdate=false → 允许（不尊重标志）
+        assert!(can_refresh_book_toc(false, false));
+        // canUpdate=true, respectCanUpdate=false → 允许
+        assert!(can_refresh_book_toc(true, false));
     }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
 import 'bookshelf_screen.dart';
+import 'explore_screen.dart';
 import 'rss_screen.dart';
 import 'settings_screen.dart';
 
@@ -18,7 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const _tabs = [
     BookshelfScreen(),
-    BookshelfScreen(), // 替代 DiscoverScreen（原版无此功能）
+    ExploreScreen(),
     RssScreen(),
     SettingsScreen(),
   ];
@@ -40,6 +41,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.library_books_outlined),
             selectedIcon: const Icon(Icons.library_books),
             label: AppStrings.bookshelf,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.explore_outlined),
+            selectedIcon: const Icon(Icons.explore),
+            label: '发现',
           ),
           NavigationDestination(
             icon: Icon(Icons.rss_feed_outlined),
