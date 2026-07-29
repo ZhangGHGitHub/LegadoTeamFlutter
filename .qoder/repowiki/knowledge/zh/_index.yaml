@@ -1,0 +1,72 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: master
+nodes_managed: true
+exported_at: "2026-07-29T05:41:10Z"
+modules:
+    "":
+        dir_name: Legado 多语言跨平台阅读器根工程
+        title: Legado 多语言跨平台阅读器根工程
+        scope:
+            - README.md
+            - Makefile
+            - package.json
+            - .gitignore
+            - CHANGELOG.md
+            - DEVELOPMENT.md
+            - LICENSE
+            - api.md
+            - avd.bat
+            - avd.sh
+            - build.gradle
+            - gradle.properties
+            - gradlew
+            - gradlew.bat
+            - settings.gradle
+        source_files: []
+        children:
+            - android_app
+            - flutter_app
+            - github_ci
+            - rust_workspace
+        depends_on: []
+        related_to: []
+    android_app:
+        dir_name: Legado Android 应用主模块
+        title: Legado Android 应用主模块
+        scope:
+            - app/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    flutter_app:
+        dir_name: Legado Flutter 跨平台阅读应用
+        title: Legado Flutter 跨平台阅读应用
+        scope:
+            - flutter_legado/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: rust_workspace
+    github_ci:
+        dir_name: GitHub 自动化与协作配置
+        title: GitHub 自动化与协作配置
+        scope:
+            - .github/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    rust_workspace:
+        dir_name: Legado Rust 多 Crate 工作区（核心引擎与 FFI 服务）
+        title: Legado Rust 多 Crate 工作区（核心引擎与 FFI 服务）
+        scope:
+            - rust/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: flutter_app

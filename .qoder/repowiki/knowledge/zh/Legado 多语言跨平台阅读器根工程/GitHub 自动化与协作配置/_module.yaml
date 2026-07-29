@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: github_ci
+title: GitHub 自动化与协作配置
+scope:
+    - .github/
+source_files: []
+depends_on: []
+related_to: []

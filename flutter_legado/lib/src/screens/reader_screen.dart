@@ -214,29 +214,66 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Widget _buildSimulateContent(BuildContext context, ReaderProvider provider) {
-    // 仿真翻页：使用 PageView + 翻页动画效果
+    // 仿真翻页：PageView + 翻页阴影 + 缩放动画效果
     return SafeArea(
       top: !provider.showControls,
       bottom: !provider.showControls,
-      child: PageView.builder(
-        controller: _pageController,
-        itemCount: provider.chapters.isNotEmpty ? provider.chapters.length : 1,
-        pageSnapping: true,
-        onPageChanged: (index) {
-          if (index != provider.currentChapterIndex) {
-            provider.goToChapter(index);
-          }
-        },
-        itemBuilder: (context, index) {
-          return AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            switchInCurve: Curves.easeInOut,
-            transitionBuilder: (child, animation) {
-              return FadeTransition(opacity: animation, child: child);
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            itemCount: provider.chapters.isNotEmpty ? provider.chapters.length : 1,
+            pageSnapping: true,
+            onPageChanged: (index) {
+              if (index != provider.currentChapterIndex) {
+                provider.goToChapter(index);
+              }
             },
-            child: _buildChapterPage(context, provider, index),
-          );
-        },
+            itemBuilder: (context, index) {
+              return AnimatedBuilder(
+                animation: _pageController,
+                builder: (context, child) {
+                  double value = 1.0;
+                  if (_pageController.position.hasContentDimensions) {
+                    value = (_pageController.page ?? _pageController.initialPage.toDouble()) - index;
+                    value = (1 - value.abs().clamp(0.0, 1.0));
+                  }
+                  return Stack(
+                    children: [
+                      // 页面内容（带缩放和透明度动画）
+                      Transform.scale(
+                        scale: 0.96 + (0.04 * value),
+                        child: Opacity(
+                          opacity: 0.75 + (0.25 * value),
+                          child: child,
+                        ),
+                      ),
+                      // 翻页阴影效果
+                      if (value < 1.0)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.centerRight,
+                                  end: Alignment.centerLeft,
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.12 * (1.0 - value)),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+                child: _buildChapterPage(context, provider, index),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
