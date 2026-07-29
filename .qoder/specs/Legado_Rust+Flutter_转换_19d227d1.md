@@ -364,68 +364,81 @@ QA Agent 负责：
 
 ---
 
-## 缺口分析与实际完成度审计（2026-07-30 更新）
+## 缺口分析与实际完成度审计（2026-07-29 源码审计）
+
+> 本节数据来自 2026-07-29 对 Rust+FFI 层与 Flutter UI 层的两项源码级深度审计，替代此前基于任务清单的估算。
 
 ### 各层完成度总览
 
-| 层 | 完成度 | 关键变化（vs 07-26） |
+| 层 | 完成度 | 审计结论（vs 此前声称） |
 |----|--------|----------|
-| Rust 核心引擎 | ~92% | 测试 534→1297，MCP Server 已实现 |
-| JS 沙箱 (JsExtensions) | ~95% | 测试 113→327 (quickjs)，无变化 |
-| FFI 桥接 | **~90%** | 12→24 个 API 模块，audio/stats/backup/config 已补齐 |
-| Flutter UI | **~60%** | 19→38 屏幕，browser/dict/font/qrcode/debug 已新增 |
-| 工程化 | ~75% | 测试 15→151，Android 已验证，CI 待完善 |
+| Rust 核心引擎 | **~85%** | 此前声称 92-98% 偏高：下载管理/WebDAV 同步深度不足 |
+| FFI 暴露 | ~92% | 80+ 函数（含 webdav/download/review/txt_search 新模块），缺预下载/增量同步策略 API |
+| JS 宿主 API | ~93% | 168 函数 vs Kotlin 112；12 个平台 API 属架构限制 |
+| Flutter UI | **~78%** | 此前声称 60% 偏低、75% 接近；40 屏幕，排版引擎是最大短板（33%） |
+| **整体迁移** | **~80%** | Rust ~85% / Flutter UI ~78% |
 
-### Flutter UI 层现状（38 屏幕）
+### Rust+FFI 层现状（整体 82-85%）
 
-| Kotlin 原版模块 | Flutter 对应 | 行数 | 覆盖度 | 剩余缺口 |
-|----------------|-------------|------|--------|------|
-| ReadBookActivity (阅读器) | reader_screen + reader_config_panel | 845+417 | **~50%** | 翻页动画、段评弹窗、漫画模式 |
-| BookSourceEditActivity (书源编辑) | source_edit_screen | 539 | **~55%** | JS 源调试流程、规则验证 |
-| AudioPlayActivity (听书) | audio_screen + read_aloud_config | 338+301 | **~55%** | 通知栏控制、定时停止 |
-| ReadRssActivity (RSS 阅读) | rss_article_detail + rss_favorites | 180+245 | **~40%** | WebView 渲染、JS 执行 |
-| RssSourceEditActivity | rss_source_edit_screen | 331 | **~60%** | 基本覆盖 |
-| 书源调试 (Debug) | source_debug_screen | 262 | **~60%** | 已新增 |
-| 浏览器 (browser/) | browser_screen | 326 | **~50%** | 已新增 |
-| 字体管理 (font/) | font_screen | 236 | **~60%** | 已新增 |
-| 二维码 (qrcode/) | qrcode_screen | 236 | **~70%** | 已新增 |
-| 词典 (dict/) | dict_screen | 465 | **~60%** | 已新增 |
-| 视频播放 (video/) | 无 | — | **0%** | 仍缺失 |
-| 漫画阅读 (manga/) | 无 | — | **0%** | 仍缺失 |
-| 代码编辑器 (code/) | 无 | — | **0%** | 仍缺失 |
-| 文件管理 (file/) | import_screen | 515 | **~40%** | 部分覆盖 |
+| 维度 | 完成度 | 关键差距 |
+|------|--------|---------|
+| 核心业务流程 | 98% | 全链路真实实现 |
+| ReadBook 状态机 | 98% | 段评边界计算未移植 |
+| WebBook 全链路 | 95% | checkJs 简化、多页目录并发合并 |
+| FFI 暴露 | 92% | 80+ 函数，缺预下载/增量同步策略 API |
+| JS 宿主 API | 93% | 168 函数 vs Kotlin 112；12 个平台 API 是架构限制 |
+| 本地书籍 | 92% | PDF 提取精度低、MOBI 编码变体 |
+| 备份恢复 | 90% | zip 字段迁移兼容性 |
+| WebDAV 同步 | **75%** | 全量同步是简化版，缺增量检测+冲突合并 |
+| 下载管理 | **60%** | 缺预下载智能算法（顺序/逆序5+3章）、断点续传、失败重试限制、进度持久化 |
 
-### FFI 桥接层现状（24 个 API 模块）
+### Flutter UI 层模块覆盖（整体 78%，40 屏幕）
+
+| 模块 | 覆盖度 | 关键缺失 |
+|------|--------|---------|
+| 翻页动画（贝塞尔仿真） | 100% | - |
+| 视频播放 | 100% | - |
+| RSS 全家桶 | 100% | - |
+| 搜索与换源 | 100% | - |
+| 阅读配置面板 | 100% | - |
+| 阅读器交互 | 87.5% | 长按菜单、高级菜单嵌套 |
+| 设置系统 | 87.5% | WebDAV 完整流、代理配置 |
+| 书源管理 | 83% | JS 沙箱联动、登录 Cookie 流 |
+| 通用组件 | 83% | 复杂对话框样式 |
+| 听书播放 | 80% | 后台媒体按钮、焦点管理 |
+| 本地导入 | 80% | 压缩包导入、自动编码检测 |
+| 主页/书架/发现 | 75% | 发现页推荐、高级分组 |
+| 书签与目录 | 66.7% | 目录搜索、段评完整流程 |
+| 漫画阅读 | 60% | 分页模式、高级手势 |
+| 缓存/导出 | 50% | 导出格式选择 UI、EPUB 分割 |
+| **排版引擎** | **33%** | **段落分页算法、中文避头尾、精确字体度量、两端对齐** |
+
+**P0 缺失（阻塞核心体验）：**
+1. 排版引擎不完整（33%）— 段落分页、中文排版优化、字体度量
+2. 导出功能 UI 缺失 — 格式选择、字符集、进度显示
+3. 离线缓存管理界面缺失
+
+### FFI 桥接层现状（26+ API 模块，103+ 函数）
 
 | 状态 | 模块 |
 |------|------|
-| ✅ 已实现 | bookshelf, reader, search, source, source_switch, rss, web_book, book_export, book_import, bookmark, replace_rule, **audio**, **reading_stats**, **backup**, **config**, **http_tts**, **server**, **user**, **book_group**, **cache**, **read_record**, **rss_star**, **search_history** |
-| ❌ 仍缺失 | sync/WebDAV API, download API |
+| ✅ 已实现 | bookshelf, reader, search, source, source_switch, rss, web_book, book_export, book_import, bookmark, replace_rule, audio, reading_stats, backup, config, http_tts, server, user, book_group, cache, read_record, rss_star, search_history, **webdav(6)**, **download(8)**, **review(4)**, **txt_search(4)** |
+| ⚠️ 策略层缺口 | 预下载智能算法 API、WebDAV 增量同步/冲突合并 API |
 
-### 工程化现状
+### Top 10 待办事项（按优先级，2026-07-29 源码审计后修订）
 
-| 维度 | 现状 | 缺口 |
-|------|------|------|
-| Rust 测试 | 1297 (default) / 1688 (quickjs+ffi) | ✅ 充足 |
-| Flutter 测试 | 22 文件 / 151 tests | ⚠️ 阅读器/网络深度测试仍不足 |
-| Android 实机 | ✅ 雷电模拟器已验证 | — |
-| 端到端流程 | 未跑通 | 书源导入→搜索→阅读全流程待验证 |
-| CI 发布 | Rust CI ✅ / Flutter CI ✅ | 缺自动发布 workflow |
-
-### Top 10 待办事项（按优先级，2026-07-30）
-
-| # | 事项 | 模块 | 预估 |
-|---|------|------|------|
-| 1 | 阅读器深度实现（翻页动画/段评/漫画） | Flutter reader | 3-4 周 |
-| 2 | 端到端流程跑通（书源导入→搜索→阅读） | 全链路 | 1-2 周 |
-| 3 | FFI 补齐 sync/WebDAV + download API | legado-ffi | 1 周 |
-| 4 | 书源编辑器完善（JS 源调试/验证） | Flutter source_edit | 2 周 |
-| 5 | RSS 阅读深度实现（WebView/JS） | Flutter rss | 2 周 |
-| 6 | 听书播放器完善（通知栏/定时） | Flutter audio | 1-2 周 |
-| 7 | Flutter 测试覆盖提升（阅读器/网络） | test/ | 1-2 周 |
-| 8 | CI 自动发布流程 | .github/workflows | 1 周 |
-| 9 | 视频播放模块 | Flutter 新增 | 2 周 |
-| 10 | 漫画阅读模块 | Flutter 新增 | 2-3 周 |
+| # | 事项 | 优先级 | 模块 | 预估 |
+|---|------|--------|------|------|
+| 1 | Flutter 排版引擎（段落分页+中文避头尾+字体度量） | **P0** | Flutter reader | 3-4 周 |
+| 2 | 导出功能 UI（格式选择/字符集/进度） | **P0** | Flutter export | 1 周 |
+| 3 | 离线缓存管理界面 | **P0** | Flutter cache | 1 周 |
+| 4 | 下载管理深度（预下载算法/断点续传/重试限制） | P1 | Rust download | 2 周 |
+| 5 | WebDAV 增量同步 + 冲突合并 | P1 | Rust webdav | 1-2 周 |
+| 6 | 目录搜索 + 段评完整流程 | P1 | Flutter toc/review | 1 周 |
+| 7 | 听书后台媒体按钮 + 焦点管理（Platform Channel） | P1 | Flutter audio | 1 周 |
+| 8 | 漫画分页模式 + 高级手势 | P2 | Flutter comic | 1 周 |
+| 9 | 压缩包导入 + 编码检测 | P2 | Flutter import | 1 周 |
+| 10 | 发现页推荐 + WebDAV 设置完整流 | P2 | Flutter explore/settings | 1-2 周 |
 
 ---
 

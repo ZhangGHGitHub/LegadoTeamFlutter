@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 16 new Flutter widget tests (page flip + paragraph comment)
 
 ### Changed
+- **2026-07-29 源码深度审计**：整体迁移完成度修正为 ~80%（Rust ~85%，Flutter UI ~78%），识别 P0 缺口：排版引擎/导出UI/缓存管理
 - **网络栈统一**：从独立 ureq 迁移至 LegadoClient，复用连接池、中间件、重试策略
 - **引擎池化增强**：SharedScopeManager LRU 缓存 + 超时中断保护
 - **flutter_rust_bridge codegen**：53 → 103+ Dart bindings，rust_api.dart 全量重写为真实 FFI 调用
