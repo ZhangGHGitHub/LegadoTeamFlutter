@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import '../providers/source_provider.dart';
 import '../routes.dart';
@@ -57,6 +61,11 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
   bool _testing = false;
   List<SearchResult> _testResults = [];
   String? _testError;
+
+  // 规则验证状态
+  bool _validating = false;
+  String? _validateResult; // JSON 格式验证结果
+  bool _validateSuccess = false; // 验证是否成功
 
   bool get isNew => widget.sourceUrl == null;
 
@@ -299,14 +308,289 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
         keyword,
         sourceUrls: [source.bookSourceUrl],
       );
+      if (!mounted) return;
       setState(() {
         _testResults = results;
         _testing = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _testError = e.toString();
         _testing = false;
+      });
+    }
+  }
+
+  /// 显示规则验证对话框
+  Future<void> _showValidateDialog() async {
+    final urlCtrl = TextEditingController();
+    // 默认验证类型：搜索
+    String validateType = 'search';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('规则验证'),
+              content: SizedBox(
+                width: 500,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 测试 URL 输入
+                    TextField(
+                      controller: urlCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '测试 URL',
+                        hintText: '搜索关键词 / 书籍URL / 章节URL',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // 验证类型选择
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        _buildValidateTypeChip(
+                          label: '搜索',
+                          value: 'search',
+                          selected: validateType == 'search',
+                          onSelected: () =>
+                              setDialogState(() => validateType = 'search'),
+                        ),
+                        _buildValidateTypeChip(
+                          label: '书籍详情',
+                          value: 'info',
+                          selected: validateType == 'info',
+                          onSelected: () =>
+                              setDialogState(() => validateType = 'info'),
+                        ),
+                        _buildValidateTypeChip(
+                          label: '章节目录',
+                          value: 'chapters',
+                          selected: validateType == 'chapters',
+                          onSelected: () =>
+                              setDialogState(() => validateType = 'chapters'),
+                        ),
+                        _buildValidateTypeChip(
+                          label: '章节内容',
+                          value: 'content',
+                          selected: validateType == 'content',
+                          onSelected: () =>
+                              setDialogState(() => validateType = 'content'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // 验证结果区域
+                    if (_validating)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 8),
+                              Text('验证中...'),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (_validateResult != null)
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 300),
+                        decoration: BoxDecoration(
+                          color: _validateSuccess
+                              ? Colors.green.shade50
+                              : Theme.of(ctx).colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _validateSuccess
+                                ? Colors.green.shade300
+                                : Theme.of(ctx).colorScheme.error,
+                          ),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 状态标题栏
+                            Row(
+                              children: [
+                                Icon(
+                                  _validateSuccess
+                                      ? Icons.check_circle
+                                      : Icons.error,
+                                  color: _validateSuccess
+                                      ? Colors.green
+                                      : Theme.of(ctx).colorScheme.error,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _validateSuccess ? '验证成功' : '验证失败',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: _validateSuccess
+                                        ? Colors.green.shade800
+                                        : Theme.of(ctx).colorScheme.error,
+                                  ),
+                                ),
+                                const Spacer(),
+                                // 复制按钮
+                                IconButton(
+                                  icon: const Icon(Icons.copy, size: 18),
+                                  tooltip: '复制结果',
+                                  onPressed: () {
+                                    Clipboard.setData(
+                                      ClipboardData(text: _validateResult!),
+                                    );
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('已复制到剪贴板')),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // JSON 预览
+                            Flexible(
+                              child: SingleChildScrollView(
+                                child: SelectableText(
+                                  _validateResult!,
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('关闭'),
+                ),
+                FilledButton.icon(
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('验证'),
+                  onPressed: _validating
+                      ? null
+                      : () async {
+                          final url = urlCtrl.text.trim();
+                          if (url.isEmpty) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(content: Text('请输入测试 URL')),
+                            );
+                            return;
+                          }
+                          // 执行验证
+                          setDialogState(() {
+                            _validating = true;
+                            _validateResult = null;
+                          });
+                          await _runValidation(url, validateType);
+                          setDialogState(() => _validating = false);
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    urlCtrl.dispose();
+  }
+
+  /// 构建验证类型选择芯片
+  Widget _buildValidateTypeChip({
+    required String label,
+    required String value,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  /// 执行规则验证
+  Future<void> _runValidation(String url, String type) async {
+    try {
+      final source = _buildSource();
+      // 先保存书源
+      if (!mounted) return;
+      final provider = context.read<SourceProvider>();
+      await provider.saveSource(source);
+
+      final sourceJson = jsonEncode(source.toJson());
+      String result;
+
+      switch (type) {
+        case 'search':
+          // 搜索验证
+          result = await bridge.webbookSearch(
+            sourceJson: sourceJson,
+            query: url,
+            page: 1,
+          );
+        case 'info':
+          // 书籍详情验证
+          result = await bridge.webbookInfo(
+            sourceJson: sourceJson,
+            bookUrl: url,
+          );
+        case 'chapters':
+          // 章节目录验证
+          result = await bridge.webbookChapters(
+            sourceJson: sourceJson,
+            bookUrl: url,
+          );
+        case 'content':
+          // 章节内容验证
+          result = await bridge.webbookContent(
+            sourceJson: sourceJson,
+            chapterJson: url,
+          );
+        default:
+          result = '{"error": "未知验证类型"}';
+      }
+
+      // 格式化 JSON 输出
+      String formatted;
+      try {
+        final decoded = jsonDecode(result);
+        formatted = const JsonEncoder.withIndent('  ').convert(decoded);
+      } catch (_) {
+        formatted = result;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _validateResult = formatted;
+        _validateSuccess = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _validateResult = '错误: $e';
+        _validateSuccess = false;
       });
     }
   }
@@ -329,6 +613,12 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
             ],
           ),
           actions: [
+            // 验证规则按钮
+            IconButton(
+              icon: const Icon(Icons.rule_folder_outlined),
+              tooltip: '验证规则',
+              onPressed: _showValidateDialog,
+            ),
             IconButton(
               icon: const Icon(Icons.menu_book_outlined),
               tooltip: '字典查询',

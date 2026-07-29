@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/audio_provider.dart';
+
+/// 预设定时时长（分钟）
+const List<int> _kPresetMinutes = [5, 10, 15, 30];
 
 /// 听书播放页面
 class AudioScreen extends StatefulWidget {
@@ -21,6 +26,18 @@ class AudioScreen extends StatefulWidget {
 class _AudioScreenState extends State<AudioScreen> {
   bool _showSettings = false;
 
+  // ===== 定时停止相关状态 =====
+
+  /// 定时器实例
+  Timer? _stopTimer;
+
+  /// 剩余秒数，为 0 表示未启用定时
+  int _remainingSeconds = 0;
+
+  /// 自定义时长输入控制器
+  final TextEditingController _customMinutesController =
+      TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -33,11 +50,135 @@ class _AudioScreenState extends State<AudioScreen> {
   }
 
   @override
+  void dispose() {
+    // 页面销毁时清理定时器
+    _stopTimer?.cancel();
+    _customMinutesController.dispose();
+    super.dispose();
+  }
+
+  // ===== 定时停止逻辑 =====
+
+  /// 是否正在倒计时
+  bool get _isTimerActive => _remainingSeconds > 0;
+
+  /// 启动定时停止
+  void _startTimer(int minutes) {
+    // 取消已有定时器
+    _stopTimer?.cancel();
+
+    final totalSeconds = minutes * 60;
+    setState(() => _remainingSeconds = totalSeconds);
+
+    // 每秒更新倒计时
+    _stopTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _remainingSeconds--;
+        if (_remainingSeconds <= 0) {
+          // 倒计时结束，暂停播放
+          timer.cancel();
+          _remainingSeconds = 0;
+          if (mounted) {
+            context.read<AudioProvider>().pause();
+          }
+        }
+      });
+    });
+  }
+
+  /// 取消定时停止
+  void _cancelTimer() {
+    _stopTimer?.cancel();
+    _stopTimer = null;
+    setState(() => _remainingSeconds = 0);
+  }
+
+  /// 格式化倒计时文本 mm:ss
+  String _formatCountdown(int totalSeconds) {
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  /// 显示定时选择底部弹窗
+  void _showTimerPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  '定时停止',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              // 预设时间选项
+              ..._kPresetMinutes.map(
+                (minutes) => ListTile(
+                  leading: const Icon(Icons.timer_outlined),
+                  title: Text('$minutes 分钟'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _startTimer(minutes);
+                  },
+                ),
+              ),
+              // 自定义时长
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: Row(
+                  children: [
+                    const Text('自定义'),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 60,
+                      child: TextField(
+                        controller: _customMinutesController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          hintText: '分钟',
+                          isDense: true,
+                          border: UnderlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('分钟'),
+                  ],
+                ),
+                onTap: () {
+                  final value =
+                      int.tryParse(_customMinutesController.text) ?? 0;
+                  if (value > 0 && value <= 180) {
+                    Navigator.pop(sheetContext);
+                    _startTimer(value);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.bookName.isNotEmpty ? widget.bookName : '听书'),
         actions: [
+          // 定时停止按钮
+          _buildTimerButton(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => setState(() => _showSettings = !_showSettings),
@@ -75,6 +216,8 @@ class _AudioScreenState extends State<AudioScreen> {
               _buildProgressBar(provider),
               // 播放控制
               _buildControls(provider),
+              // 倒计时显示（定时激活时）
+              if (_isTimerActive) _buildCountdownBar(),
               const Divider(),
               // 设置面板（可展开）
               if (_showSettings) _buildSettingsPanel(provider),
@@ -85,6 +228,51 @@ class _AudioScreenState extends State<AudioScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// 定时停止按钮（AppBar 中）
+  Widget _buildTimerButton() {
+    return IconButton(
+      icon: Icon(
+        _isTimerActive ? Icons.timer : Icons.timer_outlined,
+        color: _isTimerActive ? Colors.red : null,
+      ),
+      tooltip: _isTimerActive ? '取消定时' : '定时停止',
+      onPressed: () {
+        if (_isTimerActive) {
+          _cancelTimer();
+        } else {
+          _showTimerPicker();
+        }
+      },
+    );
+  }
+
+  /// 倒计时显示条（控制区域下方，红色文字突出）
+  Widget _buildCountdownBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.timer, size: 18, color: Colors.red),
+          const SizedBox(width: 6),
+          Text(
+            '定时停止 ${_formatCountdown(_remainingSeconds)}',
+            style: const TextStyle(
+              color: Colors.red,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: _cancelTimer,
+            child: const Icon(Icons.close, size: 18, color: Colors.red),
+          ),
+        ],
       ),
     );
   }
