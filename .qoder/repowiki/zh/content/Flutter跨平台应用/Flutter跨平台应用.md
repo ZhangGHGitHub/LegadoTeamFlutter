@@ -21,10 +21,11 @@
 
 ## 更新摘要
 **变更内容**   
-- 增强了阅读器屏幕，新增搜索功能和段落注释对话框系统
-- 改进了用户认证集成，通过Rust API中的getCurrentUser()方法实现
-- 更新了状态管理以支持新的用户认证功能
-- 优化了阅读器界面的交互体验
+- 新增缓存管理系统，提供高效的本地数据缓存和清理功能
+- 添加漫画阅读器功能，支持图片加载、缩放和翻页操作
+- 实现WebDAV设置界面，支持云端存储配置和数据同步
+- 增强测试基础设施，包含全面的单元测试和Widget测试套件
+- 优化状态管理架构，提升应用性能和响应速度
 
 ## 目录
 1. [简介](#简介)
@@ -41,7 +42,7 @@
 ## 简介
 本文件面向Flutter跨平台应用的开发者与使用者，系统性阐述Legado的Flutter工程组织、状态管理（Provider）、路由与UI设计、与Rust核心库的FFI集成、多平台构建发布流程以及开发与调试技巧。文档以"由浅入深"的方式展开，既适合快速上手，也便于深入理解实现细节。
 
-**最新更新**：本次更新重点介绍了增强的阅读器屏幕功能，包括全新的搜索功能和段落注释对话框系统，以及改进的用户认证集成机制。
+**最新更新**：本次更新重点介绍了新增的缓存管理系统、漫画阅读器功能和WebDAV设置界面，同时增强了测试基础设施，为应用提供了更强大的数据存储、多媒体阅读和云端同步能力。
 
 ## 项目结构
 Flutter工程位于 flutter_legado 目录，遵循标准Flutter多平台结构：
@@ -62,6 +63,10 @@ A --> F["flutter_legado/linux<br/>Linux宿主与CMake"]
 A --> G["flutter_legado/scripts<br/>构建与桥接脚本"]
 A --> H["flutter_legado/pubspec.yaml<br/>依赖与资源"]
 A --> I["flutter_legado/flutter_rust_bridge.yaml<br/>FFI桥接配置"]
+A --> J["flutter_legado/test<br/>测试套件"]
+J --> K["cache_settings_screen_test.dart"]
+J --> L["comic_reader_test.dart"]
+J --> M["webdav_settings_test.dart"]
 ```
 
 图表来源
@@ -86,16 +91,20 @@ A --> I["flutter_legado/flutter_rust_bridge.yaml<br/>FFI桥接配置"]
   - SearchProvider：搜索历史、结果缓存与查询状态。
   - RssProvider：订阅源与文章列表状态。
   - AutoTaskProvider：自动任务调度与执行状态。
-  - **新增**：AuthProvider：用户认证状态管理，集成getCurrentUser()方法。
+  - **新增**：CacheProvider：缓存管理状态，包括缓存大小监控、清理策略和存储优化。
+  - **新增**：WebDavProvider：WebDAV配置状态，支持服务器连接管理和数据同步。
 - 路由管理
   - 集中式路由表，按功能模块划分页面；支持命名路由与参数传递。
 - UI组件与主题
   - Material Design组件定制，统一颜色、字体、阴影与动画风格。
   - 响应式布局适配手机、平板、桌面端。
-  - **增强**：阅读器界面包含新的搜索功能和段落注释对话框。
+  - **新增**：缓存设置界面，提供缓存清理和存储管理功能。
+  - **新增**：漫画阅读器界面，支持图片浏览和交互操作。
+  - **新增**：WebDAV设置界面，支持云端存储配置。
 - Rust FFI集成
   - 通过flutter_rust_bridge生成桥接代码，调用Rust高性能计算能力（解析、加密、网络、音频等）。
-  - **改进**：用户认证API集成，支持getCurrentUser()方法调用。
+  - **新增**：缓存管理API，提供高效的本地数据存储和检索功能。
+  - **新增**：WebDAV客户端接口，支持云端文件操作和同步。
 
 章节来源
 - [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
@@ -114,7 +123,10 @@ subgraph "Flutter UI层"
 UI["Material UI组件"]
 Router["路由管理"]
 Theme["主题与样式"]
-Reader["增强的阅读器界面"]
+Reader["阅读器界面"]
+ComicReader["漫画阅读器"]
+CacheSettings["缓存设置界面"]
+WebDavSettings["WebDAV设置界面"]
 end
 subgraph "状态管理层"
 PBookshelf["BookshelfProvider"]
@@ -123,7 +135,8 @@ PReader["ReaderProvider"]
 PSearch["SearchProvider"]
 PRss["RssProvider"]
 PAuto["AutoTaskProvider"]
-PAuth["AuthProvider"]
+PCache["CacheProvider"]
+PWebDav["WebDavProvider"]
 end
 subgraph "Rust核心层"
 FFI["FFI桥接"]
@@ -132,7 +145,8 @@ Net["网络与请求"]
 Parse["解析与规则"]
 Audio["音频与TTS"]
 Crypto["加密与安全"]
-Auth["用户认证API"]
+Cache["缓存管理"]
+WebDav["WebDAV客户端"]
 end
 UI --> PBookshelf
 UI --> PSettings
@@ -140,20 +154,23 @@ UI --> PReader
 UI --> PSearch
 UI --> PRss
 UI --> PAuto
-UI --> PAuth
+UI --> PCache
+UI --> PWebDav
 PBookshelf --> FFI
 PSettings --> FFI
 PReader --> FFI
 PSearch --> FFI
 PRss --> FFI
 PAuto --> FFI
-PAuth --> FFI
+PCache --> FFI
+PWebDav --> FFI
 FFI --> Core
 Core --> Net
 Core --> Parse
 Core --> Audio
 Core --> Crypto
-Core --> Auth
+Core --> Cache
+Core --> WebDav
 ```
 
 图表来源
@@ -222,10 +239,14 @@ App-->>Boot : 渲染首屏UI
 - AutoTaskProvider
   - 职责：定时任务调度、执行状态、失败重试
   - 关键方法：添加任务、触发执行、监控状态
-- **新增**：AuthProvider
-  - 职责：用户认证状态管理、会话维护、权限控制
-  - 关键方法：getCurrentUser()、登录验证、会话刷新、权限检查
-  - 复杂度：异步认证流程，需要处理网络请求和状态同步
+- **新增**：CacheProvider
+  - 职责：缓存管理、存储空间监控、清理策略和性能优化
+  - 关键方法：获取缓存大小、清理过期数据、优化存储策略
+  - 复杂度：I/O操作密集，需要异步处理和错误恢复机制
+- **新增**：WebDavProvider
+  - 职责：WebDAV配置管理、服务器连接状态、数据同步状态
+  - 关键方法：连接测试、上传下载、同步状态监控
+  - 复杂度：网络请求密集，需要超时处理和重试机制
 
 ```mermaid
 classDiagram
@@ -262,11 +283,15 @@ class AutoTaskProvider {
 +触发执行()
 +监控状态()
 }
-class AuthProvider {
-+getCurrentUser()
-+登录验证()
-+会话刷新()
-+权限检查()
+class CacheProvider {
++获取缓存大小()
++清理过期数据()
++优化存储策略()
+}
+class WebDavProvider {
++连接测试()
++上传下载()
++同步状态监控()
 }
 ```
 
@@ -276,45 +301,96 @@ class AuthProvider {
 章节来源
 - [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
 
-### 增强的阅读器界面
-**新增功能**：阅读器屏幕现在包含以下增强功能：
+### 新增功能组件
 
-- **搜索功能**
-  - 实时文本搜索，支持关键词高亮显示
-  - 搜索结果导航，支持前后跳转
-  - 搜索历史记录，方便重复搜索
-  - 正则表达式支持，提高搜索灵活性
+#### 缓存管理系统
+**新增功能**：缓存管理系统提供高效的本地数据存储和清理功能：
 
-- **段落注释对话框系统**
-  - 长按段落弹出注释对话框
-  - 支持富文本编辑，包括加粗、斜体、下划线
-  - 注释分类管理，支持标签系统
-  - 注释同步，支持云端备份与恢复
-  - 注释导入导出，支持多种格式
+- **缓存监控**
+  - 实时监测缓存大小和使用情况
+  - 支持多种缓存类型（图片、数据、临时文件）
+  - 智能缓存策略，自动清理过期和冗余数据
+- **存储优化**
+  - 压缩存储减少空间占用
+  - 分块缓存提高访问效率
+  - 内存映射优化大文件处理
+- **清理策略**
+  - 自动清理过期缓存
+  - 手动清理指定类型数据
+  - 智能清理推荐算法
 
 ```mermaid
 sequenceDiagram
 participant User as "用户"
-participant Reader as "阅读器界面"
-participant Search as "搜索功能"
-participant Comment as "注释系统"
-participant Auth as "用户认证"
-User->>Reader : 打开书籍
-Reader->>Auth : 检查用户状态
-Auth-->>Reader : 返回认证信息
-User->>Reader : 选择搜索功能
-Reader->>Search : 启动搜索界面
-Search-->>Reader : 返回搜索结果
-User->>Reader : 长按段落
-Reader->>Comment : 显示注释对话框
-Comment-->>Reader : 保存注释
-Reader->>Auth : 同步注释到云端
-Auth-->>Reader : 确认同步完成
+participant CacheUI as "缓存设置界面"
+participant CacheProvider as "CacheProvider"
+participant Storage as "存储系统"
+User->>CacheUI : 打开缓存管理
+CacheUI->>CacheProvider : 获取缓存信息
+CacheProvider->>Storage : 扫描缓存文件
+Storage-->>CacheProvider : 返回缓存统计
+CacheProvider-->>CacheUI : 显示缓存详情
+User->>CacheUI : 选择清理操作
+CacheUI->>CacheProvider : 执行清理任务
+CacheProvider->>Storage : 删除指定缓存
+Storage-->>CacheProvider : 确认清理完成
+CacheProvider-->>CacheUI : 更新缓存状态
 ```
 
-图表来源
-- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
-- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-L200)
+#### 漫画阅读器
+**新增功能**：漫画阅读器支持图片浏览和交互操作：
+
+- **图片加载**
+  - 支持多种图片格式（JPEG、PNG、WebP）
+  - 懒加载和预加载策略
+  - 图片压缩和缓存优化
+- **交互操作**
+  - 双指缩放和平移
+  - 左右滑动翻页
+  - 长按菜单和书签功能
+- **阅读模式**
+  - 单页模式和连续模式
+  - 横向和纵向阅读方向
+  - 全屏和窗口模式切换
+
+#### WebDAV设置界面
+**新增功能**：WebDAV设置界面支持云端存储配置：
+
+- **服务器配置**
+  - 支持URL、用户名、密码认证
+  - SSL证书验证和安全连接
+  - 连接测试和状态监控
+- **数据同步**
+  - 双向同步支持
+  - 增量同步和冲突解决
+  - 同步进度和错误处理
+- **存储管理**
+  - 远程文件浏览和操作
+  - 批量上传下载
+  - 存储空间监控
+
+```mermaid
+sequenceDiagram
+participant User as "用户"
+participant WebDavUI as "WebDAV设置界面"
+participant WebDavProvider as "WebDavProvider"
+participant Network as "网络层"
+participant Server as "WebDAV服务器"
+User->>WebDavUI : 配置服务器信息
+WebDavUI->>WebDavProvider : 保存配置
+WebDavProvider->>Network : 建立连接
+Network->>Server : 发送认证请求
+Server-->>Network : 返回认证结果
+Network-->>WebDavProvider : 连接状态
+WebDavProvider-->>WebDavUI : 更新界面状态
+User->>WebDavUI : 执行同步操作
+WebDavUI->>WebDavProvider : 触发同步任务
+WebDavProvider->>Network : 数据传输
+Network->>Server : 文件操作
+Server-->>Network : 操作结果
+Network-->>WebDavProvider : 同步完成
+WebDavProvider-->>WebDavUI : 更新同步状态
+```
 
 ### 与Rust核心库的FFI集成
 - 桥接配置
@@ -323,7 +399,8 @@ Auth-->>Reader : 确认同步完成
 - Rust侧接口
   - legado-ffi/src/lib.rs：暴露给Flutter的FFI函数（如解析、加密、网络、音频）
   - legado-core/src/lib.rs：核心业务逻辑（模型、规则、网络、音频、加密等）
-  - **改进**：用户认证API，包含getCurrentUser()方法和其他认证相关功能
+  - **新增**：缓存管理API，提供高效的数据存储和检索功能
+  - **新增**：WebDAV客户端接口，支持云端文件操作和同步
 - 调用流程
   - Dart侧调用生成的桥接函数
   - 通过平台通道进入Rust层
@@ -336,12 +413,15 @@ participant Dart as "Dart桥接层"
 participant FRB as "flutter_rust_bridge"
 participant FFI as "legado-ffi"
 participant Core as "legado-core"
-participant Auth as "认证API"
+participant Cache as "缓存API"
+participant WebDav as "WebDAV API"
 Dart->>FRB : 调用生成的函数
 FRB->>FFI : 通过平台通道转发
 FFI->>Core : 执行业务逻辑
-Core->>Auth : 调用认证方法
-Auth-->>Core : 返回用户信息
+Core->>Cache : 调用缓存操作
+Core->>WebDav : 调用WebDAV操作
+WebDav-->>Core : 返回操作结果
+Cache-->>Core : 返回缓存数据
 Core-->>FFI : 返回结果/错误
 FFI-->>FRB : 序列化响应
 FRB-->>Dart : 反序列化为Dart对象
@@ -421,11 +501,15 @@ Publish --> End(["结束"])
   - http/dio：网络请求
   - shared_preferences：本地存储
   - intl：国际化
+  - **新增**：cached_network_image：图片缓存和网络加载
+  - **新增**：webdav_client：WebDAV客户端支持
 - Rust依赖
   - tokio：异步运行时
   - serde：序列化/反序列化
   - reqwest：HTTP客户端
   - rusqlite：数据库访问
+  - **新增**：rusqlite：SQLite数据库支持
+  - **新增**：image：图像处理库
 - 平台依赖
   - Android：Gradle、Kotlin、Cronet
   - iOS/macOS：Swift、Objective-C桥接
@@ -438,10 +522,13 @@ Dart --> FRB["flutter_rust_bridge"]
 Dart --> Http["http/dio"]
 Dart --> Pref["shared_preferences"]
 Dart --> Intl["intl"]
+Dart --> Image["cached_network_image"]
+Dart --> WebDav["webdav_client"]
 Rust["Rust依赖"] --> Tokio["tokio"]
 Rust --> Serde["serde"]
 Rust --> Reqwest["reqwest"]
 Rust --> Sqlite["rusqlite"]
+Rust --> ImageLib["image"]
 Platform["平台依赖"] --> Android["Android/Gradle/Kotlin/Cronet"]
 Platform --> IOS["iOS/macOS/Swift/Objective-C"]
 Platform --> WinLin["Windows/Linux/CMake/系统库"]
@@ -472,10 +559,18 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - 避免频繁跨语言调用，批量处理数据
   - 使用零拷贝或引用传递减少序列化开销
   - 对CPU密集任务使用多线程（tokio线程池）
-- **新增**：阅读器性能优化
-  - 搜索功能使用防抖和节流，避免频繁搜索
-  - 注释系统采用懒加载，只加载可见内容的注释
-  - 用户认证状态缓存，减少重复认证请求
+- **新增**：缓存性能优化
+  - 智能缓存策略，自动清理过期和冗余数据
+  - 内存映射优化大文件处理
+  - 压缩存储减少空间占用
+- **新增**：漫画阅读器性能优化
+  - 图片懒加载和预加载策略
+  - 图片压缩和缓存优化
+  - 内存管理和垃圾回收优化
+- **新增**：WebDAV同步性能优化
+  - 增量同步减少数据传输
+  - 并发上传下载提高效率
+  - 断点续传保证传输稳定性
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -488,20 +583,27 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - FFI调用失败：检查generate-bridge.sh是否成功，确认Rust库已正确编译
   - 路由跳转异常：检查路由表配置与参数传递
   - 状态未更新：确认Provider是否正确注入与监听
-  - **新增**：认证失败：检查getCurrentUser()方法调用和网络连接状态
+  - **新增**：缓存问题：检查缓存权限和存储空间
+  - **新增**：WebDAV连接失败：检查网络连接和服务器配置
+  - **新增**：图片加载失败：检查图片格式和网络权限
 - 日志与诊断
   - 启用Flutter verbose日志（flutter run -v）
   - 查看平台日志（adb logcat、xcode console、Windows Event Viewer）
   - 使用崩溃报告服务收集线上错误
+- **新增**：测试调试
+  - 运行单元测试：flutter test
+  - 运行Widget测试：flutter test widget
+  - 运行集成测试：flutter test integration
+  - 使用覆盖率工具：flutter test --coverage
 
 章节来源
 - [flutter_legado/README.md:1-200](file://flutter_legado/README.md#L1-L200)
 - [app/src/main/java/io/legado/app/App.kt:1-200](file://app/src/main/java/io/legado/app/App.kt#L1-L200)
 
 ## 结论
-本项目采用Flutter + Provider + Rust FI的现代跨平台架构，实现了高性能、可维护且易于扩展的阅读应用。通过清晰的模块划分、统一的Provider状态管理与严格的FFI接口规范，确保了多平台的一致体验与稳定运行。
+本项目采用Flutter + Provider + Rust FFI的现代跨平台架构，实现了高性能、可维护且易于扩展的阅读应用。通过清晰的模块划分、统一的Provider状态管理与严格的FFI接口规范，确保了多平台的一致体验与稳定运行。
 
-**最新改进**：本次更新显著增强了阅读器功能，包括全新的搜索系统和段落注释对话框，同时改进了用户认证集成。这些改进提升了用户体验，使阅读过程更加便捷和个性化。建议在开发过程中持续关注性能优化与错误诊断，以提升用户体验与开发效率。
+**最新改进**：本次更新显著增强了应用功能，新增了缓存管理系统、漫画阅读器功能和WebDAV设置界面，同时完善了测试基础设施。这些改进提供了更高效的数据存储、丰富的多媒体阅读体验和可靠的云端同步能力，大幅提升了用户体验和应用实用性。建议在开发过程中持续关注性能优化与错误诊断，以提升用户体验与开发效率。
 
 [本节为总结性内容，不直接分析具体文件]
 
@@ -515,11 +617,14 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - flutter run：运行应用
   - flutter build：构建发布包
   - flutter_rust_bridge_codegen：生成FFI桥接代码
+  - flutter test：运行测试套件
 - 最佳实践
   - 保持Provider粒度适中，避免过度拆分或合并
   - 使用类型安全的FFI接口，严格校验输入输出
   - 编写单元测试与Widget测试覆盖核心逻辑
-  - **新增**：对于认证相关功能，实现适当的错误处理和用户反馈
-  - **新增**：优化搜索和注释功能的性能，避免影响主线程
+  - **新增**：合理使用缓存策略，平衡性能和存储空间
+  - **新增**：实现健壮的WebDAV连接处理，支持离线模式
+  - **新增**：优化图片加载性能，避免内存溢出
+  - **新增**：完善测试覆盖率，确保新功能稳定性
 
 [本节为补充信息，不直接分析具体文件]

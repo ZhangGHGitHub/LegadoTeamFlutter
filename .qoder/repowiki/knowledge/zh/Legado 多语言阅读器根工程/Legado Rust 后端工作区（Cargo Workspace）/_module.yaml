@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: rust_workspace
-title: Legado Rust 多 Crate 工作区（核心引擎与 FFI 服务）
+title: Legado Rust 后端工作区（Cargo Workspace）
 scope:
     - rust/
 source_files: []
