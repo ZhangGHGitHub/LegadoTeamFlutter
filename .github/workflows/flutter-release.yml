@@ -1,0 +1,130 @@
+name: Flutter Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FLUTTER_VERSION: '3.41.7'
+      RUST_TOOLCHAIN: stable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # ─── Rust 工具链 ───
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # ─── Android NDK ───
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        id: ndk
+        run: |
+          # 使用 android SDK manager 安装 NDK
+          sdkmanager "ndk;27.0.12077973"
+          NDK_HOME="${ANDROID_SDK_ROOT}/ndk/27.0.12077973"
+          echo "NDK_HOME=${NDK_HOME}" >> $GITHUB_ENV
+          echo "NDK_TOOLCHAIN=${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64" >> $GITHUB_ENV
+
+      - name: Configure Cargo for Android
+        run: |
+          mkdir -p ${HOME}/.cargo
+          cat >> ${HOME}/.cargo/config.toml << 'EOF'
+          [target.aarch64-linux-android]
+          linker = "${{ env.NDK_TOOLCHAIN }}/bin/aarch64-linux-android21-clang"
+          rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+          [target.armv7-linux-androideabi]
+          linker = "${{ env.NDK_TOOLCHAIN }}/bin/armv7a-linux-androideabi21-clang"
+          rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+          EOF
+
+      # ─── Rust 交叉编译 Android ───
+      - name: Build Rust FFI (aarch64)
+        working-directory: rust
+        run: cargo build --release --target aarch64-linux-android -p legado-ffi
+
+      - name: Build Rust FFI (armv7)
+        working-directory: rust
+        run: cargo build --release --target armv7-linux-androideabi -p legado-ffi
+
+      # ─── 复制 .so 到 jniLibs ───
+      - name: Copy .so to jniLibs
+        run: |
+          JNILIBS="flutter_legado/android/app/src/main/jniLibs"
+          mkdir -p "${JNILIBS}/arm64-v8a"
+          mkdir -p "${JNILIBS}/armeabi-v7a"
+          cp rust/target/aarch64-linux-android/release/liblegado_ffi.so \
+             "${JNILIBS}/arm64-v8a/liblegado_ffi.so"
+          cp rust/target/armv7-linux-androideabi/release/liblegado_ffi.so \
+             "${JNILIBS}/armeabi-v7a/liblegado_ffi.so"
+          echo "jniLibs contents:"
+          find "${JNILIBS}" -type f -name '*.so' | sort
+
+      # ─── Flutter SDK ───
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo install flutter_rust_bridge_codegen
+
+      - name: Generate bridge bindings
+        working-directory: flutter_legado
+        run: flutter_rust_bridge generate
+
+      # ─── Flutter 构建 APK ───
+      - name: Flutter pub get
+        working-directory: flutter_legado
+        run: flutter pub get
+
+      - name: Flutter build APK (release)
+        working-directory: flutter_legado
+        run: flutter build apk --release --split-per-abi
+
+      # ─── 上传 APK 到 GitHub Release ───
+      - name: Collect APK files
+        run: |
+          mkdir -p ${{ github.workspace }}/release-apk
+          cp flutter_legado/build/app/outputs/flutter-apk/*-release.apk \
+             ${{ github.workspace }}/release-apk/
+          echo "APK files:"
+          ls -lh ${{ github.workspace }}/release-apk/*.apk
+
+      - name: Create GitHub Release and upload APK
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Flutter Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            Flutter + Rust 自动构建版本
+            Tag: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+          draft: false
+          prerelease: false
+          files: ${{ github.workspace }}/release-apk/*-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,7 +3,7 @@ schema_version: 1
 locale: zh-CN
 branch: master
 nodes_managed: true
-exported_at: "2026-07-29T05:54:42Z"
+exported_at: "2026-07-29T06:21:16Z"
 modules:
     "":
         dir_name: Legado 多语言跨平台阅读器根工程

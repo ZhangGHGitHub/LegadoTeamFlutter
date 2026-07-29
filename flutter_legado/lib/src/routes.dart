@@ -20,6 +20,7 @@ import 'screens/qrcode_screen.dart';
 import 'screens/search_content_screen.dart';
 import 'screens/reading_stats_screen.dart';
 import 'screens/reader_screen.dart';
+import 'screens/reader_comic_screen.dart';
 import 'screens/replace_rules_screen.dart';
 import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_screen.dart';
@@ -33,12 +34,14 @@ import 'screens/source_discover_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
 import 'screens/theme_config_screen.dart';
 import 'screens/txt_toc_rules_screen.dart';
+import 'screens/video_screen.dart';
 import 'screens/welcome_screen.dart';
 
 /// 路由配置
 class AppRoutes {
   static const home = '/';
   static const reader = '/reader';
+  static const readerComic = '/reader-comic';
   static const search = '/search';
   static const sources = '/sources';
   static const sourceEdit = '/sources/edit';
@@ -70,11 +73,17 @@ class AppRoutes {
   static const qrcode = '/qrcode';
   static const welcome = '/welcome';
   static const browser = '/browser';
+  static const video = '/video';
   // rssArticles 和 rssArticleDetail 通过 Navigator.push 传参，不在此注册
 
   static Map<String, WidgetBuilder> get routes => {
         home: (_) => const HomeScreen(),
         reader: (_) => const ReaderScreen(),
+        readerComic: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final bookUrl = args is String ? args : (args is Map ? (args['bookUrl'] as String? ?? '') : '');
+          return ReaderComicScreen(bookUrl: bookUrl);
+        },
         search: (_) => const SearchScreen(),
         sources: (_) => const SourceScreen(),
         sourceEdit: (_) => const SourceEditScreen(),
@@ -165,6 +174,16 @@ class AppRoutes {
           final args = ModalRoute.of(context)?.settings.arguments;
           final url = args is String ? args : null;
           return BrowserScreen(initialUrl: url);
+        },
+        video: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is Map<String, String>) {
+            return VideoScreen(
+              videoUrl: args['videoUrl'] ?? '',
+              title: args['title'] ?? '视频播放',
+            );
+          }
+          return const VideoScreen(videoUrl: '');
         },
       };
 }
