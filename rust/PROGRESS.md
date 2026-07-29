@@ -6,14 +6,14 @@
 
 ## 总览
 
-- **已完成**：137 / 137 原子任务（100%）
-- **测试状态**：cargo test 1315 passed（默认，exclude ffi）/ 1706 passed（含 QuickJS + FFI）| flutter test 151 passed | flutter analyze 0 issues
+- **已完成**：148 / 148 原子任务（100%）
+- **测试状态**：cargo test 1315 passed（默认，exclude ffi）/ 1706 passed（含 QuickJS + FFI）| flutter test 167 passed | flutter analyze 0 issues
 - **QuickJS feature**：327 tests passed (1 ignored) | legado-ffi：56 tests passed (5 ignored)
-- **里程碑**：🎉 TXT 分词搜索实现 + Flutter UI 完善（20 屏幕 + 10 组件）+ APK 构建成功
+- **里程碑**：🎉 Flutter UI 深度实现 + 工程化（仿真翻页/段评/视频/漫画/CI 发布）
 
 ---
 
-## 已完成（136/136 原子任务）
+## 已完成（148/148 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -336,6 +336,34 @@
 - 文档同步：DEVELOPMENT.md 测试数/屏幕数/FFI函数数更新 + CHANGELOG.md Unreleased 全面更新
 - 质量门禁：cargo test 1315 passed / clippy 0 warnings / flutter test 151 passed / flutter analyze 0 issues
 
+### 阶段 23：Flutter UI 深度实现 + 工程化（Task #138-#148） ✅
+
+- [x] Task #138: WebDAV sync FFI API（6 函数：list_dir/upload/download/delete/mkdir/full_sync）
+- [x] Task #139: Download Manager FFI API（8 函数：add_task/get_stats/list_by_book/pause_all/resume_all/remove_task/update_progress/complete_task）
+- [x] Task #140: Review 段评 FFI API（4 函数：get_by_chapter/add/delete/like）+ Flutter 段评弹窗
+- [x] Task #141: 仿真翻页动画（移植 Kotlin SimulationPageDelegate.kt 贝塞尔曲线算法 613 行）
+- [x] Task #142: RSS WebView 渲染 + JS 执行 + 纯文本 fallback
+- [x] Task #143: 书源编辑器规则验证（webbookSearch/Info/Chapters/Content）+ 调试日志增强
+- [x] Task #144: 听书播放器定时停止（Timer.periodic + 倒计时 UI + 预设时间选择器）
+- [x] Task #145: 视频播放模块（video_player + 播放控制 + 全屏 + 手势）
+- [x] Task #146: 漫画阅读模块（纵向滚动 + 双指缩放 + 图片预加载 + 进度保存）
+- [x] Task #147: CI 自动发布 workflow（flutter-release.yml，push tag 触发）
+- [x] Task #148: Flutter 阅读器测试覆盖（16 个新测试：翻页 8 + 段评 8）
+
+**阶段 23 关键成果：**
+- 🎉 **Flutter 屏幕数达到 40 个**：新增 video_screen + reader_comic_screen
+- FFI 新增函数：18 个（WebDAV 6 + Download 8 + Review 4），总计 103+
+- 仿真翻页：完整移植 Kotlin SimulationPageDelegate.kt 贝塞尔曲线算法（613 行）
+- 段评弹窗：FFI 4 函数 + Flutter ReviewDialog 完整交互
+- 视频播放：video_player 集成 + 播放控制 + 全屏 + 手势
+- 漫画阅读：纵向滚动 + 双指缩放 + 图片预加载 + 进度保存
+- RSS WebView：JS 执行 + 纯文本 fallback
+- 书源调试：规则验证（webbookSearch/Info/Chapters/Content）+ 调试日志增强
+- 听书定时：Timer.periodic + 倒计时 UI + 预设时间选择器
+- CI 发布：flutter-release.yml，push tag 触发自动构建 APK
+- 测试覆盖：16 个新 Flutter widget 测试（翻页 8 + 段评 8）
+- 质量门禁：cargo test 1315 passed / clippy 0 warnings / flutter test 167 passed / flutter analyze 0 issues
+
 ---
 
 ## 测试分布
@@ -348,9 +376,9 @@
 | legado-js | 158（默认）/ 327（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + 15 新 API |
 | legado-book | 95 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
 | legado-db | 206 | Schema v95 + 25 Repository（100% 覆盖）+ MigrationRegistry + RoomImporter + DefaultData + 集成测试 |
-| legado-ffi | 56 tests / 85+ 函数 | 85+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) API |
+| legado-ffi | 56 tests / 103+ 函数 | 103+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) + WebDAV(6) + Download(8) + Review(4) API |
 | legado-server | 164 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
-| **合计** | **1315**（默认，exclude ffi）/ **1706**（含 ffi + quickjs） | Flutter: 151 tests (22 files) |
+| **合计** | **1315**（默认，exclude ffi）/ **1706**（含 ffi + quickjs） | Flutter: 167 tests (24 files) |
 
 ---
 
@@ -363,6 +391,8 @@
 ### 低优先级
 
 - [x] 本地 TXT 分词搜索（2026-07-29 完成：TxtSearch 引擎 + FFI 4 函数 + 18 个测试）
+- [x] 端到端流程验证（书源导入→搜索→阅读→书签→替换规则全链路可用）
+- [x] 阅读器深度实现（仿真翻页动画 + 段评弹窗 + 漫画模式，2026-07-29 完成）
 - [ ] Cronet QUIC 优化
 
 ---

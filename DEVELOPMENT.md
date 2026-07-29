@@ -12,7 +12,7 @@
 ┌─────────────────────────────────────────────────────┐
 │                   Flutter UI 层                      │
 │              (flutter_legado/)                       │
-│     20 个页面 · 151 个测试 · 85+ FFI 函数            │
+│     40 个页面 · 167 个测试 · 103+ FFI 函数            │
 └────────────────────────┬────────────────────────────┘
                          │  flutter_rust_bridge (FFI)
 ┌────────────────────────▼────────────────────────────┐
@@ -37,7 +37,7 @@ legado-server — 独立 HTTP 服务（axum + 53 REST + 5 WS + MCP）
 - **书籍格式**：EPUB / TXT / MOBI / PDF 解析 + 导出
 - **数据库**：SQLite Schema v95 + 25 个 Repository + Room 数据导入
 - **HTTP 服务**：axum REST API + WebSocket 实时通道 + MCP Server
-- **Flutter UI**：书架 / 阅读器 / 搜索 / 书源管理 / 设置 / RSS 等 20 个页面
+- **Flutter UI**：书架 / 阅读器 / 搜索 / 书源管理 / 设置 / RSS 等 40 个页面
 
 ---
 
@@ -105,7 +105,7 @@ legado/
 │   └── PROGRESS.md              # 任务进度跟踪
 ├── flutter_legado/              # Flutter 跨平台 UI
 │   ├── lib/                     # Dart 源码
-│   ├── test/                    # Flutter 测试（30 个）
+│   ├── test/                    # Flutter 测试（24 个文件）
 │   ├── scripts/                 # 构建/代码生成脚本
 │   └── pubspec.yaml             # Flutter 依赖配置
 ├── app/                         # 原 Android Kotlin 版（历史代码）
@@ -223,8 +223,8 @@ flutter test
 | Rust workspace（默认） | 1315 | 8 个 crate 全量测试（exclude ffi） |
 | Rust QuickJS feature | 327 | legado-js 含 QuickJS 额外测试 |
 | Rust legado-ffi | 56 | FFI 导出函数测试 |
-| Flutter | 151 | Widget + 单元测试 |
-| **总计** | **1849** | |
+| Flutter | 167 | Widget + 单元测试 |
+| **总计** | **1865** | |
 
 ---
 
@@ -304,7 +304,7 @@ git commit -m "perf: 优化引擎池化内存占用"
 ## 相关链接
 
 - [Rust 端详细开发文档](./rust/DEVELOPMENT.md) — 架构设计、代码结构、调试技巧
-- [任务进度跟踪](./rust/PROGRESS.md) — 136 个任务完成状态
+- [任务进度跟踪](./rust/PROGRESS.md) — 148 个任务完成状态
 - [更新日志](./CHANGELOG.md) — 版本历史记录
 - [Flutter 客户端](./flutter_legado/README.md) — UI 层文档
 - [上游 Legado 项目](https://github.com/gedoor/legado) — Kotlin 原版

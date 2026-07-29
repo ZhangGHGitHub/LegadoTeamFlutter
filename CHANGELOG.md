@@ -20,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **WebSocket 实时通道**：搜索进度推送 + 书源/RSS 调试日志流，5 个 WS 端点
 - **DefaultData + Cron 解析**：JSON 默认数据导入 + 5/6 段 cron 表达式解析
 - **ContentHelp 段落重排**：完整移植 Kotlin ContentHelp.kt（630 行）至 Rust
-- **FFI 大规模扩展**：85+ FFI 导出函数，新增书签/替换规则/在线阅读/换源/AutoTask/RSS收藏/搜索历史/阅读记录/书籍分组/统计/缓存/配置/HTTP TTS/音频进度/Backup/Server/User 等 API
-- **Flutter UI 完善**：20 个屏幕（+14）、10 个可复用组件、78 个新 Provider 测试、APK 构建 + 模拟器安装验证通过
+- **FFI 大规模扩展**：103+ FFI 导出函数，新增书签/替换规则/在线阅读/换源/AutoTask/RSS收藏/搜索历史/阅读记录/书籍分组/统计/缓存/配置/HTTP TTS/音频进度/Backup/Server/User/WebDAV/Download/Review 等 API
+- **Flutter UI 完善**：40 个屏幕（+14）、10 个可复用组件、78 个新 Provider 测试、APK 构建 + 模拟器安装验证通过
 - **MCP Server 12 工具接入真实数据库**：search_books/get_chapters/read_chapter/list_sources 等全部接入真实查询
 - **用户管理**：users 表 + UserRepository + FFI 6 函数
 - **本地 TXT 分词搜索**：TxtSearch 引擎（纯文本/正则 + 章节感知 + 上下文摘要 + 结果数限制）+ FFI 4 函数 + 18 个测试
@@ -29,11 +29,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HTTP TTS**：http_tts 表 + Repository + FFI 5 函数
 - Multi-Agent parallel development scheme (5 roles)
 - Module ownership matrix and branch protocol
+- WebDAV sync FFI API (6 functions)
+- Download Manager FFI API (8 functions)
+- Review/paragraph comment FFI API (4 functions) + Flutter dialog
+- Simulation page flip animation (ported from Kotlin SimulationPageDelegate.kt bezier algorithm)
+- RSS article WebView rendering with JS execution and plain-text fallback
+- Source editor rule validation (webbook search/info/chapters/content) and debug log enhancement
+- Audio player timer/stop countdown with preset duration selector
+- Video player screen with playback controls and fullscreen
+- Comic reader screen with vertical scroll, pinch zoom, and image preloading
+- CI auto-release workflow (flutter-release.yml)
+- 16 new Flutter widget tests (page flip + paragraph comment)
 
 ### Changed
 - **网络栈统一**：从独立 ureq 迁移至 LegadoClient，复用连接池、中间件、重试策略
 - **引擎池化增强**：SharedScopeManager LRU 缓存 + 超时中断保护
-- **flutter_rust_bridge codegen**：53 → 85+ Dart bindings，rust_api.dart 全量重写为真实 FFI 调用
+- **flutter_rust_bridge codegen**：53 → 103+ Dart bindings，rust_api.dart 全量重写为真实 FFI 调用
 - **Mutex 安全**：49 处 unwrap() 替换为 unwrap_or_else（毒性恢复，避免 panic 级联）
 - **Backup 扩展**：备份范围新增 bookSources、rssSources、readRecords
 - Agent configs specialized with role-specific prompts

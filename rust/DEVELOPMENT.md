@@ -610,11 +610,11 @@ cargo test --workspace test_search
 | legado-js | 158 | 327 | 默认 158 + QuickJS 额外 169（含宿主 API + 沙箱 + SourceEngine） |
 | legado-book | 95 | 95 | EPUB/TXT/MOBI/PDF + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
 | legado-db | 206 | 206 | Schema v95 + 25 Repository（100% 覆盖）+ Migration + RoomImporter |
-| legado-ffi | 56 | 56 | 85+ FFI 导出 + 换源 + WebBook(真实链路) + 书签 + 替换规则 |
+| legado-ffi | 56 | 56 | 103+ FFI 导出 + 换源 + WebBook(真实链路) + 书签 + 替换规则 |
 | legado-server | 151 | 151 | axum + 53 REST + 5 WS + MCP + 集成测试 |
-| **合计** | **1315** | **1706** | Flutter: 151 tests |
+| **合计** | **1315** | **1706** | Flutter: 167 tests |
 
-> **总计**：Rust 1315（默认，exclude ffi）+ QuickJS 327 + FFI 56 + Flutter 151 = **1849 tests**
+> **总计**：Rust 1315（默认，exclude ffi）+ QuickJS 327 + FFI 56 + Flutter 167 = **1865 tests**
 
 ---
 

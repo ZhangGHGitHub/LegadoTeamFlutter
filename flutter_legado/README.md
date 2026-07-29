@@ -178,6 +178,8 @@ make clean          # cargo clean + flutter clean
 | **阅读统计** | `/reading_stats` | 今日时长/字数/速度，周/月柱状图，书籍分布，热力图 |
 | **RSS** | `/rss` | RSS 订阅源浏览 |
 | **RSS 文章** | `/rss/articles` | RSS 文章列表 |
+| **视频播放** | `/video` | 视频播放，播放控制、全屏、手势 |
+| **漫画阅读** | `/reader/comic` | 漫画阅读，纵向滚动、双指缩放、图片预加载 |
 | **设置** | `/settings` | 主题/语言切换、备份恢复、云同步、关于信息 |
 
 ---
@@ -246,22 +248,20 @@ flutter pub run build_runner build --delete-conflicting-outputs
 
 ---
 
-## 项目进度（截至 2026-07-30）
+## 项目进度（截至 2026-07-29）
 
-### 当前状态：38 屏幕 + 13 Provider + 24 FFI API，flutter analyze 0 issues，flutter test 151 passed，136/136 任务已完成
+### 当前状态：40 屏幕 + 13 Provider + 24 FFI API，flutter analyze 0 issues，flutter test 167 passed，148/148 任务已完成
 
 ### 已完成
-- 38 个页面：书架、书籍详情、阅读器（3种翻页+夜间模式+配置面板）、搜索、书内搜索、书源管理、书源编辑、书源发现、书源调试、书源登录、听书播放器、朗读配置、定时任务、书签管理、替换规则、阅读统计、设置、主题配置、RSS、RSS 文章、RSS 收藏、RSS 源编辑、浏览器、词典、字体、二维码、导入、换源、换封面、书籍分组、关联导入、欢迎页、关于
+- 40 个页面：书架、书籍详情、阅读器（3种翻页+夜间模式+配置面板+仿真动画）、搜索、书内搜索、书源管理、书源编辑、书源发现、书源调试、书源登录、听书播放器、朗读配置、定时任务、书签管理、替换规则、阅读统计、设置、主题配置、RSS、RSS 文章、RSS 收藏、RSS 源编辑、浏览器、词典、字体、二维码、导入、换源、换封面、书籍分组、关联导入、欢迎页、关于、视频播放、漫画阅读
 - 13 个 Provider：Bookshelf、Reader、Search、Source、Sync、ReadingStats、Audio、AutoTask、Bookmark、Discover、ReplaceRule、Rss、Association
 - 服务层：RustApi（1026行 FFI 联通）、SettingsService、BackupService、SourceImportService、PlatformChannel、RustBridge
 - 国际化：中英文双语切换
 - Android 平台桥接：WebView/TTS/通知/文件选择器 4 个 MethodChannel
 - APK 构建验证通过（雷电模拟器 x86_64）
-- 22 个测试文件 / 151 tests passed
+- 24 个测试文件 / 167 tests passed
 
 ### 待完成
-- 端到端流程跑通（书源导入→搜索→阅读）
-- 阅读器深度实现（翻页动画、段评、漫画）
-- 视频播放、漫画阅读模块
+- Cronet QUIC 优化
 
 > Rust 侧详细开发指南见 [DEVELOPMENT.md](../rust/DEVELOPMENT.md)
