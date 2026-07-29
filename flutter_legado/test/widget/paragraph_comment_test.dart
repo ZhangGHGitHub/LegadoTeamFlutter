@@ -64,9 +64,8 @@ void main() {
     await tester.pumpWidget(buildDialog());
     await tester.pumpAndSettle();
 
-    // 标题包含章节名 + "· 评论"
-    expect(find.textContaining('第一章'), findsOneWidget);
-    expect(find.textContaining('评论'), findsOneWidget);
+    // 标题显示："第一章 · 评论"
+    expect(find.text('第一章 · 评论'), findsOneWidget);
   });
 
   testWidgets('空评论列表显示"暂无评论"', (tester) async {
