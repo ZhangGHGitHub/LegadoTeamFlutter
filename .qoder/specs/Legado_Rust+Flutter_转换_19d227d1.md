@@ -364,70 +364,68 @@ QA Agent 负责：
 
 ---
 
-## 缺口分析与实际完成度审计（2026-07-26）
+## 缺口分析与实际完成度审计（2026-07-30 更新）
 
 ### 各层完成度总览
 
-| 层 | 完成度 | 关键瓶颈 |
+| 层 | 完成度 | 关键变化（vs 07-26） |
 |----|--------|----------|
-| Rust 核心引擎 | ~90% | 排版细节、MCP Server 缺失 |
-| JS 沙箱 (JsExtensions) | ~95% | 仅 7z/rar 解压为桩 |
-| FFI 桥接 | ~65% | 缺 5 个 API 模块 |
-| **Flutter UI** | **~35%** | **最大瓶颈**：功能深度不足，7 个模块完全缺失 |
-| 工程化 | ~60% | 测试不足、未真机验证、无自动发布 |
+| Rust 核心引擎 | ~92% | 测试 534→1297，MCP Server 已实现 |
+| JS 沙箱 (JsExtensions) | ~95% | 测试 113→327 (quickjs)，无变化 |
+| FFI 桥接 | **~90%** | 12→24 个 API 模块，audio/stats/backup/config 已补齐 |
+| Flutter UI | **~60%** | 19→38 屏幕，browser/dict/font/qrcode/debug 已新增 |
+| 工程化 | ~75% | 测试 15→151，Android 已验证，CI 待完善 |
 
-### Flutter UI 层缺口明细
+### Flutter UI 层现状（38 屏幕）
 
-| Kotlin 原版模块 | 代码量 | Flutter 对应 | 覆盖度 | 缺口 |
-|----------------|--------|-------------|--------|------|
-| ReadBookActivity (阅读器) | 90KB/2247行 | reader_screen.dart 22KB/603行 | **25%** | 翻页动画、排版渲染、段评、朗读条、文本选择、漫画模式 |
-| BookSourceEditActivity (书源编辑) | 44KB | source_edit_screen.dart 18KB | **40%** | JS 源编辑、调试面板、规则验证 |
-| AudioPlayActivity (听书) | 23KB | audio_screen.dart 11KB | **40%** | 通知栏控制、进度持久化、定时停止 |
-| ReadRssActivity (RSS 阅读) | 34KB | rss_article_detail 6.5KB | **20%** | WebView 渲染、JS 执行、收藏、分页 |
-| RssSourceEditActivity (RSS 源编辑) | 30KB | 无 | **0%** | 完全缺失 |
-| 书源调试 (Debug) | 8.4KB | 无 | **0%** | 完全缺失 |
-| 浏览器 (browser/) | 完整模块 | 无 | **0%** | 完全缺失 |
-| 代码编辑器 (code/) | 完整模块 | 无 | **0%** | 完全缺失 |
-| 文件管理 (file/) | 完整模块 | 无 | **0%** | 完全缺失 |
-| 字体管理 (font/) | 完整模块 | 无 | **0%** | 完全缺失 |
-| 视频播放 (video/) | 完整模块 | 无 | **0%** | 完全缺失 |
-| 漫画阅读 (manga/) | 完整模块 | 无 | **0%** | 完全缺失 |
-| 二维码 (qrcode/) | 完整模块 | 无 | **0%** | 完全缺失 |
-| 词典 (dict/) | 完整模块 | 无 | **0%** | 完全缺失 |
+| Kotlin 原版模块 | Flutter 对应 | 行数 | 覆盖度 | 剩余缺口 |
+|----------------|-------------|------|--------|------|
+| ReadBookActivity (阅读器) | reader_screen + reader_config_panel | 845+417 | **~50%** | 翻页动画、段评弹窗、漫画模式 |
+| BookSourceEditActivity (书源编辑) | source_edit_screen | 539 | **~55%** | JS 源调试流程、规则验证 |
+| AudioPlayActivity (听书) | audio_screen + read_aloud_config | 338+301 | **~55%** | 通知栏控制、定时停止 |
+| ReadRssActivity (RSS 阅读) | rss_article_detail + rss_favorites | 180+245 | **~40%** | WebView 渲染、JS 执行 |
+| RssSourceEditActivity | rss_source_edit_screen | 331 | **~60%** | 基本覆盖 |
+| 书源调试 (Debug) | source_debug_screen | 262 | **~60%** | 已新增 |
+| 浏览器 (browser/) | browser_screen | 326 | **~50%** | 已新增 |
+| 字体管理 (font/) | font_screen | 236 | **~60%** | 已新增 |
+| 二维码 (qrcode/) | qrcode_screen | 236 | **~70%** | 已新增 |
+| 词典 (dict/) | dict_screen | 465 | **~60%** | 已新增 |
+| 视频播放 (video/) | 无 | — | **0%** | 仍缺失 |
+| 漫画阅读 (manga/) | 无 | — | **0%** | 仍缺失 |
+| 代码编辑器 (code/) | 无 | — | **0%** | 仍缺失 |
+| 文件管理 (file/) | import_screen | 515 | **~40%** | 部分覆盖 |
 
-### FFI 桥接层缺口
+### FFI 桥接层现状（24 个 API 模块）
 
-| 缺失 API 模块 | Flutter 调用方 | 影响 |
-|--------------|---------------|------|
-| audio/TTS API | audio_provider | 听书播放器无后端支撑 |
-| auto_task API | auto_task_provider | 定时任务无法执行 |
-| reading_stats API | reading_stats_provider | 阅读统计无数据 |
-| sync/WebDAV API | sync_provider | 云同步不可用 |
-| download API | — | 下载管理无法触发 |
+| 状态 | 模块 |
+|------|------|
+| ✅ 已实现 | bookshelf, reader, search, source, source_switch, rss, web_book, book_export, book_import, bookmark, replace_rule, **audio**, **reading_stats**, **backup**, **config**, **http_tts**, **server**, **user**, **book_group**, **cache**, **read_record**, **rss_star**, **search_history** |
+| ❌ 仍缺失 | sync/WebDAV API, download API |
 
-### 工程化缺口
+### 工程化现状
 
 | 维度 | 现状 | 缺口 |
 |------|------|------|
-| Flutter 测试 | 6 文件 / 15 tests | 无阅读器深度测试、无网络 mock、无集成测试 |
-| Android 实机 | 已验证 | 交叉编译→APK→雷电模拟器(x86_64) 全链路已跑通 |
-| 端到端流程 | 未跑通 | 书源导入→搜索→阅读全流程不可用 |
-| CI 发布 | 仅手动 | 缺 Flutter APK 构建 + Rust 交叉编译自动发布 |
+| Rust 测试 | 1297 (default) / 1688 (quickjs+ffi) | ✅ 充足 |
+| Flutter 测试 | 22 文件 / 151 tests | ⚠️ 阅读器/网络深度测试仍不足 |
+| Android 实机 | ✅ 雷电模拟器已验证 | — |
+| 端到端流程 | 未跑通 | 书源导入→搜索→阅读全流程待验证 |
+| CI 发布 | Rust CI ✅ / Flutter CI ✅ | 缺自动发布 workflow |
 
-### Top 10 待办事项（按优先级）
+### Top 10 待办事项（按优先级，2026-07-30）
 
 | # | 事项 | 模块 | 预估 |
 |---|------|------|------|
-| 1 | 阅读器深度实现（翻页动画/排版/段评/朗读条） | Flutter reader | 4-6 周 |
-| 2 | FFI 补齐 audio/auto_task/stats/sync API | legado-ffi | 1-2 周 |
-| 3 | Android 实机编译验证 | Integration | ✅ 已完成 |
-| 4 | 书源编辑器完善（JS 源/调试/验证） | Flutter source_edit | 2-3 周 |
-| 5 | RSS 阅读深度实现（WebView/JS/收藏） | Flutter rss | 2 周 |
-| 6 | Flutter 测试覆盖提升 | test/ | 2 周 |
-| 7 | 听书播放器完善 + FFI audio API | Flutter audio + ffi | 2 周 |
-| 8 | 书源调试页面 | Flutter 新增 | 1 周 |
-| 9 | 主框架/导航完善 | Flutter home | 1 周 |
-| 10 | CI 自动发布流程 | .github/workflows | 1 周 |
+| 1 | 阅读器深度实现（翻页动画/段评/漫画） | Flutter reader | 3-4 周 |
+| 2 | 端到端流程跑通（书源导入→搜索→阅读） | 全链路 | 1-2 周 |
+| 3 | FFI 补齐 sync/WebDAV + download API | legado-ffi | 1 周 |
+| 4 | 书源编辑器完善（JS 源调试/验证） | Flutter source_edit | 2 周 |
+| 5 | RSS 阅读深度实现（WebView/JS） | Flutter rss | 2 周 |
+| 6 | 听书播放器完善（通知栏/定时） | Flutter audio | 1-2 周 |
+| 7 | Flutter 测试覆盖提升（阅读器/网络） | test/ | 1-2 周 |
+| 8 | CI 自动发布流程 | .github/workflows | 1 周 |
+| 9 | 视频播放模块 | Flutter 新增 | 2 周 |
+| 10 | 漫画阅读模块 | Flutter 新增 | 2-3 周 |
 
 ---
 

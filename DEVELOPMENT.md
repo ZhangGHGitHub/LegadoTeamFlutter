@@ -12,7 +12,7 @@
 ┌─────────────────────────────────────────────────────┐
 │                   Flutter UI 层                      │
 │              (flutter_legado/)                       │
-│     18 个页面 · 30 个测试 · 53 个 Dart bindings      │
+│     20 个页面 · 151 个测试 · 85+ FFI 函数            │
 └────────────────────────┬────────────────────────────┘
                          │  flutter_rust_bridge (FFI)
 ┌────────────────────────▼────────────────────────────┐
@@ -26,7 +26,7 @@
 │            (公共类型 / 错误 / 工具)                   │
 └─────────────────────────────────────────────────────┘
 
-legado-server — 独立 HTTP 服务（axum + 49 REST + 3 WS + MCP）
+legado-server — 独立 HTTP 服务（axum + 53 REST + 5 WS + MCP）
 ```
 
 ### 核心能力
@@ -35,9 +35,9 @@ legado-server — 独立 HTTP 服务（axum + 49 REST + 3 WS + MCP）
 - **JS 沙箱引擎**：QuickJS 真实实现，40+ 宿主 API，java 命名空间兼容
 - **网络引擎**：reqwest + 中间件链（重试/限流/Cookie）+ WebDAV 云同步
 - **书籍格式**：EPUB / TXT / MOBI / PDF 解析 + 导出
-- **数据库**：SQLite Schema v95 + 17 个 Repository + Room 数据导入
+- **数据库**：SQLite Schema v95 + 25 个 Repository + Room 数据导入
 - **HTTP 服务**：axum REST API + WebSocket 实时通道 + MCP Server
-- **Flutter UI**：书架 / 阅读器 / 搜索 / 书源管理 / 设置 / RSS 等 18 个页面
+- **Flutter UI**：书架 / 阅读器 / 搜索 / 书源管理 / 设置 / RSS 等 20 个页面
 
 ---
 
@@ -96,7 +96,7 @@ legado/
 │   ├── legado-parser/           # 书源规则解析：CSS/XPath/JsonPath/Regex/AnalyzeUrl
 │   ├── legado-net/              # 网络引擎：HTTP/Cookie/RSS/WebDAV/中间件
 │   ├── legado-js/               # JS 沙箱：QuickJS + 40+ 宿主 API
-│   ├── legado-book/             # 书籍格式：EPUB/TXT/MOBI/PDF 解析与导出
+│   ├── legado-book/             # 书籍格式：EPUB/TXT/MOBI/PDF 解析与导出 + TXT 搜索
 │   ├── legado-db/               # 数据库：SQLite Schema v95 + 17 Repository
 │   ├── legado-ffi/              # FFI 出口：flutter_rust_bridge 聚合层
 │   ├── legado-server/           # HTTP 服务：axum REST + WS + MCP
@@ -220,10 +220,11 @@ flutter test
 
 | 组件 | 测试数 | 说明 |
 |------|--------|------|
-| Rust workspace（默认） | 1225 | 8 个 crate 全量测试 |
-| Rust QuickJS feature | 309 | legado-js 含 QuickJS 额外测试 |
-| Flutter | 30 | Widget + 单元测试 |
-| **总计** | **1564** | |
+| Rust workspace（默认） | 1315 | 8 个 crate 全量测试（exclude ffi） |
+| Rust QuickJS feature | 327 | legado-js 含 QuickJS 额外测试 |
+| Rust legado-ffi | 56 | FFI 导出函数测试 |
+| Flutter | 151 | Widget + 单元测试 |
+| **总计** | **1849** | |
 
 ---
 
@@ -303,7 +304,7 @@ git commit -m "perf: 优化引擎池化内存占用"
 ## 相关链接
 
 - [Rust 端详细开发文档](./rust/DEVELOPMENT.md) — 架构设计、代码结构、调试技巧
-- [任务进度跟踪](./rust/PROGRESS.md) — 109 个任务完成状态
+- [任务进度跟踪](./rust/PROGRESS.md) — 136 个任务完成状态
 - [更新日志](./CHANGELOG.md) — 版本历史记录
 - [Flutter 客户端](./flutter_legado/README.md) — UI 层文档
 - [上游 Legado 项目](https://github.com/gedoor/legado) — Kotlin 原版

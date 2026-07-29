@@ -91,9 +91,7 @@ impl<'a> UserRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("更新登录状态失败: {e}")))?;
         if affected == 0 {
-            return Err(LegadoError::Database(format!(
-                "用户不存在: {username}"
-            )));
+            return Err(LegadoError::Database(format!("用户不存在: {username}")));
         }
         Ok(())
     }

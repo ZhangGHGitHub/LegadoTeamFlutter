@@ -295,6 +295,7 @@ make gen      # flutter_rust_bridge_codegen generate
 | `lib.rs` | LocalBook 统一入口：自动识别格式 |
 | `epub.rs` | EPUB 解析（quick-xml + zip） |
 | `txt.rs` | TXT 编码检测与解析（encoding_rs） |
+| `txt_search.rs` | TXT 内容搜索：纯文本/正则 + 章节感知 + 上下文摘要 |
 | `mobi.rs` | MOBI 格式解析 |
 | `pdf.rs` | PDF 解析（lopdf） |
 
@@ -606,14 +607,14 @@ cargo test --workspace test_search
 | legado-core | 448 | 448 | 数据模型、规则、加密、排版、换源、WebBook、CacheBook、ReadState、AudioPreload |
 | legado-parser | 72 | 72 | 4 解析器 + AnalyzeRule + AnalyzeUrl + RuleComplete |
 | legado-net | 168 | 168 | HTTP、Cookie、RSS、WebDAV、并发去重、UA/代理/SSL、SourceChecker |
-| legado-js | 151 | 324 | 默认 151 + QuickJS 额外 173（含宿主 API + 沙箱 + SourceEngine） |
-| legado-book | 77 | 77 | EPUB/TXT/MOBI/PDF + 导出服务 + 封面提取 + EXTH 元数据 |
+| legado-js | 158 | 327 | 默认 158 + QuickJS 额外 169（含宿主 API + 沙箱 + SourceEngine） |
+| legado-book | 95 | 95 | EPUB/TXT/MOBI/PDF + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
 | legado-db | 206 | 206 | Schema v95 + 25 Repository（100% 覆盖）+ Migration + RoomImporter |
-| legado-ffi | 58 | 58 | 85+ FFI 导出 + 换源 + WebBook(真实链路) + 书签 + 替换规则 |
-| legado-server | 158 | 158 | axum + 53 REST + 5 WS + MCP + 集成测试 |
-| **合计** | **1297** | **1679** | Flutter: 151 tests |
+| legado-ffi | 56 | 56 | 85+ FFI 导出 + 换源 + WebBook(真实链路) + 书签 + 替换规则 |
+| legado-server | 151 | 151 | axum + 53 REST + 5 WS + MCP + 集成测试 |
+| **合计** | **1315** | **1706** | Flutter: 151 tests |
 
-> **总计**：Rust 1297（默认）+ QuickJS 324 + Flutter 151 = **1772 tests**
+> **总计**：Rust 1315（默认，exclude ffi）+ QuickJS 327 + FFI 56 + Flutter 151 = **1849 tests**
 
 ---
 

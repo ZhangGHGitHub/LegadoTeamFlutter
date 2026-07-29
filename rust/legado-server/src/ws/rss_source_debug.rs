@@ -102,8 +102,7 @@ async fn handle_rss_source_debug(mut socket: WebSocket) {
                 }
 
                 // 步骤 2: 发送完成消息
-                let done =
-                    RssSourceDebugMessage::done(&format!("Completed: {text_str}"));
+                let done = RssSourceDebugMessage::done(&format!("Completed: {text_str}"));
                 if socket
                     .send(Message::Text(done.to_json().into()))
                     .await

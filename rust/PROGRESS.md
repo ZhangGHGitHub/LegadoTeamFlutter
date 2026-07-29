@@ -6,10 +6,10 @@
 
 ## 总览
 
-- **已完成**：136 / 136 原子任务（100%）
-- **测试状态**：cargo test 1297 passed（默认，exclude ffi）/ 1679 passed（含 QuickJS + FFI）| flutter test 151 passed | flutter analyze 0 issues
-- **QuickJS feature**：324 tests passed (1 ignored) | legado-ffi：58 tests passed
-- **里程碑**：🎉 Flutter UI 完善（20 屏幕 + 10 组件）+ APK 构建成功 + 模拟器安装验证通过
+- **已完成**：137 / 137 原子任务（100%）
+- **测试状态**：cargo test 1315 passed（默认，exclude ffi）/ 1706 passed（含 QuickJS + FFI）| flutter test 151 passed | flutter analyze 0 issues
+- **QuickJS feature**：327 tests passed (1 ignored) | legado-ffi：56 tests passed (5 ignored)
+- **里程碑**：🎉 TXT 分词搜索实现 + Flutter UI 完善（20 屏幕 + 10 组件）+ APK 构建成功
 
 ---
 
@@ -324,6 +324,18 @@
 - platform.rs 文档：6 个 WebView API 添加明确的文档注释（仅在 Flutter 侧实现 + 无头模式不支持）
 - 质量门禁：cargo test 1297 passed / clippy 0 warnings / flutter test 151 passed / flutter analyze 0 issues
 
+### 阶段 22：TXT 分词搜索 + 质量修复（Task #137） ✅
+
+- [x] Task #137: 本地 TXT 分词搜索（TxtSearch 引擎 + FFI 4 函数 + 18 个测试 + Clippy/Format 修复）
+
+**阶段 22 关键成果：**
+- TXT 搜索引擎：`txt_search.rs`（纯文本搜索 + 正则搜索 + 章节感知 + 上下文摘要 + 结果数限制）
+- 支持中文文本搜索（字符级匹配，无需分词）
+- FFI 4 函数：`ffi_txt_search` / `ffi_txt_search_regex` / `ffi_txt_search_in_chapter` / `ffi_txt_search_count`
+- 质量修复：Clippy `redundant_closure` 修复（bridge.rs ffi_user_get_all）+ cargo fmt 格式化修复
+- 文档同步：DEVELOPMENT.md 测试数/屏幕数/FFI函数数更新 + CHANGELOG.md Unreleased 全面更新
+- 质量门禁：cargo test 1315 passed / clippy 0 warnings / flutter test 151 passed / flutter analyze 0 issues
+
 ---
 
 ## 测试分布
@@ -333,12 +345,12 @@
 | legado-core | 448 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor |
 | legado-parser | 72 | RuleAnalyzer + 4 解析器 + AnalyzeRule 门面 + AnalyzeUrl 完整模板 + RuleComplete 自动补全 |
 | legado-net | 168 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker |
-| legado-js | 151（默认）/ 324（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + 15 新 API |
-| legado-book | 77 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 |
+| legado-js | 158（默认）/ 327（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + 15 新 API |
+| legado-book | 95 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
 | legado-db | 206 | Schema v95 + 25 Repository（100% 覆盖）+ MigrationRegistry + RoomImporter + DefaultData + 集成测试 |
-| legado-ffi | 58 tests / 85+ 函数 | 85+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) API |
-| legado-server | 158 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
-| **合计** | **1297**（默认，exclude ffi）/ **1679**（含 ffi + quickjs） | Flutter: 151 tests |
+| legado-ffi | 56 tests / 85+ 函数 | 85+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) API |
+| legado-server | 164 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
+| **合计** | **1315**（默认，exclude ffi）/ **1706**（含 ffi + quickjs） | Flutter: 151 tests (22 files) |
 
 ---
 
@@ -350,7 +362,7 @@
 
 ### 低优先级
 
-- [ ] 本地 TXT 分词搜索
+- [x] 本地 TXT 分词搜索（2026-07-29 完成：TxtSearch 引擎 + FFI 4 函数 + 18 个测试）
 - [ ] Cronet QUIC 优化
 
 ---

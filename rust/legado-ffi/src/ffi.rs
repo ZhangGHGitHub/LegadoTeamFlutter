@@ -880,4 +880,102 @@ pub mod ffi {
         let ok = crate::api::user_api::check_login_status(&username)?;
         Ok(ok)
     }
+
+    // ─── WebDAV 云同步 ─────────────────────────────────────
+
+    /// 列出 WebDAV 远程目录（JSON 数组）
+    pub fn webdav_list_dir(config_json: String, path: String) -> Result<String, BridgeError> {
+        Ok(crate::api::webdav_api::webdav_list_dir(
+            &config_json, &path,
+        )?)
+    }
+
+    /// 上传文件到 WebDAV
+    pub fn webdav_upload(
+        config_json: String,
+        path: String,
+        data: String,
+    ) -> Result<(), BridgeError> {
+        crate::api::webdav_api::webdav_upload(&config_json, &path, &data)?;
+        Ok(())
+    }
+
+    /// 从 WebDAV 下载文件
+    pub fn webdav_download(config_json: String, path: String) -> Result<String, BridgeError> {
+        Ok(crate::api::webdav_api::webdav_download(
+            &config_json, &path,
+        )?)
+    }
+
+    /// 删除 WebDAV 远程文件
+    pub fn webdav_delete(config_json: String, path: String) -> Result<(), BridgeError> {
+        crate::api::webdav_api::webdav_delete(&config_json, &path)?;
+        Ok(())
+    }
+
+    /// WebDAV 全量同步（返回 JSON: {"books": "...", "sources": "..."}）
+    pub fn webdav_full_sync(
+        config_json: String,
+        local_books: String,
+        local_sources: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::webdav_api::webdav_full_sync(
+            &config_json,
+            &local_books,
+            &local_sources,
+        )?)
+    }
+
+    // ─── 下载管理器 ─────────────────────────────────────
+
+    /// 添加下载任务，返回任务 ID
+    pub fn download_add_task(
+        book_url: String,
+        chapter_url: String,
+        chapter_title: String,
+        chapter_index: i32,
+        priority: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::download_api::download_add_task(
+            &book_url,
+            &chapter_url,
+            &chapter_title,
+            chapter_index,
+            priority,
+        )?)
+    }
+
+    /// 获取下载统计信息（JSON）
+    pub fn download_get_stats() -> Result<String, BridgeError> {
+        Ok(crate::api::download_api::download_get_stats()?)
+    }
+
+    /// 获取指定书籍的下载任务（JSON 数组）
+    pub fn download_list_by_book(book_url: String) -> Result<String, BridgeError> {
+        Ok(crate::api::download_api::download_list_by_book(&book_url)?)
+    }
+
+    /// 暂停所有下载
+    pub fn download_pause_all() -> Result<(), BridgeError> {
+        crate::api::download_api::download_pause_all()?;
+        Ok(())
+    }
+
+    /// 恢复所有下载
+    pub fn download_resume_all() -> Result<(), BridgeError> {
+        crate::api::download_api::download_resume_all()?;
+        Ok(())
+    }
+
+    /// 移除下载任务
+    pub fn download_remove_task(task_id: String) -> Result<(), BridgeError> {
+        crate::api::download_api::download_remove_task(&task_id)?;
+        Ok(())
+    }
+
+    /// 更新下载进度
+    pub fn download_update_progress(task_id: String, progress: f64) -> Result<(), BridgeError> {
+        crate::api::download_api::download_update_progress(&task_id, progress)?;
+        Ok(())
+    }
 }

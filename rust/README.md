@@ -170,35 +170,38 @@ rust/
 
 ---
 
-## 项目进度（截至 2026-07-26）
+## 项目进度（截至 2026-07-30）
 
 > 完整进度跟踪文档见 [PROGRESS.md](./PROGRESS.md)
 
-### 当前状态：59/59 原子任务已完成，532 测试默认通过 / 611 含 QuickJS / Flutter 15 通过
+### 当前状态：136/136 原子任务已完成，1297 测试默认通过 / 1688 含 QuickJS+FFI / Flutter 151 通过
 
 | Crate | 测试数 | 状态 |
 |-------|--------|------|
-| legado-core | 126 | ✅ 完成 |
-| legado-parser | 53 | ✅ 完成 |
-| legado-net | 140 | ✅ 完成 |
-| legado-js | 32（默认）/ 111（quickjs） | ✅ 完成 |
-| legado-book | 36 | ✅ 完成 |
-| legado-db | 74 | ✅ 完成 |
-| legado-ffi | 14 | ✅ 完成 |
-| legado-server | 57 | ✅ 完成 |
-| **合计** | **532**（默认）/ **611**（quickjs） | |
+| legado-core | 448 | ✅ 完成 |
+| legado-parser | 72 | ✅ 完成 |
+| legado-net | 168 | ✅ 完成 |
+| legado-js | 158（默认）/ 327（quickjs） | ✅ 完成 |
+| legado-book | 77 | ✅ 完成 |
+| legado-db | 210 | ✅ 完成 |
+| legado-ffi | 56 | ✅ 完成 |
+| legado-server | 164 | ✅ 完成 |
+| **合计** | **1297**（默认）/ **1688**（quickjs+ffi） | |
 
 ### 已完成阶段
 - **阶段 0**：基础设施（workspace 骨架、数据模型、FFI 规范）
 - **阶段 1**：Rust 核心引擎（规则解析、JS 沙箱、HTTP 网络、书籍解析、数据库、加密、排版、换源）
-- **阶段 2**：Flutter UI + FFI（30+ FFI 导出、6 页面、flutter_rust_bridge、阅读器/书架/搜索增强）
-- **阶段 3**：集成与扩展（Android 桥接、axum HTTP 服务、Web SPA、TTS、RSS、WebDAV、DB 迁移、Room 导入、上游 20 提交同步）
+- **阶段 2**：Flutter UI + FFI（85+ FFI 导出、38 页面、flutter_rust_bridge）
+- **阶段 3**：集成与扩展（Android 桥接、axum HTTP 服务、Web SPA、TTS、RSS、WebDAV、DB 迁移、Room 导入、MCP Server）
 - **阶段 4**：国际化与收尾（Flutter 中英文双语、语言切换、阅读统计、听书播放器、书源编辑器）
-- **阶段 5**：最终收尾（DEVELOPMENT.md 开发者指南、PROGRESS.md 完整记录、README 更新、最终测试验证）
+- **阶段 5**：最终收尾（DEVELOPMENT.md 开发者指南、PROGRESS.md 完整记录、README 更新）
 - **阶段 6**：核心链路完善（AnalyzeUrl 模板、书签/替换规则、WebBook 搜索、网络中间件、书源发现、导出服务、离线缓存/段评、关联导入）
+- **阶段 7**：JsExtensions 完整实现（java 命名空间、网络统一、引擎池化、55+ API、平台桩）
+- **阶段 8**：Flutter UI 完善（38 屏幕、阅读器增强、书源调试、浏览器、词典、字体、二维码）
+- **阶段 9**：Android 构建验证（交叉编译、APK 构建、雷电模拟器安装验证通过）
 
 ### 待完成（远期优化）
-- **中优先级**：Android 实机验证、JsExtensions 120+ API
-- **低优先级**：MCP Server、听书播放器、TXT 分词搜索、Cronet QUIC
+- **中优先级**：端到端流程跑通、阅读器深度实现、CI 自动发布
+- **低优先级**：视频播放、漫画阅读、代码编辑器、Cronet QUIC
 
 > 详细开发指南见 [DEVELOPMENT.md](./DEVELOPMENT.md)

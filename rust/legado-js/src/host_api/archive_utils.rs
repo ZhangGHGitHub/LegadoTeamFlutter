@@ -459,7 +459,10 @@ mod tests {
 
         let out = result.unwrap();
         // 默认输出目录为 7z 同目录下 "test" 文件夹
-        assert!(out.ends_with("test"), "output dir should end with 'test', got: {out}");
+        assert!(
+            out.ends_with("test"),
+            "output dir should end with 'test', got: {out}"
+        );
         assert!(Path::new(&out).join("readme.md").exists());
 
         let content = fs::read_to_string(Path::new(&out).join("readme.md")).unwrap();
@@ -475,7 +478,11 @@ mod tests {
         let seven_z_path = create_test_7z(&[("content.txt", b"auto detect 7z")]);
         let out_dir = std::env::temp_dir().join(format!("legado_unarchive7z_{}", uuid()));
         let result = un_archive_file(&seven_z_path, Some(out_dir.to_str().unwrap()));
-        assert!(result.is_ok(), "un_archive_file 7z failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "un_archive_file 7z failed: {:?}",
+            result.err()
+        );
 
         let out = result.unwrap();
         assert!(Path::new(&out).join("content.txt").exists());

@@ -610,3 +610,94 @@ Future<bool> userLogout({required String username}) =>
 /// 检查登录状态
 Future<bool> userCheckLogin({required String username}) =>
     RustLib.instance.api.crateFfiFfiUserCheckLogin(username: username);
+
+/// 列出 WebDAV 远程目录（JSON 数组）
+Future<String> webdavListDir({
+  required String configJson,
+  required String path,
+}) => RustLib.instance.api.crateFfiFfiWebdavListDir(
+  configJson: configJson,
+  path: path,
+);
+
+/// 上传文件到 WebDAV
+Future<void> webdavUpload({
+  required String configJson,
+  required String path,
+  required String data,
+}) => RustLib.instance.api.crateFfiFfiWebdavUpload(
+  configJson: configJson,
+  path: path,
+  data: data,
+);
+
+/// 从 WebDAV 下载文件
+Future<String> webdavDownload({
+  required String configJson,
+  required String path,
+}) => RustLib.instance.api.crateFfiFfiWebdavDownload(
+  configJson: configJson,
+  path: path,
+);
+
+/// 删除 WebDAV 远程文件
+Future<void> webdavDelete({required String configJson, required String path}) =>
+    RustLib.instance.api.crateFfiFfiWebdavDelete(
+      configJson: configJson,
+      path: path,
+    );
+
+/// WebDAV 全量同步（返回 JSON: {"books": "...", "sources": "..."}）
+Future<String> webdavFullSync({
+  required String configJson,
+  required String localBooks,
+  required String localSources,
+}) => RustLib.instance.api.crateFfiFfiWebdavFullSync(
+  configJson: configJson,
+  localBooks: localBooks,
+  localSources: localSources,
+);
+
+/// 添加下载任务，返回任务 ID
+Future<String> downloadAddTask({
+  required String bookUrl,
+  required String chapterUrl,
+  required String chapterTitle,
+  required int chapterIndex,
+  required int priority,
+}) => RustLib.instance.api.crateFfiFfiDownloadAddTask(
+  bookUrl: bookUrl,
+  chapterUrl: chapterUrl,
+  chapterTitle: chapterTitle,
+  chapterIndex: chapterIndex,
+  priority: priority,
+);
+
+/// 获取下载统计信息（JSON）
+Future<String> downloadGetStats() =>
+    RustLib.instance.api.crateFfiFfiDownloadGetStats();
+
+/// 获取指定书籍的下载任务（JSON 数组）
+Future<String> downloadListByBook({required String bookUrl}) =>
+    RustLib.instance.api.crateFfiFfiDownloadListByBook(bookUrl: bookUrl);
+
+/// 暂停所有下载
+Future<void> downloadPauseAll() =>
+    RustLib.instance.api.crateFfiFfiDownloadPauseAll();
+
+/// 恢复所有下载
+Future<void> downloadResumeAll() =>
+    RustLib.instance.api.crateFfiFfiDownloadResumeAll();
+
+/// 移除下载任务
+Future<void> downloadRemoveTask({required String taskId}) =>
+    RustLib.instance.api.crateFfiFfiDownloadRemoveTask(taskId: taskId);
+
+/// 更新下载进度
+Future<void> downloadUpdateProgress({
+  required String taskId,
+  required double progress,
+}) => RustLib.instance.api.crateFfiFfiDownloadUpdateProgress(
+  taskId: taskId,
+  progress: progress,
+);

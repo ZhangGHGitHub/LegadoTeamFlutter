@@ -1042,10 +1042,8 @@ fn register_config_apis<'js>(
         java,
         globals,
         "getThemeConfig",
-        rquickjs::Function::new(ctx.clone(), || -> String {
-            config_api::get_theme_config()
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        rquickjs::Function::new(ctx.clone(), || -> String { config_api::get_theme_config() })
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // getThemeMode() -> String
@@ -1053,10 +1051,8 @@ fn register_config_apis<'js>(
         java,
         globals,
         "getThemeMode",
-        rquickjs::Function::new(ctx.clone(), || -> String {
-            config_api::get_theme_mode()
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        rquickjs::Function::new(ctx.clone(), || -> String { config_api::get_theme_mode() })
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // getWebViewUA() -> String
@@ -1064,10 +1060,8 @@ fn register_config_apis<'js>(
         java,
         globals,
         "getWebViewUA",
-        rquickjs::Function::new(ctx.clone(), || -> String {
-            config_api::get_web_view_ua()
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        rquickjs::Function::new(ctx.clone(), || -> String { config_api::get_web_view_ua() })
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // androidId() -> String
@@ -1075,10 +1069,8 @@ fn register_config_apis<'js>(
         java,
         globals,
         "androidId",
-        rquickjs::Function::new(ctx.clone(), || -> String {
-            config_api::get_android_id()
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        rquickjs::Function::new(ctx.clone(), || -> String { config_api::get_android_id() })
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     Ok(())
@@ -1145,12 +1137,9 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "connect",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |url: String, header: Opt<String>| -> String {
-                misc_api::connect(&url, header.0.as_deref().unwrap_or(""))
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |url: String, header: Opt<String>| -> String {
+            misc_api::connect(&url, header.0.as_deref().unwrap_or(""))
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1192,12 +1181,9 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "toUrl",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |path: String, query: Opt<String>| -> String {
-                misc_api::to_url(&path, query.0.as_deref().unwrap_or(""))
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |path: String, query: Opt<String>| -> String {
+            misc_api::to_url(&path, query.0.as_deref().unwrap_or(""))
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 

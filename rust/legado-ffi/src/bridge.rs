@@ -1055,7 +1055,7 @@ pub extern "C" fn ffi_server_status() -> *mut c_char {
 /// 获取所有用户
 #[no_mangle]
 pub extern "C" fn ffi_user_get_all() -> *mut c_char {
-    to_ffi_response(catch_unwind(|| crate::api::user_api::get_users()))
+    to_ffi_response(catch_unwind(crate::api::user_api::get_users))
 }
 
 /// 保存用户
@@ -1119,6 +1119,228 @@ pub unsafe extern "C" fn ffi_user_check_login(username: *const c_char) -> *mut c
 }
 
 // ─── 向后兼容的旧函数名 ────────────────────────────────────
+
+// ─── TXT 搜索 API ──────────────────────────────────────────
+
+/// TXT 全文搜索
+#[no_mangle]
+pub unsafe extern "C" fn ffi_txt_search(
+    path: *const c_char,
+    query: *const c_char,
+    case_sensitive: bool,
+    max_results: i32,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        let q = c_char_to_str(query)?;
+        crate::api::txt_search_api::txt_search(p, q, case_sensitive, max_results)
+    });
+    to_ffi_response(result)
+}
+
+/// TXT 正则搜索
+#[no_mangle]
+pub unsafe extern "C" fn ffi_txt_search_regex(
+    path: *const c_char,
+    pattern: *const c_char,
+    case_sensitive: bool,
+    max_results: i32,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        let pat = c_char_to_str(pattern)?;
+        crate::api::txt_search_api::txt_search_regex(p, pat, case_sensitive, max_results)
+    });
+    to_ffi_response(result)
+}
+
+/// TXT 章节内搜索
+#[no_mangle]
+pub unsafe extern "C" fn ffi_txt_search_in_chapter(
+    path: *const c_char,
+    query: *const c_char,
+    chapter_index: i32,
+    case_sensitive: bool,
+    max_results: i32,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        let q = c_char_to_str(query)?;
+        crate::api::txt_search_api::txt_search_in_chapter(
+            p,
+            q,
+            chapter_index,
+            case_sensitive,
+            max_results,
+        )
+    });
+    to_ffi_response(result)
+}
+
+/// TXT 搜索匹配计数
+#[no_mangle]
+pub unsafe extern "C" fn ffi_txt_search_count(
+    path: *const c_char,
+    query: *const c_char,
+    case_sensitive: bool,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        let q = c_char_to_str(query)?;
+        crate::api::txt_search_api::txt_search_count(p, q, case_sensitive)
+    });
+    to_ffi_response(result)
+}
+
+// ─── WebDAV 云同步 API ──────────────────────────────────────
+
+/// WebDAV 列出远程目录
+#[no_mangle]
+pub unsafe extern "C" fn ffi_webdav_list_dir(
+    config_json: *const c_char,
+    path: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let c = c_char_to_str(config_json)?;
+        let p = c_char_to_str(path)?;
+        crate::api::webdav_api::webdav_list_dir(c, p)
+    });
+    to_ffi_response(result)
+}
+
+/// WebDAV 上传文件
+#[no_mangle]
+pub unsafe extern "C" fn ffi_webdav_upload(
+    config_json: *const c_char,
+    path: *const c_char,
+    data: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let c = c_char_to_str(config_json)?;
+        let p = c_char_to_str(path)?;
+        let d = c_char_to_str(data)?;
+        crate::api::webdav_api::webdav_upload(c, p, d)
+    });
+    to_ffi_response(result)
+}
+
+/// WebDAV 下载文件
+#[no_mangle]
+pub unsafe extern "C" fn ffi_webdav_download(
+    config_json: *const c_char,
+    path: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let c = c_char_to_str(config_json)?;
+        let p = c_char_to_str(path)?;
+        crate::api::webdav_api::webdav_download(c, p)
+    });
+    to_ffi_response(result)
+}
+
+/// WebDAV 删除远程文件
+#[no_mangle]
+pub unsafe extern "C" fn ffi_webdav_delete(
+    config_json: *const c_char,
+    path: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let c = c_char_to_str(config_json)?;
+        let p = c_char_to_str(path)?;
+        crate::api::webdav_api::webdav_delete(c, p)
+    });
+    to_ffi_response(result)
+}
+
+/// WebDAV 全量同步
+#[no_mangle]
+pub unsafe extern "C" fn ffi_webdav_full_sync(
+    config_json: *const c_char,
+    local_books: *const c_char,
+    local_sources: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let c = c_char_to_str(config_json)?;
+        let b = c_char_to_str(local_books)?;
+        let s = c_char_to_str(local_sources)?;
+        crate::api::webdav_api::webdav_full_sync(c, b, s)
+    });
+    to_ffi_response(result)
+}
+
+// ─── 下载管理器 API ──────────────────────────────────────────
+
+/// 添加下载任务
+#[no_mangle]
+pub unsafe extern "C" fn ffi_download_add_task(
+    book_url: *const c_char,
+    chapter_url: *const c_char,
+    chapter_title: *const c_char,
+    chapter_index: i32,
+    priority: i32,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let b = c_char_to_str(book_url)?;
+        let c = c_char_to_str(chapter_url)?;
+        let t = c_char_to_str(chapter_title)?;
+        crate::api::download_api::download_add_task(b, c, t, chapter_index, priority)
+    });
+    to_ffi_response(result)
+}
+
+/// 获取下载统计信息
+#[no_mangle]
+pub extern "C" fn ffi_download_get_stats() -> *mut c_char {
+    let result = catch_unwind(crate::api::download_api::download_get_stats);
+    to_ffi_response(result)
+}
+
+/// 获取指定书籍的下载任务
+#[no_mangle]
+pub unsafe extern "C" fn ffi_download_list_by_book(book_url: *const c_char) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let b = c_char_to_str(book_url)?;
+        crate::api::download_api::download_list_by_book(b)
+    });
+    to_ffi_response(result)
+}
+
+/// 暂停所有下载
+#[no_mangle]
+pub extern "C" fn ffi_download_pause_all() -> *mut c_char {
+    let result = catch_unwind(crate::api::download_api::download_pause_all);
+    to_ffi_response(result)
+}
+
+/// 恢复所有下载
+#[no_mangle]
+pub extern "C" fn ffi_download_resume_all() -> *mut c_char {
+    let result = catch_unwind(crate::api::download_api::download_resume_all);
+    to_ffi_response(result)
+}
+
+/// 移除下载任务
+#[no_mangle]
+pub unsafe extern "C" fn ffi_download_remove_task(task_id: *const c_char) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let t = c_char_to_str(task_id)?;
+        crate::api::download_api::download_remove_task(t)
+    });
+    to_ffi_response(result)
+}
+
+/// 更新下载进度
+#[no_mangle]
+pub unsafe extern "C" fn ffi_download_update_progress(
+    task_id: *const c_char,
+    progress: f64,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let t = c_char_to_str(task_id)?;
+        crate::api::download_api::download_update_progress(t, progress)
+    });
+    to_ffi_response(result)
+}
 
 #[no_mangle]
 pub extern "C" fn legado_init() -> i32 {

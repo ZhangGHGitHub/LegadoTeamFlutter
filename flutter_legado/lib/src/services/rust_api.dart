@@ -1111,6 +1111,73 @@ class RustApi {
   /// 检查登录状态
   Future<bool> checkLoginStatus(String username) =>
       bridge.userCheckLogin(username: username);
+
+  // ========== WebDAV 云同步 ==========
+
+  /// WebDAV 列出远程目录
+  Future<String> webdavListDir(String configJson, String path) =>
+      bridge.webdavListDir(configJson: configJson, path: path);
+
+  /// WebDAV 上传文件
+  Future<void> webdavUpload(
+          String configJson, String path, String data) =>
+      bridge.webdavUpload(
+          configJson: configJson, path: path, data: data);
+
+  /// WebDAV 下载文件
+  Future<String> webdavDownload(String configJson, String path) =>
+      bridge.webdavDownload(configJson: configJson, path: path);
+
+  /// WebDAV 删除远程文件
+  Future<void> webdavDelete(String configJson, String path) =>
+      bridge.webdavDelete(configJson: configJson, path: path);
+
+  /// WebDAV 全量同步
+  Future<String> webdavFullSync(
+          String configJson, String localBooks, String localSources) =>
+      bridge.webdavFullSync(
+          configJson: configJson,
+          localBooks: localBooks,
+          localSources: localSources);
+
+  // ========== 下载管理器 ==========
+
+  /// 添加下载任务
+  Future<String> downloadAddTask({
+    required String bookUrl,
+    required String chapterUrl,
+    required String chapterTitle,
+    required int chapterIndex,
+    int priority = 0,
+  }) =>
+      bridge.downloadAddTask(
+        bookUrl: bookUrl,
+        chapterUrl: chapterUrl,
+        chapterTitle: chapterTitle,
+        chapterIndex: chapterIndex,
+        priority: priority,
+      );
+
+  /// 获取下载统计信息
+  Future<String> downloadGetStats() => bridge.downloadGetStats();
+
+  /// 获取指定书籍的下载任务
+  Future<String> downloadListByBook(String bookUrl) =>
+      bridge.downloadListByBook(bookUrl: bookUrl);
+
+  /// 暂停所有下载
+  Future<void> downloadPauseAll() => bridge.downloadPauseAll();
+
+  /// 恢复所有下载
+  Future<void> downloadResumeAll() => bridge.downloadResumeAll();
+
+  /// 移除下载任务
+  Future<void> downloadRemoveTask(String taskId) =>
+      bridge.downloadRemoveTask(taskId: taskId);
+
+  /// 更新下载进度
+  Future<void> downloadUpdateProgress(String taskId, double progress) =>
+      bridge.downloadUpdateProgress(taskId: taskId, progress: progress);
 }
 
 /// 搜索结果包装

@@ -52,9 +52,7 @@ impl RealBookSourceFetcher {
     ) -> LegadoResult<String> {
         let url = analyze_url.url();
         if url.is_empty() {
-            return Err(LegadoError::Internal(
-                "AnalyzeUrl 解析后 URL 为空".into(),
-            ));
+            return Err(LegadoError::Internal("AnalyzeUrl 解析后 URL 为空".into()));
         }
 
         // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
@@ -177,17 +175,29 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             let book_url = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
             let cover_url = {
                 let v = elem_analyzer.get_string(cover_url_rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             };
             let intro = {
                 let v = elem_analyzer.get_string(intro_rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             };
             let latest_chapter = {
                 let v = elem_analyzer
                     .get_string(last_chapter_rule)
                     .unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             };
 
             results.push(WebSearchResult {
@@ -230,28 +240,44 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.intro.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             })
             .unwrap_or(None);
         let cover_url = info_rule
             .and_then(|r| r.cover_url.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             })
             .unwrap_or(None);
         let toc_url = info_rule
             .and_then(|r| r.toc_url.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { book_url.to_string() } else { v }
+                if v.is_empty() {
+                    book_url.to_string()
+                } else {
+                    v
+                }
             })
             .unwrap_or_else(|| book_url.to_string());
         let last_chapter = info_rule
             .and_then(|r| r.last_chapter.as_deref())
             .map(|rule| {
                 let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             })
             .unwrap_or(None);
         let categories = info_rule
@@ -297,7 +323,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.toc_url.as_deref())
             .map(|rule| {
                 let v = info_analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() { book_url.to_string() } else { v }
+                if v.is_empty() {
+                    book_url.to_string()
+                } else {
+                    v
+                }
             })
             .unwrap_or_else(|| book_url.to_string());
 
@@ -354,11 +384,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         Ok(chapters)
     }
 
-    async fn get_content(
-        &self,
-        source: &BookSource,
-        chapter: &WebChapter,
-    ) -> LegadoResult<String> {
+    async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String> {
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求章节页面

@@ -74,7 +74,13 @@ impl<'a> DictRuleRepository<'a> {
     }
 
     /// 更新词典规则
-    pub fn update(&self, id: i64, name: &str, url_rule: &str, show_rule: &str) -> LegadoResult<bool> {
+    pub fn update(
+        &self,
+        id: i64,
+        name: &str,
+        url_rule: &str,
+        show_rule: &str,
+    ) -> LegadoResult<bool> {
         let affected = self
             .conn
             .execute(
@@ -145,8 +151,20 @@ mod tests {
     fn test_insert_and_find_all() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = DictRuleRepository::new(db.connection());
-        let id1 = repo.insert("百度词典", "https://dict.baidu.com/s?wd={{key}}", "json.data").unwrap();
-        let id2 = repo.insert("有道词典", "https://dict.youdao.com/s?q={{key}}", "xpath://div").unwrap();
+        let id1 = repo
+            .insert(
+                "百度词典",
+                "https://dict.baidu.com/s?wd={{key}}",
+                "json.data",
+            )
+            .unwrap();
+        let id2 = repo
+            .insert(
+                "有道词典",
+                "https://dict.youdao.com/s?q={{key}}",
+                "xpath://div",
+            )
+            .unwrap();
         assert!(id1 > 0);
         assert!(id2 > id1);
 
@@ -177,7 +195,9 @@ mod tests {
         let repo = DictRuleRepository::new(db.connection());
         let id = repo.insert("Old", "http://old.com", "old_rule").unwrap();
 
-        assert!(repo.update(id, "New", "http://new.com", "new_rule").unwrap());
+        assert!(repo
+            .update(id, "New", "http://new.com", "new_rule")
+            .unwrap());
         let updated = repo.find_by_id(id).unwrap().unwrap();
         assert_eq!(updated.name, "New");
         assert_eq!(updated.url_rule, "http://new.com");
