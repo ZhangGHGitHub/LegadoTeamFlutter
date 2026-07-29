@@ -146,6 +146,77 @@ pub fn download_update_progress(task_id: &str, progress: f64) -> LegadoResult<()
 }
 
 // ---------------------------------------------------------------------------
+// 智能预下载相关 API
+// ---------------------------------------------------------------------------
+
+/// 设置预下载策略
+pub fn download_set_preload_strategy(ahead: usize, behind: usize) -> LegadoResult<()> {
+    with_manager(|mgr| {
+        mgr.set_preload_strategy(PreloadStrategy::Sequential { ahead, behind });
+        Ok(())
+    })
+}
+
+/// 启用/禁用移动数据预下载
+pub fn download_enable_mobile_data_preload(enable: bool) -> LegadoResult<()> {
+    with_manager(|mgr| {
+        mgr.enable_mobile_data_preload(enable);
+        Ok(())
+    })
+}
+
+/// 计算预下载的章节索引列表
+pub fn download_calculate_preload_indices(
+    book_url: &str,
+    current_chapter: i32,
+    total_chapters: i32,
+) -> LegadoResult<String> {
+    with_manager(|mgr| {
+        let indices = mgr.calculate_preload_indices(book_url, current_chapter, total_chapters);
+        serde_json::to_string(&indices).map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
+    })
+}
+
+/// 获取重试统计信息
+pub fn download_get_retry_stats(task_id: &str) -> LegadoResult<String> {
+    with_manager(|mgr| {
+        match mgr.get_retry_stats(task_id) {
+            Some(stats) => {
+                let result = serde_json::json!({
+                    "fail_count": stats.fail_count,
+                    "last_retry_at": stats.last_retry_at,
+                    "next_retry_at": stats.next_retry_at,
+                    "degraded": stats.degraded,
+                });
+                serde_json::to_string(&result).map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
+            }
+            None => Err(LegadoError::Internal("Task not found".into())),
+        }
+    })
+}
+
+/// 标记任务失败（带重试）
+pub fn download_fail_task_with_retry(task_id: &str, error: String) -> LegadoResult<()> {
+    with_manager(|mgr| {
+        mgr.fail_task_with_retry(task_id, error);
+        Ok(())
+    })
+}
+
+/// 批量添加预下载任务
+#[allow(clippy::too_many_arguments)]
+pub fn download_add_preload_tasks(
+    book_url: &str,
+    base_priority: i32,
+    chapters: Vec<(i32, String, String)>, // (index, url, title)
+) -> LegadoResult<String> {
+    with_manager(|mgr| {
+        let task_ids = mgr.add_preload_tasks(book_url, chapters, base_priority);
+        serde_json::to_string(&task_ids).map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
+    })
+}
+
+// ---------------------------------------------------------------------------
 // 辅助函数
 // ---------------------------------------------------------------------------
 
