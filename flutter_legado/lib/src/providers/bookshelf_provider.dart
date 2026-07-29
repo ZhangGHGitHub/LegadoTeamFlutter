@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 import '../services/settings_service.dart';
 
 /// 书籍分组模式
@@ -74,7 +75,11 @@ class BookshelfProvider extends ChangeNotifier {
     try {
       _books = await _api.getBooks();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -87,7 +92,11 @@ class BookshelfProvider extends ChangeNotifier {
       _books = [..._books, book];
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       notifyListeners();
     }
   }
@@ -112,7 +121,11 @@ class BookshelfProvider extends ChangeNotifier {
       _books = _books.where((b) => b.bookUrl != bookUrl).toList();
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       notifyListeners();
     }
   }
