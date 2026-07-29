@@ -365,7 +365,7 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
             style: TextStyle(
               fontFamily: 'monospace',
               fontSize: 11,
-              color: log.level.color(theme).withOpacity(0.7),
+              color: log.level.color(theme).withValues(alpha: 0.7),
             ),
           ),
           const SizedBox(width: 8),
@@ -432,13 +432,13 @@ enum _DebugLogLevel {
   Color bgColor(ThemeData theme) {
     switch (this) {
       case _DebugLogLevel.info:
-        return theme.colorScheme.surfaceContainerHighest.withOpacity(0.3);
+        return theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3);
       case _DebugLogLevel.success:
         return Colors.green.shade50;
       case _DebugLogLevel.warn:
         return Colors.orange.shade50;
       case _DebugLogLevel.error:
-        return theme.colorScheme.errorContainer.withOpacity(0.4);
+        return theme.colorScheme.errorContainer.withValues(alpha: 0.4);
     }
   }
 
