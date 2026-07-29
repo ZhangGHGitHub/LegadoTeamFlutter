@@ -10,7 +10,7 @@ import '../services/rust_api.dart';
 /// 书源调试页面
 ///
 /// 输入书源 URL 和搜索关键词，调用 bridge 的 webbookSearch API，
-/// 实时显示调试日志输出。
+/// 实时显示调试日志输出，支持按日志级别过滤。
 class SourceDebugScreen extends StatefulWidget {
   /// 可选：从外部传入书源 URL 预填
   final String? sourceUrl;
@@ -28,6 +28,9 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
 
   bool _running = false;
   final List<_DebugLogEntry> _logs = [];
+
+  /// 当前启用的日志级别过滤（全部启用时显示所有）
+  final Set<_DebugLogLevel> _enabledLevels = _DebugLogLevel.values.toSet();
 
   @override
   void initState() {
@@ -62,6 +65,11 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
         _logScrollCtrl.jumpTo(_logScrollCtrl.position.maxScrollExtent);
       }
     });
+  }
+
+  /// 根据过滤条件获取可见日志
+  List<_DebugLogEntry> get _filteredLogs {
+    return _logs.where((log) => _enabledLevels.contains(log.level)).toList();
   }
 
   Future<void> _runDebug() async {
@@ -148,15 +156,19 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final filteredLogs = _filteredLogs;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('书源调试'),
         actions: [
+          // 清除日志按钮
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: '清空日志',
-            onPressed: () => setState(() => _logs.clear()),
+            onPressed: _logs.isEmpty
+                ? null
+                : () => setState(() => _logs.clear()),
           ),
         ],
       ),
@@ -212,6 +224,78 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
             ),
           ),
           const Divider(height: 1),
+          // 日志级别过滤栏
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              children: [
+                const Icon(Icons.filter_alt_outlined, size: 18),
+                const SizedBox(width: 6),
+                // 全选/取消全选按钮
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      if (_enabledLevels.length == _DebugLogLevel.values.length) {
+                        _enabledLevels.clear();
+                      } else {
+                        _enabledLevels
+                          ..clear()
+                          ..addAll(_DebugLogLevel.values);
+                      }
+                    });
+                  },
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: Text(
+                    _enabledLevels.length == _DebugLogLevel.values.length
+                        ? '全不选'
+                        : '全选',
+                    style: theme.textTheme.labelSmall,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // 各级别过滤芯片
+                ..._DebugLogLevel.values.map((level) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: FilterChip(
+                      label: Text(level.label),
+                      selected: _enabledLevels.contains(level),
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _enabledLevels.add(level);
+                          } else {
+                            _enabledLevels.remove(level);
+                          }
+                        });
+                      },
+                      selectedColor: level.chipColor(theme),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      labelStyle: TextStyle(
+                        fontSize: 11,
+                        color: _enabledLevels.contains(level)
+                            ? Colors.white
+                            : level.color(theme),
+                      ),
+                    ),
+                  );
+                }),
+                const Spacer(),
+                // 日志计数
+                Text(
+                  '${filteredLogs.length} / ${_logs.length} 条',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
           // 日志输出区域
           Expanded(
             child: _logs.isEmpty
@@ -223,25 +307,78 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
                       ),
                     ),
                   )
-                : ListView.builder(
-                    controller: _logScrollCtrl,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _logs.length,
-                    itemBuilder: (context, index) {
-                      final log = _logs[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 1),
+                : filteredLogs.isEmpty
+                    ? Center(
                         child: Text(
-                          '${_formatTime(log.time)} ${log.message}',
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            color: log.level.color(theme),
+                          '没有匹配的日志条目',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      )
+                    : ListView.builder(
+                        controller: _logScrollCtrl,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        itemCount: filteredLogs.length,
+                        itemBuilder: (context, index) {
+                          final log = filteredLogs[index];
+                          return _buildLogEntry(log, theme);
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建单条日志条目（带左侧色条 + 背景色 + 图标）
+  Widget _buildLogEntry(_DebugLogEntry log, ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: log.level.bgColor(theme),
+        borderRadius: BorderRadius.circular(6),
+        border: Border(
+          left: BorderSide(
+            color: log.level.color(theme),
+            width: 3,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 级别图标
+          Icon(
+            log.level.icon,
+            size: 14,
+            color: log.level.color(theme),
+          ),
+          const SizedBox(width: 8),
+          // 时间戳
+          Text(
+            _formatTime(log.time),
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              color: log.level.color(theme).withOpacity(0.7),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 日志消息
+          Expanded(
+            child: SelectableText(
+              log.message,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: log.level.color(theme),
+              ),
+            ),
           ),
         ],
       ),
@@ -263,16 +400,73 @@ enum _DebugLogLevel {
   warn,
   error;
 
+  /// 显示标签
+  String get label {
+    switch (this) {
+      case _DebugLogLevel.info:
+        return 'INFO';
+      case _DebugLogLevel.success:
+        return '成功';
+      case _DebugLogLevel.warn:
+        return 'WARN';
+      case _DebugLogLevel.error:
+        return 'ERROR';
+    }
+  }
+
+  /// 文字颜色
   Color color(ThemeData theme) {
     switch (this) {
       case _DebugLogLevel.info:
         return theme.colorScheme.onSurface;
       case _DebugLogLevel.success:
+        return Colors.green.shade800;
+      case _DebugLogLevel.warn:
+        return Colors.orange.shade800;
+      case _DebugLogLevel.error:
+        return theme.colorScheme.error;
+    }
+  }
+
+  /// 背景颜色
+  Color bgColor(ThemeData theme) {
+    switch (this) {
+      case _DebugLogLevel.info:
+        return theme.colorScheme.surfaceContainerHighest.withOpacity(0.3);
+      case _DebugLogLevel.success:
+        return Colors.green.shade50;
+      case _DebugLogLevel.warn:
+        return Colors.orange.shade50;
+      case _DebugLogLevel.error:
+        return theme.colorScheme.errorContainer.withOpacity(0.4);
+    }
+  }
+
+  /// 过滤芯片选中颜色
+  Color chipColor(ThemeData theme) {
+    switch (this) {
+      case _DebugLogLevel.info:
+        return Colors.blueGrey;
+      case _DebugLogLevel.success:
         return Colors.green;
       case _DebugLogLevel.warn:
         return Colors.orange;
       case _DebugLogLevel.error:
-        return theme.colorScheme.error;
+        return Colors.red;
+    }
+  }
+
+  /// 级别图标
+  IconData get icon {
+    switch (this) {
+      case _DebugLogLevel.info:
+        return Icons.info_outline;
+      case _DebugLogLevel.success:
+        return Icons.check_circle_outline;
+      case _DebugLogLevel.warn:
+        return Icons.warning_amber_outlined;
+      case _DebugLogLevel.error:
+        return Icons.error_outline;
     }
   }
 }
