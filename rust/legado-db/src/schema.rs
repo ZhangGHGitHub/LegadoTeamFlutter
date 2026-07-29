@@ -61,7 +61,9 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
     conn.execute_batch(CREATE_DICT_RULES)
         .map_err(|e| LegadoError::Database(format!("创建 dict_rules 表失败: {e}")))?;
     conn.execute_batch(CREATE_KEYBOARD_ASSISTS)
-        .map_err(|e| LegadoError::Database(format!("创建 keyboard_assists 表失败: {e}")))?;
+        .map_err(|e| LegadoError::Database(format!("创建 keyboard_assists 表失败：{e}")))?;
+    conn.execute_batch(CREATE_DOWNLOAD_TASKS)
+        .map_err(|e| LegadoError::Database(format!("创建 download_tasks 表失败：{e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -499,6 +501,25 @@ CREATE TABLE IF NOT EXISTS keyboard_assists (
     value TEXT DEFAULT '',
     is_enabled INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0
+);
+";
+
+pub const CREATE_DOWNLOAD_TASKS: &str = "
+CREATE TABLE IF NOT EXISTS download_tasks (
+    id TEXT PRIMARY KEY NOT NULL,
+    book_url TEXT NOT NULL DEFAULT '',
+    chapter_url TEXT NOT NULL DEFAULT '',
+    chapter_title TEXT NOT NULL DEFAULT '',
+    chapter_index INTEGER NOT NULL DEFAULT 0,
+    status INTEGER NOT NULL DEFAULT 0,
+    progress REAL NOT NULL DEFAULT 0.0,
+    priority INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT 0,
+    completed_at INTEGER,
+    error TEXT,
+    fail_count INTEGER NOT NULL DEFAULT 0,
+    last_retry_at INTEGER,
+    next_retry_at INTEGER
 );
 ";
 

@@ -10,6 +10,7 @@ pub mod cache_book_repository;
 pub mod cache_repository;
 pub mod cookie_repository;
 pub mod dict_rule_repository;
+pub mod download_task_repository;
 pub mod http_tts_repository;
 pub mod keyboard_assist_repository;
 pub mod read_record_repository;

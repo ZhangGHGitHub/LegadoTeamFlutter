@@ -4,35 +4,9 @@
 
 use std::collections::{HashMap, VecDeque};
 
-/// 下载任务状态
-#[derive(Debug, Clone, PartialEq)]
-pub enum DownloadStatus {
-    Pending,
-    Downloading,
-    Completed,
-    Failed(String),
-    Paused,
-}
-
-/// 下载任务
-#[derive(Debug, Clone)]
-pub struct DownloadTask {
-    pub id: String,
-    pub book_url: String,
-    pub chapter_url: String,
-    pub chapter_title: String,
-    pub chapter_index: i32,
-    pub status: DownloadStatus,
-    pub progress: f64, // 0.0 - 1.0
-    pub priority: i32, // 越小越优先
-    pub created_at: i64,
-    pub completed_at: Option<i64>,
-    pub error: Option<String>,
-    // 重试元数据
-    pub fail_count: u32, // 连续失败次数
-    pub last_retry_at: Option<i64>, // 上次重试时间
-    pub next_retry_at: Option<i64>, // 下次允许重试时间
-}
+// 导出到模型模块
+pub use crate::models::DownloadStatus;
+pub use crate::models::DownloadTask;
 
 /// 预下载策略
 #[derive(Debug, Clone)]
@@ -319,6 +293,19 @@ impl DownloadManager {
     }
 
     /// 计算需要预下载的章节索引列表
+    ///
+    /// # 参数
+    /// - `book_url`: 书籍 URL
+    /// - `current_chapter`: 当前阅读章节索引 (从 0 开始)
+    /// - `total_chapters`: 总章节数
+    ///
+    /// # 返回
+    /// 待预下载的章节索引列表
+    ///
+    /// # 策略
+    /// - 正序阅读：当前 + 前序 3 章 + 后续 5 章 = 最多 9 章
+    /// - 逆序阅读：当前 + 前序 5 章 + 后续 3 章 = 最多 9 章
+    /// - 移动数据下最多预下载 10 章 (通过配置限制)
     pub fn calculate_preload_indices(
         &mut self,
         book_url: &str,
@@ -366,6 +353,16 @@ impl DownloadManager {
         });
 
         indices
+    }
+
+    /// 预下载 API 别名（保持与 Kotlin 代码的一致性）
+    pub fn pre_download_indices(
+        &mut self,
+        book_url: &str,
+        current_chapter: i32,
+        total_chapters: i32,
+    ) -> Vec<i32> {
+        self.calculate_preload_indices(book_url, current_chapter, total_chapters)
     }
 
     /// 检测阅读方向并获取合适的预下载数量

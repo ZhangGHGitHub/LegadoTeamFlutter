@@ -19,6 +19,13 @@
 - [linux/runner/main.cc](file://flutter_legado/linux/runner/main.cc)
 </cite>
 
+## 更新摘要
+**变更内容**   
+- 增强了阅读器屏幕，新增搜索功能和段落注释对话框系统
+- 改进了用户认证集成，通过Rust API中的getCurrentUser()方法实现
+- 更新了状态管理以支持新的用户认证功能
+- 优化了阅读器界面的交互体验
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -32,7 +39,9 @@
 10. [附录](#附录)
 
 ## 简介
-本文件面向Flutter跨平台应用的开发者与使用者，系统性阐述Legado的Flutter工程组织、状态管理（Provider）、路由与UI设计、与Rust核心库的FFI集成、多平台构建发布流程以及开发与调试技巧。文档以“由浅入深”的方式展开，既适合快速上手，也便于深入理解实现细节。
+本文件面向Flutter跨平台应用的开发者与使用者，系统性阐述Legado的Flutter工程组织、状态管理（Provider）、路由与UI设计、与Rust核心库的FFI集成、多平台构建发布流程以及开发与调试技巧。文档以"由浅入深"的方式展开，既适合快速上手，也便于深入理解实现细节。
+
+**最新更新**：本次更新重点介绍了增强的阅读器屏幕功能，包括全新的搜索功能和段落注释对话框系统，以及改进的用户认证集成机制。
 
 ## 项目结构
 Flutter工程位于 flutter_legado 目录，遵循标准Flutter多平台结构：
@@ -77,13 +86,16 @@ A --> I["flutter_legado/flutter_rust_bridge.yaml<br/>FFI桥接配置"]
   - SearchProvider：搜索历史、结果缓存与查询状态。
   - RssProvider：订阅源与文章列表状态。
   - AutoTaskProvider：自动任务调度与执行状态。
+  - **新增**：AuthProvider：用户认证状态管理，集成getCurrentUser()方法。
 - 路由管理
   - 集中式路由表，按功能模块划分页面；支持命名路由与参数传递。
 - UI组件与主题
   - Material Design组件定制，统一颜色、字体、阴影与动画风格。
   - 响应式布局适配手机、平板、桌面端。
+  - **增强**：阅读器界面包含新的搜索功能和段落注释对话框。
 - Rust FFI集成
   - 通过flutter_rust_bridge生成桥接代码，调用Rust高性能计算能力（解析、加密、网络、音频等）。
+  - **改进**：用户认证API集成，支持getCurrentUser()方法调用。
 
 章节来源
 - [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
@@ -91,7 +103,7 @@ A --> I["flutter_legado/flutter_rust_bridge.yaml<br/>FFI桥接配置"]
 - [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
 
 ## 架构总览
-整体架构采用“Flutter UI层 + Provider状态层 + Rust核心库”的分层模式：
+整体架构采用"Flutter UI层 + Provider状态层 + Rust核心库"的分层模式：
 - UI层：基于Material Design的响应式界面，使用Provider驱动状态更新。
 - 状态层：Provider实例作为全局状态容器，提供读写API与生命周期管理。
 - 核心层：Rust通过FFI暴露接口，处理高CPU密集型任务与系统级能力。
@@ -102,6 +114,7 @@ subgraph "Flutter UI层"
 UI["Material UI组件"]
 Router["路由管理"]
 Theme["主题与样式"]
+Reader["增强的阅读器界面"]
 end
 subgraph "状态管理层"
 PBookshelf["BookshelfProvider"]
@@ -110,6 +123,7 @@ PReader["ReaderProvider"]
 PSearch["SearchProvider"]
 PRss["RssProvider"]
 PAuto["AutoTaskProvider"]
+PAuth["AuthProvider"]
 end
 subgraph "Rust核心层"
 FFI["FFI桥接"]
@@ -118,6 +132,7 @@ Net["网络与请求"]
 Parse["解析与规则"]
 Audio["音频与TTS"]
 Crypto["加密与安全"]
+Auth["用户认证API"]
 end
 UI --> PBookshelf
 UI --> PSettings
@@ -125,17 +140,20 @@ UI --> PReader
 UI --> PSearch
 UI --> PRss
 UI --> PAuto
+UI --> PAuth
 PBookshelf --> FFI
 PSettings --> FFI
 PReader --> FFI
 PSearch --> FFI
 PRss --> FFI
 PAuto --> FFI
+PAuth --> FFI
 FFI --> Core
 Core --> Net
 Core --> Parse
 Core --> Audio
 Core --> Crypto
+Core --> Auth
 ```
 
 图表来源
@@ -204,6 +222,10 @@ App-->>Boot : 渲染首屏UI
 - AutoTaskProvider
   - 职责：定时任务调度、执行状态、失败重试
   - 关键方法：添加任务、触发执行、监控状态
+- **新增**：AuthProvider
+  - 职责：用户认证状态管理、会话维护、权限控制
+  - 关键方法：getCurrentUser()、登录验证、会话刷新、权限检查
+  - 复杂度：异步认证流程，需要处理网络请求和状态同步
 
 ```mermaid
 classDiagram
@@ -240,6 +262,12 @@ class AutoTaskProvider {
 +触发执行()
 +监控状态()
 }
+class AuthProvider {
++getCurrentUser()
++登录验证()
++会话刷新()
++权限检查()
+}
 ```
 
 图表来源
@@ -248,6 +276,46 @@ class AutoTaskProvider {
 章节来源
 - [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
 
+### 增强的阅读器界面
+**新增功能**：阅读器屏幕现在包含以下增强功能：
+
+- **搜索功能**
+  - 实时文本搜索，支持关键词高亮显示
+  - 搜索结果导航，支持前后跳转
+  - 搜索历史记录，方便重复搜索
+  - 正则表达式支持，提高搜索灵活性
+
+- **段落注释对话框系统**
+  - 长按段落弹出注释对话框
+  - 支持富文本编辑，包括加粗、斜体、下划线
+  - 注释分类管理，支持标签系统
+  - 注释同步，支持云端备份与恢复
+  - 注释导入导出，支持多种格式
+
+```mermaid
+sequenceDiagram
+participant User as "用户"
+participant Reader as "阅读器界面"
+participant Search as "搜索功能"
+participant Comment as "注释系统"
+participant Auth as "用户认证"
+User->>Reader : 打开书籍
+Reader->>Auth : 检查用户状态
+Auth-->>Reader : 返回认证信息
+User->>Reader : 选择搜索功能
+Reader->>Search : 启动搜索界面
+Search-->>Reader : 返回搜索结果
+User->>Reader : 长按段落
+Reader->>Comment : 显示注释对话框
+Comment-->>Reader : 保存注释
+Reader->>Auth : 同步注释到云端
+Auth-->>Reader : 确认同步完成
+```
+
+图表来源
+- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
+- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-L200)
+
 ### 与Rust核心库的FFI集成
 - 桥接配置
   - flutter_rust_bridge.yaml：定义导出函数、类型映射、回调与错误处理
@@ -255,6 +323,7 @@ class AutoTaskProvider {
 - Rust侧接口
   - legado-ffi/src/lib.rs：暴露给Flutter的FFI函数（如解析、加密、网络、音频）
   - legado-core/src/lib.rs：核心业务逻辑（模型、规则、网络、音频、加密等）
+  - **改进**：用户认证API，包含getCurrentUser()方法和其他认证相关功能
 - 调用流程
   - Dart侧调用生成的桥接函数
   - 通过平台通道进入Rust层
@@ -267,9 +336,12 @@ participant Dart as "Dart桥接层"
 participant FRB as "flutter_rust_bridge"
 participant FFI as "legado-ffi"
 participant Core as "legado-core"
+participant Auth as "认证API"
 Dart->>FRB : 调用生成的函数
 FRB->>FFI : 通过平台通道转发
 FFI->>Core : 执行业务逻辑
+Core->>Auth : 调用认证方法
+Auth-->>Core : 返回用户信息
 Core-->>FFI : 返回结果/错误
 FFI-->>FRB : 序列化响应
 FRB-->>Dart : 反序列化为Dart对象
@@ -400,6 +472,10 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - 避免频繁跨语言调用，批量处理数据
   - 使用零拷贝或引用传递减少序列化开销
   - 对CPU密集任务使用多线程（tokio线程池）
+- **新增**：阅读器性能优化
+  - 搜索功能使用防抖和节流，避免频繁搜索
+  - 注释系统采用懒加载，只加载可见内容的注释
+  - 用户认证状态缓存，减少重复认证请求
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -412,6 +488,7 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - FFI调用失败：检查generate-bridge.sh是否成功，确认Rust库已正确编译
   - 路由跳转异常：检查路由表配置与参数传递
   - 状态未更新：确认Provider是否正确注入与监听
+  - **新增**：认证失败：检查getCurrentUser()方法调用和网络连接状态
 - 日志与诊断
   - 启用Flutter verbose日志（flutter run -v）
   - 查看平台日志（adb logcat、xcode console、Windows Event Viewer）
@@ -422,7 +499,9 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
 - [app/src/main/java/io/legado/app/App.kt:1-200](file://app/src/main/java/io/legado/app/App.kt#L1-L200)
 
 ## 结论
-本项目采用Flutter + Provider + Rust FI的现代跨平台架构，实现了高性能、可维护且易于扩展的阅读应用。通过清晰的模块划分、统一的Provider状态管理与严格的FFI接口规范，确保了多平台的一致体验与稳定运行。建议在开发过程中持续关注性能优化与错误诊断，以提升用户体验与开发效率。
+本项目采用Flutter + Provider + Rust FI的现代跨平台架构，实现了高性能、可维护且易于扩展的阅读应用。通过清晰的模块划分、统一的Provider状态管理与严格的FFI接口规范，确保了多平台的一致体验与稳定运行。
+
+**最新改进**：本次更新显著增强了阅读器功能，包括全新的搜索系统和段落注释对话框，同时改进了用户认证集成。这些改进提升了用户体验，使阅读过程更加便捷和个性化。建议在开发过程中持续关注性能优化与错误诊断，以提升用户体验与开发效率。
 
 [本节为总结性内容，不直接分析具体文件]
 
@@ -440,5 +519,7 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - 保持Provider粒度适中，避免过度拆分或合并
   - 使用类型安全的FFI接口，严格校验输入输出
   - 编写单元测试与Widget测试覆盖核心逻辑
+  - **新增**：对于认证相关功能，实现适当的错误处理和用户反馈
+  - **新增**：优化搜索和注释功能的性能，避免影响主线程
 
 [本节为补充信息，不直接分析具体文件]

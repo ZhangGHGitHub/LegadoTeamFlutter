@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: master
 nodes_managed: true
-exported_at: "2026-07-29T06:21:16Z"
+exported_at: "2026-07-29T16:45:20Z"
 modules:
     "":
-        dir_name: Legado 多语言跨平台阅读器根工程
-        title: Legado 多语言跨平台阅读器根工程
+        dir_name: Legado 阅读器根工程（Android + Flutter + Rust 多语言聚合）
+        title: Legado 阅读器根工程（Android + Flutter + Rust 多语言聚合）
         scope:
             - README.md
             - Makefile
@@ -40,16 +40,18 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: flutter_app
     flutter_app:
-        dir_name: Legado Flutter 跨平台阅读应用
-        title: Legado Flutter 跨平台阅读应用
+        dir_name: Legado Flutter 跨平台电子书阅读应用
+        title: Legado Flutter 跨平台电子书阅读应用
         scope:
             - flutter_legado/
         source_files: []
         children: []
         depends_on: []
         related_to:
+            - path: android_app
             - path: rust_workspace
     github_ci:
         dir_name: GitHub 自动化与协作配置

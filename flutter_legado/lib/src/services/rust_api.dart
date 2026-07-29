@@ -1210,6 +1210,39 @@ class RustApi {
 
   /// 点赞评论
   Future<void> reviewLike(int id) => bridge.reviewLike(id: id);
+
+  // ========== 书籍导出 ==========
+
+  /// 导出书籍（返回 ExportResult JSON）
+  /// 
+  /// # 参数
+  /// - `bookUrl`: 书籍 URL
+  /// - `format`: 导出格式（txt/epub/html）
+  /// - `includeToc`: 是否包含目录
+  Future<Map<String, dynamic>> bookExport({
+    required String bookUrl,
+    required String format,
+    required bool includeToc,
+  }) async {
+    final json = await bridge.bookExport(
+      bookUrl: bookUrl,
+      format: format,
+      includeToc: includeToc,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 获取导出预览信息（返回 ExportResult JSON）
+  Future<Map<String, dynamic>> bookExportInfo({
+    required String bookUrl,
+    required String format,
+  }) async {
+    final json = await bridge.bookExportInfo(
+      bookUrl: bookUrl,
+      format: format,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
 }
 
 /// 搜索结果包装

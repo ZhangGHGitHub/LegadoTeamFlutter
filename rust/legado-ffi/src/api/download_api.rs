@@ -5,7 +5,8 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use legado_core::download_manager::{DownloadManager, DownloadStatus, DownloadTask};
+use legado_core::download_manager::{DownloadManager, PreloadStrategy};
+use legado_core::models::{DownloadStatus, DownloadTask};
 use legado_core::{LegadoError, LegadoResult};
 
 /// 全局 DownloadManager 实例
@@ -141,6 +142,50 @@ pub fn download_complete_task(task_id: &str) -> LegadoResult<()> {
 pub fn download_update_progress(task_id: &str, progress: f64) -> LegadoResult<()> {
     with_manager(|mgr| {
         mgr.update_progress(task_id, progress);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 新增 API (Task #63)
+// ---------------------------------------------------------------------------
+
+/// 获取任务进度
+///
+/// # 参数
+/// - `task_id`: 任务 ID
+///
+/// # 返回
+/// 进度值 (0.0 - 1.0)
+pub fn download_get_progress(task_id: &str) -> LegadoResult<f64> {
+    with_manager(|mgr| {
+        match mgr.get_task(task_id) {
+            Some(task) => Ok(task.progress),
+            None => Err(LegadoError::Internal("Task not found".into())),
+        }
+    })
+}
+
+/// 设置最大重试次数
+///
+/// # 参数
+/// - `limit`: 最大重试次数
+pub fn download_set_retry_limit(limit: i32) -> LegadoResult<()> {
+    // TODO: 实现重试限制配置
+    // 目前仅作为预留 API
+    Ok(())
+}
+
+/// 强制重试任务
+///
+/// # 参数
+/// - `task_id`: 任务 ID
+///
+/// # 说明
+/// 将失败的任务重置为待下载状态，立即重试（忽略退避时间）
+pub fn download_force_retry(task_id: &str) -> LegadoResult<()> {
+    with_manager(|mgr| {
+        mgr.reset_for_retry(task_id);
         Ok(())
     })
 }

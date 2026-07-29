@@ -1019,4 +1019,37 @@ pub mod ffi {
         crate::api::review_api::review_like(id)?;
         Ok(())
     }
+
+    // ─── 书籍导出 ─────────────────────────────────────
+
+    /// 导出书籍（返回 ExportResult JSON）
+    /// 
+    /// # 参数
+    /// - `book_url`: 书籍 URL
+    /// - `format`: 导出格式（txt/epub/html）
+    /// - `include_toc`: 是否包含目录
+    pub fn book_export(
+        book_url: String,
+        format: String,
+        include_toc: bool,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::book_export::export_book(
+            &book_url,
+            &format,
+            include_toc,
+        )?;
+        to_json(&result)
+    }
+
+    /// 获取导出预览信息（返回 ExportResult JSON）
+    pub fn book_export_info(
+        book_url: String,
+        format: String,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::book_export::export_info(
+            &book_url,
+            &format,
+        )?;
+        to_json(&result)
+    }
 }

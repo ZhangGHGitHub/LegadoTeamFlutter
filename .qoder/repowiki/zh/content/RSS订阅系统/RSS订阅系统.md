@@ -20,6 +20,13 @@
 - [book.d.ts](file://modules/web/src/book.d.ts)
 </cite>
 
+## 更新摘要
+**所做更改**
+- 移除了发现页面推荐算法相关功能说明
+- 删除了个性化书籍推荐和RSS建议相关内容
+- 更新了架构概览以反映当前无推荐功能的实现状态
+- 调整了依赖关系分析，移除推荐相关的组件引用
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -34,6 +41,8 @@
 
 ## 简介
 本文件面向RSS订阅系统的开发者与高级用户，系统性阐述RSS源管理、内容抓取与解析、阅读体验优化、收藏与分享、自动更新机制以及源开发与调试等关键能力。文档基于仓库中的Rust核心库、Android应用层与Flutter前端配置进行综合分析，提供从数据模型到网络抓取、从UI配置到后台任务的端到端说明，并给出可视化架构图与流程图，帮助读者快速理解与上手。
+
+**注意**：发现页面推荐算法功能已从代码库中完全移除，不再提供基于热门源的个性化书籍推荐和RSS建议功能。
 
 ## 项目结构
 RSS相关能力横跨多个模块：
@@ -104,6 +113,8 @@ Web_Config --> TS_Def
 - 前端配置与类型
   - Web侧提供RSS源编辑配置与类型定义，便于可视化编辑与校验。
 
+**已移除功能**：发现页面推荐算法及相关个性化推荐功能已从系统中完全移除。
+
 章节来源
 - [rss_source_repository.rs (model)](file://rust/legado-core/src/models/rss_source.rs)
 - [rss_article_repository.rs (model)](file://rust/legado-core/src/models/rss_article.rs)
@@ -121,7 +132,7 @@ Web_Config --> TS_Def
 - [book.d.ts](file://modules/web/src/book.d.ts)
 
 ## 架构总览
-整体采用分层架构：上层通过FFI调用Rust核心能力；核心层由模型、数据库、网络与工具组成；上层UI（Android/Flutter/Web）通过配置与测试驱动功能使用。
+整体采用分层架构：上层通过FFI调用Rust核心能力；核心层由模型、数据库、网络与工具组成；上层UI（Android/Flutter/Web）通过配置与测试驱动功能使用。当前版本不包含推荐算法相关组件。
 
 ```mermaid
 classDiagram
@@ -196,6 +207,8 @@ FfiRssStarApi --> RssStarRepository : "调用"
   - UI通过FFI调用Rust API，写入源信息至数据库；后续抓取任务读取配置执行增量更新。
 - 关键点
   - 更新频率决定定时任务间隔；过滤规则用于文章入库前筛选。
+
+**已移除功能**：源推荐算法和热门源发现功能已完全移除，不再提供智能源推荐服务。
 
 章节来源
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
@@ -324,6 +337,8 @@ FFI-->>UI : "展示星标列表"
 - 潜在循环依赖
   - 通过分层与接口隔离避免循环引用。
 
+**已移除依赖**：推荐算法相关组件及其依赖关系已从系统中完全移除。
+
 ```mermaid
 graph LR
 FFI["FFI API"] --> DB["DB Repositories"]
@@ -368,6 +383,8 @@ NET --> CORE
 - 内存与CPU
   - 避免全量加载，采用流式解析与分页显示；压缩与去重减少内存占用。
 
+**性能优化**：移除推荐算法后，系统资源消耗进一步降低，响应速度得到提升。
+
 [本节为通用指导，不直接分析具体文件]
 
 ## 故障排查指南
@@ -380,13 +397,15 @@ NET --> CORE
   - 启用日志与抓包；使用Web编辑器与单元测试验证源配置。
   - 查看自动任务执行记录与错误堆栈。
 
+**已移除功能排查**：如发现页面推荐相关功能无法使用时，这是预期行为，该功能已从系统中完全移除。
+
 章节来源
 - [auto_task_core_test.kt](file://app/src/test/java/io/legado/app/model/AutoTaskCoreTest.kt)
 - [rss_provider_test.dart](file://flutter_legado/test/unit/rss_provider_test.dart)
 - [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)
 
 ## 结论
-RSS订阅系统在多层架构下实现了完整的源管理、抓取解析、阅读优化、收藏分享与自动更新能力。通过清晰的职责划分与稳定的FFI接口，上层应用可灵活扩展与集成。建议在生产环境强化监控与容错，持续优化解析规则与缓存策略，以提升用户体验与系统稳定性。
+RSS订阅系统在多层架构下实现了完整的源管理、抓取解析、阅读优化、收藏分享与自动更新能力。通过清晰的职责划分与稳定的FFI接口，上层应用可灵活扩展与集成。当前版本已移除发现页面推荐算法功能，专注于核心的RSS订阅与管理能力。建议在生产环境强化监控与容错，持续优化解析规则与缓存策略，以提升用户体验与系统稳定性。
 
 [本节为总结性内容，不直接分析具体文件]
 
@@ -396,6 +415,8 @@ RSS订阅系统在多层架构下实现了完整的源管理、抓取解析、�
   - 使用单元测试验证抓取与解析结果，逐步完善规则。
 - 最佳实践
   - 保持源格式稳定；定期清理无用源与缓存；合理设置更新频率以避免过载。
+
+**功能说明**：当前版本不包含推荐算法功能，所有RSS源管理均基于用户手动配置和管理。
 
 章节来源
 - [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)

@@ -1,0 +1,22 @@
+schema_version: 1
+module_path: ""
+title: Legado 阅读器根工程（Android + Flutter + Rust 多语言聚合）
+scope:
+    - README.md
+    - Makefile
+    - package.json
+    - .gitignore
+    - CHANGELOG.md
+    - DEVELOPMENT.md
+    - LICENSE
+    - api.md
+    - avd.bat
+    - avd.sh
+    - build.gradle
+    - gradle.properties
+    - gradlew
+    - gradlew.bat
+    - settings.gradle
+source_files: []
+depends_on: []
+related_to: []
