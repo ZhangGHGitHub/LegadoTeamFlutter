@@ -978,4 +978,45 @@ pub mod ffi {
         crate::api::download_api::download_update_progress(&task_id, progress)?;
         Ok(())
     }
+
+    // ─── 段评/章评 ─────────────────────────────────────
+
+    /// 获取指定章节的所有评论（JSON 数组）
+    pub fn review_get_by_chapter(
+        book_url: String,
+        chapter_index: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::review_api::review_get_by_chapter(
+            &book_url,
+            chapter_index,
+        )?)
+    }
+
+    /// 添加评论，返回评论 ID
+    pub fn review_add(
+        book_url: String,
+        chapter_index: i32,
+        paragraph_index: i32,
+        content: String,
+        author: String,
+    ) -> Result<i64, BridgeError> {
+        Ok(crate::api::review_api::review_add(
+            &book_url,
+            chapter_index,
+            paragraph_index,
+            &content,
+            &author,
+        )?)
+    }
+
+    /// 删除评论
+    pub fn review_delete(id: i64) -> Result<bool, BridgeError> {
+        Ok(crate::api::review_api::review_delete(id)?)
+    }
+
+    /// 点赞评论
+    pub fn review_like(id: i64) -> Result<(), BridgeError> {
+        crate::api::review_api::review_like(id)?;
+        Ok(())
+    }
 }
