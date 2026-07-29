@@ -92,6 +92,29 @@ class ExploreProvider extends ChangeNotifier {
 
 ---
 
+## 发现页（ExploreScreen）后续增强任务
+
+以下功能对标 Android 原版 ExploreFragment，按优先级排列：
+
+### P0 - 核心交互
+- [ ] 书源展开显示 exploreUrl 分类列表 + 分类书籍浏览页（对应 Android ExploreShowActivity）
+- [ ] 编辑书源跳转（BookSourceEditActivity 对应页面，当前 onEdit 为空回调）
+
+### P1 - 交互完善
+- [ ] 置顶书源（customOrder 排序）
+- [ ] 删除书源确认对话框
+- [ ] 单书源搜索入口（SearchActivity 对应）
+- [ ] 常驻搜索栏（替代当前 AlertDialog 弹窗，对标 Android SearchView）
+
+### P2 - 性能优化
+- [ ] 搜索防抖 300ms（对标 Android delay(500) 策略）
+- [ ] filteredBookSources 脏标记缓存（消除每帧 O(n) 过滤）
+
+### 其他预存问题
+- [ ] Rust bookmark 测试隔离修复（test_delete_bookmark 共享 DB 导致 count=2）
+
+---
+
 ### 📝 Git 提交建议
 
 ```bash
@@ -144,4 +167,4 @@ git push origin main
 
 **更新日期**: 2026-07-30  
 **更新人**: AI Assistant（Human Review Required）  
-**关联任务**: Task #139（RSS），Task #129（排版引擎）
+**关联任务**: Task #139（RSS），Task #129（排版引擎），发现页后续增强（ExploreShowActivity / 编辑跳转 / 置顶 / 删除确认 / 搜索栏 / 防抖 / 缓存）
