@@ -77,71 +77,33 @@ class ExploreProvider extends ChangeNotifier {
 
 ---
 
-### 🎯 后续任务
-
-#### P0（阻塞核心体验）
-- [ ] **Task #???**: RSS 订阅管理完整实现
-  - 参考 [`RSSScreen.kt`](file:///d:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/legado/app/src/main/java/io/legado/app/ui/main/rss/RSSScreen.kt)
-  - 已完成：Flutter RssScreen + Rust Parser + Repository
-  - 待完成：集成到主界面
-
-#### P1
-- [ ] 漫画分页模式 + 高级手势
-- [ ] 压缩包导入 + 自动编码检测
-- [ ] WebDAV 设置完整流
-
----
-
-## 发现页（ExploreScreen）后续增强任务
-
-以下功能对标 Android 原版 ExploreFragment，按优先级排列：
-
-### P0 - 核心交互
-- [ ] 书源展开显示 exploreUrl 分类列表 + 分类书籍浏览页（对应 Android ExploreShowActivity）
-- [ ] 编辑书源跳转（BookSourceEditActivity 对应页面，当前 onEdit 为空回调）
-
-### P1 - 交互完善
-- [ ] 置顶书源（customOrder 排序）
-- [ ] 删除书源确认对话框
-- [ ] 单书源搜索入口（SearchActivity 对应）
-- [ ] 常驻搜索栏（替代当前 AlertDialog 弹窗，对标 Android SearchView）
-
-### P2 - 性能优化
-- [ ] 搜索防抖 300ms（对标 Android delay(500) 策略）
-- [ ] filteredBookSources 脏标记缓存（消除每帧 O(n) 过滤）
-
-### 其他预存问题
-- [ ] Rust bookmark 测试隔离修复（test_delete_bookmark 共享 DB 导致 count=2）
-
----
-
 ### 📝 Git 提交建议
 
 ```bash
-# 清理工作区
+# 检查当前工作区状态
 git status
 
-# 删除无用文件
-git rm flutter_legado/lib/src/models/recommended_source.dart
+# 本次清理涉及的文件变更：
+# 已删除：
 git rm flutter_legado/lib/src/providers/discover_provider.dart
-git rm flutter_legado/lib/src/screens/discover_screen.dart
+git rm flutter_legado/lib/src/screens/source_discover_screen.dart
+git rm flutter_legado/test/widget/discover_screen_test.dart
 
-# 检查修改
-git status
+# 已修改：
+git add flutter_legado/lib/main.dart
+git add flutter_legado/lib/src/routes.dart
+git add flutter_legado/lib/src/screens/settings_screen.dart
+git add flutter_legado/lib/src/screens/home_screen.dart
+git add flutter_legado/lib/src/providers/explore_provider.dart
 
-# 提交更改
-git add .
-git commit -m "refactor: 移除推荐算法模块，回归 Android 原版探索页功能
+# 提交
+git commit -m "refactor: 清理推荐算法残留，接入发现页 ExploreScreen
 
-- 删除 RecommendedSource 模型及 discover_provider.dart
-- 删除旧的 discover_screen.dart
-- 新增 explore_provider.dart（参考 ExploreFragment.kt）
-- 新增 explore_screen.dart（书源列表 + 搜索 + 分组）
-- 更新 routes.dart 和 home_screen.dart 路由引用
-- 更新 models.dart 导出声明"
-
-# 推送远程
-git push origin main
+- 删除 discover_provider.dart / source_discover_screen.dart / discover_screen_test.dart
+- main.dart: DiscoverProvider → ExploreProvider
+- home_screen.dart: 4 tabs ↔ 4 destinations 对齐（书架/发现/订阅/我的）
+- settings_screen.dart: 移除 AppRoutes.discover 死引用
+- explore_provider.dart: 增加 enabledExplore + exploreUrl 过滤"
 ```
 
 ---
@@ -159,12 +121,36 @@ git push origin main
    - 实现相同的交互逻辑（搜索 + 分组 + CRUD）
 
 3. **文档同步**:
-   - 已更新 [`rust/PROGRESS.md`](file:///d:/OH-WorkSpace/LegadoTeam/legado/rust/PROGRESS.md)
-   - 已创建本 [`VERSION_CONTROL.md`](file:///d:/OH-WorkSpace/LegadoTeam/legado/VERSION_CONTROL.md)
-   - 保留审计报告 [`discover_screen_audit.md`](file:///d:/OH-WorkSpace/LegadoTeam/legado/discover_screen_audit.md) 作为历史参考
+   - 已更新 [`rust/PROGRESS.md`](file:///d:/OH-WorkSpace/LegadoTeam/legado/rust/PROGRESS.md) — 任务进度跟踪（含发现页后续增强任务）
+   - 已创建本 [`VERSION_CONTROL.md`](file:///d:/OH-WorkSpace/LegadoTeam/legado/VERSION_CONTROL.md) — 版本变更决策记录
 
 ---
 
 **更新日期**: 2026-07-30  
 **更新人**: AI Assistant（Human Review Required）  
-**关联任务**: Task #139（RSS），Task #129（排版引擎），发现页后续增强（ExploreShowActivity / 编辑跳转 / 置顶 / 删除确认 / 搜索栏 / 防抖 / 缓存）
+**关联任务**: Task #139（RSS），Task #129（排版引擎）
+
+---
+
+## 崩溃防护与启动优化
+
+### 新增文件
+| 文件路径 | 说明 |
+|---------|------|
+| `flutter_legado/lib/src/services/crash_log_service.dart` | 崩溃日志服务（单例），支持错误捕获、日志写入、崩溃记录读取 |
+| `flutter_legado/lib/src/widgets/crash_log_dialog.dart` | 崩溃日志弹窗组件，支持详情展开和日志清除 |
+
+### 修改文件
+| 文件路径 | 改动说明 |
+|---------|----------|
+| `flutter_legado/lib/main.dart` | runZonedGuarded 包裹、CrashLogService 初始化、全局错误捕获、Future.wait 并行初始化、Stopwatch 计时日志、崩溃日志读取传递 |
+| `flutter_legado/lib/app.dart` | LegadoApp 改为 StatefulWidget，新增 lastCrashLog 参数，首帧弹窗展示崩溃日志 |
+| `flutter_legado/lib/src/services/settings_service.dart` | 全部 30 个方法添加 try-catch 异常保护，返回安全默认值 |
+| `flutter_legado/lib/src/services/cache_service.dart` | SharedPreferences 调用添加 try-catch 保护 |
+| `flutter_legado/lib/src/screens/home_screen.dart` | IndexedStack Tab 懒构建，未访问 Tab 延迟创建 |
+| `flutter_legado/lib/src/screens/bookshelf_screen.dart` | loadSettings 下沉到首帧回调 |
+| `flutter_legado/lib/src/screens/reader_screen.dart` | loadSettings 下沉到首帧回调 |
+
+### 功能要点
+- 四层崩溃防护：CrashLogService 全局捕获 + runZonedGuarded 异步兜底 + StorageService 安全访问 + 启动崩溃日志弹窗
+- 启动优化：SharedPreferences 与 Rust FFI 并行初始化、Tab 懒构建减少首帧开销、loadSettings 下沉

@@ -16,128 +16,209 @@ class SettingsService {
   // ===== 字体大小 =====
 
   Future<double> getFontSize() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_keyFontSize) ?? 18.0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getDouble(_keyFontSize) ?? 18.0;
+    } catch (e) {
+      debugPrint('SettingsService.getFontSize 异常: $e');
+      return 18.0;
+    }
   }
 
   Future<void> setFontSize(double size) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_keyFontSize, size);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_keyFontSize, size);
+    } catch (e) {
+      debugPrint('SettingsService.setFontSize 异常: $e');
+    }
   }
 
   // ===== 行距 =====
 
   Future<double> getLineHeight() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_keyLineHeight) ?? 1.6;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getDouble(_keyLineHeight) ?? 1.6;
+    } catch (e) {
+      debugPrint('SettingsService.getLineHeight 异常: $e');
+      return 1.6;
+    }
   }
 
   Future<void> setLineHeight(double height) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_keyLineHeight, height);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_keyLineHeight, height);
+    } catch (e) {
+      debugPrint('SettingsService.setLineHeight 异常: $e');
+    }
   }
 
   // ===== 背景色索引 =====
 
   Future<int> getBgColorIndex() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_keyBgColorIndex) ?? 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyBgColorIndex) ?? 0;
+    } catch (e) {
+      debugPrint('SettingsService.getBgColorIndex 异常: $e');
+      return 0;
+    }
   }
 
   Future<void> setBgColorIndex(int index) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_keyBgColorIndex, index);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyBgColorIndex, index);
+    } catch (e) {
+      debugPrint('SettingsService.setBgColorIndex 异常: $e');
+    }
   }
 
   // ===== 翻页模式 =====
 
   Future<int> getFlipMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_keyFlipMode) ?? 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyFlipMode) ?? 0;
+    } catch (e) {
+      debugPrint('SettingsService.getFlipMode 异常: $e');
+      return 0;
+    }
   }
 
   Future<void> setFlipMode(int mode) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_keyFlipMode, mode);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyFlipMode, mode);
+    } catch (e) {
+      debugPrint('SettingsService.setFlipMode 异常: $e');
+    }
   }
 
   // ===== 亮度 =====
 
   Future<double> getBrightness() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_keyBrightness) ?? -1.0; // -1 表示跟随系统
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getDouble(_keyBrightness) ?? -1.0; // -1 表示跟随系统
+    } catch (e) {
+      debugPrint('SettingsService.getBrightness 异常: $e');
+      return -1.0;
+    }
   }
 
   Future<void> setBrightness(double brightness) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_keyBrightness, brightness);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_keyBrightness, brightness);
+    } catch (e) {
+      debugPrint('SettingsService.setBrightness 异常: $e');
+    }
   }
 
   // ===== 应用主题模式 =====
 
   Future<ThemeMode> getThemeMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getString(_keyThemeMode) ?? 'system';
-    switch (value) {
-      case 'light':
-        return ThemeMode.light;
-      case 'dark':
-        return ThemeMode.dark;
-      default:
-        return ThemeMode.system;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_keyThemeMode) ?? 'system';
+      switch (value) {
+        case 'light':
+          return ThemeMode.light;
+        case 'dark':
+          return ThemeMode.dark;
+        default:
+          return ThemeMode.system;
+      }
+    } catch (e) {
+      debugPrint('SettingsService.getThemeMode 异常: $e');
+      return ThemeMode.system;
     }
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
-    final prefs = await SharedPreferences.getInstance();
-    String value;
-    switch (mode) {
-      case ThemeMode.light:
-        value = 'light';
-        break;
-      case ThemeMode.dark:
-        value = 'dark';
-        break;
-      default:
-        value = 'system';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String value;
+      switch (mode) {
+        case ThemeMode.light:
+          value = 'light';
+          break;
+        case ThemeMode.dark:
+          value = 'dark';
+          break;
+        default:
+          value = 'system';
+      }
+      await prefs.setString(_keyThemeMode, value);
+    } catch (e) {
+      debugPrint('SettingsService.setThemeMode 异常: $e');
     }
-    await prefs.setString(_keyThemeMode, value);
   }
 
   // ===== 书架偏好：显示最近阅读 =====
 
   Future<bool> getShowBookshelfRecentReading() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_keyShowBookshelfRecentReading) ?? true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyShowBookshelfRecentReading) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getShowBookshelfRecentReading 异常: $e');
+      return true;
+    }
   }
 
   Future<void> setShowBookshelfRecentReading(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyShowBookshelfRecentReading, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyShowBookshelfRecentReading, value);
+    } catch (e) {
+      debugPrint('SettingsService.setShowBookshelfRecentReading 异常: $e');
+    }
   }
 
   // ===== 书架偏好：显示阅读统计 =====
 
   Future<bool> getShowBookshelfStats() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_keyShowBookshelfStats) ?? true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyShowBookshelfStats) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getShowBookshelfStats 异常: $e');
+      return true;
+    }
   }
 
   Future<void> setShowBookshelfStats(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyShowBookshelfStats, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyShowBookshelfStats, value);
+    } catch (e) {
+      debugPrint('SettingsService.setShowBookshelfStats 异常: $e');
+    }
   }
 
   // ===== 语言设置 =====
 
   Future<String> getLocale() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyLocale) ?? 'system';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyLocale) ?? 'system';
+    } catch (e) {
+      debugPrint('SettingsService.getLocale 异常: $e');
+      return 'system';
+    }
   }
 
   Future<void> setLocale(String locale) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyLocale, locale);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyLocale, locale);
+    } catch (e) {
+      debugPrint('SettingsService.setLocale 异常: $e');
+    }
   }
 
   // ===== 网络设置：代理 =====
@@ -148,45 +229,81 @@ class SettingsService {
   static const _keyRequestTimeout = 'net_request_timeout';
 
   Future<String> getProxyType() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyProxyType) ?? 'none';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyProxyType) ?? 'none';
+    } catch (e) {
+      debugPrint('SettingsService.getProxyType 异常: $e');
+      return 'none';
+    }
   }
 
   Future<void> setProxyType(String type) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyProxyType, type);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyProxyType, type);
+    } catch (e) {
+      debugPrint('SettingsService.setProxyType 异常: $e');
+    }
   }
 
   Future<String> getProxyHost() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyProxyHost) ?? '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyProxyHost) ?? '';
+    } catch (e) {
+      debugPrint('SettingsService.getProxyHost 异常: $e');
+      return '';
+    }
   }
 
   Future<void> setProxyHost(String host) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyProxyHost, host);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyProxyHost, host);
+    } catch (e) {
+      debugPrint('SettingsService.setProxyHost 异常: $e');
+    }
   }
 
   Future<int> getProxyPort() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_keyProxyPort) ?? 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyProxyPort) ?? 0;
+    } catch (e) {
+      debugPrint('SettingsService.getProxyPort 异常: $e');
+      return 0;
+    }
   }
 
   Future<void> setProxyPort(int port) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_keyProxyPort, port);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyProxyPort, port);
+    } catch (e) {
+      debugPrint('SettingsService.setProxyPort 异常: $e');
+    }
   }
 
   // ===== 网络设置：请求超时（秒） =====
 
   Future<int> getRequestTimeout() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_keyRequestTimeout) ?? 30;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyRequestTimeout) ?? 30;
+    } catch (e) {
+      debugPrint('SettingsService.getRequestTimeout 异常: $e');
+      return 30;
+    }
   }
 
   Future<void> setRequestTimeout(int seconds) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_keyRequestTimeout, seconds);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyRequestTimeout, seconds);
+    } catch (e) {
+      debugPrint('SettingsService.setRequestTimeout 异常: $e');
+    }
   }
 
   // ===== WebDAV 云同步配置 =====
@@ -199,63 +316,117 @@ class SettingsService {
   static const _keyLastSyncTime = 'sync_last_time';
 
   Future<String> getWebDavUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyWebDavUrl) ?? '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyWebDavUrl) ?? '';
+    } catch (e) {
+      debugPrint('SettingsService.getWebDavUrl 异常: $e');
+      return '';
+    }
   }
 
   Future<void> setWebDavUrl(String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyWebDavUrl, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyWebDavUrl, value);
+    } catch (e) {
+      debugPrint('SettingsService.setWebDavUrl 异常: $e');
+    }
   }
 
   Future<String> getWebDavUsername() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyWebDavUsername) ?? '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyWebDavUsername) ?? '';
+    } catch (e) {
+      debugPrint('SettingsService.getWebDavUsername 异常: $e');
+      return '';
+    }
   }
 
   Future<void> setWebDavUsername(String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyWebDavUsername, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyWebDavUsername, value);
+    } catch (e) {
+      debugPrint('SettingsService.setWebDavUsername 异常: $e');
+    }
   }
 
   Future<String> getWebDavPassword() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyWebDavPassword) ?? '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyWebDavPassword) ?? '';
+    } catch (e) {
+      debugPrint('SettingsService.getWebDavPassword 异常: $e');
+      return '';
+    }
   }
 
   Future<void> setWebDavPassword(String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyWebDavPassword, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyWebDavPassword, value);
+    } catch (e) {
+      debugPrint('SettingsService.setWebDavPassword 异常: $e');
+    }
   }
 
   Future<String> getWebDavRemoteDir() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyWebDavRemoteDir) ?? '/legado/';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyWebDavRemoteDir) ?? '/legado/';
+    } catch (e) {
+      debugPrint('SettingsService.getWebDavRemoteDir 异常: $e');
+      return '/legado/';
+    }
   }
 
   Future<void> setWebDavRemoteDir(String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyWebDavRemoteDir, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyWebDavRemoteDir, value);
+    } catch (e) {
+      debugPrint('SettingsService.setWebDavRemoteDir 异常: $e');
+    }
   }
 
   Future<bool> getAutoSync() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_keyAutoSync) ?? false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyAutoSync) ?? false;
+    } catch (e) {
+      debugPrint('SettingsService.getAutoSync 异常: $e');
+      return false;
+    }
   }
 
   Future<void> setAutoSync(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyAutoSync, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyAutoSync, value);
+    } catch (e) {
+      debugPrint('SettingsService.setAutoSync 异常: $e');
+    }
   }
 
   Future<DateTime?> getLastSyncTime() async {
-    final prefs = await SharedPreferences.getInstance();
-    final millis = prefs.getInt(_keyLastSyncTime);
-    return millis != null ? DateTime.fromMillisecondsSinceEpoch(millis) : null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final millis = prefs.getInt(_keyLastSyncTime);
+      return millis != null ? DateTime.fromMillisecondsSinceEpoch(millis) : null;
+    } catch (e) {
+      debugPrint('SettingsService.getLastSyncTime 异常: $e');
+      return null;
+    }
   }
 
   Future<void> setLastSyncTime(DateTime time) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_keyLastSyncTime, time.millisecondsSinceEpoch);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyLastSyncTime, time.millisecondsSinceEpoch);
+    } catch (e) {
+      debugPrint('SettingsService.setLastSyncTime 异常: $e');
+    }
   }
 }

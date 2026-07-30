@@ -24,9 +24,12 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   @override
   void initState() {
     super.initState();
-    // 首次加载
+    // 首次加载：下沉 loadSettings + loadBooks 到首帧回调
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BookshelfProvider>().loadBooks();
+      if (mounted) {
+        context.read<BookshelfProvider>().loadSettings();
+        context.read<BookshelfProvider>().loadBooks();
+      }
     });
   }
 

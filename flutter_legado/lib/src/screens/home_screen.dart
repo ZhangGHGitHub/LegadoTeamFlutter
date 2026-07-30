@@ -17,24 +17,28 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  static const _tabs = [
-    BookshelfScreen(),
-    ExploreScreen(),
-    RssScreen(),
-    SettingsScreen(),
-  ];
+  /// 已访问过的 Tab 索引集合（首屏默认访问书架）
+  final Set<int> _visitedTabs = {0};
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _tabs,
+        children: [
+          const BookshelfScreen(),
+          if (_visitedTabs.contains(1)) const ExploreScreen() else const SizedBox.shrink(),
+          if (_visitedTabs.contains(2)) const RssScreen() else const SizedBox.shrink(),
+          if (_visitedTabs.contains(3)) const SettingsScreen() else const SizedBox.shrink(),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
-          setState(() => _currentIndex = index);
+          setState(() {
+            _currentIndex = index;
+            _visitedTabs.add(index);
+          });
         },
         destinations: [
           NavigationDestination(

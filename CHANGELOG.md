@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [未发布]
+
+### 新增
+- 崩溃防护体系：CrashLogService 全局错误捕获、runZonedGuarded 异步兜底、启动崩溃日志检测弹窗
+- 崩溃日志弹窗组件，支持查看详情和清除日志
+
+### 优化
+- main.dart 启动流程：SharedPreferences 与 Rust FFI 并行初始化
+- HomeScreen Tab 懒构建，减少首帧构建开销
+- SettingsService/CacheService 全部方法添加异常保护
+- BookshelfProvider/ReaderProvider loadSettings 下沉到首帧回调
+- 添加启动阶段 Stopwatch 计时调试日志
+
 ## [Unreleased]
 
 ### Added

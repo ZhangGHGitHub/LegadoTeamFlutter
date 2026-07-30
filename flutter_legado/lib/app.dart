@@ -1,13 +1,39 @@
 import 'package:flutter/material.dart';
 
 import 'src/routes.dart';
+import 'src/widgets/crash_log_dialog.dart';
 
 /// Legado App 入口 Widget
-class LegadoApp extends StatelessWidget {
+class LegadoApp extends StatefulWidget {
   /// 初始路由（首次启动时为欢迎页）
   final String initialRoute;
 
-  const LegadoApp({super.key, this.initialRoute = AppRoutes.home});
+  /// 上次崩溃日志内容（null 表示无崩溃记录）
+  final String? lastCrashLog;
+
+  const LegadoApp({
+    super.key,
+    this.initialRoute = AppRoutes.home,
+    this.lastCrashLog,
+  });
+
+  @override
+  State<LegadoApp> createState() => _LegadoAppState();
+}
+
+class _LegadoAppState extends State<LegadoApp> {
+  @override
+  void initState() {
+    super.initState();
+    // 首帧渲染后检查上次崩溃日志并弹窗提示
+    if (widget.lastCrashLog != null && widget.lastCrashLog!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          CrashLogDialog.show(context, widget.lastCrashLog!);
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +43,7 @@ class LegadoApp extends StatelessWidget {
       theme: _buildLightTheme(),
       darkTheme: _buildDarkTheme(),
       themeMode: ThemeMode.system,
-      initialRoute: initialRoute,
+      initialRoute: widget.initialRoute,
       routes: AppRoutes.routes,
     );
   }

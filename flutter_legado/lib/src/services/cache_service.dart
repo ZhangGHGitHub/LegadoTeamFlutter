@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'rust_api.dart';
@@ -53,16 +54,25 @@ class CacheService {
   ///
   /// [days] 为 0 表示永不过期。
   Future<void> setAutoExpireDays(int days) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_keyAutoExpireDays, days);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyAutoExpireDays, days);
+    } catch (e) {
+      debugPrint('CacheService.setAutoExpireDays 异常: $e');
+    }
   }
 
   /// 获取当前自动过期天数配置
   ///
   /// 返回 0 表示永不过期，默认值为 0。
   Future<int> getAutoExpireDays() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_keyAutoExpireDays) ?? 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyAutoExpireDays) ?? 0;
+    } catch (e) {
+      debugPrint('CacheService.getAutoExpireDays 异常: $e');
+      return 0;
+    }
   }
 
   /// 格式化缓存大小为可读字符串

@@ -43,6 +43,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void initState() {
     super.initState();
     _loadAdvancedConfig();
+    // 下沉 loadSettings 到阅读器首帧回调
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<ReaderProvider>().loadSettings();
+      }
+    });
   }
 
   Future<void> _loadAdvancedConfig() async {
