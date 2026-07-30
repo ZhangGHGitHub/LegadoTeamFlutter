@@ -8,6 +8,12 @@
 - [flutter_legado/README.md](file://flutter_legado/README.md)
 </cite>
 
+## 更新摘要
+**所做更改**   
+- 更新了导航组件部分，详细说明NavigationDestination组件的labelBehavior配置
+- 新增无标签显示效果的实现说明
+- 补充了与Android原版一致的视觉规范
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -70,7 +76,7 @@ B --> B3["src/*"]
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 
 ## 架构总览
-Flutter UI层采用“主题驱动 + 组件分层”的架构：
+Flutter UI层采用"主题驱动 + 组件分层"的架构：
 - 主题系统集中管理颜色、字体、组件样式，确保一致性
 - 基础组件提供稳定的视觉与交互基线
 - 复合组件复用基础组件，形成常用界面块
@@ -207,6 +213,34 @@ P-->>U : "展示新页面"
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 - [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
 
+### 导航组件与Material Design定制
+- NavigationDestination组件：用于底部导航栏的导航项配置，支持图标和标签的灵活展示
+- labelBehavior配置：通过设置labelBehavior属性控制标签显示行为，实现与Android原版一致的无标签显示效果
+- 图标优先设计：在空间有限的情况下，优先展示图标，隐藏文字标签以提升视觉简洁性
+- 主题集成：导航组件自动继承主题的颜色方案和字体样式，确保整体视觉一致性
+
+**更新** 新增了NavigationDestination组件的labelBehavior配置说明，实现了与Android原版一致的无标签显示效果
+
+```mermaid
+flowchart TD
+NavConfig["导航配置"] --> LabelBehavior{"标签行为设置"}
+LabelBehavior --> |隐藏标签| IconOnly["仅显示图标"]
+LabelBehavior --> |显示标签| FullLabel["显示图标+标签"]
+LabelBehavior --> |自动调整| Adaptive["根据空间自适应"]
+IconOnly --> MaterialDesign["符合Material设计规范"]
+FullLabel --> MaterialDesign
+Adaptive --> MaterialDesign
+MaterialDesign --> AndroidConsistency["与Android原版保持一致"]
+```
+
+图表来源
+- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+- [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
+
+章节来源
+- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+- [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
+
 ### 组件复用模式与设计系统规范
 - 参数化设计：所有组件暴露必要属性，支持主题注入与行为定制
 - 回调优先：通过回调函数处理外部状态变更，避免内部状态污染
@@ -255,13 +289,14 @@ Utils --> Validation["校验工具"]
 - 动画卡顿：分析动画控制器生命周期，优化计算密集型操作
 - 组件不更新：确认状态变更是否触发重建，检查依赖关系
 - 依赖冲突：清理缓存并重新解析依赖，锁定版本避免漂移
+- 导航标签显示异常：检查NavigationDestination的labelBehavior配置，确保与预期显示效果一致
 
 章节来源
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 - [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
 
 ## 结论
-本UI组件系统以主题驱动为核心，通过分层化的组件设计与响应式布局策略，实现了跨设备的一致体验。结合动画与过渡效果，提升了用户交互的流畅性与愉悦感。遵循组件复用模式与设计系统规范，可有效提高开发效率与维护性。未来可进一步引入更多自动化测试与性能监控手段，持续优化用户体验。
+本UI组件系统以主题驱动为核心，通过分层化的组件设计与响应式布局策略，实现了跨设备的一致体验。结合动画与过渡效果，提升了用户交互的流畅性与愉悦感。遵循组件复用模式与设计系统规范，可有效提高开发效率与维护性。通过NavigationDestination组件的labelBehavior配置优化，进一步确保了与Android原版的视觉一致性。未来可进一步引入更多自动化测试与性能监控手段，持续优化用户体验。
 
 [本节为总结性内容，无需特定文件引用]
 

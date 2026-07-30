@@ -11,6 +11,7 @@ import '../providers/reader_provider.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 import 'reader_config_panel.dart';
+import '../widgets/instant_scroll_physics.dart';
 
 /// 阅读器页面
 class ReaderScreen extends StatefulWidget {
@@ -151,6 +152,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         return _buildSlideContent(context, provider);
       case PageTurnMode.simulate:
         return _buildSimulateContent(context, provider);
+      case PageTurnMode.none:
+        return _buildNoneContent(context, provider);
     }
   }
 
@@ -280,6 +283,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNoneContent(BuildContext context, ReaderProvider provider) {
+    // 无动画翻页：使用 PageView 但禁用动画
+    return SafeArea(
+      top: !provider.showControls,
+      bottom: !provider.showControls,
+      child: PageView.builder(
+        controller: _pageController,
+        physics: const InstantScrollPhysics(), // 无动画瞬间切换
+        itemCount: provider.chapters.isNotEmpty ? provider.chapters.length : 1,
+        itemBuilder: (context, index) {
+          return _buildChapterPage(context, provider, index);
+        },
       ),
     );
   }

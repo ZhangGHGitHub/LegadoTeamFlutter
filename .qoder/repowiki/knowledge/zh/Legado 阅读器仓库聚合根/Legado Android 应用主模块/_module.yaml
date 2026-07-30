@@ -5,5 +5,4 @@ scope:
     - app/
 source_files: []
 depends_on: []
-related_to:
-    - path: flutter_app
+related_to: []

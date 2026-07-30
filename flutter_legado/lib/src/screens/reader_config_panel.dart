@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../providers/reader_provider.dart';
+
 /// 点击区域可映射的功能
 enum TapAction {
   none,
@@ -50,6 +52,9 @@ class ReaderAdvancedConfig {
   bool showProgress;
   bool showChapterName;
 
+  // 翻页模式
+  PageTurnMode PageTurnMode;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -62,6 +67,7 @@ class ReaderAdvancedConfig {
     this.showTime = true,
     this.showProgress = true,
     this.showChapterName = true,
+    this.PageTurnMode = PageTurnMode.slide,
   });
 
   /// 从持久化存储加载
@@ -87,6 +93,7 @@ class ReaderAdvancedConfig {
       showTime: prefs.getBool('${_prefix}show_time') ?? true,
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
       showChapterName: prefs.getBool('${_prefix}show_chapter_name') ?? true,
+      PageTurnMode: PageTurnMode.fromIndex(prefs.getInt('${_prefix}flip_mode') ?? PageTurnMode.slide.index),
     );
   }
 
@@ -104,6 +111,7 @@ class ReaderAdvancedConfig {
     await prefs.setBool('${_prefix}show_time', showTime);
     await prefs.setBool('${_prefix}show_progress', showProgress);
     await prefs.setBool('${_prefix}show_chapter_name', showChapterName);
+    await prefs.setInt('${_prefix}flip_mode', PageTurnMode.index);
   }
 
   ReaderAdvancedConfig copy() => ReaderAdvancedConfig(
@@ -118,6 +126,7 @@ class ReaderAdvancedConfig {
         showTime: showTime,
         showProgress: showProgress,
         showChapterName: showChapterName,
+        PageTurnMode: PageTurnMode,
       );
 }
 
@@ -128,6 +137,7 @@ class ReaderAdvancedConfig {
 /// - 点击区域功能映射（左 / 中 / 右）
 /// - 段落间距调节
 /// - 状态栏提示栏项配置（电量 / 时间 / 进度 / 章节名）
+/// - 翻页模式选择（仿真 / 滑动 / 覆盖 / 无动画）
 class ReaderConfigPanel extends StatefulWidget {
   final ReaderAdvancedConfig config;
 
@@ -197,6 +207,8 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
             const SizedBox(height: 12),
             Text('高级阅读设置', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
+            _buildPageTurnMode(),
+            const Divider(),
             _buildAutoPageTurn(),
             const Divider(),
             _buildTapZones(),
@@ -221,6 +233,32 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
               style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
         ],
       ),
+    );
+  }
+
+  // ===== 翻页模式 =====
+
+  Widget _buildPageTurnMode() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('翻页模式', Icons.auto_stories_outlined),
+        SegmentedButton<PageTurnMode>(
+          segments: [
+            for (final mode in PageTurnMode.values)
+              ButtonSegment(
+                value: mode,
+                label: Text(mode.displayName),
+                icon: Text(mode.icon),
+              ),
+          ],
+          selected: {_config.PageTurnMode},
+          onSelectionChanged: (sel) {
+            _config.PageTurnMode = sel.first;
+            _commit();
+          },
+        ),
+      ],
     );
   }
 

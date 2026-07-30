@@ -21,10 +21,9 @@
 
 ## 更新摘要
 **变更内容**   
-- 新增完整的崩溃保护系统，包括crash_log_service.dart和crash_log_dialog.dart组件
-- 实现启动性能优化，提升应用冷启动速度
-- 增强错误处理和异常捕获机制
-- 优化内存管理和资源清理
+- 修复Flutter重构版底部导航栏UI一致性问题，包括隐藏标签文本和修正第四个标签显示为'我的'而非'设置'
+- 优化底部导航栏的视觉呈现和用户体验
+- 统一各平台的导航栏显示效果
 
 ## 目录
 1. [简介](#简介)
@@ -41,7 +40,7 @@
 ## 简介
 本文件面向Flutter跨平台应用的开发者与使用者，系统性阐述Legado的Flutter工程组织、状态管理（Provider）、路由与UI设计、与Rust核心库的FFI集成、多平台构建发布流程以及开发与调试技巧。文档以"由浅入深"的方式展开，既适合快速上手，也便于深入理解实现细节。
 
-**最新更新**：本次更新重点介绍了新增的完整崩溃保护系统和启动性能优化，为应用提供了更强大的稳定性保障和更快的启动速度。
+**最新更新**：本次更新重点修复了底部导航栏UI一致性问题，确保各平台导航栏显示效果统一，并修正了标签文本显示错误。
 
 ## 项目结构
 Flutter工程位于 flutter_legado 目录，遵循标准Flutter多平台结构：
@@ -63,8 +62,6 @@ A --> G["flutter_legado/scripts<br/>构建与桥接脚本"]
 A --> H["flutter_legado/pubspec.yaml<br/>依赖与资源"]
 A --> I["flutter_legado/flutter_rust_bridge.yaml<br/>FFI桥接配置"]
 A --> J["flutter_legado/test<br/>测试套件"]
-J --> K["crash_log_service_test.dart"]
-J --> L["crash_log_dialog_test.dart"]
 ```
 
 图表来源
@@ -89,29 +86,21 @@ J --> L["crash_log_dialog_test.dart"]
   - SearchProvider：搜索历史、结果缓存与查询状态。
   - RssProvider：订阅源与文章列表状态。
   - AutoTaskProvider：自动任务调度与执行状态。
-  - **新增**：CacheProvider：缓存管理状态，包括缓存大小监控、清理策略和存储优化。
-  - **新增**：WebDavProvider：WebDAV配置状态，支持服务器连接管理和数据同步。
 - 路由管理
   - 集中式路由表，按功能模块划分页面；支持命名路由与参数传递。
 - UI组件与主题
   - Material Design组件定制，统一颜色、字体、阴影与动画风格。
   - 响应式布局适配手机、平板、桌面端。
-  - **新增**：缓存设置界面，提供缓存清理和存储管理功能。
-  - **新增**：漫画阅读器界面，支持图片浏览和交互操作。
-  - **新增**：WebDAV设置界面，支持云端存储配置。
-- **新增**：崩溃保护系统
-  - CrashLogService：全局异常捕获和日志记录服务
-  - CrashLogDialog：崩溃信息展示对话框
-  - 启动性能优化：异步初始化和懒加载策略
-- Rust FFI集成
-  - 通过flutter_rust_bridge生成桥接代码，调用Rust高性能计算能力（解析、加密、网络、音频等）。
-  - **新增**：缓存管理API，提供高效的本地数据存储和检索功能。
-  - **新增**：WebDAV客户端接口，支持云端文件操作和同步。
+  - **新增**：统一的底部导航栏，确保各平台显示一致性。
+- 底部导航栏优化
+  - **新增**：隐藏标签文本以提升视觉简洁性
+  - **新增**：修正第四个标签显示为'我的'而非'设置'
+  - **新增**：统一各平台导航栏样式和行为
 
 章节来源
 - [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
 - [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-200)
-- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-200)
+- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
 
 ## 架构总览
 整体架构采用"Flutter UI层 + Provider状态层 + Rust核心库"的分层模式：
@@ -126,10 +115,7 @@ UI["Material UI组件"]
 Router["路由管理"]
 Theme["主题与样式"]
 Reader["阅读器界面"]
-ComicReader["漫画阅读器"]
-CacheSettings["缓存设置界面"]
-WebDavSettings["WebDAV设置界面"]
-CrashDialog["崩溃对话框"]
+BottomNav["底部导航栏"]
 end
 subgraph "状态管理层"
 PBookshelf["BookshelfProvider"]
@@ -138,13 +124,6 @@ PReader["ReaderProvider"]
 PSearch["SearchProvider"]
 PRss["RssProvider"]
 PAuto["AutoTaskProvider"]
-PCache["CacheProvider"]
-PWebDav["WebDavProvider"]
-end
-subgraph "崩溃保护系统"
-CrashService["CrashLogService"]
-ErrorCapture["全局异常捕获"]
-PerformanceMonitor["性能监控"]
 end
 subgraph "Rust核心层"
 FFI["FFI桥接"]
@@ -153,8 +132,6 @@ Net["网络与请求"]
 Parse["解析与规则"]
 Audio["音频与TTS"]
 Crypto["加密与安全"]
-Cache["缓存管理"]
-WebDav["WebDAV客户端"]
 end
 UI --> PBookshelf
 UI --> PSettings
@@ -162,34 +139,26 @@ UI --> PReader
 UI --> PSearch
 UI --> PRss
 UI --> PAuto
-UI --> PCache
-UI --> PWebDav
-UI --> CrashDialog
+BottomNav --> UI
 PBookshelf --> FFI
 PSettings --> FFI
 PReader --> FFI
 PSearch --> FFI
 PRss --> FFI
 PAuto --> FFI
-PCache --> FFI
-PWebDav --> FFI
-CrashService --> ErrorCapture
-CrashService --> PerformanceMonitor
 FFI --> Core
 Core --> Net
 Core --> Parse
 Core --> Audio
 Core --> Crypto
-Core --> Cache
-Core --> WebDav
 ```
 
 图表来源
-- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-200)
-- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-200)
-- [flutter_legado/flutter_rust_bridge.yaml:1-200](file://flutter_legado/flutter_rust_bridge.yaml#L1-200)
-- [rust/legado-ffi/src/lib.rs:1-200](file://rust/legado-ffi/src/lib.rs#L1-200)
-- [rust/legado-core/src/lib.rs:1-200](file://rust/legado-core/src/lib.rs#L1-200)
+- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
+- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-L200)
+- [flutter_legado/flutter_rust_bridge.yaml:1-200](file://flutter_legado/flutter_rust_bridge.yaml#L1-L200)
+- [rust/legado-ffi/src/lib.rs:1-200](file://rust/legado-ffi/src/lib.rs#L1-L200)
+- [rust/legado-core/src/lib.rs:1-200](file://rust/legado-core/src/lib.rs#L1-L200)
 
 ## 详细组件分析
 
@@ -199,12 +168,10 @@ Core --> WebDav
   - 加载本地化与主题
   - 注册Provider并注入到应用上下文
   - 配置全局路由与默认页面
-  - **新增**：初始化崩溃保护服务和性能监控
 - app.dart负责：
   - 定义MaterialApp根节点
   - 集中管理路由表与导航守卫
   - 统一主题、字体、断行策略与滚动行为
-  - **新增**：集成崩溃对话框和错误处理
 
 ```mermaid
 sequenceDiagram
@@ -213,9 +180,7 @@ participant Main as "main.dart"
 participant App as "app.dart"
 participant Providers as "Provider集合"
 participant Router as "路由表"
-participant CrashService as "崩溃保护服务"
 Boot->>Main : 初始化引擎与平台
-Main->>CrashService : 初始化崩溃保护
 Main->>Providers : 创建并注入Provider
 Main->>App : 构建MaterialApp
 App->>Router : 注册命名路由与默认页
@@ -224,12 +189,12 @@ App-->>Boot : 渲染首屏UI
 ```
 
 图表来源
-- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-200)
-- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-200)
+- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
+- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-L200)
 
 章节来源
-- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-200)
-- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-200)
+- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
+- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-L200)
 
 ### 状态管理（Provider）
 - BookshelfProvider
@@ -254,14 +219,6 @@ App-->>Boot : 渲染首屏UI
 - AutoTaskProvider
   - 职责：定时任务调度、执行状态、失败重试
   - 关键方法：添加任务、触发执行、监控状态
-- **新增**：CacheProvider
-  - 职责：缓存管理、存储空间监控、清理策略和性能优化
-  - 关键方法：获取缓存大小、清理过期数据、优化存储策略
-  - 复杂度：I/O操作密集，需要异步处理和错误恢复机制
-- **新增**：WebDavProvider
-  - 职责：WebDAV配置管理、服务器连接状态、数据同步状态
-  - 关键方法：连接测试、上传下载、同步状态监控
-  - 复杂度：网络请求密集，需要超时处理和重试机制
 
 ```mermaid
 classDiagram
@@ -298,153 +255,63 @@ class AutoTaskProvider {
 +触发执行()
 +监控状态()
 }
-class CacheProvider {
-+获取缓存大小()
-+清理过期数据()
-+优化存储策略()
-}
-class WebDavProvider {
-+连接测试()
-+上传下载()
-+同步状态监控()
-}
 ```
 
 图表来源
-- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-200)
+- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
 
 章节来源
-- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-200)
+- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
 
-### 新增功能组件
+### 底部导航栏UI一致性修复
+**新增功能**：底部导航栏UI一致性修复，确保各平台显示效果统一：
 
-#### 崩溃保护系统
-**新增功能**：完整的崩溃保护系统，确保应用稳定性和用户体验：
-
-- **全局异常捕获**
-  - 捕获未处理的异常和错误
-  - 记录详细的堆栈跟踪信息
-  - 支持多种异常类型和错误码
-- **崩溃日志服务**
-  - 异步记录崩溃信息到本地文件
-  - 支持日志轮转和压缩存储
-  - 提供崩溃报告上传功能
-- **崩溃对话框**
-  - 友好的错误提示界面
-  - 支持用户反馈和错误上报
-  - 提供重启应用选项
-- **启动性能优化**
-  - 异步初始化关键组件
-  - 懒加载非核心功能
-  - 减少冷启动时间
+- **标签文本隐藏**
+  - 隐藏底部导航栏标签文本，提升视觉简洁性
+  - 仅保留图标显示，减少界面拥挤感
+  - 保持各平台一致的视觉效果
+- **标签修正**
+  - 修正第四个标签显示为'我的'而非'设置'
+  - 确保标签语义准确，符合用户预期
+  - 统一各平台标签名称和图标
+- **跨平台兼容性**
+  - 适配Android、iOS、Windows、macOS、Linux平台
+  - 处理不同平台的导航栏样式差异
+  - 确保触摸反馈和动画效果一致
 
 ```mermaid
 sequenceDiagram
 participant User as "用户"
-participant App as "应用"
-participant CrashService as "崩溃保护服务"
-participant Dialog as "崩溃对话框"
-participant Storage as "日志存储"
-User->>App : 启动应用
-App->>CrashService : 注册异常处理器
-App->>App : 初始化核心功能
-Note over App : 发生未处理异常
-App->>CrashService : 捕获异常
-CrashService->>Storage : 记录崩溃日志
-CrashService->>Dialog : 显示错误对话框
-Dialog->>User : 提示错误信息
-User->>Dialog : 选择重启或退出
-Dialog->>App : 执行用户选择
+participant BottomNav as "底部导航栏"
+participant Platform as "平台适配层"
+participant UI as "UI渲染"
+User->>BottomNav : 点击导航项
+BottomNav->>Platform : 检查平台类型
+Platform->>Platform : 应用平台特定样式
+Platform->>UI : 渲染统一界面
+UI-->>User : 显示一致的导航栏
+Note over BottomNav,UI : 隐藏标签文本，仅显示图标
+Note over BottomNav,UI : 第四个标签显示为'我的'
 ```
 
-#### 缓存管理系统
-**新增功能**：缓存管理系统提供高效的本地数据存储和清理功能：
+#### 导航栏结构
+- **主要标签**
+  - 首页：书架浏览和搜索
+  - 发现：新内容和推荐
+  - 分类：按类别浏览书籍
+  - 我的：个人中心和设置
+- **视觉设计**
+  - 扁平化图标设计
+  - 统一的色彩方案
+  - 流畅的过渡动画
+- **交互优化**
+  - 触摸反馈增强
+  - 选中状态可视化
+  - 手势操作支持
 
-- **缓存监控**
-  - 实时监测缓存大小和使用情况
-  - 支持多种缓存类型（图片、数据、临时文件）
-  - 智能缓存策略，自动清理过期和冗余数据
-- **存储优化**
-  - 压缩存储减少空间占用
-  - 分块缓存提高访问效率
-  - 内存映射优化大文件处理
-- **清理策略**
-  - 自动清理过期缓存
-  - 手动清理指定类型数据
-  - 智能清理推荐算法
-
-```mermaid
-sequenceDiagram
-participant User as "用户"
-participant CacheUI as "缓存设置界面"
-participant CacheProvider as "CacheProvider"
-participant Storage as "存储系统"
-User->>CacheUI : 打开缓存管理
-CacheUI->>CacheProvider : 获取缓存信息
-CacheProvider->>Storage : 扫描缓存文件
-Storage-->>CacheProvider : 返回缓存统计
-CacheProvider-->>CacheUI : 显示缓存详情
-User->>CacheUI : 选择清理操作
-CacheUI->>CacheProvider : 执行清理任务
-CacheProvider->>Storage : 删除指定缓存
-Storage-->>CacheProvider : 确认清理完成
-CacheProvider-->>CacheUI : 更新缓存状态
-```
-
-#### 漫画阅读器
-**新增功能**：漫画阅读器支持图片浏览和交互操作：
-
-- **图片加载**
-  - 支持多种图片格式（JPEG、PNG、WebP）
-  - 懒加载和预加载策略
-  - 图片压缩和缓存优化
-- **交互操作**
-  - 双指缩放和平移
-  - 左右滑动翻页
-  - 长按菜单和书签功能
-- **阅读模式**
-  - 单页模式和连续模式
-  - 横向和纵向阅读方向
-  - 全屏和窗口模式切换
-
-#### WebDAV设置界面
-**新增功能**：WebDAV设置界面支持云端存储配置：
-
-- **服务器配置**
-  - 支持URL、用户名、密码认证
-  - SSL证书验证和安全连接
-  - 连接测试和状态监控
-- **数据同步**
-  - 双向同步支持
-  - 增量同步和冲突解决
-  - 同步进度和错误处理
-- **存储管理**
-  - 远程文件浏览和操作
-  - 批量上传下载
-  - 存储空间监控
-
-```mermaid
-sequenceDiagram
-participant User as "用户"
-participant WebDavUI as "WebDAV设置界面"
-participant WebDavProvider as "WebDavProvider"
-participant Network as "网络层"
-participant Server as "WebDAV服务器"
-User->>WebDavUI : 配置服务器信息
-WebDavUI->>WebDavProvider : 保存配置
-WebDavProvider->>Network : 建立连接
-Network->>Server : 发送认证请求
-Server-->>Network : 返回认证结果
-Network-->>WebDavProvider : 连接状态
-WebDavProvider-->>WebDavUI : 更新界面状态
-User->>WebDavUI : 执行同步操作
-WebDavUI->>WebDavProvider : 触发同步任务
-WebDavProvider->>Network : 数据传输
-Network->>Server : 文件操作
-Server-->>Network : 操作结果
-Network-->>WebDavProvider : 同步完成
-WebDavProvider-->>WebDavUI : 更新同步状态
-```
+**Section sources**   
+- [flutter_legado/lib/main.dart:1-200](file://flutter_legado/lib/main.dart#L1-L200)
+- [flutter_legado/lib/app.dart:1-200](file://flutter_legado/lib/app.dart#L1-L200)
 
 ### 与Rust核心库的FFI集成
 - 桥接配置
@@ -453,8 +320,6 @@ WebDavProvider-->>WebDavUI : 更新同步状态
 - Rust侧接口
   - legado-ffi/src/lib.rs：暴露给Flutter的FFI函数（如解析、加密、网络、音频）
   - legado-core/src/lib.rs：核心业务逻辑（模型、规则、网络、音频、加密等）
-  - **新增**：缓存管理API，提供高效的数据存储和检索功能
-  - **新增**：WebDAV客户端接口，支持云端文件操作和同步
 - 调用流程
   - Dart侧调用生成的桥接函数
   - 通过平台通道进入Rust层
@@ -467,15 +332,9 @@ participant Dart as "Dart桥接层"
 participant FRB as "flutter_rust_bridge"
 participant FFI as "legado-ffi"
 participant Core as "legado-core"
-participant Cache as "缓存API"
-participant WebDav as "WebDAV API"
 Dart->>FRB : 调用生成的函数
 FRB->>FFI : 通过平台通道转发
 FFI->>Core : 执行业务逻辑
-Core->>Cache : 调用缓存操作
-Core->>WebDav : 调用WebDAV操作
-WebDav-->>Core : 返回操作结果
-Cache-->>Core : 返回缓存数据
 Core-->>FFI : 返回结果/错误
 FFI-->>FRB : 序列化响应
 FRB-->>Dart : 反序列化为Dart对象
@@ -483,16 +342,16 @@ Dart->>Dart : 更新Provider状态
 ```
 
 图表来源
-- [flutter_legado/flutter_rust_bridge.yaml:1-200](file://flutter_legado/flutter_rust_bridge.yaml#L1-200)
-- [flutter_legado/scripts/generate-bridge.sh:1-200](file://flutter_legado/scripts/generate-bridge.sh#L1-200)
-- [rust/legado-ffi/src/lib.rs:1-200](file://rust/legado-ffi/src/lib.rs#L1-200)
-- [rust/legado-core/src/lib.rs:1-200](file://rust/legado-core/src/lib.rs#L1-200)
+- [flutter_legado/flutter_rust_bridge.yaml:1-200](file://flutter_legado/flutter_rust_bridge.yaml#L1-L200)
+- [flutter_legado/scripts/generate-bridge.sh:1-200](file://flutter_legado/scripts/generate-bridge.sh#L1-L200)
+- [rust/legado-ffi/src/lib.rs:1-200](file://rust/legado-ffi/src/lib.rs#L1-L200)
+- [rust/legado-core/src/lib.rs:1-200](file://rust/legado-core/src/lib.rs#L1-L200)
 
 章节来源
-- [flutter_legado/flutter_rust_bridge.yaml:1-200](file://flutter_legado/flutter_rust_bridge.yaml#L1-200)
-- [flutter_legado/scripts/generate-bridge.sh:1-200](file://flutter_legado/scripts/generate-bridge.sh#L1-200)
-- [rust/legado-ffi/src/lib.rs:1-200](file://rust/legado-ffi/src/lib.rs#L1-200)
-- [rust/legado-core/src/lib.rs:1-200](file://rust/legado-core/src/lib.rs#L1-200)
+- [flutter_legado/flutter_rust_bridge.yaml:1-200](file://flutter_legado/flutter_rust_bridge.yaml#L1-L200)
+- [flutter_legado/scripts/generate-bridge.sh:1-200](file://flutter_legado/scripts/generate-bridge.sh#L1-L200)
+- [rust/legado-ffi/src/lib.rs:1-200](file://rust/legado-ffi/src/lib.rs#L1-L200)
+- [rust/legado-core/src/lib.rs:1-200](file://rust/legado-core/src/lib.rs#L1-L200)
 
 ### 多平台构建与发布
 - Android
@@ -533,20 +392,20 @@ Publish --> End(["结束"])
 ```
 
 图表来源
-- [android/build.gradle.kts:1-200](file://flutter_legado/android/build.gradle.kts#L1-200)
-- [android/app/build.gradle.kts:1-200](file://flutter_legado/android/app/build.gradle.kts#L1-200)
-- [ios/Runner/AppDelegate.swift:1-200](file://flutter_legado/ios/Runner/AppDelegate.swift#L1-200)
-- [macos/Runner/AppDelegate.swift:1-200](file://flutter_legado/macos/Runner/AppDelegate.swift#L1-200)
-- [windows/runner/main.cpp:1-200](file://flutter_legado/windows/runner/main.cpp#L1-200)
-- [linux/runner/main.cc:1-200](file://flutter_legado/linux/runner/main.cc#L1-200)
+- [android/build.gradle.kts:1-200](file://flutter_legado/android/build.gradle.kts#L1-L200)
+- [android/app/build.gradle.kts:1-200](file://flutter_legado/android/app/build.gradle.kts#L1-L200)
+- [ios/Runner/AppDelegate.swift:1-200](file://flutter_legado/ios/Runner/AppDelegate.swift#L1-L200)
+- [macos/Runner/AppDelegate.swift:1-200](file://flutter_legado/macos/Runner/AppDelegate.swift#L1-L200)
+- [windows/runner/main.cpp:1-200](file://flutter_legado/windows/runner/main.cpp#L1-L200)
+- [linux/runner/main.cc:1-200](file://flutter_legado/linux/runner/main.cc#L1-L200)
 
 章节来源
-- [android/build.gradle.kts:1-200](file://flutter_legado/android/build.gradle.kts#L1-200)
-- [android/app/build.gradle.kts:1-200](file://flutter_legado/android/app/build.gradle.kts#L1-200)
-- [ios/Runner/AppDelegate.swift:1-200](file://flutter_legado/ios/Runner/AppDelegate.swift#L1-200)
-- [macos/Runner/AppDelegate.swift:1-200](file://flutter_legado/macos/Runner/AppDelegate.swift#L1-200)
-- [windows/runner/main.cpp:1-200](file://flutter_legado/windows/runner/main.cpp#L1-200)
-- [linux/runner/main.cc:1-200](file://flutter_legado/linux/runner/main.cc#L1-200)
+- [android/build.gradle.kts:1-200](file://flutter_legado/android/build.gradle.kts#L1-L200)
+- [android/app/build.gradle.kts:1-200](file://flutter_legado/android/app/build.gradle.kts#L1-L200)
+- [ios/Runner/AppDelegate.swift:1-200](file://flutter_legado/ios/Runner/AppDelegate.swift#L1-L200)
+- [macos/Runner/AppDelegate.swift:1-200](file://flutter_legado/macos/Runner/AppDelegate.swift#L1-L200)
+- [windows/runner/main.cpp:1-200](file://flutter_legado/windows/runner/main.cpp#L1-L200)
+- [linux/runner/main.cc:1-200](file://flutter_legado/linux/runner/main.cc#L1-L200)
 
 ## 依赖关系分析
 - Dart依赖
@@ -555,16 +414,11 @@ Publish --> End(["结束"])
   - http/dio：网络请求
   - shared_preferences：本地存储
   - intl：国际化
-  - **新增**：cached_network_image：图片缓存和网络加载
-  - **新增**：webdav_client：WebDAV客户端支持
-  - **新增**：logging：日志记录和崩溃追踪
 - Rust依赖
   - tokio：异步运行时
   - serde：序列化/反序列化
   - reqwest：HTTP客户端
   - rusqlite：数据库访问
-  - **新增**：rusqlite：SQLite数据库支持
-  - **新增**：image：图像处理库
 - 平台依赖
   - Android：Gradle、Kotlin、Cronet
   - iOS/macOS：Swift、Objective-C桥接
@@ -577,26 +431,22 @@ Dart --> FRB["flutter_rust_bridge"]
 Dart --> Http["http/dio"]
 Dart --> Pref["shared_preferences"]
 Dart --> Intl["intl"]
-Dart --> Image["cached_network_image"]
-Dart --> WebDav["webdav_client"]
-Dart --> Logging["logging"]
 Rust["Rust依赖"] --> Tokio["tokio"]
 Rust --> Serde["serde"]
 Rust --> Reqwest["reqwest"]
 Rust --> Sqlite["rusqlite"]
-Rust --> ImageLib["image"]
 Platform["平台依赖"] --> Android["Android/Gradle/Kotlin/Cronet"]
 Platform --> IOS["iOS/macOS/Swift/Objective-C"]
 Platform --> WinLin["Windows/Linux/CMake/系统库"]
 ```
 
 图表来源
-- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-200)
-- [rust/Cargo.toml:1-200](file://rust/Cargo.toml#L1-200)
+- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
+- [rust/Cargo.toml:1-200](file://rust/Cargo.toml#L1-L200)
 
 章节来源
-- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-200)
-- [rust/Cargo.toml:1-200](file://rust/Cargo.toml#L1-200)
+- [flutter_legado/pubspec.yaml:1-200](file://flutter_legado/pubspec.yaml#L1-L200)
+- [rust/Cargo.toml:1-200](file://rust/Cargo.toml#L1-L200)
 
 ## 性能考量
 - UI渲染优化
@@ -615,26 +465,10 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - 避免频繁跨语言调用，批量处理数据
   - 使用零拷贝或引用传递减少序列化开销
   - 对CPU密集任务使用多线程（tokio线程池）
-- **新增**：崩溃保护性能优化
-  - 异步异常捕获，避免阻塞主线程
-  - 智能日志轮转，防止磁盘空间耗尽
-  - 内存泄漏检测和自动清理
-- **新增**：启动性能优化
-  - 延迟加载非关键组件
-  - 并行初始化独立模块
-  - 减少冷启动时的I/O操作
-- **新增**：缓存性能优化
-  - 智能缓存策略，自动清理过期和冗余数据
-  - 内存映射优化大文件处理
-  - 压缩存储减少空间占用
-- **新增**：漫画阅读器性能优化
-  - 图片懒加载和预加载策略
-  - 图片压缩和缓存优化
-  - 内存管理和垃圾回收优化
-- **新增**：WebDAV同步性能优化
-  - 增量同步减少数据传输
-  - 并发上传下载提高效率
-  - 断点续传保证传输稳定性
+- 底部导航栏性能优化
+  - 懒加载导航页面，减少初始内存占用
+  - 优化图标渲染，使用矢量图减少内存占用
+  - 预加载常用页面，提升切换速度
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -647,32 +481,26 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - FFI调用失败：检查generate-bridge.sh是否成功，确认Rust库已正确编译
   - 路由跳转异常：检查路由表配置与参数传递
   - 状态未更新：确认Provider是否正确注入与监听
-  - **新增**：崩溃问题：检查崩溃日志文件和异常堆栈信息
-  - **新增**：启动缓慢：分析启动时序和优化点
-  - **新增**：缓存问题：检查缓存权限和存储空间
-  - **新增**：WebDAV连接失败：检查网络连接和服务器配置
-  - **新增**：图片加载失败：检查图片格式和网络权限
+  - **新增**：底部导航栏显示异常：检查标签配置和平台适配代码
+  - **新增**：标签文本显示错误：验证本地化资源和字符串配置
 - 日志与诊断
   - 启用Flutter verbose日志（flutter run -v）
   - 查看平台日志（adb logcat、xcode console、Windows Event Viewer）
   - 使用崩溃报告服务收集线上错误
-  - **新增**：查看崩溃日志文件，分析异常堆栈
-  - **新增**：使用性能分析工具检测启动瓶颈
-- **新增**：测试调试
+- 测试调试
   - 运行单元测试：flutter test
   - 运行Widget测试：flutter test widget
   - 运行集成测试：flutter test integration
   - 使用覆盖率工具：flutter test --coverage
-  - **新增**：运行崩溃保护测试：flutter test crash_protection
 
 章节来源
-- [flutter_legado/README.md:1-200](file://flutter_legado/README.md#L1-200)
-- [app/src/main/java/io/legado/app/App.kt:1-200](file://app/src/main/java/io/legado/app/App.kt#L1-200)
+- [flutter_legado/README.md:1-200](file://flutter_legado/README.md#L1-L200)
+- [app/src/main/java/io/legado/app/App.kt:1-200](file://app/src/main/java/io/legado/app/App.kt#L1-L200)
 
 ## 结论
 本项目采用Flutter + Provider + Rust FFI的现代跨平台架构，实现了高性能、可维护且易于扩展的阅读应用。通过清晰的模块划分、统一的Provider状态管理与严格的FFI接口规范，确保了多平台的一致体验与稳定运行。
 
-**最新改进**：本次更新显著增强了应用稳定性，新增了完整的崩溃保护系统和启动性能优化。崩溃保护系统能够捕获和处理各种异常情况，提供更好的用户体验；启动性能优化减少了冷启动时间，提升了应用响应速度。同时，缓存管理系统、漫画阅读器功能和WebDAV设置界面的完善，为应用提供了更高效的数据存储、丰富的多媒体阅读体验和可靠的云端同步能力。建议在开发过程中持续关注性能优化与错误诊断，以提升用户体验与开发效率。
+**最新改进**：本次更新显著提升了底部导航栏的用户体验，通过隐藏标签文本和修正标签显示错误，实现了各平台导航栏的视觉一致性。这一改进不仅提升了界面的美观度，还改善了用户的操作体验。建议在开发过程中持续关注UI一致性和用户体验优化，以提升整体应用质量。
 
 [本节为总结性内容，不直接分析具体文件]
 
@@ -691,12 +519,10 @@ Platform --> WinLin["Windows/Linux/CMake/系统库"]
   - 保持Provider粒度适中，避免过度拆分或合并
   - 使用类型安全的FFI接口，严格校验输入输出
   - 编写单元测试与Widget测试覆盖核心逻辑
-  - **新增**：实现健壮的崩溃保护机制，确保应用稳定性
-  - **新增**：优化启动性能，减少冷启动时间
-  - **新增**：合理使用缓存策略，平衡性能和存储空间
-  - **新增**：实现健壮的WebDAV连接处理，支持离线模式
-  - **新增**：优化图片加载性能，避免内存溢出
-  - **新增**：完善测试覆盖率，确保新功能稳定性
-  - **新增**：定期清理崩溃日志，避免存储空间耗尽
+  - **新增**：确保底部导航栏在各平台的一致性显示
+  - **新增**：优化UI组件的性能和响应速度
+  - **新增**：完善跨平台适配，处理平台特定差异
+  - **新增**：定期测试不同设备和屏幕尺寸的显示效果
+  - **新增**：关注用户反馈，持续改进用户体验
 
 [本节为补充信息，不直接分析具体文件]

@@ -1,10 +1,8 @@
 schema_version: 1
 module_path: flutter_app
-title: Legado Flutter 跨平台客户端
+title: Legado Flutter 跨平台电子书阅读应用
 scope:
     - flutter_legado/
 source_files: []
 depends_on: []
-related_to:
-    - path: android_app
-    - path: rust_workspace
+related_to: []
