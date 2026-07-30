@@ -10,6 +10,7 @@ import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/search_filter_panel.dart';
 
 /// 搜索页面
 class SearchScreen extends StatefulWidget {
@@ -75,6 +76,11 @@ class _SearchScreenState extends State<SearchScreen> {
         onChanged: (_) => setState(() {}),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.filter_list),
+          tooltip: '筛选搜索源',
+          onPressed: () => SearchFilterPanel.show(context),
+        ),
         TextButton(
           onPressed: () {
             final text = _searchController.text.trim();
