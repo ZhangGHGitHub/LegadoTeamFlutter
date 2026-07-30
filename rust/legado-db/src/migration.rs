@@ -49,6 +49,7 @@ impl MigrationRegistry {
         self.register(Box::new(migrations::Migration92To93));
         self.register(Box::new(migrations::Migration93To94));
         self.register(Box::new(migrations::Migration94To95));
+        self.register(Box::new(migrations::Migration95To96));
     }
 
     /// 注册单个迁移

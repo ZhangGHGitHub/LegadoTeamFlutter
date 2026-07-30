@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use legado_core::{LegadoError, LegadoResult};
 
 /// 当前 Schema 版本号
-pub const SCHEMA_VERSION: u32 = 95;
+pub const SCHEMA_VERSION: u32 = 96;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -287,6 +287,21 @@ CREATE TABLE IF NOT EXISTS rssSources (
     enableCookieJar INTEGER DEFAULT 0,
     articleStyle INTEGER NOT NULL DEFAULT 0,
     singleUrl INTEGER NOT NULL DEFAULT 0,
+    jsLib TEXT,
+    enabledCookieJar INTEGER DEFAULT 0,
+    contentWhitelist TEXT,
+    contentBlacklist TEXT,
+    shouldOverrideUrlLoading TEXT,
+    injectJs TEXT,
+    preloadJs TEXT,
+    startHtml TEXT,
+    startStyle TEXT,
+    startJs TEXT,
+    showWebLog INTEGER NOT NULL DEFAULT 0,
+    type INTEGER NOT NULL DEFAULT 0,
+    preload INTEGER NOT NULL DEFAULT 0,
+    cacheFirst INTEGER NOT NULL DEFAULT 0,
+    searchUrl TEXT,
     PRIMARY KEY(sourceUrl)
 );
 ";
