@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: rust_workspace
-title: Legado Rust 后端工作区
+title: Legado Rust 后端工作区（Cargo Workspace）
 scope:
     - rust/
 source_files: []

@@ -242,13 +242,13 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 5);
+        assert_eq!(list.len(), 6);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
 
     #[test]
-    fn test_migration_90_to_95_full_chain() {
+    fn test_migration_90_to_96_full_chain() {
         let db = create_db_at_version(90);
         let conn = db.connection();
 
@@ -259,11 +259,11 @@ mod tests {
 
         // 执行迁移到 v95
         let registry = MigrationRegistry::new();
-        registry.migrate_to(conn, 95, 90).unwrap();
+        registry.migrate_to(conn, 96, 90).unwrap();
 
         // 验证版本
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 95);
+        assert_eq!(version, 96);
 
         // 验证 mainJs 列存在
         assert!(column_exists(conn, "book_sources", "mainJs"));
@@ -273,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn test_migration_91_to_95() {
+    fn test_migration_91_to_96() {
         let db = create_db_at_version(91);
         let conn = db.connection();
         // 手动添加 mainJs 列（模拟 v91 状态）
@@ -284,15 +284,15 @@ mod tests {
         assert!(!table_exists(conn, "auto_task_rules").unwrap());
 
         let registry = MigrationRegistry::new();
-        registry.migrate_to(conn, 95, 91).unwrap();
+        registry.migrate_to(conn, 96, 91).unwrap();
 
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 95);
+        assert_eq!(version, 96);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
     }
 
     #[test]
-    fn test_migration_94_to_95() {
+    fn test_migration_94_to_96() {
         let db = create_db_at_version(94);
         let conn = db.connection();
         conn.execute_batch("ALTER TABLE book_sources ADD COLUMN mainJs TEXT")
@@ -300,10 +300,10 @@ mod tests {
         conn.execute_batch(schema::CREATE_AUTO_TASK_RULES).unwrap();
 
         let registry = MigrationRegistry::new();
-        registry.migrate_to(conn, 95, 94).unwrap();
+        registry.migrate_to(conn, 96, 94).unwrap();
 
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 95);
+        assert_eq!(version, 96);
     }
 
     #[test]
@@ -312,10 +312,10 @@ mod tests {
         let conn = db.connection();
 
         let registry = MigrationRegistry::new();
-        registry.migrate_to(conn, 95, 95).unwrap();
+        registry.migrate_to(conn, 96, 95).unwrap();
 
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 95);
+        assert_eq!(version, 96);
     }
 
     #[test]
@@ -354,7 +354,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 95);
+        assert_eq!(version, 96);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
     }

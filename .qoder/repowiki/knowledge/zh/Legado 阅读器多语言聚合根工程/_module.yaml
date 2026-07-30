@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ""
-title: Legado 多语言聚合工程
+title: Legado 阅读器多语言聚合根工程
 scope:
     - README.md
     - Makefile

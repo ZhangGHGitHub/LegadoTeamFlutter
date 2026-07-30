@@ -202,8 +202,9 @@ impl Migration for Migration95To96 {
         add_column_if_not_exists(conn, "books", "downloadUrls", "TEXT DEFAULT ''")?;
         add_column_if_not_exists(conn, "books", "coverOrigin", "TEXT DEFAULT ''")?;
 
-        // rssSources 表新增列
-        add_column_if_not_exists(conn, "rssSources", "jsLib", "TEXT")?;
+        // rssSources 表新增列（仅当表存在时）
+        if table_exists(conn, "rssSources")? {
+            add_column_if_not_exists(conn, "rssSources", "jsLib", "TEXT")?;
         add_column_if_not_exists(conn, "rssSources", "enabledCookieJar", "INTEGER DEFAULT 0")?;
         add_column_if_not_exists(conn, "rssSources", "contentWhitelist", "TEXT")?;
         add_column_if_not_exists(conn, "rssSources", "contentBlacklist", "TEXT")?;
@@ -217,7 +218,8 @@ impl Migration for Migration95To96 {
         add_column_if_not_exists(conn, "rssSources", "type", "INTEGER NOT NULL DEFAULT 0")?;
         add_column_if_not_exists(conn, "rssSources", "preload", "INTEGER NOT NULL DEFAULT 0")?;
         add_column_if_not_exists(conn, "rssSources", "cacheFirst", "INTEGER NOT NULL DEFAULT 0")?;
-        add_column_if_not_exists(conn, "rssSources", "searchUrl", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "searchUrl", "TEXT")?;
+        }
 
         Ok(())
     }

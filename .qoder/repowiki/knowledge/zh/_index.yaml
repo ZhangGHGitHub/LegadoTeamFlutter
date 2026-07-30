@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: master
 nodes_managed: true
-exported_at: "2026-07-30T04:15:03Z"
+exported_at: "2026-07-30T04:44:57Z"
 modules:
     "":
-        dir_name: Legado 多语言聚合工程
-        title: Legado 多语言聚合工程
+        dir_name: Legado 阅读器多语言聚合根工程
+        title: Legado 阅读器多语言聚合根工程
         scope:
             - README.md
             - Makefile
@@ -63,8 +63,8 @@ modules:
         depends_on: []
         related_to: []
     rust_workspace:
-        dir_name: Legado Rust 后端工作区
-        title: Legado Rust 后端工作区
+        dir_name: Legado Rust 后端工作区（Cargo Workspace）
+        title: Legado Rust 后端工作区（Cargo Workspace）
         scope:
             - rust/
         source_files: []
