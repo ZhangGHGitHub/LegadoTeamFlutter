@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
           setState(() {
