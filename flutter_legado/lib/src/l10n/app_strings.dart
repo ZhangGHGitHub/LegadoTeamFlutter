@@ -16,6 +16,7 @@ class AppStrings {
   static String get search => _get('搜索', 'Search');
   static String get sources => _get('书源', 'Sources');
   static String get settings => _get('设置', 'Settings');
+  static String get my => _get('我的', 'My');
   static String get rss => _get('订阅', 'RSS');
   static String get confirm => _get('确定', 'OK');
   static String get cancel => _get('取消', 'Cancel');

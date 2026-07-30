@@ -59,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: const Icon(Icons.person_outline),
             selectedIcon: const Icon(Icons.person),
-            label: AppStrings.settings,
+            label: AppStrings.my,
           ),
         ],
       ),
