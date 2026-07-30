@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 
 /// RSS 状态管理
 class RssProvider extends ChangeNotifier {
@@ -38,7 +39,11 @@ class RssProvider extends ChangeNotifier {
     try {
       _sources = await _api.getRssSources();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _isLoadingSources = false;
       notifyListeners();
@@ -56,7 +61,11 @@ class RssProvider extends ChangeNotifier {
     try {
       _articles = await _api.getRssArticles(source.sourceUrl);
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _isLoadingArticles = false;
       notifyListeners();
@@ -90,7 +99,11 @@ class RssProvider extends ChangeNotifier {
       _sources = [..._sources, added];
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       notifyListeners();
     }
   }
@@ -108,7 +121,11 @@ class RssProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       notifyListeners();
     }
   }

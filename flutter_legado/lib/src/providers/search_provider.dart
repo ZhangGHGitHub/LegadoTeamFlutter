@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 
 /// 搜索状态管理
 class SearchProvider extends ChangeNotifier {
@@ -70,7 +71,11 @@ class SearchProvider extends ChangeNotifier {
           _selectedSourceUrls.isEmpty ? null : _selectedSourceUrls.toList();
       _results = await _api.searchBooks(_keyword, sourceUrls: sourceUrls);
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();

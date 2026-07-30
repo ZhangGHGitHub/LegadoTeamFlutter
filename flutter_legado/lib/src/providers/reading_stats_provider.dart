@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 
 /// 统计周期
 enum StatsPeriod { week, month }
@@ -63,7 +64,11 @@ class ReadingStatsProvider extends ChangeNotifier {
       _bookStats = results[2] as Map<String, int>;
       _heatmap = results[3] as Map<String, int>;
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();

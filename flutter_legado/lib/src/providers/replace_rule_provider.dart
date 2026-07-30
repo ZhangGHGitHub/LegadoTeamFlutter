@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 
 /// 替换规则状态管理
 class ReplaceRuleProvider extends ChangeNotifier {
@@ -25,7 +26,11 @@ class ReplaceRuleProvider extends ChangeNotifier {
     try {
       _rules = await _api.getReplaceRules();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();

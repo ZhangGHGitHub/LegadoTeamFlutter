@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 import '../services/settings_service.dart';
 
 /// 翻页模式
@@ -110,7 +111,11 @@ class ReaderProvider extends ChangeNotifier {
       }
       await _loadChapterContent();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -257,7 +262,11 @@ class ReaderProvider extends ChangeNotifier {
         _chapterContent = content; // 本地书籍直接使用
       }
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       _chapterContent = '';
     }
   }

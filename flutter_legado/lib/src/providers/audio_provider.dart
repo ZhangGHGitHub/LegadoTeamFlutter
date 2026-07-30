@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../services/rust_api.dart';
-
 /// 播放状态
 enum PlayerState {
   idle,

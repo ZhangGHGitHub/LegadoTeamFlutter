@@ -10,7 +10,6 @@ import 'package:flutter/foundation.dart';
 
 import '../models/book_source.dart';
 import '../services/rust_api.dart';
-
 class ExploreProvider extends ChangeNotifier {
   final RustApi _api;
 

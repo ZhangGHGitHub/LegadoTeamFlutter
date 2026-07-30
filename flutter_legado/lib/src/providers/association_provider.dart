@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 import '../services/source_import_service.dart';
 
 /// 导入类型枚举
@@ -328,7 +329,11 @@ class AssociationProvider extends ChangeNotifier {
       _step = ImportStep.done;
       return result;
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       return ImportResult(
         total: 0,
         success: 0,

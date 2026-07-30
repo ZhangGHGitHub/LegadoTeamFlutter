@@ -1,7 +1,8 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 import '../services/source_import_service.dart';
 import '../services/backup_service.dart';
 
@@ -109,7 +110,11 @@ class SourceProvider extends ChangeNotifier {
     try {
       _sources = await _api.getBookSources();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -126,7 +131,11 @@ class SourceProvider extends ChangeNotifier {
       _sources[index] = updated;
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       notifyListeners();
     }
   }
@@ -138,7 +147,11 @@ class SourceProvider extends ChangeNotifier {
       _selectedUrls.remove(sourceUrl);
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       notifyListeners();
     }
   }
@@ -159,7 +172,11 @@ class SourceProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       notifyListeners();
       rethrow;
     }
@@ -183,7 +200,11 @@ class SourceProvider extends ChangeNotifier {
       // 重新加载书源列表
       _sources = await _api.getBookSources();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -202,7 +223,11 @@ class SourceProvider extends ChangeNotifier {
       _sources = await _api.getBookSources();
       return result;
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       return ImportResult(
         total: 0,
         success: 0,
@@ -227,7 +252,11 @@ class SourceProvider extends ChangeNotifier {
       _sources = await _api.getBookSources();
       return result;
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       return ImportResult(
         total: 0,
         success: 0,
@@ -252,7 +281,11 @@ class SourceProvider extends ChangeNotifier {
       _sources = await _api.getBookSources();
       return result;
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
       return ImportResult(
         total: 0,
         success: 0,
@@ -326,7 +359,11 @@ class SourceProvider extends ChangeNotifier {
       _batchMode = false;
       _selectedUrls.clear();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -351,7 +388,11 @@ class SourceProvider extends ChangeNotifier {
       _batchMode = false;
       _selectedUrls.clear();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -370,7 +411,11 @@ class SourceProvider extends ChangeNotifier {
       _batchMode = false;
       _selectedUrls.clear();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();

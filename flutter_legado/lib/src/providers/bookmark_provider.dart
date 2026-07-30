@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../services/rust_api.dart';
+import '../bridge/ffi.dart';
 
 /// 书签状态管理
 class BookmarkProvider extends ChangeNotifier {
@@ -25,7 +26,11 @@ class BookmarkProvider extends ChangeNotifier {
     try {
       _bookmarks = await _api.getAllBookmarks();
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -40,7 +45,11 @@ class BookmarkProvider extends ChangeNotifier {
     try {
       _bookmarks = await _api.getBookmarks(bookName);
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -91,7 +100,11 @@ class BookmarkProvider extends ChangeNotifier {
     try {
       _bookmarks = await _api.searchBookmarks(keyword);
     } catch (e) {
-      _error = e.toString();
+      if (e is BridgeError) {
+        _error = e.message;
+      } else {
+        _error = e.toString();
+      }
     } finally {
       _loading = false;
       notifyListeners();
