@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../providers/reader_provider.dart';
+import '../models/flip_mode.dart';
+import '../services/system_brightness.dart';
 
 /// 点击区域可映射的功能
 enum TapAction {
@@ -53,7 +54,7 @@ class ReaderAdvancedConfig {
   bool showChapterName;
 
   // 翻页模式
-  PageTurnMode PageTurnMode;
+  FlipMode flipMode;
 
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
@@ -67,7 +68,7 @@ class ReaderAdvancedConfig {
     this.showTime = true,
     this.showProgress = true,
     this.showChapterName = true,
-    this.PageTurnMode = PageTurnMode.slide,
+    this.flipMode = FlipMode.slide,
   });
 
   /// 从持久化存储加载
@@ -93,7 +94,7 @@ class ReaderAdvancedConfig {
       showTime: prefs.getBool('${_prefix}show_time') ?? true,
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
       showChapterName: prefs.getBool('${_prefix}show_chapter_name') ?? true,
-      PageTurnMode: PageTurnMode.fromIndex(prefs.getInt('${_prefix}flip_mode') ?? PageTurnMode.slide.index),
+      flipMode: FlipMode.fromIndex(prefs.getInt('${_prefix}flip_mode') ?? FlipMode.slide.index),
     );
   }
 
@@ -111,7 +112,7 @@ class ReaderAdvancedConfig {
     await prefs.setBool('${_prefix}show_time', showTime);
     await prefs.setBool('${_prefix}show_progress', showProgress);
     await prefs.setBool('${_prefix}show_chapter_name', showChapterName);
-    await prefs.setInt('${_prefix}flip_mode', PageTurnMode.index);
+    await prefs.setInt('flip_mode', flipMode.index);
   }
 
   ReaderAdvancedConfig copy() => ReaderAdvancedConfig(
@@ -126,7 +127,7 @@ class ReaderAdvancedConfig {
         showTime: showTime,
         showProgress: showProgress,
         showChapterName: showChapterName,
-        PageTurnMode: PageTurnMode,
+        flipMode: flipMode,
       );
 }
 
@@ -207,13 +208,15 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
             const SizedBox(height: 12),
             Text('高级阅读设置', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            _buildPageTurnMode(),
+            _buildFlipMode(),
             const Divider(),
             _buildAutoPageTurn(),
             const Divider(),
             _buildTapZones(),
             const Divider(),
             _buildParagraphSpacing(),
+            const Divider(),
+            _buildBrightnessControl(),
             const Divider(),
             _buildStatusBar(),
           ],
@@ -238,23 +241,23 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
 
   // ===== 翻页模式 =====
 
-  Widget _buildPageTurnMode() {
+  Widget _buildFlipMode() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionTitle('翻页模式', Icons.auto_stories_outlined),
-        SegmentedButton<PageTurnMode>(
+        SegmentedButton<FlipMode>(
           segments: [
-            for (final mode in PageTurnMode.values)
+            for (final mode in FlipMode.values)
               ButtonSegment(
                 value: mode,
                 label: Text(mode.displayName),
                 icon: Text(mode.icon),
               ),
           ],
-          selected: {_config.PageTurnMode},
+          selected: {_config.flipMode},
           onSelectionChanged: (sel) {
-            _config.PageTurnMode = sel.first;
+            _config.flipMode = sel.first;
             _commit();
           },
         ),
@@ -402,6 +405,105 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+
+  // ===== 亮度控制 =====
+
+  Widget _buildBrightnessControl() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('亮度控制', Icons.brightness_6_outlined),
+        FutureBuilder<bool>(
+          future: SystemBrightness.isSupported(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            
+            final supported = snapshot.data ?? false;
+            if (!supported) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text('此设备不支持亮度调节',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              );
+            }
+
+            return FutureBuilder<bool>(
+              future: SystemBrightness.isAutoBrightness(),
+              builder: (context, autoSnapshot) {
+                if (autoSnapshot.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final isAuto = autoSnapshot.data ?? false;
+
+                return Column(
+                  children: [
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('自动亮度'),
+                      subtitle: const Text('根据环境光自动调节'),
+                      value: isAuto,
+                      onChanged: (v) async {
+                        await SystemBrightness.setAutoBrightness(v);
+                        setState(() {});
+                      },
+                    ),
+                    if (!isAuto) ...[
+                      const SizedBox(height: 8),
+                      FutureBuilder<double>(
+                        future: SystemBrightness.getBrightness(),
+                        builder: (context, brightnessSnapshot) {
+                          if (brightnessSnapshot.connectionState != ConnectionState.done) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+
+                          final brightness = brightnessSnapshot.data ?? 0.5;
+
+                          return Row(
+                            children: [
+                              Icon(Icons.brightness_low, size: 20,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+                              Expanded(
+                                child: Slider(
+                                  value: brightness,
+                                  min: 0.0,
+                                  max: 1.0,
+                                  divisions: 20,
+                                  label: '%',
+                                  onChanged: (v) async {
+                                    await SystemBrightness.setBrightness(v);
+                                    setState(() {});
+                                  },
+                                ),
+                              ),
+                              Icon(Icons.brightness_high, size: 20,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+                              SizedBox(
+                                width: 48,
+                                child: Text(
+                                  '%',
+                                  textAlign: TextAlign.end,
+                                  style: Theme.of(context).textTheme.labelMedium,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                );
+              },
+            );
+          },
         ),
       ],
     );

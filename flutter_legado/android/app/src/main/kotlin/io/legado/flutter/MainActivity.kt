@@ -9,6 +9,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     private val webViewBridge = WebViewBridge()
+    private val brightnessBridge = BrightnessBridge()
     private val ttsBridge = TtsBridge()
     private val filePickerBridge = FilePickerBridge()
 
@@ -17,6 +18,7 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL_TTS = "legado/tts"
         private const val CHANNEL_FILE_PICKER = "legado/file_picker"
         private const val CHANNEL_NOTIFICATION = "legado/notification"
+        private const val CHANNEL_BRIGHTNESS = "io.legado.app/brightness"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -44,6 +46,12 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_NOTIFICATION)
             .setMethodCallHandler { call, result ->
                 NotificationService.handleMethodCall(call, result, this)
+            }
+
+        // 注册亮度控制通道
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_BRIGHTNESS)
+            .setMethodCallHandler { call, result ->
+                brightnessBridge.handleMethodCall(call, result, this)
             }
     }
 
