@@ -154,3 +154,8 @@ git commit -m "refactor: 清理推荐算法残留，接入发现页 ExploreScree
 ### 功能要点
 - 四层崩溃防护：CrashLogService 全局捕获 + runZonedGuarded 异步兜底 + StorageService 安全访问 + 启动崩溃日志弹窗
 - 启动优化：SharedPreferences 与 Rust FFI 并行初始化、Tab 懒构建减少首帧开销、loadSettings 下沉
+
+### 启动优化（续）
+| 文件路径 | 改动说明 |
+|---------|----------|
+| `flutter_legado/lib/main.dart` | 移除 `_prewarmChapterContent` 章节预热功能（Android 原版无此功能），精简启动流程 |

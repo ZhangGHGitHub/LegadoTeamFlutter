@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +31,7 @@ void main() {
     // 1. 崩溃日志服务（最先初始化，确保后续异常可被捕获）
     var sw = Stopwatch()..start();
     await CrashLogService.instance.init();
-    debugPrint('[启动] CrashLogService 初始化耗时: ${sw.elapsedMilliseconds}ms');
+    debugPrint('[启动] CrashLogService 初始化耗时：${sw.elapsedMilliseconds}ms');
 
     // 2. 注册全局错误捕获
     FlutterError.onError = (details) {
@@ -58,18 +57,18 @@ void main() {
       prefs = results[0] as SharedPreferences;
     } catch (e, stack) {
       CrashLogService.instance.logError(e, stack);
-      debugPrint('[Legado] 初始化失败: $e');
+      debugPrint('[Legado] 初始化失败：$e');
       runApp(_FfiErrorApp(error: e.toString()));
       return;
     }
-    debugPrint('[启动] 并行初始化（prefs+FFI）耗时: ${sw.elapsedMilliseconds}ms');
+    debugPrint('[启动] 并行初始化（prefs+FFI）耗时：${sw.elapsedMilliseconds}ms');
 
     // 5. 计算初始路由
     final welcomeShown = prefs.getBool(WelcomeScreen.kWelcomeShownKey) ?? false;
     final initialRoute = welcomeShown ? AppRoutes.home : AppRoutes.welcome;
 
-    debugPrint('[启动] 总启动耗时: ${totalSw.elapsedMilliseconds}ms');
-
+    debugPrint('[启动] 总启动耗时：${totalSw.elapsedMilliseconds}ms');
+    
     // 6. 启动应用（传入崩溃日志）
     runApp(
       MultiProvider(

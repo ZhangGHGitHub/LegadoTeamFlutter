@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SettingsService/CacheService 全部方法添加异常保护
 - BookshelfProvider/ReaderProvider loadSettings 下沉到首帧回调
 - 添加启动阶段 Stopwatch 计时调试日志
+- 移除章节预热缓存功能（`_prewarmChapterContent`），保持与 Android 原版一致
 
 ## [Unreleased]
 
