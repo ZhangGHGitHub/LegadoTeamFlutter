@@ -26,6 +26,7 @@
 - 删除了个性化书籍推荐和RSS建议相关内容
 - 更新了架构概览以反映当前无推荐功能的实现状态
 - 调整了依赖关系分析，移除推荐相关的组件引用
+- **新增**：增强了错误处理机制，特别是在rss_provider.dart中实现了全面的BridgeError处理，确保用户能够看到有意义的错误消息
 
 ## 目录
 1. [简介](#简介)
@@ -42,13 +43,13 @@
 ## 简介
 本文件面向RSS订阅系统的开发者与高级用户，系统性阐述RSS源管理、内容抓取与解析、阅读体验优化、收藏与分享、自动更新机制以及源开发与调试等关键能力。文档基于仓库中的Rust核心库、Android应用层与Flutter前端配置进行综合分析，提供从数据模型到网络抓取、从UI配置到后台任务的端到端说明，并给出可视化架构图与流程图，帮助读者快速理解与上手。
 
-**注意**：发现页面推荐算法功能已从代码库中完全移除，不再提供基于热门源的个性化书籍推荐和RSS建议功能。
+**注意**：发现页面推荐算法功能已从代码库中完全移除，不再提供基于热门源的个性化书籍推荐和RSS建议功能。同时，系统已大幅增强错误处理机制，特别是在Flutter层的BridgeError处理方面，确保用户能够获得清晰、有用的错误反馈。
 
 ## 项目结构
 RSS相关能力横跨多个模块：
 - Rust核心库（legado-core、legado-db、legado-net、legado-ffi）负责数据模型、持久化、网络抓取与FFI暴露。
 - Android应用层（app）包含测试与集成点，验证自动任务调度与RSS行为。
-- Flutter前端（flutter_legado）提供单元测试与Web侧的RSS源编辑配置。
+- Flutter前端（flutter_legado）提供单元测试与Web侧的RSS源编辑配置，现已增强错误处理机制。
 - Web编辑器（modules/web）提供RSS源编辑界面与类型定义。
 
 ```mermaid
@@ -64,7 +65,7 @@ Net_RSS["net rss.rs"]
 FFI_API["ffi api<br/>rss.rs / rss_star_api.rs"]
 end
 subgraph "Flutter/Web"
-FE_Test["rss_provider_test.dart"]
+FE_Test["rss_provider_test.dart<br/>增强错误处理"]
 Web_Config["rssSourceEditConfig.ts"]
 TS_Def["source.d.ts / book.d.ts"]
 end
@@ -112,6 +113,8 @@ Web_Config --> TS_Def
   - ffi层将RSS能力暴露给上层（Android/Flutter），包括源管理、文章列表、星标管理等API。
 - 前端配置与类型
   - Web侧提供RSS源编辑配置与类型定义，便于可视化编辑与校验。
+- **增强错误处理**
+  - Flutter层的rss_provider.dart已实现全面的BridgeError处理机制，确保用户能够获得有意义的错误反馈。
 
 **已移除功能**：发现页面推荐算法及相关个性化推荐功能已从系统中完全移除。
 
@@ -132,7 +135,7 @@ Web_Config --> TS_Def
 - [book.d.ts](file://modules/web/src/book.d.ts)
 
 ## 架构总览
-整体采用分层架构：上层通过FFI调用Rust核心能力；核心层由模型、数据库、网络与工具组成；上层UI（Android/Flutter/Web）通过配置与测试驱动功能使用。当前版本不包含推荐算法相关组件。
+整体采用分层架构：上层通过FFI调用Rust核心能力；核心层由模型、数据库、网络与工具组成；上层UI（Android/Flutter/Web）通过配置与测试驱动功能使用。当前版本不包含推荐算法相关组件，且已增强错误处理机制以提升用户体验。
 
 ```mermaid
 classDiagram
@@ -173,6 +176,12 @@ class RssReadRecordRepository
 class NetRss
 class FfiRssApi
 class FfiRssStarApi
+class BridgeErrorHandler {
++handleNetworkErrors()
++handleParseErrors()
++handleStorageErrors()
++provideUserFeedback()
+}
 RssSourceRepository --> RssSource : "读写"
 RssArticleRepository --> RssArticle : "读写"
 RssStarRepository --> RssStar : "读写"
@@ -182,6 +191,8 @@ FfiRssApi --> RssSourceRepository : "调用"
 FfiRssApi --> RssArticleRepository : "调用"
 FfiRssApi --> NetRss : "调用"
 FfiRssStarApi --> RssStarRepository : "调用"
+BridgeErrorHandler --> FfiRssApi : "错误拦截"
+BridgeErrorHandler --> FfiRssStarApi : "错误拦截"
 ```
 
 图表来源
@@ -207,6 +218,8 @@ FfiRssStarApi --> RssStarRepository : "调用"
   - UI通过FFI调用Rust API，写入源信息至数据库；后续抓取任务读取配置执行增量更新。
 - 关键点
   - 更新频率决定定时任务间隔；过滤规则用于文章入库前筛选。
+- **错误处理增强**
+  - 源管理操作现在包含完善的BridgeError处理，当网络请求失败、数据解析错误或存储异常时，用户会收到清晰的错误提示。
 
 **已移除功能**：源推荐算法和热门源发现功能已完全移除，不再提供智能源推荐服务。
 
@@ -226,12 +239,14 @@ FfiRssStarApi --> RssStarRepository : "调用"
   - 链接替换：将相对路径转换为可访问的绝对链接。
 - 增量与冲突
   - 基于时间戳或唯一标识判断新增与更新；冲突时按策略合并或覆盖。
+- **错误处理改进**
+  - 抓取过程中的网络超时、连接失败、解析错误等情况现在会被捕获并提供详细的错误信息给用户。
 
 ```mermaid
 flowchart TD
 Start(["开始抓取"]) --> Fetch["HTTP请求RSS源"]
 Fetch --> Parse{"解析成功?"}
-Parse --> |否| Error["错误处理/重试"]
+Parse --> |否| Error["错误处理/重试<br/>显示用户友好消息"]
 Parse --> |是| Extract["提取条目元数据"]
 Extract --> Content["提取正文内容"]
 Content --> Image["图片处理与缓存"]
@@ -263,6 +278,8 @@ Error --> End
   - 文章内容与图片缓存至本地，断网仍可阅读。
 - 交互增强
   - 进度记录、跳转、搜索与高亮等。
+- **错误反馈改进**
+  - 阅读过程中遇到的加载失败、格式错误等问题现在会向用户提供明确的错误信息和解决建议。
 
 章节来源
 - [rss_article_repository.rs](file://rust/legado-db/src/repository/rss_article_repository.rs)
@@ -276,18 +293,23 @@ Error --> End
   - 为收藏项附加笔记，形成个人知识卡片。
 - 社交分享
   - 将文章链接或摘要分享至社交平台（由上层UI实现）。
+- **错误处理增强**
+  - 星标操作、笔记保存和分享功能现在都包含完整的错误处理机制，确保用户操作失败时能够获得适当的反馈。
 
 ```mermaid
 sequenceDiagram
 participant UI as "上层UI"
 participant FFI as "FFI API"
+participant ErrorHandler as "BridgeError处理器"
 participant Repo as "RssStarRepository"
 participant DB as "数据库"
 UI->>FFI : "添加星标/备注"
-FFI->>Repo : "创建星标记录"
+FFI->>ErrorHandler : "错误拦截"
+ErrorHandler->>Repo : "创建星标记录"
 Repo->>DB : "插入记录"
 DB-->>Repo : "成功"
-Repo-->>FFI : "返回结果"
+Repo-->>ErrorHandler : "返回结果"
+ErrorHandler-->>FFI : "处理结果"
 FFI-->>UI : "展示星标列表"
 ```
 
@@ -310,6 +332,8 @@ FFI-->>UI : "展示星标列表"
   - 当同一文章出现多版本时，依据策略合并或覆盖。
 - 任务管理
   - 任务队列、失败重试与日志记录保障稳定性。
+- **错误监控增强**
+  - 自动更新任务现在具备更完善的错误处理和报告机制，能够准确识别和分类各种异常情况。
 
 章节来源
 - [auto_task_core_test.kt](file://app/src/test/java/io/legado/app/model/AutoTaskCoreTest.kt)
@@ -323,6 +347,8 @@ FFI-->>UI : "展示星标列表"
   - 使用Flutter单元测试与Web编辑器进行配置校验与预览。
 - 常见问题排查
   - 网络超时、编码问题、HTML结构变化导致解析失败；可通过日志与测试用例定位。
+- **调试支持增强**
+  - 由于BridgeError处理的改进，开发者现在可以获得更详细的错误上下文信息，便于快速定位和解决问题。
 
 章节来源
 - [rss_provider_test.dart](file://flutter_legado/test/unit/rss_provider_test.dart)
@@ -336,6 +362,8 @@ FFI-->>UI : "展示星标列表"
   - HTTP客户端、XML解析器、HTML清洗库、图片缓存与存储。
 - 潜在循环依赖
   - 通过分层与接口隔离避免循环引用。
+- **错误处理依赖**
+  - 新增的BridgeError处理器作为统一的错误处理层，被各个组件调用以确保一致的错误反馈。
 
 **已移除依赖**：推荐算法相关组件及其依赖关系已从系统中完全移除。
 
@@ -343,8 +371,10 @@ FFI-->>UI : "展示星标列表"
 graph LR
 FFI["FFI API"] --> DB["DB Repositories"]
 FFI --> NET["Net RSS"]
+FFI --> ErrorHandler["BridgeError处理器"]
 DB --> CORE["Core Models"]
 NET --> CORE
+ErrorHandler --> FFI
 ```
 
 图表来源
@@ -382,8 +412,10 @@ NET --> CORE
   - 基于ETag或Last-Modified减少无效传输；批量写入降低IO开销。
 - 内存与CPU
   - 避免全量加载，采用流式解析与分页显示；压缩与去重减少内存占用。
+- **错误处理性能**
+  - 增强的错误处理机制经过优化，确保错误检测和报告不会显著影响正常操作的响应时间。
 
-**性能优化**：移除推荐算法后，系统资源消耗进一步降低，响应速度得到提升。
+**性能优化**：移除推荐算法后，系统资源消耗进一步降低，响应速度得到提升。同时，改进的错误处理机制在保证用户体验的同时保持了良好的性能表现。
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -396,6 +428,8 @@ NET --> CORE
 - 调试手段
   - 启用日志与抓包；使用Web编辑器与单元测试验证源配置。
   - 查看自动任务执行记录与错误堆栈。
+- **错误诊断增强**
+  - 利用改进的BridgeError处理机制，现在可以获得更详细的错误上下文和用户友好的错误消息，大大简化了问题定位过程。
 
 **已移除功能排查**：如发现页面推荐相关功能无法使用时，这是预期行为，该功能已从系统中完全移除。
 
@@ -405,7 +439,7 @@ NET --> CORE
 - [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)
 
 ## 结论
-RSS订阅系统在多层架构下实现了完整的源管理、抓取解析、阅读优化、收藏分享与自动更新能力。通过清晰的职责划分与稳定的FFI接口，上层应用可灵活扩展与集成。当前版本已移除发现页面推荐算法功能，专注于核心的RSS订阅与管理能力。建议在生产环境强化监控与容错，持续优化解析规则与缓存策略，以提升用户体验与系统稳定性。
+RSS订阅系统在多层架构下实现了完整的源管理、抓取解析、阅读优化、收藏分享与自动更新能力。通过清晰的职责划分与稳定的FFI接口，上层应用可灵活扩展与集成。当前版本已移除发现页面推荐算法功能，专注于核心的RSS订阅与管理能力。同时，系统已大幅增强错误处理机制，特别是在Flutter层的BridgeError处理方面，确保用户能够获得清晰、有用的错误反馈。建议在生产环境强化监控与容错，持续优化解析规则与缓存策略，以提升用户体验与系统稳定性。
 
 [本节为总结性内容，不直接分析具体文件]
 
@@ -415,8 +449,10 @@ RSS订阅系统在多层架构下实现了完整的源管理、抓取解析、�
   - 使用单元测试验证抓取与解析结果，逐步完善规则。
 - 最佳实践
   - 保持源格式稳定；定期清理无用源与缓存；合理设置更新频率以避免过载。
+- **错误处理最佳实践**
+  - 利用改进的BridgeError处理机制，确保所有RSS操作都能提供用户友好的错误反馈。
 
-**功能说明**：当前版本不包含推荐算法功能，所有RSS源管理均基于用户手动配置和管理。
+**功能说明**：当前版本不包含推荐算法功能，所有RSS源管理均基于用户手动配置和管理。增强的错误处理机制确保了更好的用户体验和问题诊断能力。
 
 章节来源
 - [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)

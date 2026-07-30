@@ -1,6 +1,6 @@
 ---
 name: ui-operator
-model: "[Qwen-3.8-Max-Preview](custom:model_1785338130671_hh02pde)"
+model: "[Qwen3.8-Max-Preview](qmodel_preview)"
 skills: []
 mcpServers: []
 additionalPrompt: ""

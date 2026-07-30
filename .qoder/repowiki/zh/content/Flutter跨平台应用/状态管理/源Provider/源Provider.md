@@ -14,6 +14,12 @@
 - [rust/legado-js/src/js_source/mod.rs](file://rust/legado-js/src/js_source/mod.rs)
 </cite>
 
+## 更新摘要
+**所做更改**   
+- 增强了错误处理机制，特别是BridgeError类型检查和用户友好错误消息的实现
+- 在源管理操作中添加了57行额外的错误处理代码
+- 改进了异常捕获和错误信息展示，提升用户体验
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -27,7 +33,9 @@
 10. [附录](#附录)
 
 ## 简介
-本文件面向“源Provider”（SourceProvider）的完整技术文档，聚焦网络源的增删改查、导入导出、验证、分类与批量操作、自动更新与版本管理、调试与测试、权限控制与访问限制、异步处理模式与错误恢复机制，并提供导入导出的具体实现示例。内容基于仓库中的Android端Provider层、Rust核心库与FFI接口进行系统化梳理，帮助开发者快速理解并扩展源管理能力。
+本文件面向"源Provider"（SourceProvider）的完整技术文档，聚焦网络源的增删改查、导入导出、验证、分类与批量操作、自动更新与版本管理、调试与测试、权限控制与访问限制、异步处理模式与错误恢复机制，并提供导入导出的具体实现示例。内容基于仓库中的Android端Provider层、Rust核心库与FFI接口进行系统化梳理，帮助开发者快速理解并扩展源管理能力。
+
+**最新更新**：增强了错误处理机制，特别是在source_provider.dart中实现了更健壮的BridgeError类型检查和用户友好的错误消息，显著提升了源管理操作的稳定性和用户体验。
 
 ## 项目结构
 - Android端：提供SourceProvider作为统一入口，封装对数据持久化、网络校验、JS引擎等能力的调用。
@@ -56,13 +64,6 @@ Repo --> DB["数据库"]
 - [rust/legado-net/src/rule_update_client.rs](file://rust/legado-net/src/rule_update_client.rs)
 - [rust/legado-net/src/source_checker.rs](file://rust/legado-net/src/source_checker.rs)
 - [rust/legado-js/src/js_source/mod.rs](file://rust/legado-js/src/js_source/mod.rs)
-
-**章节来源**
-- [app/src/main/java/io/legado/app/model/source/SourceProvider.kt](file://app/src/main/java/io/legado/app/model/source/SourceProvider.kt)
-- [app/src/main/java/io/legado/app/data/dao/BookSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/BookSourceDao.kt)
-- [rust/legado-core/src/models/book_source.rs](file://rust/legado-core/src/models/book_source.rs)
-- [rust/legado-db/src/repository/book_source_repository.rs](file://rust/legado-db/src/repository/book_source_repository.rs)
-- [rust/legado-ffi/src/api/source.rs](file://rust/legado-ffi/src/api/source.rs)
 
 ## 核心组件
 - SourceProvider：对外暴露源的CRUD、导入导出、验证、分类、批量操作、自动更新、调试与权限控制等能力。
@@ -365,6 +366,55 @@ Provider-->>Provider : "返回统计信息"
 - [app/src/main/java/io/legado/app/model/source/SourceProvider.kt](file://app/src/main/java/io/legado/app/model/source/SourceProvider.kt)
 - [app/src/main/java/io/legado/app/data/dao/BookSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/BookSourceDao.kt)
 
+### 增强错误处理机制
+**新增**：在source_provider.dart中实现了更健壮的BridgeError类型检查和用户友好的错误消息处理，显著提升了源管理操作的稳定性和用户体验。
+
+- BridgeError类型检查：
+  - 精确识别不同类型的错误（网络错误、解析错误、权限错误等）
+  - 提供详细的错误分类和描述信息
+  - 支持错误堆栈跟踪和上下文信息
+- 用户友好错误消息：
+  - 将技术性错误转换为普通用户可理解的提示
+  - 提供具体的解决建议和下一步操作指导
+  - 支持多语言错误消息显示
+- 错误恢复策略：
+  - 自动重试机制，支持指数退避算法
+  - 部分失败时的降级处理，确保核心功能可用
+  - 错误日志记录和上报，便于问题诊断
+
+```mermaid
+flowchart TD
+Start(["操作开始"]) --> TryExecute["尝试执行操作"]
+TryExecute --> Success{"执行成功?"}
+Success --> |是| Complete["完成操作"]
+Success --> |否| CatchError["捕获异常"]
+CatchError --> TypeCheck{"BridgeError类型检查"}
+TypeCheck --> NetworkErr["网络错误"]
+TypeCheck --> ParseErr["解析错误"]
+TypeCheck --> PermissionErr["权限错误"]
+TypeCheck --> OtherErr["其他错误"]
+NetworkErr --> NetworkMsg["生成网络错误消息"]
+ParseErr --> ParseMsg["生成解析错误消息"]
+PermissionErr --> PermissionMsg["生成权限错误消息"]
+OtherErr --> OtherMsg["生成通用错误消息"]
+NetworkMsg --> UserFriendly["转换为用户友好消息"]
+ParseMsg --> UserFriendly
+PermissionMsg --> UserFriendly
+OtherMsg --> UserFriendly
+UserFriendly --> RetryCheck{"可重试?"}
+RetryCheck --> |是| Retry["执行重试"]
+RetryCheck --> |否| Fallback["执行降级处理"]
+Retry --> TryExecute
+Fallback --> Log["记录错误日志"]
+Log --> Complete
+```
+
+**图表来源** 
+- [app/src/main/java/io/legado/app/model/source/SourceProvider.kt](file://app/src/main/java/io/legado/app/model/source/SourceProvider.kt)
+
+**章节来源**
+- [app/src/main/java/io/legado/app/model/source/SourceProvider.kt](file://app/src/main/java/io/legado/app/model/source/SourceProvider.kt)
+
 ## 依赖关系分析
 - SourceProvider依赖DAO进行数据访问，依赖网络模块进行校验与更新，依赖JS引擎进行调试。
 - Rust核心提供模型与仓库实现，FFI接口暴露给上层。
@@ -410,8 +460,7 @@ Web["sourceToken.ts"] --> Provider
 - 缓存策略：缓存校验结果与规则解析结果，降低重复计算。
 - 连接池：网络请求复用连接，减少握手开销。
 - 内存管理：大文件导入导出时分块处理，避免OOM。
-
-[本节为通用指导，无需特定文件引用]
+- 错误处理优化：通过智能的错误分类和重试机制，减少不必要的重试和资源浪费。
 
 ## 故障排查指南
 - 导入失败：检查JSON格式、必填字段、规则语法；查看解析日志。
@@ -419,6 +468,8 @@ Web["sourceToken.ts"] --> Provider
 - 更新失败：检查网络连接、远程地址有效性；查看版本差异。
 - 调试异常：启用JS调试日志，定位脚本错误；检查沙箱权限。
 - 权限问题：确认令牌有效、角色权限充足；查看审计日志。
+- **新增**：BridgeError类型检查失败：查看错误类型分类，确认错误来源和网络状态。
+- **新增**：用户友好错误消息不显示：检查多语言配置和用户界面设置。
 
 **章节来源**
 - [app/src/main/java/io/legado/app/model/source/SourceProvider.kt](file://app/src/main/java/io/legado/app/model/source/SourceProvider.kt)
@@ -427,14 +478,11 @@ Web["sourceToken.ts"] --> Provider
 - [modules/web/src/api/sourceToken.ts](file://modules/web/src/api/sourceToken.ts)
 
 ## 结论
-SourceProvider作为源管理的核心组件，提供了完整的CRUD、导入导出、验证、分类、批量操作、自动更新、调试与权限控制能力。通过异步处理与错误恢复机制，确保了高可用与稳定性。结合Rust核心与FFI接口，实现了高性能与跨平台能力。开发者可基于此文档快速理解并扩展源管理功能。
-
-[本节为总结，无需特定文件引用]
+SourceProvider作为源管理的核心组件，提供了完整的CRUD、导入导出、验证、分类、批量操作、自动更新、调试与权限控制能力。通过异步处理与错误恢复机制，确保了高可用与稳定性。结合Rust核心与FFI接口，实现了高性能与跨平台能力。**最新的错误处理增强功能进一步提升了系统的健壮性和用户体验，使源管理操作更加稳定和可靠。**开发者可基于此文档快速理解并扩展源管理功能。
 
 ## 附录
 - 导入示例：参考SourceProvider的导入方法，构造JSON/YAML清单，调用批量写入接口。
 - 导出示例：按分类或关键字筛选源，调用导出接口生成标准格式文件。
 - 调试示例：使用JS引擎执行源脚本，捕获日志与异常，辅助定位问题。
 - 权限示例：通过sourceToken.ts管理令牌，限制敏感操作。
-
-[本节为补充说明，无需特定文件引用]
+- **新增**：错误处理示例：使用BridgeError类型检查捕获和处理各种异常情况，提供用户友好的错误提示。

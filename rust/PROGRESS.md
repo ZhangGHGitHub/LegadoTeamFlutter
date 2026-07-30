@@ -397,13 +397,20 @@
 - [ ] WebDAV 增量同步 + 冲突合并（当前为简化版全量同步，75%）— 预估 1-2 周
 - [ ] 目录搜索 + 段评完整流程 — 预估 1 周
 - [ ] 听书后台媒体按钮 + 焦点管理（Platform Channel）— 预估 1 周
+- [ ] 发现页 ExploreScreen 功能完善（对标 Android ExploreFragment）：
+  - 书源展开 exploreUrl 分类 + 分类书籍浏览页（ExploreShowActivity）
+  - 编辑书源跳转（BookSourceEditActivity）
+  - 置顶书源 / 删除确认对话框 / 单书源搜索
+  - 常驻搜索栏 + 搜索防抖 300ms
+  — 预估 1-2 周
 
 ### P2 / 远期优化
 
 - [ ] 漫画分页模式 + 高级手势 — 预估 1 周
 - [ ] 压缩包导入 + 自动编码检测 — 预估 1 周
-- [ ] 发现页推荐 + WebDAV 设置完整流 — 预估 1-2 周
+- [ ] 发现页（ExploreScreen）功能完善 + WebDAV 设置完整流 — 预估 1-2 周
 - [ ] Cronet QUIC 优化
+- [ ] Rust bookmark 测试隔离修复（test_delete_bookmark 共享 DB 导致 count=2）
 
 ### 已完成（历史遗留项）
 

@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: flutter_app
-title: Legado Flutter 跨平台阅读应用前端
+title: Legado Flutter 跨平台客户端
 scope:
     - flutter_legado/
 source_files: []

@@ -14,6 +14,7 @@
 - [legado-db/lib.rs](file://rust/legado-db/src/lib.rs)
 - [legado-db/connection.rs](file://rust/legado-db/src/connection.rs)
 - [legado-db/schema.rs](file://rust/legado-db/src/schema.rs)
+- [legado-db/migration.rs](file://rust/legado-db/src/migration.rs)
 - [legado-db/repository/book_repository.rs](file://rust/legado-db/src/repository/book_repository.rs)
 - [legado-db/repository/book_chapter_repository.rs](file://rust/legado-db/src/repository/book_chapter_repository.rs)
 - [legado-db/repository/book_source_repository.rs](file://rust/legado-db/src/repository/book_source_repository.rs)
@@ -38,6 +39,12 @@
 - [legado-server/lib.rs](file://rust/legado-server/src/lib.rs)
 - [flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
 </cite>
+
+## 更新摘要
+**所做更改**
+- 更新了数据库架构迁移部分，反映schema.rs版本升级到v96
+- 新增了Migration95To96迁移的详细说明
+- 完善了数据库迁移机制的文档描述
 
 ## 目录
 1. [简介](#简介)
@@ -269,9 +276,12 @@ Store --> Return["返回结果"]
 - [legado-core/cache_book.rs](file://rust/legado-core/src/cache_book.rs)
 
 ### 数据库操作与仓库层
+
+**已更新** 数据库架构迁移系统已升级到v96版本，新增Migration95To96迁移以修复架构问题
+
 - 连接管理：单例或池化连接，事务支持
-- Schema定义：表结构、索引、约束
-- 迁移：版本化管理与自动升级
+- Schema定义：表结构、索引、约束，当前版本v96
+- 迁移：版本化管理与自动升级，支持从v95到v96的无缝迁移
 - 仓库层：对CRUD操作的封装，支持批量与条件查询
 
 ```mermaid
@@ -282,8 +292,9 @@ class Connection {
 +close()
 }
 class Schema {
-+version
++version : 96
 +migrations
++Migration95To96
 }
 class BookRepository {
 +insert(book)
@@ -306,11 +317,13 @@ class BookSourceRepository {
 Connection <.. BookRepository : "使用"
 Connection <.. ChapterRepository : "使用"
 Connection <.. BookSourceRepository : "使用"
+Schema --> Migration95To96 : "包含"
 ```
 
 **图表来源** 
 - [legado-db/connection.rs](file://rust/legado-db/src/connection.rs)
 - [legado-db/schema.rs](file://rust/legado-db/src/schema.rs)
+- [legado-db/migration.rs](file://rust/legado-db/src/migration.rs)
 - [legado-db/repository/book_repository.rs](file://rust/legado-db/src/repository/book_repository.rs)
 - [legado-db/repository/book_chapter_repository.rs](file://rust/legado-db/src/repository/book_chapter_repository.rs)
 - [legado-db/repository/book_source_repository.rs](file://rust/legado-db/src/repository/book_source_repository.rs)
@@ -319,6 +332,7 @@ Connection <.. BookSourceRepository : "使用"
 - [legado-db/lib.rs](file://rust/legado-db/src/lib.rs)
 - [legado-db/connection.rs](file://rust/legado-db/src/connection.rs)
 - [legado-db/schema.rs](file://rust/legado-db/src/schema.rs)
+- [legado-db/migration.rs](file://rust/legado-db/src/migration.rs)
 - [legado-db/repository/book_repository.rs](file://rust/legado-db/src/repository/book_repository.rs)
 - [legado-db/repository/book_chapter_repository.rs](file://rust/legado-db/src/repository/book_chapter_repository.rs)
 - [legado-db/repository/book_source_repository.rs](file://rust/legado-db/src/repository/book_source_repository.rs)
@@ -508,13 +522,12 @@ Server["legado-server"] --> Core
 - 索引优化：倒排索引、分词优化、增量更新
 - 网络优化：连接池、重试退避、压缩传输、代理支持
 - 解析优化：流式解析、懒加载、内存复用
-
-[本节为通用指导，不直接分析具体文件]
+- 数据库优化：迁移效率提升，v96版本优化了架构一致性检查
 
 ## 故障排查指南
 - 网络连接失败：检查代理、SSL配置、超时设置
 - 解析异常：验证XPath/JSONPath表达式、HTML结构变化
-- 数据库错误：确认Schema版本、迁移脚本、事务一致性
+- 数据库错误：确认Schema版本v96、Migration95To96迁移脚本、事务一致性
 - JS脚本错误：查看沙箱日志、API调用限制、内存泄漏
 - FFI桥接问题：检查类型映射、错误码、异步回调
 
@@ -522,13 +535,12 @@ Server["legado-server"] --> Core
 - [legado-net/middleware.rs](file://rust/legado-net/src/middleware.rs)
 - [legado-parser/xpath.rs](file://rust/legado-parser/src/xpath.rs)
 - [legado-db/connection.rs](file://rust/legado-db/src/connection.rs)
+- [legado-db/migration.rs](file://rust/legado-db/src/migration.rs)
 - [legado-js/source_engine.rs](file://rust/legado-js/src/source_engine.rs)
 - [legado-ffi/bridge.rs](file://rust/legado-ffi/src/bridge.rs)
 
 ## 结论
-Rust核心库通过清晰的模块划分与异步架构，提供了高性能、可扩展的阅读解决方案。开发者可基于现有接口快速扩展新书籍格式与网络源规则，同时利用FFI桥接与Flutter/Android平台无缝集成。
-
-[本节为总结性内容，不直接分析具体文件]
+Rust核心库通过清晰的模块划分与异步架构，提供了高性能、可扩展的阅读解决方案。最新的数据库架构迁移修复确保了v96版本的稳定性和向后兼容性。开发者可基于现有接口快速扩展新书籍格式与网络源规则，同时利用FFI桥接与Flutter/Android平台无缝集成。
 
 ## 附录
 - API使用示例：参考FRB生成的接口定义与Flutter调用方式
@@ -536,5 +548,4 @@ Rust核心库通过清晰的模块划分与异步架构，提供了高性能、�
   - 添加新书籍格式：实现解析器接口，注册到格式层
   - 新增网络源规则：编写JS脚本，定义规则字段与查询逻辑
   - 自定义中间件：实现网络中间件接口，注入请求处理逻辑
-
-[本节为补充说明，不直接分析具体文件]
+  - 数据库迁移：遵循版本控制，确保迁移脚本的正确性
