@@ -20,6 +20,8 @@ import 'src/providers/sync_provider.dart';
 import 'src/routes.dart';
 import 'src/screens/welcome_screen.dart';
 import 'src/services/crash_log_service.dart';
+import 'src/services/book_api.dart';
+import 'src/services/mock_book_api.dart';
 import 'src/services/rust_api.dart';
 
 void main() {
@@ -47,14 +49,24 @@ void main() {
 
     // 4. 并行初始化：SharedPreferences 与 Rust FFI 无依赖，可并行
     sw = Stopwatch()..start();
-    final rustApi = RustApi();
+    const useMock = bool.fromEnvironment('USE_MOCK', defaultValue: false);
+    final BookApi rustApi;
     final SharedPreferences prefs;
     try {
-      final results = await Future.wait([
-        SharedPreferences.getInstance(),
-        rustApi.initialize(),
-      ]);
-      prefs = results[0] as SharedPreferences;
+      if (useMock) {
+        // Mock 模式：跳过 Rust 引擎初始化，使用纯 Dart Mock 实现
+        rustApi = MockBookApi();
+        prefs = await SharedPreferences.getInstance();
+        await rustApi.initialize();
+      } else {
+        final realApi = RustApi();
+        final results = await Future.wait([
+          SharedPreferences.getInstance(),
+          realApi.initialize(),
+        ]);
+        prefs = results[0] as SharedPreferences;
+        rustApi = realApi;
+      }
     } catch (e, stack) {
       CrashLogService.instance.logError(e, stack);
       debugPrint('[Legado] 初始化失败：$e');
@@ -73,7 +85,7 @@ void main() {
     runApp(
       MultiProvider(
         providers: [
-          Provider<RustApi>.value(value: rustApi),
+          Provider<BookApi>.value(value: rustApi),
           // 移除 ..loadSettings() 级联，下沉到各屏幕首帧回调
           ChangeNotifierProvider(create: (_) => BookshelfProvider(rustApi)),
           ChangeNotifierProvider(create: (_) => ReaderProvider(rustApi)),
@@ -85,7 +97,7 @@ void main() {
           ChangeNotifierProvider(create: (_) => SyncProvider(rustApi)),
           ChangeNotifierProvider(create: (_) => BookmarkProvider(rustApi)),
           ChangeNotifierProvider(create: (_) => ReplaceRuleProvider(rustApi)),
-          ChangeNotifierProvider(create: (_) => AutoTaskProvider()),
+          ChangeNotifierProvider(create: (_) => AutoTaskProvider(rustApi: rustApi)),
         ],
         child: LegadoApp(initialRoute: initialRoute, lastCrashLog: lastCrash),
       ),
@@ -130,8 +142,9 @@ class _FfiErrorApp extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  '请确认 APK 包含对应架构的 liblegado_ffi.so\n'
-                  '可通过重新交叉编译 Rust FFI 并重新构建 APK 解决',
+                  '请确认已构建 Rust FFI 动态库：\n'
+                  'cd rust && cargo build -p legado-ffi\n'
+                  '然后重新运行应用',
                   style: TextStyle(fontSize: 14, color: Colors.white70),
                   textAlign: TextAlign.center,
                 ),

@@ -3,15 +3,68 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../bridge/ffi.dart';
 import '../services/settings_service.dart';
 
 /// 翻页模式
+///
+/// 对齐安卓原版 5 种翻页动画：覆盖/滑动/仿真/滚动/无动画
+/// 注意：cover 追加在末尾（index=4），避免破坏已有持久化索引映射
 enum PageTurnMode {
   scroll, // 上下滚动
   slide, // 左右滑动
   simulate, // 仿真翻页
+  none, // 无动画（直接切换）
+  cover; // 覆盖（新页从右向左覆盖旧页，旧页不动）
+
+  /// 获取显示名称
+  String get displayName {
+    switch (this) {
+      case PageTurnMode.scroll:
+        return '滚动';
+      case PageTurnMode.slide:
+        return '滑动';
+      case PageTurnMode.simulate:
+        return '仿真';
+      case PageTurnMode.none:
+        return '无动画';
+      case PageTurnMode.cover:
+        return '覆盖';
+    }
+  }
+
+  /// 获取图标
+  String get icon {
+    switch (this) {
+      case PageTurnMode.scroll:
+        return '📜';
+      case PageTurnMode.slide:
+        return '👈';
+      case PageTurnMode.simulate:
+        return '📖';
+      case PageTurnMode.none:
+        return '⚡';
+      case PageTurnMode.cover:
+        return '📄';
+    }
+  }
+
+  /// 从持久化名称恢复枚举值（兼容旧版 int 索引存储）
+  static PageTurnMode fromStorage(String? name, int? legacyIndex) {
+    // 优先使用 name 存储（新版）
+    if (name != null && name.isNotEmpty) {
+      for (final mode in PageTurnMode.values) {
+        if (mode.name == name) return mode;
+      }
+    }
+    // 回退：旧版 int 索引映射（0=scroll,1=slide,2=simulate,3=none）
+    if (legacyIndex != null && legacyIndex >= 0 && legacyIndex < PageTurnMode.values.length) {
+      return PageTurnMode.values[legacyIndex];
+    }
+    // 默认覆盖模式（对齐安卓原版）
+    return PageTurnMode.cover;
+  }
 }
 
 /// 阅读背景预设
@@ -28,7 +81,7 @@ class ReaderBackground {
 
 /// 阅读器状态管理
 class ReaderProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
   final SettingsService _settings = SettingsService();
 
   ReaderProvider(this._api);
@@ -47,7 +100,7 @@ class ReaderProvider extends ChangeNotifier {
   double _fontSize = 18.0;
   double _lineHeight = 1.6;
   Color _backgroundColor = ReaderBackground.white;
-  PageTurnMode _pageTurnMode = PageTurnMode.scroll;
+  PageTurnMode _pageTurnMode = PageTurnMode.cover;
 
   // ===== Getters =====
 
@@ -89,10 +142,10 @@ class ReaderProvider extends ChangeNotifier {
     if (bgIndex >= 0 && bgIndex < ReaderBackground.presets.length) {
       _backgroundColor = ReaderBackground.presets[bgIndex];
     }
-    final flipIndex = await _settings.getFlipMode();
-    if (flipIndex >= 0 && flipIndex < PageTurnMode.values.length) {
-      _pageTurnMode = PageTurnMode.values[flipIndex];
-    }
+    // 翻页模式：优先读取 name 存储，回退旧版 int 索引
+    final modeName = await _settings.getFlipModeName();
+    final legacyIndex = await _settings.getFlipMode();
+    _pageTurnMode = PageTurnMode.fromStorage(modeName, legacyIndex);
     notifyListeners();
   }
 
@@ -197,6 +250,8 @@ class ReaderProvider extends ChangeNotifier {
 
   void updatePageTurnMode(PageTurnMode mode) {
     _pageTurnMode = mode;
+    // 同时写入 name（新版）和 index（旧版兼容）
+    _settings.setFlipModeName(mode.name);
     _settings.setFlipMode(mode.index);
     notifyListeners();
   }
@@ -232,10 +287,11 @@ class ReaderProvider extends ChangeNotifier {
   }
 
   Future<void> _loadChapterContent() async {
-    if (_currentBook == null || _chapters.isEmpty) return;
+    final book = _currentBook;
+    if (book == null || _chapters.isEmpty) return;
     try {
       final content = await _api.getChapterContent(
-        _currentBook!.bookUrl,
+        book.bookUrl,
         _currentChapterIndex,
       );
 
@@ -244,11 +300,11 @@ class ReaderProvider extends ChangeNotifier {
         try {
           final meta = jsonDecode(content) as Map<String, dynamic>;
           final chapterUrl = meta['chapter_url'] as String? ?? '';
-          final sourceUrl = _currentBook!.origin; // 书源 URL
+          final sourceUrl = book.origin; // 书源 URL
           if (chapterUrl.isNotEmpty && sourceUrl.isNotEmpty) {
             // 在线书籍：通过 FFI 获取真实正文
             _chapterContent = await _api.fetchChapterContent(
-              _currentBook!.bookUrl,
+              book.bookUrl,
               chapterUrl,
               sourceUrl,
             );

@@ -8,6 +8,7 @@ import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import '../providers/source_provider.dart';
 import '../routes.dart';
+import '../services/book_api.dart';
 import '../services/rust_api.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -304,7 +305,7 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
       await provider.saveSource(source);
 
       if (!mounted) return;
-      final results = await context.read<RustApi>().searchBooks(
+      final results = await context.read<BookApi>().searchBooks(
         keyword,
         sourceUrls: [source.bookSourceUrl],
       );
@@ -406,12 +407,12 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
                         constraints: const BoxConstraints(maxHeight: 300),
                         decoration: BoxDecoration(
                           color: _validateSuccess
-                              ? Colors.green.shade50
+                              ? Colors.green.withValues(alpha: 0.12)
                               : Theme.of(ctx).colorScheme.errorContainer,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: _validateSuccess
-                                ? Colors.green.shade300
+                                ? Colors.green.withValues(alpha: 0.5)
                                 : Theme.of(ctx).colorScheme.error,
                           ),
                         ),
@@ -438,7 +439,9 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: _validateSuccess
-                                        ? Colors.green.shade800
+                                        ? (Theme.of(ctx).brightness == Brightness.dark
+                                            ? Colors.green.shade300
+                                            : Colors.green.shade800)
                                         : Theme.of(ctx).colorScheme.error,
                                   ),
                                 ),

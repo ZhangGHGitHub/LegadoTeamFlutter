@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'rust_api.dart';
+import 'book_api.dart';
 
 /// 段评数据模型（对应 Rust ChapterReview）
 class Comment {
@@ -83,7 +83,7 @@ class _CacheKey {
 /// 提供段评的获取、发布、点赞、删除功能，
 /// 内置内存缓存避免重复请求（参考 Kotlin 原版 CommentService）。
 class CommentService {
-  final RustApi _api;
+  final BookApi _api;
 
   /// 章节评论缓存（按 bookUrl + chapterIndex 索引）
   final Map<_CacheKey, List<Comment>> _cache = {};

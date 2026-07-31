@@ -24,7 +24,7 @@ class SimulationPageFlipWidget extends StatefulWidget {
   /// 翻页完成回调：+1 = 下一页, -1 = 上一页
   final ValueChanged<int>? onPageTurned;
 
-  /// 动画时长
+  /// 动画时长（对齐安卓端 defaultAnimationSpeed = 300ms）
   final Duration animDuration;
 
   const SimulationPageFlipWidget({
@@ -33,7 +33,7 @@ class SimulationPageFlipWidget extends StatefulWidget {
     required this.nextBuilder,
     required this.prevBuilder,
     this.onPageTurned,
-    this.animDuration = const Duration(milliseconds: 500),
+    this.animDuration = const Duration(milliseconds: 300),
   });
 
   @override
@@ -176,7 +176,8 @@ class _SimulationPageFlipWidgetState extends State<SimulationPageFlipWidget>
 
     _animController.reset();
     _animController.addListener(() {
-      final t = Curves.easeInOut.transform(_animController.value);
+      // 对齐安卓端 LinearInterpolator：使用线性插值器
+      final t = Curves.linear.transform(_animController.value);
       setState(() {
         _touchX = startTouchX + (targetX - startTouchX) * t;
         _touchY = startTouchY + (targetY - startTouchY) * t;

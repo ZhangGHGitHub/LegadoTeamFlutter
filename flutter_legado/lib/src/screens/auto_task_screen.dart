@@ -52,17 +52,22 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
           }
 
           if (provider.tasks.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.schedule, size: 64, color: Colors.grey),
-                  SizedBox(height: 8),
+                  Icon(Icons.schedule, size: 64,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(height: 8),
                   Text('暂无定时任务',
-                      style: TextStyle(color: Colors.grey, fontSize: 16)),
-                  SizedBox(height: 4),
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 16)),
+                  const SizedBox(height: 4),
                   Text('点击右下角按钮添加新任务',
-                      style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 12)),
                 ],
               ),
             );
@@ -114,16 +119,19 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
           const SizedBox(height: 2),
           Row(
             children: [
-              const Icon(Icons.schedule, size: 12, color: Colors.grey),
+              Icon(Icons.schedule, size: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(width: 4),
               Text('cron: ${task.cron}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  style: TextStyle(fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ],
           ),
           if (task.lastRunAt != null) ...[
             const SizedBox(height: 2),
             Text('上次运行: ${task.lastRunAt} · ${task.lastResult ?? "未知"}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                style: TextStyle(fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ],
         ],
       ),

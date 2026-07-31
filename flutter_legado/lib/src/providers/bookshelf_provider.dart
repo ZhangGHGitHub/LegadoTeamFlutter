@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../bridge/ffi.dart';
 import '../services/settings_service.dart';
 
@@ -10,7 +10,7 @@ enum GroupMode { none, bySource, byGroup }
 
 /// 书架状态管理
 class BookshelfProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
   final SettingsService _settings = SettingsService();
 
   BookshelfProvider(this._api);

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/cache_service.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 
 /// 缓存管理页面
 ///
@@ -46,7 +46,7 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
     _cacheService = CacheService(api);
     _loadStats();
     _loadExpireDays();

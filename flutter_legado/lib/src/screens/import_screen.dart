@@ -6,11 +6,20 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/bookshelf_provider.dart';
+import '../services/book_api.dart';
+import '../services/rust_api.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
+import 'archive_import_dialog.dart';
 
 /// 支持的导入格式
 const _supportedFormats = ['epub', 'txt', 'mobi', 'pdf', 'umd'];
+
+/// 支持的压缩包格式
+const _archiveFormats = ['zip', 'rar', '7z'];
+
+/// 所有可浏览格式（书籍 + 压缩包）
+const _allBrowsableFormats = [..._supportedFormats, ..._archiveFormats];
 
 /// 单个文件的导入结果
 class _ImportOutcome {
@@ -48,7 +57,10 @@ class _ImportScreenState extends State<ImportScreen> {
   String? _error;
 
   /// 启用的格式过滤集合
-  final Set<String> _activeFormats = {..._supportedFormats};
+  final Set<String> _activeFormats = {..._allBrowsableFormats};
+
+  /// Rust FFI 访问层（用于压缩包检测）
+  final BookApi _rustApi = RustApi();
 
   /// 已选中的文件路径
   final Set<String> _selected = {};
@@ -112,7 +124,7 @@ class _ImportScreenState extends State<ImportScreen> {
           }
         } else if (entity is File) {
           final ext = _extOf(entity.path);
-          if (_supportedFormats.contains(ext)) {
+          if (_allBrowsableFormats.contains(ext)) {
             files.add(entity);
           }
         }
@@ -146,7 +158,7 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   /// 当前过滤条件下可见的文件
-  List<File> get _visibleFiles => _activeFormats.length == _supportedFormats.length
+  List<File> get _visibleFiles => _activeFormats.length == _allBrowsableFormats.length
       ? _files
       : _files.where((f) => _activeFormats.contains(_extOf(f.path))).toList();
 
@@ -281,7 +293,7 @@ class _ImportScreenState extends State<ImportScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         children: [
-          for (final fmt in _supportedFormats)
+          for (final fmt in _allBrowsableFormats)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
@@ -393,8 +405,30 @@ class _ImportScreenState extends State<ImportScreen> {
 
   Widget _buildFileTile(File file) {
     final path = file.path;
-    final selected = _selected.contains(path);
     final ext = _extOf(path);
+    final isArchive = _archiveFormats.contains(ext);
+    // 压缩包文件：点击直接打开压缩包导入对话框，不用 Checkbox 选择
+    if (isArchive) {
+      return FutureBuilder<FileStat>(
+        future: file.stat(),
+        builder: (context, snap) {
+          final size = snap.data?.size ?? 0;
+          return ListTile(
+            leading: Icon(Icons.folder_zip, color: Theme.of(context).colorScheme.secondary),
+            title: Text(
+              _displayName(path),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text('${ext.toUpperCase()} · ${_formatSize(size)}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openArchiveImport(path),
+          );
+        },
+      );
+    }
+    // 普通书籍文件：原有 Checkbox 多选逻辑
+    final selected = _selected.contains(path);
     return FutureBuilder<FileStat>(
       future: file.stat(),
       builder: (context, snap) {
@@ -421,6 +455,31 @@ class _ImportScreenState extends State<ImportScreen> {
     );
   }
 
+  /// 打开压缩包导入对话框
+  ///
+  /// 先通过 FFI 确认文件是压缩包格式，然后弹出 ArchiveImportDialog。
+  Future<void> _openArchiveImport(String path) async {
+    // 通过 FFI 确认是否为压缩包
+    try {
+      final isArchive = await _rustApi.archiveIsArchive(filePath: path);
+      if (!isArchive) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('该文件不是有效的压缩包格式')),
+          );
+        }
+        return;
+      }
+    } catch (_) {
+      // FFI 调用失败时仍然尝试打开（可能是扩展名匹配但 FFI 未初始化）
+    }
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => ArchiveImportDialog(archivePath: path),
+    );
+  }
+
   void _toggleFile(String path) {
     setState(() {
       if (_selected.contains(path)) {
@@ -442,6 +501,10 @@ class _ImportScreenState extends State<ImportScreen> {
       case 'mobi':
       case 'azw3':
         return Icons.auto_stories;
+      case 'zip':
+      case 'rar':
+      case '7z':
+        return Icons.folder_zip;
       default:
         return Icons.insert_drive_file;
     }
@@ -468,7 +531,7 @@ class _ImportScreenState extends State<ImportScreen> {
         child: FilledButton.icon(
           onPressed: count == 0 ? null : _startImport,
           icon: const Icon(Icons.file_download),
-          label: Text(count == 0 ? '未选择书籍' : '导入 $count 本书籍'),
+          label: Text(count == 0 ? '未选择书籍' : '放入书架 ($count)'),
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(48),
           ),

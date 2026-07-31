@@ -6,7 +6,7 @@ import '../l10n/app_strings.dart';
 import '../providers/reader_provider.dart' show ReaderBackground;
 import '../routes.dart';
 import '../services/backup_service.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../services/settings_service.dart';
 import '../providers/bookshelf_provider.dart';
 import '../providers/sync_provider.dart';
@@ -438,7 +438,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _doBackup(BuildContext context) async {
     setState(() => _backupLoading = true);
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final backup = BackupService(api);
       final data = await backup.fullBackup();
       if (context.mounted) {
@@ -459,7 +459,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _doRestore(BuildContext context) async {
     setState(() => _restoreLoading = true);
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
     try {
       final controller = TextEditingController();
       final json = await showDialog<String>(
@@ -524,7 +524,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.pop(ctx);
               final messenger = ScaffoldMessenger.of(context);
               try {
-                final api = context.read<RustApi>();
+                final api = context.read<BookApi>();
                 await api.clearCache();
                 messenger.showSnackBar(
                   SnackBar(content: Text(AppStrings.cacheCleared)),
@@ -618,7 +618,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 border: Border.all(
                                   color: isSelected
                                       ? Theme.of(ctx).colorScheme.primary
-                                      : Colors.grey.shade300,
+                                      : Theme.of(ctx).colorScheme.outlineVariant,
                                   width: isSelected ? 3 : 1,
                                 ),
                               ),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -96,7 +97,9 @@ class _RssArticlesScreenState extends State<RssArticlesScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return InkWell(
+    // 稳定 ValueKey（文章 url）+ RepaintBoundary 隔离列表项重绘区域
+    final item = InkWell(
+      key: ValueKey(article.url),
       onTap: () {
         setState(() => _readArticles.add(article.url));
         Navigator.push(
@@ -118,12 +121,32 @@ class _RssArticlesScreenState extends State<RssArticlesScreen> {
             if (article.imageUrl != null && article.imageUrl!.isNotEmpty)
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  article.imageUrl!,
+                child: CachedNetworkImage(
+                  imageUrl: article.imageUrl!,
                   width: 80,
                   height: 80,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, e, s) => Container(
+                  // 限制解码宽度为缩略图实际显示像素宽度（80），避免大图解码
+                  memCacheWidth: (80 *
+                          (MediaQuery.maybeOf(context)?.devicePixelRatio ??
+                              1.0))
+                      .round(),
+                  placeholder: (_, _) => Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                  errorWidget: (_, _, _) => Container(
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
@@ -207,5 +230,6 @@ class _RssArticlesScreenState extends State<RssArticlesScreen> {
         ),
       ),
     );
+    return RepaintBoundary(child: item);
   }
 }

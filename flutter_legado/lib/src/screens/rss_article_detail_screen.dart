@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -285,6 +286,14 @@ $htmlContent
     );
   }
 
+  /// 计算封面解码像素宽度（屏幕实际显示宽度 × 设备像素比）
+  int _coverDecodeWidth() {
+    final mediaQuery = MediaQuery.maybeOf(context);
+    final displayWidth = mediaQuery?.size.width ?? 400;
+    final pixelRatio = mediaQuery?.devicePixelRatio ?? 1.0;
+    return (displayWidth * pixelRatio).round();
+  }
+
   /// 构建文章头部（标题、日期、来源、封面图）
   Widget _buildArticleHeader(ThemeData theme, ColorScheme colorScheme) {
     return Padding(
@@ -340,12 +349,25 @@ $htmlContent
               widget.article.imageUrl!.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                widget.article.imageUrl!,
+              child: CachedNetworkImage(
+                imageUrl: widget.article.imageUrl!,
                 width: double.infinity,
                 height: 180,
                 fit: BoxFit.cover,
-                errorBuilder: (_, e, s) => const SizedBox.shrink(),
+                // 限制解码宽度为屏幕实际显示像素宽度，避免大图解码
+                memCacheWidth: _coverDecodeWidth(),
+                placeholder: (_, _) => Container(
+                  height: 180,
+                  color: colorScheme.surfaceContainerHighest,
+                  child: const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+                errorWidget: (_, _, _) => const SizedBox.shrink(),
               ),
             ),
             const SizedBox(height: 8),

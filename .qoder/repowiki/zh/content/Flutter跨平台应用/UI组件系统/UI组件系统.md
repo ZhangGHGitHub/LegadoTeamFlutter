@@ -10,9 +10,10 @@
 
 ## 更新摘要
 **所做更改**   
-- 更新了导航组件部分，详细说明NavigationDestination组件的labelBehavior配置
-- 新增无标签显示效果的实现说明
-- 补充了与Android原版一致的视觉规范
+- 更新了阅读器配置组件部分，详细说明ReaderAdvancedConfig类的flipMode字段扩展
+- 新增SegmentedButton UI组件用于翻页模式选择的实现说明
+- 补充了ReaderScreen中_buildNoneContent方法处理无动画页面转换的功能
+- 完善了翻页模式选择的用户交互体验设计
 
 ## 目录
 1. [简介](#简介)
@@ -241,6 +242,72 @@ MaterialDesign --> AndroidConsistency["与Android原版保持一致"]
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 - [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
 
+### 阅读器配置组件与翻页模式选择
+- ReaderAdvancedConfig类：扩展了flipMode字段，用于存储和管理用户的翻页模式偏好设置
+- SegmentedButton组件：新增的分段按钮组件，提供直观的翻页模式选择界面，支持多种翻页方式的可视化选择
+- 翻页模式选项：包括滑动翻页、点击翻页、滚动翻页等多种模式，满足不同用户的阅读习惯
+- 配置持久化：用户选择的翻页模式会自动保存，下次打开应用时恢复上次设置
+
+**更新** 新增了ReaderAdvancedConfig类的flipMode字段扩展和SegmentedButton组件的实现，提供了更好的翻页模式选择用户体验
+
+```mermaid
+flowchart TD
+UserAction["用户操作"] --> FlipModeSelect["翻页模式选择"]
+FlipModeSelect --> SegmentedButton["SegmentedButton组件"]
+SegmentedButton --> ModeOptions["翻页模式选项"]
+ModeOptions --> SlideMode["滑动翻页"]
+ModeOptions --> ClickMode["点击翻页"]
+ModeOptions --> ScrollMode["滚动翻页"]
+SlideMode --> SaveConfig["保存配置"]
+ClickMode --> SaveConfig
+ScrollMode --> SaveConfig
+SaveConfig --> ReaderAdvancedConfig["ReaderAdvancedConfig.flipMode"]
+ReaderAdvancedConfig --> Persist["持久化存储"]
+Persist --> NextOpen["下次打开应用"]
+NextOpen --> RestoreSetting["恢复设置"]
+```
+
+图表来源
+- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+- [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
+
+章节来源
+- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+- [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
+
+### 阅读器屏幕与无动画页面转换
+- ReaderScreen类：实现了_buildNoneContent方法，专门处理无动画模式的页面转换逻辑
+- 无动画模式：当用户选择不使用翻页动画时，页面切换直接进行，减少视觉干扰
+- 性能优化：无动画模式下避免不必要的动画计算，提升页面切换速度
+- 用户体验：为追求效率的阅读用户提供更直接的页面浏览体验
+
+**更新** ReaderScreen中新增的_buildNoneContent方法提供了无动画页面转换的支持，增强了阅读器的灵活性
+
+```mermaid
+sequenceDiagram
+participant User as "用户"
+participant ReaderScreen as "ReaderScreen"
+participant AnimationController as "动画控制器"
+participant PageView as "页面视图"
+User->>ReaderScreen : "设置翻页模式"
+ReaderScreen->>AnimationController : "检查动画模式"
+alt 有动画模式
+AnimationController->>PageView : "执行动画切换"
+else 无动画模式
+ReaderScreen->>ReaderScreen : "调用_buildNoneContent"
+ReaderScreen->>PageView : "直接切换页面"
+end
+PageView-->>User : "显示新页面"
+```
+
+图表来源
+- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+- [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
+
+章节来源
+- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+- [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
+
 ### 组件复用模式与设计系统规范
 - 参数化设计：所有组件暴露必要属性，支持主题注入与行为定制
 - 回调优先：通过回调函数处理外部状态变更，避免内部状态污染
@@ -280,6 +347,7 @@ Utils --> Validation["校验工具"]
 - 动画性能：控制动画帧率，避免在主线程执行耗时操作
 - 内存管理：及时释放不使用的资源，防止内存泄漏
 - 首屏加载：延迟非关键组件加载，提升启动速度
+- 翻页模式优化：无动画模式下减少计算开销，提升页面切换性能
 
 [本节为通用指导，无需特定文件引用]
 
@@ -290,13 +358,15 @@ Utils --> Validation["校验工具"]
 - 组件不更新：确认状态变更是否触发重建，检查依赖关系
 - 依赖冲突：清理缓存并重新解析依赖，锁定版本避免漂移
 - 导航标签显示异常：检查NavigationDestination的labelBehavior配置，确保与预期显示效果一致
+- 翻页模式设置无效：确认ReaderAdvancedConfig.flipMode字段是否正确保存和读取
+- SegmentedButton组件问题：检查分段按钮的选项配置和数据绑定
 
 章节来源
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 - [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
 
 ## 结论
-本UI组件系统以主题驱动为核心，通过分层化的组件设计与响应式布局策略，实现了跨设备的一致体验。结合动画与过渡效果，提升了用户交互的流畅性与愉悦感。遵循组件复用模式与设计系统规范，可有效提高开发效率与维护性。通过NavigationDestination组件的labelBehavior配置优化，进一步确保了与Android原版的视觉一致性。未来可进一步引入更多自动化测试与性能监控手段，持续优化用户体验。
+本UI组件系统以主题驱动为核心，通过分层化的组件设计与响应式布局策略，实现了跨设备的一致体验。结合动画与过渡效果，提升了用户交互的流畅性与愉悦感。遵循组件复用模式与设计系统规范，可有效提高开发效率与维护性。通过NavigationDestination组件的labelBehavior配置优化，进一步确保了与Android原版的视觉一致性。新增的ReaderAdvancedConfig类和SegmentedButton组件为翻页模式选择提供了更好的用户体验，而ReaderScreen的无动画页面转换功能则满足了不同用户的性能需求。未来可进一步引入更多自动化测试与性能监控手段，持续优化用户体验。
 
 [本节为总结性内容，无需特定文件引用]
 

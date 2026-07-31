@@ -1,11 +1,12 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../providers/reader_provider.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 
@@ -81,7 +82,7 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
     });
 
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       // 获取书籍信息
       _book = await api.getBook(widget.bookUrl);
       if (_book == null) {
@@ -132,7 +133,7 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
     });
 
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final chapter = _chapters[_currentChapterIndex];
 
       // 获取章节内容
@@ -253,7 +254,7 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
         _preloadedIndices.add(i);
         // 使用 Image precache 进行预加载
         unawaited(
-          precacheImage(NetworkImage(_imageUrls[i]), context).catchError((_) {
+          precacheImage(CachedNetworkImageProvider(_imageUrls[i]), context).catchError((_) {
             // 预加载失败静默处理
           }),
         );
@@ -291,7 +292,7 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
   /// 保存阅读进度
   Future<void> _saveProgress() async {
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       await api.updateReadingProgress(
         bookUrl: widget.bookUrl,
         chapterIndex: _currentChapterIndex,
@@ -417,20 +418,16 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
       return _buildImageErrorPlaceholder(index, url);
     }
 
-    return Image.network(
-      url,
+    return CachedNetworkImage(
+      imageUrl: url,
       fit: BoxFit.fitWidth,
       width: double.infinity,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) {
-          // 图片加载完成
-          return child;
-        }
-        // 显示加载占位符（骨架屏效果）
-        return _buildImageLoadingPlaceholder(loadingProgress);
-      },
-      errorBuilder: (context, error, stackTrace) {
-        // 标记为失败状态
+      // 漫画页按屏宽全分辨率显示，不限制 memCacheWidth（磁盘缓存默认开启）
+      progressIndicatorBuilder: (context, _, progress) =>
+          _buildImageLoadingPlaceholder(progress.progress),
+      errorWidget: (context, _, _) => _buildImageErrorPlaceholder(index, url),
+      errorListener: (_) {
+        // 标记为失败状态（供重建时显示重试按钮）
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !_failedIndices.contains(index)) {
             setState(() {
@@ -438,17 +435,12 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
             });
           }
         });
-        return _buildImageErrorPlaceholder(index, url);
       },
     );
   }
 
-  /// 图片加载占位符（骨架屏效果）
-  Widget _buildImageLoadingPlaceholder(ImageChunkEvent? loadingProgress) {
-    final progress = loadingProgress != null && loadingProgress.expectedTotalBytes != null
-        ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-        : null;
-
+  /// 图片加载占位符（骨架屏效果，[progress] 为下载进度 0.0~1.0）
+  Widget _buildImageLoadingPlaceholder(double? progress) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.6,
       color: const Color(0xFF1A1A1A),

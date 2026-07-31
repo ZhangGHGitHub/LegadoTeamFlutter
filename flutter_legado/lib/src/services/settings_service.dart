@@ -7,6 +7,7 @@ class SettingsService {
   static const _keyLineHeight = 'reader_line_height';
   static const _keyBgColorIndex = 'reader_bg_color_index';
   static const _keyFlipMode = 'reader_flip_mode';
+  static const _keyFlipModeName = 'reader_flip_mode_name'; // 新版枚举名存储
   static const _keyBrightness = 'reader_brightness';
   static const _keyThemeMode = 'app_theme_mode';
   static const _keyLocale = 'app_locale';
@@ -78,13 +79,14 @@ class SettingsService {
 
   // ===== 翻页模式 =====
 
+  /// 获取旧版 int 索引存储的翻页模式（兼容旧用户）
   Future<int> getFlipMode() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getInt(_keyFlipMode) ?? 0;
+      return prefs.getInt(_keyFlipMode) ?? -1; // -1 表示无旧版存储
     } catch (e) {
       debugPrint('SettingsService.getFlipMode 异常: $e');
-      return 0;
+      return -1;
     }
   }
 
@@ -94,6 +96,26 @@ class SettingsService {
       await prefs.setInt(_keyFlipMode, mode);
     } catch (e) {
       debugPrint('SettingsService.setFlipMode 异常: $e');
+    }
+  }
+
+  /// 获取新版 enum name 存储的翻页模式（避免索引变动破坏映射）
+  Future<String?> getFlipModeName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyFlipModeName);
+    } catch (e) {
+      debugPrint('SettingsService.getFlipModeName 异常: $e');
+      return null;
+    }
+  }
+
+  Future<void> setFlipModeName(String name) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyFlipModeName, name);
+    } catch (e) {
+      debugPrint('SettingsService.setFlipModeName 异常: $e');
     }
   }
 

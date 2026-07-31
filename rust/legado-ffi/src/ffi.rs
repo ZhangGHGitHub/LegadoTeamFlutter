@@ -466,6 +466,32 @@ pub mod ffi {
         )?)
     }
 
+    // ─── 发现页 ───────────────────────────────────────────────
+
+    /// 解析 exploreUrl 为分类列表（返回 JSON 数组）
+    ///
+    /// `explore_url` — 书源的 exploreUrl 字段
+    pub fn explore_parse_url(explore_url: String) -> Result<String, BridgeError> {
+        Ok(crate::api::explore_api::explore_parse_url(&explore_url)?)
+    }
+
+    /// 抓取发现分类的书籍列表（返回 WebSearchResult JSON 数组）
+    ///
+    /// `source_json` — BookSource JSON 字符串
+    /// `url` — 分类 URL
+    /// `page` — 页码（从 1 开始）
+    pub fn explore_fetch_books(
+        source_json: String,
+        url: String,
+        page: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::explore_api::explore_fetch_books(
+            &source_json,
+            &url,
+            page,
+        )?)
+    }
+
     // ─── 规则解析 ─────────────────────────────────────────────
 
     /// 使用规则解析内容，返回 JSON 格式的结果
@@ -1069,5 +1095,216 @@ pub mod ffi {
             &format,
         )?;
         to_json(&result)
+    }
+
+    // ─── 压缩包导入与编码检测 ─────────────────────────
+
+    /// 导入 ZIP 压缩包中的书籍文件（返回 ArchiveImportResult JSON）
+    pub fn archive_import_zip(zip_path: String, output_dir: String) -> Result<String, BridgeError> {
+        let result = crate::api::archive_import_api::import_zip_file(&zip_path, &output_dir);
+        to_json(&result)
+    }
+
+    /// 导入 RAR 压缩包中的书籍文件（支持加密，返回 ArchiveImportResult JSON）
+    pub fn archive_import_rar(
+        rar_path: String,
+        output_dir: String,
+        password: Option<String>,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::archive_import_api::import_rar_file(&rar_path, &output_dir, password);
+        to_json(&result)
+    }
+
+    /// 列出 ZIP 压缩包中的书籍文件名（不解压，返回 JSON 数组）
+    pub fn archive_list_zip_files(zip_path: String) -> Result<String, BridgeError> {
+        let files = crate::api::archive_import_api::list_zip_book_files(&zip_path)?;
+        to_json(&files)
+    }
+
+    /// 列出 RAR 压缩包中的书籍文件名（不解压，返回 JSON 数组）
+    pub fn archive_list_rar_files(
+        rar_path: String,
+        password: Option<String>,
+    ) -> Result<String, BridgeError> {
+        let files = crate::api::archive_import_api::list_rar_book_files(&rar_path, password)?;
+        to_json(&files)
+    }
+
+    /// 检测 TXT 文件编码（返回 EncodingResult JSON）
+    pub fn archive_detect_encoding(file_path: String) -> Result<String, BridgeError> {
+        let result = crate::api::archive_import_api::detect_txt_encoding(&file_path)?;
+        to_json(&result)
+    }
+
+    /// 转换 TXT 文件编码（返回 ConvertResult JSON）
+    pub fn archive_convert_encoding(
+        file_path: String,
+        from_encoding: String,
+        to_encoding: String,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::archive_import_api::convert_txt_encoding(
+            &file_path,
+            &from_encoding,
+            &to_encoding,
+        );
+        to_json(&result)
+    }
+
+    /// 判断文件是否为压缩包格式
+    pub fn archive_is_archive(file_path: String) -> bool {
+        crate::api::archive_import_api::is_archive_file(&file_path)
+    }
+
+    // ─── QUIC/HTTP3 网络 ──────────────────────────────
+
+    /// 创建 QUIC 客户端（config_json 为空时使用默认配置）
+    pub fn quic_create_client(config_json: Option<String>) -> Result<String, BridgeError> {
+        Ok(crate::api::quic_api::create_quinn_client(config_json)?)
+    }
+
+    /// 通过 QUIC 发送 GET 请求（返回响应 JSON）
+    pub fn quic_get(url: String, headers_json: Option<String>) -> Result<String, BridgeError> {
+        Ok(crate::api::quic_api::quinn_get(url, headers_json)?)
+    }
+
+    /// 通过 QUIC 发送 POST 请求（body 为 base64 编码，返回响应 JSON）
+    pub fn quic_post(
+        url: String,
+        body_base64: String,
+        headers_json: Option<String>,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::quic_api::quinn_post(url, body_base64, headers_json)?)
+    }
+
+    /// QUIC 性能测试（返回 PerformanceMetrics JSON）
+    pub fn quic_performance_test(url: String) -> Result<String, BridgeError> {
+        Ok(crate::api::quic_api::quinn_performance_test(url)?)
+    }
+
+    /// 检查 QUIC 客户端是否已初始化
+    pub fn quic_is_initialized() -> bool {
+        crate::api::quic_api::quinn_is_initialized()
+    }
+
+    /// 清理 QUIC 连接池
+    pub fn quic_cleanup() -> String {
+        crate::api::quic_api::quinn_cleanup()
+    }
+
+    /// 设置主网络链路 QUIC 传输开关
+    ///
+    /// 启用后 LegadoClient 的 HTTPS 请求优先走 QUIC/HTTP3，失败自动 fallback 到 HTTP/2。
+    pub fn net_set_quic_enabled(enabled: bool) -> String {
+        crate::api::quic_api::net_set_quic_enabled(enabled)
+    }
+
+    /// 查询主网络链路 QUIC 传输开关状态
+    pub fn net_is_quic_enabled() -> bool {
+        crate::api::quic_api::net_is_quic_enabled()
+    }
+
+    // ─── 自动任务 ─────────────────────────────────────
+
+    /// 构建书籍更新定时任务（返回 AutoTaskRule JSON）
+    pub fn auto_task_build_book_update(
+        book_url: String,
+        book_name: String,
+        book_author: String,
+        name: String,
+    ) -> Result<String, BridgeError> {
+        let task = crate::api::auto_task_api::build_book_update_task(
+            &book_url,
+            &book_name,
+            &book_author,
+            &name,
+        );
+        to_json(&task)
+    }
+
+    /// 批量更新 cron 表达式（rules_json 为 AutoTaskRule 数组，ids_json 为 ID 数组，返回更新后的规则数组 JSON）
+    pub fn auto_task_update_cron_batch(
+        rules_json: String,
+        ids_json: String,
+        cron: String,
+    ) -> Result<String, BridgeError> {
+        let rules = crate::api::auto_task_api::update_cron_batch(&rules_json, &ids_json, &cron)?;
+        to_json(&rules)
+    }
+
+    /// 准备导入任务（合并本地运行时状态，返回合并后的任务数组 JSON）
+    pub fn auto_task_prepare_imported(
+        local_tasks_json: String,
+        imported_json: String,
+    ) -> Result<String, BridgeError> {
+        let merged =
+            crate::api::auto_task_api::prepare_imported_tasks(&local_tasks_json, &imported_json)?;
+        to_json(&merged)
+    }
+
+    /// 执行任务协议（protocol_json 为 TaskProtocol，返回 TaskResult JSON）
+    pub fn auto_task_execute(protocol_json: String) -> Result<String, BridgeError> {
+        let result = crate::api::auto_task_api::execute_task(&protocol_json, None)?;
+        to_json(&result)
+    }
+
+    /// 带 ID 执行任务协议（返回 TaskResult JSON）
+    pub fn auto_task_execute_with_id(
+        protocol_json: String,
+        task_id: String,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::auto_task_api::execute_task(&protocol_json, Some(&task_id))?;
+        to_json(&result)
+    }
+
+    /// 规范化脚本（去除 @js: 前缀或 <js></js> 包裹）
+    pub fn auto_task_normalize_script(script: String) -> String {
+        crate::api::auto_task_api::normalize_script(&script)
+    }
+
+    /// 判断书籍是否允许刷新目录
+    pub fn auto_task_can_refresh_toc(can_update: bool, respect_can_update: bool) -> bool {
+        crate::api::auto_task_api::can_refresh_book_toc(can_update, respect_can_update)
+    }
+
+    /// 查找书籍更新任务（tasks_json 为 AutoTaskRule 数组，返回匹配任务 JSON 或 null）
+    pub fn auto_task_find_book_update(
+        tasks_json: String,
+        book_url: String,
+        book_name: String,
+        book_author: String,
+    ) -> Result<String, BridgeError> {
+        let found = crate::api::auto_task_api::find_book_update_task(
+            &tasks_json,
+            &book_url,
+            &book_name,
+            &book_author,
+        )?;
+        to_json(&found)
+    }
+
+    /// 解析 cron 表达式计算下次执行时间（Unix 毫秒，无法解析返回 -1）
+    pub fn auto_task_next_due_at(cron: String, from_ms: i64) -> i64 {
+        crate::api::auto_task_api::next_due_at(&cron, from_ms)
+    }
+
+    // ─── 听书播放（播放模式/书籍解析）───────────────────
+
+    /// 将播放模式写入 readConfig JSON（返回更新后的 JSON）
+    pub fn audio_with_play_mode(read_config: Option<String>, play_mode: i32) -> String {
+        crate::api::audio_api::with_audio_play_mode(read_config.as_deref(), play_mode)
+    }
+
+    /// 解析听书书籍（返回 Book JSON 或 null）
+    ///
+    /// 请求 URL 为空时返回缓存书籍；缓存匹配时直接返回；否则按 URL 查库。
+    pub fn audio_resolve_play_book(
+        requested_book_url: Option<String>,
+        cached_book_json: Option<String>,
+    ) -> Result<String, BridgeError> {
+        let book = crate::api::audio_api::resolve_audio_play_book(
+            requested_book_url.as_deref(),
+            cached_book_json.as_deref(),
+        )?;
+        to_json(&book)
     }
 }

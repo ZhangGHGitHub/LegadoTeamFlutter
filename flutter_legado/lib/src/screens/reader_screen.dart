@@ -5,11 +5,12 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../routes.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../providers/bookmark_provider.dart';
 import '../providers/reader_provider.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
+import '../widgets/paragraph_layout_engine.dart';
 import 'reader_config_panel.dart';
 import '../widgets/instant_scroll_physics.dart';
 
@@ -34,11 +35,37 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// 目录搜索关键词
   String _chapterSearchQuery = '';
 
+  /// 覆盖翻页：当前显示的章节索引（用于 AnimatedSwitcher 触发过渡）
+  int _coverChapterIndex = 0;
+
+  /// 覆盖翻页：是否为前进方向（决定动画方向和层叠顺序）
+  bool _coverForward = true;
+
   /// 阅读器高级配置（自动翻页/点击区域/段距/状态栏）
   ReaderAdvancedConfig _advConfig = ReaderAdvancedConfig();
 
   /// 自动翻页定时器
   Timer? _autoTimer;
+
+  // ===== 排版引擎分页状态 =====
+
+  /// 当前章节的排版分页结果
+  List<PageInfo> _paginatedPages = [];
+
+  /// 分页对应的章节索引（用于检测章节切换后重新分页）
+  int _paginatedChapterIndex = -1;
+
+  /// 分页对应的字号（设置变化时重新分页）
+  double _paginatedFontSize = -1;
+
+  /// 分页对应的行高
+  double _paginatedLineHeight = -1;
+
+  /// 分页对应的段距
+  double _paginatedParagraphSpacing = -1;
+
+  /// 当前页索引（屏级分页）
+  int _currentPageIndex = 0;
 
   @override
   void initState() {
@@ -70,11 +97,106 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (!mounted) return;
       final provider = context.read<ReaderProvider>();
       if (cfg.autoPageTurnForward) {
-        provider.nextChapter();
+        _goToNextChapterOrPage(provider);
       } else {
-        provider.prevChapter();
+        _goToPrevChapterOrPage(provider);
       }
     });
+  }
+
+  /// 检查是否需要重新分页（章节/字号/行高/段距变化时触发）
+  ///
+  /// 移植自安卓端 TextChapterLayout 的排版触发时机：
+  /// 章节加载完成、字体设置变更、屏幕尺寸变化
+  void _paginateIfNeeded(BuildContext context, ReaderProvider provider) {
+    final content = provider.chapterContent;
+    final fontSize = provider.fontSize;
+    final lineHeight = provider.lineHeight;
+    final spacing = _advConfig.paragraphSpacing;
+    final chapterIndex = provider.currentChapterIndex;
+
+    // 检查是否需要重新分页
+    final needRepaginate = content.isNotEmpty &&
+        (chapterIndex != _paginatedChapterIndex ||
+            fontSize != _paginatedFontSize ||
+            lineHeight != _paginatedLineHeight ||
+            spacing != _paginatedParagraphSpacing);
+
+    if (!needRepaginate) return;
+
+    // 计算可用尺寸（减去内边距）
+    final screenSize = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final availableWidth = screenSize.width - 40; // 左右各 20px
+    final availableHeight = screenSize.height - padding.top - padding.bottom - 48 - 40; // 上下内边距 + 标题区域
+
+    // 构建排版配置
+    final config = ParagraphConfig(
+      fontSize: fontSize,
+      lineHeight: lineHeight,
+      paragraphSpacing: spacing,
+      indent: fontSize * 2, // 首行缩进两个字符
+      justify: true,
+      textColor: provider.backgroundColor == ReaderBackground.dark
+          ? const Color(0xFFCCCCCC)
+          : const Color(0xFF333333),
+      backgroundColor: provider.backgroundColor,
+    );
+
+    // 执行排版分页
+    final engine = ParagraphLayoutEngine(config: config, context: context);
+    final pages = engine.paginateChapter(content, availableWidth, availableHeight);
+
+    _paginatedPages = pages;
+    _paginatedChapterIndex = chapterIndex;
+    _paginatedFontSize = fontSize;
+    _paginatedLineHeight = lineHeight;
+    _paginatedParagraphSpacing = spacing;
+    _currentPageIndex = 0;
+
+    // 重置 PageController 到第一页
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(0);
+    }
+  }
+
+  /// 自动翻页/手动翻页：前进（下一页或下一章）
+  void _goToNextChapterOrPage(ReaderProvider provider) {
+    if (_currentPageIndex < _paginatedPages.length - 1) {
+      // 当前章节还有下一页
+      _currentPageIndex++;
+      if (_pageController.hasClients) {
+        _pageController.animateToPage(
+          _currentPageIndex,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        setState(() {});
+      }
+    } else {
+      // 已是最后一页，进入下一章
+      provider.nextChapter();
+    }
+  }
+
+  /// 自动翻页/手动翻页：后退（上一页或上一章）
+  void _goToPrevChapterOrPage(ReaderProvider provider) {
+    if (_currentPageIndex > 0) {
+      _currentPageIndex--;
+      if (_pageController.hasClients) {
+        _pageController.animateToPage(
+          _currentPageIndex,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        setState(() {});
+      }
+    } else {
+      // 已是第一页，进入上一章
+      provider.prevChapter();
+    }
   }
 
   @override
@@ -101,6 +223,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return Consumer<ReaderProvider>(
       builder: (context, provider, _) {
         _maybePreloadAdjacentChapters(provider);
+        // 排版引擎：检测是否需要重新分页
+        if (!provider.loading && provider.error == null) {
+          _paginateIfNeeded(context, provider);
+        }
         return PopScope<Object?>(
           // 退出阅读器时确保阅读进度已保存到书架
           onPopInvokedWithResult: (didPop, result) {
@@ -154,6 +280,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         return _buildSimulateContent(context, provider);
       case PageTurnMode.none:
         return _buildNoneContent(context, provider);
+      case PageTurnMode.cover:
+        return _buildCoverContent(context, provider);
     }
   }
 
@@ -181,7 +309,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   ),
                 ),
               ),
-            if (provider.chapterContent.isNotEmpty)
+            // 滚动模式：渲染所有分页内容（使用排版引擎的分行结果）
+            if (_paginatedPages.isNotEmpty)
+              for (final pageInfo in _paginatedPages)
+                _renderPageContent(pageInfo, provider, textColor)
+            else if (provider.chapterContent.isNotEmpty)
               _buildParagraphs(provider, provider.chapterContent, textColor)
             else if (!provider.loading)
               Center(
@@ -209,14 +341,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
       bottom: !provider.showControls,
       child: PageView.builder(
         controller: _pageController,
-        itemCount: provider.chapters.isNotEmpty ? provider.chapters.length : 1,
+        itemCount: _paginatedPages.isNotEmpty ? _paginatedPages.length : 1,
         onPageChanged: (index) {
-          if (index != provider.currentChapterIndex) {
-            provider.goToChapter(index);
-          }
+          setState(() => _currentPageIndex = index);
+          // 更新阅读进度
+          provider.updatePosition(index);
         },
         itemBuilder: (context, index) {
-          return _buildChapterPage(context, provider, index);
+          return _buildTypographicPage(context, provider, index);
         },
       ),
     );
@@ -231,19 +363,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
         children: [
           PageView.builder(
             controller: _pageController,
-            itemCount: provider.chapters.isNotEmpty ? provider.chapters.length : 1,
+            itemCount: _paginatedPages.isNotEmpty ? _paginatedPages.length : 1,
             pageSnapping: true,
             onPageChanged: (index) {
-              if (index != provider.currentChapterIndex) {
-                provider.goToChapter(index);
-              }
+              setState(() => _currentPageIndex = index);
+              provider.updatePosition(index);
             },
             itemBuilder: (context, index) {
               return AnimatedBuilder(
                 animation: _pageController,
                 builder: (context, child) {
                   double value = 1.0;
-                  if (_pageController.position.hasContentDimensions) {
+                  if (_pageController.hasClients && _pageController.position.hasContentDimensions) {
                     value = (_pageController.page ?? _pageController.initialPage.toDouble()) - index;
                     value = (1 - value.abs().clamp(0.0, 1.0));
                   }
@@ -278,7 +409,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     ],
                   );
                 },
-                child: _buildChapterPage(context, provider, index),
+                child: _buildTypographicPage(context, provider, index),
               );
             },
           ),
@@ -295,33 +426,151 @@ class _ReaderScreenState extends State<ReaderScreen> {
       child: PageView.builder(
         controller: _pageController,
         physics: const InstantScrollPhysics(), // 无动画瞬间切换
-        itemCount: provider.chapters.isNotEmpty ? provider.chapters.length : 1,
+        itemCount: _paginatedPages.isNotEmpty ? _paginatedPages.length : 1,
+        onPageChanged: (index) {
+          setState(() => _currentPageIndex = index);
+          provider.updatePosition(index);
+        },
         itemBuilder: (context, index) {
-          return _buildChapterPage(context, provider, index);
+          return _buildTypographicPage(context, provider, index);
         },
       ),
     );
   }
 
-  Widget _buildChapterPage(BuildContext context, ReaderProvider provider, int index) {
+  /// 覆盖翻页模式（对齐安卓 CoverPageDelegate）
+  ///
+  /// 视觉效果：
+  /// - 前进（下一页）：新页从右侧滑入覆盖旧页，旧页保持不动
+  /// - 后退（上一页）：当前页向右滑出，露出下方的新页
+  /// 动画时长 300ms，线性曲线（对齐安卓基准）
+  Widget _buildCoverContent(BuildContext context, ReaderProvider provider) {
+    final targetIndex = _currentPageIndex;
+    // 检测翻页方向
+    if (targetIndex != _coverChapterIndex) {
+      _coverForward = targetIndex > _coverChapterIndex;
+      _coverChapterIndex = targetIndex;
+    }
+    final forward = _coverForward;
+
+    return SafeArea(
+      top: !provider.showControls,
+      bottom: !provider.showControls,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        switchInCurve: Curves.linear,
+        switchOutCurve: Curves.linear,
+        // 层叠策略：前进时新页在上（覆盖效果），后退时旧页在上（抽离效果）
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            children: [
+              ...previousChildren,
+              ?currentChild,
+            ],
+          );
+        },
+        transitionBuilder: (child, animation) {
+          final isEntering = child.key == ValueKey<int>(targetIndex);
+          final bool slides;
+          if (forward) {
+            slides = isEntering;
+          } else {
+            slides = !isEntering;
+          }
+          if (!slides) return child;
+          final begin = forward ? const Offset(1.0, 0.0) : Offset.zero;
+          final end = forward ? Offset.zero : const Offset(1.0, 0.0);
+          return AnimatedBuilder(
+            animation: animation,
+            builder: (context, _) {
+              final offset = Offset.lerp(begin, end, animation.value)!;
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: FractionalTranslation(
+                      translation: offset,
+                      child: child,
+                    ),
+                  ),
+                  // 翻页阴影（30px 渐变，对齐安卓 shadowDrawableR）
+                  PositionedDirectional(
+                    top: 0,
+                    bottom: 0,
+                    start: forward ? null : 0,
+                    end: forward ? 0 : null,
+                    width: 30,
+                    child: FractionalTranslation(
+                      translation: offset,
+                      child: IgnorePointer(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: forward
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              end: forward
+                                  ? Alignment.centerLeft
+                                  : Alignment.centerRight,
+                              colors: [
+                                Colors.black.withValues(
+                                    alpha: 0.2 * (1 - animation.value)),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+        child: KeyedSubtree(
+          key: ValueKey<int>(targetIndex),
+          child: _buildTypographicPage(context, provider, targetIndex),
+        ),
+      ),
+    );
+  }
+
+  /// 渲染排版引擎分页后的单页内容
+  ///
+  /// 移植自安卓端 TextChapterLayout 的页面渲染逻辑：
+  /// - 首屏显示章节标题
+  /// - 正文使用排版引擎的分行结果渲染
+  /// - 支持两端对齐、首行缩进、中文避头尾
+  Widget _buildTypographicPage(BuildContext context, ReaderProvider provider, int pageIndex) {
     final isDark = provider.backgroundColor == ReaderBackground.dark;
     final textColor = isDark ? const Color(0xFFCCCCCC) : const Color(0xFF333333);
-    final isCurrentChapter = index == provider.currentChapterIndex;
-    final title = isCurrentChapter && provider.currentChapter != null
-        ? provider.currentChapter!.title
-        : (index < provider.chapters.length ? provider.chapters[index].title : '');
-    final content = isCurrentChapter ? provider.chapterContent : '';
 
-    return SingleChildScrollView(
+    // 分页结果尚未就绪时显示加载状态
+    if (_paginatedPages.isEmpty) {
+      return Center(
+        child: Text(
+          AppStrings.noContent,
+          style: TextStyle(fontSize: provider.fontSize, color: textColor.withValues(alpha: 0.5)),
+        ),
+      );
+    }
+
+    // 安全索引
+    final safeIndex = pageIndex.clamp(0, _paginatedPages.length - 1);
+    final pageInfo = _paginatedPages[safeIndex];
+
+    return Container(
+      color: provider.backgroundColor,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (title.isNotEmpty)
+          // 第一页显示章节标题
+          if (safeIndex == 0 && provider.currentChapter != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 20),
               child: Text(
-                title,
+                provider.currentChapter!.title,
                 style: TextStyle(
                   fontSize: provider.fontSize + 4,
                   fontWeight: FontWeight.bold,
@@ -329,24 +578,87 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 ),
               ),
             ),
-          if (content.isNotEmpty)
-            _buildParagraphs(provider, content, textColor)
-          else if (!provider.loading)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(48),
-                child: Text(
-                  AppStrings.noContent,
-                  style: TextStyle(
-                    fontSize: provider.fontSize,
-                    color: textColor.withValues(alpha: 0.5),
-                  ),
+          // 使用排版引擎渲染分页内容
+          Expanded(
+            child: _renderPageContent(pageInfo, provider, textColor),
+          ),
+          // 页码指示（对齐安卓端底部页码显示）
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Center(
+              child: Text(
+                '${safeIndex + 1} / ${_paginatedPages.length}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: textColor.withValues(alpha: 0.4),
                 ),
               ),
             ),
-          const SizedBox(height: 80),
+          ),
         ],
       ),
+    );
+  }
+
+  /// 渲染单页的排版内容（逐行渲染，支持两端对齐）
+  ///
+  /// 移植自 TextChapterLayout.kt 的 addCharsToLineFirst/Middle/Natural
+  Widget _renderPageContent(PageInfo pageInfo, ReaderProvider provider, Color textColor) {
+    final widgets = <Widget>[];
+
+    for (var paraIdx = 0; paraIdx < pageInfo.paragraphs.length; paraIdx++) {
+      final para = pageInfo.paragraphs[paraIdx];
+
+      // 段落间距（非第一段时添加）
+      if (paraIdx > 0 && provider.lineHeight > 0) {
+        widgets.add(SizedBox(height: _advConfig.paragraphSpacing));
+      }
+
+      // 逐行渲染
+      for (var lineIdx = 0; lineIdx < para.lines.length; lineIdx++) {
+        final line = para.lines[lineIdx];
+        final text = line.words.join('');
+        final isLastLine = lineIdx == para.lines.length - 1;
+        final isSingleLine = para.lines.length == 1;
+
+        // 两端对齐：非最后一行且非单行时分配额外字间距
+        double extraLetterSpacing = 0.0;
+        final shouldJustify = !isLastLine && !isSingleLine;
+        if (shouldJustify && line.width > 0) {
+          final screenSize = MediaQuery.of(context).size;
+          final availableWidth = screenSize.width - 40;
+          if (line.width < availableWidth) {
+            final gapCount = line.words.length - 1;
+            if (gapCount > 0) {
+              extraLetterSpacing = (availableWidth - line.width) / gapCount;
+              // 限制最大字间距避免过度拉伸
+              extraLetterSpacing = extraLetterSpacing.clamp(0.0, provider.fontSize * 0.5);
+            }
+          }
+        }
+
+        widgets.add(
+          SizedBox(
+            height: provider.fontSize * provider.lineHeight,
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: provider.fontSize,
+                height: provider.lineHeight,
+                color: textColor,
+                letterSpacing: extraLetterSpacing > 0.1 ? extraLetterSpacing : null,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+            ),
+          ),
+        );
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: widgets,
     );
   }
 
@@ -646,7 +958,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final chapters = provider.chapters;
     if (book == null || chapters.isEmpty) return;
 
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
     final index = provider.currentChapterIndex;
 
     // 预加载下一章
@@ -716,9 +1028,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
       case TapAction.none:
         break;
       case TapAction.prevPage:
-        provider.prevChapter();
+        _goToPrevChapterOrPage(provider);
       case TapAction.nextPage:
-        provider.nextChapter();
+        _goToNextChapterOrPage(provider);
       case TapAction.toggleControls:
         provider.toggleControls();
       case TapAction.openCatalog:
@@ -733,7 +1045,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     Navigator.pushNamed(
       context,
       AppRoutes.searchContent,
-      arguments: {'bookUrl': book.bookUrl, 'bookName': book.name},
+      arguments: book,
     );
   }
 
@@ -912,7 +1224,7 @@ class _ReaderSettingsSheet extends StatelessWidget {
                             border: Border.all(
                               color: isSelected
                                   ? Theme.of(context).colorScheme.primary
-                                  : Colors.grey.shade300,
+                                  : Theme.of(context).colorScheme.outlineVariant,
                               width: isSelected ? 3 : 1,
                             ),
                           ),
@@ -934,10 +1246,10 @@ class _ReaderSettingsSheet extends StatelessWidget {
               spacing: 8,
               children: [
                 ChoiceChip(
-                  label: Text(AppStrings.scrollMode),
-                  selected: provider.pageTurnMode == PageTurnMode.scroll,
+                  label: Text(AppStrings.coverMode),
+                  selected: provider.pageTurnMode == PageTurnMode.cover,
                   onSelected: (_) =>
-                      provider.updatePageTurnMode(PageTurnMode.scroll),
+                      provider.updatePageTurnMode(PageTurnMode.cover),
                 ),
                 ChoiceChip(
                   label: Text(AppStrings.slideMode),
@@ -950,6 +1262,18 @@ class _ReaderSettingsSheet extends StatelessWidget {
                   selected: provider.pageTurnMode == PageTurnMode.simulate,
                   onSelected: (_) =>
                       provider.updatePageTurnMode(PageTurnMode.simulate),
+                ),
+                ChoiceChip(
+                  label: Text(AppStrings.scrollMode),
+                  selected: provider.pageTurnMode == PageTurnMode.scroll,
+                  onSelected: (_) =>
+                      provider.updatePageTurnMode(PageTurnMode.scroll),
+                ),
+                ChoiceChip(
+                  label: Text(AppStrings.noneMode),
+                  selected: provider.pageTurnMode == PageTurnMode.none,
+                  onSelected: (_) =>
+                      provider.updatePageTurnMode(PageTurnMode.none),
                 ),
               ],
             ),

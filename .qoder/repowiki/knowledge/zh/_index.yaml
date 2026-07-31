@@ -3,7 +3,7 @@ schema_version: 1
 locale: zh-CN
 branch: master
 nodes_managed: true
-exported_at: "2026-07-30T08:44:15Z"
+exported_at: "2026-07-30T09:46:51Z"
 modules:
     "":
         dir_name: Legado 阅读器仓库聚合根
@@ -42,8 +42,8 @@ modules:
         depends_on: []
         related_to: []
     flutter_app:
-        dir_name: Legado Flutter 跨平台电子书阅读应用
-        title: Legado Flutter 跨平台电子书阅读应用
+        dir_name: Legado Flutter 跨平台阅读应用前端
+        title: Legado Flutter 跨平台阅读应用前端
         scope:
             - flutter_legado/
         source_files: []

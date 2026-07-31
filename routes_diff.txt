@@ -1,0 +1,96 @@
+diff --git a/flutter_legado/lib/src/routes.dart b/flutter_legado/lib/src/routes.dart
+index c7849dc2e..839234859 100644
+--- a/flutter_legado/lib/src/routes.dart
++++ b/flutter_legado/lib/src/routes.dart
+@@ -90,21 +90,36 @@ class AppRoutes {
+         rss: (_) => const RssScreen(),
+         audio: (context) {
+           final args = ModalRoute.of(context)?.settings.arguments;
++          // 路由参数规范化：优先接收 Book 对象
++          if (args is Book) {
++            return AudioScreen(book: args);
++          }
++          // 向后兼容：支持 Map<String, String> 传参
+           if (args is Map<String, String>) {
+             return AudioScreen(
+               bookUrl: args['bookUrl'] ?? '',
+               bookName: args['bookName'] ?? '',
+             );
+           }
+-          return const AudioScreen(bookUrl: '');
++          return const AudioScreen();
+         },
+         bookInfo: (context) {
+           final args = ModalRoute.of(context)?.settings.arguments;
++          // 路由参数规范化：优先接收 Book 对象
++          if (args is Book) {
++            return BookInfoScreen(book: args);
++          }
++          // 向后兼容：支持 String(bookUrl) 传参
+           final bookUrl = args is String ? args : '';
+           return BookInfoScreen(bookUrl: bookUrl);
+         },
+         changeSource: (context) {
+           final args = ModalRoute.of(context)?.settings.arguments;
++          // 路由参数规范化：优先接收 Book 对象
++          if (args is Book) {
++            return ChangeSourceScreen(book: args);
++          }
++          // 向后兼容：支持 Map<String, String> 传参
+           if (args is Map<String, String>) {
+             return ChangeSourceScreen(
+               bookUrl: args['bookUrl'] ?? '',
+@@ -113,12 +128,7 @@ class AppRoutes {
+               currentSourceUrl: args['currentSourceUrl'] ?? '',
+             );
+           }
+-          return const ChangeSourceScreen(
+-            bookUrl: '',
+-            bookName: '',
+-            author: '',
+-            currentSourceUrl: '',
+-          );
++          return const ChangeSourceScreen();
+         },
+         readingStats: (_) => const ReadingStatsScreen(),
+         bookmarks: (_) => const BookmarkScreen(),
+@@ -141,19 +151,29 @@ class AppRoutes {
+         bookGroups: (_) => const BookGroupScreen(),
+         searchContent: (context) {
+           final args = ModalRoute.of(context)?.settings.arguments;
++          // 路由参数规范化：优先接收 Book 对象
++          if (args is Book) {
++            return SearchContentScreen(book: args);
++          }
++          // 向后兼容：支持 Map<String, String> 传参
+           if (args is Map<String, String>) {
+             return SearchContentScreen(
+               bookUrl: args['bookUrl'] ?? '',
+               bookName: args['bookName'] ?? '',
+             );
+           }
+-          return const SearchContentScreen(bookUrl: '', bookName: '');
++          return const SearchContentScreen();
+         },
+         about: (_) => const AboutScreen(),
+         
+         rssFavorites: (_) => const RssFavoritesScreen(),
+         changeCover: (context) {
+           final args = ModalRoute.of(context)?.settings.arguments;
++          // 路由参数规范化：优先接收 Book 对象
++          if (args is Book) {
++            return ChangeCoverScreen(book: args);
++          }
++          // 向后兼容：支持 Map<String, String> 传参
+           if (args is Map<String, String>) {
+             return ChangeCoverScreen(
+               bookUrl: args['bookUrl'] ?? '',
+@@ -161,7 +181,7 @@ class AppRoutes {
+               currentCover: args['coverUrl'],
+             );
+           }
+-          return const ChangeCoverScreen(bookUrl: '', bookName: '');
++          return const ChangeCoverScreen();
+         },
+         txtTocRules: (_) => const TxtTocRulesScreen(),
+         dict: (_) => const DictScreen(),

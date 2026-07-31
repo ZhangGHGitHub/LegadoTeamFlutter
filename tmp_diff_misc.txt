@@ -1,0 +1,217 @@
+diff --git a/flutter_legado/lib/src/screens/book_info_screen.dart b/flutter_legado/lib/src/screens/book_info_screen.dart
+index cdbf414f6..4b477ff31 100644
+--- a/flutter_legado/lib/src/screens/book_info_screen.dart
++++ b/flutter_legado/lib/src/screens/book_info_screen.dart
+@@ -6,16 +6,25 @@ import '../models/models.dart';
+ import '../providers/bookshelf_provider.dart';
+ import '../providers/reader_provider.dart';
+ import '../routes.dart';
++import '../services/export_service.dart';
+ import '../services/rust_api.dart';
+ import '../widgets/book_cover.dart';
+ import '../widgets/error_view.dart';
++import '../widgets/export_dialog.dart';
+ import '../widgets/loading_indicator.dart';
+ 
+ /// 涔︾睄璇︽儏椤甸潰
+ class BookInfoScreen extends StatefulWidget {
++  /// 涔︾睄瀵硅薄锛堣矾鐢卞弬鏁拌鑼冨寲锛氫紭鍏堜娇鐢?Book 瀵硅薄锛?+  final Book? book;
++
++  /// 涔︾睄 URL锛堝悜鍚庡吋瀹癸紝褰撴湭浼犲叆 Book 瀵硅薄鏃朵娇鐢級
+   final String bookUrl;
+ 
+-  const BookInfoScreen({super.key, required this.bookUrl});
++  const BookInfoScreen({super.key, this.book, this.bookUrl = ''});
++
++  /// 鑾峰彇鏈夋晥鐨?bookUrl锛氫紭鍏堜粠 Book 瀵硅薄鍙栧€?+  String get effectiveBookUrl => book?.bookUrl ?? bookUrl;
+ 
+   @override
+   State<BookInfoScreen> createState() => _BookInfoScreenState();
+@@ -44,8 +53,10 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
+ 
+   Future<_BookInfoData> _loadData() async {
+     final api = context.read<RustApi>();
+-    final book = await api.getBook(widget.bookUrl);
+-    final chapters = await api.getChapters(widget.bookUrl);
++    final url = widget.effectiveBookUrl;
++    // 浼樺厛浠庢暟鎹簱鍙栨渶鏂拌褰曪紙鎹㈡簮/鍒锋柊鍚庡厓鏁版嵁鎵嶄細鏇存柊锛夛紝浼犲叆瀵硅薄浠呭厹搴?+    final book = await api.getBook(url) ?? widget.book;
++    final chapters = await api.getChapters(url);
+     return _BookInfoData(book: book, chapters: chapters);
+   }
+ 
+@@ -55,6 +66,21 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
+       appBar: AppBar(
+         title: const Text('涔︾睄璇︽儏'),
+         actions: [
++          IconButton(
++            icon: const Icon(Icons.file_download_outlined),
++            tooltip: '瀵煎嚭',
++            onPressed: () async {
++              try {
++                final data = await _future;
++                final book = data.book;
++                if (book == null) return;
++                if (!context.mounted) return;
++                _showExportDialog(context, book);
++              } catch (_) {
++                // 涔︾睄淇℃伅鏈姞杞藉畬鎴愭椂蹇界暐
++              }
++            },
++          ),
+           IconButton(
+             icon: const Icon(Icons.share),
+             tooltip: '鍒嗕韩',
+@@ -390,6 +416,20 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
+     );
+   }
+ 
++  /// 鎵撳紑瀵煎嚭瀵硅瘽妗?+  void _showExportDialog(BuildContext context, Book book) {
++    final api = context.read<RustApi>();
++    final exportService = ExportService(api);
++    showDialog(
++      context: context,
++      builder: (_) => ExportDialog(
++        book: book,
++        exportService: exportService,
++        rustApi: api,
++      ),
++    );
++  }
++
+   // ===== 鎿嶄綔 =====
+ 
+   void _openReader(BuildContext context, Book book, int chapterIndex) {
+@@ -406,12 +446,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
+     final newBookUrl = await Navigator.pushNamed<String>(
+       context,
+       AppRoutes.changeSource,
+-      arguments: {
+-        'bookUrl': book.bookUrl,
+-        'bookName': book.name,
+-        'author': book.author,
+-        'currentSourceUrl': book.origin,
+-      },
++      arguments: book,
+     );
+     if (!mounted) return;
+     // 鎹㈡簮鎴愬姛鍚?bookUrl 浼氬彉鍖栵紝闇€瑕佺敤鏂?URL 鏇挎崲褰撳墠璇︽儏椤?@@ -419,7 +454,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
+       Navigator.pushReplacementNamed(
+         context,
+         AppRoutes.bookInfo,
+-        arguments: newBookUrl,
++        arguments: book.copyWith(bookUrl: newBookUrl),
+       );
+     }
+   }
+diff --git a/flutter_legado/lib/src/screens/bookshelf_screen.dart b/flutter_legado/lib/src/screens/bookshelf_screen.dart
+index 1f19747ac..e4f4a0a6d 100644
+--- a/flutter_legado/lib/src/screens/bookshelf_screen.dart
++++ b/flutter_legado/lib/src/screens/bookshelf_screen.dart
+@@ -5,10 +5,15 @@ import 'package:provider/provider.dart';
+ import '../l10n/app_strings.dart';
+ import '../models/models.dart';
+ import '../providers/bookshelf_provider.dart';
++import '../providers/reader_provider.dart';
+ import '../routes.dart';
++import '../services/export_service.dart';
++import '../services/rust_api.dart';
+ import '../widgets/book_cover.dart';
++import '../widgets/custom_refresh_indicator.dart';
+ import '../widgets/empty_state.dart';
+ import '../widgets/error_view.dart';
++import '../widgets/export_dialog.dart';
+ import '../widgets/loading_indicator.dart';
+ import '../widgets/confirm_dialog.dart';
+ 
+@@ -129,7 +134,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
+       );
+     }
+ 
+-    return RefreshIndicator(
++    return CustomRefreshIndicator(
+       onRefresh: () => provider.loadBooks(),
+       child: CustomScrollView(
+         slivers: [
+@@ -378,8 +383,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
+   // ===== 鎿嶄綔 =====
+ 
+   void _openBook(BuildContext context, Book book) {
+-    final readerProvider = context.read<dynamic>(); // ReaderProvider
+-    // ignore: avoid_dynamic_calls
++    final readerProvider = context.read<ReaderProvider>();
+     readerProvider.openBook(book);
+     Navigator.pushNamed(context, AppRoutes.reader);
+   }
+@@ -411,6 +415,11 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
+               title: Text(AppStrings.group),
+               onTap: () => Navigator.pop(ctx, 'group'),
+             ),
++            ListTile(
++              leading: const Icon(Icons.file_download_outlined),
++              title: const Text('瀵煎嚭'),
++              onTap: () => Navigator.pop(ctx, 'export'),
++            ),
+             ListTile(
+               leading: Icon(Icons.delete, color: Theme.of(ctx).colorScheme.error),
+               title: Text(AppStrings.delete, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+@@ -428,7 +437,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
+       Navigator.pushNamed(
+         context,
+         AppRoutes.bookInfo,
+-        arguments: book.bookUrl,
++        arguments: book,
+       );
+       return;
+     }
+@@ -446,6 +455,20 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
+         context.read<BookshelfProvider>().removeBook(book.bookUrl);
+       }
+     }
++
++    if (action == 'export') {
++      if (!context.mounted) return;
++      final api = context.read<RustApi>();
++      final exportService = ExportService(api);
++      showDialog(
++        context: context,
++        builder: (_) => ExportDialog(
++          book: book,
++          exportService: exportService,
++          rustApi: api,
++        ),
++      );
++    }
+   }
+ 
+   /// 閫夋嫨鏈湴涔︾睄鏂囦欢骞跺鍏ヤ功鏋?diff --git a/flutter_legado/windows/CMakeLists.txt b/flutter_legado/windows/CMakeLists.txt
+index 8e4b6012b..5c4c4b255 100644
+--- a/flutter_legado/windows/CMakeLists.txt
++++ b/flutter_legado/windows/CMakeLists.txt
+@@ -106,3 +106,27 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
+ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+   CONFIGURATIONS Profile;Release
+   COMPONENT Runtime)
++
++# === Rust FFI Library ===
++# 鑷姩澶嶅埗 Rust FFI DLL 鍒版瀯寤鸿緭鍑虹洰褰曪紝閬垮厤杩愯鏃舵壘涓嶅埌 legado_ffi.dll
++set(RUST_FFI_DIR "${PROJECT_DIR}/../rust/target")
++set(RUST_FFI_DLL_RELEASE "${RUST_FFI_DIR}/release/legado_ffi.dll")
++set(RUST_FFI_DLL_DEBUG "${RUST_FFI_DIR}/debug/legado_ffi.dll")
++
++# 鏍规嵁鏋勫缓閰嶇疆閫夋嫨瀵瑰簲鐨?DLL 璺緞
++set(RUST_FFI_DLL "$<IF:$<CONFIG:Release>,${RUST_FFI_DLL_RELEASE},${RUST_FFI_DLL_DEBUG}>")
++
++install(FILES "${RUST_FFI_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
++  COMPONENT Runtime OPTIONAL)
++
++# 鍥為€€閫昏緫锛氬鏋滃搴旈厤缃殑 DLL 涓嶅瓨鍦紝灏濊瘯澶嶅埗 Release 鐗堟湰
++install(CODE "
++  if(NOT EXISTS \"${INSTALL_BUNDLE_LIB_DIR}/legado_ffi.dll\")
++    if(EXISTS \"${RUST_FFI_DLL_RELEASE}\")
++      file(COPY \"${RUST_FFI_DLL_RELEASE}\" DESTINATION \"${INSTALL_BUNDLE_LIB_DIR}\")
++      message(STATUS \"Copied Rust FFI DLL (release fallback) to bundle\")
++    else()
++      message(WARNING \"Rust FFI DLL not found! Run: cd ../rust && cargo build -p legado-ffi\")
++    endif()
++  endif()
++" COMPONENT Runtime)

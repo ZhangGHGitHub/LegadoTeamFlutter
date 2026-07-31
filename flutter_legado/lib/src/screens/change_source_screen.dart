@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
+import '../models/models.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -63,6 +64,10 @@ class SourceMatchItem {
 /// `source_switch_apply`），在所有启用的书源中搜索同名书籍，
 /// 按匹配度评分排序，用户选择后切换书籍来源。
 class ChangeSourceScreen extends StatefulWidget {
+  /// 书籍对象（路由参数规范化：优先使用 Book 对象）
+  final Book? book;
+
+  /// 以下字段为向后兼容保留，当未传入 Book 对象时使用
   final String bookUrl;
   final String bookName;
   final String author;
@@ -70,11 +75,24 @@ class ChangeSourceScreen extends StatefulWidget {
 
   const ChangeSourceScreen({
     super.key,
-    required this.bookUrl,
-    required this.bookName,
-    required this.author,
-    required this.currentSourceUrl,
+    this.book,
+    this.bookUrl = '',
+    this.bookName = '',
+    this.author = '',
+    this.currentSourceUrl = '',
   });
+
+  /// 获取有效的 bookUrl
+  String get effectiveBookUrl => book?.bookUrl ?? bookUrl;
+
+  /// 获取有效的书名
+  String get effectiveBookName => book?.name ?? bookName;
+
+  /// 获取有效的作者
+  String get effectiveAuthor => book?.author ?? author;
+
+  /// 获取有效的当前书源地址
+  String get effectiveCurrentSourceUrl => book?.origin ?? currentSourceUrl;
 
   @override
   State<ChangeSourceScreen> createState() => _ChangeSourceScreenState();
@@ -102,8 +120,8 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
     });
     try {
       final jsonStr = await bridge.sourceSwitchSearch(
-        bookName: widget.bookName,
-        author: widget.author,
+        bookName: widget.effectiveBookName,
+        author: widget.effectiveAuthor,
       );
       final decoded = jsonDecode(jsonStr);
       final matches = <SourceMatchItem>[];
@@ -165,7 +183,7 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
     setState(() => _applyingUrl = result.sourceUrl);
     try {
       final updatedJson = await bridge.sourceSwitchApply(
-        bookUrl: widget.bookUrl,
+        bookUrl: widget.effectiveBookUrl,
         newSourceUrl: result.sourceUrl,
         newBookUrl: result.bookUrl,
       );
@@ -198,7 +216,7 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('换源 - ${widget.bookName}'),
+        title: Text('换源 - ${widget.effectiveBookName}'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -224,17 +242,18 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
       return ErrorView(message: _error!, onRetry: _search);
     }
     if (_results.isEmpty) {
-      return const Center(
+      final colorScheme = Theme.of(context).colorScheme;
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey),
-            SizedBox(height: 8),
+            Icon(Icons.search_off, size: 64, color: colorScheme.onSurfaceVariant),
+            const SizedBox(height: 8),
             Text('未找到可替换的书源',
-                style: TextStyle(color: Colors.grey, fontSize: 16)),
-            SizedBox(height: 4),
+                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 16)),
+            const SizedBox(height: 4),
             Text('请确认已启用足够的书源后重试',
-                style: TextStyle(color: Colors.grey, fontSize: 12)),
+                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
           ],
         ),
       );
@@ -270,7 +289,7 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
 
   Widget _buildResultTile(BuildContext context, SourceMatchItem item) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isCurrent = item.sourceUrl == widget.currentSourceUrl;
+    final isCurrent = item.sourceUrl == widget.effectiveCurrentSourceUrl;
     final isApplying = _applyingUrl == item.sourceUrl;
 
     return ListTile(
@@ -352,6 +371,6 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
   Color _scoreColor(double score) {
     if (score >= 80) return Colors.green;
     if (score >= 50) return Colors.orange;
-    return Colors.grey;
+    return Theme.of(context).colorScheme.onSurfaceVariant;
   }
 }

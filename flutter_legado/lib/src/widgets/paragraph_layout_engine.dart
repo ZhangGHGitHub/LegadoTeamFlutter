@@ -234,66 +234,107 @@ class ParagraphLayoutEngine {
   final ParagraphConfig config;
   final BuildContext context;
 
-  final List<ParagraphInfo> _allPageParagraphs;
-  double _currentTotalHeight;
-
   /// 字符宽度缓存（移植自 TextMeasure.kt 三级缓存）
   final CharWidthCache _charWidthCache = CharWidthCache();
 
   ParagraphLayoutEngine({
     required this.config,
     required this.context,
-  }) : _allPageParagraphs = [],
-       _currentTotalHeight = 0.0;
+  });
 
   /// 获取字符宽度缓存（供测试使用）
   CharWidthCache get charWidthCache => _charWidthCache;
 
-  /// 排版整个章节内容
+  /// 排版整个章节内容（仅返回最后一页，保留兼容）
   /// 
   /// 参考 ReadBook.kt 的三章预加载策略
   /// 移植自 TextChapterLayout.kt getTextChapter 方法
   PageInfo layoutChapter(String content, double availableWidth, double pageHeight) {
-    // 分割段落
+    final pages = paginateChapter(content, availableWidth, pageHeight);
+    if (pages.isEmpty) return const PageInfo(paragraphs: [], totalHeight: 0);
+    return pages.last;
+  }
+
+  /// 将整章内容排版并分页，返回所有页面
+  ///
+  /// 移植自 TextChapterLayout.kt getTextChapter + prepareNextPageIfNeed：
+  /// 逐段排版，累积到当前页；超出页面高度时开始新页。
+  /// 返回的每个 PageInfo 代表一屏内容。
+  List<PageInfo> paginateChapter(String content, double availableWidth, double pageHeight) {
     final paragraphs = _splitParagraphs(content);
-    
-    if (paragraphs.isEmpty) {
-      return const PageInfo(paragraphs: [], totalHeight: 0);
-    }
-    
-    _allPageParagraphs.clear();
-    _currentTotalHeight = 0.0;
-    
+    if (paragraphs.isEmpty) return [];
+
+    final pages = <PageInfo>[];
+    var currentPageParagraphs = <ParagraphInfo>[];
+    var currentHeight = 0.0;
+
     for (var i = 0; i < paragraphs.length; i++) {
       final para = paragraphs[i];
       final paraInfo = _layoutParagraph(para, availableWidth, isFirst: i == 0);
-      
-      // 段落间距计算（对应 Kotlin durY += textHeight * paragraphSpacing / 10f）
-      double spacingHeight = 0.0;
-      if (_allPageParagraphs.isNotEmpty) {
-        spacingHeight = config.paragraphSpacing;
-      }
-      
-      // 检查是否需要换页（对应 Kotlin prepareNextPageIfNeed）
-      if (_allPageParagraphs.isNotEmpty &&
-          (_currentTotalHeight + spacingHeight + paraInfo.totalHeight > pageHeight)) {
-        // 超出页面高度，开始新页面
-        _allPageParagraphs.clear();
-        _allPageParagraphs.add(paraInfo);
-        _currentTotalHeight = paraInfo.totalHeight;
-      } else {
-        if (_allPageParagraphs.isEmpty) {
-          _allPageParagraphs.add(paraInfo);
-          _currentTotalHeight = paraInfo.totalHeight;
-        } else {
-          // 添加到当前页
-          _allPageParagraphs.add(paraInfo);
-          _currentTotalHeight += spacingHeight + paraInfo.totalHeight;
+
+      // 段落间距（对应 Kotlin durY += textHeight * paragraphSpacing / 10f）
+      double spacingHeight = currentPageParagraphs.isNotEmpty ? config.paragraphSpacing : 0.0;
+
+      // 单段超出整页高度时，按行拆分到多页
+      if (paraInfo.totalHeight > pageHeight) {
+        // 先把之前累积的段落存为一页
+        if (currentPageParagraphs.isNotEmpty) {
+          pages.add(PageInfo(paragraphs: List.from(currentPageParagraphs), totalHeight: currentHeight));
+          currentPageParagraphs = [];
+          currentHeight = 0.0;
         }
+        // 按行拆分超长段落
+        final subPages = _splitTallParagraph(paraInfo, pageHeight);
+        pages.addAll(subPages);
+        continue;
+      }
+
+      // 检查是否需要换页（对应 Kotlin prepareNextPageIfNeed）
+      if (currentPageParagraphs.isNotEmpty &&
+          (currentHeight + spacingHeight + paraInfo.totalHeight > pageHeight)) {
+        // 当前页已满，保存并开始新页
+        pages.add(PageInfo(paragraphs: List.from(currentPageParagraphs), totalHeight: currentHeight));
+        currentPageParagraphs = [paraInfo];
+        currentHeight = paraInfo.totalHeight;
+      } else {
+        currentPageParagraphs.add(paraInfo);
+        currentHeight += spacingHeight + paraInfo.totalHeight;
       }
     }
-    
-    return PageInfo(paragraphs: List.from(_allPageParagraphs), totalHeight: _currentTotalHeight);
+
+    // 最后一页
+    if (currentPageParagraphs.isNotEmpty) {
+      pages.add(PageInfo(paragraphs: currentPageParagraphs, totalHeight: currentHeight));
+    }
+
+    return pages;
+  }
+
+  /// 将超出单页高度的段落按行拆分到多页
+  ///
+  /// 对应 Kotlin TextChapterLayout 中单段超长时的逐行分页逻辑
+  List<PageInfo> _splitTallParagraph(ParagraphInfo paraInfo, double pageHeight) {
+    final pages = <PageInfo>[];
+    final textHeight = config.fontSize * config.lineHeight;
+    final linesPerPage = (pageHeight / textHeight).floor().clamp(1, 9999);
+
+    var lineIdx = 0;
+    while (lineIdx < paraInfo.lines.length) {
+      final endIdx = (lineIdx + linesPerPage).clamp(0, paraInfo.lines.length);
+      final pageLines = paraInfo.lines.sublist(lineIdx, endIdx);
+      final height = pageLines.length * textHeight;
+      pages.add(PageInfo(
+        paragraphs: [ParagraphInfo(
+          lines: pageLines,
+          totalHeight: height,
+          startIndex: pageLines.isNotEmpty ? pageLines.first.startIndex : 0,
+          endIndex: pageLines.isNotEmpty ? pageLines.last.endIndex : 0,
+        )],
+        totalHeight: height,
+      ));
+      lineIdx = endIdx;
+    }
+    return pages;
   }
 
   /// 分割段落

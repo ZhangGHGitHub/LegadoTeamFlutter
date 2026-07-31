@@ -33,6 +33,36 @@ class SearchBook with _$SearchBook {
       _$SearchBookFromJson(json);
 }
 
+// ─── ExploreCategory ────────────────────────────────────────
+
+/// 发现分类项（对标 Android ExploreKind）
+///
+/// 由 Rust 侧 parse_explore_url 解析 exploreUrl 后返回
+class ExploreCategory {
+  /// 分类标题
+  final String title;
+
+  /// 分类 URL（可能包含页码占位符）
+  final String? url;
+
+  const ExploreCategory({required this.title, this.url});
+
+  factory ExploreCategory.fromJson(Map<String, dynamic> json) {
+    return ExploreCategory(
+      title: json['title'] as String? ?? '',
+      url: json['url'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        if (url != null) 'url': url,
+      };
+
+  @override
+  String toString() => 'ExploreCategory(title: $title, url: $url)';
+}
+
 // ─── ReplaceRule ──────────────────────────────────────────
 
 /// 替换规则

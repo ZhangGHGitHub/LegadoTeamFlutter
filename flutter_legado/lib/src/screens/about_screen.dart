@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 
 /// 关于页面
 ///
@@ -46,7 +46,7 @@ class _AboutScreenState extends State<AboutScreen>
 
   Future<void> _loadRustVersion() async {
     try {
-      final v = await context.read<RustApi>().getVersion();
+      final v = await context.read<BookApi>().getVersion();
       if (mounted) setState(() => _rustVersion = v);
     } catch (_) {
       // FFI 不可用时静默忽略

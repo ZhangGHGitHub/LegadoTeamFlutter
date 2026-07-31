@@ -12,6 +12,7 @@ import 'screens/book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
 import 'screens/change_cover_screen.dart';
 import 'screens/change_source_screen.dart';
+import 'screens/explore_show_screen.dart';
 import 'screens/font_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/import_screen.dart';
@@ -44,6 +45,7 @@ class AppRoutes {
   static const search = '/search';
   static const sources = '/sources';
   static const sourceEdit = '/sources/edit';
+  static const exploreShow = '/explore_show';
   static const settings = '/settings';
   static const rss = '/rss';
   static const audio = '/audio';
@@ -86,25 +88,45 @@ class AppRoutes {
         search: (_) => const SearchScreen(),
         sources: (_) => const SourceScreen(),
         sourceEdit: (_) => const SourceEditScreen(),
+        exploreShow: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final exploreArgs = args is ExploreShowArgs ? args : null;
+          return ExploreShowScreen(args: exploreArgs);
+        },
         settings: (_) => const SettingsScreen(),
         rss: (_) => const RssScreen(),
         audio: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
+          // 路由参数规范化：优先接收 Book 对象
+          if (args is Book) {
+            return AudioScreen(book: args);
+          }
+          // 向后兼容：支持 Map<String, String> 传参
           if (args is Map<String, String>) {
             return AudioScreen(
               bookUrl: args['bookUrl'] ?? '',
               bookName: args['bookName'] ?? '',
             );
           }
-          return const AudioScreen(bookUrl: '');
+          return const AudioScreen();
         },
         bookInfo: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
+          // 路由参数规范化：优先接收 Book 对象
+          if (args is Book) {
+            return BookInfoScreen(book: args);
+          }
+          // 向后兼容：支持 String(bookUrl) 传参
           final bookUrl = args is String ? args : '';
           return BookInfoScreen(bookUrl: bookUrl);
         },
         changeSource: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
+          // 路由参数规范化：优先接收 Book 对象
+          if (args is Book) {
+            return ChangeSourceScreen(book: args);
+          }
+          // 向后兼容：支持 Map<String, String> 传参
           if (args is Map<String, String>) {
             return ChangeSourceScreen(
               bookUrl: args['bookUrl'] ?? '',
@@ -113,12 +135,7 @@ class AppRoutes {
               currentSourceUrl: args['currentSourceUrl'] ?? '',
             );
           }
-          return const ChangeSourceScreen(
-            bookUrl: '',
-            bookName: '',
-            author: '',
-            currentSourceUrl: '',
-          );
+          return const ChangeSourceScreen();
         },
         readingStats: (_) => const ReadingStatsScreen(),
         bookmarks: (_) => const BookmarkScreen(),
@@ -141,19 +158,29 @@ class AppRoutes {
         bookGroups: (_) => const BookGroupScreen(),
         searchContent: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
+          // 路由参数规范化：优先接收 Book 对象
+          if (args is Book) {
+            return SearchContentScreen(book: args);
+          }
+          // 向后兼容：支持 Map<String, String> 传参
           if (args is Map<String, String>) {
             return SearchContentScreen(
               bookUrl: args['bookUrl'] ?? '',
               bookName: args['bookName'] ?? '',
             );
           }
-          return const SearchContentScreen(bookUrl: '', bookName: '');
+          return const SearchContentScreen();
         },
         about: (_) => const AboutScreen(),
         
         rssFavorites: (_) => const RssFavoritesScreen(),
         changeCover: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
+          // 路由参数规范化：优先接收 Book 对象
+          if (args is Book) {
+            return ChangeCoverScreen(book: args);
+          }
+          // 向后兼容：支持 Map<String, String> 传参
           if (args is Map<String, String>) {
             return ChangeCoverScreen(
               bookUrl: args['bookUrl'] ?? '',
@@ -161,7 +188,7 @@ class AppRoutes {
               currentCover: args['coverUrl'],
             );
           }
-          return const ChangeCoverScreen(bookUrl: '', bookName: '');
+          return const ChangeCoverScreen();
         },
         txtTocRules: (_) => const TxtTocRulesScreen(),
         dict: (_) => const DictScreen(),

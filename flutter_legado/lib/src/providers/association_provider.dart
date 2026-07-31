@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../bridge/ffi.dart';
 import '../services/source_import_service.dart';
 
@@ -59,7 +59,7 @@ enum ImportStep {
 class AssociationProvider extends ChangeNotifier {
   final SourceImportService _importService;
 
-  AssociationProvider(RustApi api)
+  AssociationProvider(BookApi api)
       : _importService = SourceImportService(api);
 
   ImportType _type = ImportType.bookSource;

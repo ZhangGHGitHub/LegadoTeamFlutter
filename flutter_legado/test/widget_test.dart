@@ -10,7 +10,7 @@ void main() {
     // 因此只验证 LegadoApp widget 本身能正确创建。
     const app = LegadoApp();
     expect(app, isA<LegadoApp>());
-    expect(app, isA<StatelessWidget>());
+    expect(app, isA<StatefulWidget>());
   });
 
   testWidgets('LegadoApp key is preserved', (WidgetTester tester) async {

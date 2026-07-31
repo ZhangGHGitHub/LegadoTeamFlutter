@@ -1342,6 +1342,339 @@ pub unsafe extern "C" fn ffi_download_update_progress(
     to_ffi_response(result)
 }
 
+// ─── 压缩包导入与编码检测 FFI 函数 ──────────────────────
+
+/// 导入 ZIP 压缩包中的书籍文件
+#[no_mangle]
+pub unsafe extern "C" fn ffi_archive_import_zip(
+    zip_path: *const c_char,
+    output_dir: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let zip = c_char_to_str(zip_path)?;
+        let out = c_char_to_str(output_dir)?;
+        Ok::<_, LegadoError>(crate::api::archive_import_api::import_zip_file(zip, out))
+    }))
+}
+
+/// 导入 RAR 压缩包中的书籍文件（password 为空指针时表示无密码）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_archive_import_rar(
+    rar_path: *const c_char,
+    output_dir: *const c_char,
+    password: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let rar = c_char_to_str(rar_path)?;
+        let out = c_char_to_str(output_dir)?;
+        let pwd = if password.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(password)?.to_string())
+        };
+        Ok::<_, LegadoError>(crate::api::archive_import_api::import_rar_file(rar, out, pwd))
+    }))
+}
+
+/// 列出 ZIP 压缩包中的书籍文件名（不解压）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_archive_list_zip_files(zip_path: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let zip = c_char_to_str(zip_path)?;
+        crate::api::archive_import_api::list_zip_book_files(zip)
+    }))
+}
+
+/// 列出 RAR 压缩包中的书籍文件名（不解压，password 为空指针时表示无密码）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_archive_list_rar_files(
+    rar_path: *const c_char,
+    password: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let rar = c_char_to_str(rar_path)?;
+        let pwd = if password.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(password)?.to_string())
+        };
+        crate::api::archive_import_api::list_rar_book_files(rar, pwd)
+    }))
+}
+
+/// 检测 TXT 文件编码
+#[no_mangle]
+pub unsafe extern "C" fn ffi_archive_detect_encoding(file_path: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let path = c_char_to_str(file_path)?;
+        crate::api::archive_import_api::detect_txt_encoding(path)
+    }))
+}
+
+/// 转换 TXT 文件编码
+#[no_mangle]
+pub unsafe extern "C" fn ffi_archive_convert_encoding(
+    file_path: *const c_char,
+    from_encoding: *const c_char,
+    to_encoding: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let path = c_char_to_str(file_path)?;
+        let from = c_char_to_str(from_encoding)?;
+        let to = c_char_to_str(to_encoding)?;
+        Ok::<_, LegadoError>(crate::api::archive_import_api::convert_txt_encoding(path, from, to))
+    }))
+}
+
+/// 判断文件是否为压缩包格式
+#[no_mangle]
+pub unsafe extern "C" fn ffi_archive_is_archive(file_path: *const c_char) -> bool {
+    catch_unwind(|| {
+        let path = c_char_to_str(file_path).unwrap_or("");
+        crate::api::archive_import_api::is_archive_file(path)
+    })
+    .unwrap_or(false)
+}
+
+// ─── QUIC/HTTP3 网络 FFI 函数 ─────────────────────────
+
+/// 创建 QUIC 客户端（config_json 为空指针时使用默认配置）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_quic_create_client(config_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let config = if config_json.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(config_json)?.to_string())
+        };
+        crate::api::quic_api::create_quinn_client(config)
+    }))
+}
+
+/// 通过 QUIC 发送 GET 请求
+#[no_mangle]
+pub unsafe extern "C" fn ffi_quic_get(url: *const c_char, headers_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let u = c_char_to_str(url)?.to_string();
+        let headers = if headers_json.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(headers_json)?.to_string())
+        };
+        crate::api::quic_api::quinn_get(u, headers)
+    }))
+}
+
+/// 通过 QUIC 发送 POST 请求（body 为 base64 编码）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_quic_post(
+    url: *const c_char,
+    body_base64: *const c_char,
+    headers_json: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let u = c_char_to_str(url)?.to_string();
+        let body = c_char_to_str(body_base64)?.to_string();
+        let headers = if headers_json.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(headers_json)?.to_string())
+        };
+        crate::api::quic_api::quinn_post(u, body, headers)
+    }))
+}
+
+/// QUIC 性能测试
+#[no_mangle]
+pub unsafe extern "C" fn ffi_quic_performance_test(url: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let u = c_char_to_str(url)?.to_string();
+        crate::api::quic_api::quinn_performance_test(u)
+    }))
+}
+
+/// 检查 QUIC 客户端是否已初始化
+#[no_mangle]
+pub extern "C" fn ffi_quic_is_initialized() -> bool {
+    catch_unwind(crate::api::quic_api::quinn_is_initialized).unwrap_or(false)
+}
+
+/// 清理 QUIC 连接池
+#[no_mangle]
+pub extern "C" fn ffi_quic_cleanup() -> *mut c_char {
+    match catch_unwind(crate::api::quic_api::quinn_cleanup) {
+        Ok(result) => to_c_char(&result),
+        Err(_) => to_c_char("QUIC cleanup failed"),
+    }
+}
+
+/// 设置主网络链路 QUIC 传输开关
+#[no_mangle]
+pub extern "C" fn ffi_net_set_quic_enabled(enabled: bool) -> *mut c_char {
+    match catch_unwind(|| crate::api::quic_api::net_set_quic_enabled(enabled)) {
+        Ok(result) => to_c_char(&result),
+        Err(_) => to_c_char("设置 QUIC 开关失败"),
+    }
+}
+
+/// 查询主网络链路 QUIC 传输开关状态
+#[no_mangle]
+pub extern "C" fn ffi_net_is_quic_enabled() -> bool {
+    catch_unwind(crate::api::quic_api::net_is_quic_enabled).unwrap_or(false)
+}
+
+// ─── 自动任务 FFI 函数 ───────────────────────────────
+
+/// 构建书籍更新定时任务
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_build_book_update(
+    book_url: *const c_char,
+    book_name: *const c_char,
+    book_author: *const c_char,
+    name: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        let bn = c_char_to_str(book_name)?;
+        let ba = c_char_to_str(book_author)?;
+        let n = c_char_to_str(name)?;
+        Ok::<_, LegadoError>(crate::api::auto_task_api::build_book_update_task(url, bn, ba, n))
+    }))
+}
+
+/// 批量更新 cron 表达式
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_update_cron_batch(
+    rules_json: *const c_char,
+    ids_json: *const c_char,
+    cron: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let rules = c_char_to_str(rules_json)?;
+        let ids = c_char_to_str(ids_json)?;
+        let c = c_char_to_str(cron)?;
+        crate::api::auto_task_api::update_cron_batch(rules, ids, c)
+    }))
+}
+
+/// 准备导入任务（合并本地运行时状态）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_prepare_imported(
+    local_tasks_json: *const c_char,
+    imported_json: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let local = c_char_to_str(local_tasks_json)?;
+        let imported = c_char_to_str(imported_json)?;
+        crate::api::auto_task_api::prepare_imported_tasks(local, imported)
+    }))
+}
+
+/// 执行任务协议（task_id 为空指针时不带 ID）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_execute(
+    protocol_json: *const c_char,
+    task_id: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let protocol = c_char_to_str(protocol_json)?;
+        let id = if task_id.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(task_id)?)
+        };
+        crate::api::auto_task_api::execute_task(protocol, id)
+    }))
+}
+
+/// 规范化脚本
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_normalize_script(script: *const c_char) -> *mut c_char {
+    match catch_unwind(|| {
+        let s = c_char_to_str(script).unwrap_or("");
+        crate::api::auto_task_api::normalize_script(s)
+    }) {
+        Ok(result) => to_c_char(&result),
+        Err(_) => to_c_char(""),
+    }
+}
+
+/// 判断书籍是否允许刷新目录
+#[no_mangle]
+pub extern "C" fn ffi_auto_task_can_refresh_toc(can_update: bool, respect_can_update: bool) -> bool {
+    catch_unwind(|| crate::api::auto_task_api::can_refresh_book_toc(can_update, respect_can_update))
+        .unwrap_or(false)
+}
+
+/// 查找书籍更新任务
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_find_book_update(
+    tasks_json: *const c_char,
+    book_url: *const c_char,
+    book_name: *const c_char,
+    book_author: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let tasks = c_char_to_str(tasks_json)?;
+        let url = c_char_to_str(book_url)?;
+        let bn = c_char_to_str(book_name)?;
+        let ba = c_char_to_str(book_author)?;
+        crate::api::auto_task_api::find_book_update_task(tasks, url, bn, ba)
+    }))
+}
+
+/// 解析 cron 表达式计算下次执行时间（无法解析返回 -1）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_next_due_at(cron: *const c_char, from_ms: i64) -> i64 {
+    catch_unwind(|| {
+        let c = c_char_to_str(cron).unwrap_or("");
+        crate::api::auto_task_api::next_due_at(c, from_ms)
+    })
+    .unwrap_or(-1)
+}
+
+// ─── 听书播放（播放模式/书籍解析）FFI 函数 ───────────────
+
+/// 将播放模式写入 readConfig JSON（read_config 为空指针时视为空）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_audio_with_play_mode(
+    read_config: *const c_char,
+    play_mode: i32,
+) -> *mut c_char {
+    match catch_unwind(|| {
+        let config = if read_config.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(read_config).unwrap_or(""))
+        };
+        crate::api::audio_api::with_audio_play_mode(config, play_mode)
+    }) {
+        Ok(result) => to_c_char(&result),
+        Err(_) => to_c_char("{}"),
+    }
+}
+
+/// 解析听书书籍（返回 Book JSON 或 null）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_audio_resolve_play_book(
+    requested_book_url: *const c_char,
+    cached_book_json: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let requested = if requested_book_url.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(requested_book_url)?)
+        };
+        let cached = if cached_book_json.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(cached_book_json)?)
+        };
+        crate::api::audio_api::resolve_audio_play_book(requested, cached)
+    }))
+}
+
 #[no_mangle]
 pub extern "C" fn legado_init() -> i32 {
     ffi_init()

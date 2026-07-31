@@ -1,14 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'rust_api.dart';
+import 'book_api.dart';
 
 /// 缓存管理服务
 ///
 /// 提供缓存统计、清理功能和自动过期策略配置。
 /// 对应 Android 原版 CacheBookService 中的缓存管理功能。
 class CacheService {
-  final RustApi _api;
+  final BookApi _api;
 
   /// 自动过期天数持久化键
   static const _keyAutoExpireDays = 'cache_auto_expire_days';

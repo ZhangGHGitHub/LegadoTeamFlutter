@@ -1,8 +1,19 @@
-.PHONY: gen build test check clean
+.PHONY: gen gen-only build test check clean run-windows rebuild-ffi
 
-# flutter_rust_bridge 代码生成
-gen:
+# flutter_rust_bridge 代码生成 + 自动重编译 DLL（防止 content hash 不同步）
+#
+# 关键：codegen 会重新生成两侧 frb_generated 的 content hash，
+# 若不同步重编译 DLL，运行时会报 "Content hash on Dart side ... different from Rust side"。
+# 因此 gen 必须紧跟一次 DLL 重编译，两者绑定为原子操作。
+gen: gen-only rebuild-ffi
+
+# 仅生成代码（不重编译 DLL，一般不单独使用）
+gen-only:
 	flutter_rust_bridge_codegen generate
+
+# 重编译 Rust FFI 动态库
+rebuild-ffi:
+	cd ../rust && cargo build -p legado-ffi
 
 # 静态检查（Rust + Flutter）
 check:
@@ -28,3 +39,8 @@ build-debug:
 clean:
 	cd ../rust && cargo clean
 	flutter clean
+
+# Windows 开发运行：先确保 DLL 与当前代码同步，再启动
+# 避免反复出现 content hash 不同步导致的 Rust 引擎初始化失败
+run-windows: rebuild-ffi
+	flutter run -d windows

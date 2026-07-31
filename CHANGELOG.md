@@ -7,9 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [未发布]
 
+### 新增（2026-07-31 重构遗留任务收尾）
+- 排版引擎渲染侧整合（Task #34）：paragraph_layout_engine 接入 reader_screen，屏级分页 + 中文避头尾 + 两端对齐，847+ 测试通过
+- 听书后台媒体按钮（Task #17）：MediaSession 通道注册 + AudioProvider 接线，锁屏/通知栏媒体控制 + 音频焦点管理，22/22 测试
+- 发现页 exploreUrl 分类（Task #30）：新增 explore_show_screen + Rust explore_api，分类展开/翻页加载/搜索防抖，Rust 6+4 测试
+- 压缩包导入 + 编码检测（Task #31）：archive_import_dialog 支持 zip/rar/7z 解压导入 + TXT 自动编码检测 + 手动编码选择 UI
+- audio/auto_task FFI（Task #19 注册 + Task #32 接入）：legado-ffi 新增 9+2 个 FFI 方法，Flutter 侧完成接入
+- QUIC 主网络链路（Task #43）：client.rs 集成可选 QUIC/HTTP3 + 失败自动 fallback HTTP/2，配置开关默认关闭，net 188 + ffi 79 测试
+- M3 主题系统集中化（Task #39）：独立 app_theme.dart + app_typography.dart，light/dark 双 ColorScheme（用户确认 M3 方向）
+- 响应式网格布局（Task #35）：bookshelf/rss/explore 改用 MaxCrossAxisExtent 自适应列数 + responsive.dart 断点工具
+- SafeArea 安全边距（Task #36）：home_screen 导航栏与主体补充 SafeArea
+
+### 修复（2026-07-31 UI 一致性）
+- 长按多选精确化（Task #37）：长按多选限定封面区域，标题区域排除误触
+- 全局 ScrollBehavior 统一（Task #38）：统一滚动物理，各列表手感一致
+- Dark Mode 完整校验（Task #41）：42 个 screen 暗色对比度（WCAG ≥ 4.5）与图标可见性核验
+
+### 优化（2026-07-31 性能与质量）
+- 性能优化（Task #40）：cached_network_image 双缓存 + RepaintBoundary/稳定 Key/const 构造 + dispose 资源释放审计 + 冷启动/滚动 FPS/翻页性能基线
+- 测试覆盖率（Task #33）：新增 +148 测试，Providers 层覆盖率达 72.4%，总计 855 测试全部通过
+
 ### 新增
-- 崩溃防护体系：CrashLogService 全局错误捕获、runZonedGuarded 异步兜底、启动崩溃日志检测弹窗
+- Tab 自定义图标：8 个安卓原版 SVG 图标（选中/未选中各 4 个）+ flutter_svg 集成 + home_screen.dart 导航栏替换
+- 书架自定义刷新组件：custom_refresh_indicator.dart，对齐安卓下拉刷新动画
+- 搜索分组筛选：分组/书源双 Tab 筛选面板，对齐安卓 SearchScopeDialog
+- 导出路径选择与入口：FilePicker 路径选择 + book_info_screen/bookshelf_screen 双入口集成
+- 崩溃防护体系：CrashLogService 全局错误捕获、runZonedGuarded 异步兖底、启动崩溃日志检测弹窗
 - 崩溃日志弹窗组件，支持查看详情和清除日志
+
+### 修复
+- 阻塞修复：bookshelf_screen.dart dynamic 调用修复、reader_provider.dart 异步空安全、reader_screen.dart PageController hasClients 守卫
+- 翻页动画参数对齐：300ms + linear，与安卓 PageDelegate 一致
+- RSS 界面样式对齐：4 列网格 + 50x50 圆角图标居中
+- 搜索框样式对齐：35dp 胶囊 + 半透明填充 + 0.5dp 描边
+- 发现页样式对齐：AppBar 内嵌搜索框 + 扁平列表项
+
+### 变更
+- 路由参数规范化：bookInfo/changeSource/audio/searchContent/changeCover/export 6 个路由支持 Book 对象传递
+- ExportDialog 参数从 bookId 改为 Book 对象，支持完整书籍信息导出
 
 ### 优化
 - main.dart 启动流程：SharedPreferences 与 Rust FFI 并行初始化

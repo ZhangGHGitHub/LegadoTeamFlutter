@@ -39,7 +39,7 @@ pub mod verification;
 pub mod webdav;
 
 // 常用类型重导出
-pub use client::{LegadoClient, LegadoClientConfig};
+pub use client::{is_quic_enabled, set_quic_enabled, LegadoClient, LegadoClientConfig};
 pub use cookie_store::CookieStore;
 pub use cover::CoverCache;
 pub use middleware::{Middleware, MiddlewareChain};

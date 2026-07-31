@@ -182,6 +182,27 @@ pub fn quinn_cleanup() -> String {
     })
 }
 
+// ─── 主网络链路 QUIC 开关 ───────────────────────────────────────────────
+
+/// 设置主网络链路 QUIC 传输开关
+///
+/// 启用后，所有通过 `LegadoClient` 发起的 HTTPS 请求将优先尝试 QUIC/HTTP3，
+/// 失败时自动 fallback 到 HTTP/2（不影响现有请求流程）。
+/// 默认关闭。
+pub fn net_set_quic_enabled(enabled: bool) -> String {
+    legado_net::set_quic_enabled(enabled);
+    if enabled {
+        "主网络链路 QUIC 传输已启用".to_string()
+    } else {
+        "主网络链路 QUIC 传输已禁用".to_string()
+    }
+}
+
+/// 查询主网络链路 QUIC 传输开关状态
+pub fn net_is_quic_enabled() -> bool {
+    legado_net::is_quic_enabled()
+}
+
 // ---------- 内部辅助 ----------
 
 /// 解析请求头 JSON
@@ -330,5 +351,22 @@ mod tests {
         assert_eq!(quic_config.max_idle_connections, 16);
         assert!(!quic_config.enable_http2_fallback);
         assert!(!quic_config.enable_0rtt);
+    }
+
+    #[test]
+    fn test_net_quic_toggle() {
+        // 默认关闭
+        legado_net::set_quic_enabled(false);
+        assert!(!net_is_quic_enabled());
+
+        // 启用
+        let msg = net_set_quic_enabled(true);
+        assert!(msg.contains("启用"));
+        assert!(net_is_quic_enabled());
+
+        // 禁用
+        let msg = net_set_quic_enabled(false);
+        assert!(msg.contains("禁用"));
+        assert!(!net_is_quic_enabled());
     }
 }

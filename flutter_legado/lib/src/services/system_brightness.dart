@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// 系统亮度控制
@@ -12,7 +13,7 @@ class SystemBrightness {
       final int brightness = await _channel.invokeMethod('getSystemBrightness');
       return brightness / 255.0; // Android 返回 0-255，转换为 0.0-1.0
     } on PlatformException catch (e) {
-      print('获取系统亮度失败: ${e.message}');
+      debugPrint('获取系统亮度失败: ${e.message}');
       return 0.5; // 默认值
     }
   }
@@ -23,7 +24,7 @@ class SystemBrightness {
       final int value = (brightness * 255).round().clamp(0, 255);
       await _channel.invokeMethod('setSystemBrightness', value);
     } on PlatformException catch (e) {
-      print('设置系统亮度失败: ${e.message}');
+      debugPrint('设置系统亮度失败: ${e.message}');
     }
   }
 
@@ -33,7 +34,7 @@ class SystemBrightness {
       final bool supported = await _channel.invokeMethod('isBrightnessSupported');
       return supported;
     } on PlatformException catch (e) {
-      print('检查亮度支持失败: ${e.message}');
+      debugPrint('检查亮度支持失败: ${e.message}');
       return false;
     }
   }
@@ -44,7 +45,7 @@ class SystemBrightness {
       final bool auto = await _channel.invokeMethod('isAutoBrightness');
       return auto;
     } on PlatformException catch (e) {
-      print('获取自动亮度状态失败: ${e.message}');
+      debugPrint('获取自动亮度状态失败: ${e.message}');
       return false;
     }
   }
@@ -54,7 +55,7 @@ class SystemBrightness {
     try {
       await _channel.invokeMethod('setAutoBrightness', auto);
     } on PlatformException catch (e) {
-      print('设置自动亮度失败: ${e.message}');
+      debugPrint('设置自动亮度失败: ${e.message}');
     }
   }
 }

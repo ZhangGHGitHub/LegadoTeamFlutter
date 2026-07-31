@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -277,7 +278,7 @@ class ComicPageViewState extends State<ComicPageView>
         // 使用 try-catch 包裹，避免测试环境中的异常
         try {
           unawaited(
-            precacheImage(NetworkImage(widget.imageUrls[i]), context).catchError((_) {
+            precacheImage(CachedNetworkImageProvider(widget.imageUrls[i]), context).catchError((_) {
               // 预加载失败静默处理
             }),
           );
@@ -563,29 +564,22 @@ class ComicPageViewState extends State<ComicPageView>
     return Container(
       color: Colors.black,
       child: Center(
-        child: Image.network(
-          url,
+        child: CachedNetworkImage(
+          imageUrl: url,
           fit: BoxFit.contain,
           width: constraints.maxWidth,
           height: constraints.maxHeight,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return _buildLoadingPlaceholder(loadingProgress);
-          },
-          errorBuilder: (context, error, stackTrace) {
-            return _buildErrorPlaceholder(index);
-          },
+          // 漫画页需保留全分辨率供缩放，不限制 memCacheWidth（磁盘缓存默认开启）
+          progressIndicatorBuilder: (context, _, progress) =>
+              _buildLoadingPlaceholder(progress.progress),
+          errorWidget: (context, _, _) => _buildErrorPlaceholder(index),
         ),
       ),
     );
   }
 
-  /// 图片加载占位符
-  Widget _buildLoadingPlaceholder(ImageChunkEvent? progress) {
-    final value = progress != null && progress.expectedTotalBytes != null
-        ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
-        : null;
-
+  /// 图片加载占位符（[value] 为下载进度 0.0~1.0，null 表示不确定）
+  Widget _buildLoadingPlaceholder(double? value) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

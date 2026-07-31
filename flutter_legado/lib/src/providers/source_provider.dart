@@ -1,14 +1,14 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../bridge/ffi.dart';
 import '../services/source_import_service.dart';
 import '../services/backup_service.dart';
 
 /// 书源管理状态
 class SourceProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
   final SourceImportService _importService;
   final BackupService _backupService;
 

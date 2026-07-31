@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 
 /// 段评弹窗（参考 Kotlin 原版 ReviewColumn + onReviewClick）
 ///
@@ -12,7 +12,7 @@ import '../services/rust_api.dart';
 /// - 点赞评论
 /// - 删除评论
 class ParagraphCommentDialog extends StatefulWidget {
-  final RustApi api;
+  final BookApi api;
   final String bookUrl;
   final int chapterIndex;
   final String chapterTitle;
@@ -173,7 +173,7 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.error_outline,
-                                size: 48, color: Colors.grey),
+                                size: 48, color: theme.colorScheme.onSurfaceVariant),
                             const SizedBox(height: 8),
                             Text('加载失败',
                                 style: theme.textTheme.bodyMedium),
@@ -190,15 +190,15 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(Icons.chat_bubble_outline,
-                                    size: 48, color: Colors.grey[400]),
+                                    size: 48, color: theme.colorScheme.onSurfaceVariant),
                                 const SizedBox(height: 8),
                                 Text('暂无评论',
                                     style: theme.textTheme.bodyMedium
-                                        ?.copyWith(color: Colors.grey)),
+                                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                                 const SizedBox(height: 4),
                                 Text('来写第一条评论吧',
                                     style: theme.textTheme.bodySmall
-                                        ?.copyWith(color: Colors.grey)),
+                                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                               ],
                             ),
                           )
@@ -235,7 +235,7 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
                     controller: _inputController,
                     decoration: InputDecoration(
                       hintText: '写评论...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                       filled: true,
                       fillColor: theme.colorScheme.surface,
                       contentPadding: const EdgeInsets.symmetric(
@@ -321,7 +321,7 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
                     Text(
                       _formatTime(review.createdAt),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
+                        color: theme.colorScheme.onSurfaceVariant,
                         fontSize: 11,
                       ),
                     ),
@@ -338,12 +338,12 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.thumb_up_outlined,
-                                size: 14, color: Colors.grey[600]),
+                                size: 14, color: theme.colorScheme.onSurfaceVariant),
                             const SizedBox(width: 2),
                             Text(
                               '${review.likeCount}',
                               style: TextStyle(
-                                  fontSize: 11, color: Colors.grey[600]),
+                                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
                             ),
                           ],
                         ),
@@ -357,7 +357,7 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
                       child: Padding(
                         padding: const EdgeInsets.all(4),
                         child: Icon(Icons.delete_outline,
-                            size: 14, color: Colors.grey[500]),
+                            size: 14, color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ),
                   ],
@@ -386,7 +386,7 @@ class _ParagraphCommentDialogState extends State<ParagraphCommentDialog> {
               Navigator.pop(ctx);
               _deleteReview(id);
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text('删除', style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         ],
       ),
@@ -445,7 +445,7 @@ class _ReviewItem {
 /// 显示段评弹窗的便捷方法
 Future<void> showParagraphCommentDialog(
   BuildContext context, {
-  required RustApi api,
+  required BookApi api,
   required String bookUrl,
   required int chapterIndex,
   required String chapterTitle,

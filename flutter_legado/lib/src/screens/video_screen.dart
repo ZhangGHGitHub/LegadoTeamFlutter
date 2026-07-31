@@ -393,7 +393,7 @@ class _VideoScreenState extends State<VideoScreen> {
           Text(
             widget.videoUrl,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

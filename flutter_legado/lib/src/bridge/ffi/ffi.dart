@@ -308,6 +308,27 @@ Future<String> webbookContent({
   chapterJson: chapterJson,
 );
 
+/// 解析 exploreUrl 为分类列表（返回 JSON 数组）
+///
+/// `explore_url` — 书源的 exploreUrl 字段
+Future<String> exploreParseUrl({required String exploreUrl}) =>
+    RustLib.instance.api.crateFfiFfiExploreParseUrl(exploreUrl: exploreUrl);
+
+/// 抓取发现分类的书籍列表（返回 WebSearchResult JSON 数组）
+///
+/// `source_json` — BookSource JSON 字符串
+/// `url` — 分类 URL
+/// `page` — 页码（从 1 开始）
+Future<String> exploreFetchBooks({
+  required String sourceJson,
+  required String url,
+  required int page,
+}) => RustLib.instance.api.crateFfiFfiExploreFetchBooks(
+  sourceJson: sourceJson,
+  url: url,
+  page: page,
+);
+
 /// 使用规则解析内容，返回 JSON 格式的结果
 Future<String> parseRule({
   required String content,
@@ -771,4 +792,195 @@ Future<String> bookExportInfo({
 }) => RustLib.instance.api.crateFfiFfiBookExportInfo(
   bookUrl: bookUrl,
   format: format,
+);
+
+/// 导入 ZIP 压缩包中的书籍文件（返回 ArchiveImportResult JSON）
+Future<String> archiveImportZip({
+  required String zipPath,
+  required String outputDir,
+}) => RustLib.instance.api.crateFfiFfiArchiveImportZip(
+  zipPath: zipPath,
+  outputDir: outputDir,
+);
+
+/// 导入 RAR 压缩包中的书籍文件（支持加密，返回 ArchiveImportResult JSON）
+Future<String> archiveImportRar({
+  required String rarPath,
+  required String outputDir,
+  String? password,
+}) => RustLib.instance.api.crateFfiFfiArchiveImportRar(
+  rarPath: rarPath,
+  outputDir: outputDir,
+  password: password,
+);
+
+/// 列出 ZIP 压缩包中的书籍文件名（不解压，返回 JSON 数组）
+Future<String> archiveListZipFiles({required String zipPath}) =>
+    RustLib.instance.api.crateFfiFfiArchiveListZipFiles(zipPath: zipPath);
+
+/// 列出 RAR 压缩包中的书籍文件名（不解压，返回 JSON 数组）
+Future<String> archiveListRarFiles({
+  required String rarPath,
+  String? password,
+}) => RustLib.instance.api.crateFfiFfiArchiveListRarFiles(
+  rarPath: rarPath,
+  password: password,
+);
+
+/// 检测 TXT 文件编码（返回 EncodingResult JSON）
+Future<String> archiveDetectEncoding({required String filePath}) =>
+    RustLib.instance.api.crateFfiFfiArchiveDetectEncoding(filePath: filePath);
+
+/// 转换 TXT 文件编码（返回 ConvertResult JSON）
+Future<String> archiveConvertEncoding({
+  required String filePath,
+  required String fromEncoding,
+  required String toEncoding,
+}) => RustLib.instance.api.crateFfiFfiArchiveConvertEncoding(
+  filePath: filePath,
+  fromEncoding: fromEncoding,
+  toEncoding: toEncoding,
+);
+
+/// 判断文件是否为压缩包格式
+Future<bool> archiveIsArchive({required String filePath}) =>
+    RustLib.instance.api.crateFfiFfiArchiveIsArchive(filePath: filePath);
+
+/// 创建 QUIC 客户端（config_json 为空时使用默认配置）
+Future<String> quicCreateClient({String? configJson}) =>
+    RustLib.instance.api.crateFfiFfiQuicCreateClient(configJson: configJson);
+
+/// 通过 QUIC 发送 GET 请求（返回响应 JSON）
+Future<String> quicGet({required String url, String? headersJson}) =>
+    RustLib.instance.api.crateFfiFfiQuicGet(url: url, headersJson: headersJson);
+
+/// 通过 QUIC 发送 POST 请求（body 为 base64 编码，返回响应 JSON）
+Future<String> quicPost({
+  required String url,
+  required String bodyBase64,
+  String? headersJson,
+}) => RustLib.instance.api.crateFfiFfiQuicPost(
+  url: url,
+  bodyBase64: bodyBase64,
+  headersJson: headersJson,
+);
+
+/// QUIC 性能测试（返回 PerformanceMetrics JSON）
+Future<String> quicPerformanceTest({required String url}) =>
+    RustLib.instance.api.crateFfiFfiQuicPerformanceTest(url: url);
+
+/// 检查 QUIC 客户端是否已初始化
+Future<bool> quicIsInitialized() =>
+    RustLib.instance.api.crateFfiFfiQuicIsInitialized();
+
+/// 清理 QUIC 连接池
+Future<String> quicCleanup() => RustLib.instance.api.crateFfiFfiQuicCleanup();
+
+/// 设置主网络链路 QUIC 传输开关
+///
+/// 启用后 LegadoClient 的 HTTPS 请求优先走 QUIC/HTTP3，失败自动 fallback 到 HTTP/2。
+Future<String> netSetQuicEnabled({required bool enabled}) =>
+    RustLib.instance.api.crateFfiFfiNetSetQuicEnabled(enabled: enabled);
+
+/// 查询主网络链路 QUIC 传输开关状态
+Future<bool> netIsQuicEnabled() =>
+    RustLib.instance.api.crateFfiFfiNetIsQuicEnabled();
+
+/// 构建书籍更新定时任务（返回 AutoTaskRule JSON）
+Future<String> autoTaskBuildBookUpdate({
+  required String bookUrl,
+  required String bookName,
+  required String bookAuthor,
+  required String name,
+}) => RustLib.instance.api.crateFfiFfiAutoTaskBuildBookUpdate(
+  bookUrl: bookUrl,
+  bookName: bookName,
+  bookAuthor: bookAuthor,
+  name: name,
+);
+
+/// 批量更新 cron 表达式（rules_json 为 AutoTaskRule 数组，ids_json 为 ID 数组，返回更新后的规则数组 JSON）
+Future<String> autoTaskUpdateCronBatch({
+  required String rulesJson,
+  required String idsJson,
+  required String cron,
+}) => RustLib.instance.api.crateFfiFfiAutoTaskUpdateCronBatch(
+  rulesJson: rulesJson,
+  idsJson: idsJson,
+  cron: cron,
+);
+
+/// 准备导入任务（合并本地运行时状态，返回合并后的任务数组 JSON）
+Future<String> autoTaskPrepareImported({
+  required String localTasksJson,
+  required String importedJson,
+}) => RustLib.instance.api.crateFfiFfiAutoTaskPrepareImported(
+  localTasksJson: localTasksJson,
+  importedJson: importedJson,
+);
+
+/// 执行任务协议（protocol_json 为 TaskProtocol，返回 TaskResult JSON）
+Future<String> autoTaskExecute({required String protocolJson}) =>
+    RustLib.instance.api.crateFfiFfiAutoTaskExecute(protocolJson: protocolJson);
+
+/// 带 ID 执行任务协议（返回 TaskResult JSON）
+Future<String> autoTaskExecuteWithId({
+  required String protocolJson,
+  required String taskId,
+}) => RustLib.instance.api.crateFfiFfiAutoTaskExecuteWithId(
+  protocolJson: protocolJson,
+  taskId: taskId,
+);
+
+/// 规范化脚本（去除 @js: 前缀或 <js></js> 包裹）
+Future<String> autoTaskNormalizeScript({required String script}) =>
+    RustLib.instance.api.crateFfiFfiAutoTaskNormalizeScript(script: script);
+
+/// 判断书籍是否允许刷新目录
+Future<bool> autoTaskCanRefreshToc({
+  required bool canUpdate,
+  required bool respectCanUpdate,
+}) => RustLib.instance.api.crateFfiFfiAutoTaskCanRefreshToc(
+  canUpdate: canUpdate,
+  respectCanUpdate: respectCanUpdate,
+);
+
+/// 查找书籍更新任务（tasks_json 为 AutoTaskRule 数组，返回匹配任务 JSON 或 null）
+Future<String> autoTaskFindBookUpdate({
+  required String tasksJson,
+  required String bookUrl,
+  required String bookName,
+  required String bookAuthor,
+}) => RustLib.instance.api.crateFfiFfiAutoTaskFindBookUpdate(
+  tasksJson: tasksJson,
+  bookUrl: bookUrl,
+  bookName: bookName,
+  bookAuthor: bookAuthor,
+);
+
+/// 解析 cron 表达式计算下次执行时间（Unix 毫秒，无法解析返回 -1）
+Future<PlatformInt64> autoTaskNextDueAt({
+  required String cron,
+  required PlatformInt64 fromMs,
+}) => RustLib.instance.api.crateFfiFfiAutoTaskNextDueAt(
+  cron: cron,
+  fromMs: fromMs,
+);
+
+/// 将播放模式写入 readConfig JSON（返回更新后的 JSON）
+Future<String> audioWithPlayMode({String? readConfig, required int playMode}) =>
+    RustLib.instance.api.crateFfiFfiAudioWithPlayMode(
+      readConfig: readConfig,
+      playMode: playMode,
+    );
+
+/// 解析听书书籍（返回 Book JSON 或 null）
+///
+/// 请求 URL 为空时返回缓存书籍；缓存匹配时直接返回；否则按 URL 查库。
+Future<String> audioResolvePlayBook({
+  String? requestedBookUrl,
+  String? cachedBookJson,
+}) => RustLib.instance.api.crateFfiFfiAudioResolvePlayBook(
+  requestedBookUrl: requestedBookUrl,
+  cachedBookJson: cachedBookJson,
 );

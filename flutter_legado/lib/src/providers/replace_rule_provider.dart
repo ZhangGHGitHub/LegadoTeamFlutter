@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../bridge/ffi.dart';
 
 /// 替换规则状态管理
 class ReplaceRuleProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
 
   ReplaceRuleProvider(this._api);
 

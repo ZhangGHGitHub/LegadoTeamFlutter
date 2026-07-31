@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 
 /// 朗读引擎配置页面
 ///
@@ -27,7 +27,7 @@ class _ReadAloudConfigScreenState extends State<ReadAloudConfigScreen> {
   Future<void> _loadEngines() async {
     setState(() => _loading = true);
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final list = await api.getHttpTts();
       setState(() {
         _engines = list;
@@ -45,7 +45,7 @@ class _ReadAloudConfigScreenState extends State<ReadAloudConfigScreen> {
 
   Future<void> _deleteEngine(HttpTts engine) async {
     final messenger = ScaffoldMessenger.of(context);
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -82,7 +82,7 @@ class _ReadAloudConfigScreenState extends State<ReadAloudConfigScreen> {
 
   Future<void> _addOrEditEngine([HttpTts? existing]) async {
     final messenger = ScaffoldMessenger.of(context);
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
 
     final result = await showDialog<HttpTts>(
       context: context,

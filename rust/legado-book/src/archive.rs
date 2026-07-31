@@ -100,6 +100,7 @@ pub fn import_zip_file(zip_path: &str, output_dir: &str) -> LegadoResult<Vec<Str
 ///
 /// # 返回
 /// 提取的书籍文件路径列表
+#[cfg(not(target_os = "android"))]
 pub fn import_rar_file(
     rar_path: &str,
     output_dir: &str,
@@ -169,6 +170,16 @@ pub fn import_rar_file(
     Ok(extracted_files)
 }
 
+/// Android 平台不支持 RAR（unrar_sys 无法交叉编译）
+#[cfg(target_os = "android")]
+pub fn import_rar_file(
+    _rar_path: &str,
+    _output_dir: &str,
+    _password: Option<&str>,
+) -> LegadoResult<Vec<String>> {
+    Err(LegadoError::BookParse("Android 平台暂不支持 RAR 解压".to_string()))
+}
+
 /// 列出 ZIP 压缩包中的书籍文件名（不解压）
 ///
 /// # 参数
@@ -211,6 +222,7 @@ pub fn list_zip_book_files(zip_path: &str) -> LegadoResult<Vec<String>> {
 ///
 /// # 返回
 /// 书籍文件名列表
+#[cfg(not(target_os = "android"))]
 pub fn list_rar_book_files(rar_path: &str, password: Option<&str>) -> LegadoResult<Vec<String>> {
     let arc = match password {
         Some(pw) => unrar::Archive::with_password(rar_path, pw),
@@ -238,6 +250,12 @@ pub fn list_rar_book_files(rar_path: &str, password: Option<&str>) -> LegadoResu
     }
 
     Ok(book_files)
+}
+
+/// Android 平台不支持 RAR 列表
+#[cfg(target_os = "android")]
+pub fn list_rar_book_files(_rar_path: &str, _password: Option<&str>) -> LegadoResult<Vec<String>> {
+    Err(LegadoError::BookParse("Android 平台暂不支持 RAR 解压".to_string()))
 }
 
 /// 判断文件是否为压缩包格式

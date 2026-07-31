@@ -5,12 +5,15 @@ import 'package:provider/provider.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf_provider.dart';
+import '../providers/reader_provider.dart';
 import '../routes.dart';
+import '../utils/responsive.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/book_grid_item.dart';
+import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
-import '../widgets/confirm_dialog.dart';
 
 /// 书架页面
 class BookshelfScreen extends StatefulWidget {
@@ -65,37 +68,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
             PopupMenuItem(value: 'groups', child: Text('分组管理')),
             PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
             PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'group_none',
-              child: Row(
-                children: [
-                  Icon(provider.groupMode == GroupMode.none ? Icons.radio_button_checked : Icons.radio_button_off, size: 20),
-                  const SizedBox(width: 8),
-                  Text(AppStrings.groupByNoneLabel),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: 'group_source',
-              child: Row(
-                children: [
-                  Icon(provider.groupMode == GroupMode.bySource ? Icons.radio_button_checked : Icons.radio_button_off, size: 20),
-                  const SizedBox(width: 8),
-                  Text(AppStrings.groupBySourceLabel),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: 'group_group',
-              child: Row(
-                children: [
-                  Icon(provider.groupMode == GroupMode.byGroup ? Icons.radio_button_checked : Icons.radio_button_off, size: 20),
-                  const SizedBox(width: 8),
-                  Text(AppStrings.groupByGroupLabel),
-                ],
-              ),
-            ),
           ],
         ),
       ],
@@ -117,19 +89,15 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     }
 
     if (provider.isEmpty) {
+      // 安卓原版：纯居中灰字空状态
       return EmptyState(
         icon: Icons.library_books,
         title: AppStrings.emptyBookshelf,
-        subtitle: AppStrings.emptyBookshelfHint,
-        action: FilledButton.icon(
-          onPressed: () => _addLocalBook(context),
-          icon: const Icon(Icons.add),
-          label: Text(AppStrings.addBook),
-        ),
+        simple: true,
       );
     }
 
-    return RefreshIndicator(
+    return CustomRefreshIndicator(
       onRefresh: () => provider.loadBooks(),
       child: CustomScrollView(
         slivers: [
@@ -274,20 +242,29 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   }
 
   Widget _buildGridSliver(BuildContext context, List<Book> books) {
-    return SliverPadding(
-      padding: const EdgeInsets.all(12),
-      sliver: SliverGrid.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.62,
-        ),
-        itemCount: books.length,
-        itemBuilder: (context, index) {
-          return _buildGridItem(context, books[index]);
-        },
-      ),
+    // 响应式网格：按可用宽度动态计算列数（手机 2 列 / 中大屏 3 列 / 平板 4 列）
+    // 使用 SliverLayoutBuilder 而非 LayoutBuilder，因为父级是 CustomScrollView（需要 Sliver 子组件）
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        final columns = Responsive.gridColumnsForWidth(constraints.crossAxisExtent);
+        final aspectRatio =
+            Responsive.bookGridChildAspectRatio(constraints.crossAxisExtent);
+        return SliverPadding(
+          padding: const EdgeInsets.all(12),
+          sliver: SliverGrid.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: aspectRatio,
+            ),
+            itemCount: books.length,
+            itemBuilder: (context, index) {
+              return _buildGridItem(context, books[index]);
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -324,47 +301,27 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
             style: Theme.of(context).textTheme.labelSmall,
           ),
           onTap: () => _openBook(context, book),
-          onLongPress: () => _showBookMenu(context, book),
+          // 安卓原版：长按直接打开书籍信息页
+          onLongPress: () => _openBookInfo(context, book),
         );
       },
     );
   }
 
   Widget _buildGridItem(BuildContext context, Book book) {
-    return GestureDetector(
+    // 稳定 ValueKey（bookUrl）避免数据变化时整网格重建；RepaintBoundary 隔离重绘区域
+    final item = BookGridItem(
+      key: ValueKey(book.bookUrl),
+      title: book.name,
+      coverUrl: book.customCoverUrl ?? book.coverUrl,
+      author: book.durChapterTitle ?? AppStrings.unread,
       onTap: () => _openBook(context, book),
-      onLongPress: () => _showBookMenu(context, book),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: BookCover(
-              coverUrl: book.customCoverUrl ?? book.coverUrl,
-              width: double.infinity,
-              height: double.infinity,
-              borderRadius: 6,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            book.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-          ),
-          Text(
-            book.durChapterTitle ?? AppStrings.unread,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ],
-      ),
+      // 封面长按：打开书籍信息页（对齐安卓原版）
+      onCoverLongPress: () => _openBookInfo(context, book),
+      // 标题/信息区域长按：弹出操作菜单
+      onInfoLongPress: () => _showBookActionSheet(context, book),
     );
+    return RepaintBoundary(child: item);
   }
 
   Widget _buildFab(BuildContext context) {
@@ -378,74 +335,122 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   // ===== 操作 =====
 
   void _openBook(BuildContext context, Book book) {
-    final readerProvider = context.read<dynamic>(); // ReaderProvider
-    // ignore: avoid_dynamic_calls
+    final readerProvider = context.read<ReaderProvider>();
     readerProvider.openBook(book);
     Navigator.pushNamed(context, AppRoutes.reader);
   }
 
-  Future<void> _showBookMenu(BuildContext context, Book book) async {
-    final action = await showModalBottomSheet<String>(
+  /// 长按封面直接打开书籍信息页（对齐安卓原版行为）
+  void _openBookInfo(BuildContext context, Book book) {
+    Navigator.pushNamed(
+      context,
+      AppRoutes.bookInfo,
+      arguments: book,
+    );
+  }
+
+  /// 长按标题/信息区域弹出操作菜单（对齐安卓原版底部菜单）
+  void _showBookActionSheet(BuildContext context, Book book) {
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('查看详情'),
-              onTap: () => Navigator.pop(ctx, 'info'),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 菜单标题：书名
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  book.name,
+                  style: Theme.of(sheetContext).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('书籍信息'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openBookInfo(context, book);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('编辑'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  // TODO: 编辑书籍信息
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share_outlined),
+                title: const Text('分享'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  // TODO: 分享书籍
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: Theme.of(sheetContext).colorScheme.error,
+                ),
+                title: Text(
+                  '删除',
+                  style: TextStyle(
+                    color: Theme.of(sheetContext).colorScheme.error,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _confirmDeleteBook(context, book);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 确认删除书籍对话框
+  void _confirmDeleteBook(BuildContext context, Book book) {
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('删除书籍'),
+          content: Text('确定要从书架中删除「${book.name}」吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
             ),
-            ListTile(
-              leading: const Icon(Icons.vertical_align_top),
-              title: Text(AppStrings.pinToTop),
-              onTap: () => Navigator.pop(ctx, 'pin'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: Text(AppStrings.editInfo),
-              onTap: () => Navigator.pop(ctx, 'edit'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder),
-              title: Text(AppStrings.group),
-              onTap: () => Navigator.pop(ctx, 'group'),
-            ),
-            ListTile(
-              leading: Icon(Icons.delete, color: Theme.of(ctx).colorScheme.error),
-              title: Text(AppStrings.delete, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-              onTap: () => Navigator.pop(ctx, 'delete'),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                context.read<BookshelfProvider>().removeBook(book.bookUrl);
+                messenger.showSnackBar(
+                  SnackBar(content: Text('已删除「${book.name}」')),
+                );
+              },
+              child: Text(
+                '删除',
+                style: TextStyle(
+                  color: Theme.of(dialogContext).colorScheme.error,
+                ),
+              ),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
-
-    if (action == null) return;
-
-    if (action == 'info') {
-      if (!context.mounted) return;
-      Navigator.pushNamed(
-        context,
-        AppRoutes.bookInfo,
-        arguments: book.bookUrl,
-      );
-      return;
-    }
-
-    if (action == 'delete') {
-      if (!context.mounted) return;
-      final confirmed = await showConfirmDialog(
-        context,
-        title: AppStrings.deleteBook,
-        content: '${AppStrings.confirmDeleteBook}《${book.name}》?',
-        confirmText: AppStrings.delete,
-        isDestructive: true,
-      );
-      if (confirmed && context.mounted) {
-        context.read<BookshelfProvider>().removeBook(book.bookUrl);
-      }
-    }
   }
 
   /// 选择本地书籍文件并导入书架
@@ -512,15 +517,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         break;
       case 'sources':
         Navigator.pushNamed(context, AppRoutes.sources);
-        break;
-      case 'group_none':
-        context.read<BookshelfProvider>().setGroupMode(GroupMode.none);
-        break;
-      case 'group_source':
-        context.read<BookshelfProvider>().setGroupMode(GroupMode.bySource);
-        break;
-      case 'group_group':
-        context.read<BookshelfProvider>().setGroupMode(GroupMode.byGroup);
         break;
     }
   }

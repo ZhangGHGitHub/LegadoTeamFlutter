@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 use legado_core::{LegadoError, LegadoResult};
 
-use crate::migration::MigrationRegistry;
+use crate::migration::{self, MigrationRegistry};
 use crate::schema;
 
 /// 数据库包装器，持有 SQLite 连接
@@ -60,6 +60,41 @@ impl Database {
             let registry = MigrationRegistry::new();
             registry.migrate_to_latest(conn)?;
         }
+        // 无论版本号如何，始终校验列完整性（修复版本号与实际 schema 不一致的情况）
+        Self::ensure_schema_integrity(conn)?;
+        Ok(())
+    }
+
+    /// 校验并修复 schema 完整性：确保所有必要列存在
+    ///
+    /// 解决数据库 user_version 已标记为最新版本但实际缺少列的问题
+    /// （可能由早期代码直接设置版本号但未执行完整迁移导致）
+    fn ensure_schema_integrity(conn: &Connection) -> LegadoResult<()> {
+        use migration::{add_column_if_not_exists, table_exists};
+
+        if table_exists(conn, "rssSources")? {
+            add_column_if_not_exists(conn, "rssSources", "contentWhitelist", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "contentBlacklist", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "shouldOverrideUrlLoading", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "injectJs", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "preloadJs", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "startHtml", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "startStyle", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "startJs", "TEXT")?;
+            add_column_if_not_exists(conn, "rssSources", "showWebLog", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(conn, "rssSources", "type", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(conn, "rssSources", "preload", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(conn, "rssSources", "cacheFirst", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(conn, "rssSources", "searchUrl", "TEXT")?;
+        }
+
+        if table_exists(conn, "books")? {
+            add_column_if_not_exists(conn, "books", "infoHtml", "TEXT DEFAULT ''")?;
+            add_column_if_not_exists(conn, "books", "tocHtml", "TEXT DEFAULT ''")?;
+            add_column_if_not_exists(conn, "books", "downloadUrls", "TEXT DEFAULT ''")?;
+            add_column_if_not_exists(conn, "books", "coverOrigin", "TEXT DEFAULT ''")?;
+        }
+
         Ok(())
     }
 

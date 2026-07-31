@@ -13,7 +13,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io' show Platform;
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
@@ -196,13 +196,53 @@ class RustBridge {
     } else if (Platform.isIOS) {
       return DynamicLibrary.process();
     } else if (Platform.isWindows) {
-      return DynamicLibrary.open('legado_ffi.dll');
+      return _openWindowsDll();
     } else if (Platform.isMacOS) {
       return DynamicLibrary.open('liblegado_ffi.dylib');
     } else if (Platform.isLinux) {
       return DynamicLibrary.open('liblegado_ffi.so');
     }
     throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
+  }
+
+  /// Windows 下多路径搜索 legado_ffi.dll
+  ///
+  /// 搜索顺序：
+  /// 1. exe 所在目录（标准部署位置）
+  /// 2. Rust release 构建输出
+  /// 3. Rust debug 构建输出
+  /// 4. 系统 PATH（兜底）
+  DynamicLibrary _openWindowsDll() {
+    const dllName = 'legado_ffi.dll';
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    // exe 目录: flutter_legado/build/windows/x64/runner/Debug
+    // 项目根目录: 向上 5 级到 flutter_legado/
+    final projectDir = File(Platform.resolvedExecutable).parent
+        .parent.parent.parent.parent.path;
+    final rustTargetDir = '$projectDir${Platform.pathSeparator}..${Platform.pathSeparator}rust${Platform.pathSeparator}target';
+
+    final searchPaths = [
+      '$exeDir${Platform.pathSeparator}$dllName',
+      '$rustTargetDir${Platform.pathSeparator}release${Platform.pathSeparator}$dllName',
+      '$rustTargetDir${Platform.pathSeparator}debug${Platform.pathSeparator}$dllName',
+    ];
+
+    for (final path in searchPaths) {
+      if (File(path).existsSync()) {
+        return DynamicLibrary.open(path);
+      }
+    }
+
+    // 兜底：尝试系统 PATH
+    try {
+      return DynamicLibrary.open(dllName);
+    } catch (e) {
+      throw StateError(
+        '找不到 $dllName，已搜索路径:\n'
+        '${searchPaths.join('\n')}\n\n'
+        '请先构建 Rust FFI: cd rust && cargo build -p legado-ffi',
+      );
+    }
   }
 
   /// 将 FFI 调用放入 isolate 友好的 Future 中

@@ -477,7 +477,7 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
                                   min: 0.0,
                                   max: 1.0,
                                   divisions: 20,
-                                  label: '%',
+                                  label: '${(brightness * 100).round()}%',
                                   onChanged: (v) async {
                                     await SystemBrightness.setBrightness(v);
                                     setState(() {});
@@ -489,7 +489,7 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
                               SizedBox(
                                 width: 48,
                                 child: Text(
-                                  '%',
+                                  '${(brightness * 100).round()}%',
                                   textAlign: TextAlign.end,
                                   style: Theme.of(context).textTheme.labelMedium,
                                 ),

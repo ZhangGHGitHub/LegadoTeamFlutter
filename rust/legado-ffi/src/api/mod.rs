@@ -4,6 +4,7 @@
 
 pub mod archive_import_api;
 pub mod audio_api;
+pub mod auto_task_api;
 pub mod backup_api;
 pub mod book_export;
 pub mod book_group_api;
@@ -13,6 +14,7 @@ pub mod bookshelf;
 pub mod cache_api;
 pub mod config_api;
 pub mod download_api;
+pub mod explore_api;
 pub mod http_tts_api;
 pub mod quic_api;
 pub mod read_record_api;

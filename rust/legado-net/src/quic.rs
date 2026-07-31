@@ -131,6 +131,11 @@ impl QuinnClient {
 
     /// 创建 QUIC endpoint
     fn create_endpoint(&self) -> LegadoResult<Endpoint> {
+        // 安装进程级 rustls 加密提供者（ring）。
+        // rustls 0.23 同时启用 ring 与 aws-lc-rs feature 时无法自动选择默认提供者，
+        // 需手动安装；若已安装则忽略错误。
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let mut roots = RootCertStore::empty();
         if self.config.verify_certs {
             roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());

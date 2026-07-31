@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../l10n/app_strings.dart';
 import 'bookshelf_screen.dart';
@@ -23,14 +24,20 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          const BookshelfScreen(),
-          if (_visitedTabs.contains(1)) const ExploreScreen() else const SizedBox.shrink(),
-          if (_visitedTabs.contains(2)) const RssScreen() else const SizedBox.shrink(),
-          if (_visitedTabs.contains(3)) const SettingsScreen() else const SizedBox.shrink(),
-        ],
+      // SafeArea 覆盖手势导航与刘海屏场景
+      // bottom: false — 底部 NavigationBar 已自带 SafeArea 处理
+      // 阅读器为独立路由页面（沉浸式），不受此处影响
+      body: SafeArea(
+        bottom: false,
+        child: IndexedStack(
+          index: _currentIndex,
+          children: [
+            const BookshelfScreen(),
+            if (_visitedTabs.contains(1)) const ExploreScreen() else const SizedBox.shrink(),
+            if (_visitedTabs.contains(2)) const RssScreen() else const SizedBox.shrink(),
+            if (_visitedTabs.contains(3)) const SettingsScreen() else const SizedBox.shrink(),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
@@ -43,23 +50,87 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         destinations: [
           NavigationDestination(
-            icon: const Icon(Icons.library_books_outlined),
-            selectedIcon: const Icon(Icons.library_books),
+            icon: SvgPicture.asset(
+              'assets/icons/ic_bottom_books_e.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSurfaceVariant,
+                BlendMode.srcIn,
+              ),
+            ),
+            selectedIcon: SvgPicture.asset(
+              'assets/icons/ic_bottom_books_s.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSecondaryContainer,
+                BlendMode.srcIn,
+              ),
+            ),
             label: AppStrings.bookshelf,
           ),
           NavigationDestination(
-            icon: const Icon(Icons.explore_outlined),
-            selectedIcon: const Icon(Icons.explore),
-            label: '发现',
+            icon: SvgPicture.asset(
+              'assets/icons/ic_bottom_explore_e.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSurfaceVariant,
+                BlendMode.srcIn,
+              ),
+            ),
+            selectedIcon: SvgPicture.asset(
+              'assets/icons/ic_bottom_explore_s.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSecondaryContainer,
+                BlendMode.srcIn,
+              ),
+            ),
+            label: AppStrings.discover,
           ),
           NavigationDestination(
-            icon: Icon(Icons.rss_feed_outlined),
-            selectedIcon: Icon(Icons.rss_feed),
-            label: 'RSS',
+            icon: SvgPicture.asset(
+              'assets/icons/ic_bottom_rss_feed_e.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSurfaceVariant,
+                BlendMode.srcIn,
+              ),
+            ),
+            selectedIcon: SvgPicture.asset(
+              'assets/icons/ic_bottom_rss_feed_s.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSecondaryContainer,
+                BlendMode.srcIn,
+              ),
+            ),
+            label: AppStrings.rss,
           ),
           NavigationDestination(
-            icon: const Icon(Icons.person_outline),
-            selectedIcon: const Icon(Icons.person),
+            icon: SvgPicture.asset(
+              'assets/icons/ic_bottom_person_e.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSurfaceVariant,
+                BlendMode.srcIn,
+              ),
+            ),
+            selectedIcon: SvgPicture.asset(
+              'assets/icons/ic_bottom_person_s.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(
+                Theme.of(context).colorScheme.onSecondaryContainer,
+                BlendMode.srcIn,
+              ),
+            ),
             label: AppStrings.my,
           ),
         ],

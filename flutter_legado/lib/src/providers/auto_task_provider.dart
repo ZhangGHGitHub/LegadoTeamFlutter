@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../services/book_api.dart';
+
 /// 定时任务模型
 ///
 /// 与 legado-server 的 `AutoTaskRule` 结构对应。服务端字段使用
@@ -133,19 +135,22 @@ class AutoTask {
 
 /// 定时任务 Provider
 ///
-/// 通过 HTTP 调用 legado-server 的 REST API（`/api/auto-tasks`）：
+/// 优先通过 Rust FFI 调用 auto_task_api，FFI 失败时降级到 legado-server REST API：
 /// - GET    /api/auto-tasks         — 列表
 /// - POST   /api/auto-tasks         — 创建
 /// - PUT    /api/auto-tasks/:id     — 更新
 /// - DELETE /api/auto-tasks/:id     — 删除
-/// - POST   /api/auto-tasks/:id/run — 立即执行
+/// - POST   /api/auto-tasks/:id/run — 立即执行（FFI 优先）
 class AutoTaskProvider extends ChangeNotifier {
   static const String _baseUrl = 'http://127.0.0.1:8080/api/auto-tasks';
   static const Duration _timeout = Duration(seconds: 5);
 
   final http.Client _client;
+  final BookApi? _rustApi;
 
-  AutoTaskProvider({http.Client? client}) : _client = client ?? http.Client();
+  AutoTaskProvider({http.Client? client, BookApi? rustApi})
+      : _client = client ?? http.Client(),
+        _rustApi = rustApi;
 
   List<AutoTask> _tasks = [];
   bool _isLoading = false;
@@ -276,7 +281,40 @@ class AutoTaskProvider extends ChangeNotifier {
   }
 
   /// 立即运行任务
+  ///
+  /// 优先通过 Rust FFI 执行（autoTaskExecuteWithId），失败时降级到 REST。
   Future<void> runNow(String id) async {
+    // 尝试 FFI 路径
+    if (_rustApi != null) {
+      try {
+        final task = _tasks.where((t) => t.id == id).firstOrNull;
+        final protocolJson = jsonEncode({
+          'action': task?.taskType ?? 'noop',
+          'taskId': id,
+        });
+        final result = await _rustApi.autoTaskExecuteWithId(
+          protocolJson: protocolJson,
+          taskId: id,
+        );
+        // FFI 执行成功，更新本地状态
+        final success = result['success'] as bool? ?? false;
+        _tasks = _tasks.map((t) {
+          if (t.id == id) {
+            return t.copyWith(
+              lastRunAt: _formatNow(),
+              lastResult: success ? '成功' : '失败',
+            );
+          }
+          return t;
+        }).toList();
+        notifyListeners();
+        return;
+      } catch (_) {
+        // FFI 失败，降级到 REST
+      }
+    }
+
+    // REST 降级路径
     try {
       final response = await _client
           .post(Uri.parse('$_baseUrl/$id/run'))
@@ -289,6 +327,140 @@ class AutoTaskProvider extends ChangeNotifier {
     } catch (e) {
       _error = '运行任务失败: $e';
       notifyListeners();
+    }
+  }
+
+  /// 格式化当前时间为 'yyyy-MM-dd HH:mm:ss'
+  String _formatNow() {
+    final dt = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
+        '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+  }
+
+  // ========== FFI 新增方法（无 REST 等价物） ==========
+
+  /// 构建书籍更新定时任务（FFI）
+  ///
+  /// 返回构建好的 AutoTaskRule Map，可直接用于 createTask。
+  Future<Map<String, dynamic>?> buildBookUpdateTask({
+    required String bookUrl,
+    required String bookName,
+    required String bookAuthor,
+    required String name,
+  }) async {
+    if (_rustApi == null) return null;
+    try {
+      return await _rustApi.autoTaskBuildBookUpdateTask(
+        bookUrl: bookUrl,
+        bookName: bookName,
+        bookAuthor: bookAuthor,
+        name: name,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 批量更新 cron 表达式（FFI）
+  ///
+  /// 返回更新后的规则数组，失败返回 null。
+  Future<List<Map<String, dynamic>>?> updateCronBatch({
+    required List<Map<String, dynamic>> rules,
+    required List<String> ids,
+    required String cron,
+  }) async {
+    if (_rustApi == null) return null;
+    try {
+      return await _rustApi.autoTaskUpdateCronBatch(
+        rulesJson: jsonEncode(rules),
+        idsJson: jsonEncode(ids),
+        cron: cron,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 准备导入任务（FFI，合并本地运行时状态）
+  Future<List<Map<String, dynamic>>?> prepareImportedTasks({
+    required List<Map<String, dynamic>> localTasks,
+    required String importedJson,
+  }) async {
+    if (_rustApi == null) return null;
+    try {
+      return await _rustApi.autoTaskPrepareImported(
+        localTasksJson: jsonEncode(localTasks),
+        importedJson: importedJson,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 规范化脚本（FFI，去除 `@js:` 前缀或 `<js></js>` 包裹）
+  Future<String?> normalizeScript(String script) async {
+    if (_rustApi == null) return null;
+    try {
+      return await _rustApi.autoTaskNormalizeScript(script: script);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 判断书籍是否允许刷新目录（FFI）
+  Future<bool?> canRefreshBookToc({
+    required bool canUpdate,
+    required bool respectCanUpdate,
+  }) async {
+    if (_rustApi == null) return null;
+    try {
+      return await _rustApi.autoTaskCanRefreshBookToc(
+        canUpdate: canUpdate,
+        respectCanUpdate: respectCanUpdate,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 查找书籍更新任务（FFI）
+  ///
+  /// 优先按 ID 精确匹配，其次按书名 + 作者匹配。未找到返回 null。
+  Future<Map<String, dynamic>?> findBookUpdateTask({
+    required String bookUrl,
+    required String bookName,
+    required String bookAuthor,
+  }) async {
+    if (_rustApi == null) return null;
+    try {
+      final tasksJson = jsonEncode(_tasks.map((t) => t.toJson()).toList());
+      return await _rustApi.autoTaskFindBookUpdateTask(
+        tasksJson: tasksJson,
+        bookUrl: bookUrl,
+        bookName: bookName,
+        bookAuthor: bookAuthor,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 解析 cron 表达式计算下次执行时间（FFI，Unix 毫秒）
+  ///
+  /// 无法解析时返回 -1。
+  Future<int?> nextDueAt({
+    required String cron,
+    int? fromMs,
+  }) async {
+    if (_rustApi == null) return null;
+    try {
+      return await _rustApi.autoTaskNextDueAt(
+        cron: cron,
+        fromMs: fromMs ?? DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (_) {
+      return null;
     }
   }
 

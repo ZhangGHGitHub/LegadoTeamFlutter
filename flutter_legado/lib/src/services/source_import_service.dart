@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-import 'rust_api.dart';
+import 'book_api.dart';
 
 /// 书源导入结果
 class ImportResult {
@@ -45,7 +45,7 @@ class ImportResult {
 
 /// 书源导入服务
 class SourceImportService {
-  final RustApi _api;
+  final BookApi _api;
 
   SourceImportService(this._api);
 

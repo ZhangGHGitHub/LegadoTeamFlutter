@@ -1,6 +1,6 @@
 ---
 name: full-stack-engineer
-model: "[Qwen3.8-Max-Preview](qmodel_preview)"
+model: "[Qwen-3.8-Max-Preview](custom:model_1785338130671_hh02pde)"
 skills: []
 mcpServers: []
 additionalPrompt: ""

@@ -2,6 +2,11 @@
 //!
 //! 提供音频播放进度的读写操作，基于 caches 表存储。
 
+use legado_core::audio::{
+    resolve_audio_play_book as core_resolve_audio_play_book,
+    with_audio_play_mode as core_with_audio_play_mode,
+};
+use legado_core::models::Book;
 use legado_core::LegadoResult;
 use legado_db::CacheRepository;
 
@@ -34,6 +39,44 @@ pub fn save_audio_progress(
         repo.put(&key, &position.to_string(), 0)?; // 永不过期
         Ok(true)
     })
+}
+
+/// 将播放模式写入 readConfig JSON（对应 Kotlin `String?.withAudioPlayMode`）
+///
+/// 读取现有 readConfig JSON，设置 playMode 字段，返回更新后的 JSON 字符串。
+/// `read_config` 为空或非法 JSON 时返回仅含 playMode 的新对象。
+pub fn with_audio_play_mode(read_config: Option<&str>, play_mode: i32) -> String {
+    core_with_audio_play_mode(read_config, play_mode)
+}
+
+/// 解析听书书籍（对应 Kotlin `resolveAudioPlayBook`）
+///
+/// 用于修复听书通知恢复错误书籍的问题：
+/// - 请求 bookUrl 为空时返回缓存书籍（如果有效）
+/// - 缓存书籍 URL 与请求匹配时直接返回缓存
+/// - 否则按 URL 从数据库查找正确的书籍
+///
+/// `cached_book_json` 为缓存书籍的 JSON（含 bookUrl 字段），可为空。
+/// 返回解析到的书籍，未找到时为 None。
+pub fn resolve_audio_play_book(
+    requested_book_url: Option<&str>,
+    cached_book_json: Option<&str>,
+) -> LegadoResult<Option<Book>> {
+    let cached: Option<Book> = match cached_book_json {
+        Some(json) if !json.trim().is_empty() => serde_json::from_str(json)?,
+        _ => None,
+    };
+    let resolved = core_resolve_audio_play_book(
+        requested_book_url,
+        cached,
+        |b| b.book_url.as_str(),
+        |url| {
+            with_database(|db| legado_db::BookRepository::new(db.connection()).find_by_url(url))
+                .ok()
+                .flatten()
+        },
+    );
+    Ok(resolved)
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf_provider.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
@@ -41,7 +41,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
       _error = null;
     });
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final groups = await api.getBookGroups();
       if (!mounted) return;
       setState(() {
@@ -128,7 +128,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
     if (name.isEmpty) return;
     if (!mounted) return;
 
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
     try {
       if (isEdit) {
         await api.updateBookGroup(group.copyWith(
@@ -162,7 +162,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
     if (!confirmed) return;
     if (!mounted) return;
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       await api.deleteBookGroup(group.groupId);
       await _loadGroups();
     } catch (e) {
@@ -172,7 +172,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
 
   Future<void> _toggleShow(BookGroup group) async {
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       await api.updateBookGroup(group.copyWith(show: !group.show));
       await _loadGroups();
     } catch (e) {
@@ -183,7 +183,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
   /// 拖拽排序后持久化 order
   Future<void> _persistOrder(List<BookGroup> reordered) async {
     setState(() => _groups = reordered);
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
     try {
       for (var i = 0; i < reordered.length; i++) {
         final g = reordered[i];
@@ -416,7 +416,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
 
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
     try {
       for (final book in provider.books) {
         final shouldIn = selected.contains(book.bookUrl);

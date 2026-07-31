@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../models/models.dart';
 import '../widgets/book_cover.dart';
 
 /// 更换封面页面
@@ -10,16 +12,35 @@ import '../widgets/book_cover.dart';
 /// 展示当前封面，支持从网络搜索候选封面或从本地选择图片，
 /// 预览确认后通过 [Navigator.pop] 返回所选封面地址。
 class ChangeCoverScreen extends StatefulWidget {
+  /// 书籍对象（路由参数规范化：优先使用 Book 对象）
+  final Book? book;
+
+  /// 书籍 URL（向后兼容）
   final String bookUrl;
+
+  /// 书名（向后兼容）
   final String bookName;
+
+  /// 当前封面（向后兼容）
   final String? currentCover;
 
   const ChangeCoverScreen({
     super.key,
-    required this.bookUrl,
-    required this.bookName,
+    this.book,
+    this.bookUrl = '',
+    this.bookName = '',
     this.currentCover,
   });
+
+  /// 获取有效的 bookUrl
+  String get effectiveBookUrl => book?.bookUrl ?? bookUrl;
+
+  /// 获取有效的书名
+  String get effectiveBookName => book?.name ?? bookName;
+
+  /// 获取有效的当前封面
+  String? get effectiveCurrentCover =>
+      book != null ? (book!.customCoverUrl ?? book!.coverUrl) : currentCover;
 
   @override
   State<ChangeCoverScreen> createState() => _ChangeCoverScreenState();
@@ -34,7 +55,7 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
   @override
   void initState() {
     super.initState();
-    _searchController.text = widget.bookName;
+    _searchController.text = widget.effectiveBookName;
     // 进入页面即按书名搜索一次候选封面
     WidgetsBinding.instance.addPostFrameCallback((_) => _searchCovers());
   }
@@ -93,27 +114,28 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
         errorBuilder: (_, _, _) => const BookCover(width: 240, height: 320),
       );
     }
-    return Image.network(
-      url,
+    return CachedNetworkImage(
+      imageUrl: url,
       width: width,
       height: height,
       fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => const BookCover(width: 240, height: 320),
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          width: width,
-          height: height,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: const Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+      // 限制解码宽度为实际显示像素宽度（候选网格约 120），避免大图解码
+      memCacheWidth: ((width ?? 120) *
+              (MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0))
+          .round(),
+      errorWidget: (_, _, _) => const BookCover(width: 240, height: 320),
+      placeholder: (_, _) => Container(
+        width: width,
+        height: height,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -121,7 +143,7 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final previewUrl = _selectedUrl ?? widget.currentCover;
+    final previewUrl = _selectedUrl ?? widget.effectiveCurrentCover;
 
     return Scaffold(
       appBar: AppBar(
@@ -191,7 +213,7 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.bookName.isEmpty ? '未命名书籍' : widget.bookName,
+                  widget.effectiveBookName.isEmpty ? '未命名书籍' : widget.effectiveBookName,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),

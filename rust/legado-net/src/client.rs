@@ -9,8 +9,10 @@
 //! - 可选重试（指数退避）和按域名限流
 //! - UA 轮换与代理池中间件
 //! - SSL/TLS 配置（证书验证控制、自定义 CA）
+//! - 可选 QUIC/HTTP3 传输（启用后 HTTPS 请求优先走 QUIC，失败自动 fallback 到 HTTP/2）
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -22,11 +24,31 @@ use legado_core::{LegadoError, LegadoResult};
 use crate::cookie_store::CookieStore;
 use crate::middleware::MiddlewareChain;
 use crate::proxy::{ProxyConfig, ProxyMiddleware, ProxyPool};
+use crate::quic::{QuinnClient, QuinnConfig};
 use crate::rate_limit::DomainRateLimiter;
 use crate::response::LegadoResponse;
 use crate::retry::{RetryConfig, RetryExecutor};
 use crate::ssl_config::SslConfig;
 use crate::user_agent::{UserAgentMiddleware, UserAgentRotator};
+
+// ─── 全局 QUIC 开关 ────────────────────────────────────────────────────────────
+
+/// 全局 QUIC 启用标志（默认关闭，不影响现有请求路径）
+static QUIC_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// 设置全局 QUIC 传输开关
+///
+/// 启用后，所有新创建的 `LegadoClient` 对 HTTPS 请求将优先尝试 QUIC/HTTP3，
+/// 失败时自动 fallback 到 reqwest HTTP/2 路径。
+pub fn set_quic_enabled(enabled: bool) {
+    QUIC_ENABLED.store(enabled, Ordering::SeqCst);
+    log::info!("全局 QUIC 传输已{}", if enabled { "启用" } else { "禁用" });
+}
+
+/// 查询全局 QUIC 传输开关状态
+pub fn is_quic_enabled() -> bool {
+    QUIC_ENABLED.load(Ordering::SeqCst)
+}
 
 /// HTTP 客户端配置
 ///
@@ -55,6 +77,11 @@ pub struct LegadoClientConfig {
     pub proxies: Option<Vec<ProxyConfig>>,
     /// SSL/TLS 配置（如设置则覆盖 `accept_invalid_certs`）
     pub ssl: Option<SslConfig>,
+    /// 是否启用 QUIC/HTTP3 传输（默认关闭）
+    ///
+    /// 启用后，HTTPS 请求将优先尝试 QUIC，失败自动 fallback 到 HTTP/2。
+    /// 也可通过全局 `set_quic_enabled(true)` 开启，无需逐个配置。
+    pub enable_quic: bool,
 }
 
 impl Default for LegadoClientConfig {
@@ -71,6 +98,7 @@ impl Default for LegadoClientConfig {
             user_agents: None,
             proxies: None,
             ssl: None,
+            enable_quic: false,
         }
     }
 }
@@ -79,6 +107,7 @@ impl Default for LegadoClientConfig {
 ///
 /// 基于 `reqwest::Client`，附带 Cookie 存储、可选重试、按域名限流，
 /// 以及可选的 UA 轮换和代理池中间件。
+/// 启用 QUIC 后，HTTPS 请求优先走 HTTP/3，失败自动 fallback 到 HTTP/2。
 #[derive(Clone)]
 pub struct LegadoClient {
     client: reqwest::Client,
@@ -89,6 +118,8 @@ pub struct LegadoClient {
     middleware_chain: Option<Arc<MiddlewareChain>>,
     ua_rotator: Option<Arc<UserAgentRotator>>,
     proxy_pool: Option<Arc<ProxyPool>>,
+    /// QUIC 客户端（仅在 enable_quic 时初始化）
+    quic_client: Option<Arc<QuinnClient>>,
 }
 
 impl LegadoClient {
@@ -163,6 +194,28 @@ impl LegadoClient {
             }
         };
 
+        // QUIC 客户端初始化：配置显式启用 或 全局开关启用
+        let quic_enabled = config.enable_quic || is_quic_enabled();
+        let quic_client = if quic_enabled {
+            let quinn_config = QuinnConfig {
+                connect_timeout: config.connect_timeout,
+                request_timeout: config.read_timeout,
+                ..Default::default()
+            };
+            match QuinnClient::new(quinn_config) {
+                Ok(c) => {
+                    log::info!("QUIC 客户端已初始化，HTTPS 请求将优先尝试 HTTP/3");
+                    Some(Arc::new(c))
+                }
+                Err(e) => {
+                    log::warn!("QUIC 客户端初始化失败，将仅使用 HTTP/2: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             client,
             cookie_store: Arc::new(RwLock::new(CookieStore::new())),
@@ -172,6 +225,7 @@ impl LegadoClient {
             middleware_chain,
             ua_rotator,
             proxy_pool,
+            quic_client,
         })
     }
 
@@ -205,12 +259,25 @@ impl LegadoClient {
         self.domain_rate_limiter.as_ref()
     }
 
+    /// 获取 QUIC 客户端引用（如有）
+    pub fn quic_client(&self) -> Option<&Arc<QuinnClient>> {
+        self.quic_client.as_ref()
+    }
+
     /// 发送 GET 请求
+    ///
+    /// 启用 QUIC 且 URL 为 HTTPS 时，优先尝试 HTTP/3，失败自动 fallback 到 HTTP/2。
     pub async fn get(
         &self,
         url: &str,
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
+        // QUIC 优先路径：仅对 HTTPS URL 尝试
+        if let Some(resp) = self.try_quic_get(url, headers.as_ref()).await {
+            return resp;
+        }
+
+        // 标准 reqwest HTTP/2 路径
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
         let headers = Arc::new(headers);
@@ -246,12 +313,20 @@ impl LegadoClient {
     }
 
     /// 发送 POST 请求
+    ///
+    /// 启用 QUIC 且 URL 为 HTTPS 时，优先尝试 HTTP/3，失败自动 fallback 到 HTTP/2。
     pub async fn post(
         &self,
         url: &str,
         body: &str,
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
+        // QUIC 优先路径：仅对 HTTPS URL 尝试
+        if let Some(resp) = self.try_quic_post(url, body, headers.as_ref()).await {
+            return resp;
+        }
+
+        // 标准 reqwest HTTP/2 路径
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
         let headers = Arc::new(headers);
@@ -355,6 +430,63 @@ impl LegadoClient {
     }
 
     // ---------- 内部方法 ----------
+
+    /// 尝试通过 QUIC/HTTP3 发送 GET 请求
+    ///
+    /// 返回 `Some(Ok(response))` 表示 QUIC 成功，
+    /// 返回 `None` 表示应 fallback 到 reqwest 路径（QUIC 未启用/非 HTTPS/连接失败）。
+    async fn try_quic_get(
+        &self,
+        url: &str,
+        headers: Option<&HashMap<String, String>>,
+    ) -> Option<LegadoResult<LegadoResponse>> {
+        let quic = self.quic_client.as_ref()?;
+        if !is_https_url(url) {
+            return None;
+        }
+
+        log::debug!("尝试 QUIC GET: {}", url);
+        match quic.get(url, headers.cloned()).await {
+            Ok(quinn_resp) => {
+                log::debug!("QUIC GET 成功: {} (status={})", url, quinn_resp.status);
+                Some(Ok(quinn_response_to_legado(quinn_resp)))
+            }
+            Err(e) => {
+                // QUIC 失败不向上抛错，记录日志后 fallback
+                log::warn!("QUIC GET 失败，fallback 到 HTTP/2: {} | 错误: {}", url, e);
+                None
+            }
+        }
+    }
+
+    /// 尝试通过 QUIC/HTTP3 发送 POST 请求
+    ///
+    /// 返回 `Some(Ok(response))` 表示 QUIC 成功，
+    /// 返回 `None` 表示应 fallback 到 reqwest 路径。
+    async fn try_quic_post(
+        &self,
+        url: &str,
+        body: &str,
+        headers: Option<&HashMap<String, String>>,
+    ) -> Option<LegadoResult<LegadoResponse>> {
+        let quic = self.quic_client.as_ref()?;
+        if !is_https_url(url) {
+            return None;
+        }
+
+        log::debug!("尝试 QUIC POST: {}", url);
+        match quic.post(url, body.as_bytes(), headers.cloned()).await {
+            Ok(quinn_resp) => {
+                log::debug!("QUIC POST 成功: {} (status={})", url, quinn_resp.status);
+                Some(Ok(quinn_response_to_legado(quinn_resp)))
+            }
+            Err(e) => {
+                // QUIC 失败不向上抛错，记录日志后 fallback
+                log::warn!("QUIC POST 失败，fallback 到 HTTP/2: {} | 错误: {}", url, e);
+                None
+            }
+        }
+    }
 
     /// 带重试和限流的请求执行核心
     ///
@@ -480,6 +612,25 @@ fn map_reqwest_error(e: reqwest::Error) -> LegadoError {
         LegadoError::Network(format!("Connection failed: {}", e))
     } else {
         LegadoError::Network(format!("Request failed: {}", e))
+    }
+}
+
+/// 判断 URL 是否为 HTTPS 协议
+///
+/// QUIC 仅适用于 HTTPS，HTTP 明文请求不走 QUIC 路径。
+fn is_https_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("HTTPS://")
+}
+
+/// 将 QuinnResponse 转换为 LegadoResponse
+///
+/// 两种响应结构字段一致，直接映射。
+fn quinn_response_to_legado(resp: crate::quic::QuinnResponse) -> LegadoResponse {
+    LegadoResponse {
+        status: resp.status,
+        headers: resp.headers,
+        body: resp.body,
+        url: resp.url,
     }
 }
 
@@ -660,5 +811,108 @@ mod tests {
         assert!(client.retry_executor().is_some());
         assert!(client.domain_rate_limiter().is_some());
         assert!(client.middleware_chain().is_some());
+    }
+
+    // ─── QUIC 集成测试 ───────────────────────────────────────────────
+
+    #[test]
+    fn test_default_config_quic_disabled() {
+        // 默认配置不启用 QUIC
+        let cfg = LegadoClientConfig::default();
+        assert!(!cfg.enable_quic);
+    }
+
+    #[test]
+    fn test_build_client_quic_disabled_no_quic_client() {
+        // QUIC 关闭时，客户端不包含 QuinnClient
+        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        assert!(client.quic_client().is_none());
+    }
+
+    #[test]
+    fn test_build_client_quic_enabled_has_quic_client() {
+        // 配置显式启用 QUIC 时，客户端包含 QuinnClient
+        let cfg = LegadoClientConfig {
+            enable_quic: true,
+            ..Default::default()
+        };
+        let client = LegadoClient::new(cfg).unwrap();
+        assert!(client.quic_client().is_some());
+    }
+
+    #[test]
+    fn test_global_quic_toggle() {
+        // 全局开关控制 QUIC 启用
+        set_quic_enabled(true);
+        assert!(is_quic_enabled());
+
+        // 全局启用后，默认配置创建的客户端也包含 QUIC
+        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        assert!(client.quic_client().is_some());
+
+        // 关闭全局开关
+        set_quic_enabled(false);
+        assert!(!is_quic_enabled());
+
+        // 关闭后新建客户端不包含 QUIC
+        let client2 = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        assert!(client2.quic_client().is_none());
+    }
+
+    #[test]
+    fn test_is_https_url() {
+        assert!(is_https_url("https://example.com"));
+        assert!(is_https_url("HTTPS://EXAMPLE.COM"));
+        assert!(!is_https_url("http://example.com"));
+        assert!(!is_https_url("ftp://example.com"));
+        assert!(!is_https_url("example.com"));
+    }
+
+    #[test]
+    fn test_quinn_response_to_legado_conversion() {
+        let quinn_resp = crate::quic::QuinnResponse {
+            status: 200,
+            headers: HashMap::from([("content-type".to_string(), "text/html".to_string())]),
+            body: "<html>hello</html>".to_string(),
+            url: "https://example.com".to_string(),
+        };
+        let legado_resp = quinn_response_to_legado(quinn_resp);
+        assert_eq!(legado_resp.status, 200);
+        assert_eq!(legado_resp.body, "<html>hello</html>");
+        assert_eq!(legado_resp.url, "https://example.com");
+        assert_eq!(legado_resp.headers.get("content-type").unwrap(), "text/html");
+    }
+
+    #[tokio::test]
+    async fn test_quic_fallback_on_non_https() {
+        // QUIC 启用时，HTTP URL 不走 QUIC 路径（直接 fallback）
+        let cfg = LegadoClientConfig {
+            enable_quic: true,
+            ..Default::default()
+        };
+        let client = LegadoClient::new(cfg).unwrap();
+        assert!(client.quic_client().is_some());
+
+        // 对非 HTTPS URL，try_quic_get 应返回 None（fallback）
+        let result = client.try_quic_get("http://example.com", None).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_quic_fallback_on_connection_failure() {
+        // QUIC 启用时，对不支持 HTTP/3 的服务器应 fallback
+        // 使用一个不可能支持 QUIC 的地址（本地回环 + 短超时）
+        let cfg = LegadoClientConfig {
+            enable_quic: true,
+            connect_timeout: Duration::from_secs(2),
+            ..Default::default()
+        };
+        let client = LegadoClient::new(cfg).unwrap();
+
+        // 对不可达的 HTTPS 地址，try_quic_get 应返回 None（fallback）
+        let result = client
+            .try_quic_get("https://192.0.2.1:443", None)
+            .await;
+        assert!(result.is_none());
     }
 }

@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 
 /// 书源调试页面
 ///
@@ -97,7 +97,7 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
     try {
       // 1. 获取书源 JSON
       _appendLog('[1/3] 正在获取书源信息...');
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final sources = await api.getBookSources();
       final source = sources.cast<BookSource?>().firstWhere(
             (s) => s!.bookSourceUrl == sourceUrl,
@@ -420,9 +420,13 @@ enum _DebugLogLevel {
       case _DebugLogLevel.info:
         return theme.colorScheme.onSurface;
       case _DebugLogLevel.success:
-        return Colors.green.shade800;
+        return theme.brightness == Brightness.dark
+            ? Colors.green.shade300
+            : Colors.green.shade800;
       case _DebugLogLevel.warn:
-        return Colors.orange.shade800;
+        return theme.brightness == Brightness.dark
+            ? Colors.orange.shade300
+            : Colors.orange.shade800;
       case _DebugLogLevel.error:
         return theme.colorScheme.error;
     }
@@ -434,9 +438,9 @@ enum _DebugLogLevel {
       case _DebugLogLevel.info:
         return theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3);
       case _DebugLogLevel.success:
-        return Colors.green.shade50;
+        return Colors.green.withValues(alpha: 0.12);
       case _DebugLogLevel.warn:
-        return Colors.orange.shade50;
+        return Colors.orange.withValues(alpha: 0.12);
       case _DebugLogLevel.error:
         return theme.colorScheme.errorContainer.withValues(alpha: 0.4);
     }

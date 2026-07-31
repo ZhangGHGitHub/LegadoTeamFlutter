@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/models.dart';
 import '../providers/reader_provider.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../widgets/empty_state.dart';
 
 /// 单条正文搜索结果
@@ -24,14 +25,27 @@ class _ContentMatch {
 /// 在指定书籍的全部章节正文中搜索关键词，支持高亮、搜索历史，
 /// 点击结果可跳转阅读器对应章节。
 class SearchContentScreen extends StatefulWidget {
+  /// 书籍对象（路由参数规范化：优先使用 Book 对象）
+  final Book? book;
+
+  /// 书籍 URL（向后兼容）
   final String bookUrl;
+
+  /// 书名（向后兼容）
   final String bookName;
 
   const SearchContentScreen({
     super.key,
-    required this.bookUrl,
-    required this.bookName,
+    this.book,
+    this.bookUrl = '',
+    this.bookName = '',
   });
+
+  /// 获取有效的 bookUrl
+  String get effectiveBookUrl => book?.bookUrl ?? bookUrl;
+
+  /// 获取有效的书名
+  String get effectiveBookName => book?.name ?? bookName;
 
   @override
   State<SearchContentScreen> createState() => _SearchContentScreenState();
@@ -70,7 +84,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
 
   Future<void> _loadHistory() async {
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final list = await api.getSearchHistory(limit: 20);
       if (!mounted) return;
       setState(() => _history = list.map((e) => e.word).toList());
@@ -83,7 +97,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
     final query = raw.trim();
     if (query.isEmpty) return;
 
-    final api = context.read<RustApi>();
+    final api = context.read<BookApi>();
     final gen = ++_generation;
 
     setState(() {
@@ -96,10 +110,10 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
     _focusNode.unfocus();
 
     // 记录搜索历史
-    api.addSearchKeyword(query, widget.bookName).catchError((_) {});
+    api.addSearchKeyword(query, widget.effectiveBookName).catchError((_) {});
 
     try {
-      final chapters = await api.getChapters(widget.bookUrl);
+      final chapters = await api.getChapters(widget.effectiveBookUrl);
       if (gen != _generation || !mounted) return;
       setState(() => _totalChapters = chapters.length);
 
@@ -108,7 +122,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
         if (gen != _generation) return; // 已被新搜索/退出取消
         final chapter = chapters[i];
         try {
-          final content = await api.getChapterContent(widget.bookUrl, chapter.index);
+          final content = await api.getChapterContent(widget.effectiveBookUrl, chapter.index);
           if (gen != _generation) return;
 
           final lowerContent = content.toLowerCase();
@@ -199,7 +213,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 isDense: true,
-                hintText: '在《${widget.bookName}》中搜索...',
+                hintText: '在《${widget.effectiveBookName}》中搜索...',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _controller.text.isEmpty
                     ? null
@@ -341,7 +355,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
 
   Future<void> _clearHistory() async {
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       await api.clearSearchHistory();
       if (mounted) setState(() => _history = []);
     } catch (_) {

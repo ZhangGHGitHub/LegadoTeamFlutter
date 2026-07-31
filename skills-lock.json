@@ -1,0 +1,317 @@
+{
+  "version": 1,
+  "skills": {
+    "dart-add-unit-test": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-add-unit-test/SKILL.md",
+      "computedHash": "b4d913eb86f9a8539b5d07d453ce213c3b1557b028569eb980e1ae6707165da6"
+    },
+    "dart-build-cli-app": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-build-cli-app/SKILL.md",
+      "computedHash": "c8cd77f77250ad0783152e180de4fbec149c76e6b2c51c3f0d265a64c7466f0a"
+    },
+    "dart-collect-coverage": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-collect-coverage/SKILL.md",
+      "computedHash": "abaf27c3fe7370e4daaea2c48f6efd8cc418042e2844649a9c2979bbfde8b7b1"
+    },
+    "dart-fix-runtime-errors": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-fix-runtime-errors/SKILL.md",
+      "computedHash": "5d297ccaf9a34c5939c80600ff8398437c0c6bd5d343093852b65559689fae1d"
+    },
+    "dart-generate-test-mocks": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-generate-test-mocks/SKILL.md",
+      "computedHash": "c5132b41dd1d00949d035f6d49fcaee79e95d056eb9652d465e7349f539d16a2"
+    },
+    "dart-migrate-to-checks-package": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-migrate-to-checks-package/SKILL.md",
+      "computedHash": "acb9d90dc41fa4410b523e8b60083f1d9fe1dd208c1579260d454c5ab4b3b3f5"
+    },
+    "dart-resolve-package-conflicts": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-resolve-package-conflicts/SKILL.md",
+      "computedHash": "4f8029de67b9b2da43eea381c6a320a0da8844d927781effcce6e07ac736dffd"
+    },
+    "dart-run-static-analysis": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-run-static-analysis/SKILL.md",
+      "computedHash": "7b143ff93bfb118ce9d72fca56cef4b38d75bfe9044367101db09cf32e6815ad"
+    },
+    "dart-setup-ffi-assets": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-setup-ffi-assets/SKILL.md",
+      "computedHash": "d1813c87bd7c556d1aeda275d4b4fa49ce3a3fc19d5d3d8c203c5b9aeaefac51"
+    },
+    "dart-use-ffigen": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-use-ffigen/SKILL.md",
+      "computedHash": "fed0a97615cf80d8fbd59960a7a9d4497ef35af84de618e26492289924cbbcbd"
+    },
+    "dart-use-pattern-matching": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-use-pattern-matching/SKILL.md",
+      "computedHash": "4900ea465cfec31cd83d8786491609dc94e338ec8c424a1530773b2aaa0832ff"
+    },
+    "dart-use-primary-constructors": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/dart-use-primary-constructors/SKILL.md",
+      "computedHash": "f3a388b5b11b2d3b6b6c494e2cc0fbd6c4f670b9bdeb97b024f4d18b4c1970f5"
+    },
+    "flutter-add-integration-test": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-add-integration-test/SKILL.md",
+      "computedHash": "4246d3ef5f21bdb7945899056b99cf3863e2bff645a132b41634caaded68da6d"
+    },
+    "flutter-add-widget-preview": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-add-widget-preview/SKILL.md",
+      "computedHash": "369ed3ebdc1f81ee337551ad1d1dd9ec6e768ed2bdf65d32ad442117a6ba79b6"
+    },
+    "flutter-add-widget-test": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-add-widget-test/SKILL.md",
+      "computedHash": "f4ea905ae155d1bca76f5431bf6ed31f31e3d40146493e7ae4285eac39ba4ffd"
+    },
+    "flutter-apply-architecture-best-practices": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-apply-architecture-best-practices/SKILL.md",
+      "computedHash": "baeb208b1cab90c559677626dbd101b96ba93f803cbed85122abdadeb3283a8b"
+    },
+    "flutter-build-responsive-layout": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-build-responsive-layout/SKILL.md",
+      "computedHash": "6d74a9504c4e355c4c62f6fcb6c6dc0df67b56dd6616bea199e4e58f75b7729b"
+    },
+    "flutter-fix-layout-issues": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-fix-layout-issues/SKILL.md",
+      "computedHash": "b2f9789451224e6df8d1d7ac63854c2f1beb30fa35d13ea06fbae9ba2b1b0a7f"
+    },
+    "flutter-implement-json-serialization": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-implement-json-serialization/SKILL.md",
+      "computedHash": "c2cf46854472a452dafa11f862f2bca3d9fe7286a5bb45d85b1efbcebc74b74e"
+    },
+    "flutter-mcp": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp/SKILL.md",
+      "computedHash": "1774b6079042fc7a9318589dc91a117ee0c437b929d45b2d2ad022a750434ce4"
+    },
+    "flutter-mcp-boundary-audit": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-boundary-audit/SKILL.md",
+      "computedHash": "9e99add4e34444696a8e00eb3b67717cf3adfbeae7f1d4d9cb3fbfdcaf436ea6"
+    },
+    "flutter-mcp-cli-runtime-validation": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-cli-runtime-validation/SKILL.md",
+      "computedHash": "2054e3e2ad75b393eb6a18d978921b2a12b31c307609e1741def681ee5f52f23"
+    },
+    "flutter-mcp-toolkit-control": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-control/SKILL.md",
+      "computedHash": "ce11ecfb1bd1c8ad4a827b234065ba1390c074f66974ee80fe426084033c82ec"
+    },
+    "flutter-mcp-toolkit-custom-tools": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-custom-tools/SKILL.md",
+      "computedHash": "b3f6f6563a62cc00e0a2a7bd2593237ec01c9340b36dc3bd2b3440d405680231"
+    },
+    "flutter-mcp-toolkit-debug": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-debug/SKILL.md",
+      "computedHash": "faea5ac42cf2dd91c014ffe21d41add0d3efbcaa5cafac526c3c95d18e056187"
+    },
+    "flutter-mcp-toolkit-dogfood-iterations": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-dogfood-iterations/SKILL.md",
+      "computedHash": "a2ed643c65aec822e1040893d9709206e6a66f890956cf0a1bba109f6c31fe49"
+    },
+    "flutter-mcp-toolkit-guide": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-guide/SKILL.md",
+      "computedHash": "1695fedd05f93c39819f2f9a591fdabdf78f55c565c019335e16343c99374724"
+    },
+    "flutter-mcp-toolkit-inspect": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-inspect/SKILL.md",
+      "computedHash": "733f9fda6cfca76a4342466bc58f631ae5058b456fe218bc765c0d823296c0f3"
+    },
+    "flutter-mcp-toolkit-intentcall-migration": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-intentcall-migration/SKILL.md",
+      "computedHash": "e8cd8fbeddd27073ae26aeba7c9af6fe85cf6e71cb6655d5a5c802d5630f6d71"
+    },
+    "flutter-mcp-toolkit-maintain-macos": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-maintain-macos/SKILL.md",
+      "computedHash": "f50784bb7186e946f92875015c9f1bdc8e376a2a0ce608df1b0c360a250fac8f"
+    },
+    "flutter-mcp-toolkit-maintain-web": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-maintain-web/SKILL.md",
+      "computedHash": "af86e543d5dff1b3610c36d264e4252fd3d2def553d8fbb9449bfd649c552cde"
+    },
+    "flutter-mcp-toolkit-repo-maintainer": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-repo-maintainer/SKILL.md",
+      "computedHash": "243aa8d6348448ad3e43741185f1809d822c10fc5590a4a3b3b1796fa8c3a1ab"
+    },
+    "flutter-mcp-toolkit-setup": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-mcp-toolkit-setup/SKILL.md",
+      "computedHash": "1ecfc1204c40a8eb655b7dfe936beff3ff48c960f335579f09d4740b7931b57e"
+    },
+    "flutter-setup-declarative-routing": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-setup-declarative-routing/SKILL.md",
+      "computedHash": "4c2ed2fd729230be581b15d84741688e206632fb2b38af320060cd3518b91179"
+    },
+    "flutter-setup-localization": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-setup-localization/SKILL.md",
+      "computedHash": "fc0811b1b775c52c1b8f7df600f5c52b83029aea0586b8cc55169812affd408f"
+    },
+    "flutter-use-http-package": {
+      "source": "flutter/skills",
+      "sourceType": "github",
+      "skillPath": "skills/flutter-use-http-package/SKILL.md",
+      "computedHash": "bd169b5cee731751f3b32f43c94cfe9495fc8e6c3eb621b785c69e38b77d0e19"
+    },
+    "gitnexus-cli": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/gitnexus/gitnexus-cli/SKILL.md",
+      "computedHash": "f0c536212535467543c4ae07b95ead900c88ed2a16ff8a3968401013b82c19d6"
+    },
+    "gitnexus-debugging": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/gitnexus/gitnexus-debugging/SKILL.md",
+      "computedHash": "9d6eadc1fd04fa924b30cdb1001b009db35c7d815f56fbdb57a7c75abb3b2561"
+    },
+    "gitnexus-exploring": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/gitnexus/gitnexus-exploring/SKILL.md",
+      "computedHash": "bc9f84144b21bf6ac080aa8247bbb29dd300d7f655a9a8d3b66a4dfbb17ae319"
+    },
+    "gitnexus-guide": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/gitnexus/gitnexus-guide/SKILL.md",
+      "computedHash": "c5e62b8e1ca6794eec20d9d7bb4a13553b69299d421a8faeb3c84aa202f2f38c"
+    },
+    "gitnexus-impact-analysis": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md",
+      "computedHash": "640c1e6e4d8cc4fe2f88874c408588de10e46a0f6d4d31d6c87bc5058fd08cb8"
+    },
+    "gitnexus-refactoring": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/gitnexus/gitnexus-refactoring/SKILL.md",
+      "computedHash": "09eea8f1d861a1d66f3ff46b8814373ab1b8a61233d60edea1c9bfeba1379c2d"
+    },
+    "harness-engineering-lifecycle": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/harness-engineering-lifecycle/SKILL.md",
+      "computedHash": "39cf86af263e09d7783db8bf40961410741b26e975ce5116583298372942586c"
+    },
+    "mcp-harness-repo-maintainer": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/mcp-harness-repo-maintainer/SKILL.md",
+      "computedHash": "ec9cf6b42944bac2645ab67fabc704c1c6e5383c0ebc78e29c041a7a421d62c4"
+    },
+    "mixture-of-experts": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/mixture-of-experts/SKILL.md",
+      "computedHash": "7d00b9810fa361946051134eb43f3ba3e1dd3dfbbb0eb872ee9f1ff4c018467b"
+    },
+    "multi-agent-handoff": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/multi-agent-handoff/SKILL.md",
+      "computedHash": "02181855f4a2f249342fd08b2223756ba7e0c305b69f19353d8274eab83ccdf0"
+    },
+    "plugin-marketplace-setup": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/plugin-marketplace-setup/SKILL.md",
+      "computedHash": "aa3a7764ce60944a8883eff5f19da634fd420462594bf969e47a66711d9a7e85"
+    },
+    "release-changelog-harness": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/release-changelog-harness/SKILL.md",
+      "computedHash": "900dd7f4550500924c345f040a2699f45ee441fd39f8fc5621a4685d6a1d79be"
+    },
+    "repository-governance-lifecycle": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/repository-governance-lifecycle/SKILL.md",
+      "computedHash": "e0495e4c519c54cbf619f52184fe67b9f64f0531191c0bb0ae223395896fabfa"
+    },
+    "skill-authoring-lifecycle": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/skill-authoring-lifecycle/SKILL.md",
+      "computedHash": "f6abb8e8be7eab75c92a9cfb0962d6fc3efe4af24c8cb6fbe17c34e1fe3d0407"
+    },
+    "skill-eval-improve": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/skill-eval-improve/SKILL.md",
+      "computedHash": "7fc13f146810a3238966de645d75671ec55bc6ba52af876614244be9edd425cf"
+    },
+    "skill-source-citations": {
+      "source": "Arenukvern/mcp_flutter",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/skill-source-citations/SKILL.md",
+      "computedHash": "f3f95bebbb508426a905a2ec96a56ee980d5b91156069e456a462bee8d23975c"
+    }
+  }
+}

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../services/rust_api.dart';
+import '../services/audio_service.dart';
+import '../services/book_api.dart';
 /// 播放状态
 enum PlayerState {
   idle,
@@ -68,7 +71,19 @@ class AudioChapter {
 
 /// 听书播放器状态管理
 class AudioProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
+
+  /// 音频服务（后台媒体按钮 + 焦点管理）
+  final AudioService _audioService = AudioService.instance;
+
+  /// 媒体按钮事件订阅
+  StreamSubscription<MediaButtonEvent>? _mediaButtonSub;
+
+  /// 音频焦点事件订阅
+  StreamSubscription<AudioFocusEvent>? _audioFocusSub;
+
+  /// 媒体会话是否已初始化
+  bool _mediaSessionReady = false;
 
   AudioProvider(this._api);
 
@@ -79,6 +94,7 @@ class AudioProvider extends ChangeNotifier {
   int _currentIndex = 0;
   String? _errorMessage;
   String _bookUrl = '';
+  String _bookName = '';
 
   // ===== Getters =====
 
@@ -89,10 +105,14 @@ class AudioProvider extends ChangeNotifier {
   int get currentIndex => _currentIndex;
   String? get errorMessage => _errorMessage;
   String get bookUrl => _bookUrl;
+  String get bookName => _bookName;
   bool get isPlaying => _state == PlayerState.playing;
   bool get isLoading => _state == PlayerState.loading;
   bool get hasChapters => _chapters.isNotEmpty;
   int get totalChapters => _chapters.length;
+
+  /// 媒体会话是否已就绪（用于 UI 显示后台播放状态）
+  bool get isMediaSessionReady => _mediaSessionReady;
 
   AudioChapter? get currentChapter {
     if (_chapters.isEmpty || _currentIndex >= _chapters.length) return null;
@@ -108,6 +128,70 @@ class AudioProvider extends ChangeNotifier {
   }
 
   // ===== 操作 =====
+
+  /// 初始化媒体会话（后台播放 + 媒体按钮 + 焦点管理）
+  ///
+  /// 在听书页面 initState 时调用，完成：
+  /// - 初始化 Android MediaSession
+  /// - 监听媒体按钮事件（播放/暂停/上一章/下一章/停止）
+  /// - 监听音频焦点变化（获得/丢失/暂时丢失）
+  Future<void> initMediaSession({String bookName = ''}) async {
+    if (bookName.isNotEmpty) _bookName = bookName;
+    if (_mediaSessionReady) return;
+
+    await _audioService.init();
+
+    // 监听媒体按钮事件，回调到对应操作
+    _mediaButtonSub = _audioService.mediaButtonStream.listen((event) {
+      switch (event) {
+        case MediaButtonEvent.play:
+          play();
+        case MediaButtonEvent.pause:
+          pause();
+        case MediaButtonEvent.skipToNext:
+          next();
+        case MediaButtonEvent.skipToPrevious:
+          previous();
+        case MediaButtonEvent.stop:
+          stop();
+      }
+    });
+
+    // 监听音频焦点变化（复刻原版 BaseReadAloudService.onAudioFocusChange）
+    _audioFocusSub = _audioService.audioFocusStream.listen((event) {
+      switch (event) {
+        case AudioFocusEvent.gain:
+          // 重新获得焦点，恢复播放
+          if (_state == PlayerState.paused) {
+            play();
+          }
+        case AudioFocusEvent.loss:
+          // 永久丢失焦点，暂停播放
+          pause();
+        case AudioFocusEvent.lossTransient:
+          // 暂时丢失焦点，暂停（之后 gain 会恢复）
+          pause();
+        case AudioFocusEvent.lossTransientCanDuck:
+          // 短暂丢失（可降低音量），暂不处理
+          break;
+      }
+    });
+
+    _mediaSessionReady = _audioService.isInitialized;
+    notifyListeners();
+  }
+
+  /// 释放媒体会话资源
+  ///
+  /// 在听书页面 dispose 时调用。
+  Future<void> releaseMediaSession() async {
+    _mediaButtonSub?.cancel();
+    _mediaButtonSub = null;
+    _audioFocusSub?.cancel();
+    _audioFocusSub = null;
+    await _audioService.dispose();
+    _mediaSessionReady = false;
+  }
 
   /// 加载章节列表
   Future<void> loadChapters(String bookUrl) async {
@@ -168,6 +252,9 @@ class AudioProvider extends ChangeNotifier {
       }
 
       _state = PlayerState.playing;
+
+      // 通知媒体会话：请求焦点 + 更新元数据 + 更新播放状态
+      await _syncMediaSession();
     } catch (e) {
       _errorMessage = e.toString();
       _state = PlayerState.error;
@@ -175,12 +262,41 @@ class AudioProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 同步媒体会话状态（焦点 + 元数据 + 播放状态）
+  Future<void> _syncMediaSession() async {
+    if (!_mediaSessionReady) return;
+
+    // 请求音频焦点
+    await _audioService.requestAudioFocus();
+
+    // 更新媒体元数据（章节标题 / 书名 / 作者）
+    final chapter = currentChapter;
+    await _audioService.updateMetadata(
+      title: chapter?.title ?? '',
+      artist: _bookName.isNotEmpty ? '正在朗读: $_bookName' : '',
+      album: _bookName,
+    );
+
+    // 更新播放状态
+    await _audioService.notifyPlaying();
+  }
+
   /// 暂停
   void pause() {
     if (_state == PlayerState.playing) {
       _state = PlayerState.paused;
+      // 通知媒体会话暂停状态
+      _audioService.notifyPaused();
       notifyListeners();
     }
+  }
+
+  /// 停止播放并释放焦点
+  void stop() {
+    _state = PlayerState.idle;
+    _audioService.notifyStopped();
+    _audioService.abandonAudioFocus();
+    notifyListeners();
   }
 
   /// 下一章
@@ -228,5 +344,14 @@ class AudioProvider extends ChangeNotifier {
     if (pitch != null) _config.pitch = pitch.clamp(0.5, 2.0);
     if (volume != null) _config.volume = volume.clamp(0.0, 1.0);
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    // 释放媒体会话资源
+    _mediaButtonSub?.cancel();
+    _audioFocusSub?.cancel();
+    _audioService.dispose();
+    super.dispose();
   }
 }

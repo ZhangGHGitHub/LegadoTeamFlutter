@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../bridge/ffi.dart';
 
 /// 书签状态管理
 class BookmarkProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
 
   BookmarkProvider(this._api);
 

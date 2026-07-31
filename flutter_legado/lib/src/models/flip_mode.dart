@@ -1,4 +1,15 @@
-/// 翻页模式枚举
+/// 翻页模式枚举（高级配置面板使用）
+///
+/// 与 PageTurnMode 保持 5 种模式一致：
+/// - PageTurnMode: scroll / slide / simulate / none / cover（阅读器渲染驱动）
+/// - FlipMode: simulation / slide / cover / none / scroll（高级配置面板）
+///
+/// 映射关系：
+/// FlipMode.simulation ↔ PageTurnMode.simulate
+/// FlipMode.slide      ↔ PageTurnMode.slide
+/// FlipMode.cover      ↔ PageTurnMode.cover
+/// FlipMode.none       ↔ PageTurnMode.none
+/// FlipMode.scroll     ↔ PageTurnMode.scroll
 enum FlipMode {
   /// 仿真翻页（带缩放和阴影动画）
   simulation,
@@ -10,7 +21,10 @@ enum FlipMode {
   cover,
   
   /// 无动画（直接切换）
-  none;
+  none,
+
+  /// 上下滚动（纵向滚动阅读）
+  scroll;
 
   /// 获取显示名称
   String get displayName {
@@ -23,6 +37,8 @@ enum FlipMode {
         return '覆盖';
       case FlipMode.none:
         return '无动画';
+      case FlipMode.scroll:
+        return '滚动';
     }
   }
 
@@ -37,6 +53,8 @@ enum FlipMode {
         return '📄';
       case FlipMode.none:
         return '⚡';
+      case FlipMode.scroll:
+        return '📜';
     }
   }
 

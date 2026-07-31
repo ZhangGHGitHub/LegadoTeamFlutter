@@ -1,8 +1,12 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/rss_provider.dart';
+import '../routes.dart';
+import '../utils/responsive.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -119,12 +123,34 @@ class _RssScreenState extends State<RssScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RSS 订阅'),
+        title: Text(AppStrings.rss),
         actions: [
+          // 安卓原版顶栏 4 个功能入口：历史/收藏/筛选/设置
           IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: '刷新',
-            onPressed: () => context.read<RssProvider>().loadSources(),
+            icon: const Icon(Icons.history),
+            tooltip: '历史',
+            onPressed: () {
+              // TODO: 待接入 RSS 历史页面
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.star_outline),
+            tooltip: '收藏',
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.rssFavorites),
+          ),
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            tooltip: '筛选',
+            onPressed: () {
+              // TODO: 待接入 RSS 筛选功能
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: '设置',
+            onPressed: () {
+              // TODO: 待接入 RSS 设置页面
+            },
           ),
         ],
       ),
@@ -147,27 +173,38 @@ class _RssScreenState extends State<RssScreen> {
           }
 
           if (provider.isEmpty) {
+            // 安卓原版：纯灰字居中空状态
             return const EmptyState(
               icon: Icons.rss_feed,
-              title: '暂无 RSS 订阅',
-              subtitle: '点击右下角按钮添加 RSS 源',
+              title: '当前没有订阅源！',
+              simple: true,
             );
           }
 
           return RefreshIndicator(
             onRefresh: () => provider.loadSources(),
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 200,
-                mainAxisExtent: 160,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: provider.sources.length,
-              itemBuilder: (context, index) {
-                final source = provider.sources[index];
-                return _buildSourceCard(context, source);
+            // 安卓端使用 GridLayoutManager spanCount=4
+            // 响应式改造：按可用宽度动态计算列数（手机 2 列 / 中大屏 3 列 / 平板 4 列）
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final columns =
+                    Responsive.gridColumnsForWidth(constraints.maxWidth);
+                final aspectRatio =
+                    Responsive.rssGridChildAspectRatio(constraints.maxWidth);
+                return GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    childAspectRatio: aspectRatio,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
+                  itemCount: provider.sources.length,
+                  itemBuilder: (context, index) {
+                    final source = provider.sources[index];
+                    return _buildSourceItem(context, source);
+                  },
+                );
               },
             ),
           );
@@ -176,102 +213,86 @@ class _RssScreenState extends State<RssScreen> {
     );
   }
 
-  Widget _buildSourceCard(BuildContext context, RssSource source) {
+  /// 安卓端 item_rss.xml 样式：居中图标(50x50 圆角12dp) + 名称(13sp 居中 最多2行)
+  Widget _buildSourceItem(BuildContext context, RssSource source) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => RssArticlesScreen(source: source),
-            ),
-          );
-        },
-        onLongPress: () => _confirmDeleteSource(source),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 图标
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    child: source.sourceIcon.isNotEmpty
-                        ? ClipOval(
-                            child: Image.network(
-                              source.sourceIcon,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, e, s) => Text(
-                                source.sourceName.isNotEmpty
-                                    ? source.sourceName[0].toUpperCase()
-                                    : 'R',
-                                style: theme.textTheme.titleMedium,
-                              ),
-                            ),
-                          )
-                        : Text(
-                            source.sourceName.isNotEmpty
-                                ? source.sourceName[0].toUpperCase()
-                                : 'R',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (!source.enabled)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '已禁用',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // 名称
-              Text(
-                source.sourceName,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              // 分组信息
-              if (source.sourceGroup != null &&
-                  source.sourceGroup!.isNotEmpty)
-                Text(
-                  source.sourceGroup!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
+    // 稳定 ValueKey（sourceUrl）+ RepaintBoundary 隔离网格项重绘区域
+    final item = InkWell(
+      key: ValueKey(source.sourceUrl),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RssArticlesScreen(source: source),
           ),
+        );
+      },
+      onLongPress: () => _confirmDeleteSource(source),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        // 安卓端 item 内边距，缩小至 8 避免 360dp 窄屏溢出
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 图标：50x50 圆角12dp（安卓端 FilletImageView radius=12dp）
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: source.sourceIcon.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: source.sourceIcon,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      // 限制解码宽度为图标实际显示像素宽度（50），避免大图解码
+                      memCacheWidth: (50 *
+                              (MediaQuery.maybeOf(context)?.devicePixelRatio ??
+                                  1.0))
+                          .round(),
+                      placeholder: (_, _) => _buildPlaceholderIcon(
+                          context, source, colorScheme),
+                      errorWidget: (_, _, _) => _buildPlaceholderIcon(
+                          context, source, colorScheme),
+                    )
+                  : _buildPlaceholderIcon(context, source, colorScheme),
+            ),
+            // 名称：安卓端 marginTop=16dp, 13sp, secondaryText, 居中, 最多2行
+            const SizedBox(height: 16),
+            Text(
+              source.sourceName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 13,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return RepaintBoundary(child: item);
+  }
+
+  /// 占位图标：显示源名称首字母
+  Widget _buildPlaceholderIcon(
+      BuildContext context, RssSource source, ColorScheme colorScheme) {
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Text(
+          source.sourceName.isNotEmpty
+              ? source.sourceName[0].toUpperCase()
+              : 'R',
+          style: Theme.of(context).textTheme.titleMedium,
         ),
       ),
     );

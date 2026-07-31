@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 
 /// RSS 源编辑器页面
 ///
@@ -130,7 +130,7 @@ class _RssSourceEditScreenState extends State<RssSourceEditScreen> {
     setState(() => _saving = true);
 
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final source = _buildSource();
 
       if (_isEdit) {

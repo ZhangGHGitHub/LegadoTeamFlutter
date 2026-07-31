@@ -1,0 +1,106 @@
+warning: in the working copy of 'flutter_legado/lib/src/providers/search_provider.dart', LF will be replaced by CRLF the next time Git touches it
+diff --git a/flutter_legado/lib/src/providers/search_provider.dart b/flutter_legado/lib/src/providers/search_provider.dart
+index e9556c989..dfac69d33 100644
+--- a/flutter_legado/lib/src/providers/search_provider.dart
++++ b/flutter_legado/lib/src/providers/search_provider.dart
+@@ -15,6 +15,7 @@ class SearchProvider extends ChangeNotifier {
+   bool _loading = false;
+   String? _error;
+   final Set<String> _selectedSourceUrls = {};
++  final Set<String> _selectedGroups = {};
+   List<String> _searchHistory = [];
+ 
+   // ===== Getters =====
+@@ -24,10 +25,14 @@ class SearchProvider extends ChangeNotifier {
+   bool get loading => _loading;
+   String? get error => _error;
+   Set<String> get selectedSourceUrls => _selectedSourceUrls;
++  Set<String> get selectedGroups => _selectedGroups;
+   List<String> get searchHistory => _searchHistory;
+   bool get hasResults => _results.isNotEmpty;
+   bool get isEmpty => _results.isEmpty && !_loading && _keyword.isNotEmpty;
+ 
++  /// 鏄惁鏈夌瓫閫夋潯浠讹紙鍒嗙粍鎴栦功婧愶級
++  bool get hasFilter => _selectedSourceUrls.isNotEmpty || _selectedGroups.isNotEmpty;
++
+   // ===== 鎿嶄綔 =====
+ 
+   /// 鍔犺浇鎼滅储鍘嗗彶
+@@ -67,8 +72,12 @@ class SearchProvider extends ChangeNotifier {
+     notifyListeners();
+ 
+     try {
+-      final sourceUrls =
+-          _selectedSourceUrls.isEmpty ? null : _selectedSourceUrls.toList();
++      final sourceUrls = await _resolveSearchSources();
++      // 鏈夌瓫閫夋潯浠朵絾瑙ｆ瀽缁撴灉涓虹┖锛岃鏄庢墍閫夊垎缁?涔︽簮鏃犳湁鏁堜功婧?+      if (sourceUrls != null && sourceUrls.isEmpty) {
++        _error = '鎵€閫夌瓫閫夎寖鍥村唴鏃犳湁鏁堜功婧愶紝璇疯皟鏁寸瓫閫夋潯浠?;
++        return;
++      }
+       _results = await _api.searchBooks(_keyword, sourceUrls: sourceUrls);
+     } catch (e) {
+       if (e is BridgeError) {
+@@ -82,6 +91,40 @@ class SearchProvider extends ChangeNotifier {
+     }
+   }
+ 
++  /// 瑙ｆ瀽鎼滅储鑼冨洿锛氬皢鍒嗙粍鍜屼功婧愰€夋嫨鍚堝苟涓烘渶缁堢殑 sourceUrls 鍒楄〃
++  /// 杩斿洖 null 琛ㄧず鎼滅储鍏ㄩ儴涔︽簮
++  Future<List<String>?> _resolveSearchSources() async {
++    // 鏃犱换浣曠瓫閫夋潯浠舵椂鎼滅储鍏ㄩ儴
++    if (_selectedSourceUrls.isEmpty && _selectedGroups.isEmpty) return null;
++
++    final urls = <String>{};
++
++    // 娣诲姞鐩存帴閫変腑鐨勪功婧?+    urls.addAll(_selectedSourceUrls);
++
++    // 灏嗛€変腑鐨勫垎缁勮В鏋愪负瀵瑰簲鐨勪功婧?URL
++    if (_selectedGroups.isNotEmpty) {
++      try {
++        final allSources = await _api.getEnabledBookSources();
++        for (final source in allSources) {
++          final group = source.bookSourceGroup;
++          if (group != null && group.isNotEmpty) {
++            // 涔︽簮鍒嗙粍鍙兘鍖呭惈澶氫釜缁勫悕锛堥€楀彿鍒嗛殧锛?+            final sourceGroups = group.split(RegExp(r'[,锛宂')).map((g) => g.trim());
++            if (sourceGroups.any((g) => _selectedGroups.contains(g))) {
++              urls.add(source.bookSourceUrl);
++            }
++          }
++        }
++      } catch (_) {
++        // 鍒嗙粍瑙ｆ瀽澶辫触鏃朵粎浣跨敤鐩存帴閫変腑鐨勪功婧?+      }
++    }
++
++    // 鏈夌瓫閫夋潯浠朵絾瑙ｆ瀽缁撴灉涓虹┖锛岃繑鍥炵┖鍒楄〃锛堣€岄潪 null锛変互鍖哄垎鈥滄悳绱㈠叏閮ㄢ€?+    return urls.toList();
++  }
++
+   void clearResults() {
+     _keyword = '';
+     _results = [];
+@@ -102,4 +145,29 @@ class SearchProvider extends ChangeNotifier {
+     _selectedSourceUrls.clear();
+     notifyListeners();
+   }
++
++  // ===== 鍒嗙粍绛涢€?=====
++
++  /// 鍒囨崲鍒嗙粍閫変腑鐘舵€?+  void toggleGroup(String group) {
++    if (_selectedGroups.contains(group)) {
++      _selectedGroups.remove(group);
++    } else {
++      _selectedGroups.add(group);
++    }
++    notifyListeners();
++  }
++
++  /// 娓呴櫎鍒嗙粍绛涢€?+  void clearGroupFilter() {
++    _selectedGroups.clear();
++    notifyListeners();
++  }
++
++  /// 娓呴櫎鎵€鏈夌瓫閫夛紙鍒嗙粍 + 涔︽簮锛?+  void clearAllFilter() {
++    _selectedSourceUrls.clear();
++    _selectedGroups.clear();
++    notifyListeners();
++  }
+ }

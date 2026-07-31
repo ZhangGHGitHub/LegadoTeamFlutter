@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../providers/search_provider.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 
-/// 搜索源筛选面板
-/// 
-/// 以底部弹出面板形式展示所有可用的书源，支持多选
+/// 搜索范围筛选面板
+///
+/// 对齐安卓端 SearchScopeDialog，支持两种筛选模式：
+/// - 分组模式：按书源分组多选（Checkbox）
+/// - 书源模式：按单个书源多选（Checkbox）
 class SearchFilterPanel extends StatefulWidget {
   const SearchFilterPanel({super.key});
 
@@ -30,32 +32,44 @@ class SearchFilterPanel extends StatefulWidget {
   }
 }
 
-class _SearchFilterPanelState extends State<SearchFilterPanel> {
+class _SearchFilterPanelState extends State<SearchFilterPanel>
+    with SingleTickerProviderStateMixin {
   List<BookSource> _sources = [];
   bool _loading = true;
   String? _error;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  late final TabController _tabController;
+
+  /// 从书源列表中提取的所有分组名
+  List<String> _groups = [];
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    // Tab 切换后刷新统计行与全选按钮状态
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
     _loadSources();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _loadSources() async {
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final sources = await api.getEnabledBookSources();
       if (mounted) {
         setState(() {
           _sources = sources;
+          _groups = _extractGroups(sources);
           _loading = false;
         });
       }
@@ -69,6 +83,24 @@ class _SearchFilterPanelState extends State<SearchFilterPanel> {
     }
   }
 
+  /// 从书源列表中提取所有不重复的分组名
+  List<String> _extractGroups(List<BookSource> sources) {
+    final groupSet = <String>{};
+    for (final source in sources) {
+      final group = source.bookSourceGroup;
+      if (group != null && group.isNotEmpty) {
+        // 书源分组可能包含多个组名（逗号分隔）
+        final parts = group.split(RegExp(r'[,，]')).map((g) => g.trim());
+        for (final g in parts) {
+          if (g.isNotEmpty) groupSet.add(g);
+        }
+      }
+    }
+    final list = groupSet.toList()..sort();
+    return list;
+  }
+
+  /// 按搜索关键字过滤后的书源列表
   List<BookSource> get _filteredSources {
     if (_searchQuery.isEmpty) return _sources;
     return _sources
@@ -78,10 +110,17 @@ class _SearchFilterPanelState extends State<SearchFilterPanel> {
         .toList();
   }
 
+  /// 按搜索关键字过滤后的分组列表
+  List<String> get _filteredGroups {
+    if (_searchQuery.isEmpty) return _groups;
+    return _groups
+        .where((g) => g.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SearchProvider>();
-    final selectedUrls = provider.selectedSourceUrls;
 
     return SafeArea(
       top: false,
@@ -102,19 +141,28 @@ class _SearchFilterPanelState extends State<SearchFilterPanel> {
               ),
             ),
             const SizedBox(height: 12),
-            // 标题
+            // 标题行
             Row(
               children: [
-                Text('选择搜索源', style: Theme.of(context).textTheme.titleMedium),
+                Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
-                if (selectedUrls.isNotEmpty)
+                if (provider.hasFilter)
                   TextButton(
                     onPressed: () {
-                      provider.clearSourceFilter();
+                      provider.clearAllFilter();
                       Navigator.pop(context);
                     },
                     child: const Text('清除全部'),
                   ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // Tab 切换：分组 / 书源
+            TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: '分组'),
+                Tab(text: '书源'),
               ],
             ),
             const SizedBox(height: 8),
@@ -122,7 +170,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel> {
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: '搜索书源...',
+                hintText: '搜索...',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -143,100 +191,21 @@ class _SearchFilterPanelState extends State<SearchFilterPanel> {
             ),
             const SizedBox(height: 8),
             // 统计信息
-            Row(
-              children: [
-                Text(
-                  '已选择 ${selectedUrls.length} / ${_sources.length} 个书源',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () {
-                    // 全选/取消全选
-                    if (selectedUrls.length == _sources.length) {
-                      provider.clearSourceFilter();
-                    } else {
-                      for (final source in _sources) {
-                        if (!selectedUrls.contains(source.bookSourceUrl)) {
-                          provider.toggleSource(source.bookSourceUrl);
-                        }
-                      }
-                    }
-                  },
-                  child: Text(selectedUrls.length == _sources.length ? '取消全选' : '全选'),
-                ),
-              ],
-            ),
+            _buildStatsRow(provider),
             const Divider(),
-            // 书源列表
+            // 内容区域
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.error_outline,
-                                  size: 48, color: Theme.of(context).colorScheme.error),
-                              const SizedBox(height: 8),
-                              Text('加载失败',
-                                  style: Theme.of(context).textTheme.bodyMedium),
-                              const SizedBox(height: 8),
-                              TextButton(
-                                onPressed: _loadSources,
-                                child: const Text('重试'),
-                              ),
-                            ],
-                          ),
-                        )
-                      : _filteredSources.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.search_off,
-                                      size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                  const SizedBox(height: 8),
-                                  Text('未找到匹配的书源',
-                                      style: Theme.of(context).textTheme.bodyMedium),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: _filteredSources.length,
-                              itemBuilder: (context, index) {
-                                final source = _filteredSources[index];
-                                final isSelected = selectedUrls.contains(source.bookSourceUrl);
-                                return CheckboxListTile(
-                                  dense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                  value: isSelected,
-                                  onChanged: (value) {
-                                    provider.toggleSource(source.bookSourceUrl);
-                                  },
-                                  title: Text(
-                                    source.bookSourceName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(
-                                    source.bookSourceUrl,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                  secondary: Icon(
-                                    isSelected ? Icons.check_circle : Icons.circle_outlined,
-                                    color: isSelected
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                );
-                              },
-                            ),
+                      ? _buildErrorView()
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildGroupList(provider),
+                            _buildSourceList(provider),
+                          ],
+                        ),
             ),
             const SizedBox(height: 8),
             // 确定按钮
@@ -244,12 +213,209 @@ class _SearchFilterPanelState extends State<SearchFilterPanel> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text('确定 (${selectedUrls.length})'),
+                child: const Text('确定'),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  /// 统计信息行
+  Widget _buildStatsRow(SearchProvider provider) {
+    final isGroupTab = _tabController.index == 0;
+    String info;
+    if (isGroupTab) {
+      info = '已选择 ${provider.selectedGroups.length} / ${_groups.length} 个分组';
+    } else {
+      info = '已选择 ${provider.selectedSourceUrls.length} / ${_sources.length} 个书源';
+    }
+
+    return Row(
+      children: [
+        Text(info, style: Theme.of(context).textTheme.bodySmall),
+        const Spacer(),
+        TextButton(
+          onPressed: () {
+            if (isGroupTab) {
+              // 全选/取消全部分组
+              if (provider.selectedGroups.length == _groups.length) {
+                provider.clearGroupFilter();
+              } else {
+                for (final group in _groups) {
+                  if (!provider.selectedGroups.contains(group)) {
+                    provider.toggleGroup(group);
+                  }
+                }
+              }
+            } else {
+              // 全选/取消全部书源
+              if (provider.selectedSourceUrls.length == _sources.length) {
+                provider.clearSourceFilter();
+              } else {
+                for (final source in _sources) {
+                  if (!provider.selectedSourceUrls.contains(source.bookSourceUrl)) {
+                    provider.toggleSource(source.bookSourceUrl);
+                  }
+                }
+              }
+            }
+          },
+          child: Text(_isAllSelected(provider, isGroupTab) ? '取消全选' : '全选'),
+        ),
+      ],
+    );
+  }
+
+  bool _isAllSelected(SearchProvider provider, bool isGroupTab) {
+    if (isGroupTab) {
+      return _groups.isNotEmpty && provider.selectedGroups.length == _groups.length;
+    } else {
+      return _sources.isNotEmpty && provider.selectedSourceUrls.length == _sources.length;
+    }
+  }
+
+  /// 错误视图
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.error_outline,
+              size: 48, color: Theme.of(context).colorScheme.error),
+          const SizedBox(height: 8),
+          Text('加载失败', style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _loadSources,
+            child: const Text('重试'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 分组列表（对齐安卓端 SearchScopeDialog 的分组模式）
+  Widget _buildGroupList(SearchProvider provider) {
+    final filteredGroups = _filteredGroups;
+    if (filteredGroups.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_off,
+                size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 8),
+            Text(
+              _groups.isEmpty ? '暂无书源分组' : '未找到匹配的分组',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: filteredGroups.length,
+      itemBuilder: (context, index) {
+        final group = filteredGroups[index];
+        final isSelected = provider.selectedGroups.contains(group);
+        // 计算该分组下的书源数量
+        final count = _countSourcesInGroup(group);
+        return CheckboxListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          value: isSelected,
+          onChanged: (value) {
+            provider.toggleGroup(group);
+          },
+          title: Text(
+            group,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            '$count 个书源',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          secondary: Icon(
+            isSelected ? Icons.check_circle : Icons.circle_outlined,
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        );
+      },
+    );
+  }
+
+  /// 计算某个分组下的书源数量
+  int _countSourcesInGroup(String group) {
+    int count = 0;
+    for (final source in _sources) {
+      final sourceGroup = source.bookSourceGroup;
+      if (sourceGroup != null && sourceGroup.isNotEmpty) {
+        final parts = sourceGroup.split(RegExp(r'[,，]')).map((g) => g.trim());
+        if (parts.contains(group)) count++;
+      }
+    }
+    return count;
+  }
+
+  /// 书源列表（对齐安卓端 SearchScopeDialog 的书源模式）
+  Widget _buildSourceList(SearchProvider provider) {
+    final filteredSources = _filteredSources;
+    if (filteredSources.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off,
+                size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 8),
+            Text('未找到匹配的书源',
+                style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: filteredSources.length,
+      itemBuilder: (context, index) {
+        final source = filteredSources[index];
+        final isSelected = provider.selectedSourceUrls.contains(source.bookSourceUrl);
+        return CheckboxListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          value: isSelected,
+          onChanged: (value) {
+            provider.toggleSource(source.bookSourceUrl);
+          },
+          title: Text(
+            source.bookSourceName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            source.bookSourceUrl,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          secondary: Icon(
+            isSelected ? Icons.check_circle : Icons.circle_outlined,
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        );
+      },
     );
   }
 }

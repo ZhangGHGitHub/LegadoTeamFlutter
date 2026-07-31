@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/models.dart';
 import '../providers/audio_provider.dart';
 
 /// 预设定时时长（分钟）
@@ -10,14 +11,27 @@ const List<int> _kPresetMinutes = [5, 10, 15, 30];
 
 /// 听书播放页面
 class AudioScreen extends StatefulWidget {
+  /// 书籍对象（路由参数规范化：优先使用 Book 对象）
+  final Book? book;
+
+  /// 书籍 URL（向后兼容）
   final String bookUrl;
+
+  /// 书名（向后兼容）
   final String bookName;
 
   const AudioScreen({
     super.key,
-    required this.bookUrl,
+    this.book,
+    this.bookUrl = '',
     this.bookName = '',
   });
+
+  /// 获取有效的 bookUrl
+  String get effectiveBookUrl => book?.bookUrl ?? bookUrl;
+
+  /// 获取有效的书名
+  String get effectiveBookName => book?.name ?? bookName;
 
   @override
   State<AudioScreen> createState() => _AudioScreenState();
@@ -43,17 +57,21 @@ class _AudioScreenState extends State<AudioScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AudioProvider>();
+      // 初始化媒体会话（后台播放 + 媒体按钮 + 焦点管理）
+      provider.initMediaSession(bookName: widget.effectiveBookName);
       if (!provider.hasChapters) {
-        provider.loadChapters(widget.bookUrl);
+        provider.loadChapters(widget.effectiveBookUrl);
       }
     });
   }
 
   @override
   void dispose() {
-    // 页面销毁时清理定时器
+    // 页面销毁时清理定时器和媒体会话
     _stopTimer?.cancel();
     _customMinutesController.dispose();
+    // 释放媒体会话资源（后台播放/焦点）
+    context.read<AudioProvider>().releaseMediaSession();
     super.dispose();
   }
 
@@ -175,7 +193,7 @@ class _AudioScreenState extends State<AudioScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.bookName.isNotEmpty ? widget.bookName : '听书'),
+        title: Text(widget.effectiveBookName.isNotEmpty ? widget.effectiveBookName : '听书'),
         actions: [
           // 定时停止按钮
           _buildTimerButton(),
@@ -195,12 +213,12 @@ class _AudioScreenState extends State<AudioScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
                   const SizedBox(height: 16),
                   Text(provider.errorMessage ?? '加载失败'),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => provider.loadChapters(widget.bookUrl),
+                    onPressed: () => provider.loadChapters(widget.effectiveBookUrl),
                     child: const Text('重试'),
                   ),
                 ],
@@ -237,7 +255,7 @@ class _AudioScreenState extends State<AudioScreen> {
     return IconButton(
       icon: Icon(
         _isTimerActive ? Icons.timer : Icons.timer_outlined,
-        color: _isTimerActive ? Colors.red : null,
+        color: _isTimerActive ? Theme.of(context).colorScheme.error : null,
       ),
       tooltip: _isTimerActive ? '取消定时' : '定时停止',
       onPressed: () {
@@ -257,12 +275,12 @@ class _AudioScreenState extends State<AudioScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.timer, size: 18, color: Colors.red),
+          Icon(Icons.timer, size: 18, color: Theme.of(context).colorScheme.error),
           const SizedBox(width: 6),
           Text(
             '定时停止 ${_formatCountdown(_remainingSeconds)}',
-            style: const TextStyle(
-              color: Colors.red,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
               fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
@@ -270,7 +288,7 @@ class _AudioScreenState extends State<AudioScreen> {
           const SizedBox(width: 12),
           GestureDetector(
             onTap: _cancelTimer,
-            child: const Icon(Icons.close, size: 18, color: Colors.red),
+            child: Icon(Icons.close, size: 18, color: Theme.of(context).colorScheme.error),
           ),
         ],
       ),
@@ -498,17 +516,28 @@ class _AudioScreenState extends State<AudioScreen> {
   }
 
   Widget _buildBackgroundNotice() {
+    final provider = context.watch<AudioProvider>();
+    final mediaReady = provider.isMediaSessionReady;
     return Container(
       padding: const EdgeInsets.all(8),
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+          Icon(
+            mediaReady ? Icons.headphones : Icons.info_outline,
+            size: 16,
+            color: mediaReady ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 8),
           Text(
-            '支持后台播放，切换应用后音频将继续播放',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            mediaReady
+                ? '后台播放已启用，支持媒体按钮控制'
+                : '支持后台播放，切换应用后音频将继续播放',
+            style: TextStyle(
+              fontSize: 12,
+              color: mediaReady ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),

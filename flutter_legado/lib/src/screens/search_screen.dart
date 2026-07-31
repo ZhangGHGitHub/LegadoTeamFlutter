@@ -49,46 +49,83 @@ class _SearchScreenState extends State<SearchScreen> {
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final provider = context.watch<SearchProvider>();
+    final colorScheme = Theme.of(context).colorScheme;
     return AppBar(
-      title: TextField(
-        controller: _searchController,
-        focusNode: _focusNode,
-        decoration: InputDecoration(
-          hintText: AppStrings.searchBookHint,
-          border: InputBorder.none,
-          filled: true,
-          fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          prefixIcon: const Icon(Icons.search, size: 20),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear, size: 20),
-                  onPressed: () {
-                    _searchController.clear();
-                    provider.clearResults();
-                  },
-                )
-              : null,
+      title: Container(
+        height: 36,
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: TextField(
+          controller: _searchController,
+          focusNode: _focusNode,
+          decoration: InputDecoration(
+            hintText: AppStrings.searchBookHint,
+            // 安卓端 bg_searchview: 35dp圆角胶囊形、半透明填充、0.5dp描边
+            filled: true,
+            fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+            prefixIcon: const Icon(Icons.search, size: 20),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 20),
+                    onPressed: () {
+                      _searchController.clear();
+                      provider.clearResults();
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(35),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(35),
+              borderSide: BorderSide(
+                color: colorScheme.surfaceContainerHighest,
+                width: 0.5,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(35),
+              borderSide: BorderSide(
+                color: colorScheme.primary.withValues(alpha: 0.5),
+                width: 0.5,
+              ),
+            ),
+          ),
+          textInputAction: TextInputAction.search,
+          onSubmitted: (value) => provider.search(value),
+          onChanged: (_) => setState(() {}),
         ),
-        textInputAction: TextInputAction.search,
-        onSubmitted: (value) => provider.search(value),
-        onChanged: (_) => setState(() {}),
       ),
       actions: [
+        // 安卓原版：右侧「>」图标提交搜索
         IconButton(
-          icon: const Icon(Icons.filter_list),
-          tooltip: '筛选搜索源',
-          onPressed: () => SearchFilterPanel.show(context),
-        ),
-        TextButton(
+          icon: const Icon(Icons.arrow_forward),
+          tooltip: AppStrings.search,
           onPressed: () {
             final text = _searchController.text.trim();
             if (text.isNotEmpty) {
               provider.search(text);
             }
           },
-          child: Text(AppStrings.search),
+        ),
+        // 安卓原版：三点菜单（精准搜索/书源管理/分组或书源/日志）
+        PopupMenuButton<String>(
+          onSelected: (value) {
+            switch (value) {
+              case 'filter':
+                SearchFilterPanel.show(context);
+                break;
+              case 'sources':
+                Navigator.pushNamed(context, '/sources');
+                break;
+            }
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'filter', child: Text('精准搜索')),
+            const PopupMenuItem(value: 'sources', child: Text('书源管理')),
+          ],
         ),
       ],
     );
@@ -136,6 +173,15 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const Spacer(),
+              if (provider.selectedGroups.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.folder, size: 16),
+                    label: Text('${provider.selectedGroups.length} 分组'),
+                    onPressed: () => provider.clearGroupFilter(),
+                  ),
+                ),
               if (provider.selectedSourceUrls.isNotEmpty)
                 ActionChip(
                   avatar: const Icon(Icons.filter_list, size: 16),
@@ -162,7 +208,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildResultItem(BuildContext context, SearchResult result) {
     final book = result.book;
-    return ListTile(
+    // 稳定 ValueKey（来源+书址）避免结果列表整表重建；RepaintBoundary 隔离重绘区域
+    final tile = ListTile(
+      key: ValueKey('${result.sourceName}:${book.bookUrl}'),
       leading: BookCover(
         coverUrl: book.coverUrl,
         width: 48,
@@ -205,6 +253,7 @@ class _SearchScreenState extends State<SearchScreen> {
       isThreeLine: true,
       onTap: () => _showBookDetail(context, result),
     );
+    return RepaintBoundary(child: tile);
   }
 
   void _showBookDetail(BuildContext context, SearchResult result) {
@@ -274,13 +323,14 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  /// 搜索历史页面（无结果时显示）
+  /// 搜索历史页面（无结果时显示，对标安卓原版「搜索历史」区域）
   Widget _buildSearchHistory(BuildContext context, SearchProvider provider) {
     if (provider.searchHistory.isEmpty) {
-      return EmptyState(
+      // 安卓原版：无历史时显示纯灰字提示
+      return const EmptyState(
         icon: Icons.search,
-        title: AppStrings.searchBooks,
-        subtitle: AppStrings.searchBooksHint,
+        title: '搜索书名、作者',
+        simple: true,
       );
     }
 

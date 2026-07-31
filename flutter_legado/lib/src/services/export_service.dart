@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart';
-import 'rust_api.dart';
+import 'book_api.dart';
 
 /// 导出服务
 ///
 /// 提供书籍导出功能，对接 Rust 后端的 export_book API。
 class ExportService {
-  final RustApi _rustApi;
+  final BookApi _rustApi;
 
   ExportService(this._rustApi);
 

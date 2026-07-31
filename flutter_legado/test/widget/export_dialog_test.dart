@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_legado/src/models/book.dart';
 import 'package:flutter_legado/src/services/export_service.dart';
 import 'package:flutter_legado/src/services/rust_api.dart';
 import 'package:flutter_legado/src/widgets/export_dialog.dart';
@@ -75,18 +76,22 @@ void main() {
 
   /// 构建测试用 Widget
   Widget buildTestWidget({
-    String bookUrl = 'https://example.com/book1',
-    String bookName = '测试书籍',
+    Book? book,
     ExportService? exportService,
     RustApi? rustApi,
     String? webDavConfig,
   }) {
+    // 构造测试用书籍对象
+    final testBook = book ??
+        const Book(
+          bookUrl: 'https://example.com/book1',
+          name: '测试书籍',
+        );
     return MaterialApp(
       home: Scaffold(
         body: Center(
           child: ExportDialog(
-            bookUrl: bookUrl,
-            bookName: bookName,
+            book: testBook,
             exportService: exportService ?? fakeExportService,
             rustApi: rustApi ?? fakeRustApi,
             webDavConfig: webDavConfig,
@@ -96,15 +101,38 @@ void main() {
     );
   }
 
+  /// 设置测试窗口大小并泵入 Widget（避免对话框内容溢出）
+  Future<void> pumpTestWidget(
+    WidgetTester tester, {
+    Book? book,
+    ExportService? exportService,
+    RustApi? rustApi,
+    String? webDavConfig,
+  }) async {
+    // 设置较大的测试窗口，避免 RenderFlex 溢出
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(buildTestWidget(
+      book: book,
+      exportService: exportService,
+      rustApi: rustApi,
+      webDavConfig: webDavConfig,
+    ));
+  }
+
   group('导出对话框 UI 渲染', () {
     testWidgets('显示对话框标题', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       expect(find.text('导出测试书籍'), findsOneWidget);
     });
 
     testWidgets('显示格式选择器', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       expect(find.text('导出格式'), findsOneWidget);
       expect(find.text('TXT'), findsOneWidget);
@@ -113,7 +141,7 @@ void main() {
     });
 
     testWidgets('显示字符编码选择器', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       expect(find.text('字符编码'), findsOneWidget);
       // 默认选中 UTF-8
@@ -121,36 +149,29 @@ void main() {
     });
 
     testWidgets('显示 TOC 复选框', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       expect(find.text('包含目录'), findsOneWidget);
       expect(find.text('导出时包含书籍的目录结构'), findsOneWidget);
     });
 
     testWidgets('显示取消和确认按钮', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       expect(find.text('取消'), findsOneWidget);
       expect(find.text('确认'), findsOneWidget);
     });
 
     testWidgets('无 WebDAV 配置时不显示 WebDAV 选项', (tester) async {
-      await tester.pumpWidget(buildTestWidget(webDavConfig: null));
+      await pumpTestWidget(tester, webDavConfig: null);
 
       expect(find.text('上传到 WebDAV'), findsNothing);
     });
 
     testWidgets('有 WebDAV 配置时显示 WebDAV 选项', (tester) async {
-      // 设置较大的测试窗口避免溢出
-      tester.view.physicalSize = const Size(1200, 1600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      await tester.pumpWidget(
-        buildTestWidget(webDavConfig: '{"url":"https://dav.example.com"}'),
+      await pumpTestWidget(
+        tester,
+        webDavConfig: '{"url":"https://dav.example.com"}',
       );
 
       expect(find.text('上传到 WebDAV'), findsOneWidget);
@@ -160,7 +181,7 @@ void main() {
 
   group('导出对话框交互', () {
     testWidgets('默认选中 EPUB 格式', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       // 因为 supportedFormats 包含 epub，initState 会默认选中 epub
       final epubChip = tester.widget<ChoiceChip>(
@@ -173,7 +194,7 @@ void main() {
     });
 
     testWidgets('切换格式选择', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       // 点击 TXT 格式
       await tester.tap(find.text('TXT'));
@@ -189,7 +210,7 @@ void main() {
     });
 
     testWidgets('切换 TOC 复选框', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       // 初始状态为选中
       final checkbox = tester.widget<CheckboxListTile>(
@@ -208,7 +229,7 @@ void main() {
     });
 
     testWidgets('点击取消关闭对话框', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
@@ -218,7 +239,7 @@ void main() {
     });
 
     testWidgets('点击确认触发导出', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       await tester.tap(find.text('确认'));
       await tester.pump();
@@ -231,7 +252,7 @@ void main() {
     });
 
     testWidgets('导出成功后对话框自动关闭', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       // 确认对话框存在
       expect(find.text('导出测试书籍'), findsOneWidget);
@@ -250,7 +271,7 @@ void main() {
 
   group('导出对话框字符集选择', () {
     testWidgets('字符集下拉框包含所有选项', (tester) async {
-      await tester.pumpWidget(buildTestWidget());
+      await pumpTestWidget(tester);
 
       // 点击下拉框展开
       await tester.tap(find.text('UTF-8').first);

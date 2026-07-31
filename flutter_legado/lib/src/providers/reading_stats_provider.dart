@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/book_api.dart';
 import '../services/rust_api.dart';
 import '../bridge/ffi.dart';
 
@@ -8,7 +9,7 @@ enum StatsPeriod { week, month }
 
 /// 阅读统计状态管理
 class ReadingStatsProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
 
   ReadingStatsProvider(this._api);
 

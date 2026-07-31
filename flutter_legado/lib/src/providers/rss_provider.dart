@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
+import '../services/book_api.dart';
 import '../services/rust_api.dart';
 import '../bridge/ffi.dart';
 
 /// RSS 状态管理
 class RssProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
 
   RssProvider(this._api);
 

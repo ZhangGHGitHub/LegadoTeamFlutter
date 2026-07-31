@@ -9,7 +9,8 @@ void main() {
     String? author,
     double? progress,
     VoidCallback? onTap,
-    VoidCallback? onLongPress,
+    VoidCallback? onCoverLongPress,
+    VoidCallback? onInfoLongPress,
   }) {
     return MaterialApp(
       home: Scaffold(
@@ -22,7 +23,8 @@ void main() {
             author: author,
             progress: progress,
             onTap: onTap,
-            onLongPress: onLongPress,
+            onCoverLongPress: onCoverLongPress,
+            onInfoLongPress: onInfoLongPress,
           ),
         ),
       ),
@@ -53,8 +55,36 @@ void main() {
     var tapped = false;
     await tester.pumpWidget(buildTestWidget(onTap: () => tapped = true));
 
-    await tester.tap(find.byType(BookGridItem));
+    // 点击封面区域触发 onTap
+    await tester.tap(find.byIcon(Icons.menu_book));
     expect(tapped, isTrue);
+  });
+
+  testWidgets('BookGridItem cover long press triggers onCoverLongPress',
+      (tester) async {
+    var coverLongPressed = false;
+    await tester.pumpWidget(
+      buildTestWidget(onCoverLongPress: () => coverLongPressed = true),
+    );
+
+    // 长按封面区域（占位图标）
+    await tester.longPress(find.byIcon(Icons.menu_book));
+    expect(coverLongPressed, isTrue);
+  });
+
+  testWidgets('BookGridItem info long press triggers onInfoLongPress',
+      (tester) async {
+    var infoLongPressed = false;
+    await tester.pumpWidget(
+      buildTestWidget(
+        title: '测试书籍',
+        onInfoLongPress: () => infoLongPressed = true,
+      ),
+    );
+
+    // 长按标题区域
+    await tester.longPress(find.text('测试书籍'));
+    expect(infoLongPressed, isTrue);
   });
 
   testWidgets('BookGridItem shows placeholder icon without cover',

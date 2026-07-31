@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import '../models/models.dart';
-import 'rust_api.dart';
+import 'book_api.dart';
 
 /// 数据备份/恢复服务
 class BackupService {
-  final RustApi _api;
+  final BookApi _api;
 
   BackupService(this._api);
 

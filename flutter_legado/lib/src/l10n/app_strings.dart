@@ -18,6 +18,7 @@ class AppStrings {
   static String get settings => _get('设置', 'Settings');
   static String get my => _get('我的', 'My');
   static String get rss => _get('订阅', 'RSS');
+  static String get discover => _get('发现', 'Discover');
   static String get confirm => _get('确定', 'OK');
   static String get cancel => _get('取消', 'Cancel');
   static String get save => _get('保存', 'Save');
@@ -37,8 +38,8 @@ class AppStrings {
   static String get groupByNone => _get('不分组', 'No Group');
   static String get groupBySource => _get('按来源', 'By Source');
   static String get groupByTag => _get('按分组', 'By Tag');
-  static String get updateAll => _get('更新全部', 'Update All');
-  static String get manageBookshelf => _get('管理书架', 'Manage Bookshelf');
+  static String get updateAll => _get('更新目录', 'Update TOC');
+  static String get manageBookshelf => _get('书架管理', 'Manage Bookshelf');
   static String get sourceManagement => _get('书源管理', 'Source Management');
   static String get groupByNoneLabel => _get('不分组', 'No Group');
   static String get groupBySourceLabel => _get('按来源分组', 'Group by Source');
@@ -46,10 +47,10 @@ class AppStrings {
   static String get listView => _get('列表视图', 'List View');
   static String get gridView => _get('网格视图', 'Grid View');
   static String get addBook => _get('添加书籍', 'Add Book');
-  static String get addLocalBook => _get('添加本地书籍', 'Add Local Book');
-  static String get emptyBookshelf => _get('书架空空如也', 'Bookshelf is empty');
+  static String get addLocalBook => _get('添加本地', 'Add Local Book');
+  static String get emptyBookshelf => _get('书架还空着，先去搜索书籍或从发现里添加吧！', 'Bookshelf is empty, search or add from discover!');
   static String get emptyBookshelfHint =>
-      _get('点击下方按钮添加本地书籍，或通过搜索发现好书', 'Tap the button below to add local books, or search to discover great books');
+      _get('', '');
   static String get loadingBookshelf => _get('加载书架...', 'Loading bookshelf...');
   static String get recentReading => _get('最近阅读', 'Recent Reading');
   static String get allBooks => _get('全部', 'All');
@@ -162,6 +163,8 @@ class AppStrings {
   static String get scrollMode => _get('上下滚动', 'Scroll');
   static String get slideMode => _get('左右滑动', 'Slide');
   static String get simulateMode => _get('仿真翻页', 'Simulate');
+  static String get noneMode => _get('无动画', 'None');
+  static String get coverMode => _get('覆盖', 'Cover');
   static String get loadingChapter => _get('加载章节...', 'Loading chapter...');
   static String get noContent => _get('暂无内容', 'No content');
   static String get catalog => _get('目录', 'Catalog');

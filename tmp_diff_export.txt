@@ -1,0 +1,143 @@
+diff --git a/flutter_legado/lib/src/widgets/export_dialog.dart b/flutter_legado/lib/src/widgets/export_dialog.dart
+index aeedddf5d..e80da0f62 100644
+--- a/flutter_legado/lib/src/widgets/export_dialog.dart
++++ b/flutter_legado/lib/src/widgets/export_dialog.dart
+@@ -1,4 +1,6 @@
++import 'package:file_picker/file_picker.dart';
+ import 'package:flutter/material.dart';
++import '../models/models.dart';
+ import '../services/export_service.dart';
+ import '../services/rust_api.dart';
+ 
+@@ -7,15 +9,13 @@ import '../services/rust_api.dart';
+ /// 鎻愪緵瀹屾暣鐨勫鍑洪厤缃晫闈紝鍖呮嫭锛? /// - 鏍煎紡閫夋嫨鍣紙RadioGroup: TXT/EPUB/HTML锛? /// - 瀛楃闆嗛€夋嫨鍣紙DropdownButton: UTF-8/GBK/Big5锛?+/// - 瀵煎嚭璺緞閫夋嫨锛團ilePicker锛? /// - TOC 澶嶉€夋锛坕ncludeToc锛? /// - 杩涘害鎸囩ず鍣紙ProgressIndicator锛? /// - 鍙栨秷/纭鎸夐挳
+ class ExportDialog extends StatefulWidget {
+-  /// 涔︾睄 URL
+-  final String bookUrl;
+-
+-  /// 涔︾睄鍚嶇О锛堢敤浜庢樉绀猴級
+-  final String bookName;
++  /// 涔︾睄瀵硅薄锛堣矾鐢卞弬鏁拌鑼冨寲锛氫娇鐢?Book 瀵硅薄锛?+  final Book book;
+ 
+   /// 瀵煎嚭鏈嶅姟瀹炰緥
+   final ExportService exportService;
+@@ -28,8 +28,7 @@ class ExportDialog extends StatefulWidget {
+ 
+   const ExportDialog({
+     super.key,
+-    required this.bookUrl,
+-    required this.bookName,
++    required this.book,
+     required this.exportService,
+     required this.rustApi,
+     this.webDavConfig,
+@@ -52,6 +51,9 @@ class _ExportDialogState extends State<ExportDialog> {
+   // 鏄惁鍚敤 WebDAV 涓婁紶
+   bool _enableWebDav = false;
+ 
++  // 瀵煎嚭璺緞锛堢敤鎴烽€夋嫨鐨勭洰褰曪級
++  String? _exportPath;
++
+   // 瀵煎嚭鐘舵€?   ExportStatus _status = ExportStatus.idle;
+ 
+@@ -83,7 +85,7 @@ class _ExportDialogState extends State<ExportDialog> {
+           children: [
+             // 鏍囬
+             Text(
+-              '瀵煎嚭${widget.bookName}',
++              '瀵煎嚭${widget.book.name}',
+               style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                     fontWeight: FontWeight.bold,
+                   ),
+@@ -98,6 +100,10 @@ class _ExportDialogState extends State<ExportDialog> {
+             _buildEncodingSelector(),
+             const Divider(height: 32),
+ 
++            // 瀵煎嚭璺緞閫夋嫨
++            _buildPathSelector(),
++            const Divider(height: 32),
++
+             // TOC 閫夐」
+             _buildTocCheckbox(),
+             const Divider(height: 32),
+@@ -193,6 +199,63 @@ class _ExportDialogState extends State<ExportDialog> {
+     );
+   }
+ 
++  /// 瀵煎嚭璺緞閫夋嫨鍣?+  Widget _buildPathSelector() {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        const Text('瀵煎嚭璺緞',
++            style: TextStyle(fontWeight: FontWeight.w500)),
++        const SizedBox(height: 8),
++        InkWell(
++          onTap: _pickExportPath,
++          borderRadius: BorderRadius.circular(8),
++          child: Container(
++            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
++            decoration: BoxDecoration(
++              border: Border.all(
++                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
++              ),
++              borderRadius: BorderRadius.circular(8),
++            ),
++            child: Row(
++              children: [
++                Icon(Icons.folder_open,
++                    size: 20, color: Theme.of(context).colorScheme.primary),
++                const SizedBox(width: 8),
++                Expanded(
++                  child: Text(
++                    _exportPath ?? '鐐瑰嚮閫夋嫨瀵煎嚭鐩綍',
++                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
++                          color: _exportPath != null
++                              ? null
++                              : Theme.of(context).colorScheme.onSurfaceVariant,
++                        ),
++                    maxLines: 1,
++                    overflow: TextOverflow.ellipsis,
++                  ),
++                ),
++                const Icon(Icons.arrow_forward_ios, size: 14),
++              ],
++            ),
++          ),
++        ),
++      ],
++    );
++  }
++
++  /// 閫夋嫨瀵煎嚭鐩綍
++  Future<void> _pickExportPath() async {
++    final dir = await FilePicker.platform.getDirectoryPath(
++      dialogTitle: '閫夋嫨瀵煎嚭鐩綍',
++    );
++    if (dir != null) {
++      setState(() {
++        _exportPath = dir;
++      });
++    }
++  }
++
+   /// TOC 澶嶉€夋
+   Widget _buildTocCheckbox() {
+     return CheckboxListTile(
+@@ -318,7 +381,7 @@ class _ExportDialogState extends State<ExportDialog> {
+   /// 鑾峰彇棰勮淇℃伅
+   Future<Map<String, dynamic>> _getPreviewInfo() async {
+     return await widget.exportService.getExportInfo(
+-      bookUrl: widget.bookUrl,
++      bookUrl: widget.book.bookUrl,
+       format: _selectedFormat,
+     );
+   }
+@@ -340,7 +403,7 @@ class _ExportDialogState extends State<ExportDialog> {
+     try {
+       // 璋冪敤瀵煎嚭 API
+       final result = await widget.exportService.export(
+-        bookUrl: widget.bookUrl,
++        bookUrl: widget.book.bookUrl,
+         format: _selectedFormat,
+         includeToc: _includeToc,
+         encoding: _selectedEncoding,

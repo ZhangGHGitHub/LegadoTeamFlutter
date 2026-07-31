@@ -24,13 +24,67 @@ pub struct ChapterListResponse {
     pub chapters: Vec<BookChapter>,
 }
 
-/// 获取指定书籍的章节列表（从数据库读取）
+/// 获取指定书籍的章节列表
+///
+/// 优先从数据库读取；若数据库无记录且为本地书籍，则从文件解析章节并入库（懒加载）。
 pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
-    with_database(|db| {
+    // 1. 尝试从数据库读取已有章节
+    let chapters = with_database(|db| {
         let repo = BookChapterRepository::new(db.connection());
-        let chapters = repo.find_by_book_url(book_url)?;
+        repo.find_by_book_url(book_url)
+    })?;
+
+    if !chapters.is_empty() {
         let total = chapters.len() as i32;
-        Ok(ChapterListResponse { total, chapters })
+        return Ok(ChapterListResponse { total, chapters });
+    }
+
+    // 2. 数据库无章节：如果是本地书籍，从文件解析并入库
+    if is_local_book(book_url) {
+        let chapter_infos = legado_book::LocalBook::get_chapters(book_url)?;
+        let book_chapters: Vec<BookChapter> = chapter_infos
+            .iter()
+            .map(|ci| BookChapter {
+                url: ci.url.clone(),
+                title: ci.title.clone(),
+                is_volume: ci.is_volume,
+                base_url: book_url.to_string(),
+                book_url: book_url.to_string(),
+                index: ci.index,
+                is_vip: false,
+                is_pay: false,
+                resource_url: None,
+                tag: None,
+                word_count: None,
+                start: ci.start,
+                end: ci.end,
+                start_fragment_id: None,
+                end_fragment_id: None,
+                variable: None,
+                img_url: None,
+            })
+            .collect();
+
+        // 存入数据库供后续访问
+        if !book_chapters.is_empty() {
+            with_database(|db| {
+                let repo = BookChapterRepository::new(db.connection());
+                repo.insert_batch(&book_chapters)?;
+                Ok(())
+            })?;
+        }
+
+        let total = book_chapters.len() as i32;
+        return Ok(ChapterListResponse {
+            total,
+            chapters: book_chapters,
+        });
+    }
+
+    // 3. 在线书籍无章节记录，返回空
+    Ok(ChapterListResponse {
+        total: 0,
+        chapters: vec![],
     })
 }
 

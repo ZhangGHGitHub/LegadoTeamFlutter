@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -36,7 +36,7 @@ class _RssFavoritesScreenState extends State<RssFavoritesScreen> {
       _error = null;
     });
     try {
-      final api = context.read<RustApi>();
+      final api = context.read<BookApi>();
       final stars = await api.getRssStars();
       final sources = await api.getRssSources();
       if (!mounted) return;
@@ -73,7 +73,7 @@ class _RssFavoritesScreenState extends State<RssFavoritesScreen> {
     setState(() => _stars.removeWhere((s) => s.link == star.link));
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await context.read<RustApi>().deleteRssStar(star.link);
+      await context.read<BookApi>().deleteRssStar(star.link);
       messenger.showSnackBar(
         const SnackBar(
           content: Text('已取消收藏'),

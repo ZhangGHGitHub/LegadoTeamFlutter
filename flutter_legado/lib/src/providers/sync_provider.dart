@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 import '../services/settings_service.dart';
 
 /// 同步状态
@@ -8,7 +8,7 @@ enum SyncStatus { idle, syncing, success, error }
 
 /// WebDAV 云同步状态管理
 class SyncProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
   final SettingsService _settings = SettingsService();
 
   SyncProvider(this._api);

@@ -1,17 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart'
+    show ExternalLibrary;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
+import 'book_api.dart';
 
 /// Rust FFI 统一访问层
 ///
 /// 所有数据库操作通过 flutter_rust_bridge 生成的桥接函数调用 Rust 侧。
 /// 尚未在 Rust FFI 中暴露的方法使用 Dart 侧 fallback 实现。
-class RustApi {
+class RustApi implements BookApi {
   RustApi();
 
   bool _initialized = false;
@@ -20,13 +23,71 @@ class RustApi {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    await bridge.RustLib.init();
+    final lib = _resolveFfiLibrary();
+    await bridge.RustLib.init(externalLibrary: lib);
     await bridge.init();
 
     final dbPath = await _defaultDbPath();
     await bridge.dbOpen(path: dbPath);
 
     _initialized = true;
+  }
+
+  /// 解析 FFI 动态库，支持多路径搜索
+  ///
+  /// flutter_rust_bridge 生成代码中的 ioDirectory 路径可能不正确（workspace 结构），
+  /// 因此这里主动搜索 DLL 并传入 RustLib.init()。
+  ExternalLibrary? _resolveFfiLibrary() {
+    // Android/iOS 由系统加载，无需指定路径
+    if (Platform.isAndroid || Platform.isIOS) return null;
+
+    final String libName;
+    if (Platform.isWindows) {
+      libName = 'legado_ffi.dll';
+    } else if (Platform.isMacOS) {
+      libName = 'liblegado_ffi.dylib';
+    } else {
+      libName = 'liblegado_ffi.so';
+    }
+
+    final sep = Platform.pathSeparator;
+    final searchPaths = <String>[];
+
+    // 策略 1：exe 所在目录
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      searchPaths.add('$exeDir$sep$libName');
+      // 从 exe 目录向上 5 级到 flutter_legado/，再找 rust/target
+      final projectFromExe = File(Platform.resolvedExecutable)
+          .parent.parent.parent.parent.parent.path;
+      // debug 优先（匹配 flutter run 默认 debug 模式）
+      searchPaths.add('$projectFromExe$sep..${sep}rust${sep}target${sep}debug$sep$libName');
+      searchPaths.add('$projectFromExe$sep..${sep}rust${sep}target${sep}release$sep$libName');
+    } catch (_) {}
+
+    // 策略 2：当前工作目录（flutter run 时通常为 flutter_legado/）
+    try {
+      final cwd = Directory.current.path;
+      searchPaths.add('$cwd$sep..${sep}rust${sep}target${sep}debug$sep$libName');
+      searchPaths.add('$cwd$sep..${sep}rust${sep}target${sep}release$sep$libName');
+      // 也检查 cwd 本身是否就是项目根目录
+      searchPaths.add('$cwd${sep}rust${sep}target${sep}debug$sep$libName');
+      searchPaths.add('$cwd${sep}rust${sep}target${sep}release$sep$libName');
+    } catch (_) {}
+
+    for (final path in searchPaths) {
+      try {
+        if (File(path).existsSync()) {
+          return ExternalLibrary.open(path);
+        }
+      } catch (_) {
+        // DLL 存在但加载失败（缺少依赖等），继续尝试下一个
+        continue;
+      }
+    }
+
+    // 找不到时返回 null，让 flutter_rust_bridge 使用默认加载逻辑
+    return null;
   }
 
   /// 获取默认数据库路径
@@ -202,6 +263,9 @@ class RustApi {
   Future<void> cancelSearch() => bridge.searchCancel();
 
   /// 搜索可替换的书源
+  ///
+  /// Rust 侧返回 SourceSwitchResponse { book_name, author, matches }，
+  /// 兼容 Map（提取 matches 字段）和 List（直接使用）两种格式。
   Future<List<Map<String, dynamic>>> searchSource(
     String bookName,
     String author,
@@ -210,8 +274,17 @@ class RustApi {
       bookName: bookName,
       author: author,
     );
-    final list = jsonDecode(json) as List<dynamic>;
-    return list.map((e) => e as Map<String, dynamic>).toList();
+    final decoded = jsonDecode(json);
+    // Rust 侧返回 SourceSwitchResponse 对象，需提取 matches 字段
+    final List<dynamic> list;
+    if (decoded is Map<String, dynamic>) {
+      list = (decoded['matches'] as List<dynamic>?) ?? [];
+    } else if (decoded is List<dynamic>) {
+      list = decoded;
+    } else {
+      list = [];
+    }
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
   /// 切换书源
@@ -440,7 +513,16 @@ class RustApi {
   /// 获取书籍的章节列表
   Future<List<BookChapter>> getChapters(String bookUrl) async {
     final json = await bridge.readerGetChapters(bookUrl: bookUrl);
-    final list = jsonDecode(json) as List<dynamic>;
+    final decoded = jsonDecode(json);
+    // Rust 侧返回 ChapterListResponse { total, chapters }，兼容 Map 和 List 两种格式
+    final List<dynamic> list;
+    if (decoded is Map<String, dynamic>) {
+      list = (decoded['chapters'] as List<dynamic>?) ?? [];
+    } else if (decoded is List<dynamic>) {
+      list = decoded;
+    } else {
+      list = [];
+    }
     return list
         .map((e) => BookChapter.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -475,8 +557,25 @@ class RustApi {
       );
 
   /// 从网络刷新书籍目录
-  Future<String> refreshToc(String bookUrl, String sourceUrl) =>
-      bridge.readerRefreshToc(bookUrl: bookUrl, sourceUrl: sourceUrl);
+  ///
+  /// Rust 侧返回 ChapterListResponse { total, chapters }，
+  /// 兼容 Map（提取 chapters 字段）和 List（直接使用）两种格式。
+  Future<List<BookChapter>> refreshToc(String bookUrl, String sourceUrl) async {
+    final json = await bridge.readerRefreshToc(bookUrl: bookUrl, sourceUrl: sourceUrl);
+    final decoded = jsonDecode(json);
+    // Rust 侧返回 ChapterListResponse { total, chapters }，兼容 Map 和 List 两种格式
+    final List<dynamic> list;
+    if (decoded is Map<String, dynamic>) {
+      list = (decoded['chapters'] as List<dynamic>?) ?? [];
+    } else if (decoded is List<dynamic>) {
+      list = decoded;
+    } else {
+      list = [];
+    }
+    return list
+        .map((e) => BookChapter.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 
   // ========== 配置操作 ==========
 
@@ -759,6 +858,43 @@ class RustApi {
   Future<String> webbookContent(String sourceJson, String chapterJson) =>
       bridge.webbookContent(sourceJson: sourceJson, chapterJson: chapterJson);
 
+  // ========== 发现页操作 ==========
+
+  /// 解析 exploreUrl 为分类列表
+  ///
+  /// 返回 `List<ExploreCategory>`，每项包含 title 和 url。
+  /// 对标 Android BookSourceExtensions.exploreKinds()
+  Future<List<ExploreCategory>> exploreParseUrl(String exploreUrl) async {
+    final json = await bridge.exploreParseUrl(exploreUrl: exploreUrl);
+    final list = jsonDecode(json) as List<dynamic>;
+    return list
+        .map((e) => ExploreCategory.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 抓取发现分类的书籍列表
+  ///
+  /// [sourceJson] — BookSource JSON 字符串
+  /// [url] — 分类 URL
+  /// [page] — 页码（从 1 开始）
+  ///
+  /// 返回 `List<SearchBook>`，对标 Android WebBook.exploreBookAwait
+  Future<List<SearchBook>> exploreFetchBooks(
+    String sourceJson,
+    String url,
+    int page,
+  ) async {
+    final json = await bridge.exploreFetchBooks(
+      sourceJson: sourceJson,
+      url: url,
+      page: page,
+    );
+    final list = jsonDecode(json) as List<dynamic>;
+    return list
+        .map((e) => SearchBook.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   // ========== 规则解析 ==========
 
   /// 使用规则解析内容
@@ -870,7 +1006,16 @@ class RustApi {
     final bookMap = jsonDecode(bookJson) as Map<String, dynamic>;
     final bookUrl = bookMap['bookUrl'] as String? ?? filePath;
     final chaptersJson = await bridge.readerGetChapters(bookUrl: bookUrl);
-    final list = jsonDecode(chaptersJson) as List<dynamic>;
+    final decodedChapters = jsonDecode(chaptersJson);
+    // 兼容 Rust 侧返回 ChapterListResponse { total, chapters } 对象格式
+    final List<dynamic> list;
+    if (decodedChapters is Map<String, dynamic>) {
+      list = (decodedChapters['chapters'] as List<dynamic>?) ?? [];
+    } else if (decodedChapters is List<dynamic>) {
+      list = decodedChapters;
+    } else {
+      list = [];
+    }
     return list
         .map((e) => BookChapter.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -1312,6 +1457,241 @@ class RustApi {
       return {'success': false, 'error': e.toString()};
     }
   }
+
+  // ========== 自动任务（auto_task FFI） ==========
+
+  /// 构建书籍更新定时任务（返回 AutoTaskRule JSON）
+  ///
+  /// 对应 Kotlin `AutoTask.buildBookUpdateTask`。
+  Future<Map<String, dynamic>> autoTaskBuildBookUpdateTask({
+    required String bookUrl,
+    required String bookName,
+    required String bookAuthor,
+    required String name,
+  }) async {
+    final json = await bridge.autoTaskBuildBookUpdate(
+      bookUrl: bookUrl,
+      bookName: bookName,
+      bookAuthor: bookAuthor,
+      name: name,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 批量更新 cron 表达式（返回更新后的 AutoTaskRule 数组）
+  ///
+  /// [rules] 为现有规则列表 JSON，[ids] 为待更新任务 ID 列表。
+  Future<List<Map<String, dynamic>>> autoTaskUpdateCronBatch({
+    required String rulesJson,
+    required String idsJson,
+    required String cron,
+  }) async {
+    final json = await bridge.autoTaskUpdateCronBatch(
+      rulesJson: rulesJson,
+      idsJson: idsJson,
+      cron: cron,
+    );
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
+  /// 准备导入任务（合并本地运行时状态，返回合并后的任务数组）
+  Future<List<Map<String, dynamic>>> autoTaskPrepareImported({
+    required String localTasksJson,
+    required String importedJson,
+  }) async {
+    final json = await bridge.autoTaskPrepareImported(
+      localTasksJson: localTasksJson,
+      importedJson: importedJson,
+    );
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
+  /// 执行任务协议（返回 TaskResult JSON）
+  ///
+  /// [protocolJson] 为 TaskProtocol 序列化字符串。
+  Future<Map<String, dynamic>> autoTaskExecute({
+    required String protocolJson,
+  }) async {
+    final json = await bridge.autoTaskExecute(protocolJson: protocolJson);
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 带任务 ID 执行任务协议（返回 TaskResult JSON）
+  Future<Map<String, dynamic>> autoTaskExecuteWithId({
+    required String protocolJson,
+    required String taskId,
+  }) async {
+    final json = await bridge.autoTaskExecuteWithId(
+      protocolJson: protocolJson,
+      taskId: taskId,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 规范化脚本（去除 `@js:` 前缀或 `<js></js>` 包裹）
+  Future<String> autoTaskNormalizeScript({required String script}) =>
+      bridge.autoTaskNormalizeScript(script: script);
+
+  /// 判断书籍是否允许刷新目录
+  Future<bool> autoTaskCanRefreshBookToc({
+    required bool canUpdate,
+    required bool respectCanUpdate,
+  }) =>
+      bridge.autoTaskCanRefreshToc(
+        canUpdate: canUpdate,
+        respectCanUpdate: respectCanUpdate,
+      );
+
+  /// 查找书籍更新任务（返回匹配的 AutoTaskRule JSON，未找到返回 null）
+  Future<Map<String, dynamic>?> autoTaskFindBookUpdateTask({
+    required String tasksJson,
+    required String bookUrl,
+    required String bookName,
+    required String bookAuthor,
+  }) async {
+    final json = await bridge.autoTaskFindBookUpdate(
+      tasksJson: tasksJson,
+      bookUrl: bookUrl,
+      bookName: bookName,
+      bookAuthor: bookAuthor,
+    );
+    if (json.isEmpty || json == 'null') return null;
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 解析 cron 表达式计算下次执行时间（Unix 毫秒，无法解析返回 -1）
+  Future<int> autoTaskNextDueAt({
+    required String cron,
+    required int fromMs,
+  }) async {
+    final result = await bridge.autoTaskNextDueAt(
+      cron: cron,
+      fromMs: fromMs,
+    );
+    return result.toInt();
+  }
+
+  // ========== 音频播放模式（audio FFI） ==========
+
+  /// 将播放模式写入 readConfig JSON（返回更新后的 JSON）
+  ///
+  /// 对应 Kotlin `String?.withAudioPlayMode`。
+  Future<String> audioWithPlayMode({
+    String? readConfig,
+    required int playMode,
+  }) =>
+      bridge.audioWithPlayMode(readConfig: readConfig, playMode: playMode);
+
+  /// 解析听书书籍（返回 Book JSON，未找到返回 null）
+  ///
+  /// 请求 URL 为空时返回缓存书籍；缓存匹配时直接返回；否则按 URL 查库。
+  Future<Map<String, dynamic>?> audioResolvePlayBook({
+    String? requestedBookUrl,
+    String? cachedBookJson,
+  }) async {
+    final json = await bridge.audioResolvePlayBook(
+      requestedBookUrl: requestedBookUrl,
+      cachedBookJson: cachedBookJson,
+    );
+    if (json.isEmpty || json == 'null') return null;
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  // ========== 压缩包导入 ==========
+
+  /// 导入 ZIP 压缩包中的书籍文件
+  ///
+  /// 解压 ZIP 文件，提取其中的书籍文件到 [outputDir]。
+  /// 返回 ArchiveImportResult JSON 解析后的 Map。
+  Future<Map<String, dynamic>> archiveImportZip({
+    required String zipPath,
+    required String outputDir,
+  }) async {
+    final json = await bridge.archiveImportZip(
+      zipPath: zipPath,
+      outputDir: outputDir,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 导入 RAR 压缩包中的书籍文件（支持加密）
+  ///
+  /// 解压 RAR 文件，提取其中的书籍文件到 [outputDir]。
+  /// [password] 为可选密码，用于加密 RAR 文件。
+  Future<Map<String, dynamic>> archiveImportRar({
+    required String rarPath,
+    required String outputDir,
+    String? password,
+  }) async {
+    final json = await bridge.archiveImportRar(
+      rarPath: rarPath,
+      outputDir: outputDir,
+      password: password,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 列出 ZIP 压缩包中的书籍文件名（不解压）
+  ///
+  /// 返回压缩包内符合书籍格式的文件名列表。
+  Future<List<String>> archiveListZipFiles({required String zipPath}) async {
+    final json = await bridge.archiveListZipFiles(zipPath: zipPath);
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => e.toString()).toList();
+  }
+
+  /// 列出 RAR 压缩包中的书籍文件名（不解压）
+  ///
+  /// [password] 为可选密码，用于加密 RAR 文件。
+  Future<List<String>> archiveListRarFiles({
+    required String rarPath,
+    String? password,
+  }) async {
+    final json = await bridge.archiveListRarFiles(
+      rarPath: rarPath,
+      password: password,
+    );
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => e.toString()).toList();
+  }
+
+  /// 检测 TXT 文件编码
+  ///
+  /// 返回 EncodingResult JSON 解析后的 Map，包含：
+  /// - encoding: 编码名称
+  /// - has_bom: 是否通过 BOM 确定
+  /// - confidence: 置信度（high/medium/low）
+  Future<Map<String, dynamic>> archiveDetectEncoding({
+    required String filePath,
+  }) async {
+    final json = await bridge.archiveDetectEncoding(filePath: filePath);
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 转换 TXT 文件编码
+  ///
+  /// 将文件从 [fromEncoding] 转换为 [toEncoding]，输出为新文件。
+  /// 返回 ConvertResult JSON 解析后的 Map。
+  Future<Map<String, dynamic>> archiveConvertEncoding({
+    required String filePath,
+    required String fromEncoding,
+    required String toEncoding,
+  }) async {
+    final json = await bridge.archiveConvertEncoding(
+      filePath: filePath,
+      fromEncoding: fromEncoding,
+      toEncoding: toEncoding,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// 判断文件是否为压缩包格式
+  ///
+  /// 支持 .zip / .rar / .7z 等格式判断。
+  Future<bool> archiveIsArchive({required String filePath}) =>
+      bridge.archiveIsArchive(filePath: filePath);
 }
 
 /// 搜索结果包装

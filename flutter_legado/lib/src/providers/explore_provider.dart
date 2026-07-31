@@ -1,17 +1,18 @@
 /// 书源探索提供者（ExploreProvider）
-/// 
+///
 /// 参考 Android 原版 ExploreFragment.kt 实现
 /// 核心功能：
 /// 1. 显示已安装的书源列表
 /// 2. 支持实时搜索过滤
 /// 3. 按分组筛选书源
 /// 4. 一键安装/卸载书源（CRUD 操作）
+library;
 import 'package:flutter/foundation.dart';
 
 import '../models/book_source.dart';
-import '../services/rust_api.dart';
+import '../services/book_api.dart';
 class ExploreProvider extends ChangeNotifier {
-  final RustApi _api;
+  final BookApi _api;
 
   ExploreProvider(this._api);
 
@@ -88,7 +89,7 @@ class ExploreProvider extends ChangeNotifier {
     if (_searchKeyword.isNotEmpty) {
       final kw = _searchKeyword.toLowerCase();
       list.removeWhere((source) {
-        final name = source.bookSourceName?.toLowerCase() ?? '';
+        final name = source.bookSourceName.toLowerCase();
         final url = source.bookSourceUrl.toLowerCase();
         return !name.contains(kw) && !url.contains(kw);
       });
@@ -126,10 +127,5 @@ class ExploreProvider extends ChangeNotifier {
   /// 刷新书源列表
   Future<void> refreshBookSources() async {
     await loadBookSources();
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 }
