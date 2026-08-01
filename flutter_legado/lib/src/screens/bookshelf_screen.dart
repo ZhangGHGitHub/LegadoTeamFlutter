@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
@@ -349,6 +350,18 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     );
   }
 
+  /// 分享书籍（对齐 Android 原版：书名 + 作者 + 来源）
+  void _shareBook(Book book) {
+    final buffer = StringBuffer('《${book.name}》');
+    if (book.author.isNotEmpty) {
+      buffer.write(' 作者：${book.author}');
+    }
+    if (book.bookUrl.isNotEmpty) {
+      buffer.write('\n来源：${book.bookUrl}');
+    }
+    Share.share(buffer.toString());
+  }
+
   /// 长按标题/信息区域弹出操作菜单（对齐安卓原版底部菜单）
   void _showBookActionSheet(BuildContext context, Book book) {
     showModalBottomSheet<void>(
@@ -392,7 +405,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                 title: const Text('分享'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  // TODO: 分享书籍
+                  _shareBook(book);
                 },
               ),
               ListTile(

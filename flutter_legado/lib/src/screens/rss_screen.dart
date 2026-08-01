@@ -138,12 +138,24 @@ class _RssScreenState extends State<RssScreen> {
             tooltip: '收藏',
             onPressed: () => Navigator.pushNamed(context, AppRoutes.rssFavorites),
           ),
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            tooltip: '筛选',
-            onPressed: () {
-              // TODO: 待接入 RSS 筛选功能
-            },
+          // 分组筛选：对齐安卓 RssFragment 的分组菜单（linkedSetOf 保序聚合）
+          Consumer<RssProvider>(
+            builder: (context, provider, _) => PopupMenuButton<String?>(
+              tooltip: '筛选',
+              icon: const Icon(Icons.filter_list),
+              onSelected: (group) => provider.setGroup(group),
+              itemBuilder: (context) => [
+                const PopupMenuItem<String?>(
+                  value: null,
+                  child: Text('全部'),
+                ),
+                for (final group in provider.groups)
+                  PopupMenuItem<String?>(
+                    value: group,
+                    child: Text(group),
+                  ),
+              ],
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -199,9 +211,9 @@ class _RssScreenState extends State<RssScreen> {
                     crossAxisSpacing: 4,
                     mainAxisSpacing: 4,
                   ),
-                  itemCount: provider.sources.length,
+                  itemCount: provider.filteredSources.length,
                   itemBuilder: (context, index) {
-                    final source = provider.sources[index];
+                    final source = provider.filteredSources[index];
                     return _buildSourceItem(context, source);
                   },
                 );

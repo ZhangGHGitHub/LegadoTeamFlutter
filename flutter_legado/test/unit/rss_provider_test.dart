@@ -260,4 +260,108 @@ void main() {
       expect(provider.selectedSource, isNull);
     });
   });
+
+  group('RssProvider 分组筛选（对齐安卓 RssFragment）', () {
+    Future<void> loadWithGroups(List<RssSource> sources) async {
+      when(() => mockApi.getRssSources()).thenAnswer((_) async => sources);
+      await provider.loadSources();
+    }
+
+    test('初始 selectedGroup 为 null（全部）', () {
+      expect(provider.selectedGroup, isNull);
+    });
+
+    test('多分组聚合去重并保持插入顺序', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: '科技'),
+        RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: '生活'),
+        RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '科技'),
+      ]);
+
+      expect(provider.groups, equals(['科技', '生活']));
+    });
+
+    test('逗号/中文逗号/分号多组拆分', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: '科技,财经'),
+        RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: '生活，科技'),
+        RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '财经;娱乐'),
+      ]);
+
+      expect(provider.groups, equals(['科技', '财经', '生活', '娱乐']));
+    });
+
+    test('拆分时 trim 并去除空分组', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: ' 科技 , , 财经 '),
+      ]);
+
+      expect(provider.groups, equals(['科技', '财经']));
+    });
+
+    test('空分组场景：sourceGroup 为 null 或空串不计入', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1'),
+        RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: ''),
+        RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '科技'),
+      ]);
+
+      expect(provider.groups, equals(['科技']));
+    });
+
+    test('selectedGroup 为 null 时 filteredSources 返回全部', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: '科技'),
+        RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: '生活'),
+      ]);
+
+      expect(provider.filteredSources.length, equals(2));
+    });
+
+    test('选中分组后过滤（含多组源命中）', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: '科技'),
+        RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: '科技,财经'),
+        RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '生活'),
+      ]);
+
+      provider.setGroup('科技');
+
+      expect(provider.selectedGroup, equals('科技'));
+      expect(
+        provider.filteredSources.map((s) => s.sourceUrl).toList(),
+        equals(['u1', 'u2']),
+      );
+    });
+
+    test('切回「全部」恢复全部源', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: '科技'),
+        RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: '生活'),
+      ]);
+
+      provider.setGroup('科技');
+      expect(provider.filteredSources.length, equals(1));
+
+      provider.setGroup(null);
+      expect(provider.selectedGroup, isNull);
+      expect(provider.filteredSources.length, equals(2));
+    });
+
+    test('选中不存在的分组时 filteredSources 为空', () async {
+      await loadWithGroups(const [
+        RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: '科技'),
+      ]);
+
+      provider.setGroup('不存在');
+      expect(provider.filteredSources, isEmpty);
+    });
+
+    test('setGroup 触发通知', () {
+      var notified = false;
+      provider.addListener(() => notified = true);
+      provider.setGroup('科技');
+      expect(notified, isTrue);
+    });
+  });
 }

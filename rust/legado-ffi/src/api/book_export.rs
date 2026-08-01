@@ -10,6 +10,7 @@ use legado_db::repository::book_chapter_repository::BookChapterRepository;
 use legado_db::repository::book_repository::BookRepository;
 use legado_db::repository::cache_book_repository::CacheBookRepository;
 
+use crate::api::reader::{apply_content_processing, chapter_to_local_info, is_local_book};
 use crate::db_state::with_database;
 
 /// 导出结果
@@ -51,86 +52,108 @@ pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoRes
         }
     };
 
-    // 从数据库获取书籍和章节数据
-    let result = with_database(|db| {
+    // 从数据库获取书籍与章节元数据
+    let book_data = with_database(|db| {
         let book_repo = BookRepository::new(db.connection());
         let book = book_repo.find_by_url(book_url)?;
-
         let book = match book {
             Some(b) => b,
-            None => {
-                return Ok(ExportResult {
-                    success: false,
-                    data_base64: None,
-                    file_name: None,
-                    mime_type: None,
-                    error: Some(format!("书籍不存在: {book_url}")),
-                });
-            }
+            None => return Ok(None),
         };
-
         let chapter_repo = BookChapterRepository::new(db.connection());
         let chapters = chapter_repo.find_by_book_url(book_url)?;
+        Ok(Some((book, chapters)))
+    })?;
 
-        let cache_repo = CacheBookRepository::new(db.connection());
-        let cached = cache_repo.get_by_book(book_url).unwrap_or_default();
-
-        // 构造导出数据
-        let export_chapters: Vec<ExportChapter> = chapters
-            .iter()
-            .map(|ch| {
-                let content = cached
-                    .iter()
-                    .find(|c| c.chapter_index == ch.index)
-                    .map(|c| c.content.clone())
-                    .unwrap_or_default();
-                ExportChapter {
-                    index: ch.index,
-                    title: ch.title.clone(),
-                    content,
-                }
-            })
-            .collect();
-
-        let export_data = ExportData {
-            title: book.name.clone(),
-            author: book.author.clone(),
-            intro: book.intro.clone(),
-            chapters: export_chapters,
-        };
-
-        let config = ExportConfig {
-            format: export_format,
-            include_toc,
-            chapter_separator: String::new(),
-            encoding: "UTF-8".to_string(),
-        };
-
-        // 执行导出
-        match BookExporter::export(&export_data, &config) {
-            Ok(bytes) => {
-                use base64::Engine;
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                let file_name = format!("{}.{}", book.name, export_format.extension());
-                Ok(ExportResult {
-                    success: true,
-                    data_base64: Some(b64),
-                    file_name: Some(file_name),
-                    mime_type: Some(export_format.mime_type().to_string()),
-                    error: None,
-                })
-            }
-            Err(e) => Ok(ExportResult {
+    let (book, chapters) = match book_data {
+        Some(v) => v,
+        None => {
+            return Ok(ExportResult {
                 success: false,
                 data_base64: None,
                 file_name: None,
                 mime_type: None,
-                error: Some(format!("导出失败: {e}")),
-            }),
+                error: Some(format!("书籍不存在: {book_url}")),
+            });
         }
-    });
+    };
 
-    result
+    // 在线书：预加载缓存正文（本地书不走缓存，逐章走解析器）
+    let cached = if is_local_book(book_url) {
+        Vec::new()
+    } else {
+        with_database(|db| {
+            let cache_repo = CacheBookRepository::new(db.connection());
+            Ok(cache_repo.get_by_book(book_url).unwrap_or_default())
+        })?
+    };
+
+    // 逐章取正文（与阅读器 get_chapter_content 同源）并应用净化，与 Android 导出经 ContentProcessor 一致
+    let local = is_local_book(book_url);
+    let export_chapters: Vec<ExportChapter> = chapters
+        .iter()
+        .map(|ch| {
+            let raw_content = if local {
+                // 本地书：走解析器读取文件正文（修复仅读缓存导致本地书导出全空的回归）
+                legado_book::LocalBook::get_chapter_content(
+                    book_url,
+                    &chapter_to_local_info(ch),
+                )
+                .unwrap_or_default()
+            } else {
+                // 在线书：从缓存取原始正文
+                cached
+                    .iter()
+                    .find(|c| c.chapter_index == ch.index)
+                    .map(|c| c.content.clone())
+                    .unwrap_or_default()
+            };
+            // 导出内容与阅读器显示对齐：应用替换规则 + 内容净化
+            let content = apply_content_processing(book_url, &raw_content, &ch.title);
+            ExportChapter {
+                index: ch.index,
+                title: ch.title.clone(),
+                content,
+            }
+        })
+        .collect();
+
+    let export_data = ExportData {
+        title: book.name.clone(),
+        author: book.author.clone(),
+        intro: book.intro.clone(),
+        chapters: export_chapters,
+    };
+
+    let config = ExportConfig {
+        format: export_format,
+        include_toc,
+        chapter_separator: String::new(),
+        encoding: "UTF-8".to_string(),
+    };
+
+    // 执行导出
+    Ok(match BookExporter::export(&export_data, &config) {
+        Ok(bytes) => {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let file_name = format!("{}.{}", book.name, export_format.extension());
+            ExportResult {
+                success: true,
+                data_base64: Some(b64),
+                file_name: Some(file_name),
+                mime_type: Some(export_format.mime_type().to_string()),
+                error: None,
+            }
+        }
+        Err(e) => ExportResult {
+            success: false,
+            data_base64: None,
+            file_name: None,
+            mime_type: None,
+            error: Some(format!("导出失败: {e}")),
+        },
+    })
 }
 
 /// 获取导出预览信息
@@ -174,4 +197,113 @@ pub fn export_info(book_url: &str, format: &str) -> LegadoResult<ExportResult> {
             }),
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legado_core::models::{Book, ReplaceRule};
+    use legado_db::repository::Repository;
+    use legado_db::{BookRepository, ReplaceRuleRepository};
+    use std::io::Write;
+
+    /// 创建临时 TXT 书籍文件（含两个章节）并返回路径
+    fn create_temp_txt(suffix_tag: &str) -> String {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "legado_export_test_{suffix_tag}_{}.txt",
+            std::process::id()
+        ));
+        let content =
+            "第一章 测试章节一\n这是第一章的正文广告文字。\n第二章 测试章节二\n这是第二章的正文。\n";
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    /// 在 DB 中注册书籍并解析章节入库
+    fn register_book_and_chapters(book_url: &str, book_name: &str) {
+        crate::db_state::ensure_test_db();
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            if book_repo.find_by_url(book_url)?.is_none() {
+                book_repo.insert(&Book {
+                    book_url: book_url.to_string(),
+                    name: book_name.to_string(),
+                    ..Book::default()
+                })?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        // 解析章节并入库（与 get_chapters 懒加载逻辑一致）
+        let chapters = crate::api::reader::get_chapters(book_url).unwrap();
+        assert!(chapters.total >= 2, "临时 TXT 应至少解析出 2 章");
+    }
+
+    /// 解码导出结果的 base64 为 UTF-8 文本
+    fn decode_export(result: &ExportResult) -> String {
+        use base64::Engine;
+        assert!(result.success, "导出应成功: {:?}", result.error);
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(result.data_base64.as_ref().unwrap())
+            .unwrap();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    /// 测试本地书导出正文非空（修复仅读缓存导致全空的回归）
+    #[test]
+    fn test_export_local_book_non_empty_content() {
+        let path = create_temp_txt("nonempty");
+        register_book_and_chapters(&path, "导出测试书A");
+
+        let result = export_book(&path, "txt", false).unwrap();
+        let text = decode_export(&result);
+        assert!(text.contains("第一章"), "导出应包含章节标题");
+        assert!(
+            text.contains("这是第一章的正文"),
+            "本地书导出正文不应为空"
+        );
+        assert!(text.contains("这是第二章的正文"));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 测试导出应用替换规则净化（与阅读器/Android 对齐）
+    #[test]
+    fn test_export_local_book_applies_replace_rules() {
+        let path = create_temp_txt("purify");
+        register_book_and_chapters(&path, "导出测试书B");
+
+        // 插入唯一命名的全局启用规则
+        let rule_id = with_database(|db| {
+            let repo = ReplaceRuleRepository::new(db.connection());
+            repo.insert(&ReplaceRule {
+                name: "export_测试规则_unique".to_string(),
+                pattern: "广告文字".to_string(),
+                replacement: String::new(),
+                is_regex: false,
+                is_enabled: true,
+                ..ReplaceRule::default()
+            })
+        })
+        .unwrap();
+
+        let result = export_book(&path, "txt", false).unwrap();
+        let text = decode_export(&result);
+        assert!(
+            !text.contains("广告文字"),
+            "导出应已净化（替换规则生效）"
+        );
+        assert!(text.contains("这是第一章的正文。"), "净化后正文应保留");
+
+        // 清理本测试插入的规则
+        with_database(|db| {
+            let repo = ReplaceRuleRepository::new(db.connection());
+            repo.delete(rule_id)?;
+            Ok(())
+        })
+        .unwrap();
+        let _ = std::fs::remove_file(&path);
+    }
 }

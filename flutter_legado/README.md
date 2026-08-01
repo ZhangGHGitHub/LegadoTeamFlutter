@@ -56,7 +56,6 @@ flutter_legado/
 │       │   └── settings_screen.dart   # 设置
 │       ├── services/          # 服务层
 │       │   ├── rust_api.dart          # Rust API 封装
-│       │   ├── rust_bridge.dart       # Bridge 初始化
 │       │   ├── backup_service.dart    # 备份/恢复服务
 │       │   ├── settings_service.dart  # 设置持久化服务
 │       │   ├── source_import_service.dart # 书源在线导入服务

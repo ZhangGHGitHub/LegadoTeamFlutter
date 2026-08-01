@@ -18,6 +18,13 @@ class RssProvider extends ChangeNotifier {
   bool _isLoadingArticles = false;
   String? _error;
 
+  /// 当前选中的分组筛选；null 表示「全部」
+  String? _selectedGroup;
+
+  /// 安卓端 AppPattern.splitGroupRegex：[,;，；]
+  /// 一个源的 sourceGroup 可能是逗号/分号分隔的多个分组
+  static final RegExp _splitGroupRegex = RegExp(r'[,;，；]');
+
   // ===== Getters =====
 
   List<RssSource> get sources => _sources;
@@ -29,7 +36,46 @@ class RssProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isEmpty => _sources.isEmpty && !_isLoadingSources;
 
+  /// 当前选中的分组（null 表示全部）
+  String? get selectedGroup => _selectedGroup;
+
+  /// 聚合所有源的分组，去重并保持插入顺序
+  /// 对齐安卓 RssFragment 的 linkedSetOf 语义
+  List<String> get groups {
+    // Dart 的 Set 字面量即 LinkedHashSet，保持插入顺序
+    final set = <String>{};
+    for (final source in _sources) {
+      set.addAll(_splitGroups(source.sourceGroup));
+    }
+    return set.toList();
+  }
+
+  /// 按当前选中分组过滤后的源列表；selectedGroup 为 null 时返回全部
+  List<RssSource> get filteredSources {
+    final group = _selectedGroup;
+    if (group == null) return _sources;
+    return _sources
+        .where((s) => _splitGroups(s.sourceGroup).contains(group))
+        .toList();
+  }
+
+  /// 将 sourceGroup 字符串按 [,;，；] 拆分、trim、去空
+  List<String> _splitGroups(String? sourceGroup) {
+    if (sourceGroup == null || sourceGroup.isEmpty) return const [];
+    return sourceGroup
+        .split(_splitGroupRegex)
+        .map((g) => g.trim())
+        .where((g) => g.isNotEmpty)
+        .toList();
+  }
+
   // ===== 操作 =====
+
+  /// 设置分组筛选；null 表示「全部」
+  void setGroup(String? group) {
+    _selectedGroup = group;
+    notifyListeners();
+  }
 
   /// 加载所有 RSS 源列表
   Future<void> loadSources() async {

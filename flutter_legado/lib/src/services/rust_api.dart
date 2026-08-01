@@ -1386,54 +1386,12 @@ class RustApi implements BookApi {
     required String format,
     required bool includeToc,
   }) async {
-    // Dart 侧 fallback 实现（Rust FFI 尚未暴露此接口）
-    try {
-      final book = await getBook(bookUrl);
-      if (book == null) {
-        return {'success': false, 'error': '书籍不存在: $bookUrl'};
-      }
-      final chapters = await getChapters(bookUrl);
-      final buffer = StringBuffer();
-
-      // 写入书籍信息头
-      buffer.writeln(book.name);
-      buffer.writeln('作者：${book.author}');
-      if (book.intro?.isNotEmpty ?? false) {
-        buffer.writeln('简介：${book.intro}');
-      }
-      buffer.writeln();
-
-      // 写入目录
-      if (includeToc) {
-        buffer.writeln('=== 目录 ===');
-        for (final ch in chapters) {
-          buffer.writeln(ch.title);
-        }
-        buffer.writeln();
-      }
-
-      // 写入正文
-      for (final ch in chapters) {
-        buffer.writeln('\n${ch.title}\n');
-        try {
-          final content = await getChapterContent(bookUrl, ch.index);
-          buffer.writeln(content);
-        } catch (_) {
-          buffer.writeln('[内容获取失败]');
-        }
-      }
-
-      final content = buffer.toString();
-      final fileName = '${book.name}.$format';
-      return {
-        'success': true,
-        'file_name': fileName,
-        'data_base64': base64Encode(utf8.encode(content)),
-        'mime_type': 'text/plain',
-      };
-    } catch (e) {
-      return {'success': false, 'error': e.toString()};
-    }
+    final json = await bridge.bookExport(
+      bookUrl: bookUrl,
+      format: format,
+      includeToc: includeToc,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
   }
 
   /// 获取导出预览信息（返回 ExportResult JSON）
@@ -1441,21 +1399,11 @@ class RustApi implements BookApi {
     required String bookUrl,
     required String format,
   }) async {
-    // Dart 侧 fallback 实现
-    try {
-      final book = await getBook(bookUrl);
-      if (book == null) {
-        return {'success': false, 'error': '书籍不存在: $bookUrl'};
-      }
-      final chapters = await getChapters(bookUrl);
-      return {
-        'success': true,
-        'file_name': '${book.name}.$format',
-        'chapter_count': chapters.length.toString(),
-      };
-    } catch (e) {
-      return {'success': false, 'error': e.toString()};
-    }
+    final json = await bridge.bookExportInfo(
+      bookUrl: bookUrl,
+      format: format,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
   }
 
   // ========== 自动任务（auto_task FFI） ==========

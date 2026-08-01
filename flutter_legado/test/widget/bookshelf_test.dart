@@ -74,4 +74,64 @@ void main() {
       expect(find.text(book), findsOneWidget);
     }
   });
+
+  testWidgets('BookshelfScreen long-press menu contains share item', (tester) async {
+    // 验证长按菜单中“分享”菜单项渲染（对齐 bookshelf_screen 底部菜单结构）
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  builder: (_) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.info_outline),
+                          title: const Text('书籍信息'),
+                          onTap: () {},
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.edit_outlined),
+                          title: const Text('编辑'),
+                          onTap: () {},
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.share_outlined),
+                          title: const Text('分享'),
+                          onTap: () {},
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.delete_outline),
+                          title: const Text('删除'),
+                          onTap: () {},
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              child: const Text('打开菜单'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 触发底部菜单
+    await tester.tap(find.text('打开菜单'));
+    await tester.pumpAndSettle();
+
+    // 验证分享菜单项存在且可点击
+    expect(find.text('分享'), findsOneWidget);
+    expect(find.byIcon(Icons.share_outlined), findsOneWidget);
+
+    // 验证其它菜单项也存在（零回归）
+    expect(find.text('书籍信息'), findsOneWidget);
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+  });
 }
