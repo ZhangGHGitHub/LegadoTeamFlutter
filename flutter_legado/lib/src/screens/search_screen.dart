@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf_provider.dart';
-import '../providers/search_provider.dart';
+import '../providers/search/search_notifier.dart';
 import '../services/rust_api.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
@@ -13,24 +15,18 @@ import '../widgets/loading_indicator.dart';
 import '../widgets/search_filter_panel.dart';
 
 /// 搜索页面
-class SearchScreen extends StatefulWidget {
+///
+/// 状态由 [SearchNotifier]（Riverpod）管理；加书架过渡期仍用 BookshelfProvider。
+class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
   @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SearchProvider>().loadHistory();
-    });
-  }
 
   @override
   void dispose() {
@@ -48,7 +44,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
-    final provider = context.watch<SearchProvider>();
     final colorScheme = Theme.of(context).colorScheme;
     return AppBar(
       title: Container(
@@ -70,7 +65,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     icon: const Icon(Icons.clear, size: 20),
                     onPressed: () {
                       _searchController.clear();
-                      provider.clearResults();
+                      ref.read(searchNotifierProvider.notifier).clearResults();
                     },
                   )
                 : null,
@@ -94,7 +89,8 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           textInputAction: TextInputAction.search,
-          onSubmitted: (value) => provider.search(value),
+          onSubmitted: (value) =>
+              ref.read(searchNotifierProvider.notifier).search(value),
           onChanged: (_) => setState(() {}),
         ),
       ),
@@ -106,7 +102,7 @@ class _SearchScreenState extends State<SearchScreen> {
           onPressed: () {
             final text = _searchController.text.trim();
             if (text.isNotEmpty) {
-              provider.search(text);
+              ref.read(searchNotifierProvider.notifier).search(text);
             }
           },
         ),
@@ -132,24 +128,24 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    final provider = context.watch<SearchProvider>();
+    final state = ref.watch(searchNotifierProvider);
 
-    if (provider.loading) {
+    if (state.isLoading) {
       return LoadingIndicator(message: AppStrings.searching);
     }
 
-    if (provider.error != null) {
+    if (state.error != null) {
       return ErrorView(
-        message: provider.error!,
+        message: state.error!,
         onRetry: () {
-          if (provider.keyword.isNotEmpty) {
-            provider.search(provider.keyword);
+          if (state.keyword.isNotEmpty) {
+            ref.read(searchNotifierProvider.notifier).search(state.keyword);
           }
         },
       );
     }
 
-    if (provider.isEmpty) {
+    if (state.isEmpty) {
       return EmptyState(
         icon: Icons.search_off,
         title: AppStrings.noResults,
@@ -157,8 +153,8 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    if (!provider.hasResults) {
-      return _buildSearchHistory(context, provider);
+    if (!state.hasResults) {
+      return _buildSearchHistory(context, state);
     }
 
     return Column(
@@ -169,24 +165,29 @@ class _SearchScreenState extends State<SearchScreen> {
           child: Row(
             children: [
               Text(
-                '${AppStrings.search}: ${provider.results.length}',
+                '${AppStrings.search}: ${state.results.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const Spacer(),
-              if (provider.selectedGroups.isNotEmpty)
+              if (state.selectedGroups.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ActionChip(
                     avatar: const Icon(Icons.folder, size: 16),
-                    label: Text('${provider.selectedGroups.length} 分组'),
-                    onPressed: () => provider.clearGroupFilter(),
+                    label: Text('${state.selectedGroups.length} 分组'),
+                    onPressed: () => ref
+                        .read(searchNotifierProvider.notifier)
+                        .clearGroupFilter(),
                   ),
                 ),
-              if (provider.selectedSourceUrls.isNotEmpty)
+              if (state.selectedSourceUrls.isNotEmpty)
                 ActionChip(
                   avatar: const Icon(Icons.filter_list, size: 16),
-                  label: Text('${provider.selectedSourceUrls.length} ${AppStrings.sources}'),
-                  onPressed: () => provider.clearSourceFilter(),
+                  label: Text(
+                      '${state.selectedSourceUrls.length} ${AppStrings.sources}'),
+                  onPressed: () => ref
+                      .read(searchNotifierProvider.notifier)
+                      .clearSourceFilter(),
                 ),
             ],
           ),
@@ -194,10 +195,10 @@ class _SearchScreenState extends State<SearchScreen> {
         // 结果列表
         Expanded(
           child: ListView.separated(
-            itemCount: provider.results.length,
+            itemCount: state.results.length,
             separatorBuilder: (_, _) => const Divider(height: 1, indent: 88),
             itemBuilder: (context, index) {
-              final result = provider.results[index];
+              final result = state.results[index];
               return _buildResultItem(context, result);
             },
           ),
@@ -317,6 +318,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _addToBookshelf(BuildContext context, Book book) {
+    // 过渡期：书架数据源仍由 BookshelfProvider 提供（book_info_screen 等同步使用）
     context.read<BookshelfProvider>().addBook(book);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${book.name} ${AppStrings.addedToBookshelf}')),
@@ -324,8 +326,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   /// 搜索历史页面（无结果时显示，对标安卓原版「搜索历史」区域）
-  Widget _buildSearchHistory(BuildContext context, SearchProvider provider) {
-    if (provider.searchHistory.isEmpty) {
+  Widget _buildSearchHistory(BuildContext context, SearchState state) {
+    if (state.searchHistory.isEmpty) {
       // 安卓原版：无历史时显示纯灰字提示
       return const EmptyState(
         icon: Icons.search,
@@ -349,7 +351,8 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               const Spacer(),
               TextButton.icon(
-                onPressed: () => provider.clearHistory(),
+                onPressed: () =>
+                    ref.read(searchNotifierProvider.notifier).clearHistory(),
                 icon: const Icon(Icons.delete_outline, size: 18),
                 label: Text(AppStrings.clearHistory),
               ),
@@ -362,12 +365,12 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: provider.searchHistory.map((keyword) {
+              children: state.searchHistory.map((keyword) {
                 return ActionChip(
                   label: Text(keyword),
                   onPressed: () {
                     _searchController.text = keyword;
-                    provider.search(keyword);
+                    ref.read(searchNotifierProvider.notifier).search(keyword);
                   },
                 );
               }).toList(),

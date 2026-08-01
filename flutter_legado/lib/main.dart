@@ -14,7 +14,6 @@ import 'src/providers/bookshelf_provider.dart';
 import 'src/providers/reading_stats_provider.dart';
 import 'src/providers/replace_rule_provider.dart';
 import 'src/providers/rss_provider.dart';
-import 'src/providers/search_provider.dart';
 import 'src/providers/source_provider.dart';
 import 'src/providers/sync_provider.dart';
 import 'src/routes.dart';
@@ -91,7 +90,7 @@ void main() {
             // 移除 ..loadSettings() 级联，下沉到各屏幕首帧回调
             ChangeNotifierProvider(create: (_) => BookshelfProvider(rustApi)),
             // 阅读器已迁移至 Riverpod（ReaderNotifier），见 providers/reader/
-            ChangeNotifierProvider(create: (_) => SearchProvider(rustApi)),
+            // 搜索已迁移至 Riverpod（SearchNotifier），见 providers/search/
             ChangeNotifierProvider(create: (_) => SourceProvider(rustApi)),
             // 发现页已迁移至 Riverpod（ExploreNotifier/ExploreShowNotifier），见 providers/explore/
             ChangeNotifierProvider(create: (_) => RssProvider(rustApi)),

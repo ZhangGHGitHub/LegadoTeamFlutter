@@ -463,12 +463,20 @@ String mapApiError(Object e) {
 |------|------|----------|
 | 3.1 实现 `ExploreNotifier`（调用 exploreParseUrl/exploreFetchBooks） | providers/explore/ | 分类解析正确 |
 | 3.2 发现页：书源列表 + 分类 Tab + 书籍网格 | explore_screen 重构 | 对齐 ExploreFragment.kt |
-| 3.3 搜索：调用 searchMulti + 进度指示 + 结果展示 | search_screen 重构 | 搜索结果与原版一致 |
+| 3.3 搜索：SearchNotifier 迁移（searchBooks + 加载态 + 结果展示） | search_screen 重构 | 搜索结果与原版一致 |
 | 3.4 搜索历史 + 联想 | 调用 BookApi 搜索历史接口 | 交互流畅 |
 | 3.5 发现页双栏（平板） | 响应式 | 左侧源/右侧内容 |
 
 > 边界说明：多源搜索的并行调度、结果合并、去重均由 Rust `searchMulti()` 完成。
 > UI 侧 Notifier 只负责：发起调用 → 显示进度 → 渲染返回结果列表。
+
+> **3.3 实施决议（跨轨需求登记）**：原版 Android `SearchModel.kt` 为逐源流式搜索 +
+> `onSearchProgress(searched, total)` x/y 进度（协程 flow，每源返回即增量合并结果）。
+> 当前 Rust FFI `searchBooks`/`searchMulti` 均为 `Future<String>` 一次性返回（`runtime::block_on`
+> 等全部源完成），无 Stream 版本，故 UI 侧无法还原逐源渐进进度，「进度指示」当前仅能落地为
+> 不确定加载态。经决议：Phase 3.3 保持 `searchBooks`（结构化返回、行为不变）仅做 Riverpod 迁移；
+> **渐进搜索 + x/y 进度需 Rust 轨新增 `Stream<SearchResult>` FFI API**（flutter_rust_bridge 支持），
+> 属 FFI 契约变更，登记为跨轨需求待 Rust 轨排期，UI 轨不触碰。
 
 ### Phase 4：设置 / 书源管理（第 8–9 周）
 

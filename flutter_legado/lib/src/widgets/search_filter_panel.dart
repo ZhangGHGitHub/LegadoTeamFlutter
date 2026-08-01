@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../providers/search_provider.dart';
-import '../services/book_api.dart';
+import '../providers/providers.dart';
+import '../providers/search/search_notifier.dart';
 
 /// 搜索范围筛选面板
 ///
 /// 对齐安卓端 SearchScopeDialog，支持两种筛选模式：
 /// - 分组模式：按书源分组多选（Checkbox）
 /// - 书源模式：按单个书源多选（Checkbox）
-class SearchFilterPanel extends StatefulWidget {
+///
+/// 筛选状态由 [SearchNotifier]（Riverpod）管理。
+class SearchFilterPanel extends ConsumerStatefulWidget {
   const SearchFilterPanel({super.key});
 
   @override
-  State<SearchFilterPanel> createState() => _SearchFilterPanelState();
+  ConsumerState<SearchFilterPanel> createState() => _SearchFilterPanelState();
 
   /// 便捷入口：弹出筛选面板
   static Future<void> show(BuildContext context) {
@@ -32,7 +35,7 @@ class SearchFilterPanel extends StatefulWidget {
   }
 }
 
-class _SearchFilterPanelState extends State<SearchFilterPanel>
+class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
     with SingleTickerProviderStateMixin {
   List<BookSource> _sources = [];
   bool _loading = true;
@@ -64,7 +67,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
 
   Future<void> _loadSources() async {
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final sources = await api.getEnabledBookSources();
       if (mounted) {
         setState(() {
@@ -120,7 +123,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<SearchProvider>();
+    final state = ref.watch(searchNotifierProvider);
 
     return SafeArea(
       top: false,
@@ -146,10 +149,12 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
               children: [
                 Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
-                if (provider.hasFilter)
+                if (state.hasFilter)
                   TextButton(
                     onPressed: () {
-                      provider.clearAllFilter();
+                      ref
+                          .read(searchNotifierProvider.notifier)
+                          .clearAllFilter();
                       Navigator.pop(context);
                     },
                     child: const Text('清除全部'),
@@ -191,7 +196,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
             ),
             const SizedBox(height: 8),
             // 统计信息
-            _buildStatsRow(provider),
+            _buildStatsRow(state),
             const Divider(),
             // 内容区域
             Expanded(
@@ -202,8 +207,8 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
                       : TabBarView(
                           controller: _tabController,
                           children: [
-                            _buildGroupList(provider),
-                            _buildSourceList(provider),
+                            _buildGroupList(state),
+                            _buildSourceList(state),
                           ],
                         ),
             ),
@@ -223,13 +228,13 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
   }
 
   /// 统计信息行
-  Widget _buildStatsRow(SearchProvider provider) {
+  Widget _buildStatsRow(SearchState state) {
     final isGroupTab = _tabController.index == 0;
     String info;
     if (isGroupTab) {
-      info = '已选择 ${provider.selectedGroups.length} / ${_groups.length} 个分组';
+      info = '已选择 ${state.selectedGroups.length} / ${_groups.length} 个分组';
     } else {
-      info = '已选择 ${provider.selectedSourceUrls.length} / ${_sources.length} 个书源';
+      info = '已选择 ${state.selectedSourceUrls.length} / ${_sources.length} 个书源';
     }
 
     return Row(
@@ -238,41 +243,43 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
         const Spacer(),
         TextButton(
           onPressed: () {
+            final notifier = ref.read(searchNotifierProvider.notifier);
             if (isGroupTab) {
               // 全选/取消全部分组
-              if (provider.selectedGroups.length == _groups.length) {
-                provider.clearGroupFilter();
+              if (state.selectedGroups.length == _groups.length) {
+                notifier.clearGroupFilter();
               } else {
                 for (final group in _groups) {
-                  if (!provider.selectedGroups.contains(group)) {
-                    provider.toggleGroup(group);
+                  if (!state.selectedGroups.contains(group)) {
+                    notifier.toggleGroup(group);
                   }
                 }
               }
             } else {
               // 全选/取消全部书源
-              if (provider.selectedSourceUrls.length == _sources.length) {
-                provider.clearSourceFilter();
+              if (state.selectedSourceUrls.length == _sources.length) {
+                notifier.clearSourceFilter();
               } else {
                 for (final source in _sources) {
-                  if (!provider.selectedSourceUrls.contains(source.bookSourceUrl)) {
-                    provider.toggleSource(source.bookSourceUrl);
+                  if (!state.selectedSourceUrls.contains(source.bookSourceUrl)) {
+                    notifier.toggleSource(source.bookSourceUrl);
                   }
                 }
               }
             }
           },
-          child: Text(_isAllSelected(provider, isGroupTab) ? '取消全选' : '全选'),
+          child: Text(_isAllSelected(state, isGroupTab) ? '取消全选' : '全选'),
         ),
       ],
     );
   }
 
-  bool _isAllSelected(SearchProvider provider, bool isGroupTab) {
+  bool _isAllSelected(SearchState state, bool isGroupTab) {
     if (isGroupTab) {
-      return _groups.isNotEmpty && provider.selectedGroups.length == _groups.length;
+      return _groups.isNotEmpty && state.selectedGroups.length == _groups.length;
     } else {
-      return _sources.isNotEmpty && provider.selectedSourceUrls.length == _sources.length;
+      return _sources.isNotEmpty &&
+          state.selectedSourceUrls.length == _sources.length;
     }
   }
 
@@ -297,7 +304,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
   }
 
   /// 分组列表（对齐安卓端 SearchScopeDialog 的分组模式）
-  Widget _buildGroupList(SearchProvider provider) {
+  Widget _buildGroupList(SearchState state) {
     final filteredGroups = _filteredGroups;
     if (filteredGroups.isEmpty) {
       return Center(
@@ -320,7 +327,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
       itemCount: filteredGroups.length,
       itemBuilder: (context, index) {
         final group = filteredGroups[index];
-        final isSelected = provider.selectedGroups.contains(group);
+        final isSelected = state.selectedGroups.contains(group);
         // 计算该分组下的书源数量
         final count = _countSourcesInGroup(group);
         return CheckboxListTile(
@@ -328,7 +335,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
           contentPadding: EdgeInsets.zero,
           value: isSelected,
           onChanged: (value) {
-            provider.toggleGroup(group);
+            ref.read(searchNotifierProvider.notifier).toggleGroup(group);
           },
           title: Text(
             group,
@@ -366,7 +373,7 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
   }
 
   /// 书源列表（对齐安卓端 SearchScopeDialog 的书源模式）
-  Widget _buildSourceList(SearchProvider provider) {
+  Widget _buildSourceList(SearchState state) {
     final filteredSources = _filteredSources;
     if (filteredSources.isEmpty) {
       return Center(
@@ -387,13 +394,16 @@ class _SearchFilterPanelState extends State<SearchFilterPanel>
       itemCount: filteredSources.length,
       itemBuilder: (context, index) {
         final source = filteredSources[index];
-        final isSelected = provider.selectedSourceUrls.contains(source.bookSourceUrl);
+        final isSelected =
+            state.selectedSourceUrls.contains(source.bookSourceUrl);
         return CheckboxListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
           value: isSelected,
           onChanged: (value) {
-            provider.toggleSource(source.bookSourceUrl);
+            ref
+                .read(searchNotifierProvider.notifier)
+                .toggleSource(source.bookSourceUrl);
           },
           title: Text(
             source.bookSourceName,
