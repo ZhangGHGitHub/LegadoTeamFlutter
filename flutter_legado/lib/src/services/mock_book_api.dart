@@ -524,6 +524,44 @@ class MockBookApi implements BookApi {
     });
   }
 
+  // ========== RSS 已读记录 ==========
+
+  final Set<String> _rssReadLinks = {};
+  final List<Map<String, dynamic>> _rssReadRecords = [];
+
+  @override
+  Future<void> rssMarkRead(String origin, String title, [String? link]) async {
+    if (link != null) _rssReadLinks.add(link);
+    _rssReadRecords.insert(0, {
+      'origin': origin,
+      'title': title,
+      'link': link,
+      'read_time': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  @override
+  Future<bool> rssIsRead(String link) async => _rssReadLinks.contains(link);
+
+  @override
+  Future<bool> rssIsReadByTitle(String origin, String title) async =>
+      _rssReadRecords.any((r) => r['origin'] == origin && r['title'] == title);
+
+  @override
+  Future<void> rssClearReadRecords() async {
+    _rssReadLinks.clear();
+    _rssReadRecords.clear();
+  }
+
+  @override
+  Future<int> rssReadRecordCount() async => _rssReadRecords.length;
+
+  @override
+  Future<List<Map<String, dynamic>>> rssListReadRecords([int? limit]) async {
+    final l = limit ?? 100;
+    return _rssReadRecords.take(l).toList();
+  }
+
   // ========== 本地书籍操作 ==========
 
   @override
@@ -637,6 +675,12 @@ class MockBookApi implements BookApi {
   Future<String> getChapterContentRaw(String bookUrl, int chapterIndex) async {
     // Mock 层不区分净化/raw，返回同一份缓存内容
     return _contentCache[bookUrl]?[chapterIndex] ?? '（暂无内容）';
+  }
+
+  @override
+  Future<String> getChapterContentFull(String bookUrl, int chapterIndex) async {
+    // Mock 层不区分本地/在线，统一返回缓存内容
+    return _contentCache[bookUrl]?[chapterIndex] ?? '（Mock 模式：章节内容）';
   }
 
   @override
@@ -764,6 +808,15 @@ class MockBookApi implements BookApi {
   @override
   Future<List<SearchKeyword>> getSearchHistory({int limit = 50}) async =>
       _searchHistory.take(limit).toList();
+
+  @override
+  Future<List<String>> searchHistoryByPrefix(String prefix, {int limit = 20}) async {
+    return _searchHistory
+        .where((k) => k.word.startsWith(prefix))
+        .take(limit)
+        .map((k) => k.word)
+        .toList();
+  }
 
   @override
   Future<void> addSearchKeyword(String keyword, String bookName) async {
@@ -1271,6 +1324,49 @@ class MockBookApi implements BookApi {
     required String cron,
     required int fromMs,
   }) async => fromMs + 86400000; // +24h
+
+  // ========== 自动任务数据库 CRUD ==========
+
+  final List<Map<String, dynamic>> _mockAutoTaskRules = [];
+
+  @override
+  Future<List<Map<String, dynamic>>> autoTaskListRules() async =>
+      List.from(_mockAutoTaskRules);
+
+  @override
+  Future<String> autoTaskCreateRule({required String ruleJson}) async {
+    final rule = jsonDecode(ruleJson) as Map<String, dynamic>;
+    final id = rule['id']?.toString() ?? 'mock-task-${_nextId++}';
+    rule['id'] = id;
+    _mockAutoTaskRules.add(rule);
+    return id;
+  }
+
+  @override
+  Future<void> autoTaskUpdateRule({required String ruleJson}) async {
+    final rule = jsonDecode(ruleJson) as Map<String, dynamic>;
+    final id = rule['id']?.toString();
+    if (id != null) {
+      final index = _mockAutoTaskRules.indexWhere((r) => r['id'] == id);
+      if (index >= 0) {
+        _mockAutoTaskRules[index] = rule;
+      }
+    }
+  }
+
+  @override
+  Future<void> autoTaskDeleteRule({required String id}) async {
+    _mockAutoTaskRules.removeWhere((r) => r['id'] == id);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> autoTaskFindRuleById({required String id}) async {
+    try {
+      return _mockAutoTaskRules.firstWhere((r) => r['id'] == id);
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ========== 音频播放模式 ==========
 

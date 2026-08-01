@@ -357,6 +357,33 @@ class RustApi implements BookApi {
     }).toList();
   }
 
+  // ========== RSS 已读记录 ==========
+
+  /// 标记 RSS 文章为已读
+  Future<void> rssMarkRead(String origin, String title, [String? link]) =>
+      bridge.rssMarkRead(origin: origin, title: title, link: link);
+
+  /// 判断 RSS 文章是否已读（按 link）
+  Future<bool> rssIsRead(String link) => bridge.rssIsRead(link: link);
+
+  /// 判断 RSS 文章是否已读（按 origin + title）
+  Future<bool> rssIsReadByTitle(String origin, String title) =>
+      bridge.rssIsReadByTitle(origin: origin, title: title);
+
+  /// 清空所有 RSS 已读记录
+  Future<void> rssClearReadRecords() => bridge.rssClearReadRecords();
+
+  /// 获取 RSS 已读记录总数
+  Future<int> rssReadRecordCount() async =>
+      (await bridge.rssReadRecordCount()).toInt();
+
+  /// 获取 RSS 已读记录列表（按 readTime 降序）
+  Future<List<Map<String, dynamic>>> rssListReadRecords([int? limit]) async {
+    final json = await bridge.rssListReadRecords(limit: limit);
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => e as Map<String, dynamic>).toList();
+  }
+
   // ========== 本地书籍操作 ==========
 
   /// 导入本地书籍
@@ -549,6 +576,13 @@ class RustApi implements BookApi {
   /// 与 Android 书内搜索默认行为（replaceEnabled=false）对齐。
   Future<String> getChapterContentRaw(String bookUrl, int chapterIndex) =>
       bridge.readerGetContentRaw(bookUrl: bookUrl, chapterIndex: chapterIndex);
+
+  /// 一次调用获取章节正文（合并 getChapterContent + fetchChapterContent）
+  ///
+  /// 本地书籍直接解析返回；在线书籍自动从网络抓取并返回净化后的正文。
+  /// 始终返回纯正文字符串，不返回 JSON 元数据。
+  Future<String> getChapterContentFull(String bookUrl, int chapterIndex) =>
+      bridge.readerGetContentFull(bookUrl: bookUrl, chapterIndex: chapterIndex);
 
   /// 从网络获取章节正文（带 DB 缓存）
   Future<String> fetchChapterContent(
@@ -807,6 +841,13 @@ class RustApi implements BookApi {
     return list
         .map((e) => SearchKeyword.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// 按前缀搜索历史关键词（用于搜索联想）
+  Future<List<String>> searchHistoryByPrefix(String prefix, {int limit = 20}) async {
+    final json = await bridge.searchHistoryByPrefix(prefix: prefix, limit: limit);
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => e.toString()).toList();
   }
 
   /// 添加搜索关键词
@@ -1538,6 +1579,37 @@ class RustApi implements BookApi {
       fromMs: fromMs,
     );
     return result.toInt();
+  }
+
+  // ========== 自动任务数据库 CRUD ==========
+
+  /// 列出所有自动任务规则（按 customOrder 排序）
+  Future<List<Map<String, dynamic>>> autoTaskListRules() async {
+    final json = await bridge.autoTaskListRules();
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
+  /// 创建自动任务规则（返回任务 ID）
+  Future<String> autoTaskCreateRule({required String ruleJson}) async {
+    return await bridge.autoTaskCreateRule(ruleJson: ruleJson);
+  }
+
+  /// 更新自动任务规则
+  Future<void> autoTaskUpdateRule({required String ruleJson}) async {
+    await bridge.autoTaskUpdateRule(ruleJson: ruleJson);
+  }
+
+  /// 删除自动任务规则
+  Future<void> autoTaskDeleteRule({required String id}) async {
+    await bridge.autoTaskDeleteRule(id: id);
+  }
+
+  /// 根据 ID 查询自动任务规则
+  Future<Map<String, dynamic>?> autoTaskFindRuleById({required String id}) async {
+    final json = await bridge.autoTaskFindRuleById(id: id);
+    if (json.isEmpty || json == 'null') return null;
+    return jsonDecode(json) as Map<String, dynamic>;
   }
 
   // ========== 音频播放模式（audio FFI） ==========

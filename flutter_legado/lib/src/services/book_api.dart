@@ -133,6 +133,26 @@ abstract class BookApi {
   /// 获取 RSS 文章列表
   Future<List<RssFeedArticle>> getRssArticles(String sourceUrl);
 
+  // ========== RSS 已读记录 ==========
+
+  /// 标记 RSS 文章为已读
+  Future<void> rssMarkRead(String origin, String title, [String? link]);
+
+  /// 判断 RSS 文章是否已读（按 link）
+  Future<bool> rssIsRead(String link);
+
+  /// 判断 RSS 文章是否已读（按 origin + title）
+  Future<bool> rssIsReadByTitle(String origin, String title);
+
+  /// 清空所有 RSS 已读记录
+  Future<void> rssClearReadRecords();
+
+  /// 获取 RSS 已读记录总数
+  Future<int> rssReadRecordCount();
+
+  /// 获取 RSS 已读记录列表（按 readTime 降序）
+  Future<List<Map<String, dynamic>>> rssListReadRecords([int? limit]);
+
   // ========== 本地书籍操作 ==========
 
   /// 导入本地书籍
@@ -199,6 +219,12 @@ abstract class BookApi {
   ///
   /// 与 Android 书内搜索默认行为（replaceEnabled=false）对齐。
   Future<String> getChapterContentRaw(String bookUrl, int chapterIndex);
+
+  /// 一次调用获取章节正文（合并 getChapterContent + fetchChapterContent）
+  ///
+  /// 本地书籍直接解析返回；在线书籍自动从网络抓取并返回净化后的正文。
+  /// 始终返回纯正文字符串，不返回 JSON 元数据。
+  Future<String> getChapterContentFull(String bookUrl, int chapterIndex);
 
   /// 从网络获取章节正文
   Future<String> fetchChapterContent(
@@ -285,6 +311,9 @@ abstract class BookApi {
 
   /// 获取搜索历史
   Future<List<SearchKeyword>> getSearchHistory({int limit = 50});
+
+  /// 按前缀搜索历史关键词（用于搜索联想）
+  Future<List<String>> searchHistoryByPrefix(String prefix, {int limit = 20});
 
   /// 添加搜索关键词
   Future<void> addSearchKeyword(String keyword, String bookName);
@@ -623,6 +652,23 @@ abstract class BookApi {
     required String cron,
     required int fromMs,
   });
+
+  // ========== 自动任务数据库 CRUD ==========
+
+  /// 列出所有自动任务规则（按 customOrder 排序）
+  Future<List<Map<String, dynamic>>> autoTaskListRules();
+
+  /// 创建自动任务规则（返回任务 ID）
+  Future<String> autoTaskCreateRule({required String ruleJson});
+
+  /// 更新自动任务规则
+  Future<void> autoTaskUpdateRule({required String ruleJson});
+
+  /// 删除自动任务规则
+  Future<void> autoTaskDeleteRule({required String id});
+
+  /// 根据 ID 查询自动任务规则
+  Future<Map<String, dynamic>?> autoTaskFindRuleById({required String id});
 
   // ========== 音频播放模式（audio FFI） ==========
 

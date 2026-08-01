@@ -64,7 +64,6 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<String, BridgeError> {
 pub mod ffi {
     use super::to_json;
     use super::BridgeError;
-    use legado_core::error::LegadoError;
 
     // ─── 基础 ─────────────────────────────────────────────────
 
@@ -83,8 +82,13 @@ pub mod ffi {
 
     /// 打开数据库并初始化全局连接
     pub fn db_open(path: String) -> Result<(), BridgeError> {
+        // 已初始化时跳过冗余的 Database::open（含迁移检查 + 池构建）
+        if crate::db_state::is_initialized() {
+            eprintln!("[legado-ffi] 数据库已初始化，忽略重复 db_open 调用");
+            return Ok(());
+        }
         let db = legado_db::init_database(&path)?;
-        crate::db_state::init_database(db);
+        crate::db_state::init_database(db)?;
         Ok(())
     }
 
@@ -242,6 +246,20 @@ pub mod ffi {
         )?)
     }
 
+    /// 一次调用获取章节正文（合并 reader_get_content + reader_fetch_content）
+    ///
+    /// 本地书籍直接解析返回；在线书籍自动从网络抓取并返回净化后的正文。
+    /// 始终返回纯正文字符串，不返回 JSON 元数据。
+    pub fn reader_get_content_full(
+        book_url: String,
+        chapter_index: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::reader::get_chapter_content_full(
+            &book_url,
+            chapter_index,
+        )?)
+    }
+
     /// 从网络刷新书籍目录（返回 JSON 章节列表）
     ///
     /// `book_url` — 书籍详情页 URL
@@ -344,6 +362,48 @@ pub mod ffi {
         Ok(starred)
     }
 
+    // ─── RSS 已读记录 ────────────────────────────────
+
+    /// 标记 RSS 文章为已读
+    pub fn rss_mark_read(
+        origin: String,
+        title: String,
+        link: Option<String>,
+    ) -> Result<(), BridgeError> {
+        crate::api::rss_read_record_api::mark_read(&origin, &title, link.as_deref())?;
+        Ok(())
+    }
+
+    /// 判断 RSS 文章是否已读（按 link）
+    pub fn rss_is_read(link: String) -> Result<bool, BridgeError> {
+        let read = crate::api::rss_read_record_api::is_read(&link)?;
+        Ok(read)
+    }
+
+    /// 判断 RSS 文章是否已读（按 origin + title）
+    pub fn rss_is_read_by_title(origin: String, title: String) -> Result<bool, BridgeError> {
+        let read = crate::api::rss_read_record_api::is_read_by_title(&origin, &title)?;
+        Ok(read)
+    }
+
+    /// 清空所有 RSS 已读记录
+    pub fn rss_clear_read_records() -> Result<(), BridgeError> {
+        crate::api::rss_read_record_api::clear_all()?;
+        Ok(())
+    }
+
+    /// 获取 RSS 已读记录总数
+    pub fn rss_read_record_count() -> Result<i64, BridgeError> {
+        let count = crate::api::rss_read_record_api::count()?;
+        Ok(count)
+    }
+
+    /// 获取 RSS 已读记录列表（JSON 数组，按 readTime 降序）
+    pub fn rss_list_read_records(limit: Option<i32>) -> Result<String, BridgeError> {
+        let records = crate::api::rss_read_record_api::list_records(limit)?;
+        to_json(&records)
+    }
+
     // ─── 搜索历史 ────────────────────────────────────────
 
     /// 获取最近搜索历史（JSON 数组）
@@ -368,6 +428,12 @@ pub mod ffi {
     pub fn search_history_clear() -> Result<bool, BridgeError> {
         let ok = crate::api::search_history_api::clear_search_history()?;
         Ok(ok)
+    }
+
+    /// 按前缀搜索历史关键词（JSON 数组）
+    pub fn search_history_by_prefix(prefix: String, limit: i32) -> Result<String, BridgeError> {
+        let results = crate::api::search_history_api::search_history_by_prefix(&prefix, limit)?;
+        to_json(&results)
     }
 
     // ─── 换源 ───────────────────────────────────────────────
@@ -403,8 +469,7 @@ pub mod ffi {
     /// HTTP GET 请求，返回 JSON 格式的响应
     pub fn http_get(url: String) -> Result<String, BridgeError> {
         let response = crate::runtime::block_on(async {
-            let client = legado_net::LegadoClient::new(legado_net::LegadoClientConfig::default())
-                .map_err(|e| LegadoError::Network(format!("创建客户端失败: {e}")))?;
+            let client = crate::http_state::shared_client();
             client.get(&url, None).await
         })?;
         Ok(serde_json::to_string(&serde_json::json!({
@@ -417,8 +482,7 @@ pub mod ffi {
     /// HTTP POST 请求，返回 JSON 格式的响应
     pub fn http_post(url: String, body: String) -> Result<String, BridgeError> {
         let response = crate::runtime::block_on(async {
-            let client = legado_net::LegadoClient::new(legado_net::LegadoClientConfig::default())
-                .map_err(|e| LegadoError::Network(format!("创建客户端失败: {e}")))?;
+            let client = crate::http_state::shared_client();
             client.post(&url, &body, None).await
         })?;
         Ok(serde_json::to_string(&serde_json::json!({
@@ -1299,6 +1363,40 @@ pub mod ffi {
     /// 解析 cron 表达式计算下次执行时间（Unix 毫秒，无法解析返回 -1）
     pub fn auto_task_next_due_at(cron: String, from_ms: i64) -> i64 {
         crate::api::auto_task_api::next_due_at(&cron, from_ms)
+    }
+
+    // ─── 自动任务数据库 CRUD ───────────────────────
+
+    /// 列出所有自动任务规则（按 customOrder 排序，返回 AutoTaskRule 数组 JSON）
+    pub fn auto_task_list_rules() -> Result<String, BridgeError> {
+        let rules = crate::api::auto_task_api::list_rules_db()?;
+        to_json(&rules)
+    }
+
+    /// 创建自动任务规则（rule_json 为 AutoTaskRule JSON，返回任务 ID）
+    pub fn auto_task_create_rule(rule_json: String) -> Result<String, BridgeError> {
+        let rule: legado_core::models::AutoTaskRule = serde_json::from_str(&rule_json)?;
+        let id = crate::api::auto_task_api::create_rule_db(&rule)?;
+        Ok(id)
+    }
+
+    /// 更新自动任务规则（rule_json 为 AutoTaskRule JSON）
+    pub fn auto_task_update_rule(rule_json: String) -> Result<(), BridgeError> {
+        let rule: legado_core::models::AutoTaskRule = serde_json::from_str(&rule_json)?;
+        crate::api::auto_task_api::update_rule_db(&rule)?;
+        Ok(())
+    }
+
+    /// 删除自动任务规则（按 ID 删除）
+    pub fn auto_task_delete_rule(id: String) -> Result<(), BridgeError> {
+        crate::api::auto_task_api::delete_rule_db(&id)?;
+        Ok(())
+    }
+
+    /// 根据 ID 查询自动任务规则（返回 AutoTaskRule JSON 或 null）
+    pub fn auto_task_find_rule_by_id(id: String) -> Result<String, BridgeError> {
+        let rule = crate::api::auto_task_api::find_rule_by_id_db(&id)?;
+        to_json(&rule)
     }
 
     // ─── 听书播放（播放模式/书籍解析）───────────────────

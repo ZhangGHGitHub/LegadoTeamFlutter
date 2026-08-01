@@ -118,7 +118,7 @@ pub unsafe extern "C" fn ffi_db_open(path: *const c_char) -> i32 {
     match catch_unwind(|| {
         let path_str = c_char_to_str(path).map_err(|e| e.to_error_code())?;
         let db = legado_db::init_database(path_str).map_err(|e| e.to_error_code())?;
-        crate::db_state::init_database(db);
+        crate::db_state::init_database(db).map_err(|e| e.to_error_code())?;
         Ok::<i32, i32>(0)
     }) {
         Ok(Ok(code)) => code,
@@ -353,6 +353,18 @@ pub unsafe extern "C" fn ffi_reader_fetch_content(
     }))
 }
 
+/// 一次调用获取章节正文（合并 get_content + fetch_content）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_reader_get_content_full(
+    book_url: *const c_char,
+    chapter_index: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::reader::get_chapter_content_full(url, chapter_index)
+    }))
+}
+
 // ─── 书籍导入 FFI 函数 ──────────────────────────────────────
 
 /// 检测书籍文件格式
@@ -459,6 +471,74 @@ pub unsafe extern "C" fn ffi_rss_star_is_starred(link: *const c_char) -> *mut c_
     }))
 }
 
+// ─── RSS 已读记录 FFI 函数 ─────────────────────────────
+
+/// 标记 RSS 文章为已读
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_mark_read(
+    origin: *const c_char,
+    title: *const c_char,
+    link: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let o = c_char_to_str(origin)?;
+        let t = c_char_to_str(title)?;
+        let l = if link.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(link)?)
+        };
+        crate::api::rss_read_record_api::mark_read(o, t, l)
+    }))
+}
+
+/// 判断 RSS 文章是否已读（按 link）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_is_read(link: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let l = c_char_to_str(link)?;
+        crate::api::rss_read_record_api::is_read(l)
+    }))
+}
+
+/// 判断 RSS 文章是否已读（按 origin + title）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_is_read_by_title(
+    origin: *const c_char,
+    title: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let o = c_char_to_str(origin)?;
+        let t = c_char_to_str(title)?;
+        crate::api::rss_read_record_api::is_read_by_title(o, t)
+    }))
+}
+
+/// 清空所有 RSS 已读记录
+#[no_mangle]
+pub extern "C" fn ffi_rss_clear_read_records() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::rss_read_record_api::clear_all()
+    }))
+}
+
+/// 获取 RSS 已读记录总数
+#[no_mangle]
+pub extern "C" fn ffi_rss_read_record_count() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::rss_read_record_api::count()
+    }))
+}
+
+/// 获取 RSS 已读记录列表
+#[no_mangle]
+pub extern "C" fn ffi_rss_list_read_records(limit: i32) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let lim = if limit <= 0 { None } else { Some(limit) };
+        crate::api::rss_read_record_api::list_records(lim)
+    }))
+}
+
 // ─── 搜索历史 FFI 函数 ─────────────────────────────────────
 
 /// 获取最近搜索历史
@@ -499,6 +579,18 @@ pub extern "C" fn ffi_search_history_clear() -> *mut c_char {
     }))
 }
 
+/// 按前缀搜索历史关键词
+#[no_mangle]
+pub unsafe extern "C" fn ffi_search_history_by_prefix(
+    prefix: *const c_char,
+    limit: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let p = c_char_to_str(prefix)?;
+        crate::api::search_history_api::search_history_by_prefix(p, limit)
+    }))
+}
+
 // ─── HTTP FFI 函数 ──────────────────────────────────────────
 
 /// HTTP GET 请求
@@ -507,8 +599,7 @@ pub unsafe extern "C" fn ffi_http_get(url: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let url_str = c_char_to_str(url)?;
         let response = crate::runtime::block_on(async {
-            let client = legado_net::LegadoClient::new(legado_net::LegadoClientConfig::default())
-                .map_err(|e| LegadoError::Network(format!("创建客户端失败: {e}")))?;
+            let client = crate::http_state::shared_client();
             client.get(url_str, None).await
         })?;
         Ok::<_, LegadoError>(response)
@@ -522,8 +613,7 @@ pub unsafe extern "C" fn ffi_http_post(url: *const c_char, body: *const c_char) 
         let url_str = c_char_to_str(url)?;
         let body_str = c_char_to_str(body)?;
         let response = crate::runtime::block_on(async {
-            let client = legado_net::LegadoClient::new(legado_net::LegadoClientConfig::default())
-                .map_err(|e| LegadoError::Network(format!("创建客户端失败: {e}")))?;
+            let client = crate::http_state::shared_client();
             client.post(url_str, body_str, None).await
         })?;
         Ok::<_, LegadoError>(response)
@@ -1631,6 +1721,56 @@ pub unsafe extern "C" fn ffi_auto_task_next_due_at(cron: *const c_char, from_ms:
         crate::api::auto_task_api::next_due_at(c, from_ms)
     })
     .unwrap_or(-1)
+}
+
+// ─── 自动任务数据库 CRUD FFI 函数 ─────────────────────
+
+/// 列出所有自动任务规则（返回 AutoTaskRule 数组 JSON）
+#[no_mangle]
+pub extern "C" fn ffi_auto_task_list_rules() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| crate::api::auto_task_api::list_rules_db()))
+}
+
+/// 创建自动任务规则（rule_json 为 AutoTaskRule JSON，返回任务 ID）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_create_rule(rule_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let json = c_char_to_str(rule_json)?;
+        let rule: legado_core::models::AutoTaskRule =
+            serde_json::from_str(json).map_err(|e| LegadoError::Parser(e.to_string()))?;
+        crate::api::auto_task_api::create_rule_db(&rule)
+    }))
+}
+
+/// 更新自动任务规则（rule_json 为 AutoTaskRule JSON）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_update_rule(rule_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let json = c_char_to_str(rule_json)?;
+        let rule: legado_core::models::AutoTaskRule =
+            serde_json::from_str(json).map_err(|e| LegadoError::Parser(e.to_string()))?;
+        crate::api::auto_task_api::update_rule_db(&rule)?;
+        Ok::<_, LegadoError>("ok".to_string())
+    }))
+}
+
+/// 删除自动任务规则（按 ID 删除）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_delete_rule(id: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let task_id = c_char_to_str(id)?;
+        crate::api::auto_task_api::delete_rule_db(task_id)?;
+        Ok::<_, LegadoError>("ok".to_string())
+    }))
+}
+
+/// 根据 ID 查询自动任务规则（返回 AutoTaskRule JSON 或 null）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_auto_task_find_rule_by_id(id: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let task_id = c_char_to_str(id)?;
+        crate::api::auto_task_api::find_rule_by_id_db(task_id)
+    }))
 }
 
 // ─── 听书播放（播放模式/书籍解析）FFI 函数 ───────────────

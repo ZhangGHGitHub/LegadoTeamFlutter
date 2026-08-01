@@ -50,7 +50,7 @@
 
 ## 2. 方法清单
 
-> 共 **35 个模块**、**170 个方法**（与 `book_api.dart` 一一对应）。
+> 共 **35 个模块**、**171 个方法**（与 `book_api.dart` 一一对应）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -201,11 +201,12 @@
 | `updateBookGroup(BookGroup group)` | group: BookGroup 对象 | `Future<void>` | 更新书籍分组 |
 | `deleteBookGroup(int groupId)` | groupId | `Future<void>` | 删除书籍分组 |
 
-### 2.15 搜索历史（4 个方法）
+### 2.15 搜索历史（5 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `getSearchHistory({int limit = 50})` | limit(默认50) | `Future<List<SearchKeyword>>` | 获取搜索历史 |
+| `searchHistoryByPrefix(String prefix, {int limit = 20})` | prefix, limit(默认20) | `Future<List<String>>` | 按前缀搜索历史关键词（搜索联想） |
 | `addSearchKeyword(String keyword, String bookName)` | keyword, bookName | `Future<void>` | 添加搜索关键词 |
 | `deleteSearchKeyword(String keyword)` | keyword | `Future<void>` | 删除搜索关键词 |
 | `clearSearchHistory()` | 无 | `Future<void>` | 清空搜索历史 |
@@ -410,8 +411,8 @@
 
 | 方法名 | 入参 | 期望返回 | 登记日期 | 状态 |
 |--------|------|----------|----------|------|
-| `getSearchHistory`（字段修复） | 不变 | `List<SearchKeyword>` 序列化字段对齐 Dart 模型：`word` / `usage` / `lastUseTime` | 2026-08-01 | 待实现 |
-| `searchHistoryByPrefix`（新增） | `String prefix, {int limit = 20}` | `Future<List<String>>`（前缀匹配的历史关键词，对标 Android `searchKeywordDao.flowSearch`） | 2026-08-01 | 待实现 |
+| `getSearchHistory`（字段修复） | 不变 | `List<SearchKeyword>` 序列化字段对齐 Dart 模型：`word` / `usage` / `lastUseTime` | 2026-08-01 | ✅ 已完成 |
+| `searchHistoryByPrefix`（新增） | `String prefix, {int limit = 20}` | `Future<List<String>>`（前缀匹配的历史关键词，对标 Android `searchKeywordDao.flowSearch`） | 2026-08-01 | ✅ 已完成 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -445,7 +446,7 @@
 | 12 | 阅读记录 | 4 |
 | 13 | RSS 收藏操作 | 4 |
 | 14 | 书籍分组 | 4 |
-| 15 | 搜索历史 | 4 |
+| 15 | 搜索历史 | 5 |
 | 16 | 缓存管理 | 5 |
 | 17 | WebBook 操作 | 4 |
 | 18 | 发现页操作 | 2 |
@@ -466,4 +467,4 @@
 | 33 | 音频播放模式 | 2 |
 | 34 | 压缩包导入 | 7 |
 | 35 | RSS 已读记录 | 6 |
-| | **合计** | **170** |
+| | **合计** | **171** |

@@ -136,6 +136,18 @@ Future<String> readerGetContentRaw({
   chapterIndex: chapterIndex,
 );
 
+/// 一次调用获取章节正文（合并 reader_get_content + reader_fetch_content）
+///
+/// 本地书籍直接解析返回；在线书籍自动从网络抓取并返回净化后的正文。
+/// 始终返回纯正文字符串，不返回 JSON 元数据。
+Future<String> readerGetContentFull({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiReaderGetContentFull(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
 /// 从网络刷新书籍目录（返回 JSON 章节列表）
 ///
 /// `book_url` — 书籍详情页 URL
@@ -213,6 +225,42 @@ Future<bool> rssStarDelete({required String link}) =>
 Future<bool> rssStarIsStarred({required String link}) =>
     RustLib.instance.api.crateFfiFfiRssStarIsStarred(link: link);
 
+/// 标记 RSS 文章为已读
+Future<void> rssMarkRead({
+  required String origin,
+  required String title,
+  String? link,
+}) => RustLib.instance.api.crateFfiFfiRssMarkRead(
+  origin: origin,
+  title: title,
+  link: link,
+);
+
+/// 判断 RSS 文章是否已读（按 link）
+Future<bool> rssIsRead({required String link}) =>
+    RustLib.instance.api.crateFfiFfiRssIsRead(link: link);
+
+/// 判断 RSS 文章是否已读（按 origin + title）
+Future<bool> rssIsReadByTitle({
+  required String origin,
+  required String title,
+}) => RustLib.instance.api.crateFfiFfiRssIsReadByTitle(
+  origin: origin,
+  title: title,
+);
+
+/// 清空所有 RSS 已读记录
+Future<void> rssClearReadRecords() =>
+    RustLib.instance.api.crateFfiFfiRssClearReadRecords();
+
+/// 获取 RSS 已读记录总数
+Future<PlatformInt64> rssReadRecordCount() =>
+    RustLib.instance.api.crateFfiFfiRssReadRecordCount();
+
+/// 获取 RSS 已读记录列表（JSON 数组，按 readTime 降序）
+Future<String> rssListReadRecords({int? limit}) =>
+    RustLib.instance.api.crateFfiFfiRssListReadRecords(limit: limit);
+
 /// 获取最近搜索历史（JSON 数组）
 Future<String> searchHistoryList({required int limit}) =>
     RustLib.instance.api.crateFfiFfiSearchHistoryList(limit: limit);
@@ -233,6 +281,15 @@ Future<bool> searchHistoryDelete({required String keyword}) =>
 /// 清空搜索历史
 Future<bool> searchHistoryClear() =>
     RustLib.instance.api.crateFfiFfiSearchHistoryClear();
+
+/// 按前缀搜索历史关键词（JSON 数组）
+Future<String> searchHistoryByPrefix({
+  required String prefix,
+  required int limit,
+}) => RustLib.instance.api.crateFfiFfiSearchHistoryByPrefix(
+  prefix: prefix,
+  limit: limit,
+);
 
 /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）
 ///
@@ -978,6 +1035,26 @@ Future<PlatformInt64> autoTaskNextDueAt({
   cron: cron,
   fromMs: fromMs,
 );
+
+/// 列出所有自动任务规则（按 customOrder 排序，返回 AutoTaskRule 数组 JSON）
+Future<String> autoTaskListRules() =>
+    RustLib.instance.api.crateFfiFfiAutoTaskListRules();
+
+/// 创建自动任务规则（rule_json 为 AutoTaskRule JSON，返回任务 ID）
+Future<String> autoTaskCreateRule({required String ruleJson}) =>
+    RustLib.instance.api.crateFfiFfiAutoTaskCreateRule(ruleJson: ruleJson);
+
+/// 更新自动任务规则（rule_json 为 AutoTaskRule JSON）
+Future<void> autoTaskUpdateRule({required String ruleJson}) =>
+    RustLib.instance.api.crateFfiFfiAutoTaskUpdateRule(ruleJson: ruleJson);
+
+/// 删除自动任务规则（按 ID 删除）
+Future<void> autoTaskDeleteRule({required String id}) =>
+    RustLib.instance.api.crateFfiFfiAutoTaskDeleteRule(id: id);
+
+/// 根据 ID 查询自动任务规则（返回 AutoTaskRule JSON 或 null）
+Future<String> autoTaskFindRuleById({required String id}) =>
+    RustLib.instance.api.crateFfiFfiAutoTaskFindRuleById(id: id);
 
 /// 将播放模式写入 readConfig JSON（返回更新后的 JSON）
 Future<String> audioWithPlayMode({String? readConfig, required int playMode}) =>
