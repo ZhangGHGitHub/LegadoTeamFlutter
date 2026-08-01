@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_strings.dart';
-import '../providers/reader_provider.dart' show ReaderBackground;
+import '../providers/reader/reader_notifier.dart' show ReaderBackground;
 import '../routes.dart';
 import '../services/backup_service.dart';
 import '../services/book_api.dart';

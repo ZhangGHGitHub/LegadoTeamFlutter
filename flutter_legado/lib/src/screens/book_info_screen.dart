@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../providers/bookshelf_provider.dart';
-import '../providers/reader_provider.dart';
+import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/export_service.dart';
 import '../services/book_api.dart';
@@ -433,11 +434,11 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   // ===== 操作 =====
 
   void _openReader(BuildContext context, Book book, int chapterIndex) {
-    final readerProvider = context.read<ReaderProvider>();
+    final container = ProviderScope.containerOf(context);
     final bookToRead = chapterIndex != book.durChapterIndex
         ? book.copyWith(durChapterIndex: chapterIndex)
         : book;
-    readerProvider.openBook(bookToRead);
+    container.read(readerNotifierProvider.notifier).openBook(bookToRead);
     Navigator.pushNamed(context, AppRoutes.reader);
   }
 

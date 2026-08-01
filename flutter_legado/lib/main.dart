@@ -11,7 +11,6 @@ import 'app.dart';
 import 'src/providers/auto_task_provider.dart';
 import 'src/providers/bookmark_provider.dart';
 import 'src/providers/bookshelf_provider.dart';
-import 'src/providers/reader_provider.dart';
 import 'src/providers/reading_stats_provider.dart';
 import 'src/providers/replace_rule_provider.dart';
 import 'src/providers/rss_provider.dart';
@@ -92,7 +91,7 @@ void main() {
             Provider<BookApi>.value(value: rustApi),
             // 移除 ..loadSettings() 级联，下沉到各屏幕首帧回调
             ChangeNotifierProvider(create: (_) => BookshelfProvider(rustApi)),
-            ChangeNotifierProvider(create: (_) => ReaderProvider(rustApi)),
+            // 阅读器已迁移至 Riverpod（ReaderNotifier），见 providers/reader/
             ChangeNotifierProvider(create: (_) => SearchProvider(rustApi)),
             ChangeNotifierProvider(create: (_) => SourceProvider(rustApi)),
             ChangeNotifierProvider(create: (_) => ExploreProvider(rustApi)),

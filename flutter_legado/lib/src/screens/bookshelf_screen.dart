@@ -2,13 +2,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:provider/provider.dart' show ReadContext;
 import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
-import '../providers/reader_provider.dart';
+import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../utils/responsive.dart';
 import '../utils/share_utils.dart';
@@ -335,9 +334,8 @@ class BookshelfScreen extends ConsumerWidget {
   // ===== 操作 =====
 
   void _openBook(BuildContext context, WidgetRef ref, Book book) {
-    // ReaderProvider 仍在旧 provider 系统（Phase 2 迁移）
-    final readerProvider = context.read<ReaderProvider>();
-    readerProvider.openBook(book);
+    // 阅读器状态由 ReaderNotifier（Riverpod）管理
+    ref.read(readerNotifierProvider.notifier).openBook(book);
     Navigator.pushNamed(context, AppRoutes.reader);
   }
 

@@ -45,7 +45,8 @@ class AppBottomSheet extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                ?trailing,
+                // ignore: use_null_aware_elements
+                if (trailing != null) trailing!,
               ],
             ),
           ),

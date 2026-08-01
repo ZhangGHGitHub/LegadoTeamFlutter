@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
-import '../providers/reader_provider.dart';
 import '../services/book_api.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
@@ -13,7 +12,7 @@ import '../widgets/error_view.dart';
 /// 漫画阅读页面
 ///
 /// 支持纵向连续滚动、双指缩放、前后图片预加载。
-/// 通过 [bookUrl] 参数接收书籍标识，从 [ReaderProvider] 获取章节与图片列表。
+/// 通过 [bookUrl] 参数接收书籍标识，从 BookApi 获取章节与图片列表。
 class ReaderComicScreen extends StatefulWidget {
   /// 书籍 URL 标识
   final String bookUrl;

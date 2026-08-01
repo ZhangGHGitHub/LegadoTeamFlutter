@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
-import '../providers/reader_provider.dart';
+import '../providers/reader/reader_notifier.dart';
 import '../services/book_api.dart';
 import '../widgets/empty_state.dart';
 
@@ -168,8 +169,8 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
   }
 
   void _jumpToResult(_ContentMatch match) {
-    final reader = context.read<ReaderProvider>();
-    reader.goToChapter(match.chapterIndex);
+    final container = ProviderScope.containerOf(context);
+    container.read(readerNotifierProvider.notifier).goToChapter(match.chapterIndex);
     Navigator.of(context).pop();
   }
 
