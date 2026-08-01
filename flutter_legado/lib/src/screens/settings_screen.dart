@@ -1,10 +1,12 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_strings.dart';
 import '../routes.dart';
-import '../services/backup_service.dart';
 import '../services/book_api.dart';
+import '../services/crash_log_service.dart';
 import '../providers/bookshelf_provider.dart';
 import '../providers/theme_provider.dart';
 
@@ -126,6 +128,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: Text(AppStrings.aboutSettings),
             onTap: () => Navigator.pushNamed(context, AppRoutes.about),
           ),
+          ListTile(
+            leading: const Icon(Icons.bug_report),
+            title: const Text('导出日志'),
+            subtitle: const Text('分享应用日志文件用于问题诊断'),
+            onTap: _exportLogs,
+          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -138,9 +146,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -200,53 +208,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.backup),
-              title: Text(AppStrings.backupData),
-              subtitle: Text(AppStrings.backupDataDesc),
-              onTap: () {
-                Navigator.pop(ctx);
-                _doBackup(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.restore),
-              title: Text(AppStrings.restoreData),
-              subtitle: const Text('从备份 JSON 恢复书源'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _doRestore(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.cloud_sync),
-              title: const Text('WebDAV 同步'),
-              subtitle: const Text('连接测试、同步进度与自动同步配置'),
-              onTap: () {
-                Navigator.pop(ctx);
-                Navigator.pushNamed(context, AppRoutes.webdavSettings);
-              },
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.backup),
+                title: Text(AppStrings.backupData),
+                subtitle: Text(AppStrings.backupDataDesc),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _doBackup(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.restore),
+                title: Text(AppStrings.restoreData),
+                subtitle: const Text('从本地备份文件恢复全部数据'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _doRestore(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.cloud_sync),
+                title: const Text('WebDAV 同步'),
+                subtitle: const Text('连接测试、同步进度与自动同步配置'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.pushNamed(context, AppRoutes.webdavSettings);
+                },
+              ),
+              const Divider(),
+              // 延后项：Rust 契约暂不支持，占位禁用（后续版本支持）
+              ListTile(
+                leading: const Icon(Icons.filter_alt_off),
+                title: const Text('恢复忽略项'),
+                subtitle: const Text('后续版本支持'),
+                enabled: false,
+              ),
+              ListTile(
+                leading: const Icon(Icons.archive),
+                title: const Text('导入旧版数据'),
+                subtitle: const Text('后续版本支持'),
+                enabled: false,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  /// 本地备份（对标原版 BackupConfigFragment.backup）
+  ///
+  /// 读取备份路径（[CrashLogService.getBackupPath]，对应原版 AppConfig.backupPath），
+  /// 无则选择目录并持久化；经 [BookApi.backup] 真实落盘，提示备份文件路径。
   Future<void> _doBackup(BuildContext context) async {
     setState(() => _backupLoading = true);
     try {
       final api = context.read<BookApi>();
-      final backup = BackupService(api);
-      final data = await backup.fullBackup();
+      final crashLog = CrashLogService.instance;
+      var dirPath = await crashLog.getBackupPath();
+      if (dirPath == null || dirPath.isEmpty) {
+        final picked = await FilePicker.platform.getDirectoryPath();
+        if (picked == null) return; // 用户取消选择
+        dirPath = picked;
+        await crashLog.setBackupPath(dirPath);
+      }
+      final filePath = await api.backup(dirPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${AppStrings.backupSuccess}, data length: ${data.length}'),
-          ),
+          SnackBar(content: Text('${AppStrings.backupSuccess}：$filePath')),
         );
       }
     } catch (e) {
@@ -260,45 +293,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// 本地恢复（对标原版 BackupConfigFragment.restoreFromLocal）
+  ///
+  /// 选择备份文件后经 [BookApi.restore] 全量恢复（书源/RSS 源/书籍/替换规则/HTTP TTS），
+  /// 并刷新书架。
   Future<void> _doRestore(BuildContext context) async {
     setState(() => _restoreLoading = true);
     final api = context.read<BookApi>();
     try {
-      final controller = TextEditingController();
-      final json = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(AppStrings.restoreData),
-          content: TextField(
-            controller: controller,
-            maxLines: 5,
-            decoration: InputDecoration(
-              hintText: AppStrings.pasteBackupJson,
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppStrings.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text),
-              child: Text(AppStrings.restore),
-            ),
-          ],
-        ),
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json', 'zip'],
       );
+      final backupPath = result?.files.single.path;
+      if (backupPath == null) return; // 用户取消选择
 
-      if (json == null || json.isEmpty) return;
-
-      final backup = BackupService(api);
-      final count = await backup.restoreSourcesFromBackup(json);
+      await api.restore(backupPath);
       if (context.mounted) {
         context.read<BookshelfProvider>().loadBooks();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppStrings.restoreSuccess}, $count sources')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(AppStrings.restoreSuccess)));
       }
     } catch (e) {
       if (context.mounted) {
@@ -308,6 +323,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } finally {
       if (mounted) setState(() => _restoreLoading = false);
+    }
+  }
+
+  /// 导出应用日志（对标原版 BackupConfigFragment menu_log）
+  ///
+  /// 经 [CrashLogService.exportLogsToFile] 聚合日志为临时文件，调用系统分享。
+  Future<void> _exportLogs() async {
+    try {
+      final path = await CrashLogService.instance.exportLogsToFile();
+      if (!mounted) return;
+      if (path == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('暂无可导出的日志')));
+        return;
+      }
+      await Share.shareXFiles([XFile(path)], subject: 'Legado 应用日志');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导出日志失败: $e')));
+      }
     }
   }
 }

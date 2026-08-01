@@ -551,6 +551,20 @@ String mapApiError(Object e) {
 > 背景图）按「禁止新增功能」原则 + design_system M3 统一 ColorScheme Token 全部跳过。补充 theme_provider 单测
 > （13）+ theme_config widget 测试（3）+ settings 主题切换测试（1）+ settings_service fontScale 测试（3）。全量 980 测试通过。
 
+> **4.6 实施决议（本地备份/恢复真实落盘 + 缓存清理确认 + 延后项占位）**：核心缺口为 settings_screen
+> 本地备份/恢复未接入 Rust 契约——`_doBackup` 仅 `BackupService.fullBackup()` 生成内存 JSON 显示长度（未落盘），
+> `_doRestore` 仅粘贴 JSON 恢复书源。调研确认 `RustApi.backup(dirPath)`（收集 books/bookmarks/sources/
+> rssSources/replaceRules/httpTts 写 `legado_backup_<时间戳>.json`）与 `restore(backupPath)`（全量回写）
+> 已真实实现，备份路径持久化亦已有（`CrashLogService.getBackupPath/setBackupPath`，对应原版 `AppConfig.backupPath`），
+> 故备份/恢复**由内存模拟切换为真实 BookApi 落盘**：①「备份」读取备份路径（无则 `FilePicker.getDirectoryPath`
+> 选目录并持久化）→ `api.backup(dirPath)` 提示备份文件路径；②「恢复」`FilePicker.pickFiles`（json/zip）→
+> `api.restore(backupPath)` 全量恢复 + 刷新书架。缓存管理（`CacheService` + `cache_settings_screen`：统计/
+> 自动过期/清理）经确认已完备（otherSettings 入口 + 路由已接线），本次无需改动。原版 `BackupConfigFragment` 的
+> **恢复忽略项（restoreIgnore）/导入旧版数据（importOldData）/日志菜单（menu_log）**列为延后项，不修改 Rust 契约：
+> 备份恢复弹窗为「恢复忽略项」「导入旧版数据」各增加禁用 ListTile（副标题「后续版本支持」）占位；设置页底部新增
+> 「导出日志」入口，经 `CrashLogService.exportLogsToFile`（聚合内存/崩溃/消息日志为临时文件）+ `share_plus` 系统分享。
+> 移除 settings_screen 对 `BackupService` 的依赖（`BackupService` 本身保留，source_provider 与单测仍用）。
+
 ### Phase 5：规则编辑器 + 收尾（第 10–12 周）
 
 | 任务 | 产出 | 验收标准 |

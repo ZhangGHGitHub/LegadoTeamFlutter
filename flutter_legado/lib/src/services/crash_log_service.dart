@@ -483,6 +483,67 @@ class CrashLogService {
     _memoryLogs.clear();
   }
 
+  /// 导出应用日志为可分享的临时文件，返回文件路径
+  ///
+  /// 聚合内存日志、崩溃日志与消息日志，写入临时目录单一文本文件，
+  /// 便于经系统分享诊断。对应 Android 原版日志分享（`menu_log`）。
+  /// 无任何日志内容时返回 null。
+  Future<String?> exportLogsToFile() async {
+    final buffer = StringBuffer()
+      ..writeln('===== Legado 应用日志 =====')
+      ..writeln('导出时间: ${_formatTime(DateTime.now())}')
+      ..writeln();
+
+    var hasContent = false;
+
+    // 内存日志（最新在前）
+    if (_memoryLogs.isNotEmpty) {
+      hasContent = true;
+      buffer.writeln('----- 内存日志（最新 ${_memoryLogs.length} 条）-----');
+      for (final entry in _memoryLogs) {
+        final time =
+            _formatTime(DateTime.fromMillisecondsSinceEpoch(entry.timestamp));
+        buffer.writeln('[$time] ${entry.message}');
+        if (entry.error != null) {
+          buffer.writeln('  异常: ${entry.error}');
+        }
+      }
+      buffer.writeln();
+    }
+
+    // 崩溃日志文件
+    final crashFile = _crashLogFile;
+    if (crashFile != null && crashFile.existsSync()) {
+      final content = crashFile.readAsStringSync();
+      if (content.isNotEmpty) {
+        hasContent = true;
+        buffer
+          ..writeln(content)
+          ..writeln();
+      }
+    }
+
+    // 消息日志文件
+    final msgFile = _messageLogFile;
+    if (msgFile != null && msgFile.existsSync()) {
+      final content = msgFile.readAsStringSync();
+      if (content.isNotEmpty) {
+        hasContent = true;
+        buffer
+          ..writeln('----- 消息日志 -----')
+          ..writeln(content);
+      }
+    }
+
+    if (!hasContent) return null;
+
+    final dir = await getTemporaryDirectory();
+    final fileName = 'legado_logs_${_formatTimeForFileName(DateTime.now())}.txt';
+    final file = File('${dir.path}/$fileName');
+    await file.writeAsString(buffer.toString());
+    return file.path;
+  }
+
   // ===== HTTP 日志（对应 Android 原版 AppConfig.recordHttpLog） =====
 
   /// 记录 HTTP 请求日志

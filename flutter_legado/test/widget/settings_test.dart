@@ -109,7 +109,7 @@ void main() {
       expect(find.text('深色'), findsOneWidget);
     });
 
-    testWidgets('点击备份恢复弹出底部弹窗', (tester) async {
+    testWidgets('点击备份恢复弹出底部弹窗（含延后项占位）', (tester) async {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
@@ -120,6 +120,22 @@ void main() {
       expect(find.text('备份数据'), findsOneWidget);
       expect(find.text('恢复数据'), findsOneWidget);
       expect(find.text('WebDAV 同步'), findsOneWidget);
+
+      // 延后项占位（禁用，副标题「后续版本支持」）
+      expect(find.text('恢复忽略项'), findsOneWidget);
+      expect(find.text('导入旧版数据'), findsOneWidget);
+      expect(find.text('后续版本支持'), findsNWidgets(2));
+    });
+
+    testWidgets('滚动可见导出日志入口', (tester) async {
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(find.text('导出日志'), 100);
+      await tester.pumpAndSettle();
+
+      expect(find.text('导出日志'), findsOneWidget);
+      expect(find.text('分享应用日志文件用于问题诊断'), findsOneWidget);
     });
   });
 
