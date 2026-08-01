@@ -96,7 +96,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _wasLoading = state.isLoading;
   }
 
-  /// 预加载当前章节的前后各 1 章内容，提升翻页阅读体验（静默失败）
+  /// 预加载当前章节的前后各 2 章内容，提升翻页阅读体验（静默失败）
+  ///
+  /// 对齐计划 Phase 2.7：前后各 2 章的 API 调用编排，实现翻页无等待感。
+  /// 此处仅决定「何时调用 getChapterContent」，文本解析/净化/替换由 Rust 内部完成。
   void _preloadAdjacentChapters(ReaderState state) {
     final book = state.currentBook;
     final chapters = state.chapters;
@@ -105,17 +108,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     final api = context.read<BookApi>();
     final index = state.currentChapterIndex;
 
-    // 预加载下一章
-    if (index + 1 < chapters.length) {
-      unawaited(
-        api.getChapterContent(book.bookUrl, index + 1).catchError((_) => ''),
-      );
-    }
-    // 预加载上一章
-    if (index > 0) {
-      unawaited(
-        api.getChapterContent(book.bookUrl, index - 1).catchError((_) => ''),
-      );
+    // 前后各预加载 2 章（按距离由近及远，越靠近当前章越优先）
+    for (var offset = 1; offset <= 2; offset++) {
+      final next = index + offset;
+      if (next < chapters.length) {
+        unawaited(
+          api.getChapterContent(book.bookUrl, next).catchError((_) => ''),
+        );
+      }
+      final prev = index - offset;
+      if (prev >= 0) {
+        unawaited(
+          api.getChapterContent(book.bookUrl, prev).catchError((_) => ''),
+        );
+      }
     }
   }
 
