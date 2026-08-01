@@ -15,7 +15,6 @@ import 'src/providers/reading_stats_provider.dart';
 import 'src/providers/replace_rule_provider.dart';
 import 'src/providers/rss_provider.dart';
 import 'src/providers/search_provider.dart';
-import 'src/providers/explore_provider.dart';
 import 'src/providers/source_provider.dart';
 import 'src/providers/sync_provider.dart';
 import 'src/routes.dart';
@@ -94,7 +93,7 @@ void main() {
             // 阅读器已迁移至 Riverpod（ReaderNotifier），见 providers/reader/
             ChangeNotifierProvider(create: (_) => SearchProvider(rustApi)),
             ChangeNotifierProvider(create: (_) => SourceProvider(rustApi)),
-            ChangeNotifierProvider(create: (_) => ExploreProvider(rustApi)),
+            // 发现页已迁移至 Riverpod（ExploreNotifier/ExploreShowNotifier），见 providers/explore/
             ChangeNotifierProvider(create: (_) => RssProvider(rustApi)),
             ChangeNotifierProvider(create: (_) => ReadingStatsProvider(rustApi)),
             ChangeNotifierProvider(create: (_) => SyncProvider(rustApi)),

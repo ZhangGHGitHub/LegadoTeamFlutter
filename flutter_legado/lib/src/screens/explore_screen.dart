@@ -12,39 +12,31 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
-import '../providers/explore_provider.dart';
+import '../providers/explore/explore_notifier.dart';
 import '../routes.dart';
 import '../screens/explore_show_screen.dart';
-import '../services/book_api.dart';
 import '../utils/responsive.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
-class ExploreScreen extends StatefulWidget {
+class ExploreScreen extends ConsumerStatefulWidget {
   const ExploreScreen({super.key});
 
   @override
-  State<ExploreScreen> createState() => _ExploreScreenState();
+  ConsumerState<ExploreScreen> createState() => _ExploreScreenState();
 }
 
-class _ExploreScreenState extends State<ExploreScreen> {
+class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   final _searchController = TextEditingController();
 
   /// 搜索防抖计时器（300ms，对标 Android SearchView onQueryTextChange）
   Timer? _debounceTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ExploreProvider>().loadBookSources();
-    });
-  }
 
   @override
   void dispose() {
@@ -58,14 +50,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       if (mounted) {
-        context.read<ExploreProvider>().setSearchKeyword(keyword);
+        ref.read(exploreNotifierProvider.notifier).setSearchKeyword(keyword);
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ExploreProvider>();
+    final state = ref.watch(exploreNotifierProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -76,7 +68,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           IconButton(
             icon: const Icon(Icons.grid_view),
             tooltip: '筛选',
-            onPressed: () => provider.refreshBookSources(),
+            onPressed: () => ref.read(exploreNotifierProvider.notifier).refresh(),
           ),
         ],
         // 安卓端 fragment_explore.xml: TitleBar 内嵌 view_search 搜索框
@@ -102,7 +94,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           icon: const Icon(Icons.clear, size: 18),
                           onPressed: () {
                             _searchController.clear();
-                            provider.clearSearch();
+                            ref
+                                .read(exploreNotifierProvider.notifier)
+                                .clearSearch();
                           },
                         )
                       : null,
@@ -131,23 +125,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
           ),
         ),
       ),
-      body: _buildBody(provider),
+      body: _buildBody(state),
     );
   }
 
-  Widget _buildBody(ExploreProvider provider) {
-    if (provider.loading) {
+  Widget _buildBody(ExploreState state) {
+    if (state.isLoading) {
       return const LoadingIndicator();
     }
 
-    if (provider.error != null) {
+    if (state.error != null) {
       return ErrorView(
-        message: provider.error!,
-        onRetry: () => provider.loadBookSources(),
+        message: state.error!,
+        onRetry: () => ref.read(exploreNotifierProvider.notifier).refresh(),
       );
     }
 
-    final bookSources = provider.filteredBookSources;
+    final bookSources = state.filteredBookSources;
     if (bookSources.isEmpty) {
       // 安卓原版：纯灰字居中「当前没有发现源！」
       return const EmptyState(
@@ -165,28 +159,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: provider.groups.length + 1, // +1 为"全部"选项
+            itemCount: state.groups.length + 1, // +1 为"全部"选项
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Padding(
                   padding: const EdgeInsets.all(8),
                   child: FilterChip(
                     label: const Text('全部'),
-                    selected: provider.selectedGroup.isEmpty,
+                    selected: state.selectedGroup.isEmpty,
                     onSelected: (_) {
-                      provider.selectGroup('');
+                      ref.read(exploreNotifierProvider.notifier).selectGroup('');
                     },
                   ),
                 );
               } else {
-                final group = provider.groups.elementAt(index - 1);
+                final group = state.groups.elementAt(index - 1);
                 return Padding(
                   padding: const EdgeInsets.all(8),
                   child: FilterChip(
                     label: Text(group),
-                    selected: provider.selectedGroup == group,
+                    selected: state.selectedGroup == group,
                     onSelected: (_) {
-                      provider.selectGroup(group);
+                      ref
+                          .read(exploreNotifierProvider.notifier)
+                          .selectGroup(group);
                     },
                   ),
                 );
@@ -194,23 +190,24 @@ class _ExploreScreenState extends State<ExploreScreen> {
             },
           ),
         ),
-        Expanded(child: _buildSourceList(provider)),
+        Expanded(child: _buildSourceList(state)),
       ],
     );
   }
 
-  Widget _buildSourceList(ExploreProvider provider) {
+  Widget _buildSourceList(ExploreState state) {
     // 响应式处理：安卓原版 ExploreFragment 使用 LinearLayoutManager（竖向列表）
     // 保持列表布局确保安卓保真，平板宽屏时增加水平内边距提升可读性
     return LayoutBuilder(
       builder: (context, constraints) {
         final isTablet = constraints.maxWidth >= Responsive.compactMax;
         final horizontalPadding = isTablet ? 24.0 : 8.0;
+        final sources = state.filteredBookSources;
         return ListView.builder(
           padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 4),
-          itemCount: provider.filteredBookSources.length,
+          itemCount: sources.length,
           itemBuilder: (context, index) {
-            final source = provider.filteredBookSources[index];
+            final source = sources[index];
             return _SourceItem(
               source: source,
               // 对标 Android editSource(sourceUrl) → BookSourceEditActivity
@@ -221,7 +218,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   arguments: source,
                 );
               },
-              onUninstall: () => _onUninstall(provider, source.bookSourceUrl),
+              onUninstall: () => _onUninstall(source.bookSourceUrl),
               // 对标 Android openExplore(sourceUrl, title, exploreUrl) → ExploreShowActivity
               onCategoryTap: (categoryName, categoryUrl) {
                 _openExploreShow(source, categoryName, categoryUrl);
@@ -246,8 +243,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
-  Future<void> _onUninstall(ExploreProvider provider, String sourceUrl) async {
-    final ok = await provider.uninstallSource(sourceUrl);
+  Future<void> _onUninstall(String sourceUrl) async {
+    final ok =
+        await ref.read(exploreNotifierProvider.notifier).uninstallSource(sourceUrl);
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -258,11 +256,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
       );
     }
   }
-
 }
 
 /// 书源列表项（参考安卓端 item_find_book.xml 分组标题行样式）
-class _SourceItem extends StatefulWidget {
+class _SourceItem extends ConsumerStatefulWidget {
   final BookSource source;
   final VoidCallback onEdit;
   final VoidCallback onUninstall;
@@ -278,18 +275,12 @@ class _SourceItem extends StatefulWidget {
   });
 
   @override
-  State<_SourceItem> createState() => _SourceItemState();
+  ConsumerState<_SourceItem> createState() => _SourceItemState();
 }
 
-class _SourceItemState extends State<_SourceItem> {
+class _SourceItemState extends ConsumerState<_SourceItem> {
   /// 是否展开分类列表
   bool _expanded = false;
-
-  /// 解析后的分类列表
-  List<ExploreCategory>? _categories;
-
-  /// 是否正在加载分类
-  bool _loadingCategories = false;
 
   @override
   Widget build(BuildContext context) {
@@ -403,48 +394,20 @@ class _SourceItemState extends State<_SourceItem> {
     setState(() {
       _expanded = !_expanded;
     });
-    // 首次展开时加载分类
-    if (_expanded && _categories == null) {
-      _loadCategories();
-    }
-  }
-
-  /// 加载分类列表（通过 Rust FFI 解析 exploreUrl）
-  Future<void> _loadCategories() async {
-    final exploreUrl = widget.source.exploreUrl;
-    if (exploreUrl == null || exploreUrl.trim().isEmpty) {
-      setState(() {
-        _categories = [];
-      });
-      return;
-    }
-
-    setState(() {
-      _loadingCategories = true;
-    });
-
-    try {
-      final api = context.read<BookApi>();
-      final categories = await api.exploreParseUrl(exploreUrl);
-      if (mounted) {
-        setState(() {
-          _categories = categories;
-          _loadingCategories = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _categories = [];
-          _loadingCategories = false;
-        });
-      }
+    // 展开时加载分类（Notifier 内部已做缓存/去重，幂等）
+    if (_expanded) {
+      ref.read(exploreNotifierProvider.notifier).loadCategories(widget.source);
     }
   }
 
   /// 构建分类标签列表（对标 Android ExploreAdapter 中的分类 FlowLayout）
   Widget _buildCategoryList(ThemeData theme, ColorScheme colorScheme) {
-    if (_loadingCategories) {
+    final sourceUrl = widget.source.bookSourceUrl;
+    // 通过 select 精准订阅该书源的分类加载状态，避免无关重建
+    final loading = ref.watch(exploreNotifierProvider.select(
+      (s) => s.isLoadingCategories(sourceUrl),
+    ));
+    if (loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: SizedBox(
@@ -460,7 +423,10 @@ class _SourceItemState extends State<_SourceItem> {
       );
     }
 
-    final categories = _categories ?? [];
+    final categories = ref.watch(exploreNotifierProvider.select(
+          (s) => s.categoriesFor(sourceUrl),
+        )) ??
+        [];
     if (categories.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

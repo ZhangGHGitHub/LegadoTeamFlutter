@@ -9,169 +9,148 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../providers/explore_show_provider.dart';
+import '../providers/explore/explore_show_notifier.dart';
 import '../routes.dart';
-import '../services/book_api.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
-/// 发现分类书籍浏览页路由参数
-class ExploreShowArgs {
-  /// 书源对象
-  final BookSource source;
-
-  /// 分类名称
-  final String categoryName;
-
-  /// 分类 URL
-  final String categoryUrl;
-
-  const ExploreShowArgs({
-    required this.source,
-    required this.categoryName,
-    required this.categoryUrl,
-  });
-}
+// 重新导出路由参数，供 routes.dart 通过本文件引用 ExploreShowArgs
+export '../providers/explore/explore_show_notifier.dart' show ExploreShowArgs;
 
 /// 发现分类书籍浏览页
-class ExploreShowScreen extends StatefulWidget {
+class ExploreShowScreen extends ConsumerStatefulWidget {
   /// 路由参数（通过 Navigator.pushNamed 传入）
   final ExploreShowArgs? args;
 
   const ExploreShowScreen({super.key, this.args});
 
   @override
-  State<ExploreShowScreen> createState() => _ExploreShowScreenState();
+  ConsumerState<ExploreShowScreen> createState() => _ExploreShowScreenState();
 }
 
-class _ExploreShowScreenState extends State<ExploreShowScreen> {
+class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
   final _scrollController = ScrollController();
-  late final ExploreShowProvider _provider;
 
   @override
   void initState() {
     super.initState();
-    // 创建独立的 provider 实例（每个分类页面独立状态）
-    _provider = ExploreShowProvider(context.read<BookApi>());
-
     // 监听滚动，触底加载更多
     _scrollController.addListener(_onScroll);
-
-    // 初始化数据
-    final args = widget.args;
-    if (args != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _provider.initData(
-          source: args.source,
-          categoryName: args.categoryName,
-          categoryUrl: args.categoryUrl,
-        );
-      });
-    }
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
-    _provider.dispose();
     super.dispose();
   }
 
   /// 滚动监听：触底加载更多（对标 Android scrollToBottom）
   void _onScroll() {
+    final args = widget.args;
+    if (args == null) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      _provider.loadMore();
+      ref.read(exploreShowNotifierProvider(args).notifier).loadMore();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider.value(
-      value: _provider,
-      child: Scaffold(
-        appBar: AppBar(
-          // 对标 Android: binding.titleBar.title = intent.getStringExtra("exploreName")
-          title: Consumer<ExploreShowProvider>(
-            builder: (context, provider, _) => Text(provider.title),
-          ),
+    final args = widget.args;
+    // 参数缺失兜底（正常路径由 routes.dart 保证非空）
+    if (args == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('')),
+        body: const EmptyState(
+          icon: Icons.explore_outlined,
+          title: '参数错误',
+          subtitle: '缺少发现分类参数',
         ),
-        body: _buildBody(),
+      );
+    }
+
+    // family + autoDispose：相同 args 命中同一 Notifier，页面销毁自动释放
+    final state = ref.watch(exploreShowNotifierProvider(args));
+
+    return Scaffold(
+      appBar: AppBar(
+        // 对标 Android: binding.titleBar.title = intent.getStringExtra("exploreName")
+        title: Text(state.title),
+      ),
+      body: _buildBody(args, state),
+    );
+  }
+
+  Widget _buildBody(ExploreShowArgs args, ExploreShowState state) {
+    // 首次加载且无数据时显示 loading
+    if (state.isLoading && state.books.isEmpty) {
+      return const LoadingIndicator();
+    }
+
+    // 错误且无数据
+    if (state.error != null && state.books.isEmpty) {
+      return ErrorView(
+        message: state.error!,
+        onRetry: () =>
+            ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+      );
+    }
+
+    // 空列表
+    if (state.books.isEmpty) {
+      return const EmptyState(
+        icon: Icons.explore_outlined,
+        title: '暂无书籍',
+        subtitle: '该分类下没有找到书籍',
+      );
+    }
+
+    // 书籍列表（支持下拉刷新）
+    return RefreshIndicator(
+      onRefresh: () =>
+          ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        // +1 用于底部加载指示器
+        itemCount: state.books.length + 1,
+        itemBuilder: (context, index) {
+          // 底部加载指示器
+          if (index == state.books.length) {
+            return _buildLoadMoreIndicator(args, state);
+          }
+
+          final book = state.books[index];
+          // 稳定 ValueKey（bookUrl）+ RepaintBoundary 隔离列表项重绘区域
+          return RepaintBoundary(
+            child: _BookItem(
+              key: ValueKey(book.bookUrl),
+              book: book,
+              onTap: () => _showBookInfo(book),
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildBody() {
-    return Consumer<ExploreShowProvider>(
-      builder: (context, provider, _) {
-        // 首次加载且无数据时显示 loading
-        if (provider.loading && provider.books.isEmpty) {
-          return const LoadingIndicator();
-        }
-
-        // 错误且无数据
-        if (provider.error != null && provider.books.isEmpty) {
-          return ErrorView(
-            message: provider.error!,
-            onRetry: () => provider.refresh(),
-          );
-        }
-
-        // 空列表
-        if (provider.books.isEmpty) {
-          return const EmptyState(
-            icon: Icons.explore_outlined,
-            title: '暂无书籍',
-            subtitle: '该分类下没有找到书籍',
-          );
-        }
-
-        // 书籍列表（支持下拉刷新）
-        return RefreshIndicator(
-          onRefresh: () => provider.refresh(),
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            // +1 用于底部加载指示器
-            itemCount: provider.books.length + 1,
-            itemBuilder: (context, index) {
-              // 底部加载指示器
-              if (index == provider.books.length) {
-                return _buildLoadMoreIndicator(provider);
-              }
-
-              final book = provider.books[index];
-              // 稳定 ValueKey（bookUrl）+ RepaintBoundary 隔离列表项重绘区域
-              return RepaintBoundary(
-                child: _BookItem(
-                  key: ValueKey(book.bookUrl),
-                  book: book,
-                  onTap: () => _showBookInfo(book),
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
   /// 底部加载指示器（对标 Android LoadMoreView）
-  Widget _buildLoadMoreIndicator(ExploreShowProvider provider) {
-    if (provider.loading) {
+  Widget _buildLoadMoreIndicator(ExploreShowArgs args, ExploreShowState state) {
+    if (state.isLoading) {
       return const Padding(
         padding: EdgeInsets.all(16),
         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
       );
     }
 
-    if (!provider.hasMore) {
+    if (!state.hasMore) {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Center(
@@ -185,12 +164,13 @@ class _ExploreShowScreenState extends State<ExploreShowScreen> {
       );
     }
 
-    if (provider.error != null) {
+    if (state.error != null) {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Center(
           child: TextButton(
-            onPressed: () => provider.loadMore(),
+            onPressed: () =>
+                ref.read(exploreShowNotifierProvider(args).notifier).loadMore(),
             child: const Text('加载失败，点击重试'),
           ),
         ),
