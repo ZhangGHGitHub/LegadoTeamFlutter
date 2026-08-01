@@ -334,6 +334,9 @@ class SettingsService {
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
   static const _keyWebDavRemoteDir = 'sync_webdav_remote_dir';
+  static const _keyWebDavDeviceName = 'sync_webdav_device_name';
+  static const _keySyncBookProgress = 'sync_book_progress';
+  static const _keySyncBookProgressPlus = 'sync_book_progress_plus';
   static const _keyAutoSync = 'sync_auto';
   static const _keyLastSyncTime = 'sync_last_time';
 
@@ -410,6 +413,63 @@ class SettingsService {
       await prefs.setString(_keyWebDavRemoteDir, value);
     } catch (e) {
       debugPrint('SettingsService.setWebDavRemoteDir 异常: $e');
+    }
+  }
+
+  Future<String> getWebDavDeviceName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyWebDavDeviceName) ?? '';
+    } catch (e) {
+      debugPrint('SettingsService.getWebDavDeviceName 异常: $e');
+      return '';
+    }
+  }
+
+  Future<void> setWebDavDeviceName(String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyWebDavDeviceName, value);
+    } catch (e) {
+      debugPrint('SettingsService.setWebDavDeviceName 异常: $e');
+    }
+  }
+
+  Future<bool> getSyncBookProgress() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keySyncBookProgress) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getSyncBookProgress 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> setSyncBookProgress(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keySyncBookProgress, value);
+    } catch (e) {
+      debugPrint('SettingsService.setSyncBookProgress 异常: $e');
+    }
+  }
+
+  Future<bool> getSyncBookProgressPlus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keySyncBookProgressPlus) ?? false;
+    } catch (e) {
+      debugPrint('SettingsService.getSyncBookProgressPlus 异常: $e');
+      return false;
+    }
+  }
+
+  Future<void> setSyncBookProgressPlus(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keySyncBookProgressPlus, value);
+    } catch (e) {
+      debugPrint('SettingsService.setSyncBookProgressPlus 异常: $e');
     }
   }
 

@@ -16,6 +16,20 @@ void main() {
     provider = SyncProvider(mockApi);
   });
 
+  /// 桩入真实同步所需的 BookApi 调用
+  void stubSyncApis({String remoteSources = '[]'}) {
+    when(() => mockApi.getBooks()).thenAnswer((_) async => [
+          const Book(bookUrl: 'b1', name: '书1'),
+        ]);
+    when(() => mockApi.getBookSources()).thenAnswer((_) async => [
+          const BookSource(bookSourceUrl: 'https://a.com', bookSourceName: '源A'),
+        ]);
+    when(() => mockApi.webdavFullSync(any(), any(), any())).thenAnswer(
+      (_) async => '{"books":"[]","sources":$remoteSources}',
+    );
+    when(() => mockApi.importBookSources(any())).thenAnswer((_) async => 1);
+  }
+
   group('SyncProvider 初始状态', () {
     test('初始状态为 idle', () {
       expect(provider.status, equals(SyncStatus.idle));
@@ -38,6 +52,12 @@ void main() {
       expect(provider.webDavUsername, equals(''));
       expect(provider.webDavPassword, equals(''));
       expect(provider.remoteDir, equals('/legado/'));
+      expect(provider.deviceName, equals(''));
+    });
+
+    test('初始同步书籍进度默认开启、增强默认关闭', () {
+      expect(provider.syncBookProgress, isTrue);
+      expect(provider.syncBookProgressPlus, isFalse);
     });
 
     test('初始 isConfigured 为 false', () {
@@ -50,18 +70,20 @@ void main() {
   });
 
   group('SyncProvider 配置管理', () {
-    test('saveConfig 保存 WebDAV 配置', () async {
+    test('saveConfig 保存 WebDAV 配置（含设备名）', () async {
       await provider.saveConfig(
         'https://dav.example.com',
         'user@test.com',
         'pass123',
         '/backup/',
+        deviceName: 'my-phone',
       );
 
       expect(provider.webDavUrl, equals('https://dav.example.com'));
       expect(provider.webDavUsername, equals('user@test.com'));
       expect(provider.webDavPassword, equals('pass123'));
       expect(provider.remoteDir, equals('/backup/'));
+      expect(provider.deviceName, equals('my-phone'));
       expect(provider.isConfigured, isTrue);
     });
 
@@ -76,10 +98,12 @@ void main() {
         '  user  ',
         'pass',
         '  /dir/  ',
+        deviceName: '  dev  ',
       );
       expect(provider.webDavUrl, equals('https://dav.com'));
       expect(provider.webDavUsername, equals('user'));
       expect(provider.remoteDir, equals('/dir/'));
+      expect(provider.deviceName, equals('dev'));
     });
 
     test('saveConfig 触发通知', () async {
@@ -89,13 +113,24 @@ void main() {
       expect(notified, isTrue);
     });
 
-    test('loadConfig 从 SharedPreferences 加载', () async {
+    test('buildConfigJson 输出 Rust WebDavConfig 结构', () async {
+      await provider.saveConfig('https://dav.com', 'user', 'pass', '/dir/');
+      expect(
+        provider.buildConfigJson(),
+        equals('{"url":"https://dav.com","username":"user","password":"pass"}'),
+      );
+    });
+
+    test('loadConfig 从 SharedPreferences 加载（含新字段）', () async {
       final now = DateTime.now();
       SharedPreferences.setMockInitialValues({
         'sync_webdav_url': 'https://loaded.com',
         'sync_webdav_username': 'loaded_user',
         'sync_webdav_password': 'loaded_pass',
         'sync_webdav_remote_dir': '/loaded/',
+        'sync_webdav_device_name': 'loaded_dev',
+        'sync_book_progress': false,
+        'sync_book_progress_plus': true,
         'sync_auto': true,
         'sync_last_time': now.millisecondsSinceEpoch,
       });
@@ -106,6 +141,9 @@ void main() {
       expect(p.webDavUsername, equals('loaded_user'));
       expect(p.webDavPassword, equals('loaded_pass'));
       expect(p.remoteDir, equals('/loaded/'));
+      expect(p.deviceName, equals('loaded_dev'));
+      expect(p.syncBookProgress, isFalse);
+      expect(p.syncBookProgressPlus, isTrue);
       expect(p.autoSync, isTrue);
       expect(p.lastSyncTime, isNotNull);
     });
@@ -117,92 +155,87 @@ void main() {
       expect(notified, isTrue);
     });
 
-    test('toggleAutoSync 开启自动同步', () async {
+    test('toggleAutoSync 开启/关闭自动同步', () async {
       await provider.toggleAutoSync(true);
       expect(provider.autoSync, isTrue);
-    });
-
-    test('toggleAutoSync 关闭自动同步', () async {
-      await provider.toggleAutoSync(true);
       await provider.toggleAutoSync(false);
       expect(provider.autoSync, isFalse);
     });
 
-    test('toggleAutoSync 触发通知', () async {
-      var notified = false;
-      provider.addListener(() => notified = true);
-      await provider.toggleAutoSync(true);
-      expect(notified, isTrue);
+    test('setSyncBookProgress 持久化开关', () async {
+      await provider.setSyncBookProgress(false);
+      expect(provider.syncBookProgress, isFalse);
+    });
+
+    test('setSyncBookProgressPlus 持久化开关', () async {
+      await provider.setSyncBookProgressPlus(true);
+      expect(provider.syncBookProgressPlus, isTrue);
     });
   });
 
-  group('SyncProvider 同步操作（mock API）', () {
-    test('syncUpload 未配置时设置错误', () async {
-      await provider.syncUpload();
+  group('SyncProvider 真实同步操作', () {
+    test('backupToWebDav 未配置时设置错误', () async {
+      await provider.backupToWebDav();
       expect(provider.status, equals(SyncStatus.error));
       expect(provider.error, equals('请先配置 WebDAV 服务器信息'));
     });
 
-    test('syncDownload 未配置时设置错误', () async {
-      await provider.syncDownload();
+    test('restoreFromWebDav 未配置时返回提示', () async {
+      final msg = await provider.restoreFromWebDav();
       expect(provider.status, equals(SyncStatus.error));
-      expect(provider.error, equals('请先配置 WebDAV 服务器信息'));
+      expect(msg, equals('请先配置 WebDAV 服务器信息'));
     });
 
-    test('syncMerge 未配置时设置错误', () async {
-      await provider.syncMerge();
-      expect(provider.status, equals(SyncStatus.error));
-      expect(provider.error, equals('请先配置 WebDAV 服务器信息'));
-    });
-
-    test('syncUpload 配置后成功上传', () async {
-      when(() => mockApi.getBooks()).thenAnswer((_) async => [
-            const Book(bookUrl: 'b1', name: '书1'),
-          ]);
+    test('backupToWebDav 配置后调用 webdavFullSync 成功', () async {
+      stubSyncApis();
       await provider.saveConfig('https://dav.com', 'user', 'pass', '/dir/');
 
-      await provider.syncUpload();
+      await provider.backupToWebDav();
 
       expect(provider.status, equals(SyncStatus.success));
       expect(provider.error, isNull);
       expect(provider.lastSyncTime, isNotNull);
+      verify(() => mockApi.webdavFullSync(any(), any(), any())).called(1);
     });
 
-    test('syncUpload 失败时设置错误', () async {
+    test('backupToWebDav 失败时设置错误', () async {
       when(() => mockApi.getBooks()).thenThrow(Exception('网络错误'));
       await provider.saveConfig('https://dav.com', 'user', 'pass', '/dir/');
 
-      await provider.syncUpload();
+      await provider.backupToWebDav();
 
       expect(provider.status, equals(SyncStatus.error));
-      expect(provider.error, contains('上传失败'));
+      expect(provider.error, contains('备份失败'));
     });
 
-    test('syncDownload 配置后成功下载', () async {
+    test('restoreFromWebDav 回写远端书源', () async {
+      stubSyncApis(remoteSources: '[{"bookSourceUrl":"https://a.com"}]');
       await provider.saveConfig('https://dav.com', 'user', 'pass', '/dir/');
 
-      await provider.syncDownload();
+      final msg = await provider.restoreFromWebDav();
 
       expect(provider.status, equals(SyncStatus.success));
-      expect(provider.error, isNull);
-      expect(provider.lastSyncTime, isNotNull);
+      expect(msg, contains('回写 1 条书源'));
+      verify(() => mockApi.importBookSources(any())).called(1);
     });
 
-    test('syncMerge 配置后成功合并', () async {
+    test('restoreFromWebDav 远端书源为空时不回写', () async {
+      stubSyncApis(remoteSources: '[]');
       await provider.saveConfig('https://dav.com', 'user', 'pass', '/dir/');
 
-      await provider.syncMerge();
+      final msg = await provider.restoreFromWebDav();
 
       expect(provider.status, equals(SyncStatus.success));
-      expect(provider.lastSyncTime, isNotNull);
+      expect(msg, contains('回写 0 条书源'));
+      verifyNever(() => mockApi.importBookSources(any()));
     });
   });
 
   group('SyncProvider lastSyncTimeLabel', () {
     test('刚刚同步显示"刚刚"', () async {
-      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
+      stubSyncApis();
       await provider.saveConfig('https://dav.com', 'user', 'pass', '/dir/');
-      await provider.syncUpload();
+      await provider.backupToWebDav();
 
       expect(provider.lastSyncTimeLabel, equals('刚刚'));
     });
