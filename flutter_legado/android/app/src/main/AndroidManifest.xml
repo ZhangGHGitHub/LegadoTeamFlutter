@@ -20,6 +20,10 @@
     <!-- 唤醒锁（阅读时常亮） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- 相机权限（扫描二维码导入书源） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:label="阅读"
         android:name="${applicationName}"

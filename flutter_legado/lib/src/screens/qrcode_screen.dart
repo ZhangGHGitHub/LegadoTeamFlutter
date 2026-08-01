@@ -1,16 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 /// 扫码结果类型
 enum _ScanResultType { legadoUrl, httpUrl, sourceJson, text }
 
 /// 二维码扫描页面
 ///
-/// 当前构建未包含相机扫码组件（mobile_scanner），桌面端提供手动输入模式；
+/// 移动端（Android/iOS）启用相机实时扫码（mobile_scanner）；
+/// 桌面端（Windows/Linux）与测试环境降级为手动输入模式。
 /// 扫码/输入结果会被解析为：legado 协议链接 / HTTP 订阅 URL / 书源 JSON / 口令。
-/// 确认后可将内容返回给调用方（如关联导入页）。
+/// 确认后可将内容返回给调用方（如关联导入页 / 书源管理扫码导入）。
 class QrcodeScreen extends StatefulWidget {
   const QrcodeScreen({super.key});
 
@@ -22,10 +26,40 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   final _inputController = TextEditingController();
   String? _rawContent;
 
+  /// 是否启用相机扫码（仅移动端，排除 Web/桌面/测试）
+  bool get _cameraSupported =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  late final MobileScannerController? _scannerController;
+
+  /// 是否已处理扫码结果（避免连续扫码重复 pop）
+  bool _handled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scannerController =
+        _cameraSupported ? MobileScannerController(formats: [BarcodeFormat.qrCode]) : null;
+  }
+
   @override
   void dispose() {
     _inputController.dispose();
+    _scannerController?.dispose();
     super.dispose();
+  }
+
+  /// 相机扫码回调：取首个条码原始值，填入输入框并展示识别结果
+  void _onDetect(BarcodeCapture result) {
+    if (_handled) return;
+    final code = result.barcodes.firstOrNull?.rawValue;
+    if (code == null || code.trim().isEmpty) return;
+    _handled = true;
+    _inputController.text = code;
+    setState(() => _rawContent = code.trim());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('扫码成功，请确认后使用')),
+    );
   }
 
   /// 解析内容类型
@@ -111,7 +145,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildCameraPlaceholder(theme),
+          _buildScannerArea(theme),
           const SizedBox(height: 20),
           Text('手动输入', style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
@@ -145,7 +179,26 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
     );
   }
 
-  /// 相机预览占位（未集成 mobile_scanner 时降级提示）
+  /// 扫码区域：移动端为相机实时预览，桌面/测试为降级提示
+  Widget _buildScannerArea(ThemeData theme) {
+    if (_cameraSupported && _scannerController != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          height: 240,
+          child: MobileScanner(
+            controller: _scannerController,
+            onDetect: _onDetect,
+            errorBuilder: (context, error) =>
+                _buildCameraError(theme, error.toString()),
+          ),
+        ),
+      );
+    }
+    return _buildCameraPlaceholder(theme);
+  }
+
+  /// 相机预览占位（桌面端/测试环境降级提示）
   Widget _buildCameraPlaceholder(ThemeData theme) {
     return Container(
       height: 200,
@@ -167,13 +220,39 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            '当前构建未启用相机扫码',
+            '当前平台未启用相机扫码',
             style: theme.textTheme.titleSmall,
           ),
           const SizedBox(height: 4),
           Text(
             '桌面端请使用下方手动输入模式',
             style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 相机错误提示（权限拒绝/无相机等）
+  Widget _buildCameraError(ThemeData theme, String error) {
+    return Container(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.videocam_off, size: 48, color: theme.colorScheme.outline),
+          const SizedBox(height: 12),
+          Text('相机启动失败', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              error,
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),

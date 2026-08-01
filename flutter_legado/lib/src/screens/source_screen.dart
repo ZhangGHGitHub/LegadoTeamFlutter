@@ -1,10 +1,14 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../providers/source_provider.dart';
+import '../routes.dart';
 import '../services/source_import_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -93,11 +97,17 @@ class _SourceScreenState extends State<SourceScreen>
             const PopupMenuItem(
                 value: 'import_url', child: Text('从 URL 导入')),
             const PopupMenuItem(
+                value: 'import_file', child: Text('从文件导入')),
+            const PopupMenuItem(
+                value: 'import_qr', child: Text('扫码导入')),
+            const PopupMenuItem(
                 value: 'import_clipboard', child: Text('从剪贴板导入')),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'export_all', child: Text('导出全部书源')),
             const PopupMenuItem(
                 value: 'export_selected', child: Text('导出选中分组')),
+            const PopupMenuItem(
+                value: 'export_file', child: Text('导出到文件')),
             const PopupMenuDivider(),
             const PopupMenuItem(
                 value: 'batch_mode', child: Text('批量操作')),
@@ -420,6 +430,12 @@ class _SourceScreenState extends State<SourceScreen>
       case 'import_url':
         _showImportUrlDialog(context);
         break;
+      case 'import_file':
+        _importFromFile(context);
+        break;
+      case 'import_qr':
+        _importFromQrCode(context);
+        break;
       case 'import_clipboard':
         _importFromClipboard(context);
         break;
@@ -428,6 +444,9 @@ class _SourceScreenState extends State<SourceScreen>
         break;
       case 'export_selected':
         _exportSelectedGroup(context);
+        break;
+      case 'export_file':
+        _exportAllToFile(context);
         break;
       case 'batch_mode':
         context.read<SourceProvider>().enterBatchMode();
@@ -614,6 +633,78 @@ class _SourceScreenState extends State<SourceScreen>
     }
   }
 
+  /// 从本地文件导入书源（对标 Android menu_import_local，txt/json）
+  Future<void> _importFromFile(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json', 'txt'],
+      );
+      if (picked == null || picked.files.isEmpty) return;
+
+      final path = picked.files.single.path;
+      if (path == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('无法获取文件路径')),
+        );
+        return;
+      }
+
+      if (!context.mounted) return;
+      final provider = context.read<SourceProvider>();
+      final result = await provider.importFromFile(path);
+
+      if (!context.mounted) return;
+      _showImportResult(context, result);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('从文件导入失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// 扫码导入书源（对标 Android menu_import_qr）
+  ///
+  /// 扫码页返回内容后按类型分流：HTTP URL → 远程拉取；书源 JSON → 直接解析；
+  /// legado:// 协议链接 → 提示使用关联导入页（支持多类型）。
+  Future<void> _importFromQrCode(BuildContext context) async {
+    final content = await Navigator.of(context)
+        .pushNamed<String>(AppRoutes.qrcode);
+    if (!context.mounted) return;
+    if (content == null || content.trim().isEmpty) return;
+
+    final trimmed = content.trim();
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      final provider = context.read<SourceProvider>();
+      final result = await provider.importFromUrl(trimmed);
+      if (context.mounted) _showImportResult(context, result);
+      return;
+    }
+
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      final provider = context.read<SourceProvider>();
+      final result = await provider.importFromJson(trimmed);
+      if (context.mounted) _showImportResult(context, result);
+      return;
+    }
+
+    if (trimmed.startsWith('legado://')) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('legado 协议链接请使用「关联导入」页处理')),
+      );
+      return;
+    }
+
+    messenger.showSnackBar(
+      const SnackBar(content: Text('扫码内容不是可识别的书源数据')),
+    );
+  }
+
   void _showImportResult(BuildContext context, ImportResult result) {
     showDialog(
       context: context,
@@ -670,6 +761,44 @@ class _SourceScreenState extends State<SourceScreen>
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('导出失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// 导出全部书源到文件（对标 Android menu_export_selection 的 saveToFile）
+  Future<void> _exportAllToFile(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final provider = context.read<SourceProvider>();
+      final json = await provider.exportAllSources();
+
+      final dir = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择书源导出目录',
+      );
+      if (!context.mounted) return;
+      if (dir == null) {
+        messenger.showSnackBar(const SnackBar(content: Text('未选择导出目录')));
+        return;
+      }
+
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
+      final filePath = '$dir${Platform.pathSeparator}bookSources_$timestamp.json';
+      await File(filePath).writeAsString(json, flush: true);
+
+      if (context.mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('已导出到：$filePath')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出到文件失败：$e')),
         );
       }
     }
