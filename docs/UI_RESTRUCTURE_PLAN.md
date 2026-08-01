@@ -510,6 +510,12 @@ String mapApiError(Object e) {
 > 文件管理/退出）按「禁止新增功能」原则跳过。状态管理暂保持 `provider`（迁移留待 Phase 5.4 统一移除）。
 > 注：其他会话在 `settings_screen` 网络设置中新增的 QUIC/HTTP3 开关已迁移至 `other_settings_screen` 保留。
 
+> **4.2 实施决议（书源排序）**：`source_screen` 列表/搜索/启用/禁用/批量/导入导出已完备，本次补齐
+> **排序**缺口，对标 Android `BookSourceSort`。`SourceProvider` 新增 `SourceSort` 枚举（手动 customOrder /
+> 权重 weight / 名称 / URL / 更新时间 / 启用状态 / 响应时间）+ 升降序状态 + 比较器，排序与分组筛选叠加生效；
+> `source_screen` 新增排序菜单（对标 `action_sort` 子菜单：手动/自动/名称/URL + 降序切换，当前项打勾）。
+> 排序为纯 UI 状态同步（展示层排序，不改 Rust 数据），符合越界检查清单。补充 10 个排序单元测试。
+
 ### Phase 5：规则编辑器 + 收尾（第 10–12 周）
 
 | 任务 | 产出 | 验收标准 |
