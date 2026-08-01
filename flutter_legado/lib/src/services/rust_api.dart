@@ -362,7 +362,18 @@ class RustApi implements BookApi {
   /// 导入本地书籍
   Future<Book> importLocalBook(String filePath) async {
     final json = await bridge.importLocalBook(filePath: filePath);
-    return Book.fromJson(jsonDecode(json) as Map<String, dynamic>);
+    final result = jsonDecode(json) as Map<String, dynamic>;
+    final success = result['success'] as bool? ?? false;
+    if (!success) {
+      final error = result['error'] as String? ?? '未知导入错误';
+      throw RustApiException(error, operation: 'importLocalBook');
+    }
+    final bookMap = result['book'] as Map<String, dynamic>?;
+    if (bookMap == null) {
+      throw RustApiException('导入成功但缺少书籍数据',
+          operation: 'importLocalBook');
+    }
+    return Book.fromJson(bookMap);
   }
 
   /// 扫描本地书籍（扫描目录下的常见电子书格式）
@@ -1003,8 +1014,9 @@ class RustApi implements BookApi {
   Future<List<BookChapter>> parseEpub(String filePath) async {
     // 先导入书籍，然后获取章节列表
     final bookJson = await bridge.importLocalBook(filePath: filePath);
-    final bookMap = jsonDecode(bookJson) as Map<String, dynamic>;
-    final bookUrl = bookMap['bookUrl'] as String? ?? filePath;
+    final resultMap = jsonDecode(bookJson) as Map<String, dynamic>;
+    final bookMap = resultMap['book'] as Map<String, dynamic>?;
+    final bookUrl = bookMap?['bookUrl'] as String? ?? filePath;
     final chaptersJson = await bridge.readerGetChapters(bookUrl: bookUrl);
     final decodedChapters = jsonDecode(chaptersJson);
     // 兼容 Rust 侧返回 ChapterListResponse { total, chapters } 对象格式
