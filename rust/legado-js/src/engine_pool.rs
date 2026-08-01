@@ -7,6 +7,8 @@ use crate::engine::QuickJsEngine;
 #[cfg(feature = "quickjs")]
 use crate::sandbox::SandboxConfig;
 #[cfg(feature = "quickjs")]
+use legado_core::LegadoError;
+#[cfg(feature = "quickjs")]
 use std::collections::HashMap;
 #[cfg(feature = "quickjs")]
 use std::sync::{Arc, Mutex};
@@ -48,26 +50,31 @@ impl EnginePool {
     /// 获取或创建引擎
     ///
     /// 如果 source_tag 对应的引擎已存在，直接返回；否则创建新引擎并缓存。
-    /// 当池已满时，淘汰最早插入的条目。
-    pub fn get_or_create(&self, source_tag: &str) -> Arc<Mutex<QuickJsEngine>> {
+    /// 当池已满时，随机淘汰一个条目。
+    ///
+    /// 创建失败（如内存不足/初始化异常）时返回 `Err` 而非 panic，
+    /// 遵循 FFI 禁 panic 规范，由调用方决定降级/报错。
+    pub fn get_or_create(
+        &self,
+        source_tag: &str,
+    ) -> Result<Arc<Mutex<QuickJsEngine>>, LegadoError> {
         let mut pool = self.engines.lock().unwrap();
 
         if let Some(engine) = pool.get(source_tag) {
-            return engine.clone();
+            return Ok(engine.clone());
         }
 
-        // LRU 淘汰：如果池已满，移除第一个（后续可改为真正的 LRU）
+        // 随机淘汰：如果池已满，移除第一个（HashMap 迭代顺序不确定，后续可改为真正的 LRU）
         if pool.len() >= self.max_size {
             if let Some(key) = pool.keys().next().cloned() {
                 pool.remove(&key);
             }
         }
 
-        let engine = QuickJsEngine::new(self.sandbox_config.clone())
-            .expect("Failed to create QuickJsEngine in pool");
+        let engine = QuickJsEngine::new(self.sandbox_config.clone())?;
         let engine = Arc::new(Mutex::new(engine));
         pool.insert(source_tag.to_string(), engine.clone());
-        engine
+        Ok(engine)
     }
 
     /// 清除指定引擎
@@ -122,8 +129,8 @@ mod tests {
     #[test]
     fn test_pool_get_or_create_returns_same_engine() {
         let pool = EnginePool::new(4);
-        let e1 = pool.get_or_create("source_a");
-        let e2 = pool.get_or_create("source_a");
+        let e1 = pool.get_or_create("source_a").unwrap();
+        let e2 = pool.get_or_create("source_a").unwrap();
         // 同一个 source_tag 应返回同一个 Arc
         assert!(Arc::ptr_eq(&e1, &e2));
         assert_eq!(pool.len(), 1);
@@ -132,8 +139,8 @@ mod tests {
     #[test]
     fn test_pool_different_tags_create_different_engines() {
         let pool = EnginePool::new(4);
-        let e1 = pool.get_or_create("source_a");
-        let e2 = pool.get_or_create("source_b");
+        let e1 = pool.get_or_create("source_a").unwrap();
+        let e2 = pool.get_or_create("source_b").unwrap();
         assert!(!Arc::ptr_eq(&e1, &e2));
         assert_eq!(pool.len(), 2);
     }
@@ -141,10 +148,10 @@ mod tests {
     #[test]
     fn test_pool_eviction_on_max_size() {
         let pool = EnginePool::new(2);
-        let _e1 = pool.get_or_create("s1");
-        let _e2 = pool.get_or_create("s2");
+        let _e1 = pool.get_or_create("s1").unwrap();
+        let _e2 = pool.get_or_create("s2").unwrap();
         // 池已满，再插入应淘汰一个
-        let _e3 = pool.get_or_create("s3");
+        let _e3 = pool.get_or_create("s3").unwrap();
         assert_eq!(pool.len(), 2);
         // s3 必须存在
         assert!(pool.contains("s3"));
@@ -153,7 +160,7 @@ mod tests {
     #[test]
     fn test_pool_remove() {
         let pool = EnginePool::new(4);
-        let _e1 = pool.get_or_create("source_x");
+        let _e1 = pool.get_or_create("source_x").unwrap();
         assert!(pool.contains("source_x"));
         pool.remove("source_x");
         assert!(!pool.contains("source_x"));
@@ -163,9 +170,9 @@ mod tests {
     #[test]
     fn test_pool_clear() {
         let pool = EnginePool::new(8);
-        let _e1 = pool.get_or_create("a");
-        let _e2 = pool.get_or_create("b");
-        let _e3 = pool.get_or_create("c");
+        let _e1 = pool.get_or_create("a").unwrap();
+        let _e2 = pool.get_or_create("b").unwrap();
+        let _e3 = pool.get_or_create("c").unwrap();
         assert_eq!(pool.len(), 3);
         pool.clear();
         assert_eq!(pool.len(), 0);
@@ -175,7 +182,7 @@ mod tests {
     #[test]
     fn test_pool_engine_is_functional() {
         let pool = EnginePool::new(4);
-        let engine = pool.get_or_create("func_test");
+        let engine = pool.get_or_create("func_test").unwrap();
         let guard = engine.lock().unwrap();
         let result = guard.eval("1 + 2");
         assert!(result.is_ok());
@@ -186,7 +193,7 @@ mod tests {
     fn test_pool_with_sandbox_config() {
         let config = SandboxConfig::permissive();
         let pool = EnginePool::with_sandbox_config(4, config);
-        let engine = pool.get_or_create("sandbox_test");
+        let engine = pool.get_or_create("sandbox_test").unwrap();
         let guard = engine.lock().unwrap();
         let result = guard.eval("'hello' + ' ' + 'world'");
         assert!(result.is_ok());

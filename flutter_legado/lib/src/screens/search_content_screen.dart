@@ -122,7 +122,10 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
         if (gen != _generation) return; // 已被新搜索/退出取消
         final chapter = chapters[i];
         try {
-          final content = await api.getChapterContent(widget.effectiveBookUrl, chapter.index);
+          // 内容搜索使用不应用替换规则的正文（与 Android 搜索默认对齐），
+          // 避免被替换/删除的词搜不到
+          final content =
+              await api.getChapterContentRaw(widget.effectiveBookUrl, chapter.index);
           if (gen != _generation) return;
 
           final lowerContent = content.toLowerCase();

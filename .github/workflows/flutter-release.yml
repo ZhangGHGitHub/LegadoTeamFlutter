@@ -62,11 +62,11 @@ jobs:
       # ─── Rust 交叉编译 Android ───
       - name: Build Rust FFI (aarch64)
         working-directory: rust
-        run: cargo build --release --target aarch64-linux-android -p legado-ffi
+        run: cargo build --release --target aarch64-linux-android -p legado-ffi --features quickjs
 
       - name: Build Rust FFI (armv7)
         working-directory: rust
-        run: cargo build --release --target armv7-linux-androideabi -p legado-ffi
+        run: cargo build --release --target armv7-linux-androideabi -p legado-ffi --features quickjs
 
       # ─── 复制 .so 到 jniLibs ───
       - name: Copy .so to jniLibs

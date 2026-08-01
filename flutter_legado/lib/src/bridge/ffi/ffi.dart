@@ -124,6 +124,18 @@ Future<String> readerGetContent({
   chapterIndex: chapterIndex,
 );
 
+/// 获取章节正文内容（不应用替换规则，用于内容搜索）
+///
+/// 取正文流程与 [`reader_get_content`] 相同，但净化时关闭替换规则，
+/// 与 Android 书内搜索默认行为（replaceEnabled=false）对齐。
+Future<String> readerGetContentRaw({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiReaderGetContentRaw(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
 /// 从网络刷新书籍目录（返回 JSON 章节列表）
 ///
 /// `book_url` — 书籍详情页 URL

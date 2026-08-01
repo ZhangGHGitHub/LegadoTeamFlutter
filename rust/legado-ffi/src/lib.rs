@@ -17,6 +17,7 @@ pub mod bridge;
 pub mod db_state;
 pub mod error;
 pub mod ffi;
+pub mod js_executor;
 pub mod runtime;
 
 // 重新导出各业务 crate，便于外部（如 codegen）统一访问

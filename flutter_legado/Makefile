@@ -1,4 +1,4 @@
-.PHONY: gen gen-only build test check clean run-windows rebuild-ffi
+.PHONY: gen gen-only build test check clean run-windows rebuild-ffi rebuild-ffi-stub
 
 # flutter_rust_bridge 代码生成 + 自动重编译 DLL（防止 content hash 不同步）
 #
@@ -11,8 +11,14 @@ gen: gen-only rebuild-ffi
 gen-only:
 	flutter_rust_bridge_codegen generate
 
-# 重编译 Rust FFI 动态库
+# 重编译 Rust FFI 动态库（出厂/发布路径：启用 quickjs 真实 JS 引擎）
+# 使书源 @js: 规则生效；应用加载的 DLL 含真实 QuickJS 引擎。
 rebuild-ffi:
+	cd ../rust && cargo build -p legado-ffi --features quickjs
+
+# 开发态快速构建（不启用 quickjs，走 stub，编译更快）
+# 注意：此路径下书源 @js: 规则降级返回空，仅用于快速迭代调试。
+rebuild-ffi-stub:
 	cd ../rust && cargo build -p legado-ffi
 
 # 静态检查（Rust + Flutter）

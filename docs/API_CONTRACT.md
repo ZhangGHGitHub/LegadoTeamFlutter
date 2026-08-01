@@ -144,12 +144,13 @@
 | `deleteReplaceRule(int id)` | id | `Future<void>` | 删除替换规则 |
 | `setReplaceRuleEnabled(int id, bool enabled)` | id, enabled | `Future<void>` | 启用/禁用替换规则 |
 
-### 2.9 阅读器操作（5 个方法）
+### 2.9 阅读器操作（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `getChapters(String bookUrl)` | bookUrl | `Future<List<BookChapter>>` | 获取章节列表 ⚠️ 双兼容点 |
 | `getChapterContent(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 获取章节正文内容 |
+| `getChapterContentRaw(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 获取章节正文（不应用替换规则，用于内容搜索，与 Android replaceEnabled=false 对齐） |
 | `fetchChapterContent(String bookUrl, String chapterUrl, String sourceUrl)` | bookUrl, chapterUrl, sourceUrl | `Future<String>` | 从网络获取章节正文 |
 | `updateReadingProgress({required String bookUrl, required int chapterIndex, required int chapterPos})` | bookUrl, chapterIndex, chapterPos | `Future<void>` | 更新阅读进度 |
 | `refreshToc(String bookUrl, String sourceUrl)` | bookUrl, sourceUrl | `Future<List<BookChapter>>` | 从网络刷新书籍目录 ⚠️ 双兼容点 |
@@ -408,7 +409,7 @@
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 6 |
 | 8 | 替换规则操作 | 6 |
-| 9 | 阅读器操作 | 5 |
+| 9 | 阅读器操作 | 6 |
 | 10 | 配置操作 | 4 |
 | 11 | 备份操作 | 2 |
 | 12 | 阅读记录 | 4 |
@@ -434,4 +435,4 @@
 | 32 | 自动任务 | 9 |
 | 33 | 音频播放模式 | 2 |
 | 34 | 压缩包导入 | 7 |
-| | **合计** | **158** |
+| | **合计** | **159** |

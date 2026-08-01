@@ -14,7 +14,7 @@ use legado_core::web_book::{
 };
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::{LegadoClient, LegadoClientConfig};
-use legado_parser::{AnalyzeRule, AnalyzeUrl, RequestMethod};
+use legado_parser::{AnalyzeUrl, RequestMethod};
 
 use crate::runtime;
 
@@ -141,7 +141,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .unwrap_or("");
 
         let base_url = analyze_url.url().to_string();
-        let analyzer = AnalyzeRule::new(body, base_url.clone());
+        let analyzer =
+            crate::js_executor::construct_analyzer(body, base_url.clone(), &source.book_source_url);
 
         let elements = if book_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
@@ -151,7 +152,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let mut results = Vec::new();
         for elem in elements.iter().take(50) {
-            let elem_analyzer = AnalyzeRule::new(elem.clone(), base_url.clone());
+            let elem_analyzer = crate::js_executor::construct_analyzer(
+                elem.clone(),
+                base_url.clone(),
+                &source.book_source_url,
+            );
 
             let name_rule = search_rule.and_then(|r| r.name.as_deref()).unwrap_or("");
             let author_rule = search_rule.and_then(|r| r.author.as_deref()).unwrap_or("");
@@ -226,7 +231,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 2. 使用 bookInfo 规则解析
         let info_rule = source.rule_book_info.as_ref();
-        let analyzer = AnalyzeRule::new(body, book_url.to_string());
+        let analyzer = crate::js_executor::construct_analyzer(
+            body,
+            book_url.to_string(),
+            &source.book_source_url,
+        );
 
         let name = info_rule
             .and_then(|r| r.name.as_deref())
@@ -317,7 +326,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 1. 先获取详情页以确定 toc_url
         let info_body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
         let info_rule = source.rule_book_info.as_ref();
-        let info_analyzer = AnalyzeRule::new(info_body, book_url.to_string());
+        let info_analyzer = crate::js_executor::construct_analyzer(
+            info_body,
+            book_url.to_string(),
+            &source.book_source_url,
+        );
 
         let toc_url = info_rule
             .and_then(|r| r.toc_url.as_deref())
@@ -340,7 +353,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.chapter_list.as_deref())
             .unwrap_or("");
 
-        let analyzer = AnalyzeRule::new(toc_body, toc_url.clone());
+        let analyzer =
+            crate::js_executor::construct_analyzer(toc_body, toc_url.clone(), &source.book_source_url);
 
         let elements = if chapter_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
@@ -350,7 +364,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let mut chapters = Vec::new();
         for (index, elem) in elements.iter().enumerate() {
-            let elem_analyzer = AnalyzeRule::new(elem.clone(), toc_url.clone());
+            let elem_analyzer = crate::js_executor::construct_analyzer(
+                elem.clone(),
+                toc_url.clone(),
+                &source.book_source_url,
+            );
 
             let name_rule = toc_rule
                 .and_then(|r| r.chapter_name.as_deref())
@@ -398,7 +416,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.content.as_deref())
             .unwrap_or("");
 
-        let analyzer = AnalyzeRule::new(body, chapter.url.clone());
+        let analyzer = crate::js_executor::construct_analyzer(
+            body,
+            chapter.url.clone(),
+            &source.book_source_url,
+        );
 
         let content = if content_rule_str.is_empty() {
             analyzer.content().to_string()

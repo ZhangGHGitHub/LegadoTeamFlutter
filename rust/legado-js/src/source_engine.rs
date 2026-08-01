@@ -173,11 +173,15 @@ impl JsSourceEngine {
     /// 使用引擎池创建（池化模式）
     ///
     /// 从共享引擎池中按 source_tag 获取或创建引擎，避免每源重复创建。
+    /// 引擎创建失败时返回 `Err`（遵循 FFI 禁 panic 规范）。
     #[cfg(feature = "quickjs")]
-    pub fn new_with_pool(config: JsSourceConfig, pool: Arc<EnginePool>) -> Self {
+    pub fn new_with_pool(
+        config: JsSourceConfig,
+        pool: Arc<EnginePool>,
+    ) -> Result<Self, legado_core::LegadoError> {
         let source_tag = config.source_url.clone();
-        let pooled_engine = pool.get_or_create(&source_tag);
-        Self {
+        let pooled_engine = pool.get_or_create(&source_tag)?;
+        Ok(Self {
             engine: None,
             engine_pool: Some(pool),
             pooled_engine: Some(pooled_engine),
@@ -186,7 +190,7 @@ impl JsSourceEngine {
             scope_manager: None,
             script_cache: HashMap::new(),
             main_js_loaded: false,
-        }
+        })
     }
 
     /// 使用指定 JS 引擎创建

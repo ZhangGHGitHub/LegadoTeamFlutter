@@ -33,9 +33,9 @@ for target in "${TARGETS[@]}"; do
     echo ""
     echo ">> Building for $target..."
     if [ "$MODE" = "release" ]; then
-        cargo build --release --target "$target" -p legado-ffi
+        cargo build --release --target "$target" -p legado-ffi --features quickjs
     else
-        cargo build --target "$target" -p legado-ffi
+        cargo build --target "$target" -p legado-ffi --features quickjs
     fi
 done
 

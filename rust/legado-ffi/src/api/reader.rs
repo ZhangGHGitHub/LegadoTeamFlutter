@@ -97,6 +97,24 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
 /// 对于本地书籍（bookUrl 为文件路径），使用 legado-book 解析器读取。
 /// 对于在线书籍，需配合书源规则通过网络获取（此处返回数据库缓存或空）。
 pub fn get_chapter_content(book_url: &str, chapter_index: i32) -> LegadoResult<String> {
+    get_chapter_content_inner(book_url, chapter_index, true)
+}
+
+/// 获取章节正文内容（不应用替换规则）
+///
+/// 取正文流程与 [`get_chapter_content`] 完全相同，但内容净化时关闭替换规则
+/// （仅做去重复标题等），与 Android 书内搜索默认行为（replaceEnabled=false）对齐。
+/// 供内容搜索使用，避免被替换/删除的词搜不到。
+pub fn get_chapter_content_raw(book_url: &str, chapter_index: i32) -> LegadoResult<String> {
+    get_chapter_content_inner(book_url, chapter_index, false)
+}
+
+/// get_chapter_content 的内部实现：`apply_replace_rules` 控制是否应用替换规则
+fn get_chapter_content_inner(
+    book_url: &str,
+    chapter_index: i32,
+    apply_replace_rules: bool,
+) -> LegadoResult<String> {
     // 查询章节信息
     let chapter = with_database(|db| {
         let repo = BookChapterRepository::new(db.connection());
@@ -111,8 +129,13 @@ pub fn get_chapter_content(book_url: &str, chapter_index: i32) -> LegadoResult<S
             book_url,
             &chapter_to_local_info(&chapter),
         )?;
-        // 读取时净化：DB/文件保留原始正文，返回前应用替换规则与内容净化
-        Ok(apply_content_processing(book_url, &content, &chapter.title))
+        // 读取时净化：DB/文件保留原始正文，返回前应用内容净化
+        Ok(apply_content_processing_inner(
+            book_url,
+            &content,
+            &chapter.title,
+            apply_replace_rules,
+        ))
     } else {
         // 在线书籍：返回章节 URL 信息，由上层配合书源规则获取正文
         // 简化实现：返回章节 URL 供 Dart 侧进一步处理
@@ -305,6 +328,28 @@ pub fn fetch_chapter_content(
 ///
 /// 不在此处做段落重排/简繁转换/缩进/空行修剪，以免改变原始正文排版。
 pub fn apply_content_processing(book_url: &str, raw_content: &str, chapter_title: &str) -> String {
+    apply_content_processing_inner(book_url, raw_content, chapter_title, true)
+}
+
+/// 对原始正文应用内容净化但【不应用替换规则】（用于内容搜索）
+///
+/// 与 Android 书内搜索默认行为对齐：仅做去重复标题等，不应用替换规则，
+/// 避免被替换/删除的词搜不到。
+pub fn apply_content_processing_raw(
+    book_url: &str,
+    raw_content: &str,
+    chapter_title: &str,
+) -> String {
+    apply_content_processing_inner(book_url, raw_content, chapter_title, false)
+}
+
+/// apply_content_processing 的内部实现：`apply_replace_rules` 控制是否应用替换规则
+fn apply_content_processing_inner(
+    book_url: &str,
+    raw_content: &str,
+    chapter_title: &str,
+    apply_replace_rules: bool,
+) -> String {
     // 1. 加载启用的替换规则 + 查询书籍名称（用于 scope 过滤）
     let loaded = with_database(|db| {
         let rule_repo = ReplaceRuleRepository::new(db.connection());
@@ -323,15 +368,33 @@ pub fn apply_content_processing(book_url: &str, raw_content: &str, chapter_title
         Err(_) => return raw_content.to_string(),
     };
 
-    process_content_with_rules(raw_content, chapter_title, &rules, &book_name)
+    process_content_with_rules_inner(
+        raw_content,
+        chapter_title,
+        &rules,
+        &book_name,
+        apply_replace_rules,
+    )
 }
 
-/// 净化核心逻辑（纯函数，便于单元测试）：按 scope 过滤规则后经 ContentProcessor 处理
+/// 净化核心逻辑（应用替换规则）：保留 4 参签名供既有测试调用
+#[cfg(test)]
 fn process_content_with_rules(
     raw_content: &str,
     chapter_title: &str,
     rules: &[ReplaceRule],
     book_name: &str,
+) -> String {
+    process_content_with_rules_inner(raw_content, chapter_title, rules, book_name, true)
+}
+
+/// 净化核心逻辑（纯函数，便于单元测试）：`apply_replace_rules` 控制是否应用替换规则
+fn process_content_with_rules_inner(
+    raw_content: &str,
+    chapter_title: &str,
+    rules: &[ReplaceRule],
+    book_name: &str,
+    apply_replace_rules: bool,
 ) -> String {
     // 2. 按 scope 过滤（与 Android 语义一致，并修复空 book_name 守卫与精确匹配）：
     //    - None → 全局生效
@@ -358,11 +421,12 @@ fn process_content_with_rules(
         .collect();
 
     // 3. 构造处理器：仅启用「去重复标题 + 替换规则」，与 Android 净化行为对等
+    //    apply_replace_rules 由调用方控制（阅读器/导出=true，内容搜索=false）
     let config = ProcessorConfig {
         remove_duplicate_title: true,
         re_segment: false,
         chinese_convert: None,
-        apply_replace_rules: true,
+        apply_replace_rules,
         indent_spaces: 0,
         trim_empty_lines: false,
     };
@@ -661,6 +725,60 @@ mod tests {
         assert_eq!(result, "正文结尾");
 
         // 清理本测试插入的规则
+        with_database(|db| {
+            let repo = ReplaceRuleRepository::new(db.connection());
+            repo.delete(rule_id)?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// 测试 raw 变体不应用替换规则：被规则删除/替换的词仍保留
+    #[test]
+    fn test_content_processing_raw_keeps_replaced_words() {
+        let rules = vec![make_test_rule("去广告", "广告", "", false, true)];
+        // apply_replace_rules=false：即使有启用规则，"广告" 仍保留
+        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", false);
+        assert_eq!(result, "这是广告内容");
+        // apply_replace_rules=true：规则生效，"广告" 被删除
+        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", true);
+        assert_eq!(result, "这是内容");
+    }
+
+    /// 测试 raw 变体仍执行去重复标题（仅替换规则关闭）
+    #[test]
+    fn test_content_processing_raw_still_removes_duplicate_title() {
+        let rules: Vec<ReplaceRule> = vec![];
+        let result =
+            process_content_with_rules_inner("第一章 开始\n正文", "第一章 开始", &rules, "", false);
+        assert_eq!(result, "正文");
+    }
+
+    /// 集成测试：apply_content_processing_raw 不应用替换规则，apply_content_processing 仍应用
+    #[test]
+    fn test_apply_content_processing_raw_integration() {
+        crate::db_state::ensure_test_db();
+        let rule_id = with_database(|db| {
+            let repo = ReplaceRuleRepository::new(db.connection());
+            repo.insert(&ReplaceRule {
+                name: "reader_raw_测试规则_unique".to_string(),
+                pattern: "敏感词".to_string(),
+                replacement: String::new(),
+                is_regex: false,
+                is_enabled: true,
+                ..ReplaceRule::default()
+            })
+        })
+        .unwrap();
+
+        let raw_input = "正文含敏感词结尾";
+        // 净化变体（阅读器/导出）：替换规则生效
+        let purified = apply_content_processing("https://raw-test.example.com", raw_input, "");
+        assert_eq!(purified, "正文含结尾");
+        // raw 变体（内容搜索）：替换规则不生效，原词保留
+        let raw = apply_content_processing_raw("https://raw-test.example.com", raw_input, "");
+        assert_eq!(raw, raw_input);
+
         with_database(|db| {
             let repo = ReplaceRuleRepository::new(db.connection());
             repo.delete(rule_id)?;

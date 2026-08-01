@@ -38,11 +38,11 @@ if ($Clean) {
 Write-Host "`n--- Building Rust FFI Library ---" -ForegroundColor Yellow
 Set-Location $RustDir
 if ($Release) {
-    cargo build --release -p legado-ffi
+    cargo build --release -p legado-ffi --features quickjs
     $DllName = "legado_ffi.dll"
     $DllPath = Join-Path $RustDir "target\release\$DllName"
 } else {
-    cargo build -p legado-ffi
+    cargo build -p legado-ffi --features quickjs
     $DllName = "legado_ffi.dll"
     $DllPath = Join-Path $RustDir "target\debug\$DllName"
 }

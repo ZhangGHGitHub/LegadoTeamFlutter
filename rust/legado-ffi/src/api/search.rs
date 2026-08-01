@@ -276,8 +276,12 @@ fn parse_search_response(
         None => return Ok(Vec::new()),
     };
 
-    // 创建顶层 AnalyzeRule
-    let analyzer = AnalyzeRule::new(body.to_string(), base_url.to_string());
+    // 创建顶层 AnalyzeRule（quickjs 启用时注入 JS 执行器，使 @js: 搜索规则生效）
+    let analyzer = crate::js_executor::construct_analyzer(
+        body.to_string(),
+        base_url.to_string(),
+        &source.book_source_url,
+    );
 
     // 获取书籍列表元素
     let book_list_rule = rule_search.book_list.as_deref().unwrap_or("");
@@ -295,7 +299,11 @@ fn parse_search_response(
     // 对每个元素解析各字段
     let mut results = Vec::new();
     for element_html in &elements {
-        let item_analyzer = AnalyzeRule::new(element_html.clone(), base_url.to_string());
+        let item_analyzer = crate::js_executor::construct_analyzer(
+            element_html.clone(),
+            base_url.to_string(),
+            &source.book_source_url,
+        );
 
         // 提取书名（必填，无书名则跳过）
         let book_name = get_field_first(&item_analyzer, rule_search.name.as_deref());
@@ -699,5 +707,40 @@ mod tests {
         // 第一条无书名被跳过，只剩第二条
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].book_name, "有书名");
+    }
+
+    // ─── 测试 9: @js: 搜索规则注入（quickjs 启用时生效，否则降级）───────────────
+
+    #[test]
+    fn test_parse_search_js_rule() {
+        let html = r#"<html><body>
+            <div class="book-item"><span class="author">作者</span></div>
+        </body></html>"#;
+
+        // name / book_url 规则使用 @js:：quickjs 启用时返回固定值，未启用时降级为空
+        let source = make_source_with_rules(
+            ".book-item",
+            "@js:'JS注入书名'",
+            ".author",
+            "@js:'https://www.example.com/book/js'",
+            "",
+            "",
+            "",
+        );
+
+        let results = parse_search_response(html, "https://www.example.com", &source).unwrap();
+
+        #[cfg(feature = "quickjs")]
+        {
+            assert_eq!(results.len(), 1, "quickjs 启用时 @js: 规则应被执行");
+            assert_eq!(results[0].book_name, "JS注入书名");
+            assert_eq!(results[0].book_url, "https://www.example.com/book/js");
+        }
+
+        #[cfg(not(feature = "quickjs"))]
+        {
+            // 未启用 quickjs：@js: 规则降级为空，书名为空该条目被跳过
+            assert!(results.is_empty(), "未启用 quickjs 时 @js: 规则应降级为空");
+        }
     }
 }

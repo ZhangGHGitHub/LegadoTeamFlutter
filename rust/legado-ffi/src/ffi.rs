@@ -228,6 +228,20 @@ pub mod ffi {
         )?)
     }
 
+    /// 获取章节正文内容（不应用替换规则，用于内容搜索）
+    ///
+    /// 取正文流程与 [`reader_get_content`] 相同，但净化时关闭替换规则，
+    /// 与 Android 书内搜索默认行为（replaceEnabled=false）对齐。
+    pub fn reader_get_content_raw(
+        book_url: String,
+        chapter_index: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::reader::get_chapter_content_raw(
+            &book_url,
+            chapter_index,
+        )?)
+    }
+
     /// 从网络刷新书籍目录（返回 JSON 章节列表）
     ///
     /// `book_url` — 书籍详情页 URL
@@ -517,7 +531,7 @@ pub mod ffi {
         use legado_js::engine::QuickJsEngine;
         use legado_js::JsEngine;
         use legado_js::SandboxConfig;
-        let engine = QuickJsEngine::new(SandboxConfig::permissive()).map_err(|e| BridgeError {
+        let engine = QuickJsEngine::new(SandboxConfig::default()).map_err(|e| BridgeError {
             message: e.to_string(),
         })?;
         let result = engine.eval(&script)?;

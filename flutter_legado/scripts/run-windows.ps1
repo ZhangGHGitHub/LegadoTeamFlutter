@@ -28,9 +28,9 @@ Start-Sleep -Seconds 1
 Write-Host "`n>> Rebuilding Rust FFI DLL..." -ForegroundColor Yellow
 Push-Location $RustDir
 if ($Release) {
-    cargo build --release -p legado-ffi
+    cargo build --release -p legado-ffi --features quickjs
 } else {
-    cargo build -p legado-ffi
+    cargo build -p legado-ffi --features quickjs
 }
 $rustExit = $LASTEXITCODE
 Pop-Location

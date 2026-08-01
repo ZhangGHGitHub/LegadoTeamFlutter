@@ -195,6 +195,11 @@ abstract class BookApi {
   /// 获取章节正文内容
   Future<String> getChapterContent(String bookUrl, int chapterIndex);
 
+  /// 获取章节正文内容（不应用替换规则，用于内容搜索）
+  ///
+  /// 与 Android 书内搜索默认行为（replaceEnabled=false）对齐。
+  Future<String> getChapterContentRaw(String bookUrl, int chapterIndex);
+
   /// 从网络获取章节正文
   Future<String> fetchChapterContent(
     String bookUrl,

@@ -349,9 +349,10 @@ mod quickjs_engine {
             let context = rquickjs::Context::full(&runtime)
                 .map_err(|e| LegadoError::JsEngine(format!("Failed to create Context: {}", e)))?;
 
-            // 注册宿主 API（编解码等）
+            // 注册宿主 API（编解码等），根据沙箱配置门控文件 API
+            let api_cfg = config.clone();
             context.with(|ctx| {
-                quickjs_impl::register_all_apis(&ctx)
+                quickjs_impl::register_all_apis(&ctx, &api_cfg)
                     .map_err(|e| LegadoError::JsEngine(format!("Failed to register APIs: {}", e)))
             })?;
 
@@ -788,5 +789,33 @@ mod quickjs_tests {
         let engine = make_engine();
         let result = engine.eval("new Date(2024, 0, 1).getFullYear()").unwrap();
         assert_eq!(result, "2024");
+    }
+
+    // ============================================================
+    // 沙箱文件 API 门控测试
+    // ============================================================
+
+    #[test]
+    fn test_file_api_blocked_with_default_config() {
+        // 默认配置 allow_file_access=false，文件 API 不应注册
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let result = engine.eval("typeof readFile");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "undefined",
+            "文件 API 在 allow_file_access=false 时不应注册"
+        );
+    }
+
+    #[test]
+    fn test_file_api_available_with_permissive_config() {
+        // 宽松配置 allow_file_access=true，文件 API 应已注册
+        let engine = QuickJsEngine::new(SandboxConfig::permissive()).unwrap();
+        let result = engine.eval("typeof readFile").unwrap();
+        assert_eq!(
+            result, "function",
+            "文件 API 在 allow_file_access=true 时应已注册"
+        );
     }
 }

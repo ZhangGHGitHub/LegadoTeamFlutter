@@ -24,13 +24,20 @@ use crate::host_api::{
     html_format, json_utils, misc_api, network, regex_utils, register::mount_dual, string_utils,
     time_utils, variable_store,
 };
+use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
 
 /// 将所有宿主 API 注册到 QuickJS 全局上下文
 ///
 /// 每个函数同时挂载到 `java` 命名空间对象和裸全局，
 /// 确保 `java.md5Encode("hello")` 和 `md5Encode("hello")` 都能工作。
-pub fn register_all_apis<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError> {
+///
+/// 根据 `SandboxConfig.allow_file_access` 决定是否注册文件 API；
+/// network 与 cookie API 始终注册（经 legado-net 受控通道，保持书源对等）。
+pub fn register_all_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    config: &SandboxConfig,
+) -> Result<(), LegadoError> {
     let globals = ctx.globals();
 
     // 创建 java 命名空间对象
@@ -42,7 +49,10 @@ pub fn register_all_apis<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoErro
     register_json_apis(ctx, &java, &globals)?;
     register_regex_apis(ctx, &java, &globals)?;
     register_time_apis(ctx, &java, &globals)?;
-    register_file_apis(ctx, &java, &globals)?;
+    // 文件 API 仅在 allow_file_access = true 时注册（安全门控）
+    if config.allow_file_access {
+        register_file_apis(ctx, &java, &globals)?;
+    }
     register_variable_apis(ctx, &java, &globals)?;
     register_utility_apis(ctx, &java, &globals)?;
     register_network_apis(ctx, &java, &globals)?;

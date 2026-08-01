@@ -543,6 +543,13 @@ class RustApi implements BookApi {
   Future<String> getChapterContent(String bookUrl, int chapterIndex) =>
       bridge.readerGetContent(bookUrl: bookUrl, chapterIndex: chapterIndex);
 
+  /// 获取章节正文内容（不应用替换规则，用于内容搜索）
+  ///
+  /// 取正文流程与 [getChapterContent] 相同，但净化时关闭替换规则，
+  /// 与 Android 书内搜索默认行为（replaceEnabled=false）对齐。
+  Future<String> getChapterContentRaw(String bookUrl, int chapterIndex) =>
+      bridge.readerGetContentRaw(bookUrl: bookUrl, chapterIndex: chapterIndex);
+
   /// 从网络获取章节正文（带 DB 缓存）
   Future<String> fetchChapterContent(
     String bookUrl,

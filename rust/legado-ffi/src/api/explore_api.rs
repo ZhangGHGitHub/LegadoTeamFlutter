@@ -12,7 +12,7 @@ use legado_core::models::BookSource;
 use legado_core::web_book::WebSearchResult;
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::{LegadoClient, LegadoClientConfig};
-use legado_parser::{AnalyzeRule, AnalyzeUrl};
+use legado_parser::AnalyzeUrl;
 
 use crate::runtime;
 
@@ -118,7 +118,8 @@ async fn explore_books_async(
         .unwrap_or("");
 
     let base_url = final_url.clone();
-    let analyzer = AnalyzeRule::new(body, base_url.clone());
+    let analyzer =
+        crate::js_executor::construct_analyzer(body, base_url.clone(), &source.book_source_url);
 
     let elements = if book_list_rule.is_empty() {
         vec![analyzer.content().to_string()]
@@ -128,7 +129,11 @@ async fn explore_books_async(
 
     let mut results = Vec::new();
     for elem in elements.iter().take(50) {
-        let elem_analyzer = AnalyzeRule::new(elem.clone(), base_url.clone());
+        let elem_analyzer = crate::js_executor::construct_analyzer(
+            elem.clone(),
+            base_url.clone(),
+            &source.book_source_url,
+        );
 
         let name_rule = explore_rule.and_then(|r| r.name.as_deref()).unwrap_or("");
         let author_rule = explore_rule.and_then(|r| r.author.as_deref()).unwrap_or("");

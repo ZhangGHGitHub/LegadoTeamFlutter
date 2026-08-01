@@ -563,7 +563,7 @@ pub unsafe extern "C" fn ffi_js_eval(script: *const c_char) -> *mut c_char {
         use legado_js::engine::QuickJsEngine;
         use legado_js::JsEngine;
         use legado_js::SandboxConfig;
-        let engine = QuickJsEngine::new(SandboxConfig::permissive())?;
+        let engine = QuickJsEngine::new(SandboxConfig::default())?;
         let result_str = engine.eval(script_str)?;
         Ok::<_, LegadoError>(serde_json::json!({ "result": result_str }))
     }))

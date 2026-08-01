@@ -131,9 +131,9 @@ foreach ($key in $SelectedKeys) {
     Write-Host ">> Building $triple ($($info.abi))..." -ForegroundColor Yellow
 
     if ($Mode -eq "release") {
-        cargo build --release --target $triple -p legado-ffi 2>&1
+        cargo build --release --target $triple -p legado-ffi --features quickjs 2>&1
     } else {
-        cargo build --target $triple -p legado-ffi 2>&1
+        cargo build --target $triple -p legado-ffi --features quickjs 2>&1
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -221,9 +221,9 @@ foreach ($target in $Targets) {
     Write-Host ""
     Write-Host ">> Building for $target..." -ForegroundColor Yellow
     if ($Mode -eq "release") {
-        cargo build --release --target $target -p legado-ffi
+        cargo build --release --target $target -p legado-ffi --features quickjs
     } else {
-        cargo build --target $target -p legado-ffi
+        cargo build --target $target -p legado-ffi --features quickjs
     }
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Build failed for $target"
