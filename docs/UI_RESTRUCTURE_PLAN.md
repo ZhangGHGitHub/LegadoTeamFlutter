@@ -539,6 +539,18 @@ String mapApiError(Object e) {
 > `syncUpload/syncDownload/syncMerge`）。重写 sync_provider 单元测试（23 个）+ webdav 页面 widget 测试
 > （3 个，替换原 18 个自搭片段测试）。全量 960 测试通过。
 
+> **4.5 实施决议（主题切换全局生效 + 全局字体缩放）**：核心缺口为 `app.dart` 硬编码
+> `themeMode: ThemeMode.system`——settings_screen/theme_config_screen 保存的主题模式「保存了但不生效」
+> （MaterialApp 不读取、不监听）。新增 `ThemeProvider`（ChangeNotifier，暂保持 provider，迁移留待 Phase 5.4）
+> 集中管理主题模式 + 全局字体缩放；`app.dart` 经 `Consumer<ThemeProvider>` 驱动 `themeMode`，`builder` 覆盖
+> 全局 `textScaler`。字体缩放对齐原版 `AppContextWrapper.getFontScale` 语义（PreferKey.fontScale：0=跟随系统，
+> 8~16→0.8x~1.6x，「默认」按钮重置跟随系统），`SettingsService` 新增 `app_font_scale` 持久化；theme_config_screen
+> 新增「全局字体大小」选择对话框（Slider 0.8~1.6 + 跟随系统），原「字体大小」更名「阅读器字体大小」（阅读器级，
+> 对应原版阅读器排版）。settings_screen/theme_config_screen 主题模式选择统一接入 ThemeProvider 全局实时生效。
+> 原版重型主题项（图标更换/欢迎样式/沉浸状态栏/elevation/封面配置/主题列表/底栏皮肤/日夜间 ColorPicker/
+> 背景图）按「禁止新增功能」原则 + design_system M3 统一 ColorScheme Token 全部跳过。补充 theme_provider 单测
+> （13）+ theme_config widget 测试（3）+ settings 主题切换测试（1）+ settings_service fontScale 测试（3）。全量 980 测试通过。
+
 ### Phase 5：规则编辑器 + 收尾（第 10–12 周）
 
 | 任务 | 产出 | 验收标准 |
