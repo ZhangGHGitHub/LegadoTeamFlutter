@@ -516,6 +516,14 @@ String mapApiError(Object e) {
 > `source_screen` 新增排序菜单（对标 `action_sort` 子菜单：手动/自动/名称/URL + 降序切换，当前项打勾）。
 > 排序为纯 UI 状态同步（展示层排序，不改 Rust 数据），符合越界检查清单。补充 10 个排序单元测试。
 
+> **4.3 实施决议（导入/导出对齐原版）**：`source_screen` 原仅有 URL/剪贴板导入 + 剪贴板导出，本次补齐
+> 对标 Android `BookSourceActivity` 的三种导入与文件导出：①「从文件导入」（FilePicker txt/json →
+> 复用 `SourceProvider.importFromFile`）；②「扫码导入」（跳转 `QrcodeScreen`，按内容分流：HTTP URL→
+> `importFromUrl`、书源 JSON→`importFromJson`、legado://→提示用关联导入页）；③「导出到文件」
+> （`getDirectoryPath` 选目录写 `bookSources_<时间戳>.json`）。`qrcode_screen` 集成 `mobile_scanner`
+> 相机实时扫码（Android/iOS），桌面/测试环境降级手动输入。新增 `mobile_scanner` 依赖 + Android
+> CAMERA 权限 + iOS `NSCameraUsageDescription`。补充 3 个 widget 测试。
+
 ### Phase 5：规则编辑器 + 收尾（第 10–12 周）
 
 | 任务 | 产出 | 验收标准 |
