@@ -1,0 +1,42 @@
+# Flutter↔Rust 端到端集成冒烟测试
+# 构建真实 Rust DLL → Flutter 侧经 FFI 调用往返验证
+name: Integration Smoke
+on:
+  push:
+    paths: ['rust/**', 'flutter_legado/**']
+  pull_request:
+    paths: ['rust/**', 'flutter_legado/**']
+
+jobs:
+  ffi-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # ── Rust 工具链 ──
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # ── Flutter 工具链 ──
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      # ── 构建 Rust FFI 动态库（带 quickjs feature）──
+      - name: 构建 legado-ffi DLL (quickjs)
+        working-directory: rust
+        run: cargo build -p legado-ffi --features quickjs
+
+      # ── Flutter 依赖 ──
+      - name: Flutter pub get
+        working-directory: flutter_legado
+        run: flutter pub get
+
+      # ── 运行集成冒烟测试 ──
+      # flutter test integration_test -d windows 会构建 Windows 桌面应用并执行测试
+      # DLL 搜索路径：cwd/../rust/target/debug/legado_ffi.dll（由 RustApi._resolveFfiLibrary 自动发现）
+      - name: 运行 FFI 集成冒烟测试
+        working-directory: flutter_legado
+        run: flutter test integration_test -d windows

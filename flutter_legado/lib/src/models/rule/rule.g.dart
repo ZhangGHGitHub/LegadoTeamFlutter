@@ -234,15 +234,15 @@ _$FlexChildStyleImpl _$$FlexChildStyleImplFromJson(Map<String, dynamic> json) =>
     );
 
 Map<String, dynamic> _$$FlexChildStyleImplToJson(
-  _$FlexChildStyleImpl instance,
-) => <String, dynamic>{
-  'layout_flexGrow': instance.layoutFlexGrow,
-  'layout_flexShrink': instance.layoutFlexShrink,
-  'layout_alignSelf': instance.layoutAlignSelf,
-  'layout_flexBasisPercent': instance.layoutFlexBasisPercent,
-  'layout_wrapBefore': instance.layoutWrapBefore,
-  'layout_justifySelf': instance.layoutJustifySelf,
-};
+        _$FlexChildStyleImpl instance) =>
+    <String, dynamic>{
+      'layout_flexGrow': instance.layoutFlexGrow,
+      'layout_flexShrink': instance.layoutFlexShrink,
+      'layout_alignSelf': instance.layoutAlignSelf,
+      'layout_flexBasisPercent': instance.layoutFlexBasisPercent,
+      'layout_wrapBefore': instance.layoutWrapBefore,
+      'layout_justifySelf': instance.layoutJustifySelf,
+    };
 
 _$ExploreKindImpl _$$ExploreKindImplFromJson(Map<String, dynamic> json) =>
     _$ExploreKindImpl(
@@ -250,9 +250,8 @@ _$ExploreKindImpl _$$ExploreKindImplFromJson(Map<String, dynamic> json) =>
       url: json['url'] as String?,
       type: json['type'] as String? ?? 'url',
       action: json['action'] as String?,
-      chars: (json['chars'] as List<dynamic>?)
-          ?.map((e) => e as String?)
-          .toList(),
+      chars:
+          (json['chars'] as List<dynamic>?)?.map((e) => e as String?).toList(),
       defaultValue: json['default'] as String?,
       viewName: json['viewName'] as String?,
       style: json['style'] == null
@@ -273,16 +272,17 @@ Map<String, dynamic> _$$ExploreKindImplToJson(_$ExploreKindImpl instance) =>
     };
 
 _$RowUiImpl _$$RowUiImplFromJson(Map<String, dynamic> json) => _$RowUiImpl(
-  name: json['name'] as String? ?? '',
-  type: json['type'] as String? ?? 'text',
-  action: json['action'] as String?,
-  chars: (json['chars'] as List<dynamic>?)?.map((e) => e as String?).toList(),
-  defaultValue: json['default'] as String?,
-  viewName: json['viewName'] as String?,
-  style: json['style'] == null
-      ? null
-      : FlexChildStyle.fromJson(json['style'] as Map<String, dynamic>),
-);
+      name: json['name'] as String? ?? '',
+      type: json['type'] as String? ?? 'text',
+      action: json['action'] as String?,
+      chars:
+          (json['chars'] as List<dynamic>?)?.map((e) => e as String?).toList(),
+      defaultValue: json['default'] as String?,
+      viewName: json['viewName'] as String?,
+      style: json['style'] == null
+          ? null
+          : FlexChildStyle.fromJson(json['style'] as Map<String, dynamic>),
+    );
 
 Map<String, dynamic> _$$RowUiImplToJson(_$RowUiImpl instance) =>
     <String, dynamic>{

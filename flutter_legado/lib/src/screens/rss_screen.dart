@@ -193,6 +193,15 @@ class _RssScreenState extends State<RssScreen> {
             );
           }
 
+          // 分组过滤后为空：提示当前分组无订阅源
+          if (provider.filteredSources.isEmpty) {
+            return const EmptyState(
+              icon: Icons.rss_feed,
+              title: '当前分组暂无订阅源',
+              simple: true,
+            );
+          }
+
           return RefreshIndicator(
             onRefresh: () => provider.loadSources(),
             // 安卓端使用 GridLayoutManager spanCount=4

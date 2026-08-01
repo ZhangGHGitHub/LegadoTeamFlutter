@@ -21,9 +21,11 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   @override
   BookshelfState build() {
-    // 初始化时异步加载设置和书籍
-    _loadSettings();
-    _loadBooks();
+    // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
+    Future.microtask(() {
+      _loadSettings();
+      _loadBooks();
+    });
     return const BookshelfState();
   }
 

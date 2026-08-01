@@ -12,8 +12,7 @@ part of 'misc.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
-);
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 SearchBook _$SearchBookFromJson(Map<String, dynamic> json) {
   return _SearchBook.fromJson(json);
@@ -51,12 +50,8 @@ mixin _$SearchBook {
   @JsonKey(name: 'respondTime')
   int get respondTime => throw _privateConstructorUsedError;
 
-  /// Serializes this SearchBook to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of SearchBook
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $SearchBookCopyWith<SearchBook> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -64,30 +59,28 @@ mixin _$SearchBook {
 /// @nodoc
 abstract class $SearchBookCopyWith<$Res> {
   factory $SearchBookCopyWith(
-    SearchBook value,
-    $Res Function(SearchBook) then,
-  ) = _$SearchBookCopyWithImpl<$Res, SearchBook>;
+          SearchBook value, $Res Function(SearchBook) then) =
+      _$SearchBookCopyWithImpl<$Res, SearchBook>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookUrl') String bookUrl,
-    String origin,
-    @JsonKey(name: 'originName') String originName,
-    @JsonKey(name: 'type') int bookType,
-    String name,
-    String author,
-    String? kind,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    String? intro,
-    @JsonKey(name: 'wordCount') String? wordCount,
-    @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
-    @JsonKey(name: 'tocUrl') String tocUrl,
-    int time,
-    String? variable,
-    @JsonKey(name: 'originOrder') int originOrder,
-    @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
-    @JsonKey(name: 'chapterWordCount') int chapterWordCount,
-    @JsonKey(name: 'respondTime') int respondTime,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookUrl') String bookUrl,
+      String origin,
+      @JsonKey(name: 'originName') String originName,
+      @JsonKey(name: 'type') int bookType,
+      String name,
+      String author,
+      String? kind,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      String? intro,
+      @JsonKey(name: 'wordCount') String? wordCount,
+      @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
+      @JsonKey(name: 'tocUrl') String tocUrl,
+      int time,
+      String? variable,
+      @JsonKey(name: 'originOrder') int originOrder,
+      @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
+      @JsonKey(name: 'chapterWordCount') int chapterWordCount,
+      @JsonKey(name: 'respondTime') int respondTime});
 }
 
 /// @nodoc
@@ -100,8 +93,6 @@ class _$SearchBookCopyWithImpl<$Res, $Val extends SearchBook>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of SearchBook
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -124,83 +115,80 @@ class _$SearchBookCopyWithImpl<$Res, $Val extends SearchBook>
     Object? chapterWordCount = null,
     Object? respondTime = null,
   }) {
-    return _then(
-      _value.copyWith(
-            bookUrl: null == bookUrl
-                ? _value.bookUrl
-                : bookUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-            origin: null == origin
-                ? _value.origin
-                : origin // ignore: cast_nullable_to_non_nullable
-                      as String,
-            originName: null == originName
-                ? _value.originName
-                : originName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookType: null == bookType
-                ? _value.bookType
-                : bookType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            author: null == author
-                ? _value.author
-                : author // ignore: cast_nullable_to_non_nullable
-                      as String,
-            kind: freezed == kind
-                ? _value.kind
-                : kind // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            coverUrl: freezed == coverUrl
-                ? _value.coverUrl
-                : coverUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            intro: freezed == intro
-                ? _value.intro
-                : intro // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            wordCount: freezed == wordCount
-                ? _value.wordCount
-                : wordCount // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            latestChapterTitle: freezed == latestChapterTitle
-                ? _value.latestChapterTitle
-                : latestChapterTitle // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            tocUrl: null == tocUrl
-                ? _value.tocUrl
-                : tocUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-            time: null == time
-                ? _value.time
-                : time // ignore: cast_nullable_to_non_nullable
-                      as int,
-            variable: freezed == variable
-                ? _value.variable
-                : variable // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            originOrder: null == originOrder
-                ? _value.originOrder
-                : originOrder // ignore: cast_nullable_to_non_nullable
-                      as int,
-            chapterWordCountText: freezed == chapterWordCountText
-                ? _value.chapterWordCountText
-                : chapterWordCountText // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            chapterWordCount: null == chapterWordCount
-                ? _value.chapterWordCount
-                : chapterWordCount // ignore: cast_nullable_to_non_nullable
-                      as int,
-            respondTime: null == respondTime
-                ? _value.respondTime
-                : respondTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      bookUrl: null == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      originName: null == originName
+          ? _value.originName
+          : originName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookType: null == bookType
+          ? _value.bookType
+          : bookType // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+      latestChapterTitle: freezed == latestChapterTitle
+          ? _value.latestChapterTitle
+          : latestChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      tocUrl: null == tocUrl
+          ? _value.tocUrl
+          : tocUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      time: null == time
+          ? _value.time
+          : time // ignore: cast_nullable_to_non_nullable
+              as int,
+      variable: freezed == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String?,
+      originOrder: null == originOrder
+          ? _value.originOrder
+          : originOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterWordCountText: freezed == chapterWordCountText
+          ? _value.chapterWordCountText
+          : chapterWordCountText // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterWordCount: null == chapterWordCount
+          ? _value.chapterWordCount
+          : chapterWordCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      respondTime: null == respondTime
+          ? _value.respondTime
+          : respondTime // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -208,31 +196,29 @@ class _$SearchBookCopyWithImpl<$Res, $Val extends SearchBook>
 abstract class _$$SearchBookImplCopyWith<$Res>
     implements $SearchBookCopyWith<$Res> {
   factory _$$SearchBookImplCopyWith(
-    _$SearchBookImpl value,
-    $Res Function(_$SearchBookImpl) then,
-  ) = __$$SearchBookImplCopyWithImpl<$Res>;
+          _$SearchBookImpl value, $Res Function(_$SearchBookImpl) then) =
+      __$$SearchBookImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookUrl') String bookUrl,
-    String origin,
-    @JsonKey(name: 'originName') String originName,
-    @JsonKey(name: 'type') int bookType,
-    String name,
-    String author,
-    String? kind,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    String? intro,
-    @JsonKey(name: 'wordCount') String? wordCount,
-    @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
-    @JsonKey(name: 'tocUrl') String tocUrl,
-    int time,
-    String? variable,
-    @JsonKey(name: 'originOrder') int originOrder,
-    @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
-    @JsonKey(name: 'chapterWordCount') int chapterWordCount,
-    @JsonKey(name: 'respondTime') int respondTime,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookUrl') String bookUrl,
+      String origin,
+      @JsonKey(name: 'originName') String originName,
+      @JsonKey(name: 'type') int bookType,
+      String name,
+      String author,
+      String? kind,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      String? intro,
+      @JsonKey(name: 'wordCount') String? wordCount,
+      @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
+      @JsonKey(name: 'tocUrl') String tocUrl,
+      int time,
+      String? variable,
+      @JsonKey(name: 'originOrder') int originOrder,
+      @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
+      @JsonKey(name: 'chapterWordCount') int chapterWordCount,
+      @JsonKey(name: 'respondTime') int respondTime});
 }
 
 /// @nodoc
@@ -240,12 +226,9 @@ class __$$SearchBookImplCopyWithImpl<$Res>
     extends _$SearchBookCopyWithImpl<$Res, _$SearchBookImpl>
     implements _$$SearchBookImplCopyWith<$Res> {
   __$$SearchBookImplCopyWithImpl(
-    _$SearchBookImpl _value,
-    $Res Function(_$SearchBookImpl) _then,
-  ) : super(_value, _then);
+      _$SearchBookImpl _value, $Res Function(_$SearchBookImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of SearchBook
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -268,108 +251,105 @@ class __$$SearchBookImplCopyWithImpl<$Res>
     Object? chapterWordCount = null,
     Object? respondTime = null,
   }) {
-    return _then(
-      _$SearchBookImpl(
-        bookUrl: null == bookUrl
-            ? _value.bookUrl
-            : bookUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-        origin: null == origin
-            ? _value.origin
-            : origin // ignore: cast_nullable_to_non_nullable
-                  as String,
-        originName: null == originName
-            ? _value.originName
-            : originName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookType: null == bookType
-            ? _value.bookType
-            : bookType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        author: null == author
-            ? _value.author
-            : author // ignore: cast_nullable_to_non_nullable
-                  as String,
-        kind: freezed == kind
-            ? _value.kind
-            : kind // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        coverUrl: freezed == coverUrl
-            ? _value.coverUrl
-            : coverUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        intro: freezed == intro
-            ? _value.intro
-            : intro // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        wordCount: freezed == wordCount
-            ? _value.wordCount
-            : wordCount // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        latestChapterTitle: freezed == latestChapterTitle
-            ? _value.latestChapterTitle
-            : latestChapterTitle // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        tocUrl: null == tocUrl
-            ? _value.tocUrl
-            : tocUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-        time: null == time
-            ? _value.time
-            : time // ignore: cast_nullable_to_non_nullable
-                  as int,
-        variable: freezed == variable
-            ? _value.variable
-            : variable // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        originOrder: null == originOrder
-            ? _value.originOrder
-            : originOrder // ignore: cast_nullable_to_non_nullable
-                  as int,
-        chapterWordCountText: freezed == chapterWordCountText
-            ? _value.chapterWordCountText
-            : chapterWordCountText // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        chapterWordCount: null == chapterWordCount
-            ? _value.chapterWordCount
-            : chapterWordCount // ignore: cast_nullable_to_non_nullable
-                  as int,
-        respondTime: null == respondTime
-            ? _value.respondTime
-            : respondTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$SearchBookImpl(
+      bookUrl: null == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      originName: null == originName
+          ? _value.originName
+          : originName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookType: null == bookType
+          ? _value.bookType
+          : bookType // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+      latestChapterTitle: freezed == latestChapterTitle
+          ? _value.latestChapterTitle
+          : latestChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      tocUrl: null == tocUrl
+          ? _value.tocUrl
+          : tocUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      time: null == time
+          ? _value.time
+          : time // ignore: cast_nullable_to_non_nullable
+              as int,
+      variable: freezed == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String?,
+      originOrder: null == originOrder
+          ? _value.originOrder
+          : originOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterWordCountText: freezed == chapterWordCountText
+          ? _value.chapterWordCountText
+          : chapterWordCountText // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterWordCount: null == chapterWordCount
+          ? _value.chapterWordCount
+          : chapterWordCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      respondTime: null == respondTime
+          ? _value.respondTime
+          : respondTime // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$SearchBookImpl implements _SearchBook {
-  const _$SearchBookImpl({
-    @JsonKey(name: 'bookUrl') this.bookUrl = '',
-    this.origin = '',
-    @JsonKey(name: 'originName') this.originName = '',
-    @JsonKey(name: 'type') this.bookType = 0,
-    this.name = '',
-    this.author = '',
-    this.kind,
-    @JsonKey(name: 'coverUrl') this.coverUrl,
-    this.intro,
-    @JsonKey(name: 'wordCount') this.wordCount,
-    @JsonKey(name: 'latestChapterTitle') this.latestChapterTitle,
-    @JsonKey(name: 'tocUrl') this.tocUrl = '',
-    this.time = 0,
-    this.variable,
-    @JsonKey(name: 'originOrder') this.originOrder = 0,
-    @JsonKey(name: 'chapterWordCountText') this.chapterWordCountText,
-    @JsonKey(name: 'chapterWordCount') this.chapterWordCount = -1,
-    @JsonKey(name: 'respondTime') this.respondTime = -1,
-  });
+  const _$SearchBookImpl(
+      {@JsonKey(name: 'bookUrl') this.bookUrl = '',
+      this.origin = '',
+      @JsonKey(name: 'originName') this.originName = '',
+      @JsonKey(name: 'type') this.bookType = 0,
+      this.name = '',
+      this.author = '',
+      this.kind,
+      @JsonKey(name: 'coverUrl') this.coverUrl,
+      this.intro,
+      @JsonKey(name: 'wordCount') this.wordCount,
+      @JsonKey(name: 'latestChapterTitle') this.latestChapterTitle,
+      @JsonKey(name: 'tocUrl') this.tocUrl = '',
+      this.time = 0,
+      this.variable,
+      @JsonKey(name: 'originOrder') this.originOrder = 0,
+      @JsonKey(name: 'chapterWordCountText') this.chapterWordCountText,
+      @JsonKey(name: 'chapterWordCount') this.chapterWordCount = -1,
+      @JsonKey(name: 'respondTime') this.respondTime = -1});
 
   factory _$SearchBookImpl.fromJson(Map<String, dynamic> json) =>
       _$$SearchBookImplFromJson(json);
@@ -466,33 +446,30 @@ class _$SearchBookImpl implements _SearchBook {
                 other.respondTime == respondTime));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    bookUrl,
-    origin,
-    originName,
-    bookType,
-    name,
-    author,
-    kind,
-    coverUrl,
-    intro,
-    wordCount,
-    latestChapterTitle,
-    tocUrl,
-    time,
-    variable,
-    originOrder,
-    chapterWordCountText,
-    chapterWordCount,
-    respondTime,
-  );
+      runtimeType,
+      bookUrl,
+      origin,
+      originName,
+      bookType,
+      name,
+      author,
+      kind,
+      coverUrl,
+      intro,
+      wordCount,
+      latestChapterTitle,
+      tocUrl,
+      time,
+      variable,
+      originOrder,
+      chapterWordCountText,
+      chapterWordCount,
+      respondTime);
 
-  /// Create a copy of SearchBook
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SearchBookImplCopyWith<_$SearchBookImpl> get copyWith =>
@@ -500,31 +477,32 @@ class _$SearchBookImpl implements _SearchBook {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SearchBookImplToJson(this);
+    return _$$SearchBookImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _SearchBook implements SearchBook {
-  const factory _SearchBook({
-    @JsonKey(name: 'bookUrl') final String bookUrl,
-    final String origin,
-    @JsonKey(name: 'originName') final String originName,
-    @JsonKey(name: 'type') final int bookType,
-    final String name,
-    final String author,
-    final String? kind,
-    @JsonKey(name: 'coverUrl') final String? coverUrl,
-    final String? intro,
-    @JsonKey(name: 'wordCount') final String? wordCount,
-    @JsonKey(name: 'latestChapterTitle') final String? latestChapterTitle,
-    @JsonKey(name: 'tocUrl') final String tocUrl,
-    final int time,
-    final String? variable,
-    @JsonKey(name: 'originOrder') final int originOrder,
-    @JsonKey(name: 'chapterWordCountText') final String? chapterWordCountText,
-    @JsonKey(name: 'chapterWordCount') final int chapterWordCount,
-    @JsonKey(name: 'respondTime') final int respondTime,
-  }) = _$SearchBookImpl;
+  const factory _SearchBook(
+      {@JsonKey(name: 'bookUrl') final String bookUrl,
+      final String origin,
+      @JsonKey(name: 'originName') final String originName,
+      @JsonKey(name: 'type') final int bookType,
+      final String name,
+      final String author,
+      final String? kind,
+      @JsonKey(name: 'coverUrl') final String? coverUrl,
+      final String? intro,
+      @JsonKey(name: 'wordCount') final String? wordCount,
+      @JsonKey(name: 'latestChapterTitle') final String? latestChapterTitle,
+      @JsonKey(name: 'tocUrl') final String tocUrl,
+      final int time,
+      final String? variable,
+      @JsonKey(name: 'originOrder') final int originOrder,
+      @JsonKey(name: 'chapterWordCountText') final String? chapterWordCountText,
+      @JsonKey(name: 'chapterWordCount') final int chapterWordCount,
+      @JsonKey(name: 'respondTime') final int respondTime}) = _$SearchBookImpl;
 
   factory _SearchBook.fromJson(Map<String, dynamic> json) =
       _$SearchBookImpl.fromJson;
@@ -576,11 +554,8 @@ abstract class _SearchBook implements SearchBook {
   @override
   @JsonKey(name: 'respondTime')
   int get respondTime;
-
-  /// Create a copy of SearchBook
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SearchBookImplCopyWith<_$SearchBookImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -612,12 +587,8 @@ mixin _$ReplaceRule {
   @JsonKey(name: 'sortOrder')
   int get order => throw _privateConstructorUsedError;
 
-  /// Serializes this ReplaceRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ReplaceRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ReplaceRuleCopyWith<ReplaceRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -625,25 +596,23 @@ mixin _$ReplaceRule {
 /// @nodoc
 abstract class $ReplaceRuleCopyWith<$Res> {
   factory $ReplaceRuleCopyWith(
-    ReplaceRule value,
-    $Res Function(ReplaceRule) then,
-  ) = _$ReplaceRuleCopyWithImpl<$Res, ReplaceRule>;
+          ReplaceRule value, $Res Function(ReplaceRule) then) =
+      _$ReplaceRuleCopyWithImpl<$Res, ReplaceRule>;
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String? group,
-    String pattern,
-    String replacement,
-    String? scope,
-    @JsonKey(name: 'scopeTitle') bool scopeTitle,
-    @JsonKey(name: 'scopeContent') bool scopeContent,
-    @JsonKey(name: 'excludeScope') String? excludeScope,
-    @JsonKey(name: 'isEnabled') bool isEnabled,
-    @JsonKey(name: 'isRegex') bool isRegex,
-    @JsonKey(name: 'timeoutMillisecond') int timeoutMillisecond,
-    @JsonKey(name: 'sortOrder') int order,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String? group,
+      String pattern,
+      String replacement,
+      String? scope,
+      @JsonKey(name: 'scopeTitle') bool scopeTitle,
+      @JsonKey(name: 'scopeContent') bool scopeContent,
+      @JsonKey(name: 'excludeScope') String? excludeScope,
+      @JsonKey(name: 'isEnabled') bool isEnabled,
+      @JsonKey(name: 'isRegex') bool isRegex,
+      @JsonKey(name: 'timeoutMillisecond') int timeoutMillisecond,
+      @JsonKey(name: 'sortOrder') int order});
 }
 
 /// @nodoc
@@ -656,8 +625,6 @@ class _$ReplaceRuleCopyWithImpl<$Res, $Val extends ReplaceRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ReplaceRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -675,63 +642,60 @@ class _$ReplaceRuleCopyWithImpl<$Res, $Val extends ReplaceRule>
     Object? timeoutMillisecond = null,
     Object? order = null,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            group: freezed == group
-                ? _value.group
-                : group // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            pattern: null == pattern
-                ? _value.pattern
-                : pattern // ignore: cast_nullable_to_non_nullable
-                      as String,
-            replacement: null == replacement
-                ? _value.replacement
-                : replacement // ignore: cast_nullable_to_non_nullable
-                      as String,
-            scope: freezed == scope
-                ? _value.scope
-                : scope // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            scopeTitle: null == scopeTitle
-                ? _value.scopeTitle
-                : scopeTitle // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            scopeContent: null == scopeContent
-                ? _value.scopeContent
-                : scopeContent // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            excludeScope: freezed == excludeScope
-                ? _value.excludeScope
-                : excludeScope // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            isEnabled: null == isEnabled
-                ? _value.isEnabled
-                : isEnabled // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            isRegex: null == isRegex
-                ? _value.isRegex
-                : isRegex // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            timeoutMillisecond: null == timeoutMillisecond
-                ? _value.timeoutMillisecond
-                : timeoutMillisecond // ignore: cast_nullable_to_non_nullable
-                      as int,
-            order: null == order
-                ? _value.order
-                : order // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      group: freezed == group
+          ? _value.group
+          : group // ignore: cast_nullable_to_non_nullable
+              as String?,
+      pattern: null == pattern
+          ? _value.pattern
+          : pattern // ignore: cast_nullable_to_non_nullable
+              as String,
+      replacement: null == replacement
+          ? _value.replacement
+          : replacement // ignore: cast_nullable_to_non_nullable
+              as String,
+      scope: freezed == scope
+          ? _value.scope
+          : scope // ignore: cast_nullable_to_non_nullable
+              as String?,
+      scopeTitle: null == scopeTitle
+          ? _value.scopeTitle
+          : scopeTitle // ignore: cast_nullable_to_non_nullable
+              as bool,
+      scopeContent: null == scopeContent
+          ? _value.scopeContent
+          : scopeContent // ignore: cast_nullable_to_non_nullable
+              as bool,
+      excludeScope: freezed == excludeScope
+          ? _value.excludeScope
+          : excludeScope // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isEnabled: null == isEnabled
+          ? _value.isEnabled
+          : isEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isRegex: null == isRegex
+          ? _value.isRegex
+          : isRegex // ignore: cast_nullable_to_non_nullable
+              as bool,
+      timeoutMillisecond: null == timeoutMillisecond
+          ? _value.timeoutMillisecond
+          : timeoutMillisecond // ignore: cast_nullable_to_non_nullable
+              as int,
+      order: null == order
+          ? _value.order
+          : order // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -739,26 +703,24 @@ class _$ReplaceRuleCopyWithImpl<$Res, $Val extends ReplaceRule>
 abstract class _$$ReplaceRuleImplCopyWith<$Res>
     implements $ReplaceRuleCopyWith<$Res> {
   factory _$$ReplaceRuleImplCopyWith(
-    _$ReplaceRuleImpl value,
-    $Res Function(_$ReplaceRuleImpl) then,
-  ) = __$$ReplaceRuleImplCopyWithImpl<$Res>;
+          _$ReplaceRuleImpl value, $Res Function(_$ReplaceRuleImpl) then) =
+      __$$ReplaceRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String? group,
-    String pattern,
-    String replacement,
-    String? scope,
-    @JsonKey(name: 'scopeTitle') bool scopeTitle,
-    @JsonKey(name: 'scopeContent') bool scopeContent,
-    @JsonKey(name: 'excludeScope') String? excludeScope,
-    @JsonKey(name: 'isEnabled') bool isEnabled,
-    @JsonKey(name: 'isRegex') bool isRegex,
-    @JsonKey(name: 'timeoutMillisecond') int timeoutMillisecond,
-    @JsonKey(name: 'sortOrder') int order,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String? group,
+      String pattern,
+      String replacement,
+      String? scope,
+      @JsonKey(name: 'scopeTitle') bool scopeTitle,
+      @JsonKey(name: 'scopeContent') bool scopeContent,
+      @JsonKey(name: 'excludeScope') String? excludeScope,
+      @JsonKey(name: 'isEnabled') bool isEnabled,
+      @JsonKey(name: 'isRegex') bool isRegex,
+      @JsonKey(name: 'timeoutMillisecond') int timeoutMillisecond,
+      @JsonKey(name: 'sortOrder') int order});
 }
 
 /// @nodoc
@@ -766,12 +728,9 @@ class __$$ReplaceRuleImplCopyWithImpl<$Res>
     extends _$ReplaceRuleCopyWithImpl<$Res, _$ReplaceRuleImpl>
     implements _$$ReplaceRuleImplCopyWith<$Res> {
   __$$ReplaceRuleImplCopyWithImpl(
-    _$ReplaceRuleImpl _value,
-    $Res Function(_$ReplaceRuleImpl) _then,
-  ) : super(_value, _then);
+      _$ReplaceRuleImpl _value, $Res Function(_$ReplaceRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ReplaceRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -789,83 +748,80 @@ class __$$ReplaceRuleImplCopyWithImpl<$Res>
     Object? timeoutMillisecond = null,
     Object? order = null,
   }) {
-    return _then(
-      _$ReplaceRuleImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        group: freezed == group
-            ? _value.group
-            : group // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        pattern: null == pattern
-            ? _value.pattern
-            : pattern // ignore: cast_nullable_to_non_nullable
-                  as String,
-        replacement: null == replacement
-            ? _value.replacement
-            : replacement // ignore: cast_nullable_to_non_nullable
-                  as String,
-        scope: freezed == scope
-            ? _value.scope
-            : scope // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        scopeTitle: null == scopeTitle
-            ? _value.scopeTitle
-            : scopeTitle // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        scopeContent: null == scopeContent
-            ? _value.scopeContent
-            : scopeContent // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        excludeScope: freezed == excludeScope
-            ? _value.excludeScope
-            : excludeScope // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        isEnabled: null == isEnabled
-            ? _value.isEnabled
-            : isEnabled // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        isRegex: null == isRegex
-            ? _value.isRegex
-            : isRegex // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        timeoutMillisecond: null == timeoutMillisecond
-            ? _value.timeoutMillisecond
-            : timeoutMillisecond // ignore: cast_nullable_to_non_nullable
-                  as int,
-        order: null == order
-            ? _value.order
-            : order // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$ReplaceRuleImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      group: freezed == group
+          ? _value.group
+          : group // ignore: cast_nullable_to_non_nullable
+              as String?,
+      pattern: null == pattern
+          ? _value.pattern
+          : pattern // ignore: cast_nullable_to_non_nullable
+              as String,
+      replacement: null == replacement
+          ? _value.replacement
+          : replacement // ignore: cast_nullable_to_non_nullable
+              as String,
+      scope: freezed == scope
+          ? _value.scope
+          : scope // ignore: cast_nullable_to_non_nullable
+              as String?,
+      scopeTitle: null == scopeTitle
+          ? _value.scopeTitle
+          : scopeTitle // ignore: cast_nullable_to_non_nullable
+              as bool,
+      scopeContent: null == scopeContent
+          ? _value.scopeContent
+          : scopeContent // ignore: cast_nullable_to_non_nullable
+              as bool,
+      excludeScope: freezed == excludeScope
+          ? _value.excludeScope
+          : excludeScope // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isEnabled: null == isEnabled
+          ? _value.isEnabled
+          : isEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isRegex: null == isRegex
+          ? _value.isRegex
+          : isRegex // ignore: cast_nullable_to_non_nullable
+              as bool,
+      timeoutMillisecond: null == timeoutMillisecond
+          ? _value.timeoutMillisecond
+          : timeoutMillisecond // ignore: cast_nullable_to_non_nullable
+              as int,
+      order: null == order
+          ? _value.order
+          : order // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ReplaceRuleImpl implements _ReplaceRule {
-  const _$ReplaceRuleImpl({
-    this.id = 0,
-    this.name = '',
-    this.group,
-    this.pattern = '',
-    this.replacement = '',
-    this.scope,
-    @JsonKey(name: 'scopeTitle') this.scopeTitle = false,
-    @JsonKey(name: 'scopeContent') this.scopeContent = true,
-    @JsonKey(name: 'excludeScope') this.excludeScope,
-    @JsonKey(name: 'isEnabled') this.isEnabled = true,
-    @JsonKey(name: 'isRegex') this.isRegex = true,
-    @JsonKey(name: 'timeoutMillisecond') this.timeoutMillisecond = 3000,
-    @JsonKey(name: 'sortOrder') this.order = 0,
-  });
+  const _$ReplaceRuleImpl(
+      {this.id = 0,
+      this.name = '',
+      this.group,
+      this.pattern = '',
+      this.replacement = '',
+      this.scope,
+      @JsonKey(name: 'scopeTitle') this.scopeTitle = false,
+      @JsonKey(name: 'scopeContent') this.scopeContent = true,
+      @JsonKey(name: 'excludeScope') this.excludeScope,
+      @JsonKey(name: 'isEnabled') this.isEnabled = true,
+      @JsonKey(name: 'isRegex') this.isRegex = true,
+      @JsonKey(name: 'timeoutMillisecond') this.timeoutMillisecond = 3000,
+      @JsonKey(name: 'sortOrder') this.order = 0});
 
   factory _$ReplaceRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$ReplaceRuleImplFromJson(json);
@@ -939,28 +895,25 @@ class _$ReplaceRuleImpl implements _ReplaceRule {
             (identical(other.order, order) || other.order == order));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    id,
-    name,
-    group,
-    pattern,
-    replacement,
-    scope,
-    scopeTitle,
-    scopeContent,
-    excludeScope,
-    isEnabled,
-    isRegex,
-    timeoutMillisecond,
-    order,
-  );
+      runtimeType,
+      id,
+      name,
+      group,
+      pattern,
+      replacement,
+      scope,
+      scopeTitle,
+      scopeContent,
+      excludeScope,
+      isEnabled,
+      isRegex,
+      timeoutMillisecond,
+      order);
 
-  /// Create a copy of ReplaceRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ReplaceRuleImplCopyWith<_$ReplaceRuleImpl> get copyWith =>
@@ -968,26 +921,27 @@ class _$ReplaceRuleImpl implements _ReplaceRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ReplaceRuleImplToJson(this);
+    return _$$ReplaceRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ReplaceRule implements ReplaceRule {
-  const factory _ReplaceRule({
-    final int id,
-    final String name,
-    final String? group,
-    final String pattern,
-    final String replacement,
-    final String? scope,
-    @JsonKey(name: 'scopeTitle') final bool scopeTitle,
-    @JsonKey(name: 'scopeContent') final bool scopeContent,
-    @JsonKey(name: 'excludeScope') final String? excludeScope,
-    @JsonKey(name: 'isEnabled') final bool isEnabled,
-    @JsonKey(name: 'isRegex') final bool isRegex,
-    @JsonKey(name: 'timeoutMillisecond') final int timeoutMillisecond,
-    @JsonKey(name: 'sortOrder') final int order,
-  }) = _$ReplaceRuleImpl;
+  const factory _ReplaceRule(
+      {final int id,
+      final String name,
+      final String? group,
+      final String pattern,
+      final String replacement,
+      final String? scope,
+      @JsonKey(name: 'scopeTitle') final bool scopeTitle,
+      @JsonKey(name: 'scopeContent') final bool scopeContent,
+      @JsonKey(name: 'excludeScope') final String? excludeScope,
+      @JsonKey(name: 'isEnabled') final bool isEnabled,
+      @JsonKey(name: 'isRegex') final bool isRegex,
+      @JsonKey(name: 'timeoutMillisecond') final int timeoutMillisecond,
+      @JsonKey(name: 'sortOrder') final int order}) = _$ReplaceRuleImpl;
 
   factory _ReplaceRule.fromJson(Map<String, dynamic> json) =
       _$ReplaceRuleImpl.fromJson;
@@ -1025,11 +979,8 @@ abstract class _ReplaceRule implements ReplaceRule {
   @override
   @JsonKey(name: 'sortOrder')
   int get order;
-
-  /// Create a copy of ReplaceRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ReplaceRuleImplCopyWith<_$ReplaceRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1063,12 +1014,8 @@ mixin _$HttpTts {
   @JsonKey(name: 'lastUpdateTime')
   int get lastUpdateTime => throw _privateConstructorUsedError;
 
-  /// Serializes this HttpTts to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of HttpTts
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $HttpTtsCopyWith<HttpTts> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -1077,21 +1024,20 @@ abstract class $HttpTtsCopyWith<$Res> {
   factory $HttpTtsCopyWith(HttpTts value, $Res Function(HttpTts) then) =
       _$HttpTtsCopyWithImpl<$Res, HttpTts>;
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String url,
-    @JsonKey(name: 'contentType') String? contentType,
-    @JsonKey(name: 'pauseDuration') int pauseDuration,
-    @JsonKey(name: 'concurrentRate') String? concurrentRate,
-    @JsonKey(name: 'loginUrl') String? loginUrl,
-    @JsonKey(name: 'loginUi') String? loginUi,
-    String? header,
-    @JsonKey(name: 'jsLib') String? jsLib,
-    @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
-    @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
-    @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String url,
+      @JsonKey(name: 'contentType') String? contentType,
+      @JsonKey(name: 'pauseDuration') int pauseDuration,
+      @JsonKey(name: 'concurrentRate') String? concurrentRate,
+      @JsonKey(name: 'loginUrl') String? loginUrl,
+      @JsonKey(name: 'loginUi') String? loginUi,
+      String? header,
+      @JsonKey(name: 'jsLib') String? jsLib,
+      @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
+      @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
+      @JsonKey(name: 'lastUpdateTime') int lastUpdateTime});
 }
 
 /// @nodoc
@@ -1104,8 +1050,6 @@ class _$HttpTtsCopyWithImpl<$Res, $Val extends HttpTts>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of HttpTts
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1123,89 +1067,84 @@ class _$HttpTtsCopyWithImpl<$Res, $Val extends HttpTts>
     Object? loginCheckJs = freezed,
     Object? lastUpdateTime = null,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            url: null == url
-                ? _value.url
-                : url // ignore: cast_nullable_to_non_nullable
-                      as String,
-            contentType: freezed == contentType
-                ? _value.contentType
-                : contentType // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            pauseDuration: null == pauseDuration
-                ? _value.pauseDuration
-                : pauseDuration // ignore: cast_nullable_to_non_nullable
-                      as int,
-            concurrentRate: freezed == concurrentRate
-                ? _value.concurrentRate
-                : concurrentRate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginUrl: freezed == loginUrl
-                ? _value.loginUrl
-                : loginUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginUi: freezed == loginUi
-                ? _value.loginUi
-                : loginUi // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            header: freezed == header
-                ? _value.header
-                : header // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            jsLib: freezed == jsLib
-                ? _value.jsLib
-                : jsLib // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            enabledCookieJar: freezed == enabledCookieJar
-                ? _value.enabledCookieJar
-                : enabledCookieJar // ignore: cast_nullable_to_non_nullable
-                      as bool?,
-            loginCheckJs: freezed == loginCheckJs
-                ? _value.loginCheckJs
-                : loginCheckJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            lastUpdateTime: null == lastUpdateTime
-                ? _value.lastUpdateTime
-                : lastUpdateTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      contentType: freezed == contentType
+          ? _value.contentType
+          : contentType // ignore: cast_nullable_to_non_nullable
+              as String?,
+      pauseDuration: null == pauseDuration
+          ? _value.pauseDuration
+          : pauseDuration // ignore: cast_nullable_to_non_nullable
+              as int,
+      concurrentRate: freezed == concurrentRate
+          ? _value.concurrentRate
+          : concurrentRate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUrl: freezed == loginUrl
+          ? _value.loginUrl
+          : loginUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUi: freezed == loginUi
+          ? _value.loginUi
+          : loginUi // ignore: cast_nullable_to_non_nullable
+              as String?,
+      header: freezed == header
+          ? _value.header
+          : header // ignore: cast_nullable_to_non_nullable
+              as String?,
+      jsLib: freezed == jsLib
+          ? _value.jsLib
+          : jsLib // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabledCookieJar: freezed == enabledCookieJar
+          ? _value.enabledCookieJar
+          : enabledCookieJar // ignore: cast_nullable_to_non_nullable
+              as bool?,
+      loginCheckJs: freezed == loginCheckJs
+          ? _value.loginCheckJs
+          : loginCheckJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastUpdateTime: null == lastUpdateTime
+          ? _value.lastUpdateTime
+          : lastUpdateTime // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$HttpTtsImplCopyWith<$Res> implements $HttpTtsCopyWith<$Res> {
   factory _$$HttpTtsImplCopyWith(
-    _$HttpTtsImpl value,
-    $Res Function(_$HttpTtsImpl) then,
-  ) = __$$HttpTtsImplCopyWithImpl<$Res>;
+          _$HttpTtsImpl value, $Res Function(_$HttpTtsImpl) then) =
+      __$$HttpTtsImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String url,
-    @JsonKey(name: 'contentType') String? contentType,
-    @JsonKey(name: 'pauseDuration') int pauseDuration,
-    @JsonKey(name: 'concurrentRate') String? concurrentRate,
-    @JsonKey(name: 'loginUrl') String? loginUrl,
-    @JsonKey(name: 'loginUi') String? loginUi,
-    String? header,
-    @JsonKey(name: 'jsLib') String? jsLib,
-    @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
-    @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
-    @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String url,
+      @JsonKey(name: 'contentType') String? contentType,
+      @JsonKey(name: 'pauseDuration') int pauseDuration,
+      @JsonKey(name: 'concurrentRate') String? concurrentRate,
+      @JsonKey(name: 'loginUrl') String? loginUrl,
+      @JsonKey(name: 'loginUi') String? loginUi,
+      String? header,
+      @JsonKey(name: 'jsLib') String? jsLib,
+      @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
+      @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
+      @JsonKey(name: 'lastUpdateTime') int lastUpdateTime});
 }
 
 /// @nodoc
@@ -1213,12 +1152,9 @@ class __$$HttpTtsImplCopyWithImpl<$Res>
     extends _$HttpTtsCopyWithImpl<$Res, _$HttpTtsImpl>
     implements _$$HttpTtsImplCopyWith<$Res> {
   __$$HttpTtsImplCopyWithImpl(
-    _$HttpTtsImpl _value,
-    $Res Function(_$HttpTtsImpl) _then,
-  ) : super(_value, _then);
+      _$HttpTtsImpl _value, $Res Function(_$HttpTtsImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of HttpTts
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1236,83 +1172,80 @@ class __$$HttpTtsImplCopyWithImpl<$Res>
     Object? loginCheckJs = freezed,
     Object? lastUpdateTime = null,
   }) {
-    return _then(
-      _$HttpTtsImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        url: null == url
-            ? _value.url
-            : url // ignore: cast_nullable_to_non_nullable
-                  as String,
-        contentType: freezed == contentType
-            ? _value.contentType
-            : contentType // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        pauseDuration: null == pauseDuration
-            ? _value.pauseDuration
-            : pauseDuration // ignore: cast_nullable_to_non_nullable
-                  as int,
-        concurrentRate: freezed == concurrentRate
-            ? _value.concurrentRate
-            : concurrentRate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginUrl: freezed == loginUrl
-            ? _value.loginUrl
-            : loginUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginUi: freezed == loginUi
-            ? _value.loginUi
-            : loginUi // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        header: freezed == header
-            ? _value.header
-            : header // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        jsLib: freezed == jsLib
-            ? _value.jsLib
-            : jsLib // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        enabledCookieJar: freezed == enabledCookieJar
-            ? _value.enabledCookieJar
-            : enabledCookieJar // ignore: cast_nullable_to_non_nullable
-                  as bool?,
-        loginCheckJs: freezed == loginCheckJs
-            ? _value.loginCheckJs
-            : loginCheckJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        lastUpdateTime: null == lastUpdateTime
-            ? _value.lastUpdateTime
-            : lastUpdateTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$HttpTtsImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      contentType: freezed == contentType
+          ? _value.contentType
+          : contentType // ignore: cast_nullable_to_non_nullable
+              as String?,
+      pauseDuration: null == pauseDuration
+          ? _value.pauseDuration
+          : pauseDuration // ignore: cast_nullable_to_non_nullable
+              as int,
+      concurrentRate: freezed == concurrentRate
+          ? _value.concurrentRate
+          : concurrentRate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUrl: freezed == loginUrl
+          ? _value.loginUrl
+          : loginUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUi: freezed == loginUi
+          ? _value.loginUi
+          : loginUi // ignore: cast_nullable_to_non_nullable
+              as String?,
+      header: freezed == header
+          ? _value.header
+          : header // ignore: cast_nullable_to_non_nullable
+              as String?,
+      jsLib: freezed == jsLib
+          ? _value.jsLib
+          : jsLib // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabledCookieJar: freezed == enabledCookieJar
+          ? _value.enabledCookieJar
+          : enabledCookieJar // ignore: cast_nullable_to_non_nullable
+              as bool?,
+      loginCheckJs: freezed == loginCheckJs
+          ? _value.loginCheckJs
+          : loginCheckJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastUpdateTime: null == lastUpdateTime
+          ? _value.lastUpdateTime
+          : lastUpdateTime // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$HttpTtsImpl implements _HttpTts {
-  const _$HttpTtsImpl({
-    this.id = 0,
-    this.name = '',
-    this.url = '',
-    @JsonKey(name: 'contentType') this.contentType,
-    @JsonKey(name: 'pauseDuration') this.pauseDuration = 0,
-    @JsonKey(name: 'concurrentRate') this.concurrentRate,
-    @JsonKey(name: 'loginUrl') this.loginUrl,
-    @JsonKey(name: 'loginUi') this.loginUi,
-    this.header,
-    @JsonKey(name: 'jsLib') this.jsLib,
-    @JsonKey(name: 'enabledCookieJar') this.enabledCookieJar,
-    @JsonKey(name: 'loginCheckJs') this.loginCheckJs,
-    @JsonKey(name: 'lastUpdateTime') this.lastUpdateTime = 0,
-  });
+  const _$HttpTtsImpl(
+      {this.id = 0,
+      this.name = '',
+      this.url = '',
+      @JsonKey(name: 'contentType') this.contentType,
+      @JsonKey(name: 'pauseDuration') this.pauseDuration = 0,
+      @JsonKey(name: 'concurrentRate') this.concurrentRate,
+      @JsonKey(name: 'loginUrl') this.loginUrl,
+      @JsonKey(name: 'loginUi') this.loginUi,
+      this.header,
+      @JsonKey(name: 'jsLib') this.jsLib,
+      @JsonKey(name: 'enabledCookieJar') this.enabledCookieJar,
+      @JsonKey(name: 'loginCheckJs') this.loginCheckJs,
+      @JsonKey(name: 'lastUpdateTime') this.lastUpdateTime = 0});
 
   factory _$HttpTtsImpl.fromJson(Map<String, dynamic> json) =>
       _$$HttpTtsImplFromJson(json);
@@ -1388,28 +1321,25 @@ class _$HttpTtsImpl implements _HttpTts {
                 other.lastUpdateTime == lastUpdateTime));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    id,
-    name,
-    url,
-    contentType,
-    pauseDuration,
-    concurrentRate,
-    loginUrl,
-    loginUi,
-    header,
-    jsLib,
-    enabledCookieJar,
-    loginCheckJs,
-    lastUpdateTime,
-  );
+      runtimeType,
+      id,
+      name,
+      url,
+      contentType,
+      pauseDuration,
+      concurrentRate,
+      loginUrl,
+      loginUi,
+      header,
+      jsLib,
+      enabledCookieJar,
+      loginCheckJs,
+      lastUpdateTime);
 
-  /// Create a copy of HttpTts
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$HttpTtsImplCopyWith<_$HttpTtsImpl> get copyWith =>
@@ -1417,26 +1347,28 @@ class _$HttpTtsImpl implements _HttpTts {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$HttpTtsImplToJson(this);
+    return _$$HttpTtsImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _HttpTts implements HttpTts {
-  const factory _HttpTts({
-    final int id,
-    final String name,
-    final String url,
-    @JsonKey(name: 'contentType') final String? contentType,
-    @JsonKey(name: 'pauseDuration') final int pauseDuration,
-    @JsonKey(name: 'concurrentRate') final String? concurrentRate,
-    @JsonKey(name: 'loginUrl') final String? loginUrl,
-    @JsonKey(name: 'loginUi') final String? loginUi,
-    final String? header,
-    @JsonKey(name: 'jsLib') final String? jsLib,
-    @JsonKey(name: 'enabledCookieJar') final bool? enabledCookieJar,
-    @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
-    @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
-  }) = _$HttpTtsImpl;
+  const factory _HttpTts(
+          {final int id,
+          final String name,
+          final String url,
+          @JsonKey(name: 'contentType') final String? contentType,
+          @JsonKey(name: 'pauseDuration') final int pauseDuration,
+          @JsonKey(name: 'concurrentRate') final String? concurrentRate,
+          @JsonKey(name: 'loginUrl') final String? loginUrl,
+          @JsonKey(name: 'loginUi') final String? loginUi,
+          final String? header,
+          @JsonKey(name: 'jsLib') final String? jsLib,
+          @JsonKey(name: 'enabledCookieJar') final bool? enabledCookieJar,
+          @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
+          @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime}) =
+      _$HttpTtsImpl;
 
   factory _HttpTts.fromJson(Map<String, dynamic> json) = _$HttpTtsImpl.fromJson;
 
@@ -1475,11 +1407,8 @@ abstract class _HttpTts implements HttpTts {
   @override
   @JsonKey(name: 'lastUpdateTime')
   int get lastUpdateTime;
-
-  /// Create a copy of HttpTts
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$HttpTtsImplCopyWith<_$HttpTtsImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1506,12 +1435,8 @@ mixin _$Bookmark {
   String get bookText => throw _privateConstructorUsedError;
   String get content => throw _privateConstructorUsedError;
 
-  /// Serializes this Bookmark to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of Bookmark
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $BookmarkCopyWith<Bookmark> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1521,17 +1446,16 @@ abstract class $BookmarkCopyWith<$Res> {
   factory $BookmarkCopyWith(Bookmark value, $Res Function(Bookmark) then) =
       _$BookmarkCopyWithImpl<$Res, Bookmark>;
   @useResult
-  $Res call({
-    int id,
-    int time,
-    @JsonKey(name: 'bookName') String bookName,
-    @JsonKey(name: 'bookAuthor') String bookAuthor,
-    @JsonKey(name: 'chapterIndex') int chapterIndex,
-    @JsonKey(name: 'chapterPos') int chapterPos,
-    @JsonKey(name: 'chapterName') String chapterName,
-    @JsonKey(name: 'bookText') String bookText,
-    String content,
-  });
+  $Res call(
+      {int id,
+      int time,
+      @JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'bookAuthor') String bookAuthor,
+      @JsonKey(name: 'chapterIndex') int chapterIndex,
+      @JsonKey(name: 'chapterPos') int chapterPos,
+      @JsonKey(name: 'chapterName') String chapterName,
+      @JsonKey(name: 'bookText') String bookText,
+      String content});
 }
 
 /// @nodoc
@@ -1544,8 +1468,6 @@ class _$BookmarkCopyWithImpl<$Res, $Val extends Bookmark>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of Bookmark
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1559,47 +1481,44 @@ class _$BookmarkCopyWithImpl<$Res, $Val extends Bookmark>
     Object? bookText = null,
     Object? content = null,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as int,
-            time: null == time
-                ? _value.time
-                : time // ignore: cast_nullable_to_non_nullable
-                      as int,
-            bookName: null == bookName
-                ? _value.bookName
-                : bookName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookAuthor: null == bookAuthor
-                ? _value.bookAuthor
-                : bookAuthor // ignore: cast_nullable_to_non_nullable
-                      as String,
-            chapterIndex: null == chapterIndex
-                ? _value.chapterIndex
-                : chapterIndex // ignore: cast_nullable_to_non_nullable
-                      as int,
-            chapterPos: null == chapterPos
-                ? _value.chapterPos
-                : chapterPos // ignore: cast_nullable_to_non_nullable
-                      as int,
-            chapterName: null == chapterName
-                ? _value.chapterName
-                : chapterName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookText: null == bookText
-                ? _value.bookText
-                : bookText // ignore: cast_nullable_to_non_nullable
-                      as String,
-            content: null == content
-                ? _value.content
-                : content // ignore: cast_nullable_to_non_nullable
-                      as String,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      time: null == time
+          ? _value.time
+          : time // ignore: cast_nullable_to_non_nullable
+              as int,
+      bookName: null == bookName
+          ? _value.bookName
+          : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookAuthor: null == bookAuthor
+          ? _value.bookAuthor
+          : bookAuthor // ignore: cast_nullable_to_non_nullable
+              as String,
+      chapterIndex: null == chapterIndex
+          ? _value.chapterIndex
+          : chapterIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterPos: null == chapterPos
+          ? _value.chapterPos
+          : chapterPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterName: null == chapterName
+          ? _value.chapterName
+          : chapterName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookText: null == bookText
+          ? _value.bookText
+          : bookText // ignore: cast_nullable_to_non_nullable
+              as String,
+      content: null == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
   }
 }
 
@@ -1607,22 +1526,20 @@ class _$BookmarkCopyWithImpl<$Res, $Val extends Bookmark>
 abstract class _$$BookmarkImplCopyWith<$Res>
     implements $BookmarkCopyWith<$Res> {
   factory _$$BookmarkImplCopyWith(
-    _$BookmarkImpl value,
-    $Res Function(_$BookmarkImpl) then,
-  ) = __$$BookmarkImplCopyWithImpl<$Res>;
+          _$BookmarkImpl value, $Res Function(_$BookmarkImpl) then) =
+      __$$BookmarkImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    int id,
-    int time,
-    @JsonKey(name: 'bookName') String bookName,
-    @JsonKey(name: 'bookAuthor') String bookAuthor,
-    @JsonKey(name: 'chapterIndex') int chapterIndex,
-    @JsonKey(name: 'chapterPos') int chapterPos,
-    @JsonKey(name: 'chapterName') String chapterName,
-    @JsonKey(name: 'bookText') String bookText,
-    String content,
-  });
+  $Res call(
+      {int id,
+      int time,
+      @JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'bookAuthor') String bookAuthor,
+      @JsonKey(name: 'chapterIndex') int chapterIndex,
+      @JsonKey(name: 'chapterPos') int chapterPos,
+      @JsonKey(name: 'chapterName') String chapterName,
+      @JsonKey(name: 'bookText') String bookText,
+      String content});
 }
 
 /// @nodoc
@@ -1630,12 +1547,9 @@ class __$$BookmarkImplCopyWithImpl<$Res>
     extends _$BookmarkCopyWithImpl<$Res, _$BookmarkImpl>
     implements _$$BookmarkImplCopyWith<$Res> {
   __$$BookmarkImplCopyWithImpl(
-    _$BookmarkImpl _value,
-    $Res Function(_$BookmarkImpl) _then,
-  ) : super(_value, _then);
+      _$BookmarkImpl _value, $Res Function(_$BookmarkImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of Bookmark
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1649,63 +1563,60 @@ class __$$BookmarkImplCopyWithImpl<$Res>
     Object? bookText = null,
     Object? content = null,
   }) {
-    return _then(
-      _$BookmarkImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as int,
-        time: null == time
-            ? _value.time
-            : time // ignore: cast_nullable_to_non_nullable
-                  as int,
-        bookName: null == bookName
-            ? _value.bookName
-            : bookName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookAuthor: null == bookAuthor
-            ? _value.bookAuthor
-            : bookAuthor // ignore: cast_nullable_to_non_nullable
-                  as String,
-        chapterIndex: null == chapterIndex
-            ? _value.chapterIndex
-            : chapterIndex // ignore: cast_nullable_to_non_nullable
-                  as int,
-        chapterPos: null == chapterPos
-            ? _value.chapterPos
-            : chapterPos // ignore: cast_nullable_to_non_nullable
-                  as int,
-        chapterName: null == chapterName
-            ? _value.chapterName
-            : chapterName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookText: null == bookText
-            ? _value.bookText
-            : bookText // ignore: cast_nullable_to_non_nullable
-                  as String,
-        content: null == content
-            ? _value.content
-            : content // ignore: cast_nullable_to_non_nullable
-                  as String,
-      ),
-    );
+    return _then(_$BookmarkImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      time: null == time
+          ? _value.time
+          : time // ignore: cast_nullable_to_non_nullable
+              as int,
+      bookName: null == bookName
+          ? _value.bookName
+          : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookAuthor: null == bookAuthor
+          ? _value.bookAuthor
+          : bookAuthor // ignore: cast_nullable_to_non_nullable
+              as String,
+      chapterIndex: null == chapterIndex
+          ? _value.chapterIndex
+          : chapterIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterPos: null == chapterPos
+          ? _value.chapterPos
+          : chapterPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterName: null == chapterName
+          ? _value.chapterName
+          : chapterName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookText: null == bookText
+          ? _value.bookText
+          : bookText // ignore: cast_nullable_to_non_nullable
+              as String,
+      content: null == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$BookmarkImpl implements _Bookmark {
-  const _$BookmarkImpl({
-    this.id = 0,
-    this.time = 0,
-    @JsonKey(name: 'bookName') this.bookName = '',
-    @JsonKey(name: 'bookAuthor') this.bookAuthor = '',
-    @JsonKey(name: 'chapterIndex') this.chapterIndex = 0,
-    @JsonKey(name: 'chapterPos') this.chapterPos = 0,
-    @JsonKey(name: 'chapterName') this.chapterName = '',
-    @JsonKey(name: 'bookText') this.bookText = '',
-    this.content = '',
-  });
+  const _$BookmarkImpl(
+      {this.id = 0,
+      this.time = 0,
+      @JsonKey(name: 'bookName') this.bookName = '',
+      @JsonKey(name: 'bookAuthor') this.bookAuthor = '',
+      @JsonKey(name: 'chapterIndex') this.chapterIndex = 0,
+      @JsonKey(name: 'chapterPos') this.chapterPos = 0,
+      @JsonKey(name: 'chapterName') this.chapterName = '',
+      @JsonKey(name: 'bookText') this.bookText = '',
+      this.content = ''});
 
   factory _$BookmarkImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookmarkImplFromJson(json);
@@ -1765,24 +1676,12 @@ class _$BookmarkImpl implements _Bookmark {
             (identical(other.content, content) || other.content == content));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    id,
-    time,
-    bookName,
-    bookAuthor,
-    chapterIndex,
-    chapterPos,
-    chapterName,
-    bookText,
-    content,
-  );
+  int get hashCode => Object.hash(runtimeType, id, time, bookName, bookAuthor,
+      chapterIndex, chapterPos, chapterName, bookText, content);
 
-  /// Create a copy of Bookmark
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$BookmarkImplCopyWith<_$BookmarkImpl> get copyWith =>
@@ -1790,22 +1689,23 @@ class _$BookmarkImpl implements _Bookmark {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$BookmarkImplToJson(this);
+    return _$$BookmarkImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _Bookmark implements Bookmark {
-  const factory _Bookmark({
-    final int id,
-    final int time,
-    @JsonKey(name: 'bookName') final String bookName,
-    @JsonKey(name: 'bookAuthor') final String bookAuthor,
-    @JsonKey(name: 'chapterIndex') final int chapterIndex,
-    @JsonKey(name: 'chapterPos') final int chapterPos,
-    @JsonKey(name: 'chapterName') final String chapterName,
-    @JsonKey(name: 'bookText') final String bookText,
-    final String content,
-  }) = _$BookmarkImpl;
+  const factory _Bookmark(
+      {final int id,
+      final int time,
+      @JsonKey(name: 'bookName') final String bookName,
+      @JsonKey(name: 'bookAuthor') final String bookAuthor,
+      @JsonKey(name: 'chapterIndex') final int chapterIndex,
+      @JsonKey(name: 'chapterPos') final int chapterPos,
+      @JsonKey(name: 'chapterName') final String chapterName,
+      @JsonKey(name: 'bookText') final String bookText,
+      final String content}) = _$BookmarkImpl;
 
   factory _Bookmark.fromJson(Map<String, dynamic> json) =
       _$BookmarkImpl.fromJson;
@@ -1834,11 +1734,8 @@ abstract class _Bookmark implements Bookmark {
   String get bookText;
   @override
   String get content;
-
-  /// Create a copy of Bookmark
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$BookmarkImplCopyWith<_$BookmarkImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1863,12 +1760,8 @@ mixin _$BookGroup {
   @JsonKey(name: 'onlyUpdateRead')
   bool get onlyUpdateRead => throw _privateConstructorUsedError;
 
-  /// Serializes this BookGroup to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of BookGroup
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $BookGroupCopyWith<BookGroup> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1878,16 +1771,15 @@ abstract class $BookGroupCopyWith<$Res> {
   factory $BookGroupCopyWith(BookGroup value, $Res Function(BookGroup) then) =
       _$BookGroupCopyWithImpl<$Res, BookGroup>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'groupId') int groupId,
-    @JsonKey(name: 'groupName') String groupName,
-    String? cover,
-    int order,
-    @JsonKey(name: 'enableRefresh') bool enableRefresh,
-    bool show,
-    @JsonKey(name: 'bookSort') int bookSort,
-    @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead,
-  });
+  $Res call(
+      {@JsonKey(name: 'groupId') int groupId,
+      @JsonKey(name: 'groupName') String groupName,
+      String? cover,
+      int order,
+      @JsonKey(name: 'enableRefresh') bool enableRefresh,
+      bool show,
+      @JsonKey(name: 'bookSort') int bookSort,
+      @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead});
 }
 
 /// @nodoc
@@ -1900,8 +1792,6 @@ class _$BookGroupCopyWithImpl<$Res, $Val extends BookGroup>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of BookGroup
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1914,43 +1804,40 @@ class _$BookGroupCopyWithImpl<$Res, $Val extends BookGroup>
     Object? bookSort = null,
     Object? onlyUpdateRead = null,
   }) {
-    return _then(
-      _value.copyWith(
-            groupId: null == groupId
-                ? _value.groupId
-                : groupId // ignore: cast_nullable_to_non_nullable
-                      as int,
-            groupName: null == groupName
-                ? _value.groupName
-                : groupName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            cover: freezed == cover
-                ? _value.cover
-                : cover // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            order: null == order
-                ? _value.order
-                : order // ignore: cast_nullable_to_non_nullable
-                      as int,
-            enableRefresh: null == enableRefresh
-                ? _value.enableRefresh
-                : enableRefresh // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            show: null == show
-                ? _value.show
-                : show // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            bookSort: null == bookSort
-                ? _value.bookSort
-                : bookSort // ignore: cast_nullable_to_non_nullable
-                      as int,
-            onlyUpdateRead: null == onlyUpdateRead
-                ? _value.onlyUpdateRead
-                : onlyUpdateRead // ignore: cast_nullable_to_non_nullable
-                      as bool,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      groupId: null == groupId
+          ? _value.groupId
+          : groupId // ignore: cast_nullable_to_non_nullable
+              as int,
+      groupName: null == groupName
+          ? _value.groupName
+          : groupName // ignore: cast_nullable_to_non_nullable
+              as String,
+      cover: freezed == cover
+          ? _value.cover
+          : cover // ignore: cast_nullable_to_non_nullable
+              as String?,
+      order: null == order
+          ? _value.order
+          : order // ignore: cast_nullable_to_non_nullable
+              as int,
+      enableRefresh: null == enableRefresh
+          ? _value.enableRefresh
+          : enableRefresh // ignore: cast_nullable_to_non_nullable
+              as bool,
+      show: null == show
+          ? _value.show
+          : show // ignore: cast_nullable_to_non_nullable
+              as bool,
+      bookSort: null == bookSort
+          ? _value.bookSort
+          : bookSort // ignore: cast_nullable_to_non_nullable
+              as int,
+      onlyUpdateRead: null == onlyUpdateRead
+          ? _value.onlyUpdateRead
+          : onlyUpdateRead // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ) as $Val);
   }
 }
 
@@ -1958,21 +1845,19 @@ class _$BookGroupCopyWithImpl<$Res, $Val extends BookGroup>
 abstract class _$$BookGroupImplCopyWith<$Res>
     implements $BookGroupCopyWith<$Res> {
   factory _$$BookGroupImplCopyWith(
-    _$BookGroupImpl value,
-    $Res Function(_$BookGroupImpl) then,
-  ) = __$$BookGroupImplCopyWithImpl<$Res>;
+          _$BookGroupImpl value, $Res Function(_$BookGroupImpl) then) =
+      __$$BookGroupImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'groupId') int groupId,
-    @JsonKey(name: 'groupName') String groupName,
-    String? cover,
-    int order,
-    @JsonKey(name: 'enableRefresh') bool enableRefresh,
-    bool show,
-    @JsonKey(name: 'bookSort') int bookSort,
-    @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead,
-  });
+  $Res call(
+      {@JsonKey(name: 'groupId') int groupId,
+      @JsonKey(name: 'groupName') String groupName,
+      String? cover,
+      int order,
+      @JsonKey(name: 'enableRefresh') bool enableRefresh,
+      bool show,
+      @JsonKey(name: 'bookSort') int bookSort,
+      @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead});
 }
 
 /// @nodoc
@@ -1980,12 +1865,9 @@ class __$$BookGroupImplCopyWithImpl<$Res>
     extends _$BookGroupCopyWithImpl<$Res, _$BookGroupImpl>
     implements _$$BookGroupImplCopyWith<$Res> {
   __$$BookGroupImplCopyWithImpl(
-    _$BookGroupImpl _value,
-    $Res Function(_$BookGroupImpl) _then,
-  ) : super(_value, _then);
+      _$BookGroupImpl _value, $Res Function(_$BookGroupImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of BookGroup
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1998,58 +1880,55 @@ class __$$BookGroupImplCopyWithImpl<$Res>
     Object? bookSort = null,
     Object? onlyUpdateRead = null,
   }) {
-    return _then(
-      _$BookGroupImpl(
-        groupId: null == groupId
-            ? _value.groupId
-            : groupId // ignore: cast_nullable_to_non_nullable
-                  as int,
-        groupName: null == groupName
-            ? _value.groupName
-            : groupName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        cover: freezed == cover
-            ? _value.cover
-            : cover // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        order: null == order
-            ? _value.order
-            : order // ignore: cast_nullable_to_non_nullable
-                  as int,
-        enableRefresh: null == enableRefresh
-            ? _value.enableRefresh
-            : enableRefresh // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        show: null == show
-            ? _value.show
-            : show // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        bookSort: null == bookSort
-            ? _value.bookSort
-            : bookSort // ignore: cast_nullable_to_non_nullable
-                  as int,
-        onlyUpdateRead: null == onlyUpdateRead
-            ? _value.onlyUpdateRead
-            : onlyUpdateRead // ignore: cast_nullable_to_non_nullable
-                  as bool,
-      ),
-    );
+    return _then(_$BookGroupImpl(
+      groupId: null == groupId
+          ? _value.groupId
+          : groupId // ignore: cast_nullable_to_non_nullable
+              as int,
+      groupName: null == groupName
+          ? _value.groupName
+          : groupName // ignore: cast_nullable_to_non_nullable
+              as String,
+      cover: freezed == cover
+          ? _value.cover
+          : cover // ignore: cast_nullable_to_non_nullable
+              as String?,
+      order: null == order
+          ? _value.order
+          : order // ignore: cast_nullable_to_non_nullable
+              as int,
+      enableRefresh: null == enableRefresh
+          ? _value.enableRefresh
+          : enableRefresh // ignore: cast_nullable_to_non_nullable
+              as bool,
+      show: null == show
+          ? _value.show
+          : show // ignore: cast_nullable_to_non_nullable
+              as bool,
+      bookSort: null == bookSort
+          ? _value.bookSort
+          : bookSort // ignore: cast_nullable_to_non_nullable
+              as int,
+      onlyUpdateRead: null == onlyUpdateRead
+          ? _value.onlyUpdateRead
+          : onlyUpdateRead // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$BookGroupImpl implements _BookGroup {
-  const _$BookGroupImpl({
-    @JsonKey(name: 'groupId') this.groupId = 1,
-    @JsonKey(name: 'groupName') this.groupName = '',
-    this.cover,
-    this.order = 0,
-    @JsonKey(name: 'enableRefresh') this.enableRefresh = true,
-    this.show = true,
-    @JsonKey(name: 'bookSort') this.bookSort = -1,
-    @JsonKey(name: 'onlyUpdateRead') this.onlyUpdateRead = false,
-  });
+  const _$BookGroupImpl(
+      {@JsonKey(name: 'groupId') this.groupId = 1,
+      @JsonKey(name: 'groupName') this.groupName = '',
+      this.cover,
+      this.order = 0,
+      @JsonKey(name: 'enableRefresh') this.enableRefresh = true,
+      this.show = true,
+      @JsonKey(name: 'bookSort') this.bookSort = -1,
+      @JsonKey(name: 'onlyUpdateRead') this.onlyUpdateRead = false});
 
   factory _$BookGroupImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookGroupImplFromJson(json);
@@ -2102,23 +1981,12 @@ class _$BookGroupImpl implements _BookGroup {
                 other.onlyUpdateRead == onlyUpdateRead));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    groupId,
-    groupName,
-    cover,
-    order,
-    enableRefresh,
-    show,
-    bookSort,
-    onlyUpdateRead,
-  );
+  int get hashCode => Object.hash(runtimeType, groupId, groupName, cover, order,
+      enableRefresh, show, bookSort, onlyUpdateRead);
 
-  /// Create a copy of BookGroup
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$BookGroupImplCopyWith<_$BookGroupImpl> get copyWith =>
@@ -2126,21 +1994,23 @@ class _$BookGroupImpl implements _BookGroup {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$BookGroupImplToJson(this);
+    return _$$BookGroupImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _BookGroup implements BookGroup {
-  const factory _BookGroup({
-    @JsonKey(name: 'groupId') final int groupId,
-    @JsonKey(name: 'groupName') final String groupName,
-    final String? cover,
-    final int order,
-    @JsonKey(name: 'enableRefresh') final bool enableRefresh,
-    final bool show,
-    @JsonKey(name: 'bookSort') final int bookSort,
-    @JsonKey(name: 'onlyUpdateRead') final bool onlyUpdateRead,
-  }) = _$BookGroupImpl;
+  const factory _BookGroup(
+          {@JsonKey(name: 'groupId') final int groupId,
+          @JsonKey(name: 'groupName') final String groupName,
+          final String? cover,
+          final int order,
+          @JsonKey(name: 'enableRefresh') final bool enableRefresh,
+          final bool show,
+          @JsonKey(name: 'bookSort') final int bookSort,
+          @JsonKey(name: 'onlyUpdateRead') final bool onlyUpdateRead}) =
+      _$BookGroupImpl;
 
   factory _BookGroup.fromJson(Map<String, dynamic> json) =
       _$BookGroupImpl.fromJson;
@@ -2166,11 +2036,8 @@ abstract class _BookGroup implements BookGroup {
   @override
   @JsonKey(name: 'onlyUpdateRead')
   bool get onlyUpdateRead;
-
-  /// Create a copy of BookGroup
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$BookGroupImplCopyWith<_$BookGroupImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2211,12 +2078,8 @@ mixin _$AutoTaskRule {
   @JsonKey(name: 'lastLog')
   String? get lastLog => throw _privateConstructorUsedError;
 
-  /// Serializes this AutoTaskRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of AutoTaskRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $AutoTaskRuleCopyWith<AutoTaskRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2224,30 +2087,28 @@ mixin _$AutoTaskRule {
 /// @nodoc
 abstract class $AutoTaskRuleCopyWith<$Res> {
   factory $AutoTaskRuleCopyWith(
-    AutoTaskRule value,
-    $Res Function(AutoTaskRule) then,
-  ) = _$AutoTaskRuleCopyWithImpl<$Res, AutoTaskRule>;
+          AutoTaskRule value, $Res Function(AutoTaskRule) then) =
+      _$AutoTaskRuleCopyWithImpl<$Res, AutoTaskRule>;
   @useResult
-  $Res call({
-    String id,
-    String name,
-    bool enable,
-    String? cron,
-    @JsonKey(name: 'loginUrl') String? loginUrl,
-    @JsonKey(name: 'loginUi') String? loginUi,
-    @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
-    String? comment,
-    String script,
-    String? header,
-    @JsonKey(name: 'jsLib') String? jsLib,
-    @JsonKey(name: 'concurrentRate') String? concurrentRate,
-    @JsonKey(name: 'enabledCookieJar') bool enabledCookieJar,
-    @JsonKey(name: 'customOrder') int customOrder,
-    @JsonKey(name: 'lastRunAt') int lastRunAt,
-    @JsonKey(name: 'lastResult') String? lastResult,
-    @JsonKey(name: 'lastError') String? lastError,
-    @JsonKey(name: 'lastLog') String? lastLog,
-  });
+  $Res call(
+      {String id,
+      String name,
+      bool enable,
+      String? cron,
+      @JsonKey(name: 'loginUrl') String? loginUrl,
+      @JsonKey(name: 'loginUi') String? loginUi,
+      @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
+      String? comment,
+      String script,
+      String? header,
+      @JsonKey(name: 'jsLib') String? jsLib,
+      @JsonKey(name: 'concurrentRate') String? concurrentRate,
+      @JsonKey(name: 'enabledCookieJar') bool enabledCookieJar,
+      @JsonKey(name: 'customOrder') int customOrder,
+      @JsonKey(name: 'lastRunAt') int lastRunAt,
+      @JsonKey(name: 'lastResult') String? lastResult,
+      @JsonKey(name: 'lastError') String? lastError,
+      @JsonKey(name: 'lastLog') String? lastLog});
 }
 
 /// @nodoc
@@ -2260,8 +2121,6 @@ class _$AutoTaskRuleCopyWithImpl<$Res, $Val extends AutoTaskRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of AutoTaskRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -2284,83 +2143,80 @@ class _$AutoTaskRuleCopyWithImpl<$Res, $Val extends AutoTaskRule>
     Object? lastError = freezed,
     Object? lastLog = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as String,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            enable: null == enable
-                ? _value.enable
-                : enable // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            cron: freezed == cron
-                ? _value.cron
-                : cron // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginUrl: freezed == loginUrl
-                ? _value.loginUrl
-                : loginUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginUi: freezed == loginUi
-                ? _value.loginUi
-                : loginUi // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginCheckJs: freezed == loginCheckJs
-                ? _value.loginCheckJs
-                : loginCheckJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            comment: freezed == comment
-                ? _value.comment
-                : comment // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            script: null == script
-                ? _value.script
-                : script // ignore: cast_nullable_to_non_nullable
-                      as String,
-            header: freezed == header
-                ? _value.header
-                : header // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            jsLib: freezed == jsLib
-                ? _value.jsLib
-                : jsLib // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            concurrentRate: freezed == concurrentRate
-                ? _value.concurrentRate
-                : concurrentRate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            enabledCookieJar: null == enabledCookieJar
-                ? _value.enabledCookieJar
-                : enabledCookieJar // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            customOrder: null == customOrder
-                ? _value.customOrder
-                : customOrder // ignore: cast_nullable_to_non_nullable
-                      as int,
-            lastRunAt: null == lastRunAt
-                ? _value.lastRunAt
-                : lastRunAt // ignore: cast_nullable_to_non_nullable
-                      as int,
-            lastResult: freezed == lastResult
-                ? _value.lastResult
-                : lastResult // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            lastError: freezed == lastError
-                ? _value.lastError
-                : lastError // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            lastLog: freezed == lastLog
-                ? _value.lastLog
-                : lastLog // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      enable: null == enable
+          ? _value.enable
+          : enable // ignore: cast_nullable_to_non_nullable
+              as bool,
+      cron: freezed == cron
+          ? _value.cron
+          : cron // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUrl: freezed == loginUrl
+          ? _value.loginUrl
+          : loginUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUi: freezed == loginUi
+          ? _value.loginUi
+          : loginUi // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginCheckJs: freezed == loginCheckJs
+          ? _value.loginCheckJs
+          : loginCheckJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      comment: freezed == comment
+          ? _value.comment
+          : comment // ignore: cast_nullable_to_non_nullable
+              as String?,
+      script: null == script
+          ? _value.script
+          : script // ignore: cast_nullable_to_non_nullable
+              as String,
+      header: freezed == header
+          ? _value.header
+          : header // ignore: cast_nullable_to_non_nullable
+              as String?,
+      jsLib: freezed == jsLib
+          ? _value.jsLib
+          : jsLib // ignore: cast_nullable_to_non_nullable
+              as String?,
+      concurrentRate: freezed == concurrentRate
+          ? _value.concurrentRate
+          : concurrentRate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabledCookieJar: null == enabledCookieJar
+          ? _value.enabledCookieJar
+          : enabledCookieJar // ignore: cast_nullable_to_non_nullable
+              as bool,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastRunAt: null == lastRunAt
+          ? _value.lastRunAt
+          : lastRunAt // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastResult: freezed == lastResult
+          ? _value.lastResult
+          : lastResult // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastError: freezed == lastError
+          ? _value.lastError
+          : lastError // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastLog: freezed == lastLog
+          ? _value.lastLog
+          : lastLog // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -2368,31 +2224,29 @@ class _$AutoTaskRuleCopyWithImpl<$Res, $Val extends AutoTaskRule>
 abstract class _$$AutoTaskRuleImplCopyWith<$Res>
     implements $AutoTaskRuleCopyWith<$Res> {
   factory _$$AutoTaskRuleImplCopyWith(
-    _$AutoTaskRuleImpl value,
-    $Res Function(_$AutoTaskRuleImpl) then,
-  ) = __$$AutoTaskRuleImplCopyWithImpl<$Res>;
+          _$AutoTaskRuleImpl value, $Res Function(_$AutoTaskRuleImpl) then) =
+      __$$AutoTaskRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String id,
-    String name,
-    bool enable,
-    String? cron,
-    @JsonKey(name: 'loginUrl') String? loginUrl,
-    @JsonKey(name: 'loginUi') String? loginUi,
-    @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
-    String? comment,
-    String script,
-    String? header,
-    @JsonKey(name: 'jsLib') String? jsLib,
-    @JsonKey(name: 'concurrentRate') String? concurrentRate,
-    @JsonKey(name: 'enabledCookieJar') bool enabledCookieJar,
-    @JsonKey(name: 'customOrder') int customOrder,
-    @JsonKey(name: 'lastRunAt') int lastRunAt,
-    @JsonKey(name: 'lastResult') String? lastResult,
-    @JsonKey(name: 'lastError') String? lastError,
-    @JsonKey(name: 'lastLog') String? lastLog,
-  });
+  $Res call(
+      {String id,
+      String name,
+      bool enable,
+      String? cron,
+      @JsonKey(name: 'loginUrl') String? loginUrl,
+      @JsonKey(name: 'loginUi') String? loginUi,
+      @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
+      String? comment,
+      String script,
+      String? header,
+      @JsonKey(name: 'jsLib') String? jsLib,
+      @JsonKey(name: 'concurrentRate') String? concurrentRate,
+      @JsonKey(name: 'enabledCookieJar') bool enabledCookieJar,
+      @JsonKey(name: 'customOrder') int customOrder,
+      @JsonKey(name: 'lastRunAt') int lastRunAt,
+      @JsonKey(name: 'lastResult') String? lastResult,
+      @JsonKey(name: 'lastError') String? lastError,
+      @JsonKey(name: 'lastLog') String? lastLog});
 }
 
 /// @nodoc
@@ -2400,12 +2254,9 @@ class __$$AutoTaskRuleImplCopyWithImpl<$Res>
     extends _$AutoTaskRuleCopyWithImpl<$Res, _$AutoTaskRuleImpl>
     implements _$$AutoTaskRuleImplCopyWith<$Res> {
   __$$AutoTaskRuleImplCopyWithImpl(
-    _$AutoTaskRuleImpl _value,
-    $Res Function(_$AutoTaskRuleImpl) _then,
-  ) : super(_value, _then);
+      _$AutoTaskRuleImpl _value, $Res Function(_$AutoTaskRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of AutoTaskRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -2428,108 +2279,105 @@ class __$$AutoTaskRuleImplCopyWithImpl<$Res>
     Object? lastError = freezed,
     Object? lastLog = freezed,
   }) {
-    return _then(
-      _$AutoTaskRuleImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as String,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        enable: null == enable
-            ? _value.enable
-            : enable // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        cron: freezed == cron
-            ? _value.cron
-            : cron // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginUrl: freezed == loginUrl
-            ? _value.loginUrl
-            : loginUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginUi: freezed == loginUi
-            ? _value.loginUi
-            : loginUi // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginCheckJs: freezed == loginCheckJs
-            ? _value.loginCheckJs
-            : loginCheckJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        comment: freezed == comment
-            ? _value.comment
-            : comment // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        script: null == script
-            ? _value.script
-            : script // ignore: cast_nullable_to_non_nullable
-                  as String,
-        header: freezed == header
-            ? _value.header
-            : header // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        jsLib: freezed == jsLib
-            ? _value.jsLib
-            : jsLib // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        concurrentRate: freezed == concurrentRate
-            ? _value.concurrentRate
-            : concurrentRate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        enabledCookieJar: null == enabledCookieJar
-            ? _value.enabledCookieJar
-            : enabledCookieJar // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        customOrder: null == customOrder
-            ? _value.customOrder
-            : customOrder // ignore: cast_nullable_to_non_nullable
-                  as int,
-        lastRunAt: null == lastRunAt
-            ? _value.lastRunAt
-            : lastRunAt // ignore: cast_nullable_to_non_nullable
-                  as int,
-        lastResult: freezed == lastResult
-            ? _value.lastResult
-            : lastResult // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        lastError: freezed == lastError
-            ? _value.lastError
-            : lastError // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        lastLog: freezed == lastLog
-            ? _value.lastLog
-            : lastLog // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$AutoTaskRuleImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      enable: null == enable
+          ? _value.enable
+          : enable // ignore: cast_nullable_to_non_nullable
+              as bool,
+      cron: freezed == cron
+          ? _value.cron
+          : cron // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUrl: freezed == loginUrl
+          ? _value.loginUrl
+          : loginUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUi: freezed == loginUi
+          ? _value.loginUi
+          : loginUi // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginCheckJs: freezed == loginCheckJs
+          ? _value.loginCheckJs
+          : loginCheckJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      comment: freezed == comment
+          ? _value.comment
+          : comment // ignore: cast_nullable_to_non_nullable
+              as String?,
+      script: null == script
+          ? _value.script
+          : script // ignore: cast_nullable_to_non_nullable
+              as String,
+      header: freezed == header
+          ? _value.header
+          : header // ignore: cast_nullable_to_non_nullable
+              as String?,
+      jsLib: freezed == jsLib
+          ? _value.jsLib
+          : jsLib // ignore: cast_nullable_to_non_nullable
+              as String?,
+      concurrentRate: freezed == concurrentRate
+          ? _value.concurrentRate
+          : concurrentRate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabledCookieJar: null == enabledCookieJar
+          ? _value.enabledCookieJar
+          : enabledCookieJar // ignore: cast_nullable_to_non_nullable
+              as bool,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastRunAt: null == lastRunAt
+          ? _value.lastRunAt
+          : lastRunAt // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastResult: freezed == lastResult
+          ? _value.lastResult
+          : lastResult // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastError: freezed == lastError
+          ? _value.lastError
+          : lastError // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastLog: freezed == lastLog
+          ? _value.lastLog
+          : lastLog // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$AutoTaskRuleImpl implements _AutoTaskRule {
-  const _$AutoTaskRuleImpl({
-    this.id = '',
-    this.name = '',
-    this.enable = true,
-    this.cron,
-    @JsonKey(name: 'loginUrl') this.loginUrl,
-    @JsonKey(name: 'loginUi') this.loginUi,
-    @JsonKey(name: 'loginCheckJs') this.loginCheckJs,
-    this.comment,
-    this.script = '',
-    this.header,
-    @JsonKey(name: 'jsLib') this.jsLib,
-    @JsonKey(name: 'concurrentRate') this.concurrentRate,
-    @JsonKey(name: 'enabledCookieJar') this.enabledCookieJar = true,
-    @JsonKey(name: 'customOrder') this.customOrder = 0,
-    @JsonKey(name: 'lastRunAt') this.lastRunAt = 0,
-    @JsonKey(name: 'lastResult') this.lastResult,
-    @JsonKey(name: 'lastError') this.lastError,
-    @JsonKey(name: 'lastLog') this.lastLog,
-  });
+  const _$AutoTaskRuleImpl(
+      {this.id = '',
+      this.name = '',
+      this.enable = true,
+      this.cron,
+      @JsonKey(name: 'loginUrl') this.loginUrl,
+      @JsonKey(name: 'loginUi') this.loginUi,
+      @JsonKey(name: 'loginCheckJs') this.loginCheckJs,
+      this.comment,
+      this.script = '',
+      this.header,
+      @JsonKey(name: 'jsLib') this.jsLib,
+      @JsonKey(name: 'concurrentRate') this.concurrentRate,
+      @JsonKey(name: 'enabledCookieJar') this.enabledCookieJar = true,
+      @JsonKey(name: 'customOrder') this.customOrder = 0,
+      @JsonKey(name: 'lastRunAt') this.lastRunAt = 0,
+      @JsonKey(name: 'lastResult') this.lastResult,
+      @JsonKey(name: 'lastError') this.lastError,
+      @JsonKey(name: 'lastLog') this.lastLog});
 
   factory _$AutoTaskRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$AutoTaskRuleImplFromJson(json);
@@ -2624,33 +2472,30 @@ class _$AutoTaskRuleImpl implements _AutoTaskRule {
             (identical(other.lastLog, lastLog) || other.lastLog == lastLog));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    id,
-    name,
-    enable,
-    cron,
-    loginUrl,
-    loginUi,
-    loginCheckJs,
-    comment,
-    script,
-    header,
-    jsLib,
-    concurrentRate,
-    enabledCookieJar,
-    customOrder,
-    lastRunAt,
-    lastResult,
-    lastError,
-    lastLog,
-  );
+      runtimeType,
+      id,
+      name,
+      enable,
+      cron,
+      loginUrl,
+      loginUi,
+      loginCheckJs,
+      comment,
+      script,
+      header,
+      jsLib,
+      concurrentRate,
+      enabledCookieJar,
+      customOrder,
+      lastRunAt,
+      lastResult,
+      lastError,
+      lastLog);
 
-  /// Create a copy of AutoTaskRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$AutoTaskRuleImplCopyWith<_$AutoTaskRuleImpl> get copyWith =>
@@ -2658,31 +2503,32 @@ class _$AutoTaskRuleImpl implements _AutoTaskRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$AutoTaskRuleImplToJson(this);
+    return _$$AutoTaskRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _AutoTaskRule implements AutoTaskRule {
-  const factory _AutoTaskRule({
-    final String id,
-    final String name,
-    final bool enable,
-    final String? cron,
-    @JsonKey(name: 'loginUrl') final String? loginUrl,
-    @JsonKey(name: 'loginUi') final String? loginUi,
-    @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
-    final String? comment,
-    final String script,
-    final String? header,
-    @JsonKey(name: 'jsLib') final String? jsLib,
-    @JsonKey(name: 'concurrentRate') final String? concurrentRate,
-    @JsonKey(name: 'enabledCookieJar') final bool enabledCookieJar,
-    @JsonKey(name: 'customOrder') final int customOrder,
-    @JsonKey(name: 'lastRunAt') final int lastRunAt,
-    @JsonKey(name: 'lastResult') final String? lastResult,
-    @JsonKey(name: 'lastError') final String? lastError,
-    @JsonKey(name: 'lastLog') final String? lastLog,
-  }) = _$AutoTaskRuleImpl;
+  const factory _AutoTaskRule(
+      {final String id,
+      final String name,
+      final bool enable,
+      final String? cron,
+      @JsonKey(name: 'loginUrl') final String? loginUrl,
+      @JsonKey(name: 'loginUi') final String? loginUi,
+      @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
+      final String? comment,
+      final String script,
+      final String? header,
+      @JsonKey(name: 'jsLib') final String? jsLib,
+      @JsonKey(name: 'concurrentRate') final String? concurrentRate,
+      @JsonKey(name: 'enabledCookieJar') final bool enabledCookieJar,
+      @JsonKey(name: 'customOrder') final int customOrder,
+      @JsonKey(name: 'lastRunAt') final int lastRunAt,
+      @JsonKey(name: 'lastResult') final String? lastResult,
+      @JsonKey(name: 'lastError') final String? lastError,
+      @JsonKey(name: 'lastLog') final String? lastLog}) = _$AutoTaskRuleImpl;
 
   factory _AutoTaskRule.fromJson(Map<String, dynamic> json) =
       _$AutoTaskRuleImpl.fromJson;
@@ -2734,11 +2580,8 @@ abstract class _AutoTaskRule implements AutoTaskRule {
   @override
   @JsonKey(name: 'lastLog')
   String? get lastLog;
-
-  /// Create a copy of AutoTaskRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$AutoTaskRuleImplCopyWith<_$AutoTaskRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2767,12 +2610,8 @@ mixin _$RssArticle {
   @JsonKey(name: 'durPos')
   int get durPos => throw _privateConstructorUsedError;
 
-  /// Serializes this RssArticle to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of RssArticle
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $RssArticleCopyWith<RssArticle> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2780,26 +2619,24 @@ mixin _$RssArticle {
 /// @nodoc
 abstract class $RssArticleCopyWith<$Res> {
   factory $RssArticleCopyWith(
-    RssArticle value,
-    $Res Function(RssArticle) then,
-  ) = _$RssArticleCopyWithImpl<$Res, RssArticle>;
+          RssArticle value, $Res Function(RssArticle) then) =
+      _$RssArticleCopyWithImpl<$Res, RssArticle>;
   @useResult
-  $Res call({
-    String origin,
-    String sort,
-    String title,
-    int order,
-    String link,
-    @JsonKey(name: 'pubDate') String? pubDate,
-    String? description,
-    String? content,
-    String? image,
-    String group,
-    bool read,
-    String? variable,
-    @JsonKey(name: 'type') int articleType,
-    @JsonKey(name: 'durPos') int durPos,
-  });
+  $Res call(
+      {String origin,
+      String sort,
+      String title,
+      int order,
+      String link,
+      @JsonKey(name: 'pubDate') String? pubDate,
+      String? description,
+      String? content,
+      String? image,
+      String group,
+      bool read,
+      String? variable,
+      @JsonKey(name: 'type') int articleType,
+      @JsonKey(name: 'durPos') int durPos});
 }
 
 /// @nodoc
@@ -2812,8 +2649,6 @@ class _$RssArticleCopyWithImpl<$Res, $Val extends RssArticle>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of RssArticle
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -2832,67 +2667,64 @@ class _$RssArticleCopyWithImpl<$Res, $Val extends RssArticle>
     Object? articleType = null,
     Object? durPos = null,
   }) {
-    return _then(
-      _value.copyWith(
-            origin: null == origin
-                ? _value.origin
-                : origin // ignore: cast_nullable_to_non_nullable
-                      as String,
-            sort: null == sort
-                ? _value.sort
-                : sort // ignore: cast_nullable_to_non_nullable
-                      as String,
-            title: null == title
-                ? _value.title
-                : title // ignore: cast_nullable_to_non_nullable
-                      as String,
-            order: null == order
-                ? _value.order
-                : order // ignore: cast_nullable_to_non_nullable
-                      as int,
-            link: null == link
-                ? _value.link
-                : link // ignore: cast_nullable_to_non_nullable
-                      as String,
-            pubDate: freezed == pubDate
-                ? _value.pubDate
-                : pubDate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            description: freezed == description
-                ? _value.description
-                : description // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            content: freezed == content
-                ? _value.content
-                : content // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            image: freezed == image
-                ? _value.image
-                : image // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            group: null == group
-                ? _value.group
-                : group // ignore: cast_nullable_to_non_nullable
-                      as String,
-            read: null == read
-                ? _value.read
-                : read // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            variable: freezed == variable
-                ? _value.variable
-                : variable // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            articleType: null == articleType
-                ? _value.articleType
-                : articleType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            durPos: null == durPos
-                ? _value.durPos
-                : durPos // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      order: null == order
+          ? _value.order
+          : order // ignore: cast_nullable_to_non_nullable
+              as int,
+      link: null == link
+          ? _value.link
+          : link // ignore: cast_nullable_to_non_nullable
+              as String,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      description: freezed == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String?,
+      content: freezed == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String?,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      group: null == group
+          ? _value.group
+          : group // ignore: cast_nullable_to_non_nullable
+              as String,
+      read: null == read
+          ? _value.read
+          : read // ignore: cast_nullable_to_non_nullable
+              as bool,
+      variable: freezed == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String?,
+      articleType: null == articleType
+          ? _value.articleType
+          : articleType // ignore: cast_nullable_to_non_nullable
+              as int,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -2900,27 +2732,25 @@ class _$RssArticleCopyWithImpl<$Res, $Val extends RssArticle>
 abstract class _$$RssArticleImplCopyWith<$Res>
     implements $RssArticleCopyWith<$Res> {
   factory _$$RssArticleImplCopyWith(
-    _$RssArticleImpl value,
-    $Res Function(_$RssArticleImpl) then,
-  ) = __$$RssArticleImplCopyWithImpl<$Res>;
+          _$RssArticleImpl value, $Res Function(_$RssArticleImpl) then) =
+      __$$RssArticleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String origin,
-    String sort,
-    String title,
-    int order,
-    String link,
-    @JsonKey(name: 'pubDate') String? pubDate,
-    String? description,
-    String? content,
-    String? image,
-    String group,
-    bool read,
-    String? variable,
-    @JsonKey(name: 'type') int articleType,
-    @JsonKey(name: 'durPos') int durPos,
-  });
+  $Res call(
+      {String origin,
+      String sort,
+      String title,
+      int order,
+      String link,
+      @JsonKey(name: 'pubDate') String? pubDate,
+      String? description,
+      String? content,
+      String? image,
+      String group,
+      bool read,
+      String? variable,
+      @JsonKey(name: 'type') int articleType,
+      @JsonKey(name: 'durPos') int durPos});
 }
 
 /// @nodoc
@@ -2928,12 +2758,9 @@ class __$$RssArticleImplCopyWithImpl<$Res>
     extends _$RssArticleCopyWithImpl<$Res, _$RssArticleImpl>
     implements _$$RssArticleImplCopyWith<$Res> {
   __$$RssArticleImplCopyWithImpl(
-    _$RssArticleImpl _value,
-    $Res Function(_$RssArticleImpl) _then,
-  ) : super(_value, _then);
+      _$RssArticleImpl _value, $Res Function(_$RssArticleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of RssArticle
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -2952,88 +2779,85 @@ class __$$RssArticleImplCopyWithImpl<$Res>
     Object? articleType = null,
     Object? durPos = null,
   }) {
-    return _then(
-      _$RssArticleImpl(
-        origin: null == origin
-            ? _value.origin
-            : origin // ignore: cast_nullable_to_non_nullable
-                  as String,
-        sort: null == sort
-            ? _value.sort
-            : sort // ignore: cast_nullable_to_non_nullable
-                  as String,
-        title: null == title
-            ? _value.title
-            : title // ignore: cast_nullable_to_non_nullable
-                  as String,
-        order: null == order
-            ? _value.order
-            : order // ignore: cast_nullable_to_non_nullable
-                  as int,
-        link: null == link
-            ? _value.link
-            : link // ignore: cast_nullable_to_non_nullable
-                  as String,
-        pubDate: freezed == pubDate
-            ? _value.pubDate
-            : pubDate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        description: freezed == description
-            ? _value.description
-            : description // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        content: freezed == content
-            ? _value.content
-            : content // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        image: freezed == image
-            ? _value.image
-            : image // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        group: null == group
-            ? _value.group
-            : group // ignore: cast_nullable_to_non_nullable
-                  as String,
-        read: null == read
-            ? _value.read
-            : read // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        variable: freezed == variable
-            ? _value.variable
-            : variable // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        articleType: null == articleType
-            ? _value.articleType
-            : articleType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        durPos: null == durPos
-            ? _value.durPos
-            : durPos // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$RssArticleImpl(
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      order: null == order
+          ? _value.order
+          : order // ignore: cast_nullable_to_non_nullable
+              as int,
+      link: null == link
+          ? _value.link
+          : link // ignore: cast_nullable_to_non_nullable
+              as String,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      description: freezed == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String?,
+      content: freezed == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String?,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      group: null == group
+          ? _value.group
+          : group // ignore: cast_nullable_to_non_nullable
+              as String,
+      read: null == read
+          ? _value.read
+          : read // ignore: cast_nullable_to_non_nullable
+              as bool,
+      variable: freezed == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String?,
+      articleType: null == articleType
+          ? _value.articleType
+          : articleType // ignore: cast_nullable_to_non_nullable
+              as int,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$RssArticleImpl implements _RssArticle {
-  const _$RssArticleImpl({
-    this.origin = '',
-    this.sort = '',
-    this.title = '',
-    this.order = 0,
-    this.link = '',
-    @JsonKey(name: 'pubDate') this.pubDate,
-    this.description,
-    this.content,
-    this.image,
-    this.group = '默认分组',
-    this.read = false,
-    this.variable,
-    @JsonKey(name: 'type') this.articleType = 0,
-    @JsonKey(name: 'durPos') this.durPos = 0,
-  });
+  const _$RssArticleImpl(
+      {this.origin = '',
+      this.sort = '',
+      this.title = '',
+      this.order = 0,
+      this.link = '',
+      @JsonKey(name: 'pubDate') this.pubDate,
+      this.description,
+      this.content,
+      this.image,
+      this.group = '默认分组',
+      this.read = false,
+      this.variable,
+      @JsonKey(name: 'type') this.articleType = 0,
+      @JsonKey(name: 'durPos') this.durPos = 0});
 
   factory _$RssArticleImpl.fromJson(Map<String, dynamic> json) =>
       _$$RssArticleImplFromJson(json);
@@ -3106,29 +2930,26 @@ class _$RssArticleImpl implements _RssArticle {
             (identical(other.durPos, durPos) || other.durPos == durPos));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    origin,
-    sort,
-    title,
-    order,
-    link,
-    pubDate,
-    description,
-    content,
-    image,
-    group,
-    read,
-    variable,
-    articleType,
-    durPos,
-  );
+      runtimeType,
+      origin,
+      sort,
+      title,
+      order,
+      link,
+      pubDate,
+      description,
+      content,
+      image,
+      group,
+      read,
+      variable,
+      articleType,
+      durPos);
 
-  /// Create a copy of RssArticle
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$RssArticleImplCopyWith<_$RssArticleImpl> get copyWith =>
@@ -3136,27 +2957,28 @@ class _$RssArticleImpl implements _RssArticle {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$RssArticleImplToJson(this);
+    return _$$RssArticleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _RssArticle implements RssArticle {
-  const factory _RssArticle({
-    final String origin,
-    final String sort,
-    final String title,
-    final int order,
-    final String link,
-    @JsonKey(name: 'pubDate') final String? pubDate,
-    final String? description,
-    final String? content,
-    final String? image,
-    final String group,
-    final bool read,
-    final String? variable,
-    @JsonKey(name: 'type') final int articleType,
-    @JsonKey(name: 'durPos') final int durPos,
-  }) = _$RssArticleImpl;
+  const factory _RssArticle(
+      {final String origin,
+      final String sort,
+      final String title,
+      final int order,
+      final String link,
+      @JsonKey(name: 'pubDate') final String? pubDate,
+      final String? description,
+      final String? content,
+      final String? image,
+      final String group,
+      final bool read,
+      final String? variable,
+      @JsonKey(name: 'type') final int articleType,
+      @JsonKey(name: 'durPos') final int durPos}) = _$RssArticleImpl;
 
   factory _RssArticle.fromJson(Map<String, dynamic> json) =
       _$RssArticleImpl.fromJson;
@@ -3192,11 +3014,8 @@ abstract class _RssArticle implements RssArticle {
   @override
   @JsonKey(name: 'durPos')
   int get durPos;
-
-  /// Create a copy of RssArticle
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$RssArticleImplCopyWith<_$RssArticleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -3225,12 +3044,8 @@ mixin _$RssStar {
   @JsonKey(name: 'durPos')
   int get durPos => throw _privateConstructorUsedError;
 
-  /// Serializes this RssStar to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of RssStar
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $RssStarCopyWith<RssStar> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -3239,21 +3054,20 @@ abstract class $RssStarCopyWith<$Res> {
   factory $RssStarCopyWith(RssStar value, $Res Function(RssStar) then) =
       _$RssStarCopyWithImpl<$Res, RssStar>;
   @useResult
-  $Res call({
-    String origin,
-    String sort,
-    String title,
-    @JsonKey(name: 'starTime') int starTime,
-    String link,
-    @JsonKey(name: 'pubDate') String? pubDate,
-    String? description,
-    String? content,
-    String? image,
-    String group,
-    String? variable,
-    @JsonKey(name: 'type') int starType,
-    @JsonKey(name: 'durPos') int durPos,
-  });
+  $Res call(
+      {String origin,
+      String sort,
+      String title,
+      @JsonKey(name: 'starTime') int starTime,
+      String link,
+      @JsonKey(name: 'pubDate') String? pubDate,
+      String? description,
+      String? content,
+      String? image,
+      String group,
+      String? variable,
+      @JsonKey(name: 'type') int starType,
+      @JsonKey(name: 'durPos') int durPos});
 }
 
 /// @nodoc
@@ -3266,8 +3080,6 @@ class _$RssStarCopyWithImpl<$Res, $Val extends RssStar>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of RssStar
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3285,89 +3097,84 @@ class _$RssStarCopyWithImpl<$Res, $Val extends RssStar>
     Object? starType = null,
     Object? durPos = null,
   }) {
-    return _then(
-      _value.copyWith(
-            origin: null == origin
-                ? _value.origin
-                : origin // ignore: cast_nullable_to_non_nullable
-                      as String,
-            sort: null == sort
-                ? _value.sort
-                : sort // ignore: cast_nullable_to_non_nullable
-                      as String,
-            title: null == title
-                ? _value.title
-                : title // ignore: cast_nullable_to_non_nullable
-                      as String,
-            starTime: null == starTime
-                ? _value.starTime
-                : starTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-            link: null == link
-                ? _value.link
-                : link // ignore: cast_nullable_to_non_nullable
-                      as String,
-            pubDate: freezed == pubDate
-                ? _value.pubDate
-                : pubDate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            description: freezed == description
-                ? _value.description
-                : description // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            content: freezed == content
-                ? _value.content
-                : content // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            image: freezed == image
-                ? _value.image
-                : image // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            group: null == group
-                ? _value.group
-                : group // ignore: cast_nullable_to_non_nullable
-                      as String,
-            variable: freezed == variable
-                ? _value.variable
-                : variable // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            starType: null == starType
-                ? _value.starType
-                : starType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            durPos: null == durPos
-                ? _value.durPos
-                : durPos // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      starTime: null == starTime
+          ? _value.starTime
+          : starTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      link: null == link
+          ? _value.link
+          : link // ignore: cast_nullable_to_non_nullable
+              as String,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      description: freezed == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String?,
+      content: freezed == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String?,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      group: null == group
+          ? _value.group
+          : group // ignore: cast_nullable_to_non_nullable
+              as String,
+      variable: freezed == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String?,
+      starType: null == starType
+          ? _value.starType
+          : starType // ignore: cast_nullable_to_non_nullable
+              as int,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$RssStarImplCopyWith<$Res> implements $RssStarCopyWith<$Res> {
   factory _$$RssStarImplCopyWith(
-    _$RssStarImpl value,
-    $Res Function(_$RssStarImpl) then,
-  ) = __$$RssStarImplCopyWithImpl<$Res>;
+          _$RssStarImpl value, $Res Function(_$RssStarImpl) then) =
+      __$$RssStarImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String origin,
-    String sort,
-    String title,
-    @JsonKey(name: 'starTime') int starTime,
-    String link,
-    @JsonKey(name: 'pubDate') String? pubDate,
-    String? description,
-    String? content,
-    String? image,
-    String group,
-    String? variable,
-    @JsonKey(name: 'type') int starType,
-    @JsonKey(name: 'durPos') int durPos,
-  });
+  $Res call(
+      {String origin,
+      String sort,
+      String title,
+      @JsonKey(name: 'starTime') int starTime,
+      String link,
+      @JsonKey(name: 'pubDate') String? pubDate,
+      String? description,
+      String? content,
+      String? image,
+      String group,
+      String? variable,
+      @JsonKey(name: 'type') int starType,
+      @JsonKey(name: 'durPos') int durPos});
 }
 
 /// @nodoc
@@ -3375,12 +3182,9 @@ class __$$RssStarImplCopyWithImpl<$Res>
     extends _$RssStarCopyWithImpl<$Res, _$RssStarImpl>
     implements _$$RssStarImplCopyWith<$Res> {
   __$$RssStarImplCopyWithImpl(
-    _$RssStarImpl _value,
-    $Res Function(_$RssStarImpl) _then,
-  ) : super(_value, _then);
+      _$RssStarImpl _value, $Res Function(_$RssStarImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of RssStar
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3398,83 +3202,80 @@ class __$$RssStarImplCopyWithImpl<$Res>
     Object? starType = null,
     Object? durPos = null,
   }) {
-    return _then(
-      _$RssStarImpl(
-        origin: null == origin
-            ? _value.origin
-            : origin // ignore: cast_nullable_to_non_nullable
-                  as String,
-        sort: null == sort
-            ? _value.sort
-            : sort // ignore: cast_nullable_to_non_nullable
-                  as String,
-        title: null == title
-            ? _value.title
-            : title // ignore: cast_nullable_to_non_nullable
-                  as String,
-        starTime: null == starTime
-            ? _value.starTime
-            : starTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-        link: null == link
-            ? _value.link
-            : link // ignore: cast_nullable_to_non_nullable
-                  as String,
-        pubDate: freezed == pubDate
-            ? _value.pubDate
-            : pubDate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        description: freezed == description
-            ? _value.description
-            : description // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        content: freezed == content
-            ? _value.content
-            : content // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        image: freezed == image
-            ? _value.image
-            : image // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        group: null == group
-            ? _value.group
-            : group // ignore: cast_nullable_to_non_nullable
-                  as String,
-        variable: freezed == variable
-            ? _value.variable
-            : variable // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        starType: null == starType
-            ? _value.starType
-            : starType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        durPos: null == durPos
-            ? _value.durPos
-            : durPos // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$RssStarImpl(
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      starTime: null == starTime
+          ? _value.starTime
+          : starTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      link: null == link
+          ? _value.link
+          : link // ignore: cast_nullable_to_non_nullable
+              as String,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      description: freezed == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String?,
+      content: freezed == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String?,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      group: null == group
+          ? _value.group
+          : group // ignore: cast_nullable_to_non_nullable
+              as String,
+      variable: freezed == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String?,
+      starType: null == starType
+          ? _value.starType
+          : starType // ignore: cast_nullable_to_non_nullable
+              as int,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$RssStarImpl implements _RssStar {
-  const _$RssStarImpl({
-    this.origin = '',
-    this.sort = '',
-    this.title = '',
-    @JsonKey(name: 'starTime') this.starTime = 0,
-    this.link = '',
-    @JsonKey(name: 'pubDate') this.pubDate,
-    this.description,
-    this.content,
-    this.image,
-    this.group = '默认分组',
-    this.variable,
-    @JsonKey(name: 'type') this.starType = 0,
-    @JsonKey(name: 'durPos') this.durPos = 0,
-  });
+  const _$RssStarImpl(
+      {this.origin = '',
+      this.sort = '',
+      this.title = '',
+      @JsonKey(name: 'starTime') this.starTime = 0,
+      this.link = '',
+      @JsonKey(name: 'pubDate') this.pubDate,
+      this.description,
+      this.content,
+      this.image,
+      this.group = '默认分组',
+      this.variable,
+      @JsonKey(name: 'type') this.starType = 0,
+      @JsonKey(name: 'durPos') this.durPos = 0});
 
   factory _$RssStarImpl.fromJson(Map<String, dynamic> json) =>
       _$$RssStarImplFromJson(json);
@@ -3544,28 +3345,25 @@ class _$RssStarImpl implements _RssStar {
             (identical(other.durPos, durPos) || other.durPos == durPos));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    origin,
-    sort,
-    title,
-    starTime,
-    link,
-    pubDate,
-    description,
-    content,
-    image,
-    group,
-    variable,
-    starType,
-    durPos,
-  );
+      runtimeType,
+      origin,
+      sort,
+      title,
+      starTime,
+      link,
+      pubDate,
+      description,
+      content,
+      image,
+      group,
+      variable,
+      starType,
+      durPos);
 
-  /// Create a copy of RssStar
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$RssStarImplCopyWith<_$RssStarImpl> get copyWith =>
@@ -3573,26 +3371,27 @@ class _$RssStarImpl implements _RssStar {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$RssStarImplToJson(this);
+    return _$$RssStarImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _RssStar implements RssStar {
-  const factory _RssStar({
-    final String origin,
-    final String sort,
-    final String title,
-    @JsonKey(name: 'starTime') final int starTime,
-    final String link,
-    @JsonKey(name: 'pubDate') final String? pubDate,
-    final String? description,
-    final String? content,
-    final String? image,
-    final String group,
-    final String? variable,
-    @JsonKey(name: 'type') final int starType,
-    @JsonKey(name: 'durPos') final int durPos,
-  }) = _$RssStarImpl;
+  const factory _RssStar(
+      {final String origin,
+      final String sort,
+      final String title,
+      @JsonKey(name: 'starTime') final int starTime,
+      final String link,
+      @JsonKey(name: 'pubDate') final String? pubDate,
+      final String? description,
+      final String? content,
+      final String? image,
+      final String group,
+      final String? variable,
+      @JsonKey(name: 'type') final int starType,
+      @JsonKey(name: 'durPos') final int durPos}) = _$RssStarImpl;
 
   factory _RssStar.fromJson(Map<String, dynamic> json) = _$RssStarImpl.fromJson;
 
@@ -3626,11 +3425,8 @@ abstract class _RssStar implements RssStar {
   @override
   @JsonKey(name: 'durPos')
   int get durPos;
-
-  /// Create a copy of RssStar
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$RssStarImplCopyWith<_$RssStarImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -3644,12 +3440,8 @@ mixin _$Cookie {
   String get url => throw _privateConstructorUsedError;
   String get cookie => throw _privateConstructorUsedError;
 
-  /// Serializes this Cookie to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of Cookie
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $CookieCopyWith<Cookie> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -3671,33 +3463,30 @@ class _$CookieCopyWithImpl<$Res, $Val extends Cookie>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of Cookie
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? url = null, Object? cookie = null}) {
-    return _then(
-      _value.copyWith(
-            url: null == url
-                ? _value.url
-                : url // ignore: cast_nullable_to_non_nullable
-                      as String,
-            cookie: null == cookie
-                ? _value.cookie
-                : cookie // ignore: cast_nullable_to_non_nullable
-                      as String,
-          )
-          as $Val,
-    );
+  $Res call({
+    Object? url = null,
+    Object? cookie = null,
+  }) {
+    return _then(_value.copyWith(
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      cookie: null == cookie
+          ? _value.cookie
+          : cookie // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$CookieImplCopyWith<$Res> implements $CookieCopyWith<$Res> {
   factory _$$CookieImplCopyWith(
-    _$CookieImpl value,
-    $Res Function(_$CookieImpl) then,
-  ) = __$$CookieImplCopyWithImpl<$Res>;
+          _$CookieImpl value, $Res Function(_$CookieImpl) then) =
+      __$$CookieImplCopyWithImpl<$Res>;
   @override
   @useResult
   $Res call({String url, String cookie});
@@ -3708,27 +3497,25 @@ class __$$CookieImplCopyWithImpl<$Res>
     extends _$CookieCopyWithImpl<$Res, _$CookieImpl>
     implements _$$CookieImplCopyWith<$Res> {
   __$$CookieImplCopyWithImpl(
-    _$CookieImpl _value,
-    $Res Function(_$CookieImpl) _then,
-  ) : super(_value, _then);
+      _$CookieImpl _value, $Res Function(_$CookieImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of Cookie
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? url = null, Object? cookie = null}) {
-    return _then(
-      _$CookieImpl(
-        url: null == url
-            ? _value.url
-            : url // ignore: cast_nullable_to_non_nullable
-                  as String,
-        cookie: null == cookie
-            ? _value.cookie
-            : cookie // ignore: cast_nullable_to_non_nullable
-                  as String,
-      ),
-    );
+  $Res call({
+    Object? url = null,
+    Object? cookie = null,
+  }) {
+    return _then(_$CookieImpl(
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      cookie: null == cookie
+          ? _value.cookie
+          : cookie // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
   }
 }
 
@@ -3761,13 +3548,11 @@ class _$CookieImpl implements _Cookie {
             (identical(other.cookie, cookie) || other.cookie == cookie));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, url, cookie);
 
-  /// Create a copy of Cookie
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$CookieImplCopyWith<_$CookieImpl> get copyWith =>
@@ -3775,7 +3560,9 @@ class _$CookieImpl implements _Cookie {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$CookieImplToJson(this);
+    return _$$CookieImplToJson(
+      this,
+    );
   }
 }
 
@@ -3788,11 +3575,8 @@ abstract class _Cookie implements Cookie {
   String get url;
   @override
   String get cookie;
-
-  /// Create a copy of Cookie
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$CookieImplCopyWith<_$CookieImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -3807,12 +3591,8 @@ mixin _$Cache {
   String? get value => throw _privateConstructorUsedError;
   int get deadline => throw _privateConstructorUsedError;
 
-  /// Serializes this Cache to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of Cache
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $CacheCopyWith<Cache> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -3834,8 +3614,6 @@ class _$CacheCopyWithImpl<$Res, $Val extends Cache>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of Cache
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3843,32 +3621,28 @@ class _$CacheCopyWithImpl<$Res, $Val extends Cache>
     Object? value = freezed,
     Object? deadline = null,
   }) {
-    return _then(
-      _value.copyWith(
-            key: null == key
-                ? _value.key
-                : key // ignore: cast_nullable_to_non_nullable
-                      as String,
-            value: freezed == value
-                ? _value.value
-                : value // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            deadline: null == deadline
-                ? _value.deadline
-                : deadline // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      key: null == key
+          ? _value.key
+          : key // ignore: cast_nullable_to_non_nullable
+              as String,
+      value: freezed == value
+          ? _value.value
+          : value // ignore: cast_nullable_to_non_nullable
+              as String?,
+      deadline: null == deadline
+          ? _value.deadline
+          : deadline // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$CacheImplCopyWith<$Res> implements $CacheCopyWith<$Res> {
   factory _$$CacheImplCopyWith(
-    _$CacheImpl value,
-    $Res Function(_$CacheImpl) then,
-  ) = __$$CacheImplCopyWithImpl<$Res>;
+          _$CacheImpl value, $Res Function(_$CacheImpl) then) =
+      __$$CacheImplCopyWithImpl<$Res>;
   @override
   @useResult
   $Res call({String key, String? value, int deadline});
@@ -3879,12 +3653,9 @@ class __$$CacheImplCopyWithImpl<$Res>
     extends _$CacheCopyWithImpl<$Res, _$CacheImpl>
     implements _$$CacheImplCopyWith<$Res> {
   __$$CacheImplCopyWithImpl(
-    _$CacheImpl _value,
-    $Res Function(_$CacheImpl) _then,
-  ) : super(_value, _then);
+      _$CacheImpl _value, $Res Function(_$CacheImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of Cache
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3892,22 +3663,20 @@ class __$$CacheImplCopyWithImpl<$Res>
     Object? value = freezed,
     Object? deadline = null,
   }) {
-    return _then(
-      _$CacheImpl(
-        key: null == key
-            ? _value.key
-            : key // ignore: cast_nullable_to_non_nullable
-                  as String,
-        value: freezed == value
-            ? _value.value
-            : value // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        deadline: null == deadline
-            ? _value.deadline
-            : deadline // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$CacheImpl(
+      key: null == key
+          ? _value.key
+          : key // ignore: cast_nullable_to_non_nullable
+              as String,
+      value: freezed == value
+          ? _value.value
+          : value // ignore: cast_nullable_to_non_nullable
+              as String?,
+      deadline: null == deadline
+          ? _value.deadline
+          : deadline // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
@@ -3944,13 +3713,11 @@ class _$CacheImpl implements _Cache {
                 other.deadline == deadline));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, key, value, deadline);
 
-  /// Create a copy of Cache
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$CacheImplCopyWith<_$CacheImpl> get copyWith =>
@@ -3958,16 +3725,17 @@ class _$CacheImpl implements _Cache {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$CacheImplToJson(this);
+    return _$$CacheImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _Cache implements Cache {
-  const factory _Cache({
-    final String key,
-    final String? value,
-    final int deadline,
-  }) = _$CacheImpl;
+  const factory _Cache(
+      {final String key,
+      final String? value,
+      final int deadline}) = _$CacheImpl;
 
   factory _Cache.fromJson(Map<String, dynamic> json) = _$CacheImpl.fromJson;
 
@@ -3977,11 +3745,8 @@ abstract class _Cache implements Cache {
   String? get value;
   @override
   int get deadline;
-
-  /// Create a copy of Cache
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$CacheImplCopyWith<_$CacheImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -4001,12 +3766,8 @@ mixin _$DictRule {
   @JsonKey(name: 'sortNumber')
   int get sortNumber => throw _privateConstructorUsedError;
 
-  /// Serializes this DictRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of DictRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $DictRuleCopyWith<DictRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -4016,13 +3777,12 @@ abstract class $DictRuleCopyWith<$Res> {
   factory $DictRuleCopyWith(DictRule value, $Res Function(DictRule) then) =
       _$DictRuleCopyWithImpl<$Res, DictRule>;
   @useResult
-  $Res call({
-    String name,
-    @JsonKey(name: 'urlRule') String urlRule,
-    @JsonKey(name: 'showRule') String showRule,
-    bool enabled,
-    @JsonKey(name: 'sortNumber') int sortNumber,
-  });
+  $Res call(
+      {String name,
+      @JsonKey(name: 'urlRule') String urlRule,
+      @JsonKey(name: 'showRule') String showRule,
+      bool enabled,
+      @JsonKey(name: 'sortNumber') int sortNumber});
 }
 
 /// @nodoc
@@ -4035,8 +3795,6 @@ class _$DictRuleCopyWithImpl<$Res, $Val extends DictRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of DictRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4046,31 +3804,28 @@ class _$DictRuleCopyWithImpl<$Res, $Val extends DictRule>
     Object? enabled = null,
     Object? sortNumber = null,
   }) {
-    return _then(
-      _value.copyWith(
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            urlRule: null == urlRule
-                ? _value.urlRule
-                : urlRule // ignore: cast_nullable_to_non_nullable
-                      as String,
-            showRule: null == showRule
-                ? _value.showRule
-                : showRule // ignore: cast_nullable_to_non_nullable
-                      as String,
-            enabled: null == enabled
-                ? _value.enabled
-                : enabled // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            sortNumber: null == sortNumber
-                ? _value.sortNumber
-                : sortNumber // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      urlRule: null == urlRule
+          ? _value.urlRule
+          : urlRule // ignore: cast_nullable_to_non_nullable
+              as String,
+      showRule: null == showRule
+          ? _value.showRule
+          : showRule // ignore: cast_nullable_to_non_nullable
+              as String,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      sortNumber: null == sortNumber
+          ? _value.sortNumber
+          : sortNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -4078,18 +3833,16 @@ class _$DictRuleCopyWithImpl<$Res, $Val extends DictRule>
 abstract class _$$DictRuleImplCopyWith<$Res>
     implements $DictRuleCopyWith<$Res> {
   factory _$$DictRuleImplCopyWith(
-    _$DictRuleImpl value,
-    $Res Function(_$DictRuleImpl) then,
-  ) = __$$DictRuleImplCopyWithImpl<$Res>;
+          _$DictRuleImpl value, $Res Function(_$DictRuleImpl) then) =
+      __$$DictRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String name,
-    @JsonKey(name: 'urlRule') String urlRule,
-    @JsonKey(name: 'showRule') String showRule,
-    bool enabled,
-    @JsonKey(name: 'sortNumber') int sortNumber,
-  });
+  $Res call(
+      {String name,
+      @JsonKey(name: 'urlRule') String urlRule,
+      @JsonKey(name: 'showRule') String showRule,
+      bool enabled,
+      @JsonKey(name: 'sortNumber') int sortNumber});
 }
 
 /// @nodoc
@@ -4097,12 +3850,9 @@ class __$$DictRuleImplCopyWithImpl<$Res>
     extends _$DictRuleCopyWithImpl<$Res, _$DictRuleImpl>
     implements _$$DictRuleImplCopyWith<$Res> {
   __$$DictRuleImplCopyWithImpl(
-    _$DictRuleImpl _value,
-    $Res Function(_$DictRuleImpl) _then,
-  ) : super(_value, _then);
+      _$DictRuleImpl _value, $Res Function(_$DictRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of DictRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4112,43 +3862,40 @@ class __$$DictRuleImplCopyWithImpl<$Res>
     Object? enabled = null,
     Object? sortNumber = null,
   }) {
-    return _then(
-      _$DictRuleImpl(
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        urlRule: null == urlRule
-            ? _value.urlRule
-            : urlRule // ignore: cast_nullable_to_non_nullable
-                  as String,
-        showRule: null == showRule
-            ? _value.showRule
-            : showRule // ignore: cast_nullable_to_non_nullable
-                  as String,
-        enabled: null == enabled
-            ? _value.enabled
-            : enabled // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        sortNumber: null == sortNumber
-            ? _value.sortNumber
-            : sortNumber // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$DictRuleImpl(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      urlRule: null == urlRule
+          ? _value.urlRule
+          : urlRule // ignore: cast_nullable_to_non_nullable
+              as String,
+      showRule: null == showRule
+          ? _value.showRule
+          : showRule // ignore: cast_nullable_to_non_nullable
+              as String,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      sortNumber: null == sortNumber
+          ? _value.sortNumber
+          : sortNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$DictRuleImpl implements _DictRule {
-  const _$DictRuleImpl({
-    this.name = '',
-    @JsonKey(name: 'urlRule') this.urlRule = '',
-    @JsonKey(name: 'showRule') this.showRule = '',
-    this.enabled = true,
-    @JsonKey(name: 'sortNumber') this.sortNumber = 0,
-  });
+  const _$DictRuleImpl(
+      {this.name = '',
+      @JsonKey(name: 'urlRule') this.urlRule = '',
+      @JsonKey(name: 'showRule') this.showRule = '',
+      this.enabled = true,
+      @JsonKey(name: 'sortNumber') this.sortNumber = 0});
 
   factory _$DictRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$DictRuleImplFromJson(json);
@@ -4188,14 +3935,12 @@ class _$DictRuleImpl implements _DictRule {
                 other.sortNumber == sortNumber));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode =>
       Object.hash(runtimeType, name, urlRule, showRule, enabled, sortNumber);
 
-  /// Create a copy of DictRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$DictRuleImplCopyWith<_$DictRuleImpl> get copyWith =>
@@ -4203,18 +3948,19 @@ class _$DictRuleImpl implements _DictRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$DictRuleImplToJson(this);
+    return _$$DictRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _DictRule implements DictRule {
-  const factory _DictRule({
-    final String name,
-    @JsonKey(name: 'urlRule') final String urlRule,
-    @JsonKey(name: 'showRule') final String showRule,
-    final bool enabled,
-    @JsonKey(name: 'sortNumber') final int sortNumber,
-  }) = _$DictRuleImpl;
+  const factory _DictRule(
+      {final String name,
+      @JsonKey(name: 'urlRule') final String urlRule,
+      @JsonKey(name: 'showRule') final String showRule,
+      final bool enabled,
+      @JsonKey(name: 'sortNumber') final int sortNumber}) = _$DictRuleImpl;
 
   factory _DictRule.fromJson(Map<String, dynamic> json) =
       _$DictRuleImpl.fromJson;
@@ -4232,11 +3978,8 @@ abstract class _DictRule implements DictRule {
   @override
   @JsonKey(name: 'sortNumber')
   int get sortNumber;
-
-  /// Create a copy of DictRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$DictRuleImplCopyWith<_$DictRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -4255,12 +3998,8 @@ mixin _$Server {
   @JsonKey(name: 'sortNumber')
   int get sortNumber => throw _privateConstructorUsedError;
 
-  /// Serializes this Server to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of Server
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ServerCopyWith<Server> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -4269,13 +4008,12 @@ abstract class $ServerCopyWith<$Res> {
   factory $ServerCopyWith(Server value, $Res Function(Server) then) =
       _$ServerCopyWithImpl<$Res, Server>;
   @useResult
-  $Res call({
-    int id,
-    String name,
-    @JsonKey(name: 'type') String serverType,
-    String? config,
-    @JsonKey(name: 'sortNumber') int sortNumber,
-  });
+  $Res call(
+      {int id,
+      String name,
+      @JsonKey(name: 'type') String serverType,
+      String? config,
+      @JsonKey(name: 'sortNumber') int sortNumber});
 }
 
 /// @nodoc
@@ -4288,8 +4026,6 @@ class _$ServerCopyWithImpl<$Res, $Val extends Server>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of Server
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4299,49 +4035,44 @@ class _$ServerCopyWithImpl<$Res, $Val extends Server>
     Object? config = freezed,
     Object? sortNumber = null,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            serverType: null == serverType
-                ? _value.serverType
-                : serverType // ignore: cast_nullable_to_non_nullable
-                      as String,
-            config: freezed == config
-                ? _value.config
-                : config // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            sortNumber: null == sortNumber
-                ? _value.sortNumber
-                : sortNumber // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      serverType: null == serverType
+          ? _value.serverType
+          : serverType // ignore: cast_nullable_to_non_nullable
+              as String,
+      config: freezed == config
+          ? _value.config
+          : config // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sortNumber: null == sortNumber
+          ? _value.sortNumber
+          : sortNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$ServerImplCopyWith<$Res> implements $ServerCopyWith<$Res> {
   factory _$$ServerImplCopyWith(
-    _$ServerImpl value,
-    $Res Function(_$ServerImpl) then,
-  ) = __$$ServerImplCopyWithImpl<$Res>;
+          _$ServerImpl value, $Res Function(_$ServerImpl) then) =
+      __$$ServerImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    int id,
-    String name,
-    @JsonKey(name: 'type') String serverType,
-    String? config,
-    @JsonKey(name: 'sortNumber') int sortNumber,
-  });
+  $Res call(
+      {int id,
+      String name,
+      @JsonKey(name: 'type') String serverType,
+      String? config,
+      @JsonKey(name: 'sortNumber') int sortNumber});
 }
 
 /// @nodoc
@@ -4349,12 +4080,9 @@ class __$$ServerImplCopyWithImpl<$Res>
     extends _$ServerCopyWithImpl<$Res, _$ServerImpl>
     implements _$$ServerImplCopyWith<$Res> {
   __$$ServerImplCopyWithImpl(
-    _$ServerImpl _value,
-    $Res Function(_$ServerImpl) _then,
-  ) : super(_value, _then);
+      _$ServerImpl _value, $Res Function(_$ServerImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of Server
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4364,43 +4092,40 @@ class __$$ServerImplCopyWithImpl<$Res>
     Object? config = freezed,
     Object? sortNumber = null,
   }) {
-    return _then(
-      _$ServerImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        serverType: null == serverType
-            ? _value.serverType
-            : serverType // ignore: cast_nullable_to_non_nullable
-                  as String,
-        config: freezed == config
-            ? _value.config
-            : config // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        sortNumber: null == sortNumber
-            ? _value.sortNumber
-            : sortNumber // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$ServerImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      serverType: null == serverType
+          ? _value.serverType
+          : serverType // ignore: cast_nullable_to_non_nullable
+              as String,
+      config: freezed == config
+          ? _value.config
+          : config // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sortNumber: null == sortNumber
+          ? _value.sortNumber
+          : sortNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ServerImpl implements _Server {
-  const _$ServerImpl({
-    this.id = 0,
-    this.name = '',
-    @JsonKey(name: 'type') this.serverType = 'WEBDAV',
-    this.config,
-    @JsonKey(name: 'sortNumber') this.sortNumber = 0,
-  });
+  const _$ServerImpl(
+      {this.id = 0,
+      this.name = '',
+      @JsonKey(name: 'type') this.serverType = 'WEBDAV',
+      this.config,
+      @JsonKey(name: 'sortNumber') this.sortNumber = 0});
 
   factory _$ServerImpl.fromJson(Map<String, dynamic> json) =>
       _$$ServerImplFromJson(json);
@@ -4439,14 +4164,12 @@ class _$ServerImpl implements _Server {
                 other.sortNumber == sortNumber));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode =>
       Object.hash(runtimeType, id, name, serverType, config, sortNumber);
 
-  /// Create a copy of Server
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ServerImplCopyWith<_$ServerImpl> get copyWith =>
@@ -4454,18 +4177,19 @@ class _$ServerImpl implements _Server {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ServerImplToJson(this);
+    return _$$ServerImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _Server implements Server {
-  const factory _Server({
-    final int id,
-    final String name,
-    @JsonKey(name: 'type') final String serverType,
-    final String? config,
-    @JsonKey(name: 'sortNumber') final int sortNumber,
-  }) = _$ServerImpl;
+  const factory _Server(
+      {final int id,
+      final String name,
+      @JsonKey(name: 'type') final String serverType,
+      final String? config,
+      @JsonKey(name: 'sortNumber') final int sortNumber}) = _$ServerImpl;
 
   factory _Server.fromJson(Map<String, dynamic> json) = _$ServerImpl.fromJson;
 
@@ -4481,11 +4205,8 @@ abstract class _Server implements Server {
   @override
   @JsonKey(name: 'sortNumber')
   int get sortNumber;
-
-  /// Create a copy of Server
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ServerImplCopyWith<_$ServerImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -4500,12 +4221,8 @@ mixin _$WebDavConfig {
   String get username => throw _privateConstructorUsedError;
   String get password => throw _privateConstructorUsedError;
 
-  /// Serializes this WebDavConfig to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of WebDavConfig
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $WebDavConfigCopyWith<WebDavConfig> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -4513,9 +4230,8 @@ mixin _$WebDavConfig {
 /// @nodoc
 abstract class $WebDavConfigCopyWith<$Res> {
   factory $WebDavConfigCopyWith(
-    WebDavConfig value,
-    $Res Function(WebDavConfig) then,
-  ) = _$WebDavConfigCopyWithImpl<$Res, WebDavConfig>;
+          WebDavConfig value, $Res Function(WebDavConfig) then) =
+      _$WebDavConfigCopyWithImpl<$Res, WebDavConfig>;
   @useResult
   $Res call({String url, String username, String password});
 }
@@ -4530,8 +4246,6 @@ class _$WebDavConfigCopyWithImpl<$Res, $Val extends WebDavConfig>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of WebDavConfig
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4539,23 +4253,20 @@ class _$WebDavConfigCopyWithImpl<$Res, $Val extends WebDavConfig>
     Object? username = null,
     Object? password = null,
   }) {
-    return _then(
-      _value.copyWith(
-            url: null == url
-                ? _value.url
-                : url // ignore: cast_nullable_to_non_nullable
-                      as String,
-            username: null == username
-                ? _value.username
-                : username // ignore: cast_nullable_to_non_nullable
-                      as String,
-            password: null == password
-                ? _value.password
-                : password // ignore: cast_nullable_to_non_nullable
-                      as String,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      username: null == username
+          ? _value.username
+          : username // ignore: cast_nullable_to_non_nullable
+              as String,
+      password: null == password
+          ? _value.password
+          : password // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
   }
 }
 
@@ -4563,9 +4274,8 @@ class _$WebDavConfigCopyWithImpl<$Res, $Val extends WebDavConfig>
 abstract class _$$WebDavConfigImplCopyWith<$Res>
     implements $WebDavConfigCopyWith<$Res> {
   factory _$$WebDavConfigImplCopyWith(
-    _$WebDavConfigImpl value,
-    $Res Function(_$WebDavConfigImpl) then,
-  ) = __$$WebDavConfigImplCopyWithImpl<$Res>;
+          _$WebDavConfigImpl value, $Res Function(_$WebDavConfigImpl) then) =
+      __$$WebDavConfigImplCopyWithImpl<$Res>;
   @override
   @useResult
   $Res call({String url, String username, String password});
@@ -4576,12 +4286,9 @@ class __$$WebDavConfigImplCopyWithImpl<$Res>
     extends _$WebDavConfigCopyWithImpl<$Res, _$WebDavConfigImpl>
     implements _$$WebDavConfigImplCopyWith<$Res> {
   __$$WebDavConfigImplCopyWithImpl(
-    _$WebDavConfigImpl _value,
-    $Res Function(_$WebDavConfigImpl) _then,
-  ) : super(_value, _then);
+      _$WebDavConfigImpl _value, $Res Function(_$WebDavConfigImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of WebDavConfig
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4589,33 +4296,28 @@ class __$$WebDavConfigImplCopyWithImpl<$Res>
     Object? username = null,
     Object? password = null,
   }) {
-    return _then(
-      _$WebDavConfigImpl(
-        url: null == url
-            ? _value.url
-            : url // ignore: cast_nullable_to_non_nullable
-                  as String,
-        username: null == username
-            ? _value.username
-            : username // ignore: cast_nullable_to_non_nullable
-                  as String,
-        password: null == password
-            ? _value.password
-            : password // ignore: cast_nullable_to_non_nullable
-                  as String,
-      ),
-    );
+    return _then(_$WebDavConfigImpl(
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      username: null == username
+          ? _value.username
+          : username // ignore: cast_nullable_to_non_nullable
+              as String,
+      password: null == password
+          ? _value.password
+          : password // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$WebDavConfigImpl implements _WebDavConfig {
-  const _$WebDavConfigImpl({
-    this.url = '',
-    this.username = '',
-    this.password = '',
-  });
+  const _$WebDavConfigImpl(
+      {this.url = '', this.username = '', this.password = ''});
 
   factory _$WebDavConfigImpl.fromJson(Map<String, dynamic> json) =>
       _$$WebDavConfigImplFromJson(json);
@@ -4647,13 +4349,11 @@ class _$WebDavConfigImpl implements _WebDavConfig {
                 other.password == password));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, url, username, password);
 
-  /// Create a copy of WebDavConfig
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$WebDavConfigImplCopyWith<_$WebDavConfigImpl> get copyWith =>
@@ -4661,16 +4361,17 @@ class _$WebDavConfigImpl implements _WebDavConfig {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$WebDavConfigImplToJson(this);
+    return _$$WebDavConfigImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _WebDavConfig implements WebDavConfig {
-  const factory _WebDavConfig({
-    final String url,
-    final String username,
-    final String password,
-  }) = _$WebDavConfigImpl;
+  const factory _WebDavConfig(
+      {final String url,
+      final String username,
+      final String password}) = _$WebDavConfigImpl;
 
   factory _WebDavConfig.fromJson(Map<String, dynamic> json) =
       _$WebDavConfigImpl.fromJson;
@@ -4681,11 +4382,8 @@ abstract class _WebDavConfig implements WebDavConfig {
   String get username;
   @override
   String get password;
-
-  /// Create a copy of WebDavConfig
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$WebDavConfigImplCopyWith<_$WebDavConfigImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -4723,12 +4421,8 @@ mixin _$BookSourcePart {
   @JsonKey(name: 'hasJs')
   bool get hasJs => throw _privateConstructorUsedError;
 
-  /// Serializes this BookSourcePart to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of BookSourcePart
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $BookSourcePartCopyWith<BookSourcePart> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -4736,26 +4430,24 @@ mixin _$BookSourcePart {
 /// @nodoc
 abstract class $BookSourcePartCopyWith<$Res> {
   factory $BookSourcePartCopyWith(
-    BookSourcePart value,
-    $Res Function(BookSourcePart) then,
-  ) = _$BookSourcePartCopyWithImpl<$Res, BookSourcePart>;
+          BookSourcePart value, $Res Function(BookSourcePart) then) =
+      _$BookSourcePartCopyWithImpl<$Res, BookSourcePart>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookSourceUrl') String bookSourceUrl,
-    @JsonKey(name: 'bookSourceName') String bookSourceName,
-    @JsonKey(name: 'bookSourceGroup') String? bookSourceGroup,
-    @JsonKey(name: 'customOrder') int customOrder,
-    bool enabled,
-    @JsonKey(name: 'enabledExplore') bool enabledExplore,
-    @JsonKey(name: 'hasLoginUrl') bool hasLoginUrl,
-    @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
-    @JsonKey(name: 'respondTime') int respondTime,
-    int weight,
-    @JsonKey(name: 'hasExploreUrl') bool hasExploreUrl,
-    @JsonKey(name: 'eventListener') bool eventListener,
-    @JsonKey(name: 'bookSourceType') int bookSourceType,
-    @JsonKey(name: 'hasJs') bool hasJs,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookSourceUrl') String bookSourceUrl,
+      @JsonKey(name: 'bookSourceName') String bookSourceName,
+      @JsonKey(name: 'bookSourceGroup') String? bookSourceGroup,
+      @JsonKey(name: 'customOrder') int customOrder,
+      bool enabled,
+      @JsonKey(name: 'enabledExplore') bool enabledExplore,
+      @JsonKey(name: 'hasLoginUrl') bool hasLoginUrl,
+      @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
+      @JsonKey(name: 'respondTime') int respondTime,
+      int weight,
+      @JsonKey(name: 'hasExploreUrl') bool hasExploreUrl,
+      @JsonKey(name: 'eventListener') bool eventListener,
+      @JsonKey(name: 'bookSourceType') int bookSourceType,
+      @JsonKey(name: 'hasJs') bool hasJs});
 }
 
 /// @nodoc
@@ -4768,8 +4460,6 @@ class _$BookSourcePartCopyWithImpl<$Res, $Val extends BookSourcePart>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of BookSourcePart
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4788,95 +4478,90 @@ class _$BookSourcePartCopyWithImpl<$Res, $Val extends BookSourcePart>
     Object? bookSourceType = null,
     Object? hasJs = null,
   }) {
-    return _then(
-      _value.copyWith(
-            bookSourceUrl: null == bookSourceUrl
-                ? _value.bookSourceUrl
-                : bookSourceUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookSourceName: null == bookSourceName
-                ? _value.bookSourceName
-                : bookSourceName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookSourceGroup: freezed == bookSourceGroup
-                ? _value.bookSourceGroup
-                : bookSourceGroup // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            customOrder: null == customOrder
-                ? _value.customOrder
-                : customOrder // ignore: cast_nullable_to_non_nullable
-                      as int,
-            enabled: null == enabled
-                ? _value.enabled
-                : enabled // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            enabledExplore: null == enabledExplore
-                ? _value.enabledExplore
-                : enabledExplore // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            hasLoginUrl: null == hasLoginUrl
-                ? _value.hasLoginUrl
-                : hasLoginUrl // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            lastUpdateTime: null == lastUpdateTime
-                ? _value.lastUpdateTime
-                : lastUpdateTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-            respondTime: null == respondTime
-                ? _value.respondTime
-                : respondTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-            weight: null == weight
-                ? _value.weight
-                : weight // ignore: cast_nullable_to_non_nullable
-                      as int,
-            hasExploreUrl: null == hasExploreUrl
-                ? _value.hasExploreUrl
-                : hasExploreUrl // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            eventListener: null == eventListener
-                ? _value.eventListener
-                : eventListener // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            bookSourceType: null == bookSourceType
-                ? _value.bookSourceType
-                : bookSourceType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            hasJs: null == hasJs
-                ? _value.hasJs
-                : hasJs // ignore: cast_nullable_to_non_nullable
-                      as bool,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      bookSourceUrl: null == bookSourceUrl
+          ? _value.bookSourceUrl
+          : bookSourceUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookSourceName: null == bookSourceName
+          ? _value.bookSourceName
+          : bookSourceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookSourceGroup: freezed == bookSourceGroup
+          ? _value.bookSourceGroup
+          : bookSourceGroup // ignore: cast_nullable_to_non_nullable
+              as String?,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      enabledExplore: null == enabledExplore
+          ? _value.enabledExplore
+          : enabledExplore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasLoginUrl: null == hasLoginUrl
+          ? _value.hasLoginUrl
+          : hasLoginUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      lastUpdateTime: null == lastUpdateTime
+          ? _value.lastUpdateTime
+          : lastUpdateTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      respondTime: null == respondTime
+          ? _value.respondTime
+          : respondTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      weight: null == weight
+          ? _value.weight
+          : weight // ignore: cast_nullable_to_non_nullable
+              as int,
+      hasExploreUrl: null == hasExploreUrl
+          ? _value.hasExploreUrl
+          : hasExploreUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      eventListener: null == eventListener
+          ? _value.eventListener
+          : eventListener // ignore: cast_nullable_to_non_nullable
+              as bool,
+      bookSourceType: null == bookSourceType
+          ? _value.bookSourceType
+          : bookSourceType // ignore: cast_nullable_to_non_nullable
+              as int,
+      hasJs: null == hasJs
+          ? _value.hasJs
+          : hasJs // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$BookSourcePartImplCopyWith<$Res>
     implements $BookSourcePartCopyWith<$Res> {
-  factory _$$BookSourcePartImplCopyWith(
-    _$BookSourcePartImpl value,
-    $Res Function(_$BookSourcePartImpl) then,
-  ) = __$$BookSourcePartImplCopyWithImpl<$Res>;
+  factory _$$BookSourcePartImplCopyWith(_$BookSourcePartImpl value,
+          $Res Function(_$BookSourcePartImpl) then) =
+      __$$BookSourcePartImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookSourceUrl') String bookSourceUrl,
-    @JsonKey(name: 'bookSourceName') String bookSourceName,
-    @JsonKey(name: 'bookSourceGroup') String? bookSourceGroup,
-    @JsonKey(name: 'customOrder') int customOrder,
-    bool enabled,
-    @JsonKey(name: 'enabledExplore') bool enabledExplore,
-    @JsonKey(name: 'hasLoginUrl') bool hasLoginUrl,
-    @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
-    @JsonKey(name: 'respondTime') int respondTime,
-    int weight,
-    @JsonKey(name: 'hasExploreUrl') bool hasExploreUrl,
-    @JsonKey(name: 'eventListener') bool eventListener,
-    @JsonKey(name: 'bookSourceType') int bookSourceType,
-    @JsonKey(name: 'hasJs') bool hasJs,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookSourceUrl') String bookSourceUrl,
+      @JsonKey(name: 'bookSourceName') String bookSourceName,
+      @JsonKey(name: 'bookSourceGroup') String? bookSourceGroup,
+      @JsonKey(name: 'customOrder') int customOrder,
+      bool enabled,
+      @JsonKey(name: 'enabledExplore') bool enabledExplore,
+      @JsonKey(name: 'hasLoginUrl') bool hasLoginUrl,
+      @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
+      @JsonKey(name: 'respondTime') int respondTime,
+      int weight,
+      @JsonKey(name: 'hasExploreUrl') bool hasExploreUrl,
+      @JsonKey(name: 'eventListener') bool eventListener,
+      @JsonKey(name: 'bookSourceType') int bookSourceType,
+      @JsonKey(name: 'hasJs') bool hasJs});
 }
 
 /// @nodoc
@@ -4884,12 +4569,9 @@ class __$$BookSourcePartImplCopyWithImpl<$Res>
     extends _$BookSourcePartCopyWithImpl<$Res, _$BookSourcePartImpl>
     implements _$$BookSourcePartImplCopyWith<$Res> {
   __$$BookSourcePartImplCopyWithImpl(
-    _$BookSourcePartImpl _value,
-    $Res Function(_$BookSourcePartImpl) _then,
-  ) : super(_value, _then);
+      _$BookSourcePartImpl _value, $Res Function(_$BookSourcePartImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of BookSourcePart
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -4908,88 +4590,85 @@ class __$$BookSourcePartImplCopyWithImpl<$Res>
     Object? bookSourceType = null,
     Object? hasJs = null,
   }) {
-    return _then(
-      _$BookSourcePartImpl(
-        bookSourceUrl: null == bookSourceUrl
-            ? _value.bookSourceUrl
-            : bookSourceUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookSourceName: null == bookSourceName
-            ? _value.bookSourceName
-            : bookSourceName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookSourceGroup: freezed == bookSourceGroup
-            ? _value.bookSourceGroup
-            : bookSourceGroup // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        customOrder: null == customOrder
-            ? _value.customOrder
-            : customOrder // ignore: cast_nullable_to_non_nullable
-                  as int,
-        enabled: null == enabled
-            ? _value.enabled
-            : enabled // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        enabledExplore: null == enabledExplore
-            ? _value.enabledExplore
-            : enabledExplore // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        hasLoginUrl: null == hasLoginUrl
-            ? _value.hasLoginUrl
-            : hasLoginUrl // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        lastUpdateTime: null == lastUpdateTime
-            ? _value.lastUpdateTime
-            : lastUpdateTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-        respondTime: null == respondTime
-            ? _value.respondTime
-            : respondTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-        weight: null == weight
-            ? _value.weight
-            : weight // ignore: cast_nullable_to_non_nullable
-                  as int,
-        hasExploreUrl: null == hasExploreUrl
-            ? _value.hasExploreUrl
-            : hasExploreUrl // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        eventListener: null == eventListener
-            ? _value.eventListener
-            : eventListener // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        bookSourceType: null == bookSourceType
-            ? _value.bookSourceType
-            : bookSourceType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        hasJs: null == hasJs
-            ? _value.hasJs
-            : hasJs // ignore: cast_nullable_to_non_nullable
-                  as bool,
-      ),
-    );
+    return _then(_$BookSourcePartImpl(
+      bookSourceUrl: null == bookSourceUrl
+          ? _value.bookSourceUrl
+          : bookSourceUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookSourceName: null == bookSourceName
+          ? _value.bookSourceName
+          : bookSourceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookSourceGroup: freezed == bookSourceGroup
+          ? _value.bookSourceGroup
+          : bookSourceGroup // ignore: cast_nullable_to_non_nullable
+              as String?,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      enabledExplore: null == enabledExplore
+          ? _value.enabledExplore
+          : enabledExplore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasLoginUrl: null == hasLoginUrl
+          ? _value.hasLoginUrl
+          : hasLoginUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      lastUpdateTime: null == lastUpdateTime
+          ? _value.lastUpdateTime
+          : lastUpdateTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      respondTime: null == respondTime
+          ? _value.respondTime
+          : respondTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      weight: null == weight
+          ? _value.weight
+          : weight // ignore: cast_nullable_to_non_nullable
+              as int,
+      hasExploreUrl: null == hasExploreUrl
+          ? _value.hasExploreUrl
+          : hasExploreUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      eventListener: null == eventListener
+          ? _value.eventListener
+          : eventListener // ignore: cast_nullable_to_non_nullable
+              as bool,
+      bookSourceType: null == bookSourceType
+          ? _value.bookSourceType
+          : bookSourceType // ignore: cast_nullable_to_non_nullable
+              as int,
+      hasJs: null == hasJs
+          ? _value.hasJs
+          : hasJs // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$BookSourcePartImpl implements _BookSourcePart {
-  const _$BookSourcePartImpl({
-    @JsonKey(name: 'bookSourceUrl') this.bookSourceUrl = '',
-    @JsonKey(name: 'bookSourceName') this.bookSourceName = '',
-    @JsonKey(name: 'bookSourceGroup') this.bookSourceGroup,
-    @JsonKey(name: 'customOrder') this.customOrder = 0,
-    this.enabled = true,
-    @JsonKey(name: 'enabledExplore') this.enabledExplore = true,
-    @JsonKey(name: 'hasLoginUrl') this.hasLoginUrl = false,
-    @JsonKey(name: 'lastUpdateTime') this.lastUpdateTime = 0,
-    @JsonKey(name: 'respondTime') this.respondTime = 180000,
-    this.weight = 0,
-    @JsonKey(name: 'hasExploreUrl') this.hasExploreUrl = false,
-    @JsonKey(name: 'eventListener') this.eventListener = false,
-    @JsonKey(name: 'bookSourceType') this.bookSourceType = 0,
-    @JsonKey(name: 'hasJs') this.hasJs = false,
-  });
+  const _$BookSourcePartImpl(
+      {@JsonKey(name: 'bookSourceUrl') this.bookSourceUrl = '',
+      @JsonKey(name: 'bookSourceName') this.bookSourceName = '',
+      @JsonKey(name: 'bookSourceGroup') this.bookSourceGroup,
+      @JsonKey(name: 'customOrder') this.customOrder = 0,
+      this.enabled = true,
+      @JsonKey(name: 'enabledExplore') this.enabledExplore = true,
+      @JsonKey(name: 'hasLoginUrl') this.hasLoginUrl = false,
+      @JsonKey(name: 'lastUpdateTime') this.lastUpdateTime = 0,
+      @JsonKey(name: 'respondTime') this.respondTime = 180000,
+      this.weight = 0,
+      @JsonKey(name: 'hasExploreUrl') this.hasExploreUrl = false,
+      @JsonKey(name: 'eventListener') this.eventListener = false,
+      @JsonKey(name: 'bookSourceType') this.bookSourceType = 0,
+      @JsonKey(name: 'hasJs') this.hasJs = false});
 
   factory _$BookSourcePartImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookSourcePartImplFromJson(json);
@@ -5074,60 +4753,56 @@ class _$BookSourcePartImpl implements _BookSourcePart {
             (identical(other.hasJs, hasJs) || other.hasJs == hasJs));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    bookSourceUrl,
-    bookSourceName,
-    bookSourceGroup,
-    customOrder,
-    enabled,
-    enabledExplore,
-    hasLoginUrl,
-    lastUpdateTime,
-    respondTime,
-    weight,
-    hasExploreUrl,
-    eventListener,
-    bookSourceType,
-    hasJs,
-  );
+      runtimeType,
+      bookSourceUrl,
+      bookSourceName,
+      bookSourceGroup,
+      customOrder,
+      enabled,
+      enabledExplore,
+      hasLoginUrl,
+      lastUpdateTime,
+      respondTime,
+      weight,
+      hasExploreUrl,
+      eventListener,
+      bookSourceType,
+      hasJs);
 
-  /// Create a copy of BookSourcePart
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$BookSourcePartImplCopyWith<_$BookSourcePartImpl> get copyWith =>
       __$$BookSourcePartImplCopyWithImpl<_$BookSourcePartImpl>(
-        this,
-        _$identity,
-      );
+          this, _$identity);
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$BookSourcePartImplToJson(this);
+    return _$$BookSourcePartImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _BookSourcePart implements BookSourcePart {
-  const factory _BookSourcePart({
-    @JsonKey(name: 'bookSourceUrl') final String bookSourceUrl,
-    @JsonKey(name: 'bookSourceName') final String bookSourceName,
-    @JsonKey(name: 'bookSourceGroup') final String? bookSourceGroup,
-    @JsonKey(name: 'customOrder') final int customOrder,
-    final bool enabled,
-    @JsonKey(name: 'enabledExplore') final bool enabledExplore,
-    @JsonKey(name: 'hasLoginUrl') final bool hasLoginUrl,
-    @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
-    @JsonKey(name: 'respondTime') final int respondTime,
-    final int weight,
-    @JsonKey(name: 'hasExploreUrl') final bool hasExploreUrl,
-    @JsonKey(name: 'eventListener') final bool eventListener,
-    @JsonKey(name: 'bookSourceType') final int bookSourceType,
-    @JsonKey(name: 'hasJs') final bool hasJs,
-  }) = _$BookSourcePartImpl;
+  const factory _BookSourcePart(
+      {@JsonKey(name: 'bookSourceUrl') final String bookSourceUrl,
+      @JsonKey(name: 'bookSourceName') final String bookSourceName,
+      @JsonKey(name: 'bookSourceGroup') final String? bookSourceGroup,
+      @JsonKey(name: 'customOrder') final int customOrder,
+      final bool enabled,
+      @JsonKey(name: 'enabledExplore') final bool enabledExplore,
+      @JsonKey(name: 'hasLoginUrl') final bool hasLoginUrl,
+      @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
+      @JsonKey(name: 'respondTime') final int respondTime,
+      final int weight,
+      @JsonKey(name: 'hasExploreUrl') final bool hasExploreUrl,
+      @JsonKey(name: 'eventListener') final bool eventListener,
+      @JsonKey(name: 'bookSourceType') final int bookSourceType,
+      @JsonKey(name: 'hasJs') final bool hasJs}) = _$BookSourcePartImpl;
 
   factory _BookSourcePart.fromJson(Map<String, dynamic> json) =
       _$BookSourcePartImpl.fromJson;
@@ -5172,11 +4847,8 @@ abstract class _BookSourcePart implements BookSourcePart {
   @override
   @JsonKey(name: 'hasJs')
   bool get hasJs;
-
-  /// Create a copy of BookSourcePart
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$BookSourcePartImplCopyWith<_$BookSourcePartImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -5192,12 +4864,8 @@ mixin _$SearchKeyword {
   @JsonKey(name: 'lastUseTime')
   int get lastUseTime => throw _privateConstructorUsedError;
 
-  /// Serializes this SearchKeyword to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of SearchKeyword
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $SearchKeywordCopyWith<SearchKeyword> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -5205,15 +4873,11 @@ mixin _$SearchKeyword {
 /// @nodoc
 abstract class $SearchKeywordCopyWith<$Res> {
   factory $SearchKeywordCopyWith(
-    SearchKeyword value,
-    $Res Function(SearchKeyword) then,
-  ) = _$SearchKeywordCopyWithImpl<$Res, SearchKeyword>;
+          SearchKeyword value, $Res Function(SearchKeyword) then) =
+      _$SearchKeywordCopyWithImpl<$Res, SearchKeyword>;
   @useResult
-  $Res call({
-    String word,
-    int usage,
-    @JsonKey(name: 'lastUseTime') int lastUseTime,
-  });
+  $Res call(
+      {String word, int usage, @JsonKey(name: 'lastUseTime') int lastUseTime});
 }
 
 /// @nodoc
@@ -5226,8 +4890,6 @@ class _$SearchKeywordCopyWithImpl<$Res, $Val extends SearchKeyword>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of SearchKeyword
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -5235,23 +4897,20 @@ class _$SearchKeywordCopyWithImpl<$Res, $Val extends SearchKeyword>
     Object? usage = null,
     Object? lastUseTime = null,
   }) {
-    return _then(
-      _value.copyWith(
-            word: null == word
-                ? _value.word
-                : word // ignore: cast_nullable_to_non_nullable
-                      as String,
-            usage: null == usage
-                ? _value.usage
-                : usage // ignore: cast_nullable_to_non_nullable
-                      as int,
-            lastUseTime: null == lastUseTime
-                ? _value.lastUseTime
-                : lastUseTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      word: null == word
+          ? _value.word
+          : word // ignore: cast_nullable_to_non_nullable
+              as String,
+      usage: null == usage
+          ? _value.usage
+          : usage // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastUseTime: null == lastUseTime
+          ? _value.lastUseTime
+          : lastUseTime // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -5259,16 +4918,12 @@ class _$SearchKeywordCopyWithImpl<$Res, $Val extends SearchKeyword>
 abstract class _$$SearchKeywordImplCopyWith<$Res>
     implements $SearchKeywordCopyWith<$Res> {
   factory _$$SearchKeywordImplCopyWith(
-    _$SearchKeywordImpl value,
-    $Res Function(_$SearchKeywordImpl) then,
-  ) = __$$SearchKeywordImplCopyWithImpl<$Res>;
+          _$SearchKeywordImpl value, $Res Function(_$SearchKeywordImpl) then) =
+      __$$SearchKeywordImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String word,
-    int usage,
-    @JsonKey(name: 'lastUseTime') int lastUseTime,
-  });
+  $Res call(
+      {String word, int usage, @JsonKey(name: 'lastUseTime') int lastUseTime});
 }
 
 /// @nodoc
@@ -5276,12 +4931,9 @@ class __$$SearchKeywordImplCopyWithImpl<$Res>
     extends _$SearchKeywordCopyWithImpl<$Res, _$SearchKeywordImpl>
     implements _$$SearchKeywordImplCopyWith<$Res> {
   __$$SearchKeywordImplCopyWithImpl(
-    _$SearchKeywordImpl _value,
-    $Res Function(_$SearchKeywordImpl) _then,
-  ) : super(_value, _then);
+      _$SearchKeywordImpl _value, $Res Function(_$SearchKeywordImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of SearchKeyword
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -5289,33 +4941,30 @@ class __$$SearchKeywordImplCopyWithImpl<$Res>
     Object? usage = null,
     Object? lastUseTime = null,
   }) {
-    return _then(
-      _$SearchKeywordImpl(
-        word: null == word
-            ? _value.word
-            : word // ignore: cast_nullable_to_non_nullable
-                  as String,
-        usage: null == usage
-            ? _value.usage
-            : usage // ignore: cast_nullable_to_non_nullable
-                  as int,
-        lastUseTime: null == lastUseTime
-            ? _value.lastUseTime
-            : lastUseTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$SearchKeywordImpl(
+      word: null == word
+          ? _value.word
+          : word // ignore: cast_nullable_to_non_nullable
+              as String,
+      usage: null == usage
+          ? _value.usage
+          : usage // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastUseTime: null == lastUseTime
+          ? _value.lastUseTime
+          : lastUseTime // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$SearchKeywordImpl implements _SearchKeyword {
-  const _$SearchKeywordImpl({
-    this.word = '',
-    this.usage = 1,
-    @JsonKey(name: 'lastUseTime') this.lastUseTime = 0,
-  });
+  const _$SearchKeywordImpl(
+      {this.word = '',
+      this.usage = 1,
+      @JsonKey(name: 'lastUseTime') this.lastUseTime = 0});
 
   factory _$SearchKeywordImpl.fromJson(Map<String, dynamic> json) =>
       _$$SearchKeywordImplFromJson(json);
@@ -5346,13 +4995,11 @@ class _$SearchKeywordImpl implements _SearchKeyword {
                 other.lastUseTime == lastUseTime));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, word, usage, lastUseTime);
 
-  /// Create a copy of SearchKeyword
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SearchKeywordImplCopyWith<_$SearchKeywordImpl> get copyWith =>
@@ -5360,16 +5007,18 @@ class _$SearchKeywordImpl implements _SearchKeyword {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SearchKeywordImplToJson(this);
+    return _$$SearchKeywordImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _SearchKeyword implements SearchKeyword {
-  const factory _SearchKeyword({
-    final String word,
-    final int usage,
-    @JsonKey(name: 'lastUseTime') final int lastUseTime,
-  }) = _$SearchKeywordImpl;
+  const factory _SearchKeyword(
+          {final String word,
+          final int usage,
+          @JsonKey(name: 'lastUseTime') final int lastUseTime}) =
+      _$SearchKeywordImpl;
 
   factory _SearchKeyword.fromJson(Map<String, dynamic> json) =
       _$SearchKeywordImpl.fromJson;
@@ -5381,11 +5030,8 @@ abstract class _SearchKeyword implements SearchKeyword {
   @override
   @JsonKey(name: 'lastUseTime')
   int get lastUseTime;
-
-  /// Create a copy of SearchKeyword
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SearchKeywordImplCopyWith<_$SearchKeywordImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -5416,12 +5062,8 @@ mixin _$RuleSub {
   @JsonKey(name: 'sourceUrl')
   String? get sourceUrl => throw _privateConstructorUsedError;
 
-  /// Serializes this RuleSub to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of RuleSub
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $RuleSubCopyWith<RuleSub> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -5430,20 +5072,19 @@ abstract class $RuleSubCopyWith<$Res> {
   factory $RuleSubCopyWith(RuleSub value, $Res Function(RuleSub) then) =
       _$RuleSubCopyWithImpl<$Res, RuleSub>;
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String url,
-    @JsonKey(name: 'type') int subType,
-    @JsonKey(name: 'customOrder') int customOrder,
-    @JsonKey(name: 'autoUpdate') bool autoUpdate,
-    int update,
-    @JsonKey(name: 'updateInterval') int updateInterval,
-    @JsonKey(name: 'silentUpdate') bool silentUpdate,
-    String? js,
-    @JsonKey(name: 'showRule') String? showRule,
-    @JsonKey(name: 'sourceUrl') String? sourceUrl,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String url,
+      @JsonKey(name: 'type') int subType,
+      @JsonKey(name: 'customOrder') int customOrder,
+      @JsonKey(name: 'autoUpdate') bool autoUpdate,
+      int update,
+      @JsonKey(name: 'updateInterval') int updateInterval,
+      @JsonKey(name: 'silentUpdate') bool silentUpdate,
+      String? js,
+      @JsonKey(name: 'showRule') String? showRule,
+      @JsonKey(name: 'sourceUrl') String? sourceUrl});
 }
 
 /// @nodoc
@@ -5456,8 +5097,6 @@ class _$RuleSubCopyWithImpl<$Res, $Val extends RuleSub>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of RuleSub
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -5474,84 +5113,79 @@ class _$RuleSubCopyWithImpl<$Res, $Val extends RuleSub>
     Object? showRule = freezed,
     Object? sourceUrl = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            url: null == url
-                ? _value.url
-                : url // ignore: cast_nullable_to_non_nullable
-                      as String,
-            subType: null == subType
-                ? _value.subType
-                : subType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            customOrder: null == customOrder
-                ? _value.customOrder
-                : customOrder // ignore: cast_nullable_to_non_nullable
-                      as int,
-            autoUpdate: null == autoUpdate
-                ? _value.autoUpdate
-                : autoUpdate // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            update: null == update
-                ? _value.update
-                : update // ignore: cast_nullable_to_non_nullable
-                      as int,
-            updateInterval: null == updateInterval
-                ? _value.updateInterval
-                : updateInterval // ignore: cast_nullable_to_non_nullable
-                      as int,
-            silentUpdate: null == silentUpdate
-                ? _value.silentUpdate
-                : silentUpdate // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            js: freezed == js
-                ? _value.js
-                : js // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            showRule: freezed == showRule
-                ? _value.showRule
-                : showRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            sourceUrl: freezed == sourceUrl
-                ? _value.sourceUrl
-                : sourceUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      subType: null == subType
+          ? _value.subType
+          : subType // ignore: cast_nullable_to_non_nullable
+              as int,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      autoUpdate: null == autoUpdate
+          ? _value.autoUpdate
+          : autoUpdate // ignore: cast_nullable_to_non_nullable
+              as bool,
+      update: null == update
+          ? _value.update
+          : update // ignore: cast_nullable_to_non_nullable
+              as int,
+      updateInterval: null == updateInterval
+          ? _value.updateInterval
+          : updateInterval // ignore: cast_nullable_to_non_nullable
+              as int,
+      silentUpdate: null == silentUpdate
+          ? _value.silentUpdate
+          : silentUpdate // ignore: cast_nullable_to_non_nullable
+              as bool,
+      js: freezed == js
+          ? _value.js
+          : js // ignore: cast_nullable_to_non_nullable
+              as String?,
+      showRule: freezed == showRule
+          ? _value.showRule
+          : showRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sourceUrl: freezed == sourceUrl
+          ? _value.sourceUrl
+          : sourceUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$RuleSubImplCopyWith<$Res> implements $RuleSubCopyWith<$Res> {
   factory _$$RuleSubImplCopyWith(
-    _$RuleSubImpl value,
-    $Res Function(_$RuleSubImpl) then,
-  ) = __$$RuleSubImplCopyWithImpl<$Res>;
+          _$RuleSubImpl value, $Res Function(_$RuleSubImpl) then) =
+      __$$RuleSubImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String url,
-    @JsonKey(name: 'type') int subType,
-    @JsonKey(name: 'customOrder') int customOrder,
-    @JsonKey(name: 'autoUpdate') bool autoUpdate,
-    int update,
-    @JsonKey(name: 'updateInterval') int updateInterval,
-    @JsonKey(name: 'silentUpdate') bool silentUpdate,
-    String? js,
-    @JsonKey(name: 'showRule') String? showRule,
-    @JsonKey(name: 'sourceUrl') String? sourceUrl,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String url,
+      @JsonKey(name: 'type') int subType,
+      @JsonKey(name: 'customOrder') int customOrder,
+      @JsonKey(name: 'autoUpdate') bool autoUpdate,
+      int update,
+      @JsonKey(name: 'updateInterval') int updateInterval,
+      @JsonKey(name: 'silentUpdate') bool silentUpdate,
+      String? js,
+      @JsonKey(name: 'showRule') String? showRule,
+      @JsonKey(name: 'sourceUrl') String? sourceUrl});
 }
 
 /// @nodoc
@@ -5559,12 +5193,9 @@ class __$$RuleSubImplCopyWithImpl<$Res>
     extends _$RuleSubCopyWithImpl<$Res, _$RuleSubImpl>
     implements _$$RuleSubImplCopyWith<$Res> {
   __$$RuleSubImplCopyWithImpl(
-    _$RuleSubImpl _value,
-    $Res Function(_$RuleSubImpl) _then,
-  ) : super(_value, _then);
+      _$RuleSubImpl _value, $Res Function(_$RuleSubImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of RuleSub
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -5581,78 +5212,75 @@ class __$$RuleSubImplCopyWithImpl<$Res>
     Object? showRule = freezed,
     Object? sourceUrl = freezed,
   }) {
-    return _then(
-      _$RuleSubImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        url: null == url
-            ? _value.url
-            : url // ignore: cast_nullable_to_non_nullable
-                  as String,
-        subType: null == subType
-            ? _value.subType
-            : subType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        customOrder: null == customOrder
-            ? _value.customOrder
-            : customOrder // ignore: cast_nullable_to_non_nullable
-                  as int,
-        autoUpdate: null == autoUpdate
-            ? _value.autoUpdate
-            : autoUpdate // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        update: null == update
-            ? _value.update
-            : update // ignore: cast_nullable_to_non_nullable
-                  as int,
-        updateInterval: null == updateInterval
-            ? _value.updateInterval
-            : updateInterval // ignore: cast_nullable_to_non_nullable
-                  as int,
-        silentUpdate: null == silentUpdate
-            ? _value.silentUpdate
-            : silentUpdate // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        js: freezed == js
-            ? _value.js
-            : js // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        showRule: freezed == showRule
-            ? _value.showRule
-            : showRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        sourceUrl: freezed == sourceUrl
-            ? _value.sourceUrl
-            : sourceUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$RuleSubImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      subType: null == subType
+          ? _value.subType
+          : subType // ignore: cast_nullable_to_non_nullable
+              as int,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      autoUpdate: null == autoUpdate
+          ? _value.autoUpdate
+          : autoUpdate // ignore: cast_nullable_to_non_nullable
+              as bool,
+      update: null == update
+          ? _value.update
+          : update // ignore: cast_nullable_to_non_nullable
+              as int,
+      updateInterval: null == updateInterval
+          ? _value.updateInterval
+          : updateInterval // ignore: cast_nullable_to_non_nullable
+              as int,
+      silentUpdate: null == silentUpdate
+          ? _value.silentUpdate
+          : silentUpdate // ignore: cast_nullable_to_non_nullable
+              as bool,
+      js: freezed == js
+          ? _value.js
+          : js // ignore: cast_nullable_to_non_nullable
+              as String?,
+      showRule: freezed == showRule
+          ? _value.showRule
+          : showRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sourceUrl: freezed == sourceUrl
+          ? _value.sourceUrl
+          : sourceUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$RuleSubImpl implements _RuleSub {
-  const _$RuleSubImpl({
-    this.id = 0,
-    this.name = '',
-    this.url = '',
-    @JsonKey(name: 'type') this.subType = 0,
-    @JsonKey(name: 'customOrder') this.customOrder = 0,
-    @JsonKey(name: 'autoUpdate') this.autoUpdate = false,
-    this.update = 0,
-    @JsonKey(name: 'updateInterval') this.updateInterval = 0,
-    @JsonKey(name: 'silentUpdate') this.silentUpdate = false,
-    this.js,
-    @JsonKey(name: 'showRule') this.showRule,
-    @JsonKey(name: 'sourceUrl') this.sourceUrl,
-  });
+  const _$RuleSubImpl(
+      {this.id = 0,
+      this.name = '',
+      this.url = '',
+      @JsonKey(name: 'type') this.subType = 0,
+      @JsonKey(name: 'customOrder') this.customOrder = 0,
+      @JsonKey(name: 'autoUpdate') this.autoUpdate = false,
+      this.update = 0,
+      @JsonKey(name: 'updateInterval') this.updateInterval = 0,
+      @JsonKey(name: 'silentUpdate') this.silentUpdate = false,
+      this.js,
+      @JsonKey(name: 'showRule') this.showRule,
+      @JsonKey(name: 'sourceUrl') this.sourceUrl});
 
   factory _$RuleSubImpl.fromJson(Map<String, dynamic> json) =>
       _$$RuleSubImplFromJson(json);
@@ -5723,27 +5351,24 @@ class _$RuleSubImpl implements _RuleSub {
                 other.sourceUrl == sourceUrl));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    id,
-    name,
-    url,
-    subType,
-    customOrder,
-    autoUpdate,
-    update,
-    updateInterval,
-    silentUpdate,
-    js,
-    showRule,
-    sourceUrl,
-  );
+      runtimeType,
+      id,
+      name,
+      url,
+      subType,
+      customOrder,
+      autoUpdate,
+      update,
+      updateInterval,
+      silentUpdate,
+      js,
+      showRule,
+      sourceUrl);
 
-  /// Create a copy of RuleSub
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$RuleSubImplCopyWith<_$RuleSubImpl> get copyWith =>
@@ -5751,25 +5376,26 @@ class _$RuleSubImpl implements _RuleSub {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$RuleSubImplToJson(this);
+    return _$$RuleSubImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _RuleSub implements RuleSub {
-  const factory _RuleSub({
-    final int id,
-    final String name,
-    final String url,
-    @JsonKey(name: 'type') final int subType,
-    @JsonKey(name: 'customOrder') final int customOrder,
-    @JsonKey(name: 'autoUpdate') final bool autoUpdate,
-    final int update,
-    @JsonKey(name: 'updateInterval') final int updateInterval,
-    @JsonKey(name: 'silentUpdate') final bool silentUpdate,
-    final String? js,
-    @JsonKey(name: 'showRule') final String? showRule,
-    @JsonKey(name: 'sourceUrl') final String? sourceUrl,
-  }) = _$RuleSubImpl;
+  const factory _RuleSub(
+      {final int id,
+      final String name,
+      final String url,
+      @JsonKey(name: 'type') final int subType,
+      @JsonKey(name: 'customOrder') final int customOrder,
+      @JsonKey(name: 'autoUpdate') final bool autoUpdate,
+      final int update,
+      @JsonKey(name: 'updateInterval') final int updateInterval,
+      @JsonKey(name: 'silentUpdate') final bool silentUpdate,
+      final String? js,
+      @JsonKey(name: 'showRule') final String? showRule,
+      @JsonKey(name: 'sourceUrl') final String? sourceUrl}) = _$RuleSubImpl;
 
   factory _RuleSub.fromJson(Map<String, dynamic> json) = _$RuleSubImpl.fromJson;
 
@@ -5804,11 +5430,8 @@ abstract class _RuleSub implements RuleSub {
   @override
   @JsonKey(name: 'sourceUrl')
   String? get sourceUrl;
-
-  /// Create a copy of RuleSub
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$RuleSubImplCopyWith<_$RuleSubImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -5828,12 +5451,8 @@ mixin _$TxtTocRule {
   int get serialNumber => throw _privateConstructorUsedError;
   bool get enable => throw _privateConstructorUsedError;
 
-  /// Serializes this TxtTocRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of TxtTocRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $TxtTocRuleCopyWith<TxtTocRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -5841,19 +5460,17 @@ mixin _$TxtTocRule {
 /// @nodoc
 abstract class $TxtTocRuleCopyWith<$Res> {
   factory $TxtTocRuleCopyWith(
-    TxtTocRule value,
-    $Res Function(TxtTocRule) then,
-  ) = _$TxtTocRuleCopyWithImpl<$Res, TxtTocRule>;
+          TxtTocRule value, $Res Function(TxtTocRule) then) =
+      _$TxtTocRuleCopyWithImpl<$Res, TxtTocRule>;
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String rule,
-    String replacement,
-    String? example,
-    @JsonKey(name: 'serialNumber') int serialNumber,
-    bool enable,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String rule,
+      String replacement,
+      String? example,
+      @JsonKey(name: 'serialNumber') int serialNumber,
+      bool enable});
 }
 
 /// @nodoc
@@ -5866,8 +5483,6 @@ class _$TxtTocRuleCopyWithImpl<$Res, $Val extends TxtTocRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of TxtTocRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -5879,39 +5494,36 @@ class _$TxtTocRuleCopyWithImpl<$Res, $Val extends TxtTocRule>
     Object? serialNumber = null,
     Object? enable = null,
   }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            rule: null == rule
-                ? _value.rule
-                : rule // ignore: cast_nullable_to_non_nullable
-                      as String,
-            replacement: null == replacement
-                ? _value.replacement
-                : replacement // ignore: cast_nullable_to_non_nullable
-                      as String,
-            example: freezed == example
-                ? _value.example
-                : example // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            serialNumber: null == serialNumber
-                ? _value.serialNumber
-                : serialNumber // ignore: cast_nullable_to_non_nullable
-                      as int,
-            enable: null == enable
-                ? _value.enable
-                : enable // ignore: cast_nullable_to_non_nullable
-                      as bool,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      rule: null == rule
+          ? _value.rule
+          : rule // ignore: cast_nullable_to_non_nullable
+              as String,
+      replacement: null == replacement
+          ? _value.replacement
+          : replacement // ignore: cast_nullable_to_non_nullable
+              as String,
+      example: freezed == example
+          ? _value.example
+          : example // ignore: cast_nullable_to_non_nullable
+              as String?,
+      serialNumber: null == serialNumber
+          ? _value.serialNumber
+          : serialNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+      enable: null == enable
+          ? _value.enable
+          : enable // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ) as $Val);
   }
 }
 
@@ -5919,20 +5531,18 @@ class _$TxtTocRuleCopyWithImpl<$Res, $Val extends TxtTocRule>
 abstract class _$$TxtTocRuleImplCopyWith<$Res>
     implements $TxtTocRuleCopyWith<$Res> {
   factory _$$TxtTocRuleImplCopyWith(
-    _$TxtTocRuleImpl value,
-    $Res Function(_$TxtTocRuleImpl) then,
-  ) = __$$TxtTocRuleImplCopyWithImpl<$Res>;
+          _$TxtTocRuleImpl value, $Res Function(_$TxtTocRuleImpl) then) =
+      __$$TxtTocRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    int id,
-    String name,
-    String rule,
-    String replacement,
-    String? example,
-    @JsonKey(name: 'serialNumber') int serialNumber,
-    bool enable,
-  });
+  $Res call(
+      {int id,
+      String name,
+      String rule,
+      String replacement,
+      String? example,
+      @JsonKey(name: 'serialNumber') int serialNumber,
+      bool enable});
 }
 
 /// @nodoc
@@ -5940,12 +5550,9 @@ class __$$TxtTocRuleImplCopyWithImpl<$Res>
     extends _$TxtTocRuleCopyWithImpl<$Res, _$TxtTocRuleImpl>
     implements _$$TxtTocRuleImplCopyWith<$Res> {
   __$$TxtTocRuleImplCopyWithImpl(
-    _$TxtTocRuleImpl _value,
-    $Res Function(_$TxtTocRuleImpl) _then,
-  ) : super(_value, _then);
+      _$TxtTocRuleImpl _value, $Res Function(_$TxtTocRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of TxtTocRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -5957,53 +5564,50 @@ class __$$TxtTocRuleImplCopyWithImpl<$Res>
     Object? serialNumber = null,
     Object? enable = null,
   }) {
-    return _then(
-      _$TxtTocRuleImpl(
-        id: null == id
-            ? _value.id
-            : id // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        rule: null == rule
-            ? _value.rule
-            : rule // ignore: cast_nullable_to_non_nullable
-                  as String,
-        replacement: null == replacement
-            ? _value.replacement
-            : replacement // ignore: cast_nullable_to_non_nullable
-                  as String,
-        example: freezed == example
-            ? _value.example
-            : example // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        serialNumber: null == serialNumber
-            ? _value.serialNumber
-            : serialNumber // ignore: cast_nullable_to_non_nullable
-                  as int,
-        enable: null == enable
-            ? _value.enable
-            : enable // ignore: cast_nullable_to_non_nullable
-                  as bool,
-      ),
-    );
+    return _then(_$TxtTocRuleImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      rule: null == rule
+          ? _value.rule
+          : rule // ignore: cast_nullable_to_non_nullable
+              as String,
+      replacement: null == replacement
+          ? _value.replacement
+          : replacement // ignore: cast_nullable_to_non_nullable
+              as String,
+      example: freezed == example
+          ? _value.example
+          : example // ignore: cast_nullable_to_non_nullable
+              as String?,
+      serialNumber: null == serialNumber
+          ? _value.serialNumber
+          : serialNumber // ignore: cast_nullable_to_non_nullable
+              as int,
+      enable: null == enable
+          ? _value.enable
+          : enable // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$TxtTocRuleImpl implements _TxtTocRule {
-  const _$TxtTocRuleImpl({
-    this.id = 0,
-    this.name = '',
-    this.rule = '',
-    this.replacement = '',
-    this.example,
-    @JsonKey(name: 'serialNumber') this.serialNumber = -1,
-    this.enable = true,
-  });
+  const _$TxtTocRuleImpl(
+      {this.id = 0,
+      this.name = '',
+      this.rule = '',
+      this.replacement = '',
+      this.example,
+      @JsonKey(name: 'serialNumber') this.serialNumber = -1,
+      this.enable = true});
 
   factory _$TxtTocRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$TxtTocRuleImplFromJson(json);
@@ -6050,22 +5654,12 @@ class _$TxtTocRuleImpl implements _TxtTocRule {
             (identical(other.enable, enable) || other.enable == enable));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    id,
-    name,
-    rule,
-    replacement,
-    example,
-    serialNumber,
-    enable,
-  );
+      runtimeType, id, name, rule, replacement, example, serialNumber, enable);
 
-  /// Create a copy of TxtTocRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$TxtTocRuleImplCopyWith<_$TxtTocRuleImpl> get copyWith =>
@@ -6073,20 +5667,21 @@ class _$TxtTocRuleImpl implements _TxtTocRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$TxtTocRuleImplToJson(this);
+    return _$$TxtTocRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _TxtTocRule implements TxtTocRule {
-  const factory _TxtTocRule({
-    final int id,
-    final String name,
-    final String rule,
-    final String replacement,
-    final String? example,
-    @JsonKey(name: 'serialNumber') final int serialNumber,
-    final bool enable,
-  }) = _$TxtTocRuleImpl;
+  const factory _TxtTocRule(
+      {final int id,
+      final String name,
+      final String rule,
+      final String replacement,
+      final String? example,
+      @JsonKey(name: 'serialNumber') final int serialNumber,
+      final bool enable}) = _$TxtTocRuleImpl;
 
   factory _TxtTocRule.fromJson(Map<String, dynamic> json) =
       _$TxtTocRuleImpl.fromJson;
@@ -6106,11 +5701,8 @@ abstract class _TxtTocRule implements TxtTocRule {
   int get serialNumber;
   @override
   bool get enable;
-
-  /// Create a copy of TxtTocRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$TxtTocRuleImplCopyWith<_$TxtTocRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6128,12 +5720,8 @@ mixin _$BookChapterReview {
   @JsonKey(name: 'summaryUrl')
   String get summaryUrl => throw _privateConstructorUsedError;
 
-  /// Serializes this BookChapterReview to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of BookChapterReview
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $BookChapterReviewCopyWith<BookChapterReview> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6141,15 +5729,13 @@ mixin _$BookChapterReview {
 /// @nodoc
 abstract class $BookChapterReviewCopyWith<$Res> {
   factory $BookChapterReviewCopyWith(
-    BookChapterReview value,
-    $Res Function(BookChapterReview) then,
-  ) = _$BookChapterReviewCopyWithImpl<$Res, BookChapterReview>;
+          BookChapterReview value, $Res Function(BookChapterReview) then) =
+      _$BookChapterReviewCopyWithImpl<$Res, BookChapterReview>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookId') int bookId,
-    @JsonKey(name: 'chapterId') int chapterId,
-    @JsonKey(name: 'summaryUrl') String summaryUrl,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookId') int bookId,
+      @JsonKey(name: 'chapterId') int chapterId,
+      @JsonKey(name: 'summaryUrl') String summaryUrl});
 }
 
 /// @nodoc
@@ -6162,8 +5748,6 @@ class _$BookChapterReviewCopyWithImpl<$Res, $Val extends BookChapterReview>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of BookChapterReview
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6171,53 +5755,45 @@ class _$BookChapterReviewCopyWithImpl<$Res, $Val extends BookChapterReview>
     Object? chapterId = null,
     Object? summaryUrl = null,
   }) {
-    return _then(
-      _value.copyWith(
-            bookId: null == bookId
-                ? _value.bookId
-                : bookId // ignore: cast_nullable_to_non_nullable
-                      as int,
-            chapterId: null == chapterId
-                ? _value.chapterId
-                : chapterId // ignore: cast_nullable_to_non_nullable
-                      as int,
-            summaryUrl: null == summaryUrl
-                ? _value.summaryUrl
-                : summaryUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      bookId: null == bookId
+          ? _value.bookId
+          : bookId // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterId: null == chapterId
+          ? _value.chapterId
+          : chapterId // ignore: cast_nullable_to_non_nullable
+              as int,
+      summaryUrl: null == summaryUrl
+          ? _value.summaryUrl
+          : summaryUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$BookChapterReviewImplCopyWith<$Res>
     implements $BookChapterReviewCopyWith<$Res> {
-  factory _$$BookChapterReviewImplCopyWith(
-    _$BookChapterReviewImpl value,
-    $Res Function(_$BookChapterReviewImpl) then,
-  ) = __$$BookChapterReviewImplCopyWithImpl<$Res>;
+  factory _$$BookChapterReviewImplCopyWith(_$BookChapterReviewImpl value,
+          $Res Function(_$BookChapterReviewImpl) then) =
+      __$$BookChapterReviewImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookId') int bookId,
-    @JsonKey(name: 'chapterId') int chapterId,
-    @JsonKey(name: 'summaryUrl') String summaryUrl,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookId') int bookId,
+      @JsonKey(name: 'chapterId') int chapterId,
+      @JsonKey(name: 'summaryUrl') String summaryUrl});
 }
 
 /// @nodoc
 class __$$BookChapterReviewImplCopyWithImpl<$Res>
     extends _$BookChapterReviewCopyWithImpl<$Res, _$BookChapterReviewImpl>
     implements _$$BookChapterReviewImplCopyWith<$Res> {
-  __$$BookChapterReviewImplCopyWithImpl(
-    _$BookChapterReviewImpl _value,
-    $Res Function(_$BookChapterReviewImpl) _then,
-  ) : super(_value, _then);
+  __$$BookChapterReviewImplCopyWithImpl(_$BookChapterReviewImpl _value,
+      $Res Function(_$BookChapterReviewImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of BookChapterReview
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6225,33 +5801,30 @@ class __$$BookChapterReviewImplCopyWithImpl<$Res>
     Object? chapterId = null,
     Object? summaryUrl = null,
   }) {
-    return _then(
-      _$BookChapterReviewImpl(
-        bookId: null == bookId
-            ? _value.bookId
-            : bookId // ignore: cast_nullable_to_non_nullable
-                  as int,
-        chapterId: null == chapterId
-            ? _value.chapterId
-            : chapterId // ignore: cast_nullable_to_non_nullable
-                  as int,
-        summaryUrl: null == summaryUrl
-            ? _value.summaryUrl
-            : summaryUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-      ),
-    );
+    return _then(_$BookChapterReviewImpl(
+      bookId: null == bookId
+          ? _value.bookId
+          : bookId // ignore: cast_nullable_to_non_nullable
+              as int,
+      chapterId: null == chapterId
+          ? _value.chapterId
+          : chapterId // ignore: cast_nullable_to_non_nullable
+              as int,
+      summaryUrl: null == summaryUrl
+          ? _value.summaryUrl
+          : summaryUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$BookChapterReviewImpl implements _BookChapterReview {
-  const _$BookChapterReviewImpl({
-    @JsonKey(name: 'bookId') this.bookId = 0,
-    @JsonKey(name: 'chapterId') this.chapterId = 0,
-    @JsonKey(name: 'summaryUrl') this.summaryUrl = '',
-  });
+  const _$BookChapterReviewImpl(
+      {@JsonKey(name: 'bookId') this.bookId = 0,
+      @JsonKey(name: 'chapterId') this.chapterId = 0,
+      @JsonKey(name: 'summaryUrl') this.summaryUrl = ''});
 
   factory _$BookChapterReviewImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookChapterReviewImplFromJson(json);
@@ -6283,33 +5856,31 @@ class _$BookChapterReviewImpl implements _BookChapterReview {
                 other.summaryUrl == summaryUrl));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, bookId, chapterId, summaryUrl);
 
-  /// Create a copy of BookChapterReview
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$BookChapterReviewImplCopyWith<_$BookChapterReviewImpl> get copyWith =>
       __$$BookChapterReviewImplCopyWithImpl<_$BookChapterReviewImpl>(
-        this,
-        _$identity,
-      );
+          this, _$identity);
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$BookChapterReviewImplToJson(this);
+    return _$$BookChapterReviewImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _BookChapterReview implements BookChapterReview {
-  const factory _BookChapterReview({
-    @JsonKey(name: 'bookId') final int bookId,
-    @JsonKey(name: 'chapterId') final int chapterId,
-    @JsonKey(name: 'summaryUrl') final String summaryUrl,
-  }) = _$BookChapterReviewImpl;
+  const factory _BookChapterReview(
+          {@JsonKey(name: 'bookId') final int bookId,
+          @JsonKey(name: 'chapterId') final int chapterId,
+          @JsonKey(name: 'summaryUrl') final String summaryUrl}) =
+      _$BookChapterReviewImpl;
 
   factory _BookChapterReview.fromJson(Map<String, dynamic> json) =
       _$BookChapterReviewImpl.fromJson;
@@ -6323,11 +5894,8 @@ abstract class _BookChapterReview implements BookChapterReview {
   @override
   @JsonKey(name: 'summaryUrl')
   String get summaryUrl;
-
-  /// Create a copy of BookChapterReview
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$BookChapterReviewImplCopyWith<_$BookChapterReviewImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6345,12 +5913,8 @@ mixin _$KeyboardAssist {
   @JsonKey(name: 'serialNo')
   int get serialNo => throw _privateConstructorUsedError;
 
-  /// Serializes this KeyboardAssist to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of KeyboardAssist
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $KeyboardAssistCopyWith<KeyboardAssist> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6358,16 +5922,14 @@ mixin _$KeyboardAssist {
 /// @nodoc
 abstract class $KeyboardAssistCopyWith<$Res> {
   factory $KeyboardAssistCopyWith(
-    KeyboardAssist value,
-    $Res Function(KeyboardAssist) then,
-  ) = _$KeyboardAssistCopyWithImpl<$Res, KeyboardAssist>;
+          KeyboardAssist value, $Res Function(KeyboardAssist) then) =
+      _$KeyboardAssistCopyWithImpl<$Res, KeyboardAssist>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'type') int assistType,
-    String key,
-    String value,
-    @JsonKey(name: 'serialNo') int serialNo,
-  });
+  $Res call(
+      {@JsonKey(name: 'type') int assistType,
+      String key,
+      String value,
+      @JsonKey(name: 'serialNo') int serialNo});
 }
 
 /// @nodoc
@@ -6380,8 +5942,6 @@ class _$KeyboardAssistCopyWithImpl<$Res, $Val extends KeyboardAssist>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of KeyboardAssist
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6390,45 +5950,40 @@ class _$KeyboardAssistCopyWithImpl<$Res, $Val extends KeyboardAssist>
     Object? value = null,
     Object? serialNo = null,
   }) {
-    return _then(
-      _value.copyWith(
-            assistType: null == assistType
-                ? _value.assistType
-                : assistType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            key: null == key
-                ? _value.key
-                : key // ignore: cast_nullable_to_non_nullable
-                      as String,
-            value: null == value
-                ? _value.value
-                : value // ignore: cast_nullable_to_non_nullable
-                      as String,
-            serialNo: null == serialNo
-                ? _value.serialNo
-                : serialNo // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      assistType: null == assistType
+          ? _value.assistType
+          : assistType // ignore: cast_nullable_to_non_nullable
+              as int,
+      key: null == key
+          ? _value.key
+          : key // ignore: cast_nullable_to_non_nullable
+              as String,
+      value: null == value
+          ? _value.value
+          : value // ignore: cast_nullable_to_non_nullable
+              as String,
+      serialNo: null == serialNo
+          ? _value.serialNo
+          : serialNo // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$KeyboardAssistImplCopyWith<$Res>
     implements $KeyboardAssistCopyWith<$Res> {
-  factory _$$KeyboardAssistImplCopyWith(
-    _$KeyboardAssistImpl value,
-    $Res Function(_$KeyboardAssistImpl) then,
-  ) = __$$KeyboardAssistImplCopyWithImpl<$Res>;
+  factory _$$KeyboardAssistImplCopyWith(_$KeyboardAssistImpl value,
+          $Res Function(_$KeyboardAssistImpl) then) =
+      __$$KeyboardAssistImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'type') int assistType,
-    String key,
-    String value,
-    @JsonKey(name: 'serialNo') int serialNo,
-  });
+  $Res call(
+      {@JsonKey(name: 'type') int assistType,
+      String key,
+      String value,
+      @JsonKey(name: 'serialNo') int serialNo});
 }
 
 /// @nodoc
@@ -6436,12 +5991,9 @@ class __$$KeyboardAssistImplCopyWithImpl<$Res>
     extends _$KeyboardAssistCopyWithImpl<$Res, _$KeyboardAssistImpl>
     implements _$$KeyboardAssistImplCopyWith<$Res> {
   __$$KeyboardAssistImplCopyWithImpl(
-    _$KeyboardAssistImpl _value,
-    $Res Function(_$KeyboardAssistImpl) _then,
-  ) : super(_value, _then);
+      _$KeyboardAssistImpl _value, $Res Function(_$KeyboardAssistImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of KeyboardAssist
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6450,38 +6002,35 @@ class __$$KeyboardAssistImplCopyWithImpl<$Res>
     Object? value = null,
     Object? serialNo = null,
   }) {
-    return _then(
-      _$KeyboardAssistImpl(
-        assistType: null == assistType
-            ? _value.assistType
-            : assistType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        key: null == key
-            ? _value.key
-            : key // ignore: cast_nullable_to_non_nullable
-                  as String,
-        value: null == value
-            ? _value.value
-            : value // ignore: cast_nullable_to_non_nullable
-                  as String,
-        serialNo: null == serialNo
-            ? _value.serialNo
-            : serialNo // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$KeyboardAssistImpl(
+      assistType: null == assistType
+          ? _value.assistType
+          : assistType // ignore: cast_nullable_to_non_nullable
+              as int,
+      key: null == key
+          ? _value.key
+          : key // ignore: cast_nullable_to_non_nullable
+              as String,
+      value: null == value
+          ? _value.value
+          : value // ignore: cast_nullable_to_non_nullable
+              as String,
+      serialNo: null == serialNo
+          ? _value.serialNo
+          : serialNo // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$KeyboardAssistImpl implements _KeyboardAssist {
-  const _$KeyboardAssistImpl({
-    @JsonKey(name: 'type') this.assistType = 0,
-    this.key = '',
-    this.value = '',
-    @JsonKey(name: 'serialNo') this.serialNo = 0,
-  });
+  const _$KeyboardAssistImpl(
+      {@JsonKey(name: 'type') this.assistType = 0,
+      this.key = '',
+      this.value = '',
+      @JsonKey(name: 'serialNo') this.serialNo = 0});
 
   factory _$KeyboardAssistImpl.fromJson(Map<String, dynamic> json) =>
       _$$KeyboardAssistImplFromJson(json);
@@ -6517,35 +6066,32 @@ class _$KeyboardAssistImpl implements _KeyboardAssist {
                 other.serialNo == serialNo));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode =>
       Object.hash(runtimeType, assistType, key, value, serialNo);
 
-  /// Create a copy of KeyboardAssist
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$KeyboardAssistImplCopyWith<_$KeyboardAssistImpl> get copyWith =>
       __$$KeyboardAssistImplCopyWithImpl<_$KeyboardAssistImpl>(
-        this,
-        _$identity,
-      );
+          this, _$identity);
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$KeyboardAssistImplToJson(this);
+    return _$$KeyboardAssistImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _KeyboardAssist implements KeyboardAssist {
-  const factory _KeyboardAssist({
-    @JsonKey(name: 'type') final int assistType,
-    final String key,
-    final String value,
-    @JsonKey(name: 'serialNo') final int serialNo,
-  }) = _$KeyboardAssistImpl;
+  const factory _KeyboardAssist(
+      {@JsonKey(name: 'type') final int assistType,
+      final String key,
+      final String value,
+      @JsonKey(name: 'serialNo') final int serialNo}) = _$KeyboardAssistImpl;
 
   factory _KeyboardAssist.fromJson(Map<String, dynamic> json) =
       _$KeyboardAssistImpl.fromJson;
@@ -6560,11 +6106,8 @@ abstract class _KeyboardAssist implements KeyboardAssist {
   @override
   @JsonKey(name: 'serialNo')
   int get serialNo;
-
-  /// Create a copy of KeyboardAssist
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$KeyboardAssistImplCopyWith<_$KeyboardAssistImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6584,12 +6127,8 @@ mixin _$ReadRecord {
   @JsonKey(name: 'lastRead')
   int get lastRead => throw _privateConstructorUsedError;
 
-  /// Serializes this ReadRecord to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ReadRecord
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ReadRecordCopyWith<ReadRecord> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6597,16 +6136,14 @@ mixin _$ReadRecord {
 /// @nodoc
 abstract class $ReadRecordCopyWith<$Res> {
   factory $ReadRecordCopyWith(
-    ReadRecord value,
-    $Res Function(ReadRecord) then,
-  ) = _$ReadRecordCopyWithImpl<$Res, ReadRecord>;
+          ReadRecord value, $Res Function(ReadRecord) then) =
+      _$ReadRecordCopyWithImpl<$Res, ReadRecord>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'deviceId') String deviceId,
-    @JsonKey(name: 'bookName') String bookName,
-    @JsonKey(name: 'readTime') int readTime,
-    @JsonKey(name: 'lastRead') int lastRead,
-  });
+  $Res call(
+      {@JsonKey(name: 'deviceId') String deviceId,
+      @JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'readTime') int readTime,
+      @JsonKey(name: 'lastRead') int lastRead});
 }
 
 /// @nodoc
@@ -6619,8 +6156,6 @@ class _$ReadRecordCopyWithImpl<$Res, $Val extends ReadRecord>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ReadRecord
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6629,27 +6164,24 @@ class _$ReadRecordCopyWithImpl<$Res, $Val extends ReadRecord>
     Object? readTime = null,
     Object? lastRead = null,
   }) {
-    return _then(
-      _value.copyWith(
-            deviceId: null == deviceId
-                ? _value.deviceId
-                : deviceId // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookName: null == bookName
-                ? _value.bookName
-                : bookName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            readTime: null == readTime
-                ? _value.readTime
-                : readTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-            lastRead: null == lastRead
-                ? _value.lastRead
-                : lastRead // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      deviceId: null == deviceId
+          ? _value.deviceId
+          : deviceId // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookName: null == bookName
+          ? _value.bookName
+          : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      readTime: null == readTime
+          ? _value.readTime
+          : readTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastRead: null == lastRead
+          ? _value.lastRead
+          : lastRead // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -6657,17 +6189,15 @@ class _$ReadRecordCopyWithImpl<$Res, $Val extends ReadRecord>
 abstract class _$$ReadRecordImplCopyWith<$Res>
     implements $ReadRecordCopyWith<$Res> {
   factory _$$ReadRecordImplCopyWith(
-    _$ReadRecordImpl value,
-    $Res Function(_$ReadRecordImpl) then,
-  ) = __$$ReadRecordImplCopyWithImpl<$Res>;
+          _$ReadRecordImpl value, $Res Function(_$ReadRecordImpl) then) =
+      __$$ReadRecordImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'deviceId') String deviceId,
-    @JsonKey(name: 'bookName') String bookName,
-    @JsonKey(name: 'readTime') int readTime,
-    @JsonKey(name: 'lastRead') int lastRead,
-  });
+  $Res call(
+      {@JsonKey(name: 'deviceId') String deviceId,
+      @JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'readTime') int readTime,
+      @JsonKey(name: 'lastRead') int lastRead});
 }
 
 /// @nodoc
@@ -6675,12 +6205,9 @@ class __$$ReadRecordImplCopyWithImpl<$Res>
     extends _$ReadRecordCopyWithImpl<$Res, _$ReadRecordImpl>
     implements _$$ReadRecordImplCopyWith<$Res> {
   __$$ReadRecordImplCopyWithImpl(
-    _$ReadRecordImpl _value,
-    $Res Function(_$ReadRecordImpl) _then,
-  ) : super(_value, _then);
+      _$ReadRecordImpl _value, $Res Function(_$ReadRecordImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ReadRecord
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6689,38 +6216,35 @@ class __$$ReadRecordImplCopyWithImpl<$Res>
     Object? readTime = null,
     Object? lastRead = null,
   }) {
-    return _then(
-      _$ReadRecordImpl(
-        deviceId: null == deviceId
-            ? _value.deviceId
-            : deviceId // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookName: null == bookName
-            ? _value.bookName
-            : bookName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        readTime: null == readTime
-            ? _value.readTime
-            : readTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-        lastRead: null == lastRead
-            ? _value.lastRead
-            : lastRead // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$ReadRecordImpl(
+      deviceId: null == deviceId
+          ? _value.deviceId
+          : deviceId // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookName: null == bookName
+          ? _value.bookName
+          : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      readTime: null == readTime
+          ? _value.readTime
+          : readTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastRead: null == lastRead
+          ? _value.lastRead
+          : lastRead // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ReadRecordImpl implements _ReadRecord {
-  const _$ReadRecordImpl({
-    @JsonKey(name: 'deviceId') this.deviceId = '',
-    @JsonKey(name: 'bookName') this.bookName = '',
-    @JsonKey(name: 'readTime') this.readTime = 0,
-    @JsonKey(name: 'lastRead') this.lastRead = 0,
-  });
+  const _$ReadRecordImpl(
+      {@JsonKey(name: 'deviceId') this.deviceId = '',
+      @JsonKey(name: 'bookName') this.bookName = '',
+      @JsonKey(name: 'readTime') this.readTime = 0,
+      @JsonKey(name: 'lastRead') this.lastRead = 0});
 
   factory _$ReadRecordImpl.fromJson(Map<String, dynamic> json) =>
       _$$ReadRecordImplFromJson(json);
@@ -6758,14 +6282,12 @@ class _$ReadRecordImpl implements _ReadRecord {
                 other.lastRead == lastRead));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode =>
       Object.hash(runtimeType, deviceId, bookName, readTime, lastRead);
 
-  /// Create a copy of ReadRecord
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ReadRecordImplCopyWith<_$ReadRecordImpl> get copyWith =>
@@ -6773,17 +6295,18 @@ class _$ReadRecordImpl implements _ReadRecord {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ReadRecordImplToJson(this);
+    return _$$ReadRecordImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ReadRecord implements ReadRecord {
-  const factory _ReadRecord({
-    @JsonKey(name: 'deviceId') final String deviceId,
-    @JsonKey(name: 'bookName') final String bookName,
-    @JsonKey(name: 'readTime') final int readTime,
-    @JsonKey(name: 'lastRead') final int lastRead,
-  }) = _$ReadRecordImpl;
+  const factory _ReadRecord(
+      {@JsonKey(name: 'deviceId') final String deviceId,
+      @JsonKey(name: 'bookName') final String bookName,
+      @JsonKey(name: 'readTime') final int readTime,
+      @JsonKey(name: 'lastRead') final int lastRead}) = _$ReadRecordImpl;
 
   factory _ReadRecord.fromJson(Map<String, dynamic> json) =
       _$ReadRecordImpl.fromJson;
@@ -6800,11 +6323,8 @@ abstract class _ReadRecord implements ReadRecord {
   @override
   @JsonKey(name: 'lastRead')
   int get lastRead;
-
-  /// Create a copy of ReadRecord
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ReadRecordImplCopyWith<_$ReadRecordImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6830,12 +6350,8 @@ mixin _$RssReadRecord {
   @JsonKey(name: 'pubDate')
   String? get pubDate => throw _privateConstructorUsedError;
 
-  /// Serializes this RssReadRecord to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of RssReadRecord
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $RssReadRecordCopyWith<RssReadRecord> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -6843,22 +6359,20 @@ mixin _$RssReadRecord {
 /// @nodoc
 abstract class $RssReadRecordCopyWith<$Res> {
   factory $RssReadRecordCopyWith(
-    RssReadRecord value,
-    $Res Function(RssReadRecord) then,
-  ) = _$RssReadRecordCopyWithImpl<$Res, RssReadRecord>;
+          RssReadRecord value, $Res Function(RssReadRecord) then) =
+      _$RssReadRecordCopyWithImpl<$Res, RssReadRecord>;
   @useResult
-  $Res call({
-    String record,
-    String? title,
-    @JsonKey(name: 'readTime') int? readTime,
-    bool read,
-    String origin,
-    String sort,
-    String? image,
-    @JsonKey(name: 'type') int recordType,
-    @JsonKey(name: 'durPos') int durPos,
-    @JsonKey(name: 'pubDate') String? pubDate,
-  });
+  $Res call(
+      {String record,
+      String? title,
+      @JsonKey(name: 'readTime') int? readTime,
+      bool read,
+      String origin,
+      String sort,
+      String? image,
+      @JsonKey(name: 'type') int recordType,
+      @JsonKey(name: 'durPos') int durPos,
+      @JsonKey(name: 'pubDate') String? pubDate});
 }
 
 /// @nodoc
@@ -6871,8 +6385,6 @@ class _$RssReadRecordCopyWithImpl<$Res, $Val extends RssReadRecord>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of RssReadRecord
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6887,51 +6399,48 @@ class _$RssReadRecordCopyWithImpl<$Res, $Val extends RssReadRecord>
     Object? durPos = null,
     Object? pubDate = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            record: null == record
-                ? _value.record
-                : record // ignore: cast_nullable_to_non_nullable
-                      as String,
-            title: freezed == title
-                ? _value.title
-                : title // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            readTime: freezed == readTime
-                ? _value.readTime
-                : readTime // ignore: cast_nullable_to_non_nullable
-                      as int?,
-            read: null == read
-                ? _value.read
-                : read // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            origin: null == origin
-                ? _value.origin
-                : origin // ignore: cast_nullable_to_non_nullable
-                      as String,
-            sort: null == sort
-                ? _value.sort
-                : sort // ignore: cast_nullable_to_non_nullable
-                      as String,
-            image: freezed == image
-                ? _value.image
-                : image // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            recordType: null == recordType
-                ? _value.recordType
-                : recordType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            durPos: null == durPos
-                ? _value.durPos
-                : durPos // ignore: cast_nullable_to_non_nullable
-                      as int,
-            pubDate: freezed == pubDate
-                ? _value.pubDate
-                : pubDate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      record: null == record
+          ? _value.record
+          : record // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: freezed == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String?,
+      readTime: freezed == readTime
+          ? _value.readTime
+          : readTime // ignore: cast_nullable_to_non_nullable
+              as int?,
+      read: null == read
+          ? _value.read
+          : read // ignore: cast_nullable_to_non_nullable
+              as bool,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      recordType: null == recordType
+          ? _value.recordType
+          : recordType // ignore: cast_nullable_to_non_nullable
+              as int,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -6939,23 +6448,21 @@ class _$RssReadRecordCopyWithImpl<$Res, $Val extends RssReadRecord>
 abstract class _$$RssReadRecordImplCopyWith<$Res>
     implements $RssReadRecordCopyWith<$Res> {
   factory _$$RssReadRecordImplCopyWith(
-    _$RssReadRecordImpl value,
-    $Res Function(_$RssReadRecordImpl) then,
-  ) = __$$RssReadRecordImplCopyWithImpl<$Res>;
+          _$RssReadRecordImpl value, $Res Function(_$RssReadRecordImpl) then) =
+      __$$RssReadRecordImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String record,
-    String? title,
-    @JsonKey(name: 'readTime') int? readTime,
-    bool read,
-    String origin,
-    String sort,
-    String? image,
-    @JsonKey(name: 'type') int recordType,
-    @JsonKey(name: 'durPos') int durPos,
-    @JsonKey(name: 'pubDate') String? pubDate,
-  });
+  $Res call(
+      {String record,
+      String? title,
+      @JsonKey(name: 'readTime') int? readTime,
+      bool read,
+      String origin,
+      String sort,
+      String? image,
+      @JsonKey(name: 'type') int recordType,
+      @JsonKey(name: 'durPos') int durPos,
+      @JsonKey(name: 'pubDate') String? pubDate});
 }
 
 /// @nodoc
@@ -6963,12 +6470,9 @@ class __$$RssReadRecordImplCopyWithImpl<$Res>
     extends _$RssReadRecordCopyWithImpl<$Res, _$RssReadRecordImpl>
     implements _$$RssReadRecordImplCopyWith<$Res> {
   __$$RssReadRecordImplCopyWithImpl(
-    _$RssReadRecordImpl _value,
-    $Res Function(_$RssReadRecordImpl) _then,
-  ) : super(_value, _then);
+      _$RssReadRecordImpl _value, $Res Function(_$RssReadRecordImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of RssReadRecord
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -6983,68 +6487,65 @@ class __$$RssReadRecordImplCopyWithImpl<$Res>
     Object? durPos = null,
     Object? pubDate = freezed,
   }) {
-    return _then(
-      _$RssReadRecordImpl(
-        record: null == record
-            ? _value.record
-            : record // ignore: cast_nullable_to_non_nullable
-                  as String,
-        title: freezed == title
-            ? _value.title
-            : title // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        readTime: freezed == readTime
-            ? _value.readTime
-            : readTime // ignore: cast_nullable_to_non_nullable
-                  as int?,
-        read: null == read
-            ? _value.read
-            : read // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        origin: null == origin
-            ? _value.origin
-            : origin // ignore: cast_nullable_to_non_nullable
-                  as String,
-        sort: null == sort
-            ? _value.sort
-            : sort // ignore: cast_nullable_to_non_nullable
-                  as String,
-        image: freezed == image
-            ? _value.image
-            : image // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        recordType: null == recordType
-            ? _value.recordType
-            : recordType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        durPos: null == durPos
-            ? _value.durPos
-            : durPos // ignore: cast_nullable_to_non_nullable
-                  as int,
-        pubDate: freezed == pubDate
-            ? _value.pubDate
-            : pubDate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$RssReadRecordImpl(
+      record: null == record
+          ? _value.record
+          : record // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: freezed == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String?,
+      readTime: freezed == readTime
+          ? _value.readTime
+          : readTime // ignore: cast_nullable_to_non_nullable
+              as int?,
+      read: null == read
+          ? _value.read
+          : read // ignore: cast_nullable_to_non_nullable
+              as bool,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      recordType: null == recordType
+          ? _value.recordType
+          : recordType // ignore: cast_nullable_to_non_nullable
+              as int,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$RssReadRecordImpl implements _RssReadRecord {
-  const _$RssReadRecordImpl({
-    this.record = '',
-    this.title,
-    @JsonKey(name: 'readTime') this.readTime,
-    this.read = true,
-    this.origin = '',
-    this.sort = '',
-    this.image,
-    @JsonKey(name: 'type') this.recordType = 0,
-    @JsonKey(name: 'durPos') this.durPos = 0,
-    @JsonKey(name: 'pubDate') this.pubDate,
-  });
+  const _$RssReadRecordImpl(
+      {this.record = '',
+      this.title,
+      @JsonKey(name: 'readTime') this.readTime,
+      this.read = true,
+      this.origin = '',
+      this.sort = '',
+      this.image,
+      @JsonKey(name: 'type') this.recordType = 0,
+      @JsonKey(name: 'durPos') this.durPos = 0,
+      @JsonKey(name: 'pubDate') this.pubDate});
 
   factory _$RssReadRecordImpl.fromJson(Map<String, dynamic> json) =>
       _$$RssReadRecordImplFromJson(json);
@@ -7102,25 +6603,12 @@ class _$RssReadRecordImpl implements _RssReadRecord {
             (identical(other.pubDate, pubDate) || other.pubDate == pubDate));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    record,
-    title,
-    readTime,
-    read,
-    origin,
-    sort,
-    image,
-    recordType,
-    durPos,
-    pubDate,
-  );
+  int get hashCode => Object.hash(runtimeType, record, title, readTime, read,
+      origin, sort, image, recordType, durPos, pubDate);
 
-  /// Create a copy of RssReadRecord
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$RssReadRecordImplCopyWith<_$RssReadRecordImpl> get copyWith =>
@@ -7128,23 +6616,24 @@ class _$RssReadRecordImpl implements _RssReadRecord {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$RssReadRecordImplToJson(this);
+    return _$$RssReadRecordImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _RssReadRecord implements RssReadRecord {
-  const factory _RssReadRecord({
-    final String record,
-    final String? title,
-    @JsonKey(name: 'readTime') final int? readTime,
-    final bool read,
-    final String origin,
-    final String sort,
-    final String? image,
-    @JsonKey(name: 'type') final int recordType,
-    @JsonKey(name: 'durPos') final int durPos,
-    @JsonKey(name: 'pubDate') final String? pubDate,
-  }) = _$RssReadRecordImpl;
+  const factory _RssReadRecord(
+      {final String record,
+      final String? title,
+      @JsonKey(name: 'readTime') final int? readTime,
+      final bool read,
+      final String origin,
+      final String sort,
+      final String? image,
+      @JsonKey(name: 'type') final int recordType,
+      @JsonKey(name: 'durPos') final int durPos,
+      @JsonKey(name: 'pubDate') final String? pubDate}) = _$RssReadRecordImpl;
 
   factory _RssReadRecord.fromJson(Map<String, dynamic> json) =
       _$RssReadRecordImpl.fromJson;
@@ -7173,11 +6662,8 @@ abstract class _RssReadRecord implements RssReadRecord {
   @override
   @JsonKey(name: 'pubDate')
   String? get pubDate;
-
-  /// Create a copy of RssReadRecord
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$RssReadRecordImplCopyWith<_$RssReadRecordImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -7199,12 +6685,8 @@ mixin _$BookProgress {
   @JsonKey(name: 'durChapterTitle')
   String? get durChapterTitle => throw _privateConstructorUsedError;
 
-  /// Serializes this BookProgress to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of BookProgress
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $BookProgressCopyWith<BookProgress> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -7212,18 +6694,16 @@ mixin _$BookProgress {
 /// @nodoc
 abstract class $BookProgressCopyWith<$Res> {
   factory $BookProgressCopyWith(
-    BookProgress value,
-    $Res Function(BookProgress) then,
-  ) = _$BookProgressCopyWithImpl<$Res, BookProgress>;
+          BookProgress value, $Res Function(BookProgress) then) =
+      _$BookProgressCopyWithImpl<$Res, BookProgress>;
   @useResult
-  $Res call({
-    String name,
-    String author,
-    @JsonKey(name: 'durChapterIndex') int durChapterIndex,
-    @JsonKey(name: 'durChapterPos') int durChapterPos,
-    @JsonKey(name: 'durChapterTime') int durChapterTime,
-    @JsonKey(name: 'durChapterTitle') String? durChapterTitle,
-  });
+  $Res call(
+      {String name,
+      String author,
+      @JsonKey(name: 'durChapterIndex') int durChapterIndex,
+      @JsonKey(name: 'durChapterPos') int durChapterPos,
+      @JsonKey(name: 'durChapterTime') int durChapterTime,
+      @JsonKey(name: 'durChapterTitle') String? durChapterTitle});
 }
 
 /// @nodoc
@@ -7236,8 +6716,6 @@ class _$BookProgressCopyWithImpl<$Res, $Val extends BookProgress>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of BookProgress
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -7248,35 +6726,32 @@ class _$BookProgressCopyWithImpl<$Res, $Val extends BookProgress>
     Object? durChapterTime = null,
     Object? durChapterTitle = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            author: null == author
-                ? _value.author
-                : author // ignore: cast_nullable_to_non_nullable
-                      as String,
-            durChapterIndex: null == durChapterIndex
-                ? _value.durChapterIndex
-                : durChapterIndex // ignore: cast_nullable_to_non_nullable
-                      as int,
-            durChapterPos: null == durChapterPos
-                ? _value.durChapterPos
-                : durChapterPos // ignore: cast_nullable_to_non_nullable
-                      as int,
-            durChapterTime: null == durChapterTime
-                ? _value.durChapterTime
-                : durChapterTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-            durChapterTitle: freezed == durChapterTitle
-                ? _value.durChapterTitle
-                : durChapterTitle // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      durChapterIndex: null == durChapterIndex
+          ? _value.durChapterIndex
+          : durChapterIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      durChapterPos: null == durChapterPos
+          ? _value.durChapterPos
+          : durChapterPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      durChapterTime: null == durChapterTime
+          ? _value.durChapterTime
+          : durChapterTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      durChapterTitle: freezed == durChapterTitle
+          ? _value.durChapterTitle
+          : durChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -7284,19 +6759,17 @@ class _$BookProgressCopyWithImpl<$Res, $Val extends BookProgress>
 abstract class _$$BookProgressImplCopyWith<$Res>
     implements $BookProgressCopyWith<$Res> {
   factory _$$BookProgressImplCopyWith(
-    _$BookProgressImpl value,
-    $Res Function(_$BookProgressImpl) then,
-  ) = __$$BookProgressImplCopyWithImpl<$Res>;
+          _$BookProgressImpl value, $Res Function(_$BookProgressImpl) then) =
+      __$$BookProgressImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String name,
-    String author,
-    @JsonKey(name: 'durChapterIndex') int durChapterIndex,
-    @JsonKey(name: 'durChapterPos') int durChapterPos,
-    @JsonKey(name: 'durChapterTime') int durChapterTime,
-    @JsonKey(name: 'durChapterTitle') String? durChapterTitle,
-  });
+  $Res call(
+      {String name,
+      String author,
+      @JsonKey(name: 'durChapterIndex') int durChapterIndex,
+      @JsonKey(name: 'durChapterPos') int durChapterPos,
+      @JsonKey(name: 'durChapterTime') int durChapterTime,
+      @JsonKey(name: 'durChapterTitle') String? durChapterTitle});
 }
 
 /// @nodoc
@@ -7304,12 +6777,9 @@ class __$$BookProgressImplCopyWithImpl<$Res>
     extends _$BookProgressCopyWithImpl<$Res, _$BookProgressImpl>
     implements _$$BookProgressImplCopyWith<$Res> {
   __$$BookProgressImplCopyWithImpl(
-    _$BookProgressImpl _value,
-    $Res Function(_$BookProgressImpl) _then,
-  ) : super(_value, _then);
+      _$BookProgressImpl _value, $Res Function(_$BookProgressImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of BookProgress
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -7320,48 +6790,45 @@ class __$$BookProgressImplCopyWithImpl<$Res>
     Object? durChapterTime = null,
     Object? durChapterTitle = freezed,
   }) {
-    return _then(
-      _$BookProgressImpl(
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        author: null == author
-            ? _value.author
-            : author // ignore: cast_nullable_to_non_nullable
-                  as String,
-        durChapterIndex: null == durChapterIndex
-            ? _value.durChapterIndex
-            : durChapterIndex // ignore: cast_nullable_to_non_nullable
-                  as int,
-        durChapterPos: null == durChapterPos
-            ? _value.durChapterPos
-            : durChapterPos // ignore: cast_nullable_to_non_nullable
-                  as int,
-        durChapterTime: null == durChapterTime
-            ? _value.durChapterTime
-            : durChapterTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-        durChapterTitle: freezed == durChapterTitle
-            ? _value.durChapterTitle
-            : durChapterTitle // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$BookProgressImpl(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      durChapterIndex: null == durChapterIndex
+          ? _value.durChapterIndex
+          : durChapterIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      durChapterPos: null == durChapterPos
+          ? _value.durChapterPos
+          : durChapterPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      durChapterTime: null == durChapterTime
+          ? _value.durChapterTime
+          : durChapterTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      durChapterTitle: freezed == durChapterTitle
+          ? _value.durChapterTitle
+          : durChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$BookProgressImpl implements _BookProgress {
-  const _$BookProgressImpl({
-    this.name = '',
-    this.author = '',
-    @JsonKey(name: 'durChapterIndex') this.durChapterIndex = 0,
-    @JsonKey(name: 'durChapterPos') this.durChapterPos = 0,
-    @JsonKey(name: 'durChapterTime') this.durChapterTime = 0,
-    @JsonKey(name: 'durChapterTitle') this.durChapterTitle,
-  });
+  const _$BookProgressImpl(
+      {this.name = '',
+      this.author = '',
+      @JsonKey(name: 'durChapterIndex') this.durChapterIndex = 0,
+      @JsonKey(name: 'durChapterPos') this.durChapterPos = 0,
+      @JsonKey(name: 'durChapterTime') this.durChapterTime = 0,
+      @JsonKey(name: 'durChapterTitle') this.durChapterTitle});
 
   factory _$BookProgressImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookProgressImplFromJson(json);
@@ -7407,21 +6874,12 @@ class _$BookProgressImpl implements _BookProgress {
                 other.durChapterTitle == durChapterTitle));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    name,
-    author,
-    durChapterIndex,
-    durChapterPos,
-    durChapterTime,
-    durChapterTitle,
-  );
+  int get hashCode => Object.hash(runtimeType, name, author, durChapterIndex,
+      durChapterPos, durChapterTime, durChapterTitle);
 
-  /// Create a copy of BookProgress
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$BookProgressImplCopyWith<_$BookProgressImpl> get copyWith =>
@@ -7429,19 +6887,21 @@ class _$BookProgressImpl implements _BookProgress {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$BookProgressImplToJson(this);
+    return _$$BookProgressImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _BookProgress implements BookProgress {
-  const factory _BookProgress({
-    final String name,
-    final String author,
-    @JsonKey(name: 'durChapterIndex') final int durChapterIndex,
-    @JsonKey(name: 'durChapterPos') final int durChapterPos,
-    @JsonKey(name: 'durChapterTime') final int durChapterTime,
-    @JsonKey(name: 'durChapterTitle') final String? durChapterTitle,
-  }) = _$BookProgressImpl;
+  const factory _BookProgress(
+          {final String name,
+          final String author,
+          @JsonKey(name: 'durChapterIndex') final int durChapterIndex,
+          @JsonKey(name: 'durChapterPos') final int durChapterPos,
+          @JsonKey(name: 'durChapterTime') final int durChapterTime,
+          @JsonKey(name: 'durChapterTitle') final String? durChapterTitle}) =
+      _$BookProgressImpl;
 
   factory _BookProgress.fromJson(Map<String, dynamic> json) =
       _$BookProgressImpl.fromJson;
@@ -7462,11 +6922,8 @@ abstract class _BookProgress implements BookProgress {
   @override
   @JsonKey(name: 'durChapterTitle')
   String? get durChapterTitle;
-
-  /// Create a copy of BookProgress
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$BookProgressImplCopyWith<_$BookProgressImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -7499,12 +6956,8 @@ mixin _$ReplaceBook {
   @JsonKey(name: 'originOrder')
   int get originOrder => throw _privateConstructorUsedError;
 
-  /// Serializes this ReplaceBook to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ReplaceBook
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ReplaceBookCopyWith<ReplaceBook> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -7512,25 +6965,23 @@ mixin _$ReplaceBook {
 /// @nodoc
 abstract class $ReplaceBookCopyWith<$Res> {
   factory $ReplaceBookCopyWith(
-    ReplaceBook value,
-    $Res Function(ReplaceBook) then,
-  ) = _$ReplaceBookCopyWithImpl<$Res, ReplaceBook>;
+          ReplaceBook value, $Res Function(ReplaceBook) then) =
+      _$ReplaceBookCopyWithImpl<$Res, ReplaceBook>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookUrl') String bookUrl,
-    String origin,
-    @JsonKey(name: 'originName') String originName,
-    @JsonKey(name: 'type') int bookType,
-    String name,
-    String author,
-    String? kind,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    String? intro,
-    @JsonKey(name: 'wordCount') String? wordCount,
-    @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
-    @JsonKey(name: 'tocUrl') String tocUrl,
-    @JsonKey(name: 'originOrder') int originOrder,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookUrl') String bookUrl,
+      String origin,
+      @JsonKey(name: 'originName') String originName,
+      @JsonKey(name: 'type') int bookType,
+      String name,
+      String author,
+      String? kind,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      String? intro,
+      @JsonKey(name: 'wordCount') String? wordCount,
+      @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
+      @JsonKey(name: 'tocUrl') String tocUrl,
+      @JsonKey(name: 'originOrder') int originOrder});
 }
 
 /// @nodoc
@@ -7543,8 +6994,6 @@ class _$ReplaceBookCopyWithImpl<$Res, $Val extends ReplaceBook>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ReplaceBook
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -7562,63 +7011,60 @@ class _$ReplaceBookCopyWithImpl<$Res, $Val extends ReplaceBook>
     Object? tocUrl = null,
     Object? originOrder = null,
   }) {
-    return _then(
-      _value.copyWith(
-            bookUrl: null == bookUrl
-                ? _value.bookUrl
-                : bookUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-            origin: null == origin
-                ? _value.origin
-                : origin // ignore: cast_nullable_to_non_nullable
-                      as String,
-            originName: null == originName
-                ? _value.originName
-                : originName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookType: null == bookType
-                ? _value.bookType
-                : bookType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            author: null == author
-                ? _value.author
-                : author // ignore: cast_nullable_to_non_nullable
-                      as String,
-            kind: freezed == kind
-                ? _value.kind
-                : kind // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            coverUrl: freezed == coverUrl
-                ? _value.coverUrl
-                : coverUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            intro: freezed == intro
-                ? _value.intro
-                : intro // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            wordCount: freezed == wordCount
-                ? _value.wordCount
-                : wordCount // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            latestChapterTitle: freezed == latestChapterTitle
-                ? _value.latestChapterTitle
-                : latestChapterTitle // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            tocUrl: null == tocUrl
-                ? _value.tocUrl
-                : tocUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-            originOrder: null == originOrder
-                ? _value.originOrder
-                : originOrder // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      bookUrl: null == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      originName: null == originName
+          ? _value.originName
+          : originName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookType: null == bookType
+          ? _value.bookType
+          : bookType // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+      latestChapterTitle: freezed == latestChapterTitle
+          ? _value.latestChapterTitle
+          : latestChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      tocUrl: null == tocUrl
+          ? _value.tocUrl
+          : tocUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      originOrder: null == originOrder
+          ? _value.originOrder
+          : originOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -7626,26 +7072,24 @@ class _$ReplaceBookCopyWithImpl<$Res, $Val extends ReplaceBook>
 abstract class _$$ReplaceBookImplCopyWith<$Res>
     implements $ReplaceBookCopyWith<$Res> {
   factory _$$ReplaceBookImplCopyWith(
-    _$ReplaceBookImpl value,
-    $Res Function(_$ReplaceBookImpl) then,
-  ) = __$$ReplaceBookImplCopyWithImpl<$Res>;
+          _$ReplaceBookImpl value, $Res Function(_$ReplaceBookImpl) then) =
+      __$$ReplaceBookImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookUrl') String bookUrl,
-    String origin,
-    @JsonKey(name: 'originName') String originName,
-    @JsonKey(name: 'type') int bookType,
-    String name,
-    String author,
-    String? kind,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    String? intro,
-    @JsonKey(name: 'wordCount') String? wordCount,
-    @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
-    @JsonKey(name: 'tocUrl') String tocUrl,
-    @JsonKey(name: 'originOrder') int originOrder,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookUrl') String bookUrl,
+      String origin,
+      @JsonKey(name: 'originName') String originName,
+      @JsonKey(name: 'type') int bookType,
+      String name,
+      String author,
+      String? kind,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      String? intro,
+      @JsonKey(name: 'wordCount') String? wordCount,
+      @JsonKey(name: 'latestChapterTitle') String? latestChapterTitle,
+      @JsonKey(name: 'tocUrl') String tocUrl,
+      @JsonKey(name: 'originOrder') int originOrder});
 }
 
 /// @nodoc
@@ -7653,12 +7097,9 @@ class __$$ReplaceBookImplCopyWithImpl<$Res>
     extends _$ReplaceBookCopyWithImpl<$Res, _$ReplaceBookImpl>
     implements _$$ReplaceBookImplCopyWith<$Res> {
   __$$ReplaceBookImplCopyWithImpl(
-    _$ReplaceBookImpl _value,
-    $Res Function(_$ReplaceBookImpl) _then,
-  ) : super(_value, _then);
+      _$ReplaceBookImpl _value, $Res Function(_$ReplaceBookImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ReplaceBook
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -7676,83 +7117,80 @@ class __$$ReplaceBookImplCopyWithImpl<$Res>
     Object? tocUrl = null,
     Object? originOrder = null,
   }) {
-    return _then(
-      _$ReplaceBookImpl(
-        bookUrl: null == bookUrl
-            ? _value.bookUrl
-            : bookUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-        origin: null == origin
-            ? _value.origin
-            : origin // ignore: cast_nullable_to_non_nullable
-                  as String,
-        originName: null == originName
-            ? _value.originName
-            : originName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookType: null == bookType
-            ? _value.bookType
-            : bookType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        author: null == author
-            ? _value.author
-            : author // ignore: cast_nullable_to_non_nullable
-                  as String,
-        kind: freezed == kind
-            ? _value.kind
-            : kind // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        coverUrl: freezed == coverUrl
-            ? _value.coverUrl
-            : coverUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        intro: freezed == intro
-            ? _value.intro
-            : intro // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        wordCount: freezed == wordCount
-            ? _value.wordCount
-            : wordCount // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        latestChapterTitle: freezed == latestChapterTitle
-            ? _value.latestChapterTitle
-            : latestChapterTitle // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        tocUrl: null == tocUrl
-            ? _value.tocUrl
-            : tocUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-        originOrder: null == originOrder
-            ? _value.originOrder
-            : originOrder // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$ReplaceBookImpl(
+      bookUrl: null == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      originName: null == originName
+          ? _value.originName
+          : originName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookType: null == bookType
+          ? _value.bookType
+          : bookType // ignore: cast_nullable_to_non_nullable
+              as int,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+      latestChapterTitle: freezed == latestChapterTitle
+          ? _value.latestChapterTitle
+          : latestChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      tocUrl: null == tocUrl
+          ? _value.tocUrl
+          : tocUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      originOrder: null == originOrder
+          ? _value.originOrder
+          : originOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ReplaceBookImpl implements _ReplaceBook {
-  const _$ReplaceBookImpl({
-    @JsonKey(name: 'bookUrl') this.bookUrl = '',
-    this.origin = '',
-    @JsonKey(name: 'originName') this.originName = '',
-    @JsonKey(name: 'type') this.bookType = 0,
-    this.name = '',
-    this.author = '',
-    this.kind,
-    @JsonKey(name: 'coverUrl') this.coverUrl,
-    this.intro,
-    @JsonKey(name: 'wordCount') this.wordCount,
-    @JsonKey(name: 'latestChapterTitle') this.latestChapterTitle,
-    @JsonKey(name: 'tocUrl') this.tocUrl = '',
-    @JsonKey(name: 'originOrder') this.originOrder = 0,
-  });
+  const _$ReplaceBookImpl(
+      {@JsonKey(name: 'bookUrl') this.bookUrl = '',
+      this.origin = '',
+      @JsonKey(name: 'originName') this.originName = '',
+      @JsonKey(name: 'type') this.bookType = 0,
+      this.name = '',
+      this.author = '',
+      this.kind,
+      @JsonKey(name: 'coverUrl') this.coverUrl,
+      this.intro,
+      @JsonKey(name: 'wordCount') this.wordCount,
+      @JsonKey(name: 'latestChapterTitle') this.latestChapterTitle,
+      @JsonKey(name: 'tocUrl') this.tocUrl = '',
+      @JsonKey(name: 'originOrder') this.originOrder = 0});
 
   factory _$ReplaceBookImpl.fromJson(Map<String, dynamic> json) =>
       _$$ReplaceBookImplFromJson(json);
@@ -7826,28 +7264,25 @@ class _$ReplaceBookImpl implements _ReplaceBook {
                 other.originOrder == originOrder));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    bookUrl,
-    origin,
-    originName,
-    bookType,
-    name,
-    author,
-    kind,
-    coverUrl,
-    intro,
-    wordCount,
-    latestChapterTitle,
-    tocUrl,
-    originOrder,
-  );
+      runtimeType,
+      bookUrl,
+      origin,
+      originName,
+      bookType,
+      name,
+      author,
+      kind,
+      coverUrl,
+      intro,
+      wordCount,
+      latestChapterTitle,
+      tocUrl,
+      originOrder);
 
-  /// Create a copy of ReplaceBook
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ReplaceBookImplCopyWith<_$ReplaceBookImpl> get copyWith =>
@@ -7855,26 +7290,27 @@ class _$ReplaceBookImpl implements _ReplaceBook {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ReplaceBookImplToJson(this);
+    return _$$ReplaceBookImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ReplaceBook implements ReplaceBook {
-  const factory _ReplaceBook({
-    @JsonKey(name: 'bookUrl') final String bookUrl,
-    final String origin,
-    @JsonKey(name: 'originName') final String originName,
-    @JsonKey(name: 'type') final int bookType,
-    final String name,
-    final String author,
-    final String? kind,
-    @JsonKey(name: 'coverUrl') final String? coverUrl,
-    final String? intro,
-    @JsonKey(name: 'wordCount') final String? wordCount,
-    @JsonKey(name: 'latestChapterTitle') final String? latestChapterTitle,
-    @JsonKey(name: 'tocUrl') final String tocUrl,
-    @JsonKey(name: 'originOrder') final int originOrder,
-  }) = _$ReplaceBookImpl;
+  const factory _ReplaceBook(
+      {@JsonKey(name: 'bookUrl') final String bookUrl,
+      final String origin,
+      @JsonKey(name: 'originName') final String originName,
+      @JsonKey(name: 'type') final int bookType,
+      final String name,
+      final String author,
+      final String? kind,
+      @JsonKey(name: 'coverUrl') final String? coverUrl,
+      final String? intro,
+      @JsonKey(name: 'wordCount') final String? wordCount,
+      @JsonKey(name: 'latestChapterTitle') final String? latestChapterTitle,
+      @JsonKey(name: 'tocUrl') final String tocUrl,
+      @JsonKey(name: 'originOrder') final int originOrder}) = _$ReplaceBookImpl;
 
   factory _ReplaceBook.fromJson(Map<String, dynamic> json) =
       _$ReplaceBookImpl.fromJson;
@@ -7913,11 +7349,8 @@ abstract class _ReplaceBook implements ReplaceBook {
   @override
   @JsonKey(name: 'originOrder')
   int get originOrder;
-
-  /// Create a copy of ReplaceBook
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ReplaceBookImplCopyWith<_$ReplaceBookImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -7937,12 +7370,8 @@ mixin _$BookCacheInfo {
   @JsonKey(name: 'type')
   int get bookType => throw _privateConstructorUsedError;
 
-  /// Serializes this BookCacheInfo to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of BookCacheInfo
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $BookCacheInfoCopyWith<BookCacheInfo> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -7950,17 +7379,15 @@ mixin _$BookCacheInfo {
 /// @nodoc
 abstract class $BookCacheInfoCopyWith<$Res> {
   factory $BookCacheInfoCopyWith(
-    BookCacheInfo value,
-    $Res Function(BookCacheInfo) then,
-  ) = _$BookCacheInfoCopyWithImpl<$Res, BookCacheInfo>;
+          BookCacheInfo value, $Res Function(BookCacheInfo) then) =
+      _$BookCacheInfoCopyWithImpl<$Res, BookCacheInfo>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookUrl') String bookUrl,
-    String name,
-    String origin,
-    @JsonKey(name: 'originName') String originName,
-    @JsonKey(name: 'type') int bookType,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookUrl') String bookUrl,
+      String name,
+      String origin,
+      @JsonKey(name: 'originName') String originName,
+      @JsonKey(name: 'type') int bookType});
 }
 
 /// @nodoc
@@ -7973,8 +7400,6 @@ class _$BookCacheInfoCopyWithImpl<$Res, $Val extends BookCacheInfo>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of BookCacheInfo
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -7984,31 +7409,28 @@ class _$BookCacheInfoCopyWithImpl<$Res, $Val extends BookCacheInfo>
     Object? originName = null,
     Object? bookType = null,
   }) {
-    return _then(
-      _value.copyWith(
-            bookUrl: null == bookUrl
-                ? _value.bookUrl
-                : bookUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            origin: null == origin
-                ? _value.origin
-                : origin // ignore: cast_nullable_to_non_nullable
-                      as String,
-            originName: null == originName
-                ? _value.originName
-                : originName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookType: null == bookType
-                ? _value.bookType
-                : bookType // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      bookUrl: null == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      originName: null == originName
+          ? _value.originName
+          : originName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookType: null == bookType
+          ? _value.bookType
+          : bookType // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
@@ -8016,18 +7438,16 @@ class _$BookCacheInfoCopyWithImpl<$Res, $Val extends BookCacheInfo>
 abstract class _$$BookCacheInfoImplCopyWith<$Res>
     implements $BookCacheInfoCopyWith<$Res> {
   factory _$$BookCacheInfoImplCopyWith(
-    _$BookCacheInfoImpl value,
-    $Res Function(_$BookCacheInfoImpl) then,
-  ) = __$$BookCacheInfoImplCopyWithImpl<$Res>;
+          _$BookCacheInfoImpl value, $Res Function(_$BookCacheInfoImpl) then) =
+      __$$BookCacheInfoImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookUrl') String bookUrl,
-    String name,
-    String origin,
-    @JsonKey(name: 'originName') String originName,
-    @JsonKey(name: 'type') int bookType,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookUrl') String bookUrl,
+      String name,
+      String origin,
+      @JsonKey(name: 'originName') String originName,
+      @JsonKey(name: 'type') int bookType});
 }
 
 /// @nodoc
@@ -8035,12 +7455,9 @@ class __$$BookCacheInfoImplCopyWithImpl<$Res>
     extends _$BookCacheInfoCopyWithImpl<$Res, _$BookCacheInfoImpl>
     implements _$$BookCacheInfoImplCopyWith<$Res> {
   __$$BookCacheInfoImplCopyWithImpl(
-    _$BookCacheInfoImpl _value,
-    $Res Function(_$BookCacheInfoImpl) _then,
-  ) : super(_value, _then);
+      _$BookCacheInfoImpl _value, $Res Function(_$BookCacheInfoImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of BookCacheInfo
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -8050,43 +7467,40 @@ class __$$BookCacheInfoImplCopyWithImpl<$Res>
     Object? originName = null,
     Object? bookType = null,
   }) {
-    return _then(
-      _$BookCacheInfoImpl(
-        bookUrl: null == bookUrl
-            ? _value.bookUrl
-            : bookUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        origin: null == origin
-            ? _value.origin
-            : origin // ignore: cast_nullable_to_non_nullable
-                  as String,
-        originName: null == originName
-            ? _value.originName
-            : originName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        bookType: null == bookType
-            ? _value.bookType
-            : bookType // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$BookCacheInfoImpl(
+      bookUrl: null == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      origin: null == origin
+          ? _value.origin
+          : origin // ignore: cast_nullable_to_non_nullable
+              as String,
+      originName: null == originName
+          ? _value.originName
+          : originName // ignore: cast_nullable_to_non_nullable
+              as String,
+      bookType: null == bookType
+          ? _value.bookType
+          : bookType // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$BookCacheInfoImpl implements _BookCacheInfo {
-  const _$BookCacheInfoImpl({
-    @JsonKey(name: 'bookUrl') this.bookUrl = '',
-    this.name = '',
-    this.origin = '',
-    @JsonKey(name: 'originName') this.originName = '',
-    @JsonKey(name: 'type') this.bookType = 0,
-  });
+  const _$BookCacheInfoImpl(
+      {@JsonKey(name: 'bookUrl') this.bookUrl = '',
+      this.name = '',
+      this.origin = '',
+      @JsonKey(name: 'originName') this.originName = '',
+      @JsonKey(name: 'type') this.bookType = 0});
 
   factory _$BookCacheInfoImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookCacheInfoImplFromJson(json);
@@ -8126,14 +7540,12 @@ class _$BookCacheInfoImpl implements _BookCacheInfo {
                 other.bookType == bookType));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode =>
       Object.hash(runtimeType, bookUrl, name, origin, originName, bookType);
 
-  /// Create a copy of BookCacheInfo
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$BookCacheInfoImplCopyWith<_$BookCacheInfoImpl> get copyWith =>
@@ -8141,18 +7553,19 @@ class _$BookCacheInfoImpl implements _BookCacheInfo {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$BookCacheInfoImplToJson(this);
+    return _$$BookCacheInfoImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _BookCacheInfo implements BookCacheInfo {
-  const factory _BookCacheInfo({
-    @JsonKey(name: 'bookUrl') final String bookUrl,
-    final String name,
-    final String origin,
-    @JsonKey(name: 'originName') final String originName,
-    @JsonKey(name: 'type') final int bookType,
-  }) = _$BookCacheInfoImpl;
+  const factory _BookCacheInfo(
+      {@JsonKey(name: 'bookUrl') final String bookUrl,
+      final String name,
+      final String origin,
+      @JsonKey(name: 'originName') final String originName,
+      @JsonKey(name: 'type') final int bookType}) = _$BookCacheInfoImpl;
 
   factory _BookCacheInfo.fromJson(Map<String, dynamic> json) =
       _$BookCacheInfoImpl.fromJson;
@@ -8170,11 +7583,8 @@ abstract class _BookCacheInfo implements BookCacheInfo {
   @override
   @JsonKey(name: 'type')
   int get bookType;
-
-  /// Create a copy of BookCacheInfo
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$BookCacheInfoImplCopyWith<_$BookCacheInfoImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -8192,12 +7602,8 @@ mixin _$ReadRecordShow {
   @JsonKey(name: 'lastRead')
   int get lastRead => throw _privateConstructorUsedError;
 
-  /// Serializes this ReadRecordShow to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ReadRecordShow
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ReadRecordShowCopyWith<ReadRecordShow> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -8205,15 +7611,13 @@ mixin _$ReadRecordShow {
 /// @nodoc
 abstract class $ReadRecordShowCopyWith<$Res> {
   factory $ReadRecordShowCopyWith(
-    ReadRecordShow value,
-    $Res Function(ReadRecordShow) then,
-  ) = _$ReadRecordShowCopyWithImpl<$Res, ReadRecordShow>;
+          ReadRecordShow value, $Res Function(ReadRecordShow) then) =
+      _$ReadRecordShowCopyWithImpl<$Res, ReadRecordShow>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookName') String bookName,
-    @JsonKey(name: 'readTime') int readTime,
-    @JsonKey(name: 'lastRead') int lastRead,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'readTime') int readTime,
+      @JsonKey(name: 'lastRead') int lastRead});
 }
 
 /// @nodoc
@@ -8226,8 +7630,6 @@ class _$ReadRecordShowCopyWithImpl<$Res, $Val extends ReadRecordShow>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ReadRecordShow
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -8235,40 +7637,35 @@ class _$ReadRecordShowCopyWithImpl<$Res, $Val extends ReadRecordShow>
     Object? readTime = null,
     Object? lastRead = null,
   }) {
-    return _then(
-      _value.copyWith(
-            bookName: null == bookName
-                ? _value.bookName
-                : bookName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            readTime: null == readTime
-                ? _value.readTime
-                : readTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-            lastRead: null == lastRead
-                ? _value.lastRead
-                : lastRead // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      bookName: null == bookName
+          ? _value.bookName
+          : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      readTime: null == readTime
+          ? _value.readTime
+          : readTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastRead: null == lastRead
+          ? _value.lastRead
+          : lastRead // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$ReadRecordShowImplCopyWith<$Res>
     implements $ReadRecordShowCopyWith<$Res> {
-  factory _$$ReadRecordShowImplCopyWith(
-    _$ReadRecordShowImpl value,
-    $Res Function(_$ReadRecordShowImpl) then,
-  ) = __$$ReadRecordShowImplCopyWithImpl<$Res>;
+  factory _$$ReadRecordShowImplCopyWith(_$ReadRecordShowImpl value,
+          $Res Function(_$ReadRecordShowImpl) then) =
+      __$$ReadRecordShowImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookName') String bookName,
-    @JsonKey(name: 'readTime') int readTime,
-    @JsonKey(name: 'lastRead') int lastRead,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'readTime') int readTime,
+      @JsonKey(name: 'lastRead') int lastRead});
 }
 
 /// @nodoc
@@ -8276,12 +7673,9 @@ class __$$ReadRecordShowImplCopyWithImpl<$Res>
     extends _$ReadRecordShowCopyWithImpl<$Res, _$ReadRecordShowImpl>
     implements _$$ReadRecordShowImplCopyWith<$Res> {
   __$$ReadRecordShowImplCopyWithImpl(
-    _$ReadRecordShowImpl _value,
-    $Res Function(_$ReadRecordShowImpl) _then,
-  ) : super(_value, _then);
+      _$ReadRecordShowImpl _value, $Res Function(_$ReadRecordShowImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ReadRecordShow
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -8289,33 +7683,30 @@ class __$$ReadRecordShowImplCopyWithImpl<$Res>
     Object? readTime = null,
     Object? lastRead = null,
   }) {
-    return _then(
-      _$ReadRecordShowImpl(
-        bookName: null == bookName
-            ? _value.bookName
-            : bookName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        readTime: null == readTime
-            ? _value.readTime
-            : readTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-        lastRead: null == lastRead
-            ? _value.lastRead
-            : lastRead // ignore: cast_nullable_to_non_nullable
-                  as int,
-      ),
-    );
+    return _then(_$ReadRecordShowImpl(
+      bookName: null == bookName
+          ? _value.bookName
+          : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      readTime: null == readTime
+          ? _value.readTime
+          : readTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastRead: null == lastRead
+          ? _value.lastRead
+          : lastRead // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ReadRecordShowImpl implements _ReadRecordShow {
-  const _$ReadRecordShowImpl({
-    @JsonKey(name: 'bookName') this.bookName = '',
-    @JsonKey(name: 'readTime') this.readTime = 0,
-    @JsonKey(name: 'lastRead') this.lastRead = 0,
-  });
+  const _$ReadRecordShowImpl(
+      {@JsonKey(name: 'bookName') this.bookName = '',
+      @JsonKey(name: 'readTime') this.readTime = 0,
+      @JsonKey(name: 'lastRead') this.lastRead = 0});
 
   factory _$ReadRecordShowImpl.fromJson(Map<String, dynamic> json) =>
       _$$ReadRecordShowImplFromJson(json);
@@ -8348,33 +7739,30 @@ class _$ReadRecordShowImpl implements _ReadRecordShow {
                 other.lastRead == lastRead));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, bookName, readTime, lastRead);
 
-  /// Create a copy of ReadRecordShow
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ReadRecordShowImplCopyWith<_$ReadRecordShowImpl> get copyWith =>
       __$$ReadRecordShowImplCopyWithImpl<_$ReadRecordShowImpl>(
-        this,
-        _$identity,
-      );
+          this, _$identity);
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ReadRecordShowImplToJson(this);
+    return _$$ReadRecordShowImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ReadRecordShow implements ReadRecordShow {
-  const factory _ReadRecordShow({
-    @JsonKey(name: 'bookName') final String bookName,
-    @JsonKey(name: 'readTime') final int readTime,
-    @JsonKey(name: 'lastRead') final int lastRead,
-  }) = _$ReadRecordShowImpl;
+  const factory _ReadRecordShow(
+      {@JsonKey(name: 'bookName') final String bookName,
+      @JsonKey(name: 'readTime') final int readTime,
+      @JsonKey(name: 'lastRead') final int lastRead}) = _$ReadRecordShowImpl;
 
   factory _ReadRecordShow.fromJson(Map<String, dynamic> json) =
       _$ReadRecordShowImpl.fromJson;
@@ -8388,11 +7776,8 @@ abstract class _ReadRecordShow implements ReadRecordShow {
   @override
   @JsonKey(name: 'lastRead')
   int get lastRead;
-
-  /// Create a copy of ReadRecordShow
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ReadRecordShowImplCopyWith<_$ReadRecordShowImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

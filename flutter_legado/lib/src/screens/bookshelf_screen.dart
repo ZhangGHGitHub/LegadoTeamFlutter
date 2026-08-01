@@ -52,10 +52,16 @@ class BookshelfScreen extends ConsumerWidget {
               ref.read(bookshelfNotifierProvider.notifier).toggleViewMode(),
         ),
         PopupMenuButton<String>(
-          onSelected: (value) => _handleMenuAction(context, value),
+          onSelected: (value) => _handleMenuAction(context, ref, value),
           itemBuilder: (_) => [
             PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
             PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
+            const PopupMenuDivider(),
+            // 分组展示模式切换
+            PopupMenuItem(value: 'group_none', child: _buildGroupModeItem(ref, GroupMode.none, '不分组')),
+            PopupMenuItem(value: 'group_source', child: _buildGroupModeItem(ref, GroupMode.bySource, '按来源分组')),
+            PopupMenuItem(value: 'group_group', child: _buildGroupModeItem(ref, GroupMode.byGroup, '按分组显示')),
+            const PopupMenuDivider(),
             PopupMenuItem(value: 'groups', child: Text('分组管理')),
             PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
             PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
@@ -94,7 +100,10 @@ class BookshelfScreen extends ConsumerWidget {
         slivers: [
           if (state.showStats) _buildStatsSliver(context, state),
           if (state.showRecentReading) _buildRecentReadingSliver(context, ref, state),
-          if (state.isGridView)
+          // 分组模式：渲染分组头 + 分组内容
+          if (state.groupMode != GroupMode.none)
+            ..._buildGroupedSlivers(context, ref, state)
+          else if (state.isGridView)
             _buildGridSliver(context, ref, state.books)
           else
             _buildReorderableSliver(context, ref, state),
@@ -496,7 +505,112 @@ class BookshelfScreen extends ConsumerWidget {
     );
   }
 
-  void _handleMenuAction(BuildContext context, String action) {
+  // ===== 分组展示 =====
+
+  /// 分组模式菜单项（带勾选标记）
+  Widget _buildGroupModeItem(WidgetRef ref, GroupMode mode, String label) {
+    final current = ref.read(bookshelfNotifierProvider).groupMode;
+    return Row(
+      children: [
+        Icon(
+          current == mode ? Icons.radio_button_checked : Icons.radio_button_off,
+          size: 20,
+        ),
+        const SizedBox(width: 12),
+        Text(label),
+      ],
+    );
+  }
+
+  /// 构建分组 slivers：每组一个头部 + 网格/列表
+  List<Widget> _buildGroupedSlivers(BuildContext context, WidgetRef ref, BookshelfState state) {
+    final groups = state.groupedBooks;
+    final slivers = <Widget>[];
+    for (final entry in groups.entries) {
+      // 分组头
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  entry.key,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${entry.value.length}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      // 分组内容
+      if (state.isGridView) {
+        slivers.add(_buildGridSliver(context, ref, entry.value));
+      } else {
+        slivers.add(_buildListSliver(context, ref, entry.value));
+      }
+    }
+    return slivers;
+  }
+
+  /// 列表模式（非拖拽，用于分组内展示）
+  Widget _buildListSliver(BuildContext context, WidgetRef ref, List<Book> books) {
+    return SliverList.builder(
+      itemCount: books.length,
+      itemBuilder: (context, index) {
+        final book = books[index];
+        return ListTile(
+          key: ValueKey(book.bookUrl),
+          leading: BookCover(
+            coverUrl: book.customCoverUrl ?? book.coverUrl,
+            width: 44,
+            height: 60,
+            borderRadius: 4,
+          ),
+          title: Text(
+            book.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+          subtitle: Text(
+            book.durChapterTitle ?? AppStrings.unread,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          trailing: Text(
+            book.totalChapterNum > 0
+                ? '${book.durChapterIndex + 1}/${book.totalChapterNum}'
+                : '',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          onTap: () => _openBook(context, ref, book),
+          onLongPress: () => _openBookInfo(context, book),
+        );
+      },
+    );
+  }
+
+  void _handleMenuAction(BuildContext context, WidgetRef ref, String action) {
     switch (action) {
       case 'update_all':
         ScaffoldMessenger.of(context).showSnackBar(
@@ -504,6 +618,12 @@ class BookshelfScreen extends ConsumerWidget {
         );
       case 'import':
         Navigator.pushNamed(context, AppRoutes.importBooks);
+      case 'group_none':
+        ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.none);
+      case 'group_source':
+        ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.bySource);
+      case 'group_group':
+        ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.byGroup);
       case 'groups':
         Navigator.pushNamed(context, AppRoutes.bookGroups);
       case 'manage':

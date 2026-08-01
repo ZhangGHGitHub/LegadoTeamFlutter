@@ -87,11 +87,11 @@ void main() {
     });
 
     test('enableBookSource/disableBookSource 切换状态', () async {
-      await api.disableBookSource('mock://source/1');
+      await api.disableBookSource('https://www.kaixin7days.com');
       var enabled = await api.getEnabledBookSources();
       expect(enabled.length, 1);
 
-      await api.enableBookSource('mock://source/1');
+      await api.enableBookSource('https://www.kaixin7days.com');
       enabled = await api.getEnabledBookSources();
       expect(enabled.length, 2);
     });
@@ -135,13 +135,13 @@ void main() {
   });
 
   group('RSS 源操作', () {
-    test('getRssSources 返回 2 个预置源', () async {
+    test('getRssSources 返回 4 个预置源', () async {
       final sources = await api.getRssSources();
-      expect(sources.length, 2);
+      expect(sources.length, 4);
     });
 
     test('getRssArticles 每源返回 5 篇文章', () async {
-      final articles = await api.getRssArticles('mock://rss/1');
+      final articles = await api.getRssArticles('https://www.yuque.com/legado');
       expect(articles.length, 5);
       expect(articles[0].title, isNotEmpty);
     });
@@ -293,8 +293,18 @@ void main() {
     test('addHttpTts/getHttpTts 读写一致', () async {
       await api.addHttpTts(HttpTts(name: '测试引擎', url: 'http://tts.example.com'));
       final list = await api.getHttpTts();
-      expect(list.length, 1);
-      expect(list[0].name, '测试引擎');
+      // 预置 2 个真实 TTS 引擎 + 新增 1 个
+      expect(list.length, 3);
+      expect(list.last.name, '测试引擎');
+    });
+
+    test('预置 TTS 引擎来自 Android 真实样本', () async {
+      final list = await api.getHttpTts();
+      expect(list.length, 2);
+      expect(list[0].name, '1.百度');
+      expect(list[0].contentType, 'audio/wav');
+      expect(list[1].name, '2.阿里云语音');
+      expect(list[1].contentType, 'audio/mpeg');
     });
   });
 

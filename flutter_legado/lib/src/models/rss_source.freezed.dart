@@ -12,8 +12,7 @@ part of 'rss_source.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
-);
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 RssSource _$RssSourceFromJson(Map<String, dynamic> json) {
   return _RssSource.fromJson(json);
@@ -106,12 +105,8 @@ mixin _$RssSource {
   @JsonKey(name: 'searchUrl')
   String? get searchUrl => throw _privateConstructorUsedError;
 
-  /// Serializes this RssSource to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of RssSource
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $RssSourceCopyWith<RssSource> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -121,52 +116,52 @@ abstract class $RssSourceCopyWith<$Res> {
   factory $RssSourceCopyWith(RssSource value, $Res Function(RssSource) then) =
       _$RssSourceCopyWithImpl<$Res, RssSource>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'sourceUrl') String sourceUrl,
-    @JsonKey(name: 'sourceName') String sourceName,
-    @JsonKey(name: 'sourceIcon') String sourceIcon,
-    @JsonKey(name: 'sourceGroup') String? sourceGroup,
-    @JsonKey(name: 'sourceComment') String? sourceComment,
-    bool enabled,
-    @JsonKey(name: 'variableComment') String? variableComment,
-    @JsonKey(name: 'jsLib') String? jsLib,
-    @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
-    @JsonKey(name: 'concurrentRate') String? concurrentRate,
-    String? header,
-    @JsonKey(name: 'loginUrl') String? loginUrl,
-    @JsonKey(name: 'loginUi') String? loginUi,
-    @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
-    @JsonKey(name: 'coverDecodeJs') String? coverDecodeJs,
-    @JsonKey(name: 'sortUrl') String? sortUrl,
-    @JsonKey(name: 'singleUrl') bool singleUrl,
-    @JsonKey(name: 'articleStyle') int articleStyle,
-    @JsonKey(name: 'ruleArticles') String? ruleArticles,
-    @JsonKey(name: 'ruleNextPage') String? ruleNextPage,
-    @JsonKey(name: 'ruleTitle') String? ruleTitle,
-    @JsonKey(name: 'rulePubDate') String? rulePubDate,
-    @JsonKey(name: 'ruleDescription') String? ruleDescription,
-    @JsonKey(name: 'ruleImage') String? ruleImage,
-    @JsonKey(name: 'ruleLink') String? ruleLink,
-    @JsonKey(name: 'ruleContent') String? ruleContent,
-    @JsonKey(name: 'contentWhitelist') String? contentWhitelist,
-    @JsonKey(name: 'contentBlacklist') String? contentBlacklist,
-    @JsonKey(name: 'shouldOverrideUrlLoading') String? shouldOverrideUrlLoading,
-    String? style,
-    @JsonKey(name: 'enableJs') bool enableJs,
-    @JsonKey(name: 'loadWithBaseUrl') bool loadWithBaseUrl,
-    @JsonKey(name: 'injectJs') String? injectJs,
-    @JsonKey(name: 'preloadJs') String? preloadJs,
-    @JsonKey(name: 'startHtml') String? startHtml,
-    @JsonKey(name: 'startStyle') String? startStyle,
-    @JsonKey(name: 'startJs') String? startJs,
-    @JsonKey(name: 'showWebLog') bool showWebLog,
-    @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
-    @JsonKey(name: 'customOrder') int customOrder,
-    @JsonKey(name: 'type') int rssType,
-    bool preload,
-    @JsonKey(name: 'cacheFirst') bool cacheFirst,
-    @JsonKey(name: 'searchUrl') String? searchUrl,
-  });
+  $Res call(
+      {@JsonKey(name: 'sourceUrl') String sourceUrl,
+      @JsonKey(name: 'sourceName') String sourceName,
+      @JsonKey(name: 'sourceIcon') String sourceIcon,
+      @JsonKey(name: 'sourceGroup') String? sourceGroup,
+      @JsonKey(name: 'sourceComment') String? sourceComment,
+      bool enabled,
+      @JsonKey(name: 'variableComment') String? variableComment,
+      @JsonKey(name: 'jsLib') String? jsLib,
+      @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
+      @JsonKey(name: 'concurrentRate') String? concurrentRate,
+      String? header,
+      @JsonKey(name: 'loginUrl') String? loginUrl,
+      @JsonKey(name: 'loginUi') String? loginUi,
+      @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
+      @JsonKey(name: 'coverDecodeJs') String? coverDecodeJs,
+      @JsonKey(name: 'sortUrl') String? sortUrl,
+      @JsonKey(name: 'singleUrl') bool singleUrl,
+      @JsonKey(name: 'articleStyle') int articleStyle,
+      @JsonKey(name: 'ruleArticles') String? ruleArticles,
+      @JsonKey(name: 'ruleNextPage') String? ruleNextPage,
+      @JsonKey(name: 'ruleTitle') String? ruleTitle,
+      @JsonKey(name: 'rulePubDate') String? rulePubDate,
+      @JsonKey(name: 'ruleDescription') String? ruleDescription,
+      @JsonKey(name: 'ruleImage') String? ruleImage,
+      @JsonKey(name: 'ruleLink') String? ruleLink,
+      @JsonKey(name: 'ruleContent') String? ruleContent,
+      @JsonKey(name: 'contentWhitelist') String? contentWhitelist,
+      @JsonKey(name: 'contentBlacklist') String? contentBlacklist,
+      @JsonKey(name: 'shouldOverrideUrlLoading')
+      String? shouldOverrideUrlLoading,
+      String? style,
+      @JsonKey(name: 'enableJs') bool enableJs,
+      @JsonKey(name: 'loadWithBaseUrl') bool loadWithBaseUrl,
+      @JsonKey(name: 'injectJs') String? injectJs,
+      @JsonKey(name: 'preloadJs') String? preloadJs,
+      @JsonKey(name: 'startHtml') String? startHtml,
+      @JsonKey(name: 'startStyle') String? startStyle,
+      @JsonKey(name: 'startJs') String? startJs,
+      @JsonKey(name: 'showWebLog') bool showWebLog,
+      @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
+      @JsonKey(name: 'customOrder') int customOrder,
+      @JsonKey(name: 'type') int rssType,
+      bool preload,
+      @JsonKey(name: 'cacheFirst') bool cacheFirst,
+      @JsonKey(name: 'searchUrl') String? searchUrl});
 }
 
 /// @nodoc
@@ -179,8 +174,6 @@ class _$RssSourceCopyWithImpl<$Res, $Val extends RssSource>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of RssSource
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -229,187 +222,184 @@ class _$RssSourceCopyWithImpl<$Res, $Val extends RssSource>
     Object? cacheFirst = null,
     Object? searchUrl = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            sourceUrl: null == sourceUrl
-                ? _value.sourceUrl
-                : sourceUrl // ignore: cast_nullable_to_non_nullable
-                      as String,
-            sourceName: null == sourceName
-                ? _value.sourceName
-                : sourceName // ignore: cast_nullable_to_non_nullable
-                      as String,
-            sourceIcon: null == sourceIcon
-                ? _value.sourceIcon
-                : sourceIcon // ignore: cast_nullable_to_non_nullable
-                      as String,
-            sourceGroup: freezed == sourceGroup
-                ? _value.sourceGroup
-                : sourceGroup // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            sourceComment: freezed == sourceComment
-                ? _value.sourceComment
-                : sourceComment // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            enabled: null == enabled
-                ? _value.enabled
-                : enabled // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            variableComment: freezed == variableComment
-                ? _value.variableComment
-                : variableComment // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            jsLib: freezed == jsLib
-                ? _value.jsLib
-                : jsLib // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            enabledCookieJar: freezed == enabledCookieJar
-                ? _value.enabledCookieJar
-                : enabledCookieJar // ignore: cast_nullable_to_non_nullable
-                      as bool?,
-            concurrentRate: freezed == concurrentRate
-                ? _value.concurrentRate
-                : concurrentRate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            header: freezed == header
-                ? _value.header
-                : header // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginUrl: freezed == loginUrl
-                ? _value.loginUrl
-                : loginUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginUi: freezed == loginUi
-                ? _value.loginUi
-                : loginUi // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            loginCheckJs: freezed == loginCheckJs
-                ? _value.loginCheckJs
-                : loginCheckJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            coverDecodeJs: freezed == coverDecodeJs
-                ? _value.coverDecodeJs
-                : coverDecodeJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            sortUrl: freezed == sortUrl
-                ? _value.sortUrl
-                : sortUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            singleUrl: null == singleUrl
-                ? _value.singleUrl
-                : singleUrl // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            articleStyle: null == articleStyle
-                ? _value.articleStyle
-                : articleStyle // ignore: cast_nullable_to_non_nullable
-                      as int,
-            ruleArticles: freezed == ruleArticles
-                ? _value.ruleArticles
-                : ruleArticles // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            ruleNextPage: freezed == ruleNextPage
-                ? _value.ruleNextPage
-                : ruleNextPage // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            ruleTitle: freezed == ruleTitle
-                ? _value.ruleTitle
-                : ruleTitle // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            rulePubDate: freezed == rulePubDate
-                ? _value.rulePubDate
-                : rulePubDate // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            ruleDescription: freezed == ruleDescription
-                ? _value.ruleDescription
-                : ruleDescription // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            ruleImage: freezed == ruleImage
-                ? _value.ruleImage
-                : ruleImage // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            ruleLink: freezed == ruleLink
-                ? _value.ruleLink
-                : ruleLink // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            ruleContent: freezed == ruleContent
-                ? _value.ruleContent
-                : ruleContent // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            contentWhitelist: freezed == contentWhitelist
-                ? _value.contentWhitelist
-                : contentWhitelist // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            contentBlacklist: freezed == contentBlacklist
-                ? _value.contentBlacklist
-                : contentBlacklist // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            shouldOverrideUrlLoading: freezed == shouldOverrideUrlLoading
-                ? _value.shouldOverrideUrlLoading
-                : shouldOverrideUrlLoading // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            style: freezed == style
-                ? _value.style
-                : style // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            enableJs: null == enableJs
-                ? _value.enableJs
-                : enableJs // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            loadWithBaseUrl: null == loadWithBaseUrl
-                ? _value.loadWithBaseUrl
-                : loadWithBaseUrl // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            injectJs: freezed == injectJs
-                ? _value.injectJs
-                : injectJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            preloadJs: freezed == preloadJs
-                ? _value.preloadJs
-                : preloadJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            startHtml: freezed == startHtml
-                ? _value.startHtml
-                : startHtml // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            startStyle: freezed == startStyle
-                ? _value.startStyle
-                : startStyle // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            startJs: freezed == startJs
-                ? _value.startJs
-                : startJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            showWebLog: null == showWebLog
-                ? _value.showWebLog
-                : showWebLog // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            lastUpdateTime: null == lastUpdateTime
-                ? _value.lastUpdateTime
-                : lastUpdateTime // ignore: cast_nullable_to_non_nullable
-                      as int,
-            customOrder: null == customOrder
-                ? _value.customOrder
-                : customOrder // ignore: cast_nullable_to_non_nullable
-                      as int,
-            rssType: null == rssType
-                ? _value.rssType
-                : rssType // ignore: cast_nullable_to_non_nullable
-                      as int,
-            preload: null == preload
-                ? _value.preload
-                : preload // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            cacheFirst: null == cacheFirst
-                ? _value.cacheFirst
-                : cacheFirst // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            searchUrl: freezed == searchUrl
-                ? _value.searchUrl
-                : searchUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      sourceUrl: null == sourceUrl
+          ? _value.sourceUrl
+          : sourceUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceName: null == sourceName
+          ? _value.sourceName
+          : sourceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceIcon: null == sourceIcon
+          ? _value.sourceIcon
+          : sourceIcon // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceGroup: freezed == sourceGroup
+          ? _value.sourceGroup
+          : sourceGroup // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sourceComment: freezed == sourceComment
+          ? _value.sourceComment
+          : sourceComment // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      variableComment: freezed == variableComment
+          ? _value.variableComment
+          : variableComment // ignore: cast_nullable_to_non_nullable
+              as String?,
+      jsLib: freezed == jsLib
+          ? _value.jsLib
+          : jsLib // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabledCookieJar: freezed == enabledCookieJar
+          ? _value.enabledCookieJar
+          : enabledCookieJar // ignore: cast_nullable_to_non_nullable
+              as bool?,
+      concurrentRate: freezed == concurrentRate
+          ? _value.concurrentRate
+          : concurrentRate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      header: freezed == header
+          ? _value.header
+          : header // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUrl: freezed == loginUrl
+          ? _value.loginUrl
+          : loginUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUi: freezed == loginUi
+          ? _value.loginUi
+          : loginUi // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginCheckJs: freezed == loginCheckJs
+          ? _value.loginCheckJs
+          : loginCheckJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverDecodeJs: freezed == coverDecodeJs
+          ? _value.coverDecodeJs
+          : coverDecodeJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sortUrl: freezed == sortUrl
+          ? _value.sortUrl
+          : sortUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      singleUrl: null == singleUrl
+          ? _value.singleUrl
+          : singleUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      articleStyle: null == articleStyle
+          ? _value.articleStyle
+          : articleStyle // ignore: cast_nullable_to_non_nullable
+              as int,
+      ruleArticles: freezed == ruleArticles
+          ? _value.ruleArticles
+          : ruleArticles // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleNextPage: freezed == ruleNextPage
+          ? _value.ruleNextPage
+          : ruleNextPage // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleTitle: freezed == ruleTitle
+          ? _value.ruleTitle
+          : ruleTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      rulePubDate: freezed == rulePubDate
+          ? _value.rulePubDate
+          : rulePubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleDescription: freezed == ruleDescription
+          ? _value.ruleDescription
+          : ruleDescription // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleImage: freezed == ruleImage
+          ? _value.ruleImage
+          : ruleImage // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleLink: freezed == ruleLink
+          ? _value.ruleLink
+          : ruleLink // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleContent: freezed == ruleContent
+          ? _value.ruleContent
+          : ruleContent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      contentWhitelist: freezed == contentWhitelist
+          ? _value.contentWhitelist
+          : contentWhitelist // ignore: cast_nullable_to_non_nullable
+              as String?,
+      contentBlacklist: freezed == contentBlacklist
+          ? _value.contentBlacklist
+          : contentBlacklist // ignore: cast_nullable_to_non_nullable
+              as String?,
+      shouldOverrideUrlLoading: freezed == shouldOverrideUrlLoading
+          ? _value.shouldOverrideUrlLoading
+          : shouldOverrideUrlLoading // ignore: cast_nullable_to_non_nullable
+              as String?,
+      style: freezed == style
+          ? _value.style
+          : style // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enableJs: null == enableJs
+          ? _value.enableJs
+          : enableJs // ignore: cast_nullable_to_non_nullable
+              as bool,
+      loadWithBaseUrl: null == loadWithBaseUrl
+          ? _value.loadWithBaseUrl
+          : loadWithBaseUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      injectJs: freezed == injectJs
+          ? _value.injectJs
+          : injectJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      preloadJs: freezed == preloadJs
+          ? _value.preloadJs
+          : preloadJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      startHtml: freezed == startHtml
+          ? _value.startHtml
+          : startHtml // ignore: cast_nullable_to_non_nullable
+              as String?,
+      startStyle: freezed == startStyle
+          ? _value.startStyle
+          : startStyle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      startJs: freezed == startJs
+          ? _value.startJs
+          : startJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      showWebLog: null == showWebLog
+          ? _value.showWebLog
+          : showWebLog // ignore: cast_nullable_to_non_nullable
+              as bool,
+      lastUpdateTime: null == lastUpdateTime
+          ? _value.lastUpdateTime
+          : lastUpdateTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      rssType: null == rssType
+          ? _value.rssType
+          : rssType // ignore: cast_nullable_to_non_nullable
+              as int,
+      preload: null == preload
+          ? _value.preload
+          : preload // ignore: cast_nullable_to_non_nullable
+              as bool,
+      cacheFirst: null == cacheFirst
+          ? _value.cacheFirst
+          : cacheFirst // ignore: cast_nullable_to_non_nullable
+              as bool,
+      searchUrl: freezed == searchUrl
+          ? _value.searchUrl
+          : searchUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -417,57 +407,56 @@ class _$RssSourceCopyWithImpl<$Res, $Val extends RssSource>
 abstract class _$$RssSourceImplCopyWith<$Res>
     implements $RssSourceCopyWith<$Res> {
   factory _$$RssSourceImplCopyWith(
-    _$RssSourceImpl value,
-    $Res Function(_$RssSourceImpl) then,
-  ) = __$$RssSourceImplCopyWithImpl<$Res>;
+          _$RssSourceImpl value, $Res Function(_$RssSourceImpl) then) =
+      __$$RssSourceImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'sourceUrl') String sourceUrl,
-    @JsonKey(name: 'sourceName') String sourceName,
-    @JsonKey(name: 'sourceIcon') String sourceIcon,
-    @JsonKey(name: 'sourceGroup') String? sourceGroup,
-    @JsonKey(name: 'sourceComment') String? sourceComment,
-    bool enabled,
-    @JsonKey(name: 'variableComment') String? variableComment,
-    @JsonKey(name: 'jsLib') String? jsLib,
-    @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
-    @JsonKey(name: 'concurrentRate') String? concurrentRate,
-    String? header,
-    @JsonKey(name: 'loginUrl') String? loginUrl,
-    @JsonKey(name: 'loginUi') String? loginUi,
-    @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
-    @JsonKey(name: 'coverDecodeJs') String? coverDecodeJs,
-    @JsonKey(name: 'sortUrl') String? sortUrl,
-    @JsonKey(name: 'singleUrl') bool singleUrl,
-    @JsonKey(name: 'articleStyle') int articleStyle,
-    @JsonKey(name: 'ruleArticles') String? ruleArticles,
-    @JsonKey(name: 'ruleNextPage') String? ruleNextPage,
-    @JsonKey(name: 'ruleTitle') String? ruleTitle,
-    @JsonKey(name: 'rulePubDate') String? rulePubDate,
-    @JsonKey(name: 'ruleDescription') String? ruleDescription,
-    @JsonKey(name: 'ruleImage') String? ruleImage,
-    @JsonKey(name: 'ruleLink') String? ruleLink,
-    @JsonKey(name: 'ruleContent') String? ruleContent,
-    @JsonKey(name: 'contentWhitelist') String? contentWhitelist,
-    @JsonKey(name: 'contentBlacklist') String? contentBlacklist,
-    @JsonKey(name: 'shouldOverrideUrlLoading') String? shouldOverrideUrlLoading,
-    String? style,
-    @JsonKey(name: 'enableJs') bool enableJs,
-    @JsonKey(name: 'loadWithBaseUrl') bool loadWithBaseUrl,
-    @JsonKey(name: 'injectJs') String? injectJs,
-    @JsonKey(name: 'preloadJs') String? preloadJs,
-    @JsonKey(name: 'startHtml') String? startHtml,
-    @JsonKey(name: 'startStyle') String? startStyle,
-    @JsonKey(name: 'startJs') String? startJs,
-    @JsonKey(name: 'showWebLog') bool showWebLog,
-    @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
-    @JsonKey(name: 'customOrder') int customOrder,
-    @JsonKey(name: 'type') int rssType,
-    bool preload,
-    @JsonKey(name: 'cacheFirst') bool cacheFirst,
-    @JsonKey(name: 'searchUrl') String? searchUrl,
-  });
+  $Res call(
+      {@JsonKey(name: 'sourceUrl') String sourceUrl,
+      @JsonKey(name: 'sourceName') String sourceName,
+      @JsonKey(name: 'sourceIcon') String sourceIcon,
+      @JsonKey(name: 'sourceGroup') String? sourceGroup,
+      @JsonKey(name: 'sourceComment') String? sourceComment,
+      bool enabled,
+      @JsonKey(name: 'variableComment') String? variableComment,
+      @JsonKey(name: 'jsLib') String? jsLib,
+      @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
+      @JsonKey(name: 'concurrentRate') String? concurrentRate,
+      String? header,
+      @JsonKey(name: 'loginUrl') String? loginUrl,
+      @JsonKey(name: 'loginUi') String? loginUi,
+      @JsonKey(name: 'loginCheckJs') String? loginCheckJs,
+      @JsonKey(name: 'coverDecodeJs') String? coverDecodeJs,
+      @JsonKey(name: 'sortUrl') String? sortUrl,
+      @JsonKey(name: 'singleUrl') bool singleUrl,
+      @JsonKey(name: 'articleStyle') int articleStyle,
+      @JsonKey(name: 'ruleArticles') String? ruleArticles,
+      @JsonKey(name: 'ruleNextPage') String? ruleNextPage,
+      @JsonKey(name: 'ruleTitle') String? ruleTitle,
+      @JsonKey(name: 'rulePubDate') String? rulePubDate,
+      @JsonKey(name: 'ruleDescription') String? ruleDescription,
+      @JsonKey(name: 'ruleImage') String? ruleImage,
+      @JsonKey(name: 'ruleLink') String? ruleLink,
+      @JsonKey(name: 'ruleContent') String? ruleContent,
+      @JsonKey(name: 'contentWhitelist') String? contentWhitelist,
+      @JsonKey(name: 'contentBlacklist') String? contentBlacklist,
+      @JsonKey(name: 'shouldOverrideUrlLoading')
+      String? shouldOverrideUrlLoading,
+      String? style,
+      @JsonKey(name: 'enableJs') bool enableJs,
+      @JsonKey(name: 'loadWithBaseUrl') bool loadWithBaseUrl,
+      @JsonKey(name: 'injectJs') String? injectJs,
+      @JsonKey(name: 'preloadJs') String? preloadJs,
+      @JsonKey(name: 'startHtml') String? startHtml,
+      @JsonKey(name: 'startStyle') String? startStyle,
+      @JsonKey(name: 'startJs') String? startJs,
+      @JsonKey(name: 'showWebLog') bool showWebLog,
+      @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
+      @JsonKey(name: 'customOrder') int customOrder,
+      @JsonKey(name: 'type') int rssType,
+      bool preload,
+      @JsonKey(name: 'cacheFirst') bool cacheFirst,
+      @JsonKey(name: 'searchUrl') String? searchUrl});
 }
 
 /// @nodoc
@@ -475,12 +464,9 @@ class __$$RssSourceImplCopyWithImpl<$Res>
     extends _$RssSourceCopyWithImpl<$Res, _$RssSourceImpl>
     implements _$$RssSourceImplCopyWith<$Res> {
   __$$RssSourceImplCopyWithImpl(
-    _$RssSourceImpl _value,
-    $Res Function(_$RssSourceImpl) _then,
-  ) : super(_value, _then);
+      _$RssSourceImpl _value, $Res Function(_$RssSourceImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of RssSource
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -529,238 +515,235 @@ class __$$RssSourceImplCopyWithImpl<$Res>
     Object? cacheFirst = null,
     Object? searchUrl = freezed,
   }) {
-    return _then(
-      _$RssSourceImpl(
-        sourceUrl: null == sourceUrl
-            ? _value.sourceUrl
-            : sourceUrl // ignore: cast_nullable_to_non_nullable
-                  as String,
-        sourceName: null == sourceName
-            ? _value.sourceName
-            : sourceName // ignore: cast_nullable_to_non_nullable
-                  as String,
-        sourceIcon: null == sourceIcon
-            ? _value.sourceIcon
-            : sourceIcon // ignore: cast_nullable_to_non_nullable
-                  as String,
-        sourceGroup: freezed == sourceGroup
-            ? _value.sourceGroup
-            : sourceGroup // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        sourceComment: freezed == sourceComment
-            ? _value.sourceComment
-            : sourceComment // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        enabled: null == enabled
-            ? _value.enabled
-            : enabled // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        variableComment: freezed == variableComment
-            ? _value.variableComment
-            : variableComment // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        jsLib: freezed == jsLib
-            ? _value.jsLib
-            : jsLib // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        enabledCookieJar: freezed == enabledCookieJar
-            ? _value.enabledCookieJar
-            : enabledCookieJar // ignore: cast_nullable_to_non_nullable
-                  as bool?,
-        concurrentRate: freezed == concurrentRate
-            ? _value.concurrentRate
-            : concurrentRate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        header: freezed == header
-            ? _value.header
-            : header // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginUrl: freezed == loginUrl
-            ? _value.loginUrl
-            : loginUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginUi: freezed == loginUi
-            ? _value.loginUi
-            : loginUi // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        loginCheckJs: freezed == loginCheckJs
-            ? _value.loginCheckJs
-            : loginCheckJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        coverDecodeJs: freezed == coverDecodeJs
-            ? _value.coverDecodeJs
-            : coverDecodeJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        sortUrl: freezed == sortUrl
-            ? _value.sortUrl
-            : sortUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        singleUrl: null == singleUrl
-            ? _value.singleUrl
-            : singleUrl // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        articleStyle: null == articleStyle
-            ? _value.articleStyle
-            : articleStyle // ignore: cast_nullable_to_non_nullable
-                  as int,
-        ruleArticles: freezed == ruleArticles
-            ? _value.ruleArticles
-            : ruleArticles // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        ruleNextPage: freezed == ruleNextPage
-            ? _value.ruleNextPage
-            : ruleNextPage // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        ruleTitle: freezed == ruleTitle
-            ? _value.ruleTitle
-            : ruleTitle // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        rulePubDate: freezed == rulePubDate
-            ? _value.rulePubDate
-            : rulePubDate // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        ruleDescription: freezed == ruleDescription
-            ? _value.ruleDescription
-            : ruleDescription // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        ruleImage: freezed == ruleImage
-            ? _value.ruleImage
-            : ruleImage // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        ruleLink: freezed == ruleLink
-            ? _value.ruleLink
-            : ruleLink // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        ruleContent: freezed == ruleContent
-            ? _value.ruleContent
-            : ruleContent // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        contentWhitelist: freezed == contentWhitelist
-            ? _value.contentWhitelist
-            : contentWhitelist // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        contentBlacklist: freezed == contentBlacklist
-            ? _value.contentBlacklist
-            : contentBlacklist // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        shouldOverrideUrlLoading: freezed == shouldOverrideUrlLoading
-            ? _value.shouldOverrideUrlLoading
-            : shouldOverrideUrlLoading // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        style: freezed == style
-            ? _value.style
-            : style // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        enableJs: null == enableJs
-            ? _value.enableJs
-            : enableJs // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        loadWithBaseUrl: null == loadWithBaseUrl
-            ? _value.loadWithBaseUrl
-            : loadWithBaseUrl // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        injectJs: freezed == injectJs
-            ? _value.injectJs
-            : injectJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        preloadJs: freezed == preloadJs
-            ? _value.preloadJs
-            : preloadJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        startHtml: freezed == startHtml
-            ? _value.startHtml
-            : startHtml // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        startStyle: freezed == startStyle
-            ? _value.startStyle
-            : startStyle // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        startJs: freezed == startJs
-            ? _value.startJs
-            : startJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        showWebLog: null == showWebLog
-            ? _value.showWebLog
-            : showWebLog // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        lastUpdateTime: null == lastUpdateTime
-            ? _value.lastUpdateTime
-            : lastUpdateTime // ignore: cast_nullable_to_non_nullable
-                  as int,
-        customOrder: null == customOrder
-            ? _value.customOrder
-            : customOrder // ignore: cast_nullable_to_non_nullable
-                  as int,
-        rssType: null == rssType
-            ? _value.rssType
-            : rssType // ignore: cast_nullable_to_non_nullable
-                  as int,
-        preload: null == preload
-            ? _value.preload
-            : preload // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        cacheFirst: null == cacheFirst
-            ? _value.cacheFirst
-            : cacheFirst // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        searchUrl: freezed == searchUrl
-            ? _value.searchUrl
-            : searchUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$RssSourceImpl(
+      sourceUrl: null == sourceUrl
+          ? _value.sourceUrl
+          : sourceUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceName: null == sourceName
+          ? _value.sourceName
+          : sourceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceIcon: null == sourceIcon
+          ? _value.sourceIcon
+          : sourceIcon // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceGroup: freezed == sourceGroup
+          ? _value.sourceGroup
+          : sourceGroup // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sourceComment: freezed == sourceComment
+          ? _value.sourceComment
+          : sourceComment // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      variableComment: freezed == variableComment
+          ? _value.variableComment
+          : variableComment // ignore: cast_nullable_to_non_nullable
+              as String?,
+      jsLib: freezed == jsLib
+          ? _value.jsLib
+          : jsLib // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabledCookieJar: freezed == enabledCookieJar
+          ? _value.enabledCookieJar
+          : enabledCookieJar // ignore: cast_nullable_to_non_nullable
+              as bool?,
+      concurrentRate: freezed == concurrentRate
+          ? _value.concurrentRate
+          : concurrentRate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      header: freezed == header
+          ? _value.header
+          : header // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUrl: freezed == loginUrl
+          ? _value.loginUrl
+          : loginUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginUi: freezed == loginUi
+          ? _value.loginUi
+          : loginUi // ignore: cast_nullable_to_non_nullable
+              as String?,
+      loginCheckJs: freezed == loginCheckJs
+          ? _value.loginCheckJs
+          : loginCheckJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverDecodeJs: freezed == coverDecodeJs
+          ? _value.coverDecodeJs
+          : coverDecodeJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sortUrl: freezed == sortUrl
+          ? _value.sortUrl
+          : sortUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      singleUrl: null == singleUrl
+          ? _value.singleUrl
+          : singleUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      articleStyle: null == articleStyle
+          ? _value.articleStyle
+          : articleStyle // ignore: cast_nullable_to_non_nullable
+              as int,
+      ruleArticles: freezed == ruleArticles
+          ? _value.ruleArticles
+          : ruleArticles // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleNextPage: freezed == ruleNextPage
+          ? _value.ruleNextPage
+          : ruleNextPage // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleTitle: freezed == ruleTitle
+          ? _value.ruleTitle
+          : ruleTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      rulePubDate: freezed == rulePubDate
+          ? _value.rulePubDate
+          : rulePubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleDescription: freezed == ruleDescription
+          ? _value.ruleDescription
+          : ruleDescription // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleImage: freezed == ruleImage
+          ? _value.ruleImage
+          : ruleImage // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleLink: freezed == ruleLink
+          ? _value.ruleLink
+          : ruleLink // ignore: cast_nullable_to_non_nullable
+              as String?,
+      ruleContent: freezed == ruleContent
+          ? _value.ruleContent
+          : ruleContent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      contentWhitelist: freezed == contentWhitelist
+          ? _value.contentWhitelist
+          : contentWhitelist // ignore: cast_nullable_to_non_nullable
+              as String?,
+      contentBlacklist: freezed == contentBlacklist
+          ? _value.contentBlacklist
+          : contentBlacklist // ignore: cast_nullable_to_non_nullable
+              as String?,
+      shouldOverrideUrlLoading: freezed == shouldOverrideUrlLoading
+          ? _value.shouldOverrideUrlLoading
+          : shouldOverrideUrlLoading // ignore: cast_nullable_to_non_nullable
+              as String?,
+      style: freezed == style
+          ? _value.style
+          : style // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enableJs: null == enableJs
+          ? _value.enableJs
+          : enableJs // ignore: cast_nullable_to_non_nullable
+              as bool,
+      loadWithBaseUrl: null == loadWithBaseUrl
+          ? _value.loadWithBaseUrl
+          : loadWithBaseUrl // ignore: cast_nullable_to_non_nullable
+              as bool,
+      injectJs: freezed == injectJs
+          ? _value.injectJs
+          : injectJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      preloadJs: freezed == preloadJs
+          ? _value.preloadJs
+          : preloadJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      startHtml: freezed == startHtml
+          ? _value.startHtml
+          : startHtml // ignore: cast_nullable_to_non_nullable
+              as String?,
+      startStyle: freezed == startStyle
+          ? _value.startStyle
+          : startStyle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      startJs: freezed == startJs
+          ? _value.startJs
+          : startJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      showWebLog: null == showWebLog
+          ? _value.showWebLog
+          : showWebLog // ignore: cast_nullable_to_non_nullable
+              as bool,
+      lastUpdateTime: null == lastUpdateTime
+          ? _value.lastUpdateTime
+          : lastUpdateTime // ignore: cast_nullable_to_non_nullable
+              as int,
+      customOrder: null == customOrder
+          ? _value.customOrder
+          : customOrder // ignore: cast_nullable_to_non_nullable
+              as int,
+      rssType: null == rssType
+          ? _value.rssType
+          : rssType // ignore: cast_nullable_to_non_nullable
+              as int,
+      preload: null == preload
+          ? _value.preload
+          : preload // ignore: cast_nullable_to_non_nullable
+              as bool,
+      cacheFirst: null == cacheFirst
+          ? _value.cacheFirst
+          : cacheFirst // ignore: cast_nullable_to_non_nullable
+              as bool,
+      searchUrl: freezed == searchUrl
+          ? _value.searchUrl
+          : searchUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$RssSourceImpl implements _RssSource {
-  const _$RssSourceImpl({
-    @JsonKey(name: 'sourceUrl') this.sourceUrl = '',
-    @JsonKey(name: 'sourceName') this.sourceName = '',
-    @JsonKey(name: 'sourceIcon') this.sourceIcon = '',
-    @JsonKey(name: 'sourceGroup') this.sourceGroup,
-    @JsonKey(name: 'sourceComment') this.sourceComment,
-    this.enabled = true,
-    @JsonKey(name: 'variableComment') this.variableComment,
-    @JsonKey(name: 'jsLib') this.jsLib,
-    @JsonKey(name: 'enabledCookieJar') this.enabledCookieJar,
-    @JsonKey(name: 'concurrentRate') this.concurrentRate,
-    this.header,
-    @JsonKey(name: 'loginUrl') this.loginUrl,
-    @JsonKey(name: 'loginUi') this.loginUi,
-    @JsonKey(name: 'loginCheckJs') this.loginCheckJs,
-    @JsonKey(name: 'coverDecodeJs') this.coverDecodeJs,
-    @JsonKey(name: 'sortUrl') this.sortUrl,
-    @JsonKey(name: 'singleUrl') this.singleUrl = false,
-    @JsonKey(name: 'articleStyle') this.articleStyle = 0,
-    @JsonKey(name: 'ruleArticles') this.ruleArticles,
-    @JsonKey(name: 'ruleNextPage') this.ruleNextPage,
-    @JsonKey(name: 'ruleTitle') this.ruleTitle,
-    @JsonKey(name: 'rulePubDate') this.rulePubDate,
-    @JsonKey(name: 'ruleDescription') this.ruleDescription,
-    @JsonKey(name: 'ruleImage') this.ruleImage,
-    @JsonKey(name: 'ruleLink') this.ruleLink,
-    @JsonKey(name: 'ruleContent') this.ruleContent,
-    @JsonKey(name: 'contentWhitelist') this.contentWhitelist,
-    @JsonKey(name: 'contentBlacklist') this.contentBlacklist,
-    @JsonKey(name: 'shouldOverrideUrlLoading') this.shouldOverrideUrlLoading,
-    this.style,
-    @JsonKey(name: 'enableJs') this.enableJs = true,
-    @JsonKey(name: 'loadWithBaseUrl') this.loadWithBaseUrl = true,
-    @JsonKey(name: 'injectJs') this.injectJs,
-    @JsonKey(name: 'preloadJs') this.preloadJs,
-    @JsonKey(name: 'startHtml') this.startHtml,
-    @JsonKey(name: 'startStyle') this.startStyle,
-    @JsonKey(name: 'startJs') this.startJs,
-    @JsonKey(name: 'showWebLog') this.showWebLog = false,
-    @JsonKey(name: 'lastUpdateTime') this.lastUpdateTime = 0,
-    @JsonKey(name: 'customOrder') this.customOrder = 0,
-    @JsonKey(name: 'type') this.rssType = 0,
-    this.preload = false,
-    @JsonKey(name: 'cacheFirst') this.cacheFirst = false,
-    @JsonKey(name: 'searchUrl') this.searchUrl,
-  });
+  const _$RssSourceImpl(
+      {@JsonKey(name: 'sourceUrl') this.sourceUrl = '',
+      @JsonKey(name: 'sourceName') this.sourceName = '',
+      @JsonKey(name: 'sourceIcon') this.sourceIcon = '',
+      @JsonKey(name: 'sourceGroup') this.sourceGroup,
+      @JsonKey(name: 'sourceComment') this.sourceComment,
+      this.enabled = true,
+      @JsonKey(name: 'variableComment') this.variableComment,
+      @JsonKey(name: 'jsLib') this.jsLib,
+      @JsonKey(name: 'enabledCookieJar') this.enabledCookieJar,
+      @JsonKey(name: 'concurrentRate') this.concurrentRate,
+      this.header,
+      @JsonKey(name: 'loginUrl') this.loginUrl,
+      @JsonKey(name: 'loginUi') this.loginUi,
+      @JsonKey(name: 'loginCheckJs') this.loginCheckJs,
+      @JsonKey(name: 'coverDecodeJs') this.coverDecodeJs,
+      @JsonKey(name: 'sortUrl') this.sortUrl,
+      @JsonKey(name: 'singleUrl') this.singleUrl = false,
+      @JsonKey(name: 'articleStyle') this.articleStyle = 0,
+      @JsonKey(name: 'ruleArticles') this.ruleArticles,
+      @JsonKey(name: 'ruleNextPage') this.ruleNextPage,
+      @JsonKey(name: 'ruleTitle') this.ruleTitle,
+      @JsonKey(name: 'rulePubDate') this.rulePubDate,
+      @JsonKey(name: 'ruleDescription') this.ruleDescription,
+      @JsonKey(name: 'ruleImage') this.ruleImage,
+      @JsonKey(name: 'ruleLink') this.ruleLink,
+      @JsonKey(name: 'ruleContent') this.ruleContent,
+      @JsonKey(name: 'contentWhitelist') this.contentWhitelist,
+      @JsonKey(name: 'contentBlacklist') this.contentBlacklist,
+      @JsonKey(name: 'shouldOverrideUrlLoading') this.shouldOverrideUrlLoading,
+      this.style,
+      @JsonKey(name: 'enableJs') this.enableJs = true,
+      @JsonKey(name: 'loadWithBaseUrl') this.loadWithBaseUrl = true,
+      @JsonKey(name: 'injectJs') this.injectJs,
+      @JsonKey(name: 'preloadJs') this.preloadJs,
+      @JsonKey(name: 'startHtml') this.startHtml,
+      @JsonKey(name: 'startStyle') this.startStyle,
+      @JsonKey(name: 'startJs') this.startJs,
+      @JsonKey(name: 'showWebLog') this.showWebLog = false,
+      @JsonKey(name: 'lastUpdateTime') this.lastUpdateTime = 0,
+      @JsonKey(name: 'customOrder') this.customOrder = 0,
+      @JsonKey(name: 'type') this.rssType = 0,
+      this.preload = false,
+      @JsonKey(name: 'cacheFirst') this.cacheFirst = false,
+      @JsonKey(name: 'searchUrl') this.searchUrl});
 
   factory _$RssSourceImpl.fromJson(Map<String, dynamic> json) =>
       _$$RssSourceImplFromJson(json);
@@ -958,9 +941,7 @@ class _$RssSourceImpl implements _RssSource {
             (identical(other.contentBlacklist, contentBlacklist) ||
                 other.contentBlacklist == contentBlacklist) &&
             (identical(
-                  other.shouldOverrideUrlLoading,
-                  shouldOverrideUrlLoading,
-                ) ||
+                    other.shouldOverrideUrlLoading, shouldOverrideUrlLoading) ||
                 other.shouldOverrideUrlLoading == shouldOverrideUrlLoading) &&
             (identical(other.style, style) || other.style == style) &&
             (identical(other.enableJs, enableJs) ||
@@ -990,59 +971,57 @@ class _$RssSourceImpl implements _RssSource {
                 other.searchUrl == searchUrl));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hashAll([
-    runtimeType,
-    sourceUrl,
-    sourceName,
-    sourceIcon,
-    sourceGroup,
-    sourceComment,
-    enabled,
-    variableComment,
-    jsLib,
-    enabledCookieJar,
-    concurrentRate,
-    header,
-    loginUrl,
-    loginUi,
-    loginCheckJs,
-    coverDecodeJs,
-    sortUrl,
-    singleUrl,
-    articleStyle,
-    ruleArticles,
-    ruleNextPage,
-    ruleTitle,
-    rulePubDate,
-    ruleDescription,
-    ruleImage,
-    ruleLink,
-    ruleContent,
-    contentWhitelist,
-    contentBlacklist,
-    shouldOverrideUrlLoading,
-    style,
-    enableJs,
-    loadWithBaseUrl,
-    injectJs,
-    preloadJs,
-    startHtml,
-    startStyle,
-    startJs,
-    showWebLog,
-    lastUpdateTime,
-    customOrder,
-    rssType,
-    preload,
-    cacheFirst,
-    searchUrl,
-  ]);
+        runtimeType,
+        sourceUrl,
+        sourceName,
+        sourceIcon,
+        sourceGroup,
+        sourceComment,
+        enabled,
+        variableComment,
+        jsLib,
+        enabledCookieJar,
+        concurrentRate,
+        header,
+        loginUrl,
+        loginUi,
+        loginCheckJs,
+        coverDecodeJs,
+        sortUrl,
+        singleUrl,
+        articleStyle,
+        ruleArticles,
+        ruleNextPage,
+        ruleTitle,
+        rulePubDate,
+        ruleDescription,
+        ruleImage,
+        ruleLink,
+        ruleContent,
+        contentWhitelist,
+        contentBlacklist,
+        shouldOverrideUrlLoading,
+        style,
+        enableJs,
+        loadWithBaseUrl,
+        injectJs,
+        preloadJs,
+        startHtml,
+        startStyle,
+        startJs,
+        showWebLog,
+        lastUpdateTime,
+        customOrder,
+        rssType,
+        preload,
+        cacheFirst,
+        searchUrl
+      ]);
 
-  /// Create a copy of RssSource
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$RssSourceImplCopyWith<_$RssSourceImpl> get copyWith =>
@@ -1050,58 +1029,59 @@ class _$RssSourceImpl implements _RssSource {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$RssSourceImplToJson(this);
+    return _$$RssSourceImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _RssSource implements RssSource {
-  const factory _RssSource({
-    @JsonKey(name: 'sourceUrl') final String sourceUrl,
-    @JsonKey(name: 'sourceName') final String sourceName,
-    @JsonKey(name: 'sourceIcon') final String sourceIcon,
-    @JsonKey(name: 'sourceGroup') final String? sourceGroup,
-    @JsonKey(name: 'sourceComment') final String? sourceComment,
-    final bool enabled,
-    @JsonKey(name: 'variableComment') final String? variableComment,
-    @JsonKey(name: 'jsLib') final String? jsLib,
-    @JsonKey(name: 'enabledCookieJar') final bool? enabledCookieJar,
-    @JsonKey(name: 'concurrentRate') final String? concurrentRate,
-    final String? header,
-    @JsonKey(name: 'loginUrl') final String? loginUrl,
-    @JsonKey(name: 'loginUi') final String? loginUi,
-    @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
-    @JsonKey(name: 'coverDecodeJs') final String? coverDecodeJs,
-    @JsonKey(name: 'sortUrl') final String? sortUrl,
-    @JsonKey(name: 'singleUrl') final bool singleUrl,
-    @JsonKey(name: 'articleStyle') final int articleStyle,
-    @JsonKey(name: 'ruleArticles') final String? ruleArticles,
-    @JsonKey(name: 'ruleNextPage') final String? ruleNextPage,
-    @JsonKey(name: 'ruleTitle') final String? ruleTitle,
-    @JsonKey(name: 'rulePubDate') final String? rulePubDate,
-    @JsonKey(name: 'ruleDescription') final String? ruleDescription,
-    @JsonKey(name: 'ruleImage') final String? ruleImage,
-    @JsonKey(name: 'ruleLink') final String? ruleLink,
-    @JsonKey(name: 'ruleContent') final String? ruleContent,
-    @JsonKey(name: 'contentWhitelist') final String? contentWhitelist,
-    @JsonKey(name: 'contentBlacklist') final String? contentBlacklist,
-    @JsonKey(name: 'shouldOverrideUrlLoading')
-    final String? shouldOverrideUrlLoading,
-    final String? style,
-    @JsonKey(name: 'enableJs') final bool enableJs,
-    @JsonKey(name: 'loadWithBaseUrl') final bool loadWithBaseUrl,
-    @JsonKey(name: 'injectJs') final String? injectJs,
-    @JsonKey(name: 'preloadJs') final String? preloadJs,
-    @JsonKey(name: 'startHtml') final String? startHtml,
-    @JsonKey(name: 'startStyle') final String? startStyle,
-    @JsonKey(name: 'startJs') final String? startJs,
-    @JsonKey(name: 'showWebLog') final bool showWebLog,
-    @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
-    @JsonKey(name: 'customOrder') final int customOrder,
-    @JsonKey(name: 'type') final int rssType,
-    final bool preload,
-    @JsonKey(name: 'cacheFirst') final bool cacheFirst,
-    @JsonKey(name: 'searchUrl') final String? searchUrl,
-  }) = _$RssSourceImpl;
+  const factory _RssSource(
+      {@JsonKey(name: 'sourceUrl') final String sourceUrl,
+      @JsonKey(name: 'sourceName') final String sourceName,
+      @JsonKey(name: 'sourceIcon') final String sourceIcon,
+      @JsonKey(name: 'sourceGroup') final String? sourceGroup,
+      @JsonKey(name: 'sourceComment') final String? sourceComment,
+      final bool enabled,
+      @JsonKey(name: 'variableComment') final String? variableComment,
+      @JsonKey(name: 'jsLib') final String? jsLib,
+      @JsonKey(name: 'enabledCookieJar') final bool? enabledCookieJar,
+      @JsonKey(name: 'concurrentRate') final String? concurrentRate,
+      final String? header,
+      @JsonKey(name: 'loginUrl') final String? loginUrl,
+      @JsonKey(name: 'loginUi') final String? loginUi,
+      @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
+      @JsonKey(name: 'coverDecodeJs') final String? coverDecodeJs,
+      @JsonKey(name: 'sortUrl') final String? sortUrl,
+      @JsonKey(name: 'singleUrl') final bool singleUrl,
+      @JsonKey(name: 'articleStyle') final int articleStyle,
+      @JsonKey(name: 'ruleArticles') final String? ruleArticles,
+      @JsonKey(name: 'ruleNextPage') final String? ruleNextPage,
+      @JsonKey(name: 'ruleTitle') final String? ruleTitle,
+      @JsonKey(name: 'rulePubDate') final String? rulePubDate,
+      @JsonKey(name: 'ruleDescription') final String? ruleDescription,
+      @JsonKey(name: 'ruleImage') final String? ruleImage,
+      @JsonKey(name: 'ruleLink') final String? ruleLink,
+      @JsonKey(name: 'ruleContent') final String? ruleContent,
+      @JsonKey(name: 'contentWhitelist') final String? contentWhitelist,
+      @JsonKey(name: 'contentBlacklist') final String? contentBlacklist,
+      @JsonKey(name: 'shouldOverrideUrlLoading')
+      final String? shouldOverrideUrlLoading,
+      final String? style,
+      @JsonKey(name: 'enableJs') final bool enableJs,
+      @JsonKey(name: 'loadWithBaseUrl') final bool loadWithBaseUrl,
+      @JsonKey(name: 'injectJs') final String? injectJs,
+      @JsonKey(name: 'preloadJs') final String? preloadJs,
+      @JsonKey(name: 'startHtml') final String? startHtml,
+      @JsonKey(name: 'startStyle') final String? startStyle,
+      @JsonKey(name: 'startJs') final String? startJs,
+      @JsonKey(name: 'showWebLog') final bool showWebLog,
+      @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
+      @JsonKey(name: 'customOrder') final int customOrder,
+      @JsonKey(name: 'type') final int rssType,
+      final bool preload,
+      @JsonKey(name: 'cacheFirst') final bool cacheFirst,
+      @JsonKey(name: 'searchUrl') final String? searchUrl}) = _$RssSourceImpl;
 
   factory _RssSource.fromJson(Map<String, dynamic> json) =
       _$RssSourceImpl.fromJson;
@@ -1234,11 +1214,8 @@ abstract class _RssSource implements RssSource {
   @override
   @JsonKey(name: 'searchUrl')
   String? get searchUrl;
-
-  /// Create a copy of RssSource
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$RssSourceImplCopyWith<_$RssSourceImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

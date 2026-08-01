@@ -12,8 +12,7 @@ part of 'rule.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
-);
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 BookInfoRule _$BookInfoRuleFromJson(Map<String, dynamic> json) {
   return _BookInfoRule.fromJson(json);
@@ -41,12 +40,8 @@ mixin _$BookInfoRule {
   @JsonKey(name: 'downloadUrls')
   String? get downloadUrls => throw _privateConstructorUsedError;
 
-  /// Serializes this BookInfoRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of BookInfoRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $BookInfoRuleCopyWith<BookInfoRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -54,24 +49,22 @@ mixin _$BookInfoRule {
 /// @nodoc
 abstract class $BookInfoRuleCopyWith<$Res> {
   factory $BookInfoRuleCopyWith(
-    BookInfoRule value,
-    $Res Function(BookInfoRule) then,
-  ) = _$BookInfoRuleCopyWithImpl<$Res, BookInfoRule>;
+          BookInfoRule value, $Res Function(BookInfoRule) then) =
+      _$BookInfoRuleCopyWithImpl<$Res, BookInfoRule>;
   @useResult
-  $Res call({
-    String? init,
-    String? name,
-    String? author,
-    String? intro,
-    String? kind,
-    @JsonKey(name: 'lastChapter') String? lastChapter,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    @JsonKey(name: 'tocUrl') String? tocUrl,
-    @JsonKey(name: 'wordCount') String? wordCount,
-    @JsonKey(name: 'canReName') String? canReName,
-    @JsonKey(name: 'downloadUrls') String? downloadUrls,
-  });
+  $Res call(
+      {String? init,
+      String? name,
+      String? author,
+      String? intro,
+      String? kind,
+      @JsonKey(name: 'lastChapter') String? lastChapter,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'tocUrl') String? tocUrl,
+      @JsonKey(name: 'wordCount') String? wordCount,
+      @JsonKey(name: 'canReName') String? canReName,
+      @JsonKey(name: 'downloadUrls') String? downloadUrls});
 }
 
 /// @nodoc
@@ -84,8 +77,6 @@ class _$BookInfoRuleCopyWithImpl<$Res, $Val extends BookInfoRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of BookInfoRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -102,59 +93,56 @@ class _$BookInfoRuleCopyWithImpl<$Res, $Val extends BookInfoRule>
     Object? canReName = freezed,
     Object? downloadUrls = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            init: freezed == init
-                ? _value.init
-                : init // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            name: freezed == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            author: freezed == author
-                ? _value.author
-                : author // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            intro: freezed == intro
-                ? _value.intro
-                : intro // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            kind: freezed == kind
-                ? _value.kind
-                : kind // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            lastChapter: freezed == lastChapter
-                ? _value.lastChapter
-                : lastChapter // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            updateTime: freezed == updateTime
-                ? _value.updateTime
-                : updateTime // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            coverUrl: freezed == coverUrl
-                ? _value.coverUrl
-                : coverUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            tocUrl: freezed == tocUrl
-                ? _value.tocUrl
-                : tocUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            wordCount: freezed == wordCount
-                ? _value.wordCount
-                : wordCount // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            canReName: freezed == canReName
-                ? _value.canReName
-                : canReName // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            downloadUrls: freezed == downloadUrls
-                ? _value.downloadUrls
-                : downloadUrls // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      init: freezed == init
+          ? _value.init
+          : init // ignore: cast_nullable_to_non_nullable
+              as String?,
+      name: freezed == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String?,
+      author: freezed == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapter: freezed == lastChapter
+          ? _value.lastChapter
+          : lastChapter // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      tocUrl: freezed == tocUrl
+          ? _value.tocUrl
+          : tocUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+      canReName: freezed == canReName
+          ? _value.canReName
+          : canReName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      downloadUrls: freezed == downloadUrls
+          ? _value.downloadUrls
+          : downloadUrls // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -162,25 +150,23 @@ class _$BookInfoRuleCopyWithImpl<$Res, $Val extends BookInfoRule>
 abstract class _$$BookInfoRuleImplCopyWith<$Res>
     implements $BookInfoRuleCopyWith<$Res> {
   factory _$$BookInfoRuleImplCopyWith(
-    _$BookInfoRuleImpl value,
-    $Res Function(_$BookInfoRuleImpl) then,
-  ) = __$$BookInfoRuleImplCopyWithImpl<$Res>;
+          _$BookInfoRuleImpl value, $Res Function(_$BookInfoRuleImpl) then) =
+      __$$BookInfoRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String? init,
-    String? name,
-    String? author,
-    String? intro,
-    String? kind,
-    @JsonKey(name: 'lastChapter') String? lastChapter,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    @JsonKey(name: 'tocUrl') String? tocUrl,
-    @JsonKey(name: 'wordCount') String? wordCount,
-    @JsonKey(name: 'canReName') String? canReName,
-    @JsonKey(name: 'downloadUrls') String? downloadUrls,
-  });
+  $Res call(
+      {String? init,
+      String? name,
+      String? author,
+      String? intro,
+      String? kind,
+      @JsonKey(name: 'lastChapter') String? lastChapter,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'tocUrl') String? tocUrl,
+      @JsonKey(name: 'wordCount') String? wordCount,
+      @JsonKey(name: 'canReName') String? canReName,
+      @JsonKey(name: 'downloadUrls') String? downloadUrls});
 }
 
 /// @nodoc
@@ -188,12 +174,9 @@ class __$$BookInfoRuleImplCopyWithImpl<$Res>
     extends _$BookInfoRuleCopyWithImpl<$Res, _$BookInfoRuleImpl>
     implements _$$BookInfoRuleImplCopyWith<$Res> {
   __$$BookInfoRuleImplCopyWithImpl(
-    _$BookInfoRuleImpl _value,
-    $Res Function(_$BookInfoRuleImpl) _then,
-  ) : super(_value, _then);
+      _$BookInfoRuleImpl _value, $Res Function(_$BookInfoRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of BookInfoRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -210,78 +193,75 @@ class __$$BookInfoRuleImplCopyWithImpl<$Res>
     Object? canReName = freezed,
     Object? downloadUrls = freezed,
   }) {
-    return _then(
-      _$BookInfoRuleImpl(
-        init: freezed == init
-            ? _value.init
-            : init // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        name: freezed == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        author: freezed == author
-            ? _value.author
-            : author // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        intro: freezed == intro
-            ? _value.intro
-            : intro // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        kind: freezed == kind
-            ? _value.kind
-            : kind // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        lastChapter: freezed == lastChapter
-            ? _value.lastChapter
-            : lastChapter // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        updateTime: freezed == updateTime
-            ? _value.updateTime
-            : updateTime // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        coverUrl: freezed == coverUrl
-            ? _value.coverUrl
-            : coverUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        tocUrl: freezed == tocUrl
-            ? _value.tocUrl
-            : tocUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        wordCount: freezed == wordCount
-            ? _value.wordCount
-            : wordCount // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        canReName: freezed == canReName
-            ? _value.canReName
-            : canReName // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        downloadUrls: freezed == downloadUrls
-            ? _value.downloadUrls
-            : downloadUrls // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$BookInfoRuleImpl(
+      init: freezed == init
+          ? _value.init
+          : init // ignore: cast_nullable_to_non_nullable
+              as String?,
+      name: freezed == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String?,
+      author: freezed == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapter: freezed == lastChapter
+          ? _value.lastChapter
+          : lastChapter // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      tocUrl: freezed == tocUrl
+          ? _value.tocUrl
+          : tocUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+      canReName: freezed == canReName
+          ? _value.canReName
+          : canReName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      downloadUrls: freezed == downloadUrls
+          ? _value.downloadUrls
+          : downloadUrls // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$BookInfoRuleImpl implements _BookInfoRule {
-  const _$BookInfoRuleImpl({
-    this.init,
-    this.name,
-    this.author,
-    this.intro,
-    this.kind,
-    @JsonKey(name: 'lastChapter') this.lastChapter,
-    @JsonKey(name: 'updateTime') this.updateTime,
-    @JsonKey(name: 'coverUrl') this.coverUrl,
-    @JsonKey(name: 'tocUrl') this.tocUrl,
-    @JsonKey(name: 'wordCount') this.wordCount,
-    @JsonKey(name: 'canReName') this.canReName,
-    @JsonKey(name: 'downloadUrls') this.downloadUrls,
-  });
+  const _$BookInfoRuleImpl(
+      {this.init,
+      this.name,
+      this.author,
+      this.intro,
+      this.kind,
+      @JsonKey(name: 'lastChapter') this.lastChapter,
+      @JsonKey(name: 'updateTime') this.updateTime,
+      @JsonKey(name: 'coverUrl') this.coverUrl,
+      @JsonKey(name: 'tocUrl') this.tocUrl,
+      @JsonKey(name: 'wordCount') this.wordCount,
+      @JsonKey(name: 'canReName') this.canReName,
+      @JsonKey(name: 'downloadUrls') this.downloadUrls});
 
   factory _$BookInfoRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookInfoRuleImplFromJson(json);
@@ -348,27 +328,24 @@ class _$BookInfoRuleImpl implements _BookInfoRule {
                 other.downloadUrls == downloadUrls));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    init,
-    name,
-    author,
-    intro,
-    kind,
-    lastChapter,
-    updateTime,
-    coverUrl,
-    tocUrl,
-    wordCount,
-    canReName,
-    downloadUrls,
-  );
+      runtimeType,
+      init,
+      name,
+      author,
+      intro,
+      kind,
+      lastChapter,
+      updateTime,
+      coverUrl,
+      tocUrl,
+      wordCount,
+      canReName,
+      downloadUrls);
 
-  /// Create a copy of BookInfoRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$BookInfoRuleImplCopyWith<_$BookInfoRuleImpl> get copyWith =>
@@ -376,25 +353,27 @@ class _$BookInfoRuleImpl implements _BookInfoRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$BookInfoRuleImplToJson(this);
+    return _$$BookInfoRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _BookInfoRule implements BookInfoRule {
-  const factory _BookInfoRule({
-    final String? init,
-    final String? name,
-    final String? author,
-    final String? intro,
-    final String? kind,
-    @JsonKey(name: 'lastChapter') final String? lastChapter,
-    @JsonKey(name: 'updateTime') final String? updateTime,
-    @JsonKey(name: 'coverUrl') final String? coverUrl,
-    @JsonKey(name: 'tocUrl') final String? tocUrl,
-    @JsonKey(name: 'wordCount') final String? wordCount,
-    @JsonKey(name: 'canReName') final String? canReName,
-    @JsonKey(name: 'downloadUrls') final String? downloadUrls,
-  }) = _$BookInfoRuleImpl;
+  const factory _BookInfoRule(
+          {final String? init,
+          final String? name,
+          final String? author,
+          final String? intro,
+          final String? kind,
+          @JsonKey(name: 'lastChapter') final String? lastChapter,
+          @JsonKey(name: 'updateTime') final String? updateTime,
+          @JsonKey(name: 'coverUrl') final String? coverUrl,
+          @JsonKey(name: 'tocUrl') final String? tocUrl,
+          @JsonKey(name: 'wordCount') final String? wordCount,
+          @JsonKey(name: 'canReName') final String? canReName,
+          @JsonKey(name: 'downloadUrls') final String? downloadUrls}) =
+      _$BookInfoRuleImpl;
 
   factory _BookInfoRule.fromJson(Map<String, dynamic> json) =
       _$BookInfoRuleImpl.fromJson;
@@ -430,11 +409,8 @@ abstract class _BookInfoRule implements BookInfoRule {
   @override
   @JsonKey(name: 'downloadUrls')
   String? get downloadUrls;
-
-  /// Create a copy of BookInfoRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$BookInfoRuleImplCopyWith<_$BookInfoRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -464,12 +440,8 @@ mixin _$SearchRule {
   @JsonKey(name: 'wordCount')
   String? get wordCount => throw _privateConstructorUsedError;
 
-  /// Serializes this SearchRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of SearchRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $SearchRuleCopyWith<SearchRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -477,23 +449,21 @@ mixin _$SearchRule {
 /// @nodoc
 abstract class $SearchRuleCopyWith<$Res> {
   factory $SearchRuleCopyWith(
-    SearchRule value,
-    $Res Function(SearchRule) then,
-  ) = _$SearchRuleCopyWithImpl<$Res, SearchRule>;
+          SearchRule value, $Res Function(SearchRule) then) =
+      _$SearchRuleCopyWithImpl<$Res, SearchRule>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'checkKeyWord') String? checkKeyWord,
-    @JsonKey(name: 'bookList') String? bookList,
-    String? name,
-    String? author,
-    String? intro,
-    String? kind,
-    @JsonKey(name: 'lastChapter') String? lastChapter,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'bookUrl') String? bookUrl,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    @JsonKey(name: 'wordCount') String? wordCount,
-  });
+  $Res call(
+      {@JsonKey(name: 'checkKeyWord') String? checkKeyWord,
+      @JsonKey(name: 'bookList') String? bookList,
+      String? name,
+      String? author,
+      String? intro,
+      String? kind,
+      @JsonKey(name: 'lastChapter') String? lastChapter,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'bookUrl') String? bookUrl,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'wordCount') String? wordCount});
 }
 
 /// @nodoc
@@ -506,8 +476,6 @@ class _$SearchRuleCopyWithImpl<$Res, $Val extends SearchRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of SearchRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -523,55 +491,52 @@ class _$SearchRuleCopyWithImpl<$Res, $Val extends SearchRule>
     Object? coverUrl = freezed,
     Object? wordCount = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            checkKeyWord: freezed == checkKeyWord
-                ? _value.checkKeyWord
-                : checkKeyWord // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            bookList: freezed == bookList
-                ? _value.bookList
-                : bookList // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            name: freezed == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            author: freezed == author
-                ? _value.author
-                : author // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            intro: freezed == intro
-                ? _value.intro
-                : intro // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            kind: freezed == kind
-                ? _value.kind
-                : kind // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            lastChapter: freezed == lastChapter
-                ? _value.lastChapter
-                : lastChapter // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            updateTime: freezed == updateTime
-                ? _value.updateTime
-                : updateTime // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            bookUrl: freezed == bookUrl
-                ? _value.bookUrl
-                : bookUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            coverUrl: freezed == coverUrl
-                ? _value.coverUrl
-                : coverUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            wordCount: freezed == wordCount
-                ? _value.wordCount
-                : wordCount // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      checkKeyWord: freezed == checkKeyWord
+          ? _value.checkKeyWord
+          : checkKeyWord // ignore: cast_nullable_to_non_nullable
+              as String?,
+      bookList: freezed == bookList
+          ? _value.bookList
+          : bookList // ignore: cast_nullable_to_non_nullable
+              as String?,
+      name: freezed == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String?,
+      author: freezed == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapter: freezed == lastChapter
+          ? _value.lastChapter
+          : lastChapter // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      bookUrl: freezed == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -579,24 +544,22 @@ class _$SearchRuleCopyWithImpl<$Res, $Val extends SearchRule>
 abstract class _$$SearchRuleImplCopyWith<$Res>
     implements $SearchRuleCopyWith<$Res> {
   factory _$$SearchRuleImplCopyWith(
-    _$SearchRuleImpl value,
-    $Res Function(_$SearchRuleImpl) then,
-  ) = __$$SearchRuleImplCopyWithImpl<$Res>;
+          _$SearchRuleImpl value, $Res Function(_$SearchRuleImpl) then) =
+      __$$SearchRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'checkKeyWord') String? checkKeyWord,
-    @JsonKey(name: 'bookList') String? bookList,
-    String? name,
-    String? author,
-    String? intro,
-    String? kind,
-    @JsonKey(name: 'lastChapter') String? lastChapter,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'bookUrl') String? bookUrl,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    @JsonKey(name: 'wordCount') String? wordCount,
-  });
+  $Res call(
+      {@JsonKey(name: 'checkKeyWord') String? checkKeyWord,
+      @JsonKey(name: 'bookList') String? bookList,
+      String? name,
+      String? author,
+      String? intro,
+      String? kind,
+      @JsonKey(name: 'lastChapter') String? lastChapter,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'bookUrl') String? bookUrl,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'wordCount') String? wordCount});
 }
 
 /// @nodoc
@@ -604,12 +567,9 @@ class __$$SearchRuleImplCopyWithImpl<$Res>
     extends _$SearchRuleCopyWithImpl<$Res, _$SearchRuleImpl>
     implements _$$SearchRuleImplCopyWith<$Res> {
   __$$SearchRuleImplCopyWithImpl(
-    _$SearchRuleImpl _value,
-    $Res Function(_$SearchRuleImpl) _then,
-  ) : super(_value, _then);
+      _$SearchRuleImpl _value, $Res Function(_$SearchRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of SearchRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -625,73 +585,70 @@ class __$$SearchRuleImplCopyWithImpl<$Res>
     Object? coverUrl = freezed,
     Object? wordCount = freezed,
   }) {
-    return _then(
-      _$SearchRuleImpl(
-        checkKeyWord: freezed == checkKeyWord
-            ? _value.checkKeyWord
-            : checkKeyWord // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        bookList: freezed == bookList
-            ? _value.bookList
-            : bookList // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        name: freezed == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        author: freezed == author
-            ? _value.author
-            : author // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        intro: freezed == intro
-            ? _value.intro
-            : intro // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        kind: freezed == kind
-            ? _value.kind
-            : kind // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        lastChapter: freezed == lastChapter
-            ? _value.lastChapter
-            : lastChapter // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        updateTime: freezed == updateTime
-            ? _value.updateTime
-            : updateTime // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        bookUrl: freezed == bookUrl
-            ? _value.bookUrl
-            : bookUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        coverUrl: freezed == coverUrl
-            ? _value.coverUrl
-            : coverUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        wordCount: freezed == wordCount
-            ? _value.wordCount
-            : wordCount // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$SearchRuleImpl(
+      checkKeyWord: freezed == checkKeyWord
+          ? _value.checkKeyWord
+          : checkKeyWord // ignore: cast_nullable_to_non_nullable
+              as String?,
+      bookList: freezed == bookList
+          ? _value.bookList
+          : bookList // ignore: cast_nullable_to_non_nullable
+              as String?,
+      name: freezed == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String?,
+      author: freezed == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapter: freezed == lastChapter
+          ? _value.lastChapter
+          : lastChapter // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      bookUrl: freezed == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$SearchRuleImpl implements _SearchRule {
-  const _$SearchRuleImpl({
-    @JsonKey(name: 'checkKeyWord') this.checkKeyWord,
-    @JsonKey(name: 'bookList') this.bookList,
-    this.name,
-    this.author,
-    this.intro,
-    this.kind,
-    @JsonKey(name: 'lastChapter') this.lastChapter,
-    @JsonKey(name: 'updateTime') this.updateTime,
-    @JsonKey(name: 'bookUrl') this.bookUrl,
-    @JsonKey(name: 'coverUrl') this.coverUrl,
-    @JsonKey(name: 'wordCount') this.wordCount,
-  });
+  const _$SearchRuleImpl(
+      {@JsonKey(name: 'checkKeyWord') this.checkKeyWord,
+      @JsonKey(name: 'bookList') this.bookList,
+      this.name,
+      this.author,
+      this.intro,
+      this.kind,
+      @JsonKey(name: 'lastChapter') this.lastChapter,
+      @JsonKey(name: 'updateTime') this.updateTime,
+      @JsonKey(name: 'bookUrl') this.bookUrl,
+      @JsonKey(name: 'coverUrl') this.coverUrl,
+      @JsonKey(name: 'wordCount') this.wordCount});
 
   factory _$SearchRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$SearchRuleImplFromJson(json);
@@ -755,26 +712,23 @@ class _$SearchRuleImpl implements _SearchRule {
                 other.wordCount == wordCount));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    checkKeyWord,
-    bookList,
-    name,
-    author,
-    intro,
-    kind,
-    lastChapter,
-    updateTime,
-    bookUrl,
-    coverUrl,
-    wordCount,
-  );
+      runtimeType,
+      checkKeyWord,
+      bookList,
+      name,
+      author,
+      intro,
+      kind,
+      lastChapter,
+      updateTime,
+      bookUrl,
+      coverUrl,
+      wordCount);
 
-  /// Create a copy of SearchRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$SearchRuleImplCopyWith<_$SearchRuleImpl> get copyWith =>
@@ -782,24 +736,25 @@ class _$SearchRuleImpl implements _SearchRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SearchRuleImplToJson(this);
+    return _$$SearchRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _SearchRule implements SearchRule {
-  const factory _SearchRule({
-    @JsonKey(name: 'checkKeyWord') final String? checkKeyWord,
-    @JsonKey(name: 'bookList') final String? bookList,
-    final String? name,
-    final String? author,
-    final String? intro,
-    final String? kind,
-    @JsonKey(name: 'lastChapter') final String? lastChapter,
-    @JsonKey(name: 'updateTime') final String? updateTime,
-    @JsonKey(name: 'bookUrl') final String? bookUrl,
-    @JsonKey(name: 'coverUrl') final String? coverUrl,
-    @JsonKey(name: 'wordCount') final String? wordCount,
-  }) = _$SearchRuleImpl;
+  const factory _SearchRule(
+      {@JsonKey(name: 'checkKeyWord') final String? checkKeyWord,
+      @JsonKey(name: 'bookList') final String? bookList,
+      final String? name,
+      final String? author,
+      final String? intro,
+      final String? kind,
+      @JsonKey(name: 'lastChapter') final String? lastChapter,
+      @JsonKey(name: 'updateTime') final String? updateTime,
+      @JsonKey(name: 'bookUrl') final String? bookUrl,
+      @JsonKey(name: 'coverUrl') final String? coverUrl,
+      @JsonKey(name: 'wordCount') final String? wordCount}) = _$SearchRuleImpl;
 
   factory _SearchRule.fromJson(Map<String, dynamic> json) =
       _$SearchRuleImpl.fromJson;
@@ -833,11 +788,8 @@ abstract class _SearchRule implements SearchRule {
   @override
   @JsonKey(name: 'wordCount')
   String? get wordCount;
-
-  /// Create a copy of SearchRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$SearchRuleImplCopyWith<_$SearchRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -869,12 +821,8 @@ mixin _$TocRule {
   @JsonKey(name: 'nextTocUrl')
   String? get nextTocUrl => throw _privateConstructorUsedError;
 
-  /// Serializes this TocRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of TocRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $TocRuleCopyWith<TocRule> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -883,18 +831,17 @@ abstract class $TocRuleCopyWith<$Res> {
   factory $TocRuleCopyWith(TocRule value, $Res Function(TocRule) then) =
       _$TocRuleCopyWithImpl<$Res, TocRule>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'preUpdateJs') String? preUpdateJs,
-    @JsonKey(name: 'chapterList') String? chapterList,
-    @JsonKey(name: 'chapterName') String? chapterName,
-    @JsonKey(name: 'chapterUrl') String? chapterUrl,
-    @JsonKey(name: 'formatJs') String? formatJs,
-    @JsonKey(name: 'isVolume') String? isVolume,
-    @JsonKey(name: 'isVip') String? isVip,
-    @JsonKey(name: 'isPay') String? isPay,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'nextTocUrl') String? nextTocUrl,
-  });
+  $Res call(
+      {@JsonKey(name: 'preUpdateJs') String? preUpdateJs,
+      @JsonKey(name: 'chapterList') String? chapterList,
+      @JsonKey(name: 'chapterName') String? chapterName,
+      @JsonKey(name: 'chapterUrl') String? chapterUrl,
+      @JsonKey(name: 'formatJs') String? formatJs,
+      @JsonKey(name: 'isVolume') String? isVolume,
+      @JsonKey(name: 'isVip') String? isVip,
+      @JsonKey(name: 'isPay') String? isPay,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'nextTocUrl') String? nextTocUrl});
 }
 
 /// @nodoc
@@ -907,8 +854,6 @@ class _$TocRuleCopyWithImpl<$Res, $Val extends TocRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of TocRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -923,74 +868,69 @@ class _$TocRuleCopyWithImpl<$Res, $Val extends TocRule>
     Object? updateTime = freezed,
     Object? nextTocUrl = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            preUpdateJs: freezed == preUpdateJs
-                ? _value.preUpdateJs
-                : preUpdateJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            chapterList: freezed == chapterList
-                ? _value.chapterList
-                : chapterList // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            chapterName: freezed == chapterName
-                ? _value.chapterName
-                : chapterName // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            chapterUrl: freezed == chapterUrl
-                ? _value.chapterUrl
-                : chapterUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            formatJs: freezed == formatJs
-                ? _value.formatJs
-                : formatJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            isVolume: freezed == isVolume
-                ? _value.isVolume
-                : isVolume // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            isVip: freezed == isVip
-                ? _value.isVip
-                : isVip // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            isPay: freezed == isPay
-                ? _value.isPay
-                : isPay // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            updateTime: freezed == updateTime
-                ? _value.updateTime
-                : updateTime // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            nextTocUrl: freezed == nextTocUrl
-                ? _value.nextTocUrl
-                : nextTocUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      preUpdateJs: freezed == preUpdateJs
+          ? _value.preUpdateJs
+          : preUpdateJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterList: freezed == chapterList
+          ? _value.chapterList
+          : chapterList // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterName: freezed == chapterName
+          ? _value.chapterName
+          : chapterName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterUrl: freezed == chapterUrl
+          ? _value.chapterUrl
+          : chapterUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      formatJs: freezed == formatJs
+          ? _value.formatJs
+          : formatJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isVolume: freezed == isVolume
+          ? _value.isVolume
+          : isVolume // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isVip: freezed == isVip
+          ? _value.isVip
+          : isVip // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isPay: freezed == isPay
+          ? _value.isPay
+          : isPay // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      nextTocUrl: freezed == nextTocUrl
+          ? _value.nextTocUrl
+          : nextTocUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$TocRuleImplCopyWith<$Res> implements $TocRuleCopyWith<$Res> {
   factory _$$TocRuleImplCopyWith(
-    _$TocRuleImpl value,
-    $Res Function(_$TocRuleImpl) then,
-  ) = __$$TocRuleImplCopyWithImpl<$Res>;
+          _$TocRuleImpl value, $Res Function(_$TocRuleImpl) then) =
+      __$$TocRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'preUpdateJs') String? preUpdateJs,
-    @JsonKey(name: 'chapterList') String? chapterList,
-    @JsonKey(name: 'chapterName') String? chapterName,
-    @JsonKey(name: 'chapterUrl') String? chapterUrl,
-    @JsonKey(name: 'formatJs') String? formatJs,
-    @JsonKey(name: 'isVolume') String? isVolume,
-    @JsonKey(name: 'isVip') String? isVip,
-    @JsonKey(name: 'isPay') String? isPay,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'nextTocUrl') String? nextTocUrl,
-  });
+  $Res call(
+      {@JsonKey(name: 'preUpdateJs') String? preUpdateJs,
+      @JsonKey(name: 'chapterList') String? chapterList,
+      @JsonKey(name: 'chapterName') String? chapterName,
+      @JsonKey(name: 'chapterUrl') String? chapterUrl,
+      @JsonKey(name: 'formatJs') String? formatJs,
+      @JsonKey(name: 'isVolume') String? isVolume,
+      @JsonKey(name: 'isVip') String? isVip,
+      @JsonKey(name: 'isPay') String? isPay,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'nextTocUrl') String? nextTocUrl});
 }
 
 /// @nodoc
@@ -998,12 +938,9 @@ class __$$TocRuleImplCopyWithImpl<$Res>
     extends _$TocRuleCopyWithImpl<$Res, _$TocRuleImpl>
     implements _$$TocRuleImplCopyWith<$Res> {
   __$$TocRuleImplCopyWithImpl(
-    _$TocRuleImpl _value,
-    $Res Function(_$TocRuleImpl) _then,
-  ) : super(_value, _then);
+      _$TocRuleImpl _value, $Res Function(_$TocRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of TocRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1018,68 +955,65 @@ class __$$TocRuleImplCopyWithImpl<$Res>
     Object? updateTime = freezed,
     Object? nextTocUrl = freezed,
   }) {
-    return _then(
-      _$TocRuleImpl(
-        preUpdateJs: freezed == preUpdateJs
-            ? _value.preUpdateJs
-            : preUpdateJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        chapterList: freezed == chapterList
-            ? _value.chapterList
-            : chapterList // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        chapterName: freezed == chapterName
-            ? _value.chapterName
-            : chapterName // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        chapterUrl: freezed == chapterUrl
-            ? _value.chapterUrl
-            : chapterUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        formatJs: freezed == formatJs
-            ? _value.formatJs
-            : formatJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        isVolume: freezed == isVolume
-            ? _value.isVolume
-            : isVolume // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        isVip: freezed == isVip
-            ? _value.isVip
-            : isVip // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        isPay: freezed == isPay
-            ? _value.isPay
-            : isPay // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        updateTime: freezed == updateTime
-            ? _value.updateTime
-            : updateTime // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        nextTocUrl: freezed == nextTocUrl
-            ? _value.nextTocUrl
-            : nextTocUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$TocRuleImpl(
+      preUpdateJs: freezed == preUpdateJs
+          ? _value.preUpdateJs
+          : preUpdateJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterList: freezed == chapterList
+          ? _value.chapterList
+          : chapterList // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterName: freezed == chapterName
+          ? _value.chapterName
+          : chapterName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chapterUrl: freezed == chapterUrl
+          ? _value.chapterUrl
+          : chapterUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      formatJs: freezed == formatJs
+          ? _value.formatJs
+          : formatJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isVolume: freezed == isVolume
+          ? _value.isVolume
+          : isVolume // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isVip: freezed == isVip
+          ? _value.isVip
+          : isVip // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isPay: freezed == isPay
+          ? _value.isPay
+          : isPay // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      nextTocUrl: freezed == nextTocUrl
+          ? _value.nextTocUrl
+          : nextTocUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$TocRuleImpl implements _TocRule {
-  const _$TocRuleImpl({
-    @JsonKey(name: 'preUpdateJs') this.preUpdateJs,
-    @JsonKey(name: 'chapterList') this.chapterList,
-    @JsonKey(name: 'chapterName') this.chapterName,
-    @JsonKey(name: 'chapterUrl') this.chapterUrl,
-    @JsonKey(name: 'formatJs') this.formatJs,
-    @JsonKey(name: 'isVolume') this.isVolume,
-    @JsonKey(name: 'isVip') this.isVip,
-    @JsonKey(name: 'isPay') this.isPay,
-    @JsonKey(name: 'updateTime') this.updateTime,
-    @JsonKey(name: 'nextTocUrl') this.nextTocUrl,
-  });
+  const _$TocRuleImpl(
+      {@JsonKey(name: 'preUpdateJs') this.preUpdateJs,
+      @JsonKey(name: 'chapterList') this.chapterList,
+      @JsonKey(name: 'chapterName') this.chapterName,
+      @JsonKey(name: 'chapterUrl') this.chapterUrl,
+      @JsonKey(name: 'formatJs') this.formatJs,
+      @JsonKey(name: 'isVolume') this.isVolume,
+      @JsonKey(name: 'isVip') this.isVip,
+      @JsonKey(name: 'isPay') this.isPay,
+      @JsonKey(name: 'updateTime') this.updateTime,
+      @JsonKey(name: 'nextTocUrl') this.nextTocUrl});
 
   factory _$TocRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$TocRuleImplFromJson(json);
@@ -1145,25 +1079,22 @@ class _$TocRuleImpl implements _TocRule {
                 other.nextTocUrl == nextTocUrl));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    preUpdateJs,
-    chapterList,
-    chapterName,
-    chapterUrl,
-    formatJs,
-    isVolume,
-    isVip,
-    isPay,
-    updateTime,
-    nextTocUrl,
-  );
+      runtimeType,
+      preUpdateJs,
+      chapterList,
+      chapterName,
+      chapterUrl,
+      formatJs,
+      isVolume,
+      isVip,
+      isPay,
+      updateTime,
+      nextTocUrl);
 
-  /// Create a copy of TocRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$TocRuleImplCopyWith<_$TocRuleImpl> get copyWith =>
@@ -1171,23 +1102,24 @@ class _$TocRuleImpl implements _TocRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$TocRuleImplToJson(this);
+    return _$$TocRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _TocRule implements TocRule {
-  const factory _TocRule({
-    @JsonKey(name: 'preUpdateJs') final String? preUpdateJs,
-    @JsonKey(name: 'chapterList') final String? chapterList,
-    @JsonKey(name: 'chapterName') final String? chapterName,
-    @JsonKey(name: 'chapterUrl') final String? chapterUrl,
-    @JsonKey(name: 'formatJs') final String? formatJs,
-    @JsonKey(name: 'isVolume') final String? isVolume,
-    @JsonKey(name: 'isVip') final String? isVip,
-    @JsonKey(name: 'isPay') final String? isPay,
-    @JsonKey(name: 'updateTime') final String? updateTime,
-    @JsonKey(name: 'nextTocUrl') final String? nextTocUrl,
-  }) = _$TocRuleImpl;
+  const factory _TocRule(
+      {@JsonKey(name: 'preUpdateJs') final String? preUpdateJs,
+      @JsonKey(name: 'chapterList') final String? chapterList,
+      @JsonKey(name: 'chapterName') final String? chapterName,
+      @JsonKey(name: 'chapterUrl') final String? chapterUrl,
+      @JsonKey(name: 'formatJs') final String? formatJs,
+      @JsonKey(name: 'isVolume') final String? isVolume,
+      @JsonKey(name: 'isVip') final String? isVip,
+      @JsonKey(name: 'isPay') final String? isPay,
+      @JsonKey(name: 'updateTime') final String? updateTime,
+      @JsonKey(name: 'nextTocUrl') final String? nextTocUrl}) = _$TocRuleImpl;
 
   factory _TocRule.fromJson(Map<String, dynamic> json) = _$TocRuleImpl.fromJson;
 
@@ -1221,11 +1153,8 @@ abstract class _TocRule implements TocRule {
   @override
   @JsonKey(name: 'nextTocUrl')
   String? get nextTocUrl;
-
-  /// Create a copy of TocRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$TocRuleImplCopyWith<_$TocRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1257,12 +1186,8 @@ mixin _$ContentRule {
   @JsonKey(name: 'callBackJs')
   String? get callBackJs => throw _privateConstructorUsedError;
 
-  /// Serializes this ContentRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ContentRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ContentRuleCopyWith<ContentRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1270,23 +1195,21 @@ mixin _$ContentRule {
 /// @nodoc
 abstract class $ContentRuleCopyWith<$Res> {
   factory $ContentRuleCopyWith(
-    ContentRule value,
-    $Res Function(ContentRule) then,
-  ) = _$ContentRuleCopyWithImpl<$Res, ContentRule>;
+          ContentRule value, $Res Function(ContentRule) then) =
+      _$ContentRuleCopyWithImpl<$Res, ContentRule>;
   @useResult
-  $Res call({
-    String? content,
-    @JsonKey(name: 'subContent') String? subContent,
-    String? title,
-    @JsonKey(name: 'nextContentUrl') String? nextContentUrl,
-    @JsonKey(name: 'webJs') String? webJs,
-    @JsonKey(name: 'sourceRegex') String? sourceRegex,
-    @JsonKey(name: 'replaceRegex') String? replaceRegex,
-    @JsonKey(name: 'imageStyle') String? imageStyle,
-    @JsonKey(name: 'imageDecode') String? imageDecode,
-    @JsonKey(name: 'payAction') String? payAction,
-    @JsonKey(name: 'callBackJs') String? callBackJs,
-  });
+  $Res call(
+      {String? content,
+      @JsonKey(name: 'subContent') String? subContent,
+      String? title,
+      @JsonKey(name: 'nextContentUrl') String? nextContentUrl,
+      @JsonKey(name: 'webJs') String? webJs,
+      @JsonKey(name: 'sourceRegex') String? sourceRegex,
+      @JsonKey(name: 'replaceRegex') String? replaceRegex,
+      @JsonKey(name: 'imageStyle') String? imageStyle,
+      @JsonKey(name: 'imageDecode') String? imageDecode,
+      @JsonKey(name: 'payAction') String? payAction,
+      @JsonKey(name: 'callBackJs') String? callBackJs});
 }
 
 /// @nodoc
@@ -1299,8 +1222,6 @@ class _$ContentRuleCopyWithImpl<$Res, $Val extends ContentRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ContentRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1316,55 +1237,52 @@ class _$ContentRuleCopyWithImpl<$Res, $Val extends ContentRule>
     Object? payAction = freezed,
     Object? callBackJs = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            content: freezed == content
-                ? _value.content
-                : content // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            subContent: freezed == subContent
-                ? _value.subContent
-                : subContent // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            title: freezed == title
-                ? _value.title
-                : title // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            nextContentUrl: freezed == nextContentUrl
-                ? _value.nextContentUrl
-                : nextContentUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            webJs: freezed == webJs
-                ? _value.webJs
-                : webJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            sourceRegex: freezed == sourceRegex
-                ? _value.sourceRegex
-                : sourceRegex // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            replaceRegex: freezed == replaceRegex
-                ? _value.replaceRegex
-                : replaceRegex // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            imageStyle: freezed == imageStyle
-                ? _value.imageStyle
-                : imageStyle // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            imageDecode: freezed == imageDecode
-                ? _value.imageDecode
-                : imageDecode // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            payAction: freezed == payAction
-                ? _value.payAction
-                : payAction // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            callBackJs: freezed == callBackJs
-                ? _value.callBackJs
-                : callBackJs // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      content: freezed == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String?,
+      subContent: freezed == subContent
+          ? _value.subContent
+          : subContent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      title: freezed == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String?,
+      nextContentUrl: freezed == nextContentUrl
+          ? _value.nextContentUrl
+          : nextContentUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      webJs: freezed == webJs
+          ? _value.webJs
+          : webJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sourceRegex: freezed == sourceRegex
+          ? _value.sourceRegex
+          : sourceRegex // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replaceRegex: freezed == replaceRegex
+          ? _value.replaceRegex
+          : replaceRegex // ignore: cast_nullable_to_non_nullable
+              as String?,
+      imageStyle: freezed == imageStyle
+          ? _value.imageStyle
+          : imageStyle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      imageDecode: freezed == imageDecode
+          ? _value.imageDecode
+          : imageDecode // ignore: cast_nullable_to_non_nullable
+              as String?,
+      payAction: freezed == payAction
+          ? _value.payAction
+          : payAction // ignore: cast_nullable_to_non_nullable
+              as String?,
+      callBackJs: freezed == callBackJs
+          ? _value.callBackJs
+          : callBackJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -1372,24 +1290,22 @@ class _$ContentRuleCopyWithImpl<$Res, $Val extends ContentRule>
 abstract class _$$ContentRuleImplCopyWith<$Res>
     implements $ContentRuleCopyWith<$Res> {
   factory _$$ContentRuleImplCopyWith(
-    _$ContentRuleImpl value,
-    $Res Function(_$ContentRuleImpl) then,
-  ) = __$$ContentRuleImplCopyWithImpl<$Res>;
+          _$ContentRuleImpl value, $Res Function(_$ContentRuleImpl) then) =
+      __$$ContentRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String? content,
-    @JsonKey(name: 'subContent') String? subContent,
-    String? title,
-    @JsonKey(name: 'nextContentUrl') String? nextContentUrl,
-    @JsonKey(name: 'webJs') String? webJs,
-    @JsonKey(name: 'sourceRegex') String? sourceRegex,
-    @JsonKey(name: 'replaceRegex') String? replaceRegex,
-    @JsonKey(name: 'imageStyle') String? imageStyle,
-    @JsonKey(name: 'imageDecode') String? imageDecode,
-    @JsonKey(name: 'payAction') String? payAction,
-    @JsonKey(name: 'callBackJs') String? callBackJs,
-  });
+  $Res call(
+      {String? content,
+      @JsonKey(name: 'subContent') String? subContent,
+      String? title,
+      @JsonKey(name: 'nextContentUrl') String? nextContentUrl,
+      @JsonKey(name: 'webJs') String? webJs,
+      @JsonKey(name: 'sourceRegex') String? sourceRegex,
+      @JsonKey(name: 'replaceRegex') String? replaceRegex,
+      @JsonKey(name: 'imageStyle') String? imageStyle,
+      @JsonKey(name: 'imageDecode') String? imageDecode,
+      @JsonKey(name: 'payAction') String? payAction,
+      @JsonKey(name: 'callBackJs') String? callBackJs});
 }
 
 /// @nodoc
@@ -1397,12 +1313,9 @@ class __$$ContentRuleImplCopyWithImpl<$Res>
     extends _$ContentRuleCopyWithImpl<$Res, _$ContentRuleImpl>
     implements _$$ContentRuleImplCopyWith<$Res> {
   __$$ContentRuleImplCopyWithImpl(
-    _$ContentRuleImpl _value,
-    $Res Function(_$ContentRuleImpl) _then,
-  ) : super(_value, _then);
+      _$ContentRuleImpl _value, $Res Function(_$ContentRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ContentRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1418,73 +1331,70 @@ class __$$ContentRuleImplCopyWithImpl<$Res>
     Object? payAction = freezed,
     Object? callBackJs = freezed,
   }) {
-    return _then(
-      _$ContentRuleImpl(
-        content: freezed == content
-            ? _value.content
-            : content // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        subContent: freezed == subContent
-            ? _value.subContent
-            : subContent // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        title: freezed == title
-            ? _value.title
-            : title // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        nextContentUrl: freezed == nextContentUrl
-            ? _value.nextContentUrl
-            : nextContentUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        webJs: freezed == webJs
-            ? _value.webJs
-            : webJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        sourceRegex: freezed == sourceRegex
-            ? _value.sourceRegex
-            : sourceRegex // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        replaceRegex: freezed == replaceRegex
-            ? _value.replaceRegex
-            : replaceRegex // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        imageStyle: freezed == imageStyle
-            ? _value.imageStyle
-            : imageStyle // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        imageDecode: freezed == imageDecode
-            ? _value.imageDecode
-            : imageDecode // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        payAction: freezed == payAction
-            ? _value.payAction
-            : payAction // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        callBackJs: freezed == callBackJs
-            ? _value.callBackJs
-            : callBackJs // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$ContentRuleImpl(
+      content: freezed == content
+          ? _value.content
+          : content // ignore: cast_nullable_to_non_nullable
+              as String?,
+      subContent: freezed == subContent
+          ? _value.subContent
+          : subContent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      title: freezed == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String?,
+      nextContentUrl: freezed == nextContentUrl
+          ? _value.nextContentUrl
+          : nextContentUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      webJs: freezed == webJs
+          ? _value.webJs
+          : webJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+      sourceRegex: freezed == sourceRegex
+          ? _value.sourceRegex
+          : sourceRegex // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replaceRegex: freezed == replaceRegex
+          ? _value.replaceRegex
+          : replaceRegex // ignore: cast_nullable_to_non_nullable
+              as String?,
+      imageStyle: freezed == imageStyle
+          ? _value.imageStyle
+          : imageStyle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      imageDecode: freezed == imageDecode
+          ? _value.imageDecode
+          : imageDecode // ignore: cast_nullable_to_non_nullable
+              as String?,
+      payAction: freezed == payAction
+          ? _value.payAction
+          : payAction // ignore: cast_nullable_to_non_nullable
+              as String?,
+      callBackJs: freezed == callBackJs
+          ? _value.callBackJs
+          : callBackJs // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ContentRuleImpl implements _ContentRule {
-  const _$ContentRuleImpl({
-    this.content,
-    @JsonKey(name: 'subContent') this.subContent,
-    this.title,
-    @JsonKey(name: 'nextContentUrl') this.nextContentUrl,
-    @JsonKey(name: 'webJs') this.webJs,
-    @JsonKey(name: 'sourceRegex') this.sourceRegex,
-    @JsonKey(name: 'replaceRegex') this.replaceRegex,
-    @JsonKey(name: 'imageStyle') this.imageStyle,
-    @JsonKey(name: 'imageDecode') this.imageDecode,
-    @JsonKey(name: 'payAction') this.payAction,
-    @JsonKey(name: 'callBackJs') this.callBackJs,
-  });
+  const _$ContentRuleImpl(
+      {this.content,
+      @JsonKey(name: 'subContent') this.subContent,
+      this.title,
+      @JsonKey(name: 'nextContentUrl') this.nextContentUrl,
+      @JsonKey(name: 'webJs') this.webJs,
+      @JsonKey(name: 'sourceRegex') this.sourceRegex,
+      @JsonKey(name: 'replaceRegex') this.replaceRegex,
+      @JsonKey(name: 'imageStyle') this.imageStyle,
+      @JsonKey(name: 'imageDecode') this.imageDecode,
+      @JsonKey(name: 'payAction') this.payAction,
+      @JsonKey(name: 'callBackJs') this.callBackJs});
 
   factory _$ContentRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$ContentRuleImplFromJson(json);
@@ -1552,26 +1462,23 @@ class _$ContentRuleImpl implements _ContentRule {
                 other.callBackJs == callBackJs));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    content,
-    subContent,
-    title,
-    nextContentUrl,
-    webJs,
-    sourceRegex,
-    replaceRegex,
-    imageStyle,
-    imageDecode,
-    payAction,
-    callBackJs,
-  );
+      runtimeType,
+      content,
+      subContent,
+      title,
+      nextContentUrl,
+      webJs,
+      sourceRegex,
+      replaceRegex,
+      imageStyle,
+      imageDecode,
+      payAction,
+      callBackJs);
 
-  /// Create a copy of ContentRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ContentRuleImplCopyWith<_$ContentRuleImpl> get copyWith =>
@@ -1579,24 +1486,26 @@ class _$ContentRuleImpl implements _ContentRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ContentRuleImplToJson(this);
+    return _$$ContentRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ContentRule implements ContentRule {
-  const factory _ContentRule({
-    final String? content,
-    @JsonKey(name: 'subContent') final String? subContent,
-    final String? title,
-    @JsonKey(name: 'nextContentUrl') final String? nextContentUrl,
-    @JsonKey(name: 'webJs') final String? webJs,
-    @JsonKey(name: 'sourceRegex') final String? sourceRegex,
-    @JsonKey(name: 'replaceRegex') final String? replaceRegex,
-    @JsonKey(name: 'imageStyle') final String? imageStyle,
-    @JsonKey(name: 'imageDecode') final String? imageDecode,
-    @JsonKey(name: 'payAction') final String? payAction,
-    @JsonKey(name: 'callBackJs') final String? callBackJs,
-  }) = _$ContentRuleImpl;
+  const factory _ContentRule(
+          {final String? content,
+          @JsonKey(name: 'subContent') final String? subContent,
+          final String? title,
+          @JsonKey(name: 'nextContentUrl') final String? nextContentUrl,
+          @JsonKey(name: 'webJs') final String? webJs,
+          @JsonKey(name: 'sourceRegex') final String? sourceRegex,
+          @JsonKey(name: 'replaceRegex') final String? replaceRegex,
+          @JsonKey(name: 'imageStyle') final String? imageStyle,
+          @JsonKey(name: 'imageDecode') final String? imageDecode,
+          @JsonKey(name: 'payAction') final String? payAction,
+          @JsonKey(name: 'callBackJs') final String? callBackJs}) =
+      _$ContentRuleImpl;
 
   factory _ContentRule.fromJson(Map<String, dynamic> json) =
       _$ContentRuleImpl.fromJson;
@@ -1632,11 +1541,8 @@ abstract class _ContentRule implements ContentRule {
   @override
   @JsonKey(name: 'callBackJs')
   String? get callBackJs;
-
-  /// Create a copy of ContentRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ContentRuleImplCopyWith<_$ContentRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1664,12 +1570,8 @@ mixin _$ExploreRule {
   @JsonKey(name: 'wordCount')
   String? get wordCount => throw _privateConstructorUsedError;
 
-  /// Serializes this ExploreRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ExploreRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ExploreRuleCopyWith<ExploreRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -1677,22 +1579,20 @@ mixin _$ExploreRule {
 /// @nodoc
 abstract class $ExploreRuleCopyWith<$Res> {
   factory $ExploreRuleCopyWith(
-    ExploreRule value,
-    $Res Function(ExploreRule) then,
-  ) = _$ExploreRuleCopyWithImpl<$Res, ExploreRule>;
+          ExploreRule value, $Res Function(ExploreRule) then) =
+      _$ExploreRuleCopyWithImpl<$Res, ExploreRule>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookList') String? bookList,
-    String? name,
-    String? author,
-    String? intro,
-    String? kind,
-    @JsonKey(name: 'lastChapter') String? lastChapter,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'bookUrl') String? bookUrl,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    @JsonKey(name: 'wordCount') String? wordCount,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookList') String? bookList,
+      String? name,
+      String? author,
+      String? intro,
+      String? kind,
+      @JsonKey(name: 'lastChapter') String? lastChapter,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'bookUrl') String? bookUrl,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'wordCount') String? wordCount});
 }
 
 /// @nodoc
@@ -1705,8 +1605,6 @@ class _$ExploreRuleCopyWithImpl<$Res, $Val extends ExploreRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ExploreRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1721,51 +1619,48 @@ class _$ExploreRuleCopyWithImpl<$Res, $Val extends ExploreRule>
     Object? coverUrl = freezed,
     Object? wordCount = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            bookList: freezed == bookList
-                ? _value.bookList
-                : bookList // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            name: freezed == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            author: freezed == author
-                ? _value.author
-                : author // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            intro: freezed == intro
-                ? _value.intro
-                : intro // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            kind: freezed == kind
-                ? _value.kind
-                : kind // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            lastChapter: freezed == lastChapter
-                ? _value.lastChapter
-                : lastChapter // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            updateTime: freezed == updateTime
-                ? _value.updateTime
-                : updateTime // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            bookUrl: freezed == bookUrl
-                ? _value.bookUrl
-                : bookUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            coverUrl: freezed == coverUrl
-                ? _value.coverUrl
-                : coverUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            wordCount: freezed == wordCount
-                ? _value.wordCount
-                : wordCount // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      bookList: freezed == bookList
+          ? _value.bookList
+          : bookList // ignore: cast_nullable_to_non_nullable
+              as String?,
+      name: freezed == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String?,
+      author: freezed == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapter: freezed == lastChapter
+          ? _value.lastChapter
+          : lastChapter // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      bookUrl: freezed == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -1773,23 +1668,21 @@ class _$ExploreRuleCopyWithImpl<$Res, $Val extends ExploreRule>
 abstract class _$$ExploreRuleImplCopyWith<$Res>
     implements $ExploreRuleCopyWith<$Res> {
   factory _$$ExploreRuleImplCopyWith(
-    _$ExploreRuleImpl value,
-    $Res Function(_$ExploreRuleImpl) then,
-  ) = __$$ExploreRuleImplCopyWithImpl<$Res>;
+          _$ExploreRuleImpl value, $Res Function(_$ExploreRuleImpl) then) =
+      __$$ExploreRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'bookList') String? bookList,
-    String? name,
-    String? author,
-    String? intro,
-    String? kind,
-    @JsonKey(name: 'lastChapter') String? lastChapter,
-    @JsonKey(name: 'updateTime') String? updateTime,
-    @JsonKey(name: 'bookUrl') String? bookUrl,
-    @JsonKey(name: 'coverUrl') String? coverUrl,
-    @JsonKey(name: 'wordCount') String? wordCount,
-  });
+  $Res call(
+      {@JsonKey(name: 'bookList') String? bookList,
+      String? name,
+      String? author,
+      String? intro,
+      String? kind,
+      @JsonKey(name: 'lastChapter') String? lastChapter,
+      @JsonKey(name: 'updateTime') String? updateTime,
+      @JsonKey(name: 'bookUrl') String? bookUrl,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'wordCount') String? wordCount});
 }
 
 /// @nodoc
@@ -1797,12 +1690,9 @@ class __$$ExploreRuleImplCopyWithImpl<$Res>
     extends _$ExploreRuleCopyWithImpl<$Res, _$ExploreRuleImpl>
     implements _$$ExploreRuleImplCopyWith<$Res> {
   __$$ExploreRuleImplCopyWithImpl(
-    _$ExploreRuleImpl _value,
-    $Res Function(_$ExploreRuleImpl) _then,
-  ) : super(_value, _then);
+      _$ExploreRuleImpl _value, $Res Function(_$ExploreRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ExploreRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -1817,68 +1707,65 @@ class __$$ExploreRuleImplCopyWithImpl<$Res>
     Object? coverUrl = freezed,
     Object? wordCount = freezed,
   }) {
-    return _then(
-      _$ExploreRuleImpl(
-        bookList: freezed == bookList
-            ? _value.bookList
-            : bookList // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        name: freezed == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        author: freezed == author
-            ? _value.author
-            : author // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        intro: freezed == intro
-            ? _value.intro
-            : intro // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        kind: freezed == kind
-            ? _value.kind
-            : kind // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        lastChapter: freezed == lastChapter
-            ? _value.lastChapter
-            : lastChapter // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        updateTime: freezed == updateTime
-            ? _value.updateTime
-            : updateTime // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        bookUrl: freezed == bookUrl
-            ? _value.bookUrl
-            : bookUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        coverUrl: freezed == coverUrl
-            ? _value.coverUrl
-            : coverUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        wordCount: freezed == wordCount
-            ? _value.wordCount
-            : wordCount // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$ExploreRuleImpl(
+      bookList: freezed == bookList
+          ? _value.bookList
+          : bookList // ignore: cast_nullable_to_non_nullable
+              as String?,
+      name: freezed == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String?,
+      author: freezed == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String?,
+      intro: freezed == intro
+          ? _value.intro
+          : intro // ignore: cast_nullable_to_non_nullable
+              as String?,
+      kind: freezed == kind
+          ? _value.kind
+          : kind // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapter: freezed == lastChapter
+          ? _value.lastChapter
+          : lastChapter // ignore: cast_nullable_to_non_nullable
+              as String?,
+      updateTime: freezed == updateTime
+          ? _value.updateTime
+          : updateTime // ignore: cast_nullable_to_non_nullable
+              as String?,
+      bookUrl: freezed == bookUrl
+          ? _value.bookUrl
+          : bookUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      wordCount: freezed == wordCount
+          ? _value.wordCount
+          : wordCount // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ExploreRuleImpl implements _ExploreRule {
-  const _$ExploreRuleImpl({
-    @JsonKey(name: 'bookList') this.bookList,
-    this.name,
-    this.author,
-    this.intro,
-    this.kind,
-    @JsonKey(name: 'lastChapter') this.lastChapter,
-    @JsonKey(name: 'updateTime') this.updateTime,
-    @JsonKey(name: 'bookUrl') this.bookUrl,
-    @JsonKey(name: 'coverUrl') this.coverUrl,
-    @JsonKey(name: 'wordCount') this.wordCount,
-  });
+  const _$ExploreRuleImpl(
+      {@JsonKey(name: 'bookList') this.bookList,
+      this.name,
+      this.author,
+      this.intro,
+      this.kind,
+      @JsonKey(name: 'lastChapter') this.lastChapter,
+      @JsonKey(name: 'updateTime') this.updateTime,
+      @JsonKey(name: 'bookUrl') this.bookUrl,
+      @JsonKey(name: 'coverUrl') this.coverUrl,
+      @JsonKey(name: 'wordCount') this.wordCount});
 
   factory _$ExploreRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$ExploreRuleImplFromJson(json);
@@ -1937,25 +1824,12 @@ class _$ExploreRuleImpl implements _ExploreRule {
                 other.wordCount == wordCount));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    bookList,
-    name,
-    author,
-    intro,
-    kind,
-    lastChapter,
-    updateTime,
-    bookUrl,
-    coverUrl,
-    wordCount,
-  );
+  int get hashCode => Object.hash(runtimeType, bookList, name, author, intro,
+      kind, lastChapter, updateTime, bookUrl, coverUrl, wordCount);
 
-  /// Create a copy of ExploreRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ExploreRuleImplCopyWith<_$ExploreRuleImpl> get copyWith =>
@@ -1963,23 +1837,24 @@ class _$ExploreRuleImpl implements _ExploreRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ExploreRuleImplToJson(this);
+    return _$$ExploreRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ExploreRule implements ExploreRule {
-  const factory _ExploreRule({
-    @JsonKey(name: 'bookList') final String? bookList,
-    final String? name,
-    final String? author,
-    final String? intro,
-    final String? kind,
-    @JsonKey(name: 'lastChapter') final String? lastChapter,
-    @JsonKey(name: 'updateTime') final String? updateTime,
-    @JsonKey(name: 'bookUrl') final String? bookUrl,
-    @JsonKey(name: 'coverUrl') final String? coverUrl,
-    @JsonKey(name: 'wordCount') final String? wordCount,
-  }) = _$ExploreRuleImpl;
+  const factory _ExploreRule(
+      {@JsonKey(name: 'bookList') final String? bookList,
+      final String? name,
+      final String? author,
+      final String? intro,
+      final String? kind,
+      @JsonKey(name: 'lastChapter') final String? lastChapter,
+      @JsonKey(name: 'updateTime') final String? updateTime,
+      @JsonKey(name: 'bookUrl') final String? bookUrl,
+      @JsonKey(name: 'coverUrl') final String? coverUrl,
+      @JsonKey(name: 'wordCount') final String? wordCount}) = _$ExploreRuleImpl;
 
   factory _ExploreRule.fromJson(Map<String, dynamic> json) =
       _$ExploreRuleImpl.fromJson;
@@ -2010,11 +1885,8 @@ abstract class _ExploreRule implements ExploreRule {
   @override
   @JsonKey(name: 'wordCount')
   String? get wordCount;
-
-  /// Create a copy of ExploreRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ExploreRuleImplCopyWith<_$ExploreRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2085,12 +1957,8 @@ mixin _$ReviewRule {
   @JsonKey(name: 'replyContentRule')
   String? get replyContentRule => throw _privateConstructorUsedError;
 
-  /// Serializes this ReviewRule to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ReviewRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ReviewRuleCopyWith<ReviewRule> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2098,43 +1966,42 @@ mixin _$ReviewRule {
 /// @nodoc
 abstract class $ReviewRuleCopyWith<$Res> {
   factory $ReviewRuleCopyWith(
-    ReviewRule value,
-    $Res Function(ReviewRule) then,
-  ) = _$ReviewRuleCopyWithImpl<$Res, ReviewRule>;
+          ReviewRule value, $Res Function(ReviewRule) then) =
+      _$ReviewRuleCopyWithImpl<$Res, ReviewRule>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'reviewUrl') String? reviewUrl,
-    @JsonKey(name: 'avatarRule') String? avatarRule,
-    @JsonKey(name: 'contentRule') String? contentRule,
-    @JsonKey(name: 'postTimeRule') String? postTimeRule,
-    @JsonKey(name: 'reviewQuoteUrl') String? reviewQuoteUrl,
-    @JsonKey(name: 'voteUpUrl') String? voteUpUrl,
-    @JsonKey(name: 'voteDownUrl') String? voteDownUrl,
-    @JsonKey(name: 'postReviewUrl') String? postReviewUrl,
-    @JsonKey(name: 'postQuoteUrl') String? postQuoteUrl,
-    @JsonKey(name: 'deleteUrl') String? deleteUrl,
-    bool enabled,
-    @JsonKey(name: 'reviewSummaryUrl') String? reviewSummaryUrl,
-    @JsonKey(name: 'summaryListRule') String? summaryListRule,
-    @JsonKey(name: 'summaryParagraphIndexRule')
-    String? summaryParagraphIndexRule,
-    @JsonKey(name: 'summaryParagraphDataRule') String? summaryParagraphDataRule,
-    @JsonKey(name: 'summaryCountRule') String? summaryCountRule,
-    @JsonKey(name: 'reviewDetailUrl') String? reviewDetailUrl,
-    @JsonKey(name: 'reviewDetailNextPageUrl') String? reviewDetailNextPageUrl,
-    @JsonKey(name: 'detailListRule') String? detailListRule,
-    @JsonKey(name: 'detailIdRule') String? detailIdRule,
-    @JsonKey(name: 'detailAvatarRule') String? detailAvatarRule,
-    @JsonKey(name: 'detailNameRule') String? detailNameRule,
-    @JsonKey(name: 'detailBadgeRule') String? detailBadgeRule,
-    @JsonKey(name: 'detailContentRule') String? detailContentRule,
-    @JsonKey(name: 'replyListRule') String? replyListRule,
-    @JsonKey(name: 'replyIdRule') String? replyIdRule,
-    @JsonKey(name: 'replyAvatarRule') String? replyAvatarRule,
-    @JsonKey(name: 'replyNameRule') String? replyNameRule,
-    @JsonKey(name: 'replyBadgeRule') String? replyBadgeRule,
-    @JsonKey(name: 'replyContentRule') String? replyContentRule,
-  });
+  $Res call(
+      {@JsonKey(name: 'reviewUrl') String? reviewUrl,
+      @JsonKey(name: 'avatarRule') String? avatarRule,
+      @JsonKey(name: 'contentRule') String? contentRule,
+      @JsonKey(name: 'postTimeRule') String? postTimeRule,
+      @JsonKey(name: 'reviewQuoteUrl') String? reviewQuoteUrl,
+      @JsonKey(name: 'voteUpUrl') String? voteUpUrl,
+      @JsonKey(name: 'voteDownUrl') String? voteDownUrl,
+      @JsonKey(name: 'postReviewUrl') String? postReviewUrl,
+      @JsonKey(name: 'postQuoteUrl') String? postQuoteUrl,
+      @JsonKey(name: 'deleteUrl') String? deleteUrl,
+      bool enabled,
+      @JsonKey(name: 'reviewSummaryUrl') String? reviewSummaryUrl,
+      @JsonKey(name: 'summaryListRule') String? summaryListRule,
+      @JsonKey(name: 'summaryParagraphIndexRule')
+      String? summaryParagraphIndexRule,
+      @JsonKey(name: 'summaryParagraphDataRule')
+      String? summaryParagraphDataRule,
+      @JsonKey(name: 'summaryCountRule') String? summaryCountRule,
+      @JsonKey(name: 'reviewDetailUrl') String? reviewDetailUrl,
+      @JsonKey(name: 'reviewDetailNextPageUrl') String? reviewDetailNextPageUrl,
+      @JsonKey(name: 'detailListRule') String? detailListRule,
+      @JsonKey(name: 'detailIdRule') String? detailIdRule,
+      @JsonKey(name: 'detailAvatarRule') String? detailAvatarRule,
+      @JsonKey(name: 'detailNameRule') String? detailNameRule,
+      @JsonKey(name: 'detailBadgeRule') String? detailBadgeRule,
+      @JsonKey(name: 'detailContentRule') String? detailContentRule,
+      @JsonKey(name: 'replyListRule') String? replyListRule,
+      @JsonKey(name: 'replyIdRule') String? replyIdRule,
+      @JsonKey(name: 'replyAvatarRule') String? replyAvatarRule,
+      @JsonKey(name: 'replyNameRule') String? replyNameRule,
+      @JsonKey(name: 'replyBadgeRule') String? replyBadgeRule,
+      @JsonKey(name: 'replyContentRule') String? replyContentRule});
 }
 
 /// @nodoc
@@ -2147,8 +2014,6 @@ class _$ReviewRuleCopyWithImpl<$Res, $Val extends ReviewRule>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ReviewRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -2183,131 +2048,128 @@ class _$ReviewRuleCopyWithImpl<$Res, $Val extends ReviewRule>
     Object? replyBadgeRule = freezed,
     Object? replyContentRule = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            reviewUrl: freezed == reviewUrl
-                ? _value.reviewUrl
-                : reviewUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            avatarRule: freezed == avatarRule
-                ? _value.avatarRule
-                : avatarRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            contentRule: freezed == contentRule
-                ? _value.contentRule
-                : contentRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            postTimeRule: freezed == postTimeRule
-                ? _value.postTimeRule
-                : postTimeRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            reviewQuoteUrl: freezed == reviewQuoteUrl
-                ? _value.reviewQuoteUrl
-                : reviewQuoteUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            voteUpUrl: freezed == voteUpUrl
-                ? _value.voteUpUrl
-                : voteUpUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            voteDownUrl: freezed == voteDownUrl
-                ? _value.voteDownUrl
-                : voteDownUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            postReviewUrl: freezed == postReviewUrl
-                ? _value.postReviewUrl
-                : postReviewUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            postQuoteUrl: freezed == postQuoteUrl
-                ? _value.postQuoteUrl
-                : postQuoteUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            deleteUrl: freezed == deleteUrl
-                ? _value.deleteUrl
-                : deleteUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            enabled: null == enabled
-                ? _value.enabled
-                : enabled // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            reviewSummaryUrl: freezed == reviewSummaryUrl
-                ? _value.reviewSummaryUrl
-                : reviewSummaryUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            summaryListRule: freezed == summaryListRule
-                ? _value.summaryListRule
-                : summaryListRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            summaryParagraphIndexRule: freezed == summaryParagraphIndexRule
-                ? _value.summaryParagraphIndexRule
-                : summaryParagraphIndexRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            summaryParagraphDataRule: freezed == summaryParagraphDataRule
-                ? _value.summaryParagraphDataRule
-                : summaryParagraphDataRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            summaryCountRule: freezed == summaryCountRule
-                ? _value.summaryCountRule
-                : summaryCountRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            reviewDetailUrl: freezed == reviewDetailUrl
-                ? _value.reviewDetailUrl
-                : reviewDetailUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            reviewDetailNextPageUrl: freezed == reviewDetailNextPageUrl
-                ? _value.reviewDetailNextPageUrl
-                : reviewDetailNextPageUrl // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            detailListRule: freezed == detailListRule
-                ? _value.detailListRule
-                : detailListRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            detailIdRule: freezed == detailIdRule
-                ? _value.detailIdRule
-                : detailIdRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            detailAvatarRule: freezed == detailAvatarRule
-                ? _value.detailAvatarRule
-                : detailAvatarRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            detailNameRule: freezed == detailNameRule
-                ? _value.detailNameRule
-                : detailNameRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            detailBadgeRule: freezed == detailBadgeRule
-                ? _value.detailBadgeRule
-                : detailBadgeRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            detailContentRule: freezed == detailContentRule
-                ? _value.detailContentRule
-                : detailContentRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            replyListRule: freezed == replyListRule
-                ? _value.replyListRule
-                : replyListRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            replyIdRule: freezed == replyIdRule
-                ? _value.replyIdRule
-                : replyIdRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            replyAvatarRule: freezed == replyAvatarRule
-                ? _value.replyAvatarRule
-                : replyAvatarRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            replyNameRule: freezed == replyNameRule
-                ? _value.replyNameRule
-                : replyNameRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            replyBadgeRule: freezed == replyBadgeRule
-                ? _value.replyBadgeRule
-                : replyBadgeRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            replyContentRule: freezed == replyContentRule
-                ? _value.replyContentRule
-                : replyContentRule // ignore: cast_nullable_to_non_nullable
-                      as String?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      reviewUrl: freezed == reviewUrl
+          ? _value.reviewUrl
+          : reviewUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      avatarRule: freezed == avatarRule
+          ? _value.avatarRule
+          : avatarRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      contentRule: freezed == contentRule
+          ? _value.contentRule
+          : contentRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      postTimeRule: freezed == postTimeRule
+          ? _value.postTimeRule
+          : postTimeRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      reviewQuoteUrl: freezed == reviewQuoteUrl
+          ? _value.reviewQuoteUrl
+          : reviewQuoteUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      voteUpUrl: freezed == voteUpUrl
+          ? _value.voteUpUrl
+          : voteUpUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      voteDownUrl: freezed == voteDownUrl
+          ? _value.voteDownUrl
+          : voteDownUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      postReviewUrl: freezed == postReviewUrl
+          ? _value.postReviewUrl
+          : postReviewUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      postQuoteUrl: freezed == postQuoteUrl
+          ? _value.postQuoteUrl
+          : postQuoteUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      deleteUrl: freezed == deleteUrl
+          ? _value.deleteUrl
+          : deleteUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      reviewSummaryUrl: freezed == reviewSummaryUrl
+          ? _value.reviewSummaryUrl
+          : reviewSummaryUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryListRule: freezed == summaryListRule
+          ? _value.summaryListRule
+          : summaryListRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryParagraphIndexRule: freezed == summaryParagraphIndexRule
+          ? _value.summaryParagraphIndexRule
+          : summaryParagraphIndexRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryParagraphDataRule: freezed == summaryParagraphDataRule
+          ? _value.summaryParagraphDataRule
+          : summaryParagraphDataRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryCountRule: freezed == summaryCountRule
+          ? _value.summaryCountRule
+          : summaryCountRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      reviewDetailUrl: freezed == reviewDetailUrl
+          ? _value.reviewDetailUrl
+          : reviewDetailUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      reviewDetailNextPageUrl: freezed == reviewDetailNextPageUrl
+          ? _value.reviewDetailNextPageUrl
+          : reviewDetailNextPageUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailListRule: freezed == detailListRule
+          ? _value.detailListRule
+          : detailListRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailIdRule: freezed == detailIdRule
+          ? _value.detailIdRule
+          : detailIdRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailAvatarRule: freezed == detailAvatarRule
+          ? _value.detailAvatarRule
+          : detailAvatarRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailNameRule: freezed == detailNameRule
+          ? _value.detailNameRule
+          : detailNameRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailBadgeRule: freezed == detailBadgeRule
+          ? _value.detailBadgeRule
+          : detailBadgeRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailContentRule: freezed == detailContentRule
+          ? _value.detailContentRule
+          : detailContentRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyListRule: freezed == replyListRule
+          ? _value.replyListRule
+          : replyListRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyIdRule: freezed == replyIdRule
+          ? _value.replyIdRule
+          : replyIdRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyAvatarRule: freezed == replyAvatarRule
+          ? _value.replyAvatarRule
+          : replyAvatarRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyNameRule: freezed == replyNameRule
+          ? _value.replyNameRule
+          : replyNameRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyBadgeRule: freezed == replyBadgeRule
+          ? _value.replyBadgeRule
+          : replyBadgeRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyContentRule: freezed == replyContentRule
+          ? _value.replyContentRule
+          : replyContentRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
   }
 }
 
@@ -2315,44 +2177,43 @@ class _$ReviewRuleCopyWithImpl<$Res, $Val extends ReviewRule>
 abstract class _$$ReviewRuleImplCopyWith<$Res>
     implements $ReviewRuleCopyWith<$Res> {
   factory _$$ReviewRuleImplCopyWith(
-    _$ReviewRuleImpl value,
-    $Res Function(_$ReviewRuleImpl) then,
-  ) = __$$ReviewRuleImplCopyWithImpl<$Res>;
+          _$ReviewRuleImpl value, $Res Function(_$ReviewRuleImpl) then) =
+      __$$ReviewRuleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'reviewUrl') String? reviewUrl,
-    @JsonKey(name: 'avatarRule') String? avatarRule,
-    @JsonKey(name: 'contentRule') String? contentRule,
-    @JsonKey(name: 'postTimeRule') String? postTimeRule,
-    @JsonKey(name: 'reviewQuoteUrl') String? reviewQuoteUrl,
-    @JsonKey(name: 'voteUpUrl') String? voteUpUrl,
-    @JsonKey(name: 'voteDownUrl') String? voteDownUrl,
-    @JsonKey(name: 'postReviewUrl') String? postReviewUrl,
-    @JsonKey(name: 'postQuoteUrl') String? postQuoteUrl,
-    @JsonKey(name: 'deleteUrl') String? deleteUrl,
-    bool enabled,
-    @JsonKey(name: 'reviewSummaryUrl') String? reviewSummaryUrl,
-    @JsonKey(name: 'summaryListRule') String? summaryListRule,
-    @JsonKey(name: 'summaryParagraphIndexRule')
-    String? summaryParagraphIndexRule,
-    @JsonKey(name: 'summaryParagraphDataRule') String? summaryParagraphDataRule,
-    @JsonKey(name: 'summaryCountRule') String? summaryCountRule,
-    @JsonKey(name: 'reviewDetailUrl') String? reviewDetailUrl,
-    @JsonKey(name: 'reviewDetailNextPageUrl') String? reviewDetailNextPageUrl,
-    @JsonKey(name: 'detailListRule') String? detailListRule,
-    @JsonKey(name: 'detailIdRule') String? detailIdRule,
-    @JsonKey(name: 'detailAvatarRule') String? detailAvatarRule,
-    @JsonKey(name: 'detailNameRule') String? detailNameRule,
-    @JsonKey(name: 'detailBadgeRule') String? detailBadgeRule,
-    @JsonKey(name: 'detailContentRule') String? detailContentRule,
-    @JsonKey(name: 'replyListRule') String? replyListRule,
-    @JsonKey(name: 'replyIdRule') String? replyIdRule,
-    @JsonKey(name: 'replyAvatarRule') String? replyAvatarRule,
-    @JsonKey(name: 'replyNameRule') String? replyNameRule,
-    @JsonKey(name: 'replyBadgeRule') String? replyBadgeRule,
-    @JsonKey(name: 'replyContentRule') String? replyContentRule,
-  });
+  $Res call(
+      {@JsonKey(name: 'reviewUrl') String? reviewUrl,
+      @JsonKey(name: 'avatarRule') String? avatarRule,
+      @JsonKey(name: 'contentRule') String? contentRule,
+      @JsonKey(name: 'postTimeRule') String? postTimeRule,
+      @JsonKey(name: 'reviewQuoteUrl') String? reviewQuoteUrl,
+      @JsonKey(name: 'voteUpUrl') String? voteUpUrl,
+      @JsonKey(name: 'voteDownUrl') String? voteDownUrl,
+      @JsonKey(name: 'postReviewUrl') String? postReviewUrl,
+      @JsonKey(name: 'postQuoteUrl') String? postQuoteUrl,
+      @JsonKey(name: 'deleteUrl') String? deleteUrl,
+      bool enabled,
+      @JsonKey(name: 'reviewSummaryUrl') String? reviewSummaryUrl,
+      @JsonKey(name: 'summaryListRule') String? summaryListRule,
+      @JsonKey(name: 'summaryParagraphIndexRule')
+      String? summaryParagraphIndexRule,
+      @JsonKey(name: 'summaryParagraphDataRule')
+      String? summaryParagraphDataRule,
+      @JsonKey(name: 'summaryCountRule') String? summaryCountRule,
+      @JsonKey(name: 'reviewDetailUrl') String? reviewDetailUrl,
+      @JsonKey(name: 'reviewDetailNextPageUrl') String? reviewDetailNextPageUrl,
+      @JsonKey(name: 'detailListRule') String? detailListRule,
+      @JsonKey(name: 'detailIdRule') String? detailIdRule,
+      @JsonKey(name: 'detailAvatarRule') String? detailAvatarRule,
+      @JsonKey(name: 'detailNameRule') String? detailNameRule,
+      @JsonKey(name: 'detailBadgeRule') String? detailBadgeRule,
+      @JsonKey(name: 'detailContentRule') String? detailContentRule,
+      @JsonKey(name: 'replyListRule') String? replyListRule,
+      @JsonKey(name: 'replyIdRule') String? replyIdRule,
+      @JsonKey(name: 'replyAvatarRule') String? replyAvatarRule,
+      @JsonKey(name: 'replyNameRule') String? replyNameRule,
+      @JsonKey(name: 'replyBadgeRule') String? replyBadgeRule,
+      @JsonKey(name: 'replyContentRule') String? replyContentRule});
 }
 
 /// @nodoc
@@ -2360,12 +2221,9 @@ class __$$ReviewRuleImplCopyWithImpl<$Res>
     extends _$ReviewRuleCopyWithImpl<$Res, _$ReviewRuleImpl>
     implements _$$ReviewRuleImplCopyWith<$Res> {
   __$$ReviewRuleImplCopyWithImpl(
-    _$ReviewRuleImpl _value,
-    $Res Function(_$ReviewRuleImpl) _then,
-  ) : super(_value, _then);
+      _$ReviewRuleImpl _value, $Res Function(_$ReviewRuleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ReviewRule
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -2400,168 +2258,166 @@ class __$$ReviewRuleImplCopyWithImpl<$Res>
     Object? replyBadgeRule = freezed,
     Object? replyContentRule = freezed,
   }) {
-    return _then(
-      _$ReviewRuleImpl(
-        reviewUrl: freezed == reviewUrl
-            ? _value.reviewUrl
-            : reviewUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        avatarRule: freezed == avatarRule
-            ? _value.avatarRule
-            : avatarRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        contentRule: freezed == contentRule
-            ? _value.contentRule
-            : contentRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        postTimeRule: freezed == postTimeRule
-            ? _value.postTimeRule
-            : postTimeRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        reviewQuoteUrl: freezed == reviewQuoteUrl
-            ? _value.reviewQuoteUrl
-            : reviewQuoteUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        voteUpUrl: freezed == voteUpUrl
-            ? _value.voteUpUrl
-            : voteUpUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        voteDownUrl: freezed == voteDownUrl
-            ? _value.voteDownUrl
-            : voteDownUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        postReviewUrl: freezed == postReviewUrl
-            ? _value.postReviewUrl
-            : postReviewUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        postQuoteUrl: freezed == postQuoteUrl
-            ? _value.postQuoteUrl
-            : postQuoteUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        deleteUrl: freezed == deleteUrl
-            ? _value.deleteUrl
-            : deleteUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        enabled: null == enabled
-            ? _value.enabled
-            : enabled // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        reviewSummaryUrl: freezed == reviewSummaryUrl
-            ? _value.reviewSummaryUrl
-            : reviewSummaryUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        summaryListRule: freezed == summaryListRule
-            ? _value.summaryListRule
-            : summaryListRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        summaryParagraphIndexRule: freezed == summaryParagraphIndexRule
-            ? _value.summaryParagraphIndexRule
-            : summaryParagraphIndexRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        summaryParagraphDataRule: freezed == summaryParagraphDataRule
-            ? _value.summaryParagraphDataRule
-            : summaryParagraphDataRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        summaryCountRule: freezed == summaryCountRule
-            ? _value.summaryCountRule
-            : summaryCountRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        reviewDetailUrl: freezed == reviewDetailUrl
-            ? _value.reviewDetailUrl
-            : reviewDetailUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        reviewDetailNextPageUrl: freezed == reviewDetailNextPageUrl
-            ? _value.reviewDetailNextPageUrl
-            : reviewDetailNextPageUrl // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        detailListRule: freezed == detailListRule
-            ? _value.detailListRule
-            : detailListRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        detailIdRule: freezed == detailIdRule
-            ? _value.detailIdRule
-            : detailIdRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        detailAvatarRule: freezed == detailAvatarRule
-            ? _value.detailAvatarRule
-            : detailAvatarRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        detailNameRule: freezed == detailNameRule
-            ? _value.detailNameRule
-            : detailNameRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        detailBadgeRule: freezed == detailBadgeRule
-            ? _value.detailBadgeRule
-            : detailBadgeRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        detailContentRule: freezed == detailContentRule
-            ? _value.detailContentRule
-            : detailContentRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        replyListRule: freezed == replyListRule
-            ? _value.replyListRule
-            : replyListRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        replyIdRule: freezed == replyIdRule
-            ? _value.replyIdRule
-            : replyIdRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        replyAvatarRule: freezed == replyAvatarRule
-            ? _value.replyAvatarRule
-            : replyAvatarRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        replyNameRule: freezed == replyNameRule
-            ? _value.replyNameRule
-            : replyNameRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        replyBadgeRule: freezed == replyBadgeRule
-            ? _value.replyBadgeRule
-            : replyBadgeRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        replyContentRule: freezed == replyContentRule
-            ? _value.replyContentRule
-            : replyContentRule // ignore: cast_nullable_to_non_nullable
-                  as String?,
-      ),
-    );
+    return _then(_$ReviewRuleImpl(
+      reviewUrl: freezed == reviewUrl
+          ? _value.reviewUrl
+          : reviewUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      avatarRule: freezed == avatarRule
+          ? _value.avatarRule
+          : avatarRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      contentRule: freezed == contentRule
+          ? _value.contentRule
+          : contentRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      postTimeRule: freezed == postTimeRule
+          ? _value.postTimeRule
+          : postTimeRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      reviewQuoteUrl: freezed == reviewQuoteUrl
+          ? _value.reviewQuoteUrl
+          : reviewQuoteUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      voteUpUrl: freezed == voteUpUrl
+          ? _value.voteUpUrl
+          : voteUpUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      voteDownUrl: freezed == voteDownUrl
+          ? _value.voteDownUrl
+          : voteDownUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      postReviewUrl: freezed == postReviewUrl
+          ? _value.postReviewUrl
+          : postReviewUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      postQuoteUrl: freezed == postQuoteUrl
+          ? _value.postQuoteUrl
+          : postQuoteUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      deleteUrl: freezed == deleteUrl
+          ? _value.deleteUrl
+          : deleteUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      enabled: null == enabled
+          ? _value.enabled
+          : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      reviewSummaryUrl: freezed == reviewSummaryUrl
+          ? _value.reviewSummaryUrl
+          : reviewSummaryUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryListRule: freezed == summaryListRule
+          ? _value.summaryListRule
+          : summaryListRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryParagraphIndexRule: freezed == summaryParagraphIndexRule
+          ? _value.summaryParagraphIndexRule
+          : summaryParagraphIndexRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryParagraphDataRule: freezed == summaryParagraphDataRule
+          ? _value.summaryParagraphDataRule
+          : summaryParagraphDataRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      summaryCountRule: freezed == summaryCountRule
+          ? _value.summaryCountRule
+          : summaryCountRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      reviewDetailUrl: freezed == reviewDetailUrl
+          ? _value.reviewDetailUrl
+          : reviewDetailUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      reviewDetailNextPageUrl: freezed == reviewDetailNextPageUrl
+          ? _value.reviewDetailNextPageUrl
+          : reviewDetailNextPageUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailListRule: freezed == detailListRule
+          ? _value.detailListRule
+          : detailListRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailIdRule: freezed == detailIdRule
+          ? _value.detailIdRule
+          : detailIdRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailAvatarRule: freezed == detailAvatarRule
+          ? _value.detailAvatarRule
+          : detailAvatarRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailNameRule: freezed == detailNameRule
+          ? _value.detailNameRule
+          : detailNameRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailBadgeRule: freezed == detailBadgeRule
+          ? _value.detailBadgeRule
+          : detailBadgeRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      detailContentRule: freezed == detailContentRule
+          ? _value.detailContentRule
+          : detailContentRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyListRule: freezed == replyListRule
+          ? _value.replyListRule
+          : replyListRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyIdRule: freezed == replyIdRule
+          ? _value.replyIdRule
+          : replyIdRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyAvatarRule: freezed == replyAvatarRule
+          ? _value.replyAvatarRule
+          : replyAvatarRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyNameRule: freezed == replyNameRule
+          ? _value.replyNameRule
+          : replyNameRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyBadgeRule: freezed == replyBadgeRule
+          ? _value.replyBadgeRule
+          : replyBadgeRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+      replyContentRule: freezed == replyContentRule
+          ? _value.replyContentRule
+          : replyContentRule // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ReviewRuleImpl implements _ReviewRule {
-  const _$ReviewRuleImpl({
-    @JsonKey(name: 'reviewUrl') this.reviewUrl,
-    @JsonKey(name: 'avatarRule') this.avatarRule,
-    @JsonKey(name: 'contentRule') this.contentRule,
-    @JsonKey(name: 'postTimeRule') this.postTimeRule,
-    @JsonKey(name: 'reviewQuoteUrl') this.reviewQuoteUrl,
-    @JsonKey(name: 'voteUpUrl') this.voteUpUrl,
-    @JsonKey(name: 'voteDownUrl') this.voteDownUrl,
-    @JsonKey(name: 'postReviewUrl') this.postReviewUrl,
-    @JsonKey(name: 'postQuoteUrl') this.postQuoteUrl,
-    @JsonKey(name: 'deleteUrl') this.deleteUrl,
-    this.enabled = false,
-    @JsonKey(name: 'reviewSummaryUrl') this.reviewSummaryUrl,
-    @JsonKey(name: 'summaryListRule') this.summaryListRule,
-    @JsonKey(name: 'summaryParagraphIndexRule') this.summaryParagraphIndexRule,
-    @JsonKey(name: 'summaryParagraphDataRule') this.summaryParagraphDataRule,
-    @JsonKey(name: 'summaryCountRule') this.summaryCountRule,
-    @JsonKey(name: 'reviewDetailUrl') this.reviewDetailUrl,
-    @JsonKey(name: 'reviewDetailNextPageUrl') this.reviewDetailNextPageUrl,
-    @JsonKey(name: 'detailListRule') this.detailListRule,
-    @JsonKey(name: 'detailIdRule') this.detailIdRule,
-    @JsonKey(name: 'detailAvatarRule') this.detailAvatarRule,
-    @JsonKey(name: 'detailNameRule') this.detailNameRule,
-    @JsonKey(name: 'detailBadgeRule') this.detailBadgeRule,
-    @JsonKey(name: 'detailContentRule') this.detailContentRule,
-    @JsonKey(name: 'replyListRule') this.replyListRule,
-    @JsonKey(name: 'replyIdRule') this.replyIdRule,
-    @JsonKey(name: 'replyAvatarRule') this.replyAvatarRule,
-    @JsonKey(name: 'replyNameRule') this.replyNameRule,
-    @JsonKey(name: 'replyBadgeRule') this.replyBadgeRule,
-    @JsonKey(name: 'replyContentRule') this.replyContentRule,
-  });
+  const _$ReviewRuleImpl(
+      {@JsonKey(name: 'reviewUrl') this.reviewUrl,
+      @JsonKey(name: 'avatarRule') this.avatarRule,
+      @JsonKey(name: 'contentRule') this.contentRule,
+      @JsonKey(name: 'postTimeRule') this.postTimeRule,
+      @JsonKey(name: 'reviewQuoteUrl') this.reviewQuoteUrl,
+      @JsonKey(name: 'voteUpUrl') this.voteUpUrl,
+      @JsonKey(name: 'voteDownUrl') this.voteDownUrl,
+      @JsonKey(name: 'postReviewUrl') this.postReviewUrl,
+      @JsonKey(name: 'postQuoteUrl') this.postQuoteUrl,
+      @JsonKey(name: 'deleteUrl') this.deleteUrl,
+      this.enabled = false,
+      @JsonKey(name: 'reviewSummaryUrl') this.reviewSummaryUrl,
+      @JsonKey(name: 'summaryListRule') this.summaryListRule,
+      @JsonKey(name: 'summaryParagraphIndexRule')
+      this.summaryParagraphIndexRule,
+      @JsonKey(name: 'summaryParagraphDataRule') this.summaryParagraphDataRule,
+      @JsonKey(name: 'summaryCountRule') this.summaryCountRule,
+      @JsonKey(name: 'reviewDetailUrl') this.reviewDetailUrl,
+      @JsonKey(name: 'reviewDetailNextPageUrl') this.reviewDetailNextPageUrl,
+      @JsonKey(name: 'detailListRule') this.detailListRule,
+      @JsonKey(name: 'detailIdRule') this.detailIdRule,
+      @JsonKey(name: 'detailAvatarRule') this.detailAvatarRule,
+      @JsonKey(name: 'detailNameRule') this.detailNameRule,
+      @JsonKey(name: 'detailBadgeRule') this.detailBadgeRule,
+      @JsonKey(name: 'detailContentRule') this.detailContentRule,
+      @JsonKey(name: 'replyListRule') this.replyListRule,
+      @JsonKey(name: 'replyIdRule') this.replyIdRule,
+      @JsonKey(name: 'replyAvatarRule') this.replyAvatarRule,
+      @JsonKey(name: 'replyNameRule') this.replyNameRule,
+      @JsonKey(name: 'replyBadgeRule') this.replyBadgeRule,
+      @JsonKey(name: 'replyContentRule') this.replyContentRule});
 
   factory _$ReviewRuleImpl.fromJson(Map<String, dynamic> json) =>
       _$$ReviewRuleImplFromJson(json);
@@ -2692,24 +2548,16 @@ class _$ReviewRuleImpl implements _ReviewRule {
                 other.reviewSummaryUrl == reviewSummaryUrl) &&
             (identical(other.summaryListRule, summaryListRule) ||
                 other.summaryListRule == summaryListRule) &&
-            (identical(
-                  other.summaryParagraphIndexRule,
-                  summaryParagraphIndexRule,
-                ) ||
+            (identical(other.summaryParagraphIndexRule, summaryParagraphIndexRule) ||
                 other.summaryParagraphIndexRule == summaryParagraphIndexRule) &&
             (identical(
-                  other.summaryParagraphDataRule,
-                  summaryParagraphDataRule,
-                ) ||
+                    other.summaryParagraphDataRule, summaryParagraphDataRule) ||
                 other.summaryParagraphDataRule == summaryParagraphDataRule) &&
             (identical(other.summaryCountRule, summaryCountRule) ||
                 other.summaryCountRule == summaryCountRule) &&
             (identical(other.reviewDetailUrl, reviewDetailUrl) ||
                 other.reviewDetailUrl == reviewDetailUrl) &&
-            (identical(
-                  other.reviewDetailNextPageUrl,
-                  reviewDetailNextPageUrl,
-                ) ||
+            (identical(other.reviewDetailNextPageUrl, reviewDetailNextPageUrl) ||
                 other.reviewDetailNextPageUrl == reviewDetailNextPageUrl) &&
             (identical(other.detailListRule, detailListRule) ||
                 other.detailListRule == detailListRule) &&
@@ -2737,45 +2585,43 @@ class _$ReviewRuleImpl implements _ReviewRule {
                 other.replyContentRule == replyContentRule));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hashAll([
-    runtimeType,
-    reviewUrl,
-    avatarRule,
-    contentRule,
-    postTimeRule,
-    reviewQuoteUrl,
-    voteUpUrl,
-    voteDownUrl,
-    postReviewUrl,
-    postQuoteUrl,
-    deleteUrl,
-    enabled,
-    reviewSummaryUrl,
-    summaryListRule,
-    summaryParagraphIndexRule,
-    summaryParagraphDataRule,
-    summaryCountRule,
-    reviewDetailUrl,
-    reviewDetailNextPageUrl,
-    detailListRule,
-    detailIdRule,
-    detailAvatarRule,
-    detailNameRule,
-    detailBadgeRule,
-    detailContentRule,
-    replyListRule,
-    replyIdRule,
-    replyAvatarRule,
-    replyNameRule,
-    replyBadgeRule,
-    replyContentRule,
-  ]);
+        runtimeType,
+        reviewUrl,
+        avatarRule,
+        contentRule,
+        postTimeRule,
+        reviewQuoteUrl,
+        voteUpUrl,
+        voteDownUrl,
+        postReviewUrl,
+        postQuoteUrl,
+        deleteUrl,
+        enabled,
+        reviewSummaryUrl,
+        summaryListRule,
+        summaryParagraphIndexRule,
+        summaryParagraphDataRule,
+        summaryCountRule,
+        reviewDetailUrl,
+        reviewDetailNextPageUrl,
+        detailListRule,
+        detailIdRule,
+        detailAvatarRule,
+        detailNameRule,
+        detailBadgeRule,
+        detailContentRule,
+        replyListRule,
+        replyIdRule,
+        replyAvatarRule,
+        replyNameRule,
+        replyBadgeRule,
+        replyContentRule
+      ]);
 
-  /// Create a copy of ReviewRule
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ReviewRuleImplCopyWith<_$ReviewRuleImpl> get copyWith =>
@@ -2783,46 +2629,48 @@ class _$ReviewRuleImpl implements _ReviewRule {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ReviewRuleImplToJson(this);
+    return _$$ReviewRuleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ReviewRule implements ReviewRule {
-  const factory _ReviewRule({
-    @JsonKey(name: 'reviewUrl') final String? reviewUrl,
-    @JsonKey(name: 'avatarRule') final String? avatarRule,
-    @JsonKey(name: 'contentRule') final String? contentRule,
-    @JsonKey(name: 'postTimeRule') final String? postTimeRule,
-    @JsonKey(name: 'reviewQuoteUrl') final String? reviewQuoteUrl,
-    @JsonKey(name: 'voteUpUrl') final String? voteUpUrl,
-    @JsonKey(name: 'voteDownUrl') final String? voteDownUrl,
-    @JsonKey(name: 'postReviewUrl') final String? postReviewUrl,
-    @JsonKey(name: 'postQuoteUrl') final String? postQuoteUrl,
-    @JsonKey(name: 'deleteUrl') final String? deleteUrl,
-    final bool enabled,
-    @JsonKey(name: 'reviewSummaryUrl') final String? reviewSummaryUrl,
-    @JsonKey(name: 'summaryListRule') final String? summaryListRule,
-    @JsonKey(name: 'summaryParagraphIndexRule')
-    final String? summaryParagraphIndexRule,
-    @JsonKey(name: 'summaryParagraphDataRule')
-    final String? summaryParagraphDataRule,
-    @JsonKey(name: 'summaryCountRule') final String? summaryCountRule,
-    @JsonKey(name: 'reviewDetailUrl') final String? reviewDetailUrl,
-    @JsonKey(name: 'reviewDetailNextPageUrl')
-    final String? reviewDetailNextPageUrl,
-    @JsonKey(name: 'detailListRule') final String? detailListRule,
-    @JsonKey(name: 'detailIdRule') final String? detailIdRule,
-    @JsonKey(name: 'detailAvatarRule') final String? detailAvatarRule,
-    @JsonKey(name: 'detailNameRule') final String? detailNameRule,
-    @JsonKey(name: 'detailBadgeRule') final String? detailBadgeRule,
-    @JsonKey(name: 'detailContentRule') final String? detailContentRule,
-    @JsonKey(name: 'replyListRule') final String? replyListRule,
-    @JsonKey(name: 'replyIdRule') final String? replyIdRule,
-    @JsonKey(name: 'replyAvatarRule') final String? replyAvatarRule,
-    @JsonKey(name: 'replyNameRule') final String? replyNameRule,
-    @JsonKey(name: 'replyBadgeRule') final String? replyBadgeRule,
-    @JsonKey(name: 'replyContentRule') final String? replyContentRule,
-  }) = _$ReviewRuleImpl;
+  const factory _ReviewRule(
+          {@JsonKey(name: 'reviewUrl') final String? reviewUrl,
+          @JsonKey(name: 'avatarRule') final String? avatarRule,
+          @JsonKey(name: 'contentRule') final String? contentRule,
+          @JsonKey(name: 'postTimeRule') final String? postTimeRule,
+          @JsonKey(name: 'reviewQuoteUrl') final String? reviewQuoteUrl,
+          @JsonKey(name: 'voteUpUrl') final String? voteUpUrl,
+          @JsonKey(name: 'voteDownUrl') final String? voteDownUrl,
+          @JsonKey(name: 'postReviewUrl') final String? postReviewUrl,
+          @JsonKey(name: 'postQuoteUrl') final String? postQuoteUrl,
+          @JsonKey(name: 'deleteUrl') final String? deleteUrl,
+          final bool enabled,
+          @JsonKey(name: 'reviewSummaryUrl') final String? reviewSummaryUrl,
+          @JsonKey(name: 'summaryListRule') final String? summaryListRule,
+          @JsonKey(name: 'summaryParagraphIndexRule')
+          final String? summaryParagraphIndexRule,
+          @JsonKey(name: 'summaryParagraphDataRule')
+          final String? summaryParagraphDataRule,
+          @JsonKey(name: 'summaryCountRule') final String? summaryCountRule,
+          @JsonKey(name: 'reviewDetailUrl') final String? reviewDetailUrl,
+          @JsonKey(name: 'reviewDetailNextPageUrl')
+          final String? reviewDetailNextPageUrl,
+          @JsonKey(name: 'detailListRule') final String? detailListRule,
+          @JsonKey(name: 'detailIdRule') final String? detailIdRule,
+          @JsonKey(name: 'detailAvatarRule') final String? detailAvatarRule,
+          @JsonKey(name: 'detailNameRule') final String? detailNameRule,
+          @JsonKey(name: 'detailBadgeRule') final String? detailBadgeRule,
+          @JsonKey(name: 'detailContentRule') final String? detailContentRule,
+          @JsonKey(name: 'replyListRule') final String? replyListRule,
+          @JsonKey(name: 'replyIdRule') final String? replyIdRule,
+          @JsonKey(name: 'replyAvatarRule') final String? replyAvatarRule,
+          @JsonKey(name: 'replyNameRule') final String? replyNameRule,
+          @JsonKey(name: 'replyBadgeRule') final String? replyBadgeRule,
+          @JsonKey(name: 'replyContentRule') final String? replyContentRule}) =
+      _$ReviewRuleImpl;
 
   factory _ReviewRule.fromJson(Map<String, dynamic> json) =
       _$ReviewRuleImpl.fromJson;
@@ -2916,11 +2764,8 @@ abstract class _ReviewRule implements ReviewRule {
   @override
   @JsonKey(name: 'replyContentRule')
   String? get replyContentRule;
-
-  /// Create a copy of ReviewRule
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ReviewRuleImplCopyWith<_$ReviewRuleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2944,12 +2789,8 @@ mixin _$FlexChildStyle {
   @JsonKey(name: 'layout_justifySelf')
   String get layoutJustifySelf => throw _privateConstructorUsedError;
 
-  /// Serializes this FlexChildStyle to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of FlexChildStyle
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $FlexChildStyleCopyWith<FlexChildStyle> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -2957,18 +2798,16 @@ mixin _$FlexChildStyle {
 /// @nodoc
 abstract class $FlexChildStyleCopyWith<$Res> {
   factory $FlexChildStyleCopyWith(
-    FlexChildStyle value,
-    $Res Function(FlexChildStyle) then,
-  ) = _$FlexChildStyleCopyWithImpl<$Res, FlexChildStyle>;
+          FlexChildStyle value, $Res Function(FlexChildStyle) then) =
+      _$FlexChildStyleCopyWithImpl<$Res, FlexChildStyle>;
   @useResult
-  $Res call({
-    @JsonKey(name: 'layout_flexGrow') double layoutFlexGrow,
-    @JsonKey(name: 'layout_flexShrink') double layoutFlexShrink,
-    @JsonKey(name: 'layout_alignSelf') String layoutAlignSelf,
-    @JsonKey(name: 'layout_flexBasisPercent') double layoutFlexBasisPercent,
-    @JsonKey(name: 'layout_wrapBefore') bool layoutWrapBefore,
-    @JsonKey(name: 'layout_justifySelf') String layoutJustifySelf,
-  });
+  $Res call(
+      {@JsonKey(name: 'layout_flexGrow') double layoutFlexGrow,
+      @JsonKey(name: 'layout_flexShrink') double layoutFlexShrink,
+      @JsonKey(name: 'layout_alignSelf') String layoutAlignSelf,
+      @JsonKey(name: 'layout_flexBasisPercent') double layoutFlexBasisPercent,
+      @JsonKey(name: 'layout_wrapBefore') bool layoutWrapBefore,
+      @JsonKey(name: 'layout_justifySelf') String layoutJustifySelf});
 }
 
 /// @nodoc
@@ -2981,8 +2820,6 @@ class _$FlexChildStyleCopyWithImpl<$Res, $Val extends FlexChildStyle>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of FlexChildStyle
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -2993,55 +2830,50 @@ class _$FlexChildStyleCopyWithImpl<$Res, $Val extends FlexChildStyle>
     Object? layoutWrapBefore = null,
     Object? layoutJustifySelf = null,
   }) {
-    return _then(
-      _value.copyWith(
-            layoutFlexGrow: null == layoutFlexGrow
-                ? _value.layoutFlexGrow
-                : layoutFlexGrow // ignore: cast_nullable_to_non_nullable
-                      as double,
-            layoutFlexShrink: null == layoutFlexShrink
-                ? _value.layoutFlexShrink
-                : layoutFlexShrink // ignore: cast_nullable_to_non_nullable
-                      as double,
-            layoutAlignSelf: null == layoutAlignSelf
-                ? _value.layoutAlignSelf
-                : layoutAlignSelf // ignore: cast_nullable_to_non_nullable
-                      as String,
-            layoutFlexBasisPercent: null == layoutFlexBasisPercent
-                ? _value.layoutFlexBasisPercent
-                : layoutFlexBasisPercent // ignore: cast_nullable_to_non_nullable
-                      as double,
-            layoutWrapBefore: null == layoutWrapBefore
-                ? _value.layoutWrapBefore
-                : layoutWrapBefore // ignore: cast_nullable_to_non_nullable
-                      as bool,
-            layoutJustifySelf: null == layoutJustifySelf
-                ? _value.layoutJustifySelf
-                : layoutJustifySelf // ignore: cast_nullable_to_non_nullable
-                      as String,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      layoutFlexGrow: null == layoutFlexGrow
+          ? _value.layoutFlexGrow
+          : layoutFlexGrow // ignore: cast_nullable_to_non_nullable
+              as double,
+      layoutFlexShrink: null == layoutFlexShrink
+          ? _value.layoutFlexShrink
+          : layoutFlexShrink // ignore: cast_nullable_to_non_nullable
+              as double,
+      layoutAlignSelf: null == layoutAlignSelf
+          ? _value.layoutAlignSelf
+          : layoutAlignSelf // ignore: cast_nullable_to_non_nullable
+              as String,
+      layoutFlexBasisPercent: null == layoutFlexBasisPercent
+          ? _value.layoutFlexBasisPercent
+          : layoutFlexBasisPercent // ignore: cast_nullable_to_non_nullable
+              as double,
+      layoutWrapBefore: null == layoutWrapBefore
+          ? _value.layoutWrapBefore
+          : layoutWrapBefore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      layoutJustifySelf: null == layoutJustifySelf
+          ? _value.layoutJustifySelf
+          : layoutJustifySelf // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
   }
 }
 
 /// @nodoc
 abstract class _$$FlexChildStyleImplCopyWith<$Res>
     implements $FlexChildStyleCopyWith<$Res> {
-  factory _$$FlexChildStyleImplCopyWith(
-    _$FlexChildStyleImpl value,
-    $Res Function(_$FlexChildStyleImpl) then,
-  ) = __$$FlexChildStyleImplCopyWithImpl<$Res>;
+  factory _$$FlexChildStyleImplCopyWith(_$FlexChildStyleImpl value,
+          $Res Function(_$FlexChildStyleImpl) then) =
+      __$$FlexChildStyleImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    @JsonKey(name: 'layout_flexGrow') double layoutFlexGrow,
-    @JsonKey(name: 'layout_flexShrink') double layoutFlexShrink,
-    @JsonKey(name: 'layout_alignSelf') String layoutAlignSelf,
-    @JsonKey(name: 'layout_flexBasisPercent') double layoutFlexBasisPercent,
-    @JsonKey(name: 'layout_wrapBefore') bool layoutWrapBefore,
-    @JsonKey(name: 'layout_justifySelf') String layoutJustifySelf,
-  });
+  $Res call(
+      {@JsonKey(name: 'layout_flexGrow') double layoutFlexGrow,
+      @JsonKey(name: 'layout_flexShrink') double layoutFlexShrink,
+      @JsonKey(name: 'layout_alignSelf') String layoutAlignSelf,
+      @JsonKey(name: 'layout_flexBasisPercent') double layoutFlexBasisPercent,
+      @JsonKey(name: 'layout_wrapBefore') bool layoutWrapBefore,
+      @JsonKey(name: 'layout_justifySelf') String layoutJustifySelf});
 }
 
 /// @nodoc
@@ -3049,12 +2881,9 @@ class __$$FlexChildStyleImplCopyWithImpl<$Res>
     extends _$FlexChildStyleCopyWithImpl<$Res, _$FlexChildStyleImpl>
     implements _$$FlexChildStyleImplCopyWith<$Res> {
   __$$FlexChildStyleImplCopyWithImpl(
-    _$FlexChildStyleImpl _value,
-    $Res Function(_$FlexChildStyleImpl) _then,
-  ) : super(_value, _then);
+      _$FlexChildStyleImpl _value, $Res Function(_$FlexChildStyleImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of FlexChildStyle
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3065,49 +2894,46 @@ class __$$FlexChildStyleImplCopyWithImpl<$Res>
     Object? layoutWrapBefore = null,
     Object? layoutJustifySelf = null,
   }) {
-    return _then(
-      _$FlexChildStyleImpl(
-        layoutFlexGrow: null == layoutFlexGrow
-            ? _value.layoutFlexGrow
-            : layoutFlexGrow // ignore: cast_nullable_to_non_nullable
-                  as double,
-        layoutFlexShrink: null == layoutFlexShrink
-            ? _value.layoutFlexShrink
-            : layoutFlexShrink // ignore: cast_nullable_to_non_nullable
-                  as double,
-        layoutAlignSelf: null == layoutAlignSelf
-            ? _value.layoutAlignSelf
-            : layoutAlignSelf // ignore: cast_nullable_to_non_nullable
-                  as String,
-        layoutFlexBasisPercent: null == layoutFlexBasisPercent
-            ? _value.layoutFlexBasisPercent
-            : layoutFlexBasisPercent // ignore: cast_nullable_to_non_nullable
-                  as double,
-        layoutWrapBefore: null == layoutWrapBefore
-            ? _value.layoutWrapBefore
-            : layoutWrapBefore // ignore: cast_nullable_to_non_nullable
-                  as bool,
-        layoutJustifySelf: null == layoutJustifySelf
-            ? _value.layoutJustifySelf
-            : layoutJustifySelf // ignore: cast_nullable_to_non_nullable
-                  as String,
-      ),
-    );
+    return _then(_$FlexChildStyleImpl(
+      layoutFlexGrow: null == layoutFlexGrow
+          ? _value.layoutFlexGrow
+          : layoutFlexGrow // ignore: cast_nullable_to_non_nullable
+              as double,
+      layoutFlexShrink: null == layoutFlexShrink
+          ? _value.layoutFlexShrink
+          : layoutFlexShrink // ignore: cast_nullable_to_non_nullable
+              as double,
+      layoutAlignSelf: null == layoutAlignSelf
+          ? _value.layoutAlignSelf
+          : layoutAlignSelf // ignore: cast_nullable_to_non_nullable
+              as String,
+      layoutFlexBasisPercent: null == layoutFlexBasisPercent
+          ? _value.layoutFlexBasisPercent
+          : layoutFlexBasisPercent // ignore: cast_nullable_to_non_nullable
+              as double,
+      layoutWrapBefore: null == layoutWrapBefore
+          ? _value.layoutWrapBefore
+          : layoutWrapBefore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      layoutJustifySelf: null == layoutJustifySelf
+          ? _value.layoutJustifySelf
+          : layoutJustifySelf // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$FlexChildStyleImpl implements _FlexChildStyle {
-  const _$FlexChildStyleImpl({
-    @JsonKey(name: 'layout_flexGrow') this.layoutFlexGrow = 0,
-    @JsonKey(name: 'layout_flexShrink') this.layoutFlexShrink = 1.0,
-    @JsonKey(name: 'layout_alignSelf') this.layoutAlignSelf = 'auto',
-    @JsonKey(name: 'layout_flexBasisPercent')
-    this.layoutFlexBasisPercent = -1.0,
-    @JsonKey(name: 'layout_wrapBefore') this.layoutWrapBefore = false,
-    @JsonKey(name: 'layout_justifySelf') this.layoutJustifySelf = 'auto',
-  });
+  const _$FlexChildStyleImpl(
+      {@JsonKey(name: 'layout_flexGrow') this.layoutFlexGrow = 0,
+      @JsonKey(name: 'layout_flexShrink') this.layoutFlexShrink = 1.0,
+      @JsonKey(name: 'layout_alignSelf') this.layoutAlignSelf = 'auto',
+      @JsonKey(name: 'layout_flexBasisPercent')
+      this.layoutFlexBasisPercent = -1.0,
+      @JsonKey(name: 'layout_wrapBefore') this.layoutWrapBefore = false,
+      @JsonKey(name: 'layout_justifySelf') this.layoutJustifySelf = 'auto'});
 
   factory _$FlexChildStyleImpl.fromJson(Map<String, dynamic> json) =>
       _$$FlexChildStyleImplFromJson(json);
@@ -3155,45 +2981,42 @@ class _$FlexChildStyleImpl implements _FlexChildStyle {
                 other.layoutJustifySelf == layoutJustifySelf));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    layoutFlexGrow,
-    layoutFlexShrink,
-    layoutAlignSelf,
-    layoutFlexBasisPercent,
-    layoutWrapBefore,
-    layoutJustifySelf,
-  );
+      runtimeType,
+      layoutFlexGrow,
+      layoutFlexShrink,
+      layoutAlignSelf,
+      layoutFlexBasisPercent,
+      layoutWrapBefore,
+      layoutJustifySelf);
 
-  /// Create a copy of FlexChildStyle
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$FlexChildStyleImplCopyWith<_$FlexChildStyleImpl> get copyWith =>
       __$$FlexChildStyleImplCopyWithImpl<_$FlexChildStyleImpl>(
-        this,
-        _$identity,
-      );
+          this, _$identity);
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$FlexChildStyleImplToJson(this);
+    return _$$FlexChildStyleImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _FlexChildStyle implements FlexChildStyle {
-  const factory _FlexChildStyle({
-    @JsonKey(name: 'layout_flexGrow') final double layoutFlexGrow,
-    @JsonKey(name: 'layout_flexShrink') final double layoutFlexShrink,
-    @JsonKey(name: 'layout_alignSelf') final String layoutAlignSelf,
-    @JsonKey(name: 'layout_flexBasisPercent')
-    final double layoutFlexBasisPercent,
-    @JsonKey(name: 'layout_wrapBefore') final bool layoutWrapBefore,
-    @JsonKey(name: 'layout_justifySelf') final String layoutJustifySelf,
-  }) = _$FlexChildStyleImpl;
+  const factory _FlexChildStyle(
+      {@JsonKey(name: 'layout_flexGrow') final double layoutFlexGrow,
+      @JsonKey(name: 'layout_flexShrink') final double layoutFlexShrink,
+      @JsonKey(name: 'layout_alignSelf') final String layoutAlignSelf,
+      @JsonKey(name: 'layout_flexBasisPercent')
+      final double layoutFlexBasisPercent,
+      @JsonKey(name: 'layout_wrapBefore') final bool layoutWrapBefore,
+      @JsonKey(name: 'layout_justifySelf')
+      final String layoutJustifySelf}) = _$FlexChildStyleImpl;
 
   factory _FlexChildStyle.fromJson(Map<String, dynamic> json) =
       _$FlexChildStyleImpl.fromJson;
@@ -3216,11 +3039,8 @@ abstract class _FlexChildStyle implements FlexChildStyle {
   @override
   @JsonKey(name: 'layout_justifySelf')
   String get layoutJustifySelf;
-
-  /// Create a copy of FlexChildStyle
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$FlexChildStyleImplCopyWith<_$FlexChildStyleImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -3242,12 +3062,8 @@ mixin _$ExploreKind {
   String? get viewName => throw _privateConstructorUsedError;
   FlexChildStyle? get style => throw _privateConstructorUsedError;
 
-  /// Serializes this ExploreKind to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of ExploreKind
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $ExploreKindCopyWith<ExploreKind> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -3255,20 +3071,18 @@ mixin _$ExploreKind {
 /// @nodoc
 abstract class $ExploreKindCopyWith<$Res> {
   factory $ExploreKindCopyWith(
-    ExploreKind value,
-    $Res Function(ExploreKind) then,
-  ) = _$ExploreKindCopyWithImpl<$Res, ExploreKind>;
+          ExploreKind value, $Res Function(ExploreKind) then) =
+      _$ExploreKindCopyWithImpl<$Res, ExploreKind>;
   @useResult
-  $Res call({
-    String title,
-    String? url,
-    String type,
-    String? action,
-    List<String?>? chars,
-    @JsonKey(name: 'default') String? defaultValue,
-    @JsonKey(name: 'viewName') String? viewName,
-    FlexChildStyle? style,
-  });
+  $Res call(
+      {String title,
+      String? url,
+      String type,
+      String? action,
+      List<String?>? chars,
+      @JsonKey(name: 'default') String? defaultValue,
+      @JsonKey(name: 'viewName') String? viewName,
+      FlexChildStyle? style});
 
   $FlexChildStyleCopyWith<$Res>? get style;
 }
@@ -3283,8 +3097,6 @@ class _$ExploreKindCopyWithImpl<$Res, $Val extends ExploreKind>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of ExploreKind
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3297,47 +3109,42 @@ class _$ExploreKindCopyWithImpl<$Res, $Val extends ExploreKind>
     Object? viewName = freezed,
     Object? style = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            title: null == title
-                ? _value.title
-                : title // ignore: cast_nullable_to_non_nullable
-                      as String,
-            url: freezed == url
-                ? _value.url
-                : url // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            type: null == type
-                ? _value.type
-                : type // ignore: cast_nullable_to_non_nullable
-                      as String,
-            action: freezed == action
-                ? _value.action
-                : action // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            chars: freezed == chars
-                ? _value.chars
-                : chars // ignore: cast_nullable_to_non_nullable
-                      as List<String?>?,
-            defaultValue: freezed == defaultValue
-                ? _value.defaultValue
-                : defaultValue // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            viewName: freezed == viewName
-                ? _value.viewName
-                : viewName // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            style: freezed == style
-                ? _value.style
-                : style // ignore: cast_nullable_to_non_nullable
-                      as FlexChildStyle?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: freezed == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String?,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      action: freezed == action
+          ? _value.action
+          : action // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chars: freezed == chars
+          ? _value.chars
+          : chars // ignore: cast_nullable_to_non_nullable
+              as List<String?>?,
+      defaultValue: freezed == defaultValue
+          ? _value.defaultValue
+          : defaultValue // ignore: cast_nullable_to_non_nullable
+              as String?,
+      viewName: freezed == viewName
+          ? _value.viewName
+          : viewName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      style: freezed == style
+          ? _value.style
+          : style // ignore: cast_nullable_to_non_nullable
+              as FlexChildStyle?,
+    ) as $Val);
   }
 
-  /// Create a copy of ExploreKind
-  /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
   $FlexChildStyleCopyWith<$Res>? get style {
@@ -3355,21 +3162,19 @@ class _$ExploreKindCopyWithImpl<$Res, $Val extends ExploreKind>
 abstract class _$$ExploreKindImplCopyWith<$Res>
     implements $ExploreKindCopyWith<$Res> {
   factory _$$ExploreKindImplCopyWith(
-    _$ExploreKindImpl value,
-    $Res Function(_$ExploreKindImpl) then,
-  ) = __$$ExploreKindImplCopyWithImpl<$Res>;
+          _$ExploreKindImpl value, $Res Function(_$ExploreKindImpl) then) =
+      __$$ExploreKindImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String title,
-    String? url,
-    String type,
-    String? action,
-    List<String?>? chars,
-    @JsonKey(name: 'default') String? defaultValue,
-    @JsonKey(name: 'viewName') String? viewName,
-    FlexChildStyle? style,
-  });
+  $Res call(
+      {String title,
+      String? url,
+      String type,
+      String? action,
+      List<String?>? chars,
+      @JsonKey(name: 'default') String? defaultValue,
+      @JsonKey(name: 'viewName') String? viewName,
+      FlexChildStyle? style});
 
   @override
   $FlexChildStyleCopyWith<$Res>? get style;
@@ -3380,12 +3185,9 @@ class __$$ExploreKindImplCopyWithImpl<$Res>
     extends _$ExploreKindCopyWithImpl<$Res, _$ExploreKindImpl>
     implements _$$ExploreKindImplCopyWith<$Res> {
   __$$ExploreKindImplCopyWithImpl(
-    _$ExploreKindImpl _value,
-    $Res Function(_$ExploreKindImpl) _then,
-  ) : super(_value, _then);
+      _$ExploreKindImpl _value, $Res Function(_$ExploreKindImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of ExploreKind
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3398,58 +3200,56 @@ class __$$ExploreKindImplCopyWithImpl<$Res>
     Object? viewName = freezed,
     Object? style = freezed,
   }) {
-    return _then(
-      _$ExploreKindImpl(
-        title: null == title
-            ? _value.title
-            : title // ignore: cast_nullable_to_non_nullable
-                  as String,
-        url: freezed == url
-            ? _value.url
-            : url // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        type: null == type
-            ? _value.type
-            : type // ignore: cast_nullable_to_non_nullable
-                  as String,
-        action: freezed == action
-            ? _value.action
-            : action // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        chars: freezed == chars
-            ? _value._chars
-            : chars // ignore: cast_nullable_to_non_nullable
-                  as List<String?>?,
-        defaultValue: freezed == defaultValue
-            ? _value.defaultValue
-            : defaultValue // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        viewName: freezed == viewName
-            ? _value.viewName
-            : viewName // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        style: freezed == style
-            ? _value.style
-            : style // ignore: cast_nullable_to_non_nullable
-                  as FlexChildStyle?,
-      ),
-    );
+    return _then(_$ExploreKindImpl(
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: freezed == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String?,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      action: freezed == action
+          ? _value.action
+          : action // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chars: freezed == chars
+          ? _value._chars
+          : chars // ignore: cast_nullable_to_non_nullable
+              as List<String?>?,
+      defaultValue: freezed == defaultValue
+          ? _value.defaultValue
+          : defaultValue // ignore: cast_nullable_to_non_nullable
+              as String?,
+      viewName: freezed == viewName
+          ? _value.viewName
+          : viewName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      style: freezed == style
+          ? _value.style
+          : style // ignore: cast_nullable_to_non_nullable
+              as FlexChildStyle?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$ExploreKindImpl implements _ExploreKind {
-  const _$ExploreKindImpl({
-    this.title = '',
-    this.url,
-    this.type = 'url',
-    this.action,
-    final List<String?>? chars,
-    @JsonKey(name: 'default') this.defaultValue,
-    @JsonKey(name: 'viewName') this.viewName,
-    this.style,
-  }) : _chars = chars;
+  const _$ExploreKindImpl(
+      {this.title = '',
+      this.url,
+      this.type = 'url',
+      this.action,
+      final List<String?>? chars,
+      @JsonKey(name: 'default') this.defaultValue,
+      @JsonKey(name: 'viewName') this.viewName,
+      this.style})
+      : _chars = chars;
 
   factory _$ExploreKindImpl.fromJson(Map<String, dynamic> json) =>
       _$$ExploreKindImplFromJson(json);
@@ -3505,23 +3305,20 @@ class _$ExploreKindImpl implements _ExploreKind {
             (identical(other.style, style) || other.style == style));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    title,
-    url,
-    type,
-    action,
-    const DeepCollectionEquality().hash(_chars),
-    defaultValue,
-    viewName,
-    style,
-  );
+      runtimeType,
+      title,
+      url,
+      type,
+      action,
+      const DeepCollectionEquality().hash(_chars),
+      defaultValue,
+      viewName,
+      style);
 
-  /// Create a copy of ExploreKind
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$ExploreKindImplCopyWith<_$ExploreKindImpl> get copyWith =>
@@ -3529,21 +3326,22 @@ class _$ExploreKindImpl implements _ExploreKind {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$ExploreKindImplToJson(this);
+    return _$$ExploreKindImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _ExploreKind implements ExploreKind {
-  const factory _ExploreKind({
-    final String title,
-    final String? url,
-    final String type,
-    final String? action,
-    final List<String?>? chars,
-    @JsonKey(name: 'default') final String? defaultValue,
-    @JsonKey(name: 'viewName') final String? viewName,
-    final FlexChildStyle? style,
-  }) = _$ExploreKindImpl;
+  const factory _ExploreKind(
+      {final String title,
+      final String? url,
+      final String type,
+      final String? action,
+      final List<String?>? chars,
+      @JsonKey(name: 'default') final String? defaultValue,
+      @JsonKey(name: 'viewName') final String? viewName,
+      final FlexChildStyle? style}) = _$ExploreKindImpl;
 
   factory _ExploreKind.fromJson(Map<String, dynamic> json) =
       _$ExploreKindImpl.fromJson;
@@ -3566,11 +3364,8 @@ abstract class _ExploreKind implements ExploreKind {
   String? get viewName;
   @override
   FlexChildStyle? get style;
-
-  /// Create a copy of ExploreKind
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$ExploreKindImplCopyWith<_$ExploreKindImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -3591,12 +3386,8 @@ mixin _$RowUi {
   String? get viewName => throw _privateConstructorUsedError;
   FlexChildStyle? get style => throw _privateConstructorUsedError;
 
-  /// Serializes this RowUi to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of RowUi
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $RowUiCopyWith<RowUi> get copyWith => throw _privateConstructorUsedError;
 }
 
@@ -3605,15 +3396,14 @@ abstract class $RowUiCopyWith<$Res> {
   factory $RowUiCopyWith(RowUi value, $Res Function(RowUi) then) =
       _$RowUiCopyWithImpl<$Res, RowUi>;
   @useResult
-  $Res call({
-    String name,
-    String type,
-    String? action,
-    List<String?>? chars,
-    @JsonKey(name: 'default') String? defaultValue,
-    @JsonKey(name: 'viewName') String? viewName,
-    FlexChildStyle? style,
-  });
+  $Res call(
+      {String name,
+      String type,
+      String? action,
+      List<String?>? chars,
+      @JsonKey(name: 'default') String? defaultValue,
+      @JsonKey(name: 'viewName') String? viewName,
+      FlexChildStyle? style});
 
   $FlexChildStyleCopyWith<$Res>? get style;
 }
@@ -3628,8 +3418,6 @@ class _$RowUiCopyWithImpl<$Res, $Val extends RowUi>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of RowUi
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3641,43 +3429,38 @@ class _$RowUiCopyWithImpl<$Res, $Val extends RowUi>
     Object? viewName = freezed,
     Object? style = freezed,
   }) {
-    return _then(
-      _value.copyWith(
-            name: null == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String,
-            type: null == type
-                ? _value.type
-                : type // ignore: cast_nullable_to_non_nullable
-                      as String,
-            action: freezed == action
-                ? _value.action
-                : action // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            chars: freezed == chars
-                ? _value.chars
-                : chars // ignore: cast_nullable_to_non_nullable
-                      as List<String?>?,
-            defaultValue: freezed == defaultValue
-                ? _value.defaultValue
-                : defaultValue // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            viewName: freezed == viewName
-                ? _value.viewName
-                : viewName // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            style: freezed == style
-                ? _value.style
-                : style // ignore: cast_nullable_to_non_nullable
-                      as FlexChildStyle?,
-          )
-          as $Val,
-    );
+    return _then(_value.copyWith(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      action: freezed == action
+          ? _value.action
+          : action // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chars: freezed == chars
+          ? _value.chars
+          : chars // ignore: cast_nullable_to_non_nullable
+              as List<String?>?,
+      defaultValue: freezed == defaultValue
+          ? _value.defaultValue
+          : defaultValue // ignore: cast_nullable_to_non_nullable
+              as String?,
+      viewName: freezed == viewName
+          ? _value.viewName
+          : viewName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      style: freezed == style
+          ? _value.style
+          : style // ignore: cast_nullable_to_non_nullable
+              as FlexChildStyle?,
+    ) as $Val);
   }
 
-  /// Create a copy of RowUi
-  /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
   $FlexChildStyleCopyWith<$Res>? get style {
@@ -3694,20 +3477,18 @@ class _$RowUiCopyWithImpl<$Res, $Val extends RowUi>
 /// @nodoc
 abstract class _$$RowUiImplCopyWith<$Res> implements $RowUiCopyWith<$Res> {
   factory _$$RowUiImplCopyWith(
-    _$RowUiImpl value,
-    $Res Function(_$RowUiImpl) then,
-  ) = __$$RowUiImplCopyWithImpl<$Res>;
+          _$RowUiImpl value, $Res Function(_$RowUiImpl) then) =
+      __$$RowUiImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({
-    String name,
-    String type,
-    String? action,
-    List<String?>? chars,
-    @JsonKey(name: 'default') String? defaultValue,
-    @JsonKey(name: 'viewName') String? viewName,
-    FlexChildStyle? style,
-  });
+  $Res call(
+      {String name,
+      String type,
+      String? action,
+      List<String?>? chars,
+      @JsonKey(name: 'default') String? defaultValue,
+      @JsonKey(name: 'viewName') String? viewName,
+      FlexChildStyle? style});
 
   @override
   $FlexChildStyleCopyWith<$Res>? get style;
@@ -3718,12 +3499,9 @@ class __$$RowUiImplCopyWithImpl<$Res>
     extends _$RowUiCopyWithImpl<$Res, _$RowUiImpl>
     implements _$$RowUiImplCopyWith<$Res> {
   __$$RowUiImplCopyWithImpl(
-    _$RowUiImpl _value,
-    $Res Function(_$RowUiImpl) _then,
-  ) : super(_value, _then);
+      _$RowUiImpl _value, $Res Function(_$RowUiImpl) _then)
+      : super(_value, _then);
 
-  /// Create a copy of RowUi
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -3735,53 +3513,51 @@ class __$$RowUiImplCopyWithImpl<$Res>
     Object? viewName = freezed,
     Object? style = freezed,
   }) {
-    return _then(
-      _$RowUiImpl(
-        name: null == name
-            ? _value.name
-            : name // ignore: cast_nullable_to_non_nullable
-                  as String,
-        type: null == type
-            ? _value.type
-            : type // ignore: cast_nullable_to_non_nullable
-                  as String,
-        action: freezed == action
-            ? _value.action
-            : action // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        chars: freezed == chars
-            ? _value._chars
-            : chars // ignore: cast_nullable_to_non_nullable
-                  as List<String?>?,
-        defaultValue: freezed == defaultValue
-            ? _value.defaultValue
-            : defaultValue // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        viewName: freezed == viewName
-            ? _value.viewName
-            : viewName // ignore: cast_nullable_to_non_nullable
-                  as String?,
-        style: freezed == style
-            ? _value.style
-            : style // ignore: cast_nullable_to_non_nullable
-                  as FlexChildStyle?,
-      ),
-    );
+    return _then(_$RowUiImpl(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      action: freezed == action
+          ? _value.action
+          : action // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chars: freezed == chars
+          ? _value._chars
+          : chars // ignore: cast_nullable_to_non_nullable
+              as List<String?>?,
+      defaultValue: freezed == defaultValue
+          ? _value.defaultValue
+          : defaultValue // ignore: cast_nullable_to_non_nullable
+              as String?,
+      viewName: freezed == viewName
+          ? _value.viewName
+          : viewName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      style: freezed == style
+          ? _value.style
+          : style // ignore: cast_nullable_to_non_nullable
+              as FlexChildStyle?,
+    ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$RowUiImpl implements _RowUi {
-  const _$RowUiImpl({
-    this.name = '',
-    this.type = 'text',
-    this.action,
-    final List<String?>? chars,
-    @JsonKey(name: 'default') this.defaultValue,
-    @JsonKey(name: 'viewName') this.viewName,
-    this.style,
-  }) : _chars = chars;
+  const _$RowUiImpl(
+      {this.name = '',
+      this.type = 'text',
+      this.action,
+      final List<String?>? chars,
+      @JsonKey(name: 'default') this.defaultValue,
+      @JsonKey(name: 'viewName') this.viewName,
+      this.style})
+      : _chars = chars;
 
   factory _$RowUiImpl.fromJson(Map<String, dynamic> json) =>
       _$$RowUiImplFromJson(json);
@@ -3834,22 +3610,19 @@ class _$RowUiImpl implements _RowUi {
             (identical(other.style, style) || other.style == style));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-    runtimeType,
-    name,
-    type,
-    action,
-    const DeepCollectionEquality().hash(_chars),
-    defaultValue,
-    viewName,
-    style,
-  );
+      runtimeType,
+      name,
+      type,
+      action,
+      const DeepCollectionEquality().hash(_chars),
+      defaultValue,
+      viewName,
+      style);
 
-  /// Create a copy of RowUi
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$RowUiImplCopyWith<_$RowUiImpl> get copyWith =>
@@ -3857,20 +3630,21 @@ class _$RowUiImpl implements _RowUi {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$RowUiImplToJson(this);
+    return _$$RowUiImplToJson(
+      this,
+    );
   }
 }
 
 abstract class _RowUi implements RowUi {
-  const factory _RowUi({
-    final String name,
-    final String type,
-    final String? action,
-    final List<String?>? chars,
-    @JsonKey(name: 'default') final String? defaultValue,
-    @JsonKey(name: 'viewName') final String? viewName,
-    final FlexChildStyle? style,
-  }) = _$RowUiImpl;
+  const factory _RowUi(
+      {final String name,
+      final String type,
+      final String? action,
+      final List<String?>? chars,
+      @JsonKey(name: 'default') final String? defaultValue,
+      @JsonKey(name: 'viewName') final String? viewName,
+      final FlexChildStyle? style}) = _$RowUiImpl;
 
   factory _RowUi.fromJson(Map<String, dynamic> json) = _$RowUiImpl.fromJson;
 
@@ -3890,11 +3664,8 @@ abstract class _RowUi implements RowUi {
   String? get viewName;
   @override
   FlexChildStyle? get style;
-
-  /// Create a copy of RowUi
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$RowUiImplCopyWith<_$RowUiImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

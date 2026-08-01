@@ -204,7 +204,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     // 保持列表布局确保安卓保真，平板宽屏时增加水平内边距提升可读性
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isTablet = constraints.maxWidth >= Responsive.tabletMinWidth;
+        final isTablet = constraints.maxWidth >= Responsive.compactMax;
         final horizontalPadding = isTablet ? 24.0 : 8.0;
         return ListView.builder(
           padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 4),
