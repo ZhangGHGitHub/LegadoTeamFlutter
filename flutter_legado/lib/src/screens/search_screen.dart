@@ -91,7 +91,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           textInputAction: TextInputAction.search,
           onSubmitted: (value) =>
               ref.read(searchNotifierProvider.notifier).search(value),
-          onChanged: (_) => setState(() {}),
+          // 实时驱动联想过滤（对标原版 SearchActivity.upHistory）
+          onChanged: (value) =>
+              ref.read(searchNotifierProvider.notifier).setInput(value),
         ),
       ),
       actions: [
@@ -325,8 +327,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  /// 搜索历史页面（无结果时显示，对标安卓原版「搜索历史」区域）
+  /// 搜索历史/联想区（无结果时显示，对标安卓原版「输入帮助」区域）
+  ///
+  /// 输入为空时展示全部历史；输入非空时展示前缀联想词（[SearchState.suggestions]）。
   Widget _buildSearchHistory(BuildContext context, SearchState state) {
+    final suggestions = state.suggestions;
     if (state.searchHistory.isEmpty) {
       // 安卓原版：无历史时显示纯灰字提示
       return const EmptyState(
@@ -362,19 +367,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: state.searchHistory.map((keyword) {
-                return ActionChip(
-                  label: Text(keyword),
-                  onPressed: () {
-                    _searchController.text = keyword;
-                    ref.read(searchNotifierProvider.notifier).search(keyword);
-                  },
-                );
-              }).toList(),
-            ),
+            child: suggestions.isEmpty
+                // 联想无匹配（原版：联想列表为空时隐藏历史项）
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 24),
+                    child: Center(
+                      child: Text(
+                        '无匹配的历史关键词',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
+                    ),
+                  )
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: suggestions.map((keyword) {
+                      return ActionChip(
+                        label: Text(keyword),
+                        onPressed: () {
+                          _searchController.text = keyword;
+                          ref
+                              .read(searchNotifierProvider.notifier)
+                              .setInput(keyword);
+                          ref
+                              .read(searchNotifierProvider.notifier)
+                              .search(keyword);
+                        },
+                      );
+                    }).toList(),
+                  ),
           ),
         ),
       ],

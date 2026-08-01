@@ -1,6 +1,6 @@
 // SearchNotifier 单元测试
 //
-// 覆盖：初始状态/搜索历史（去重置顶截断持久化）/书源筛选/分组筛选/
+// 覆盖：初始状态/搜索历史（去重置顶截断持久化）/联想（前缀过滤）/书源筛选/分组筛选/
 // search（空关键词/正常/异常/trim/sourceUrls 传递/分组解析/多组名/空解析/降级/搜全部）/isEmpty
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -113,6 +113,66 @@ void main() {
       await pumpInit(); // build() 自动 loadHistory
 
       expect(readState().searchHistory, equals(['历史1', '历史2']));
+    });
+  });
+
+  group('SearchNotifier 联想（前缀过滤）', () {
+    test('setInput 更新 inputText', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      readNotifier().setInput('斗破');
+      expect(readState().inputText, equals('斗破'));
+    });
+
+    test('setInput 相同值不重复更新状态', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      readNotifier().setInput('a');
+      final before = readState();
+      readNotifier().setInput('a');
+      expect(identical(before, readState()), isTrue);
+    });
+
+    test('输入为空时 suggestions 返回全部历史', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().addToHistory('斗破苍穹');
+      await readNotifier().addToHistory('完美世界');
+      expect(readState().suggestions, equals(['完美世界', '斗破苍穹']));
+    });
+
+    test('输入非空时 suggestions 返回前缀匹配项', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().addToHistory('斗破苍穹');
+      await readNotifier().addToHistory('斗战神');
+      await readNotifier().addToHistory('完美世界');
+
+      readNotifier().setInput('斗');
+      expect(readState().suggestions, containsAll(['斗战神', '斗破苍穹']));
+      expect(readState().suggestions, isNot(contains('完美世界')));
+    });
+
+    test('suggestions 对输入做 trim', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().addToHistory('遮天');
+      readNotifier().setInput('  遮  ');
+      expect(readState().suggestions, equals(['遮天']));
+    });
+
+    test('无匹配前缀时 suggestions 为空', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().addToHistory('斗破苍穹');
+      readNotifier().setInput('xyz');
+      expect(readState().suggestions, isEmpty);
     });
   });
 

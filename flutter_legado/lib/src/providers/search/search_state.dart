@@ -31,6 +31,9 @@ class SearchState with _$SearchState {
 
     /// 搜索历史（最近 20 条，持久化于 SharedPreferences）
     @Default([]) List<String> searchHistory,
+
+    /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）
+    @Default('') String inputText,
   }) = _SearchState;
 }
 
@@ -44,4 +47,18 @@ extension SearchStateDisplay on SearchState {
 
   /// 是否存在筛选条件（分组或书源）
   bool get hasFilter => selectedSourceUrls.isNotEmpty || selectedGroups.isNotEmpty;
+
+  /// 联想/历史建议列表
+  ///
+  /// 对标 Android 原版 SearchActivity.upHistory 的前缀联想行为：
+  /// - 输入为空 → 返回全部历史（flowByTime）
+  /// - 输入非空 → 返回以输入为前缀的历史关键词（flowSearch 前缀匹配）
+  ///
+  /// 说明：原版前缀匹配由 DB 查询完成；当前 Rust FFI 未暴露前缀搜索，
+  /// 故在客户端对已有历史做前缀过滤（行为等价，待 Rust 轨暴露 FFI 后切换）。
+  List<String> get suggestions {
+    final input = inputText.trim();
+    if (input.isEmpty) return searchHistory;
+    return searchHistory.where((w) => w.startsWith(input)).toList();
+  }
 }

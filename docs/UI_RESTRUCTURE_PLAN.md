@@ -464,7 +464,7 @@ String mapApiError(Object e) {
 | 3.1 实现 `ExploreNotifier`（调用 exploreParseUrl/exploreFetchBooks） | providers/explore/ | 分类解析正确 |
 | 3.2 发现页：书源列表 + 分类 Tab + 书籍网格 | explore_screen 重构 | 对齐 ExploreFragment.kt |
 | 3.3 搜索：SearchNotifier 迁移（searchBooks + 加载态 + 结果展示） | search_screen 重构 | 搜索结果与原版一致 |
-| 3.4 搜索历史 + 联想 | 调用 BookApi 搜索历史接口 | 交互流畅 |
+| 3.4 搜索历史 + 联想 | SearchNotifier 联想（客户端前缀过滤） | 输入实时联想，对标原版 flowSearch |
 | 3.5 发现页双栏（平板） | 响应式 | 左侧源/右侧内容 |
 
 > 边界说明：多源搜索的并行调度、结果合并、去重均由 Rust `searchMulti()` 完成。
@@ -477,6 +477,17 @@ String mapApiError(Object e) {
 > 不确定加载态。经决议：Phase 3.3 保持 `searchBooks`（结构化返回、行为不变）仅做 Riverpod 迁移；
 > **渐进搜索 + x/y 进度需 Rust 轨新增 `Stream<SearchResult>` FFI API**（flutter_rust_bridge 支持），
 > 属 FFI 契约变更，登记为跨轨需求待 Rust 轨排期，UI 轨不触碰。
+
+> **3.4 实施决议（跨轨需求登记）**：原版 Android 搜索历史为 DB 后端（`searchKeywordDao`，实体
+> `SearchKeyword(word, usage, lastUseTime)`），联想为 `flowSearch(key)` 前缀匹配 + `bookDao.flowSearch`
+> 书架内搜索。调研发现两个跨轨缺口：① Rust `get_search_history` 返回 DTO 字段为 `keyword/book_name/time`，
+> 与 Dart `SearchKeyword` 模型（`word/usage/lastUseTime`，对齐原版实体）不匹配，`fromJson` 解析后 `word`
+> 恒为空（真实 FFI 历史显示为空的既有 bug，同样影响书内搜索历史）；② 前缀联想所需的
+> `SearchKeywordRepository::find_by_prefix` 未暴露至 FFI bridge。
+> 经决议：Phase 3.4 历史存储保持 SharedPreferences（与重构前 Flutter 一致、真实 FFI 模式亦可用、不回归）；
+> 联想以客户端对已有历史做前缀过滤实现（对标原版 `flowSearch` UX，无需新 FFI）；
+> **Rust 字段对齐 + `searchHistoryByPrefix` FFI 暴露**已登记至 `API_CONTRACT.md` 需求区，
+> 待 Rust 轨交付后再将历史/联想后端切换为 BookApi。
 
 ### Phase 4：设置 / 书源管理（第 8–9 周）
 

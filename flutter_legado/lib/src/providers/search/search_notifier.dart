@@ -15,6 +15,7 @@ export 'search_state.dart';
 /// - 管理 UI 状态（loading/error/results 三态）
 /// - 管理精准搜索筛选（书源/分组选择 → 解析为 sourceUrls）
 /// - 管理搜索历史（SharedPreferences 持久化）
+/// - 管理输入联想（客户端前缀过滤，对标原版 flowSearch）
 /// - 禁止包含搜索匹配/合并逻辑（由 Rust searchBooks 完成）
 ///
 /// 说明：原版 Android 为逐源流式搜索 + x/y 进度（协程 flow），
@@ -57,6 +58,12 @@ class SearchNotifier extends Notifier<SearchState> {
     state = state.copyWith(searchHistory: []);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_historyKey);
+  }
+
+  /// 更新输入框实时文本（驱动联想过滤，见 [SearchState.suggestions]）
+  void setInput(String text) {
+    if (state.inputText == text) return;
+    state = state.copyWith(inputText: text);
   }
 
   // ===== 搜索 =====

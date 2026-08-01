@@ -50,7 +50,7 @@
 
 ## 2. 方法清单
 
-> 共 **34 个模块**、**158 个方法**（与 `book_api.dart` 一一对应）。
+> 共 **35 个模块**、**170 个方法**（与 `book_api.dart` 一一对应）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -144,13 +144,14 @@
 | `deleteReplaceRule(int id)` | id | `Future<void>` | 删除替换规则 |
 | `setReplaceRuleEnabled(int id, bool enabled)` | id, enabled | `Future<void>` | 启用/禁用替换规则 |
 
-### 2.9 阅读器操作（6 个方法）
+### 2.9 阅读器操作（7 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `getChapters(String bookUrl)` | bookUrl | `Future<List<BookChapter>>` | 获取章节列表 ⚠️ 双兼容点 |
 | `getChapterContent(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 获取章节正文内容 |
 | `getChapterContentRaw(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 获取章节正文（不应用替换规则，用于内容搜索，与 Android replaceEnabled=false 对齐） |
+| `getChapterContentFull(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 一次调用获取章节正文（合并 getChapterContent + fetchChapterContent，在线书籍自动网络抓取，始终返回纯正文） |
 | `fetchChapterContent(String bookUrl, String chapterUrl, String sourceUrl)` | bookUrl, chapterUrl, sourceUrl | `Future<String>` | 从网络获取章节正文 |
 | `updateReadingProgress({required String bookUrl, required int chapterIndex, required int chapterPos})` | bookUrl, chapterIndex, chapterPos | `Future<void>` | 更新阅读进度 |
 | `refreshToc(String bookUrl, String sourceUrl)` | bookUrl, sourceUrl | `Future<List<BookChapter>>` | 从网络刷新书籍目录 ⚠️ 双兼容点 |
@@ -352,7 +353,7 @@
 | `bookExport({required String bookUrl, required String format, required bool includeToc})` | bookUrl, format, includeToc | `Future<Map<String, dynamic>>` | 导出书籍，返回 ExportResult JSON |
 | `bookExportInfo({required String bookUrl, required String format})` | bookUrl, format | `Future<Map<String, dynamic>>` | 获取导出预览信息 |
 
-### 2.32 自动任务（auto_task FFI）（9 个方法）
+### 2.32 自动任务（auto_task FFI）（14 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -365,6 +366,11 @@
 | `autoTaskCanRefreshBookToc({required bool canUpdate, required bool respectCanUpdate})` | canUpdate, respectCanUpdate | `Future<bool>` | 判断书籍是否允许刷新目录 |
 | `autoTaskFindBookUpdateTask({required String tasksJson, required String bookUrl, required String bookName, required String bookAuthor})` | tasksJson, bookUrl, bookName, bookAuthor | `Future<Map<String, dynamic>?>` | 查找书籍更新任务 |
 | `autoTaskNextDueAt({required String cron, required int fromMs})` | cron, fromMs | `Future<int>` | 解析 cron 表达式计算下次执行时间 |
+| `autoTaskListRules()` | 无 | `Future<List<Map<String, dynamic>>>` | 列出所有自动任务规则（数据库 CRUD） |
+| `autoTaskCreateRule({required String ruleJson})` | ruleJson | `Future<String>` | 创建自动任务规则（数据库 CRUD） |
+| `autoTaskUpdateRule({required String ruleJson})` | ruleJson | `Future<void>` | 更新自动任务规则（数据库 CRUD） |
+| `autoTaskDeleteRule({required String id})` | id | `Future<void>` | 删除自动任务规则（数据库 CRUD） |
+| `autoTaskFindRuleById({required String id})` | id | `Future<Map<String, dynamic>?>` | 根据 ID 查询自动任务规则（数据库 CRUD） |
 
 ### 2.33 音频播放模式（audio FFI）（2 个方法）
 
@@ -385,6 +391,17 @@
 | `archiveConvertEncoding({required String filePath, required String fromEncoding, required String toEncoding})` | filePath, fromEncoding, toEncoding | `Future<Map<String, dynamic>>` | 转换 TXT 文件编码 |
 | `archiveIsArchive({required String filePath})` | filePath | `Future<bool>` | 判断文件是否为压缩包格式 |
 
+### 2.35 RSS 已读记录（6 个方法）
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `rssMarkRead(String origin, String title, {String? link})` | origin, title, link(可选) | `Future<void>` | 标记 RSS 文章为已读 |
+| `rssIsRead(String link)` | link | `Future<bool>` | 判断文章是否已读（按 link 匹配） |
+| `rssIsReadByTitle(String origin, String title)` | origin, title | `Future<bool>` | 判断文章是否已读（按 origin+title 匹配） |
+| `rssClearReadRecords()` | 无 | `Future<void>` | 清空所有已读记录 |
+| `rssReadRecordCount()` | 无 | `Future<int>` | 获取已读记录总数 |
+| `rssListReadRecords({int? limit})` | limit(可选，默认100) | `Future<List<RssReadRecordRow>>` | 获取已读记录列表（按 readTime 降序） |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -393,7 +410,20 @@
 
 | 方法名 | 入参 | 期望返回 | 登记日期 | 状态 |
 |--------|------|----------|----------|------|
-| （暂无） | — | — | — | — |
+| `getSearchHistory`（字段修复） | 不变 | `List<SearchKeyword>` 序列化字段对齐 Dart 模型：`word` / `usage` / `lastUseTime` | 2026-08-01 | 待实现 |
+| `searchHistoryByPrefix`（新增） | `String prefix, {int limit = 20}` | `Future<List<String>>`（前缀匹配的历史关键词，对标 Android `searchKeywordDao.flowSearch`） | 2026-08-01 | 待实现 |
+
+> **需求 1：getSearchHistory 字段修复（Bug）**
+> 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
+> 而 Dart `SearchKeyword` 模型（对齐 Android 原版实体）解析 `word` / `usage` / `lastUseTime`。
+> 字段名不匹配导致 `SearchKeyword.fromJson` 解析后 `word` 恒为空字符串，
+> 影响全局搜索历史与书内搜索历史（`search_content_screen.dart`）的真实 FFI 显示。
+> 请 Rust 轨将 `SearchHistoryItem` 序列化字段对齐 Dart 模型（`word` / `usage` / `lastUseTime`）。
+>
+> **需求 2：searchHistoryByPrefix 前缀联想**
+> Rust 仓储层已有 `SearchKeywordRepository::find_by_prefix`（LIKE 前缀匹配），但未暴露至 FFI bridge。
+> 请暴露为 `searchHistoryByPrefix(prefix, {limit})` FFI 方法，供搜索页联想使用。
+> UI 轨当前以客户端前缀过滤临时实现（行为等价），待本方法交付后切换为 DB 查询。
 
 ---
 
@@ -432,7 +462,8 @@
 | 29 | 下载管理器 | 7 |
 | 30 | 段评/章评 | 4 |
 | 31 | 书籍导出 | 2 |
-| 32 | 自动任务 | 9 |
+| 32 | 自动任务 | 14 |
 | 33 | 音频播放模式 | 2 |
 | 34 | 压缩包导入 | 7 |
-| | **合计** | **159** |
+| 35 | RSS 已读记录 | 6 |
+| | **合计** | **170** |

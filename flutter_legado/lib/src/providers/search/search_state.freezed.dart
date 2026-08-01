@@ -37,6 +37,9 @@ mixin _$SearchState {
   /// 搜索历史（最近 20 条，持久化于 SharedPreferences）
   List<String> get searchHistory => throw _privateConstructorUsedError;
 
+  /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）
+  String get inputText => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $SearchStateCopyWith<SearchState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -55,7 +58,8 @@ abstract class $SearchStateCopyWith<$Res> {
       String? error,
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
-      List<String> searchHistory});
+      List<String> searchHistory,
+      String inputText});
 }
 
 /// @nodoc
@@ -78,6 +82,7 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
     Object? selectedSourceUrls = null,
     Object? selectedGroups = null,
     Object? searchHistory = null,
+    Object? inputText = null,
   }) {
     return _then(_value.copyWith(
       keyword: null == keyword
@@ -108,6 +113,10 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
           ? _value.searchHistory
           : searchHistory // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      inputText: null == inputText
+          ? _value.inputText
+          : inputText // ignore: cast_nullable_to_non_nullable
+              as String,
     ) as $Val);
   }
 }
@@ -127,7 +136,8 @@ abstract class _$$SearchStateImplCopyWith<$Res>
       String? error,
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
-      List<String> searchHistory});
+      List<String> searchHistory,
+      String inputText});
 }
 
 /// @nodoc
@@ -148,6 +158,7 @@ class __$$SearchStateImplCopyWithImpl<$Res>
     Object? selectedSourceUrls = null,
     Object? selectedGroups = null,
     Object? searchHistory = null,
+    Object? inputText = null,
   }) {
     return _then(_$SearchStateImpl(
       keyword: null == keyword
@@ -178,6 +189,10 @@ class __$$SearchStateImplCopyWithImpl<$Res>
           ? _value._searchHistory
           : searchHistory // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      inputText: null == inputText
+          ? _value.inputText
+          : inputText // ignore: cast_nullable_to_non_nullable
+              as String,
     ));
   }
 }
@@ -192,7 +207,8 @@ class _$SearchStateImpl implements _SearchState {
       this.error,
       final Set<String> selectedSourceUrls = const <String>{},
       final Set<String> selectedGroups = const <String>{},
-      final List<String> searchHistory = const []})
+      final List<String> searchHistory = const [],
+      this.inputText = ''})
       : _results = results,
         _selectedSourceUrls = selectedSourceUrls,
         _selectedGroups = selectedGroups,
@@ -261,9 +277,14 @@ class _$SearchStateImpl implements _SearchState {
     return EqualUnmodifiableListView(_searchHistory);
   }
 
+  /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）
+  @override
+  @JsonKey()
+  final String inputText;
+
   @override
   String toString() {
-    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, error: $error, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory)';
+    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, error: $error, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory, inputText: $inputText)';
   }
 
   @override
@@ -281,7 +302,9 @@ class _$SearchStateImpl implements _SearchState {
             const DeepCollectionEquality()
                 .equals(other._selectedGroups, _selectedGroups) &&
             const DeepCollectionEquality()
-                .equals(other._searchHistory, _searchHistory));
+                .equals(other._searchHistory, _searchHistory) &&
+            (identical(other.inputText, inputText) ||
+                other.inputText == inputText));
   }
 
   @override
@@ -293,7 +316,8 @@ class _$SearchStateImpl implements _SearchState {
       error,
       const DeepCollectionEquality().hash(_selectedSourceUrls),
       const DeepCollectionEquality().hash(_selectedGroups),
-      const DeepCollectionEquality().hash(_searchHistory));
+      const DeepCollectionEquality().hash(_searchHistory),
+      inputText);
 
   @JsonKey(ignore: true)
   @override
@@ -310,7 +334,8 @@ abstract class _SearchState implements SearchState {
       final String? error,
       final Set<String> selectedSourceUrls,
       final Set<String> selectedGroups,
-      final List<String> searchHistory}) = _$SearchStateImpl;
+      final List<String> searchHistory,
+      final String inputText}) = _$SearchStateImpl;
 
   @override
 
@@ -340,6 +365,10 @@ abstract class _SearchState implements SearchState {
 
   /// 搜索历史（最近 20 条，持久化于 SharedPreferences）
   List<String> get searchHistory;
+  @override
+
+  /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）
+  String get inputText;
   @override
   @JsonKey(ignore: true)
   _$$SearchStateImplCopyWith<_$SearchStateImpl> get copyWith =>
