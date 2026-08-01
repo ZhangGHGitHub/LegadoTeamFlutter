@@ -16,6 +16,7 @@ import 'src/providers/replace_rule_provider.dart';
 import 'src/providers/rss_provider.dart';
 import 'src/providers/source_provider.dart';
 import 'src/providers/sync_provider.dart';
+import 'src/providers/theme_provider.dart';
 import 'src/routes.dart';
 import 'src/screens/welcome_screen.dart';
 import 'src/services/crash_log_service.dart';
@@ -87,6 +88,8 @@ void main() {
         child: MultiProvider(
           providers: [
             Provider<BookApi>.value(value: rustApi),
+            // 全局主题（主题模式 + 字体缩放）：启动时加载持久化设置，驱动 MaterialApp 实时切换
+            ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
             // 移除 ..loadSettings() 级联，下沉到各屏幕首帧回调
             ChangeNotifierProvider(create: (_) => BookshelfProvider(rustApi)),
             // 阅读器已迁移至 Riverpod（ReaderNotifier），见 providers/reader/

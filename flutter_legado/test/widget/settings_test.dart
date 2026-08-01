@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/providers/bookshelf_provider.dart';
 import 'package:flutter_legado/src/providers/sync_provider.dart';
+import 'package:flutter_legado/src/providers/theme_provider.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/services/book_api.dart';
@@ -32,6 +33,7 @@ void main() {
     return MultiProvider(
       providers: [
         Provider<BookApi>.value(value: mockApi),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
         ChangeNotifierProvider(create: (_) => BookshelfProvider(mockApi)),
         ChangeNotifierProvider(create: (_) => SyncProvider(mockApi)),
       ],
@@ -72,6 +74,39 @@ void main() {
       expect(find.text('书签'), findsOneWidget);
       expect(find.text('阅读统计'), findsOneWidget);
       expect(find.text('关于'), findsOneWidget);
+    });
+
+    testWidgets('点击主题模式弹出选择对话框并可切换（全局生效）', (tester) async {
+      late ThemeProvider themeProvider;
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          Provider<BookApi>.value(value: mockApi),
+          ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
+          ChangeNotifierProvider(create: (_) => BookshelfProvider(mockApi)),
+          ChangeNotifierProvider(create: (_) => SyncProvider(mockApi)),
+        ],
+        child: MaterialApp(home: const SettingsScreen()),
+      ));
+      await tester.pumpAndSettle();
+      themeProvider = tester.element(find.byType(SettingsScreen)).read<ThemeProvider>();
+
+      // 默认跟随系统（subtitle）
+      expect(find.text('跟随系统'), findsOneWidget);
+      expect(themeProvider.themeMode, ThemeMode.system);
+
+      // 点击主题模式弹出选择对话框
+      await tester.tap(find.text('主题模式'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择主题模式'), findsOneWidget);
+      expect(find.text('浅色'), findsOneWidget);
+      expect(find.text('深色'), findsOneWidget);
+
+      // 选择深色 → ThemeProvider 状态更新（驱动 MaterialApp 全局切换）
+      await tester.tap(find.text('深色'));
+      await tester.pumpAndSettle();
+
+      expect(themeProvider.themeMode, ThemeMode.dark);
+      expect(find.text('深色'), findsOneWidget);
     });
 
     testWidgets('点击备份恢复弹出底部弹窗', (tester) async {

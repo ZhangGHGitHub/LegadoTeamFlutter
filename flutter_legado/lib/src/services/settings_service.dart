@@ -10,6 +10,7 @@ class SettingsService {
   static const _keyFlipModeName = 'reader_flip_mode_name'; // 新版枚举名存储
   static const _keyBrightness = 'reader_brightness';
   static const _keyThemeMode = 'app_theme_mode';
+  static const _keyFontScale = 'app_font_scale';
   static const _keyLocale = 'app_locale';
   static const _keyShowBookshelfRecentReading = 'bookshelf_show_recent_reading';
   static const _keyShowBookshelfStats = 'bookshelf_show_stats';
@@ -177,6 +178,30 @@ class SettingsService {
       await prefs.setString(_keyThemeMode, value);
     } catch (e) {
       debugPrint('SettingsService.setThemeMode 异常: $e');
+    }
+  }
+
+  // ===== 全局字体缩放 =====
+
+  /// 全局 UI 字体缩放原始值（对齐原版 PreferKey.fontScale）
+  ///
+  /// 0 = 跟随系统；8~16 → 0.8x~1.6x（见 AppContextWrapper.getFontScale）。
+  Future<int> getFontScale() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyFontScale) ?? 0;
+    } catch (e) {
+      debugPrint('SettingsService.getFontScale 异常: $e');
+      return 0;
+    }
+  }
+
+  Future<void> setFontScale(int value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyFontScale, value);
+    } catch (e) {
+      debugPrint('SettingsService.setFontScale 异常: $e');
     }
   }
 

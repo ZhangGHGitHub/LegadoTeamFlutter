@@ -121,6 +121,23 @@ void main() {
     });
   });
 
+  group('SettingsService 全局字体缩放', () {
+    test('默认字体缩放为 0（跟随系统）', () async {
+      expect(await service.getFontScale(), equals(0));
+    });
+
+    test('设置并读取字体缩放', () async {
+      await service.setFontScale(12);
+      expect(await service.getFontScale(), equals(12));
+    });
+
+    test('重置为 0（跟随系统）', () async {
+      await service.setFontScale(14);
+      await service.setFontScale(0);
+      expect(await service.getFontScale(), equals(0));
+    });
+  });
+
   group('SettingsService 书架偏好', () {
     test('默认显示最近阅读', () async {
       expect(await service.getShowBookshelfRecentReading(), isTrue);

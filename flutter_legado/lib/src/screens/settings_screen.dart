@@ -5,8 +5,8 @@ import '../l10n/app_strings.dart';
 import '../routes.dart';
 import '../services/backup_service.dart';
 import '../services/book_api.dart';
-import '../services/settings_service.dart';
 import '../providers/bookshelf_provider.dart';
+import '../providers/theme_provider.dart';
 
 /// 设置页面（枢纽菜单）
 ///
@@ -27,24 +27,12 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final SettingsService _settingsService = SettingsService();
-  ThemeMode _themeMode = ThemeMode.system;
   bool _backupLoading = false;
   bool _restoreLoading = false;
 
   @override
-  void initState() {
-    super.initState();
-    _loadThemeMode();
-  }
-
-  Future<void> _loadThemeMode() async {
-    _themeMode = await _settingsService.getThemeMode();
-    if (mounted) setState(() {});
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final themeMode = context.watch<ThemeProvider>().themeMode;
     return Scaffold(
       appBar: AppBar(title: Text(AppStrings.settings)),
       body: ListView(
@@ -83,7 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.brightness_6),
             title: Text(AppStrings.themeMode),
-            subtitle: Text(_themeModeLabel),
+            subtitle: Text(_themeModeLabel(themeMode)),
             onTap: () => _showThemePicker(context),
           ),
           const Divider(),
@@ -157,8 +145,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  String get _themeModeLabel {
-    switch (_themeMode) {
+  String _themeModeLabel(ThemeMode mode) {
+    switch (mode) {
       case ThemeMode.light:
         return AppStrings.themeLight;
       case ThemeMode.dark:
@@ -169,13 +157,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// 主题模式选择（对标 pref_main themeMode NameListPreference）
+  ///
+  /// 选中后经 [ThemeProvider.setThemeMode] 全局实时生效并持久化。
   void _showThemePicker(BuildContext context) {
+    final themeProvider = context.read<ThemeProvider>();
     showDialog<ThemeMode>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: Text(AppStrings.selectTheme),
         children: ThemeMode.values.map((mode) {
-          final isSelected = mode == _themeMode;
+          final isSelected = mode == themeProvider.themeMode;
           return ListTile(
             leading: Icon(
               isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
@@ -186,10 +177,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
         }).toList(),
       ),
-    ).then((selectedMode) async {
+    ).then((selectedMode) {
       if (selectedMode != null) {
-        setState(() => _themeMode = selectedMode);
-        await _settingsService.setThemeMode(selectedMode);
+        themeProvider.setThemeMode(selectedMode);
       }
     });
   }

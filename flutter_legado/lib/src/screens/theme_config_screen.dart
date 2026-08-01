@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../providers/theme_provider.dart';
 import '../services/settings_service.dart';
 
 /// 主题配置页面
 ///
-/// 管理应用主题模式、阅读器字体大小、行距、背景色等外观设置。
+/// 管理应用主题模式、全局字体缩放（对齐原版 fontScale）以及阅读器字体大小、行距、背景色等外观设置。
+/// 主题模式与全局字体缩放经 [ThemeProvider] 全局实时生效。
 class ThemeConfigScreen extends StatefulWidget {
   const ThemeConfigScreen({super.key});
 
@@ -15,7 +18,6 @@ class ThemeConfigScreen extends StatefulWidget {
 class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
   final _settingsService = SettingsService();
 
-  ThemeMode _themeMode = ThemeMode.system;
   double _fontSize = 18.0;
   double _lineHeight = 1.6;
   int _bgColorIndex = 0;
@@ -39,23 +41,16 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final mode = await _settingsService.getThemeMode();
     final fontSize = await _settingsService.getFontSize();
     final lineHeight = await _settingsService.getLineHeight();
     final bgColorIndex = await _settingsService.getBgColorIndex();
 
     setState(() {
-      _themeMode = mode;
       _fontSize = fontSize;
       _lineHeight = lineHeight;
       _bgColorIndex = bgColorIndex;
       _loading = false;
     });
-  }
-
-  Future<void> _setThemeMode(ThemeMode mode) async {
-    setState(() => _themeMode = mode);
-    await _settingsService.setThemeMode(mode);
   }
 
   Future<void> _setFontSize(double size) async {
@@ -76,6 +71,7 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
       appBar: AppBar(title: const Text('主题配置')),
@@ -105,15 +101,29 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
                       icon: Icon(Icons.dark_mode),
                     ),
                   ],
-                  selected: {_themeMode},
+                  selected: {themeProvider.themeMode},
                   onSelectionChanged: (selected) =>
-                      _setThemeMode(selected.first),
+                      themeProvider.setThemeMode(selected.first),
                 ),
 
                 const SizedBox(height: 32),
 
-                // === 字体大小 ===
-                _sectionHeader(theme, '字体大小'),
+                // === 全局字体缩放（对齐原版 fontScale）===
+                _sectionHeader(theme, '全局字体大小'),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.format_size),
+                  title: const Text('字体缩放'),
+                  subtitle: Text(themeProvider.fontScaleLabel),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showFontScalePicker(context, themeProvider),
+                ),
+
+                const SizedBox(height: 32),
+
+                // === 阅读器字体大小 ===
+                _sectionHeader(theme, '阅读器字体大小'),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -246,6 +256,62 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
       title,
       style: theme.textTheme.titleMedium?.copyWith(
         fontWeight: FontWeight.bold,
+      ),
+    );
+  }
+
+  /// 全局字体缩放选择（对齐原版 ThemeConfigFragment fontScale NumberPickerDialog）
+  ///
+  /// 原版取值 8~16（0.8x~1.6x），「默认」按钮重置为 0（跟随系统）。
+  void _showFontScalePicker(BuildContext context, ThemeProvider provider) {
+    // 跟随系统时默认展示 1.0x
+    var current = provider.fontScaleRaw.toDouble();
+    if (current < 8 || current > 16) current = 10;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('字体缩放'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '当前字体大小：${(current / 10).toStringAsFixed(1)}',
+                style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 8),
+              Slider(
+                value: current,
+                min: 8,
+                max: 16,
+                divisions: 8,
+                label: (current / 10).toStringAsFixed(1),
+                onChanged: (v) => setDialogState(() => current = v),
+              ),
+            ],
+          ),
+          actions: [
+            // 对齐原版「默认」按钮：重置为跟随系统
+            TextButton(
+              onPressed: () {
+                provider.setFontScale(0);
+                Navigator.pop(ctx);
+              },
+              child: const Text('跟随系统'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                provider.setFontScale(current.round());
+                Navigator.pop(ctx);
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
       ),
     );
   }
