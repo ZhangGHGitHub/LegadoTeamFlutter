@@ -692,6 +692,10 @@ fn extract_domain_for_cookie(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{LazyLock, Mutex};
+
+    /// QUIC 全局开关测试互斥锁，防止并行测试间数据竞争
+    static QUIC_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn test_default_config() {
@@ -824,6 +828,9 @@ mod tests {
 
     #[test]
     fn test_build_client_quic_disabled_no_quic_client() {
+        let _guard = QUIC_TEST_MUTEX.lock().unwrap();
+        // 确保全局开关处于关闭状态
+        set_quic_enabled(false);
         // QUIC 关闭时，客户端不包含 QuinnClient
         let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
         assert!(client.quic_client().is_none());
@@ -842,6 +849,7 @@ mod tests {
 
     #[test]
     fn test_global_quic_toggle() {
+        let _guard = QUIC_TEST_MUTEX.lock().unwrap();
         // 全局开关控制 QUIC 启用
         set_quic_enabled(true);
         assert!(is_quic_enabled());
@@ -857,6 +865,9 @@ mod tests {
         // 关闭后新建客户端不包含 QUIC
         let client2 = LegadoClient::new(LegadoClientConfig::default()).unwrap();
         assert!(client2.quic_client().is_none());
+
+        // 确保测试结束后全局状态恢复为默认（关闭）
+        set_quic_enabled(false);
     }
 
     #[test]
