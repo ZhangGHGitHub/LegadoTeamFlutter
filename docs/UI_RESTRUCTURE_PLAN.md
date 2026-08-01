@@ -577,6 +577,16 @@ String mapApiError(Object e) {
 | 5.6 性能优化（列表懒加载、图片缓存策略） | 优化提交 | 首屏 < 1s |
 | 5.7 暗色模式全量检查 | 逐屏验证 | WCAG AA 达标 |
 
+> **5.1 实施决议（书源编辑表单多 Tab + 字段完整）**：`source_edit_screen` 原已存在（5 Tab：基本/搜索/目录/内容/测试），
+> 但缺「发现」「详情」Tab 且现有 Tab 字段覆盖不全。本次重构为数据驱动表单（`_Field` 字段定义 + controller 按 key
+> 惰性创建），与原版 `BookSourceEditActivity` 基于 `EditEntity` 列表的配置化编辑思路一致。Tab 扩为 8 个：
+> 基本信息/搜索规则/发现规则/详情规则/目录规则/内容规则/评论规则/测试——其中「评论」Tab 为用户决策追加
+> （忠实还原原版 7 Tab 结构），「测试」Tab 为 Flutter 既有便利功能予以保留。字段全量覆盖 SearchRule/ExploreRule/
+> BookInfoRule/TocRule/ContentRule/ReviewRule（达成「字段完整」验收），并新增「启用发现」（enabledExplore）与
+> 「启用段评」（ReviewRule.enabled）开关。原有规则验证对话框（webbookSearch/Info/Chapters/Content）与测试 Tab
+> 逻辑原样保留。新增 `source_edit_test.dart` 5 个 widget 测试（8 Tab 结构/新 Tab 字段与开关可见/必填校验/保存创建/
+> 编辑模式回填发现·详情·评论规则）。全量 986 测试通过，改动文件 analyze 0 issues。
+
 ---
 
 ## 九、验收标准总则
