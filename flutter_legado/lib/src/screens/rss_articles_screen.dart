@@ -1,9 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../providers/rss_provider.dart';
+import '../providers/rss/rss_notifier.dart';
 import '../services/rust_api.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -11,16 +12,16 @@ import '../widgets/loading_indicator.dart';
 import 'rss_article_detail_screen.dart';
 
 /// RSS 文章列表页面
-class RssArticlesScreen extends StatefulWidget {
+class RssArticlesScreen extends ConsumerStatefulWidget {
   final RssSource source;
 
   const RssArticlesScreen({super.key, required this.source});
 
   @override
-  State<RssArticlesScreen> createState() => _RssArticlesScreenState();
+  ConsumerState<RssArticlesScreen> createState() => _RssArticlesScreenState();
 }
 
-class _RssArticlesScreenState extends State<RssArticlesScreen> {
+class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
   final Set<String> _readArticles = {};
 
   @override
@@ -28,19 +29,21 @@ class _RssArticlesScreenState extends State<RssArticlesScreen> {
     super.initState();
     // 加载文章
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RssProvider>().selectSource(widget.source);
+      ref.read(rssNotifierProvider.notifier).selectSource(widget.source);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(rssNotifierProvider);
+    final notifier = ref.read(rssNotifierProvider.notifier);
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.source.sourceName),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            context.read<RssProvider>().clearSelectedSource();
+            notifier.clearSelectedSource();
             Navigator.pop(context);
           },
         ),
@@ -48,24 +51,24 @@ class _RssArticlesScreenState extends State<RssArticlesScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '刷新',
-            onPressed: () => context.read<RssProvider>().refreshArticles(),
+            onPressed: () => notifier.refreshArticles(),
           ),
         ],
       ),
-      body: Consumer<RssProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoadingArticles && provider.articles.isEmpty) {
+      body: Builder(
+        builder: (context) {
+          if (state.isLoadingArticles && state.articles.isEmpty) {
             return const LoadingIndicator(message: '加载文章...');
           }
 
-          if (provider.error != null && provider.articles.isEmpty) {
+          if (state.error != null && state.articles.isEmpty) {
             return ErrorView(
-              message: provider.error!,
-              onRetry: () => provider.selectSource(widget.source),
+              message: state.error!,
+              onRetry: () => notifier.selectSource(widget.source),
             );
           }
 
-          if (provider.articles.isEmpty) {
+          if (state.articles.isEmpty) {
             return const EmptyState(
               icon: Icons.article_outlined,
               title: '暂无文章',
@@ -74,14 +77,14 @@ class _RssArticlesScreenState extends State<RssArticlesScreen> {
           }
 
           return RefreshIndicator(
-            onRefresh: () => provider.refreshArticles(),
+            onRefresh: () => notifier.refreshArticles(),
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: provider.articles.length,
+              itemCount: state.articles.length,
               separatorBuilder: (c, i) =>
                   const Divider(height: 1, indent: 16, endIndent: 16),
               itemBuilder: (context, index) {
-                final article = provider.articles[index];
+                final article = state.articles[index];
                 final isRead = _readArticles.contains(article.url);
                 return _buildArticleItem(context, article, isRead);
               },

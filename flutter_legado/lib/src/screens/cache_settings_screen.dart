@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
+import '../providers/providers.dart';
 import '../services/cache_service.dart';
-import '../services/book_api.dart';
 
 /// 缓存管理页面
 ///
 /// 提供缓存统计显示、清理功能和自动过期策略配置。
 /// 对应 Android 原版 CacheBookService 的缓存管理功能。
-class CacheSettingsScreen extends StatefulWidget {
+class CacheSettingsScreen extends ConsumerStatefulWidget {
   const CacheSettingsScreen({super.key});
 
   @override
-  State<CacheSettingsScreen> createState() => _CacheSettingsScreenState();
+  ConsumerState<CacheSettingsScreen> createState() => _CacheSettingsScreenState();
 }
 
-class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
+class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
   late final CacheService _cacheService;
 
   /// 缓存统计加载状态
@@ -46,7 +46,7 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     _cacheService = CacheService(api);
     _loadStats();
     _loadExpireDays();

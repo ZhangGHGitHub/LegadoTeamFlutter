@@ -1,15 +1,27 @@
+// RssNotifier 单元测试
+//
+// 覆盖：初始状态/loadSources/selectSource/refreshArticles/addSource/
+// removeSource/状态管理（clear*）/分组筛选（对齐安卓 RssFragment）
+//
+// 迁移自原 RssProvider（ChangeNotifier）测试，改为 Riverpod 范式：
+// 使用 ProviderContainer + bookApiProvider.overrideWithValue(mockApi)。
+// 原「触发通知」测试点改为通过 container.listen 断言状态变更会触发监听。
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:flutter_legado/src/providers/rss_provider.dart';
-import 'package:flutter_legado/src/services/rust_api.dart';
-import 'package:flutter_legado/src/models/models.dart';
+
 import 'package:flutter_legado/src/bridge/ffi.dart';
+import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/services/rust_api.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/rss/rss_notifier.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
-  late RssProvider provider;
   late MockRustApi mockApi;
+  late ProviderContainer container;
 
   setUpAll(() {
     registerFallbacks();
@@ -17,35 +29,41 @@ void main() {
 
   setUp(() {
     mockApi = MockRustApi();
-    provider = RssProvider(mockApi);
+    container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
   });
 
-  group('RssProvider 初始状态', () {
+  RssState readState() => container.read(rssNotifierProvider);
+  RssNotifier readNotifier() => container.read(rssNotifierProvider.notifier);
+
+  group('RssNotifier 初始状态', () {
     test('初始源列表为空', () {
-      expect(provider.sources, isEmpty);
-      expect(provider.isEmpty, isTrue);
+      expect(readState().sources, isEmpty);
+      expect(readState().isEmpty, isTrue);
     });
 
     test('初始文章列表为空', () {
-      expect(provider.articles, isEmpty);
+      expect(readState().articles, isEmpty);
     });
 
     test('初始无选中源', () {
-      expect(provider.selectedSource, isNull);
+      expect(readState().selectedSource, isNull);
     });
 
     test('初始非加载状态', () {
-      expect(provider.isLoadingSources, isFalse);
-      expect(provider.isLoadingArticles, isFalse);
-      expect(provider.isLoading, isFalse);
+      expect(readState().isLoadingSources, isFalse);
+      expect(readState().isLoadingArticles, isFalse);
+      expect(readState().isLoading, isFalse);
     });
 
     test('初始无错误', () {
-      expect(provider.error, isNull);
+      expect(readState().error, isNull);
     });
   });
 
-  group('RssProvider loadSources（mock API）', () {
+  group('RssNotifier loadSources（mock API）', () {
     test('成功加载 RSS 源列表', () async {
       final sources = [
         const RssSource(sourceUrl: 'https://rss1.com', sourceName: '源1'),
@@ -53,45 +71,45 @@ void main() {
       ];
       when(() => mockApi.getRssSources()).thenAnswer((_) async => sources);
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
-      expect(provider.sources.length, equals(2));
-      expect(provider.isEmpty, isFalse);
-      expect(provider.isLoadingSources, isFalse);
-      expect(provider.error, isNull);
+      expect(readState().sources.length, equals(2));
+      expect(readState().isEmpty, isFalse);
+      expect(readState().isLoadingSources, isFalse);
+      expect(readState().error, isNull);
     });
 
     test('加载失败时设置 BridgeError', () async {
       when(() => mockApi.getRssSources())
           .thenThrow(const BridgeError(message: 'RSS 加载失败'));
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
-      expect(provider.error, equals('RSS 加载失败'));
-      expect(provider.isLoadingSources, isFalse);
-      expect(provider.sources, isEmpty);
+      expect(readState().error, equals('RSS 加载失败'));
+      expect(readState().isLoadingSources, isFalse);
+      expect(readState().sources, isEmpty);
     });
 
     test('加载失败时设置普通异常', () async {
       when(() => mockApi.getRssSources()).thenThrow(Exception('网络'));
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
-      expect(provider.error, contains('网络'));
-      expect(provider.isLoadingSources, isFalse);
+      expect(readState().error, contains('网络'));
+      expect(readState().isLoadingSources, isFalse);
     });
 
-    test('loadSources 触发通知', () async {
+    test('loadSources 触发状态更新（loading→data 至少两次）', () async {
       when(() => mockApi.getRssSources()).thenAnswer((_) async => []);
       var notifyCount = 0;
-      provider.addListener(() => notifyCount++);
+      container.listen(rssNotifierProvider, (_, __) => notifyCount++);
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
       expect(notifyCount, greaterThanOrEqualTo(2));
     });
   });
 
-  group('RssProvider selectSource（mock API）', () {
+  group('RssNotifier selectSource（mock API）', () {
     final testSource = const RssSource(
       sourceUrl: 'https://rss.com',
       sourceName: '测试源',
@@ -105,86 +123,89 @@ void main() {
       when(() => mockApi.getRssArticles(any()))
           .thenAnswer((_) async => articles);
 
-      await provider.selectSource(testSource);
+      await readNotifier().selectSource(testSource);
 
-      expect(provider.selectedSource, equals(testSource));
-      expect(provider.articles.length, equals(2));
-      expect(provider.isLoadingArticles, isFalse);
-      expect(provider.error, isNull);
+      expect(readState().selectedSource, equals(testSource));
+      expect(readState().articles.length, equals(2));
+      expect(readState().isLoadingArticles, isFalse);
+      expect(readState().error, isNull);
     });
 
     test('选择源失败时设置错误', () async {
       when(() => mockApi.getRssArticles(any()))
           .thenThrow(const BridgeError(message: '获取文章失败'));
 
-      await provider.selectSource(testSource);
+      await readNotifier().selectSource(testSource);
 
-      expect(provider.error, equals('获取文章失败'));
-      expect(provider.isLoadingArticles, isFalse);
-      expect(provider.articles, isEmpty);
+      expect(readState().error, equals('获取文章失败'));
+      expect(readState().isLoadingArticles, isFalse);
+      expect(readState().articles, isEmpty);
     });
 
     test('selectSource 清空旧文章', () async {
       when(() => mockApi.getRssArticles(any()))
           .thenAnswer((_) async => [const RssFeedArticle(title: 'a', url: 'u')]);
 
-      await provider.selectSource(testSource);
-      expect(provider.articles.length, equals(1));
+      await readNotifier().selectSource(testSource);
+      expect(readState().articles.length, equals(1));
 
       // 选择另一个源
-      final other = const RssSource(sourceUrl: 'https://other.com', sourceName: '其他');
+      final other =
+          const RssSource(sourceUrl: 'https://other.com', sourceName: '其他');
       when(() => mockApi.getRssArticles('https://other.com'))
           .thenAnswer((_) async => []);
-      await provider.selectSource(other);
+      await readNotifier().selectSource(other);
 
-      expect(provider.articles, isEmpty);
-      expect(provider.selectedSource, equals(other));
+      expect(readState().articles, isEmpty);
+      expect(readState().selectedSource, equals(other));
     });
   });
 
-  group('RssProvider refreshArticles', () {
+  group('RssNotifier refreshArticles', () {
     test('无选中源时不抛异常', () async {
-      await provider.refreshArticles();
-      expect(provider.articles, isEmpty);
-      expect(provider.selectedSource, isNull);
+      await readNotifier().refreshArticles();
+      expect(readState().articles, isEmpty);
+      expect(readState().selectedSource, isNull);
     });
 
     test('有选中源时重新加载文章', () async {
-      final source = const RssSource(sourceUrl: 'https://r.com', sourceName: 'R');
+      final source =
+          const RssSource(sourceUrl: 'https://r.com', sourceName: 'R');
       when(() => mockApi.getRssArticles(any()))
           .thenAnswer((_) async => [const RssFeedArticle(title: 'x', url: 'u')]);
 
-      await provider.selectSource(source);
-      await provider.refreshArticles();
+      await readNotifier().selectSource(source);
+      await readNotifier().refreshArticles();
 
       verify(() => mockApi.getRssArticles('https://r.com')).called(2);
     });
   });
 
-  group('RssProvider addSource（mock API）', () {
+  group('RssNotifier addSource（mock API）', () {
     test('成功添加 RSS 源', () async {
-      final added = const RssSource(sourceUrl: 'https://new.com', sourceName: '新源');
+      final added =
+          const RssSource(sourceUrl: 'https://new.com', sourceName: '新源');
       when(() => mockApi.addRssSource(any())).thenAnswer((_) async => added);
 
-      await provider.addSource('新源', 'https://new.com');
+      await readNotifier().addSource('新源', 'https://new.com');
 
-      expect(provider.sources.length, equals(1));
-      expect(provider.sources.first.sourceName, equals('新源'));
-      expect(provider.error, isNull);
+      expect(readState().sources.length, equals(1));
+      expect(readState().sources.first.sourceName, equals('新源'));
+      expect(readState().error, isNull);
     });
 
     test('添加失败时设置错误', () async {
       when(() => mockApi.addRssSource(any()))
           .thenThrow(const BridgeError(message: '添加失败'));
 
-      await provider.addSource('bad', 'https://bad.com');
+      await readNotifier().addSource('bad', 'https://bad.com');
 
-      expect(provider.error, equals('添加失败'));
-      expect(provider.sources, isEmpty);
+      expect(readState().error, equals('添加失败'));
+      expect(readState().sources, isEmpty);
     });
   });
 
-  group('RssProvider removeSource（mock API）', () {
+  group('RssNotifier removeSource（mock API）', () {
     test('成功删除 RSS 源', () async {
       final sources = [
         const RssSource(sourceUrl: 'https://a.com', sourceName: 'A'),
@@ -193,82 +214,94 @@ void main() {
       when(() => mockApi.getRssSources()).thenAnswer((_) async => sources);
       when(() => mockApi.deleteRssSource(any())).thenAnswer((_) async {});
 
-      await provider.loadSources();
-      await provider.removeSource('https://a.com');
+      await readNotifier().loadSources();
+      await readNotifier().removeSource('https://a.com');
 
-      expect(provider.sources.length, equals(1));
-      expect(provider.sources.first.sourceUrl, equals('https://b.com'));
+      expect(readState().sources.length, equals(1));
+      expect(readState().sources.first.sourceUrl, equals('https://b.com'));
     });
 
     test('删除当前选中源时清除选中状态', () async {
-      final source = const RssSource(sourceUrl: 'https://a.com', sourceName: 'A');
+      final source =
+          const RssSource(sourceUrl: 'https://a.com', sourceName: 'A');
       when(() => mockApi.getRssSources()).thenAnswer((_) async => [source]);
       when(() => mockApi.getRssArticles(any())).thenAnswer((_) async => []);
       when(() => mockApi.deleteRssSource(any())).thenAnswer((_) async {});
 
-      await provider.loadSources();
-      await provider.selectSource(source);
-      await provider.removeSource('https://a.com');
+      await readNotifier().loadSources();
+      await readNotifier().selectSource(source);
+      await readNotifier().removeSource('https://a.com');
 
-      expect(provider.selectedSource, isNull);
-      expect(provider.articles, isEmpty);
+      expect(readState().selectedSource, isNull);
+      expect(readState().articles, isEmpty);
     });
 
     test('删除失败时设置错误', () async {
       when(() => mockApi.deleteRssSource(any()))
           .thenThrow(const BridgeError(message: '删除失败'));
 
-      await provider.removeSource('https://x.com');
+      await readNotifier().removeSource('https://x.com');
 
-      expect(provider.error, equals('删除失败'));
+      expect(readState().error, equals('删除失败'));
     });
   });
 
-  group('RssProvider 状态管理', () {
+  group('RssNotifier 状态管理', () {
     test('clearSelectedSource 清除选中源和文章', () {
-      provider.clearSelectedSource();
-      expect(provider.selectedSource, isNull);
-      expect(provider.articles, isEmpty);
+      readNotifier().clearSelectedSource();
+      expect(readState().selectedSource, isNull);
+      expect(readState().articles, isEmpty);
     });
 
-    test('clearSelectedSource 触发通知', () {
+    test('clearSelectedSource 状态变更触发监听', () async {
+      final source =
+          const RssSource(sourceUrl: 'https://a.com', sourceName: 'A');
+      when(() => mockApi.getRssArticles(any()))
+          .thenAnswer((_) async => [const RssFeedArticle(title: 'a', url: 'u')]);
+      await readNotifier().selectSource(source);
+
       var notified = false;
-      provider.addListener(() => notified = true);
-      provider.clearSelectedSource();
+      container.listen(rssNotifierProvider, (_, __) => notified = true);
+      readNotifier().clearSelectedSource();
       expect(notified, isTrue);
     });
 
     test('clearError 清除错误', () {
-      provider.clearError();
-      expect(provider.error, isNull);
+      readNotifier().clearError();
+      expect(readState().error, isNull);
     });
 
-    test('clearError 触发通知', () {
+    test('clearError 状态变更触发监听', () async {
+      when(() => mockApi.getRssSources())
+          .thenThrow(const BridgeError(message: 'e'));
+      await readNotifier().loadSources();
+      expect(readState().error, isNotNull);
+
       var notified = false;
-      provider.addListener(() => notified = true);
-      provider.clearError();
+      container.listen(rssNotifierProvider, (_, __) => notified = true);
+      readNotifier().clearError();
       expect(notified, isTrue);
     });
 
     test('isLoading 是 sources 或 articles 加载的或', () {
-      expect(provider.isLoading, isFalse);
+      expect(readState().isLoading, isFalse);
     });
 
     test('多次 clearSelectedSource 不抛异常', () {
-      provider.clearSelectedSource();
-      provider.clearSelectedSource();
-      expect(provider.selectedSource, isNull);
+      readNotifier().clearSelectedSource();
+      readNotifier().clearSelectedSource();
+      expect(readState().selectedSource, isNull);
     });
   });
 
-  group('RssProvider 分组筛选（对齐安卓 RssFragment）', () {
+  group('RssNotifier 分组筛选（对齐安卓 RssFragment）', () {
     Future<void> loadWithGroups(List<RssSource> sources) async {
       when(() => mockApi.getRssSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     }
 
     test('初始 selectedGroup 为 null（全部）', () {
-      expect(provider.selectedGroup, isNull);
+      expect(readState().selectedGroup, isNull);
     });
 
     test('多分组聚合去重并保持插入顺序', () async {
@@ -278,7 +311,7 @@ void main() {
         RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '科技'),
       ]);
 
-      expect(provider.groups, equals(['科技', '生活']));
+      expect(readState().groups, equals(['科技', '生活']));
     });
 
     test('逗号/中文逗号/分号多组拆分', () async {
@@ -288,7 +321,7 @@ void main() {
         RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '财经;娱乐'),
       ]);
 
-      expect(provider.groups, equals(['科技', '财经', '生活', '娱乐']));
+      expect(readState().groups, equals(['科技', '财经', '生活', '娱乐']));
     });
 
     test('拆分时 trim 并去除空分组', () async {
@@ -296,7 +329,7 @@ void main() {
         RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: ' 科技 , , 财经 '),
       ]);
 
-      expect(provider.groups, equals(['科技', '财经']));
+      expect(readState().groups, equals(['科技', '财经']));
     });
 
     test('空分组场景：sourceGroup 为 null 或空串不计入', () async {
@@ -306,7 +339,7 @@ void main() {
         RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '科技'),
       ]);
 
-      expect(provider.groups, equals(['科技']));
+      expect(readState().groups, equals(['科技']));
     });
 
     test('selectedGroup 为 null 时 filteredSources 返回全部', () async {
@@ -315,7 +348,7 @@ void main() {
         RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: '生活'),
       ]);
 
-      expect(provider.filteredSources.length, equals(2));
+      expect(readState().filteredSources.length, equals(2));
     });
 
     test('选中分组后过滤（含多组源命中）', () async {
@@ -325,11 +358,11 @@ void main() {
         RssSource(sourceUrl: 'u3', sourceName: 's3', sourceGroup: '生活'),
       ]);
 
-      provider.setGroup('科技');
+      readNotifier().setGroup('科技');
 
-      expect(provider.selectedGroup, equals('科技'));
+      expect(readState().selectedGroup, equals('科技'));
       expect(
-        provider.filteredSources.map((s) => s.sourceUrl).toList(),
+        readState().filteredSources.map((s) => s.sourceUrl).toList(),
         equals(['u1', 'u2']),
       );
     });
@@ -340,12 +373,12 @@ void main() {
         RssSource(sourceUrl: 'u2', sourceName: 's2', sourceGroup: '生活'),
       ]);
 
-      provider.setGroup('科技');
-      expect(provider.filteredSources.length, equals(1));
+      readNotifier().setGroup('科技');
+      expect(readState().filteredSources.length, equals(1));
 
-      provider.setGroup(null);
-      expect(provider.selectedGroup, isNull);
-      expect(provider.filteredSources.length, equals(2));
+      readNotifier().setGroup(null);
+      expect(readState().selectedGroup, isNull);
+      expect(readState().filteredSources.length, equals(2));
     });
 
     test('选中不存在的分组时 filteredSources 为空', () async {
@@ -353,14 +386,14 @@ void main() {
         RssSource(sourceUrl: 'u1', sourceName: 's1', sourceGroup: '科技'),
       ]);
 
-      provider.setGroup('不存在');
-      expect(provider.filteredSources, isEmpty);
+      readNotifier().setGroup('不存在');
+      expect(readState().filteredSources, isEmpty);
     });
 
-    test('setGroup 触发通知', () {
+    test('setGroup 状态变更触发监听', () {
       var notified = false;
-      provider.addListener(() => notified = true);
-      provider.setGroup('科技');
+      container.listen(rssNotifierProvider, (_, __) => notified = true);
+      readNotifier().setGroup('科技');
       expect(notified, isTrue);
     });
   });

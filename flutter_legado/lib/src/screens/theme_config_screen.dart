@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
-import '../providers/theme_provider.dart';
+import '../providers/theme/theme_notifier.dart';
 import '../services/settings_service.dart';
 
 /// 主题配置页面
 ///
 /// 管理应用主题模式、全局字体缩放（对齐原版 fontScale）以及阅读器字体大小、行距、背景色等外观设置。
-/// 主题模式与全局字体缩放经 [ThemeProvider] 全局实时生效。
-class ThemeConfigScreen extends StatefulWidget {
+/// 主题模式与全局字体缩放经 [ThemeNotifier] 全局实时生效。
+class ThemeConfigScreen extends ConsumerStatefulWidget {
   const ThemeConfigScreen({super.key});
 
   @override
-  State<ThemeConfigScreen> createState() => _ThemeConfigScreenState();
+  ConsumerState<ThemeConfigScreen> createState() => _ThemeConfigScreenState();
 }
 
-class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
+class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   final _settingsService = SettingsService();
 
   double _fontSize = 18.0;
@@ -71,7 +72,8 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final themeProvider = context.watch<ThemeProvider>();
+    final themeState = ref.watch(themeNotifierProvider);
+    final themeNotifier = ref.read(themeNotifierProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(title: const Text('主题配置')),
@@ -101,9 +103,9 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
                       icon: Icon(Icons.dark_mode),
                     ),
                   ],
-                  selected: {themeProvider.themeMode},
+                  selected: {themeState.themeMode},
                   onSelectionChanged: (selected) =>
-                      themeProvider.setThemeMode(selected.first),
+                      themeNotifier.setThemeMode(selected.first),
                 ),
 
                 const SizedBox(height: 32),
@@ -115,9 +117,10 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.format_size),
                   title: const Text('字体缩放'),
-                  subtitle: Text(themeProvider.fontScaleLabel),
+                  subtitle: Text(themeState.fontScaleLabel),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showFontScalePicker(context, themeProvider),
+                  onTap: () =>
+                      _showFontScalePicker(context, themeState, themeNotifier),
                 ),
 
                 const SizedBox(height: 32),
@@ -263,9 +266,13 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
   /// 全局字体缩放选择（对齐原版 ThemeConfigFragment fontScale NumberPickerDialog）
   ///
   /// 原版取值 8~16（0.8x~1.6x），「默认」按钮重置为 0（跟随系统）。
-  void _showFontScalePicker(BuildContext context, ThemeProvider provider) {
+  void _showFontScalePicker(
+    BuildContext context,
+    ThemeState themeState,
+    ThemeNotifier notifier,
+  ) {
     // 跟随系统时默认展示 1.0x
-    var current = provider.fontScaleRaw.toDouble();
+    var current = themeState.fontScaleRaw.toDouble();
     if (current < 8 || current > 16) current = 10;
     showDialog<void>(
       context: context,
@@ -294,7 +301,7 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
             // 对齐原版「默认」按钮：重置为跟随系统
             TextButton(
               onPressed: () {
-                provider.setFontScale(0);
+                notifier.setFontScale(0);
                 Navigator.pop(ctx);
               },
               child: const Text('跟随系统'),
@@ -305,7 +312,7 @@ class _ThemeConfigScreenState extends State<ThemeConfigScreen> {
             ),
             FilledButton(
               onPressed: () {
-                provider.setFontScale(current.round());
+                notifier.setFontScale(current.round());
                 Navigator.pop(ctx);
               },
               child: const Text('确定'),

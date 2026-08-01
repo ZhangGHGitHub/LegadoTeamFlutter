@@ -1,211 +1,100 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../services/book_api.dart';
-import '../bridge/ffi.dart';
-import '../services/source_import_service.dart';
+import '../../bridge/ffi.dart';
+import '../../services/source_import_service.dart';
+import '../providers.dart';
+import 'association_state.dart';
 
-/// 导入类型枚举
-enum ImportType {
-  /// 书源
-  bookSource,
+export 'association_state.dart';
 
-  /// RSS 源
-  rssSource,
-
-  /// 替换规则
-  replaceRule,
-
-  /// 主题配置
-  theme,
-}
-
-/// 导入来源方式
-enum ImportSource {
-  /// 从 URL 导入
-  url,
-
-  /// 从文件导入
-  file,
-
-  /// 从剪贴板导入
-  clipboard,
-
-  /// 扫码导入（预留）
-  qrCode,
-}
-
-/// 导入步骤
-enum ImportStep {
-  /// 选择导入类型
-  selectType,
-
-  /// 输入来源
-  inputSource,
-
-  /// 预览导入内容
-  preview,
-
-  /// 导入完成
-  done,
-}
-
-/// 关联导入状态管理
-class AssociationProvider extends ChangeNotifier {
-  final SourceImportService _importService;
-
-  AssociationProvider(BookApi api)
-      : _importService = SourceImportService(api);
-
-  ImportType _type = ImportType.bookSource;
-  ImportSource _source = ImportSource.url;
-  ImportStep _step = ImportStep.selectType;
-  List<dynamic> _previewItems = [];
-  bool _isLoading = false;
-  String? _error;
-  ImportResult? _lastResult;
-
-  // URL 输入
-  String _urlInput = '';
-
-  // ===== Getters =====
-
-  ImportType get type => _type;
-  ImportSource get source => _source;
-  ImportStep get step => _step;
-  List<dynamic> get previewItems => _previewItems;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  ImportResult? get lastResult => _lastResult;
-  String get urlInput => _urlInput;
-  SourceImportService get importService => _importService;
-
-  /// 导入类型显示名称
-  String get typeName {
-    switch (_type) {
-      case ImportType.bookSource:
-        return '书源';
-      case ImportType.rssSource:
-        return 'RSS 源';
-      case ImportType.replaceRule:
-        return '替换规则';
-      case ImportType.theme:
-        return '主题配置';
-    }
+/// 关联导入 Riverpod Notifier
+///
+/// 职责：
+/// - 管理导入流程状态（类型选择 → 来源输入 → 预览 → 完成）
+/// - 从 URL / 文件 / 剪贴板加载预览内容
+/// - 确认导入（书源 / RSS 源 / 替换规则 / 主题配置）
+/// - 禁止包含业务计算（书源解析由 Rust/SourceImportService 完成）
+class AssociationNotifier extends Notifier<AssociationState> {
+  @override
+  AssociationState build() {
+    // 原实现不自动加载，build() 仅返回初始状态
+    return const AssociationState();
   }
 
-  /// 导入来源显示名称
-  String get sourceName {
-    switch (_source) {
-      case ImportSource.url:
-        return 'URL';
-      case ImportSource.file:
-        return '文件';
-      case ImportSource.clipboard:
-        return '剪贴板';
-      case ImportSource.qrCode:
-        return '扫码';
-    }
-  }
-
-  /// 预览项数量
-  int get previewCount => _previewItems.length;
-
-  /// 是否可以进入下一步
-  bool get canProceed {
-    switch (_step) {
-      case ImportStep.selectType:
-        return true;
-      case ImportStep.inputSource:
-        if (_source == ImportSource.url) {
-          return _urlInput.trim().isNotEmpty;
-        }
-        return true;
-      case ImportStep.preview:
-        return _previewItems.isNotEmpty;
-      case ImportStep.done:
-        return false;
-    }
-  }
+  /// 获取导入服务实例
+  SourceImportService get importService =>
+      SourceImportService(ref.read(bookApiProvider));
 
   // ===== 操作 =====
 
   /// 设置导入类型
   void setType(ImportType type) {
-    _type = type;
-    notifyListeners();
+    state = state.copyWith(type: type);
   }
 
   /// 设置导入来源
   void setSource(ImportSource source) {
-    _source = source;
-    notifyListeners();
+    state = state.copyWith(source: source);
   }
 
   /// 设置 URL 输入
   void setUrlInput(String url) {
-    _urlInput = url;
-    notifyListeners();
+    state = state.copyWith(urlInput: url);
   }
 
   /// 进入下一步
   void nextStep() {
-    switch (_step) {
+    switch (state.step) {
       case ImportStep.selectType:
-        _step = ImportStep.inputSource;
+        state = state.copyWith(step: ImportStep.inputSource);
         break;
       case ImportStep.inputSource:
-        _step = ImportStep.preview;
+        state = state.copyWith(step: ImportStep.preview);
         break;
       case ImportStep.preview:
-        _step = ImportStep.done;
+        state = state.copyWith(step: ImportStep.done);
         break;
       case ImportStep.done:
         break;
     }
-    notifyListeners();
   }
 
   /// 返回上一步
   void previousStep() {
-    switch (_step) {
+    switch (state.step) {
       case ImportStep.selectType:
         break;
       case ImportStep.inputSource:
-        _step = ImportStep.selectType;
+        state = state.copyWith(step: ImportStep.selectType, error: null);
         break;
       case ImportStep.preview:
-        _step = ImportStep.inputSource;
-        _previewItems.clear();
+        state = state.copyWith(
+          step: ImportStep.inputSource,
+          previewItems: [],
+          error: null,
+        );
         break;
       case ImportStep.done:
-        _step = ImportStep.preview;
+        state = state.copyWith(step: ImportStep.preview, error: null);
         break;
     }
-    _error = null;
-    notifyListeners();
   }
 
   /// 重置到初始状态
   void reset() {
-    _step = ImportStep.selectType;
-    _previewItems.clear();
-    _error = null;
-    _lastResult = null;
-    _urlInput = '';
-    notifyListeners();
+    state = const AssociationState();
   }
 
   /// 从 URL 加载预览
   Future<void> loadFromUrl(String url) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
       final uri = Uri.parse(url);
@@ -214,71 +103,61 @@ class AssociationProvider extends ChangeNotifier {
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {
-        _error = 'HTTP 请求失败：状态码 ${response.statusCode}';
+        state = state.copyWith(
+          error: 'HTTP 请求失败：状态码 ${response.statusCode}',
+          isLoading: false,
+        );
         return;
       }
 
       final body = utf8.decode(response.bodyBytes);
       _parsePreviewContent(body);
     } catch (e) {
-      _error = '从 URL 加载失败：$e';
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      state = state.copyWith(error: '从 URL 加载失败：$e', isLoading: false);
     }
   }
 
   /// 从文件加载预览
   Future<void> loadFromFile(String path) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
       final file = File(path);
       if (!await file.exists()) {
-        _error = '文件不存在：$path';
+        state = state.copyWith(error: '文件不存在：$path', isLoading: false);
         return;
       }
 
       final content = await file.readAsString(encoding: utf8);
       _parsePreviewContent(content);
     } catch (e) {
-      _error = '读取文件失败：$e';
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      state = state.copyWith(error: '读取文件失败：$e', isLoading: false);
     }
   }
 
   /// 从剪贴板加载预览
   Future<void> loadFromClipboard() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       final text = data?.text;
 
       if (text == null || text.trim().isEmpty) {
-        _error = '剪贴板为空';
+        state = state.copyWith(error: '剪贴板为空', isLoading: false);
         return;
       }
 
       // 如果剪贴板内容是 URL，则从 URL 加载
       if (text.startsWith('http://') || text.startsWith('https://')) {
-        _urlInput = text.trim();
+        state = state.copyWith(urlInput: text.trim());
         await loadFromUrl(text.trim());
         return;
       }
 
       _parsePreviewContent(text);
     } catch (e) {
-      _error = '读取剪贴板失败：$e';
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      state = state.copyWith(error: '读取剪贴板失败：$e', isLoading: false);
     }
   }
 
@@ -288,29 +167,33 @@ class AssociationProvider extends ChangeNotifier {
       final decoded = jsonDecode(content);
 
       if (decoded is List) {
-        _previewItems = decoded;
+        state = state.copyWith(previewItems: decoded, isLoading: false);
       } else if (decoded is Map<String, dynamic>) {
-        _previewItems = [decoded];
+        state = state.copyWith(previewItems: [decoded], isLoading: false);
       } else {
-        _error = '无效的 JSON 格式：期望数组或对象';
-        _previewItems = [];
+        state = state.copyWith(
+          error: '无效的 JSON 格式：期望数组或对象',
+          previewItems: [],
+          isLoading: false,
+        );
       }
     } on FormatException catch (e) {
-      _error = 'JSON 解析错误：${e.message}';
-      _previewItems = [];
+      state = state.copyWith(
+        error: 'JSON 解析错误：${e.message}',
+        previewItems: [],
+        isLoading: false,
+      );
     }
   }
 
   /// 确认导入
   Future<ImportResult> confirmImport() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
       final ImportResult result;
 
-      switch (_type) {
+      switch (state.type) {
         case ImportType.bookSource:
           result = await _importBookSources();
           break;
@@ -325,15 +208,15 @@ class AssociationProvider extends ChangeNotifier {
           break;
       }
 
-      _lastResult = result;
-      _step = ImportStep.done;
+      state = state.copyWith(
+        lastResult: result,
+        step: ImportStep.done,
+        isLoading: false,
+      );
       return result;
     } catch (e) {
-      if (e is BridgeError) {
-        _error = e.message;
-      } else {
-        _error = e.toString();
-      }
+      final errorMsg = e is BridgeError ? e.message : e.toString();
+      state = state.copyWith(error: errorMsg, isLoading: false);
       return ImportResult(
         total: 0,
         success: 0,
@@ -341,16 +224,13 @@ class AssociationProvider extends ChangeNotifier {
         skipped: 0,
         errors: [e.toString()],
       );
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
   }
 
   /// 导入书源
   Future<ImportResult> _importBookSources() async {
-    final jsonStr = jsonEncode(_previewItems);
-    return await _importService.importFromJson(jsonStr);
+    final jsonStr = jsonEncode(state.previewItems);
+    return await importService.importFromJson(jsonStr);
   }
 
   /// 导入 RSS 源
@@ -359,7 +239,7 @@ class AssociationProvider extends ChangeNotifier {
     var failed = 0;
     final errors = <String>[];
 
-    for (final item in _previewItems) {
+    for (final item in state.previewItems) {
       if (item is! Map<String, dynamic>) {
         failed++;
         errors.add('无效的 RSS 源格式');
@@ -384,7 +264,7 @@ class AssociationProvider extends ChangeNotifier {
     }
 
     return ImportResult(
-      total: _previewItems.length,
+      total: state.previewItems.length,
       success: success,
       failed: failed,
       skipped: 0,
@@ -398,7 +278,7 @@ class AssociationProvider extends ChangeNotifier {
     var failed = 0;
     final errors = <String>[];
 
-    for (final item in _previewItems) {
+    for (final item in state.previewItems) {
       if (item is! Map<String, dynamic>) {
         failed++;
         errors.add('无效的替换规则格式');
@@ -421,7 +301,7 @@ class AssociationProvider extends ChangeNotifier {
     }
 
     return ImportResult(
-      total: _previewItems.length,
+      total: state.previewItems.length,
       success: success,
       failed: failed,
       skipped: 0,
@@ -435,7 +315,7 @@ class AssociationProvider extends ChangeNotifier {
     var failed = 0;
     final errors = <String>[];
 
-    for (final item in _previewItems) {
+    for (final item in state.previewItems) {
       if (item is! Map<String, dynamic>) {
         failed++;
         errors.add('无效的主题配置格式');
@@ -483,7 +363,7 @@ class AssociationProvider extends ChangeNotifier {
     }
 
     return ImportResult(
-      total: _previewItems.length,
+      total: state.previewItems.length,
       success: success,
       failed: failed,
       skipped: 0,
@@ -491,3 +371,15 @@ class AssociationProvider extends ChangeNotifier {
     );
   }
 }
+
+/// 关联导入 Notifier 全局 Provider
+///
+/// 使用方式：
+/// ```dart
+/// final state = ref.watch(associationNotifierProvider);
+/// ref.read(associationNotifierProvider.notifier).reset();
+/// ```
+final associationNotifierProvider =
+    NotifierProvider<AssociationNotifier, AssociationState>(
+  AssociationNotifier.new,
+);

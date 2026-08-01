@@ -1,26 +1,26 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
-import '../services/book_api.dart';
+import '../providers/providers.dart';
 
 /// RSS 源编辑器页面
 ///
 /// 支持新建/编辑 RSS 源，包含基本信息和规则配置。
-class RssSourceEditScreen extends StatefulWidget {
+class RssSourceEditScreen extends ConsumerStatefulWidget {
   /// 编辑模式时传入已有源，null 表示新建
   final RssSource? source;
 
   const RssSourceEditScreen({super.key, this.source});
 
   @override
-  State<RssSourceEditScreen> createState() => _RssSourceEditScreenState();
+  ConsumerState<RssSourceEditScreen> createState() => _RssSourceEditScreenState();
 }
 
-class _RssSourceEditScreenState extends State<RssSourceEditScreen> {
+class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
   bool _testing = false;
@@ -130,7 +130,7 @@ class _RssSourceEditScreenState extends State<RssSourceEditScreen> {
     setState(() => _saving = true);
 
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final source = _buildSource();
 
       if (_isEdit) {

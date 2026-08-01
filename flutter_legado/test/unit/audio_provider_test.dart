@@ -1,74 +1,98 @@
+// AudioNotifier 单元测试
+//
+// 由原 AudioProvider（ChangeNotifier）测试迁移而来，测试点逐一对齐：
+// 初始状态 / TtsConfig / AudioChapter / loadChapters / 播放控制 /
+// 播放模式 / updateConfig / PlayerState / AudioPlayMode 枚举。
+//
+// 迁移范式：ProviderContainer + bookApiProvider.overrideWithValue(mockApi)。
+// AudioService 依赖走 audioServiceProvider，默认单例在测试环境未初始化，
+// 其所有平台通道调用均为静默 no-op（与原测试使用真实单例的行为一致），
+// 故此处无需 override audioServiceProvider。
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:flutter_legado/src/providers/audio_provider.dart';
-import 'package:flutter_legado/src/services/rust_api.dart';
+
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
-  late AudioProvider provider;
   late MockRustApi mockApi;
+  late ProviderContainer container;
+
+  setUpAll(() {
+    registerFallbacks();
+  });
 
   setUp(() {
     mockApi = MockRustApi();
-    provider = AudioProvider(mockApi);
+    container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
   });
 
-  group('AudioProvider 初始状态', () {
+  AudioState readState() => container.read(audioNotifierProvider);
+  AudioNotifier readNotifier() =>
+      container.read(audioNotifierProvider.notifier);
+
+  group('AudioNotifier 初始状态', () {
     test('初始状态为 idle', () {
-      expect(provider.state, equals(PlayerState.idle));
+      expect(readState().state, equals(PlayerState.idle));
     });
 
     test('初始播放模式为 sequential', () {
-      expect(provider.mode, equals(AudioPlayMode.sequential));
+      expect(readState().mode, equals(AudioPlayMode.sequential));
     });
 
     test('初始无章节', () {
-      expect(provider.chapters, isEmpty);
-      expect(provider.hasChapters, isFalse);
-      expect(provider.totalChapters, equals(0));
+      expect(readState().chapters, isEmpty);
+      expect(readState().hasChapters, isFalse);
+      expect(readState().totalChapters, equals(0));
     });
 
     test('初始索引为 0', () {
-      expect(provider.currentIndex, equals(0));
+      expect(readState().currentIndex, equals(0));
     });
 
     test('初始无错误', () {
-      expect(provider.errorMessage, isNull);
+      expect(readState().errorMessage, isNull);
     });
 
     test('初始 bookUrl 和 bookName 为空', () {
-      expect(provider.bookUrl, equals(''));
-      expect(provider.bookName, equals(''));
+      expect(readState().bookUrl, equals(''));
+      expect(readState().bookName, equals(''));
     });
 
     test('初始 isPlaying 为 false', () {
-      expect(provider.isPlaying, isFalse);
+      expect(readState().isPlaying, isFalse);
     });
 
     test('初始 isLoading 为 false', () {
-      expect(provider.isLoading, isFalse);
+      expect(readState().isLoading, isFalse);
     });
 
     test('初始 currentChapter 为 null', () {
-      expect(provider.currentChapter, isNull);
+      expect(readState().currentChapter, isNull);
     });
 
     test('初始 hasPrevious 为 false', () {
-      expect(provider.hasPrevious, isFalse);
+      expect(readState().hasPrevious, isFalse);
     });
 
     test('初始 hasNext 为 false', () {
-      expect(provider.hasNext, isFalse);
+      expect(readState().hasNext, isFalse);
     });
 
     test('初始 progress 为 0', () {
-      expect(provider.progress, equals(0.0));
+      expect(readState().progress, equals(0.0));
     });
 
     test('初始媒体会话未就绪', () {
-      expect(provider.isMediaSessionReady, isFalse);
+      expect(readState().isMediaSessionReady, isFalse);
     });
   });
 
@@ -156,7 +180,7 @@ void main() {
     });
   });
 
-  group('AudioProvider loadChapters（mock API）', () {
+  group('AudioNotifier loadChapters（mock API）', () {
     test('loadChapters 成功加载章节列表', () async {
       final chapters = [
         const BookChapter(title: '第一章', index: 0),
@@ -165,15 +189,15 @@ void main() {
       ];
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
 
-      await provider.loadChapters('https://book.com/1');
+      await readNotifier().loadChapters('https://book.com/1');
 
-      expect(provider.bookUrl, equals('https://book.com/1'));
-      expect(provider.chapters.length, equals(3));
-      expect(provider.hasChapters, isTrue);
-      expect(provider.totalChapters, equals(3));
-      expect(provider.state, equals(PlayerState.idle));
-      expect(provider.currentIndex, equals(0));
-      expect(provider.errorMessage, isNull);
+      expect(readState().bookUrl, equals('https://book.com/1'));
+      expect(readState().chapters.length, equals(3));
+      expect(readState().hasChapters, isTrue);
+      expect(readState().totalChapters, equals(3));
+      expect(readState().state, equals(PlayerState.idle));
+      expect(readState().currentIndex, equals(0));
+      expect(readState().errorMessage, isNull);
     });
 
     test('loadChapters 章节标题正确映射', () async {
@@ -183,30 +207,31 @@ void main() {
       ];
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
 
-      await provider.loadChapters('https://book.com/2');
+      await readNotifier().loadChapters('https://book.com/2');
 
-      expect(provider.chapters[0].title, equals('序章'));
-      expect(provider.chapters[1].title, equals('终章'));
+      expect(readState().chapters[0].title, equals('序章'));
+      expect(readState().chapters[1].title, equals('终章'));
       // 内容初始为空（按需加载）
-      expect(provider.chapters[0].text, equals(''));
+      expect(readState().chapters[0].text, equals(''));
     });
 
     test('loadChapters 失败时设置错误状态', () async {
       when(() => mockApi.getChapters(any()))
           .thenThrow(Exception('加载失败'));
 
-      await provider.loadChapters('https://book.com/bad');
+      await readNotifier().loadChapters('https://book.com/bad');
 
-      expect(provider.state, equals(PlayerState.error));
-      expect(provider.errorMessage, contains('加载失败'));
+      expect(readState().state, equals(PlayerState.error));
+      expect(readState().errorMessage, contains('加载失败'));
     });
 
     test('loadChapters 触发通知', () async {
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => []);
       var notifyCount = 0;
-      provider.addListener(() => notifyCount++);
+      container.listen(audioNotifierProvider, (_, __) => notifyCount++);
 
-      await provider.loadChapters('https://book.com/1');
+      await readNotifier().loadChapters('https://book.com/1');
+      // loading → idle 至少两次状态变更
       expect(notifyCount, greaterThanOrEqualTo(2));
     });
 
@@ -218,10 +243,10 @@ void main() {
       ];
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
 
-      await provider.loadChapters('url');
+      await readNotifier().loadChapters('url');
 
-      expect(provider.hasPrevious, isFalse);
-      expect(provider.hasNext, isTrue);
+      expect(readState().hasPrevious, isFalse);
+      expect(readState().hasNext, isTrue);
     });
 
     test('loadChapters 后 currentChapter 正确', () async {
@@ -230,8 +255,8 @@ void main() {
       ];
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
 
-      await provider.loadChapters('url');
-      expect(provider.currentChapter?.title, equals('第一章'));
+      await readNotifier().loadChapters('url');
+      expect(readState().currentChapter?.title, equals('第一章'));
     });
 
     test('loadChapters 后 progress 正确', () async {
@@ -243,13 +268,13 @@ void main() {
       ];
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
 
-      await provider.loadChapters('url');
+      await readNotifier().loadChapters('url');
       // (0+1)/4 = 0.25
-      expect(provider.progress, equals(0.25));
+      expect(readState().progress, equals(0.25));
     });
   });
 
-  group('AudioProvider 播放控制（mock API）', () {
+  group('AudioNotifier 播放控制（mock API）', () {
     setUp(() {
       final chapters = [
         const BookChapter(title: 'ch1', index: 0),
@@ -270,32 +295,32 @@ void main() {
     });
 
     test('play 无章节时不执行', () async {
-      await provider.play();
-      expect(provider.state, equals(PlayerState.idle));
+      await readNotifier().play();
+      expect(readState().state, equals(PlayerState.idle));
     });
 
     test('play 有章节且配置了引擎时进入 playing 状态', () async {
-      await provider.loadChapters('url');
-      provider.updateConfig(engineUrl: 'https://tts.com');
+      await readNotifier().loadChapters('url');
+      readNotifier().updateConfig(engineUrl: 'https://tts.com');
 
-      await provider.play();
+      await readNotifier().play();
 
-      expect(provider.state, equals(PlayerState.playing));
-      expect(provider.isPlaying, isTrue);
+      expect(readState().state, equals(PlayerState.playing));
+      expect(readState().isPlaying, isTrue);
     });
 
     test('play 无引擎 URL 时仍进入 playing 状态', () async {
-      await provider.loadChapters('url');
+      await readNotifier().loadChapters('url');
       // 不设置 engineUrl，默认为空
 
-      await provider.play();
+      await readNotifier().play();
 
-      expect(provider.state, equals(PlayerState.playing));
+      expect(readState().state, equals(PlayerState.playing));
     });
 
     test('play 加载章节内容', () async {
-      await provider.loadChapters('url');
-      await provider.play();
+      await readNotifier().loadChapters('url');
+      await readNotifier().play();
 
       // 验证 getChapterContent 被调用
       verify(() => mockApi.getChapterContent('url', 0)).called(1);
@@ -305,207 +330,207 @@ void main() {
       when(() => mockApi.getChapterContent(any(), any()))
           .thenThrow(Exception('内容加载失败'));
 
-      await provider.loadChapters('url');
-      await provider.play();
+      await readNotifier().loadChapters('url');
+      await readNotifier().play();
 
-      expect(provider.state, equals(PlayerState.error));
-      expect(provider.errorMessage, contains('内容加载失败'));
+      expect(readState().state, equals(PlayerState.error));
+      expect(readState().errorMessage, contains('内容加载失败'));
     });
 
     test('pause 从 playing 切换到 paused', () async {
-      await provider.loadChapters('url');
-      await provider.play();
-      provider.pause();
+      await readNotifier().loadChapters('url');
+      await readNotifier().play();
+      readNotifier().pause();
 
-      expect(provider.state, equals(PlayerState.paused));
-      expect(provider.isPlaying, isFalse);
+      expect(readState().state, equals(PlayerState.paused));
+      expect(readState().isPlaying, isFalse);
     });
 
     test('pause 非 playing 状态时无效', () async {
-      await provider.loadChapters('url');
+      await readNotifier().loadChapters('url');
       // 状态为 idle
-      provider.pause();
-      expect(provider.state, equals(PlayerState.idle));
+      readNotifier().pause();
+      expect(readState().state, equals(PlayerState.idle));
     });
 
     test('stop 重置为 idle', () async {
-      await provider.loadChapters('url');
-      await provider.play();
-      provider.stop();
+      await readNotifier().loadChapters('url');
+      await readNotifier().play();
+      readNotifier().stop();
 
-      expect(provider.state, equals(PlayerState.idle));
+      expect(readState().state, equals(PlayerState.idle));
     });
 
     test('next 切换到下一章', () async {
-      await provider.loadChapters('url');
-      await provider.play();
-      await provider.next();
+      await readNotifier().loadChapters('url');
+      await readNotifier().play();
+      await readNotifier().next();
 
-      expect(provider.currentIndex, equals(1));
+      expect(readState().currentIndex, equals(1));
     });
 
     test('next 在最后一章时不切换（sequential 模式）', () async {
-      await provider.loadChapters('url');
+      await readNotifier().loadChapters('url');
       // 手动设置到最后一章
-      await provider.jumpTo(2);
-      await provider.next();
+      await readNotifier().jumpTo(2);
+      await readNotifier().next();
 
       // sequential 模式下最后一章不切换
-      expect(provider.currentIndex, equals(2));
+      expect(readState().currentIndex, equals(2));
     });
 
     test('previous 切换到上一章', () async {
-      await provider.loadChapters('url');
-      await provider.jumpTo(1);
-      await provider.previous();
+      await readNotifier().loadChapters('url');
+      await readNotifier().jumpTo(1);
+      await readNotifier().previous();
 
-      expect(provider.currentIndex, equals(0));
+      expect(readState().currentIndex, equals(0));
     });
 
     test('previous 在第一章时不切换', () async {
-      await provider.loadChapters('url');
-      await provider.previous();
+      await readNotifier().loadChapters('url');
+      await readNotifier().previous();
 
-      expect(provider.currentIndex, equals(0));
+      expect(readState().currentIndex, equals(0));
     });
 
     test('jumpTo 跳转到指定章节', () async {
-      await provider.loadChapters('url');
-      await provider.jumpTo(2);
+      await readNotifier().loadChapters('url');
+      await readNotifier().jumpTo(2);
 
-      expect(provider.currentIndex, equals(2));
+      expect(readState().currentIndex, equals(2));
     });
 
     test('jumpTo 负索引不跳转', () async {
-      await provider.loadChapters('url');
-      await provider.jumpTo(-1);
+      await readNotifier().loadChapters('url');
+      await readNotifier().jumpTo(-1);
 
-      expect(provider.currentIndex, equals(0));
+      expect(readState().currentIndex, equals(0));
     });
 
     test('jumpTo 越界索引不跳转', () async {
-      await provider.loadChapters('url');
-      await provider.jumpTo(99);
+      await readNotifier().loadChapters('url');
+      await readNotifier().jumpTo(99);
 
-      expect(provider.currentIndex, equals(0));
+      expect(readState().currentIndex, equals(0));
     });
 
     test('singleLoop 模式下 next 重播当前章', () async {
-      await provider.loadChapters('url');
-      provider.setMode(AudioPlayMode.singleLoop);
-      await provider.jumpTo(2); // 最后一章
+      await readNotifier().loadChapters('url');
+      readNotifier().setMode(AudioPlayMode.singleLoop);
+      await readNotifier().jumpTo(2); // 最后一章
 
-      await provider.next();
+      await readNotifier().next();
 
       // singleLoop 模式下仍停留在当前章
-      expect(provider.currentIndex, equals(2));
-      expect(provider.state, equals(PlayerState.playing));
+      expect(readState().currentIndex, equals(2));
+      expect(readState().state, equals(PlayerState.playing));
     });
   });
 
-  group('AudioProvider 播放模式', () {
+  group('AudioNotifier 播放模式', () {
     test('setMode 切换到 singleLoop', () {
-      provider.setMode(AudioPlayMode.singleLoop);
-      expect(provider.mode, equals(AudioPlayMode.singleLoop));
+      readNotifier().setMode(AudioPlayMode.singleLoop);
+      expect(readState().mode, equals(AudioPlayMode.singleLoop));
     });
 
     test('setMode 切换到 shuffle', () {
-      provider.setMode(AudioPlayMode.shuffle);
-      expect(provider.mode, equals(AudioPlayMode.shuffle));
+      readNotifier().setMode(AudioPlayMode.shuffle);
+      expect(readState().mode, equals(AudioPlayMode.shuffle));
     });
 
     test('setMode 切换回 sequential', () {
-      provider.setMode(AudioPlayMode.shuffle);
-      provider.setMode(AudioPlayMode.sequential);
-      expect(provider.mode, equals(AudioPlayMode.sequential));
+      readNotifier().setMode(AudioPlayMode.shuffle);
+      readNotifier().setMode(AudioPlayMode.sequential);
+      expect(readState().mode, equals(AudioPlayMode.sequential));
     });
 
     test('setMode 触发通知', () {
       var notified = false;
-      provider.addListener(() => notified = true);
-      provider.setMode(AudioPlayMode.singleLoop);
+      container.listen(audioNotifierProvider, (_, __) => notified = true);
+      readNotifier().setMode(AudioPlayMode.singleLoop);
       expect(notified, isTrue);
     });
   });
 
-  group('AudioProvider updateConfig', () {
+  group('AudioNotifier updateConfig', () {
     test('更新 engineUrl', () {
-      provider.updateConfig(engineUrl: 'https://tts.new.com');
-      expect(provider.config.engineUrl, equals('https://tts.new.com'));
+      readNotifier().updateConfig(engineUrl: 'https://tts.new.com');
+      expect(readState().config.engineUrl, equals('https://tts.new.com'));
     });
 
     test('更新 voiceName', () {
-      provider.updateConfig(voiceName: 'xiaohong');
-      expect(provider.config.voiceName, equals('xiaohong'));
+      readNotifier().updateConfig(voiceName: 'xiaohong');
+      expect(readState().config.voiceName, equals('xiaohong'));
     });
 
     test('更新 speed 正常值', () {
-      provider.updateConfig(speed: 2.0);
-      expect(provider.config.speed, equals(2.0));
+      readNotifier().updateConfig(speed: 2.0);
+      expect(readState().config.speed, equals(2.0));
     });
 
     test('speed 低于下限被 clamp 到 0.5', () {
-      provider.updateConfig(speed: 0.1);
-      expect(provider.config.speed, equals(0.5));
+      readNotifier().updateConfig(speed: 0.1);
+      expect(readState().config.speed, equals(0.5));
     });
 
     test('speed 超过上限被 clamp 到 3.0', () {
-      provider.updateConfig(speed: 5.0);
-      expect(provider.config.speed, equals(3.0));
+      readNotifier().updateConfig(speed: 5.0);
+      expect(readState().config.speed, equals(3.0));
     });
 
     test('更新 pitch 正常值', () {
-      provider.updateConfig(pitch: 1.5);
-      expect(provider.config.pitch, equals(1.5));
+      readNotifier().updateConfig(pitch: 1.5);
+      expect(readState().config.pitch, equals(1.5));
     });
 
     test('pitch 低于下限被 clamp 到 0.5', () {
-      provider.updateConfig(pitch: 0.1);
-      expect(provider.config.pitch, equals(0.5));
+      readNotifier().updateConfig(pitch: 0.1);
+      expect(readState().config.pitch, equals(0.5));
     });
 
     test('pitch 超过上限被 clamp 到 2.0', () {
-      provider.updateConfig(pitch: 3.0);
-      expect(provider.config.pitch, equals(2.0));
+      readNotifier().updateConfig(pitch: 3.0);
+      expect(readState().config.pitch, equals(2.0));
     });
 
     test('更新 volume 正常值', () {
-      provider.updateConfig(volume: 0.7);
-      expect(provider.config.volume, equals(0.7));
+      readNotifier().updateConfig(volume: 0.7);
+      expect(readState().config.volume, equals(0.7));
     });
 
     test('volume 低于下限被 clamp 到 0.0', () {
-      provider.updateConfig(volume: -0.5);
-      expect(provider.config.volume, equals(0.0));
+      readNotifier().updateConfig(volume: -0.5);
+      expect(readState().config.volume, equals(0.0));
     });
 
     test('volume 超过上限被 clamp 到 1.0', () {
-      provider.updateConfig(volume: 2.0);
-      expect(provider.config.volume, equals(1.0));
+      readNotifier().updateConfig(volume: 2.0);
+      expect(readState().config.volume, equals(1.0));
     });
 
     test('同时更新多个配置', () {
-      provider.updateConfig(
+      readNotifier().updateConfig(
         engineUrl: 'https://multi.com',
         speed: 1.5,
         volume: 0.8,
       );
-      expect(provider.config.engineUrl, equals('https://multi.com'));
-      expect(provider.config.speed, equals(1.5));
-      expect(provider.config.volume, equals(0.8));
+      expect(readState().config.engineUrl, equals('https://multi.com'));
+      expect(readState().config.speed, equals(1.5));
+      expect(readState().config.volume, equals(0.8));
     });
 
     test('null 参数不更新对应字段', () {
-      provider.updateConfig(engineUrl: 'https://keep.com');
-      provider.updateConfig(speed: 2.0); // 不传 engineUrl
-      expect(provider.config.engineUrl, equals('https://keep.com'));
-      expect(provider.config.speed, equals(2.0));
+      readNotifier().updateConfig(engineUrl: 'https://keep.com');
+      readNotifier().updateConfig(speed: 2.0); // 不传 engineUrl
+      expect(readState().config.engineUrl, equals('https://keep.com'));
+      expect(readState().config.speed, equals(2.0));
     });
 
     test('updateConfig 触发通知', () {
       var notified = false;
-      provider.addListener(() => notified = true);
-      provider.updateConfig(speed: 1.2);
+      container.listen(audioNotifierProvider, (_, __) => notified = true);
+      readNotifier().updateConfig(speed: 1.2);
       expect(notified, isTrue);
     });
   });

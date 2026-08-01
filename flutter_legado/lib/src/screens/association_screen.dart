@@ -1,22 +1,23 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
-import '../providers/association_provider.dart';
+import '../providers/association/association_notifier.dart';
 import '../routes.dart';
 
 /// 统一关联导入页面
 ///
 /// 支持导入类型：书源、RSS 源、替换规则、主题配置
 /// 导入方式：从 URL 导入、从文件导入、从剪贴板导入、扫码导入（预留）
-class AssociationScreen extends StatefulWidget {
+class AssociationScreen extends ConsumerStatefulWidget {
   const AssociationScreen({super.key});
 
   @override
-  State<AssociationScreen> createState() => _AssociationScreenState();
+  ConsumerState<AssociationScreen> createState() => _AssociationScreenState();
 }
 
-class _AssociationScreenState extends State<AssociationScreen> {
+class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   final _urlController = TextEditingController();
 
   @override
@@ -27,6 +28,8 @@ class _AssociationScreenState extends State<AssociationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(associationNotifierProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('关联导入'),
@@ -51,30 +54,27 @@ class _AssociationScreenState extends State<AssociationScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '重置',
-            onPressed: () => context.read<AssociationProvider>().reset(),
+            onPressed: () =>
+                ref.read(associationNotifierProvider.notifier).reset(),
           ),
         ],
       ),
-      body: Consumer<AssociationProvider>(
-        builder: (context, provider, _) {
-          return Column(
-            children: [
-              _buildStepIndicator(context, provider),
-              const Divider(height: 1),
-              Expanded(
-                child: _buildStepContent(context, provider),
-              ),
-            ],
-          );
-        },
+      body: Column(
+        children: [
+          _buildStepIndicator(context, state),
+          const Divider(height: 1),
+          Expanded(
+            child: _buildStepContent(context, state),
+          ),
+        ],
       ),
     );
   }
 
   /// 步骤指示器
-  Widget _buildStepIndicator(BuildContext context, AssociationProvider provider) {
+  Widget _buildStepIndicator(BuildContext context, AssociationState state) {
     final steps = ['选择类型', '输入来源', '预览内容', '完成'];
-    final currentIndex = provider.step.index;
+    final currentIndex = state.step.index;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -139,21 +139,21 @@ class _AssociationScreenState extends State<AssociationScreen> {
   }
 
   /// 步骤内容
-  Widget _buildStepContent(BuildContext context, AssociationProvider provider) {
-    switch (provider.step) {
+  Widget _buildStepContent(BuildContext context, AssociationState state) {
+    switch (state.step) {
       case ImportStep.selectType:
-        return _buildSelectTypeStep(context, provider);
+        return _buildSelectTypeStep(context, state);
       case ImportStep.inputSource:
-        return _buildInputSourceStep(context, provider);
+        return _buildInputSourceStep(context, state);
       case ImportStep.preview:
-        return _buildPreviewStep(context, provider);
+        return _buildPreviewStep(context, state);
       case ImportStep.done:
-        return _buildDoneStep(context, provider);
+        return _buildDoneStep(context, state);
     }
   }
 
   /// 步骤 1：选择导入类型
-  Widget _buildSelectTypeStep(BuildContext context, AssociationProvider provider) {
+  Widget _buildSelectTypeStep(BuildContext context, AssociationState state) {
     final types = [
       (ImportType.bookSource, Icons.menu_book, '书源', '导入网络书源规则'),
       (ImportType.rssSource, Icons.rss_feed, 'RSS 源', '导入 RSS 订阅源'),
@@ -171,7 +171,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
         const SizedBox(height: 16),
         ...types.map((item) {
           final (type, icon, title, subtitle) = item;
-          final isSelected = provider.type == type;
+          final isSelected = state.type == type;
 
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
@@ -187,7 +187,8 @@ class _AssociationScreenState extends State<AssociationScreen> {
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () => provider.setType(type),
+              onTap: () =>
+                  ref.read(associationNotifierProvider.notifier).setType(type),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
@@ -229,7 +230,8 @@ class _AssociationScreenState extends State<AssociationScreen> {
         }),
         const SizedBox(height: 24),
         FilledButton(
-          onPressed: () => provider.nextStep(),
+          onPressed: () =>
+              ref.read(associationNotifierProvider.notifier).nextStep(),
           child: const Text('下一步'),
         ),
       ],
@@ -237,7 +239,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
   }
 
   /// 步骤 2：输入来源
-  Widget _buildInputSourceStep(BuildContext context, AssociationProvider provider) {
+  Widget _buildInputSourceStep(BuildContext context, AssociationState state) {
     final sources = [
       (ImportSource.url, Icons.link, 'URL', '从网络地址导入'),
       (ImportSource.file, Icons.file_open, '文件', '从本地文件导入'),
@@ -255,7 +257,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
         const SizedBox(height: 16),
         ...sources.map((item) {
           final (source, icon, title, subtitle) = item;
-          final isSelected = provider.source == source;
+          final isSelected = state.source == source;
           final isDisabled = source == ImportSource.qrCode;
 
           return Card(
@@ -272,7 +274,11 @@ class _AssociationScreenState extends State<AssociationScreen> {
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: isDisabled ? null : () => provider.setSource(source),
+              onTap: isDisabled
+                  ? null
+                  : () => ref
+                      .read(associationNotifierProvider.notifier)
+                      .setSource(source),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
@@ -314,7 +320,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
         }),
         const SizedBox(height: 16),
         // URL 输入框
-        if (provider.source == ImportSource.url) ...[
+        if (state.source == ImportSource.url) ...[
           TextField(
             controller: _urlController,
             decoration: const InputDecoration(
@@ -324,12 +330,14 @@ class _AssociationScreenState extends State<AssociationScreen> {
               border: OutlineInputBorder(),
             ),
             keyboardType: TextInputType.url,
-            onChanged: (value) => provider.setUrlInput(value),
+            onChanged: (value) => ref
+                .read(associationNotifierProvider.notifier)
+                .setUrlInput(value),
           ),
           const SizedBox(height: 16),
         ],
         // 错误提示
-        if (provider.error != null) ...[
+        if (state.error != null) ...[
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -346,7 +354,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    provider.error!,
+                    state.error!,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onErrorContainer,
                     ),
@@ -358,21 +366,23 @@ class _AssociationScreenState extends State<AssociationScreen> {
           const SizedBox(height: 16),
         ],
         // 加载按钮
-        if (provider.isLoading)
+        if (state.isLoading)
           const Center(child: CircularProgressIndicator())
         else
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => provider.previousStep(),
+                  onPressed: () => ref
+                      .read(associationNotifierProvider.notifier)
+                      .previousStep(),
                   child: const Text('上一步'),
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: FilledButton(
-                  onPressed: () => _loadPreview(context, provider),
+                  onPressed: () => _loadPreview(context, state),
                   child: const Text('加载预览'),
                 ),
               ),
@@ -383,12 +393,12 @@ class _AssociationScreenState extends State<AssociationScreen> {
   }
 
   /// 步骤 3：预览内容
-  Widget _buildPreviewStep(BuildContext context, AssociationProvider provider) {
-    if (provider.isLoading) {
+  Widget _buildPreviewStep(BuildContext context, AssociationState state) {
+    if (state.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (provider.error != null) {
+    if (state.error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -402,12 +412,14 @@ class _AssociationScreenState extends State<AssociationScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                provider.error!,
+                state.error!,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
               OutlinedButton(
-                onPressed: () => provider.previousStep(),
+                onPressed: () => ref
+                    .read(associationNotifierProvider.notifier)
+                    .previousStep(),
                 child: const Text('返回'),
               ),
             ],
@@ -416,7 +428,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
       );
     }
 
-    if (provider.previewItems.isEmpty) {
+    if (state.previewItems.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -433,7 +445,9 @@ class _AssociationScreenState extends State<AssociationScreen> {
             ),
             const SizedBox(height: 16),
             OutlinedButton(
-              onPressed: () => provider.previousStep(),
+              onPressed: () => ref
+                  .read(associationNotifierProvider.notifier)
+                  .previousStep(),
               child: const Text('返回'),
             ),
           ],
@@ -456,7 +470,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
               ),
               const SizedBox(width: 12),
               Text(
-                '发现 ${provider.previewCount} 个${provider.typeName}',
+                '发现 ${state.previewCount} 个${state.typeName}',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onPrimaryContainer,
                   fontWeight: FontWeight.w500,
@@ -469,9 +483,9 @@ class _AssociationScreenState extends State<AssociationScreen> {
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: provider.previewItems.length,
+            itemCount: state.previewItems.length,
             itemBuilder: (context, index) {
-              final item = provider.previewItems[index];
+              final item = state.previewItems[index];
               return _buildPreviewItem(context, item, index);
             },
           ),
@@ -483,7 +497,9 @@ class _AssociationScreenState extends State<AssociationScreen> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => provider.previousStep(),
+                  onPressed: () => ref
+                      .read(associationNotifierProvider.notifier)
+                      .previousStep(),
                   child: const Text('返回'),
                 ),
               ),
@@ -491,9 +507,9 @@ class _AssociationScreenState extends State<AssociationScreen> {
               Expanded(
                 flex: 2,
                 child: FilledButton.icon(
-                  onPressed: () => _confirmImport(context, provider),
+                  onPressed: () => _confirmImport(context),
                   icon: const Icon(Icons.download),
-                  label: Text('确认导入 (${provider.previewCount})'),
+                  label: Text('确认导入 (${state.previewCount})'),
                 ),
               ),
             ],
@@ -549,8 +565,8 @@ class _AssociationScreenState extends State<AssociationScreen> {
   }
 
   /// 步骤 4：完成
-  Widget _buildDoneStep(BuildContext context, AssociationProvider provider) {
-    final result = provider.lastResult;
+  Widget _buildDoneStep(BuildContext context, AssociationState state) {
+    final result = state.lastResult;
 
     return Center(
       child: Padding(
@@ -612,7 +628,8 @@ class _AssociationScreenState extends State<AssociationScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 OutlinedButton(
-                  onPressed: () => provider.reset(),
+                  onPressed: () =>
+                      ref.read(associationNotifierProvider.notifier).reset(),
                   child: const Text('继续导入'),
                 ),
                 const SizedBox(width: 16),
@@ -630,8 +647,9 @@ class _AssociationScreenState extends State<AssociationScreen> {
 
   /// 加载预览
   Future<void> _loadPreview(
-      BuildContext context, AssociationProvider provider) async {
-    switch (provider.source) {
+      BuildContext context, AssociationState state) async {
+    final notifier = ref.read(associationNotifierProvider.notifier);
+    switch (state.source) {
       case ImportSource.url:
         final url = _urlController.text.trim();
         if (url.isEmpty) {
@@ -640,7 +658,7 @@ class _AssociationScreenState extends State<AssociationScreen> {
           );
           return;
         }
-        await provider.loadFromUrl(url);
+        await notifier.loadFromUrl(url);
         break;
       case ImportSource.file:
         final result = await FilePicker.platform.pickFiles(
@@ -650,10 +668,10 @@ class _AssociationScreenState extends State<AssociationScreen> {
         if (result == null || result.files.isEmpty) return;
         final path = result.files.single.path;
         if (path == null) return;
-        await provider.loadFromFile(path);
+        await notifier.loadFromFile(path);
         break;
       case ImportSource.clipboard:
-        await provider.loadFromClipboard();
+        await notifier.loadFromClipboard();
         break;
       case ImportSource.qrCode:
         ScaffoldMessenger.of(context).showSnackBar(
@@ -665,15 +683,16 @@ class _AssociationScreenState extends State<AssociationScreen> {
     }
 
     // 如果加载成功且有预览项，进入下一步
-    if (provider.error == null && provider.previewItems.isNotEmpty) {
-      provider.nextStep();
+    final currentState = ref.read(associationNotifierProvider);
+    if (currentState.error == null && currentState.previewItems.isNotEmpty) {
+      notifier.nextStep();
     }
   }
 
   /// 确认导入
-  Future<void> _confirmImport(
-      BuildContext context, AssociationProvider provider) async {
-    final result = await provider.confirmImport();
+  Future<void> _confirmImport(BuildContext context) async {
+    final result =
+        await ref.read(associationNotifierProvider.notifier).confirmImport();
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

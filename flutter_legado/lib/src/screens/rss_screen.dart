@@ -1,10 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
-import '../providers/rss_provider.dart';
+import '../providers/rss/rss_notifier.dart';
 import '../routes.dart';
 import '../utils/responsive.dart';
 import '../widgets/empty_state.dart';
@@ -13,19 +14,19 @@ import '../widgets/loading_indicator.dart';
 import 'rss_articles_screen.dart';
 
 /// RSS 源列表页面
-class RssScreen extends StatefulWidget {
+class RssScreen extends ConsumerStatefulWidget {
   const RssScreen({super.key});
 
   @override
-  State<RssScreen> createState() => _RssScreenState();
+  ConsumerState<RssScreen> createState() => _RssScreenState();
 }
 
-class _RssScreenState extends State<RssScreen> {
+class _RssScreenState extends ConsumerState<RssScreen> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RssProvider>().loadSources();
+      ref.read(rssNotifierProvider.notifier).loadSources();
     });
   }
 
@@ -80,7 +81,7 @@ class _RssScreenState extends State<RssScreen> {
             onPressed: () {
               if (formKey.currentState?.validate() ?? false) {
                 Navigator.pop(dialogContext);
-                context.read<RssProvider>().addSource(
+                ref.read(rssNotifierProvider.notifier).addSource(
                       nameController.text.trim(),
                       urlController.text.trim(),
                     );
@@ -107,7 +108,7 @@ class _RssScreenState extends State<RssScreen> {
           FilledButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              context.read<RssProvider>().removeSource(source.sourceUrl);
+              ref.read(rssNotifierProvider.notifier).removeSource(source.sourceUrl);
             },
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
@@ -121,6 +122,8 @@ class _RssScreenState extends State<RssScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(rssNotifierProvider);
+    final notifier = ref.read(rssNotifierProvider.notifier);
     return Scaffold(
       appBar: AppBar(
         title: Text(AppStrings.rss),
@@ -139,30 +142,26 @@ class _RssScreenState extends State<RssScreen> {
             onPressed: () => Navigator.pushNamed(context, AppRoutes.rssFavorites),
           ),
           // 分组筛选：对齐安卓 RssFragment 的分组菜单（linkedSetOf 保序聚合）
-          Consumer<RssProvider>(
-            builder: (context, provider, _) => PopupMenuButton<String?>(
-              tooltip: '筛选',
-              icon: const Icon(Icons.filter_list),
-              onSelected: (group) => provider.setGroup(group),
-              itemBuilder: (context) => [
-                const PopupMenuItem<String?>(
-                  value: null,
-                  child: Text('全部'),
+          PopupMenuButton<String?>(
+            tooltip: '筛选',
+            icon: const Icon(Icons.filter_list),
+            onSelected: (group) => notifier.setGroup(group),
+            itemBuilder: (context) => [
+              const PopupMenuItem<String?>(
+                value: null,
+                child: Text('全部'),
+              ),
+              for (final group in state.groups)
+                PopupMenuItem<String?>(
+                  value: group,
+                  child: Text(group),
                 ),
-                for (final group in provider.groups)
-                  PopupMenuItem<String?>(
-                    value: group,
-                    child: Text(group),
-                  ),
-              ],
-            ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: '设置',
-            onPressed: () {
-              // TODO: 待接入 RSS 设置页面
-            },
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.rssConfig),
           ),
         ],
       ),
@@ -171,20 +170,20 @@ class _RssScreenState extends State<RssScreen> {
         icon: const Icon(Icons.add),
         label: const Text('添加源'),
       ),
-      body: Consumer<RssProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoadingSources && provider.sources.isEmpty) {
+      body: Builder(
+        builder: (context) {
+          if (state.isLoadingSources && state.sources.isEmpty) {
             return const LoadingIndicator(message: '加载 RSS 源...');
           }
 
-          if (provider.error != null && provider.sources.isEmpty) {
+          if (state.error != null && state.sources.isEmpty) {
             return ErrorView(
-              message: provider.error!,
-              onRetry: () => provider.loadSources(),
+              message: state.error!,
+              onRetry: () => notifier.loadSources(),
             );
           }
 
-          if (provider.isEmpty) {
+          if (state.isEmpty) {
             // 安卓原版：纯灰字居中空状态
             return const EmptyState(
               icon: Icons.rss_feed,
@@ -194,7 +193,7 @@ class _RssScreenState extends State<RssScreen> {
           }
 
           // 分组过滤后为空：提示当前分组无订阅源
-          if (provider.filteredSources.isEmpty) {
+          if (state.filteredSources.isEmpty) {
             return const EmptyState(
               icon: Icons.rss_feed,
               title: '当前分组暂无订阅源',
@@ -203,7 +202,7 @@ class _RssScreenState extends State<RssScreen> {
           }
 
           return RefreshIndicator(
-            onRefresh: () => provider.loadSources(),
+            onRefresh: () => notifier.loadSources(),
             // 安卓端使用 GridLayoutManager spanCount=4
             // 响应式改造：按可用宽度动态计算列数（手机 2 列 / 中大屏 3 列 / 平板 4 列）
             child: LayoutBuilder(
@@ -220,9 +219,9 @@ class _RssScreenState extends State<RssScreen> {
                     crossAxisSpacing: 4,
                     mainAxisSpacing: 4,
                   ),
-                  itemCount: provider.filteredSources.length,
+                  itemCount: state.filteredSources.length,
                   itemBuilder: (context, index) {
-                    final source = provider.filteredSources[index];
+                    final source = state.filteredSources[index];
                     return _buildSourceItem(context, source);
                   },
                 );

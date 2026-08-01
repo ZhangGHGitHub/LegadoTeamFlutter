@@ -1,75 +1,76 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
-import '../providers/reading_stats_provider.dart';
+import '../providers/reading_stats/reading_stats_notifier.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
 /// 阅读统计页面
-class ReadingStatsScreen extends StatefulWidget {
+class ReadingStatsScreen extends ConsumerStatefulWidget {
   const ReadingStatsScreen({super.key});
 
   @override
-  State<ReadingStatsScreen> createState() => _ReadingStatsScreenState();
+  ConsumerState<ReadingStatsScreen> createState() => _ReadingStatsScreenState();
 }
 
-class _ReadingStatsScreenState extends State<ReadingStatsScreen> {
+class _ReadingStatsScreenState extends ConsumerState<ReadingStatsScreen> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ReadingStatsProvider>().loadStats();
+      ref.read(readingStatsNotifierProvider.notifier).loadStats();
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(readingStatsNotifierProvider);
+    final notifier = ref.read(readingStatsNotifierProvider.notifier);
     return Scaffold(
       appBar: AppBar(
         title: const Text('阅读统计'),
         actions: [
-          Consumer<ReadingStatsProvider>(
-            builder: (context, provider, _) => SegmentedButton<StatsPeriod>(
-              segments: const [
-                ButtonSegment(value: StatsPeriod.week, label: Text('周')),
-                ButtonSegment(value: StatsPeriod.month, label: Text('月')),
-              ],
-              selected: {provider.period},
-              onSelectionChanged: (s) => provider.setPeriod(s.first),
-              style: SegmentedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-              ),
+          SegmentedButton<StatsPeriod>(
+            segments: const [
+              ButtonSegment(value: StatsPeriod.week, label: Text('周')),
+              ButtonSegment(value: StatsPeriod.month, label: Text('月')),
+            ],
+            selected: {state.period},
+            onSelectionChanged: (s) => notifier.setPeriod(s.first),
+            style: SegmentedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
             ),
           ),
           const SizedBox(width: 8),
         ],
       ),
-      body: Consumer<ReadingStatsProvider>(
-        builder: (context, provider, _) {
-          if (provider.loading && provider.dailyStats.isEmpty) {
+      body: Builder(
+        builder: (context) {
+          if (state.loading && state.dailyStats.isEmpty) {
             return const LoadingIndicator(message: '加载统计数据...');
           }
-          if (provider.error != null && provider.dailyStats.isEmpty) {
+          if (state.error != null && state.dailyStats.isEmpty) {
             return ErrorView(
-              message: provider.error!,
-              onRetry: () => provider.loadStats(),
+              message: state.error!,
+              onRetry: () => notifier.loadStats(),
             );
           }
           return RefreshIndicator(
-            onRefresh: () => provider.loadStats(),
+            onRefresh: () => notifier.loadStats(),
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildTodayCards(context, provider),
+                  _buildTodayCards(context, state),
                   const SizedBox(height: 24),
-                  _buildDailyBarChart(context, provider),
+                  _buildDailyBarChart(context, state),
                   const SizedBox(height: 24),
-                  _buildBookDistribution(context, provider),
+                  _buildBookDistribution(context, state),
                   const SizedBox(height: 24),
-                  _buildHeatmap(context, provider),
+                  _buildHeatmap(context, state),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -82,8 +83,8 @@ class _ReadingStatsScreenState extends State<ReadingStatsScreen> {
 
   // ===== 今日统计卡片 =====
 
-  Widget _buildTodayCards(BuildContext context, ReadingStatsProvider provider) {
-    final stats = provider.today;
+  Widget _buildTodayCards(BuildContext context, ReadingStatsState state) {
+    final stats = state.today;
     return Row(
       children: [
         Expanded(
@@ -119,8 +120,8 @@ class _ReadingStatsScreenState extends State<ReadingStatsScreen> {
   // ===== 每日阅读时长柱状图 =====
 
   Widget _buildDailyBarChart(
-      BuildContext context, ReadingStatsProvider provider) {
-    final daily = provider.dailyStats;
+      BuildContext context, ReadingStatsState state) {
+    final daily = state.dailyStats;
     final sortedKeys = daily.keys.toList()..sort();
     final values = sortedKeys.map((k) => daily[k] ?? 0).toList();
     final maxVal = values.isEmpty
@@ -131,7 +132,7 @@ class _ReadingStatsScreenState extends State<ReadingStatsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          provider.period == StatsPeriod.week ? '本周阅读时长' : '本月阅读时长',
+          state.period == StatsPeriod.week ? '本周阅读时长' : '本月阅读时长',
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -193,8 +194,8 @@ class _ReadingStatsScreenState extends State<ReadingStatsScreen> {
   // ===== 各书籍阅读时间占比 =====
 
   Widget _buildBookDistribution(
-      BuildContext context, ReadingStatsProvider provider) {
-    final bookStats = provider.bookStats;
+      BuildContext context, ReadingStatsState state) {
+    final bookStats = state.bookStats;
     if (bookStats.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,7 +211,7 @@ class _ReadingStatsScreenState extends State<ReadingStatsScreen> {
         ],
       );
     }
-    final total = provider.totalBookDuration;
+    final total = state.totalBookDuration;
     final sorted = bookStats.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -265,8 +266,8 @@ class _ReadingStatsScreenState extends State<ReadingStatsScreen> {
 
   // ===== 阅读热力图 =====
 
-  Widget _buildHeatmap(BuildContext context, ReadingStatsProvider provider) {
-    final heatmap = provider.heatmap;
+  Widget _buildHeatmap(BuildContext context, ReadingStatsState state) {
+    final heatmap = state.heatmap;
     if (heatmap.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,

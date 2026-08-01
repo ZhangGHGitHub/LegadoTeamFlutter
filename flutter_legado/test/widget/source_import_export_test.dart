@@ -4,12 +4,13 @@
 // - SourceScreen 菜单含「从文件导入 / 扫码导入 / 导出到文件」入口
 // - QrcodeScreen 在桌面/测试环境降级为手动输入模式（无相机），可输入并返回内容
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:provider/provider.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
-import 'package:flutter_legado/src/providers/source_provider.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/qrcode_screen.dart';
 import 'package:flutter_legado/src/screens/source_screen.dart';
 
@@ -35,8 +36,8 @@ void main() {
   });
 
   Widget wrapSourceScreen() {
-    return ChangeNotifierProvider(
-      create: (_) => SourceProvider(mockApi),
+    return ProviderScope(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
       child: const MaterialApp(home: SourceScreen()),
     );
   }

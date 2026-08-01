@@ -598,6 +598,21 @@ String mapApiError(Object e) {
 > （scopeTitle）/作用于正文（scopeContent）/排除范围（excludeScope）/超时（timeoutMillisecond）。本次按用户决策补全
 > 这 5 个字段，忠实还原原版字段集与顺序。新增 `replace_rules_test.dart` 3 个 widget 测试（全字段可见/保存全字段传递/
 > 编辑模式回填全字段与开关）。全量 989 测试通过，改动文件 analyze 0 issues。
+>
+> **5.4 实施决议（移除 provider 依赖，全量 Riverpod）**：采用「多 agent 并行 + 主控整合」模式（用户决策：freezed+Notifier
+> 完整重写、全部 6 个 agent 同时跑）。将原 10 个 `ChangeNotifierProvider`（theme/bookshelf/source/rss/reading_stats/sync/
+> bookmark/replace_rule/auto_task/association/audio）与 `Provider<BookApi>` 全部迁移为 Riverpod `NotifierProvider`（freezed
+> 不可变 State + `Notifier`），统一经全局 `bookApiProvider` 取 API。新建 `providers/{theme,sync,replace_rule,auto_task,
+> association,audio,reading_stats,rss,source,bookmark}/` 模块（bookshelf 复用 Phase 1.2-1.3 已建的 `bookshelf/`）；消费方
+> 屏幕改 `ConsumerWidget/ConsumerStatefulWidget` + `ref.watch/read`；`main.dart` 移除 `MultiProvider` 仅留 `ProviderScope`；
+> `pubspec.yaml` 移除 `provider` 依赖（lib 中 `package:provider` 引用归零）。测试改 `ProviderContainer`/`ProviderScope` +
+> `bookApiProvider.overrideWithValue(mock)` 范式。**并行协作要点**：6 个 agent 按文件互斥分派、不碰共享文件（main/app/
+> pubspec/settings 等）、不跑 build_runner（freezed 由主控统一生成）；主控整合阶段修复 agent 产出缺陷（缺失 rust_api 导入、
+> 误用 `hide Provider`、未完成的 book_group/book_info BookApi 消费点迁移、移除 12 处未使用导入）。**测试注意**：
+> `SharedPreferences` 单例跨测试缓存，`setMockInitialValues` 后须先读取 provider 触发 `build()` 再冲刷微任务，否则自动
+> 加载不生效。**git 隔离**：并行会话的「跨章节连续分页 + 书籍信息编辑」功能改动（reader/*、paragraph_layout_engine、
+> routes.dart、bookshelf_screen 等）予以排除；`reader_screen` 还原后仅重做 bookmark/BookApi 迁移部分（分页功能留待该会话
+> 重新应用）。删除与 `bookshelf_notifier_test` 重复的 `bookshelf_provider_test`。全量 952 测试通过，analyze 0 error/warning。
 
 ---
 

@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../services/book_api.dart';
+import '../providers/providers.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 
@@ -13,17 +13,17 @@ import '../widgets/error_view.dart';
 ///
 /// 支持纵向连续滚动、双指缩放、前后图片预加载。
 /// 通过 [bookUrl] 参数接收书籍标识，从 BookApi 获取章节与图片列表。
-class ReaderComicScreen extends StatefulWidget {
+class ReaderComicScreen extends ConsumerStatefulWidget {
   /// 书籍 URL 标识
   final String bookUrl;
 
   const ReaderComicScreen({super.key, required this.bookUrl});
 
   @override
-  State<ReaderComicScreen> createState() => _ReaderComicScreenState();
+  ConsumerState<ReaderComicScreen> createState() => _ReaderComicScreenState();
 }
 
-class _ReaderComicScreenState extends State<ReaderComicScreen> {
+class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 滚动控制器，用于纵向连续滚动
   final ScrollController _scrollController = ScrollController();
 
@@ -81,7 +81,7 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
     });
 
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       // 获取书籍信息
       _book = await api.getBook(widget.bookUrl);
       if (_book == null) {
@@ -132,7 +132,7 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
     });
 
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final chapter = _chapters[_currentChapterIndex];
 
       // 获取章节内容
@@ -291,7 +291,7 @@ class _ReaderComicScreenState extends State<ReaderComicScreen> {
   /// 保存阅读进度
   Future<void> _saveProgress() async {
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       await api.updateReadingProgress(
         bookUrl: widget.bookUrl,
         chapterIndex: _currentChapterIndex,

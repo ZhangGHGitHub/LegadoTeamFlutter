@@ -1,18 +1,20 @@
-/// AutoTaskProvider 单元测试
+/// AutoTaskNotifier 单元测试
 ///
 /// 覆盖：
 /// - AutoTask 模型：fromJson/toJson/copyWith/taskTypeLabel/_defaultScript
-/// - AutoTaskProvider：loadTasks/createTask/toggleTask/deleteTask/runNow
+/// - AutoTaskNotifier：loadTasks/createTask/toggleTask/deleteTask/runNow
 /// - FFI 方法：buildBookUpdateTask/updateCronBatch/normalizeScript 等
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:flutter_legado/src/providers/auto_task_provider.dart';
+import 'package:flutter_legado/src/providers/auto_task/auto_task_notifier.dart';
 
 import '../mocks/mocks.dart';
 
@@ -20,11 +22,6 @@ void main() {
   setUpAll(() {
     registerFallbacks();
   });
-
-  // Helper: Create ASCII JSON (avoiding Latin-1 encoding issues in http package)
-  String jsonEncodeAscii(Map<String, dynamic> data) {
-    return jsonEncode(data);
-  }
 
   List<Map<String, dynamic>> makeTaskList({int count = 2, String idStart = '1'}) {
     return List.generate(
@@ -37,6 +34,31 @@ void main() {
       },
     );
   }
+
+  /// 构建仅 REST 降级路径的容器（rustApi 覆盖为 null，对齐旧 `AutoTaskProvider(client:)`）
+  ProviderContainer restContainer(http.Client client) {
+    final c = ProviderContainer(overrides: [
+      autoTaskHttpClientProvider.overrideWithValue(client),
+      autoTaskRustApiProvider.overrideWithValue(null),
+    ]);
+    addTearDown(c.dispose);
+    return c;
+  }
+
+  /// 构建带 FFI（rustApi）的容器（对齐旧 `AutoTaskProvider(client:, rustApi:)`）
+  ProviderContainer ffiContainer(http.Client client, MockRustApi rustApi) {
+    final c = ProviderContainer(overrides: [
+      autoTaskHttpClientProvider.overrideWithValue(client),
+      autoTaskRustApiProvider.overrideWithValue(rustApi),
+    ]);
+    addTearDown(c.dispose);
+    return c;
+  }
+
+  AutoTaskState readState(ProviderContainer c) =>
+      c.read(autoTaskNotifierProvider);
+  AutoTaskNotifier readNotifier(ProviderContainer c) =>
+      c.read(autoTaskNotifierProvider.notifier);
 
   // ═══════════════════════════════════════════════════════════
   // AutoTask 模型测试（纯逻辑，不涉及 HTTP）
@@ -111,20 +133,20 @@ void main() {
   });
 
   // ═══════════════════════════════════════════════════════════
-  // AutoTaskProvider 测试
+  // AutoTaskNotifier 测试
   // ═══════════════════════════════════════════════════════════
 
-  group('AutoTaskProvider 初始状态', () {
+  group('AutoTaskNotifier 初始状态', () {
     test('初始任务列表为空', () {
       final client = MockClient((_) async => http.Response(jsonEncode({'tasks': []}), 200));
-      final provider = AutoTaskProvider(client: client);
-      expect(provider.tasks, isEmpty);
-      expect(provider.isLoading, isFalse);
-      expect(provider.error, isNull);
+      final c = restContainer(client);
+      expect(readState(c).tasks, isEmpty);
+      expect(readState(c).isLoading, isFalse);
+      expect(readState(c).error, isNull);
     });
   });
 
-  group('AutoTaskProvider loadTasks', () {
+  group('AutoTaskNotifier loadTasks', () {
     test('成功加载任务列表（tasks 包裹格式）', () async {
       final client = MockClient((request) async {
         return http.Response(
@@ -132,14 +154,14 @@ void main() {
           200,
         );
       });
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
-      await provider.loadTasks();
+      await readNotifier(c).loadTasks();
 
-      expect(provider.tasks.length, equals(2));
-      expect(provider.tasks[0].name, equals('Task1'));
-      expect(provider.isLoading, isFalse);
-      expect(provider.error, isNull);
+      expect(readState(c).tasks.length, equals(2));
+      expect(readState(c).tasks[0].name, equals('Task1'));
+      expect(readState(c).isLoading, isFalse);
+      expect(readState(c).error, isNull);
     });
 
     test('成功加载任务列表（直接数组格式）', () async {
@@ -148,46 +170,46 @@ void main() {
           {'id': '1', 'name': 'TaskA', 'cron': ''},
         ]), 200);
       });
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
-      await provider.loadTasks();
-      expect(provider.tasks.length, equals(1));
+      await readNotifier(c).loadTasks();
+      expect(readState(c).tasks.length, equals(1));
     });
 
     test('HTTP 非 200 时设置错误', () async {
       final client = MockClient((_) async => http.Response('Not Found', 404));
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
-      await provider.loadTasks();
-      expect(provider.tasks, isEmpty);
-      expect(provider.error, contains('404'));
+      await readNotifier(c).loadTasks();
+      expect(readState(c).tasks, isEmpty);
+      expect(readState(c).error, contains('404'));
     });
 
     test('连接失败时回退为空列表且不报错', () async {
       final client = MockClient((_) async {
         throw const SocketException('Connection refused');
       });
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
-      await provider.loadTasks();
-      expect(provider.tasks, isEmpty);
-      expect(provider.error, isNull);
+      await readNotifier(c).loadTasks();
+      expect(readState(c).tasks, isEmpty);
+      expect(readState(c).error, isNull);
     });
 
     test('silent 模式不触发 loading 状态', () async {
       final client = MockClient((_) async => http.Response('[]', 200));
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
       var sawLoading = false;
-      provider.addListener(() {
-        if (provider.isLoading) sawLoading = true;
+      c.listen(autoTaskNotifierProvider, (prev, next) {
+        if (next.isLoading) sawLoading = true;
       });
 
-      await provider.loadTasks(silent: true);
+      await readNotifier(c).loadTasks(silent: true);
       expect(sawLoading, isFalse);
     });
   });
 
-  group('AutoTaskProvider createTask', () {
+  group('AutoTaskNotifier createTask', () {
     test('创建成功后静默刷新', () async {
       var requestCount = 0;
       final client = MockClient((request) async {
@@ -199,27 +221,27 @@ void main() {
         if (requestCount == 1) return http.Response('', 201);
         return http.Response(jsonEncode([{'id': '1', 'name': 'New Task', 'cron': ''}]), 200);
       });
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
       const task = AutoTask(id: '1', name: 'New Task', taskType: 'backup', cron: '');
-      await provider.createTask(task);
+      await readNotifier(c).createTask(task);
 
-      expect(provider.error, isNull);
-      expect(provider.tasks.length, equals(1));
+      expect(readState(c).error, isNull);
+      expect(readState(c).tasks.length, equals(1));
     });
 
     test('创建失败时设置错误', () async {
       final client = MockClient((_) async => http.Response('Error', 500));
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
       const task = AutoTask(id: '1', name: 'Fail', taskType: '', cron: '');
-      await provider.createTask(task);
+      await readNotifier(c).createTask(task);
 
-      expect(provider.error, contains('创建任务失败'));
+      expect(readState(c).error, contains('创建任务失败'));
     });
   });
 
-  group('AutoTaskProvider toggleTask', () {
+  group('AutoTaskNotifier toggleTask', () {
     test('乐观更新成功后刷新', () async {
       final client = MockClient((request) async {
         if (request.method == 'GET') {
@@ -227,42 +249,40 @@ void main() {
         }
         return http.Response('', 200);
       });
-      final provider = AutoTaskProvider(client: client);
-      await provider.loadTasks();
+      final c = restContainer(client);
+      await readNotifier(c).loadTasks();
 
-      await provider.toggleTask('1', false);
-      expect(provider.error, isNull);
+      await readNotifier(c).toggleTask('1', false);
+      expect(readState(c).error, isNull);
     });
 
     test('更新失败时回滚', () async {
-      var getRequestCount = 0;
       final client = MockClient((request) async {
         if (request.method == 'GET') {
-          getRequestCount++;
           return http.Response(jsonEncode(makeTaskList()), 200);
         }
         throw Exception('Network error');
       });
-      final provider = AutoTaskProvider(client: client);
-      await provider.loadTasks();
+      final c = restContainer(client);
+      await readNotifier(c).loadTasks();
 
-      await provider.toggleTask('1', false);
+      await readNotifier(c).toggleTask('1', false);
 
-      expect(provider.tasks[0].isEnabled, isTrue);
-      expect(provider.error, contains('更新任务失败'));
+      expect(readState(c).tasks[0].isEnabled, isTrue);
+      expect(readState(c).error, contains('更新任务失败'));
     });
   });
 
-  group('AutoTaskProvider deleteTask', () {
+  group('AutoTaskNotifier deleteTask', () {
     test('删除成功后刷新', () async {
       final client = MockClient((request) async {
         if (request.method == 'DELETE') return http.Response('', 200);
         return http.Response('[]', 200);
       });
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
-      await provider.deleteTask('1');
-      expect(provider.error, isNull);
+      await readNotifier(c).deleteTask('1');
+      expect(readState(c).error, isNull);
     });
 
     test('删除失败时设置错误', () async {
@@ -270,23 +290,23 @@ void main() {
         if (request.method == 'DELETE') return http.Response('Error', 500);
         return http.Response('[]', 200);
       });
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
-      await provider.deleteTask('1');
-      expect(provider.error, contains('删除任务失败'));
+      await readNotifier(c).deleteTask('1');
+      expect(readState(c).error, contains('删除任务失败'));
     });
   });
 
-  group('AutoTaskProvider runNow', () {
+  group('AutoTaskNotifier runNow', () {
     test('REST 路径运行成功后刷新', () async {
       final client = MockClient((request) async {
         if (request.method == 'POST') return http.Response('', 200);
         return http.Response('[]', 200);
       });
-      final provider = AutoTaskProvider(client: client);
+      final c = restContainer(client);
 
-      await provider.runNow('1');
-      expect(provider.error, isNull);
+      await readNotifier(c).runNow('1');
+      expect(readState(c).error, isNull);
     });
 
     test('FFI 执行成功更新本地状态', () async {
@@ -294,30 +314,31 @@ void main() {
         return http.Response(jsonEncode({'tasks': [{'id': 't1', 'name': 'Task', 'taskType': 'backup', 'cron': ''}], 'total': 1}), 200);
       });
       final mockApi = MockRustApi();
-      final provider = AutoTaskProvider(client: client, rustApi: mockApi);
-      await provider.loadTasks();
+      final c = ffiContainer(client, mockApi);
+      // autoTaskListRules 未打桩 → 抛出 → 降级 REST 拉取到 t1
+      await readNotifier(c).loadTasks();
 
       when(() => mockApi.autoTaskExecuteWithId(
             protocolJson: any(named: 'protocolJson'),
             taskId: any(named: 'taskId'),
           )).thenAnswer((_) async => {'success': true});
 
-      await provider.runNow('t1');
-      
+      await readNotifier(c).runNow('t1');
+
       // Verify the update happened
-      expect(provider.tasks.length, equals(1));
-      expect(provider.tasks.first.lastResult, isNotNull); // Check not null
+      expect(readState(c).tasks.length, equals(1));
+      expect(readState(c).tasks.first.lastResult, isNotNull); // Check not null
     });
   });
 
-  group('AutoTaskProvider FFI 专属方法', () {
+  group('AutoTaskNotifier FFI 专属方法', () {
     late MockRustApi mockApi;
-    late AutoTaskProvider provider;
+    late ProviderContainer container;
 
     setUp(() {
       mockApi = MockRustApi();
       final client = MockClient((_) async => http.Response('[]', 200));
-      provider = AutoTaskProvider(client: client, rustApi: mockApi);
+      container = ffiContainer(client, mockApi);
     });
 
     test('buildBookUpdateTask 成功', () async {
@@ -329,7 +350,7 @@ void main() {
             name: any(named: 'name'),
           )).thenAnswer((_) async => expected);
 
-      final result = await provider.buildBookUpdateTask(
+      final result = await readNotifier(container).buildBookUpdateTask(
         bookUrl: 'http://book.com', bookName: 'TestBook',
         bookAuthor: 'Author', name: 'Update',
       );
@@ -337,8 +358,9 @@ void main() {
     });
 
     test('buildBookUpdateTask 无 rustApi 返回 null', () async {
-      final noApiProvider = AutoTaskProvider(client: MockClient((_) async => http.Response('[]', 200)));
-      final result = await noApiProvider.buildBookUpdateTask(
+      final noApiContainer =
+          restContainer(MockClient((_) async => http.Response('[]', 200)));
+      final result = await readNotifier(noApiContainer).buildBookUpdateTask(
         bookUrl: '', bookName: '', bookAuthor: '', name: '',
       );
       expect(result, isNull);
@@ -348,7 +370,7 @@ void main() {
       when(() => mockApi.autoTaskNormalizeScript(script: any(named: 'script')))
           .thenAnswer((_) async => 'cleaned()');
 
-      final result = await provider.normalizeScript('@js:cleaned()');
+      final result = await readNotifier(container).normalizeScript('@js:cleaned()');
       expect(result, equals('cleaned()'));
     });
 
@@ -358,7 +380,8 @@ void main() {
             respectCanUpdate: any(named: 'respectCanUpdate'),
           )).thenAnswer((_) async => true);
 
-      final result = await provider.canRefreshBookToc(canUpdate: true, respectCanUpdate: true);
+      final result = await readNotifier(container)
+          .canRefreshBookToc(canUpdate: true, respectCanUpdate: true);
       expect(result, isTrue);
     });
 
@@ -368,7 +391,7 @@ void main() {
             fromMs: any(named: 'fromMs'),
           )).thenAnswer((_) async => 1735689600000);
 
-      final result = await provider.nextDueAt(cron: '0 0 3 * * *');
+      final result = await readNotifier(container).nextDueAt(cron: '0 0 3 * * *');
       expect(result, equals(1735689600000));
     });
   });

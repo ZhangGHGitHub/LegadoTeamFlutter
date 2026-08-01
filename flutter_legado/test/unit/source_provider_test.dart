@@ -1,4 +1,4 @@
-/// SourceProvider 单元测试
+/// SourceNotifier 单元测试
 ///
 /// 覆盖：
 /// - 初始状态、loadSources、filteredSources、groupedSources
@@ -6,18 +6,21 @@
 /// - 批量操作：enterBatchMode/exitBatchMode/selectAll/batchEnable/batchDisable/batchDelete
 /// - 分组筛选：setGroup
 /// - 导入：importSources/importFromJson/importFromUrl/importFromFile
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:flutter_legado/src/providers/source_provider.dart';
+import 'package:flutter_legado/src/providers/source/source_notifier.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/bridge/ffi.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
-  late SourceProvider provider;
   late MockRustApi mockApi;
+  late ProviderContainer container;
 
   setUpAll(() {
     registerFallbacks();
@@ -25,8 +28,15 @@ void main() {
 
   setUp(() {
     mockApi = MockRustApi();
-    provider = SourceProvider(mockApi);
+    container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
   });
+
+  SourceState readState() => container.read(sourceNotifierProvider);
+  SourceNotifier readNotifier() =>
+      container.read(sourceNotifierProvider.notifier);
 
   // 辅助：构造 BookSource
   BookSource makeSource(String url, String name,
@@ -39,39 +49,39 @@ void main() {
     );
   }
 
-  group('SourceProvider 初始状态', () {
+  group('SourceNotifier 初始状态', () {
     test('初始书源列表为空', () {
-      expect(provider.sources, isEmpty);
+      expect(readState().sources, isEmpty);
     });
 
     test('初始非加载状态', () {
-      expect(provider.loading, isFalse);
+      expect(readState().loading, isFalse);
     });
 
     test('初始无错误', () {
-      expect(provider.error, isNull);
+      expect(readState().error, isNull);
     });
 
     test('初始无筛选关键字', () {
-      expect(provider.filterKeyword, equals(''));
+      expect(readState().filterKeyword, equals(''));
     });
 
     test('初始无选中分组', () {
-      expect(provider.selectedGroup, isNull);
+      expect(readState().selectedGroup, isNull);
     });
 
     test('初始非批量模式', () {
-      expect(provider.batchMode, isFalse);
-      expect(provider.selectedUrls, isEmpty);
-      expect(provider.selectedCount, equals(0));
+      expect(readState().batchMode, isFalse);
+      expect(readState().selectedUrls, isEmpty);
+      expect(readState().selectedCount, equals(0));
     });
 
     test('初始无导入结果', () {
-      expect(provider.lastImportResult, isNull);
+      expect(readState().lastImportResult, isNull);
     });
   });
 
-  group('SourceProvider loadSources', () {
+  group('SourceNotifier loadSources', () {
     test('成功加载书源列表', () async {
       final sources = [
         makeSource('http://s1.com', '源1', group: '小说'),
@@ -79,44 +89,48 @@ void main() {
       ];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
-      expect(provider.sources.length, equals(2));
-      expect(provider.loading, isFalse);
-      expect(provider.error, isNull);
+      expect(readState().sources.length, equals(2));
+      expect(readState().loading, isFalse);
+      expect(readState().error, isNull);
     });
 
     test('加载失败设置 BridgeError', () async {
       when(() => mockApi.getBookSources())
           .thenThrow(const BridgeError(message: '书源加载失败'));
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
-      expect(provider.error, equals('书源加载失败'));
-      expect(provider.loading, isFalse);
+      expect(readState().error, equals('书源加载失败'));
+      expect(readState().loading, isFalse);
     });
 
     test('加载失败设置普通异常', () async {
       when(() => mockApi.getBookSources()).thenThrow(Exception('网络'));
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
-      expect(provider.error, contains('网络'));
+      expect(readState().error, contains('网络'));
     });
 
-    test('loadSources 触发通知', () async {
-      when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      var notifyCount = 0;
-      provider.addListener(() => notifyCount++);
+    test('loadSources 触发状态变化通知', () async {
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => [
+            makeSource('http://s1.com', '源1'),
+          ]);
+      final changes = <SourceState>[];
+      container.listen(sourceNotifierProvider, (prev, next) {
+        changes.add(next);
+      });
 
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
-      // 至少 2 次：开始 loading + 结束
-      expect(notifyCount, greaterThanOrEqualTo(2));
+      // 至少 2 次状态变化：开始 loading + 结束
+      expect(changes.length, greaterThanOrEqualTo(2));
     });
   });
 
-  group('SourceProvider filteredSources', () {
+  group('SourceNotifier filteredSources', () {
     setUp(() async {
       final sources = [
         makeSource('http://novel.com', '小说源', group: '小说'),
@@ -124,57 +138,57 @@ void main() {
         makeSource('http://other.com', '其他源'),
       ];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     });
 
     test('无筛选时返回全部', () {
-      expect(provider.filteredSources.length, equals(3));
+      expect(readState().filteredSources.length, equals(3));
     });
 
     test('按名称关键字筛选', () {
-      provider.setFilter('小说');
-      expect(provider.filteredSources.length, equals(1));
-      expect(provider.filteredSources[0].bookSourceName, equals('小说源'));
+      readNotifier().setFilter('小说');
+      expect(readState().filteredSources.length, equals(1));
+      expect(readState().filteredSources[0].bookSourceName, equals('小说源'));
     });
 
     test('按 URL 关键字筛选', () {
-      provider.setFilter('comic');
-      expect(provider.filteredSources.length, equals(1));
-      expect(provider.filteredSources[0].bookSourceUrl, equals('http://comic.com'));
+      readNotifier().setFilter('comic');
+      expect(readState().filteredSources.length, equals(1));
+      expect(readState().filteredSources[0].bookSourceUrl, equals('http://comic.com'));
     });
 
     test('按分组名筛选', () {
-      provider.setFilter('漫画');
+      readNotifier().setFilter('漫画');
       // 匹配分组名 "漫画" 和源名 "漫画源"
-      expect(provider.filteredSources.length, equals(1));
+      expect(readState().filteredSources.length, equals(1));
     });
 
     test('clearFilter 清除筛选', () {
-      provider.setFilter('小说');
-      provider.clearFilter();
-      expect(provider.filteredSources.length, equals(3));
+      readNotifier().setFilter('小说');
+      readNotifier().clearFilter();
+      expect(readState().filteredSources.length, equals(3));
     });
 
     test('分组筛选', () {
-      provider.setGroup('小说');
-      expect(provider.filteredSources.length, equals(1));
-      expect(provider.filteredSources[0].bookSourceName, equals('小说源'));
+      readNotifier().setGroup('小说');
+      expect(readState().filteredSources.length, equals(1));
+      expect(readState().filteredSources[0].bookSourceName, equals('小说源'));
     });
 
     test('分组筛选 - 未分组', () {
-      provider.setGroup('未分组');
-      expect(provider.filteredSources.length, equals(1));
-      expect(provider.filteredSources[0].bookSourceName, equals('其他源'));
+      readNotifier().setGroup('未分组');
+      expect(readState().filteredSources.length, equals(1));
+      expect(readState().filteredSources[0].bookSourceName, equals('其他源'));
     });
 
     test('取消分组筛选', () {
-      provider.setGroup('小说');
-      provider.setGroup(null);
-      expect(provider.filteredSources.length, equals(3));
+      readNotifier().setGroup('小说');
+      readNotifier().setGroup(null);
+      expect(readState().filteredSources.length, equals(3));
     });
   });
 
-  group('SourceProvider groups 和 groupedSources', () {
+  group('SourceNotifier groups 和 groupedSources', () {
     setUp(() async {
       final sources = [
         makeSource('http://a.com', 'A', group: '小说'),
@@ -183,23 +197,23 @@ void main() {
         makeSource('http://d.com', 'D'),
       ];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     });
 
     test('groups 返回排序后的分组列表', () {
-      final groups = provider.groups;
+      final groups = readState().groups;
       expect(groups, containsAll(['小说', '漫画', '未分组']));
     });
 
     test('groupedSources 按分组归类', () {
-      final grouped = provider.groupedSources;
+      final grouped = readState().groupedSources;
       expect(grouped['小说']!.length, equals(2));
       expect(grouped['漫画']!.length, equals(1));
       expect(grouped['未分组']!.length, equals(1));
     });
   });
 
-  group('SourceProvider enabledSources/disabledSources', () {
+  group('SourceNotifier enabledSources/disabledSources', () {
     setUp(() async {
       final sources = [
         makeSource('http://a.com', 'A', enabled: true),
@@ -207,140 +221,140 @@ void main() {
         makeSource('http://c.com', 'C', enabled: true),
       ];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     });
 
     test('enabledSources 只返回启用的', () {
-      expect(provider.enabledSources.length, equals(2));
+      expect(readState().enabledSources.length, equals(2));
     });
 
     test('disabledSources 只返回禁用的', () {
-      expect(provider.disabledSources.length, equals(1));
-      expect(provider.disabledSources[0].bookSourceName, equals('B'));
+      expect(readState().disabledSources.length, equals(1));
+      expect(readState().disabledSources[0].bookSourceName, equals('B'));
     });
   });
 
-  group('SourceProvider toggleSource', () {
+  group('SourceNotifier toggleSource', () {
     setUp(() async {
       final sources = [makeSource('http://a.com', 'A', enabled: true)];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     });
 
     test('切换启用状态', () async {
       when(() => mockApi.updateBookSource(any())).thenAnswer((_) async {});
 
-      await provider.toggleSource('http://a.com');
+      await readNotifier().toggleSource('http://a.com');
 
-      expect(provider.sources[0].enabled, isFalse);
+      expect(readState().sources[0].enabled, isFalse);
     });
 
     test('切换不存在的源不报错', () async {
-      await provider.toggleSource('http://nonexist.com');
-      expect(provider.error, isNull);
+      await readNotifier().toggleSource('http://nonexist.com');
+      expect(readState().error, isNull);
     });
 
     test('切换失败设置错误', () async {
       when(() => mockApi.updateBookSource(any()))
           .thenThrow(const BridgeError(message: '更新失败'));
 
-      await provider.toggleSource('http://a.com');
+      await readNotifier().toggleSource('http://a.com');
 
-      expect(provider.error, equals('更新失败'));
+      expect(readState().error, equals('更新失败'));
     });
   });
 
-  group('SourceProvider deleteSource', () {
+  group('SourceNotifier deleteSource', () {
     setUp(() async {
       final sources = [
         makeSource('http://a.com', 'A'),
         makeSource('http://b.com', 'B'),
       ];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     });
 
     test('删除成功移除源', () async {
       when(() => mockApi.deleteBookSource(any())).thenAnswer((_) async {});
 
-      await provider.deleteSource('http://a.com');
+      await readNotifier().deleteSource('http://a.com');
 
-      expect(provider.sources.length, equals(1));
-      expect(provider.sources[0].bookSourceUrl, equals('http://b.com'));
+      expect(readState().sources.length, equals(1));
+      expect(readState().sources[0].bookSourceUrl, equals('http://b.com'));
     });
 
     test('删除失败设置错误', () async {
       when(() => mockApi.deleteBookSource(any()))
           .thenThrow(const BridgeError(message: '删除失败'));
 
-      await provider.deleteSource('http://a.com');
+      await readNotifier().deleteSource('http://a.com');
 
-      expect(provider.error, equals('删除失败'));
-      expect(provider.sources.length, equals(2));
+      expect(readState().error, equals('删除失败'));
+      expect(readState().sources.length, equals(2));
     });
   });
 
-  group('SourceProvider saveSource', () {
+  group('SourceNotifier saveSource', () {
     test('新建书源', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
       final newSource = makeSource('http://new.com', '新源');
       when(() => mockApi.addBookSource(any())).thenAnswer((_) async => newSource);
 
-      await provider.saveSource(newSource);
+      await readNotifier().saveSource(newSource);
 
-      expect(provider.sources.length, equals(1));
-      expect(provider.sources[0].bookSourceName, equals('新源'));
+      expect(readState().sources.length, equals(1));
+      expect(readState().sources[0].bookSourceName, equals('新源'));
     });
 
     test('更新已有书源', () async {
       final sources = [makeSource('http://a.com', '旧名')];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
       final updated = makeSource('http://a.com', '新名');
       when(() => mockApi.updateBookSource(any())).thenAnswer((_) async {});
 
-      await provider.saveSource(updated);
+      await readNotifier().saveSource(updated);
 
-      expect(provider.sources[0].bookSourceName, equals('新名'));
+      expect(readState().sources[0].bookSourceName, equals('新名'));
     });
 
     test('保存失败 rethrow', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
       final source = makeSource('http://x.com', 'X');
       when(() => mockApi.addBookSource(any()))
           .thenThrow(const BridgeError(message: '保存失败'));
 
       expect(
-        () => provider.saveSource(source),
+        () => readNotifier().saveSource(source),
         throwsA(isA<BridgeError>()),
       );
     });
   });
 
-  group('SourceProvider getSource', () {
+  group('SourceNotifier getSource', () {
     setUp(() async {
       final sources = [makeSource('http://a.com', 'A')];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     });
 
     test('找到存在的源', () {
-      final source = provider.getSource('http://a.com');
+      final source = readNotifier().getSource('http://a.com');
       expect(source, isNotNull);
       expect(source!.bookSourceName, equals('A'));
     });
 
     test('找不到返回 null', () {
-      expect(provider.getSource('http://nope.com'), isNull);
+      expect(readNotifier().getSource('http://nope.com'), isNull);
     });
   });
 
-  group('SourceProvider 批量操作', () {
+  group('SourceNotifier 批量操作', () {
     setUp(() async {
       final sources = [
         makeSource('http://a.com', 'A', enabled: true),
@@ -348,98 +362,98 @@ void main() {
         makeSource('http://c.com', 'C', enabled: true),
       ];
       when(() => mockApi.getBookSources()).thenAnswer((_) async => sources);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     });
 
     test('enterBatchMode 进入批量模式', () {
-      provider.enterBatchMode();
-      expect(provider.batchMode, isTrue);
-      expect(provider.selectedUrls, isEmpty);
+      readNotifier().enterBatchMode();
+      expect(readState().batchMode, isTrue);
+      expect(readState().selectedUrls, isEmpty);
     });
 
     test('exitBatchMode 退出批量模式', () {
-      provider.enterBatchMode();
-      provider.toggleSelection('http://a.com');
-      provider.exitBatchMode();
-      expect(provider.batchMode, isFalse);
-      expect(provider.selectedUrls, isEmpty);
+      readNotifier().enterBatchMode();
+      readNotifier().toggleSelection('http://a.com');
+      readNotifier().exitBatchMode();
+      expect(readState().batchMode, isFalse);
+      expect(readState().selectedUrls, isEmpty);
     });
 
     test('toggleSelection 切换选中', () {
-      provider.enterBatchMode();
-      provider.toggleSelection('http://a.com');
-      expect(provider.isSelected('http://a.com'), isTrue);
-      expect(provider.selectedCount, equals(1));
+      readNotifier().enterBatchMode();
+      readNotifier().toggleSelection('http://a.com');
+      expect(readState().isSelected('http://a.com'), isTrue);
+      expect(readState().selectedCount, equals(1));
 
-      provider.toggleSelection('http://a.com');
-      expect(provider.isSelected('http://a.com'), isFalse);
+      readNotifier().toggleSelection('http://a.com');
+      expect(readState().isSelected('http://a.com'), isFalse);
     });
 
     test('selectAll 全选当前过滤结果', () {
-      provider.enterBatchMode();
-      provider.selectAll();
-      expect(provider.selectedCount, equals(3));
-      expect(provider.isAllSelected, isTrue);
+      readNotifier().enterBatchMode();
+      readNotifier().selectAll();
+      expect(readState().selectedCount, equals(3));
+      expect(readState().isAllSelected, isTrue);
     });
 
     test('deselectAll 取消全选', () {
-      provider.enterBatchMode();
-      provider.selectAll();
-      provider.deselectAll();
-      expect(provider.selectedCount, equals(0));
+      readNotifier().enterBatchMode();
+      readNotifier().selectAll();
+      readNotifier().deselectAll();
+      expect(readState().selectedCount, equals(0));
     });
 
     test('batchEnable 批量启用', () async {
       when(() => mockApi.updateBookSource(any())).thenAnswer((_) async {});
-      provider.enterBatchMode();
-      provider.toggleSelection('http://b.com');
+      readNotifier().enterBatchMode();
+      readNotifier().toggleSelection('http://b.com');
 
-      await provider.batchEnable();
+      await readNotifier().batchEnable();
 
-      expect(provider.sources[1].enabled, isTrue);
-      expect(provider.batchMode, isFalse);
+      expect(readState().sources[1].enabled, isTrue);
+      expect(readState().batchMode, isFalse);
     });
 
     test('batchDisable 批量禁用', () async {
       when(() => mockApi.updateBookSource(any())).thenAnswer((_) async {});
-      provider.enterBatchMode();
-      provider.toggleSelection('http://a.com');
-      provider.toggleSelection('http://c.com');
+      readNotifier().enterBatchMode();
+      readNotifier().toggleSelection('http://a.com');
+      readNotifier().toggleSelection('http://c.com');
 
-      await provider.batchDisable();
+      await readNotifier().batchDisable();
 
-      expect(provider.sources[0].enabled, isFalse);
-      expect(provider.sources[2].enabled, isFalse);
+      expect(readState().sources[0].enabled, isFalse);
+      expect(readState().sources[2].enabled, isFalse);
     });
 
     test('batchDelete 批量删除', () async {
       when(() => mockApi.deleteBookSource(any())).thenAnswer((_) async {});
-      provider.enterBatchMode();
-      provider.toggleSelection('http://a.com');
-      provider.toggleSelection('http://b.com');
+      readNotifier().enterBatchMode();
+      readNotifier().toggleSelection('http://a.com');
+      readNotifier().toggleSelection('http://b.com');
 
-      await provider.batchDelete();
+      await readNotifier().batchDelete();
 
-      expect(provider.sources.length, equals(1));
-      expect(provider.sources[0].bookSourceUrl, equals('http://c.com'));
+      expect(readState().sources.length, equals(1));
+      expect(readState().sources[0].bookSourceUrl, equals('http://c.com'));
     });
 
     test('batchEnable 失败设置错误', () async {
       when(() => mockApi.updateBookSource(any()))
           .thenThrow(const BridgeError(message: '批量失败'));
-      provider.enterBatchMode();
-      provider.toggleSelection('http://b.com');
+      readNotifier().enterBatchMode();
+      readNotifier().toggleSelection('http://b.com');
 
-      await provider.batchEnable();
+      await readNotifier().batchEnable();
 
-      expect(provider.error, equals('批量失败'));
+      expect(readState().error, equals('批量失败'));
     });
   });
 
-  group('SourceProvider importSources', () {
+  group('SourceNotifier importSources', () {
     test('导入成功重新加载列表', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
       when(() => mockApi.importBookSources(any())).thenAnswer((_) async => 2);
       final newSources = [makeSource('http://new.com', '新')];
@@ -450,32 +464,32 @@ void main() {
         return callCount > 1 ? newSources : [];
       });
 
-      await provider.importSources('[{"bookSourceUrl":"http://new.com"}]');
+      await readNotifier().importSources('[{"bookSourceUrl":"http://new.com"}]');
 
-      expect(provider.loading, isFalse);
-      expect(provider.error, isNull);
+      expect(readState().loading, isFalse);
+      expect(readState().error, isNull);
     });
 
     test('导入失败设置错误', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      await provider.loadSources();
+      await readNotifier().loadSources();
 
       when(() => mockApi.importBookSources(any()))
           .thenThrow(const BridgeError(message: '导入失败'));
 
-      await provider.importSources('invalid');
+      await readNotifier().importSources('invalid');
 
-      expect(provider.error, equals('导入失败'));
+      expect(readState().error, equals('导入失败'));
     });
   });
 
-  group('SourceProvider isAllSelected', () {
+  group('SourceNotifier isAllSelected', () {
     test('空列表时返回 false', () {
-      expect(provider.isAllSelected, isFalse);
+      expect(readState().isAllSelected, isFalse);
     });
   });
 
-  group('SourceProvider 排序', () {
+  group('SourceNotifier 排序', () {
     // 辅助：构造带排序字段的 BookSource
     BookSource makeSortSource(
       String url,
@@ -501,12 +515,12 @@ void main() {
 
     Future<void> load(List<BookSource> list) async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => list);
-      await provider.loadSources();
+      await readNotifier().loadSources();
     }
 
     test('初始为手动升序', () {
-      expect(provider.sort, equals(SourceSort.manual));
-      expect(provider.sortAscending, isTrue);
+      expect(readState().sort, equals(SourceSort.manual));
+      expect(readState().sortAscending, isTrue);
     });
 
     test('手动排序按 customOrder 升序', () async {
@@ -515,9 +529,9 @@ void main() {
         makeSortSource('http://a.com', 'A', customOrder: 1),
         makeSortSource('http://c.com', 'C', customOrder: 3),
       ]);
-      provider.setSort(SourceSort.manual);
+      readNotifier().setSort(SourceSort.manual);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        readState().filteredSources.map((s) => s.bookSourceUrl).toList(),
         equals(['http://a.com', 'http://b.com', 'http://c.com']),
       );
     });
@@ -528,9 +542,9 @@ void main() {
         makeSortSource('http://high.com', '高', weight: 100),
         makeSortSource('http://mid.com', '中', weight: 50),
       ]);
-      provider.setSort(SourceSort.weight);
+      readNotifier().setSort(SourceSort.weight);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        readState().filteredSources.map((s) => s.bookSourceUrl).toList(),
         equals(['http://high.com', 'http://mid.com', 'http://low.com']),
       );
     });
@@ -541,15 +555,15 @@ void main() {
         makeSortSource('http://2.com', 'apple'),
         makeSortSource('http://3.com', 'cherry'),
       ]);
-      provider.setSort(SourceSort.name);
+      readNotifier().setSort(SourceSort.name);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceName).toList(),
+        readState().filteredSources.map((s) => s.bookSourceName).toList(),
         equals(['apple', 'banana', 'cherry']),
       );
-      provider.toggleSortDirection();
-      expect(provider.sortAscending, isFalse);
+      readNotifier().toggleSortDirection();
+      expect(readState().sortAscending, isFalse);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceName).toList(),
+        readState().filteredSources.map((s) => s.bookSourceName).toList(),
         equals(['cherry', 'banana', 'apple']),
       );
     });
@@ -560,9 +574,9 @@ void main() {
         makeSortSource('http://a.com', 'A'),
         makeSortSource('http://b.com', 'B'),
       ]);
-      provider.setSort(SourceSort.url);
+      readNotifier().setSort(SourceSort.url);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        readState().filteredSources.map((s) => s.bookSourceUrl).toList(),
         equals(['http://a.com', 'http://b.com', 'http://c.com']),
       );
     });
@@ -573,9 +587,9 @@ void main() {
         makeSortSource('http://new.com', '新', lastUpdateTime: 300),
         makeSortSource('http://mid.com', '中', lastUpdateTime: 200),
       ]);
-      provider.setSort(SourceSort.update);
+      readNotifier().setSort(SourceSort.update);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        readState().filteredSources.map((s) => s.bookSourceUrl).toList(),
         equals(['http://new.com', 'http://mid.com', 'http://old.com']),
       );
     });
@@ -585,9 +599,9 @@ void main() {
         makeSortSource('http://off.com', '禁', enabled: false),
         makeSortSource('http://on.com', '启', enabled: true),
       ]);
-      provider.setSort(SourceSort.enable);
+      readNotifier().setSort(SourceSort.enable);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        readState().filteredSources.map((s) => s.bookSourceUrl).toList(),
         equals(['http://on.com', 'http://off.com']),
       );
     });
@@ -598,9 +612,9 @@ void main() {
         makeSortSource('http://fast.com', '快', respondTime: 100),
         makeSortSource('http://mid.com', '中', respondTime: 1000),
       ]);
-      provider.setSort(SourceSort.respond);
+      readNotifier().setSort(SourceSort.respond);
       expect(
-        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        readState().filteredSources.map((s) => s.bookSourceUrl).toList(),
         equals(['http://fast.com', 'http://mid.com', 'http://slow.com']),
       );
     });
@@ -611,10 +625,10 @@ void main() {
         makeSortSource('http://a.com', 'A', group: '小说'),
         makeSortSource('http://z.com', 'Z', group: '漫画'),
       ]);
-      provider.setSort(SourceSort.name);
-      provider.setGroup('小说');
+      readNotifier().setSort(SourceSort.name);
+      readNotifier().setGroup('小说');
       expect(
-        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        readState().filteredSources.map((s) => s.bookSourceUrl).toList(),
         equals(['http://a.com', 'http://b.com']),
       );
     });

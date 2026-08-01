@@ -1,16 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../providers/audio_provider.dart';
+import '../providers/audio/audio_notifier.dart';
 
 /// 预设定时时长（分钟）
 const List<int> _kPresetMinutes = [5, 10, 15, 30];
 
 /// 听书播放页面
-class AudioScreen extends StatefulWidget {
+class AudioScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book? book;
 
@@ -34,10 +35,10 @@ class AudioScreen extends StatefulWidget {
   String get effectiveBookName => book?.name ?? bookName;
 
   @override
-  State<AudioScreen> createState() => _AudioScreenState();
+  ConsumerState<AudioScreen> createState() => _AudioScreenState();
 }
 
-class _AudioScreenState extends State<AudioScreen> {
+class _AudioScreenState extends ConsumerState<AudioScreen> {
   bool _showSettings = false;
 
   // ===== 定时停止相关状态 =====
@@ -56,11 +57,11 @@ class _AudioScreenState extends State<AudioScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<AudioProvider>();
+      final notifier = ref.read(audioNotifierProvider.notifier);
       // 初始化媒体会话（后台播放 + 媒体按钮 + 焦点管理）
-      provider.initMediaSession(bookName: widget.effectiveBookName);
-      if (!provider.hasChapters) {
-        provider.loadChapters(widget.effectiveBookUrl);
+      notifier.initMediaSession(bookName: widget.effectiveBookName);
+      if (!ref.read(audioNotifierProvider).hasChapters) {
+        notifier.loadChapters(widget.effectiveBookUrl);
       }
     });
   }
@@ -71,7 +72,7 @@ class _AudioScreenState extends State<AudioScreen> {
     _stopTimer?.cancel();
     _customMinutesController.dispose();
     // 释放媒体会话资源（后台播放/焦点）
-    context.read<AudioProvider>().releaseMediaSession();
+    ref.read(audioNotifierProvider.notifier).releaseMediaSession();
     super.dispose();
   }
 
@@ -101,7 +102,7 @@ class _AudioScreenState extends State<AudioScreen> {
           timer.cancel();
           _remainingSeconds = 0;
           if (mounted) {
-            context.read<AudioProvider>().pause();
+            ref.read(audioNotifierProvider.notifier).pause();
           }
         }
       });
@@ -191,6 +192,8 @@ class _AudioScreenState extends State<AudioScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 监听听书状态（替代原 Consumer<AudioProvider>）
+    final provider = ref.watch(audioNotifierProvider);
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.effectiveBookName.isNotEmpty ? widget.effectiveBookName : '听书'),
@@ -203,50 +206,53 @@ class _AudioScreenState extends State<AudioScreen> {
           ),
         ],
       ),
-      body: Consumer<AudioProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading && !provider.hasChapters) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (provider.state == PlayerState.error && !provider.hasChapters) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
-                  const SizedBox(height: 16),
-                  Text(provider.errorMessage ?? '加载失败'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => provider.loadChapters(widget.effectiveBookUrl),
-                    child: const Text('重试'),
-                  ),
-                ],
-              ),
-            );
-          }
+      body: _buildBody(provider),
+    );
+  }
 
-          return Column(
-            children: [
-              // 当前章节信息
-              _buildNowPlayingCard(provider),
-              // 进度条
-              _buildProgressBar(provider),
-              // 播放控制
-              _buildControls(provider),
-              // 倒计时显示（定时激活时）
-              if (_isTimerActive) _buildCountdownBar(),
-              const Divider(),
-              // 设置面板（可展开）
-              if (_showSettings) _buildSettingsPanel(provider),
-              // 章节列表
-              Expanded(child: _buildChapterList(provider)),
-              // 后台播放提示
-              _buildBackgroundNotice(),
-            ],
-          );
-        },
-      ),
+  /// 听书主体（根据状态展示 loading/error/内容三态）
+  Widget _buildBody(AudioState provider) {
+    if (provider.isLoading && !provider.hasChapters) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (provider.state == PlayerState.error && !provider.hasChapters) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
+            const SizedBox(height: 16),
+            Text(provider.errorMessage ?? '加载失败'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => ref
+                  .read(audioNotifierProvider.notifier)
+                  .loadChapters(widget.effectiveBookUrl),
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // 当前章节信息
+        _buildNowPlayingCard(provider),
+        // 进度条
+        _buildProgressBar(provider),
+        // 播放控制
+        _buildControls(provider),
+        // 倒计时显示（定时激活时）
+        if (_isTimerActive) _buildCountdownBar(),
+        const Divider(),
+        // 设置面板（可展开）
+        if (_showSettings) _buildSettingsPanel(provider),
+        // 章节列表
+        Expanded(child: _buildChapterList(provider)),
+        // 后台播放提示
+        _buildBackgroundNotice(),
+      ],
     );
   }
 
@@ -295,7 +301,7 @@ class _AudioScreenState extends State<AudioScreen> {
     );
   }
 
-  Widget _buildNowPlayingCard(AudioProvider provider) {
+  Widget _buildNowPlayingCard(AudioState provider) {
     final chapter = provider.currentChapter;
     return Container(
       padding: const EdgeInsets.all(16),
@@ -324,7 +330,7 @@ class _AudioScreenState extends State<AudioScreen> {
     );
   }
 
-  Widget _buildProgressBar(AudioProvider provider) {
+  Widget _buildProgressBar(AudioState provider) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -352,7 +358,7 @@ class _AudioScreenState extends State<AudioScreen> {
     );
   }
 
-  Widget _buildControls(AudioProvider provider) {
+  Widget _buildControls(AudioState provider) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -369,7 +375,9 @@ class _AudioScreenState extends State<AudioScreen> {
           IconButton(
             icon: const Icon(Icons.skip_previous),
             iconSize: 36,
-            onPressed: provider.hasPrevious ? provider.previous : null,
+            onPressed: provider.hasPrevious
+                ? ref.read(audioNotifierProvider.notifier).previous
+                : null,
           ),
           const SizedBox(width: 16),
           // 播放/暂停
@@ -379,23 +387,25 @@ class _AudioScreenState extends State<AudioScreen> {
           IconButton(
             icon: const Icon(Icons.skip_next),
             iconSize: 36,
-            onPressed: provider.hasNext ? provider.next : null,
+            onPressed: provider.hasNext
+                ? ref.read(audioNotifierProvider.notifier).next
+                : null,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPlayPauseButton(AudioProvider provider) {
+  Widget _buildPlayPauseButton(AudioState provider) {
     return SizedBox(
       width: 64,
       height: 64,
       child: FloatingActionButton(
         onPressed: () {
           if (provider.isPlaying) {
-            provider.pause();
+            ref.read(audioNotifierProvider.notifier).pause();
           } else {
-            provider.play();
+            ref.read(audioNotifierProvider.notifier).play();
           }
         },
         child: provider.isLoading
@@ -415,7 +425,7 @@ class _AudioScreenState extends State<AudioScreen> {
     );
   }
 
-  Widget _buildSettingsPanel(AudioProvider provider) {
+  Widget _buildSettingsPanel(AudioState provider) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -434,7 +444,9 @@ class _AudioScreenState extends State<AudioScreen> {
                   max: 3.0,
                   divisions: 25,
                   label: '${provider.config.speed.toStringAsFixed(1)}x',
-                  onChanged: (v) => provider.updateConfig(speed: v),
+                  onChanged: (v) => ref
+                      .read(audioNotifierProvider.notifier)
+                      .updateConfig(speed: v),
                 ),
               ),
               SizedBox(
@@ -454,7 +466,9 @@ class _AudioScreenState extends State<AudioScreen> {
                   max: 2.0,
                   divisions: 15,
                   label: provider.config.pitch.toStringAsFixed(1),
-                  onChanged: (v) => provider.updateConfig(pitch: v),
+                  onChanged: (v) => ref
+                      .read(audioNotifierProvider.notifier)
+                      .updateConfig(pitch: v),
                 ),
               ),
               SizedBox(
@@ -474,7 +488,9 @@ class _AudioScreenState extends State<AudioScreen> {
                   max: 1.0,
                   divisions: 10,
                   label: '${(provider.config.volume * 100).toInt()}%',
-                  onChanged: (v) => provider.updateConfig(volume: v),
+                  onChanged: (v) => ref
+                      .read(audioNotifierProvider.notifier)
+                      .updateConfig(volume: v),
                 ),
               ),
               SizedBox(
@@ -488,7 +504,7 @@ class _AudioScreenState extends State<AudioScreen> {
     );
   }
 
-  Widget _buildChapterList(AudioProvider provider) {
+  Widget _buildChapterList(AudioState provider) {
     if (provider.chapters.isEmpty) {
       return const Center(child: Text('暂无章节'));
     }
@@ -509,14 +525,14 @@ class _AudioScreenState extends State<AudioScreen> {
             ),
           ),
           selected: isCurrent,
-          onTap: () => provider.jumpTo(index),
+          onTap: () => ref.read(audioNotifierProvider.notifier).jumpTo(index),
         );
       },
     );
   }
 
   Widget _buildBackgroundNotice() {
-    final provider = context.watch<AudioProvider>();
+    final provider = ref.watch(audioNotifierProvider);
     final mediaReady = provider.isMediaSessionReady;
     return Container(
       padding: const EdgeInsets.all(8),
@@ -566,8 +582,10 @@ class _AudioScreenState extends State<AudioScreen> {
     }
   }
 
-  void _cycleMode(AudioProvider provider) {
+  void _cycleMode(AudioState provider) {
     final nextIndex = (provider.mode.index + 1) % AudioPlayMode.values.length;
-    provider.setMode(AudioPlayMode.values[nextIndex]);
+    ref
+        .read(audioNotifierProvider.notifier)
+        .setMode(AudioPlayMode.values[nextIndex]);
   }
 }

@@ -1,11 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:path_provider/path_provider.dart';
-import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
-import '../providers/bookshelf_provider.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../services/book_api.dart';
 import '../services/rust_api.dart';
 import '../widgets/empty_state.dart';
@@ -39,14 +40,14 @@ class _ImportOutcome {
 /// 本地书籍导入页面 — 文件浏览器模式
 ///
 /// 提供目录导航、格式过滤、批量选择、导入进度与结果统计。
-class ImportScreen extends StatefulWidget {
+class ImportScreen extends ConsumerStatefulWidget {
   const ImportScreen({super.key});
 
   @override
-  State<ImportScreen> createState() => _ImportScreenState();
+  ConsumerState<ImportScreen> createState() => _ImportScreenState();
 }
 
-class _ImportScreenState extends State<ImportScreen> {
+class _ImportScreenState extends ConsumerState<ImportScreen> {
   /// 可选的存储根目录（Android 可能有多个）
   List<Directory> _roots = [];
 
@@ -199,15 +200,15 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   /// 判断文件是否已在书架（视为跳过）
-  bool _isAlreadyImported(String path, BookshelfProvider provider) {
-    return provider.books.any(
+  bool _isAlreadyImported(String path, BookshelfState state) {
+    return state.books.any(
       (b) => b.bookUrl == path || b.originName == path,
     );
   }
 
   Future<void> _startImport() async {
     if (_selected.isEmpty || _importing) return;
-    final provider = context.read<BookshelfProvider>();
+    final notifier = ref.read(bookshelfNotifierProvider.notifier);
     final paths = _selected.toList()..sort();
 
     setState(() {
@@ -220,11 +221,12 @@ class _ImportScreenState extends State<ImportScreen> {
 
     for (final path in paths) {
       final name = _displayName(path);
-      if (_isAlreadyImported(path, provider)) {
+      // 逐次读取最新书架状态（导入会增量更新 state.books）
+      if (_isAlreadyImported(path, ref.read(bookshelfNotifierProvider))) {
         _outcomes.add(_ImportOutcome(name: name, success: false, skipped: true));
       } else {
         try {
-          await provider.importLocalBook(path);
+          await notifier.importLocalBook(path);
           _outcomes.add(_ImportOutcome(name: name, success: true));
         } catch (e) {
           _outcomes.add(_ImportOutcome(name: name, success: false, error: e.toString()));
@@ -236,7 +238,7 @@ class _ImportScreenState extends State<ImportScreen> {
     }
 
     // 刷新书架确保与后端一致
-    await provider.loadBooks();
+    await notifier.refresh();
 
     if (mounted) {
       setState(() {

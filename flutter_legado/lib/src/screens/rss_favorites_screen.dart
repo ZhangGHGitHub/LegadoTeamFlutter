@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
-import '../services/book_api.dart';
+import '../providers/providers.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -11,14 +11,14 @@ import '../widgets/loading_indicator.dart';
 /// RSS 收藏页面
 ///
 /// 展示已收藏的 RSS 文章，按来源分组，支持取消收藏与打开原文。
-class RssFavoritesScreen extends StatefulWidget {
+class RssFavoritesScreen extends ConsumerStatefulWidget {
   const RssFavoritesScreen({super.key});
 
   @override
-  State<RssFavoritesScreen> createState() => _RssFavoritesScreenState();
+  ConsumerState<RssFavoritesScreen> createState() => _RssFavoritesScreenState();
 }
 
-class _RssFavoritesScreenState extends State<RssFavoritesScreen> {
+class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
   List<RssStar> _stars = [];
   Map<String, String> _sourceNames = {};
   bool _loading = true;
@@ -36,7 +36,7 @@ class _RssFavoritesScreenState extends State<RssFavoritesScreen> {
       _error = null;
     });
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final stars = await api.getRssStars();
       final sources = await api.getRssSources();
       if (!mounted) return;
@@ -73,7 +73,7 @@ class _RssFavoritesScreenState extends State<RssFavoritesScreen> {
     setState(() => _stars.removeWhere((s) => s.link == star.link));
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await context.read<BookApi>().deleteRssStar(star.link);
+      await ref.read(bookApiProvider).deleteRssStar(star.link);
       messenger.showSnackBar(
         const SnackBar(
           content: Text('已取消收藏'),

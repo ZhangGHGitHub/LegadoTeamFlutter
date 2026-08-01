@@ -6,19 +6,21 @@
 // - 必填校验（书源名称/URL）与保存创建
 // - 编辑模式回填发现/详情/评论规则
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:provider/provider.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
-import 'package:flutter_legado/src/providers/source_provider.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/source/source_notifier.dart';
 import 'package:flutter_legado/src/screens/source_edit_screen.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
   late MockRustApi mockApi;
-  late SourceProvider provider;
+  late ProviderContainer container;
 
   setUpAll(() {
     registerFallbacks();
@@ -27,14 +29,17 @@ void main() {
   setUp(() {
     mockApi = MockRustApi();
     when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-    provider = SourceProvider(mockApi);
+    container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
   });
 
   /// 在底层页面上 push 书源编辑页，便于验证保存后的返回行为
   Future<void> pumpEdit(WidgetTester tester, {String? sourceUrl}) async {
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: provider,
+      UncontrolledProviderScope(
+        container: container,
         child: MaterialApp(
           home: Scaffold(
             body: Builder(
@@ -162,7 +167,8 @@ void main() {
         ruleReview: ReviewRule(enabled: true, reviewUrl: '.review'),
       );
       when(() => mockApi.getBookSources()).thenAnswer((_) async => [source]);
-      await provider.loadSources();
+      // 预加载书源到 notifier 状态
+      await container.read(sourceNotifierProvider.notifier).loadSources();
 
       await pumpEdit(tester, sourceUrl: 'https://edit.com');
 

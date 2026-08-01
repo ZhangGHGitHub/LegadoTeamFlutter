@@ -1,27 +1,27 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
-import '../services/book_api.dart';
+import '../providers/providers.dart';
 
 /// 书源调试页面
 ///
 /// 输入书源 URL 和搜索关键词，调用 bridge 的 webbookSearch API，
 /// 实时显示调试日志输出，支持按日志级别过滤。
-class SourceDebugScreen extends StatefulWidget {
+class SourceDebugScreen extends ConsumerStatefulWidget {
   /// 可选：从外部传入书源 URL 预填
   final String? sourceUrl;
 
   const SourceDebugScreen({super.key, this.sourceUrl});
 
   @override
-  State<SourceDebugScreen> createState() => _SourceDebugScreenState();
+  ConsumerState<SourceDebugScreen> createState() => _SourceDebugScreenState();
 }
 
-class _SourceDebugScreenState extends State<SourceDebugScreen> {
+class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
   final _sourceUrlCtrl = TextEditingController();
   final _keywordCtrl = TextEditingController();
   final _logScrollCtrl = ScrollController();
@@ -97,7 +97,7 @@ class _SourceDebugScreenState extends State<SourceDebugScreen> {
     try {
       // 1. 获取书源 JSON
       _appendLog('[1/3] 正在获取书源信息...');
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final sources = await api.getBookSources();
       final source = sources.cast<BookSource?>().firstWhere(
             (s) => s!.bookSourceUrl == sourceUrl,

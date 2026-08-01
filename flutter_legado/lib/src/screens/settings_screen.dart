@@ -1,14 +1,16 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_strings.dart';
 import '../routes.dart';
 import '../services/book_api.dart';
 import '../services/crash_log_service.dart';
-import '../providers/bookshelf_provider.dart';
-import '../providers/theme_provider.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/providers.dart';
+import '../providers/theme/theme_notifier.dart';
 
 /// 设置页面（枢纽菜单）
 ///
@@ -21,20 +23,20 @@ import '../providers/theme_provider.dart';
 /// - 主题设置 → [AppRoutes.themeConfig]
 /// - 其他设置（语言/阅读默认/网络/缓存）→ [AppRoutes.otherSettings]
 /// - 备份恢复 → 底部弹窗（备份/恢复/WebDAV 同步），WebDAV 详情 → [AppRoutes.webdavSettings]
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _backupLoading = false;
   bool _restoreLoading = false;
 
   @override
   Widget build(BuildContext context) {
-    final themeMode = context.watch<ThemeProvider>().themeMode;
+    final themeMode = ref.watch(themeNotifierProvider).themeMode;
     return Scaffold(
       appBar: AppBar(title: Text(AppStrings.settings)),
       body: ListView(
@@ -166,15 +168,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 主题模式选择（对标 pref_main themeMode NameListPreference）
   ///
-  /// 选中后经 [ThemeProvider.setThemeMode] 全局实时生效并持久化。
+  /// 选中后经 [ThemeNotifier.setThemeMode] 全局实时生效并持久化。
   void _showThemePicker(BuildContext context) {
-    final themeProvider = context.read<ThemeProvider>();
+    final themeNotifier = ref.read(themeNotifierProvider.notifier);
+    final currentMode = ref.read(themeNotifierProvider).themeMode;
     showDialog<ThemeMode>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: Text(AppStrings.selectTheme),
         children: ThemeMode.values.map((mode) {
-          final isSelected = mode == themeProvider.themeMode;
+          final isSelected = mode == currentMode;
           return ListTile(
             leading: Icon(
               isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
@@ -187,7 +190,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     ).then((selectedMode) {
       if (selectedMode != null) {
-        themeProvider.setThemeMode(selectedMode);
+        themeNotifier.setThemeMode(selectedMode);
       }
     });
   }
@@ -267,7 +270,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _doBackup(BuildContext context) async {
     setState(() => _backupLoading = true);
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final crashLog = CrashLogService.instance;
       var dirPath = await crashLog.getBackupPath();
       if (dirPath == null || dirPath.isEmpty) {
@@ -299,7 +302,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 并刷新书架。
   Future<void> _doRestore(BuildContext context) async {
     setState(() => _restoreLoading = true);
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -310,7 +313,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       await api.restore(backupPath);
       if (context.mounted) {
-        context.read<BookshelfProvider>().loadBooks();
+        ref.read(bookshelfNotifierProvider.notifier).refresh();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(AppStrings.restoreSuccess)));

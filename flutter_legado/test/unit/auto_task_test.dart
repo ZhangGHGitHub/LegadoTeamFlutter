@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_legado/src/providers/auto_task_provider.dart';
+import 'package:flutter_legado/src/providers/auto_task/auto_task_notifier.dart';
 
 void main() {
   group('AutoTask model', () {

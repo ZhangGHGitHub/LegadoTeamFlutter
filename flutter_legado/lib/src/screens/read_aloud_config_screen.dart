@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../services/book_api.dart';
+import '../providers/providers.dart';
 
 /// 朗读引擎配置页面
 ///
 /// 管理 HTTP TTS 朗读引擎：列表展示、新增、编辑、删除。
-class ReadAloudConfigScreen extends StatefulWidget {
+class ReadAloudConfigScreen extends ConsumerStatefulWidget {
   const ReadAloudConfigScreen({super.key});
 
   @override
-  State<ReadAloudConfigScreen> createState() => _ReadAloudConfigScreenState();
+  ConsumerState<ReadAloudConfigScreen> createState() => _ReadAloudConfigScreenState();
 }
 
-class _ReadAloudConfigScreenState extends State<ReadAloudConfigScreen> {
+class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
   List<HttpTts> _engines = [];
   bool _loading = true;
 
@@ -27,7 +27,7 @@ class _ReadAloudConfigScreenState extends State<ReadAloudConfigScreen> {
   Future<void> _loadEngines() async {
     setState(() => _loading = true);
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final list = await api.getHttpTts();
       setState(() {
         _engines = list;
@@ -45,7 +45,7 @@ class _ReadAloudConfigScreenState extends State<ReadAloudConfigScreen> {
 
   Future<void> _deleteEngine(HttpTts engine) async {
     final messenger = ScaffoldMessenger.of(context);
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -82,7 +82,7 @@ class _ReadAloudConfigScreenState extends State<ReadAloudConfigScreen> {
 
   Future<void> _addOrEditEngine([HttpTts? existing]) async {
     final messenger = ScaffoldMessenger.of(context);
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
 
     final result = await showDialog<HttpTts>(
       context: context,

@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/book_api.dart';
+import '../providers/providers.dart';
 
 /// 关于页面
 ///
 /// 展示应用图标、版本、开源协议、仓库链接、检查更新、
 /// 捐赠/反馈入口以及技术栈说明。
-class AboutScreen extends StatefulWidget {
+class AboutScreen extends ConsumerStatefulWidget {
   const AboutScreen({super.key});
 
   @override
-  State<AboutScreen> createState() => _AboutScreenState();
+  ConsumerState<AboutScreen> createState() => _AboutScreenState();
 }
 
-class _AboutScreenState extends State<AboutScreen>
+class _AboutScreenState extends ConsumerState<AboutScreen>
     with SingleTickerProviderStateMixin {
   static const _appVersion = '2.0.0';
   static const _repoUrl = 'https://github.com/gedoor/legado';
@@ -46,7 +46,7 @@ class _AboutScreenState extends State<AboutScreen>
 
   Future<void> _loadRustVersion() async {
     try {
-      final v = await context.read<BookApi>().getVersion();
+      final v = await ref.read(bookApiProvider).getVersion();
       if (mounted) setState(() => _rustVersion = v);
     } catch (_) {
       // FFI 不可用时静默忽略

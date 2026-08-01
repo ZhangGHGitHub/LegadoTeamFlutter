@@ -2,13 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
-import '../providers/source_provider.dart';
+import '../providers/providers.dart';
+import '../providers/source/source_notifier.dart';
 import '../routes.dart';
-import '../services/book_api.dart';
 import '../services/rust_api.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -18,14 +19,14 @@ import '../widgets/loading_indicator.dart';
 /// 基本信息 / 搜索规则 / 发现规则 / 详情规则 / 目录规则 / 内容规则 / 评论规则 / 测试。
 /// 表单字段以数据驱动方式定义（[_Field] 列表），controller 按 key 惰性创建，
 /// 与原版基于 `EditEntity` 列表的配置化编辑思路一致。
-class SourceEditScreen extends StatefulWidget {
+class SourceEditScreen extends ConsumerStatefulWidget {
   /// 书源 URL（编辑模式），null 表示新建
   final String? sourceUrl;
 
   const SourceEditScreen({super.key, this.sourceUrl});
 
   @override
-  State<SourceEditScreen> createState() => _SourceEditScreenState();
+  ConsumerState<SourceEditScreen> createState() => _SourceEditScreenState();
 }
 
 /// 表单字段定义
@@ -59,7 +60,7 @@ class _Field {
   });
 }
 
-class _SourceEditScreenState extends State<SourceEditScreen> {
+class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
 
@@ -232,8 +233,8 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
 
   void _loadSource() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<SourceProvider>();
-      final source = provider.getSource(widget.sourceUrl!);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final source = notifier.getSource(widget.sourceUrl!);
       if (source != null) {
         _populateFields(source);
       }
@@ -498,8 +499,8 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
     setState(() => _saving = true);
     try {
       final source = _buildSource();
-      final provider = context.read<SourceProvider>();
-      await provider.saveSource(source);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      await notifier.saveSource(source);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -530,11 +531,12 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
     try {
       final source = _buildSource();
       // 先保存书源以便搜索
-      final provider = context.read<SourceProvider>();
-      await provider.saveSource(source);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      await notifier.saveSource(source);
 
       if (!mounted) return;
-      final results = await context.read<BookApi>().searchBooks(
+      final api = ref.read(bookApiProvider);
+      final results = await api.searchBooks(
         keyword,
         sourceUrls: [source.bookSourceUrl],
       );
@@ -768,8 +770,8 @@ class _SourceEditScreenState extends State<SourceEditScreen> {
       final source = _buildSource();
       // 先保存书源
       if (!mounted) return;
-      final provider = context.read<SourceProvider>();
-      await provider.saveSource(source);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      await notifier.saveSource(source);
 
       final sourceJson = jsonEncode(source.toJson());
       String result;

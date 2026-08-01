@@ -1,42 +1,41 @@
 // 设置枢纽菜单 / 其他设置页 widget 测试
 //
-// 验证 Phase 4.1 设置页重构（对标 Android pref_main 枢纽结构）：
+// 验证 Phase 5.4 provider→Riverpod 迁移后的设置页（对标 Android pref_main 枢纽结构）：
 // - SettingsScreen 以菜单入口聚合各管理功能与子设置页
 // - OtherSettingsScreen 承接语言/阅读默认/网络（含 QUIC）/缓存入口
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_legado/src/providers/bookshelf_provider.dart';
-import 'package:flutter_legado/src/providers/sync_provider.dart';
-import 'package:flutter_legado/src/providers/theme_provider.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
-import 'package:flutter_legado/src/services/book_api.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
   late MockRustApi mockApi;
+  late ProviderContainer container;
 
   setUpAll(() {
     registerFallbacks();
-    SharedPreferences.setMockInitialValues({});
   });
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
+    container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
   });
 
   Widget wrap(Widget child) {
-    return MultiProvider(
-      providers: [
-        Provider<BookApi>.value(value: mockApi),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
-        ChangeNotifierProvider(create: (_) => BookshelfProvider(mockApi)),
-        ChangeNotifierProvider(create: (_) => SyncProvider(mockApi)),
-      ],
+    return UncontrolledProviderScope(
+      container: container,
       child: MaterialApp(home: child),
     );
   }
@@ -77,22 +76,15 @@ void main() {
     });
 
     testWidgets('点击主题模式弹出选择对话框并可切换（全局生效）', (tester) async {
-      late ThemeProvider themeProvider;
-      await tester.pumpWidget(MultiProvider(
-        providers: [
-          Provider<BookApi>.value(value: mockApi),
-          ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
-          ChangeNotifierProvider(create: (_) => BookshelfProvider(mockApi)),
-          ChangeNotifierProvider(create: (_) => SyncProvider(mockApi)),
-        ],
-        child: MaterialApp(home: const SettingsScreen()),
-      ));
+      await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
-      themeProvider = tester.element(find.byType(SettingsScreen)).read<ThemeProvider>();
 
       // 默认跟随系统（subtitle）
       expect(find.text('跟随系统'), findsOneWidget);
-      expect(themeProvider.themeMode, ThemeMode.system);
+      expect(
+        container.read(themeNotifierProvider).themeMode,
+        ThemeMode.system,
+      );
 
       // 点击主题模式弹出选择对话框
       await tester.tap(find.text('主题模式'));
@@ -101,11 +93,11 @@ void main() {
       expect(find.text('浅色'), findsOneWidget);
       expect(find.text('深色'), findsOneWidget);
 
-      // 选择深色 → ThemeProvider 状态更新（驱动 MaterialApp 全局切换）
+      // 选择深色 → ThemeNotifier 状态更新（驱动 MaterialApp 全局切换）
       await tester.tap(find.text('深色'));
       await tester.pumpAndSettle();
 
-      expect(themeProvider.themeMode, ThemeMode.dark);
+      expect(container.read(themeNotifierProvider).themeMode, ThemeMode.dark);
       expect(find.text('深色'), findsOneWidget);
     });
 

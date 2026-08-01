@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
-import '../providers/bookshelf_provider.dart';
-import '../services/book_api.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/providers.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
@@ -16,14 +17,14 @@ enum _GroupSort { order, name, bookCount }
 /// 书籍分组管理页面
 ///
 /// 支持分组的增删改、排序、封面设置、显示/隐藏，以及将书籍分配到分组。
-class BookGroupScreen extends StatefulWidget {
+class BookGroupScreen extends ConsumerStatefulWidget {
   const BookGroupScreen({super.key});
 
   @override
-  State<BookGroupScreen> createState() => _BookGroupScreenState();
+  ConsumerState<BookGroupScreen> createState() => _BookGroupScreenState();
 }
 
-class _BookGroupScreenState extends State<BookGroupScreen> {
+class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
   List<BookGroup> _groups = [];
   bool _loading = true;
   String? _error;
@@ -41,7 +42,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
       _error = null;
     });
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final groups = await api.getBookGroups();
       if (!mounted) return;
       setState(() {
@@ -59,8 +60,8 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
 
   /// 某分组内的书籍数量
   int _bookCountOf(int groupId) {
-    final provider = context.read<BookshelfProvider>();
-    return provider.books.where((b) => b.group == groupId).length;
+    final books = ref.read(bookshelfNotifierProvider).books;
+    return books.where((b) => b.group == groupId).length;
   }
 
   List<BookGroup> get _sortedGroups {
@@ -128,7 +129,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
     if (name.isEmpty) return;
     if (!mounted) return;
 
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     try {
       if (isEdit) {
         await api.updateBookGroup(group.copyWith(
@@ -162,7 +163,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
     if (!confirmed) return;
     if (!mounted) return;
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       await api.deleteBookGroup(group.groupId);
       await _loadGroups();
     } catch (e) {
@@ -172,7 +173,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
 
   Future<void> _toggleShow(BookGroup group) async {
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       await api.updateBookGroup(group.copyWith(show: !group.show));
       await _loadGroups();
     } catch (e) {
@@ -183,7 +184,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
   /// 拖拽排序后持久化 order
   Future<void> _persistOrder(List<BookGroup> reordered) async {
     setState(() => _groups = reordered);
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     try {
       for (var i = 0; i < reordered.length; i++) {
         final g = reordered[i];
@@ -359,13 +360,13 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
 
   /// 将书籍分配到分组（多选）
   Future<void> _assignBooks(BookGroup group) async {
-    final provider = context.read<BookshelfProvider>();
-    if (provider.books.isEmpty) {
+    final books = ref.read(bookshelfNotifierProvider).books;
+    if (books.isEmpty) {
       _showError('书架暂无书籍');
       return;
     }
     final selected = <String>{
-      for (final b in provider.books.where((b) => b.group == group.groupId)) b.bookUrl,
+      for (final b in books.where((b) => b.group == group.groupId)) b.bookUrl,
     };
 
     final confirmed = await showDialog<bool>(
@@ -377,9 +378,9 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
             width: double.maxFinite,
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: provider.books.length,
+              itemCount: books.length,
               itemBuilder: (_, i) {
-                final book = provider.books[i];
+                final book = books[i];
                 final checked = selected.contains(book.bookUrl);
                 return CheckboxListTile(
                   dense: true,
@@ -416,9 +417,9 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
 
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     try {
-      for (final book in provider.books) {
+      for (final book in books) {
         final shouldIn = selected.contains(book.bookUrl);
         final isIn = book.group == group.groupId;
         if (shouldIn && !isIn) {
@@ -427,7 +428,7 @@ class _BookGroupScreenState extends State<BookGroupScreen> {
           await api.setBookGroup(book.bookUrl, 0);
         }
       }
-      await provider.loadBooks();
+      await ref.read(bookshelfNotifierProvider.notifier).refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已更新「${group.groupName}」的书籍')),

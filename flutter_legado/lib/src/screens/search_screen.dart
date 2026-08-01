@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
-import '../providers/bookshelf_provider.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/search/search_notifier.dart';
 import '../services/rust_api.dart';
 import '../widgets/book_cover.dart';
@@ -320,8 +319,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _addToBookshelf(BuildContext context, Book book) {
-    // 过渡期：书架数据源仍由 BookshelfProvider 提供（book_info_screen 等同步使用）
-    context.read<BookshelfProvider>().addBook(book);
+    // 书架数据源由 BookshelfNotifier 提供（book_info_screen 等同步使用）
+    ref.read(bookshelfNotifierProvider.notifier).addBook(book);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${book.name} ${AppStrings.addedToBookshelf}')),
     );

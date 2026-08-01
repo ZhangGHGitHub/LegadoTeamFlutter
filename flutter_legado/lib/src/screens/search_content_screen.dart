@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
+import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
-import '../services/book_api.dart';
 import '../widgets/empty_state.dart';
 
 /// 单条正文搜索结果
@@ -25,7 +24,7 @@ class _ContentMatch {
 ///
 /// 在指定书籍的全部章节正文中搜索关键词，支持高亮、搜索历史，
 /// 点击结果可跳转阅读器对应章节。
-class SearchContentScreen extends StatefulWidget {
+class SearchContentScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book? book;
 
@@ -49,10 +48,10 @@ class SearchContentScreen extends StatefulWidget {
   String get effectiveBookName => book?.name ?? bookName;
 
   @override
-  State<SearchContentScreen> createState() => _SearchContentScreenState();
+  ConsumerState<SearchContentScreen> createState() => _SearchContentScreenState();
 }
 
-class _SearchContentScreenState extends State<SearchContentScreen> {
+class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -85,7 +84,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
 
   Future<void> _loadHistory() async {
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       final list = await api.getSearchHistory(limit: 20);
       if (!mounted) return;
       setState(() => _history = list.map((e) => e.word).toList());
@@ -98,7 +97,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
     final query = raw.trim();
     if (query.isEmpty) return;
 
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     final gen = ++_generation;
 
     setState(() {
@@ -359,7 +358,7 @@ class _SearchContentScreenState extends State<SearchContentScreen> {
 
   Future<void> _clearHistory() async {
     try {
-      final api = context.read<BookApi>();
+      final api = ref.read(bookApiProvider);
       await api.clearSearchHistory();
       if (mounted) setState(() => _history = []);
     } catch (_) {

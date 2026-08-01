@@ -1,10 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:path_provider/path_provider.dart';
-import 'package:provider/provider.dart';
 
-import '../providers/bookshelf_provider.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../services/book_api.dart';
 import '../services/rust_api.dart';
 
@@ -22,17 +23,18 @@ const _supportedEncodings = [
 ///
 /// 显示压缩包内书籍文件列表，支持多选导入、编码检测与编码选择。
 /// 对应安卓端 BaseImportBookActivity.onArchiveFileClick 逻辑。
-class ArchiveImportDialog extends StatefulWidget {
+class ArchiveImportDialog extends ConsumerStatefulWidget {
   /// 压缩包文件路径
   final String archivePath;
 
   const ArchiveImportDialog({super.key, required this.archivePath});
 
   @override
-  State<ArchiveImportDialog> createState() => _ArchiveImportDialogState();
+  ConsumerState<ArchiveImportDialog> createState() =>
+      _ArchiveImportDialogState();
 }
 
-class _ArchiveImportDialogState extends State<ArchiveImportDialog> {
+class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   final BookApi _api = RustApi();
 
   /// 压缩包内的书籍文件名列表
@@ -265,7 +267,7 @@ class _ArchiveImportDialogState extends State<ArchiveImportDialog> {
       final extractedFiles =
           (result['extracted_files'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       if (!mounted) return;
-      final provider = context.read<BookshelfProvider>();
+      final notifier = ref.read(bookshelfNotifierProvider.notifier);
 
       for (final filePath in extractedFiles) {
         final fileName = filePath.split(Platform.pathSeparator).last;
@@ -286,7 +288,7 @@ class _ArchiveImportDialogState extends State<ArchiveImportDialog> {
         }
 
         try {
-          await provider.importLocalBook(filePath);
+          await notifier.importLocalBook(filePath);
         } catch (_) {
           // 单个文件导入失败不阻断整体流程
         }
@@ -297,7 +299,7 @@ class _ArchiveImportDialogState extends State<ArchiveImportDialog> {
       }
 
       // 刷新书架
-      await provider.loadBooks();
+      await notifier.refresh();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

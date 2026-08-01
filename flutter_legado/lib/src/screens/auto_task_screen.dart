@@ -1,36 +1,39 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
-import '../providers/auto_task_provider.dart';
+import '../providers/auto_task/auto_task_notifier.dart';
 
 /// 定时任务管理页面
-class AutoTaskScreen extends StatefulWidget {
+class AutoTaskScreen extends ConsumerStatefulWidget {
   const AutoTaskScreen({super.key});
 
   @override
-  State<AutoTaskScreen> createState() => _AutoTaskScreenState();
+  ConsumerState<AutoTaskScreen> createState() => _AutoTaskScreenState();
 }
 
-class _AutoTaskScreenState extends State<AutoTaskScreen> {
+class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AutoTaskProvider>().loadTasks();
+      ref.read(autoTaskNotifierProvider.notifier).loadTasks();
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(autoTaskNotifierProvider);
+    final notifier = ref.read(autoTaskNotifierProvider.notifier);
     return Scaffold(
       appBar: AppBar(title: const Text('定时任务')),
-      body: Consumer<AutoTaskProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading) {
+      body: Builder(
+        builder: (context) {
+          if (state.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (provider.error != null) {
+          if (state.error != null) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -38,12 +41,12 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
                   Icon(Icons.error_outline,
                       size: 48, color: Theme.of(context).colorScheme.error),
                   const SizedBox(height: 8),
-                  Text(provider.error!,
+                  Text(state.error!,
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.error)),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: () => provider.loadTasks(),
+                    onPressed: () => notifier.loadTasks(),
                     child: const Text('重试'),
                   ),
                 ],
@@ -51,7 +54,7 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
             );
           }
 
-          if (provider.tasks.isEmpty) {
+          if (state.tasks.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -74,13 +77,13 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
           }
 
           return RefreshIndicator(
-            onRefresh: () => provider.loadTasks(),
+            onRefresh: () => notifier.loadTasks(),
             child: ListView.separated(
-              itemCount: provider.tasks.length,
+              itemCount: state.tasks.length,
               separatorBuilder: (_, index) => const Divider(height: 1),
               itemBuilder: (context, index) {
-                final task = provider.tasks[index];
-                return _buildTaskTile(context, provider, task);
+                final task = state.tasks[index];
+                return _buildTaskTile(context, notifier, task);
               },
             ),
           );
@@ -94,7 +97,7 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
   }
 
   Widget _buildTaskTile(
-      BuildContext context, AutoTaskProvider provider, AutoTask task) {
+      BuildContext context, AutoTaskNotifier provider, AutoTask task) {
     final IconData icon;
     switch (task.taskType) {
       case 'refreshToc':
@@ -225,7 +228,7 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
     );
 
     if (result != null && context.mounted) {
-      await context.read<AutoTaskProvider>().createTask(result);
+      await ref.read(autoTaskNotifierProvider.notifier).createTask(result);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已添加任务: ${result.name}')),
@@ -236,7 +239,7 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
 
   /// 显示任务操作菜单
   void _showTaskOptions(
-      BuildContext context, AutoTaskProvider provider, AutoTask task) {
+      BuildContext context, AutoTaskNotifier provider, AutoTask task) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -355,9 +358,9 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
     );
 
     if (result != null && context.mounted) {
-      await context.read<AutoTaskProvider>().deleteTask(task.id);
+      await ref.read(autoTaskNotifierProvider.notifier).deleteTask(task.id);
       if (context.mounted) {
-        await context.read<AutoTaskProvider>().createTask(result);
+        await ref.read(autoTaskNotifierProvider.notifier).createTask(result);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('已更新任务: ${result.name}')),
@@ -369,7 +372,7 @@ class _AutoTaskScreenState extends State<AutoTaskScreen> {
 
   /// 确认删除
   void _confirmDelete(
-      BuildContext context, AutoTaskProvider provider, AutoTask task) {
+      BuildContext context, AutoTaskNotifier provider, AutoTask task) {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(

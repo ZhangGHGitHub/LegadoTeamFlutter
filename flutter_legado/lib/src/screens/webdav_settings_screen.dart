@@ -1,22 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
-import '../providers/sync_provider.dart';
+import '../providers/sync/sync_notifier.dart';
 
 /// WebDAV 设置页面
 ///
 /// 对齐 Android 原版 BackupConfigFragment 的 WebDAV 设置组：
 /// 服务器地址 / 账号 / 密码 / 子目录 / 设备名 / 同步书籍进度（含增强），
 /// 以及备份/恢复操作（真实对接 BookApi.webdavFullSync）。
-class WebDavSettingsScreen extends StatefulWidget {
+class WebDavSettingsScreen extends ConsumerStatefulWidget {
   const WebDavSettingsScreen({super.key});
 
   @override
-  State<WebDavSettingsScreen> createState() => _WebDavSettingsScreenState();
+  ConsumerState<WebDavSettingsScreen> createState() =>
+      _WebDavSettingsScreenState();
 }
 
-class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
-  // 本地编辑态（确认后整体写回 SyncProvider）
+class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
+  // 本地编辑态（确认后整体写回 SyncNotifier）
   String _url = '';
   String _user = '';
   String _pass = '';
@@ -32,25 +34,26 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
     _loadConfig();
   }
 
-  /// 从 SyncProvider 加载已保存的配置
+  /// 从 SyncNotifier 加载已保存的配置
   Future<void> _loadConfig() async {
-    final syncProvider = context.read<SyncProvider>();
-    await syncProvider.loadConfig();
+    final notifier = ref.read(syncNotifierProvider.notifier);
+    await notifier.loadConfig();
     if (mounted) {
+      final state = ref.read(syncNotifierProvider);
       setState(() {
-        _url = syncProvider.webDavUrl;
-        _user = syncProvider.webDavUsername;
-        _pass = syncProvider.webDavPassword;
-        _dir = syncProvider.remoteDir;
-        _device = syncProvider.deviceName;
+        _url = state.webDavUrl;
+        _user = state.webDavUsername;
+        _pass = state.webDavPassword;
+        _dir = state.remoteDir;
+        _device = state.deviceName;
       });
     }
   }
 
   /// 整体保存当前配置
   Future<void> _saveAll() async {
-    final syncProvider = context.read<SyncProvider>();
-    await syncProvider.saveConfig(
+    final notifier = ref.read(syncNotifierProvider.notifier);
+    await notifier.saveConfig(
       _url,
       _user,
       _pass,
@@ -97,16 +100,16 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
 
   /// 备份到 WebDAV
   Future<void> _backup() async {
-    final syncProvider = context.read<SyncProvider>();
-    if (!syncProvider.isConfigured) {
+    final notifier = ref.read(syncNotifierProvider.notifier);
+    if (!ref.read(syncNotifierProvider).isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先配置并保存 WebDAV 服务器信息')),
       );
       return;
     }
-    await _runWithProgress('备份中…', () => syncProvider.backupToWebDav());
+    await _runWithProgress('备份中…', () => notifier.backupToWebDav());
     if (!mounted) return;
-    final error = syncProvider.error;
+    final error = ref.read(syncNotifierProvider).error;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(error ?? '备份成功')),
     );
@@ -114,8 +117,8 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
 
   /// 从 WebDAV 恢复
   Future<void> _restore() async {
-    final syncProvider = context.read<SyncProvider>();
-    if (!syncProvider.isConfigured) {
+    final notifier = ref.read(syncNotifierProvider.notifier);
+    if (!ref.read(syncNotifierProvider).isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先配置并保存 WebDAV 服务器信息')),
       );
@@ -124,7 +127,7 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
     var message = '';
     await _runWithProgress(
       '恢复中…',
-      () async => message = await syncProvider.restoreFromWebDav(),
+      () async => message = await notifier.restoreFromWebDav(),
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -160,7 +163,8 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final syncProvider = context.watch<SyncProvider>();
+    final syncState = ref.watch(syncNotifierProvider);
+    final notifier = ref.read(syncNotifierProvider.notifier);
     return Scaffold(
       appBar: AppBar(title: const Text('WebDAV 设置')),
       body: ListView(
@@ -218,15 +222,15 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
           SwitchListTile(
             title: const Text('同步书籍进度'),
             subtitle: const Text('在多设备间同步书籍阅读进度'),
-            value: syncProvider.syncBookProgress,
-            onChanged: (v) => syncProvider.setSyncBookProgress(v),
+            value: syncState.syncBookProgress,
+            onChanged: (v) => notifier.setSyncBookProgress(v),
           ),
           SwitchListTile(
             title: const Text('同步书籍进度增强'),
             subtitle: const Text('同步更详细的阅读进度信息'),
-            value: syncProvider.syncBookProgressPlus,
-            onChanged: syncProvider.syncBookProgress
-                ? (v) => syncProvider.setSyncBookProgressPlus(v)
+            value: syncState.syncBookProgressPlus,
+            onChanged: syncState.syncBookProgress
+                ? (v) => notifier.setSyncBookProgressPlus(v)
                 : null,
           ),
           const Divider(height: 1),
@@ -250,7 +254,7 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
           ListTile(
             leading: const Icon(Icons.access_time),
             title: const Text('最后同步时间'),
-            subtitle: Text(syncProvider.lastSyncTimeLabel),
+            subtitle: Text(syncState.lastSyncTimeLabel),
             enabled: false,
           ),
           const SizedBox(height: 24),

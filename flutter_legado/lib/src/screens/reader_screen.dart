@@ -3,12 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:provider/provider.dart' show ReadContext;
 
-import '../providers/bookmark_provider.dart';
+import '../providers/bookmark/bookmark_notifier.dart';
+import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
-import '../services/book_api.dart';
 import '../widgets/reader/reader_bottom_bar.dart';
 import '../widgets/reader/reader_catalog_drawer.dart';
 import '../widgets/reader/reader_page_view.dart';
@@ -105,7 +104,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     final chapters = state.chapters;
     if (book == null || chapters.isEmpty) return;
 
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     final index = state.currentChapterIndex;
 
     // 前后各预加载 2 章（按距离由近及远，越靠近当前章越优先）
@@ -216,7 +215,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     final content = state.chapterContent;
     final summary = content.length > 100 ? content.substring(0, 100) : content;
 
-    context.read<BookmarkProvider>().addBookmark(
+    ref.read(bookmarkNotifierProvider.notifier).addBookmark(
           bookName: book.name,
           bookAuthor: book.author,
           chapterIndex: state.currentChapterIndex,

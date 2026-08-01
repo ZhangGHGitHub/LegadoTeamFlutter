@@ -1,0 +1,382 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
+
+import '../../bridge/ffi.dart';
+import '../../models/models.dart';
+import '../../services/backup_service.dart';
+import '../../services/source_import_service.dart';
+import '../providers.dart';
+import 'source_state.dart';
+
+export 'source_state.dart';
+
+/// 书源管理 Riverpod Notifier
+///
+/// 职责（对标 Android BookSourceActivity）：
+/// - 调用 BookApi → 接收纯数据 → 更新 immutable State
+/// - 管理 UI 状态（loading/error/data 三态）
+/// - 管理搜索过滤、分组筛选、排序
+/// - 批量操作（启用/禁用/删除/导出）
+/// - 导入（URL/文件/JSON/扫码）
+/// - 禁止包含业务计算（书源解析由 Rust 完成）
+class SourceNotifier extends Notifier<SourceState> {
+  @override
+  SourceState build() {
+    // 原实现不自动加载（由屏幕 initState 触发 loadSources），build() 仅返回初始状态
+    return const SourceState();
+  }
+
+  /// 获取导入服务实例
+  SourceImportService get importService =>
+      SourceImportService(ref.read(bookApiProvider));
+
+  /// 获取备份服务实例
+  BackupService get backupService =>
+      BackupService(ref.read(bookApiProvider));
+
+  // ===== CRUD 操作 =====
+
+  /// 加载书源列表
+  Future<void> loadSources() async {
+    state = state.copyWith(loading: true, error: null);
+    try {
+      final api = ref.read(bookApiProvider);
+      final sources = await api.getBookSources();
+      state = state.copyWith(sources: sources, loading: false);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 切换书源启用状态
+  Future<void> toggleSource(String sourceUrl) async {
+    final index =
+        state.sources.indexWhere((s) => s.bookSourceUrl == sourceUrl);
+    if (index == -1) return;
+    final source = state.sources[index];
+    final updated = source.copyWith(enabled: !source.enabled);
+    try {
+      final api = ref.read(bookApiProvider);
+      await api.updateBookSource(updated);
+      final newSources = List<BookSource>.of(state.sources);
+      newSources[index] = updated;
+      state = state.copyWith(sources: newSources);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+    }
+  }
+
+  /// 删除书源
+  Future<void> deleteSource(String sourceUrl) async {
+    try {
+      final api = ref.read(bookApiProvider);
+      await api.deleteBookSource(sourceUrl);
+      state = state.copyWith(
+        sources: state.sources
+            .where((s) => s.bookSourceUrl != sourceUrl)
+            .toList(),
+        selectedUrls: {...state.selectedUrls}..remove(sourceUrl),
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+    }
+  }
+
+  /// 保存书源（新建或更新）
+  Future<void> saveSource(BookSource source) async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final index = state.sources
+          .indexWhere((s) => s.bookSourceUrl == source.bookSourceUrl);
+      if (index == -1) {
+        // 新建
+        final added = await api.addBookSource(source);
+        state = state.copyWith(sources: [...state.sources, added]);
+      } else {
+        // 更新
+        await api.updateBookSource(source);
+        final newSources = List<BookSource>.of(state.sources);
+        newSources[index] = source;
+        state = state.copyWith(sources: newSources);
+      }
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+      rethrow;
+    }
+  }
+
+  /// 获取单个书源
+  BookSource? getSource(String sourceUrl) {
+    try {
+      return state.sources.firstWhere((s) => s.bookSourceUrl == sourceUrl);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ===== 导入 =====
+
+  /// 导入书源（原始 JSON）
+  Future<void> importSources(String jsonContent) async {
+    state = state.copyWith(loading: true, error: null);
+    try {
+      final api = ref.read(bookApiProvider);
+      await api.importBookSources(jsonContent);
+      // 重新加载书源列表
+      final sources = await api.getBookSources();
+      state = state.copyWith(sources: sources, loading: false);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 使用导入服务导入 JSON
+  Future<ImportResult> importFromJson(String jsonStr) async {
+    state = state.copyWith(loading: true, error: null);
+    try {
+      final result = await importService.importFromJson(jsonStr);
+      final api = ref.read(bookApiProvider);
+      // 重新加载书源列表
+      final sources = await api.getBookSources();
+      state = state.copyWith(
+        sources: sources,
+        lastImportResult: result,
+        loading: false,
+      );
+      return result;
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+      return ImportResult(
+        total: 0,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        errors: [e.toString()],
+      );
+    }
+  }
+
+  /// 从 URL 导入书源
+  Future<ImportResult> importFromUrl(String url) async {
+    state = state.copyWith(loading: true, error: null);
+    try {
+      final result = await importService.importFromUrl(url);
+      final api = ref.read(bookApiProvider);
+      final sources = await api.getBookSources();
+      state = state.copyWith(
+        sources: sources,
+        lastImportResult: result,
+        loading: false,
+      );
+      return result;
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+      return ImportResult(
+        total: 0,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        errors: [e.toString()],
+      );
+    }
+  }
+
+  /// 从文件导入书源
+  Future<ImportResult> importFromFile(String filePath) async {
+    state = state.copyWith(loading: true, error: null);
+    try {
+      final result = await importService.importFromFile(filePath);
+      final api = ref.read(bookApiProvider);
+      final sources = await api.getBookSources();
+      state = state.copyWith(
+        sources: sources,
+        lastImportResult: result,
+        loading: false,
+      );
+      return result;
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+      return ImportResult(
+        total: 0,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        errors: [e.toString()],
+      );
+    }
+  }
+
+  // ===== 分组筛选 =====
+
+  /// 设置分组筛选
+  void setGroup(String? group) {
+    state = state.copyWith(selectedGroup: group);
+  }
+
+  // ===== 排序 =====
+
+  /// 设置排序方式（对标 Android menu_sort_manual/auto/name/url 等）
+  void setSort(SourceSort sort) {
+    state = state.copyWith(sort: sort);
+  }
+
+  /// 切换升序/降序（对标 Android menu_sort_desc）
+  void toggleSortDirection() {
+    state = state.copyWith(sortAscending: !state.sortAscending);
+  }
+
+  // ===== 批量操作 =====
+
+  /// 进入批量模式
+  void enterBatchMode() {
+    state = state.copyWith(batchMode: true, selectedUrls: {});
+  }
+
+  /// 退出批量模式
+  void exitBatchMode() {
+    state = state.copyWith(batchMode: false, selectedUrls: {});
+  }
+
+  /// 切换选中状态
+  void toggleSelection(String sourceUrl) {
+    final newSet = {...state.selectedUrls};
+    if (newSet.contains(sourceUrl)) {
+      newSet.remove(sourceUrl);
+    } else {
+      newSet.add(sourceUrl);
+    }
+    state = state.copyWith(selectedUrls: newSet);
+  }
+
+  /// 全选当前过滤结果
+  void selectAll() {
+    final newSet = {...state.selectedUrls};
+    for (final s in state.filteredSources) {
+      newSet.add(s.bookSourceUrl);
+    }
+    state = state.copyWith(selectedUrls: newSet);
+  }
+
+  /// 取消全选
+  void deselectAll() {
+    state = state.copyWith(selectedUrls: {});
+  }
+
+  /// 批量启用选中的书源
+  Future<void> batchEnable() async {
+    state = state.copyWith(loading: true);
+    try {
+      final api = ref.read(bookApiProvider);
+      final newSources = List<BookSource>.of(state.sources);
+      for (final url in state.selectedUrls) {
+        final index =
+            newSources.indexWhere((s) => s.bookSourceUrl == url);
+        if (index == -1) continue;
+        final source = newSources[index];
+        if (!source.enabled) {
+          final updated = source.copyWith(enabled: true);
+          await api.updateBookSource(updated);
+          newSources[index] = updated;
+        }
+      }
+      state = state.copyWith(
+        sources: newSources,
+        batchMode: false,
+        selectedUrls: {},
+        loading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 批量禁用选中的书源
+  Future<void> batchDisable() async {
+    state = state.copyWith(loading: true);
+    try {
+      final api = ref.read(bookApiProvider);
+      final newSources = List<BookSource>.of(state.sources);
+      for (final url in state.selectedUrls) {
+        final index =
+            newSources.indexWhere((s) => s.bookSourceUrl == url);
+        if (index == -1) continue;
+        final source = newSources[index];
+        if (source.enabled) {
+          final updated = source.copyWith(enabled: false);
+          await api.updateBookSource(updated);
+          newSources[index] = updated;
+        }
+      }
+      state = state.copyWith(
+        sources: newSources,
+        batchMode: false,
+        selectedUrls: {},
+        loading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 批量删除选中的书源
+  Future<void> batchDelete() async {
+    state = state.copyWith(loading: true);
+    try {
+      final api = ref.read(bookApiProvider);
+      final newSources = List<BookSource>.of(state.sources);
+      for (final url in state.selectedUrls) {
+        await api.deleteBookSource(url);
+        newSources.removeWhere((s) => s.bookSourceUrl == url);
+      }
+      state = state.copyWith(
+        sources: newSources,
+        batchMode: false,
+        selectedUrls: {},
+        loading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 导出选中的书源为 JSON
+  Future<String> exportSelectedSources() async {
+    return await backupService
+        .exportSelectedSources(state.selectedUrls.toList());
+  }
+
+  /// 导出全部书源为 JSON
+  Future<String> exportAllSources() async {
+    return await backupService.exportAllSourcesFormatted();
+  }
+
+  // ===== 搜索过滤 =====
+
+  /// 设置搜索关键词
+  void setFilter(String keyword) {
+    state = state.copyWith(filterKeyword: keyword);
+  }
+
+  /// 清除搜索关键词
+  void clearFilter() {
+    state = state.copyWith(filterKeyword: '');
+  }
+
+  /// 统一错误映射
+  String _mapError(Object e) {
+    if (e is BridgeError) return e.message;
+    return e.toString();
+  }
+}
+
+/// 书源管理 Notifier 全局 Provider
+///
+/// 使用方式：
+/// ```dart
+/// final state = ref.watch(sourceNotifierProvider);
+/// ref.read(sourceNotifierProvider.notifier).loadSources();
+/// ```
+final sourceNotifierProvider =
+    NotifierProvider<SourceNotifier, SourceState>(
+  SourceNotifier.new,
+);

@@ -1,28 +1,32 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../providers/replace_rule_provider.dart';
+import '../providers/replace_rule/replace_rule_notifier.dart';
 
 /// 替换规则管理页面
-class ReplaceRulesScreen extends StatefulWidget {
+class ReplaceRulesScreen extends ConsumerStatefulWidget {
   const ReplaceRulesScreen({super.key});
 
   @override
-  State<ReplaceRulesScreen> createState() => _ReplaceRulesScreenState();
+  ConsumerState<ReplaceRulesScreen> createState() =>
+      _ReplaceRulesScreenState();
 }
 
-class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
+class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ReplaceRuleProvider>().load();
+      ref.read(replaceRuleNotifierProvider.notifier).load();
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(replaceRuleNotifierProvider);
+    final notifier = ref.read(replaceRuleNotifierProvider.notifier);
     return Scaffold(
       appBar: AppBar(
         title: const Text('替换规则'),
@@ -33,12 +37,12 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
           ),
         ],
       ),
-      body: Consumer<ReplaceRuleProvider>(
-        builder: (context, provider, _) {
-          if (provider.loading) {
+      body: Builder(
+        builder: (context) {
+          if (state.loading) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (provider.error != null) {
+          if (state.error != null) {
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -49,17 +53,17 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
                     color: Theme.of(context).colorScheme.error,
                   ),
                   const SizedBox(height: 16),
-                  Text(provider.error!, textAlign: TextAlign.center),
+                  Text(state.error!, textAlign: TextAlign.center),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => provider.load(),
+                    onPressed: () => notifier.load(),
                     child: const Text('重试'),
                   ),
                 ],
               ),
             );
           }
-          if (provider.rules.isEmpty) {
+          if (state.rules.isEmpty) {
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -80,15 +84,19 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
               ),
             );
           }
-          return _buildRuleList(context, provider);
+          return _buildRuleList(context, notifier, state.rules);
         },
       ),
     );
   }
 
-  Widget _buildRuleList(BuildContext context, ReplaceRuleProvider provider) {
+  Widget _buildRuleList(
+    BuildContext context,
+    ReplaceRuleNotifier provider,
+    List<ReplaceRule> rules,
+  ) {
     return ReorderableListView.builder(
-      itemCount: provider.rules.length,
+      itemCount: rules.length,
       onReorder: (oldIndex, newIndex) {
         // 简单的排序处理
         if (oldIndex < newIndex) newIndex--;
@@ -103,12 +111,12 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
         }
       },
       itemBuilder: (context, index) {
-        final rule = provider.rules[index];
+        final rule = rules[index];
         return _ReplaceRuleTile(
           key: ValueKey(rule.id),
           rule: rule,
           index: index,
-          total: provider.rules.length,
+          total: rules.length,
           onToggle: (enabled) => provider.setEnabled(rule.id, enabled),
           onEdit: () => _showRuleForm(context, rule: rule),
           onDelete: () => _confirmDelete(context, provider, rule),
@@ -263,7 +271,7 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
                   timeoutMillisecond: int.tryParse(timeoutCtrl.text) ?? 3000,
                   order: rule?.order ?? 0,
                 );
-                final provider = context.read<ReplaceRuleProvider>();
+                final provider = ref.read(replaceRuleNotifierProvider.notifier);
                 if (isEdit) {
                   provider.updateRule(newRule);
                 } else {
@@ -281,7 +289,7 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
 
   void _confirmDelete(
     BuildContext context,
-    ReplaceRuleProvider provider,
+    ReplaceRuleNotifier provider,
     ReplaceRule rule,
   ) {
     showDialog(

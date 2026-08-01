@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../providers/bookmark_provider.dart';
+import '../providers/bookmark/bookmark_notifier.dart';
 
 /// 书签管理页面
-class BookmarkScreen extends StatefulWidget {
+class BookmarkScreen extends ConsumerStatefulWidget {
   const BookmarkScreen({super.key});
 
   @override
-  State<BookmarkScreen> createState() => _BookmarkScreenState();
+  ConsumerState<BookmarkScreen> createState() => _BookmarkScreenState();
 }
 
-class _BookmarkScreenState extends State<BookmarkScreen> {
+class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -20,7 +21,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BookmarkProvider>().loadAll();
+      ref.read(bookmarkNotifierProvider.notifier).loadAll();
     });
   }
 
@@ -42,60 +43,61 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
           ),
         ],
       ),
-      body: Consumer<BookmarkProvider>(
-        builder: (context, provider, _) {
-          if (provider.loading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (provider.error != null) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.error_outline, size: 48,
-                      color: Theme.of(context).colorScheme.error),
-                  const SizedBox(height: 16),
-                  Text(provider.error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => provider.loadAll(),
-                    child: const Text('重试'),
-                  ),
-                ],
-              ),
-            );
-          }
-          if (provider.bookmarks.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.bookmark_border, size: 64,
-                      color: Theme.of(context).colorScheme.outline),
-                  const SizedBox(height: 16),
-                  Text(
-                    _searchQuery.isEmpty ? '暂无书签' : '未找到匹配的书签',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ],
-              ),
-            );
-          }
-          return _buildBookmarkList(context, provider);
-        },
-      ),
+      body: _buildBody(ref.watch(bookmarkNotifierProvider)),
     );
   }
 
-  Widget _buildBookmarkList(BuildContext context, BookmarkProvider provider) {
+  Widget _buildBody(BookmarkState state) {
+    final notifier = ref.read(bookmarkNotifierProvider.notifier);
+    if (state.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (state.error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48,
+                color: Theme.of(context).colorScheme.error),
+            const SizedBox(height: 16),
+            Text(state.error!, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => notifier.loadAll(),
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (state.bookmarks.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.bookmark_border, size: 64,
+                color: Theme.of(context).colorScheme.outline),
+            const SizedBox(height: 16),
+            Text(
+              _searchQuery.isEmpty ? '暂无书签' : '未找到匹配的书签',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ],
+        ),
+      );
+    }
+    return _buildBookmarkList(context, state);
+  }
+
+  Widget _buildBookmarkList(BuildContext context, BookmarkState state) {
     return ListView.builder(
-      itemCount: provider.bookmarks.length,
+      itemCount: state.bookmarks.length,
       itemBuilder: (context, index) {
-        final bookmark = provider.bookmarks[index];
+        final bookmark = state.bookmarks[index];
         return _BookmarkTile(
           bookmark: bookmark,
           onTap: () => _navigateToChapter(context, bookmark),
-          onDelete: () => _confirmDelete(context, provider, bookmark),
+          onDelete: () => _confirmDelete(context, bookmark),
         );
       },
     );
@@ -110,8 +112,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     });
   }
 
-  void _confirmDelete(
-      BuildContext context, BookmarkProvider provider, Bookmark bookmark) {
+  void _confirmDelete(BuildContext context, Bookmark bookmark) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -125,7 +126,9 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              provider.deleteBookmark(bookmark.id);
+              ref
+                  .read(bookmarkNotifierProvider.notifier)
+                  .deleteBookmark(bookmark.id);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('书签已删除')),
               );
@@ -153,7 +156,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
           onSubmitted: (value) {
             Navigator.of(ctx).pop();
             setState(() => _searchQuery = value);
-            context.read<BookmarkProvider>().search(value);
+            ref.read(bookmarkNotifierProvider.notifier).search(value);
           },
         ),
         actions: [
@@ -161,7 +164,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
             onPressed: () {
               Navigator.of(ctx).pop();
               setState(() => _searchQuery = '');
-              context.read<BookmarkProvider>().loadAll();
+              ref.read(bookmarkNotifierProvider.notifier).loadAll();
             },
             child: const Text('清除'),
           ),
@@ -170,7 +173,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
               Navigator.of(ctx).pop();
               final query = _searchController.text;
               setState(() => _searchQuery = query);
-              context.read<BookmarkProvider>().search(query);
+              ref.read(bookmarkNotifierProvider.notifier).search(query);
             },
             child: const Text('搜索'),
           ),

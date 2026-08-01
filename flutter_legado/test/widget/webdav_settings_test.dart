@@ -1,30 +1,36 @@
 // WebDAV 设置页 widget 测试
 //
-// 验证 Phase 4.4 重构（对齐原版 BackupConfigFragment WebDAV 设置组）：
+// 验证 Phase 5.4 provider→Riverpod 迁移后（对齐原版 BackupConfigFragment WebDAV 设置组）：
 // - Preference 列表风格渲染（配置组 + 备份/恢复组）
 // - 点击配置项弹出编辑对话框并保存
 // - 未配置时备份给出提示
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_legado/src/providers/sync_provider.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
   late MockRustApi mockApi;
+  late ProviderContainer container;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
+    container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
   });
 
   Widget wrap() {
-    return ChangeNotifierProvider(
-      create: (_) => SyncProvider(mockApi),
+    return UncontrolledProviderScope(
+      container: container,
       child: const MaterialApp(home: WebDavSettingsScreen()),
     );
   }

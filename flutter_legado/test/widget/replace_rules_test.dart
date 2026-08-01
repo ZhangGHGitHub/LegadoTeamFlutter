@@ -5,19 +5,19 @@
 // - 保存新规则时全字段传递给数据层
 // - 编辑模式回填已有规则的全字段与开关状态
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:provider/provider.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
-import 'package:flutter_legado/src/providers/replace_rule_provider.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/replace_rules_screen.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
   late MockRustApi mockApi;
-  late ReplaceRuleProvider provider;
 
   setUpAll(() {
     registerFallbacks();
@@ -26,15 +26,14 @@ void main() {
   setUp(() {
     mockApi = MockRustApi();
     when(() => mockApi.getReplaceRules()).thenAnswer((_) async => []);
-    provider = ReplaceRuleProvider(mockApi);
   });
 
   Future<void> pumpScreen(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: provider,
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
         child: const MaterialApp(home: ReplaceRulesScreen()),
       ),
     );

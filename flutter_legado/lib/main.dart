@@ -4,19 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
-import 'src/providers/auto_task_provider.dart';
-import 'src/providers/bookmark_provider.dart';
-import 'src/providers/bookshelf_provider.dart';
-import 'src/providers/reading_stats_provider.dart';
-import 'src/providers/replace_rule_provider.dart';
-import 'src/providers/rss_provider.dart';
-import 'src/providers/source_provider.dart';
-import 'src/providers/sync_provider.dart';
-import 'src/providers/theme_provider.dart';
 import 'src/routes.dart';
 import 'src/screens/welcome_screen.dart';
 import 'src/services/crash_log_service.dart';
@@ -82,29 +72,11 @@ void main() {
     debugPrint('[启动] 总启动耗时：${totalSw.elapsedMilliseconds}ms');
     
     // 6. 启动应用（传入崩溃日志）
-    // ProviderScope 为 Riverpod 全局作用域（过渡期与 provider 共存）
+    // ProviderScope 为 Riverpod 全局作用域：全部状态管理已迁移至 Riverpod Notifier
+    // （主题/书架/书源/RSS/阅读统计/同步/书签/替换规则/定时任务/阅读器/搜索/发现等）
     runApp(
       ProviderScope(
-        child: MultiProvider(
-          providers: [
-            Provider<BookApi>.value(value: rustApi),
-            // 全局主题（主题模式 + 字体缩放）：启动时加载持久化设置，驱动 MaterialApp 实时切换
-            ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
-            // 移除 ..loadSettings() 级联，下沉到各屏幕首帧回调
-            ChangeNotifierProvider(create: (_) => BookshelfProvider(rustApi)),
-            // 阅读器已迁移至 Riverpod（ReaderNotifier），见 providers/reader/
-            // 搜索已迁移至 Riverpod（SearchNotifier），见 providers/search/
-            ChangeNotifierProvider(create: (_) => SourceProvider(rustApi)),
-            // 发现页已迁移至 Riverpod（ExploreNotifier/ExploreShowNotifier），见 providers/explore/
-            ChangeNotifierProvider(create: (_) => RssProvider(rustApi)),
-            ChangeNotifierProvider(create: (_) => ReadingStatsProvider(rustApi)),
-            ChangeNotifierProvider(create: (_) => SyncProvider(rustApi)),
-            ChangeNotifierProvider(create: (_) => BookmarkProvider(rustApi)),
-            ChangeNotifierProvider(create: (_) => ReplaceRuleProvider(rustApi)),
-            ChangeNotifierProvider(create: (_) => AutoTaskProvider(rustApi: rustApi)),
-          ],
-          child: LegadoApp(initialRoute: initialRoute, lastCrashLog: lastCrash),
-        ),
+        child: LegadoApp(initialRoute: initialRoute, lastCrashLog: lastCrash),
       ),
     );
   }, (error, stack) {

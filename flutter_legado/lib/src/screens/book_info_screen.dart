@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
-import '../providers/bookshelf_provider.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/export_service.dart';
-import '../services/book_api.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/error_view.dart';
 import '../widgets/export_dialog.dart';
 import '../widgets/loading_indicator.dart';
 
 /// 书籍详情页面
-class BookInfoScreen extends StatefulWidget {
+class BookInfoScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book? book;
 
@@ -28,10 +28,10 @@ class BookInfoScreen extends StatefulWidget {
   String get effectiveBookUrl => book?.bookUrl ?? bookUrl;
 
   @override
-  State<BookInfoScreen> createState() => _BookInfoScreenState();
+  ConsumerState<BookInfoScreen> createState() => _BookInfoScreenState();
 }
 
-class _BookInfoScreenState extends State<BookInfoScreen> {
+class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   late Future<_BookInfoData> _future;
   final TextEditingController _searchCtrl = TextEditingController();
   String _filter = '';
@@ -53,7 +53,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   }
 
   Future<_BookInfoData> _loadData() async {
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     final url = widget.effectiveBookUrl;
     // 优先从数据库取最新记录（换源/刷新后元数据才会更新），传入对象仅兜底
     final book = await api.getBook(url) ?? widget.book;
@@ -67,6 +67,29 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
       appBar: AppBar(
         title: const Text('书籍详情'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: '编辑书籍信息',
+            onPressed: () async {
+              try {
+                final data = await _future;
+                final book = data.book;
+                if (book == null) return;
+                if (!context.mounted) return;
+                final saved = await Navigator.pushNamed<bool>(
+                  context,
+                  AppRoutes.editBookInfo,
+                  arguments: book,
+                );
+                // 编辑保存成功后重新加载书籍信息
+                if (saved == true && mounted) {
+                  setState(() => _future = _loadData());
+                }
+              } catch (_) {
+                // 书籍信息未加载完成时忽略
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.file_download_outlined),
             tooltip: '导出',
@@ -364,7 +387,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                         : () async {
                             setState(() => _isLoading = true);
                             try {
-                              final api = context.read<BookApi>();
+                              final api = ref.read(bookApiProvider);
                               final chapters = await api.refreshToc(
                                 book.bookUrl,
                                 book.origin,
@@ -419,7 +442,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
 
   /// 打开导出对话框
   void _showExportDialog(BuildContext context, Book book) {
-    final api = context.read<BookApi>();
+    final api = ref.read(bookApiProvider);
     final exportService = ExportService(api);
     showDialog(
       context: context,
@@ -461,8 +484,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   }
 
   void _addToBookshelf(BuildContext context, Book book) async {
-    final provider = context.read<BookshelfProvider>();
-    await provider.addBook(book);
+    await ref.read(bookshelfNotifierProvider.notifier).addBook(book);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('《${book.name}》已加入书架')),

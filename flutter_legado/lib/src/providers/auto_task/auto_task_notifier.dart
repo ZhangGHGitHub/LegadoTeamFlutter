@@ -2,138 +2,34 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide ChangeNotifierProvider;
 import 'package:http/http.dart' as http;
 
-import '../services/book_api.dart';
+import '../../services/book_api.dart';
+import '../providers.dart';
+import 'auto_task_state.dart';
 
-/// 定时任务模型
+export 'auto_task_state.dart';
+
+/// 定时任务 Rust API 注入点
 ///
-/// 与 legado-server 的 `AutoTaskRule` 结构对应。服务端字段使用
-/// `enable` / `cron` / `comment` / `lastRunAt`（毫秒时间戳）等命名，
-/// 这里在 [fromJson] / [toJson] 中做双向兼容：
-/// - `isEnabled` ↔ `enable`
-/// - `taskType`  ↔ `comment`（服务端无 taskType 字段，借用 comment 保存）
-/// - `lastRunAt` 服务端返回毫秒时间戳（int），UI 展示为格式化字符串
-class AutoTask {
-  final String id;
-  final String name;
-  final String taskType; // refreshToc, updateSources, backup
-  final String cron; // cron 表达式
-  final bool isEnabled;
-  final String? lastRunAt;
-  final String? lastResult;
+/// 生产环境由 [bookApiProvider] 提供；对齐旧 AutoTaskProvider 命名参数 `rustApi`
+/// 的可空语义，测试可覆盖为 null 以验证纯 REST 降级 / FFI 缺失分支。
+final autoTaskRustApiProvider =
+    Provider<BookApi?>((ref) => ref.read(bookApiProvider));
 
-  const AutoTask({
-    required this.id,
-    required this.name,
-    required this.taskType,
-    required this.cron,
-    this.isEnabled = true,
-    this.lastRunAt,
-    this.lastResult,
-  });
+/// 定时任务 REST 降级所用 HTTP 客户端注入点
+///
+/// 默认创建真实 http.Client，并在 Provider 释放时关闭（对齐旧实现 dispose）。
+/// 测试可覆盖为 MockClient。
+final autoTaskHttpClientProvider = Provider<http.Client>((ref) {
+  final client = http.Client();
+  ref.onDispose(client.close);
+  return client;
+});
 
-  /// 从 JSON 构建（兼容 Dart 风格与服务端 AutoTaskRule 风格字段）
-  factory AutoTask.fromJson(Map<String, dynamic> json) {
-    return AutoTask(
-      id: json['id']?.toString() ?? '',
-      name: json['name'] as String? ?? '',
-      taskType:
-          json['taskType'] as String? ?? json['comment'] as String? ?? '',
-      cron: json['cron'] as String? ?? '',
-      isEnabled:
-          json['isEnabled'] as bool? ?? json['enable'] as bool? ?? true,
-      lastRunAt: _parseLastRunAt(json['lastRunAt']),
-      lastResult: json['lastResult'] as String?,
-    );
-  }
-
-  /// 解析 lastRunAt：服务端返回毫秒时间戳（int），也可能是字符串
-  static String? _parseLastRunAt(dynamic value) {
-    if (value is int) {
-      return value > 0 ? _formatMillis(value) : null;
-    }
-    if (value is num) {
-      return value > 0 ? _formatMillis(value.toInt()) : null;
-    }
-    if (value is String && value.isNotEmpty) {
-      return value;
-    }
-    return null;
-  }
-
-  /// 毫秒时间戳格式化为 'yyyy-MM-dd HH:mm:ss'
-  static String _formatMillis(int millis) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
-        '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
-  }
-
-  /// 转为 JSON（服务端 AutoTaskRule 兼容格式）
-  ///
-  /// 服务端 run 端点要求 `script` 非空，按任务类型生成占位脚本。
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'enable': isEnabled,
-        'cron': cron,
-        'comment': taskType,
-        'script': _defaultScript,
-      };
-
-  /// 按任务类型生成占位脚本（服务端校验非空即视为可执行）
-  String get _defaultScript {
-    switch (taskType) {
-      case 'refreshToc':
-        return 'refreshToc()';
-      case 'updateSources':
-        return 'updateSources()';
-      case 'backup':
-        return 'backup()';
-      default:
-        return taskType.isEmpty ? 'noop()' : taskType;
-    }
-  }
-
-  /// 复制并修改
-  AutoTask copyWith({
-    String? id,
-    String? name,
-    String? taskType,
-    String? cron,
-    bool? isEnabled,
-    String? lastRunAt,
-    String? lastResult,
-  }) {
-    return AutoTask(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      taskType: taskType ?? this.taskType,
-      cron: cron ?? this.cron,
-      isEnabled: isEnabled ?? this.isEnabled,
-      lastRunAt: lastRunAt ?? this.lastRunAt,
-      lastResult: lastResult ?? this.lastResult,
-    );
-  }
-
-  /// 任务类型显示名称
-  String get taskTypeLabel {
-    switch (taskType) {
-      case 'refreshToc':
-        return '刷新目录';
-      case 'updateSources':
-        return '更新书源';
-      case 'backup':
-        return '自动备份';
-      default:
-        return taskType;
-    }
-  }
-}
-
-/// 定时任务 Provider
+/// 定时任务 Riverpod Notifier
 ///
 /// 优先通过 Rust FFI 调用 auto_task_api，FFI 失败时降级到 legado-server REST API：
 /// - GET    /api/auto-tasks         — 列表
@@ -141,59 +37,71 @@ class AutoTask {
 /// - PUT    /api/auto-tasks/:id     — 更新
 /// - DELETE /api/auto-tasks/:id     — 删除
 /// - POST   /api/auto-tasks/:id/run — 立即执行（FFI 优先）
-class AutoTaskProvider extends ChangeNotifier {
+class AutoTaskNotifier extends Notifier<AutoTaskState> {
   static const String _baseUrl = 'http://127.0.0.1:8080/api/auto-tasks';
   static const Duration _timeout = Duration(seconds: 5);
 
-  final http.Client _client;
-  final BookApi? _rustApi;
-
-  AutoTaskProvider({http.Client? client, BookApi? rustApi})
-      : _client = client ?? http.Client(),
-        _rustApi = rustApi;
-
-  List<AutoTask> _tasks = [];
-  bool _isLoading = false;
-  String? _error;
-
-  List<AutoTask> get tasks => _tasks;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-
   @override
-  void dispose() {
-    _client.close();
-    super.dispose();
+  AutoTaskState build() {
+    // 原 AutoTaskProvider 不在构造时自动加载，由页面 initState 触发 loadTasks()
+    return const AutoTaskState();
   }
+
+  /// Rust API（可空，null 表示无 FFI，仅走 REST 降级）
+  BookApi? get _rustApi => ref.read(autoTaskRustApiProvider);
+
+  /// REST 降级所用 HTTP 客户端
+  http.Client get _client => ref.read(autoTaskHttpClientProvider);
 
   /// 加载所有定时任务
   ///
   /// [silent] 为 true 时不触发 loading 状态（用于增删改后的静默刷新）。
-  /// 若服务端未运行（连接失败），使用空列表而不报错。
+  /// 优先通过 Rust FFI 读取本地数据库，失败时降级到 REST API。
   Future<void> loadTasks({bool silent = false}) async {
     if (!silent) {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
+      state = state.copyWith(isLoading: true, error: null);
     }
 
+    // FFI 优先路径
+    final rustApi = _rustApi;
+    if (rustApi != null) {
+      try {
+        final rules = await rustApi.autoTaskListRules();
+        state = state.copyWith(
+          tasks: rules.map((r) => AutoTask.fromJson(r)).toList(),
+          error: null,
+          isLoading: false,
+        );
+        return;
+      } catch (_) {
+        // FFI 失败，降级到 REST
+      }
+    }
+
+    // REST 降级路径
     try {
       final response =
           await _client.get(Uri.parse(_baseUrl)).timeout(_timeout);
       if (response.statusCode == 200) {
-        _tasks = _parseTaskList(response.body);
-        _error = null;
+        state = state.copyWith(
+          tasks: _parseTaskList(response.body),
+          error: null,
+          isLoading: false,
+        );
       } else {
-        _tasks = [];
-        _error = '加载任务失败: HTTP ${response.statusCode}';
+        state = state.copyWith(
+          tasks: [],
+          error: '加载任务失败: HTTP ${response.statusCode}',
+          isLoading: false,
+        );
       }
     } catch (e) {
       // 服务端未运行或网络不可达时，回退为空列表
-      _tasks = [];
-      _error = _isConnectionError(e) ? null : '加载任务失败: $e';
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      state = state.copyWith(
+        tasks: [],
+        error: _isConnectionError(e) ? null : '加载任务失败: $e',
+        isLoading: false,
+      );
     }
   }
 
@@ -217,7 +125,22 @@ class AutoTaskProvider extends ChangeNotifier {
   }
 
   /// 创建新任务
+  ///
+  /// 优先通过 Rust FFI 写入本地数据库，失败时降级到 REST API。
   Future<void> createTask(AutoTask task) async {
+    // FFI 优先路径
+    final rustApi = _rustApi;
+    if (rustApi != null) {
+      try {
+        await rustApi.autoTaskCreateRule(ruleJson: jsonEncode(task.toJson()));
+        await loadTasks(silent: true);
+        return;
+      } catch (_) {
+        // FFI 失败，降级到 REST
+      }
+    }
+
+    // REST 降级路径
     try {
       final response = await _client
           .post(
@@ -231,21 +154,39 @@ class AutoTaskProvider extends ChangeNotifier {
       }
       await loadTasks(silent: true);
     } catch (e) {
-      _error = '创建任务失败: $e';
-      notifyListeners();
+      state = state.copyWith(error: '创建任务失败: $e');
     }
   }
 
   /// 切换任务启用状态
+  ///
+  /// 乐观更新，失败时回滚。优先 FFI，降级 REST。
   Future<void> toggleTask(String id, bool enabled) async {
     // 乐观更新，失败时回滚
-    final previous = _tasks;
-    _tasks = _tasks.map((t) {
-      if (t.id == id) return t.copyWith(isEnabled: enabled);
-      return t;
-    }).toList();
-    notifyListeners();
+    final previous = state.tasks;
+    state = state.copyWith(
+      tasks: state.tasks.map((t) {
+        if (t.id == id) return t.copyWith(isEnabled: enabled);
+        return t;
+      }).toList(),
+    );
 
+    // FFI 优先路径
+    final rustApi = _rustApi;
+    if (rustApi != null) {
+      try {
+        final task = state.tasks.firstWhere((t) => t.id == id);
+        await rustApi.autoTaskUpdateRule(
+          ruleJson: jsonEncode(task.toJson()),
+        );
+        await loadTasks(silent: true);
+        return;
+      } catch (_) {
+        // FFI 失败，降级到 REST
+      }
+    }
+
+    // REST 降级路径
     try {
       final response = await _client
           .put(
@@ -259,14 +200,27 @@ class AutoTaskProvider extends ChangeNotifier {
       }
       await loadTasks(silent: true);
     } catch (e) {
-      _tasks = previous;
-      _error = '更新任务失败: $e';
-      notifyListeners();
+      state = state.copyWith(tasks: previous, error: '更新任务失败: $e');
     }
   }
 
   /// 删除任务
+  ///
+  /// 优先通过 Rust FFI 删除，失败时降级到 REST API。
   Future<void> deleteTask(String id) async {
+    // FFI 优先路径
+    final rustApi = _rustApi;
+    if (rustApi != null) {
+      try {
+        await rustApi.autoTaskDeleteRule(id: id);
+        await loadTasks(silent: true);
+        return;
+      } catch (_) {
+        // FFI 失败，降级到 REST
+      }
+    }
+
+    // REST 降级路径
     try {
       final response =
           await _client.delete(Uri.parse('$_baseUrl/$id')).timeout(_timeout);
@@ -275,8 +229,7 @@ class AutoTaskProvider extends ChangeNotifier {
       }
       await loadTasks(silent: true);
     } catch (e) {
-      _error = '删除任务失败: $e';
-      notifyListeners();
+      state = state.copyWith(error: '删除任务失败: $e');
     }
   }
 
@@ -285,29 +238,31 @@ class AutoTaskProvider extends ChangeNotifier {
   /// 优先通过 Rust FFI 执行（autoTaskExecuteWithId），失败时降级到 REST。
   Future<void> runNow(String id) async {
     // 尝试 FFI 路径
-    if (_rustApi != null) {
+    final rustApi = _rustApi;
+    if (rustApi != null) {
       try {
-        final task = _tasks.where((t) => t.id == id).firstOrNull;
+        final task = state.tasks.where((t) => t.id == id).firstOrNull;
         final protocolJson = jsonEncode({
           'action': task?.taskType ?? 'noop',
           'taskId': id,
         });
-        final result = await _rustApi.autoTaskExecuteWithId(
+        final result = await rustApi.autoTaskExecuteWithId(
           protocolJson: protocolJson,
           taskId: id,
         );
         // FFI 执行成功，更新本地状态
         final success = result['success'] as bool? ?? false;
-        _tasks = _tasks.map((t) {
-          if (t.id == id) {
-            return t.copyWith(
-              lastRunAt: _formatNow(),
-              lastResult: success ? '成功' : '失败',
-            );
-          }
-          return t;
-        }).toList();
-        notifyListeners();
+        state = state.copyWith(
+          tasks: state.tasks.map((t) {
+            if (t.id == id) {
+              return t.copyWith(
+                lastRunAt: _formatNow(),
+                lastResult: success ? '成功' : '失败',
+              );
+            }
+            return t;
+          }).toList(),
+        );
         return;
       } catch (_) {
         // FFI 失败，降级到 REST
@@ -325,8 +280,7 @@ class AutoTaskProvider extends ChangeNotifier {
       // 服务端会更新 lastRunAt / lastResult，重新拉取以同步状态
       await loadTasks(silent: true);
     } catch (e) {
-      _error = '运行任务失败: $e';
-      notifyListeners();
+      state = state.copyWith(error: '运行任务失败: $e');
     }
   }
 
@@ -349,9 +303,10 @@ class AutoTaskProvider extends ChangeNotifier {
     required String bookAuthor,
     required String name,
   }) async {
-    if (_rustApi == null) return null;
+    final rustApi = _rustApi;
+    if (rustApi == null) return null;
     try {
-      return await _rustApi.autoTaskBuildBookUpdateTask(
+      return await rustApi.autoTaskBuildBookUpdateTask(
         bookUrl: bookUrl,
         bookName: bookName,
         bookAuthor: bookAuthor,
@@ -370,9 +325,10 @@ class AutoTaskProvider extends ChangeNotifier {
     required List<String> ids,
     required String cron,
   }) async {
-    if (_rustApi == null) return null;
+    final rustApi = _rustApi;
+    if (rustApi == null) return null;
     try {
-      return await _rustApi.autoTaskUpdateCronBatch(
+      return await rustApi.autoTaskUpdateCronBatch(
         rulesJson: jsonEncode(rules),
         idsJson: jsonEncode(ids),
         cron: cron,
@@ -387,9 +343,10 @@ class AutoTaskProvider extends ChangeNotifier {
     required List<Map<String, dynamic>> localTasks,
     required String importedJson,
   }) async {
-    if (_rustApi == null) return null;
+    final rustApi = _rustApi;
+    if (rustApi == null) return null;
     try {
-      return await _rustApi.autoTaskPrepareImported(
+      return await rustApi.autoTaskPrepareImported(
         localTasksJson: jsonEncode(localTasks),
         importedJson: importedJson,
       );
@@ -400,9 +357,10 @@ class AutoTaskProvider extends ChangeNotifier {
 
   /// 规范化脚本（FFI，去除 `@js:` 前缀或 `<js></js>` 包裹）
   Future<String?> normalizeScript(String script) async {
-    if (_rustApi == null) return null;
+    final rustApi = _rustApi;
+    if (rustApi == null) return null;
     try {
-      return await _rustApi.autoTaskNormalizeScript(script: script);
+      return await rustApi.autoTaskNormalizeScript(script: script);
     } catch (_) {
       return null;
     }
@@ -413,9 +371,10 @@ class AutoTaskProvider extends ChangeNotifier {
     required bool canUpdate,
     required bool respectCanUpdate,
   }) async {
-    if (_rustApi == null) return null;
+    final rustApi = _rustApi;
+    if (rustApi == null) return null;
     try {
-      return await _rustApi.autoTaskCanRefreshBookToc(
+      return await rustApi.autoTaskCanRefreshBookToc(
         canUpdate: canUpdate,
         respectCanUpdate: respectCanUpdate,
       );
@@ -432,10 +391,11 @@ class AutoTaskProvider extends ChangeNotifier {
     required String bookName,
     required String bookAuthor,
   }) async {
-    if (_rustApi == null) return null;
+    final rustApi = _rustApi;
+    if (rustApi == null) return null;
     try {
-      final tasksJson = jsonEncode(_tasks.map((t) => t.toJson()).toList());
-      return await _rustApi.autoTaskFindBookUpdateTask(
+      final tasksJson = jsonEncode(state.tasks.map((t) => t.toJson()).toList());
+      return await rustApi.autoTaskFindBookUpdateTask(
         tasksJson: tasksJson,
         bookUrl: bookUrl,
         bookName: bookName,
@@ -453,9 +413,10 @@ class AutoTaskProvider extends ChangeNotifier {
     required String cron,
     int? fromMs,
   }) async {
-    if (_rustApi == null) return null;
+    final rustApi = _rustApi;
+    if (rustApi == null) return null;
     try {
-      return await _rustApi.autoTaskNextDueAt(
+      return await rustApi.autoTaskNextDueAt(
         cron: cron,
         fromMs: fromMs ?? DateTime.now().millisecondsSinceEpoch,
       );
@@ -471,3 +432,15 @@ class AutoTaskProvider extends ChangeNotifier {
         e is TimeoutException;
   }
 }
+
+/// 定时任务 Notifier 全局 Provider
+///
+/// 使用方式：
+/// ```dart
+/// final state = ref.watch(autoTaskNotifierProvider);
+/// ref.read(autoTaskNotifierProvider.notifier).loadTasks();
+/// ```
+final autoTaskNotifierProvider =
+    NotifierProvider<AutoTaskNotifier, AutoTaskState>(
+  AutoTaskNotifier.new,
+);

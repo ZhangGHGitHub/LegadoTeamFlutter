@@ -3,11 +3,12 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
-import '../providers/source_provider.dart';
+import '../providers/source/source_notifier.dart';
 import '../routes.dart';
 import '../services/source_import_service.dart';
 import '../widgets/empty_state.dart';
@@ -17,14 +18,14 @@ import '../widgets/confirm_dialog.dart';
 import 'source_edit_screen.dart';
 
 /// 书源管理页面
-class SourceScreen extends StatefulWidget {
+class SourceScreen extends ConsumerStatefulWidget {
   const SourceScreen({super.key});
 
   @override
-  State<SourceScreen> createState() => _SourceScreenState();
+  ConsumerState<SourceScreen> createState() => _SourceScreenState();
 }
 
-class _SourceScreenState extends State<SourceScreen>
+class _SourceScreenState extends ConsumerState<SourceScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
@@ -33,7 +34,7 @@ class _SourceScreenState extends State<SourceScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SourceProvider>().loadSources();
+      ref.read(sourceNotifierProvider.notifier).loadSources();
     });
   }
 
@@ -45,22 +46,22 @@ class _SourceScreenState extends State<SourceScreen>
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<SourceProvider>();
+    final state = ref.watch(sourceNotifierProvider);
 
     return PopScope(
-      canPop: !provider.batchMode,
+      canPop: !state.batchMode,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && provider.batchMode) {
-          provider.exitBatchMode();
+        if (!didPop && state.batchMode) {
+          ref.read(sourceNotifierProvider.notifier).exitBatchMode();
         }
       },
       child: Scaffold(
-        appBar: provider.batchMode
-            ? _buildBatchAppBar(context, provider)
+        appBar: state.batchMode
+            ? _buildBatchAppBar(context, state)
             : _buildAppBar(context),
         body: _buildBody(context),
         floatingActionButton:
-            !provider.batchMode ? _buildFab(context) : null,
+            !state.batchMode ? _buildFab(context) : null,
       ),
     );
   }
@@ -118,24 +119,26 @@ class _SourceScreenState extends State<SourceScreen>
   }
 
   PreferredSizeWidget _buildBatchAppBar(
-      BuildContext context, SourceProvider provider) {
+      BuildContext context, SourceState state) {
     return AppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
-        onPressed: () => provider.exitBatchMode(),
+        onPressed: () =>
+            ref.read(sourceNotifierProvider.notifier).exitBatchMode(),
       ),
-      title: Text('已选择 ${provider.selectedCount} 项'),
+      title: Text('已选择 ${state.selectedCount} 项'),
       actions: [
         IconButton(
-          icon: Icon(provider.isAllSelected
+          icon: Icon(state.isAllSelected
               ? Icons.check_box
               : Icons.check_box_outline_blank),
           tooltip: '全选',
           onPressed: () {
-            if (provider.isAllSelected) {
-              provider.deselectAll();
+            final notifier = ref.read(sourceNotifierProvider.notifier);
+            if (state.isAllSelected) {
+              notifier.deselectAll();
             } else {
-              provider.selectAll();
+              notifier.selectAll();
             }
           },
         ),
@@ -167,31 +170,31 @@ class _SourceScreenState extends State<SourceScreen>
   }
 
   Widget _buildBody(BuildContext context) {
-    final provider = context.watch<SourceProvider>();
+    final state = ref.watch(sourceNotifierProvider);
 
-    if (provider.loading && provider.sources.isEmpty) {
+    if (state.loading && state.sources.isEmpty) {
       return const LoadingIndicator(message: '加载书源...');
     }
 
-    if (provider.error != null && provider.sources.isEmpty) {
+    if (state.error != null && state.sources.isEmpty) {
       return ErrorView(
-        message: provider.error!,
-        onRetry: () => provider.loadSources(),
+        message: state.error!,
+        onRetry: () => ref.read(sourceNotifierProvider.notifier).loadSources(),
       );
     }
 
     return Column(
       children: [
         // 分组筛选 Chip
-        if (provider.groups.isNotEmpty) _buildGroupChips(context, provider),
+        if (state.groups.isNotEmpty) _buildGroupChips(context, state),
         // 书源列表
         Expanded(
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildSourceList(context, provider.filteredSources),
-              _buildSourceList(context, provider.enabledSources),
-              _buildSourceList(context, provider.disabledSources),
+              _buildSourceList(context, state.filteredSources),
+              _buildSourceList(context, state.enabledSources),
+              _buildSourceList(context, state.disabledSources),
             ],
           ),
         ),
@@ -199,8 +202,8 @@ class _SourceScreenState extends State<SourceScreen>
     );
   }
 
-  Widget _buildGroupChips(BuildContext context, SourceProvider provider) {
-    final groups = provider.groups;
+  Widget _buildGroupChips(BuildContext context, SourceState state) {
+    final groups = state.groups;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: SizedBox(
@@ -211,20 +214,22 @@ class _SourceScreenState extends State<SourceScreen>
           separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
             if (index == 0) {
-              final selected = provider.selectedGroup == null;
+              final selected = state.selectedGroup == null;
               return FilterChip(
                 label: const Text('全部'),
                 selected: selected,
-                onSelected: (_) => provider.setGroup(null),
+                onSelected: (_) =>
+                    ref.read(sourceNotifierProvider.notifier).setGroup(null),
               );
             }
             final group = groups[index - 1];
-            final selected = provider.selectedGroup == group;
+            final selected = state.selectedGroup == group;
             return FilterChip(
               label: Text(group),
               selected: selected,
-              onSelected: (_) =>
-                  provider.setGroup(selected ? null : group),
+              onSelected: (_) => ref
+                  .read(sourceNotifierProvider.notifier)
+                  .setGroup(selected ? null : group),
             );
           },
         ),
@@ -241,15 +246,15 @@ class _SourceScreenState extends State<SourceScreen>
       );
     }
 
-    final provider = context.watch<SourceProvider>();
+    final state = ref.watch(sourceNotifierProvider);
 
     return ListView.separated(
       itemCount: sources.length,
       separatorBuilder: (_, _) => const Divider(height: 1, indent: 60),
       itemBuilder: (context, index) {
         final source = sources[index];
-        return provider.batchMode
-            ? _buildBatchSourceItem(context, source, provider)
+        return state.batchMode
+            ? _buildBatchSourceItem(context, source, state)
             : _buildSourceItem(context, source);
       },
     );
@@ -279,8 +284,9 @@ class _SourceScreenState extends State<SourceScreen>
       ),
       trailing: Switch(
         value: source.enabled,
-        onChanged: (_) =>
-            context.read<SourceProvider>().toggleSource(source.bookSourceUrl),
+        onChanged: (_) => ref
+            .read(sourceNotifierProvider.notifier)
+            .toggleSource(source.bookSourceUrl),
       ),
       onTap: () {
         Navigator.of(context).push(
@@ -294,12 +300,14 @@ class _SourceScreenState extends State<SourceScreen>
   }
 
   Widget _buildBatchSourceItem(
-      BuildContext context, BookSource source, SourceProvider provider) {
-    final selected = provider.isSelected(source.bookSourceUrl);
+      BuildContext context, BookSource source, SourceState state) {
+    final selected = state.isSelected(source.bookSourceUrl);
     return ListTile(
       leading: Checkbox(
         value: selected,
-        onChanged: (_) => provider.toggleSelection(source.bookSourceUrl),
+        onChanged: (_) => ref
+            .read(sourceNotifierProvider.notifier)
+            .toggleSelection(source.bookSourceUrl),
       ),
       title: Text(
         source.bookSourceName,
@@ -310,7 +318,9 @@ class _SourceScreenState extends State<SourceScreen>
         source.bookSourceGroup ?? '未分组',
         style: Theme.of(context).textTheme.bodySmall,
       ),
-      onTap: () => provider.toggleSelection(source.bookSourceUrl),
+      onTap: () => ref
+          .read(sourceNotifierProvider.notifier)
+          .toggleSelection(source.bookSourceUrl),
     );
   }
 
@@ -365,16 +375,18 @@ class _SourceScreenState extends State<SourceScreen>
         isDestructive: true,
       );
       if (confirmed && context.mounted) {
-        context.read<SourceProvider>().deleteSource(source.bookSourceUrl);
+        ref
+            .read(sourceNotifierProvider.notifier)
+            .deleteSource(source.bookSourceUrl);
       }
     }
   }
 
   Future<void> _shareSource(BuildContext context, BookSource source) async {
     try {
-      final provider = context.read<SourceProvider>();
-      final json =
-          await provider.backupService.exportSelectedSources([source.bookSourceUrl]);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final json = await notifier.backupService
+          .exportSelectedSources([source.bookSourceUrl]);
       await Share.share(json, subject: '书源分享：${source.bookSourceName}');
     } catch (e) {
       if (context.mounted) {
@@ -397,13 +409,14 @@ class _SourceScreenState extends State<SourceScreen>
           decoration: const InputDecoration(
             hintText: '输入书源名称或分组',
           ),
-          onChanged: (v) => context.read<SourceProvider>().setFilter(v),
+          onChanged: (v) =>
+              ref.read(sourceNotifierProvider.notifier).setFilter(v),
         ),
         actions: [
           TextButton(
             onPressed: () {
               controller.dispose();
-              context.read<SourceProvider>().clearFilter();
+              ref.read(sourceNotifierProvider.notifier).clearFilter();
               Navigator.pop(ctx);
             },
             child: const Text('清除'),
@@ -449,16 +462,16 @@ class _SourceScreenState extends State<SourceScreen>
         _exportAllToFile(context);
         break;
       case 'batch_mode':
-        context.read<SourceProvider>().enterBatchMode();
+        ref.read(sourceNotifierProvider.notifier).enterBatchMode();
         break;
     }
   }
 
   /// 排序菜单项（对标 Android menu_sort_manual/auto/name/url + menu_sort_desc）
   List<PopupMenuEntry<String>> _buildSortMenuItems(BuildContext context) {
-    final provider = context.read<SourceProvider>();
+    final state = ref.read(sourceNotifierProvider);
     PopupMenuItem<String> sortItem(SourceSort sort, String label) {
-      final selected = provider.sort == sort;
+      final selected = state.sort == sort;
       return PopupMenuItem(
         value: 'sort_${sort.name}',
         child: Row(
@@ -481,7 +494,7 @@ class _SourceScreenState extends State<SourceScreen>
         child: Row(
           children: [
             Icon(
-              provider.sortAscending ? null : Icons.check,
+              state.sortAscending ? null : Icons.check,
               size: 18,
               color: Theme.of(context).colorScheme.primary,
             ),
@@ -502,9 +515,9 @@ class _SourceScreenState extends State<SourceScreen>
   }
 
   void _handleSortAction(BuildContext context, String action) {
-    final provider = context.read<SourceProvider>();
+    final notifier = ref.read(sourceNotifierProvider.notifier);
     if (action == 'sort_desc') {
-      provider.toggleSortDirection();
+      notifier.toggleSortDirection();
       return;
     }
     if (action.startsWith('sort_')) {
@@ -513,13 +526,14 @@ class _SourceScreenState extends State<SourceScreen>
         (e) => e.name == name,
         orElse: () => SourceSort.manual,
       );
-      provider.setSort(sort);
+      notifier.setSort(sort);
     }
   }
 
   void _handleBatchAction(BuildContext context, String action) async {
-    final provider = context.read<SourceProvider>();
-    if (provider.selectedCount == 0) {
+    final notifier = ref.read(sourceNotifierProvider.notifier);
+    final state = ref.read(sourceNotifierProvider);
+    if (state.selectedCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先选择书源')),
       );
@@ -528,7 +542,7 @@ class _SourceScreenState extends State<SourceScreen>
 
     switch (action) {
       case 'enable':
-        await provider.batchEnable();
+        await notifier.batchEnable();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('批量启用完成')),
@@ -536,7 +550,7 @@ class _SourceScreenState extends State<SourceScreen>
         }
         break;
       case 'disable':
-        await provider.batchDisable();
+        await notifier.batchDisable();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('批量禁用完成')),
@@ -548,12 +562,12 @@ class _SourceScreenState extends State<SourceScreen>
         final confirmed = await showConfirmDialog(
           context,
           title: '批量删除',
-          content: '确定要删除选中的 ${provider.selectedCount} 个书源吗？',
+          content: '确定要删除选中的 ${state.selectedCount} 个书源吗？',
           confirmText: '删除',
           isDestructive: true,
         );
         if (confirmed && context.mounted) {
-          await provider.batchDelete();
+          await notifier.batchDelete();
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('批量删除完成')),
@@ -591,8 +605,8 @@ class _SourceScreenState extends State<SourceScreen>
               Navigator.pop(ctx);
               controller.dispose();
 
-              final provider = context.read<SourceProvider>();
-              final result = await provider.importFromUrl(url);
+              final notifier = ref.read(sourceNotifierProvider.notifier);
+              final result = await notifier.importFromUrl(url);
 
               if (context.mounted) {
                 _showImportResult(context, result);
@@ -606,7 +620,7 @@ class _SourceScreenState extends State<SourceScreen>
   }
 
   Future<void> _importFromClipboard(BuildContext context) async {
-    final provider = context.read<SourceProvider>();
+    final notifier = ref.read(sourceNotifierProvider.notifier);
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       final text = data?.text;
@@ -620,7 +634,7 @@ class _SourceScreenState extends State<SourceScreen>
         return;
       }
 
-      final result = await provider.importFromJson(text);
+      final result = await notifier.importFromJson(text);
 
       if (!context.mounted) return;
       _showImportResult(context, result);
@@ -652,8 +666,8 @@ class _SourceScreenState extends State<SourceScreen>
       }
 
       if (!context.mounted) return;
-      final provider = context.read<SourceProvider>();
-      final result = await provider.importFromFile(path);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final result = await notifier.importFromFile(path);
 
       if (!context.mounted) return;
       _showImportResult(context, result);
@@ -680,15 +694,15 @@ class _SourceScreenState extends State<SourceScreen>
     final messenger = ScaffoldMessenger.of(context);
 
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      final provider = context.read<SourceProvider>();
-      final result = await provider.importFromUrl(trimmed);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final result = await notifier.importFromUrl(trimmed);
       if (context.mounted) _showImportResult(context, result);
       return;
     }
 
     if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      final provider = context.read<SourceProvider>();
-      final result = await provider.importFromJson(trimmed);
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final result = await notifier.importFromJson(trimmed);
       if (context.mounted) _showImportResult(context, result);
       return;
     }
@@ -748,8 +762,8 @@ class _SourceScreenState extends State<SourceScreen>
 
   Future<void> _exportAllSources(BuildContext context) async {
     try {
-      final provider = context.read<SourceProvider>();
-      final json = await provider.exportAllSources();
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final json = await notifier.exportAllSources();
 
       await Clipboard.setData(ClipboardData(text: json));
       if (context.mounted) {
@@ -770,8 +784,8 @@ class _SourceScreenState extends State<SourceScreen>
   Future<void> _exportAllToFile(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final provider = context.read<SourceProvider>();
-      final json = await provider.exportAllSources();
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final json = await notifier.exportAllSources();
 
       final dir = await FilePicker.platform.getDirectoryPath(
         dialogTitle: '选择书源导出目录',
@@ -805,8 +819,8 @@ class _SourceScreenState extends State<SourceScreen>
   }
 
   Future<void> _exportSelectedGroup(BuildContext context) async {
-    final provider = context.read<SourceProvider>();
-    final group = provider.selectedGroup;
+    final state = ref.read(sourceNotifierProvider);
+    final group = state.selectedGroup;
 
     if (group == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -816,9 +830,10 @@ class _SourceScreenState extends State<SourceScreen>
     }
 
     try {
-      final sources = provider.filteredSources;
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final sources = state.filteredSources;
       final urls = sources.map((s) => s.bookSourceUrl).toList();
-      final json = await provider.backupService.exportSelectedSources(urls);
+      final json = await notifier.backupService.exportSelectedSources(urls);
 
       await Clipboard.setData(ClipboardData(text: json));
       if (context.mounted) {
@@ -837,18 +852,19 @@ class _SourceScreenState extends State<SourceScreen>
 
   Future<void> _exportBatchSelected(BuildContext context) async {
     try {
-      final provider = context.read<SourceProvider>();
-      final json = await provider.exportSelectedSources();
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final state = ref.read(sourceNotifierProvider);
+      final json = await notifier.exportSelectedSources();
 
       await Clipboard.setData(ClipboardData(text: json));
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content:
-                  Text('已导出 ${provider.selectedCount} 个书源到剪贴板')),
+                  Text('已导出 ${state.selectedCount} 个书源到剪贴板')),
         );
       }
-      provider.exitBatchMode();
+      notifier.exitBatchMode();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
