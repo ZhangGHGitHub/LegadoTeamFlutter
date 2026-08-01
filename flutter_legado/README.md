@@ -258,9 +258,10 @@ flutter pub run build_runner build --delete-conflicting-outputs
 - 国际化：中英文双语切换
 - Android 平台桥接：WebView/TTS/通知/文件选择器 4 个 MethodChannel
 - APK 构建验证通过（雷电模拟器 x86_64）
-- 24 个测试文件 / 167 tests passed
+- 24 个测试文件 / 953 tests passed
 
 ### 待完成
-- Cronet QUIC 优化
+
+无。所有已规划任务均已完成（Cronet QUIC 已由 Rust reqwest + QUIC 替代，无需引入）。
 
 > Rust 侧详细开发指南见 [DEVELOPMENT.md](../rust/DEVELOPMENT.md)

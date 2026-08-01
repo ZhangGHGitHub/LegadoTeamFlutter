@@ -165,28 +165,31 @@ rust/
 ├── legado-ffi/             # FFI 出口（cdylib + staticlib，含 WebBook API）
 ├── legado-server/          # HTTP 服务（axum Web 服务器，含 WebBook/SourceCheck 端点）
 │   └── web-dist/           # Web SPA 前端静态资源
+├── legacy-ffi/             # ⚠️ 已废弃，不参与编译（见下方说明）
 └──
 ```
 
+> **注意**：`legacy-ffi/` 为早期废弃模块，不在 workspace 成员中，不参与编译。保留仅供历史参考。
+
 ---
 
-## 项目进度（截至 2026-07-30）
+## 项目进度（截至 2026-08-01）
 
 > 完整进度跟踪文档见 [PROGRESS.md](./PROGRESS.md)
 
-### 当前状态：136/136 原子任务已完成，1297 测试默认通过 / 1688 含 QuickJS+FFI / Flutter 151 通过
+### 当前状态：148/148 原子任务已完成，Rust 1409 测试默认通过 / Flutter 953 通过
 
 | Crate | 测试数 | 状态 |
 |-------|--------|------|
-| legado-core | 448 | ✅ 完成 |
+| legado-core | 502 | ✅ 完成 |
 | legado-parser | 72 | ✅ 完成 |
-| legado-net | 168 | ✅ 完成 |
+| legado-net | 188 | ✅ 完成 |
 | legado-js | 158（默认）/ 327（quickjs） | ✅ 完成 |
-| legado-book | 77 | ✅ 完成 |
-| legado-db | 210 | ✅ 完成 |
-| legado-ffi | 56 | ✅ 完成 |
+| legado-book | 120 | ✅ 完成 |
+| legado-db | 220（215 单元 + 4 集成 + 1 文档） | ✅ 完成 |
+| legado-ffi | 105 | ✅ 完成 |
 | legado-server | 164 | ✅ 完成 |
-| **合计** | **1297**（默认）/ **1688**（quickjs+ffi） | |
+| **合计** | **1409**（默认）/ **1578**（quickjs+ffi） | |
 
 ### 已完成阶段
 - **阶段 0**：基础设施（workspace 骨架、数据模型、FFI 规范）
@@ -199,10 +202,16 @@ rust/
 - **阶段 7**：JsExtensions 完整实现（java 命名空间、网络统一、引擎池化、55+ API、平台桩）
 - **阶段 8**：Flutter UI 完善（38 屏幕、阅读器增强、书源调试、浏览器、词典、字体、二维码）
 - **阶段 9**：Android 构建验证（交叉编译、APK 构建、雷电模拟器安装验证通过）
+- **阶段 10-23**：补全与增强、内容处理管线、UI 集成接线、审计修复、FFI 扩展、Flutter UI 深度实现 + 工程化
 
-### 待完成（远期优化）
-- **中优先级**：端到端流程跑通、阅读器深度实现、CI 自动发布
-- **低优先级**：视频播放、漫画阅读、代码编辑器、Cronet QUIC
+### 已完成（原“远期优化”列表，已全部实现）
+- ✅ 端到端流程跑通（书源导入→搜索→阅读→书签→替换规则全链路可用）
+- ✅ 阅读器深度实现（仿真翻页动画 + 段评弹窗 + 漫画模式）
+- ✅ CI 自动发布（flutter-release.yml，push tag 触发）
+- ✅ 视频播放（video_player + 播放控制 + 全屏 + 手势，Task #145）
+- ✅ 漫画阅读（纵向滚动 + 双指缩放 + 图片预加载 + 进度保存，Task #146）
+- ✅ QUIC 接入主网络链路（可选 QUIC + fallback HTTP/2，Task #43）
+- ✅ Cronet 替代方案（Rust reqwest + QUIC 替代，无需引入 Cronet）
 
 ---
 

@@ -1,6 +1,6 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-07-31（P0-P3 遗留任务全部核销完成）
+> 最后更新：2026-08-01（文档一致性回写，测试数更新为实测值）
 
 ---
 
@@ -8,8 +8,8 @@
 
 - **已完成**：148 / 148 原子任务（100%）
 - **完成度（2026-07-29 源码审计）**：整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）
-- **测试状态**：cargo test 1315 passed（默认，exclude ffi）/ 1706 passed（含 QuickJS + FFI）| flutter test 167 passed | flutter analyze 0 issues
-- **QuickJS feature**：327 tests passed (1 ignored) | legado-ffi：56 tests passed (5 ignored)
+- **测试状态**：cargo test 1409 passed（默认）/ 1578 passed（含 QuickJS + FFI）| flutter test 953 passed | flutter analyze 0 issues
+- **QuickJS feature**：327 tests passed (1 ignored) | legado-ffi：105 tests passed
 - **里程碑**：🎉 Flutter UI 深度实现 + 工程化（仿真翻页/段评/视频/漫画/CI 发布）
 
 ---
@@ -371,15 +371,15 @@
 
 | Crate | 测试数 | 备注 |
 |-------|--------|------|
-| legado-core | 448 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor |
+| legado-core | 502 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor |
 | legado-parser | 72 | RuleAnalyzer + 4 解析器 + AnalyzeRule 门面 + AnalyzeUrl 完整模板 + RuleComplete 自动补全 |
-| legado-net | 168 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker |
+| legado-net | 188 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + QUIC |
 | legado-js | 158（默认）/ 327（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + 15 新 API |
-| legado-book | 95 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
-| legado-db | 206 | Schema v95 + 25 Repository（100% 覆盖）+ MigrationRegistry + RoomImporter + DefaultData + 集成测试 |
-| legado-ffi | 56 tests / 103+ 函数 | 103+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) + WebDAV(6) + Download(8) + Review(4) API |
+| legado-book | 120 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
+| legado-db | 220 | Schema v95 + 25 Repository（100% 覆盖）+ MigrationRegistry + RoomImporter + DefaultData（215 单元 + 4 集成 + 1 文档） |
+| legado-ffi | 105 | 103+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) + WebDAV(6) + Download(8) + Review(4) API |
 | legado-server | 164 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
-| **合计** | **1315**（默认，exclude ffi）/ **1706**（含 ffi + quickjs） | Flutter: 167 tests (24 files) |
+| **合计** | **1409**（默认）/ **1578**（含 quickjs + ffi） | Flutter: 953 tests |
 
 ---
 
