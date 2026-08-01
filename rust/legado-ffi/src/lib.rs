@@ -17,6 +17,7 @@ pub mod bridge;
 pub mod db_state;
 pub mod error;
 pub mod ffi;
+pub mod http_state;
 pub mod js_executor;
 pub mod runtime;
 

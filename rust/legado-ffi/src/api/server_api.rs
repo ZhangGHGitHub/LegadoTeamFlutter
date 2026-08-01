@@ -33,7 +33,12 @@ fn get_server_runtime() -> &'static Runtime {
     SERVER_RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
-            .worker_threads(2)
+            .worker_threads(
+                std::thread::available_parallelism()
+                    .map(|n| n.get())
+                    .unwrap_or(2)
+                    .clamp(2, 8),
+            )
             .thread_name("legado-server")
             .build()
             .expect("Failed to create server runtime")

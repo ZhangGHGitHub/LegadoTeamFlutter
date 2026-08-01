@@ -11,7 +11,6 @@ use legado_core::explore::{parse_explore_url, ExploreCategory};
 use legado_core::models::BookSource;
 use legado_core::web_book::WebSearchResult;
 use legado_core::{LegadoError, LegadoResult};
-use legado_net::{LegadoClient, LegadoClientConfig};
 use legado_parser::AnalyzeUrl;
 
 use crate::runtime;
@@ -83,10 +82,8 @@ async fn explore_books_async(
         return Err(LegadoError::Internal("解析后发现 URL 为空".into()));
     }
 
-    // 发起 HTTP 请求
-    let config = LegadoClientConfig::default();
-    let client = LegadoClient::new(config)
-        .map_err(|e| LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
+    // 发起 HTTP 请求（复用进程共享客户端单例）
+    let client = crate::http_state::shared_client();
 
     // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
     let mut headers = source_headers.clone().unwrap_or_default();

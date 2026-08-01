@@ -1,5 +1,16 @@
-//! 数据库连接管理
+//! 数据库连接管理（基于 r2d2 连接池实现读写分离）
+//!
+//! 核心设计：
+//! - `Database` 持有 `r2d2::Pool` + 一个 `PooledConnection`（per-call 包装器）
+//! - `connection()` 返回 `&Connection`（通过 Deref），所有调用点零修改
+//! - 每个池连接自动设置 PRAGMA（journal_mode=WAL, busy_timeout=5000 等）
+//! - `auto_migrate` 仅在建池前执行一次，不在每个连接上重复执行
+//! - 多线程并发：每次 `with_database` 调用创建独立 `Database`，各持一个池连接
 
+use std::time::Duration;
+
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::Connection;
 
 use legado_core::{LegadoError, LegadoResult};
@@ -7,47 +18,147 @@ use legado_core::{LegadoError, LegadoResult};
 use crate::migration::{self, MigrationRegistry};
 use crate::schema;
 
-/// 数据库包装器，持有 SQLite 连接
+/// 默认连接池大小
+const DEFAULT_POOL_SIZE: u32 = 16;
+
+/// 连接池 PRAGMA 自定义器：在每个池连接创建时自动执行
+///
+/// 设置的 PRAGMA：
+/// - `journal_mode = WAL`：允许并发读写
+/// - `foreign_keys = ON`：启用外键约束
+/// - `synchronous = NORMAL`：平衡性能与安全
+/// - `busy_timeout = 5000`：等待锁释放最多 5 秒，防止 SQLITE_BUSY
+#[derive(Debug)]
+struct PragmaCustomizer;
+
+impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer {
+    fn on_acquire(&self, conn: &mut Connection) -> Result<(), rusqlite::Error> {
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        conn.pragma_update(None, "busy_timeout", 5000)?;
+        Ok(())
+    }
+}
+
+/// 数据库包装器，持有 r2d2 连接池 + 一个池连接
+///
+/// 每次通过 `with_database` 访问时，从池中获取一个独立连接包装为 `Database`。
+/// 当 `Database` 被 drop 时，连接自动归还到池中。
+///
+/// `connection()` 返回 `&Connection`（通过 `PooledConnection` 的 Deref），
+/// 所有 Repository 调用点无需任何修改。
 pub struct Database {
-    conn: Connection,
+    /// 连接池（Arc 内部共享，clone 开销极低）
+    pool: Pool<SqliteConnectionManager>,
+    /// 当前持有的池连接（drop 时自动归还到 pool）
+    conn: r2d2::PooledConnection<SqliteConnectionManager>,
 }
 
 impl Database {
     /// 打开或创建指定路径的数据库文件，自动执行增量迁移
+    ///
+    /// 流程：临时连接执行迁移 → 创建连接池 → 获取一个池连接
     pub fn open(path: &str) -> LegadoResult<Self> {
-        let conn = Connection::open(path)
+        // 阶段1：在临时连接上执行一次性迁移（文件数据库，数据持久化到磁盘）
+        let temp_conn = Connection::open(path)
             .map_err(|e| LegadoError::Database(format!("打开数据库失败: {e}")))?;
-        Self::init_pragmas(&conn)?;
-        Self::auto_migrate(&conn)?;
-        Ok(Self { conn })
+        Self::init_pragmas(&temp_conn)?;
+        Self::auto_migrate(&temp_conn)?;
+        drop(temp_conn);
+
+        // 阶段2：创建连接池（每个连接由 PragmaCustomizer 自动设置 PRAGMA）
+        let manager = SqliteConnectionManager::file(path);
+        let pool = Self::build_pool(manager, DEFAULT_POOL_SIZE)?;
+        let conn = pool
+            .get()
+            .map_err(|e| LegadoError::Database(format!("获取池连接失败: {e}")))?;
+        Ok(Self { pool, conn })
     }
 
     /// 打开内存数据库（用于测试），自动执行迁移
+    ///
+    /// 内存数据库池大小固定为 1（每个 `:memory:` 连接是独立数据库，无法共享）
     pub fn open_in_memory() -> LegadoResult<Self> {
-        let conn = Connection::open_in_memory()
-            .map_err(|e| LegadoError::Database(format!("打开内存数据库失败: {e}")))?;
-        Self::init_pragmas(&conn)?;
+        let manager = SqliteConnectionManager::memory();
+        let pool = Self::build_pool(manager, 1)?;
+        let conn = pool
+            .get()
+            .map_err(|e| LegadoError::Database(format!("获取池连接失败: {e}")))?;
+
+        // 在持有的连接上执行迁移（pool size=1，始终复用同一连接，数据保留）
         Self::auto_migrate(&conn)?;
-        Ok(Self { conn })
+
+        Ok(Self { pool, conn })
     }
 
     /// 打开数据库但不执行迁移（用于测试迁移流程）
     pub fn open_raw(path: &str) -> LegadoResult<Self> {
-        let conn = Connection::open(path)
+        let temp_conn = Connection::open(path)
             .map_err(|e| LegadoError::Database(format!("打开数据库失败: {e}")))?;
-        Self::init_pragmas(&conn)?;
-        Ok(Self { conn })
+        Self::init_pragmas(&temp_conn)?;
+        drop(temp_conn);
+
+        let manager = SqliteConnectionManager::file(path);
+        let pool = Self::build_pool(manager, DEFAULT_POOL_SIZE)?;
+        let conn = pool
+            .get()
+            .map_err(|e| LegadoError::Database(format!("获取池连接失败: {e}")))?;
+        Ok(Self { pool, conn })
     }
 
     /// 打开内存数据库但不执行迁移（用于测试）
     pub fn open_in_memory_raw() -> LegadoResult<Self> {
-        let conn = Connection::open_in_memory()
-            .map_err(|e| LegadoError::Database(format!("打开内存数据库失败: {e}")))?;
-        Self::init_pragmas(&conn)?;
-        Ok(Self { conn })
+        let manager = SqliteConnectionManager::memory();
+        let pool = Self::build_pool(manager, 1)?;
+        let conn = pool
+            .get()
+            .map_err(|e| LegadoError::Database(format!("获取池连接失败: {e}")))?;
+        Ok(Self { pool, conn })
     }
 
-    /// 自动迁移：检查版本并执行必要的迁移
+    /// 从已有连接池创建 Database（获取一个池连接）
+    ///
+    /// 用于 `with_database` 等需要从全局池获取连接的场景。
+    pub fn from_pool(pool: &Pool<SqliteConnectionManager>) -> LegadoResult<Self> {
+        let conn = pool
+            .get()
+            .map_err(|e| LegadoError::Database(format!("获取池连接失败: {e}")))?;
+        Ok(Self {
+            pool: pool.clone(),
+            conn,
+        })
+    }
+
+    /// 获取底层连接池引用
+    pub fn pool(&self) -> &Pool<SqliteConnectionManager> {
+        &self.pool
+    }
+
+    /// 构建连接池（统一入口）
+    ///
+    /// 对于内存数据库（max_size=1），禁用 idle_timeout 和 max_lifetime，
+    /// 防止 r2d2 reaper 关闭唯一连接后下次 pool.get() 创建新的空 :memory: 数据库。
+    fn build_pool(
+        manager: SqliteConnectionManager,
+        max_size: u32,
+    ) -> LegadoResult<Pool<SqliteConnectionManager>> {
+        let is_in_memory = max_size == 1;
+        let mut builder = Pool::builder()
+            .max_size(max_size)
+            .connection_timeout(Duration::from_secs(10))
+            .connection_customizer(Box::new(PragmaCustomizer));
+        if is_in_memory {
+            // 内存数据库池大小固定为 1，禁止 reaper 回收唯一连接
+            builder = builder.idle_timeout(None).max_lifetime(None);
+        }
+        let pool = builder
+            .build(manager)
+            .map_err(|e| LegadoError::Database(format!("创建连接池失败: {e}")))?;
+        Ok(pool)
+    }
+
+    /// 自动迁移：检查版本并执行必要的迁移（仅调用一次）
     fn auto_migrate(conn: &Connection) -> LegadoResult<()> {
         let version = MigrationRegistry::current_version(conn)?;
         if version == 0 {
@@ -99,11 +210,16 @@ impl Database {
     }
 
     /// 获取底层 rusqlite 连接引用
+    ///
+    /// 通过 `PooledConnection` 的 `Deref<Target=Connection>` 返回 `&Connection`。
+    /// 所有 Repository 调用 `db.connection()` 的代码无需任何修改。
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
 
-    /// 设置常用 PRAGMA 优化参数
+    /// 设置常用 PRAGMA 优化参数（用于临时连接的一次性初始化）
+    ///
+    /// 池连接的 PRAGMA 由 `PragmaCustomizer` 自动设置，此方法仅用于迁移前的临时连接。
     fn init_pragmas(conn: &Connection) -> LegadoResult<()> {
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| LegadoError::Database(format!("设置 journal_mode 失败: {e}")))?;
@@ -111,6 +227,8 @@ impl Database {
             .map_err(|e| LegadoError::Database(format!("设置 foreign_keys 失败: {e}")))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
             .map_err(|e| LegadoError::Database(format!("设置 synchronous 失败: {e}")))?;
+        conn.pragma_update(None, "busy_timeout", 5000)
+            .map_err(|e| LegadoError::Database(format!("设置 busy_timeout 失败: {e}")))?;
         Ok(())
     }
 
@@ -158,6 +276,16 @@ mod tests {
     }
 
     #[test]
+    fn test_busy_timeout_set() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+        let bt: i32 = conn
+            .pragma_query_value(None, "busy_timeout", |row| row.get(0))
+            .unwrap();
+        assert_eq!(bt, 5000);
+    }
+
+    #[test]
     fn test_version_get_set() {
         let db = Database::open_in_memory_raw().unwrap();
         let v = db.get_version().unwrap();
@@ -190,5 +318,65 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "Table {} should exist", table);
         }
+    }
+
+    #[test]
+    fn test_pool_concurrent_file_db() {
+        // 验证连接池支持多线程并发访问（使用文件数据库）
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let dir = std::env::temp_dir().join("legado_db_test_concurrent");
+        let _ = std::fs::create_dir_all(&dir);
+        let db_path = dir.join("test_concurrent.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        // 清理旧文件
+        let _ = std::fs::remove_file(&db_path);
+
+        let db = Database::open(db_path_str).unwrap();
+        let pool = db.pool().clone();
+        drop(db); // 释放初始连接
+
+        let barrier = Arc::new(Barrier::new(8));
+        let mut handles = Vec::new();
+
+        for i in 0..8 {
+            let pool = pool.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                let db = Database::from_pool(&pool).unwrap();
+                let conn = db.connection();
+                // 写入
+                conn.execute(
+                    "INSERT INTO books (bookUrl, tocUrl, origin, originName, name, author) VALUES (?1, '', 'test', 'test', ?2, 'test')",
+                    rusqlite::params![format!("url_{i}"), format!("book_{i}")],
+                )
+                .unwrap();
+                // 读取
+                let count: i32 = conn
+                    .query_row("SELECT COUNT(*) FROM books", [], |row| row.get(0))
+                    .unwrap();
+                assert!(count >= 1);
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("线程不应 panic");
+        }
+
+        // 验证所有写入成功
+        let db = Database::from_pool(&pool).unwrap();
+        let conn = db.connection();
+        let total: i32 = conn
+            .query_row("SELECT COUNT(*) FROM books", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 8);
+
+        // 清理
+        drop(db);
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

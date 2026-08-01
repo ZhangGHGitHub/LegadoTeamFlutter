@@ -23,6 +23,7 @@ pub mod reading_stats_api;
 pub mod replace_rule_api;
 pub mod review_api;
 pub mod rss;
+pub mod rss_read_record_api;
 pub mod rss_star_api;
 pub mod search;
 pub mod search_history_api;

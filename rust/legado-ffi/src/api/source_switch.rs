@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use legado_core::models::BookSource;
 use legado_core::source_matcher::{SearchCandidate, SourceMatch, SourceMatcher};
 use legado_core::{LegadoError, LegadoResult};
-use legado_net::{LegadoClient, LegadoClientConfig};
+use legado_net::LegadoClient;
 
 use crate::api::source as source_api;
 use crate::runtime;
@@ -47,8 +47,7 @@ pub fn search_alternative_sources(
 
     // 使用 tokio runtime 并行搜索
     let candidates = runtime::block_on(async {
-        let client = LegadoClient::new(LegadoClientConfig::default())
-            .map_err(|e| LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
+        let client = crate::http_state::shared_client();
 
         let mut handles = Vec::new();
         for source in sources {

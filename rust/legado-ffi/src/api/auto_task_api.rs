@@ -12,7 +12,12 @@ use legado_core::auto_task::{
     update_cron_batch as core_update_cron_batch, AutoTaskExporter, AutoTaskRule, AutoTaskRunner,
     AutoTaskSchedulePolicy, TaskProtocol,
 };
+use legado_core::models::AutoTaskRule as AutoTaskRuleModel;
 use legado_core::LegadoResult;
+
+use crate::db_state::with_database;
+use legado_db::repository::Repository;
+use legado_db::AutoTaskRepository;
 
 /// 构建书籍更新定时任务（对应 Kotlin `AutoTask.buildBookUpdateTask`）
 ///
@@ -108,6 +113,49 @@ pub fn next_due_at(cron: &str, from_ms: i64) -> i64 {
     AutoTaskSchedulePolicy::next_due_at(cron, from_ms).unwrap_or(-1)
 }
 
+// ─── 数据库 CRUD（通过 with_database 访问 auto_task_rules 表）───────────
+
+/// 列出所有自动任务规则（按 customOrder 排序）
+pub fn list_rules_db() -> LegadoResult<Vec<AutoTaskRuleModel>> {
+    with_database(|db| {
+        let repo = AutoTaskRepository::new(db.connection());
+        repo.find_all()
+    })
+}
+
+/// 创建自动任务规则（INSERT OR REPLACE，返回任务 ID）
+pub fn create_rule_db(rule: &AutoTaskRuleModel) -> LegadoResult<String> {
+    with_database(|db| {
+        let repo = AutoTaskRepository::new(db.connection());
+        repo.insert(rule)?;
+        Ok(rule.id.clone())
+    })
+}
+
+/// 更新自动任务规则（按 ID 更新）
+pub fn update_rule_db(rule: &AutoTaskRuleModel) -> LegadoResult<()> {
+    with_database(|db| {
+        let repo = AutoTaskRepository::new(db.connection());
+        repo.update(rule)
+    })
+}
+
+/// 删除自动任务规则（按 ID 删除）
+pub fn delete_rule_db(id: &str) -> LegadoResult<()> {
+    with_database(|db| {
+        let repo = AutoTaskRepository::new(db.connection());
+        repo.delete(id)
+    })
+}
+
+/// 根据 ID 查询自动任务规则
+pub fn find_rule_by_id_db(id: &str) -> LegadoResult<Option<AutoTaskRuleModel>> {
+    with_database(|db| {
+        let repo = AutoTaskRepository::new(db.connection());
+        repo.find_by_id(id)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +222,46 @@ mod tests {
         let base: i64 = 1_000_000_000_000;
         assert_eq!(next_due_at("*/30 * * * *", base), base + 30 * 60_000);
         assert_eq!(next_due_at("invalid", base), -1);
+    }
+
+    #[test]
+    fn test_auto_task_crud_db() {
+        crate::db_state::ensure_test_db();
+
+        let rule = AutoTaskRuleModel {
+            id: "test_crud_task_001".to_string(),
+            name: "测试CRUD任务".to_string(),
+            enable: true,
+            cron: Some("0 */6 * * *".to_string()),
+            script: "print('hello')".to_string(),
+            ..AutoTaskRuleModel::default()
+        };
+
+        // Create
+        create_rule_db(&rule).unwrap();
+
+        // List
+        let rules = list_rules_db().unwrap();
+        assert!(rules.iter().any(|r| r.id == "test_crud_task_001"));
+
+        // Find by ID
+        let found = find_rule_by_id_db("test_crud_task_001").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "测试CRUD任务");
+
+        // Update
+        let updated_rule = AutoTaskRuleModel {
+            name: "已更新任务".to_string(),
+            ..rule.clone()
+        };
+        update_rule_db(&updated_rule).unwrap();
+        let after_update = find_rule_by_id_db("test_crud_task_001").unwrap().unwrap();
+        assert_eq!(after_update.name, "已更新任务");
+
+        // Delete
+        delete_rule_db("test_crud_task_001").unwrap();
+
+        // Verify deleted
+        assert!(find_rule_by_id_db("test_crud_task_001").unwrap().is_none());
     }
 }

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use legado_core::models::RssSource;
 use legado_core::{LegadoError, LegadoResult};
-use legado_net::{LegadoClient, LegadoClientConfig};
 
 use crate::db_state::with_database;
 use crate::runtime;
@@ -120,8 +119,7 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
 
     // 通过网络获取 RSS 内容
     let articles = runtime::block_on(async {
-        let client = LegadoClient::new(LegadoClientConfig::default())
-            .map_err(|e| LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
+        let client = crate::http_state::shared_client();
         let response = client.get(&source.0, None).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(

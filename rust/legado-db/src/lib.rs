@@ -53,7 +53,7 @@ pub use repository::reading_stats_repository::ReadingStatsRepository;
 pub use repository::replace_rule_repository::ReplaceRuleRepository;
 pub use repository::review_repository::ReviewRepository;
 pub use repository::rss_article_repository::{RssArticleRecord, RssArticleRepository};
-pub use repository::rss_read_record_repository::RssReadRecordRepository;
+pub use repository::rss_read_record_repository::{RssReadRecordRepository, RssReadRecordRow};
 pub use repository::rss_source_repository::RssSourceRepository;
 pub use repository::rss_star_repository::{RssStarRecord, RssStarRepository};
 pub use repository::rule_sub_repository::{RuleSubRecord, RuleSubRepository};

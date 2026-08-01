@@ -13,7 +13,7 @@ use legado_core::models::BookSource;
 use legado_core::search_engine::{MultiSourceSearcher, SearchConfig};
 use legado_core::source_matcher::SearchCandidate;
 use legado_core::{LegadoError, LegadoResult};
-use legado_net::{LegadoClient, LegadoClientConfig};
+use legado_net::LegadoClient;
 use legado_parser::{AnalyzeRule, AnalyzeUrl, RequestMethod};
 
 use crate::api::source as source_api;
@@ -100,8 +100,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
 
     // 使用 tokio runtime 并行搜索
     let results = runtime::block_on(async {
-        let client = LegadoClient::new(LegadoClientConfig::default())
-            .map_err(|e| LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
+        let client = crate::http_state::shared_client();
 
         let mut handles = Vec::new();
         for source in sources {
@@ -146,8 +145,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
     };
 
     let results = runtime::block_on(async {
-        let client = LegadoClient::new(LegadoClientConfig::default())
-            .map_err(|e| LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
+        let client = crate::http_state::shared_client();
 
         let searcher = MultiSourceSearcher::new(WebSourceSearcher::new(client));
         let cancel = Arc::new(AtomicBool::new(false));
@@ -417,6 +415,7 @@ mod tests {
     use super::*;
     use legado_core::models::rule::SearchRule;
     use legado_core::SourceSearcher;
+    use legado_net::LegadoClientConfig;
 
     /// 构造带搜索规则的书源
     fn make_source_with_rules(

@@ -28,7 +28,12 @@ fn get_quic_runtime() -> &'static Runtime {
     QUIC_RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
-            .worker_threads(2)
+            .worker_threads(
+                std::thread::available_parallelism()
+                    .map(|n| n.get())
+                    .unwrap_or(2)
+                    .clamp(2, 8),
+            )
             .thread_name("legado-quic")
             .build()
             .expect("创建 QUIC runtime 失败")
@@ -191,6 +196,8 @@ pub fn quinn_cleanup() -> String {
 /// 默认关闭。
 pub fn net_set_quic_enabled(enabled: bool) -> String {
     legado_net::set_quic_enabled(enabled);
+    // QUIC 状态变更后必须重置共享客户端，否则单例冻结旧状态导致开关无效
+    crate::http_state::reset_shared_client();
     if enabled {
         "主网络链路 QUIC 传输已启用".to_string()
     } else {

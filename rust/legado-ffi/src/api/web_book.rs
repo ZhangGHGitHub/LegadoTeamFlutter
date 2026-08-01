@@ -13,7 +13,7 @@ use legado_core::web_book::{
     BookSourceFetcher, WebBookEngine, WebBookInfo, WebChapter, WebSearchResult,
 };
 use legado_core::{LegadoError, LegadoResult};
-use legado_net::{LegadoClient, LegadoClientConfig};
+use legado_net::LegadoClient;
 use legado_parser::{AnalyzeUrl, RequestMethod};
 
 use crate::runtime;
@@ -30,9 +30,8 @@ pub struct RealBookSourceFetcher {
 
 impl RealBookSourceFetcher {
     pub fn new() -> Self {
-        let config = LegadoClientConfig::default();
-        let client = LegadoClient::new(config)
-            .unwrap_or_else(|_| LegadoClient::new(LegadoClientConfig::default()).expect("client"));
+        // 复用进程共享的 HTTP 客户端单例（共享连接池与 CookieStore，clone 廉价）
+        let client = crate::http_state::shared_client();
         Self { client }
     }
 

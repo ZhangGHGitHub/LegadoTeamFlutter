@@ -255,6 +255,23 @@ pub fn fetch_chapter_content(
     chapter_url: &str,
     source_url: &str,
 ) -> LegadoResult<String> {
+    // 取得真实章节序号与标题（供去重复标题与缓存使用）
+    let (chapter_index, chapter_title) = get_chapter_index_and_title(book_url, chapter_url)?;
+    fetch_chapter_content_inner(book_url, chapter_url, source_url, chapter_index, &chapter_title)
+}
+
+/// 章节正文抓取核心逻辑（不含 get_chapter_index_and_title 查询）
+///
+/// 由 [`fetch_chapter_content`] 和 [`get_chapter_content_full`] 共用：
+/// - `fetch_chapter_content` 先查询章节序号/标题再调用本函数
+/// - `get_chapter_content_full` 已持有章节信息，直接调用本函数避免冗余查询
+fn fetch_chapter_content_inner(
+    book_url: &str,
+    chapter_url: &str,
+    source_url: &str,
+    chapter_index: i32,
+    chapter_title: &str,
+) -> LegadoResult<String> {
     // 1. 检查 DB 缓存
     let cached = with_database(|db| {
         let repo = CacheBookRepository::new(db.connection());
@@ -278,11 +295,9 @@ pub fn fetch_chapter_content(
     })?
     .ok_or_else(|| LegadoError::Database(format!("书源不存在: {source_url}")))?;
 
-    // 构造 WebChapter 用于请求（同时取得真实章节标题，供去重复标题与缓存使用）
-    let (chapter_index, chapter_title) = get_chapter_index_and_title(book_url, chapter_url)?;
     let web_chapter = WebChapter {
         index: chapter_index,
-        title: chapter_title.clone(),
+        title: chapter_title.to_string(),
         url: chapter_url.to_string(),
         is_vip: false,
     };
@@ -300,7 +315,7 @@ pub fn fetch_chapter_content(
         id: 0,
         book_url: book_url.to_string(),
         chapter_index,
-        chapter_title: chapter_title.clone(),
+        chapter_title: chapter_title.to_string(),
         chapter_url: chapter_url.to_string(),
         content: content.clone(),
         cached_at: now_ms,
@@ -314,7 +329,53 @@ pub fn fetch_chapter_content(
     })?;
 
     // 缓存写入原始正文，返回净化后的正文（透传真实章节标题，使去重复标题生效）
-    Ok(apply_content_processing(book_url, &content, &chapter_title))
+    Ok(apply_content_processing(book_url, &content, chapter_title))
+}
+
+/// 一次调用获取章节正文（合并 get_chapter_content + fetch_chapter_content）
+///
+/// 与 [`get_chapter_content`] 的区别：在线书籍不再返回 JSON 元数据，
+/// 而是自动完成网络抓取并直接返回净化后的正文文本。
+///
+/// 流程：
+/// 1. 查询章节信息（DB）
+/// 2. 本地书籍 → legado-book 解析 + 净化
+/// 3. 在线书籍 → 以 `book.origin` 为书源 URL，内部调用 [`fetch_chapter_content`]
+///    （含 DB 缓存检查 → 网络抓取 → 缓存写入 → 净化）
+/// 4. 始终返回纯正文字符串，不返回 JSON 元数据
+pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoResult<String> {
+    // 1. 查询章节信息
+    let chapter = with_database(|db| {
+        let repo = BookChapterRepository::new(db.connection());
+        repo.find_by_book_url_and_index(book_url, chapter_index)
+    })?
+    .ok_or_else(|| LegadoError::Database(format!("章节 {chapter_index} 不存在")))?;
+
+    // 2. 本地书籍：解析文件 + 净化
+    if is_local_book(book_url) {
+        let content = legado_book::LocalBook::get_chapter_content(
+            book_url,
+            &chapter_to_local_info(&chapter),
+        )?;
+        return Ok(apply_content_processing(book_url, &content, &chapter.title));
+    }
+
+    // 3. 在线书籍：查找书籍获取书源 URL（book.origin）
+    let book = with_database(|db| {
+        let repo = BookRepository::new(db.connection());
+        repo.find_by_url(book_url)
+    })?
+    .ok_or_else(|| LegadoError::Database(format!("书籍 {book_url} 不存在")))?;
+
+    if book.origin.is_empty() {
+        return Err(LegadoError::Database(format!(
+            "书籍 {book_url} 未配置书源（origin 为空）"
+        )));
+    }
+    let source_url = book.origin;
+
+    // 直接调用 inner，复用已持有的章节信息，避免冗余的 get_chapter_index_and_title 查询
+    fetch_chapter_content_inner(book_url, &chapter.url, &source_url, chapter.index, &chapter.title)
 }
 
 /// 对原始正文应用「替换规则 + 内容净化」，返回净化后的正文（读取时净化）
@@ -752,6 +813,110 @@ mod tests {
         let result =
             process_content_with_rules_inner("第一章 开始\n正文", "第一章 开始", &rules, "", false);
         assert_eq!(result, "正文");
+    }
+
+    // ─── get_chapter_content_full 测试 ─────────────────────────────────────
+
+    /// 章节不存在时应返回错误
+    #[test]
+    fn test_get_chapter_content_full_chapter_not_found() {
+        crate::db_state::ensure_test_db();
+        let err = get_chapter_content_full("https://no-such-book.example.com", 999).unwrap_err();
+        assert!(err.to_string().contains("章节"));
+    }
+
+    /// 在线书籍未配置书源（origin 为空）时应返回错误
+    #[test]
+    fn test_get_chapter_content_full_no_origin() {
+        crate::db_state::ensure_test_db();
+        let book_url = "https://full-test-no-origin.example.com/book/1";
+
+        // 插入一本 origin 为空的书籍和章节
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            let book = legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: String::new(), // 空 origin
+                ..legado_core::models::Book::default()
+            };
+            let _ = book_repo.insert(&book);
+
+            let ch_repo = BookChapterRepository::new(db.connection());
+            let ch = legado_core::models::BookChapter {
+                url: format!("{book_url}/ch/0"),
+                title: "第一章".to_string(),
+                is_volume: false,
+                base_url: book_url.to_string(),
+                book_url: book_url.to_string(),
+                index: 0,
+                is_vip: false,
+                is_pay: false,
+                resource_url: None,
+                tag: None,
+                word_count: None,
+                start: None,
+                end: None,
+                start_fragment_id: None,
+                end_fragment_id: None,
+                variable: None,
+                img_url: None,
+            };
+            let _ = ch_repo.insert_batch(&[ch]);
+            Ok::<(), legado_core::LegadoError>(())
+        })
+        .unwrap();
+
+        let err = get_chapter_content_full(book_url, 0).unwrap_err();
+        assert!(err.to_string().contains("书源"));
+    }
+
+    /// 网络测试：在线书籍完整链路（需要真实网络，CI 中忽略）
+    #[test]
+    #[ignore = "requires network access"]
+    fn test_get_chapter_content_full_online() {
+        let source_url = "https://full-online-test.example.com";
+        let book_url = "https://full-online-test.example.com/book/1";
+        setup_db_and_source(source_url);
+
+        // 插入书籍（origin = source_url）和章节
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            let book = legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                ..legado_core::models::Book::default()
+            };
+            let _ = book_repo.insert(&book);
+
+            let ch_repo = BookChapterRepository::new(db.connection());
+            let ch = legado_core::models::BookChapter {
+                url: format!("{book_url}/chapter/0"),
+                title: "第一章".to_string(),
+                is_volume: false,
+                base_url: book_url.to_string(),
+                book_url: book_url.to_string(),
+                index: 0,
+                is_vip: false,
+                is_pay: false,
+                resource_url: None,
+                tag: None,
+                word_count: None,
+                start: None,
+                end: None,
+                start_fragment_id: None,
+                end_fragment_id: None,
+                variable: None,
+                img_url: None,
+            };
+            let _ = ch_repo.insert_batch(&[ch]);
+            Ok::<(), legado_core::LegadoError>(())
+        })
+        .unwrap();
+
+        let content = get_chapter_content_full(book_url, 0).unwrap();
+        assert!(!content.is_empty());
+        // 确保返回的是真实正文，不是 JSON 元数据
+        assert!(!content.contains("need_fetch"));
     }
 
     /// 集成测试：apply_content_processing_raw 不应用替换规则，apply_content_processing 仍应用
