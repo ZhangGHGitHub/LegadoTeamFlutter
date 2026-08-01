@@ -524,6 +524,21 @@ String mapApiError(Object e) {
 > 相机实时扫码（Android/iOS），桌面/测试环境降级手动输入。新增 `mobile_scanner` 依赖 + Android
 > CAMERA 权限 + iOS `NSCameraUsageDescription`。补充 3 个 widget 测试。
 
+> **4.4 实施决议（WebDAV 同步设置，模拟转真实 + 对齐原版）**：原 `webdav_settings_screen`（586 行自设计
+> 「同步中心」：连接测试/同步进度/同步日志/自动同步频率，且连接测试与同步均为 `Future.delayed` 模拟）
+> 重构为对标 Android `BackupConfigFragment` 的 **WebDAV 设置组** Preference 列表页。调研确认 Rust 侧
+> WebDAV API 已真实实现（`webdav_api.rs`：listDir/upload/download/delete/fullSync，`WebDavConfig{url,
+> username,password}`），且 `BookApi` 契约已暴露，故同步后端**由模拟切换为真实 BookApi 调用**：
+> ①「备份」=`webdavFullSync`（上传本地书架+书源序列化 JSON）；②「恢复」=`webdavFullSync` 取远端合并
+> 数据 → 书源经 `importBookSources` 回写。设置项补齐原版「设备名称/同步书籍进度/同步书籍进度增强」
+> （`SettingsService` 新增 3 键持久化，进度增强依赖进度开关）。移除原版没有的连接测试按钮/同步日志/
+> 自动同步频率（`SyncProvider.autoSync` 状态保留但不再上 UI）。备份/恢复组中本地备份路径/恢复忽略项/
+> 缓存清理属 Phase 4.6。**跨轨需求登记**：书架批量回写受限于 `BookApi` 暂无 `importBooks(jsonArray)`
+> 批量导入契约（现仅单本 `addBook`），恢复时书架回写待 Rust 轨补契约；`WebDavConfig` 暂无设备名字段，
+> 设备名仅 UI-only 存储。`SyncProvider` 同步方法重构为 `backupToWebDav`/`restoreFromWebDav`（移除模拟的
+> `syncUpload/syncDownload/syncMerge`）。重写 sync_provider 单元测试（23 个）+ webdav 页面 widget 测试
+> （3 个，替换原 18 个自搭片段测试）。全量 960 测试通过。
+
 ### Phase 5：规则编辑器 + 收尾（第 10–12 周）
 
 | 任务 | 产出 | 验收标准 |
