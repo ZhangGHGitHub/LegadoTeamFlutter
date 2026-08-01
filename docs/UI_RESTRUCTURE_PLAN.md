@@ -500,6 +500,16 @@ String mapApiError(Object e) {
 | 4.5 主题切换 + 字体设置 | theme_config | 亮/暗/跟随系统 |
 | 4.6 备份/恢复 + 缓存清理 | 设置子功能 | 功能正确 |
 
+> **4.1 实施决议（枢纽菜单重构）**：原 `settings_screen.dart`（1014 行单体、内联 7 分组）重构为
+> **枢纽菜单**，对标 Android 原版「我的」页 `pref_main.xml`：顶部管理入口（书源管理/定时任务/
+> TXT 目录规则/替换净化/词典规则/主题模式）+「设置」分组（备份恢复/主题设置/其他设置）+「其他」分组
+> （书签/阅读统计/关于）。子设置页拆分：主题设置→`theme_config_screen`（既有）；新增
+> `other_settings_screen` 承接语言/默认阅读设置/网络（代理·超时·QUIC）/缓存入口；备份恢复聚合为
+> 底部弹窗（备份/恢复/WebDAV），WebDAV 详情→既有 `webdav_settings_screen`；注册孤儿页
+> `cache_settings_screen` 路由。原版中 Flutter 无对应实现的项（Web 服务/MCP 服务/定时服务开关/
+> 文件管理/退出）按「禁止新增功能」原则跳过。状态管理暂保持 `provider`（迁移留待 Phase 5.4 统一移除）。
+> 注：其他会话在 `settings_screen` 网络设置中新增的 QUIC/HTTP3 开关已迁移至 `other_settings_screen` 保留。
+
 ### Phase 5：规则编辑器 + 收尾（第 10–12 周）
 
 | 任务 | 产出 | 验收标准 |
