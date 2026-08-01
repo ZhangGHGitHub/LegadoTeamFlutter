@@ -586,6 +586,18 @@ String mapApiError(Object e) {
 > 「启用段评」（ReviewRule.enabled）开关。原有规则验证对话框（webbookSearch/Info/Chapters/Content）与测试 Tab
 > 逻辑原样保留。新增 `source_edit_test.dart` 5 个 widget 测试（8 Tab 结构/新 Tab 字段与开关可见/必填校验/保存创建/
 > 编辑模式回填发现·详情·评论规则）。全量 986 测试通过，改动文件 analyze 0 issues。
+>
+> **5.2 核验决议（规则调试器）**：`source_debug_screen` 已存在且功能闭环（输入书源 URL + 关键词 → `webbookSearch`
+> → 分级日志展示/级别过滤/清空）。原版 `BookSourceDebugActivity` 通过 WebSocket 流式输出分步日志（搜索/详情/目录/
+> 正文）+ 快捷帮助面板 + 源码 HTML 查看菜单，但 Flutter 侧受 FFI bridge 契约冻结约束（无分步日志流 API），直连
+> `webbookSearch` 是合理适配，满足「输入 URL → 执行规则 → 展示结果」验收，本次无需改动。
+>
+> **5.3 实施决议（替换规则编辑器）**：`replace_rules_screen` 的 CRUD（增删改查 + 启停 + 拖拽排序）已完整。经核对
+> 原版 `ReplaceEditActivity`，验收项「正则预览」在原版中并不存在（编辑菜单仅全屏编辑/保存/复制/粘贴 + 正则教程链接），
+> 按「禁止新增功能」原则不予添加。真实缺口是编辑表单缺少原版与 Dart 模型均支持的 5 个字段：分组（group）/作用于标题
+> （scopeTitle）/作用于正文（scopeContent）/排除范围（excludeScope）/超时（timeoutMillisecond）。本次按用户决策补全
+> 这 5 个字段，忠实还原原版字段集与顺序。新增 `replace_rules_test.dart` 3 个 widget 测试（全字段可见/保存全字段传递/
+> 编辑模式回填全字段与开关）。全量 989 测试通过，改动文件 analyze 0 issues。
 
 ---
 

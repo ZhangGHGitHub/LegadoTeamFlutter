@@ -43,8 +43,11 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.error_outline, size: 48,
-                      color: Theme.of(context).colorScheme.error),
+                  Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
                   const SizedBox(height: 16),
                   Text(provider.error!, textAlign: TextAlign.center),
                   const SizedBox(height: 16),
@@ -61,13 +64,13 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.find_replace, size: 64,
-                      color: Theme.of(context).colorScheme.outline),
-                  const SizedBox(height: 16),
-                  Text(
-                    '暂无替换规则',
-                    style: Theme.of(context).textTheme.bodyLarge,
+                  Icon(
+                    Icons.find_replace,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.outline,
                   ),
+                  const SizedBox(height: 16),
+                  Text('暂无替换规则', style: Theme.of(context).textTheme.bodyLarge),
                   const SizedBox(height: 8),
                   Text(
                     '点击右上角 + 添加规则',
@@ -119,10 +122,21 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
   void _showRuleForm(BuildContext context, {ReplaceRule? rule}) {
     final isEdit = rule != null;
     final nameCtrl = TextEditingController(text: rule?.name ?? '');
+    final groupCtrl = TextEditingController(text: rule?.group ?? '');
     final patternCtrl = TextEditingController(text: rule?.pattern ?? '');
-    final replacementCtrl = TextEditingController(text: rule?.replacement ?? '');
+    final replacementCtrl = TextEditingController(
+      text: rule?.replacement ?? '',
+    );
     final scopeCtrl = TextEditingController(text: rule?.scope ?? '');
+    final excludeScopeCtrl = TextEditingController(
+      text: rule?.excludeScope ?? '',
+    );
+    final timeoutCtrl = TextEditingController(
+      text: (rule?.timeoutMillisecond ?? 3000).toString(),
+    );
     var isRegex = rule?.isRegex ?? true;
+    var scopeTitle = rule?.scopeTitle ?? false;
+    var scopeContent = rule?.scopeContent ?? true;
     var isEnabled = rule?.isEnabled ?? true;
 
     showDialog(
@@ -143,27 +157,18 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
                 ),
                 const SizedBox(height: 12),
                 TextField(
+                  controller: groupCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '分组',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
                   controller: patternCtrl,
                   decoration: const InputDecoration(
                     labelText: '匹配模式',
                     hintText: '正则表达式或文本',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: replacementCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '替换为',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: scopeCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '作用范围',
-                    hintText: '留空或 global 为全局，输入书名为特定书籍',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -175,6 +180,55 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
+                TextField(
+                  controller: replacementCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '替换为',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  title: const Text('作用于标题'),
+                  value: scopeTitle,
+                  onChanged: (v) => setState(() => scopeTitle = v),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
+                  title: const Text('作用于正文'),
+                  value: scopeContent,
+                  onChanged: (v) => setState(() => scopeContent = v),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                TextField(
+                  controller: scopeCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '作用范围',
+                    hintText: '留空或 global 为全局，输入书名为特定书籍',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: excludeScopeCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '排除范围',
+                    hintText: '输入书名，多个用逗号分隔',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: timeoutCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '超时时间（毫秒）',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 12),
                 SwitchListTile(
                   title: const Text('启用'),
                   value: isEnabled,
@@ -195,11 +249,18 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
                 final newRule = ReplaceRule(
                   id: rule?.id ?? 0,
                   name: nameCtrl.text,
+                  group: groupCtrl.text.isEmpty ? null : groupCtrl.text,
                   pattern: patternCtrl.text,
                   replacement: replacementCtrl.text,
                   scope: scopeCtrl.text.isEmpty ? null : scopeCtrl.text,
+                  scopeTitle: scopeTitle,
+                  scopeContent: scopeContent,
+                  excludeScope: excludeScopeCtrl.text.isEmpty
+                      ? null
+                      : excludeScopeCtrl.text,
                   isRegex: isRegex,
                   isEnabled: isEnabled,
+                  timeoutMillisecond: int.tryParse(timeoutCtrl.text) ?? 3000,
                   order: rule?.order ?? 0,
                 );
                 final provider = context.read<ReplaceRuleProvider>();
@@ -219,7 +280,10 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
   }
 
   void _confirmDelete(
-      BuildContext context, ReplaceRuleProvider provider, ReplaceRule rule) {
+    BuildContext context,
+    ReplaceRuleProvider provider,
+    ReplaceRule rule,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -234,9 +298,9 @@ class _ReplaceRulesScreenState extends State<ReplaceRulesScreen> {
             onPressed: () {
               Navigator.of(ctx).pop();
               provider.deleteRule(rule.id);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('规则已删除')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('规则已删除')));
             },
             child: const Text('删除'),
           ),
@@ -284,8 +348,10 @@ class _ReplaceRuleTile extends StatelessWidget {
               // 排序手柄
               ReorderableDragStartListener(
                 index: index,
-                child: Icon(Icons.drag_handle,
-                    color: theme.colorScheme.outline),
+                child: Icon(
+                  Icons.drag_handle,
+                  color: theme.colorScheme.outline,
+                ),
               ),
               const SizedBox(width: 8),
               // 规则信息
@@ -319,10 +385,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                 ),
               ),
               // 启用开关
-              Switch(
-                value: rule.isEnabled,
-                onChanged: onToggle,
-              ),
+              Switch(value: rule.isEnabled, onChanged: onToggle),
             ],
           ),
         ),
