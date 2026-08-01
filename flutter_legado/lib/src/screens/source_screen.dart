@@ -78,6 +78,13 @@ class _SourceScreenState extends State<SourceScreen>
           tooltip: '搜索书源',
           onPressed: () => _showSearchDialog(context),
         ),
+        // 排序菜单（对标 Android action_sort 子菜单）
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.sort),
+          tooltip: '排序',
+          onSelected: (value) => _handleSortAction(context, value),
+          itemBuilder: (_) => _buildSortMenuItems(context),
+        ),
         PopupMenuButton<String>(
           onSelected: (value) => _handleAction(context, value),
           itemBuilder: (_) => [
@@ -425,6 +432,69 @@ class _SourceScreenState extends State<SourceScreen>
       case 'batch_mode':
         context.read<SourceProvider>().enterBatchMode();
         break;
+    }
+  }
+
+  /// 排序菜单项（对标 Android menu_sort_manual/auto/name/url + menu_sort_desc）
+  List<PopupMenuEntry<String>> _buildSortMenuItems(BuildContext context) {
+    final provider = context.read<SourceProvider>();
+    PopupMenuItem<String> sortItem(SourceSort sort, String label) {
+      final selected = provider.sort == sort;
+      return PopupMenuItem(
+        value: 'sort_${sort.name}',
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.check : null,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(label),
+          ],
+        ),
+      );
+    }
+
+    return [
+      PopupMenuItem(
+        value: 'sort_desc',
+        child: Row(
+          children: [
+            Icon(
+              provider.sortAscending ? null : Icons.check,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            const Text('降序'),
+          ],
+        ),
+      ),
+      const PopupMenuDivider(),
+      sortItem(SourceSort.manual, '手动排序'),
+      sortItem(SourceSort.weight, '自动排序（权重）'),
+      sortItem(SourceSort.name, '按名称'),
+      sortItem(SourceSort.url, '按 URL'),
+      sortItem(SourceSort.update, '按更新时间'),
+      sortItem(SourceSort.enable, '按启用状态'),
+      sortItem(SourceSort.respond, '按响应时间'),
+    ];
+  }
+
+  void _handleSortAction(BuildContext context, String action) {
+    final provider = context.read<SourceProvider>();
+    if (action == 'sort_desc') {
+      provider.toggleSortDirection();
+      return;
+    }
+    if (action.startsWith('sort_')) {
+      final name = action.substring('sort_'.length);
+      final sort = SourceSort.values.firstWhere(
+        (e) => e.name == name,
+        orElse: () => SourceSort.manual,
+      );
+      provider.setSort(sort);
     }
   }
 

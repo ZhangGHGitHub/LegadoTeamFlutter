@@ -6,6 +6,30 @@ import '../bridge/ffi.dart';
 import '../services/source_import_service.dart';
 import '../services/backup_service.dart';
 
+/// 书源排序方式（对标 Android `BookSourceSort`）
+enum SourceSort {
+  /// 手动排序（按 customOrder，原版 Default）
+  manual,
+
+  /// 自动排序（按权重 weight，原版 Weight）
+  weight,
+
+  /// 按名称
+  name,
+
+  /// 按 URL
+  url,
+
+  /// 按更新时间（lastUpdateTime）
+  update,
+
+  /// 按启用状态（enabled）
+  enable,
+
+  /// 按响应时间（respondTime）
+  respond,
+}
+
 /// 书源管理状态
 class SourceProvider extends ChangeNotifier {
   final BookApi _api;
@@ -24,6 +48,10 @@ class SourceProvider extends ChangeNotifier {
   // 分组筛选
   String? _selectedGroup; // null = 全部
 
+  // 排序（对标 Android BookSourceActivity.sort / sortAscending）
+  SourceSort _sort = SourceSort.manual;
+  bool _sortAscending = true;
+
   // 批量选择模式
   bool _batchMode = false;
   final Set<String> _selectedUrls = {};
@@ -38,6 +66,8 @@ class SourceProvider extends ChangeNotifier {
   String? get error => _error;
   String get filterKeyword => _filterKeyword;
   String? get selectedGroup => _selectedGroup;
+  SourceSort get sort => _sort;
+  bool get sortAscending => _sortAscending;
   bool get batchMode => _batchMode;
   Set<String> get selectedUrls => Set.unmodifiable(_selectedUrls);
   int get selectedCount => _selectedUrls.length;
@@ -54,11 +84,13 @@ class SourceProvider extends ChangeNotifier {
     return set.toList()..sort();
   }
 
-  List<BookSource> get enabledSources =>
-      _applyGroupFilter(_sources.where((s) => s.enabled).toList());
+  List<BookSource> get enabledSources => _applyGroupFilter(
+        _sources.where((s) => s.enabled).toList(),
+      );
 
-  List<BookSource> get disabledSources =>
-      _applyGroupFilter(_sources.where((s) => !s.enabled).toList());
+  List<BookSource> get disabledSources => _applyGroupFilter(
+        _sources.where((s) => !s.enabled).toList(),
+      );
 
   List<BookSource> get filteredSources {
     var list = _sources;
@@ -74,11 +106,51 @@ class SourceProvider extends ChangeNotifier {
   }
 
   List<BookSource> _applyGroupFilter(List<BookSource> list) {
-    if (_selectedGroup == null) return list;
-    return list.where((s) {
-      final group = s.bookSourceGroup ?? '未分组';
-      return group == _selectedGroup;
-    }).toList();
+    final filtered = _selectedGroup == null
+        ? list
+        : list.where((s) {
+            final group = s.bookSourceGroup ?? '未分组';
+            return group == _selectedGroup;
+          }).toList();
+    return _applySort(filtered);
+  }
+
+  /// 按当前 [_sort]/[_sortAscending] 排序（对标 Android upBookSource 排序逻辑）
+  List<BookSource> _applySort(List<BookSource> list) {
+    final result = List<BookSource>.of(list);
+    result.sort(_comparator);
+    return result;
+  }
+
+  int _comparator(BookSource a, BookSource b) {
+    int result;
+    switch (_sort) {
+      case SourceSort.manual:
+        result = a.customOrder.compareTo(b.customOrder);
+        break;
+      case SourceSort.weight:
+        result = b.weight.compareTo(a.weight); // 默认权重高优先
+        break;
+      case SourceSort.name:
+        result = a.bookSourceName.compareTo(b.bookSourceName);
+        break;
+      case SourceSort.url:
+        result = a.bookSourceUrl.compareTo(b.bookSourceUrl);
+        break;
+      case SourceSort.update:
+        result = b.lastUpdateTime.compareTo(a.lastUpdateTime); // 默认新优先
+        break;
+      case SourceSort.enable:
+        result = (b.enabled ? 1 : 0).compareTo(a.enabled ? 1 : 0); // 默认启用优先
+        break;
+      case SourceSort.respond:
+        result = a.respondTime.compareTo(b.respondTime); // 默认快优先
+        break;
+    }
+    if (!_sortAscending) result = -result;
+    if (result != 0) return result;
+    // 稳定次序：按 URL 兑底
+    return a.bookSourceUrl.compareTo(b.bookSourceUrl);
   }
 
   Map<String, List<BookSource>> get groupedSources {
@@ -303,6 +375,20 @@ class SourceProvider extends ChangeNotifier {
 
   void setGroup(String? group) {
     _selectedGroup = group;
+    notifyListeners();
+  }
+
+  // ===== 排序 =====
+
+  /// 设置排序方式（对标 Android menu_sort_manual/auto/name/url 等）
+  void setSort(SourceSort sort) {
+    _sort = sort;
+    notifyListeners();
+  }
+
+  /// 切换升序/降序（对标 Android menu_sort_desc）
+  void toggleSortDirection() {
+    _sortAscending = !_sortAscending;
     notifyListeners();
   }
 

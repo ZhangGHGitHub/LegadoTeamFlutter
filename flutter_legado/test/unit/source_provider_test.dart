@@ -474,4 +474,149 @@ void main() {
       expect(provider.isAllSelected, isFalse);
     });
   });
+
+  group('SourceProvider 排序', () {
+    // 辅助：构造带排序字段的 BookSource
+    BookSource makeSortSource(
+      String url,
+      String name, {
+      String? group,
+      int customOrder = 0,
+      int weight = 0,
+      int lastUpdateTime = 0,
+      int respondTime = 180000,
+      bool enabled = true,
+    }) {
+      return BookSource(
+        bookSourceUrl: url,
+        bookSourceName: name,
+        bookSourceGroup: group,
+        customOrder: customOrder,
+        weight: weight,
+        lastUpdateTime: lastUpdateTime,
+        respondTime: respondTime,
+        enabled: enabled,
+      );
+    }
+
+    Future<void> load(List<BookSource> list) async {
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => list);
+      await provider.loadSources();
+    }
+
+    test('初始为手动升序', () {
+      expect(provider.sort, equals(SourceSort.manual));
+      expect(provider.sortAscending, isTrue);
+    });
+
+    test('手动排序按 customOrder 升序', () async {
+      await load([
+        makeSortSource('http://b.com', 'B', customOrder: 2),
+        makeSortSource('http://a.com', 'A', customOrder: 1),
+        makeSortSource('http://c.com', 'C', customOrder: 3),
+      ]);
+      provider.setSort(SourceSort.manual);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        equals(['http://a.com', 'http://b.com', 'http://c.com']),
+      );
+    });
+
+    test('权重排序默认高权重优先', () async {
+      await load([
+        makeSortSource('http://low.com', '低', weight: 1),
+        makeSortSource('http://high.com', '高', weight: 100),
+        makeSortSource('http://mid.com', '中', weight: 50),
+      ]);
+      provider.setSort(SourceSort.weight);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        equals(['http://high.com', 'http://mid.com', 'http://low.com']),
+      );
+    });
+
+    test('名称排序升序与降序', () async {
+      await load([
+        makeSortSource('http://1.com', 'banana'),
+        makeSortSource('http://2.com', 'apple'),
+        makeSortSource('http://3.com', 'cherry'),
+      ]);
+      provider.setSort(SourceSort.name);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceName).toList(),
+        equals(['apple', 'banana', 'cherry']),
+      );
+      provider.toggleSortDirection();
+      expect(provider.sortAscending, isFalse);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceName).toList(),
+        equals(['cherry', 'banana', 'apple']),
+      );
+    });
+
+    test('URL 排序升序', () async {
+      await load([
+        makeSortSource('http://c.com', 'C'),
+        makeSortSource('http://a.com', 'A'),
+        makeSortSource('http://b.com', 'B'),
+      ]);
+      provider.setSort(SourceSort.url);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        equals(['http://a.com', 'http://b.com', 'http://c.com']),
+      );
+    });
+
+    test('更新时间排序默认新优先', () async {
+      await load([
+        makeSortSource('http://old.com', '旧', lastUpdateTime: 100),
+        makeSortSource('http://new.com', '新', lastUpdateTime: 300),
+        makeSortSource('http://mid.com', '中', lastUpdateTime: 200),
+      ]);
+      provider.setSort(SourceSort.update);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        equals(['http://new.com', 'http://mid.com', 'http://old.com']),
+      );
+    });
+
+    test('启用状态排序默认启用优先', () async {
+      await load([
+        makeSortSource('http://off.com', '禁', enabled: false),
+        makeSortSource('http://on.com', '启', enabled: true),
+      ]);
+      provider.setSort(SourceSort.enable);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        equals(['http://on.com', 'http://off.com']),
+      );
+    });
+
+    test('响应时间排序默认快优先', () async {
+      await load([
+        makeSortSource('http://slow.com', '慢', respondTime: 5000),
+        makeSortSource('http://fast.com', '快', respondTime: 100),
+        makeSortSource('http://mid.com', '中', respondTime: 1000),
+      ]);
+      provider.setSort(SourceSort.respond);
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        equals(['http://fast.com', 'http://mid.com', 'http://slow.com']),
+      );
+    });
+
+    test('排序与分组筛选叠加生效', () async {
+      await load([
+        makeSortSource('http://b.com', 'B', group: '小说'),
+        makeSortSource('http://a.com', 'A', group: '小说'),
+        makeSortSource('http://z.com', 'Z', group: '漫画'),
+      ]);
+      provider.setSort(SourceSort.name);
+      provider.setGroup('小说');
+      expect(
+        provider.filteredSources.map((s) => s.bookSourceUrl).toList(),
+        equals(['http://a.com', 'http://b.com']),
+      );
+    });
+  });
 }
