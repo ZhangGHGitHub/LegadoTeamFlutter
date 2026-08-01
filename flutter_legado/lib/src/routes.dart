@@ -9,11 +9,13 @@ import 'screens/audio_screen.dart';
 import 'screens/auto_task_screen.dart';
 import 'screens/book_group_screen.dart';
 import 'screens/book_info_screen.dart';
+import 'screens/cache_settings_screen.dart';
 import 'screens/bookmark_screen.dart';
 import 'screens/change_cover_screen.dart';
 import 'screens/change_source_screen.dart';
 import 'screens/explore_show_screen.dart';
 import 'screens/font_screen.dart';
+import 'screens/other_settings_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/import_screen.dart';
 import 'screens/qrcode_screen.dart';
@@ -47,6 +49,8 @@ class AppRoutes {
   static const sourceEdit = '/sources/edit';
   static const exploreShow = '/explore_show';
   static const settings = '/settings';
+  static const otherSettings = '/other_settings';
+  static const cacheSettings = '/cache_settings';
   static const rss = '/rss';
   static const audio = '/audio';
   static const bookInfo = '/book_info';
@@ -94,6 +98,8 @@ class AppRoutes {
           return ExploreShowScreen(args: exploreArgs);
         },
         settings: (_) => const SettingsScreen(),
+        otherSettings: (_) => const OtherSettingsScreen(),
+        cacheSettings: (_) => const CacheSettingsScreen(),
         rss: (_) => const RssScreen(),
         audio: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
