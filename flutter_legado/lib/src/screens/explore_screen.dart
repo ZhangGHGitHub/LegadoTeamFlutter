@@ -22,6 +22,7 @@ import '../routes.dart';
 import '../screens/explore_show_screen.dart';
 import '../utils/responsive.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/explore_book_list.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -38,6 +39,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   /// 搜索防抖计时器（300ms，对标 Android SearchView onQueryTextChange）
   Timer? _debounceTimer;
 
+  /// 平板双栏：右栏当前选中的发现分类（null 时右栏显示占位提示）
+  ExploreShowArgs? _selectedCategory;
+
   @override
   void dispose() {
     _debounceTimer?.cancel();
@@ -51,6 +55,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       if (mounted) {
         ref.read(exploreNotifierProvider.notifier).setSearchKeyword(keyword);
+        setState(() {}); // 刷新搜索框清除按钮显示
       }
     });
   }
@@ -60,7 +65,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     final state = ref.watch(exploreNotifierProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
+    // 响应式：expanded/large（≥840dp，对齐 UI_RESTRUCTURE_PLAN.md §6.2）启用左源右内容双栏
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isTablet = constraints.maxWidth >= Responsive.mediumMax;
+        return Scaffold(
       appBar: AppBar(
         title: Text(AppStrings.discover),
         actions: [
@@ -125,11 +134,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           ),
         ),
       ),
-      body: _buildBody(state),
+      body: _buildBody(state, isTablet),
+    );
+      },
     );
   }
 
-  Widget _buildBody(ExploreState state) {
+  Widget _buildBody(ExploreState state, bool isTablet) {
     if (state.isLoading) {
       return const LoadingIndicator();
     }
@@ -151,57 +162,110 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       );
     }
 
+    if (isTablet) {
+      return _buildTabletBody(state);
+    }
+
+    // 手机（compact/medium）：保持安卓原版单栏列表 + 分组选择器
     return Column(
       children: [
-        // 分组选择器
-        SizedBox(
-          height: 56,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: state.groups.length + 1, // +1 为"全部"选项
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: FilterChip(
-                    label: const Text('全部'),
-                    selected: state.selectedGroup.isEmpty,
-                    onSelected: (_) {
-                      ref.read(exploreNotifierProvider.notifier).selectGroup('');
-                    },
-                  ),
-                );
-              } else {
-                final group = state.groups.elementAt(index - 1);
-                return Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: FilterChip(
-                    label: Text(group),
-                    selected: state.selectedGroup == group,
-                    onSelected: (_) {
-                      ref
-                          .read(exploreNotifierProvider.notifier)
-                          .selectGroup(group);
-                    },
-                  ),
-                );
-              }
-            },
-          ),
-        ),
-        Expanded(child: _buildSourceList(state)),
+        _buildGroupBar(state),
+        Expanded(child: _buildSourceList(state, isTablet: false)),
       ],
     );
   }
 
-  Widget _buildSourceList(ExploreState state) {
+  /// 平板双栏布局（对齐 UI_RESTRUCTURE_PLAN.md §6.2：左侧书源列表 + 右侧内容）
+  ///
+  /// 手机端分类点击导航至全屏 [ExploreShowScreen]（保持安卓原版行为）；
+  /// 平板端在右栏原地展示分类书籍，避免频繁跳转。
+  Widget _buildTabletBody(ExploreState state) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        _buildGroupBar(state),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 左栏：书源列表
+              Flexible(
+                flex: 2,
+                child: _buildSourceList(state, isTablet: true),
+              ),
+              VerticalDivider(width: 1, color: colorScheme.outlineVariant),
+              // 右栏：选中分类的书籍内容
+              Flexible(
+                flex: 3,
+                child: _selectedCategory == null
+                    ? const EmptyState(
+                        icon: Icons.explore_outlined,
+                        title: '选择发现分类',
+                        subtitle: '展开左侧书源并点击分类，在此浏览书籍',
+                        simple: true,
+                      )
+                    : ExploreBookList(
+                        key: ValueKey(_selectedCategory),
+                        args: _selectedCategory!,
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 分组选择器（横向 FilterChip，手机/平板共用）
+  Widget _buildGroupBar(ExploreState state) {
+    return SizedBox(
+      height: 56,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        itemCount: state.groups.length + 1, // +1 为"全部"选项
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.all(8),
+              child: FilterChip(
+                label: const Text('全部'),
+                selected: state.selectedGroup.isEmpty,
+                onSelected: (_) {
+                  ref.read(exploreNotifierProvider.notifier).selectGroup('');
+                  // 分组切换后书源列表变化，清空右栏选择
+                  setState(() => _selectedCategory = null);
+                },
+              ),
+            );
+          } else {
+            final group = state.groups.elementAt(index - 1);
+            return Padding(
+              padding: const EdgeInsets.all(8),
+              child: FilterChip(
+                label: Text(group),
+                selected: state.selectedGroup == group,
+                onSelected: (_) {
+                  ref
+                      .read(exploreNotifierProvider.notifier)
+                      .selectGroup(group);
+                  // 分组切换后书源列表变化，清空右栏选择
+                  setState(() => _selectedCategory = null);
+                },
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildSourceList(ExploreState state, {required bool isTablet}) {
     // 响应式处理：安卓原版 ExploreFragment 使用 LinearLayoutManager（竖向列表）
     // 保持列表布局确保安卓保真，平板宽屏时增加水平内边距提升可读性
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isTablet = constraints.maxWidth >= Responsive.compactMax;
-        final horizontalPadding = isTablet ? 24.0 : 8.0;
+        final horizontalPadding = isTablet ? 16.0 : 8.0;
         final sources = state.filteredBookSources;
         return ListView.builder(
           padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 4),
@@ -210,6 +274,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             final source = sources[index];
             return _SourceItem(
               source: source,
+              isTablet: isTablet,
               // 对标 Android editSource(sourceUrl) → BookSourceEditActivity
               onEdit: () {
                 Navigator.pushNamed(
@@ -221,7 +286,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               onUninstall: () => _onUninstall(source.bookSourceUrl),
               // 对标 Android openExplore(sourceUrl, title, exploreUrl) → ExploreShowActivity
               onCategoryTap: (categoryName, categoryUrl) {
-                _openExploreShow(source, categoryName, categoryUrl);
+                _openExploreShow(source, categoryName, categoryUrl, isTablet);
               },
             );
           },
@@ -231,16 +296,25 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   }
 
   /// 打开发现分类书籍列表（对标 Android openExplore → ExploreShowActivity）
-  void _openExploreShow(BookSource source, String categoryName, String categoryUrl) {
-    Navigator.pushNamed(
-      context,
-      AppRoutes.exploreShow,
-      arguments: ExploreShowArgs(
-        source: source,
-        categoryName: categoryName,
-        categoryUrl: categoryUrl,
-      ),
+  ///
+  /// 手机：导航至全屏 [ExploreShowScreen]（保持安卓原版行为）；
+  /// 平板：在右栏原地展示分类书籍。
+  void _openExploreShow(
+    BookSource source,
+    String categoryName,
+    String categoryUrl,
+    bool isTablet,
+  ) {
+    final args = ExploreShowArgs(
+      source: source,
+      categoryName: categoryName,
+      categoryUrl: categoryUrl,
     );
+    if (isTablet) {
+      setState(() => _selectedCategory = args);
+      return;
+    }
+    Navigator.pushNamed(context, AppRoutes.exploreShow, arguments: args);
   }
 
   Future<void> _onUninstall(String sourceUrl) async {
@@ -264,6 +338,9 @@ class _SourceItem extends ConsumerStatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onUninstall;
 
+  /// 是否处于平板双栏模式（分类点击在右栏展示而非导航）
+  final bool isTablet;
+
   /// 分类点击回调（对标 Android ExploreAdapter.CallBack.openExplore）
   final void Function(String categoryName, String categoryUrl)? onCategoryTap;
 
@@ -271,6 +348,7 @@ class _SourceItem extends ConsumerStatefulWidget {
     required this.source,
     required this.onEdit,
     required this.onUninstall,
+    required this.isTablet,
     this.onCategoryTap,
   });
 
@@ -300,6 +378,7 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
       children: [
         InkWell(
           onTap: () => _toggleExpand(),
+          borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: Column(
@@ -441,7 +520,10 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
 
     // 分类标签流式布局（对标 Android flexbox 布局）
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: widget.isTablet ? 16 : 10,
+        vertical: 8,
+      ),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
