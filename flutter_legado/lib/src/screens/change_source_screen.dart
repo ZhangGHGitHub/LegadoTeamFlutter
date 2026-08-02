@@ -1,69 +1,21 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
-import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
+import '../providers/change_source/change_source_notifier.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
-/// 换源匹配结果（对应 Rust 侧 `SourceMatch`）
-class SourceMatchItem {
-  final String sourceUrl;
-  final String sourceName;
-  final String bookUrl;
-  final String bookName;
-  final String author;
-  final String? latestChapter;
-  final String? wordCount;
-  final double score;
-
-  const SourceMatchItem({
-    required this.sourceUrl,
-    required this.sourceName,
-    required this.bookUrl,
-    required this.bookName,
-    required this.author,
-    this.latestChapter,
-    this.wordCount,
-    required this.score,
-  });
-
-  /// 从 FFI 返回的 JSON 构造。
-  ///
-  /// Rust 侧 `SourceMatch` 使用 snake_case 字段：
-  /// ```json
-  /// {
-  ///   "source_url": "...",
-  ///   "source_name": "...",
-  ///   "book_url": "...",
-  ///   "book_name": "...",
-  ///   "author": "...",
-  ///   "latest_chapter": "...",
-  ///   "word_count": "...",
-  ///   "score": 87.5
-  /// }
-  /// ```
-  factory SourceMatchItem.fromJson(Map<String, dynamic> json) {
-    return SourceMatchItem(
-      sourceUrl: json['source_url'] as String? ?? '',
-      sourceName: json['source_name'] as String? ?? '',
-      bookUrl: json['book_url'] as String? ?? '',
-      bookName: json['book_name'] as String? ?? '',
-      author: json['author'] as String? ?? '',
-      latestChapter: json['latest_chapter'] as String?,
-      wordCount: json['word_count'] as String?,
-      score: (json['score'] as num?)?.toDouble() ?? 0.0,
-    );
-  }
-}
-
 /// 换源页面 — 搜索替代书源并切换
 ///
-/// 通过 FFI 调用 Rust 后端的换源匹配器（`source_switch_search` /
-/// `source_switch_apply`），在所有启用的书源中搜索同名书籍，
-/// 按匹配度评分排序，用户选择后切换书籍来源。
-class ChangeSourceScreen extends StatefulWidget {
+/// 通过 [ChangeSourceNotifier] 经 BookApi 调用 Rust 后端的换源匹配器
+/// （`searchSource` / `switchSource`），在所有启用的书源中搜索同名书籍，
+/// 按匹配度评分排序（Rust 侧完成），用户选择后切换书籍来源。
+///
+/// 架构说明（对齐 UI_RESTRUCTURE_PLAN.md §0.2）：本页面不直接调用 bridge/FFI，
+/// 全部经 [ChangeSourceNotifier] → BookApi 委托 Rust。
+class ChangeSourceScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book? book;
 
@@ -95,15 +47,10 @@ class ChangeSourceScreen extends StatefulWidget {
   String get effectiveCurrentSourceUrl => book?.origin ?? currentSourceUrl;
 
   @override
-  State<ChangeSourceScreen> createState() => _ChangeSourceScreenState();
+  ConsumerState<ChangeSourceScreen> createState() => _ChangeSourceScreenState();
 }
 
-class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
-  List<SourceMatchItem> _results = [];
-  bool _isSearching = false;
-  String? _error;
-  String? _applyingUrl;
-
+class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   @override
   void initState() {
     super.initState();
@@ -112,53 +59,14 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
   }
 
   /// 搜索可替换书源
-  Future<void> _search() async {
-    if (_isSearching) return;
-    setState(() {
-      _isSearching = true;
-      _error = null;
-    });
-    try {
-      final jsonStr = await bridge.sourceSwitchSearch(
-        bookName: widget.effectiveBookName,
-        author: widget.effectiveAuthor,
-      );
-      final decoded = jsonDecode(jsonStr);
-      final matches = <SourceMatchItem>[];
-      if (decoded is Map<String, dynamic>) {
-        final list = decoded['matches'] as List? ?? [];
-        for (final e in list) {
-          if (e is Map<String, dynamic>) {
-            matches.add(SourceMatchItem.fromJson(e));
-          }
-        }
-      } else if (decoded is List) {
-        // 兼容直接返回数组的情况
-        for (final e in decoded) {
-          if (e is Map<String, dynamic>) {
-            matches.add(SourceMatchItem.fromJson(e));
-          }
-        }
-      }
-      // 按评分降序（Rust 侧已排序，这里兜底）
-      matches.sort((a, b) => b.score.compareTo(a.score));
-      if (!mounted) return;
-      setState(() {
-        _results = matches;
-        _isSearching = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = '搜索失败: $e';
-        _isSearching = false;
-      });
-    }
-  }
+  Future<void> _search() => ref
+      .read(changeSourceNotifierProvider.notifier)
+      .search(widget.effectiveBookName, widget.effectiveAuthor);
 
   /// 应用选中的书源
-  Future<void> _applySource(SourceMatchItem result) async {
-    if (_applyingUrl != null) return;
+  Future<void> _applySource(SourceMatch result) async {
+    // 已有切换进行中时不再重复触发
+    if (ref.read(changeSourceNotifierProvider).isApplying) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -180,24 +88,10 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    setState(() => _applyingUrl = result.sourceUrl);
     try {
-      final updatedJson = await bridge.sourceSwitchApply(
-        bookUrl: widget.effectiveBookUrl,
-        newSourceUrl: result.sourceUrl,
-        newBookUrl: result.bookUrl,
-      );
-      // 解析更新后的书籍，取出新的 bookUrl 供上层刷新
-      var newBookUrl = result.bookUrl;
-      try {
-        final decoded = jsonDecode(updatedJson);
-        if (decoded is Map<String, dynamic>) {
-          final url = decoded['bookUrl'] as String?;
-          if (url != null && url.isNotEmpty) newBookUrl = url;
-        }
-      } catch (_) {
-        // 解析失败时回退到候选项的 bookUrl
-      }
+      final newBookUrl = await ref
+          .read(changeSourceNotifierProvider.notifier)
+          .applySource(result, bookUrl: widget.effectiveBookUrl);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已切换到「${result.sourceName}」')),
@@ -205,7 +99,6 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
       Navigator.pop(context, newBookUrl);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _applyingUrl = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('换源失败: $e')),
       );
@@ -214,6 +107,7 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(changeSourceNotifierProvider);
     return Scaffold(
       appBar: AppBar(
         title: Text('换源 - ${widget.effectiveBookName}'),
@@ -221,27 +115,27 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '重新搜索',
-            onPressed: _isSearching ? null : _search,
+            onPressed: state.isLoading ? null : _search,
           ),
         ],
       ),
-      body: _buildBody(),
+      body: _buildBody(state),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isSearching ? null : _search,
+        onPressed: state.isLoading ? null : _search,
         icon: const Icon(Icons.search),
         label: const Text('搜索'),
       ),
     );
   }
 
-  Widget _buildBody() {
-    if (_isSearching && _results.isEmpty) {
+  Widget _buildBody(ChangeSourceState state) {
+    if (state.isLoading && state.results.isEmpty) {
       return const LoadingIndicator(message: '正在搜索可替换书源...');
     }
-    if (_error != null && _results.isEmpty) {
-      return ErrorView(message: _error!, onRetry: _search);
+    if (state.error != null && state.results.isEmpty) {
+      return ErrorView(message: state.error!, onRetry: _search);
     }
-    if (_results.isEmpty) {
+    if (state.results.isEmpty) {
       final colorScheme = Theme.of(context).colorScheme;
       return Center(
         child: Column(
@@ -263,11 +157,11 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_isSearching) const LinearProgressIndicator(minHeight: 2),
+          if (state.isLoading) const LinearProgressIndicator(minHeight: 2),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              '找到 ${_results.length} 个匹配书源（按匹配度排序）',
+              '找到 ${state.results.length} 个匹配书源（按匹配度排序）',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -276,10 +170,10 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 4),
-              itemCount: _results.length,
+              itemCount: state.results.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) =>
-                  _buildResultTile(context, _results[index]),
+                  _buildResultTile(context, state.results[index], state),
             ),
           ),
         ],
@@ -287,10 +181,14 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
     );
   }
 
-  Widget _buildResultTile(BuildContext context, SourceMatchItem item) {
+  Widget _buildResultTile(
+    BuildContext context,
+    SourceMatch item,
+    ChangeSourceState state,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
     final isCurrent = item.sourceUrl == widget.effectiveCurrentSourceUrl;
-    final isApplying = _applyingUrl == item.sourceUrl;
+    final isApplying = state.applyingUrl == item.sourceUrl;
 
     return ListTile(
       leading: CircleAvatar(
@@ -362,7 +260,7 @@ class _ChangeSourceScreenState extends State<ChangeSourceScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Icon(Icons.chevron_right, color: colorScheme.outline),
-      enabled: !isCurrent && _applyingUrl == null,
+      enabled: !isCurrent && !state.isApplying,
       onTap: () => _applySource(item),
     );
   }

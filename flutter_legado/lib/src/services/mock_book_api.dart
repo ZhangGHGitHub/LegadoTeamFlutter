@@ -448,11 +448,16 @@ class MockBookApi implements BookApi {
       'https://www.biquge.com.cn',
       'https://www.qidian.com',
     ];
+    // 对齐 Rust `SourceMatch` 的 snake_case 序列化（按 score 降序，Rust 侧已排序）
     return List.generate(3, (i) => {
-      'sourceUrl': srcUrls[i],
-      'sourceName': srcNames[i],
-      'bookUrl': 'mock://switch/$bookName/$i',
-      'matchScore': 90 - i * 10,
+      'source_url': srcUrls[i],
+      'source_name': srcNames[i],
+      'book_url': 'mock://switch/$bookName/$i',
+      'book_name': bookName,
+      'author': author,
+      'latest_chapter': '最新章节${i + 1}',
+      'word_count': '${100 + i * 50}万字',
+      'score': 90.0 - i * 10,
     });
   }
 
