@@ -13,6 +13,7 @@ pub mod bookmark_api;
 pub mod bookshelf;
 pub mod cache_api;
 pub mod config_api;
+pub mod dict_api;
 pub mod download_api;
 pub mod explore_api;
 pub mod http_tts_api;

@@ -280,6 +280,15 @@ abstract class BookApi {
   /// 获取所有配置
   Future<Map<String, String>> getAllConfigs();
 
+  // ========== 词典操作 ==========
+
+  /// 词典查询（本地内置词典）
+  ///
+  /// 按单词查询释义（API_CONTRACT.md §3 需求 4，用于 `dict_screen`）。
+  /// 返回字段：`word`（归一化单词）/ `phonetic`（音标，可空）/ `definitions`（释义列表）。
+  /// 未收录词返回空 `definitions`（非异常）；查询异常抛出经 bridge 映射为 [BridgeError]。
+  Future<Map<String, dynamic>> dictLookup(String word);
+
   // ========== 备份操作 ==========
 
   /// 备份数据

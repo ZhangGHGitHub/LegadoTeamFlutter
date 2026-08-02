@@ -790,6 +790,42 @@ class MockBookApi implements BookApi {
   @override
   Future<Map<String, String>> getAllConfigs() async => Map.from(_configs);
 
+  // ========== 词典操作 ==========
+
+  /// 内置 Mock 词典（占位数据，字段对齐 Rust `DictEntry`）
+  static const _mockDict = <String, Map<String, dynamic>>{
+    'chapter': {
+      'word': 'chapter',
+      'phonetic': '/ˈtʃæptə(r)/',
+      'definitions': ['n. 章，章节', 'n. （人生的）一段时期'],
+    },
+    'novel': {
+      'word': 'novel',
+      'phonetic': '/ˈnɒvl/',
+      'definitions': ['n. 长篇小说', 'adj. 新奇的，异常的'],
+    },
+    'library': {
+      'word': 'library',
+      'phonetic': '/ˈlaɪbrəri/',
+      'definitions': ['n. 图书馆，藏书室', 'n. 文库，（软件）库'],
+    },
+  };
+
+  @override
+  Future<Map<String, dynamic>> dictLookup(String word) async {
+    // 模拟查询延迟
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final key = word.trim().toLowerCase();
+    final hit = _mockDict[key];
+    if (hit != null) return hit;
+    // 未收录词：返回空 definitions（非异常，对齐契约）
+    return {
+      'word': key,
+      'phonetic': '',
+      'definitions': <String>[],
+    };
+  }
+
   // ========== 备份操作 ==========
 
   @override

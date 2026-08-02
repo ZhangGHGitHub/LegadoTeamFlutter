@@ -683,6 +683,18 @@ class RustApi implements BookApi {
     return m.map((k, v) => MapEntry(k, v.toString()));
   }
 
+  // ========== 词典操作 ==========
+
+  /// 词典查询（本地内置词典）
+  ///
+  /// Rust 侧返回结构化释义 JSON 对象，字段：`word` / `phonetic` / `definitions`。
+  /// 未收录词返回空 `definitions`（非异常）。
+  @override
+  Future<Map<String, dynamic>> dictLookup(String word) async {
+    final json = await bridge.dictLookup(word: word);
+    return (jsonDecode(json) as Map).cast<String, dynamic>();
+  }
+
   // ========== 备份操作 ==========
 
   /// 备份数据（收集所有数据写入 JSON 文件）

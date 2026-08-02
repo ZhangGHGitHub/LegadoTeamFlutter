@@ -321,6 +321,13 @@ Future<String> searchHistoryByPrefix({
   limit: limit,
 );
 
+/// 词典查询（本地内置词典，JSON 对象）
+///
+/// 返回结构化释义 DictEntry：`word`（归一化单词）/ `phonetic`（音标）/
+/// `definitions`（释义列表）。未收录词返回空 `definitions`（非异常）。
+Future<String> dictLookup({required String word}) =>
+    RustLib.instance.api.crateFfiFfiDictLookup(word: word);
+
 /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）
 ///
 /// `book_name` — 当前书籍名称

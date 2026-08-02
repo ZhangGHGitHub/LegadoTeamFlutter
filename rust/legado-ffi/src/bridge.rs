@@ -653,6 +653,18 @@ pub unsafe extern "C" fn ffi_search_history_by_prefix(
     }))
 }
 
+/// 词典查询（本地内置词典）
+///
+/// 返回结构化释义 DictEntry（JSON 对象）：`word` / `phonetic` / `definitions`。
+/// 未收录词返回空 `definitions`（非异常）。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_dict_lookup(word: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let w = c_char_to_str(word)?;
+        crate::api::dict_api::dict_lookup(w)
+    }))
+}
+
 // ─── HTTP FFI 函数 ──────────────────────────────────────────
 
 /// HTTP GET 请求
