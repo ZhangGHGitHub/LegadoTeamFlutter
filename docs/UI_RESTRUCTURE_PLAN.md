@@ -623,6 +623,35 @@ String mapApiError(Object e) {
 > routes.dart、bookshelf_screen 等）予以排除；`reader_screen` 还原后仅重做 bookmark/BookApi 迁移部分（分页功能留待该会话
 > 重新应用）。删除与 `bookshelf_notifier_test` 重复的 `bookshelf_provider_test`。全量 952 测试通过，analyze 0 error/warning。
 
+### Phase 6：审计驱动重构（全量界面审计后补齐）
+
+> Phase 1-5 主体完成后，对 47 个 screen 做全量审计（对比 Android 原版 + 核查 Riverpod 接入与架构铁律），
+> 识别出 15 个未接 Riverpod 的界面，按优先级登记如下，逐项闭环：
+>
+> | 优先级 | 界面 | 问题 | 状态 |
+> |--------|------|------|------|
+> | 🔴 P0 | `change_source_screen` | 直接调 `bridge.sourceSwitchSearch/Apply`，绕过 BookApi/Notifier（架构越界） | ✅ 已完成 |
+> | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | 待办（需 Rust 封面搜索契约） |
+> | 🟡 P2 | `dict_screen` / `source_login_screen` / `txt_toc_rules_screen` | SharedPreferences/硬编码本地数据，未接后端 | 待办（需对应 Rust 契约） |
+> | ⚪ 清理 | `rss_article_detail_screen` | 死导入 `rust_api.dart` | 待办 |
+
+> **6.1 实施决议（P0 换源页消除架构越界）**：`change_source_screen`（376 行）原在 `_ChangeSourceScreenState` 内直接
+> `import '../bridge/rust_lib.dart'` 并调 `bridge.sourceSwitchSearch/sourceSwitchApply`，自行 `jsonDecode` + 评分兜底排序，
+> 是审计中唯一明确违反 §0.2 铁律（UI 层禁触 bridge/FFI）的界面。调研确认 `BookApi.searchSource`（返回
+> `List<Map<String,dynamic>>`）与 `BookApi.switchSource` 契约早已就绪但未被该页使用，**无跨轨阻塞**，故重构：
+> ① 新增 `SourceMatch` freezed 模型（`models/source_match.dart`，镜像 Rust `SourceMatch` 的 snake_case 序列化，
+> `score` 经 json_serializable `num?.toDouble()` 兼容整数）；② 新增 `ChangeSourceNotifier` + `ChangeSourceState`
+> （`providers/change_source/`，freezed 不可变 State 管理 loading/error/results/applying 四态），`search`/`applySource`
+> 全部经 `bookApiProvider` 委托 Rust；③ `change_source_screen` 重构为 `ConsumerStatefulWidget`，移除 bridge 直调与
+> 内联 `SourceMatchItem` 类，确认对话框/SnackBar/导航等纯 UI 编排留在页面。**排序铁律**：Rust `SourceMatcher::
+> rank_candidates` 已按评分降序（源码注释明确），Dart 侧移除原兜底 `sort`，直接按返回顺序渲染（§0.2/§0.3）。
+> **字段对齐修复**：`MockBookApi.searchSource` 原返回 camelCase（`sourceUrl`/`matchScore`）与真实 Rust 的 snake_case
+> （`source_url`/`score`）不匹配（同 3.4 历史 bug 模式），本次对齐为 snake_case 并补齐 `book_name`/`author`/
+> `latest_chapter`/`word_count` 字段。**git 隔离**：`mock_book_api.dart` 中并行会话的 `importBooks`/`searchMultiStream`
+> 改动经 `git add -p` 精确排除，仅暂存本轨 searchSource hunk。`change_source_test` 模型测试迁移至 `SourceMatch`，
+> 新增 9 个 Notifier 测试（search 解析/保序/异常/防重入 + applySource 回写/回退/异常/并发守卫）。全量 963 测试通过，
+> 改动文件 analyze 0 issues。
+
 ---
 
 ## 九、验收标准总则
