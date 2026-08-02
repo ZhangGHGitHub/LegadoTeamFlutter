@@ -16,5 +16,13 @@ des = { workspace = true }
 base64 = { workspace = true }
 md5 = "0.7"
 regex = "1"
+# Java 正则方言支持（lookbehind / backreference / 原子组等 regex crate 不支持的语法）
+fancy-regex = "0.19.0"
+
+[features]
+default = []
+# 占位 feature：本 crate 的 JS 执行通过 ReplaceJsExecutor trait 注入（实现位于 legado-js），
+# 保留 quickjs feature 仅为与工作区统一构建命令 `--features quickjs` 兼容。
+quickjs = []
 
 [dev-dependencies]

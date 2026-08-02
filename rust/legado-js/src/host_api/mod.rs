@@ -13,6 +13,7 @@ pub mod crypto_api;
 pub mod encoding;
 pub mod env;
 pub mod file_utils;
+pub mod font_api;
 pub mod html_format;
 pub mod json_utils;
 pub mod misc_api;

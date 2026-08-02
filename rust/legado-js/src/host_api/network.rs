@@ -192,6 +192,117 @@ pub fn ajax_all(urls_json: &str) -> Result<String, String> {
     })
 }
 
+/// connectFull(url, method?, headers?, body?, timeoutMs?) → 完整 HTTP 响应 JSON
+///
+/// 对应 Kotlin: `connect(urlStr, header, callTimeout): StrResponse`
+/// 增强版：支持指定 HTTP 方法（GET/POST/HEAD/PUT/DELETE），返回完整响应。
+///
+/// 返回 JSON：`{"statusCode":200,"body":"...","headers":{...}}`
+pub fn connect_full(
+    url: &str,
+    method: Option<&str>,
+    headers_json: Option<&str>,
+    body: Option<&str>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    let timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+    let method_str = method.unwrap_or("GET").to_uppercase();
+    let method = match method_str.as_str() {
+        "GET" | "POST" | "HEAD" | "PUT" | "DELETE" => Method::from_str_loose(&method_str),
+        other => return Err(format!("connect: unsupported method '{}'", other)),
+    };
+    let headers: HashMap<String, String> = headers_json
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+
+    block_on(async {
+        let client = build_client_with_timeout(timeout)?;
+        let request = LegadoRequest {
+            url: url.to_string(),
+            method,
+            headers,
+            body: body.map(|s| s.to_string()),
+            timeout: Some(std::time::Duration::from_millis(timeout)),
+        };
+        let resp = client
+            .send(&request)
+            .await
+            .map_err(|e| format!("connect request error: {}", e))?;
+        let result = HttpResponse {
+            status_code: resp.status,
+            body: resp.body,
+            headers: resp.headers,
+        };
+        serde_json::to_string(&result).map_err(|e| format!("connect serialize error: {}", e))
+    })
+}
+
+/// headFull(url, headers?) → HEAD 请求完整响应 JSON
+///
+/// 对应 Kotlin: `head(urlStr, headers): Connection.Response`
+/// 返回包含 statusCode / body / headers 的完整响应 JSON。
+pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String> {
+    let headers: HashMap<String, String> = headers_json
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+
+    block_on(async {
+        let client = build_client()?;
+        let request = LegadoRequest {
+            url: url.to_string(),
+            method: Method::Head,
+            headers,
+            body: None,
+            timeout: Some(std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS)),
+        };
+        let resp = client
+            .send(&request)
+            .await
+            .map_err(|e| format!("head request error: {}", e))?;
+        let result = HttpResponse {
+            status_code: resp.status,
+            body: resp.body,
+            headers: resp.headers,
+        };
+        serde_json::to_string(&result).map_err(|e| format!("head serialize error: {}", e))
+    })
+}
+
+/// postFull(url, body, headers?) → POST 请求完整响应 JSON
+///
+/// 对应 Kotlin: `post(urlStr, body, headers): Connection.Response`
+/// 返回包含 statusCode / body / headers 的完整响应 JSON。
+pub fn post_full(
+    url: &str,
+    body: &str,
+    headers_json: Option<&str>,
+) -> Result<String, String> {
+    let headers: HashMap<String, String> = headers_json
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+
+    block_on(async {
+        let client = build_client()?;
+        let request = LegadoRequest {
+            url: url.to_string(),
+            method: Method::Post,
+            headers,
+            body: Some(body.to_string()),
+            timeout: Some(std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS)),
+        };
+        let resp = client
+            .send(&request)
+            .await
+            .map_err(|e| format!("post request error: {}", e))?;
+        let result = HttpResponse {
+            status_code: resp.status,
+            body: resp.body,
+            headers: resp.headers,
+        };
+        serde_json::to_string(&result).map_err(|e| format!("post serialize error: {}", e))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,5 +480,52 @@ mod tests {
     fn test_build_client_with_timeout() {
         let client = build_client_with_timeout(5000);
         assert!(client.is_ok(), "自定义超时构建客户端应成功");
+    }
+
+    /// 测试 connect_full 不支持的 HTTP 方法
+    #[test]
+    fn test_connect_full_unsupported_method() {
+        let result = connect_full("https://httpbin.org/get", Some("PATCH"), None, None, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unsupported method"));
+    }
+
+    /// 测试 connect_full GET 请求（返回完整响应 JSON）
+    #[test]
+    fn test_connect_full_get() {
+        let result = connect_full("https://httpbin.org/get", Some("GET"), None, None, Some(10000));
+        if let Ok(resp_json) = result {
+            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
+            if resp.status_code == 200 {
+                assert!(!resp.body.is_empty());
+            }
+        }
+    }
+
+    /// 测试 head_full 返回完整响应 JSON
+    #[test]
+    fn test_head_full() {
+        let result = head_full("https://httpbin.org/get", None);
+        if let Ok(resp_json) = result {
+            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
+            // HEAD 请求应有状态码
+            assert!(resp.status_code > 0);
+        }
+    }
+
+    /// 测试 post_full 返回完整响应 JSON
+    #[test]
+    fn test_post_full() {
+        let result = post_full(
+            "https://httpbin.org/post",
+            r#"{"key":"value"}"#,
+            Some(r#"{"Content-Type":"application/json"}"#),
+        );
+        if let Ok(resp_json) = result {
+            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
+            if resp.status_code == 200 {
+                assert!(resp.body.contains("key"));
+            }
+        }
     }
 }
