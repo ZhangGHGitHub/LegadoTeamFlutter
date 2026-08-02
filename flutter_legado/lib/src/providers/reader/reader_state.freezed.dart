@@ -50,7 +50,13 @@ mixin _$ReaderState {
   Color get backgroundColor => throw _privateConstructorUsedError;
 
   /// 翻页模式
-  PageTurnMode get pageTurnMode => throw _privateConstructorUsedError;
+  PageTurnMode get pageTurnMode =>
+      throw _privateConstructorUsedError; // ===== 跨章节连续分页 =====
+  /// 全局页索引（跨章节连续编号，从 0 开始）
+  int get globalPageIndex => throw _privateConstructorUsedError;
+
+  /// 全局总页数（所有章节页数之和）
+  int get totalPages => throw _privateConstructorUsedError;
 
   @JsonKey(ignore: true)
   $ReaderStateCopyWith<ReaderState> get copyWith =>
@@ -75,7 +81,9 @@ abstract class $ReaderStateCopyWith<$Res> {
       double fontSize,
       double lineHeight,
       Color backgroundColor,
-      PageTurnMode pageTurnMode});
+      PageTurnMode pageTurnMode,
+      int globalPageIndex,
+      int totalPages});
 
   $BookCopyWith<$Res>? get currentBook;
 }
@@ -105,6 +113,8 @@ class _$ReaderStateCopyWithImpl<$Res, $Val extends ReaderState>
     Object? lineHeight = null,
     Object? backgroundColor = null,
     Object? pageTurnMode = null,
+    Object? globalPageIndex = null,
+    Object? totalPages = null,
   }) {
     return _then(_value.copyWith(
       currentBook: freezed == currentBook
@@ -155,6 +165,14 @@ class _$ReaderStateCopyWithImpl<$Res, $Val extends ReaderState>
           ? _value.pageTurnMode
           : pageTurnMode // ignore: cast_nullable_to_non_nullable
               as PageTurnMode,
+      globalPageIndex: null == globalPageIndex
+          ? _value.globalPageIndex
+          : globalPageIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalPages: null == totalPages
+          ? _value.totalPages
+          : totalPages // ignore: cast_nullable_to_non_nullable
+              as int,
     ) as $Val);
   }
 
@@ -191,7 +209,9 @@ abstract class _$$ReaderStateImplCopyWith<$Res>
       double fontSize,
       double lineHeight,
       Color backgroundColor,
-      PageTurnMode pageTurnMode});
+      PageTurnMode pageTurnMode,
+      int globalPageIndex,
+      int totalPages});
 
   @override
   $BookCopyWith<$Res>? get currentBook;
@@ -220,6 +240,8 @@ class __$$ReaderStateImplCopyWithImpl<$Res>
     Object? lineHeight = null,
     Object? backgroundColor = null,
     Object? pageTurnMode = null,
+    Object? globalPageIndex = null,
+    Object? totalPages = null,
   }) {
     return _then(_$ReaderStateImpl(
       currentBook: freezed == currentBook
@@ -270,6 +292,14 @@ class __$$ReaderStateImplCopyWithImpl<$Res>
           ? _value.pageTurnMode
           : pageTurnMode // ignore: cast_nullable_to_non_nullable
               as PageTurnMode,
+      globalPageIndex: null == globalPageIndex
+          ? _value.globalPageIndex
+          : globalPageIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalPages: null == totalPages
+          ? _value.totalPages
+          : totalPages // ignore: cast_nullable_to_non_nullable
+              as int,
     ));
   }
 }
@@ -289,7 +319,9 @@ class _$ReaderStateImpl implements _ReaderState {
       this.fontSize = 18.0,
       this.lineHeight = 1.6,
       this.backgroundColor = ReaderBackground.white,
-      this.pageTurnMode = PageTurnMode.cover})
+      this.pageTurnMode = PageTurnMode.cover,
+      this.globalPageIndex = 0,
+      this.totalPages = 0})
       : _chapters = chapters;
 
   /// 当前阅读的书籍
@@ -356,10 +388,20 @@ class _$ReaderStateImpl implements _ReaderState {
   @override
   @JsonKey()
   final PageTurnMode pageTurnMode;
+// ===== 跨章节连续分页 =====
+  /// 全局页索引（跨章节连续编号，从 0 开始）
+  @override
+  @JsonKey()
+  final int globalPageIndex;
+
+  /// 全局总页数（所有章节页数之和）
+  @override
+  @JsonKey()
+  final int totalPages;
 
   @override
   String toString() {
-    return 'ReaderState(currentBook: $currentBook, chapters: $chapters, currentChapterIndex: $currentChapterIndex, currentChapterPos: $currentChapterPos, chapterContent: $chapterContent, isLoading: $isLoading, error: $error, showControls: $showControls, fontSize: $fontSize, lineHeight: $lineHeight, backgroundColor: $backgroundColor, pageTurnMode: $pageTurnMode)';
+    return 'ReaderState(currentBook: $currentBook, chapters: $chapters, currentChapterIndex: $currentChapterIndex, currentChapterPos: $currentChapterPos, chapterContent: $chapterContent, isLoading: $isLoading, error: $error, showControls: $showControls, fontSize: $fontSize, lineHeight: $lineHeight, backgroundColor: $backgroundColor, pageTurnMode: $pageTurnMode, globalPageIndex: $globalPageIndex, totalPages: $totalPages)';
   }
 
   @override
@@ -388,7 +430,11 @@ class _$ReaderStateImpl implements _ReaderState {
             (identical(other.backgroundColor, backgroundColor) ||
                 other.backgroundColor == backgroundColor) &&
             (identical(other.pageTurnMode, pageTurnMode) ||
-                other.pageTurnMode == pageTurnMode));
+                other.pageTurnMode == pageTurnMode) &&
+            (identical(other.globalPageIndex, globalPageIndex) ||
+                other.globalPageIndex == globalPageIndex) &&
+            (identical(other.totalPages, totalPages) ||
+                other.totalPages == totalPages));
   }
 
   @override
@@ -405,7 +451,9 @@ class _$ReaderStateImpl implements _ReaderState {
       fontSize,
       lineHeight,
       backgroundColor,
-      pageTurnMode);
+      pageTurnMode,
+      globalPageIndex,
+      totalPages);
 
   @JsonKey(ignore: true)
   @override
@@ -427,7 +475,9 @@ abstract class _ReaderState implements ReaderState {
       final double fontSize,
       final double lineHeight,
       final Color backgroundColor,
-      final PageTurnMode pageTurnMode}) = _$ReaderStateImpl;
+      final PageTurnMode pageTurnMode,
+      final int globalPageIndex,
+      final int totalPages}) = _$ReaderStateImpl;
 
   @override
 
@@ -476,6 +526,13 @@ abstract class _ReaderState implements ReaderState {
 
   /// 翻页模式
   PageTurnMode get pageTurnMode;
+  @override // ===== 跨章节连续分页 =====
+  /// 全局页索引（跨章节连续编号，从 0 开始）
+  int get globalPageIndex;
+  @override
+
+  /// 全局总页数（所有章节页数之和）
+  int get totalPages;
   @override
   @JsonKey(ignore: true)
   _$$ReaderStateImplCopyWith<_$ReaderStateImpl> get copyWith =>

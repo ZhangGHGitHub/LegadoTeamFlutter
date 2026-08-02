@@ -348,6 +348,18 @@ class BookshelfScreen extends ConsumerWidget {
     );
   }
 
+  /// 打开书籍信息编辑页，保存成功后刷新书架
+  Future<void> _editBookInfo(BuildContext context, WidgetRef ref, Book book) async {
+    final saved = await Navigator.pushNamed<bool>(
+      context,
+      AppRoutes.editBookInfo,
+      arguments: book,
+    );
+    if (saved == true) {
+      ref.read(bookshelfNotifierProvider.notifier).refresh();
+    }
+  }
+
   /// 分享书籍（对齐 Android 原版：书名 + 作者 + 来源）
   void _shareBook(Book book) {
     Share.share(buildBookShareText(book));
@@ -388,7 +400,7 @@ class BookshelfScreen extends ConsumerWidget {
                 title: const Text('编辑'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  // TODO: 编辑书籍信息
+                  _editBookInfo(context, ref, book);
                 },
               ),
               ListTile(

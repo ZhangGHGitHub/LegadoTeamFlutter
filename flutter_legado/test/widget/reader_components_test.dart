@@ -56,7 +56,7 @@ void main() {
   void stubOpenBook({String content = '章节内容'}) {
     when(() => mockApi.getChapters(any()))
         .thenAnswer((_) async => testChapters);
-    when(() => mockApi.getChapterContent(any(), any()))
+    when(() => mockApi.getChapterContentFull(any(), any()))
         .thenAnswer((_) async => content);
     when(() => mockApi.updateReadingProgress(
           bookUrl: any(named: 'bookUrl'),

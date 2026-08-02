@@ -129,6 +129,14 @@ class ReaderState with _$ReaderState {
 
     /// 翻页模式
     @Default(PageTurnMode.cover) PageTurnMode pageTurnMode,
+
+    // ===== 跨章节连续分页 =====
+
+    /// 全局页索引（跨章节连续编号，从 0 开始）
+    @Default(0) int globalPageIndex,
+
+    /// 全局总页数（所有章节页数之和）
+    @Default(0) int totalPages,
   }) = _ReaderState;
 }
 

@@ -10,6 +10,7 @@ import 'screens/auto_task_screen.dart';
 import 'screens/book_group_screen.dart';
 import 'screens/book_info_screen.dart';
 import 'screens/cache_settings_screen.dart';
+import 'screens/edit_book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
 import 'screens/change_cover_screen.dart';
 import 'screens/change_source_screen.dart';
@@ -24,6 +25,7 @@ import 'screens/reading_stats_screen.dart';
 import 'screens/reader_screen.dart';
 import 'screens/reader_comic_screen.dart';
 import 'screens/replace_rules_screen.dart';
+import 'screens/rss_config_screen.dart';
 import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_screen.dart';
 import 'screens/search_screen.dart';
@@ -54,6 +56,7 @@ class AppRoutes {
   static const rss = '/rss';
   static const audio = '/audio';
   static const bookInfo = '/book_info';
+  static const editBookInfo = '/edit_book_info';
   static const changeSource = '/change_source';
   static const readingStats = '/reading_stats';
   static const bookmarks = '/bookmarks';
@@ -69,6 +72,7 @@ class AppRoutes {
   static const searchContent = '/search_content';
   static const about = '/about';
   // discover 路由已删除（原版不存在的功能）
+  static const rssConfig = '/rss/config';
   static const rssFavorites = '/rss/favorites';
   static const changeCover = '/change_cover';
   static const txtTocRules = '/txt_toc_rules';
@@ -126,6 +130,15 @@ class AppRoutes {
           final bookUrl = args is String ? args : '';
           return BookInfoScreen(bookUrl: bookUrl);
         },
+        editBookInfo: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          // 路由参数规范化：接收 Book 对象
+          if (args is Book) {
+            return EditBookInfoScreen(book: args);
+          }
+          // 缺少书籍对象时回退到首页，避免崩溃
+          return const HomeScreen();
+        },
         changeSource: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           // 路由参数规范化：优先接收 Book 对象
@@ -179,6 +192,7 @@ class AppRoutes {
         },
         about: (_) => const AboutScreen(),
         
+        rssConfig: (_) => const RssConfigScreen(),
         rssFavorites: (_) => const RssFavoritesScreen(),
         changeCover: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;

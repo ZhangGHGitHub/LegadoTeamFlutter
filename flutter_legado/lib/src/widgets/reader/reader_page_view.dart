@@ -58,6 +58,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   int get currentPageIndex => _currentPageIndex;
 
   /// 前进（下一页或下一章）
+  ///
+  /// 跨章节无缝翻页：到达本章最后一页时自动进入下一章第一页。
   void nextPageOrChapter() {
     final notifier = ref.read(readerNotifierProvider.notifier);
     if (_currentPageIndex < _paginatedPages.length - 1) {
@@ -71,12 +73,17 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       } else {
         setState(() {});
       }
+      // 同步全局页索引
+      notifier.updatePosition(_currentPageIndex);
     } else {
+      // 本章最后一页 → 跨章节无缝进入下一章
       notifier.nextChapter();
     }
   }
 
   /// 后退（上一页或上一章）
+  ///
+  /// 跨章节无缝翻页：到达本章第一页时自动进入上一章最后一页。
   void prevPageOrChapter() {
     final notifier = ref.read(readerNotifierProvider.notifier);
     if (_currentPageIndex > 0) {
@@ -90,7 +97,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       } else {
         setState(() {});
       }
+      // 同步全局页索引
+      notifier.updatePosition(_currentPageIndex);
     } else {
+      // 本章第一页 → 跨章节无缝进入上一章
       notifier.prevChapter();
     }
   }
@@ -146,6 +156,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedLineHeight = lineHeight;
     _paginatedParagraphSpacing = spacing;
     _currentPageIndex = 0;
+
+    // 跨章节分页：注册本章页数到全局分页器
+    final notifier = ref.read(readerNotifierProvider.notifier);
+    notifier.updateChapterPageCount(chapterIndex, pages.length);
 
     if (_pageController.hasClients) {
       _pageController.jumpToPage(0);
@@ -461,6 +475,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         : pageIndex.clamp(0, _paginatedPages.length - 1);
     final pageInfo = _paginatedPages.isEmpty ? null : _paginatedPages[safeIndex];
 
+    // 计算全局页索引（章起始全局索引 + 章内页索引）
+    final notifier = ref.read(readerNotifierProvider.notifier);
+    final chapterStart = notifier.paginator.globalIndexForChapterStart(state.currentChapterIndex);
+    final globalIndex = chapterStart >= 0 ? chapterStart + safeIndex : null;
+
     return ReaderTypographicPage(
       pageInfo: pageInfo,
       pageIndex: safeIndex,
@@ -471,6 +490,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       paragraphSpacing: widget.paragraphSpacing,
       backgroundColor: state.backgroundColor,
       textColor: state.textColor,
+      globalPageIndex: globalIndex,
+      globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
     );
   }
 }

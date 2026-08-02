@@ -20,6 +20,12 @@ class ReaderTypographicPage extends StatelessWidget {
   final Color backgroundColor;
   final Color textColor;
 
+  /// 全局页索引（跨章节连续编号，可选）
+  final int? globalPageIndex;
+
+  /// 全局总页数（可选）
+  final int? globalTotalPages;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -31,6 +37,8 @@ class ReaderTypographicPage extends StatelessWidget {
     required this.paragraphSpacing,
     required this.backgroundColor,
     required this.textColor,
+    this.globalPageIndex,
+    this.globalTotalPages,
   });
 
   @override
@@ -77,11 +85,12 @@ class ReaderTypographicPage extends StatelessWidget {
             ),
           ),
           // 页码指示（对齐安卓端底部页码显示）
+          // 显示格式："章内页/章总页 · 全局页/全局总页"
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Center(
               child: Text(
-                '${pageIndex + 1} / $totalPages',
+                _buildPageIndicator(),
                 style: TextStyle(
                   fontSize: 11,
                   color: textColor.withValues(alpha: 0.4),
@@ -92,6 +101,19 @@ class ReaderTypographicPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// 构建页码指示文本
+  ///
+  /// 格式："章内页/章总页" 或 "章内页/章总页 · 全局页/全局总页"
+  String _buildPageIndicator() {
+    final localIndicator = '${pageIndex + 1}/$totalPages';
+    final gIndex = globalPageIndex;
+    final gTotal = globalTotalPages;
+    if (gIndex != null && gTotal != null && gTotal > 0) {
+      return '$localIndicator · ${gIndex + 1}/$gTotal';
+    }
+    return localIndicator;
   }
 }
 

@@ -1,11 +1,10 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
 import '../../services/settings_service.dart';
+import '../../widgets/paragraph_layout_engine.dart';
 import '../providers.dart';
 import 'reader_state.dart';
 
@@ -20,6 +19,12 @@ export 'reader_state.dart';
 /// - 禁止包含业务计算（文本解析/净化/替换由 Rust 完成）
 class ReaderNotifier extends Notifier<ReaderState> {
   final SettingsService _settings = SettingsService();
+
+  /// 跨章节连续分页器（维护全局页索引 ↔ 章节/页映射）
+  final CrossChapterPaginator _paginator = CrossChapterPaginator();
+
+  /// 获取分页器（供 UI 层查询全局页信息）
+  CrossChapterPaginator get paginator => _paginator;
 
   @override
   ReaderState build() {
@@ -172,6 +177,77 @@ class ReaderNotifier extends Notifier<ReaderState> {
     state = state.copyWith(currentChapterPos: position);
   }
 
+  // ===== 跨章节连续分页导航 =====
+
+  /// 更新章节分页信息（由 UI 层分页完成后调用）
+  ///
+  /// 当某章分页完成时，UI 层调用此方法注册该章的页数，
+  /// 分页器据此维护全局页索引映射。
+  void updateChapterPageCount(int chapterIndex, int pageCount) {
+    _paginator.addChapter(chapterIndex, pageCount);
+    _syncGlobalPageInfo();
+  }
+
+  /// 同步全局页信息到 State
+  void _syncGlobalPageInfo() {
+    final total = _paginator.totalPages();
+    final globalStart = _paginator.globalIndexForChapterStart(state.currentChapterIndex);
+    final globalIndex = globalStart >= 0 ? globalStart + state.currentChapterPos : state.globalPageIndex;
+    state = state.copyWith(
+      totalPages: total,
+      globalPageIndex: globalIndex.clamp(0, total > 0 ? total - 1 : 0),
+    );
+  }
+
+  /// 跳转到全局页索引
+  ///
+  /// 自动解析对应的章节和章内页，如果章节变化则加载新章节内容。
+  Future<void> goToGlobalPage(int globalIndex) async {
+    if (!_paginator.isValidGlobalIndex(globalIndex)) return;
+
+    final resolved = _paginator.resolve(globalIndex);
+    if (resolved == null) return;
+
+    final targetChapter = resolved.chapterIndex;
+    final targetPage = resolved.pageIndex;
+
+    if (targetChapter != state.currentChapterIndex) {
+      // 章节变化：加载新章节
+      await _saveProgress();
+      state = state.copyWith(
+        currentChapterIndex: targetChapter,
+        currentChapterPos: targetPage,
+        globalPageIndex: globalIndex,
+        isLoading: true,
+      );
+      await _loadChapterContent();
+      state = state.copyWith(isLoading: false);
+      await _saveProgress();
+    } else {
+      // 同章内翻页
+      state = state.copyWith(
+        currentChapterPos: targetPage,
+        globalPageIndex: globalIndex,
+      );
+    }
+  }
+
+  /// 下一页（跨章节无缝）
+  Future<void> nextGlobalPage() async {
+    final next = state.globalPageIndex + 1;
+    if (_paginator.isValidGlobalIndex(next)) {
+      await goToGlobalPage(next);
+    }
+  }
+
+  /// 上一页（跨章节无缝）
+  Future<void> prevGlobalPage() async {
+    final prev = state.globalPageIndex - 1;
+    if (prev >= 0 && _paginator.isValidGlobalIndex(prev)) {
+      await goToGlobalPage(prev);
+    }
+  }
+
   /// 保存当前阅读进度到后端
   Future<void> saveProgress() => _saveProgress();
 
@@ -194,41 +270,18 @@ class ReaderNotifier extends Notifier<ReaderState> {
 
   /// 加载当前章节正文
   ///
-  /// 在线书籍：getChapterContent 返回 JSON 元数据，需二次调用
-  /// fetchChapterContent 通过 FFI 获取真实正文；本地书籍直接使用。
+  /// 统一调用 getChapterContentFull：本地书籍直接解析返回，在线书籍自动
+  /// 从网络抓取并返回净化后的正文，始终返回纯正文字符串（无 JSON 元数据）。
   Future<void> _loadChapterContent() async {
     final book = state.currentBook;
     if (book == null || state.chapters.isEmpty) return;
     try {
       final api = ref.read(bookApiProvider);
-      final content = await api.getChapterContent(
+      final content = await api.getChapterContentFull(
         book.bookUrl,
         state.currentChapterIndex,
       );
-
-      // 检查是否是 JSON 元数据（在线书籍）
-      if (content.startsWith('{') && content.contains('chapter_url')) {
-        try {
-          final meta = jsonDecode(content) as Map<String, dynamic>;
-          final chapterUrl = meta['chapter_url'] as String? ?? '';
-          final sourceUrl = book.origin; // 书源 URL
-          if (chapterUrl.isNotEmpty && sourceUrl.isNotEmpty) {
-            // 在线书籍：通过 FFI 获取真实正文
-            final real = await api.fetchChapterContent(
-              book.bookUrl,
-              chapterUrl,
-              sourceUrl,
-            );
-            state = state.copyWith(chapterContent: real);
-          } else {
-            state = state.copyWith(chapterContent: content);
-          }
-        } catch (_) {
-          state = state.copyWith(chapterContent: content); // fallback
-        }
-      } else {
-        state = state.copyWith(chapterContent: content); // 本地书籍直接使用
-      }
+      state = state.copyWith(chapterContent: content);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), chapterContent: '');
     }
