@@ -7781,3 +7781,343 @@ abstract class _ReadRecordShow implements ReadRecordShow {
   _$$ReadRecordShowImplCopyWith<_$ReadRecordShowImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
+
+DictEntry _$DictEntryFromJson(Map<String, dynamic> json) {
+  return _DictEntry.fromJson(json);
+}
+
+/// @nodoc
+mixin _$DictEntry {
+  String get word => throw _privateConstructorUsedError;
+  String get phonetic => throw _privateConstructorUsedError;
+  List<String> get definitions => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $DictEntryCopyWith<DictEntry> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $DictEntryCopyWith<$Res> {
+  factory $DictEntryCopyWith(DictEntry value, $Res Function(DictEntry) then) =
+      _$DictEntryCopyWithImpl<$Res, DictEntry>;
+  @useResult
+  $Res call({String word, String phonetic, List<String> definitions});
+}
+
+/// @nodoc
+class _$DictEntryCopyWithImpl<$Res, $Val extends DictEntry>
+    implements $DictEntryCopyWith<$Res> {
+  _$DictEntryCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? word = null,
+    Object? phonetic = null,
+    Object? definitions = null,
+  }) {
+    return _then(_value.copyWith(
+      word: null == word
+          ? _value.word
+          : word // ignore: cast_nullable_to_non_nullable
+              as String,
+      phonetic: null == phonetic
+          ? _value.phonetic
+          : phonetic // ignore: cast_nullable_to_non_nullable
+              as String,
+      definitions: null == definitions
+          ? _value.definitions
+          : definitions // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$DictEntryImplCopyWith<$Res>
+    implements $DictEntryCopyWith<$Res> {
+  factory _$$DictEntryImplCopyWith(
+          _$DictEntryImpl value, $Res Function(_$DictEntryImpl) then) =
+      __$$DictEntryImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String word, String phonetic, List<String> definitions});
+}
+
+/// @nodoc
+class __$$DictEntryImplCopyWithImpl<$Res>
+    extends _$DictEntryCopyWithImpl<$Res, _$DictEntryImpl>
+    implements _$$DictEntryImplCopyWith<$Res> {
+  __$$DictEntryImplCopyWithImpl(
+      _$DictEntryImpl _value, $Res Function(_$DictEntryImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? word = null,
+    Object? phonetic = null,
+    Object? definitions = null,
+  }) {
+    return _then(_$DictEntryImpl(
+      word: null == word
+          ? _value.word
+          : word // ignore: cast_nullable_to_non_nullable
+              as String,
+      phonetic: null == phonetic
+          ? _value.phonetic
+          : phonetic // ignore: cast_nullable_to_non_nullable
+              as String,
+      definitions: null == definitions
+          ? _value._definitions
+          : definitions // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$DictEntryImpl implements _DictEntry {
+  const _$DictEntryImpl(
+      {this.word = '',
+      this.phonetic = '',
+      final List<String> definitions = const []})
+      : _definitions = definitions;
+
+  factory _$DictEntryImpl.fromJson(Map<String, dynamic> json) =>
+      _$$DictEntryImplFromJson(json);
+
+  @override
+  @JsonKey()
+  final String word;
+  @override
+  @JsonKey()
+  final String phonetic;
+  final List<String> _definitions;
+  @override
+  @JsonKey()
+  List<String> get definitions {
+    if (_definitions is EqualUnmodifiableListView) return _definitions;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_definitions);
+  }
+
+  @override
+  String toString() {
+    return 'DictEntry(word: $word, phonetic: $phonetic, definitions: $definitions)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DictEntryImpl &&
+            (identical(other.word, word) || other.word == word) &&
+            (identical(other.phonetic, phonetic) ||
+                other.phonetic == phonetic) &&
+            const DeepCollectionEquality()
+                .equals(other._definitions, _definitions));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, word, phonetic,
+      const DeepCollectionEquality().hash(_definitions));
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DictEntryImplCopyWith<_$DictEntryImpl> get copyWith =>
+      __$$DictEntryImplCopyWithImpl<_$DictEntryImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$DictEntryImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _DictEntry implements DictEntry {
+  const factory _DictEntry(
+      {final String word,
+      final String phonetic,
+      final List<String> definitions}) = _$DictEntryImpl;
+
+  factory _DictEntry.fromJson(Map<String, dynamic> json) =
+      _$DictEntryImpl.fromJson;
+
+  @override
+  String get word;
+  @override
+  String get phonetic;
+  @override
+  List<String> get definitions;
+  @override
+  @JsonKey(ignore: true)
+  _$$DictEntryImplCopyWith<_$DictEntryImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+LoginKeyValue _$LoginKeyValueFromJson(Map<String, dynamic> json) {
+  return _LoginKeyValue.fromJson(json);
+}
+
+/// @nodoc
+mixin _$LoginKeyValue {
+  String get name => throw _privateConstructorUsedError;
+  String get value => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $LoginKeyValueCopyWith<LoginKeyValue> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $LoginKeyValueCopyWith<$Res> {
+  factory $LoginKeyValueCopyWith(
+          LoginKeyValue value, $Res Function(LoginKeyValue) then) =
+      _$LoginKeyValueCopyWithImpl<$Res, LoginKeyValue>;
+  @useResult
+  $Res call({String name, String value});
+}
+
+/// @nodoc
+class _$LoginKeyValueCopyWithImpl<$Res, $Val extends LoginKeyValue>
+    implements $LoginKeyValueCopyWith<$Res> {
+  _$LoginKeyValueCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? name = null,
+    Object? value = null,
+  }) {
+    return _then(_value.copyWith(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      value: null == value
+          ? _value.value
+          : value // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$LoginKeyValueImplCopyWith<$Res>
+    implements $LoginKeyValueCopyWith<$Res> {
+  factory _$$LoginKeyValueImplCopyWith(
+          _$LoginKeyValueImpl value, $Res Function(_$LoginKeyValueImpl) then) =
+      __$$LoginKeyValueImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String name, String value});
+}
+
+/// @nodoc
+class __$$LoginKeyValueImplCopyWithImpl<$Res>
+    extends _$LoginKeyValueCopyWithImpl<$Res, _$LoginKeyValueImpl>
+    implements _$$LoginKeyValueImplCopyWith<$Res> {
+  __$$LoginKeyValueImplCopyWithImpl(
+      _$LoginKeyValueImpl _value, $Res Function(_$LoginKeyValueImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? name = null,
+    Object? value = null,
+  }) {
+    return _then(_$LoginKeyValueImpl(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      value: null == value
+          ? _value.value
+          : value // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$LoginKeyValueImpl implements _LoginKeyValue {
+  const _$LoginKeyValueImpl({this.name = '', this.value = ''});
+
+  factory _$LoginKeyValueImpl.fromJson(Map<String, dynamic> json) =>
+      _$$LoginKeyValueImplFromJson(json);
+
+  @override
+  @JsonKey()
+  final String name;
+  @override
+  @JsonKey()
+  final String value;
+
+  @override
+  String toString() {
+    return 'LoginKeyValue(name: $name, value: $value)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$LoginKeyValueImpl &&
+            (identical(other.name, name) || other.name == name) &&
+            (identical(other.value, value) || other.value == value));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, name, value);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$LoginKeyValueImplCopyWith<_$LoginKeyValueImpl> get copyWith =>
+      __$$LoginKeyValueImplCopyWithImpl<_$LoginKeyValueImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$LoginKeyValueImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _LoginKeyValue implements LoginKeyValue {
+  const factory _LoginKeyValue({final String name, final String value}) =
+      _$LoginKeyValueImpl;
+
+  factory _LoginKeyValue.fromJson(Map<String, dynamic> json) =
+      _$LoginKeyValueImpl.fromJson;
+
+  @override
+  String get name;
+  @override
+  String get value;
+  @override
+  @JsonKey(ignore: true)
+  _$$LoginKeyValueImplCopyWith<_$LoginKeyValueImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}

@@ -1,15 +1,18 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../providers/source_login/source_login_notifier.dart';
 
 /// 书源登录页面
 ///
 /// 支持两种登录方式：
 /// 1. WebView 登录（通过外部浏览器打开登录链接，再回填 Cookie）
 /// 2. 手动 Cookie 输入
-class SourceLoginScreen extends StatefulWidget {
+///
+/// 登录凭据经 [SourceLoginNotifier] 持久化到 Rust 配置库
+/// （BookApi.getConfig/setConfig，键 `source_login_<sourceUrl>`），不再使用 SharedPreferences。
+class SourceLoginScreen extends ConsumerStatefulWidget {
   /// 书源 URL
   final String sourceUrl;
 
@@ -27,31 +30,33 @@ class SourceLoginScreen extends StatefulWidget {
   });
 
   @override
-  State<SourceLoginScreen> createState() => _SourceLoginScreenState();
+  ConsumerState<SourceLoginScreen> createState() => _SourceLoginScreenState();
 }
 
-class _SourceLoginScreenState extends State<SourceLoginScreen>
+class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  // 手动 Cookie 输入控制器
+  // 手动输入控制器（瞬时输入态，提交后落入 Notifier 状态）
   final _cookieNameCtrl = TextEditingController();
   final _cookieValueCtrl = TextEditingController();
   final _headerNameCtrl = TextEditingController();
   final _headerValueCtrl = TextEditingController();
   final _tokenCtrl = TextEditingController();
 
-  // 已添加的 Cookie / Header 列表
-  final List<MapEntry<String, String>> _cookies = [];
-  final List<MapEntry<String, String>> _headers = [];
-
-  bool _saving = false;
-
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadSavedLogin();
+    // 进入页面加载已保存的登录信息，完成后回填 Token 输入框
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref
+          .read(sourceLoginNotifierProvider.notifier)
+          .load(widget.sourceUrl);
+      if (mounted) {
+        _tokenCtrl.text = ref.read(sourceLoginNotifierProvider).token;
+      }
+    });
   }
 
   @override
@@ -90,11 +95,9 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
       _showSnack('Cookie 名称不能为空');
       return;
     }
-    setState(() {
-      _cookies.add(MapEntry(name, value));
-      _cookieNameCtrl.clear();
-      _cookieValueCtrl.clear();
-    });
+    ref.read(sourceLoginNotifierProvider.notifier).addCookie(name, value);
+    _cookieNameCtrl.clear();
+    _cookieValueCtrl.clear();
   }
 
   void _addHeader() {
@@ -104,84 +107,31 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
       _showSnack('Header 名称不能为空');
       return;
     }
-    setState(() {
-      _headers.add(MapEntry(name, value));
-      _headerNameCtrl.clear();
-      _headerValueCtrl.clear();
-    });
-  }
-
-  /// 从 SharedPreferences 加载已保存的登录信息
-  Future<void> _loadSavedLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = 'source_login_${widget.sourceUrl}';
-    final saved = prefs.getString(key);
-    if (saved == null || saved.isEmpty || !mounted) return;
-
-    try {
-      final data = jsonDecode(saved) as Map<String, dynamic>;
-      setState(() {
-        final token = data['token'] as String? ?? '';
-        if (token.isNotEmpty) _tokenCtrl.text = token;
-
-        final cookies = data['cookies'] as List<dynamic>? ?? [];
-        for (final c in cookies) {
-          if (c is Map<String, dynamic>) {
-            _cookies.add(MapEntry(
-              c['name'] as String? ?? '',
-              c['value'] as String? ?? '',
-            ));
-          }
-        }
-
-        final headers = data['headers'] as List<dynamic>? ?? [];
-        for (final h in headers) {
-          if (h is Map<String, dynamic>) {
-            _headers.add(MapEntry(
-              h['name'] as String? ?? '',
-              h['value'] as String? ?? '',
-            ));
-          }
-        }
-      });
-    } catch (_) {
-      // 忽略解析错误
-    }
+    ref.read(sourceLoginNotifierProvider.notifier).addHeader(name, value);
+    _headerNameCtrl.clear();
+    _headerValueCtrl.clear();
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    final notifier = ref.read(sourceLoginNotifierProvider.notifier);
+    notifier.setToken(_tokenCtrl.text.trim());
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'source_login_${widget.sourceUrl}';
-      final data = {
-        'sourceUrl': widget.sourceUrl,
-        'sourceName': widget.sourceName,
-        'token': _tokenCtrl.text.trim(),
-        'cookies': _cookies
-            .map((e) => {'name': e.key, 'value': e.value})
-            .toList(),
-        'headers': _headers
-            .map((e) => {'name': e.key, 'value': e.value})
-            .toList(),
-        'savedAt': DateTime.now().toIso8601String(),
-      };
-      await prefs.setString(key, jsonEncode(data));
+      await notifier.save(
+        sourceUrl: widget.sourceUrl,
+        sourceName: widget.sourceName,
+      );
       if (mounted) {
         _showSnack('登录信息已保存');
         Navigator.of(context).pop(true);
       }
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    } catch (_) {
+      if (mounted) _showSnack('保存失败，请重试');
     }
   }
 
   void _clear() {
-    setState(() {
-      _cookies.clear();
-      _headers.clear();
-      _tokenCtrl.clear();
-    });
+    ref.read(sourceLoginNotifierProvider.notifier).clear();
+    _tokenCtrl.clear();
   }
 
   void _showSnack(String msg) {
@@ -190,6 +140,7 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(sourceLoginNotifierProvider);
     return Scaffold(
       appBar: AppBar(
         title: Text('登录 - ${widget.sourceName}'),
@@ -211,7 +162,7 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildManualTab(),
+          _buildManualTab(state),
           _buildLoginUrlTab(),
         ],
       ),
@@ -219,8 +170,8 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
+            onPressed: state.isSaving ? null : _save,
+            icon: state.isSaving
                 ? const SizedBox(
                     width: 18,
                     height: 18,
@@ -234,7 +185,7 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
     );
   }
 
-  Widget _buildManualTab() {
+  Widget _buildManualTab(SourceLoginState state) {
     final theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -258,13 +209,15 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
           valueHint: 'value',
           onAdd: _addCookie,
         ),
-        ..._cookies.map(
-          (e) => ListTile(
+        ...state.cookies.indexed.map(
+          (entry) => ListTile(
             dense: true,
-            title: Text('${e.key} = ${e.value}'),
+            title: Text('${entry.$2.name} = ${entry.$2.value}'),
             trailing: IconButton(
               icon: const Icon(Icons.close),
-              onPressed: () => setState(() => _cookies.remove(e)),
+              onPressed: () => ref
+                  .read(sourceLoginNotifierProvider.notifier)
+                  .removeCookie(entry.$1),
             ),
           ),
         ),
@@ -278,13 +231,15 @@ class _SourceLoginScreenState extends State<SourceLoginScreen>
           valueHint: 'header value',
           onAdd: _addHeader,
         ),
-        ..._headers.map(
-          (e) => ListTile(
+        ...state.headers.indexed.map(
+          (entry) => ListTile(
             dense: true,
-            title: Text('${e.key}: ${e.value}'),
+            title: Text('${entry.$2.name}: ${entry.$2.value}'),
             trailing: IconButton(
               icon: const Icon(Icons.close),
-              onPressed: () => setState(() => _headers.remove(e)),
+              onPressed: () => ref
+                  .read(sourceLoginNotifierProvider.notifier)
+                  .removeHeader(entry.$1),
             ),
           ),
         ),

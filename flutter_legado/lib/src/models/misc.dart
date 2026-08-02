@@ -280,6 +280,12 @@ class DictRule with _$DictRule {
       _$DictRuleFromJson(json);
 }
 
+/// 字典规则 URL 构造扩展
+extension DictRuleUrl on DictRule {
+  /// 将 [urlRule] 中的 `{{key}}` 占位符替换为查询单词，生成跳转 URL
+  String buildUrl(String key) => urlRule.replaceAll('{{key}}', key);
+}
+
 // ─── Server ───────────────────────────────────────────────
 
 /// 服务器
@@ -536,4 +542,33 @@ class ReadRecordShow with _$ReadRecordShow {
 
   factory ReadRecordShow.fromJson(Map<String, dynamic> json) =>
       _$ReadRecordShowFromJson(json);
+}
+
+// ─── DictEntry ────────────────────────────────────────────
+
+/// 词典条目（本地内置词典释义）
+@freezed
+class DictEntry with _$DictEntry {
+  const factory DictEntry({
+    @Default('') String word,
+    @Default('') String phonetic,
+    @Default([]) List<String> definitions,
+  }) = _DictEntry;
+
+  factory DictEntry.fromJson(Map<String, dynamic> json) =>
+      _$DictEntryFromJson(json);
+}
+
+// ─── LoginKeyValue ────────────────────────────────────────
+
+/// 书源登录键值对（Cookie / Header）
+@freezed
+class LoginKeyValue with _$LoginKeyValue {
+  const factory LoginKeyValue({
+    @Default('') String name,
+    @Default('') String value,
+  }) = _LoginKeyValue;
+
+  factory LoginKeyValue.fromJson(Map<String, dynamic> json) =>
+      _$LoginKeyValueFromJson(json);
 }

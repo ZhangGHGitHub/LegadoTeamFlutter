@@ -1,47 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
+import '../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import '../widgets/empty_state.dart';
 
 /// TXT 目录规则管理页面
 ///
 /// 管理用于识别 TXT 小说章节标题的正则规则，
 /// 支持添加 / 编辑 / 删除、启用开关以及在线测试匹配效果。
-class TxtTocRulesScreen extends StatefulWidget {
+///
+/// 规则经 [TxtTocRulesNotifier] 持久化到 Rust 配置库（BookApi.getConfig/setConfig），
+/// 不再使用内存态；「在线测试」仅为本地正则预览，不参与实际数据流。
+class TxtTocRulesScreen extends ConsumerStatefulWidget {
   const TxtTocRulesScreen({super.key});
 
   @override
-  State<TxtTocRulesScreen> createState() => _TxtTocRulesScreenState();
+  ConsumerState<TxtTocRulesScreen> createState() => _TxtTocRulesScreenState();
 }
 
-class _TxtTocRulesScreenState extends State<TxtTocRulesScreen> {
-  int _nextId = 100;
-
-  /// 内置默认规则（本地状态，未接入持久化 API）
-  final List<TxtTocRule> _rules = [
-    const TxtTocRule(
-      id: 1,
-      name: '中文章节',
-      rule: r'^第\s*[0-9一二三四五六七八九十百千零两]+\s*[章节卷集部篇回则话]',
-      serialNumber: 0,
-      enable: true,
-    ),
-    const TxtTocRule(
-      id: 2,
-      name: '数字编号',
-      rule: r'^\s*\d+[\.、．]\s*\S+',
-      serialNumber: 1,
-      enable: true,
-    ),
-    const TxtTocRule(
-      id: 3,
-      name: '英文 Chapter',
-      rule: r'^\s*Chapter\s+\d+',
-      serialNumber: 2,
-      enable: false,
-    ),
-  ];
-
+class _TxtTocRulesScreenState extends ConsumerState<TxtTocRulesScreen> {
   static const _sampleText = '''第一章 初入江湖
 少年站在山门前，望着云雾缭绕的主峰。
 第2章 拜师学艺
@@ -52,7 +30,16 @@ Chapter 4 The Beginning
 It was a dark and stormy night.''';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => ref.read(txtTocRulesNotifierProvider.notifier).load(),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final state = ref.watch(txtTocRulesNotifierProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('TXT 目录规则'),
@@ -64,38 +51,40 @@ It was a dark and stormy night.''';
           ),
         ],
       ),
-      body: _rules.isEmpty
-          ? const EmptyState(
-              icon: Icons.format_list_numbered_rounded,
-              title: '暂无目录规则',
-              subtitle: '点击右上角 + 添加识别章节标题的正则规则',
-            )
-          : _buildList(),
+      body: _buildBody(state),
     );
   }
 
-  Widget _buildList() {
+  Widget _buildBody(TxtTocRulesState state) {
+    if (state.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (state.rules.isEmpty) {
+      return const EmptyState(
+        icon: Icons.format_list_numbered_rounded,
+        title: '暂无目录规则',
+        subtitle: '点击右上角 + 添加识别章节标题的正则规则',
+      );
+    }
+    return _buildList(state);
+  }
+
+  Widget _buildList(TxtTocRulesState state) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _rules.length,
+      itemCount: state.rules.length,
       itemBuilder: (context, index) {
-        final rule = _rules[index];
+        final rule = state.rules[index];
         return _RuleTile(
           rule: rule,
-          onToggle: (v) => _toggle(rule, v),
+          onToggle: (v) =>
+              ref.read(txtTocRulesNotifierProvider.notifier).setEnabled(rule.id, v),
           onEdit: () => _showRuleForm(context, rule: rule),
           onDelete: () => _confirmDelete(rule),
           onTest: () => _showTestDialog(rule),
         );
       },
     );
-  }
-
-  void _toggle(TxtTocRule rule, bool value) {
-    setState(() {
-      final i = _rules.indexWhere((r) => r.id == rule.id);
-      if (i >= 0) _rules[i] = _rules[i].copyWith(enable: value);
-    });
   }
 
   void _confirmDelete(TxtTocRule rule) {
@@ -115,7 +104,7 @@ It was a dark and stormy night.''';
             ),
             onPressed: () {
               Navigator.pop(ctx);
-              setState(() => _rules.removeWhere((r) => r.id == rule.id));
+              ref.read(txtTocRulesNotifierProvider.notifier).deleteRule(rule.id);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('规则已删除'),
@@ -195,23 +184,20 @@ It was a dark and stormy night.''';
                 return;
               }
               final updated = TxtTocRule(
-                id: rule?.id ?? _nextId++,
+                id: rule?.id ?? 0,
                 name: nameCtrl.text.trim(),
                 rule: ruleCtrl.text,
                 replacement: replacementCtrl.text,
-                example:
-                    exampleCtrl.text.isEmpty ? null : exampleCtrl.text,
-                serialNumber: rule?.serialNumber ?? _rules.length,
+                example: exampleCtrl.text.isEmpty ? null : exampleCtrl.text,
+                serialNumber: rule?.serialNumber ?? 0,
                 enable: rule?.enable ?? true,
               );
-              setState(() {
-                if (isEdit) {
-                  final i = _rules.indexWhere((r) => r.id == updated.id);
-                  if (i >= 0) _rules[i] = updated;
-                } else {
-                  _rules.add(updated);
-                }
-              });
+              final notifier = ref.read(txtTocRulesNotifierProvider.notifier);
+              if (isEdit) {
+                notifier.updateRule(updated);
+              } else {
+                notifier.addRule(updated);
+              }
               Navigator.pop(ctx);
             },
             child: Text(isEdit ? '保存' : '添加'),
@@ -305,6 +291,7 @@ It was a dark and stormy night.''';
     );
   }
 
+  /// 本地正则预览（仅供用户测试规则，不参与实际 TXT 解析数据流）
   _TestResult _runTest(String pattern, String text) {
     try {
       final regex = RegExp(pattern, multiLine: true);

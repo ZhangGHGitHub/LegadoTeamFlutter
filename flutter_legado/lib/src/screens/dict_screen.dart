@@ -1,118 +1,32 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// 词典条目
-class _DictEntry {
-  final String word;
-  final String phonetic;
-  final List<String> definitions;
-
-  const _DictEntry({
-    required this.word,
-    required this.phonetic,
-    required this.definitions,
-  });
-}
-
-/// 在线词典规则
-class _DictRule {
-  final String name;
-  final String urlTemplate; // 使用 {{key}} 作为查询占位符
-
-  const _DictRule({required this.name, required this.urlTemplate});
-
-  Map<String, dynamic> toJson() => {'name': name, 'urlTemplate': urlTemplate};
-
-  static _DictRule fromJson(Map<String, dynamic> json) => _DictRule(
-        name: json['name'] as String? ?? '',
-        urlTemplate: json['urlTemplate'] as String? ?? '',
-      );
-
-  String buildUrl(String key) => urlTemplate.replaceAll('{{key}}', key);
-}
+import '../models/models.dart';
+import '../providers/dict/dict_notifier.dart';
 
 /// 字典查询页面
 ///
 /// 优先查询内置本地词典，未命中时可通过在线词典规则跳转查询。
-/// 词典规则持久化在 SharedPreferences 中。
-class DictScreen extends StatefulWidget {
+/// 在线词典规则经 [DictNotifier] 持久化到 Rust 配置库（BookApi.getConfig/setConfig），
+/// 不再使用 SharedPreferences；本地内置词典为静态占位数据（真实词典查询待 Rust 契约）。
+class DictScreen extends ConsumerStatefulWidget {
   const DictScreen({super.key});
 
   @override
-  State<DictScreen> createState() => _DictScreenState();
+  ConsumerState<DictScreen> createState() => _DictScreenState();
 }
 
-class _DictScreenState extends State<DictScreen> {
-  static const _rulesKey = 'dict_rules';
-
+class _DictScreenState extends ConsumerState<DictScreen> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
-
-  String? _queriedWord;
-  _DictEntry? _result;
-  List<_DictRule> _rules = [];
-
-  /// 内置本地词典（常见阅读相关词汇）
-  static const Map<String, _DictEntry> _localDict = {
-    'chapter': _DictEntry(
-      word: 'chapter',
-      phonetic: '/ˈtʃæptə(r)/',
-      definitions: ['n. 章，章节', 'n. （人生的）一段时期'],
-    ),
-    'novel': _DictEntry(
-      word: 'novel',
-      phonetic: '/ˈnɒvl/',
-      definitions: ['n. 长篇小说', 'adj. 新奇的，异常的'],
-    ),
-    'author': _DictEntry(
-      word: 'author',
-      phonetic: '/ˈɔːθə(r)/',
-      definitions: ['n. 作者，作家', 'v. 编写，创作'],
-    ),
-    'bookmark': _DictEntry(
-      word: 'bookmark',
-      phonetic: '/ˈbʊkmɑːk/',
-      definitions: ['n. 书签', 'v. 将…加入书签'],
-    ),
-    'library': _DictEntry(
-      word: 'library',
-      phonetic: '/ˈlaɪbrəri/',
-      definitions: ['n. 图书馆，藏书室', 'n. 文库，（软件）库'],
-    ),
-    'fiction': _DictEntry(
-      word: 'fiction',
-      phonetic: '/ˈfɪkʃn/',
-      definitions: ['n. 小说，虚构作品', 'n. 虚构，想象'],
-    ),
-    'prologue': _DictEntry(
-      word: 'prologue',
-      phonetic: '/ˈprəʊlɒɡ/',
-      definitions: ['n. 序言，开场白'],
-    ),
-    'epilogue': _DictEntry(
-      word: 'epilogue',
-      phonetic: '/ˈepɪlɒɡ/',
-      definitions: ['n. 结语，尾声'],
-    ),
-    'paragraph': _DictEntry(
-      word: 'paragraph',
-      phonetic: '/ˈpærəɡrɑːf/',
-      definitions: ['n. 段落', 'n. （报刊的）短讯'],
-    ),
-    'volume': _DictEntry(
-      word: 'volume',
-      phonetic: '/ˈvɒljuːm/',
-      definitions: ['n. 卷，册', 'n. 音量', 'n. 体积，容量'],
-    ),
-  };
 
   @override
   void initState() {
     super.initState();
-    _loadRules();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => ref.read(dictNotifierProvider.notifier).loadRules(),
+    );
   }
 
   @override
@@ -122,54 +36,13 @@ class _DictScreenState extends State<DictScreen> {
     super.dispose();
   }
 
-  Future<void> _loadRules() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_rulesKey);
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final list = jsonDecode(raw) as List<dynamic>;
-        _rules = list
-            .map((e) => _DictRule.fromJson(e as Map<String, dynamic>))
-            .toList();
-      } catch (_) {
-        _rules = [];
-      }
-    } else {
-      // 首次使用预置默认在线词典
-      _rules = const [
-        _DictRule(
-          name: '有道词典',
-          urlTemplate: 'https://dict.youdao.com/w/{{key}}',
-        ),
-        _DictRule(
-          name: '剑桥词典',
-          urlTemplate: 'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/{{key}}',
-        ),
-      ];
-      await _saveRules();
-    }
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _saveRules() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _rulesKey,
-      jsonEncode(_rules.map((e) => e.toJson()).toList()),
-    );
-  }
-
   void _search() {
-    final word = _searchController.text.trim().toLowerCase();
-    if (word.isEmpty) return;
-    setState(() {
-      _queriedWord = word;
-      _result = _localDict[word];
-    });
+    ref.read(dictNotifierProvider.notifier).lookup(_searchController.text);
   }
 
-  Future<void> _launchOnline(_DictRule rule) async {
-    final word = _queriedWord ?? _searchController.text.trim();
+  Future<void> _launchOnline(DictRule rule) async {
+    final word =
+        ref.read(dictNotifierProvider).queriedWord ?? _searchController.text.trim();
     if (word.isEmpty) return;
     final uri = Uri.tryParse(rule.buildUrl(word));
     if (uri == null) return;
@@ -185,6 +58,7 @@ class _DictScreenState extends State<DictScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final state = ref.watch(dictNotifierProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('字典查询'),
@@ -200,7 +74,7 @@ class _DictScreenState extends State<DictScreen> {
         children: [
           _buildSearchBar(theme),
           const Divider(height: 1),
-          Expanded(child: _buildBody(theme)),
+          Expanded(child: _buildBody(theme, state)),
         ],
       ),
     );
@@ -238,17 +112,19 @@ class _DictScreenState extends State<DictScreen> {
     );
   }
 
-  Widget _buildBody(ThemeData theme) {
-    if (_queriedWord == null) {
+  Widget _buildBody(ThemeData theme, DictState state) {
+    if (state.queriedWord == null) {
       return _buildEmptyHint(theme);
     }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        if (_result != null) _buildResultCard(theme, _result!)
-        else _buildNotFound(theme, _queriedWord!),
+        if (state.result != null)
+          _buildResultCard(theme, state.result!)
+        else
+          _buildNotFound(theme, state.queriedWord!),
         const SizedBox(height: 20),
-        _buildOnlineSection(theme),
+        _buildOnlineSection(theme, state),
       ],
     );
   }
@@ -271,7 +147,7 @@ class _DictScreenState extends State<DictScreen> {
     );
   }
 
-  Widget _buildResultCard(ThemeData theme, _DictEntry entry) {
+  Widget _buildResultCard(ThemeData theme, DictEntry entry) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -359,20 +235,20 @@ class _DictScreenState extends State<DictScreen> {
     );
   }
 
-  Widget _buildOnlineSection(ThemeData theme) {
+  Widget _buildOnlineSection(ThemeData theme, DictState state) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('在线词典', style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
-        if (_rules.isEmpty)
+        if (state.rules.isEmpty)
           Text('暂无词典规则，点击右上角管理添加',
               style: theme.textTheme.bodySmall)
         else
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _rules
+            children: state.rules
                 .map((rule) => ActionChip(
                       avatar: const Icon(Icons.open_in_new, size: 16),
                       label: Text(rule.name),
@@ -390,61 +266,66 @@ class _DictScreenState extends State<DictScreen> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('词典规则管理'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: _rules.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('暂无规则，点击下方按钮添加'),
-                  )
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: _rules.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final rule = _rules[index];
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(rule.name),
-                        subtitle: Text(
-                          rule.urlTemplate,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                          onPressed: () async {
-                            setDialogState(() => _rules.removeAt(index));
-                            await _saveRules();
-                            setState(() {});
-                          },
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () =>
-                  _showRuleEditor(ctx, onSaved: setDialogState),
-              child: const Text('添加规则'),
+        builder: (ctx, setDialogState) {
+          final rules = ref.read(dictNotifierProvider).rules;
+          return AlertDialog(
+            title: const Text('词典规则管理'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: rules.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('暂无规则，点击下方按钮添加'),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: rules.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final rule = rules[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(rule.name),
+                          subtitle: Text(
+                            rule.urlRule,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            onPressed: () async {
+                              await ref
+                                  .read(dictNotifierProvider.notifier)
+                                  .deleteRule(index);
+                              setDialogState(() {});
+                            },
+                          ),
+                        );
+                      },
+                    ),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('完成'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    _showRuleEditor(ctx, onSaved: setDialogState),
+                child: const Text('添加规则'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('完成'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
   void _showRuleEditor(BuildContext ctx, {required StateSetter onSaved}) {
     final nameCtrl = TextEditingController();
-    final urlCtrl = TextEditingController(text: 'https://example.com/dict?q={{key}}');
+    final urlCtrl =
+        TextEditingController(text: 'https://example.com/dict?q={{key}}');
     showDialog(
       context: ctx,
       builder: (editCtx) => AlertDialog(
@@ -480,10 +361,10 @@ class _DictScreenState extends State<DictScreen> {
               final name = nameCtrl.text.trim();
               final url = urlCtrl.text.trim();
               if (name.isEmpty || url.isEmpty) return;
-              _rules.add(_DictRule(name: name, urlTemplate: url));
-              await _saveRules();
+              await ref
+                  .read(dictNotifierProvider.notifier)
+                  .addRule(DictRule(name: name, urlRule: url));
               onSaved(() {});
-              setState(() {});
               if (editCtx.mounted) Navigator.of(editCtx).pop();
             },
             child: const Text('保存'),

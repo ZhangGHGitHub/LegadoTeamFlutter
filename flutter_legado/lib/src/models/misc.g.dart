@@ -623,3 +623,32 @@ Map<String, dynamic> _$$ReadRecordShowImplToJson(
       'readTime': instance.readTime,
       'lastRead': instance.lastRead,
     };
+
+_$DictEntryImpl _$$DictEntryImplFromJson(Map<String, dynamic> json) =>
+    _$DictEntryImpl(
+      word: json['word'] as String? ?? '',
+      phonetic: json['phonetic'] as String? ?? '',
+      definitions: (json['definitions'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
+    );
+
+Map<String, dynamic> _$$DictEntryImplToJson(_$DictEntryImpl instance) =>
+    <String, dynamic>{
+      'word': instance.word,
+      'phonetic': instance.phonetic,
+      'definitions': instance.definitions,
+    };
+
+_$LoginKeyValueImpl _$$LoginKeyValueImplFromJson(Map<String, dynamic> json) =>
+    _$LoginKeyValueImpl(
+      name: json['name'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+    );
+
+Map<String, dynamic> _$$LoginKeyValueImplToJson(_$LoginKeyValueImpl instance) =>
+    <String, dynamic>{
+      'name': instance.name,
+      'value': instance.value,
+    };
