@@ -505,6 +505,19 @@ class MockBookApi implements BookApi {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> searchCover(String bookName) async {
+    // 模拟网络延迟
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    // 按书名生成确定性候选封面（占位数据，字段对齐 Rust `CoverCandidate`）
+    final base = bookName.hashCode.abs();
+    return List.generate(5, (i) => {
+      'url': 'https://picsum.photos/seed/${base + i}/240/320',
+      'width': 240,
+      'height': 320,
+    });
+  }
+
+  @override
   Future<String> switchSource(
     String bookUrl,
     String newSourceUrl,

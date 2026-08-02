@@ -220,6 +220,18 @@ pub mod ffi {
         crate::api::search::cancel_search();
     }
 
+    /// 搜索书籍封面候选列表（返回 JSON 数组）
+    ///
+    /// 复用多书源搜索能力：以书名为关键词搜索所有启用的书源，
+    /// 从搜索结果中提取封面 URL 作为候选（去重、过滤空值）。
+    /// 每项字段：`url` / `width` / `height`（未知尺寸填 0）。
+    ///
+    /// `book_name` — 书籍名称（搜索关键词）
+    pub fn search_cover(book_name: String) -> Result<String, BridgeError> {
+        let candidates = crate::api::search::search_cover(&book_name)?;
+        to_json(&candidates)
+    }
+
     /// 多源渐进式（流式）搜索
     ///
     /// 与 [`search_multi`] 不同：每完成一个书源即通过 `StreamSink` 推送一个结果批次

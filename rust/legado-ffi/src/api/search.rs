@@ -3,7 +3,7 @@
 //! 提供跨书源并行搜索能力，通过 legado-net 发起 HTTP 请求，
 //! 使用 legado-parser 的 AnalyzeUrl + AnalyzeRule 解析搜索结果。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -171,6 +171,55 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
 /// 取消正在进行的搜索
 pub fn cancel_search() {
     SEARCH_CANCELLED.store(true, Ordering::SeqCst);
+}
+
+// ─── 封面搜索 ──────────────────────────────────────────────────────────────────
+
+/// 封面候选项
+///
+/// 用于 `change_cover_screen` 网络封面搜索（API_CONTRACT.md §3 需求 3）。
+/// 字段对齐 Dart 侧 `CoverCandidate` freezed 模型（snake_case）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoverCandidate {
+    /// 封面图片地址（必需）
+    pub url: String,
+    /// 图片宽度（像素，未知填 0）
+    pub width: i32,
+    /// 图片高度（像素，未知填 0）
+    pub height: i32,
+}
+
+/// 搜索书籍封面候选列表
+///
+/// 复用现有书源搜索能力（方案 A）：以书名为关键词搜索所有启用的书源，
+/// 从搜索结果中提取 `cover_url` 字段作为封面候选，过滤空值并去重。
+///
+/// `book_name` — 书籍名称（搜索关键词）
+///
+/// 返回去重后的封面候选列表；无候选时返回空列表（非异常）。
+/// `width` / `height` 暂设为 0（搜索结果无法提供图片尺寸，UI 侧可接受）。
+pub fn search_cover(book_name: &str) -> LegadoResult<Vec<CoverCandidate>> {
+    // 复用多书源搜索（搜索所有启用的书源）
+    let results = search_books(book_name, "")?;
+    Ok(extract_cover_candidates(results))
+}
+
+/// 从搜索结果中提取封面候选（过滤空值 + 去重，保持首次出现顺序）
+fn extract_cover_candidates(results: Vec<SearchResult>) -> Vec<CoverCandidate> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut candidates: Vec<CoverCandidate> = Vec::new();
+    for item in results {
+        if let Some(url) = item.cover_url {
+            if !url.is_empty() && seen.insert(url.clone()) {
+                candidates.push(CoverCandidate {
+                    url,
+                    width: 0,
+                    height: 0,
+                });
+            }
+        }
+    }
+    candidates
 }
 
 // ─── 渐进式（流式）搜索 ────────────────────────────────────────────────────────
@@ -923,5 +972,67 @@ mod tests {
             // 未启用 quickjs：@js: 规则降级为空，书名为空该条目被跳过
             assert!(results.is_empty(), "未启用 quickjs 时 @js: 规则应降级为空");
         }
+    }
+
+    // ─── 测试 10: 封面候选提取（过滤空值 + 去重）────────────────────────────
+
+    /// 构造带指定封面的 SearchResult
+    fn make_result_with_cover(cover: Option<&str>) -> SearchResult {
+        SearchResult {
+            source_url: "https://www.example.com".to_string(),
+            source_name: "测试书源".to_string(),
+            book_name: "测试书籍".to_string(),
+            author: "作者".to_string(),
+            book_url: "https://www.example.com/book/1".to_string(),
+            latest_chapter: None,
+            intro: None,
+            cover_url: cover.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_extract_cover_candidates_dedup_and_filter() {
+        let results = vec![
+            make_result_with_cover(Some("https://cdn.example.com/a.jpg")),
+            make_result_with_cover(Some("https://cdn.example.com/b.jpg")),
+            // 重复 URL 应被去重
+            make_result_with_cover(Some("https://cdn.example.com/a.jpg")),
+            // 空封面应被过滤
+            make_result_with_cover(None),
+            // 空字符串封面应被过滤
+            make_result_with_cover(Some("")),
+            make_result_with_cover(Some("https://cdn.example.com/c.jpg")),
+        ];
+
+        let candidates = extract_cover_candidates(results);
+
+        // 去重 + 过滤后仅剩 3 个，且保持首次出现顺序
+        assert_eq!(candidates.len(), 3);
+        assert_eq!(candidates[0].url, "https://cdn.example.com/a.jpg");
+        assert_eq!(candidates[1].url, "https://cdn.example.com/b.jpg");
+        assert_eq!(candidates[2].url, "https://cdn.example.com/c.jpg");
+        // width / height 均为 0
+        assert!(candidates.iter().all(|c| c.width == 0 && c.height == 0));
+    }
+
+    #[test]
+    fn test_extract_cover_candidates_empty_input() {
+        let candidates = extract_cover_candidates(Vec::new());
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_cover_candidate_serialize() {
+        let candidate = CoverCandidate {
+            url: "https://cdn.example.com/x.jpg".to_string(),
+            width: 0,
+            height: 0,
+        };
+        let json = serde_json::to_string(&candidate).unwrap();
+        // 字段名为 snake_case，对齐 Dart CoverCandidate 模型
+        assert!(json.contains("\"url\""));
+        assert!(json.contains("\"width\""));
+        assert!(json.contains("\"height\""));
+        assert!(json.contains("https://cdn.example.com/x.jpg"));
     }
 }

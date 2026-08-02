@@ -305,6 +305,17 @@ class RustApi implements BookApi {
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
+  /// 搜索书籍封面候选列表
+  ///
+  /// Rust 侧复用多书源搜索提取封面 URL，返回 JSON 数组，
+  /// 每项字段：`url` / `width` / `height`（未知尺寸填 0）。
+  @override
+  Future<List<Map<String, dynamic>>> searchCover(String bookName) async {
+    final json = await bridge.searchCover(bookName: bookName);
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
   /// 切换书源
   Future<String> switchSource(
     String bookUrl,

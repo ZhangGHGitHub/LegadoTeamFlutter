@@ -113,6 +113,13 @@ abstract class BookApi {
     String author,
   );
 
+  /// 搜索书籍封面候选列表
+  ///
+  /// 按书名搜索网络封面候选（API_CONTRACT.md §3 需求 3，用于 `change_cover_screen`）。
+  /// 每个元素字段：`url`（封面地址，必需）/ `width`（像素，未知填 0）/ `height`（像素，未知填 0）。
+  /// 无候选时返回空列表（非异常）。
+  Future<List<Map<String, dynamic>>> searchCover(String bookName);
+
   /// 切换书源
   Future<String> switchSource(
     String bookUrl,

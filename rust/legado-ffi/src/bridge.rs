@@ -311,6 +311,18 @@ pub extern "C" fn ffi_search_cancel() {
     });
 }
 
+/// 搜索书籍封面候选列表
+///
+/// 复用多书源搜索能力，从搜索结果中提取封面 URL 作为候选（去重、过滤空值）。
+/// 返回 JSON 数组字符串，每项字段：`url` / `width` / `height`。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_search_cover(book_name: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let name = c_char_to_str(book_name)?;
+        crate::api::search::search_cover(name)
+    }))
+}
+
 /// 渐进式搜索批次回调（C ABI）
 ///
 /// 每完成一个书源即被调用一次：
