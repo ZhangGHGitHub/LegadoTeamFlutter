@@ -633,7 +633,7 @@ String mapApiError(Object e) {
 > | 🔴 P0 | `change_source_screen` | 直接调 `bridge.sourceSwitchSearch/Apply`，绕过 BookApi/Notifier（架构越界） | ✅ 已完成 |
 > | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | ⛔ 跨轨阻塞（已登记 `searchCover` 契约需求，见 6.2） |
 > | 🟡 P2 | `dict_screen` / `source_login_screen` / `txt_toc_rules_screen` | SharedPreferences/硬编码本地数据，未接后端 | ✅ 已完成（经 `getConfig/setConfig` 迁移，见 6.2） |
-> | ⚪ 清理 | `rss_article_detail_screen` | 死导入 `rust_api.dart` | 待办 |
+> | ⚪ 清理 | `rss_article_detail_screen` | 依赖服务层 `rust_api.dart`（`RssFeedArticle` 误置于服务层） | ✅ 已完成（模型迁至 models 层，见 6.3） |
 
 > **6.1 实施决议（P0 换源页消除架构越界）**：`change_source_screen`（376 行）原在 `_ChangeSourceScreenState` 内直接
 > `import '../bridge/rust_lib.dart'` 并调 `bridge.sourceSwitchSearch/sourceSwitchApply`，自行 `jsonDecode` + 评分兜底排序，
@@ -669,6 +669,20 @@ String mapApiError(Object e) {
 > `rust_api.dart`（`RustApi implements BookApi`，新增抽象方法会破坏其编译），无法单边添加 BookApi 契约，故按双轨规范
 > 登记跨轨契约需求（见 `API_CONTRACT.md` 待办）：`searchCover(bookName) -> List<CoverCandidate>` 与
 > `dictLookup(word) -> DictEntry`，待 Rust 轨交付后接入。`change_cover_screen` 本地选图路径不受影响，保持现状。
+
+> **6.3 实施决议（⚪ 清理项：RssFeedArticle 模型归位）**：审计原将 `rss_article_detail_screen` 标为「死导入 `rust_api.dart`」，
+> 经核实**并非死导入**——界面第 15 行 `final RssFeedArticle article` 字段真实依赖该类型。根因是模型类 `RssFeedArticle`
+> 被误定义于服务层 `rust_api.dart`（原 1784 行），导致 `book_api`/`rss_state`/`rss_articles_screen`/
+> `rss_article_detail_screen` 被迫导入服务层，违反 §0.2 分层原则。经确认后执行原子化迁移：
+> ① 新增 `models/rss_article.dart` 承载 `RssFeedArticle`（**保持纯类定义不变**，行为零变化），`models.dart` 统一导出；
+> ② `rust_api.dart` 删除内联类定义（已导入 models，`getRssArticles` 返回类型经 models 解析，契约不变）；
+> ③ `rss_article_detail_screen` 导入由 `services/rust_api.dart` 改为 `models/models.dart`；`rss_state`/
+> `rss_articles_screen`/`rss_provider_test` 移除多余的 `rust_api.dart` 导入。**边界与规避**：`book_api`/`mock_book_api`
+> 仍需 `ReadingStatsToday`（留于 `rust_api.dart`），故保持其 `rust_api.dart` 引用且**未触碰这两个并行会话活跃文件**。
+> **git 隔离**：`rust_api.dart` 中并行会话的插入 hunk（161 行）经「重置 HEAD → 重放本轨删除 → 还原并行版本」精确排除，
+> 仅暂存本轨类删除 hunk。全量 988 测试通过，改动文件 analyze 0 error/warning。**遗留**：`ReadingStatsToday`/
+> `RustApiException` 仍定义于 `rust_api.dart`，`book_api`（接口）反向依赖 `rust_api`（实现）为既有结构问题，非本次审计项，
+> 待后续统一模型归位时一并处理。
 
 ---
 
