@@ -631,8 +631,8 @@ String mapApiError(Object e) {
 > | 优先级 | 界面 | 问题 | 状态 |
 > |--------|------|------|------|
 > | 🔴 P0 | `change_source_screen` | 直接调 `bridge.sourceSwitchSearch/Apply`，绕过 BookApi/Notifier（架构越界） | ✅ 已完成 |
-> | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | 待办（需 Rust 封面搜索契约） |
-> | 🟡 P2 | `dict_screen` / `source_login_screen` / `txt_toc_rules_screen` | SharedPreferences/硬编码本地数据，未接后端 | 待办（需对应 Rust 契约） |
+> | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | ⛔ 跨轨阻塞（已登记 `searchCover` 契约需求，见 6.2） |
+> | 🟡 P2 | `dict_screen` / `source_login_screen` / `txt_toc_rules_screen` | SharedPreferences/硬编码本地数据，未接后端 | ✅ 已完成（经 `getConfig/setConfig` 迁移，见 6.2） |
 > | ⚪ 清理 | `rss_article_detail_screen` | 死导入 `rust_api.dart` | 待办 |
 
 > **6.1 实施决议（P0 换源页消除架构越界）**：`change_source_screen`（376 行）原在 `_ChangeSourceScreenState` 内直接
@@ -651,6 +651,24 @@ String mapApiError(Object e) {
 > 改动经 `git add -p` 精确排除，仅暂存本轨 searchSource hunk。`change_source_test` 模型测试迁移至 `SourceMatch`，
 > 新增 9 个 Notifier 测试（search 解析/保序/异常/防重入 + applySource 回写/回退/异常/并发守卫）。全量 963 测试通过，
 > 改动文件 analyze 0 issues。
+
+> **6.2 实施决议（P2 本地数据迁移 + P1 跨轨契约登记）**：P2 三界面经核实，其业务数据持久化均可复用现有 Rust 支撑的
+> 通用 KV 契约 `BookApi.getConfig/setConfig`（`bridge.configGet/configSet`），**无跨轨阻塞**，故重构：
+> ① `source_login_screen`：登录凭据（Token/Cookies/Headers）原存 SharedPreferences，新增 `SourceLoginNotifier`+
+> `SourceLoginState`（`providers/source_login/`）经键 `source_login_<sourceUrl>` 落 Rust 配置库，新增 `LoginKeyValue`
+> freezed 模型；② `txt_toc_rules_screen`：规则原为内存态（重启即丢），新增 `TxtTocRulesNotifier`+`TxtTocRulesState`
+> （`providers/txt_toc_rules/`）经键 `txt_toc_rules` 持久化，首启写入内置默认规则，CRUD/启停透传；「在线测试」保留为
+> 本地正则预览（仅供用户试规则，不参与实际 TXT 解析数据流）；③ `dict_screen`：词典规则原存 SharedPreferences，新增
+> `DictNotifier`+`DictState`（`providers/dict/`）经键 `dict_rules` 迁移，**复用既有 `DictRule` 模型**（对齐 Android 原版
+> `urlRule` 字段，新增 `buildUrl` 扩展），另新增 `DictEntry` 模型承载本地内置词典（静态占位数据）。三界面均重构为
+> `ConsumerStatefulWidget`，移除 SharedPreferences/内存态直管。新增 25 个 Notifier 测试（凭据加载/保存/异常 + 规则
+> CRUD/种子/异常 + 词典规则/查询）。全量 988 测试通过，改动文件 analyze 0 issues。
+>
+> **P1 与词典查询运行时能力——跨轨阻塞登记**：`change_cover_screen` 封面搜索与 `dict_screen` 真实词典查询均需 Rust
+> 运行时能力，但 Rust 侧尚无对应函数（全仓 grep `search_cover`/`dict_lookup`/`translate` 0 匹配）。因 UI 轨禁改
+> `rust_api.dart`（`RustApi implements BookApi`，新增抽象方法会破坏其编译），无法单边添加 BookApi 契约，故按双轨规范
+> 登记跨轨契约需求（见 `API_CONTRACT.md` 待办）：`searchCover(bookName) -> List<CoverCandidate>` 与
+> `dictLookup(word) -> DictEntry`，待 Rust 轨交付后接入。`change_cover_screen` 本地选图路径不受影响，保持现状。
 
 ---
 

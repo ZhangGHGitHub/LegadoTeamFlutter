@@ -413,6 +413,8 @@
 |--------|------|----------|----------|------|
 | `getSearchHistory`（字段修复） | 不变 | `List<SearchKeyword>` 序列化字段对齐 Dart 模型：`word` / `usage` / `lastUseTime` | 2026-08-01 | ✅ 已完成 |
 | `searchHistoryByPrefix`（新增） | `String prefix, {int limit = 20}` | `Future<List<String>>`（前缀匹配的历史关键词，对标 Android `searchKeywordDao.flowSearch`） | 2026-08-01 | ✅ 已完成 |
+| `searchCover`（新增） | `String bookName` | `Future<List<Map<String, dynamic>>>`（网络封面候选列表，字段建议 `url` / `width` / `height`，用于 Phase 6 P1 `change_cover_screen` 封面搜索） | 2026-08-01 | ⛔ 待 Rust 实现 |
+| `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询） | 2026-08-01 | ⛔ 待 Rust 实现 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -425,6 +427,17 @@
 > Rust 仓储层已有 `SearchKeywordRepository::find_by_prefix`（LIKE 前缀匹配），但未暴露至 FFI bridge。
 > 请暴露为 `searchHistoryByPrefix(prefix, {limit})` FFI 方法，供搜索页联想使用。
 > UI 轨当前以客户端前缀过滤临时实现（行为等价），待本方法交付后切换为 DB 查询。
+>
+> **需求 3：searchCover 网络封面搜索（Phase 6 P1）**
+> `change_cover_screen` 当前以占位假数据（`Future.delayed` + picsum 随机图）实现网络封面搜索。
+> Android 原版通过配置的封面源（图片搜索）按书名检索候选封面。请 Rust 轨提供 `searchCover(bookName)`，
+> 返回封面候选列表（每项含 `url`，建议附 `width` / `height`）。UI 轨将在交付后接入 `ChangeCoverNotifier`；
+> 本地选图路径不依赖本契约。因 UI 轨禁改 `rust_api.dart`，未单边添加 BookApi 抽象方法。
+>
+> **需求 4：dictLookup 词典查询（Phase 6 P2 延伸）**
+> `dict_screen` 本地内置词典为静态占位数据，仅覆盖少量示例词。请 Rust 轨提供 `dictLookup(word)`，
+> 返回词典释义（字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`）。在线词典规则跳转
+> 已经 `getConfig/setConfig` 持久化，不依赖本契约；本契约用于替换本地占位词典实现真实查询。
 
 ---
 
