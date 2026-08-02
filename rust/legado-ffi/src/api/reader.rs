@@ -300,6 +300,7 @@ fn fetch_chapter_content_inner(
         title: chapter_title.to_string(),
         url: chapter_url.to_string(),
         is_vip: false,
+        is_volume: false,
     };
 
     let engine = super::web_book::build_engine();
