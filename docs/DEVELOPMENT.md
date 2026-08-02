@@ -12,7 +12,7 @@
 ┌─────────────────────────────────────────────────────┐
 │                   Flutter UI 层                      │
 │              (flutter_legado/)                       │
-│     40 个页面 · 953 个测试 · 103+ FFI 函数            │
+│     40 个页面 · 952 个测试 · 103+ FFI 函数            │
 └────────────────────────┬────────────────────────────┘
                          │  flutter_rust_bridge (FFI)
 ┌────────────────────────▼────────────────────────────┐
@@ -223,8 +223,8 @@ flutter test
 | Rust workspace（默认） | 1409 | 8 个 crate 全量测试 |
 | Rust QuickJS feature | 327 | legado-js 含 QuickJS 额外测试 |
 | Rust legado-ffi | 105 | FFI 导出函数测试 |
-| Flutter | 953 | Widget + 单元测试 |
-| **总计** | **2362** | |
+| Flutter | 952 | Widget + 单元测试（2026-08-02 实测，Phase 5.4 去重 bookshelf_provider_test 后） |
+| **总计** | **2361** | |
 
 ---
 

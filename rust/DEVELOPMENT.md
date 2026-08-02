@@ -612,9 +612,9 @@ cargo test --workspace test_search
 | legado-db | 220 | 220 | Schema v95 + 25 Repository（100% 覆盖）+ Migration + RoomImporter（215 单元 + 4 集成 + 1 文档） |
 | legado-ffi | 105 | 105 | 103+ FFI 导出 + 换源 + WebBook(真实链路) + 书签 + 替换规则 |
 | legado-server | 164 | 164 | axum + 53 REST + 5 WS + MCP + 集成测试 |
-| **合计** | **1409** | **1578** | Flutter: 953 tests |
+| **合计** | **1409** | **1578** | Flutter: 952 tests（2026-08-02 实测，Phase 5.4 去重后） |
 
-> **总计**：Rust 1409（默认）+ Flutter 953 = **2362 tests**
+> **总计**：Rust 1409（默认）+ Flutter 952 = **2361 tests**
 
 ---
 

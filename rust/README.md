@@ -177,7 +177,7 @@ rust/
 
 > 完整进度跟踪文档见 [PROGRESS.md](./PROGRESS.md)
 
-### 当前状态：148/148 原子任务已完成，Rust 1409 测试默认通过 / Flutter 953 通过
+### 当前状态：148/148 原子任务已完成，Rust 1409 测试默认通过 / Flutter 952 通过（2026-08-02 实测，Phase 5.4 去重 bookshelf_provider_test 后）
 
 | Crate | 测试数 | 状态 |
 |-------|--------|------|

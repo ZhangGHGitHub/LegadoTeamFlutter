@@ -258,7 +258,7 @@ flutter pub run build_runner build --delete-conflicting-outputs
 - 国际化：中英文双语切换
 - Android 平台桥接：WebView/TTS/通知/文件选择器 4 个 MethodChannel
 - APK 构建验证通过（雷电模拟器 x86_64）
-- 24 个测试文件 / 953 tests passed
+- 24 个测试文件 / 952 tests passed（2026-08-02 实测，Phase 5.4 去重 bookshelf_provider_test 后）
 
 ### 待完成
 

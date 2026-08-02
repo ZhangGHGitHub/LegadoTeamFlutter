@@ -1,6 +1,6 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-08-01（文档一致性回写，测试数更新为实测值）
+> 最后更新：2026-08-02（Flutter 测试数更新为实测 952，Phase 5.4 去重 bookshelf_provider_test 后）
 
 ---
 
@@ -8,7 +8,7 @@
 
 - **已完成**：148 / 148 原子任务（100%）
 - **完成度（2026-07-29 源码审计）**：整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）
-- **测试状态**：cargo test 1409 passed（默认）/ 1578 passed（含 QuickJS + FFI）| flutter test 953 passed | flutter analyze 0 issues
+- **测试状态**：cargo test 1409 passed（默认）/ 1578 passed（含 QuickJS + FFI）| flutter test 952 passed（2026-08-02 实测，Phase 5.4 去重后） | flutter analyze 0 issues
 - **QuickJS feature**：327 tests passed (1 ignored) | legado-ffi：105 tests passed
 - **里程碑**：🎉 Flutter UI 深度实现 + 工程化（仿真翻页/段评/视频/漫画/CI 发布）
 
@@ -379,7 +379,7 @@
 | legado-db | 220 | Schema v95 + 25 Repository（100% 覆盖）+ MigrationRegistry + RoomImporter + DefaultData（215 单元 + 4 集成 + 1 文档） |
 | legado-ffi | 105 | 103+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) + WebDAV(6) + Download(8) + Review(4) API |
 | legado-server | 164 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
-| **合计** | **1409**（默认）/ **1578**（含 quickjs + ffi） | Flutter: 953 tests |
+| **合计** | **1409**（默认）/ **1578**（含 quickjs + ffi） | Flutter: 952 tests（2026-08-02 实测，Phase 5.4 去重后） |
 
 ---
 
