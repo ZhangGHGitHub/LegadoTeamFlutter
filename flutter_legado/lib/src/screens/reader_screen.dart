@@ -150,6 +150,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 paragraphSpacing: _advConfig.paragraphSpacing,
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
+              // 全局页码指示器（跨章节连续分页已注册时显示）
+              if (state.showControls && state.totalPages > 0)
+                Positioned(
+                  bottom: 80,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '全局页 ${state.globalPageIndex + 1} / ${state.totalPages}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (state.showControls)
                 ReaderTopBar(
                   onOpenContentSearch: () => _openContentSearch(state),
@@ -192,13 +218,47 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       case TapAction.none:
         break;
       case TapAction.prevPage:
-        pageView?.prevPageOrChapter();
+        _navigatePrevPage(notifier, pageView);
       case TapAction.nextPage:
-        pageView?.nextPageOrChapter();
+        _navigateNextPage(notifier, pageView);
       case TapAction.toggleControls:
         notifier.toggleControls();
       case TapAction.openCatalog:
         _scaffoldKey.currentState?.openEndDrawer();
+    }
+  }
+
+  /// 全局上一页（优先跨章节连续分页，失败时回退到章级翻页）
+  void _navigatePrevPage(ReaderNotifier notifier, ReaderPageViewState? pageView) {
+    final stateBefore = ref.read(readerNotifierProvider);
+    if (stateBefore.totalPages > 0) {
+      notifier.prevGlobalPage().then((_) {
+        final stateAfter = ref.read(readerNotifierProvider);
+        if (stateAfter.globalPageIndex == stateBefore.globalPageIndex) {
+          pageView?.prevPageOrChapter();
+        }
+      }).catchError((_) {
+        pageView?.prevPageOrChapter();
+      });
+    } else {
+      pageView?.prevPageOrChapter();
+    }
+  }
+
+  /// 全局下一页（优先跨章节连续分页，失败时回退到章级翻页）
+  void _navigateNextPage(ReaderNotifier notifier, ReaderPageViewState? pageView) {
+    final stateBefore = ref.read(readerNotifierProvider);
+    if (stateBefore.totalPages > 0) {
+      notifier.nextGlobalPage().then((_) {
+        final stateAfter = ref.read(readerNotifierProvider);
+        if (stateAfter.globalPageIndex == stateBefore.globalPageIndex) {
+          pageView?.nextPageOrChapter();
+        }
+      }).catchError((_) {
+        pageView?.nextPageOrChapter();
+      });
+    } else {
+      pageView?.nextPageOrChapter();
     }
   }
 
