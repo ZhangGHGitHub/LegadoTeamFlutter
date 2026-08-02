@@ -11,8 +11,12 @@
 //! - JSON 工具：jsonPath, jsonGetString, toJson
 //! - 正则工具：regExp, regExpReplace, regExpFindAll
 //! - 时间工具：formatTime, currentTimeMillis, parseTime, timeFormatUTC
-//! - 文件工具：readFile, writeFile, fileExists, deleteFile
+//! - 文件工具：readFile, writeFile, fileExists, deleteFile, getTxtInFolder
 //! - 变量存储：getVariable, setVariable, removeVariable, clearVariables
+//! - 网络 API：httpGet, httpPost, httpHead, ajax, ajaxAll, connect, head, post
+//! - 平台桥接：webView, webViewGetSource, startBrowser, openUrl, getVerificationCode
+//! - 压缩解压：un7zFile, unrarFile
+//! - 字体 API：queryTTF, queryBase64TTF, replaceFont
 //! - 工具类：randomUUID, log
 
 #![cfg(feature = "quickjs")]
@@ -20,9 +24,9 @@
 use legado_core::LegadoError;
 
 use crate::host_api::{
-    chinese_utils, concurrency_api, config_api, cookie_store, crypto_api, encoding, file_utils,
-    html_format, json_utils, misc_api, network, regex_utils, register::mount_dual, string_utils,
-    time_utils, variable_store,
+    archive_utils, chinese_utils, concurrency_api, config_api, cookie_store, crypto_api, encoding,
+    file_utils, font_api, html_format, json_utils, misc_api, network, platform, regex_utils,
+    register::mount_dual, string_utils, time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
@@ -63,6 +67,8 @@ pub fn register_all_apis<'js>(
     register_config_apis(ctx, &java, &globals)?;
     register_concurrency_apis(ctx, &java, &globals)?;
     register_misc_apis(ctx, &java, &globals)?;
+    register_archive_apis(ctx, &java, &globals)?;
+    register_font_apis(ctx, &java, &globals)?;
 
     // 将 java 命名空间对象注册到全局
     globals
@@ -733,7 +739,7 @@ fn register_utility_apis<'js>(
 
 /// 注册网络类 API
 ///
-/// 对应 Kotlin 端 `JsExtensions` 中的 ajax/connect/get/post/head 等方法。
+/// 对应 Kotlin 端 `JsExtensions` 中的 ajax/ajaxAll/connect/get/post/head 等方法。
 fn register_network_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
     java: &rquickjs::Object<'js>,
@@ -785,6 +791,74 @@ fn register_network_apis<'js>(
         rquickjs::Function::new(ctx.clone(), |options: String| -> String {
             network::ajax(&options).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // ajaxAll(urls_json) -> String（JSON 数组，并发请求多个 URL）
+    // 对应 Kotlin: ajaxAll(urlList: Array<String>): Array<StrResponse>
+    mount_dual(
+        java,
+        globals,
+        "ajaxAll",
+        rquickjs::Function::new(ctx.clone(), |urls: String| -> String {
+            network::ajax_all(&urls).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // connect(url, method?, headers?, body?, timeoutMs?) -> String（完整响应 JSON）
+    // 对应 Kotlin: connect(urlStr, header, callTimeout): StrResponse
+    // 增强：支持指定 HTTP 方法（GET/POST/HEAD/PUT/DELETE）
+    mount_dual(
+        java,
+        globals,
+        "connect",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String,
+             method: Opt<String>,
+             headers: Opt<String>,
+             body: Opt<String>,
+             timeout_ms: Opt<i64>| -> String {
+                network::connect_full(
+                    &url,
+                    method.0.as_deref(),
+                    headers.0.as_deref(),
+                    body.0.as_deref(),
+                    timeout_ms.0.map(|t| t as u64),
+                )
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // head(url, headers?) -> String（完整响应 JSON）
+    // 对应 Kotlin: head(urlStr, headers): Connection.Response
+    mount_dual(
+        java,
+        globals,
+        "head",
+        rquickjs::Function::new(ctx.clone(), |url: String, headers: Opt<String>| -> String {
+            network::head_full(&url, headers.0.as_deref())
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // post(url, body, headers?) -> String（完整响应 JSON）
+    // 对应 Kotlin: post(urlStr, body, headers): Connection.Response
+    mount_dual(
+        java,
+        globals,
+        "post",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, body: String, headers: Opt<String>| -> String {
+                network::post_full(&url, &body, headers.0.as_deref())
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1135,24 +1209,14 @@ fn register_concurrency_apis<'js>(
 
 /// 注册杂项 API
 ///
-/// 对应 Kotlin 端 `JsExtensions` 中的 connect / getSource / getTag /
-/// ajaxTestAll / toUrl / toast / logType 等方法。
+/// 对应 Kotlin 端 `JsExtensions` 中的 getSource / getTag /
+/// ajaxTestAll / toUrl / toast / logType 等方法，
+/// 以及需要平台能力的桥接 API（webView / startBrowser / openUrl 等）。
 fn register_misc_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
 ) -> Result<(), LegadoError> {
-    // connect(url, header) -> String
-    mount_dual(
-        java,
-        globals,
-        "connect",
-        rquickjs::Function::new(ctx.clone(), |url: String, header: Opt<String>| -> String {
-            misc_api::connect(&url, header.0.as_deref().unwrap_or(""))
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
-    )?;
-
     // getSource(sourceUrl) -> String
     mount_dual(
         java,
@@ -1216,6 +1280,218 @@ fn register_misc_apis<'js>(
         rquickjs::Function::new(ctx.clone(), |value: String| -> String {
             misc_api::log_type(&value)
         })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // openVideoPlayer(url, title?, isFloat?) -> String
+    // 对齐 Kotlin JsExtensions.openVideoPlayer：返回结构化桥接载荷，
+    // 由 Flutter / 平台侧拦截并拉起内置视频播放器。
+    mount_dual(
+        java,
+        globals,
+        "openVideoPlayer",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, title: Opt<String>, is_float: Opt<bool>| -> String {
+                platform::open_video_player(
+                    &url,
+                    title.0.as_deref().unwrap_or(""),
+                    is_float.0.unwrap_or(false),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // webView(html?, url?, js?) -> String（桥接载荷）
+    // 对应 Kotlin: webView(html, url, js): String?
+    // Rust 无头运行时返回结构化桥接载荷，由 Flutter 侧使用真实 WebView 处理
+    mount_dual(
+        java,
+        globals,
+        "webView",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: Opt<String>, url: Opt<String>, js: Opt<String>| -> String {
+                platform::web_view(
+                    html.0.as_deref().unwrap_or(""),
+                    url.0.as_deref().unwrap_or(""),
+                    js.0.as_deref().unwrap_or(""),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // webViewGetSource(html?, url?, js?, sourceRegex?) -> String（桥接载荷）
+    // 对应 Kotlin: webViewGetSource(html, url, js, sourceRegex): String?
+    mount_dual(
+        java,
+        globals,
+        "webViewGetSource",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: Opt<String>,
+             url: Opt<String>,
+             js: Opt<String>,
+             source_regex: Opt<String>|
+             -> String {
+                platform::web_view_get_source(
+                    html.0.as_deref().unwrap_or(""),
+                    url.0.as_deref().unwrap_or(""),
+                    js.0.as_deref().unwrap_or(""),
+                    source_regex.0.as_deref().unwrap_or(""),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // startBrowser(url, title?, html?) -> String（桥接载荷）
+    // 对应 Kotlin: startBrowser(url, title, html?)
+    mount_dual(
+        java,
+        globals,
+        "startBrowser",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, title: Opt<String>, html: Opt<String>| -> String {
+                platform::start_browser(
+                    &url,
+                    title.0.as_deref().unwrap_or(""),
+                    html.0.as_deref().unwrap_or(""),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // openUrl(url, mimeType?) -> String（桥接载荷）
+    // 对应 Kotlin: openUrl(url, mimeType?)
+    mount_dual(
+        java,
+        globals,
+        "openUrl",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, mime_type: Opt<String>| -> String {
+                platform::open_url(&url, mime_type.0.as_deref().unwrap_or(""))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getVerificationCode(imageUrl) -> String（桥接载荷）
+    // 对应 Kotlin: getVerificationCode(imageUrl): String
+    mount_dual(
+        java,
+        globals,
+        "getVerificationCode",
+        rquickjs::Function::new(ctx.clone(), |image_url: String| -> String {
+            platform::get_verification_code(&image_url)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    Ok(())
+}
+
+/// 注册压缩解压 API
+///
+/// 对应 Kotlin 端 `ArchiveUtils` 中的 un7zFile / unrarFile 方法。
+fn register_archive_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+    globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    // un7zFile(7zPath, outputPath?) -> String（解压目标目录）
+    // 使用 sevenz-rust2 纯 Rust 实现解压 7z 格式
+    mount_dual(
+        java,
+        globals,
+        "un7zFile",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |seven_z_path: String, output_path: Opt<String>| -> String {
+                archive_utils::un7z_file(&seven_z_path, output_path.0.as_deref())
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // unrarFile(rarPath, outputPath?) -> String
+    // RAR 解压桩化：Rust 生态无纯 Rust RAR 实现，返回错误提示
+    mount_dual(
+        java,
+        globals,
+        "unrarFile",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |rar_path: String, output_path: Opt<String>| -> String {
+                archive_utils::unrar_file(&rar_path, output_path.0.as_deref())
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    Ok(())
+}
+
+/// 注册字体 API
+///
+/// 对应 Kotlin 端 `JsExtensions` 中的 queryTTF / queryBase64TTF / replaceFont 方法。
+fn register_font_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+    globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    // queryTTF(data, useCache?) -> String（字体句柄 JSON）
+    // 对应 Kotlin: queryTTF(data: Any?, useCache: Boolean): QueryTTF?
+    mount_dual(
+        java,
+        globals,
+        "queryTTF",
+        rquickjs::Function::new(ctx.clone(), |data: String, use_cache: Opt<bool>| -> String {
+            font_api::query_ttf(&data, use_cache.0.unwrap_or(true))
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // queryBase64TTF(data) -> String（已废弃，等价于 queryTTF）
+    // 对应 Kotlin: @Deprecated queryBase64TTF(data): QueryTTF?
+    mount_dual(
+        java,
+        globals,
+        "queryBase64TTF",
+        rquickjs::Function::new(ctx.clone(), |data: String| -> String {
+            font_api::query_base64_ttf(&data)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // replaceFont(text, errorFontData, correctFontData, filter?) -> String
+    // 对应 Kotlin: replaceFont(text, errorQueryTTF, correctQueryTTF, filter): String
+    mount_dual(
+        java,
+        globals,
+        "replaceFont",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |text: String,
+             error_font: String,
+             correct_font: String,
+             filter: Opt<bool>|
+             -> String {
+                font_api::replace_font(
+                    &text,
+                    &error_font,
+                    &correct_font,
+                    filter.0.unwrap_or(false),
+                )
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1283,6 +1559,31 @@ mod tests {
         let java_result = engine.eval("java.md5Encode('test123')").unwrap();
         let bare_result = engine.eval("md5Encode('test123')").unwrap();
         assert_eq!(java_result, bare_result);
+    }
+
+    #[test]
+    fn test_java_open_video_player_bridge() {
+        let engine = make_engine();
+        // 书源 JS 调用 java.openVideoPlayer(url, title) 应返回结构化桥接载荷
+        let result = engine
+            .eval("java.openVideoPlayer('http://v.com/x.mp4', '第1集')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "openVideoPlayer");
+        assert_eq!(parsed["url"], "http://v.com/x.mp4");
+        assert_eq!(parsed["title"], "第1集");
+        assert_eq!(parsed["isFloat"], false);
+    }
+
+    #[test]
+    fn test_bare_open_video_player_with_float() {
+        let engine = make_engine();
+        // 裸全局调用 + isFloat 参数
+        let result = engine
+            .eval("openVideoPlayer('http://v.com/y.m3u8', '标题', true)")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["isFloat"], true);
     }
 
     // ---- 新增 API 集成测试 ----
@@ -1406,5 +1707,180 @@ mod tests {
         assert_eq!(result, "bold");
         let result = engine.eval("toNumChapter('第一章')").unwrap();
         assert_eq!(result, "第1章");
+    }
+
+    // ---- P2-6 新增 API 集成测试 ----
+
+    #[test]
+    fn test_java_web_view_bridge() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.webView('', 'http://test.com', 'document.title')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "webView");
+        assert_eq!(parsed["url"], "http://test.com");
+        assert_eq!(parsed["js"], "document.title");
+    }
+
+    #[test]
+    fn test_java_web_view_get_source_bridge() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.webViewGetSource('', 'http://test.com', '', 'content')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "webViewGetSource");
+        assert_eq!(parsed["sourceRegex"], "content");
+    }
+
+    #[test]
+    fn test_java_start_browser_bridge() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.startBrowser('http://test.com', '标题')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "startBrowser");
+        assert_eq!(parsed["url"], "http://test.com");
+        assert_eq!(parsed["title"], "标题");
+    }
+
+    #[test]
+    fn test_java_open_url_bridge() {
+        let engine = make_engine();
+        let result = engine.eval("java.openUrl('legado://import')").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "openUrl");
+        assert_eq!(parsed["url"], "legado://import");
+    }
+
+    #[test]
+    fn test_java_get_verification_code_bridge() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.getVerificationCode('http://img.com/captcha.png')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "getVerificationCode");
+        assert_eq!(parsed["imageUrl"], "http://img.com/captcha.png");
+    }
+
+    #[test]
+    fn test_java_query_ttf() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.queryTTF('https://example.com/font.ttf')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["type"], "url");
+        assert_eq!(parsed["valid"], true);
+    }
+
+    #[test]
+    fn test_java_query_ttf_empty() {
+        let engine = make_engine();
+        let result = engine.eval("java.queryTTF('')").unwrap();
+        assert_eq!(result, "null");
+    }
+
+    #[test]
+    fn test_java_query_base64_ttf() {
+        let engine = make_engine();
+        let result = engine.eval("java.queryBase64TTF('AAECAwQF')").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["valid"], true);
+    }
+
+    #[test]
+    fn test_java_replace_font_null_handles() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.replaceFont('hello', 'null', 'null')")
+            .unwrap();
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_java_replace_font_stub() {
+        let engine = make_engine();
+        // 桩化实现：原样返回
+        let result = engine
+            .eval(
+                "var e = java.queryTTF('https://e.com/f.ttf'); \
+                 var c = java.queryTTF('https://c.com/f.ttf'); \
+                 java.replaceFont('测试', e, c)",
+            )
+            .unwrap();
+        assert_eq!(result, "测试");
+    }
+
+    #[test]
+    fn test_java_ajax_all_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.ajaxAll").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_head_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.head").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_post_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.post").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_connect_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.connect").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_un7z_file_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.un7zFile").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_unrar_file_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.unrarFile").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_unrar_file_stub() {
+        let engine = make_engine();
+        let result = engine.eval("java.unrarFile('test.rar')").unwrap();
+        assert!(result.contains("[ERROR]"));
+    }
+
+    #[test]
+    fn test_bare_web_view_bridge() {
+        let engine = make_engine();
+        // 裸全局调用 webView
+        let result = engine
+            .eval("webView('', 'http://bare.com', 'js_code')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "webView");
+        assert_eq!(parsed["url"], "http://bare.com");
+    }
+
+    #[test]
+    fn test_bare_query_ttf() {
+        let engine = make_engine();
+        let result = engine.eval("queryTTF('/fonts/test.ttf')").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["type"], "file");
     }
 }
