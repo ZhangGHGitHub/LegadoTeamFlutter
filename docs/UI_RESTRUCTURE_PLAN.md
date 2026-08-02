@@ -597,7 +597,7 @@ String mapApiError(Object e) {
 > 按「禁止新增功能」原则不予添加。真实缺口是编辑表单缺少原版与 Dart 模型均支持的 5 个字段：分组（group）/作用于标题
 > （scopeTitle）/作用于正文（scopeContent）/排除范围（excludeScope）/超时（timeoutMillisecond）。本次按用户决策补全
 > 这 5 个字段，忠实还原原版字段集与顺序。新增 `replace_rules_test.dart` 3 个 widget 测试（全字段可见/保存全字段传递/
-> 编辑模式回填全字段与开关）。全量 989 测试通过，改动文件 analyze 0 issues。
+> 编辑模式回填全字段与开关）。全量 952 测试通过（Phase 5.4 去重后），改动文件 analyze 0 issues。
 >
 > **5.4 实施决议（移除 provider 依赖，全量 Riverpod）**：采用「多 agent 并行 + 主控整合」模式（用户决策：freezed+Notifier
 > 完整重写、全部 6 个 agent 同时跑）。将原 10 个 `ChangeNotifierProvider`（theme/bookshelf/source/rss/reading_stats/sync/
