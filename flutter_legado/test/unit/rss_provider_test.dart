@@ -13,7 +13,6 @@ import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
-import 'package:flutter_legado/src/services/rust_api.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/rss/rss_notifier.dart';
 

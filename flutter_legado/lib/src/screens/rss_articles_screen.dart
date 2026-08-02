@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/rss/rss_notifier.dart';
-import '../services/rust_api.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';

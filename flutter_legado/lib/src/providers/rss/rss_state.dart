@@ -1,7 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../models/models.dart';
-import '../../services/rust_api.dart';
 
 part 'rss_state.freezed.dart';
 

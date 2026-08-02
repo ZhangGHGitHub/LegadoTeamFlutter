@@ -1762,25 +1762,6 @@ class SearchResult {
   }
 }
 
-/// RSS 文章（用于 UI 展示）
-class RssFeedArticle {
-  final String title;
-  final String url;
-  final String? description;
-  final String? pubDate;
-  final String? imageUrl;
-  final String? content;
-
-  const RssFeedArticle({
-    required this.title,
-    required this.url,
-    this.description,
-    this.pubDate,
-    this.imageUrl,
-    this.content,
-  });
-}
-
 /// 今日阅读统计
 class ReadingStatsToday {
   final int totalSeconds;

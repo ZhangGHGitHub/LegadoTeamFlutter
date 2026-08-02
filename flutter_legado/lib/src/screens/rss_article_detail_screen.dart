@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../services/rust_api.dart';
+import '../models/models.dart';
 
 /// RSS 文章详情页面
 ///
