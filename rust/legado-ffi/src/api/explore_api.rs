@@ -208,6 +208,8 @@ async fn explore_books_async(
             intro,
             latest_chapter,
             source_url: source.book_source_url.clone(),
+            kind: None,
+            word_count: None,
         });
     }
 

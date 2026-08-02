@@ -28,6 +28,12 @@ pub struct WebSearchResult {
     pub latest_chapter: Option<String>,
     /// 来源书源 URL
     pub source_url: String,
+    /// 分类（kind 原始字符串，对标 Kotlin SearchBook.kind）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// 字数（对标 Kotlin SearchBook.wordCount）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_count: Option<String>,
 }
 
 /// 章节信息
@@ -65,6 +71,12 @@ pub struct WebBookInfo {
     pub book_url: String,
     /// 目录页 URL（可能与详情页相同）
     pub toc_url: String,
+    /// 字数（对标 Kotlin Book.wordCount）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_count: Option<String>,
+    /// 分类（kind 原始字符串，对标 Kotlin Book.kind）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 // ─── Fetcher trait ────────────────────────────────────────────────────────────
@@ -368,6 +380,8 @@ impl WebSearchResult {
             intro: None,
             latest_chapter: None,
             source_url: source_url.into(),
+            kind: None,
+            word_count: None,
         }
     }
 }
@@ -400,6 +414,8 @@ impl WebBookInfo {
             last_chapter: None,
             book_url: book_url.into(),
             toc_url: toc_url.into(),
+            word_count: None,
+            kind: None,
         }
     }
 }
@@ -581,6 +597,8 @@ mod tests {
             last_chapter: Some("第100章".to_string()),
             book_url: "https://example.com/book/10".to_string(),
             toc_url: "https://example.com/book/10/toc".to_string(),
+            word_count: None,
+            kind: None,
         };
         let json = serde_json::to_string(&info).unwrap();
         let de: WebBookInfo = serde_json::from_str(&json).unwrap();

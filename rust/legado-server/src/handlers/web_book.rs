@@ -235,6 +235,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             let last_chapter_rule = search_rule
                 .and_then(|r| r.last_chapter.as_deref())
                 .unwrap_or("");
+            let kind_rule = search_rule.and_then(|r| r.kind.as_deref()).unwrap_or("");
+            let word_count_rule = search_rule
+                .and_then(|r| r.word_count.as_deref())
+                .unwrap_or("");
 
             let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
             if name.is_empty() {
@@ -269,6 +273,22 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                     Some(v)
                 }
             };
+            let kind = {
+                let v = elem_analyzer.get_string(kind_rule).unwrap_or_default();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
+            };
+            let word_count = {
+                let v = elem_analyzer.get_string(word_count_rule).unwrap_or_default();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
+            };
 
             results.push(WebSearchResult {
                 name,
@@ -278,6 +298,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 intro,
                 latest_chapter,
                 source_url: source.book_source_url.clone(),
+                kind,
+                word_count,
             });
         }
 
@@ -364,6 +386,28 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 }
             })
             .unwrap_or_default();
+        let word_count = info_rule
+            .and_then(|r| r.word_count.as_deref())
+            .map(|rule| {
+                let v = analyzer.get_string(rule).unwrap_or_default();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
+            })
+            .unwrap_or(None);
+        let kind = info_rule
+            .and_then(|r| r.kind.as_deref())
+            .map(|rule| {
+                let v = analyzer.get_string(rule).unwrap_or_default();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
+            })
+            .unwrap_or(None);
 
         Ok(WebBookInfo {
             name,
@@ -374,6 +418,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             last_chapter,
             book_url: book_url.to_string(),
             toc_url,
+            word_count,
+            kind,
         })
     }
 

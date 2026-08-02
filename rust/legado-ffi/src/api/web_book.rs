@@ -126,6 +126,130 @@ impl RealBookSourceFetcher {
         )
         .map_err(|e| LegadoError::JsEngine(format!("loginCheckJs: {e}")))
     }
+
+    /// 从详情页响应体解析书籍详情（可复用辅助方法）
+    ///
+    /// 同时服务于：
+    /// - 详情路径 `get_book_info`
+    /// - 搜索详情页直连 / 空列表回退（B1.1）
+    ///
+    /// 对标 Kotlin `BookInfo.analyzeBookInfo`：
+    /// - **canReName 双条件门控**：仅当规则 `canReName` 非空且入参 `can_re_name` 为 true 时，
+    ///   才允许以解析结果覆盖已有书名/作者（`mCanReName = canReName && !infoRule.canReName.isNullOrBlank()`）；
+    ///   否则仅在原值为空时填充。
+    /// - **coverUrl 绝对化**：基于 `redirect_url` 转绝对 URL。
+    /// - **tocUrl**：绝对化，空时回退 `book_url`。
+    /// - **kind / wordCount** 字段提取。
+    fn parse_book_info_from_body(
+        source: &BookSource,
+        body: String,
+        book_url: &str,
+        redirect_url: &str,
+        can_re_name: bool,
+        existing_name: &str,
+        existing_author: &str,
+    ) -> WebBookInfo {
+        let info_rule = source.rule_book_info.as_ref();
+        let analyzer = crate::js_executor::construct_analyzer(
+            body,
+            book_url.to_string(),
+            &source.book_source_url,
+        );
+
+        // B2.1 canReName 双条件门控
+        let rule_can_re_name = info_rule
+            .and_then(|r| r.can_re_name.as_deref())
+            .is_some_and(|v| !v.trim().is_empty());
+        let m_can_re_name = can_re_name && rule_can_re_name;
+
+        // 书名：对标 Kotlin `if (it.isNotEmpty() && (mCanReName || book.name.isEmpty()))`
+        let parsed_name = info_rule
+            .and_then(|r| r.name.as_deref())
+            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
+            .unwrap_or_default();
+        let name = if !parsed_name.is_empty() && (m_can_re_name || existing_name.is_empty()) {
+            parsed_name
+        } else {
+            existing_name.to_string()
+        };
+
+        // 作者：与书名同门控
+        let parsed_author = info_rule
+            .and_then(|r| r.author.as_deref())
+            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
+            .unwrap_or_default();
+        let author = if !parsed_author.is_empty() && (m_can_re_name || existing_author.is_empty()) {
+            parsed_author
+        } else {
+            existing_author.to_string()
+        };
+
+        // 分类：kind 原始字符串 + 拆分后的 categories
+        let kind_raw = info_rule
+            .and_then(|r| r.kind.as_deref())
+            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
+            .unwrap_or_default();
+        let (kind, categories) = if kind_raw.is_empty() {
+            (None, Vec::new())
+        } else {
+            let cats = kind_raw
+                .split([',', '，', ' '])
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            (Some(kind_raw), cats)
+        };
+
+        // B2 字数
+        let word_count = info_rule
+            .and_then(|r| r.word_count.as_deref())
+            .and_then(|rule| optional_field(&analyzer, rule));
+
+        let intro = info_rule
+            .and_then(|r| r.intro.as_deref())
+            .and_then(|rule| optional_field(&analyzer, rule));
+
+        // 封面：基于 redirect_url 绝对化（对标 Kotlin NetworkUtils.getAbsoluteURL(redirectUrl, it)）
+        let cover_url = info_rule
+            .and_then(|r| r.cover_url.as_deref())
+            .map(|rule| {
+                let v = analyzer.get_string(rule).unwrap_or_default();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(AnalyzeUrl::get_absolute_url(redirect_url, &v))
+                }
+            })
+            .unwrap_or(None);
+
+        let last_chapter = info_rule
+            .and_then(|r| r.last_chapter.as_deref())
+            .and_then(|rule| optional_field(&analyzer, rule));
+
+        // 目录页 URL：绝对化 + 空时回退 book_url（对标 Kotlin `if (book.tocUrl.isEmpty()) book.tocUrl = baseUrl`）
+        let raw_toc = info_rule
+            .and_then(|r| r.toc_url.as_deref())
+            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
+            .unwrap_or_default();
+        let toc_url = if raw_toc.is_empty() {
+            book_url.to_string()
+        } else {
+            AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
+        };
+
+        WebBookInfo {
+            name,
+            author,
+            cover_url,
+            intro,
+            categories,
+            last_chapter,
+            book_url: book_url.to_string(),
+            toc_url,
+            word_count,
+            kind,
+        }
+    }
 }
 
 impl Default for RealBookSourceFetcher {
@@ -165,21 +289,86 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 2.5 loginCheckJs 登录检测（规则路径增强）
         Self::execute_login_check(source, &body, analyze_url.url(), 200)?;
 
-        // 3. 使用搜索规则解析结果
+        let base_url = analyze_url.url().to_string();
         let search_rule = source.rule_search.as_ref();
+
+        // 3. bookUrlPattern 详情页直连（B1.1，对标 Kotlin BookList `baseUrl.matches(bookUrlPattern)`）
+        //    若搜索结果页 URL 命中详情页正则，说明返回体本身就是详情页，按单条详情解析。
+        let has_pattern = source
+            .book_url_pattern
+            .as_deref()
+            .is_some_and(|p| !p.trim().is_empty());
+        if has_pattern
+            && matches_book_url_pattern(source.book_url_pattern.as_deref().unwrap_or(""), &base_url)
+        {
+            let info = Self::parse_book_info_from_body(
+                source,
+                body,
+                &base_url,
+                &base_url,
+                true,
+                "",
+                "",
+            );
+            return Ok(if info.name.is_empty() {
+                vec![]
+            } else {
+                vec![info_to_search_result(info, &source.book_source_url)]
+            });
+        }
+
+        // 4. 使用搜索规则解析列表
         let book_list_rule = search_rule
             .and_then(|r| r.book_list.as_deref())
             .unwrap_or("");
 
-        let base_url = analyze_url.url().to_string();
-        let analyzer =
-            crate::js_executor::construct_analyzer(body, base_url.clone(), &source.book_source_url);
+        let analyzer = crate::js_executor::construct_analyzer(
+            body.clone(),
+            base_url.clone(),
+            &source.book_source_url,
+        );
 
         let elements = if book_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
         } else {
             analyzer.get_elements(book_list_rule).unwrap_or_default()
         };
+
+        // 4.5 列表为空且未配置 bookUrlPattern 时，回退按详情页解析（对标 Kotlin BookList “列表为空,按详情页解析”）
+        if elements.is_empty() && !has_pattern {
+            let info = Self::parse_book_info_from_body(
+                source,
+                body,
+                &base_url,
+                &base_url,
+                true,
+                "",
+                "",
+            );
+            return Ok(if info.name.is_empty() {
+                vec![]
+            } else {
+                vec![info_to_search_result(info, &source.book_source_url)]
+            });
+        }
+
+        // 5. 逐项提取字段（规则提到循环外，避免重复解析）
+        let name_rule = search_rule.and_then(|r| r.name.as_deref()).unwrap_or("");
+        let author_rule = search_rule.and_then(|r| r.author.as_deref()).unwrap_or("");
+        let book_url_rule = search_rule
+            .and_then(|r| r.book_url.as_deref())
+            .unwrap_or("");
+        let cover_url_rule = search_rule
+            .and_then(|r| r.cover_url.as_deref())
+            .unwrap_or("");
+        let intro_rule = search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("");
+        let last_chapter_rule = search_rule
+            .and_then(|r| r.last_chapter.as_deref())
+            .unwrap_or("");
+        let kind_rule = search_rule.and_then(|r| r.kind.as_deref()).unwrap_or("");
+        let word_count_rule = search_rule
+            .and_then(|r| r.word_count.as_deref())
+            .unwrap_or("");
 
         let mut results = Vec::new();
         for elem in elements.iter().take(50) {
@@ -189,52 +378,35 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 &source.book_source_url,
             );
 
-            let name_rule = search_rule.and_then(|r| r.name.as_deref()).unwrap_or("");
-            let author_rule = search_rule.and_then(|r| r.author.as_deref()).unwrap_or("");
-            let book_url_rule = search_rule
-                .and_then(|r| r.book_url.as_deref())
-                .unwrap_or("");
-            let cover_url_rule = search_rule
-                .and_then(|r| r.cover_url.as_deref())
-                .unwrap_or("");
-            let intro_rule = search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("");
-            let last_chapter_rule = search_rule
-                .and_then(|r| r.last_chapter.as_deref())
-                .unwrap_or("");
-
             let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
             if name.is_empty() {
                 continue;
             }
 
             let author = elem_analyzer.get_string(author_rule).unwrap_or_default();
-            let book_url = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
+
+            // B1.4 bookUrl 绝对化（对标 Kotlin getString(ruleBookUrl, isUrl=true)），空时回退 baseUrl
+            let raw_book_url = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
+            let book_url = if raw_book_url.is_empty() {
+                base_url.clone()
+            } else {
+                AnalyzeUrl::get_absolute_url(&base_url, &raw_book_url)
+            };
+
+            // B1.4 coverUrl 绝对化（对标 Kotlin NetworkUtils.getAbsoluteURL(baseUrl, it)）
             let cover_url = {
                 let v = elem_analyzer.get_string(cover_url_rule).unwrap_or_default();
                 if v.is_empty() {
                     None
                 } else {
-                    Some(v)
+                    Some(AnalyzeUrl::get_absolute_url(&base_url, &v))
                 }
             };
-            let intro = {
-                let v = elem_analyzer.get_string(intro_rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            };
-            let latest_chapter = {
-                let v = elem_analyzer
-                    .get_string(last_chapter_rule)
-                    .unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            };
+            let intro = optional_field(&elem_analyzer, intro_rule);
+            let latest_chapter = optional_field(&elem_analyzer, last_chapter_rule);
+            // B1.2 kind / wordCount 输出字段
+            let kind = optional_field(&elem_analyzer, kind_rule);
+            let word_count = optional_field(&elem_analyzer, word_count_rule);
 
             results.push(WebSearchResult {
                 name,
@@ -244,10 +416,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 intro,
                 latest_chapter,
                 source_url: source.book_source_url.clone(),
+                kind,
+                word_count,
             });
         }
 
-        Ok(results)
+        // B1.3 LinkedHashSet 去重：按 bookUrl 去重，保留首次出现顺序
+        Ok(dedupe_by_book_url(results))
     }
 
     async fn get_book_info(
@@ -258,96 +433,17 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求书籍详情页
+        //    注：B2.2 infoHtml 缓存复用需要上游传入带 info_html 的 Book 对象，
+        //    当前无状态 FFI 签名（book_url）无法携带，故此处始终发 HTTP（见报告说明）。
         let body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
 
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &body, book_url, 200)?;
 
-        // 2. 使用 bookInfo 规则解析
-        let info_rule = source.rule_book_info.as_ref();
-        let analyzer = crate::js_executor::construct_analyzer(
-            body,
-            book_url.to_string(),
-            &source.book_source_url,
-        );
-
-        let name = info_rule
-            .and_then(|r| r.name.as_deref())
-            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
-            .unwrap_or_default();
-        let author = info_rule
-            .and_then(|r| r.author.as_deref())
-            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
-            .unwrap_or_default();
-        let intro = info_rule
-            .and_then(|r| r.intro.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-        let cover_url = info_rule
-            .and_then(|r| r.cover_url.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-        let toc_url = info_rule
-            .and_then(|r| r.toc_url.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    book_url.to_string()
-                } else {
-                    v
-                }
-            })
-            .unwrap_or_else(|| book_url.to_string());
-        let last_chapter = info_rule
-            .and_then(|r| r.last_chapter.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-        let categories = info_rule
-            .and_then(|r| r.kind.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    vec![]
-                } else {
-                    v.split([',', '，', ' '])
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                }
-            })
-            .unwrap_or_default();
-
-        Ok(WebBookInfo {
-            name,
-            author,
-            cover_url,
-            intro,
-            categories,
-            last_chapter,
-            book_url: book_url.to_string(),
-            toc_url,
-        })
+        // 2. 使用 bookInfo 规则解析（无状态上下文无已有书名，canReName=true、existing 为空）
+        Ok(Self::parse_book_info_from_body(
+            source, body, book_url, book_url, true, "", "",
+        ))
     }
 
     async fn get_chapters(
@@ -365,31 +461,43 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let info_rule = source.rule_book_info.as_ref();
         let info_analyzer = crate::js_executor::construct_analyzer(
-            info_body,
+            info_body.clone(),
             book_url.to_string(),
             &source.book_source_url,
         );
 
-        let toc_url = info_rule
+        let raw_toc = info_rule
             .and_then(|r| r.toc_url.as_deref())
-            .map(|rule| {
-                let v = info_analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    book_url.to_string()
-                } else {
-                    v
-                }
-            })
-            .unwrap_or_else(|| book_url.to_string());
+            .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
+            .unwrap_or_default();
+        let toc_url = if raw_toc.is_empty() {
+            book_url.to_string()
+        } else {
+            AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
+        };
 
-        // 2. 请求目录页
-        let toc_body = self.fetch_simple(&toc_url, source_headers.as_ref()).await?;
+        // 2. B3.1 tocHtml 缓存复用：当 tocUrl == bookUrl 时复用详情页响应体，避免重复请求
+        //    （对标 Kotlin BookInfo `if (book.tocUrl == baseUrl) book.tocHtml = body` + BookChapterList 缓存复用）
+        let toc_body = if toc_url == book_url {
+            info_body
+        } else {
+            self.fetch_simple(&toc_url, source_headers.as_ref()).await?
+        };
 
-        // 3. 解析目录
+        // 3. B3.4 反转标记：chapterList 规则以 "-" 前缀表示倒序，"+" 前缀仅为标记（对标 Kotlin BookChapterList）
         let toc_rule = source.rule_toc.as_ref();
-        let chapter_list_rule = toc_rule
+        let raw_list_rule = toc_rule
             .and_then(|r| r.chapter_list.as_deref())
             .unwrap_or("");
+        let mut reverse = false;
+        let mut chapter_list_rule = raw_list_rule;
+        if let Some(stripped) = chapter_list_rule.strip_prefix('-') {
+            reverse = true;
+            chapter_list_rule = stripped;
+        }
+        if let Some(stripped) = chapter_list_rule.strip_prefix('+') {
+            chapter_list_rule = stripped;
+        }
 
         let analyzer =
             crate::js_executor::construct_analyzer(toc_body, toc_url.clone(), &source.book_source_url);
@@ -400,6 +508,16 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             analyzer.get_elements(chapter_list_rule).unwrap_or_default()
         };
 
+        // 规则提到循环外
+        let name_rule = toc_rule
+            .and_then(|r| r.chapter_name.as_deref())
+            .unwrap_or("");
+        let url_rule = toc_rule
+            .and_then(|r| r.chapter_url.as_deref())
+            .unwrap_or("");
+        let vip_rule = toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or("");
+        let volume_rule = toc_rule.and_then(|r| r.is_volume.as_deref()).unwrap_or("");
+
         let mut chapters = Vec::new();
         for (index, elem) in elements.iter().enumerate() {
             let elem_analyzer = crate::js_executor::construct_analyzer(
@@ -408,20 +526,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 &source.book_source_url,
             );
 
-            let name_rule = toc_rule
-                .and_then(|r| r.chapter_name.as_deref())
-                .unwrap_or("");
-            let url_rule = toc_rule
-                .and_then(|r| r.chapter_url.as_deref())
-                .unwrap_or("");
-            let vip_rule = toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or("");
-
             let title = elem_analyzer.get_string(name_rule).unwrap_or_default();
             if title.is_empty() {
                 continue;
             }
 
-            let url = elem_analyzer.get_string(url_rule).unwrap_or_default();
             let is_vip = if vip_rule.is_empty() {
                 false
             } else {
@@ -429,13 +538,27 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 v == "true" || v == "1"
             };
 
-            // 解析 is_volume（卷章）标记
-            let volume_rule = toc_rule.and_then(|r| r.is_volume.as_deref()).unwrap_or("");
+            // B3.2 isVolume 标记（卷章）
             let is_volume = if volume_rule.is_empty() {
                 false
             } else {
                 let v = elem_analyzer.get_string(volume_rule).unwrap_or_default();
                 v == "true" || v == "1"
+            };
+
+            // B3.3 空 URL 回退 + 绝对化（对标 Kotlin BookChapterList）
+            //    - 卷章 url 空：用 `title + index` 替代（合成唯一标识，不绝对化）
+            //    - 普通章 url 空：回退 baseUrl（目录页 url）
+            //    - 非空 url：基于 toc_url 绝对化
+            let raw_url = elem_analyzer.get_string(url_rule).unwrap_or_default();
+            let url = if raw_url.is_empty() {
+                if is_volume {
+                    format!("{}{}", title, index)
+                } else {
+                    toc_url.clone()
+                }
+            } else {
+                AnalyzeUrl::get_absolute_url(&toc_url, &raw_url)
             };
 
             chapters.push(WebChapter {
@@ -446,6 +569,17 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 is_volume,
             });
         }
+
+        // B3.4 去重 + 反转管线（对标 Kotlin BookChapterList 双反转去重逻辑，去重键为 url）
+        let chapters = if reverse {
+            // "-" 前缀：先去重（保留首次），再反转
+            let mut deduped = dedupe_first_by_url(chapters);
+            deduped.reverse();
+            deduped
+        } else {
+            // 默认：等价于 Kotlin reverse→去重→reverse，即去重保留最后一次出现、保持原顺序
+            dedupe_last_by_url(chapters)
+        };
 
         Ok(chapters)
     }
@@ -510,6 +644,76 @@ pub fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
     WebBookEngine::new(RealBookSourceFetcher::new())
 }
 
+// ─── 规则路径增强辅助函数（B1-B3） ─────────────────────────────
+
+/// 提取可选字段：规则为空或解析结果为空时返回 None
+fn optional_field(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> Option<String> {
+    if rule.is_empty() {
+        return None;
+    }
+    let v = analyzer.get_string(rule).unwrap_or_default();
+    if v.is_empty() {
+        None
+    } else {
+        Some(v)
+    }
+}
+
+/// 判断 URL 是否命中 bookUrlPattern 正则（对标 Kotlin `baseUrl.matches(it.toRegex())`）
+///
+/// 正则非法时静默返回 false，不影响主流程。
+fn matches_book_url_pattern(pattern: &str, url: &str) -> bool {
+    regex::Regex::new(pattern)
+        .map(|re| re.is_match(url))
+        .unwrap_or(false)
+}
+
+/// 将 WebBookInfo 转为 WebSearchResult（详情页直连搜索项，对标 Kotlin `Book.toSearchBook()`）
+fn info_to_search_result(info: WebBookInfo, source_url: &str) -> WebSearchResult {
+    WebSearchResult {
+        name: info.name,
+        author: info.author,
+        book_url: info.book_url,
+        cover_url: info.cover_url,
+        intro: info.intro,
+        latest_chapter: info.last_chapter,
+        source_url: source_url.to_string(),
+        kind: info.kind,
+        word_count: info.word_count,
+    }
+}
+
+/// 搜索结果按 bookUrl 去重，保留首次出现顺序（对标 Kotlin `LinkedHashSet(bookList)`）
+fn dedupe_by_book_url(results: Vec<WebSearchResult>) -> Vec<WebSearchResult> {
+    let mut seen = std::collections::HashSet::new();
+    results
+        .into_iter()
+        .filter(|r| seen.insert(r.book_url.clone()))
+        .collect()
+}
+
+/// 章节去重（保留首次出现），去重键为 url
+///
+/// 对标 Kotlin `BookChapter.equals/hashCode`（基于 url）+ `LinkedHashSet(chapterList)`。
+fn dedupe_first_by_url(chapters: Vec<WebChapter>) -> Vec<WebChapter> {
+    let mut seen = std::collections::HashSet::new();
+    chapters
+        .into_iter()
+        .filter(|c| seen.insert(c.url.clone()))
+        .collect()
+}
+
+/// 章节去重（保留最后一次出现、保持原顺序）
+///
+/// 等价于 Kotlin 默认路径的 reverse→去重（保留首次）→reverse 双反转逻辑。
+fn dedupe_last_by_url(chapters: Vec<WebChapter>) -> Vec<WebChapter> {
+    let mut reversed = chapters;
+    reversed.reverse();
+    let mut deduped = dedupe_first_by_url(reversed);
+    deduped.reverse();
+    deduped
+}
+
 // ─── JS 书源分派辅助 ──────────────────────────────────────────────────────────
 
 /// 将 JS 编排器搜索结果（serde_json::Value）转换为 WebSearchResult 列表
@@ -546,6 +750,16 @@ pub(crate) fn convert_js_search_results(
                 .and_then(|l| l.as_str())
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
+            let kind = v
+                .get("kind")
+                .and_then(|k| k.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let word_count = v
+                .get("wordCount")
+                .and_then(|w| w.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
             Some(WebSearchResult {
                 name,
                 author,
@@ -554,6 +768,8 @@ pub(crate) fn convert_js_search_results(
                 intro,
                 latest_chapter,
                 source_url: source_url.to_string(),
+                kind,
+                word_count,
             })
         })
         .collect()
@@ -678,23 +894,27 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
             .map_err(|e| LegadoError::Internal(format!("JS 详情任务异常: {e}")))?
         })?;
         // 将 MarshalledBookInfo 转换为 WebBookInfo
+        let categories = js_info
+            .kind
+            .as_deref()
+            .map(|k| {
+                k.split([',', '，', ' '])
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
         let info = WebBookInfo {
             name: js_info.name,
             author: js_info.author.unwrap_or_default(),
             cover_url: js_info.cover_url,
             intro: js_info.intro,
-            categories: js_info
-                .kind
-                .map(|k| {
-                    k.split([',', '，', ' '])
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default(),
+            categories,
             last_chapter: js_info.latest_chapter_title,
             book_url: book_url.to_string(),
             toc_url: js_info.toc_url.unwrap_or_else(|| book_url.to_string()),
+            word_count: js_info.word_count,
+            kind: js_info.kind,
         };
         return serde_json::to_string(&info).map_err(LegadoError::Serialization);
     }
@@ -849,5 +1069,167 @@ mod tests {
         let chapter_json = serde_json::to_string(&WebChapter::new(0, "第一章", "")).unwrap();
         let err = webbook_content(&make_source_json(), &chapter_json).unwrap_err();
         assert!(err.to_string().contains("章节URL不能为空"));
+    }
+
+    // ─── B1-B3 规则路径增强测试 ───────────────────────────────
+
+    /// 构造带 bookInfo 规则的书源（canReName 可选）
+    fn make_info_source(can_re_name: Option<&str>) -> BookSource {
+        use legado_core::models::rule::BookInfoRule;
+        BookSource {
+            book_source_url: "https://example.com".to_string(),
+            rule_book_info: Some(BookInfoRule {
+                name: Some(".name".to_string()),
+                author: Some(".author".to_string()),
+                kind: Some(".kind".to_string()),
+                word_count: Some(".wc".to_string()),
+                cover_url: Some(".cover".to_string()),
+                can_re_name: can_re_name.map(|s| s.to_string()),
+                ..BookInfoRule::default()
+            }),
+            ..BookSource::default()
+        }
+    }
+
+    const INFO_HTML: &str = "<html><body>\
+<div class='name'>解析书名</div>\
+<div class='author'>解析作者</div>\
+<div class='kind'>科幻,悬疑</div>\
+<div class='wc'>200万字</div>\
+<div class='cover'>/covers/1.jpg</div>\
+</body></html>";
+
+    #[test]
+    fn test_matches_book_url_pattern() {
+        assert!(matches_book_url_pattern(
+            r"https://example\.com/book/\d+",
+            "https://example.com/book/123"
+        ));
+        assert!(!matches_book_url_pattern(
+            r"https://example\.com/book/\d+",
+            "https://example.com/search?q=x"
+        ));
+        // 非法正则静默返回 false
+        assert!(!matches_book_url_pattern("[invalid", "https://example.com"));
+    }
+
+    #[test]
+    fn test_dedupe_by_book_url_keeps_first() {
+        let results = vec![
+            WebSearchResult::new("书A", "作者A", "url1", "src"),
+            WebSearchResult::new("书A重复", "作者A", "url1", "src"),
+            WebSearchResult::new("书B", "作者B", "url2", "src"),
+        ];
+        let deduped = dedupe_by_book_url(results);
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].name, "书A"); // 保留首次出现
+        assert_eq!(deduped[1].book_url, "url2");
+    }
+
+    #[test]
+    fn test_dedupe_first_by_url() {
+        let chapters = vec![
+            WebChapter::new(0, "章1", "u1"),
+            WebChapter::new(1, "章1重复", "u1"),
+            WebChapter::new(2, "章2", "u2"),
+        ];
+        let deduped = dedupe_first_by_url(chapters);
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].title, "章1");
+    }
+
+    #[test]
+    fn test_dedupe_last_by_url_keeps_last_preserves_order() {
+        let chapters = vec![
+            WebChapter::new(0, "章1", "u1"),
+            WebChapter::new(1, "章2", "u2"),
+            WebChapter::new(2, "章1重复", "u1"),
+        ];
+        let deduped = dedupe_last_by_url(chapters);
+        assert_eq!(deduped.len(), 2);
+        // 保留最后一次出现，且保持原相对顺序 → [章2, 章1重复]
+        assert_eq!(deduped[0].title, "章2");
+        assert_eq!(deduped[1].title, "章1重复");
+    }
+
+    #[test]
+    fn test_info_to_search_result() {
+        let mut info = WebBookInfo::new("三体", "刘慈欣", "url1", "toc1");
+        info.kind = Some("科幻".to_string());
+        info.word_count = Some("200k".to_string());
+        let r = info_to_search_result(info, "https://src");
+        assert_eq!(r.name, "三体");
+        assert_eq!(r.kind.as_deref(), Some("科幻"));
+        assert_eq!(r.word_count.as_deref(), Some("200k"));
+        assert_eq!(r.source_url, "https://src");
+    }
+
+    #[test]
+    fn test_parse_book_info_can_rename_gating() {
+        // 规则 canReName 为空 + 已有书名非空 → 不覆盖（保留已有）
+        let source = make_info_source(None);
+        let info = RealBookSourceFetcher::parse_book_info_from_body(
+            &source,
+            INFO_HTML.to_string(),
+            "https://example.com/book/1",
+            "https://example.com/book/1",
+            true,
+            "已有书名",
+            "已有作者",
+        );
+        assert_eq!(info.name, "已有书名");
+        assert_eq!(info.author, "已有作者");
+
+        // 规则 canReName 非空 + can_re_name=true + 已有非空 → 覆盖
+        let source2 = make_info_source(Some("true"));
+        let info2 = RealBookSourceFetcher::parse_book_info_from_body(
+            &source2,
+            INFO_HTML.to_string(),
+            "https://example.com/book/1",
+            "https://example.com/book/1",
+            true,
+            "已有书名",
+            "已有作者",
+        );
+        assert_eq!(info2.name, "解析书名");
+        assert_eq!(info2.author, "解析作者");
+
+        // 已有书名为空 → 无论 canReName 均填充
+        let info3 = RealBookSourceFetcher::parse_book_info_from_body(
+            &source,
+            INFO_HTML.to_string(),
+            "https://example.com/book/1",
+            "https://example.com/book/1",
+            true,
+            "",
+            "",
+        );
+        assert_eq!(info3.name, "解析书名");
+    }
+
+    #[test]
+    fn test_parse_book_info_fields_and_absolutize() {
+        let source = make_info_source(None);
+        let info = RealBookSourceFetcher::parse_book_info_from_body(
+            &source,
+            INFO_HTML.to_string(),
+            "https://example.com/book/1",
+            "https://example.com/book/1",
+            true,
+            "",
+            "",
+        );
+        // kind 原始字符串 + 拆分 categories
+        assert_eq!(info.kind.as_deref(), Some("科幻,悬疑"));
+        assert_eq!(info.categories, vec!["科幻".to_string(), "悬疑".to_string()]);
+        // wordCount
+        assert_eq!(info.word_count.as_deref(), Some("200万字"));
+        // coverUrl 绝对化
+        assert_eq!(
+            info.cover_url.as_deref(),
+            Some("https://example.com/covers/1.jpg")
+        );
+        // tocUrl 规则为空时回退 book_url
+        assert_eq!(info.toc_url, "https://example.com/book/1");
     }
 }
