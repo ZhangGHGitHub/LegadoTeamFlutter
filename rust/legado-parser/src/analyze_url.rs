@@ -5,13 +5,18 @@
 //! - `{key}` — 简单变量替换
 //! - `<key>` — 另一种变量格式（分页列表等）
 //! - `${key}` — JS 表达式变量（在此实现中作为变量查找）
-//! - `{{expression}}` — 内嵌表达式替换
+//! - `{{expression}}` — 内嵌表达式替换（支持 JS 执行）
+//! - `@js:...` / `<js>...</js>` — 内嵌 JS 执行并替换
 //! - 分页参数：`{page}` / `<page,N1,N2,...>` 自动递增
 //! - 编码管道：`|urlencode`、`|base64`、`|md5`
 //! - POST body 模板：JSON/Form body 中的变量替换
 //! - 请求配置提取：`@Header:{key:value}`、`@Body:{json}` 格式
-//! - URL 参数解析（method, headers, body, charset 等）
+//! - URL 参数解析（method, headers, body, charset, webView, js 等）
 //! - 基础 URL 拼接与绝对路径解析
+//! - data: URI 解析（base64 编码内容提取）
+//! - WebView 请求模式标记（由上层 Flutter 侧处理实际加载）
+//! - bookName/title 等内置变量支持
+//! - getByteArrayAwait 流式读取（data URI 直接解码）
 
 use std::collections::HashMap;
 
@@ -20,6 +25,8 @@ use md5::{Digest, Md5};
 use regex::Regex;
 
 use legado_core::LegadoResult;
+
+use crate::analyze_rule::JsExecutor;
 
 /// HTTP 请求方法
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +48,46 @@ pub struct UrlOption {
     pub timeout: Option<u64>,
     pub proxy: Option<String>,
     pub follow_redirects: Option<bool>,
+    /// 是否使用 WebView 加载（由 Flutter 侧处理）
+    pub use_web_view: bool,
+    /// WebView 中执行的 JS 脚本
+    pub web_js: Option<String>,
+    /// WebView 等待页面加载完毕的延迟时间（毫秒）
+    pub web_view_delay_time: u64,
+    /// 解析完 URL 参数时执行的 JS（执行结果赋值给 url）
+    pub js: Option<String>,
+    /// 得到访问结果后执行的 JS（对结果进行二次处理，返回为 body）
+    pub body_js: Option<String>,
+    /// 自定义域名 IP
+    pub dns_ip: Option<String>,
+    /// 服务器 ID
+    pub server_id: Option<i64>,
+}
+
+/// data: URI 解析结果
+#[derive(Debug, Clone, PartialEq)]
+pub struct DataUriContent {
+    /// MIME 类型（如 text/html, image/png）
+    pub mime_type: String,
+    /// 字符集（如 utf-8），默认 utf-8
+    pub charset: String,
+    /// 是否为 base64 编码
+    pub is_base64: bool,
+    /// 解码后的原始内容字节
+    pub data: Vec<u8>,
+}
+
+/// 模板上下文：提供 bookName/title 等内置变量
+#[derive(Debug, Clone, Default)]
+pub struct TemplateContext {
+    /// 书名
+    pub book_name: Option<String>,
+    /// 章节标题
+    pub title: Option<String>,
+    /// 作者
+    pub author: Option<String>,
+    /// 额外变量
+    pub extra: HashMap<String, String>,
 }
 
 /// URL 分析器
@@ -77,6 +124,22 @@ pub struct AnalyzeUrl {
     encoded_form: Option<String>,
     /// 编码后的查询字符串
     encoded_query: Option<String>,
+    /// 是否使用 WebView 加载
+    use_web_view: bool,
+    /// WebView 中执行的 JS 脚本
+    web_js: Option<String>,
+    /// WebView 等待延迟时间（毫秒）
+    web_view_delay_time: u64,
+    /// 解析完 URL 后执行的 JS（结果赋值给 url）
+    url_js: Option<String>,
+    /// 得到访问结果后执行的 JS（对 body 二次处理）
+    body_js: Option<String>,
+    /// 自定义域名 IP
+    dns_ip: Option<String>,
+    /// 服务器 ID
+    server_id: Option<i64>,
+    /// 响应类型（如 hex 表示返回十六进制编码）
+    response_type: Option<String>,
 }
 
 impl AnalyzeUrl {
@@ -112,6 +175,14 @@ impl AnalyzeUrl {
             query_params: HashMap::new(),
             encoded_form: None,
             encoded_query: None,
+            use_web_view: false,
+            web_js: None,
+            web_view_delay_time: 0,
+            url_js: None,
+            body_js: None,
+            dns_ip: None,
+            server_id: None,
+            response_type: None,
         };
 
         instance.init_url(key, page);
@@ -146,6 +217,14 @@ impl AnalyzeUrl {
             query_params: HashMap::new(),
             encoded_form: None,
             encoded_query: None,
+            use_web_view: false,
+            web_js: None,
+            web_view_delay_time: 0,
+            url_js: None,
+            body_js: None,
+            dns_ip: None,
+            server_id: None,
+            response_type: None,
         };
 
         // 1. 提取 @Header 和 @Body 配置
@@ -611,6 +690,54 @@ impl AnalyzeUrl {
             if let Some(f) = obj.get("followRedirects").and_then(|v| v.as_bool()) {
                 option.follow_redirects = Some(f);
             }
+
+            // WebView 相关选项
+            if let Some(wv) = obj.get("webView") {
+                option.use_web_view = match wv {
+                    serde_json::Value::Bool(b) => *b,
+                    serde_json::Value::String(s) => {
+                        !s.is_empty() && s != "false" && s != "0"
+                    }
+                    serde_json::Value::Null => false,
+                    _ => true,
+                };
+            }
+
+            if let Some(wj) = obj.get("webJs").and_then(|v| v.as_str()) {
+                if !wj.is_empty() {
+                    option.web_js = Some(wj.to_string());
+                }
+            }
+
+            if let Some(dt) = obj.get("webViewDelayTime").and_then(|v| v.as_u64()) {
+                option.web_view_delay_time = dt;
+            }
+
+            // 解析完 URL 后执行的 JS
+            if let Some(js) = obj.get("js").and_then(|v| v.as_str()) {
+                if !js.is_empty() {
+                    option.js = Some(js.to_string());
+                }
+            }
+
+            // 对响应 body 二次处理的 JS
+            if let Some(bjs) = obj.get("bodyJs").and_then(|v| v.as_str()) {
+                if !bjs.is_empty() {
+                    option.body_js = Some(bjs.to_string());
+                }
+            }
+
+            // 自定义域名 IP
+            if let Some(dns) = obj.get("dnsIp").and_then(|v| v.as_str()) {
+                if !dns.is_empty() {
+                    option.dns_ip = Some(dns.trim().to_string());
+                }
+            }
+
+            // 服务器 ID
+            if let Some(sid) = obj.get("serverID").and_then(|v| v.as_i64()) {
+                option.server_id = Some(sid);
+            }
         }
 
         Ok(option)
@@ -635,6 +762,26 @@ impl AnalyzeUrl {
             self.proxy = option.proxy;
         }
         self.follow_redirects = option.follow_redirects;
+        // WebView 相关
+        self.use_web_view = option.use_web_view;
+        if option.web_js.is_some() {
+            self.web_js = option.web_js;
+        }
+        self.web_view_delay_time = option.web_view_delay_time;
+        // JS 相关
+        if option.js.is_some() {
+            self.url_js = option.js;
+        }
+        if option.body_js.is_some() {
+            self.body_js = option.body_js;
+        }
+        // 其他
+        if option.dns_ip.is_some() {
+            self.dns_ip = option.dns_ip;
+        }
+        if option.server_id.is_some() {
+            self.server_id = option.server_id;
+        }
     }
 
     /// 将相对 URL 转为绝对 URL
@@ -685,6 +832,232 @@ impl AnalyzeUrl {
         } else {
             format!("{}/{}", base, relative)
         }
+    }
+
+    // ========== JS 内嵌执行 ==========
+
+    /// 处理 `@js:...` 和 `<js>...</js>` 内嵌 JS 执行
+    ///
+    /// 参考 Kotlin `analyzeJs()` 方法：
+    /// - 匹配 `<js>...</js>` 或 `@js:...` 模式
+    /// - 用 JS 引擎执行表达式，将结果替换回 URL
+    /// - 支持 `@result` 引用上一步结果
+    pub fn analyze_js(rule: &str, js_executor: &dyn JsExecutor) -> String {
+        // 匹配 <js>...</js> 或 @js:... 模式
+        let js_re = Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap();
+
+        let mut result = rule.to_string();
+        let mut start = 0;
+        let rule_chars = rule;
+
+        for caps in js_re.captures_iter(rule_chars) {
+            let full_match = caps.get(0).unwrap();
+            let match_start = full_match.start();
+            let match_end = full_match.end();
+
+            // 处理 JS 块之前的文本
+            if match_start > start {
+                let prefix = rule[start..match_start].trim();
+                if !prefix.is_empty() {
+                    result = prefix.replace("@result", &result);
+                }
+            }
+
+            // 提取 JS 代码（group(1) 是 <js>...</js>，group(2) 是 @js:...）
+            let js_code = caps
+                .get(1)
+                .or_else(|| caps.get(2))
+                .map(|m| m.as_str())
+                .unwrap_or("");
+
+            // 执行 JS 并获取结果
+            match js_executor.execute_js(js_code) {
+                Ok(js_result) => {
+                    result = js_result;
+                }
+                Err(_) => {
+                    // JS 执行失败，保留原始结果
+                }
+            }
+
+            start = match_end;
+        }
+
+        // 处理最后一个 JS 块之后的文本
+        if rule.len() > start {
+            let suffix = rule[start..].trim();
+            if !suffix.is_empty() {
+                result = suffix.replace("@result", &result);
+            }
+        }
+
+        result
+    }
+
+    /// 使用 JS 执行器解析 URL 模板（增强版 parse）
+    ///
+    /// 在标准 parse 流程前，先执行 `@js:`/`<js>` 内嵌 JS，
+    /// 并在 `{{expression}}` 中使用 JS 引擎执行复杂表达式。
+    pub fn parse_with_js(
+        template: &str,
+        variables: &HashMap<String, String>,
+        page: i32,
+        js_executor: &dyn JsExecutor,
+    ) -> LegadoResult<Self> {
+        // 1. 先执行 @js:/<js> 内嵌 JS
+        let processed = Self::analyze_js(template, js_executor);
+
+        // 2. 处理 {{expression}} 内嵌表达式（用 JS 执行复杂表达式）
+        let processed = Self::replace_inner_expressions_with_js(&processed, variables, js_executor);
+
+        // 3. 调用标准 parse 流程
+        Self::parse(&processed, variables, page)
+    }
+
+    /// 使用模板上下文解析 URL（支持 bookName/title 等内置变量）
+    ///
+    /// 将 TemplateContext 中的内置变量合并到 variables 中，
+    /// 然后调用标准 parse 流程。
+    pub fn parse_with_context(
+        template: &str,
+        variables: &HashMap<String, String>,
+        context: &TemplateContext,
+        page: i32,
+    ) -> LegadoResult<Self> {
+        // 合并内置变量到 variables
+        let mut merged = variables.clone();
+        if let Some(ref name) = context.book_name {
+            merged.insert("bookName".to_string(), name.clone());
+        }
+        if let Some(ref title) = context.title {
+            merged.insert("title".to_string(), title.clone());
+        }
+        if let Some(ref author) = context.author {
+            merged.insert("author".to_string(), author.clone());
+        }
+        // 合并额外变量
+        for (k, v) in &context.extra {
+            merged.insert(k.clone(), v.clone());
+        }
+
+        Self::parse(template, &merged, page)
+    }
+
+    /// 使用 JS 执行器替换 `{{expression}}` 内嵌表达式
+    ///
+    /// 对于简单变量名直接查找替换，对于复杂表达式用 JS 引擎执行。
+    fn replace_inner_expressions_with_js(
+        template: &str,
+        variables: &HashMap<String, String>,
+        js_executor: &dyn JsExecutor,
+    ) -> String {
+        if !template.contains("{{") || !template.contains("}}") {
+            return template.to_string();
+        }
+
+        let re = Regex::new(r"\{\{(.+?)\}\}").unwrap();
+        re.replace_all(template, |caps: &regex::Captures| {
+            let expr = caps[1].trim();
+            // 简单变量名直接替换
+            if expr
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+            {
+                variables.get(expr).cloned().unwrap_or_default()
+            } else {
+                // 复杂表达式：用 JS 引擎执行
+                // 先构建变量注入前缀
+                let mut js_code = String::new();
+                for (k, v) in variables {
+                    // 转义单引号
+                    let escaped = v.replace('\\', "\\\\").replace('\'', "\\'");
+                    js_code.push_str(&format!("var {} = '{}';\n", k, escaped));
+                }
+                js_code.push_str(expr);
+
+                match js_executor.execute_js(&js_code) {
+                    Ok(result) => result,
+                    Err(_) => caps[0].to_string(),
+                }
+            }
+        })
+        .to_string()
+    }
+
+    // ========== data: URI 解析 ==========
+
+    /// 解析 data: URI
+    ///
+    /// 支持格式：`data:[<mediatype>][;base64],<data>`
+    /// 参考 Kotlin `getByteArrayIfDataUri()` 和 `AppPattern.dataUriRegex`
+    ///
+    /// # 示例
+    /// - `data:text/html;base64,PGh0bWw+` → mime=text/html, base64 解码
+    /// - `data:text/plain;charset=utf-8,hello` → mime=text/plain, 纯文本
+    /// - `data:image/png;base64,iVBOR...` → mime=image/png, base64 解码
+    pub fn parse_data_uri(uri: &str) -> Option<DataUriContent> {
+        if !uri.starts_with("data:") {
+            return None;
+        }
+
+        // 去掉 "data:" 前缀
+        let rest = &uri[5..];
+
+        // 查找数据分隔符 ','
+        let comma_pos = rest.find(',')?;
+        let meta = &rest[..comma_pos];
+        let data_part = &rest[comma_pos + 1..];
+
+        // 解析 meta 部分：[<mediatype>][;charset=xxx][;base64]
+        let mut mime_type = "text/plain".to_string();
+        let mut charset = "utf-8".to_string();
+        let mut is_base64 = false;
+
+        for segment in meta.split(';') {
+            let segment = segment.trim();
+            if segment == "base64" {
+                is_base64 = true;
+            } else if let Some(cs) = segment.strip_prefix("charset=") {
+                charset = cs.to_string();
+            } else if !segment.is_empty() && segment.contains('/') {
+                mime_type = segment.to_string();
+            }
+        }
+
+        // 解码数据
+        let data = if is_base64 {
+            base64::engine::general_purpose::STANDARD
+                .decode(data_part.as_bytes())
+                .ok()?
+        } else {
+            // URL 编码的纯文本
+            urlencoding::decode(data_part)
+                .map(|s| s.into_owned().into_bytes())
+                .unwrap_or_else(|_| data_part.as_bytes().to_vec())
+        };
+
+        Some(DataUriContent {
+            mime_type,
+            charset,
+            is_base64,
+            data,
+        })
+    }
+
+    /// 获取 URL 的字节内容（等价于 Kotlin `getByteArrayAwait`）
+    ///
+    /// 如果 URL 是 data: URI，直接解码返回内容；
+    /// 否则返回 None，表示需要网络层处理。
+    pub fn get_byte_array_if_data_uri(&self) -> Option<Vec<u8>> {
+        if !self.url_no_query.starts_with("data:") {
+            return None;
+        }
+        Self::parse_data_uri(&self.url_no_query).map(|c| c.data)
+    }
+
+    /// 判断当前 URL 是否为 data: URI
+    pub fn is_data_uri(&self) -> bool {
+        self.url_no_query.starts_with("data:")
     }
 
     // ========== 公共访问器 ==========
@@ -755,6 +1128,46 @@ impl AnalyzeUrl {
 
     pub fn encoded_query(&self) -> Option<&str> {
         self.encoded_query.as_deref()
+    }
+
+    /// 是否使用 WebView 加载
+    pub fn use_web_view(&self) -> bool {
+        self.use_web_view
+    }
+
+    /// WebView 中执行的 JS 脚本
+    pub fn web_js(&self) -> Option<&str> {
+        self.web_js.as_deref()
+    }
+
+    /// WebView 等待延迟时间（毫秒）
+    pub fn web_view_delay_time(&self) -> u64 {
+        self.web_view_delay_time
+    }
+
+    /// 解析完 URL 后执行的 JS
+    pub fn url_js(&self) -> Option<&str> {
+        self.url_js.as_deref()
+    }
+
+    /// 对响应 body 二次处理的 JS
+    pub fn body_js(&self) -> Option<&str> {
+        self.body_js.as_deref()
+    }
+
+    /// 自定义域名 IP
+    pub fn dns_ip(&self) -> Option<&str> {
+        self.dns_ip.as_deref()
+    }
+
+    /// 服务器 ID
+    pub fn server_id(&self) -> Option<i64> {
+        self.server_id
+    }
+
+    /// 响应类型
+    pub fn response_type(&self) -> Option<&str> {
+        self.response_type.as_deref()
     }
 }
 
@@ -1073,5 +1486,360 @@ mod tests {
 
         let url = AnalyzeUrl::parse("https://example.com/books/<category>/list", &vars, 1).unwrap();
         assert_eq!(url.url(), "https://example.com/books/fiction/list");
+    }
+
+    // --- 16. data: URI 解析 ---
+    #[test]
+    fn test_parse_data_uri_base64() {
+        // "hello" 的 base64 编码是 "aGVsbG8="
+        let uri = "data:text/plain;base64,aGVsbG8=";
+        let result = AnalyzeUrl::parse_data_uri(uri).unwrap();
+        assert_eq!(result.mime_type, "text/plain");
+        assert_eq!(result.charset, "utf-8");
+        assert!(result.is_base64);
+        assert_eq!(result.data, b"hello");
+    }
+
+    #[test]
+    fn test_parse_data_uri_html_base64() {
+        // "<html>" 的 base64 编码是 "PGh0bWw+"
+        let uri = "data:text/html;base64,PGh0bWw+";
+        let result = AnalyzeUrl::parse_data_uri(uri).unwrap();
+        assert_eq!(result.mime_type, "text/html");
+        assert!(result.is_base64);
+        assert_eq!(result.data, b"<html>");
+    }
+
+    #[test]
+    fn test_parse_data_uri_plain_text() {
+        let uri = "data:text/plain;charset=utf-8,hello%20world";
+        let result = AnalyzeUrl::parse_data_uri(uri).unwrap();
+        assert_eq!(result.mime_type, "text/plain");
+        assert_eq!(result.charset, "utf-8");
+        assert!(!result.is_base64);
+        assert_eq!(result.data, b"hello world");
+    }
+
+    #[test]
+    fn test_parse_data_uri_not_data() {
+        assert!(AnalyzeUrl::parse_data_uri("https://example.com").is_none());
+    }
+
+    #[test]
+    fn test_parse_data_uri_image_png() {
+        // 1x1 像素 PNG 的 base64
+        let uri = "data:image/png;base64,iVBORw0KGgo=";
+        let result = AnalyzeUrl::parse_data_uri(uri).unwrap();
+        assert_eq!(result.mime_type, "image/png");
+        assert!(result.is_base64);
+    }
+
+    // --- 17. is_data_uri 和 get_byte_array_if_data_uri ---
+    #[test]
+    fn test_is_data_uri() {
+        let url = AnalyzeUrl::new(
+            "data:text/plain;base64,aGVsbG8=",
+            None,
+            None,
+            "",
+            None,
+        );
+        assert!(url.is_data_uri());
+        let bytes = url.get_byte_array_if_data_uri().unwrap();
+        assert_eq!(bytes, b"hello");
+    }
+
+    #[test]
+    fn test_not_data_uri() {
+        let url = AnalyzeUrl::new("https://example.com/page", None, None, "", None);
+        assert!(!url.is_data_uri());
+        assert!(url.get_byte_array_if_data_uri().is_none());
+    }
+
+    // --- 18. WebView 选项解析 ---
+    #[test]
+    fn test_webview_option_true() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/page,{"webView":true,"webJs":"document.body.innerHTML","webViewDelayTime":1000}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert!(url.use_web_view());
+        assert_eq!(url.web_js(), Some("document.body.innerHTML"));
+        assert_eq!(url.web_view_delay_time(), 1000);
+    }
+
+    #[test]
+    fn test_webview_option_string() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/page,{"webView":"true"}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert!(url.use_web_view());
+    }
+
+    #[test]
+    fn test_webview_option_false() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/page,{"webView":false}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert!(!url.use_web_view());
+    }
+
+    #[test]
+    fn test_webview_option_string_false() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/page,{"webView":"false"}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert!(!url.use_web_view());
+    }
+
+    // --- 19. UrlOption 新增字段解析 ---
+    #[test]
+    fn test_url_option_js_field() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/api,{"js":"url + '/v2'"}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert_eq!(url.url_js(), Some("url + '/v2'"));
+    }
+
+    #[test]
+    fn test_url_option_body_js_field() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/api,{"bodyJs":"result.replace('old','new')"}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert_eq!(url.body_js(), Some("result.replace('old','new')"));
+    }
+
+    #[test]
+    fn test_url_option_dns_ip_field() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/api,{"dnsIp":"1.2.3.4"}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert_eq!(url.dns_ip(), Some("1.2.3.4"));
+    }
+
+    #[test]
+    fn test_url_option_server_id_field() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/api,{"serverID":42}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert_eq!(url.server_id(), Some(42));
+    }
+
+    // --- 20. JS 内嵌执行 (analyze_js) ---
+
+    /// 测试用 Mock JS 执行器
+    struct MockJsExecutor;
+
+    impl crate::analyze_rule::JsExecutor for MockJsExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            // 简单模拟：如果包含 "1+1" 返回 "2"
+            if js_code.contains("1+1") {
+                Ok("2".to_string())
+            } else if js_code.contains("'hello'+' world'") {
+                Ok("hello world".to_string())
+            } else if js_code.contains("url") {
+                Ok("https://result.example.com".to_string())
+            } else {
+                Ok(js_code.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn test_analyze_js_at_js_syntax() {
+        let executor = MockJsExecutor;
+        // @js: 语法：整个 URL 是 JS 表达式
+        let result = AnalyzeUrl::analyze_js("@js:1+1", &executor);
+        assert_eq!(result, "2");
+    }
+
+    #[test]
+    fn test_analyze_js_tag_syntax() {
+        let executor = MockJsExecutor;
+        // <js>...</js> 语法
+        let result = AnalyzeUrl::analyze_js("<js>1+1</js>", &executor);
+        assert_eq!(result, "2");
+    }
+
+    #[test]
+    fn test_analyze_js_with_result_ref() {
+        let executor = MockJsExecutor;
+        // <js>...</js> 之间的文本中的 @result 会被替换为上一步 JS 执行结果
+        // 第一个 <js>1+1</js> 执行得到 "2"
+        // 中间文本 "https://@result.com" 中的 @result 被替换为 "2"
+        let result = AnalyzeUrl::analyze_js("<js>1+1</js>https://@result.com", &executor);
+        assert_eq!(result, "https://2.com");
+    }
+
+    #[test]
+    fn test_analyze_js_no_js() {
+        let executor = MockJsExecutor;
+        // 没有 JS 标记，原样返回
+        let result = AnalyzeUrl::analyze_js("https://example.com/page", &executor);
+        assert_eq!(result, "https://example.com/page");
+    }
+
+    // --- 21. parse_with_js ---
+    #[test]
+    fn test_parse_with_js() {
+        let executor = MockJsExecutor;
+        let vars = HashMap::new();
+        let url = AnalyzeUrl::parse_with_js("@js:1+1", &vars, 1, &executor).unwrap();
+        // JS 执行结果 "2" 作为 URL
+        assert_eq!(url.url(), "2");
+    }
+
+    // --- 22. parse_with_context (bookName/title 内置变量) ---
+    #[test]
+    fn test_parse_with_context_book_name() {
+        let vars = HashMap::new();
+        let ctx = TemplateContext {
+            book_name: Some("Rust编程指南".to_string()),
+            title: None,
+            author: None,
+            extra: HashMap::new(),
+        };
+
+        let url =
+            AnalyzeUrl::parse_with_context("https://example.com/search?q={bookName}", &vars, &ctx, 1)
+                .unwrap();
+        assert!(url.url().contains("Rust%E7%BC%96%E7%A8%8B%E6%8C%87%E5%8D%97"));
+    }
+
+    #[test]
+    fn test_parse_with_context_title() {
+        let vars = HashMap::new();
+        let ctx = TemplateContext {
+            book_name: None,
+            title: Some("第一章".to_string()),
+            author: None,
+            extra: HashMap::new(),
+        };
+
+        let url =
+            AnalyzeUrl::parse_with_context("https://example.com/chapter?t={title}", &vars, &ctx, 1)
+                .unwrap();
+        assert!(url.url().contains("%E7%AC%AC%E4%B8%80%E7%AB%A0"));
+    }
+
+    #[test]
+    fn test_parse_with_context_author() {
+        let vars = HashMap::new();
+        let ctx = TemplateContext {
+            book_name: None,
+            title: None,
+            author: Some("张三".to_string()),
+            extra: HashMap::new(),
+        };
+
+        let url =
+            AnalyzeUrl::parse_with_context("https://example.com/author?a={author}", &vars, &ctx, 1)
+                .unwrap();
+        assert!(url.url().contains("%E5%BC%A0%E4%B8%89"));
+    }
+
+    #[test]
+    fn test_parse_with_context_extra_vars() {
+        let vars = HashMap::new();
+        let mut extra = HashMap::new();
+        extra.insert("customKey".to_string(), "customValue".to_string());
+        let ctx = TemplateContext {
+            book_name: None,
+            title: None,
+            author: None,
+            extra,
+        };
+
+        let url = AnalyzeUrl::parse_with_context(
+            "https://example.com/api?k={customKey}",
+            &vars,
+            &ctx,
+            1,
+        )
+        .unwrap();
+        assert!(url.url().contains("k=customValue"));
+    }
+
+    #[test]
+    fn test_parse_with_context_merges_variables() {
+        let mut vars = HashMap::new();
+        vars.insert("page_size".to_string(), "20".to_string());
+        let ctx = TemplateContext {
+            book_name: Some("测试书".to_string()),
+            title: None,
+            author: None,
+            extra: HashMap::new(),
+        };
+
+        let url = AnalyzeUrl::parse_with_context(
+            "https://example.com/search?q={bookName}&size={page_size}",
+            &vars,
+            &ctx,
+            1,
+        )
+        .unwrap();
+        assert!(url.url().contains("size=20"));
+        assert!(url.url().contains("q="));
+    }
+
+    // --- 23. 综合场景：WebView + POST ---
+    #[test]
+    fn test_webview_post_combined() {
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/api,{"method":"POST","body":"key=val","webView":true,"webJs":"document.querySelector('#content').innerHTML","webViewDelayTime":500}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert_eq!(url.method(), &RequestMethod::Post);
+        assert!(url.use_web_view());
+        assert_eq!(
+            url.web_js(),
+            Some("document.querySelector('#content').innerHTML")
+        );
+        assert_eq!(url.web_view_delay_time(), 500);
+        assert_eq!(url.body(), Some("key=val"));
+    }
+
+    // --- 24. data: URI 在 parse 流程中的处理 ---
+    #[test]
+    fn test_data_uri_in_parse() {
+        let vars = HashMap::new();
+        let url = AnalyzeUrl::parse("data:text/html;base64,PGh0bWw+", &vars, 1).unwrap();
+        assert!(url.is_data_uri());
+        let bytes = url.get_byte_array_if_data_uri().unwrap();
+        assert_eq!(bytes, b"<html>");
     }
 }

@@ -76,6 +76,7 @@ fn api_routes() -> Router<Arc<AppState>> {
         // TTS 文本转语音
         .route("/tts/speak", post(handlers::tts::speak))
         .route("/tts/engines", get(handlers::tts::list_engines))
+        .route("/tts/synthesize", post(handlers::tts::synthesize_by_id))
         // 听书音频播放
         .route("/audio/chapters", post(handlers::audio::get_chapters))
         .route("/audio/speak", post(handlers::audio::speak))

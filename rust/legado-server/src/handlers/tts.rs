@@ -11,6 +11,7 @@ use std::sync::Arc;
 use crate::error::ApiError;
 use crate::state::AppState;
 use legado_core::LegadoError;
+use legado_db::HttpTtsRepository;
 
 /// TTS 请求体
 #[derive(Debug, Deserialize)]
@@ -128,25 +129,111 @@ pub async fn speak(
     }))
 }
 
-/// TTS 引擎配置
+/// TTS 引擎配置（从数据库 http_tts 表读取）
 #[derive(Debug, Serialize)]
 pub struct TtsEngine {
+    /// 引擎 ID
+    pub id: i64,
+    /// 引擎名称
     pub name: String,
+    /// URL 模板（含 `{speakText}` 占位符）
     pub url_template: String,
+    /// 返回音频的 MIME 类型
+    pub content_type: String,
+    /// 是否启用
+    pub is_enabled: bool,
 }
 
 /// GET /api/tts/engines — 列出可用的 TTS 引擎配置
 ///
-/// 当前返回预设引擎列表，后续可从数据库查询。
+/// 从数据库 http_tts 表读取已启用的引擎列表。
 pub async fn list_engines(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<TtsEngine>>, ApiError> {
-    // 预设 TTS 引擎示例（后续可从 DB http_tts 表加载）
-    let engines = vec![TtsEngine {
-        name: "示例 TTS 引擎".to_string(),
-        url_template: "https://tts.example.com/speak?text={speakText}".to_string(),
-    }];
+    let db = state.db.lock().await;
+    let repo = HttpTtsRepository::new(db.connection());
+    let list = repo.find_enabled()?;
+    let engines = list
+        .into_iter()
+        .map(|t| TtsEngine {
+            id: t.id,
+            name: t.name,
+            url_template: t.url,
+            content_type: t.content_type,
+            is_enabled: t.is_enabled,
+        })
+        .collect();
     Ok(Json(engines))
+}
+
+/// POST /api/tts/synthesize — 使用指定引擎 ID 合成语音
+///
+/// 从数据库查找引擎配置，替换 URL 模板中的 `{speakText}` 占位符后请求音频。
+#[derive(Debug, Deserialize)]
+pub struct SynthesizeRequest {
+    /// 引擎 ID（http_tts 表主键）
+    pub engine_id: i64,
+    /// 要合成的文本
+    pub text: String,
+}
+
+/// POST /api/tts/synthesize — 根据引擎 ID 合成语音
+pub async fn synthesize_by_id(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SynthesizeRequest>,
+) -> Result<Json<TtsResponse>, ApiError> {
+    // 从数据库查找引擎配置
+    let engine_url = {
+        let db = state.db.lock().await;
+        let repo = HttpTtsRepository::new(db.connection());
+        let engine = repo
+            .find_by_id(req.engine_id)?
+            .ok_or_else(|| {
+                ApiError(LegadoError::Internal(format!(
+                    "TTS 引擎不存在: id={}",
+                    req.engine_id
+                )))
+            })?;
+        if !engine.is_enabled {
+            return Err(ApiError(LegadoError::Internal(format!(
+                "TTS 引擎已禁用: id={}",
+                req.engine_id
+            ))));
+        }
+        engine.url
+    };
+
+    // 构建 TTS URL：替换 {speakText} 占位符
+    let encoded_text = urlencoding::encode(&req.text);
+    let url = engine_url.replace("{speakText}", &encoded_text);
+
+    // 发送 HTTP 请求获取音频
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| ApiError(LegadoError::Network(format!("TTS 请求失败: {e}"))))?;
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("audio/mpeg")
+        .to_string();
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| ApiError(LegadoError::Network(format!("TTS 读取响应失败: {e}"))))?;
+
+    let audio_data = STANDARD.encode(&bytes);
+
+    Ok(Json(TtsResponse {
+        audio_url: None,
+        audio_data: Some(audio_data),
+        content_type,
+    }))
 }
 
 /// 辅助：向 URL 追加 query 参数
@@ -210,11 +297,16 @@ mod tests {
     #[test]
     fn test_tts_engine_serialize() {
         let engine = TtsEngine {
+            id: 1,
             name: "Test".to_string(),
             url_template: "https://example.com/{speakText}".to_string(),
+            content_type: "audio/mpeg".to_string(),
+            is_enabled: true,
         };
         let json = serde_json::to_string(&engine).unwrap();
         assert!(json.contains("{speakText}"));
+        assert!(json.contains("\"id\":1"));
+        assert!(json.contains("\"is_enabled\":true"));
     }
 
     #[test]

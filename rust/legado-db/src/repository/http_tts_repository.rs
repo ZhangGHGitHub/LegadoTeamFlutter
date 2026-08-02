@@ -95,6 +95,24 @@ impl<'a> HttpTtsRepository<'a> {
         Ok(affected > 0)
     }
 
+    /// 获取所有已启用的 TTS 源
+    pub fn find_enabled(&self) -> LegadoResult<Vec<HttpTts>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, name, url, content_type, is_enabled, created_at
+                 FROM http_tts WHERE is_enabled = 1 ORDER BY created_at DESC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let rows = stmt
+            .query_map([], row_to_http_tts)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
     /// 设置启用/禁用状态
     pub fn set_enabled(&self, id: i64, enabled: bool) -> LegadoResult<bool> {
         let affected = self

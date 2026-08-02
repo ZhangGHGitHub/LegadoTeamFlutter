@@ -96,6 +96,8 @@ pub async fn check_batch(
                         toc_error: Some("skipped".to_string()),
                         content_error: Some("skipped".to_string()),
                         total_time_ms: 0,
+                        captcha: None,
+                        redirect: None,
                     };
                 }
             };
@@ -118,6 +120,8 @@ pub async fn check_batch(
                     toc_error: Some("skipped".to_string()),
                     content_error: Some("skipped".to_string()),
                     total_time_ms: 0,
+                    captcha: None,
+                    redirect: None,
                 });
             }
         }

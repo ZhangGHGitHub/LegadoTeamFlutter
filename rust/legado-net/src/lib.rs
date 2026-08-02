@@ -53,7 +53,7 @@ pub use rule_update_client::{
     fetch_subscription, merge_subscription, should_update, MergeResult, RuleSubscription,
     UpdateResult,
 };
-pub use source_checker::{CheckResult, CheckerConfig, SourceChecker};
+pub use source_checker::{CaptchaInfo, CheckResult, CheckerConfig, RedirectInfo, SourceChecker};
 pub use ssl_config::SslConfig;
 pub use url_template::{parse_url_template, ParsedUrl, UrlOption};
 pub use user_agent::{UserAgentMiddleware, UserAgentRotator};
