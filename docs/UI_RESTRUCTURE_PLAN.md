@@ -488,6 +488,15 @@ String mapApiError(Object e) {
 > 联想以客户端对已有历史做前缀过滤实现（对标原版 `flowSearch` UX，无需新 FFI）；
 > **Rust 字段对齐 + `searchHistoryByPrefix` FFI 暴露**已登记至 `API_CONTRACT.md` 需求区，
 > 待 Rust 轨交付后再将历史/联想后端切换为 BookApi。
+>
+> **3.4 跨轨销记（搜索历史后端切换已完成）**：Rust 轨已交付对齐的 `SearchHistoryItem` DTO
+> （序列化为 `word/usage/lastUseTime`，明确对齐 Dart `SearchKeyword`，修复原字段不匹配 bug）与
+> `getSearchHistory`/`searchHistoryByPrefix`/`addSearchKeyword`/`deleteSearchKeyword`/`clearSearchHistory`
+> FFI（`API_CONTRACT.md` 标记 2026-08-01 已交付）。UI 轨随之将 `SearchNotifier` 搜索历史后端从
+> **SharedPreferences 临时方案切换为 BookApi**：`loadHistory` 经 `getSearchHistory` 读取（取 `word`）、
+> `addToHistory` 经 `addSearchKeyword` 持久化（客户端保留去重置顶 + 截断 20 条以统一 Mock/真实后端行为）、
+> `clearHistory` 经 `clearSearchHistory` 清后端；联想仍维持客户端前缀过滤（对标原版 `flowSearch` UX）。
+> 移除 search_notifier 对 `shared_preferences` 的依赖。search_notifier_test 补充 2 个后端切换测试，全量 954 测试通过。
 
 ### Phase 4：设置 / 书源管理（第 8–9 周）
 

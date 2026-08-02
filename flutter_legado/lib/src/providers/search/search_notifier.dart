@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
 import '../providers.dart';
@@ -14,7 +13,7 @@ export 'search_state.dart';
 /// - 调用 BookApi.searchBooks → 接收纯数据 → 更新 immutable State
 /// - 管理 UI 状态（loading/error/results 三态）
 /// - 管理精准搜索筛选（书源/分组选择 → 解析为 sourceUrls）
-/// - 管理搜索历史（SharedPreferences 持久化）
+/// - 管理搜索历史（经 BookApi 持久化至 Rust search_keywords 表）
 /// - 管理输入联想（客户端前缀过滤，对标原版 flowSearch）
 /// - 禁止包含搜索匹配/合并逻辑（由 Rust searchBooks 完成）
 ///
@@ -22,7 +21,7 @@ export 'search_state.dart';
 /// 当前 Rust FFI searchBooks 为一次性返回，故进度仅表现为加载态；
 /// 渐进搜索需 Rust 轨提供 Stream API（见交接文档跨轨需求）。
 class SearchNotifier extends Notifier<SearchState> {
-  static const _historyKey = 'search_history';
+  /// 历史保留上限（UI 展示截断，对标原版）
   static const _maxHistory = 20;
 
   @override
@@ -34,14 +33,22 @@ class SearchNotifier extends Notifier<SearchState> {
 
   // ===== 搜索历史 =====
 
-  /// 加载搜索历史
+  /// 加载搜索历史（经 BookApi.getSearchHistory 从 Rust 读取，取关键词列表）
   Future<void> loadHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    final history = prefs.getStringList(_historyKey) ?? [];
-    state = state.copyWith(searchHistory: history);
+    try {
+      final keywords = await ref.read(bookApiProvider).getSearchHistory();
+      state = state.copyWith(
+        searchHistory: keywords.map((k) => k.word).toList(),
+      );
+    } catch (_) {
+      // 历史加载失败不阻断搜索主流程，保持空历史
+    }
   }
 
-  /// 添加到搜索历史（去重置顶，限 20 条，持久化）
+  /// 添加到搜索历史（客户端去重置顶 + 截断 20 条，并经 BookApi 持久化）
+  ///
+  /// 客户端维护去重/截断后的展示列表（即时 UI 反馈，且 Mock/真实后端行为一致）；
+  /// Rust `addSearchKeyword` 负责持久化（真实后端按 keyword 去重）。
   Future<void> addToHistory(String keyword) async {
     final history = [...state.searchHistory];
     history.remove(keyword);
@@ -49,15 +56,21 @@ class SearchNotifier extends Notifier<SearchState> {
     final trimmed =
         history.length > _maxHistory ? history.sublist(0, _maxHistory) : history;
     state = state.copyWith(searchHistory: trimmed);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_historyKey, trimmed);
+    try {
+      await ref.read(bookApiProvider).addSearchKeyword(keyword, '');
+    } catch (_) {
+      // 持久化失败不阻断 UI 历史展示
+    }
   }
 
-  /// 清空搜索历史
+  /// 清空搜索历史（同步清本地状态并经 BookApi 清后端）
   Future<void> clearHistory() async {
     state = state.copyWith(searchHistory: []);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_historyKey);
+    try {
+      await ref.read(bookApiProvider).clearSearchHistory();
+    } catch (_) {
+      // 后端清空失败不阻断 UI
+    }
   }
 
   /// 更新输入框实时文本（驱动联想过滤，见 [SearchState.suggestions]）

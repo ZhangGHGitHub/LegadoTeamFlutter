@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
@@ -25,8 +24,13 @@ void main() {
   });
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
+    // 搜索历史后端默认桩：空历史 + 持久化/清空 no-op（各测试可覆写 getSearchHistory）
+    when(() => mockApi.getSearchHistory(limit: any(named: 'limit')))
+        .thenAnswer((_) async => []);
+    when(() => mockApi.addSearchKeyword(any(), any()))
+        .thenAnswer((_) async {});
+    when(() => mockApi.clearSearchHistory()).thenAnswer((_) async {});
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );
@@ -105,14 +109,32 @@ void main() {
       expect(readState().searchHistory, isEmpty);
     });
 
-    test('loadHistory 从 SharedPreferences 加载', () async {
-      SharedPreferences.setMockInitialValues({
-        'search_history': ['历史1', '历史2'],
-      });
+    test('loadHistory 从 BookApi 加载（取 SearchKeyword.word）', () async {
+      when(() => mockApi.getSearchHistory(limit: any(named: 'limit')))
+          .thenAnswer((_) async => const [
+                SearchKeyword(word: '历史1'),
+                SearchKeyword(word: '历史2'),
+              ]);
       container.read(searchNotifierProvider);
       await pumpInit(); // build() 自动 loadHistory
 
       expect(readState().searchHistory, equals(['历史1', '历史2']));
+    });
+
+    test('addToHistory 经 BookApi.addSearchKeyword 持久化', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().addToHistory('斗破苍穹');
+      verify(() => mockApi.addSearchKeyword('斗破苍穹', any())).called(1);
+    });
+
+    test('clearHistory 经 BookApi.clearSearchHistory 清后端', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().clearHistory();
+      verify(() => mockApi.clearSearchHistory()).called(1);
     });
   });
 
