@@ -631,7 +631,7 @@ String mapApiError(Object e) {
 > | 优先级 | 界面 | 问题 | 状态 |
 > |--------|------|------|------|
 > | 🔴 P0 | `change_source_screen` | 直接调 `bridge.sourceSwitchSearch/Apply`，绕过 BookApi/Notifier（架构越界） | ✅ 已完成 |
-> | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | ⛔ 跨轨阻塞（已登记 `searchCover` 契约需求，见 6.2） |
+> | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | 🟡 Mock 先行（数据流架构已就位，待 Rust `searchCover` 切换，见 6.4） |
 > | 🟡 P2 | `dict_screen` / `source_login_screen` / `txt_toc_rules_screen` | SharedPreferences/硬编码本地数据，未接后端 | ✅ 已完成（经 `getConfig/setConfig` 迁移，见 6.2） |
 > | ⚪ 清理 | `rss_article_detail_screen` | 依赖服务层 `rust_api.dart`（`RssFeedArticle` 误置于服务层） | ✅ 已完成（模型迁至 models 层，见 6.3） |
 
@@ -683,6 +683,17 @@ String mapApiError(Object e) {
 > 仅暂存本轨类删除 hunk。全量 988 测试通过，改动文件 analyze 0 error/warning。**遗留**：`ReadingStatsToday`/
 > `RustApiException` 仍定义于 `rust_api.dart`，`book_api`（接口）反向依赖 `rust_api`（实现）为既有结构问题，非本次审计项，
 > 待后续统一模型归位时一并处理。
+
+> **6.4 实施决议（P1/dictLookup Mock 先行：UI 侧数据流架构就位）**：经确认实现 Rust FFI 属 Rust 轨职责，且 Rust 轨并行会话
+> 正在改动 `search.rs`/`bridge.rs`/`ffi.rs`/`frb_generated.rs`（searchCover 落点），UI 轨按双轨规范采「Mock 先行」：
+> ① **P1 `change_cover_screen`**：新增 `CoverCandidate` freezed 模型（`models/cover_candidate.dart`，字段 `url`/`width`/
+> `height` 即冻结契约）+ `ChangeCoverNotifier`/`ChangeCoverState`（`providers/change_cover/`），`searchCovers` 以 Mock
+> 数据驱动候选数据流并预留 Rust 切换缝；`change_cover_screen` 重构为 `ConsumerStatefulWidget`，**UI 层不再内联制造假数据**
+> （消除 P1 审计痛点）。Rust 交付 `searchCover` 后仅需将 Notifier 内 `_mockSearch` 替换为 BookApi 调用。② **dictLookup**：
+> `DictNotifier.lookup` 已封装查询职责（本地 `_localDict` 即占位 Mock），架构已就位，无需代码改动，Rust 交付后替换一行即可。
+> ③ **契约细化**：`API_CONTRACT.md` §3 需求 3/4 补全响应 schema（对齐 `CoverCandidate`/`DictEntry`）与错误语义，达可直接实现程度。
+> 新增 7 个单测（CoverCandidate 解析 + ChangeCoverNotifier 搜索/确定性/空值忽略）。全量 995 测试通过，改动文件 analyze 0 issues。
+> **未触碰** `book_api.dart`/`rust_api.dart`（避免破坏 `RustApi implements BookApi` 编译 + 规避并行会话）。
 
 ---
 

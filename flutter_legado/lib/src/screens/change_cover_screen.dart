@@ -3,15 +3,18 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/change_cover/change_cover_notifier.dart';
 import '../widgets/book_cover.dart';
 
 /// 更换封面页面
 ///
 /// 展示当前封面，支持从网络搜索候选封面或从本地选择图片，
 /// 预览确认后通过 [Navigator.pop] 返回所选封面地址。
-class ChangeCoverScreen extends StatefulWidget {
+class ChangeCoverScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book? book;
 
@@ -43,14 +46,12 @@ class ChangeCoverScreen extends StatefulWidget {
       book != null ? (book!.customCoverUrl ?? book!.coverUrl) : currentCover;
 
   @override
-  State<ChangeCoverScreen> createState() => _ChangeCoverScreenState();
+  ConsumerState<ChangeCoverScreen> createState() => _ChangeCoverScreenState();
 }
 
-class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
+class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
   final _searchController = TextEditingController();
-  List<String> _candidates = [];
   String? _selectedUrl;
-  bool _searching = false;
 
   @override
   void initState() {
@@ -66,21 +67,11 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
     super.dispose();
   }
 
-  /// 模拟网络封面搜索，生成候选图片列表
-  Future<void> _searchCovers() async {
-    final keyword = _searchController.text.trim();
-    if (keyword.isEmpty) return;
-    setState(() => _searching = true);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    final base = keyword.hashCode.abs();
-    setState(() {
-      _candidates = List.generate(
-        8,
-        (i) => 'https://picsum.photos/seed/${base + i}/240/320',
-      );
-      _searching = false;
-    });
+  /// 触发网络封面搜索（委托 [ChangeCoverNotifier]，候选数据流经 Riverpod 状态）
+  void _searchCovers() {
+    ref
+        .read(changeCoverNotifierProvider.notifier)
+        .searchCovers(_searchController.text);
   }
 
   /// 从本地相册 / 文件选择封面
@@ -143,6 +134,7 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final coverState = ref.watch(changeCoverNotifierProvider);
     final previewUrl = _selectedUrl ?? widget.effectiveCurrentCover;
 
     return Scaffold(
@@ -174,9 +166,9 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
         padding: const EdgeInsets.only(bottom: 24),
         children: [
           _buildPreview(theme, previewUrl),
-          _buildSearchBar(theme),
+          _buildSearchBar(theme, coverState),
           _buildSectionHeader(theme, '网络封面'),
-          _buildCandidateGrid(theme),
+          _buildCandidateGrid(theme, coverState),
         ],
       ),
     );
@@ -252,7 +244,7 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
     );
   }
 
-  Widget _buildSearchBar(ThemeData theme) {
+  Widget _buildSearchBar(ThemeData theme, ChangeCoverState coverState) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: TextField(
@@ -265,7 +257,7 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
           ),
           suffixIcon: IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _searching ? null : _searchCovers,
+            onPressed: coverState.isSearching ? null : _searchCovers,
           ),
         ),
         onSubmitted: (_) => _searchCovers(),
@@ -285,14 +277,14 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
     );
   }
 
-  Widget _buildCandidateGrid(ThemeData theme) {
-    if (_searching) {
+  Widget _buildCandidateGrid(ThemeData theme, ChangeCoverState coverState) {
+    if (coverState.isSearching) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 40),
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    if (_candidates.isEmpty) {
+    if (coverState.candidates.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 40),
         child: Center(
@@ -317,9 +309,9 @@ class _ChangeCoverScreenState extends State<ChangeCoverScreen> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
-        itemCount: _candidates.length,
+        itemCount: coverState.candidates.length,
         itemBuilder: (context, index) {
-          final url = _candidates[index];
+          final url = coverState.candidates[index].url;
           final selected = url == _selectedUrl;
           return _CandidateTile(
             url: url,
