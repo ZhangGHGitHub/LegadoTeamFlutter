@@ -48,6 +48,27 @@ pub fn explore_fetch_books(source_json: &str, url: &str, page: i32) -> LegadoRes
         return Err(LegadoError::Internal("发现分类 URL 为空".into()));
     }
 
+    // JS 书源分派：spawn_blocking 避免嵌套 runtime 死锁（R1）
+    if source.is_js_source() {
+        let source_clone = source.clone();
+        let url_clone = url.to_string();
+        let values = runtime::block_on(async {
+            tokio::task::spawn_blocking(move || {
+                let mut orchestrator = crate::api::web_book::build_js_orchestrator(&source_clone)?
+                    .ok_or_else(|| LegadoError::Internal("JS 书源缺少 mainJs".into()))?;
+                orchestrator.explore(&source_clone, &url_clone, page)
+            })
+            .await
+            .map_err(|e| LegadoError::Internal(format!("JS 发现任务异常: {e}")))?
+        })?;
+        let results = crate::api::web_book::convert_js_search_results(
+            values,
+            &source.book_source_url,
+        );
+        return serde_json::to_string(&results).map_err(LegadoError::Serialization);
+    }
+
+    // 规则书源路径
     let results: Vec<WebSearchResult> =
         runtime::block_on(async { explore_books_async(&source, url, page).await })?;
 

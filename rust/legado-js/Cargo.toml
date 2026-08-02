@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 legado-core = { path = "../legado-core" }
+legado-parser = { path = "../legado-parser" }
 
 # rquickjs 是重型依赖（需编译 QuickJS C 代码），设为可选 feature
 # 启用方式: cargo build --features quickjs

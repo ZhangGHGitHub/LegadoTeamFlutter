@@ -42,6 +42,9 @@ abstract class BookApi {
   /// 设置书籍分组
   Future<void> setBookGroup(String bookUrl, int groupId);
 
+  /// 批量导入书籍，返回成功导入的数量
+  Future<int> importBooks(String jsonArray);
+
   // ========== 书源操作 ==========
 
   /// 获取所有书源
@@ -84,6 +87,19 @@ abstract class BookApi {
 
   /// 多源并行搜索
   Future<List<Map<String, dynamic>>> searchMulti(
+    String query, {
+    List<String>? sourceUrls,
+  });
+
+  /// 多源渐进式（流式）搜索
+  ///
+  /// 与 [searchMulti]（一次性返回全部）不同：每完成一个书源即推送一个批次，
+  /// UI 侧可逐源渲染，无需等待最慢书源。流在所有书源完成后自然结束。
+  ///
+  /// 每个元素为一个书源批次 Map，字段：
+  /// `source_index` / `source_url` / `source_name` / `books`(List) /
+  /// `error`(String?) / `finished_count` / `total_count` / `is_last`。
+  Stream<Map<String, dynamic>> searchMultiStream(
     String query, {
     List<String>? sourceUrls,
   });

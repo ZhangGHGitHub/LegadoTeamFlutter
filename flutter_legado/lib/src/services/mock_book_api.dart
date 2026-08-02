@@ -340,6 +340,12 @@ class MockBookApi implements BookApi {
     if (idx >= 0) _books[idx] = _books[idx].copyWith(group: groupId);
   }
 
+  @override
+  Future<int> importBooks(String jsonArray) async {
+    final list = jsonDecode(jsonArray) as List<dynamic>;
+    return list.length;
+  }
+
   // ========== 书源操作 ==========
 
   @override
@@ -432,6 +438,43 @@ class MockBookApi implements BookApi {
       'count': 5,
       'results': <Map<String, dynamic>>[],
     });
+  }
+
+  @override
+  Stream<Map<String, dynamic>> searchMultiStream(
+    String query, {
+    List<String>? sourceUrls,
+  }) async* {
+    const srcNames = ['消消乐听书', '笔趣阁', '起点中文网'];
+    const srcUrls = [
+      'https://www.kaixin7days.com',
+      'https://www.biquge.com.cn',
+      'https://www.qidian.com',
+    ];
+    final total = srcNames.length;
+    for (var i = 0; i < total; i++) {
+      // 模拟逐源完成的渐进推送
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      yield {
+        'source_index': i,
+        'source_url': srcUrls[i],
+        'source_name': srcNames[i],
+        'books': List.generate(2, (j) => {
+          'source_url': srcUrls[i],
+          'source_name': srcNames[i],
+          'book_name': '$query 相关书籍${i * 2 + j + 1}',
+          'author': '作者${i * 2 + j + 1}',
+          'book_url': 'mock://search/$query/${i}_$j',
+          'latest_chapter': '最新章节',
+          'intro': '渐进搜索“$query”的结果。',
+          'cover_url': null,
+        }),
+        'error': null,
+        'finished_count': i + 1,
+        'total_count': total,
+        'is_last': i == total - 1,
+      };
+    }
   }
 
   @override

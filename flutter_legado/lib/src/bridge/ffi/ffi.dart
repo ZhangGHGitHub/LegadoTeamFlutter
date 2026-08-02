@@ -37,6 +37,10 @@ Future<void> bookshelfDelete({required String bookUrl}) =>
 Future<String> bookshelfGet({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiBookshelfGet(bookUrl: bookUrl);
 
+/// 批量导入书籍（JSON 数组），返回成功导入的数量
+Future<int> bookshelfImport({required String jsonArray}) =>
+    RustLib.instance.api.crateFfiFfiBookshelfImport(jsonArray: jsonArray);
+
 /// 更新阅读进度
 Future<void> readerUpdateProgress({
   required String bookUrl,
@@ -108,6 +112,22 @@ Future<String> searchMulti({
 
 /// 取消正在进行的搜索
 Future<void> searchCancel() => RustLib.instance.api.crateFfiFfiSearchCancel();
+
+/// 多源渐进式（流式）搜索
+///
+/// 与 [`search_multi`] 不同：每完成一个书源即通过 `StreamSink` 推送一个结果批次
+/// （JSON 字符串），UI 侧可逐源渲染，无需等待最慢书源。流在所有书源完成后自然结束。
+///
+/// `query` — 搜索关键词
+/// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
+/// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
+Stream<String> searchMultiStream({
+  required String query,
+  required String sourceUrlsJson,
+}) => RustLib.instance.api.crateFfiFfiSearchMultiStream(
+  query: query,
+  sourceUrlsJson: sourceUrlsJson,
+);
 
 /// 获取书籍的章节列表（JSON）
 Future<String> readerGetChapters({required String bookUrl}) =>

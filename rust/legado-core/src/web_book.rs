@@ -41,6 +41,9 @@ pub struct WebChapter {
     pub url: String,
     /// 是否 VIP 章节
     pub is_vip: bool,
+    /// 是否卷章（卷章不检查空内容）
+    #[serde(default)]
+    pub is_volume: bool,
 }
 
 /// 书籍详情
@@ -270,8 +273,10 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         query: &str,
         page: i32,
     ) -> LegadoResult<Vec<WebSearchResult>> {
-        // 校验搜索 URL
-        if source.search_url.as_ref().is_none_or(|u| u.is_empty()) {
+        // 校验搜索 URL（JS 书源的 searchUrl 通常为空，豁免校验）
+        if !source.is_js_source()
+            && source.search_url.as_ref().is_none_or(|u| u.trim().is_empty())
+        {
             return Err(LegadoError::Parser("搜索url不能为空".into()));
         }
         // 校验关键词
@@ -329,13 +334,15 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         source: &BookSource,
         chapter: &WebChapter,
     ) -> LegadoResult<String> {
-        // 校验正文规则
-        let has_content_rule = source
-            .rule_content
-            .as_ref()
-            .is_some_and(|r| r.content.as_ref().is_some_and(|c| !c.is_empty()));
-        if !has_content_rule {
-            return Err(LegadoError::Parser("正文规则为空".into()));
+        // 校验正文规则（JS 书源由脚本直接返回内容，豁免规则校验）
+        if !source.is_js_source() {
+            let has_content_rule = source
+                .rule_content
+                .as_ref()
+                .is_some_and(|r| r.content.as_ref().is_some_and(|c| !c.is_empty()));
+            if !has_content_rule {
+                return Err(LegadoError::Parser("正文规则为空".into()));
+            }
         }
         if chapter.url.is_empty() {
             return Err(LegadoError::Parser("章节URL不能为空".into()));
@@ -372,6 +379,7 @@ impl WebChapter {
             title: title.into(),
             url: url.into(),
             is_vip: false,
+            is_volume: false,
         }
     }
 }

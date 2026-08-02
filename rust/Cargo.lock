@@ -1657,6 +1657,7 @@ version = "0.2.0"
 dependencies = [
  "base64",
  "flutter_rust_bridge",
+ "futures",
  "legado-book",
  "legado-core",
  "legado-db",
@@ -1685,6 +1686,7 @@ dependencies = [
  "jsonpath-rust",
  "legado-core",
  "legado-net",
+ "legado-parser",
  "lru",
  "md-5",
  "percent-encoding",

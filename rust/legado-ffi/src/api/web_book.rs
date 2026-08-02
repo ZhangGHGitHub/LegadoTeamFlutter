@@ -9,10 +9,13 @@
 use std::collections::HashMap;
 
 use legado_core::models::BookSource;
+use legado_core::models::{Book, BookChapter};
 use legado_core::web_book::{
     BookSourceFetcher, WebBookEngine, WebBookInfo, WebChapter, WebSearchResult,
 };
 use legado_core::{LegadoError, LegadoResult};
+use legado_js::js_source::js_source_book::JsSourceBookOrchestrator;
+use legado_js::JsSourceConfig;
 use legado_net::LegadoClient;
 use legado_parser::{AnalyzeUrl, RequestMethod};
 
@@ -97,6 +100,32 @@ impl RealBookSourceFetcher {
         }
         Ok(response.body)
     }
+
+    /// 执行 loginCheckJs 登录检测（规则路径增强）
+    ///
+    /// 参考 Kotlin WebBook.kt 四链路中的 loginCheckJs 双路径模式：
+    /// - 成功路径：HTTP 响应正常时 evalJS(loginCheckJs)
+    /// - 无配置时静默跳过，不影响现有逻辑
+    fn execute_login_check(
+        source: &BookSource,
+        response_body: &str,
+        response_url: &str,
+        response_code: u16,
+    ) -> LegadoResult<()> {
+        let login_check_js = match &source.login_check_js {
+            Some(js) if !js.trim().is_empty() => js,
+            _ => return Ok(()), // 无 loginCheckJs 配置，跳过
+        };
+
+        crate::js_executor::execute_login_check_js(
+            login_check_js,
+            response_body,
+            response_url,
+            response_code,
+            &source.book_source_url,
+        )
+        .map_err(|e| LegadoError::JsEngine(format!("loginCheckJs: {e}")))
+    }
 }
 
 impl Default for RealBookSourceFetcher {
@@ -132,6 +161,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let body = self
             .fetch_url(&analyze_url, source_headers.as_ref())
             .await?;
+
+        // 2.5 loginCheckJs 登录检测（规则路径增强）
+        Self::execute_login_check(source, &body, analyze_url.url(), 200)?;
 
         // 3. 使用搜索规则解析结果
         let search_rule = source.rule_search.as_ref();
@@ -227,6 +259,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 1. 请求书籍详情页
         let body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
+
+        // 1.5 loginCheckJs 登录检测
+        Self::execute_login_check(source, &body, book_url, 200)?;
 
         // 2. 使用 bookInfo 规则解析
         let info_rule = source.rule_book_info.as_ref();
@@ -324,6 +359,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 1. 先获取详情页以确定 toc_url
         let info_body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
+
+        // 1.5 loginCheckJs 登录检测
+        Self::execute_login_check(source, &info_body, book_url, 200)?;
+
         let info_rule = source.rule_book_info.as_ref();
         let info_analyzer = crate::js_executor::construct_analyzer(
             info_body,
@@ -390,11 +429,21 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 v == "true" || v == "1"
             };
 
+            // 解析 is_volume（卷章）标记
+            let volume_rule = toc_rule.and_then(|r| r.is_volume.as_deref()).unwrap_or("");
+            let is_volume = if volume_rule.is_empty() {
+                false
+            } else {
+                let v = elem_analyzer.get_string(volume_rule).unwrap_or_default();
+                v == "true" || v == "1"
+            };
+
             chapters.push(WebChapter {
                 index: index as i32,
                 title,
                 url,
                 is_vip,
+                is_volume,
             });
         }
 
@@ -409,6 +458,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .fetch_simple(&chapter.url, source_headers.as_ref())
             .await?;
 
+        // 1.5 loginCheckJs 登录检测
+        Self::execute_login_check(source, &body, &chapter.url, 200)?;
+
         // 2. 使用正文规则解析
         let content_rule = source.rule_content.as_ref();
         let content_rule_str = content_rule
@@ -421,11 +473,33 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             &source.book_source_url,
         );
 
-        let content = if content_rule_str.is_empty() {
+        let raw_content = if content_rule_str.is_empty() {
             analyzer.content().to_string()
         } else {
             analyzer.get_string(content_rule_str).unwrap_or_default()
         };
+
+        // 3. 正文净化管线（对标 Kotlin BookContent.analyzeContent）
+        // 音频/视频书源获取的是链接，不需要 HTML 格式化
+        let is_media = source.book_source_type == legado_core::models::book_source::book_source_type::AUDIO
+            || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
+
+        let content = if is_media {
+            raw_content
+        } else {
+            // 3.1 HtmlFormatter.formatKeepImg（保留 img 标签 + URL 绝对化）
+            let cleaned = legado_core::html_formatter::format_keep_img(&raw_content, &chapter.url);
+            // 3.2 unescapeHtml4（实体反转义）
+            legado_core::html_formatter::unescape_html4(&cleaned)
+        };
+
+        // 4. 空内容检查（卷章豁免）
+        if !chapter.is_volume && content.trim().is_empty() {
+            return Err(LegadoError::ContentEmpty(format!(
+                "章节 {} 正文为空",
+                chapter.title
+            )));
+        }
 
         Ok(content)
     }
@@ -434,6 +508,114 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 /// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
 pub fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
     WebBookEngine::new(RealBookSourceFetcher::new())
+}
+
+// ─── JS 书源分派辅助 ──────────────────────────────────────────────────────────
+
+/// 将 JS 编排器搜索结果（serde_json::Value）转换为 WebSearchResult 列表
+pub(crate) fn convert_js_search_results(
+    values: Vec<serde_json::Value>,
+    source_url: &str,
+) -> Vec<WebSearchResult> {
+    values
+        .into_iter()
+        .filter_map(|v| {
+            let name = v.get("name")?.as_str()?.to_string();
+            let book_url = v.get("bookUrl")?.as_str()?.to_string();
+            if name.is_empty() || book_url.is_empty() {
+                return None;
+            }
+            let author = v
+                .get("author")
+                .and_then(|a| a.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let cover_url = v
+                .get("coverUrl")
+                .and_then(|c| c.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let intro = v
+                .get("intro")
+                .and_then(|i| i.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let latest_chapter = v
+                .get("latestChapter")
+                .or_else(|| v.get("lastChapter"))
+                .and_then(|l| l.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            Some(WebSearchResult {
+                name,
+                author,
+                book_url,
+                cover_url,
+                intro,
+                latest_chapter,
+                source_url: source_url.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// 将 JS 编排器章节列表（serde_json::Value）转换为 WebChapter 列表
+fn convert_js_chapters(values: Vec<serde_json::Value>) -> Vec<WebChapter> {
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let index = v
+                .get("index")
+                .and_then(|idx| idx.as_i64())
+                .unwrap_or(i as i64) as i32;
+            let title = v
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let url = v
+                .get("url")
+                .and_then(|u| u.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let is_vip = v
+                .get("isVip")
+                .and_then(|vip| vip.as_bool())
+                .unwrap_or(false);
+            WebChapter {
+                index,
+                title,
+                url,
+                is_vip,
+                is_volume: false,
+            }
+        })
+        .collect()
+}
+
+/// 构建 JS 书源编排器
+///
+/// 从 BookSource 的 mainJs 字段创建 JsSourceEngine 并包装为编排器。
+/// quickjs 启用时使用真实 QuickJS 引擎，否则使用占位引擎。
+/// mainJs 为空时返回 None（非 JS 源）。
+pub(crate) fn build_js_orchestrator(source: &BookSource) -> LegadoResult<Option<JsSourceBookOrchestrator>> {
+    let main_js = match source.main_js.as_deref() {
+        Some(js) if !js.trim().is_empty() => js.to_string(),
+        _ => return Ok(None),
+    };
+
+    let mut config = JsSourceConfig::new(source.book_source_url.clone(), main_js);
+    if let Some(lib) = &source.js_lib {
+        config = config.with_js_lib(lib.clone());
+    }
+
+    #[cfg(feature = "quickjs")]
+    let engine = legado_js::JsSourceEngine::new_quickjs(config)?;
+    #[cfg(not(feature = "quickjs"))]
+    let engine = legado_js::JsSourceEngine::new_stub(config);
+
+    Ok(Some(JsSourceBookOrchestrator::new(engine)))
 }
 
 // ─── 公开 API 函数 ─────────────────────────────────────────────────────────────
@@ -447,6 +629,23 @@ pub fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
 /// 返回 `WebSearchResult` JSON 数组字符串
 pub fn webbook_search(source_json: &str, query: &str, page: i32) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
+
+    // JS 书源分派：spawn_blocking 避免嵌套 runtime 死锁（R1）
+    if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
+        let source_clone = source.clone();
+        let key = query.to_string();
+        let values = runtime::block_on(async {
+            tokio::task::spawn_blocking(move || {
+                orchestrator.search(&source_clone, &key, page)
+            })
+            .await
+            .map_err(|e| LegadoError::Internal(format!("JS 搜索任务异常: {e}")))?
+        })?;
+        let results = convert_js_search_results(values, &source.book_source_url);
+        return serde_json::to_string(&results).map_err(LegadoError::Serialization);
+    }
+
+    // 规则书源路径（现有逻辑不变）
     let engine = build_engine();
     let results: Vec<WebSearchResult> =
         runtime::block_on(async { engine.search(&source, query, page).await })?;
@@ -461,6 +660,46 @@ pub fn webbook_search(source_json: &str, query: &str, page: i32) -> LegadoResult
 /// 返回 `WebBookInfo` JSON 字符串
 pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
+
+    // JS 书源分派
+    if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
+        let source_clone = source.clone();
+        let url = book_url.to_string();
+        let js_info = runtime::block_on(async {
+            tokio::task::spawn_blocking(move || {
+                let book = Book {
+                    book_url: url.clone(),
+                    origin: source_clone.book_source_url.clone(),
+                    ..Book::default()
+                };
+                orchestrator.get_book_info(&source_clone, &book, true)
+            })
+            .await
+            .map_err(|e| LegadoError::Internal(format!("JS 详情任务异常: {e}")))?
+        })?;
+        // 将 MarshalledBookInfo 转换为 WebBookInfo
+        let info = WebBookInfo {
+            name: js_info.name,
+            author: js_info.author.unwrap_or_default(),
+            cover_url: js_info.cover_url,
+            intro: js_info.intro,
+            categories: js_info
+                .kind
+                .map(|k| {
+                    k.split([',', '，', ' '])
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            last_chapter: js_info.latest_chapter_title,
+            book_url: book_url.to_string(),
+            toc_url: js_info.toc_url.unwrap_or_else(|| book_url.to_string()),
+        };
+        return serde_json::to_string(&info).map_err(LegadoError::Serialization);
+    }
+
+    // 规则书源路径
     let engine = build_engine();
     let info: WebBookInfo =
         runtime::block_on(async { engine.get_book_info(&source, book_url).await })?;
@@ -475,6 +714,29 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
 /// 返回 `WebChapter` JSON 数组字符串
 pub fn webbook_chapters(source_json: &str, book_url: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
+
+    // JS 书源分派
+    if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
+        let source_clone = source.clone();
+        let url = book_url.to_string();
+        let values = runtime::block_on(async {
+            tokio::task::spawn_blocking(move || {
+                let book = Book {
+                    book_url: url.clone(),
+                    toc_url: url,
+                    origin: source_clone.book_source_url.clone(),
+                    ..Book::default()
+                };
+                orchestrator.get_chapter_list(&source_clone, &book)
+            })
+            .await
+            .map_err(|e| LegadoError::Internal(format!("JS 目录任务异常: {e}")))?
+        })?;
+        let chapters = convert_js_chapters(values);
+        return serde_json::to_string(&chapters).map_err(LegadoError::Serialization);
+    }
+
+    // 规则书源路径
     let engine = build_engine();
     let chapters: Vec<WebChapter> =
         runtime::block_on(async { engine.get_chapters(&source, book_url).await })?;
@@ -490,6 +752,32 @@ pub fn webbook_chapters(source_json: &str, book_url: &str) -> LegadoResult<Strin
 pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
     let chapter: WebChapter = serde_json::from_str(chapter_json)?;
+
+    // JS 书源分派
+    if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
+        let source_clone = source.clone();
+        let web_ch = chapter.clone();
+        return runtime::block_on(async {
+            tokio::task::spawn_blocking(move || {
+                let book_chapter = BookChapter {
+                    url: web_ch.url,
+                    title: web_ch.title,
+                    index: web_ch.index,
+                    is_vip: web_ch.is_vip,
+                    ..BookChapter::default()
+                };
+                let book = Book {
+                    origin: source_clone.book_source_url.clone(),
+                    ..Book::default()
+                };
+                orchestrator.get_content(&source_clone, &book_chapter, &book, None)
+            })
+            .await
+            .map_err(|e| LegadoError::Internal(format!("JS 正文任务异常: {e}")))?
+        });
+    }
+
+    // 规则书源路径
     let engine = build_engine();
     runtime::block_on(async { engine.get_content(&source, &chapter).await })
 }

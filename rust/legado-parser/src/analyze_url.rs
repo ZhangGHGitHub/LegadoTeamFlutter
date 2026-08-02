@@ -638,7 +638,9 @@ impl AnalyzeUrl {
     }
 
     /// 将相对 URL 转为绝对 URL
-    fn get_absolute_url(base: &str, relative: &str) -> String {
+    ///
+    /// 参考 Kotlin `NetworkUtils.getAbsoluteURL`
+    pub fn get_absolute_url(base: &str, relative: &str) -> String {
         let relative = relative.trim();
 
         if relative.starts_with("http://") || relative.starts_with("https://") {

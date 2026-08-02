@@ -22,6 +22,8 @@ impl IntoResponse for ApiError {
             LegadoError::Serialization(_) => (StatusCode::INTERNAL_SERVER_ERROR, "serialization"),
             LegadoError::Ffi(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ffi"),
             LegadoError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, "timeout"),
+            LegadoError::TocEmpty(_) => (StatusCode::NOT_FOUND, "toc_empty"),
+            LegadoError::ContentEmpty(_) => (StatusCode::NOT_FOUND, "content_empty"),
             LegadoError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
 

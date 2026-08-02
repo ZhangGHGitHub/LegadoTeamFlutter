@@ -115,6 +115,15 @@ pub struct BookSource {
     pub custom_button: bool,
 }
 
+impl BookSource {
+    /// 判断是否为 JS 书源（mainJs 非空）
+    ///
+    /// 参考 Kotlin `BookSource.kt:238`: `fun isJsSource(): Boolean = !mainJs.isNullOrBlank()`
+    pub fn is_js_source(&self) -> bool {
+        self.main_js.as_ref().map_or(false, |s| !s.trim().is_empty())
+    }
+}
+
 fn default_true() -> bool {
     true
 }

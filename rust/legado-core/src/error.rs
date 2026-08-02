@@ -32,6 +32,12 @@ pub enum LegadoError {
     #[error("Timeout: {0}")]
     Timeout(String),
 
+    #[error("TOC empty: {0}")]
+    TocEmpty(String),
+
+    #[error("Content empty: {0}")]
+    ContentEmpty(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -52,6 +58,8 @@ impl LegadoError {
             LegadoError::Serialization(_) => 1007,
             LegadoError::Ffi(_) => 1008,
             LegadoError::Timeout(_) => 1009,
+            LegadoError::TocEmpty(_) => 1010,
+            LegadoError::ContentEmpty(_) => 1011,
             LegadoError::Internal(_) => 1999,
         }
     }

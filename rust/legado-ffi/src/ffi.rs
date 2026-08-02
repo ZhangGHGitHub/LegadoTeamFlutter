@@ -64,6 +64,7 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<String, BridgeError> {
 pub mod ffi {
     use super::to_json;
     use super::BridgeError;
+    use crate::frb_generated::StreamSink;
 
     // ─── 基础 ─────────────────────────────────────────────────
 
@@ -122,6 +123,11 @@ pub mod ffi {
     pub fn bookshelf_get(book_url: String) -> Result<String, BridgeError> {
         let book = crate::api::bookshelf::get_book(&book_url)?;
         to_json(&book)
+    }
+
+    /// 批量导入书籍（JSON 数组），返回成功导入的数量
+    pub fn bookshelf_import(json_array: String) -> Result<i32, BridgeError> {
+        Ok(crate::api::bookshelf::import_books(&json_array)?)
     }
 
     /// 更新阅读进度
@@ -212,6 +218,26 @@ pub mod ffi {
     /// 取消正在进行的搜索
     pub fn search_cancel() {
         crate::api::search::cancel_search();
+    }
+
+    /// 多源渐进式（流式）搜索
+    ///
+    /// 与 [`search_multi`] 不同：每完成一个书源即通过 `StreamSink` 推送一个结果批次
+    /// （JSON 字符串），UI 侧可逐源渲染，无需等待最慢书源。流在所有书源完成后自然结束。
+    ///
+    /// `query` — 搜索关键词
+    /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
+    /// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
+    pub async fn search_multi_stream(
+        query: String,
+        source_urls_json: String,
+        sink: StreamSink<String>,
+    ) -> Result<(), BridgeError> {
+        crate::api::search::run_multi_stream(query, source_urls_json, |batch| {
+            sink.add(batch).map_err(|e| e.to_string())
+        })
+        .await;
+        Ok(())
     }
 
     // ─── 阅读 ─────────────────────────────────────────────────

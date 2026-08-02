@@ -33,6 +33,62 @@ pub fn construct_analyzer(content: String, base_url: String, _source_tag: &str) 
     AnalyzeRule::new(content, base_url)
 }
 
+/// 执行 loginCheckJs 登录检测脚本
+///
+/// 将 HTTP 响应上下文以 `result` 绑定注入 JS 环境，
+/// 使书源 loginCheckJs 脚本可访问 `result`（JSON 字符串，含 body/url/code 字段）。
+///
+/// 参考 Kotlin `AnalyzeUrl.evalJS(checkJs, response)` 的双路径模式：
+/// - 成功路径：response 正常时执行 loginCheckJs
+/// - 失败路径：response 异常时构造 errResponse 再执行
+///
+/// 返回 Ok(()) 表示检测通过，Err 表示需要登录或检测失败。
+#[cfg(feature = "quickjs")]
+pub fn execute_login_check_js(
+    js_code: &str,
+    response_body: &str,
+    response_url: &str,
+    response_code: u16,
+    source_tag: &str,
+) -> Result<(), String> {
+    use legado_parser::JsExecutor;
+
+    let executor = quickjs_impl::QuickJsExecutor::new(source_tag);
+
+    // 构造响应上下文 JSON
+    let response_json = serde_json::json!({
+        "body": response_body,
+        "url": response_url,
+        "code": response_code,
+    })
+    .to_string();
+
+    // 将 result 变量内联到 JS 代码前缀，通过 execute_js 公共接口执行
+    let wrapped_code = format!("var result = {};\n{}", response_json, js_code);
+    let eval_result = executor.execute_js(&wrapped_code)?;
+
+    // 检测返回值：如果 JS 返回明确的错误指示，视为登录失败
+    let trimmed = eval_result.trim();
+    if trimmed == "false" || trimmed.contains("未登录") || trimmed.contains("needLogin") {
+        return Err(format!("loginCheckJs 检测未登录: {trimmed}"));
+    }
+
+    Ok(())
+}
+
+/// 非 quickjs 构建下 loginCheckJs 降级：静默跳过检测
+#[cfg(not(feature = "quickjs"))]
+pub fn execute_login_check_js(
+    _js_code: &str,
+    _response_body: &str,
+    _response_url: &str,
+    _response_code: u16,
+    _source_tag: &str,
+) -> Result<(), String> {
+    // 未启用 quickjs 时无法执行 JS，静默跳过
+    Ok(())
+}
+
 // ─── quickjs 启用时的适配器实现 ────────────────────────────────────────────────
 
 #[cfg(feature = "quickjs")]

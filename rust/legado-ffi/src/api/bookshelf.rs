@@ -4,6 +4,7 @@
 
 use legado_core::models::Book;
 use legado_core::LegadoResult;
+use legado_db::import::RoomImporter;
 use legado_db::repository::Repository;
 use legado_db::BookRepository;
 
@@ -51,6 +52,16 @@ pub fn get_book(book_url: &str) -> LegadoResult<Option<Book>> {
     with_database(|db| {
         let repo = BookRepository::new(db.connection());
         repo.find_by_url(book_url)
+    })
+}
+
+/// 批量导入书籍（JSON 数组）
+///
+/// `json_array` 中每个元素为一本书的 JSON 对象，返回成功导入的数量。
+pub fn import_books(json_array: &str) -> LegadoResult<i32> {
+    with_database(|db| {
+        let count = RoomImporter::import_books(db.connection(), json_array)?;
+        Ok(count as i32)
     })
 }
 

@@ -59,7 +59,7 @@
 | `initialize()` | 无 | `Future<void>` | 初始化 Rust 运行时和数据库连接 |
 | `getVersion()` | 无 | `Future<String>` | 获取引擎版本号 |
 
-### 2.2 书架操作（8 个方法）
+### 2.2 书架操作（9 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -71,6 +71,7 @@
 | `topBook(String bookUrl)` | bookUrl | `Future<void>` | 置顶书籍 |
 | `unTopBook(String bookUrl)` | bookUrl | `Future<void>` | 取消置顶 |
 | `setBookGroup(String bookUrl, int groupId)` | bookUrl, groupId | `Future<void>` | 设置书籍分组 |
+| `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 
 ### 2.3 书源操作（10 个方法）
 
@@ -87,17 +88,20 @@
 | `exportBookSources()` | 无 | `Future<String>` | 导出所有书源为 JSON 数组 |
 | `sortBookSources(int sortKey, bool ascending)` | sortKey, ascending | `Future<void>` | 书源排序 |
 
-### 2.4 搜索操作（5 个方法）
+### 2.4 搜索操作（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `searchBooks(String keyword, {List<String>? sourceUrls})` | keyword, sourceUrls(可选) | `Future<List<SearchResult>>` | 搜索书籍 |
 | `searchMulti(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Future<List<Map<String, dynamic>>>` | 多源并行搜索 |
+| `searchMultiStream(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Stream<Map<String, dynamic>>` | 多源渐进式（流式）搜索：每完成一个书源即推送一个批次，无需等待最慢书源 |
 | `cancelSearch()` | 无 | `Future<void>` | 取消搜索 |
 | `searchSource(String bookName, String author)` | bookName, author | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
 
 > ⚠️ `searchSource`：Rust 返回 `SourceSwitchResponse { book_name, author, matches[] }`，Dart 侧提取 `matches` 字段。
+>
+> ℹ️ `searchMultiStream`：Rust 侧 `ffi::search_multi_stream(query, source_urls_json, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），每完成一个书源推送一个 `SearchSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `books[]` / `error?` / `finished_count` / `total_count` / `is_last`。冻结契约 `searchMulti` 保持不变，本方法为加法式新增。
 
 ### 2.5 RSS 源操作（9 个方法）
 
@@ -413,6 +417,8 @@
 |--------|------|----------|----------|------|
 | `getSearchHistory`（字段修复） | 不变 | `List<SearchKeyword>` 序列化字段对齐 Dart 模型：`word` / `usage` / `lastUseTime` | 2026-08-01 | ✅ 已完成 |
 | `searchHistoryByPrefix`（新增） | `String prefix, {int limit = 20}` | `Future<List<String>>`（前缀匹配的历史关键词，对标 Android `searchKeywordDao.flowSearch`） | 2026-08-01 | ✅ 已完成 |
+| `importBooks`（新增） | `String jsonArray` | `Future<int>`（批量导入书籍，返回成功导入数量，用于 WebDAV 书架批量回写） | 2026-08-02 | ✅ 已完成 |
+| `searchMultiStream`（新增） | `String query, {List<String>? sourceUrls}` | `Stream<Map<String, dynamic>>`（多源渐进式搜索，逐书源推送批次，用于 Phase 3.3 渐进搜索） | 2026-08-02 | ✅ 已完成 |
 | `searchCover`（新增） | `String bookName` | `Future<List<Map<String, dynamic>>>`（网络封面候选列表，字段建议 `url` / `width` / `height`，用于 Phase 6 P1 `change_cover_screen` 封面搜索） | 2026-08-01 | ⛔ 待 Rust 实现 |
 | `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询） | 2026-08-01 | ⛔ 待 Rust 实现 |
 
@@ -446,7 +452,7 @@
 | # | 模块 | 方法数 |
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
-| 2 | 书架操作 | 8 |
+| 2 | 书架操作 | 9 |
 | 3 | 书源操作 | 10 |
 | 4 | 搜索操作 | 5 |
 | 5 | RSS 源操作 | 9 |

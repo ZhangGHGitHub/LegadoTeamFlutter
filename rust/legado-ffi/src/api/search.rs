@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use futures::StreamExt;
+
 use legado_core::models::BookSource;
 use legado_core::search_engine::{MultiSourceSearcher, SearchConfig};
 use legado_core::source_matcher::SearchCandidate;
@@ -171,6 +173,116 @@ pub fn cancel_search() {
     SEARCH_CANCELLED.store(true, Ordering::SeqCst);
 }
 
+// ─── 渐进式（流式）搜索 ────────────────────────────────────────────────────────
+
+/// 单个书源的搜索结果批次
+///
+/// 用于渐进式搜索：每完成一个书源即推送一个批次，UI 侧可逐源渲染，
+/// 无需等待最慢的书源。批次以 JSON 字符串形式跨 FFI 传递。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchSourceBatch {
+    /// 书源在请求列表中的索引（从 0 开始）
+    pub source_index: usize,
+    /// 书源 URL
+    pub source_url: String,
+    /// 书源名称
+    pub source_name: String,
+    /// 该书源命中的书籍列表
+    pub books: Vec<SearchResult>,
+    /// 该书源搜索失败时的错误信息（成功为 None）
+    pub error: Option<String>,
+    /// 当前已完成（已推送批次）的书源数量
+    pub finished_count: usize,
+    /// 本次搜索的书源总数
+    pub total_count: usize,
+    /// 是否为最后一个批次（finished_count == total_count 时为 true）
+    pub is_last: bool,
+}
+
+/// 多源渐进式（流式）搜索驱动器
+///
+/// 与 [`multi_source_search`] 不同：本函数不等待全部书源完成，而是
+/// **每完成一个书源即调用一次 `on_batch`**（传入该源批次的 JSON 字符串），
+/// 实现渐进式返回。
+///
+/// `query` — 搜索关键词
+/// `source_urls_json` — JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
+/// `on_batch` — 每个书源完成时的回调；返回 `Err` 时提前终止（如 sink 已关闭）。
+///
+/// 配合 `cancel_search()` 可提前中止。供 flutter_rust_bridge 的 `StreamSink`
+/// 绑定使用（在 ffi.rs 中将 `on_batch` 接到 `sink.add`）。
+pub async fn run_multi_stream<F>(query: String, source_urls_json: String, mut on_batch: F)
+where
+    F: FnMut(String) -> Result<(), String>,
+{
+    // 重置取消标志
+    SEARCH_CANCELLED.store(false, Ordering::SeqCst);
+
+    // 书源加载失败时以空流结束（Dart 侧表现为无结果）
+    let sources = load_search_sources(&source_urls_json).unwrap_or_default();
+    let total = sources.len();
+    if total == 0 {
+        return;
+    }
+
+    let client = crate::http_state::shared_client();
+
+    // 为每个书源 spawn 独立任务，附带原始索引
+    let mut tasks = Vec::with_capacity(total);
+    for (index, source) in sources.into_iter().enumerate() {
+        let client = client.clone();
+        let query = query.clone();
+        tasks.push(tokio::spawn(async move {
+            let source_url = source.book_source_url.clone();
+            let source_name = source.book_source_name.clone();
+            let outcome = search_single_source(&client, &source, &query).await;
+            (index, source_url, source_name, outcome)
+        }));
+    }
+
+    let mut set = futures::stream::FuturesUnordered::from_iter(tasks);
+    let mut finished: usize = 0;
+
+    while let Some(joined) = set.next().await {
+        // 任务被取消/panic 时跳过，但仍计入进度
+        let (index, source_url, source_name, outcome) = match joined {
+            Ok(v) => v,
+            Err(_) => {
+                finished += 1;
+                continue;
+            }
+        };
+
+        if SEARCH_CANCELLED.load(Ordering::SeqCst) {
+            break;
+        }
+
+        finished += 1;
+        let (books, error) = match outcome {
+            Ok(list) => (list, None),
+            Err(e) => (Vec::new(), Some(e.to_string())),
+        };
+
+        let batch = SearchSourceBatch {
+            source_index: index,
+            source_url,
+            source_name,
+            books,
+            error,
+            finished_count: finished,
+            total_count: total,
+            is_last: finished >= total,
+        };
+
+        if let Ok(json) = serde_json::to_string(&batch) {
+            // sink 关闭（Err）时提前终止
+            if on_batch(json).is_err() {
+                break;
+            }
+        }
+    }
+}
+
 // ─── 内部实现 ─────────────────────────────────────────────────────────────────
 
 /// 加载待搜索的书源列表
@@ -194,11 +306,17 @@ fn load_search_sources(source_urls_json: &str) -> LegadoResult<Vec<BookSource>> 
 /// 对单个书源执行搜索（异步）
 ///
 /// 完整链路：AnalyzeUrl 构建请求 → LegadoClient 发送 → AnalyzeRule 解析结果
+/// JS 书源走 JsSourceBookOrchestrator 路径（R1: spawn_blocking 避免嵌套 runtime 死锁）
 async fn search_single_source(
     client: &LegadoClient,
     source: &BookSource,
     keyword: &str,
 ) -> LegadoResult<Vec<SearchResult>> {
+    // JS 书源分派
+    if source.is_js_source() {
+        return search_js_source(source, keyword).await;
+    }
+
     // 1. 获取搜索 URL 模板
     let search_url_template = source
         .search_url
@@ -406,6 +524,70 @@ fn resolve_url(url: &str, base_url: &str) -> String {
 /// 解析 JSON 格式的请求头字符串
 fn parse_header_option(header_str: Option<&str>) -> Option<HashMap<String, String>> {
     header_str.and_then(|s| serde_json::from_str(s).ok())
+}
+
+/// JS 书源搜索（通过 JsSourceBookOrchestrator 执行）
+///
+/// 使用 spawn_blocking 将 JS 执行移出 tokio worker 线程，
+/// 避免 JS 宿主函数内部 block_on 导致嵌套 runtime 死锁（R1）。
+async fn search_js_source(
+    source: &BookSource,
+    keyword: &str,
+) -> LegadoResult<Vec<SearchResult>> {
+    let source_clone = source.clone();
+    let key = keyword.to_string();
+
+    let values = tokio::task::spawn_blocking(move || {
+        let orchestrator = crate::api::web_book::build_js_orchestrator(&source_clone)?;
+        let mut orch = orchestrator.ok_or_else(|| {
+            LegadoError::Internal("JS 书源缺少 mainJs".into())
+        })?;
+        orch.search(&source_clone, &key, 1)
+    })
+    .await
+    .map_err(|e| LegadoError::Internal(format!("JS 搜索任务异常: {e}")))?
+    ?;
+
+    // 将 serde_json::Value 转换为 SearchResult
+    let results = values
+        .into_iter()
+        .filter_map(|v| {
+            let book_name = v.get("name")?.as_str()?.to_string();
+            let book_url = v.get("bookUrl")?.as_str()?.to_string();
+            if book_name.is_empty() || book_url.is_empty() {
+                return None;
+            }
+            Some(SearchResult {
+                source_url: source.book_source_url.clone(),
+                source_name: source.book_source_name.clone(),
+                book_name,
+                author: v
+                    .get("author")
+                    .and_then(|a| a.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                book_url,
+                latest_chapter: v
+                    .get("latestChapter")
+                    .or_else(|| v.get("lastChapter"))
+                    .and_then(|l| l.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+                intro: v
+                    .get("intro")
+                    .and_then(|i| i.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+                cover_url: v
+                    .get("coverUrl")
+                    .and_then(|c| c.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+            })
+        })
+        .collect();
+
+    Ok(results)
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────

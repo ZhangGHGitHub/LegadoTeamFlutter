@@ -161,6 +161,10 @@ class RustApi implements BookApi {
     );
   }
 
+  /// 批量导入书籍，返回成功导入的数量
+  Future<int> importBooks(String jsonArray) =>
+      bridge.bookshelfImport(jsonArray: jsonArray);
+
   // ========== 书源操作 ==========
 
   /// 获取所有书源
@@ -257,6 +261,20 @@ class RustApi implements BookApi {
     );
     final list = jsonDecode(json) as List<dynamic>;
     return list.map((e) => e as Map<String, dynamic>).toList();
+  }
+
+  /// 多源渐进式（流式）搜索
+  ///
+  /// 每完成一个书源即推送一个批次 Map（字段见 [BookApi.searchMultiStream]）。
+  @override
+  Stream<Map<String, dynamic>> searchMultiStream(
+    String query, {
+    List<String>? sourceUrls,
+  }) {
+    final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
+    return bridge
+        .searchMultiStream(query: query, sourceUrlsJson: urlsJson)
+        .map((batch) => jsonDecode(batch) as Map<String, dynamic>);
   }
 
   /// 取消搜索
