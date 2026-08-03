@@ -29,6 +29,7 @@ import 'screens/replace_rules_screen.dart';
 import 'screens/rss_config_screen.dart';
 import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_history_screen.dart';
+import 'screens/rss_source_debug_screen.dart';
 import 'screens/rss_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
@@ -78,6 +79,7 @@ class AppRoutes {
   static const rssConfig = '/rss/config';
   static const rssFavorites = '/rss/favorites';
   static const rssHistory = '/rss/history';
+  static const rssSourceDebug = '/rss/source_debug';
   static const changeCover = '/change_cover';
   static const txtTocRules = '/txt_toc_rules';
   static const dict = '/dict';
@@ -200,6 +202,11 @@ class AppRoutes {
         rssConfig: (_) => const RssConfigScreen(),
         rssFavorites: (_) => const RssFavoritesScreen(),
         rssHistory: (_) => const RssHistoryScreen(),
+        rssSourceDebug: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final sourceUrl = args is String ? args : null;
+          return RssSourceDebugScreen(sourceUrl: sourceUrl);
+        },
         changeCover: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           // 路由参数规范化：优先接收 Book 对象

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNot
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../routes.dart';
 
 /// RSS 源编辑器页面
 ///
@@ -203,6 +204,19 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
                   )
                 : const Icon(Icons.science, size: 18),
             label: const Text('测试'),
+          ),
+          // 调试入口：对标原版 RssSourceDebug（日志链路调试）
+          IconButton(
+            tooltip: '调试',
+            icon: const Icon(Icons.bug_report_outlined),
+            onPressed: () {
+              final url = _urlCtrl.text.trim();
+              Navigator.pushNamed(
+                context,
+                AppRoutes.rssSourceDebug,
+                arguments: url.isEmpty ? null : url,
+              );
+            },
           ),
           FilledButton.icon(
             onPressed: _saving ? null : _save,
