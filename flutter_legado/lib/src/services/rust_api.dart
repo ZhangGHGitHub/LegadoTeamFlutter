@@ -697,24 +697,10 @@ class RustApi implements BookApi {
 
   // ========== 备份操作 ==========
 
-  /// 备份数据（收集所有数据写入 JSON 文件）
+  /// 备份数据（委托 Rust backup_create：收集全量数据写入 JSON 文件）
+  ///
+  /// 在 [dirPath] 下生成时间戳命名的备份文件，返回实际备份文件路径。
   Future<String> backup(String dirPath) async {
-    final books = await getBooks();
-    final bookmarks = await getAllBookmarks();
-    final sources = await getBookSources();
-    final rules = await getReplaceRules();
-    final rssSources = await getRssSources();
-    final httpTtsList = await getHttpTts();
-    final backupData = {
-      'version': 2,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'books': books.map((e) => e.toJson()).toList(),
-      'bookmarks': bookmarks.map((e) => e.toJson()).toList(),
-      'sources': sources.map((e) => e.toJson()).toList(),
-      'rssSources': rssSources.map((e) => e.toJson()).toList(),
-      'replaceRules': rules.map((e) => e.toJson()).toList(),
-      'httpTts': httpTtsList.map((e) => e.toJson()).toList(),
-    };
     final dir = Directory(dirPath);
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -722,61 +708,17 @@ class RustApi implements BookApi {
     final fileName =
         'legado_backup_${DateTime.now().millisecondsSinceEpoch}.json';
     final filePath = '$dirPath${Platform.pathSeparator}$fileName';
-    final file = File(filePath);
-    await file.writeAsString(jsonEncode(backupData));
-    return filePath;
+    return bridge.backupCreate(path: filePath);
   }
 
-  /// 恢复数据（从备份文件导入）
+  /// 恢复数据（委托 Rust backup_restore：从备份文件导入）
   Future<void> restore(String backupPath) async {
     final file = File(backupPath);
     if (!await file.exists()) {
       throw RustApiException('Backup file not found: $backupPath',
           operation: 'restore');
     }
-    final content = await file.readAsString();
-    final data = jsonDecode(content) as Map<String, dynamic>;
-
-    // 恢复书源
-    final sources = data['sources'] as List<dynamic>? ?? [];
-    if (sources.isNotEmpty) {
-      await bridge.sourceImport(jsonArray: jsonEncode(sources));
-    }
-
-    // 恢复 RSS 源
-    final rssSources = data['rssSources'] as List<dynamic>? ?? [];
-    for (final rs in rssSources) {
-      await bridge.rssAddSource(sourceJson: jsonEncode(rs));
-    }
-
-    // 恢复书籍
-    final books = data['books'] as List<dynamic>? ?? [];
-    for (final b in books) {
-      await bridge.bookshelfAdd(bookJson: jsonEncode(b));
-    }
-
-    // 恢复替换规则
-    final rules = data['replaceRules'] as List<dynamic>? ?? [];
-    for (final r in rules) {
-      final m = r as Map<String, dynamic>;
-      await bridge.replaceRuleAdd(
-        name: m['name'] as String? ?? '',
-        pattern: m['pattern'] as String? ?? '',
-        replacement: m['replacement'] as String? ?? '',
-        isRegex: m['isRegex'] as bool? ?? true,
-        scope: m['scope'] as String? ?? '',
-      );
-    }
-
-    // 恢复 HTTP TTS
-    final ttsList = data['httpTts'] as List<dynamic>? ?? [];
-    for (final t in ttsList) {
-      final m = t as Map<String, dynamic>;
-      await bridge.httpTtsAdd(
-        name: m['name'] as String? ?? '',
-        url: m['url'] as String? ?? '',
-      );
-    }
+    await bridge.backupRestore(path: backupPath);
   }
 
   // ========== 阅读记录 ==========
@@ -1040,28 +982,34 @@ class RustApi implements BookApi {
 
   // ========== 服务器管理 ==========
 
-  /// 启动服务器（待 FFI 实现，当前将状态存入配置）
+  /// 启动服务器（委托 Rust server_start 真实启动 Web 服务）
   Future<void> startServer({int port = 1122}) async {
-    await bridge.configSet(key: 'server_port', value: port.toString());
-    await bridge.configSet(key: 'server_running', value: 'true');
+    await bridge.serverStart(port: port);
   }
 
-  /// 停止服务器（待 FFI 实现，当前更新配置状态）
+  /// 停止服务器（委托 Rust server_stop）
   Future<void> stopServer() async {
-    await bridge.configSet(key: 'server_running', value: 'false');
+    await bridge.serverStop();
   }
 
   /// 获取服务器状态
+  ///
+  /// Rust 返回 JSON `{running: bool, port: int}`，转换为统一描述串
+  ///（与既有 UI/测试语义一致：`running on port X` / `stopped`）。
   Future<String> getServerStatus() async {
-    final running = await bridge.configGet(key: 'server_running');
-    final port = await bridge.configGet(key: 'server_port');
-    if (running == 'true') {
-      return 'running on port ${port.isEmpty ? '1122' : port}';
+    final raw = await bridge.serverStatus();
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      if (m['running'] == true) {
+        return 'running on port ${m['port'] ?? 1122}';
+      }
+    } catch (_) {
+      // 解析失败按停止处理
     }
     return 'stopped';
   }
 
-  /// 设置服务器端口
+  /// 设置服务器端口（记录用户选择，下次 startServer 生效）
   Future<void> setServerPort(int port) async {
     await bridge.configSet(key: 'server_port', value: port.toString());
   }
