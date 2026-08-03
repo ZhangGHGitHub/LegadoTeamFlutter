@@ -781,6 +781,9 @@ String mapApiError(Object e) {
 > 差距主因客观：bridge 生成代码与 rust_api 真实 FFI 分支需 §4.3 P2-4 FFI 集成测试（真实 DLL）方能覆盖，screens 大页面
 > 需深度 widget 测试补强。覆盖率提升列入后续批次，与 P2-4 FFI 集成测试协同推进（先集成测试吃掉 bridge/rust_api
 > 分母，再逐屏补 widget 深度测试）。
+> **覆盖率推进行动（同轮）**：为近期新增三页面（书架管理/远程导入/RSS 历史，此前仅 Notifier 单测）补 widget 深度测试
+> `new_pages_widget_test`（12 用例：列表渲染/空态/错误重试/勾选操作栏/全选/topBook 调用/导入反馈），screens 层深度覆盖
+> 自本轮起逐屏补强；全量 1054 测试通过，analyze 206 info 基线。
 
 ---
 
