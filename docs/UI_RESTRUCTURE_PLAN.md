@@ -738,6 +738,16 @@ String mapApiError(Object e) {
 > 的 getBook/getChapters 均有 null 兜底与 ErrorView）未发现确定性缺陷，盲修风险高，登记为**待复现**：需实机/
 > 模拟器以本地 txt 书长按复现具体异常后再定位修复，不作为本轮盲改项。
 
+> **6.8 实施决议（REFACTORING_REMAINING_PLAN §4.3 P2-2④ 远程书籍导入 + 新违规登记）**：
+> ① **P2-2④ RemoteBookActivity 对齐**：新增 `RemoteBookNotifier/State`（`providers/remote_book/`，多行书籍链接解析
+> 提取为可测纯函数 `parseUrls`/`nameFromUrl`——去空白/空行/去重/仅 http(s)，百分号解码与截断编码双重容错），
+> 批量导入经 `BookApi.importBooks`（Rust 已交付）委托；新增 `remote_book_screen`（多行链接输入 + 导入反馈 +
+> 成功后刷新书架），路由 `/remote_books` 注册，`import_screen` AppBar 新增远程导入入口。新增 11 个单测，
+> 全量 1024 测试通过，analyze 206 info 基线。至此 P2-2 缺失页面中可独立立项项已全部完成（③书架管理/⑤RSS调试/
+> ④远程导入），余①②⑥均跨轨阻塞（source_check/ruleSub 契约）。② **新违规登记**：`import_screen.dart:64` 直接
+> `new RustApi()`（调 `archiveIsArchive`）绕过注入层，属 §0.2 铁律违规；因 archive 系列契约不在 BookApi，上收需补
+> `archiveIsArchive` 等契约（三层），列入后续架构治理批次，与 P2-1 同类处理。
+
 ---
 
 ## 九、验收标准总则
