@@ -757,6 +757,14 @@ String mapApiError(Object e) {
 > 残留为 **0**。全量 1024 测试通过，analyze 206 info 基线。至此 UI 层架构铁律违规已全部清零（P0 换源 bridge 直调、
 > P2-1 四屏 bridge 直调、6.8 RustApi() 直实例化均闭环），仅余跨轨阻塞项与实机取证项。
 
+> **6.10 实施决议（REFACTORING_REMAINING_PLAN §4.3 P2-3④ 多尺寸网格自动化取证）**：P2-3④「响应式网格多尺寸验证」
+> 原需人工多分辨率窗口核验，现补齐自动化取证：① `responsive_test`：Responsive 全行为专项单测（四断点边界互斥性/
+> 网格列数 2/3/4/6/书架与 RSS 宽高比 0.65/0.62/0.75/NavigationRail 切换/内容限宽 1080）；②
+> `bookshelf_grid_responsive_test`：真实渲染 `BookshelfScreen`（MockBookApi + SharedPreferences mock）于 360/500/900/
+> 1300dp 四档窗口宽度，断言 SliverGrid delegate 列数与宽高比，并验证窗口拉宽后列数自适应重算（2→6）。新增 18 个
+> 测试，全量 1042 测试通过，analyze 206 info 基线。P2-3 余下项（色值实机复核、阅读器 5 屏取证、长按 txt bug 复现等）
+> 仍需实机环境。
+
 ---
 
 ## 九、验收标准总则
