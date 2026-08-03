@@ -631,7 +631,7 @@ String mapApiError(Object e) {
 > | 优先级 | 界面 | 问题 | 状态 |
 > |--------|------|------|------|
 > | 🔴 P0 | `change_source_screen` | 直接调 `bridge.sourceSwitchSearch/Apply`，绕过 BookApi/Notifier（架构越界） | ✅ 已完成 |
-> | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | 🟡 Mock 先行（数据流架构已就位，待 Rust `searchCover` 切换，见 6.4） |
+> | 🟠 P1 | `change_cover_screen` | 封面搜索为占位假数据（`Future.delayed` + picsum 随机图） | ✅ 已完成（Mock 先行后已切换真实 `searchCover` 契约，见 6.4） |
 > | 🟡 P2 | `dict_screen` / `source_login_screen` / `txt_toc_rules_screen` | SharedPreferences/硬编码本地数据，未接后端 | ✅ 已完成（经 `getConfig/setConfig` 迁移，见 6.2） |
 > | ⚪ 清理 | `rss_article_detail_screen` | 依赖服务层 `rust_api.dart`（`RssFeedArticle` 误置于服务层） | ✅ 已完成（模型迁至 models 层，见 6.3） |
 
@@ -694,6 +694,15 @@ String mapApiError(Object e) {
 > ③ **契约细化**：`API_CONTRACT.md` §3 需求 3/4 补全响应 schema（对齐 `CoverCandidate`/`DictEntry`）与错误语义，达可直接实现程度。
 > 新增 7 个单测（CoverCandidate 解析 + ChangeCoverNotifier 搜索/确定性/空值忽略）。全量 995 测试通过，改动文件 analyze 0 issues。
 > **未触碰** `book_api.dart`/`rust_api.dart`（避免破坏 `RustApi implements BookApi` 编译 + 规避并行会话）。
+>
+> **回写（Rust 交付后双切换完成）**：Rust 轨已交付 `searchCover`/`dictLookup`（`api/search.rs::search_cover`/
+> `api/dict_api.rs::dict_lookup` → `ffi.rs` → `bridge` → `rust_api.dart`/`book_api.dart`/`mock_book_api.dart` 三层链路已通，
+> API_CONTRACT.md §3 状态 ✅，见 REFACTORING_REMAINING_PLAN.md §4.3 P0-1）。UI 轨随即完成切换：
+> ① `ChangeCoverNotifier.searchCovers` 移除 `_mockSearch`，改调 `api.searchCover` 并经 `CoverCandidate.fromJson` 解析
+> （width/height 未知时为 0，渲染不依赖尺寸）；② `DictNotifier.lookup` 移除本地 `_localDict` 静态词典并转异步，
+> 改调 `api.dictLookup`（未收录词返回空 `definitions` 非异常），`dict_screen` 补 loading 态与空释义未收录判定；
+> ③ 两组 Notifier 测试改以 mocktail stub 真实契约（解析/空候选/异常兜底/空值忽略）。切换后全量 996 测试通过，
+> analyze 保持 206 info 基线。P1 至此闭环；dictLookup 的 Rust 内置词典为 18 词占位级，真实词库为 Rust 轨后续项。
 
 ---
 
