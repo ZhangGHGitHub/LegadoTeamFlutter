@@ -637,8 +637,8 @@ class BookshelfScreen extends ConsumerWidget {
       case 'groups':
         Navigator.pushNamed(context, AppRoutes.bookGroups);
       case 'manage':
-        // 进入管理模式
-        break;
+        // 进入书架管理页（对标原版 BookshelfManageActivity）
+        Navigator.pushNamed(context, AppRoutes.bookshelfManage);
       case 'sources':
         Navigator.pushNamed(context, AppRoutes.sources);
     }

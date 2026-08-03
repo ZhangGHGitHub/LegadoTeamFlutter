@@ -9,6 +9,7 @@ import 'screens/audio_screen.dart';
 import 'screens/auto_task_screen.dart';
 import 'screens/book_group_screen.dart';
 import 'screens/book_info_screen.dart';
+import 'screens/bookshelf_manage_screen.dart';
 import 'screens/cache_settings_screen.dart';
 import 'screens/edit_book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
@@ -70,6 +71,7 @@ class AppRoutes {
   static const themeConfig = '/theme_config';
   static const importBooks = '/import_books';
   static const bookGroups = '/book_groups';
+  static const bookshelfManage = '/bookshelf/manage';
   static const searchContent = '/search_content';
   static const about = '/about';
   // discover 路由已删除（原版不存在的功能）
@@ -177,6 +179,7 @@ class AppRoutes {
         themeConfig: (_) => const ThemeConfigScreen(),
         importBooks: (_) => const ImportScreen(),
         bookGroups: (_) => const BookGroupScreen(),
+        bookshelfManage: (_) => const BookshelfManageScreen(),
         searchContent: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           // 路由参数规范化：优先接收 Book 对象
