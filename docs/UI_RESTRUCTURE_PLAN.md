@@ -717,6 +717,17 @@ String mapApiError(Object e) {
 > 新增 7 个单测。全量 1003 测试通过，analyze 206 info 基线。**并行规避**：REFACTORING_REMAINING_PLAN.md 本身因并行会话
 > 存在未提交 §4 章节本轮未做销记，待其提交后补。
 
+> **6.6 实施决议（REFACTORING_REMAINING_PLAN §4.3 P2-2③ 书架管理页 + P1-3 前置核实）**：
+> ① **P2-2③ BookshelfManageActivity 对齐**：`bookshelf_screen` 菜单 `manage` 项原为空实现，新增
+> `BookshelfManageNotifier/State`（`providers/bookshelf_manage/`，load/多选/批量删除 `deleteBook`/移动分组
+> `setBookGroup`/置顶 `topBook` 全部经 BookApi 委托 Rust，批量操作后重拉列表保证数据源一致）+
+> `bookshelf_manage_screen`（CheckboxListTile 多选列表 + 全选/取消全选 + 底部操作栏：删除确认/分组选择对话框/置顶
+> + 空态/错误重试），路由 `/bookshelf/manage` 注册，菜单入口接线。新增 10 个单测，全量 1013 测试通过，
+> analyze 206 info 基线。② **P1-3 前置核实**：grep `flutter_legado/lib/src/bridge/ffi/ffi.dart` 与
+> `rust/legado-ffi/src/ffi.rs` 均无 `source_check` 函数（Rust `cad00a257` 提交为 source_checker 内部简化，
+> 尚未暴露 FFI），P1-3 仍处跨轨阻塞，待 Rust 轨交付契约后接入。**P2-2 其余项状态**：①校验书源=P1-3（阻塞）；
+> ②验证码页依赖校验链路（阻塞）；④远程书籍导入与⑤ RSS 源调试待后续立项；⑥规则订阅无 ruleSub 契约（阻塞）。
+
 ---
 
 ## 九、验收标准总则
