@@ -748,6 +748,15 @@ String mapApiError(Object e) {
 > `new RustApi()`（调 `archiveIsArchive`）绕过注入层，属 §0.2 铁律违规；因 archive 系列契约不在 BookApi，上收需补
 > `archiveIsArchive` 等契约（三层），列入后续架构治理批次，与 P2-1 同类处理。
 
+> **6.9 实施决议（6.8 登记违规闭环：archive 调用上收注入层）**：经核实 archive 系列契约（`archiveImportZip/
+> archiveImportRar/archiveListZipFiles/archiveListRarFiles/archiveDetectEncoding/archiveConvertEncoding/
+> archiveIsArchive`）在 BookApi/RustApi/MockBookApi 三层均已就绪，违规仅是绕过注入层，故**零契约变更**修复：
+> ① `archive_import_dialog` 的 `final BookApi _api = RustApi()` 改为 `BookApi get _api => ref.read(bookApiProvider)`；
+> ② `import_screen` 移除 `_rustApi` 字段改 `ref.read(bookApiProvider).archiveIsArchive(...)`，同步清理
+> book_api/rust_api 冗余导入。全局复查 UI 层（screens/widgets/providers）`RustApi()` 直实例化与 bridge 直调
+> 残留为 **0**。全量 1024 测试通过，analyze 206 info 基线。至此 UI 层架构铁律违规已全部清零（P0 换源 bridge 直调、
+> P2-1 四屏 bridge 直调、6.8 RustApi() 直实例化均闭环），仅余跨轨阻塞项与实机取证项。
+
 ---
 
 ## 九、验收标准总则
