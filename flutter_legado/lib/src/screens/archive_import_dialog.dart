@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:path_provider/path_provider.dart';
 
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/providers.dart';
 import '../services/book_api.dart';
-import '../services/rust_api.dart';
 
 /// 支持的编码列表（用于 TXT 子文件编码选择）
 const _supportedEncodings = [
@@ -35,7 +35,8 @@ class ArchiveImportDialog extends ConsumerStatefulWidget {
 }
 
 class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
-  final BookApi _api = RustApi();
+  /// 经 Riverpod 注入层获取 BookApi（对齐 §0.2 铁律，不直接实例化 RustApi）
+  BookApi get _api => ref.read(bookApiProvider);
 
   /// 压缩包内的书籍文件名列表
   List<String> _fileNames = [];

@@ -7,9 +7,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/providers.dart';
 import '../routes.dart';
-import '../services/book_api.dart';
-import '../services/rust_api.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
 import 'archive_import_dialog.dart';
@@ -60,9 +59,6 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   /// 启用的格式过滤集合
   final Set<String> _activeFormats = {..._allBrowsableFormats};
-
-  /// Rust FFI 访问层（用于压缩包检测）
-  final BookApi _rustApi = RustApi();
 
   /// 已选中的文件路径
   final Set<String> _selected = {};
@@ -469,9 +465,10 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   ///
   /// 先通过 FFI 确认文件是压缩包格式，然后弹出 ArchiveImportDialog。
   Future<void> _openArchiveImport(String path) async {
-    // 通过 FFI 确认是否为压缩包
+    // 经 BookApi（Riverpod 注入层）确认是否为压缩包
     try {
-      final isArchive = await _rustApi.archiveIsArchive(filePath: path);
+      final isArchive =
+          await ref.read(bookApiProvider).archiveIsArchive(filePath: path);
       if (!isArchive) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
