@@ -1732,52 +1732,6 @@ class RustApi implements BookApi {
       bridge.archiveIsArchive(filePath: filePath);
 }
 
-/// 搜索结果包装
-class SearchResult {
-  final Book book;
-  final String sourceName;
-
-  const SearchResult({required this.book, this.sourceName = ''});
-
-  factory SearchResult.fromSearchBook(SearchBook sb) {
-    return SearchResult(
-      sourceName: sb.originName,
-      book: Book(
-        bookUrl: sb.bookUrl,
-        tocUrl: sb.tocUrl,
-        origin: sb.origin,
-        originName: sb.originName,
-        name: sb.name,
-        author: sb.author,
-        kind: sb.kind,
-        coverUrl: sb.coverUrl,
-        intro: sb.intro,
-        bookType: sb.bookType,
-        latestChapterTitle: sb.latestChapterTitle,
-        wordCount: sb.wordCount,
-        originOrder: sb.originOrder,
-      ),
-    );
-  }
-}
-
-/// 今日阅读统计
-class ReadingStatsToday {
-  final int totalSeconds;
-  final int bookCount;
-  final int durationSeconds;
-  final int wordCount;
-  final double readingSpeed;
-
-  const ReadingStatsToday({
-    this.totalSeconds = 0,
-    this.bookCount = 0,
-    this.durationSeconds = 0,
-    this.wordCount = 0,
-    this.readingSpeed = 0,
-  });
-}
-
 /// RustApi 调用异常
 class RustApiException implements Exception {
   final String message;

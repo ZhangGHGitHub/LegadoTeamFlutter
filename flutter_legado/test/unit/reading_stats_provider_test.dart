@@ -9,7 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:flutter_legado/src/providers/reading_stats/reading_stats_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/bridge/ffi.dart';
-import 'package:flutter_legado/src/services/rust_api.dart';
+import 'package:flutter_legado/src/models/models.dart';
 
 import '../mocks/mocks.dart';
 

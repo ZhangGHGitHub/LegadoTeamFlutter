@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
-import '../../services/rust_api.dart';
+import '../../models/models.dart';
 import '../providers.dart';
 import 'reading_stats_state.dart';
 

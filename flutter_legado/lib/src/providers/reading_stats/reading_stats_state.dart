@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../../services/rust_api.dart';
+import '../../models/models.dart';
 
 part 'reading_stats_state.freezed.dart';
 
