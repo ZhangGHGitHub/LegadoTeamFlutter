@@ -132,9 +132,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: '历史',
-            onPressed: () {
-              // TODO: 待接入 RSS 历史页面
-            },
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.rssHistory),
           ),
           IconButton(
             icon: const Icon(Icons.star_outline),

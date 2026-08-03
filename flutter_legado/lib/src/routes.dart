@@ -27,6 +27,7 @@ import 'screens/reader_comic_screen.dart';
 import 'screens/replace_rules_screen.dart';
 import 'screens/rss_config_screen.dart';
 import 'screens/rss_favorites_screen.dart';
+import 'screens/rss_history_screen.dart';
 import 'screens/rss_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
@@ -74,6 +75,7 @@ class AppRoutes {
   // discover 路由已删除（原版不存在的功能）
   static const rssConfig = '/rss/config';
   static const rssFavorites = '/rss/favorites';
+  static const rssHistory = '/rss/history';
   static const changeCover = '/change_cover';
   static const txtTocRules = '/txt_toc_rules';
   static const dict = '/dict';
@@ -194,6 +196,7 @@ class AppRoutes {
         
         rssConfig: (_) => const RssConfigScreen(),
         rssFavorites: (_) => const RssFavoritesScreen(),
+        rssHistory: (_) => const RssHistoryScreen(),
         changeCover: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           // 路由参数规范化：优先接收 Book 对象
