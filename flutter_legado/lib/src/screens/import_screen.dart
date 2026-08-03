@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../routes.dart';
 import '../services/book_api.dart';
 import '../services/rust_api.dart';
 import '../widgets/empty_state.dart';
@@ -275,6 +276,13 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           ? const BackButton()
           : IconButton(icon: const Icon(Icons.arrow_upward), onPressed: _goUp),
       actions: [
+        // 远程书籍导入入口（对标原版 RemoteBookActivity）
+        IconButton(
+          icon: const Icon(Icons.link),
+          tooltip: '远程导入',
+          onPressed: () =>
+              Navigator.pushNamed(context, AppRoutes.remoteBooks),
+        ),
         if (_currentDir != null)
           IconButton(
             icon: Icon(

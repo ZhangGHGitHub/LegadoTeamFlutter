@@ -25,6 +25,7 @@ import 'screens/search_content_screen.dart';
 import 'screens/reading_stats_screen.dart';
 import 'screens/reader_screen.dart';
 import 'screens/reader_comic_screen.dart';
+import 'screens/remote_book_screen.dart';
 import 'screens/replace_rules_screen.dart';
 import 'screens/rss_config_screen.dart';
 import 'screens/rss_favorites_screen.dart';
@@ -71,6 +72,7 @@ class AppRoutes {
   static const readAloudConfig = '/read_aloud_config';
   static const themeConfig = '/theme_config';
   static const importBooks = '/import_books';
+  static const remoteBooks = '/remote_books';
   static const bookGroups = '/book_groups';
   static const bookshelfManage = '/bookshelf/manage';
   static const searchContent = '/search_content';
@@ -180,6 +182,7 @@ class AppRoutes {
         readAloudConfig: (_) => const ReadAloudConfigScreen(),
         themeConfig: (_) => const ThemeConfigScreen(),
         importBooks: (_) => const ImportScreen(),
+        remoteBooks: (_) => const RemoteBookScreen(),
         bookGroups: (_) => const BookGroupScreen(),
         bookshelfManage: (_) => const BookshelfManageScreen(),
         searchContent: (context) {
