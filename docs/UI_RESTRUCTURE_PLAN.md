@@ -773,6 +773,15 @@ String mapApiError(Object e) {
 > 保留于 `rust_api.dart` 合理。至此分层单向依赖成立（models ← services ← providers ← screens），UI 层仅注入层
 > `providers.dart` 合法引用 `rust_api`。全量 1042 测试通过，analyze 206 info 基线。
 
+> **6.12 实施决议（§9.5 测试覆盖率验收核实：如实登记未达标）**：`flutter test --coverage` 实测（1042 测试）lcov 行覆盖率：
+> 总体 **23.4%**（4605/19706，含生成文件）/ 源码口径 23.7%。分层：`providers` **80.2%**（1385/1726，✅ 达「核心模块 >80%」门槛）、
+> `utils` 88%、`widgets` 43%、`services` 27.8%（rust_api 真实 FFI 路径多数仅实机/集成测试可覆盖）、`screens` 14.5%
+> （8982 行，widget 测试以结构/交互为主）、`bridge` 0%（codegen 产物）。
+> **结论**：§9.5「行覆盖率 >70%」门槛**未达标**，如实登记为待办而非虚报；providers/utils 核心状态管理层已达标。
+> 差距主因客观：bridge 生成代码与 rust_api 真实 FFI 分支需 §4.3 P2-4 FFI 集成测试（真实 DLL）方能覆盖，screens 大页面
+> 需深度 widget 测试补强。覆盖率提升列入后续批次，与 P2-4 FFI 集成测试协同推进（先集成测试吃掉 bridge/rust_api
+> 分母，再逐屏补 widget 深度测试）。
+
 ---
 
 ## 九、验收标准总则
