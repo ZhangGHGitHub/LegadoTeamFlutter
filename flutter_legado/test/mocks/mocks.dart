@@ -46,5 +46,6 @@ void registerFallbacks() {
   registerFallbackValue(FakeBookSource());
   registerFallbackValue(FakeBookmark());
   registerFallbackValue(FakeReplaceRule());
+  registerFallbackValue(const BookGroup());
   registerFallbackValue(FakeUri());
 }
