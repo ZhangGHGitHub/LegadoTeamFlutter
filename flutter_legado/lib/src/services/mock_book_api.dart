@@ -1014,6 +1014,17 @@ class MockBookApi implements BookApi {
   Future<String> httpPost(String url, String body) async =>
       '{"status": "ok", "mock": true}';
 
+  /// Mock QUIC 开关状态（内存态，供设置页切换回显）
+  bool _mockQuicEnabled = false;
+
+  @override
+  Future<bool> netIsQuicEnabled() async => _mockQuicEnabled;
+
+  @override
+  Future<void> netSetQuicEnabled(bool enabled) async {
+    _mockQuicEnabled = enabled;
+  }
+
   // ========== JS 引擎 ==========
 
   @override

@@ -99,27 +99,54 @@ void main() {
       expect(readState().rules.single.name, equals('剑桥词典'));
     });
 
-    test('lookup 命中本地内置词典（大小写归一化）', () {
-      readNotifier().lookup('Chapter');
+    test('lookup 委托 Rust dictLookup 并解析（大小写归一化）', () async {
+      when(() => mockApi.dictLookup(any())).thenAnswer((_) async => {
+            'word': 'chapter',
+            'phonetic': '/ˈtʃæptə(r)/',
+            'definitions': ['n. 章，章节'],
+          });
+
+      await readNotifier().lookup('Chapter');
 
       final state = readState();
       expect(state.queriedWord, equals('chapter'));
+      expect(state.isLoading, isFalse);
       expect(state.result, isNotNull);
       expect(state.result!.word, equals('chapter'));
       expect(state.result!.definitions, isNotEmpty);
+      verify(() => mockApi.dictLookup('chapter')).called(1);
     });
 
-    test('lookup 未收录词时 result 为 null 但记录 queriedWord', () {
-      readNotifier().lookup('zzz');
+    test('lookup 未收录词返回空 definitions（非异常）', () async {
+      when(() => mockApi.dictLookup(any())).thenAnswer((_) async => {
+            'word': 'zzz',
+            'phonetic': '',
+            'definitions': <String>[],
+          });
+
+      await readNotifier().lookup('zzz');
 
       final state = readState();
       expect(state.queriedWord, equals('zzz'));
-      expect(state.result, isNull);
+      expect(state.result, isNotNull);
+      expect(state.result!.definitions, isEmpty);
     });
 
-    test('lookup 空字符串被忽略', () {
-      readNotifier().lookup('   ');
+    test('lookup 异常时兜底并记录 error', () async {
+      when(() => mockApi.dictLookup(any())).thenThrow(Exception('ffi'));
+
+      await readNotifier().lookup('chapter');
+
+      final state = readState();
+      expect(state.isLoading, isFalse);
+      expect(state.result, isNull);
+      expect(state.error, isNotNull);
+    });
+
+    test('lookup 空字符串被忽略（不触发契约）', () async {
+      await readNotifier().lookup('   ');
       expect(readState().queriedWord, isNull);
+      verifyNever(() => mockApi.dictLookup(any()));
     });
   });
 }

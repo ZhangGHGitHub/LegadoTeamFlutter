@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
-import '../bridge/rust_lib.dart' as rust_bridge;
 import '../l10n/app_strings.dart';
+import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart' show ReaderBackground;
 import '../routes.dart';
 import '../services/settings_service.dart';
@@ -15,14 +17,15 @@ import '../services/settings_service.dart';
 /// - 缓存管理入口
 ///
 /// 拆分自原单体 SettingsScreen，作为设置枢纽「其他设置」入口的目标页。
-class OtherSettingsScreen extends StatefulWidget {
+class OtherSettingsScreen extends ConsumerStatefulWidget {
   const OtherSettingsScreen({super.key});
 
   @override
-  State<OtherSettingsScreen> createState() => _OtherSettingsScreenState();
+  ConsumerState<OtherSettingsScreen> createState() =>
+      _OtherSettingsScreenState();
 }
 
-class _OtherSettingsScreenState extends State<OtherSettingsScreen> {
+class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   final SettingsService _settingsService = SettingsService();
   String _localeValue = 'system'; // system / zh / en
 
@@ -66,9 +69,9 @@ class _OtherSettingsScreenState extends State<OtherSettingsScreen> {
     _proxyHost = await _settingsService.getProxyHost();
     _proxyPort = await _settingsService.getProxyPort();
     _timeoutSeconds = await _settingsService.getRequestTimeout();
-    // 加载 QUIC 开关状态（FFI 查询 Rust 侧全局配置）
+    // 加载 QUIC 开关状态（经 BookApi 查询 Rust 侧全局配置）
     try {
-      _quicEnabled = await rust_bridge.netIsQuicEnabled();
+      _quicEnabled = await ref.read(bookApiProvider).netIsQuicEnabled();
     } catch (_) {
       _quicEnabled = false; // FFI 不可用时默认关闭
     }
@@ -135,7 +138,7 @@ class _OtherSettingsScreenState extends State<OtherSettingsScreen> {
             onChanged: (value) async {
               final messenger = ScaffoldMessenger.of(context);
               try {
-                await rust_bridge.netSetQuicEnabled(enabled: value);
+                await ref.read(bookApiProvider).netSetQuicEnabled(value);
                 setState(() => _quicEnabled = value);
               } catch (e) {
                 messenger.showSnackBar(

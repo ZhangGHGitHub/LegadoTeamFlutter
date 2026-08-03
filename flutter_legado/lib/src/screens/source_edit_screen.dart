@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
-import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/source/source_notifier.dart';
@@ -774,34 +773,22 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       await notifier.saveSource(source);
 
       final sourceJson = jsonEncode(source.toJson());
+      final api = ref.read(bookApiProvider);
       String result;
 
       switch (type) {
         case 'search':
           // 搜索验证
-          result = await bridge.webbookSearch(
-            sourceJson: sourceJson,
-            query: url,
-            page: 1,
-          );
+          result = await api.webbookSearch(sourceJson, url, 1);
         case 'info':
           // 书籍详情验证
-          result = await bridge.webbookInfo(
-            sourceJson: sourceJson,
-            bookUrl: url,
-          );
+          result = await api.webbookInfo(sourceJson, url);
         case 'chapters':
           // 章节目录验证
-          result = await bridge.webbookChapters(
-            sourceJson: sourceJson,
-            bookUrl: url,
-          );
+          result = await api.webbookChapters(sourceJson, url);
         case 'content':
           // 章节内容验证
-          result = await bridge.webbookContent(
-            sourceJson: sourceJson,
-            chapterJson: url,
-          );
+          result = await api.webbookContent(sourceJson, url);
         default:
           result = '{"error": "未知验证类型"}';
       }

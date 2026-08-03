@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
-import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import '../providers/providers.dart';
 
@@ -116,11 +115,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
       // 2. 执行搜索
       _appendLog('[2/3] 正在执行搜索...');
       final sourceJson = jsonEncode(source.toJson());
-      final resultJson = await bridge.webbookSearch(
-        sourceJson: sourceJson,
-        query: keyword,
-        page: 1,
-      );
+      final resultJson = await api.webbookSearch(sourceJson, keyword, 1);
 
       final results = jsonDecode(resultJson) as List;
       _appendLog('搜索完成，返回 ${results.length} 条结果', level: _DebugLogLevel.success);

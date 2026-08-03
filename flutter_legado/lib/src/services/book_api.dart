@@ -412,6 +412,12 @@ abstract class BookApi {
   /// HTTP POST 请求
   Future<String> httpPost(String url, String body);
 
+  /// 查询 QUIC/HTTP3 传输开关状态
+  Future<bool> netIsQuicEnabled();
+
+  /// 设置 QUIC/HTTP3 传输开关（实验性）
+  Future<void> netSetQuicEnabled(bool enabled);
+
   // ========== JS 引擎 ==========
 
   /// 执行 JS 脚本

@@ -15,7 +15,9 @@ export 'dict_state.dart';
 /// 职责严格限定（对齐 UI_RESTRUCTURE_PLAN.md §0.2 铁律）：
 /// - 在线词典规则经 BookApi.getConfig/setConfig 持久化到 Rust 配置库，键 `dict_rules`，
 ///   不再使用 SharedPreferences。
-/// - 本地内置词典为静态占位数据，真实词典查询待 Rust 契约（见 API_CONTRACT.md 待办）。
+/// - 词典释义查询经 `BookApi.dictLookup` 委托 Rust（字段对齐 [DictEntry]：
+///   `word`/`phonetic`/`definitions`，未收录词返回空 `definitions`，
+///   契约见 API_CONTRACT.md §3 需求 4）。
 /// - 在线跳转仅为 URL 构造，规则 CRUD 透传。
 class DictNotifier extends Notifier<DictState> {
   /// 配置键
@@ -33,60 +35,6 @@ class DictNotifier extends Notifier<DictState> {
           'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/{{key}}',
     ),
   ];
-
-  /// 内置本地词典（占位数据，待 Rust 词典契约替换）
-  static const _localDict = <String, DictEntry>{
-    'chapter': DictEntry(
-      word: 'chapter',
-      phonetic: '/ˈtʃæptə(r)/',
-      definitions: ['n. 章，章节', 'n. （人生的）一段时期'],
-    ),
-    'novel': DictEntry(
-      word: 'novel',
-      phonetic: '/ˈnɒvl/',
-      definitions: ['n. 长篇小说', 'adj. 新奇的，异常的'],
-    ),
-    'author': DictEntry(
-      word: 'author',
-      phonetic: '/ˈɔːθə(r)/',
-      definitions: ['n. 作者，作家', 'v. 编写，创作'],
-    ),
-    'bookmark': DictEntry(
-      word: 'bookmark',
-      phonetic: '/ˈbʊkmɑːk/',
-      definitions: ['n. 书签', 'v. 将…加入书签'],
-    ),
-    'library': DictEntry(
-      word: 'library',
-      phonetic: '/ˈlaɪbrəri/',
-      definitions: ['n. 图书馆，藏书室', 'n. 文库，（软件）库'],
-    ),
-    'fiction': DictEntry(
-      word: 'fiction',
-      phonetic: '/ˈfɪkʃn/',
-      definitions: ['n. 小说，虚构作品', 'n. 虚构，想象'],
-    ),
-    'prologue': DictEntry(
-      word: 'prologue',
-      phonetic: '/ˈprəʊlɒɡ/',
-      definitions: ['n. 序言，开场白'],
-    ),
-    'epilogue': DictEntry(
-      word: 'epilogue',
-      phonetic: '/ˈepɪlɒɡ/',
-      definitions: ['n. 结语，尾声'],
-    ),
-    'paragraph': DictEntry(
-      word: 'paragraph',
-      phonetic: '/ˈpærəɡrɑːf/',
-      definitions: ['n. 段落', 'n. （报刊的）短讯'],
-    ),
-    'volume': DictEntry(
-      word: 'volume',
-      phonetic: '/ˈvɒljuːm/',
-      definitions: ['n. 卷，册', 'n. 音量', 'n. 体积，容量'],
-    ),
-  };
 
   @override
   DictState build() => const DictState();
@@ -125,11 +73,27 @@ class DictNotifier extends Notifier<DictState> {
     await _persist(rules);
   }
 
-  /// 查询单词（本地内置词典）
-  void lookup(String word) {
+  /// 查询单词（经 BookApi.dictLookup 委托 Rust）
+  ///
+  /// 空字符串 / 纯空白被忽略；未收录词返回空 `definitions`（非异常）。
+  Future<void> lookup(String word) async {
     final key = word.trim().toLowerCase();
     if (key.isEmpty) return;
-    state = state.copyWith(queriedWord: key, result: _localDict[key]);
+    state = state.copyWith(
+      queriedWord: key,
+      result: null,
+      isLoading: true,
+      error: null,
+    );
+    try {
+      final raw = await ref.read(bookApiProvider).dictLookup(key);
+      state = state.copyWith(
+        result: DictEntry.fromJson(raw),
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), isLoading: false);
+    }
   }
 
   /// 持久化全量规则到 Rust 配置库

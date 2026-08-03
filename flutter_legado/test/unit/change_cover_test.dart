@@ -1,9 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/change_cover/change_cover_notifier.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
+
+import '../mocks/mocks.dart';
 
 void main() {
   group('CoverCandidate.fromJson', () {
@@ -27,10 +31,16 @@ void main() {
   });
 
   group('ChangeCoverNotifier', () {
+    late MockRustApi mockApi;
     late ProviderContainer container;
 
+    setUpAll(registerFallbacks);
+
     setUp(() {
-      container = ProviderContainer();
+      mockApi = MockRustApi();
+      container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      );
       addTearDown(container.dispose);
     });
 
@@ -46,47 +56,50 @@ void main() {
       expect(state.error, isNull);
     });
 
-    test('searchCovers 生成确定性候选（含尺寸）', () async {
+    test('searchCovers 解析真实契约返回（含尺寸缺省兜底）', () async {
+      when(() => mockApi.searchCover(any())).thenAnswer((_) async => [
+            {'url': 'https://a.com/1.jpg', 'width': 240, 'height': 320},
+            {'url': 'https://a.com/2.jpg'},
+          ]);
+
       await readNotifier().searchCovers(' chapter ');
 
       final state = readState();
       expect(state.isSearching, isFalse);
-      expect(state.candidates.length, equals(8));
+      expect(state.candidates.length, equals(2));
+      expect(state.candidates.first.url, equals('https://a.com/1.jpg'));
       expect(state.candidates.first.width, equals(240));
-      expect(state.candidates.first.height, equals(320));
-      expect(state.candidates.first.url, contains('picsum.photos'));
+      expect(state.candidates[1].width, isZero);
+      verify(() => mockApi.searchCover('chapter')).called(1);
     });
 
-    test('searchCovers 同书名结果确定（可复现）', () async {
+    test('searchCovers 无候选返回空列表（非异常）', () async {
+      when(() => mockApi.searchCover(any())).thenAnswer((_) async => []);
+
       await readNotifier().searchCovers('novel');
-      final first = readState().candidates.map((e) => e.url).toList();
-
-      // 新建容器重查，结果一致
-      final container2 = ProviderContainer();
-      addTearDown(container2.dispose);
-      await container2
-          .read(changeCoverNotifierProvider.notifier)
-          .searchCovers('novel');
-      final second = container2
-          .read(changeCoverNotifierProvider)
-          .candidates
-          .map((e) => e.url)
-          .toList();
-
-      expect(second, equals(first));
-    });
-
-    test('searchCovers 空字符串被忽略（状态不变）', () async {
-      await readNotifier().searchCovers('');
 
       final state = readState();
       expect(state.candidates, isEmpty);
       expect(state.isSearching, isFalse);
+      expect(state.error, isNull);
     });
 
-    test('searchCovers 纯空白被忽略', () async {
+    test('searchCovers 异常时兜底并记录 error', () async {
+      when(() => mockApi.searchCover(any())).thenThrow(Exception('网络错误'));
+
+      await readNotifier().searchCovers('novel');
+
+      final state = readState();
+      expect(state.isSearching, isFalse);
+      expect(state.candidates, isEmpty);
+      expect(state.error, isNotNull);
+    });
+
+    test('searchCovers 空字符串被忽略（不触发契约）', () async {
       await readNotifier().searchCovers('   ');
+
       expect(readState().candidates, isEmpty);
+      verifyNever(() => mockApi.searchCover(any()));
     });
   });
 }

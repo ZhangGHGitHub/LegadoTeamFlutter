@@ -116,11 +116,16 @@ class _DictScreenState extends ConsumerState<DictScreen> {
     if (state.queriedWord == null) {
       return _buildEmptyHint(theme);
     }
+    if (state.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final entry = state.result;
+    final notFound = entry == null || entry.definitions.isEmpty;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        if (state.result != null)
-          _buildResultCard(theme, state.result!)
+        if (!notFound)
+          _buildResultCard(theme, entry)
         else
           _buildNotFound(theme, state.queriedWord!),
         const SizedBox(height: 20),
@@ -139,7 +144,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
           Text('输入单词开始查询', style: theme.textTheme.bodyLarge),
           const SizedBox(height: 8),
           Text(
-            '内置本地词典，未收录的词可跳转在线词典',
+            '未收录的词可跳转在线词典',
             style: theme.textTheme.bodySmall,
           ),
         ],

@@ -1,9 +1,6 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
-import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import '../providers/providers.dart';
 
@@ -170,14 +167,14 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     });
 
     try {
-      final json = await bridge.rssFetchArticles(sourceUrl: url);
-      final articles = jsonDecode(json) as List;
+      final api = ref.read(bookApiProvider);
+      final articles = await api.getRssArticles(url);
       if (articles.isEmpty) {
         setState(() => _testResult = '连接成功，但未获取到文章（可能需要配置规则）');
       } else {
         final titles = articles
             .take(5)
-            .map((e) => (e as Map<String, dynamic>)['title'] ?? '(无标题)')
+            .map((e) => e.title.isEmpty ? '(无标题)' : e.title)
             .join('\n');
         setState(() {
           _testResult = '成功获取 ${articles.length} 篇文章：\n$titles';
