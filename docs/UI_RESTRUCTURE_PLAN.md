@@ -704,6 +704,19 @@ String mapApiError(Object e) {
 > ③ 两组 Notifier 测试改以 mocktail stub 真实契约（解析/空候选/异常兜底/空值忽略）。切换后全量 996 测试通过，
 > analyze 保持 206 info 基线。P1 至此闭环；dictLookup 的 Rust 内置词典为 18 词占位级，真实词库为 Rust 轨后续项。
 
+> **6.5 实施决议（REFACTORING_REMAINING_PLAN §4.3 P1-1/P1-2 UI 轨落地）**：按 REFACTORING_REMAINING_PLAN.md §4.3 推进：
+> ① **P1-1 过期占位清理**：`rust_api.dart` 的 `startServer/stopServer` 由 config 占位改用 `bridge.serverStart/serverStop`
+> 真实启停；`getServerStatus` 改读 `bridge.serverStatus` JSON（`{running, port}`）并转统一描述串（`running on port X`/
+> `stopped` 语义不变）；`backup/restore` 移除 Dart 侧自行聚合 JSON，改委托 `bridge.backupCreate/backupRestore`（保留
+> 目录创建/时间戳文件名与文件存在性检查语义）；`setServerPort` 保持 config 记录（bridge 无独立 setPort，下次
+> startServer 生效）。② **P1-2 RSS 历史页**（该项 UI 轨部分；`rssUpdateSource` 契约/落表确认仍待 Rust 轨）：新增
+> `RssReadRecordRow` freezed 模型（镜像 Rust `RssReadRecordRow`：`origin`/`title`/`link`/`read_time` snake_case；
+> misc.dart 既有 Room v95 全列版 `RssReadRecord` 无业务引用，保留不冲突，待 §4.2 P0-2 v96→97 迁移对齐后统一）+
+> `RssHistoryNotifier/State`（load/clear 经 `BookApi.rssListReadRecords/rssClearReadRecords`）+ `rss_history_screen`
+> （列表/清空确认/空态/错误重试），路由 `/rss/history` 注册，`rss_screen` 顶栏历史入口接线（消除 TODO）。
+> 新增 7 个单测。全量 1003 测试通过，analyze 206 info 基线。**并行规避**：REFACTORING_REMAINING_PLAN.md 本身因并行会话
+> 存在未提交 §4 章节本轮未做销记，待其提交后补。
+
 ---
 
 ## 九、验收标准总则
