@@ -728,6 +728,16 @@ String mapApiError(Object e) {
 > 尚未暴露 FFI），P1-3 仍处跨轨阻塞，待 Rust 轨交付契约后接入。**P2-2 其余项状态**：①校验书源=P1-3（阻塞）；
 > ②验证码页依赖校验链路（阻塞）；④远程书籍导入与⑤ RSS 源调试待后续立项；⑥规则订阅无 ruleSub 契约（阻塞）。
 
+> **6.7 实施决议（REFACTORING_REMAINING_PLAN §4.3 P2-2⑤ RSS 源调试页 + P2-3 长按 bug 核实）**：
+> ① **P2-2⑤ RssSourceDebugActivity 对齐**：新增 `rss_source_debug_screen`（对标书源调试页模式：输入 RSS 源 URL
+> 逐步执行「查源 `getRssSources` → 抓取文章 `getRssArticles`」链路，实时日志控制台含级别过滤/清空/自动滚动，
+> 全部经 BookApi 无 bridge 直调），路由 `/rss/source_debug` 注册（String sourceUrl 参数），`rss_source_edit`
+> AppBar 新增调试入口（预填当前 URL）。全量 1013 测试通过，analyze 206 info 基线。
+> ② **P2-3 书架长按本地 txt bug 核实**：FINAL_REPORT 仅记「长按 txt 有 bug，取证缺失」无具体复现路径；静态核查
+> `bookshelf_screen` 长按链路（封面长按→`_openBookInfo`→bookInfo 路由传 Book 对象→`book_info_screen._loadData`
+> 的 getBook/getChapters 均有 null 兜底与 ErrorView）未发现确定性缺陷，盲修风险高，登记为**待复现**：需实机/
+> 模拟器以本地 txt 书长按复现具体异常后再定位修复，不作为本轮盲改项。
+
 ---
 
 ## 九、验收标准总则
