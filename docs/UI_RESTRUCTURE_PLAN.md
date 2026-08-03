@@ -765,6 +765,14 @@ String mapApiError(Object e) {
 > 测试，全量 1042 测试通过，analyze 206 info 基线。P2-3 余下项（色值实机复核、阅读器 5 屏取证、长按 txt bug 复现等）
 > 仍需实机环境。
 
+> **6.11 实施决议（遗留结构问题闭环：模型归位与反向依赖消除）**：6.3 登记的遗留结构问题本轮闭环：
+> ① `ReadingStatsToday` 与 `SearchResult`（后者为迁移中连带发现，同被 book_api 引用）由服务层 `rust_api.dart` 原子迁移至
+> `models/`（`reading_stats_today.dart`/`search_result.dart`，保持纯类定义行为零变化），`models.dart` 统一导出；
+> ② `book_api.dart`（接口层）移除对 `rust_api.dart`（实现层）的反向导入；providers/UI 层（reading_stats_state/notifier、
+> search_state/search_screen/source_edit_screen 及对应测试）改经 models 引用；③ `RustApiException` 为服务内部异常，
+> 保留于 `rust_api.dart` 合理。至此分层单向依赖成立（models ← services ← providers ← screens），UI 层仅注入层
+> `providers.dart` 合法引用 `rust_api`。全量 1042 测试通过，analyze 206 info 基线。
+
 ---
 
 ## 九、验收标准总则
