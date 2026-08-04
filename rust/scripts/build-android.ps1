@@ -88,6 +88,13 @@ if (-not (Test-Path $ToolchainBin)) {
 $env:ANDROID_NDK_HOME = $NdkPath
 # 将 NDK 工具链加入 PATH（供 cc-rs 发现 clang）
 $env:PATH = "$ToolchainBin;$env:PATH"
+# 清理外部环境污染：MSVC 风格 CFLAGS（/std:c11 等）对 clang 无效
+# 注意：不能用 Remove-Item Env:（用户级作用域会重新透出），必须置空字符串
+$env:CFLAGS = ''
+$env:CXXFLAGS = ''
+# 清掉全局 CC/AR：全局 CC 会污染同一 cargo 调用中的宿主机构建
+# （rquickjs-sys 宿主机 build.rs 会叠加 MSVC CFLAGS 导致交叉编译失败）
+Remove-Item Env:\CC, Env:\AR -ErrorAction SilentlyContinue
 
 # TLS 说明：reqwest 使用 rustls-tls (default-features=false)，无需 OpenSSL
 
@@ -106,7 +113,7 @@ Set-Location $RustDir
 # ========== 安装 Rust targets ==========
 $triples = $SelectedKeys | ForEach-Object { $AllTargets[$_].triple }
 Write-Host ">> Ensuring Rust targets installed..." -ForegroundColor Yellow
-rustup target add @triples
+rustup target add $triples
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to install Rust targets"
     exit 1
@@ -118,14 +125,12 @@ foreach ($key in $SelectedKeys) {
     $triple = $info.triple
 
     # 设置 CC/AR 环境变量（cc-rs crate 需要）
+    # 必须只用 target 限定变量（CC_<triple>）：全局 CC 会让宿主机构建
+    # 误用 Android clang，叠加 rquickjs-sys 宿主 MSVC CFLAGS 导致编译失败
     $ccName = $info.cc
-    $env:CC = Join-Path $ToolchainBin $ccName
-    $env:AR = Join-Path $ToolchainBin "llvm-ar.exe"
-
-    # 也设置 target-specific 变量（更精确）
     $envVar = $triple -replace "-", "_"
-    [System.Environment]::SetEnvironmentVariable("CC_$envVar", $env:CC, "Process")
-    [System.Environment]::SetEnvironmentVariable("AR_$envVar", $env:AR, "Process")
+    [System.Environment]::SetEnvironmentVariable("CC_$envVar", (Join-Path $ToolchainBin $ccName), "Process")
+    [System.Environment]::SetEnvironmentVariable("AR_$envVar", (Join-Path $ToolchainBin "llvm-ar.exe"), "Process")
 
     Write-Host ""
     Write-Host ">> Building $triple ($($info.abi))..." -ForegroundColor Yellow
