@@ -117,14 +117,21 @@ impl RealBookSourceFetcher {
             _ => return Ok(()), // 无 loginCheckJs 配置，跳过
         };
 
-        crate::js_executor::execute_login_check_js(
+        // 对齐原版语义：loginCheckJs 仅为登录态检查（常依赖 java.*/cookie.*
+        // 等 Android 运行时对象），执行失败不应阻断详情/目录/正文获取，降级放行
+        if let Err(e) = crate::js_executor::execute_login_check_js(
             login_check_js,
             response_body,
             response_url,
             response_code,
             &source.book_source_url,
-        )
-        .map_err(|e| LegadoError::JsEngine(format!("loginCheckJs: {e}")))
+        ) {
+            eprintln!(
+                "[web_book] loginCheckJs 执行失败（已忽略）: {}",
+                e
+            );
+        }
+        Ok(())
     }
 
     /// 从详情页响应体解析书籍详情（可复用辅助方法）
