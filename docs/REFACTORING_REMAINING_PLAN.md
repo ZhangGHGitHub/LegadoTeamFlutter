@@ -429,6 +429,8 @@ flutter test                  # 全量测试通过
 
 #### 3.4 Rust 轨缺口补全（与 Kotlin 修复并行）
 
+> ✅ **核销（2026-08-03）**：本节 10 项缺口已于 2026-08-03 全部完成并核验（相关提交：301b83b7f / 064999d63 / 90d197b6f / f008f5467 / cad00a257）。
+
 **P0（阻塞核心阅读体验）**
 
 1. **WebBook 书源驱动全链路**（`legado-ffi/src/api/web_book.rs`、`legado-server/src/handlers/web_book.rs`、`legado-js/src/js_source/`）
@@ -465,12 +467,16 @@ flutter test                  # 全量测试通过
 | B | 冻结 app/，聚焦 Flutter+Rust 轨（当前实际状态），正式声明停止 Kotlin 同步 | §3.1-3.3 按现状修复；放弃上游 8 个版本日新功能 |
 | C | 选择性 cherry-pick 关键功能（MCP 套件、PDF 导出、高亮样式、定时任务分享、壁纸配色等） | 折中；需维护补丁集，与 Rust 轨同步评估 |
 
-> 决策结果：**待定**。决策前默认按 B 执行（维持现状，不引入上游）；决策后回写本节。
+> 决策结果：**选项 A 已执行（2026-08-04）**——从 LegadoTeam/legado 同步 141 个提交（e1c102803 #396 → 308ac7b1e #543），提交 `b10285b8c`，424 文件 +31,710/-2,235 行。
+>
+> 后续口径（按选项 A 原定“先合并再修”）：
+> - §3.1-3.3 的 Kotlin 修复需按新基线（308ac7b1e）逐条复核 file:line 后再执行（同步导致 89 条修复项的证据基线过期）
+> - 注意：Kotlin 两项 P0（BaseReadBookActivity.kt 日期崩溃、DatabaseMigrations.kt migration_26_27）经同步仍未修复（上游同样带病）
 
 #### 3.6 文档同步项
 
 - `docs/README.md`：修正「所有已规划任务均已完成」「零 TODO/桩实现」表述；登记本计划为「进行中项」
-- `docs/KOTLIN_SYNC_REPORT.md`：同步机制持续化（周更）；本次落后 123 提交按 §3.5 决策处理
+- `docs/KOTLIN_SYNC_REPORT.md`：同步机制持续化（周更）；本次落后已按 §3.5 决策处理（2026-08-04 同步 141 个提交，见报告「同步窗口 2」）
 - 本文档章节随修复完成逐项销记，并同步「当前状态（权威）」
 
 ### 4. 执行顺序建议
