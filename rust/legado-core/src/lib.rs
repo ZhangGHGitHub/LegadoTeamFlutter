@@ -24,6 +24,7 @@
 pub mod audio;
 pub mod audio_cache;
 pub mod audio_preload;
+pub mod audio_skip_policy;
 pub mod auto_task;
 pub mod cache_book;
 pub mod chinese_convert;
