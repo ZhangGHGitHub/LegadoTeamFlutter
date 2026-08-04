@@ -10,7 +10,11 @@ use legado_db::{BookGroup, BookGroupRepository};
 use crate::db_state::with_database;
 
 /// 书籍分组 DTO
+///
+/// 序列化契约：camelCase 字段名（groupId/groupName/…），
+/// 与 Dart 侧 `BookGroup.fromJson` 的 `@JsonKey` 一一对应。
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BookGroupDto {
     pub group_id: i64,
     pub group_name: String,
@@ -107,6 +111,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_dto_serializes_camel_case() {
+        // 与 Dart BookGroup.fromJson 的 @JsonKey(name: 'groupId'/'groupName') 契约一致
+        let dto = BookGroupDto {
+            group_id: 42,
+            group_name: "科幻".to_string(),
+            cover: None,
+            order: 1,
+            show: true,
+        };
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("\"groupId\":42"));
+        assert!(json.contains("\"groupName\":\"科幻\""));
+        assert!(!json.contains("group_id"));
+    }
+
+    #[test]
     fn test_book_group_crud() {
         crate::db_state::ensure_test_db();
 
@@ -131,5 +151,47 @@ mod tests {
         assert!(delete_book_group(id).unwrap());
         let groups = get_book_groups().unwrap();
         assert!(!groups.iter().any(|g| g.group_id == id));
+    }
+
+    /// setShow 生效验证：设置后通过 get_book_groups 读回，
+    /// 确认 show 状态确实持久化变更（对齐 Kotlin dao upShow 语义）
+    #[test]
+    fn test_set_show_readback() {
+        crate::db_state::ensure_test_db();
+
+        let id = add_book_group("显示状态测试", "", 0).unwrap();
+        assert!(id > 0);
+
+        // 新建分组默认显示
+        let g = get_book_groups()
+            .unwrap()
+            .into_iter()
+            .find(|g| g.group_id == id)
+            .expect("分组应存在");
+        assert!(g.show);
+
+        // 隐藏后读回应为 false
+        assert!(set_book_group_show(id, false).unwrap());
+        let g = get_book_groups()
+            .unwrap()
+            .into_iter()
+            .find(|g| g.group_id == id)
+            .expect("分组应存在");
+        assert!(!g.show);
+
+        // 恢复显示后读回应为 true
+        assert!(set_book_group_show(id, true).unwrap());
+        let g = get_book_groups()
+            .unwrap()
+            .into_iter()
+            .find(|g| g.group_id == id)
+            .expect("分组应存在");
+        assert!(g.show);
+
+        // 不存在的分组返回 false
+        assert!(!set_book_group_show(id + 999_999, true).unwrap());
+
+        // 清理
+        assert!(delete_book_group(id).unwrap());
     }
 }
