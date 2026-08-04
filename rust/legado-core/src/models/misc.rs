@@ -44,6 +44,17 @@ pub struct SearchBook {
     pub chapter_word_count: i32,
     #[serde(default = "default_neg_one", rename = "respondTime")]
     pub respond_time: i32,
+    /// 是否有阅读记录（#424：搜索结果阅读记录标识，加法式字段，
+    /// 原版 Kotlin 在 UI 层计算，Flutter 轨由 Rust 侧随 JSON 附加）
+    #[serde(default, rename = "hasReadRecord")]
+    pub has_read_record: bool,
+    /// 阅读记录中的作者信息（仅在有阅读记录时附加，无记录时缺省）
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "readRecordAuthor"
+    )]
+    pub read_record_author: Option<String>,
 }
 
 fn default_neg_one() -> i32 {

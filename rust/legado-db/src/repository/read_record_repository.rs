@@ -28,7 +28,10 @@ const AUTHORS_PREFIX: &str = "\u{1E}authors:";
 /// - 空白值返回空列表（上游返回 {""}，合并时会被非空过滤掉，等价）；
 /// - 无前缀视为单一作者；
 /// - 前缀后 JSON 解析失败时返回空列表（上游 getOrNull 后同样被过滤）。
-fn decode_authors(value: &str) -> Vec<String> {
+///
+/// 公开供上层构建阅读记录索引使用（如搜索结果阅读记录标识，
+/// 对齐上游 `ReadRecordIndex.of` 对 author 列的解码）。
+pub fn decode_read_record_authors(value: &str) -> Vec<String> {
     if value.trim().is_empty() {
         return Vec::new();
     }
@@ -58,9 +61,9 @@ fn decode_authors(value: &str) -> Vec<String> {
 /// - 多个作者 → `前缀 + JSON 数组`。
 pub fn merge_read_record_authors(current: &str, incoming: &str) -> String {
     let mut set: BTreeSet<String> = BTreeSet::new();
-    for author in decode_authors(current)
+    for author in decode_read_record_authors(current)
         .into_iter()
-        .chain(decode_authors(incoming))
+        .chain(decode_read_record_authors(incoming))
     {
         if !author.trim().is_empty() {
             set.insert(author);

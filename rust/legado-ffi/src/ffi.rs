@@ -204,6 +204,8 @@ pub mod ffi {
     ///
     /// 序列化契约：返回原版 `SearchBook` camelCase 结构（name/originName/bookUrl/…），
     /// 与 Dart 侧 `SearchBook.fromJson` 字段一一对应。
+    /// 另附加阅读记录标识字段 `hasReadRecord` / `readRecordAuthor`（#424，
+    /// 加法式扩展，Dart 侧 jsonDecode 兼容）。
     pub fn search_books(keyword: String, source_urls_json: String) -> Result<String, BridgeError> {
         let results = crate::api::search::search_books(&keyword, &source_urls_json)?;
         let books: Vec<legado_core::models::SearchBook> = results
@@ -227,6 +229,9 @@ pub mod ffi {
                 chapter_word_count_text: None,
                 chapter_word_count: -1,
                 respond_time: -1,
+                // 阅读记录标识（由 api::search 批量附加后透传）
+                has_read_record: r.has_read_record,
+                read_record_author: r.read_record_author,
             })
             .collect();
         to_json(&books)

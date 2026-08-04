@@ -115,6 +115,8 @@ fn row_to_search_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchBook> {
         chapter_word_count_text: row.get(15)?,
         chapter_word_count: row.get(16)?,
         respond_time: row.get(17)?,
+        // searchBooks 表不存储阅读记录标识（#424 加法式字段，默认 false/None）
+        ..Default::default()
     })
 }
 

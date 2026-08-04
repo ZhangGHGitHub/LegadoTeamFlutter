@@ -15,6 +15,8 @@ use legado_core::models::BookSource;
 use legado_core::search_engine::{MultiSourceSearcher, SearchConfig};
 use legado_core::source_matcher::SearchCandidate;
 use legado_core::{LegadoError, LegadoResult};
+use legado_db::repository::read_record_repository::decode_read_record_authors;
+use legado_db::ReadRecordRepository;
 use legado_net::LegadoClient;
 use legado_parser::{AnalyzeRule, AnalyzeUrl, RequestMethod};
 
@@ -43,6 +45,18 @@ pub struct SearchResult {
     pub intro: Option<String>,
     /// 封面 URL
     pub cover_url: Option<String>,
+    /// 是否有阅读记录（对齐上游 `SearchViewModel.hasReadRecord`，
+    /// 加法式字段：无记录时恒为 false）
+    #[serde(default, rename = "hasReadRecord")]
+    pub has_read_record: bool,
+    /// 阅读记录中的作者信息（仅在有阅读记录时附加，
+    /// 多作者以顿号连接；无记录时缺省）
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "readRecordAuthor"
+    )]
+    pub read_record_author: Option<String>,
 }
 
 // ─── WebSourceSearcher ────────────────────────────────────────────────────────
@@ -101,7 +115,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     }
 
     // 使用 tokio runtime 并行搜索
-    let results = runtime::block_on(async {
+    let mut results = runtime::block_on(async {
         let client = crate::http_state::shared_client();
 
         let mut handles = Vec::new();
@@ -121,6 +135,11 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
         }
         Ok::<_, LegadoError>(all_results)
     })?;
+
+    // 搜索完成后批量附加阅读记录标识（一次性构建内存索引，O(1) 查找，
+    // 对齐上游 ReadRecordIndex 思路；search_cover 复用本函数但不关心该字段）
+    let index = ReadRecordIndex::load();
+    annotate_results(&mut results, &index);
 
     Ok(results)
 }
@@ -165,7 +184,30 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
         Ok::<_, LegadoError>(searcher.search(config, sources, cancel).await)
     })?;
 
-    serde_json::to_string(&results).map_err(LegadoError::Serialization)
+    // 批量附加阅读记录标识后序列化（不修改 core 的 SearchResult 结构，
+    // 通过加法式 DTO 扩展输出 JSON）
+    let index = ReadRecordIndex::load();
+    let annotated: Vec<AnnotatedCandidate> = results
+        .into_iter()
+        .map(|c| {
+            let (has_record, record_author) = index.lookup(&c.book_name, &c.author);
+            AnnotatedCandidate {
+                book_name: c.book_name,
+                author: c.author,
+                cover_url: c.cover_url,
+                intro: c.intro,
+                latest_chapter: c.latest_chapter,
+                source_url: c.source_url,
+                source_name: c.source_name,
+                book_url: c.book_url,
+                relevance_score: c.relevance_score,
+                has_read_record: has_record,
+                read_record_author: record_author,
+            }
+        })
+        .collect();
+
+    serde_json::to_string(&annotated).map_err(LegadoError::Serialization)
 }
 
 /// 取消正在进行的搜索
@@ -276,6 +318,9 @@ where
 
     let client = crate::http_state::shared_client();
 
+    // 一次性构建阅读记录索引，逐批附加标识（对齐 ReadRecordIndex 思路）
+    let read_record_index = ReadRecordIndex::load();
+
     // 为每个书源 spawn 独立任务，附带原始索引
     let mut tasks = Vec::with_capacity(total);
     for (index, source) in sources.into_iter().enumerate() {
@@ -307,10 +352,13 @@ where
         }
 
         finished += 1;
-        let (books, error) = match outcome {
+        let (mut books, error) = match outcome {
             Ok(list) => (list, None),
             Err(e) => (Vec::new(), Some(e.to_string())),
         };
+
+        // 批次推送前附加阅读记录标识
+        annotate_results(&mut books, &read_record_index);
 
         let batch = SearchSourceBatch {
             source_index: index,
@@ -330,6 +378,136 @@ where
             }
         }
     }
+}
+
+// ─── 阅读记录标识（对齐上游 ReadRecordIndex，#424）─────────────────────
+
+/// 阅读记录内存索引（对齐上游 Kotlin `ReadRecordIndex`）
+///
+/// 一次性从 readRecord 表加载全量记录构建 `书名 -> 作者集合` 映射，
+/// 搜索结果逐本 O(1) 查找，避免每本书一次 DB 查询。
+///
+/// 匹配语义对齐上游 `ReadRecordIndex.contains`：
+/// 阅读记录以书名为准，作者仅作辅助 —— 任意一方作者为空时
+/// 退化为按书名判断；两侧作者都非空时需存在交集才算读过。
+struct ReadRecordIndex {
+    /// 书名 -> 阅读记录中的作者列表（旧记录/无作者时为空列表）
+    authors: HashMap<String, Vec<String>>,
+}
+
+impl ReadRecordIndex {
+    /// 从当前数据库加载全量阅读记录构建索引
+    ///
+    /// 数据库未初始化或查询失败时降级为空索引（不影响搜索主流程）。
+    fn load() -> Self {
+        let records = crate::db_state::with_database(|db| {
+            ReadRecordRepository::new(db.connection()).find_all()
+        })
+        .unwrap_or_default();
+        Self::of(records)
+    }
+
+    /// 由记录列表构建索引（对齐上游 `ReadRecordIndex.of`）
+    ///
+    /// 注意：上游 `ReadRecordAuthors.decode` 对空白 author 返回 {""}，
+    /// 索引中保留空串占位以表达「旧记录无作者 → 按书名命中任意作者」；
+    /// Rust 侧解码返回空列表时需补上空串占位保持等价。
+    fn of(records: Vec<legado_db::repository::read_record_repository::ReadRecord>) -> Self {
+        let mut authors: HashMap<String, Vec<String>> = HashMap::new();
+        for record in records {
+            let mut decoded = decode_read_record_authors(&record.author);
+            if decoded.is_empty() {
+                decoded.push(String::new());
+            }
+            authors
+                .entry(record.book_name)
+                .or_default()
+                .extend(decoded);
+        }
+        Self { authors }
+    }
+
+    /// 查询书籍是否有阅读记录（对齐上游 `ReadRecordIndex.contains`）
+    fn contains(&self, name: &str, author: &str) -> bool {
+        let Some(record_authors) = self.authors.get(name) else {
+            return false;
+        };
+        let author = author.trim();
+        if author.is_empty() {
+            return true;
+        }
+        record_authors
+            .iter()
+            .any(|a| a.trim().is_empty() || a == author)
+    }
+
+    /// 查询并返回（是否有记录, 记录中的作者展示串）
+    ///
+    /// 作者展示串仅在有记录时返回：多作者以顿号连接，
+    /// 记录无作者信息时为 None。
+    fn lookup(&self, name: &str, author: &str) -> (bool, Option<String>) {
+        if !self.contains(name, author) {
+            return (false, None);
+        }
+        let display = self
+            .authors
+            .get(name)
+            .map(|list| {
+                list.iter()
+                    .filter(|a| !a.trim().is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("、")
+            })
+            .filter(|s| !s.is_empty());
+        (true, display)
+    }
+}
+
+/// 批量为搜索结果附加阅读记录标识（原地修改）
+fn annotate_results(results: &mut [SearchResult], index: &ReadRecordIndex) {
+    for item in results.iter_mut() {
+        let (has_record, record_author) = index.lookup(&item.book_name, &item.author);
+        item.has_read_record = has_record;
+        item.read_record_author = record_author;
+    }
+}
+
+/// 附加阅读记录标识后的多源搜索输出 DTO
+///
+/// 字段为 `legado_core::search_engine::SearchResult` 的加法式超集：
+/// 不修改 core 结构，仅在输出 JSON 中额外携带
+/// `hasReadRecord` / `readRecordAuthor`（Dart 侧 jsonDecode 兼容）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AnnotatedCandidate {
+    /// 书籍名称
+    pub book_name: String,
+    /// 作者
+    pub author: String,
+    /// 封面 URL
+    pub cover_url: Option<String>,
+    /// 简介
+    pub intro: Option<String>,
+    /// 最新章节
+    pub latest_chapter: Option<String>,
+    /// 书源 URL
+    pub source_url: String,
+    /// 书源名称
+    pub source_name: String,
+    /// 书籍详情页 URL
+    pub book_url: String,
+    /// 相关性评分
+    pub relevance_score: f64,
+    /// 是否有阅读记录
+    #[serde(default, rename = "hasReadRecord")]
+    pub has_read_record: bool,
+    /// 阅读记录中的作者信息（无记录时缺省）
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "readRecordAuthor"
+    )]
+    pub read_record_author: Option<String>,
 }
 
 // ─── 内部实现 ─────────────────────────────────────────────────────────────────
@@ -507,6 +685,9 @@ fn parse_search_response(
             latest_chapter,
             intro,
             cover_url,
+            // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
+            has_read_record: false,
+            read_record_author: None,
         });
     }
 
@@ -632,6 +813,9 @@ async fn search_js_source(
                     .and_then(|c| c.as_str())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string()),
+                // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
+                has_read_record: false,
+                read_record_author: None,
             })
         })
         .collect();
@@ -987,6 +1171,8 @@ mod tests {
             latest_chapter: None,
             intro: None,
             cover_url: cover.map(|s| s.to_string()),
+            has_read_record: false,
+            read_record_author: None,
         }
     }
 
@@ -1034,5 +1220,155 @@ mod tests {
         assert!(json.contains("\"width\""));
         assert!(json.contains("\"height\""));
         assert!(json.contains("https://cdn.example.com/x.jpg"));
+    }
+
+    // ─── 测试 11: 阅读记录标识（对齐上游 ReadRecordIndex，#424）────────────
+
+    use legado_db::repository::read_record_repository::ReadRecord;
+
+    /// 构造 ReadRecord 测试数据
+    fn make_record(book_name: &str, author: &str) -> ReadRecord {
+        ReadRecord {
+            book_name: book_name.to_string(),
+            author: author.to_string(),
+            read_time: 0,
+        }
+    }
+
+    /// 构造最简 SearchResult 测试数据
+    fn make_result(book_name: &str, author: &str) -> SearchResult {
+        SearchResult {
+            source_url: "https://s.example.com".into(),
+            source_name: "源".into(),
+            book_name: book_name.into(),
+            author: author.into(),
+            book_url: "https://s.example.com/b/1".into(),
+            latest_chapter: None,
+            intro: None,
+            cover_url: None,
+            has_read_record: false,
+            read_record_author: None,
+        }
+    }
+
+    /// 索引匹配语义（对齐上游 ReadRecordIndex.contains 的四种分支）
+    #[test]
+    fn test_read_record_index_match_semantics() {
+        let index = ReadRecordIndex::of(vec![
+            make_record("剑来", "烽火戏诸侯"),
+            make_record("旧记录书", ""),
+        ]);
+
+        // 书名+作者完全匹配
+        assert!(index.contains("剑来", "烽火戏诸侯"));
+        // 书名命中但作者不符 → 不算读过
+        assert!(!index.contains("剑来", "某同名作者"));
+        // 搜索结果无作者 → 退化为按书名判断
+        assert!(index.contains("剑来", ""));
+        // 记录无作者（旧记录）→ 任意作者都算命中
+        assert!(index.contains("旧记录书", "任何作者"));
+        // 无记录
+        assert!(!index.contains("不存在", ""));
+    }
+
+    /// 多作者集合编码（\u{1E}authors: 前缀）解码后逐作者匹配
+    #[test]
+    fn test_read_record_index_multi_author_encoded() {
+        let encoded = format!("\u{1E}authors:[\"作者A\",\"作者B\"]");
+        let index = ReadRecordIndex::of(vec![make_record("同名书", &encoded)]);
+
+        assert!(index.contains("同名书", "作者A"));
+        assert!(index.contains("同名书", "作者B"));
+        assert!(!index.contains("同名书", "作者C"));
+        // lookup 返回记录侧全部作者（顿号连接）
+        let (has, author) = index.lookup("同名书", "作者B");
+        assert!(has);
+        assert_eq!(author.as_deref(), Some("作者A、作者B"));
+    }
+
+    /// 无记录时字段缺省：hasReadRecord=false，readRecordAuthor 缺省
+    #[test]
+    fn test_read_record_annotation_absent() {
+        let index = ReadRecordIndex::of(Vec::new());
+        let mut results = vec![make_result("任意书", "任意作者")];
+
+        annotate_results(&mut results, &index);
+        assert!(!results[0].has_read_record);
+        assert!(results[0].read_record_author.is_none());
+
+        // 序列化：hasReadRecord 恒输出，readRecordAuthor 缺省时不出现
+        let json = serde_json::to_string(&results[0]).unwrap();
+        assert!(json.contains("\"hasReadRecord\":false"));
+        assert!(!json.contains("readRecordAuthor"));
+    }
+
+    /// 端到端：DB 存在阅读记录时，搜索结果被批量附加标识
+    #[test]
+    fn test_read_record_annotation_with_db() {
+        crate::db_state::ensure_test_db();
+        crate::db_state::with_database(|db| {
+            let repo = ReadRecordRepository::new(db.connection());
+            repo.insert_with_author("标识测试书A", "作者甲", 100)?;
+            repo.upsert("标识测试书B", 200)?; // 旧式记录，无作者
+            Ok(())
+        })
+        .expect("写入测试阅读记录失败");
+
+        let index = ReadRecordIndex::load();
+        let mut results = vec![
+            make_result("标识测试书A", "作者甲"),
+            make_result("标识测试书B", "书源给的作者"),
+            make_result("无记录书", ""),
+        ];
+
+        annotate_results(&mut results, &index);
+
+        // 有记录 + 作者匹配
+        assert!(results[0].has_read_record);
+        assert_eq!(results[0].read_record_author.as_deref(), Some("作者甲"));
+        // 旧式无作者记录 → 按书名命中，无作者展示串
+        assert!(results[1].has_read_record);
+        assert!(results[1].read_record_author.is_none());
+        // 无记录
+        assert!(!results[2].has_read_record);
+
+        // 序列化字段名契约（camelCase）
+        let json = serde_json::to_string(&results[0]).unwrap();
+        assert!(json.contains("\"hasReadRecord\":true"));
+        assert!(json.contains("\"readRecordAuthor\":\"作者甲\""));
+
+        // 清理测试记录，避免污染共享测试库
+        crate::db_state::with_database(|db| {
+            let repo = ReadRecordRepository::new(db.connection());
+            repo.delete_by_book_name("标识测试书A")?;
+            repo.delete_by_book_name("标识测试书B")?;
+            Ok(())
+        })
+        .expect("清理测试阅读记录失败");
+    }
+
+    /// 批量查询性能：大量记录 + 大量结果，一次建索引后 O(1) 查找
+    #[test]
+    fn test_read_record_index_batch_lookup() {
+        // 5000 条记录 + 2000 条搜索结果
+        let records: Vec<ReadRecord> = (0..5000)
+            .map(|i| make_record(&format!("批量书{i}"), &format!("作者{i}")))
+            .collect();
+        let index = ReadRecordIndex::of(records);
+
+        let mut results: Vec<SearchResult> = (0..2000)
+            .map(|i| make_result(&format!("批量书{}", i * 2), &format!("作者{}", i * 2)))
+            .collect();
+
+        let start = std::time::Instant::now();
+        annotate_results(&mut results, &index);
+        let elapsed = start.elapsed();
+
+        assert!(results.iter().all(|r| r.has_read_record));
+        // 2000 次 O(1) 查找应远低于每本一次 DB 查询的开销
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "批量查找耗时异常: {elapsed:?}"
+        );
     }
 }
