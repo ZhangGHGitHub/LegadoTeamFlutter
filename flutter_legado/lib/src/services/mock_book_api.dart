@@ -1562,4 +1562,128 @@ class MockBookApi implements BookApi {
         filePath.endsWith('.rar') ||
         filePath.endsWith('.7z');
   }
+
+  // ========== 正文高亮（highlight Mock） ==========
+
+  /// 内存高亮记录（key = time 主键）
+  final Map<int, Map<String, dynamic>> _mockHighlights = {};
+
+  /// 内存高亮规则（key = id）
+  final Map<int, Map<String, dynamic>> _mockHighlightRules = {};
+
+  @override
+  Future<int> highlightAdd({required String highlightJson}) async {
+    final h = jsonDecode(highlightJson) as Map<String, dynamic>;
+    var time = (h['time'] as num?)?.toInt() ?? 0;
+    if (time == 0) {
+      time = DateTime.now().millisecondsSinceEpoch;
+      while (_mockHighlights.containsKey(time)) {
+        time += 1;
+      }
+    }
+    h['time'] = time;
+    _mockHighlights[time] = h;
+    return time;
+  }
+
+  @override
+  Future<bool> highlightDelete({required int time}) async {
+    return _mockHighlights.remove(time) != null;
+  }
+
+  @override
+  Future<int> highlightDeleteByBook({required String bookUrl}) async {
+    final keys = _mockHighlights.entries
+        .where((e) => e.value['bookUrl'] == bookUrl)
+        .map((e) => e.key)
+        .toList();
+    keys.forEach(_mockHighlights.remove);
+    return keys.length;
+  }
+
+  String _highlightListJson(Iterable<Map<String, dynamic>> items) =>
+      jsonEncode(items.toList());
+
+  @override
+  Future<String> highlightListByBook({required String bookUrl}) async {
+    final items = _mockHighlights.values
+        .where((h) => h['bookUrl'] == bookUrl)
+        .toList()
+      ..sort((a, b) =>
+          ((a['time'] as num?) ?? 0).compareTo((b['time'] as num?) ?? 0));
+    return _highlightListJson(items);
+  }
+
+  @override
+  Future<String> highlightListByChapter({
+    required String bookUrl,
+    required int chapterIndex,
+  }) async {
+    final items = _mockHighlights.values
+        .where((h) =>
+            h['bookUrl'] == bookUrl && h['chapterIndex'] == chapterIndex)
+        .toList()
+      ..sort((a, b) =>
+          ((a['time'] as num?) ?? 0).compareTo((b['time'] as num?) ?? 0));
+    return _highlightListJson(items);
+  }
+
+  @override
+  Future<String> highlightSearch({required String keyword}) async {
+    final key = keyword.toLowerCase();
+    final items = _mockHighlights.values
+        .where((h) =>
+            ((h['bookText'] as String?) ?? '')
+                .toLowerCase()
+                .contains(key) ||
+            ((h['note'] as String?) ?? '').toLowerCase().contains(key))
+        .toList();
+    return _highlightListJson(items);
+  }
+
+  @override
+  Future<String> highlightListAll() async =>
+      _highlightListJson(_mockHighlights.values);
+
+  @override
+  Future<String> highlightRuleList() async {
+    final items = _mockHighlightRules.values.toList()
+      ..sort((a, b) => ((a['sortOrder'] as num?) ?? 0)
+          .compareTo((b['sortOrder'] as num?) ?? 0));
+    return _highlightListJson(items);
+  }
+
+  @override
+  Future<int> highlightRuleSave({required String ruleJson}) async {
+    final rule = jsonDecode(ruleJson) as Map<String, dynamic>;
+    var id = (rule['id'] as num?)?.toInt() ?? 0;
+    if (id == 0) {
+      id = _nextId++;
+      rule['id'] = id;
+    }
+    _mockHighlightRules[id] = rule;
+    return id;
+  }
+
+  @override
+  Future<bool> highlightRuleDelete({required int id}) async {
+    return _mockHighlightRules.remove(id) != null;
+  }
+
+  @override
+  Future<String> highlightRuleFindEnabled({
+    required String bookName,
+    required String origin,
+  }) async {
+    final items = _mockHighlightRules.values.where((r) {
+      final enabled = (r['isEnabled'] as bool?) ?? false;
+      if (!enabled) return false;
+      final scope = r['scope'] as String?;
+      if (scope == null || scope.isEmpty) return true;
+      return scope.contains(bookName) || scope.contains(origin);
+    }).toList()
+      ..sort((a, b) => ((a['sortOrder'] as num?) ?? 0)
+          .compareTo((b['sortOrder'] as num?) ?? 0));
+    return _highlightListJson(items);
+  }
 }

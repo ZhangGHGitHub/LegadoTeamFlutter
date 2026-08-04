@@ -1894,6 +1894,83 @@ pub extern "C" fn legado_init() -> i32 {
     ffi_init()
 }
 
+// ─── 高亮体系 FFI 函数 ────────────────────────────
+
+/// 新增/更新高亮记录（BookHighlight JSON，time=0 时自动分配），返回 time
+#[no_mangle]
+pub unsafe extern "C" fn ffi_highlight_add(highlight_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let json = c_char_to_str(highlight_json)?;
+        crate::api::highlight_api::highlight_add(json)
+    }))
+}
+
+/// 按主键 time 删除高亮记录
+#[no_mangle]
+pub extern "C" fn ffi_highlight_delete(time: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| crate::api::highlight_api::highlight_delete(time)))
+}
+
+/// 按书籍删除全部高亮记录，返回删除数量
+#[no_mangle]
+pub unsafe extern "C" fn ffi_highlight_delete_by_book(book_url: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::highlight_api::highlight_delete_by_book(url)
+    }))
+}
+
+/// 按书籍获取高亮列表（BookHighlight 数组 JSON）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_highlight_list_by_book(book_url: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::highlight_api::highlight_list_by_book(url)
+    }))
+}
+
+/// 按书籍 + 章节索引获取高亮列表
+#[no_mangle]
+pub unsafe extern "C" fn ffi_highlight_list_by_chapter(
+    book_url: *const c_char,
+    chapter_index: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::highlight_api::highlight_list_by_chapter(url, chapter_index)
+    }))
+}
+
+/// 全局关键词搜索高亮
+#[no_mangle]
+pub unsafe extern "C" fn ffi_highlight_search(keyword: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let key = c_char_to_str(keyword)?;
+        crate::api::highlight_api::highlight_search(key)
+    }))
+}
+
+/// 获取所有高亮规则（HighlightRule 数组 JSON，按 sortOrder 升序）
+#[no_mangle]
+pub extern "C" fn ffi_highlight_rule_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| crate::api::highlight_api::highlight_rule_list()))
+}
+
+/// 保存高亮规则（HighlightRule JSON，id=0 时自增新增），返回规则 ID
+#[no_mangle]
+pub unsafe extern "C" fn ffi_highlight_rule_save(rule_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let json = c_char_to_str(rule_json)?;
+        crate::api::highlight_api::highlight_rule_save(json)
+    }))
+}
+
+/// 按 ID 删除高亮规则
+#[no_mangle]
+pub extern "C" fn ffi_highlight_rule_delete(id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| crate::api::highlight_api::highlight_rule_delete(id)))
+}
+
 #[no_mangle]
 pub extern "C" fn legado_version() -> *mut c_char {
     ffi_version()

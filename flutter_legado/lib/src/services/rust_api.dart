@@ -1730,6 +1730,70 @@ class RustApi implements BookApi {
   /// 支持 .zip / .rar / .7z 等格式判断。
   Future<bool> archiveIsArchive({required String filePath}) =>
       bridge.archiveIsArchive(filePath: filePath);
+
+  // ========== 正文高亮（highlight FFI） ==========
+
+  /// 新增/更新高亮记录（BookHighlight JSON，time=0 时自动分配），返回 time
+  @override
+  Future<int> highlightAdd({required String highlightJson}) =>
+      bridge.highlightAdd(highlightJson: highlightJson);
+
+  /// 按主键 time 删除高亮记录，返回是否实际删除
+  @override
+  Future<bool> highlightDelete({required int time}) =>
+      bridge.highlightDelete(time: time);
+
+  /// 按书籍删除全部高亮记录，返回删除数量
+  @override
+  Future<int> highlightDeleteByBook({required String bookUrl}) =>
+      bridge.highlightDeleteByBook(bookUrl: bookUrl);
+
+  /// 按书籍获取高亮列表（BookHighlight 数组 JSON）
+  @override
+  Future<String> highlightListByBook({required String bookUrl}) =>
+      bridge.highlightListByBook(bookUrl: bookUrl);
+
+  /// 按书籍 + 章节索引获取高亮列表（BookHighlight 数组 JSON）
+  @override
+  Future<String> highlightListByChapter({
+    required String bookUrl,
+    required int chapterIndex,
+  }) =>
+      bridge.highlightListByChapter(
+        bookUrl: bookUrl,
+        chapterIndex: chapterIndex,
+      );
+
+  /// 全局关键词搜索高亮（BookHighlight 数组 JSON）
+  @override
+  Future<String> highlightSearch({required String keyword}) =>
+      bridge.highlightSearch(keyword: keyword);
+
+  /// 获取所有高亮记录（BookHighlight 数组 JSON）
+  @override
+  Future<String> highlightListAll() => bridge.highlightListAll();
+
+  /// 获取所有高亮规则（HighlightRule 数组 JSON，按 sortOrder 升序）
+  @override
+  Future<String> highlightRuleList() => bridge.highlightRuleList();
+
+  /// 保存高亮规则（HighlightRule JSON，id=0 时自增新增），返回规则 ID
+  @override
+  Future<int> highlightRuleSave({required String ruleJson}) =>
+      bridge.highlightRuleSave(ruleJson: ruleJson);
+
+  /// 按 ID 删除高亮规则，返回是否实际删除
+  @override
+  Future<bool> highlightRuleDelete({required int id}) =>
+      bridge.highlightRuleDelete(id: id);
+
+  /// 按书籍查找启用的高亮规则（HighlightRule 数组 JSON）
+  @override
+  Future<String> highlightRuleFindEnabled({
+    required String bookName,
+    required String origin,
+  }) =>
+      bridge.highlightRuleFindEnabled(bookName: bookName, origin: origin);
 }
 
 /// RustApi 调用异常

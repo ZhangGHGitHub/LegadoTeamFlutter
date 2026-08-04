@@ -408,6 +408,25 @@
 | `rssReadRecordCount()` | 无 | `Future<int>` | 获取已读记录总数 |
 | `rssListReadRecords({int? limit})` | limit(可选，默认100) | `Future<List<RssReadRecordRow>>` | 获取已读记录列表（按 readTime 降序） |
 
+### 2.36 正文高亮（highlight FFI）（11 个方法）
+
+> 对齐上游 `BookHighlight` / `HighlightRule` 实体与 DAO（DB v96-v99）。
+> JSON 字段名对齐 Room 列名（camelCase）：BookHighlight 含 `time` / `bookUrl` / `chapterUrl` / `bookName` / `bookAuthor` / `chapterIndex` / `chapterPos` / `chapterPosEnd` / `layoutTitleLength` / `chapterName` / `bookText` / `style` / `note`；HighlightRule 含 `id` / `name` / `pattern` / `isRegex` / `scope` / `isEnabled` / `style` / `sortOrder` / `timeoutMillisecond` / `applyToTitle`。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `highlightAdd({required String highlightJson})` | BookHighlight JSON（time=0 时自动分配） | `Future<int>` | 新增/更新高亮记录，返回 time 主键 |
+| `highlightDelete({required int time})` | time | `Future<bool>` | 按主键删除高亮记录，返回是否实际删除 |
+| `highlightDeleteByBook({required String bookUrl})` | bookUrl | `Future<int>` | 按书籍删除全部高亮，返回删除数量 |
+| `highlightListByBook({required String bookUrl})` | bookUrl | `Future<String>` | 按书籍获取高亮列表（BookHighlight 数组 JSON） |
+| `highlightListByChapter({required String bookUrl, required int chapterIndex})` | bookUrl, chapterIndex | `Future<String>` | 按书籍+章节获取高亮列表（BookHighlight 数组 JSON） |
+| `highlightSearch({required String keyword})` | keyword | `Future<String>` | 全局关键词搜索高亮（bookText/note，BookHighlight 数组 JSON） |
+| `highlightListAll()` | 无 | `Future<String>` | 获取所有高亮记录（BookHighlight 数组 JSON） |
+| `highlightRuleList()` | 无 | `Future<String>` | 获取所有高亮规则（按 sortOrder 升序，HighlightRule 数组 JSON） |
+| `highlightRuleSave({required String ruleJson})` | HighlightRule JSON（id=0 时自增新增） | `Future<int>` | 保存高亮规则，返回规则 ID |
+| `highlightRuleDelete({required int id})` | id | `Future<bool>` | 按 ID 删除高亮规则，返回是否实际删除 |
+| `highlightRuleFindEnabled({required String bookName, required String origin})` | bookName, origin | `Future<String>` | 按书籍查找启用的高亮规则（scope 匹配书名或 origin，HighlightRule 数组 JSON） |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -422,6 +441,7 @@
 | `searchMultiStream`（新增） | `String query, {List<String>? sourceUrls}` | `Stream<Map<String, dynamic>>`（多源渐进式搜索，逐书源推送批次，用于 Phase 3.3 渐进搜索） | 2026-08-02 | ✅ 已完成 |
 | `searchCover`（新增） | `String bookName` | `Future<List<Map<String, dynamic>>>`（网络封面候选列表，字段建议 `url` / `width` / `height`，用于 Phase 6 P1 `change_cover_screen` 封面搜索） | 2026-08-01 | ✅ 已完成 |
 | `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询） | 2026-08-01 | ✅ 已完成 |
+| `highlight*` / `highlightRule*`（新增） | 见 §2.36 方法清单 | 高亮记录 CRUD + 高亮规则 CRUD（对齐上游 DB v96-v99，用于阅读器正文高亮一期） | 2026-08-04 | ✅ 已完成 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -496,4 +516,5 @@
 | 33 | 音频播放模式 | 2 |
 | 34 | 压缩包导入 | 7 |
 | 35 | RSS 已读记录 | 6 |
-| | **合计** | **171** |
+| 36 | 正文高亮 | 11 |
+| | **合计** | **182** |

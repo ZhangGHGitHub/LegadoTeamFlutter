@@ -3,8 +3,8 @@
 //! 提供完整的 SQLite 数据库访问能力，包括：
 //!
 //! - [`connection`] — 连接管理与 PRAGMA 配置（含自动迁移）
-//! - [`schema`] — 全量表结构 DDL（v95，25 张表）
-//! - [`repository`] — Repository 模式的数据访问层（25 个 Repository）
+//! - [`schema`] — 全量表结构 DDL（v99，27 张表）
+//! - [`repository`] — Repository 模式的数据访问层（27 个 Repository）
 //! - [`migration`] — 基于版本号的增量迁移框架（MigrationRegistry）
 //! - [`import`] — Room JSON 数据导入工具
 //! - [`default_data`] — 默认数据导入（JSON 格式）
@@ -46,6 +46,8 @@ pub use repository::cache_book_repository::CacheBookRepository;
 pub use repository::cache_repository::CacheRepository;
 pub use repository::cookie_repository::CookieRepository;
 pub use repository::dict_rule_repository::{DictRule, DictRuleRepository};
+pub use repository::highlight_repository::HighlightRepository;
+pub use repository::highlight_rule_repository::HighlightRuleRepository;
 pub use repository::http_tts_repository::{HttpTts, HttpTtsRepository};
 pub use repository::keyboard_assist_repository::{KeyboardAssist, KeyboardAssistRepository};
 pub use repository::read_record_repository::{ReadRecord, ReadRecordRepository};

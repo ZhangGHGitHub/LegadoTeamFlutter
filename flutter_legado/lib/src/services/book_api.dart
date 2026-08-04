@@ -759,4 +759,45 @@ abstract class BookApi {
 
   /// 判断文件是否为压缩包格式
   Future<bool> archiveIsArchive({required String filePath});
+
+  // ========== 正文高亮（highlight FFI） ==========
+
+  /// 新增/更新高亮记录（BookHighlight JSON，time=0 时自动分配），返回 time
+  Future<int> highlightAdd({required String highlightJson});
+
+  /// 按主键 time 删除高亮记录，返回是否实际删除
+  Future<bool> highlightDelete({required int time});
+
+  /// 按书籍删除全部高亮记录，返回删除数量
+  Future<int> highlightDeleteByBook({required String bookUrl});
+
+  /// 按书籍获取高亮列表（BookHighlight 数组 JSON）
+  Future<String> highlightListByBook({required String bookUrl});
+
+  /// 按书籍 + 章节索引获取高亮列表（BookHighlight 数组 JSON）
+  Future<String> highlightListByChapter({
+    required String bookUrl,
+    required int chapterIndex,
+  });
+
+  /// 全局关键词搜索高亮（BookHighlight 数组 JSON）
+  Future<String> highlightSearch({required String keyword});
+
+  /// 获取所有高亮记录（BookHighlight 数组 JSON）
+  Future<String> highlightListAll();
+
+  /// 获取所有高亮规则（HighlightRule 数组 JSON，按 sortOrder 升序）
+  Future<String> highlightRuleList();
+
+  /// 保存高亮规则（HighlightRule JSON，id=0 时自增新增），返回规则 ID
+  Future<int> highlightRuleSave({required String ruleJson});
+
+  /// 按 ID 删除高亮规则，返回是否实际删除
+  Future<bool> highlightRuleDelete({required int id});
+
+  /// 按书籍查找启用的高亮规则（HighlightRule 数组 JSON）
+  Future<String> highlightRuleFindEnabled({
+    required String bookName,
+    required String origin,
+  });
 }

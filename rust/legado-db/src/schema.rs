@@ -1,4 +1,4 @@
-//! 数据库 Schema 定义（基于 AppDatabase v95）
+//! 数据库 Schema 定义（基于 AppDatabase v99）
 //!
 //! 本模块包含所有核心表的 CREATE TABLE DDL 语句。
 //! 调用 `init_schema()` 可一次性创建所有表。
@@ -7,8 +7,8 @@ use rusqlite::Connection;
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// 当前 Schema 版本号
-pub const SCHEMA_VERSION: u32 = 96;
+/// 当前 Schema 版本号（对齐上游 Room AppDatabase v99）
+pub const SCHEMA_VERSION: u32 = 99;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -64,6 +64,10 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 keyboard_assists 表失败：{e}")))?;
     conn.execute_batch(CREATE_DOWNLOAD_TASKS)
         .map_err(|e| LegadoError::Database(format!("创建 download_tasks 表失败：{e}")))?;
+    conn.execute_batch(CREATE_HIGHLIGHTS)
+        .map_err(|e| LegadoError::Database(format!("创建 highlights 表失败：{e}")))?;
+    conn.execute_batch(CREATE_HIGHLIGHT_RULES)
+        .map_err(|e| LegadoError::Database(format!("创建 highlightRules 表失败：{e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -377,6 +381,7 @@ CREATE TABLE IF NOT EXISTS txtTocRules (
 pub const CREATE_READ_RECORD: &str = "
 CREATE TABLE IF NOT EXISTS readRecord (
     bookName TEXT NOT NULL,
+    author TEXT NOT NULL DEFAULT '',
     readTime INTEGER NOT NULL,
     PRIMARY KEY(bookName)
 );
@@ -535,6 +540,47 @@ CREATE TABLE IF NOT EXISTS download_tasks (
     fail_count INTEGER NOT NULL DEFAULT 0,
     last_retry_at INTEGER,
     next_retry_at INTEGER
+);
+";
+
+/// highlights 表（v99 最终形态，对齐 Room schema 99.json）
+///
+/// 正文高亮记录：主键为 time（Unix 毫秒），bookUrl/chapterUrl 定位高亮所属书籍与章节。
+pub const CREATE_HIGHLIGHTS: &str = "
+CREATE TABLE IF NOT EXISTS highlights (
+    time INTEGER NOT NULL,
+    bookUrl TEXT NOT NULL DEFAULT '',
+    chapterUrl TEXT NOT NULL DEFAULT '',
+    bookName TEXT NOT NULL,
+    bookAuthor TEXT NOT NULL,
+    chapterIndex INTEGER NOT NULL,
+    chapterPos INTEGER NOT NULL,
+    chapterPosEnd INTEGER NOT NULL,
+    layoutTitleLength INTEGER NOT NULL DEFAULT -1,
+    chapterName TEXT NOT NULL,
+    bookText TEXT NOT NULL,
+    style TEXT NOT NULL,
+    note TEXT NOT NULL,
+    PRIMARY KEY(time)
+);
+CREATE INDEX IF NOT EXISTS index_highlights_bookUrl ON highlights (bookUrl);
+";
+
+/// highlightRules 表（对齐 Room schema 98.json/99.json）
+///
+/// 自动高亮规则：支持正则/普通文本匹配，scope 限定生效书籍范围。
+pub const CREATE_HIGHLIGHT_RULES: &str = "
+CREATE TABLE IF NOT EXISTS highlightRules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    name TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    isRegex INTEGER NOT NULL,
+    scope TEXT,
+    isEnabled INTEGER NOT NULL,
+    style TEXT NOT NULL,
+    sortOrder INTEGER NOT NULL,
+    timeoutMillisecond INTEGER NOT NULL,
+    applyToTitle INTEGER NOT NULL DEFAULT 0
 );
 ";
 

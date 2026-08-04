@@ -201,9 +201,35 @@ pub mod ffi {
     ///
     /// `keyword` — 搜索关键词
     /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
+    ///
+    /// 序列化契约：返回原版 `SearchBook` camelCase 结构（name/originName/bookUrl/…），
+    /// 与 Dart 侧 `SearchBook.fromJson` 字段一一对应。
     pub fn search_books(keyword: String, source_urls_json: String) -> Result<String, BridgeError> {
         let results = crate::api::search::search_books(&keyword, &source_urls_json)?;
-        to_json(&results)
+        let books: Vec<legado_core::models::SearchBook> = results
+            .into_iter()
+            .map(|r| legado_core::models::SearchBook {
+                book_url: r.book_url,
+                origin: r.source_url,
+                origin_name: r.source_name,
+                book_type: 0,
+                name: r.book_name,
+                author: r.author,
+                kind: None,
+                cover_url: r.cover_url,
+                intro: r.intro,
+                word_count: None,
+                latest_chapter_title: r.latest_chapter,
+                toc_url: String::new(),
+                time: 0,
+                variable: None,
+                origin_order: 0,
+                chapter_word_count_text: None,
+                chapter_word_count: -1,
+                respond_time: -1,
+            })
+            .collect();
+        to_json(&books)
     }
 
     /// 多源并行搜索（返回 JSON 数组）
@@ -1446,6 +1472,76 @@ pub mod ffi {
     pub fn auto_task_find_rule_by_id(id: String) -> Result<String, BridgeError> {
         let rule = crate::api::auto_task_api::find_rule_by_id_db(&id)?;
         to_json(&rule)
+    }
+
+    // ─── 高亮体系（Task #69，加法式新增）────────────────
+
+    /// 新增/更新高亮记录（BookHighlight JSON，time=0 时自动分配），返回 time
+    pub fn highlight_add(highlight_json: String) -> Result<i64, BridgeError> {
+        Ok(crate::api::highlight_api::highlight_add(&highlight_json)?)
+    }
+
+    /// 按主键 time 删除高亮记录，返回是否实际删除
+    pub fn highlight_delete(time: i64) -> Result<bool, BridgeError> {
+        Ok(crate::api::highlight_api::highlight_delete(time)?)
+    }
+
+    /// 按书籍删除全部高亮记录，返回删除数量
+    pub fn highlight_delete_by_book(book_url: String) -> Result<i64, BridgeError> {
+        Ok(crate::api::highlight_api::highlight_delete_by_book(&book_url)?)
+    }
+
+    /// 按书籍获取高亮列表（BookHighlight 数组 JSON）
+    pub fn highlight_list_by_book(book_url: String) -> Result<String, BridgeError> {
+        let list = crate::api::highlight_api::highlight_list_by_book(&book_url)?;
+        to_json(&list)
+    }
+
+    /// 按书籍 + 章节索引获取高亮列表（BookHighlight 数组 JSON）
+    pub fn highlight_list_by_chapter(
+        book_url: String,
+        chapter_index: i32,
+    ) -> Result<String, BridgeError> {
+        let list =
+            crate::api::highlight_api::highlight_list_by_chapter(&book_url, chapter_index)?;
+        to_json(&list)
+    }
+
+    /// 全局关键词搜索高亮（BookHighlight 数组 JSON）
+    pub fn highlight_search(keyword: String) -> Result<String, BridgeError> {
+        let list = crate::api::highlight_api::highlight_search(&keyword)?;
+        to_json(&list)
+    }
+
+    /// 获取所有高亮记录（BookHighlight 数组 JSON）
+    pub fn highlight_list_all() -> Result<String, BridgeError> {
+        let list = crate::api::highlight_api::highlight_list_all()?;
+        to_json(&list)
+    }
+
+    /// 获取所有高亮规则（HighlightRule 数组 JSON，按 sortOrder 升序）
+    pub fn highlight_rule_list() -> Result<String, BridgeError> {
+        let rules = crate::api::highlight_api::highlight_rule_list()?;
+        to_json(&rules)
+    }
+
+    /// 保存高亮规则（HighlightRule JSON，id=0 时自增新增），返回规则 ID
+    pub fn highlight_rule_save(rule_json: String) -> Result<i64, BridgeError> {
+        Ok(crate::api::highlight_api::highlight_rule_save(&rule_json)?)
+    }
+
+    /// 按 ID 删除高亮规则，返回是否实际删除
+    pub fn highlight_rule_delete(id: i64) -> Result<bool, BridgeError> {
+        Ok(crate::api::highlight_api::highlight_rule_delete(id)?)
+    }
+
+    /// 按书籍查找启用的高亮规则（HighlightRule 数组 JSON）
+    pub fn highlight_rule_find_enabled(
+        book_name: String,
+        origin: String,
+    ) -> Result<String, BridgeError> {
+        let rules = crate::api::highlight_api::highlight_rule_find_enabled(&book_name, &origin)?;
+        to_json(&rules)
     }
 
     // ─── 听书播放（播放模式/书籍解析）───────────────────
