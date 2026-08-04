@@ -86,6 +86,35 @@ Future<int> sourceImport({required String jsonArray}) =>
 /// 导出所有书源为 JSON 数组
 Future<String> sourceExport() => RustLib.instance.api.crateFfiFfiSourceExport();
 
+/// 判定书源登录 UI 是否为 V2 动态状态协议
+///
+/// `source_json` — BookSource JSON
+Future<bool> sourceIsLoginUiV2({required String sourceJson}) =>
+    RustLib.instance.api.crateFfiFfiSourceIsLoginUiV2(sourceJson: sourceJson);
+
+/// 执行 loginUi v2 脚本，返回动态 UI 描述 JSON（`{"rows":[...]}`）
+///
+/// `source_json` — BookSource JSON；`state_json` — 当前状态 JSON（首次渲染传 `"{}"`）
+Future<String> sourceLoginUiV2({
+  required String sourceJson,
+  required String stateJson,
+}) => RustLib.instance.api.crateFfiFfiSourceLoginUiV2(
+  sourceJson: sourceJson,
+  stateJson: stateJson,
+);
+
+/// 执行 loginAction v2 动作，返回命令 JSON（state/error/login/close）
+///
+/// `source_json` — BookSource JSON
+/// `user_input_json` — `{"action":"...","stateJson":"...","formJson":{...}}`
+Future<String> sourceLoginActionV2({
+  required String sourceJson,
+  required String userInputJson,
+}) => RustLib.instance.api.crateFfiFfiSourceLoginActionV2(
+  sourceJson: sourceJson,
+  userInputJson: userInputJson,
+);
+
 /// 搜索书籍（返回 JSON 数组）
 ///
 /// `keyword` — 搜索关键词
@@ -93,6 +122,8 @@ Future<String> sourceExport() => RustLib.instance.api.crateFfiFfiSourceExport();
 ///
 /// 序列化契约：返回原版 `SearchBook` camelCase 结构（name/originName/bookUrl/…），
 /// 与 Dart 侧 `SearchBook.fromJson` 字段一一对应。
+/// 另附加阅读记录标识字段 `hasReadRecord` / `readRecordAuthor`（#424，
+/// 加法式扩展，Dart 侧 jsonDecode 兼容）。
 Future<String> searchBooks({
   required String keyword,
   required String sourceUrlsJson,
@@ -896,7 +927,7 @@ Future<String> reviewGetReplies({
 ///
 /// # 参数
 /// - `book_url`: 书籍 URL
-/// - `format`: 导出格式（txt/epub/html）
+/// - `format`: 导出格式（txt/epub/html/pdf）
 /// - `include_toc`: 是否包含目录
 Future<String> bookExport({
   required String bookUrl,
@@ -1181,3 +1212,51 @@ Future<String> audioResolvePlayBook({
   requestedBookUrl: requestedBookUrl,
   cachedBookJson: cachedBookJson,
 );
+
+/// 提取 JS 单文件书源配置（返回 BookSource JSON）
+///
+/// `content` — 完整 JS 书源脚本文本；需 quickjs 构建，否则返回错误
+Future<String> jsSourceExtract({required String content}) =>
+    RustLib.instance.api.crateFfiFfiJsSourceExtract(content: content);
+
+/// JS 语法检查（#479，返回 SyntaxCheckResult JSON：valid/message/line）
+///
+/// `content` — 待检查的 JS 脚本文本；quickjs 构建下只编译不执行，
+/// 非 quickjs 构建降级为括号平衡基础检查
+Future<String> jsSourceSyntaxCheck({required String content}) =>
+    RustLib.instance.api.crateFfiFfiJsSourceSyntaxCheck(content: content);
+
+/// 写回顶层配置对象的 lastUpdateTime（#208/#515，返回替换后脚本文本）
+///
+/// `content` — JS 书源脚本文本；`stamp` — 新时间戳（毫秒）。
+/// 找不到可替换位置时返回空字符串
+Future<String> jsSourceStampLastUpdateTime({
+  required String content,
+  required PlatformInt64 stamp,
+}) => RustLib.instance.api.crateFfiFfiJsSourceStampLastUpdateTime(
+  content: content,
+  stamp: stamp,
+);
+
+/// 写入一条应用日志（级别：message / crash / http，大小写不敏感）
+///
+/// 供 UI/Flutter 侧记录应用消息；空消息忽略（对齐 Kotlin `put` 的 null 短路）
+Future<void> appLogPush({required String level, required String message}) =>
+    RustLib.instance.api.crateFfiFfiAppLogPush(level: level, message: message);
+
+/// 获取指定级别的日志列表（JSON 数组，最新在前）
+///
+/// 每项字段：`timestamp`（毫秒）/ `level` / `message`
+Future<String> appLogList({required String level}) =>
+    RustLib.instance.api.crateFfiFfiAppLogList(level: level);
+
+/// 清空指定级别的日志
+Future<void> appLogClear({required String level}) =>
+    RustLib.instance.api.crateFfiFfiAppLogClear(level: level);
+
+/// 清空全部级别日志（对齐 #543 清空确认后的 AppLog.clear + HttpLogStore.clear）
+Future<void> appLogClearAll() =>
+    RustLib.instance.api.crateFfiFfiAppLogClearAll();
+
+/// 导出全部日志为格式化文本（时间升序，64_000 字符截断，对齐 #543）
+Future<String> appLogExport() => RustLib.instance.api.crateFfiFfiAppLogExport();

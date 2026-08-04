@@ -1961,6 +1961,7 @@ dependencies = [
  "legado-book",
  "legado-core",
  "legado-db",
+ "legado-js",
  "legado-net",
  "legado-parser",
  "reqwest",

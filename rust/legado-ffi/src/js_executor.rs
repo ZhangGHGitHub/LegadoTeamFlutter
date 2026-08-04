@@ -105,7 +105,7 @@ mod quickjs_impl {
     ///
     /// 使用 `OnceLock` 惰性初始化，保证多线程下仅创建一次；
     /// `EnginePool` 内部以 `Arc<Mutex<...>>` 保护，自身可安全共享。
-    fn global_pool() -> &'static EnginePool {
+    pub(super) fn global_pool() -> &'static EnginePool {
         static POOL: OnceLock<EnginePool> = OnceLock::new();
         POOL.get_or_init(|| EnginePool::new(POOL_MAX_SIZE))
     }
@@ -146,6 +146,17 @@ mod quickjs_impl {
 
 #[cfg(feature = "quickjs")]
 pub use quickjs_impl::QuickJsExecutor;
+
+/// 按 `source_tag` 从全局引擎池获取（或创建）QuickJS 引擎
+///
+/// 供需要直接操作引擎（如带绑定 eval）的模块复用，
+/// 与 [`QuickJsExecutor`] 共享同一进程级引擎池。
+#[cfg(feature = "quickjs")]
+pub fn pool_engine(
+    source_tag: &str,
+) -> legado_core::LegadoResult<std::sync::Arc<std::sync::Mutex<legado_js::QuickJsEngine>>> {
+    quickjs_impl::global_pool().get_or_create(source_tag)
+}
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
 

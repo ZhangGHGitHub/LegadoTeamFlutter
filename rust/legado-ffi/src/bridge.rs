@@ -1282,6 +1282,46 @@ pub unsafe extern "C" fn ffi_user_check_login(username: *const c_char) -> *mut c
     to_ffi_response(result)
 }
 
+// ─── 登录 UI V2 动态状态协议（#402/#488，加法式新增） ────
+
+/// 判定书源登录 UI 是否为 V2 动态状态协议
+#[no_mangle]
+pub unsafe extern "C" fn ffi_source_is_login_ui_v2(source_json: *const c_char) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let s = c_char_to_str(source_json)?;
+        crate::api::source_login_v2_api::is_login_ui_v2(s)
+    });
+    to_ffi_response(result)
+}
+
+/// 执行 loginUi v2 脚本，返回动态 UI 描述 JSON
+#[no_mangle]
+pub unsafe extern "C" fn ffi_source_login_ui_v2(
+    source_json: *const c_char,
+    state_json: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let s = c_char_to_str(source_json)?;
+        let st = c_char_to_str(state_json)?;
+        crate::api::source_login_v2_api::eval_login_ui_v2(s, st)
+    });
+    to_ffi_response(result)
+}
+
+/// 执行 loginAction v2 动作，返回命令 JSON
+#[no_mangle]
+pub unsafe extern "C" fn ffi_source_login_action_v2(
+    source_json: *const c_char,
+    user_input_json: *const c_char,
+) -> *mut c_char {
+    let result = catch_unwind(|| {
+        let s = c_char_to_str(source_json)?;
+        let u = c_char_to_str(user_input_json)?;
+        crate::api::source_login_v2_api::eval_login_action_v2(s, u)
+    });
+    to_ffi_response(result)
+}
+
 // ─── 向后兼容的旧函数名 ────────────────────────────────────
 
 // ─── TXT 搜索 API ──────────────────────────────────────────

@@ -18,6 +18,6 @@ pub use explore_kind::ExploreKind;
 pub use explore_rule::ExploreRule;
 pub use flex_child_style::FlexChildStyle;
 pub use review_rule::ReviewRule;
-pub use row_ui::RowUi;
+pub use row_ui::{row_ui_type, RowUi};
 pub use search_rule::SearchRule;
 pub use toc_rule::TocRule;

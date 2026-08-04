@@ -50,7 +50,7 @@
 
 ## 2. 方法清单
 
-> 共 **35 个模块**、**171 个方法**（与 `book_api.dart` 一一对应）。
+> 共 **35 个模块**、**174 个方法**（与 `book_api.dart` 一一对应）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -87,6 +87,11 @@
 | `importBookSources(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书源，返回成功数量 |
 | `exportBookSources()` | 无 | `Future<String>` | 导出所有书源为 JSON 数组 |
 | `sortBookSources(int sortKey, bool ascending)` | sortKey, ascending | `Future<void>` | 书源排序 |
+| `sourceIsLoginUiV2(String sourceJson)` | sourceJson: BookSource JSON | `Future<bool>` | 判定登录 UI 是否为 V2 动态状态协议（#402/#488，加法式新增） |
+| `sourceLoginUiV2(String sourceJson, String stateJson)` | sourceJson, stateJson（首次传 `"{}"`） | `Future<String>` | 执行 loginUi v2 脚本，返回动态 UI 描述 JSON `{"rows":[RowUi...]}`（#402，加法式新增） |
+| `sourceLoginActionV2(String sourceJson, String userInputJson)` | sourceJson, userInputJson | `Future<String>` | 执行 loginAction v2 动作，返回命令 JSON（state/error/login/close）（#402，加法式新增） |
+
+> ℹ️ **登录 UI V2 动态状态协议（#402/#488）**：Rust 侧 `ffi::source_is_login_ui_v2 / source_login_ui_v2 / source_login_action_v2`（核心实现 `legado-core/src/login_ui_v2.rs`，对齐 Kotlin `LoginUiV2.kt` + `BaseSource.evalLoginUiV2/evalLoginActionV2`）。`loginUi` 为 `{"version":2}` 标记时启用；登录脚本取自 `mainJs`（JS 单文件书源）或 `loginUrl`，须实现 `loginUi(state)` / `loginAction(action, state, form)`。`userInputJson` 契约：`{"action":"...","stateJson":"...","formJson":{...}}`（stateJson/formJson 支持字符串或对象）。JS 返回 null/undefined 时返回空字符串；需 quickjs 特性构建。RowUi V2 扩展字段：key/hint/value/options/countdown。冻结契约保持不变，本组方法为加法式新增。
 
 ### 2.4 搜索操作（7 个方法）
 
