@@ -162,6 +162,10 @@ fn api_routes() -> Router<Arc<AppState>> {
         )
         // TOC Update API
         .route(
+            "/bookshelf/update-toc/single",
+            post(handlers::toc_update::update_single_toc),
+        )
+        .route(
             "/bookshelf/update-toc",
             post(handlers::toc_update::start_toc_update),
         )

@@ -92,7 +92,7 @@ use legado_parser::{AnalyzeRule, AnalyzeUrl, RequestMethod};
 ///
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
 /// 实现完整的搜索→详情→目录→正文链路。
-struct RealBookSourceFetcher {
+pub(crate) struct RealBookSourceFetcher {
     client: LegadoClient,
 }
 
@@ -541,7 +541,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 }
 
 /// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
-fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
+pub(crate) fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
     WebBookEngine::new(RealBookSourceFetcher::new())
 }
 
