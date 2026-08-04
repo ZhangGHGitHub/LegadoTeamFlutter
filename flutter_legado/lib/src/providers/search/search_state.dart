@@ -29,7 +29,8 @@ class SearchState with _$SearchState {
     /// 精准搜索：选中的分组
     @Default(<String>{}) Set<String> selectedGroups,
 
-    /// 搜索历史（最近 20 条，持久化于 SharedPreferences）
+    /// 搜索历史（最近 20 条，经 BookApi 持久化至 Rust search_keywords 表）
+    /// [审计修复 §4.5] 清理陈旧注释（实际已不走 SharedPreferences） — Qoder
     @Default([]) List<String> searchHistory,
 
     /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）

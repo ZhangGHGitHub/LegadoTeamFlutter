@@ -84,7 +84,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        foregroundColor: Colors.white,
+        // [审计修复 §3.3] 改用 Theme Token（沉浸式封面背景上仍为白色系） — Qoder
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_outlined),
@@ -104,8 +105,14 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 if (saved == true && mounted) {
                   setState(() => _future = _loadData());
                 }
-              } catch (_) {
-                // 书籍信息未加载完成时忽略
+              } catch (e) {
+                // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
+                debugPrint('编辑书籍信息失败: $e');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
+                  );
+                }
               }
             },
           ),
@@ -119,8 +126,14 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 if (book == null) return;
                 if (!context.mounted) return;
                 _showExportDialog(context, book);
-              } catch (_) {
-                // 书籍信息未加载完成时忽略
+              } catch (e) {
+                // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
+                debugPrint('导出书籍失败: $e');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
+                  );
+                }
               }
             },
           ),
@@ -143,8 +156,14 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                   buffer.write('\n$shortIntro');
                 }
                 await Share.share(buffer.toString());
-              } catch (_) {
-                // 书籍信息未加载完成时忽略
+              } catch (e) {
+                // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
+                debugPrint('分享书籍失败: $e');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
+                  );
+                }
               }
             },
           ),
@@ -225,7 +244,13 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       fit: StackFit.expand,
       children: [
         ?bgImage,
-        ColoredBox(color: Colors.black.withValues(alpha: 0x50 / 0xFF)),
+        // [审计修复 §3.3] 遮罩改用 colorScheme.scrim Token，
+        // 透明度对齐原版 vw_bg #50000000 — Qoder
+        ColoredBox(
+          color: Theme.of(
+            context,
+          ).colorScheme.scrim.withValues(alpha: 0x50 / 0xFF),
+        ),
         SafeArea(
           top: false,
           child: RefreshIndicator(

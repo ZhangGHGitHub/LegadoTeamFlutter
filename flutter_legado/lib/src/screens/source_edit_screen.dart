@@ -635,13 +635,20 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
                       Container(
                         constraints: const BoxConstraints(maxHeight: 300),
                         decoration: BoxDecoration(
+                          // [审计修复 §3.2] 绿色成功色按亮暗适配 — Qoder
                           color: _validateSuccess
-                              ? Colors.green.withValues(alpha: 0.12)
+                              ? (Theme.of(ctx).brightness == Brightness.dark
+                                    ? Colors.green.shade300
+                                    : Colors.green.shade800)
+                                  .withValues(alpha: 0.12)
                               : Theme.of(ctx).colorScheme.errorContainer,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: _validateSuccess
-                                ? Colors.green.withValues(alpha: 0.5)
+                                ? (Theme.of(ctx).brightness == Brightness.dark
+                                      ? Colors.green.shade300
+                                      : Colors.green.shade800)
+                                  .withValues(alpha: 0.5)
                                 : Theme.of(ctx).colorScheme.error,
                           ),
                         ),
@@ -657,8 +664,12 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
                                   _validateSuccess
                                       ? Icons.check_circle
                                       : Icons.error,
+                                  // [审计修复 §3.2] 成功图标亮暗适配 — Qoder
                                   color: _validateSuccess
-                                      ? Colors.green
+                                      ? (Theme.of(ctx).brightness ==
+                                            Brightness.dark
+                                          ? Colors.green.shade300
+                                          : Colors.green.shade800)
                                       : Theme.of(ctx).colorScheme.error,
                                   size: 20,
                                 ),

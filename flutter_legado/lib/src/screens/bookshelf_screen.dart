@@ -122,6 +122,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         controller: controller,
         isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
         tabAlignment: TabAlignment.start,
+        // [审计修复 §3.1] AppBar 内 TabBar 必须显式白色系前景，
+        // 否则继承全局 tabBarTheme 的 primary 色与 AppBar 背景同色不可见 — Qoder
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white70,
+        indicatorColor: Colors.white,
         tabs: state.groups.map((g) => Tab(text: g.groupName)).toList(),
       );
     }

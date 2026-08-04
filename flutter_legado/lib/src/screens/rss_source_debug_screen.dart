@@ -326,16 +326,19 @@ enum _DebugLogLevel {
   }
 
   /// 过滤芯片选中颜色
+  ///
+  /// [审计修复 §3.2] 作为选中背景与白色标签搭配，按亮暗选 shade 保证对比度 — Qoder
   Color chipColor(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
     switch (this) {
       case _DebugLogLevel.info:
-        return Colors.blueGrey;
+        return isDark ? Colors.blueGrey.shade400 : Colors.blueGrey.shade600;
       case _DebugLogLevel.success:
-        return Colors.green;
+        return isDark ? Colors.green.shade600 : Colors.green.shade700;
       case _DebugLogLevel.warn:
-        return Colors.orange;
+        return isDark ? Colors.orange.shade700 : Colors.orange.shade800;
       case _DebugLogLevel.error:
-        return Colors.red;
+        return isDark ? Colors.red.shade600 : Colors.red.shade700;
     }
   }
 }

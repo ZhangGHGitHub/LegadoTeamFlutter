@@ -245,6 +245,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               IosListTile(
                 icon: Icons.bug_report,
                 iconBackground: AppColors.iosYellowLight,
+                // [审计修复 §3.3] 黑色图标为亮黄背景的固定对比搭配
+                //（iconBackground 亮暗模式均为亮黄，iOS 惯例黄底黑字），保留 — Qoder
                 iconColor: AppColors.black,
                 title: '导出日志',
                 subtitle: '分享应用日志文件用于问题诊断',

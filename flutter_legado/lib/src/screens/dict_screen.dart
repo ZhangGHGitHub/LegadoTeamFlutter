@@ -9,7 +9,8 @@ import '../providers/dict/dict_notifier.dart';
 ///
 /// 优先查询内置本地词典，未命中时可通过在线词典规则跳转查询。
 /// 在线词典规则经 [DictNotifier] 持久化到 Rust 配置库（BookApi.getConfig/setConfig），
-/// 不再使用 SharedPreferences；本地内置词典为静态占位数据（真实词典查询待 Rust 契约）。
+/// 不再使用 SharedPreferences；词典查询已接通 Rust FFI（BookApi.dictLookup，
+/// 见 dict_notifier.dart）。[审计修复 §4.5] 清理陈旧注释 — Qoder
 class DictScreen extends ConsumerStatefulWidget {
   const DictScreen({super.key});
 

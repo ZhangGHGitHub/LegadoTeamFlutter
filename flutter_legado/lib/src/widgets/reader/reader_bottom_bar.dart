@@ -52,8 +52,10 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
         _autoBrightness = isAuto;
         _brightness = value;
       });
-    } catch (_) {
-      // 平台通道不可用时（如测试环境）静默降级，隐藏亮度行
+    } catch (e) {
+      // [审计修复 §4.1] 平台通道不可用时（如测试环境）静默降级隐藏亮度行，
+      // debugPrint 留痕便于排障 — Qoder
+      debugPrint('亮度通道不可用，隐藏亮度行: $e');
     }
   }
 

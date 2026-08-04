@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -40,8 +41,10 @@ class SearchNotifier extends Notifier<SearchState> {
       state = state.copyWith(
         searchHistory: keywords.map((k) => k.word).toList(),
       );
-    } catch (_) {
+    } catch (e) {
       // 历史加载失败不阻断搜索主流程，保持空历史
+      // [审计修复 §4.1] debugPrint 留痕 — Qoder
+      debugPrint('搜索历史加载失败: $e');
     }
   }
 
@@ -58,8 +61,10 @@ class SearchNotifier extends Notifier<SearchState> {
     state = state.copyWith(searchHistory: trimmed);
     try {
       await ref.read(bookApiProvider).addSearchKeyword(keyword, '');
-    } catch (_) {
+    } catch (e) {
       // 持久化失败不阻断 UI 历史展示
+      // [审计修复 §4.1] debugPrint 留痕 — Qoder
+      debugPrint('搜索历史持久化失败: $e');
     }
   }
 
@@ -68,8 +73,10 @@ class SearchNotifier extends Notifier<SearchState> {
     state = state.copyWith(searchHistory: []);
     try {
       await ref.read(bookApiProvider).clearSearchHistory();
-    } catch (_) {
+    } catch (e) {
       // 后端清空失败不阻断 UI
+      // [审计修复 §4.1] debugPrint 留痕 — Qoder
+      debugPrint('搜索历史后端清空失败: $e');
     }
   }
 
@@ -135,8 +142,10 @@ class SearchNotifier extends Notifier<SearchState> {
             }
           }
         }
-      } catch (_) {
+      } catch (e) {
         // 分组解析失败时仅使用直接选中的书源
+        // [审计修复 §4.1] debugPrint 留痕 — Qoder
+        debugPrint('书源分组解析失败: $e');
       }
     }
 

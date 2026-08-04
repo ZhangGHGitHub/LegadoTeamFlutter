@@ -205,7 +205,8 @@ class IosListTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(7),
         ),
         alignment: Alignment.center,
-        child: Icon(icon, size: 19, color: iconColor ?? Colors.white),
+        // [审计修复 §3.3] 兜底前景改用 onPrimary Token（与默认 primary 背景配对） — Qoder
+        child: Icon(icon, size: 19, color: iconColor ?? scheme.onPrimary),
       ),
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle!) : null,

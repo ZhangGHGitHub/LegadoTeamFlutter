@@ -58,7 +58,8 @@ class BookGridItem extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.10),
+                    // [审计修复 §3.3] 阴影改用 colorScheme.shadow Token — Qoder
+                    color: colorScheme.shadow.withValues(alpha: 0.10),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),

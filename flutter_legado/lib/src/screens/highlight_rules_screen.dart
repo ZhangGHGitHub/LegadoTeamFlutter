@@ -316,8 +316,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       final obj = jsonDecode(styleJson) as Map<String, dynamic>;
       final v = obj['textColor'];
       if (v is num) return v.toInt();
-    } catch (_) {
-      // style 非法时回退默认色
+    } catch (e) {
+      // [审计修复 §4.1] style 非法时回退默认色，debugPrint 留痕便于排障 — Qoder
+      debugPrint('高亮规则 style 解析失败，回退默认色: $e');
     }
     return null;
   }
