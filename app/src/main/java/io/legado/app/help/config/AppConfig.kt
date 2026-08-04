@@ -58,7 +58,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     var editNonPrintable = appCtx.getPrefInt(PreferKey.editNonPrintable, 0)
     var editAutoWrap = appCtx.getPrefBoolean(PreferKey.editAutoWrap, true)
     var editAutoComplete = appCtx.getPrefBoolean(PreferKey.editAutoComplete, true)
-    var showBoardLine = appCtx.getPrefInt(PreferKey.showBoardLine, 1)
+    var showBoardLine = appCtx.getPrefInt(PreferKey.showBoardLine, 1).coerceIn(1, 5)
     var adaptSpecialStyle = appCtx.getPrefBoolean(PreferKey.adaptSpecialStyle, true)
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
@@ -67,7 +67,8 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             PreferKey.editNonPrintable -> editNonPrintable = appCtx.getPrefInt(PreferKey.editNonPrintable, 0)
             PreferKey.editAutoWrap -> editAutoWrap = appCtx.getPrefBoolean(PreferKey.editAutoWrap, true)
             PreferKey.editAutoComplete -> editAutoComplete = appCtx.getPrefBoolean(PreferKey.editAutoComplete, true)
-            PreferKey.showBoardLine -> showBoardLine = appCtx.getPrefInt(PreferKey.showBoardLine, 1)
+            PreferKey.showBoardLine ->
+                showBoardLine = appCtx.getPrefInt(PreferKey.showBoardLine, 1).coerceIn(1, 5)
             PreferKey.adaptSpecialStyle -> adaptSpecialStyle = appCtx.getPrefBoolean(PreferKey.adaptSpecialStyle, true)
 
             PreferKey.themeMode -> {
@@ -203,6 +204,12 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         get() = appCtx.getPrefBoolean(PreferKey.showLastUpdateTime, false)
         set(value) {
             appCtx.putPrefBoolean(PreferKey.showLastUpdateTime, value)
+        }
+
+    var showSearchReadRecord: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.showSearchReadRecord, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.showSearchReadRecord, value)
         }
 
     var showBookshelfReadProgress: Boolean
@@ -585,6 +592,9 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     val clickImgWay: String?
         get() = appCtx.getPrefString(PreferKey.clickImgWay)
 
+    val highlightActionByLongPress: Boolean
+        get() = appCtx.getPrefString(PreferKey.highlightActionTrigger, "click") == "longPress"
+
     var preDownloadNum
         get() = appCtx.getPrefInt(PreferKey.preDownloadNum, 2)
         set(value) {
@@ -630,6 +640,14 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     val updateToVariant get() = appCtx.getPrefString(PreferKey.updateToVariant, "default_version")
 
     val streamReadAloudAudio get() = appCtx.getPrefBoolean(PreferKey.streamReadAloudAudio, false)
+
+    var audioSkipOpenCredits: Int
+        get() = appCtx.getPrefInt(PreferKey.audioSkipOpenCredits, 0)
+        set(value) = appCtx.putPrefInt(PreferKey.audioSkipOpenCredits, value.coerceAtLeast(0))
+
+    var audioSkipCloseCredits: Int
+        get() = appCtx.getPrefInt(PreferKey.audioSkipCloseCredits, 0)
+        set(value) = appCtx.putPrefInt(PreferKey.audioSkipCloseCredits, value.coerceAtLeast(0))
 
     var audioCacheTreeUri: String?
         get() = appCtx.getPrefString(PreferKey.audioCacheTreeUri)

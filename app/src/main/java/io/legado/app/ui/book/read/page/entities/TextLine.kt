@@ -5,17 +5,20 @@ import android.graphics.Canvas
 import android.graphics.DashPathEffect
 import android.graphics.Paint.FontMetrics
 import android.os.Build
-import android.text.TextPaint
 import androidx.annotation.Keep
+import io.legado.app.help.HighlightGeometry
 import io.legado.app.help.PaintPool
 import io.legado.app.help.book.isImage
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.page.ContentTextView
+import io.legado.app.ui.book.read.page.HighlightDraw
 import io.legado.app.ui.book.read.page.entities.TextPage.Companion.emptyTextPage
 import io.legado.app.ui.book.read.page.entities.column.BaseColumn
+import io.legado.app.ui.book.read.page.entities.column.TextBaseColumn
 import io.legado.app.ui.book.read.page.entities.column.TextColumn
+import io.legado.app.ui.book.read.page.entities.column.TextHtmlColumn
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.utils.canvasrecorder.CanvasRecorderFactory
 import io.legado.app.utils.canvasrecorder.recordIfNeededThenDraw
@@ -48,6 +51,7 @@ data class TextLine(
     var exceed: Boolean = false,
     var onlyTextColumn: Boolean = true,
     var reviewTitleOffset: Int = 0,
+    var hangingPunctuation: Boolean = false,
 ) {
 
     val columns: List<BaseColumn> get() = textColumns
@@ -56,8 +60,16 @@ data class TextLine(
     val lineEnd: Float get() = textColumns.lastOrNull()?.end ?: 0f
     val chapterIndices: IntRange get() = chapterPosition..chapterPosition + charSize
     val height: Float inline get() = lineBottom - lineTop
+    val hasOverflowTextStyle: Boolean
+        get() = styledColumnCount > 0 && textColumns.any {
+            (it as? TextBaseColumn)?.highlightStyle?.let { style ->
+                style.shadow != null || style.resolvedFontPath.isNotEmpty()
+            } == true
+        }
     val canvasRecorder = CanvasRecorderFactory.create()
     var searchResultColumnCount = 0
+    var fillColumnCount = 0
+    var styledColumnCount = 0
     var isReadAloud: Boolean = false
         set(value) {
             if (field != value) {
@@ -162,7 +174,7 @@ data class TextLine(
     }
 
     fun draw(view: ContentTextView, canvas: Canvas) {
-        if (AppConfig.optimizeRender) {
+        if (AppConfig.optimizeRender && !hasOverflowTextStyle) {
             canvasRecorder.recordIfNeededThenDraw(canvas, view.width, height.toInt()) {
                 drawTextLine(view, this)
             }
@@ -172,11 +184,17 @@ data class TextLine(
     }
 
     private fun drawTextLine(view: ContentTextView, canvas: Canvas) {
+        if (fillColumnCount > 0) {
+            drawHighlightFills(canvas)
+        }
         if (checkFastDraw()) {
             fastDrawTextLine(view, canvas)
         } else {
             for (i in columns.indices) {
                 columns[i].draw(view, canvas)
+            }
+            if (styledColumnCount > 0) {
+                drawHighlightRuns(canvas)
             }
         }
 
@@ -249,27 +267,152 @@ data class TextLine(
                 paint
             )
         } else if (underlineMode == 2) { // 虚线
-            val dashPathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
-            val dashPath = TextPaint(paint)
-            dashPath.pathEffect = dashPathEffect
+            val dashPaint = PaintPool.obtain()
+            dashPaint.set(paint)
+            dashPaint.pathEffect = underlineDashPathEffect
             canvas.drawLine(
                 lineStart + indentWidth,
                 lineY,
                 lineEnd,
                 lineY,
-                dashPath
+                dashPaint
             )
+            PaintPool.recycle(dashPaint)
+        }
+    }
+
+    private fun drawHighlightFills(canvas: Canvas) {
+        val baseline = lineBase - lineTop
+        val baseTextSize = if (isTitle) {
+            ChapterProvider.titlePaint.textSize
+        } else {
+            ChapterProvider.contentPaint.textSize
+        }
+        var index = 0
+        while (index < columns.size) {
+            val first = columns[index] as? TextBaseColumn
+            val style = first?.highlightStyle
+            if (first == null || style == null || style.fill == 0) {
+                index++
+                continue
+            }
+            val fill = style.fill
+            val shape = style.resolvedFillShape
+            val textSize = (first as? TextHtmlColumn)?.mTextSize ?: baseTextSize
+            var endIndex = index + 1
+            while (endIndex < columns.size) {
+                val next = columns[endIndex] as? TextBaseColumn ?: break
+                val nextStyle = next.highlightStyle ?: break
+                val nextTextSize = (next as? TextHtmlColumn)?.mTextSize ?: baseTextSize
+                if (
+                    nextStyle.fill == fill &&
+                    nextStyle.resolvedFillShape == shape &&
+                    nextTextSize == textSize
+                ) {
+                    endIndex++
+                } else {
+                    break
+                }
+            }
+            val last = columns[endIndex - 1] as TextBaseColumn
+            val band = HighlightGeometry.fillBand(
+                baseline,
+                textSize,
+                height,
+                shape,
+                1f.dpToPx()
+            )
+            HighlightDraw.drawFillRun(
+                canvas,
+                first.start,
+                last.end,
+                band.top,
+                band.bottom,
+                fill,
+                shape
+            )
+            index = endIndex
+        }
+    }
+
+    private fun drawHighlightRuns(canvas: Canvas) {
+        val baseline = lineBase - lineTop
+        val baseTextSize: Float
+        val fontMetrics: FontMetrics
+        if (isTitle) {
+            baseTextSize = ChapterProvider.titlePaint.textSize
+            fontMetrics = ChapterProvider.titlePaintFontMetrics
+        } else {
+            baseTextSize = ChapterProvider.contentPaint.textSize
+            fontMetrics = ChapterProvider.contentPaintFontMetrics
+        }
+        var index = 0
+        while (index < columns.size) {
+            val first = columns[index] as? TextBaseColumn
+            val style = first?.highlightStyle
+            val underline = style?.underline
+            val strike = style?.strike
+            val box = style?.box
+            if (first == null || style == null || (underline == null && strike == null && box == null)) {
+                index++
+                continue
+            }
+            val sizeSensitive = strike != null || box != null
+            val textSize = if (sizeSensitive) {
+                (first as? TextHtmlColumn)?.mTextSize ?: baseTextSize
+            } else {
+                baseTextSize
+            }
+            var endIndex = index + 1
+            while (endIndex < columns.size) {
+                val next = columns[endIndex] as? TextBaseColumn ?: break
+                val nextStyle = next.highlightStyle
+                val sameTextSize = !sizeSensitive ||
+                    ((next as? TextHtmlColumn)?.mTextSize ?: baseTextSize) == textSize
+                if (
+                    nextStyle != null &&
+                    nextStyle.underline == underline &&
+                    nextStyle.strike == strike &&
+                    nextStyle.box == box &&
+                    nextStyle.textColor == style.textColor &&
+                    sameTextSize
+                ) {
+                    endIndex++
+                } else {
+                    break
+                }
+            }
+            val last = columns[endIndex - 1] as TextBaseColumn
+            val fallbackColor = style.textColor.takeIf { it != 0 } ?: ReadBookConfig.textColor
+            val metricScale = textSize / baseTextSize
+            HighlightDraw.drawRun(
+                canvas,
+                first.start,
+                last.end,
+                baseline,
+                height,
+                fontMetrics.ascent * metricScale,
+                fontMetrics.descent * metricScale,
+                underline,
+                strike,
+                box,
+                fallbackColor
+            )
+            index = endIndex
         }
     }
 
     fun checkFastDraw(): Boolean {
-        if (!AppConfig.optimizeRender || exceed || !onlyTextColumn || textPage.isMsgPage) {
+        if (!FastDrawRule.canDrawWholeLine(
+                AppConfig.optimizeRender, exceed, hangingPunctuation, onlyTextColumn, textPage.isMsgPage
+            )
+        ) {
             return false
         }
         if (wordSpacing != 0f && (!atLeastApi26 || !wordSpacingWorking)) {
             return false
         }
-        return searchResultColumnCount == 0
+        return searchResultColumnCount == 0 && styledColumnCount == 0
     }
 
     fun invalidate() {
@@ -291,6 +434,7 @@ data class TextLine(
         private val atLeastApi26 = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
         val atLeastApi28 = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
         private val atLeastApi35 = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM
+        private val underlineDashPathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
         private val wordSpacingWorking by lazy {
             // issue 3785 3846
             val paint = PaintPool.obtain()
@@ -306,6 +450,26 @@ data class TextLine(
                 PaintPool.recycle(paint)
             }
         }
+    }
+
+}
+
+/**
+ * 整行一次性绘制的前置条件
+ * 一次 drawText 只能按字宽顺序排字,列坐标被改写过的行必须退回逐列绘制
+ */
+internal object FastDrawRule {
+
+    fun canDrawWholeLine(
+        optimizeRender: Boolean,
+        /**超出版心后整体左移*/
+        exceed: Boolean,
+        /**段首标点悬挂到缩进内*/
+        hangingPunctuation: Boolean,
+        onlyTextColumn: Boolean,
+        isMsgPage: Boolean
+    ): Boolean {
+        return optimizeRender && !exceed && !hangingPunctuation && onlyTextColumn && !isMsgPage
     }
 
 }

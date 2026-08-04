@@ -418,4 +418,51 @@ object DatabaseMigrations {
     )
     class Migration_84_85 : AutoMigrationSpec
 
+    @Suppress("ClassName")
+    class Migration_96_97 : AutoMigrationSpec {
+        override fun onPostMigrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                update highlights set bookUrl = coalesce((
+                    select books.bookUrl from books
+                    where books.name = highlights.bookName
+                    and books.author = highlights.bookAuthor
+                    limit 1
+                ), '') where bookUrl = ''
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                update highlights set chapterUrl = coalesce((
+                    select chapters.url from chapters
+                    where chapters.bookUrl = highlights.bookUrl
+                    and chapters.`index` = highlights.chapterIndex
+                    and chapters.title = highlights.chapterName
+                    limit 1
+                ), '') where chapterUrl = ''
+                """.trimIndent()
+            )
+        }
+    }
+
+    @Suppress("ClassName")
+    class Migration_98_99 : AutoMigrationSpec {
+        override fun onPostMigrate(db: SupportSQLiteDatabase) {
+            //书名唯一对应一个作者时用书架数据补全阅读记录的作者,有歧义的保持为空
+            db.execSQL(
+                """
+                update readRecord set author = (
+                    select max(books.author) from books
+                    where books.name = readRecord.bookName
+                    and (books.type & ${BookType.notShelf}) = 0
+                ) where author = '' and (
+                    select count(distinct books.author) from books
+                    where books.name = readRecord.bookName
+                    and (books.type & ${BookType.notShelf}) = 0
+                ) = 1
+                """.trimIndent()
+            )
+        }
+    }
+
 }

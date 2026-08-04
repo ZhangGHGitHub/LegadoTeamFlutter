@@ -7,10 +7,15 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import io.legado.app.R
+import io.legado.app.data.entities.BookHighlight
 import io.legado.app.data.entities.Bookmark
+import io.legado.app.help.HighlightMatcher
+import io.legado.app.help.HighlightRuleMatcher
+import io.legado.app.help.HighlightStyle
 import io.legado.app.help.book.isOnLineTxt
 import io.legado.app.help.config.AppConfig
 import io.legado.app.model.ReadBook
+import io.legado.app.model.isForBook
 import io.legado.app.ui.association.OpenUrlConfirmActivity
 import io.legado.app.ui.book.read.page.delegate.PageDelegate
 import io.legado.app.ui.book.read.page.entities.TextLine
@@ -84,6 +89,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
      */
     fun setContent(textPage: TextPage) {
         this.textPage = textPage
+        upHighlight()
         // 非滑动翻页动画需要同步重绘，不然翻页可能会出现闪烁
         if (isScroll) {
             postInvalidate()
@@ -173,7 +179,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 pageDelegate?.abortAnim()
             }
         }
-        postInvalidate()
+        postInvalidateOnAnimation()
     }
 
     fun submitRenderTask() {
@@ -220,15 +226,24 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         y: Float,
         select: (textPos: TextPos) -> Unit,
     ) {
-        touch(x, y) { _, textPos, _, _, column ->
+        val highlightActionByLongPress = AppConfig.highlightActionByLongPress
+        touch(x, y) { relativeOffset, textPos, textPage, textLine, column ->
             when (column) {
                 is ImageColumn -> callBack.onImageLongPress(x, y, column.src)
                 is TextColumn -> {
+                    if (highlightActionByLongPress && column.highlightStyle != null &&
+                        notifyHighlightClick(column, textPos, textPage, textLine, relativeOffset)
+                    ) return@touch
                     if (!selectAble) return@touch
                     column.selected = true
                     select(textPos)
                 }
                 is TextHtmlColumn -> {
+                    if (
+                        column.highlightStyle != null &&
+                        (highlightActionByLongPress || column.linkUrl != null) &&
+                        notifyHighlightClick(column, textPos, textPage, textLine, relativeOffset)
+                    ) return@touch
                     if (!selectAble) return@touch
                     column.selected = true
                     select(textPos)
@@ -251,8 +266,9 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         } else {
             false
         }
+        val highlightActionByLongPress = AppConfig.highlightActionByLongPress
         var handled = false
-        touch(x, y) { _, textPos, textPage, textLine, column ->
+        touch(x, y) { relativeOffset, textPos, textPage, textLine, column ->
             when (column) {
                 is ButtonColumn -> {
                     context.toastOnUi("Button Pressed!")
@@ -312,12 +328,31 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                     }
                 }
                 is TextHtmlColumn -> {
-                    column.linkUrl?.let {
+                    val linkUrl = column.linkUrl
+                    if (linkUrl != null) {
                         activity?.startActivity<OpenUrlConfirmActivity> {
-                            putExtra("uri", it)
+                            putExtra("uri", linkUrl)
                         }
                         handled = true
+                    } else if (!highlightActionByLongPress && column.highlightStyle != null) {
+                        handled = notifyHighlightClick(
+                            column,
+                            textPos,
+                            textPage,
+                            textLine,
+                            relativeOffset
+                        )
                     }
+                }
+
+                is TextColumn -> if (!highlightActionByLongPress && column.highlightStyle != null) {
+                    handled = notifyHighlightClick(
+                        column,
+                        textPos,
+                        textPage,
+                        textLine,
+                        relativeOffset
+                    )
                 }
             }
         }
@@ -675,6 +710,72 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         callBack.onCancelSelect()
     }
 
+    fun upHighlight() {
+        val last = if (isScroll) 2 else 0
+        for (relativePos in 0..last) {
+            val page = relativePage(relativePos)
+            if (page.lines.isEmpty() || page.isMsgPage) continue
+            val chapter = page.getTextChapter()
+            if (!chapter.isForBook(ReadBook.book)) {
+                page.lines.forEach { line ->
+                    line.columns.forEach { column ->
+                        if (column is TextBaseColumn) column.highlightStyle = null
+                    }
+                }
+                continue
+            }
+            val titleLength = chapter.layoutTitleLength
+            val pageBase = chapter.getReadLength(page.index)
+            val pageLength = page.lines.sumOf {
+                it.charSize + if (it.isParagraphEnd) 1 else 0
+            }
+            val pageEnd = pageBase + pageLength
+            val ruleRanges = ReadBook.ruleMatchesOfChapter(chapter)
+                .asSequence()
+                .filter { it.start < pageEnd && it.end > pageBase }
+                .map {
+                    HighlightMatcher.Range(
+                        it.start,
+                        it.end,
+                        it.style,
+                        it.applyToTitle
+                    )
+                }
+                .toList()
+            val manualRanges = if (titleLength >= 0) {
+                ReadBook.anchoredHighlightsOfChapter(chapter, titleLength).map { (highlight, anchor) ->
+                    HighlightMatcher.Range(
+                        anchor.start + titleLength,
+                        anchor.end + titleLength,
+                        highlight.styleObj()
+                    )
+                }
+            } else emptyList()
+            val ranges = ruleRanges + manualRanges
+            val lineSpecs = page.lines.map { line ->
+                HighlightMatcher.LineSpec(
+                    charSize = line.charSize,
+                    columnCharLengths = line.columns.map { it.positionLength },
+                    isParagraphEnd = line.isParagraphEnd,
+                    isTitle = line.isTitle
+                )
+            }
+            val styles = HighlightMatcher.resolve(
+                pageBase,
+                lineSpecs,
+                ranges
+            )
+            page.lines.forEachIndexed { lineIndex, line ->
+                line.columns.forEachIndexed { columnIndex, column ->
+                    if (column is TextBaseColumn) {
+                        column.highlightStyle = styles[lineIndex][columnIndex]
+                    }
+                }
+            }
+        }
+        postInvalidate()
+    }
+
     fun getSelectedText(): String {
         val textPos = TextPos(0, 0, 0)
         val builder = StringBuilder()
@@ -735,6 +836,104 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
             }
         }
         return null
+    }
+
+    fun createHighlight(style: HighlightStyle): BookHighlight? {
+        val book = ReadBook.book ?: return null
+        val startPage = relativePage(selectStart.relativePagePos)
+        val endPage = relativePage(selectEnd.relativePagePos)
+        if (startPage.chapterIndex != endPage.chapterIndex) return null
+        val startLine = startPage.getLine(selectStart.lineIndex)
+        val endLine = endPage.getLine(selectEnd.lineIndex)
+        if (startLine.isTitle || endLine.isTitle) return null
+        val chapter = startPage.getTextChapter()
+        if (!chapter.isForBook(book)) return null
+        val titleLength = chapter.layoutTitleLength.takeIf { it >= 0 } ?: return null
+        val endLength = highlightSelectionEndLength(selectEnd.columnIndex) {
+            endLine.getColumn(selectEnd.columnIndex).positionLength
+        }
+        val rawStart = chapter.getReadLength(startPage.index) +
+                startPage.getPosByLineColumn(selectStart.lineIndex, selectStart.columnIndex)
+        val rawEnd = chapter.getReadLength(endPage.index) +
+                endPage.getPosByLineColumn(selectEnd.lineIndex, selectEnd.columnIndex) + endLength
+        val bodyStart = (rawStart - titleLength).coerceAtLeast(0)
+        val bodyEnd = (rawEnd - titleLength).coerceAtLeast(0)
+        if (bodyEnd <= bodyStart) return null
+        val bookText = getSelectedText()
+        if (!bookText.hasHighlightableText()) return null
+        return BookHighlight(
+            bookUrl = book.bookUrl,
+            chapterUrl = chapter.chapter.url,
+            bookName = book.name,
+            bookAuthor = book.author,
+            chapterIndex = startPage.chapterIndex,
+            chapterPos = bodyStart + titleLength,
+            chapterPosEnd = bodyEnd + titleLength,
+            layoutTitleLength = titleLength,
+            chapterName = chapter.title,
+            bookText = bookText
+        ).apply { applyStyle(style) }
+    }
+
+    private fun notifyHighlightClick(
+        column: TextBaseColumn,
+        textPos: TextPos,
+        page: TextPage,
+        line: TextLine,
+        relativeOffset: Float
+    ): Boolean {
+        val x = column.start + callBack.imgBgPaddingStart
+        val y = line.lineTop + relativeOffset + callBack.headerHeight
+        highlightAt(column, textPos, page)?.let {
+            callBack.onHighlightClick(it, x, y)
+            return true
+        }
+        highlightRuleIdAt(column, textPos, page)?.let {
+            callBack.onHighlightRuleClick(it, x, y)
+            return true
+        }
+        return false
+    }
+
+    private fun highlightAt(
+        column: TextBaseColumn,
+        textPos: TextPos,
+        page: TextPage
+    ): BookHighlight? {
+        val book = ReadBook.book ?: return null
+        val chapter = page.getTextChapter()
+        if (!chapter.isForBook(book)) return null
+        if (page.getLine(textPos.lineIndex).isTitle) return null
+        val titleLength = chapter.layoutTitleLength.takeIf { it >= 0 } ?: return null
+        val rawColumnStart = chapter.getReadLength(page.index) +
+                page.getPosByLineColumn(textPos.lineIndex, textPos.columnIndex)
+        val columnStart = (rawColumnStart - titleLength).coerceAtLeast(0)
+        val columnEnd = (rawColumnStart + column.positionLength - titleLength).coerceAtLeast(0)
+        return ReadBook.anchoredHighlightsOfChapter(chapter, titleLength)
+            .lastOrNull { (_, anchor) ->
+                highlightRangeIntersects(columnStart, columnEnd, anchor.start, anchor.end)
+            }
+            ?.first
+    }
+
+    private fun highlightRuleIdAt(
+        column: TextBaseColumn,
+        textPos: TextPos,
+        page: TextPage
+    ): Long? {
+        val book = ReadBook.book ?: return null
+        val chapter = page.getTextChapter()
+        if (!chapter.isForBook(book)) return null
+        val line = page.getLine(textPos.lineIndex)
+        val columnStart = chapter.getReadLength(page.index) +
+                page.getPosByLineColumn(textPos.lineIndex, textPos.columnIndex)
+        val columnEnd = columnStart + column.positionLength
+        return highlightRuleIdAtColumn(
+            ReadBook.ruleMatchesOfChapter(chapter),
+            columnStart,
+            columnEnd,
+            line.isTitle
+        )
     }
 
     private fun relativeOffset(relativePos: Int): Float {
@@ -804,6 +1003,8 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         fun oldClickImg(src: String): Boolean
         fun clickImg(click: String, src: String)
         fun onReviewClick(paragraphNum: Int, count: Int, chapterIndex: Int)
+        fun onHighlightClick(highlight: BookHighlight, x: Float, y: Float)
+        fun onHighlightRuleClick(ruleId: Long, x: Float, y: Float)
     }
 
     private fun resolveReviewId(textLine: TextLine): Int {
@@ -812,3 +1013,28 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         return if (reviewId > 0) reviewId else textLine.paragraphNum
     }
 }
+
+internal fun highlightRangeIntersects(
+    columnStart: Int,
+    columnEnd: Int,
+    rangeStart: Int,
+    rangeEnd: Int
+): Boolean = columnStart < columnEnd && rangeStart < rangeEnd &&
+        columnStart < rangeEnd && columnEnd > rangeStart
+
+internal fun highlightRuleIdAtColumn(
+    matches: List<HighlightRuleMatcher.RuleMatch>,
+    columnStart: Int,
+    columnEnd: Int,
+    isTitle: Boolean
+): Long? = matches.lastOrNull {
+    (!isTitle || it.applyToTitle) &&
+            highlightRangeIntersects(columnStart, columnEnd, it.start, it.end)
+}?.ruleId
+
+internal inline fun highlightSelectionEndLength(
+    columnIndex: Int,
+    columnLength: () -> Int
+): Int = if (columnIndex < 0) 0 else columnLength()
+
+internal fun String.hasHighlightableText(): Boolean = any { it != '\r' && it != '\n' }

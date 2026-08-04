@@ -6,8 +6,10 @@ import android.text.TextPaint
 import androidx.annotation.Keep
 import io.legado.app.help.TextViewTagHandler.Companion.HR_PLACE_CHAR
 import io.legado.app.help.TextViewTagHandler.Companion.HR_PLACE_STR
+import io.legado.app.help.HighlightStyle
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.ui.book.read.page.ContentTextView
+import io.legado.app.ui.book.read.page.HighlightDraw
 import io.legado.app.ui.book.read.page.entities.TextLine
 import io.legado.app.ui.book.read.page.entities.TextLine.Companion.emptyTextLine
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
@@ -24,6 +26,9 @@ data class TextHtmlColumn(
     val mTextColor: Int?,
     val linkUrl: String?
 ) : TextBaseColumn {
+
+    override val positionLength: Int
+        get() = if (charData == HR_PLACE_STR) HR_PLACE_CHAR.length else charData.length
 
     override var textLine: TextLine = emptyTextLine
 
@@ -54,28 +59,60 @@ data class TextHtmlColumn(
             field = value
         }
 
+    override var highlightStyle: HighlightStyle? = null
+        set(value) {
+            val normalized = value?.normalized()
+            if (field != normalized) {
+                textLine.invalidate()
+                val beforeFill = field?.fill?.let { it != 0 } == true
+                val afterFill = normalized?.fill?.let { it != 0 } == true
+                if (!beforeFill && afterFill) textLine.fillColumnCount++
+                else if (beforeFill && !afterFill) textLine.fillColumnCount--
+                val before = field?.needsPerColumnDraw == true
+                val after = normalized?.needsPerColumnDraw == true
+                if (!before && after) textLine.styledColumnCount++
+                else if (before && !after) textLine.styledColumnCount--
+            }
+            field = normalized
+        }
+
     override fun draw(view: ContentTextView, canvas: Canvas) {
         val y = textLine.lineBase - textLine.lineTop
-        if (linkUrl != null) {
-            textPaint.run {
-                color = ReadBookConfig.textAccentColor
-                isUnderlineText = true
+        val style = highlightStyle
+        val styleTextColor = style?.textColor ?: 0
+        val textColor = when {
+            textLine.isReadAloud || isSearchResult || linkUrl != null -> {
+                ReadBookConfig.textAccentColor
             }
-            drawText(view, canvas, y, textPaint)
-            return
+
+            styleTextColor != 0 -> styleTextColor
+            else -> mTextColor ?: ReadBookConfig.textColor
         }
         textPaint.run {
-            color = if (textLine.isReadAloud || isSearchResult) {
-                ReadBookConfig.textAccentColor
-            } else {
-                mTextColor ?: ReadBookConfig.textColor
-            }
-            isUnderlineText = false
+            color = textColor
+            isUnderlineText = linkUrl != null
         }
-        drawText(view, canvas, y, textPaint)
+        val styledPaint = style?.takeIf {
+            it.textColor != 0 || it.bold || it.italic || it.shadow != null ||
+                it.resolvedFontPath.isNotEmpty()
+        }?.let { HighlightDraw.obtainTextPaint(textPaint, it, textColor, charData) }
+        drawText(canvas, y, styledPaint ?: textPaint)
+        styledPaint?.let(HighlightDraw::recycleTextPaint)
+        style?.takeIf { it.underline == null }?.emphasis?.let {
+            HighlightDraw.drawEmphasis(
+                canvas,
+                start,
+                end,
+                textLine.height,
+                if (it.color != 0) it.color else textColor
+            )
+        }
+        if (selected) {
+            canvas.drawRect(start, 0f, end, textLine.height, view.selectedPaint)
+        }
     }
 
-    private fun drawText(view: ContentTextView, canvas: Canvas, y: Float, textPaint: TextPaint) {
+    private fun drawText(canvas: Canvas, y: Float, textPaint: android.graphics.Paint) {
         if (charData == HR_PLACE_STR) {
             canvas.drawRect(start, 0f, end, 3f, textPaint)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -84,9 +121,6 @@ data class TextHtmlColumn(
             canvas.drawText(charData, start + letterSpacingHalf, y, textPaint)
         } else {
             canvas.drawText(charData, start, y, textPaint)
-        }
-        if (selected) {
-            canvas.drawRect(start, 0f, end, textLine.height, view.selectedPaint)
         }
     }
 

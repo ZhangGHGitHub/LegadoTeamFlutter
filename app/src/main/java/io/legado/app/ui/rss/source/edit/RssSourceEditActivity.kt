@@ -35,10 +35,12 @@ import io.legado.app.ui.file.HandleFileContract
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
 import io.legado.app.ui.rss.source.debug.RssSourceDebugActivity
+import io.legado.app.ui.widget.bindFieldNavigation
 import io.legado.app.ui.widget.code.EditSafety
 import io.legado.app.ui.widget.dialog.UrlOptionDialog
 import io.legado.app.ui.widget.dialog.VariableDialog
 import io.legado.app.ui.widget.keyboard.KeyboardToolPop
+import io.legado.app.ui.widget.setFieldLabels
 import io.legado.app.ui.widget.text.EditEntity
 import io.legado.app.utils.GSON
 import io.legado.app.utils.imeHeight
@@ -213,7 +215,11 @@ class RssSourceEditActivity :
         if (index < 0) return
 
         adapter.notifyItemChanged(index)
-        if (cursorPosition < 0 || EditSafety.isCombiningHeavy(editEntity.value.orEmpty())) return
+        if (
+            cursorPosition < 0 ||
+            EditSafety.isCombiningHeavy(editEntity.value.orEmpty()) ||
+            EditSafety.isTooLongForInline(editEntity.value.orEmpty())
+        ) return
 
         binding.recyclerView.post {
             val holder = binding.recyclerView.findViewHolderForAdapterPosition(index)
@@ -302,17 +308,18 @@ class RssSourceEditActivity :
         }
         binding.recyclerView.layoutManager = gridLayoutManager
         binding.recyclerView.adapter = adapter
+        binding.fieldNav.bindFieldNavigation(binding.recyclerView)
         binding.recyclerView.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
             if (newFocus is EditText) {
                 newFocus.postDelayed({ sendText("") }, 120)
             }
         }
         val transparentBar = transparentNavBar && !AppConfig.isEInkMode
-        binding.tabLayout.setBackgroundColor(
-            if (transparentBar) Color.TRANSPARENT else backgroundColor
-        )
-        if (transparentBar) binding.tabLayout.elevation = 0f
-        binding.tabLayout.setSelectedTabIndicatorColor(accentColor)
+        listOf(binding.tabLayout, binding.fieldNav).forEach { tabs ->
+            tabs.setBackgroundColor(if (transparentBar) Color.TRANSPARENT else backgroundColor)
+            if (transparentBar) tabs.elevation = 0f
+            tabs.setSelectedTabIndicatorColor(accentColor)
+        }
         binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabReselected(tab: TabLayout.Tab?) {
 
@@ -371,12 +378,14 @@ class RssSourceEditActivity :
     }
 
     private fun setEditEntities(tabPosition: Int?) {
-        when (tabPosition) {
-            1 -> adapter.editEntities = startEntities
-            2 -> adapter.editEntities = listEntities
-            3 -> adapter.editEntities = webViewEntities
-            else -> adapter.editEntities = sourceEntities
+        val entities = when (tabPosition) {
+            1 -> startEntities
+            2 -> listEntities
+            3 -> webViewEntities
+            else -> sourceEntities
         }
+        adapter.editEntities = entities
+        binding.fieldNav.setFieldLabels(entities.map { it.hint })
         binding.recyclerView.scrollToPosition(0)
         window.decorView.rootView.clearFocus()
     }

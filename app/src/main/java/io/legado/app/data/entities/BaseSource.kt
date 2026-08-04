@@ -9,6 +9,7 @@ import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern.JS_PATTERN
 import io.legado.app.data.entities.rule.RowUi
+import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.CacheManager
 import io.legado.app.help.ConcurrentRateLimiter.Companion.updateConcurrentRate
 import io.legado.app.help.JsExtensions
@@ -21,8 +22,8 @@ import io.legado.app.help.source.getSharedGlobalStateKey
 import io.legado.app.model.SharedJsScope
 import io.legado.app.model.SharedJsScope.remove
 import io.legado.app.model.jsSource.JsSourceEngine
+import io.legado.app.model.login.LoginUiV2
 import io.legado.app.utils.GSON
-import io.legado.app.utils.GSONStrict
 import io.legado.app.utils.fromJsonArray
 import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.has
@@ -48,6 +49,12 @@ internal object LoginInfoMapInitialization {
             }
         }
     }
+}
+
+internal fun BaseSource.getStoredLoginInfoMap(): MutableMap<String, String>? {
+    val json = getLoginInfo() ?: return null
+    return GSON.fromJsonObject<MutableMap<String, String>>(json).getOrNull()
+        ?: mutableMapOf()
 }
 
 /**
@@ -105,6 +112,36 @@ interface BaseSource : JsExtensions {
         return extractInlineJs(loginUi)
     }
 
+    fun isLoginUiV2(): Boolean {
+        return LoginUiV2.isV2(loginUi)
+    }
+
+    fun evalLoginUiV2(stateJson: String): String? {
+        val loginJs = getLoginJs()
+            ?: throw NoStackTraceException("登录UI v2 缺少 loginUi/loginAction 脚本")
+        val result = evalJS(
+            "$loginJs\nloginUi(JSON.parse(String(__loginState)))"
+        ) {
+            put("__loginState", stateJson)
+        }
+        return JsSourceEngine.normalizeJsResult(result)
+    }
+
+    fun evalLoginActionV2(action: String, stateJson: String, formJson: String): String? {
+        val loginJs = getLoginJs()
+            ?: throw NoStackTraceException("登录UI v2 缺少 loginUi/loginAction 脚本")
+        val result = evalJS(
+            "$loginJs\n" +
+                "loginAction(String(__loginAction), JSON.parse(String(__loginState)), " +
+                "JSON.parse(String(__loginForm)))"
+        ) {
+            put("__loginAction", action)
+            put("__loginState", stateJson)
+            put("__loginForm", formJson)
+        }
+        return JsSourceEngine.normalizeJsResult(result)
+    }
+
     fun getLoginJs(): String? {
         val loginRule = loginUrl?.trim()
         if (loginRule.isNullOrBlank()) return null
@@ -155,10 +192,7 @@ interface BaseSource : JsExtensions {
 
                     else -> it
                 }
-                GSONStrict.fromJsonObject<Map<String, String>>(json).getOrNull()?.let { map ->
-                    putAll(map)
-                } ?: GSON.fromJsonObject<Map<String, String>>(json).getOrNull()?.let { map ->
-                    log("请求头规则 JSON 格式不规范，请改为规范格式")
+                GSON.fromJsonObject<Map<String, String>>(json).getOrNull()?.let { map ->
                     putAll(map)
                 }
             } catch (e: Exception) {
@@ -228,10 +262,8 @@ interface BaseSource : JsExtensions {
     }
 
     fun getLoginInfoMap(): MutableMap<String, String> {
-        getLoginInfo()?.let { json ->
-            return GSON.fromJsonObject<MutableMap<String, String>>(json).getOrNull()
-                ?: mutableMapOf()
-        }
+        getStoredLoginInfoMap()?.let { return it }
+        if (isLoginUiV2()) return mutableMapOf()
         val loginUiRule = loginUi?.trim().takeUnless { it.isNullOrBlank() } ?: return mutableMapOf()
         return LoginInfoMapInitialization.run(
             sourceKey = getKey(),

@@ -47,7 +47,7 @@ class BookInfoTocEntryTest {
     }
 
     @Test
-    fun `toc result preserves the selected chapter before reading`() {
+    fun `toc result preserves normal progress and defers highlight coordinates`() {
         val activity = readProjectFile(
             "src/main/java/io/legado/app/ui/book/info/BookInfoActivity.kt"
         )
@@ -57,22 +57,35 @@ class BookInfoTocEntryTest {
         val readFlow = activity
             .substringAfter("private fun readFromChapter(")
             .substringBefore("private fun showWebFileDownloadAlert")
+        val normalProgressFlow = readFlow
+            .substringAfter("if (!deferHighlightPosition) {")
+            .substringBefore("}")
+        val notShelfFlow = readFlow
+            .substringAfter("if (!viewModel.inBookshelf) {")
+            .substringBefore("} else {")
+        val shelfFlow = readFlow.substringAfter("} else {")
         assertTrue(callback.contains("index = it[0] as Int"))
         assertTrue(callback.contains("pos = it[1] as Int"))
         assertTrue(callback.contains("changed = it[2] as Boolean"))
         assertTrue(callback.contains("volumeIndex = it[3] as Int"))
         assertTrue(callback.contains("chapterInVolumeIndex = it[4] as Int"))
-        assertTrue(readFlow.contains("book.durChapterIndex = index"))
-        assertTrue(readFlow.contains("book.durChapterPos = pos"))
+        assertTrue(callback.contains("HIGHLIGHT_LAYOUT_TITLE_LENGTH_INDEX"))
+        assertTrue(callback.contains("HIGHLIGHT_ANCHOR_TEXT_INDEX"))
+        assertTrue(normalProgressFlow.contains("book.durChapterIndex = index"))
+        assertTrue(normalProgressFlow.contains("book.durChapterPos = pos"))
+        assertTrue(normalProgressFlow.contains("book.durVolumeIndex = volumeIndex"))
+        assertTrue(normalProgressFlow.contains("book.chapterInVolumeIndex = chapterInVolumeIndex"))
         assertTrue(readFlow.contains("chapterChanged = changed"))
-        assertTrue(readFlow.contains("book.durVolumeIndex = volumeIndex"))
-        assertTrue(readFlow.contains("book.chapterInVolumeIndex = chapterInVolumeIndex"))
         assertTrue(readFlow.contains("book.addType(BookType.notShelf)"))
         assertTrue(!readFlow.contains("viewModel.saveBook(book)"))
-        assertTrue(!readFlow.contains("viewModel.saveChapterList"))
-        assertTrue(readFlow.contains("withContext(IO)"))
-        assertTrue(readFlow.contains("appDb.bookDao.update(book)"))
-        assertTrue(readFlow.contains("startReadActivity(book)"))
+        assertTrue(notShelfFlow.contains("book.save()"))
+        assertTrue(notShelfFlow.contains("viewModel.saveChapterList"))
+        assertTrue(notShelfFlow.contains("highlightLayoutTitleLength.takeIf"))
+        assertTrue(shelfFlow.contains("appDb.bookDao.update(book)"))
+        assertTrue(shelfFlow.contains("highlightLayoutTitleLength.takeIf"))
+        assertTrue(readFlow.contains("highlightLayoutTitleLength.takeIf { deferHighlightPosition }"))
+        assertTrue(readFlow.contains("highlightAnchorText.takeIf { deferHighlightPosition }"))
+        assertTrue(readFlow.contains("startReadActivity("))
     }
 
     private fun readProjectFile(pathInApp: String): String {

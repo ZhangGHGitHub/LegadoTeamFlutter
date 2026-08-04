@@ -225,8 +225,13 @@ abstract class BaseReadAloudService : BaseService(),
             toastOnUi("朗读定时 ${AppConfig.ttsTimer} 分钟")
         }
         execute {
+            val book = ReadBook.book
             ImageLoader
-                .loadBitmap(this@BaseReadAloudService, ReadBook.book?.getDisplayCover())
+                .loadBitmap(
+                    this@BaseReadAloudService,
+                    book?.getDisplayCover(),
+                    book?.getCoverSourceOrigin(),
+                )
                 .submit()
                 .get()
         }.onSuccess {
@@ -307,6 +312,7 @@ abstract class BaseReadAloudService : BaseService(),
     }
 
     private fun newReadAloud(play: Boolean, pageIndex: Int, startPos: Int) {
+        playStop()
         restoreReadAloudFollow()
         execute(executeContext = IO) {
             this@BaseReadAloudService.pageIndex = pageIndex

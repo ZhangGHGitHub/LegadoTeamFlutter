@@ -45,7 +45,7 @@ class SelectActionBarPopupActionMigrationTest {
         listOf(
             "private var disabledValues: Set<String> = emptySet()",
             "fun setDisabledValues(values: Set<String>)",
-            "holder.itemView.isEnabled = item.value !in disabledValues",
+            "item.enabled && item.value !in disabledValues",
             "context.secondaryDisabledTextColor"
         ).forEach { expected ->
             assertTrue("PopupAction should contain $expected", source.contains(expected))
@@ -116,7 +116,8 @@ class SelectActionBarPopupActionMigrationTest {
                 "@+id/menu_change_source",
                 "@+id/menu_clear_cache",
                 "@+id/menu_check_selected_interval",
-                "@+id/menu_update_toc"
+                "@+id/menu_update_toc",
+                "@+id/menu_create_book_update_tasks"
             ),
             "book_source_sel.xml" to listOf(
                 "@+id/menu_enable_selection",

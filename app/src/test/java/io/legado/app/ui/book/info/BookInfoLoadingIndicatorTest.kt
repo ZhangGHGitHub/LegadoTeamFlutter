@@ -1,7 +1,10 @@
 package io.legado.app.ui.book.info
 
+import io.legado.app.data.entities.Book
+import io.legado.app.data.entities.BookChapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,6 +13,38 @@ import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 
 class BookInfoLoadingIndicatorTest {
+
+    @Test
+    fun `read progress appears only for read multi chapter books`() {
+        assertNull(resolveBookInfoReadProgress(Book(totalChapterNum = 20)))
+        assertNull(
+            resolveBookInfoReadProgress(
+                Book(totalChapterNum = 1, durChapterPos = 1),
+            ),
+        )
+        assertEquals(
+            50,
+            resolveBookInfoReadProgress(
+                Book(totalChapterNum = 11, durChapterIndex = 5),
+            ),
+        )
+    }
+
+    @Test
+    fun `empty stored toc title follows the current chapter index`() {
+        val chapters = listOf(
+            BookChapter(title = "卷一", isVolume = true),
+            BookChapter(title = "第一章"),
+            BookChapter(title = "第二章"),
+        )
+
+        assertEquals(
+            "已保存章节",
+            resolveBookInfoTocTitle("已保存章节", 2, chapters),
+        )
+        assertEquals("卷一", resolveBookInfoTocTitle(null, 0, chapters))
+        assertEquals("第二章", resolveBookInfoTocTitle(null, 99, chapters))
+    }
 
     @Test
     fun `overlapping network loads stay active until the last one finishes`() {
@@ -91,6 +126,34 @@ class BookInfoLoadingIndicatorTest {
         )
     }
 
+    @Test
+    fun `refresh failures preserve the persisted book metadata`() {
+        val bookInfoViewModel = projectFile(VIEW_MODEL_PATH).readText()
+        val loadBookInfo = bookInfoViewModel
+            .substringAfter("fun loadBookInfo(")
+            .substringBefore("fun loadChapter(")
+        val loadChapter = bookInfoViewModel
+            .substringAfter("fun loadChapter(")
+            .substringBefore("fun loadGroup(")
+        val mainViewModel = projectFile(MAIN_VIEW_MODEL_PATH).readText()
+        val normalBookRefresh = loadBookInfo
+            .substringAfter("if (it.isWebFile) {")
+            .substringAfter("} else {")
+            .substringBefore("}.onError")
+
+        assertTrue(loadBookInfo.contains("val oldBook = book.copy()"))
+        assertTrue(loadBookInfo.contains("bookData.postValue(oldBook)"))
+        assertFalse(normalBookRefresh.contains("it.save()"))
+        assertTrue(normalBookRefresh.contains("oldBook = persistedBook"))
+        assertTrue(loadChapter.contains("appDb.bookDao.replace(oldBook, book)"))
+        assertTrue(loadChapter.contains("bookData.postValue(oldBook)"))
+        assertTrue(
+            mainViewModel.contains(
+                "WebBook.runPreUpdateJs(source, book).getOrThrow()",
+            ),
+        )
+    }
+
     private fun Element.androidAttribute(name: String): String = getAttributeNS(ANDROID_NS, name)
 
     private fun Element.elementChildren(): List<Element> {
@@ -112,6 +175,8 @@ class BookInfoLoadingIndicatorTest {
             "src/main/java/io/legado/app/ui/book/info/BookInfoActivity.kt"
         private const val VIEW_MODEL_PATH =
             "src/main/java/io/legado/app/ui/book/info/BookInfoViewModel.kt"
+        private const val MAIN_VIEW_MODEL_PATH =
+            "src/main/java/io/legado/app/ui/main/MainViewModel.kt"
         private val LAYOUTS = listOf(
             "src/main/res/layout/activity_book_info.xml",
             "src/main/res/layout-land/activity_book_info.xml",

@@ -46,7 +46,6 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import androidx.core.content.edit
 import io.legado.app.model.VideoPlay.VIDEO_PREF_NAME
-import kotlinx.coroutines.currentCoroutineContext
 
 /**
  * 备份
@@ -66,6 +65,8 @@ object Backup {
         arrayOf(
             "bookshelf.json",
             "bookmark.json",
+            "highlight.json",
+            "highlightRule.json",
             "bookGroup.json",
             "bookSource.json",
             "rssSources.json",
@@ -140,6 +141,13 @@ object Backup {
         FileUtils.delete(backupPath)
         writeListToJson(appDb.bookDao.all, "bookshelf.json", backupPath)
         writeListToJson(appDb.bookmarkDao.all, "bookmark.json", backupPath)
+        writeListToJson(appDb.bookHighlightDao.all, "highlight.json", backupPath)
+        writeListToJson(
+            appDb.highlightRuleDao.all,
+            "highlightRule.json",
+            backupPath,
+            writeEmpty = true
+        )
         writeListToJson(appDb.bookGroupDao.all, "bookGroup.json", backupPath)
         writeListToJson(appDb.bookSourceDao.all, "bookSource.json", backupPath)
         writeListToJson(appDb.rssSourceDao.all, "rssSources.json", backupPath)
@@ -268,10 +276,15 @@ object Backup {
         }
     }
 
-    private suspend fun writeListToJson(list: List<Any>, fileName: String, path: String) {
+    private suspend fun writeListToJson(
+        list: List<Any>,
+        fileName: String,
+        path: String,
+        writeEmpty: Boolean = false
+    ) {
         currentCoroutineContext().ensureActive()
         withContext(IO) {
-            if (list.isNotEmpty()) {
+            if (list.isNotEmpty() || writeEmpty) {
                 LogUtils.d(TAG, "阅读备份 $fileName 列表大小 ${list.size}")
                 val file = FileUtils.createFileIfNotExist(path + File.separator + fileName)
                 file.outputStream().buffered().use {

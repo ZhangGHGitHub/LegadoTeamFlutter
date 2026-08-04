@@ -4,6 +4,9 @@
 * [书源帮助文档](https://mgz0227.github.io/The-tutorial-of-Legado/Rule/source.html)　
 * [订阅源帮助文档](https://mgz0227.github.io/The-tutorial-of-Legado/Rule/rss.html)　
 * 辅助键盘❓中可插入URL参数模板,打开帮助,js教程,正则教程,选择文件
+
+## 基础配置
+
 * 规则标志, {{......}}内使用规则必须有明显的规则标志,没有规则标志当作js执行
 ```
 @@ 默认规则,直接写时可以省略@@
@@ -39,6 +42,8 @@
 
 * CookieJar
 > 启用后会自动保存每次返回头中的Set-Cookie中的值，适用于验证码图片一类需要session的网站
+
+## 登录
 
 * 登录UI
 > 不使用内置webView登录网站，需要使用`登录URL`规则实现登录逻辑，可使用`登录检查JS`检查登录结果  
@@ -135,6 +140,41 @@ getStrResponse( jsStr: String? = null, sourceRegex: String? = null) //返回访�
 getResponse(): Response //返回访问结果,网络朗读引擎采用的是这个,调用登录后在调用这方法可以重新访问,参考阿里云登录检测
 ```
 
+* 登录 UI v2（动态状态协议）
+> `登录UI` 填 `{"version":2}`，并在`登录URL`中实现 `loginUi(state)` 与 `loginAction(action, state, form)`。适合验证码、多步骤和动态字段；完整契约见 JS 帮助的“登录”章节。
+```js
+function loginUi(state) {
+    if (!state.step) {
+        return { rows: [
+            { key: "phone", name: "手机号", type: "text" },
+            { name: "发送验证码", type: "button", action: "sendCode", countdown: 60 }
+        ] };
+    }
+    return { rows: [
+        { key: "code", name: "验证码", type: "text" },
+        { name: "登录", type: "button", action: "verify" }
+    ] };
+}
+
+function loginAction(action, state, form) {
+    if (action === "sendCode") {
+        if (!form.phone) return { error: { phone: "请输入手机号" } };
+        java.ajax("https://example.com/sms?phone=" + form.phone);
+        return { state: { step: "code", phone: form.phone } };
+    }
+    if (action === "verify") {
+        var result = JSON.parse(java.ajax("https://example.com/verify?code=" + form.code));
+        if (!result.ok) return { error: { code: "验证码错误" } };
+        source.putLoginHeader(JSON.stringify({ Cookie: result.cookie }));
+        return { login: { phone: state.phone }, close: true };
+    }
+}
+```
+
+`loginUi` 返回 `{rows:[...]}`；行类型支持 `text`、`password`、`label`、`select` 和 `button`。`loginAction` 可返回 `state` 重新渲染、`error` 显示字段错误、`login` 保存登录信息、`close` 关闭界面。
+
+## 发现
+
 * 发现url格式
 > 对比登录ui，name换成了title，url用来打开发现页面，其余相同  
 > 额外的变量[infoMap](https://github.com/Luoyacheng/legado/blob/main/app/src/main/java/io/legado/app/utils/InfoMap.kt)可读取按钮的切换值
@@ -170,20 +210,24 @@ infoMap.save();
 ]
 ```
 
+## 请求与URL
+
 * 请求头,支持http代理,socks4 socks5代理设置
 > 注意请求头的key是区分大小写的  
 > 正确格式 User-Agent Referer  
 > 错误格式 user-agent referer
 ```
-socks5代理    不支持需要验证的socks5代理
+socks5代理
 { "proxy":"socks5://127.0.0.1:1080" }
+支持标准socks5代理服务器验证格式
+{ "proxy":"socks5://用户名:密码@127.0.0.1:1080" }
 http代理
 { "proxy":"http://127.0.0.1:1080" }
 支持旧版http代理服务器验证格式
 { "proxy":"http://127.0.0.1:1080@用户名@密码" }
 支持标准http代理服务器验证格式
 { "proxy":"http://用户名:密码@127.0.0.1:1080" }
-注意: socks4和socks5代理仍不支持账号密码验证，无效代理配置会直接返回错误，不会绕过代理直连
+注意: socks4代理不支持账号密码验证，无效代理配置会直接返回错误，不会绕过代理直连
 注意:这些请求头是无意义的,会被忽略掉
 ```
 
@@ -249,6 +293,8 @@ let options = {
 '<img src="'+src+","+JSON.stringify(options)+'">'
 ```
 
+## 正文处理
+
 * 字体解析使用
 > 使用方法,在正文替换规则中使用,原理根据f1字体的字形数据到f2中查找字形对应的编码
 ```
@@ -273,6 +319,8 @@ let options = {
 
 * 购买操作
 > 可直接填写链接或者JavaScript，如果执行结果是网络链接将会自动打开浏览器,js返回true自动刷新目录和当前章节
+
+## 回调事件
 
 * 回调操作
 > 先启用事件监听按钮，然后软件触发事件时会执行回调规则的js代码。  
@@ -303,6 +351,8 @@ let options = {
 "startShelfRefresh" //开始书架刷新
 "endShelfRefresh" //结束书架刷新
 ```
+
+## 图片与页面处理
 
 * 图片解密
 > 适用于图片需要二次解密的情况，直接填写JavaScript，返回解密后的`ByteArray`  

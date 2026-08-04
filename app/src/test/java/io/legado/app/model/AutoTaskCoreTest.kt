@@ -11,6 +11,9 @@ import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonArray
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.runBlocking
 import org.htmlunit.corejs.javascript.ConsString
 import org.htmlunit.corejs.javascript.Scriptable
 import org.junit.Assert.assertEquals
@@ -49,6 +52,8 @@ class AutoTaskCoreTest {
         val notify = action?.get("notify") as Map<*, *>
         assertEquals(true, notify["enable"])
         assertEquals(1, (notify["minCount"] as Number).toInt())
+        val cache = action?.get("cache") as Map<*, *>
+        assertEquals(false, cache["enable"])
     }
 
     @Test
@@ -72,6 +77,36 @@ class AutoTaskCoreTest {
                 listOf(oldTask),
                 Book(bookUrl = "new", name = "Test", author = "Changed")
             )
+        )
+    }
+
+    @Test
+    fun buildsBatchBookUpdateTasksWithoutStealingExactMatches() {
+        val movedBook = Book(bookUrl = "new", name = "Test", author = "Author")
+        val exactBook = Book(bookUrl = "exact", name = "Test", author = "Author")
+        val movedTask = AutoTask.buildBookUpdateTask(
+            Book(bookUrl = "old", name = "Test", author = "Author"),
+            "Old"
+        )
+        val exactTask = AutoTask.buildBookUpdateTask(exactBook, "Exact").copy(enable = false)
+        val cron = "0 */2 * * *"
+
+        val tasks = AutoTask.buildBookUpdateTasks(
+            books = listOf(movedBook, exactBook),
+            existingTasks = listOf(exactTask, movedTask),
+            cron = cron,
+            nameOf = { "Update ${it.name}" }
+        )
+
+        assertEquals(listOf(movedTask.id, exactTask.id), tasks.map { it.id })
+        assertEquals(listOf(true, false), tasks.map { it.enable })
+        assertEquals(listOf(cron, cron), tasks.map { it.cron })
+        assertEquals(
+            listOf(movedBook.bookUrl, exactBook.bookUrl),
+            tasks.map {
+                AutoTaskProtocol.parseActions(RhinoScriptEngine.eval(it.script))
+                    ?.single()?.get("bookUrl")
+            }
         )
     }
 
@@ -123,6 +158,15 @@ class AutoTaskCoreTest {
             AutoTaskLogFormatter.MAX_ERROR_LENGTH,
             AutoTaskLogFormatter.trimError("x".repeat(8_000)).length
         )
+    }
+
+    @Test
+    fun protocolSummaryIsNotRepeatedInStoredLog() {
+        val action = "Notification: Done"
+        val log = AutoTaskLogFormatter.success(0L, 25L, listOf(action), action)
+
+        assertEquals(1, log.split(action).size - 1)
+        assertFalse(log.contains("Result:"))
     }
 
     @Test
@@ -346,5 +390,75 @@ class AutoTaskCoreTest {
                 after = listOf(chapter1, chapter2)
             )
         )
+    }
+
+    @Test
+    fun findsNewContentChaptersByUrlAndSkipsVolumes() {
+        val old = listOf(
+            BookChapter(url = "volume", title = "Volume", isVolume = true),
+            BookChapter(url = "one", title = "Chapter 1"),
+            BookChapter(url = "two", title = "Chapter 2"),
+        )
+        val after = listOf(
+            BookChapter(url = "one", title = "Chapter 1"),
+            BookChapter(url = "new-volume", title = "New volume", isVolume = true),
+            BookChapter(url = "new", title = "New chapter"),
+            BookChapter(url = "two", title = "Chapter 2"),
+        )
+
+        assertEquals(1, AutoTaskProtocol.countNewChapters(old, after))
+        assertEquals(
+            listOf("new"),
+            AutoTaskProtocol.newContentChapters(old, after).map { it.url }
+        )
+        assertTrue(
+            AutoTaskProtocol.newContentChapters(
+                before = old,
+                after = listOf(
+                    BookChapter(url = "rotated-one", title = "Chapter 1"),
+                    BookChapter(url = "rotated-two", title = "Chapter 2"),
+                )
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun cacheRetriesEachChapterAndReportsTheFirstFinalFailure() {
+        val first = BookChapter(url = "first")
+        val second = BookChapter(url = "second")
+        val attempts = mutableMapOf<String, Int>()
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                AutoTaskProtocol.cacheChaptersWithRetry(
+                    chapters = listOf(first, second),
+                    retryDelayMillis = 0,
+                ) { chapter ->
+                    val attempt = attempts.getOrDefault(chapter.url, 0) + 1
+                    attempts[chapter.url] = attempt
+                    if (chapter == first || attempt < 3) error(chapter.url)
+                }
+            }
+        }
+
+        assertEquals("first", failure.message)
+        assertEquals(3, attempts["first"])
+        assertEquals(3, attempts["second"])
+    }
+
+    @Test
+    fun finalCancellationTakesPriorityOverCacheFailure() {
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                val context = currentCoroutineContext()
+                AutoTaskProtocol.cacheChaptersWithRetry(
+                    chapters = listOf(BookChapter(url = "first")),
+                    retryDelayMillis = 0,
+                    onFailure = { _, _ -> context.cancel() },
+                ) {
+                    error("cache failed")
+                }
+            }
+        }
     }
 }

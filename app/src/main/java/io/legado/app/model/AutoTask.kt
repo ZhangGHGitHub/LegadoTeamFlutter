@@ -39,7 +39,8 @@ object AutoTask {
             "bookAuthor" to book.author,
             "generatedBy" to BOOK_UPDATE_GENERATOR,
             "respectCanUpdate" to true,
-            "notify" to mapOf("enable" to true, "minCount" to 1)
+            "notify" to mapOf("enable" to true, "minCount" to 1),
+            "cache" to mapOf("enable" to false)
         )
         return AutoTaskRule(
             id = bookUpdateTaskId(book.bookUrl),
@@ -58,6 +59,27 @@ object AutoTask {
             generatedBookIdentity(task)?.let { task to it }
         }.filter { it.second == (book.name to book.author) }
         return sameBook.singleOrNull()?.first
+    }
+
+    internal fun buildBookUpdateTasks(
+        books: List<Book>,
+        existingTasks: List<AutoTaskRule>,
+        cron: String,
+        nameOf: (Book) -> String
+    ): List<AutoTaskRule> {
+        val generated = books.map { it to buildBookUpdateTask(it, nameOf(it)) }
+        val existingById = existingTasks.associateBy { it.id }
+        val generatedIds = generated.mapTo(hashSetOf()) { it.second.id }
+        val movedTasks = existingTasks.filterNot { it.id in generatedIds }.toMutableList()
+        return generated.map { (book, task) ->
+            val existing = existingById[task.id]
+                ?: findBookUpdateTask(movedTasks, book)?.also { movedTasks.remove(it) }
+            task.copy(
+                id = existing?.id ?: task.id,
+                enable = existing?.enable ?: task.enable,
+                cron = cron
+            )
+        }
     }
 
     private fun bookUpdateTaskId(bookUrl: String): String {
@@ -181,6 +203,16 @@ object AutoTask {
         if (changed) AutoTaskScheduler.refresh(context)
     }
 
+    fun updateEnabled(ids: Collection<String>, enabled: Boolean, context: Context = appCtx): Int {
+        if (ids.isEmpty()) return 0
+        val changed = synchronized(this) {
+            all()
+            ids.chunked(900).sumOf { appDb.autoTaskRuleDao.updateEnabled(it, enabled) }
+        }
+        if (changed > 0) AutoTaskScheduler.refresh(context)
+        return changed
+    }
+
     fun updateCron(ids: Collection<String>, cron: String, context: Context = appCtx): Int {
         if (ids.isEmpty()) return 0
         val changed = synchronized(this) {
@@ -189,6 +221,10 @@ object AutoTask {
         }
         if (changed > 0) AutoTaskScheduler.refresh(context)
         return changed
+    }
+
+    fun clearRunLog(id: String) = synchronized(this) {
+        appDb.autoTaskRuleDao.clearRunLog(id)
     }
 
     fun updateRunState(

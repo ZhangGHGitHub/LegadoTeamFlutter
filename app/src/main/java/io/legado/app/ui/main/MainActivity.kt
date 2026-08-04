@@ -29,7 +29,6 @@ import io.legado.app.databinding.ActivityMainBinding
 import io.legado.app.databinding.DialogEditTextBinding
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.BottomBarSkinManager
-import io.legado.app.help.LifecycleHelp
 import io.legado.app.help.SourceSharePassphrase
 import io.legado.app.help.SourceSharePassphraseImportPolicy
 import io.legado.app.help.book.BookHelp
@@ -38,11 +37,13 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.storage.Backup
 import io.legado.app.help.update.AppUpdate
+import io.legado.app.help.update.isIgnoredAppUpdate
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.about.CrashLogsDialog
 import io.legado.app.ui.about.UpdateDialog
+import io.legado.app.ui.autoTask.ImportAutoTaskDialog
 import io.legado.app.ui.association.ImportBookSourceDialog
 import io.legado.app.ui.association.ImportDictRuleDialog
 import io.legado.app.ui.association.ImportHttpTtsDialog
@@ -112,6 +113,8 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
     private var onUpBooksBadgeView: BadgeView? = null
     private var lastPassphraseText: String? = null
+    private var pendingPassphraseRead = false
+    private var passphraseReadGeneration = 0
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         upBottomMenu()
@@ -159,7 +162,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             binding.viewPagerMain.postDelayed(1000) {
                 viewModel.ruleSubsUp()
             }
-            readSourceSharePassphrase(1500)
+            scheduleSourceSharePassphraseRead(1500)
             //自动更新书籍
             val isAutoRefreshedBook = savedInstanceState?.getBoolean("isAutoRefreshedBook") ?: false
             if (AppConfig.autoRefreshBook && !isAutoRefreshedBook) {
@@ -176,11 +179,25 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     override fun onResume() {
         super.onResume()
         if (SourceSharePassphraseImportPolicy.shouldScheduleOnResume(
-                privacyPolicyOk = LocalConfig.privacyPolicyOk,
-                activityCount = LifecycleHelp.activitySize()
+                privacyPolicyOk = LocalConfig.privacyPolicyOk
             )
         ) {
-            readSourceSharePassphrase(500)
+            scheduleSourceSharePassphraseRead(500)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        pendingPassphraseRead = false
+        passphraseReadGeneration++
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && pendingPassphraseRead && canAwaitPassphraseWindowFocus()) {
+            readSourceSharePassphrase(200)
+        } else if (hasFocus) {
+            pendingPassphraseRead = false
         }
     }
 
@@ -268,6 +285,9 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 if (LocalConfig.lastCheckUpdate + 24.hours.inWholeMilliseconds < System.currentTimeMillis()) {
                     AppUpdate.gitHubUpdate.check(lifecycleScope)
                         .onSuccess {
+                            if (isIgnoredAppUpdate(it.tagName, LocalConfig.ignoreUpdateVersion)) {
+                                return@onSuccess
+                            }
                             showDialogFragment(
                                 UpdateDialog(it)
                             )
@@ -281,7 +301,12 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         LocalConfig.versionCode = appInfo.versionCode
         if (LocalConfig.isFirstOpenApp) {
             val help = String(assets.open("web/help/md/appHelp.md").readBytes())
-            val dialog = TextDialog(getString(R.string.help), help, TextDialog.Mode.MD)
+            val dialog = TextDialog(
+                getString(R.string.help),
+                help,
+                TextDialog.Mode.MD,
+                showToc = true,
+            )
             dialog.setOnDismissListener {
                 block.resume(null)
             }
@@ -422,6 +447,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 it,
                 onlyUpdateRead = false,
                 policy = TocUpdatePolicy.SKIP_PRE_DOWNLOAD,
+                refreshBookInfo = true,
             )
         }
     }
@@ -448,13 +474,40 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         adapter.notifyDataSetChanged()
     }
 
-    private fun readSourceSharePassphrase(delayMillis: Long) {
+    private fun scheduleSourceSharePassphraseRead(delayMillis: Long) {
+        passphraseReadGeneration++
+        pendingPassphraseRead = true
+        if (hasWindowFocus()) {
+            readSourceSharePassphrase(delayMillis, passphraseReadGeneration)
+        }
+    }
+
+    private fun canAwaitPassphraseWindowFocus(): Boolean {
+        return SourceSharePassphraseImportPolicy.canAwaitWindowFocus(
+            privacyPolicyOk = LocalConfig.privacyPolicyOk,
+            isFinishing = isFinishing,
+            isResumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            isFragmentStateSaved = supportFragmentManager.isStateSaved
+        )
+    }
+
+    private fun readSourceSharePassphrase(
+        delayMillis: Long,
+        generation: Int = passphraseReadGeneration
+    ) {
+        pendingPassphraseRead = false
         binding.viewPagerMain.postDelayed(delayMillis) {
+            if (generation != passphraseReadGeneration) return@postDelayed
+            val hasWindowFocus = hasWindowFocus()
+            if (!hasWindowFocus) {
+                pendingPassphraseRead = canAwaitPassphraseWindowFocus()
+            }
             if (!SourceSharePassphraseImportPolicy.canReadClipboard(
                     privacyPolicyOk = LocalConfig.privacyPolicyOk,
                     isFinishing = isFinishing,
                     isResumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
-                    isFragmentStateSaved = supportFragmentManager.isStateSaved
+                    isFragmentStateSaved = supportFragmentManager.isStateSaved,
+                    hasWindowFocus = hasWindowFocus
                 )
             ) {
                 return@postDelayed
@@ -498,6 +551,9 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
                         SourceSharePassphrase.Type.TTS_RULE ->
                             showDialogFragment(ImportHttpTtsDialog(value.url))
+
+                        SourceSharePassphrase.Type.AUTO_TASK ->
+                            showDialogFragment(ImportAutoTaskDialog(value.url))
                     }
                 }
             }

@@ -35,6 +35,10 @@
 
     <item
         android:id="@+id/menu_update_toc"
-        android:title="@string/update_toc" />
+        android:title="@string/update_book_info_toc" />
+
+    <item
+        android:id="@+id/menu_create_book_update_tasks"
+        android:title="@string/create_book_update_task" />
 
 </menu>

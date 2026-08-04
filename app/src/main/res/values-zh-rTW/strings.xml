@@ -752,6 +752,8 @@
     <string name="auto_change_source">自動換源</string>
     <string name="text_full_justify">文字兩端對齊</string>
     <string name="text_bottom_justify">文字底部對齊</string>
+    <string name="hanging_punctuation">段首標點懸掛</string>
+    <string name="hanging_punctuation_summary">段首引號等標點懸掛於縮排內，使正文首字與其他段落對齊</string>
     <string name="auto_page_speed">自動翻頁速度</string>
     <string name="sort_by_url">地址排序</string>
     <string name="backup_summary">本機和 WebDav 一起備份</string>
@@ -799,6 +801,7 @@
     <string name="read_record">閱讀記錄</string>
     <string name="del_read_record">刪除閲讀記錄</string>
     <string name="read_record_summary">閱讀時間記錄</string>
+    <string name="show_search_read_record">標識讀過的書籍</string>
     <string name="local_tts">本機TTS</string>
     <string name="thread_count">執行緒數</string>
     <string name="all_read_time">總閱讀時間</string>
@@ -810,6 +813,11 @@
     <string name="save_night_theme_summary">儲存夜間主題配置以供呼叫和分享</string>
     <string name="theme_list">主題列表</string>
     <string name="theme_list_summary">使用儲存主題，匯入、分享主題</string>
+    <string name="wallpaper_color_follow">跟隨桌布配色</string>
+    <string name="wallpaper_color_follow_summary">使用系統桌布色盤產生日間和夜間主題（Android 12+）</string>
+    <string name="wallpaper_color_auto_update">桌布變更時自動更新</string>
+    <string name="wallpaper_color_auto_update_summary">系統桌布變更後自動套用新色盤</string>
+    <string name="wallpaper_colors_unavailable">無法取得桌布配色</string>
     <string name="select_theme">切換預設主題</string>
     <string name="sort_by_lastUpdateTime">更新時間排序</string>
     <string name="search_content">全文搜尋</string>
@@ -949,6 +957,10 @@
     <string name="open">打開</string>
     <string name="del_login_header">刪除登入頭</string>
     <string name="clear_login_info">清除登入資訊</string>
+    <string name="login_ui_v2_render_error">登入介面載入失敗，loginUi(state) 必須回傳 {rows:[...]}，詳情請見日誌</string>
+    <string name="login_ui_v2_action_error">登入操作失敗：%1$s</string>
+    <string name="login_ui_v2_invalid_action">loginAction 回傳了無效的命令物件</string>
+    <string name="login_ui_v2_save_error">登入資訊儲存失敗</string>
     <string name="show_login_header">查看登入頭</string>
     <string name="login_header">登入頭</string>
     <string name="font_scale">字體大小</string>

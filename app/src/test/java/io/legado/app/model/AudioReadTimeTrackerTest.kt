@@ -36,12 +36,23 @@ class AudioReadTimeTrackerTest {
     }
 
     @Test
+    fun `book info can update the author of an active interval`() {
+        val tracker = AudioReadTimeTracker()
+        tracker.setRecord(ReadRecord(bookName = "book"))
+        tracker.start(100)
+
+        tracker.updateAuthor("author")
+
+        assertEquals("author", tracker.stop(200, 1_000)?.author)
+    }
+
+    @Test
     fun `service records only actual playing state`() {
         val source = projectFile(
             "src/main/java/io/legado/app/service/AudioPlayService.kt"
         ).readText()
-        val callback = source.substringAfter("override fun onIsPlayingChanged(isPlaying: Boolean)")
-            .substringBefore("override fun onPlayerError")
+        val callback = source.substringAfter("private fun handleIsPlayingChanged(")
+            .substringBefore("override fun onSharedPreferenceChanged")
             .replace(Regex("\\s+"), " ")
 
         assertTrue(

@@ -13,10 +13,12 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.AutoTaskRule
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
+import io.legado.app.data.entities.BookHighlight
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.data.entities.DictRule
 import io.legado.app.data.entities.HttpTTS
+import io.legado.app.data.entities.HighlightRule
 import io.legado.app.data.entities.KeyboardAssist
 import io.legado.app.data.entities.ReadRecord
 import io.legado.app.data.entities.ReplaceRule
@@ -27,12 +29,14 @@ import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.data.entities.Server
 import io.legado.app.data.entities.TxtTocRule
 import io.legado.app.help.DirectLinkUpload
+import io.legado.app.help.HighlightStyle
 import io.legado.app.help.LauncherIconHelp
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.upType
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ThemeConfig
+import io.legado.app.lib.theme.WallpaperTheme
 import io.legado.app.model.VideoPlay.VIDEO_PREF_NAME
 import io.legado.app.model.BookCover
 import io.legado.app.model.localBook.LocalBook
@@ -45,6 +49,7 @@ import io.legado.app.utils.compress.ZipUtils
 import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.externalFiles
 import io.legado.app.utils.fromJsonArray
+import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
@@ -133,6 +138,22 @@ object Restore {
         fileToListT<Bookmark>(path, "bookmark.json")?.let {
             appDb.bookmarkDao.insert(*it.toTypedArray())
         }
+        fileToListT<BookHighlight>(path, "highlight.json")?.let { highlights ->
+            kotlin.runCatching {
+                applyLegacyHighlightStyles(File(path, "highlight.json").readText(), highlights)
+                applyLegacyHighlightOwners(highlights)
+                appDb.bookHighlightDao.insert(*highlights.toTypedArray())
+            }.onFailure {
+                AppLog.put("恢复高亮出错\n${it.localizedMessage}", it)
+            }
+        }
+        fileToListT<HighlightRule>(path, "highlightRule.json")?.let { rules ->
+            kotlin.runCatching {
+                appDb.highlightRuleDao.replaceAll(rules.map(HighlightRule::normalizeForRestore))
+            }.onFailure {
+                AppLog.put("恢复高亮规则出错\n${it.localizedMessage}", it)
+            }
+        }
         fileToListT<BookGroup>(path, "bookGroup.json")?.let {
             appDb.bookGroupDao.insert(*it.toTypedArray())
         }
@@ -179,10 +200,12 @@ object Restore {
                 if (readRecord.deviceId != androidId) {
                     appDb.readRecordDao.insert(readRecord)
                 } else {
-                    val time = appDb.readRecordDao
-                        .getReadTime(readRecord.deviceId, readRecord.bookName)
-                    if (time == null || time < readRecord.readTime) {
+                    val current = appDb.readRecordDao
+                        .getRecord(readRecord.deviceId, readRecord.bookName)
+                    if (current == null || current.readTime < readRecord.readTime) {
                         appDb.readRecordDao.insert(readRecord)
+                    } else if (readRecord.author.isNotBlank()) {
+                        appDb.readRecordDao.insert(current.copy(author = readRecord.author))
                     }
                 }
             }
@@ -322,6 +345,7 @@ object Restore {
             if (!BuildConfig.DEBUG) {
                 LauncherIconHelp.changeIcon(appCtx.getPrefString(PreferKey.launcherIcon))
             }
+            WallpaperTheme.syncWithPreferences(appCtx)
             ThemeConfig.applyDayNight(appCtx)
         }
     }
@@ -346,4 +370,33 @@ object Restore {
         return null
     }
 
+    private fun applyLegacyHighlightOwners(highlights: List<BookHighlight>) {
+        highlights.forEach { highlight ->
+            val bookUrl = highlight.bookUrl.ifBlank {
+                appDb.bookDao.getBook(highlight.bookName, highlight.bookAuthor)?.bookUrl.orEmpty()
+            }
+            val chapterUrl = highlight.chapterUrl.ifBlank {
+                appDb.bookChapterDao.getChapter(bookUrl, highlight.chapterIndex)
+                    ?.takeIf { it.title == highlight.chapterName }
+                    ?.url
+                    .orEmpty()
+            }
+            highlight.bindLegacyOwner(bookUrl, chapterUrl)
+        }
+    }
+
+}
+
+internal fun applyLegacyHighlightStyles(json: String, highlights: List<BookHighlight>) {
+    val legacy = GSON.fromJsonObject<List<Map<String, Any?>>>(json).getOrNull()
+    highlights.forEachIndexed { index, highlight ->
+        if (highlight.style.isNullOrBlank()) {
+            val raw = legacy?.getOrNull(index)
+            val fill = (raw?.get("bgColor") as? Number)?.toInt() ?: 0
+            val textColor = (raw?.get("textColor") as? Number)?.toInt() ?: 0
+            if (fill != 0 || textColor != 0) {
+                highlight.applyStyle(HighlightStyle(fill = fill, textColor = textColor))
+            }
+        }
+    }
 }

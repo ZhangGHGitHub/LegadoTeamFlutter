@@ -50,6 +50,7 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isLocalTxt
 import io.legado.app.help.book.isVideo
 import io.legado.app.help.book.isWebFile
+import io.legado.app.help.book.readProgress
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
@@ -138,6 +139,14 @@ class BookInfoActivity :
                 changed = it[2] as Boolean,
                 volumeIndex = it[3] as Int,
                 chapterInVolumeIndex = it[4] as Int,
+                highlightLayoutTitleLength =
+                    (it[TocActivityResult.HIGHLIGHT_LAYOUT_TITLE_LENGTH_INDEX] as Int)
+                        .takeUnless { titleLength ->
+                            titleLength == TocActivityResult.NO_HIGHLIGHT_LAYOUT_TITLE_LENGTH
+                        },
+                highlightAnchorText =
+                    (it[TocActivityResult.HIGHLIGHT_ANCHOR_TEXT_INDEX] as String)
+                        .takeIf(String::isNotEmpty),
             )
         } ?: let {
             if (!viewModel.inBookshelf) {
@@ -896,7 +905,18 @@ class BookInfoActivity :
 
             else -> {
                 book?.let {
-                    binding.tvToc.text = getString(R.string.toc_s, it.durChapterTitle)
+                    val tocTitle = resolveBookInfoTocTitle(
+                        it.durChapterTitle,
+                        it.durChapterIndex,
+                        chapterList,
+                    ) ?: getString(R.string.no_last_chapter)
+                    val readStatus = resolveBookInfoReadProgress(it)?.let { percent ->
+                        getString(R.string.read_y, "$percent%")
+                    }
+                    binding.tvToc.text = getString(
+                        R.string.toc_s,
+                        listOfNotNull(tocTitle, readStatus).joinToString("  ·  "),
+                    )
                     binding.tvLasted.text = getString(R.string.lasted_show, it.latestChapterTitle)
                 }
             }
@@ -1190,21 +1210,49 @@ class BookInfoActivity :
         changed: Boolean,
         volumeIndex: Int,
         chapterInVolumeIndex: Int,
+        highlightLayoutTitleLength: Int?,
+        highlightAnchorText: String?,
     ) {
         viewModel.getBook(false)?.let { book ->
-            book.durChapterIndex = index
-            book.durChapterPos = pos
+            val deferHighlightPosition = highlightLayoutTitleLength != null &&
+                !book.isAudio && !book.isVideo &&
+                (book.isLocal || !book.isImage || !AppConfig.showMangaUi)
+            if (!deferHighlightPosition) {
+                book.durChapterIndex = index
+                book.durChapterPos = pos
+                book.durVolumeIndex = volumeIndex
+                book.chapterInVolumeIndex = chapterInVolumeIndex
+            }
             chapterChanged = changed
-            book.durVolumeIndex = volumeIndex
-            book.chapterInVolumeIndex = chapterInVolumeIndex
             if (!viewModel.inBookshelf) {
                 book.addType(BookType.notShelf)
-            }
-            lifecycleScope.launch {
-                withContext(IO) {
-                    appDb.bookDao.update(book)
+                lifecycleScope.launch {
+                    withContext(IO) {
+                        book.save()
+                    }
+                    viewModel.saveChapterList {
+                        startReadActivity(
+                            book,
+                            index.takeIf { deferHighlightPosition },
+                            pos.takeIf { deferHighlightPosition },
+                            highlightLayoutTitleLength.takeIf { deferHighlightPosition },
+                            highlightAnchorText.takeIf { deferHighlightPosition }
+                        )
+                    }
                 }
-                startReadActivity(book)
+            } else {
+                lifecycleScope.launch {
+                    withContext(IO) {
+                        appDb.bookDao.update(book)
+                    }
+                    startReadActivity(
+                        book,
+                        index.takeIf { deferHighlightPosition },
+                        pos.takeIf { deferHighlightPosition },
+                        highlightLayoutTitleLength.takeIf { deferHighlightPosition },
+                        highlightAnchorText.takeIf { deferHighlightPosition }
+                    )
+                }
             }
         }
     }
@@ -1290,7 +1338,13 @@ class BookInfoActivity :
         }
     }
 
-    private fun startReadActivity(book: Book) {
+    private fun startReadActivity(
+        book: Book,
+        highlightIndex: Int? = null,
+        highlightChapterPos: Int? = null,
+        highlightLayoutTitleLength: Int? = null,
+        highlightAnchorText: String? = null,
+    ) {
         when {
             book.isAudio -> readBookResult.launch(
                 Intent(this, AudioPlayActivity::class.java)
@@ -1308,10 +1362,25 @@ class BookInfoActivity :
                     this,
                     if (!book.isLocal && book.isImage && AppConfig.showMangaUi) ReadMangaActivity::class.java
                     else ReadBookActivity::class.java
-                )
-                    .putExtra("bookUrl", book.bookUrl)
-                    .putExtra("inBookshelf", viewModel.inBookshelf)
-                    .putExtra("chapterChanged", chapterChanged)
+                ).apply {
+                    putExtra("bookUrl", book.bookUrl)
+                    putExtra("inBookshelf", viewModel.inBookshelf)
+                    putExtra("chapterChanged", chapterChanged)
+                    if (highlightIndex != null &&
+                        highlightChapterPos != null &&
+                        highlightLayoutTitleLength != null
+                    ) {
+                        putExtra("index", highlightIndex)
+                        putExtra("chapterPos", highlightChapterPos)
+                        putExtra(
+                            TocActivityResult.EXTRA_HIGHLIGHT_LAYOUT_TITLE_LENGTH,
+                            highlightLayoutTitleLength
+                        )
+                        highlightAnchorText?.let {
+                            putExtra(TocActivityResult.EXTRA_HIGHLIGHT_ANCHOR_TEXT, it)
+                        }
+                    }
+                }
             )
         }
     }
@@ -1390,4 +1459,20 @@ class BookInfoActivity :
         pooledWebView = null
     }
 
+}
+
+internal fun resolveBookInfoTocTitle(
+    storedTitle: String?,
+    currentIndex: Int,
+    chapters: List<BookChapter>,
+): String? {
+    return storedTitle?.takeIf { it.isNotBlank() }
+        ?: (chapters.getOrNull(currentIndex) ?: chapters.lastOrNull())
+            ?.getDisplayTitle(chineseConvert = false)
+            ?.takeIf { it.isNotBlank() }
+}
+
+internal fun resolveBookInfoReadProgress(book: Book): Int? {
+    if (book.totalChapterNum <= 1) return null
+    return book.readProgress()?.let { (it * 100).roundToInt() }
 }

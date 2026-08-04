@@ -198,11 +198,23 @@ interface BookDao {
     fun getReadConfigJson(bookUrl: String): String?
 
     @Query("update books set readConfig = :readConfig where bookUrl = :bookUrl")
-    fun updateReadConfigJson(bookUrl: String, readConfig: String)
+    fun updateReadConfigJson(bookUrl: String, readConfig: String?)
+
+    @Transaction
+    fun updatePreservingReadConfig(book: Book) {
+        val readConfig = getReadConfigJson(book.bookUrl)
+        update(book)
+        updateReadConfigJson(book.bookUrl, readConfig)
+    }
 
     @Transaction
     fun updateAudioPlayMode(bookUrl: String, playMode: Int) {
         updateReadConfigJson(bookUrl, getReadConfigJson(bookUrl).withAudioPlayMode(playMode))
+    }
+
+    @Transaction
+    fun updateAudioPlaySpeed(bookUrl: String, playSpeed: Float) {
+        updateReadConfigJson(bookUrl, getReadConfigJson(bookUrl).withAudioPlaySpeed(playSpeed))
     }
 
     @Delete
@@ -231,7 +243,17 @@ interface BookDao {
 }
 
 internal fun String?.withAudioPlayMode(playMode: Int): String {
-    val readConfig = GSON.fromJsonObject<JsonObject>(this).getOrNull() ?: JsonObject()
-    readConfig.addProperty("playMode", playMode)
+    return withAudioPlayPreference("playMode", playMode)
+}
+
+internal fun String?.withAudioPlaySpeed(playSpeed: Float): String {
+    return withAudioPlayPreference("playSpeed", playSpeed)
+}
+
+private fun String?.withAudioPlayPreference(key: String, value: Number): String {
+    val readConfig = GSON.fromJsonObject<JsonObject>(this).getOrNull() ?: JsonObject().apply {
+        addProperty("useGlobalAudioSkip", true)
+    }
+    readConfig.addProperty(key, value)
     return GSON.toJson(readConfig)
 }

@@ -43,11 +43,13 @@ import io.legado.app.ui.code.CodeEditActivity
 import io.legado.app.ui.file.HandleFileContract
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
+import io.legado.app.ui.widget.bindFieldNavigation
 import io.legado.app.ui.widget.code.EditSafety
 import io.legado.app.ui.widget.dialog.UrlOptionDialog
 import io.legado.app.ui.widget.dialog.VariableDialog
 import io.legado.app.ui.widget.keyboard.KeyboardToolPop
 import io.legado.app.ui.widget.recycler.NoChildScrollLinearLayoutManager
+import io.legado.app.ui.widget.setFieldLabels
 import io.legado.app.ui.widget.text.EditEntity
 import io.legado.app.utils.GSON
 import io.legado.app.utils.imeHeight
@@ -254,12 +256,11 @@ class BookSourceEditActivity :
         when (item.itemId) {
             R.id.menu_fullscreen_edit -> onFullEditClicked()
 
-            R.id.menu_save -> viewModel.save(getSource()) {
-                setResult(RESULT_OK, Intent().putExtra("origin", it.bookSourceUrl))
+            R.id.menu_save -> saveSource {
                 finish()
             }
 
-            R.id.menu_debug_source -> viewModel.save(getSource()) { source ->
+            R.id.menu_debug_source -> saveSource { source ->
                 startActivity<BookSourceDebugActivity> {
                     putExtra("key", source.bookSourceUrl)
                 }
@@ -279,7 +280,7 @@ class BookSourceEditActivity :
 
             R.id.menu_log -> showDialogFragment<AppLogDialog>()
             R.id.menu_help -> showHelp("ruleHelp")
-            R.id.menu_login -> viewModel.save(getSource()) { source ->
+            R.id.menu_login -> saveSource { source ->
                 startActivity<SourceLoginActivity> {
                     putExtra("type", "bookSource")
                     putExtra("key", source.bookSourceUrl)
@@ -287,12 +288,19 @@ class BookSourceEditActivity :
             }
 
             R.id.menu_set_source_variable -> setSourceVariable()
-            R.id.menu_search -> viewModel.save(getSource()) { source ->
+            R.id.menu_search -> saveSource { source ->
                 SearchActivity.start(this, source)
             }
 
         }
         return super.onCompatOptionsItemSelected(item)
+    }
+
+    private fun saveSource(onSuccess: (BookSource) -> Unit) {
+        viewModel.save(getSource()) { source ->
+            setResult(RESULT_OK, Intent().putExtra("origin", source.bookSourceUrl))
+            onSuccess(source)
+        }
     }
 
     private fun initView() {
@@ -323,17 +331,18 @@ class BookSourceEditActivity :
             binding.recyclerView.layoutManager = NoChildScrollLinearLayoutManager(this) //启用后会阻止RecyclerView跟随光标滚动,行数少时,用的TextView跟随
         }
         binding.recyclerView.adapter = adapter
+        binding.fieldNav.bindFieldNavigation(binding.recyclerView)
         binding.recyclerView.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
             if (newFocus is EditText) {
                 newFocus.postDelayed({ sendText("") }, 120)
             }
         }
         val transparentBar = transparentNavBar && !AppConfig.isEInkMode
-        binding.tabLayout.setBackgroundColor(
-            if (transparentBar) Color.TRANSPARENT else backgroundColor
-        )
-        if (transparentBar) binding.tabLayout.elevation = 0f
-        binding.tabLayout.setSelectedTabIndicatorColor(accentColor)
+        listOf(binding.tabLayout, binding.fieldNav).forEach { tabs ->
+            tabs.setBackgroundColor(if (transparentBar) Color.TRANSPARENT else backgroundColor)
+            if (transparentBar) tabs.elevation = 0f
+            tabs.setSelectedTabIndicatorColor(accentColor)
+        }
         binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabReselected(tab: TabLayout.Tab?) {
 
@@ -430,7 +439,7 @@ class BookSourceEditActivity :
     }
 
     private fun setEditEntities(tabPosition: Int?) {
-        adapter.editEntities = when (tabPosition) {
+        val entities = when (tabPosition) {
             1 -> searchEntities
             2 -> exploreEntities
             3 -> infoEntities
@@ -439,6 +448,8 @@ class BookSourceEditActivity :
             6 -> reviewEntities
             else -> sourceEntities
         }
+        adapter.editEntities = entities
+        binding.fieldNav.setFieldLabels(entities.map { it.hint })
         binding.recyclerView.scrollToPosition(0)
         window.decorView.rootView.clearFocus()
     }
@@ -577,6 +588,7 @@ class BookSourceEditActivity :
             add(EditEntity("detailBadgeRule", rr.detailBadgeRule, R.string.rule_review_detail_badge))
             add(EditEntity("detailContentRule", rr.detailContentRule, R.string.rule_review_detail_content))
 
+            add(EditEntity("reviewQuoteUrl", rr.reviewQuoteUrl, R.string.rule_review_quote))
             add(EditEntity("replyListRule", rr.replyListRule, R.string.rule_review_reply_list))
             add(EditEntity("replyIdRule", rr.replyIdRule, R.string.rule_review_reply_id))
             add(EditEntity("replyAvatarRule", rr.replyAvatarRule, R.string.rule_review_reply_avatar))
@@ -800,6 +812,7 @@ class BookSourceEditActivity :
                 "detailNameRule" -> reviewRule.detailNameRule = it.value
                 "detailBadgeRule" -> reviewRule.detailBadgeRule = it.value
                 "detailContentRule" -> reviewRule.detailContentRule = it.value
+                "reviewQuoteUrl" -> reviewRule.reviewQuoteUrl = it.value
                 "replyListRule" -> reviewRule.replyListRule = it.value
                 "replyIdRule" -> reviewRule.replyIdRule = it.value
                 "replyAvatarRule" -> reviewRule.replyAvatarRule = it.value
@@ -918,7 +931,7 @@ class BookSourceEditActivity :
     }
 
     private fun setSourceVariable() {
-        viewModel.save(getSource()) { source ->
+        saveSource { source ->
             lifecycleScope.launch {
                 val comment =
                     source.getDisplayVariableComment("源变量可在js中通过source.getVariable()获取")
