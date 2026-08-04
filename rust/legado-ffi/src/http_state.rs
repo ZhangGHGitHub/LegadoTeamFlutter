@@ -9,10 +9,73 @@
 //!
 //! 单例以 `RwLock<Option<...>>` 承载（而非裸 `OnceLock`），以便 [`reset_shared_client`]
 //! 在 QUIC 开关切换等场景清空并重建。
+//!
+//! ## Cookie 持久化（Task #72）
+//!
+//! 依赖方向：legado-net 不依赖 legado-db，因此网络层仅定义
+//! [`legado_net::CookiePersistence`] trait；本模块提供基于 legado-db
+//! `CookieRepository` 的实现 [`DbCookiePersistence`]，在共享客户端初始化时注入：
+//! - 构建时从 DB 加载全部 Cookie 到内存 CookieStore（重启不丢 Cookie）
+//! - 响应 Set-Cookie 变更时同步写回 DB（按域名 upsert）
+//!
+//! 若构建时 DB 尚未初始化（`ffi_db_open` 未先于首次请求调用），则降级为纯内存
+//! Cookie（与既有行为一致）；`reset_shared_client` 后重建时会重新尝试接入。
 
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
-use legado_net::{LegadoClient, LegadoClientConfig};
+use legado_net::{CookiePersistence, LegadoClient, LegadoClientConfig};
+
+/// 基于 legado-db cookies 表的 Cookie 持久化实现
+///
+/// 通过 [`crate::db_state::with_database`] 从全局连接池取连接，
+/// DB 未初始化或读写失败时仅记日志，不影响网络请求。
+pub struct DbCookiePersistence;
+
+impl CookiePersistence for DbCookiePersistence {
+    fn load_all(&self) -> Vec<(String, String)> {
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.find_all()
+        })
+        .unwrap_or_else(|e| {
+            log::warn!("加载持久化 Cookie 失败（降级为内存 Cookie）: {}", e);
+            Vec::new()
+        })
+    }
+
+    fn save(&self, tag: &str, cookie: &str) {
+        let tag_for_log = tag.to_string();
+        let tag = tag.to_string();
+        let cookie = cookie.to_string();
+        if let Err(e) = crate::db_state::with_database(move |db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.upsert(&tag, &cookie)
+        }) {
+            log::warn!("持久化 Cookie '{}' 写入失败: {}", tag_for_log, e);
+        }
+    }
+
+    fn delete(&self, tag: &str) {
+        let tag_for_log = tag.to_string();
+        let tag = tag.to_string();
+        if let Err(e) = crate::db_state::with_database(move |db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.delete_by_tag(&tag)
+        }) {
+            log::warn!("删除持久化 Cookie '{}' 失败: {}", tag_for_log, e);
+        }
+    }
+}
+
+/// 构造 Cookie 持久化后端（DB 已初始化时返回 DB 实现，否则 None）
+fn make_cookie_persistence() -> Option<Arc<dyn CookiePersistence>> {
+    if crate::db_state::is_initialized() {
+        Some(Arc::new(DbCookiePersistence))
+    } else {
+        log::debug!("共享客户端构建时数据库未初始化，Cookie 仅驻留内存");
+        None
+    }
+}
 
 /// 承载单例的可变槽位
 ///
@@ -44,8 +107,14 @@ pub fn shared_client() -> LegadoClient {
     }
 
     // 默认配置不含 proxy/ssl，构建实际不会失败；与既有 RealBookSourceFetcher 一致用 expect
-    let client = LegadoClient::new(LegadoClientConfig::default())
-        .expect("初始化共享 HTTP 客户端失败（默认配置不应失败）");
+    // Cookie 持久化：DB 已初始化时注入 DbCookiePersistence（启动加载 + 变更写回）
+    let client = match make_cookie_persistence() {
+        Some(persistence) => {
+            LegadoClient::with_cookie_persistence(LegadoClientConfig::default(), persistence)
+        }
+        None => LegadoClient::new(LegadoClientConfig::default()),
+    }
+    .expect("初始化共享 HTTP 客户端失败（默认配置不应失败）");
     *guard = Some(client.clone());
     client
 }
@@ -114,6 +183,60 @@ mod tests {
         assert!(
             !Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
             "reset 后应重建底层客户端"
+        );
+    }
+
+    // ─── Cookie 持久化（DB 注入）测试 ──────────────────────────
+
+    /// DB 已初始化时，shared_client 应携带持久化后端，
+    /// 且 DB 中预置的 Cookie 应被加载到客户端 CookieStore。
+    #[test]
+    fn test_shared_client_with_db_cookie_persistence() {
+        let _g = TEST_LOCK.lock().unwrap();
+        crate::db_state::ensure_test_db();
+
+        // 预置一条 Cookie 到 DB（tag 为域名，与内存 CookieStore 键对齐）
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.upsert("persist-test.com", "session=from_db")
+        })
+        .unwrap();
+
+        // reset 后重建客户端，应从 DB 加载 Cookie
+        reset_shared_client();
+        let client = shared_client();
+        assert!(
+            client.cookie_persistence().is_some(),
+            "DB 已初始化时共享客户端应携带持久化后端"
+        );
+        let store = client.cookie_store().read().unwrap();
+        assert_eq!(
+            store.get_key("persist-test.com", "session"),
+            Some("from_db".to_string()),
+            "DB 预置 Cookie 应被加载到内存 CookieStore"
+        );
+    }
+
+    /// DbCookiePersistence 直接测试：save/load/delete 与 CookieRepository 联动。
+    #[test]
+    fn test_db_cookie_persistence_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        crate::db_state::ensure_test_db();
+
+        let persistence = DbCookiePersistence;
+        persistence.save("roundtrip.com", "a=1; b=2");
+
+        let loaded = persistence.load_all();
+        assert!(
+            loaded.iter().any(|(tag, c)| tag == "roundtrip.com" && c == "a=1; b=2"),
+            "save 后 load_all 应包含写入条目"
+        );
+
+        persistence.delete("roundtrip.com");
+        let loaded = persistence.load_all();
+        assert!(
+            !loaded.iter().any(|(tag, _)| tag == "roundtrip.com"),
+            "delete 后 load_all 不应再包含该条目"
         );
     }
 }

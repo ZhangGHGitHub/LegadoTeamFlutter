@@ -1,15 +1,19 @@
 //! HTTP 客户端封装模块
 //!
 //! 参考 Kotlin `HttpHelper.kt` 基于 reqwest 构建，特性包括：
-//! - 可配置的超时、UA、代理
+//! - 可配置的超时、UA、代理（含 SOCKS5 用户名/密码认证）
 //! - 信任所有证书（与原 Kotlin SSLHelper.unsafeSSLSocketFactory 一致）
 //! - 自动重定向
-//! - Cookie 管理集成
+//! - 透明解压缩（gzip/brotli/deflate，对齐上游 OkHttp）
+//! - Cookie 管理集成（可选 DB 持久化，由上层注入 [`CookiePersistence`]）
 //! - 默认 Keep-Alive / Cache-Control 头
 //! - 可选重试（指数退避）和按域名限流
 //! - UA 轮换与代理池中间件
 //! - SSL/TLS 配置（证书验证控制、自定义 CA）
 //! - 可选 QUIC/HTTP3 传输（启用后 HTTPS 请求优先走 QUIC，失败自动 fallback 到 HTTP/2）
+//!
+//! 注：QUIC/HTTP3 路径（quinn 直连）不经过 reqwest 解压缩中间件，但该路径
+//! 不发送 Accept-Encoding 头，服务器不会返回压缩体，行为保持一致。
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,7 +25,7 @@ use reqwest::ClientBuilder;
 
 use legado_core::{LegadoError, LegadoResult};
 
-use crate::cookie_store::CookieStore;
+use crate::cookie_store::{CookiePersistence, CookieStore};
 use crate::middleware::MiddlewareChain;
 use crate::proxy::{ProxyConfig, ProxyMiddleware, ProxyPool};
 use crate::quic::{QuinnClient, QuinnConfig};
@@ -120,11 +124,32 @@ pub struct LegadoClient {
     proxy_pool: Option<Arc<ProxyPool>>,
     /// QUIC 客户端（仅在 enable_quic 时初始化）
     quic_client: Option<Arc<QuinnClient>>,
+    /// Cookie 持久化后端（可选，由上层注入，如 legado-ffi 的 DB 实现）
+    cookie_persistence: Option<Arc<dyn CookiePersistence>>,
 }
 
 impl LegadoClient {
     /// 根据配置创建新的 HTTP 客户端
     pub fn new(config: LegadoClientConfig) -> LegadoResult<Self> {
+        Self::build(config, None)
+    }
+
+    /// 创建带 Cookie 持久化后端的 HTTP 客户端
+    ///
+    /// 构建时立即从后端加载已持久化的 Cookie 到内存 CookieStore；
+    /// 后续响应中的 Set-Cookie 变更会同步写回后端（按域名 upsert）。
+    pub fn with_cookie_persistence(
+        config: LegadoClientConfig,
+        persistence: Arc<dyn CookiePersistence>,
+    ) -> LegadoResult<Self> {
+        Self::build(config, Some(persistence))
+    }
+
+    /// 内部构建入口：可选携带 Cookie 持久化后端
+    fn build(
+        config: LegadoClientConfig,
+        cookie_persistence: Option<Arc<dyn CookiePersistence>>,
+    ) -> LegadoResult<Self> {
         let mut builder = ClientBuilder::new()
             .connect_timeout(config.connect_timeout)
             .timeout(config.read_timeout)
@@ -216,9 +241,21 @@ impl LegadoClient {
             None
         };
 
+        // Cookie 持久化：启动时从后端加载到内存 CookieStore
+        let cookie_store = {
+            let mut store = CookieStore::new();
+            if let Some(ref persistence) = cookie_persistence {
+                let entries = persistence.load_all();
+                let count = entries.len();
+                store.load_persisted(entries);
+                log::info!("从持久化后端加载 {} 条域名 Cookie 记录", count);
+            }
+            Arc::new(RwLock::new(store))
+        };
+
         Ok(Self {
             client,
-            cookie_store: Arc::new(RwLock::new(CookieStore::new())),
+            cookie_store,
             config,
             retry_executor,
             domain_rate_limiter,
@@ -226,6 +263,7 @@ impl LegadoClient {
             ua_rotator,
             proxy_pool,
             quic_client,
+            cookie_persistence,
         })
     }
 
@@ -247,6 +285,11 @@ impl LegadoClient {
     /// 获取 CookieStore 引用
     pub fn cookie_store(&self) -> &Arc<RwLock<CookieStore>> {
         &self.cookie_store
+    }
+
+    /// 获取 Cookie 持久化后端引用（如有）
+    pub fn cookie_persistence(&self) -> Option<&Arc<dyn CookiePersistence>> {
+        self.cookie_persistence.as_ref()
     }
 
     /// 获取重试执行器引用（如有）
@@ -423,10 +466,12 @@ impl LegadoClient {
     }
 
     /// 创建使用自定义代理的客户端副本（对应 Kotlin `getProxyClient`）
+    ///
+    /// 保留原客户端的 Cookie 持久化后端（共享同一 `Arc`）。
     pub fn with_proxy(&self, proxy_url: &str) -> LegadoResult<Self> {
         let mut config = self.config.clone();
         config.proxy = Some(ProxyConfig::from_url(proxy_url));
-        Self::new(config)
+        Self::build(config, self.cookie_persistence.clone())
     }
 
     // ---------- 内部方法 ----------
@@ -598,6 +643,17 @@ impl LegadoClient {
                             http_only: false,
                         });
                     }
+                }
+            }
+
+            // 持久化写回：将变更域名的全部 Cookie 序列化后 upsert 到后端
+            //（同步写入，单行 upsert 开销可接受；后端失败仅记日志不阻断请求）
+            if let Some(ref persistence) = self.cookie_persistence {
+                let cookie_string = store.domain_cookie_string(&domain);
+                if cookie_string.is_empty() {
+                    persistence.delete(&domain);
+                } else {
+                    persistence.save(&domain, &cookie_string);
                 }
             }
         }
@@ -800,6 +856,20 @@ mod tests {
     }
 
     #[test]
+    fn test_build_client_with_socks5_credentials() {
+        // SOCKS5 携带 user:pass 凭据的客户端应构建成功
+        //（reqwest socks feature 原生解析代理 URL 中的凭据，不实际连接）
+        let cfg = LegadoClientConfig {
+            proxy: Some(crate::proxy::parse_proxy_config(
+                "socks5://alice:secret@127.0.0.1:1080",
+            ).unwrap()),
+            ..Default::default()
+        };
+        let client = LegadoClient::new(cfg);
+        assert!(client.is_ok());
+    }
+
+    #[test]
     fn test_build_client_with_full_config() {
         let cfg = LegadoClientConfig {
             user_agents: Some(vec!["Bot/1.0".to_string()]),
@@ -925,5 +995,142 @@ mod tests {
             .try_quic_get("https://192.0.2.1:443", None)
             .await;
         assert!(result.is_none());
+    }
+
+    // ─── gzip 透明解压缩测试 ──────────────────────────────
+
+    /// 启动一个一次性本地 HTTP 服务器，返回 gzip 压缩的响应体
+    ///
+    /// 返回监听地址（如 `127.0.0.1:53211`）。验证 reqwest 启用 gzip feature 后
+    /// 自动设置 Accept-Encoding 并透明解压响应体（对齐上游 OkHttp 行为）。
+    async fn spawn_gzip_server(plain_body: &'static str) -> std::net::SocketAddr {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        // 预构造 gzip 压缩体
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(plain_body.as_bytes()).unwrap();
+        let gzipped = encoder.finish().unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                // 读取请求头（简化：读到空行为止，不关心具体内容）
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf).await;
+                // 返回 gzip 压缩响应（仅支持单次请求）
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    gzipped.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.write_all(&gzipped).await;
+                let _ = stream.flush().await;
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn test_gzip_response_decompressed() {
+        let plain = "你好，这是一段用于验证 gzip 透明解压的响应文本。hello gzip!";
+        let addr = spawn_gzip_server(plain).await;
+
+        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        let resp = client
+            .get(&format!("http://{}/", addr), None)
+            .await
+            .expect("请求 gzip 服务器失败");
+        assert_eq!(resp.status, 200);
+        // reqwest 应已透明解压：body 为原始明文而非压缩字节
+        assert_eq!(resp.body, plain);
+    }
+
+    // ─── Cookie 持久化测试（内存模拟后端） ────────────────────
+
+    /// 测试用内存持久化后端
+    #[derive(Default)]
+    struct MockPersistence {
+        data: Mutex<HashMap<String, String>>,
+    }
+
+    impl crate::cookie_store::CookiePersistence for MockPersistence {
+        fn load_all(&self) -> Vec<(String, String)> {
+            let guard = self.data.lock().unwrap();
+            guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        }
+
+        fn save(&self, tag: &str, cookie: &str) {
+            self.data
+                .lock()
+                .unwrap()
+                .insert(tag.to_string(), cookie.to_string());
+        }
+
+        fn delete(&self, tag: &str) {
+            self.data.lock().unwrap().remove(tag);
+        }
+    }
+
+    #[test]
+    fn test_cookie_persistence_load_on_build() {
+        // 后端预置 Cookie，构建客户端时应载入内存 CookieStore
+        let persistence = Arc::new(MockPersistence::default());
+        persistence.save("example.com", "session=abc123; theme=dark");
+
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig::default(),
+            persistence.clone(),
+        )
+        .unwrap();
+        let store = client.cookie_store().read().unwrap();
+        assert_eq!(
+            store.get_key("example.com", "session"),
+            Some("abc123".to_string())
+        );
+        assert_eq!(
+            store.get_key("example.com", "theme"),
+            Some("dark".to_string())
+        );
+    }
+
+    #[test]
+    fn test_cookie_persistence_writeback_on_set_cookie() {
+        // 模拟响应 Set-Cookie 后应写回后端
+        let persistence = Arc::new(MockPersistence::default());
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig::default(),
+            persistence.clone(),
+        )
+        .unwrap();
+
+        let mut headers = HashMap::new();
+        headers.insert("set-cookie".to_string(), "token=xyz789".to_string());
+        client.save_cookies_from_response(
+            "https://www.example.com/page",
+            "https://www.example.com/page",
+            &headers,
+        );
+
+        // 内存与后端均应包含新 Cookie
+        let store = client.cookie_store().read().unwrap();
+        assert_eq!(
+            store.get_key("example.com", "token"),
+            Some("xyz789".to_string())
+        );
+        drop(store);
+        let saved = persistence.data.lock().unwrap().get("example.com").cloned();
+        assert_eq!(saved, Some("token=xyz789".to_string()));
+    }
+
+    #[test]
+    fn test_cookie_persistence_not_attached_by_default() {
+        // 默认构建不携带持久化后端，行为不变
+        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        assert!(client.cookie_persistence().is_none());
     }
 }

@@ -28,6 +28,23 @@ impl Cookie {
     }
 }
 
+/// Cookie 持久化后端抽象（注入模式）
+///
+/// legado-net 不能依赖 legado-db（避免循环依赖），因此网络层仅定义 trait：
+/// - 启动时由上层（legado-ffi）注入 DB 实现，将持久化 Cookie 载入内存 [`CookieStore`]
+/// - Cookie 变更时 [`LegadoClient`](crate::client::LegadoClient) 同步回调写回后端
+///
+/// 方法均为同步接口：DB 实现（r2d2 连接池）本身是同步的，避免引入异步开销。
+/// 各方法应自行吞掉底层错误（仅记日志），持久化失败不应阻断网络请求。
+pub trait CookiePersistence: Send + Sync {
+    /// 加载全部持久化 Cookie，返回 `(域名 tag, "name=value; ...")` 列表
+    fn load_all(&self) -> Vec<(String, String)>;
+    /// 插入/更新单个域名的 Cookie 字符串
+    fn save(&self, tag: &str, cookie: &str);
+    /// 删除单个域名的全部 Cookie
+    fn delete(&self, tag: &str);
+}
+
 /// 基于内存的 Cookie 存储
 ///
 /// 以 domain 为键管理 Cookie 列表，支持：
@@ -119,12 +136,27 @@ impl CookieStore {
             Some(d) => d,
             None => return String::new(),
         };
-        let cookies = self.get_cookies(&domain);
-        cookies
+        self.domain_cookie_string(&domain)
+    }
+
+    /// 序列化指定域名下全部 Cookie（不含已过期）为 `name1=value1; name2=value2`
+    ///
+    /// 用于持久化写回（与 DB cookies 表的 cookie 字段格式对齐）。
+    pub fn domain_cookie_string(&self, domain: &str) -> String {
+        self.get_cookies(domain)
             .iter()
             .map(|c| format!("{}={}", c.name, c.value))
             .collect::<Vec<_>>()
             .join("; ")
+    }
+
+    /// 批量加载持久化 Cookie 条目：`(域名 tag, "name=value; ...")`
+    ///
+    /// 用于启动时从 DB 恢复 Cookie 到内存。
+    pub fn load_persisted(&mut self, entries: impl IntoIterator<Item = (String, String)>) {
+        for (domain, cookie_str) in entries {
+            self.set_cookies_from_string(&domain, &cookie_str);
+        }
     }
 
     /// 获取指定域名下某个 key 的值
@@ -434,5 +466,29 @@ mod tests {
     #[test]
     fn test_merge_cookies_empty() {
         assert_eq!(CookieStore::merge_cookies_str("", ""), None);
+    }
+
+    #[test]
+    fn test_domain_cookie_string() {
+        let mut store = CookieStore::new();
+        store.set_cookies_from_string("example.com", "a=1; b=2");
+        let s = store.domain_cookie_string("example.com");
+        let map = CookieStore::cookie_string_to_map(&s);
+        assert_eq!(map.get("a"), Some(&"1".to_string()));
+        assert_eq!(map.get("b"), Some(&"2".to_string()));
+    }
+
+    #[test]
+    fn test_load_persisted() {
+        let mut store = CookieStore::new();
+        store.load_persisted(vec![
+            ("example.com".to_string(), "session=abc; theme=dark".to_string()),
+            ("other.com".to_string(), "token=xyz".to_string()),
+        ]);
+        assert_eq!(store.get_cookies("example.com").len(), 2);
+        assert_eq!(
+            store.get_key("other.com", "token"),
+            Some("xyz".to_string())
+        );
     }
 }

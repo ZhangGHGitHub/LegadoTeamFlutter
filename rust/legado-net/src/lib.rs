@@ -40,10 +40,10 @@ pub mod webdav;
 
 // 常用类型重导出
 pub use client::{is_quic_enabled, set_quic_enabled, LegadoClient, LegadoClientConfig};
-pub use cookie_store::CookieStore;
+pub use cookie_store::{CookiePersistence, CookieStore};
 pub use cover::CoverCache;
 pub use middleware::{Middleware, MiddlewareChain};
-pub use proxy::{ProxyConfig, ProxyPool, ProxyType};
+pub use proxy::{parse_proxy_config, ProxyConfig, ProxyCredentials, ProxyPool, ProxyType};
 pub use rate_limit::{DomainRateLimiter, RateLimiter};
 pub use request::{LegadoRequest, Method};
 pub use response::LegadoResponse;

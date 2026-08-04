@@ -8,7 +8,9 @@ legado-core = { path = "../legado-core" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls", "http2", "charset"] }
+# gzip/brotli/deflate：对齐上游 OkHttp 透明解压缩（reqwest 自动设置 Accept-Encoding 并解压）
+# socks：支持 SOCKS5 代理（含 user:pass 凭据，对齐上游 Socks5Proxy.kt）
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls", "http2", "charset", "gzip", "brotli", "deflate", "socks"] }
 url = "2"
 regex = "1"
 log = "0.4"
@@ -26,3 +28,5 @@ bytes = "1"
 [dev-dependencies]
 filetime = "0.2"
 tokio = { workspace = true, features = ["full"] }
+# 测试用：构造 gzip 压缩响应体
+flate2 = "1"
