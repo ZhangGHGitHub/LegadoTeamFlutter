@@ -1,6 +1,6 @@
 //! 书籍导出 API
 //!
-//! 提供书籍导出为 TXT/EPUB/HTML 的能力。
+//! 提供书籍导出为 TXT/EPUB/HTML/PDF 的能力。
 
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +32,7 @@ pub struct ExportResult {
 ///
 /// # 参数
 /// - `book_url`: 书籍 URL
-/// - `format`: 导出格式（txt/epub/html）
+/// - `format`: 导出格式（txt/epub/html/pdf）
 /// - `include_toc`: 是否包含目录
 ///
 /// # 返回
@@ -47,7 +47,7 @@ pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoRes
                 data_base64: None,
                 file_name: None,
                 mime_type: None,
-                error: Some(format!("不支持的导出格式: {format}，支持 txt/epub/html")),
+                error: Some(format!("不支持的导出格式: {format}，支持 txt/epub/html/pdf")),
             });
         }
     };
@@ -304,6 +304,44 @@ mod tests {
             Ok(())
         })
         .unwrap();
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 集成测试：PDF 格式全链路导出
+    ///
+    /// 环境有中文字体时应成功且输出有效 PDF（%PDF 文件头）；
+    /// 无字体时应优雅降级为带明确错误信息的结果（不 panic）。
+    #[test]
+    fn test_export_local_book_pdf() {
+        let path = create_temp_txt("pdf");
+        register_book_and_chapters(&path, "导出测试书PDF");
+
+        let result = export_book(&path, "pdf", false).unwrap();
+        if result.success {
+            use base64::Engine;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(result.data_base64.as_ref().unwrap())
+                .unwrap();
+            assert!(bytes.len() > 4, "PDF 输出不应为空");
+            assert_eq!(&bytes[0..4], b"%PDF", "导出文件应为有效 PDF");
+            assert_eq!(
+                result.mime_type.as_deref(),
+                Some("application/pdf"),
+                "MIME 类型应为 application/pdf"
+            );
+            assert!(
+                result.file_name.as_ref().unwrap().ends_with(".pdf"),
+                "文件名应以 .pdf 结尾"
+            );
+        } else {
+            // 无 CJK 字体环境：错误信息应明确提示字体问题
+            let err = result.error.unwrap_or_default();
+            assert!(
+                err.contains("字体"),
+                "导出失败应提示字体问题: {err}"
+            );
+        }
+
         let _ = std::fs::remove_file(&path);
     }
 }

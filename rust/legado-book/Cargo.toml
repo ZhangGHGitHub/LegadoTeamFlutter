@@ -12,6 +12,8 @@ quick-xml = "0.37"
 encoding_rs = "0.8"
 regex = "1"
 lopdf = "0.34"
+# PDF 导出：纯 Rust 实现（printpdf + rusttype），支持 Android 交叉编译
+genpdf = "0.2"
 
 # unrar 在 Android 上无法交叉编译（unrar_sys 包含 Windows 专属代码）
 [target.'cfg(not(target_os = "android"))'.dependencies]

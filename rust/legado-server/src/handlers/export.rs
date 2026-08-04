@@ -23,7 +23,7 @@ use crate::state::AppState;
 pub struct ExportRequest {
     /// 书籍 URL（bookUrl）
     pub book_url: String,
-    /// 导出格式：txt / epub / html
+    /// 导出格式：txt / epub / html / pdf
     pub format: String,
     /// 是否包含目录
     #[serde(default = "default_true")]
@@ -42,7 +42,7 @@ pub async fn export_book(
     // 解析导出格式
     let format = ExportFormat::from_str(&req.format).ok_or_else(|| {
         ApiError(LegadoError::Internal(format!(
-            "不支持的导出格式: {}，支持 txt/epub/html",
+            "不支持的导出格式: {}，支持 txt/epub/html/pdf",
             req.format
         )))
     })?;
@@ -126,7 +126,7 @@ pub async fn export_info(
 ) -> Result<Json<Value>, ApiError> {
     let format = ExportFormat::from_str(&req.format).ok_or_else(|| {
         ApiError(LegadoError::Internal(format!(
-            "不支持的导出格式: {}，支持 txt/epub/html",
+            "不支持的导出格式: {}，支持 txt/epub/html/pdf",
             req.format
         )))
     })?;

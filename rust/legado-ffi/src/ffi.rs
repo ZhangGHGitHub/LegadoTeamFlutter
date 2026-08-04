@@ -1223,7 +1223,7 @@ pub mod ffi {
     /// 
     /// # 参数
     /// - `book_url`: 书籍 URL
-    /// - `format`: 导出格式（txt/epub/html）
+    /// - `format`: 导出格式（txt/epub/html/pdf）
     /// - `include_toc`: 是否包含目录
     pub fn book_export(
         book_url: String,
