@@ -822,4 +822,26 @@ abstract class BookApi {
     required String bookName,
     required String origin,
   });
+
+  // ========== 应用日志（appLog FFI） ==========
+  // [审计修复 §1.2] 补齐契约 §2.38 已交付但接口缺失的 appLog* 五方法 — QoderCN
+
+  /// 推送一条应用日志（对齐 Android AppLog.put；空消息由 Rust 侧短路忽略）
+  ///
+  /// [level] 取值：`message` / `crash` / `http`（对齐契约 §2.38）。
+  Future<void> appLogPush({required String level, required String message});
+
+  /// 获取指定级别的日志列表（JSON 数组，最新在前）
+  ///
+  /// 每项字段：`timestamp`（毫秒）/ `level` / `message`。
+  Future<String> appLogList({required String level});
+
+  /// 清空指定级别的日志
+  Future<void> appLogClear({required String level});
+
+  /// 清空全部级别日志（对齐 #543 AppLog.clear + HttpLogStore.clear）
+  Future<void> appLogClearAll();
+
+  /// 导出全部日志为格式化文本（时间升序，64_000 字符截断，对齐 #543）
+  Future<String> appLogExport();
 }

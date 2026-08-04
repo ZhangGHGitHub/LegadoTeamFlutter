@@ -1738,4 +1738,55 @@ class MockBookApi implements BookApi {
           .compareTo((b['sortOrder'] as num?) ?? 0));
     return _highlightListJson(items);
   }
+
+  // ========== 应用日志（appLog 假实现） ==========
+  // [审计修复 §1.2] 内存环形缓冲（每级最多 500 条），行为对齐 Rust log_api — QoderCN
+
+  static const int _appLogMaxPerLevel = 500;
+  final Map<String, List<Map<String, dynamic>>> _appLogs = {};
+
+  @override
+  Future<void> appLogPush({required String level, required String message}) async {
+    if (message.isEmpty) return; // 对齐 Kotlin put 的空消息短路
+    final bucket = _appLogs.putIfAbsent(level, () => <Map<String, dynamic>>[]);
+    bucket.insert(0, {
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'level': level,
+      'message': message,
+    });
+    if (bucket.length > _appLogMaxPerLevel) {
+      bucket.removeRange(_appLogMaxPerLevel, bucket.length);
+    }
+  }
+
+  @override
+  Future<String> appLogList({required String level}) async =>
+      jsonEncode(_appLogs[level] ?? const <Map<String, dynamic>>[]);
+
+  @override
+  Future<void> appLogClear({required String level}) async {
+    _appLogs.remove(level);
+  }
+
+  @override
+  Future<void> appLogClearAll() async {
+    _appLogs.clear();
+  }
+
+  @override
+  Future<String> appLogExport() async {
+    // 时间升序导出（对齐 #543），截断 64_000 字符
+    final all = _appLogs.values
+        .expand((entries) => entries)
+        .toList()
+      ..sort((a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int));
+    final buffer = StringBuffer();
+    for (final entry in all) {
+      buffer.writeln(
+        '[${entry['timestamp']}] [${entry['level']}] ${entry['message']}',
+      );
+    }
+    final text = buffer.toString();
+    return text.length > 64000 ? text.substring(0, 64000) : text;
+  }
 }

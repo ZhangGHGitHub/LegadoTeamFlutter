@@ -454,6 +454,47 @@ void main() {
     });
   });
 
+  group('应用日志', () {
+    // [审计修复 §1.2] appLog* 五方法可调用性验证 — QoderCN
+    test('appLogPush/appLogList 读写一致且最新在前', () async {
+      await api.appLogPush(level: 'message', message: '第一条');
+      await api.appLogPush(level: 'message', message: '第二条');
+      final json = await api.appLogList(level: 'message');
+      expect(json, contains('第二条'));
+      expect(json.indexOf('第二条'), lessThan(json.indexOf('第一条')));
+    });
+
+    test('空消息短路不入列', () async {
+      await api.appLogPush(level: 'message', message: '');
+      final json = await api.appLogList(level: 'message');
+      expect(json, '[]');
+    });
+
+    test('appLogClear 只清指定级别', () async {
+      await api.appLogPush(level: 'message', message: 'a');
+      await api.appLogPush(level: 'http', message: 'b');
+      await api.appLogClear(level: 'message');
+      expect(await api.appLogList(level: 'message'), '[]');
+      expect(await api.appLogList(level: 'http'), contains('b'));
+    });
+
+    test('appLogClearAll 清空全部', () async {
+      await api.appLogPush(level: 'message', message: 'a');
+      await api.appLogPush(level: 'crash', message: 'b');
+      await api.appLogClearAll();
+      expect(await api.appLogList(level: 'message'), '[]');
+      expect(await api.appLogList(level: 'crash'), '[]');
+    });
+
+    test('appLogExport 时间升序导出', () async {
+      await api.appLogPush(level: 'message', message: '第一条');
+      await api.appLogPush(level: 'http', message: '第二条');
+      final text = await api.appLogExport();
+      expect(text, contains('[message] 第一条'));
+      expect(text.indexOf('第一条'), lessThan(text.indexOf('第二条')));
+    });
+  });
+
   group('段评/章评', () {
     test('reviewAdd 返回 ID', () async {
       final id = await api.reviewAdd(

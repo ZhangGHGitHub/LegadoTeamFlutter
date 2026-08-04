@@ -102,12 +102,36 @@ class RustApi implements BookApi {
   /// 获取 Rust 引擎版本号
   Future<String> getVersion() => bridge.version();
 
+  // [审计修复 §4.2] jsonDecode 守卫：类型不符时抛带上下文的 FormatException，
+  // 避免 Rust 返回结构漂移时直接 TypeError 崩溃（契约 §1.4 历史教训） — QoderCN
+
+  /// 解码 JSON 数组，类型不符时抛带方法上下文的 [FormatException]
+  List<dynamic> _decodeList(String json, String method) {
+    final dynamic decoded = jsonDecode(json);
+    if (decoded is List<dynamic>) return decoded;
+    throw FormatException(
+      '$method（RustApi 列表解码）: 期望 JSON 数组，实际为 ${decoded.runtimeType}，'
+      '原始内容前 120 字符：${json.length > 120 ? json.substring(0, 120) : json}',
+    );
+  }
+
+  /// 解码 JSON 对象，类型不符时抛带方法上下文的 [FormatException]
+  Map<String, dynamic> _decodeMap(String json, String method) {
+    final dynamic decoded = jsonDecode(json);
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return decoded.cast<String, dynamic>();
+    throw FormatException(
+      '$method（RustApi 对象解码）: 期望 JSON 对象，实际为 ${decoded.runtimeType}，'
+      '原始内容前 120 字符：${json.length > 120 ? json.substring(0, 120) : json}',
+    );
+  }
+
   // ========== 书架操作 ==========
 
   /// 获取书架上所有书籍
   Future<List<Book>> getBooks() async {
     final json = await bridge.bookshelfList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => Book.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -116,7 +140,7 @@ class RustApi implements BookApi {
   /// 添加书籍到书架
   Future<Book> addBook(Book book) async {
     final json = await bridge.bookshelfAdd(bookJson: jsonEncode(book.toJson()));
-    return Book.fromJson(jsonDecode(json) as Map<String, dynamic>);
+    return Book.fromJson(_decodeMap(json, 'bookApi'));
   }
 
   /// 更新书籍信息
@@ -131,7 +155,7 @@ class RustApi implements BookApi {
   Future<Book?> getBook(String bookUrl) async {
     final json = await bridge.bookshelfGet(bookUrl: bookUrl);
     if (json.isEmpty || json == 'null') return null;
-    return Book.fromJson(jsonDecode(json) as Map<String, dynamic>);
+    return Book.fromJson(_decodeMap(json, 'bookApi'));
   }
 
   /// 置顶书籍（通过设置 order 为负值实现）
@@ -170,7 +194,7 @@ class RustApi implements BookApi {
   /// 获取所有书源
   Future<List<BookSource>> getBookSources() async {
     final json = await bridge.sourceList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => BookSource.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -179,7 +203,7 @@ class RustApi implements BookApi {
   /// 获取所有启用的书源
   Future<List<BookSource>> getEnabledBookSources() async {
     final json = await bridge.sourceListEnabled();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => BookSource.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -189,7 +213,7 @@ class RustApi implements BookApi {
   Future<BookSource> addBookSource(BookSource source) async {
     final json =
         await bridge.sourceAdd(sourceJson: jsonEncode(source.toJson()));
-    return BookSource.fromJson(jsonDecode(json) as Map<String, dynamic>);
+    return BookSource.fromJson(_decodeMap(json, 'bookApi'));
   }
 
   /// 更新书源
@@ -253,7 +277,7 @@ class RustApi implements BookApi {
       keyword: keyword,
       sourceUrlsJson: urlsJson,
     );
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => SearchResult.fromSearchBook(
               SearchBook.fromJson(e as Map<String, dynamic>),
@@ -271,7 +295,7 @@ class RustApi implements BookApi {
       query: query,
       sourceUrlsJson: urlsJson,
     );
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => e as Map<String, dynamic>).toList();
   }
 
@@ -286,7 +310,7 @@ class RustApi implements BookApi {
     final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
     return bridge
         .searchMultiStream(query: query, sourceUrlsJson: urlsJson)
-        .map((batch) => jsonDecode(batch) as Map<String, dynamic>);
+        .map((batch) => _decodeMap(batch, 'searchMultiStream'));
   }
 
   /// 取消搜索
@@ -324,7 +348,7 @@ class RustApi implements BookApi {
   @override
   Future<List<Map<String, dynamic>>> searchCover(String bookName) async {
     final json = await bridge.searchCover(bookName: bookName);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
@@ -345,7 +369,7 @@ class RustApi implements BookApi {
   /// 获取所有 RSS 源
   Future<List<RssSource>> getRssSources() async {
     final json = await bridge.rssListSources();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => RssSource.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -355,7 +379,7 @@ class RustApi implements BookApi {
   Future<RssSource> addRssSource(RssSource source) async {
     final json =
         await bridge.rssAddSource(sourceJson: jsonEncode(source.toJson()));
-    return RssSource.fromJson(jsonDecode(json) as Map<String, dynamic>);
+    return RssSource.fromJson(_decodeMap(json, 'bookApi'));
   }
 
   /// 更新 RSS 源（复用书源更新接口）
@@ -384,7 +408,7 @@ class RustApi implements BookApi {
   /// 获取 RSS 文章列表
   Future<List<RssFeedArticle>> getRssArticles(String sourceUrl) async {
     final json = await bridge.rssFetchArticles(sourceUrl: sourceUrl);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) {
       final m = e as Map<String, dynamic>;
       return RssFeedArticle(
@@ -421,7 +445,7 @@ class RustApi implements BookApi {
   /// 获取 RSS 已读记录列表（按 readTime 降序）
   Future<List<Map<String, dynamic>>> rssListReadRecords([int? limit]) async {
     final json = await bridge.rssListReadRecords(limit: limit);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => e as Map<String, dynamic>).toList();
   }
 
@@ -430,7 +454,7 @@ class RustApi implements BookApi {
   /// 导入本地书籍
   Future<Book> importLocalBook(String filePath) async {
     final json = await bridge.importLocalBook(filePath: filePath);
-    final result = jsonDecode(json) as Map<String, dynamic>;
+    final result = _decodeMap(json, 'bookApi');
     final success = result['success'] as bool? ?? false;
     if (!success) {
       final error = result['error'] as String? ?? '未知导入错误';
@@ -480,7 +504,7 @@ class RustApi implements BookApi {
   /// 获取某本书的所有书签
   Future<List<Bookmark>> getBookmarks(String bookName) async {
     final json = await bridge.bookmarkGetAll(bookName: bookName);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -489,7 +513,7 @@ class RustApi implements BookApi {
   /// 获取所有书签
   Future<List<Bookmark>> getAllBookmarks() async {
     final json = await bridge.bookmarkList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -530,7 +554,7 @@ class RustApi implements BookApi {
   /// 搜索书签
   Future<List<Bookmark>> searchBookmarks(String keyword) async {
     final json = await bridge.bookmarkSearch(keyword: keyword);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -541,7 +565,7 @@ class RustApi implements BookApi {
   /// 获取所有替换规则
   Future<List<ReplaceRule>> getReplaceRules() async {
     final json = await bridge.replaceRuleList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => ReplaceRule.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -550,7 +574,7 @@ class RustApi implements BookApi {
   /// 获取启用的替换规则
   Future<List<ReplaceRule>> getEnabledReplaceRules() async {
     final json = await bridge.replaceRuleEnabled();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => ReplaceRule.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -691,7 +715,7 @@ class RustApi implements BookApi {
   /// 获取所有配置
   Future<Map<String, String>> getAllConfigs() async {
     final json = await bridge.configGetAll();
-    final m = jsonDecode(json) as Map<String, dynamic>;
+    final m = _decodeMap(json, 'bookApi');
     return m.map((k, v) => MapEntry(k, v.toString()));
   }
 
@@ -704,8 +728,29 @@ class RustApi implements BookApi {
   @override
   Future<Map<String, dynamic>> dictLookup(String word) async {
     final json = await bridge.dictLookup(word: word);
-    return (jsonDecode(json) as Map).cast<String, dynamic>();
+    return _decodeMap(json, 'dictLookup');
   }
+
+  // ========== 应用日志（appLog FFI） ==========
+  // [审计修复 §1.2] 接通契约 §2.38 appLog* 五方法（frb 绑定已生成） — QoderCN
+
+  @override
+  Future<void> appLogPush({required String level, required String message}) =>
+      bridge.appLogPush(level: level, message: message);
+
+  @override
+  Future<String> appLogList({required String level}) =>
+      bridge.appLogList(level: level);
+
+  @override
+  Future<void> appLogClear({required String level}) =>
+      bridge.appLogClear(level: level);
+
+  @override
+  Future<void> appLogClearAll() => bridge.appLogClearAll();
+
+  @override
+  Future<String> appLogExport() => bridge.appLogExport();
 
   // ========== 备份操作 ==========
 
@@ -738,7 +783,7 @@ class RustApi implements BookApi {
   /// 获取所有阅读记录
   Future<List<ReadRecord>> getReadRecords() async {
     final json = await bridge.readRecordList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => ReadRecord.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -767,7 +812,7 @@ class RustApi implements BookApi {
   /// 获取所有 RSS 收藏
   Future<List<RssStar>> getRssStars() async {
     final json = await bridge.rssStarList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => RssStar.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -796,7 +841,7 @@ class RustApi implements BookApi {
   /// 获取所有书籍分组
   Future<List<BookGroup>> getBookGroups() async {
     final json = await bridge.bookGroupList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => BookGroup.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -832,7 +877,7 @@ class RustApi implements BookApi {
   /// 获取搜索历史
   Future<List<SearchKeyword>> getSearchHistory({int limit = 50}) async {
     final json = await bridge.searchHistoryList(limit: limit);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => SearchKeyword.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -841,7 +886,7 @@ class RustApi implements BookApi {
   /// 按前缀搜索历史关键词（用于搜索联想）
   Future<List<String>> searchHistoryByPrefix(String prefix, {int limit = 20}) async {
     final json = await bridge.searchHistoryByPrefix(prefix: prefix, limit: limit);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => e.toString()).toList();
   }
 
@@ -920,7 +965,7 @@ class RustApi implements BookApi {
   /// 对标 Android BookSourceExtensions.exploreKinds()
   Future<List<ExploreCategory>> exploreParseUrl(String exploreUrl) async {
     final json = await bridge.exploreParseUrl(exploreUrl: exploreUrl);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => ExploreCategory.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -943,7 +988,7 @@ class RustApi implements BookApi {
       url: url,
       page: page,
     );
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => SearchBook.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -1133,7 +1178,7 @@ class RustApi implements BookApi {
   /// 获取今日阅读统计
   Future<ReadingStatsToday> getTodayReadingStats() async {
     final json = await bridge.statsToday();
-    final m = jsonDecode(json) as Map<String, dynamic>;
+    final m = _decodeMap(json, 'bookApi');
     return ReadingStatsToday(
       totalSeconds: m['totalSeconds'] as int? ?? 0,
       bookCount: m['bookCount'] as int? ?? 0,
@@ -1146,7 +1191,7 @@ class RustApi implements BookApi {
   /// 获取每日阅读统计
   Future<Map<String, int>> getDailyReadingStats({required int days}) async {
     final json = await bridge.statsDaily(days: days);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     final result = <String, int>{};
     for (final e in list) {
       final m = e as Map<String, dynamic>;
@@ -1158,7 +1203,7 @@ class RustApi implements BookApi {
   /// 获取书籍阅读统计
   Future<Map<String, int>> getBookReadingStats() async {
     final json = await bridge.statsByBook();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     final result = <String, int>{};
     for (final e in list) {
       final m = e as Map<String, dynamic>;
@@ -1170,7 +1215,7 @@ class RustApi implements BookApi {
   /// 获取阅读热力图
   Future<Map<String, int>> getReadingHeatmap({required int days}) async {
     final json = await bridge.statsHeatmap(days: days);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     final result = <String, int>{};
     for (final e in list) {
       final m = e as Map<String, dynamic>;
@@ -1189,7 +1234,7 @@ class RustApi implements BookApi {
   /// 获取所有 HTTP TTS 配置
   Future<List<HttpTts>> getHttpTts() async {
     final json = await bridge.httpTtsList();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => HttpTts.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -1216,7 +1261,7 @@ class RustApi implements BookApi {
 
   /// 导入 HTTP TTS 配置（解析 JSON 数组并逐条添加）
   Future<int> importHttpTts(String json) async {
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     var count = 0;
     for (final item in list) {
       final m = item as Map<String, dynamic>;
@@ -1308,7 +1353,7 @@ class RustApi implements BookApi {
   /// 获取所有用户
   Future<List<Map<String, dynamic>>> getUsers() async {
     final json = await bridge.userGetAll();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
@@ -1473,7 +1518,7 @@ class RustApi implements BookApi {
       format: format,
       includeToc: includeToc,
     );
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 获取导出预览信息（返回 ExportResult JSON）
@@ -1485,7 +1530,7 @@ class RustApi implements BookApi {
       bookUrl: bookUrl,
       format: format,
     );
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   // ========== 自动任务（auto_task FFI） ==========
@@ -1505,7 +1550,7 @@ class RustApi implements BookApi {
       bookAuthor: bookAuthor,
       name: name,
     );
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 批量更新 cron 表达式（返回更新后的 AutoTaskRule 数组）
@@ -1521,7 +1566,7 @@ class RustApi implements BookApi {
       idsJson: idsJson,
       cron: cron,
     );
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
@@ -1534,7 +1579,7 @@ class RustApi implements BookApi {
       localTasksJson: localTasksJson,
       importedJson: importedJson,
     );
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
@@ -1545,7 +1590,7 @@ class RustApi implements BookApi {
     required String protocolJson,
   }) async {
     final json = await bridge.autoTaskExecute(protocolJson: protocolJson);
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 带任务 ID 执行任务协议（返回 TaskResult JSON）
@@ -1557,7 +1602,7 @@ class RustApi implements BookApi {
       protocolJson: protocolJson,
       taskId: taskId,
     );
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 规范化脚本（去除 `@js:` 前缀或 `<js></js>` 包裹）
@@ -1588,7 +1633,7 @@ class RustApi implements BookApi {
       bookAuthor: bookAuthor,
     );
     if (json.isEmpty || json == 'null') return null;
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 解析 cron 表达式计算下次执行时间（Unix 毫秒，无法解析返回 -1）
@@ -1608,7 +1653,7 @@ class RustApi implements BookApi {
   /// 列出所有自动任务规则（按 customOrder 排序）
   Future<List<Map<String, dynamic>>> autoTaskListRules() async {
     final json = await bridge.autoTaskListRules();
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
@@ -1631,7 +1676,7 @@ class RustApi implements BookApi {
   Future<Map<String, dynamic>?> autoTaskFindRuleById({required String id}) async {
     final json = await bridge.autoTaskFindRuleById(id: id);
     if (json.isEmpty || json == 'null') return null;
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   // ========== 音频播放模式（audio FFI） ==========
@@ -1657,7 +1702,7 @@ class RustApi implements BookApi {
       cachedBookJson: cachedBookJson,
     );
     if (json.isEmpty || json == 'null') return null;
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   // ========== 压缩包导入 ==========
@@ -1674,7 +1719,7 @@ class RustApi implements BookApi {
       zipPath: zipPath,
       outputDir: outputDir,
     );
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 导入 RAR 压缩包中的书籍文件（支持加密）
@@ -1691,7 +1736,7 @@ class RustApi implements BookApi {
       outputDir: outputDir,
       password: password,
     );
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 列出 ZIP 压缩包中的书籍文件名（不解压）
@@ -1699,7 +1744,7 @@ class RustApi implements BookApi {
   /// 返回压缩包内符合书籍格式的文件名列表。
   Future<List<String>> archiveListZipFiles({required String zipPath}) async {
     final json = await bridge.archiveListZipFiles(zipPath: zipPath);
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => e.toString()).toList();
   }
 
@@ -1714,7 +1759,7 @@ class RustApi implements BookApi {
       rarPath: rarPath,
       password: password,
     );
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _decodeList(json, 'bookApi');
     return list.map((e) => e.toString()).toList();
   }
 
@@ -1728,7 +1773,7 @@ class RustApi implements BookApi {
     required String filePath,
   }) async {
     final json = await bridge.archiveDetectEncoding(filePath: filePath);
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 转换 TXT 文件编码
@@ -1745,7 +1790,7 @@ class RustApi implements BookApi {
       fromEncoding: fromEncoding,
       toEncoding: toEncoding,
     );
-    return jsonDecode(json) as Map<String, dynamic>;
+    return _decodeMap(json, 'bookApi');
   }
 
   /// 判断文件是否为压缩包格式
