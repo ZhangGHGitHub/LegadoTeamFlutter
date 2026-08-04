@@ -1615,4 +1615,36 @@ pub mod ffi {
             crate::api::js_source_config_api::js_source_stamp_last_update_time(&content, stamp)?,
         )
     }
+
+    // ─── 应用日志（Task #79，对齐 Kotlin AppLog + 上游 #543 导出）──────
+
+    /// 写入一条应用日志（级别：message / crash / http，大小写不敏感）
+    ///
+    /// 供 UI/Flutter 侧记录应用消息；空消息忽略（对齐 Kotlin `put` 的 null 短路）
+    pub fn app_log_push(level: String, message: String) -> Result<(), BridgeError> {
+        Ok(crate::api::log_api::push_log(&level, &message)?)
+    }
+
+    /// 获取指定级别的日志列表（JSON 数组，最新在前）
+    ///
+    /// 每项字段：`timestamp`（毫秒）/ `level` / `message`
+    pub fn app_log_list(level: String) -> Result<String, BridgeError> {
+        let logs = crate::api::log_api::list_logs(&level)?;
+        to_json(&logs)
+    }
+
+    /// 清空指定级别的日志
+    pub fn app_log_clear(level: String) -> Result<(), BridgeError> {
+        Ok(crate::api::log_api::clear_logs(&level)?)
+    }
+
+    /// 清空全部级别日志（对齐 #543 清空确认后的 AppLog.clear + HttpLogStore.clear）
+    pub fn app_log_clear_all() -> Result<(), BridgeError> {
+        Ok(crate::api::log_api::clear_all_logs()?)
+    }
+
+    /// 导出全部日志为格式化文本（时间升序，64_000 字符截断，对齐 #543）
+    pub fn app_log_export() -> Result<String, BridgeError> {
+        Ok(crate::api::log_api::export_logs()?)
+    }
 }

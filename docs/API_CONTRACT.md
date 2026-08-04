@@ -439,6 +439,22 @@
 | `jsSourceSyntaxCheck({required String content})` | content（待检查 JS 脚本） | `Future<String>` | 语法检查（SyntaxCheckResult JSON：`valid` / `message` / `line`）；quickjs 下只编译不执行 |
 | `jsSourceStampLastUpdateTime({required String content, required int stamp})` | content（JS 书源脚本）, stamp（新时间戳毫秒） | `Future<String>` | 写回顶层 config/source 对象的 lastUpdateTime（仅替换数字字面量或 Date.now()）；无可替换位置返回空字符串 |
 
+### 2.38 应用日志（app_log FFI，Task #79）（5 个方法）
+
+> 对齐 Kotlin `AppLog.kt` / `AppLogDialog.kt`（旧欠账 + 上游 #512/#524/#543）。
+> Rust 侧进程级环形缓冲（每级上限 500 条，最新在前），三级独立：`message` / `crash` / `http`（大小写不敏感）。
+> 日志条目 JSON 字段：`timestamp`（毫秒）/ `level` / `message`（对齐 Kotlin `Triple<Long, String, Throwable?>`）。
+> 导出文本格式 `yyyy-MM-dd HH:mm:ss.SSS [LEVEL] message`，时间升序，超 64_000 字符按字符边界截断（对齐 #543 `MAX_SHARE_TEXT`）。
+> 纯内存缓冲、无 DB 依赖，任意时机可调用；日志页面 UI 由 UI 轨后续接入（与 Flutter 现有 `CrashLogService` 文件型崩溃日志互补，不重复）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `appLogPush({required String level, required String message})` | level（message/crash/http）, message | `Future<void>` | 写入一条日志；非法级别抛 BridgeError，空消息忽略（对齐 Kotlin `put` 的 null 短路） |
+| `appLogList({required String level})` | level | `Future<String>` | 获取指定级别日志列表（裸 JSON Array，最新在前，对齐 §1.4 铁律） |
+| `appLogClear({required String level})` | level | `Future<void>` | 清空指定级别日志 |
+| `appLogClearAll()` | 无 | `Future<void>` | 清空全部级别日志（对齐 #543 清空确认后的 AppLog.clear + HttpLogStore.clear） |
+| `appLogExport()` | 无 | `Future<String>` | 导出全部日志为格式化文本（时间升序，64_000 字符截断，对齐 #543） |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -455,6 +471,7 @@
 | `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询） | 2026-08-01 | ✅ 已完成 |
 | `highlight*` / `highlightRule*`（新增） | 见 §2.36 方法清单 | 高亮记录 CRUD + 高亮规则 CRUD（对齐上游 DB v96-v99，用于阅读器正文高亮一期） | 2026-08-04 | ✅ 已完成 |
 | `reviewGetReplies`（新增） | `String sourceJson, String requestJson, int page` | `Future<String>`（段评回复按需加载，对标 Android `ReviewDetailDialog.loadReplies` + `ReviewRuleParser.parseReplyPage`，上游 #519；返回 `{items, nextPageUrl}` 对象包装，Flutter 段评弹窗回复 UI 由 UI 轨后续接入） | 2026-08-04 | ✅ 已完成 |
+| `appLog*`（新增，Task #79） | 见 §2.38 方法清单 | 应用日志体系：Rust 侧三级环形缓冲（message/crash/http）+ 写入/查询/清空/导出 FFI（对齐 Kotlin AppLog 旧欠账 + 上游 #543 导出 64K 截断），日志页面 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -531,4 +548,5 @@
 | 35 | RSS 已读记录 | 6 |
 | 36 | 正文高亮 | 11 |
 | 37 | JS 单文件书源配置 | 3 |
-| | **合计** | **185** |
+| 38 | 应用日志 | 5 |
+| | **合计** | **190** |

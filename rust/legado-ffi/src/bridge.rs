@@ -2003,6 +2003,60 @@ pub unsafe extern "C" fn ffi_js_source_stamp_last_update_time(
     }))
 }
 
+// ─── 应用日志 FFI 函数（Task #79）────────────────────
+
+/// 写入一条应用日志（级别：message / crash / http）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_app_log_push(level: *const c_char, message: *const c_char) -> i32 {
+    match catch_unwind(|| {
+        let level = c_char_to_str(level).map_err(|e| e.to_error_code())?;
+        let message = c_char_to_str(message).map_err(|e| e.to_error_code())?;
+        crate::api::log_api::push_log(level, message).map_err(|e| e.to_error_code())
+    }) {
+        Ok(Ok(())) => 0,
+        Ok(Err(code)) => code,
+        Err(_) => -1,
+    }
+}
+
+/// 获取指定级别的日志列表（JSON 数组，最新在前）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_app_log_list(level: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let level = c_char_to_str(level)?;
+        crate::api::log_api::list_logs(level)
+    }))
+}
+
+/// 清空指定级别的日志
+#[no_mangle]
+pub unsafe extern "C" fn ffi_app_log_clear(level: *const c_char) -> i32 {
+    match catch_unwind(|| {
+        let level = c_char_to_str(level).map_err(|e| e.to_error_code())?;
+        crate::api::log_api::clear_logs(level).map_err(|e| e.to_error_code())
+    }) {
+        Ok(Ok(())) => 0,
+        Ok(Err(code)) => code,
+        Err(_) => -1,
+    }
+}
+
+/// 清空全部级别日志
+#[no_mangle]
+pub extern "C" fn ffi_app_log_clear_all() -> i32 {
+    match catch_unwind(|| crate::api::log_api::clear_all_logs().map_err(|e| e.to_error_code())) {
+        Ok(Ok(())) => 0,
+        Ok(Err(code)) => code,
+        Err(_) => -1,
+    }
+}
+
+/// 导出全部日志为格式化文本（时间升序，64_000 字符截断）
+#[no_mangle]
+pub extern "C" fn ffi_app_log_export() -> *mut c_char {
+    to_ffi_response(catch_unwind(crate::api::log_api::export_logs))
+}
+
 #[no_mangle]
 pub extern "C" fn legado_version() -> *mut c_char {
     ffi_version()
