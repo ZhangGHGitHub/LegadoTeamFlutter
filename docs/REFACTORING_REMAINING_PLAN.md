@@ -501,7 +501,330 @@ flutter test                  # 全量测试通过
 
 ---
 
-**文档版本**: 1.4  
-**最后更新**: 2026-08-02  
+## §4 2026-08-03 重构进度全面审计整合计划（新增）
+
+> 本节为 2026-08-03 四路并行源码级审计（Rust 工作区实测 / Flutter 静态审计 / 数据库与 FFI 契约对照 / docs 文档梳理）结论的整合台账。登记原则与 §3 一致：只登记计划、不修改任何代码；新登记项一律不标核销，完成后逐项销记。涉及 FFI 边界的变更先更新 [API_CONTRACT.md](API_CONTRACT.md)，跨轨协作遵守 [TWO_TRACK_DEV_SPEC.md](TWO_TRACK_DEV_SPEC.md)。
+
+### §4.1 审计总览
+
+#### 4.1.1 审计方式
+
+| 路 | 审计内容 | 方式 |
+|---|---|---|
+| 第一路 | Rust 各模块完成度（8 个活跃 crate + 1 个废弃模块） | 源码级实测：文件/行数统计、桩标记全量扫描、`cargo test` 实测（默认 workspace 约 1752 passed）、Kotlin 原版逐目录映射，并与 PROGRESS.md / README.md / DEVELOPMENT.md / MIGRATION_WORKFLOW.md 交叉核对 |
+| 第二路 | Flutter 前端与 FFI 集成 | 纯只读代码/文档取证：架构分层、FFI 桥接链路、Mock vs 真实 FFI 接入清单、页面覆盖与 Android 原版对比、测试覆盖 |
+| 第三路 | 数据库迁移与 FFI 契约 | 静态源码审计：legado-db 迁移链（v90→v96）× Room v95 基线（`app/schemas/.../95.json`）逐表对照、API_CONTRACT.md 35 模块 171 方法实现对照、桥接链路断裂点排查 |
+| 第四路 | 重构文档梳理 | docs/ 下 25 份文档 + 3 个基线目录调查，跨文档矛盾与过期信息登记 |
+
+#### 4.1.2 总体结论
+
+| 维度 | 结论 |
+|---|---|
+| Rust 轨道 | 整体完成度约 **97-98%**；240 文件 / 约 79,197 行；26/26 表 Repository 100% 覆盖；189 个 FFI api 公开函数、72 个 HTTP/WS 路由实测；源码零 todo!/unimplemented!；实测测试约 1752 passed（高于文档记载的 1409） |
+| Flutter 架构 | 分层与状态管理 **100%**（Riverpod Notifier + freezed 全量迁移，四层边界清晰）；FFI 桥接基础设施完成；真实 FFI 接入约 90% |
+| FFI 主链路 | `rust/legado-ffi/src/ffi.rs` 166 个 frb 函数 ↔ `flutter_legado/lib/src/bridge/ffi/ffi.dart` 166 绑定完全对齐；API_CONTRACT.md 35 模块 171 方法契约层面全部满足（部分为 Dart 侧兜底实现） |
+| 数据库 | 核心 10 张表（books/book_sources/chapters/book_groups/replace_rules/searchBooks/cookies/bookmarks/auto_task_rules/caches）对齐 Room v95 良好；**8 张表存在字段级偏离**（rssArticles/rssReadRecords/rssStars/readRecord/httpTTS/ruleSubs/dictRules/keyboardAssists）+ search_keywords 语义缺失；users 表与 Room servers 表不兼容 |
+| 书源校验 | Rust 侧 `legado-net/src/source_checker.rs`（962 行）已实现，但仅被 legado-server HTTP handler 使用，**未暴露 FFI**；Flutter 侧无入口、BookApi 无方法 |
+| 文档 | docs/README.md「全部完成 / 零 TODO/桩实现」声明与源码不符且 §3.6 要求修正后至今未改——当前最大文档矛盾；另有多处跨文档过期信息（见 §4.1.3） |
+
+#### 4.1.3 关键矛盾登记
+
+| # | 矛盾 | 证据与处置 |
+|---|---|---|
+| ① | docs/README.md「所有已规划任务均已完成」「零 TODO/桩实现」与源码不符 | §2.3（2026-08-02）已判定不实（platform.rs 12 桩、web_book Mock、7z/rar 桩化），§3.6 要求修正但 README 现状未改。处置：按 §3.6 执行 |
+| ② | 本台账 §3.4 Rust 缺口清单与本次 Rust 实测冲突 | §3.4 P0-1 登记「WebBook 仅 trait+Mock」，但本次实测 `api/web_book.rs` 测试名（test_build_engine_creates_real_fetcher / test_real_fetcher_default）证实 StubFetcher 已替换为真实书源链路；§3.4 P2-9 登记「书源校验简化」，实测 `legado-net/src/source_checker.rs` 已实现 962 行（含验证码/重定向信息类型）。上述条目**标注「待复核」**：复核确认已完成者销记，确属部分完成者修订条目范围 |
+| ③ | searchCover / dictLookup：Rust 已交付、UI 未切换 | API_CONTRACT.md 需求区标 ✅（Rust/bridge/BookApi/RustApi 均已实现）；UI_RESTRUCTURE_PLAN Phase 6 仍标「🟡 待 Rust 交付」；代码实测 `change_cover_notifier.dart` 仍用 `_mockSearch`、`dict_notifier.dart` 仍查 `_localDict`。处置：见 §4.3 P0-1 |
+
+### §4.2 Rust 后端部分：后续解决方案与实施步骤
+
+#### 4.2.1 P0（阻塞级）
+
+**P0-1 legado-ffi 测试竞态隔离修复**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | `cargo test --workspace` 间歇性失败：第一轮 config_api::test_config_crud、bookmark_api::test_search_bookmarks_by_content 失败，第二轮 1 个失败，单独运行 0 失败。根因：所有 FFI 测试经 `db_state::ensure_test_db()` 共享同一个全局 OnceLock 内存数据库（`db_state.rs:57-66`），并行测试线程互相污染数据 |
+| **证据** | `rust/legado-ffi/src/db_state.rs:57-66`；实测现象与 PROGRESS.md「cargo test 1409 passed 稳定通过」「bookmark 测试隔离已修复」声明不符 |
+| **解决方案** | 改为每测试独立 DB（各测试用例各自创建独立内存库）或测试串行化 |
+| **实施步骤** | ① 重构 `db_state.rs` 的测试库获取机制，提供按测试名/线程隔离的独立内存库实例（或 `serial_test` 串行化）；② 复跑 config_api / bookmark_api 测试多轮验证；③ 更新 PROGRESS.md 测试稳定性描述 |
+| **验收** | `cargo test --workspace` 连续 3 轮全部通过，无间歇性失败 |
+
+**P0-2 数据库偏离表修复（v96→97 迁移对齐 Room v95 列名）**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | 8 张表字段级偏离 Room v95 基线 + users/servers 不兼容 + SCHEMA_VERSION=96 自造语义未登记（详见下表） |
+| **证据** | `rust/legado-db/src/schema.rs`（SCHEMA_VERSION=96，26 表 DDL）、`rust/legado-db/src/migration/migrations.rs`（现有 90→96 迁移链）、Room 基线 `app/schemas/io.legado.app.data.AppDatabase/95.json`、`app/src/main/java/io/legado/app/data/AppDatabase.kt`（version = 95） |
+| **解决方案** | 新增 v96→97 迁移对齐 Room v95 列名；或明确登记「偏离表为新架构专用、不与 Android 遗留库互通」的决策。users vs servers 需补建迁移链；SCHEMA_VERSION=96 自造语义登记至 API_CONTRACT.md / TWO_TRACK_DEV_SPEC.md |
+
+偏离明细（审计对照表）：
+
+| Room 表 | Rust 表 | 偏离 |
+|---|---|---|
+| rssArticles | rssArticles | 缺 `group`、`read`、`type`、`durPos` 4 列 |
+| rssStars | rssStars | 缺 `group`、`type`、`durPos` 3 列 |
+| rssReadRecords | rssReadRecords | 结构偏离：Room `record/title/readTime/read/origin/sort/image/type/durPos/pubDate` vs Rust `id/origin/title/readTime/link/variable` |
+| readRecord | readRecord | 缺 `deviceId`、`lastRead` 2 列 |
+| httpTTS | http_tts | 严重偏离：Room 13 列（contentType/pauseDuration/concurrentRate/loginUrl…）vs Rust 仅 6 列且 `content_type` 为 snake_case |
+| ruleSubs | rule_subs | 重新设计：Room 12 列（type/customOrder/autoUpdate/updateInterval/silentUpdate/js/showRule/sourceUrl）vs Rust 8 列 snake_case（sub_type/last_update/version/is_enabled/created_at），无法互读 |
+| dictRules | dict_rules | 字段不对齐：Room `name/urlRule/showRule/enabled/sortNumber` vs Rust `name/url_rule/show_rule/is_enabled/sort_order` + 自增 id |
+| keyboardAssists | keyboard_assists | 字段不对齐：Room `type/key/value/serialNo` vs Rust `name/key/value/is_enabled/sort_order` + id |
+| search_keywords | search_keywords | Room `word/usage/lastUseTime` vs Rust `id/keyword/time`（DTO 已做字段名映射，但 usage 恒为 1，无真实使用次数语义） |
+| txtTocRules | txtTocRules | 缺 `replacement` 1 列 |
+| servers | users（替代） | 不兼容：Room v95 `servers(id/name/type/config/sortNumber)` vs Rust 自建 `users`（username/password_hash 模型），且迁移链未对旧库创建 users 表，打开 Android 遗留库时用户相关 API 会失败 |
+| （视图）book_sources_part | 无 | Rust 未建该视图 |
+
+> 另有 books 为超集（Rust 多 infoHtml/tocHtml/downloadUrls/coverOrigin，Kotlin `Book.kt` 中为 @Ignore 字段）、caches 多 created_at、rssSources 双列冗余（见 P0-3）。
+
+| **实施步骤** | ① 在 `migration/migrations.rs` 新增 `Migration96To97`，按 Room v95 列名补列/重建上述偏离表，`schema.rs` SCHEMA_VERSION 升至 97；② 为旧库（user_version=95 的 Android 遗留库）补建 users 表（或 servers→users 数据搬迁）迁移；③ 同步修订对应 Repository 列名；④ 在 API_CONTRACT.md / TWO_TRACK_DEV_SPEC.md 登记 SCHEMA_VERSION=96 自造语义（books 4 个 @Ignore 字段持久化 + rssSources 补列）与 v97 决策；⑤ 用构造的 v95/v96 遗留库验证 95→96→97 全链路 |
+| **验收** | 构造 Android 遗留库（user_version=95）打开后迁移成功、偏离表 Repository 查询不再因列名失配失败；migration 全链路单测通过 |
+
+**P0-3 rssSources 双列冗余处理**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | rssSources 同时存在 `enableCookieJar` 与 `enabledCookieJar` 两个近似重复列，易造成读写错列 |
+| **证据** | `rust/legado-db/src/schema.rs` CREATE_RSS_SOURCES；Room v95 基线 45 列对照 |
+| **解决方案** | 确认 Room 基线列名，合并冗余列（保留与 Room 一致者），纳入 v96→97 迁移一并处理 |
+| **实施步骤** | ① 核对 `95.json` rssSources 列名；② 迁移中删除冗余列并做数据回填；③ 修订 Repository/DTO 引用 |
+| **验收** | rssSources 列集与 Room v95 一致（或登记超集决策），无重复语义列 |
+
+#### 4.2.2 P1（功能缺口）
+
+**P1-1 书源校验 FFI 暴露（跨轨）**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | `legado-net/src/source_checker.rs`（962 行）已实现 SourceChecker（含验证码/重定向信息类型），但仅被 legado-server HTTP handler 使用，未暴露 FFI；Flutter 无校验入口 |
+| **证据** | `rust/legado-net/src/source_checker.rs`；本台账 §3.4 P2-9「书源校验简化」条目（待复核）；`flutter_legado/lib/src/services/book_api.dart` 无 source_check 方法 |
+| **解决方案** | legado-ffi 新增 source_check 系列函数；按铁律先更新 API_CONTRACT.md 契约冻结，再实现，最后 codegen 生成绑定 |
+| **实施步骤** | ① API_CONTRACT.md 需求区登记 source_check 契约（入参书源 JSON/批量、出分校验结果 JSON）并冻结；② `legado-ffi/src/api/` 新增校验 API 模块，委托 `SourceChecker`；③ `ffi.rs` 注册函数，`make gen` 生成绑定；④ 交付后 UI 轨接入口（见 §4.3 P1-4） |
+| **验收** | Dart 侧可经 bridge 调用书源批量校验并取回结果；契约文档同步登记 |
+
+**P1-2 txt_search 系列接入 frb 主链路**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | `txt_search / txt_search_regex / txt_search_in_chapter / txt_search_count` 仅存在于遗留 bridge.rs（C ABI），frb 主链路未暴露，Dart 不可达；`txt_search_api.rs` 存在但未接入 ffi.rs |
+| **证据** | `rust/legado-ffi/src/bridge.rs`、`rust/legado-ffi/src/api/txt_search_api.rs`、`rust/legado-ffi/src/ffi.rs` |
+| **解决方案** | 将 txt_search 系列接入 `ffi.rs` frb 主链路，同步补登记 API_CONTRACT.md |
+| **实施步骤** | ① `ffi.rs` 新增 4 个 frb 函数包装 txt_search_api；② 契约补登记；③ `make gen` 生成 Dart 绑定 |
+| **验收** | Dart 侧可调用 txt_search 系列；契约文档包含该组函数 |
+
+**P1-3 契约外函数补登记 API_CONTRACT.md**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | QUIC 系列（quic_create_client / quic_get / quic_post / quic_performance_test / quic_is_initialized / quic_cleanup / net_set_quic_enabled / net_is_quic_enabled）、`backup_list`、`cache_get_chapter`、`book_group_set_show` 等已实现并生成 Dart 绑定，但未登记契约，违反 API_CONTRACT.md §1.2「新增 API 须同步更新文档」规则 |
+| **证据** | `rust/legado-ffi/src/ffi.rs`、`flutter_legado/lib/src/bridge/ffi/ffi.dart` |
+| **解决方案** | 逐一补登记至 API_CONTRACT.md 对应模块 |
+| **实施步骤** | 盘点 ffi.rs 与契约 35 模块差异 → 补写契约条目 → 评审确认 |
+| **验收** | ffi.rs 导出函数与 API_CONTRACT.md 登记一一对应，无契约外函数 |
+
+#### 4.2.3 P2（治理与收尾）
+
+**P2-1 遗留 bridge.rs 去留决策**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | `rust/legado-ffi/src/bridge.rs`（1746 行、155 个 `ffi_*` extern "C" 导出）与 frb 主链路漂移：缺 webbook/explore/review/book_export/cache 计数/auto_task_execute_with_id，多出 txt_search；Dart 完全不走 bridge.rs，实质半废弃 |
+| **证据** | `rust/legado-ffi/src/bridge.rs` vs `rust/legado-ffi/src/ffi.rs` |
+| **解决方案** | 决策废弃（在 lib.rs 标注）或补齐；若废弃，评估 txt_search 先行迁至 frb（见 P1-2）后整体移除 |
+| **实施步骤** | ① 决策记录写入本节；② 废弃路线：lib.rs 标注废弃 + 移除导出；补齐路线：对齐 frb 函数集 |
+| **验收** | bridge.rs 状态明确（废弃标注或函数集对齐），无半废弃漂移层 |
+
+**P2-2 MOBI HUFF/CDIC 压缩与 KF8/INDX 解析移植**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | `mobi.rs` 头部注释明确声明 HUFF/CDIC 压缩（compression=17480）与 INDX 章节结构解析未实现；KF8(AZW3) 仅检测并返回错误——全项目唯一经源码确认的实质性功能缺口 |
+| **证据** | `rust/legado-book/src/mobi.rs`（591 行）；Kotlin 原版 `app/src/main/java/io/legado/app/lib/mobi/`（34 文件：HuffcdicDecompressor.kt、KF8Book.kt、IndexData.kt 等） |
+| **解决方案** | 对标 Kotlin lib/mobi 移植 HUFF/CDIC 解压、INDX 章节结构、KF8 解析 |
+| **实施步骤** | ① 移植 HuffcdicDecompressor；② 移植 INDX/IndexData 章节结构解析；③ KF8Book 解析接入 `LocalBook` 入口；④ 补测试（老式 MOBI/AZW3 样本） |
+| **验收** | HUFF/CDIC 压缩 MOBI 与 AZW3 文件可正常导入阅读，测试通过 |
+
+**P2-3 §3.4 已登记项复核与衔接**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | §3.4 登记的 JS 替换规则引擎（content_processor.rs）、漫画核心、视频核心（platform.rs open_video_player）、AnalyzeUrl 缺口（`legado-parser/src/analyze_url.rs` 1623 行基础上的内嵌 JS/WebView 模式/data URI）、HTTP TTS `list_engines`（tts.rs 现返回硬编码「示例引擎」）等条目，与本次审计结论需逐项对账 |
+| **证据** | 本台账 §3.4；本次 Rust 审计报告（legado-core ~99%、legado-parser 100% 结论） |
+| **解决方案** | 逐项复核：确认已完成者销记；部分完成者修订范围并给出行号级证据 |
+| **实施步骤** | 按 §3.4 条目顺序逐一源码验证 → 更新条目状态（待复核 → 已完成/修订） |
+| **验收** | §3.4 全部条目状态与源码一致，无悬置「待复核」 |
+
+**P2-4 一次性脚本清理与过期注释修正**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | rust/ 下存在已执行完毕的一次性脚本与历史快照文件；lib.rs 文档注释过期（写「v95，25 张表」，实际 v96、26 张表） |
+| **证据** | `rust/update_schema.py`、`rust/add_migration.py`、`rust/update_schema_rss.py`、`rust/update_rss_schema.ps1`、`rust/legado-db/src/migration/fix_migration.py`、`fix_migration2.py`、`rust/legacy_db_temp.txt`（534 行历史快照）；`rust/legado-ffi/src/lib.rs` 注释；另有 `rust/test_migration.rs`（手工验证用例，未纳入 crate 构建）与仓库根 `check_db_version.py`（排障工具，可保留） |
+| **解决方案** | 清理一次性脚本与 legacy_db_temp.txt；修正 lib.rs 注释为 v96/26 表 |
+| **实施步骤** | ① 删除上表所列脚本/快照文件；② 修订 lib.rs 注释；③ test_migration.rs 一并决策保留或清理 |
+| **验收** | rust/ 根目录无一次性脚本残留；lib.rs 注释与实际 schema 一致 |
+
+**P2-5 Rust 文档数据同步**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | PROGRESS.md / README.md 测试数（记载 1409 vs 实测约 1752）、FFI 函数数（记载 103+ vs api 层实测 189）、路由数（记载 53 REST + 5 WS vs 实测 72 个 .route()）均滞后；DEVELOPMENT.md「已知限制」platform API 表格仍写「返回 [ERROR]」，实际 platform.rs 已升级为结构化 JSON 桥接载荷 |
+| **证据** | `rust/PROGRESS.md`、`rust/README.md`、`rust/DEVELOPMENT.md`；本次实测数据 |
+| **解决方案** | 按实测数据更新三处文档 |
+| **实施步骤** | 逐文档替换过期数字与 platform API 表述 |
+| **验收** | 文档数字与实测一致 |
+
+### §4.3 Flutter 前端部分：后续解决方案与实施步骤
+
+#### 4.3.1 P0（阻塞级）
+
+**P0-1 切换真实 searchCover / dictLookup**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | FFI 契约已交付但 UI Notifier 仍走 Mock：换封面用 `_mockSearch`（picsum 占位图）、词典查 `_localDict` 静态词典 |
+| **证据** | `flutter_legado/lib/src/providers/change_cover/change_cover_notifier.dart:30-54`（TODO「Rust 轨交付 searchCover 后切换」）；`flutter_legado/lib/src/providers/dict/dict_notifier.dart:38,129-133`；Rust 侧 `api/search.rs::search_cover`（L201 起）→ `ffi.rs` L230 → `bridge.searchCover` → `rust_api.dart` L313，`api/dict_api.rs::dict_lookup` → `ffi.rs` L483 → `rust_api.dart` L693，链路已通 |
+| **解决方案** | UI 轨替换两处调用为 `api.searchCover` / `api.dictLookup`，并回写 UI_RESTRUCTURE_PLAN.md Phase 6 决议块（6.4 待回写项） |
+| **实施步骤** | ① ChangeCoverNotifier 移除 `_mockSearch`，调用 `api.searchCover` 并解析 url/width/height（注意 width/height 恒 0 的现状）；② DictNotifier 移除 `_localDict` 同步查询，改调 `api.dictLookup`（字段 word/phonetic/definitions）；③ 更新对应 Notifier 测试；④ 回写 UI_RESTRUCTURE_PLAN Phase 6 决议块为已完成 |
+| **验收** | 换封面显示真实多源搜索封面候选、词典查询走 FFI；相关测试通过；Phase 6 决议块闭环 |
+| **备注** | dictLookup 的 Rust 实现当前为 18 词静态内置词典（契约达标、离线可用，数据覆盖为占位级），真实词库为后续项 |
+
+**P0-2 上游同步 A/B/C 决策登记（前置阻塞）**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | §3.5 上游同步决策（A 合并 123 提交 / B 冻结 app/ 聚焦 Flutter+Rust / C 选择性 cherry-pick）仍为「待定」，决策前默认按 B 执行；该决策影响 §3.1-3.3 全部 Kotlin 修复与本节 Kotlin 侧条目的执行方式 |
+| **证据** | 本台账 §3.5 |
+| **解决方案** | 用户拍板后回写 §3.5 决策结果；未拍板期间维持默认 B（不引入上游） |
+| **实施步骤** | ① 提交决策；② 回写 §3.5；③ 按决策调整 §3.1-3.3 与本节 Kotlin 条目执行口径 |
+| **验收** | §3.5 决策结果非「待定」 |
+
+#### 4.3.2 P1（功能与语义）
+
+**P1-1 rust_api.dart 过期占位清理（服务器启停 / 备份）**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | `startServer/stopServer` 仅写 config 占位（注释「待 FFI 实现」），实际 bridge.serverStart/serverStop 已存在；备份在 Dart 侧自行聚合 JSON，bridge 已有 `backupCreate/backupRestore/backupList` 未被使用 |
+| **证据** | `flutter_legado/lib/src/services/rust_api.dart:1033-1052` vs `flutter_legado/lib/src/bridge/ffi/ffi.dart:713-720`；`rust_api.dart:701-780`（备份） |
+| **解决方案** | startServer/stopServer 改用 bridge.serverStart/serverStop；备份改用 backupCreate/backupRestore/backupList |
+| **实施步骤** | ① rust_api.dart 两处方法体替换；② 核对返回 JSON 字段与现有 State 解析；③ 更新服务层测试 |
+| **验收** | 服务器启停真实驱动 Rust server；备份/恢复走 FFI；测试通过 |
+
+**P1-2 RSS 语义修复**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | ① FFI 无 rssUpdateSource，`rss_source_edit_screen` 用「删旧+加新」workaround（137-140 行），`rust_api.updateRssSource` 复用书源接口 `sourceUpdate`；② RSS 启停/导入导出全部复用书源接口（sourceEnable/sourceDisable/sourceImport/sourceExport），存在串表风险（Android 原版为 book_source / rss_source 两张独立表）；③ RSS 历史页未接（已读记录 FFI 已具备但无历史页面） |
+| **证据** | `flutter_legado/lib/src/screens/rss_source_edit_screen.dart:137-140`；`flutter_legado/lib/src/screens/rss_screen.dart:132-138`（TODO）；Tina 审计 §5.2 风险提示 |
+| **解决方案** | Rust 轨确认 `sourceUpdate(sourceJson: RssSource)` 的落表语义；新增 `rssUpdateSource` FFI 替代删+加 workaround；RSS 启停/导入导出按确认结果决定继续复用或分离；UI 轨接入 RSS 历史页 |
+| **实施步骤** | ① Rust 轨核实 rssSources 与 book_sources 落表区分（契约登记）；② 契约新增 rssUpdateSource（先 API_CONTRACT 冻结）→ ffi.rs 注册 → codegen；③ rss_source_edit_screen 移除删+加 workaround；④ 新增 RSS 历史页面并接入 rssListReadRecords |
+| **验收** | RSS 源更新为原子操作、无串表风险；RSS 历史页可浏览已读记录 |
+
+**P1-3 书源校验 UI 入口（依赖 §4.2 P1-1 契约交付）**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | Flutter 书源校验功能级缺失：无入口、BookApi 无方法、FFI 无 source_check 函数；编辑页「校验关键字」仅是表单字段（对应原版 checkKeyWord），不是校验功能 |
+| **证据** | Tina 审计 §5.1；`flutter_legado/lib/src/screens/source_screen.dart`（无校验入口） |
+| **解决方案** | 依赖 Rust P1-1 契约交付后：BookApi 新增校验方法（RustApi/MockBookApi 双实现）、新增 CheckSourceNotifier、source_screen 补校验入口 |
+| **实施步骤** | ① 等待契约冻结 + FFI 交付；② book_api.dart 增方法 + mock_book_api.dart Mock 实现；③ 新增 CheckSourceNotifier（批量校验进度/结果状态）；④ source_screen 增「校验书源」入口与结果展示；⑤ 补 Notifier/widget 测试 |
+| **验收** | 可批量校验书源并展示可用性结果，对标原版 CheckSourceActivity |
+
+#### 4.3.3 P2（治理、补齐与对齐）
+
+**P2-1 消除 4 个 screen 直调 bridge 违规（架构铁律 §0.2）**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | 4 个 screen 直接 import bridge（UI 禁触 bridge 铁律违规） |
+| **证据** | `source_edit_screen.dart:782-801`（直调 webbookSearch/Info/Chapters/Content）、`source_debug_screen.dart:119`（直调 webbookSearch）、`rss_source_edit_screen.dart:173`（直调 rssFetchArticles）、`other_settings_screen.dart:71/138`（直调 netIsQuicEnabled/netSetQuicEnabled） |
+| **解决方案** | 将 webbook 四件套/rssFetchArticles/quic 开关上收进 BookApi，screen 改经 Notifier/BookApi 调用 |
+| **实施步骤** | 逐 screen 上收：book_api.dart 补方法 → rust_api/mock 实现 → screen 去 bridge import |
+| **验收** | 4 个 screen 无 `import '../bridge/...'`；flutter analyze 通过 |
+
+**P2-2 缺失页面补齐清单**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | 相对 Android 原版 54 个 Activity，Flutter 缺失：① 校验书源 CheckSource（已由 P1-3 立项）；② VerificationCodeActivity 验证码页；③ BookshelfManageActivity 书架管理页；④ RemoteBookActivity 远程书籍导入页（import_screen 仅本地扫描）；⑤ RssSourceDebugActivity RSS 源调试；⑥ RuleSubActivity 规则订阅管理；⑦ JsSourceEditActivity/CodeEditActivity（部分已并入 source_edit）；⑧ BottomBarSkinActivity 底栏皮肤自定义（Flutter 底栏固定）；⑨ FileManageActivity/HandleFileActivity（Android SAF 特有，Windows 可不对齐） |
+| **证据** | Tina 审计 §4（Android `app/src/main/java/io/legado/app/ui/` 54 Activity 对照） |
+| **解决方案** | 按原版对齐优先级逐个立项（校验 > 验证码/远程导入 > 书架管理/RSS 调试/规则订阅 > 底栏皮肤；SAF 类可豁免） |
+| **实施步骤** | 每页单独立项：页面 + Notifier + 路由注册 + 测试 |
+| **验收** | 立项页面逐个对齐原版行为并核销 |
+
+**P2-3 UI 对齐收尾**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | ① 主题色值实机复核：安卓棕褐 #6B4F43 顶栏 + 红 #E53935 强调 vs Flutter M3 蓝灰 seedColor + 白顶栏，FINAL_REPORT（2026-07-31）仍记为 -5% 差异项，决策 A 已定「M3 框架 + 安卓 colors.xml 色值」但无完全对齐核销记录；② UI_DIFF_REPORT_V2 §7 列 8 项取证缺口（阅读器 5 屏实机对比、书籍详情页取证、发现页/RSS 带数据状态、动画逐帧、字号精确测量、搜索历史行为核实、在线书差异）；③ 书架长按本地 txt bug（FINAL_REPORT 记为功能缺陷）；④ 响应式网格多尺寸验证 |
+| **证据** | `docs/UI_DIFF_REPORT_V2.md`、`docs/UI_CONSISTENCY_FINAL_REPORT.md` |
+| **解决方案** | 实机复核色值并按 colors.xml 修订 app_theme.dart；按 8 项缺口逐项取证；修复长按 bug；多尺寸网格验证 |
+| **实施步骤** | ① 真机/模拟器取色对比 → 修订 seedColor/强调色；② 8 项取证逐个补截图对比；③ 复现并修复书架长按本地 txt 缺陷；④ 多分辨率窗口验证网格 |
+| **验收** | 色值与原版一致并留核销记录；8 项取证补齐；长按 bug 修复 |
+
+**P2-4 flutter_rust_bridge 版本统一与 FFI 集成测试引入**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | ① pubspec 锁定 `flutter_rust_bridge: 2.11.1`，但 `bridge/lib.dart`、`api/*.dart` 头注释为 2.12.0 生成（`ffi.dart`/`frb_generated.dart` 为 2.11.1），codegen 版本不完全一致；② 测试全部基于 MockBookApi/mocktail（约 986 例），无任何真实 DLL 集成测试，bridge 生成代码覆盖率 0% |
+| **证据** | `flutter_legado/pubspec.yaml`；`flutter_legado/lib/src/bridge/` 头注释；Tina 审计 §6 |
+| **解决方案** | Rust 轨核对并统一 codegen 版本后重新生成；引入最小 FFI 集成测试（真实 DLL 冒烟） |
+| **实施步骤** | ① Rust 轨统一 flutter_rust_bridge 版本并 `make gen` 重生成；② integration_test 增加真实 DLL 初始化 + 核心链路（dbOpen/书架/搜索）冒烟用例 |
+| **验收** | bridge 生成文件版本头一致；存在可运行的 FFI 集成冒烟测试 |
+
+**P2-5 Kotlin 侧 P0×2 修复（执行依赖上游同步决策）**
+
+| 项目 | 内容 |
+|------|------|
+| **问题** | ① `BaseReadBookActivity.kt:298-303` 模拟阅读未开启时日期框点击崩溃（DateTimeParseException）；② `DatabaseMigrations.kt:176` migration_26_27 引用错列名 `pageIndex`（应为 `chapterPos`），v26 用户升级链中断 |
+| **证据** | 本台账 §3.1（含逐条 file:line 与修改方案） |
+| **解决方案** | 按 §3.1 方案修复；**执行前置依赖 §3.5 上游同步 A/B/C 决策**（若选 A 先合并上游再修，避免被覆盖） |
+| **实施步骤** | ① §3.5 决策落定；② 按 §3.1 表格实施两处修复；③ 按表格验证方式验收 |
+| **验收** | 日期框两种状态不崩溃；构造 v26 库执行 26→27 迁移成功 |
+
+### §4.4 执行顺序与里程碑建议
+
+#### 第一批（1-2 周，低成本收尾）
+
+| 项 | 轨道 | 依赖 |
+|---|---|---|
+| UI 双切换：searchCover / dictLookup（§4.3 P0-1） | UI 轨 | 无（Rust 已交付），完成后回写 Phase 6 决议块 |
+| FFI 测试竞态隔离（§4.2 P0-1） | Rust 轨 | 无 |
+| 文档修正：README 表述（§3.6）、Rust 三文档数据同步（§4.2 P2-5）、lib.rs 注释（§4.2 P2-4）、契约外函数补登记（§4.2 P1-3） | 双轨 | 无 |
+| 上游同步 A/B/C 决策拍板（§4.3 P0-2 → §3.5） | 决策项 | 前置阻塞，默认 B |
+
+#### 第二批（2-4 周，数据兼容与功能补齐）
+
+| 项 | 轨道 | 依赖 |
+|---|---|---|
+| v96→97 迁移：8 张偏离表 + users/servers 补建 + rssSources 双列合并 + SCHEMA_VERSION=96 语义登记（§4.2 P0-2/P0-3） | Rust 轨 | 无 |
+| 书源校验跨轨链路：契约冻结 → Rust FFI 暴露 → UI 入口（§4.2 P1-1 → §4.3 P1-3） | 跨轨 | 严格串行：契约冻结 → Rust FFI → UI 入口 |
+| RSS 语义修复：落表语义确认、rssUpdateSource、历史页（§4.3 P1-2） | 跨轨 | Rust 落表确认先行 |
+| 过期占位清理：serverStart/serverStop、backup 三件套（§4.3 P1-1）、txt_search 接入 frb（§4.2 P1-2） | 双轨 | txt_search 属 Rust 轨，占位清理属 UI 轨，可并行 |
+
+#### 第三批（排期推进）
+
+| 项 | 轨道 | 依赖 |
+|---|---|---|
+| 架构治理：bridge.rs 去留决策、4 个 screen 违规上收、frb 版本统一、FFI 集成测试（§4.2 P2-1、§4.3 P2-1/P2-4） | 双轨 | txt_search 迁出后再处置 bridge.rs |
+| 缺失页面补齐：验证码/书架管理/远程导入/RSS 调试/规则订阅/底栏皮肤（§4.3 P2-2） | UI 轨 | 书源校验页依赖第二批契约交付 |
+| MOBI HUFF/CDIC + KF8/INDX 移植（§4.2 P2-2） | Rust 轨 | 无，可独立排期 |
+| §3.4 已登记项复核与 Kotlin 侧修复批次（§4.2 P2-3、§4.3 P2-5） | 双轨 | Kotlin 修复依赖 §3.5 决策 |
+
+> 质量门禁沿用本文档「质量门禁」章节；每批完成后同步更新 docs/README.md「当前状态」与本台账销记。
+
+---
+
+**文档版本**: 1.5  
+**最后更新**: 2026-08-03  
 **维护人**: Qoder  
 **最后修改**: Reasonix
+
+**版本记录**：
+- v1.5（2026-08-03）整合四路审计结论，新增审计整合章节（§4）
+- v1.4（2026-08-02）新增全量源码检查后续修改计划（§3）
+- v1.0（2026-07-31）初版：P0-P3 共 7 项遗留任务 + UI 一致性 13 项整合
+
+---
+编写者：Qoder
+日期：2026-08-03

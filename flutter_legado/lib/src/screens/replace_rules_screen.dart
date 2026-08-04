@@ -15,6 +15,9 @@ class ReplaceRulesScreen extends ConsumerStatefulWidget {
 }
 
 class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
+  final _searchCtrl = TextEditingController();
+  String _filter = '';
+
   @override
   void initState() {
     super.initState();
@@ -24,12 +27,56 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   }
 
   @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = ref.watch(replaceRuleNotifierProvider);
     final notifier = ref.read(replaceRuleNotifierProvider.notifier);
+    final filtered = _filter.isEmpty
+        ? state.rules
+        : state.rules
+            .where((r) =>
+                r.name.contains(_filter) ||
+                r.pattern.contains(_filter) ||
+                (r.group?.contains(_filter) ?? false))
+            .toList();
     return Scaffold(
+      // 对齐原版 activity_replace_rule.xml：TitleBar 内嵌 view_search 搜索框
       appBar: AppBar(
-        title: const Text('替换规则'),
+        titleSpacing: 0,
+        title: SizedBox(
+          height: 36,
+          child: TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _filter = v.trim()),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
+            decoration: InputDecoration(
+              hintText: '搜索规则',
+              hintStyle: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.6),
+              ),
+              prefixIcon: Icon(
+                Icons.search,
+                size: 20,
+                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
+              ),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.2),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
@@ -84,7 +131,15 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
               ),
             );
           }
-          return _buildRuleList(context, notifier, state.rules);
+          if (filtered.isEmpty) {
+            return Center(
+              child: Text(
+                '未找到匹配「$_filter」的规则',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            );
+          }
+          return _buildRuleList(context, notifier, filtered);
         },
       ),
     );
@@ -392,8 +447,34 @@ class _ReplaceRuleTile extends StatelessWidget {
                   ],
                 ),
               ),
-              // 启用开关
+              // 启用开关（对标 swt_enabled）
               Switch(value: rule.isEnabled, onChanged: onToggle),
+              // 编辑（对标 iv_edit）
+              IconButton(
+                icon: Icon(
+                  Icons.edit_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                visualDensity: VisualDensity.compact,
+                tooltip: '编辑',
+                onPressed: onEdit,
+              ),
+              // 更多菜单（对标 iv_menu_more）
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                tooltip: '更多',
+                onSelected: (v) {
+                  if (v == 'delete') onDelete();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'delete', child: Text('删除')),
+                ],
+              ),
             ],
           ),
         ),

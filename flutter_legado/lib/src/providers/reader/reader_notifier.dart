@@ -65,7 +65,12 @@ class ReaderNotifier extends Notifier<ReaderState> {
 
     try {
       final api = ref.read(bookApiProvider);
-      final chapters = await api.getChapters(book.bookUrl);
+      var chapters = await api.getChapters(book.bookUrl);
+      // 对齐原版：本地无目录的网络书籍（如刚从搜索结果加入书架，
+      // 尚未拉取过目录），自动经书源规则从网络获取目录
+      if (chapters.isEmpty && book.origin.isNotEmpty) {
+        chapters = await api.refreshToc(book.bookUrl, book.origin);
+      }
       var chapterIndex = book.durChapterIndex;
       if (chapterIndex >= chapters.length && chapters.isNotEmpty) {
         chapterIndex = 0;

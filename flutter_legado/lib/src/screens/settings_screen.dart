@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
@@ -11,13 +12,15 @@ import '../services/crash_log_service.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
+import '../theme/app_colors.dart';
+import '../widgets/ios_widgets.dart';
 
-/// 设置页面（枢纽菜单）
+/// 我的页面（枢纽菜单）
 ///
-/// 对标 Android 原版「我的」页（`pref_main.xml`）：以菜单入口形式聚合各管理功能与子设置页。
-/// - 顶部：书源管理 / 定时任务 / TXT 目录规则 / 替换净化 / 词典规则 / 主题模式
+/// 对标 Android 原版「我的」页（`fragment_my_config.xml` + `pref_main.xml`）：以菜单入口形式聚合各管理功能与子设置页。
+/// - 顶部：书源管理 / 定时任务 / 定时任务服务 / TXT 目录规则 / 替换净化 / 词典规则 / 主题模式 / Web 服务 / MCP 服务
 /// - 「设置」分组：备份恢复 / 主题设置 / 其他设置
-/// - 「其他」分组：书签 / 阅读统计 / 关于
+/// - 「其他」分组：书签 / 阅读记录 / 文件管理 / 关于 / 退出
 ///
 /// 子设置页拆分至独立页面：
 /// - 主题设置 → [AppRoutes.themeConfig]
@@ -33,124 +36,223 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _backupLoading = false;
   bool _restoreLoading = false;
+  // 服务开关（对标 pref_main SwitchPreference，服务本体未移植，开启时提示）
+  bool _autoTaskService = false;
+  bool _webService = false;
+  bool _mcpService = false;
 
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeNotifierProvider).themeMode;
     return Scaffold(
-      appBar: AppBar(title: Text(AppStrings.settings)),
-      body: ListView(
-        children: [
-          // ===== 顶部管理入口（对标 pref_main 顶层项）=====
-          ListTile(
-            leading: const Icon(Icons.library_books),
-            title: Text(AppStrings.sourceManagement),
-            subtitle: const Text('书源管理、启用、禁用与排序'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.sources),
+      appBar: AppBar(
+        title: Text(AppStrings.my),
+        actions: [
+          // 对标原版 main_my.xml：顶栏帮助入口（ic_help → HelpActivity）
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: '帮助',
+            onPressed: _showHelp,
           ),
-          ListTile(
-            leading: const Icon(Icons.schedule),
-            title: const Text('定时任务'),
-            subtitle: const Text('管理自动刷新和备份任务'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.autoTasks),
-          ),
-          ListTile(
-            leading: const Icon(Icons.toc),
-            title: const Text('TXT 目录规则'),
-            subtitle: const Text('配置 TXT 书籍目录解析规则'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.txtTocRules),
-          ),
-          ListTile(
-            leading: const Icon(Icons.find_replace),
-            title: const Text('替换净化'),
-            subtitle: const Text('管理阅读内容替换规则'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.replaceRules),
-          ),
-          ListTile(
-            leading: const Icon(Icons.translate),
-            title: const Text('词典规则'),
-            subtitle: const Text('配置词典查询规则'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.dict),
-          ),
-          ListTile(
-            leading: const Icon(Icons.brightness_6),
-            title: Text(AppStrings.themeMode),
-            subtitle: Text(_themeModeLabel(themeMode)),
-            onTap: () => _showThemePicker(context),
-          ),
-          const Divider(),
-
-          // ===== 设置分组（对标 pref_main「设置」PreferenceCategory）=====
-          _buildSectionHeader(context, '设置'),
-          ListTile(
-            leading: const Icon(Icons.backup),
-            title: const Text('备份恢复'),
-            subtitle: const Text('备份/恢复数据与 WebDAV 同步'),
-            trailing: (_backupLoading || _restoreLoading)
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
-            onTap: (_backupLoading || _restoreLoading)
-                ? null
-                : () => _showBackupSheet(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: const Text('主题设置'),
-            subtitle: const Text('主题模式、字体、行距、背景色'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.themeConfig),
-          ),
-          ListTile(
-            leading: const Icon(Icons.tune),
-            title: const Text('其他设置'),
-            subtitle: const Text('语言、阅读默认、网络、缓存'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.otherSettings),
-          ),
-          const Divider(),
-
-          // ===== 其他分组（对标 pref_main「其他」PreferenceCategory）=====
-          _buildSectionHeader(context, AppStrings.otherSettings),
-          ListTile(
-            leading: const Icon(Icons.bookmark),
-            title: const Text('书签'),
-            subtitle: const Text('查看和管理所有书签'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.bookmarks),
-          ),
-          ListTile(
-            leading: const Icon(Icons.bar_chart),
-            title: const Text('阅读统计'),
-            subtitle: const Text('查看阅读时长与书籍分布'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.readingStats),
-          ),
-          ListTile(
-            leading: const Icon(Icons.info),
-            title: Text(AppStrings.aboutSettings),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.about),
-          ),
-          ListTile(
-            leading: const Icon(Icons.bug_report),
-            title: const Text('导出日志'),
-            subtitle: const Text('分享应用日志文件用于问题诊断'),
-            onTap: _exportLogs,
-          ),
-          const SizedBox(height: 24),
         ],
       ),
-    );
-  }
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+        children: [
+          // ===== 顶部管理入口（对标 pref_main 顶层项）=====
+          IosGroup(
+            separatorIndent: 62,
+            children: [
+              IosListTile(
+                icon: Icons.library_books,
+                iconBackground: AppColors.iosBlueLight,
+                title: AppStrings.sourceManagement,
+                subtitle: '书源管理、启用、禁用与排序',
+                showDisclosure: true,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.sources),
+              ),
+              IosListTile(
+                icon: Icons.schedule,
+                iconBackground: AppColors.iosOrangeLight,
+                title: '定时任务',
+                subtitle: '管理自动刷新和备份任务',
+                showDisclosure: true,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.autoTasks),
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.autorenew),
+                title: const Text('定时任务服务'),
+                subtitle: const Text('定时任务后台服务（后续版本支持）'),
+                value: _autoTaskService,
+                onChanged: (v) {
+                  if (v) {
+                    _todo(context, '定时任务服务');
+                  } else {
+                    setState(() => _autoTaskService = false);
+                  }
+                },
+              ),
+              IosListTile(
+                icon: Icons.toc,
+                iconBackground: AppColors.iosTealLight,
+                title: 'TXT 目录规则',
+                subtitle: '配置 TXT 书籍目录解析规则',
+                showDisclosure: true,
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.txtTocRules),
+              ),
+              IosListTile(
+                icon: Icons.find_replace,
+                iconBackground: AppColors.iosRedLight,
+                title: '替换净化',
+                subtitle: '管理阅读内容替换规则',
+                showDisclosure: true,
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.replaceRules),
+              ),
+              IosListTile(
+                icon: Icons.translate,
+                iconBackground: AppColors.iosIndigoLight,
+                title: '词典规则',
+                subtitle: '配置词典查询规则',
+                showDisclosure: true,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.dict),
+              ),
+              IosListTile(
+                icon: Icons.brightness_6,
+                iconBackground: AppColors.iosPurpleLight,
+                title: AppStrings.themeMode,
+                value: _themeModeLabel(themeMode),
+                showDisclosure: true,
+                onTap: () => _showThemePicker(context),
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.language),
+                title: const Text('Web 服务'),
+                subtitle: const Text('Web 书架服务（后续版本支持）'),
+                value: _webService,
+                onChanged: (v) {
+                  if (v) {
+                    _todo(context, 'Web 服务');
+                  } else {
+                    setState(() => _webService = false);
+                  }
+                },
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.cable),
+                title: const Text('MCP 服务'),
+                subtitle: const Text('MCP 服务（后续版本支持）'),
+                value: _mcpService,
+                onChanged: (v) {
+                  if (v) {
+                    _todo(context, 'MCP 服务');
+                  } else {
+                    setState(() => _mcpService = false);
+                  }
+                },
+              ),
+            ],
+          ),
 
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.w600,
-        ),
+          // ===== 设置分组（对标 pref_main「设置」PreferenceCategory）=====
+          const IosSectionHeader('设置'),
+          IosGroup(
+            separatorIndent: 62,
+            children: [
+              IosListTile(
+                icon: Icons.backup,
+                iconBackground: AppColors.iosGreenLight,
+                title: '备份恢复',
+                subtitle: '备份/恢复数据与 WebDAV 同步',
+                trailing: (_backupLoading || _restoreLoading)
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
+                showDisclosure: !(_backupLoading || _restoreLoading),
+                onTap: (_backupLoading || _restoreLoading)
+                    ? null
+                    : () => _showBackupSheet(context),
+              ),
+              IosListTile(
+                icon: Icons.palette_outlined,
+                iconBackground: AppColors.iosPinkLight,
+                title: '主题设置',
+                subtitle: '主题模式、字体、行距、背景色',
+                showDisclosure: true,
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.themeConfig),
+              ),
+              IosListTile(
+                icon: Icons.tune,
+                iconBackground: AppColors.iosBrownLight,
+                title: '其他设置',
+                subtitle: '语言、阅读默认、网络、缓存',
+                showDisclosure: true,
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.otherSettings),
+              ),
+            ],
+          ),
+
+          // ===== 其他分组（对标 pref_main「其他」PreferenceCategory）=====
+          IosSectionHeader(AppStrings.otherSettings),
+          IosGroup(
+            separatorIndent: 62,
+            children: [
+              IosListTile(
+                icon: Icons.bookmark,
+                iconBackground: AppColors.iosOrangeLight,
+                title: '书签',
+                subtitle: '查看和管理所有书签',
+                showDisclosure: true,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.bookmarks),
+              ),
+              IosListTile(
+                icon: Icons.history,
+                iconBackground: AppColors.iosTealLight,
+                title: '阅读记录',
+                subtitle: '查看阅读时长与书籍分布',
+                showDisclosure: true,
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.readingStats),
+              ),
+              IosListTile(
+                icon: Icons.folder_outlined,
+                iconBackground: AppColors.iosBrownLight,
+                title: '文件管理',
+                subtitle: '浏览与管理应用文件',
+                showDisclosure: true,
+                // 对标原版 FileManageActivity 入口
+                onTap: () => Navigator.pushNamed(context, AppRoutes.fileManage),
+              ),
+              IosListTile(
+                icon: Icons.info,
+                iconBackground: AppColors.iosBlueLight,
+                title: AppStrings.aboutSettings,
+                showDisclosure: true,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.about),
+              ),
+              IosListTile(
+                icon: Icons.exit_to_app,
+                iconBackground: AppColors.iosRedLight,
+                title: '退出',
+                onTap: _confirmExit,
+              ),
+              IosListTile(
+                icon: Icons.bug_report,
+                iconBackground: AppColors.iosYellowLight,
+                iconColor: AppColors.black,
+                title: '导出日志',
+                subtitle: '分享应用日志文件用于问题诊断',
+                onTap: _exportLogs,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -164,6 +266,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       default:
         return AppStrings.themeSystem;
     }
+  }
+
+  /// 帮助对话框（对标原版 HelpActivity 入口）
+  void _showHelp() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('帮助'),
+        content: const SingleChildScrollView(
+          child: Text(
+            '欢迎使用 Legado 阅读。\n\n'
+            '· 书架：顶栏菜单可添加本地书籍、切换书架布局与管理分组；'
+            '长按书籍可编辑、分享或删除。\n'
+            '· 发现：展开书源查看发现分类，长按书源可编辑或删除。\n'
+            '· 订阅：顶栏可进入历史、收藏与订阅设置，长按订阅源可删除。\n'
+            '· 备份：「备份恢复」支持本地备份/恢复与 WebDAV 同步。\n\n'
+            '详细文档请访问 Legado 官方帮助页面。',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 主题模式选择（对标 pref_main themeMode NameListPreference）
@@ -326,6 +455,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } finally {
       if (mounted) setState(() => _restoreLoading = false);
+    }
+  }
+
+  /// 未移植功能提示
+  void _todo(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」后续版本支持')),
+    );
+  }
+
+  /// 退出应用（对标 pref_main exit）
+  Future<void> _confirmExit() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出'),
+        content: const Text('确定退出阅读吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppStrings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(AppStrings.confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await SystemNavigator.pop();
     }
   }
 

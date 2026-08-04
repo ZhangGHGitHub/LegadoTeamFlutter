@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +11,7 @@ import '../models/models.dart';
 import '../providers/source/source_notifier.dart';
 import '../routes.dart';
 import '../services/source_import_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -25,14 +26,13 @@ class SourceScreen extends ConsumerStatefulWidget {
   ConsumerState<SourceScreen> createState() => _SourceScreenState();
 }
 
-class _SourceScreenState extends ConsumerState<SourceScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _SourceScreenState extends ConsumerState<SourceScreen> {
+  /// 顶栏搜索框（对标原版 activity_book_source.xml 的 view_search）
+  final _searchCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(sourceNotifierProvider.notifier).loadSources();
     });
@@ -40,7 +40,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -58,58 +58,135 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
       child: Scaffold(
         appBar: state.batchMode
             ? _buildBatchAppBar(context, state)
-            : _buildAppBar(context),
+            : _buildAppBar(context, state),
         body: _buildBody(context),
-        floatingActionButton:
-            !state.batchMode ? _buildFab(context) : null,
+        // 安卓原版书源管理页无 FAB：新建书源入口在顶栏菜单
       ),
     );
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
+  PreferredSizeWidget _buildAppBar(BuildContext context, SourceState state) {
     return AppBar(
-      title: const Text('书源管理'),
-      bottom: TabBar(
-        controller: _tabController,
-        tabs: const [
-          Tab(text: '全部'),
-          Tab(text: '已启用'),
-          Tab(text: '已禁用'),
-        ],
+      // 原版 TitleBar 内嵌 view_search：搜索框与菜单图标同行，无标题文字
+      title: SizedBox(
+        height: 36,
+        child: TextField(
+          controller: _searchCtrl,
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          decoration: InputDecoration(
+            hintText: '搜索书源',
+            hintStyle: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+            prefixIcon: Icon(Icons.search,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+            suffixIcon: state.filterKeyword.isNotEmpty
+                ? IconButton(
+                    icon: Icon(Icons.clear,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    onPressed: () {
+                      _searchCtrl.clear();
+                      ref
+                          .read(sourceNotifierProvider.notifier)
+                          .clearFilter();
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(35),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          onChanged: (v) =>
+              ref.read(sourceNotifierProvider.notifier).setFilter(v),
+        ),
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.search),
-          tooltip: '搜索书源',
-          onPressed: () => _showSearchDialog(context),
-        ),
-        // 排序菜单（对标 Android action_sort 子菜单）
+        // 安卓原版 book_source.xml：排序按钮常驻顶栏（action_sort）
         PopupMenuButton<String>(
           icon: const Icon(Icons.sort),
           tooltip: '排序',
           onSelected: (value) => _handleSortAction(context, value),
           itemBuilder: (_) => _buildSortMenuItems(context),
         ),
+        // 安卓原版：分组按钮常驻顶栏（menu_group 子菜单）
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.groups),
+          tooltip: '分组',
+          onSelected: (value) => _handleGroupAction(context, value),
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              enabled: false,
+              child:
+                  Text('分组', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            const PopupMenuItem(value: 'group_manage', child: Text('分组管理')),
+            CheckedPopupMenuItem(
+              value: SourceSpecialGroup.enabled,
+              checked: state.selectedGroup == SourceSpecialGroup.enabled,
+              child: const Text('已启用'),
+            ),
+            CheckedPopupMenuItem(
+              value: SourceSpecialGroup.disabled,
+              checked: state.selectedGroup == SourceSpecialGroup.disabled,
+              child: const Text('已禁用'),
+            ),
+            CheckedPopupMenuItem(
+              value: SourceSpecialGroup.login,
+              checked: state.selectedGroup == SourceSpecialGroup.login,
+              child: const Text('需登录'),
+            ),
+            CheckedPopupMenuItem(
+              value: '未分组',
+              checked: state.selectedGroup == '未分组',
+              child: const Text('未分组'),
+            ),
+            CheckedPopupMenuItem(
+              value: SourceSpecialGroup.exploreOn,
+              checked: state.selectedGroup == SourceSpecialGroup.exploreOn,
+              child: const Text('发现已启用'),
+            ),
+            CheckedPopupMenuItem(
+              value: SourceSpecialGroup.exploreOff,
+              checked: state.selectedGroup == SourceSpecialGroup.exploreOff,
+              child: const Text('发现已禁用'),
+            ),
+            for (final group in state.groups.where((g) => g != '未分组'))
+              CheckedPopupMenuItem(
+                value: group,
+                checked: state.selectedGroup == group,
+                child: Text(group),
+              ),
+          ],
+        ),
         PopupMenuButton<String>(
           onSelected: (value) => _handleAction(context, value),
           itemBuilder: (_) => [
-            const PopupMenuItem(value: 'new', child: Text('新建书源')),
+            // 对标原版 book_source.xml 溢出菜单
+            const PopupMenuItem(value: 'new', child: Text('添加书源')),
+            const PopupMenuItem(value: 'new_js', child: Text('新建 JS 书源')),
+            const PopupMenuItem(value: 'import_file', child: Text('本地导入')),
+            const PopupMenuItem(value: 'import_url', child: Text('网络导入')),
+            const PopupMenuItem(value: 'import_qr', child: Text('二维码导入')),
+            const PopupMenuItem(
+                value: 'group_by_domain', child: Text('按域名拆分分组')),
+            const PopupMenuItem(value: 'help', child: Text('帮助')),
             const PopupMenuDivider(),
-            const PopupMenuItem(
-                value: 'import_url', child: Text('从 URL 导入')),
-            const PopupMenuItem(
-                value: 'import_file', child: Text('从文件导入')),
-            const PopupMenuItem(
-                value: 'import_qr', child: Text('扫码导入')),
+            // Flutter 扩展功能
             const PopupMenuItem(
                 value: 'import_clipboard', child: Text('从剪贴板导入')),
-            const PopupMenuDivider(),
-            const PopupMenuItem(value: 'export_all', child: Text('导出全部书源')),
+            const PopupMenuItem(
+                value: 'export_all', child: Text('导出全部书源')),
             const PopupMenuItem(
                 value: 'export_selected', child: Text('导出选中分组')),
             const PopupMenuItem(
                 value: 'export_file', child: Text('导出到文件')),
-            const PopupMenuDivider(),
             const PopupMenuItem(
                 value: 'batch_mode', child: Text('批量操作')),
           ],
@@ -155,20 +232,6 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
     );
   }
 
-  Widget? _buildFab(BuildContext context) {
-    return FloatingActionButton(
-      tooltip: '新建书源',
-      onPressed: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const SourceEditScreen(),
-          ),
-        );
-      },
-      child: const Icon(Icons.add),
-    );
-  }
-
   Widget _buildBody(BuildContext context) {
     final state = ref.watch(sourceNotifierProvider);
 
@@ -183,58 +246,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
       );
     }
 
-    return Column(
-      children: [
-        // 分组筛选 Chip
-        if (state.groups.isNotEmpty) _buildGroupChips(context, state),
-        // 书源列表
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildSourceList(context, state.filteredSources),
-              _buildSourceList(context, state.enabledSources),
-              _buildSourceList(context, state.disabledSources),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGroupChips(BuildContext context, SourceState state) {
-    final groups = state.groups;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: SizedBox(
-        height: 36,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: groups.length + 1, // +1 for "全部"
-          separatorBuilder: (_, _) => const SizedBox(width: 8),
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              final selected = state.selectedGroup == null;
-              return FilterChip(
-                label: const Text('全部'),
-                selected: selected,
-                onSelected: (_) =>
-                    ref.read(sourceNotifierProvider.notifier).setGroup(null),
-              );
-            }
-            final group = groups[index - 1];
-            final selected = state.selectedGroup == group;
-            return FilterChip(
-              label: Text(group),
-              selected: selected,
-              onSelected: (_) => ref
-                  .read(sourceNotifierProvider.notifier)
-                  .setGroup(selected ? null : group),
-            );
-          },
-        ),
-      ),
-    );
+    // 原版仅单一列表；分组/启用状态筛选均在顶栏分组菜单（无 Tab/Chip 行）
+    return _buildSourceList(context, state.filteredSources);
   }
 
   Widget _buildSourceList(BuildContext context, List<BookSource> sources) {
@@ -242,7 +255,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
       return const EmptyState(
         icon: Icons.library_books_outlined,
         title: '暂无书源',
-        subtitle: '点击右下角按钮新建书源，或从菜单导入',
+        subtitle: '点击右上角菜单「添加书源」新建，或导入书源',
       );
     }
 
@@ -250,7 +263,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
 
     return ListView.separated(
       itemCount: sources.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, indent: 60),
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
       itemBuilder: (context, index) {
         final source = sources[index];
         return state.batchMode
@@ -260,34 +273,13 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
     );
   }
 
+  /// 书源列表项（对标原版 item_book_source.xml：源名 16sp + 发现绿点 +
+  /// Switch + 编辑图标 + 更多图标，无头像/分组副标题）
   Widget _buildSourceItem(BuildContext context, BookSource source) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: Text(
-          source.bookSourceName.isNotEmpty
-              ? source.bookSourceName[0]
-              : '?',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-      ),
-      title: Text(
-        source.bookSourceName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        source.bookSourceGroup ?? '未分组',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      trailing: Switch(
-        value: source.enabled,
-        onChanged: (_) => ref
-            .read(sourceNotifierProvider.notifier)
-            .toggleSource(source.bookSourceUrl),
-      ),
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasExplore =
+        source.exploreUrl != null && source.exploreUrl!.isNotEmpty;
+    return InkWell(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -296,6 +288,68 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
         );
       },
       onLongPress: () => _showSourceMenu(context, source),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            // 源名（对标 cb_book_source 文本 16sp）
+            Expanded(
+              child: Text(
+                source.bookSourceName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
+              ),
+            ),
+            // 启用开关（对标 swt_enabled）
+            Switch(
+              value: source.enabled,
+              onChanged: (_) => ref
+                  .read(sourceNotifierProvider.notifier)
+                  .toggleSource(source.bookSourceUrl),
+            ),
+            // 编辑图标（对标 iv_edit）
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              tooltip: '编辑',
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        SourceEditScreen(sourceUrl: source.bookSourceUrl),
+                  ),
+                );
+              },
+            ),
+            // 更多图标（对标 iv_menu_more）+ 发现绿点（iv_explore）
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.more_vert, size: 20),
+                  tooltip: '更多',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _showSourceMenu(context, source),
+                ),
+                if (hasExplore)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      // iOS 系统绿发现角标
+                      decoration: const BoxDecoration(
+                        color: AppColors.iosGreenLight,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -397,40 +451,24 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
     }
   }
 
-  void _showSearchDialog(BuildContext context) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('搜索书源'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '输入书源名称或分组',
-          ),
-          onChanged: (v) =>
-              ref.read(sourceNotifierProvider.notifier).setFilter(v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              controller.dispose();
-              ref.read(sourceNotifierProvider.notifier).clearFilter();
-              Navigator.pop(ctx);
-            },
-            child: const Text('清除'),
-          ),
-          TextButton(
-            onPressed: () {
-              controller.dispose();
-              Navigator.pop(ctx);
-            },
-            child: const Text('完成'),
-          ),
-        ],
-      ),
-    );
+  /// 分组菜单处理（对标原版 BookSourceActivity 分组子菜单）
+  void _handleGroupAction(BuildContext context, String value) {
+    if (value == 'group_manage') {
+      _todo(context, '分组管理');
+      return;
+    }
+    // 再次点击当前特殊分组时取消筛选
+    final current = ref.read(sourceNotifierProvider).selectedGroup;
+    final isSpecial = [
+      SourceSpecialGroup.enabled,
+      SourceSpecialGroup.disabled,
+      SourceSpecialGroup.login,
+      SourceSpecialGroup.exploreOn,
+      SourceSpecialGroup.exploreOff,
+    ].contains(value);
+    ref.read(sourceNotifierProvider.notifier).setGroup(
+          isSpecial && current == value ? null : value,
+        );
   }
 
   void _handleAction(BuildContext context, String action) {
@@ -440,6 +478,9 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
           MaterialPageRoute(builder: (_) => const SourceEditScreen()),
         );
         break;
+      case 'new_js':
+        _todo(context, '新建 JS 书源');
+        break;
       case 'import_url':
         _showImportUrlDialog(context);
         break;
@@ -448,6 +489,12 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
         break;
       case 'import_qr':
         _importFromQrCode(context);
+        break;
+      case 'group_by_domain':
+        _todo(context, '按域名拆分分组');
+        break;
+      case 'help':
+        _todo(context, '帮助');
         break;
       case 'import_clipboard':
         _importFromClipboard(context);
@@ -465,6 +512,13 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
         ref.read(sourceNotifierProvider.notifier).enterBatchMode();
         break;
     }
+  }
+
+  /// 尚未移植的原版功能统一提示
+  void _todo(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」功能尚未移植')),
+    );
   }
 
   /// 排序菜单项（对标 Android menu_sort_manual/auto/name/url + menu_sort_desc）
@@ -648,13 +702,13 @@ class _SourceScreenState extends ConsumerState<SourceScreen>
   }
 
   /// 从本地文件导入书源（对标 Android menu_import_local，txt/json）
+  ///
+  /// 注：不使用 FileType.custom 扩展名过滤——低版本 Android（API 28）的
+  /// SAF 会因 MIME 匹配问题禁用全部文件；改为任选文件，由解析层容错。
   Future<void> _importFromFile(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final picked = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['json', 'txt'],
-      );
+      final picked = await FilePicker.platform.pickFiles();
       if (picked == null || picked.files.isEmpty) return;
 
       final path = picked.files.single.path;

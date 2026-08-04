@@ -22,6 +22,8 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
+    // 书架初始化会加载分组（顶栏 Tab 数据源），默认返回空列表
+    when(() => mockApi.getBookGroups()).thenAnswer((_) async => []);
     // 创建容器并覆盖 bookApiProvider 注入 mock
     container = ProviderContainer(
       overrides: [
@@ -197,15 +199,32 @@ void main() {
       container.read(bookshelfNotifierProvider);
     });
 
-    test('toggleViewMode 切换网格/列表', () async {
+    test('toggleViewMode 切换网格/列表并持久化', () async {
       await pumpInit();
       expect(readState().isGridView, isTrue);
 
-      readNotifier().toggleViewMode();
+      await readNotifier().toggleViewMode();
       expect(readState().isGridView, isFalse);
+      var prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('bookshelf_layout'), isFalse);
 
-      readNotifier().toggleViewMode();
+      await readNotifier().toggleViewMode();
       expect(readState().isGridView, isTrue);
+      prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('bookshelf_layout'), isTrue);
+    });
+
+    test('布局偏好重启后恢复（对标原版 bookshelfLayout 持久化）', () async {
+      // 预置上次选择：列表视图
+      SharedPreferences.setMockInitialValues({'bookshelf_layout': false});
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      );
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      expect(readState().isGridView, isFalse);
     });
 
     test('setGroupMode 切换分组模式', () async {
@@ -297,6 +316,95 @@ void main() {
       await pumpInit();
 
       expect(readState().isEmpty, isTrue);
+    });
+  });
+
+  group('BookshelfNotifier 分组 Tab（对标原版 BookshelfFragment1）', () {
+    final groupedBooks = [
+      const Book(name: '网络书', bookUrl: 'book://1', origin: 'source', group: 1),
+      const Book(name: '本地书', bookUrl: 'book://2', origin: 'loc_book', group: 0),
+      const Book(name: '双组书', bookUrl: 'book://3', origin: 'source', group: 3),
+    ];
+    final multiGroups = [
+      const BookGroup(groupId: BookGroupId.all, groupName: '全部', order: -10),
+      const BookGroup(groupId: 1, groupName: '科幻', order: 1),
+      const BookGroup(groupId: 2, groupName: '隐藏组', order: 2, show: false),
+    ];
+
+    setUp(() {
+      when(() => mockApi.getBooks()).thenAnswer((_) async => groupedBooks);
+    });
+
+    test('多分组时 hasGroupTabs 为真且隐藏组不展示', () async {
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => multiGroups);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      expect(readState().hasGroupTabs, isTrue);
+      // show=false 的分组被过滤
+      expect(readState().groups.map((g) => g.groupName), equals(['全部', '科幻']));
+    });
+
+    test('无自定义分组时 hasGroupTabs 为假且不过滤书籍', () async {
+      // setUp 外层已 stub getBookGroups 返回空；重建容器重新加载
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      );
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      expect(readState().hasGroupTabs, isFalse);
+      expect(readState().currentGroupBooks, hasLength(3));
+    });
+
+    test('自定义分组缺少「全部」组时自动置顶补齐', () async {
+      when(() => mockApi.getBookGroups()).thenAnswer(
+        (_) async => [const BookGroup(groupId: 1, groupName: '科幻', order: 1)],
+      );
+      // 重建容器以重新加载分组
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      );
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      // 「全部」+ 「科幻」→ 双 Tab
+      expect(readState().groups.map((g) => g.groupName), equals(['全部', '科幻']));
+      expect(readState().hasGroupTabs, isTrue);
+    });
+
+    test('selectGroup 切换当前分组并持久化', () async {
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => multiGroups);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().selectGroup(1);
+      expect(readState().selectedGroupIndex, equals(1));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('bookshelf_tab_position'), equals(1));
+    });
+
+    test('自定义分组按位掩码过滤 currentGroupBooks', () async {
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => multiGroups);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().selectGroup(1); // 科幻（groupId=1）
+      final names = readState().currentGroupBooks.map((b) => b.name).toList();
+      // group=1 与 group=3（含第 1 位）的书都属于分组 1
+      expect(names, containsAll(['网络书', '双组书']));
+      expect(names, isNot(contains('本地书')));
+    });
+
+    test('初始化时恢复上次选中的 Tab 位置', () async {
+      SharedPreferences.setMockInitialValues({'bookshelf_tab_position': 1});
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => multiGroups);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      expect(readState().selectedGroupIndex, equals(1));
     });
   });
 

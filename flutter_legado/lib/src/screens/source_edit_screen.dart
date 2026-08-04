@@ -824,15 +824,16 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
           title: Text(isNew ? '新建书源' : '编辑书源'),
           bottom: const TabBar(
             isScrollable: true,
+            // 页签文案对齐原版 source_tab_* 短标签
             tabs: [
-              Tab(text: '基本信息'),
-              Tab(text: '搜索规则'),
-              Tab(text: '发现规则'),
-              Tab(text: '详情规则'),
-              Tab(text: '目录规则'),
-              Tab(text: '内容规则'),
-              Tab(text: '评论规则'),
-              Tab(text: '测试'),
+              Tab(text: '基本'),
+              Tab(text: '搜索'),
+              Tab(text: '发现'),
+              Tab(text: '详情'),
+              Tab(text: '目录'),
+              Tab(text: '正文'),
+              Tab(text: '段评'),
+              Tab(text: '调试'),
             ],
           ),
           actions: [
@@ -848,6 +849,11 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
               onPressed: () => Navigator.pushNamed(context, AppRoutes.dict),
             ),
             TextButton.icon(
+              // AppBar 为 primary 底色，TextButton 默认 primary 前景会蓝底蓝字不可见，
+              // 显式使用 onPrimary（白）对齐 AppBar 前景色。
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
               icon: const Icon(Icons.save),
               label: const Text('保存'),
               onPressed: _saving ? null : _save,

@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../providers/reader/reader_notifier.dart';
+import '../../routes.dart';
 
 /// 阅读器顶部工具栏
 ///
-/// 对齐安卓原版 ReadMenu 顶部 TitleBar：
-/// 返回键 + 书名 + 阅读进度百分比 + 夜间模式 + 正文搜索 + 书签 + 高级设置
+/// 对齐安卓原版 ReadMenu 顶部 TitleBar 与 book_read.xml 菜单：
+/// 返回键 + 书名 + 阅读进度百分比 + 换源/刷新/缓存（在线书）
+/// + 夜间模式 + 正文搜索 + 书签 + 溢出菜单（高级设置等）
 class ReaderTopBar extends ConsumerWidget {
   final VoidCallback onOpenContentSearch;
   final VoidCallback onAddBookmark;
@@ -19,6 +21,12 @@ class ReaderTopBar extends ConsumerWidget {
     required this.onAddBookmark,
     required this.onOpenAdvancedConfig,
   });
+
+  void _todo(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」后续版本支持')),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -33,7 +41,15 @@ class ReaderTopBar extends ConsumerWidget {
       right: 0,
       child: Material(
         color: Theme.of(context).colorScheme.surface,
-        elevation: 2,
+        // iOS 风格：无阴影 + hairline 底边
+        elevation: 0,
+        shape: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerTheme.color ??
+                Theme.of(context).dividerColor,
+            width: 0.0,
+          ),
+        ),
         child: SafeArea(
           bottom: false,
           child: SizedBox(
@@ -41,7 +57,7 @@ class ReaderTopBar extends ConsumerWidget {
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.arrow_back),
+                  icon: const Icon(Icons.arrow_back_ios_new),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 Expanded(
@@ -63,6 +79,37 @@ class ReaderTopBar extends ConsumerWidget {
                         ),
                   ),
                 ),
+                // 安卓原版 book_read.xml：换源/刷新/缓存（menu_group_on_line）
+                if (state.currentBook != null) ...[
+                  IconButton(
+                    icon: const Icon(Icons.swap_horiz),
+                    tooltip: '换源',
+                    onPressed: () => Navigator.pushNamed(
+                      context,
+                      AppRoutes.changeSource,
+                      arguments: state.currentBook,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: '刷新',
+                    onPressed: () async {
+                      final book = state.currentBook;
+                      if (book == null) return;
+                      await notifier.openBook(book);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已刷新')),
+                        );
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.download_outlined),
+                    tooltip: '缓存',
+                    onPressed: () => _todo(context, '离线缓存'),
+                  ),
+                ],
                 // 夜间模式快速切换
                 IconButton(
                   icon: Icon(
@@ -87,10 +134,70 @@ class ReaderTopBar extends ConsumerWidget {
                   tooltip: '添加书签',
                   onPressed: onAddBookmark,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  tooltip: '高级设置',
-                  onPressed: onOpenAdvancedConfig,
+                // 安卓原版：溢出菜单（book_read.xml never 项）
+                PopupMenuButton<String>(
+                  tooltip: '更多',
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'advanced':
+                        onOpenAdvancedConfig();
+                        break;
+                      case 'highlightRule':
+                        // 对标原版 ReadMenu → HighlightRuleActivity
+                        Navigator.pushNamed(context, AppRoutes.highlightRules);
+                        break;
+                      default:
+                        const names = {
+                          'editContent': '编辑内容',
+                          'pageAnim': '翻页动画',
+                          'reverseContent': '反转内容',
+                          'simulatedReading': '模拟追读',
+                          'enableReplace': '替换规则',
+                          'reSegment': '重新分段',
+                          'imageStyle': '图片样式',
+                          'updateToc': '更新目录',
+                          'log': '日志',
+                          'help': '帮助',
+                        };
+                        _todo(context, names[value] ?? value);
+                        break;
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'advanced',
+                      child: Text('高级设置'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'highlightRule',
+                      child: Text('高亮规则'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'editContent',
+                      child: Text('编辑内容'),
+                    ),
+                    const PopupMenuItem(value: 'pageAnim', child: Text('翻页动画')),
+                    const PopupMenuItem(
+                      value: 'reverseContent',
+                      child: Text('反转内容'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'simulatedReading',
+                      child: Text('模拟追读'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'enableReplace',
+                      child: Text('替换规则'),
+                    ),
+                    const PopupMenuItem(value: 'reSegment', child: Text('重新分段')),
+                    const PopupMenuItem(
+                      value: 'imageStyle',
+                      child: Text('图片样式'),
+                    ),
+                    const PopupMenuItem(value: 'updateToc', child: Text('更新目录')),
+                    const PopupMenuItem(value: 'log', child: Text('日志')),
+                    const PopupMenuItem(value: 'help', child: Text('帮助')),
+                  ],
                 ),
               ],
             ),

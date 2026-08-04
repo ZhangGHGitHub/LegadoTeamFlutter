@@ -48,7 +48,8 @@ void main() {
       await tester.pumpWidget(wrap(const BookshelfManageScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('书架管理'), findsOneWidget);
+      // 顶栏内嵌搜索框（对标原版 view_search，无标题文字）
+      expect(find.byType(TextField), findsOneWidget);
       expect(find.text('斗破苍穹'), findsOneWidget);
       expect(find.text('天蚕土豆'), findsOneWidget);
       expect(find.text('完美世界'), findsOneWidget);
@@ -87,14 +88,14 @@ void main() {
       await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
 
-      // 标题显示已选数量，操作栏出现
-      expect(find.text('已选择 1 本'), findsOneWidget);
+      // 底部操作栏显示已选数量（对标原版 SelectActionBar）
+      expect(find.text('已选 1 本'), findsOneWidget);
       expect(find.text('删除'), findsOneWidget);
       expect(find.text('分组'), findsOneWidget);
       expect(find.text('置顶'), findsOneWidget);
     });
 
-    testWidgets('全选按钮勾选全部书籍', (tester) async {
+    testWidgets('全选复选框勾选全部书籍', (tester) async {
       when(() => mockApi.getBooks()).thenAnswer((_) async => const [
             Book(bookUrl: 'u1', name: '书一'),
             Book(bookUrl: 'u2', name: '书二'),
@@ -103,13 +104,20 @@ void main() {
       await tester.pumpWidget(wrap(const BookshelfManageScreen()));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('全选'));
+      // 先勾选第一本，底部操作栏出现
+      await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
-      expect(find.text('已选择 2 本'), findsOneWidget);
+      expect(find.text('已选 1 本'), findsOneWidget);
 
-      await tester.tap(find.text('取消全选'));
+      // 底栏末尾的全选复选框勾选全部书籍
+      await tester.tap(find.byType(Checkbox).last);
       await tester.pumpAndSettle();
-      expect(find.text('书架管理'), findsOneWidget);
+      expect(find.text('已选 2 本'), findsOneWidget);
+
+      // 再次点击取消全选，操作栏消失
+      await tester.tap(find.byType(Checkbox).last);
+      await tester.pumpAndSettle();
+      expect(find.text('删除'), findsNothing);
     });
 
     testWidgets('置顶选中书籍调用 topBook', (tester) async {

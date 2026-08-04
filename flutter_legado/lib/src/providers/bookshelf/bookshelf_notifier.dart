@@ -25,6 +25,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     Future.microtask(() {
       _loadSettings();
       _loadBooks();
+      _loadGroups();
     });
     return const BookshelfState();
   }
@@ -33,9 +34,11 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   Future<void> _loadSettings() async {
     final showRecentReading = await _settings.getShowBookshelfRecentReading();
     final showStats = await _settings.getShowBookshelfStats();
+    final isGridView = await _settings.getBookshelfLayout();
     state = state.copyWith(
       showRecentReading: showRecentReading,
       showStats: showStats,
+      isGridView: isGridView,
     );
   }
 
@@ -54,7 +57,39 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   }
 
   /// 刷新书架
-  Future<void> refresh() => _loadBooks();
+  Future<void> refresh() async {
+    await Future.wait([_loadBooks(), _loadGroups()]);
+  }
+
+  /// 加载书籍分组（对标原版 BookshelfFragment1.initBookGroupData）
+  Future<void> _loadGroups() async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final groups = await api.getBookGroups();
+      final visible = groups.where((g) => g.show).toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
+      // 对标原版 upGroup：始终保证「全部」组存在并置顶；
+      // 无自定义分组时仅单一「全部」组（此时 UI 不显示 TabBar）
+      final allGroup = const BookGroup(groupId: BookGroupId.all, groupName: '全部');
+      final hasAll = visible.any((g) => g.groupId == BookGroupId.all);
+      final list = hasAll ? visible : [allGroup, ...visible];
+      final lastIndex = await _settings.getBookshelfTabPosition();
+      state = state.copyWith(
+        groups: list,
+        selectedGroupIndex: lastIndex.clamp(0, list.length - 1),
+      );
+    } catch (e) {
+      // 分组加载失败不阻断书架展示
+      state = state.copyWith(error: _mapError(e));
+    }
+  }
+
+  /// 切换分组 Tab（对标原版 onTabSelected → AppConfig.saveTabPosition）
+  Future<void> selectGroup(int index) async {
+    if (index < 0 || index >= state.groups.length) return;
+    state = state.copyWith(selectedGroupIndex: index);
+    await _settings.setBookshelfTabPosition(index);
+  }
 
   /// 添加书籍到书架
   Future<void> addBook(Book book) async {
@@ -100,9 +135,11 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   // ===== 展示层状态切换（不涉及数据内容变更） =====
 
-  /// 切换网格/列表视图
-  void toggleViewMode() {
-    state = state.copyWith(isGridView: !state.isGridView);
+  /// 切换网格/列表视图（对标原版书架布局切换，持久化到 AppConfig.bookshelfLayout）
+  Future<void> toggleViewMode() async {
+    final newValue = !state.isGridView;
+    state = state.copyWith(isGridView: newValue);
+    await _settings.setBookshelfLayout(newValue);
   }
 
   /// 设置分组模式

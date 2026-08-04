@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../bridge/ffi.dart' show BridgeError;
 import 'book_api.dart';
 
 /// 书源导入结果
@@ -102,7 +103,9 @@ class SourceImportService {
         } catch (e) {
           failed++;
           final name = item['bookSourceName'] ?? '未知书源';
-          errors.add('导入「$name」失败：$e');
+          // BridgeError 取 message，避免显示 "Instance of 'BridgeError'"
+          final msg = e is BridgeError ? e.message : e.toString();
+          errors.add('导入「$name」失败：$msg');
         }
       }
     } on FormatException catch (e) {

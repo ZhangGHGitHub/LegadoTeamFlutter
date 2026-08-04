@@ -47,13 +47,16 @@ void main() {
       await tester.pumpWidget(wrapSourceScreen());
       await tester.pumpAndSettle();
 
-      // 打开溢出菜单（更多操作）
-      await tester.tap(find.byIcon(Icons.more_vert));
+      // 打开溢出菜单（更多操作；限定 AppBar 内，避免命中列表项的 more_vert 图标）
+      await tester.tap(find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byIcon(Icons.more_vert),
+      ));
       await tester.pumpAndSettle();
 
-      expect(find.text('从 URL 导入'), findsOneWidget);
-      expect(find.text('从文件导入'), findsOneWidget);
-      expect(find.text('扫码导入'), findsOneWidget);
+      expect(find.text('本地导入'), findsOneWidget);
+      expect(find.text('网络导入'), findsOneWidget);
+      expect(find.text('二维码导入'), findsOneWidget);
       expect(find.text('从剪贴板导入'), findsOneWidget);
       expect(find.text('导出全部书源'), findsOneWidget);
       expect(find.text('导出到文件'), findsOneWidget);

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNot
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../theme/app_colors.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -108,9 +109,17 @@ class _RssConfigScreenState extends ConsumerState<RssConfigScreen> {
       result = result.where((s) => !s.enabled).toList();
     }
 
-    // 分组过滤
+    // 分组过滤（特殊值：login=需登录，空串=未分组）
     final group = _selectedGroup;
-    if (group != null) {
+    if (group == 'login') {
+      result = result
+          .where((s) => (s.loginUrl ?? '').trim().isNotEmpty)
+          .toList();
+    } else if (group == '') {
+      result = result
+          .where((s) => (s.sourceGroup ?? '').trim().isEmpty)
+          .toList();
+    } else if (group != null) {
       result = result
           .where((s) => _splitGroups(s.sourceGroup).contains(group))
           .toList();
@@ -216,28 +225,102 @@ class _RssConfigScreenState extends ConsumerState<RssConfigScreen> {
       appBar: AppBar(
         title: const Text('订阅源管理'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: '搜索',
-            onPressed: _showSearchDialog,
+          // 安卓原版 rss_source.xml：分组按钮（常驻顶栏） + 溢出菜单
+          PopupMenuButton<String>(
+            tooltip: '分组',
+            icon: const Icon(Icons.groups),
+            onSelected: _handleGroupFilter,
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                enabled: false,
+                child: Text('分组', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              const CheckedPopupMenuItem(value: 'group:manage', child: Text('分组管理')),
+              CheckedPopupMenuItem(
+                value: 'enabled',
+                checked: _filterEnabled,
+                child: const Text('已启用'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'disabled',
+                checked: _filterDisabled,
+                child: const Text('已禁用'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'group:login',
+                checked: _selectedGroup == 'login',
+                child: const Text('需登录'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'group:none',
+                checked: _selectedGroup == '',
+                child: const Text('未分组'),
+              ),
+              for (final group in _groups)
+                CheckedPopupMenuItem(
+                  value: 'group:$group',
+                  checked: _selectedGroup == group,
+                  child: Text(group),
+                ),
+            ],
           ),
           PopupMenuButton<String>(
             onSelected: _handleMenuAction,
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'add', child: Text('新建订阅源')),
+              const PopupMenuItem(value: 'add', child: Text('添加订阅源')),
+              const PopupMenuItem(value: 'import_local', child: Text('本地导入')),
+              const PopupMenuItem(value: 'import_online', child: Text('网络导入')),
+              const PopupMenuItem(value: 'import_qr', child: Text('二维码导入')),
+              const PopupMenuItem(value: 'import_default', child: Text('导入默认规则')),
               const PopupMenuDivider(),
-              const PopupMenuItem(value: 'enabled', child: Text('只看已启用')),
-              const PopupMenuItem(value: 'disabled', child: Text('只看已禁用')),
-              const PopupMenuItem(value: 'all', child: Text('显示全部')),
+              const PopupMenuItem(value: 'help', child: Text('帮助')),
             ],
           ),
         ],
+        // 安卓原版 activity_rss_source.xml：TitleBar 内嵌 view_search 搜索框
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SizedBox(
+              height: 36,
+              child: TextField(
+                controller: _searchCtrl,
+                style: const TextStyle(color: AppColors.white),
+                decoration: InputDecoration(
+                  hintText: '搜索订阅源',
+                  hintStyle: TextStyle(
+                    color: AppColors.white.withValues(alpha: 0.7),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.white.withValues(alpha: 0.15),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                  prefixIcon: Icon(Icons.search,
+                      size: 20, color: AppColors.white.withValues(alpha: 0.7)),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.clear,
+                              size: 18,
+                              color: AppColors.white.withValues(alpha: 0.7)),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(35),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (value) => setState(() => _searchQuery = value),
+              ),
+            ),
+          ),
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        tooltip: '新建订阅源',
-        onPressed: _addSource,
-        child: const Icon(Icons.add),
-      ),
+      // 安卓原版无 FAB：新建订阅源入口在顶栏菜单「添加订阅源」
       body: _buildBody(),
     );
   }
@@ -258,44 +341,17 @@ class _RssConfigScreenState extends ConsumerState<RssConfigScreen> {
       return const EmptyState(
         icon: Icons.rss_feed,
         title: '暂无订阅源',
-        subtitle: '点击右下角按钮新建订阅源',
+        subtitle: '点击右上角菜单「添加订阅源」新建',
       );
     }
 
     return Column(
       children: [
-        // 搜索栏（当有搜索内容时显示）
-        if (_searchQuery.isNotEmpty) _buildSearchBar(),
         // 分组筛选 Chip
         if (_groups.isNotEmpty) _buildGroupChips(),
         // 源列表
         Expanded(child: _buildSourceList()),
       ],
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Row(
-        children: [
-          Icon(Icons.search, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '搜索: $_searchQuery',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            tooltip: '清除搜索',
-            onPressed: () => setState(() => _searchQuery = ''),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ],
-      ),
     );
   }
 
@@ -394,42 +450,68 @@ class _RssConfigScreenState extends ConsumerState<RssConfigScreen> {
 
   // ===== 弹窗/菜单 =====
 
-  void _showSearchDialog() {
-    final controller = TextEditingController(text: _searchQuery);
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('搜索订阅源'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '输入名称或地址',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.search),
-          ),
-          onSubmitted: (value) {
-            Navigator.pop(dialogContext);
-            setState(() => _searchQuery = value);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              setState(() => _searchQuery = '');
-            },
-            child: const Text('清除'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              setState(() => _searchQuery = controller.text);
-            },
-            child: const Text('搜索'),
-          ),
-        ],
-      ),
+  /// 分组筛选菜单处理（对标原版 RssSourceActivity 分组子菜单）
+  void _handleGroupFilter(String value) {
+    switch (value) {
+      case 'group:manage':
+        _todo('分组管理');
+      case 'enabled':
+        setState(() {
+          _filterEnabled = true;
+          _filterDisabled = false;
+          _selectedGroup = null;
+        });
+      case 'disabled':
+        setState(() {
+          _filterEnabled = false;
+          _filterDisabled = true;
+          _selectedGroup = null;
+        });
+      case 'group:login':
+        setState(() {
+          _filterEnabled = false;
+          _filterDisabled = false;
+          _selectedGroup = 'login';
+        });
+      case 'group:none':
+        setState(() {
+          _filterEnabled = false;
+          _filterDisabled = false;
+          _selectedGroup = '';
+        });
+      default:
+        if (value.startsWith('group:')) {
+          setState(() {
+            _filterEnabled = false;
+            _filterDisabled = false;
+            _selectedGroup = value.substring('group:'.length);
+          });
+        }
+    }
+  }
+
+  /// 溢出菜单处理（对标原版 rss_source.xml）
+  void _handleMenuAction(String action) {
+    switch (action) {
+      case 'add':
+        _addSource();
+      case 'import_local':
+        _todo('本地导入');
+      case 'import_online':
+        _todo('网络导入');
+      case 'import_qr':
+        _todo('二维码导入');
+      case 'import_default':
+        _todo('导入默认规则');
+      case 'help':
+        _todo('帮助');
+    }
+  }
+
+  /// 尚未移植的原版功能统一提示
+  void _todo(String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」功能尚未移植')),
     );
   }
 
@@ -474,36 +556,6 @@ class _RssConfigScreenState extends ConsumerState<RssConfigScreen> {
         _toggleEnabled(source);
       case 'delete':
         _deleteSource(source);
-    }
-  }
-
-  void _handleMenuAction(String action) {
-    switch (action) {
-      case 'add':
-        _addSource();
-      case 'enabled':
-        setState(() {
-          _searchQuery = '';
-          _selectedGroup = null;
-          _sources = _sources; // 保持原列表
-          // 通过搜索过滤实现：只显示已启用
-          _filterEnabled = true;
-          _filterDisabled = false;
-        });
-      case 'disabled':
-        setState(() {
-          _searchQuery = '';
-          _selectedGroup = null;
-          _filterEnabled = false;
-          _filterDisabled = true;
-        });
-      case 'all':
-        setState(() {
-          _searchQuery = '';
-          _selectedGroup = null;
-          _filterEnabled = false;
-          _filterDisabled = false;
-        });
     }
   }
 

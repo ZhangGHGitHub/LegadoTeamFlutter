@@ -45,12 +45,9 @@ void main() {
   });
 
   group('Responsive 网格列数（多尺寸验证）', () {
-    test('<400dp → 2 列', () {
-      expect(Responsive.gridColumnsForWidth(320), equals(2));
-      expect(Responsive.gridColumnsForWidth(399), equals(2));
-    });
-
-    test('[400, 600)dp → 3 列', () {
+    test('<600dp → 3 列（对齐原版 bookshelfLayout 默认列数）', () {
+      expect(Responsive.gridColumnsForWidth(320), equals(3));
+      expect(Responsive.gridColumnsForWidth(399), equals(3));
       expect(Responsive.gridColumnsForWidth(400), equals(3));
       expect(Responsive.gridColumnsForWidth(599), equals(3));
     });

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../l10n/app_strings.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../ios_widgets.dart';
 
 /// 阅读设置底部弹出面板
 ///
@@ -28,11 +29,14 @@ class ReaderSettingsSheet extends ConsumerWidget {
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // iOS sheet 顶部短横条
+            const Center(child: IosGrabber()),
+            const SizedBox(height: 12),
             Text(AppStrings.readingSettingsTitle,
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 20),

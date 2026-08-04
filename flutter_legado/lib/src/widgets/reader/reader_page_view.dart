@@ -158,8 +158,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _currentPageIndex = 0;
 
     // 跨章节分页：注册本章页数到全局分页器
+    // 注：本方法在 build 阶段调用，不可同步修改 provider（会触发
+    // "modify a provider while the widget tree was building" 断言），延迟到下一帧
     final notifier = ref.read(readerNotifierProvider.notifier);
-    notifier.updateChapterPageCount(chapterIndex, pages.length);
+    Future(() => notifier.updateChapterPageCount(chapterIndex, pages.length));
 
     if (_pageController.hasClients) {
       _pageController.jumpToPage(0);

@@ -1,32 +1,41 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
-/// 书架网格项 — 含封面/进度/作者
+/// 书架网格项（对标原版 item_bookshelf_grid.xml）
 ///
-/// 区域分离长按（对齐安卓原版）：
+/// 结构：
+/// - 封面铺满单元格，右上角未读角标（BadgeView bv_unread），
+///   封面底部 2dp 阅读进度条（pb_read_progress）
+/// - 封面下方书名：12sp、居中、最多 2 行（tv_name）
+///
+/// 区域分离长按（Flutter 扩展，对齐原版长按打开书籍信息）：
 /// - 封面区域长按 → [onCoverLongPress]（打开书籍信息）
-/// - 标题/信息区域长按 → [onInfoLongPress]（打开操作菜单）
-/// - 点击 → [onTap]（打开阅读器）
+/// - 标题区域长按 → [onInfoLongPress]（打开操作菜单）
+/// - 点击 → [onTap]（打开阅读/书籍信息）
 class BookGridItem extends StatelessWidget {
   final String title;
   final String? coverUrl;
-  final String? author;
+
+  /// 未读章节数（>0 时显示右上角角标）
+  final int unreadNum;
+
+  /// 阅读进度（null 表示无阅读记录，不显示进度条）
   final double? progress;
 
-  /// 点击回调（打开阅读器）
+  /// 点击回调
   final VoidCallback? onTap;
 
   /// 封面区域长按回调（打开书籍信息页）
   final VoidCallback? onCoverLongPress;
 
-  /// 标题/信息区域长按回调（打开操作菜单）
+  /// 标题区域长按回调（打开操作菜单）
   final VoidCallback? onInfoLongPress;
 
   const BookGridItem({
     super.key,
     required this.title,
     this.coverUrl,
-    this.author,
+    this.unreadNum = 0,
     this.progress,
     this.onTap,
     this.onCoverLongPress,
@@ -38,74 +47,118 @@ class BookGridItem extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 封面区域：长按打开书籍信息
+        // 封面区域：右上角标 + 底部进度条；长按打开书籍信息
         Expanded(
           child: GestureDetector(
             onTap: onTap,
             onLongPress: onCoverLongPress,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LayoutBuilder(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.10),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: LayoutBuilder(
                 builder: (context, constraints) {
                   // 按网格单元实际显示像素宽度限制解码尺寸，避免大图解码
                   final decodeWidth =
                       _decodeWidth(context, constraints.maxWidth);
-                  return SizedBox(
-                    width: double.infinity,
-                    child: (coverUrl != null && coverUrl!.isNotEmpty)
-                        ? CachedNetworkImage(
-                            imageUrl: coverUrl!,
-                            fit: BoxFit.cover,
-                            memCacheWidth: decodeWidth,
-                            placeholder: (_, _) =>
-                                _buildPlaceholder(colorScheme),
-                            errorWidget: (_, _, _) =>
-                                _buildPlaceholder(colorScheme),
-                          )
-                        : _buildPlaceholder(colorScheme),
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      (coverUrl != null && coverUrl!.isNotEmpty)
+                          ? CachedNetworkImage(
+                              imageUrl: coverUrl!,
+                              fit: BoxFit.cover,
+                              memCacheWidth: decodeWidth,
+                              placeholder: (_, _) =>
+                                  _buildPlaceholder(colorScheme),
+                              errorWidget: (_, _, _) =>
+                                  _buildPlaceholder(colorScheme),
+                            )
+                          : _buildPlaceholder(colorScheme),
+                      // 未读角标（对标 bv_unread，右上角）
+                      if (unreadNum > 0)
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            constraints: const BoxConstraints(
+                                minWidth: 18, minHeight: 18),
+                            decoration: BoxDecoration(
+                              color: colorScheme.error,
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(10),
+                                bottomLeft: Radius.circular(8),
+                              ),
+                            ),
+                            child: Text(
+                              unreadNum > 99 ? '99+' : '$unreadNum',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: colorScheme.onError,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      // 封面底部阅读进度条（对标 pb_read_progress，2dp）
+                      if (progress != null)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: LinearProgressIndicator(
+                            value: progress!.clamp(0.0, 1.0),
+                            minHeight: 2,
+                            backgroundColor: colorScheme.primary
+                                .withValues(alpha: 0.25),
+                            valueColor:
+                                AlwaysStoppedAnimation(colorScheme.primary),
+                          ),
+                        ),
+                    ],
                   );
                 },
+              ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        // 标题/信息区域：长按打开操作菜单
+        // 书名区域：12sp 居中最多 2 行（对标 tv_name）；长按打开操作菜单
         GestureDetector(
           onTap: onTap,
           onLongPress: onInfoLongPress,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.bodyMedium,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (author != null)
-                Text(
-                  author!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                  maxLines: 1,
+          child: SizedBox(
+            height: 40,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Text(
+                  title,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                ),
-              if (progress != null) ...[
-                const SizedBox(height: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    value: progress!.clamp(0.0, 1.0),
-                    minHeight: 3,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onSurface,
                   ),
                 ),
-              ],
-            ],
+              ),
+            ),
           ),
         ),
       ],

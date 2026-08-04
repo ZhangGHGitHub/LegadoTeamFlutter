@@ -22,6 +22,11 @@ class RssScreen extends ConsumerStatefulWidget {
 }
 
 class _RssScreenState extends ConsumerState<RssScreen> {
+  /// 顶栏搜索框（对齐安卓原版 fragment_rss.xml 的 view_search：
+  /// 实时按名称/URL 过滤已启用订阅源）
+  final _searchController = TextEditingController();
+  String _searchKey = '';
+
   @override
   void initState() {
     super.initState();
@@ -30,68 +35,21 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     });
   }
 
-  void _showAddSourceDialog() {
-    final nameController = TextEditingController();
-    final urlController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('添加 RSS 源'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: '名称',
-                  hintText: '例如：少数派',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '请输入名称' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: urlController,
-                decoration: const InputDecoration(
-                  labelText: 'RSS 地址',
-                  hintText: 'https://sspai.com/feed',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.url,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return '请输入 RSS 地址';
-                  if (!v.startsWith('http')) return '地址必须以 http(s) 开头';
-                  return null;
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() ?? false) {
-                Navigator.pop(dialogContext);
-                ref.read(rssNotifierProvider.notifier).addSource(
-                      nameController.text.trim(),
-                      urlController.text.trim(),
-                    );
-              }
-            },
-            child: const Text('添加'),
-          ),
-        ],
-      ),
-    );
+  /// 在分组过滤基础上叠加搜索过滤（对标原版 flowEnabled(searchKey)）
+  List<RssSource> _applySearch(List<RssSource> sources) {
+    final key = _searchKey.trim().toLowerCase();
+    if (key.isEmpty) return sources;
+    return sources
+        .where((s) =>
+            s.sourceName.toLowerCase().contains(key) ||
+            s.sourceUrl.toLowerCase().contains(key))
+        .toList();
   }
 
   void _confirmDeleteSource(RssSource source) {
@@ -126,9 +84,46 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     final notifier = ref.read(rssNotifierProvider.notifier);
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppStrings.rss),
+        // 对标原版 view_search.xml：TitleBar 内嵌胶囊搜索框（hint「订阅」），
+        // 与右侧 4 个图标入口同行，无标题文字
+        title: SizedBox(
+          height: 36,
+          child: TextField(
+            controller: _searchController,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            decoration: InputDecoration(
+              // 安卓原版 queryHint = 订阅
+              hintText: AppStrings.rss,
+              hintStyle: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+              prefixIcon: Icon(Icons.search,
+                  size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              suffixIcon: _searchKey.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchKey = '');
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (value) => setState(() => _searchKey = value),
+          ),
+        ),
         actions: [
-          // 安卓原版顶栏 4 个功能入口：历史/收藏/筛选/设置
+          // 安卓原版顶栏 4 个功能入口：历史/收藏/分组/设置
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: '历史',
@@ -139,10 +134,10 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             tooltip: '收藏',
             onPressed: () => Navigator.pushNamed(context, AppRoutes.rssFavorites),
           ),
-          // 分组筛选：对齐安卓 RssFragment 的分组菜单（linkedSetOf 保序聚合）
+          // 分组筛选：对齐原版 RssFragment 的分组菜单（ic_groups 图标，linkedSetOf 保序聚合）
           PopupMenuButton<String?>(
-            tooltip: '筛选',
-            icon: const Icon(Icons.filter_list),
+            tooltip: '分组',
+            icon: const Icon(Icons.groups),
             onSelected: (group) => notifier.setGroup(group),
             itemBuilder: (context) => [
               const PopupMenuItem<String?>(
@@ -163,11 +158,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddSourceDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('添加源'),
-      ),
+      // 安卓原版无 FAB：添加订阅源入口在订阅源管理页（对标 RssSourceActivity 菜单）
       body: Builder(
         builder: (context) {
           if (state.isLoadingSources && state.sources.isEmpty) {
@@ -190,8 +181,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             );
           }
 
-          // 分组过滤后为空：提示当前分组无订阅源
-          if (state.filteredSources.isEmpty) {
+          // 分组/搜索过滤后为空：提示当前无订阅源
+          final displaySources = _applySearch(state.filteredSources);
+          if (displaySources.isEmpty) {
             return const EmptyState(
               icon: Icons.rss_feed,
               title: '当前分组暂无订阅源',
@@ -202,24 +194,25 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           return RefreshIndicator(
             onRefresh: () => notifier.loadSources(),
             // 安卓端使用 GridLayoutManager spanCount=4
-            // 响应式改造：按可用宽度动态计算列数（手机 2 列 / 中大屏 3 列 / 平板 4 列）
+            // 手机 4 列对齐原版，宽屏上限 6 列
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final columns =
-                    Responsive.gridColumnsForWidth(constraints.maxWidth);
+                    Responsive.rssGridColumnsForWidth(constraints.maxWidth);
                 final aspectRatio =
                     Responsive.rssGridChildAspectRatio(constraints.maxWidth);
                 return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
                     childAspectRatio: aspectRatio,
-                    crossAxisSpacing: 4,
-                    mainAxisSpacing: 4,
+                    // iOS 风格：加大网格间距，配合图标阴影留出呼吸感
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
                   ),
-                  itemCount: state.filteredSources.length,
+                  itemCount: displaySources.length,
                   itemBuilder: (context, index) {
-                    final source = state.filteredSources[index];
+                    final source = displaySources[index];
                     return _buildSourceItem(context, source);
                   },
                 );
@@ -250,31 +243,46 @@ class _RssScreenState extends ConsumerState<RssScreen> {
       onLongPress: () => _confirmDeleteSource(source),
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        // 安卓端 item 内边距，缩小至 8 避免 360dp 窄屏溢出
-        padding: const EdgeInsets.all(8),
+        // 安卓端 item 内边距 16dp；窄屏缩至 12dp 防溢出
+        padding: EdgeInsets.all(
+          Responsive.isCompact(MediaQuery.sizeOf(context).width) ? 12 : 16,
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // 图标：50x50 圆角12dp（安卓端 FilletImageView radius=12dp）
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: source.sourceIcon.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: source.sourceIcon,
-                      width: 50,
-                      height: 50,
-                      fit: BoxFit.cover,
-                      // 限制解码宽度为图标实际显示像素宽度（50），避免大图解码
-                      memCacheWidth: (50 *
-                              (MediaQuery.maybeOf(context)?.devicePixelRatio ??
-                                  1.0))
-                          .round(),
-                      placeholder: (_, _) => _buildPlaceholderIcon(
-                          context, source, colorScheme),
-                      errorWidget: (_, _, _) => _buildPlaceholderIcon(
-                          context, source, colorScheme),
-                    )
-                  : _buildPlaceholderIcon(context, source, colorScheme),
+            // iOS 风格：圆角图标 + 柔和阴影，类似主屏 App 图标
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.10),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: source.sourceIcon.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: source.sourceIcon,
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                        // 限制解码宽度为图标实际显示像素宽度（50），避免大图解码
+                        memCacheWidth: (50 *
+                                (MediaQuery.maybeOf(context)?.devicePixelRatio ??
+                                    1.0))
+                            .round(),
+                        placeholder: (_, _) => _buildPlaceholderIcon(
+                            context, source, colorScheme),
+                        errorWidget: (_, _, _) => _buildPlaceholderIcon(
+                            context, source, colorScheme),
+                      )
+                    : _buildPlaceholderIcon(context, source, colorScheme),
+              ),
             ),
             // 名称：安卓端 marginTop=16dp, 13sp, secondaryText, 居中, 最多2行
             const SizedBox(height: 16),
@@ -295,7 +303,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     return RepaintBoundary(child: item);
   }
 
-  /// 占位图标：显示源名称首字母
+  /// 占位图标：显示源名称首字母（iOS 风格柔和填充底）
   Widget _buildPlaceholderIcon(
       BuildContext context, RssSource source, ColorScheme colorScheme) {
     return Container(
@@ -310,7 +318,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           source.sourceName.isNotEmpty
               ? source.sourceName[0].toUpperCase()
               : 'R',
-          style: Theme.of(context).textTheme.titleMedium,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
         ),
       ),
     );

@@ -187,6 +187,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   onOpenCatalog: () =>
                       _scaffoldKey.currentState?.openEndDrawer(),
                   onOpenSettings: () => ReaderSettingsSheet.show(context),
+                  onOpenAdvancedConfig: () => _openAdvancedConfig(context),
                 ),
             ],
           ),

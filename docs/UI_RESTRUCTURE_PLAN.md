@@ -798,7 +798,9 @@ String mapApiError(Object e) {
 
 ### 9.2 视觉验收
 
-- [ ] 逐屏对照 `docs/baseline_android/` 截图，像素级对齐
+> **标准修订（2026-08-05，用户确认）**：界面功能与交互流程对齐原版，**UI 视觉风格自由**。像素级对齐不再作为验收标准，视觉以 `design_system.md` 为准。
+
+- [ ] 逐屏对照 `docs/baseline_android/` 截图，页面结构与布局信息对等（视觉风格不作像素级对比）
 - [ ] 亮色/暗色主题全部正确（无硬编码颜色）
 - [ ] 字体层级、间距、圆角遵循 `design_system.md`
 

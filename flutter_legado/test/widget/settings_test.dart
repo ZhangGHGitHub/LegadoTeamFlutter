@@ -53,8 +53,13 @@ void main() {
       expect(find.text('词典规则'), findsOneWidget);
       expect(find.text('主题模式'), findsOneWidget);
 
-      // 设置分组（“设置”同时出现在 AppBar 标题与分组头，故为 2 处）
-      expect(find.text('设置'), findsNWidgets(2));
+      // AppBar 标题为「我的」（对标原版 fragment_my_config）
+      expect(find.text('我的'), findsOneWidget);
+      // 「设置」分组头位于视口外缓存区内（对标 pref_main PreferenceCategory）
+      expect(find.text('设置', skipOffstage: false), findsOneWidget);
+      // 备份恢复在默认视口折叠区外（ListView 懒构建），需滚动可见
+      await tester.scrollUntilVisible(find.text('备份恢复'), 100);
+      await tester.pumpAndSettle();
       expect(find.text('备份恢复'), findsOneWidget);
       // 主题设置/其他设置在默认视口折叠区外，需滚动可见
       await tester.scrollUntilVisible(find.text('主题设置'), 100);
@@ -63,7 +68,7 @@ void main() {
       expect(find.text('其他设置'), findsOneWidget);
     });
 
-    testWidgets('滚动可见其他分组（书签/阅读统计/关于）', (tester) async {
+    testWidgets('滚动可见其他分组（书签/阅读记录/关于）', (tester) async {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
@@ -71,7 +76,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('书签'), findsOneWidget);
-      expect(find.text('阅读统计'), findsOneWidget);
+      expect(find.text('阅读记录'), findsOneWidget);
       expect(find.text('关于'), findsOneWidget);
     });
 
@@ -105,6 +110,8 @@ void main() {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
+      await tester.scrollUntilVisible(find.text('备份恢复'), 100);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('备份恢复'));
       await tester.pumpAndSettle();
 

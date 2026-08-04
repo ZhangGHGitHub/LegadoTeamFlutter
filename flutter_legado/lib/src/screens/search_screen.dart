@@ -25,6 +25,8 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
+  // 精准搜索开关（对标原版 menu_precision_search，展示层精确书名过滤）
+  bool _precision = false;
 
   @override
   void dispose() {
@@ -50,6 +52,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: TextField(
           controller: _searchController,
           focusNode: _focusNode,
+          // 对标原版 SearchActivity：进入即聚焦弹出键盘
+          autofocus: true,
           decoration: InputDecoration(
             hintText: AppStrings.searchBookHint,
             // 安卓端 bg_searchview: 35dp圆角胶囊形、半透明填充、0.5dp描边
@@ -106,21 +110,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             }
           },
         ),
-        // 安卓原版：三点菜单（精准搜索/书源管理/分组或书源/日志）
+        // 安卓原版：三点菜单（book_search.xml：精准搜索/显示搜索记录/书源管理/分组或书源/日志）
         PopupMenuButton<String>(
           onSelected: (value) {
             switch (value) {
-              case 'filter':
-                SearchFilterPanel.show(context);
+              case 'precision':
+                setState(() => _precision = !_precision);
+                break;
+              case 'readRecord':
+                _todo(context, '显示搜索记录');
                 break;
               case 'sources':
                 Navigator.pushNamed(context, '/sources');
                 break;
+              case 'scope':
+                SearchFilterPanel.show(context);
+                break;
+              case 'log':
+                _todo(context, '日志');
+                break;
             }
           },
           itemBuilder: (_) => [
-            const PopupMenuItem(value: 'filter', child: Text('精准搜索')),
+            CheckedPopupMenuItem(
+              value: 'precision',
+              checked: _precision,
+              child: const Text('精准搜索'),
+            ),
+            const PopupMenuItem(value: 'readRecord', child: Text('显示搜索记录')),
             const PopupMenuItem(value: 'sources', child: Text('书源管理')),
+            const PopupMenuItem(value: 'scope', child: Text('分组或书源')),
+            const PopupMenuItem(value: 'log', child: Text('日志')),
           ],
         ),
       ],
@@ -129,6 +149,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildBody(BuildContext context) {
     final state = ref.watch(searchNotifierProvider);
+    // 精准搜索：展示层按精确书名过滤（对标原版 menu_precision_search）
+    final results = _precision
+        ? state.results
+            .where((r) => r.book.name == state.keyword)
+            .toList(growable: false)
+        : state.results;
 
     if (state.isLoading) {
       return LoadingIndicator(message: AppStrings.searching);
@@ -145,7 +171,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
-    if (state.isEmpty) {
+    if (state.isEmpty || (_precision && results.isEmpty)) {
       return EmptyState(
         icon: Icons.search_off,
         title: AppStrings.noResults,
@@ -165,7 +191,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           child: Row(
             children: [
               Text(
-                '${AppStrings.search}: ${state.results.length}',
+                '${AppStrings.search}: ${results.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const Spacer(),
@@ -195,10 +221,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         // 结果列表
         Expanded(
           child: ListView.separated(
-            itemCount: state.results.length,
+            itemCount: results.length,
             separatorBuilder: (_, _) => const Divider(height: 1, indent: 88),
             itemBuilder: (context, index) {
-              final result = state.results[index];
+              final result = results[index];
               return _buildResultItem(context, result);
             },
           ),
@@ -207,52 +233,110 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  /// 搜索结果项（对标原版 item_search.xml：80x110 封面 + 书名 16sp +
+  /// 作者/最新章节 12sp + 简介 3 行 + 右上角来源徽标）
   Widget _buildResultItem(BuildContext context, SearchResult result) {
     final book = result.book;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final infoStyle = theme.textTheme.bodySmall?.copyWith(fontSize: 12);
     // 稳定 ValueKey（来源+书址）避免结果列表整表重建；RepaintBoundary 隔离重绘区域
-    final tile = ListTile(
+    final tile = InkWell(
       key: ValueKey('${result.sourceName}:${book.bookUrl}'),
-      leading: BookCover(
-        coverUrl: book.coverUrl,
-        width: 48,
-        height: 64,
-        borderRadius: 4,
-      ),
-      title: Text(
-        book.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (book.author.isNotEmpty)
-            Text(
-              '${AppStrings.author}: ${book.author}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          Text(
-            '${AppStrings.source}: ${result.sourceName}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-          if (book.intro != null && book.intro!.isNotEmpty)
-            Text(
-              book.intro!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-        ],
-      ),
-      isThreeLine: true,
       onTap: () => _showBookDetail(context, result),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            BookCover(
+              coverUrl: book.coverUrl,
+              width: 80,
+              height: 110,
+              // iOS 风格圆角封面
+              borderRadius: 10,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 书名 16sp + 右侧来源徽标（对标 tv_name + bv_originCount）
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          book.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      // 来源徽标（iOS 风格填充胶囊）
+                      Container(
+                        margin: const EdgeInsets.only(left: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          result.sourceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  // 作者行（对标 tv_author 12sp）
+                  if (book.author.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(
+                        book.author,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: infoStyle,
+                      ),
+                    ),
+                  // 最新章节行（对标 tv_lasted 12sp）
+                  if ((book.latestChapterTitle ?? '').isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '最新：${book.latestChapterTitle}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: infoStyle,
+                      ),
+                    ),
+                  // 简介（对标 tv_introduce 12sp 最多 3 行）
+                  if (book.intro != null && book.intro!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        book.intro!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: infoStyle?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
     return RepaintBoundary(child: tile);
   }
@@ -269,7 +353,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           children: [
             Row(
               children: [
-                BookCover(coverUrl: book.coverUrl, width: 80, height: 110),
+                BookCover(coverUrl: book.coverUrl, width: 80, height: 110, borderRadius: 10),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -322,6 +406,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref.read(bookshelfNotifierProvider.notifier).addBook(book);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${book.name} ${AppStrings.addedToBookshelf}')),
+    );
+  }
+
+  /// 未移植功能提示
+  void _todo(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」后续版本支持')),
     );
   }
 

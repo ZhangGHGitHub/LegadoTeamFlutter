@@ -1,7 +1,7 @@
 // 书源编辑页 widget 测试
 //
 // 验证 Phase 5.1 书源编辑表单（对标 Android BookSourceEditActivity）：
-// - 8 个 Tab：基本信息/搜索规则/发现规则/详情规则/目录规则/内容规则/评论规则/测试
+// - 8 个 Tab：基本/搜索/发现/详情/目录/正文/段评/调试（对齐原版 source_tab_* 短标签）
 // - 发现/详情/评论 Tab 的字段与开关可见
 // - 必填校验（书源名称/URL）与保存创建
 // - 编辑模式回填发现/详情/评论规则
@@ -70,14 +70,14 @@ void main() {
       final tabBar = find.byType(TabBar);
       expect(tabBar, findsOneWidget);
       for (final label in const [
-        '基本信息',
-        '搜索规则',
-        '发现规则',
-        '详情规则',
-        '目录规则',
-        '内容规则',
-        '评论规则',
-        '测试',
+        '基本',
+        '搜索',
+        '发现',
+        '详情',
+        '目录',
+        '正文',
+        '段评',
+        '调试',
       ]) {
         expect(
           find.descendant(of: tabBar, matching: find.text(label)),
@@ -94,19 +94,19 @@ void main() {
       await pumpEdit(tester);
 
       // 发现规则
-      await tester.tap(find.text('发现规则'));
+      await tester.tap(find.text('发现'));
       await tester.pumpAndSettle();
       expect(find.text('启用发现'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, '发现 URL'), findsOneWidget);
 
       // 详情规则
-      await tester.tap(find.text('详情规则'));
+      await tester.tap(find.text('详情'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextFormField, '目录 URL'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, '修改书名'), findsOneWidget);
 
       // 评论规则
-      await tester.tap(find.text('评论规则'));
+      await tester.tap(find.text('段评'));
       await tester.pumpAndSettle();
       expect(find.text('启用段评'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, '段评 URL'), findsOneWidget);
@@ -178,19 +178,19 @@ void main() {
       expect(find.text('可编辑源'), findsOneWidget);
 
       // 发现规则回填
-      await tester.tap(find.text('发现规则'));
+      await tester.tap(find.text('发现'));
       await tester.pumpAndSettle();
       expect(find.text('分类::https://edit.com/sort'), findsOneWidget);
       expect(find.text('.explore-list'), findsOneWidget);
 
       // 详情规则回填
-      await tester.tap(find.text('详情规则'));
+      await tester.tap(find.text('详情'));
       await tester.pumpAndSettle();
       expect(find.text('.init'), findsOneWidget);
       expect(find.text('.toc'), findsOneWidget);
 
       // 评论规则回填（开关开启 + URL）
-      await tester.tap(find.text('评论规则'));
+      await tester.tap(find.text('段评'));
       await tester.pumpAndSettle();
       expect(find.text('.review'), findsOneWidget);
       final reviewSwitch = tester.widget<SwitchListTile>(

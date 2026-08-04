@@ -75,13 +75,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // 表单字段顺序：名称/分组/匹配模式/替换为/作用范围/排除范围/超时
-      await tester.enterText(find.byType(TextField).at(0), '去广告');
-      await tester.enterText(find.byType(TextField).at(1), '净化');
-      await tester.enterText(find.byType(TextField).at(2), '广告');
-      await tester.enterText(find.byType(TextField).at(3), '【广告】');
-      await tester.enterText(find.byType(TextField).at(4), '某书');
-      await tester.enterText(find.byType(TextField).at(5), '排除书');
-      await tester.enterText(find.byType(TextField).at(6), '5000');
+      // （at(0) 为顶栏搜索框，表单字段从 at(1) 起）
+      await tester.enterText(find.byType(TextField).at(1), '去广告');
+      await tester.enterText(find.byType(TextField).at(2), '净化');
+      await tester.enterText(find.byType(TextField).at(3), '广告');
+      await tester.enterText(find.byType(TextField).at(4), '【广告】');
+      await tester.enterText(find.byType(TextField).at(5), '某书');
+      await tester.enterText(find.byType(TextField).at(6), '排除书');
+      await tester.enterText(find.byType(TextField).at(7), '5000');
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('添加'));

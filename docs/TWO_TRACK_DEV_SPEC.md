@@ -13,7 +13,7 @@
 Legado Flutter 重构采用 **Rust 核心引擎 + Flutter 跨平台 UI** 架构，两端通过 `flutter_rust_bridge`（FFI）连接。在实际开发中暴露出以下痛点：
 
 - **UI 迭代被 Rust 交叉编译拖慢**：每次修改 Rust 代码都需重新编译 cdylib、执行 codegen、同步 DLL，一次完整循环耗时数分钟，严重拖慢 UI 调整节奏。
-- **UI 对齐安卓需要高频迭代**：Flutter 端需逐屏对照 Android 原版精调像素级差异，要求秒级热重载。
+- **UI 对齐需要高频迭代**：Flutter 端需逐屏对照 Android 原版精调界面差异（功能与结构对齐，视觉风格自由），要求秒级热重载。
 - **两人可并行**：项目采用 Qoder 与 QoderCN 双向协作模式，天然适合一人专注 UI、一人专注 Rust 引擎的并行分工。
 
 ### 1.2 目标

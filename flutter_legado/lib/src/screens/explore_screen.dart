@@ -15,7 +15,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
-import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/explore/explore_notifier.dart';
 import '../routes.dart';
@@ -27,7 +26,10 @@ import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
 class ExploreScreen extends ConsumerStatefulWidget {
-  const ExploreScreen({super.key});
+  /// 收起已展开分类信号（主页双击底栏发现项时自增，对标原版 compressExplore）
+  final ValueNotifier<int>? collapseSignal;
+
+  const ExploreScreen({super.key, this.collapseSignal});
 
   @override
   ConsumerState<ExploreScreen> createState() => _ExploreScreenState();
@@ -71,68 +73,79 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         final isTablet = constraints.maxWidth >= Responsive.mediumMax;
         return Scaffold(
       appBar: AppBar(
-        title: Text(AppStrings.discover),
-        actions: [
-          // 安卓原版：右侧为筛选（田形网格）图标
-          IconButton(
-            icon: const Icon(Icons.grid_view),
-            tooltip: '筛选',
-            onPressed: () => ref.read(exploreNotifierProvider.notifier).refresh(),
-          ),
-        ],
-        // 安卓端 fragment_explore.xml: TitleBar 内嵌 view_search 搜索框
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: SizedBox(
-              height: 36,
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  // 安卓原版：搜索框提示「筛选发现源」
-                  hintText: '筛选发现源',
-                  // 安卓端 bg_searchview: 35dp圆角胶囊形、半透明填充、0.5dp描边
-                  filled: true,
-                  fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () {
-                            _searchController.clear();
-                            ref
-                                .read(exploreNotifierProvider.notifier)
-                                .clearSearch();
-                          },
-                        )
-                      : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(35),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(35),
-                    borderSide: BorderSide(
-                      color: colorScheme.surfaceContainerHighest,
-                      width: 0.5,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(35),
-                    borderSide: BorderSide(
-                      color: colorScheme.primary.withValues(alpha: 0.5),
-                      width: 0.5,
-                    ),
-                  ),
+        // 对标原版 view_search.xml：TitleBar 内嵌胶囊搜索框，
+        // 与右侧分组菜单图标同行，无标题文字
+        title: SizedBox(
+          height: 36,
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              // 安卓原版：搜索框提示「筛选发现源」
+              hintText: '筛选发现源',
+              // 安卓端 bg_searchview: 35dp圆角胶囊形、半透明填充、0.5dp描边
+              filled: true,
+              fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        ref
+                            .read(exploreNotifierProvider.notifier)
+                            .clearSearch();
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide(
+                  color: colorScheme.surfaceContainerHighest,
+                  width: 0.5,
                 ),
-                onChanged: _onSearchChanged,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide(
+                  color: colorScheme.primary.withValues(alpha: 0.5),
+                  width: 0.5,
+                ),
               ),
             ),
+            onChanged: _onSearchChanged,
           ),
         ),
+        actions: [
+          // 安卓原版 main_explore.xml：顶栏右侧仅一个分组按钮（ic_groups）
+          PopupMenuButton<String>(
+            tooltip: '分组',
+            icon: const Icon(Icons.groups),
+            onSelected: (group) {
+              ref.read(exploreNotifierProvider.notifier).selectGroup(group);
+              // 分组切换后书源列表变化，清空右栏选择
+              setState(() => _selectedCategory = null);
+            },
+            itemBuilder: (context) => [
+              CheckedPopupMenuItem<String>(
+                value: '',
+                checked: state.selectedGroup.isEmpty,
+                child: const Text('全部'),
+              ),
+              for (final group in state.groups)
+                CheckedPopupMenuItem<String>(
+                  value: group,
+                  checked: state.selectedGroup == group,
+                  child: Text(group),
+                ),
+            ],
+          ),
+        ],
       ),
       body: _buildBody(state, isTablet),
     );
@@ -166,13 +179,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       return _buildTabletBody(state);
     }
 
-    // 手机（compact/medium）：保持安卓原版单栏列表 + 分组选择器
-    return Column(
-      children: [
-        _buildGroupBar(state),
-        Expanded(child: _buildSourceList(state, isTablet: false)),
-      ],
-    );
+    // 手机：安卓原版单栏列表（分组筛选仅顶栏弹出菜单，无 body 内 FilterChip 行）
+    return _buildSourceList(state, isTablet: false);
   }
 
   /// 平板双栏布局（对齐 UI_RESTRUCTURE_PLAN.md §6.2：左侧书源列表 + 右侧内容）
@@ -181,82 +189,31 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   /// 平板端在右栏原地展示分类书籍，避免频繁跳转。
   Widget _buildTabletBody(ExploreState state) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildGroupBar(state),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 左栏：书源列表
-              Flexible(
-                flex: 2,
-                child: _buildSourceList(state, isTablet: true),
-              ),
-              VerticalDivider(width: 1, color: colorScheme.outlineVariant),
-              // 右栏：选中分类的书籍内容
-              Flexible(
-                flex: 3,
-                child: _selectedCategory == null
-                    ? const EmptyState(
-                        icon: Icons.explore_outlined,
-                        title: '选择发现分类',
-                        subtitle: '展开左侧书源并点击分类，在此浏览书籍',
-                        simple: true,
-                      )
-                    : ExploreBookList(
-                        key: ValueKey(_selectedCategory),
-                        args: _selectedCategory!,
-                      ),
-              ),
-            ],
-          ),
+        // 左栏：书源列表
+        Flexible(
+          flex: 2,
+          child: _buildSourceList(state, isTablet: true),
+        ),
+        VerticalDivider(width: 1, color: colorScheme.outlineVariant),
+        // 右栏：选中分类的书籍内容
+        Flexible(
+          flex: 3,
+          child: _selectedCategory == null
+              ? const EmptyState(
+                  icon: Icons.explore_outlined,
+                  title: '选择发现分类',
+                  subtitle: '展开左侧书源并点击分类，在此浏览书籍',
+                  simple: true,
+                )
+              : ExploreBookList(
+                  key: ValueKey(_selectedCategory),
+                  args: _selectedCategory!,
+                ),
         ),
       ],
-    );
-  }
-
-  /// 分组选择器（横向 FilterChip，手机/平板共用）
-  Widget _buildGroupBar(ExploreState state) {
-    return SizedBox(
-      height: 56,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        itemCount: state.groups.length + 1, // +1 为"全部"选项
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.all(8),
-              child: FilterChip(
-                label: const Text('全部'),
-                selected: state.selectedGroup.isEmpty,
-                onSelected: (_) {
-                  ref.read(exploreNotifierProvider.notifier).selectGroup('');
-                  // 分组切换后书源列表变化，清空右栏选择
-                  setState(() => _selectedCategory = null);
-                },
-              ),
-            );
-          } else {
-            final group = state.groups.elementAt(index - 1);
-            return Padding(
-              padding: const EdgeInsets.all(8),
-              child: FilterChip(
-                label: Text(group),
-                selected: state.selectedGroup == group,
-                onSelected: (_) {
-                  ref
-                      .read(exploreNotifierProvider.notifier)
-                      .selectGroup(group);
-                  // 分组切换后书源列表变化，清空右栏选择
-                  setState(() => _selectedCategory = null);
-                },
-              ),
-            );
-          }
-        },
-      ),
     );
   }
 
@@ -275,6 +232,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             return _SourceItem(
               source: source,
               isTablet: isTablet,
+              collapseSignal: widget.collapseSignal,
               // 对标 Android editSource(sourceUrl) → BookSourceEditActivity
               onEdit: () {
                 Navigator.pushNamed(
@@ -341,6 +299,9 @@ class _SourceItem extends ConsumerStatefulWidget {
   /// 是否处于平板双栏模式（分类点击在右栏展示而非导航）
   final bool isTablet;
 
+  /// 收起展开信号（主页双击底栏发现项时自增，对标原版 compressExplore）
+  final ValueNotifier<int>? collapseSignal;
+
   /// 分类点击回调（对标 Android ExploreAdapter.CallBack.openExplore）
   final void Function(String categoryName, String categoryUrl)? onCategoryTap;
 
@@ -349,6 +310,7 @@ class _SourceItem extends ConsumerStatefulWidget {
     required this.onEdit,
     required this.onUninstall,
     required this.isTablet,
+    this.collapseSignal,
     this.onCategoryTap,
   });
 
@@ -359,6 +321,25 @@ class _SourceItem extends ConsumerStatefulWidget {
 class _SourceItemState extends ConsumerState<_SourceItem> {
   /// 是否展开分类列表
   bool _expanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.collapseSignal?.addListener(_onCollapseSignal);
+  }
+
+  @override
+  void dispose() {
+    widget.collapseSignal?.removeListener(_onCollapseSignal);
+    super.dispose();
+  }
+
+  /// 双击底栏发现项 → 收起已展开的分类列表
+  void _onCollapseSignal() {
+    if (_expanded) {
+      setState(() => _expanded = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -378,6 +359,8 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
       children: [
         InkWell(
           onTap: () => _toggleExpand(),
+          // 对标原版长按项弹出菜单（编辑/删除）
+          onLongPress: _showItemMenu,
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -395,32 +378,6 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    // 编辑按钮
-                    InkWell(
-                      onTap: widget.onEdit,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.edit_outlined,
-                          size: 20,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    // 删除按钮
-                    InkWell(
-                      onTap: widget.onUninstall,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.delete_outline,
-                          size: 20,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
                       ),
                     ),
                     // 安卓端 iv_status: 箭头图标 20x20 secondaryText色
@@ -466,6 +423,34 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
         if (_expanded) _buildCategoryList(theme, colorScheme),
       ],
     );
+  }
+
+  /// 长按弹出项菜单（对标原版列表项长按菜单：编辑/删除）
+  Future<void> _showItemMenu() async {
+    // 以项自身左上角为锚点弹出菜单
+    final box = context.findRenderObject() as RenderBox?;
+    final pos = box != null ? box.localToGlobal(Offset.zero) : Offset.zero;
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+      items: [
+        const PopupMenuItem(value: 'edit', child: Text('编辑')),
+        PopupMenuItem(
+          value: 'uninstall',
+          child: Text(
+            '删除',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'edit':
+        widget.onEdit();
+      case 'uninstall':
+        widget.onUninstall();
+    }
   }
 
   /// 切换展开/收起分类列表

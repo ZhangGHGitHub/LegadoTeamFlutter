@@ -37,6 +37,12 @@ mixin _$BookshelfState {
   /// 用户偏好：是否显示阅读统计
   bool get showStats => throw _privateConstructorUsedError;
 
+  /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）
+  List<BookGroup> get groups => throw _privateConstructorUsedError;
+
+  /// 当前选中的分组 Tab 索引（对标原版 AppConfig.saveTabPosition）
+  int get selectedGroupIndex => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $BookshelfStateCopyWith<BookshelfState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -55,7 +61,9 @@ abstract class $BookshelfStateCopyWith<$Res> {
       bool isGridView,
       GroupMode groupMode,
       bool showRecentReading,
-      bool showStats});
+      bool showStats,
+      List<BookGroup> groups,
+      int selectedGroupIndex});
 }
 
 /// @nodoc
@@ -78,6 +86,8 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
     Object? groupMode = null,
     Object? showRecentReading = null,
     Object? showStats = null,
+    Object? groups = null,
+    Object? selectedGroupIndex = null,
   }) {
     return _then(_value.copyWith(
       books: null == books
@@ -108,6 +118,14 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.showStats
           : showStats // ignore: cast_nullable_to_non_nullable
               as bool,
+      groups: null == groups
+          ? _value.groups
+          : groups // ignore: cast_nullable_to_non_nullable
+              as List<BookGroup>,
+      selectedGroupIndex: null == selectedGroupIndex
+          ? _value.selectedGroupIndex
+          : selectedGroupIndex // ignore: cast_nullable_to_non_nullable
+              as int,
     ) as $Val);
   }
 }
@@ -127,7 +145,9 @@ abstract class _$$BookshelfStateImplCopyWith<$Res>
       bool isGridView,
       GroupMode groupMode,
       bool showRecentReading,
-      bool showStats});
+      bool showStats,
+      List<BookGroup> groups,
+      int selectedGroupIndex});
 }
 
 /// @nodoc
@@ -148,6 +168,8 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
     Object? groupMode = null,
     Object? showRecentReading = null,
     Object? showStats = null,
+    Object? groups = null,
+    Object? selectedGroupIndex = null,
   }) {
     return _then(_$BookshelfStateImpl(
       books: null == books
@@ -178,6 +200,14 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value.showStats
           : showStats // ignore: cast_nullable_to_non_nullable
               as bool,
+      groups: null == groups
+          ? _value._groups
+          : groups // ignore: cast_nullable_to_non_nullable
+              as List<BookGroup>,
+      selectedGroupIndex: null == selectedGroupIndex
+          ? _value.selectedGroupIndex
+          : selectedGroupIndex // ignore: cast_nullable_to_non_nullable
+              as int,
     ));
   }
 }
@@ -192,8 +222,11 @@ class _$BookshelfStateImpl implements _BookshelfState {
       this.isGridView = true,
       this.groupMode = GroupMode.none,
       this.showRecentReading = true,
-      this.showStats = true})
-      : _books = books;
+      this.showStats = true,
+      final List<BookGroup> groups = const [],
+      this.selectedGroupIndex = 0})
+      : _books = books,
+        _groups = groups;
 
   /// Rust 返回的书籍列表（已排序，UI 层不做排序）
   final List<Book> _books;
@@ -236,9 +269,26 @@ class _$BookshelfStateImpl implements _BookshelfState {
   @JsonKey()
   final bool showStats;
 
+  /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）
+  final List<BookGroup> _groups;
+
+  /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）
+  @override
+  @JsonKey()
+  List<BookGroup> get groups {
+    if (_groups is EqualUnmodifiableListView) return _groups;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_groups);
+  }
+
+  /// 当前选中的分组 Tab 索引（对标原版 AppConfig.saveTabPosition）
+  @override
+  @JsonKey()
+  final int selectedGroupIndex;
+
   @override
   String toString() {
-    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, showRecentReading: $showRecentReading, showStats: $showStats)';
+    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, showRecentReading: $showRecentReading, showStats: $showStats, groups: $groups, selectedGroupIndex: $selectedGroupIndex)';
   }
 
   @override
@@ -257,7 +307,10 @@ class _$BookshelfStateImpl implements _BookshelfState {
             (identical(other.showRecentReading, showRecentReading) ||
                 other.showRecentReading == showRecentReading) &&
             (identical(other.showStats, showStats) ||
-                other.showStats == showStats));
+                other.showStats == showStats) &&
+            const DeepCollectionEquality().equals(other._groups, _groups) &&
+            (identical(other.selectedGroupIndex, selectedGroupIndex) ||
+                other.selectedGroupIndex == selectedGroupIndex));
   }
 
   @override
@@ -269,7 +322,9 @@ class _$BookshelfStateImpl implements _BookshelfState {
       isGridView,
       groupMode,
       showRecentReading,
-      showStats);
+      showStats,
+      const DeepCollectionEquality().hash(_groups),
+      selectedGroupIndex);
 
   @JsonKey(ignore: true)
   @override
@@ -287,7 +342,9 @@ abstract class _BookshelfState implements BookshelfState {
       final bool isGridView,
       final GroupMode groupMode,
       final bool showRecentReading,
-      final bool showStats}) = _$BookshelfStateImpl;
+      final bool showStats,
+      final List<BookGroup> groups,
+      final int selectedGroupIndex}) = _$BookshelfStateImpl;
 
   @override
 
@@ -317,6 +374,14 @@ abstract class _BookshelfState implements BookshelfState {
 
   /// 用户偏好：是否显示阅读统计
   bool get showStats;
+  @override
+
+  /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）
+  List<BookGroup> get groups;
+  @override
+
+  /// 当前选中的分组 Tab 索引（对标原版 AppConfig.saveTabPosition）
+  int get selectedGroupIndex;
   @override
   @JsonKey(ignore: true)
   _$$BookshelfStateImplCopyWith<_$BookshelfStateImpl> get copyWith =>

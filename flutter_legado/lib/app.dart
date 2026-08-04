@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -30,6 +31,16 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   @override
   void initState() {
     super.initState();
+    // 无 AppBar 页面（欢迎页/阅读器全屏等）的状态栏图标兜底样式：
+    // 页面背景为浅色，图标用深色，避免白底白图标全白不可见。
+    // 有 AppBar 的页面由 AppBarTheme.systemOverlayStyle 覆盖为白色图标。
+    // 注意：不设置 statusBarColor——状态栏底色由 Android 主题
+    // （styles.xml android:statusBarColor，primaryDark 色）固化，
+    // 此处若传 transparent 会在运行时覆盖主题色，导致顶部显示白色窗口背景。
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+    ));
     // 首帧渲染后检查上次崩溃日志并弹窗提示
     if (widget.lastCrashLog != null && widget.lastCrashLog!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

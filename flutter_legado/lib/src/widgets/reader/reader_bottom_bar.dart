@@ -1,29 +1,72 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../l10n/app_strings.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../../services/system_brightness.dart';
 
 /// 阅读器底部工具栏
 ///
-/// 对齐安卓原版 ReadMenu 底部栏：
-/// 上一章/章节进度条/下一章 + 目录/设置/夜间模式功能按钮
-class ReaderBottomBar extends ConsumerWidget {
+/// 对齐安卓原版 ReadMenu 底部栏（view_read_menu.xml）：
+/// 亮度行（自动亮度+亮度滑条）+ 上一章/章节进度条/下一章
+/// + 目录/朗读/界面/设置四功能按钮
+class ReaderBottomBar extends ConsumerStatefulWidget {
   final VoidCallback onOpenCatalog;
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenAdvancedConfig;
 
   const ReaderBottomBar({
     super.key,
     required this.onOpenCatalog,
     required this.onOpenSettings,
+    required this.onOpenAdvancedConfig,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReaderBottomBar> createState() => _ReaderBottomBarState();
+}
+
+class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
+  bool _brightnessSupported = false;
+  bool _autoBrightness = false;
+  double _brightness = 0.5;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadBrightness());
+  }
+
+  Future<void> _loadBrightness() async {
+    try {
+      final supported = await SystemBrightness.isSupported();
+      if (!supported) return;
+      final isAuto = await SystemBrightness.isAutoBrightness();
+      final value = await SystemBrightness.getBrightness();
+      if (!mounted) return;
+      setState(() {
+        _brightnessSupported = true;
+        _autoBrightness = isAuto;
+        _brightness = value;
+      });
+    } catch (_) {
+      // 平台通道不可用时（如测试环境）静默降级，隐藏亮度行
+    }
+  }
+
+  void _todo(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」后续版本支持')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
-    final isDark = state.isDarkBackground;
 
     return Positioned(
       bottom: 0,
@@ -31,23 +74,63 @@ class ReaderBottomBar extends ConsumerWidget {
       right: 0,
       child: Material(
         color: Theme.of(context).colorScheme.surface,
-        elevation: 4,
+        // iOS 风格：无阴影 + hairline 顶边
+        elevation: 0,
+        shape: Border(
+          top: BorderSide(
+            color: Theme.of(context).dividerTheme.color ??
+                Theme.of(context).dividerColor,
+            width: 0.0,
+          ),
+        ),
         child: SafeArea(
           top: false,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 进度条
+              // 亮度行（对标 ll_brightness：自动亮度 + 亮度滑条）
+              if (_brightnessSupported)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          _autoBrightness
+                              ? Icons.brightness_auto
+                              : Icons.brightness_auto_outlined,
+                        ),
+                        tooltip: _autoBrightness ? '关闭自动亮度' : '自动亮度',
+                        onPressed: () async {
+                          await SystemBrightness.setAutoBrightness(
+                              !_autoBrightness);
+                          await _loadBrightness();
+                        },
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: _brightness,
+                          onChanged: _autoBrightness
+                              ? null
+                              : (v) {
+                                  setState(() => _brightness = v);
+                                  unawaited(SystemBrightness.setBrightness(v));
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              // 进度条（对标 tv_pre + seek_read_page + tv_next）
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.skip_previous),
+                    TextButton(
                       onPressed: state.hasPreviousChapter
                           ? () => notifier.prevChapter()
                           : null,
-                      tooltip: AppStrings.previousChapter,
+                      child: Text(AppStrings.previousChapter),
                     ),
                     Expanded(
                       child: Slider(
@@ -66,41 +149,43 @@ class ReaderBottomBar extends ConsumerWidget {
                         },
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.skip_next),
+                    TextButton(
                       onPressed: state.hasNextChapter
                           ? () => notifier.nextChapter()
                           : null,
-                      tooltip: AppStrings.nextChapter,
+                      child: Text(AppStrings.nextChapter),
                     ),
                   ],
                 ),
               ),
-              // 功能按钮
+              // 功能按钮（对标 ll_catalog/ll_read_aloud/ll_font/ll_setting）
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _buildBottomAction(
                     context,
-                    Icons.format_list_numbered,
+                    Icons.toc,
                     AppStrings.catalog,
-                    onOpenCatalog,
+                    widget.onOpenCatalog,
+                  ),
+                  _buildBottomAction(
+                    context,
+                    Icons.record_voice_over_outlined,
+                    AppStrings.readAloud,
+                    () => _todo(context, AppStrings.readAloud),
+                  ),
+                  _buildBottomAction(
+                    context,
+                    Icons.palette_outlined,
+                    AppStrings.interfaceSetting,
+                    widget.onOpenSettings,
                   ),
                   _buildBottomAction(
                     context,
                     Icons.settings,
                     AppStrings.settings,
-                    onOpenSettings,
-                  ),
-                  _buildBottomAction(
-                    context,
-                    Icons.brightness_6,
-                    AppStrings.nightMode,
-                    () {
-                      notifier.updateBackgroundColor(
-                        isDark ? ReaderBackground.white : ReaderBackground.dark,
-                      );
-                    },
+                    // 对标 ll_setting：打开更多/高级设置面板
+                    widget.onOpenAdvancedConfig,
                   ),
                 ],
               ),

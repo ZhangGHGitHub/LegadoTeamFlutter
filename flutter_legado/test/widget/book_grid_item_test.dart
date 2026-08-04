@@ -6,7 +6,7 @@ void main() {
   Widget buildTestWidget({
     String title = '斗破苍穹',
     String? coverUrl,
-    String? author,
+    int unreadNum = 0,
     double? progress,
     VoidCallback? onTap,
     VoidCallback? onCoverLongPress,
@@ -20,7 +20,7 @@ void main() {
           child: BookGridItem(
             title: title,
             coverUrl: coverUrl,
-            author: author,
+            unreadNum: unreadNum,
             progress: progress,
             onTap: onTap,
             onCoverLongPress: onCoverLongPress,
@@ -38,10 +38,24 @@ void main() {
     expect(find.byType(BookGridItem), findsOneWidget);
   });
 
-  testWidgets('BookGridItem renders author when provided', (tester) async {
-    await tester.pumpWidget(buildTestWidget(author: '天蚕土豆'));
+  testWidgets('BookGridItem renders unread badge when unreadNum > 0',
+      (tester) async {
+    await tester.pumpWidget(buildTestWidget(unreadNum: 5));
 
-    expect(find.text('天蚕土豆'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
+  });
+
+  testWidgets('BookGridItem hides unread badge when unreadNum is 0',
+      (tester) async {
+    await tester.pumpWidget(buildTestWidget(unreadNum: 0));
+
+    expect(find.text('0'), findsNothing);
+  });
+
+  testWidgets('BookGridItem caps unread badge at 99+', (tester) async {
+    await tester.pumpWidget(buildTestWidget(unreadNum: 120));
+
+    expect(find.text('99+'), findsOneWidget);
   });
 
   testWidgets('BookGridItem shows progress bar when progress provided',

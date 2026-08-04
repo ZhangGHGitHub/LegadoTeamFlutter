@@ -16,7 +16,9 @@ import 'screens/bookmark_screen.dart';
 import 'screens/change_cover_screen.dart';
 import 'screens/change_source_screen.dart';
 import 'screens/explore_show_screen.dart';
+import 'screens/file_manage_screen.dart';
 import 'screens/font_screen.dart';
+import 'screens/highlight_rules_screen.dart';
 import 'screens/other_settings_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/import_screen.dart';
@@ -86,6 +88,8 @@ class AppRoutes {
   static const txtTocRules = '/txt_toc_rules';
   static const dict = '/dict';
   static const fonts = '/fonts';
+  static const highlightRules = '/highlight_rules';
+  static const fileManage = '/file_manage';
   static const qrcode = '/qrcode';
   static const welcome = '/welcome';
   static const browser = '/browser';
@@ -229,6 +233,8 @@ class AppRoutes {
         txtTocRules: (_) => const TxtTocRulesScreen(),
         dict: (_) => const DictScreen(),
         fonts: (_) => const FontScreen(),
+        highlightRules: (_) => const HighlightRulesScreen(),
+        fileManage: (_) => const FileManageScreen(),
         qrcode: (_) => const QrcodeScreen(),
         welcome: (_) => const WelcomeScreen(),
         browser: (context) {

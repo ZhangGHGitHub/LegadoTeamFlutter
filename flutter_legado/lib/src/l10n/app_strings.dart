@@ -28,6 +28,8 @@ class AppStrings {
   static String get error => _get('错误', 'Error');
   static String get noData => _get('暂无数据', 'No data');
   static String get retry => _get('重试', 'Retry');
+  // 对齐原版 R.string.double_click_exit
+  static String get doubleClickExit => _get('再按一次退出程序', 'Press again to exit');
 
   // 书架
   static String get startReading => _get('开始阅读', 'Start Reading');
@@ -169,6 +171,8 @@ class AppStrings {
   static String get noContent => _get('暂无内容', 'No content');
   static String get catalog => _get('目录', 'Catalog');
   static String get nightMode => _get('夜间', 'Night');
+  static String get readAloud => _get('朗读', 'Read Aloud');
+  static String get interfaceSetting => _get('界面', 'Interface');
   static String get readingSettingsTitle => _get('阅读设置', 'Reading Settings');
   static String get fontSizeLabel => _get('字体大小', 'Font Size');
   static String get fontSmall => _get('小', 'S');

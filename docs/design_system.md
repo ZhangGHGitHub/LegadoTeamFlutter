@@ -1,7 +1,9 @@
 # Legado Flutter 设计规范文档
 
 > 数据来源：`flutter_legado/lib/src/theme/app_colors.dart`、`app_typography.dart`、`app_theme.dart`
-> 对齐基准：Android 端 `values/colors.xml` + `values-night/colors.xml`，M3 体系
+> Token 来源基准：Android 端 `values/colors.xml` + `values-night/colors.xml`，M3 体系
+>
+> **定位说明（2026-08-05 更新）**：本文档描述当前主题 Token 体系，作为 UI 实现的统一依据。项目对齐标准为：**界面功能与交互流程对齐 Android 原版，UI 视觉风格自由**——本文档中的色值/字号等可随设计演进更新，修改 Token 时需同步更新本档与代码实现，保持单一事实源。
 
 ---
 

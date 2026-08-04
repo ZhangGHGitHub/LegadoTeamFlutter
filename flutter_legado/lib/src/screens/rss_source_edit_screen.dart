@@ -195,6 +195,10 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
         title: Text(_isEdit ? '编辑 RSS 源' : '新建 RSS 源'),
         actions: [
           TextButton.icon(
+            // AppBar 为 primary 底色，显式使用 onPrimary 避免蓝底蓝字不可见。
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            ),
             onPressed: _testing ? null : _test,
             icon: _testing
                 ? const SizedBox(

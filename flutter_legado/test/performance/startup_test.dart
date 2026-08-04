@@ -116,7 +116,7 @@ class _BookshelfShell extends StatelessWidget {
         final item = BookGridItem(
           key: ValueKey(book.title),
           title: book.title,
-          author: book.author,
+          unreadNum: 3,
           progress: 0.5,
         );
         return RepaintBoundary(child: item);

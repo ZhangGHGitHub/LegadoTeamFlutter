@@ -39,6 +39,22 @@ if ($rustExit -ne 0) {
     exit 1
 }
 
+# Step 2.5: 同步 DLL 到应用加载目录。
+# flutter run 不会触发 CMake install 步骤，且 install 回退逻辑在旧 DLL
+# 存在时不会覆盖，导致应用一直加载旧 hash 的 DLL（content hash 不同步）。
+# 因此在启动前强制复制最新 DLL。
+if ($Release) {
+    $srcDll = Join-Path $RustDir "target\release\legado_ffi.dll"
+    $dstDir = Join-Path $FlutterDir "build\windows\x64\runner\Release"
+} else {
+    $srcDll = Join-Path $RustDir "target\debug\legado_ffi.dll"
+    $dstDir = Join-Path $FlutterDir "build\windows\x64\runner\Debug"
+}
+if ((Test-Path $srcDll) -and (Test-Path $dstDir)) {
+    Copy-Item $srcDll (Join-Path $dstDir "legado_ffi.dll") -Force
+    Write-Host "DLL synced -> $dstDir" -ForegroundColor Green
+}
+
 # Step 3: 启动 Flutter 应用
 Write-Host "`n>> Launching Flutter app..." -ForegroundColor Yellow
 Set-Location $FlutterDir

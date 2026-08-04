@@ -45,12 +45,12 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('手机 360dp：书架网格 2 列竖卡（0.65）', (tester) async {
+  testWidgets('手机 360dp：书架网格 3 列竖卡（0.65，对齐原版默认列数）', (tester) async {
     setLogicalWidth(tester, 360);
     await pumpBookshelf(tester, MockRustApi());
 
     final delegate = gridDelegate(tester);
-    expect(delegate.crossAxisCount, equals(2));
+    expect(delegate.crossAxisCount, equals(3));
     expect(delegate.childAspectRatio, equals(0.65));
   });
 
@@ -84,7 +84,7 @@ void main() {
   testWidgets('窗口尺寸变化后网格列数自适应重算', (tester) async {
     setLogicalWidth(tester, 360);
     await pumpBookshelf(tester, MockRustApi());
-    expect(gridDelegate(tester).crossAxisCount, equals(2));
+    expect(gridDelegate(tester).crossAxisCount, equals(3));
 
     // 模拟窗口拉宽到桌面尺寸
     tester.view.physicalSize = const Size(1300 * 3, 900);

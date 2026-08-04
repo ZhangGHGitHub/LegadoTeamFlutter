@@ -9,60 +9,155 @@ import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../utils/book_progress_utils.dart';
 import '../utils/responsive.dart';
 import '../utils/share_utils.dart';
-import '../widgets/book_cover.dart';
 import '../widgets/book_grid_item.dart';
+import '../widgets/book_list_item.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
-/// 书架页面（Riverpod ConsumerWidget）
+/// 书架页面（Riverpod ConsumerStatefulWidget）
 ///
 /// 状态由 [BookshelfNotifier] 管理，Widget 层仅负责渲染与交互。
 /// Notifier 在 build() 时自动加载数据，无需 initState。
-class BookshelfScreen extends ConsumerWidget {
-  const BookshelfScreen({super.key});
+/// 多分组时顶栏显示分组 TabBar（对标原版 fragment_bookshelf1.xml TabLayout）。
+class BookshelfScreen extends ConsumerStatefulWidget {
+  /// 回滚顶部信号（主页双击底栏书架项时自增，对标原版 gotoTop）
+  final ValueNotifier<int>? scrollTopSignal;
+
+  const BookshelfScreen({super.key, this.scrollTopSignal});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BookshelfScreen> createState() => _BookshelfScreenState();
+}
+
+class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
+    with SingleTickerProviderStateMixin {
+  TabController? _tabController;
+  int _tabControllerLen = 0;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollTopSignal?.addListener(_onScrollTopSignal);
+  }
+
+  @override
+  void dispose() {
+    widget.scrollTopSignal?.removeListener(_onScrollTopSignal);
+    _scrollController.dispose();
+    _tabController?.removeListener(_onTabControllerChanged);
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  /// 双击底栏书架项 → 列表回滚顶部（对标 BaseBookshelfFragment.gotoTop）
+  void _onScrollTopSignal() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// 按分组数量维护 TabController（分组数变化时重建）。
+  /// 不在 build 期间同步 index（会被 TabBar 内部状态覆盖），
+  /// 改由 [_onTabControllerChanged] 在帧后回调中对齐。
+  TabController _ensureTabController(int length) {
+    if (_tabController == null || _tabControllerLen != length) {
+      _tabController?.removeListener(_onTabControllerChanged);
+      _tabController?.dispose();
+      _tabController = TabController(length: length, vsync: this);
+      _tabController!.addListener(_onTabControllerChanged);
+      _tabControllerLen = length;
+    }
+    return _tabController!;
+  }
+
+  /// TabController 变化 → 持久化选中分组（对标原版 onTabSelected）
+  void _onTabControllerChanged() {
+    final controller = _tabController;
+    if (controller == null || controller.indexIsChanging) return;
+    final state = ref.read(bookshelfNotifierProvider);
+    if (controller.index != state.selectedGroupIndex) {
+      ref.read(bookshelfNotifierProvider.notifier).selectGroup(controller.index);
+    }
+  }
+
+  /// 状态选中分组 → 帧后同步到 TabController（避免 build 期间改动）
+  void _syncTabControllerIndex(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = _tabController;
+      if (!mounted || controller == null) return;
+      if (controller.index != index && index < controller.length) {
+        controller.animateTo(index);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 安卓原版书架页无 FAB：添加书籍入口在顶栏溢出菜单
     return Scaffold(
       appBar: _buildAppBar(context, ref),
       body: _buildBody(context, ref),
-      floatingActionButton: _buildFab(context, ref),
     );
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context, WidgetRef ref) {
     final state = ref.watch(bookshelfNotifierProvider);
+    // 对标原版 BookshelfFragment1：多分组时 TitleBar 通过 contentLayout
+    // 把可滚动 TabLayout 嵌入 Toolbar 内容区，与右侧菜单图标同一行，
+    // 而不是作为 bottom 置于顶栏下方第二行（会导致顶栏过高且左右错位）
+    Widget title = Text(AppStrings.bookshelf);
+    if (state.hasGroupTabs) {
+      final controller = _ensureTabController(state.groups.length);
+      _syncTabControllerIndex(state.selectedGroupIndex);
+      title = TabBar(
+        controller: controller,
+        isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
+        tabAlignment: TabAlignment.start,
+        tabs: state.groups.map((g) => Tab(text: g.groupName)).toList(),
+      );
+    }
     return AppBar(
-      title: Text(AppStrings.bookshelf),
+      title: title,
       actions: [
         IconButton(
           icon: const Icon(Icons.search),
           tooltip: AppStrings.search,
           onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
         ),
-        IconButton(
-          icon: Icon(state.isGridView ? Icons.view_list : Icons.grid_view),
-          tooltip: state.isGridView ? AppStrings.listView : AppStrings.gridView,
-          onPressed: () =>
-              ref.read(bookshelfNotifierProvider.notifier).toggleViewMode(),
-        ),
+        // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「书架布局」
         PopupMenuButton<String>(
           onSelected: (value) => _handleMenuAction(context, ref, value),
           itemBuilder: (_) => [
+            // 对齐安卓原版 main_bookshelf.xml 溢出菜单
             PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
-            PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
             const PopupMenuDivider(),
-            // 分组展示模式切换
+            PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
+            const PopupMenuItem(value: 'remote', child: Text('添加远程书籍')),
+            const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
+            const PopupMenuDivider(),
+            PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
+            const PopupMenuItem(value: 'cache_export', child: Text('缓存导出')),
+            PopupMenuItem(value: 'groups', child: Text('分组管理')),
+            const PopupMenuItem(value: 'layout', child: Text('书架布局')),
+            const PopupMenuDivider(),
+            // 分组展示模式切换（Flutter 扩展）
             PopupMenuItem(value: 'group_none', child: _buildGroupModeItem(ref, GroupMode.none, '不分组')),
             PopupMenuItem(value: 'group_source', child: _buildGroupModeItem(ref, GroupMode.bySource, '按来源分组')),
             PopupMenuItem(value: 'group_group', child: _buildGroupModeItem(ref, GroupMode.byGroup, '按分组显示')),
             const PopupMenuDivider(),
-            PopupMenuItem(value: 'groups', child: Text('分组管理')),
-            PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
+            const PopupMenuItem(value: 'export_list', child: Text('导出书单')),
+            const PopupMenuItem(value: 'import_list', child: Text('导入书单')),
+            const PopupMenuItem(value: 'log', child: Text('日志')),
+            const PopupMenuDivider(),
             PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
           ],
         ),
@@ -96,6 +191,7 @@ class BookshelfScreen extends ConsumerWidget {
     return CustomRefreshIndicator(
       onRefresh: () => ref.read(bookshelfNotifierProvider.notifier).refresh(),
       child: CustomScrollView(
+        controller: _scrollController,
         slivers: [
           if (state.showStats) _buildStatsSliver(context, state),
           if (state.showRecentReading) _buildRecentReadingSliver(context, ref, state),
@@ -103,7 +199,7 @@ class BookshelfScreen extends ConsumerWidget {
           if (state.groupMode != GroupMode.none)
             ..._buildGroupedSlivers(context, ref, state)
           else if (state.isGridView)
-            _buildGridSliver(context, ref, state.books)
+            _buildGridSliver(context, ref, state.currentGroupBooks)
           else
             _buildReorderableSliver(context, ref, state),
         ],
@@ -112,136 +208,94 @@ class BookshelfScreen extends ConsumerWidget {
   }
 
   Widget _buildStatsSliver(BuildContext context, BookshelfState state) {
-    final totalBooks = state.books.length;
-    final readingBooks = state.books.where((b) => b.durChapterIndex > 0).length;
+    // 对标原版 view_bookshelf_header.xml tv_shelf_stats：单行摘要「N 本书 · M 在读」
+    final shelfBooks = state.currentGroupBooks;
+    final totalBooks = shelfBooks.length;
+    final readingBooks = shelfBooks.where((b) => b.durChapterIndex > 0).length;
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-        child: Row(
-          children: [
-            _buildStatChip(context, AppStrings.allBooks, '$totalBooks', Icons.library_books),
-            const SizedBox(width: 12),
-            _buildStatChip(context, AppStrings.reading, '$readingBooks', Icons.menu_book),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatChip(BuildContext context, String label, String value, IconData icon) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: colorScheme.onSecondaryContainer),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: Theme.of(context).textTheme.labelSmall),
-                Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSecondaryContainer,
-                )),
-              ],
-            ),
-          ],
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Text(
+          '$totalBooks 本书 · $readingBooks 在读',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
         ),
       ),
     );
   }
 
   Widget _buildRecentReadingSliver(BuildContext context, WidgetRef ref, BookshelfState state) {
-    // 取最近阅读的书籍（有阅读进度的，按 durChapterTime 降序）
-    final recentBooks = state.books
+    // 对标原版 continue_reading 行：最近阅读的一本书，点击继续阅读，长按打开书籍信息
+    final continueBook = state.currentGroupBooks
         .where((b) => b.durChapterIndex > 0)
-        .toList()
-      ..sort((a, b) => b.durChapterTime.compareTo(a.durChapterTime));
-    final show = recentBooks.take(3).toList();
-    if (show.isEmpty) return const SliverToBoxAdapter();
+        .fold<Book?>(
+          null,
+          (latest, b) => (latest == null || b.durChapterTime > latest.durChapterTime)
+              ? b
+              : latest,
+        );
+    if (continueBook == null) return const SliverToBoxAdapter();
+    final colorScheme = Theme.of(context).colorScheme;
+    final percent = continueBook.totalChapterNum > 0
+        ? '${((continueBook.durChapterIndex + 1) * 100 ~/ continueBook.totalChapterNum)}%'
+        : '';
     return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Text(
-              AppStrings.recentReading,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+      child: InkWell(
+        onTap: () => _openBook(context, ref, continueBook),
+        onLongPress: () => _openBookInfo(context, continueBook),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                AppStrings.recentReading,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  continueBook.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  continueBook.durChapterTitle ?? AppStrings.unknownChapter,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                percent,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right, size: 16, color: colorScheme.onSurfaceVariant),
+            ],
           ),
-          SizedBox(
-            height: 110,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              scrollDirection: Axis.horizontal,
-              itemCount: show.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final book = show[index];
-                return _buildRecentBookCard(context, ref, book);
-              },
-            ),
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentBookCard(BuildContext context, WidgetRef ref, Book book) {
-    return GestureDetector(
-      onTap: () => _openBook(context, ref, book),
-      child: Container(
-        width: 160,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              book.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              book.durChapterTitle ?? AppStrings.unknownChapter,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const Spacer(),
-            if (book.totalChapterNum > 0)
-              LinearProgressIndicator(
-                value: book.totalChapterNum > 0
-                    ? (book.durChapterIndex + 1) / book.totalChapterNum
-                    : 0,
-                minHeight: 3,
-              ),
-          ],
         ),
       ),
     );
   }
 
   Widget _buildGridSliver(BuildContext context, WidgetRef ref, List<Book> books) {
-    // 响应式网格：按可用宽度动态计算列数（手机 2 列 / 中大屏 3 列 / 平板 4 列）
+    // 响应式网格：按可用宽度动态计算列数（手机 3 列对齐原版 / 平板 4 列）
     return SliverLayoutBuilder(
       builder: (context, constraints) {
         final columns = Responsive.gridColumnsForWidth(constraints.crossAxisExtent);
@@ -267,38 +321,21 @@ class BookshelfScreen extends ConsumerWidget {
   }
 
   Widget _buildReorderableSliver(BuildContext context, WidgetRef ref, BookshelfState state) {
+    final shelfBooks = state.currentGroupBooks;
     return SliverReorderableList(
-      itemCount: state.books.length,
-      onReorder: (oldIndex, newIndex) =>
-          ref.read(bookshelfNotifierProvider.notifier).reorderBook(oldIndex, newIndex),
+      itemCount: shelfBooks.length,
+      // onReorderItem 的 newIndex 已按移除项调整，还原为 onReorder 语义后交给 Notifier
+      onReorderItem: (oldIndex, newIndex) {
+        if (newIndex > oldIndex) newIndex++;
+        ref
+            .read(bookshelfNotifierProvider.notifier)
+            .reorderBook(oldIndex, newIndex);
+      },
       itemBuilder: (context, index) {
-        final book = state.books[index];
-        return ListTile(
+        final book = shelfBooks[index];
+        return BookListItem(
           key: ValueKey(book.bookUrl),
-          leading: BookCover(
-            coverUrl: book.customCoverUrl ?? book.coverUrl,
-            width: 44,
-            height: 60,
-            borderRadius: 4,
-          ),
-          title: Text(
-            book.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
-          subtitle: Text(
-            book.durChapterTitle ?? AppStrings.unread,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          trailing: Text(
-            book.totalChapterNum > 0
-                ? '${book.durChapterIndex + 1}/${book.totalChapterNum}'
-                : '',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
+          book: book,
           onTap: () => _openBook(context, ref, book),
           // 安卓原版：长按直接打开书籍信息页
           onLongPress: () => _openBookInfo(context, book),
@@ -313,7 +350,8 @@ class BookshelfScreen extends ConsumerWidget {
       key: ValueKey(book.bookUrl),
       title: book.name,
       coverUrl: book.customCoverUrl ?? book.coverUrl,
-      author: book.durChapterTitle ?? AppStrings.unread,
+      unreadNum: unreadChapterNum(book),
+      progress: bookReadProgress(book),
       onTap: () => _openBook(context, ref, book),
       // 封面长按：打开书籍信息页（对齐安卓原版）
       onCoverLongPress: () => _openBookInfo(context, book),
@@ -323,17 +361,14 @@ class BookshelfScreen extends ConsumerWidget {
     return RepaintBoundary(child: item);
   }
 
-  Widget _buildFab(BuildContext context, WidgetRef ref) {
-    return FloatingActionButton(
-      onPressed: () => _addLocalBook(context, ref),
-      tooltip: AppStrings.addLocalBook,
-      child: const Icon(Icons.add),
-    );
-  }
-
   // ===== 操作 =====
 
   void _openBook(BuildContext context, WidgetRef ref, Book book) {
+    // 对标原版 startActivityForBook：未读书籍进书籍信息页，已读进阅读器
+    if (book.durChapterIndex <= 0 && book.durChapterPos <= 0) {
+      _openBookInfo(context, book);
+      return;
+    }
     // 阅读器状态由 ReaderNotifier（Riverpod）管理
     ref.read(readerNotifierProvider.notifier).openBook(book);
     Navigator.pushNamed(context, AppRoutes.reader);
@@ -587,32 +622,9 @@ class BookshelfScreen extends ConsumerWidget {
       itemCount: books.length,
       itemBuilder: (context, index) {
         final book = books[index];
-        return ListTile(
+        return BookListItem(
           key: ValueKey(book.bookUrl),
-          leading: BookCover(
-            coverUrl: book.customCoverUrl ?? book.coverUrl,
-            width: 44,
-            height: 60,
-            borderRadius: 4,
-          ),
-          title: Text(
-            book.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
-          subtitle: Text(
-            book.durChapterTitle ?? AppStrings.unread,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          trailing: Text(
-            book.totalChapterNum > 0
-                ? '${book.durChapterIndex + 1}/${book.totalChapterNum}'
-                : '',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
+          book: book,
           onTap: () => _openBook(context, ref, book),
           onLongPress: () => _openBookInfo(context, book),
         );
@@ -627,20 +639,58 @@ class BookshelfScreen extends ConsumerWidget {
           SnackBar(content: Text(AppStrings.checkingUpdate)),
         );
       case 'import':
-        Navigator.pushNamed(context, AppRoutes.importBooks);
+        // 原版添加本地：直接选择本地书籍文件导入
+        _addLocalBook(context, ref);
+      case 'remote':
+        Navigator.pushNamed(context, AppRoutes.remoteBooks);
+      case 'add_url':
+        _todo(context, '添加网址');
+      case 'manage':
+        // 进入书架管理页（对标原版 BookshelfManageActivity）
+        Navigator.pushNamed(context, AppRoutes.bookshelfManage);
+      case 'cache_export':
+        _todo(context, '缓存导出');
+      case 'groups':
+        Navigator.pushNamed(context, AppRoutes.bookGroups);
+      case 'layout':
+        // 原版书架布局切换：Flutter 映射为网格/列表视图切换
+        ref.read(bookshelfNotifierProvider.notifier).toggleViewMode();
       case 'group_none':
         ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.none);
       case 'group_source':
         ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.bySource);
       case 'group_group':
         ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.byGroup);
-      case 'groups':
-        Navigator.pushNamed(context, AppRoutes.bookGroups);
-      case 'manage':
-        // 进入书架管理页（对标原版 BookshelfManageActivity）
-        Navigator.pushNamed(context, AppRoutes.bookshelfManage);
+      case 'export_list':
+        _exportBookshelf(context, ref);
+      case 'import_list':
+        Navigator.pushNamed(context, AppRoutes.importBooks);
+      case 'log':
+        _todo(context, '日志');
       case 'sources':
         Navigator.pushNamed(context, AppRoutes.sources);
     }
+  }
+
+  /// 尚未移植的原版功能统一提示
+  void _todo(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」功能尚未移植')),
+    );
+  }
+
+  /// 导出书单（对标原版 export_bookshelf）：书名+作者文本分享
+  void _exportBookshelf(BuildContext context, WidgetRef ref) {
+    final books = ref.read(bookshelfNotifierProvider).books;
+    if (books.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('书架为空，无可导出的书单')),
+      );
+      return;
+    }
+    final lines = books
+        .map((b) => b.author.isNotEmpty ? '${b.name} - ${b.author}' : b.name)
+        .join('\n');
+    Share.share('Legado 书单导出：\n$lines');
   }
 }

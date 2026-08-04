@@ -1,12 +1,12 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bookshelf_manage/bookshelf_manage_notifier.dart';
 import '../providers/providers.dart';
-import '../widgets/book_cover.dart';
+import '../routes.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -24,12 +24,25 @@ class BookshelfManageScreen extends ConsumerStatefulWidget {
 }
 
 class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
+  /// 顶栏搜索框（对标原版 activity_arrange_book.xml 的 view_search）
+  final _searchCtrl = TextEditingController();
+  String _filter = '';
+
   @override
   void initState() {
     super.initState();
+    _searchCtrl.addListener(() {
+      setState(() => _filter = _searchCtrl.text.trim().toLowerCase());
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(bookshelfManageNotifierProvider.notifier).load();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   BookshelfManageNotifier get _notifier =>
@@ -134,21 +147,54 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final theme = Theme.of(context);
     final state = ref.watch(bookshelfManageNotifierProvider);
     final selectedCount = state.selectedUrls.length;
-    final allSelected =
-        state.books.isNotEmpty && selectedCount == state.books.length;
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          selectedCount > 0 ? '已选择 $selectedCount 本' : '书架管理',
+        // 原版 TitleBar 内嵌 view_search：搜索框与菜单图标同行，无标题文字
+        title: SizedBox(
+          height: 36,
+          child: TextField(
+            controller: _searchCtrl,
+            style: TextStyle(color: theme.colorScheme.onPrimary),
+            decoration: InputDecoration(
+              hintText: '搜索书名',
+              hintStyle: TextStyle(
+                color: theme.colorScheme.onPrimary.withValues(alpha: 0.7),
+              ),
+              filled: true,
+              fillColor: theme.colorScheme.onPrimary.withValues(alpha: 0.15),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+              prefixIcon: Icon(Icons.search,
+                  size: 20,
+                  color: theme.colorScheme.onPrimary.withValues(alpha: 0.7)),
+              suffixIcon: _filter.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear,
+                          size: 18,
+                          color: theme.colorScheme.onPrimary
+                              .withValues(alpha: 0.7)),
+                      onPressed: () => _searchCtrl.clear(),
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
         ),
         actions: [
-          TextButton(
-            onPressed: state.books.isEmpty
-                ? null
-                : () => allSelected
-                    ? _notifier.deselectAll()
-                    : _notifier.selectAll(),
-            child: Text(allSelected ? '取消全选' : '全选'),
+          // 原版溢出菜单 bookshelf_manage.xml
+          PopupMenuButton<String>(
+            onSelected: _handleMenu,
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                  value: 'group_manage', child: Text('分组管理')),
+              const PopupMenuItem(
+                  value: 'export_all', child: Text('导出所有使用书源的书籍')),
+              const PopupMenuItem(
+                  value: 'open_by_title', child: Text('点击书名打开书籍信息')),
+            ],
           ),
         ],
       ),
@@ -157,6 +203,23 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           : null,
       body: _buildBody(theme, state),
     );
+  }
+
+  /// 溢出菜单处理（对标原版 BookshelfManageActivity.onOptionsItemSelected）
+  void _handleMenu(String value) {
+    switch (value) {
+      case 'group_manage':
+        Navigator.pushNamed(context, AppRoutes.bookGroups);
+        break;
+      default:
+        const names = {
+          'export_all': '导出所有使用书源的书籍',
+          'open_by_title': '点击书名打开书籍信息',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('「${names[value] ?? value}」后续版本支持')),
+        );
+    }
   }
 
   Widget _buildBody(ThemeData theme, BookshelfManageState state) {
@@ -176,93 +239,175 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         subtitle: '请先在书架添加书籍',
       );
     }
+    // 顶栏搜索框：UI 层按书名过滤（对标原版 searchView 实时筛选）
+    final books = _filter.isEmpty
+        ? state.books
+        : state.books
+            .where((b) => b.name.toLowerCase().contains(_filter))
+            .toList();
+    if (books.isEmpty) {
+      return const EmptyState(
+        icon: Icons.search_off,
+        title: '无匹配书籍',
+        subtitle: '试试其他关键词',
+      );
+    }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: state.books.length,
-      itemBuilder: (context, index) =>
-          _buildItem(theme, state, state.books[index]),
+      itemCount: books.length,
+      itemBuilder: (context, index) => _buildItem(theme, state, books[index]),
     );
   }
 
+  /// 列表项（对标原版 item_arrange_book.xml：checkbox + 书名 15sp +
+  /// 作者/来源/分组 12sp + 删除按钮，无封面缩略图）
   Widget _buildItem(
     ThemeData theme,
     BookshelfManageState state,
     Book book,
   ) {
     final selected = state.selectedUrls.contains(book.bookUrl);
-    final coverUrl = book.customCoverUrl ?? book.coverUrl;
-    return CheckboxListTile(
-      value: selected,
-      onChanged: (_) => _notifier.toggleSelect(book.bookUrl),
-      secondary: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: (coverUrl != null && coverUrl.isNotEmpty)
-            ? CachedNetworkImage(
-                imageUrl: coverUrl,
-                width: 42,
-                height: 56,
-                fit: BoxFit.cover,
-                memCacheWidth: 84,
-                errorWidget: (_, _, _) =>
-                    const BookCover(width: 42, height: 56),
-              )
-            : const BookCover(width: 42, height: 56),
-      ),
-      title: Text(
-        book.name.isEmpty ? '未命名书籍' : book.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        book.author.isEmpty ? '未知作者' : book.author,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+    final cs = theme.colorScheme;
+    final infoStyle = theme.textTheme.bodySmall?.copyWith(
+      fontSize: 12,
+      color: cs.onSurfaceVariant,
+    );
+    return InkWell(
+      onTap: () => _notifier.toggleSelect(book.bookUrl),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Checkbox(
+              value: selected,
+              onChanged: (_) => _notifier.toggleSelect(book.bookUrl),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    book.name.isEmpty ? '未命名书籍' : book.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, color: cs.onSurface),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    book.author.isEmpty ? '未知作者' : book.author,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: infoStyle,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '来源：${book.originName.isEmpty ? '本地' : book.originName}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: infoStyle,
+                  ),
+                  Text(
+                    '分组：${_groupNames(book)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: infoStyle,
+                  ),
+                ],
+              ),
+            ),
+            // 删除按钮（对标原版 tv_delete）
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20),
+              tooltip: '删除',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _confirmDeleteSingle(book),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  /// 分组显示名（book.group 为位掩码，解析书架分组列表）
+  String _groupNames(Book book) {
+    if (book.group == 0) return '未分组';
+    final groups = ref.watch(bookshelfNotifierProvider).groups;
+    final names = groups
+        .where((g) => g.groupId > 0 && (book.group & g.groupId) != 0)
+        .map((g) => g.groupName)
+        .toList();
+    return names.isEmpty ? '未分组' : names.join('，');
+  }
+
+  /// 单本删除（对标原版 item 内 tv_delete）
+  Future<void> _confirmDeleteSingle(Book book) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除书籍'),
+        content: Text('确定要删除《${book.name}》吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(bookApiProvider).deleteBook(book.bookUrl);
+      await _notifier.load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e')),
+        );
+      }
+    }
+  }
+
+  /// 底部多选操作条（对标原版 SelectActionBar：全选 + 已选数 + 批量操作）
   Widget _buildActionBar(ThemeData theme, BookshelfManageState state) {
     final colorScheme = theme.colorScheme;
+    final allSelected =
+        state.books.isNotEmpty && state.selectedUrls.length == state.books.length;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Row(
           children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('删除'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: colorScheme.error,
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                onPressed: () => _confirmDelete(state),
-              ),
+            // 全选复选框 + 已选数（对标 cbSelectedAll + tv_selected）
+            Checkbox(
+              value: allSelected,
+              onChanged: (_) =>
+                  allSelected ? _notifier.deselectAll() : _notifier.selectAll(),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.folder_outlined),
-                label: const Text('分组'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                onPressed: () => _showGroupPicker(state),
-              ),
+            Text(
+              '已选 ${state.selectedUrls.length} 本',
+              style: theme.textTheme.bodySmall,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                icon: const Icon(Icons.vertical_align_top),
-                label: const Text('置顶'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                onPressed: _pinSelected,
-              ),
+            const Spacer(),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: colorScheme.error),
+              onPressed: () => _confirmDelete(state),
+              child: const Text('删除'),
+            ),
+            TextButton(
+              onPressed: () => _showGroupPicker(state),
+              child: const Text('分组'),
+            ),
+            TextButton(
+              onPressed: _pinSelected,
+              child: const Text('置顶'),
             ),
           ],
         ),

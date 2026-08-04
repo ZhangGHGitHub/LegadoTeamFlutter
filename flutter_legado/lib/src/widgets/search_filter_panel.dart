@@ -162,9 +162,13 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
               ],
             ),
             const SizedBox(height: 4),
-            // Tab 切换：分组 / 书源
+            // Tab 切换：分组 / 书源（位于浅色表面，覆盖全局白色 TabBar 主题）
             TabBar(
               controller: _tabController,
+              labelColor: Theme.of(context).colorScheme.primary,
+              unselectedLabelColor:
+                  Theme.of(context).colorScheme.onSurfaceVariant,
+              indicatorColor: Theme.of(context).colorScheme.primary,
               tabs: const [
                 Tab(text: '分组'),
                 Tab(text: '书源'),

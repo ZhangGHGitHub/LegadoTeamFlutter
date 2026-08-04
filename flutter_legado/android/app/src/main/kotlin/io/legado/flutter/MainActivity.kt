@@ -2,6 +2,8 @@ package io.legado.flutter
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Bundle
+import android.util.TypedValue
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -63,6 +65,34 @@ class MainActivity : FlutterActivity() {
         mediaSessionBridge.setMethodChannel(mediaSessionChannel)
         mediaSessionChannel.setMethodCallHandler { call, result ->
             mediaSessionBridge.handleMethodCall(call, result, this)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        applyThemeStatusBarColor()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        // 从其他 Activity（WebView/文件选择器等）返回时也需重新应用，
+        // 防止系统恢复默认的半透明状态栏底色
+        applyThemeStatusBarColor()
+    }
+
+    /**
+     * 恢复 styles.xml 中定义的状态栏底色（亮色 #0288D1 / 暗色 #455A64）。
+     *
+     * Flutter 引擎在 FlutterActivity.onCreate 中硬编码
+     * window.setStatusBarColor(0x40000000)（半透明黑），会覆盖主题色，
+     * 导致顶部出现灰白条（白窗口背景 + 25% 黑遮罩）。
+     * Dart 侧的 SystemUiOverlayStyle 不再下发 statusBarColor，
+     * 由这里统一固化为主题色，不受路由切换影响。
+     */
+    private fun applyThemeStatusBarColor() {
+        val typedValue = TypedValue()
+        if (theme.resolveAttribute(android.R.attr.statusBarColor, typedValue, true)) {
+            window.statusBarColor = typedValue.data
         }
     }
 

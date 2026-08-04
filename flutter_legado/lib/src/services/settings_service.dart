@@ -14,6 +14,8 @@ class SettingsService {
   static const _keyLocale = 'app_locale';
   static const _keyShowBookshelfRecentReading = 'bookshelf_show_recent_reading';
   static const _keyShowBookshelfStats = 'bookshelf_show_stats';
+  static const _keyBookshelfTabPosition = 'bookshelf_tab_position';
+  static const _keyBookshelfLayout = 'bookshelf_layout'; // true=网格 false=列表
 
   // ===== 字体大小 =====
 
@@ -244,6 +246,48 @@ class SettingsService {
       await prefs.setBool(_keyShowBookshelfStats, value);
     } catch (e) {
       debugPrint('SettingsService.setShowBookshelfStats 异常: $e');
+    }
+  }
+
+  // ===== 书架分组 Tab 位置（对标原版 AppConfig.saveTabPosition）=====
+
+  Future<int> getBookshelfTabPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyBookshelfTabPosition) ?? 0;
+    } catch (e) {
+      debugPrint('SettingsService.getBookshelfTabPosition 异常: $e');
+      return 0;
+    }
+  }
+
+  Future<void> setBookshelfTabPosition(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyBookshelfTabPosition, index);
+    } catch (e) {
+      debugPrint('SettingsService.setBookshelfTabPosition 异常: $e');
+    }
+  }
+
+  // ===== 书架布局（网格/列表，对标原版 AppConfig.bookshelfLayout）=====
+
+  Future<bool> getBookshelfLayout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyBookshelfLayout) ?? true; // 默认网格视图
+    } catch (e) {
+      debugPrint('SettingsService.getBookshelfLayout 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> setBookshelfLayout(bool isGridView) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyBookshelfLayout, isGridView);
+    } catch (e) {
+      debugPrint('SettingsService.setBookshelfLayout 异常: $e');
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/l10n/app_strings.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
@@ -97,7 +98,7 @@ void main() {
       )));
       await tester.pump();
 
-      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back_ios_new), findsOneWidget);
       expect(find.byIcon(Icons.search), findsOneWidget);
       expect(find.byIcon(Icons.bookmark_add_outlined), findsOneWidget);
       expect(find.byIcon(Icons.more_vert), findsOneWidget);
@@ -156,19 +157,21 @@ void main() {
   });
 
   group('ReaderBottomBar（Phase 2.5/2.6 章节导航 + 功能按钮）', () {
-    testWidgets('渲染上一章/下一章/进度滑块与目录/设置/夜间按钮', (tester) async {
+    testWidgets('渲染上一章/下一章/进度滑块与目录/朗读/界面/设置按钮', (tester) async {
       await tester.pumpWidget(wrapStack(ReaderBottomBar(
         onOpenCatalog: () {},
         onOpenSettings: () {},
+        onOpenAdvancedConfig: () {},
       )));
       await tester.pump();
 
-      expect(find.byIcon(Icons.skip_previous), findsOneWidget);
-      expect(find.byIcon(Icons.skip_next), findsOneWidget);
+      expect(find.text(AppStrings.previousChapter), findsOneWidget);
+      expect(find.text(AppStrings.nextChapter), findsOneWidget);
       expect(find.byType(Slider), findsOneWidget);
-      expect(find.byIcon(Icons.format_list_numbered), findsOneWidget);
+      expect(find.byIcon(Icons.toc), findsOneWidget);
+      expect(find.byIcon(Icons.record_voice_over_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.palette_outlined), findsOneWidget);
       expect(find.byIcon(Icons.settings), findsOneWidget);
-      expect(find.byIcon(Icons.brightness_6), findsOneWidget);
     });
 
     testWidgets('打开书籍后点击目录按钮触发回调', (tester) async {
@@ -177,11 +180,12 @@ void main() {
       await tester.pumpWidget(wrapStack(ReaderBottomBar(
         onOpenCatalog: () => catalogTapped = true,
         onOpenSettings: () {},
+        onOpenAdvancedConfig: () {},
       )));
       await tester.pump();
       await openBookAndPump(tester);
 
-      await tester.tap(find.byIcon(Icons.format_list_numbered));
+      await tester.tap(find.byIcon(Icons.toc));
       await tester.pump();
 
       expect(catalogTapped, isTrue);
@@ -192,15 +196,16 @@ void main() {
       await tester.pumpWidget(wrapStack(ReaderBottomBar(
         onOpenCatalog: () {},
         onOpenSettings: () {},
+        onOpenAdvancedConfig: () {},
       )));
       await tester.pump();
       await openBookAndPump(tester);
 
-      final prevButton = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.skip_previous),
+      final prevButton = tester.widget<TextButton>(
+        find.widgetWithText(TextButton, AppStrings.previousChapter),
       );
-      final nextButton = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.skip_next),
+      final nextButton = tester.widget<TextButton>(
+        find.widgetWithText(TextButton, AppStrings.nextChapter),
       );
       expect(prevButton.onPressed, isNull);
       expect(nextButton.onPressed, isNotNull);

@@ -29,6 +29,24 @@ enum SourceSort {
   respond,
 }
 
+/// 特殊分组筛选值（对标 Android book_source.xml 分组子菜单虚拟分组）
+abstract final class SourceSpecialGroup {
+  /// 已启用
+  static const enabled = '__enabled__';
+
+  /// 已禁用
+  static const disabled = '__disabled__';
+
+  /// 需登录
+  static const login = '__login__';
+
+  /// 发现已启用（exploreUrl 非空）
+  static const exploreOn = '__explore_on__';
+
+  /// 发现已禁用（exploreUrl 为空）
+  static const exploreOff = '__explore_off__';
+}
+
 /// 书源管理 UI 状态（immutable）
 ///
 /// 职责边界（对标 Android BookSourceActivity）：
@@ -135,12 +153,35 @@ extension SourceStateFiltering on SourceState {
   // ─── 内部辅助 ───────────────────────────────────────
 
   List<BookSource> _applyGroupFilter(List<BookSource> list) {
-    final filtered = selectedGroup == null
-        ? list
-        : list.where((s) {
-            final group = s.bookSourceGroup ?? '未分组';
-            return group == selectedGroup;
+    final group = selectedGroup;
+    List<BookSource> filtered;
+    if (group == null) {
+      filtered = list;
+    } else {
+      switch (group) {
+        case SourceSpecialGroup.enabled:
+          filtered = list.where((s) => s.enabled).toList();
+        case SourceSpecialGroup.disabled:
+          filtered = list.where((s) => !s.enabled).toList();
+        case SourceSpecialGroup.login:
+          filtered = list
+              .where((s) => (s.loginUrl ?? '').trim().isNotEmpty)
+              .toList();
+        case SourceSpecialGroup.exploreOn:
+          filtered = list
+              .where((s) => (s.exploreUrl ?? '').trim().isNotEmpty)
+              .toList();
+        case SourceSpecialGroup.exploreOff:
+          filtered = list
+              .where((s) => (s.exploreUrl ?? '').trim().isEmpty)
+              .toList();
+        default:
+          filtered = list.where((s) {
+            final g = s.bookSourceGroup ?? '未分组';
+            return g == group;
           }).toList();
+      }
+    }
     return _applySort(filtered);
   }
 

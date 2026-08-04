@@ -40,7 +40,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
       appBar: AppBar(
         title: Text(widget.source.sourceName),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back_ios_new),
           onPressed: () {
             notifier.clearSelectedSource();
             Navigator.pop(context);
@@ -80,8 +80,9 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: state.articles.length,
+              // iOS 风格：分隔线从文字列起始处缩进（16 边距 + 80 缩略图 + 12 间距）
               separatorBuilder: (c, i) =>
-                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  const Divider(height: 1, indent: 108, endIndent: 16),
               itemBuilder: (context, index) {
                 final article = state.articles[index];
                 final isRead = _readArticles.contains(article.url);
@@ -119,10 +120,10 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 缩略图
+            // 缩略图（iOS 风格 10 圆角）
             if (article.imageUrl != null && article.imageUrl!.isNotEmpty)
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
                 child: CachedNetworkImage(
                   imageUrl: article.imageUrl!,
                   width: 80,
@@ -138,7 +139,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                     height: 80,
                     decoration: BoxDecoration(
                       color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Center(
                       child: SizedBox(
@@ -153,7 +154,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                     height: 80,
                     decoration: BoxDecoration(
                       color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(Icons.image_not_supported,
                         color: colorScheme.onSurfaceVariant.withAlpha(128)),
@@ -166,7 +167,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                 height: 80,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(Icons.article,
                     color: colorScheme.onSurfaceVariant.withAlpha(128)),

@@ -10,9 +10,6 @@ class Responsive {
 
   // ===== 断点常量 =====
 
-  /// 手机小屏上限（dp）—— 2 列
-  static const double compactSmallMax = 400;
-
   /// compact 上限（dp）—— 3 列
   static const double compactMax = 600;
 
@@ -40,9 +37,9 @@ class Responsive {
 
   /// 根据可用宽度计算书架网格列数
   ///
-  /// <400dp → 2 列 / 400-600dp → 3 列 / 600-1200dp → 4 列 / >1200dp → 6 列
+  /// <600dp → 3 列（对齐原版 bookshelfLayout 默认 3 列）/
+  /// 600-1200dp → 4 列 / >1200dp → 6 列
   static int gridColumnsForWidth(double width) {
-    if (width < compactSmallMax) return 2;
     if (width < compactMax) return 3;
     if (width < expandedMax) return 4;
     return 6;
@@ -58,6 +55,13 @@ class Responsive {
   /// RSS 源网格子项宽高比（保持安卓端 item_rss.xml 竖卡比例）
   static double rssGridChildAspectRatio(double width) {
     return width < compactMax ? 0.62 : 0.75;
+  }
+
+  /// 根据可用宽度计算 RSS 源网格列数
+  ///
+  /// <600dp → 4 列（对齐原版 RssFragment spanCount=4）/ >=600dp → 6 列（宽屏上限）
+  static int rssGridColumnsForWidth(double width) {
+    return width < compactMax ? 4 : 6;
   }
 
   // ===== 导航适配 =====
