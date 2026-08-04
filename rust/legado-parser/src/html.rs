@@ -42,6 +42,18 @@ impl HtmlParser {
         }
 
         let document = Html::parse_document(html);
+
+        // 对标 Kotlin AnalyzeByJSoup：规则本身就是默认提取关键字时，
+        // 不做选择器匹配，直接对当前内容（片段根元素）执行提取
+        if let Some(mode) = Self::bare_extract_mode(css_selector) {
+            let root = document.root_element();
+            let elem = root.select(&Selector::parse("body").unwrap()).next().unwrap_or(root);
+            return Ok(self
+                .extract_from_element(elem, mode, "")
+                .map(|t| vec![t])
+                .unwrap_or_default());
+        }
+
         let mut analyzer = RuleAnalyzer::new(css_selector, false);
         let rules = analyzer.split_rule(&["&&", "||", "%%"]);
         let elements_type = analyzer.elements_type.to_string();
@@ -79,20 +91,67 @@ impl HtmlParser {
             }
         }
 
-        Ok(self.merge_results(results, &elements_type))
+        let merged = self.merge_results(results, &elements_type);
+
+        // 对标 Kotlin getResultLast else 分支：选择器无结果且规则为裸 token 时，
+        // 视为属性名从当前元素提取（如 chapterUrl 规则 "href"）
+        if merged.is_empty()
+            && default_mode == "text"
+            && !css_selector.contains(['@', ' ', '>', '.', '#', '['])
+        {
+            let root = document.root_element();
+            if let Some(elem) = root.select(&Selector::parse("body").unwrap()).next() {
+                let mut attr_values: Vec<String> = Vec::new();
+                for child in elem.children().filter_map(ElementRef::wrap) {
+                    if let Some(v) = child.value().attr(css_selector) {
+                        if !v.is_empty() && !attr_values.iter().any(|x| x == v) {
+                            attr_values.push(v.to_string());
+                        }
+                    }
+                }
+                if attr_values.is_empty() {
+                    if let Some(v) = elem.value().attr(css_selector) {
+                        if !v.is_empty() {
+                            attr_values.push(v.to_string());
+                        }
+                    }
+                }
+                if !attr_values.is_empty() {
+                    return Ok(attr_values);
+                }
+            }
+        }
+
+        Ok(merged)
     }
 
     /// 在已解析的文档上执行选择器并提取内容
     fn extract_from_doc(&self, document: &Html, rule: &str, default_mode: &str) -> Vec<String> {
         let (selector_str, extract_mode, attr_name) = self.parse_last_rule(rule, default_mode);
+
+        // 空选择器：直接对文档 body（或根元素）提取（裸提取关键字场景）
+        if selector_str.trim().is_empty() {
+            let root = document.root_element();
+            let elem = root
+                .select(&Selector::parse("body").unwrap())
+                .next()
+                .unwrap_or(root);
+            return self
+                .extract_from_element(elem, extract_mode, &attr_name)
+                .map(|t| vec![t])
+                .unwrap_or_default();
+        }
+
         let Ok(selector) = Selector::parse(selector_str) else {
             return vec![];
         };
 
         let mut items = Vec::new();
+        // 对标 Kotlin：仅属性提取路径去重，text/html 逐元素保留
+        let dedup = extract_mode == "attr";
         for elem in document.select(&selector) {
             if let Some(text) = self.extract_from_element(elem, extract_mode, &attr_name) {
-                if !text.is_empty() && !items.contains(&text) {
+                if !text.is_empty() && (!dedup || !items.contains(&text)) {
                     items.push(text);
                 }
             }
@@ -150,14 +209,25 @@ impl HtmlParser {
             // 最后一级没有选择器，直接从当前元素提取
             for elem in &current_elements {
                 if let Some(text) = self.extract_from_element(*elem, extract_mode, &attr_name) {
-                    if !text.is_empty() && !items.contains(&text) {
+                    if !text.is_empty() {
                         items.push(text);
                     }
                 }
             }
         } else if Selector::parse(selector_str).is_err() {
-            // 选择器无效，可能是属性名（如 "href"、"src"）
-            // 将最后一段视为属性名，从当前元素提取该属性
+            // 选择器无效：可能是默认提取关键字（如 "text"、"html"）
+            if let Some(mode) = Self::bare_extract_mode(selector_str) {
+                for elem in &current_elements {
+                    if let Some(text) = self.extract_from_element(*elem, mode, "") {
+                        if !text.is_empty() {
+                            items.push(text);
+                        }
+                    }
+                }
+                return items;
+            }
+            // 也可能是属性名（如 "href"、"src"）
+            // 将最后一段视为属性名，从当前元素提取该属性（属性路径去重）
             for elem in &current_elements {
                 if let Some(text) = self.extract_from_element(*elem, "attr", selector_str) {
                     if !text.is_empty() && !items.contains(&text) {
@@ -243,6 +313,19 @@ impl HtmlParser {
     }
 
     /// 解析最后一段规则，提取选择器、提取模式和属性名
+    /// 裸默认提取关键字 → 提取模式（对标 Kotlin AnalyzeByJSoup 的
+    /// `text/textNodes/ownText/html/allText` 特殊规则）
+    fn bare_extract_mode(rule: &str) -> Option<&'static str> {
+        match rule.trim() {
+            "text" => Some("text"),
+            "textNodes" => Some("textNodes"),
+            "ownText" => Some("ownText"),
+            "html" => Some("html"),
+            "allText" => Some("all"),
+            _ => None,
+        }
+    }
+
     fn parse_last_rule<'a>(
         &self,
         rule: &'a str,
@@ -258,7 +341,12 @@ impl HtmlParser {
                 _ => (selector_part, "attr", extract_part.to_string()),
             }
         } else {
-            (rule, default_mode, String::new())
+            // 无 `@`：裸默认提取关键字视为提取模式，其余视为选择器
+            if let Some(mode) = Self::bare_extract_mode(rule) {
+                ("", mode, String::new())
+            } else {
+                (rule, default_mode, String::new())
+            }
         }
     }
 
@@ -481,8 +569,18 @@ mod tests {
         let html = r#"<div><span>重复</span><span>重复</span><span>不同</span></div>"#;
         let parser = HtmlParser::new();
         let result = parser.get_text(html, "span").unwrap();
-        // 相同文本应去重
-        assert_eq!(result.len(), 2);
+        // 对标 Kotlin AnalyzeByJSoup：text 提取不做去重（逐元素保留），
+        // 去重仅发生在属性提取路径（getResultLast else 分支）
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_attr_deduplication() {
+        // 属性提取路径保留去重（对标 Kotlin getResultLast else 分支）
+        let html = r#"<div><a href="/x.html">a</a><a href="/x.html">b</a><a href="/y.html">c</a></div>"#;
+        let parser = HtmlParser::new();
+        let result = parser.get_text(html, "a@href").unwrap();
+        assert_eq!(result, vec!["/x.html", "/y.html"]);
     }
 
     #[test]
