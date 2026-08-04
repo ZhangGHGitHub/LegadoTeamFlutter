@@ -29,6 +29,7 @@ pub mod analyze_url;
 pub mod html;
 pub mod jsonpath;
 pub mod regex_engine;
+pub mod review_rule_parser;
 pub mod rule_analyzer;
 pub mod rule_complete;
 pub mod xpath;
@@ -38,5 +39,6 @@ pub use analyze_url::{AnalyzeUrl, DataUriContent, RequestMethod, TemplateContext
 pub use html::HtmlParser;
 pub use jsonpath::JsonPathParser;
 pub use regex_engine::RegexEngine;
+pub use review_rule_parser::{parse_reply_page, parse_reply_page_with, ReviewDetailItem};
 pub use rule_analyzer::RuleAnalyzer;
 pub use xpath::XPathParser;

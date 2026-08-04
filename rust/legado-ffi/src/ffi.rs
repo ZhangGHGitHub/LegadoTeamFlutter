@@ -1217,6 +1217,22 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 按需加载段评回复（上游 #519）
+    ///
+    /// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`。
+    /// `request_json` 支持字段：reviewId/paraIndex/paraData/chapterUrl/replyUrl。
+    pub fn review_get_replies(
+        source_json: String,
+        request_json: String,
+        page: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::review_api::review_get_replies(
+            &source_json,
+            &request_json,
+            page,
+        )?)
+    }
+
     // ─── 书籍导出 ─────────────────────────────────────
 
     /// 导出书籍（返回 ExportResult JSON）

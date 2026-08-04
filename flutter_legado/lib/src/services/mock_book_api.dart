@@ -1308,6 +1308,30 @@ class MockBookApi implements BookApi {
   @override
   Future<void> reviewLike(int id) async {}
 
+  @override
+  Future<String> reviewGetReplies(
+      String sourceJson, String requestJson, int page) async {
+    // Mock 返回两条示例回复，便于 UI 轨联调段评回复弹窗
+    return jsonEncode({
+      'items': [
+        {
+          'id': 'mock_reply_$page-1',
+          'name': '读者甲',
+          'content': 'Mock 回复内容一（第$page 页）',
+          'badges': <String>['沙发'],
+          'time': '刚刚',
+        },
+        {
+          'id': 'mock_reply_$page-2',
+          'name': '读者乙',
+          'content': 'Mock 回复内容二（第$page 页）',
+          'badges': <String>[],
+        },
+      ],
+      'nextPageUrl': null,
+    });
+  }
+
   // ========== 书籍导出 ==========
 
   @override

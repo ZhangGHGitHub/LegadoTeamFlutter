@@ -89,6 +89,11 @@ impl AnalyzeRule {
         self.js_executor = Some(executor);
     }
 
+    /// 获取已注入的 JS 执行器（用于在子解析器间透传）
+    pub fn js_executor(&self) -> Option<Arc<dyn JsExecutor>> {
+        self.js_executor.clone()
+    }
+
     /// 设置解析内容
     ///
     /// 设置内容后立即检测内容类型并缓存，清除解析器状态。
@@ -299,7 +304,10 @@ impl AnalyzeRule {
         // 2. 根据缓存的内容类型推断（快速路径）
         if self.is_json {
             // 内容是 JSON，规则看起来不像 CSS 时，使用 JsonPath
-            if !rule.contains('<') && !rule.contains('>') {
+            // （以标签名/类名/ID 选择器开头的规则仍按 CSS 处理，
+            // 避免 `span.user@text` 等 CSS 规则被误路由到 JsonPath）
+            if !rule.contains('<') && !rule.contains('>') && !Self::looks_like_css_selector(rule)
+            {
                 return RuleType::Json;
             }
         } else if let Some(ref ct) = self.cached_content_type {
@@ -310,6 +318,22 @@ impl AnalyzeRule {
 
         // 默认 CSS
         RuleType::Css
+    }
+
+    /// 判断规则是否形似 CSS 选择器（用于 JSON 内容下的规则类型仲裁）
+    ///
+    /// 仅依据强 CSS 特征判定，避免误伤无 `$` 前缀的 JsonPath 规则（如 `data.list`）：
+    /// - 以 `.` 类选择器或 `#` ID 选择器开头
+    /// - 含 Legado 取值后缀 `@text` / `@html` / `@href` / `@src`
+    fn looks_like_css_selector(rule: &str) -> bool {
+        let head = rule.split_whitespace().next().unwrap_or("");
+        if matches!(head.chars().next(), Some('.') | Some('#')) {
+            return true;
+        }
+        rule.contains("@text")
+            || rule.contains("@html")
+            || rule.contains("@href")
+            || rule.contains("@src")
     }
 
     /// 获取缓存的内容类型

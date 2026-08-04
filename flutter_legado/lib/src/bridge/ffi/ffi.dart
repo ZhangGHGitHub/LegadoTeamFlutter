@@ -878,6 +878,20 @@ Future<bool> reviewDelete({required PlatformInt64 id}) =>
 Future<void> reviewLike({required PlatformInt64 id}) =>
     RustLib.instance.api.crateFfiFfiReviewLike(id: id);
 
+/// 按需加载段评回复（上游 #519）
+///
+/// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`。
+/// `request_json` 支持字段：reviewId/paraIndex/paraData/chapterUrl/replyUrl。
+Future<String> reviewGetReplies({
+  required String sourceJson,
+  required String requestJson,
+  required int page,
+}) => RustLib.instance.api.crateFfiFfiReviewGetReplies(
+  sourceJson: sourceJson,
+  requestJson: requestJson,
+  page: page,
+);
+
 /// 导出书籍（返回 ExportResult JSON）
 ///
 /// # 参数

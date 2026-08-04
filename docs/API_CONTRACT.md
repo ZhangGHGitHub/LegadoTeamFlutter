@@ -343,7 +343,7 @@
 | `downloadRemoveTask(String taskId)` | taskId | `Future<void>` | 移除下载任务 |
 | `downloadUpdateProgress(String taskId, double progress)` | taskId, progress | `Future<void>` | 更新下载进度 |
 
-### 2.30 段评/章评（4 个方法）
+### 2.30 段评/章评（5 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -351,6 +351,7 @@
 | `reviewAdd({required String bookUrl, required int chapterIndex, int paragraphIndex = -1, required String content, String author = ''})` | bookUrl, chapterIndex, paragraphIndex, content, author | `Future<int>` | 添加评论，返回评论 ID |
 | `reviewDelete(int id)` | id | `Future<bool>` | 删除评论 |
 | `reviewLike(int id)` | id | `Future<void>` | 点赞评论 |
+| `reviewGetReplies(String sourceJson, String requestJson, int page)` | sourceJson, requestJson, page | `Future<String>` | 按需加载段评回复（上游 #519），返回 `{"items": [...], "nextPageUrl": String?}` 对象包装（含分页 URL，非裸数组）；requestJson 支持 reviewId/paraIndex/paraData/chapterUrl/replyUrl 字段；回复条目字段：id/avatar/name/badges/content/imageUrl/audioUrl/time |
 
 ### 2.31 书籍导出（2 个方法）
 
@@ -442,6 +443,7 @@
 | `searchCover`（新增） | `String bookName` | `Future<List<Map<String, dynamic>>>`（网络封面候选列表，字段建议 `url` / `width` / `height`，用于 Phase 6 P1 `change_cover_screen` 封面搜索） | 2026-08-01 | ✅ 已完成 |
 | `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询） | 2026-08-01 | ✅ 已完成 |
 | `highlight*` / `highlightRule*`（新增） | 见 §2.36 方法清单 | 高亮记录 CRUD + 高亮规则 CRUD（对齐上游 DB v96-v99，用于阅读器正文高亮一期） | 2026-08-04 | ✅ 已完成 |
+| `reviewGetReplies`（新增） | `String sourceJson, String requestJson, int page` | `Future<String>`（段评回复按需加载，对标 Android `ReviewDetailDialog.loadReplies` + `ReviewRuleParser.parseReplyPage`，上游 #519；返回 `{items, nextPageUrl}` 对象包装，Flutter 段评弹窗回复 UI 由 UI 轨后续接入） | 2026-08-04 | ✅ 已完成 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，

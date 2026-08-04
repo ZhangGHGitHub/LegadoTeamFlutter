@@ -618,6 +618,19 @@ abstract class BookApi {
   /// 点赞评论
   Future<void> reviewLike(int id);
 
+  /// 按需加载段评回复（上游 #519）
+  ///
+  /// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`；
+  /// 回复条目字段：id/avatar/name/badges/content/imageUrl/audioUrl/time。
+  ///
+  /// # 参数
+  /// - `sourceJson`: BookSource JSON（含 ruleReview）
+  /// - `requestJson`: 请求上下文 JSON，支持
+  ///   reviewId/paraIndex/paraData/chapterUrl/replyUrl 字段
+  /// - `page`: 回复页码（从 1 开始）
+  Future<String> reviewGetReplies(
+      String sourceJson, String requestJson, int page);
+
   // ========== 书籍导出 ==========
 
   /// 导出书籍（返回 ExportResult JSON）
