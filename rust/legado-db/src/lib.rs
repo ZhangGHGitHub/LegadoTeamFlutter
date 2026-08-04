@@ -50,7 +50,9 @@ pub use repository::highlight_repository::HighlightRepository;
 pub use repository::highlight_rule_repository::HighlightRuleRepository;
 pub use repository::http_tts_repository::{HttpTts, HttpTtsRepository};
 pub use repository::keyboard_assist_repository::{KeyboardAssist, KeyboardAssistRepository};
-pub use repository::read_record_repository::{ReadRecord, ReadRecordRepository};
+pub use repository::read_record_repository::{
+    merge_read_record_authors, ReadRecord, ReadRecordRepository,
+};
 pub use repository::reading_stats_repository::ReadingStatsRepository;
 pub use repository::replace_rule_repository::ReplaceRuleRepository;
 pub use repository::review_repository::ReviewRepository;

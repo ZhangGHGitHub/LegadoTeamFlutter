@@ -1,6 +1,6 @@
 //! Book Repository - books 表 CRUD
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use legado_core::models::Book;
 use legado_core::{LegadoError, LegadoResult};
@@ -144,6 +144,80 @@ impl<'a> BookRepository<'a> {
             "playMode",
             &serde_json::Value::Number(play_mode.into()),
         )
+    }
+
+    /// 更新书籍的听书播放速度（局部列更新）
+    ///
+    /// 对齐上游 Kotlin `BookDao.updateAudioPlaySpeed()` 及 `withAudioPlayPreference()`：
+    /// 仅改写 readConfig JSON 中的 `playSpeed` 键；若 readConfig 为空或非法 JSON，
+    /// 则新建对象并预写入 `useGlobalAudioSkip = true`（与上游回退分支一致）。
+    pub fn update_audio_play_speed(&self, book_url: &str, play_speed: f32) -> LegadoResult<()> {
+        // 1. 读取当前 readConfig JSON
+        let current = self.read_config_json(book_url)?;
+
+        // 2. 解析现有 JSON；为空/非法时对齐上游新建分支（预置 useGlobalAudioSkip=true）
+        let mut config: serde_json::Value = current
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .filter(|v| v.is_object())
+            .unwrap_or_else(|| serde_json::json!({ "useGlobalAudioSkip": true }));
+
+        // 3. 仅更新 playSpeed 键
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert(
+                "playSpeed".to_string(),
+                serde_json::Value::Number(serde_json::Number::from_f64(f64::from(play_speed))
+                    .unwrap_or_else(|| serde_json::Number::from(1))),
+            );
+        }
+
+        // 4. 写回
+        let updated_json = serde_json::to_string(&config)
+            .map_err(|e| LegadoError::Database(format!("序列化 readConfig 失败: {e}")))?;
+        self.conn
+            .execute(
+                "UPDATE books SET readConfig = ?1 WHERE bookUrl = ?2",
+                params![updated_json, book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新 playSpeed 失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 更新书籍但保留库内原有 readConfig（对齐上游 `BookDao.updatePreservingReadConfig`）
+    ///
+    /// 上游事务语义：先取库内 readConfig JSON → 执行全行 update → 再写回原 JSON，
+    /// 使调用方传入的 readConfig 不会覆盖库内已有配置（如进度相关的听书设置）。
+    pub fn update_preserving_read_config(&self, book: &Book) -> LegadoResult<()> {
+        // 1. 读取库内当前 readConfig（保持 NULL 状态）
+        let saved = self.read_config_json(&book.book_url)?;
+
+        // 2. 全行 upsert
+        self.insert(book)?;
+
+        // 3. 写回原 readConfig，避免被传入值覆盖
+        self.conn
+            .execute(
+                "UPDATE books SET readConfig = ?1 WHERE bookUrl = ?2",
+                params![saved, book.book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("写回 readConfig 失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 读取指定书籍的 readConfig 原始 JSON（不存在时返回 None）
+    ///
+    /// 对应 Kotlin `BookDao.getReadConfigJson()`
+    fn read_config_json(&self, book_url: &str) -> LegadoResult<Option<String>> {
+        // optional() 已包一层 Option（行不存在），列本身又可为 NULL，故用双层后 flatten
+        let json: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT readConfig FROM books WHERE bookUrl = ?1",
+                params![book_url],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| LegadoError::Database(format!("查询 readConfig 失败: {e}")))?;
+        Ok(json.flatten())
     }
 }
 
@@ -427,5 +501,93 @@ mod tests {
         let found = repo.find_by_url("u1").unwrap().unwrap();
         let rc = found.read_config.unwrap();
         assert_eq!(rc.play_mode, 3);
+    }
+
+    /// update_audio_play_speed：仅更新 playSpeed，其他 readConfig 字段不受影响
+    #[test]
+    fn test_update_audio_play_speed_preserves_other_fields() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let mut book = make_book("u1", "n1", "a1");
+        book.read_config = Some(legado_core::models::ReadConfig {
+            reverse_toc: true,
+            play_mode: 2,
+            ..legado_core::models::ReadConfig::default()
+        });
+        repo.insert(&book).unwrap();
+
+        repo.update_audio_play_speed("u1", 1.75).unwrap();
+
+        let rc = repo.find_by_url("u1").unwrap().unwrap().read_config.unwrap();
+        assert!((rc.play_speed - 1.75).abs() < f32::EPSILON);
+        assert!(rc.reverse_toc);
+        assert_eq!(rc.play_mode, 2);
+    }
+
+    /// update_audio_play_speed：readConfig 为空时新建对象并预置 useGlobalAudioSkip=true（对齐上游）
+    #[test]
+    fn test_update_audio_play_speed_creates_config_with_global_skip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let book = make_book("u1", "n1", "a1");
+        assert!(book.read_config.is_none());
+        repo.insert(&book).unwrap();
+
+        repo.update_audio_play_speed("u1", 2.0).unwrap();
+
+        let rc = repo.find_by_url("u1").unwrap().unwrap().read_config.unwrap();
+        assert!((rc.play_speed - 2.0).abs() < f32::EPSILON);
+        assert!(rc.use_global_audio_skip);
+    }
+
+    /// update_preserving_read_config：库内 readConfig 不被传入值覆盖
+    #[test]
+    fn test_update_preserving_read_config_keeps_db_config() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let mut book = make_book("u1", "n1", "a1");
+        book.read_config = Some(legado_core::models::ReadConfig {
+            reverse_toc: true,
+            play_speed: 1.5,
+            ..legado_core::models::ReadConfig::default()
+        });
+        repo.insert(&book).unwrap();
+
+        // 传入带不同 readConfig 的更新；其他字段应生效，readConfig 保持库内原值
+        let mut updated = book.clone();
+        updated.name = "改名".to_string();
+        updated.read_config = Some(legado_core::models::ReadConfig {
+            reverse_toc: false,
+            play_speed: 3.0,
+            ..legado_core::models::ReadConfig::default()
+        });
+        repo.update_preserving_read_config(&updated).unwrap();
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.name, "改名");
+        let rc = found.read_config.unwrap();
+        assert!(rc.reverse_toc);
+        assert!((rc.play_speed - 1.5).abs() < f32::EPSILON);
+    }
+
+    /// update_preserving_read_config：库内 readConfig 为 NULL 时保持 NULL
+    #[test]
+    fn test_update_preserving_read_config_keeps_null() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let book = make_book("u1", "n1", "a1");
+        repo.insert(&book).unwrap();
+
+        let mut updated = book.clone();
+        updated.name = "改名".to_string();
+        updated.read_config = Some(legado_core::models::ReadConfig {
+            reverse_toc: true,
+            ..legado_core::models::ReadConfig::default()
+        });
+        repo.update_preserving_read_config(&updated).unwrap();
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.name, "改名");
+        assert!(found.read_config.is_none());
     }
 }

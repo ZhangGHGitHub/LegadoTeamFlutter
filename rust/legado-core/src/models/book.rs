@@ -56,6 +56,11 @@ pub struct ReadConfig {
     /// 音频播放速度
     #[serde(default = "default_play_speed", rename = "playSpeed")]
     pub play_speed: f32,
+    /// 是否使用全局音频跳过（片头/片尾）设置
+    ///
+    /// 对齐上游 Kotlin `Book.ReadConfig.useGlobalAudioSkip`（非空 Boolean，默认 false）
+    #[serde(default, rename = "useGlobalAudioSkip")]
+    pub use_global_audio_skip: bool,
 }
 
 fn default_true() -> bool {
@@ -302,6 +307,17 @@ mod tests {
         assert!(rc.split_long_chapter);
         assert_eq!(rc.daily_chapters, 3);
         assert!((rc.play_speed - 1.0).abs() < f32::EPSILON);
+        // 旧 JSON 无该字段时默认 false（对齐 Kotlin 实体默认值）
+        assert!(!rc.use_global_audio_skip);
+    }
+
+    #[test]
+    fn test_read_config_use_global_audio_skip_roundtrip() {
+        let rc: ReadConfig =
+            serde_json::from_str(r#"{"useGlobalAudioSkip": true}"#).unwrap();
+        assert!(rc.use_global_audio_skip);
+        let json = serde_json::to_string(&rc).unwrap();
+        assert!(json.contains("useGlobalAudioSkip"));
     }
 
     #[test]

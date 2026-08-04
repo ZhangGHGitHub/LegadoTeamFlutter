@@ -100,6 +100,57 @@ impl<'a> BookSourceRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("计数查询失败: {e}")))?;
         Ok(count)
     }
+
+    /// CAS 乐观锁更新书源检查结果（对齐上游 `BookSourceDao.updateCheckResult`）
+    ///
+    /// 仅当数据库中 `lastUpdateTime`/`bookSourceGroup`/`bookSourceComment`/`respondTime`
+    /// 与调用方读取时的快照（expected_*）完全一致时才执行更新，
+    /// 避免并发检查时覆盖其他会话的修改。
+    ///
+    /// 语义对齐说明：
+    /// - Kotlin 中 `(col is null and :p is null) or col = :p` 的空值安全比较，
+    ///   在 SQLite 中等价于 `col IS ?`（两侧同为 NULL 时返回真）；
+    /// - Kotlin 返回受影响行数 Int，此处按任务要求收敛为 bool（affected > 0）。
+    ///
+    /// 返回 `Ok(true)` 表示 CAS 成功（已更新），`Ok(false)` 表示快照已过期未更新。
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_check_result(
+        &self,
+        book_source_url: &str,
+        book_source_group: Option<&str>,
+        book_source_comment: Option<&str>,
+        respond_time: i64,
+        expected_last_update_time: i64,
+        expected_book_source_group: Option<&str>,
+        expected_book_source_comment: Option<&str>,
+        expected_respond_time: i64,
+    ) -> LegadoResult<bool> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE book_sources SET
+                    bookSourceGroup = ?2,
+                    bookSourceComment = ?3,
+                    respondTime = ?4
+                 WHERE bookSourceUrl = ?1
+                    AND lastUpdateTime = ?5
+                    AND bookSourceGroup IS ?6
+                    AND bookSourceComment IS ?7
+                    AND respondTime = ?8",
+                params![
+                    book_source_url,
+                    book_source_group,
+                    book_source_comment,
+                    respond_time,
+                    expected_last_update_time,
+                    expected_book_source_group,
+                    expected_book_source_comment,
+                    expected_respond_time,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("CAS 更新检查结果失败: {e}")))?;
+        Ok(affected > 0)
+    }
 }
 
 impl<'a> Repository<BookSource> for BookSourceRepository<'a> {
@@ -351,5 +402,114 @@ mod tests {
         let found = repo.find_by_url("u1").unwrap().unwrap();
         assert_eq!(found.book_source_name, "updated");
         assert_eq!(repo.count().unwrap(), 1);
+    }
+
+    /// CAS 成功：expected 快照与库内一致，字段被更新并返回 true
+    #[test]
+    fn test_update_check_result_success() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.book_source_group = Some("分组A".to_string());
+        src.book_source_comment = Some("旧备注".to_string());
+        src.last_update_time = 100;
+        src.respond_time = 500;
+        repo.insert(&src).unwrap();
+
+        let ok = repo
+            .update_check_result(
+                "u1",
+                Some("分组B"),
+                Some("新备注"),
+                300,
+                100,
+                Some("分组A"),
+                Some("旧备注"),
+                500,
+            )
+            .unwrap();
+        assert!(ok);
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.book_source_group.as_deref(), Some("分组B"));
+        assert_eq!(found.book_source_comment.as_deref(), Some("新备注"));
+        assert_eq!(found.respond_time, 300);
+        // lastUpdateTime 不在更新列内，保持原值
+        assert_eq!(found.last_update_time, 100);
+    }
+
+    /// CAS 竞态：expected_last_update_time 不匹配时返回 false 且不落库
+    #[test]
+    fn test_update_check_result_conflict_on_last_update_time() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.last_update_time = 200;
+        src.respond_time = 500;
+        repo.insert(&src).unwrap();
+
+        // 调用方持有旧快照（lastUpdateTime=100），库内已被其他会话推进到 200
+        let ok = repo
+            .update_check_result("u1", Some("G"), None, 300, 100, None, None, 500)
+            .unwrap();
+        assert!(!ok);
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.book_source_group, None);
+        assert_eq!(found.respond_time, 500);
+    }
+
+    /// CAS 竞态：respondTime 快照不匹配时同样拒绝更新
+    #[test]
+    fn test_update_check_result_conflict_on_respond_time() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.last_update_time = 100;
+        src.respond_time = 400;
+        repo.insert(&src).unwrap();
+
+        let ok = repo
+            .update_check_result("u1", None, None, 300, 100, None, None, 500)
+            .unwrap();
+        assert!(!ok);
+        assert_eq!(repo.find_by_url("u1").unwrap().unwrap().respond_time, 400);
+    }
+
+    /// 空值安全比较：库内 group/comment 为 NULL 时 expected 传 None 应匹配成功
+    #[test]
+    fn test_update_check_result_null_fields_match() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.book_source_group = None;
+        src.book_source_comment = None;
+        src.last_update_time = 100;
+        src.respond_time = 500;
+        repo.insert(&src).unwrap();
+
+        let ok = repo
+            .update_check_result("u1", None, None, 250, 100, None, None, 500)
+            .unwrap();
+        assert!(ok);
+        assert_eq!(repo.find_by_url("u1").unwrap().unwrap().respond_time, 250);
+    }
+
+    /// 空值安全比较：库内 group 为 NULL 而 expected 传 Some 时应拒绝（反之亦然）
+    #[test]
+    fn test_update_check_result_null_mismatch_rejected() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.book_source_group = None;
+        src.last_update_time = 100;
+        src.respond_time = 500;
+        repo.insert(&src).unwrap();
+
+        let ok = repo
+            .update_check_result("u1", None, None, 300, 100, Some("分组A"), None, 500)
+            .unwrap();
+        assert!(!ok);
+        assert_eq!(repo.find_by_url("u1").unwrap().unwrap().respond_time, 500);
     }
 }
