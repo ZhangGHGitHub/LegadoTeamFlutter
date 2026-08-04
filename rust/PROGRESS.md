@@ -1,20 +1,20 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-08-02（Flutter 测试数更新为实测 952，Phase 5.4 去重 bookshelf_provider_test 后）
+> 最后更新：2026-08-05（阶段 24 上游同步窗口 2 跟进完成，任务数更新至 157，测试数按 2026-08-05 全量实测更新）
 
 ---
 
 ## 总览
 
-- **已完成**：148 / 148 原子任务（100%）
+- **已完成**：157 / 157 原子任务（100%）
 - **完成度（2026-07-29 源码审计）**：整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）
-- **测试状态**：cargo test 1409 passed（默认）/ 1578 passed（含 QuickJS + FFI）| flutter test 952 passed（2026-08-02 实测，Phase 5.4 去重后） | flutter analyze 0 issues
-- **QuickJS feature**：327 tests passed (1 ignored) | legado-ffi：105 tests passed
-- **里程碑**：🎉 Flutter UI 深度实现 + 工程化（仿真翻页/段评/视频/漫画/CI 发布）
+- **测试状态**：cargo test 2023 passed（Rust workspace）+ 547 passed（quickjs feature）| flutter test 1087 passed（2026-08-05 实测） | flutter analyze 0 issues
+- **QuickJS feature**：547 tests passed | legado-ffi：150 tests passed
+- **里程碑**：🎉 上游同步窗口 2 跟进完成（141 提交同步 + 高亮体系一期 + P0/P1/P2 全部跟进项 + E2E 遗留修复闭环）
 
 ---
 
-## 已完成（148/148 原子任务）
+## 已完成（157/157 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -365,21 +365,34 @@
 - 测试覆盖：16 个新 Flutter widget 测试（翻页 8 + 段评 8）
 - 质量门禁：cargo test 1315 passed / clippy 0 warnings / flutter test 167 passed / flutter analyze 0 issues
 
+### 阶段 24：上游同步窗口 2 跟进（2026-08-04 ~ 08-05）✅
+
+- [x] Task #149: 上游同步 141 提交（e1c102803→308ac7b1e #543，提交 b10285b8c）
+- [x] Task #150: 高亮体系一期——DB v99 迁移对齐上游（消除 v96 语义撞车）+ highlights/highlightRules 表 + Repository + FFI 11 方法（bcb583f17）
+- [x] Task #151: PDF 导出（genpdf + 中文字体三级策略）（c81977f01）
+- [x] Task #152: 网络层补强——gzip/brotli/deflate + SOCKS5 凭据认证 + Cookie 持久化（e954c3178）
+- [x] Task #153: Repository 补齐上游新方法（CAS 乐观锁/音频语速/批量启停/阅读记录作者合并）（94c3e1e55）
+- [x] Task #154: 听书修复同步——TTS 队列防串扰 + 音频跳过策略（e5dcf6b9e）
+- [x] Task #155: 段评回复按需加载（review_rule_parser + reviewGetReplies FFI）（2a6d4c865）
+- [x] Task #156: P2 八项——cURL 转换/MCP 5 工具/目录批量更新/AutoTask 协议/搜索阅读记录/JsSourceConfig/应用日志/登录 V2（98e6e264~24281fdd）
+- [x] Task #157: E2E 会话遗留文件处置——宽松反序列化/loginCheckJs 降级/分组 camelCase/JSoup 对齐/交叉编译修复/搜索空数组（b3aa3fa~32fb823）
+- [x] 全量回归：Rust workspace 2023 + quickjs 547 + Flutter 1087 测试零失败
+
 ---
 
 ## 测试分布
 
 | Crate | 测试数 | 备注 |
 |-------|--------|------|
-| legado-core | 502 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor |
-| legado-parser | 72 | RuleAnalyzer + 4 解析器 + AnalyzeRule 门面 + AnalyzeUrl 完整模板 + RuleComplete 自动补全 |
-| legado-net | 188 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + QUIC |
-| legado-js | 158（默认）/ 327（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + 15 新 API |
+| legado-core | 734 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor、PDF 导出 |
+| legado-parser | 163 | RuleAnalyzer + 4 解析器 + AnalyzeRule 门面 + AnalyzeUrl 完整模板 + RuleComplete 自动补全 + review_rule_parser 段评回复 |
+| legado-net | 222 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + QUIC + gzip/brotli/deflate + SOCKS5 凭据认证 + Cookie 持久化 |
+| legado-js | 397（默认）/ 547（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + JsSourceConfig + 登录 V2 |
 | legado-book | 120 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
-| legado-db | 220 | Schema v95 + 25 Repository（100% 覆盖）+ MigrationRegistry + RoomImporter + DefaultData（215 单元 + 4 集成 + 1 文档） |
-| legado-ffi | 105 | 103+ FFI 导出 + flutter_rust_bridge + 换源 + WebBook(真实链路) + 书签 + 替换规则 + 在线阅读 + RSS收藏 + 搜索历史 + 阅读记录 + 书籍分组 + 统计 + 缓存 + 配置 + HTTP TTS + 音频进度 + Backup(3) + Server(3) + User(6) + WebDAV(6) + Download(8) + Review(4) API |
-| legado-server | 164 | axum HTTP + 53 REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook(真实链路) + Debug + ReadAloud + MCP(12工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + 集成测试 |
-| **合计** | **1409**（默认）/ **1578**（含 quickjs + ffi） | Flutter: 952 tests（2026-08-02 实测，Phase 5.4 去重后） |
+| legado-db | 260 | Schema v99 + highlights/highlightRules 表 + 27 Repository + MigrationRegistry + RoomImporter + DefaultData（CAS 乐观锁/批量启停/阅读记录作者合并） |
+| legado-ffi | 150 | 110+ FFI 导出 + flutter_rust_bridge + 高亮 11 方法 + reviewGetReplies + 搜索阅读记录 + 既有全部模块 API |
+| legado-server | 178 | axum HTTP + 60+ REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook + Debug + ReadAloud + MCP(17工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + cURL 转换 + 应用日志 + 集成测试 |
+| **合计** | **Rust workspace 2023**（默认）+ **547**（quickjs feature） | Flutter: 1087 tests（2026-08-05 实测） |
 
 ---
 

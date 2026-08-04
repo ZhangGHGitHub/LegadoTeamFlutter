@@ -26,23 +26,25 @@
 - **Rust 延后项 Phase 2**：取章合并 ✅
 - **Rust 延后项 Phase 3**：RSS 历史 FFI ✅
 - **Rust 延后项 Phase 4**：DB 读写分离 ✅
+- **上游同步窗口 2**：LegadoTeam/legado 141 提交同步（e1c102803→308ac7b1e #543）+ 全部 P0/P1/P2 跟进项完成（提交 b10285b8c、bcb583f17、c81977f01、e954c3178、94c3e1e55、e5dcf6b9e、2a6d4c865、98e6e264~24281fdd）
+- **高亮体系数据层**：DB v99 迁移对齐上游 + highlights/highlightRules 表 + Repository + FFI 11 方法（一期完成）
+- **E2E 遗留修复闭环**：E2E 会话遗留 6 文件全部处置提交（b3aa3fa~32fb823）
 
-> 🎉 **Rust 重构主体已全部完成**：148/148 原子任务完成，零 TODO/桩实现。
+> 🎉 **Rust 重构主体已全部完成**：157/157 原子任务完成，零 TODO/桩实现。
 
-### 📊 测试统计（2026-08-02 实测）
+### 📊 测试统计（2026-08-05 实测）
 
 | 模块 | 测试数 |
 |------|--------|
-| Rust DB（legado-db） | 220（215 单元 + 4 集成 + 1 文档） |
-| Rust FFI（legado-ffi） | 105 |
-| Flutter | 952 |
-| **总计（含全部 Rust crate）** | **2361** |
+| Rust（workspace 全 crate） | 约 2100（workspace 默认 2023 + quickjs feature 547） |
+| Flutter | 1087 |
+| **总计** | **约 3200**（以实测为准：2026-08-05 全量回归零失败） |
 
-> Flutter 测试数于 2026-08-02 实测为 952（Phase 5.4 去重 bookshelf_provider_test 约 37 个重复用例，覆盖未丢失）。
+> 2026-08-05 全量回归实测：Rust workspace 2023 + quickjs feature 547 + Flutter 1087，零失败；flutter analyze 0 issues。
 
 ### 🔄 进行中项
 
-无。所有已规划任务均已完成。
+- **高亮体系二期**：Flutter 渲染层（高亮样式渲染与交互，UI 轨）——当前唯一进行中项。
 
 ### 👥 各轨负责人与分支
 

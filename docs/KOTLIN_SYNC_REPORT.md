@@ -310,8 +310,13 @@ pub fn AutoTaskExporter::export_json(tasks) -> String
 | 定时任务增强 | #497/#460/#458 | 分享口令导入导出/批量启停/批量生成更新任务 |
 | DB 迁移 | v96-v99（含高亮表结构调整） | Room 数据库升级链推进至 v99 |
 
-### Rust/Flutter 跟进状态
+### Rust/Flutter 跟进状态（2026-08-05 更新）
 
-- 高亮体系 + DB v99 迁移：一期（数据层）进行中（2026-08-04 立项），对齐上游语义分两期推进
-- 其余约 25 个跟进项详见审计报告（待立项）
+- 高亮体系 + DB v99 迁移一期（数据层）：✅ **已完成**（提交 bcb583f17）——DB v99 迁移对齐上游（消除 v96 语义撞车）+ highlights/highlightRules 表 + Repository + FFI 11 方法；二期（Flutter 渲染）移交 UI 轨
+- 其余约 25 个跟进项：✅ **全部完成**
+  - P1 四项：PDF 导出（c81977f01）、网络层补强 gzip/brotli/deflate + SOCKS5 凭据 + Cookie 持久化（e954c3178）、Repository 补齐上游新方法 CAS 乐观锁/音频语速/批量启停/阅读记录作者合并（94c3e1e55）、听书修复同步 TTS 队列防串扰 + 音频跳过策略（e5dcf6b9e）
+  - 段评回复按需加载：review_rule_parser + reviewGetReplies FFI（2a6d4c865）
+  - P2 八项：cURL 转换/MCP 5 工具/目录批量更新/AutoTask 协议/搜索阅读记录/JsSourceConfig/应用日志/登录 V2（98e6e264~24281fdd）
+- E2E 会话遗留 6 文件：✅ **全部处置提交**（b3aa3fa~32fb823）——宽松反序列化/loginCheckJs 降级/分组 camelCase/JSoup 对齐/交叉编译修复/搜索空数组
 - 应用自更新（上游 #520/#526/#528）：已列入不迁移项（用户确认，见 rust/PROGRESS.md）
+- 全量回归：Rust workspace 2023 + quickjs 547 + Flutter 1087 测试零失败（2026-08-05 实测）
