@@ -408,6 +408,72 @@ mod quickjs_engine {
                 other => other.to_js_string(),
             }
         }
+
+        /// JS 语法检查（只编译不执行）
+        ///
+        /// 借助 `Function` 构造器：仅将源码作为函数体解析编译，不执行任何代码。
+        /// 编译成功返回 `Ok(())`，语法错误时返回携带异常信息（message + stack，
+        /// stack 中含 `:<行号>:` 线索）的 `Err`。用于 JS 单文件书源语法校验（#479）。
+        ///
+        /// 注 1：rquickjs 未暴露 `JS_EVAL_FLAG_COMPILE_ONLY` 原生入口，
+        /// `Function(code)` 构造器是等价的"只编译不执行"公开方案。
+        /// 注 2：沙箱会替换全局 `Function` 构造器，故此处创建独立的纯上下文；
+        /// 检查过程不执行待检代码，无沙箱逃逸风险。
+        pub fn check_syntax(&self, code: &str) -> Result<(), String> {
+            // 独立纯上下文：不经沙箱注册，保留原生 Function 构造器
+            let runtime = rquickjs::Runtime::new()
+                .map_err(|e| format!("语法检查引擎创建失败: {}", e))?;
+            let context = rquickjs::Context::full(&runtime)
+                .map_err(|e| format!("语法检查上下文创建失败: {}", e))?;
+            context.with(|ctx| Self::check_syntax_in_ctx(&ctx, code))
+        }
+
+        /// 在指定上下文内执行语法检查（供 [`Self::check_syntax`] 与测试复用）
+        fn check_syntax_in_ctx(ctx: &rquickjs::Ctx<'_>, code: &str) -> Result<(), String> {
+            // 待检源码暂存为临时全局变量（仅字符串赋值，不执行源码本身）
+            let globals = ctx.globals();
+            globals
+                .set("__legado_syntax_check__", code.to_string())
+                .map_err(|e| e.to_string())?;
+            // Function 构造器只编译函数体；语法错误时抛出 SyntaxError
+            let result: Result<rquickjs::Value, rquickjs::Error> = ctx.eval(
+                "(function(){ Function(__legado_syntax_check__); return 'ok'; })()",
+            );
+            // 清理临时全局变量
+            let _ = globals.remove::<&str>("__legado_syntax_check__");
+            match result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(Self::take_exception_message(ctx)),
+            }
+        }
+
+        /// 提取当前挂起异常的信息（message + stack），不抛出
+        fn take_exception_message(ctx: &rquickjs::Ctx<'_>) -> String {
+            let exc_val = ctx.catch();
+            let mut message = "语法错误".to_string();
+            if let Some(exc) = exc_val
+                .as_object()
+                .and_then(|o| rquickjs::Exception::from_object(o.clone()))
+            {
+                if let Some(m) = exc.message() {
+                    if !m.trim().is_empty() {
+                        message = m;
+                    }
+                }
+                let stack = exc.stack().unwrap_or_default();
+                if stack.trim().is_empty() {
+                    return message;
+                }
+                return format!("{} ({})", message, stack.trim());
+            }
+            // 非 Error 对象异常：退化为字符串表示
+            if let Some(s) = exc_val.as_string().and_then(|s| s.to_string().ok()) {
+                if !s.trim().is_empty() {
+                    return s;
+                }
+            }
+            message
+        }
     }
 
     impl JsEngine for QuickJsEngine {

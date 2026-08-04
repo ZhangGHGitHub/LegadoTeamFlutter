@@ -1585,4 +1585,34 @@ pub mod ffi {
         )?;
         to_json(&book)
     }
+
+    // ─── JS 单文件书源配置（JsSourceConfig 对齐）────────────────
+
+    /// 提取 JS 单文件书源配置（返回 BookSource JSON）
+    ///
+    /// `content` — 完整 JS 书源脚本文本；需 quickjs 构建，否则返回错误
+    pub fn js_source_extract(content: String) -> Result<String, BridgeError> {
+        Ok(crate::api::js_source_config_api::js_source_extract(&content)?)
+    }
+
+    /// JS 语法检查（#479，返回 SyntaxCheckResult JSON：valid/message/line）
+    ///
+    /// `content` — 待检查的 JS 脚本文本；quickjs 构建下只编译不执行，
+    /// 非 quickjs 构建降级为括号平衡基础检查
+    pub fn js_source_syntax_check(content: String) -> Result<String, BridgeError> {
+        Ok(crate::api::js_source_config_api::js_source_syntax_check(&content)?)
+    }
+
+    /// 写回顶层配置对象的 lastUpdateTime（#208/#515，返回替换后脚本文本）
+    ///
+    /// `content` — JS 书源脚本文本；`stamp` — 新时间戳（毫秒）。
+    /// 找不到可替换位置时返回空字符串
+    pub fn js_source_stamp_last_update_time(
+        content: String,
+        stamp: i64,
+    ) -> Result<String, BridgeError> {
+        Ok(
+            crate::api::js_source_config_api::js_source_stamp_last_update_time(&content, stamp)?,
+        )
+    }
 }

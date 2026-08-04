@@ -18,6 +18,7 @@ pub mod download_api;
 pub mod explore_api;
 pub mod highlight_api;
 pub mod http_tts_api;
+pub mod js_source_config_api;
 pub mod quic_api;
 pub mod read_record_api;
 pub mod reader;

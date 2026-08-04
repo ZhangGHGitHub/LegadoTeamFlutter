@@ -428,6 +428,17 @@
 | `highlightRuleDelete({required int id})` | id | `Future<bool>` | 按 ID 删除高亮规则，返回是否实际删除 |
 | `highlightRuleFindEnabled({required String bookName, required String origin})` | bookName, origin | `Future<String>` | 按书籍查找启用的高亮规则（scope 匹配书名或 origin，HighlightRule 数组 JSON） |
 
+### 2.37 JS 单文件书源配置（JsSourceConfig 对齐）（3 个方法）
+
+> 对齐 Kotlin `JsSourceConfig.kt`：extract 配置提取 / stampLastUpdateTime 时间写回（#208/#515）/ 语法检查（#479）。
+> extract 需 QuickJS 构建（`--features quickjs`），非 quickjs 构建返回错误；语法检查非 quickjs 构建降级为括号平衡基础检查。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `jsSourceExtract({required String content})` | content（完整 JS 书源脚本） | `Future<String>` | 执行脚本提取顶层 config/source 配置（BookSource JSON，mainJs 回填完整脚本）；缺必备函数/配对校验失败报错 |
+| `jsSourceSyntaxCheck({required String content})` | content（待检查 JS 脚本） | `Future<String>` | 语法检查（SyntaxCheckResult JSON：`valid` / `message` / `line`）；quickjs 下只编译不执行 |
+| `jsSourceStampLastUpdateTime({required String content, required int stamp})` | content（JS 书源脚本）, stamp（新时间戳毫秒） | `Future<String>` | 写回顶层 config/source 对象的 lastUpdateTime（仅替换数字字面量或 Date.now()）；无可替换位置返回空字符串 |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -519,4 +530,5 @@
 | 34 | 压缩包导入 | 7 |
 | 35 | RSS 已读记录 | 6 |
 | 36 | 正文高亮 | 11 |
-| | **合计** | **182** |
+| 37 | JS 单文件书源配置 | 3 |
+| | **合计** | **185** |

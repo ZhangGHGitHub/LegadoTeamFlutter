@@ -399,6 +399,34 @@ class MockBookApi implements BookApi {
     _configs['source_sort_ascending'] = ascending.toString();
   }
 
+  @override
+  Future<String> extractJsSource(String content) async {
+    // Mock 占位：返回基于脚本内容的假书源 JSON
+    return jsonEncode({
+      'bookSourceUrl': 'mock://js-source',
+      'bookSourceName': 'Mock JS 书源',
+      'bookSourceType': 0,
+      'enabled': true,
+      'mainJs': content,
+    });
+  }
+
+  @override
+  Future<String> checkJsSourceSyntax(String content) async {
+    // Mock 占位：非空即视为语法合法
+    return jsonEncode({
+      'valid': content.trim().isNotEmpty,
+      'message': content.trim().isNotEmpty ? 'Mock 语法检查通过' : 'JS源内容为空',
+      'line': null,
+    });
+  }
+
+  @override
+  Future<String> stampJsSourceLastUpdateTime(String content, int stamp) async {
+    // Mock 占位：原样返回（不模拟写回）
+    return content;
+  }
+
   // ========== 搜索操作 ==========
 
   @override

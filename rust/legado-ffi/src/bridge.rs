@@ -1971,6 +1971,38 @@ pub extern "C" fn ffi_highlight_rule_delete(id: i64) -> *mut c_char {
     to_ffi_response(catch_unwind(|| crate::api::highlight_api::highlight_rule_delete(id)))
 }
 
+// ─── JS 单文件书源配置 FFI 函数 ──────────────────────────────
+
+/// 提取 JS 单文件书源配置（返回 BookSource JSON）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_js_source_extract(content: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let text = c_char_to_str(content)?;
+        crate::api::js_source_config_api::js_source_extract(text)
+    }))
+}
+
+/// JS 语法检查（返回 SyntaxCheckResult JSON）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_js_source_syntax_check(content: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let text = c_char_to_str(content)?;
+        crate::api::js_source_config_api::js_source_syntax_check(text)
+    }))
+}
+
+/// 写回顶层配置对象的 lastUpdateTime（返回替换后脚本文本，无匹配时空字符串）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_js_source_stamp_last_update_time(
+    content: *const c_char,
+    stamp: i64,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let text = c_char_to_str(content)?;
+        crate::api::js_source_config_api::js_source_stamp_last_update_time(text, stamp)
+    }))
+}
+
 #[no_mangle]
 pub extern "C" fn legado_version() -> *mut c_char {
     ffi_version()

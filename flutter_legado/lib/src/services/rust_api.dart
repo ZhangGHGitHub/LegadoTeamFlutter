@@ -227,6 +227,18 @@ class RustApi implements BookApi {
     );
   }
 
+  /// 提取 JS 单文件书源配置（返回 BookSource JSON，需 QuickJS 构建）
+  Future<String> extractJsSource(String content) =>
+      bridge.jsSourceExtract(content: content);
+
+  /// JS 书源语法检查（返回含 valid/message/line 的 JSON）
+  Future<String> checkJsSourceSyntax(String content) =>
+      bridge.jsSourceSyntaxCheck(content: content);
+
+  /// 写回 JS 书源顶层配置的 lastUpdateTime（返回替换后脚本文本，无匹配时空串）
+  Future<String> stampJsSourceLastUpdateTime(String content, int stamp) =>
+      bridge.jsSourceStampLastUpdateTime(content: content, stamp: stamp);
+
   // ========== 搜索操作 ==========
 
   /// 搜索书籍
