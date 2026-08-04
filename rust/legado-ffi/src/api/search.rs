@@ -513,21 +513,27 @@ struct AnnotatedCandidate {
 // ─── 内部实现 ─────────────────────────────────────────────────────────────────
 
 /// 加载待搜索的书源列表
+///
+/// `source_urls_json` 为空字符串或空数组（`[]`）均表示「搜索所有启用的书源」；
+/// Dart 侧无筛选条件时传 `'[]'`，与原版「未选分组/书源即搜全部」语义对齐。
 fn load_search_sources(source_urls_json: &str) -> LegadoResult<Vec<BookSource>> {
     if source_urls_json.is_empty() {
         // 使用所有启用的书源
-        source_api::list_enabled_sources()
-    } else {
-        let urls: Vec<String> = serde_json::from_str(source_urls_json)
-            .map_err(|e| LegadoError::Ffi(format!("书源 URL 列表解析失败: {e}")))?;
-        // 从数据库逐个加载（简化实现）
-        let all = source_api::list_enabled_sources()?;
-        let filtered: Vec<BookSource> = all
-            .into_iter()
-            .filter(|s| urls.contains(&s.book_source_url))
-            .collect();
-        Ok(filtered)
+        return source_api::list_enabled_sources();
     }
+    let urls: Vec<String> = serde_json::from_str(source_urls_json)
+        .map_err(|e| LegadoError::Ffi(format!("书源 URL 列表解析失败: {e}")))?;
+    if urls.is_empty() {
+        // 空数组同样表示搜全部（兼容 Dart 侧默认值 '[]'）
+        return source_api::list_enabled_sources();
+    }
+    // 从数据库逐个加载（简化实现）
+    let all = source_api::list_enabled_sources()?;
+    let filtered: Vec<BookSource> = all
+        .into_iter()
+        .filter(|s| urls.contains(&s.book_source_url))
+        .collect();
+    Ok(filtered)
 }
 
 /// 对单个书源执行搜索（异步）
@@ -1220,6 +1226,100 @@ mod tests {
         assert!(json.contains("\"width\""));
         assert!(json.contains("\"height\""));
         assert!(json.contains("https://cdn.example.com/x.jpg"));
+    }
+
+    /// 回归：`load_search_sources("[]")` 应视为搜全部（Dart 侧无筛选默认传 '[]'）
+    #[test]
+    fn test_load_search_sources_empty_array_means_all() {
+        crate::db_state::ensure_test_db();
+        let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
+            .expect("读取 yckceo_7631.json 失败");
+        crate::api::source::import_sources(&json).expect("导入书源失败");
+
+        let from_empty_array = load_search_sources("[]").expect("空数组解析失败");
+        let from_empty_str = load_search_sources("").expect("空串解析失败");
+        assert!(
+            !from_empty_array.is_empty(),
+            "空数组 '[]' 应表示搜索全部启用书源"
+        );
+        assert_eq!(from_empty_array.len(), from_empty_str.len());
+    }
+
+    /// E2E 诊断测试（需网络，默认忽略）：
+    /// 导入 yckceo 7631 书源并执行真实搜索，用于区分
+    /// 「集成测试框架缺陷」与「Rust 搜索链路问题」。
+    /// 运行：cargo test -p legado-ffi e2e_yckceo -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn test_e2e_yckceo_search_network() {
+        crate::db_state::ensure_test_db();
+
+        // cwd 为 rust/legado-ffi，书源夹具位于 tests/fixtures/
+        let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
+            .expect("读取 yckceo_7631.json 失败");
+        let imported = crate::api::source::import_sources(&json).expect("导入书源失败");
+        eprintln!("[E2E] 导入书源数量: {imported}");
+
+        match search_books("都市", "") {
+            Ok(results) => {
+                eprintln!("[E2E] 搜索结果数量: {}", results.len());
+                for r in results.iter().take(5) {
+                    eprintln!(
+                        "[E2E] - 《{}》 作者:{} 源:{} url:{}",
+                        r.book_name, r.author, r.source_name, r.book_url
+                    );
+                }
+            }
+            Err(e) => eprintln!("[E2E] 搜索失败: {e:?}"),
+        }
+    }
+
+    /// E2E 诊断：搜索 → 刷新目录 → 获取正文，定位阅读链路断点。
+    /// 运行：cargo test -p legado-ffi e2e_read_chain --features quickjs -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn test_e2e_yckceo_read_chain_network() {
+        crate::db_state::ensure_test_db();
+
+        let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
+            .expect("读取 yckceo_7631.json 失败");
+        crate::api::source::import_sources(&json).expect("导入书源失败");
+
+        let results = search_books("都市", "").expect("搜索失败");
+        assert!(!results.is_empty(), "搜索无结果");
+        // 优先选《都市逍遥邪医》，否则取首条
+        let target = results
+            .iter()
+            .find(|r| r.book_name.contains("都市逍遥邪医"))
+            .unwrap_or(&results[0]);
+        eprintln!(
+            "[E2E-READ] 目标: 《{}》 url={} origin={}",
+            target.book_name, target.book_url, target.source_url
+        );
+
+        match crate::api::reader::refresh_toc(&target.book_url, &target.source_url) {
+            Ok(resp) => {
+                eprintln!("[E2E-READ] 目录章节数: {}", resp.total);
+                for c in resp.chapters.iter().take(3) {
+                    eprintln!("[E2E-READ] - {} url={}", c.title, c.url);
+                }
+                if let Some(first) = resp.chapters.first() {
+                    match crate::api::reader::fetch_chapter_content(
+                        &target.book_url,
+                        &first.url,
+                        &target.source_url,
+                    ) {
+                        Ok(content) => eprintln!(
+                            "[E2E-READ] 正文长度: {} 前80字: {}",
+                            content.len(),
+                            content.chars().take(80).collect::<String>()
+                        ),
+                        Err(e) => eprintln!("[E2E-READ] 正文获取失败: {e:?}"),
+                    }
+                }
+            }
+            Err(e) => eprintln!("[E2E-READ] 目录获取失败: {e:?}"),
+        }
     }
 
     // ─── 测试 11: 阅读记录标识（对齐上游 ReadRecordIndex，#424）────────────
