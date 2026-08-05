@@ -11,7 +11,9 @@
 //!    由 Flutter / 平台侧拦截并真正执行（与 `openVideoPlayer` 相同模式）：
 //!    - `webView` → `{"action":"webView","html":...,"url":...,"js":...}`
 //!    - `webViewGetSource` → `{"action":"webViewGetSource",...,"sourceRegex":...}`
+//!    - `webViewGetOverrideUrl` → `{"action":"webViewGetOverrideUrl",...,"overrideUrlRegex":...}`
 //!    - `startBrowser` → `{"action":"startBrowser","url":...,"title":...}`
+//!    - `showBrowser` → `{"action":"openBrowser","url":...,"html":...}`
 //!    - `openUrl` → `{"action":"openUrl","url":...,"mimeType":...}`
 //!
 //! 2. **需要挂起等待用户交互的 API**（验证码）：接入全局验证码交互通道
@@ -68,12 +70,57 @@ pub fn web_view_get_source(html: &str, url: &str, js: &str, source_regex: &str) 
     .to_string()
 }
 
-/// WebView API — 获取 WebView 拦截的跳转 URL
+/// WebView API — 获取 WebView 拦截的跳转 URL → 结构化桥接载荷
 ///
-/// 对应 Kotlin: `webViewGetOverrideUrl(html, url, js, overrideUrlRegex): String?`
-/// Rust 无头运行时不支持此操作，返回错误提示。
-pub fn web_view_get_override_url() -> String {
-    NOT_SUPPORTED.to_string()
+/// 对应 Kotlin: `webViewGetOverrideUrl(html, url, js, overrideUrlRegex,
+/// cacheFirst, delayTime): String?`（内部用 BackstageWebView 拦截跳转 URL）。
+///
+/// Rust 无头运行时无法执行真实 WebView，因此返回桥接载荷，
+/// 由 Flutter 侧使用真实 WebView 处理后回填结果（与 webView / webViewGetSource 同模式）。
+///
+/// 返回 JSON：
+/// ```json
+/// {"action":"webViewGetOverrideUrl","html":"...","url":"...","js":"...",
+///  "overrideUrlRegex":"...","cacheFirst":false,"delayTime":0}
+/// ```
+pub fn web_view_get_override_url(
+    html: &str,
+    url: &str,
+    js: &str,
+    override_url_regex: &str,
+    cache_first: bool,
+    delay_time: i64,
+) -> String {
+    serde_json::json!({
+        "action": "webViewGetOverrideUrl",
+        "html": html,
+        "url": url,
+        "js": js,
+        "overrideUrlRegex": override_url_regex,
+        "cacheFirst": cache_first,
+        "delayTime": delay_time,
+    })
+    .to_string()
+}
+
+/// showBrowser(url, html?, preloadJs?, config?) → 结构化桥接载荷
+///
+/// 对应 Kotlin: `showBrowser(url, html, preloadJs, config)`（弹出应用内 WebView 对话框）。
+/// Rust 无头运行时返回桥接载荷，由 Flutter 侧拦截并打开浏览器/WebView 页面。
+///
+/// 返回 JSON：
+/// ```json
+/// {"action":"openBrowser","url":"...","html":"...","preloadJs":"...","config":"..."}
+/// ```
+pub fn show_browser(url: &str, html: &str, preload_js: &str, config: &str) -> String {
+    serde_json::json!({
+        "action": "openBrowser",
+        "url": url,
+        "html": html,
+        "preloadJs": preload_js,
+        "config": config,
+    })
+    .to_string()
 }
 
 /// startBrowser(url, title, html?) → 结构化桥接载荷
@@ -242,6 +289,28 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(parsed["action"], "webViewGetSource");
         assert_eq!(parsed["sourceRegex"], "content");
+    }
+
+    #[test]
+    fn test_web_view_get_override_url_bridge_payload() {
+        let payload =
+            web_view_get_override_url("", "http://test.com", "", "legado://.*", true, 500);
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(parsed["action"], "webViewGetOverrideUrl");
+        assert_eq!(parsed["url"], "http://test.com");
+        assert_eq!(parsed["overrideUrlRegex"], "legado://.*");
+        assert_eq!(parsed["cacheFirst"], true);
+        assert_eq!(parsed["delayTime"], 500);
+    }
+
+    #[test]
+    fn test_show_browser_bridge_payload() {
+        let payload = show_browser("http://test.com", "<html/>", "console.log(1)", "");
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(parsed["action"], "openBrowser");
+        assert_eq!(parsed["url"], "http://test.com");
+        assert_eq!(parsed["html"], "<html/>");
+        assert_eq!(parsed["preloadJs"], "console.log(1)");
     }
 
     #[test]

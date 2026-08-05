@@ -101,6 +101,27 @@ pub fn get_zip_byte_array_content(zip_path: &str, entry_name: &str) -> Result<Ve
     Ok(buf)
 }
 
+/// zipEntryBytes(zipBytes, entryName) — 从内存中的 ZIP 字节数据读取指定条目
+///
+/// 对应 Kotlin `getZipByteArrayContent` 的 ZipInputStream 逻辑：
+/// 用于网络 ZIP / 十六进制字符串等非本地文件场景。
+pub fn zip_entry_bytes(zip_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, String> {
+    let cursor = std::io::Cursor::new(zip_bytes);
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|e| format!("Invalid ZIP archive: {e}"))?;
+
+    let mut entry = archive
+        .by_name(entry_name)
+        .map_err(|e| format!("Entry '{entry_name}' not found in ZIP: {e}"))?;
+
+    let mut buf = Vec::new();
+    entry
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("Failed to read entry '{entry_name}': {e}"))?;
+
+    Ok(buf)
+}
+
 /// un7zFile(7zPath, outputPath?) — 解压 7z 文件
 ///
 /// 使用 `sevenz-rust2` 纯 Rust 实现解压 7z 格式文件。
@@ -145,6 +166,7 @@ pub fn un7z_file(_seven_z_path: &str, _output_path: Option<&str>) -> Result<Stri
 pub fn unrar_file(_rar_path: &str, _output_path: Option<&str>) -> Result<String, String> {
     Err("[ERROR] RAR decompression requires platform-native library. Use Flutter-side implementation.".to_string())
 }
+
 
 /// unArchiveFile(archivePath, outputPath?) — 通用解压（自动检测格式）
 ///
@@ -306,6 +328,24 @@ mod tests {
         let result = get_zip_byte_array_content("/no/such/file.zip", "entry");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_zip_entry_bytes_from_memory() {
+        let content = "内存 ZIP 内容";
+        let zip_path = create_test_zip(&[("inner.txt", content.as_bytes())]);
+        let zip_bytes = fs::read(&zip_path).unwrap();
+
+        let result = zip_entry_bytes(&zip_bytes, "inner.txt");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), content.as_bytes().to_vec());
+
+        // 不存在的条目应报错
+        assert!(zip_entry_bytes(&zip_bytes, "no-such.txt").is_err());
+        // 非法 ZIP 数据应报错
+        assert!(zip_entry_bytes(b"not a zip", "a").is_err());
+
+        let _ = fs::remove_dir_all(Path::new(&zip_path).parent().unwrap());
     }
 
     #[test]

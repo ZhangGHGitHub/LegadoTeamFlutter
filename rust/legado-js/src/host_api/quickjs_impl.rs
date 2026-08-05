@@ -5,28 +5,29 @@
 //!
 //! 当前实现：
 //! - 编解码 API：md5Encode, md5Encode16, base64Encode, base64Decode,
-//!   hexEncode, hexDecode, sha256, encodeURI, hmacMd5, hmacSha256
+//!   base64DecodeToByteArray, hexEncode, hexDecode, sha256, encodeURI,
+//!   hmacMd5, hmacSha256
 //! - 字符串工具：urlencode, urldecode, trimStart, trimEnd,
 //!   substringBefore, substringAfter, replaceFirst, replaceAll
 //! - JSON 工具：jsonPath, jsonGetString, toJson
 //! - 正则工具：regExp, regExpReplace, regExpFindAll
-//! - 时间工具：formatTime, currentTimeMillis, parseTime, timeFormatUTC
+//! - 时间工具：formatTime, timeFormat, currentTimeMillis, parseTime, timeFormatUTC
 //! - 文件工具：readFile, writeFile, fileExists, deleteFile, getTxtInFolder
 //! - 变量存储：getVariable, setVariable, removeVariable, clearVariables
 //! - 网络 API：httpGet, httpPost, httpHead, ajax, ajaxAll, connect, head, post
-//! - 平台桥接：webView, webViewGetSource, startBrowser, openUrl, getVerificationCode
-//! - 压缩解压：un7zFile, unrarFile
+//! - 平台桥接：webView, webViewGetSource, webViewGetOverrideUrl, startBrowser,
+//!   showBrowser, openUrl, getVerificationCode
+//! - 压缩解压：unzipFile, getZipStringContent, un7zFile, unrarFile
 //! - 字体 API：queryTTF, queryBase64TTF, replaceFont
-//! - 工具类：randomUUID, log
+//! - 工具类：randomUUID, log, toast, longToast, toURL
 
 #![cfg(feature = "quickjs")]
 
 use legado_core::LegadoError;
 
 use crate::host_api::{
-    archive_utils, chinese_utils, concurrency_api, config_api, cookie_store, crypto_api, encoding,
-    file_utils, font_api, html_format, json_utils, misc_api, network, platform, regex_utils,
-    register::mount_dual, string_utils, time_utils, variable_store,
+    archive_utils, chinese_utils, concurrency_api, config_api, cookie_store, crypto_api, encoding, file_utils, font_api, html_format, json_utils, misc_api, network,
+    platform, regex_utils, register::mount_dual, string_utils, time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
@@ -127,6 +128,37 @@ fn register_encoding_apis<'js>(
         rquickjs::Function::new(ctx.clone(), |s: String| -> String {
             encoding::base64_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // base64DecodeToByteArray(str, flags?) -> Uint8Array（字节数组）
+    // 对应 Kotlin: base64DecodeToByteArray(str?, flags=0): ByteArray?
+    // 空白输入返回 null（对齐 Kotlin 的 null 返回）；flags 兼容 Android URL_SAFE(8)
+    mount_dual(
+        java,
+        globals,
+        "base64DecodeToByteArray",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, s: String, flags: Opt<i32>| -> rquickjs::Result<
+                rquickjs::Value<'js>,
+            > {
+                use rquickjs::IntoJs;
+                if s.trim().is_empty() {
+                    // 对齐 Kotlin：isNullOrBlank -> null
+                    return Ok(rquickjs::Value::new_null(ctx.clone()));
+                }
+                let bytes =
+                    encoding::base64_decode_bytes_with_flags(&s, flags.0.unwrap_or(0))
+                        .map_err(|e| rquickjs::Error::FromJs {
+                            from: "String",
+                            to: "Uint8Array",
+                            message: Some(e),
+                        })?;
+                let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), bytes)?;
+                arr.into_js(&ctx)
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -490,6 +522,20 @@ fn register_time_apis<'js>(
                 Some(format.as_str())
             };
             time_utils::format_time(ts, fmt).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // timeFormat(ts) -> String
+    // 对应 Kotlin: timeFormat(time: Long)，格式为 AppConst.dateFormat "yyyy/MM/dd HH:mm"。
+    // 保留上方 formatTime(ts, format) 注册名，兼容已按该名调用的现有书源。
+    mount_dual(
+        java,
+        globals,
+        "timeFormat",
+        rquickjs::Function::new(ctx.clone(), |ts: i64| -> String {
+            time_utils::format_time(ts, Some("%Y/%m/%d %H:%M"))
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -1272,6 +1318,60 @@ fn register_misc_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // longToast(msg) -> String
+    // 对应 Kotlin: longToast(msg)（长停留 toast）；
+    // 与现有 toast 处理保持一致：stderr 日志输出 + 原样返回
+    mount_dual(
+        java,
+        globals,
+        "longToast",
+        rquickjs::Function::new(ctx.clone(), |msg: String| -> String {
+            misc_api::long_toast(&msg)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // toURL(urlStr, baseUrl?) -> Object（JsURL）
+    // 对应 Kotlin: toURL(urlStr, baseUrl?) -> JsURL（host/origin/pathname/searchParams）
+    mount_dual(
+        java,
+        globals,
+        "toURL",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             url_str: String,
+             base_url: Opt<String>|
+             -> rquickjs::Result<rquickjs::Object<'js>> {
+                let parts = misc_api::parse_js_url(&url_str, base_url.0.as_deref().unwrap_or(""))
+                    .map_err(|e| rquickjs::Error::FromJs {
+                        from: "String",
+                        to: "Object<JsURL>",
+                        message: Some(e),
+                    })?;
+                let obj = rquickjs::Object::new(ctx.clone())?;
+                obj.set("host", parts.host)?;
+                obj.set("origin", parts.origin)?;
+                obj.set("pathname", parts.pathname)?;
+                match parts.search_params {
+                    Some(params) => {
+                        let map = rquickjs::Object::new(ctx.clone())?;
+                        for (k, v) in params {
+                            map.set(k, v)?;
+                        }
+                        obj.set("searchParams", map)?;
+                    }
+                    None => {
+                        // 对齐 Kotlin JsURL：无 query 时 searchParams 为 null
+                        obj.set("searchParams", rquickjs::Null)?;
+                    }
+                }
+                Ok(obj)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // logType(value) -> String
     mount_dual(
         java,
@@ -1341,6 +1441,61 @@ fn register_misc_apis<'js>(
                     url.0.as_deref().unwrap_or(""),
                     js.0.as_deref().unwrap_or(""),
                     source_regex.0.as_deref().unwrap_or(""),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // webViewGetOverrideUrl(html?, url?, js?, overrideUrlRegex, cacheFirst?, delayTime?)
+    // -> String（桥接载荷）
+    // 对应 Kotlin: webViewGetOverrideUrl(html, url, js, overrideUrlRegex, cacheFirst, delayTime)
+    // Rust 无头运行时返回桥接载荷，由 Flutter 侧用真实 WebView 拦截跳转 URL
+    mount_dual(
+        java,
+        globals,
+        "webViewGetOverrideUrl",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: Opt<String>,
+             url: Opt<String>,
+             js: Opt<String>,
+             override_url_regex: String,
+             cache_first: Opt<bool>,
+             delay_time: Opt<i64>|
+             -> String {
+                platform::web_view_get_override_url(
+                    html.0.as_deref().unwrap_or(""),
+                    url.0.as_deref().unwrap_or(""),
+                    js.0.as_deref().unwrap_or(""),
+                    &override_url_regex,
+                    cache_first.0.unwrap_or(false),
+                    delay_time.0.unwrap_or(0),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // showBrowser(url, html?, preloadJs?, config?) -> String（桥接载荷）
+    // 对应 Kotlin: showBrowser(url, html, preloadJs, config)（应用内 WebView 对话框）；
+    // Rust 无头运行时返回 {"action":"openBrowser",...}，由 Flutter 侧拦截并打开浏览器
+    mount_dual(
+        java,
+        globals,
+        "showBrowser",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String,
+             html: Opt<String>,
+             preload_js: Opt<String>,
+             config: Opt<String>|
+             -> String {
+                platform::show_browser(
+                    &url,
+                    html.0.as_deref().unwrap_or(""),
+                    preload_js.0.as_deref().unwrap_or(""),
+                    config.0.as_deref().unwrap_or(""),
                 )
             },
         )
@@ -1418,12 +1573,47 @@ fn register_misc_apis<'js>(
 
 /// 注册压缩解压 API
 ///
-/// 对应 Kotlin 端 `ArchiveUtils` 中的 un7zFile / unrarFile 方法。
+/// 对应 Kotlin 端 `JsExtensions` / `ArchiveUtils` 中的
+/// unzipFile / getZipStringContent / un7zFile / unrarFile /
+/// get7zStringContent / getRarStringContent 方法。
 fn register_archive_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
 ) -> Result<(), LegadoError> {
+    // unzipFile(zipPath) -> String（解压目标目录）
+    // 对应 Kotlin: unzipFile(zipPath) -> unArchiveFile(zipPath)（自动检测压缩格式）；
+    // 空路径返回空串（对齐 Kotlin）
+    mount_dual(
+        java,
+        globals,
+        "unzipFile",
+        rquickjs::Function::new(ctx.clone(), |zip_path: String| -> String {
+            if zip_path.is_empty() {
+                return String::new();
+            }
+            archive_utils::un_archive_file(&zip_path, None)
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getZipStringContent(url, path, charsetName?) -> String
+    // 对应 Kotlin: getZipStringContent(url, path[, charsetName])；
+    // url 可为本地 ZIP 路径 / 网络 URL / 十六进制字符串；失败返回空串（对齐 Kotlin）
+    mount_dual(
+        java,
+        globals,
+        "getZipStringContent",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, entry: String, charset: Opt<String>| -> String {
+                get_zip_string_content_js(&url, &entry, charset.0.as_deref())
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // un7zFile(7zPath, outputPath?) -> String（解压目标目录）
     // 使用 sevenz-rust2 纯 Rust 实现解压 7z 格式
     mount_dual(
@@ -1457,6 +1647,80 @@ fn register_archive_apis<'js>(
     )?;
 
     Ok(())
+}
+
+/// getZipStringContent 的 JS 入口实现：解析 ZIP 来源并读取指定条目的字符串内容
+///
+/// 对应 Kotlin `getZipByteArrayContent` + `getZipStringContent`：
+/// - 绝对 URL → 经 legado-net 下载 ZIP 字节
+/// - 本地存在的文件路径 → 直接读取
+/// - 其余按十六进制字符串解码
+/// 失败时记录日志并返回空串（对齐 Kotlin `log("getZipContent 未发现内容")` + `return ""`）
+fn get_zip_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> String {
+    let bytes = match resolve_zip_bytes(url) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[getZipStringContent] ZIP 来源解析失败: {e}");
+            return String::new();
+        }
+    };
+    match archive_utils::zip_entry_bytes(&bytes, entry) {
+        Ok(b) => decode_bytes_with_charset(&b, charset),
+        Err(e) => {
+            eprintln!("[getZipStringContent] {e}");
+            String::new()
+        }
+    }
+}
+
+/// 解析 getZipStringContent 的 ZIP 来源为字节数据
+fn resolve_zip_bytes(source: &str) -> Result<Vec<u8>, String> {
+    resolve_archive_bytes(source, "ZIP")
+}
+
+/// 解析压缩档案来源为字节数据（ZIP / 7z / RAR 共用）
+fn resolve_archive_bytes(source: &str, kind: &str) -> Result<Vec<u8>, String> {
+    // 网络 URL：经 legado-net 二进制通道下载（尽力支持；
+    // legado-net 响应体当前经 String 中转，纯二进制压缩包可能受影响）
+    if source.starts_with("http://") || source.starts_with("https://") {
+        use crate::host_api::runtime_bridge::block_on;
+        use legado_net::{LegadoClient, LegadoClientConfig};
+        return block_on(async {
+            let client = LegadoClient::new(LegadoClientConfig::default())
+                .map_err(|e| format!("网络客户端初始化失败: {e}"))?;
+            client
+                .get_bytes(source, None)
+                .await
+                .map_err(|e| format!("{kind} 下载失败: {e}"))
+        });
+    }
+    // 本地文件路径
+    let path = std::path::Path::new(source);
+    if path.exists() {
+        return std::fs::read(path).map_err(|e| format!("读取本地 {kind} 文件失败: {e}"));
+    }
+    // 十六进制字符串（对齐 Kotlin HexUtil.decodeHex 分支）
+    hex::decode(source).map_err(|e| format!("十六进制 {kind} 数据解析失败: {e}"))
+}
+
+/// 按指定字符集解码 ZIP 条目字节
+///
+/// Kotlin 侧默认用 EncodingDetect 自动探测编码；Rust 侧未指定字符集时
+/// 优先按严格 UTF-8 解码，非法则 lossy 回退；指定字符集时用 encoding_rs 解码
+fn decode_bytes_with_charset(bytes: &[u8], charset: Option<&str>) -> String {
+    match charset {
+        Some(cs) if !cs.trim().is_empty() => {
+            match encoding_rs::Encoding::for_label(cs.trim().as_bytes()) {
+                Some(enc) => {
+                    let (decoded, _, _) = enc.decode(bytes);
+                    decoded.into_owned()
+                }
+                None => String::from_utf8_lossy(bytes).into_owned(),
+            }
+        }
+        _ => String::from_utf8(bytes.to_vec())
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
+    }
 }
 
 /// 注册字体 API
@@ -1936,6 +2200,229 @@ mod tests {
         let engine = make_engine();
         let result = engine.eval("java.unrarFile('test.rar')").unwrap();
         assert!(result.contains("[ERROR]"));
+    }
+
+    // ============================================================
+    // Task #95：unzipFile / getZipStringContent / 零星 API 宿主集成测试
+    // ============================================================
+
+    /// 辅助：创建测试 ZIP 文件，返回路径
+    fn create_zip_for_js(entries: &[(&str, &[u8])]) -> String {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        use zip::ZipWriter;
+
+        let dir = std::env::temp_dir().join(format!(
+            "legado_js_host_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("host_test.zip");
+
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, content) in entries {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(content).unwrap();
+        }
+        writer.finish().unwrap();
+
+        zip_path.to_string_lossy().to_string()
+    }
+
+    /// 辅助：把路径转为 JS 字符串字面量（转义 Windows 反斜杠）
+    fn js_str(s: &str) -> String {
+        format!("'{}'", s.replace('\\', "\\\\"))
+    }
+
+    #[test]
+    fn test_java_unzip_file_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.unzipFile").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_js_unzip_file_round_trip() {
+        // unzip 往返：创建 ZIP → JS 调用 unzipFile → 验证解压产物
+        let zip_path = create_zip_for_js(&[
+            ("hello.txt", b"unzip round trip"),
+            ("sub/data.bin", &[0x01, 0x02]),
+        ]);
+        let engine = make_engine();
+        let code = format!("java.unzipFile({})", js_str(&zip_path));
+        let out_dir = engine.eval(&code).unwrap();
+        assert!(
+            !out_dir.starts_with("[ERROR]"),
+            "unzipFile 失败: {}",
+            out_dir
+        );
+        assert!(std::path::Path::new(&out_dir).join("hello.txt").exists());
+        assert!(std::path::Path::new(&out_dir).join("sub/data.bin").exists());
+
+        let _ = std::fs::remove_dir_all(&out_dir);
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&zip_path).parent().unwrap());
+    }
+
+    #[test]
+    fn test_js_unzip_file_empty_path() {
+        // 对齐 Kotlin：空路径返回空串
+        let engine = make_engine();
+        let result = engine.eval("java.unzipFile('')").unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_js_get_zip_string_content() {
+        let content = "ZIP 文本内容";
+        let zip_path = create_zip_for_js(&[("content.txt", content.as_bytes())]);
+        let engine = make_engine();
+
+        let code = format!("java.getZipStringContent({}, 'content.txt')", js_str(&zip_path));
+        let result = engine.eval(&code).unwrap();
+        assert_eq!(result, content);
+
+        // 不存在的条目返回空串（对齐 Kotlin return ""）
+        let code = format!("java.getZipStringContent({}, 'no.txt')", js_str(&zip_path));
+        assert_eq!(engine.eval(&code).unwrap(), "");
+
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&zip_path).parent().unwrap());
+    }
+
+    #[test]
+    fn test_js_get_zip_string_content_hex_source() {
+        // 十六进制字符串来源（对齐 Kotlin HexUtil.decodeHex 分支）
+        let zip_path = create_zip_for_js(&[("h.txt", b"hex source")]);
+        let hex_str = hex::encode(std::fs::read(&zip_path).unwrap());
+        let engine = make_engine();
+
+        let code = format!("java.getZipStringContent('{}', 'h.txt')", hex_str);
+        assert_eq!(engine.eval(&code).unwrap(), "hex source");
+
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&zip_path).parent().unwrap());
+    }
+
+    #[test]
+    fn test_js_web_view_get_override_url_payload() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.webViewGetOverrideUrl('', 'http://t.com', '', 'legado://.*')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "webViewGetOverrideUrl");
+        assert_eq!(parsed["url"], "http://t.com");
+        assert_eq!(parsed["overrideUrlRegex"], "legado://.*");
+        assert_eq!(parsed["cacheFirst"], false);
+    }
+
+    #[test]
+    fn test_js_show_browser_payload() {
+        let engine = make_engine();
+        let result = engine
+            .eval("java.showBrowser('http://t.com', '<h/>')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["action"], "openBrowser");
+        assert_eq!(parsed["url"], "http://t.com");
+        assert_eq!(parsed["html"], "<h/>");
+    }
+
+    #[test]
+    fn test_js_long_toast() {
+        let engine = make_engine();
+        let result = engine.eval("java.longToast('长提示')").unwrap();
+        assert_eq!(result, "长提示");
+        // 裸全局同样可用
+        let result = engine.eval("longToast('bare')").unwrap();
+        assert_eq!(result, "bare");
+    }
+
+    #[test]
+    fn test_js_base64_decode_to_byte_array() {
+        let engine = make_engine();
+        // 'aGVsbG8=' = "hello"
+        let result = engine
+            .eval("Array.from(java.base64DecodeToByteArray('aGVsbG8=')).join(',')")
+            .unwrap();
+        assert_eq!(result, "104,101,108,108,111");
+        // 空白输入返回 null（对齐 Kotlin isNullOrBlank -> null）
+        let result = engine.eval("java.base64DecodeToByteArray('') === null").unwrap();
+        assert_eq!(result, "true");
+    }
+
+    #[test]
+    fn test_js_time_format() {
+        let engine = make_engine();
+        let result = engine.eval("java.timeFormat(1704067200000)").unwrap();
+        // Kotlin dateFormat = "yyyy/MM/dd HH:mm"
+        let re = regex::Regex::new(r"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}$").unwrap();
+        assert!(re.is_match(&result), "timeFormat 结果不匹配: {}", result);
+        // formatTime 兼容名保留（双参形式）
+        let result = engine.eval("java.formatTime(1704067200000, '%Y')").unwrap();
+        assert_eq!(result, "2024");
+    }
+
+    #[test]
+    fn test_js_to_url_fields() {
+        let engine = make_engine();
+        assert_eq!(
+            engine
+                .eval("java.toURL('https://ex.com:8080/a/b?x=1&y=%E4%B8%AD').host")
+                .unwrap(),
+            "ex.com"
+        );
+        assert_eq!(
+            engine
+                .eval("java.toURL('https://ex.com:8080/a/b').origin")
+                .unwrap(),
+            "https://ex.com:8080"
+        );
+        assert_eq!(
+            engine.eval("java.toURL('https://ex.com/a/b').pathname").unwrap(),
+            "/a/b"
+        );
+        assert_eq!(
+            engine
+                .eval("java.toURL('https://ex.com/a?x=1').searchParams.x")
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            engine
+                .eval("java.toURL('https://ex.com/a?y=%E4%B8%AD').searchParams.y")
+                .unwrap(),
+            "中"
+        );
+        // 无 query 时 searchParams 为 null（对齐 Kotlin JsURL）
+        assert_eq!(
+            engine
+                .eval("java.toURL('https://ex.com/a').searchParams === null")
+                .unwrap(),
+            "true"
+        );
+    }
+
+    #[test]
+    fn test_js_to_url_relative_base() {
+        let engine = make_engine();
+        assert_eq!(
+            engine
+                .eval("java.toURL('c.html', 'https://ex.com/a/b.html').pathname")
+                .unwrap(),
+            "/a/c.html"
+        );
+        assert_eq!(
+            engine
+                .eval("java.toURL('/c', 'https://ex.com/a/b.html').pathname")
+                .unwrap(),
+            "/c"
+        );
     }
 
     #[test]

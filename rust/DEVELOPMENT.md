@@ -476,12 +476,13 @@ java.variableStore.get(key) // 读取变量
 
 | API | 原 Android 依赖 | Rust 运行时行为 |
 |-----|----------------|------------------|
-| `web_view(url)` | Android WebView | 返回 `[ERROR]` 提示 |
-| `web_view_get_source(url)` | Android WebView | 返回 `[ERROR]` 提示 |
-| `web_view_get_override_url()` | Android WebView | 返回 `[ERROR]` 提示 |
-| `start_browser(url)` | Android Intent | 返回 `[ERROR]` 提示 |
-| `open_url(url)` | Android Intent | 返回 `[ERROR]` 提示 |
-| `toast(msg)` | Android Toast | 输出到 stderr，返回空字符串 |
+| `web_view(url)` | Android WebView | 返回桥接载荷 `{"action":"webView",...}` |
+| `web_view_get_source(url)` | Android WebView | 返回桥接载荷 `{"action":"webViewGetSource",...}` |
+| `web_view_get_override_url(...)` | Android WebView | 返回桥接载荷 `{"action":"webViewGetOverrideUrl",...}` |
+| `start_browser(url)` | Android Intent | 返回桥接载荷 `{"action":"startBrowser",...}` |
+| `show_browser(url, ...)` | Android WebView 对话框 | 返回桥接载荷 `{"action":"openBrowser",...}` |
+| `open_url(url)` | Android Intent | 返回桥接载荷 `{"action":"openUrl",...}` |
+| `toast(msg)` / `long_toast(msg)` | Android Toast | 输出到 stderr 日志，原样返回 msg |
 | `get_verification_code(url)` | WebView + 人机交互 | 返回 `[ERROR]` 提示 |
 | `android_id()` | Android Context | 返回 `[ERROR]` 提示 |
 | `get_web_view_ua()` | Android WebView | 返回 `[ERROR]` 提示 |
