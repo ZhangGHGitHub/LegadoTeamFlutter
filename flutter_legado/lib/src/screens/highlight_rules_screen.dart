@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
-import '../providers/providers.dart';
+import '../providers/highlight_rules/highlight_rules_notifier.dart';
 import '../theme/app_colors.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
@@ -17,6 +17,8 @@ import '../widgets/loading_indicator.dart';
 /// - 编辑（HighlightRuleEditDialog）/ 删除（确认对话框 sure_del）
 ///
 /// 数据经 BookApi highlightRule* 系列接口（Rust 侧 highlight_api）。
+/// [审计修复 §4.3 第二批] JSON 解析已下沉至 HighlightRulesNotifier，
+/// 本层仅消费类型化的 [HighlightRule] — Qoder
 class HighlightRulesScreen extends ConsumerStatefulWidget {
   const HighlightRulesScreen({super.key});
 
@@ -26,58 +28,22 @@ class HighlightRulesScreen extends ConsumerStatefulWidget {
 }
 
 class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
-  List<Map<String, dynamic>> _rules = [];
-  bool _loading = true;
-  String? _error;
-
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final api = ref.read(bookApiProvider);
-      final json = await api.highlightRuleList();
-      final list = (jsonDecode(json) as List)
-          .whereType<Map<String, dynamic>>()
-          .toList();
-      if (!mounted) return;
-      setState(() {
-        _rules = list;
-        _loading = false;
-        _error = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.toString();
-      });
-    }
-  }
-
-  /// 规则显示名（对标 Kotlin getDisplayName：name 为空时回退 pattern）
-  String _displayName(Map<String, dynamic> rule) {
-    final name = (rule['name'] as String?) ?? '';
-    return name.isNotEmpty ? name : ((rule['pattern'] as String?) ?? '');
-  }
-
-  Future<void> _toggleEnabled(Map<String, dynamic> rule, bool enabled) async {
-    final updated = Map<String, dynamic>.from(rule)..['isEnabled'] = enabled;
-    final api = ref.read(bookApiProvider);
-    await api.highlightRuleSave(ruleJson: jsonEncode(updated));
-    await _load();
+    // 首帧后加载，避免在 build 期间触发 notifier 状态写入
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(highlightRulesNotifierProvider.notifier).load();
+    });
   }
 
   /// 删除确认（对标原版 alert(sure_del + displayName)）
-  Future<void> _confirmDelete(Map<String, dynamic> rule) async {
+  Future<void> _confirmDelete(HighlightRule rule) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('高亮规则'),
-        content: Text('确定删除吗？\n${_displayName(rule)}'),
+        content: Text('确定删除吗？\n${rule.displayName}'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -94,13 +60,12 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       ),
     );
     if (ok != true) return;
-    final api = ref.read(bookApiProvider);
-    await api.highlightRuleDelete(id: ((rule['id'] as num?) ?? 0).toInt());
-    await _load();
+    await ref.read(highlightRulesNotifierProvider.notifier).deleteRule(rule);
+    _showErrorIfAny();
   }
 
-  Future<void> _edit(Map<String, dynamic>? rule) async {
-    final saved = await showModalBottomSheet<Map<String, dynamic>>(
+  Future<void> _edit(HighlightRule? rule) async {
+    final saved = await showModalBottomSheet<HighlightRule>(
       context: context,
       isScrollControlled: true,
       builder: (_) => Padding(
@@ -111,14 +76,23 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       ),
     );
     if (saved == null) return;
-    final api = ref.read(bookApiProvider);
-    await api.highlightRuleSave(ruleJson: jsonEncode(saved));
-    await _load();
+    await ref.read(highlightRulesNotifierProvider.notifier).saveRule(saved);
+    _showErrorIfAny();
+  }
+
+  /// notifier 状态中的错误提示到 UI（避免静默吞噬）
+  void _showErrorIfAny() {
+    final error = ref.read(highlightRulesNotifierProvider).error;
+    if (error == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('操作失败: $error')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final state = ref.watch(highlightRulesNotifierProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('高亮规则'),
@@ -132,11 +106,13 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
         ],
       ),
       body: Builder(builder: (context) {
-        if (_loading) return const LoadingIndicator(message: '加载高亮规则...');
-        if (_error != null) {
-          return Center(child: Text('加载失败: $_error'));
+        if (state.isLoading) {
+          return const LoadingIndicator(message: '加载高亮规则...');
         }
-        if (_rules.isEmpty) {
+        if (state.error != null) {
+          return Center(child: Text('加载失败: ${state.error}'));
+        }
+        if (state.rules.isEmpty) {
           return const EmptyState(
             icon: Icons.format_paint_outlined,
             title: '暂无高亮规则',
@@ -150,10 +126,10 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
             Card(
               child: Column(
                 children: [
-                  for (var i = 0; i < _rules.length; i++) ...[
+                  for (var i = 0; i < state.rules.length; i++) ...[
                     if (i > 0)
                       const Divider(height: 1, indent: 16),
-                    _buildRuleTile(context, _rules[i], cs),
+                    _buildRuleTile(context, state.rules[i], cs),
                   ],
                 ],
               ),
@@ -165,12 +141,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   }
 
   Widget _buildRuleTile(
-      BuildContext context, Map<String, dynamic> rule, ColorScheme cs) {
-    final enabled = (rule['isEnabled'] as bool?) ?? true;
-    final pattern = (rule['pattern'] as String?) ?? '';
-    final scope = (rule['scope'] as String?) ?? '';
-    final isRegex = (rule['isRegex'] as bool?) ?? false;
-    final name = (rule['name'] as String?) ?? '';
+      BuildContext context, HighlightRule rule, ColorScheme cs) {
+    final scope = rule.scope ?? '';
     return InkWell(
       onTap: () => _edit(rule),
       onLongPress: () => _confirmDelete(rule),
@@ -183,18 +155,20 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name.isNotEmpty ? name : pattern,
+                    rule.displayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: enabled ? cs.onSurface : cs.onSurfaceVariant,
+                          color: rule.isEnabled
+                              ? cs.onSurface
+                              : cs.onSurfaceVariant,
                         ),
                   ),
-                  if (name.isNotEmpty)
+                  if (rule.name.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        pattern,
+                        rule.pattern,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -207,7 +181,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                     child: Row(
                       children: [
                         // 正则徽标
-                        if (isRegex)
+                        if (rule.isRegex)
                           Container(
                             margin: const EdgeInsets.only(right: 6),
                             padding: const EdgeInsets.symmetric(
@@ -243,8 +217,13 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
             ),
             // 启用开关（对标原版列表项 Switch）
             Switch(
-              value: enabled,
-              onChanged: (v) => _toggleEnabled(rule, v),
+              value: rule.isEnabled,
+              onChanged: (v) async {
+                await ref
+                    .read(highlightRulesNotifierProvider.notifier)
+                    .toggleEnabled(rule, v);
+                _showErrorIfAny();
+              },
             ),
             IconButton(
               icon: Icon(Icons.delete_outline,
@@ -265,7 +244,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
 /// 对标原版 HighlightRuleEditDialog 字段：
 /// name / pattern / isRegex / applyToTitle / scope / style（颜色选择）。
 class _HighlightRuleEditSheet extends StatefulWidget {
-  final Map<String, dynamic>? rule;
+  final HighlightRule? rule;
 
   const _HighlightRuleEditSheet({this.rule});
 
@@ -298,29 +277,14 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   @override
   void initState() {
     super.initState();
-    final rule = widget.rule ?? const <String, dynamic>{};
-    _nameCtrl = TextEditingController(text: (rule['name'] as String?) ?? '');
-    _patternCtrl =
-        TextEditingController(text: (rule['pattern'] as String?) ?? '');
-    _scopeCtrl = TextEditingController(text: (rule['scope'] as String?) ?? '');
-    _isRegex = (rule['isRegex'] as bool?) ?? false;
-    _applyToTitle = (rule['applyToTitle'] as bool?) ?? false;
-    _color = _parseStyleColor((rule['style'] as String?) ?? '') ??
-        AppColors.iosYellowLight.toARGB32();
-  }
-
-  /// 从 style JSON 解析 textColor（ARGB int）
-  int? _parseStyleColor(String styleJson) {
-    if (styleJson.isEmpty) return null;
-    try {
-      final obj = jsonDecode(styleJson) as Map<String, dynamic>;
-      final v = obj['textColor'];
-      if (v is num) return v.toInt();
-    } catch (e) {
-      // [审计修复 §4.1] style 非法时回退默认色，debugPrint 留痕便于排障 — Qoder
-      debugPrint('高亮规则 style 解析失败，回退默认色: $e');
-    }
-    return null;
+    final rule = widget.rule;
+    _nameCtrl = TextEditingController(text: rule?.name ?? '');
+    _patternCtrl = TextEditingController(text: rule?.pattern ?? '');
+    _scopeCtrl = TextEditingController(text: rule?.scope ?? '');
+    _isRegex = rule?.isRegex ?? false;
+    _applyToTitle = rule?.applyToTitle ?? false;
+    // [审计修复 §4.1] style 非法时模型层回退 null，此处取默认色 — Qoder
+    _color = rule?.styleTextColor ?? AppColors.iosYellowLight.toARGB32();
   }
 
   @override
@@ -331,7 +295,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     super.dispose();
   }
 
-  /// 组装保存 JSON（字段名与 Rust HighlightRule serde 契约一致）
+  /// 组装保存模型（字段名与 Rust HighlightRule serde 契约一致）
   void _save() {
     final pattern = _patternCtrl.text.trim();
     if (pattern.isEmpty) {
@@ -350,15 +314,18 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
         return;
       }
     }
-    final rule = Map<String, dynamic>.from(widget.rule ?? const {});
-    rule['name'] = _nameCtrl.text.trim();
-    rule['pattern'] = pattern;
-    rule['isRegex'] = _isRegex;
-    rule['applyToTitle'] = _applyToTitle;
     final scope = _scopeCtrl.text.trim();
-    rule['scope'] = scope.isEmpty ? null : scope;
-    rule['isEnabled'] = (rule['isEnabled'] as bool?) ?? true;
-    rule['style'] = jsonEncode({'textColor': _color});
+    final base = widget.rule;
+    final rule = HighlightRule(
+      id: base?.id ?? 0,
+      name: _nameCtrl.text.trim(),
+      pattern: pattern,
+      isRegex: _isRegex,
+      applyToTitle: _applyToTitle,
+      scope: scope.isEmpty ? null : scope,
+      isEnabled: base?.isEnabled ?? true,
+      style: jsonEncode({'textColor': _color}),
+    );
     Navigator.pop(context, rule);
   }
 
