@@ -954,6 +954,21 @@ class MockBookApi implements BookApi {
   Future<List<BookChapter>> refreshToc(String bookUrl, String sourceUrl) async =>
       _chaptersCache[bookUrl] ?? [];
 
+  /// 繁简转换类型 Mock 持久化键（与 Rust 侧配置键同名）
+  static const _chineseConvertKey = 'chineseConverterType';
+
+  @override
+  Future<void> setChineseConvertType(int type) async {
+    // 非法取值归一为 0，与 Rust 侧语义对齐
+    final normalized = (type >= 0 && type <= 2) ? type : 0;
+    _configs[_chineseConvertKey] = normalized.toString();
+  }
+
+  @override
+  Future<int> getChineseConvertType() async {
+    return int.tryParse(_configs[_chineseConvertKey] ?? '') ?? 0;
+  }
+
   // ========== 配置操作 ==========
 
   @override

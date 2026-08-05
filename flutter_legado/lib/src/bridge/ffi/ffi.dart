@@ -307,6 +307,19 @@ Future<String> readerFetchContent({
   sourceUrl: sourceUrl,
 );
 
+/// 设置阅读器繁简转换类型并持久化（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
+///
+/// 语义对齐 Kotlin `AppConfig.chineseConverterType`；非法取值归一为 0。
+/// 设置后，正文净化与章节标题显示均按新类型转换。
+Future<void> readerSetChineseConvert({required int convertType}) => RustLib
+    .instance
+    .api
+    .crateFfiFfiReaderSetChineseConvert(convertType: convertType);
+
+/// 获取当前繁简转换类型（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
+Future<int> readerGetChineseConvert() =>
+    RustLib.instance.api.crateFfiFfiReaderGetChineseConvert();
+
 /// 检测书籍文件格式（JSON）
 Future<String> importDetectFormat({required String filePath}) =>
     RustLib.instance.api.crateFfiFfiImportDetectFormat(filePath: filePath);

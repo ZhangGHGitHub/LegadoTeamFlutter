@@ -829,6 +829,15 @@ class RustApi implements BookApi {
         .toList();
   }
 
+  /// 设置阅读器繁简转换类型并持久化（0=不转换 / 1=繁转简 / 2=简转繁）
+  ///
+  /// 语义对齐 Android `AppConfig.chineseConverterType`；非法取值归一为 0。
+  Future<void> setChineseConvertType(int type) =>
+      bridge.readerSetChineseConvert(convertType: type);
+
+  /// 获取当前繁简转换类型（0=不转换 / 1=繁转简 / 2=简转繁）
+  Future<int> getChineseConvertType() => bridge.readerGetChineseConvert();
+
   // ========== 配置操作 ==========
 
   /// 获取配置值

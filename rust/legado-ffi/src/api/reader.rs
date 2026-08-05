@@ -19,6 +19,78 @@ use legado_db::{
 use crate::db_state::with_database;
 use crate::runtime;
 
+// ─── 简繁转换配置（对齐 Kotlin AppConfig.chineseConverterType） ──────────────
+
+/// 配置键：繁简转换类型（与 Kotlin `PreferKey.chineseConverterType` 同名，
+/// 备份恢复时可跨端互通）
+const CHINESE_CONVERT_CONFIG_KEY: &str = "chineseConverterType";
+
+/// 读取持久化的繁简转换类型（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
+///
+/// 配置不存在、非数字或超出 0..=2 范围时回退为 0（不转换）。
+pub fn get_chinese_convert_type() -> i32 {
+    crate::api::config_api::get_config(CHINESE_CONVERT_CONFIG_KEY)
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|t| (0..=2).contains(t))
+        .unwrap_or(0)
+}
+
+/// 设置并持久化繁简转换类型（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
+///
+/// 非法取值一律归一为 0（不转换），与 Kotlin 面板仅提供三个选项的语义对齐。
+pub fn set_chinese_convert_type(convert_type: i32) {
+    let normalized = if (0..=2).contains(&convert_type) {
+        convert_type
+    } else {
+        0
+    };
+    let _ = crate::api::config_api::set_config(
+        CHINESE_CONVERT_CONFIG_KEY,
+        &normalized.to_string(),
+    );
+}
+
+/// 繁简转换类型 → content_processor 管线方向（None / "t2s" / "s2t"）
+fn chinese_convert_direction(convert_type: i32) -> Option<String> {
+    match convert_type {
+        1 => Some("t2s".to_string()),
+        2 => Some("s2t".to_string()),
+        _ => None,
+    }
+}
+
+/// 当前配置的管线转换方向（读取持久化配置）
+fn current_chinese_convert_direction() -> Option<String> {
+    chinese_convert_direction(get_chinese_convert_type())
+}
+
+/// 按当前繁简配置转换单个标题文本
+///
+/// 对齐 Kotlin `BookChapter.getDisplayTitle`（BookChapter.kt L132-135）：
+/// 1 → t2s（繁转简），2 → s2t（简转繁），其他不转换。
+fn convert_title_by_type(title: &str, convert_type: i32) -> String {
+    match convert_type {
+        1 => legado_core::chinese_convert::traditional_to_simplified(title),
+        2 => legado_core::chinese_convert::simplified_to_traditional(title),
+        _ => title.to_string(),
+    }
+}
+
+/// 对章节列表的标题应用当前繁简转换（仅转换返回副本，不回写数据库）
+///
+/// 阅读器/目录展示路径不经过 content_processor 正文管线，
+/// 标题的繁简转换需在此显示层补齐，与 Android getDisplayTitle 行为对等。
+fn apply_title_convert(chapters: &mut [BookChapter]) {
+    let convert_type = get_chinese_convert_type();
+    if convert_type == 0 {
+        return;
+    }
+    for ch in chapters.iter_mut() {
+        ch.title = convert_title_by_type(&ch.title, convert_type);
+    }
+}
+
 /// 章节列表响应（包含章节概要信息）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterListResponse {
@@ -39,6 +111,8 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
     })?;
 
     if !chapters.is_empty() {
+        let mut chapters = chapters;
+        apply_title_convert(&mut chapters);
         let total = chapters.len() as i32;
         return Ok(ChapterListResponse { total, chapters });
     }
@@ -46,7 +120,7 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
     // 2. 数据库无章节：如果是本地书籍，从文件解析并入库
     if is_local_book(book_url) {
         let chapter_infos = legado_book::LocalBook::get_chapters(book_url)?;
-        let book_chapters: Vec<BookChapter> = chapter_infos
+        let mut book_chapters: Vec<BookChapter> = chapter_infos
             .iter()
             .map(|ci| BookChapter {
                 url: ci.url.clone(),
@@ -77,6 +151,9 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
                 Ok(())
             })?;
         }
+
+        // 显示层标题繁简转换（不回写数据库）
+        apply_title_convert(&mut book_chapters);
 
         let total = book_chapters.len() as i32;
         return Ok(ChapterListResponse {
@@ -138,11 +215,11 @@ fn get_chapter_content_inner(
         ))
     } else {
         // 在线书籍：返回章节 URL 信息，由上层配合书源规则获取正文
-        // 简化实现：返回章节 URL 供 Dart 侧进一步处理
+        // 简化实现：返回章节 URL 供 Dart 侧进一步处理（标题做显示层繁简转换）
         Ok(serde_json::to_string(&serde_json::json!({
             "chapter_url": chapter.url,
             "base_url": chapter.base_url,
-            "title": chapter.title,
+            "title": convert_title_by_type(&chapter.title, get_chinese_convert_type()),
             "need_fetch": true,
         }))?)
     }
@@ -233,6 +310,10 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
         repo.insert_batch(&book_chapters)?;
         Ok(())
     })?;
+
+    // 显示层标题繁简转换（入库的是原始标题，仅转换返回副本）
+    let mut book_chapters = book_chapters;
+    apply_title_convert(&mut book_chapters);
 
     let total = book_chapters.len() as i32;
     Ok(ChapterListResponse {
@@ -430,12 +511,22 @@ fn apply_content_processing_inner(
         Err(_) => return raw_content.to_string(),
     };
 
+    // 繁简转换仅作用于阅读器/导出正文路径（apply_replace_rules=true）；
+    // 内容搜索 raw 路径保持原文，避免搜不到被转换的词
+    // （对齐 Kotlin BookHelp.getContent 的 replaceEnabled=false 路径）。
+    let chinese_convert = if apply_replace_rules {
+        current_chinese_convert_direction()
+    } else {
+        None
+    };
+
     process_content_with_rules_inner(
         raw_content,
         chapter_title,
         &rules,
         &book_name,
         apply_replace_rules,
+        chinese_convert,
     )
 }
 
@@ -447,16 +538,19 @@ fn process_content_with_rules(
     rules: &[ReplaceRule],
     book_name: &str,
 ) -> String {
-    process_content_with_rules_inner(raw_content, chapter_title, rules, book_name, true)
+    process_content_with_rules_inner(raw_content, chapter_title, rules, book_name, true, None)
 }
 
-/// 净化核心逻辑（纯函数，便于单元测试）：`apply_replace_rules` 控制是否应用替换规则
+/// 净化核心逻辑（纯函数，便于单元测试）：
+/// - `apply_replace_rules` 控制是否应用替换规则
+/// - `chinese_convert` 控制简繁转换方向（None / "t2s" / "s2t"，由调用方从持久化配置读取）
 fn process_content_with_rules_inner(
     raw_content: &str,
     chapter_title: &str,
     rules: &[ReplaceRule],
     book_name: &str,
     apply_replace_rules: bool,
+    chinese_convert: Option<String>,
 ) -> String {
     // 2. 按 scope 过滤（与 Android 语义一致，并修复空 book_name 守卫与精确匹配）：
     //    - None → 全局生效
@@ -482,12 +576,13 @@ fn process_content_with_rules_inner(
         .map(ReplaceRuleEntry::from_replace_rule)
         .collect();
 
-    // 3. 构造处理器：仅启用「去重复标题 + 替换规则」，与 Android 净化行为对等
+    // 3. 构造处理器：启用「去重复标题 + 替换规则 + 简繁转换」，与 Android 净化行为对等
     //    apply_replace_rules 由调用方控制（阅读器/导出=true，内容搜索=false）
+    //    chinese_convert 来自持久化配置 chineseConverterType（0/1/2 → None/t2s/s2t）
     let config = ProcessorConfig {
         remove_duplicate_title: true,
         re_segment: false,
-        chinese_convert: None,
+        chinese_convert,
         apply_replace_rules,
         indent_spaces: 0,
         trim_empty_lines: false,
@@ -801,10 +896,10 @@ mod tests {
     fn test_content_processing_raw_keeps_replaced_words() {
         let rules = vec![make_test_rule("去广告", "广告", "", false, true)];
         // apply_replace_rules=false：即使有启用规则，"广告" 仍保留
-        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", false);
+        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", false, None);
         assert_eq!(result, "这是广告内容");
         // apply_replace_rules=true：规则生效，"广告" 被删除
-        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", true);
+        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", true, None);
         assert_eq!(result, "这是内容");
     }
 
@@ -812,9 +907,115 @@ mod tests {
     #[test]
     fn test_content_processing_raw_still_removes_duplicate_title() {
         let rules: Vec<ReplaceRule> = vec![];
-        let result =
-            process_content_with_rules_inner("第一章 开始\n正文", "第一章 开始", &rules, "", false);
+        let result = process_content_with_rules_inner(
+            "第一章 开始\n正文",
+            "第一章 开始",
+            &rules,
+            "",
+            false,
+            None,
+        );
         assert_eq!(result, "正文");
+    }
+
+    // ─── 简繁转换透传测试 ───────────────────────────────────
+
+    /// 测试净化管线 t2s：繁体正文经处理后转为简体
+    #[test]
+    fn test_content_processing_chinese_convert_t2s() {
+        let rules: Vec<ReplaceRule> = vec![];
+        let result = process_content_with_rules_inner(
+            "測試內容",
+            "",
+            &rules,
+            "",
+            true,
+            Some("t2s".to_string()),
+        );
+        assert_eq!(result, "测试内容");
+    }
+
+    /// 测试净化管线 s2t：简体正文经处理后转为繁体
+    #[test]
+    fn test_content_processing_chinese_convert_s2t() {
+        let rules: Vec<ReplaceRule> = vec![];
+        let result = process_content_with_rules_inner(
+            "测试内容",
+            "",
+            &rules,
+            "",
+            true,
+            Some("s2t".to_string()),
+        );
+        assert_eq!(result, "測試內容");
+    }
+
+    /// 测试 0=不转换回归：chinese_convert=None 时正文保持原样
+    #[test]
+    fn test_content_processing_chinese_convert_none() {
+        let rules: Vec<ReplaceRule> = vec![];
+        let result =
+            process_content_with_rules_inner("測試內容abc", "", &rules, "", true, None);
+        assert_eq!(result, "測試內容abc");
+    }
+
+    /// 测试设置/读取往返：0/1/2 持久化后读回一致，非法值归一为 0
+    #[test]
+    fn test_chinese_convert_type_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        for t in [1, 2, 0] {
+            set_chinese_convert_type(t);
+            assert_eq!(get_chinese_convert_type(), t);
+        }
+        // 非法值归一为 0
+        set_chinese_convert_type(9);
+        assert_eq!(get_chinese_convert_type(), 0);
+        set_chinese_convert_type(-1);
+        assert_eq!(get_chinese_convert_type(), 0);
+
+        // 方向映射语义：0/1/2 → None/t2s/s2t
+        assert_eq!(chinese_convert_direction(0), None);
+        assert_eq!(chinese_convert_direction(1), Some("t2s".to_string()));
+        assert_eq!(chinese_convert_direction(2), Some("s2t".to_string()));
+    }
+
+    /// 集成测试：设置繁简配置后，apply_content_processing 完整链路对正文生效
+    #[test]
+    fn test_apply_content_processing_chinese_convert_integration() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://chinese-convert-test.example.com/book/1";
+
+        // t2s：繁体正文转简体
+        set_chinese_convert_type(1);
+        let result = apply_content_processing(book_url, "繁體正文內容", "");
+        assert_eq!(result, "繁体正文内容");
+
+        // s2t：简体正文转繁体
+        set_chinese_convert_type(2);
+        let result = apply_content_processing(book_url, "简体正文内容", "");
+        assert_eq!(result, "簡體正文內容");
+
+        // 0=不转换回归
+        set_chinese_convert_type(0);
+        let result = apply_content_processing(book_url, "繁體正文內容", "");
+        assert_eq!(result, "繁體正文內容");
+
+        // raw 路径（内容搜索）不做繁简转换，保持原文
+        set_chinese_convert_type(1);
+        let result = apply_content_processing_raw(book_url, "繁體正文內容", "");
+        assert_eq!(result, "繁體正文內容");
+
+        // 还原默认配置，避免影响其他测试
+        set_chinese_convert_type(0);
+    }
+
+    /// 测试标题繁简转换：对齐 Kotlin getDisplayTitle（1=t2s / 2=s2t / 0=不转）
+    #[test]
+    fn test_title_convert_by_type() {
+        assert_eq!(convert_title_by_type("第一章 測試", 1), "第一章 测试");
+        assert_eq!(convert_title_by_type("第一章 测试", 2), "第一章 測試");
+        assert_eq!(convert_title_by_type("第一章 測試", 0), "第一章 測試");
     }
 
     // ─── get_chapter_content_full 测试 ─────────────────────────────────────

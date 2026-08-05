@@ -480,6 +480,20 @@ pub mod ffi {
         )?)
     }
 
+    /// 设置阅读器繁简转换类型并持久化（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
+    ///
+    /// 语义对齐 Kotlin `AppConfig.chineseConverterType`；非法取值归一为 0。
+    /// 设置后，正文净化与章节标题显示均按新类型转换。
+    pub fn reader_set_chinese_convert(convert_type: i32) -> Result<(), BridgeError> {
+        crate::api::reader::set_chinese_convert_type(convert_type);
+        Ok(())
+    }
+
+    /// 获取当前繁简转换类型（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
+    pub fn reader_get_chinese_convert() -> Result<i32, BridgeError> {
+        Ok(crate::api::reader::get_chinese_convert_type())
+    }
+
     // ─── 书籍导入 ─────────────────────────────────────────────
 
     /// 检测书籍文件格式（JSON）
