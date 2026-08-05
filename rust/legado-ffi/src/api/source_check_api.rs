@@ -249,6 +249,14 @@ fn all_sources_as_options() -> LegadoResult<Vec<Option<BookSource>>> {
 mod tests {
     use super::*;
 
+    /// 流式测试共享全局取消标志 `CHECK_CANCELLED`，并行执行会互相
+    /// 置位/重置导致不稳定，故串行化所有流式测试。
+    /// 使用 tokio 异步锁：其守卫为 Send，可跨 `.await` 全程持有。
+    async fn lock_stream_tests() -> tokio::sync::MutexGuard<'static, ()> {
+        static STREAM_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        STREAM_TEST_LOCK.lock().await
+    }
+
     /// 构造无 searchUrl 的书源（校验走纯错误路径，无需网络）
     fn make_source_no_search(url: &str, name: &str) -> BookSource {
         BookSource {
@@ -329,6 +337,7 @@ mod tests {
     /// 串行推送：顺序、进度字段与 is_last 标记
     #[tokio::test]
     async fn test_check_sources_stream_order_and_progress() {
+        let _guard = lock_stream_tests().await;
         let sources = vec![
             Some(make_source_no_search("https://a.example.com", "源A")),
             Some(make_source_no_search("https://b.example.com", "源B")),
@@ -362,6 +371,7 @@ mod tests {
     /// 不存在的书源（None 占位）推送失败结果而非跳过，保持序号连续
     #[tokio::test]
     async fn test_check_sources_stream_missing_source() {
+        let _guard = lock_stream_tests().await;
         let sources = vec![
             Some(make_source_no_search("https://a.example.com", "源A")),
             None,
@@ -387,6 +397,7 @@ mod tests {
     /// sink 关闭（回调返回 Err）时应提前终止
     #[tokio::test]
     async fn test_check_sources_stream_sink_closed() {
+        let _guard = lock_stream_tests().await;
         let sources = vec![
             Some(make_source_no_search("https://a.example.com", "源A")),
             Some(make_source_no_search("https://b.example.com", "源B")),
@@ -408,6 +419,7 @@ mod tests {
     /// 空列表：不推送任何进度
     #[tokio::test]
     async fn test_check_sources_stream_empty() {
+        let _guard = lock_stream_tests().await;
         let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count_cb = count.clone();
         run_check_sources_stream_inner(Vec::new(), "", move |_json| {
@@ -421,6 +433,7 @@ mod tests {
     /// 取消标志：校验过程中置位后不再推送后续结果
     #[tokio::test]
     async fn test_check_sources_stream_cancel() {
+        let _guard = lock_stream_tests().await;
         let sources = vec![
             Some(make_source_no_search("https://a.example.com", "源A")),
             Some(make_source_no_search("https://b.example.com", "源B")),
