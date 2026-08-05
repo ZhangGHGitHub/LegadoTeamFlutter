@@ -12,6 +12,8 @@
 //! - v98 → v99: `readRecord` 表新增 `author` 列并用 books 表回填（Migration_98_99）
 //! - v99 → v100: `rule_subs` 表补全 Kotlin RuleSub 字段（customOrder/autoUpdate/
 //!   updateInterval/silentUpdate/js/showRule/sourceUrl，Rust 轨自有扩展）
+//! - v100 → v101: 偏离表修复（rssArticles/rssStars/readRecord/txtTocRules
+//!   补齐 Room 99.json 缺列，对齐 Android 遗留库互读/迁移）
 //!
 //! 历史说明：原 Rust 自有 `Migration95To96`（books/rssSources 补列）与上游 v96
 //! 语义撞车，已改造为不占版本号的幂等修复函数 [`repair_legacy_columns`]，
@@ -515,6 +517,92 @@ impl Migration for Migration99To100 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v100 → v101: 偏离表修复（对齐 Room 99.json 列集）
+// ---------------------------------------------------------------------------
+
+/// 从 v100 升级到 v101
+///
+/// 变更内容（列定义来源：Room 基线
+/// `app/schemas/io.legado.app.data.AppDatabase/99.json` + Kotlin 实体）：
+/// - rssArticles 补 4 列：
+///   - `group` TEXT NOT NULL DEFAULT '默认分组'（RssArticle.kt @ColumnInfo）
+///   - `read` INTEGER NOT NULL DEFAULT 0（Kotlin 默认 false，Room JSON 未带默认值，
+///     SQLite 补列要求 NOT NULL 必须带默认值）
+///   - `type` INTEGER NOT NULL DEFAULT 0（0网页，1图片，2视频）
+///   - `durPos` INTEGER NOT NULL DEFAULT 0（阅读进度）
+/// - rssStars 补 3 列：group/type/durPos（定义同上，RssStar.kt）
+/// - readRecord 补 2 列：`deviceId` TEXT NOT NULL DEFAULT ''、
+///   `lastRead` INTEGER NOT NULL DEFAULT 0（ReadRecord.kt）
+/// - txtTocRules 补 1 列：`replacement` TEXT NOT NULL DEFAULT ''（TxtTocRule.kt）
+///
+/// 幂等检测缺列才补，重复执行安全。
+pub struct Migration100To101;
+
+impl Migration for Migration100To101 {
+    fn from_version(&self) -> u32 {
+        100
+    }
+    fn to_version(&self) -> u32 {
+        101
+    }
+    fn description(&self) -> &str {
+        "偏离表修复：rssArticles/rssStars/readRecord/txtTocRules 补齐 Room 99.json 缺列"
+    }
+
+    fn up(&self, conn: &Connection) -> LegadoResult<()> {
+        // rssArticles 补列（Room 99.json：group/read/type/durPos）
+        // group/read 为 SQLite 关键字，列名需带双引号
+        if table_exists(conn, "rssArticles")? {
+            add_column_if_not_exists(
+                conn,
+                "rssArticles",
+                "\"group\"",
+                "TEXT NOT NULL DEFAULT '默认分组'",
+            )?;
+            add_column_if_not_exists(conn, "rssArticles", "\"read\"", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(conn, "rssArticles", "type", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(conn, "rssArticles", "durPos", "INTEGER NOT NULL DEFAULT 0")?;
+        }
+
+        // rssStars 补列（Room 99.json：group/type/durPos）
+        if table_exists(conn, "rssStars")? {
+            add_column_if_not_exists(
+                conn,
+                "rssStars",
+                "\"group\"",
+                "TEXT NOT NULL DEFAULT '默认分组'",
+            )?;
+            add_column_if_not_exists(conn, "rssStars", "type", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(conn, "rssStars", "durPos", "INTEGER NOT NULL DEFAULT 0")?;
+        }
+
+        // readRecord 补列（Room 99.json：deviceId/lastRead）
+        if table_exists(conn, "readRecord")? {
+            add_column_if_not_exists(conn, "readRecord", "deviceId", "TEXT NOT NULL DEFAULT ''")?;
+            add_column_if_not_exists(conn, "readRecord", "lastRead", "INTEGER NOT NULL DEFAULT 0")?;
+        }
+
+        // txtTocRules 补列（Room 99.json：replacement）
+        if table_exists(conn, "txtTocRules")? {
+            add_column_if_not_exists(
+                conn,
+                "txtTocRules",
+                "replacement",
+                "TEXT NOT NULL DEFAULT ''",
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn down(&self, _conn: &Connection) -> LegadoResult<()> {
+        Err(LegadoError::Database(
+            "Cannot safely rollback Migration100To101: DROP COLUMN not supported".into(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -634,11 +722,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 100);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 100);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -729,26 +817,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fresh_db_reaches_v100_with_highlight_tables() {
-        let db = Database::open_in_memory().unwrap();
-        let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 100);
-        assert!(table_exists(conn, "highlights").unwrap());
-        assert!(table_exists(conn, "highlightRules").unwrap());
-        assert!(column_exists(conn, "highlights", "bookUrl"));
-        assert!(column_exists(conn, "highlights", "chapterUrl"));
-        assert!(column_exists(conn, "readRecord", "author"));
-        // v100: rule_subs 补全 Kotlin RuleSub 字段
-        assert!(column_exists(conn, "rule_subs", "custom_order"));
-        assert!(column_exists(conn, "rule_subs", "auto_update"));
-        assert!(column_exists(conn, "rule_subs", "update_interval"));
-        assert!(column_exists(conn, "rule_subs", "silent_update"));
-        assert!(column_exists(conn, "rule_subs", "js"));
-        assert!(column_exists(conn, "rule_subs", "show_rule"));
-        assert!(column_exists(conn, "rule_subs", "source_url"));
-    }
-
-    #[test]
     fn test_migration_99_to_100_rule_subs_columns() {
         // 构造 v99 形态的 rule_subs 表（缺少新增 7 列）
         let db = Database::open_in_memory_raw().unwrap();
@@ -801,5 +869,198 @@ mod tests {
 
         // down 应报错（不支持 DROP COLUMN）
         assert!(m.down(conn).is_err());
+    }
+
+    #[test]
+    fn test_fresh_db_reaches_v101_with_deviation_columns() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
+        assert!(table_exists(conn, "highlights").unwrap());
+        assert!(table_exists(conn, "highlightRules").unwrap());
+        assert!(column_exists(conn, "highlights", "bookUrl"));
+        assert!(column_exists(conn, "highlights", "chapterUrl"));
+        assert!(column_exists(conn, "readRecord", "author"));
+        // v100: rule_subs 补全 Kotlin RuleSub 字段
+        assert!(column_exists(conn, "rule_subs", "custom_order"));
+        assert!(column_exists(conn, "rule_subs", "auto_update"));
+        assert!(column_exists(conn, "rule_subs", "update_interval"));
+        assert!(column_exists(conn, "rule_subs", "silent_update"));
+        assert!(column_exists(conn, "rule_subs", "js"));
+        assert!(column_exists(conn, "rule_subs", "show_rule"));
+        assert!(column_exists(conn, "rule_subs", "source_url"));
+        // v101: 偏离表补列（新建库 CREATE 语句已含全部列）
+        assert!(column_exists(conn, "rssArticles", "group"));
+        assert!(column_exists(conn, "rssArticles", "read"));
+        assert!(column_exists(conn, "rssArticles", "type"));
+        assert!(column_exists(conn, "rssArticles", "durPos"));
+        assert!(column_exists(conn, "rssStars", "group"));
+        assert!(column_exists(conn, "rssStars", "type"));
+        assert!(column_exists(conn, "rssStars", "durPos"));
+        assert!(column_exists(conn, "readRecord", "deviceId"));
+        assert!(column_exists(conn, "readRecord", "lastRead"));
+        assert!(column_exists(conn, "txtTocRules", "replacement"));
+    }
+
+    #[test]
+    fn test_migration_100_to_101_deviation_columns() {
+        // 构造 v100 形态的偏离表（缺少新增列）
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TABLE rssArticles (
+                origin TEXT NOT NULL,
+                sort TEXT NOT NULL,
+                title TEXT NOT NULL,
+                \"order\" INTEGER NOT NULL,
+                link TEXT,
+                pubDate TEXT,
+                description TEXT,
+                content TEXT,
+                image TEXT,
+                variable TEXT,
+                PRIMARY KEY(origin, title)
+            );
+            CREATE TABLE rssStars (
+                origin TEXT NOT NULL,
+                sort TEXT NOT NULL,
+                title TEXT NOT NULL,
+                starTime INTEGER NOT NULL,
+                link TEXT,
+                pubDate TEXT,
+                description TEXT,
+                content TEXT,
+                image TEXT,
+                variable TEXT,
+                PRIMARY KEY(origin, title)
+            );
+            CREATE TABLE readRecord (
+                bookName TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT '',
+                readTime INTEGER NOT NULL,
+                PRIMARY KEY(bookName)
+            );
+            CREATE TABLE txtTocRules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                name TEXT NOT NULL,
+                rule TEXT NOT NULL,
+                serialNumber INTEGER NOT NULL DEFAULT 0,
+                enable INTEGER NOT NULL DEFAULT 1,
+                example TEXT
+            );",
+        )
+        .unwrap();
+        // 存量数据（升级后新列应取默认值）
+        conn.execute(
+            "INSERT INTO rssArticles (origin, sort, title, \"order\", link) VALUES ('https://rss.com', 's1', '存量文章', 1, 'https://rss.com/a1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO rssStars (origin, sort, title, starTime, link) VALUES ('https://rss.com', 's1', '存量收藏', 100, 'https://rss.com/s1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO readRecord (bookName, readTime) VALUES ('存量书', 500)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO txtTocRules (name, rule) VALUES ('存量规则', '^第.+章')",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 100).unwrap();
+
+        // 执行 v100 → v101
+        let m = Migration100To101;
+        m.up(conn).unwrap();
+        // 幂等：重复执行不报错
+        m.up(conn).unwrap();
+
+        // 新列全部存在
+        assert!(column_exists(conn, "rssArticles", "group"));
+        assert!(column_exists(conn, "rssArticles", "read"));
+        assert!(column_exists(conn, "rssArticles", "type"));
+        assert!(column_exists(conn, "rssArticles", "durPos"));
+        assert!(column_exists(conn, "rssStars", "group"));
+        assert!(column_exists(conn, "rssStars", "type"));
+        assert!(column_exists(conn, "rssStars", "durPos"));
+        assert!(column_exists(conn, "readRecord", "deviceId"));
+        assert!(column_exists(conn, "readRecord", "lastRead"));
+        assert!(column_exists(conn, "txtTocRules", "replacement"));
+
+        // 存量数据新列取默认值
+        let (group, read, article_type, dur_pos): (String, i32, i32, i32) = conn
+            .query_row(
+                "SELECT \"group\", \"read\", type, durPos FROM rssArticles WHERE title = '存量文章'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(group, "默认分组");
+        assert_eq!(read, 0);
+        assert_eq!(article_type, 0);
+        assert_eq!(dur_pos, 0);
+
+        let (star_group, star_type): (String, i32) = conn
+            .query_row(
+                "SELECT \"group\", type FROM rssStars WHERE title = '存量收藏'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(star_group, "默认分组");
+        assert_eq!(star_type, 0);
+
+        let (device_id, last_read): (String, i64) = conn
+            .query_row(
+                "SELECT deviceId, lastRead FROM readRecord WHERE bookName = '存量书'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(device_id, "");
+        assert_eq!(last_read, 0);
+
+        let replacement: String = conn
+            .query_row(
+                "SELECT replacement FROM txtTocRules WHERE name = '存量规则'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(replacement, "");
+
+        // down 应报错（不支持 DROP COLUMN）
+        assert!(m.down(conn).is_err());
+    }
+
+    #[test]
+    fn test_migration_100_to_101_via_registry() {
+        // 经注册表从 v100 升级到最新（v101）
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TABLE rssArticles (
+                origin TEXT NOT NULL,
+                title TEXT NOT NULL,
+                PRIMARY KEY(origin, title)
+            );
+            CREATE TABLE readRecord (
+                bookName TEXT NOT NULL,
+                readTime INTEGER NOT NULL,
+                PRIMARY KEY(bookName)
+            );",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 100).unwrap();
+
+        let registry = MigrationRegistry::new();
+        registry.migrate_to_latest(conn).unwrap();
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
+        assert!(column_exists(conn, "rssArticles", "group"));
+        assert!(column_exists(conn, "readRecord", "lastRead"));
     }
 }

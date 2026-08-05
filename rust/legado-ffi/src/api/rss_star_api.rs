@@ -57,6 +57,7 @@ pub fn add_rss_star(source_url: &str, title: &str, link: &str) -> LegadoResult<i
         .unwrap_or_default()
         .as_millis() as i64;
 
+    // v101 新增字段（group/star_type/dur_pos）取默认值，函数签名保持不变
     let record = RssStarRecord {
         origin: source_url.to_string(),
         sort: "default".to_string(),
@@ -68,6 +69,7 @@ pub fn add_rss_star(source_url: &str, title: &str, link: &str) -> LegadoResult<i
         content: None,
         image: None,
         variable: None,
+        ..Default::default()
     };
 
     with_database(|db| {

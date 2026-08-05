@@ -10,11 +10,17 @@ use legado_core::{LegadoError, LegadoResult};
 /// 阅读记录
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReadRecord {
+    /// 设备标识（v101 补齐 Room 基线 deviceId 列，当前单设备 Rust 侧固定空串）
+    #[serde(default, rename = "deviceId")]
+    pub device_id: String,
     pub book_name: String,
     /// 作者（同书名的多本书共用一条记录时，以作者集合形式合并存储）
     #[serde(default)]
     pub author: String,
     pub read_time: i64,
+    /// 最后阅读位置/章节索引（v101 补齐 Room 基线 lastRead 列）
+    #[serde(default, rename = "lastRead")]
+    pub last_read: i64,
 }
 
 /// 作者集合存储前缀（对齐上游 Kotlin `ReadRecordAuthors.PREFIX`）
@@ -93,6 +99,9 @@ impl<'a> ReadRecordRepository<'a> {
     }
 
     /// 添加/更新阅读记录（主键冲突时替换）
+    ///
+    /// 说明：本方法签名保持不变（FFI 既有契约），deviceId/lastRead 依赖列默认值
+    /// （''/0）；需要写入新字段时使用 [`upsert_full`]。
     pub fn upsert(&self, book_name: &str, read_time: i64) -> LegadoResult<()> {
         self.conn
             .execute(
@@ -101,6 +110,40 @@ impl<'a> ReadRecordRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
         Ok(())
+    }
+
+    /// 添加/更新阅读记录（全字段版，覆盖 v101 新增的 deviceId/lastRead 列）
+    ///
+    /// 主键冲突时整行替换；author 不做合并（调用方自行处理）。
+    pub fn upsert_full(
+        &self,
+        device_id: &str,
+        book_name: &str,
+        author: &str,
+        read_time: i64,
+        last_read: i64,
+    ) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO readRecord
+                 (deviceId, bookName, author, readTime, lastRead)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![device_id, book_name, author, read_time, last_read],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 更新指定书籍的最后阅读位置（lastRead 列，v101 新增）
+    pub fn update_last_read(&self, book_name: &str, last_read: i64) -> LegadoResult<bool> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE readRecord SET lastRead = ?1 WHERE bookName = ?2",
+                params![last_read, book_name],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新 lastRead 失败: {e}")))?;
+        Ok(affected > 0)
     }
 
     /// 添加/更新阅读记录并合并作者（对齐上游 `ReadRecordDao.insert` 事务）
@@ -136,16 +179,19 @@ impl<'a> ReadRecordRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT bookName, author, readTime FROM readRecord WHERE bookName = ?1",
+                "SELECT bookName, author, readTime, deviceId, lastRead
+                 FROM readRecord WHERE bookName = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
         let record = stmt
             .query_row(params![book_name], |row| {
                 Ok(ReadRecord {
+                    device_id: row.get(3)?,
                     book_name: row.get(0)?,
                     author: row.get(1)?,
                     read_time: row.get(2)?,
+                    last_read: row.get(4)?,
                 })
             })
             .optional()
@@ -190,16 +236,19 @@ impl<'a> ReadRecordRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT bookName, author, readTime FROM readRecord ORDER BY readTime DESC",
+                "SELECT bookName, author, readTime, deviceId, lastRead
+                 FROM readRecord ORDER BY readTime DESC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
         let rows = stmt
             .query_map([], |row| {
                 Ok(ReadRecord {
+                    device_id: row.get(3)?,
                     book_name: row.get(0)?,
                     author: row.get(1)?,
                     read_time: row.get(2)?,
+                    last_read: row.get(4)?,
                 })
             })
             .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
@@ -467,5 +516,53 @@ mod tests {
         assert_eq!(record.author, "");
         assert_eq!(record.read_time, 123);
         assert!(repo.get_record("none").unwrap().is_none());
+    }
+
+    // ─── v101 新字段（deviceId / lastRead）────────────────────
+
+    /// 全字段写入后 get_record / find_all 均能完整读回
+    #[test]
+    fn test_upsert_full_new_fields_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.upsert_full("device-1", "书A", "作者A", 500, 42)
+            .unwrap();
+
+        let record = repo.get_record("书A").unwrap().unwrap();
+        assert_eq!(record.device_id, "device-1");
+        assert_eq!(record.book_name, "书A");
+        assert_eq!(record.author, "作者A");
+        assert_eq!(record.read_time, 500);
+        assert_eq!(record.last_read, 42);
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].device_id, "device-1");
+        assert_eq!(all[0].last_read, 42);
+    }
+
+    /// 旧接口 upsert 写入的记录：新字段回落列默认值（''/0）
+    #[test]
+    fn test_legacy_upsert_new_field_defaults() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.upsert("旧接口", 10).unwrap();
+        let record = repo.get_record("旧接口").unwrap().unwrap();
+        assert_eq!(record.device_id, "");
+        assert_eq!(record.last_read, 0);
+    }
+
+    /// update_last_read：存在时更新成功，不存在时返回 false
+    #[test]
+    fn test_update_last_read() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.upsert("书B", 100).unwrap();
+        assert!(repo.update_last_read("书B", 77).unwrap());
+        assert_eq!(repo.get_record("书B").unwrap().unwrap().last_read, 77);
+        assert!(!repo.update_last_read("不存在", 1).unwrap());
     }
 }

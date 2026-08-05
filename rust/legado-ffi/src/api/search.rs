@@ -1326,12 +1326,13 @@ mod tests {
 
     use legado_db::repository::read_record_repository::ReadRecord;
 
-    /// 构造 ReadRecord 测试数据
+    /// 构造 ReadRecord 测试数据（device_id/last_read 为 v101 新增字段，取默认值）
     fn make_record(book_name: &str, author: &str) -> ReadRecord {
         ReadRecord {
             book_name: book_name.to_string(),
             author: author.to_string(),
             read_time: 0,
+            ..Default::default()
         }
     }
 

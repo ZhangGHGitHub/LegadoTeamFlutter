@@ -4,12 +4,14 @@ use rusqlite::{params, Connection};
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// TXT 目录规则记录
+/// TXT 目录规则记录（v101 补齐 replacement，对齐 Room 99.json）
 #[derive(Debug, Clone, Default)]
 pub struct TxtTocRuleRecord {
     pub id: i64,
     pub name: String,
     pub rule: String,
+    /// 替换内容（对齐 Kotlin TxtTocRule.replacement，默认空串）
+    pub replacement: String,
     pub serial_number: i32,
     pub enable: bool,
     pub example: Option<String>,
@@ -25,12 +27,23 @@ impl<'a> TxtTocRuleRepository<'a> {
         Self { conn }
     }
 
-    /// 插入规则，返回新行 id
+    /// 插入规则，返回新行 id（replacement 默认空串）
     pub fn insert(&self, name: &str, rule: &str, order: i32) -> LegadoResult<i64> {
+        self.insert_with_replacement(name, rule, "", order)
+    }
+
+    /// 插入规则（含替换内容，对齐 Kotlin TxtTocRule.replacement），返回新行 id
+    pub fn insert_with_replacement(
+        &self,
+        name: &str,
+        rule: &str,
+        replacement: &str,
+        order: i32,
+    ) -> LegadoResult<i64> {
         self.conn
             .execute(
-                "INSERT INTO txtTocRules (name, rule, serialNumber) VALUES (?1, ?2, ?3)",
-                params![name, rule, order],
+                "INSERT INTO txtTocRules (name, rule, replacement, serialNumber) VALUES (?1, ?2, ?3, ?4)",
+                params![name, rule, replacement, order],
             )
             .map_err(|e| LegadoError::Database(format!("插入 TXT 目录规则失败: {e}")))?;
         Ok(self.conn.last_insert_rowid())
@@ -41,7 +54,7 @@ impl<'a> TxtTocRuleRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, rule, serialNumber, enable, example
+                "SELECT id, name, rule, replacement, serialNumber, enable, example
                  FROM txtTocRules ORDER BY serialNumber ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -54,12 +67,23 @@ impl<'a> TxtTocRuleRepository<'a> {
         Ok(rows)
     }
 
-    /// 更新规则名称和正则
+    /// 更新规则名称、正则与替换内容（覆盖 v101 全部可变列）
     pub fn update(&self, id: i64, name: &str, rule: &str) -> LegadoResult<()> {
+        self.update_with_replacement(id, name, rule, "")
+    }
+
+    /// 更新规则（含替换内容）
+    pub fn update_with_replacement(
+        &self,
+        id: i64,
+        name: &str,
+        rule: &str,
+        replacement: &str,
+    ) -> LegadoResult<()> {
         self.conn
             .execute(
-                "UPDATE txtTocRules SET name = ?1, rule = ?2 WHERE id = ?3",
-                params![name, rule, id],
+                "UPDATE txtTocRules SET name = ?1, rule = ?2, replacement = ?3 WHERE id = ?4",
+                params![name, rule, replacement, id],
             )
             .map_err(|e| LegadoError::Database(format!("更新 TXT 目录规则失败: {e}")))?;
         Ok(())
@@ -78,7 +102,7 @@ impl<'a> TxtTocRuleRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, rule, serialNumber, enable, example
+                "SELECT id, name, rule, replacement, serialNumber, enable, example
                  FROM txtTocRules WHERE enable = 1 ORDER BY serialNumber ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -106,9 +130,10 @@ fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<TxtTocRuleRecord> {
         id: row.get(0)?,
         name: row.get(1)?,
         rule: row.get(2)?,
-        serial_number: row.get(3)?,
-        enable: row.get::<_, i32>(4)? != 0,
-        example: row.get(5)?,
+        replacement: row.get(3)?,
+        serial_number: row.get(4)?,
+        enable: row.get::<_, i32>(5)? != 0,
+        example: row.get(6)?,
     })
 }
 
@@ -193,5 +218,41 @@ mod tests {
         let repo = TxtTocRuleRepository::new(db.connection());
         let all = repo.find_all().unwrap();
         assert!(all.is_empty());
+    }
+
+    // ─── v101 新增字段读写测试（replacement）────────────
+
+    #[test]
+    fn test_replacement_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = TxtTocRuleRepository::new(db.connection());
+        let id = repo
+            .insert_with_replacement("带替换规则", r"^卷\s*\d+", "", 0)
+            .unwrap();
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all[0].replacement, "");
+
+        // 更新时写入替换内容
+        repo.update_with_replacement(id, "带替换规则", r"^卷\s*\d+", "[卷]")
+            .unwrap();
+        let all = repo.find_all().unwrap();
+        assert_eq!(all[0].replacement, "[卷]");
+    }
+
+    #[test]
+    fn test_legacy_insert_default_replacement() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = TxtTocRuleRepository::new(db.connection());
+        // 旧接口 insert：replacement 默认空串，不丢字段
+        repo.insert("旧接口规则", r"^第.+章", 0).unwrap();
+        let all = repo.find_all().unwrap();
+        assert_eq!(all[0].replacement, "");
+
+        // 旧接口 update：replacement 置空串，不丢字段
+        repo.update(all[0].id, "旧接口规则-改", r"^第.+节").unwrap();
+        let all = repo.find_all().unwrap();
+        assert_eq!(all[0].name, "旧接口规则-改");
+        assert_eq!(all[0].replacement, "");
     }
 }

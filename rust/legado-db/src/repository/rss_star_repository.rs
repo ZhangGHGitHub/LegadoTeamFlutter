@@ -4,8 +4,10 @@ use rusqlite::{params, Connection};
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// RSS 收藏记录
-#[derive(Debug, Clone, Default)]
+use super::rss_article_repository::DEFAULT_RSS_GROUP;
+
+/// RSS 收藏记录（v101 补齐 group/star_type/dur_pos，对齐 Room 99.json）
+#[derive(Debug, Clone)]
 pub struct RssStarRecord {
     pub origin: String,
     pub sort: String,
@@ -17,6 +19,32 @@ pub struct RssStarRecord {
     pub content: Option<String>,
     pub image: Option<String>,
     pub variable: Option<String>,
+    /// 分组（对齐 Kotlin RssStar.group，默认“默认分组”）
+    pub group: String,
+    /// 类型 0网页，1图片，2视频（对齐 Kotlin RssStar.type）
+    pub star_type: i32,
+    /// 阅读进度（对齐 Kotlin RssStar.durPos）
+    pub dur_pos: i32,
+}
+
+impl Default for RssStarRecord {
+    fn default() -> Self {
+        Self {
+            origin: String::new(),
+            sort: String::new(),
+            title: String::new(),
+            star_time: 0,
+            link: None,
+            pub_date: None,
+            description: None,
+            content: None,
+            image: None,
+            variable: None,
+            group: DEFAULT_RSS_GROUP.to_string(),
+            star_type: 0,
+            dur_pos: 0,
+        }
+    }
 }
 
 /// RSS 收藏数据访问层
@@ -29,13 +57,19 @@ impl<'a> RssStarRepository<'a> {
         Self { conn }
     }
 
-    /// 添加收藏（主键冲突时替换）
+    /// 添加收藏（主键冲突时替换），覆盖 v101 全部列（含 group/type/durPos）
     pub fn add_star(&self, star: &RssStarRecord) -> LegadoResult<()> {
+        // 空分组回退为默认分组（对齐 Kotlin 实体默认值）
+        let group = if star.group.is_empty() {
+            DEFAULT_RSS_GROUP
+        } else {
+            &star.group
+        };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO rssStars (origin, sort, title, starTime, link,
-                 pubDate, description, content, image, variable)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 pubDate, description, content, image, \"group\", variable, type, durPos)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     star.origin,
                     star.sort,
@@ -46,7 +80,10 @@ impl<'a> RssStarRepository<'a> {
                     star.description,
                     star.content,
                     star.image,
+                    group,
                     star.variable,
+                    star.star_type,
+                    star.dur_pos,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("添加收藏失败: {e}")))?;
@@ -80,7 +117,7 @@ impl<'a> RssStarRepository<'a> {
             .conn
             .prepare(
                 "SELECT origin, sort, title, starTime, link, pubDate, description,
-                        content, image, variable
+                        content, image, \"group\", variable, type, durPos
                  FROM rssStars ORDER BY starTime DESC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -114,7 +151,10 @@ fn row_to_star(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssStarRecord> {
         description: row.get(6)?,
         content: row.get(7)?,
         image: row.get(8)?,
-        variable: row.get(9)?,
+        group: row.get(9)?,
+        variable: row.get(10)?,
+        star_type: row.get(11)?,
+        dur_pos: row.get(12)?,
     })
 }
 
@@ -134,6 +174,7 @@ mod tests {
             content: None,
             image: None,
             variable: None,
+            ..Default::default()
         }
     }
 
@@ -200,5 +241,37 @@ mod tests {
         let repo = RssStarRepository::new(db.connection());
         let all = repo.find_all().unwrap();
         assert!(all.is_empty());
+    }
+
+    // ─── v101 新增字段读写测试（group/type/durPos）────────────
+
+    #[test]
+    fn test_new_fields_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssStarRepository::new(db.connection());
+        let mut star = make_star("https://rss.com", "新字段收藏", 100);
+        star.group = "技术".to_string();
+        star.star_type = 1;
+        star.dur_pos = 7;
+        repo.add_star(&star).unwrap();
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].group, "技术");
+        assert_eq!(all[0].star_type, 1);
+        assert_eq!(all[0].dur_pos, 7);
+    }
+
+    #[test]
+    fn test_default_group() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssStarRepository::new(db.connection());
+        repo.add_star(&make_star("https://rss.com", "默认分组收藏", 100))
+            .unwrap();
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all[0].group, "默认分组");
+        assert_eq!(all[0].star_type, 0);
+        assert_eq!(all[0].dur_pos, 0);
     }
 }

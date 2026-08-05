@@ -54,6 +54,7 @@ impl MigrationRegistry {
         self.register(Box::new(migrations::Migration97To98));
         self.register(Box::new(migrations::Migration98To99));
         self.register(Box::new(migrations::Migration99To100));
+        self.register(Box::new(migrations::Migration100To101));
     }
 
     /// 注册单个迁移
@@ -130,12 +131,16 @@ impl Default for MigrationRegistry {
 pub type MigrationManager = MigrationRegistry;
 
 /// 安全添加列（如果不存在）
+///
+/// column 允许传入带双引号的列名（如 `"group"`/`"read"` 等 SQLite 关键字列），
+/// 存在性检测时会去除引号后再与 PRAGMA table_info 返回的裸列名比较。
 pub(crate) fn add_column_if_not_exists(
     conn: &Connection,
     table: &str,
     column: &str,
     definition: &str,
 ) -> LegadoResult<()> {
+    let bare = column.trim_matches('"');
     let sql = format!("PRAGMA table_info({table})");
     let mut stmt = conn
         .prepare(&sql)
@@ -144,7 +149,7 @@ pub(crate) fn add_column_if_not_exists(
     let exists: bool = stmt
         .query_map([], |row| {
             let name: String = row.get(1)?;
-            Ok(name == column)
+            Ok(name == bare)
         })
         .map_err(|e| LegadoError::Database(format!("遍历表结构失败: {e}")))?
         .filter_map(|r| r.ok())
@@ -246,7 +251,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 10);
+        assert_eq!(list.len(), 11);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -362,7 +367,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 100);
+        assert_eq!(version, 101);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
     }

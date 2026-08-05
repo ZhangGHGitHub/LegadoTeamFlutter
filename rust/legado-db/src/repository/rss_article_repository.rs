@@ -4,8 +4,8 @@ use rusqlite::{params, Connection};
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// RSS 文章记录
-#[derive(Debug, Clone, Default)]
+/// RSS 文章记录（v101 补齐 group/read/article_type/dur_pos，对齐 Room 99.json）
+#[derive(Debug, Clone)]
 pub struct RssArticleRecord {
     pub origin: String,
     pub sort: String,
@@ -17,6 +17,38 @@ pub struct RssArticleRecord {
     pub content: Option<String>,
     pub image: Option<String>,
     pub variable: Option<String>,
+    /// 分组（对齐 Kotlin RssArticle.group，默认“默认分组”）
+    pub group: String,
+    /// 是否已读（对齐 Kotlin RssArticle.read）
+    pub read: bool,
+    /// 类型 0网页，1图片，2视频（对齐 Kotlin RssArticle.type）
+    pub article_type: i32,
+    /// 阅读进度（对齐 Kotlin RssArticle.durPos）
+    pub dur_pos: i32,
+}
+
+/// 默认分组名（对齐 Kotlin `@ColumnInfo(defaultValue = "默认分组")`）
+pub const DEFAULT_RSS_GROUP: &str = "默认分组";
+
+impl Default for RssArticleRecord {
+    fn default() -> Self {
+        Self {
+            origin: String::new(),
+            sort: String::new(),
+            title: String::new(),
+            order: 0,
+            link: None,
+            pub_date: None,
+            description: None,
+            content: None,
+            image: None,
+            variable: None,
+            group: DEFAULT_RSS_GROUP.to_string(),
+            read: false,
+            article_type: 0,
+            dur_pos: 0,
+        }
+    }
 }
 
 /// RSS 文章数据访问层
@@ -29,13 +61,20 @@ impl<'a> RssArticleRepository<'a> {
         Self { conn }
     }
 
-    /// 插入文章（主键冲突时替换）
+    /// 插入文章（主键冲突时替换），覆盖 v101 全部列（含 group/read/type/durPos）
     pub fn insert(&self, article: &RssArticleRecord) -> LegadoResult<()> {
+        // 空分组回退为默认分组（对齐 Kotlin 实体默认值）
+        let group = if article.group.is_empty() {
+            DEFAULT_RSS_GROUP
+        } else {
+            &article.group
+        };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO rssArticles (origin, sort, title, \"order\", link,
-                 pubDate, description, content, image, variable)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 pubDate, description, content, image, \"group\", \"read\", variable,
+                 type, durPos)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     article.origin,
                     article.sort,
@@ -46,10 +85,25 @@ impl<'a> RssArticleRepository<'a> {
                     article.description,
                     article.content,
                     article.image,
+                    group,
+                    article.read,
                     article.variable,
+                    article.article_type,
+                    article.dur_pos,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入 RSS 文章失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 标记文章已读状态（对齐 Kotlin 对 read 列的更新语义）
+    pub fn update_read(&self, origin: &str, title: &str, read: bool) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "UPDATE rssArticles SET \"read\" = ?1 WHERE origin = ?2 AND title = ?3",
+                params![read, origin, title],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新 RSS 文章已读状态失败: {e}")))?;
         Ok(())
     }
 
@@ -63,7 +117,7 @@ impl<'a> RssArticleRepository<'a> {
             .conn
             .prepare(
                 "SELECT origin, sort, title, \"order\", link, pubDate, description,
-                        content, image, variable
+                        content, image, \"group\", \"read\", variable, type, durPos
                  FROM rssArticles WHERE origin = ?1
                  ORDER BY \"order\" DESC LIMIT ?2",
             )
@@ -117,7 +171,11 @@ fn row_to_article(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssArticleRecord>
         description: row.get(6)?,
         content: row.get(7)?,
         image: row.get(8)?,
-        variable: row.get(9)?,
+        group: row.get(9)?,
+        read: row.get::<_, i32>(10)? != 0,
+        variable: row.get(11)?,
+        article_type: row.get(12)?,
+        dur_pos: row.get(13)?,
     })
 }
 
@@ -137,6 +195,7 @@ mod tests {
             content: None,
             image: None,
             variable: None,
+            ..Default::default()
         }
     }
 
@@ -219,5 +278,45 @@ mod tests {
         let repo = RssArticleRepository::new(db.connection());
         let articles = repo.find_by_source("https://nonexist.com", 10).unwrap();
         assert!(articles.is_empty());
+    }
+
+    // ─── v101 新增字段读写测试（group/read/type/durPos）────────────
+
+    #[test]
+    fn test_new_fields_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        let mut article = make_article("https://rss.com", "新字段文章", 1);
+        article.group = "科技".to_string();
+        article.read = true;
+        article.article_type = 2;
+        article.dur_pos = 42;
+        repo.insert(&article).unwrap();
+
+        let articles = repo.find_by_source("https://rss.com", 10).unwrap();
+        assert_eq!(articles.len(), 1);
+        assert_eq!(articles[0].group, "科技");
+        assert!(articles[0].read);
+        assert_eq!(articles[0].article_type, 2);
+        assert_eq!(articles[0].dur_pos, 42);
+    }
+
+    #[test]
+    fn test_default_group_and_update_read() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        // 默认构造：group 为默认分组，未读
+        repo.insert(&make_article("https://rss.com", "默认分组文章", 1))
+            .unwrap();
+
+        let articles = repo.find_by_source("https://rss.com", 10).unwrap();
+        assert_eq!(articles[0].group, "默认分组");
+        assert!(!articles[0].read);
+
+        // 更新已读状态
+        repo.update_read("https://rss.com", "默认分组文章", true)
+            .unwrap();
+        let articles = repo.find_by_source("https://rss.com", 10).unwrap();
+        assert!(articles[0].read);
     }
 }

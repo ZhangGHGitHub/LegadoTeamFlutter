@@ -1,4 +1,4 @@
-//! 数据库 Schema 定义（基于 AppDatabase v99）
+//! 数据库 Schema 定义（基于 AppDatabase v99 + Rust 轨扩展）
 //!
 //! 本模块包含所有核心表的 CREATE TABLE DDL 语句。
 //! 调用 `init_schema()` 可一次性创建所有表。
@@ -7,8 +7,12 @@ use rusqlite::Connection;
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// 当前 Schema 版本号（对齐上游 Room AppDatabase v99，v100 为 Rust 轨自有扩展：rule_subs 补全 Kotlin RuleSub 字段）
-pub const SCHEMA_VERSION: u32 = 100;
+/// 当前 Schema 版本号
+///
+/// - v99：对齐上游 Room AppDatabase v99
+/// - v100：Rust 轨自有扩展（rule_subs 补全 Kotlin RuleSub 字段）
+/// - v101：偏离表修复（rssArticles/rssStars/readRecord/txtTocRules 补齐 Room 99.json 缺列）
+pub const SCHEMA_VERSION: u32 = 101;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -324,6 +328,10 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 );
 ";
 
+/// rssArticles 表（对齐 Room 99.json 列集，v101 补齐 group/read/type/durPos）
+///
+/// 注意：Room 主键为 (origin, link, sort)，Rust 轨历史主键为 (origin, title)，
+/// 主键差异属结构级偏离，本次仅补列不重建表（登记于台账 §4.2.1 P0-2）。
 pub const CREATE_RSS_ARTICLES: &str = "
 CREATE TABLE IF NOT EXISTS rssArticles (
     origin TEXT NOT NULL,
@@ -335,7 +343,11 @@ CREATE TABLE IF NOT EXISTS rssArticles (
     description TEXT,
     content TEXT,
     image TEXT,
+    \"group\" TEXT NOT NULL DEFAULT '默认分组',
+    \"read\" INTEGER NOT NULL DEFAULT 0,
     variable TEXT,
+    type INTEGER NOT NULL DEFAULT 0,
+    durPos INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(origin, title)
 );
 ";
@@ -351,6 +363,7 @@ CREATE TABLE IF NOT EXISTS rssReadRecords (
 );
 ";
 
+/// rssStars 表（对齐 Room 99.json 列集，v101 补齐 group/type/durPos）
 pub const CREATE_RSS_STARS: &str = "
 CREATE TABLE IF NOT EXISTS rssStars (
     origin TEXT NOT NULL,
@@ -362,27 +375,38 @@ CREATE TABLE IF NOT EXISTS rssStars (
     description TEXT,
     content TEXT,
     image TEXT,
+    \"group\" TEXT NOT NULL DEFAULT '默认分组',
     variable TEXT,
+    type INTEGER NOT NULL DEFAULT 0,
+    durPos INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(origin, title)
 );
 ";
 
+/// txtTocRules 表（对齐 Room 99.json 列集，v101 补齐 replacement）
 pub const CREATE_TXT_TOC_RULES: &str = "
 CREATE TABLE IF NOT EXISTS txtTocRules (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     name TEXT NOT NULL,
     rule TEXT NOT NULL,
+    replacement TEXT NOT NULL DEFAULT '',
     serialNumber INTEGER NOT NULL DEFAULT 0,
     enable INTEGER NOT NULL DEFAULT 1,
     example TEXT
 );
 ";
 
+/// readRecord 表（对齐 Room 99.json 列集，v101 补齐 deviceId/lastRead）
+///
+/// 注意：Room 主键为 (deviceId, bookName)，Rust 轨历史主键为 (bookName)，
+/// 主键差异属结构级偏离，本次仅补列不重建表（登记于台账 §4.2.1 P0-2）。
 pub const CREATE_READ_RECORD: &str = "
 CREATE TABLE IF NOT EXISTS readRecord (
+    deviceId TEXT NOT NULL DEFAULT '',
     bookName TEXT NOT NULL,
     author TEXT NOT NULL DEFAULT '',
     readTime INTEGER NOT NULL,
+    lastRead INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(bookName)
 );
 ";
@@ -496,6 +520,14 @@ CREATE TABLE IF NOT EXISTS http_tts (
 );
 ";
 
+/// users 表（Rust 轨自有扩展，Room 无此表）
+///
+/// 命名差异说明（台账 §4.2.1 P0-2 登记）：
+/// Kotlin 侧的 `servers` 表存储 WebDAV 备份服务器配置
+/// （id/name/type/config/sortNumber，见 `Server.kt`），与本表语义完全不同；
+/// 本表为 Rust 轨自建的用户账户存储（替代 SharedPreferences），
+/// 并非 Kotlin servers 的等价物。为避免破坏现有 API，两表均不改名，
+/// 互读/迁移差异另行登记。
 pub const CREATE_USERS: &str = "
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
