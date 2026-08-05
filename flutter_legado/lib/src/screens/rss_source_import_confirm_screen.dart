@@ -6,13 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
-import '../providers/source/source_notifier.dart';
-import '../services/source_import_service.dart';
+import '../providers/providers.dart';
+import '../providers/rss/rss_notifier.dart';
 import '../widgets/custom_group_dialog.dart';
+import 'source_import_confirm_screen.dart' show AppColorsExt;
 
-/// 书源导入状态（对标原版 ImportBookSourceStatus）
+/// 订阅源导入状态（对标原版 ImportRssSourceDialog 状态展示）
 enum _ImportStatus {
-  /// 新增（本地不存在）
+  /// 新增（本地不存在该 sourceUrl）
   isNew,
 
   /// 更新（本地 lastUpdateTime 较旧）
@@ -22,43 +23,44 @@ enum _ImportStatus {
   exists,
 }
 
-/// 书源导入确认页（对标原版 ImportBookSourceDialog）
+/// 订阅源导入确认页（对标原版 ImportRssSourceDialog）
 ///
-/// 拉取/解析出的候选书源在此页供用户勾选确认后才写入数据库：
+/// 拉取/解析出的候选订阅源在此页供用户勾选确认后才写入数据库：
 /// - 列表项：勾选框 + 源名 + 新增/更新/已有 状态 + 打开（查看 JSON）
-/// - 顶部菜单：自定义源分组 / 选中新增源 / 选中更新源 /
-///   保留原名 / 保留分组 / 保留启用状态 / 显示源注释
+/// - 顶部菜单：自定义源分组 / 保留原名 / 保留分组 / 保留启用状态 / 显示源注释
+///   （原版 RSS 导入菜单不含「选中新增源/选中更新源」）
 /// - 底部：全选|取消全选（n/m）/ 取消 / 确认
-class SourceImportConfirmScreen extends ConsumerStatefulWidget {
-  /// 候选书源预览列表（保留原始 JSON，未入库）
-  final List<SourcePreview> sources;
+class RssSourceImportConfirmScreen extends ConsumerStatefulWidget {
+  /// 候选订阅源原始 JSON 列表（保留原始 Map，未入库）
+  final List<Map<String, dynamic>> sources;
 
-  /// 本地现有书源（用于新增/更新状态判定与保留选项合并）
-  final List<BookSource> localSources;
+  /// 本地现有订阅源（用于状态判定与保留选项合并）
+  final List<RssSource> localSources;
 
-  const SourceImportConfirmScreen({
+  const RssSourceImportConfirmScreen({
     super.key,
     required this.sources,
     required this.localSources,
   });
 
   @override
-  ConsumerState<SourceImportConfirmScreen> createState() =>
-      _SourceImportConfirmScreenState();
+  ConsumerState<RssSourceImportConfirmScreen> createState() =>
+      _RssSourceImportConfirmScreenState();
 }
 
-class _SourceImportConfirmScreenState
-    extends ConsumerState<SourceImportConfirmScreen> {
-  late final Map<String, BookSource> _localByUrl = {
-    for (final s in widget.localSources) s.bookSourceUrl: s,
+class _RssSourceImportConfirmScreenState
+    extends ConsumerState<RssSourceImportConfirmScreen> {
+  late final Map<String, RssSource> _localByUrl = {
+    for (final s in widget.localSources) s.sourceUrl: s,
   };
 
   late final List<bool> _selected = [
-    // 原版默认选中策略：新增与更新默认选中，已有不选
+    // 原版默认选中策略（compareImportedRssSources）：
+    // 新增与更新默认选中，已有不选
     for (final s in widget.sources) _statusOf(s) != _ImportStatus.exists,
   ];
 
-  // 菜单选项（对标 import_source.xml）
+  // 菜单选项（对标 import_source.xml：RSS 版含保留启用/源注释）
   bool _keepName = false;
   bool _keepGroup = false;
   bool _keepEnable = false;
@@ -70,10 +72,22 @@ class _SourceImportConfirmScreenState
 
   bool _importing = false;
 
-  _ImportStatus _statusOf(SourcePreview source) {
-    final local = _localByUrl[source.bookSourceUrl];
+  String _urlOf(Map<String, dynamic> raw) =>
+      (raw['sourceUrl'] ?? '').toString();
+
+  String _nameOf(Map<String, dynamic> raw) =>
+      (raw['sourceName'] ?? '').toString();
+
+  String? _commentOf(Map<String, dynamic> raw) =>
+      raw['sourceComment']?.toString();
+
+  int _lastUpdateTimeOf(Map<String, dynamic> raw) =>
+      int.tryParse((raw['lastUpdateTime'] ?? '0').toString()) ?? 0;
+
+  _ImportStatus _statusOf(Map<String, dynamic> raw) {
+    final local = _localByUrl[_urlOf(raw)];
     if (local == null) return _ImportStatus.isNew;
-    if (local.lastUpdateTime < source.lastUpdateTime) {
+    if (local.lastUpdateTime < _lastUpdateTimeOf(raw)) {
       return _ImportStatus.isUpdate;
     }
     return _ImportStatus.exists;
@@ -89,32 +103,12 @@ class _SourceImportConfirmScreenState
 
   bool get _isSelectAll => _selected.every((b) => b);
 
-  bool get _isSelectAllNew {
-    for (var i = 0; i < widget.sources.length; i++) {
-      if (_statusOf(widget.sources[i]) == _ImportStatus.isNew &&
-          !_selected[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  bool get _isSelectAllUpdate {
-    for (var i = 0; i < widget.sources.length; i++) {
-      if (_statusOf(widget.sources[i]) == _ImportStatus.isUpdate &&
-          !_selected[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   /// 确认导入：应用保留选项与自定义分组后写库
-  /// （对标 ImportBookSourceViewModel.importSelect）
+  /// （对标 ImportRssSourceViewModel.importSelect）
   ///
   /// 直传选中项的原始 JSON（仅在 raw Map 上覆盖保留/分组字段），
   /// 不经 freezed 类型化往返，由 Rust 侧宽松反序列化兜底
-  /// （字符串数字/字符串布尔等第三方书源字段）。
+  /// （第三方订阅源非常规字段）。
   Future<void> _confirmImport() async {
     if (_selectCount == 0) return;
     setState(() => _importing = true);
@@ -123,44 +117,44 @@ class _SourceImportConfirmScreenState
       final toImport = <Map<String, dynamic>>[];
       for (var i = 0; i < widget.sources.length; i++) {
         if (!_selected[i]) continue;
-        final preview = widget.sources[i];
         // 拷贝原始 Map，避免污染预览条目持有的原对象
-        final raw = Map<String, dynamic>.from(preview.raw);
-        final local = _localByUrl[preview.bookSourceUrl];
+        final raw = Map<String, dynamic>.from(widget.sources[i]);
+        final local = _localByUrl[_urlOf(raw)];
         if (local != null) {
           if (_keepName) {
-            raw['bookSourceName'] = local.bookSourceName;
+            raw['sourceName'] = local.sourceName;
           }
           if (_keepGroup) {
-            raw['bookSourceGroup'] = local.bookSourceGroup;
+            raw['sourceGroup'] = local.sourceGroup;
           }
           if (_keepEnable) {
             raw['enabled'] = local.enabled;
-            raw['enabledExplore'] = local.enabledExplore;
           }
+          // 对标原版：customOrder 恒保留本地
           raw['customOrder'] = local.customOrder;
         }
         if (group != null && group.isNotEmpty) {
           if (_isAddGroup) {
             final groups = <String>{
-              ...?raw['bookSourceGroup']
+              ...?raw['sourceGroup']
                   ?.toString()
                   .split(',')
                   .map((g) => g.trim())
                   .where((g) => g.isNotEmpty),
               group,
             };
-            raw['bookSourceGroup'] = groups.join(',');
+            raw['sourceGroup'] = groups.join(',');
           } else {
-            raw['bookSourceGroup'] = group;
+            raw['sourceGroup'] = group;
           }
         }
         toImport.add(raw);
       }
 
-      final json = jsonEncode(toImport);
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      await notifier.importFromJson(json);
+      await ref
+          .read(bookApiProvider)
+          .importRssSources(jsonEncode(toImport));
+      await ref.read(rssNotifierProvider.notifier).loadSources();
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
@@ -176,8 +170,6 @@ class _SourceImportConfirmScreenState
   /// 自定义源分组弹窗（对标原版 alertCustomGroup：
   /// 添加分组开关 + 分组名称输入）
   Future<void> _showCustomGroupDialog() async {
-    // controller 由对话框内容组件自持（随子树卸载释放，
-    // 避免退场动画期间 dispose 引发框架断言）
     final result = await showDialog<(String, bool)>(
       context: context,
       builder: (_) => CustomGroupDialog(
@@ -193,14 +185,13 @@ class _SourceImportConfirmScreenState
     });
   }
 
-  /// 查看书源 JSON（对标原版 tvOpen → CodeDialog）：直接展示原始 JSON
-  Future<void> _showSourceJson(SourcePreview source) async {
-    final json = const JsonEncoder.withIndent('  ')
-        .convert(source.raw);
+  /// 查看订阅源 JSON（对标原版 tvOpen → CodeDialog）：直接展示原始 JSON
+  Future<void> _showSourceJson(Map<String, dynamic> raw) async {
+    final json = const JsonEncoder.withIndent('  ').convert(raw);
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(source.bookSourceName),
+        title: Text(_nameOf(raw)),
         content: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(
@@ -237,7 +228,7 @@ class _SourceImportConfirmScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('导入书源'),
+        title: const Text('导入订阅源'),
         actions: [
           // 自定义源分组（对标 menu_new_group，always 显示）
           TextButton(
@@ -255,15 +246,6 @@ class _SourceImportConfirmScreenState
             position: PopupMenuPosition.under,
             onSelected: _handleMenu,
             itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'select_new',
-                child: Text('选中新增源'),
-              ),
-              const PopupMenuItem(
-                value: 'select_update',
-                child: Text('选中更新源'),
-              ),
-              const PopupMenuDivider(),
               CheckedPopupMenuItem(
                 value: 'keep_name',
                 checked: _keepName,
@@ -289,7 +271,7 @@ class _SourceImportConfirmScreenState
         ],
       ),
       body: widget.sources.isEmpty
-          ? const Center(child: Text('格式错误，未解析到书源'))
+          ? const Center(child: Text('格式错误，未解析到订阅源'))
           : ListView.separated(
               itemCount: widget.sources.length,
               separatorBuilder: (_, _) =>
@@ -360,20 +342,6 @@ class _SourceImportConfirmScreenState
   void _handleMenu(String value) {
     setState(() {
       switch (value) {
-        case 'select_new':
-          final selectAllNew = _isSelectAllNew;
-          for (var i = 0; i < widget.sources.length; i++) {
-            if (_statusOf(widget.sources[i]) == _ImportStatus.isNew) {
-              _selected[i] = !selectAllNew;
-            }
-          }
-        case 'select_update':
-          final selectAllUpdate = _isSelectAllUpdate;
-          for (var i = 0; i < widget.sources.length; i++) {
-            if (_statusOf(widget.sources[i]) == _ImportStatus.isUpdate) {
-              _selected[i] = !selectAllUpdate;
-            }
-          }
         case 'keep_name':
           _keepName = !_keepName;
         case 'keep_group':
@@ -386,11 +354,11 @@ class _SourceImportConfirmScreenState
     });
   }
 
-  /// 单个候选书源项（对标 item_source_import.xml：
-  /// 勾选框 + 源名 + 状态标签 + 打开按钮）
+  /// 单个候选订阅源项（对标 item_source_import.xml：
+  /// 勾选框 + 源名 + 状态标签 + 打开按钮 + 可选源注释）
   Widget _buildItem(int index) {
-    final source = widget.sources[index];
-    final status = _statusOf(source);
+    final raw = widget.sources[index];
+    final status = _statusOf(raw);
     final colorScheme = Theme.of(context).colorScheme;
 
     final (label, color) = switch (status) {
@@ -417,17 +385,17 @@ class _SourceImportConfirmScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    source.bookSourceName,
+                    _nameOf(raw),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 16),
                   ),
                   if (_showComment &&
-                      (source.bookSourceComment ?? '').trim().isNotEmpty)
+                      (_commentOf(raw) ?? '').trim().isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        source.bookSourceComment!.trim(),
+                        _commentOf(raw)!.trim(),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -447,7 +415,7 @@ class _SourceImportConfirmScreenState
               ),
             ),
             TextButton(
-              onPressed: () => _showSourceJson(source),
+              onPressed: () => _showSourceJson(raw),
               child: const Text('打开'),
             ),
           ],
@@ -456,18 +424,3 @@ class _SourceImportConfirmScreenState
     );
   }
 }
-
-/// 导入状态标签配色（亮暗自适应）
-abstract final class AppColorsExt {
-  static Color importNew(ColorScheme scheme) =>
-      scheme.brightness == Brightness.dark
-          ? const Color(0xFF4CD964)
-          : const Color(0xFF34C759);
-
-  static Color importUpdate(ColorScheme scheme) =>
-      scheme.brightness == Brightness.dark
-          ? const Color(0xFFFFC069)
-          : const Color(0xFFFF9500);
-}
-
-

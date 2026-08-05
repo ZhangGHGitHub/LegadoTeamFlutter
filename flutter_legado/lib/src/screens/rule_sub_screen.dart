@@ -1,13 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:http/http.dart' as http;
 
 import '../models/models.dart';
 import '../providers/providers.dart';
-import '../providers/rss/rss_notifier.dart';
 import '../providers/rule_sub/rule_sub_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../services/source_import_service.dart' show SourcePreview;
@@ -15,6 +15,8 @@ import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import 'rss_source_import_confirm_screen.dart';
+import 'replace_rule_import_confirm_screen.dart';
 import 'source_import_confirm_screen.dart';
 
 /// 规则订阅管理页（对标原版 RuleSubActivity）
@@ -373,7 +375,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     }
   }
 
-  /// 订阅源导入（对标 ImportRssSourceDialog：拉取→确认→入库）
+  /// 订阅源导入（对标 ImportRssSourceDialog：拉取→勾选确认→入库）
   Future<void> _importRssSources(BuildContext context, RuleSub sub) async {
     final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
@@ -403,34 +405,33 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       return;
     }
 
-    final confirmed = await showConfirmDialog(
-      context,
-      title: '导入订阅源',
-      content: '共解析到 ${items.length} 个订阅源，是否导入？',
-      confirmText: '导入',
-    );
-    if (!confirmed || !context.mounted) return;
-
+    final candidates = [
+      for (final item in items)
+        if (item is Map<String, dynamic>) item,
+    ];
+    // 本地订阅源用于新增/更新状态判定与保留选项合并
+    List<RssSource> localSources;
     try {
-      final count = await ref
-          .read(bookApiProvider)
-          .importRssSources(jsonEncode(items));
-      await ref.read(rssNotifierProvider.notifier).loadSources();
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('已导入 $count 个订阅源')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('导入订阅源失败：$e')),
-        );
-      }
+      localSources = await ref.read(bookApiProvider).getRssSources();
+    } catch (_) {
+      localSources = [];
+    }
+    if (!mounted) return;
+
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => RssSourceImportConfirmScreen(
+          sources: candidates,
+          localSources: localSources,
+        ),
+      ),
+    );
+    if (ok == true && mounted) {
+      messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
     }
   }
 
-  /// 替换规则导入（对标 ImportReplaceRuleDialog：拉取→确认→逐条入库）
+  /// 替换规则导入（对标 ImportReplaceRuleDialog：拉取→勾选确认→入库）
   Future<void> _importReplaceRules(BuildContext context, RuleSub sub) async {
     final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
@@ -460,38 +461,31 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       return;
     }
 
-    final confirmed = await showConfirmDialog(
-      context,
-      title: '导入替换规则',
-      content: '共解析到 ${items.length} 条替换规则，是否导入？',
-      confirmText: '导入',
-    );
-    if (!confirmed || !context.mounted) return;
-
+    final candidates = [
+      for (final item in items)
+        if (item is Map<String, dynamic>) item,
+    ];
+    // 本地规则用于新增/更新状态判定与同 id 更新入库
+    List<ReplaceRule> localRules;
     try {
-      final api = ref.read(bookApiProvider);
-      var success = 0;
-      for (final item in items) {
-        if (item is Map<String, dynamic>) {
-          try {
-            await api.addReplaceRule(ReplaceRule.fromJson(item));
-            success++;
-          } catch (_) {
-            // 单条解析失败跳过（对标原版逐条容错）
-          }
-        }
-      }
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('已导入 $success 条替换规则')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('导入替换规则失败：$e')),
-        );
-      }
+      localRules = await ref.read(bookApiProvider).getReplaceRules();
+    } catch (_) {
+      localRules = [];
+    }
+    if (!mounted) return;
+
+    final count = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        builder: (_) => ReplaceRuleImportConfirmScreen(
+          raws: candidates,
+          localRules: localRules,
+        ),
+      ),
+    );
+    if (count != null && count > 0 && mounted) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('已导入 $count 条替换规则')),
+      );
     }
   }
 
@@ -611,8 +605,11 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final intervalEnabled = _intervalEnabled;
     final silentEnabled = _silentEnabled;
+    // 禁用态文字色（对标原版 isEnabled=false 的置灰效果）
+    final disabledColor = colorScheme.onSurface.withValues(alpha: 0.4);
     return AlertDialog(
       title: const Text('规则订阅'),
       content: SingleChildScrollView(
@@ -651,30 +648,71 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
               controller: _urlCtrl,
               decoration: const InputDecoration(labelText: 'URL'),
             ),
-            // 自动更新（对标 autoUpdate CheckBox）
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('自动更新'),
-              value: _autoUpdate,
-              onChanged: _onAutoUpdateChanged,
-            ),
-            // 更新间隔（对标 et_update_interval，单位小时）
-            TextField(
-              controller: _intervalCtrl,
-              enabled: intervalEnabled,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '更新间隔（小时）',
-              ),
-            ),
-            // 静默更新（对标 silentUpdate CheckBox：间隔 0 时不可用）
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('静默更新'),
-              value: _silentUpdate && silentEnabled,
-              onChanged: silentEnabled
-                  ? (v) => setState(() => _silentUpdate = v)
-                  : null,
+            const SizedBox(height: 12),
+            // 原版单行水平布局（dialog_rule_sub_edit.xml L55-99）：
+            // 自动更新 | 静默更新 | 更新间隔输入 + 小时；窄屏自动换行
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 4,
+              children: [
+                _buildCheckText(
+                  '自动更新',
+                  _autoUpdate,
+                  _onAutoUpdateChanged,
+                ),
+                _buildCheckText(
+                  '静默更新',
+                  _silentUpdate && silentEnabled,
+                  silentEnabled
+                      ? (v) => setState(() => _silentUpdate = v)
+                      : null,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    '更新间隔',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: intervalEnabled
+                          ? colorScheme.onSurface
+                          : disabledColor,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 64,
+                  child: TextField(
+                    controller: _intervalCtrl,
+                    enabled: intervalEnabled,
+                    keyboardType: TextInputType.number,
+                    // 对标原版 digits="0123456789"
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(
+                      hintText: '24',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    '小时',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: intervalEnabled
+                          ? colorScheme.onSurface
+                          : disabledColor,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -689,6 +727,46 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
           child: const Text('确定'),
         ),
       ],
+    );
+  }
+
+  /// 紧凑勾选框 + 标签（对标原版 CheckBox 水平排布，整块可点）
+  Widget _buildCheckText(
+    String label,
+    bool value,
+    ValueChanged<bool>? onChanged,
+  ) {
+    final enabled = onChanged != null;
+    final colorScheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onChanged == null ? null : () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                value: value,
+                onChanged: enabled ? (v) => onChanged(v ?? false) : null,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                color: enabled
+                    ? colorScheme.onSurface
+                    : colorScheme.onSurface.withValues(alpha: 0.4),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
