@@ -17,7 +17,7 @@
 //! - 网络 API：httpGet, httpPost, httpHead, ajax, ajaxAll, connect, head, post
 //! - 平台桥接：webView, webViewGetSource, webViewGetOverrideUrl, startBrowser,
 //!   showBrowser, openUrl, getVerificationCode
-//! - 压缩解压：unzipFile, getZipStringContent, un7zFile, unrarFile
+//! - 压缩解压：unzipFile, getZipStringContent, un7zFile, unrarFile, get7zStringContent, getRarStringContent
 //! - 字体 API：queryTTF, queryBase64TTF, replaceFont
 //! - 工具类：randomUUID, log, toast, longToast, toURL
 
@@ -1668,7 +1668,7 @@ fn register_archive_apis<'js>(
     )?;
 
     // unrarFile(rarPath, outputPath?) -> String
-    // RAR 解压桩化：Rust 生态无纯 Rust RAR 实现，返回错误提示
+    // 纯 Rust RAR4/RAR5 解压（rar crate），失败返回 [ERROR] 前缀错误信息
     mount_dual(
         java,
         globals,
@@ -1678,6 +1678,38 @@ fn register_archive_apis<'js>(
             |rar_path: String, output_path: Opt<String>| -> String {
                 archive_utils::unrar_file(&rar_path, output_path.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // get7zStringContent(url, path, charsetName?) -> String
+    // 对应 Kotlin: get7zStringContent(url, path[, charsetName])；
+    // url 可为本地 7z 路径 / 网络 URL / 十六进制字符串；失败返回空串（对齐 Kotlin）
+    mount_dual(
+        java,
+        globals,
+        "get7zStringContent",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, entry: String, charset: Opt<String>| -> String {
+                get_7z_string_content_js(&url, &entry, charset.0.as_deref())
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getRarStringContent(url, path, charsetName?) -> String
+    // 对应 Kotlin: getRarStringContent(url, path[, charsetName])；
+    // url 可为本地 RAR 路径 / 网络 URL / 十六进制字符串；失败返回空串（对齐 Kotlin）
+    mount_dual(
+        java,
+        globals,
+        "getRarStringContent",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, entry: String, charset: Opt<String>| -> String {
+                get_rar_string_content_js(&url, &entry, charset.0.as_deref())
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1713,6 +1745,48 @@ fn get_zip_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> S
 /// 解析 getZipStringContent 的 ZIP 来源为字节数据
 fn resolve_zip_bytes(source: &str) -> Result<Vec<u8>, String> {
     resolve_archive_bytes(source, "ZIP")
+}
+
+/// get7zStringContent 的 JS 入口实现：解析 7z 来源并读取指定条目的字符串内容
+///
+/// 对应 Kotlin `get7zByteArrayContent` + `get7zStringContent`；
+/// 失败时记录日志并返回空串（对齐 Kotlin `?: return ""`）
+fn get_7z_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> String {
+    let bytes = match resolve_archive_bytes(url, "7z") {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[get7zStringContent] 7z 来源解析失败: {e}");
+            return String::new();
+        }
+    };
+    match archive_utils::seven_z_entry_bytes(&bytes, entry) {
+        Ok(b) => decode_bytes_with_charset(&b, charset),
+        Err(e) => {
+            eprintln!("[get7zStringContent] {e}");
+            String::new()
+        }
+    }
+}
+
+/// getRarStringContent 的 JS 入口实现：解析 RAR 来源并读取指定条目的字符串内容
+///
+/// 对应 Kotlin `getRarByteArrayContent` + `getRarStringContent`；
+/// 失败时记录日志并返回空串（对齐 Kotlin `?: return ""`）
+fn get_rar_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> String {
+    let bytes = match resolve_archive_bytes(url, "RAR") {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[getRarStringContent] RAR 来源解析失败: {e}");
+            return String::new();
+        }
+    };
+    match archive_utils::rar_entry_bytes(&bytes, entry) {
+        Ok(b) => decode_bytes_with_charset(&b, charset),
+        Err(e) => {
+            eprintln!("[getRarStringContent] {e}");
+            String::new()
+        }
+    }
 }
 
 /// 解析压缩档案来源为字节数据（ZIP / 7z / RAR 共用）
@@ -2233,10 +2307,63 @@ mod tests {
     }
 
     #[test]
-    fn test_java_unrar_file_stub() {
+    fn test_java_unrar_file_missing_file_error() {
+        // 真实实现（rar crate）：不存在的文件返回 [ERROR] 前缀错误信息
         let engine = make_engine();
         let result = engine.eval("java.unrarFile('test.rar')").unwrap();
         assert!(result.contains("[ERROR]"));
+    }
+
+    #[test]
+    fn test_java_get7z_string_content_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.get7zStringContent").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_get_rar_string_content_exists() {
+        let engine = make_engine();
+        let result = engine.eval("typeof java.getRarStringContent").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_java_get7z_string_content_local_file() {
+        use std::io::Write;
+
+        // 构造测试 7z 文件
+        let dir = std::env::temp_dir().join(format!(
+            "legado_js_7z_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src_dir = dir.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let entry_path = src_dir.join("inner.txt");
+        let mut f = std::fs::File::create(&entry_path).unwrap();
+        f.write_all("7z 内部文本内容".as_bytes()).unwrap();
+        drop(f);
+        let seven_z_path = dir.join("test.7z");
+        sevenz_rust2::compress_to_path(&src_dir, &seven_z_path).unwrap();
+
+        // JS 侧调用：本地路径 + 条目名
+        let path_js = seven_z_path.to_str().unwrap().replace('\\', "\\\\");
+        let engine = make_engine();
+        let script = format!("java.get7zStringContent('{path_js}', 'inner.txt')");
+        let result = engine.eval(&script).unwrap();
+        assert_eq!(result, "7z 内部文本内容");
+
+        // 不存在的条目 → 空串（对齐 Kotlin 失败语义）
+        let script = format!("java.get7zStringContent('{path_js}', 'no-such.txt')");
+        let result = engine.eval(&script).unwrap();
+        assert_eq!(result, "");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ============================================================
@@ -2343,6 +2470,77 @@ mod tests {
         assert_eq!(engine.eval(&code).unwrap(), "hex source");
 
         let _ = std::fs::remove_dir_all(std::path::Path::new(&zip_path).parent().unwrap());
+    }
+
+    /// 辅助：创建包含指定文件的测试 7z 压缩包，返回 7z 文件路径
+    fn create_7z_for_js(entries: &[(&str, &[u8])]) -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let src_dir = std::env::temp_dir().join(format!("legado_js_7z_src_{:x}", nanos));
+        std::fs::create_dir_all(&src_dir).unwrap();
+        for (name, content) in entries {
+            let file_path = src_dir.join(name);
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&file_path, content).unwrap();
+        }
+
+        let seven_z_path = std::env::temp_dir()
+            .join(format!("legado_js_7z_arc_{:x}", nanos))
+            .join("host_test.7z");
+        if let Some(parent) = seven_z_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        sevenz_rust2::compress_to_path(&src_dir, &seven_z_path).unwrap();
+        let _ = std::fs::remove_dir_all(&src_dir);
+
+        seven_z_path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn test_js_get_7z_string_content() {
+        // 7z 本地文件来源往返（对齐 getZipStringContent 模式）
+        let content = "第七章 7z 文本内容";
+        let seven_z_path = create_7z_for_js(&[("chapter.txt", content.as_bytes())]);
+        let engine = make_engine();
+
+        let code = format!(
+            "java.get7zStringContent({}, 'chapter.txt')",
+            js_str(&seven_z_path)
+        );
+        let result = engine.eval(&code).unwrap();
+        assert_eq!(result, content);
+
+        // 不存在的条目返回空串（对齐 Kotlin return ""）
+        let code = format!("java.get7zStringContent({}, 'no.txt')", js_str(&seven_z_path));
+        assert_eq!(engine.eval(&code).unwrap(), "");
+
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&seven_z_path).parent().unwrap());
+    }
+
+    #[test]
+    fn test_js_get_rar_string_content_hex_source() {
+        // RAR 十六进制来源往返：RAR5 STORE 单文件 fixture（与 archive_utils 测试同源）
+        const RAR5_HELLO: &[u8] = &[
+            0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0xc5, 0x1a, 0x33, 0x32, 0x03, 0x01,
+            0x00, 0x00, 0xe4, 0xf8, 0x02, 0x48, 0x16, 0x02, 0x02, 0x10, 0x04, 0x10, 0x20, 0xec,
+            0x68, 0x08, 0x45, 0x00, 0x01, 0x09, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78,
+            0x74, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x52, 0x41, 0x52, 0x20, 0x57, 0x6f, 0x72,
+            0x6c, 0x64, 0x21, 0x19, 0xb2, 0x3a, 0x35, 0x03, 0x05, 0x00, 0x00,
+        ];
+        let hex_str = hex::encode(RAR5_HELLO);
+        let engine = make_engine();
+
+        let code = format!("java.getRarStringContent('{}', 'hello.txt')", hex_str);
+        assert_eq!(engine.eval(&code).unwrap(), "Hello RAR World!");
+
+        // 不存在的条目返回空串（对齐 Kotlin return ""）
+        let code = format!("java.getRarStringContent('{}', 'no.txt')", hex_str);
+        assert_eq!(engine.eval(&code).unwrap(), "");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! 对应 Kotlin `ArchiveUtils.kt`，提供 ZIP / 7z / RAR 解压能力。
 //! - ZIP：使用 `zip` crate 完整实现
 //! - 7z：使用 `sevenz-rust2` crate 纯 Rust 实现（需 quickjs feature）
-//! - RAR：Rust 生态无纯 Rust 实现，桩化返回错误
+//! - RAR：使用 `rar` crate 纯 Rust 实现（RAR4/RAR5，含加密档案；需 quickjs feature）
 
 use std::fs;
 use std::io::Read;
@@ -160,13 +160,126 @@ pub fn un7z_file(_seven_z_path: &str, _output_path: Option<&str>) -> Result<Stri
 
 /// unrarFile(rarPath, outputPath?) — 解压 RAR 文件
 ///
-/// RAR 解压 — 当前 Rust 生态无纯 Rust RAR 实现。
-/// `unrar` crate 需要 unrar C 库（libunrar），交叉编译困难。
-/// 建议通过 Flutter 侧调用平台原生 RAR 解压（Android: libarchive, iOS: UnrarKit）。
-pub fn unrar_file(_rar_path: &str, _output_path: Option<&str>) -> Result<String, String> {
-    Err("[ERROR] RAR decompression requires platform-native library. Use Flutter-side implementation.".to_string())
+/// 使用 `rar` crate 纯 Rust 实现（RAR4/RAR5 全压缩级别 + 加密档案，无 C 依赖）。
+/// 返回解压目标目录路径。
+///
+/// Kotlin 原版走 libarchive（`ArchiveUtils.deCompress`），此处以纯 Rust 方案对等替代。
+#[cfg(feature = "quickjs")]
+pub fn unrar_file(rar_path: &str, output_path: Option<&str>) -> Result<String, String> {
+    let src = Path::new(rar_path);
+    if !src.exists() {
+        return Err(format!("RAR file not found: {}", src.display()));
+    }
+
+    let out_dir = match output_path {
+        Some(p) => p.to_string(),
+        None => {
+            let stem = src
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unrarred");
+            let parent = src.parent().unwrap_or(Path::new("."));
+            parent.join(stem).to_string_lossy().to_string()
+        }
+    };
+
+    fs::create_dir_all(&out_dir)
+        .map_err(|e| format!("Failed to create output dir: {e}"))?;
+
+    // rar crate 仅支持文件路径入参；空密码表示无加密
+    rar::Archive::extract_all(rar_path, &out_dir, "")
+        .map_err(|e| format!("RAR decompression failed: {e}"))?;
+
+    Ok(out_dir)
 }
 
+/// unrarFile — 无 quickjs feature 时的回退桩
+#[cfg(not(feature = "quickjs"))]
+pub fn unrar_file(_rar_path: &str, _output_path: Option<&str>) -> Result<String, String> {
+    Err("[ERROR] RAR decompression requires 'quickjs' feature (rar crate)".to_string())
+}
+
+/// sevenZEntryBytes — 从内存中的 7z 字节数据读取指定条目
+///
+/// 对应 Kotlin `get7zByteArrayContent` 的流式读取逻辑：
+/// 用于网络 7z / 十六进制字符串等非本地文件场景。
+#[cfg(feature = "quickjs")]
+pub fn seven_z_entry_bytes(seven_z_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, String> {
+    let cursor = std::io::Cursor::new(seven_z_bytes);
+    let mut reader =
+        sevenz_rust2::SevenZReader::new(cursor, sevenz_rust2::Password::empty())
+            .map_err(|e| format!("Invalid 7z archive: {e}"))?;
+    reader
+        .read_file(entry_name)
+        .map_err(|e| format!("Entry '{entry_name}' not found in 7z: {e}"))
+}
+
+/// sevenZEntryBytes — 无 quickjs feature 时的回退桩
+#[cfg(not(feature = "quickjs"))]
+pub fn seven_z_entry_bytes(_seven_z_bytes: &[u8], _entry_name: &str) -> Result<Vec<u8>, String> {
+    Err("[ERROR] 7z entry reading requires 'quickjs' feature (sevenz-rust2)".to_string())
+}
+
+/// rarEntryBytes — 从内存中的 RAR 字节数据读取指定条目
+///
+/// 对应 Kotlin `getRarByteArrayContent` 的流式读取逻辑。
+/// rar crate 仅支持文件路径，故经临时文件中转：写入临时 .rar → 解压到临时目录 → 读取条目。
+#[cfg(feature = "quickjs")]
+pub fn rar_entry_bytes(rar_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("legado_rar_entry_{}_{}", std::process::id(), nanos));
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
+
+    let result = (|| -> Result<Vec<u8>, String> {
+        let rar_file = dir.join("data.rar");
+        fs::write(&rar_file, rar_bytes)
+            .map_err(|e| format!("Failed to write temp RAR: {e}"))?;
+
+        let out_dir = dir.join("out");
+        fs::create_dir_all(&out_dir)
+            .map_err(|e| format!("Failed to create extract dir: {e}"))?;
+
+        let rar_path = rar_file
+            .to_str()
+            .ok_or_else(|| "Temp RAR path is not valid UTF-8".to_string())?;
+        let out_path = out_dir
+            .to_str()
+            .ok_or_else(|| "Temp extract path is not valid UTF-8".to_string())?;
+        rar::Archive::extract_all(rar_path, out_path, "")
+            .map_err(|e| format!("Invalid RAR archive: {e}"))?;
+
+        // 条目路径兼容：先按原样查找，再尝试反斜杠归一化（RAR 内路径分隔符可能为 \）
+        let target = out_dir.join(entry_name);
+        if target.is_file() {
+            return fs::read(&target)
+                .map_err(|e| format!("Failed to read entry '{entry_name}': {e}"));
+        }
+        let normalized = entry_name.replace('\\', "/");
+        if normalized != entry_name {
+            let target = out_dir.join(&normalized);
+            if target.is_file() {
+                return fs::read(&target)
+                    .map_err(|e| format!("Failed to read entry '{entry_name}': {e}"));
+            }
+        }
+        Err(format!("Entry '{entry_name}' not found in RAR"))
+    })();
+
+    // 无论成败都清理临时目录
+    let _ = fs::remove_dir_all(&dir);
+    result
+}
+
+/// rarEntryBytes — 无 quickjs feature 时的回退桩
+#[cfg(not(feature = "quickjs"))]
+pub fn rar_entry_bytes(_rar_bytes: &[u8], _entry_name: &str) -> Result<Vec<u8>, String> {
+    Err("[ERROR] RAR entry reading requires 'quickjs' feature (rar crate)".to_string())
+}
 
 /// unArchiveFile(archivePath, outputPath?) — 通用解压（自动检测格式）
 ///
@@ -358,12 +471,93 @@ mod tests {
     }
 
     #[test]
-    fn test_unrar_file_stub() {
+    fn test_unrar_file_stub_or_not_found() {
+        // quickjs feature 启用时：真实实现，不存在的文件报 "not found"；
+        // 未启用时：回退桩，报 feature 提示
         let result = unrar_file("some.rar", None);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("RAR decompression requires platform-native library"));
+        let err = result.unwrap_err();
+        assert!(err.contains("not found") || err.contains("quickjs"));
+    }
+
+    #[test]
+    fn test_rar_entry_bytes_invalid_data() {
+        let result = rar_entry_bytes(b"not a rar archive", "a.txt");
+        assert!(result.is_err());
+    }
+
+    /// 最小 RAR5 测试归档：单文件 hello.txt（STORE 无压缩），
+    /// 内容为 "Hello RAR World!"（由 scripts/gen_rar5_fixture.py 按 RAR5 格式规范构造）
+    #[cfg(feature = "quickjs")]
+    const RAR5_HELLO: &[u8] = &[
+        0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0xc5, 0x1a, 0x33, 0x32, 0x03, 0x01,
+        0x00, 0x00, 0xe4, 0xf8, 0x02, 0x48, 0x16, 0x02, 0x02, 0x10, 0x04, 0x10, 0x20, 0xec,
+        0x68, 0x08, 0x45, 0x00, 0x01, 0x09, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78,
+        0x74, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x52, 0x41, 0x52, 0x20, 0x57, 0x6f, 0x72,
+        0x6c, 0x64, 0x21, 0x19, 0xb2, 0x3a, 0x35, 0x03, 0x05, 0x00, 0x00,
+    ];
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_rar_entry_bytes_rar5_basic() {
+        let content = rar_entry_bytes(RAR5_HELLO, "hello.txt");
+        assert!(content.is_ok(), "rar_entry_bytes failed: {:?}", content.err());
+        assert_eq!(content.unwrap(), b"Hello RAR World!");
+
+        // 不存在的条目应报错
+        assert!(rar_entry_bytes(RAR5_HELLO, "no-such.txt").is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_unrar_file_rar5_basic() {
+        let dir = std::env::temp_dir().join(format!("legado_rar5_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        let rar_path = dir.join("hello.rar");
+        fs::write(&rar_path, RAR5_HELLO).unwrap();
+
+        let out_dir = dir.join("out");
+        let result = unrar_file(rar_path.to_str().unwrap(), Some(out_dir.to_str().unwrap()));
+        assert!(result.is_ok(), "unrar_file failed: {:?}", result.err());
+
+        let content = fs::read_to_string(out_dir.join("hello.txt")).unwrap();
+        assert_eq!(content, "Hello RAR World!");
+
+        // 默认输出目录：同目录下去掉扩展名的文件夹
+        let result2 = unrar_file(rar_path.to_str().unwrap(), None);
+        assert!(result2.is_ok(), "unrar_file default out failed: {:?}", result2.err());
+        assert!(Path::new(&result2.unwrap()).join("hello.txt").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_seven_z_entry_bytes_basic() {
+        let seven_z_path = create_test_7z(&[
+            ("chapter.txt", "第七章 内容文本".as_bytes()),
+            ("sub/data.bin", &[0x11, 0x22]),
+        ]);
+        let bytes = fs::read(&seven_z_path).unwrap();
+
+        // 读取存在的条目
+        let content = seven_z_entry_bytes(&bytes, "chapter.txt");
+        assert!(content.is_ok(), "seven_z_entry_bytes failed: {:?}", content.err());
+        assert_eq!(
+            String::from_utf8(content.unwrap()).unwrap(),
+            "第七章 内容文本"
+        );
+
+        // 子目录条目
+        let bin = seven_z_entry_bytes(&bytes, "sub/data.bin").unwrap();
+        assert_eq!(bin, vec![0x11, 0x22]);
+
+        // 不存在的条目应报错
+        assert!(seven_z_entry_bytes(&bytes, "no-such.txt").is_err());
+        // 非法 7z 数据应报错
+        assert!(seven_z_entry_bytes(b"not a 7z", "a").is_err());
+
+        let _ = fs::remove_dir_all(Path::new(&seven_z_path).parent().unwrap());
     }
 
     #[test]

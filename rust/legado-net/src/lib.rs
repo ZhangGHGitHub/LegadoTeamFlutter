@@ -38,6 +38,10 @@ pub mod user_agent;
 pub mod verification;
 pub mod webdav;
 
+// 测试专用：SOCKS5 凭据代理 e2e（内置最小 SOCKS5/HTTP 测试服务器）
+#[cfg(test)]
+mod socks5_e2e;
+
 // 常用类型重导出
 pub use client::{is_quic_enabled, set_quic_enabled, LegadoClient, LegadoClientConfig};
 pub use cookie_store::{CookiePersistence, CookieStore};
