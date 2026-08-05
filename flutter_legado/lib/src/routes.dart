@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'models/models.dart';
 import 'screens/about_screen.dart';
+import 'screens/app_log_screen.dart';
 import 'screens/association_screen.dart';
 import 'screens/browser_screen.dart';
 import 'screens/dict_screen.dart';
@@ -79,6 +80,7 @@ class AppRoutes {
   static const bookshelfManage = '/bookshelf/manage';
   static const searchContent = '/search_content';
   static const about = '/about';
+  static const appLog = '/app_log';
   // discover 路由已删除（原版不存在的功能）
   static const rssConfig = '/rss/config';
   static const rssFavorites = '/rss/favorites';
@@ -205,6 +207,7 @@ class AppRoutes {
           return const SearchContentScreen();
         },
         about: (_) => const AboutScreen(),
+        appLog: (_) => const AppLogScreen(),
         
         rssConfig: (_) => const RssConfigScreen(),
         rssFavorites: (_) => const RssFavoritesScreen(),

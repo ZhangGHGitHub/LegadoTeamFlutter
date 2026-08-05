@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNot
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/providers.dart';
+import '../routes.dart';
 
 /// 关于页面
 ///
@@ -48,8 +49,9 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
     try {
       final v = await ref.read(bookApiProvider).getVersion();
       if (mounted) setState(() => _rustVersion = v);
-    } catch (_) {
-      // FFI 不可用时静默忽略
+    } catch (e) {
+      // [审计修复 §4.1] FFI 不可用时静默降级，debugPrint 留痕 — Qoder
+      debugPrint('获取 Rust 版本号失败: $e');
     }
   }
 
@@ -285,6 +287,15 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
                       ],
                     ),
                   ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                // [审计修复 §1.2 第二批] 对齐原版 AppLogDialog 关于页入口 — Qoder
+                ListTile(
+                  leading: const Icon(Icons.receipt_long_outlined),
+                  title: const Text('应用日志'),
+                  subtitle: const Text('查看 message/crash/http 三级日志'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.appLog),
+                ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
