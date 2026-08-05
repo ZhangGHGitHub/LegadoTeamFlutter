@@ -1,9 +1,9 @@
 # Legado Flutter 设计规范文档
 
 > 数据来源：`flutter_legado/lib/src/theme/app_colors.dart`、`app_typography.dart`、`app_theme.dart`
-> Token 来源基准：Android 端 `values/colors.xml` + `values-night/colors.xml`，M3 体系
+> Token 来源基准：iOS Human Interface Guidelines 系统色（亮/暗两套），语义槽位与 Android 原版一一对应
 >
-> **定位说明（2026-08-05 更新）**：本文档描述当前主题 Token 体系，作为 UI 实现的统一依据。项目对齐标准为：**界面功能与交互流程对齐 Android 原版，UI 视觉风格自由**——本文档中的色值/字号等可随设计演进更新，修改 Token 时需同步更新本档与代码实现，保持单一事实源。
+> **定位说明（2026-08-05 更新）**：本文档描述当前主题 Token 体系，作为 UI 实现的统一依据。项目对齐标准为：**界面功能与交互流程对齐 Android 原版，UI 视觉风格自由**——当前视觉语言已切换为 iOS 体系，本文档中的色值/字号等可随设计演进更新，修改 Token 时需同步更新本档与代码实现，保持单一事实源。
 
 ---
 
@@ -13,55 +13,55 @@
 
 | Token | 色值 | 用途 |
 |-------|------|------|
-| `primary` | `#039BE5` | 主色（AppBar、按钮、链接） |
+| `primary` | `#007AFF` | 主色 / Tint（iOS 系统蓝，AppBar、按钮、链接） |
 | `onPrimary` | `#FFFFFF` | 主色上的前景（白色文字/图标） |
-| `primaryContainer` | `#B3E5FC` | 主色容器背景 |
-| `onPrimaryContainer` | `#01579B` | 主色容器前景 |
-| `secondary` | `#AD1457` | 强调色（FAB、选中态） |
+| `primaryContainer` | `#D6E9FF` | 主色容器背景 |
+| `onPrimaryContainer` | `#003E82` | 主色容器前景 |
+| `secondary` | `#FF2D55` | 强调色（iOS 系统粉，FAB、选中态） |
 | `onSecondary` | `#FFFFFF` | 强调色上的前景 |
-| `secondaryContainer` | `#F8BBD0` | 强调色容器背景 |
-| `onSecondaryContainer` | `#880E4F` | 强调色容器前景 |
-| `tertiary` | `#578FCC` | 第三色（辅助链接） |
-| `error` | `#EB4333` | 错误色 |
+| `secondaryContainer` | `#FFDCE3` | 强调色容器背景 |
+| `onSecondaryContainer` | `#8A0F2E` | 强调色容器前景 |
+| `tertiary` | `#5856D6` | 第三色（iOS 系统靛蓝） |
+| `error` | `#FF3B30` | 错误色（iOS 系统红） |
 | `onError` | `#FFFFFF` | 错误色上的前景 |
 | `errorContainer` | `#FFDAD6` | 错误容器背景 |
 | `onErrorContainer` | `#410002` | 错误容器前景 |
 | `surface` | `#FFFFFF` | 表面色（卡片、对话框） |
-| `onSurface` | `#DE000000`（87%黑） | 表面上的主要文字 |
-| `surfaceContainerHighest` | `#F5F5F5` | 最高层容器背景 |
-| `onSurfaceVariant` | `#8A000000`（54%黑） | 次要文字、图标 |
-| `outline` | `#66666666`（40%灰） | 分割线、边框 |
-| `outlineVariant` | `#39424242` | 弱边框 |
-| `inverseSurface` | `#303030` | 反色表面（SnackBar） |
-| `onInverseSurface` | `#F5F5F5` | 反色表面前景 |
-| `scaffoldBackground` | `#FAFAFA` | 页面背景 |
+| `onSurface` | `#000000` | 表面上的主要文字（Label） |
+| `surfaceContainerHighest` | `#F2F2F7` | 最高层容器背景（iOS Grouped Background） |
+| `onSurfaceVariant` | `#993C3C43`（60% Secondary Label） | 次要文字、图标 |
+| `outline` | `#4A3C3C43`（29% Separator） | 分割线、边框 |
+| `outlineVariant` | `#1E3C3C43`（12% hairline） | 弱边框 |
+| `inverseSurface` | `#1C1C1E` | 反色表面（SnackBar） |
+| `onInverseSurface` | `#F2F2F7` | 反色表面前景 |
+| `scaffoldBackground` | `#F2F2F7` | 页面背景（iOS Grouped Background） |
 
 ### 1.2 暗色主题（Dark）
 
 | Token | 色值 | 用途 |
 |-------|------|------|
-| `primary` | `#546E7A` | 主色 |
+| `primary` | `#0A84FF` | 主色 / Tint（iOS 系统蓝·暗） |
 | `onPrimary` | `#FFFFFF` | 主色上的前景 |
-| `primaryContainer` | `#37474F` | 主色容器背景 |
-| `onPrimaryContainer` | `#CFD8DC` | 主色容器前景 |
-| `secondary` | `#D84315` | 强调色 |
+| `primaryContainer` | `#0A3A6B` | 主色容器背景 |
+| `onPrimaryContainer` | `#D6E9FF` | 主色容器前景 |
+| `secondary` | `#FF375F` | 强调色（iOS 系统粉·暗） |
 | `onSecondary` | `#FFFFFF` | 强调色上的前景 |
-| `secondaryContainer` | `#BF360C` | 强调色容器背景 |
-| `onSecondaryContainer` | `#FFCCBC` | 强调色容器前景 |
-| `tertiary` | `#578FCC` | 第三色 |
-| `error` | `#EB4333` | 错误色 |
+| `secondaryContainer` | `#5C0F22` | 强调色容器背景 |
+| `onSecondaryContainer` | `#FFDCE3` | 强调色容器前景 |
+| `tertiary` | `#5E5CE6` | 第三色（iOS 系统靛蓝·暗） |
+| `error` | `#FF453A` | 错误色（iOS 系统红·暗） |
 | `onError` | `#FFFFFF` | 错误色上的前景 |
 | `errorContainer` | `#93000A` | 错误容器背景 |
 | `onErrorContainer` | `#FFDAD6` | 错误容器前景 |
-| `surface` | `#303030` | 表面色 |
-| `onSurface` | `#FFFFFF` | 表面上的主要文字 |
-| `surfaceContainerHighest` | `#424242` | 最高层容器背景 |
-| `onSurfaceVariant` | `#B3FFFFFF`（70%白） | 次要文字、图标 |
-| `outline` | `#66666666` | 分割线、边框 |
-| `outlineVariant` | `#39BDBDBD` | 弱边框 |
-| `inverseSurface` | `#E0E0E0` | 反色表面 |
-| `onInverseSurface` | `#303030` | 反色表面前景 |
-| `scaffoldBackground` | `#212121` | 页面背景 |
+| `surface` | `#1C1C1E` | 表面色（Secondary Grouped Background） |
+| `onSurface` | `#FFFFFF` | 表面上的主要文字（Label） |
+| `surfaceContainerHighest` | `#2C2C2E` | 最高层容器背景（Tertiary Grouped Background） |
+| `onSurfaceVariant` | `#99EBEBF5`（60% Secondary Label） | 次要文字、图标 |
+| `outline` | `#99545458`（60% Separator） | 分割线、边框 |
+| `outlineVariant` | `#1E545458`（12% hairline） | 弱边框 |
+| `inverseSurface` | `#F2F2F7` | 反色表面 |
+| `onInverseSurface` | `#1C1C1E` | 反色表面前景 |
+| `scaffoldBackground` | `#000000` | 页面背景（iOS Dark Grouped Background） |
 
 ### 1.3 通用色值（不区分亮暗）
 
@@ -70,7 +70,12 @@
 | `transparent` | `#00000000` | 透明 |
 | `black` | `#000000` | 纯黑（仅阅读器） |
 | `white` | `#FFFFFF` | 纯白（仅 AppBar 前景等） |
-| `lightBlue` | `#578FCC` | 链接蓝 |
+| `lightBlue` | `#578FCC` | 链接蓝（历史语义色，部分阅读器配色引用） |
+
+> iOS 系统色补充（`AppColors.ios*Light/Dark`，用于高亮预设、开关绿、徽标等场景）：
+> 红 `#FF3B30`/`#FF453A`、橙 `#FF9500`/`#FF9F0A`、黄 `#FFCC00`/`#FFD60A`、绿 `#34C759`/`#30D158`、
+> 薄荷绿 `#00C7BE`/`#63E6E2`、青 `#5AC8FA`/`#40C8E0`、蓝 `#007AFF`/`#0A84FF`、靛蓝 `#5856D6`/`#5E5CE6`、
+> 紫 `#AF52DE`/`#BF5AF2`、粉 `#FF2D55`/`#FF375F`、棕 `#A2845E`/`#AC8E68`（亮/暗）。
 
 ---
 

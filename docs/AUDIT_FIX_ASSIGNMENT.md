@@ -1,4 +1,4 @@
-# 审计修复任务分配与完成报告（第一批）
+# 审计修复任务分配与完成报告（第一批 + 第二批）
 
 **日期**: 2026-08-05
 **依据**: [PROJECT_AUDIT_REPORT.md](PROJECT_AUDIT_REPORT.md)
@@ -56,16 +56,16 @@
 
 ## 3. 延后批次（需独立设计/较大工作量）
 
-| 条目 | 延后原因 |
-|---|---|
-| §1.1 书源校验 FFI 链路 | 需先冻结 `checkSource*` 契约 + frb codegen + UI 菜单/进度条，建议独立任务 |
-| §1.2 app_log_screen 页面 | 依赖本批 appLog 接口（已交付），可作为下一批 UI 任务 |
-| §2.1 验证码输入页 / 规则订阅页 | 新页面开发，独立任务 |
-| §1.3 HTTP TTS 引擎接 http_tts_repository | Rust 侧逻辑改造 |
-| §1.4 MOBI HUFF/CDIC + KF8 | 解析器移植，低频路径 |
-| §3.4 design_system.md Token 同步 | 文档治理，需与 UI 负责人确认口径 |
-| §4.3 高亮规则 JSON 解析下沉 Notifier | 结构重构，低风险但需测试覆盖 |
-| §4.4 dev 构建 quickjs stub 提示 | Makefile/启动日志改造 |
+| 条目 | 状态 | 备注 |
+|---|---|---|
+| §1.1 书源校验 FFI 链路 | ⛳ 继续延后 | 评估结论见 §5.4；另有并行会话在改书源管理页，UI 入口必冲突 |
+| §1.2 app_log_screen 页面 | ✅ 第二批完成 | 见 §5.1 |
+| §2.1 验证码输入页 / 规则订阅页 | ⛳ 待排期 | 新页面开发，独立任务 |
+| §1.3 HTTP TTS 引擎接 http_tts_repository | ✅ 无需修复 | 审计描述过期：`list_engines` 已接通 `HttpTtsRepository::find_enabled`（见 §5.3） |
+| §1.4 MOBI HUFF/CDIC + KF8 | ⛳ 待排期 | 解析器移植，低频路径 |
+| §3.4 design_system.md Token 同步 | ✅ 第二批完成 | 见 §5.2 |
+| §4.3 高亮规则 JSON 解析下沉 Notifier | ✅ 第二批完成 | 见 §5.1 |
+| §4.4 dev 构建 quickjs stub 提示 | ✅ 第二批完成 | 见 §5.2 |
 
 ---
 
@@ -75,3 +75,41 @@
 2. `git show 6a7a68b5a --stat`（UI 轨，14 文件 +105/-35）
 3. 重点目检：bookshelf 分组 Tab 白字、书源调试芯片亮暗模式、书籍信息页编辑/导出/分享失败提示
 4. 复跑：`cd flutter_legado && flutter analyze && flutter test test/unit`
+
+---
+
+## 5. 第二批完成情况（2026-08-05）
+
+### 5.1 UI 轨 — app 日志页 — 提交 `160affb0d`；高亮规则下沉 — 提交 `a62de97af`
+
+`[UI] 审计修复第二批：新增应用日志页（message/crash/http 三级页签）+ 关于页入口 + 路由`
+
+| 审计条目 | 修复内容 | 文件 |
+|---|---|---|
+| §1.2 应用日志页 | 新建 app_log 三件套（state/notifier/screen）：三级 TabBar 白色前景、刷新/清空/导出菜单、二次确认、错误 SnackBar；关于页加入口，routes 注册 `/app_log` | providers/app_log/×2、app_log_screen.dart、about_screen.dart、routes.dart |
+| §4.3 高亮规则 JSON 下沉 | 新建类型化模型 `HighlightRule`（fromJson/toJson/displayName/styleTextColor）与 `HighlightRulesNotifier`（load/toggle/delete/save）；UI 层不再触碰 raw map，jsonDecode 全部移除 | providers/highlight_rules/×2、highlight_rules_screen.dart |
+| §4.1 遗留 | about_screen 版本加载 catch 补 debugPrint（顺手修复） | about_screen.dart |
+
+### 5.2 文档与构建轨 — 随本文档提交
+
+| 审计条目 | 修复内容 | 文件 |
+|---|---|---|
+| §3.4 Token 表同步 | design_system.md 亮/暗两套 ColorScheme 表同步为 app_colors.dart 实际 iOS 色值（primary #007AFF/#0A84FF 等），头部说明改为 iOS 体系，补充 ios* 系统色清单 | docs/design_system.md |
+| §4.4 stub 构建提示 | `rebuild-ffi-stub` 构建时 echo 降级提示；新增 `run-windows-stub` 开发目标 | flutter_legado/Makefile |
+
+### 5.3 审计复核更正（第二批）
+
+- §1.3 审计描述过期：`legado-server/src/handlers/tts.rs` 的 `list_engines` 已接通 `HttpTtsRepository::new(db.connection()).find_enabled()`，非“硬编码示例引擎”，无需代码修复。
+
+### 5.4 §1.1 书源校验 FFI 链路评估结论（继续延后）
+
+- **Rust 侧已就绪**：`legado-net::source_checker`（SourceChecker / CheckerConfig / CheckResult / CaptchaInfo / RedirectInfo）完整；HTTP 路由 `POST /sources/check` 与 MCP 工具 `check_sources` 均已接通并有测试。
+- **FFI 侧空缺**：`legado-ffi` 与 Dart bridge 均无 `checkSource*` 绑定；`API_CONTRACT.md` 无对应条目（仅有 jsSourceSyntaxCheck 语法检查）。
+- **实施路径**：冻结契约（入参书源 JSON 数组 + 搜索关键词，出参 CheckResult 数组 JSON）→ ffi.rs 薄包装 → frb codegen（两侧 frb_generated 全量重生成 + DLL content hash 同步）→ BookApi/RustApi/Mock → Notifier + UI。
+- **延后原因**：① frb codegen 影响面大（生成物全量重刷 + hash 同步风险）；② **当前有并行会话正在修改书源管理页，校验 UI 入口恰在该页，实施必然冲突**。建议待书源管理页改动合入后作为独立任务执行。
+
+### 5.5 第二批验证结果
+
+- `flutter analyze`：无 error / warning（214 项存量 info，均在 test 目录且不涉及本批文件）
+- `flutter test`：**1092 项全部通过**（含高亮规则 widget 测试 5 项回归验证）
+- 提交时只精确 add 本批文件，不触碰书源管理页相关文件（避免与并行会话冲突）

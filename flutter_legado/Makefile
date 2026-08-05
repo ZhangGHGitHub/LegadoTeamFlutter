@@ -1,4 +1,4 @@
-.PHONY: gen gen-only build test check clean run-windows rebuild-ffi rebuild-ffi-stub
+.PHONY: gen gen-only build test check clean run-windows run-windows-stub rebuild-ffi rebuild-ffi-stub
 
 # flutter_rust_bridge 代码生成 + 自动重编译 DLL（防止 content hash 不同步）
 #
@@ -18,7 +18,9 @@ rebuild-ffi:
 
 # 开发态快速构建（不启用 quickjs，走 stub，编译更快）
 # 注意：此路径下书源 @js: 规则降级返回空，仅用于快速迭代调试。
+# [审计修复 §4.4 第二批] 构建时显式提示 stub 降级行为，避免误判 JS 规则失效为 bug — Qoder
 rebuild-ffi-stub:
+	@echo "⚠ [stub 构建] 未启用 quickjs：书源 @js: 规则将降级返回空。如需真实 JS 引擎请改用 make rebuild-ffi（或 run-windows）。"
 	cd ../rust && cargo build -p legado-ffi
 
 # 静态检查（Rust + Flutter）
@@ -49,4 +51,8 @@ clean:
 # Windows 开发运行：先确保 DLL 与当前代码同步，再启动
 # 避免反复出现 content hash 不同步导致的 Rust 引擎初始化失败
 run-windows: rebuild-ffi
+	flutter run -d windows
+
+# Windows 开发快速迭代（stub DLL，编译更快；@js: 规则降级）
+run-windows-stub: rebuild-ffi-stub
 	flutter run -d windows
