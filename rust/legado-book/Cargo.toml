@@ -13,7 +13,10 @@ encoding_rs = "0.8"
 regex = "1"
 lopdf = "0.34"
 # PDF 导出：纯 Rust 实现（printpdf + rusttype），支持 Android 交叉编译
-genpdf = "0.2"
+# images feature：启用 genpdf 的图片嵌入能力（图片书/漫画 PDF 导出）
+genpdf = { version = "0.2", features = ["images"] }
+# 图片解码（JPEG/PNG）：与 genpdf 的 image 0.23 依赖统一版本，仅启用所需格式
+image = { version = "0.23", default-features = false, features = ["png", "jpeg"] }
 
 # unrar 在 Android 上无法交叉编译（unrar_sys 包含 Windows 专属代码）
 [target.'cfg(not(target_os = "android"))'.dependencies]

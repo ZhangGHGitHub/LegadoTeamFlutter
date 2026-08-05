@@ -78,6 +78,8 @@ pub async fn export_book(
                 index: ch.index,
                 title: ch.title.clone(),
                 content,
+                // HTTP 服务导出仅处理文本章节，图片列表保持为空
+                images: Vec::new(),
             }
         })
         .collect();

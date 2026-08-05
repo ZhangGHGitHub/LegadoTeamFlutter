@@ -4,11 +4,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use legado_book::export::{BookExporter, ExportChapter, ExportConfig, ExportData, ExportFormat};
+use legado_book::export::{
+    extract_image_sources, BookExporter, ExportChapter, ExportConfig, ExportData, ExportFormat,
+    ImageFetcher,
+};
 use legado_core::LegadoResult;
 use legado_db::repository::book_chapter_repository::BookChapterRepository;
 use legado_db::repository::book_repository::BookRepository;
 use legado_db::repository::cache_book_repository::CacheBookRepository;
+use legado_parser::AnalyzeUrl;
 
 use crate::api::reader::{apply_content_processing, chapter_to_local_info, is_local_book};
 use crate::db_state::with_database;
@@ -110,10 +114,21 @@ pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoRes
             };
             // 导出内容与阅读器显示对齐：应用替换规则 + 内容净化
             let content = apply_content_processing(book_url, &raw_content, &ch.title);
+            // 图片书 PDF 导出（对齐上游 #483）：从正文提取 img 标签，
+            // 并相对章节 URL 绝对化（对齐 Kotlin NetworkUtils.getAbsoluteURL）
+            let images = if matches!(export_format, ExportFormat::Pdf) {
+                extract_image_sources(&content)
+                    .into_iter()
+                    .map(|src| AnalyzeUrl::get_absolute_url(&ch.url, &src))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             ExportChapter {
                 index: ch.index,
                 title: ch.title.clone(),
                 content,
+                images,
             }
         })
         .collect();
@@ -132,8 +147,22 @@ pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoRes
         encoding: "UTF-8".to_string(),
     };
 
+    // 图片书 PDF 导出：注入网络图片获取器（复用共享 HTTP 客户端，与阅读器下载链路同源）
+    let fetcher: Option<Box<ImageFetcher>> = if matches!(export_format, ExportFormat::Pdf) {
+        Some(Box::new(|src: &str| {
+            crate::runtime::block_on(async {
+                crate::http_state::shared_client()
+                    .get_bytes(src, None)
+                    .await
+                    .map_err(|e| e.to_string())
+            })
+        }))
+    } else {
+        None
+    };
+
     // 执行导出
-    Ok(match BookExporter::export(&export_data, &config) {
+    Ok(match BookExporter::export_with(&export_data, &config, fetcher.as_deref()) {
         Ok(bytes) => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -221,7 +250,6 @@ mod tests {
         path.to_string_lossy().to_string()
     }
 
-    /// 在 DB 中注册书籍并解析章节入库
     fn register_book_and_chapters(book_url: &str, book_name: &str) {
         crate::db_state::ensure_test_db();
         with_database(|db| {

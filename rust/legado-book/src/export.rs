@@ -6,10 +6,17 @@
 //! A4 页面、章节标题加粗加大、正文段落首行缩进、自动分页。
 //! 中文渲染依赖系统 CJK 字体（自动查找，支持 TTC 集合提取），
 //! 字体缺失时返回明确错误而非 panic。
+//!
+//! 图片书（漫画类书源）PDF 导出（对齐上游 #483 图片路径）：
+//! 章节图片列表（`ExportChapter::images`，URL 或本地路径）逐张写入 PDF，
+//! 每页一图、按原始宽高比适配 A4 内容区并水平居中；本地图片直接读文件，
+//! 网络图片通过调用方注入的 [`ImageFetcher`] 下载（复用 legado-net 客户端）。
 
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
+use image::GenericImageView;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
@@ -94,7 +101,19 @@ pub struct ExportChapter {
     pub index: i32,
     pub title: String,
     pub content: String,
+    /// 章节图片源列表（绝对 URL 或本地文件路径，按页面顺序）
+    ///
+    /// 图片书（漫画）的章节正文缓存中以 `<img src="...">` 标签承载图片，
+    /// API 层提取并绝对化后填入本字段；文本章节保持空列表。
+    pub images: Vec<String>,
 }
+
+/// 图片获取器：将图片源解析为原始字节
+///
+/// 由 API 层注入（如 FFI 层用 legado-net 的共享 LegadoClient 下载），
+/// 保持 legado-book 零网络依赖。仅处理网络 URL；本地文件路径由
+/// [`fetch_image_bytes`] 直接读取，不会进入本回调。
+pub type ImageFetcher = dyn Fn(&str) -> Result<Vec<u8>, String> + Send + Sync;
 
 /// 导出器
 pub struct BookExporter;
@@ -241,11 +260,23 @@ impl BookExporter {
 
     /// 统一导出接口
     pub fn export(data: &ExportData, config: &ExportConfig) -> Result<Vec<u8>, String> {
+        Self::export_with(data, config, None)
+    }
+
+    /// 统一导出接口（带图片获取器）
+    ///
+    /// `fetcher` 用于图片书 PDF 导出时下载网络图片；
+    /// 传 `None` 时仅支持本地图片，网络图片返回明确错误。
+    pub fn export_with(
+        data: &ExportData,
+        config: &ExportConfig,
+        fetcher: Option<&ImageFetcher>,
+    ) -> Result<Vec<u8>, String> {
         match config.format {
             ExportFormat::Txt => Self::export_txt(data, config),
             ExportFormat::Epub => Self::export_epub(data, config),
             ExportFormat::Html => Self::export_html(data, config),
-            ExportFormat::Pdf => Self::export_pdf(data, config),
+            ExportFormat::Pdf => Self::export_pdf_with(data, config, fetcher),
         }
     }
 
@@ -256,9 +287,23 @@ impl BookExporter {
     /// - 可选目录
     /// - 每章分页，章节标题加粗加大，正文段落首行缩进两字符
     ///
-    /// 注意：图片书（漫画类书源）暂不支持 PDF 导出——现有导出数据结构
-    /// （ExportData）不含图片内容，待后续图片链路就绪后扩展。
+    /// 图片书（含图片列表的章节）自动走图片管线，见 [`export_pdf_with`]。
     pub fn export_pdf(data: &ExportData, config: &ExportConfig) -> Result<Vec<u8>, String> {
+        Self::export_pdf_with(data, config, None)
+    }
+
+    /// 导出为 PDF（带图片获取器）
+    ///
+    /// 任一章节含图片列表时走图片管线（对齐上游 #483）：每页一张图片，
+    /// 按原始宽高比适配 A4 内容区、水平居中、不放大；其余走文本排版管线。
+    pub fn export_pdf_with(
+        data: &ExportData,
+        config: &ExportConfig,
+        fetcher: Option<&ImageFetcher>,
+    ) -> Result<Vec<u8>, String> {
+        if data.chapters.iter().any(|ch| !ch.images.is_empty()) {
+            return Self::export_pdf_images(data, config, fetcher);
+        }
         let regular = load_pdf_font(&pdf_regular_candidates())?;
         // 粗体优先使用独立的粗体字重文件，找不到时退化为常规字重
         let bold = load_pdf_font(&pdf_bold_candidates()).unwrap_or_else(|_| regular.clone());
@@ -353,6 +398,220 @@ impl BookExporter {
             .map_err(|e| format!("PDF 渲染失败: {e}"))?;
         Ok(buf)
     }
+
+    /// 导出图片书为 PDF（对齐上游 #483 图片路径）
+    ///
+    /// 排版规则（对齐 Kotlin ExportBookService.exportPdf 的 drawImage 逻辑）：
+    /// - 首页：书名 + 作者 + 简介（与文本导出一致）
+    /// - 可选目录页
+    /// - 每章另起一页：章节标题 + 逐张图片
+    /// - 每张图片保持原始宽高比适配 A4 内容区（不放大）、水平居中；
+    ///   图片高于剩余空间时由 genpdf 自动分页
+    /// - 卷节点（无图片的章节）仅输出标题，与上游 isVolume 行为一致
+    fn export_pdf_images(
+        data: &ExportData,
+        config: &ExportConfig,
+        fetcher: Option<&ImageFetcher>,
+    ) -> Result<Vec<u8>, String> {
+        let regular = load_pdf_font(&pdf_regular_candidates())?;
+        let bold = load_pdf_font(&pdf_bold_candidates()).unwrap_or_else(|_| regular.clone());
+
+        let font_family = genpdf::fonts::FontFamily {
+            regular: regular.clone(),
+            bold: bold.clone(),
+            italic: regular,
+            bold_italic: bold,
+        };
+        let mut doc = genpdf::Document::new(font_family);
+        doc.set_title(data.title.clone());
+
+        // 页边距约 18mm（对应上游 48pt）
+        let mut decorator = genpdf::SimplePageDecorator::new();
+        decorator.set_margins(18);
+        doc.set_page_decorator(decorator);
+
+        // ---- 标题区 ----
+        push_pdf_paragraph(
+            &mut doc,
+            &data.title,
+            genpdf::style::Style::new().bold().with_font_size(22),
+            Some(genpdf::Alignment::Center),
+        );
+        push_pdf_paragraph(
+            &mut doc,
+            &format!("作者：{}", data.author),
+            genpdf::style::Style::new().with_font_size(11),
+            Some(genpdf::Alignment::Center),
+        );
+        doc.push(genpdf::elements::Break::new(0.5));
+        if let Some(intro) = &data.intro {
+            push_pdf_paragraph(
+                &mut doc,
+                &format!("简介：{}", intro),
+                genpdf::style::Style::new().with_font_size(10),
+                None,
+            );
+        }
+
+        // ---- 目录 ----
+        if config.include_toc && !data.chapters.is_empty() {
+            doc.push(genpdf::elements::PageBreak::new());
+            push_pdf_paragraph(
+                &mut doc,
+                "目录",
+                genpdf::style::Style::new().bold().with_font_size(18),
+                None,
+            );
+            doc.push(genpdf::elements::Break::new(0.5));
+            for ch in &data.chapters {
+                push_pdf_paragraph(
+                    &mut doc,
+                    &ch.title,
+                    genpdf::style::Style::new().with_font_size(11),
+                    None,
+                );
+            }
+        }
+
+        // ---- 章节图片（每章分页，每图居中适配）----
+        for ch in &data.chapters {
+            doc.push(genpdf::elements::PageBreak::new());
+            push_pdf_paragraph(
+                &mut doc,
+                &ch.title,
+                genpdf::style::Style::new().bold().with_font_size(16),
+                None,
+            );
+            doc.push(genpdf::elements::Break::new(0.5));
+            for (i, src) in ch.images.iter().enumerate() {
+                let bytes = fetch_image_bytes(src, fetcher).map_err(|e| {
+                    format!(
+                        "图片导出失败：章节「{}」第 {} 张图片获取失败: {}\n图片源: {}",
+                        ch.title,
+                        i + 1,
+                        e,
+                        src
+                    )
+                })?;
+                let dyn_img = decode_pdf_image(&bytes).map_err(|e| {
+                    format!(
+                        "图片导出失败：章节「{}」第 {} 张图片解码失败: {}\n图片源: {}",
+                        ch.title,
+                        i + 1,
+                        e,
+                        src
+                    )
+                })?;
+                let (w, h) = dyn_img.dimensions();
+                let element = genpdf::elements::Image::from_dynamic_image(dyn_img)
+                    .map_err(|e| format!("图片嵌入 PDF 失败: {e}"))?
+                    .with_scale(image_fit_scale(w, h))
+                    .with_alignment(genpdf::Alignment::Center);
+                doc.push(element);
+                // 图片间距（对应上游 paragraphSpacing）
+                doc.push(genpdf::elements::Break::new(0.3));
+            }
+        }
+
+        // 渲染到内存缓冲区
+        let mut buf: Vec<u8> = Vec::new();
+        doc.render(&mut buf)
+            .map_err(|e| format!("PDF 渲染失败: {e}"))?;
+        Ok(buf)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 图片获取与解码（图片书 PDF 导出管线）
+// ---------------------------------------------------------------------------
+
+/// A4 内容区尺寸（页宽 210mm − 左右各 18mm 边距；页高 297mm − 上下各 18mm）
+const PDF_CONTENT_WIDTH_MM: f64 = 174.0;
+const PDF_CONTENT_HEIGHT_MM: f64 = 261.0;
+
+/// img 标签 src 提取正则（对齐 Kotlin AppPattern.imgPattern）
+static IMG_SRC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"<img[^>]*src="([^"]*(?:"[^>]+\})?)"[^>]*>"#)
+        .expect("内置 img 提取正则应可编译")
+});
+
+/// 从章节正文中提取图片源列表（`<img src="...">` 标签的 src 属性，按顺序）
+///
+/// 图片书的章节正文缓存中以 img 标签承载图片（与 Android 原版一致）。
+pub fn extract_image_sources(content: &str) -> Vec<String> {
+    IMG_SRC_RE
+        .captures_iter(content)
+        .filter_map(|caps| {
+            let src = caps.get(1)?.as_str().trim();
+            if src.is_empty() {
+                None
+            } else {
+                Some(src.to_string())
+            }
+        })
+        .collect()
+}
+
+/// 将图片源解析为原始字节
+///
+/// - `http://` / `https://`：调用注入的 [`ImageFetcher`] 下载；
+///   未注入时返回明确错误（保持 legado-book 零网络依赖）
+/// - `file://` 前缀或普通路径：直接读本地文件
+pub fn fetch_image_bytes(src: &str, fetcher: Option<&ImageFetcher>) -> Result<Vec<u8>, String> {
+    let src = src.trim();
+    if src.starts_with("http://") || src.starts_with("https://") {
+        match fetcher {
+            Some(f) => f(src),
+            None => Err(format!(
+                "网络图片需要注入图片获取器（ImageFetcher），当前不可用: {src}"
+            )),
+        }
+    } else {
+        let path = src.strip_prefix("file://").unwrap_or(src);
+        std::fs::read(path).map_err(|e| format!("读取本地图片失败: {e}"))
+    }
+}
+
+/// 解码图片字节为可嵌入 PDF 的 DynamicImage（支持 JPEG/PNG）
+///
+/// genpdf/printpdf 不支持 alpha 通道：带透明通道的图片先平铺到白色背景。
+fn decode_pdf_image(bytes: &[u8]) -> Result<image::DynamicImage, String> {
+    let img = image::load_from_memory(bytes).map_err(|e| format!("图片解码失败: {e}"))?;
+    if !img.color().has_alpha() {
+        return Ok(img);
+    }
+    // alpha 平铺到白色背景（对齐常见 PDF 阅读器的白底呈现）
+    let rgba = img.to_rgba8();
+    let mut rgb = image::RgbImage::new(rgba.width(), rgba.height());
+    for (x, y, pixel) in rgba.enumerate_pixels() {
+        let [r, g, b, a] = pixel.0;
+        let af = a as f32 / 255.0;
+        let blend = |c: u8| (c as f32 * af + 255.0 * (1.0 - af)).round() as u8;
+        rgb.put_pixel(x, y, image::Rgb([blend(r), blend(g), blend(b)]));
+    }
+    Ok(image::DynamicImage::ImageRgb8(rgb))
+}
+
+/// 计算图片适配 A4 内容区的等比缩放系数
+///
+/// genpdf 默认按 300 DPI 将像素尺寸换算为物理尺寸；这里反算出使图片
+/// 完整落入内容区（174mm × 261mm）的最大缩放，且不放大（上限 1.0，
+/// 对齐 Kotlin drawImage 的 `minOf(1f, ...)` 行为）。
+fn image_fit_scale(width_px: u32, height_px: u32) -> genpdf::Scale {
+    const DPI: f64 = 300.0; // genpdf/printpdf 默认 DPI
+    const MM_PER_INCH: f64 = 25.4;
+    let w_mm = width_px as f64 * MM_PER_INCH / DPI;
+    let h_mm = height_px as f64 * MM_PER_INCH / DPI;
+    let mut scale = 1.0f64;
+    if w_mm > 0.0 {
+        scale = scale.min(PDF_CONTENT_WIDTH_MM / w_mm);
+    }
+    if h_mm > 0.0 {
+        scale = scale.min(PDF_CONTENT_HEIGHT_MM / h_mm);
+    }
+    // 下限保护：避免零/负尺寸导致 PDF 渲染异常
+    let scale = scale.max(0.01);
+    genpdf::Scale::new(scale, scale)
 }
 
 // ---------------------------------------------------------------------------
@@ -758,16 +1017,19 @@ mod tests {
                     index: 0,
                     title: "第一章 开始".to_string(),
                     content: "这是第一章的内容。\n第二段文字。".to_string(),
+                    images: vec![],
                 },
                 ExportChapter {
                     index: 1,
                     title: "第二章 发展".to_string(),
                     content: "这是第二章的内容。".to_string(),
+                    images: vec![],
                 },
                 ExportChapter {
                     index: 2,
                     title: "第三章 结局".to_string(),
                     content: "这是第三章的内容。".to_string(),
+                    images: vec![],
                 },
             ],
         }
@@ -860,6 +1122,7 @@ mod tests {
                 index: 0,
                 title: "章节<1>".to_string(),
                 content: "内容包含 & < > \" ' 字符".to_string(),
+                images: vec![],
             }],
         };
         let config = default_config(ExportFormat::Txt);
@@ -969,6 +1232,7 @@ mod tests {
                 index: 0,
                 title: "章节<1>&测试".to_string(),
                 content: "内容 <script>alert('xss')</script>".to_string(),
+                images: vec![],
             }],
         };
         let config = default_config(ExportFormat::Html);
@@ -1004,6 +1268,7 @@ mod tests {
                 index: 0,
                 title: "超长章节".to_string(),
                 content: large_content,
+                images: vec![],
             }],
         };
 
@@ -1182,5 +1447,298 @@ mod tests {
         assert_eq!(xml_escape("<tag>"), "&lt;tag&gt;");
         assert_eq!(xml_escape("\"quote\""), "&quot;quote&quot;");
         assert_eq!(xml_escape("it's"), "it&apos;s");
+    }
+
+    // ------------------------------------------------------------------
+    // 图片书（漫画）PDF 导出测试（对齐上游 #483）
+    // ------------------------------------------------------------------
+
+    /// 用 image crate 生成最小 PNG 字节（测试样本，避免外部文件依赖）
+    fn make_png_bytes(width: u32, height: u32, alpha: bool) -> Vec<u8> {
+        let mut buf = Vec::new();
+        if alpha {
+            // 半透明红色（验证 alpha 平铺白底逻辑）
+            let img = image::RgbaImage::from_pixel(width, height, image::Rgba([255, 0, 0, 128]));
+            let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+            encoder
+                .encode(
+                    img.as_raw(),
+                    width,
+                    height,
+                    image::ColorType::Rgba8,
+                )
+                .unwrap();
+        } else {
+            let img = image::RgbImage::from_pixel(width, height, image::Rgb([30, 60, 200]));
+            let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+            encoder
+                .encode(img.as_raw(), width, height, image::ColorType::Rgb8)
+                .unwrap();
+        }
+        buf
+    }
+
+    /// 程序化生成最小合法 JPEG（验证 JPEG 解码路径）
+    fn make_jpeg_bytes() -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(8, 8, image::Rgb([200, 100, 40]));
+        let mut buf = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new(&mut buf);
+        encoder
+            .encode(img.as_raw(), 8, 8, image::ColorType::Rgb8)
+            .unwrap();
+        buf
+    }
+
+    /// 统计 PDF 页数（lopdf 已是依赖，无需新增）
+    fn pdf_page_count(bytes: &[u8]) -> usize {
+        let doc = lopdf::Document::load_mem(bytes).expect("导出结果应为可解析的 PDF");
+        doc.get_pages().len()
+    }
+
+    /// 图片源提取：对齐 Kotlin AppPattern.imgPattern 行为
+    #[test]
+    fn test_extract_image_sources() {
+        let content = "前文<img src=\"https://cdn.example.com/1.jpg\">中间文字\
+<img class=\"lazy\" data-x=\"1\" src='/images/2.png' >尾部";
+        // 注意：正则匹配双引号 src，单引号的不匹配（与上游一致）
+        let srcs = extract_image_sources(content);
+        assert_eq!(srcs.len(), 1);
+        assert_eq!(srcs[0], "https://cdn.example.com/1.jpg");
+
+        // 多张顺序保持
+        let multi = "<img src=\"a.png\"><img src=\"b.png\"><img src=\"c.png\">";
+        assert_eq!(
+            extract_image_sources(multi),
+            vec!["a.png".to_string(), "b.png".to_string(), "c.png".to_string()]
+        );
+
+        // 无图片返回空
+        assert!(extract_image_sources("纯文本章节内容").is_empty());
+    }
+
+    /// 图片获取：本地路径直读，file:// 前缀支持
+    #[test]
+    fn test_fetch_image_bytes_local() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("legado_img_fetch_{}.png", std::process::id()));
+        let png = make_png_bytes(8, 8, false);
+        std::fs::write(&path, &png).unwrap();
+
+        let bytes = fetch_image_bytes(path.to_str().unwrap(), None).unwrap();
+        assert_eq!(bytes, png);
+
+        let file_url = format!("file://{}", path.to_string_lossy().replace('\\', "/"));
+        // Windows 下 file:// + 盘符路径仅作前缀去除验证，路径不存在时应报读文件错
+        let _ = fetch_image_bytes(&file_url, None);
+
+        let _ = std::fs::remove_file(&path);
+
+        // 不存在的本地文件返回错误而非 panic
+        let err = fetch_image_bytes("/nonexistent/img_不存在.png", None).unwrap_err();
+        assert!(err.contains("本地图片"), "错误应提及本地图片: {err}");
+    }
+
+    /// 图片获取：网络图片未注入 fetcher 时返回明确错误
+    #[test]
+    fn test_fetch_image_bytes_network_without_fetcher() {
+        let err = fetch_image_bytes("https://cdn.example.com/1.jpg", None).unwrap_err();
+        assert!(
+            err.contains("ImageFetcher"),
+            "错误应提示需要注入获取器: {err}"
+        );
+
+        // 注入 mock fetcher 后正常返回字节
+        let fetcher: &ImageFetcher = &|src: &str| {
+            assert_eq!(src, "https://cdn.example.com/1.jpg");
+            Ok(vec![1, 2, 3])
+        };
+        assert_eq!(
+            fetch_image_bytes("https://cdn.example.com/1.jpg", Some(fetcher)).unwrap(),
+            vec![1, 2, 3]
+        );
+    }
+
+    /// 图片解码：JPEG/PNG 均可解码；带 alpha 的 PNG 自动平铺白底
+    #[test]
+    fn test_decode_pdf_image_formats_and_alpha() {
+        let png = make_png_bytes(16, 24, false);
+        let img = decode_pdf_image(&png).unwrap();
+        assert_eq!(img.dimensions(), (16, 24));
+        assert!(!img.color().has_alpha(), "无 alpha 输入应保持无 alpha");
+
+        let jpeg = make_jpeg_bytes();
+        let img = decode_pdf_image(&jpeg).unwrap();
+        assert_eq!(img.dimensions(), (8, 8), "生成的 8x8 JPEG 应可解码");
+
+        let rgba_png = make_png_bytes(8, 8, true);
+        let img = decode_pdf_image(&rgba_png).unwrap();
+        assert!(!img.color().has_alpha(), "alpha 应被平铺到白底");
+
+        // 非法字节返回错误而非 panic
+        assert!(decode_pdf_image(b"not-an-image").is_err());
+    }
+
+    /// 适配缩放：保持宽高比、不放大、适配 A4 内容区
+    #[test]
+    fn test_image_fit_scale() {
+        // 小图不放大
+        let s = image_fit_scale(100, 100);
+        assert!(s.x <= 1.0 && s.y <= 1.0);
+        assert!((s.x - s.y).abs() < f64::EPSILON, "等比缩放 x/y 应一致");
+
+        // 超长竖图（条漫）应被高度约束
+        let tall = image_fit_scale(800, 20000);
+        assert!(tall.y < 1.0, "超高图应被缩小适配");
+        let wide = image_fit_scale(20000, 800);
+        assert!(wide.x < 1.0, "超宽图应被缩小适配");
+        assert_eq!(tall.x, tall.y);
+        assert_eq!(wide.x, wide.y);
+    }
+
+    /// 图片书 PDF 生成：本地图片路径（验证 %PDF 头 + 页数）
+    #[test]
+    fn test_export_pdf_images_local() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("legado_img_pdf_{}.png", std::process::id()));
+        std::fs::write(&path, make_png_bytes(64, 64, false)).unwrap();
+
+        let data = ExportData {
+            title: "测试漫画".to_string(),
+            author: "漫画作者".to_string(),
+            intro: None,
+            chapters: vec![ExportChapter {
+                index: 0,
+                title: "第1话".to_string(),
+                content: String::new(),
+                images: vec![path.to_string_lossy().to_string()],
+            }],
+        };
+        let config = default_config(ExportFormat::Pdf);
+        match BookExporter::export_pdf(&data, &config) {
+            Ok(bytes) => {
+                assert!(bytes.len() > 4);
+                assert_eq!(&bytes[0..4], b"%PDF", "图片 PDF 文件头应为 %PDF");
+                // 标题页 + 章节页（含图）
+                assert!(
+                    pdf_page_count(&bytes) >= 2,
+                    "图片 PDF 至少应有标题页 + 章节图片页"
+                );
+            }
+            Err(e) => {
+                eprintln!("跳过图片 PDF 测试（环境无中文字体）: {e}");
+                assert!(e.contains("字体"), "字体缺失错误应含明确提示");
+            }
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 图片书 PDF 生成：网络图片走注入的 mock fetcher（含 JPEG 解码路径）
+    #[test]
+    fn test_export_pdf_images_network_mock() {
+        let jpeg = make_jpeg_bytes();
+        let png = make_png_bytes(32, 32, false);
+        // move 闭包获取字节所有权，满足 ImageFetcher 的 'static 约束
+        let fetcher: &ImageFetcher = &move |src: &str| match src {
+            "https://cdn.example.com/1.jpg" => Ok(jpeg.clone()),
+            "https://cdn.example.com/2.png" => Ok(png.clone()),
+            _ => Err(format!("意外的图片源: {src}")),
+        };
+
+        let data = ExportData {
+            title: "网络漫画".to_string(),
+            author: "作者".to_string(),
+            intro: Some("简介".to_string()),
+            chapters: vec![
+                ExportChapter {
+                    index: 0,
+                    title: "第1话".to_string(),
+                    content: String::new(),
+                    images: vec![
+                        "https://cdn.example.com/1.jpg".to_string(),
+                        "https://cdn.example.com/2.png".to_string(),
+                    ],
+                },
+                ExportChapter {
+                    index: 1,
+                    title: "卷分隔（无图）".to_string(),
+                    content: String::new(),
+                    images: vec![],
+                },
+            ],
+        };
+        let mut config = default_config(ExportFormat::Pdf);
+        config.include_toc = false;
+        match BookExporter::export_with(&data, &config, Some(fetcher)) {
+            Ok(bytes) => {
+                assert_eq!(&bytes[0..4], b"%PDF");
+                // 标题页 + 第1话（含 2 图）+ 卷页
+                assert!(pdf_page_count(&bytes) >= 3);
+            }
+            Err(e) => {
+                eprintln!("跳过网络图片 PDF 测试（环境无中文字体）: {e}");
+                assert!(e.contains("字体"));
+            }
+        }
+    }
+
+    /// 图片书 PDF：网络图片未注入 fetcher 时应返回明确错误
+    #[test]
+    fn test_export_pdf_images_missing_fetcher_error() {
+        let data = ExportData {
+            title: "漫画".to_string(),
+            author: "作者".to_string(),
+            intro: None,
+            chapters: vec![ExportChapter {
+                index: 0,
+                title: "第1话".to_string(),
+                content: String::new(),
+                images: vec!["https://cdn.example.com/x.jpg".to_string()],
+            }],
+        };
+        let config = default_config(ExportFormat::Pdf);
+        match BookExporter::export_pdf(&data, &config) {
+            Ok(_) => {
+                // 无字体环境会先报字体错，此处不会 Ok；若 Ok 说明逻辑异常
+                panic!("无 fetcher 时网络图片导出不应成功");
+            }
+            Err(e) => {
+                // 可能是字体缺失（CI 环境）或 fetcher 缺失，两者都应是明确错误
+                assert!(
+                    e.contains("字体") || e.contains("ImageFetcher") || e.contains("图片导出失败"),
+                    "错误信息应明确: {e}"
+                );
+            }
+        }
+    }
+
+    /// 图片书 PDF：损坏图片应返回带章节定位的错误而非 panic
+    #[test]
+    fn test_export_pdf_images_broken_image_error() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("legado_img_broken_{}.bin", std::process::id()));
+        std::fs::write(&path, b"broken-image-bytes").unwrap();
+
+        let data = ExportData {
+            title: "漫画".to_string(),
+            author: "作者".to_string(),
+            intro: None,
+            chapters: vec![ExportChapter {
+                index: 0,
+                title: "第1话".to_string(),
+                content: String::new(),
+                images: vec![path.to_string_lossy().to_string()],
+            }],
+        };
+        let config = default_config(ExportFormat::Pdf);
+        match BookExporter::export_pdf(&data, &config) {
+            Ok(_) => panic!("损坏图片不应导出成功"),
+            Err(e) => {
+                assert!(
+                    e.contains("图片导出失败") || e.contains("字体"),
+                    "错误应定位到图片或字体: {e}"
+                );
+            }
+        }
+        let _ = std::fs::remove_file(&path);
     }
 }
