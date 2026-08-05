@@ -87,28 +87,38 @@ void main() {
       }
     });
 
-    testWidgets('切换到发现/详情/评论 Tab 展示对应字段与开关', (tester) async {
+    testWidgets('顶部设置面板展示开关，各 Tab 展示对应字段', (tester) async {
       // 加高可视区域，确保各 Tab 列表字段完整构建
       await tester.binding.setSurfaceSize(const Size(800, 3000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await pumpEdit(tester);
 
-      // 发现规则
-      await tester.tap(find.text('发现'));
+      // 设置面板（对标原版：启用/发现/CookieJar/段评/事件监听/定制按钮）
+      expect(find.text('设置'), findsOneWidget);
+      expect(find.text('CookieJar'), findsOneWidget);
+      expect(find.text('事件监听'), findsOneWidget);
+      expect(find.text('定制按钮'), findsOneWidget);
+
+      // 发现规则（Tab 标签与设置面板复选框同名，需限定 TabBar 内点击）
+      await tester.tap(
+        find.descendant(of: find.byType(TabBar), matching: find.text('发现')),
+      );
       await tester.pumpAndSettle();
-      expect(find.text('启用发现'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, '发现 URL'), findsOneWidget);
 
       // 详情规则
-      await tester.tap(find.text('详情'));
+      await tester.tap(
+        find.descendant(of: find.byType(TabBar), matching: find.text('详情')),
+      );
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextFormField, '目录 URL'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, '修改书名'), findsOneWidget);
 
-      // 评论规则
-      await tester.tap(find.text('段评'));
+      // 段评规则
+      await tester.tap(
+        find.descendant(of: find.byType(TabBar), matching: find.text('段评')),
+      );
       await tester.pumpAndSettle();
-      expect(find.text('启用段评'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, '段评 URL'), findsOneWidget);
     });
   });
@@ -178,25 +188,32 @@ void main() {
       expect(find.text('可编辑源'), findsOneWidget);
 
       // 发现规则回填
-      await tester.tap(find.text('发现'));
+      await tester.tap(
+        find.descendant(of: find.byType(TabBar), matching: find.text('发现')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('分类::https://edit.com/sort'), findsOneWidget);
       expect(find.text('.explore-list'), findsOneWidget);
 
       // 详情规则回填
-      await tester.tap(find.text('详情'));
+      await tester.tap(
+        find.descendant(of: find.byType(TabBar), matching: find.text('详情')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('.init'), findsOneWidget);
       expect(find.text('.toc'), findsOneWidget);
 
-      // 评论规则回填（开关开启 + URL）
-      await tester.tap(find.text('段评'));
+      // 段评规则回填（URL）
+      await tester.tap(
+        find.descendant(of: find.byType(TabBar), matching: find.text('段评')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('.review'), findsOneWidget);
-      final reviewSwitch = tester.widget<SwitchListTile>(
-        find.widgetWithText(SwitchListTile, '启用段评'),
+      // 段评开关已迁至顶部设置面板（CheckboxListTile）并回填为开启
+      final reviewCheck = tester.widget<CheckboxListTile>(
+        find.widgetWithText(CheckboxListTile, '段评'),
       );
-      expect(reviewSwitch.value, isTrue);
+      expect(reviewCheck.value, isTrue);
     });
   });
 }

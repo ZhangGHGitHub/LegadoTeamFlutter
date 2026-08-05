@@ -50,16 +50,12 @@ class _Field {
   /// 是否必填（参与表单校验）
   final bool required;
 
-  /// 键盘类型
-  final TextInputType? keyboardType;
-
   const _Field(
     this.key,
     this.label, {
     this.hint,
     this.maxLines = 2,
     this.required = false,
-    this.keyboardType,
   });
 }
 
@@ -76,9 +72,14 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   /// 所有文本字段控制器（按 key 惰性创建）
   final Map<String, TextEditingController> _ctrls = {};
 
-  // 开关状态（非文本字段）
+  // 开关状态（非文本字段，对标原版可折叠「设置」面板）
+  bool _enabled = true;
   bool _enabledExplore = true;
   bool _reviewEnabled = false;
+  bool _cookieJar = false;
+  bool _eventListener = false;
+  bool _customButton = false;
+  int _bookSourceType = 0;
 
   // 测试
   final _testKeywordCtrl = TextEditingController();
@@ -92,18 +93,14 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   TextEditingController _ctrl(String key) =>
       _ctrls.putIfAbsent(key, () => TextEditingController());
 
+  /// 书源类型（对标原版 sp_type / @array/source_type）
+  static const _typeLabels = ['文本', '音频', '图片', '文件', '视频'];
+
   // ─── 基本信息字段 ───────────────────────────────────────
   static const _basicFields = [
     _Field('bookSourceName', '书源名称', required: true, maxLines: 1),
     _Field('bookSourceUrl', '书源 URL', required: true, maxLines: 1),
     _Field('bookSourceGroup', '分组', maxLines: 1),
-    _Field(
-      'bookSourceType',
-      '类型',
-      hint: '0=文本, 1=音频, 2=图片, 3=文件, 4=视频',
-      maxLines: 1,
-      keyboardType: TextInputType.number,
-    ),
     _Field('header', '请求头', hint: 'JSON 格式', maxLines: 3),
     _Field('loginUrl', '登录 URL', maxLines: 1),
     _Field('bookSourceComment', '备注', maxLines: 3),
@@ -267,8 +264,14 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   void _populateFields(BookSource source) {
     final values = _sourceToValues(source);
     values.forEach((key, value) => _ctrl(key).text = value);
+    _enabled = source.enabled;
     _enabledExplore = source.enabledExplore;
     _reviewEnabled = source.ruleReview?.enabled ?? false;
+    _cookieJar = source.enabledCookieJar ?? false;
+    _eventListener = source.eventListener;
+    _customButton = source.customButton;
+    _bookSourceType =
+        source.bookSourceType.clamp(0, _typeLabels.length - 1);
     setState(() {});
   }
 
@@ -295,7 +298,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       'bookSourceName': source.bookSourceName,
       'bookSourceUrl': source.bookSourceUrl,
       'bookSourceGroup': v(source.bookSourceGroup),
-      'bookSourceType': source.bookSourceType.toString(),
       'header': v(source.header),
       'loginUrl': v(source.loginUrl),
       'bookSourceComment': v(source.bookSourceComment),
@@ -404,7 +406,11 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       bookSourceName: t('bookSourceName'),
       bookSourceUrl: t('bookSourceUrl'),
       bookSourceGroup: n('bookSourceGroup'),
-      bookSourceType: int.tryParse(t('bookSourceType')) ?? 0,
+      bookSourceType: _bookSourceType,
+      enabled: _enabled,
+      enabledCookieJar: _cookieJar,
+      eventListener: _eventListener,
+      customButton: _customButton,
       header: n('header'),
       loginUrl: n('loginUrl'),
       bookSourceComment: n('bookSourceComment'),
@@ -887,44 +893,91 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
         ),
         body: Form(
           key: _formKey,
-          child: TabBarView(
+          child: Column(
             children: [
-              _buildFormTab(_basicFields),
-              _buildFormTab(_searchFields),
-              _buildFormTab(
-                _exploreFields,
-                leading: [
-                  SwitchListTile(
-                    title: const Text('启用发现'),
-                    subtitle: const Text('关闭后书架发现页不显示该书源'),
-                    value: _enabledExplore,
-                    onChanged: (value) =>
-                        setState(() => _enabledExplore = value),
-                  ),
-                  const Divider(),
-                ],
+              // 可折叠「设置」面板（对标原版：类型 + 启用/发现/CookieJar/
+              // 段评/事件监听/定制按钮）
+              _buildSettingsPanel(),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _buildFormTab(_basicFields),
+                    _buildFormTab(_searchFields),
+                    _buildFormTab(_exploreFields),
+                    _buildFormTab(_infoFields),
+                    _buildFormTab(_tocFields),
+                    _buildFormTab(_contentFields),
+                    _buildFormTab(_reviewFields),
+                    _buildTestTab(),
+                  ],
+                ),
               ),
-              _buildFormTab(_infoFields),
-              _buildFormTab(_tocFields),
-              _buildFormTab(_contentFields),
-              _buildFormTab(
-                _reviewFields,
-                leading: [
-                  SwitchListTile(
-                    title: const Text('启用段评'),
-                    subtitle: const Text('开启后阅读页展示该书源段评'),
-                    value: _reviewEnabled,
-                    onChanged: (value) =>
-                        setState(() => _reviewEnabled = value),
-                  ),
-                  const Divider(),
-                ],
-              ),
-              _buildTestTab(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 可折叠「设置」面板（对标原版 BookSourceEditActivity 顶部设置区：
+  /// 类型下拉 + 启用/发现/CookieJar/段评/事件监听/定制按钮）
+  Widget _buildSettingsPanel() {
+    final colorScheme = Theme.of(context).colorScheme;
+    Widget checkChip(String label, bool value, ValueChanged<bool> onChanged) {
+      return SizedBox(
+        width: 132,
+        child: CheckboxListTile(
+          dense: true,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          title: Text(label, style: const TextStyle(fontSize: 14)),
+          value: value,
+          onChanged: (v) => setState(() => onChanged(v ?? false)),
+        ),
+      );
+    }
+
+    return ExpansionTile(
+      initiallyExpanded: true,
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+      shape: const Border(),
+      collapsedShape: const Border(),
+      title: const Text('设置',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Row(
+            children: [
+              Text('类型', style: TextStyle(color: colorScheme.onSurface)),
+              const SizedBox(width: 8),
+              DropdownButton<int>(
+                value: _bookSourceType,
+                isDense: true,
+                onChanged: (v) => setState(() => _bookSourceType = v ?? 0),
+                items: [
+                  for (var i = 0; i < _typeLabels.length; i++)
+                    DropdownMenuItem(value: i, child: Text(_typeLabels[i])),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Wrap(
+            children: [
+              checkChip('启用', _enabled, (v) => _enabled = v),
+              checkChip('发现', _enabledExplore, (v) => _enabledExplore = v),
+              checkChip('CookieJar', _cookieJar, (v) => _cookieJar = v),
+              checkChip('段评', _reviewEnabled, (v) => _reviewEnabled = v),
+              checkChip('事件监听', _eventListener, (v) => _eventListener = v),
+              checkChip('定制按钮', _customButton, (v) => _customButton = v),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+      ],
     );
   }
 
@@ -943,7 +996,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       child: TextFormField(
         controller: _ctrl(field.key),
         maxLines: field.maxLines,
-        keyboardType: field.keyboardType,
         decoration: InputDecoration(
           labelText: field.required ? '${field.label} *' : field.label,
           hintText: field.hint,

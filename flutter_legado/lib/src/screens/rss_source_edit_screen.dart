@@ -471,6 +471,9 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
             ),
             title: Text(_isEdit ? '编辑订阅源' : '新建订阅源'),
             bottom: const TabBar(
+              // 全局 tabBarTheme 设了 TabAlignment.start，必须 isScrollable
+              // 否则触发断言崩溃（对齐书源编辑页）
+              isScrollable: true,
               tabs: [
                 Tab(text: '基本'),
                 Tab(text: '预处理'),

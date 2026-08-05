@@ -660,50 +660,108 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     );
   }
 
+  /// 批量模式列表项：对标原版选择态仍保留完整行控件
+  /// （勾选框 + 源名 + 启用开关 + 编辑 + 更多 + 发现角标），
+  /// 整行点击切换选中；开关/编辑/更多各自独立响应，与原版一致
   Widget _buildBatchSourceItem(
       BuildContext context, BookSource source, SourceState state) {
+    final colorScheme = Theme.of(context).colorScheme;
     final selected = state.isSelected(source.bookSourceUrl);
+    final hasExplore =
+        source.exploreUrl != null && source.exploreUrl!.isNotEmpty;
     // 校验结果消息（对标原版列表项 checkSourceMessage：绿=通过，红=失效）
     final checkMessage =
         ref.watch(checkSourceNotifierProvider).messages[source.bookSourceUrl];
-    final checkColor = checkMessage == null
-        ? null
-        : (checkMessage.ok ? AppColors.iosGreenLight : AppColors.iosRedLight);
-    return ListTile(
-      leading: Checkbox(
-        value: selected,
-        onChanged: (_) => ref
-            .read(sourceNotifierProvider.notifier)
-            .toggleSelection(source.bookSourceUrl),
-      ),
-      title: Text(
-        source.bookSourceName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(
-              text: source.bookSourceGroup ?? '未分组',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (checkMessage != null)
-              TextSpan(
-                text: '\n${checkMessage.text}',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: checkColor),
-              ),
-          ],
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
+    return InkWell(
       onTap: () => ref
           .read(sourceNotifierProvider.notifier)
           .toggleSelection(source.bookSourceUrl),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, right: 8, top: 4, bottom: 4),
+        child: Row(
+          children: [
+            Checkbox(
+              value: selected,
+              onChanged: (_) => ref
+                  .read(sourceNotifierProvider.notifier)
+                  .toggleSelection(source.bookSourceUrl),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    source.bookSourceName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 16, color: colorScheme.onSurface),
+                  ),
+                  if (checkMessage != null)
+                    Text(
+                      checkMessage.text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: checkMessage.ok
+                            ? AppColors.iosGreenLight
+                            : AppColors.iosRedLight,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // 启用开关（对标 swt_enabled）
+            Switch(
+              value: source.enabled,
+              onChanged: (_) => ref
+                  .read(sourceNotifierProvider.notifier)
+                  .toggleSource(source.bookSourceUrl),
+            ),
+            // 编辑图标（对标 iv_edit）
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              tooltip: '编辑',
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        SourceEditScreen(sourceUrl: source.bookSourceUrl),
+                  ),
+                );
+              },
+            ),
+            // 更多图标（对标 iv_menu_more）+ 发现角标
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.more_vert, size: 20),
+                  tooltip: '更多选项',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _showSourceMenu(context, source),
+                ),
+                if (hasExplore)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: source.enabledExplore
+                            ? AppColors.iosGreenLight
+                            : AppColors.iosRedLight,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
