@@ -1,13 +1,33 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
+import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../widgets/confirm_dialog.dart';
+import '../widgets/ios_widgets.dart';
 
-/// RSS 源编辑器页面
+/// 编辑字段定义（key 与 RssSource JSON 字段名一致）
+class _FieldSpec {
+  final String key;
+  final String label;
+  final String hint;
+  final int maxLines;
+
+  const _FieldSpec(this.key, this.label, [this.hint = '', this.maxLines = 1]);
+}
+
+/// RSS 源编辑器页面（对标原版 RssSourceEditActivity）
 ///
-/// 支持新建/编辑 RSS 源，包含基本信息和规则配置。
+/// - 可折叠选项面板：启用 / 单 URL / Cookie / 预加载 + 源类型 + 文章样式
+/// - 4 Tab：基本（15 字段）/ 预处理（4）/ 列表规则（7）/ WEB_VIEW（10）
+/// - 菜单：调试源 / 复制源 / 粘贴源 / 分享文本 / 帮助
+/// - 编辑走 updateRssSource，新建走 addRssSource；退出时未保存提示
 class RssSourceEditScreen extends ConsumerStatefulWidget {
   /// 编辑模式时传入已有源，null 表示新建
   final RssSource? source;
@@ -15,138 +35,243 @@ class RssSourceEditScreen extends ConsumerStatefulWidget {
   const RssSourceEditScreen({super.key, this.source});
 
   @override
-  ConsumerState<RssSourceEditScreen> createState() => _RssSourceEditScreenState();
+  ConsumerState<RssSourceEditScreen> createState() =>
+      _RssSourceEditScreenState();
 }
 
 class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
-  final _formKey = GlobalKey<FormState>();
+  // ===== 字段定义（对标原版 sourceEntities 4 Tab 分组） =====
+
+  static const _baseFields = [
+    _FieldSpec('sourceName', '源名称'),
+    _FieldSpec('sourceUrl', '源 URL', 'https://example.com/feed'),
+    _FieldSpec('sourceIcon', '图标', '图标 URL'),
+    _FieldSpec('sourceGroup', '源分组', '多个分组用逗号分隔'),
+    _FieldSpec('sourceComment', '源注释', '', 2),
+    _FieldSpec('searchUrl', '搜索 URL'),
+    _FieldSpec('sortUrl', '分类 URL', '分类名::规则', 2),
+    _FieldSpec('loginUrl', '登录 URL'),
+    _FieldSpec('loginUi', '登录界面'),
+    _FieldSpec('loginCheckJs', '登录检测 JS'),
+    _FieldSpec('coverDecodeJs', '封面解码 JS'),
+    _FieldSpec('header', '请求头'),
+    _FieldSpec('variableComment', '源变量注释', 'variableComment'),
+    _FieldSpec('concurrentRate', '并发率', '如：16/s'),
+    _FieldSpec('jsLib', 'JS 库', '源使用的 JavaScript 库'),
+  ];
+
+  static const _preFields = [
+    _FieldSpec('startHtml', '初始 HTML', 'startHtml'),
+    _FieldSpec('startStyle', '初始样式', 'startStyle', 2),
+    _FieldSpec('startJs', '初始 JS', 'startJs'),
+    _FieldSpec('preloadJs', '预加载 JS', 'preloadJs'),
+  ];
+
+  static const _listFields = [
+    _FieldSpec('ruleArticles', '文章列表规则', 'ruleArticles，如 item 或 //item'),
+    _FieldSpec('ruleNextPage', '下一页规则', 'ruleNextPage'),
+    _FieldSpec('ruleTitle', '标题规则', 'ruleTitle'),
+    _FieldSpec('rulePubDate', '日期规则', 'rulePubDate'),
+    _FieldSpec('ruleDescription', '描述规则', 'ruleDescription'),
+    _FieldSpec('ruleImage', '图片规则', 'ruleImage'),
+    _FieldSpec('ruleLink', '链接规则', 'ruleLink'),
+  ];
+
+  static const _webFields = [
+    _FieldSpec('ruleContent', '内容规则', 'ruleContent'),
+    _FieldSpec('style', '样式', '文章页面 CSS', 2),
+    _FieldSpec('injectJs', '注入 JS', 'injectJs'),
+    _FieldSpec('contentWhitelist', '内容白名单', 'contentWhitelist'),
+    _FieldSpec('contentBlacklist', '内容黑名单', 'contentBlacklist'),
+    _FieldSpec('shouldOverrideUrlLoading', 'URL 拦截', 'shouldOverrideUrlLoading'),
+  ];
+
+  static const _allFieldSpecs = [
+    ..._baseFields,
+    ..._preFields,
+    ..._listFields,
+    ..._webFields,
+  ];
+
+  /// 源类型（对标原版 sp_type / @array/rss_type）
+  static const _typeLabels = ['网页', '图片', '视频'];
+
+  /// 文章样式（对标原版 ly_type / @array/layout_type）
+  static const _styleLabels = ['列表', '单列', '双列', '瀑布', '三列'];
+
+  final Map<String, TextEditingController> _ctrls = {};
+
+  // 选项面板开关（对标原版 cb_is_enable 等）
+  late bool _enabled;
+  late bool _singleUrl;
+  late bool _cookieJar;
+  late bool _preload;
+
+  // WEB_VIEW 页开关
+  late bool _enableJs;
+  late bool _loadWithBaseUrl;
+  late bool _showWebLog;
+  late bool _cacheFirst;
+
+  late int _type;
+  late int _articleStyle;
+
   bool _saving = false;
   bool _testing = false;
   String? _testResult;
   String? _testError;
 
-  // 基本信息
-  late TextEditingController _nameCtrl;
-  late TextEditingController _urlCtrl;
-  late TextEditingController _iconCtrl;
-  late TextEditingController _groupCtrl;
-  late TextEditingController _commentCtrl;
-
-  // 规则
-  late TextEditingController _ruleArticlesCtrl;
-  late TextEditingController _ruleTitleCtrl;
-  late TextEditingController _ruleLinkCtrl;
-  late TextEditingController _rulePubDateCtrl;
-  late TextEditingController _ruleDescriptionCtrl;
-  late TextEditingController _ruleImageCtrl;
-  late TextEditingController _ruleContentCtrl;
-  late TextEditingController _ruleNextPageCtrl;
-
   bool get _isEdit => widget.source != null;
+
+  /// 进入时的字段快照（用于退出未保存提示）
+  late final String _initialSnapshot;
 
   @override
   void initState() {
     super.initState();
-
     final s = widget.source;
-    _nameCtrl = TextEditingController(text: s?.sourceName ?? '');
-    _urlCtrl = TextEditingController(text: s?.sourceUrl ?? '');
-    _iconCtrl = TextEditingController(text: s?.sourceIcon ?? '');
-    _groupCtrl = TextEditingController(text: s?.sourceGroup ?? '');
-    _commentCtrl = TextEditingController(text: s?.sourceComment ?? '');
-
-    _ruleArticlesCtrl = TextEditingController(text: s?.ruleArticles ?? '');
-    _ruleTitleCtrl = TextEditingController(text: s?.ruleTitle ?? '');
-    _ruleLinkCtrl = TextEditingController(text: s?.ruleLink ?? '');
-    _rulePubDateCtrl = TextEditingController(text: s?.rulePubDate ?? '');
-    _ruleDescriptionCtrl =
-        TextEditingController(text: s?.ruleDescription ?? '');
-    _ruleImageCtrl = TextEditingController(text: s?.ruleImage ?? '');
-    _ruleContentCtrl = TextEditingController(text: s?.ruleContent ?? '');
-    _ruleNextPageCtrl = TextEditingController(text: s?.ruleNextPage ?? '');
+    // 初始值直接取源 JSON（key 与字段定义一致）
+    final initial = s?.toJson() ?? const <String, dynamic>{};
+    for (final spec in _allFieldSpecs) {
+      final v = initial[spec.key];
+      _ctrls[spec.key] =
+          TextEditingController(text: v == null ? '' : v.toString());
+    }
+    _enabled = s?.enabled ?? true;
+    _singleUrl = s?.singleUrl ?? false;
+    _cookieJar = s?.enabledCookieJar ?? false;
+    _preload = s?.preload ?? false;
+    _enableJs = s?.enableJs ?? true;
+    _loadWithBaseUrl = s?.loadWithBaseUrl ?? true;
+    _showWebLog = s?.showWebLog ?? false;
+    _cacheFirst = s?.cacheFirst ?? false;
+    // 越界归零（对标原版 spType/lyType selection 校验）
+    _type = (s?.rssType ?? 0).clamp(0, _typeLabels.length - 1);
+    _articleStyle = (s?.articleStyle ?? 0).clamp(0, _styleLabels.length - 1);
+    _initialSnapshot = _snapshot();
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _urlCtrl.dispose();
-    _iconCtrl.dispose();
-    _groupCtrl.dispose();
-    _commentCtrl.dispose();
-    _ruleArticlesCtrl.dispose();
-    _ruleTitleCtrl.dispose();
-    _ruleLinkCtrl.dispose();
-    _rulePubDateCtrl.dispose();
-    _ruleDescriptionCtrl.dispose();
-    _ruleImageCtrl.dispose();
-    _ruleContentCtrl.dispose();
-    _ruleNextPageCtrl.dispose();
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
+  // ===== 快照与构建 =====
+
+  String _snapshot() {
+    return jsonEncode({
+      for (final spec in _allFieldSpecs) spec.key: _ctrls[spec.key]!.text,
+      'enabled': _enabled,
+      'singleUrl': _singleUrl,
+      'enabledCookieJar': _cookieJar,
+      'preload': _preload,
+      'enableJs': _enableJs,
+      'loadWithBaseUrl': _loadWithBaseUrl,
+      'showWebLog': _showWebLog,
+      'cacheFirst': _cacheFirst,
+      'type': _type,
+      'articleStyle': _articleStyle,
+    });
+  }
+
+  String? _opt(String key) {
+    final v = _ctrls[key]!.text.trim();
+    return v.isEmpty ? null : v;
+  }
+
+  /// 组装完整源（显式构造全部字段，避免 copyWith 无法清空可空字段）
   RssSource _buildSource() {
+    final old = widget.source;
     return RssSource(
-      sourceName: _nameCtrl.text.trim(),
-      sourceUrl: _urlCtrl.text.trim(),
-      sourceIcon: _iconCtrl.text.trim(),
-      sourceGroup:
-          _groupCtrl.text.trim().isNotEmpty ? _groupCtrl.text.trim() : null,
-      sourceComment: _commentCtrl.text.trim().isNotEmpty
-          ? _commentCtrl.text.trim()
-          : null,
-      enabled: widget.source?.enabled ?? true,
-      ruleArticles: _ruleArticlesCtrl.text.trim().isNotEmpty
-          ? _ruleArticlesCtrl.text.trim()
-          : null,
-      ruleTitle: _ruleTitleCtrl.text.trim().isNotEmpty
-          ? _ruleTitleCtrl.text.trim()
-          : null,
-      ruleLink: _ruleLinkCtrl.text.trim().isNotEmpty
-          ? _ruleLinkCtrl.text.trim()
-          : null,
-      rulePubDate: _rulePubDateCtrl.text.trim().isNotEmpty
-          ? _rulePubDateCtrl.text.trim()
-          : null,
-      ruleDescription: _ruleDescriptionCtrl.text.trim().isNotEmpty
-          ? _ruleDescriptionCtrl.text.trim()
-          : null,
-      ruleImage: _ruleImageCtrl.text.trim().isNotEmpty
-          ? _ruleImageCtrl.text.trim()
-          : null,
-      ruleContent: _ruleContentCtrl.text.trim().isNotEmpty
-          ? _ruleContentCtrl.text.trim()
-          : null,
-      ruleNextPage: _ruleNextPageCtrl.text.trim().isNotEmpty
-          ? _ruleNextPageCtrl.text.trim()
-          : null,
+      sourceName: _ctrls['sourceName']!.text.trim(),
+      sourceUrl: _ctrls['sourceUrl']!.text.trim(),
+      sourceIcon: _opt('sourceIcon') ?? '',
+      sourceGroup: _opt('sourceGroup'),
+      sourceComment: _opt('sourceComment'),
+      enabled: _enabled,
+      variableComment: _opt('variableComment'),
+      jsLib: _opt('jsLib'),
+      enabledCookieJar: _cookieJar,
+      concurrentRate: _opt('concurrentRate'),
+      header: _opt('header'),
+      loginUrl: _opt('loginUrl'),
+      loginUi: _opt('loginUi'),
+      loginCheckJs: _opt('loginCheckJs'),
+      coverDecodeJs: _opt('coverDecodeJs'),
+      sortUrl: _opt('sortUrl'),
+      singleUrl: _singleUrl,
+      articleStyle: _articleStyle,
+      ruleArticles: _opt('ruleArticles'),
+      ruleNextPage: _opt('ruleNextPage'),
+      ruleTitle: _opt('ruleTitle'),
+      rulePubDate: _opt('rulePubDate'),
+      ruleDescription: _opt('ruleDescription'),
+      ruleImage: _opt('ruleImage'),
+      ruleLink: _opt('ruleLink'),
+      ruleContent: _opt('ruleContent'),
+      contentWhitelist: _opt('contentWhitelist'),
+      contentBlacklist: _opt('contentBlacklist'),
+      shouldOverrideUrlLoading: _opt('shouldOverrideUrlLoading'),
+      style: _opt('style'),
+      enableJs: _enableJs,
+      loadWithBaseUrl: _loadWithBaseUrl,
+      injectJs: _opt('injectJs'),
+      preloadJs: _opt('preloadJs'),
+      startHtml: _opt('startHtml'),
+      startStyle: _opt('startStyle'),
+      startJs: _opt('startJs'),
+      showWebLog: _showWebLog,
+      // 编辑模式保留排序与更新时间（对标原版 viewModel.save 语义）
+      lastUpdateTime: old?.lastUpdateTime ?? 0,
+      customOrder: old?.customOrder ?? 0,
+      rssType: _type,
+      preload: _preload,
+      cacheFirst: _cacheFirst,
+      searchUrl: _opt('searchUrl'),
     );
   }
 
+  // ===== 保存 / 测试 =====
+
   Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final name = _ctrls['sourceName']!.text.trim();
+    final url = _ctrls['sourceUrl']!.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入源名称')),
+      );
+      return;
+    }
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入源 URL')),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
-
     try {
       final api = ref.read(bookApiProvider);
       final source = _buildSource();
-
       if (_isEdit) {
-        // 编辑模式：删除旧源再添加新源（FFI 无 rssUpdateSource）
-        await api.deleteRssSource(widget.source!.sourceUrl);
+        await api.updateRssSource(source);
+      } else {
+        await api.addRssSource(source);
       }
-      await api.addRssSource(source);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_isEdit ? 'RSS 源已更新' : 'RSS 源已添加')),
-        );
-        Navigator.pop(context, true);
-      }
+      if (!mounted) return;
+      // 保存成功后更新快照，退出不再提示未保存
+      _initialSnapshotMark = _snapshot();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_isEdit ? '订阅源已更新' : '订阅源已添加')),
+      );
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e')),
+          SnackBar(content: Text('保存失败：$e')),
         );
       }
     } finally {
@@ -154,19 +279,42 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     }
   }
 
-  Future<void> _test() async {
-    final url = _urlCtrl.text.trim();
-    if (url.isEmpty) {
-      setState(() => _testError = '请先输入 RSS 地址');
+  /// 保存成功后覆盖初始快照的可变标记（late final 无法重赋值，独立持有）
+  String? _savedSnapshot;
+  String get _initialSnapshotMark => _savedSnapshot ?? _initialSnapshot;
+  set _initialSnapshotMark(String v) => _savedSnapshot = v;
+
+  bool get _dirty => _snapshot() != _initialSnapshotMark;
+
+  /// 退出拦截：未保存时确认放弃（对标原版 exit 提示）
+  Future<void> _tryExit({Object? result}) async {
+    if (!_dirty) {
+      Navigator.of(context).pop(result);
       return;
     }
+    final discard = await showConfirmDialog(
+      context,
+      title: '未保存的修改',
+      content: '修改尚未保存，确定要放弃修改并退出吗？',
+      confirmText: '放弃',
+      isDestructive: true,
+    );
+    if (discard && mounted) {
+      Navigator.of(context).pop(result);
+    }
+  }
 
+  Future<void> _test() async {
+    final url = _ctrls['sourceUrl']!.text.trim();
+    if (url.isEmpty) {
+      setState(() => _testError = '请先输入源 URL');
+      return;
+    }
     setState(() {
       _testing = true;
       _testResult = null;
       _testError = null;
     });
-
     try {
       final api = ref.read(bookApiProvider);
       final articles = await api.getRssArticles(url);
@@ -177,199 +325,389 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
             .take(5)
             .map((e) => e.title.isEmpty ? '(无标题)' : e.title)
             .join('\n');
-        setState(() {
-          _testResult = '成功获取 ${articles.length} 篇文章：\n$titles';
-        });
+        setState(() => _testResult = '成功获取 ${articles.length} 篇文章：\n$titles');
       }
     } catch (e) {
-      setState(() => _testError = '测试失败: $e');
+      setState(() => _testError = '测试失败：$e');
     } finally {
       if (mounted) setState(() => _testing = false);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEdit ? '编辑 RSS 源' : '新建 RSS 源'),
-        actions: [
-          TextButton.icon(
-            // AppBar 为 primary 底色，显式使用 onPrimary 避免蓝底蓝字不可见。
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-            ),
-            onPressed: _testing ? null : _test,
-            icon: _testing
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.science, size: 18),
-            label: const Text('测试'),
-          ),
-          // 调试入口：对标原版 RssSourceDebug（日志链路调试）
-          IconButton(
-            tooltip: '调试',
-            icon: const Icon(Icons.bug_report_outlined),
-            onPressed: () {
-              final url = _urlCtrl.text.trim();
-              Navigator.pushNamed(
-                context,
-                AppRoutes.rssSourceDebug,
-                arguments: url.isEmpty ? null : url,
-              );
-            },
-          ),
-          FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save, size: 18),
-            label: const Text('保存'),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // === 基本信息 ===
-            _sectionHeader('基本信息'),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: '源名称 *',
-                hintText: '例如：少数派',
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? '请输入源名称' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _urlCtrl,
-              decoration: const InputDecoration(
-                labelText: 'RSS 地址 *',
-                hintText: 'https://example.com/feed',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.url,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return '请输入 RSS 地址';
-                if (!v.trim().startsWith('http')) return '地址必须以 http(s) 开头';
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _iconCtrl,
-              decoration: const InputDecoration(
-                labelText: '图标 URL',
-                hintText: '可选',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _groupCtrl,
-              decoration: const InputDecoration(
-                labelText: '分组',
-                hintText: '可选，例如：科技',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _commentCtrl,
-              decoration: const InputDecoration(
-                labelText: '备注',
-                hintText: '可选',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
-            ),
+  // ===== 菜单操作 =====
 
-            const SizedBox(height: 24),
+  Future<void> _handleMenu(String action) async {
+    switch (action) {
+      case 'debug':
+        final url = _ctrls['sourceUrl']!.text.trim();
+        Navigator.of(context).pushNamed(
+          AppRoutes.rssSourceDebug,
+          arguments: url.isEmpty ? null : url,
+        );
+      case 'copy':
+        final json = const JsonEncoder.withIndent('  ')
+            .convert(_buildSource().toJson());
+        await Clipboard.setData(ClipboardData(text: json));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已复制订阅源到剪贴板')),
+          );
+        }
+      case 'paste':
+        await _pasteSource();
+      case 'share':
+        final json = jsonEncode(_buildSource().toJson());
+        await Share.share(json,
+            subject: '订阅源分享：${_ctrls['sourceName']!.text.trim()}');
+      case 'help':
+        _showHelpSheet();
+    }
+  }
 
-            // === 规则配置 ===
-            _sectionHeader('规则配置'),
-            const SizedBox(height: 8),
-            _ruleField(_ruleArticlesCtrl, '文章列表规则', 'ruleArticles，如 item 或 //item'),
-            _ruleField(_ruleTitleCtrl, '标题规则', 'ruleTitle，如 title'),
-            _ruleField(_ruleLinkCtrl, '链接规则', 'ruleLink，如 link'),
-            _ruleField(_rulePubDateCtrl, '日期规则', 'rulePubDate，如 pubDate'),
-            _ruleField(_ruleDescriptionCtrl, '描述规则', 'ruleDescription'),
-            _ruleField(_ruleImageCtrl, '图片规则', 'ruleImage'),
-            _ruleField(_ruleContentCtrl, '内容规则', 'ruleContent'),
-            _ruleField(_ruleNextPageCtrl, '下一页规则', 'ruleNextPage'),
+  /// 粘贴源（对标原版 menu_paste_source：剪贴板 JSON 回填字段）
+  Future<void> _pasteSource() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim();
+    if (text == null || text.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('剪贴板为空')),
+        );
+      }
+      return;
+    }
+    try {
+      final decoded = jsonDecode(text);
+      final map = decoded is List && decoded.isNotEmpty
+          ? decoded.first
+          : decoded;
+      if (map is! Map) throw const FormatException('不是订阅源 JSON');
+      setState(() {
+        for (final spec in _allFieldSpecs) {
+          final v = map[spec.key];
+          _ctrls[spec.key]!.text = v == null ? '' : v.toString();
+        }
+        _enabled = map['enabled'] == true;
+        _singleUrl = map['singleUrl'] == true;
+        _cookieJar = map['enabledCookieJar'] == true;
+        _preload = map['preload'] == true;
+        _enableJs = map['enableJs'] != false;
+        _loadWithBaseUrl = map['loadWithBaseUrl'] != false;
+        _showWebLog = map['showWebLog'] == true;
+        _cacheFirst = map['cacheFirst'] == true;
+        final type = map['type'];
+        _type = type is int ? type.clamp(0, _typeLabels.length - 1) : 0;
+        final style = map['articleStyle'];
+        _articleStyle =
+            style is int ? style.clamp(0, _styleLabels.length - 1) : 0;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已从剪贴板粘贴订阅源')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('粘贴失败，剪贴板不是有效的订阅源 JSON：$e')),
+        );
+      }
+    }
+  }
 
-            // === 测试结果 ===
-            if (_testResult != null || _testError != null) ...[
-              const SizedBox(height: 24),
-              _sectionHeader('测试结果'),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _testError != null
-                      ? Theme.of(context).colorScheme.errorContainer
-                      : Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _testError ?? _testResult!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: _testError != null
-                        ? Theme.of(context).colorScheme.onErrorContainer
-                        : Theme.of(context).colorScheme.onPrimaryContainer,
+  void _showHelpSheet() {
+    final textTheme = Theme.of(context).textTheme;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Center(child: IosGrabber()),
+              const SizedBox(height: 12),
+              Text('订阅源编辑帮助',
+                  style: textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 16),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Text(
+                    '• 源名称与源 URL 为必填项\n'
+                    '• 源 URL 支持网页地址、RSS 订阅地址或应用协议链接\n'
+                    '• 列表规则用于从网页解析文章列表，标准 RSS 源可不填\n'
+                    '• WEB_VIEW 页选项控制文章正文 WebView 加载行为\n'
+                    '• 预处理 JS 在页面加载前执行，可用于反爬处理\n'
+                    '• 粘贴源可从剪贴板导入订阅源 JSON 进行编辑',
+                    style: textTheme.bodyMedium,
                   ),
                 ),
               ),
             ],
-
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _sectionHeader(String title) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
+  // ===== 构建 =====
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _tryExit();
+      },
+      child: DefaultTabController(
+        length: 4,
+        child: Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _tryExit,
+            ),
+            title: Text(_isEdit ? '编辑订阅源' : '新建订阅源'),
+            bottom: const TabBar(
+              tabs: [
+                Tab(text: '基本'),
+                Tab(text: '预处理'),
+                Tab(text: '列表规则'),
+                Tab(text: 'WEB_VIEW'),
+              ],
+            ),
+            actions: [
+              // 测试（快速验证源 URL 可用性）
+              IconButton(
+                tooltip: '测试',
+                icon: _testing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.science_outlined),
+                onPressed: _testing ? null : _test,
+              ),
+              // 溢出菜单（对标原版 source_edit.xml 精简版）
+              PopupMenuButton<String>(
+                tooltip: '更多选项',
+                position: PopupMenuPosition.under,
+                onSelected: _handleMenu,
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                      value: 'debug', child: Text('调试源')),
+                  const PopupMenuItem(
+                      value: 'copy', child: Text('复制源')),
+                  const PopupMenuItem(
+                      value: 'paste', child: Text('粘贴源')),
+                  const PopupMenuItem(
+                      value: 'share', child: Text('分享文本')),
+                  const PopupMenuItem(
+                      value: 'help', child: Text('帮助')),
+                ],
+              ),
+              // 保存（对标原版 menu_save）
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('保存'),
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
+          body: Column(
+            children: [
+              // 可折叠选项面板（对标原版选项区：4 开关 + 类型 + 样式）
+              _buildOptionPanel(),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _buildFieldList(_baseFields, withTestResult: true),
+                    _buildFieldList(_preFields),
+                    _buildFieldList(_listFields),
+                    _buildWebViewTab(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _ruleField(
-    TextEditingController ctrl,
-    String label,
-    String hint,
-  ) {
+  /// 选项面板（对标原版 cb_is_enable/cb_single_url/cb_is_enable_cookie/
+  /// cb_is_enable_preload + sp_type + ly_type）
+  Widget _buildOptionPanel() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ExpansionTile(
+      initiallyExpanded: true,
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+      shape: const Border(),
+      collapsedShape: const Border(),
+      title: const Text('选项',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Wrap(
+            children: [
+              _checkChip('启用', _enabled, (v) => _enabled = v),
+              _checkChip('单 URL', _singleUrl, (v) => _singleUrl = v),
+              _checkChip('Cookie', _cookieJar, (v) => _cookieJar = v),
+              _checkChip('预加载', _preload, (v) => _preload = v),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
+            children: [
+              Text('类型', style: TextStyle(color: colorScheme.onSurface)),
+              const SizedBox(width: 8),
+              DropdownButton<int>(
+                value: _type,
+                isDense: true,
+                onChanged: (v) => setState(() => _type = v ?? 0),
+                items: [
+                  for (var i = 0; i < _typeLabels.length; i++)
+                    DropdownMenuItem(value: i, child: Text(_typeLabels[i])),
+                ],
+              ),
+              const SizedBox(width: 24),
+              Text('样式', style: TextStyle(color: colorScheme.onSurface)),
+              const SizedBox(width: 8),
+              DropdownButton<int>(
+                value: _articleStyle,
+                isDense: true,
+                onChanged: (v) => setState(() => _articleStyle = v ?? 0),
+                items: [
+                  for (var i = 0; i < _styleLabels.length; i++)
+                    DropdownMenuItem(value: i, child: Text(_styleLabels[i])),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+      ],
+    );
+  }
+
+  Widget _checkChip(String label, bool value, ValueChanged<bool> onChanged) {
+    return SizedBox(
+      width: 112,
+      child: CheckboxListTile(
+        dense: true,
+        controlAffinity: ListTileControlAffinity.leading,
+        contentPadding: EdgeInsets.zero,
+        title: Text(label, style: const TextStyle(fontSize: 14)),
+        value: value,
+        onChanged: (v) => setState(() => onChanged(v ?? false)),
+      ),
+    );
+  }
+
+  Widget _buildFieldList(List<_FieldSpec> fields, {bool withTestResult = false}) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (final spec in fields) _field(spec),
+        if (withTestResult && (_testResult != null || _testError != null)) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _testError != null
+                  ? Theme.of(context).colorScheme.errorContainer
+                  : Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _testError ?? _testResult!,
+              style: TextStyle(
+                fontSize: 13,
+                color: _testError != null
+                    ? Theme.of(context).colorScheme.onErrorContainer
+                    : Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _field(_FieldSpec spec) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: TextFormField(
-        controller: ctrl,
+      child: TextField(
+        controller: _ctrls[spec.key],
+        maxLines: spec.maxLines,
         decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
+          labelText: spec.label,
+          hintText: spec.hint.isEmpty ? null : spec.hint,
           border: const OutlineInputBorder(),
           isDense: true,
         ),
       ),
+    );
+  }
+
+  /// WEB_VIEW Tab：4 开关 + 6 文本字段（对标原版 WEB_VIEW 页 10 项）
+  Widget _buildWebViewTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        CheckboxListTile(
+          dense: true,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('启用 JS'),
+          value: _enableJs,
+          onChanged: (v) => setState(() => _enableJs = v ?? true),
+        ),
+        CheckboxListTile(
+          dense: true,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('以 base URL 加载'),
+          value: _loadWithBaseUrl,
+          onChanged: (v) => setState(() => _loadWithBaseUrl = v ?? true),
+        ),
+        CheckboxListTile(
+          dense: true,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('显示网页日志'),
+          value: _showWebLog,
+          onChanged: (v) => setState(() => _showWebLog = v ?? false),
+        ),
+        CheckboxListTile(
+          dense: true,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('缓存优先'),
+          value: _cacheFirst,
+          onChanged: (v) => setState(() => _cacheFirst = v ?? false),
+        ),
+        const SizedBox(height: 8),
+        for (final spec in _webFields) _field(spec),
+        const SizedBox(height: 24),
+      ],
     );
   }
 }

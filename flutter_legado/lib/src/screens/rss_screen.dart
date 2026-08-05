@@ -151,6 +151,16 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                 ),
             ],
           ),
+          // 订阅源管理入口（对标原版 menu_rss_config → RssSourceActivity），
+          // 返回后刷新源列表
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: '订阅源管理',
+            onPressed: () async {
+              await Navigator.pushNamed(context, AppRoutes.rssSourceManage);
+              if (mounted) notifier.loadSources();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: '设置',

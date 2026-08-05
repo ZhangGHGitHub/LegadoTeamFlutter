@@ -34,6 +34,7 @@ import 'screens/rss_config_screen.dart';
 import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_history_screen.dart';
 import 'screens/rss_source_debug_screen.dart';
+import 'screens/rss_source_manage_screen.dart';
 import 'screens/rss_screen.dart';
 import 'screens/rule_sub_screen.dart';
 import 'screens/search_screen.dart';
@@ -85,6 +86,7 @@ class AppRoutes {
   static const appLog = '/app_log';
   // discover 路由已删除（原版不存在的功能）
   static const rssConfig = '/rss/config';
+  static const rssSourceManage = '/rss/manage';
   static const rssFavorites = '/rss/favorites';
   static const rssHistory = '/rss/history';
   static const rssSourceDebug = '/rss/source_debug';
@@ -213,6 +215,7 @@ class AppRoutes {
         appLog: (_) => const AppLogScreen(),
         
         rssConfig: (_) => const RssConfigScreen(),
+        rssSourceManage: (_) => const RssSourceManageScreen(),
         rssFavorites: (_) => const RssFavoritesScreen(),
         rssHistory: (_) => const RssHistoryScreen(),
         rssSourceDebug: (context) {
