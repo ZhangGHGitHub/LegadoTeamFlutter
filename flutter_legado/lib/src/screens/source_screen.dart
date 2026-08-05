@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,13 +8,14 @@ import 'package:share_plus/share_plus.dart';
 import '../models/models.dart';
 import '../providers/source/source_notifier.dart';
 import '../routes.dart';
-import '../services/source_import_service.dart';
+import '../services/source_import_service.dart' show SourcePreview;
 import '../theme/app_colors.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/confirm_dialog.dart';
 import 'source_edit_screen.dart';
+import 'source_import_confirm_screen.dart';
 
 /// 书源管理页面
 class SourceScreen extends ConsumerStatefulWidget {
@@ -496,20 +495,6 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       case 'help':
         _todo(context, '帮助');
         break;
-      case 'import_clipboard':
-        _importFromClipboard(context);
-        break;
-      case 'export_all':
-        _exportAllSources(context);
-        break;
-      case 'export_selected':
-        _exportSelectedGroup(context);
-        break;
-      case 'export_file':
-        _exportAllToFile(context);
-        break;
-      case 'batch_mode':
-        ref.read(sourceNotifierProvider.notifier).enterBatchMode();
         break;
     }
   }
@@ -635,72 +620,26 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     }
   }
 
-  void _showImportUrlDialog(BuildContext context) {
-    final controller = TextEditingController();
-    showDialog(
+  void _showImportUrlDialog(BuildContext context) async {
+    // controller 由对话框内容组件自持（随子树卸载释放）：
+    // 若在关闭回调中提前 dispose，退场动画中的 TextField 仍挂载着
+    // 它，会触发 "used after disposed" 及 _dependents 断言级联
+    final url = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('从 URL 导入书源'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: '输入书源 URL 地址',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final url = controller.text.trim();
-              if (url.isEmpty) return;
-              Navigator.pop(ctx);
-              controller.dispose();
-
-              final notifier = ref.read(sourceNotifierProvider.notifier);
-              final result = await notifier.importFromUrl(url);
-
-              if (context.mounted) {
-                _showImportResult(context, result);
-              }
-            },
-            child: const Text('导入'),
-          ),
-        ],
+      builder: (_) => const _TextPromptDialog(
+        title: '从 URL 导入书源',
+        hintText: '输入书源 URL 地址',
+        confirmLabel: '导入',
+        requireNonEmpty: true,
       ),
     );
+    if (url == null || url.trim().isEmpty || !context.mounted) return;
+    // 对标原版：先拉取候选书源，进入导入确认页由用户勾选后入库
+    await _fetchAndConfirm(() => ref
+        .read(sourceNotifierProvider.notifier)
+        .importService
+        .fetchSourcesFromUrl(url.trim()));
   }
-
-  Future<void> _importFromClipboard(BuildContext context) async {
-    final notifier = ref.read(sourceNotifierProvider.notifier);
-    try {
-      final data = await Clipboard.getData(Clipboard.kTextPlain);
-      final text = data?.text;
-
-      if (text == null || text.isEmpty) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('剪贴板为空')),
-          );
-        }
-        return;
-      }
-
-      final result = await notifier.importFromJson(text);
-
-      if (!context.mounted) return;
-      _showImportResult(context, result);
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('剪贴板读取失败：$e')),
-        );
-      }
-    }
-  }
-
   /// 从本地文件导入书源（对标 Android menu_import_local，txt/json）
   ///
   /// 注：不使用 FileType.custom 扩展名过滤——低版本 Android（API 28）的
@@ -720,11 +659,11 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       }
 
       if (!context.mounted) return;
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final result = await notifier.importFromFile(path);
-
-      if (!context.mounted) return;
-      _showImportResult(context, result);
+      // 对标原版：先解析候选书源，进入导入确认页由用户勾选后入库
+      await _fetchAndConfirm(() => ref
+          .read(sourceNotifierProvider.notifier)
+          .importService
+          .fetchSourcesFromFile(path));
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -748,16 +687,19 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     final messenger = ScaffoldMessenger.of(context);
 
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final result = await notifier.importFromUrl(trimmed);
-      if (context.mounted) _showImportResult(context, result);
+      // 对标原版：先拉取候选书源，进入导入确认页由用户勾选后入库
+      await _fetchAndConfirm(() => ref
+          .read(sourceNotifierProvider.notifier)
+          .importService
+          .fetchSourcesFromUrl(trimmed));
       return;
     }
 
     if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final result = await notifier.importFromJson(trimmed);
-      if (context.mounted) _showImportResult(context, result);
+      await _fetchAndConfirm(() async => ref
+          .read(sourceNotifierProvider.notifier)
+          .importService
+          .parseSourcesText(trimmed));
       return;
     }
 
@@ -773,134 +715,50 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     );
   }
 
-  void _showImportResult(BuildContext context, ImportResult result) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('导入结果'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(result.summary),
-            if (result.errors.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text('详细信息：',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 200),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: result.errors
-                      .map((e) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(e,
-                                style: Theme.of(ctx).textTheme.bodySmall),
-                          ))
-                      .toList(),
-                ),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _exportAllSources(BuildContext context) async {
-    try {
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final json = await notifier.exportAllSources();
-
-      await Clipboard.setData(ClipboardData(text: json));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('全部书源已复制到剪贴板')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
-        );
-      }
-    }
-  }
-
-  /// 导出全部书源到文件（对标 Android menu_export_selection 的 saveToFile）
-  Future<void> _exportAllToFile(BuildContext context) async {
+  /// 拉取/解析候选书源并进入导入确认页
+  /// （对标原版：importSource → comparisonSource → ImportBookSourceDialog）
+  Future<void> _fetchAndConfirm(
+    Future<List<SourcePreview>> Function() fetch,
+  ) async {
     final messenger = ScaffoldMessenger.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    List<SourcePreview> sources;
     try {
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final json = await notifier.exportAllSources();
-
-      final dir = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '选择书源导出目录',
-      );
-      if (!context.mounted) return;
-      if (dir == null) {
-        messenger.showSnackBar(const SnackBar(content: Text('未选择导出目录')));
-        return;
-      }
-
-      final timestamp = DateTime.now()
-          .toIso8601String()
-          .replaceAll(':', '-')
-          .split('.')
-          .first;
-      final filePath = '$dir${Platform.pathSeparator}bookSources_$timestamp.json';
-      await File(filePath).writeAsString(json, flush: true);
-
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('已导出到：$filePath')),
-        );
-      }
+      sources = await fetch();
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出到文件失败：$e')),
-        );
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
       }
+      messenger.showSnackBar(
+        SnackBar(content: Text('获取书源失败：$e')),
+      );
+      return;
     }
-  }
+    if (!mounted) return;
+    Navigator.of(context).pop(); // 关闭加载指示
 
-  Future<void> _exportSelectedGroup(BuildContext context) async {
-    final state = ref.read(sourceNotifierProvider);
-    final group = state.selectedGroup;
-
-    if (group == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先选择一个分组')),
+    if (sources.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('格式错误，未解析到书源')),
       );
       return;
     }
 
-    try {
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final sources = state.filteredSources;
-      final urls = sources.map((s) => s.bookSourceUrl).toList();
-      final json = await notifier.backupService.exportSelectedSources(urls);
-
-      await Clipboard.setData(ClipboardData(text: json));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分组「$group」书源已复制到剪贴板')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
-        );
-      }
+    final localSources = ref.read(sourceNotifierProvider).sources;
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => SourceImportConfirmScreen(
+          sources: sources,
+          localSources: localSources,
+        ),
+      ),
+    );
+    if (ok == true && mounted) {
+      messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
     }
   }
 
@@ -926,5 +784,65 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         );
       }
     }
+  }
+}
+
+
+/// 文本输入对话框内容组件：controller 生命周期绑定对话框子树，
+/// 随子树卸载统一释放（避免退场动画期间 dispose 引发框架断言）
+class _TextPromptDialog extends StatefulWidget {
+  final String title;
+  final String hintText;
+  final String confirmLabel;
+  final bool autofocus;
+
+  /// 为 true 时确认按钮在输入为空时不关闭对话框
+  final bool requireNonEmpty;
+
+  const _TextPromptDialog({
+    required this.title,
+    required this.hintText,
+    required this.confirmLabel,
+    this.autofocus = false,
+    this.requireNonEmpty = false,
+  });
+
+  @override
+  State<_TextPromptDialog> createState() => _TextPromptDialogState();
+}
+
+class _TextPromptDialogState extends State<_TextPromptDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: widget.autofocus,
+        decoration: InputDecoration(hintText: widget.hintText),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final text = _controller.text.trim();
+            if (widget.requireNonEmpty && text.isEmpty) return;
+            Navigator.pop(context, text);
+          },
+          child: Text(widget.confirmLabel),
+        ),
+      ],
+    );
   }
 }

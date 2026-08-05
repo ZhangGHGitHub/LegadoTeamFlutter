@@ -1,7 +1,7 @@
 // 书源管理导入/导出 + 扫码页 widget 测试
 //
-// 验证 Phase 4.3 书源导入/导出（对标 Android BookSourceActivity）：
-// - SourceScreen 菜单含「从文件导入 / 扫码导入 / 导出到文件」入口
+// 验证书源导入/导出（对标 Android BookSourceActivity）：
+// - SourceScreen 溢出菜单与原版 book_source.xml 一致（7 项）
 // - QrcodeScreen 在桌面/测试环境降级为手动输入模式（无相机），可输入并返回内容
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -42,8 +42,8 @@ void main() {
     );
   }
 
-  group('SourceScreen 导入/导出菜单', () {
-    testWidgets('菜单含文件导入/扫码导入/导出到文件入口', (tester) async {
+  group('SourceScreen 溢出菜单（对标原版 book_source.xml）', () {
+    testWidgets('菜单与原版一致：仅 7 项，无扩展项', (tester) async {
       await tester.pumpWidget(wrapSourceScreen());
       await tester.pumpAndSettle();
 
@@ -54,12 +54,19 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
+      // 原版 7 项
+      expect(find.text('新建书源'), findsOneWidget);
+      expect(find.text('新建 JS 书源'), findsOneWidget);
       expect(find.text('本地导入'), findsOneWidget);
       expect(find.text('网络导入'), findsOneWidget);
       expect(find.text('二维码导入'), findsOneWidget);
-      expect(find.text('从剪贴板导入'), findsOneWidget);
-      expect(find.text('导出全部书源'), findsOneWidget);
-      expect(find.text('导出到文件'), findsOneWidget);
+      expect(find.text('按域名分组显示'), findsOneWidget);
+      expect(find.text('帮助'), findsOneWidget);
+
+      // 已删除的扩展项不应出现
+      expect(find.text('从剪贴板导入'), findsNothing);
+      expect(find.text('导出全部书源'), findsNothing);
+      expect(find.text('导出到文件'), findsNothing);
     });
   });
 
