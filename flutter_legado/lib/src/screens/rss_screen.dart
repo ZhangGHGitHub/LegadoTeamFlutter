@@ -6,12 +6,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/rss/rss_notifier.dart';
+import '../providers/rss_history/rss_history_notifier.dart';
 import '../routes.dart';
 import '../utils/responsive.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 import 'rss_articles_screen.dart';
+import 'rss_article_detail_screen.dart';
 
 /// RSS 源列表页面
 class RssScreen extends ConsumerStatefulWidget {
@@ -123,11 +126,15 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           ),
         ),
         actions: [
-          // 安卓原版顶栏 4 个功能入口：历史/收藏/分组/设置
+          // 安卓原版顶栏 4 个功能入口：阅读记录/收藏/分组/订阅源管理
+          // （原版 menu_read_record 打开阅读记录对话框，非独立页面）
           IconButton(
             icon: const Icon(Icons.history),
-            tooltip: '历史',
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.rssHistory),
+            tooltip: '阅读记录',
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => const _ReadRecordDialog(),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.star_outline),
@@ -151,20 +158,15 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                 ),
             ],
           ),
-          // 订阅源管理入口（对标原版 menu_rss_config → RssSourceActivity），
+          // 原版 menu_rss_config：齿轮图标即订阅源管理入口，
           // 返回后刷新源列表
           IconButton(
-            icon: const Icon(Icons.tune),
+            icon: const Icon(Icons.settings_outlined),
             tooltip: '订阅源管理',
             onPressed: () async {
               await Navigator.pushNamed(context, AppRoutes.rssSourceManage);
               if (mounted) notifier.loadSources();
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: '设置',
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.rssConfig),
           ),
         ],
       ),
@@ -449,6 +451,177 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               ),
         ),
       ),
+    );
+  }
+}
+
+/// 阅读记录对话框（对标原版 ReadRecordDialog：
+/// 标题「阅读记录」+ 清除菜单 + 记录列表；点击条目重读并关闭对话框）
+class _ReadRecordDialog extends ConsumerStatefulWidget {
+  const _ReadRecordDialog();
+
+  @override
+  ConsumerState<_ReadRecordDialog> createState() => _ReadRecordDialogState();
+}
+
+class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(rssHistoryNotifierProvider.notifier).load();
+    });
+  }
+
+  /// 清除确认（对标原版：sure_del + 记录数 + read_record）
+  Future<void> _confirmClear() async {
+    final count = ref.read(rssHistoryNotifierProvider).records.length;
+    final confirmed = await showConfirmDialog(
+      context,
+      title: '提示',
+      content: '确定要删除？\n$count 条阅读记录',
+      confirmText: '删除',
+      isDestructive: true,
+    );
+    if (confirmed && mounted) {
+      await ref.read(rssHistoryNotifierProvider.notifier).clear();
+    }
+  }
+
+  /// 点击记录重读（对标原版 ReadRss.readRss：打开文章阅读页）
+  void _openRecord(RssReadRecordRow record) {
+    Navigator.of(context).pop(); // 对标原版点击后 dismiss
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RssArticleDetailScreen(
+          article: RssFeedArticle(title: record.title, url: record.link ?? ''),
+          sourceName: _hostOf(record.origin),
+        ),
+      ),
+    );
+  }
+
+  String _hostOf(String origin) {
+    final uri = Uri.tryParse(origin);
+    return uri?.host.isNotEmpty == true ? uri!.host : origin;
+  }
+
+  String _formatTime(int millis) {
+    if (millis <= 0) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
+    String pad(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${pad(dt.month)}-${pad(dt.day)} '
+        '${pad(dt.hour)}:${pad(dt.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(rssHistoryNotifierProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 480,
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 标题栏（对标原版 toolBar：阅读记录 + 清除菜单）
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '阅读记录',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: (state.records.isEmpty || state.isClearing)
+                        ? null
+                        : _confirmClear,
+                    child: Text(
+                      '清除',
+                      style: TextStyle(
+                        color: (state.records.isEmpty || state.isClearing)
+                            ? colorScheme.onSurfaceVariant
+                            : colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(child: _buildList(state)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildList(RssHistoryState state) {
+    // 注意：空态/加载分支不能用 Center（Align 在 loose 约束下会撑满
+    // 可用高度，导致对话框被拉至 maxHeight），用 Column(min) 收缩
+    if (state.isLoading || state.isClearing) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [CircularProgressIndicator()],
+        ),
+      );
+    }
+    if (state.records.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('暂无阅读记录', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+      );
+    }
+    return ListView.separated(
+      shrinkWrap: true,
+      itemCount: state.records.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
+      itemBuilder: (context, index) {
+        final record = state.records[index];
+        final time = _formatTime(record.readTime);
+        return InkWell(
+          onTap: () => _openRecord(record),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  record.title.isEmpty ? '(无标题)' : record.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  time.isEmpty
+                      ? _hostOf(record.origin)
+                      : '${_hostOf(record.origin)}  ·  $time',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

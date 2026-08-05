@@ -9,11 +9,11 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/bookshelf_manage_screen.dart';
 import 'package:flutter_legado/src/screens/remote_book_screen.dart';
-import 'package:flutter_legado/src/screens/rss_history_screen.dart';
+import 'package:flutter_legado/src/screens/rss_screen.dart';
 
 import '../mocks/mocks.dart';
 
-/// 近期新增三页面（书架管理/远程导入/RSS 历史）widget 深度测试
+/// 近期新增页面（书架管理/远程导入）与订阅主页入口 widget 深度测试
 ///
 /// 覆盖真实渲染分支：加载/空态/错误/列表/交互（勾选/全选/操作栏/导入反馈）。
 void main() {
@@ -184,8 +184,9 @@ void main() {
     });
   });
 
-  group('RssHistoryScreen', () {
-    testWidgets('渲染已读记录列表（标题/来源主机）', (tester) async {
+  group('RssScreen 阅读记录对话框', () {
+    testWidgets('历史入口打开阅读记录对话框并渲染记录', (tester) async {
+      when(() => mockApi.getRssSources()).thenAnswer((_) async => []);
       when(() => mockApi.rssListReadRecords(any())).thenAnswer((_) async => [
             {
               'origin': 'https://rss.example.com/feed',
@@ -194,33 +195,41 @@ void main() {
             },
           ]);
 
-      await tester.pumpWidget(wrap(const RssHistoryScreen()));
+      await tester.pumpWidget(wrap(const RssScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('RSS 历史'), findsOneWidget);
+      // 顶栏 4 入口（对标原版 main_rss.xml）
+      await tester.tap(find.byIcon(Icons.history));
+      await tester.pumpAndSettle();
+
+      expect(find.text('阅读记录'), findsOneWidget);
       expect(find.text('文章一'), findsOneWidget);
       expect(find.textContaining('rss.example.com'), findsOneWidget);
+      expect(find.text('清除'), findsOneWidget);
     });
 
-    testWidgets('空记录显示空态且清空按钮禁用', (tester) async {
+    testWidgets('空记录显示空态且清除禁用', (tester) async {
+      when(() => mockApi.getRssSources()).thenAnswer((_) async => []);
       when(() => mockApi.rssListReadRecords(any()))
           .thenAnswer((_) async => []);
 
-      await tester.pumpWidget(wrap(const RssHistoryScreen()));
+      await tester.pumpWidget(wrap(const RssScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('暂无阅读历史'), findsOneWidget);
-    });
-
-    testWidgets('加载失败显示错误视图', (tester) async {
-      when(() => mockApi.rssListReadRecords(any()))
-          .thenThrow(Exception('ffi'));
-
-      await tester.pumpWidget(wrap(const RssHistoryScreen()));
+      await tester.tap(find.byIcon(Icons.history));
       await tester.pumpAndSettle();
 
-      // ErrorView 含重试按钮
-      expect(find.text('重试'), findsOneWidget);
+      expect(find.text('暂无阅读记录'), findsOneWidget);
+      // 清除按钮禁用（TextButton onPressed null）
+      final clearButton = tester.widget<TextButton>(
+        find
+            .ancestor(
+              of: find.text('清除'),
+              matching: find.byType(TextButton),
+            )
+            .first,
+      );
+      expect(clearButton.onPressed, isNull);
     });
   });
 }
