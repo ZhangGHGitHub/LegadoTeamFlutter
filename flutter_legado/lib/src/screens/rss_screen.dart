@@ -172,22 +172,62 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             );
           }
 
+          // 「规则订阅」入口格常驻（对标原版 header 不随列表空态隐藏），
+          // 列表为空时网格仅含入口格 + 空态提示
+          final displaySources = _applySearch(state.filteredSources);
           if (state.isEmpty) {
-            // 安卓原版：纯灰字居中空状态
-            return const EmptyState(
-              icon: Icons.rss_feed,
-              title: '当前没有订阅源！',
-              simple: true,
+            return Column(
+              children: [
+                SizedBox(
+                  height: 120,
+                  child: GridView(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      childAspectRatio: 0.9,
+                    ),
+                    children: [_buildRuleSubEntry(context)],
+                  ),
+                ),
+                // 安卓原版：纯灰字居中空状态
+                const Expanded(
+                  child: EmptyState(
+                    icon: Icons.rss_feed,
+                    title: '当前没有订阅源！',
+                    simple: true,
+                  ),
+                ),
+              ],
             );
           }
 
-          // 分组/搜索过滤后为空：提示当前无订阅源
-          final displaySources = _applySearch(state.filteredSources);
+          // 分组/搜索过滤后为空：仅展示入口格
           if (displaySources.isEmpty) {
-            return const EmptyState(
-              icon: Icons.rss_feed,
-              title: '当前分组暂无订阅源',
-              simple: true,
+            return Column(
+              children: [
+                SizedBox(
+                  height: 120,
+                  child: GridView(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      childAspectRatio: 0.9,
+                    ),
+                    children: [_buildRuleSubEntry(context)],
+                  ),
+                ),
+                const Expanded(
+                  child: EmptyState(
+                    icon: Icons.rss_feed,
+                    title: '当前分组暂无订阅源',
+                    simple: true,
+                  ),
+                ),
+              ],
             );
           }
 
@@ -210,9 +250,12 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
                   ),
-                  itemCount: displaySources.length,
+                  itemCount: displaySources.length + 1,
                   itemBuilder: (context, index) {
-                    final source = displaySources[index];
+                    // 首格为「规则订阅」入口（对标原版 RssFragment
+                    // 列表 header item → RuleSubActivity）
+                    if (index == 0) return _buildRuleSubEntry(context);
+                    final source = displaySources[index - 1];
                     return _buildSourceItem(context, source);
                   },
                 );
@@ -220,6 +263,66 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// 「规则订阅」入口格（对标原版 RssFragment header：图标 + 文字，
+  /// 点击进入 RuleSubActivity 对应页）
+  Widget _buildRuleSubEntry(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return RepaintBoundary(
+      child: InkWell(
+        key: const ValueKey('rule_sub_entry'),
+        onTap: () => Navigator.pushNamed(context, AppRoutes.ruleSub),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: EdgeInsets.all(
+            Responsive.isCompact(MediaQuery.sizeOf(context).width) ? 12 : 16,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.subscriptions_outlined,
+                    size: 26,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '规则订阅',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

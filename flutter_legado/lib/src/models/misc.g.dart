@@ -406,38 +406,6 @@ Map<String, dynamic> _$$SearchKeywordImplToJson(_$SearchKeywordImpl instance) =>
       'lastUseTime': instance.lastUseTime,
     };
 
-_$RuleSubImpl _$$RuleSubImplFromJson(Map<String, dynamic> json) =>
-    _$RuleSubImpl(
-      id: (json['id'] as num?)?.toInt() ?? 0,
-      name: json['name'] as String? ?? '',
-      url: json['url'] as String? ?? '',
-      subType: (json['type'] as num?)?.toInt() ?? 0,
-      customOrder: (json['customOrder'] as num?)?.toInt() ?? 0,
-      autoUpdate: json['autoUpdate'] as bool? ?? false,
-      update: (json['update'] as num?)?.toInt() ?? 0,
-      updateInterval: (json['updateInterval'] as num?)?.toInt() ?? 0,
-      silentUpdate: json['silentUpdate'] as bool? ?? false,
-      js: json['js'] as String?,
-      showRule: json['showRule'] as String?,
-      sourceUrl: json['sourceUrl'] as String?,
-    );
-
-Map<String, dynamic> _$$RuleSubImplToJson(_$RuleSubImpl instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'name': instance.name,
-      'url': instance.url,
-      'type': instance.subType,
-      'customOrder': instance.customOrder,
-      'autoUpdate': instance.autoUpdate,
-      'update': instance.update,
-      'updateInterval': instance.updateInterval,
-      'silentUpdate': instance.silentUpdate,
-      'js': instance.js,
-      'showRule': instance.showRule,
-      'sourceUrl': instance.sourceUrl,
-    };
-
 _$TxtTocRuleImpl _$$TxtTocRuleImplFromJson(Map<String, dynamic> json) =>
     _$TxtTocRuleImpl(
       id: (json['id'] as num?)?.toInt() ?? 0,

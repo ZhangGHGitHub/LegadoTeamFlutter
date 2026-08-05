@@ -501,6 +501,45 @@ class SourceNotifier extends Notifier<SourceState> {
     }
   }
 
+  /// 为指定 URL 的书源追加分组（校验失效回写等场景）
+  ///
+  /// 与 [batchAddGroup] 的差异：操作显式传入的 [urls] 集合，
+  /// 不依赖批量选择状态，也不退出批量模式；已有该分组的书源跳过。
+  /// 单个书源持久化失败不中断整体（后续书源继续处理）。
+  Future<void> addGroupToUrls(Set<String> urls, String group) async {
+    final name = group.trim();
+    if (name.isEmpty || urls.isEmpty) return;
+    try {
+      final api = ref.read(bookApiProvider);
+      final newSources = List<BookSource>.of(state.sources);
+      for (final url in urls) {
+        final index =
+            newSources.indexWhere((s) => s.bookSourceUrl == url);
+        if (index == -1) continue;
+        final source = newSources[index];
+        final groups = (source.bookSourceGroup ?? '')
+            .split(',')
+            .map((g) => g.trim())
+            .where((g) => g.isNotEmpty)
+            .toList();
+        if (groups.contains(name)) continue;
+        groups.add(name);
+        final updated = source.copyWith(
+          bookSourceGroup: groups.join(','),
+        );
+        try {
+          await api.updateBookSource(updated);
+          newSources[index] = updated;
+        } catch (_) {
+          // 单源持久化失败不中断整体（校验副作用为尽力而为）
+        }
+      }
+      state = state.copyWith(sources: newSources);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+    }
+  }
+
   /// 导出选中的书源为 JSON
   Future<String> exportSelectedSources() async {
     return await backupService

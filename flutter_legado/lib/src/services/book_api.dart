@@ -901,4 +901,34 @@ abstract class BookApi {
 
   /// 导出全部日志为格式化文本（时间升序，64_000 字符截断，对齐 #543）
   Future<String> appLogExport();
+
+  // ========== 规则订阅（rule_sub FFI，Task #89） ==========
+
+  /// 获取规则订阅列表（按 customOrder 排序，对齐 Kotlin RuleSubDao.all）
+  ///
+  /// 每项字段：`id` / `name` / `url` / `type`（0 书源 / 1 订阅源 / 2 替换规则）/
+  /// `customOrder` / `autoUpdate` / `update`（最后更新时间戳）/
+  /// `updateInterval`（小时）/ `silentUpdate` / `js`? / `showRule`? / `sourceUrl`?。
+  Future<List<Map<String, dynamic>>> ruleSubList();
+
+  /// 新增/更新规则订阅（RuleSub JSON；id>0 且存在则更新，否则新增）
+  Future<bool> ruleSubSave({required String subJson});
+
+  /// 删除规则订阅，返回是否实际删除
+  Future<bool> ruleSubDelete({required int id});
+
+  /// 切换规则订阅启用状态，返回记录是否存在
+  Future<bool> ruleSubSetEnabled({required int id, required bool enabled});
+
+  /// 拖拽排序：按新顺序 ID 列表重写 customOrder（0 起）
+  Future<bool> ruleSubUpdateOrder({required List<int> ids});
+
+  /// 检查更新（返回检查结果 Map：
+  /// `id` / `url` / `name` / `dueForUpdate` / `hasUpdate` / `remoteVersion` / `error`）
+  Future<Map<String, dynamic>> ruleSubCheckUpdate({required int id});
+
+  /// 应用更新（返回应用结果 Map：
+  /// `id` / `url` / `success` / `itemsAdded` / `itemsUpdated` /
+  /// `itemsRemoved` / `totalItems` / `error`）
+  Future<Map<String, dynamic>> ruleSubApplyUpdate({required int id});
 }

@@ -1872,4 +1872,102 @@ class MockBookApi implements BookApi {
     final text = buffer.toString();
     return text.length > 64000 ? text.substring(0, 64000) : text;
   }
+
+  // ========== 规则订阅（Task #89） ==========
+
+  /// Mock 内存态订阅列表（自增 ID 分配，语义对齐 Rust rule_sub FFI）
+  final List<Map<String, dynamic>> _ruleSubs = [];
+  int _ruleSubNextId = 1;
+
+  @override
+  Future<List<Map<String, dynamic>>> ruleSubList() async {
+    final list = _ruleSubs.map((e) => Map<String, dynamic>.from(e)).toList()
+      ..sort((a, b) => (a['customOrder'] as int).compareTo(
+          b['customOrder'] as int));
+    return list;
+  }
+
+  @override
+  Future<bool> ruleSubSave({required String subJson}) async {
+    final dynamic decoded = jsonDecode(subJson);
+    if (decoded is! Map<String, dynamic>) return false;
+    final sub = Map<String, dynamic>.from(decoded);
+    final id = (sub['id'] as num?)?.toInt() ?? 0;
+    if (id > 0) {
+      final index = _ruleSubs.indexWhere((e) => e['id'] == id);
+      if (index >= 0) {
+        _ruleSubs[index] = sub;
+        return true;
+      }
+    }
+    sub['id'] = _ruleSubNextId++;
+    sub.putIfAbsent('customOrder', () => _ruleSubs.length);
+    _ruleSubs.add(sub);
+    return true;
+  }
+
+  @override
+  Future<bool> ruleSubDelete({required int id}) async {
+    final before = _ruleSubs.length;
+    _ruleSubs.removeWhere((e) => e['id'] == id);
+    return _ruleSubs.length < before;
+  }
+
+  @override
+  Future<bool> ruleSubSetEnabled({
+    required int id,
+    required bool enabled,
+  }) async {
+    final index = _ruleSubs.indexWhere((e) => e['id'] == id);
+    if (index < 0) return false;
+    _ruleSubs[index]['isEnabled'] = enabled;
+    return true;
+  }
+
+  @override
+  Future<bool> ruleSubUpdateOrder({required List<int> ids}) async {
+    for (var i = 0; i < ids.length; i++) {
+      final index = _ruleSubs.indexWhere((e) => e['id'] == ids[i]);
+      if (index >= 0) _ruleSubs[index]['customOrder'] = i;
+    }
+    return true;
+  }
+
+  @override
+  Future<Map<String, dynamic>> ruleSubCheckUpdate({required int id}) async {
+    final index = _ruleSubs.indexWhere((e) => e['id'] == id);
+    if (index < 0) {
+      return {'id': id, 'error': '订阅不存在'};
+    }
+    final sub = _ruleSubs[index];
+    // Mock 占位：无网络，始终返回无更新
+    return {
+      'id': id,
+      'url': sub['url'] ?? '',
+      'name': sub['name'] ?? '',
+      'dueForUpdate': true,
+      'hasUpdate': false,
+      'remoteVersion': sub['version'] ?? '',
+      'error': null,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> ruleSubApplyUpdate({required int id}) async {
+    final index = _ruleSubs.indexWhere((e) => e['id'] == id);
+    if (index < 0) {
+      return {'id': id, 'success': false, 'error': '订阅不存在'};
+    }
+    // Mock 占位：无网络，模拟应用成功但无条目变更
+    return {
+      'id': id,
+      'url': _ruleSubs[index]['url'] ?? '',
+      'success': true,
+      'itemsAdded': 0,
+      'itemsUpdated': 0,
+      'itemsRemoved': 0,
+      'totalItems': 0,
+      'error': null,
+    };
+  }
 }

@@ -10,6 +10,7 @@ export 'reading_stats_today.dart';
 export 'rss_article.dart';
 export 'rss_read_record_row.dart';
 export 'rss_source.dart';
+export 'rule_sub.dart';
 export 'search_result.dart';
 export 'source_match.dart';
 export 'rule/rule.dart';

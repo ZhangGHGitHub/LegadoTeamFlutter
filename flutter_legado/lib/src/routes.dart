@@ -35,6 +35,7 @@ import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_history_screen.dart';
 import 'screens/rss_source_debug_screen.dart';
 import 'screens/rss_screen.dart';
+import 'screens/rule_sub_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/source_screen.dart';
@@ -61,6 +62,7 @@ class AppRoutes {
   static const otherSettings = '/other_settings';
   static const cacheSettings = '/cache_settings';
   static const rss = '/rss';
+  static const ruleSub = '/rule_sub';
   static const audio = '/audio';
   static const bookInfo = '/book_info';
   static const editBookInfo = '/edit_book_info';
@@ -119,6 +121,7 @@ class AppRoutes {
         otherSettings: (_) => const OtherSettingsScreen(),
         cacheSettings: (_) => const CacheSettingsScreen(),
         rss: (_) => const RssScreen(),
+        ruleSub: (_) => const RuleSubScreen(),
         audio: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           // 路由参数规范化：优先接收 Book 对象

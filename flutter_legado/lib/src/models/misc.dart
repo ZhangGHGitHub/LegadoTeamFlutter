@@ -359,27 +359,8 @@ class SearchKeyword with _$SearchKeyword {
 
 // ─── RuleSub ──────────────────────────────────────────────
 
-/// 规则订阅
-@freezed
-class RuleSub with _$RuleSub {
-  const factory RuleSub({
-    @Default(0) int id,
-    @Default('') String name,
-    @Default('') String url,
-    @Default(0) @JsonKey(name: 'type') int subType,
-    @Default(0) @JsonKey(name: 'customOrder') int customOrder,
-    @Default(false) @JsonKey(name: 'autoUpdate') bool autoUpdate,
-    @Default(0) int update,
-    @Default(0) @JsonKey(name: 'updateInterval') int updateInterval,
-    @Default(false) @JsonKey(name: 'silentUpdate') bool silentUpdate,
-    String? js,
-    @JsonKey(name: 'showRule') String? showRule,
-    @JsonKey(name: 'sourceUrl') String? sourceUrl,
-  }) = _RuleSub;
-
-  factory RuleSub.fromJson(Map<String, dynamic> json) =>
-      _$RuleSubFromJson(json);
-}
+// RuleSub 已迁移至 rule_sub.dart（手写模型，对齐契约 §2.39
+// RuleSubRecord JSON：sub_type 字符串 / is_enabled / last_update 等）
 
 // ─── TxtTocRule ───────────────────────────────────────────
 

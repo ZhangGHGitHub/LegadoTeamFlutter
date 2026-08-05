@@ -8,6 +8,7 @@ import 'src/routes.dart';
 import 'src/theme/app_theme.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/crash_log_dialog.dart';
+import 'src/widgets/verification_code_listener.dart';
 
 /// Legado App 入口 Widget
 class LegadoApp extends ConsumerStatefulWidget {
@@ -67,11 +68,14 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       // （fontScale 为 null 表示跟随系统，不覆盖平台缩放）
       builder: (context, child) {
         final scale = themeState.fontScale;
-        if (scale == null) return child!;
+        // 全局验证码请求监听（对标原版 SourceVerificationHelp 全局监听，
+        // 书源 JS 挂起等待验证码时跨页面弹窗）
+        final wrapped = VerificationCodeListener(child: child!);
+        if (scale == null) return wrapped;
         return MediaQuery(
           data: MediaQuery.of(context)
               .copyWith(textScaler: TextScaler.linear(scale)),
-          child: child!,
+          child: wrapped,
         );
       },
       initialRoute: widget.initialRoute,

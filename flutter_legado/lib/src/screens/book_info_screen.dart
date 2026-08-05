@@ -243,7 +243,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        ?bgImage,
+        // 传统写法（null-aware 元素 ?bgImage 与 build_runner
+        // 内置 analyzer 版本不兼容，codegen 会报语法错）
+        if (bgImage != null) bgImage,
         // [审计修复 §3.3] 遮罩改用 colorScheme.scrim Token，
         // 透明度对齐原版 vw_bg #50000000 — Qoder
         ColoredBox(
@@ -555,7 +557,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               style: TextStyle(fontSize: 13, color: summaryColor),
             ),
           ),
-          ?action,
+          if (action != null) action,
         ],
       ),
     );

@@ -1923,6 +1923,54 @@ class RustApi implements BookApi {
     required String origin,
   }) =>
       bridge.highlightRuleFindEnabled(bookName: bookName, origin: origin);
+
+  // ========== 规则订阅（rule_sub FFI，Task #89） ==========
+
+  /// 获取规则订阅列表（按 customOrder 排序）
+  @override
+  Future<List<Map<String, dynamic>>> ruleSubList() async {
+    final json = await bridge.ruleSubList();
+    return _decodeList(json, 'ruleSubList')
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  /// 新增/更新规则订阅
+  @override
+  Future<bool> ruleSubSave({required String subJson}) =>
+      bridge.ruleSubSave(subJson: subJson);
+
+  /// 删除规则订阅
+  @override
+  Future<bool> ruleSubDelete({required int id}) =>
+      bridge.ruleSubDelete(id: id);
+
+  /// 切换规则订阅启用状态
+  @override
+  Future<bool> ruleSubSetEnabled({
+    required int id,
+    required bool enabled,
+  }) =>
+      bridge.ruleSubSetEnabled(id: id, enabled: enabled);
+
+  /// 拖拽排序：按新顺序 ID 列表重写 customOrder
+  @override
+  Future<bool> ruleSubUpdateOrder({required List<int> ids}) =>
+      bridge.ruleSubUpdateOrder(idsJson: jsonEncode(ids));
+
+  /// 检查更新（返回检查结果 Map）
+  @override
+  Future<Map<String, dynamic>> ruleSubCheckUpdate({required int id}) async {
+    final json = await bridge.ruleSubCheckUpdate(id: id);
+    return _decodeMap(json, 'ruleSubCheckUpdate');
+  }
+
+  /// 应用更新（返回应用结果 Map）
+  @override
+  Future<Map<String, dynamic>> ruleSubApplyUpdate({required int id}) async {
+    final json = await bridge.ruleSubApplyUpdate(id: id);
+    return _decodeMap(json, 'ruleSubApplyUpdate');
+  }
 }
 
 /// RustApi 调用异常

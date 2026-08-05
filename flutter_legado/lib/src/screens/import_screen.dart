@@ -13,8 +13,8 @@ import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
 import 'archive_import_dialog.dart';
 
-/// 支持的导入格式
-const _supportedFormats = ['epub', 'txt', 'mobi', 'pdf', 'umd'];
+/// 支持的导入格式（azw3/azw 为 KF8 MOBI，Rust LocalBook 已支持）
+const _supportedFormats = ['epub', 'txt', 'mobi', 'azw3', 'azw', 'pdf', 'umd'];
 
 /// 支持的压缩包格式
 const _archiveFormats = ['zip', 'rar', '7z'];

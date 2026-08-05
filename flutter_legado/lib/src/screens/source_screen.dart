@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../providers/source/source_notifier.dart';
+import '../providers/source_check/check_source_notifier.dart';
 import '../routes.dart';
 import '../services/source_import_service.dart' show SourcePreview;
 import '../theme/app_colors.dart';
@@ -30,6 +31,12 @@ class SourceScreen extends ConsumerStatefulWidget {
 class _SourceScreenState extends ConsumerState<SourceScreen> {
   /// 顶栏搜索框（对标原版 activity_book_source.xml 的 view_search）
   final _searchCtrl = TextEditingController();
+
+  /// 校验会话结束后的总结 SnackBar 是否已展示（防 build 重复触发）
+  bool _checkToastShown = false;
+
+  /// 上一帧的校验进行中状态（检测结束瞬间）
+  bool _checkingForToast = false;
 
   @override
   void initState() {
@@ -428,7 +435,95 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     }
 
     // 原版仅单一列表；分组/启用状态筛选均在顶栏分组菜单（无 Tab/Chip 行）
-    return _buildSourceList(context, state.filteredSources);
+    // 校验进行中/结束后顶部展示进度/结果横幅（对标原版 snackbar 持续进度）
+    final checkState = ref.watch(checkSourceNotifierProvider);
+    final showCheckBanner =
+        checkState.checking || (checkState.hasSession && !_checkToastShown);
+    final previousChecking = _checkingForToast;
+    _checkingForToast = checkState.checking;
+    if (previousChecking && !checkState.checking && checkState.hasSession) {
+      _checkToastShown = true;
+      final invalid = checkState.invalidCount;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(checkState.cancelled
+              ? '已取消校验（完成 $invalid 个失效）'
+              : (invalid > 0
+                  ? '校验完成：$invalid 个失效源已归入「失效」分组'
+                  : '校验完成：全部书源可用')),
+        ));
+      });
+    }
+
+    return Column(
+      children: [
+        if (showCheckBanner) _buildCheckBanner(checkState),
+        Expanded(child: _buildSourceList(context, state.filteredSources)),
+      ],
+    );
+  }
+
+  /// 校验进度/结果横幅（对标原版持续 Snackbar：进度 n/total + 当前源名）
+  Widget _buildCheckBanner(CheckSourceState checkState) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final checking = checkState.checking;
+    return Material(
+      color: checking
+          ? colorScheme.primary.withValues(alpha: 0.08)
+          : colorScheme.surfaceContainerHighest,
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              if (checking) const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              if (checking) const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  checking
+                      ? '校验中 ${checkState.done}/${checkState.total}：'
+                          '${checkState.currentName}'
+                      : '校验结束：${checkState.done}/${checkState.total}'
+                          '，失效 ${checkState.invalidCount} 个',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              if (checking)
+                TextButton(
+                  onPressed: () => ref
+                      .read(checkSourceNotifierProvider.notifier)
+                      .cancel(),
+                  child: const Text('取消'),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: '关闭校验结果',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    setState(() => _checkToastShown = false);
+                    ref
+                        .read(checkSourceNotifierProvider.notifier)
+                        .clearMessages();
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSourceList(BuildContext context, List<BookSource> sources) {
@@ -460,6 +555,9 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final hasExplore =
         source.exploreUrl != null && source.exploreUrl!.isNotEmpty;
+    // 校验结果消息（对标原版列表项 checkSourceMessage：绿=通过，红=失效）
+    final checkMessage =
+        ref.watch(checkSourceNotifierProvider).messages[source.bookSourceUrl];
     return InkWell(
       onTap: () {
         Navigator.of(context).push(
@@ -480,13 +578,31 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            // 源名（对标 cb_book_source 文本 16sp）
+            // 源名（对标 cb_book_source 文本 16sp）+ 校验消息副标题
             Expanded(
-              child: Text(
-                source.bookSourceName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    source.bookSourceName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        TextStyle(fontSize: 16, color: colorScheme.onSurface),
+                  ),
+                  if (checkMessage != null)
+                    Text(
+                      checkMessage.text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: checkMessage.ok
+                            ? AppColors.iosGreenLight
+                            : AppColors.iosRedLight,
+                      ),
+                    ),
+                ],
               ),
             ),
             // 启用开关（对标 swt_enabled）
@@ -547,6 +663,12 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   Widget _buildBatchSourceItem(
       BuildContext context, BookSource source, SourceState state) {
     final selected = state.isSelected(source.bookSourceUrl);
+    // 校验结果消息（对标原版列表项 checkSourceMessage：绿=通过，红=失效）
+    final checkMessage =
+        ref.watch(checkSourceNotifierProvider).messages[source.bookSourceUrl];
+    final checkColor = checkMessage == null
+        ? null
+        : (checkMessage.ok ? AppColors.iosGreenLight : AppColors.iosRedLight);
     return ListTile(
       leading: Checkbox(
         value: selected,
@@ -559,9 +681,25 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        source.bookSourceGroup ?? '未分组',
-        style: Theme.of(context).textTheme.bodySmall,
+      subtitle: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: source.bookSourceGroup ?? '未分组',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (checkMessage != null)
+              TextSpan(
+                text: '\n${checkMessage.text}',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: checkColor),
+              ),
+          ],
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       ),
       onTap: () => ref
           .read(sourceNotifierProvider.notifier)
@@ -965,8 +1103,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         await _shareBatchSelected(context);
         break;
       case 'check':
-        // 校验需网络请求链路，尚未移植
-        _todo(context, '校验所选');
+        await _startCheck(context);
         break;
       case 'select_range':
         _todo(context, '选中所选区间');
@@ -990,6 +1127,44 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         }
         break;
     }
+  }
+
+  /// 校验所选书源（对标原版 checkSource：关键词弹窗→校验选中源）
+  Future<void> _startCheck(BuildContext context) async {
+    final state = ref.read(sourceNotifierProvider);
+    if (state.selectedCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先选择要校验的书源')),
+      );
+      return;
+    }
+    final checkNotifier = ref.read(checkSourceNotifierProvider.notifier);
+    if (ref.read(checkSourceNotifierProvider).checking) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('校验进行中，请先取消当前校验')),
+      );
+      return;
+    }
+    // 预填上次校验关键词（对标原版 CheckSource.keyword 持久化）
+    final initial = await checkNotifier.loadKeyword();
+    if (!context.mounted) return;
+    // controller 由对话框内容组件自持（随子树卸载释放）
+    final keyword = await showDialog<String>(
+      context: context,
+      builder: (_) => _TextPromptDialog(
+        title: '校验所选书源',
+        hintText: '输入校验关键词',
+        confirmLabel: '开始校验',
+        autofocus: true,
+        initialText: initial,
+      ),
+    );
+    if (keyword == null || !context.mounted) return;
+    // 空关键词交给 Rust 侧使用书源自带校验关键词
+    await checkNotifier.start(
+      sourceUrls: state.selectedUrls.toList(),
+      keyword: keyword,
+    );
   }
 
   /// 添加分组输入框（对标原版 addGroup 弹窗）
@@ -1272,6 +1447,9 @@ class _TextPromptDialog extends StatefulWidget {
   final String confirmLabel;
   final bool autofocus;
 
+  /// 预填文本（如校验关键词持久化回显）
+  final String? initialText;
+
   /// 为 true 时确认按钮在输入为空时不关闭对话框
   final bool requireNonEmpty;
 
@@ -1280,6 +1458,7 @@ class _TextPromptDialog extends StatefulWidget {
     required this.hintText,
     required this.confirmLabel,
     this.autofocus = false,
+    this.initialText,
     this.requireNonEmpty = false,
   });
 
@@ -1288,7 +1467,8 @@ class _TextPromptDialog extends StatefulWidget {
 }
 
 class _TextPromptDialogState extends State<_TextPromptDialog> {
-  final TextEditingController _controller = TextEditingController();
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialText);
 
   @override
   void dispose() {
