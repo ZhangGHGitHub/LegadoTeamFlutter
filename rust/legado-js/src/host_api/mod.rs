@@ -5,6 +5,8 @@
 
 #[cfg(feature = "quickjs")]
 pub mod archive_utils;
+#[cfg(feature = "quickjs")]
+pub mod asymmetric_crypto;
 pub mod chinese_utils;
 pub mod concurrency_api;
 pub mod config_api;

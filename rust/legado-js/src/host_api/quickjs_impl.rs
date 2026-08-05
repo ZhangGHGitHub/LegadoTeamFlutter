@@ -26,7 +26,8 @@
 use legado_core::LegadoError;
 
 use crate::host_api::{
-    archive_utils, chinese_utils, concurrency_api, config_api, cookie_store, crypto_api, encoding, file_utils, font_api, html_format, json_utils, misc_api, network,
+    archive_utils, asymmetric_crypto, chinese_utils, concurrency_api, config_api, cookie_store,
+    crypto_api, encoding, file_utils, font_api, html_format, json_utils, misc_api, network,
     platform, regex_utils, register::mount_dual, string_utils, time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
@@ -1070,6 +1071,42 @@ fn register_crypto_apis<'js>(
             |transformation: String, key: String, iv: Opt<String>| -> String {
                 crypto_api::create_symmetric_crypto(&transformation, &key, iv.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // createAsymmetricCrypto(transformation) -> RSA 对象
+    // 对应 Kotlin JsEncodeUtils.createAsymmetricCrypto（AsymmetricCrypto）
+    // 返回对象含 setPublicKey/setPrivateKey/encrypt/encryptHex/encryptBase64/decrypt/decryptStr
+    mount_dual(
+        java,
+        globals,
+        "createAsymmetricCrypto",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             transformation: String|
+             -> rquickjs::Result<rquickjs::Object<'js>> {
+                asymmetric_crypto::build_asymmetric_crypto_object(ctx, &transformation)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // createSign(algorithm) -> 签名对象
+    // 对应 Kotlin JsEncodeUtils.createSign（Sign / hutool Sign）
+    // 返回对象含 setPublicKey/setPrivateKey/sign/signHex/signBase64/verify
+    mount_dual(
+        java,
+        globals,
+        "createSign",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             algorithm: String|
+             -> rquickjs::Result<rquickjs::Object<'js>> {
+                asymmetric_crypto::build_sign_object(ctx, &algorithm)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
