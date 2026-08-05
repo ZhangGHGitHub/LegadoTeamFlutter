@@ -301,6 +301,29 @@ class RustApi implements BookApi {
   @override
   Future<void> cancelCheckSources() => bridge.sourceCheckCancel();
 
+  // ========== 验证码交互通道（Task #90） ==========
+
+  /// 订阅验证码请求事件流（长期存活）
+  ///
+  /// 事件 Map 字段见 [BookApi.verificationRequestStream]。
+  /// 订阅时 Rust 侧先回放当前进行中的请求。
+  @override
+  Stream<Map<String, dynamic>> verificationRequestStream() {
+    return bridge
+        .verificationRequestStream()
+        .map((item) => _decodeMap(item, 'verificationRequestStream'));
+  }
+
+  /// 提交验证码结果，唤醒 JS 等待方（对齐 Kotlin `setResult`）
+  @override
+  Future<bool> submitVerificationResult(String key, String code) =>
+      bridge.verificationSubmit(key: key, code: code);
+
+  /// 取消验证码请求（对齐 Kotlin `checkResult`：以空结果唤醒等待方）
+  @override
+  Future<bool> cancelVerificationRequest(String key) =>
+      bridge.verificationCancel(key: key);
+
   // ========== 搜索操作 ==========
 
   /// 搜索书籍

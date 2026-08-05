@@ -5,15 +5,23 @@
 //!
 //! # 实现策略
 //!
-//! 需要平台能力的 API 统一返回**结构化 JSON 桥接载荷**，
-//! 由 Flutter / 平台侧拦截并真正执行（与 `openVideoPlayer` 相同模式）：
-//! - `webView` → `{"action":"webView","html":...,"url":...,"js":...}`
-//! - `webViewGetSource` → `{"action":"webViewGetSource",...,"sourceRegex":...}`
-//! - `startBrowser` → `{"action":"startBrowser","url":...,"title":...}`
-//! - `openUrl` → `{"action":"openUrl","url":...,"mimeType":...}`
-//! - `getVerificationCode` → `{"action":"getVerificationCode","imageUrl":...}`
+//! 需要平台能力的 API 分两类：
 //!
-//! 这样书源 JS 调用不再得到纯错误字符串，而是可被上层消费的结构化请求。
+//! 1. **一次性平台动作**（webView / openUrl 等）：返回结构化 JSON 桥接载荷，
+//!    由 Flutter / 平台侧拦截并真正执行（与 `openVideoPlayer` 相同模式）：
+//!    - `webView` → `{"action":"webView","html":...,"url":...,"js":...}`
+//!    - `webViewGetSource` → `{"action":"webViewGetSource",...,"sourceRegex":...}`
+//!    - `startBrowser` → `{"action":"startBrowser","url":...,"title":...}`
+//!    - `openUrl` → `{"action":"openUrl","url":...,"mimeType":...}`
+//!
+//! 2. **需要挂起等待用户交互的 API**（验证码）：接入全局验证码交互通道
+//!    （`legado_core::verification_channel`，Task #90）：JS 侧阻塞挂起 →
+//!    FFI 事件流推送请求 → UI 弹验证码对话框 → 用户输入回传唤醒。
+//!    对齐 Kotlin `SourceVerificationHelp.getVerificationResult` 语义。
+
+use legado_core::verification_channel;
+
+use super::current_source;
 
 const NOT_SUPPORTED: &str = "[ERROR] This API is not supported in Rust runtime";
 
@@ -118,23 +126,51 @@ pub fn toast(msg: &str) -> String {
     String::new()
 }
 
-/// getVerificationCode(imageUrl) → 结构化桥接载荷
+/// getVerificationCode(imageUrl) — 图片验证码交互（阻塞等待用户输入）
 ///
 /// 对应 Kotlin: `getVerificationCode(imageUrl: String): String`
+/// （内部 `SourceVerificationHelp.getVerificationResult(source, imageUrl, "", false)`）
 ///
-/// 显示人机验证页面（验证码/滑块等），需要 WebView + 用户交互。
-/// Rust 无头运行时返回桥接载荷，由 Flutter 侧弹出验证对话框。
+/// 阻塞当前 JS 工作线程（默认超时 5 分钟，对齐 Kotlin），
+/// 经全局验证码通道挂起等待 UI 侧提交结果：
+/// - 用户提交非空验证码 → 返回验证码字符串
+/// - 取消 / 空结果 / 超时 → 返回 `[ERROR] ...`（对齐 Kotlin 抛错后的规则失败表现）
 ///
-/// 返回 JSON：
-/// ```json
-/// {"action":"getVerificationCode","imageUrl":"..."}
-/// ```
+/// 书源标识取自当前线程上下文（[`current_source`]，对齐 Kotlin `getSource()`）。
 pub fn get_verification_code(image_url: &str) -> String {
-    serde_json::json!({
-        "action": "getVerificationCode",
-        "imageUrl": image_url,
-    })
-    .to_string()
+    let source_url = current_source::current_source_tag().unwrap_or_default();
+    match verification_channel::request_verification_code(
+        &source_url,
+        "",
+        image_url,
+        "",
+        false,
+    ) {
+        Ok(code) => code,
+        Err(e) => format!("[ERROR] {e}"),
+    }
+}
+
+/// startBrowserAwait(url, title) — 浏览器验证降级实现
+///
+/// 对应 Kotlin: `startBrowserAwait(url, title, refetchAfterSuccess, html)`
+/// （内部 `getVerificationResult(source, url, title, useBrowser = true)`）
+///
+/// 桌面端无内置浏览器，useBrowser 模式一律降级为图片验证码流程：
+/// 把传入 url 作为验证资源地址经验证码通道挂起等待用户输入，
+/// 返回验证码字符串（或 `[ERROR] ...`）。
+pub fn start_browser_await(url: &str, title: &str) -> String {
+    let source_url = current_source::current_source_tag().unwrap_or_default();
+    match verification_channel::request_verification_code(
+        &source_url,
+        "",
+        url,
+        title,
+        false,
+    ) {
+        Ok(code) => code,
+        Err(e) => format!("[ERROR] {e}"),
+    }
 }
 
 /// 获取 Android ID — 需要 Android Context
@@ -226,11 +262,62 @@ mod tests {
     }
 
     #[test]
-    fn test_get_verification_code_bridge_payload() {
-        let payload = get_verification_code("http://img.com/captcha.png");
-        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
-        assert_eq!(parsed["action"], "getVerificationCode");
-        assert_eq!(parsed["imageUrl"], "http://img.com/captcha.png");
+    fn test_get_verification_code_blocks_until_submit() {
+        use std::time::{Duration, Instant};
+
+        let image_url = "http://img.com/captcha-platform-test.png";
+        // UI 侧：订阅验证码请求事件
+        let rx = verification_channel::verification_manager().subscribe();
+
+        // JS 侧：后台线程阻塞等待（模拟 JS 工作线程）
+        let url = image_url.to_string();
+        let worker = std::thread::spawn(move || get_verification_code(&url));
+
+        // 定位本次请求事件（全局通道可能存在其他测试的请求，按 imageUrl 过滤）
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut key = None;
+        while Instant::now() < deadline {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(req) if req.image_url == image_url => {
+                    key = Some(req.key);
+                    break;
+                }
+                Ok(_) => continue,
+                Err(_) => continue,
+            }
+        }
+        let key = key.expect("应收到验证码请求事件");
+        assert!(verification_channel::submit_verification_result(&key, "8888"));
+        assert_eq!(worker.join().unwrap(), "8888");
+    }
+
+    #[test]
+    fn test_start_browser_await_degrades_to_image_channel() {
+        use std::time::{Duration, Instant};
+
+        let url = "http://verify.example.com/browser-degrade-test";
+        let rx = verification_channel::verification_manager().subscribe();
+
+        let u = url.to_string();
+        let worker = std::thread::spawn(move || start_browser_await(&u, "人机验证"));
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut key = None;
+        while Instant::now() < deadline {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(req) if req.image_url == url => {
+                    assert_eq!(req.title, "人机验证");
+                    assert!(!req.use_browser, "浏览器模式应降级为图片验证码");
+                    key = Some(req.key);
+                    break;
+                }
+                Ok(_) => continue,
+                Err(_) => continue,
+            }
+        }
+        let key = key.expect("应收到降级验证请求事件");
+        assert!(verification_channel::submit_verification_result(&key, "ok-code"));
+        assert_eq!(worker.join().unwrap(), "ok-code");
     }
 
     #[test]

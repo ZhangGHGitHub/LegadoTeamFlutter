@@ -228,7 +228,9 @@ mod tests {
 
         let loaded = persistence.load_all();
         assert!(
-            loaded.iter().any(|(tag, c)| tag == "roundtrip.com" && c == "a=1; b=2"),
+            loaded
+                .iter()
+                .any(|(tag, c)| tag == "roundtrip.com" && c == "a=1; b=2"),
             "save 后 load_all 应包含写入条目"
         );
 

@@ -491,6 +491,25 @@ class MockBookApi implements BookApi {
     // Mock 占位：无后台任务，无需取消
   }
 
+  // ========== 验证码交互通道（Task #90） ==========
+
+  @override
+  Stream<Map<String, dynamic>> verificationRequestStream() async* {
+    // Mock 占位：无 JS 引擎，不会产生验证码请求
+  }
+
+  @override
+  Future<bool> submitVerificationResult(String key, String code) async {
+    // Mock 占位：无进行中的请求，返回未命中
+    return false;
+  }
+
+  @override
+  Future<bool> cancelVerificationRequest(String key) async {
+    // Mock 占位：无进行中的请求，返回未命中
+    return false;
+  }
+
   // ========== 搜索操作 ==========
 
   @override

@@ -124,6 +124,36 @@ Stream<String> sourceCheckStream({
 Future<void> sourceCheckCancel() =>
     RustLib.instance.api.crateFfiFfiSourceCheckCancel();
 
+/// 订阅验证码请求事件流（长期存活，Stream<String>）
+///
+/// 书源 JS 经 `getVerificationCode` 钩子挂起等待时，每个请求推送
+/// 一条事件 JSON：`key` / `source_url` / `source_name` / `image_url` /
+/// `title` / `use_browser`（桌面端恒 false，浏览器模式已降级） /
+/// `created_at_ms`。订阅时先回放当前进行中的请求。
+/// UI 拿到事件后弹验证码对话框，用户输入经 [`verification_submit`]
+/// 回传；关闭对话框调 [`verification_cancel`]。流在 sink 关闭后结束。
+///
+/// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
+Stream<String> verificationRequestStream() =>
+    RustLib.instance.api.crateFfiFfiVerificationRequestStream();
+
+/// 提交验证码结果，唤醒 JS 等待方（对齐 Kotlin `setResult`）
+///
+/// `key` — 请求事件中的 resultKey；`code` — 用户输入的验证码。
+/// 返回是否命中进行中的请求。
+Future<bool> verificationSubmit({required String key, required String code}) =>
+    RustLib.instance.api.crateFfiFfiVerificationSubmit(key: key, code: code);
+
+/// 取消验证码请求（对齐 Kotlin `checkResult`：UI 关闭对话框未提交）
+///
+/// 以空结果唤醒等待方（等待侧报「验证结果为空」，对齐 Kotlin 语义）。
+Future<bool> verificationCancel({required String key}) =>
+    RustLib.instance.api.crateFfiFfiVerificationCancel(key: key);
+
+/// 当前进行中的验证码请求列表（JSON 数组，供拉取式消费/调试）
+Future<String> verificationPending() =>
+    RustLib.instance.api.crateFfiFfiVerificationPending();
+
 /// 判定书源登录 UI 是否为 V2 动态状态协议
 ///
 /// `source_json` — BookSource JSON

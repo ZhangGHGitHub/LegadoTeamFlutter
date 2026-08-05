@@ -239,6 +239,19 @@ impl JsSourceEngine {
         name: &str,
         args: &[(&str, JsValue)],
     ) -> LegadoResult<Option<String>> {
+        // 绑定当前书源上下文（供 getVerificationCode 等宿主钩子识别书源，
+        // 对齐 Kotlin JsExtensions.getSource()），结束后恢复原值
+        let tag = self.config.source_url.clone();
+        crate::host_api::current_source::with_current_source_tag(&tag, || {
+            self.call_function_inner(name, args)
+        })
+    }
+
+    fn call_function_inner(
+        &mut self,
+        name: &str,
+        args: &[(&str, JsValue)],
+    ) -> LegadoResult<Option<String>> {
         if self.config.main_js.is_empty() {
             return Err(LegadoError::JsEngine("mainJs 为空，非 JS 源".to_string()));
         }

@@ -10,6 +10,7 @@ pub mod concurrency_api;
 pub mod config_api;
 pub mod cookie_store;
 pub mod crypto_api;
+pub mod current_source;
 pub mod encoding;
 pub mod env;
 pub mod file_utils;

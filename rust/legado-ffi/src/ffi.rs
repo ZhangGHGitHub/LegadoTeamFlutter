@@ -240,13 +240,57 @@ pub mod ffi {
         Ok(())
     }
 
+    // ─── 验证码交互通道（Task #90，加法式新增） ───────────────
+
+    /// 订阅验证码请求事件流（长期存活，Stream<String>）
+    ///
+    /// 书源 JS 经 `getVerificationCode` 钩子挂起等待时，每个请求推送
+    /// 一条事件 JSON：`key` / `source_url` / `source_name` / `image_url` /
+    /// `title` / `use_browser`（桌面端恒 false，浏览器模式已降级） /
+    /// `created_at_ms`。订阅时先回放当前进行中的请求。
+    /// UI 拿到事件后弹验证码对话框，用户输入经 [`verification_submit`]
+    /// 回传；关闭对话框调 [`verification_cancel`]。流在 sink 关闭后结束。
+    ///
+    /// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
+    pub async fn verification_request_stream(
+        sink: StreamSink<String>,
+    ) -> Result<(), BridgeError> {
+        crate::api::verification_api::run_verification_request_stream(|event| {
+            sink.add(event).map_err(|e| e.to_string())
+        })
+        .await;
+        Ok(())
+    }
+
+    /// 提交验证码结果，唤醒 JS 等待方（对齐 Kotlin `setResult`）
+    ///
+    /// `key` — 请求事件中的 resultKey；`code` — 用户输入的验证码。
+    /// 返回是否命中进行中的请求。
+    pub fn verification_submit(key: String, code: String) -> Result<bool, BridgeError> {
+        Ok(crate::api::verification_api::submit_verification_result(&key, &code))
+    }
+
+    /// 取消验证码请求（对齐 Kotlin `checkResult`：UI 关闭对话框未提交）
+    ///
+    /// 以空结果唤醒等待方（等待侧报「验证结果为空」，对齐 Kotlin 语义）。
+    pub fn verification_cancel(key: String) -> Result<bool, BridgeError> {
+        Ok(crate::api::verification_api::cancel_verification_request(&key))
+    }
+
+    /// 当前进行中的验证码请求列表（JSON 数组，供拉取式消费/调试）
+    pub fn verification_pending() -> Result<String, BridgeError> {
+        Ok(crate::api::verification_api::pending_requests_json())
+    }
+
     // ─── 登录 UI V2 动态状态协议（#402/#488，加法式新增） ─────────
 
     /// 判定书源登录 UI 是否为 V2 动态状态协议
     ///
     /// `source_json` — BookSource JSON
     pub fn source_is_login_ui_v2(source_json: String) -> Result<bool, BridgeError> {
-        Ok(crate::api::source_login_v2_api::is_login_ui_v2(&source_json)?)
+        Ok(crate::api::source_login_v2_api::is_login_ui_v2(
+            &source_json,
+        )?)
     }
 
     /// 执行 loginUi v2 脚本，返回动态 UI 描述 JSON（`{"rows":[...]}`）
@@ -1169,7 +1213,8 @@ pub mod ffi {
     /// 列出 WebDAV 远程目录（JSON 数组）
     pub fn webdav_list_dir(config_json: String, path: String) -> Result<String, BridgeError> {
         Ok(crate::api::webdav_api::webdav_list_dir(
-            &config_json, &path,
+            &config_json,
+            &path,
         )?)
     }
 
@@ -1186,7 +1231,8 @@ pub mod ffi {
     /// 从 WebDAV 下载文件
     pub fn webdav_download(config_json: String, path: String) -> Result<String, BridgeError> {
         Ok(crate::api::webdav_api::webdav_download(
-            &config_json, &path,
+            &config_json,
+            &path,
         )?)
     }
 
@@ -1322,7 +1368,7 @@ pub mod ffi {
     // ─── 书籍导出 ─────────────────────────────────────
 
     /// 导出书籍（返回 ExportResult JSON）
-    /// 
+    ///
     /// # 参数
     /// - `book_url`: 书籍 URL
     /// - `format`: 导出格式（txt/epub/html/pdf）
@@ -1332,23 +1378,13 @@ pub mod ffi {
         format: String,
         include_toc: bool,
     ) -> Result<String, BridgeError> {
-        let result = crate::api::book_export::export_book(
-            &book_url,
-            &format,
-            include_toc,
-        )?;
+        let result = crate::api::book_export::export_book(&book_url, &format, include_toc)?;
         to_json(&result)
     }
 
     /// 获取导出预览信息（返回 ExportResult JSON）
-    pub fn book_export_info(
-        book_url: String,
-        format: String,
-    ) -> Result<String, BridgeError> {
-        let result = crate::api::book_export::export_info(
-            &book_url,
-            &format,
-        )?;
+    pub fn book_export_info(book_url: String, format: String) -> Result<String, BridgeError> {
+        let result = crate::api::book_export::export_info(&book_url, &format)?;
         to_json(&result)
     }
 
@@ -1366,7 +1402,8 @@ pub mod ffi {
         output_dir: String,
         password: Option<String>,
     ) -> Result<String, BridgeError> {
-        let result = crate::api::archive_import_api::import_rar_file(&rar_path, &output_dir, password);
+        let result =
+            crate::api::archive_import_api::import_rar_file(&rar_path, &output_dir, password);
         to_json(&result)
     }
 
@@ -1428,7 +1465,11 @@ pub mod ffi {
         body_base64: String,
         headers_json: Option<String>,
     ) -> Result<String, BridgeError> {
-        Ok(crate::api::quic_api::quinn_post(url, body_base64, headers_json)?)
+        Ok(crate::api::quic_api::quinn_post(
+            url,
+            body_base64,
+            headers_json,
+        )?)
     }
 
     /// QUIC 性能测试（返回 PerformanceMetrics JSON）
@@ -1590,7 +1631,9 @@ pub mod ffi {
 
     /// 按书籍删除全部高亮记录，返回删除数量
     pub fn highlight_delete_by_book(book_url: String) -> Result<i64, BridgeError> {
-        Ok(crate::api::highlight_api::highlight_delete_by_book(&book_url)?)
+        Ok(crate::api::highlight_api::highlight_delete_by_book(
+            &book_url,
+        )?)
     }
 
     /// 按书籍获取高亮列表（BookHighlight 数组 JSON）
@@ -1604,8 +1647,7 @@ pub mod ffi {
         book_url: String,
         chapter_index: i32,
     ) -> Result<String, BridgeError> {
-        let list =
-            crate::api::highlight_api::highlight_list_by_chapter(&book_url, chapter_index)?;
+        let list = crate::api::highlight_api::highlight_list_by_chapter(&book_url, chapter_index)?;
         to_json(&list)
     }
 
@@ -1673,7 +1715,9 @@ pub mod ffi {
     ///
     /// `content` — 完整 JS 书源脚本文本；需 quickjs 构建，否则返回错误
     pub fn js_source_extract(content: String) -> Result<String, BridgeError> {
-        Ok(crate::api::js_source_config_api::js_source_extract(&content)?)
+        Ok(crate::api::js_source_config_api::js_source_extract(
+            &content,
+        )?)
     }
 
     /// JS 语法检查（#479，返回 SyntaxCheckResult JSON：valid/message/line）
@@ -1681,7 +1725,9 @@ pub mod ffi {
     /// `content` — 待检查的 JS 脚本文本；quickjs 构建下只编译不执行，
     /// 非 quickjs 构建降级为括号平衡基础检查
     pub fn js_source_syntax_check(content: String) -> Result<String, BridgeError> {
-        Ok(crate::api::js_source_config_api::js_source_syntax_check(&content)?)
+        Ok(crate::api::js_source_config_api::js_source_syntax_check(
+            &content,
+        )?)
     }
 
     /// 写回顶层配置对象的 lastUpdateTime（#208/#515，返回替换后脚本文本）
@@ -1692,9 +1738,7 @@ pub mod ffi {
         content: String,
         stamp: i64,
     ) -> Result<String, BridgeError> {
-        Ok(
-            crate::api::js_source_config_api::js_source_stamp_last_update_time(&content, stamp)?,
-        )
+        Ok(crate::api::js_source_config_api::js_source_stamp_last_update_time(&content, stamp)?)
     }
 
     // ─── 应用日志（Task #79，对齐 Kotlin AppLog + 上游 #543 导出）──────

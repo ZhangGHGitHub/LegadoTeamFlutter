@@ -135,11 +135,16 @@ mod quickjs_impl {
                 .pool
                 .get_or_create(&self.source_tag)
                 .map_err(|e| format!("JS 引擎获取/创建失败: {e}"))?;
-            let guard = engine
-                .lock()
-                .map_err(|e| format!("JS 引擎加锁失败: {e}"))?;
-            // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
-            legado_js::JsEngine::eval(&*guard, js_code).map_err(|e| e.to_string())
+            let guard = engine.lock().map_err(|e| format!("JS 引擎加锁失败: {e}"))?;
+            // 绑定当前书源上下文（供 getVerificationCode 等宿主钩子识别书源，
+            // 对齐 Kotlin JsExtensions.getSource()），eval 结束后恢复
+            legado_js::host_api::current_source::with_current_source_tag(
+                &self.source_tag,
+                || {
+                    // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
+                    legado_js::JsEngine::eval(&*guard, js_code).map_err(|e| e.to_string())
+                },
+            )
         }
     }
 }
@@ -192,7 +197,9 @@ mod tests {
             "http://example.com".to_string(),
             "concat_source",
         );
-        let result = analyzer.get_string("@js:'legado' + '-' + 'js'").unwrap_or_default();
+        let result = analyzer
+            .get_string("@js:'legado' + '-' + 'js'")
+            .unwrap_or_default();
         assert_eq!(result, "legado-js");
     }
 

@@ -275,7 +275,7 @@ pub extern "C" fn ffi_source_export() -> *mut c_char {
     to_ffi_response(catch_unwind(crate::api::source::export_sources))
 }
 
-// ─── 书源校验 FFI 函数（Task #87，加法式新增） ──────────────────────
+// ─── 书源校验 FFI 函数（Task #87，加法式新增） ──────────────────────────
 
 /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
 ///
@@ -340,6 +340,44 @@ pub extern "C" fn ffi_source_check_cancel() {
     let _ = catch_unwind(|| {
         crate::api::source_check_api::cancel_check_sources();
     });
+}
+
+// ─── 验证码交互通道 FFI 函数（Task #90，加法式新增） ─────────────────────
+
+/// 提交验证码结果，唤醒 JS 等待方（对齐 Kotlin `setResult`）
+///
+/// 返回 `{"code":0,"data":true/false}`（是否命中进行中的请求）。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_verification_submit(
+    key: *const c_char,
+    code: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let key = c_char_to_str(key)?;
+        let code = c_char_to_str(code)?;
+        Ok::<_, LegadoError>(crate::api::verification_api::submit_verification_result(
+            key, code,
+        ))
+    }))
+}
+
+/// 取消验证码请求（对齐 Kotlin `checkResult`：UI 关闭对话框未提交）
+///
+/// 返回 `{"code":0,"data":true/false}`（是否命中进行中的请求）。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_verification_cancel(key: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let key = c_char_to_str(key)?;
+        Ok::<_, LegadoError>(crate::api::verification_api::cancel_verification_request(key))
+    }))
+}
+
+/// 当前进行中的验证码请求列表（JSON 数组，供 C ABI 消费者拉取）
+#[no_mangle]
+pub extern "C" fn ffi_verification_pending() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        Ok::<_, LegadoError>(crate::api::verification_api::pending_requests_json())
+    }))
 }
 
 // ─── 搜索 FFI 函数 ──────────────────────────────────────────
@@ -416,16 +454,12 @@ pub unsafe extern "C" fn ffi_search_multi_stream(
         let q = c_char_to_str(query)?.to_string();
         let urls = c_char_to_str(source_urls_json)?.to_string();
 
-        crate::runtime::block_on(crate::api::search::run_multi_stream(
-            q,
-            urls,
-            |batch| {
-                if let Ok(cs) = CString::new(batch) {
-                    unsafe { callback(cs.as_ptr(), user_data) };
-                }
-                Ok::<(), String>(())
-            },
-        ));
+        crate::runtime::block_on(crate::api::search::run_multi_stream(q, urls, |batch| {
+            if let Ok(cs) = CString::new(batch) {
+                unsafe { callback(cs.as_ptr(), user_data) };
+            }
+            Ok::<(), String>(())
+        }));
 
         Ok::<_, LegadoError>("ok".to_string())
     }))
@@ -654,9 +688,7 @@ pub extern "C" fn ffi_rss_clear_read_records() -> *mut c_char {
 /// 获取 RSS 已读记录总数
 #[no_mangle]
 pub extern "C" fn ffi_rss_read_record_count() -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        crate::api::rss_read_record_api::count()
-    }))
+    to_ffi_response(catch_unwind(|| crate::api::rss_read_record_api::count()))
 }
 
 /// 获取 RSS 已读记录列表
@@ -1643,7 +1675,9 @@ pub unsafe extern "C" fn ffi_archive_import_rar(
         } else {
             Some(c_char_to_str(password)?.to_string())
         };
-        Ok::<_, LegadoError>(crate::api::archive_import_api::import_rar_file(rar, out, pwd))
+        Ok::<_, LegadoError>(crate::api::archive_import_api::import_rar_file(
+            rar, out, pwd,
+        ))
     }))
 }
 
@@ -1693,7 +1727,9 @@ pub unsafe extern "C" fn ffi_archive_convert_encoding(
         let path = c_char_to_str(file_path)?;
         let from = c_char_to_str(from_encoding)?;
         let to = c_char_to_str(to_encoding)?;
-        Ok::<_, LegadoError>(crate::api::archive_import_api::convert_txt_encoding(path, from, to))
+        Ok::<_, LegadoError>(crate::api::archive_import_api::convert_txt_encoding(
+            path, from, to,
+        ))
     }))
 }
 
@@ -1724,7 +1760,10 @@ pub unsafe extern "C" fn ffi_quic_create_client(config_json: *const c_char) -> *
 
 /// 通过 QUIC 发送 GET 请求
 #[no_mangle]
-pub unsafe extern "C" fn ffi_quic_get(url: *const c_char, headers_json: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn ffi_quic_get(
+    url: *const c_char,
+    headers_json: *const c_char,
+) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let u = c_char_to_str(url)?.to_string();
         let headers = if headers_json.is_null() {
@@ -1809,7 +1848,9 @@ pub unsafe extern "C" fn ffi_auto_task_build_book_update(
         let bn = c_char_to_str(book_name)?;
         let ba = c_char_to_str(book_author)?;
         let n = c_char_to_str(name)?;
-        Ok::<_, LegadoError>(crate::api::auto_task_api::build_book_update_task(url, bn, ba, n))
+        Ok::<_, LegadoError>(crate::api::auto_task_api::build_book_update_task(
+            url, bn, ba, n,
+        ))
     }))
 }
 
@@ -1872,7 +1913,10 @@ pub unsafe extern "C" fn ffi_auto_task_normalize_script(script: *const c_char) -
 
 /// 判断书籍是否允许刷新目录
 #[no_mangle]
-pub extern "C" fn ffi_auto_task_can_refresh_toc(can_update: bool, respect_can_update: bool) -> bool {
+pub extern "C" fn ffi_auto_task_can_refresh_toc(
+    can_update: bool,
+    respect_can_update: bool,
+) -> bool {
     catch_unwind(|| crate::api::auto_task_api::can_refresh_book_toc(can_update, respect_can_update))
         .unwrap_or(false)
 }
@@ -1954,7 +1998,7 @@ pub unsafe extern "C" fn ffi_auto_task_find_rule_by_id(id: *const c_char) -> *mu
     }))
 }
 
-// ─── 规则订阅 FFI 函数（Task #89）─────────────────
+// ─── 规则订阅 FFI 函数（Task #89）─────────────────────
 
 /// 获取规则订阅列表（返回 RuleSub 数组 JSON，按 customOrder 排序）
 #[no_mangle]
@@ -2075,7 +2119,9 @@ pub unsafe extern "C" fn ffi_highlight_add(highlight_json: *const c_char) -> *mu
 /// 按主键 time 删除高亮记录
 #[no_mangle]
 pub extern "C" fn ffi_highlight_delete(time: i64) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| crate::api::highlight_api::highlight_delete(time)))
+    to_ffi_response(catch_unwind(|| {
+        crate::api::highlight_api::highlight_delete(time)
+    }))
 }
 
 /// 按书籍删除全部高亮记录，返回删除数量
@@ -2120,7 +2166,9 @@ pub unsafe extern "C" fn ffi_highlight_search(keyword: *const c_char) -> *mut c_
 /// 获取所有高亮规则（HighlightRule 数组 JSON，按 sortOrder 升序）
 #[no_mangle]
 pub extern "C" fn ffi_highlight_rule_list() -> *mut c_char {
-    to_ffi_response(catch_unwind(|| crate::api::highlight_api::highlight_rule_list()))
+    to_ffi_response(catch_unwind(|| {
+        crate::api::highlight_api::highlight_rule_list()
+    }))
 }
 
 /// 保存高亮规则（HighlightRule JSON，id=0 时自增新增），返回规则 ID
@@ -2135,7 +2183,9 @@ pub unsafe extern "C" fn ffi_highlight_rule_save(rule_json: *const c_char) -> *m
 /// 按 ID 删除高亮规则
 #[no_mangle]
 pub extern "C" fn ffi_highlight_rule_delete(id: i64) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| crate::api::highlight_api::highlight_rule_delete(id)))
+    to_ffi_response(catch_unwind(|| {
+        crate::api::highlight_api::highlight_rule_delete(id)
+    }))
 }
 
 // ─── JS 单文件书源配置 FFI 函数 ──────────────────────────────

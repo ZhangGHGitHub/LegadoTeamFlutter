@@ -1381,7 +1381,7 @@ fn register_misc_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // getVerificationCode(imageUrl) -> String（桥接载荷）
+    // getVerificationCode(imageUrl) -> String（验证码交互通道，阻塞等待用户输入）
     // 对应 Kotlin: getVerificationCode(imageUrl): String
     mount_dual(
         java,
@@ -1390,6 +1390,26 @@ fn register_misc_apis<'js>(
         rquickjs::Function::new(ctx.clone(), |image_url: String| -> String {
             platform::get_verification_code(&image_url)
         })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // startBrowserAwait(url, title, refetchAfterSuccess?, html?) -> String
+    // 对应 Kotlin: startBrowserAwait 三个重载（useBrowser=true）；
+    // 桌面端无内置浏览器，一律降级为图片验证码流程（Task #90）
+    mount_dual(
+        java,
+        globals,
+        "startBrowserAwait",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String,
+             title: Opt<String>,
+             _refetch_after_success: Opt<bool>,
+             _html: Opt<String>|
+             -> String {
+                platform::start_browser_await(&url, title.0.as_deref().unwrap_or(""))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1756,14 +1776,68 @@ mod tests {
     }
 
     #[test]
-    fn test_java_get_verification_code_bridge() {
-        let engine = make_engine();
-        let result = engine
-            .eval("java.getVerificationCode('http://img.com/captcha.png')")
-            .unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed["action"], "getVerificationCode");
-        assert_eq!(parsed["imageUrl"], "http://img.com/captcha.png");
+    fn test_java_get_verification_code_channel() {
+        use std::time::{Duration, Instant};
+
+        let engine = std::sync::Arc::new(make_engine());
+        let image_url = "http://img.com/captcha-quickjs-test.png";
+        let rx = legado_core::verification_channel::verification_manager().subscribe();
+
+        // JS eval 在后台线程阻塞等待（模拟 JS 工作线程）
+        let eng = engine.clone();
+        let worker = std::thread::spawn(move || {
+            eng.eval("java.getVerificationCode('http://img.com/captcha-quickjs-test.png')")
+                .unwrap()
+        });
+
+        // UI 侧：定位事件并提交
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut key = None;
+        while Instant::now() < deadline {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(req) if req.image_url == image_url => {
+                    key = Some(req.key);
+                    break;
+                }
+                Ok(_) => continue,
+                Err(_) => continue,
+            }
+        }
+        let key = key.expect("应收到验证码请求事件");
+        assert!(legado_core::verification_channel::submit_verification_result(&key, "q777"));
+        assert_eq!(worker.join().unwrap(), "q777");
+    }
+
+    #[test]
+    fn test_java_start_browser_await_degraded() {
+        use std::time::{Duration, Instant};
+
+        let engine = std::sync::Arc::new(make_engine());
+        let url = "http://verify.example.com/quickjs-browser-degrade";
+        let rx = legado_core::verification_channel::verification_manager().subscribe();
+
+        let eng = engine.clone();
+        let worker = std::thread::spawn(move || {
+            eng.eval("java.startBrowserAwait('http://verify.example.com/quickjs-browser-degrade', '验证', true)")
+                .unwrap()
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut key = None;
+        while Instant::now() < deadline {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(req) if req.image_url == url => {
+                    assert!(!req.use_browser);
+                    key = Some(req.key);
+                    break;
+                }
+                Ok(_) => continue,
+                Err(_) => continue,
+            }
+        }
+        let key = key.expect("应收到降级验证请求事件");
+        assert!(legado_core::verification_channel::submit_verification_result(&key, "b555"));
+        assert_eq!(worker.join().unwrap(), "b555");
     }
 
     #[test]

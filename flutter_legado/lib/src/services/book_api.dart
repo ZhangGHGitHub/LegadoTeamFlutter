@@ -119,6 +119,29 @@ abstract class BookApi {
   /// 取消正在进行的批量书源校验
   Future<void> cancelCheckSources();
 
+  // ========== 验证码交互通道（Task #90） ==========
+
+  /// 订阅验证码请求事件流（长期存活，对齐 Kotlin SourceVerificationHelp）
+  ///
+  /// 书源 JS 经 `getVerificationCode` 钩子挂起等待时，每个请求推送
+  /// 一条事件 Map，字段：`key`（resultKey）/ `source_url` / `source_name` /
+  /// `image_url` / `title` / `use_browser`（桌面端恒 false，浏览器模式
+  /// 已降级）/ `created_at_ms`。订阅时先回放当前进行中的请求。
+  /// UI 拿到事件后弹验证码对话框；用户输入经 [submitVerificationResult]
+  /// 回传；关闭对话框调 [cancelVerificationRequest]。
+  Stream<Map<String, dynamic>> verificationRequestStream();
+
+  /// 提交验证码结果，唤醒 JS 等待方（对齐 Kotlin `setResult`）
+  ///
+  /// [key] — 请求事件中的 resultKey；[code] — 用户输入的验证码。
+  /// 返回是否命中进行中的请求。
+  Future<bool> submitVerificationResult(String key, String code);
+
+  /// 取消验证码请求（对齐 Kotlin `checkResult`：UI 关闭对话框未提交）
+  ///
+  /// 以空结果唤醒等待方（等待侧报「验证结果为空」，对齐 Kotlin 语义）。
+  Future<bool> cancelVerificationRequest(String key);
+
   // ========== 搜索操作 ==========
 
   /// 搜索书籍

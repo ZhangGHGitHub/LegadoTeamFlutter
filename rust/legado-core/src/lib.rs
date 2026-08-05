@@ -56,6 +56,7 @@ pub mod source_login;
 pub mod source_matcher;
 pub mod toc_updater;
 pub mod types;
+pub mod verification_channel;
 pub mod video_state;
 pub mod web_book;
 
