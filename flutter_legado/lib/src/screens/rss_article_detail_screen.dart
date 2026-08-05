@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
+import '../widgets/open_url_confirm_dialog.dart';
 
 /// RSS 文章详情页面
 ///
@@ -204,11 +205,15 @@ $htmlContent
 ''';
 
   /// 在系统浏览器中打开指定 URL
+  ///
+  /// [审计修复 §2.1 第三批] WebView 拦截的外链属内容请求跳转，
+  /// 先弹确认对话框（对齐原版 OpenUrlConfirmDialog）再打开 — Qoder
   Future<void> _openUrlExternally(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    await openExternalUrlWithConfirm(
+      context,
+      url: url,
+      sourceName: widget.sourceName,
+    );
   }
 
   /// 在系统浏览器中打开文章原文链接
