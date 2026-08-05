@@ -178,19 +178,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           if (state.isEmpty) {
             return Column(
               children: [
-                SizedBox(
-                  height: 120,
-                  child: GridView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      childAspectRatio: 0.9,
-                    ),
-                    children: [_buildRuleSubEntry(context)],
-                  ),
-                ),
+                _buildRuleSubHeader(context),
                 // 安卓原版：纯灰字居中空状态
                 const Expanded(
                   child: EmptyState(
@@ -207,19 +195,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           if (displaySources.isEmpty) {
             return Column(
               children: [
-                SizedBox(
-                  height: 120,
-                  child: GridView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      childAspectRatio: 0.9,
-                    ),
-                    children: [_buildRuleSubEntry(context)],
-                  ),
-                ),
+                _buildRuleSubHeader(context),
                 const Expanded(
                   child: EmptyState(
                     icon: Icons.rss_feed,
@@ -267,6 +243,41 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     );
   }
 
+  /// 空态分支的入口格头部：网格参数与主网格（Responsive 列数/宽高比/
+  /// 8px 间距）保持一致，高度按实际格高动态计算，
+  /// 避免固定 120 高度 + 0.9 宽高比导致的 BOTTOM OVERFLOW
+  Widget _buildRuleSubHeader(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns =
+            Responsive.rssGridColumnsForWidth(constraints.maxWidth);
+        final aspectRatio =
+            Responsive.rssGridChildAspectRatio(constraints.maxWidth);
+        const crossAxisSpacing = 8.0;
+        const horizontalPadding = 24.0; // fromLTRB(12, _, 12, _)
+        final cellWidth = (constraints.maxWidth -
+                horizontalPadding -
+                crossAxisSpacing * (columns - 1)) /
+            columns;
+        final cellHeight = cellWidth / aspectRatio;
+        return SizedBox(
+          height: 12 + cellHeight,
+          child: GridView(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              childAspectRatio: aspectRatio,
+              crossAxisSpacing: crossAxisSpacing,
+              mainAxisSpacing: crossAxisSpacing,
+            ),
+            children: [_buildRuleSubEntry(context)],
+          ),
+        );
+      },
+    );
+  }
+
   /// 「规则订阅」入口格（对标原版 RssFragment header：图标 + 文字，
   /// 点击进入 RuleSubActivity 对应页）
   Widget _buildRuleSubEntry(BuildContext context) {
@@ -309,7 +320,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              // 间距收紧至 8：为字体放大场景预留两行文本空间，
+              // 避免入口格内容溢出网格单元
+              const SizedBox(height: 8),
               Text(
                 '规则订阅',
                 maxLines: 2,
