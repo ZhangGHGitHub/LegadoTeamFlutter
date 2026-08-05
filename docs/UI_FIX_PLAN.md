@@ -918,6 +918,98 @@ P2-7 (设置项) ───────┘
 
 ---
 
-**文档生成时间**: 2026-07-31  
-**文档版本**: v2.0  
-**下次更新**: 版本发布后
+## UI 缺口修复批次（2026-08-06）
+
+> **背景**：2026-08-06 Flutter UI 功能缺口实测审计（约 92 项：P0 2 / P1 44 / P2 46）与 Rust 源码级复查（4 项 P1 实质缺口）。本批次将 P0/P1 UI 缺口列为可执行任务清单；台账总览见 [REFACTORING_REMAINING_PLAN.md §5](REFACTORING_REMAINING_PLAN.md)，量化统计见 [REFACTORING_AUDIT_REPORT_20260806.md](REFACTORING_AUDIT_REPORT_20260806.md)。
+>
+> **验收基准**：按顶部标准修订声明——功能、页面结构与交互流程对齐 Android 原版，视觉风格不纳入验收。
+>
+> **FFI 铁律**：依赖新契约的批次，先查 [API_CONTRACT.md](API_CONTRACT.md)；新增 FFI 须先冻结契约再实施（[TWO_TRACK_DEV_SPEC.md](TWO_TRACK_DEV_SPEC.md)）。
+
+### 批次 0：纯接线快赢（无 FFI 阻塞，立即可做，合计 ≤2d）
+
+| # | 任务 | 依赖 | 工时 |
+|---|------|------|------|
+| 0-1 | 6 处日志入口接线（AppLogScreen 路由已存在，appLog* FFI 已交付，API_CONTRACT §2.38） | 无 | ≤0.5d |
+| 0-2 | 朗读配置页入口：`read_aloud_config_screen.dart` 孤儿页补入口（阅读器底栏/设置页） | 无（管线接通为 P0-2 后续） | ≤0.5d |
+| 0-3 | 替换规则导入接已有确认页（3 种导入通道复用现有确认页组件） | 无 | ≤0.5d |
+| 0-4 | 翻页动画菜单（菜单项接既有翻页模式配置） | 无 | ≤0.5d |
+
+### 批次 1：P0 专项（5-8 人日）
+
+#### 任务 B1-1：阅读器正文长按选择 + 9 项操作菜单（3-5d）
+
+**目标**：对齐 ReadBookActivity 正文长按动作菜单（复制/书签/高亮/词典/朗读/搜正文等 9 项）
+
+**涉及文件**：`reader_text_content.dart`、新增选择动作菜单 widget、`reader_notifier.dart`
+
+**实施要点**：
+1. 正文渲染接入可选中文本（SelectableText 或自建选择层，需兼容排版引擎分页结果）
+2. 选择后弹出 9 项动作菜单，逐项接线：
+   - 复制：Clipboard
+   - 书签：bookmark* FFI（已有）
+   - 高亮：highlight* 11 方法（API_CONTRACT §2.36，已交付）
+   - 词典：dictLookup（已交付）
+   - 朗读：跳转朗读链路（依赖 B1-2 与 Rust audioSpeak 管线）
+   - 搜正文：txtSearch 系列（API_CONTRACT §2.40，本地书）/ 在线书走 search_content
+3. 补 widget 测试
+
+**FFI 依赖**：无契约阻塞（highlight*/dictLookup/bookmark* 均已交付）
+
+**验收**：长按选中正文 → 9 项动作均可用，行为对齐原版
+
+#### 任务 B1-2：阅读器底栏朗读按钮 + 朗读配置页接通（2-3d）
+
+**目标**：底栏朗读按钮从存根变为可用；`read_aloud_config_screen.dart` 接通并可用
+
+**实施要点**：
+1. 底栏朗读按钮接 ReadAloud 状态机（启动/暂停/停止/跳转配置页）
+2. 朗读配置页接引擎选择/语速/定时等配置持久化（getConfig/setConfig）
+3. TTS 播报管线：UI 侧先完成界面与状态机；**真实播报依赖 Rust P1 缺口 audioSpeak TTS 管线**（现 `rust_api.dart` L1431 仅 http.get 探活，被 audio_notifier 实际调用，跨轨 3-5d）
+
+**FFI 依赖**：⚠️ audioSpeak 真实管线为跨轨阻塞项（已在 API_CONTRACT §2.26 登记 audioSpeak 方法，需 Rust 轨补真实实现）；UI 可先行，管线交付后接通
+
+**验收**：底栏按钮可启动/控制朗读；配置页可选引擎与语速；管线交付后可真实播报
+
+### 批次 2：P1 批量（44 项，按屏幕分组，预计 3-4 周）
+
+> 前置：Rust 轨先交付 ① nextContentUrl 分页抓取（解除正文截断）与 ④ rssUpdateSource 原子 FFI（见下表 FFI 依赖列标注）。
+
+| 批次 | 屏幕/模块 | 任务（缺口功能） | 依赖的 FFI 契约 |
+|------|-----------|------------------|------------------|
+| B2-1 阅读器 | 顶栏 | 溢出菜单 10 项落地（编辑内容/替换规则开关/更新目录等） | 替换规则开关用既有 replaceRule*；更新目录用 refreshToc；编辑内容需确认内容编辑契约 |
+| B2-1 阅读器 | 底部 | 源操作菜单（登录源/章节购买/编辑源/禁用源） | 登录 UI V2 三件套已交付未封装（API_CONTRACT §3 待封装清单，需 BookApi 封装后接入） |
+| B2-1 阅读器 | 配置 | 阅读配置面板 5 项（字体/字距/首行缩进/简繁/MoreConfig） | 简繁用 setChineseConvertType（已交付）；其余无契约阻塞 |
+| B2-2 缓存 | 离线缓存 | 顶栏缓存 + 书架缓存导出（对应 CacheActivity） | cache 系列已有；cacheGetChapter 已实现待封装（API_CONTRACT §2.41） |
+| B2-3 书架/详情 | 书架 | 更新目录假动作修复/添加网址/书单导入导出行为对齐 | refreshToc + 既有 import/export |
+| B2-3 书架/详情 | 书详情 | 登录/置顶/清缓存 3 项 | topBook/clearCache 已有；登录依赖登录 UI V2 封装 |
+| B2-4 RSS | 文章列表 | 菜单 6 项 + 详情收藏按钮 | 收藏用既有 rssStar*；源更新依赖 rssUpdateSource 原子 FFI（Rust P1 ④，替代删+加 workaround） |
+| B2-5 规则/换源 | 替换规则页 | 分组筛选 + 3 种导入 + 批量操作 | 导入接已有确认页（纯接线）；批量用既有 replaceRule* |
+| B2-5 规则/换源 | 换源页 | 高级选项 8 项 | 既有 searchSource/switchSource |
+| B2-6 听书/设置 | 听书 | 溢出菜单（换源/缓存/wakelock） | 换源用 searchSource；wakelock 为纯 Flutter 插件项 |
+| B2-6 听书/设置 | 设置 | Web 服务/定时服务开关 | serverStart/serverStop 已有（rust_api.dart 占位清理见 REMAINING_PLAN §4.3 P1-1） |
+| B2-6 听书/设置 | 书架管理 | 批量换源等 | 既有 switchSource 循环 |
+
+**验收**：逐屏幕对照 Android 原版菜单/交互逐项核销；每批附 widget 测试；`flutter analyze` 0 issues + `flutter test` 全量通过。
+
+### 批次 3：P2 收尾（46 项，随迭代消化，预计 2 周）
+
+- 优先消化：6 处日志入口（已入批次 0）、编码/字距/边距参数、导入排序、自动任务菜单
+- 结构治理：删除 `rss_config_screen.dart`（与 `rss_source_manage_screen.dart` 重复，前者 5 存根），删除前核销替代覆盖
+- 逐条明细见综合报告附录；完成一项即在 [REFACTORING_REMAINING_PLAN.md §5](REFACTORING_REMAINING_PLAN.md) 销记一项
+
+### 跨轨依赖汇总（本批次）
+
+| 依赖项 | 提供方 | 阻塞的 UI 任务 |
+|--------|--------|------------------|
+| audioSpeak TTS 真实管线（3-5d） | Rust 轨 | B1-2 真实播报 |
+| nextContentUrl 分页抓取（2-3d） | Rust 轨 | 阅读器正文完整性（分页书源） |
+| rssUpdateSource 原子 FFI（0.5d） | Rust 轨 | B2-4 RSS 源编辑 |
+| WebView 桥接载荷 Flutter 侧拦截（2-3d） | 跨轨 | 书源 WebView 交互类功能 |
+| 登录 UI V2 三件套 BookApi 封装 | UI 轨（FFI 已交付） | B2-1 源登录、B2-3 书详情登录 |
+
+---
+
+**文档生成时间**: 2026-08-06  
+**文档版本**: v2.1（新增 UI 缺口修复批次 2026-08-06）  
+**下次更新**: 批次 0/1 完成后销记更新

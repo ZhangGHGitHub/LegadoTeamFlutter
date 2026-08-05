@@ -507,6 +507,32 @@
 | `txtSearchInChapter(String path, String query, int chapterIndex, {bool caseSensitive = false, int maxResults = 50})` | path, query, chapterIndex（0 起） | `Future<List<Map<String, dynamic>>>` | 指定章节内搜索，返回格式同上 |
 | `txtSearchCount(String path, String query, {bool caseSensitive = false})` | path, query | `Future<int>` | 匹配总数计数（不返回完整结果，供 UI 显示） |
 
+### 2.41 契约外已实现 FFI 补登记（2026-08-06 审计，12 个）
+
+> 以下函数已在 `rust/legado-ffi/src/ffi.rs` 实现并生成 Dart 绑定（`ffi.dart`），但此前未登记本契约（违反 §1.2「新增 API 须同步更新文档」），本节为补登记（承接 REMAINING_PLAN §4.2.2 P1-3）。其中多数尚未封装进 `BookApi` 抽象层，UI 封装计划见 §3「待 UI 封装清单」。
+
+**QUIC 系列（8 个）**
+
+| 函数 | 说明 |
+|------|------|
+| `quicCreateClient` | 创建 QUIC 客户端实例 |
+| `quicGet` | QUIC GET 请求 |
+| `quicPost` | QUIC POST 请求 |
+| `quicPerformanceTest` | QUIC 性能测试 |
+| `quicIsInitialized` | QUIC 客户端初始化状态查询 |
+| `quicCleanup` | QUIC 资源清理 |
+| `netSetQuicEnabled` | QUIC 总开关设置（默认关闭，见 REMAINING_PLAN P3-7 核销） |
+| `netIsQuicEnabled` | QUIC 总开关状态查询（现被 other_settings_screen 直调 bridge，待上收 BookApi，见 REMAINING_PLAN §4.3 P2-1） |
+
+**其他（4 个）**
+
+| 函数 | 所属模块 | 说明 |
+|------|----------|------|
+| `backupList` | 备份操作（§2.11 扩展） | 列出备份文件（RustApi/MockBookApi 封装待补，见 §4.3 P1-1 备份三件套） |
+| `cacheGetChapter` | 缓存管理（§2.16 扩展） | 获取已缓存章节内容（离线缓存 UI 批次依赖） |
+| `bookGroupSetShow` | 书籍分组（§2.14 扩展） | 设置分组显示状态 |
+| `httpTtsSetEnabled` | HTTP TTS（§2.25 扩展） | 启用/禁用 HTTP TTS 配置 |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -529,6 +555,26 @@
 | `verificationRequestStream` / `submitVerificationResult` / `cancelVerificationRequest`（新增，Task #90） | 见 §2.3 方法清单 | 验证码交互通道：JS 钩子（getVerificationCode/startBrowserAwait，对齐 Kotlin JsExtensions）经请求管理器挂起等待 → FFI 事件流推送请求（含航班去重/回放/5 分钟超时）→ UI 提交/取消唤醒；useBrowser 降级为图片验证码（桌面无 WebView），验证码弹窗 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `txtSearch` / `txtSearchRegex` / `txtSearchInChapter` / `txtSearchCount`（新增，Task #98 缺口#4） | 见 §2.40 方法清单 | 本地 TXT 全文搜索接入 frb 主链路：既有 C ABI 4 函数的 frb 暴露（包装 legado-book TxtSearch 引擎，纯文本/正则/章节内搜索 + 匹配计数，返回裸 JSON Array），供搜索页内“搜本地书正文”场景调用，UI 由 UI 轨后续接入 | 2026-08-05 | ✅ 已完成 |
 | `setChineseConvertType` / `getChineseConvertType`（新增，Task #100） | 见 §2.9 方法清单 | 繁简转换 FFI 透传：reader.rs 硬编码 `chinese_convert: None` 改为读取持久化配置（键 `chineseConverterType`，0/1/2 → None/t2s/s2t），新增 set/get 接口；章节标题在展示路径补齐 t2s/s2t（对齐 Kotlin getDisplayTitle）；阅读器样式面板控件由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
+
+#### 待 UI 封装清单（2026-08-06 审计：13 个 bridge 绑定已实现未被 UI 层封装）
+
+> 以下 bridge 绑定（ffi.dart）已实现但未被 BookApi/rust_api.dart 封装或未被 UI 调用，登记于此供 UI 轨排期封装；封装后逐项销记。
+
+| # | 绑定 | 所属组 | 备注 |
+|---|------|--------|------|
+| 1 | `sourceIsLoginUiV2` | 登录 UI V2 整组（§2.3） | 书源登录 V2 判定，UI 未接入 |
+| 2 | `sourceLoginUiV2` | 登录 UI V2 整组（§2.3） | 登录 UI V2 脚本执行，UI 未接入 |
+| 3 | `sourceLoginActionV2` | 登录 UI V2 整组（§2.3） | 登录动作 V2 执行，UI 未接入 |
+| 4 | `quicCreateClient` | QUIC 客户端六件套（§2.41） | UI 未封装 |
+| 5 | `quicGet` | QUIC 客户端六件套（§2.41） | UI 未封装 |
+| 6 | `quicPost` | QUIC 客户端六件套（§2.41） | UI 未封装 |
+| 7 | `quicPerformanceTest` | QUIC 客户端六件套（§2.41） | UI 未封装 |
+| 8 | `quicIsInitialized` | QUIC 客户端六件套（§2.41） | UI 未封装 |
+| 9 | `quicCleanup` | QUIC 客户端六件套（§2.41） | UI 未封装 |
+| 10 | `backupList` | 其他（§2.41） | 备份三件套之一，rust_api.dart 待切换 |
+| 11 | `cacheGetChapter` | 其他（§2.41） | 离线缓存 UI 批次依赖 |
+| 12 | `bookGroupSetShow` | 其他（§2.41） | 分组显示开关 |
+| 13 | `httpTtsSetEnabled` | 其他（§2.41） | TTS 配置启停 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -608,4 +654,6 @@
 | 38 | 应用日志 | 5 |
 | 39 | 规则订阅 | 7 |
 | 40 | 本地 TXT 全文搜索 | 4 |
-| | **合计** | **203** |
+| 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 12 |
+| | **合计（BookApi 方法）** | **203** |
+| | **补登记 FFI（待封装）** | **+12** |

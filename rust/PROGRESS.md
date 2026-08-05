@@ -1,13 +1,14 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-08-05（阶段 24 缺口清单清零批次完成，任务数更新至 168；Task #131 登记失实经审计纠正；测试统计待本批回归更新）
+> 最后更新：2026-08-06（双轨缺口审计：Rust 完成度修订为 96-97%（源码级复查），登记 4 项 P1 实质缺口；「零 TODO/桩实现」表述口径修正）
 
 ---
 
 ## 总览
 
 - **已完成**：168 / 168 原子任务（100%）
-- **完成度（2026-07-29 源码审计）**：整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）
+- **完成度（2026-08-06 源码级复查）**：Rust 轨道 **96-97%**（修订此前「95%+」口径）；Flutter UI 主链路已对齐，剩约 92 项 UI 缺口（详见 docs/REFACTORING_AUDIT_REPORT_20260806.md）；早期 2026-07-29 审计口径「整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）」作废
+- **剩余 P1 实质缺口（4 项）**：① 正文 nextContentUrl 分页抓取（2-3d）；② audioSpeak TTS 真实管线（3-5d，跨轨）；③ WebView 桥接载荷 Flutter 侧拦截执行（2-3d，跨轨）；④ rssUpdateSource 原子更新 FFI（0.5d）——详见下方「剩余 P1 实质缺口（2026-08-06 审计）」小节
 - **测试状态**：cargo test 2283 passed（Rust workspace）+ 547 passed（quickjs feature）| flutter test 1087 passed（2026-08-05 实测） | flutter analyze 0 issues（缺口清单清零批次测试统计待回归更新）
 - **QuickJS feature**：547 tests passed | legado-ffi：175 tests passed
 - **里程碑**：🎉 上游同步窗口 2 跟进完成（141 提交同步 + 高亮体系一期 + P0/P1/P2 全部跟进项 + E2E 遗留修复闭环）+ 跨轨阻塞四连解除（MOBI 完整解析 / 书源校验 FFI / 规则订阅全链路 / 验证码交互通道）+ 缺口清单清零批次（Task #162~#168）
@@ -233,6 +234,7 @@
 
 **阶段 15 关键成果：**
 - 🎉 **Rust 侧零 TODO/FIXME/桩实现**（全量扫描确认）
+  > ⚠️ **口径修正（2026-08-06 审计）**：该历史结论已修订——platform.rs 仍有 5 个死代码桩待清理、dict 为 18 词占位、legado-server 正文为桩、部分 Dart fallback（getAudioChapterMedia/scanLocalBooks/parseTxt）多为死代码；「零 TODO/桩实现」表述不再作为当前状态声明（docs/README.md 中的同源表述待同步修正）
 - MCP Server：12 个工具全部接入真实数据库查询逻辑
 - @js: 规则执行：JsExecutor trait 注入模式解决跨 crate 循环依赖
 - EPUB 封面：3 级 fallback 策略（cover meta → OPF item → 首图片）
@@ -409,6 +411,21 @@
 | legado-ffi | 175 | 120+ FFI 导出 + flutter_rust_bridge + 高亮 11 方法 + reviewGetReplies + 搜索阅读记录 + 书源校验（sourceCheck/sourceCheckStream/sourceCheckCancel）+ 规则订阅 7 方法 + 验证码事件流/提交回传 + 既有全部模块 API |
 | legado-server | 178 | axum HTTP + 60+ REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook + Debug + ReadAloud + MCP(17工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + cURL 转换 + 应用日志 + 集成测试 |
 | **合计** | **Rust workspace 2283**（默认）+ **547**（quickjs feature） | Flutter: 1087 tests（2026-08-05 实测） |
+
+---
+
+## 剩余 P1 实质缺口（2026-08-06 审计）
+
+> 来源：Rust 功能缺口源码级复查（完成度 96-97%）。台账登记见 docs/REFACTORING_REMAINING_PLAN.md §5.6，UI 侧影响见 docs/UI_FIX_PLAN.md「UI 缺口修复批次（2026-08-06）」。
+
+| # | 缺口 | 现状 | 工时 | 备注 |
+|---|------|------|------|------|
+| ① | 正文 nextContentUrl 分页抓取 | `legado-ffi/src/api/web_book.rs`（或对应 get_content 链路）只抓一页，分页书源正文被截断——**唯一用户可见的核心解析缺口** | 2-3d | 对齐 Kotlin nextContentUrl 循环/并发抓取 |
+| ② | audioSpeak TTS 真实管线 | `rust_api.dart` L1431 仅 http.get 探活，且被 audio_notifier 实际调用 | 3-5d | 跨轨；阻塞 Flutter P0 朗读功能 |
+| ③ | WebView 桥接载荷 Flutter 侧拦截执行 | Rust 已交付 7 个 action JSON，Flutter lib 无拦截代码 | 2-3d | 跨轨 |
+| ④ | rssUpdateSource 原子更新 FFI | 现用「删旧+加新」workaround | 0.5d | 承接 REMAINING_PLAN §4.3 P1-2 |
+
+**P2 与治理项（不阻塞单机功能）**：subContent/contentRule.replaceRegex、legado-server 正文桩、dict 18 词占位、Dart fallback 死代码清理；12 个 FFI 已实现未登记（已补登 API_CONTRACT.md §2.41）、13 个 bridge 绑定待 UI 封装、schema 偏离（rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources 双列冗余）v102 重建表可延后；README「零 TODO」表述修正、platform.rs 5 桩清理、一次性脚本清理、DEVELOPMENT.md 已知限制表更新、bridge.rs 62 个 C ABI 去留决策。Task #131 timeFormat/toURL 别名已闭合。
 
 ---
 

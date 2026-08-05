@@ -842,16 +842,107 @@ flutter test                  # 全量测试通过
 
 ---
 
-**文档版本**: 1.5  
-**最后更新**: 2026-08-03  
+## §5 UI 细节与功能缺口专项（2026-08-06 实测审计）（新增）
+
+> 本节为 2026-08-06 双轨缺口审计的整合台账：第一路为 Flutter UI 功能缺口实测审计（约 **92 项**：P0 2 / P1 44 / P2 46）；第二路为 Rust 功能缺口源码级复查（完成度修订为 **96-97%**，实质 P1 缺口 4 项）。登记原则与 §3/§4 一致：只登记计划、不修改代码，完成后逐项销记。可执行任务清单见 [UI_FIX_PLAN.md](UI_FIX_PLAN.md)「UI 缺口修复批次（2026-08-06）」；量化统计与时间表见综合报告 [REFACTORING_AUDIT_REPORT_20260806.md](REFACTORING_AUDIT_REPORT_20260806.md)。
+
+### §5.1 Flutter UI 缺口：P0（2 项，阻塞核心阅读体验）
+
+| # | 功能名 | Android 原版位置 | Flutter 现状 | 优先级 | 工作量 |
+|---|--------|------------------|--------------|--------|--------|
+| 1 | 阅读器正文长按选择 + 9 项操作菜单（复制/书签/高亮/词典/朗读/搜正文等） | ReadBookActivity 正文长按动作菜单 | `reader_text_content.dart` 无 SelectableText / 选择区域与动作菜单均缺失 | P0 | 3-5d |
+| 2 | 阅读器底栏朗读按钮 + 朗读配置页入口 | ReadBookActivity 底栏朗读入口 + ReadAloud 配置 | 底栏朗读按钮为存根；`read_aloud_config_screen.dart` 为孤儿页（无任何入口） | P0 | 2-3d |
+
+**FFI 依赖标注**：① 高亮操作可复用已交付的 highlight* 11 方法（§2.36），词典可复用 dictLookup，书签可复用 bookmark* 系列——**无契约阻塞**，纯 UI 工程；② 朗读功能依赖 Rust P1 缺口「audioSpeak TTS 真实管线」（见 §5.6 ②），当前 `rust_api.dart` L1431 仅 http.get 探活，UI 可先做界面与状态机，管线交付后接通。
+
+### §5.2 Flutter UI 缺口：P1（44 项，按屏幕分组）
+
+| # | 屏幕/模块 | 缺口功能 | Android 原版位置 | Flutter 现状 | FFI 依赖 |
+|---|-----------|----------|------------------|--------------|----------|
+| 1 | 阅读器·顶栏 | 溢出菜单 10 项全存根（编辑内容/替换规则开关/更新目录等） | ReadBookActivity 顶栏溢出菜单 | 菜单项均为存根 | 替换规则开关用既有 replaceRule*；更新目录用 refreshToc；编辑内容需确认内容编辑契约 |
+| 2 | 阅读器·底部 | 源操作菜单（登录源/章节购买/编辑源/禁用源） | ReadBookActivity 底部源菜单 | 缺失 | 登录 UI V2 三件套已交付未封装（见 API_CONTRACT §3 待封装清单） |
+| 3 | 阅读器·配置 | 阅读配置面板 5 项（字体/字距/首行缩进/简繁/MoreConfig） | ReadBookConfig 对话框 | 部分缺失（简繁已有 setChineseConvertType 可调） | 无契约阻塞 |
+| 4 | 离线缓存 | 顶栏缓存 + 书架缓存导出（对应 CacheActivity） | CacheActivity | 缺失 | cache 系列 FFI 已具备（cacheGetChapter 待封装，见 API_CONTRACT §2.41） |
+| 5 | 书架 | 3 项（更新目录假动作/添加网址/书单导入导出行为不符） | BookshelfActivity 菜单 | 行为不符/假动作 | 更新目录用 refreshToc；书单导入导出用既有 import/export |
+| 6 | 书详情 | 登录/置顶/清缓存 3 项 | BookInfoActivity 菜单 | 存根或缺失 | topBook/clearCache 已有；登录依赖登录 UI V2 封装 |
+| 7 | RSS | 文章列表菜单 6 项 + RSS 详情收藏按钮 | ReadRssActivity / RssArticle 列表 | 缺失 | 收藏用既有 rssStar* 系列；源更新依赖 rssUpdateSource 原子 FFI（§5.6 ④） |
+| 8 | 替换规则页 | 分组筛选 + 3 种导入 + 批量操作 | ReplaceRuleActivity | 部分缺失 | 导入可接已有确认页（纯接线）；批量用既有 replaceRule* |
+| 9 | 换源页 | 高级选项 8 项 | 换源对话框高级选项 | 缺失 | 用既有 searchSource/switchSource |
+| 10 | 听书 | 溢出菜单（换源/缓存/wakelock） | AudioPlayActivity 菜单 | 缺失 | 换源用 searchSource；wakelock 为纯 Flutter 插件项 |
+| 11 | 设置 | Web 服务/定时服务开关 | WebService / 定时服务设置 | 缺失 | serverStart/serverStop 已有（rust_api.dart 占位清理见 §4.3 P1-1） |
+| 12 | 书架管理 | 批量换源等 | BookshelfManageActivity | 缺失 | 批量换源用既有 switchSource 循环 |
+
+> 44 项逐条明细与验收标准见 [UI_FIX_PLAN.md](UI_FIX_PLAN.md)「UI 缺口修复批次（2026-08-06）」批次 2。
+
+### §5.3 Flutter UI 缺口：P2（46 项，摘要登记）
+
+| 类别 | 内容 | 备注 |
+|------|------|------|
+| 日志入口接线 | 6 处日志入口未接线（AppLogScreen 路由已存在、appLog* FFI 已交付） | 纯接线快赢 |
+| 排版细节参数 | 编码/字距/边距等参数项对齐 | 随阅读器批次收尾 |
+| 导入排序 | 导入页排序行为对齐原版 | 独立小项 |
+| 自动任务菜单 | 自动任务页菜单项补齐 | 依赖既有 autoTask* FFI |
+| 其余 | 约 35 项零星菜单/行为细节 | 逐条明细见综合报告附录 |
+
+### §5.4 纯接线快赢项（立即可做，无 FFI 阻塞）
+
+| # | 快赢项 | 说明 | 工时 |
+|---|--------|------|------|
+| 1 | 6 处日志入口接线 | AppLogScreen 路由已存在，appLog* FFI 已交付（API_CONTRACT §2.38） | ≤0.5d |
+| 2 | 朗读配置页入口 | `read_aloud_config_screen.dart` 孤儿页补入口（先于 P0-2 的管线接通） | ≤0.5d |
+| 3 | 替换规则导入接已有确认页 | 3 种导入通道复用现有确认页组件 | ≤0.5d |
+| 4 | 翻页动画菜单 | 菜单项接既有翻页模式配置 | ≤0.5d |
+
+### §5.5 结构问题
+
+- `rss_config_screen.dart` 与 `rss_source_manage_screen.dart` 功能重复（前者含 5 个存根）。**建议删除前者**，以 `rss_source_manage_screen.dart` 为准；删除前需核销 5 个存根的替代覆盖。
+
+### §5.6 Rust P1 实质缺口（4 项，源码级复查）
+
+| # | 缺口 | 现状证据 | 优先级 | 工作量 | 阻塞的 UI 项 |
+|---|------|----------|--------|--------|--------------|
+| ① | 正文 nextContentUrl 分页抓取 | `web_book.rs` get_content 只抓一页，分页书源正文被截断——**唯一用户可见的核心解析缺口** | P1 | 2-3d | 阅读器正文完整性（所有分页书源） |
+| ② | audioSpeak TTS 真实管线 | `rust_api.dart` L1431 仅 http.get 探活，且被 audio_notifier 实际调用 | P1（跨轨） | 3-5d | P0-2 朗读按钮与朗读配置页 |
+| ③ | WebView 桥接载荷 Flutter 侧拦截执行 | Rust 已交付 7 个 action JSON，Flutter lib 无拦截代码 | P1（跨轨） | 2-3d | 书源 WebView 交互类功能 |
+| ④ | rssUpdateSource 原子更新 FFI | 现用「删旧+加新」workaround（承接 §4.3 P1-2） | P1 | 0.5d | RSS 源编辑（防串表） |
+
+### §5.7 Rust 治理与契约登记缺口（摘要）
+
+| 类别 | 内容 | 处置去向 |
+|------|------|----------|
+| 契约补登 | 12 个 FFI 已实现未登记（QUIC 8 + backupList + cacheGetChapter + bookGroupSetShow + httpTtsSetEnabled） | ✅ 已补登至 API_CONTRACT.md §2.41（2026-08-06） |
+| UI 封装 | 13 个 bridge 绑定已实现未被 UI 层封装（含登录 UI V2 整组 + QUIC 客户端六件套） | 已登记至 API_CONTRACT.md §3 待封装清单 |
+| schema 偏离 | rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources enableCookieJar/enabledCookieJar 双列冗余（P1 治理） | 均不阻塞单机功能，v102 重建表可延后（承接 §4.2.1 P0-2/P0-3 遗留） |
+| 文档治理 | README「零 TODO/桩实现」表述需修正、DEVELOPMENT.md 已知限制表过期 | rust/PROGRESS.md 已修正口径（2026-08-06），docs/README.md 待同步 |
+| 代码治理 | platform.rs 5 个死代码桩清理、一次性脚本清理（承接 §4.2.3 P2-4）、bridge.rs 62 个 C ABI 去留决策（承接 §4.2.3 P2-1） | 随第三批治理 |
+| 已闭合 | Task #131 timeFormat/toURL 别名 | ✅ 已闭合 |
+
+### §5.8 执行顺序建议
+
+```
+批次 1（快赢 + P0 专项，1-2 周）：§5.4 四个纯接线项 → P0-1 长按选择菜单 → P0-2 朗读入口（UI 先行）
+批次 2（P1 批量 + Rust P1，3-4 周）：Rust ①④ 先行（0.5-3d，解除正文截断与 RSS 串表）
+                                  → UI 按屏幕分组批量（阅读器 → 书架/详情 → RSS → 其余）
+                                  → Rust ②③ 跨轨项与 UI 朗读批次并行
+批次 3（P2 收尾 + 治理，2 周）：P2 46 项随迭代消化 + §5.7 治理项 + rss_config_screen 删除
+```
+
+- 跨轨项遵守 [TWO_TRACK_DEV_SPEC.md](TWO_TRACK_DEV_SPEC.md)：新增 FFI 先更新 [API_CONTRACT.md](API_CONTRACT.md) 冻结契约再实施
+- 每批完成后同步更新 docs/README.md「当前状态」与本台账销记
+
+---
+
+**文档版本**: 1.6  
+**最后更新**: 2026-08-06  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.6（2026-08-06）新增 UI 细节与功能缺口专项章节（§5），整合 Flutter 92 项 UI 缺口与 Rust 4 项 P1 实质缺口双轨审计
 - v1.5（2026-08-03）整合四路审计结论，新增审计整合章节（§4）
 - v1.4（2026-08-02）新增全量源码检查后续修改计划（§3）
 - v1.0（2026-07-31）初版：P0-P3 共 7 项遗留任务 + UI 一致性 13 项整合
 
 ---
 编写者：Qoder
-日期：2026-08-03
+日期：2026-08-06
