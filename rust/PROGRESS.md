@@ -1,20 +1,20 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-08-05（阶段 24 上游同步窗口 2 跟进完成，任务数更新至 157，测试数按 2026-08-05 全量实测更新）
+> 最后更新：2026-08-05（阶段 24 跨轨阻塞四连解除完成，任务数更新至 161，测试数按 2026-08-05 实测更新）
 
 ---
 
 ## 总览
 
-- **已完成**：157 / 157 原子任务（100%）
+- **已完成**：161 / 161 原子任务（100%）
 - **完成度（2026-07-29 源码审计）**：整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）
-- **测试状态**：cargo test 2023 passed（Rust workspace）+ 547 passed（quickjs feature）| flutter test 1087 passed（2026-08-05 实测） | flutter analyze 0 issues
-- **QuickJS feature**：547 tests passed | legado-ffi：150 tests passed
-- **里程碑**：🎉 上游同步窗口 2 跟进完成（141 提交同步 + 高亮体系一期 + P0/P1/P2 全部跟进项 + E2E 遗留修复闭环）
+- **测试状态**：cargo test 2283 passed（Rust workspace）+ 547 passed（quickjs feature）| flutter test 1087 passed（2026-08-05 实测） | flutter analyze 0 issues
+- **QuickJS feature**：547 tests passed | legado-ffi：175 tests passed
+- **里程碑**：🎉 上游同步窗口 2 跟进完成（141 提交同步 + 高亮体系一期 + P0/P1/P2 全部跟进项 + E2E 遗留修复闭环）+ 跨轨阻塞四连解除（MOBI 完整解析 / 书源校验 FFI / 规则订阅全链路 / 验证码交互通道）
 
 ---
 
-## 已完成（157/157 原子任务）
+## 已完成（161/161 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -376,7 +376,11 @@
 - [x] Task #155: 段评回复按需加载（review_rule_parser + reviewGetReplies FFI）（2a6d4c865）
 - [x] Task #156: P2 八项——cURL 转换/MCP 5 工具/目录批量更新/AutoTask 协议/搜索阅读记录/JsSourceConfig/应用日志/登录 V2（98e6e264~24281fdd）
 - [x] Task #157: E2E 会话遗留文件处置——宽松反序列化/loginCheckJs 降级/分组 camelCase/JSoup 对齐/交叉编译修复/搜索空数组（b3aa3fa~32fb823）
-- [x] 全量回归：Rust workspace 2023 + quickjs 547 + Flutter 1087 测试零失败
+- [x] Task #158: MOBI 解析补全——HUFF/CDIC + INDX/TAGX + KF8(AZW3) + NCX/封面（mobi.rs 677→2563 行，对照 Kotlin lib/mobi/ 34 文件移植，d994a4fdb）
+- [x] Task #159: 书源校验 FFI——单本校验 + 批量 Stream + 取消（sourceCheck/sourceCheckStream/sourceCheckCancel，86c299923）
+- [x] Task #160: 规则订阅全链路——schema v100 补 7 字段 + FFI 7 方法（94b257390）
+- [x] Task #161: 验证码交互通道——JS 钩子 getVerificationCode/startBrowserAwait + FFI 事件流 + 提交回传（6f5614e24）
+- [x] 全量回归：Rust workspace 2283 + quickjs 547 + Flutter 1087 测试零失败（2026-08-05 实测）
 
 ---
 
@@ -384,15 +388,15 @@
 
 | Crate | 测试数 | 备注 |
 |-------|--------|------|
-| legado-core | 734 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor、PDF 导出 |
+| legado-core | 743 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor、PDF 导出、规则订阅服务 |
 | legado-parser | 163 | RuleAnalyzer + 4 解析器 + AnalyzeRule 门面 + AnalyzeUrl 完整模板 + RuleComplete 自动补全 + review_rule_parser 段评回复 |
 | legado-net | 222 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + QUIC + gzip/brotli/deflate + SOCKS5 凭据认证 + Cookie 持久化 |
-| legado-js | 397（默认）/ 547（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + JsSourceConfig + 登录 V2 |
-| legado-book | 120 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
-| legado-db | 260 | Schema v99 + highlights/highlightRules 表 + 27 Repository + MigrationRegistry + RoomImporter + DefaultData（CAS 乐观锁/批量启停/阅读记录作者合并） |
-| legado-ffi | 150 | 110+ FFI 导出 + flutter_rust_bridge + 高亮 11 方法 + reviewGetReplies + 搜索阅读记录 + 既有全部模块 API |
+| legado-js | 402（默认）/ 547（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + JsSourceConfig + 登录 V2 + 验证码 JS 钩子（getVerificationCode/startBrowserAwait） |
+| legado-book | 140 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 + MOBI HUFF/CDIC/INDX/TAGX/KF8(AZW3)/NCX 完整解析 |
+| legado-db | 260 | Schema v100 + highlights/highlightRules 表 + ruleSubscriptions 表 + Repository + MigrationRegistry + RoomImporter + DefaultData（CAS 乐观锁/批量启停/阅读记录作者合并） |
+| legado-ffi | 175 | 120+ FFI 导出 + flutter_rust_bridge + 高亮 11 方法 + reviewGetReplies + 搜索阅读记录 + 书源校验（sourceCheck/sourceCheckStream/sourceCheckCancel）+ 规则订阅 7 方法 + 验证码事件流/提交回传 + 既有全部模块 API |
 | legado-server | 178 | axum HTTP + 60+ REST 端点 + 5 WS 端点 + 静态文件 + TTS + RSS + WebBook + Debug + ReadAloud + MCP(17工具) + TocUpdate + AutoTask + Download + ReadingStats + Audio + cURL 转换 + 应用日志 + 集成测试 |
-| **合计** | **Rust workspace 2023**（默认）+ **547**（quickjs feature） | Flutter: 1087 tests（2026-08-05 实测） |
+| **合计** | **Rust workspace 2283**（默认）+ **547**（quickjs feature） | Flutter: 1087 tests（2026-08-05 实测） |
 
 ---
 

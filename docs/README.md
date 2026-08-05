@@ -29,18 +29,19 @@
 - **上游同步窗口 2**：LegadoTeam/legado 141 提交同步（e1c102803→308ac7b1e #543）+ 全部 P0/P1/P2 跟进项完成（提交 b10285b8c、bcb583f17、c81977f01、e954c3178、94c3e1e55、e5dcf6b9e、2a6d4c865、98e6e264~24281fdd）
 - **高亮体系数据层**：DB v99 迁移对齐上游 + highlights/highlightRules 表 + Repository + FFI 11 方法（一期完成）
 - **E2E 遗留修复闭环**：E2E 会话遗留 6 文件全部处置提交（b3aa3fa~32fb823）
+- **跨轨阻塞四连解除**：MOBI 完整解析（HUFF/CDIC + INDX/TAGX + KF8(AZW3) + NCX/封面，d994a4fdb）/ 书源校验 FFI（sourceCheck/sourceCheckStream/sourceCheckCancel，86c299923）/ 规则订阅全链路（schema v100 + FFI 7 方法，94b257390）/ 验证码交互通道（JS 钩子 + FFI 事件流 + 提交回传，6f5614e24）
 
-> 🎉 **Rust 重构主体已全部完成**：157/157 原子任务完成，零 TODO/桩实现。
+> 🎉 **Rust 重构主体已全部完成**：161/161 原子任务完成，零 TODO/桩实现。
 
 ### 📊 测试统计（2026-08-05 实测）
 
 | 模块 | 测试数 |
 |------|--------|
-| Rust（workspace 全 crate） | 约 2100（workspace 默认 2023 + quickjs feature 547） |
+| Rust（workspace 全 crate） | workspace 默认 2283 + quickjs feature 547 |
 | Flutter | 1087 |
-| **总计** | **约 3200**（以实测为准：2026-08-05 全量回归零失败） |
+| **总计** | **约 3400**（以实测为准：2026-08-05 全量回归零失败） |
 
-> 2026-08-05 全量回归实测：Rust workspace 2023 + quickjs feature 547 + Flutter 1087，零失败；flutter analyze 0 issues。
+> 2026-08-05 全量回归实测：Rust workspace 2283 + quickjs feature 547 + Flutter 1087，零失败；flutter analyze 0 issues。
 
 ### 🔄 进行中项
 

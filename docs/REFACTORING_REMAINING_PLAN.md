@@ -454,9 +454,11 @@ flutter test                  # 全量测试通过
 **P2（中度缺口）**
 
 6. **JS 宿主 API 覆盖**（对齐 `JsExtensions.kt` 44.6k）：`webView/webViewGetSource`、`queryTTF/replaceFont/queryBase64TTF`、`ajaxAll/ajaxTestAll/connect/head/post`（Java 语义）、`getVerificationCode`、`startBrowser/openUrl`、`un7zFile/unrarFile`（现桩化）、`getTxtInFolder`
+   > ✅ 部分核销（2026-08-05，Task #161，6f5614e24）：`getVerificationCode`/`startBrowserAwait` 验证码 JS 钩子已交付（FFI 事件流 + 提交回传），其余项维持登记
 7. **AnalyzeUrl 缺口**（`legado-parser/src/analyze_url.rs`）：`{{js:...}}`/`{{bookName}}` 内嵌 JS 执行、WebView 请求模式、data: URI、`getByteArrayAwait` 流式读取
 8. **ReadBook 阅读器核心**：章节加载/阅读进度/继续阅读策略/阅读统计写入（现仅 `read_state.rs` 预加载窗口 + `layout.rs` 排版子集）
 9. **书源校验简化**（`source_checker.rs`）：补验证码识别、重定向详情检测（对齐 `SourceVerificationHelp`）
+   > ✅ 已核销（2026-08-05，Task #159，86c299923）：书源校验 FFI 已交付（sourceCheck/sourceCheckStream/sourceCheckCancel），本台账 §4.2.2 P1-1 同步销记
 10. **HTTP TTS 简化**（`tts.rs`）：`list_engines` 从 `http_tts_repository` 读真实配置（现返回硬编码"示例引擎"）
 
 #### 3.5 上游同步决策项（需用户拍板，前置）
@@ -591,7 +593,7 @@ flutter test                  # 全量测试通过
 
 #### 4.2.2 P1（功能缺口）
 
-**P1-1 书源校验 FFI 暴露（跨轨）**
+**P1-1 书源校验 FFI 暴露（跨轨）**——✅ 已完成（2026-08-05，Task #159，提交 86c299923：sourceCheck/sourceCheckStream/sourceCheckCancel 已交付，待 UI 轨接入）
 
 | 项目 | 内容 |
 |------|------|
@@ -633,7 +635,7 @@ flutter test                  # 全量测试通过
 | **实施步骤** | ① 决策记录写入本节；② 废弃路线：lib.rs 标注废弃 + 移除导出；补齐路线：对齐 frb 函数集 |
 | **验收** | bridge.rs 状态明确（废弃标注或函数集对齐），无半废弃漂移层 |
 
-**P2-2 MOBI HUFF/CDIC 压缩与 KF8/INDX 解析移植**
+**P2-2 MOBI HUFF/CDIC 压缩与 KF8/INDX 解析移植**——✅ 已完成（2026-08-05，Task #158，提交 d994a4fdb）
 
 | 项目 | 内容 |
 |------|------|
@@ -642,6 +644,8 @@ flutter test                  # 全量测试通过
 | **解决方案** | 对标 Kotlin lib/mobi 移植 HUFF/CDIC 解压、INDX 章节结构、KF8 解析 |
 | **实施步骤** | ① 移植 HuffcdicDecompressor；② 移植 INDX/IndexData 章节结构解析；③ KF8Book 解析接入 `LocalBook` 入口；④ 补测试（老式 MOBI/AZW3 样本） |
 | **验收** | HUFF/CDIC 压缩 MOBI 与 AZW3 文件可正常导入阅读，测试通过 |
+
+> ✅ 核销（2026-08-05，Task #158，d994a4fdb）：mobi.rs 677→2563 行，对照 Kotlin lib/mobi/ 34 文件移植 HUFF/CDIC + INDX/TAGX + KF8(AZW3) + NCX/封面，legado-book 140 测试通过，全项目唯一经源码确认的实质性功能缺口已闭合
 
 **P2-3 §3.4 已登记项复核与衔接**
 
@@ -746,7 +750,7 @@ flutter test                  # 全量测试通过
 
 | 项目 | 内容 |
 |------|------|
-| **问题** | 相对 Android 原版 54 个 Activity，Flutter 缺失：① 校验书源 CheckSource（已由 P1-3 立项）；② VerificationCodeActivity 验证码页；③ BookshelfManageActivity 书架管理页；④ RemoteBookActivity 远程书籍导入页（import_screen 仅本地扫描）；⑤ RssSourceDebugActivity RSS 源调试；⑥ RuleSubActivity 规则订阅管理；⑦ JsSourceEditActivity/CodeEditActivity（部分已并入 source_edit）；⑧ BottomBarSkinActivity 底栏皮肤自定义（Flutter 底栏固定）；⑨ FileManageActivity/HandleFileActivity（Android SAF 特有，Windows 可不对齐） |
+| **问题** | 相对 Android 原版 54 个 Activity，Flutter 缺失：① 校验书源 CheckSource（已由 P1-3 立项，Rust 契约已交付 sourceCheck/sourceCheckStream/sourceCheckCancel，待 UI 轨接入）；② VerificationCodeActivity 验证码页（Rust 契约已交付 verification 事件流/提交回传，待 UI 轨接入）；③ BookshelfManageActivity 书架管理页；④ RemoteBookActivity 远程书籍导入页（import_screen 仅本地扫描）；⑤ RssSourceDebugActivity RSS 源调试；⑥ RuleSubActivity 规则订阅管理（Rust 契约已交付 ruleSub* 7 方法，待 UI 轨接入）；⑦ JsSourceEditActivity/CodeEditActivity（部分已并入 source_edit）；⑧ BottomBarSkinActivity 底栏皮肤自定义（Flutter 底栏固定）；⑨ FileManageActivity/HandleFileActivity（Android SAF 特有，Windows 可不对齐） |
 | **证据** | Tina 审计 §4（Android `app/src/main/java/io/legado/app/ui/` 54 Activity 对照） |
 | **解决方案** | 按原版对齐优先级逐个立项（校验 > 验证码/远程导入 > 书架管理/RSS 调试/规则订阅 > 底栏皮肤；SAF 类可豁免） |
 | **实施步骤** | 每页单独立项：页面 + Notifier + 路由注册 + 测试 |
