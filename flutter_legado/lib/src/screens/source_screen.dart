@@ -12,10 +12,12 @@ import '../services/source_import_service.dart' show SourcePreview;
 import '../theme/app_colors.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
+import '../widgets/ios_widgets.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/confirm_dialog.dart';
 import 'source_edit_screen.dart';
 import 'source_import_confirm_screen.dart';
+import 'source_login_screen.dart';
 
 /// 书源管理页面
 class SourceScreen extends ConsumerStatefulWidget {
@@ -59,7 +61,10 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             ? _buildBatchAppBar(context, state)
             : _buildAppBar(context, state),
         body: _buildBody(context),
-        // 安卓原版书源管理页无 FAB：新建书源入口在顶栏菜单
+        // 底部常驻批量操作栏（全选/反选/删除/更多选项，
+        // 对标原版 SelectActionBar + book_source_sel.xml）；
+        // 非批量模式下点击全选/反选会自动进入批量模式
+        bottomNavigationBar: _buildBatchBottomBar(context, state),
       ),
     );
   }
@@ -67,6 +72,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   PreferredSizeWidget _buildAppBar(BuildContext context, SourceState state) {
     return AppBar(
       // 原版 TitleBar 内嵌 view_search：搜索框与菜单图标同行，无标题文字
+      // 收紧 titleSpacing 保证搜索框宽度，「搜索书源」提示不被截断
+      titleSpacing: 8,
       title: SizedBox(
         height: 36,
         child: TextField(
@@ -84,6 +91,11 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             prefixIcon: Icon(Icons.search,
                 size: 20,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
+            // 压缩前缀图标占位，为提示文字腾出完整显示空间
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 36,
+              minHeight: 36,
+            ),
             suffixIcon: state.filterKeyword.isNotEmpty
                 ? IconButton(
                     icon: Icon(Icons.clear,
@@ -111,6 +123,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         PopupMenuButton<String>(
           icon: const Icon(Icons.sort),
           tooltip: '排序',
+          // 菜单在顶栏下方展开，不覆盖顶栏
+          position: PopupMenuPosition.under,
           onSelected: (value) => _handleSortAction(context, value),
           itemBuilder: (_) => _buildSortMenuItems(context),
         ),
@@ -118,6 +132,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         PopupMenuButton<String>(
           icon: const Icon(Icons.groups),
           tooltip: '分组',
+          // 菜单在顶栏下方展开，不覆盖顶栏
+          position: PopupMenuPosition.under,
           onSelected: (value) => _handleGroupAction(context, value),
           itemBuilder: (context) => [
             const PopupMenuItem(
@@ -165,69 +181,235 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
           ],
         ),
         PopupMenuButton<String>(
+          // 原版无 tooltip 时系统默认提示 Show menu（长按被误读为
+          // "shou menu"），此处显式指定中文提示
+          tooltip: '更多选项',
+          // 菜单在顶栏下方展开，不覆盖顶栏（默认 over 会盖住搜索栏）
+          position: PopupMenuPosition.under,
           onSelected: (value) => _handleAction(context, value),
           itemBuilder: (_) => [
-            // 对标原版 book_source.xml 溢出菜单
-            const PopupMenuItem(value: 'new', child: Text('添加书源')),
-            const PopupMenuItem(value: 'new_js', child: Text('新建 JS 书源')),
-            const PopupMenuItem(value: 'import_file', child: Text('本地导入')),
-            const PopupMenuItem(value: 'import_url', child: Text('网络导入')),
-            const PopupMenuItem(value: 'import_qr', child: Text('二维码导入')),
+            // 对标原版 book_source.xml 溢出菜单（仅原版 7 项，含 leading 图标）
             const PopupMenuItem(
-                value: 'group_by_domain', child: Text('按域名拆分分组')),
-            const PopupMenuItem(value: 'help', child: Text('帮助')),
-            const PopupMenuDivider(),
-            // Flutter 扩展功能
+              value: 'new',
+              child: _MenuRow(icon: Icons.add, label: '新建书源'),
+            ),
             const PopupMenuItem(
-                value: 'import_clipboard', child: Text('从剪贴板导入')),
+              value: 'new_js',
+              child: _MenuRow(icon: Icons.add, label: '新建 JS 书源'),
+            ),
             const PopupMenuItem(
-                value: 'export_all', child: Text('导出全部书源')),
+              value: 'import_file',
+              child: _MenuRow(icon: Icons.download, label: '本地导入'),
+            ),
             const PopupMenuItem(
-                value: 'export_selected', child: Text('导出选中分组')),
+              value: 'import_url',
+              child:
+                  _MenuRow(icon: Icons.cloud_download, label: '网络导入'),
+            ),
             const PopupMenuItem(
-                value: 'export_file', child: Text('导出到文件')),
+              value: 'import_qr',
+              child: _MenuRow(icon: Icons.qr_code, label: '二维码导入'),
+            ),
             const PopupMenuItem(
-                value: 'batch_mode', child: Text('批量操作')),
+              value: 'group_by_domain',
+              child: _MenuRow(
+                  icon: Icons.domain, label: '按域名分组显示'),
+            ),
+            const PopupMenuItem(
+              value: 'help',
+              child: _MenuRow(icon: Icons.help_outline, label: '帮助'),
+            ),
           ],
         ),
       ],
     );
   }
 
+  /// 批量模式顶栏（对标原版 SelectActionBar：关闭 + 已选计数）
+  ///
+  /// 全选/反选/更多操作统一收进底部操作栏，与原版底部操作区一致。
   PreferredSizeWidget _buildBatchAppBar(
       BuildContext context, SourceState state) {
     return AppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
+        tooltip: '退出批量模式',
         onPressed: () =>
             ref.read(sourceNotifierProvider.notifier).exitBatchMode(),
       ),
       title: Text('已选择 ${state.selectedCount} 项'),
-      actions: [
-        IconButton(
-          icon: Icon(state.isAllSelected
-              ? Icons.check_box
-              : Icons.check_box_outline_blank),
-          tooltip: '全选',
-          onPressed: () {
-            final notifier = ref.read(sourceNotifierProvider.notifier);
-            if (state.isAllSelected) {
-              notifier.deselectAll();
-            } else {
-              notifier.selectAll();
-            }
-          },
+    );
+  }
+
+  /// 底部常驻批量操作栏（对标原版 SelectActionBar：全选/反选 +
+  /// book_source_sel.xml 更多操作菜单）；非批量模式下点击
+  /// 全选/反选自动进入批量模式
+  Widget _buildBatchBottomBar(BuildContext context, SourceState state) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final filteredCount = state.filteredSources.length;
+
+    Widget barButton({
+      required IconData icon,
+      required String label,
+      required VoidCallback? onPressed,
+      Color? color,
+    }) {
+      final effective = color ?? colorScheme.onSurface;
+      return Expanded(
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 22, color: onPressed == null
+                    ? effective.withValues(alpha: 0.35)
+                    : effective),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: onPressed == null
+                        ? effective.withValues(alpha: 0.35)
+                        : effective,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        PopupMenuButton<String>(
-          onSelected: (value) => _handleBatchAction(context, value),
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 'enable', child: Text('批量启用')),
-            const PopupMenuItem(value: 'disable', child: Text('批量禁用')),
-            const PopupMenuItem(value: 'delete', child: Text('批量删除')),
-            const PopupMenuItem(value: 'export', child: Text('导出选中')),
-          ],
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        // iOS hairline 上边线
+        border: Border(
+          top: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+            width: 0.5,
+          ),
         ),
-      ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              // 全选/取消全选（带当前进度 n/m，对标原版计数文案）
+              barButton(
+                icon: state.isAllSelected
+                    ? Icons.check_box
+                    : Icons.check_box_outline_blank,
+                label:
+                    '全选 ${state.selectedCount}/$filteredCount',
+                onPressed: () {
+                  final notifier =
+                      ref.read(sourceNotifierProvider.notifier);
+                  if (!state.batchMode) notifier.enterBatchMode();
+                  if (state.isAllSelected) {
+                    notifier.deselectAll();
+                  } else {
+                    notifier.selectAll();
+                  }
+                },
+              ),
+              // 反选
+              barButton(
+                icon: Icons.flip,
+                label: '反选',
+                onPressed: state.filteredSources.isEmpty
+                    ? null
+                    : () {
+                        final notifier =
+                            ref.read(sourceNotifierProvider.notifier);
+                        if (!state.batchMode) notifier.enterBatchMode();
+                        notifier.revertSelection();
+                      },
+              ),
+              // 删除（危险操作标红，对标原版 delete）
+              barButton(
+                icon: Icons.delete_outline,
+                label: '删除',
+                color: colorScheme.error,
+                onPressed: state.selectedCount == 0
+                    ? null
+                    : () => _handleBatchAction(context, 'delete'),
+              ),
+              // 更多选项（book_source_sel.xml 全量选择操作菜单）
+              Expanded(
+                child: PopupMenuButton<String>(
+                  tooltip: '更多选项',
+                  enabled: state.selectedCount > 0,
+                  onSelected: (value) =>
+                      _handleBatchAction(context, value),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.more_horiz,
+                          size: 22,
+                          color: state.selectedCount == 0
+                              ? colorScheme.onSurface
+                                  .withValues(alpha: 0.35)
+                              : colorScheme.onSurface,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '更多选项',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: state.selectedCount == 0
+                                ? colorScheme.onSurface
+                                    .withValues(alpha: 0.35)
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  itemBuilder: (_) => [
+                    // 对标原版 book_source_sel.xml 12 项选择操作
+                    const PopupMenuItem(
+                        value: 'enable', child: Text('启用所选')),
+                    const PopupMenuItem(
+                        value: 'disable', child: Text('禁用所选')),
+                    const PopupMenuItem(
+                        value: 'add_group', child: Text('添加分组')),
+                    const PopupMenuItem(
+                        value: 'remove_group', child: Text('移除分组')),
+                    const PopupMenuItem(
+                        value: 'enable_explore', child: Text('启用发现')),
+                    const PopupMenuItem(
+                        value: 'disable_explore', child: Text('禁用发现')),
+                    const PopupMenuItem(
+                        value: 'top', child: Text('置顶所选')),
+                    const PopupMenuItem(
+                        value: 'bottom', child: Text('置底所选')),
+                    const PopupMenuItem(
+                        value: 'export', child: Text('导出所选')),
+                    const PopupMenuItem(
+                        value: 'share', child: Text('分享选中源')),
+                    const PopupMenuItem(
+                        value: 'check', child: Text('校验所选')),
+                    const PopupMenuItem(
+                        value: 'select_range', child: Text('选中所选区间')),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -254,7 +436,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       return const EmptyState(
         icon: Icons.library_books_outlined,
         title: '暂无书源',
-        subtitle: '点击右上角菜单「添加书源」新建，或导入书源',
+        subtitle: '点击右上角菜单「新建书源」新建，或导入书源',
       );
     }
 
@@ -286,7 +468,14 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
           ),
         );
       },
-      onLongPress: () => _showSourceMenu(context, source),
+      onLongPress: () {
+        // 对标原版 BookSourceAdapter：长按进入多选模式并选中该项
+        final notifier = ref.read(sourceNotifierProvider.notifier);
+        if (!ref.read(sourceNotifierProvider).batchMode) {
+          notifier.enterBatchMode();
+        }
+        notifier.toggleSelection(source.bookSourceUrl);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
@@ -321,12 +510,13 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                 );
               },
             ),
-            // 更多图标（对标 iv_menu_more）+ 发现绿点（iv_explore）
+            // 更多图标（对标 iv_menu_more）+ 发现角标（iv_explore：
+            // 绿=有发现且启用，红=有发现未启用，无=无发现）
             Stack(
               children: [
                 IconButton(
                   icon: const Icon(Icons.more_vert, size: 20),
-                  tooltip: '更多',
+                  tooltip: '更多选项',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _showSourceMenu(context, source),
                 ),
@@ -337,9 +527,11 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                     child: Container(
                       width: 8,
                       height: 8,
-                      // iOS 系统绿发现角标
-                      decoration: const BoxDecoration(
-                        color: AppColors.iosGreenLight,
+                      // 发现启用=系统绿；有发现但未启用=系统红
+                      decoration: BoxDecoration(
+                        color: source.enabledExplore
+                            ? AppColors.iosGreenLight
+                            : AppColors.iosRedLight,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -377,77 +569,208 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     );
   }
 
+  /// 书源长按/更多按钮菜单（对标原版 BookSourceAdapter.showMenu）：
+  /// 置顶/置底（仅手动排序）、登录（有 loginUrl）、搜索、调试、删除、
+  /// 启用|禁用发现（有 exploreUrl，按 enabledExplore 切换文案）
   Future<void> _showSourceMenu(BuildContext context, BookSource source) async {
+    final state = ref.read(sourceNotifierProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    final manualSort = state.sort == SourceSort.manual;
+    final hasLoginUrl = (source.loginUrl ?? '').trim().isNotEmpty;
+    final hasExplore =
+        (source.exploreUrl ?? '').trim().isNotEmpty;
+
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('编辑'),
-              onTap: () => Navigator.pop(ctx, 'edit'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.share),
-              title: const Text('分享'),
-              onTap: () => Navigator.pop(ctx, 'share'),
-            ),
-            ListTile(
-              leading:
-                  Icon(Icons.delete, color: Theme.of(ctx).colorScheme.error),
-              title: Text('删除',
-                  style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-              onTap: () => Navigator.pop(ctx, 'delete'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 8, bottom: 4),
+                child: IosGrabber(),
+              ),
+              ListTile(
+                leading: const Icon(Icons.vertical_align_top),
+                title: const Text('置顶'),
+                enabled: manualSort,
+                onTap: () => Navigator.pop(ctx, 'top'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.vertical_align_bottom),
+                title: const Text('置底'),
+                enabled: manualSort,
+                onTap: () => Navigator.pop(ctx, 'bottom'),
+              ),
+              if (hasLoginUrl)
+                ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: const Text('登录'),
+                  onTap: () => Navigator.pop(ctx, 'login'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text('搜索'),
+                onTap: () => Navigator.pop(ctx, 'search'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.bug_report_outlined),
+                title: const Text('调试'),
+                onTap: () => Navigator.pop(ctx, 'debug'),
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: colorScheme.error),
+                title: Text('删除',
+                    style: TextStyle(color: colorScheme.error)),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
+              if (hasExplore)
+                ListTile(
+                  leading: Icon(source.enabledExplore
+                      ? Icons.explore_off_outlined
+                      : Icons.explore_outlined),
+                  title:
+                      Text(source.enabledExplore ? '禁用发现' : '启用发现'),
+                  onTap: () => Navigator.pop(ctx, 'toggle_explore'),
+                ),
+            ],
+          ),
         ),
       ),
     );
 
-    if (action == null) return;
+    if (action == null || !context.mounted) return;
 
-    if (action == 'edit') {
-      if (!context.mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => SourceEditScreen(sourceUrl: source.bookSourceUrl),
-        ),
-      );
-    } else if (action == 'share') {
-      if (!context.mounted) return;
-      await _shareSource(context, source);
-    } else if (action == 'delete') {
-      if (!context.mounted) return;
-      final confirmed = await showConfirmDialog(
-        context,
-        title: '删除书源',
-        content: '确定要删除书源「${source.bookSourceName}」吗？',
-        confirmText: '删除',
-        isDestructive: true,
-      );
-      if (confirmed && context.mounted) {
-        ref
-            .read(sourceNotifierProvider.notifier)
-            .deleteSource(source.bookSourceUrl);
-      }
+    final notifier = ref.read(sourceNotifierProvider.notifier);
+    switch (action) {
+      case 'top':
+        await notifier.moveSource(source.bookSourceUrl, toTop: true);
+      case 'bottom':
+        await notifier.moveSource(source.bookSourceUrl, toTop: false);
+      case 'login':
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => SourceLoginScreen(
+              sourceUrl: source.bookSourceUrl,
+              sourceName: source.bookSourceName,
+              loginUrl: source.loginUrl,
+            ),
+          ),
+        );
+      case 'search':
+        // 原版为单源搜索调试；Flutter 搜索页暂未支持单源范围
+        _todo(context, '单源搜索');
+      case 'debug':
+        Navigator.of(context)
+            .pushNamed(AppRoutes.sourceDebug, arguments: source.bookSourceUrl);
+      case 'delete':
+        final confirmed = await showConfirmDialog(
+          context,
+          title: '删除书源',
+          content: '确定要删除书源「${source.bookSourceName}」吗？',
+          confirmText: '删除',
+          isDestructive: true,
+        );
+        if (confirmed && context.mounted) {
+          notifier.deleteSource(source.bookSourceUrl);
+        }
+      case 'toggle_explore':
+        await notifier.toggleExplore(source.bookSourceUrl);
     }
   }
 
-  Future<void> _shareSource(BuildContext context, BookSource source) async {
-    try {
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final json = await notifier.backupService
-          .exportSelectedSources([source.bookSourceUrl]);
-      await Share.share(json, subject: '书源分享：${source.bookSourceName}');
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败：$e')),
-        );
-      }
+  /// 书源管理帮助页（对标原版 showHelp("SourceMBookHelp")，
+  /// 内容取自 assets/web/help/md/SourceMBookHelp.md 全文）
+  void _showHelpSheet(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    Widget section(String title, [List<String> bullets = const []]) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style:
+                    textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            for (final bullet in bullets)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, left: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('• ',
+                        style: textTheme.bodyMedium
+                            ?.copyWith(color: colorScheme.primary)),
+                    Expanded(
+                      child: Text(bullet,
+                          style: textTheme.bodyMedium
+                              ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
     }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Center(child: IosGrabber()),
+              const SizedBox(height: 12),
+              Text('书源管理界面帮助',
+                  style:
+                      textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 16),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      section('书源右上角标志', [
+                        '绿点表示书源有发现，且启用了发现',
+                        '红点表示书源有发现，但是未启用',
+                        '没有标志表示此书源没有发现',
+                      ]),
+                      section(
+                          '右上角有分组菜单，可以按分组筛选书源'),
+                      section('右上角更多菜单里包含', [
+                        '新建书源 / 新建 JS 书源 / 本地导入 / 网络导入 / 二维码导入',
+                        '按域名分组显示 / 帮助',
+                      ]),
+                      section(
+                          '选择源的更多操作在底部菜单里面，操作都是针对选择的书源', [
+                        '启用所选 / 禁用所选 / 添加分组 / 移除分组',
+                        '启用发现 / 禁用发现 / 置顶所选 / 置底所选',
+                        '导出所选 / 校验所选',
+                      ]),
+                      section(
+                          '校验书源可批量校验书源，由于网络等原因结果仅供参考', [
+                        '“校验成功”是指所选的校验项目全部通过',
+                        '可正常识别搜索为空、发现为空、搜索(发现)目录为空、搜索(发现)正文为空、校验超时、js执行错误导致的失效，其余的原因视为网站失效',
+                        '校验搜索优先使用书源填写的校验关键词，不存在时使用用户输入的关键词',
+                        '校验结束后会自动筛选“失效”书源',
+                      ]),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// 分组菜单处理（对标原版 BookSourceActivity 分组子菜单）
@@ -490,11 +813,11 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         _importFromQrCode(context);
         break;
       case 'group_by_domain':
-        _todo(context, '按域名拆分分组');
+        _todo(context, '按域名分组显示');
         break;
       case 'help':
-        _todo(context, '帮助');
-        break;
+        // 对标原版 showHelp("SourceMBookHelp")
+        _showHelpSheet(context);
         break;
     }
   }
@@ -569,6 +892,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     }
   }
 
+  /// 批量操作处理（对标原版 book_source_sel.xml 选择操作菜单）
   void _handleBatchAction(BuildContext context, String action) async {
     final notifier = ref.read(sourceNotifierProvider.notifier);
     final state = ref.read(sourceNotifierProvider);
@@ -584,7 +908,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         await notifier.batchEnable();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('批量启用完成')),
+            const SnackBar(content: Text('已启用所选书源')),
           );
         }
         break;
@@ -592,15 +916,66 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         await notifier.batchDisable();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('批量禁用完成')),
+            const SnackBar(content: Text('已禁用所选书源')),
           );
         }
+        break;
+      case 'add_group':
+        if (context.mounted) _showAddGroupDialog(context);
+        break;
+      case 'remove_group':
+        if (context.mounted) _showRemoveGroupDialog(context);
+        break;
+      case 'enable_explore':
+        await notifier.batchToggleExplore(true);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已启用所选书源发现')),
+          );
+        }
+        break;
+      case 'disable_explore':
+        await notifier.batchToggleExplore(false);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已禁用所选书源发现')),
+          );
+        }
+        break;
+      case 'top':
+        await notifier.batchMoveSelection(toTop: true);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已置顶所选书源')),
+          );
+        }
+        break;
+      case 'bottom':
+        await notifier.batchMoveSelection(toTop: false);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已置底所选书源')),
+          );
+        }
+        break;
+      case 'export':
+        await _exportBatchSelected(context);
+        break;
+      case 'share':
+        await _shareBatchSelected(context);
+        break;
+      case 'check':
+        // 校验需网络请求链路，尚未移植
+        _todo(context, '校验所选');
+        break;
+      case 'select_range':
+        _todo(context, '选中所选区间');
         break;
       case 'delete':
         if (!context.mounted) return;
         final confirmed = await showConfirmDialog(
           context,
-          title: '批量删除',
+          title: '删除书源',
           content: '确定要删除选中的 ${state.selectedCount} 个书源吗？',
           confirmText: '删除',
           isDestructive: true,
@@ -609,14 +984,96 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
           await notifier.batchDelete();
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('批量删除完成')),
+              const SnackBar(content: Text('已删除所选书源')),
             );
           }
         }
         break;
-      case 'export':
-        await _exportBatchSelected(context);
-        break;
+    }
+  }
+
+  /// 添加分组输入框（对标原版 addGroup 弹窗）
+  Future<void> _showAddGroupDialog(BuildContext context) async {
+    // controller 由对话框内容组件自持（随子树卸载释放）
+    final group = await showDialog<String>(
+      context: context,
+      builder: (_) => const _TextPromptDialog(
+        title: '添加分组',
+        hintText: '输入分组名称',
+        confirmLabel: '确定',
+        autofocus: true,
+      ),
+    );
+    if (group == null || group.isEmpty || !context.mounted) return;
+
+    final notifier = ref.read(sourceNotifierProvider.notifier);
+    await notifier.batchAddGroup(group);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已为所选书源添加分组「$group」')),
+      );
+    }
+  }
+
+  /// 移除分组选择（对标原版 removeGroup：从选中书源已有分组中选择）
+  Future<void> _showRemoveGroupDialog(BuildContext context) async {
+    final state = ref.read(sourceNotifierProvider);
+    // 收集选中书源的全部分组
+    final groups = <String>{};
+    for (final source in state.sources) {
+      if (!state.selectedUrls.contains(source.bookSourceUrl)) continue;
+      for (final g in (source.bookSourceGroup ?? '')
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)) {
+        groups.add(g);
+      }
+    }
+    if (groups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('所选书源没有可移除的分组')),
+      );
+      return;
+    }
+
+    final group = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('移除分组'),
+        children: [
+          for (final g in groups.toList()..sort())
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, g),
+              child: Text(g),
+            ),
+        ],
+      ),
+    );
+    if (group == null || !context.mounted) return;
+
+    final notifier = ref.read(sourceNotifierProvider.notifier);
+    await notifier.batchRemoveGroup(group);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已从所选书源移除分组「$group」')),
+      );
+    }
+  }
+
+  /// 分享选中书源（对标原版 shareSelectedSource）
+  Future<void> _shareBatchSelected(BuildContext context) async {
+    try {
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      final state = ref.read(sourceNotifierProvider);
+      final json = await notifier.backupService
+          .exportSelectedSources(state.selectedUrls.toList());
+      await Share.share(json, subject: '书源分享（${state.selectedCount} 个）');
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分享失败：$e')),
+        );
+      }
     }
   }
 
@@ -640,6 +1097,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         .importService
         .fetchSourcesFromUrl(url.trim()));
   }
+
   /// 从本地文件导入书源（对标 Android menu_import_local，txt/json）
   ///
   /// 注：不使用 FileType.custom 扩展名过滤——低版本 Android（API 28）的
@@ -787,6 +1245,24 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   }
 }
 
+/// 溢出菜单图标行（对标原版菜单项的 icon + title 结构）
+class _MenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _MenuRow({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+        const SizedBox(width: 12),
+        Expanded(child: Text(label)),
+      ],
+    );
+  }
+}
 
 /// 文本输入对话框内容组件：controller 生命周期绑定对话框子树，
 /// 随子树卸载统一释放（避免退场动画期间 dispose 引发框架断言）

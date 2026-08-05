@@ -262,6 +262,35 @@ class SourceNotifier extends Notifier<SourceState> {
     state = state.copyWith(selectedUrls: {});
   }
 
+  /// 反选当前过滤结果（对标原版 SelectActionBar 反选）
+  void revertSelection() {
+    final newSet = <String>{};
+    for (final s in state.filteredSources) {
+      if (!state.selectedUrls.contains(s.bookSourceUrl)) {
+        newSet.add(s.bookSourceUrl);
+      }
+    }
+    state = state.copyWith(selectedUrls: newSet);
+  }
+
+  /// 切换单个书源的发现启用状态（对标长按菜单 启用/禁用发现）
+  Future<void> toggleExplore(String sourceUrl) async {
+    final index =
+        state.sources.indexWhere((s) => s.bookSourceUrl == sourceUrl);
+    if (index == -1) return;
+    final source = state.sources[index];
+    final updated = source.copyWith(enabledExplore: !source.enabledExplore);
+    try {
+      final api = ref.read(bookApiProvider);
+      await api.updateBookSource(updated);
+      final newSources = List<BookSource>.of(state.sources);
+      newSources[index] = updated;
+      state = state.copyWith(sources: newSources);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+    }
+  }
+
   /// 批量启用选中的书源
   Future<void> batchEnable() async {
     state = state.copyWith(loading: true);
@@ -327,6 +356,139 @@ class SourceNotifier extends Notifier<SourceState> {
       for (final url in state.selectedUrls) {
         await api.deleteBookSource(url);
         newSources.removeWhere((s) => s.bookSourceUrl == url);
+      }
+      state = state.copyWith(
+        sources: newSources,
+        batchMode: false,
+        selectedUrls: {},
+        loading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 批量启用/禁用选中书源的发现（对标 book_source_sel.xml
+  /// menu_enable_select_explore / menu_disable_select_explore）
+  Future<void> batchToggleExplore(bool enable) async {
+    state = state.copyWith(loading: true);
+    try {
+      final api = ref.read(bookApiProvider);
+      final newSources = List<BookSource>.of(state.sources);
+      for (final url in state.selectedUrls) {
+        final index =
+            newSources.indexWhere((s) => s.bookSourceUrl == url);
+        if (index == -1) continue;
+        final source = newSources[index];
+        if (source.enabledExplore != enable) {
+          final updated = source.copyWith(enabledExplore: enable);
+          await api.updateBookSource(updated);
+          newSources[index] = updated;
+        }
+      }
+      state = state.copyWith(
+        sources: newSources,
+        batchMode: false,
+        selectedUrls: {},
+        loading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 置顶/置底选中书源（对标 menu_top_select / menu_bottom_select）
+  ///
+  /// 纯 UI 层编排：通过重排 customOrder 并逐条 updateBookSource 持久化，
+  /// 不依赖 Rust FFI 新增接口。
+  Future<void> batchMoveSelection({required bool toTop}) async {
+    if (state.selectedUrls.isEmpty) return;
+    await _moveSources(state.selectedUrls, toTop, exitBatch: true);
+  }
+
+  /// 置顶/置底单个书源（对标长按菜单 topSource/bottomSource，仅手动排序可用）
+  Future<void> moveSource(String sourceUrl, {required bool toTop}) async {
+    await _moveSources({sourceUrl}, toTop, exitBatch: false);
+  }
+
+  Future<void> _moveSources(
+    Set<String> urls,
+    bool toTop, {
+    required bool exitBatch,
+  }) async {
+    state = state.copyWith(loading: true);
+    try {
+      final api = ref.read(bookApiProvider);
+      final ordered = List<BookSource>.of(state.sources)
+        ..sort((a, b) => a.customOrder.compareTo(b.customOrder));
+      final selected = ordered
+          .where((s) => urls.contains(s.bookSourceUrl))
+          .toList();
+      final rest = ordered
+          .where((s) => !urls.contains(s.bookSourceUrl))
+          .toList();
+      final rearranged =
+          toTop ? [...selected, ...rest] : [...rest, ...selected];
+
+      final newSources = List<BookSource>.of(state.sources);
+      for (var i = 0; i < rearranged.length; i++) {
+        final source = rearranged[i];
+        if (source.customOrder != i) {
+          final updated = source.copyWith(customOrder: i);
+          await api.updateBookSource(updated);
+          final index = newSources
+              .indexWhere((s) => s.bookSourceUrl == source.bookSourceUrl);
+          if (index != -1) newSources[index] = updated;
+        }
+      }
+      state = state.copyWith(
+        sources: newSources,
+        batchMode: exitBatch ? false : state.batchMode,
+        selectedUrls: exitBatch ? <String>{} : state.selectedUrls,
+        loading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// 为选中书源添加分组（对标 menu_add_group；分组串逗号分隔）
+  Future<void> batchAddGroup(String group) async {
+    final name = group.trim();
+    if (name.isEmpty) return;
+    await _mutateSelectedGroups((groups) {
+      if (!groups.contains(name)) groups.add(name);
+    });
+  }
+
+  /// 从选中书源移除分组（对标 menu_remove_group）
+  Future<void> batchRemoveGroup(String group) async {
+    await _mutateSelectedGroups((groups) => groups.remove(group.trim()));
+  }
+
+  Future<void> _mutateSelectedGroups(
+    void Function(List<String> groups) mutate,
+  ) async {
+    state = state.copyWith(loading: true);
+    try {
+      final api = ref.read(bookApiProvider);
+      final newSources = List<BookSource>.of(state.sources);
+      for (final url in state.selectedUrls) {
+        final index =
+            newSources.indexWhere((s) => s.bookSourceUrl == url);
+        if (index == -1) continue;
+        final source = newSources[index];
+        final groups = (source.bookSourceGroup ?? '')
+            .split(',')
+            .map((g) => g.trim())
+            .where((g) => g.isNotEmpty)
+            .toList();
+        mutate(groups);
+        final updated = source.copyWith(
+          bookSourceGroup: groups.isEmpty ? null : groups.join(','),
+        );
+        await api.updateBookSource(updated);
+        newSources[index] = updated;
       }
       state = state.copyWith(
         sources: newSources,

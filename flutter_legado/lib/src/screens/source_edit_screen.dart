@@ -1,15 +1,20 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/source/source_notifier.dart';
 import '../routes.dart';
 import '../widgets/loading_indicator.dart';
+import 'source_login_screen.dart';
 
 /// 书源编辑页面
 ///
@@ -62,6 +67,12 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
 
+  /// 首次帮助已展示标志（对标原版 LocalConfig.ruleHelpVersionIsLast）
+  static const _ruleHelpShownKey = 'source_rule_help_shown';
+
+  /// 自动补全开关（对标原版 menu_auto_complete，会话级）
+  bool _autoComplete = false;
+
   /// 所有文本字段控制器（按 key 惰性创建）
   final Map<String, TextEditingController> _ctrls = {};
 
@@ -74,11 +85,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   bool _testing = false;
   List<SearchResult> _testResults = [];
   String? _testError;
-
-  // 规则验证状态
-  bool _validating = false;
-  String? _validateResult; // JSON 格式验证结果
-  bool _validateSuccess = false; // 验证是否成功
 
   bool get isNew => widget.sourceUrl == null;
 
@@ -93,11 +99,12 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     _Field('bookSourceGroup', '分组', maxLines: 1),
     _Field(
       'bookSourceType',
-      '类型（0=文本, 1=音频, 2=图片, 3=文件, 4=视频）',
+      '类型',
+      hint: '0=文本, 1=音频, 2=图片, 3=文件, 4=视频',
       maxLines: 1,
       keyboardType: TextInputType.number,
     ),
-    _Field('header', '请求头（JSON 格式）', maxLines: 3),
+    _Field('header', '请求头', hint: 'JSON 格式', maxLines: 3),
     _Field('loginUrl', '登录 URL', maxLines: 1),
     _Field('bookSourceComment', '备注', maxLines: 3),
   ];
@@ -226,6 +233,24 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     super.initState();
     if (!isNew) {
       _loadSource();
+    }
+    // 对标原版 BookSourceEditActivity.onPostCreate：
+    // if (!LocalConfig.ruleHelpVersionIsLast) showHelp("ruleHelp")
+    _maybeShowFirstHelp();
+  }
+
+  /// 首次打开编辑页自动弹出规则帮助（对标原版 ruleHelpVersionIsLast 标志）
+  Future<void> _maybeShowFirstHelp() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_ruleHelpShownKey) ?? false) return;
+      await prefs.setBool(_ruleHelpShownKey, true);
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showHelp();
+      });
+    } catch (_) {
+      // 偏好存储异常不阻断编辑流程
     }
   }
 
@@ -552,277 +577,213 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     }
   }
 
-  /// 显示规则验证对话框
-  Future<void> _showValidateDialog() async {
-    final urlCtrl = TextEditingController();
-    // 默认验证类型：搜索
-    String validateType = 'search';
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogCtx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return AlertDialog(
-              title: const Text('规则验证'),
-              content: SizedBox(
-                width: 500,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // 测试 URL 输入
-                    TextField(
-                      controller: urlCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '测试 URL',
-                        hintText: '搜索关键词 / 书籍URL / 章节URL',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // 验证类型选择
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _buildValidateTypeChip(
-                          label: '搜索',
-                          value: 'search',
-                          selected: validateType == 'search',
-                          onSelected: () =>
-                              setDialogState(() => validateType = 'search'),
-                        ),
-                        _buildValidateTypeChip(
-                          label: '书籍详情',
-                          value: 'info',
-                          selected: validateType == 'info',
-                          onSelected: () =>
-                              setDialogState(() => validateType = 'info'),
-                        ),
-                        _buildValidateTypeChip(
-                          label: '章节目录',
-                          value: 'chapters',
-                          selected: validateType == 'chapters',
-                          onSelected: () =>
-                              setDialogState(() => validateType = 'chapters'),
-                        ),
-                        _buildValidateTypeChip(
-                          label: '章节内容',
-                          value: 'content',
-                          selected: validateType == 'content',
-                          onSelected: () =>
-                              setDialogState(() => validateType = 'content'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // 验证结果区域
-                    if (_validating)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 8),
-                              Text('验证中...'),
-                            ],
-                          ),
-                        ),
-                      )
-                    else if (_validateResult != null)
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 300),
-                        decoration: BoxDecoration(
-                          // [审计修复 §3.2] 绿色成功色按亮暗适配 — Qoder
-                          color: _validateSuccess
-                              ? (Theme.of(ctx).brightness == Brightness.dark
-                                    ? Colors.green.shade300
-                                    : Colors.green.shade800)
-                                  .withValues(alpha: 0.12)
-                              : Theme.of(ctx).colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _validateSuccess
-                                ? (Theme.of(ctx).brightness == Brightness.dark
-                                      ? Colors.green.shade300
-                                      : Colors.green.shade800)
-                                  .withValues(alpha: 0.5)
-                                : Theme.of(ctx).colorScheme.error,
-                          ),
-                        ),
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // 状态标题栏
-                            Row(
-                              children: [
-                                Icon(
-                                  _validateSuccess
-                                      ? Icons.check_circle
-                                      : Icons.error,
-                                  // [审计修复 §3.2] 成功图标亮暗适配 — Qoder
-                                  color: _validateSuccess
-                                      ? (Theme.of(ctx).brightness ==
-                                            Brightness.dark
-                                          ? Colors.green.shade300
-                                          : Colors.green.shade800)
-                                      : Theme.of(ctx).colorScheme.error,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _validateSuccess ? '验证成功' : '验证失败',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: _validateSuccess
-                                        ? (Theme.of(ctx).brightness ==
-                                                  Brightness.dark
-                                              ? Colors.green.shade300
-                                              : Colors.green.shade800)
-                                        : Theme.of(ctx).colorScheme.error,
-                                  ),
-                                ),
-                                const Spacer(),
-                                // 复制按钮
-                                IconButton(
-                                  icon: const Icon(Icons.copy, size: 18),
-                                  tooltip: '复制结果',
-                                  onPressed: () {
-                                    Clipboard.setData(
-                                      ClipboardData(text: _validateResult!),
-                                    );
-                                    ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(content: Text('已复制到剪贴板')),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            // JSON 预览
-                            Flexible(
-                              child: SingleChildScrollView(
-                                child: SelectableText(
-                                  _validateResult!,
-                                  style: const TextStyle(
-                                    fontFamily: 'monospace',
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
-                  child: const Text('关闭'),
-                ),
-                FilledButton.icon(
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('验证'),
-                  onPressed: _validating
-                      ? null
-                      : () async {
-                          final url = urlCtrl.text.trim();
-                          if (url.isEmpty) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(content: Text('请输入测试 URL')),
-                            );
-                            return;
-                          }
-                          // 执行验证
-                          setDialogState(() {
-                            _validating = true;
-                            _validateResult = null;
-                          });
-                          await _runValidation(url, validateType);
-                          setDialogState(() => _validating = false);
-                        },
-                ),
-              ],
-            );
-          },
+  /// overflow 菜单分流（对标原版 source_edit.xml 折叠项）
+  Future<void> _handleMenu(String value) async {
+    switch (value) {
+      case 'login':
+        _openLogin();
+      case 'search':
+        _todo('搜索');
+      case 'clear_cookie':
+        _todo('清除 Cookie');
+      case 'auto_complete':
+        setState(() => _autoComplete = !_autoComplete);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_autoComplete ? '自动补全已开启' : '自动补全已关闭'),
+          ),
         );
-      },
-    );
-    urlCtrl.dispose();
+      case 'copy_source':
+        await _copySource();
+      case 'paste_source':
+        await _pasteSource();
+      case 'set_source_variable':
+        _todo('设置源变量');
+      case 'import_qr':
+        await _importFromQr();
+      case 'share_qr':
+        _todo('二维码分享');
+      case 'share_str':
+        await _shareSource();
+      case 'log':
+        _todo('日志');
+      case 'help':
+        _showHelp();
+    }
   }
 
-  /// 构建验证类型选择芯片
-  Widget _buildValidateTypeChip({
-    required String label,
-    required String value,
-    required bool selected,
-    required VoidCallback onSelected,
-  }) {
-    return FilterChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onSelected(),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      visualDensity: VisualDensity.compact,
+  /// 待 FFI 层支持的原版功能占位提示
+  void _todo(String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$feature」功能开发中')),
     );
   }
 
-  /// 执行规则验证
-  Future<void> _runValidation(String url, String type) async {
+  /// 登录（对标原版 menu_login → SourceLoginActivity）
+  void _openLogin() {
+    final loginUrl = _ctrl('loginUrl').text.trim();
+    if (loginUrl.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SourceLoginScreen(
+          sourceUrl: _ctrl('bookSourceUrl').text.trim(),
+          sourceName: _ctrl('bookSourceName').text.trim(),
+          loginUrl: loginUrl,
+        ),
+      ),
+    );
+  }
+
+  /// 拷贝源（对标原版 menu_copy_source：JSON 写入剪贴板）
+  Future<void> _copySource() async {
+    final json = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(_buildSource().toJson());
+    await Clipboard.setData(ClipboardData(text: json));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制到剪贴板')),
+    );
+  }
+
+  /// 粘贴源（对标原版 menu_paste_source：解析剪贴板 JSON 回填表单）
+  Future<void> _pasteSource() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (text == null || text.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('剪贴板为空')));
+      return;
+    }
     try {
-      final source = _buildSource();
-      // 先保存书源
-      if (!mounted) return;
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      await notifier.saveSource(source);
+      final decoded = jsonDecode(text);
+      final map = decoded is List
+          ? decoded.first as Map<String, dynamic>
+          : decoded as Map<String, dynamic>;
+      final source = BookSource.fromJson(map);
+      _populateFields(source);
+      messenger.showSnackBar(
+        SnackBar(content: Text('已粘贴书源：${source.bookSourceName}')),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('剪贴板内容不是有效的书源 JSON')),
+      );
+    }
+  }
 
-      final sourceJson = jsonEncode(source.toJson());
-      final api = ref.read(bookApiProvider);
-      String result;
-
-      switch (type) {
-        case 'search':
-          // 搜索验证
-          result = await api.webbookSearch(sourceJson, url, 1);
-        case 'info':
-          // 书籍详情验证
-          result = await api.webbookInfo(sourceJson, url);
-        case 'chapters':
-          // 章节目录验证
-          result = await api.webbookChapters(sourceJson, url);
-        case 'content':
-          // 章节内容验证
-          result = await api.webbookContent(sourceJson, url);
-        default:
-          result = '{"error": "未知验证类型"}';
-      }
-
-      // 格式化 JSON 输出
-      String formatted;
-      try {
-        final decoded = jsonDecode(result);
-        formatted = const JsonEncoder.withIndent('  ').convert(decoded);
-      } catch (_) {
-        formatted = result;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _validateResult = formatted;
-        _validateSuccess = true;
-      });
+  /// 字符串分享（对标原版 menu_share_str）
+  Future<void> _shareSource() async {
+    try {
+      final json = jsonEncode(_buildSource().toJson());
+      await Share.share(json, subject: '书源分享');
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _validateResult = '错误: $e';
-        _validateSuccess = false;
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('分享失败：$e')),
+      );
+    }
+  }
+
+  /// 二维码导入（对标原版 menu_qr_code_camera：扫码内容解析回填表单）
+  Future<void> _importFromQr() async {
+    final content = await Navigator.of(context).pushNamed<String>(
+      AppRoutes.qrcode,
+    );
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (content == null || content.trim().isEmpty) return;
+
+    final trimmed = content.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        final map = decoded is List
+            ? decoded.first as Map<String, dynamic>
+            : decoded as Map<String, dynamic>;
+        final source = BookSource.fromJson(map);
+        _populateFields(source);
+        messenger.showSnackBar(
+          SnackBar(content: Text('已导入书源：${source.bookSourceName}')),
+        );
+      } catch (_) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('扫码内容不是有效的书源 JSON')),
+        );
+      }
+      return;
+    }
+
+    if (trimmed.startsWith('legado://')) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('legado 协议链接请使用「关联导入」页处理')),
+      );
+      return;
+    }
+
+    messenger.showSnackBar(
+      const SnackBar(content: Text('URL 内容请使用书源管理页的网络导入处理')),
+    );
+  }
+
+  /// 显示规则帮助（对标原版 showHelp("ruleHelp")）
+  void _showHelp() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _RuleHelpSheet(),
+    );
+  }
+
+  /// 调试源（对标原版 menu_debug_source：保存后进入源调试页）
+  Future<void> _debugSource() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      final source = _buildSource();
+      final notifier = ref.read(sourceNotifierProvider.notifier);
+      await notifier.saveSource(source);
+      if (!mounted) return;
+      Navigator.of(context).pushNamed(
+        AppRoutes.sourceDebug,
+        arguments: source.bookSourceUrl,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('调试失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// 全屏编辑（对标原版 menu_fullscreen_edit：整体编辑书源 JSON）
+  Future<void> _showFullscreenEdit() async {
+    // controller 由对话框内容组件自持（随子树卸载释放，
+    // 避免退场动画期间 dispose 引发框架断言）；
+    // 关闭返回 null，应用返回编辑后的 JSON 文本
+    final text = await showDialog<String>(
+      context: context,
+      builder: (_) => _FullscreenJsonEditDialog(
+        initialText: const JsonEncoder.withIndent(
+          '  ',
+        ).convert(_buildSource().toJson()),
+      ),
+    );
+    if (text == null || !mounted) return;
+    try {
+      final source = BookSource.fromJson(
+        jsonDecode(text) as Map<String, dynamic>,
+      );
+      _populateFields(source);
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('JSON 格式错误，未应用修改')),
+      );
     }
   }
 
@@ -848,17 +809,19 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
             ],
           ),
           actions: [
-            // 验证规则按钮
+            // 全屏编辑（对标原版 menu_fullscreen_edit，always）
             IconButton(
-              icon: const Icon(Icons.rule_folder_outlined),
-              tooltip: '验证规则',
-              onPressed: _showValidateDialog,
+              icon: const Icon(Icons.code),
+              tooltip: '全屏编辑',
+              onPressed: _showFullscreenEdit,
             ),
+            // 调试源（对标原版 menu_debug_source，always）
             IconButton(
-              icon: const Icon(Icons.menu_book_outlined),
-              tooltip: '字典查询',
-              onPressed: () => Navigator.pushNamed(context, AppRoutes.dict),
+              icon: const Icon(Icons.bug_report),
+              tooltip: '调试源',
+              onPressed: _saving ? null : _debugSource,
             ),
+            // 保存（对标原版 menu_save，always）
             TextButton.icon(
               // AppBar 为 primary 底色，TextButton 默认 primary 前景会蓝底蓝字不可见，
               // 显式使用 onPrimary（白）对齐 AppBar 前景色。
@@ -868,6 +831,57 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
               icon: const Icon(Icons.save),
               label: const Text('保存'),
               onPressed: _saving ? null : _save,
+            ),
+            // overflow 菜单（对标原版 source_edit.xml 折叠项）
+            PopupMenuButton<String>(
+              tooltip: '更多选项',
+              // 菜单在顶栏下方展开，不覆盖顶栏
+              position: PopupMenuPosition.under,
+              onSelected: _handleMenu,
+              itemBuilder: (_) => [
+                // 登录（对标 menu_login：仅在配置了登录 URL 时显示）
+                if (_ctrl('loginUrl').text.trim().isNotEmpty)
+                  const PopupMenuItem(
+                    value: 'login',
+                    child: Text('登录'),
+                  ),
+                const PopupMenuItem(value: 'search', child: Text('搜索')),
+                const PopupMenuItem(
+                  value: 'clear_cookie',
+                  child: Text('清除 Cookie'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'auto_complete',
+                  checked: _autoComplete,
+                  child: const Text('自动补全'),
+                ),
+                const PopupMenuItem(
+                  value: 'copy_source',
+                  child: Text('拷贝源'),
+                ),
+                const PopupMenuItem(
+                  value: 'paste_source',
+                  child: Text('粘贴源'),
+                ),
+                const PopupMenuItem(
+                  value: 'set_source_variable',
+                  child: Text('设置源变量'),
+                ),
+                const PopupMenuItem(
+                  value: 'import_qr',
+                  child: Text('二维码导入'),
+                ),
+                const PopupMenuItem(
+                  value: 'share_qr',
+                  child: Text('二维码分享'),
+                ),
+                const PopupMenuItem(
+                  value: 'share_str',
+                  child: Text('字符串分享'),
+                ),
+                const PopupMenuItem(value: 'log', child: Text('日志')),
+                const PopupMenuItem(value: 'help', child: Text('帮助')),
+              ],
             ),
           ],
         ),
@@ -1007,6 +1021,307 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 书源规则帮助内容（对标原版 assets/web/help/md/ruleHelp.md 精简版）
+const String _ruleHelpContent = '''
+* [阅读3.0(Legado)规则说明](https://mgz0227.github.io/The-tutorial-of-Legado/)
+* [书源帮助文档](https://mgz0227.github.io/The-tutorial-of-Legado/Rule/source.html)
+* [订阅源帮助文档](https://mgz0227.github.io/The-tutorial-of-Legado/Rule/rss.html)
+* 辅助键盘中可插入URL参数模板,打开帮助,js教程,正则教程,选择文件
+
+## 基础配置
+* 规则标志, {{......}}内使用规则必须有明显的规则标志,没有规则标志当作js执行
+```
+@@ 默认规则,直接写时可以省略@@
+@XPath: xpath规则,直接写时以//开头可省略@XPath
+@Json: json规则,直接写时以\$.开头可省略@Json
+: regex规则,不可省略,只可以用在书籍列表和目录列表
+```
+* jsLib
+> 注入JavaScript到RhinoJs引擎中，支持两种格式，可实现[函数共用](https://github.com/LegadoTeam/legado/wiki/JavaScript%E5%87%BD%E6%95%B0%E5%85%B1%E7%94%A8)
+> `JavaScript Code` 直接填写JavaScript片段
+> `{"example":"https://www.example.com/js/example.js", ...}` 自动复用已经下载的js文件
+> 注意此处定义的函数可能会被多个线程同时调用，函数内声明全局变量必须使用var
+* 并发率
+> 并发限制，单位ms，可填写两种格式
+> `1000` 访问间隔1s
+> `20/60000` 60s内访问次数20
+* 书源类型: 文件
+> 对于提供文件整合下载的网站，可以在书源详情的下载URL规则获取文件链接
+* 书源类型: 音频
+> 将正文获得的字符串作为音频链接，返回序列化后的链接数组会将多个链接拼接成一条音频
+* CookieJar
+> 启用后会自动保存每次返回头中的Set-Cookie中的值，适用于需要session的网站
+
+## 登录
+* 登录UI
+> 不使用内置webView登录网站，需要使用`登录URL`规则实现登录逻辑，可使用`登录检查JS`检查登录结果
+> 按钮支持调用`登录URL`规则里面的函数，必须实现`login`函数
+* 登录URL
+> 填写登录页面地址或登录逻辑，打开登录界面时执行
+
+## 发现
+* 发现URL
+> 支持多行`分类名::url`格式，可返回字符串、数组、Map等
+> 支持 <js></js> 与 @js: 追加 js 处理
+
+## 请求与URL参数
+* URL参数模板
+> {{key, value}} 以JSON对象形式添加请求头/请求体参数
+* 常用选项
+> charset: 指定响应编码；method: GET/POST；body: 请求体
+> headers: 自定义请求头；retry: 重试次数；webview: 使用webview加载
+
+## 正文处理
+* 正文内容
+> 支持规则、js、正则替换，可使用 <js></js> 组合多种规则
+* 替换正则
+> 对正文结果做正则替换
+* 图片样式 / 图片解码
+> 控制正文图片展示方式与自定义解码逻辑
+
+## 回调事件
+* 回调 JS
+> 翻页/加载完成等事件触发的 js 回调
+''';
+
+/// 规则帮助 sheet（对标原版 showHelp 弹窗，轻量 markdown 渲染：
+/// ## 标题 / * 列表 / > 引用 / ``` 代码块 / [链接](url)）
+class _RuleHelpSheet extends StatefulWidget {
+  const _RuleHelpSheet();
+
+  @override
+  State<_RuleHelpSheet> createState() => _RuleHelpSheetState();
+}
+
+class _RuleHelpSheetState extends State<_RuleHelpSheet> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  InlineSpan _linkSpan(String label, String url) {
+    final recognizer = TapGestureRecognizer()
+      ..onTap = () async {
+        final uri = Uri.tryParse(url);
+        if (uri == null) return;
+        try {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (_) {
+          // 打开失败静默处理
+        }
+      };
+    _recognizers.add(recognizer);
+    return TextSpan(
+      text: label,
+      style: TextStyle(color: Theme.of(context).colorScheme.primary),
+      recognizer: recognizer,
+    );
+  }
+
+  /// 行内解析 [label](url) 链接
+  InlineSpan _renderInline(String text) {
+    final spans = <InlineSpan>[];
+    final regex = RegExp(r'\[(.+?)\]\((https?://[^)\s]+)\)');
+    var last = 0;
+    for (final m in regex.allMatches(text)) {
+      if (m.start > last) {
+        spans.add(TextSpan(text: text.substring(last, m.start)));
+      }
+      spans.add(_linkSpan(m.group(1)!, m.group(2)!));
+      last = m.end;
+    }
+    if (last < text.length) {
+      spans.add(TextSpan(text: text.substring(last)));
+    }
+    return TextSpan(children: spans);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.85,
+      child: Column(
+        children: [
+          // iOS 风格抓手
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text('书源规则帮助', style: theme.textTheme.titleLarge),
+          ),
+          Divider(height: 1, color: colorScheme.outlineVariant),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              children: _buildHelpLines(theme, colorScheme),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildHelpLines(ThemeData theme, ColorScheme colorScheme) {
+    final result = <Widget>[];
+    var inCode = false;
+    final codeLines = <String>[];
+    for (final raw in _ruleHelpContent.split('\n')) {
+      final line = raw.trimRight();
+      if (line.trim() == '```') {
+        if (inCode) {
+          result.add(
+            Container(
+              width: double.maxFinite,
+              margin: const EdgeInsets.only(bottom: 8, left: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                codeLines.join('\n'),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
+            ),
+          );
+          codeLines.clear();
+          inCode = false;
+        } else {
+          inCode = true;
+        }
+        continue;
+      }
+      if (inCode) {
+        codeLines.add(raw);
+        continue;
+      }
+      if (line.trim().isEmpty) continue;
+      if (line.startsWith('## ')) {
+        result.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 16, bottom: 6),
+            child: Text(
+              line.substring(3),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        );
+      } else if (line.startsWith('* ')) {
+        result.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('• '),
+                Expanded(child: Text.rich(_renderInline(line.substring(2)))),
+              ],
+            ),
+          ),
+        );
+      } else if (line.startsWith('> ')) {
+        result.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4, left: 16),
+            child: Text.rich(
+              _renderInline(line.substring(2)),
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        );
+      } else {
+        result.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text.rich(_renderInline(line)),
+          ),
+        );
+      }
+    }
+    return result;
+  }
+}
+
+/// 全屏 JSON 编辑对话框：controller 生命周期绑定对话框子树，
+/// 随子树卸载统一释放（避免退场动画期间 dispose 引发框架断言）
+class _FullscreenJsonEditDialog extends StatefulWidget {
+  final String initialText;
+
+  const _FullscreenJsonEditDialog({required this.initialText});
+
+  @override
+  State<_FullscreenJsonEditDialog> createState() =>
+      _FullscreenJsonEditDialogState();
+}
+
+class _FullscreenJsonEditDialogState
+    extends State<_FullscreenJsonEditDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('全屏编辑'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: '关闭',
+            onPressed: () => Navigator.pop(context),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, _controller.text),
+              child: const Text('应用'),
+            ),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: TextField(
+            controller: _controller,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
