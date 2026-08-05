@@ -7,8 +7,8 @@ use rusqlite::Connection;
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// 当前 Schema 版本号（对齐上游 Room AppDatabase v99）
-pub const SCHEMA_VERSION: u32 = 99;
+/// 当前 Schema 版本号（对齐上游 Room AppDatabase v99，v100 为 Rust 轨自有扩展：rule_subs 补全 Kotlin RuleSub 字段）
+pub const SCHEMA_VERSION: u32 = 100;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -464,7 +464,14 @@ CREATE TABLE IF NOT EXISTS rule_subs (
     last_update INTEGER NOT NULL DEFAULT 0,
     version TEXT DEFAULT '',
     is_enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    custom_order INTEGER NOT NULL DEFAULT 0,
+    auto_update INTEGER NOT NULL DEFAULT 0,
+    update_interval INTEGER NOT NULL DEFAULT 0,
+    silent_update INTEGER NOT NULL DEFAULT 0,
+    js TEXT,
+    show_rule TEXT,
+    source_url TEXT
 );
 ";
 

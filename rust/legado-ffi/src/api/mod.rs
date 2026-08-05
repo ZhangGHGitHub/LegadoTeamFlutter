@@ -29,6 +29,7 @@ pub mod review_api;
 pub mod rss;
 pub mod rss_read_record_api;
 pub mod rss_star_api;
+pub mod rule_sub_api;
 pub mod search;
 pub mod search_history_api;
 pub mod server_api;

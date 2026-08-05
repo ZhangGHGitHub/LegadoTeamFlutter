@@ -1728,4 +1728,50 @@ pub mod ffi {
     pub fn app_log_export() -> Result<String, BridgeError> {
         Ok(crate::api::log_api::export_logs()?)
     }
+
+    // ─── 规则订阅（Task #89，对齐 Kotlin RuleSub/RuleSubActivity）──────
+
+    /// 获取规则订阅列表（RuleSub 数组 JSON，按 customOrder 排序）
+    pub fn rule_sub_list() -> Result<String, BridgeError> {
+        let subs = crate::api::rule_sub_api::list_subs_db()?;
+        to_json(&subs)
+    }
+
+    /// 保存规则订阅（RuleSub JSON，id>0 且存在则更新，否则新增）
+    pub fn rule_sub_save(sub_json: String) -> Result<bool, BridgeError> {
+        let record: legado_db::RuleSubRecord = serde_json::from_str(&sub_json)?;
+        Ok(crate::api::rule_sub_api::save_sub_db(&record)?)
+    }
+
+    /// 删除规则订阅，返回是否实际删除
+    pub fn rule_sub_delete(id: i64) -> Result<bool, BridgeError> {
+        Ok(crate::api::rule_sub_api::delete_sub_db(id)?)
+    }
+
+    /// 切换规则订阅启用状态，返回记录是否存在
+    pub fn rule_sub_set_enabled(id: i64, enabled: bool) -> Result<bool, BridgeError> {
+        Ok(crate::api::rule_sub_api::set_sub_enabled_db(id, enabled)?)
+    }
+
+    /// 批量更新规则订阅排序（拖拽排序，ids_json 为新顺序 ID 数组）
+    pub fn rule_sub_update_order(ids_json: String) -> Result<bool, BridgeError> {
+        let ids: Vec<i64> = serde_json::from_str(&ids_json)?;
+        Ok(crate::api::rule_sub_api::update_sub_order_db(&ids)?)
+    }
+
+    /// 检查规则订阅更新（委托 should_update/fetch_subscription，返回检查结果 JSON）
+    ///
+    /// 返回字段：id/url/name/dueForUpdate/hasUpdate/remoteVersion/error
+    pub fn rule_sub_check_update(id: i64) -> Result<String, BridgeError> {
+        let result = crate::api::rule_sub_api::check_sub_update_db(id)?;
+        to_json(&result)
+    }
+
+    /// 应用规则订阅更新（委托 fetch/merge_subscription，返回应用结果 JSON）
+    ///
+    /// 返回字段：id/url/success/itemsAdded/itemsUpdated/itemsRemoved/totalItems/error
+    pub fn rule_sub_apply_update(id: i64) -> Result<String, BridgeError> {
+        let result = crate::api::rule_sub_api::apply_sub_update_db(id)?;
+        to_json(&result)
+    }
 }

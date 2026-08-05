@@ -465,6 +465,25 @@
 | `appLogClearAll()` | 无 | `Future<void>` | 清空全部级别日志（对齐 #543 清空确认后的 AppLog.clear + HttpLogStore.clear） |
 | `appLogExport()` | 无 | `Future<String>` | 导出全部日志为格式化文本（时间升序，64_000 字符截断，对齐 #543） |
 
+### 2.39 规则订阅（rule_sub FFI，Task #89）（7 个方法）
+
+> 对齐 Kotlin `RuleSub.kt` 实体与 `RuleSubActivity.kt`（列表 CRUD / 拖拽排序 / 自动更新 / 静默更新 / 更新间隔）。
+> DB v100（Rust 轨自有扩展）：rule_subs 表补全 Kotlin RuleSub 字段 `customOrder` / `autoUpdate` / `updateInterval` /
+> `silentUpdate` / `js` / `showRule` / `sourceUrl`（Migration99To100，幂等补列，不动 v95-v99 高亮体系迁移）。
+> RuleSub JSON 字段：`id` / `url` / `name` / `sub_type`（bookSource/replaceRule/rssSource）/ `last_update` / `version` /
+> `is_enabled` / `created_at` / `customOrder` / `autoUpdate` / `updateInterval` / `silentUpdate` / `js` / `showRule` / `sourceUrl`（新增 7 字段对齐 Kotlin 驼峰命名）。
+> 检查/应用更新委托 `legado-net` rule_update_client（should_update / fetch_subscription / merge_subscription）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `ruleSubList()` | 无 | `Future<String>` | 获取订阅列表（RuleSub 数组 JSON，按 customOrder 排序） |
+| `ruleSubSave({required String subJson})` | RuleSub JSON | `Future<bool>` | 新增/更新订阅（id>0 且存在则更新，否则新增） |
+| `ruleSubDelete({required int id})` | id | `Future<bool>` | 删除订阅，返回是否实际删除 |
+| `ruleSubSetEnabled({required int id, required bool enabled})` | id, enabled | `Future<bool>` | 切换启用状态，返回记录是否存在 |
+| `ruleSubUpdateOrder({required String idsJson})` | idsJson（新顺序 ID 数组 JSON） | `Future<bool>` | 拖拽排序：按索引重写 customOrder（0 起） |
+| `ruleSubCheckUpdate({required int id})` | id | `Future<String>` | 检查更新（检查结果 JSON：`id` / `url` / `name` / `dueForUpdate`（should_update 间隔判定）/ `hasUpdate`（远程版本对比）/ `remoteVersion` / `error`） |
+| `ruleSubApplyUpdate({required int id})` | id | `Future<String>` | 应用更新（应用结果 JSON：`id` / `url` / `success` / `itemsAdded` / `itemsUpdated` / `itemsRemoved` / `totalItems` / `error`；合并后回写版本号与最后更新时间） |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -483,6 +502,7 @@
 | `reviewGetReplies`（新增） | `String sourceJson, String requestJson, int page` | `Future<String>`（段评回复按需加载，对标 Android `ReviewDetailDialog.loadReplies` + `ReviewRuleParser.parseReplyPage`，上游 #519；返回 `{items, nextPageUrl}` 对象包装，Flutter 段评弹窗回复 UI 由 UI 轨后续接入） | 2026-08-04 | ✅ 已完成 |
 | `appLog*`（新增，Task #79） | 见 §2.38 方法清单 | 应用日志体系：Rust 侧三级环形缓冲（message/crash/http）+ 写入/查询/清空/导出 FFI（对齐 Kotlin AppLog 旧欠账 + 上游 #543 导出 64K 截断），日志页面 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `checkSource` / `checkSourcesStream` / `cancelCheckSources`（新增，Task #87） | 见 §2.3 方法清单 | 书源校验 FFI 暴露：单本四步校验（CheckResult JSON）+ 批量串行 Stream 进度回推（CheckProgress JSON）+ 取消（包装 legado-net SourceChecker，对齐 Kotlin CheckSource 与 server /sources/check），校验页面 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
+| `ruleSub*`（新增，Task #89） | 见 §2.39 方法清单 | 规则订阅 FFI 暴露：列表/保存/删除/启用切换/拖拽排序 + 检查更新/应用更新（DB v100 补全 Kotlin RuleSub 7 字段，委托 legado-net rule_update_client），订阅管理 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -560,4 +580,5 @@
 | 36 | 正文高亮 | 11 |
 | 37 | JS 单文件书源配置 | 3 |
 | 38 | 应用日志 | 5 |
-| | **合计** | **190** |
+| 39 | 规则订阅 | 7 |
+| | **合计** | **197** |

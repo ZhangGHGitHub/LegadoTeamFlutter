@@ -1298,3 +1298,37 @@ Future<void> appLogClearAll() =>
 
 /// 导出全部日志为格式化文本（时间升序，64_000 字符截断，对齐 #543）
 Future<String> appLogExport() => RustLib.instance.api.crateFfiFfiAppLogExport();
+
+/// 获取规则订阅列表（RuleSub 数组 JSON，按 customOrder 排序）
+Future<String> ruleSubList() => RustLib.instance.api.crateFfiFfiRuleSubList();
+
+/// 保存规则订阅（RuleSub JSON，id>0 且存在则更新，否则新增）
+Future<bool> ruleSubSave({required String subJson}) =>
+    RustLib.instance.api.crateFfiFfiRuleSubSave(subJson: subJson);
+
+/// 删除规则订阅，返回是否实际删除
+Future<bool> ruleSubDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiRuleSubDelete(id: id);
+
+/// 切换规则订阅启用状态，返回记录是否存在
+Future<bool> ruleSubSetEnabled({
+  required PlatformInt64 id,
+  required bool enabled,
+}) =>
+    RustLib.instance.api.crateFfiFfiRuleSubSetEnabled(id: id, enabled: enabled);
+
+/// 批量更新规则订阅排序（拖拽排序，ids_json 为新顺序 ID 数组）
+Future<bool> ruleSubUpdateOrder({required String idsJson}) =>
+    RustLib.instance.api.crateFfiFfiRuleSubUpdateOrder(idsJson: idsJson);
+
+/// 检查规则订阅更新（委托 should_update/fetch_subscription，返回检查结果 JSON）
+///
+/// 返回字段：id/url/name/dueForUpdate/hasUpdate/remoteVersion/error
+Future<String> ruleSubCheckUpdate({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiRuleSubCheckUpdate(id: id);
+
+/// 应用规则订阅更新（委托 fetch/merge_subscription，返回应用结果 JSON）
+///
+/// 返回字段：id/url/success/itemsAdded/itemsUpdated/itemsRemoved/totalItems/error
+Future<String> ruleSubApplyUpdate({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiRuleSubApplyUpdate(id: id);

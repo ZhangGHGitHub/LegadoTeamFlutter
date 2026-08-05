@@ -1954,6 +1954,66 @@ pub unsafe extern "C" fn ffi_auto_task_find_rule_by_id(id: *const c_char) -> *mu
     }))
 }
 
+// ─── 规则订阅 FFI 函数（Task #89）─────────────────
+
+/// 获取规则订阅列表（返回 RuleSub 数组 JSON，按 customOrder 排序）
+#[no_mangle]
+pub extern "C" fn ffi_rule_sub_list() -> *mut c_char {
+    to_ffi_response(catch_unwind(|| crate::api::rule_sub_api::list_subs_db()))
+}
+
+/// 保存规则订阅（sub_json 为 RuleSub JSON，返回是否成功）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rule_sub_save(sub_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let json = c_char_to_str(sub_json)?;
+        let record: legado_db::RuleSubRecord =
+            serde_json::from_str(json).map_err(|e| LegadoError::Parser(e.to_string()))?;
+        crate::api::rule_sub_api::save_sub_db(&record)
+    }))
+}
+
+/// 删除规则订阅（返回是否实际删除）
+#[no_mangle]
+pub extern "C" fn ffi_rule_sub_delete(id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| crate::api::rule_sub_api::delete_sub_db(id)))
+}
+
+/// 切换规则订阅启用状态（返回记录是否存在）
+#[no_mangle]
+pub extern "C" fn ffi_rule_sub_set_enabled(id: i64, enabled: bool) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::rule_sub_api::set_sub_enabled_db(id, enabled)
+    }))
+}
+
+/// 批量更新规则订阅排序（ids_json 为新顺序 ID 数组 JSON）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rule_sub_update_order(ids_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let json = c_char_to_str(ids_json)?;
+        let ids: Vec<i64> =
+            serde_json::from_str(json).map_err(|e| LegadoError::Parser(e.to_string()))?;
+        crate::api::rule_sub_api::update_sub_order_db(&ids)
+    }))
+}
+
+/// 检查规则订阅更新（返回检查结果 JSON）
+#[no_mangle]
+pub extern "C" fn ffi_rule_sub_check_update(id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::rule_sub_api::check_sub_update_db(id)
+    }))
+}
+
+/// 应用规则订阅更新（返回应用结果 JSON）
+#[no_mangle]
+pub extern "C" fn ffi_rule_sub_apply_update(id: i64) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        crate::api::rule_sub_api::apply_sub_update_db(id)
+    }))
+}
+
 // ─── 听书播放（播放模式/书籍解析）FFI 函数 ───────────────
 
 /// 将播放模式写入 readConfig JSON（read_config 为空指针时视为空）

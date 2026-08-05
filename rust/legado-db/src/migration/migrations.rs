@@ -10,6 +10,8 @@
 //! - v96 → v97: `highlights` 表新增 bookUrl/chapterUrl 列并回填（Migration_96_97）
 //! - v97 → v98: 新建 `highlightRules` 表（上游 v98 引入）
 //! - v98 → v99: `readRecord` 表新增 `author` 列并用 books 表回填（Migration_98_99）
+//! - v99 → v100: `rule_subs` 表补全 Kotlin RuleSub 字段（customOrder/autoUpdate/
+//!   updateInterval/silentUpdate/js/showRule/sourceUrl，Rust 轨自有扩展）
 //!
 //! 历史说明：原 Rust 自有 `Migration95To96`（books/rssSources 补列）与上游 v96
 //! 语义撞车，已改造为不占版本号的幂等修复函数 [`repair_legacy_columns`]，
@@ -443,6 +445,76 @@ impl Migration for Migration98To99 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v99 → v100: rule_subs 补全 Kotlin RuleSub 字段（Rust 轨自有扩展）
+// ---------------------------------------------------------------------------
+
+/// 从 v99 升级到 v100
+///
+/// 变更内容（对齐 Kotlin `RuleSub` 实体字段清单）：
+/// rule_subs 表新增 7 列：
+/// - `custom_order` INTEGER（自定义排序，拖拽排序依据）
+/// - `auto_update` INTEGER/BOOLEAN（是否自动更新）
+/// - `update_interval` INTEGER（更新间隔，小时）
+/// - `silent_update` INTEGER/BOOLEAN（是否静默更新）
+/// - `js` TEXT（访问链接前执行的 js 规则）
+/// - `show_rule` TEXT（显示规则）
+/// - `source_url` TEXT（绑定的源链接）
+///
+/// 幂等检测缺列才补，重复执行安全。
+pub struct Migration99To100;
+
+impl Migration for Migration99To100 {
+    fn from_version(&self) -> u32 {
+        99
+    }
+    fn to_version(&self) -> u32 {
+        100
+    }
+    fn description(&self) -> &str {
+        "rule_subs 补全 Kotlin RuleSub 字段（customOrder/autoUpdate/updateInterval/silentUpdate/js/showRule/sourceUrl）"
+    }
+
+    fn up(&self, conn: &Connection) -> LegadoResult<()> {
+        if table_exists(conn, "rule_subs")? {
+            add_column_if_not_exists(
+                conn,
+                "rule_subs",
+                "custom_order",
+                "INTEGER NOT NULL DEFAULT 0",
+            )?;
+            add_column_if_not_exists(
+                conn,
+                "rule_subs",
+                "auto_update",
+                "INTEGER NOT NULL DEFAULT 0",
+            )?;
+            add_column_if_not_exists(
+                conn,
+                "rule_subs",
+                "update_interval",
+                "INTEGER NOT NULL DEFAULT 0",
+            )?;
+            add_column_if_not_exists(
+                conn,
+                "rule_subs",
+                "silent_update",
+                "INTEGER NOT NULL DEFAULT 0",
+            )?;
+            add_column_if_not_exists(conn, "rule_subs", "js", "TEXT")?;
+            add_column_if_not_exists(conn, "rule_subs", "show_rule", "TEXT")?;
+            add_column_if_not_exists(conn, "rule_subs", "source_url", "TEXT")?;
+        }
+        Ok(())
+    }
+
+    fn down(&self, _conn: &Connection) -> LegadoResult<()> {
+        Err(LegadoError::Database(
+            "Cannot safely rollback Migration99To100: DROP COLUMN not supported".into(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,11 +634,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 99);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 100);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 99);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 100);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -657,14 +729,77 @@ mod tests {
     }
 
     #[test]
-    fn test_fresh_db_reaches_v99_with_highlight_tables() {
+    fn test_fresh_db_reaches_v100_with_highlight_tables() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 99);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 100);
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
         assert!(column_exists(conn, "highlights", "chapterUrl"));
         assert!(column_exists(conn, "readRecord", "author"));
+        // v100: rule_subs 补全 Kotlin RuleSub 字段
+        assert!(column_exists(conn, "rule_subs", "custom_order"));
+        assert!(column_exists(conn, "rule_subs", "auto_update"));
+        assert!(column_exists(conn, "rule_subs", "update_interval"));
+        assert!(column_exists(conn, "rule_subs", "silent_update"));
+        assert!(column_exists(conn, "rule_subs", "js"));
+        assert!(column_exists(conn, "rule_subs", "show_rule"));
+        assert!(column_exists(conn, "rule_subs", "source_url"));
+    }
+
+    #[test]
+    fn test_migration_99_to_100_rule_subs_columns() {
+        // 构造 v99 形态的 rule_subs 表（缺少新增 7 列）
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TABLE rule_subs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL DEFAULT '',
+                sub_type TEXT NOT NULL DEFAULT 'bookSource',
+                last_update INTEGER NOT NULL DEFAULT 0,
+                version TEXT DEFAULT '',
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO rule_subs (url, name, created_at) VALUES ('https://example.com/s.json', '存量订阅', 1700000000000)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 99).unwrap();
+
+        // 执行 v99 → v100
+        let m = Migration99To100;
+        m.up(conn).unwrap();
+        // 幂等：重复执行不报错
+        m.up(conn).unwrap();
+
+        assert!(column_exists(conn, "rule_subs", "custom_order"));
+        assert!(column_exists(conn, "rule_subs", "auto_update"));
+        assert!(column_exists(conn, "rule_subs", "update_interval"));
+        assert!(column_exists(conn, "rule_subs", "silent_update"));
+        assert!(column_exists(conn, "rule_subs", "js"));
+        assert!(column_exists(conn, "rule_subs", "show_rule"));
+        assert!(column_exists(conn, "rule_subs", "source_url"));
+
+        // 存量数据新列取默认值
+        let (custom_order, auto_update, js): (i32, i32, Option<String>) = conn
+            .query_row(
+                "SELECT custom_order, auto_update, js FROM rule_subs WHERE url = 'https://example.com/s.json'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(custom_order, 0);
+        assert_eq!(auto_update, 0);
+        assert!(js.is_none());
+
+        // down 应报错（不支持 DROP COLUMN）
+        assert!(m.down(conn).is_err());
     }
 }
