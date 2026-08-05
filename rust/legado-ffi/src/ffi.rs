@@ -195,6 +195,51 @@ pub mod ffi {
         to_json(&sources)
     }
 
+    // ─── 书源校验（Task #87，加法式新增） ─────────────────────
+
+    /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
+    ///
+    /// 返回 CheckResult JSON：`source_url` / `search_ok` / `toc_ok` /
+    /// `content_ok` / `search_error` / `toc_error` / `content_error` /
+    /// `total_time_ms` / `captcha` / `redirect`。
+    ///
+    /// `source_json` — BookSource JSON（字段名对齐 Android 原版 camelCase）
+    /// `config_json` — 可选校验配置 JSON（keyword/step_timeout_ms/check_search/
+    /// check_toc/check_content/detect_captcha/detect_redirect），空串用默认配置
+    pub fn source_check(source_json: String, config_json: String) -> Result<String, BridgeError> {
+        let result = crate::api::source_check_api::check_source(&source_json, &config_json)?;
+        to_json(&result)
+    }
+
+    /// 批量校验书源（串行逐个回推进度，Stream<String>）
+    ///
+    /// 每完成一个书源即推送一条进度 JSON：`index` / `total` / `is_last` /
+    /// `source_name` / `result`（CheckResult）。流在所有书源完成、
+    /// 取消或 sink 关闭后自然结束。
+    ///
+    /// `source_urls_json` — 待校验书源 URL 的 JSON 数组；为空则校验全部书源
+    /// `config_json` — 可选校验配置 JSON，空串用默认配置
+    /// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
+    pub async fn source_check_stream(
+        source_urls_json: String,
+        config_json: String,
+        sink: StreamSink<String>,
+    ) -> Result<(), BridgeError> {
+        crate::api::source_check_api::run_check_sources_stream(
+            source_urls_json,
+            config_json,
+            |item| sink.add(item).map_err(|e| e.to_string()),
+        )
+        .await;
+        Ok(())
+    }
+
+    /// 取消正在进行的批量书源校验
+    pub fn source_check_cancel() -> Result<(), BridgeError> {
+        crate::api::source_check_api::cancel_check_sources();
+        Ok(())
+    }
+
     // ─── 登录 UI V2 动态状态协议（#402/#488，加法式新增） ─────────
 
     /// 判定书源登录 UI 是否为 V2 动态状态协议

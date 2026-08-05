@@ -275,6 +275,73 @@ pub extern "C" fn ffi_source_export() -> *mut c_char {
     to_ffi_response(catch_unwind(crate::api::source::export_sources))
 }
 
+// ─── 书源校验 FFI 函数（Task #87，加法式新增） ──────────────────────
+
+/// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
+///
+/// `config_json` 传空串使用默认配置；返回 CheckResult JSON。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_source_check(
+    source_json: *const c_char,
+    config_json: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let source = c_char_to_str(source_json)?;
+        let config = c_char_to_str(config_json)?;
+        crate::api::source_check_api::check_source(source, config)
+    }))
+}
+
+/// 批量校验进度回调（C ABI）
+///
+/// 每完成一个书源即被调用一次：
+/// - `progress_json` — 该书源进度（`CheckProgress`）的 JSON 字符串（NUL 结尾，仅回调期间有效）
+/// - `user_data` — 调用方透传的上下文指针
+pub type FfiSourceCheckCallback =
+    unsafe extern "C" fn(progress_json: *const c_char, user_data: *mut std::ffi::c_void);
+
+/// 批量校验书源（C ABI，回调模式，串行逐个回推）
+///
+/// 同步阻塞直到所有书源完成/取消；每完成一个书源即通过 `callback`
+/// 推送一条进度 JSON。与 frb `source_check_stream`（Stream）互补，
+/// 供原生 C 消费者逐源渲染。
+///
+/// # Safety
+/// `callback` 可能从后台工作线程调用，调用方须保证其线程安全；`user_data` 原样透传。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_source_check_stream(
+    source_urls_json: *const c_char,
+    config_json: *const c_char,
+    callback: FfiSourceCheckCallback,
+    user_data: *mut std::ffi::c_void,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let urls = c_char_to_str(source_urls_json)?.to_string();
+        let config = c_char_to_str(config_json)?.to_string();
+
+        crate::runtime::block_on(crate::api::source_check_api::run_check_sources_stream(
+            urls,
+            config,
+            |item| {
+                if let Ok(cs) = CString::new(item) {
+                    unsafe { callback(cs.as_ptr(), user_data) };
+                }
+                Ok::<(), String>(())
+            },
+        ));
+
+        Ok::<_, LegadoError>("ok".to_string())
+    }))
+}
+
+/// 取消正在进行的批量书源校验
+#[no_mangle]
+pub extern "C" fn ffi_source_check_cancel() {
+    let _ = catch_unwind(|| {
+        crate::api::source_check_api::cancel_check_sources();
+    });
+}
+
 // ─── 搜索 FFI 函数 ──────────────────────────────────────────
 
 /// 搜索书籍
