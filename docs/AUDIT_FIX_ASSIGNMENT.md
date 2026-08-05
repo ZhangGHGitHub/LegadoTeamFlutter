@@ -60,7 +60,8 @@
 |---|---|---|
 | §1.1 书源校验 FFI 链路 | ⛳ 继续延后 | 评估结论见 §5.4；另有并行会话在改书源管理页，UI 入口必冲突 |
 | §1.2 app_log_screen 页面 | ✅ 第二批完成 | 见 §5.1 |
-| §2.1 验证码输入页 / 规则订阅页 | ⛳ 待排期 | 新页面开发，独立任务 |
+| §2.1 验证码输入页 / 规则订阅页 | ⛳ 待排期 | 依赖 Rust 轨：验证码仅有被动检测（CaptchaInfo）无 UI 链路；规则订阅 Rust 侧 DB/Repository/HTTP 已备但 FFI 空缺，均需契约冻结+codegen |
+| §2.1 跳转确认（OpenUrlConfirm） | ✅ 第三批完成 | 降级为通用 Dialog，见 §5.6 |
 | §1.3 HTTP TTS 引擎接 http_tts_repository | ✅ 无需修复 | 审计描述过期：`list_engines` 已接通 `HttpTtsRepository::find_enabled`（见 §5.3） |
 | §1.4 MOBI HUFF/CDIC + KF8 | ⛳ 待排期 | 解析器移植，低频路径 |
 | §3.4 design_system.md Token 同步 | ✅ 第二批完成 | 见 §5.2 |
@@ -113,3 +114,17 @@
 - `flutter analyze`：无 error / warning（214 项存量 info，均在 test 目录且不涉及本批文件）
 - `flutter test`：**1092 项全部通过**（含高亮规则 widget 测试 5 项回归验证）
 - 提交时只精确 add 本批文件，不触碰书源管理页相关文件（避免与并行会话冲突）
+
+### 5.6 第三批 — 跳转确认对话框（2026-08-05）
+
+`[UI] 审计修复第三批：新增外链跳转确认对话框（对齐原版 OpenUrlConfirmDialog，降级 Dialog 实现）`
+
+| 审计条目 | 修复内容 | 文件 |
+|---|---|---|
+| §2.1 跳转确认（P2） | 新建 `open_url_confirm_dialog.dart`：确认文案对齐原版「正在请求跳转链接/应用，是否跳转？」，含来源名副标题、URL 可选展示、失败提示；RSS 文章详情 WebView 拦截外链接入确认 | widgets/open_url_confirm_dialog.dart、rss_article_detail_screen.dart |
+
+**接入范围决策**：仅内容/网页请求跳转（WebView 拦截外链）走确认；用户显式操作（关于页仓库/捐赠、词典规则、书源登录链接、「在浏览器打开」按钮、RSS 收藏打开原文）保持直开，对齐原版触发语义（原版仅书源/内容规则跳转触发）。
+
+**降级登记**：原版菜单「禁用书源/删除书源」依赖书源管理接口，且书源管理页正由并行会话修改，本批不实现。
+
+**验证码/规则订阅侦察结论**（同批）：验证码 Rust 侧仅 source_checker 被动检测（CaptchaInfo），无推送 UI/回填链路；规则订阅 Rust 侧 rule_subs 表/RuleSubRepository/rule_update handler/HTTP 路由已备，但 legado-ffi 与契约均空缺——两项均需 Rust 轨先行（契约冻结+codegen），继续待排期。
