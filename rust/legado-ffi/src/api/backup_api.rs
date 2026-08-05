@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_backup_create_and_restore() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         let dir = std::env::temp_dir().join("legado_backup_test");
         let _ = fs::create_dir_all(&dir);

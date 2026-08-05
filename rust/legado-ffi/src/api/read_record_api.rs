@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn test_read_record_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 添加记录
         let rt = upsert_read_record("测试书籍", 5000).unwrap();

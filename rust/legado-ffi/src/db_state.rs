@@ -54,13 +54,33 @@ where
     f(&db)
 }
 
-/// 测试专用：确保全局数据库已初始化（仅执行一次，并行安全）
+/// 测试专用：确保全局数据库已初始化，并获取测试串行锁守卫
+///
+/// # 并行竞态修复（Task #98 缺口#8）
+/// 所有 DB 测试共享同一个内存数据库（`Once` 初始化的全局连接池）。
+/// 此前并行测试对共享库插入固定 ID/名称，互相碰撞（UNIQUE 冲突、
+/// 全局启用规则/阅读记录交叉污染）导致 flaky。
+///
+/// 修复方式：保留共享内存库，改为返回测试互斥锁守卫。
+/// 调用方必须将守卫绑定到局部变量（如 `let _db_guard = ensure_test_db();`），
+/// 守卫存活至测试结束才释放，从而让 DB 测试串行执行；
+/// 不涉及 DB 的测试不受影响，cargo test 并行模式依旧生效。
+///
+/// 注意：持有守卫期间勿再次调用本函数（该锁不可重入，会死锁）。
 #[cfg(test)]
-pub fn ensure_test_db() {
-    use std::sync::Once;
+#[must_use = "必须将返回的锁守卫绑定到变量（如 let _db_guard = ...），否则串行化失效"]
+pub fn ensure_test_db() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::{Mutex, Once};
     static INIT: Once = Once::new();
+    /// 测试串行锁：所有共享内存库的 DB 测试须持锁执行
+    static TEST_DB_LOCK: Mutex<()> = Mutex::new(());
     INIT.call_once(|| {
         let db = legado_db::init_in_memory_database().expect("Failed to init test database");
         init_database(db).expect("Failed to set global database");
     });
+    // 中毒（前一个持锁测试 panic）时直接恢复：我们只需要串行语义，
+    // 不依赖锁内数据一致性（共享库本身仍可用）
+    TEST_DB_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

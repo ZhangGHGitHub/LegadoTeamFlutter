@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_highlight_crud_flow() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 新增
         let json = r#"{
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_highlight_delete_by_book() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         for i in 0..2 {
             let json = format!(
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_highlight_rule_crud_flow() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 新增规则（id=0 自增）
         let json = r#"{
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_highlight_add_invalid_json() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         assert!(highlight_add("{invalid json").is_err());
         assert!(highlight_rule_save("{invalid json").is_err());
     }

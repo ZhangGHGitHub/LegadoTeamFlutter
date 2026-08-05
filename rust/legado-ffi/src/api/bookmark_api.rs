@@ -77,14 +77,14 @@ pub fn get_all_bookmarks() -> LegadoResult<Vec<Bookmark>> {
 mod tests {
     use super::*;
 
-    /// 辅助：初始化内存数据库并设置全局状态
-    fn setup_test_db() {
-        crate::db_state::ensure_test_db();
+    /// 辅助：初始化内存数据库并设置全局状态（返回串行锁守卫，测试必须绑定到变量）
+    fn setup_test_db() -> std::sync::MutexGuard<'static, ()> {
+        crate::db_state::ensure_test_db()
     }
 
     #[test]
     fn test_add_and_get_bookmarks() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         let id = add_bookmark(
             "bm_测试书籍_1",
             "作者A",
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_add_multiple_bookmarks() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         add_bookmark("bm_书A_2", "作者1", 0, 0, "ch0", "text1", "").unwrap();
         add_bookmark("bm_书A_2", "作者1", 1, 50, "ch1", "text2", "").unwrap();
         add_bookmark("bm_书B_2", "作者2", 0, 0, "ch0", "text3", "").unwrap();
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_delete_bookmark() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         let id = add_bookmark("bm_书A_3", "作者", 0, 0, "ch0", "text", "").unwrap();
         assert_eq!(get_bookmarks("bm_书A_3").unwrap().len(), 1);
 
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_search_bookmarks() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         add_bookmark(
             "bm_书A_4",
             "作者",
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_search_bookmarks_by_content() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         add_bookmark("bm_书A_5", "作者", 0, 0, "ch0", "text", "重要备注_5").unwrap();
 
         let results = search_bookmarks("备注_5").unwrap();
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_get_all_bookmarks() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         add_bookmark("bm_书A_6", "作者1", 0, 0, "ch0", "t1", "").unwrap();
         add_bookmark("bm_书B_6", "作者2", 0, 0, "ch0", "t2", "").unwrap();
 

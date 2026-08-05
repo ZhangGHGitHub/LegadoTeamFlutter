@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_rss_star_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 添加收藏
         let ts = add_rss_star(

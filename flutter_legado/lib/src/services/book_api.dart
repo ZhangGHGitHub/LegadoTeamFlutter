@@ -255,6 +255,51 @@ abstract class BookApi {
   /// 解析书籍元数据
   Future<String> parseMetadata(String filePath);
 
+  // ========== 本地 TXT 全文搜索（Task #98 缺口#4，加法式新增） ==========
+
+  /// 搜索本地 TXT 文件内容（纯文本模式，章节感知）
+  ///
+  /// 对齐 Android 原版搜索页内“搜本地书正文”场景。
+  /// 返回搜索结果列表，每项字段（snake_case）：
+  /// `chapter_index`（章节序号）/ `chapter_title`（章节标题）/
+  /// `char_offset`（匹配在章节内的字符偏移）/ `matched_text`（匹配文本）/
+  /// `context`（上下文摘要）/ `context_match_start` / `context_match_end`
+  /// （匹配在上下文中的起止位置）。
+  Future<List<Map<String, dynamic>>> txtSearch(
+    String path,
+    String query, {
+    bool caseSensitive = false,
+    int maxResults = 500,
+  });
+
+  /// 使用正则表达式搜索本地 TXT 文件内容
+  ///
+  /// 返回格式同 [txtSearch]。
+  Future<List<Map<String, dynamic>>> txtSearchRegex(
+    String path,
+    String pattern, {
+    bool caseSensitive = false,
+    int maxResults = 500,
+  });
+
+  /// 在本地 TXT 文件指定章节内搜索
+  ///
+  /// [chapterIndex] 为章节序号（从 0 开始）。返回格式同 [txtSearch]。
+  Future<List<Map<String, dynamic>>> txtSearchInChapter(
+    String path,
+    String query,
+    int chapterIndex, {
+    bool caseSensitive = false,
+    int maxResults = 50,
+  });
+
+  /// 统计本地 TXT 文件内关键词匹配总数（不返回完整结果，供 UI 显示计数）
+  Future<int> txtSearchCount(
+    String path,
+    String query, {
+    bool caseSensitive = false,
+  });
+
   // ========== 书签操作 ==========
 
   /// 获取某本书的所有书签

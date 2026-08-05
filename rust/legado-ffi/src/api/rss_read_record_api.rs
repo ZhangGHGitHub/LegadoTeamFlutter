@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn test_rss_read_record_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 标记已读
         mark_read("https://rss.example.com", "Test Article", Some("https://link.com/1")).unwrap();

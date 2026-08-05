@@ -319,6 +319,68 @@ Future<String> importParseMetadata({required String filePath}) =>
 Future<String> importLocalBook({required String filePath}) =>
     RustLib.instance.api.crateFfiFfiImportLocalBook(filePath: filePath);
 
+/// 搜索本地 TXT 文件内容（纯文本模式）
+///
+/// 对齐 C ABI `ffi_txt_search`。返回 JSON 序列化的 `Vec<TxtSearchResult>`，
+/// 每项含 `chapter_index` / `chapter_title` / `char_offset` / `matched_text` /
+/// `context` / `context_match_start` / `context_match_end`。
+Future<String> txtSearch({
+  required String path,
+  required String query,
+  required bool caseSensitive,
+  required int maxResults,
+}) => RustLib.instance.api.crateFfiFfiTxtSearch(
+  path: path,
+  query: query,
+  caseSensitive: caseSensitive,
+  maxResults: maxResults,
+);
+
+/// 使用正则搜索本地 TXT 文件内容
+///
+/// 对齐 C ABI `ffi_txt_search_regex`。返回格式同 `txt_search`。
+Future<String> txtSearchRegex({
+  required String path,
+  required String pattern,
+  required bool caseSensitive,
+  required int maxResults,
+}) => RustLib.instance.api.crateFfiFfiTxtSearchRegex(
+  path: path,
+  pattern: pattern,
+  caseSensitive: caseSensitive,
+  maxResults: maxResults,
+);
+
+/// 在本地 TXT 文件指定章节内搜索
+///
+/// 对齐 C ABI `ffi_txt_search_in_chapter`。返回格式同 `txt_search`。
+Future<String> txtSearchInChapter({
+  required String path,
+  required String query,
+  required int chapterIndex,
+  required bool caseSensitive,
+  required int maxResults,
+}) => RustLib.instance.api.crateFfiFfiTxtSearchInChapter(
+  path: path,
+  query: query,
+  chapterIndex: chapterIndex,
+  caseSensitive: caseSensitive,
+  maxResults: maxResults,
+);
+
+/// 统计本地 TXT 文件内关键词匹配总数（不返回完整结果，供 UI 显示计数）
+///
+/// 对齐 C ABI `ffi_txt_search_count`。
+Future<int> txtSearchCount({
+  required String path,
+  required String query,
+  required bool caseSensitive,
+}) => RustLib.instance.api.crateFfiFfiTxtSearchCount(
+  path: path,
+  query: query,
+  caseSensitive: caseSensitive,
+);
+
 /// 获取所有 RSS 源列表（JSON 数组）
 Future<String> rssListSources() =>
     RustLib.instance.api.crateFfiFfiRssListSources();

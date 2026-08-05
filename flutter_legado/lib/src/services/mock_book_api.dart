@@ -767,6 +767,78 @@ class MockBookApi implements BookApi {
     return jsonEncode({'title': '未知书籍', 'author': '未知作者', 'format': 'txt'});
   }
 
+  // ========== 本地 TXT 全文搜索（Task #98 缺口#4，加法式新增） ==========
+
+  /// 构造 Mock 搜索结果（字段结构对齐 Rust TxtSearchResult）
+  List<Map<String, dynamic>> _mockTxtSearchResults(String query) {
+    return [
+      {
+        'chapter_index': 0,
+        'chapter_title': '第一章 测试章节',
+        'char_offset': 42,
+        'matched_text': query,
+        'context': '……这是包含 $query 的上下文摘要……',
+        'context_match_start': 6,
+        'context_match_end': 6 + query.length,
+      },
+      {
+        'chapter_index': 1,
+        'chapter_title': '第二章 后续发展',
+        'char_offset': 108,
+        'matched_text': query,
+        'context': '……另一处包含 $query 的正文片段……',
+        'context_match_start': 8,
+        'context_match_end': 8 + query.length,
+      },
+    ];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> txtSearch(
+    String path,
+    String query, {
+    bool caseSensitive = false,
+    int maxResults = 500,
+  }) async {
+    if (query.isEmpty) return [];
+    return _mockTxtSearchResults(query);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> txtSearchRegex(
+    String path,
+    String pattern, {
+    bool caseSensitive = false,
+    int maxResults = 500,
+  }) async {
+    if (pattern.isEmpty) return [];
+    return _mockTxtSearchResults(pattern);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> txtSearchInChapter(
+    String path,
+    String query,
+    int chapterIndex, {
+    bool caseSensitive = false,
+    int maxResults = 50,
+  }) async {
+    if (query.isEmpty) return [];
+    return _mockTxtSearchResults(query)
+        .where((r) => r['chapter_index'] == chapterIndex)
+        .toList();
+  }
+
+  @override
+  Future<int> txtSearchCount(
+    String path,
+    String query, {
+    bool caseSensitive = false,
+  }) async {
+    if (query.isEmpty) return 0;
+    return 2;
+  }
+
   // ========== 书签操作 ==========
 
   @override

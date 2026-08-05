@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_rule_sub_crud_db() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         let record = RuleSubRecord {
             url: "https://example.com/ffi_crud.json".to_string(),
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_rule_sub_update_order_db() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         let mut ids = Vec::new();
         for i in 0..3 {
@@ -350,14 +350,14 @@ mod tests {
 
     #[test]
     fn test_check_sub_update_not_found() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         let err = check_sub_update_db(999_999_999).unwrap_err();
         assert!(err.to_string().contains("未找到"));
     }
 
     #[test]
     fn test_apply_sub_update_not_found() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         let err = apply_sub_update_db(999_999_999).unwrap_err();
         assert!(err.to_string().contains("未找到"));
     }
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn test_check_sub_update_unreachable_url() {
         // 无效 URL：网络错误应体现在 error 字段而非抛出
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         let record = RuleSubRecord {
             url: "http://127.0.0.1:1/nonexistent.json".to_string(),
             name: "不可达订阅".to_string(),

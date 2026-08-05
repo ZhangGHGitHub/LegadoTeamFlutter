@@ -115,14 +115,14 @@ pub fn set_rule_enabled(rule_id: i64, enabled: bool) -> LegadoResult<()> {
 mod tests {
     use super::*;
 
-    /// 辅助：初始化内存数据库并设置全局状态
-    fn setup_test_db() {
-        crate::db_state::ensure_test_db();
+    /// 辅助：初始化内存数据库并设置全局状态（返回串行锁守卫，测试必须绑定到变量）
+    fn setup_test_db() -> std::sync::MutexGuard<'static, ()> {
+        crate::db_state::ensure_test_db()
     }
 
     #[test]
     fn test_add_and_get_rules() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         let id = add_replace_rule("rr_规则1_1", "hello", "hi", false, "").unwrap();
         assert!(id > 0);
 
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_add_multiple_rules() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         add_replace_rule("rr_r1_2", "a", "b", false, "").unwrap();
         add_replace_rule("rr_r2_2", r"\d+", "NUM", true, "").unwrap();
         add_replace_rule("rr_r3_2", "x", "y", false, "global").unwrap();
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_update_replace_rule() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         let id = add_replace_rule("rr_原名_3", "old", "new", false, "").unwrap();
 
         update_replace_rule(id, "rr_新名_3", "pattern2", "replace2", true, false).unwrap();
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_delete_replace_rule() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         let id = add_replace_rule("rr_r1_4", "a", "b", false, "").unwrap();
         assert!(get_replace_rules()
             .unwrap()
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_get_enabled_rules() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         let id1 = add_replace_rule("rr_r1_5", "a", "b", false, "").unwrap();
         let _id2 = add_replace_rule("rr_r2_5", "c", "d", false, "").unwrap();
 
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_set_rule_enabled_toggle() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         let id = add_replace_rule("rr_r1_6", "a", "b", false, "").unwrap();
 
         // 默认启用
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_add_rule_with_scope() {
-        setup_test_db();
+        let _db_guard = setup_test_db();
         add_replace_rule("rr_scoped_7", "a", "b", false, "特定书籍_7").unwrap();
 
         let rules = get_replace_rules().unwrap();

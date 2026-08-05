@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_search_history_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 添加关键词
         let ts = add_search_keyword("斗破苍穹", "").unwrap();
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_search_history_by_prefix() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 清空后插入测试数据
         clear_search_history().unwrap();

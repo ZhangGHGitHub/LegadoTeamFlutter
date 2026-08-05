@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_http_tts_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 添加
         let id = add_http_tts("测试TTS", "http://tts.example.com/speak").unwrap();

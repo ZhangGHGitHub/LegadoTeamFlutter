@@ -500,6 +500,74 @@ pub mod ffi {
         to_json(&result)
     }
 
+    // ─── 本地 TXT 全文搜索（Task #98 缺口#4，加法式新增） ─────
+
+    /// 搜索本地 TXT 文件内容（纯文本模式）
+    ///
+    /// 对齐 C ABI `ffi_txt_search`。返回 JSON 序列化的 `Vec<TxtSearchResult>`，
+    /// 每项含 `chapter_index` / `chapter_title` / `char_offset` / `matched_text` /
+    /// `context` / `context_match_start` / `context_match_end`。
+    pub fn txt_search(
+        path: String,
+        query: String,
+        case_sensitive: bool,
+        max_results: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::txt_search_api::txt_search(
+            &path,
+            &query,
+            case_sensitive,
+            max_results,
+        )?)
+    }
+
+    /// 使用正则搜索本地 TXT 文件内容
+    ///
+    /// 对齐 C ABI `ffi_txt_search_regex`。返回格式同 `txt_search`。
+    pub fn txt_search_regex(
+        path: String,
+        pattern: String,
+        case_sensitive: bool,
+        max_results: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::txt_search_api::txt_search_regex(
+            &path,
+            &pattern,
+            case_sensitive,
+            max_results,
+        )?)
+    }
+
+    /// 在本地 TXT 文件指定章节内搜索
+    ///
+    /// 对齐 C ABI `ffi_txt_search_in_chapter`。返回格式同 `txt_search`。
+    pub fn txt_search_in_chapter(
+        path: String,
+        query: String,
+        chapter_index: i32,
+        case_sensitive: bool,
+        max_results: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::txt_search_api::txt_search_in_chapter(
+            &path,
+            &query,
+            chapter_index,
+            case_sensitive,
+            max_results,
+        )?)
+    }
+
+    /// 统计本地 TXT 文件内关键词匹配总数（不返回完整结果，供 UI 显示计数）
+    ///
+    /// 对齐 C ABI `ffi_txt_search_count`。
+    pub fn txt_search_count(path: String, query: String, case_sensitive: bool) -> Result<i32, BridgeError> {
+        Ok(crate::api::txt_search_api::txt_search_count(
+            &path,
+            &query,
+            case_sensitive,
+        )?)
+    }
+
     // ─── RSS ──────────────────────────────────────────────────
 
     /// 获取所有 RSS 源列表（JSON 数组）

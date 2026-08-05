@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn test_shared_client_with_db_cookie_persistence() {
         let _g = TEST_LOCK.lock().unwrap();
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 预置一条 Cookie 到 DB（tag 为域名，与内存 CookieStore 键对齐）
         crate::db_state::with_database(|db| {
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn test_db_cookie_persistence_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         let persistence = DbCookiePersistence;
         persistence.save("roundtrip.com", "a=1; b=2");

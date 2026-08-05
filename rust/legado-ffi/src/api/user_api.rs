@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_user_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 保存用户
         let id = save_user("test_user", "pass123", "https://example.com").unwrap();

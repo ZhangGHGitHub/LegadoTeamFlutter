@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn test_config_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 设置配置
         assert!(set_config("theme", "dark").unwrap());

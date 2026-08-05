@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_cache_apis() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 先清空缓存确保测试隔离
         clear_cache().unwrap();

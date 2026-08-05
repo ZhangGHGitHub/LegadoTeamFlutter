@@ -515,10 +515,11 @@ mod tests {
     use legado_core::models::rule::ContentRule;
     use legado_core::models::BookSource;
 
-    /// 初始化测试数据库（全局 Once 保护，并行安全）
-    fn setup_db_and_source(source_url: &str) {
-        crate::db_state::ensure_test_db();
+    /// 初始化测试数据库并持锁（返回串行锁守卫，测试必须绑定到变量）
+    fn setup_db_and_source(source_url: &str) -> std::sync::MutexGuard<'static, ()> {
+        let db_guard = crate::db_state::ensure_test_db();
         insert_test_source(source_url);
+        db_guard
     }
 
     /// 插入测试书源
@@ -549,7 +550,7 @@ mod tests {
     fn test_refresh_toc_success() {
         let source_url = "https://toc-test.example.com";
         let book_url = "https://toc-test.example.com/book/1";
-        setup_db_and_source(source_url);
+        let _db_guard = setup_db_and_source(source_url);
 
         let resp = refresh_toc(book_url, source_url).unwrap();
         assert!(resp.total >= 0);
@@ -557,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_refresh_toc_source_not_found() {
-        setup_db_and_source("https://other.example.com");
+        let _db_guard = setup_db_and_source("https://other.example.com");
         let err = refresh_toc("https://x.com/book", "https://nonexistent.example.com").unwrap_err();
         assert!(err.to_string().contains("书源不存在"));
     }
@@ -568,7 +569,7 @@ mod tests {
     fn test_refresh_toc_saves_to_db() {
         let source_url = "https://toc-db-test.example.com";
         let book_url = "https://toc-db-test.example.com/book/2";
-        setup_db_and_source(source_url);
+        let _db_guard = setup_db_and_source(source_url);
 
         let resp = refresh_toc(book_url, source_url).unwrap();
         assert!(resp.total >= 0);
@@ -583,7 +584,7 @@ mod tests {
         let source_url = "https://content-test.example.com";
         let book_url = "https://content-test.example.com/book/1";
         let chapter_url = format!("{book_url}/chapter/0");
-        setup_db_and_source(source_url);
+        let _db_guard = setup_db_and_source(source_url);
 
         let content = fetch_chapter_content(book_url, &chapter_url, source_url).unwrap();
         assert!(!content.is_empty());
@@ -596,7 +597,7 @@ mod tests {
         let source_url = "https://cache-test.example.com";
         let book_url = "https://cache-test.example.com/book/1";
         let chapter_url = "https://cache-test.example.com/ch/99";
-        setup_db_and_source(source_url);
+        let _db_guard = setup_db_and_source(source_url);
 
         // 第一次调用：从网络获取并缓存
         let content1 = fetch_chapter_content(book_url, chapter_url, source_url).unwrap();
@@ -609,7 +610,7 @@ mod tests {
 
     #[test]
     fn test_fetch_chapter_content_source_not_found() {
-        setup_db_and_source("https://other2.example.com");
+        let _db_guard = setup_db_and_source("https://other2.example.com");
         let err = fetch_chapter_content(
             "https://x.com/book",
             "https://x.com/ch/1",
@@ -626,7 +627,7 @@ mod tests {
         let source_url = "https://text-check.example.com";
         let book_url = "https://text-check.example.com/book/1";
         let chapter_url = format!("{book_url}/chapter/0");
-        setup_db_and_source(source_url);
+        let _db_guard = setup_db_and_source(source_url);
 
         let content = fetch_chapter_content(book_url, &chapter_url, source_url).unwrap();
         // 确保返回的是真实正文，不是 JSON 元数据
@@ -766,7 +767,7 @@ mod tests {
     /// 集成测试：通过 apply_content_processing 完整链路（DB 加载规则 + 净化）
     #[test]
     fn test_apply_content_processing_integration() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 插入一条唯一命名的启用规则（不清理其他测试的规则，避免并行竞态）
         let rule_id = with_database(|db| {
@@ -821,7 +822,7 @@ mod tests {
     /// 章节不存在时应返回错误
     #[test]
     fn test_get_chapter_content_full_chapter_not_found() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         let err = get_chapter_content_full("https://no-such-book.example.com", 999).unwrap_err();
         assert!(err.to_string().contains("章节"));
     }
@@ -829,7 +830,7 @@ mod tests {
     /// 在线书籍未配置书源（origin 为空）时应返回错误
     #[test]
     fn test_get_chapter_content_full_no_origin() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         let book_url = "https://full-test-no-origin.example.com/book/1";
 
         // 插入一本 origin 为空的书籍和章节
@@ -877,7 +878,7 @@ mod tests {
     fn test_get_chapter_content_full_online() {
         let source_url = "https://full-online-test.example.com";
         let book_url = "https://full-online-test.example.com/book/1";
-        setup_db_and_source(source_url);
+        let _db_guard = setup_db_and_source(source_url);
 
         // 插入书籍（origin = source_url）和章节
         with_database(|db| {
@@ -923,7 +924,7 @@ mod tests {
     /// 集成测试：apply_content_processing_raw 不应用替换规则，apply_content_processing 仍应用
     #[test]
     fn test_apply_content_processing_raw_integration() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         let rule_id = with_database(|db| {
             let repo = ReplaceRuleRepository::new(db.connection());
             repo.insert(&ReplaceRule {

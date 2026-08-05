@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_auto_task_crud_db() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         let rule = AutoTaskRuleModel {
             id: "test_crud_task_001".to_string(),

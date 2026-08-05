@@ -1231,7 +1231,7 @@ mod tests {
     /// 回归：`load_search_sources("[]")` 应视为搜全部（Dart 侧无筛选默认传 '[]'）
     #[test]
     fn test_load_search_sources_empty_array_means_all() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
             .expect("读取 yckceo_7631.json 失败");
         crate::api::source::import_sources(&json).expect("导入书源失败");
@@ -1252,7 +1252,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_e2e_yckceo_search_network() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // cwd 为 rust/legado-ffi，书源夹具位于 tests/fixtures/
         let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
@@ -1279,7 +1279,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_e2e_yckceo_read_chain_network() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
             .expect("读取 yckceo_7631.json 失败");
@@ -1406,7 +1406,7 @@ mod tests {
     /// 端到端：DB 存在阅读记录时，搜索结果被批量附加标识
     #[test]
     fn test_read_record_annotation_with_db() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
         crate::db_state::with_database(|db| {
             let repo = ReadRecordRepository::new(db.connection());
             repo.insert_with_author("标识测试书A", "作者甲", 100)?;

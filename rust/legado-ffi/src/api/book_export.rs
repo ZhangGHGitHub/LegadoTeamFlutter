@@ -250,8 +250,9 @@ mod tests {
         path.to_string_lossy().to_string()
     }
 
-    fn register_book_and_chapters(book_url: &str, book_name: &str) {
-        crate::db_state::ensure_test_db();
+    /// 在 DB 中注册书籍并解析章节入库（返回串行锁守卫，测试必须绑定到变量）
+    fn register_book_and_chapters(book_url: &str, book_name: &str) -> std::sync::MutexGuard<'static, ()> {
+        let db_guard = crate::db_state::ensure_test_db();
         with_database(|db| {
             let book_repo = BookRepository::new(db.connection());
             if book_repo.find_by_url(book_url)?.is_none() {
@@ -267,6 +268,7 @@ mod tests {
         // 解析章节并入库（与 get_chapters 懒加载逻辑一致）
         let chapters = crate::api::reader::get_chapters(book_url).unwrap();
         assert!(chapters.total >= 2, "临时 TXT 应至少解析出 2 章");
+        db_guard
     }
 
     /// 解码导出结果的 base64 为 UTF-8 文本
@@ -283,7 +285,7 @@ mod tests {
     #[test]
     fn test_export_local_book_non_empty_content() {
         let path = create_temp_txt("nonempty");
-        register_book_and_chapters(&path, "导出测试书A");
+        let _db_guard = register_book_and_chapters(&path, "导出测试书A");
 
         let result = export_book(&path, "txt", false).unwrap();
         let text = decode_export(&result);
@@ -301,7 +303,7 @@ mod tests {
     #[test]
     fn test_export_local_book_applies_replace_rules() {
         let path = create_temp_txt("purify");
-        register_book_and_chapters(&path, "导出测试书B");
+        let _db_guard = register_book_and_chapters(&path, "导出测试书B");
 
         // 插入唯一命名的全局启用规则
         let rule_id = with_database(|db| {
@@ -342,7 +344,7 @@ mod tests {
     #[test]
     fn test_export_local_book_pdf() {
         let path = create_temp_txt("pdf");
-        register_book_and_chapters(&path, "导出测试书PDF");
+        let _db_guard = register_book_and_chapters(&path, "导出测试书PDF");
 
         let result = export_book(&path, "pdf", false).unwrap();
         if result.success {

@@ -560,6 +560,80 @@ class RustApi implements BookApi {
   Future<String> parseMetadata(String filePath) =>
       bridge.importParseMetadata(filePath: filePath);
 
+  // ========== 本地 TXT 全文搜索（Task #98 缺口#4，加法式新增） ==========
+
+  /// 搜索本地 TXT 文件内容（纯文本模式，章节感知）
+  @override
+  Future<List<Map<String, dynamic>>> txtSearch(
+    String path,
+    String query, {
+    bool caseSensitive = false,
+    int maxResults = 500,
+  }) async {
+    final json = await bridge.txtSearch(
+      path: path,
+      query: query,
+      caseSensitive: caseSensitive,
+      maxResults: maxResults,
+    );
+    return _decodeSearchResults(json);
+  }
+
+  /// 使用正则表达式搜索本地 TXT 文件内容
+  @override
+  Future<List<Map<String, dynamic>>> txtSearchRegex(
+    String path,
+    String pattern, {
+    bool caseSensitive = false,
+    int maxResults = 500,
+  }) async {
+    final json = await bridge.txtSearchRegex(
+      path: path,
+      pattern: pattern,
+      caseSensitive: caseSensitive,
+      maxResults: maxResults,
+    );
+    return _decodeSearchResults(json);
+  }
+
+  /// 在本地 TXT 文件指定章节内搜索
+  @override
+  Future<List<Map<String, dynamic>>> txtSearchInChapter(
+    String path,
+    String query,
+    int chapterIndex, {
+    bool caseSensitive = false,
+    int maxResults = 50,
+  }) async {
+    final json = await bridge.txtSearchInChapter(
+      path: path,
+      query: query,
+      chapterIndex: chapterIndex,
+      caseSensitive: caseSensitive,
+      maxResults: maxResults,
+    );
+    return _decodeSearchResults(json);
+  }
+
+  /// 统计本地 TXT 文件内关键词匹配总数
+  @override
+  Future<int> txtSearchCount(
+    String path,
+    String query, {
+    bool caseSensitive = false,
+  }) =>
+      bridge.txtSearchCount(
+        path: path,
+        query: query,
+        caseSensitive: caseSensitive,
+      );
+
+  /// 解码 txt_search 系列返回的 JSON 数组（每项为 TxtSearchResult 对象）
+  List<Map<String, dynamic>> _decodeSearchResults(String json) {
+    final list = _decodeList(json, 'txtSearch');
+    return list.map((e) => e as Map<String, dynamic>).toList();
+  }
+
   // ========== 书签操作 ==========
 
   /// 获取某本书的所有书签

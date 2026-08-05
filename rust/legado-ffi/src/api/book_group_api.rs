@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_book_group_crud() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 添加分组
         let id = add_book_group("科幻", "", 0).unwrap();
@@ -157,7 +157,7 @@ mod tests {
     /// 确认 show 状态确实持久化变更（对齐 Kotlin dao upShow 语义）
     #[test]
     fn test_set_show_readback() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         let id = add_book_group("显示状态测试", "", 0).unwrap();
         assert!(id > 0);

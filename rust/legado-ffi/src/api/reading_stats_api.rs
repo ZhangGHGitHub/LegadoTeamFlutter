@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn test_reading_stats_apis() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 空数据时不报错
         let today = get_today_stats().unwrap();

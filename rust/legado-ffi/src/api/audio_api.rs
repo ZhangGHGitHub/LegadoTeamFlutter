@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_audio_progress() {
-        crate::db_state::ensure_test_db();
+        let _db_guard = crate::db_state::ensure_test_db();
 
         // 无记录时返回 0
         let pos = get_audio_progress("http://book.com/audio", 0).unwrap();
