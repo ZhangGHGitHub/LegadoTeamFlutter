@@ -30,8 +30,9 @@
 - **高亮体系数据层**：DB v99 迁移对齐上游 + highlights/highlightRules 表 + Repository + FFI 11 方法（一期完成）
 - **E2E 遗留修复闭环**：E2E 会话遗留 6 文件全部处置提交（b3aa3fa~32fb823）
 - **跨轨阻塞四连解除**：MOBI 完整解析（HUFF/CDIC + INDX/TAGX + KF8(AZW3) + NCX/封面，d994a4fdb）/ 书源校验 FFI（sourceCheck/sourceCheckStream/sourceCheckCancel，86c299923）/ 规则订阅全链路（schema v100 + FFI 7 方法，94b257390）/ 验证码交互通道（JS 钩子 + FFI 事件流 + 提交回传，6f5614e24）
+- **缺口清单清零批次**（2026-08-05，Task #162~#168）：图片书 PDF 导出（对齐 #483）/ RSA-SM2 非对称加密 JS API / txt_search frb 主链路 / 繁简转换 FFI 透传 / DB v101 偏离表补列 / unzip 断线修复 + JS 零星 API / unrar 降级处置，缺口清单 7 项全部清零（详见 docs/REFACTORING_REMAINING_PLAN.md §4.2.4）
 
-> 🎉 **Rust 重构主体已全部完成**：161/161 原子任务完成，零 TODO/桩实现。
+> 🎉 **Rust 重构主体已全部完成**：168/168 原子任务完成，零 TODO/桩实现。
 
 ### 📊 测试统计（2026-08-05 实测）
 
@@ -41,7 +42,7 @@
 | Flutter | 1087 |
 | **总计** | **约 3400**（以实测为准：2026-08-05 全量回归零失败） |
 
-> 2026-08-05 全量回归实测：Rust workspace 2283 + quickjs feature 547 + Flutter 1087，零失败；flutter analyze 0 issues。
+> 2026-08-05 全量回归实测：Rust workspace 2283 + quickjs feature 547 + Flutter 1087，零失败；flutter analyze 0 issues。（缺口清单清零批次新增测试统计待回归更新）
 
 ### 🔄 进行中项
 

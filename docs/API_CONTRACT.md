@@ -164,7 +164,7 @@
 | `deleteReplaceRule(int id)` | id | `Future<void>` | 删除替换规则 |
 | `setReplaceRuleEnabled(int id, bool enabled)` | id, enabled | `Future<void>` | 启用/禁用替换规则 |
 
-### 2.9 阅读器操作（7 个方法）
+### 2.9 阅读器操作（9 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -175,8 +175,12 @@
 | `fetchChapterContent(String bookUrl, String chapterUrl, String sourceUrl)` | bookUrl, chapterUrl, sourceUrl | `Future<String>` | 从网络获取章节正文 |
 | `updateReadingProgress({required String bookUrl, required int chapterIndex, required int chapterPos})` | bookUrl, chapterIndex, chapterPos | `Future<void>` | 更新阅读进度 |
 | `refreshToc(String bookUrl, String sourceUrl)` | bookUrl, sourceUrl | `Future<List<BookChapter>>` | 从网络刷新书籍目录 ⚠️ 双兼容点 |
+| `setChineseConvertType(int type)` | type | `Future<void>` | 设置阅读器繁简转换类型并持久化（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t，对齐 Android `AppConfig.chineseConverterType`，非法值归一为 0） |
+| `getChineseConvertType()` | 无 | `Future<int>` | 获取当前繁简转换类型（0/1/2） |
 
 > ⚠️ `getChapters` / `refreshToc`：Rust 返回 `ChapterListResponse { total, chapters[] }`，Dart 侧提取 `chapters` 字段。
+>
+> 繁简转换（Task #100）：配置键 `chineseConverterType`（caches 表 `config:` 前缀，与 Kotlin PreferKey 同名）。正文在净化管线按配置做 t2s/s2t；章节标题在 getChapters/refreshToc 返回前做显示层转换（对齐 Kotlin `BookChapter.getDisplayTitle`，不回写 DB）；内容搜索 raw 路径保持原文。
 
 ### 2.10 配置操作（4 个方法）
 
@@ -489,6 +493,20 @@
 | `ruleSubCheckUpdate({required int id})` | id | `Future<String>` | 检查更新（检查结果 JSON：`id` / `url` / `name` / `dueForUpdate`（should_update 间隔判定）/ `hasUpdate`（远程版本对比）/ `remoteVersion` / `error`） |
 | `ruleSubApplyUpdate({required int id})` | id | `Future<String>` | 应用更新（应用结果 JSON：`id` / `url` / `success` / `itemsAdded` / `itemsUpdated` / `itemsRemoved` / `totalItems` / `error`；合并后回写版本号与最后更新时间） |
 
+### 2.40 本地 TXT 全文搜索（txt_search FFI，Task #98 缺口#4）（4 个方法）
+
+> 对齐既有 C ABI 4 函数（`ffi_txt_search` / `ffi_txt_search_regex` / `ffi_txt_search_in_chapter` / `ffi_txt_search_count`），
+> 本小节为其 frb 主链路暴露（包装 `legado-book::txt_search::TxtSearch` 引擎），供 Flutter 侧本地 TXT 书内搜索调用。
+> 返回裸 JSON Array（遵守 §1.4 铁律），每项字段（snake_case）：`chapter_index` / `chapter_title` / `char_offset` /
+> `matched_text` / `context` / `context_match_start` / `context_match_end`（TxtSearchResult 序列化）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `txtSearch(String path, String query, {bool caseSensitive = false, int maxResults = 500})` | path: TXT 文件路径，query: 关键词 | `Future<List<Map<String, dynamic>>>` | 纯文本全文搜索（章节感知 + 上下文摘要） |
+| `txtSearchRegex(String path, String pattern, {bool caseSensitive = false, int maxResults = 500})` | path, pattern: 正则表达式 | `Future<List<Map<String, dynamic>>>` | 正则全文搜索，返回格式同上 |
+| `txtSearchInChapter(String path, String query, int chapterIndex, {bool caseSensitive = false, int maxResults = 50})` | path, query, chapterIndex（0 起） | `Future<List<Map<String, dynamic>>>` | 指定章节内搜索，返回格式同上 |
+| `txtSearchCount(String path, String query, {bool caseSensitive = false})` | path, query | `Future<int>` | 匹配总数计数（不返回完整结果，供 UI 显示） |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -509,6 +527,8 @@
 | `checkSource` / `checkSourcesStream` / `cancelCheckSources`（新增，Task #87） | 见 §2.3 方法清单 | 书源校验 FFI 暴露：单本四步校验（CheckResult JSON）+ 批量串行 Stream 进度回推（CheckProgress JSON）+ 取消（包装 legado-net SourceChecker，对齐 Kotlin CheckSource 与 server /sources/check），校验页面 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `ruleSub*`（新增，Task #89） | 见 §2.39 方法清单 | 规则订阅 FFI 暴露：列表/保存/删除/启用切换/拖拽排序 + 检查更新/应用更新（DB v100 补全 Kotlin RuleSub 7 字段，委托 legado-net rule_update_client），订阅管理 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `verificationRequestStream` / `submitVerificationResult` / `cancelVerificationRequest`（新增，Task #90） | 见 §2.3 方法清单 | 验证码交互通道：JS 钩子（getVerificationCode/startBrowserAwait，对齐 Kotlin JsExtensions）经请求管理器挂起等待 → FFI 事件流推送请求（含航班去重/回放/5 分钟超时）→ UI 提交/取消唤醒；useBrowser 降级为图片验证码（桌面无 WebView），验证码弹窗 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
+| `txtSearch` / `txtSearchRegex` / `txtSearchInChapter` / `txtSearchCount`（新增，Task #98 缺口#4） | 见 §2.40 方法清单 | 本地 TXT 全文搜索接入 frb 主链路：既有 C ABI 4 函数的 frb 暴露（包装 legado-book TxtSearch 引擎，纯文本/正则/章节内搜索 + 匹配计数，返回裸 JSON Array），供搜索页内“搜本地书正文”场景调用，UI 由 UI 轨后续接入 | 2026-08-05 | ✅ 已完成 |
+| `setChineseConvertType` / `getChineseConvertType`（新增，Task #100） | 见 §2.9 方法清单 | 繁简转换 FFI 透传：reader.rs 硬编码 `chinese_convert: None` 改为读取持久化配置（键 `chineseConverterType`，0/1/2 → None/t2s/s2t），新增 set/get 接口；章节标题在展示路径补齐 t2s/s2t（对齐 Kotlin getDisplayTitle）；阅读器样式面板控件由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -556,7 +576,7 @@
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 6 |
 | 8 | 替换规则操作 | 6 |
-| 9 | 阅读器操作 | 6 |
+| 9 | 阅读器操作 | 8 |
 | 10 | 配置操作 | 4 |
 | 11 | 备份操作 | 2 |
 | 12 | 阅读记录 | 4 |
@@ -587,4 +607,5 @@
 | 37 | JS 单文件书源配置 | 3 |
 | 38 | 应用日志 | 5 |
 | 39 | 规则订阅 | 7 |
-| | **合计** | **197** |
+| 40 | 本地 TXT 全文搜索 | 4 |
+| | **合计** | **203** |

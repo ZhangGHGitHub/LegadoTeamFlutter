@@ -455,6 +455,8 @@ flutter test                  # 全量测试通过
 
 6. **JS 宿主 API 覆盖**（对齐 `JsExtensions.kt` 44.6k）：`webView/webViewGetSource`、`queryTTF/replaceFont/queryBase64TTF`、`ajaxAll/ajaxTestAll/connect/head/post`（Java 语义）、`getVerificationCode`、`startBrowser/openUrl`、`un7zFile/unrarFile`（现桩化）、`getTxtInFolder`
    > ✅ 部分核销（2026-08-05，Task #161，6f5614e24）：`getVerificationCode`/`startBrowserAwait` 验证码 JS 钩子已交付（FFI 事件流 + 提交回传），其余项维持登记
+   > ✅ 部分核销（2026-08-05，Task #164/#166/#168，缺口清单清零批次）：unzip 断线修复 + 6 个零星 API 已交付；RSA/SM2 非对称加密 JS API 已交付；`unrarFile` 正式降级（纯 Rust RAR 解压生态调研无可用 crate，见 rust/PROGRESS.md 已知降级项登记），其余项维持登记
+   > ⚖️ Task #131 裁决（2026-08-05 审计）：原登记名单（configGet/threadPool/randomString 等）为登记失实（Kotlin 无此 API），实际交付真实（提交 249f95451：+15 函数），已在 rust/PROGRESS.md 纠正
 7. **AnalyzeUrl 缺口**（`legado-parser/src/analyze_url.rs`）：`{{js:...}}`/`{{bookName}}` 内嵌 JS 执行、WebView 请求模式、data: URI、`getByteArrayAwait` 流式读取
 8. **ReadBook 阅读器核心**：章节加载/阅读进度/继续阅读策略/阅读统计写入（现仅 `read_state.rs` 预加载窗口 + `layout.rs` 排版子集）
 9. **书源校验简化**（`source_checker.rs`）：补验证码识别、重定向详情检测（对齐 `SourceVerificationHelp`）
@@ -541,7 +543,7 @@ flutter test                  # 全量测试通过
 
 #### 4.2.1 P0（阻塞级）
 
-**P0-1 legado-ffi 测试竞态隔离修复**
+**P0-1 legado-ffi 测试竞态隔离修复**——✅ 已完成（2026-08-05，Task #165：FFI 测试串行锁消除竞态，3 轮并行验证零 flaky）
 
 | 项目 | 内容 |
 |------|------|
@@ -551,7 +553,9 @@ flutter test                  # 全量测试通过
 | **实施步骤** | ① 重构 `db_state.rs` 的测试库获取机制，提供按测试名/线程隔离的独立内存库实例（或 `serial_test` 串行化）；② 复跑 config_api / bookmark_api 测试多轮验证；③ 更新 PROGRESS.md 测试稳定性描述 |
 | **验收** | `cargo test --workspace` 连续 3 轮全部通过，无间歇性失败 |
 
-**P0-2 数据库偏离表修复（v96→97 迁移对齐 Room v95 列名）**
+> ✅ 核销（2026-08-05，Task #165）：FFI 测试串行锁方案落地，消除共享内存库并行污染；3 轮并行验证零 flaky，验收标准（连续 3 轮全通过）已满足
+
+**P0-2 数据库偏离表修复（v96→97 迁移对齐 Room v95 列名）**——✅ 列级偏离已完成（v101，users/servers 语义差异登记不改名）
 
 | 项目 | 内容 |
 |------|------|
@@ -581,6 +585,8 @@ flutter test                  # 全量测试通过
 | **实施步骤** | ① 在 `migration/migrations.rs` 新增 `Migration96To97`，按 Room v95 列名补列/重建上述偏离表，`schema.rs` SCHEMA_VERSION 升至 97；② 为旧库（user_version=95 的 Android 遗留库）补建 users 表（或 servers→users 数据搬迁）迁移；③ 同步修订对应 Repository 列名；④ 在 API_CONTRACT.md / TWO_TRACK_DEV_SPEC.md 登记 SCHEMA_VERSION=96 自造语义（books 4 个 @Ignore 字段持久化 + rssSources 补列）与 v97 决策；⑤ 用构造的 v95/v96 遗留库验证 95→96→97 全链路 |
 | **验收** | 构造 Android 遗留库（user_version=95）打开后迁移成功、偏离表 Repository 查询不再因列名失配失败；migration 全链路单测通过 |
 
+> ✅ **部分核销（2026-08-05，Task #94）**：4 张列级偏离表已修复（v101 迁移，幂等 `add_column_if_not_exists`）——rssArticles 补 `group`/`read`/`type`/`durPos`、rssStars 补 `group`/`type`/`durPos`、readRecord 补 `deviceId`/`lastRead`、txtTocRules 补 `replacement`；SCHEMA_VERSION 100→101，建表语句同步，四个 Repository 全字段读写适配。**users/servers 结论**：Room `servers` 表存 WebDAV 备份服务器配置（id/name/type/config/sortNumber），与 Rust 自建 `users`（用户账户）语义完全不同，非等价物，登记不改名。**遗留**：rssArticles 主键 (origin,title) vs Room (origin,link,sort)、readRecord 主键 (bookName) vs Room (deviceId,bookName) 为结构级偏离，仅补列不重建表；rssReadRecords/httpTTS/ruleSubs/dictRules/keyboardAssists/search_keywords 等结构偏离项待后续批次处置。验证：legado-db 281 通过、legado-ffi(quickjs) 175 通过。
+
 **P0-3 rssSources 双列冗余处理**
 
 | 项目 | 内容 |
@@ -603,7 +609,7 @@ flutter test                  # 全量测试通过
 | **实施步骤** | ① API_CONTRACT.md 需求区登记 source_check 契约（入参书源 JSON/批量、出分校验结果 JSON）并冻结；② `legado-ffi/src/api/` 新增校验 API 模块，委托 `SourceChecker`；③ `ffi.rs` 注册函数，`make gen` 生成绑定；④ 交付后 UI 轨接入口（见 §4.3 P1-4） |
 | **验收** | Dart 侧可经 bridge 调用书源批量校验并取回结果；契约文档同步登记 |
 
-**P1-2 txt_search 系列接入 frb 主链路**
+**P1-2 txt_search 系列接入 frb 主链路**——✅ 已完成（2026-08-05，Task #165：frb 主链路接入，Dart 可达）
 
 | 项目 | 内容 |
 |------|------|
@@ -676,6 +682,23 @@ flutter test                  # 全量测试通过
 | **解决方案** | 按实测数据更新三处文档 |
 | **实施步骤** | 逐文档替换过期数字与 platform API 表述 |
 | **验收** | 文档数字与实测一致 |
+
+#### 4.2.4 缺口清单核销记录（2026-08-05 缺口清单清零批次，Task #162~#168）
+
+> 本批次对 §2.1/§3.4/§4.2 登记的缺口逐项处置，核销标注如下：
+
+| 缺口项 | 处置 | 对应任务 |
+|--------|------|----------|
+| 图片书 PDF 导出（对齐 #483） | ✅ 已完成：图片提取 + 注入式获取管线 + A4 宽高比写入 | Task #162 |
+| DB schema 偏离表 | ✅ 已完成：v101 补列（rssArticles/rssStars/readRecord/txtTocRules 对齐 Room 基线；users/servers 语义差异登记不改名） | Task #163（承接 §4.2.1 P0-2） |
+| JS 宿主 API 零星项 | ✅ 已完成：unzip 断线修复 + 6 个零星 API | Task #164（承接 §3.4 P2-6） |
+| txt_search frb 主链路 | ✅ 已完成：接入 frb 主链路，Dart 可达 | Task #165（承接 §4.2.2 P1-2） |
+| unzip 断线 | ✅ 已完成 | Task #164 |
+| 测试竞态 | ✅ 已完成：串行锁方案，3 轮并行验证零 flaky | Task #165（承接 §4.2.1 P0-1） |
+| RSA/SM2 非对称加密 | ✅ 已完成：加解密 + 签名验签 + 长文分段 JS API | Task #166 |
+| unrar | ⚠️ 降级处置：纯 Rust RAR 解压生态调研无可用 crate，正式降级（见 rust/PROGRESS.md 已知降级项登记） | Task #168 |
+| #473 复核 | ✅ 复核结论：Rust 结构天然免疫（阅读预下载静默失败不入队），无需同步 | 缺口清单清零批次 |
+| Task #131 裁决 | ⚖️ 登记失实已纠正（原名单 configGet/threadPool/randomString 等 Kotlin 无此 API），交付真实（提交 249f95451，+15 函数），rust/PROGRESS.md 已同步纠正 | 2026-08-05 审计 |
 
 ### §4.3 Flutter 前端部分：后续解决方案与实施步骤
 

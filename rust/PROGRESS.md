@@ -1,20 +1,20 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-08-05（阶段 24 跨轨阻塞四连解除完成，任务数更新至 161，测试数按 2026-08-05 实测更新）
+> 最后更新：2026-08-05（阶段 24 缺口清单清零批次完成，任务数更新至 168；Task #131 登记失实经审计纠正；测试统计待本批回归更新）
 
 ---
 
 ## 总览
 
-- **已完成**：161 / 161 原子任务（100%）
+- **已完成**：168 / 168 原子任务（100%）
 - **完成度（2026-07-29 源码审计）**：整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）
-- **测试状态**：cargo test 2283 passed（Rust workspace）+ 547 passed（quickjs feature）| flutter test 1087 passed（2026-08-05 实测） | flutter analyze 0 issues
+- **测试状态**：cargo test 2283 passed（Rust workspace）+ 547 passed（quickjs feature）| flutter test 1087 passed（2026-08-05 实测） | flutter analyze 0 issues（缺口清单清零批次测试统计待回归更新）
 - **QuickJS feature**：547 tests passed | legado-ffi：175 tests passed
-- **里程碑**：🎉 上游同步窗口 2 跟进完成（141 提交同步 + 高亮体系一期 + P0/P1/P2 全部跟进项 + E2E 遗留修复闭环）+ 跨轨阻塞四连解除（MOBI 完整解析 / 书源校验 FFI / 规则订阅全链路 / 验证码交互通道）
+- **里程碑**：🎉 上游同步窗口 2 跟进完成（141 提交同步 + 高亮体系一期 + P0/P1/P2 全部跟进项 + E2E 遗留修复闭环）+ 跨轨阻塞四连解除（MOBI 完整解析 / 书源校验 FFI / 规则订阅全链路 / 验证码交互通道）+ 缺口清单清零批次（Task #162~#168）
 
 ---
 
-## 已完成（161/161 原子任务）
+## 已完成（168/168 原子任务）
 
 ### 阶段 0：基础设施 ✅
 
@@ -172,6 +172,7 @@
 
 - [x] Task #97: ContentHelp 段落重排算法（content_help.rs 663 行：合并过短段落 + 对话模式检测 + 引号配对 + 强制切分过长段落 + 语义完整性保持）
 - [x] Task #98: ContentProcessor 管线集成（re_segment 桩替换为真实调用 + clippy/fmt 修复 + 全量验证通过）
+- [x] Task #99: 缺口#6 unrar 处置 + SOCKS5 e2e 实测（rar crate 0.4 纯 Rust 实现 unrarFile/getRarStringContent + sevenz-rust2 实现 get7zStringContent + SOCKS5 凭据代理 e2e 双用例 + startBrowserAwait 降级登记）
 
 **阶段 11 关键成果：**
 - 段落重排：完整移植 Kotlin ContentHelp.kt（630 行）至 Rust，零平台依赖
@@ -300,7 +301,11 @@
 ### 阶段 20：审计修复与功能补全（Task #130-#133） ✅
 
 - [x] Task #130: P0 Book 实体补全 + users 表（Book +4 字段 infoHtml/tocHtml/downloadUrls/coverOrigin + users 表 + UserRepository + FFI 6 个用户管理函数）
-- [x] Task #131: JS 宿主 API 补全（+15 函数：configGet/configSet/configDelete + threadPool/concurrent + getChapterInfo/getBookInfo + timeFormat/urlEncode/uuid/randomString）
+- [x] Task #131: JS 宿主 API 补全（+15 函数，提交 249f95451）：
+  - config_api：getReadBookConfig/getThemeConfig/getThemeMode/getWebViewUA/androidId
+  - concurrency_api：singleFlight/lock/tick
+  - misc_api：connect/getSource/getTag/ajaxTestAll/toUrl/toast/logType
+  - （2026-08-05 审计纠正：原名单 configGet/threadPool/randomString 等为登记失实，Kotlin 无此 API；timeFormat 大小写失配已于 #95 批次补别名修复）
 - [x] Task #132: 书源/RSS 调试 WebSocket 端点（ws/debug/book-source + ws/debug/rss-source 实时日志推送）
 - [x] Task #133: Flutter 5 屏幕实现（DictRuleScreen 字典规则 + FontManageScreen 字体管理 + QrCodeScanScreen 二维码扫描 + WelcomeScreen 欢迎页 + BrowserScreen 内置浏览器）+ dict_rules/keyboard_assists 表 + Repository
 
@@ -380,7 +385,14 @@
 - [x] Task #159: 书源校验 FFI——单本校验 + 批量 Stream + 取消（sourceCheck/sourceCheckStream/sourceCheckCancel，86c299923）
 - [x] Task #160: 规则订阅全链路——schema v100 补 7 字段 + FFI 7 方法（94b257390）
 - [x] Task #161: 验证码交互通道——JS 钩子 getVerificationCode/startBrowserAwait + FFI 事件流 + 提交回传（6f5614e24）
-- [x] 全量回归：Rust workspace 2283 + quickjs 547 + Flutter 1087 测试零失败（2026-08-05 实测）
+- [x] Task #162: 图片书 PDF 导出（图片提取+注入式获取管线+A4 宽高比写入，对齐 #483）
+- [x] Task #163: DB schema v101 偏离表补列（rssArticles/rssStars/readRecord/txtTocRules 对齐 Room 基线）
+- [x] Task #164: JS 宿主 API 补齐（unzip 断线修复 + 6 个零星 API）
+- [x] Task #165: txt_search frb 主链路接入 + FFI 测试串行锁消除竞态（3 轮并行验证零 flaky）
+- [x] Task #166: RSA/SM2 非对称加密 JS API（加解密+签名验签+长文分段）
+- [x] Task #167: 繁简转换 FFI 透传（不迁移项重评后改为迁移；chineseConverterType 对齐 Kotlin）
+- [x] Task #168: unrar 处置 + get7zStringContent + SOCKS5 凭据 e2e 实测（自建 SOCKS5 测试服务器验证认证握手）；初评结论“无可用纯 Rust crate，降级”，后经复评发现 rar crate 0.4（纯 Rust，RAR4/RAR5 全压缩级别+加密档案）可用，已改为真实实现（见 Task #99 与已知降级项表备注）
+- [x] 全量回归：Rust workspace 2283 + quickjs 547 + Flutter 1087 测试零失败（2026-08-05 实测，为缺口清单清零批次前数字；本批新增测试统计待回归更新）
 
 ---
 
@@ -390,7 +402,7 @@
 |-------|--------|------|
 | legado-core | 743 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor、PDF 导出、规则订阅服务 |
 | legado-parser | 163 | RuleAnalyzer + 4 解析器 + AnalyzeRule 门面 + AnalyzeUrl 完整模板 + RuleComplete 自动补全 + review_rule_parser 段评回复 |
-| legado-net | 222 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + QUIC + gzip/brotli/deflate + SOCKS5 凭据认证 + Cookie 持久化 |
+| legado-net | 224 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + QUIC + gzip/brotli/deflate + SOCKS5 凭据认证 + SOCKS5 凭据代理 e2e + Cookie 持久化 |
 | legado-js | 402（默认）/ 547（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + JsSourceConfig + 登录 V2 + 验证码 JS 钩子（getVerificationCode/startBrowserAwait） |
 | legado-book | 140 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 + MOBI HUFF/CDIC/INDX/TAGX/KF8(AZW3)/NCX 完整解析 |
 | legado-db | 260 | Schema v100 + highlights/highlightRules 表 + ruleSubscriptions 表 + Repository + MigrationRegistry + RoomImporter + DefaultData（CAS 乐观锁/批量启停/阅读记录作者合并） |
@@ -467,14 +479,25 @@
 
 ### 不迁移项登记（含用户已确认项）
 
-> 以下为技术分析建议。其中前 4 项已经用户确认为不迁移（2026-08-04）；后续新增项确认前仅供参考。
+> 以下为技术分析建议。其中 3 项已经用户确认为不迁移（2026-08-04；原第 4 项“繁”按钮经重评改为迁移并已完成，见 Task #167）；降级登记项为缺口清单清零批次评估结论（2026-08-05）；后续新增项确认前仅供参考。
 
 | 不迁移项 | 原因 | 状态 |
 |----------|------|------|
 | Cronet 网络库 | Flutter 端使用 Rust reqwest + QUIC 替代，无需引入 Cronet | ✅ 用户已确认不迁移（2026-08-04） |
-| 阅读界面“繁”按钮 | 功能过于小众，投入产出比低 | ✅ 用户已确认不迁移（2026-08-04） |
 | 旧版备份恢复逻辑 | 已有新版 BackupService 替代，旧版不再迁移 | ✅ 用户已确认不迁移（2026-08-04） |
-| 应用自更新 | `help/update/` 4 文件 + UpdateDialog（上游 #520/#526/#528）；Android 平台特性（APK 下载+系统安装器），Flutter 跨平台目标以 Windows 为主，无真实需求；Android 端更新可走应用商店 | ✅ 用户已确认不迁移（2026-08-04） |
+| 应用自更新 | `help/update/` 4 文件 + UpdateDialog（上游 #520/#526/#528）；Android 平台特性（APK 下载+系统安装器），Flutter 跨平台目标以 Windows 为主，无真实需求；Android 端更新可走应用商店。备注：可选中间态“检查新版本提示”已建议单独登记 P2 待决策 | ✅ 用户已确认不迁移（2026-08-04） |
+
+> 阅读界面“繁”按钮：已从“不迁移”移除，改为**已迁移**（Task #167，重评结论：引擎已存在只差透传，功能对齐硬约束相关）。startBrowserAwait 降级处置见下方「已知降级项登记」；unrar 经复评后已真实实现，不再属于降级项。
+
+### 已知降级项登记
+
+> 功能存在但语义弱于 Kotlin 原版的项，正式登记为已知限制。
+
+| 降级项 | Kotlin 原版语义 | Rust 侧现状 | 登记时间 |
+|--------|-----------------|-------------|----------|
+| startBrowserAwait 浏览器模式 | `useBrowser=true`：内嵌浏览器打开验证页，支持 JS 交互与 refetchAfterSuccess 自动重取 | 桌面端无内置浏览器，一律降级为图片验证码通道（把 url 作为验证资源地址挂起等待用户输入，`legado-js platform.rs start_browser_await`）；已有测试 `test_start_browser_await_degrades_to_image_channel` 覆盖 | 2026-08-05（Task #99） |
+
+> unrar（RAR 解压）：初评（Task #168）登记为降级，后复评发现 `rar` crate 0.4（纯 Rust，RAR4/RAR5 全压缩级别+加密档案，无 C 依赖）可用，已改为真实实现（`archive_utils::unrar_file` / `rar_entry_bytes` + RAR5 fixture 往返测试），从降级项中移除。
 
 ---
 
