@@ -89,6 +89,72 @@ class _RssGroupManageDialogState extends ConsumerState<RssGroupManageDialog> {
     }
   }
 
+  /// 新增分组：把所有「无分组」的订阅源统一归入该分组名
+  /// （对标原版 viewModel.addGroup：取 noGroup 源批量设置 sourceGroup，
+  /// 原版并非创建空分组，而是收拢未分组源，故可经 updateRssSource 实现）
+  Future<void> _addGroup() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('添加分组'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '分组名称'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    if (_groups.contains(name)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('分组「$name」已存在')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final api = ref.read(bookApiProvider);
+      var moved = 0;
+      for (final s in _sources) {
+        // 仅收拢无分组的源（对标原版 rssSourceDao.noGroup）
+        if (_splitGroups(s.sourceGroup).isNotEmpty) continue;
+        final next = s.copyWith(sourceGroup: name);
+        await api.updateRssSource(next);
+        _sources[_sources.indexOf(s)] = next;
+        moved++;
+      }
+      _changed = true;
+      if (mounted) {
+        setState(() {});
+        if (moved == 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('没有未分组的订阅源可归入该分组')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('添加分组失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _rename(String group) async {
     final controller = TextEditingController(text: group);
     final newName = await showDialog<String>(
@@ -145,11 +211,21 @@ class _RssGroupManageDialogState extends ConsumerState<RssGroupManageDialog> {
         children: [
           const Expanded(child: Text('分组管理')),
           if (_busy)
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             ),
+          // 新增分组（对标原版 group_manage.xml menu_add）
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: '添加分组',
+            visualDensity: VisualDensity.compact,
+            onPressed: _busy ? null : _addGroup,
+          ),
         ],
       ),
       content: SizedBox(
