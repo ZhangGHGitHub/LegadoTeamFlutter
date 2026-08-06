@@ -202,6 +202,49 @@
 
 ---
 
+## 7. 修复完成状态（2026-08-06 批次0-3 闭合）
+
+> 本章为审计报告缺口的修复回写（Task #119）：审计报告所列 P0/P1/P2 缺口与 Rust 4 项 P1 实质缺口已全部按计划闭合，台账销记见 [REFACTORING_REMAINING_PLAN.md §5](REFACTORING_REMAINING_PLAN.md)（v1.8）。
+
+### 7.1 提交清单（8 个提交，均 2026-08-06）
+
+| 序 | 提交 hash | 批次 | 内容 | 闭合的审计缺口 |
+|----|-----------|------|------|------------------|
+| 1 | `0cde41a5c` | 批次0 快赢（v2.0.1） | 日志入口接通 AppLog / 翻页动画接阅读设置 / 朗读配置页入口 / 替换规则本地导入接确认页 | §5.4 四个纯接线快赢项 |
+| 2 | `873abea29` | 批次1 P0（v2.0.1） | 阅读器正文长按选择 + 9 项操作菜单 / 底栏朗读按钮 + 朗读控制条 | §3.2 P0-1、P0-2 |
+| 3 | `b7368193a` | 批次2 解阻塞（Rust） | 正文 nextContentUrl 分页抓取（99 页上限去重终止）+ rssUpdateSource 原子更新 FFI（契约 §2.5/§2.17 登记） | §3.1 P1 ①④ |
+| 4 | `9ac94b173` | 批次2 跨轨（Rust） | TTS 真实合成管线：ttsSpeak 模板替换 + MD5 文件缓存 + Content-Type 校验 / legado-net 无损字节 get_raw（契约 §2.42 登记） | §3.1 P1 ② Rust 侧 |
+| 5 | `522e1c1be` | 批次2 P1 批量（v2.0.2，34 files） | 组 A 阅读器系 10 项菜单+源操作+配置 5 项 / 组 B 离线缓存+书架书详 7 项 / 组 C RSS 规则换源听书设置 8 项 + 删 rss_config_screen / WebView 桥接拦截 7 动作（platform_bridge_service.dart）/ audioSpeak 接 ttsSpeak 真实管线 | §3.2 P1 44 项、§3.1 P1 ②③、结构问题 |
+| 6 | `6633c25e3` | 批次3 治理（Rust） | platform.rs 5 个死代码桩清理、rust_api.dart 3 个死代码 fallback 标注、10 个一次性脚本清理 | §3.1 治理项 |
+| 7 | `0c452f4b5` | 批次3 治理（Docs） | 文档口径修正（README/DEVELOPMENT/PROGRESS）与决策记录（bridge.rs 保留+计划性废弃、schema v102 延后） | §3.1 治理项 |
+| 8 | `13a11220e` | 批次3 P2 收尾（v2.0.3） | 阅读页面四向边距 + 设置编码 + 定时任务导入导出菜单；日志入口/字距段距/导入排序经核验销记 | §3.2 P2 46 项 |
+
+### 7.2 版本演进
+
+| 版本 | 对应批次 | 主要交付 |
+|------|----------|----------|
+| 2.0.0+2 | 审计基线 | 审计前基线版本（缺口约 92 项 UI + 4 项 Rust P1） |
+| 2.0.1 | 批次0 + 批次1 | 4 个纯接线快赢 + P0 两项（长按选择菜单、朗读链路） |
+| 2.0.2 | 批次2 | P1 44 项批量（组 A/B/C）+ WebView 拦截 7 动作 + audioSpeak 接真实管线 |
+| 2.0.3+5 | 批次3 | P2 收尾（边距/编码/定时任务菜单）+ 治理项闭合，**当前版本** |
+
+### 7.3 留项汇总（未闭合项，均已在代码/台账登记，不臆测）
+
+| # | 留项 | 性质 | 来源依据 |
+|---|------|------|----------|
+| 1 | 章节内容保存 FFI（saveChapterContent） | 待 Rust 交付 FFI 后持久化编辑结果 | `reader_top_bar.dart` TODO(留批次) |
+| 2 | 反转内容持久化 | 依赖留项 1（无章节保存 FFI，反转结果无法持久化） | `reader_top_bar.dart` TODO(留批次) |
+| 3 | 章节购买 payAction | 需书源 payAction 后端支持，当前无 FFI | `reader_bottom_bar.dart` TODO(留批次) |
+| 4 | 段落级 TTS 切换起点 | 待 startReadAloud 支持偏移参数（chapterPos） | `text_selection_panel.dart` TODO(留批次) |
+| 5 | 语速跟随系统实时通道 | 需系统 TTS 语速读取通道，当前持久化到 SharedPreferences | `read_aloud_bar.dart` TODO(留批次) |
+| 6 | MoreConfig 其余项 | 显示标题/滚动条/音量键翻页等 | `reader_config_panel.dart` TODO(留批次) |
+| 7 | schema v102 重建表 | 评估结论：建议延后，与 ruleSubs/dictRules 等结构偏离合并为 schema 对齐专项 | [REFACTORING_REMAINING_PLAN.md §4.2.1](REFACTORING_REMAINING_PLAN.md) |
+| 8 | bridge.rs C ABI 三步废弃 | 已决策保留+计划性废弃：本批完成决策记录→下批 DEPRECATED 标注冻结新增→下大版本物理移除 | [REFACTORING_REMAINING_PLAN.md §4.2.3 P2-1](REFACTORING_REMAINING_PLAN.md) |
+| 9 | Rust P2 缺口 | subContent 副内容、contentRule.replaceRegex 全文替换、legado-server 正文桩、dict 18 词占位数据 | 本报告 §3.1 P2（未列入本次闭合范围） |
+| 10 | 登录 UI V2 / QUIC 六件套等 13 个 bridge 绑定 UI 封装 | 已登记 API_CONTRACT §3 待封装清单，随后续批次消化 | 本报告 §3.1 契约登记缺口 |
+
+---
+
 **编写者**: Qoder
 **日期**: 2026-08-06
 **数据来源**: Grace（Flutter UI 缺口实测审计）、Sam（Rust 功能缺口源码级复查）两份审计结论，本报告不臆测审计外数据
