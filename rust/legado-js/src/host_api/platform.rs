@@ -20,12 +20,17 @@
 //!    （`legado_core::verification_channel`，Task #90）：JS 侧阻塞挂起 →
 //!    FFI 事件流推送请求 → UI 弹验证码对话框 → 用户输入回传唤醒。
 //!    对齐 Kotlin `SourceVerificationHelp.getVerificationResult` 语义。
+//!
+//! # 注意
+//!
+//! 配置/工具类宿主 API（`androidId` / `getWebViewUA` / `getReadBookConfig` /
+//! `getThemeMode` / `toast` / `longToast`）不在此模块，见
+//! [`super::config_api`] 与 [`super::misc_api`]（quickjs_impl 实际注册路径）。
+//! 批次3治理（Task #118）：曾存在的同名降级桩因无任何调用点已删除。
 
 use legado_core::verification_channel;
 
 use super::current_source;
-
-const NOT_SUPPORTED: &str = "[ERROR] This API is not supported in Rust runtime";
 
 /// webView(html, url, js) → 结构化桥接载荷
 ///
@@ -164,15 +169,6 @@ pub fn open_url(url: &str, mime_type: &str) -> String {
     .to_string()
 }
 
-/// Toast 提示 — 需要 Android Toast / Flutter SnackBar
-///
-/// Rust 运行时降级为 stderr 输出。
-pub fn toast(msg: &str) -> String {
-    // 在 Rust 运行时输出到 stderr 作为替代
-    eprintln!("[Toast] {}", msg);
-    String::new()
-}
-
 /// getVerificationCode(imageUrl) — 图片验证码交互（阻塞等待用户输入）
 ///
 /// 对应 Kotlin: `getVerificationCode(imageUrl: String): String`
@@ -220,20 +216,6 @@ pub fn start_browser_await(url: &str, title: &str) -> String {
     }
 }
 
-/// 获取 Android ID — 需要 Android Context
-///
-/// Rust 运行时（无头模式）不支持此操作。
-pub fn android_id() -> String {
-    NOT_SUPPORTED.to_string()
-}
-
-/// WebView API — 获取 WebView 默认 User-Agent
-///
-/// Rust 运行时（无头模式）不支持此操作。
-pub fn get_web_view_ua() -> String {
-    NOT_SUPPORTED.to_string()
-}
-
 /// 打开视频播放器 — 需要 Android Intent / Flutter 平台通道
 ///
 /// 对齐 Kotlin `JsExtensions.openVideoPlayer(url, title, isFloat)` →
@@ -254,20 +236,6 @@ pub fn open_video_player(url: &str, title: &str, is_float: bool) -> String {
         "isFloat": is_float,
     })
     .to_string()
-}
-
-/// 获取阅读配置 — 需要 Android SharedPreferences
-///
-/// Rust 运行时返回空 JSON 作为降级。
-pub fn get_read_book_config() -> String {
-    "{}".to_string() // 返回空 JSON 作为降级
-}
-
-/// 获取主题模式
-///
-/// Rust 运行时默认返回浅色主题。
-pub fn get_theme_mode() -> String {
-    "light".to_string() // 默认浅色主题
 }
 
 #[cfg(test)]
@@ -387,12 +355,6 @@ mod tests {
         let key = key.expect("应收到降级验证请求事件");
         assert!(verification_channel::submit_verification_result(&key, "ok-code"));
         assert_eq!(worker.join().unwrap(), "ok-code");
-    }
-
-    #[test]
-    fn test_degraded_defaults() {
-        assert_eq!(get_read_book_config(), "{}");
-        assert_eq!(get_theme_mode(), "light");
     }
 
     #[test]

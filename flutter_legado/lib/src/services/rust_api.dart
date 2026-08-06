@@ -562,6 +562,11 @@ class RustApi implements BookApi {
   }
 
   /// 扫描本地书籍（扫描目录下的常见电子书格式）
+  ///
+  /// ⚠️ 死代码标注（批次3治理 Task #118）：此 Dart 纯实现 fallback 在全工程
+  /// 已无任何调用点（本地导入已走 Rust FFI 管线：detectFormat/parseMetadata/
+  /// importLocalBook）。仅为保持 [BookApi] 契约面不变而保留，勿删除；
+  /// 后续如需清理须同步 book_api.dart / mock_book_api.dart 声明。
   Future<List<Map<String, dynamic>>> scanLocalBooks(String dirPath) async {
     const extensions = {'.txt', '.epub', '.mobi', '.pdf', '.azw3'};
     final dir = Directory(dirPath);
@@ -1276,6 +1281,11 @@ class RustApi implements BookApi {
   // ========== 书籍格式解析 ==========
 
   /// 解析 TXT 文件（按章节标题模式分割）
+  ///
+  /// ⚠️ 死代码标注（批次3治理 Task #118）：此 Dart 纯正则 fallback 在全工程
+  /// 已无任何调用点（TXT 章节解析已由 Rust 侧接管）。仅为保持 [BookApi]
+  /// 契约面不变而保留，勿删除；后续如需清理须同步 book_api.dart /
+  /// mock_book_api.dart 声明。
   Future<List<BookChapter>> parseTxt(String filePath) async {
     final file = File(filePath);
     if (!await file.exists()) {
@@ -1535,6 +1545,11 @@ class RustApi implements BookApi {
   }
 
   /// 获取章节媒体信息（待 FFI 实现，当前返回基本信息）
+  ///
+  /// ⚠️ 死代码标注（批次3治理 Task #118）：此 fallback 在全工程已无任何
+  /// 调用点（audioSpeak 已接真实 Rust TTS 管线，听书不再依赖此接口）。
+  /// 仅为保持 [BookApi] 契约面不变而保留，勿删除；后续如需清理须同步
+  /// book_api.dart / mock_book_api.dart 声明。
   Future<Map<String, dynamic>> getAudioChapterMedia(
     String bookUrl,
     int chapterIndex,
