@@ -36,12 +36,23 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 两端对齐开关（对标 MoreConfig textFullJustify）
   final bool textFullJustify;
 
+  // [UI-fix v2.0.3 | 2026-08-06] 页面边距四向可调（对标原版
+  // ReadBookConfig paddingTop/Bottom/Left/Right） — Qoder
+  final double marginTop;
+  final double marginBottom;
+  final double marginLeft;
+  final double marginRight;
+
   const ReaderPageView({
     super.key,
     required this.paragraphSpacing,
     this.letterSpacing = 0.0,
     this.paragraphIndent = true,
     this.textFullJustify = true,
+    this.marginTop = 24,
+    this.marginBottom = 24,
+    this.marginLeft = 20,
+    this.marginRight = 20,
   });
 
   @override
@@ -73,6 +84,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   bool _paginatedIndent = true;
   bool _paginatedJustify = true;
   String? _paginatedFontFamily;
+
+  // [UI-fix v2.0.3 | 2026-08-06] 分页缓存键新增页面边距 — Qoder
+  String _paginatedMargins = '';
 
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
@@ -206,6 +220,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final indent = widget.paragraphIndent;
     final justify = widget.textFullJustify;
     final fontFamily = _fontFamily;
+    // [UI-fix v2.0.3 | 2026-08-06] 页面边距变化同样触发重新分页 — Qoder
+    final margins =
+        '${widget.marginTop}_${widget.marginBottom}_${widget.marginLeft}_${widget.marginRight}';
 
     final needRepaginate = content.isNotEmpty &&
         (chapterIndex != _paginatedChapterIndex ||
@@ -215,16 +232,23 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             letterSpacing != _paginatedLetterSpacing ||
             indent != _paginatedIndent ||
             justify != _paginatedJustify ||
-            fontFamily != _paginatedFontFamily);
+            fontFamily != _paginatedFontFamily ||
+            margins != _paginatedMargins);
 
     if (!needRepaginate) return;
 
-    // 计算可用尺寸（减去内边距）
+    // 计算可用尺寸（减去配置的页面边距）
     final screenSize = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
-    final availableWidth = screenSize.width - 40; // 左右各 20px
-    final availableHeight =
-        screenSize.height - padding.top - padding.bottom - 48 - 40;
+    final availableWidth = screenSize.width -
+        widget.marginLeft -
+        widget.marginRight;
+    final availableHeight = screenSize.height -
+        padding.top -
+        padding.bottom -
+        40 -
+        widget.marginTop -
+        widget.marginBottom;
 
     final config = ParagraphConfig(
       fontSize: fontSize,
@@ -252,6 +276,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedIndent = indent;
     _paginatedJustify = justify;
     _paginatedFontFamily = fontFamily;
+    _paginatedMargins = margins;
     _currentPageIndex = 0;
 
     // 跨章节分页：注册本章页数到全局分页器
@@ -310,7 +335,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       top: !state.showControls,
       bottom: !state.showControls,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        // [UI-fix v2.0.3 | 2026-08-06] 滚动模式边距接页面边距配置 — Qoder
+        padding: EdgeInsets.only(
+          left: widget.marginLeft,
+          right: widget.marginRight,
+          top: widget.marginTop,
+          bottom: widget.marginBottom,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -595,6 +626,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       paragraphSpacing: widget.paragraphSpacing,
       backgroundColor: state.backgroundColor,
       textColor: state.textColor,
+      // [UI-fix v2.0.3 | 2026-08-06] 分页页内容边距接配置 — Qoder
+      contentPadding: EdgeInsets.only(
+        left: widget.marginLeft,
+        right: widget.marginRight,
+        top: widget.marginTop,
+        bottom: widget.marginBottom,
+      ),
       globalPageIndex: globalIndex,
       globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
     );

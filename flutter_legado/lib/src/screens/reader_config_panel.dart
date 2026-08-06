@@ -58,6 +58,13 @@ class ReaderAdvancedConfig {
   bool paragraphIndent;
   bool textFullJustify;
 
+  // [UI-fix v2.0.3 | 2026-08-06] 页面边距（对标原版 ReadBookConfig
+  // paddingTop/paddingBottom/paddingLeft/paddingRight） — Qoder
+  double pageMarginTop;
+  double pageMarginBottom;
+  double pageMarginLeft;
+  double pageMarginRight;
+
   // 状态栏提示栏
   bool showBattery;
   bool showTime;
@@ -78,6 +85,10 @@ class ReaderAdvancedConfig {
     this.letterSpacing = 0,
     this.paragraphIndent = true,
     this.textFullJustify = true,
+    this.pageMarginTop = 24,
+    this.pageMarginBottom = 24,
+    this.pageMarginLeft = 20,
+    this.pageMarginRight = 20,
     this.showBattery = true,
     this.showTime = true,
     this.showProgress = true,
@@ -108,6 +119,14 @@ class ReaderAdvancedConfig {
           .clamp(0.0, 10.0),
       paragraphIndent: prefs.getBool('${_prefix}paragraph_indent') ?? true,
       textFullJustify: prefs.getBool('${_prefix}text_full_justify') ?? true,
+      pageMarginTop: (prefs.getDouble('${_prefix}margin_top') ?? 24)
+          .clamp(0.0, 80.0),
+      pageMarginBottom: (prefs.getDouble('${_prefix}margin_bottom') ?? 24)
+          .clamp(0.0, 80.0),
+      pageMarginLeft: (prefs.getDouble('${_prefix}margin_left') ?? 20)
+          .clamp(0.0, 80.0),
+      pageMarginRight: (prefs.getDouble('${_prefix}margin_right') ?? 20)
+          .clamp(0.0, 80.0),
       showBattery: prefs.getBool('${_prefix}show_battery') ?? true,
       showTime: prefs.getBool('${_prefix}show_time') ?? true,
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
@@ -129,6 +148,10 @@ class ReaderAdvancedConfig {
     await prefs.setDouble('${_prefix}letter_spacing', letterSpacing);
     await prefs.setBool('${_prefix}paragraph_indent', paragraphIndent);
     await prefs.setBool('${_prefix}text_full_justify', textFullJustify);
+    await prefs.setDouble('${_prefix}margin_top', pageMarginTop);
+    await prefs.setDouble('${_prefix}margin_bottom', pageMarginBottom);
+    await prefs.setDouble('${_prefix}margin_left', pageMarginLeft);
+    await prefs.setDouble('${_prefix}margin_right', pageMarginRight);
     await prefs.setBool('${_prefix}show_battery', showBattery);
     await prefs.setBool('${_prefix}show_time', showTime);
     await prefs.setBool('${_prefix}show_progress', showProgress);
@@ -147,6 +170,10 @@ class ReaderAdvancedConfig {
         letterSpacing: letterSpacing,
         paragraphIndent: paragraphIndent,
         textFullJustify: textFullJustify,
+        pageMarginTop: pageMarginTop,
+        pageMarginBottom: pageMarginBottom,
+        pageMarginLeft: pageMarginLeft,
+        pageMarginRight: pageMarginRight,
         showBattery: showBattery,
         showTime: showTime,
         showProgress: showProgress,
@@ -277,6 +304,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
             _buildParagraphSpacing(),
             const Divider(),
             _buildTypography(),
+            const Divider(),
+            _buildPageMargins(),
             const Divider(),
             _buildMoreConfig(),
             const Divider(),
@@ -535,6 +564,71 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
             _config.paragraphIndent = v;
             _commit();
           },
+        ),
+      ],
+    );
+  }
+
+  // ===== 页面边距（对标原版 ReadStyleDialog 的四向 padding 调节） =====
+
+  // [UI-fix v2.0.3 | 2026-08-06] 页面边距四向可调，接入分页与渲染 — Qoder
+  Widget _buildPageMargins() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('页面边距', Icons.crop_free),
+        _marginSlider('顶部', Icons.arrow_upward,
+            _config.pageMarginTop, (v) {
+          _config.pageMarginTop = v;
+          _commit();
+        }),
+        _marginSlider('底部', Icons.arrow_downward,
+            _config.pageMarginBottom, (v) {
+          _config.pageMarginBottom = v;
+          _commit();
+        }),
+        _marginSlider('左侧', Icons.arrow_back,
+            _config.pageMarginLeft, (v) {
+          _config.pageMarginLeft = v;
+          _commit();
+        }),
+        _marginSlider('右侧', Icons.arrow_forward,
+            _config.pageMarginRight, (v) {
+          _config.pageMarginRight = v;
+          _commit();
+        }),
+      ],
+    );
+  }
+
+  Widget _marginSlider(String label, IconData icon, double value,
+      ValueChanged<double> onChanged) {
+    return Row(
+      children: [
+        Icon(icon, size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: 36,
+          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        ),
+        Expanded(
+          child: Slider(
+            value: value,
+            min: 0,
+            max: 80,
+            divisions: 40,
+            label: value.toStringAsFixed(0),
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(
+            '${value.toStringAsFixed(0)}px',
+            textAlign: TextAlign.end,
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
         ),
       ],
     );

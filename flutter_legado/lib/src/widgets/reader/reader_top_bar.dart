@@ -250,6 +250,97 @@ class ReaderTopBar extends ConsumerWidget {
     _snack(context, '「反转内容」待章节保存 FFI 交付后支持');
   }
 
+  // [UI-fix v2.0.3 | 2026-08-06] 设置编码（对标原版 menu_set_charset →
+  // BaseReadBookActivity.showCharsetConfig → ReadBook.setCharset：
+  // 写入 book.charset 并重载章节，本地书乱码时按指定编码重读） — Qoder
+
+  /// 常用编码候选（对标原版 AppConst.charsets）
+  static const List<String> _charsets = [
+    'UTF-8', 'GB2312', 'GB18030', 'GBK',
+    'Unicode', 'UTF-16', 'UTF-16LE', 'ASCII',
+  ];
+
+  /// 设置编码对话框（对标原版 showCharsetConfig）
+  void _showCharsetDialog(BuildContext context, WidgetRef ref) {
+    final book = ref.read(readerNotifierProvider).currentBook;
+    if (book == null) return;
+    final ctrl = TextEditingController(text: book.charset ?? '');
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('设置编码'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: ctrl,
+                decoration: const InputDecoration(
+                  labelText: 'charset',
+                  hintText: '如 UTF-8 / GBK',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final cs in _charsets)
+                    ChoiceChip(
+                      label: Text(cs),
+                      selected: ctrl.text == cs,
+                      onSelected: (_) =>
+                          setDialogState(() => ctrl.text = cs),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final charset = ctrl.text.trim();
+                Navigator.pop(dialogContext);
+                if (charset.isEmpty) {
+                  _snack(context, '编码不能为空');
+                  return;
+                }
+                unawaited(_applyCharset(context, ref, charset));
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 持久化 charset 并重载当前章正文（对标 ReadBook.setCharset）
+  Future<void> _applyCharset(
+    BuildContext context,
+    WidgetRef ref,
+    String charset,
+  ) async {
+    final book = ref.read(readerNotifierProvider).currentBook;
+    if (book == null) return;
+    final updated = book.copyWith(charset: charset);
+    try {
+      await ref.read(bookApiProvider).updateBook(updated);
+      final notifier = ref.read(readerNotifierProvider.notifier);
+      notifier.updateCurrentBook(updated);
+      await notifier.reloadChapterContent();
+      if (context.mounted) _snack(context, '已设置编码：$charset');
+    } catch (e) {
+      if (context.mounted) _snack(context, '设置编码失败: $e');
+    }
+  }
+
   /// 帮助对话框（对标原版 menu_help）
   void _showHelpDialog(BuildContext context) {
     showDialog<void>(
@@ -500,6 +591,10 @@ class ReaderTopBar extends ConsumerWidget {
                       case 'imageStyle':
                         _showImageStyleDialog(context, ref);
                         break;
+                      case 'setCharset':
+                        // [UI-fix v2.0.3 | 2026-08-06] 设置编码接通 — Qoder
+                        _showCharsetDialog(context, ref);
+                        break;
                       case 'updateToc':
                         unawaited(_updateToc(context, ref));
                         break;
@@ -557,6 +652,11 @@ class ReaderTopBar extends ConsumerWidget {
                       const PopupMenuItem(
                         value: 'imageStyle',
                         child: Text('图片样式'),
+                      ),
+                      // [UI-fix v2.0.3 | 2026-08-06] 新增设置编码菜单项 — Qoder
+                      const PopupMenuItem(
+                        value: 'setCharset',
+                        child: Text('设置编码'),
                       ),
                       const PopupMenuItem(value: 'updateToc', child: Text('更新目录')),
                       const PopupMenuItem(value: 'log', child: Text('日志')),

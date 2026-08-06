@@ -27,6 +27,10 @@ class ReaderTypographicPage extends StatelessWidget {
   /// 全局总页数（可选）
   final int? globalTotalPages;
 
+  // [UI-fix v2.0.3 | 2026-08-06] 页面内容边距接阅读配置（对标原版
+  // ReadBookConfig 四向 padding），默认保持历史硬编码值 — Qoder
+  final EdgeInsets contentPadding;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -40,6 +44,8 @@ class ReaderTypographicPage extends StatelessWidget {
     required this.textColor,
     this.globalPageIndex,
     this.globalTotalPages,
+    this.contentPadding =
+        const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
   });
 
   @override
@@ -58,7 +64,7 @@ class ReaderTypographicPage extends StatelessWidget {
 
     return Container(
       color: backgroundColor,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      padding: contentPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

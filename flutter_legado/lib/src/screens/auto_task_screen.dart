@@ -1,6 +1,13 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../providers/auto_task/auto_task_notifier.dart';
 
@@ -26,7 +33,38 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     final state = ref.watch(autoTaskNotifierProvider);
     final notifier = ref.read(autoTaskNotifierProvider.notifier);
     return Scaffold(
-      appBar: AppBar(title: const Text('定时任务')),
+      appBar: AppBar(
+        title: const Text('定时任务'),
+        // [UI-fix v2.0.3 | 2026-08-06] 溢出菜单（对标原版 AutoTaskActivity
+        // menu_import_local / menu_import_on_line / menu_export / menu_help）
+        // — Qoder
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              switch (value) {
+                case 'import_local':
+                  _importLocal(context);
+                  break;
+                case 'import_online':
+                  _showImportOnlineDialog(context);
+                  break;
+                case 'export':
+                  _exportTasks(context);
+                  break;
+                case 'help':
+                  _showHelpDialog(context);
+                  break;
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'import_local', child: Text('导入本地任务')),
+              PopupMenuItem(value: 'import_online', child: Text('导入线上任务')),
+              PopupMenuItem(value: 'export', child: Text('导出任务')),
+              PopupMenuItem(value: 'help', child: Text('帮助')),
+            ],
+          ),
+        ],
+      ),
       body: Builder(
         builder: (context) {
           if (state.isLoading) {
@@ -368,6 +406,222 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         }
       }
     }
+  }
+
+  // ===== [UI-fix v2.0.3 | 2026-08-06] 导入/导出/帮助（对标原版
+  // AutoTaskActivity 菜单） — Qoder =====
+
+  void _snack(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 导入本地任务文件（txt/json，对标 menu_import_local）
+  Future<void> _importLocal(BuildContext context) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['txt', 'json'],
+      );
+      final path = result?.files.single.path;
+      if (path == null) return;
+      final raw = await File(path).readAsString();
+      if (context.mounted) {
+        await _importFromRaw(context, raw, '本地文件');
+      }
+    } catch (e) {
+      if (context.mounted) _snack(context, '读取文件失败: $e');
+    }
+  }
+
+  /// 线上导入对话框（URL，对标 menu_import_on_line）
+  void _showImportOnlineDialog(BuildContext context) {
+    final ctrl = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('导入线上任务'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            labelText: 'URL',
+            hintText: 'https://example.com/autoTask.json',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final url = ctrl.text.trim();
+              Navigator.pop(dialogContext);
+              if (url.isEmpty) return;
+              _importOnline(context, url);
+            },
+            child: const Text('导入'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 线上导入（对标 ImportAutoTaskDialog 网络分支）
+  Future<void> _importOnline(BuildContext context, String url) async {
+    _snack(context, '正在获取任务配置…');
+    try {
+      final resp = await http.get(Uri.parse(url)).timeout(
+            const Duration(seconds: 15),
+          );
+      if (resp.statusCode != 200) {
+        if (context.mounted) {
+          _snack(context, '下载失败: HTTP ${resp.statusCode}');
+        }
+        return;
+      }
+      if (context.mounted) {
+        await _importFromRaw(context, resp.body, '线上');
+      }
+    } catch (e) {
+      if (context.mounted) _snack(context, '下载失败: $e');
+    }
+  }
+
+  /// 解析导入 JSON → 经 FFI 合并（autoTaskPrepareImported）→ 确认后入库
+  Future<void> _importFromRaw(
+    BuildContext context,
+    String raw,
+    String source,
+  ) async {
+    List<Map<String, dynamic>> imported;
+    try {
+      final decoded = jsonDecode(raw);
+      final list = decoded is List ? decoded : [decoded];
+      imported = list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (_) {
+      _snack(context, '导入失败：JSON 格式无效');
+      return;
+    }
+    if (imported.isEmpty) {
+      _snack(context, '导入失败：未找到任务数据');
+      return;
+    }
+
+    final notifier = ref.read(autoTaskNotifierProvider.notifier);
+    final localTasks = ref
+        .read(autoTaskNotifierProvider)
+        .tasks
+        .map((t) => t.toJson())
+        .toList();
+    // FFI 合并（合并本地运行时状态）；不可用时退化为原始解析结果
+    final merged = await notifier.prepareImportedTasks(
+      localTasks: localTasks,
+      importedJson: raw,
+    );
+    final newTasks = (merged ?? imported)
+        .map(AutoTask.fromJson)
+        .where((t) => t.name.isNotEmpty)
+        .map((t) => t.id.isEmpty
+            ? t.copyWith(
+                id: DateTime.now().microsecondsSinceEpoch.toString())
+            : t)
+        .toList();
+    if (newTasks.isEmpty) {
+      _snack(context, '导入失败：任务数据无效');
+      return;
+    }
+
+    if (!context.mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('导入任务'),
+        content: Text('从$source发现 ${newTasks.length} 个任务，是否导入？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('导入'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    var count = 0;
+    for (final task in newTasks) {
+      try {
+        await notifier.createTask(task);
+        count++;
+      } catch (_) {
+        // 单条失败不阻断整体导入
+      }
+    }
+    if (context.mounted) _snack(context, '已导入 $count 个任务');
+  }
+
+  /// 导出任务（对标 menu_export → exportAutoTask.json）
+  Future<void> _exportTasks(BuildContext context) async {
+    final tasks = ref.read(autoTaskNotifierProvider).tasks;
+    if (tasks.isEmpty) {
+      _snack(context, '暂无任务可导出');
+      return;
+    }
+    final json = jsonEncode(tasks.map((t) => t.toJson()).toList());
+    try {
+      // 优先让用户选择保存位置（桌面/移动端支持）
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: '导出定时任务',
+        fileName: 'exportAutoTask.json',
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsString(json);
+        if (context.mounted) _snack(context, '已导出到: $savePath');
+        return;
+      }
+      // 平台不支持保存对话框：写入文档目录并走系统分享
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/exportAutoTask.json');
+      await file.writeAsString(json);
+      await Share.shareXFiles([XFile(file.path)], subject: '导出定时任务');
+    } catch (e) {
+      if (context.mounted) _snack(context, '导出失败: $e');
+    }
+  }
+
+  /// 帮助对话框（对标 menu_help → autoTaskHelp）
+  void _showHelpDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('定时任务帮助'),
+        content: const SingleChildScrollView(
+          child: Text(
+            '• 支持三种任务：刷新目录、更新书源、自动备份\n'
+            '• cron 表达式为标准 5 位格式：分 时 日 月 周\n'
+            '  例：0 8 * * *（每天 8:00）、0 */6 * * *（每 6 小时）\n'
+            '• 开关可随时通过列表项右侧切换\n'
+            '• 长按任务可立即运行、编辑或删除\n'
+            '• 可通过菜单导入本地/线上任务文件（txt/json），'
+            '或导出全部任务备份',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 确认删除

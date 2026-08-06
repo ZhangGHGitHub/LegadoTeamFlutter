@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-08-06
+
+### 修复（批次3 P2 收尾：排版细节 + 菜单行为，署名 Qoder）
+- 阅读器页面边距：阅读高级配置新增上/下/左/右四向边距滑杆（对标原版 ReadBookConfig paddingTop/Bottom/Left/Right），接入分页缓存键与排版渲染，默认值与历史行为零变化
+- 阅读器设置编码：顶栏溢出菜单新增「设置编码」（对标原版 menu_set_charset → showCharsetConfig），写入 book.charset 并重载当前章，本地书乱码可按 UTF-8/GBK/GB18030 等候选重读
+- 定时任务页溢出菜单：导入本地（txt/json）/导入线上（URL）/导出（exportAutoTask.json）/帮助，导入经 autoTaskPrepareImported FFI 合并本地运行时状态（对标原版 AutoTaskActivity menu_import_local/import_on_line/export/help）
+
+### 销记（审计 P2 台账核验后无需改动）
+- 日志入口 6+1 处：批次0 已全部接通 AppLogScreen（书架/搜索/书详/书源编辑/阅读器/听书/关于），销记
+- 字距/段距/首行缩进/两端对齐：v2.0.2 已接入排版引擎，销记
+- 书源导入排序：排序已应用于显示列表且导入后 reload 保持当前排序（原版 ImportBookSourceDialog 亦无排序 UI），判定对齐，销记
+
 ## [2.0.2] - 2026-08-06
 
 ### 修复（批次2 组A 阅读器系，署名 Qoder）

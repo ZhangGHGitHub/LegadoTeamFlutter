@@ -164,6 +164,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 letterSpacing: _advConfig.letterSpacing,
                 paragraphIndent: _advConfig.paragraphIndent,
                 textFullJustify: _advConfig.textFullJustify,
+                // [UI-fix v2.0.3 | 2026-08-06] 页面边距接入分页渲染 — Qoder
+                marginTop: _advConfig.pageMarginTop,
+                marginBottom: _advConfig.pageMarginBottom,
+                marginLeft: _advConfig.pageMarginLeft,
+                marginRight: _advConfig.pageMarginRight,
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
               // 全局页码指示器（跨章节连续分页已注册时显示）
