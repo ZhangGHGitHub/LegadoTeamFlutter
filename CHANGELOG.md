@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-06
 
+### 修复（书详情页背景分区：仅顶部封面区虚化，章节列表区改纯色——Qoder）
+- 书详情页背景分区回退：上一提交 `c620c97e4` 将章节列表 section 底色改为半透明 scrim（`cs.surface` alpha 0.82）让封面虚化整页透出，用户确认不要此效果。现回退 `book_info_screen._buildBody` 章节列表 section（章节搜索/章节列表（N）头/空态/底部间距）为**不透明** `cs.surface`；章节列表本体额外用 `DecoratedSliver(BoxDecoration(color: cs.surface))` 铺满不透明底色——`ListTile.tileColor` 在全屏虚化栈上不可靠地绘制不透明背景（早期无虚化层时被不透明 Scaffold 底色掩盖，加虚化后暴露），故显式加不透明背景 Sliver 盖住虚化。`_buildPage` 的 `ImageFilter.blur` 封面虚化背景层保留，仅透过顶部透明的 `_buildHeader` 封面区显现，`_buildSummaryPanel` 及以下均用不透明纯色盖住虚化，形成「顶部封面虚化景深 → 章节列表纯色清爽背景」的自然过渡（`_buildSummaryPanel` 顶部圆角 20 作为过渡分隔）
+
 ### 修复（阅读器点击翻页失效回归——Qoder）
 - 阅读器点击翻页失效（P0 回归）根因修复：`reader_screen._handleTap` 命中 `TapAction.nextPage/prevPage` 时经 `ReaderNotifier.nextGlobalPage/prevGlobalPage` 走「全局连续分页」路径，该路径仅更新 `globalPageIndex/currentChapterPos` 状态，却从未驱动 `ReaderPageView` 内部的 `PageController`，故点击后视觉上不翻页；且其「`globalPageIndex` 未变才回退章级翻页」的兜底判定在同章翻页时永不成立（同章翻页必然 +1），兜底 `pageView.nextPageOrChapter()` 从不触发。改为在 `_handleTap` 中直接调用 `ReaderPageView.next/prevPageOrChapter()`——统一驱动 `PageController` 完成各翻页模式（仿真/滑动/覆盖/无动画/滚动）视觉翻页与跨章无缝切换；删除失效的 `_navigateNextPage/_navigatePrevPage`
 - 全局页码指示器同步修复：`ReaderNotifier.updatePosition` 在更新章内页位后补调 `_syncGlobalPageInfo()`，使点击翻页与滑动手势翻页时底部「全局页 N/总页」指示器实时更新（此前仅 `updateChapterPageCount` 才刷新，章内翻页时指示器停滞）

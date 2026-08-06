@@ -520,10 +520,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             .where((c) => c.title.toLowerCase().contains(_filter))
             .toList();
     final cs = Theme.of(context).colorScheme;
-    // [UI-fix v2.0.3 | 2026-08-06] 章节列表区改半透明 scrim（surface alpha 0.82），
-    // 让封面虚化背景隐约透出、保持整页 iOS 景深一致；仍保留足够对比度确保章节文字可读 — Qoder
-    final tocPanelColor = cs.surface.withValues(alpha: 0.82);
-
+    // [UI-fix v2.0.3 | 2026-08-06] 书详情页仅顶部封面区虚化景深，章节列表区纯色背景 — Qoder
+    // 封面虚化背景层（见 _buildPage）仅透过顶部透明的 _buildHeader 封面区显现；
+    // 自 _buildSummaryPanel 起（含章节搜索/列表）均用不透明 cs.surface 盖住虚化，
+    // 形成「顶部封面虚化景深 → 章节列表纯色」的自然过渡（不再整页透出）。
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
@@ -531,10 +531,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         SliverToBoxAdapter(child: _buildHeader(context, book)),
         // 信息面板：书名/标签/摘要行/简介（对标原版 ll_info）
         SliverToBoxAdapter(child: _buildSummaryPanel(context, book)),
-        // 章节搜索与列表头（半透明面板，虚化背景透出）
+        // 章节搜索与列表头（不透明纯色面板，接在虚化 header 之下）
         SliverToBoxAdapter(
           child: Container(
-            color: tocPanelColor,
+            color: cs.surface,
             child: Column(
               children: [
                 _buildChapterSearch(context),
@@ -557,7 +557,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         if (filteredChapters.isEmpty)
           SliverToBoxAdapter(
             child: Container(
-              color: tocPanelColor,
+              color: cs.surface,
               child: const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: Text('暂无匹配章节')),
@@ -565,43 +565,48 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             ),
           )
         else
-          SliverList.builder(
-            itemCount: filteredChapters.length,
-            itemBuilder: (context, index) {
-              final chapter = filteredChapters[index];
-              final isCurrentRead = chapter.index == book.durChapterIndex;
-              return ListTile(
-                // [UI-fix v2.0.3 | 2026-08-06] tileColor 用半透明面板色，虚化背景透出保持景深
-                // （不能用 ColoredBox 包裹，会遮挡 ink 效果） — Qoder
-                tileColor: tocPanelColor,
-                title: Text(
-                  chapter.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight:
-                        isCurrentRead ? FontWeight.bold : FontWeight.normal,
-                    color: isCurrentRead
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
+          // [UI-fix v2.0.3 | 2026-08-06] 章节列表用 DecoratedSliver 铺不透明 cs.surface 底色，
+          // 盖住 _buildPage 全屏封面虚化层（ListTile.tileColor 在此栈上不可靠地绘制不透明背景，
+          // 早期无虚化层时被不透明 Scaffold 底色掩盖，加虚化后暴露 → 显式加不透明背景容器） — Qoder
+          DecoratedSliver(
+            decoration: BoxDecoration(color: cs.surface),
+            sliver: SliverList.builder(
+              itemCount: filteredChapters.length,
+              itemBuilder: (context, index) {
+                final chapter = filteredChapters[index];
+                final isCurrentRead = chapter.index == book.durChapterIndex;
+                return ListTile(
+                  // tileColor 延续纯色面板背景（不能用 ColoredBox 包裹，会遮挡 ink 效果）
+                  tileColor: cs.surface,
+                  title: Text(
+                    chapter.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight:
+                          isCurrentRead ? FontWeight.bold : FontWeight.normal,
+                      color: isCurrentRead
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
                   ),
-                ),
-                subtitle: chapter.wordCount != null &&
-                        chapter.wordCount!.isNotEmpty
-                    ? Text('${chapter.wordCount} 字')
-                    : null,
-                dense: true,
-                trailing: isCurrentRead
-                    ? const Icon(Icons.play_circle, size: 20)
-                    : null,
-                onTap: () => _openReader(context, book, chapter.index),
-                onLongPress: () =>
-                    _showChapterMenu(context, book, chapter, index),
-              );
-            },
+                  subtitle: chapter.wordCount != null &&
+                          chapter.wordCount!.isNotEmpty
+                      ? Text('${chapter.wordCount} 字')
+                      : null,
+                  dense: true,
+                  trailing: isCurrentRead
+                      ? const Icon(Icons.play_circle, size: 20)
+                      : null,
+                  onTap: () => _openReader(context, book, chapter.index),
+                  onLongPress: () =>
+                      _showChapterMenu(context, book, chapter, index),
+                );
+              },
+            ),
           ),
         SliverToBoxAdapter(
-          child: Container(color: tocPanelColor, height: 24),
+          child: Container(color: cs.surface, height: 24),
         ),
       ],
     );
