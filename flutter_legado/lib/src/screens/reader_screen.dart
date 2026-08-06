@@ -293,9 +293,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       case TapAction.none:
         break;
       case TapAction.prevPage:
-        _navigatePrevPage(notifier, pageView);
+        // [UI-fix v2.0.3 | 2026-08-06] 直接驱动 PageView 翻页（见下方根因说明）— Qoder
+        pageView?.prevPageOrChapter();
       case TapAction.nextPage:
-        _navigateNextPage(notifier, pageView);
+        pageView?.nextPageOrChapter();
       case TapAction.toggleControls:
         notifier.toggleControls();
       case TapAction.openCatalog:
@@ -303,39 +304,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
-  /// 全局上一页（优先跨章节连续分页，失败时回退到章级翻页）
-  void _navigatePrevPage(ReaderNotifier notifier, ReaderPageViewState? pageView) {
-    final stateBefore = ref.read(readerNotifierProvider);
-    if (stateBefore.totalPages > 0) {
-      notifier.prevGlobalPage().then((_) {
-        final stateAfter = ref.read(readerNotifierProvider);
-        if (stateAfter.globalPageIndex == stateBefore.globalPageIndex) {
-          pageView?.prevPageOrChapter();
-        }
-      }).catchError((_) {
-        pageView?.prevPageOrChapter();
-      });
-    } else {
-      pageView?.prevPageOrChapter();
-    }
-  }
-
-  /// 全局下一页（优先跨章节连续分页，失败时回退到章级翻页）
-  void _navigateNextPage(ReaderNotifier notifier, ReaderPageViewState? pageView) {
-    final stateBefore = ref.read(readerNotifierProvider);
-    if (stateBefore.totalPages > 0) {
-      notifier.nextGlobalPage().then((_) {
-        final stateAfter = ref.read(readerNotifierProvider);
-        if (stateAfter.globalPageIndex == stateBefore.globalPageIndex) {
-          pageView?.nextPageOrChapter();
-        }
-      }).catchError((_) {
-        pageView?.nextPageOrChapter();
-      });
-    } else {
-      pageView?.nextPageOrChapter();
-    }
-  }
+  // [UI-fix v2.0.3 | 2026-08-06] 修复点击翻页失效回归 —— Qoder
+  // 根因：此前点击翻页经 ReaderNotifier.nextGlobalPage/prevGlobalPage 仅更新
+  // 全局页索引状态（globalPageIndex/currentChapterPos），却未驱动 ReaderPageView
+  // 内部的 PageController；且「globalPageIndex 未变才回退章级翻页」的判定在同章
+  // 翻页时永不成立（同章翻页必然改变 globalPageIndex），导致点击后视觉上不翻页。
+  // 现改为在 _handleTap 中直接调用 ReaderPageView.next/prevPageOrChapter()：
+  // 既驱动 PageController 完成各模式（仿真/滑动/覆盖/无动画/滚动）视觉翻页与
+  // 跨章无缝切换，又经其内部 updatePosition() 同步全局页码指示器。
 
   /// 添加书签（提取当前章节内容前 100 字符作为摘要）
   void _addBookmark(ReaderState state) {

@@ -180,6 +180,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 更新当前阅读位置（由 UI 层滚动/翻页时调用）
   void updatePosition(int position) {
     state = state.copyWith(currentChapterPos: position);
+    // [UI-fix v2.0.3 | 2026-08-06] 翻页/滑动后同步全局页索引，
+    // 保证点击翻页与滑动手势翻页时全局页码指示器实时更新（此前仅
+    // updateChapterPageCount 才刷新，导致章内翻页指示器停滞） — Qoder
+    _syncGlobalPageInfo();
   }
 
   // ===== 跨章节连续分页导航 =====

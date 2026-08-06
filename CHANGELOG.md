@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-06
 
+### 修复（阅读器点击翻页失效回归——Qoder）
+- 阅读器点击翻页失效（P0 回归）根因修复：`reader_screen._handleTap` 命中 `TapAction.nextPage/prevPage` 时经 `ReaderNotifier.nextGlobalPage/prevGlobalPage` 走「全局连续分页」路径，该路径仅更新 `globalPageIndex/currentChapterPos` 状态，却从未驱动 `ReaderPageView` 内部的 `PageController`，故点击后视觉上不翻页；且其「`globalPageIndex` 未变才回退章级翻页」的兜底判定在同章翻页时永不成立（同章翻页必然 +1），兜底 `pageView.nextPageOrChapter()` 从不触发。改为在 `_handleTap` 中直接调用 `ReaderPageView.next/prevPageOrChapter()`——统一驱动 `PageController` 完成各翻页模式（仿真/滑动/覆盖/无动画/滚动）视觉翻页与跨章无缝切换；删除失效的 `_navigateNextPage/_navigatePrevPage`
+- 全局页码指示器同步修复：`ReaderNotifier.updatePosition` 在更新章内页位后补调 `_syncGlobalPageInfo()`，使点击翻页与滑动手势翻页时底部「全局页 N/总页」指示器实时更新（此前仅 `updateChapterPageCount` 才刷新，章内翻页时指示器停滞）
+- 实机 E2E 验证（emulator-5556）：滑动模式右侧点击 1/558→2/558→3/558、左侧点击 3→2、中间点击呼出/隐藏菜单；仿真模式右侧点击 2→3 均生效，滑动手势翻页未受影响
+
 ### 修复（书详情页章节列表区背景虚化覆盖——Qoder）
 - 书详情页向下滚动到章节列表时背景无封面虚化修复：`book_info_screen._buildBody` 中章节列表 section（章节搜索/章节列表（N）头/列表项 ListTile/空态/底部间距）原使用不透明 `cs.surface` 背景，完全遮挡了 `_buildPage` 铺满全页的 `ImageFilter.blur` 封面虚化层，导致仅顶部封面区可见景深、下方列表区为纯色。改为半透明 scrim（`cs.surface` withValues alpha 0.82），让封面虚化背景隐约透出、整页保持 iOS 沉浸景深一致；仍保留足够对比度确保章节文字可读（方案 B）
 
