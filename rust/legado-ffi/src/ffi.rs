@@ -738,8 +738,18 @@ pub mod ffi {
     ///
     /// `book_name` — 当前书籍名称
     /// `author` — 当前作者
-    pub fn source_switch_search(book_name: String, author: String) -> Result<String, BridgeError> {
-        let resp = crate::api::source_switch::search_alternative_sources(&book_name, &author)?;
+    /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；
+    /// 空串/空数组=搜全部启用源（留项#12/Task #131，加法式新增）
+    pub fn source_switch_search(
+        book_name: String,
+        author: String,
+        source_urls_json: String,
+    ) -> Result<String, BridgeError> {
+        let resp = crate::api::source_switch::search_alternative_sources(
+            &book_name,
+            &author,
+            &source_urls_json,
+        )?;
         to_json(&resp)
     }
 

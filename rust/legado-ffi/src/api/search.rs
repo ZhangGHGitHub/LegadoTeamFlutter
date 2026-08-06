@@ -516,7 +516,8 @@ struct AnnotatedCandidate {
 ///
 /// `source_urls_json` 为空字符串或空数组（`[]`）均表示「搜索所有启用的书源」；
 /// Dart 侧无筛选条件时传 `'[]'`，与原版「未选分组/书源即搜全部」语义对齐。
-fn load_search_sources(source_urls_json: &str) -> LegadoResult<Vec<BookSource>> {
+/// 留项#12（Task #131）：提升为 pub(crate) 供 source_switch 换源搜索复用同一过滤语义。
+pub(crate) fn load_search_sources(source_urls_json: &str) -> LegadoResult<Vec<BookSource>> {
     if source_urls_json.is_empty() {
         // 使用所有启用的书源
         return source_api::list_enabled_sources();

@@ -516,12 +516,16 @@ Future<String> dictLookup({required String word}) =>
 ///
 /// `book_name` — 当前书籍名称
 /// `author` — 当前作者
+/// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；
+/// 空串/空数组=搜全部启用源（留项#12/Task #131，加法式新增）
 Future<String> sourceSwitchSearch({
   required String bookName,
   required String author,
+  required String sourceUrlsJson,
 }) => RustLib.instance.api.crateFfiFfiSourceSwitchSearch(
   bookName: bookName,
   author: author,
+  sourceUrlsJson: sourceUrlsJson,
 );
 
 /// 切换到新书源（返回更新后的书籍 JSON）

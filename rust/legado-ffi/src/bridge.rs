@@ -854,15 +854,20 @@ pub unsafe extern "C" fn ffi_js_eval(script: *const c_char) -> *mut c_char {
 // ─── 换源 FFI 函数 ──────────────────────────────────────────────
 
 /// 搜索可替换的书源
+///
+/// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；
+/// 空串/空数组=搜全部启用源（留项#12/Task #131，加法式新增）
 #[no_mangle]
 pub unsafe extern "C" fn ffi_source_switch_search(
     book_name: *const c_char,
     author: *const c_char,
+    source_urls_json: *const c_char,
 ) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let name = c_char_to_str(book_name)?;
         let author_str = c_char_to_str(author)?;
-        crate::api::source_switch::search_alternative_sources(name, author_str)
+        let urls = c_char_to_str(source_urls_json)?;
+        crate::api::source_switch::search_alternative_sources(name, author_str, urls)
     }))
 }
 

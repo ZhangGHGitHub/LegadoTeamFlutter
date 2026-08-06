@@ -12,7 +12,6 @@ use legado_core::source_matcher::{SearchCandidate, SourceMatch, SourceMatcher};
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::LegadoClient;
 
-use crate::api::source as source_api;
 use crate::runtime;
 
 /// 换源搜索响应
@@ -30,13 +29,17 @@ pub struct SourceSwitchResponse {
 ///
 /// `book_name` — 当前书籍名称
 /// `author` — 当前作者
+/// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；
+/// 空串/空数组/缺省=搜索所有启用源（留项#12/Task #131，语义与
+/// `search_books` 的 `source_urls_json` 一致，复用 `search::load_search_sources`）。
 ///
-/// 在所有启用的书源中搜索，返回按匹配度排序的候选列表。
+/// 在指定（或全部启用）的书源中搜索，返回按匹配度排序的候选列表。
 pub fn search_alternative_sources(
     book_name: &str,
     author: &str,
+    source_urls_json: &str,
 ) -> LegadoResult<SourceSwitchResponse> {
-    let sources = source_api::list_enabled_sources()?;
+    let sources = resolve_switch_sources(source_urls_json)?;
     if sources.is_empty() {
         return Ok(SourceSwitchResponse {
             book_name: book_name.to_string(),
@@ -120,6 +123,14 @@ pub fn switch_book_source(
     })
 }
 
+/// 解析换源场景待搜索的书源列表（留项#12，Task #131）
+///
+/// 复用 [`crate::api::search::load_search_sources`] 过滤语义：
+/// 空串/空数组（`[]`）=全部启用源；非空 JSON 数组=仅搜指定 URL 的启用源。
+pub(crate) fn resolve_switch_sources(source_urls_json: &str) -> LegadoResult<Vec<BookSource>> {
+    crate::api::search::load_search_sources(source_urls_json)
+}
+
 /// 对单个书源执行搜索（用于换源场景）
 async fn search_for_switch(
     client: &LegadoClient,
@@ -171,6 +182,7 @@ async fn search_for_switch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::source as source_api;
 
     #[test]
     fn test_source_switch_response_serialize() {
@@ -182,5 +194,39 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("斗破苍穹"));
         assert!(json.contains("天蚕土豆"));
+    }
+
+    /// 留项#12（Task #131）：传 URL 列表时仅搜指定源
+    #[test]
+    fn test_resolve_switch_sources_url_filter() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
+            .expect("读取 yckceo_7631.json 失败");
+        crate::api::source::import_sources(&json).expect("导入书源失败");
+
+        let all = source_api::list_enabled_sources().expect("列出启用书源失败");
+        assert!(!all.is_empty(), "测试夹具应含启用书源");
+
+        // 取首个启用源 URL，仅搜该源
+        let target = all[0].book_source_url.clone();
+        let urls_json = serde_json::to_string(&vec![target.clone()]).unwrap();
+        let filtered = resolve_switch_sources(&urls_json).expect("URL 列表解析失败");
+        assert_eq!(filtered.len(), 1, "传 URL 列表应只搜指定源");
+        assert_eq!(filtered[0].book_source_url, target);
+    }
+
+    /// 留项#12（Task #131）：空参数（空串/空数组）搜全部启用源
+    #[test]
+    fn test_resolve_switch_sources_empty_means_all() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
+            .expect("读取 yckceo_7631.json 失败");
+        crate::api::source::import_sources(&json).expect("导入书源失败");
+
+        let enabled = source_api::list_enabled_sources().expect("列出启用书源失败");
+        let from_empty_str = resolve_switch_sources("").expect("空串解析失败");
+        let from_empty_array = resolve_switch_sources("[]").expect("空数组解析失败");
+        assert_eq!(from_empty_str.len(), enabled.len(), "空串应搜全部启用源");
+        assert_eq!(from_empty_array.len(), enabled.len(), "空数组应搜全部启用源");
     }
 }

@@ -6233,11 +6233,15 @@ fn wire__crate__ffi__ffi__source_switch_search_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_book_name = <String>::sse_decode(&mut deserializer);
             let api_author = <String>::sse_decode(&mut deserializer);
+            let api_source_urls_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok =
-                        crate::ffi::ffi::source_switch_search(api_book_name, api_author)?;
+                    let output_ok = crate::ffi::ffi::source_switch_search(
+                        api_book_name,
+                        api_author,
+                        api_source_urls_json,
+                    )?;
                     Ok(output_ok)
                 })())
             }

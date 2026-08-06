@@ -111,11 +111,13 @@
 | `searchMulti(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Future<List<Map<String, dynamic>>>` | 多源并行搜索 |
 | `searchMultiStream(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Stream<Map<String, dynamic>>` | 多源渐进式（流式）搜索：每完成一个书源即推送一个批次，无需等待最慢书源 |
 | `cancelSearch()` | 无 | `Future<void>` | 取消搜索 |
-| `searchSource(String bookName, String author)` | bookName, author | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点 |
+| `searchSource(String bookName, String author, {List<String>? sourceUrls})` | bookName, author, sourceUrls(可选) | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点（留项#12/Task #131：`sourceUrls` 为加法式新增可选参数，null/空=搜全部启用源，兼容既有调用） |
 | `searchCover(String bookName)` | bookName | `Future<List<Map<String, dynamic>>>` | 搜索书籍封面候选列表：复用多书源搜索提取封面 URL，每项字段 `url` / `width` / `height`（未知尺寸填 0），无候选返回空列表 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
 
 > ⚠️ `searchSource`：Rust 返回 `SourceSwitchResponse { book_name, author, matches[] }`，Dart 侧提取 `matches` 字段。
+>
+> ℹ️ `searchSource` 分组/书源范围过滤（留项#12，Task #131 闭合）：Rust 侧 `ffi::source_switch_search(book_name, author, source_urls_json)` 新增第三个参数 `source_urls_json`（JSON 字符串数组；空串/空数组/缺省=搜全部启用源，语义与 `search_books` 的 `source_urls_json` 完全一致，复用 `search::load_search_sources` 过滤逻辑）。C ABI `ffi_source_switch_search` 同步加参。Dart 侧 `searchSource` 新增可选命名参数 `sourceUrls`，由 `rust_api` 编码为 `sourceUrlsJson` 传入；换源页按 `AppConfig.searchGroup` 内存过滤出该分组源 URL 列表后传入。冻结契约返回结构不变，本变更为加法式新增。
 >
 > ℹ️ `searchMultiStream`：Rust 侧 `ffi::search_multi_stream(query, source_urls_json, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），每完成一个书源推送一个 `SearchSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `books[]` / `error?` / `finished_count` / `total_count` / `is_last`。冻结契约 `searchMulti` 保持不变，本方法为加法式新增。
 
