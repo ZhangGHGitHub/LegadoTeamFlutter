@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import 'src/providers/theme/theme_notifier.dart';
 import 'src/routes.dart';
+import 'src/services/platform_bridge_service.dart';
 import 'src/theme/app_theme.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/crash_log_dialog.dart';
@@ -57,6 +58,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     final themeState = ref.watch(themeNotifierProvider);
     return MaterialApp(
       title: 'Legado',
+      // 平台桥接服务经此 Key 分发页面跳转 / SnackBar（Task #114，服务层无 BuildContext）— QoderCN
+      navigatorKey: PlatformBridgeService.navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

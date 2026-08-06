@@ -256,6 +256,17 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 保存当前阅读进度到后端
   Future<void> saveProgress() => _saveProgress();
 
+  // [UI-fix v2.0.2 | 2026-08-06] 重新加载当前章正文（替换规则开关/重新分段/
+  // 图片样式/繁简转换等书籍配置变更后由 UI 层调用，对标原版
+  // ReadBook.loadContent(false)） — Qoder
+  Future<void> reloadChapterContent() => _loadChapterContent();
+
+  // [UI-fix v2.0.2 | 2026-08-06] 同步已持久化的书对象到 State
+  // （readConfig 变更经 BookApi.updateBook 落库后回写 UI 状态） — Qoder
+  void updateCurrentBook(Book book) {
+    state = state.copyWith(currentBook: book);
+  }
+
   // ===== 内部工具 =====
 
   Future<void> _saveProgress() async {

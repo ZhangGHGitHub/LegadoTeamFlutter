@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../providers/reader/reader_notifier.dart';
@@ -19,7 +24,25 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 段落间距（来自高级配置）
   final double paragraphSpacing;
 
-  const ReaderPageView({super.key, required this.paragraphSpacing});
+  // [UI-fix v2.0.2 | 2026-08-06] 阅读配置面板新增参数接入排版：
+  // 字距调节/首行缩进/两端对齐（MoreConfig） — Qoder
+
+  /// 字距（对标原版 ReadBookConfig.letterSpacing）
+  final double letterSpacing;
+
+  /// 首行缩进开关（true=缩进两字符，对标原版 paragraphIndent）
+  final bool paragraphIndent;
+
+  /// 两端对齐开关（对标 MoreConfig textFullJustify）
+  final bool textFullJustify;
+
+  const ReaderPageView({
+    super.key,
+    required this.paragraphSpacing,
+    this.letterSpacing = 0.0,
+    this.paragraphIndent = true,
+    this.textFullJustify = true,
+  });
 
   @override
   ConsumerState<ReaderPageView> createState() => ReaderPageViewState();
@@ -44,6 +67,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   /// 分页对应的段距
   double _paginatedParagraphSpacing = -1;
+
+  // [UI-fix v2.0.2 | 2026-08-06] 分页缓存键新增字距/缩进/对齐/字体 — Qoder
+  double _paginatedLetterSpacing = double.nan;
+  bool _paginatedIndent = true;
+  bool _paginatedJustify = true;
+  String? _paginatedFontFamily;
+
+  /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
+  String? _fontFamily;
 
   /// 当前页索引（屏级分页）
   int _currentPageIndex = 0;
@@ -106,6 +138,54 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(_refreshFontFamily());
+  }
+
+  @override
+  void didUpdateWidget(covariant ReaderPageView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // [UI-fix v2.0.2 | 2026-08-06] 从字体选择页返回时重建 widget，
+    // 重新读取字体配置（自定义字体会经 FontLoader 重新注册） — Qoder
+    unawaited(_refreshFontFamily());
+  }
+
+  /// 从 SharedPreferences 读取当前阅读字体，自定义字体需先经 FontLoader 注册
+  Future<void> _refreshFontFamily() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final family = prefs.getString('reader_font_family');
+      // 自定义字体（Custom_* 前缀）应用重启后需重新加载字体文件
+      if (family != null && family.startsWith('Custom_')) {
+        final customRaw = prefs.getStringList('reader_custom_fonts') ?? [];
+        for (final entry in customRaw) {
+          final parts = entry.split('|');
+          if (parts.length != 2 || parts[0] != family) continue;
+          final file = File(parts[1]);
+          if (await file.exists()) {
+            final loader = FontLoader(parts[0])
+              ..addFont(
+                file.readAsBytes().then((b) => b.buffer.asByteData()),
+              );
+            await loader.load();
+          }
+        }
+      }
+      if (!mounted) return;
+      if (family != _fontFamily) {
+        setState(() {
+          _fontFamily = family;
+          _paginatedFontFamily = null; // 强制重新分页
+        });
+      }
+    } catch (e) {
+      // 字体配置不可用时回退默认字体，不阻断阅读
+      debugPrint('阅读字体加载失败，回退默认字体: $e');
+    }
+  }
+
+  @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
@@ -121,12 +201,21 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final lineHeight = state.lineHeight;
     final spacing = widget.paragraphSpacing;
     final chapterIndex = state.currentChapterIndex;
+    // [UI-fix v2.0.2 | 2026-08-06] 字距/首行缩进/两端对齐/字体变化同样触发重新分页 — Qoder
+    final letterSpacing = widget.letterSpacing;
+    final indent = widget.paragraphIndent;
+    final justify = widget.textFullJustify;
+    final fontFamily = _fontFamily;
 
     final needRepaginate = content.isNotEmpty &&
         (chapterIndex != _paginatedChapterIndex ||
             fontSize != _paginatedFontSize ||
             lineHeight != _paginatedLineHeight ||
-            spacing != _paginatedParagraphSpacing);
+            spacing != _paginatedParagraphSpacing ||
+            letterSpacing != _paginatedLetterSpacing ||
+            indent != _paginatedIndent ||
+            justify != _paginatedJustify ||
+            fontFamily != _paginatedFontFamily);
 
     if (!needRepaginate) return;
 
@@ -141,10 +230,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       fontSize: fontSize,
       lineHeight: lineHeight,
       paragraphSpacing: spacing,
-      indent: fontSize * 2, // 首行缩进两个字符
-      justify: true,
+      // [UI-fix v2.0.2 | 2026-08-06] 首行缩进接入配置（关闭时为 0，
+      // 排版引擎按全角空格实现；单字符缩进待排版引擎增强） — Qoder
+      indent: indent ? fontSize * 2 : 0,
+      justify: justify,
       textColor: state.textColor,
       backgroundColor: state.backgroundColor,
+      letterSpacing: letterSpacing,
+      fontFamily: fontFamily,
     );
 
     final engine = ParagraphLayoutEngine(config: config, context: context);
@@ -155,6 +248,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedFontSize = fontSize;
     _paginatedLineHeight = lineHeight;
     _paginatedParagraphSpacing = spacing;
+    _paginatedLetterSpacing = letterSpacing;
+    _paginatedIndent = indent;
+    _paginatedJustify = justify;
+    _paginatedFontFamily = fontFamily;
     _currentPageIndex = 0;
 
     // 跨章节分页：注册本章页数到全局分页器
@@ -238,6 +335,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   lineHeight: state.lineHeight,
                   paragraphSpacing: widget.paragraphSpacing,
                   textColor: textColor,
+                  // [UI-fix v2.0.2 | 2026-08-06] 字距/字体/两端对齐透传到正文渲染 — Qoder
+                  letterSpacing: widget.letterSpacing,
+                  fontFamily: _fontFamily,
+                  justify: widget.textFullJustify,
                 )
             else if (state.chapterContent.isNotEmpty)
               ReaderParagraphs(
@@ -246,6 +347,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 lineHeight: state.lineHeight,
                 paragraphSpacing: widget.paragraphSpacing,
                 textColor: textColor,
+                letterSpacing: widget.letterSpacing,
+                fontFamily: _fontFamily,
               )
             else if (!state.isLoading)
               Center(

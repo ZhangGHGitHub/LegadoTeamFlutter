@@ -5,14 +5,22 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
+import '../routes.dart';
 import 'replace_rule_import_confirm_screen.dart';
 
 /// 替换规则管理页面
 class ReplaceRulesScreen extends ConsumerStatefulWidget {
-  const ReplaceRulesScreen({super.key});
+  // [UI-fix v2.0.2 | 2026-08-06] 路由参数：新规则 pattern 预填（阅读器
+  // 长按选中文本传入，对标原版 ReplaceEditActivity 预填） — Qoder
+  final String? initialPattern;
+
+  const ReplaceRulesScreen({super.key, this.initialPattern});
 
   @override
   ConsumerState<ReplaceRulesScreen> createState() =>
@@ -23,11 +31,25 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   final _searchCtrl = TextEditingController();
   String _filter = '';
 
+  // [UI-fix v2.0.2 | 2026-08-06] 分组筛选（对标原版 menu_group：
+  // 全部/启用/禁用/无分组/分组:x） — Qoder
+  String? _groupFilter;
+
+  // [UI-fix v2.0.2 | 2026-08-06] 批量模式（对标原版 replace_rule_sel.xml：
+  // 启用选中/禁用选中/置顶/置底/导出选中） — Qoder
+  bool _batchMode = false;
+  final Set<int> _selected = {};
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(replaceRuleNotifierProvider.notifier).load();
+      // 路由预填 pattern：首帧后直接打开新建规则表单（pattern 已预填）
+      final pattern = widget.initialPattern;
+      if (mounted && pattern != null && pattern.isNotEmpty) {
+        _showRuleForm(context, prefillPattern: pattern);
+      }
     });
   }
 
@@ -41,17 +63,10 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(replaceRuleNotifierProvider);
     final notifier = ref.read(replaceRuleNotifierProvider.notifier);
-    final filtered = _filter.isEmpty
-        ? state.rules
-        : state.rules
-            .where((r) =>
-                r.name.contains(_filter) ||
-                r.pattern.contains(_filter) ||
-                (r.group?.contains(_filter) ?? false))
-            .toList();
+    final filtered = _applyFilters(state.rules);
     return Scaffold(
       // 对齐原版 activity_replace_rule.xml：TitleBar 内嵌 view_search 搜索框
-      appBar: AppBar(
+      appBar: _batchMode ? _buildBatchAppBar() : AppBar(
         titleSpacing: 0,
         title: SizedBox(
           height: 36,
@@ -83,9 +98,33 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           ),
         ),
         actions: [
-          // [UI-fix v2.0.1 | 2026-08-06] 导入入口接 ReplaceRuleImportConfirmScreen
-          // （对标原版 ReplaceRuleActivity menu_import；本地导入已接通，
-          // 网络/二维码导入缺 replace 导入 service，留批次2） — Qoder
+          // [UI-fix v2.0.2 | 2026-08-06] 分组筛选入口（对标原版 menu_group）— Qoder
+          PopupMenuButton<String?>(
+            tooltip: '分组筛选',
+            icon: Icon(
+              _groupFilter == null ? Icons.filter_list : Icons.filter_alt,
+            ),
+            onSelected: (v) => setState(() => _groupFilter = v),
+            itemBuilder: (_) => [
+              const PopupMenuItem<String?>(value: null, child: Text('全部')),
+              const PopupMenuItem<String?>(
+                value: '__enabled__',
+                child: Text('启用'),
+              ),
+              const PopupMenuItem<String?>(
+                value: '__disabled__',
+                child: Text('禁用'),
+              ),
+              const PopupMenuItem<String?>(
+                value: '__null__',
+                child: Text('无分组'),
+              ),
+              for (final g in _collectGroups(state.rules))
+                PopupMenuItem<String?>(value: g, child: Text('分组：$g')),
+            ],
+          ),
+          // [UI-fix v2.0.2 | 2026-08-06] 导入入口接 ReplaceRuleImportConfirmScreen
+          // （对标原版 ReplaceRuleActivity menu_import：本地/网络/二维码均已接通） — Qoder
           PopupMenuButton<String>(
             tooltip: '导入',
             icon: const Icon(Icons.file_download_outlined),
@@ -95,6 +134,12 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
               PopupMenuItem(value: 'online', child: Text('网络导入')),
               PopupMenuItem(value: 'qrcode', child: Text('二维码导入')),
             ],
+          ),
+          // [UI-fix v2.0.2 | 2026-08-06] 批量模式入口 — Qoder
+          IconButton(
+            icon: const Icon(Icons.checklist),
+            tooltip: '批量操作',
+            onPressed: () => setState(() => _batchMode = true),
           ),
           IconButton(
             icon: const Icon(Icons.add),
@@ -168,6 +213,29 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     ReplaceRuleNotifier provider,
     List<ReplaceRule> rules,
   ) {
+    // [UI-fix v2.0.2 | 2026-08-06] 批量模式下禁用拖拽排序，行点击切换选中 — Qoder
+    if (_batchMode) {
+      return ListView.builder(
+        itemCount: rules.length,
+        itemBuilder: (context, index) {
+          final rule = rules[index];
+          return _ReplaceRuleTile(
+            key: ValueKey(rule.id),
+            rule: rule,
+            index: index,
+            total: rules.length,
+            batchMode: true,
+            selected: _selected.contains(rule.id),
+            onSelect: () => _toggleSelect(rule.id),
+            onToggle: (enabled) => provider.setEnabled(rule.id, enabled),
+            onEdit: () => _toggleSelect(rule.id),
+            onDelete: () => _confirmDelete(context, provider, rule),
+            onMoveUp: () => provider.moveUp(index),
+            onMoveDown: () => provider.moveDown(index),
+          );
+        },
+      );
+    }
     return ReorderableListView.builder(
       itemCount: rules.length,
       onReorder: (oldIndex, newIndex) {
@@ -195,24 +263,251 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           onDelete: () => _confirmDelete(context, provider, rule),
           onMoveUp: () => provider.moveUp(index),
           onMoveDown: () => provider.moveDown(index),
+          onEnterBatch: () => _enterBatch(rule.id),
         );
       },
     );
   }
 
-  /// [UI-fix v2.0.1 | 2026-08-06] 导入菜单分发 — Qoder
+  // ===== [UI-fix v2.0.2 | 2026-08-06] 分组筛选 — Qoder =====
+
+  /// 收集所有分组名（规则的 group 字段可含逗号分隔多分组）
+  List<String> _collectGroups(List<ReplaceRule> rules) {
+    final groups = <String>{};
+    for (final r in rules) {
+      final g = r.group;
+      if (g == null || g.trim().isEmpty) continue;
+      groups.addAll(
+        g.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty),
+      );
+    }
+    return groups.toList()..sort();
+  }
+
+  /// 分组筛选 + 搜索词叠加过滤（对标原版分组下拉 + view_search）
+  List<ReplaceRule> _applyFilters(List<ReplaceRule> rules) {
+    Iterable<ReplaceRule> result = rules;
+    switch (_groupFilter) {
+      case null:
+        break;
+      case '__enabled__':
+        result = result.where((r) => r.isEnabled);
+      case '__disabled__':
+        result = result.where((r) => !r.isEnabled);
+      case '__null__':
+        result = result.where(
+          (r) => r.group == null || r.group!.trim().isEmpty,
+        );
+      default:
+        final g = _groupFilter!;
+        result = result.where(
+          (r) =>
+              r.group?.split(',').map((e) => e.trim()).contains(g) ?? false,
+        );
+    }
+    if (_filter.isNotEmpty) {
+      result = result.where(
+        (r) =>
+            r.name.contains(_filter) ||
+            r.pattern.contains(_filter) ||
+            (r.group?.contains(_filter) ?? false),
+      );
+    }
+    return result.toList();
+  }
+
+  // ===== [UI-fix v2.0.2 | 2026-08-06] 批量操作（对标 replace_rule_sel.xml）— Qoder =====
+
+  /// 长按进入批量模式并选中该项（对标原版列表长按进入选择态）
+  void _enterBatch(int id) {
+    setState(() {
+      _batchMode = true;
+      _selected.add(id);
+    });
+  }
+
+  void _toggleSelect(int id) {
+    setState(() {
+      if (!_selected.remove(id)) _selected.add(id);
+    });
+  }
+
+  void _exitBatch() {
+    setState(() {
+      _batchMode = false;
+      _selected.clear();
+    });
+  }
+
+  /// 批量模式顶栏（对标原版 SelectActionBar：关闭 + 已选计数 + 全选）
+  PreferredSizeWidget _buildBatchAppBar() {
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: '退出批量模式',
+        onPressed: _exitBatch,
+      ),
+      title: Text('已选择 ${_selected.length} 项'),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.select_all),
+          tooltip: '全选',
+          onPressed: () {
+            final state = ref.read(replaceRuleNotifierProvider);
+            setState(() {
+              _selected.addAll(_applyFilters(state.rules).map((r) => r.id));
+            });
+          },
+        ),
+        PopupMenuButton<String>(
+          tooltip: '批量操作',
+          onSelected: _handleBatchAction,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'enable', child: Text('启用选中')),
+            PopupMenuItem(value: 'disable', child: Text('禁用选中')),
+            PopupMenuItem(value: 'top', child: Text('置顶')),
+            PopupMenuItem(value: 'bottom', child: Text('置底')),
+            PopupMenuItem(value: 'export', child: Text('导出选中')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 批量操作分发（5 项：启用选中/禁用选中/置顶/置底/导出选中）
+  Future<void> _handleBatchAction(String action) async {
+    if (_selected.isEmpty) return;
+    final notifier = ref.read(replaceRuleNotifierProvider.notifier);
+    final ids = _selected.toList();
+    switch (action) {
+      case 'enable':
+      case 'disable':
+        for (final id in ids) {
+          await notifier.setEnabled(id, action == 'enable');
+        }
+        _exitBatch();
+      case 'top':
+        await notifier.moveToTop(ids);
+        _exitBatch();
+      case 'bottom':
+        await notifier.moveToBottom(ids);
+        _exitBatch();
+      case 'export':
+        await _exportSelected(ids);
+    }
+  }
+
+  /// 导出选中规则（对标原版 menu_export_selection：JSON 分享）
+  Future<void> _exportSelected(List<int> ids) async {
+    final rules = ref
+        .read(replaceRuleNotifierProvider)
+        .rules
+        .where((r) => ids.contains(r.id))
+        .toList();
+    if (rules.isEmpty) return;
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(rules.map((r) => r.toJson()).toList());
+    try {
+      await Share.share(json, subject: 'Legado 替换规则');
+      if (mounted) _exitBatch();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// [UI-fix v2.0.1 | 2026-08-06] 导入菜单分发
+  /// [UI-fix v2.0.2 | 2026-08-06] 网络/二维码导入接通（复用导入确认页） — Qoder
   void _handleImportMenu(String value) {
     switch (value) {
       case 'local':
         _importFromFile();
       case 'online':
+        _showImportUrlDialog();
       case 'qrcode':
-        // 网络/二维码导入依赖替换规则导入 service（尚未实现），留批次2 — Qoder
-        final name = value == 'online' ? '网络' : '二维码';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('「$name导入」后续版本支持')),
-        );
+        _importFromQrCode();
     }
+  }
+
+  /// 网络导入弹窗（对标原版 showImportDialog：URL 输入 + 历史记录）
+  Future<void> _showImportUrlDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = prefs
+        .getString('replaceRuleImportUrls')
+        ?.split(',')
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+    if (!mounted) return;
+    final url = await showDialog<String>(
+      context: context,
+      builder: (_) => _ImportUrlDialog(history: history ?? []),
+    );
+    if (url == null || url.trim().isEmpty || !mounted) return;
+    final trimmed = url.trim();
+    // 保存历史记录（逗号分隔，最多 10 条，对标原版 InputDialog history）
+    final updated = [
+      trimmed,
+      ...(history ?? []).where((e) => e != trimmed),
+    ].take(10).toList();
+    await prefs.setString('replaceRuleImportUrls', updated.join(','));
+    if (!mounted) return;
+    await _fetchFromUrl(trimmed);
+  }
+
+  /// 从 URL 拉取规则文本后进入导入确认页
+  Future<void> _fetchFromUrl(String url) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 30));
+      if (!mounted) return;
+      Navigator.of(context).pop(); // 关闭加载指示
+      if (response.statusCode != 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('获取替换规则失败：HTTP ${response.statusCode}')),
+        );
+        return;
+      }
+      await _parseAndConfirm(utf8.decode(response.bodyBytes));
+    } catch (e) {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('获取替换规则失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// 二维码导入（对标原版 menu_import_qr）：
+  /// HTTP URL → 远程拉取；JSON → 直接解析
+  Future<void> _importFromQrCode() async {
+    final content =
+        await Navigator.of(context).pushNamed<String>(AppRoutes.qrcode);
+    if (!mounted) return;
+    if (content == null || content.trim().isEmpty) return;
+    final trimmed = content.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      await _fetchFromUrl(trimmed);
+      return;
+    }
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      await _parseAndConfirm(trimmed);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('扫码内容不是可识别的替换规则数据')),
+    );
   }
 
   /// 本地文件导入（对标原版 menu_import_local：任选文件，解析层容错）
@@ -303,11 +598,13 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     }
   }
 
-  void _showRuleForm(BuildContext context, {ReplaceRule? rule}) {
+  void _showRuleForm(BuildContext context, {ReplaceRule? rule, String? prefillPattern}) {
     final isEdit = rule != null;
     final nameCtrl = TextEditingController(text: rule?.name ?? '');
     final groupCtrl = TextEditingController(text: rule?.group ?? '');
-    final patternCtrl = TextEditingController(text: rule?.pattern ?? '');
+    final patternCtrl = TextEditingController(
+      text: rule?.pattern ?? prefillPattern ?? '',
+    );
     final replacementCtrl = TextEditingController(
       text: rule?.replacement ?? '',
     );
@@ -503,6 +800,11 @@ class _ReplaceRuleTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onMoveUp;
   final VoidCallback onMoveDown;
+  // [UI-fix v2.0.2 | 2026-08-06] 批量模式支持 — Qoder
+  final bool batchMode;
+  final bool selected;
+  final VoidCallback? onSelect;
+  final VoidCallback? onEnterBatch;
 
   const _ReplaceRuleTile({
     super.key,
@@ -514,6 +816,10 @@ class _ReplaceRuleTile extends StatelessWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.batchMode = false,
+    this.selected = false,
+    this.onSelect,
+    this.onEnterBatch,
   });
 
   @override
@@ -522,21 +828,28 @@ class _ReplaceRuleTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: InkWell(
-        onTap: onEdit,
-        onLongPress: onDelete,
+        onTap: batchMode ? onSelect : onEdit,
+        onLongPress: batchMode ? onSelect : onEnterBatch,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
-              // 排序手柄
-              ReorderableDragStartListener(
-                index: index,
-                child: Icon(
-                  Icons.drag_handle,
-                  color: theme.colorScheme.outline,
+              // [UI-fix v2.0.2 | 2026-08-06] 批量模式显示选中框，否则排序手柄 — Qoder
+              if (batchMode)
+                Checkbox(
+                  value: selected,
+                  onChanged: (_) => onSelect?.call(),
+                )
+              else
+                // 排序手柄
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Icon(
+                    Icons.drag_handle,
+                    color: theme.colorScheme.outline,
+                  ),
                 ),
-              ),
               const SizedBox(width: 8),
               // 规则信息
               Expanded(
@@ -570,36 +883,119 @@ class _ReplaceRuleTile extends StatelessWidget {
               ),
               // 启用开关（对标 swt_enabled）
               Switch(value: rule.isEnabled, onChanged: onToggle),
-              // 编辑（对标 iv_edit）
-              IconButton(
-                icon: Icon(
-                  Icons.edit_outlined,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (!batchMode) ...[
+                // 编辑（对标 iv_edit）
+                IconButton(
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: '编辑',
+                  onPressed: onEdit,
                 ),
-                visualDensity: VisualDensity.compact,
-                tooltip: '编辑',
-                onPressed: onEdit,
-              ),
-              // 更多菜单（对标 iv_menu_more）
-              PopupMenuButton<String>(
-                icon: Icon(
-                  Icons.more_vert,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
+                // 更多菜单（对标 iv_menu_more）
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_vert,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  tooltip: '更多',
+                  onSelected: (v) {
+                    if (v == 'delete') onDelete();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'delete', child: Text('删除')),
+                  ],
                 ),
-                tooltip: '更多',
-                onSelected: (v) {
-                  if (v == 'delete') onDelete();
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'delete', child: Text('删除')),
-                ],
-              ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// [UI-fix v2.0.2 | 2026-08-06] 网络导入 URL 输入对话框
+///（对标原版 InputDialog：输入框 + 历史记录） — Qoder
+class _ImportUrlDialog extends StatefulWidget {
+  final List<String> history;
+
+  const _ImportUrlDialog({required this.history});
+
+  @override
+  State<_ImportUrlDialog> createState() => _ImportUrlDialogState();
+}
+
+class _ImportUrlDialogState extends State<_ImportUrlDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('从 URL 导入替换规则'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: widget.history.isEmpty,
+              decoration: const InputDecoration(
+                hintText: '输入替换规则 URL 地址',
+              ),
+              keyboardType: TextInputType.url,
+            ),
+            if (widget.history.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                '历史记录',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              const SizedBox(height: 4),
+              for (final url in widget.history)
+                InkWell(
+                  onTap: () => Navigator.pop(context, url),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Text(
+                      url,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final url = _controller.text.trim();
+            if (url.isEmpty) return;
+            Navigator.pop(context, url);
+          },
+          child: const Text('导入'),
+        ),
+      ],
     );
   }
 }

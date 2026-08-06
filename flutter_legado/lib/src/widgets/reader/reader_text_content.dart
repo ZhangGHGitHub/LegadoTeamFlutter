@@ -128,6 +128,14 @@ class ReaderTextContent extends StatelessWidget {
   final double paragraphSpacing;
   final Color textColor;
 
+  // [UI-fix v2.0.2 | 2026-08-06] 字距调节与字体选择接入渲染
+  // （对标原版 ReadBookConfig.letterSpacing/textFont） — Qoder
+  final double letterSpacing;
+  final String? fontFamily;
+
+  /// 两端对齐开关（对标 MoreConfig textFullJustify）
+  final bool justify;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -135,6 +143,9 @@ class ReaderTextContent extends StatelessWidget {
     required this.lineHeight,
     required this.paragraphSpacing,
     required this.textColor,
+    this.letterSpacing = 0.0,
+    this.fontFamily,
+    this.justify = true,
   });
 
   @override
@@ -160,7 +171,9 @@ class ReaderTextContent extends StatelessWidget {
 
         // 两端对齐：非最后一行且非单行时分配额外字间距
         double extraLetterSpacing = 0.0;
-        final shouldJustify = !isLastLine && !isSingleLine;
+        // [UI-fix v2.0.2 | 2026-08-06] 关闭两端对齐时不再拉伸字距
+        // （对标 MoreConfig textFullJustify 开关） — Qoder
+        final shouldJustify = justify && !isLastLine && !isSingleLine;
         if (shouldJustify && line.width > 0) {
           if (line.width < availableWidth) {
             final gapCount = line.words.length - 1;
@@ -182,8 +195,11 @@ class ReaderTextContent extends StatelessWidget {
                 fontSize: fontSize,
                 height: lineHeight,
                 color: textColor,
-                letterSpacing:
-                    extraLetterSpacing > 0.1 ? extraLetterSpacing : null,
+                fontFamily: fontFamily,
+                // [UI-fix v2.0.2 | 2026-08-06] 基础字距 + 对齐额外字距 — Qoder
+                letterSpacing: (letterSpacing + extraLetterSpacing) != 0
+                    ? letterSpacing + extraLetterSpacing
+                    : null,
               ),
               maxLines: 1,
               overflow: TextOverflow.clip,
@@ -227,6 +243,10 @@ class ReaderParagraphs extends StatelessWidget {
   final double paragraphSpacing;
   final Color textColor;
 
+  // [UI-fix v2.0.2 | 2026-08-06] 滚动回退渲染同步字距/字体 — Qoder
+  final double letterSpacing;
+  final String? fontFamily;
+
   const ReaderParagraphs({
     super.key,
     required this.content,
@@ -234,6 +254,8 @@ class ReaderParagraphs extends StatelessWidget {
     required this.lineHeight,
     required this.paragraphSpacing,
     required this.textColor,
+    this.letterSpacing = 0.0,
+    this.fontFamily,
   });
 
   @override
@@ -256,6 +278,8 @@ class ReaderParagraphs extends StatelessWidget {
                   fontSize: fontSize,
                   height: lineHeight,
                   color: textColor,
+                  fontFamily: fontFamily,
+                  letterSpacing: letterSpacing != 0 ? letterSpacing : null,
                 ),
               ),
             ),

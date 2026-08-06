@@ -1,12 +1,16 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
+import '../providers/providers.dart';
 import '../routes.dart';
+import 'source_edit_screen.dart';
+import 'source_login_screen.dart';
 
 /// 预设定时时长（分钟）
 const List<int> _kPresetMinutes = [5, 10, 15, 30];
@@ -204,6 +208,28 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => setState(() => _showSettings = !_showSettings),
+          ),
+          // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml：
+          // 换源/登录/复制播放地址/缓存目录选择/缓存范围/清当前章缓存/
+          // 编辑书源/wakelock开关/跳过片头/日志） — Qoder
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            onSelected: _handleOverflowMenu,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'changeSource', child: Text('换源')),
+              PopupMenuItem(value: 'login', child: Text('登录')),
+              PopupMenuItem(value: 'copyAudioUrl', child: Text('复制播放地址')),
+              PopupMenuItem(value: 'cacheFolder', child: Text('缓存目录选择')),
+              PopupMenuItem(value: 'cacheRange', child: Text('缓存范围')),
+              PopupMenuItem(
+                value: 'clearChapterCache',
+                child: Text('清当前章缓存'),
+              ),
+              PopupMenuItem(value: 'editSource', child: Text('编辑书源')),
+              PopupMenuItem(value: 'wakeLock', child: Text('wakelock 开关')),
+              PopupMenuItem(value: 'skipCredits', child: Text('跳过片头')),
+              PopupMenuItem(value: 'log', child: Text('日志')),
+            ],
           ),
         ],
       ),
@@ -600,5 +626,267 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     ref
         .read(audioNotifierProvider.notifier)
         .setMode(AudioPlayMode.values[nextIndex]);
+  }
+
+  // ===== [UI-fix v2.0.2 | 2026-08-06] 溢出菜单（对标 audio_play.xml）— Qoder =====
+
+  /// 溢出菜单分发
+  Future<void> _handleOverflowMenu(String value) async {
+    switch (value) {
+      case 'changeSource':
+        // 对标 menu_change_source → ChangeBookSourceDialog
+        _openChangeSource();
+      case 'login':
+        // 对标 menu_login → SourceLoginActivity
+        await _openLogin();
+      case 'copyAudioUrl':
+        // 对标 menu_copy_audio_url
+        await _copyAudioUrl();
+      case 'cacheFolder':
+        // 对标 menu_audio_cache_folder
+        await _pickCacheFolder();
+      case 'cacheRange':
+        // 对标 menu_audio_cache_range
+        await _showCacheRangeDialog();
+      case 'clearChapterCache':
+        // 对标 menu_clear_current_audio_cache
+        await _clearChapterCache();
+      case 'editSource':
+        // 对标 menu_edit_source → SourceEditActivity
+        _openEditSource();
+      case 'wakeLock':
+        // 对标 menu_wake_lock
+        await _toggleWakeLock();
+      case 'skipCredits':
+        // 对标 menu_skip_credits
+        await _showSkipCreditsDialog();
+      case 'log':
+        // 对标 menu_log → LogActivity（接 AppRoutes.appLog）
+        if (mounted) Navigator.pushNamed(context, AppRoutes.appLog);
+    }
+  }
+
+  /// 当前书源 URL（Book.origin）
+  String get _origin => widget.book?.origin ?? '';
+
+  /// 换源（对标原版从听书页打开 ChangeBookSourceDialog）
+  void _openChangeSource() {
+    final book = widget.book;
+    if (book != null) {
+      Navigator.pushNamed(context, AppRoutes.changeSource, arguments: book);
+      return;
+    }
+    Navigator.pushNamed(context, AppRoutes.changeSource, arguments: {
+      'bookUrl': widget.effectiveBookUrl,
+      'bookName': widget.effectiveBookName,
+      'currentSourceUrl': _origin,
+    });
+  }
+
+  /// 登录（按 book.origin 定位书源后打开登录页）
+  Future<void> _openLogin() async {
+    if (_origin.isEmpty) {
+      _snack('本书无关联书源，无法登录');
+      return;
+    }
+    BookSource? source;
+    try {
+      final sources = await ref.read(bookApiProvider).getBookSources();
+      source =
+          sources.where((s) => s.bookSourceUrl == _origin).firstOrNull;
+    } catch (_) {}
+    if (!mounted) return;
+    if (source == null) {
+      _snack('未找到当前书源');
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SourceLoginScreen(
+          sourceUrl: source!.bookSourceUrl,
+          sourceName: source.bookSourceName,
+          loginUrl: source.loginUrl,
+        ),
+      ),
+    );
+  }
+
+  /// 复制播放地址
+  ///
+  /// TODO(UI-fix v2.0.2): 当前听书为 TTS 朗读，尚无真实播放地址，
+  /// 待 audioSpeak 音频管线（任务 #113）落地后接通。— Qoder
+  Future<void> _copyAudioUrl() async {
+    _snack('当前为 TTS 朗读，暂无播放地址可复制');
+  }
+
+  /// 缓存目录选择（目录选择后持久化于 config 键 audioCacheFolder）
+  ///
+  /// TODO(UI-fix v2.0.2): 音频缓存体系未移植，目录仅持久化待后端接入。— Qoder
+  Future<void> _pickCacheFolder() async {
+    final api = ref.read(bookApiProvider);
+    String? current;
+    try {
+      current = await api.getConfig('audioCacheFolder');
+    } catch (_) {}
+    if (!mounted) return;
+    final picked = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: '选择音频缓存目录',
+      initialDirectory: (current ?? '').isEmpty ? null : current,
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await api.setConfig('audioCacheFolder', picked);
+      if (mounted) _snack('缓存目录已设置：$picked');
+    } catch (e) {
+      if (mounted) _snack('设置缓存目录失败：$e');
+    }
+  }
+
+  /// 缓存范围（输入待缓存章节数，持久化于 config 键 audioCacheCount）
+  ///
+  /// TODO(UI-fix v2.0.2): 音频缓存体系未移植，仅持久化配置待后端接入。— Qoder
+  Future<void> _showCacheRangeDialog() async {
+    final api = ref.read(bookApiProvider);
+    String? current;
+    try {
+      current = await api.getConfig('audioCacheCount');
+    } catch (_) {}
+    if (!mounted) return;
+    final ctrl = TextEditingController(text: current ?? '10');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('缓存范围'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '缓存章节数',
+            hintText: '输入待缓存的章节数量',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty || !mounted) return;
+    if (int.tryParse(result) == null) {
+      _snack('请输入有效的章节数');
+      return;
+    }
+    try {
+      await api.setConfig('audioCacheCount', result);
+      if (mounted) _snack('缓存范围已设置：$result 章');
+    } catch (e) {
+      if (mounted) _snack('设置缓存范围失败：$e');
+    }
+  }
+
+  /// 清当前章缓存
+  ///
+  /// TODO(UI-fix v2.0.2): 音频缓存体系未移植，暂无可清理的本地缓存。— Qoder
+  Future<void> _clearChapterCache() async {
+    _snack('当前无本地音频缓存可清理');
+  }
+
+  /// 编辑书源（对标原版 menu_edit_source）
+  void _openEditSource() {
+    if (_origin.isEmpty) {
+      _snack('本书无关联书源');
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SourceEditScreen(sourceUrl: _origin),
+      ),
+    );
+  }
+
+  /// wakelock 开关（持久化于 config 键 audioWakeLock）
+  ///
+  /// TODO(UI-fix v2.0.2): 未引入 wakelock 依赖（不改 pubspec），
+  /// 当前仅持久化开关，待依赖接入后生效。— Qoder
+  Future<void> _toggleWakeLock() async {
+    final api = ref.read(bookApiProvider);
+    String? current;
+    try {
+      current = await api.getConfig('audioWakeLock');
+    } catch (_) {}
+    final next = current != 'true';
+    try {
+      await api.setConfig('audioWakeLock', next ? 'true' : 'false');
+    } catch (_) {}
+    if (mounted) _snack(next ? 'wakelock 已开启' : 'wakelock 已关闭');
+  }
+
+  /// 跳过片头（输入跳过秒数，持久化于 config 键 audioSkipCredits）
+  ///
+  /// TODO(UI-fix v2.0.2): 音频管线未支持自动跳片头，仅持久化配置。— Qoder
+  Future<void> _showSkipCreditsDialog() async {
+    final api = ref.read(bookApiProvider);
+    String? current;
+    try {
+      current = await api.getConfig('audioSkipCredits');
+    } catch (_) {}
+    if (!mounted) return;
+    final ctrl = TextEditingController(text: current ?? '0');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('跳过片头'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '跳过秒数',
+            hintText: '每章开头自动跳过的秒数，0 为不跳过',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    final seconds = int.tryParse(result);
+    if (seconds == null || seconds < 0) {
+      _snack('请输入有效的秒数');
+      return;
+    }
+    try {
+      await api.setConfig('audioSkipCredits', seconds.toString());
+      if (mounted) {
+        _snack(seconds == 0 ? '已关闭跳过片头' : '已设置跳过片头 $seconds 秒');
+      }
+    } catch (e) {
+      if (mounted) _snack('设置跳过片头失败：$e');
+    }
+  }
+
+  /// 统一 snackbar 提示
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 }

@@ -142,6 +142,119 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     }
   }
 
+  // ===== [UI-fix v2.0.2 | 2026-08-06] 批量换源 — Qoder =====
+
+  /// 批量换源流程（对标 Kotlin BookshelfManageViewModel.changeSource）：
+  /// 选目标书源 → 确认 → 进度对话框 → 复用单本 switchSource FFI
+  Future<void> _switchSelectedSource(BookshelfManageState state) async {
+    List<BookSource> sources;
+    try {
+      sources = await ref.read(bookApiProvider).getEnabledBookSources();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('获取书源失败: $e')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (sources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无可用书源')),
+      );
+      return;
+    }
+    final target = await showDialog<BookSource>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('选择目标书源'),
+        children: [
+          for (final s in sources)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, s),
+              child: Text(
+                s.bookSourceName.isEmpty ? s.bookSourceUrl : s.bookSourceName,
+              ),
+            ),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
+    // 预估可换源书籍数（跳过本地书与已是目标源的书，对齐 Kotlin 过滤）
+    final candidates = state.books
+        .where((b) => state.selectedUrls.contains(b.bookUrl))
+        .where((b) =>
+            b.origin != BookType.localTag &&
+            !b.origin.startsWith(BookType.webDavTag) &&
+            b.origin != target.bookSourceUrl)
+        .toList();
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('选中书籍无可换源目标（本地书/已是该源）')),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('批量换源'),
+        content: Text(
+          '确定将 ${candidates.length} 本书切换到'
+          '「${target.bookSourceName.isEmpty ? target.bookSourceUrl : target.bookSourceName}」吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('换源'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    // 进度对话框（对标原版 i/N 进度提示）
+    final progress = ValueNotifier<String>('准备中...');
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ValueListenableBuilder<String>(
+        valueListenable: progress,
+        builder: (context, text, _) => AlertDialog(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(text)),
+            ],
+          ),
+        ),
+      ),
+    );
+    final (success, total) = await _notifier.switchSelectedSource(
+      target.bookSourceUrl,
+      onProgress: (done, total, name) {
+        progress.value = '换源 $done/$total：$name';
+      },
+    );
+    if (!mounted) {
+      progress.dispose();
+      return;
+    }
+    Navigator.pop(context); // 关闭进度对话框
+    progress.dispose();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('批量换源完成：成功 $success/$total 本')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -408,6 +521,11 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
             TextButton(
               onPressed: _pinSelected,
               child: const Text('置顶'),
+            ),
+            // [UI-fix v2.0.2 | 2026-08-06] 批量换源入口（对标原版 changeSource） — Qoder
+            TextButton(
+              onPressed: () => _switchSelectedSource(state),
+              child: const Text('换源'),
             ),
           ],
         ),

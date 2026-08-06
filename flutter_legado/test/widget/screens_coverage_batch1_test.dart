@@ -9,12 +9,12 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/book_group_screen.dart';
 import 'package:flutter_legado/src/screens/book_info_screen.dart';
-import 'package:flutter_legado/src/screens/rss_config_screen.dart';
 
 import '../mocks/mocks.dart';
 
 /// screens 层深度覆盖第一批（§9.5 覆盖率推进）：
-/// BookGroupScreen / RssConfigScreen / BookInfoScreen
+/// BookGroupScreen / BookInfoScreen
+// [UI-fix v2.0.2 | 2026-08-06] 结构治理：RssConfigScreen 已删除，同步移除其测试组 — Qoder
 void main() {
   late MockRustApi mockApi;
   late ProviderContainer container;
@@ -125,50 +125,6 @@ void main() {
       await tester.pumpAndSettle();
 
       verify(() => mockApi.deleteBookGroup(7)).called(1);
-    });
-  });
-
-  group('RssConfigScreen', () {
-    testWidgets('渲染 RSS 源列表', (tester) async {
-      when(() => mockApi.getRssSources()).thenAnswer((_) async => const [
-            RssSource(sourceUrl: 'https://a.com/feed', sourceName: '源A'),
-            RssSource(sourceUrl: 'https://b.com/feed', sourceName: '源B'),
-          ]);
-
-      await tester.pumpWidget(wrap(const RssConfigScreen()));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('源A'), findsWidgets);
-      expect(find.textContaining('源B'), findsWidgets);
-    });
-
-    testWidgets('切换开关调用 enable/disableRssSource', (tester) async {
-      when(() => mockApi.getRssSources()).thenAnswer((_) async => const [
-            RssSource(
-              sourceUrl: 'https://a.com/feed',
-              sourceName: '源A',
-              enabled: false,
-            ),
-          ]);
-      when(() => mockApi.enableRssSource(any())).thenAnswer((_) async {});
-      when(() => mockApi.disableRssSource(any())).thenAnswer((_) async {});
-
-      await tester.pumpWidget(wrap(const RssConfigScreen()));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byType(Switch).first);
-      await tester.pumpAndSettle();
-
-      verify(() => mockApi.enableRssSource('https://a.com/feed')).called(1);
-    });
-
-    testWidgets('加载失败显示错误视图', (tester) async {
-      when(() => mockApi.getRssSources()).thenThrow(Exception('ffi'));
-
-      await tester.pumpWidget(wrap(const RssConfigScreen()));
-      await tester.pumpAndSettle();
-
-      expect(find.text('重试'), findsOneWidget);
     });
   });
 

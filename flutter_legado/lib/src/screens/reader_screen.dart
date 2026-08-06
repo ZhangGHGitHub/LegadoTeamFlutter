@@ -160,6 +160,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               ReaderPageView(
                 key: _pageViewKey,
                 paragraphSpacing: _advConfig.paragraphSpacing,
+                // [UI-fix v2.0.2 | 2026-08-06] 阅读配置面板新增排版参数接入分页渲染 — Qoder
+                letterSpacing: _advConfig.letterSpacing,
+                paragraphIndent: _advConfig.paragraphIndent,
+                textFullJustify: _advConfig.textFullJustify,
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
               // 全局页码指示器（跨章节连续分页已注册时显示）

@@ -80,6 +80,11 @@ class ParagraphConfig {
   final Color backgroundColor;
   final Color textColor;
 
+  // [UI-fix v2.0.2 | 2026-08-06] 字距与字体接入排版配置（阅读配置面板
+  // 字距调节/字体选择；测量与渲染同参，保证分页一致性） — Qoder
+  final double letterSpacing;
+  final String? fontFamily;
+
   const ParagraphConfig({
     this.fontSize = 16.0,
     this.lineHeight = 1.6,
@@ -88,6 +93,8 @@ class ParagraphConfig {
     this.justify = true,
     this.backgroundColor = Colors.white,
     this.textColor = Colors.black,
+    this.letterSpacing = 0.0,
+    this.fontFamily,
   });
 
   ParagraphConfig copyWith({
@@ -98,6 +105,8 @@ class ParagraphConfig {
     bool? justify,
     Color? backgroundColor,
     Color? textColor,
+    double? letterSpacing,
+    String? fontFamily,
   }) {
     return ParagraphConfig(
       fontSize: fontSize ?? this.fontSize,
@@ -107,6 +116,8 @@ class ParagraphConfig {
       justify: justify ?? this.justify,
       backgroundColor: backgroundColor ?? this.backgroundColor,
       textColor: textColor ?? this.textColor,
+      letterSpacing: letterSpacing ?? this.letterSpacing,
+      fontFamily: fontFamily ?? this.fontFamily,
     );
   }
 }
@@ -467,7 +478,12 @@ class ParagraphLayoutEngine {
   /// 2. 未命中则使用 TextPainter 测量并写入缓存
   List<double> _measureCharWidths(String text, double maxWidth) {
     final widths = List<double>.filled(text.length, 0.0);
-    final style = TextStyle(fontSize: config.fontSize);
+    // [UI-fix v2.0.2 | 2026-08-06] 测量样式同步字距/字体配置 — Qoder
+    final style = TextStyle(
+      fontSize: config.fontSize,
+      letterSpacing: config.letterSpacing != 0 ? config.letterSpacing : null,
+      fontFamily: config.fontFamily,
+    );
 
     // 确保中文通用宽度已初始化
     if (_charWidthCache.chineseCommonWidth <= 0) {
@@ -501,7 +517,16 @@ class ParagraphLayoutEngine {
   /// 对应 Kotlin paint.measureText("一")
   double _measureSingleChar(String char) {
     final painter = TextPainter(
-      text: TextSpan(text: char, style: TextStyle(fontSize: config.fontSize)),
+      // [UI-fix v2.0.2 | 2026-08-06] 单字宽度测量同步字距/字体配置 — Qoder
+      text: TextSpan(
+        text: char,
+        style: TextStyle(
+          fontSize: config.fontSize,
+          letterSpacing:
+              config.letterSpacing != 0 ? config.letterSpacing : null,
+          fontFamily: config.fontFamily,
+        ),
+      ),
       textDirection: TextDirection.ltr,
     );
     painter.layout();
@@ -654,7 +679,14 @@ class _LineWidget extends StatelessWidget {
           fontSize: config.fontSize,
           color: config.textColor,
           height: config.lineHeight,
-          letterSpacing: extraLetterSpacing > 0 ? extraLetterSpacing : null,
+          fontFamily: config.fontFamily,
+          // [UI-fix v2.0.2 | 2026-08-06] 渲染字距 = 配置基础字距 + 两端对齐额外字距 — Qoder
+          letterSpacing: (config.letterSpacing +
+                  (extraLetterSpacing > 0 ? extraLetterSpacing : 0)) !=
+              0
+              ? config.letterSpacing +
+                  (extraLetterSpacing > 0 ? extraLetterSpacing : 0)
+              : null,
         ),
       ),
     );

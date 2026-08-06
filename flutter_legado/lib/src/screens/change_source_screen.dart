@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/change_source/change_source_notifier.dart';
+import '../providers/providers.dart';
+import '../routes.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -51,11 +53,79 @@ class ChangeSourceScreen extends ConsumerStatefulWidget {
 }
 
 class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
+  // [UI-fix v2.0.2 | 2026-08-06] 换源页高级选项（对标原版 change_source.xml：
+  // 搜索筛选/停止刷新切换/书源管理入口/刷新列表/校验作者开关/加载字数开关/
+  // 加载信息开关/加载目录开关/源分组单选/关闭）；开关项持久化于 config，
+  // 键名对齐原版 AppConfig — Qoder
+  final _searchFilterCtrl = TextEditingController();
+  bool _searchFilterVisible = false;
+  String _searchFilter = '';
+  bool _stopped = false;
+  bool _checkAuthor = false;
+  bool _loadWordCount = false;
+  bool _loadInfo = false;
+  bool _loadToc = false;
+  String _searchGroup = '';
+  List<String> _groups = const [];
+
   @override
   void initState() {
     super.initState();
+    _loadAdvancedOptions();
     // 进入页面自动搜索一次
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+  }
+
+  @override
+  void dispose() {
+    _searchFilterCtrl.dispose();
+    super.dispose();
+  }
+
+  /// 恢复高级开关持久化状态与源分组列表
+  Future<void> _loadAdvancedOptions() async {
+    final api = ref.read(bookApiProvider);
+    try {
+      final results = await Future.wait([
+        api.getConfig('changeSourceCheckAuthor'),
+        api.getConfig('changeSourceLoadWordCount'),
+        api.getConfig('changeSourceLoadInfo'),
+        api.getConfig('changeSourceLoadToc'),
+        api.getConfig('searchGroup'),
+      ]);
+      if (mounted) {
+        setState(() {
+          _checkAuthor = results[0] == 'true';
+          _loadWordCount = results[1] == 'true';
+          _loadInfo = results[2] == 'true';
+          _loadToc = results[3] == 'true';
+          _searchGroup = results[4] ?? '';
+        });
+      }
+    } catch (_) {}
+    try {
+      // 源分组从启用书源的 bookSourceGroup 字段聚合（对标原版
+      // flowEnabledGroups），逗号分隔多分组展开
+      final sources = await api.getBookSources();
+      final groups = <String>{};
+      for (final s in sources) {
+        if (!s.enabled) continue;
+        final g = s.bookSourceGroup ?? '';
+        if (g.trim().isEmpty) continue;
+        groups.addAll(
+          g.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty),
+        );
+      }
+      if (mounted) setState(() => _groups = groups.toList()..sort());
+    } catch (_) {}
+  }
+
+  /// 开关项持久化（键名对齐原版 AppConfig；TODO: 待 Rust 匹配器
+  /// searchSource 读取这些 config 后全链生效）— Qoder
+  Future<void> _persistBool(String key, bool value) async {
+    try {
+      await ref.read(bookApiProvider).setConfig(key, value ? 'true' : 'false');
+    } catch (_) {}
   }
 
   /// 搜索可替换书源
@@ -112,30 +182,215 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       appBar: AppBar(
         title: Text('换源 - ${widget.effectiveBookName}'),
         actions: [
+          // [UI-fix v2.0.2 | 2026-08-06] 搜索筛选入口（对标 menu_screen）— Qoder
+          IconButton(
+            icon: Icon(
+              _searchFilter.isNotEmpty
+                  ? Icons.filter_alt
+                  : Icons.search,
+            ),
+            tooltip: '搜索筛选',
+            onPressed: () => setState(
+              () => _searchFilterVisible = !_searchFilterVisible,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '重新搜索',
-            onPressed: state.isLoading ? null : _search,
+            onPressed: state.isLoading || _stopped ? null : _search,
+          ),
+          // [UI-fix v2.0.2 | 2026-08-06] 高级选项菜单（对标 change_source.xml）— Qoder
+          PopupMenuButton<String>(
+            tooltip: '高级选项',
+            onSelected: _handleAdvancedMenu,
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'startStop',
+                child: _menuRow(
+                  icon: _stopped ? Icons.play_arrow : Icons.stop,
+                  label: _stopped ? '继续刷新' : '停止刷新',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'sourceManage',
+                child: _menuRow(icon: Icons.settings, label: '书源管理'),
+              ),
+              PopupMenuItem(
+                value: 'refreshList',
+                child: _menuRow(icon: Icons.refresh, label: '刷新列表'),
+              ),
+              PopupMenuItem(
+                value: 'checkAuthor',
+                child: _menuRow(
+                  icon: _checkAuthor ? Icons.check_box : Icons.check_box_outline_blank,
+                  label: '校验作者',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'loadWordCount',
+                child: _menuRow(
+                  icon: _loadWordCount
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
+                  label: '加载字数',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'loadInfo',
+                child: _menuRow(
+                  icon: _loadInfo ? Icons.check_box : Icons.check_box_outline_blank,
+                  label: '加载信息',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'loadToc',
+                child: _menuRow(
+                  icon: _loadToc ? Icons.check_box : Icons.check_box_outline_blank,
+                  label: '加载目录',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'group',
+                child: _menuRow(
+                  icon: Icons.group_work,
+                  label: _searchGroup.isEmpty
+                      ? '源分组：全部'
+                      : '源分组：$_searchGroup',
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'close',
+                child: _MenuRowStatic(icon: Icons.close, label: '关闭'),
+              ),
+            ],
           ),
         ],
+        bottom: _searchFilterVisible
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(48),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: TextField(
+                    controller: _searchFilterCtrl,
+                    onChanged: (v) => setState(() => _searchFilter = v.trim()),
+                    decoration: InputDecoration(
+                      hintText: '按书源名称筛选',
+                      isDense: true,
+                      filled: true,
+                      fillColor:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : null,
       ),
       body: _buildBody(state),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: state.isLoading ? null : _search,
+        onPressed: state.isLoading || _stopped ? null : _search,
         icon: const Icon(Icons.search),
         label: const Text('搜索'),
       ),
     );
   }
 
+  /// 菜单行（动态勾选态）
+  Widget _menuRow({required IconData icon, required String label}) =>
+      _MenuRowStatic(icon: icon, label: label);
+
+  /// 高级选项菜单分发（对标 change_source.xml 各 menu 项）
+  Future<void> _handleAdvancedMenu(String value) async {
+    switch (value) {
+      case 'startStop':
+        // 对标 menu_start_stop：停止/继续刷新（会话态，不持久化）
+        setState(() => _stopped = !_stopped);
+      case 'sourceManage':
+        // 对标 menu_source_manage → SourceActivity
+        Navigator.pushNamed(context, AppRoutes.sources);
+      case 'refreshList':
+        // 对标 menu_refresh_list：重新搜索并刷新列表
+        if (!_stopped) await _search();
+      case 'checkAuthor':
+        // 对标 menu_check_author（AppConfig.changeSourceCheckAuthor）
+        setState(() => _checkAuthor = !_checkAuthor);
+        _persistBool('changeSourceCheckAuthor', _checkAuthor);
+      case 'loadWordCount':
+        // 对标 menu_load_word_count（AppConfig.changeSourceLoadWordCount）
+        setState(() => _loadWordCount = !_loadWordCount);
+        _persistBool('changeSourceLoadWordCount', _loadWordCount);
+      case 'loadInfo':
+        // 对标 menu_load_info（AppConfig.changeSourceLoadInfo）
+        setState(() => _loadInfo = !_loadInfo);
+        _persistBool('changeSourceLoadInfo', _loadInfo);
+      case 'loadToc':
+        // 对标 menu_load_toc（AppConfig.changeSourceLoadToc）
+        setState(() => _loadToc = !_loadToc);
+        _persistBool('changeSourceLoadToc', _loadToc);
+      case 'group':
+        await _showGroupPicker();
+      case 'close':
+        // 对标 menu_close
+        if (mounted) Navigator.pop(context);
+    }
+  }
+
+  /// 源分组单选（对标 menu_group/source_group：AppConfig.searchGroup，
+  // TODO: 待 Rust searchSource 支持分组过滤后全链生效）— Qoder
+  Future<void> _showGroupPicker() async {
+    final selected = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('源分组'),
+        children: [
+          _groupRadio(ctx, '', '全部'),
+          for (final g in _groups) _groupRadio(ctx, g, g),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _searchGroup = selected);
+    try {
+      await ref.read(bookApiProvider).setConfig('searchGroup', selected);
+    } catch (_) {}
+    if (!_stopped) await _search();
+  }
+
+  Widget _groupRadio(BuildContext ctx, String value, String label) {
+    final isSelected = _searchGroup == value;
+    return ListTile(
+      leading: Icon(
+        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: isSelected ? Theme.of(ctx).colorScheme.primary : null,
+      ),
+      title: Text(label),
+      onTap: () => Navigator.pop(ctx, value),
+    );
+  }
+
   Widget _buildBody(ChangeSourceState state) {
-    if (state.isLoading && state.results.isEmpty) {
+    // [UI-fix v2.0.2 | 2026-08-06] 搜索筛选（对标 menu_screen SearchView：
+    // 客户端按书源名/书名关键字过滤结果列表）— Qoder
+    var results = state.results;
+    if (_searchFilter.isNotEmpty) {
+      results = results
+          .where(
+            (r) =>
+                r.sourceName.contains(_searchFilter) ||
+                r.bookName.contains(_searchFilter),
+          )
+          .toList();
+    }
+    if (state.isLoading && results.isEmpty) {
       return const LoadingIndicator(message: '正在搜索可替换书源...');
     }
-    if (state.error != null && state.results.isEmpty) {
+    if (state.error != null && results.isEmpty) {
       return ErrorView(message: state.error!, onRetry: _search);
     }
-    if (state.results.isEmpty) {
+    if (results.isEmpty) {
       final colorScheme = Theme.of(context).colorScheme;
       return Center(
         child: Column(
@@ -161,7 +416,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              '找到 ${state.results.length} 个匹配书源（按匹配度排序）',
+              '找到 ${results.length} 个匹配书源（按匹配度排序）',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -170,10 +425,10 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 4),
-              itemCount: state.results.length,
+              itemCount: results.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) =>
-                  _buildResultTile(context, state.results[index], state),
+                  _buildResultTile(context, results[index], state),
             ),
           ),
         ],
@@ -270,5 +525,24 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     if (score >= 80) return Colors.green;
     if (score >= 50) return Colors.orange;
     return Theme.of(context).colorScheme.onSurfaceVariant;
+  }
+}
+
+/// [UI-fix v2.0.2 | 2026-08-06] 菜单行（图标 + 文案） — Qoder
+class _MenuRowStatic extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _MenuRowStatic({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 12),
+        Text(label),
+      ],
+    );
   }
 }

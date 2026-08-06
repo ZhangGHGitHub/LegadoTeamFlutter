@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../providers/audio/audio_notifier.dart';
 import '../../providers/bookmark/bookmark_notifier.dart';
 import '../../providers/dict/dict_notifier.dart';
 import '../../providers/providers.dart';
@@ -279,11 +280,11 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
 
   /// 替换：原版以选中文本为替换 pattern 打开 ReplaceEditActivity
   void _openReplace() {
-    // TODO(批次2)：replace_rules_screen 当前不接受路由参数预填（不在本任务边界内），
-    // 选中文本作为替换规则 pattern 的预填能力留批次2接通；此处先跳转规则管理页。
+    // [UI-fix v2.0.2 | 2026-08-06] 闭合留批次项：选中文本作为替换规则
+    // pattern 预填传入规则管理页（对标原版 ReplaceEditActivity 预填） — Qoder
     _close();
     final navigator = Navigator.of(context, rootNavigator: true);
-    navigator.pushNamed(AppRoutes.replaceRules);
+    navigator.pushNamed(AppRoutes.replaceRules, arguments: _selectedText);
   }
 
   /// 复制：对齐原版 menu_copy → sendToClip
@@ -363,9 +364,24 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
 
   /// 朗读所选：对齐原版 menu_aloud → speak(selectedText)
   void _readAloud() {
-    // TODO(批次2)：Flutter 侧暂无 TTS 引擎依赖（原版走本地 TTS / aloudStartSelect），
-    // 朗读所选需待批次2 TTS 管线交付后接通，此处仅保留菜单项 UI 呈现。
-    _toast('朗读所选：TTS 管线待批次2接通');
+    // [UI-fix v2.0.2 | 2026-08-06] 闭合留批次项：接朗读链路
+    // （AudioNotifier.startReadAloud → audioSpeak FFI） — Qoder
+    final state = ref.read(readerNotifierProvider);
+    final book = state.currentBook;
+    if (book == null) {
+      _toast('无法启动朗读：未打开书籍');
+      return;
+    }
+    final chapterIndex = state.currentChapterIndex;
+    _close();
+    // TODO(留批次): 段落级起点（chapterPos）待 startReadAloud 支持偏移参数 — Qoder
+    unawaited(
+      ref.read(audioNotifierProvider.notifier).startReadAloud(
+            bookUrl: book.bookUrl,
+            bookName: book.name,
+            chapterIndex: chapterIndex,
+          ),
+    );
   }
 
   /// 词典：对齐原版 menu_dict → DictDialog(selectedText)
@@ -387,11 +403,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       _toast('无法搜正文：未打开书籍');
       return;
     }
-    // TODO(批次2)：SearchContentScreen 暂不支持路由参数预填初始查询词
-    // （原版将 selectedText 写入 viewModel.searchContentQuery），留批次2接通。
+    // [UI-fix v2.0.2 | 2026-08-06] 闭合留批次项：选中文本作为初始查询词
+    // 传入正文搜索页（对标原版 viewModel.searchContentQuery） — Qoder
     final navigator = Navigator.of(context, rootNavigator: true);
     _close();
-    navigator.pushNamed(AppRoutes.searchContent, arguments: book);
+    navigator.pushNamed(
+      AppRoutes.searchContent,
+      arguments: {'book': book, 'query': _selectedText},
+    );
   }
 
   /// 浏览器：对齐原版 menu_browser（绝对 URL 直接打开，否则网页搜索）

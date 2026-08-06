@@ -36,10 +36,94 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _backupLoading = false;
   bool _restoreLoading = false;
-  // 服务开关（对标 pref_main SwitchPreference，服务本体未移植，开启时提示）
+  // 服务开关（对标 pref_main SwitchPreference）
+  // [UI-fix v2.0.2 | 2026-08-06] Web 服务开关接通 Rust server_start/server_stop，
+  // 状态持久化于 config 键 webService；定时服务无后端 FFI，仅持久化开关 + TODO — Qoder
   bool _autoTaskService = false;
   bool _webService = false;
   bool _mcpService = false;
+  bool _webServiceBusy = false;
+  String _webServiceStatus = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initServiceStates();
+  }
+
+  /// 恢复服务开关持久化状态（config 键 webService / autoTaskService）
+  Future<void> _initServiceStates() async {
+    final api = ref.read(bookApiProvider);
+    try {
+      final web = await api.getConfig('webService');
+      final autoTask = await api.getConfig('autoTaskService');
+      if (!mounted) return;
+      setState(() {
+        _webService = web == 'true';
+        _autoTaskService = autoTask == 'true';
+      });
+      if (_webService) {
+        final status = await api.getServerStatus();
+        if (!mounted) return;
+        setState(() => _webServiceStatus = status);
+      }
+    } catch (_) {
+      // 首启无配置时静默失败，保持默认关
+    }
+  }
+
+  /// Web 服务开关（对标原版 WebServiceActivity：启动/停止 legado-server）
+  ///
+  /// 经 [BookApi.startServer]/[BookApi.stopServer] 委托 Rust 真实启停，
+  /// 开关状态持久化于 config 键 `webService`。
+  Future<void> _toggleWebService(bool v) async {
+    if (_webServiceBusy) return;
+    setState(() => _webServiceBusy = true);
+    final api = ref.read(bookApiProvider);
+    try {
+      if (v) {
+        await api.startServer();
+        final status = await api.getServerStatus();
+        await api.setConfig('webService', 'true');
+        if (!mounted) return;
+        setState(() {
+          _webService = true;
+          _webServiceStatus = status;
+        });
+      } else {
+        await api.stopServer();
+        await api.setConfig('webService', 'false');
+        if (!mounted) return;
+        setState(() {
+          _webService = false;
+          _webServiceStatus = '';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Web 服务切换失败: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _webServiceBusy = false);
+    }
+  }
+
+  /// 定时任务服务开关（对标原版 AutoTaskService SwitchPreference）
+  ///
+  /// TODO(UI-fix v2.0.2): Rust 侧尚无定时调度服务启停 FFI（仅有 autoTask
+  /// 任务构建/执行类契约），当前仅持久化开关状态，待后端接入后接通。— Qoder
+  Future<void> _toggleAutoTaskService(bool v) async {
+    setState(() => _autoTaskService = v);
+    try {
+      await ref.read(bookApiProvider).setConfig(
+        'autoTaskService',
+        v ? 'true' : 'false',
+      );
+    } catch (_) {
+      // 持久化失败不阻断 UI 切换
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,18 +163,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 showDisclosure: true,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.autoTasks),
               ),
+              // [UI-fix v2.0.2 | 2026-08-06] 定时服务后端未移植：开关持久化 + TODO — Qoder
               SwitchListTile(
                 secondary: const Icon(Icons.autorenew),
                 title: const Text('定时任务服务'),
                 subtitle: const Text('定时任务后台服务（后续版本支持）'),
                 value: _autoTaskService,
-                onChanged: (v) {
-                  if (v) {
-                    _todo(context, '定时任务服务');
-                  } else {
-                    setState(() => _autoTaskService = false);
-                  }
-                },
+                onChanged: _toggleAutoTaskService,
               ),
               IosListTile(
                 icon: Icons.toc,
@@ -126,18 +205,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 showDisclosure: true,
                 onTap: () => _showThemePicker(context),
               ),
+              // [UI-fix v2.0.2 | 2026-08-06] Web 服务开关接通 Rust server_start/server_stop — Qoder
               SwitchListTile(
-                secondary: const Icon(Icons.language),
+                secondary: _webServiceBusy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.language),
                 title: const Text('Web 服务'),
-                subtitle: const Text('Web 书架服务（后续版本支持）'),
+                subtitle: Text(
+                  _webService && _webServiceStatus.isNotEmpty
+                      ? 'Web 书架服务：$_webServiceStatus'
+                      : 'Web 书架服务',
+                ),
                 value: _webService,
-                onChanged: (v) {
-                  if (v) {
-                    _todo(context, 'Web 服务');
-                  } else {
-                    setState(() => _webService = false);
-                  }
-                },
+                onChanged: _webServiceBusy ? null : _toggleWebService,
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.cable),

@@ -30,7 +30,6 @@ import 'screens/reader_screen.dart';
 import 'screens/reader_comic_screen.dart';
 import 'screens/remote_book_screen.dart';
 import 'screens/replace_rules_screen.dart';
-import 'screens/rss_config_screen.dart';
 import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_source_debug_screen.dart';
 import 'screens/rss_source_manage_screen.dart';
@@ -84,7 +83,7 @@ class AppRoutes {
   static const about = '/about';
   static const appLog = '/app_log';
   // discover 路由已删除（原版不存在的功能）
-  static const rssConfig = '/rss/config';
+  // [UI-fix v2.0.2 | 2026-08-06] 结构治理：删除 rssConfig 路由（原版无此页，订阅源管理统一走 rssSourceManage）— Qoder
   static const rssSourceManage = '/rss/manage';
   static const rssFavorites = '/rss/favorites';
   static const rssSourceDebug = '/rss/source_debug';
@@ -175,7 +174,13 @@ class AppRoutes {
         },
         readingStats: (_) => const ReadingStatsScreen(),
         bookmarks: (_) => const BookmarkScreen(),
-        replaceRules: (_) => const ReplaceRulesScreen(),
+        replaceRules: (context) {
+          // [UI-fix v2.0.2 | 2026-08-06] 支持 String 路由参数：阅读器长按
+          // 选中文本作为新规则 pattern 预填 — Qoder
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final pattern = args is String ? args : null;
+          return ReplaceRulesScreen(initialPattern: pattern);
+        },
         autoTasks: (_) => const AutoTaskScreen(),
         association: (_) => const AssociationScreen(),
         sourceDebug: (context) {
@@ -200,6 +205,15 @@ class AppRoutes {
           if (args is Book) {
             return SearchContentScreen(book: args);
           }
+          // [UI-fix v2.0.2 | 2026-08-06] 支持 Map 传参 {book, query}：
+          // 阅读器长按选中文本作为初始查询词 — Qoder
+          if (args is Map && args['book'] is Book) {
+            final query = args['query'];
+            return SearchContentScreen(
+              book: args['book'] as Book,
+              initialQuery: query is String ? query : null,
+            );
+          }
           // 向后兼容：支持 Map<String, String> 传参
           if (args is Map<String, String>) {
             return SearchContentScreen(
@@ -211,8 +225,6 @@ class AppRoutes {
         },
         about: (_) => const AboutScreen(),
         appLog: (_) => const AppLogScreen(),
-        
-        rssConfig: (_) => const RssConfigScreen(),
         rssSourceManage: (_) => const RssSourceManageScreen(),
         rssFavorites: (_) => const RssFavoritesScreen(),
         rssSourceDebug: (context) {
@@ -245,6 +257,15 @@ class AppRoutes {
         welcome: (_) => const WelcomeScreen(),
         browser: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
+          // 平台桥接分发携带 url/html/title（Task #114）— QoderCN
+          // 路由参数统一 is Map 运行时兼容判定（Map<String,dynamic> 规范）
+          if (args is Map) {
+            return BrowserScreen(
+              initialUrl: args['url']?.toString(),
+              initialHtml: args['html']?.toString(),
+              title: args['title']?.toString(),
+            );
+          }
           final url = args is String ? args : null;
           return BrowserScreen(initialUrl: url);
         },

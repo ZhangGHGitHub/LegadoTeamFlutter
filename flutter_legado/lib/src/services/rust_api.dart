@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart'
     show ExternalLibrary;
 import 'package:http/http.dart' as http;
@@ -9,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import 'book_api.dart';
+import 'platform_bridge_service.dart';
 
 /// Rust FFI 统一访问层
 ///
@@ -301,6 +304,32 @@ class RustApi implements BookApi {
   @override
   Future<void> cancelCheckSources() => bridge.sourceCheckCancel();
 
+  // ========== 书源登录 V2 动态状态协议（上游 #402/#488） — QoderCN ==========
+
+  /// 判定书源登录 UI 是否为 V2 动态状态协议
+  @override
+  Future<bool> isLoginUiV2(String sourceJson) =>
+      bridge.sourceIsLoginUiV2(sourceJson: sourceJson);
+
+  /// 执行 loginUi v2 脚本，返回动态 UI 描述 JSON（`{"rows":[...]}`）
+  @override
+  Future<String> loginUiV2(String sourceJson, String stateJson) async =>
+      // 平台桥接拦截：脚本可能以 webView 类桥接载荷作为整体返回（Task #114）— QoderCN
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.sourceLoginUiV2(sourceJson: sourceJson, stateJson: stateJson),
+      );
+
+  /// 执行登录 V2 action 命令（返回命令 JSON：state/error/login/close）
+  @override
+  Future<String> loginActionV2(String sourceJson, String userInputJson) async =>
+      // 平台桥接拦截（Task #114）— QoderCN
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.sourceLoginActionV2(
+          sourceJson: sourceJson,
+          userInputJson: userInputJson,
+        ),
+      );
+
   // ========== 验证码交互通道（Task #90） ==========
 
   /// 订阅验证码请求事件流（长期存活）
@@ -444,6 +473,9 @@ class RustApi implements BookApi {
   }
 
   /// 更新 RSS 源（复用书源更新接口）
+  ///
+  /// TODO(v2.0.2): 当前复用 sourceUpdate 作为 workaround，待 Rust 轨
+  /// 专用 rssUpdateSource FFI 落地后切换；UI 侧保持现状不另做删+加。— QoderCN
   Future<void> updateRssSource(RssSource source) =>
       bridge.sourceUpdate(sourceJson: jsonEncode(source.toJson()));
 
@@ -781,19 +813,25 @@ class RustApi implements BookApi {
   ///
   /// 本地书籍直接解析返回；在线书籍自动从网络抓取并返回净化后的正文。
   /// 始终返回纯正文字符串，不返回 JSON 元数据。
-  Future<String> getChapterContentFull(String bookUrl, int chapterIndex) =>
-      bridge.readerGetContentFull(bookUrl: bookUrl, chapterIndex: chapterIndex);
+  Future<String> getChapterContentFull(String bookUrl, int chapterIndex) async =>
+      // 平台桥接拦截：正文规则可能以 webView 类桥接载荷作为整体返回（Task #114）— QoderCN
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.readerGetContentFull(bookUrl: bookUrl, chapterIndex: chapterIndex),
+      );
 
   /// 从网络获取章节正文（带 DB 缓存）
   Future<String> fetchChapterContent(
     String bookUrl,
     String chapterUrl,
     String sourceUrl,
-  ) =>
-      bridge.readerFetchContent(
-        bookUrl: bookUrl,
-        chapterUrl: chapterUrl,
-        sourceUrl: sourceUrl,
+  ) async =>
+      // 平台桥接拦截（Task #114）— QoderCN
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.readerFetchContent(
+          bookUrl: bookUrl,
+          chapterUrl: chapterUrl,
+          sourceUrl: sourceUrl,
+        ),
       );
 
   /// 更新阅读进度
@@ -813,7 +851,10 @@ class RustApi implements BookApi {
   /// Rust 侧返回 ChapterListResponse { total, chapters }，
   /// 兼容 Map（提取 chapters 字段）和 List（直接使用）两种格式。
   Future<List<BookChapter>> refreshToc(String bookUrl, String sourceUrl) async {
-    final json = await bridge.readerRefreshToc(bookUrl: bookUrl, sourceUrl: sourceUrl);
+    // 平台桥接拦截：目录规则可能以桥接载荷作为整体返回（Task #114）— QoderCN
+    final json = await PlatformBridgeService.instance.interceptResult(
+      await bridge.readerRefreshToc(bookUrl: bookUrl, sourceUrl: sourceUrl),
+    );
     final decoded = jsonDecode(json);
     // Rust 侧返回 ChapterListResponse { total, chapters }，兼容 Map 和 List 两种格式
     final List<dynamic> list;
@@ -1080,26 +1121,36 @@ class RustApi implements BookApi {
   }
 
   // ========== WebBook 操作 ==========
+  // 以下解析类方法统一经平台桥接拦截（Task #114）：Rust 侧 webView 类 JS API
+  // 无头运行时返回桥接载荷 JSON，恰为整体结果时由此执行并以真实结果回填 — QoderCN
 
   /// 搜索书籍（书源规则驱动）
   Future<String> webbookSearch(
     String sourceJson,
     String query,
     int page,
-  ) =>
-      bridge.webbookSearch(sourceJson: sourceJson, query: query, page: page);
+  ) async =>
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.webbookSearch(sourceJson: sourceJson, query: query, page: page),
+      );
 
   /// 获取书籍详情
-  Future<String> webbookInfo(String sourceJson, String bookUrl) =>
-      bridge.webbookInfo(sourceJson: sourceJson, bookUrl: bookUrl);
+  Future<String> webbookInfo(String sourceJson, String bookUrl) async =>
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.webbookInfo(sourceJson: sourceJson, bookUrl: bookUrl),
+      );
 
   /// 获取章节列表
-  Future<String> webbookChapters(String sourceJson, String bookUrl) =>
-      bridge.webbookChapters(sourceJson: sourceJson, bookUrl: bookUrl);
+  Future<String> webbookChapters(String sourceJson, String bookUrl) async =>
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.webbookChapters(sourceJson: sourceJson, bookUrl: bookUrl),
+      );
 
   /// 获取章节正文
-  Future<String> webbookContent(String sourceJson, String chapterJson) =>
-      bridge.webbookContent(sourceJson: sourceJson, chapterJson: chapterJson);
+  Future<String> webbookContent(String sourceJson, String chapterJson) async =>
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.webbookContent(sourceJson: sourceJson, chapterJson: chapterJson),
+      );
 
   // ========== 发现页操作 ==========
 
@@ -1127,10 +1178,13 @@ class RustApi implements BookApi {
     String url,
     int page,
   ) async {
-    final json = await bridge.exploreFetchBooks(
-      sourceJson: sourceJson,
-      url: url,
-      page: page,
+    // 平台桥接拦截（Task #114）— QoderCN
+    final json = await PlatformBridgeService.instance.interceptResult(
+      await bridge.exploreFetchBooks(
+        sourceJson: sourceJson,
+        url: url,
+        page: page,
+      ),
     );
     final list = _decodeList(json, 'bookApi');
     return list
@@ -1170,7 +1224,11 @@ class RustApi implements BookApi {
   // ========== JS 引擎 ==========
 
   /// 执行 JS 脚本
-  Future<String> evalJs(String script) => bridge.jsEval(script: script);
+  Future<String> evalJs(String script) async =>
+      // 平台桥接拦截：书源调试中 webView 类调用由此真实执行（Task #114）— QoderCN
+      PlatformBridgeService.instance.interceptResult(
+        await bridge.jsEval(script: script),
+      );
 
   /// 获取 JS 引擎版本（通过 jsEval 查询）
   Future<String> getJsEngineVersion() async {
@@ -1427,7 +1485,16 @@ class RustApi implements BookApi {
 
   // ========== 音频播放 ==========
 
-  /// TTS 朗读（通过 HTTP 请求 TTS 引擎，待 FFI 实现本地播放）
+  // [UI-fix v2.0.2 | 2026-08-06] audioSpeak 改接 ttsSpeak 真实管线（缺口②闭合） — QoderCN
+  /// TTS 朗读：接 Rust 真实合成管线（bridge.ttsSpeak，契约 §2.42）
+  ///
+  /// engineUrl 模板原样透传——占位符替换（{{speakText}}/{{text}}/
+  /// {{speakSpeed}}/{{speed}}）、HTTP 音频拉取、Content-Type 校验与
+  /// MD5 文件缓存均由 Rust 侧完成，Dart 不再预替换模板。
+  /// 返回语义保持 Future<void>（调用方 AudioNotifier.play 不消费返回值）；
+  /// 合成产物 audioPath 由 Rust 缓存落盘，供后续本地播放接线。
+  /// ttsSpeak 异常时降级为原探活逻辑（模板替换 + http.get），
+  /// 保持 audio_notifier 既有 try/catch 保护语义不变。
   Future<void> audioSpeak({
     required String text,
     required String engineUrl,
@@ -1436,17 +1503,35 @@ class RustApi implements BookApi {
     double volume = 1.0,
     String? voiceName,
   }) async {
-    // 将参数填充到 engineUrl 模板中
-    var url = engineUrl
-        .replaceAll('{{text}}', Uri.encodeComponent(text))
-        .replaceAll('{{speed}}', speed.toString())
-        .replaceAll('{{pitch}}', pitch.toString())
-        .replaceAll('{{volume}}', volume.toString());
-    if (voiceName != null) {
-      url = url.replaceAll('{{voice}}', Uri.encodeComponent(voiceName));
+    try {
+      final resultJson = await bridge.ttsSpeak(
+        text: text,
+        engineUrl: engineUrl,
+        speed: speed,
+      );
+      // 解析合成结果（camelCase）：audioPath / fromCache / contentType
+      final result =
+          (jsonDecode(resultJson) as Map<String, dynamic>).cast<String, dynamic>();
+      debugPrint(
+        'ttsSpeak 合成完成: audioPath=${result['audioPath']} '
+        'fromCache=${result['fromCache']} contentType=${result['contentType']}',
+      );
+    } catch (e) {
+      // 降级探活：真实管线异常（引擎不可达/正文为空/缓存目录未就绪等）
+      // 时保留原模板替换 + http.get 探活行为，失败仍向上抛出由调用方保护
+      debugPrint('ttsSpeak 真实管线失败，降级探活: $e');
+      var url = engineUrl
+          .replaceAll('{{speakText}}', Uri.encodeComponent(text))
+          .replaceAll('{{text}}', Uri.encodeComponent(text))
+          .replaceAll('{{speakSpeed}}', speed.toString())
+          .replaceAll('{{speed}}', speed.toString())
+          .replaceAll('{{pitch}}', pitch.toString())
+          .replaceAll('{{volume}}', volume.toString());
+      if (voiceName != null) {
+        url = url.replaceAll('{{voice}}', Uri.encodeComponent(voiceName));
+      }
+      await http.get(Uri.parse(url));
     }
-    // 发起请求验证可达性（实际播放需平台音频播放器）
-    await http.get(Uri.parse(url));
   }
 
   /// 获取章节媒体信息（待 FFI 实现，当前返回基本信息）

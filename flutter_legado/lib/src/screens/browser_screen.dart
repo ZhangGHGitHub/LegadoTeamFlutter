@@ -1,18 +1,30 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 /// 内置浏览器页面
 ///
-/// 当前构建未包含 webview_flutter（桌面端无 WebView 实现），
-/// 采用 url_launcher 降级方案：内部维护导航历史栈（前进/后退/刷新），
-/// 页面在系统浏览器中打开，并提供 JavaScript 片段提取助手
-/// （生成常用提取脚本 → 复制到外部浏览器控制台执行 → 粘贴回结果）。
+/// 双模实现（Task #114 平台桥接参数扩展 — QoderCN）：
+/// - WebView 支持平台（Android/iOS/macOS）且携带初始 URL/HTML 时，
+///   内嵌真实 WebView（webview_flutter）页内渲染，供平台桥接
+///   （showBrowser/startBrowser/openUrl）承载应用内浏览；
+/// - 其余场景（桌面无 WebView 实现）保持 url_launcher 降级方案：
+///   内部维护导航历史栈（前进/后退/刷新），页面在系统浏览器中打开，
+///   并提供 JavaScript 片段提取助手。
 class BrowserScreen extends StatefulWidget {
   /// 初始 URL（可选）
   final String? initialUrl;
 
-  const BrowserScreen({super.key, this.initialUrl});
+  /// 初始 HTML 内容（可选，供平台桥接 showBrowser 携带页面内容加载）
+  final String? initialHtml;
+
+  /// 页面标题（可选，缺省「内置浏览器」）
+  final String? title;
+
+  const BrowserScreen({super.key, this.initialUrl, this.initialHtml, this.title});
 
   @override
   State<BrowserScreen> createState() => _BrowserScreenState();
@@ -27,6 +39,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   /// JS 提取结果粘贴区
   final _jsResultController = TextEditingController();
+
+  /// 内嵌 WebView 控制器（仅 WebView 支持平台且携带初始内容时创建）— QoderCN
+  WebViewController? _webViewController;
+
+  /// 内嵌 WebView 页面是否加载完成（进度指示用）
+  bool _embeddedLoading = true;
+
+  /// 当前平台是否支持内嵌 WebView（对齐 rss_article_detail_screen 判定）
+  bool get _webViewSupported =>
+      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
   static const _jsSnippets = <String, String>{
     '获取页面标题': 'document.title',
@@ -51,10 +73,52 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void initState() {
     super.initState();
     final initial = widget.initialUrl?.trim() ?? '';
-    if (initial.isNotEmpty) {
+    final html = widget.initialHtml?.trim() ?? '';
+    if (_webViewSupported && (initial.isNotEmpty || html.isNotEmpty)) {
+      // 内嵌真实 WebView 模式（Task #114 平台桥接承载）— QoderCN
+      _initEmbeddedWebView(initial, html);
+    } else if (initial.isNotEmpty) {
       _urlController.text = initial;
       _navigate(initial);
     }
+  }
+
+  /// 初始化内嵌 WebView 并加载初始内容（html 优先，对齐 Kotlin
+  /// BackstageWebView loadDataWithBaseURL(url, html) 语义）— QoderCN
+  void _initEmbeddedWebView(String url, String html) {
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageStarted: (_) {
+          if (mounted) setState(() => _embeddedLoading = true);
+        },
+        onPageFinished: (finishedUrl) {
+          if (mounted) {
+            setState(() {
+              _embeddedLoading = false;
+              _urlController.text = finishedUrl;
+            });
+          }
+        },
+        onWebResourceError: (_) {
+          if (mounted) setState(() => _embeddedLoading = false);
+        },
+      ));
+    if (html.isNotEmpty) {
+      final base = Uri.tryParse(url);
+      controller.loadHtmlString(
+        html,
+        baseUrl: base != null && base.hasScheme ? url : null,
+      );
+      if (url.isNotEmpty) _urlController.text = url;
+    } else {
+      final uri = Uri.tryParse(_normalize(url));
+      if (uri != null) {
+        controller.loadRequest(uri);
+        _urlController.text = uri.toString();
+      }
+    }
+    _webViewController = controller;
   }
 
   @override
@@ -75,6 +139,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _navigate(String input) {
     final url = _normalize(input);
+    final embedded = _webViewController;
+    if (embedded != null) {
+      // 内嵌模式：页内加载（Task #114）— QoderCN
+      final uri = Uri.tryParse(url);
+      if (uri == null) return;
+      setState(() => _urlController.text = url);
+      embedded.loadRequest(uri);
+      return;
+    }
     setState(() {
       // 截断前进历史
       if (_currentIndex < _history.length - 1) {
@@ -88,6 +161,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _goBack() {
+    final embedded = _webViewController;
+    if (embedded != null) {
+      embedded.canGoBack().then((can) {
+        if (can) embedded.goBack();
+      });
+      return;
+    }
     if (!_canGoBack) return;
     setState(() => _currentIndex--);
     final url = _currentUrl;
@@ -98,6 +178,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _goForward() {
+    final embedded = _webViewController;
+    if (embedded != null) {
+      embedded.canGoForward().then((can) {
+        if (can) embedded.goForward();
+      });
+      return;
+    }
     if (!_canGoForward) return;
     setState(() => _currentIndex++);
     final url = _currentUrl;
@@ -108,6 +195,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _refresh() {
+    final embedded = _webViewController;
+    if (embedded != null) {
+      embedded.reload();
+      return;
+    }
     final url = _currentUrl;
     if (url != null) _openExternal(url);
   }
@@ -136,14 +228,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final embedded = _webViewController;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('内置浏览器'),
+        title: Text(widget.title?.isNotEmpty == true
+            ? widget.title!
+            : '内置浏览器'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '刷新',
-            onPressed: _currentUrl != null ? _refresh : null,
+            onPressed: embedded != null || _currentUrl != null
+                ? _refresh
+                : null,
           ),
         ],
       ),
@@ -153,12 +250,30 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _buildToolbar(theme),
           const Divider(height: 1),
           Expanded(
-            child: _currentUrl == null
-                ? _buildEmpty(theme)
-                : _buildContent(theme),
+            child: embedded != null
+                ? _buildEmbeddedWebView(theme, embedded)
+                : (_currentUrl == null
+                    ? _buildEmpty(theme)
+                    : _buildContent(theme)),
           ),
         ],
       ),
+    );
+  }
+
+  /// 内嵌 WebView 内容区（Task #114 平台桥接承载）— QoderCN
+  Widget _buildEmbeddedWebView(ThemeData theme, WebViewController controller) {
+    return Stack(
+      children: [
+        WebViewWidget(controller: controller),
+        if (_embeddedLoading)
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+      ],
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../models/models.dart';
 import '../providers.dart';
 import 'bookshelf_manage_state.dart';
 
@@ -103,6 +104,67 @@ class BookshelfManageNotifier extends Notifier<BookshelfManageState> {
       await load();
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isBusy: false);
+    }
+  }
+
+  // [UI-fix v2.0.2 | 2026-08-06] 批量换源（对标 Kotlin
+  // BookshelfManageViewModel.changeSource，复用单本 switchSource FFI） — Qoder
+  ///
+  /// 逐本：目标源内搜同名书 → switchSource；跳过本地书与已是目标源的书。
+  /// [onProgress] 回推进度（done/total/当前书名），供 UI 对话框渲染；
+  /// 返回 (成功数, 候选总数)。
+  Future<(int, int)> switchSelectedSource(
+    String targetSourceUrl, {
+    void Function(int done, int total, String bookName)? onProgress,
+  }) async {
+    final selected = state.selectedUrls;
+    final targets = state.books
+        .where((b) => selected.contains(b.bookUrl))
+        .where((b) =>
+            b.origin != BookType.localTag &&
+            !b.origin.startsWith(BookType.webDavTag) &&
+            b.origin != targetSourceUrl)
+        .toList();
+    if (targets.isEmpty) return (0, 0);
+    state = state.copyWith(isBusy: true, error: null);
+    try {
+      final api = ref.read(bookApiProvider);
+      var success = 0;
+      for (var i = 0; i < targets.length; i++) {
+        final book = targets[i];
+        onProgress?.call(i + 1, targets.length, book.name);
+        try {
+          final results = await api.searchBooks(
+            book.name,
+            sourceUrls: [targetSourceUrl],
+          );
+          // 对标 Kotlin preciseSearch：仅取同名书，作者相等优先
+          Book? best;
+          for (final r in results) {
+            if (r.book.name != book.name) continue;
+            if (book.author.isEmpty || r.book.author == book.author) {
+              best = r.book;
+              break;
+            }
+            best ??= r.book;
+          }
+          if (best == null) continue;
+          await api.switchSource(
+            book.bookUrl,
+            targetSourceUrl,
+            best.bookUrl,
+          );
+          success++;
+        } catch (_) {
+          // 单本失败不中断批次（对齐原版批间容错）
+        }
+      }
+      state = state.copyWith(isBusy: false);
+      await load();
+      return (success, targets.length);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e), isBusy: false);
+      return (0, targets.length);
     }
   }
 

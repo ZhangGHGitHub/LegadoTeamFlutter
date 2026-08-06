@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
@@ -34,11 +36,16 @@ class SearchContentScreen extends ConsumerStatefulWidget {
   /// 书名（向后兼容）
   final String bookName;
 
+  // [UI-fix v2.0.2 | 2026-08-06] 初始查询词（阅读器长按选中文本传入，
+  // 对标原版 searchContentQuery 预填 + 自动搜索） — Qoder
+  final String? initialQuery;
+
   const SearchContentScreen({
     super.key,
     this.book,
     this.bookUrl = '',
     this.bookName = '',
+    this.initialQuery,
   });
 
   /// 获取有效的 bookUrl
@@ -72,6 +79,14 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    // 初始查询词：预填输入框并在首帧后自动触发搜索
+    final q = widget.initialQuery;
+    if (q != null && q.trim().isNotEmpty) {
+      _controller.text = q;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_search(q));
+      });
+    }
   }
 
   @override

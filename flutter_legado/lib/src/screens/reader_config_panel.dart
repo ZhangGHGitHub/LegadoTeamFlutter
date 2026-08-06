@@ -1,9 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/flip_mode.dart';
+import '../providers/providers.dart';
+import '../providers/reader/reader_notifier.dart';
+import '../routes.dart';
 import '../services/system_brightness.dart';
 
 /// 点击区域可映射的功能
@@ -47,6 +52,12 @@ class ReaderAdvancedConfig {
   // 段落间距
   double paragraphSpacing;
 
+  // [UI-fix v2.0.2 | 2026-08-06] 对标原版 ReadBookConfig：
+  // 字距调节/首行缩进/两端对齐（MoreConfig textFullJustify） — Qoder
+  double letterSpacing;
+  bool paragraphIndent;
+  bool textFullJustify;
+
   // 状态栏提示栏
   bool showBattery;
   bool showTime;
@@ -64,6 +75,9 @@ class ReaderAdvancedConfig {
     this.centerAction = TapAction.toggleControls,
     this.rightAction = TapAction.nextPage,
     this.paragraphSpacing = 12,
+    this.letterSpacing = 0,
+    this.paragraphIndent = true,
+    this.textFullJustify = true,
     this.showBattery = true,
     this.showTime = true,
     this.showProgress = true,
@@ -90,6 +104,10 @@ class ReaderAdvancedConfig {
       rightAction: tap('right_action', TapAction.nextPage),
       paragraphSpacing: (prefs.getDouble('${_prefix}paragraph_spacing') ?? 12)
           .clamp(0.0, 48.0),
+      letterSpacing: (prefs.getDouble('${_prefix}letter_spacing') ?? 0)
+          .clamp(0.0, 10.0),
+      paragraphIndent: prefs.getBool('${_prefix}paragraph_indent') ?? true,
+      textFullJustify: prefs.getBool('${_prefix}text_full_justify') ?? true,
       showBattery: prefs.getBool('${_prefix}show_battery') ?? true,
       showTime: prefs.getBool('${_prefix}show_time') ?? true,
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
@@ -108,6 +126,9 @@ class ReaderAdvancedConfig {
     await prefs.setInt('${_prefix}center_action', centerAction.index);
     await prefs.setInt('${_prefix}right_action', rightAction.index);
     await prefs.setDouble('${_prefix}paragraph_spacing', paragraphSpacing);
+    await prefs.setDouble('${_prefix}letter_spacing', letterSpacing);
+    await prefs.setBool('${_prefix}paragraph_indent', paragraphIndent);
+    await prefs.setBool('${_prefix}text_full_justify', textFullJustify);
     await prefs.setBool('${_prefix}show_battery', showBattery);
     await prefs.setBool('${_prefix}show_time', showTime);
     await prefs.setBool('${_prefix}show_progress', showProgress);
@@ -123,6 +144,9 @@ class ReaderAdvancedConfig {
         centerAction: centerAction,
         rightAction: rightAction,
         paragraphSpacing: paragraphSpacing,
+        letterSpacing: letterSpacing,
+        paragraphIndent: paragraphIndent,
+        textFullJustify: textFullJustify,
         showBattery: showBattery,
         showTime: showTime,
         showProgress: showProgress,
@@ -139,7 +163,9 @@ class ReaderAdvancedConfig {
 /// - 段落间距调节
 /// - 状态栏提示栏项配置（电量 / 时间 / 进度 / 章节名）
 /// - 翻页模式选择（仿真 / 滑动 / 覆盖 / 无动画）
-class ReaderConfigPanel extends StatefulWidget {
+/// - [UI-fix v2.0.2 | 2026-08-06] 字体选择/字距调节/首行缩进/
+///   简繁转换/MoreConfig（两端对齐） — Qoder
+class ReaderConfigPanel extends ConsumerStatefulWidget {
   final ReaderAdvancedConfig config;
 
   /// 配置变更回调（每次修改后触发，便于阅读器实时应用）
@@ -174,11 +200,45 @@ class ReaderConfigPanel extends StatefulWidget {
   }
 
   @override
-  State<ReaderConfigPanel> createState() => _ReaderConfigPanelState();
+  ConsumerState<ReaderConfigPanel> createState() => _ReaderConfigPanelState();
 }
 
-class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
+class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
   late final ReaderAdvancedConfig _config = widget.config.copy();
+
+  /// 当前阅读字体显示名（与 FontScreen 持久化键 reader_font_family 同步）
+  String _fontLabel = '默认字体';
+
+  /// 简繁转换类型（0=不转换 1=繁转简 2=简转繁，对标原版 chineseConvertType）
+  int _convertType = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadFontLabel());
+    unawaited(_loadConvertType());
+  }
+
+  Future<void> _loadFontLabel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final family = prefs.getString('reader_font_family');
+      if (!mounted || family == null) return;
+      setState(() => _fontLabel = family.replaceFirst('Custom_', ''));
+    } catch (_) {
+      // 读取失败保持默认字体标签
+    }
+  }
+
+  Future<void> _loadConvertType() async {
+    try {
+      final type = await ref.read(bookApiProvider).getChineseConvertType();
+      if (!mounted) return;
+      setState(() => _convertType = type.clamp(0, 2));
+    } catch (_) {
+      // FFI 不可用时保持不转换
+    }
+  }
 
   void _commit() {
     unawaited(_config.save());
@@ -215,6 +275,10 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
             _buildTapZones(),
             const Divider(),
             _buildParagraphSpacing(),
+            const Divider(),
+            _buildTypography(),
+            const Divider(),
+            _buildMoreConfig(),
             const Divider(),
             _buildBrightnessControl(),
             const Divider(),
@@ -406,6 +470,136 @@ class _ReaderConfigPanelState extends State<ReaderConfigPanel> {
             ),
           ],
         ),
+      ],
+    );
+  }
+
+  // ===== 字体与排版（对标原版 TextFontStyleDialog + ReadBookConfig） =====
+
+  Widget _buildTypography() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('字体与排版', Icons.text_fields),
+        // 字体选择：跳转字体管理页，返回后触发阅读器重新加载字体
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.font_download_outlined, size: 20),
+          title: const Text('阅读字体'),
+          subtitle: Text(_fontLabel),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            await Navigator.pushNamed(context, AppRoutes.fonts);
+            if (!mounted) return;
+            await _loadFontLabel();
+            // 通知阅读器重建内容区（ReaderPageView.didUpdateWidget 重读字体）
+            widget.onChanged?.call(_config.copy());
+          },
+        ),
+        // 字距调节（对标原版 ReadBookConfig.letterSpacing）
+        Row(
+          children: [
+            Text('字距', style: Theme.of(context).textTheme.bodyMedium),
+            Expanded(
+              child: Slider(
+                value: _config.letterSpacing,
+                min: 0,
+                max: 5,
+                divisions: 25,
+                label: _config.letterSpacing.toStringAsFixed(1),
+                onChanged: (v) {
+                  _config.letterSpacing = v;
+                  _commit();
+                },
+              ),
+            ),
+            SizedBox(
+              width: 48,
+              child: Text(
+                _config.letterSpacing.toStringAsFixed(1),
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            ),
+          ],
+        ),
+        // 首行缩进（对标原版 paragraphIndent）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('首行缩进'),
+          subtitle: const Text('段落首行缩进两个字符'),
+          value: _config.paragraphIndent,
+          onChanged: (v) {
+            _config.paragraphIndent = v;
+            _commit();
+          },
+        ),
+      ],
+    );
+  }
+
+  // ===== 更多配置（对标原版 MoreConfigDialog） =====
+
+  Widget _buildMoreConfig() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('更多配置', Icons.tune_outlined),
+        // 简繁转换（接 Rust 繁简转换 FFI，对标原版 chineseConvertType）
+        Row(
+          children: [
+            Text('简繁转换', style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('不转换')),
+                  ButtonSegment(value: 1, label: Text('繁→简')),
+                  ButtonSegment(value: 2, label: Text('简→繁')),
+                ],
+                selected: {_convertType},
+                onSelectionChanged: (sel) async {
+                  final type = sel.first;
+                  setState(() => _convertType = type);
+                  try {
+                    await ref.read(bookApiProvider).setChineseConvertType(type);
+                    // 转换类型变更后重新加载当前章正文
+                    if (mounted) {
+                      unawaited(
+                        ref
+                            .read(readerNotifierProvider.notifier)
+                            .reloadChapterContent(),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('简繁转换设置失败: $e')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        // 两端对齐（对标原版 MoreConfig textFullJustify）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('两端对齐'),
+          subtitle: const Text('正文行尾对齐（末行除外）'),
+          value: _config.textFullJustify,
+          onChanged: (v) {
+            _config.textFullJustify = v;
+            _commit();
+          },
+        ),
+        // TODO(留批次): 原版 MoreConfig 其余项（显示标题/滚动条/音量键翻页等）
+        // 待后续批次补齐 — Qoder
       ],
     );
   }

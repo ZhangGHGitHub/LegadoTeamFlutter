@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-08-06
+
+### 修复（批次2 组A 阅读器系，署名 Qoder）
+- 阅读器顶栏菜单补齐 10 项：重新加载当前章正文（替换规则开关重新分段）、同步已持久化书对象到 State 等，对齐原版 ReadBookActivity 菜单
+- 阅读器源操作：批量换源链路接通（对标 Kotlin changeSource）
+- 阅读配置 5 项：字体选择/字距调节/首行缩进/两端对齐（MoreConfig textFullJustify）接入排版参数与分页渲染，对标原版 ReadBookConfig
+- 离线缓存：阅读器离线下载配置项接通（待 Rust 侧缓存体系补齐）
+- 朗读控制条完善：read_aloud_bar 定时/目录/章节跳转等控制项补齐，阅读器底栏朗读入口接线 AudioNotifier.startReadAloud
+
+### 修复（批次2 组B 书架书详，署名 Qoder）
+- 书架菜单 7 项：更新目录接真实 refreshToc FFI、添加网址接 WebBook 入库（对标 addBookByUrl）、导入/导出书单对齐 Kotlin importBookshelf/exportBookshelf（url/json/文件三通道）等
+- 书详页：登录接通书源登录链路（V2 动态协议+旧版凭据页）、置顶接 topBook FFI、清缓存接 clearCache FFI、批量换源入口（对标 changeSource）
+- 书架管理页：批量置顶/置底（对标原版 + replace_rule_sel.xml menu_top_sel/menu_bottom_sel），重排后逐条持久化
+
+### 修复（批次2 组C RSS·规则·换源·听书·设置+结构治理，署名 Qoder）
+- RSS：文章列表菜单（登录/刷新/排序/设置源变量/编辑源/切换布局，对标 rss_articles.xml）、双列网格布局切换本地态（articleStyle 0-4）、详情收藏接 addRssStar/deleteRssStar/isStarred FFI（对标 RssFavoritesDialog）、阅读记录对话框（对标 ReadRecordDialog）、rssMarkRead 已读标记
+- 替换规则：分组筛选（menu_group：全部/启用/禁用/无分组/分组:x）、批量模式（启用/禁用选中/置顶/置底/导出选中，对标 replace_rule_sel.xml）、网络/二维码导入接通确认页、新规则 pattern 预填
+- 换源页：高级选项（搜索筛选/停止刷新切换/书源管理入口/刷新列表/校验作者开关/加载字数开关，对标 change_source.xml）+ 搜索筛选（对标 menu_screen SearchView）
+- 听书页：溢出菜单 7 动作（换源/登录/复制播放地址/缓存目录选择/缓存范围/清当前章缓存等，对标 audio_play.xml）
+- 设置页：登录/置顶/清缓存等入口接线
+- 结构治理：删除 rss_config_screen.dart 及 rssConfig 路由（原版无此页，订阅源管理统一走 rssSourceManage）
+
+### 修复（批次2 跨轨管线：WebView 拦截 + TTS 接线，署名 Qoder）
+- WebView 桥接拦截：新建 platform_bridge_service.dart 统一承接 Rust 侧 7 个平台桥接 API（webView/webViewGetSource/webViewGetOverrideUrl/showBrowser/startBrowser/openUrl/openVideoPlayer）结构化 JSON 桥载荷；rust_api.dart 11 处拦截接入，browser_screen/routes/app.dart 联动打开真实 WebView/浏览器（Task #114）
+- audioSpeak 接 ttsSpeak 真实管线：rust_api.dart audioSpeak 由 http.get 探活改接 bridge.ttsSpeak（模板替换+MD5 文件缓存+Content-Type 校验由 Rust 侧完成），异常降级探活保留 audio_notifier 既有保护（契约 §2.42，缺口②闭合，署名 QoderCN）
+- 搜索内容页：支持阅读器长按选中文本作为初始查询词预填+自动搜索（对标 searchContentQuery）
+
 ## [2.0.1] - 2026-08-06
 
 ### 修复（批次0 纯接线快赢）

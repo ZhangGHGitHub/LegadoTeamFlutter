@@ -104,6 +104,39 @@ class ReplaceRuleNotifier extends Notifier<ReplaceRuleState> {
     list.sort((a, b) => a.order.compareTo(b.order));
     state = state.copyWith(rules: list);
   }
+
+  // [UI-fix v2.0.2 | 2026-08-06] 批量置顶/置底（对标原版
+  // replace_rule_sel.xml menu_top_sel/menu_bottom_sel），重排后逐条持久化 — Qoder
+
+  /// 将指定规则批量置顶并持久化 order
+  Future<void> moveToTop(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final selected = state.rules.where((r) => ids.contains(r.id)).toList();
+    final rest = state.rules.where((r) => !ids.contains(r.id)).toList();
+    await _persistOrder([...selected, ...rest]);
+  }
+
+  /// 将指定规则批量置底并持久化 order
+  Future<void> moveToBottom(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final selected = state.rules.where((r) => ids.contains(r.id)).toList();
+    final rest = state.rules.where((r) => !ids.contains(r.id)).toList();
+    await _persistOrder([...rest, ...selected]);
+  }
+
+  /// 按目标顺序重排 order（连续编号）并逐条持久化
+  Future<void> _persistOrder(List<ReplaceRule> ordered) async {
+    final api = ref.read(bookApiProvider);
+    final updated = <ReplaceRule>[];
+    for (var i = 0; i < ordered.length; i++) {
+      final rule = ordered[i].copyWith(order: i);
+      if (rule.order != ordered[i].order) {
+        await api.updateReplaceRule(rule);
+      }
+      updated.add(rule);
+    }
+    state = state.copyWith(rules: updated);
+  }
 }
 
 /// 替换规则 Notifier 全局 Provider

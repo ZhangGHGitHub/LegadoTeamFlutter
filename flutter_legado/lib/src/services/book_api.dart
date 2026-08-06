@@ -119,6 +119,25 @@ abstract class BookApi {
   /// 取消正在进行的批量书源校验
   Future<void> cancelCheckSources();
 
+  // ========== 书源登录 V2 动态状态协议（上游 #402/#488） — QoderCN ==========
+
+  /// 判定书源登录 UI 是否为 V2 动态状态协议
+  ///
+  /// [sourceJson] — BookSource JSON。
+  Future<bool> isLoginUiV2(String sourceJson);
+
+  /// 执行 loginUi v2 脚本，返回动态 UI 描述 JSON（`{"rows":[...]}`）
+  ///
+  /// [stateJson] — 当前状态 JSON（首次渲染传 `"{}"`）。
+  Future<String> loginUiV2(String sourceJson, String stateJson);
+
+  /// 执行登录 V2 action 命令
+  ///
+  /// [userInputJson] — `{"action":"...","stateJson":"...","formJson":{...}}`；
+  /// 返回命令 JSON：`state`(对象→更新状态重渲染) / `error`(对象→键值错误) /
+  /// `login`(对象→登录成功) / `close`(布尔→关闭)。
+  Future<String> loginActionV2(String sourceJson, String userInputJson);
+
   // ========== 验证码交互通道（Task #90） ==========
 
   /// 订阅验证码请求事件流（长期存活，对齐 Kotlin SourceVerificationHelp）

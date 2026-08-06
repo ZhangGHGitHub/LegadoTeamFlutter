@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +12,9 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../services/book_api.dart';
 import '../services/export_service.dart';
+import 'source_login_screen.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/error_view.dart';
 import '../widgets/export_dialog.dart';
@@ -317,6 +321,18 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
         Navigator.pushNamed(context, AppRoutes.appLog);
         break;
+      case 'login':
+        // [UI-fix v2.0.2 | 2026-08-06] 登录接通书源登录链路（V2 动态协议/旧版凭据页） — Qoder
+        await _loginSource();
+        break;
+      case 'top':
+        // [UI-fix v2.0.2 | 2026-08-06] 置顶接通 topBook FFI（对标原版 topBook） — Qoder
+        await _topBook();
+        break;
+      case 'clearCache':
+        // [UI-fix v2.0.2 | 2026-08-06] 清缓存接通 clearCache FFI — Qoder
+        await _clearCache();
+        break;
       default:
         _todo(value);
         break;
@@ -328,12 +344,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     const names = {
       'upload': '上传至远程',
       'updateTask': '创建书籍更新任务',
-      'login': '登录',
-      'top': '置顶',
       'sourceVariable': '设置源变量',
       'bookVariable': '设置书籍变量',
       'deleteAlert': '删除警告',
-      'clearCache': '清除缓存',
     };
     final feature = names[value] ?? value;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -774,6 +787,136 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     }
   }
 
+  // ===== [UI-fix v2.0.2 | 2026-08-06] 登录 / 置顶 / 清缓存 — Qoder =====
+
+  /// 书源登录（对标 Kotlin BookInfoActivity menu_login）：
+  /// V2 动态状态协议（上游 #402/#488）→ 页内对话框；旧版协议 → SourceLoginScreen
+  Future<void> _loginSource() async {
+    final book = _loadedBook;
+    if (book == null) return;
+    if (book.origin == BookType.localTag ||
+        book.origin.startsWith(BookType.webDavTag)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本地书籍不支持书源登录')),
+      );
+      return;
+    }
+    final api = ref.read(bookApiProvider);
+    BookSource? source;
+    try {
+      final sources = await api.getBookSources();
+      for (final s in sources) {
+        if (s.bookSourceUrl == book.origin) {
+          source = s;
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('获取书源失败: $e');
+    }
+    if (!mounted) return;
+    if (source == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未找到本书对应的书源')),
+      );
+      return;
+    }
+    final sourceJson = jsonEncode(source.toJson());
+    var isV2 = false;
+    try {
+      isV2 = await api.isLoginUiV2(sourceJson);
+    } catch (e) {
+      debugPrint('loginUiV2 判定失败: $e');
+    }
+    if (!mounted) return;
+    if (isV2) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => _LoginV2Dialog(
+          api: api,
+          sourceJson: sourceJson,
+          sourceName: source!.bookSourceName,
+        ),
+      );
+      if (ok == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('登录成功')),
+        );
+      }
+    } else {
+      // 旧版协议：复用手动凭据登录页
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SourceLoginScreen(
+            sourceUrl: source!.bookSourceUrl,
+            sourceName: source.bookSourceName,
+            loginUrl: source.loginUrl,
+          ),
+        ),
+      );
+    }
+  }
+
+  /// 置顶（对标 Kotlin BookInfoViewModel.topBook；原版仅置顶无取消）
+  Future<void> _topBook() async {
+    final book = _loadedBook;
+    if (book == null) return;
+    try {
+      await ref.read(bookApiProvider).topBook(book.bookUrl);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已置顶')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('置顶失败: $e')),
+        );
+      }
+    }
+  }
+
+  /// 清除缓存（对标 Kotlin BookInfoViewModel.clearCache）
+  ///
+  /// TODO(Rust轨)：原版按书清缓存（BookCacheManager.clear），当前 FFI 仅有
+  /// 全局 cacheClear，暂以全局清理 + 确认对话框降级实现 — Qoder
+  Future<void> _clearCache() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清除缓存'),
+        // 当前 FFI 仅支持全局清缓存（按书清缓存留 Rust 轨补齐）
+        content: const Text('当前仅支持清除全部缓存，是否继续？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('清除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(bookApiProvider).clearCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('缓存已清除')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('清除缓存失败: $e')),
+        );
+      }
+    }
+  }
+
   /// 打开导出对话框
   void _showExportDialog(BuildContext context, Book book) {
     final api = ref.read(bookApiProvider);
@@ -857,6 +1000,264 @@ class _BookInfoData {
   final List<BookChapter> chapters;
 
   const _BookInfoData({required this.book, required this.chapters});
+}
+
+/// 登录 V2 动态状态协议对话框（对标 Kotlin SourceLoginDialogV2，上游 #402/#488）
+///
+/// [UI-fix v2.0.2 | 2026-08-06] — Qoder
+/// rows 类型：text(需 key)/password/label/select(需 options)/button(需 action)；
+/// action 返回命令键：state(对象→更新状态重渲染) / error(对象→键值错误) /
+/// login(对象→登录成功) / close(布尔→关闭)。
+class _LoginV2Dialog extends StatefulWidget {
+  final BookApi api;
+  final String sourceJson;
+  final String sourceName;
+
+  const _LoginV2Dialog({
+    required this.api,
+    required this.sourceJson,
+    required this.sourceName,
+  });
+
+  @override
+  State<_LoginV2Dialog> createState() => _LoginV2DialogState();
+}
+
+class _LoginV2DialogState extends State<_LoginV2Dialog> {
+  String _stateJson = '{}';
+  List<Map<String, dynamic>> _rows = [];
+  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, String> _selects = {};
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUi();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  /// 拉取动态 UI 描述（首次/收到 state 命令后重渲染）
+  Future<void> _loadUi() async {
+    setState(() => _busy = true);
+    try {
+      final json = await widget.api.loginUiV2(widget.sourceJson, _stateJson);
+      final data = jsonDecode(json);
+      final rows = (data is Map && data['rows'] is List)
+          ? (data['rows'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
+      if (!mounted) return;
+      // 预填默认值（text/password → 控制器；select → 选中项）
+      for (final row in rows) {
+        final key = row['key']?.toString() ?? '';
+        final value = row['value']?.toString() ?? '';
+        final type = row['type']?.toString() ?? '';
+        if (key.isEmpty) continue;
+        if (type == 'select') {
+          final options = (row['options'] is List)
+              ? (row['options'] as List).map((e) => e.toString()).toList()
+              : <String>[];
+          _selects.putIfAbsent(
+            key,
+            () => value.isNotEmpty
+                ? value
+                : (options.isNotEmpty ? options.first : ''),
+          );
+        } else if (type == 'text' || type == 'password') {
+          final ctrl = _controllers.putIfAbsent(key, TextEditingController.new);
+          if (ctrl.text.isEmpty && value.isNotEmpty) ctrl.text = value;
+        }
+      }
+      setState(() {
+        _rows = rows;
+        _busy = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _busy = false;
+      });
+    }
+  }
+
+  /// 收集表单数据（text/password 控制器 + select 选中项）
+  Map<String, dynamic> _formJson() {
+    final form = <String, dynamic>{};
+    for (final e in _controllers.entries) {
+      form[e.key] = e.value.text;
+    }
+    form.addAll(_selects);
+    return form;
+  }
+
+  /// 执行 action 命令（button 行触发），处理返回命令键
+  Future<void> _doAction(String action) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final input = jsonEncode({
+        'action': action,
+        'stateJson': _stateJson,
+        'formJson': _formJson(),
+      });
+      final resJson =
+          await widget.api.loginActionV2(widget.sourceJson, input);
+      final res = jsonDecode(resJson);
+      if (!mounted) return;
+      if (res is! Map) {
+        setState(() => _busy = false);
+        return;
+      }
+      if (res['close'] == true || res['login'] is Map) {
+        Navigator.pop(context, true);
+        return;
+      }
+      if (res['error'] is Map) {
+        final msgs = (res['error'] as Map)
+            .values
+            .map((v) => v.toString())
+            .where((v) => v.isNotEmpty);
+        setState(() {
+          _error = msgs.isEmpty ? '登录失败' : msgs.join('\n');
+          _busy = false;
+        });
+        return;
+      }
+      if (res['state'] is Map) {
+        _stateJson = jsonEncode(res['state']);
+        setState(() => _busy = false);
+        await _loadUi();
+        return;
+      }
+      setState(() => _busy = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _busy = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('登录 - ${widget.sourceName}'),
+      content: SizedBox(
+        width: 360,
+        child: _busy && _rows.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    for (final row in _rows) _buildRow(row),
+                  ],
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+      ],
+    );
+  }
+
+  /// 按 rows 类型渲染单行（对齐 login_ui_v2.rs 协议）
+  Widget _buildRow(Map<String, dynamic> row) {
+    final type = row['type']?.toString() ?? '';
+    final key = row['key']?.toString() ?? '';
+    final name = row['name']?.toString() ?? '';
+    final hint = row['hint']?.toString() ?? name;
+    switch (type) {
+      case 'label':
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Text(
+            name.isNotEmpty ? name : (row['value']?.toString() ?? ''),
+          ),
+        );
+      case 'select':
+        final options = (row['options'] is List)
+            ? (row['options'] as List).map((e) => e.toString()).toList()
+            : <String>[];
+        final current = _selects[key] ?? '';
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: DropdownButton<String>(
+            value: options.contains(current)
+                ? current
+                : (options.isNotEmpty ? options.first : null),
+            isExpanded: true,
+            hint: Text(hint),
+            items: [
+              for (final o in options)
+                DropdownMenuItem<String>(value: o, child: Text(o)),
+            ],
+            onChanged: (v) {
+              if (v != null) setState(() => _selects[key] = v);
+            },
+          ),
+        );
+      case 'button':
+        final action = row['action']?.toString() ?? '';
+        // TODO: button countdown 倒计时暂未实现（后续对齐 — Qoder）
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: OutlinedButton(
+            onPressed:
+                _busy || action.isEmpty ? null : () => _doAction(action),
+            child: Text(name),
+          ),
+        );
+      case 'password':
+      case 'text':
+      default:
+        final ctrl = _controllers.putIfAbsent(key, TextEditingController.new);
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: TextField(
+            controller: ctrl,
+            obscureText: type == 'password',
+            decoration: InputDecoration(
+              labelText: name.isNotEmpty ? name : null,
+              hintText: hint,
+            ),
+          ),
+        );
+    }
+  }
 }
 
 /// 可折叠文字组件

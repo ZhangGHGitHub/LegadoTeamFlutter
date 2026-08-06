@@ -491,6 +491,22 @@ class MockBookApi implements BookApi {
     // Mock 占位：无后台任务，无需取消
   }
 
+  // ========== 书源登录 V2 动态状态协议（上游 #402/#488） — QoderCN ==========
+
+  @override
+  Future<bool> isLoginUiV2(String sourceJson) async => false;
+
+  @override
+  Future<String> loginUiV2(String sourceJson, String stateJson) async =>
+      '{"rows":[]}';
+
+  @override
+  Future<String> loginActionV2(
+    String sourceJson,
+    String userInputJson,
+  ) async =>
+      '{"close":true}';
+
   // ========== 验证码交互通道（Task #90） ==========
 
   @override

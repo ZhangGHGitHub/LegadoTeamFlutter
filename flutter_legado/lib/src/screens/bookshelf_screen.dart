@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -7,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../utils/book_progress_utils.dart';
@@ -640,16 +644,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   void _handleMenuAction(BuildContext context, WidgetRef ref, String action) {
     switch (action) {
       case 'update_all':
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppStrings.checkingUpdate)),
-        );
+        // [UI-fix v2.0.2 | 2026-08-06] 更新目录接通真实 refreshToc FFI（对标原版 updateBook 逐本刷新） — Qoder
+        _updateAllBooks();
       case 'import':
         // 原版添加本地：直接选择本地书籍文件导入
         _addLocalBook(context, ref);
       case 'remote':
         Navigator.pushNamed(context, AppRoutes.remoteBooks);
       case 'add_url':
-        _todo(context, '添加网址');
+        // [UI-fix v2.0.2 | 2026-08-06] 添加网址接通 WebBook 入库链路（对标原版 addBookByUrl） — Qoder
+        _showAddByUrlDialog();
       case 'manage':
         // 进入书架管理页（对标原版 BookshelfManageActivity）
         Navigator.pushNamed(context, AppRoutes.bookshelfManage);
@@ -667,9 +671,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'group_group':
         ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.byGroup);
       case 'export_list':
-        _exportBookshelf(context, ref);
+        // [UI-fix v2.0.2 | 2026-08-06] 导出书单对齐 Kotlin exportBookshelf（JSON 数组文件） — Qoder
+        _exportBookshelf();
       case 'import_list':
-        Navigator.pushNamed(context, AppRoutes.importBooks);
+        // [UI-fix v2.0.2 | 2026-08-06] 导入书单对齐 Kotlin importBookshelf（url/json/文件） — Qoder
+        _showImportBookshelfDialog();
       case 'log':
         // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
         Navigator.pushNamed(context, AppRoutes.appLog);
@@ -685,8 +691,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
   }
 
-  /// 导出书单（对标原版 export_bookshelf）：书名+作者文本分享
-  void _exportBookshelf(BuildContext context, WidgetRef ref) {
+  /// 导出书单（对标 Kotlin BookshelfViewModel.exportBookshelf）：
+  /// [UI-fix v2.0.2 | 2026-08-06] JSON 数组 [{name,author,intro}] 2 空格缩进，
+  /// 输出 bookshelf.json 供分享（原版行为对齐） — Qoder
+  Future<void> _exportBookshelf() async {
     final books = ref.read(bookshelfNotifierProvider).books;
     if (books.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -694,9 +702,359 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       );
       return;
     }
-    final lines = books
-        .map((b) => b.author.isNotEmpty ? '${b.name} - ${b.author}' : b.name)
-        .join('\n');
-    Share.share('Legado 书单导出：\n$lines');
+    final data = books
+        .map((b) => {
+              'name': b.name,
+              'author': b.author,
+              'intro': b.customIntro ?? b.intro ?? '',
+            })
+        .toList();
+    final json = const JsonEncoder.withIndent('  ').convert(data);
+    await Share.shareXFiles([
+      XFile.fromData(
+        utf8.encode(json),
+        name: 'bookshelf.json',
+        mimeType: 'application/json',
+      ),
+    ]);
+  }
+
+  // ===== [UI-fix v2.0.2 | 2026-08-06] 更新目录 / 添加网址 / 导入书单 — Qoder =====
+
+  /// 更新全部书籍目录（对标 Kotlin updateAllBooks：仅刷新允许更新的非本地书）
+  Future<void> _updateAllBooks() async {
+    final api = ref.read(bookApiProvider);
+    final books = ref.read(bookshelfNotifierProvider).books;
+    final targets = books
+        .where((b) =>
+            b.canUpdate &&
+            b.origin != BookType.localTag &&
+            !b.origin.startsWith(BookType.webDavTag))
+        .toList();
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有需要更新的书籍')),
+      );
+      return;
+    }
+    final progress = ValueNotifier<String>('准备中...');
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ValueListenableBuilder<String>(
+        valueListenable: progress,
+        builder: (context, text, _) => AlertDialog(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(text)),
+            ],
+          ),
+        ),
+      ),
+    );
+    var ok = 0;
+    for (var i = 0; i < targets.length; i++) {
+      final book = targets[i];
+      progress.value = '正在更新 ${i + 1}/${targets.length}：${book.name}';
+      try {
+        await api.refreshToc(book.bookUrl, book.origin);
+        ok++;
+      } catch (e) {
+        debugPrint('更新目录失败《${book.name}》: $e');
+      }
+    }
+    if (!mounted) {
+      progress.dispose();
+      return;
+    }
+    Navigator.pop(context); // 关闭进度对话框
+    progress.dispose();
+    ref.read(bookshelfNotifierProvider.notifier).refresh();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('目录更新完成：成功 $ok/${targets.length} 本')),
+    );
+  }
+
+  /// 添加网址对话框（对标 Kotlin showAddBookByUrlAlert，扩展书名字段作裸书兑底）
+  Future<void> _showAddByUrlDialog() async {
+    final urlCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('添加网址'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: urlCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: '输入书籍详情页 URL（多行可加多本）',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  hintText: '书名（可选，无法获取详情时兑底）',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    final urls = urlCtrl.text
+        .split(RegExp(r'[\n,;]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final fallbackName = nameCtrl.text.trim();
+    urlCtrl.dispose();
+    nameCtrl.dispose();
+    if (confirmed != true || urls.isEmpty || !mounted) return;
+    await _addBooksByUrl(urls, fallbackName);
+  }
+
+  /// 按 URL 逐本添加（对标 Kotlin BookshelfViewModel.addBookByUrl：
+  /// bookUrlPattern 正则/域名匹配书源 → webbookInfo 取详情入库）
+  Future<void> _addBooksByUrl(List<String> urls, String fallbackName) async {
+    final api = ref.read(bookApiProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final existingUrls =
+        ref.read(bookshelfNotifierProvider).books.map((b) => b.bookUrl).toSet();
+    List<BookSource> sources;
+    try {
+      sources = await api.getEnabledBookSources();
+    } catch (_) {
+      sources = const [];
+    }
+    var ok = 0;
+    var skip = 0;
+    var fail = 0;
+    for (final url in urls) {
+      if (existingUrls.contains(url)) {
+        skip++;
+        continue;
+      }
+      try {
+        final source = _matchSource(sources, url);
+        Book? book;
+        if (source != null) {
+          final json = await api.webbookInfo(
+            jsonEncode(source.toJson()),
+            url,
+          );
+          book = Book.fromJson(jsonDecode(json) as Map<String, dynamic>);
+        }
+        // 无匹配书源时按输入书名创建裸 WebBook 入库（任务要求；
+        // Kotlin 原版此处报「没有匹配的书源」，Flutter 侧放宽为兑底入库）
+        book ??= Book(
+          bookUrl: url,
+          name: fallbackName.isNotEmpty ? fallbackName : url,
+          originName: '网页书籍',
+        );
+        await api.addBook(book);
+        existingUrls.add(url);
+        ok++;
+      } catch (e) {
+        fail++;
+        debugPrint('添加网址失败 $url: $e');
+      }
+    }
+    if (!mounted) return;
+    ref.read(bookshelfNotifierProvider.notifier).refresh();
+    messenger.showSnackBar(
+      SnackBar(content: Text('添加网址完成：成功 $ok，跳过 $skip，失败 $fail')),
+    );
+  }
+
+  /// URL 匹配书源（对标 Kotlin addBookByUrl：先 bookUrlPattern 正则，
+  /// 后按主域名兑底）
+  BookSource? _matchSource(List<BookSource> sources, String url) {
+    for (final s in sources) {
+      final pattern = s.bookUrlPattern;
+      if (pattern == null || pattern.isEmpty) continue;
+      try {
+        if (RegExp(pattern).hasMatch(url)) return s;
+      } catch (_) {
+        // 非法正则忽略（部分书源 pattern 非标准正则）
+      }
+    }
+    final uri = Uri.tryParse(url);
+    if (uri != null && uri.host.isNotEmpty) {
+      for (final s in sources) {
+        final sUri = Uri.tryParse(s.bookSourceUrl);
+        if (sUri != null && sUri.host == uri.host) return s;
+      }
+    }
+    return null;
+  }
+
+  /// 导入书单对话框（对标 Kotlin importBookshelfAlert：
+  /// url/json 输入框 + 选择 txt/json 文件）
+  Future<void> _showImportBookshelfDialog() async {
+    final ctrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('导入书单'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: ctrl,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                hintText: '输入书单 URL 或 JSON 数组',
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () async {
+                  final picked = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: const ['txt', 'json'],
+                  );
+                  final path =
+                      picked == null || picked.files.isEmpty
+                          ? null
+                          : picked.files.first.path;
+                  if (path != null) {
+                    try {
+                      ctrl.text = await File(path).readAsString();
+                    } catch (e) {
+                      debugPrint('读取书单文件失败: $e');
+                    }
+                  }
+                },
+                child: const Text('选择文件（txt/json）'),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('导入'),
+          ),
+        ],
+      ),
+    );
+    final input = ctrl.text.trim();
+    ctrl.dispose();
+    if (confirmed != true || input.isEmpty || !mounted) return;
+    await _importBookshelf(input);
+  }
+
+  /// 导入书单（对标 Kotlin importBookshelf：url → httpGet 拉取，
+  /// JSON 数组 → 逐本搜索入库；已在架跳过）
+  Future<void> _importBookshelf(String input) async {
+    final api = ref.read(bookApiProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    var content = input;
+    if (content.startsWith('http://') || content.startsWith('https://')) {
+      try {
+        content = (await api.httpGet(content)).trim();
+      } catch (e) {
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(content: Text('拉取书单失败: $e')),
+          );
+        }
+        return;
+      }
+    }
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(content);
+    } catch (_) {
+      decoded = null;
+    }
+    if (decoded is! List) {
+      if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('书单格式不对（应为 URL 或 JSON 数组）')),
+        );
+      }
+      return;
+    }
+    final shelf = ref.read(bookshelfNotifierProvider).books;
+    final existing = shelf.map((b) => '${b.name}|${b.author}').toSet();
+    List<String> enabledUrls;
+    try {
+      enabledUrls = (await api.getEnabledBookSources())
+          .map((s) => s.bookSourceUrl)
+          .toList();
+    } catch (_) {
+      enabledUrls = const [];
+    }
+    var ok = 0;
+    var skip = 0;
+    var fail = 0;
+    for (final item in decoded) {
+      if (item is! Map) continue;
+      final name = (item['name'] ?? '').toString().trim();
+      final author = (item['author'] ?? '').toString().trim();
+      if (name.isEmpty) continue;
+      if (existing.contains('$name|$author')) {
+        skip++;
+        continue;
+      }
+      try {
+        // 对标 Kotlin WebBook.preciseSearch：在启用书源中搜同名书取最优匹配
+        final results = await api.searchBooks(
+          name,
+          sourceUrls: enabledUrls.isEmpty ? null : enabledUrls,
+        );
+        Book? best;
+        for (final r in results) {
+          if (r.book.name != name) continue;
+          if (author.isEmpty || r.book.author == author) {
+            best = r.book;
+            break;
+          }
+          best ??= r.book;
+        }
+        if (best == null) {
+          fail++;
+          continue;
+        }
+        await api.addBook(best);
+        existing.add('$name|$author');
+        ok++;
+      } catch (e) {
+        fail++;
+        debugPrint('导入书单条目失败《$name》: $e');
+      }
+    }
+    if (!mounted) return;
+    ref.read(bookshelfNotifierProvider.notifier).refresh();
+    messenger.showSnackBar(
+      SnackBar(content: Text('书单导入完成：成功 $ok，跳过 $skip，失败 $fail')),
+    );
   }
 }

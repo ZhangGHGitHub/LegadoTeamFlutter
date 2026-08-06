@@ -2,31 +2,40 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
+import '../providers/providers.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 
 /// RSS 文章详情页面
 ///
 /// 使用 WebView 渲染文章 HTML 内容（支持 JS 执行）。
 /// 当 WebView 不可用时（如桌面端），降级为纯文本渲染。
-class RssArticleDetailScreen extends StatefulWidget {
+class RssArticleDetailScreen extends ConsumerStatefulWidget {
   final RssFeedArticle article;
   final String sourceName;
+
+  /// 订阅源 URL（收藏记录 origin；新增入参保持向后兼容，默认空）
+  final String sourceUrl;
 
   const RssArticleDetailScreen({
     super.key,
     required this.article,
     this.sourceName = '',
+    this.sourceUrl = '',
   });
 
   @override
-  State<RssArticleDetailScreen> createState() => _RssArticleDetailScreenState();
+  ConsumerState<RssArticleDetailScreen> createState() =>
+      _RssArticleDetailScreenState();
 }
 
-class _RssArticleDetailScreenState extends State<RssArticleDetailScreen> {
+class _RssArticleDetailScreenState
+    extends ConsumerState<RssArticleDetailScreen> {
   /// WebView 控制器（仅在支持 WebView 的平台初始化）
   WebViewController? _webViewController;
 
@@ -38,6 +47,11 @@ class _RssArticleDetailScreenState extends State<RssArticleDetailScreen> {
 
   /// 当前是否使用 WebView 模式（可切换为纯文本）
   bool _useWebView = true;
+
+  // [UI-fix v2.0.2 | 2026-08-06] 详情收藏（对标原版 RssFavoritesDialog：
+  // 接通 addRssStar/deleteRssStar/isStarred FFI） — Qoder
+  bool _isStarred = false;
+  bool _starBusy = false;
 
   /// 判断当前平台是否支持 WebView
   ///
@@ -70,6 +84,58 @@ class _RssArticleDetailScreenState extends State<RssArticleDetailScreen> {
       _initWebView();
     } else {
       _isWebLoading = false;
+    }
+    _loadStarState();
+  }
+
+  /// 加载收藏状态（isStarred FFI，失败静默保持未收藏）
+  Future<void> _loadStarState() async {
+    try {
+      final starred = await ref
+          .read(bookApiProvider)
+          .isStarred(widget.article.url);
+      if (mounted) setState(() => _isStarred = starred);
+    } catch (_) {}
+  }
+
+  /// 收藏/取消收藏（对标原版 RssFavoritesDialog.favoriteArticle）
+  Future<void> _toggleStar() async {
+    if (_starBusy) return;
+    setState(() => _starBusy = true);
+    final api = ref.read(bookApiProvider);
+    try {
+      if (_isStarred) {
+        await api.deleteRssStar(widget.article.url);
+      } else {
+        final article = widget.article;
+        await api.addRssStar(
+          RssStar(
+            origin: widget.sourceUrl,
+            sort: '',
+            title: article.title,
+            starTime: DateTime.now().millisecondsSinceEpoch,
+            link: article.url,
+            pubDate: article.pubDate,
+            description: article.description,
+            content: article.content,
+            image: article.imageUrl,
+            group: widget.sourceName.isEmpty ? '默认分组' : widget.sourceName,
+          ),
+        );
+      }
+      if (!mounted) return;
+      setState(() => _isStarred = !_isStarred);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_isStarred ? '已收藏' : '已取消收藏')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('收藏操作失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _starBusy = false);
     }
   }
 
@@ -242,6 +308,12 @@ $htmlContent
       appBar: AppBar(
         title: const Text('文章详情'),
         actions: [
+          // [UI-fix v2.0.2 | 2026-08-06] 收藏入口（对标原版 menu_rss_star）— Qoder
+          IconButton(
+            icon: Icon(_isStarred ? Icons.star : Icons.star_border),
+            tooltip: _isStarred ? '取消收藏' : '收藏',
+            onPressed: _starBusy ? null : _toggleStar,
+          ),
           // 切换渲染模式按钮（仅在支持 WebView 且有内容时显示）
           if (_isWebViewSupported && html != null)
             IconButton(
