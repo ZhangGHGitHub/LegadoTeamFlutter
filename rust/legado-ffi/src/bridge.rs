@@ -574,6 +574,17 @@ pub unsafe extern "C" fn ffi_rss_add_source(source_json: *const c_char) -> *mut 
     }))
 }
 
+/// 原子更新 RSS 源（按 sourceUrl 主键单条 UPDATE）
+///
+/// 缺口④ rssUpdateSource 原子更新（Task #108，加法式）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_update_source(source_json: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let json = c_char_to_str(source_json)?;
+        crate::api::rss::update_rss_source(json)
+    }))
+}
+
 /// 删除 RSS 源
 #[no_mangle]
 pub unsafe extern "C" fn ffi_rss_delete_source(source_url: *const c_char) -> *mut c_char {

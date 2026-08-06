@@ -1,12 +1,14 @@
 //! RSS 源管理 API
 //!
 //! 提供 RSS 源的增删查与文章获取能力。
-//! 由于尚无 RssSourceRepository，直接通过 SQL 操作实现。
+//! 早期无 RssSourceRepository 时直接通过 SQL 操作实现（既有函数保留）；
+//! 新增函数（如 `update_rss_source`）改走 `legado_db::RssSourceRepository`。
 
 use serde::{Deserialize, Serialize};
 
 use legado_core::models::RssSource;
 use legado_core::{LegadoError, LegadoResult};
+use legado_db::RssSourceRepository;
 
 use crate::db_state::with_database;
 use crate::runtime;
@@ -95,6 +97,33 @@ pub fn delete_rss_source(source_url: &str) -> LegadoResult<()> {
         )
         .map_err(|e| LegadoError::Database(format!("删除 RSS 源失败: {e}")))?;
         Ok(())
+    })
+}
+
+/// 原子更新 RSS 源（按 sourceUrl 主键单条 UPDATE）
+///
+/// 缺口④ rssUpdateSource 原子更新（审计 2026-08-06，加法式）：
+/// 替代 Flutter 侧「删旧+加新」workaround，对既有行原地更新全字段，
+/// 不删除行、不触发外键级联，规避关联表串表风险。
+/// 源不存在时返回错误（不静默插入）。
+pub fn update_rss_source(source_json: &str) -> LegadoResult<RssSource> {
+    let source: RssSource = serde_json::from_str(source_json)
+        .map_err(|e| LegadoError::Ffi(format!("RssSource JSON 解析失败: {e}")))?;
+    if source.source_url.trim().is_empty() {
+        return Err(LegadoError::Ffi("RssSource sourceUrl 不能为空".into()));
+    }
+    with_database(|db| {
+        let repo = RssSourceRepository::new(db.connection());
+        let updated = repo
+            .update_fields(&source)
+            .map_err(|e| LegadoError::Database(format!("原子更新 RSS 源失败: {e}")))?;
+        if !updated {
+            return Err(LegadoError::Database(format!(
+                "RSS 源不存在: {}",
+                source.source_url
+            )));
+        }
+        Ok(source)
     })
 }
 

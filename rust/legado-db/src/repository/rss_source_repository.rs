@@ -1,25 +1,26 @@
 //! RssSource Repository - rssSources 表 CRUD
 
-use std::sync::{Arc, Mutex};
-
 use rusqlite::{params, Connection};
 
 use legado_core::models::RssSource;
 
 /// RSS 源数据访问层
-pub struct RssSourceRepository {
-    conn: Arc<Mutex<Connection>>,
+///
+/// 构造参数为借用连接（与 BookGroupRepository 等新式仓储一致），
+/// 适配 FFI 层 r2d2 连接池的 per-call `Database` 包装。
+pub struct RssSourceRepository<'a> {
+    conn: &'a Connection,
 }
 
-impl RssSourceRepository {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
+impl<'a> RssSourceRepository<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
         Self { conn }
     }
 
     /// 查询所有 RSS 源
     pub fn find_all(&self) -> Result<Vec<RssSource>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("锁获取失败: {e}"))?;
-        let mut stmt = conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT sourceUrl, sourceName, sourceIcon, sourceGroup, sourceComment,
                         enabled, sortUrl, customOrder, lastUpdateTime, header,
@@ -42,8 +43,8 @@ impl RssSourceRepository {
 
     /// 根据 URL 查询 RSS 源
     pub fn find_by_url(&self, source_url: &str) -> Result<Option<RssSource>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("锁获取失败: {e}"))?;
-        let mut stmt = conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT sourceUrl, sourceName, sourceIcon, sourceGroup, sourceComment,
                         enabled, sortUrl, customOrder, lastUpdateTime, header,
@@ -69,8 +70,8 @@ impl RssSourceRepository {
 
     /// 查询所有启用的 RSS 源
     pub fn find_enabled(&self) -> Result<Vec<RssSource>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("锁获取失败: {e}"))?;
-        let mut stmt = conn
+        let mut stmt = self
+            .conn
             .prepare(
                 "SELECT sourceUrl, sourceName, sourceIcon, sourceGroup, sourceComment,
                         enabled, sortUrl, customOrder, lastUpdateTime, header,
@@ -93,8 +94,8 @@ impl RssSourceRepository {
 
     /// 插入 RSS 源（主键冲突时替换）
     pub fn insert(&self, source: &RssSource) -> Result<i64, String> {
-        let conn = self.conn.lock().map_err(|e| format!("锁获取失败: {e}"))?;
-        conn.execute(
+        self.conn
+            .execute(
             "INSERT OR REPLACE INTO rssSources
              (sourceUrl, sourceName, sourceIcon, sourceGroup, sourceComment,
               enabled, sortUrl, customOrder, lastUpdateTime, header,
@@ -139,7 +140,7 @@ impl RssSourceRepository {
             ],
         )
         .map_err(|e| format!("插入失败: {e}"))?;
-        Ok(conn.last_insert_rowid())
+        Ok(self.conn.last_insert_rowid())
     }
 
     /// 更新 RSS 源（等同于 upsert）
@@ -149,10 +150,87 @@ impl RssSourceRepository {
         Ok(exists)
     }
 
+    /// 原子更新 RSS 源（单条 UPDATE 语句，按 sourceUrl 主键）
+    ///
+    /// 缺口④ rssUpdateSource 原子更新（审计 2026-08-06，加法式）：
+    /// 区别于 `update`（INSERT OR REPLACE = 删后重插，可能触发外键级联），
+    /// 本方法对既有行原地更新全字段，行不被删除，规避关联表
+    /// （rssArticles/rssStars 等按 origin 关联）串表风险。
+    /// 目标行不存在时返回 Ok(false)，不静默插入。
+    pub fn update_fields(&self, source: &RssSource) -> Result<bool, String> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE rssSources SET
+                    sourceName = ?2, sourceIcon = ?3, sourceGroup = ?4, sourceComment = ?5,
+                    enabled = ?6, sortUrl = ?7, customOrder = ?8, lastUpdateTime = ?9,
+                    header = ?10, enableJs = ?11, loadWithBaseUrl = ?12, variableComment = ?13,
+                    loginUrl = ?14, loginUi = ?15, loginCheckJs = ?16, coverDecodeJs = ?17,
+                    concurrentRate = ?18, ruleArticles = ?19, ruleNextPage = ?20, ruleTitle = ?21,
+                    rulePubDate = ?22, ruleDescription = ?23, ruleImage = ?24, ruleLink = ?25,
+                    ruleContent = ?26, style = ?27, enableCookieJar = ?28, articleStyle = ?29,
+                    singleUrl = ?30, jsLib = ?31, enabledCookieJar = ?32,
+                    contentWhitelist = ?33, contentBlacklist = ?34,
+                    shouldOverrideUrlLoading = ?35, injectJs = ?36, preloadJs = ?37,
+                    startHtml = ?38, startStyle = ?39, startJs = ?40, showWebLog = ?41,
+                    type = ?42, preload = ?43, cacheFirst = ?44, searchUrl = ?45
+                 WHERE sourceUrl = ?1",
+                params![
+                    source.source_url,
+                    source.source_name,
+                    source.source_icon,
+                    source.source_group,
+                    source.source_comment,
+                    source.enabled,
+                    source.sort_url,
+                    source.custom_order,
+                    source.last_update_time,
+                    source.header,
+                    source.enable_js,
+                    source.load_with_base_url,
+                    source.variable_comment,
+                    source.login_url,
+                    source.login_ui,
+                    source.login_check_js,
+                    source.cover_decode_js,
+                    source.concurrent_rate,
+                    source.rule_articles,
+                    source.rule_next_page,
+                    source.rule_title,
+                    source.rule_pub_date,
+                    source.rule_description,
+                    source.rule_image,
+                    source.rule_link,
+                    source.rule_content,
+                    source.style,
+                    source.enabled_cookie_jar,
+                    source.article_style,
+                    source.single_url,
+                    source.js_lib,
+                    source.enabled_cookie_jar,
+                    source.content_whitelist,
+                    source.content_blacklist,
+                    source.should_override_url_loading,
+                    source.inject_js,
+                    source.preload_js,
+                    source.start_html,
+                    source.start_style,
+                    source.start_js,
+                    source.show_web_log,
+                    source.rss_type,
+                    source.preload,
+                    source.cache_first,
+                    source.search_url,
+                ],
+            )
+            .map_err(|e| format!("原子更新失败: {e}"))?;
+        Ok(affected > 0)
+    }
+
     /// 根据 URL 删除 RSS 源
     pub fn delete(&self, source_url: &str) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| format!("锁获取失败: {e}"))?;
-        let affected = conn
+        let affected = self
+            .conn
             .execute(
                 "DELETE FROM rssSources WHERE sourceUrl = ?1",
                 params![source_url],
@@ -163,8 +241,8 @@ impl RssSourceRepository {
 
     /// 设置 RSS 源启用/禁用状态
     pub fn set_enabled(&self, source_url: &str, enabled: bool) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| format!("锁获取失败: {e}"))?;
-        let affected = conn
+        let affected = self
+            .conn
             .execute(
                 "UPDATE rssSources SET enabled = ?2 WHERE sourceUrl = ?1",
                 params![source_url, enabled],
@@ -175,8 +253,8 @@ impl RssSourceRepository {
 
     /// 获取 RSS 源总数
     pub fn count(&self) -> Result<i64, String> {
-        let conn = self.conn.lock().map_err(|e| format!("锁获取失败: {e}"))?;
-        let count: i64 = conn
+        let count: i64 = self
+            .conn
             .query_row("SELECT COUNT(*) FROM rssSources", [], |row| row.get(0))
             .map_err(|e| format!("计数查询失败: {e}"))?;
         Ok(count)
@@ -224,11 +302,11 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
 mod tests {
     use super::*;
 
-    fn make_repo() -> RssSourceRepository {
+    /// 构造内存库连接（测试用）
+    fn setup_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         crate::schema::init_schema(&conn).unwrap();
-        let conn = Arc::new(Mutex::new(conn));
-        RssSourceRepository::new(conn)
+        conn
     }
 
     fn make_source(url: &str, name: &str) -> RssSource {
@@ -241,7 +319,8 @@ mod tests {
 
     #[test]
     fn test_insert_and_find_by_url() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         let src = make_source("https://rss.example.com", "测试RSS");
         repo.insert(&src).unwrap();
         let found = repo.find_by_url("https://rss.example.com").unwrap();
@@ -251,14 +330,16 @@ mod tests {
 
     #[test]
     fn test_find_by_url_not_found() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         let found = repo.find_by_url("https://nonexist.com").unwrap();
         assert!(found.is_none());
     }
 
     #[test]
     fn test_find_all() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         repo.insert(&make_source("u1", "s1")).unwrap();
         repo.insert(&make_source("u2", "s2")).unwrap();
         let all = repo.find_all().unwrap();
@@ -267,7 +348,8 @@ mod tests {
 
     #[test]
     fn test_find_enabled() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         let mut s1 = make_source("u1", "enabled");
         s1.enabled = true;
         let mut s2 = make_source("u2", "disabled");
@@ -281,7 +363,8 @@ mod tests {
 
     #[test]
     fn test_update() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         let mut src = make_source("u1", "original");
         repo.insert(&src).unwrap();
         src.source_name = "updated".to_string();
@@ -293,8 +376,48 @@ mod tests {
     }
 
     #[test]
+    fn test_update_fields_atomic() {
+        // 缺口④：单条 UPDATE 原子更新既有源字段并持久化
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
+        let mut src = make_source("u_atomic", "原名");
+        src.source_group = Some("旧分组".to_string());
+        src.rule_content = Some("旧规则".to_string());
+        repo.insert(&src).unwrap();
+
+        src.source_name = "新名".to_string();
+        src.source_group = Some("新分组".to_string());
+        src.rule_content = Some("新规则".to_string());
+        src.enabled = false;
+        src.article_style = 3;
+        let existed = repo.update_fields(&src).unwrap();
+        assert!(existed);
+
+        let found = repo.find_by_url("u_atomic").unwrap().unwrap();
+        assert_eq!(found.source_name, "新名");
+        assert_eq!(found.source_group, Some("新分组".to_string()));
+        assert_eq!(found.rule_content, Some("新规则".to_string()));
+        assert!(!found.enabled);
+        assert_eq!(found.article_style, 3);
+        // 行数不变（原地更新，无删后重插）
+        assert_eq!(repo.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_update_fields_not_found_returns_false() {
+        // 目标源不存在 → Ok(false)，不静默插入
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
+        let src = make_source("u_missing", "不存在");
+        let existed = repo.update_fields(&src).unwrap();
+        assert!(!existed);
+        assert_eq!(repo.count().unwrap(), 0);
+    }
+
+    #[test]
     fn test_delete() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         repo.insert(&make_source("u1", "s1")).unwrap();
         let deleted = repo.delete("u1").unwrap();
         assert!(deleted);
@@ -305,7 +428,8 @@ mod tests {
 
     #[test]
     fn test_set_enabled() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         let mut src = make_source("u1", "s1");
         src.enabled = true;
         repo.insert(&src).unwrap();
@@ -319,7 +443,8 @@ mod tests {
 
     #[test]
     fn test_count() {
-        let repo = make_repo();
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
         assert_eq!(repo.count().unwrap(), 0);
         repo.insert(&make_source("u1", "s1")).unwrap();
         repo.insert(&make_source("u2", "s2")).unwrap();

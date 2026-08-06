@@ -602,37 +602,44 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &body, &chapter.url, 200)?;
 
-        // 2. 使用正文规则解析
+        // 2. 使用正文规则解析首页
         let content_rule = source.rule_content.as_ref();
         let content_rule_str = content_rule
             .and_then(|r| r.content.as_deref())
             .unwrap_or("");
+        let next_url_rule = content_rule
+            .and_then(|r| r.next_content_url.as_deref())
+            .unwrap_or("");
 
-        let analyzer = crate::js_executor::construct_analyzer(
-            body,
-            chapter.url.clone(),
-            &source.book_source_url,
-        );
-
-        let raw_content = if content_rule_str.is_empty() {
-            analyzer.content().to_string()
-        } else {
-            analyzer.get_string(content_rule_str).unwrap_or_default()
-        };
-
-        // 3. 正文净化管线（对标 Kotlin BookContent.analyzeContent）
         // 音频/视频书源获取的是链接，不需要 HTML 格式化
         let is_media = source.book_source_type == legado_core::models::book_source::book_source_type::AUDIO
             || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
 
-        let content = if is_media {
-            raw_content
-        } else {
-            // 3.1 HtmlFormatter.formatKeepImg（保留 img 标签 + URL 绝对化）
-            let cleaned = legado_core::html_formatter::format_keep_img(&raw_content, &chapter.url);
-            // 3.2 unescapeHtml4（实体反转义）
-            legado_core::html_formatter::unescape_html4(&cleaned)
-        };
+        let (first_content, next_urls) = parse_content_page(
+            body,
+            content_rule_str,
+            next_url_rule,
+            &chapter.url,
+            &source.book_source_url,
+            is_media,
+        );
+
+        // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
+        let source_headers_clone = source_headers.clone();
+        let content = fetch_paginated_content(
+            first_content,
+            next_urls,
+            &chapter.url,
+            &source.book_source_url,
+            content_rule_str,
+            next_url_rule,
+            is_media,
+            |url: String| {
+                let headers = source_headers_clone.clone();
+                async move { self.fetch_simple(&url, headers.as_ref()).await }
+            },
+        )
+        .await;
 
         // 4. 空内容检查（卷章豁免）
         if !chapter.is_volume && content.trim().is_empty() {
@@ -649,6 +656,161 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 /// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
 pub fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
     WebBookEngine::new(RealBookSourceFetcher::new())
+}
+
+/// 缺口① nextContentUrl 分页最大页数保护（审计 2026-08-06，加法式）
+///
+/// Kotlin 原版无显式上限（依赖 nextUrl 重复/空终止），
+/// Rust 轨加法式加固以防恶意/异常规则导致死循环。
+const MAX_CONTENT_PAGES: usize = 99;
+
+/// 解析单页正文，返回（净化后正文，下一页 URL 列表）
+///
+/// 缺口① nextContentUrl 分页（审计 2026-08-06，加法式）：
+/// 对标 Kotlin `BookContent.analyzeContent`（私有重载）单页处理：
+/// - 正文规则提取 + HtmlFormatter 净化管线（音视频源跳过格式化）
+/// - next_url_rule 非空时解析下一页 URL 列表（对标 Kotlin
+///   `analyzeRule.getStringList(nextUrlRule, isUrl = true)`），并基于本页 URL 绝对化
+fn parse_content_page(
+    body: String,
+    content_rule_str: &str,
+    next_url_rule: &str,
+    page_url: &str,
+    source_url: &str,
+    is_media: bool,
+) -> (String, Vec<String>) {
+    let analyzer = crate::js_executor::construct_analyzer(
+        body,
+        page_url.to_string(),
+        source_url,
+    );
+
+    let raw_content = if content_rule_str.is_empty() {
+        analyzer.content().to_string()
+    } else {
+        analyzer.get_string(content_rule_str).unwrap_or_default()
+    };
+
+    // 正文净化管线（对标 Kotlin BookContent.analyzeContent）
+    let content = if is_media {
+        raw_content
+    } else {
+        // HtmlFormatter.formatKeepImg（保留 img 标签 + 按本页 URL 绝对化）
+        let cleaned = legado_core::html_formatter::format_keep_img(&raw_content, page_url);
+        // unescapeHtml4（实体反转义）
+        legado_core::html_formatter::unescape_html4(&cleaned)
+    };
+
+    // 解析下一页 URL 规则
+    let next_urls = if next_url_rule.is_empty() {
+        Vec::new()
+    } else {
+        analyzer
+            .get_strings(next_url_rule)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|u| u.trim().to_string())
+            .filter(|u| !u.is_empty())
+            .map(|u| AnalyzeUrl::get_absolute_url(page_url, &u))
+            .collect()
+    };
+
+    (content, next_urls)
+}
+
+/// nextContentUrl 分页循环（抓取后续页并按页拼接）
+///
+/// 缺口① nextContentUrl 分页（审计 2026-08-06，加法式），对标 Kotlin
+/// `BookContent.analyzeContent` 分页循环：
+/// - 单个下一页 URL：串行循环直到为空/重复（对标 `while (nextUrl.isNotEmpty()
+///   && !nextUrlList.contains(nextUrl))`）
+/// - 多个下一页 URL：逐页抓取且不再继续分页（对标原版并发分支
+///   `getNextPageUrl = false`，此处降级串行）
+/// - 防死循环保护：已访问 URL 去重（含首章 URL）+ 最大页数上限
+///
+/// `fetch_page` 可注入，便于单测以脚本化响应验证多页拼接（不走真实网络）。
+async fn fetch_paginated_content<F, Fut>(
+    first_content: String,
+    next_urls: Vec<String>,
+    chapter_url: &str,
+    source_url: &str,
+    content_rule_str: &str,
+    next_url_rule: &str,
+    is_media: bool,
+    mut fetch_page: F,
+) -> String
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = LegadoResult<String>>,
+{
+    let mut content_list = vec![first_content];
+
+    if !next_url_rule.is_empty() && !next_urls.is_empty() {
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(chapter_url.to_string());
+
+        if next_urls.len() > 1 {
+            // 对标 Kotlin `contentData.second.size > 1` 分支：仅解析正文，不递归分页
+            for raw_url in next_urls {
+                if content_list.len() >= MAX_CONTENT_PAGES {
+                    break;
+                }
+                if !visited.insert(raw_url.clone()) {
+                    continue;
+                }
+                match fetch_page(raw_url.clone()).await {
+                    Ok(next_body) => {
+                        let (page_content, _) = parse_content_page(
+                            next_body,
+                            content_rule_str,
+                            "", // getNextPageUrl = false
+                            &raw_url,
+                            source_url,
+                            is_media,
+                        );
+                        content_list.push(page_content);
+                    }
+                    Err(e) => {
+                        eprintln!("[web_book] 分页正文抓取失败 {raw_url}: {e}");
+                    }
+                }
+            }
+        } else {
+            let mut next_url = next_urls.into_iter().next().unwrap_or_default();
+            while !next_url.is_empty()
+                && visited.insert(next_url.clone())
+                && content_list.len() < MAX_CONTENT_PAGES
+            {
+                let next_body = match fetch_page(next_url.clone()).await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!("[web_book] 分页正文抓取失败 {next_url}: {e}");
+                        break;
+                    }
+                };
+                let (page_content, following) = parse_content_page(
+                    next_body,
+                    content_rule_str,
+                    next_url_rule,
+                    &next_url,
+                    source_url,
+                    is_media,
+                );
+                content_list.push(page_content);
+                // 仅在获得单个下一页时继续串行（对标 Kotlin size==1 分支）；
+                // 命中下一章 URL 的截断判定因无状态签名不可得 nextChapterUrl，
+                // 由 URL 去重与页数上限兜底
+                next_url = if following.len() == 1 {
+                    following.into_iter().next().unwrap_or_default()
+                } else {
+                    String::new()
+                };
+            }
+        }
+    }
+
+    // 按页拼接（对标 Kotlin `contentList.joinToString("\n")`）
+    content_list.join("\n")
 }
 
 // ─── 规则路径增强辅助函数（B1-B3） ─────────────────────────────
@@ -1238,5 +1400,243 @@ mod tests {
         );
         // tocUrl 规则为空时回退 book_url
         assert_eq!(info.toc_url, "https://example.com/book/1");
+    }
+
+    // ─── 缺口① nextContentUrl 分页测试（审计 2026-08-06） ─────────────
+
+    const PAGE1_HTML: &str = "<html><body>\
+<div class='content'><p>第一页正文</p></div>\
+<a class='next' href='/chap/1_2.html'>下一页</a>\
+</body></html>";
+
+    const PAGE2_HTML: &str = "<html><body>\
+<div class='content'><p>第二页正文</p></div>\
+<a class='next' href='/chap/1_3.html'>下一页</a>\
+</body></html>";
+
+    /// 第三页 next 指回第一页（构造循环，验证去重终止）
+    const PAGE3_HTML: &str = "<html><body>\
+<div class='content'><p>第三页正文</p></div>\
+<a class='next' href='/chap/1.html'>下一页</a>\
+</body></html>";
+
+    /// 首页返回两个下一页 URL（验证多页分支且不递归）
+    const PAGE_MULTI_HTML: &str = "<html><body>\
+<div class='content'><p>多页首屏正文</p></div>\
+<a class='next' href='/chap/2_a.html'>下一页</a>\
+<a class='alt' href='/chap/2_b.html'>下一页</a>\
+</body></html>";
+
+    #[test]
+    fn test_parse_content_page_single_next_url() {
+        let (content, next_urls) = parse_content_page(
+            PAGE1_HTML.to_string(),
+            ".content@html",
+            ".next@href",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            false,
+        );
+        assert!(content.contains("第一页正文"));
+        // 相对 URL 基于本页 URL 绝对化
+        assert_eq!(
+            next_urls,
+            vec!["https://example.com/chap/1_2.html".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_parse_content_page_empty_next_rule() {
+        let (_, next_urls) = parse_content_page(
+            PAGE1_HTML.to_string(),
+            ".content@html",
+            "",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            false,
+        );
+        assert!(next_urls.is_empty());
+    }
+
+    #[test]
+    fn test_parse_content_page_media_skips_formatting() {
+        // 音视频源：正文原样返回，不走 HTML 净化
+        let raw = "https://media.example.com/audio/1.mp3";
+        let (content, _) = parse_content_page(
+            raw.to_string(),
+            "",
+            "",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            true,
+        );
+        assert_eq!(content, raw);
+    }
+
+    /// 脚本化响应的抓取闭包（离线模拟多页，不走真实网络）
+    fn scripted_fetch(
+        pages: std::collections::HashMap<String, String>,
+    ) -> impl FnMut(
+        String,
+    )
+        -> std::pin::Pin<Box<dyn std::future::Future<Output = LegadoResult<String>> + Send>>
+    {
+        move |url: String| {
+            let body = pages.get(&url).cloned();
+            Box::pin(async move {
+                body.ok_or_else(|| LegadoError::Network(format!("404 for {url}")))
+            })
+        }
+    }
+
+    fn pagination_pages() -> std::collections::HashMap<String, String> {
+        let mut pages = std::collections::HashMap::new();
+        pages.insert(
+            "https://example.com/chap/1_2.html".to_string(),
+            PAGE2_HTML.to_string(),
+        );
+        pages.insert(
+            "https://example.com/chap/1_3.html".to_string(),
+            PAGE3_HTML.to_string(),
+        );
+        pages
+    }
+
+    #[test]
+    fn test_next_content_url_pagination_concatenates_pages() {
+        // 首页解析出下一页 → 串行拓三页（第三页 next 指回首页，去重终止）
+        let (first_content, next_urls) = parse_content_page(
+            PAGE1_HTML.to_string(),
+            ".content@html",
+            ".next@href",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            false,
+        );
+        let result = runtime::block_on(fetch_paginated_content(
+            first_content,
+            next_urls,
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            ".content@html",
+            ".next@href",
+            false,
+            scripted_fetch(pagination_pages()),
+        ));
+        // 多页拼接（顺序 + \n 连接）
+        let parts: Vec<&str> = result.split('\n').collect();
+        assert_eq!(parts.len(), 3);
+        assert!(parts[0].contains("第一页正文"));
+        assert!(parts[1].contains("第二页正文"));
+        assert!(parts[2].contains("第三页正文"));
+        // 循环终止：首页正文仅出现一次（next 指回自身被去重拦截）
+        assert_eq!(result.matches("第一页正文").count(), 1);
+    }
+
+    #[test]
+    fn test_pagination_empty_next_rule_stops_at_first_page() {
+        let (first_content, next_urls) = parse_content_page(
+            PAGE1_HTML.to_string(),
+            ".content@html",
+            "", // 无 nextContentUrl 规则 → 单页行为不变
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            false,
+        );
+        let result = runtime::block_on(fetch_paginated_content(
+            first_content,
+            next_urls,
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            ".content@html",
+            "",
+            false,
+            scripted_fetch(pagination_pages()),
+        ));
+        assert!(result.contains("第一页正文"));
+        assert!(!result.contains("第二页正文"));
+    }
+
+    #[test]
+    fn test_pagination_multi_next_urls_fetch_each_without_recursion() {
+        // 首页解析出两个下一页 URL → 各抓一页且不递归（对标原版并发分支 getNextPageUrl=false）
+        let mut pages = std::collections::HashMap::new();
+        pages.insert(
+            "https://example.com/chap/2_a.html".to_string(),
+            "<html><body><div class='content'><p>分卷A正文</p></div><a class='next' href='/chap/2_c.html'>下一页</a></body></html>"
+                .to_string(),
+        );
+        pages.insert(
+            "https://example.com/chap/2_b.html".to_string(),
+            "<html><body><div class='content'><p>分卷B正文</p></div></body></html>"
+                .to_string(),
+        );
+        // 若递归则需抓 2_c.html，此处故意不提供（验证不递归）
+
+        let (first_content, next_urls) = parse_content_page(
+            PAGE_MULTI_HTML.to_string(),
+            ".content@html",
+            ".next@href&&.alt@href",
+            "https://example.com/chap/2.html",
+            "https://example.com",
+            false,
+        );
+        assert_eq!(next_urls.len(), 2);
+
+        let result = runtime::block_on(fetch_paginated_content(
+            first_content,
+            next_urls,
+            "https://example.com/chap/2.html",
+            "https://example.com",
+            ".content@html",
+            ".next@href&&.alt@href",
+            false,
+            scripted_fetch(pages),
+        ));
+        let parts: Vec<&str> = result.split('\n').collect();
+        assert_eq!(parts.len(), 3);
+        assert!(parts[0].contains("多页首屏正文"));
+        assert!(parts[1].contains("分卷A正文"));
+        assert!(parts[2].contains("分卷B正文"));
+    }
+
+    #[test]
+    fn test_pagination_max_pages_guard() {
+        // 每页 next 都指向新的唯一 URL，验证页数上限保护终止（不死循环）
+        let mut pages = std::collections::HashMap::new();
+        for i in 1..=(MAX_CONTENT_PAGES + 5) {
+            pages.insert(
+                format!("https://example.com/p/{i}.html"),
+                format!(
+                    "<html><body><div class='content'><p>P{i}</p></div><a class='next' href='/p/{}.html'>next</a></body></html>",
+                    i + 1
+                ),
+            );
+        }
+        let (first_content, next_urls) = parse_content_page(
+            "<html><body><div class='content'><p>P0</p></div><a class='next' href='/p/1.html'>next</a></body></html>"
+                .to_string(),
+            ".content@html",
+            ".next@href",
+            "https://example.com/p/0.html",
+            "https://example.com",
+            false,
+        );
+        let result = runtime::block_on(fetch_paginated_content(
+            first_content,
+            next_urls,
+            "https://example.com/p/0.html",
+            "https://example.com",
+            ".content@html",
+            ".next@href",
+            false,
+            scripted_fetch(pages),
+        ));
+        let parts: Vec<&str> = result.split('\n').collect();
+        assert_eq!(
+            parts.len(),
+            MAX_CONTENT_PAGES,
+            "页数上限保护应截断于 {MAX_CONTENT_PAGES} 页"
+        );
     }
 }

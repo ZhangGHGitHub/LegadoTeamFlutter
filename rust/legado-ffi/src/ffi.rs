@@ -596,6 +596,15 @@ pub mod ffi {
         to_json(&source)
     }
 
+    /// 原子更新 RSS 源（按 sourceUrl 主键单条 UPDATE，不删后重插），返回源信息（JSON）
+    ///
+    /// 缺口④ rssUpdateSource 原子更新（Task #108，加法式）：
+    /// 对齐 C ABI `ffi_rss_update_source`。
+    pub fn rss_update_source(source_json: String) -> Result<String, BridgeError> {
+        let source = crate::api::rss::update_rss_source(&source_json)?;
+        to_json(&source)
+    }
+
     /// 删除 RSS 源
     pub fn rss_delete_source(source_url: String) -> Result<(), BridgeError> {
         crate::api::rss::delete_rss_source(&source_url)?;

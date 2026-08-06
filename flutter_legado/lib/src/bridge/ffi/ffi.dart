@@ -402,6 +402,13 @@ Future<String> rssListSources() =>
 Future<String> rssAddSource({required String sourceJson}) =>
     RustLib.instance.api.crateFfiFfiRssAddSource(sourceJson: sourceJson);
 
+/// 原子更新 RSS 源（按 sourceUrl 主键单条 UPDATE，不删后重插），返回源信息（JSON）
+///
+/// 缺口④ rssUpdateSource 原子更新（Task #108，加法式）：
+/// 对齐 C ABI `ffi_rss_update_source`。
+Future<String> rssUpdateSource({required String sourceJson}) =>
+    RustLib.instance.api.crateFfiFfiRssUpdateSource(sourceJson: sourceJson);
+
 /// 删除 RSS 源
 Future<void> rssDeleteSource({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssDeleteSource(sourceUrl: sourceUrl);
