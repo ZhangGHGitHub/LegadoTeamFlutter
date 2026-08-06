@@ -169,6 +169,14 @@ flutter_rust_bridge_codegen generate
 ./scripts/generate-bridge.sh    # Linux/Mac
 ```
 
+> ⚠️ **codegen 须知（评审 Warning 登记，2026-08-06）**：frb Dart 生成物
+> （`flutter_legado/lib/src/rust/**`，含 `frb_generated.dart`）已 git-ignore，
+> 仓库不包含。**拉取含新增 FFI 的提交后，必须先执行
+> `flutter_rust_bridge_codegen generate` 再构建**，否则 Dart 侧缺失新增
+> FFI 绑定；codegen 后还需重编译 Rust DLL/.so（content hash 校验要求
+> 两侧生成物与二进制同步，参见 Makefile `gen` 目标 = codegen +
+> `cargo build -p legado-ffi` 的原子操作约定）。
+
 ### Windows 桌面构建与运行
 
 ```powershell

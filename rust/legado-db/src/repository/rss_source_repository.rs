@@ -28,7 +28,11 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, enableCookieJar, articleStyle, singleUrl
+                        style, enableCookieJar, articleStyle, singleUrl,
+                        jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
+                        shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
+                        startStyle, startJs, showWebLog, type, preload, cacheFirst,
+                        searchUrl
                  FROM rssSources ORDER BY customOrder ASC",
             )
             .map_err(|e| format!("准备查询失败: {e}"))?;
@@ -52,7 +56,11 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, enableCookieJar, articleStyle, singleUrl
+                        style, enableCookieJar, articleStyle, singleUrl,
+                        jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
+                        shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
+                        startStyle, startJs, showWebLog, type, preload, cacheFirst,
+                        searchUrl
                  FROM rssSources WHERE sourceUrl = ?1",
             )
             .map_err(|e| format!("准备查询失败: {e}"))?;
@@ -79,7 +87,11 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, enableCookieJar, articleStyle, singleUrl
+                        style, enableCookieJar, articleStyle, singleUrl,
+                        jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
+                        shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
+                        startStyle, startJs, showWebLog, type, preload, cacheFirst,
+                        searchUrl
                  FROM rssSources WHERE enabled = 1 ORDER BY customOrder ASC",
             )
             .map_err(|e| format!("准备查询失败: {e}"))?;
@@ -93,53 +105,78 @@ impl<'a> RssSourceRepository<'a> {
     }
 
     /// 插入 RSS 源（主键冲突时替换）
+    ///
+    /// 评审修复（读写不对称，中危）：原先仅写 30 列，与 `update_fields` 的
+    /// 全 44 业务字段 UPDATE 不对称，「读出→改一个字段→回写」会清空
+    /// jsLib/injectJs 等 14 个扩展字段。现与表定义（schema.rs rssSources）
+    /// 全列对齐。
     pub fn insert(&self, source: &RssSource) -> Result<i64, String> {
         self.conn
             .execute(
-            "INSERT OR REPLACE INTO rssSources
+                "INSERT OR REPLACE INTO rssSources
              (sourceUrl, sourceName, sourceIcon, sourceGroup, sourceComment,
               enabled, sortUrl, customOrder, lastUpdateTime, header,
               enableJs, loadWithBaseUrl, variableComment, loginUrl, loginUi,
               loginCheckJs, coverDecodeJs, concurrentRate,
               ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
               ruleDescription, ruleImage, ruleLink, ruleContent,
-              style, enableCookieJar, articleStyle, singleUrl)
+              style, enableCookieJar, articleStyle, singleUrl,
+              jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
+              shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
+              startStyle, startJs, showWebLog, type, preload, cacheFirst,
+              searchUrl)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
-                     ?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30)",
-            params![
-                source.source_url,
-                source.source_name,
-                source.source_icon,
-                source.source_group,
-                source.source_comment,
-                source.enabled,
-                source.sort_url,
-                source.custom_order,
-                source.last_update_time,
-                source.header,
-                source.enable_js,
-                source.load_with_base_url,
-                source.variable_comment,
-                source.login_url,
-                source.login_ui,
-                source.login_check_js,
-                source.cover_decode_js,
-                source.concurrent_rate,
-                source.rule_articles,
-                source.rule_next_page,
-                source.rule_title,
-                source.rule_pub_date,
-                source.rule_description,
-                source.rule_image,
-                source.rule_link,
-                source.rule_content,
-                source.style,
-                source.enabled_cookie_jar,
-                source.article_style,
-                source.single_url,
-            ],
-        )
-        .map_err(|e| format!("插入失败: {e}"))?;
+                     ?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,
+                     ?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44,?45)",
+                params![
+                    source.source_url,
+                    source.source_name,
+                    source.source_icon,
+                    source.source_group,
+                    source.source_comment,
+                    source.enabled,
+                    source.sort_url,
+                    source.custom_order,
+                    source.last_update_time,
+                    source.header,
+                    source.enable_js,
+                    source.load_with_base_url,
+                    source.variable_comment,
+                    source.login_url,
+                    source.login_ui,
+                    source.login_check_js,
+                    source.cover_decode_js,
+                    source.concurrent_rate,
+                    source.rule_articles,
+                    source.rule_next_page,
+                    source.rule_title,
+                    source.rule_pub_date,
+                    source.rule_description,
+                    source.rule_image,
+                    source.rule_link,
+                    source.rule_content,
+                    source.style,
+                    source.enabled_cookie_jar,
+                    source.article_style,
+                    source.single_url,
+                    source.js_lib,
+                    source.enabled_cookie_jar,
+                    source.content_whitelist,
+                    source.content_blacklist,
+                    source.should_override_url_loading,
+                    source.inject_js,
+                    source.preload_js,
+                    source.start_html,
+                    source.start_style,
+                    source.start_js,
+                    source.show_web_log,
+                    source.rss_type,
+                    source.preload,
+                    source.cache_first,
+                    source.search_url,
+                ],
+            )
+            .map_err(|e| format!("插入失败: {e}"))?;
         Ok(self.conn.last_insert_rowid())
     }
 
@@ -262,6 +299,14 @@ impl<'a> RssSourceRepository<'a> {
 }
 
 /// 将 rusqlite Row 转换为 RssSource
+///
+/// 评审修复（读写不对称，中危）：原先仅映射 30 列，其余 14 个扩展字段
+/// 以默认值填充，与 `update_fields` 全字段 UPDATE 不对称导致回写清空。
+/// 现覆盖 rssSources 表全部 44 业务列。
+///
+/// 注：模型仅有单一 `enabled_cookie_jar` 字段，表中 `enableCookieJar`（idx 27）
+/// 与 `enabledCookieJar`（idx 31）为历史冗余双列，取后者（与 `update_fields`
+/// 主写列一致），其余列以 `..Default` 补齐（均为零值）。
 fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
     Ok(RssSource {
         source_url: row.get(0)?,
@@ -291,9 +336,23 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
         rule_link: row.get(24)?,
         rule_content: row.get(25)?,
         style: row.get(26)?,
-        enabled_cookie_jar: row.get(27)?,
         article_style: row.get(28)?,
         single_url: row.get(29)?,
+        js_lib: row.get(30)?,
+        enabled_cookie_jar: row.get(31)?,
+        content_whitelist: row.get(32)?,
+        content_blacklist: row.get(33)?,
+        should_override_url_loading: row.get(34)?,
+        inject_js: row.get(35)?,
+        preload_js: row.get(36)?,
+        start_html: row.get(37)?,
+        start_style: row.get(38)?,
+        start_js: row.get(39)?,
+        show_web_log: row.get(40)?,
+        rss_type: row.get(41)?,
+        preload: row.get(42)?,
+        cache_first: row.get(43)?,
+        search_url: row.get(44)?,
         ..RssSource::default()
     })
 }
@@ -401,6 +460,77 @@ mod tests {
         assert_eq!(found.article_style, 3);
         // 行数不变（原地更新，无删后重插）
         assert_eq!(repo.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_insert_roundtrip_all_extended_fields() {
+        // 评审修复回归：insert 带全部 14 个扩展字段 → find_by_url 逐字段读回
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
+        let mut src = make_source("https://rss.example.com/ext", "扩展字段");
+        src.js_lib = Some("window.lib = {}".to_string());
+        src.enabled_cookie_jar = Some(true);
+        src.content_whitelist = Some("example.com".to_string());
+        src.content_blacklist = Some("ads.example.com".to_string());
+        src.should_override_url_loading = Some("return true;".to_string());
+        src.inject_js = Some("console.log('inject')".to_string());
+        src.preload_js = Some("console.log('preload')".to_string());
+        src.start_html = Some("<html></html>".to_string());
+        src.start_style = Some("body{color:red}".to_string());
+        src.start_js = Some("console.log('start')".to_string());
+        src.show_web_log = true;
+        src.rss_type = 2;
+        src.preload = true;
+        src.cache_first = true;
+        src.search_url = Some("search?q={{key}}".to_string());
+        repo.insert(&src).unwrap();
+
+        let found = repo
+            .find_by_url("https://rss.example.com/ext")
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.js_lib, src.js_lib);
+        assert_eq!(found.enabled_cookie_jar, Some(true));
+        assert_eq!(found.content_whitelist, src.content_whitelist);
+        assert_eq!(found.content_blacklist, src.content_blacklist);
+        assert_eq!(
+            found.should_override_url_loading,
+            src.should_override_url_loading
+        );
+        assert_eq!(found.inject_js, src.inject_js);
+        assert_eq!(found.preload_js, src.preload_js);
+        assert_eq!(found.start_html, src.start_html);
+        assert_eq!(found.start_style, src.start_style);
+        assert_eq!(found.start_js, src.start_js);
+        assert!(found.show_web_log);
+        assert_eq!(found.rss_type, 2);
+        assert!(found.preload);
+        assert!(found.cache_first);
+        assert_eq!(found.search_url, src.search_url);
+    }
+
+    #[test]
+    fn test_read_modify_write_preserves_extended_fields() {
+        // 评审修复回归：「读出→改一个字段→回写」不得清空扩展字段
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
+        let mut src = make_source("u_rmw", "读写回环");
+        src.inject_js = Some("inject()".to_string());
+        src.start_html = Some("<html>start</html>".to_string());
+        src.search_url = Some("s={{key}}".to_string());
+        src.rss_type = 1;
+        repo.insert(&src).unwrap();
+
+        let mut loaded = repo.find_by_url("u_rmw").unwrap().unwrap();
+        loaded.source_name = "改名后".to_string();
+        repo.update_fields(&loaded).unwrap();
+
+        let after = repo.find_by_url("u_rmw").unwrap().unwrap();
+        assert_eq!(after.source_name, "改名后");
+        assert_eq!(after.inject_js, Some("inject()".to_string()));
+        assert_eq!(after.start_html, Some("<html>start</html>".to_string()));
+        assert_eq!(after.search_url, Some("s={{key}}".to_string()));
+        assert_eq!(after.rss_type, 1);
     }
 
     #[test]

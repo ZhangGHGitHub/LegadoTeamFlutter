@@ -15,6 +15,21 @@
 
 ---
 
+## 内部 API 非加法式变更记录（并行分支 rebase 须知）
+
+> 本轨道绝大多数变更是加法式（新增函数/字段）；以下非加法式变更需并行分支 rebase 时注意。
+
+### 2026-08-06（Task #120 批次）
+
+- **`RssSourceRepository::new` 签名迁移**（本批唯一非加法式内部 API 变更）：
+  构造参数由 `Arc<Mutex<Connection>>` 改为借用 `&Connection`，结构体带生命周期
+  `RssSourceRepository<'a>`（与 BookGroupRepository 等新式仓储一致，适配 FFI 层
+  r2d2 连接池的 per-call `Database` 包装）。工作区内调用方已全部适配；并行分支
+  rebase 时若持有旧 `Arc<Mutex<Connection>>` 调用点，需改为
+  `conn.lock()` 后传入借用，文件：`rust/legado-db/src/repository/rss_source_repository.rs`。
+
+---
+
 ## 已完成（168/168 原子任务）
 
 ### 阶段 0：基础设施 ✅

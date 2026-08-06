@@ -63,17 +63,32 @@ fn format_speed(speed: f64) -> String {
     }
 }
 
-/// 计算合成缓存键：MD5(模板 | 文本 | 语速)
+/// 计算合成缓存键：MD5(模板)-MD5(文本)-语速
 ///
 /// 同一模板同一文本同一语速命中同一缓存文件，对应原版 `md5SpeakFileName(text)`。
+///
+/// 评审修复（缓存键碰撞，低危）：原先拼接 `"模板|文本|语速"` 后整体 MD5，
+/// 模板/文本内容含 `|` 时不同输入可产生同一拼接串（如 `a|b` + `c` 与
+/// `a` + `b|c`）。现改为各段独立 MD5 后拼接：md5 段定长，分隔符不再
+/// 引入歧义。分隔符取 `-` 而非 `|`，因键会嵌入缓存文件名，`|` 在
+/// Windows 文件系统为非法字符。
 pub fn speak_cache_key(template: &str, text: &str, speed: f64) -> String {
-    let raw = format!("{}|{}|{}", template, text, format_speed(speed));
-    format!("{:x}", md5::compute(raw.as_bytes()))
+    format!(
+        "{:x}-{:x}-{}",
+        md5::compute(template.as_bytes()),
+        md5::compute(text.as_bytes()),
+        format_speed(speed)
+    )
 }
 
 /// Content-Type → 音频文件扩展名映射（无法识别时回退 `mp3`）
 pub fn ext_from_content_type(content_type: &str) -> &'static str {
-    let ct = content_type.split(';').next().unwrap_or("").trim().to_lowercase();
+    let ct = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
     match ct.as_str() {
         "audio/mpeg" | "audio/mp3" => "mp3",
         "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
@@ -141,7 +156,12 @@ impl SpeakCache {
             if !path.is_file() {
                 continue;
             }
-            let name = path.file_name()?.to_string_lossy().to_string();
+            // 评审修复（提前返回，低危）：原 `path.file_name()?` 遇 None
+            // 会终止整个扫描循环，改为 continue 跳过该条目。
+            let Some(file_name) = path.file_name() else {
+                continue;
+            };
+            let name = file_name.to_string_lossy().to_string();
             if name.starts_with(&prefix) {
                 if let Ok(meta) = std::fs::metadata(&path) {
                     if meta.len() > 0 {
@@ -253,10 +273,7 @@ where
         } else {
             msg.to_string()
         };
-        return Err(LegadoError::Network(format!(
-            "TTS 服务器返回错误：{}",
-            msg
-        )));
+        return Err(LegadoError::Network(format!("TTS 服务器返回错误：{}", msg)));
     }
 
     // 4. 写入缓存并返回
@@ -362,6 +379,18 @@ mod tests {
         assert_ne!(k1, speak_cache_key("tpl2", "text", 1.0));
     }
 
+    #[test]
+    fn test_cache_key_no_delimiter_collision() {
+        // 评审修复回归：内容含分隔符时不同（模板，文本）组合不得同键
+        //（旧实现 `a|b`+`c` 与 `a`+`b|c` 拼接同串导致碰撞）
+        let k1 = speak_cache_key("a|b", "c", 1.0);
+        let k2 = speak_cache_key("a", "b|c", 1.0);
+        assert_ne!(k1, k2);
+        // 键内不含 Windows 文件名非法字符
+        assert!(!k1.contains('|'));
+        assert!(!k2.contains('|'));
+    }
+
     // ─── Content-Type 判定 ───────────────────────────────────
 
     #[test]
@@ -446,13 +475,19 @@ mod tests {
     #[test]
     fn test_speak_text_json_error_body() {
         let dir = test_dir("json_err");
-        let err = speak_text("https://tts.example.com/{{speakText}}", "abc", 1.0, &dir, |_| {
-            Ok(SpeakResponse {
-                status: 200,
-                content_type: "application/json; charset=utf-8".into(),
-                body: r#"{"error":"余额不足"}"#.as_bytes().to_vec(),
-            })
-        })
+        let err = speak_text(
+            "https://tts.example.com/{{speakText}}",
+            "abc",
+            1.0,
+            &dir,
+            |_| {
+                Ok(SpeakResponse {
+                    status: 200,
+                    content_type: "application/json; charset=utf-8".into(),
+                    body: r#"{"error":"余额不足"}"#.as_bytes().to_vec(),
+                })
+            },
+        )
         .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("余额不足"));
