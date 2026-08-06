@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-06
 
+### 变更（书详情页 iOS 视觉重设计 + 溢出菜单对齐原版 + 阅读器顶栏溢出修复，署名 Qoder）
+- 书详情页封面高斯虚化背景：`book_info_screen._buildPage` 封面图改用 `ImageFiltered(ImageFilter.blur sigma 25)` 作背景层 + 保留半透明 scrim 叠层，营造 iOS 沉浸景深；无封面降级纯色背景不加模糊
+- 顶栏精简至 iOS 导航栏节奏：移除下载/导出按钮（原版书详情无此入口）；编辑按钮条件化，仅在架书籍显示（对标原版 `editMenuItem.isVisible = inBookshelf`）；保留分享 + 更多菜单；标题固定「书籍信息」
+- 溢出菜单对齐原版 book_info.xml：条目顺序/可见性对标原版（onMenuOpened 判定）——上传至远程(仅本地书)/刷新/创建更新任务(在架+书源+非本地+允许更新)/登录(书源支持)/置顶/设置源变量·书籍变量(书源存在)/拷贝书籍URL·目录URL/允许更新(勾选,书源存在)/拆分长章节(勾选,本地txt)/删除提醒(勾选)/清理缓存/日志；移除「更新目录」独立项（刷新即含目录更新）；文案「拷贝书籍链接/目录链接」→「拷贝书籍URL/目录URL」、「删除警告」→「删除提醒」；占位项(设置源/书籍变量·删除提醒·上传远程·创建更新任务)保持 _todo 标注不强行实现
+- iOS 排版层级：书名改 SF Pro 大标题风格(22sp/w700/负字距)，底部按钮主次分明（放入书架=tinted、开始阅读=filled），分享图标改 `ios_share`
+- 阅读器顶栏溢出修复：`reader_top_bar` 顶栏 Row 图标过多致 `RIGHT OVERFLOWED BY 68 PIXELS`，将换源/刷新/缓存（原 menu_group_on_line 三枚 IconButton）收入溢出菜单（仅在线书显示），顶栏仅保留高频的夜间/搜索/书签，Row 不再溢出
+
 ### 修复（未入库书详情页加载链路，署名 Qoder）
 - 未入库书「目录/章节/封面」加载链路修复（三现象同源，对齐原版 BookInfoViewModel.upBook）：从搜索结果跳转的未入库书进入详情页时，`book_info_screen._loadData` 由「仅查 DB」改为完整链路——在线书 DB 无章节时按 origin 取书源，`webbookInfo` 补全封面/简介/tocUrl/字数（现象③封面缺失），`webbookChapters` 联网取目录用于展示（现象①共 0 章）；未入库时「仅展示不落库」（对齐原版 loadChapter 在 !inBookshelf 时不写 DB），避免污染书架（getBooks=find_all 无 notShelf 过滤）
 - 阅读器「章节不存在/未配置书源」修复（现象②）：`_openReader` 对齐原版 readBook——未入库在线书阅读前先 `addBook` 带正确 origin 落库，使 Rust `get_chapter_content_full` 按 book.origin 找书源取正文成立，规避 refresh_toc 兜底插入空 origin 记录导致的第二章及后续报错；已入库则幂等跳过

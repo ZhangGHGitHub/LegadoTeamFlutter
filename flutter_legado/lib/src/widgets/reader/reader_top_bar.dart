@@ -493,39 +493,9 @@ class ReaderTopBar extends ConsumerWidget {
                         ),
                   ),
                 ),
-                // 安卓原版 book_read.xml：换源/刷新/缓存（menu_group_on_line）
-                if (state.currentBook != null) ...[
-                  IconButton(
-                    icon: const Icon(Icons.swap_horiz),
-                    tooltip: '换源',
-                    onPressed: () => Navigator.pushNamed(
-                      context,
-                      AppRoutes.changeSource,
-                      arguments: state.currentBook,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    tooltip: '刷新',
-                    onPressed: () async {
-                      final book = state.currentBook;
-                      if (book == null) return;
-                      await notifier.openBook(book);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已刷新')),
-                        );
-                      }
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.download_outlined),
-                    tooltip: '缓存',
-                    // [UI-fix v2.0.2 | 2026-08-06] 缓存菜单接通（对标原版
-                    // CacheActivity：选择章节范围加入下载队列） — Qoder
-                    onPressed: () => _showCacheDialog(context, ref),
-                  ),
-                ],
+                // [UI-fix v2.0.3 | 2026-08-06] 顶栏图标过多致 RIGHT OVERFLOWED，
+                // 将换源/刷新/缓存（原 menu_group_on_line 三枚 IconButton）收入溢出
+                // 菜单，顶栏仅保留高频的夜间/搜索/书签，Row 不再溢出（对标 iOS 精简导航栏） — Qoder
                 // 夜间模式快速切换
                 IconButton(
                   icon: Icon(
@@ -553,8 +523,27 @@ class ReaderTopBar extends ConsumerWidget {
                 // 安卓原版：溢出菜单（book_read.xml never 项）
                 PopupMenuButton<String>(
                   tooltip: '更多',
-                  onSelected: (value) {
+                  onSelected: (value) async {
                     switch (value) {
+                      // [UI-fix v2.0.3 | 2026-08-06] 换源/刷新/缓存由顶栏
+                      // IconButton 迁入溢出菜单（修复顶栏溢出） — Qoder
+                      case 'changeSource':
+                        Navigator.pushNamed(
+                          context,
+                          AppRoutes.changeSource,
+                          arguments: state.currentBook,
+                        );
+                        break;
+                      case 'refreshBook':
+                        final book = state.currentBook;
+                        if (book != null) {
+                          await notifier.openBook(book);
+                          if (context.mounted) _snack(context, '已刷新');
+                        }
+                        break;
+                      case 'cache':
+                        _showCacheDialog(context, ref);
+                        break;
                       case 'advanced':
                         onOpenAdvancedConfig();
                         break;
@@ -609,6 +598,10 @@ class ReaderTopBar extends ConsumerWidget {
                     final book = ref.read(readerNotifierProvider).currentBook;
                     final replaceOn = book?.readConfig?.useReplaceRule ?? true;
                     final segmentOn = book?.readConfig?.reSegment ?? false;
+                    // 在线书才显示换源/刷新/缓存（对标原版 menu_group_on_line）
+                    final isOnline = book != null &&
+                        book.origin != BookType.localTag &&
+                        !book.origin.startsWith(BookType.webDavTag);
                     Widget checked(String text, bool on) => Row(
                           children: [
                             if (on) ...[
@@ -620,6 +613,15 @@ class ReaderTopBar extends ConsumerWidget {
                           ],
                         );
                     return [
+                      // [UI-fix v2.0.3 | 2026-08-06] 换源/刷新/缓存（仅在线书）— Qoder
+                      if (isOnline) ...[
+                        const PopupMenuItem(
+                            value: 'changeSource', child: Text('换源')),
+                        const PopupMenuItem(
+                            value: 'refreshBook', child: Text('刷新')),
+                        const PopupMenuItem(value: 'cache', child: Text('缓存')),
+                        const PopupMenuDivider(),
+                      ],
                       const PopupMenuItem(
                         value: 'advanced',
                         child: Text('高级设置'),
