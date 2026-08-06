@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1071884367;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1191663602;
 
 // Section: executor
 
@@ -6407,6 +6407,75 @@ fn wire__crate__ffi__ffi__stats_today_impl(
         },
     )
 }
+fn wire__crate__ffi__ffi__tts_set_cache_dir_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "tts_set_cache_dir",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::tts_set_cache_dir(api_path)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__tts_speak_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "tts_speak",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_text = <String>::sse_decode(&mut deserializer);
+            let api_engine_url = <String>::sse_decode(&mut deserializer);
+            let api_speed = <f64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok =
+                        crate::ffi::ffi::tts_speak(api_text, api_engine_url, api_speed)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__ffi__txt_search_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -7647,35 +7716,37 @@ fn pde_ffi_dispatcher_primary_impl(
         184 => wire__crate__ffi__ffi__stats_daily_impl(port, ptr, rust_vec_len, data_len),
         185 => wire__crate__ffi__ffi__stats_heatmap_impl(port, ptr, rust_vec_len, data_len),
         186 => wire__crate__ffi__ffi__stats_today_impl(port, ptr, rust_vec_len, data_len),
-        187 => wire__crate__ffi__ffi__txt_search_impl(port, ptr, rust_vec_len, data_len),
-        188 => wire__crate__ffi__ffi__txt_search_count_impl(port, ptr, rust_vec_len, data_len),
-        189 => wire__crate__ffi__ffi__txt_search_in_chapter_impl(port, ptr, rust_vec_len, data_len),
-        190 => wire__crate__ffi__ffi__txt_search_regex_impl(port, ptr, rust_vec_len, data_len),
-        191 => wire__crate__ffi__ffi__user_check_login_impl(port, ptr, rust_vec_len, data_len),
-        192 => wire__crate__ffi__ffi__user_delete_impl(port, ptr, rust_vec_len, data_len),
-        193 => wire__crate__ffi__ffi__user_get_all_impl(port, ptr, rust_vec_len, data_len),
-        194 => wire__crate__ffi__ffi__user_login_impl(port, ptr, rust_vec_len, data_len),
-        195 => wire__crate__ffi__ffi__user_logout_impl(port, ptr, rust_vec_len, data_len),
-        196 => wire__crate__ffi__ffi__user_save_impl(port, ptr, rust_vec_len, data_len),
-        197 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
-        198 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
-        199 => wire__crate__ffi__ffi__verification_request_stream_impl(
+        187 => wire__crate__ffi__ffi__tts_set_cache_dir_impl(port, ptr, rust_vec_len, data_len),
+        188 => wire__crate__ffi__ffi__tts_speak_impl(port, ptr, rust_vec_len, data_len),
+        189 => wire__crate__ffi__ffi__txt_search_impl(port, ptr, rust_vec_len, data_len),
+        190 => wire__crate__ffi__ffi__txt_search_count_impl(port, ptr, rust_vec_len, data_len),
+        191 => wire__crate__ffi__ffi__txt_search_in_chapter_impl(port, ptr, rust_vec_len, data_len),
+        192 => wire__crate__ffi__ffi__txt_search_regex_impl(port, ptr, rust_vec_len, data_len),
+        193 => wire__crate__ffi__ffi__user_check_login_impl(port, ptr, rust_vec_len, data_len),
+        194 => wire__crate__ffi__ffi__user_delete_impl(port, ptr, rust_vec_len, data_len),
+        195 => wire__crate__ffi__ffi__user_get_all_impl(port, ptr, rust_vec_len, data_len),
+        196 => wire__crate__ffi__ffi__user_login_impl(port, ptr, rust_vec_len, data_len),
+        197 => wire__crate__ffi__ffi__user_logout_impl(port, ptr, rust_vec_len, data_len),
+        198 => wire__crate__ffi__ffi__user_save_impl(port, ptr, rust_vec_len, data_len),
+        199 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
+        200 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
+        201 => wire__crate__ffi__ffi__verification_request_stream_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        200 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
-        201 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
-        202 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
-        203 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
-        204 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
-        205 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
-        206 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
-        207 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
-        208 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
-        209 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
-        210 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
+        202 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
+        203 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
+        204 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
+        205 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
+        206 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
+        207 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
+        208 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
+        209 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
+        210 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
+        211 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
+        212 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

@@ -1239,6 +1239,31 @@ pub extern "C" fn ffi_http_tts_set_enabled(id: i64, enabled: bool) -> *mut c_cha
     }))
 }
 
+/// TTS 真实合成（Task #113 缺口②）：模板替换 → HTTP 拉取音频 → 本地缓存
+///
+/// 返回 JSON：`{"audioPath": "...", "fromCache": bool, "contentType": "..."}`
+#[no_mangle]
+pub unsafe extern "C" fn ffi_tts_speak(
+    text: *const c_char,
+    engine_url: *const c_char,
+    speed: f64,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let t = c_char_to_str(text)?;
+        let u = c_char_to_str(engine_url)?;
+        crate::api::tts_speak_api::tts_speak(t, u, speed)
+    }))
+}
+
+/// 设置 TTS 音频缓存目录
+#[no_mangle]
+pub unsafe extern "C" fn ffi_tts_set_cache_dir(path: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        crate::api::tts_speak_api::set_tts_cache_dir(p)
+    }))
+}
+
 // ─── 音频播放进度 FFI 函数 ───────────────────────────────────
 
 /// 获取音频播放进度

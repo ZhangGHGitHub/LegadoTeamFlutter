@@ -355,6 +355,56 @@ impl LegadoClient {
         Ok(resp.body.into_bytes())
     }
 
+    /// 发送 GET 请求并返回无损原始字节响应（Task #113：TTS 音频等二进制资源）
+    ///
+    /// 与 [`get_bytes`](Self::get_bytes) 的区别：本方法直接读取 `resp.bytes()`，
+    /// 不经过 UTF-8 文本解码（避免二进制音频被有损转换），并保留状态码/响应头。
+    /// 不走 QUIC 路径（音频拉取对 HTTP/3 无需求），保留重试与限流机制。
+    pub async fn get_raw(
+        &self,
+        url: &str,
+        headers: Option<HashMap<String, String>>,
+    ) -> LegadoResult<crate::response::LegadoRawResponse> {
+        let client = self.client.clone();
+        let cookie_store = self.cookie_store.clone();
+        let headers = Arc::new(headers);
+        let url = url.to_string();
+        let url_for_retry = url.clone();
+
+        let factory = move || {
+            let client = client.clone();
+            let cookie_store = cookie_store.clone();
+            let headers = Arc::clone(&headers);
+            let url = url.clone();
+            async move {
+                let mut req = client.get(&url);
+                req = apply_default_headers_static(req);
+                req = apply_custom_headers(req, (*headers).clone());
+                req = apply_cookie_static(req, &cookie_store, &url);
+                req.send().await
+            }
+        };
+
+        // 限流：获取域名许可（在整个重试期间持有）
+        let _permit = if let Some(ref limiter) = self.domain_rate_limiter {
+            let domain = crate::rate_limit::extract_domain(&url_for_retry);
+            let slot = limiter.get_or_create(&domain);
+            Some(slot.acquire().await?)
+        } else {
+            None
+        };
+
+        let response = if let Some(ref executor) = self.retry_executor {
+            executor
+                .execute_with_retry(|| async { factory().await.map_err(map_reqwest_error) })
+                .await?
+        } else {
+            factory().await.map_err(map_reqwest_error)?
+        };
+
+        self.collect_raw_response(response, &url_for_retry).await
+    }
+
     /// 发送 POST 请求
     ///
     /// 启用 QUIC 且 URL 为 HTTPS 时，优先尝试 HTTP/3，失败自动 fallback 到 HTTP/2。
@@ -593,6 +643,41 @@ impl LegadoClient {
             .map_err(|e| LegadoError::Network(format!("Failed to read response body: {}", e)))?;
 
         Ok(LegadoResponse {
+            status,
+            headers,
+            body,
+            url: final_url,
+        })
+    }
+
+    /// 收集二进制响应数据并保存 Cookie（Task #113：无损字节读取，对照 [`collect_response`](Self::collect_response)）
+    async fn collect_raw_response(
+        &self,
+        response: reqwest::Response,
+        original_url: &str,
+    ) -> LegadoResult<crate::response::LegadoRawResponse> {
+        let final_url = response.url().to_string();
+        let status = response.status().as_u16();
+
+        // 收集响应头
+        let mut headers = HashMap::new();
+        for (name, value) in response.headers() {
+            if let Ok(v) = value.to_str() {
+                headers.insert(name.as_str().to_string(), v.to_string());
+            }
+        }
+
+        // 保存 Set-Cookie 到 CookieStore
+        self.save_cookies_from_response(original_url, &final_url, &headers);
+
+        // 读取原始字节（不经 UTF-8 解码）
+        let body = response
+            .bytes()
+            .await
+            .map_err(|e| LegadoError::Network(format!("Failed to read response bytes: {}", e)))?
+            .to_vec();
+
+        Ok(crate::response::LegadoRawResponse {
             status,
             headers,
             body,

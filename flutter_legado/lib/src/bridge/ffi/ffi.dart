@@ -861,6 +861,25 @@ Future<bool> httpTtsSetEnabled({
 }) =>
     RustLib.instance.api.crateFfiFfiHttpTtsSetEnabled(id: id, enabled: enabled);
 
+/// TTS 真实合成：url 模板替换（speakText/speakSpeed）→ HTTP 拉取音频 → 本地缓存
+///
+/// 返回合成结果 JSON（camelCase）：
+/// `{"audioPath": "...", "fromCache": false, "contentType": "audio/mpeg"}`
+/// 缓存命中时不发起网络请求。
+Future<String> ttsSpeak({
+  required String text,
+  required String engineUrl,
+  required double speed,
+}) => RustLib.instance.api.crateFfiFfiTtsSpeak(
+  text: text,
+  engineUrl: engineUrl,
+  speed: speed,
+);
+
+/// 设置 TTS 音频缓存目录（全局生效）
+Future<bool> ttsSetCacheDir({required String path}) =>
+    RustLib.instance.api.crateFfiFfiTtsSetCacheDir(path: path);
+
 /// 获取音频播放进度（毫秒）
 Future<PlatformInt64> audioGetProgress({
   required String bookUrl,

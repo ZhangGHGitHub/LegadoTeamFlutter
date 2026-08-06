@@ -538,6 +538,21 @@
 | `bookGroupSetShow` | 书籍分组（§2.14 扩展） | 设置分组显示状态 |
 | `httpTtsSetEnabled` | HTTP TTS（§2.25 扩展） | 启用/禁用 HTTP TTS 配置 |
 
+### 2.42 TTS 真实合成管线（Task #113 批次 2 缺口②，2 个方法）
+
+> 对齐 Kotlin 原版 `HttpReadAloudService.getSpeakStream` + `AnalyzeUrl(speakText/speakSpeed)` 模型：
+> url 模板占位符替换 → HTTP 请求获取音频二进制 → Content-Type 校验（`application/json` / `text/*` 视为服务器报错）→
+> 以「模板+文本+语速」MD5 命名缓存到本地（命中直接返回路径，避免重复请求）。
+> Flutter 侧 `audioSpeak`（§2.26）当前为 `http.get` 探活 fallback，UI 轨后续改接 `ttsSpeak` 真实管线。
+>
+> **占位符约定**：`{{speakText}}` / `{{text}}`（朗读文本，URL 编码后替换）、`{{speakSpeed}}` / `{{speed}}`（语速）。
+> **缓存目录**：默认为系统临时目录下 `legado_tts_cache`，可通过 `ttsSetCacheDir` 覆盖（建议 UI 轨初始化时传入应用缓存目录）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `ttsSpeak({required String text, required String engineUrl, double speed = 1.0})` | text: 朗读文本，engineUrl: 引擎 URL 模板，speed: 语速 | `Future<Map<String, dynamic>>` | TTS 真实合成。返回字段（camelCase）：`audioPath: String`（本地音频文件绝对路径）/ `fromCache: bool`（是否缓存命中）/ `contentType: String`（音频 MIME 类型）。服务器返回 json/text 时以响应体文本抛出 BridgeError |
+| `ttsSetCacheDir(String path)` | path: 缓存目录绝对路径 | `Future<bool>` | 设置 TTS 音频缓存目录（全局生效） |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -560,6 +575,7 @@
 | `verificationRequestStream` / `submitVerificationResult` / `cancelVerificationRequest`（新增，Task #90） | 见 §2.3 方法清单 | 验证码交互通道：JS 钩子（getVerificationCode/startBrowserAwait，对齐 Kotlin JsExtensions）经请求管理器挂起等待 → FFI 事件流推送请求（含航班去重/回放/5 分钟超时）→ UI 提交/取消唤醒；useBrowser 降级为图片验证码（桌面无 WebView），验证码弹窗 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `txtSearch` / `txtSearchRegex` / `txtSearchInChapter` / `txtSearchCount`（新增，Task #98 缺口#4） | 见 §2.40 方法清单 | 本地 TXT 全文搜索接入 frb 主链路：既有 C ABI 4 函数的 frb 暴露（包装 legado-book TxtSearch 引擎，纯文本/正则/章节内搜索 + 匹配计数，返回裸 JSON Array），供搜索页内“搜本地书正文”场景调用，UI 由 UI 轨后续接入 | 2026-08-05 | ✅ 已完成 |
 | `setChineseConvertType` / `getChineseConvertType`（新增，Task #100） | 见 §2.9 方法清单 | 繁简转换 FFI 透传：reader.rs 硬编码 `chinese_convert: None` 改为读取持久化配置（键 `chineseConverterType`，0/1/2 → None/t2s/s2t），新增 set/get 接口；章节标题在展示路径补齐 t2s/s2t（对齐 Kotlin getDisplayTitle）；阅读器样式面板控件由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
+| `ttsSpeak` / `ttsSetCacheDir`（新增，Task #113 缺口②） | 见 §2.42 方法清单 | TTS 真实合成管线：url 模板替换（speakText/speakSpeed）→ HTTP 拉取音频二进制（legado-net 新增 get_raw）→ Content-Type 校验 → MD5 命名本地缓存（命中免请求）；请 UI 轨将 `audioSpeak`（§2.26）的 `http.get` 探活 fallback 改接 `ttsSpeak`，音频播放器播放返回的 `audioPath` | 2026-08-06 | ✅ 已完成 |
 
 #### 待 UI 封装清单（2026-08-06 审计：13 个 bridge 绑定已实现未被 UI 层封装）
 
@@ -580,6 +596,8 @@
 | 11 | `cacheGetChapter` | 其他（§2.41） | 离线缓存 UI 批次依赖 |
 | 12 | `bookGroupSetShow` | 其他（§2.41） | 分组显示开关 |
 | 13 | `httpTtsSetEnabled` | 其他（§2.41） | TTS 配置启停 |
+| 14 | `ttsSpeak` | TTS 真实合成管线（§2.42） | `audioSpeak` 改接真实管线（Task #113 缺口②） |
+| 15 | `ttsSetCacheDir` | TTS 真实合成管线（§2.42） | 应用缓存目录注入（初始化时调用） |
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -660,5 +678,6 @@
 | 39 | 规则订阅 | 7 |
 | 40 | 本地 TXT 全文搜索 | 4 |
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 12 |
-| | **合计（BookApi 方法）** | **203** |
-| | **补登记 FFI（待封装）** | **+12** |
+| 42 | TTS 真实合成管线 | 2 |
+| | **合计（BookApi 方法）** | **205** |
+| | **补登记 FFI（待封装）** | **+14** |

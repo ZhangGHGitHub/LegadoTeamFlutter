@@ -38,6 +38,7 @@ pub mod source_check_api;
 pub mod source_login_v2_api;
 pub mod source_switch;
 pub mod txt_search_api;
+pub mod tts_speak_api;
 pub mod user_api;
 pub mod verification_api;
 pub mod web_book;

@@ -1202,6 +1202,24 @@ pub mod ffi {
         Ok(ok)
     }
 
+    // ─── TTS 真实合成管线（Task #113 缺口②，API_CONTRACT §2.42）─────
+
+    /// TTS 真实合成：url 模板替换（speakText/speakSpeed）→ HTTP 拉取音频 → 本地缓存
+    ///
+    /// 返回合成结果 JSON（camelCase）：
+    /// `{"audioPath": "...", "fromCache": false, "contentType": "audio/mpeg"}`
+    /// 缓存命中时不发起网络请求。
+    pub fn tts_speak(text: String, engine_url: String, speed: f64) -> Result<String, BridgeError> {
+        let dto = crate::api::tts_speak_api::tts_speak(&text, &engine_url, speed)?;
+        to_json(&dto)
+    }
+
+    /// 设置 TTS 音频缓存目录（全局生效）
+    pub fn tts_set_cache_dir(path: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::tts_speak_api::set_tts_cache_dir(&path)?;
+        Ok(ok)
+    }
+
     // ─── 音频播放进度 ───────────────────────────────────
 
     /// 获取音频播放进度（毫秒）
