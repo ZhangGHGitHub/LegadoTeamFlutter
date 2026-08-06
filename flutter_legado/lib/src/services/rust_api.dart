@@ -432,13 +432,18 @@ class RustApi implements BookApi {
   ///
   /// Rust 侧返回 SourceSwitchResponse { book_name, author, matches }，
   /// 兼容 Map（提取 matches 字段）和 List（直接使用）两种格式。
+  /// [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：新增 sourceUrls 可选参数，
+  /// 编码为 sourceUrlsJson 传入 sourceSwitchSearch；null=搜全部启用源（兼容既有语义） — QoderCN
   Future<List<Map<String, dynamic>>> searchSource(
     String bookName,
-    String author,
-  ) async {
+    String author, {
+    List<String>? sourceUrls,
+  }) async {
+    final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
     final json = await bridge.sourceSwitchSearch(
       bookName: bookName,
       author: author,
+      sourceUrlsJson: urlsJson,
     );
     final decoded = jsonDecode(json);
     // Rust 侧返回 SourceSwitchResponse 对象，需提取 matches 字段

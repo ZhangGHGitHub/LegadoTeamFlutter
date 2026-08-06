@@ -192,10 +192,14 @@ abstract class BookApi {
   Future<void> cancelSearch();
 
   /// 搜索可替换的书源
+  ///
+  /// [sourceUrls] 可选：仅搜指定书源；null/空=搜全部启用源
+  /// （留项#12，Task #131，加法式新增，契约见 API_CONTRACT.md §2.4）
   Future<List<Map<String, dynamic>>> searchSource(
     String bookName,
-    String author,
-  );
+    String author, {
+    List<String>? sourceUrls,
+  });
 
   /// 搜索书籍封面候选列表
   ///

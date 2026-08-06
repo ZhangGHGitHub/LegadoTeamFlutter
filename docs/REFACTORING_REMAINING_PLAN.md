@@ -961,18 +961,19 @@ flutter test                  # 全量测试通过
 
 | # | 留项 | 代码位置 | 说明 |
 |---|------|----------|------|
-| 1 | searchSource 分组过滤 | `flutter_legado/lib/src/screens/change_source_screen.dart` `_showGroupPicker` | 源分组单选持久化 `AppConfig.searchGroup`，待 Rust searchSource 支持分组过滤后全链生效；由裸 TODO 转正式登记（Task #122） |
+| 1 | ~~searchSource 分组过滤~~（已闭合） | `flutter_legado/lib/src/screens/change_source_screen.dart` `_showGroupPicker` | ✅ Task #131（2026-08-07）销记：Rust `source_switch_search` 加 `source_urls_json` 参数复用 `load_search_sources` 过滤，换源页按分组过滤生效；另修复主搜索页选分组/书源后关闭面板不自动重搜（留项#12 闭合） |
 | 2 | 定时服务后端 | `flutter_legado/lib/src/screens/auto_task_screen.dart` | autoTask 后台执行 FFI 未移植，开关仅持久化 `isEnabled`，无后台调度（评审修复补登） |
 | 3 | 书架缓存导出扩展项 | `flutter_legado/lib/src/screens/bookshelf_screen.dart` | 缓存管理页/缓存下载/epub·pdf/模板/WebDav 等，已交付 TXT 导出（评审修复补登） |
 
 ---
 
-**文档版本**: 1.9  
-**最后更新**: 2026-08-06  
+**文档版本**: 1.10  
+**最后更新**: 2026-08-07  
 **维护人**: Qoder  
-**最后修改**: Reasonix
+**最后修改**: Qoder
 
 **版本记录**：
+- v1.10（2026-08-07）留项#12 闭合销记（Task #131）：§5.9 留项 1 searchSource 分组过滤全链修复（Rust sourceSwitchSearch 加 sourceUrlsJson 参数 + 换源页按分组过滤 + 主搜索页选分组自动重搜）
 - v1.9（2026-08-06）评审修复口径修正（Task #122）：日志入口销记修正为 7/7（source_edit_screen 补接，补提交）、缺口④补记 UI 接线提交、新增 §5.9 TODO(留批次) 正式登记（searchSource 分组过滤等 3 项）
 - v1.8（2026-08-06）批次0-3 缺口闭合销记（Task #119）：§5.1-§5.6 全部销记（8 提交：0cde41a5c/873abea29/b7368193a/9ac94b173/522e1c1be/6633c25e3/0c452f4b5/13a11220e），Rust 4 项 P1 实质缺口闭合，残留留项见审计报告 §7
 - v1.7（2026-08-06）批次3治理闭合（Task #118）：bridge.rs 去留决策记录（保留+计划性废弃，§4.2.3 P2-1）、schema v102 评估（建议延后，§4.2.1）、一次性脚本清理销记（§4.2.3 P2-4）、§5.7 治理表更新

@@ -129,9 +129,16 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   }
 
   /// 搜索可替换书源
+  ///
+  /// [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：传入当前选中分组，
+  /// 分组过滤全链生效（Rust sourceSwitchSearch 的 sourceUrlsJson） — Qoder
   Future<void> _search() => ref
       .read(changeSourceNotifierProvider.notifier)
-      .search(widget.effectiveBookName, widget.effectiveAuthor);
+      .search(
+        widget.effectiveBookName,
+        widget.effectiveAuthor,
+        group: _searchGroup,
+      );
 
   /// 应用选中的书源
   Future<void> _applySource(SourceMatch result) async {
@@ -339,8 +346,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   }
 
   /// 源分组单选（对标 menu_group/source_group：AppConfig.searchGroup，
-  /// TODO(留批次): 待 Rust searchSource 支持分组过滤后全链生效；
-  /// 已登记 docs/REFACTORING_REMAINING_PLAN.md §5.9）— Qoder
+  /// 留项#12 已于 Task #131 闭合：选中后按分组过滤重搜全链生效）— Qoder
   Future<void> _showGroupPicker() async {
     final selected = await showDialog<String?>(
       context: context,

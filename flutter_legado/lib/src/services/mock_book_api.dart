@@ -609,8 +609,9 @@ class MockBookApi implements BookApi {
   @override
   Future<List<Map<String, dynamic>>> searchSource(
     String bookName,
-    String author,
-  ) async {
+    String author, {
+    List<String>? sourceUrls,
+  }) async {
     const srcNames = ['消消乐听书', '笔趣阁', '起点中文网'];
     const srcUrls = [
       'https://www.kaixin7days.com',
@@ -618,7 +619,7 @@ class MockBookApi implements BookApi {
       'https://www.qidian.com',
     ];
     // 对齐 Rust `SourceMatch` 的 snake_case 序列化（按 score 降序，Rust 侧已排序）
-    return List.generate(3, (i) => {
+    final all = List.generate(3, (i) => {
       'source_url': srcUrls[i],
       'source_name': srcNames[i],
       'book_url': 'mock://switch/$bookName/$i',
@@ -628,6 +629,14 @@ class MockBookApi implements BookApi {
       'word_count': '${100 + i * 50}万字',
       'score': 90.0 - i * 10,
     });
+    // [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：模拟 sourceUrls 过滤语义，
+    // 非空列表时仅返回指定书源的候选 — QoderCN
+    if (sourceUrls != null && sourceUrls.isNotEmpty) {
+      return all
+          .where((m) => sourceUrls.contains(m['source_url']))
+          .toList();
+    }
+    return all;
   }
 
   @override

@@ -163,8 +163,11 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
             ),
             const SizedBox(height: 4),
             // Tab 切换：分组 / 书源（位于浅色表面，覆盖全局白色 TabBar 主题）
+            // [UI-fix v2.0.3 | 2026-08-06] 全局 tabBarTheme 设了 TabAlignment.start（仅滚动 TabBar 合法），
+            // 此非滚动双 Tab 面板在 debug 下触发断言红屏；显式 fill 覆盖主题修复 — Qoder
             TabBar(
               controller: _tabController,
+              tabAlignment: TabAlignment.fill,
               labelColor: Theme.of(context).colorScheme.primary,
               unselectedLabelColor:
                   Theme.of(context).colorScheme.onSurfaceVariant,

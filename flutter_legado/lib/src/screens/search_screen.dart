@@ -124,7 +124,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 Navigator.pushNamed(context, '/sources');
                 break;
               case 'scope':
-                SearchFilterPanel.show(context);
+                // [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：选完分组/书源
+                // 关闭面板后自动重搜（筛选变更且有关键词时），对齐原版选 scope
+                // 后自动重搜行为，避免「选了没用」 — Qoder
+                _showScopePanelAndAutoSearch();
                 break;
               case 'log':
                 // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
@@ -352,6 +355,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('「$feature」后续版本支持')),
     );
+  }
+
+  /// 弹出搜索范围面板，关闭后若筛选变更且已有搜索关键词则自动重搜
+  /// （留项#12，Task #131）
+  Future<void> _showScopePanelAndAutoSearch() async {
+    final before = ref.read(searchNotifierProvider);
+    final prevGroups = {...before.selectedGroups};
+    final prevUrls = {...before.selectedSourceUrls};
+    await SearchFilterPanel.show(context);
+    if (!mounted) return;
+    final after = ref.read(searchNotifierProvider);
+    final filterChanged = !_setEquals(prevGroups, after.selectedGroups) ||
+        !_setEquals(prevUrls, after.selectedSourceUrls);
+    if (filterChanged && after.keyword.isNotEmpty) {
+      ref.read(searchNotifierProvider.notifier).search(after.keyword);
+    }
+  }
+
+  /// 集合相等比较（元素无序）
+  static bool _setEquals(Set<String> a, Set<String> b) {
+    if (a.length != b.length) return false;
+    return a.containsAll(b);
   }
 
   /// 搜索历史/联想区（无结果时显示，对标安卓原版「输入帮助」区域）

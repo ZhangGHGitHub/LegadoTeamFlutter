@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-06
 
+### 修复（「按分组搜索用不了」：换源页分组过滤生效 + 主搜索页选分组自动重搜，留项#12 闭合，跨 Rust+UI 全链，契约先行——Qoder/QoderCN）
+- 换源页分组搜索修复（根因：Rust `search_alternative_sources` 硬编码 `list_enabled_sources()` 搜全部源，选分组仅存 config 不生效）：`ffi::source_switch_search` 新增可选参数 `source_urls_json`（空串/空数组/缺省=搜全部启用源，加法式兼容既有调用，语义与 `search_books` 完全一致，复用 `search::load_search_sources` 过滤逻辑），契约登记 API_CONTRACT.md §2.4；C ABI `ffi_source_switch_search` 同步加参；新增单测「传 URL 列表只搜指定源 / 空参数搜全部」；codegen 重新生成 Dart 绑定 + 重建 x86_64 .so
+- UI 接线：`BookApi.searchSource` 加可选 `sourceUrls` 参数（rust_api 编码为 sourceUrlsJson / mock 模拟过滤语义，署名 QoderCN）；`ChangeSourceNotifier.search` 加 `group` 参数——非空时用 `getEnabledBookSources()` 内存过滤出该分组源 URL 列表传给 searchSource（分组下无启用源时直接空结果，不误搜全部）；`change_source_screen._search()` 传入 `_searchGroup`，分组过滤全链生效，删除过时 TODO(留批次) 注释
+- 主搜索页 UX 修复：三点菜单选分组/书源关闭筛选面板后自动重搜（筛选变更且有关键词时），对齐原版选 scope 后自动重搜行为，避免「选了没用」
+- 筛选面板红屏修复（E2E 实机发现）：全局 `tabBarTheme` 设 `TabAlignment.start`（仅滚动 TabBar 合法），`search_filter_panel` 非滚动双 Tab 面板在 debug 下触发断言红屏+底部溢出，面板完全不可用；显式 `tabAlignment: TabAlignment.fill` 覆盖主题修复，分组/书源选择恢复可用
+- 台账销记：REFACTORING_REMAINING_PLAN.md §5.9 留项 1（searchSource 分组过滤）闭合（v1.10）
+
 ### 修复（书详情页背景分区：仅顶部封面区虚化，章节列表区改纯色——Qoder）
 - 书详情页背景分区回退：上一提交 `c620c97e4` 将章节列表 section 底色改为半透明 scrim（`cs.surface` alpha 0.82）让封面虚化整页透出，用户确认不要此效果。现回退 `book_info_screen._buildBody` 章节列表 section（章节搜索/章节列表（N）头/空态/底部间距）为**不透明** `cs.surface`；章节列表本体额外用 `DecoratedSliver(BoxDecoration(color: cs.surface))` 铺满不透明底色——`ListTile.tileColor` 在全屏虚化栈上不可靠地绘制不透明背景（早期无虚化层时被不透明 Scaffold 底色掩盖，加虚化后暴露），故显式加不透明背景 Sliver 盖住虚化。`_buildPage` 的 `ImageFilter.blur` 封面虚化背景层保留，仅透过顶部透明的 `_buildHeader` 封面区显现，`_buildSummaryPanel` 及以下均用不透明纯色盖住虚化，形成「顶部封面虚化景深 → 章节列表纯色清爽背景」的自然过渡（`_buildSummaryPanel` 顶部圆角 20 作为过渡分隔）
 

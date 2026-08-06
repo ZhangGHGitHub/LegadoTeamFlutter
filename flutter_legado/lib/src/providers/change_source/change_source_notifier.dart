@@ -24,12 +24,44 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
   /// 搜索可替换书源
   ///
   /// Rust 返回已按评分降序的候选列表，Dart 侧仅做反序列化，不重排。
-  Future<void> search(String bookName, String author) async {
+  ///
+  /// [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：新增 [group] 参数，
+  /// 非空时用 getEnabledBookSources() 内存过滤出该分组源 URL 列表传给
+  /// searchSource（对齐原版 AppConfig.searchGroup 分组搜索）；
+  /// 分组下无启用源时直接返回空结果，不误搜全部 — Qoder
+  Future<void> search(
+    String bookName,
+    String author, {
+    String group = '',
+  }) async {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final raw =
-          await ref.read(bookApiProvider).searchSource(bookName, author);
+      List<String>? sourceUrls;
+      if (group.isNotEmpty) {
+        final sources =
+            await ref.read(bookApiProvider).getEnabledBookSources();
+        sourceUrls = sources
+            .where((s) {
+              final g = s.bookSourceGroup ?? '';
+              if (g.trim().isEmpty) return false;
+              return g
+                  .split(RegExp(r'[,，]'))
+                  .map((e) => e.trim())
+                  .contains(group);
+            })
+            .map((s) => s.bookSourceUrl)
+            .toList();
+        if (sourceUrls.isEmpty) {
+          // 所选分组无启用书源：直接空结果（不误搜全部）
+          state = state.copyWith(results: [], isLoading: false);
+          return;
+        }
+      }
+      final api = ref.read(bookApiProvider);
+      final raw = sourceUrls == null
+          ? await api.searchSource(bookName, author)
+          : await api.searchSource(bookName, author, sourceUrls: sourceUrls);
       final matches = raw.map(SourceMatch.fromJson).toList();
       state = state.copyWith(results: matches, isLoading: false);
     } catch (e) {
