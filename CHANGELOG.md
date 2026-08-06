@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-06
 
+### 修复（未入库书详情页加载链路，署名 Qoder）
+- 未入库书「目录/章节/封面」加载链路修复（三现象同源，对齐原版 BookInfoViewModel.upBook）：从搜索结果跳转的未入库书进入详情页时，`book_info_screen._loadData` 由「仅查 DB」改为完整链路——在线书 DB 无章节时按 origin 取书源，`webbookInfo` 补全封面/简介/tocUrl/字数（现象③封面缺失），`webbookChapters` 联网取目录用于展示（现象①共 0 章）；未入库时「仅展示不落库」（对齐原版 loadChapter 在 !inBookshelf 时不写 DB），避免污染书架（getBooks=find_all 无 notShelf 过滤）
+- 阅读器「章节不存在/未配置书源」修复（现象②）：`_openReader` 对齐原版 readBook——未入库在线书阅读前先 `addBook` 带正确 origin 落库，使 Rust `get_chapter_content_full` 按 book.origin 找书源取正文成立，规避 refresh_toc 兜底插入空 origin 记录导致的第二章及后续报错；已入库则幂等跳过
+- 阅读器「翻章后目录被清空 / 章节 N 不存在」根因修复（现象②真因，实机 E2E 定位）：`BookRepository::update` 此前复用 `insert` 的 `INSERT OR REPLACE INTO books`，主键冲突时会先删除旧 books 行再插入，触发 chapters 表 `ON DELETE CASCADE` 级联删除该书全部章节；每次翻章 `_saveProgress → update_reading_progress → repo.update` 都会清空目录，导致下一章「章节不存在」（影响所有在线书，非仅未入库）。改为真正原地 `UPDATE books SET ... WHERE bookUrl=?`（行不存在时退化 insert，保留 upsert 语义且不误触发级联删除），并新增回归测试 `test_update_book_preserves_chapters` 守护；实机验证翻章后 chapters 计数稳定 2598、第三/四章连续阅读正常
+- WebBookInfo/WebChapter 为 snake_case（cover_url/toc_url/is_vip），手动映射合并而非 Book.fromJson 直解，避免封面/目录链接丢失
+- 发现分类书籍 origin 丢失修复（同源缺陷，端到端验证时发现）：`rust_api.exploreFetchBooks` 返回的 Rust `WebSearchResult` 为 snake_case（book_url/cover_url/source_url，且无 origin/originName），此前直接 `SearchBook.fromJson`（期望 camelCase）会丢失 bookUrl/origin/coverUrl，导致从「发现」进入书详情页的未入库书同样共 0 章、无封面、阅读报「章节不存在」；改为显式归一化（兼容 snake/camel 两种键名）并用本次发现所属书源补齐 origin/originName，使详情页联网补全链路对搜索/发现两个入口一致生效
+
 ### 修复（评审修复：三维评审问题收口，署名 Qoder）
 - 搜索结果直达阅读：search_screen 搜索结果点击由弹出仅含「加入书架」的简易 AlertDialog 改为 `Navigator.pushNamed(bookInfo)` 跳转书详情页（对齐原版 SearchActivity→BookInfoActivity），补齐「开始阅读」入口——未入架时开始阅读自动 openBook 直达阅读器，无需先手动加书架；同步删除废弃的 `_showBookDetail`/`_addToBookshelf` 方法及 bookshelf_notifier 冗余引用
 - rssUpdateSource 真实接线：`rust_api.updateRssSource` 由误接 `sourceUpdate`（按 BookSource 语义落 book_sources 表，产生幽灵书源脏数据且 RSS 变更静默丢失）改接 `bridge.rssUpdateSource` 原子更新管线，Mock 同步对齐「源不存在时报错」语义（审计缺口④至此全链闭合）

@@ -69,13 +69,150 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     final api = ref.read(bookApiProvider);
     final url = widget.effectiveBookUrl;
     // 优先从数据库取最新记录（换源/刷新后元数据才会更新），传入对象仅兜底
-    final book = await api.getBook(url) ?? widget.book;
-    final chapters = await api.getChapters(url);
+    final dbBook = await api.getBook(url);
+    // DB 有记录且未打 notShelf 位才视为已入书架（对标原版 inBookshelf；
+    // 搜索/发现打开的在线书会以 notShelf 临时落库，不算在书架内）
+    final inShelf =
+        dbBook != null && (dbBook.bookType & BookType.notShelf) == 0;
+    var book = dbBook ?? widget.book;
+    var chapters = await api.getChapters(url);
+
+    // [UI-fix v2.0.3 | 2026-08-06] 未入库在线书进入即联网补全目录/详情/封面 — Qoder
+    // 对齐原版 BookInfoViewModel.upBook：tocUrl/详情缺失→loadBookInfo 补
+    // cover/intro/tocUrl；DB 无章节→loadChapter 取目录。关键：未入库时「仅展示
+    // 不落库」（对齐原版 loadChapter 在 !inBookshelf 时不写 DB）；真正落库延迟到
+    // 开始阅读（见 _openReader），且以 notShelf 位标记，书架列表(list_books)过滤，不污染书架。
+    if (book != null && chapters.isEmpty && _isOnlineBook(book)) {
+      var b = book;
+      final source = await _findSourceByOrigin(api, b.origin);
+      if (source != null) {
+        final sourceJson = jsonEncode(source.toJson());
+        // a. 补全元数据（现象3：封面/简介/tocUrl/字数缺失）
+        if (_needCompleteInfo(b)) {
+          try {
+            final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
+            b = _mergeWebInfo(b, infoJson);
+          } catch (e) {
+            debugPrint('webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}');
+          }
+        }
+        // b. 取目录（现象1）
+        try {
+          if (inShelf) {
+            // 已入库：走 DB 刷新（refreshToc 内部落库章节）
+            chapters = await api.refreshToc(b.bookUrl, b.origin);
+          } else {
+            // 未入库：仅网络取目录用于展示，不落库
+            final chJson = await api.webbookChapters(sourceJson, b.bookUrl);
+            chapters = _parseWebChapters(chJson, b.bookUrl);
+          }
+        } catch (e) {
+          debugPrint(
+              '取目录失败(bookUrl=${b.bookUrl}, origin=${b.origin}): ${_errMsg(e)}');
+        }
+        // 目录数回填 totalChapterNum（供「目录：共 N 章」摘要行显示）
+        if (chapters.isNotEmpty) {
+          b = b.copyWith(totalChapterNum: chapters.length);
+        }
+        // 已入库书：把补全的元数据写回 DB（对标原版 inBookshelf 时 update）
+        if (inShelf) {
+          try {
+            await api.updateBook(b);
+          } catch (e) {
+            debugPrint('更新书籍元数据失败: $e');
+          }
+        }
+      }
+      book = b;
+    }
+
     _loadedBook = book;
     // 书架中已存在该书记录时按钮显示「移出书架」（对标原版 upTvBookshelf）
-    final shelfBook = book != null ? await api.getBook(book.bookUrl) : null;
-    if (mounted) setState(() => _inBookshelf = shelfBook != null);
+    if (mounted) setState(() => _inBookshelf = inShelf);
     return _BookInfoData(book: book, chapters: chapters);
+  }
+
+  /// 提取错误信息：BridgeError 等封装类型带 message 字段，直接 `$e` 只得类型名。
+  String _errMsg(Object e) {
+    try {
+      final m = (e as dynamic).message;
+      if (m is String && m.isNotEmpty) return m;
+    } catch (_) {}
+    return e.toString();
+  }
+
+  /// 是否在线书籍（非本地、非 WebDAV）——仅在线书才走网络补全链路
+  bool _isOnlineBook(Book book) =>
+      book.origin.isNotEmpty &&
+      book.origin != BookType.localTag &&
+      !book.origin.startsWith(BookType.webDavTag);
+
+  /// 元数据是否需要联网补全（封面/简介/目录链接任一缺失）
+  bool _needCompleteInfo(Book book) =>
+      (book.coverUrl == null || book.coverUrl!.isEmpty) ||
+      (book.intro == null || book.intro!.isEmpty) ||
+      book.tocUrl.isEmpty;
+
+  /// 按 origin（书源 URL）查找对应书源（供 webbookInfo/webbookChapters 传参）
+  Future<BookSource?> _findSourceByOrigin(BookApi api, String origin) async {
+    try {
+      final sources = await api.getBookSources();
+      for (final s in sources) {
+        if (s.bookSourceUrl == origin) return s;
+      }
+    } catch (e) {
+      debugPrint('获取书源失败: $e');
+    }
+    return null;
+  }
+
+  /// 合并 webbookInfo 返回的详情到 book（WebBookInfo 为 snake_case，需手动映射，
+  /// 不能直接 Book.fromJson 否则 cover_url/toc_url 等丢失）；仅补全当前缺失字段。
+  Book _mergeWebInfo(Book book, String infoJson) {
+    final decoded = jsonDecode(infoJson);
+    if (decoded is! Map) return book;
+    String? pick(String key) {
+      final v = decoded[key];
+      return (v is String && v.isNotEmpty) ? v : null;
+    }
+
+    final hasCover = book.coverUrl != null && book.coverUrl!.isNotEmpty;
+    final hasIntro = book.intro != null && book.intro!.isNotEmpty;
+    final hasWord = book.wordCount != null && book.wordCount!.isNotEmpty;
+    final hasLast =
+        book.latestChapterTitle != null && book.latestChapterTitle!.isNotEmpty;
+    final hasKind = book.kind != null && book.kind!.isNotEmpty;
+    final tocUrl = pick('toc_url');
+    final name = pick('name');
+    final author = pick('author');
+    return book.copyWith(
+      coverUrl: hasCover ? book.coverUrl : pick('cover_url'),
+      intro: hasIntro ? book.intro : pick('intro'),
+      tocUrl: book.tocUrl.isNotEmpty ? book.tocUrl : (tocUrl ?? book.tocUrl),
+      wordCount: hasWord ? book.wordCount : pick('word_count'),
+      latestChapterTitle: hasLast ? book.latestChapterTitle : pick('last_chapter'),
+      kind: hasKind ? book.kind : pick('kind'),
+      name: book.name.isNotEmpty ? book.name : (name ?? book.name),
+      author: book.author.isNotEmpty ? book.author : (author ?? book.author),
+    );
+  }
+
+  /// 解析 webbookChapters 返回的 WebChapter 数组（snake_case）为展示用章节列表
+  List<BookChapter> _parseWebChapters(String json, String bookUrl) {
+    final decoded = jsonDecode(json);
+    if (decoded is! List) return const [];
+    return [
+      for (final e in decoded)
+        if (e is Map)
+          BookChapter(
+            index: (e['index'] as num?)?.toInt() ?? 0,
+            title: e['title']?.toString() ?? '',
+            url: e['url']?.toString() ?? '',
+            bookUrl: bookUrl,
+            isVolume: e['is_volume'] == true,
+            isVip: e['is_vip'] == true,
+          ),
+    ];
   }
 
   @override
@@ -734,7 +871,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         SnackBar(content: Text('《${book.name}》已移出书架')),
       );
     } else {
-      await notifier.addBook(book);
+      // 清除 notShelf 位转正：之前阅读时可能已以 notShelf 临时落库，
+      // addBook 走原地 UPDATE 安全 upsert（不会级联删章节），同时清掉标记进书架。
+      await notifier
+          .addBook(book.copyWith(bookType: book.bookType & ~BookType.notShelf));
       if (!mounted) return;
       setState(() => _inBookshelf = true);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -933,7 +1073,26 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   // ===== 操作 =====
 
-  void _openReader(BuildContext context, Book book, int chapterIndex) {
+  Future<void> _openReader(
+      BuildContext context, Book book, int chapterIndex) async {
+    // [UI-fix v2.0.3 | 2026-08-06] 对齐原版 readBook：未入库在线书阅读前先落库 — Qoder
+    // 带正确 origin 落库，使阅读器 DB 依赖成立（get_chapter_content_full 按
+    // book.origin 找书源取正文），规避「章节不存在 / 未配置书源」；已入库则幂等跳过。
+    final api = ref.read(bookApiProvider);
+    try {
+      if (_isOnlineBook(book)) {
+        final existing = await api.getBook(book.bookUrl);
+        if (existing == null) {
+          // 以 notShelf 位标记临时落库：阅读器 DB 依赖成立（按 origin 取正文），
+          // 但不进书架列表；用户显式「加入书架」时再清标记转正（见 _toggleShelf）。
+          await api.addBook(
+              book.copyWith(bookType: book.bookType | BookType.notShelf));
+        }
+      }
+    } catch (e) {
+      debugPrint('阅读前落库失败: $e');
+    }
+    if (!context.mounted) return;
     final container = ProviderScope.containerOf(context);
     final bookToRead = chapterIndex != book.durChapterIndex
         ? book.copyWith(durChapterIndex: chapterIndex)
@@ -989,7 +1148,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     if (action == null) return;
     if (!context.mounted) return;
     if (action == 'start' || action == 'read') {
-      _openReader(context, book, chapter.index);
+      await _openReader(context, book, chapter.index);
     }
   }
 }

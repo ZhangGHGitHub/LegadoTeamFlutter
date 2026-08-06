@@ -309,8 +309,74 @@ impl<'a> Repository<Book> for BookRepository<'a> {
     }
 
     fn update(&self, item: &Book) -> LegadoResult<()> {
-        // INSERT OR REPLACE 即可实现 upsert
-        self.insert(item)
+        // Task#125 P0：update 改为原地 UPDATE，避免 INSERT OR REPLACE
+        // 删除 books 行触发 chapters 的 ON DELETE CASCADE，导致翻章后目录被清空
+        let read_config_json = item
+            .read_config
+            .as_ref()
+            .map(|rc| serde_json::to_string(rc).unwrap_or_default());
+
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE books SET
+                    tocUrl=?1, origin=?2, originName=?3, name=?4, author=?5, kind=?6,
+                    customTag=?7, coverUrl=?8, customCoverUrl=?9, intro=?10, customIntro=?11,
+                    charset=?12, type=?13, \"group\"=?14, latestChapterTitle=?15,
+                    latestChapterTime=?16, lastCheckTime=?17, lastCheckCount=?18,
+                    totalChapterNum=?19, durChapterTitle=?20, durChapterIndex=?21,
+                    durVolumeIndex=?22, chapterInVolumeIndex=?23, durChapterPos=?24,
+                    durChapterTime=?25, wordCount=?26, canUpdate=?27, \"order\"=?28,
+                    originOrder=?29, variable=?30, readConfig=?31, syncTime=?32,
+                    infoHtml=?33, tocHtml=?34, downloadUrls=?35, coverOrigin=?36
+                 WHERE bookUrl=?37",
+                params![
+                    item.toc_url,
+                    item.origin,
+                    item.origin_name,
+                    item.name,
+                    item.author,
+                    item.kind,
+                    item.custom_tag,
+                    item.cover_url,
+                    item.custom_cover_url,
+                    item.intro,
+                    item.custom_intro,
+                    item.charset,
+                    item.book_type,
+                    item.group,
+                    item.latest_chapter_title,
+                    item.latest_chapter_time,
+                    item.last_check_time,
+                    item.last_check_count,
+                    item.total_chapter_num,
+                    item.dur_chapter_title,
+                    item.dur_chapter_index,
+                    item.dur_volume_index,
+                    item.chapter_in_volume_index,
+                    item.dur_chapter_pos,
+                    item.dur_chapter_time,
+                    item.word_count,
+                    item.can_update,
+                    item.order,
+                    item.origin_order,
+                    item.variable,
+                    read_config_json,
+                    item.sync_time,
+                    item.info_html,
+                    item.toc_html,
+                    item.download_urls,
+                    item.cover_origin,
+                    item.book_url,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新失败: {e}")))?;
+
+        // 行不存在时退化为插入，保留 upsert 语义（不会误触发级联删除，因为无旧行）
+        if affected == 0 {
+            self.insert(item)?;
+        }
+        Ok(())
     }
 
     fn delete(&self, id: &str) -> LegadoResult<()> {

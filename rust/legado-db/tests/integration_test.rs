@@ -1,10 +1,72 @@
 //! legado-db 集成测试
 //! 完整 CRUD 流程 + 迁移测试
 
-use legado_core::models::Book;
+use legado_core::models::{Book, BookChapter};
 use legado_db::repository::book_repository::BookRepository;
 use legado_db::repository::Repository;
-use legado_db::{Database, MigrationRegistry, SCHEMA_VERSION};
+use legado_db::{BookChapterRepository, Database, MigrationRegistry, SCHEMA_VERSION};
+
+// ---------------------------------------------------------------------------
+// 回归：更新书籍进度不得清空章节目录（ON DELETE CASCADE 级联删除缺陷）
+// Task#125 P0：复现并守护 book.update() 曾用 INSERT OR REPLACE
+// 删除 books 行 → 触发 chapters ON DELETE CASCADE → 翻章后目录被清空
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_update_book_preserves_chapters() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.connection();
+    let repo = BookRepository::new(conn);
+    let chapter_repo = BookChapterRepository::new(conn);
+
+    let book_url = "https://example.com/online-book";
+
+    // 1. 入库一本在线书
+    let book = Book {
+        book_url: book_url.to_string(),
+        name: "灵气复苏".to_string(),
+        author: "作者".to_string(),
+        origin: "https://source.com".to_string(),
+        total_chapter_num: 3,
+        ..Book::default()
+    };
+    repo.insert(&book).unwrap();
+
+    // 2. 写入目录（3 章）
+    let chapters: Vec<BookChapter> = (0..3)
+        .map(|i| BookChapter {
+            url: format!("{book_url}/ch{i}"),
+            title: format!("第{}章", i + 1),
+            book_url: book_url.to_string(),
+            index: i,
+            ..BookChapter::default()
+        })
+        .collect();
+    chapter_repo.insert_batch(&chapters).unwrap();
+    assert_eq!(chapter_repo.count_by_book_url(book_url).unwrap(), 3);
+
+    // 3. 模拟翻章保存进度 → repo.update()
+    let mut progressed = repo.find_by_url(book_url).unwrap().unwrap();
+    progressed.dur_chapter_index = 1;
+    progressed.dur_chapter_pos = 42;
+    repo.update(&progressed).unwrap();
+
+    // 4. 关键断言：章节目录必须完整保留（修复前此处会变成 0）
+    assert_eq!(
+        chapter_repo.count_by_book_url(book_url).unwrap(),
+        3,
+        "update() 不得级联删除章节目录"
+    );
+    // 第 2 章仍可按 index 命中（对应“章节不存在”缺陷）
+    assert!(chapter_repo
+        .find_by_book_url_and_index(book_url, 1)
+        .unwrap()
+        .is_some());
+    // 进度已写回
+    let after = repo.find_by_url(book_url).unwrap().unwrap();
+    assert_eq!(after.dur_chapter_index, 1);
+    assert_eq!(after.dur_chapter_pos, 42);
+}
 
 // ---------------------------------------------------------------------------
 // 完整书籍生命周期 CRUD

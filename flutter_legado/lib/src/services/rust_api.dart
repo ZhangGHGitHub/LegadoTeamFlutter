@@ -1236,9 +1236,79 @@ class RustApi implements BookApi {
       ),
     );
     final list = _decodeList(json, 'bookApi');
+    // [UI-fix v2.0.3 | 2026-08-06] 发现分类返回的是 Rust WebSearchResult
+    // （snake_case：book_url/cover_url/source_url，且无 origin/originName），
+    // 与 SearchBook.fromJson 期望的 camelCase 键不一致，直接 fromJson 会丢失
+    // bookUrl/origin/coverUrl → 详情页因 origin 为空无法联网补全目录/封面
+    // （未入库书共 0 章 / 无封面）。此处显式归一化，并用本次发现所属书源
+    // 补齐 origin/originName（同源批量，权威）。 — Qoder
+    String srcUrl = '';
+    String srcName = '';
+    try {
+      final sm = jsonDecode(sourceJson);
+      if (sm is Map) {
+        srcUrl =
+            (sm['bookSourceUrl'] ?? sm['book_source_url'] ?? '').toString();
+        srcName =
+            (sm['bookSourceName'] ?? sm['book_source_name'] ?? '').toString();
+      }
+    } catch (_) {}
     return list
-        .map((e) => SearchBook.fromJson(e as Map<String, dynamic>))
+        .map((e) =>
+            _searchBookFromExplore(e as Map<String, dynamic>, srcUrl, srcName))
         .toList();
+  }
+
+  /// 将发现分类返回的 WebSearchResult 归一化为 SearchBook。
+  /// 兼容 snake_case 与 camelCase 两种键名；origin/originName 用所属书源补齐，
+  /// 避免 Rust 侧字段命名差异导致 origin 丢失（未入库书详情页无法联网取目录/封面）。
+  SearchBook _searchBookFromExplore(
+    Map<String, dynamic> e,
+    String sourceUrl,
+    String sourceName,
+  ) {
+    String? pick(String camel, String snake) {
+      final v = e[camel] ?? e[snake];
+      final s = v?.toString();
+      return (s != null && s.isNotEmpty) ? s : null;
+    }
+
+    return SearchBook(
+      bookUrl: _absoluteUrl(
+          pick('origin', 'source_url') ?? sourceUrl, pick('bookUrl', 'book_url')),
+      origin: pick('origin', 'source_url') ?? sourceUrl,
+      originName: pick('originName', 'source_name') ?? sourceName,
+      name: pick('name', 'name') ?? '',
+      author: pick('author', 'author') ?? '',
+      kind: pick('kind', 'kind'),
+      coverUrl: _absoluteUrlOrNull(
+          pick('origin', 'source_url') ?? sourceUrl, pick('coverUrl', 'cover_url')),
+      intro: pick('intro', 'intro'),
+      wordCount: pick('wordCount', 'word_count'),
+      latestChapterTitle: pick('latestChapterTitle', 'latest_chapter'),
+      tocUrl: pick('tocUrl', 'toc_url') ?? '',
+    );
+  }
+
+  /// 将可能为相对路径的 URL 解析为绝对 URL（对标原版 NetworkUtils.getAbsoluteURL）。
+  /// 发现/搜索返回的 book_url 可能是相对路径（如 /book/65308/），直接传给
+  /// webbookInfo/webbookChapters 会导致 reqwest “builder error”。以书源基地址补齐。
+  String _absoluteUrl(String base, String? url) {
+    final u = (url ?? '').trim();
+    if (u.isEmpty || base.isEmpty) return u;
+    if (u.contains('://') || u.startsWith('data:')) return u;
+    try {
+      return Uri.parse(base).resolve(u).toString();
+    } catch (_) {
+      return u;
+    }
+  }
+
+  /// [_absoluteUrl] 的可空包装：空值返回 null（保持封面可空语义）。
+  String? _absoluteUrlOrNull(String base, String? url) {
+    final u = (url ?? '').trim();
+    if (u.isEmpty) return null;
+    return _absoluteUrl(base, u);
   }
 
   // ========== 规则解析 ==========
