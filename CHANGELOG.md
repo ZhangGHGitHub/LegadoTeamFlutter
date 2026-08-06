@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-06
 
+### 修复（书详情页章节列表区背景虚化覆盖——Qoder）
+- 书详情页向下滚动到章节列表时背景无封面虚化修复：`book_info_screen._buildBody` 中章节列表 section（章节搜索/章节列表（N）头/列表项 ListTile/空态/底部间距）原使用不透明 `cs.surface` 背景，完全遮挡了 `_buildPage` 铺满全页的 `ImageFilter.blur` 封面虚化层，导致仅顶部封面区可见景深、下方列表区为纯色。改为半透明 scrim（`cs.surface` withValues alpha 0.82），让封面虚化背景隐约透出、整页保持 iOS 沉浸景深一致；仍保留足够对比度确保章节文字可读（方案 B）
+
 ### 变更（书详情页 iOS 视觉重设计 + 溢出菜单对齐原版 + 阅读器顶栏溢出修复，署名 Qoder）
 - 书详情页封面高斯虚化背景：`book_info_screen._buildPage` 封面图改用 `ImageFiltered(ImageFilter.blur sigma 25)` 作背景层 + 保留半透明 scrim 叠层，营造 iOS 沉浸景深；无封面降级纯色背景不加模糊
 - 顶栏精简至 iOS 导航栏节奏：移除下载/导出按钮（原版书详情无此入口）；编辑按钮条件化，仅在架书籍显示（对标原版 `editMenuItem.isVisible = inBookshelf`）；保留分享 + 更多菜单；标题固定「书籍信息」

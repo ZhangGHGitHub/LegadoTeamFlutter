@@ -520,6 +520,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             .where((c) => c.title.toLowerCase().contains(_filter))
             .toList();
     final cs = Theme.of(context).colorScheme;
+    // [UI-fix v2.0.3 | 2026-08-06] 章节列表区改半透明 scrim（surface alpha 0.82），
+    // 让封面虚化背景隐约透出、保持整页 iOS 景深一致；仍保留足够对比度确保章节文字可读 — Qoder
+    final tocPanelColor = cs.surface.withValues(alpha: 0.82);
 
     return CustomScrollView(
       controller: _scrollController,
@@ -528,10 +531,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         SliverToBoxAdapter(child: _buildHeader(context, book)),
         // 信息面板：书名/标签/摘要行/简介（对标原版 ll_info）
         SliverToBoxAdapter(child: _buildSummaryPanel(context, book)),
-        // 章节搜索与列表头（白色背景延续面板）
+        // 章节搜索与列表头（半透明面板，虚化背景透出）
         SliverToBoxAdapter(
           child: Container(
-            color: cs.surface,
+            color: tocPanelColor,
             child: Column(
               children: [
                 _buildChapterSearch(context),
@@ -554,7 +557,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         if (filteredChapters.isEmpty)
           SliverToBoxAdapter(
             child: Container(
-              color: cs.surface,
+              color: tocPanelColor,
               child: const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: Text('暂无匹配章节')),
@@ -568,8 +571,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               final chapter = filteredChapters[index];
               final isCurrentRead = chapter.index == book.durChapterIndex;
               return ListTile(
-                // tileColor 延续白色面板背景（不能用 ColoredBox 包裹，会遮挡 ink 效果）
-                tileColor: cs.surface,
+                // [UI-fix v2.0.3 | 2026-08-06] tileColor 用半透明面板色，虚化背景透出保持景深
+                // （不能用 ColoredBox 包裹，会遮挡 ink 效果） — Qoder
+                tileColor: tocPanelColor,
                 title: Text(
                   chapter.title,
                   maxLines: 1,
@@ -597,7 +601,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             },
           ),
         SliverToBoxAdapter(
-          child: Container(color: cs.surface, height: 24),
+          child: Container(color: tocPanelColor, height: 24),
         ),
       ],
     );
