@@ -71,6 +71,33 @@ impl<'a> BookRepository<'a> {
         }
     }
 
+    /// 仅查询已入书架的书籍（过滤 notShelf 临时书）
+    ///
+    /// Task#125 P0：搜索/发现打开在线书阅读时会落库临时记录（打 NOT_SHELF 位），
+    /// 书架列表须排除这些临时书，对齐上游 `BookDao.getBooksOnBookshelf()`（type & NOT_SHELF = 0）。
+    pub fn find_all_in_shelf(&self) -> LegadoResult<Vec<Book>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT bookUrl, tocUrl, origin, originName, name, author, kind, customTag,
+                        coverUrl, customCoverUrl, intro, customIntro, charset, type,
+                        \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
+                        lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
+                        durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
+                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
+                        infoHtml, tocHtml, downloadUrls, coverOrigin
+                 FROM books WHERE (type & 1024) = 0 ORDER BY \"order\" ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let books = stmt
+            .query_map([], row_to_book)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(books)
+    }
+
     /// 删除指定 bookUrl 的书籍
     pub fn delete_by_url(&self, book_url: &str) -> LegadoResult<()> {
         self.conn
@@ -190,8 +217,9 @@ impl<'a> BookRepository<'a> {
         // 1. 读取库内当前 readConfig（保持 NULL 状态）
         let saved = self.read_config_json(&book.book_url)?;
 
-        // 2. 全行 upsert
-        self.insert(book)?;
+        // 2. 全行原地更新（Task#125 P0：改用 update 原地 UPDATE，避免 insert 的
+        //    INSERT OR REPLACE 删行触发 chapters ON DELETE CASCADE 清空目录）
+        self.update(book)?;
 
         // 3. 写回原 readConfig，避免被传入值覆盖
         self.conn

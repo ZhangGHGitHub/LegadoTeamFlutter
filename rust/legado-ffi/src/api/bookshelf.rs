@@ -14,7 +14,8 @@ use crate::db_state::with_database;
 pub fn list_books() -> LegadoResult<Vec<Book>> {
     with_database(|db| {
         let repo = BookRepository::new(db.connection());
-        repo.find_all()
+        // Task#125 P0：仅返回已入书架的书，过滤 notShelf 临时书（搜索/发现打开的在线书）
+        repo.find_all_in_shelf()
     })
 }
 
@@ -24,7 +25,9 @@ pub fn add_book(book_json: &str) -> LegadoResult<Book> {
         .map_err(|e| legado_core::LegadoError::Ffi(format!("Book JSON 解析失败: {e}")))?;
     with_database(|db| {
         let repo = BookRepository::new(db.connection());
-        repo.insert(&book)?;
+        // Task#125 P0：用原地 UPDATE 语义的 upsert，避免对已存在的临时书
+        // 触发 INSERT OR REPLACE 级联删除其章节目录（转正/重复加入书架时安全）
+        repo.update(&book)?;
         Ok(book)
     })
 }

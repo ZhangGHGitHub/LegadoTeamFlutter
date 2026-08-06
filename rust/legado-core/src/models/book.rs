@@ -9,6 +9,10 @@ pub mod book_type {
     pub const VIDEO: i32 = 4;
     pub const LOCAL: i32 = 0x1000;
     pub const ALL_BOOK_TYPE_LOCAL: i32 = 0x1000;
+    /// 未入书架的临时书（对齐 Kotlin `BookType.notShelf = 0b100_0000_0000`）
+    /// 用于「搜索/发现打开在线书阅读但未加入书架」的临时记录：落库以支撑阅读器
+    /// 按 bookUrl/origin 取正文，但书架列表须按此位过滤，避免污染书架。
+    pub const NOT_SHELF: i32 = 0b100_0000_0000;
     pub const LOCAL_TAG: &str = "loc_book";
     pub const WEB_DAV_TAG: &str = "dav:";
 }
