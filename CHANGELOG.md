@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 朗读配置页入口：听书页 TTS 设置面板新增「朗读引擎」入口，接通孤儿页 ReadAloudConfigScreen（对标原版 pref_aloud）
 - 替换规则导入：replace_rules_screen 新增导入菜单，本地文件导入接通 ReplaceRuleImportConfirmScreen；网络/二维码导入缺导入 service，留批次2
 
+### 修复（批次1 P0 长按选择 + 朗读链路）
+- 阅读器正文长按选择：新增段落选区面板（SelectText 精细选区），接通复制/书签/高亮（5色）/词典/浏览器/分享，操作菜单对齐原版 content_select_action 顺序（审计 P0-1，署名 Qoder）
+- 阅读器朗读链路：底栏朗读按钮接通朗读启动/播放暂停切换，新增朗读控制条（章节切换/语速 0.5-3.0x/目录/朗读设置/转后台），对标原版 ReadAloud 控制项（审计 P0-2，真实 TTS 管线待批次2，署名 Qoder）
+
 ### 新增（2026-07-31 重构遗留任务收尾）
 - 排版引擎渲染侧整合（Task #34）：paragraph_layout_engine 接入 reader_screen，屏级分页 + 中文避头尾 + 两端对齐，847+ 测试通过
 - 听书后台媒体按钮（Task #17）：MediaSession 通道注册 + AudioProvider 接线，锁屏/通知栏媒体控制 + 音频焦点管理，22/22 测试

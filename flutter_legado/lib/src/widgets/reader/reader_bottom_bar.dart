@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../l10n/app_strings.dart';
+import '../../providers/audio/audio_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../services/system_brightness.dart';
 
@@ -18,11 +19,15 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenAdvancedConfig;
 
+  /// 朗读按钮回调（启动/切换朗读，由 ReaderScreen 接线到 AudioNotifier）
+  final VoidCallback onReadAloud;
+
   const ReaderBottomBar({
     super.key,
     required this.onOpenCatalog,
     required this.onOpenSettings,
     required this.onOpenAdvancedConfig,
+    required this.onReadAloud,
   });
 
   @override
@@ -59,16 +64,17 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
     }
   }
 
-  void _todo(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$feature」后续版本支持')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
+    // [UI-fix v2.0.1 | 2026-08-06] 朗读按钮激活：当前书朗读进行中时
+    // 按钮切换为实心图标高亮 — Qoder
+    final audio = ref.watch(audioNotifierProvider);
+    final book = state.currentBook;
+    final aloudActive = book != null &&
+        audio.bookUrl == book.bookUrl &&
+        audio.state != PlayerState.idle;
 
     return Positioned(
       bottom: 0,
@@ -172,9 +178,13 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                   ),
                   _buildBottomAction(
                     context,
-                    Icons.record_voice_over_outlined,
+                    // 对标 ll_read_aloud：启动朗读当前章（进行中时点击为播放/暂停切换）
+                    aloudActive
+                        ? Icons.record_voice_over
+                        : Icons.record_voice_over_outlined,
                     AppStrings.readAloud,
-                    () => _todo(context, AppStrings.readAloud),
+                    widget.onReadAloud,
+                    highlighted: aloudActive,
                   ),
                   _buildBottomAction(
                     context,
@@ -203,8 +213,10 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
     BuildContext context,
     IconData icon,
     String label,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    bool highlighted = false,
+  }) {
+    final highlightColor = Theme.of(context).colorScheme.primary;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -212,9 +224,18 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22),
+            Icon(
+              icon,
+              size: 22,
+              color: highlighted ? highlightColor : null,
+            ),
             const SizedBox(height: 2),
-            Text(label, style: Theme.of(context).textTheme.labelSmall),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: highlighted ? highlightColor : null,
+                  ),
+            ),
           ],
         ),
       ),

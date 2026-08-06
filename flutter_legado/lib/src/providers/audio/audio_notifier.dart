@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 // 本文件需使用 Riverpod 的 Provider 定义 audioServiceProvider，
 // 且未引入 provider 包，故不 hide Provider（仅 ChangeNotifierProvider 无需引用）。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -144,6 +145,60 @@ class AudioNotifier extends Notifier<AudioState> {
     }
   }
 
+  // [UI-fix v2.0.1 | 2026-08-06] 阅读器底栏朗读入口：打通 底栏按钮 →
+  // ReaderScreen → AudioNotifier.startReadAloud → play() → BookApi.audioSpeak
+  // 的朗读链路，对齐原版 ReadBookActivity.onClickReadAloud 启动流程 — Qoder
+  /// 启动指定书籍的朗读（阅读器底栏「朗读」按钮入口）
+  ///
+  /// 流程（对标原版 ReadBookActivity 朗读启动）：
+  /// 初始化媒体会话 → 加载章节列表 → 定位到当前阅读章节 → 开始播放。
+  /// 重复调用同一本书时从当前状态续播。
+  Future<void> startReadAloud({
+    required String bookUrl,
+    required String bookName,
+    int chapterIndex = 0,
+  }) async {
+    // 换书或章节未加载时需要重新拉取章节列表
+    final needReload = state.chapters.isEmpty || state.bookUrl != bookUrl;
+    state = state.copyWith(bookUrl: bookUrl, bookName: bookName);
+    await initMediaSession(bookName: bookName);
+
+    if (needReload) {
+      await loadChapters(bookUrl);
+    }
+    if (state.chapters.isEmpty) return; // 章节加载失败时保持错误态
+
+    // 未配置朗读引擎时取首个 HTTP TTS 引擎作为默认引擎
+    if (state.config.engineUrl.isEmpty) {
+      await _ensureDefaultEngine();
+    }
+
+    // 定位到阅读器当前章节后开始朗读
+    final target = chapterIndex.clamp(0, state.chapters.length - 1).toInt();
+    if (target != state.currentIndex) {
+      state = state.copyWith(currentIndex: target);
+    }
+    await play();
+  }
+
+  /// 从 HTTP TTS 引擎列表取首个作为默认朗读引擎
+  ///
+  /// [UI-fix v2.0.1 | 2026-08-06] 真实 TTS 管线待批次2（Rust audioSpeak 缺口②） — Qoder
+  /// 当前仅用于探活链路打通；批次2应改为读取用户偏好引擎配置。
+  Future<void> _ensureDefaultEngine() async {
+    try {
+      final list = await _api.getHttpTts();
+      if (list.isEmpty) return;
+      // 原版引擎 URL 格式为 "url,{header/body 配置}"，探活仅取逗号前的 URL 部分
+      final raw = list.first.url;
+      final commaIndex = raw.indexOf(',');
+      final url = commaIndex > 0 ? raw.substring(0, commaIndex) : raw;
+      if (url.isNotEmpty) updateConfig(engineUrl: url);
+    } catch (e) {
+      debugPrint('获取默认朗读引擎失败: $e');
+    }
+  }
+
   /// 播放当前章节
   Future<void> play() async {
     if (state.chapters.isEmpty) return;
@@ -167,14 +222,21 @@ class AudioNotifier extends Notifier<AudioState> {
       // 调用 TTS 合成语音
       final config = state.config;
       if (config.engineUrl.isNotEmpty) {
-        await _api.audioSpeak(
-          text: state.chapters[state.currentIndex].text,
-          engineUrl: config.engineUrl,
-          speed: config.speed,
-          pitch: config.pitch,
-          volume: config.volume,
-          voiceName: config.voiceName,
-        );
+        // [UI-fix v2.0.1 | 2026-08-06] 真实 TTS 管线待批次2（Rust audioSpeak 缺口②） — Qoder
+        // 当前 audioSpeak 为探活级实现（http.get 探活），探活失败不阻断朗读 UI
+        // 状态机，仅留痕便于排障；批次2接入真实管线后移除该保护。
+        try {
+          await _api.audioSpeak(
+            text: state.chapters[state.currentIndex].text,
+            engineUrl: config.engineUrl,
+            speed: config.speed,
+            pitch: config.pitch,
+            volume: config.volume,
+            voiceName: config.voiceName,
+          );
+        } catch (e) {
+          debugPrint('audioSpeak 探活失败（不影响朗读 UI 状态）: $e');
+        }
       }
 
       state = state.copyWith(state: PlayerState.playing);

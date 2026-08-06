@@ -162,6 +162,7 @@ void main() {
         onOpenCatalog: () {},
         onOpenSettings: () {},
         onOpenAdvancedConfig: () {},
+        onReadAloud: () {},
       )));
       await tester.pump();
 
@@ -181,6 +182,7 @@ void main() {
         onOpenCatalog: () => catalogTapped = true,
         onOpenSettings: () {},
         onOpenAdvancedConfig: () {},
+        onReadAloud: () {},
       )));
       await tester.pump();
       await openBookAndPump(tester);
@@ -197,6 +199,7 @@ void main() {
         onOpenCatalog: () {},
         onOpenSettings: () {},
         onOpenAdvancedConfig: () {},
+        onReadAloud: () {},
       )));
       await tester.pump();
       await openBookAndPump(tester);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../widgets/paragraph_layout_engine.dart';
+import 'text_selection_panel.dart';
 
 /// 阅读器正文排版渲染
 ///
@@ -150,6 +151,7 @@ class ReaderTextContent extends StatelessWidget {
       }
 
       // 逐行渲染
+      final lineWidgets = <Widget>[];
       for (var lineIdx = 0; lineIdx < para.lines.length; lineIdx++) {
         final line = para.lines[lineIdx];
         final text = line.words.join('');
@@ -171,7 +173,7 @@ class ReaderTextContent extends StatelessWidget {
           }
         }
 
-        widgets.add(
+        lineWidgets.add(
           SizedBox(
             height: fontSize * lineHeight,
             child: Text(
@@ -189,6 +191,25 @@ class ReaderTextContent extends StatelessWidget {
           ),
         );
       }
+
+      // [UI-fix v2.0.1 | 2026-08-06] 段落级长按入口：弹出选区操作面板
+      // （对齐原版 ReadView.onLongPress → showTextActionMenu；P0-1 审计修复）— Qoder
+      final paraText = para.lines.map((l) => l.words.join('')).join();
+      widgets.add(
+        GestureDetector(
+          onLongPress: paraText.trim().isEmpty
+              ? null
+              : () => TextSelectionPanel.show(
+                    context,
+                    text: paraText,
+                    chapterPos: para.startIndex,
+                  ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: lineWidgets,
+          ),
+        ),
+      );
     }
 
     return Column(
@@ -222,14 +243,20 @@ class ReaderParagraphs extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final p in paragraphs)
-          Padding(
-            padding: EdgeInsets.only(bottom: paragraphSpacing),
-            child: Text(
-              p.isEmpty ? ' ' : p,
-              style: TextStyle(
-                fontSize: fontSize,
-                height: lineHeight,
-                color: textColor,
+          // [UI-fix v2.0.1 | 2026-08-06] 滚动回退模式段落级长按入口 — Qoder
+          GestureDetector(
+            onLongPress: p.trim().isEmpty
+                ? null
+                : () => TextSelectionPanel.show(context, text: p),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: paragraphSpacing),
+              child: Text(
+                p.isEmpty ? ' ' : p,
+                style: TextStyle(
+                  fontSize: fontSize,
+                  height: lineHeight,
+                  color: textColor,
+                ),
               ),
             ),
           ),

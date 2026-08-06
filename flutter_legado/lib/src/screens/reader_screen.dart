@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../providers/audio/audio_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../widgets/reader/read_aloud_bar.dart';
 import '../widgets/reader/reader_bottom_bar.dart';
 import '../widgets/reader/reader_catalog_drawer.dart';
 import '../widgets/reader/reader_page_view.dart';
@@ -44,6 +46,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   /// 已触发过预加载的章节索引（避免重复预加载）
   int _lastPreloadedIndex = -1;
+
+  /// [UI-fix v2.0.1 | 2026-08-06] 朗读控制条是否被手动收起
+  /// （收起后朗读继续，再次点击底栏朗读按钮重新展开） — Qoder
+  bool _aloudBarHidden = false;
 
   @override
   void initState() {
@@ -128,6 +134,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
+    // 朗读控制条显隐依赖全局朗读状态（朗读进行中时替代底部功能栏）
+    final audio = ref.watch(audioNotifierProvider);
+    final book = state.currentBook;
+    final aloudActive = book != null &&
+        audio.bookUrl == book.bookUrl &&
+        audio.state != PlayerState.idle;
 
     _maybePreloadAdjacentChapters(state);
 
@@ -182,12 +194,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   onAddBookmark: () => _addBookmark(state),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
                 ),
-              if (state.showControls)
+              // [UI-fix v2.0.1 | 2026-08-06] 朗读激活时以 ReadAloudBar 替代底部
+              // 功能栏（对标原版 ReadAloudDialog 覆盖 ReadMenu 底部的行为） — Qoder
+              if (aloudActive && !_aloudBarHidden)
+                ReadAloudBar(
+                  onDismiss: () => setState(() => _aloudBarHidden = true),
+                  onOpenCatalog: () =>
+                      _scaffoldKey.currentState?.openEndDrawer(),
+                  onBackstage: () => Navigator.of(context).maybePop(),
+                )
+              else if (state.showControls)
                 ReaderBottomBar(
                   onOpenCatalog: () =>
                       _scaffoldKey.currentState?.openEndDrawer(),
                   onOpenSettings: () => ReaderSettingsSheet.show(context),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
+                  onReadAloud: _onReadAloudTap,
                 ),
             ],
           ),
@@ -198,6 +220,49 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   // ===== 交互 =====
+
+  /// 底栏朗读按钮点击处理
+  ///
+  /// [UI-fix v2.0.1 | 2026-08-06] 去除存根 SnackBar，打通朗读链路：
+  /// 对标原版 ReadBookActivity.onClickReadAloud —— 朗读进行中再次点击为
+  /// 播放/暂停切换并重新展开控制条；未启动时从当前章启动朗读 — Qoder
+  void _onReadAloudTap() {
+    final state = ref.read(readerNotifierProvider);
+    final audio = ref.read(audioNotifierProvider);
+    final book = state.currentBook;
+    final aloudActive = book != null &&
+        audio.bookUrl == book.bookUrl &&
+        audio.state != PlayerState.idle;
+
+    if (aloudActive) {
+      final notifier = ref.read(audioNotifierProvider.notifier);
+      if (audio.isPlaying) {
+        notifier.pause();
+      } else {
+        unawaited(notifier.play());
+      }
+      setState(() => _aloudBarHidden = false);
+      return;
+    }
+    unawaited(_startReadAloud(state));
+  }
+
+  /// 启动当前书的朗读（链路：AudioNotifier.startReadAloud → play → audioSpeak）
+  Future<void> _startReadAloud(ReaderState state) async {
+    final book = state.currentBook;
+    if (book == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法启动朗读：未打开书籍')),
+      );
+      return;
+    }
+    setState(() => _aloudBarHidden = false);
+    await ref.read(audioNotifierProvider.notifier).startReadAloud(
+          bookUrl: book.bookUrl,
+          bookName: book.name,
+          chapterIndex: state.currentChapterIndex,
+        );
+  }
 
   /// 根据点击区域配置执行对应功能
   void _handleTap(BuildContext context, TapUpDetails details) {
