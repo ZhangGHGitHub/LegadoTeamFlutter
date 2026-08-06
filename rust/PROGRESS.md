@@ -1,6 +1,6 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-08-06（双轨缺口审计：Rust 完成度修订为 96-97%（源码级复查），登记 4 项 P1 实质缺口；「零 TODO/桩实现」表述口径修正）
+> 最后更新：2026-08-06（批次3治理闭合 Task #118：platform.rs 死代码桩删除、一次性脚本清理、README/DEVELOPMENT 表述修正、bridge.rs 去留决策与 v102 schema 评估；双轨缺口审计：Rust 完成度修订为 96-97%（源码级复查），登记 4 项 P1 实质缺口；「零 TODO/桩实现」表述口径修正）
 
 ---
 
@@ -234,7 +234,8 @@
 
 **阶段 15 关键成果：**
 - 🎉 **Rust 侧零 TODO/FIXME/桩实现**（全量扫描确认）
-  > ⚠️ **口径修正（2026-08-06 审计）**：该历史结论已修订——platform.rs 仍有 5 个死代码桩待清理、dict 为 18 词占位、legado-server 正文为桩、部分 Dart fallback（getAudioChapterMedia/scanLocalBooks/parseTxt）多为死代码；「零 TODO/桩实现」表述不再作为当前状态声明（docs/README.md 中的同源表述待同步修正）
+  > ⚠️ **口径修正（2026-08-06 审计）**：该历史结论已修订——dict 为小规模静态数据（占位级覆盖）、legado-server 正文为待补项；「零 TODO/桩实现」表述不再作为当前状态声明。
+  > ✅ **批次3治理闭合（Task #118，2026-08-06）**：platform.rs 5 个死代码桩已删除（JS 侧实际走 config_api/misc_api，无契约影响）；Dart 侧 getAudioChapterMedia/scanLocalBooks/parseTxt 确认零调用点，已在 rust_api.dart 注释标注死代码（保留契约面）；docs/README.md 同源表述已同步修正。
 - MCP Server：12 个工具全部接入真实数据库查询逻辑
 - @js: 规则执行：JsExecutor trait 注入模式解决跨 crate 循环依赖
 - EPUB 封面：3 级 fallback 策略（cover meta → OPF item → 首图片）
@@ -425,7 +426,7 @@
 | ③ | WebView 桥接载荷 Flutter 侧拦截执行 | Rust 已交付 7 个 action JSON，Flutter lib 无拦截代码 | 2-3d | 跨轨 |
 | ④ | rssUpdateSource 原子更新 FFI | 现用「删旧+加新」workaround | 0.5d | 承接 REMAINING_PLAN §4.3 P1-2 |
 
-**P2 与治理项（不阻塞单机功能）**：subContent/contentRule.replaceRegex、legado-server 正文桩、dict 18 词占位、Dart fallback 死代码清理；12 个 FFI 已实现未登记（已补登 API_CONTRACT.md §2.41）、13 个 bridge 绑定待 UI 封装、schema 偏离（rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources 双列冗余）v102 重建表可延后；README「零 TODO」表述修正、platform.rs 5 桩清理、一次性脚本清理、DEVELOPMENT.md 已知限制表更新、bridge.rs 62 个 C ABI 去留决策。Task #131 timeFormat/toURL 别名已闭合。
+**P2 与治理项（不阻塞单机功能）**：subContent/contentRule.replaceRegex、legado-server 正文桩、dict 小规模静态数据；12 个 FFI 已实现未登记（已补登 API_CONTRACT.md §2.41）、13 个 bridge 绑定待 UI 封装、schema 偏离（rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources 双列冗余）v102 重建表建议延后（评估见 REMAINING_PLAN §4.2.1）；治理项已随批次3闭合（Task #118）：README「零 TODO」表述已修正、platform.rs 5 桩已删除、一次性脚本已清理、DEVELOPMENT.md 已知限制表已更新、bridge.rs C ABI 决策已记录（保留+废弃计划）。Task #131 timeFormat/toURL 别名已闭合。
 
 ---
 

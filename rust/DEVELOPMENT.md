@@ -467,28 +467,31 @@ java.variableStore.get(key) // 读取变量
 ## 已知限制
 
 1. **QuickJS 编译耗时较长**：首次编译需编译 C 代码（约 30 秒），后续增量编译较快
-2. **Android 实机编译未验证**：交叉编译脚本已就绪，但未在真实设备上验证运行
-3. **平台专属 API 不可用**：依赖 Android 平台的 API（WebView、Toast、Intent 等）在 Rust 运行时中返回错误提示，详见下方清单
+2. **平台专属 API 降级/桥接**：依赖 Android 平台的 API（WebView、Toast、Intent 等）在 Rust 运行时中返回结构化桥接载荷或降级默认值，由 Flutter/平台侧拦截执行，详见下方清单
 
-### 不支持的平台 API 清单（platform.rs）
+### 平台相关 API 行为清单（platform.rs / config_api.rs / misc_api.rs）
 
-以下 API 依赖 Android 平台，在 Rust 运行时中返回明确错误提示或降级默认值：
+以下 API 依赖 Android 平台，在 Rust 运行时中返回桥接载荷或降级默认值（批次3治理 Task #118 更新，与源码一致）：
 
-| API | 原 Android 依赖 | Rust 运行时行为 |
-|-----|----------------|------------------|
-| `web_view(url)` | Android WebView | 返回桥接载荷 `{"action":"webView",...}` |
-| `web_view_get_source(url)` | Android WebView | 返回桥接载荷 `{"action":"webViewGetSource",...}` |
-| `web_view_get_override_url(...)` | Android WebView | 返回桥接载荷 `{"action":"webViewGetOverrideUrl",...}` |
-| `start_browser(url)` | Android Intent | 返回桥接载荷 `{"action":"startBrowser",...}` |
-| `show_browser(url, ...)` | Android WebView 对话框 | 返回桥接载荷 `{"action":"openBrowser",...}` |
-| `open_url(url)` | Android Intent | 返回桥接载荷 `{"action":"openUrl",...}` |
-| `toast(msg)` / `long_toast(msg)` | Android Toast | 输出到 stderr 日志，原样返回 msg |
-| `get_verification_code(url)` | WebView + 人机交互 | 返回 `[ERROR]` 提示 |
-| `android_id()` | Android Context | 返回 `[ERROR]` 提示 |
-| `get_web_view_ua()` | Android WebView | 返回 `[ERROR]` 提示 |
-| `open_video_player(url)` | Android Intent | 返回 `[ERROR]` 提示 |
-| `get_read_book_config()` | SharedPreferences | 返回 `{}`（空 JSON 降级） |
-| `get_theme_mode()` | Android 主题 | 返回 `"light"`（默认浅色） |
+| API | 原 Android 依赖 | Rust 运行时行为 | 实现位置 |
+|-----|----------------|------------------|----------|
+| `web_view(url)` | Android WebView | 返回桥接载荷 `{"action":"webView",...}` | platform.rs |
+| `web_view_get_source(url)` | Android WebView | 返回桥接载荷 `{"action":"webViewGetSource",...}` | platform.rs |
+| `web_view_get_override_url(...)` | Android WebView | 返回桥接载荷 `{"action":"webViewGetOverrideUrl",...}` | platform.rs |
+| `start_browser(url)` | Android Intent | 返回桥接载荷 `{"action":"startBrowser",...}` | platform.rs |
+| `show_browser(url, ...)` | Android WebView 对话框 | 返回桥接载荷 `{"action":"openBrowser",...}` | platform.rs |
+| `open_url(url)` | Android Intent | 返回桥接载荷 `{"action":"openUrl",...}` | platform.rs |
+| `open_video_player(url)` | Android Intent | 返回桥接载荷 `{"action":"openVideoPlayer",...}` | platform.rs |
+| `get_verification_code(url)` | WebView + 人机交互 | 经全局验证码通道阻塞等待 UI 提交（默认 5 分钟超时，Task #90） | platform.rs |
+| `start_browser_await(url)` | 内置浏览器 | 桌面无内置浏览器，降级为图片验证码通道流程 | platform.rs |
+| `toast(msg)` / `long_toast(msg)` | Android Toast | 输出到 stderr 日志，原样返回 msg | misc_api.rs |
+| `android_id()` | Android Context | 返回进程内稳定的伪设备 ID | config_api.rs |
+| `get_web_view_ua()` | Android WebView | 返回内置默认移动端 UA 字符串 | config_api.rs |
+| `get_read_book_config()` | SharedPreferences | 返回内置默认阅读配置 JSON | config_api.rs |
+| `get_theme_mode()` | Android 主题 | 返回 `"light"`（默认浅色） | config_api.rs |
+
+> 注：platform.rs 曾存在的 `android_id/get_web_view_ua/get_read_book_config/get_theme_mode/toast` 同名降级桩因无任何调用点已于批次3治理（Task #118）删除；JS 侧注册路径始终走 config_api/misc_api，无契约影响。
+> 另：Android 交叉编译已在阶段 9 验证通过（APK 构建 + 模拟器安装），原「实机编译未验证」限制已销记。
 
 ---
 

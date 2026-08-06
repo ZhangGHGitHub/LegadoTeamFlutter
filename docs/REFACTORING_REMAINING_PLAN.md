@@ -587,6 +587,12 @@ flutter test                  # 全量测试通过
 
 > ✅ **部分核销（2026-08-05，Task #94）**：4 张列级偏离表已修复（v101 迁移，幂等 `add_column_if_not_exists`）——rssArticles 补 `group`/`read`/`type`/`durPos`、rssStars 补 `group`/`type`/`durPos`、readRecord 补 `deviceId`/`lastRead`、txtTocRules 补 `replacement`；SCHEMA_VERSION 100→101，建表语句同步，四个 Repository 全字段读写适配。**users/servers 结论**：Room `servers` 表存 WebDAV 备份服务器配置（id/name/type/config/sortNumber），与 Rust 自建 `users`（用户账户）语义完全不同，非等价物，登记不改名。**遗留**：rssArticles 主键 (origin,title) vs Room (origin,link,sort)、readRecord 主键 (bookName) vs Room (deviceId,bookName) 为结构级偏离，仅补列不重建表；rssReadRecords/httpTTS/ruleSubs/dictRules/keyboardAssists/search_keywords 等结构偏离项待后续批次处置。验证：legado-db 281 通过、legado-ffi(quickjs) 175 通过。
 
+> 📋 **schema v102 评估（批次3治理，Task #118，2026-08-06）：建议延后**。
+> **剩余结构偏离（5 项）**：① rssArticles 主键 (origin,title) vs Room (origin,link,sort)；② readRecord 主键 (bookName) vs Room (deviceId,bookName)；③ rssReadRecords 结构偏离（Rust id/origin/title/readTime/link/variable vs Room record/title/readTime/read/origin/sort/image/type/durPos/pubDate）；④ httpTTS 严重偏离（http_tts 6 列 snake_case vs Room 13 列 camelCase）；⑤ rssSources enableCookieJar/enabledCookieJar 双列冗余。
+> **v102 重建表方案**：SQLite 不支持改主键/改列名，需逐表重建：新建表 → 数据搬迁（主键变更需去重冲突策略）→ drop 旧表 rename → SCHEMA_VERSION 101→102 → 修订相关 Repository（RssArticleRepository/RssReadRecordRepository/ReadRecordRepository/HttpTtsRepository/RssSourceRepository）+ 备份恢复/Room 导入链路验证。
+> **代价**：约 3-5d 开发 + 全链路回归；风险点：rssArticles 主键 (origin,title)→(origin,link,sort) 迁移可能合并重名文章行造成数据丢失；Android 遗留库 v95→v102 全链路回滚复杂；WebDAV 备份导入导出一致性受影响。
+> **结论与理由**：建议延后。① 五项偏离均不阻塞单机功能（审计确认）；② 列级偏离已随 v101 补齐，剩余结构偏离影响面限于 RSS 历史/TTS 引擎配置等次要功能；③ rssSources 双列冗余可先做零风险代码层收敛（Repository 读写统一 enabledCookieJar，enableCookieJar 保留不写），待 v102 重建表时一并 drop；④ 建议与 ruleSubs/dictRules/keyboardAssists/search_keywords 结构偏离（§4.2.1 偏离表）合并为一次「schema 对齐专项」批次执行，避免多次重建表。**执行触发条件**：出现与 Android 遗留库/备份文件互操作需求，或上游同步要求结构一致时启动。
+
 **P0-3 rssSources 双列冗余处理**
 
 | 项目 | 内容 |
@@ -641,6 +647,11 @@ flutter test                  # 全量测试通过
 | **实施步骤** | ① 决策记录写入本节；② 废弃路线：lib.rs 标注废弃 + 移除导出；补齐路线：对齐 frb 函数集 |
 | **验收** | bridge.rs 状态明确（废弃标注或函数集对齐），无半废弃漂移层 |
 
+> ✅ **去留决策记录（批次3治理，Task #118，2026-08-06）**：决策为 **保留 + 计划性废弃**（本批次不改代码）。
+> **现状事实**：bridge.rs 实测 2116 行、约 196 个 `ffi_*` extern "C" 导出（任务描述「62 个 C ABI」与 P2-1 表「155 个」为不同口径的历史快照计数，不影响结论）；Rust 侧零调用点；Dart 全量走 frb 主链路（ffi.rs 166 函数 ↔ ffi.dart 166 绑定 100% 对齐），bridge.rs 实质半废弃；原移除前置条件 txt_search 迁 frb 已满足（Task #165）。
+> **保留理由**：① bridge.rs 属 cdylib 导出面，无法排除外部 C 消费者（历史 C ABI 接入方）依赖，直接删除会改变 .so 导出符号面且不可逆；② 保留无运行时成本（仅编译体积），废弃路线风险更低。
+> **废弃计划（三步走）**：① ✅ 本批次完成决策记录；② 下一治理批次：lib.rs/bridge.rs 模块文档标注 DEPRECATED，冻结新增函数（新能力一律进 frb 主链路）；③ 下一大版本：确认无外部 C 消费者后物理移除 bridge.rs，同步销记本台账与 API_CONTRACT.md。
+
 **P2-2 MOBI HUFF/CDIC 压缩与 KF8/INDX 解析移植**——✅ 已完成（2026-08-05，Task #158，提交 d994a4fdb）
 
 | 项目 | 内容 |
@@ -663,7 +674,7 @@ flutter test                  # 全量测试通过
 | **实施步骤** | 按 §3.4 条目顺序逐一源码验证 → 更新条目状态（待复核 → 已完成/修订） |
 | **验收** | §3.4 全部条目状态与源码一致，无悬置「待复核」 |
 
-**P2-4 一次性脚本清理与过期注释修正**
+**P2-4 一次性脚本清理与过期注释修正**——✅ 已闭合（2026-08-06，批次3治理 Task #118）
 
 | 项目 | 内容 |
 |------|------|
@@ -672,6 +683,8 @@ flutter test                  # 全量测试通过
 | **解决方案** | 清理一次性脚本与 legacy_db_temp.txt；修正 lib.rs 注释为 v96/26 表 |
 | **实施步骤** | ① 删除上表所列脚本/快照文件；② 修订 lib.rs 注释；③ test_migration.rs 一并决策保留或清理 |
 | **验收** | rust/ 根目录无一次性脚本残留；lib.rs 注释与实际 schema 一致 |
+
+> ✅ **核销（2026-08-06，Task #118）**：已删除 10 个文件——rust/ 下 9 个（update_schema.py、add_migration.py、update_schema_rss.py、update_rss_schema.ps1、fix_migration.py、fix_migration2.py、legacy_db_temp.txt、test_migration.rs，另含 rust/legado-net/src/fix_quic.ps1）+ 仓库根 fix_reader_provider.py；test_migration.rs 决策为清理（硬编码绝对路径、未纳入 crate 构建、无复用价值）；check_db_version.py 按台账建议保留（排障工具）。保留项见批次3治理报告；lib.rs 注释修正项待后续批次核对。
 
 **P2-5 Rust 文档数据同步**
 
@@ -912,9 +925,9 @@ flutter test                  # 全量测试通过
 |------|------|----------|
 | 契约补登 | 12 个 FFI 已实现未登记（QUIC 8 + backupList + cacheGetChapter + bookGroupSetShow + httpTtsSetEnabled） | ✅ 已补登至 API_CONTRACT.md §2.41（2026-08-06） |
 | UI 封装 | 13 个 bridge 绑定已实现未被 UI 层封装（含登录 UI V2 整组 + QUIC 客户端六件套） | 已登记至 API_CONTRACT.md §3 待封装清单 |
-| schema 偏离 | rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources enableCookieJar/enabledCookieJar 双列冗余（P1 治理） | 均不阻塞单机功能，v102 重建表可延后（承接 §4.2.1 P0-2/P0-3 遗留） |
-| 文档治理 | README「零 TODO/桩实现」表述需修正、DEVELOPMENT.md 已知限制表过期 | rust/PROGRESS.md 已修正口径（2026-08-06），docs/README.md 待同步 |
-| 代码治理 | platform.rs 5 个死代码桩清理、一次性脚本清理（承接 §4.2.3 P2-4）、bridge.rs 62 个 C ABI 去留决策（承接 §4.2.3 P2-1） | 随第三批治理 |
+| schema 偏离 | rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources enableCookieJar/enabledCookieJar 双列冗余（P1 治理） | 均不阻塞单机功能；v102 评估已完成（Task #118）：**建议延后**，与 ruleSubs/dictRules 等结构偏离合并为 schema 对齐专项（见 §4.2.1） |
+| 文档治理 | README「零 TODO/桩实现」表述需修正、DEVELOPMENT.md 已知限制表过期 | ✅ 已闭合（Task #118）：docs/README.md + rust/PROGRESS.md + rust/DEVELOPMENT.md 均已按实际口径修正 |
+| 代码治理 | platform.rs 5 个死代码桩清理、一次性脚本清理（承接 §4.2.3 P2-4）、bridge.rs C ABI 去留决策（承接 §4.2.3 P2-1） | ✅ 已随批次3闭合（Task #118）：platform.rs 5 桩已删除、10 个一次性脚本已清理、bridge.rs 决策为保留+计划性废弃（见 §4.2.3 P2-1 决策记录） |
 | 已闭合 | Task #131 timeFormat/toURL 别名 | ✅ 已闭合 |
 
 ### §5.8 执行顺序建议
@@ -932,12 +945,13 @@ flutter test                  # 全量测试通过
 
 ---
 
-**文档版本**: 1.6  
+**文档版本**: 1.7  
 **最后更新**: 2026-08-06  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.7（2026-08-06）批次3治理闭合（Task #118）：bridge.rs 去留决策记录（保留+计划性废弃，§4.2.3 P2-1）、schema v102 评估（建议延后，§4.2.1）、一次性脚本清理销记（§4.2.3 P2-4）、§5.7 治理表更新
 - v1.6（2026-08-06）新增 UI 细节与功能缺口专项章节（§5），整合 Flutter 92 项 UI 缺口与 Rust 4 项 P1 实质缺口双轨审计
 - v1.5（2026-08-03）整合四路审计结论，新增审计整合章节（§4）
 - v1.4（2026-08-02）新增全量源码检查后续修改计划（§3）

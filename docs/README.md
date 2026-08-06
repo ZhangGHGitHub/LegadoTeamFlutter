@@ -32,7 +32,9 @@
 - **跨轨阻塞四连解除**：MOBI 完整解析（HUFF/CDIC + INDX/TAGX + KF8(AZW3) + NCX/封面，d994a4fdb）/ 书源校验 FFI（sourceCheck/sourceCheckStream/sourceCheckCancel，86c299923）/ 规则订阅全链路（schema v100 + FFI 7 方法，94b257390）/ 验证码交互通道（JS 钩子 + FFI 事件流 + 提交回传，6f5614e24）
 - **缺口清单清零批次**（2026-08-05，Task #162~#168）：图片书 PDF 导出（对齐 #483）/ RSA-SM2 非对称加密 JS API / txt_search frb 主链路 / 繁简转换 FFI 透传 / DB v101 偏离表补列 / unzip 断线修复 + JS 零星 API / unrar 降级处置，缺口清单 7 项全部清零（详见 docs/REFACTORING_REMAINING_PLAN.md §4.2.4）
 
-> 🎉 **Rust 重构主体已全部完成**：168/168 原子任务完成，零 TODO/桩实现。
+> 🎉 **Rust 重构主体已全部完成**：168/168 原子任务完成。
+>
+> ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 内置词典为小规模静态数据（契约达标、覆盖为占位级）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 getAudioChapterMedia/scanLocalBooks/parseTxt 为死代码 fallback（已在 rust_api.dart 注释标注，保留契约面）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
 
 ### 📊 测试统计（2026-08-05 实测）
 
