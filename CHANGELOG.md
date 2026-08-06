@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.3] - 2026-08-06
 
 ### 修复（评审修复：三维评审问题收口，署名 Qoder）
+- 搜索结果直达阅读：search_screen 搜索结果点击由弹出仅含「加入书架」的简易 AlertDialog 改为 `Navigator.pushNamed(bookInfo)` 跳转书详情页（对齐原版 SearchActivity→BookInfoActivity），补齐「开始阅读」入口——未入架时开始阅读自动 openBook 直达阅读器，无需先手动加书架；同步删除废弃的 `_showBookDetail`/`_addToBookshelf` 方法及 bookshelf_notifier 冗余引用
 - rssUpdateSource 真实接线：`rust_api.updateRssSource` 由误接 `sourceUpdate`（按 BookSource 语义落 book_sources 表，产生幽灵书源脏数据且 RSS 变更静默丢失）改接 `bridge.rssUpdateSource` 原子更新管线，Mock 同步对齐「源不存在时报错」语义（审计缺口④至此全链闭合）
 - 书架缓存导出：书架菜单新增缓存章节导出，新增 `BookApi.getCachedChapter` 封装（接通 `cacheGetChapter` FFI）逐章取缓存正文拼接 TXT 经分享通道保存；缓存管理页/epub·pdf/模板等扩展项 TODO(留批次) 登记（台账 §5.9）
 - 嗅探委托合并：platform_bridge_service WebView 嗅探改为单一 NavigationDelegate（跳转拦截与加载终态等待共用，不再二次重设委托与二次加载），修复 JS 分支嗅探因委托覆盖必超时问题

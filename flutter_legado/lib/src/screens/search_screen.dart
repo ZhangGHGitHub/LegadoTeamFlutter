@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
-import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/search/search_notifier.dart';
 import '../routes.dart';
 import '../widgets/book_cover.dart';
@@ -245,7 +244,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // 稳定 ValueKey（来源+书址）避免结果列表整表重建；RepaintBoundary 隔离重绘区域
     final tile = InkWell(
       key: ValueKey('${result.sourceName}:${book.bookUrl}'),
-      onTap: () => _showBookDetail(context, result),
+      // [UI-fix v2.0.3 | 2026-08-06] 搜索结果直达书详情页（对齐原版 SearchActivity→BookInfoActivity，含开始阅读入口） — Qoder
+      onTap: () => Navigator.pushNamed(
+        context,
+        AppRoutes.bookInfo,
+        arguments: result.book,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Row(
@@ -341,74 +345,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
     );
     return RepaintBoundary(child: tile);
-  }
-
-  void _showBookDetail(BuildContext context, SearchResult result) {
-    final book = result.book;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(book.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                BookCover(coverUrl: book.coverUrl, width: 80, height: 110, borderRadius: 10),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (book.author.isNotEmpty)
-                        Text('${AppStrings.author}: ${book.author}',
-                            style: Theme.of(ctx).textTheme.bodyMedium),
-                      Text('${AppStrings.source}: ${result.sourceName}',
-                          style: Theme.of(ctx).textTheme.bodySmall),
-                      if (book.totalChapterNum > 0)
-                        Text('${book.totalChapterNum} ${AppStrings.chapters}',
-                            style: Theme.of(ctx).textTheme.bodySmall),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (book.intro != null && book.intro!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                book.intro!,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(ctx).textTheme.bodySmall,
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(AppStrings.cancel),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _addToBookshelf(context, book);
-            },
-            icon: const Icon(Icons.add, size: 18),
-            label: Text(AppStrings.addToBookshelf),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _addToBookshelf(BuildContext context, Book book) {
-    // 书架数据源由 BookshelfNotifier 提供（book_info_screen 等同步使用）
-    ref.read(bookshelfNotifierProvider.notifier).addBook(book);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${book.name} ${AppStrings.addedToBookshelf}')),
-    );
   }
 
   /// 未移植功能提示
