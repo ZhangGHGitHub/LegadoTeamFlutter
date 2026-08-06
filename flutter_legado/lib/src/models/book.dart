@@ -11,6 +11,8 @@ class BookType {
   static const int file = 3;
   static const int video = 4;
   static const int local = 0x1000;
+  /// 未入书架的临时书（对齐 Kotlin `BookType.notShelf`；搜索/发现打开在线书阅读时临时落库）
+  static const int notShelf = 0x400;
   static const String localTag = 'loc_book';
   static const String webDavTag = 'dav:';
 }
