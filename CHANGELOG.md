@@ -7,13 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-06
 
+### 修复（评审修复：三维评审问题收口，署名 Qoder）
+- rssUpdateSource 真实接线：`rust_api.updateRssSource` 由误接 `sourceUpdate`（按 BookSource 语义落 book_sources 表，产生幽灵书源脏数据且 RSS 变更静默丢失）改接 `bridge.rssUpdateSource` 原子更新管线，Mock 同步对齐「源不存在时报错」语义（审计缺口④至此全链闭合）
+- 书架缓存导出：书架菜单新增缓存章节导出，新增 `BookApi.getCachedChapter` 封装（接通 `cacheGetChapter` FFI）逐章取缓存正文拼接 TXT 经分享通道保存；缓存管理页/epub·pdf/模板等扩展项 TODO(留批次) 登记（台账 §5.9）
+- 嗅探委托合并：platform_bridge_service WebView 嗅探改为单一 NavigationDelegate（跳转拦截与加载终态等待共用，不再二次重设委托与二次加载），修复 JS 分支嗅探因委托覆盖必超时问题
+- ttsSetCacheDir 初始化接线：`RustApi.init` 内注入应用支持目录 tts_cache（Rust 默认临时目录 Android 可能不可写），失败仅记日志不阻断初始化
+- AutoTask 导入 id 碰撞修复：空 id 批量补齐改为基准时间戳拼接循环下标（`${baseId}_$i`），避免同一循环内 microsecondsSinceEpoch 重复导致 id 碰撞
+- 日志入口补接：source_edit_screen「日志」菜单接通 AppLogScreen（批次0 遗漏项，日志入口销记口径修正为 7/7，补提交）
+- 署名补齐：audio_screen/browser_screen/app.dart 共 3 处注释署名/标记补齐
+- 台账口径修正：API_CONTRACT §3 待封装清单销记（登录 V2 三件套/ttsSpeak/cacheGetChapter/rssUpdateSource/ttsSetCacheDir）、审计报告 §7.3 留项修订 + §7.4 P2 处置明细（诚实口径）、UI_FIX_PLAN widget 测试验收口径显式修订、台账 v1.9 + §5.9 TODO(留批次) 登记
+
 ### 修复（批次3 P2 收尾：排版细节 + 菜单行为，署名 Qoder）
 - 阅读器页面边距：阅读高级配置新增上/下/左/右四向边距滑杆（对标原版 ReadBookConfig paddingTop/Bottom/Left/Right），接入分页缓存键与排版渲染，默认值与历史行为零变化
 - 阅读器设置编码：顶栏溢出菜单新增「设置编码」（对标原版 menu_set_charset → showCharsetConfig），写入 book.charset 并重载当前章，本地书乱码可按 UTF-8/GBK/GB18030 等候选重读
 - 定时任务页溢出菜单：导入本地（txt/json）/导入线上（URL）/导出（exportAutoTask.json）/帮助，导入经 autoTaskPrepareImported FFI 合并本地运行时状态（对标原版 AutoTaskActivity menu_import_local/import_on_line/export/help）
 
 ### 销记（审计 P2 台账核验后无需改动）
-- 日志入口 6+1 处：批次0 已全部接通 AppLogScreen（书架/搜索/书详/书源编辑/阅读器/听书/关于），销记
+- 日志入口 7/7：批次0 已接通 6 处 AppLogScreen（书架/搜索/书详/阅读器/听书/关于），source_edit_screen（书源编辑）为批次0 遗漏项随本次评审修复补接（补提交），销记
 - 字距/段距/首行缩进/两端对齐：v2.0.2 已接入排版引擎，销记
 - 书源导入排序：排序已应用于显示列表且导入后 reload 保持当前排序（原版 ImportBookSourceDialog 亦无排序 UI），判定对齐，销记
 

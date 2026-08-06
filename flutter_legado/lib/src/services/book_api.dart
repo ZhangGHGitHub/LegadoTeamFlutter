@@ -511,6 +511,9 @@ abstract class BookApi {
   /// 清除指定时间之前的缓存
   Future<void> clearCacheBefore(int beforeTimestampMs);
 
+  /// 获取章节缓存正文（未缓存返回空串，供缓存导出拼装 TXT）
+  Future<String> getCachedChapter(String bookUrl, int chapterIndex);
+
   // ========== WebBook 操作 ==========
 
   /// 搜索书籍（书源规则驱动）

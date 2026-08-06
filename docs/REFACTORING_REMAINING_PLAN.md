@@ -897,19 +897,19 @@ flutter test                  # 全量测试通过
 
 | 类别 | 内容 | 备注 |
 |------|------|------|
-| 日志入口接线 | 6 处日志入口未接线（AppLogScreen 路由已存在、appLog* FFI 已交付） | 纯接线快赢 |
+| 日志入口接线 | 7 处日志入口（含 source_edit_screen，评审修复补接；AppLogScreen 路由已存在、appLog* FFI 已交付） | 纯接线快赢 |
 | 排版细节参数 | 编码/字距/边距等参数项对齐 | 随阅读器批次收尾 |
 | 导入排序 | 导入页排序行为对齐原版 | 独立小项 |
 | 自动任务菜单 | 自动任务页菜单项补齐 | 依赖既有 autoTask* FFI |
 | 其余 | 约 35 项零星菜单/行为细节 | 逐条明细见综合报告附录 |
 
-> ✅ **销记（2026-08-06）**：批次3 P2 收尾交付阅读页面四向边距、设置编码（book.charset 重载当前章）、定时任务导入导出菜单（本地/线上/导出/帮助），见 `13a11220e`；日志入口 6+1 处（批次0 已接通）、字距/段距/首行缩进/两端对齐（v2.0.2 已接入排版引擎）、书源导入排序（判定对齐）经台账核验无需改动，一并销记。
+> ✅ **销记（2026-08-06）**：批次3 P2 收尾交付阅读页面四向边距、设置编码（book.charset 重载当前章）、定时任务导入导出菜单（本地/线上/导出/帮助），见 `13a11220e`；日志入口销记口径修正为 **7/7**：批次0 接通 6 处，source_edit_screen（书源编辑）为批次0 遗漏，随本次评审修复补接（补提交），全部核验可达 AppLogScreen；字距/段距/首行缩进/两端对齐（v2.0.2 已接入排版引擎）、书源导入排序（判定对齐）经台账核验无需改动，一并销记。P2 逐条处置明细见 [REFACTORING_AUDIT_REPORT_20260806.md §7.4](REFACTORING_AUDIT_REPORT_20260806.md)。
 
 ### §5.4 纯接线快赢项（立即可做，无 FFI 阻塞）——✅ 已闭合（批次0，`0cde41a5c`，2026-08-06）
 
 | # | 快赢项 | 说明 | 工时 |
 |---|--------|------|------|
-| 1 | 6 处日志入口接线 | AppLogScreen 路由已存在，appLog* FFI 已交付（API_CONTRACT §2.38） | ≤0.5d |
+| 1 | 7 处日志入口接线 | AppLogScreen 路由已存在，appLog* FFI 已交付（API_CONTRACT §2.38）；批次0 接通 6 处，source_edit_screen 遗漏项随评审修复补接（补提交），合计 7/7 | ≤0.5d |
 | 2 | 朗读配置页入口 | `read_aloud_config_screen.dart` 孤儿页补入口（先于 P0-2 的管线接通） | ≤0.5d |
 | 3 | 替换规则导入接已有确认页 | 3 种导入通道复用现有确认页组件 | ≤0.5d |
 | 4 | 翻页动画菜单 | 菜单项接既有翻页模式配置 | ≤0.5d |
@@ -929,7 +929,7 @@ flutter test                  # 全量测试通过
 | ③ | WebView 桥接载荷 Flutter 侧拦截执行 | Rust 已交付 7 个 action JSON，Flutter lib 无拦截代码 | P1（跨轨） | 2-3d | 书源 WebView 交互类功能 |
 | ④ | rssUpdateSource 原子更新 FFI | 现用「删旧+加新」workaround（承接 §4.3 P1-2） | P1 | 0.5d | RSS 源编辑（防串表） |
 
-> ✅ **销记（2026-08-06）**：① nextContentUrl 分页抓取闭合（`b7368193a`，99 页上限去重终止，契约 §2.5 登记）；② audioSpeak Rust 侧闭合（`9ac94b173`，ttsSpeak 模板替换+MD5 文件缓存+Content-Type 校验+legado-net 无损字节 get_raw，契约 §2.42 登记），Flutter 侧接线闭合（`522e1c1be`，audioSpeak 改接 bridge.ttsSpeak）；③ WebView 桥接载荷 Flutter 侧拦截闭合（`522e1c1be`，platform_bridge_service.dart 承接 7 动作，rust_api.dart 11 处拦截接入）；④ rssUpdateSource 原子更新闭合（`b7368193a`，契约 §2.17 登记）。
+> ✅ **销记（2026-08-06）**：① nextContentUrl 分页抓取闭合（`b7368193a`，99 页上限去重终止，契约 §2.5 登记）；② audioSpeak Rust 侧闭合（`9ac94b173`，ttsSpeak 模板替换+MD5 文件缓存+Content-Type 校验+legado-net 无损字节 get_raw，契约 §2.42 登记），Flutter 侧接线闭合（`522e1c1be`，audioSpeak 改接 bridge.ttsSpeak）；③ WebView 桥接载荷 Flutter 侧拦截闭合（`522e1c1be`，platform_bridge_service.dart 承接 7 动作，rust_api.dart 11 处拦截接入）；④ rssUpdateSource 原子更新闭合（`b7368193a`，契约 §2.17 登记）；**④补记：UI 接线随评审修复补闭合（本次提交，`rust_api.updateRssSource` 由误接 sourceUpdate 改接 bridge.rssUpdateSource，Mock 同步对齐「源不存在时报错」语义，缺口④至此全链闭合）**。
 
 ### §5.7 Rust 治理与契约登记缺口（摘要）
 
@@ -955,14 +955,25 @@ flutter test                  # 全量测试通过
 - 跨轨项遵守 [TWO_TRACK_DEV_SPEC.md](TWO_TRACK_DEV_SPEC.md)：新增 FFI 先更新 [API_CONTRACT.md](API_CONTRACT.md) 冻结契约再实施
 - 每批完成后同步更新 docs/README.md「当前状态」与本台账销记
 
+### §5.9 TODO(留批次) 正式登记（2026-08-06 评审修复新增）
+
+> 代码中 `TODO(留批次)` 标记项的台账登记处；与审计报告 §7.3 留项清单互为镜像。
+
+| # | 留项 | 代码位置 | 说明 |
+|---|------|----------|------|
+| 1 | searchSource 分组过滤 | `flutter_legado/lib/src/screens/change_source_screen.dart` `_showGroupPicker` | 源分组单选持久化 `AppConfig.searchGroup`，待 Rust searchSource 支持分组过滤后全链生效；由裸 TODO 转正式登记（Task #122） |
+| 2 | 定时服务后端 | `flutter_legado/lib/src/screens/auto_task_screen.dart` | autoTask 后台执行 FFI 未移植，开关仅持久化 `isEnabled`，无后台调度（评审修复补登） |
+| 3 | 书架缓存导出扩展项 | `flutter_legado/lib/src/screens/bookshelf_screen.dart` | 缓存管理页/缓存下载/epub·pdf/模板/WebDav 等，已交付 TXT 导出（评审修复补登） |
+
 ---
 
-**文档版本**: 1.8  
+**文档版本**: 1.9  
 **最后更新**: 2026-08-06  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.9（2026-08-06）评审修复口径修正（Task #122）：日志入口销记修正为 7/7（source_edit_screen 补接，补提交）、缺口④补记 UI 接线提交、新增 §5.9 TODO(留批次) 正式登记（searchSource 分组过滤等 3 项）
 - v1.8（2026-08-06）批次0-3 缺口闭合销记（Task #119）：§5.1-§5.6 全部销记（8 提交：0cde41a5c/873abea29/b7368193a/9ac94b173/522e1c1be/6633c25e3/0c452f4b5/13a11220e），Rust 4 项 P1 实质缺口闭合，残留留项见审计报告 §7
 - v1.7（2026-08-06）批次3治理闭合（Task #118）：bridge.rs 去留决策记录（保留+计划性废弃，§4.2.3 P2-1）、schema v102 评估（建议延后，§4.2.1）、一次性脚本清理销记（§4.2.3 P2-4）、§5.7 治理表更新
 - v1.6（2026-08-06）新增 UI 细节与功能缺口专项章节（§5），整合 Flutter 92 项 UI 缺口与 Rust 4 项 P1 实质缺口双轨审计

@@ -33,7 +33,29 @@ class RustApi implements BookApi {
     final dbPath = await _defaultDbPath();
     await bridge.dbOpen(path: dbPath);
 
+    // [UI-fix v2.0.2 | 2026-08-06] TTS 缓存目录初始化接线 — QoderCN
+    await _initTtsCacheDir();
+
     _initialized = true;
+  }
+
+  /// 设置 TTS 音频缓存目录（应用初始化时调用）— QoderCN
+  ///
+  /// Rust 默认落系统临时目录（Android 可能不可写），改指向应用支持目录
+  /// 下的 tts_cache 子目录；取不到路径时保留默认并仅记日志，不阻断初始化。
+  Future<void> _initTtsCacheDir() async {
+    try {
+      final base = await getApplicationSupportDirectory();
+      final dir =
+          Directory('${base.path}${Platform.pathSeparator}tts_cache');
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      final ok = await bridge.ttsSetCacheDir(path: dir.path);
+      debugPrint('[RustApi] ttsSetCacheDir -> ${dir.path}（ok=$ok）');
+    } catch (e) {
+      debugPrint('[RustApi] ttsSetCacheDir 初始化失败，保留 Rust 默认目录：$e');
+    }
   }
 
   /// 解析 FFI 动态库，支持多路径搜索
@@ -472,12 +494,27 @@ class RustApi implements BookApi {
     return RssSource.fromJson(_decodeMap(json, 'bookApi'));
   }
 
-  /// 更新 RSS 源（复用书源更新接口）
+  /// 更新 RSS 源（专用原子更新 FFI，按 sourceUrl 主键单条 UPDATE）
   ///
-  /// TODO(v2.0.2): 当前复用 sourceUpdate 作为 workaround，待 Rust 轨
-  /// 专用 rssUpdateSource FFI 落地后切换；UI 侧保持现状不另做删+加。— QoderCN
-  Future<void> updateRssSource(RssSource source) =>
-      bridge.sourceUpdate(sourceJson: jsonEncode(source.toJson()));
+  /// 历史误接 sourceUpdate（按 BookSource 语义解析落 book_sources 表，
+  /// 产生幽灵书源脏数据且 RSS 变更静默丢失），现已切换 rssUpdateSource。
+  /// 源不存在时 Rust 侧报错；若返回载荷为 false（bool 语义兜底）则抛异常。 — QoderCN
+  Future<void> updateRssSource(RssSource source) async {
+    final json = await bridge.rssUpdateSource(
+      sourceJson: jsonEncode(source.toJson()),
+    );
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(json);
+    } catch (_) {
+      decoded = json;
+    }
+    if (decoded == false) {
+      throw StateError(
+        'updateRssSource: RSS 源不存在（sourceUrl=${source.sourceUrl}）',
+      );
+    }
+  }
 
   /// 删除 RSS 源
   Future<void> deleteRssSource(String sourceUrl) =>
@@ -1124,6 +1161,13 @@ class RustApi implements BookApi {
   Future<void> clearCacheBefore(int beforeTimestampMs) async {
     await bridge.cacheClearBefore(beforeTimestampMs: beforeTimestampMs);
   }
+
+  /// 获取章节缓存正文（未缓存返回空串，供缓存导出拼装 TXT）
+  ///
+  /// [UI-fix v2.0.2 | 2026-08-06] 接通 cacheGetChapter FFI（书架菜单缓存导出） — Qoder
+  @override
+  Future<String> getCachedChapter(String bookUrl, int chapterIndex) =>
+      bridge.cacheGetChapter(bookUrl: bookUrl, chapterIndex: chapterIndex);
 
   // ========== WebBook 操作 ==========
   // 以下解析类方法统一经平台桥接拦截（Task #114）：Rust 侧 webView 类 JS API

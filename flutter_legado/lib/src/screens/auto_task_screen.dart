@@ -523,15 +523,21 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       localTasks: localTasks,
       importedJson: raw,
     );
-    final newTasks = (merged ?? imported)
+    // [UI-fix v2.0.2 | 2026-08-06] 空 id 补充拼接循环下标，避免同一循环内
+    // microsecondsSinceEpoch 重复导致 id 碰撞 — Qoder
+    final validTasks = (merged ?? imported)
         .map(AutoTask.fromJson)
         .where((t) => t.name.isNotEmpty)
-        .map((t) => t.id.isEmpty
-            ? t.copyWith(
-                id: DateTime.now().microsecondsSinceEpoch.toString())
-            : t)
         .toList();
+    final baseId = DateTime.now().microsecondsSinceEpoch;
+    final newTasks = <AutoTask>[
+      for (var i = 0; i < validTasks.length; i++)
+        validTasks[i].id.isEmpty
+            ? validTasks[i].copyWith(id: '${baseId}_$i')
+            : validTasks[i],
+    ];
     if (newTasks.isEmpty) {
+      if (!context.mounted) return;
       _snack(context, '导入失败：任务数据无效');
       return;
     }

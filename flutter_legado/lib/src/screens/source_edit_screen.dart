@@ -612,7 +612,8 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       case 'share_str':
         await _shareSource();
       case 'log':
-        _todo('日志');
+        // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
+        Navigator.pushNamed(context, AppRoutes.appLog);
       case 'help':
         _showHelp();
     }

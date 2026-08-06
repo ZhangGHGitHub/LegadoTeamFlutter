@@ -665,8 +665,14 @@ class MockBookApi implements BookApi {
 
   @override
   Future<void> updateRssSource(RssSource source) async {
+    // 对齐 rssUpdateSource FFI 语义：源不存在时报错（不再静默忽略） — QoderCN
     final idx = _rssSources.indexWhere((s) => s.sourceUrl == source.sourceUrl);
-    if (idx >= 0) _rssSources[idx] = source;
+    if (idx < 0) {
+      throw StateError(
+        'updateRssSource: RSS 源不存在（sourceUrl=${source.sourceUrl}）',
+      );
+    }
+    _rssSources[idx] = source;
   }
 
   @override
@@ -1159,6 +1165,10 @@ class MockBookApi implements BookApi {
 
   @override
   Future<void> clearCacheBefore(int beforeTimestampMs) async {}
+
+  @override
+  Future<String> getCachedChapter(String bookUrl, int chapterIndex) async =>
+      '（mock 缓存正文：$bookUrl 第 $chapterIndex 章）';
 
   // ========== WebBook 操作 ==========
 

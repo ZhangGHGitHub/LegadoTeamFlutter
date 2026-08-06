@@ -661,7 +661,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         // 对标 menu_skip_credits
         await _showSkipCreditsDialog();
       case 'log':
-        // 对标 menu_log → LogActivity（接 AppRoutes.appLog）
+        // [UI-fix v2.0.2 | 2026-08-06] 听书日志入口接通 AppLogScreen
+        //（对标原版 menu_log → LogActivity） — Qoder
         if (mounted) Navigator.pushNamed(context, AppRoutes.appLog);
     }
   }

@@ -57,12 +57,12 @@
 
 #### P1 实质缺口（4 项）
 
-| # | 缺口 | 现状证据 | 影响 | 工作量 |
-|---|------|----------|------|--------|
-| ① | 正文 nextContentUrl 分页抓取 | `web_book.rs` get_content 只抓一页 | 分页书源正文被截断——**唯一用户可见的核心解析缺口** | 2-3d |
-| ② | audioSpeak TTS 真实管线 | `rust_api.dart` L1431 仅 http.get 探活，被 audio_notifier 实际调用 | 阻塞 Flutter P0 朗读功能（跨轨） | 3-5d |
-| ③ | WebView 桥接载荷 Flutter 侧拦截执行 | Rust 已交付 7 个 action JSON，Flutter lib 无拦截代码 | 书源 WebView 交互类功能不可用（跨轨） | 2-3d |
-| ④ | rssUpdateSource 原子更新 FFI | 现用「删旧+加新」workaround | RSS 源编辑存在串表风险 | 0.5d |
+| # | 缺口 | 现状证据 | 影响 | 工作量 | 状态 |
+|---|------|----------|------|--------|------|
+| ① | 正文 nextContentUrl 分页抓取 | `web_book.rs` get_content 只抓一页 | 分页书源正文被截断——**唯一用户可见的核心解析缺口** | 2-3d | ✅ 已闭合（`b7368193a`） |
+| ② | audioSpeak TTS 真实管线 | `rust_api.dart` L1431 仅 http.get 探活，被 audio_notifier 实际调用 | 阻塞 Flutter P0 朗读功能（跨轨） | 3-5d | ✅ 已闭合（`9ac94b173` + `522e1c1be`） |
+| ③ | WebView 桥接载荷 Flutter 侧拦截执行 | Rust 已交付 7 个 action JSON，Flutter lib 无拦截代码 | 书源 WebView 交互类功能不可用（跨轨） | 2-3d | ✅ 已闭合（`522e1c1be`） |
+| ④ | rssUpdateSource 原子更新 FFI | 现用「删旧+加新」workaround | RSS 源编辑存在串表风险 | 0.5d | ✅ 已闭合（Rust `b7368193a` + UI 评审修复接线） |
 
 #### P2 缺口
 
@@ -74,7 +74,7 @@
 #### 契约登记缺口
 
 - 12 个 FFI 已实现未登记：QUIC 8（quicCreateClient/quicGet/quicPost/quicPerformanceTest/quicIsInitialized/quicCleanup/netSetQuicEnabled/netIsQuicEnabled）+ backupList + cacheGetChapter + bookGroupSetShow + httpTtsSetEnabled → ✅ 已补登 API_CONTRACT.md §2.41
-- 13 个 bridge 绑定未封装：登录 UI V2 整组（3）+ QUIC 客户端六件套（6）+ backupList/cacheGetChapter/bookGroupSetShow/httpTtsSetEnabled（4）→ 已登记 API_CONTRACT.md §3 待封装清单
+- 13 个 bridge 绑定未封装：登录 UI V2 整组（3）+ QUIC 客户端六件套（6）+ backupList/cacheGetChapter/bookGroupSetShow/httpTtsSetEnabled（4）→ 已登记 API_CONTRACT.md §3 待封装清单；**评审修复销记：登录 V2 三件套 + ttsSpeak（522e1c1be）、cacheGetChapter + ttsSetCacheDir（评审修复提交）已封装接通，剩 9 项**
 
 #### schema 偏离（P1 治理，不阻塞单机功能）
 
@@ -132,14 +132,14 @@
 
 | 功能 | Rust 侧 | Flutter 侧 | 阻塞方向 |
 |------|---------|------------|----------|
-| 正文完整性（分页书源） | ❌ nextContentUrl 未抓取 | 等待 | Rust → UI |
-| 朗读/TTS | ❌ audioSpeak 仅探活 | P0-2 UI 可先行 | Rust → UI |
-| WebView 书源交互 | ✅ 7 action JSON 已交付 | ❌ 无拦截代码 | UI |
-| RSS 源更新 | ⚠️ 删+加 workaround | 等待原子 FFI | Rust → UI |
-| 正文长按操作（高亮/词典/书签） | ✅ FFI 全部已交付 | ❌ UI 缺失 | 纯 UI |
-| 书源登录 V2 | ✅ FFI 已交付 | ❌ 未封装未接入 | 纯 UI |
-| 离线缓存 | ✅ cache FFI 具备（cacheGetChapter 待封装） | ❌ UI 缺失 | 封装+UI |
-| 应用日志 | ✅ appLog* 已交付 | ⚠️ 页面已有、6 处入口未接线 | 纯接线 |
+| 正文完整性（分页书源） | ✅ nextContentUrl 分页抓取（`b7368193a`） | ✅ 阅读器正文完整 | 已闭合 |
+| 朗读/TTS | ✅ ttsSpeak 真实管线（`9ac94b173`） | ✅ audioSpeak 已接线（`522e1c1be`） | 已闭合 |
+| WebView 书源交互 | ✅ 7 action JSON 已交付 | ✅ platform_bridge_service 拦截 7 动作（`522e1c1be`） | 已闭合 |
+| RSS 源更新 | ✅ rssUpdateSource 原子 FFI（`b7368193a`） | ✅ updateRssSource 接线（评审修复提交） | 已闭合 |
+| 正文长按操作（高亮/词典/书签） | ✅ FFI 全部已交付 | ✅ 选区面板 + 9 项菜单（`873abea29`） | 已闭合 |
+| 书源登录 V2 | ✅ FFI 已交付 | ✅ 封装接通（`522e1c1be`） | 已闭合 |
+| 离线缓存 | ✅ cache FFI 具备（cacheGetChapter 已封装，评审修复提交） | ✅ 顶栏缓存 + 书架缓存导出（扩展项留批次） | 主体闭合 |
+| 应用日志 | ✅ appLog* 已交付 | ✅ 入口 7/7 接线（批次0 6 处 + source_edit_screen 评审修复补接） | 已闭合 |
 
 ---
 
@@ -212,7 +212,7 @@
 |----|-----------|------|------|------------------|
 | 1 | `0cde41a5c` | 批次0 快赢（v2.0.1） | 日志入口接通 AppLog / 翻页动画接阅读设置 / 朗读配置页入口 / 替换规则本地导入接确认页 | §5.4 四个纯接线快赢项 |
 | 2 | `873abea29` | 批次1 P0（v2.0.1） | 阅读器正文长按选择 + 9 项操作菜单 / 底栏朗读按钮 + 朗读控制条 | §3.2 P0-1、P0-2 |
-| 3 | `b7368193a` | 批次2 解阻塞（Rust） | 正文 nextContentUrl 分页抓取（99 页上限去重终止）+ rssUpdateSource 原子更新 FFI（契约 §2.5/§2.17 登记） | §3.1 P1 ①④ |
+| 3 | `b7368193a` | 批次2 解阻塞（Rust） | 正文 nextContentUrl 分页抓取（99 页上限去重终止）+ rssUpdateSource 原子更新 FFI（契约 §2.5/§2.17 登记） | §3.1 P1 ①④（④的 UI 接线随评审修复补闭合，见 §7.3 修订） |
 | 4 | `9ac94b173` | 批次2 跨轨（Rust） | TTS 真实合成管线：ttsSpeak 模板替换 + MD5 文件缓存 + Content-Type 校验 / legado-net 无损字节 get_raw（契约 §2.42 登记） | §3.1 P1 ② Rust 侧 |
 | 5 | `522e1c1be` | 批次2 P1 批量（v2.0.2，34 files） | 组 A 阅读器系 10 项菜单+源操作+配置 5 项 / 组 B 离线缓存+书架书详 7 项 / 组 C RSS 规则换源听书设置 8 项 + 删 rss_config_screen / WebView 桥接拦截 7 动作（platform_bridge_service.dart）/ audioSpeak 接 ttsSpeak 真实管线 | §3.2 P1 44 项、§3.1 P1 ②③、结构问题 |
 | 6 | `6633c25e3` | 批次3 治理（Rust） | platform.rs 5 个死代码桩清理、rust_api.dart 3 个死代码 fallback 标注、10 个一次性脚本清理 | §3.1 治理项 |
@@ -230,6 +230,8 @@
 
 ### 7.3 留项汇总（未闭合项，均已在代码/台账登记，不臆测）
 
+> **评审修复修订（Task #122）**：缺口④ rssUpdateSource 已闭合（Rust `b7368193a` + UI 评审修复接线：`rust_api.updateRssSource` 由误接 `sourceUpdate` 改接 `bridge.rssUpdateSource` 真实管线，Mock 同步对齐「源不存在时报错」语义），不再列入留项；留项 10 已按封装销记扣减。
+
 | # | 留项 | 性质 | 来源依据 |
 |---|------|------|----------|
 | 1 | 章节内容保存 FFI（saveChapterContent） | 待 Rust 交付 FFI 后持久化编辑结果 | `reader_top_bar.dart` TODO(留批次) |
@@ -241,7 +243,24 @@
 | 7 | schema v102 重建表 | 评估结论：建议延后，与 ruleSubs/dictRules 等结构偏离合并为 schema 对齐专项 | [REFACTORING_REMAINING_PLAN.md §4.2.1](REFACTORING_REMAINING_PLAN.md) |
 | 8 | bridge.rs C ABI 三步废弃 | 已决策保留+计划性废弃：本批完成决策记录→下批 DEPRECATED 标注冻结新增→下大版本物理移除 | [REFACTORING_REMAINING_PLAN.md §4.2.3 P2-1](REFACTORING_REMAINING_PLAN.md) |
 | 9 | Rust P2 缺口 | subContent 副内容、contentRule.replaceRegex 全文替换、legado-server 正文桩、dict 18 词占位数据 | 本报告 §3.1 P2（未列入本次闭合范围） |
-| 10 | 登录 UI V2 / QUIC 六件套等 13 个 bridge 绑定 UI 封装 | 已登记 API_CONTRACT §3 待封装清单，随后续批次消化 | 本报告 §3.1 契约登记缺口 |
+| 10 | 登录 UI V2 / QUIC 六件套等 13 个 bridge 绑定 UI 封装 | **已扣减**：登录 V2 三件套 + ttsSpeak（522e1c1be）、cacheGetChapter + ttsSetCacheDir（本次评审修复提交）已封装接通；剩 QUIC 六件套（6）+ backupList/bookGroupSetShow/httpTtsSetEnabled（3）共 9 项，随后续批次消化 | 本报告 §3.1 契约登记缺口 + API_CONTRACT §3 待封装清单 |
+| 11 | 定时服务后端 | autoTask 后台执行 FFI 未移植，定时任务开关当前仅持久化 `isEnabled`，无后台调度执行 | `auto_task_screen.dart` 开关语义核验（评审修复补登） |
+| 12 | 书架缓存导出扩展项 | 缓存管理独立页/缓存下载/epub·pdf 导出类型/导出目录与文件名模板/自定义导出设置/WebDav 等，当前已交付 TXT 正文导出 | `bookshelf_screen.dart` TODO(留批次)（评审修复补登） |
+| 13 | searchSource 分组过滤 | 换源页源分组单选持久化 `searchGroup`，待 Rust searchSource 支持分组过滤后全链生效 | `change_source_screen.dart` TODO(留批次)（评审修复转正式登记，台账 §5.9） |
+
+### 7.4 P2 处置明细（2026-08-06 评审修复补录）
+
+> **诚实口径说明**：审计 §3.2 的 P2「46 项」为摘要登记（审计当时未逐条归档明细），本表按类别逐项还原处置结果；无法逐条追溯的零星项如实标注，不虚报。
+
+| # | 类别/条目 | 处置 | 核验依据 |
+|---|-----------|------|----------|
+| 1 | 阅读页面四向边距 | ✅ 实现闭合 | `13a11220e`：阅读高级配置上/下/左/右边距滑杆，接分页缓存键与排版渲染 |
+| 2 | 设置编码 | ✅ 实现闭合 | `13a11220e`：顶栏 menu_set_charset → book.charset 写入并重载当前章 |
+| 3 | 自动任务菜单（导入/导出） | ✅ 实现闭合 | `13a11220e`：导入本地/导入线上/导出/帮助，经 autoTaskPrepareImported 合并 |
+| 4 | 日志入口接线 | ✅ 销记闭合（7/7） | 批次0 `0cde41a5c` 接通 6 处；source_edit_screen（书源编辑）为批次0 遗漏，本次评审修复补接（补提交），全部核验可达 AppLogScreen |
+| 5 | 字距/段距/首行缩进/两端对齐 | ✅ 销记闭合 | v2.0.2 `522e1c1be` 已接入排版引擎，台账核验无需改动 |
+| 6 | 书源导入排序 | ✅ 销记闭合 | 排序已应用于显示列表且导入后 reload 保持；原版 ImportBookSourceDialog 亦无排序 UI，判定对齐 |
+| 7 | 其余约 35 项零星菜单/行为细节 | ⚠️ 降级为观察项 | 审计未归档逐条明细，无法逐条追溯；已随批次1/2 对应屏幕修复消化（`873abea29`/`522e1c1be` 覆盖阅读器/书架/书详/RSS/规则/换源/听书/设置），残留分歧发现时单独立项登记 |
 
 ---
 

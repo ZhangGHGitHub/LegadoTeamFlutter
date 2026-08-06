@@ -658,7 +658,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         // 进入书架管理页（对标原版 BookshelfManageActivity）
         Navigator.pushNamed(context, AppRoutes.bookshelfManage);
       case 'cache_export':
-        _todo(context, '缓存导出');
+        // [UI-fix v2.0.2 | 2026-08-06] 缓存导出接通：选书导出已缓存章节 TXT
+        //（对标原版 CacheActivity 导出通道） — Qoder
+        _exportBookCache();
       case 'groups':
         Navigator.pushNamed(context, AppRoutes.bookGroups);
       case 'layout':
@@ -682,13 +684,6 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'sources':
         Navigator.pushNamed(context, AppRoutes.sources);
     }
-  }
-
-  /// 尚未移植的原版功能统一提示
-  void _todo(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$feature」功能尚未移植')),
-    );
   }
 
   /// 导出书单（对标 Kotlin BookshelfViewModel.exportBookshelf）：
@@ -717,6 +712,130 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         mimeType: 'application/json',
       ),
     ]);
+  }
+
+  /// 缓存导出（对标原版 CacheActivity 导出通道）— Qoder
+  ///
+  /// [UI-fix v2.0.2 | 2026-08-06] 可行部分：书架选一本书，按章节顺序读取
+  /// 已缓存章节（cacheGetChapter），章节标题+正文拼接为 TXT，
+  /// 文件名取书名，经分享通道保存。
+  /// TODO(留批次): CacheActivity 对齐尚缺——缓存管理独立页（书籍列表/
+  /// 缓存进度/单本导出入口）、缓存下载（download_after/download_all）、
+  /// epub/pdf 导出类型、导出文件夹选择与文件名模板、自定义导出设置
+  ///（charset/章节范围/不导出章节名）、导出进度与 WebDav，待对应 FFI 落地。 — Qoder
+  Future<void> _exportBookCache() async {
+    final books = ref.read(bookshelfNotifierProvider).books;
+    if (books.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('书架为空，无可导出的缓存书籍')),
+      );
+      return;
+    }
+    final picked = await showDialog<Book>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('缓存导出'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final b in books)
+                ListTile(
+                  title: Text(b.name),
+                  subtitle: b.author.isEmpty ? null : Text(b.author),
+                  onTap: () => Navigator.pop(dialogContext, b),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    final api = ref.read(bookApiProvider);
+    final progress = ValueNotifier<String>('正在读取章节列表...');
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ValueListenableBuilder<String>(
+        valueListenable: progress,
+        builder: (context, text, _) => AlertDialog(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(text)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final buffer = StringBuffer();
+    var cached = 0;
+    String? loadError;
+    try {
+      final chapters = await api.getChapters(picked.bookUrl);
+      for (var i = 0; i < chapters.length; i++) {
+        progress.value = '正在读取缓存 ${i + 1}/${chapters.length}';
+        String content;
+        try {
+          content = await api.getCachedChapter(picked.bookUrl, i);
+        } catch (e) {
+          debugPrint('读取缓存失败《${picked.name}》第 $i 章：$e');
+          continue;
+        }
+        if (content.trim().isEmpty) continue; // 未缓存章节：跳过
+        buffer.writeln(chapters[i].title);
+        buffer.writeln();
+        buffer.writeln(content.trim());
+        buffer.writeln();
+        cached++;
+      }
+    } catch (e) {
+      loadError = '$e';
+    } finally {
+      if (mounted) Navigator.pop(context); // 关闭进度对话框
+      progress.dispose();
+    }
+    if (!mounted) return;
+    if (loadError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('缓存导出失败：$loadError')),
+      );
+      return;
+    }
+    if (cached == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('《${picked.name}》暂无已缓存章节')),
+      );
+      return;
+    }
+    final fileName =
+        '${picked.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.txt';
+    await Share.shareXFiles([
+      XFile.fromData(
+        utf8.encode(buffer.toString()),
+        name: fileName,
+        mimeType: 'text/plain',
+      ),
+    ]);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已导出缓存章节 $cached 章：$fileName')),
+      );
+    }
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 更新目录 / 添加网址 / 导入书单 — Qoder =====

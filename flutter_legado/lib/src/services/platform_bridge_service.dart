@@ -302,6 +302,12 @@ class PlatformBridgeService {
 
   /// webViewGetOverrideUrl：拦截匹配 overrideUrlRegex 的跳转 URL
   /// （对齐 Kotlin SnifferWebClient.shouldOverrideUrlLoading）
+  ///
+  /// [UI-fix v2.0.2 | 2026-08-06] 合并为单个 NavigationDelegate：
+  /// 旧实现在 js 非空时二次调用 _loadAndWaitFinished 重设委托，
+  /// 覆盖了 onNavigationRequest 捕获委托并二次加载，导致 JS 分支
+  /// 嗅探必超时；现拦截捕获与加载完成等待共用同一委托，
+  /// 不重设、不二次 _load。 — QoderCN
   Future<String> _webViewSniffOverrideUrl({
     required String url,
     required String html,
@@ -317,6 +323,12 @@ class PlatformBridgeService {
     if (url.isNotEmpty && regex.hasMatch(url)) return url;
 
     final controller = _newController();
+    final finished = Completer<void>();
+    void completeFinished() {
+      if (!finished.isCompleted) finished.complete();
+    }
+
+    // 单一委托：跳转拦截（capture）与加载终态等待共用，避免相互覆盖
     controller.setNavigationDelegate(NavigationDelegate(
       onNavigationRequest: (request) {
         if (!capture.isCompleted && regex.hasMatch(request.url)) {
@@ -325,13 +337,17 @@ class PlatformBridgeService {
         }
         return NavigationDecision.navigate;
       },
+      onPageFinished: (_) => completeFinished(),
+      onWebResourceError: (_) => completeFinished(),
+      onHttpError: (_) => completeFinished(),
     ));
     _load(controller, url: url, html: html);
     if (js.isNotEmpty) {
-      // 触发型 JS：等待页面完成后执行以诱发目标跳转
-      unawaited(_loadAndWaitFinished(controller, url: url, html: html)
-          .then((_) => Future<void>.delayed(
-              Duration(milliseconds: 100 + delayMs)))
+      // 触发型 JS：首次加载到达终态后执行以诱发目标跳转（无二次加载）
+      unawaited(finished.future
+          .timeout(_webViewTimeout, onTimeout: () {})
+          .then((_) =>
+              Future<void>.delayed(Duration(milliseconds: 100 + delayMs)))
           .then((_) => controller.runJavaScript(js))
           .catchError((Object _) {}));
     }

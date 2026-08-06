@@ -339,7 +339,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   }
 
   /// 源分组单选（对标 menu_group/source_group：AppConfig.searchGroup，
-  // TODO: 待 Rust searchSource 支持分组过滤后全链生效）— Qoder
+  /// TODO(留批次): 待 Rust searchSource 支持分组过滤后全链生效；
+  /// 已登记 docs/REFACTORING_REMAINING_PLAN.md §5.9）— Qoder
   Future<void> _showGroupPicker() async {
     final selected = await showDialog<String?>(
       context: context,

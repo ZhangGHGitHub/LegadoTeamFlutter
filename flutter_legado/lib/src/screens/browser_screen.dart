@@ -7,7 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 /// 内置浏览器页面
 ///
-/// 双模实现（Task #114 平台桥接参数扩展 — QoderCN）：
+/// [UI-fix v2.0.2 | 2026-08-06] 双模实现（Task #114 平台桥接参数扩展 — QoderCN）：
 /// - WebView 支持平台（Android/iOS/macOS）且携带初始 URL/HTML 时，
 ///   内嵌真实 WebView（webview_flutter）页内渲染，供平台桥接
 ///   （showBrowser/startBrowser/openUrl）承载应用内浏览；

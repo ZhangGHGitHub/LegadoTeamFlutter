@@ -125,7 +125,7 @@
 |------|------|------|------|
 | `getRssSources()` | 无 | `Future<List<RssSource>>` | 获取所有 RSS 源 |
 | `addRssSource(RssSource source)` | source: RssSource 对象 | `Future<RssSource>` | 添加 RSS 源 |
-| `updateRssSource(RssSource source)` | source: RssSource 对象 | `Future<void>` | 更新 RSS 源（Rust 侧 `ffi::rss_update_source`：按 `sourceUrl` 主键单条 UPDATE 原子更新，替代「删旧+加新」workaround，规避级联串表风险；Task #108，加法式新增 FFI） |
+| `updateRssSource(RssSource source)` | source: RssSource 对象 | `Future<void>` | 更新 RSS 源（Rust 侧 `ffi::rss_update_source`：按 `sourceUrl` 主键单条 UPDATE 原子更新，替代「删旧+加新」workaround，规避级联串表风险；Task #108，加法式新增 FFI）。✅ UI 封装接通：`rust_api.updateRssSource` 已由误接 `sourceUpdate` 改接 `rssUpdateSource` 真实管线（本次评审修复提交），Mock 同步对齐「源不存在时报错」语义 |
 | `rssUpdateSource(String sourceJson)` | sourceJson: RssSource JSON | `Future<String>` | 原子更新 RSS 源（按 `sourceUrl` 主键单条 UPDATE 全字段），源不存在时报错，返回更新后的 RssSource JSON（Task #108，加法式新增） |
 | `deleteRssSource(String sourceUrl)` | sourceUrl | `Future<void>` | 删除 RSS 源 |
 | `enableRssSource(String sourceUrl)` | sourceUrl | `Future<void>` | 启用 RSS 源 |
@@ -534,7 +534,7 @@
 | 函数 | 所属模块 | 说明 |
 |------|----------|------|
 | `backupList` | 备份操作（§2.11 扩展） | 列出备份文件（RustApi/MockBookApi 封装待补，见 §4.3 P1-1 备份三件套） |
-| `cacheGetChapter` | 缓存管理（§2.16 扩展） | 获取已缓存章节内容（离线缓存 UI 批次依赖） |
+| `cacheGetChapter` | 缓存管理（§2.16 扩展） | 获取已缓存章节内容（离线缓存 UI 批次依赖）——✅ 已封装接通（本次评审修复提交，`RustApi.getCachedChapter` 封装，书架菜单缓存导出） |
 | `bookGroupSetShow` | 书籍分组（§2.14 扩展） | 设置分组显示状态 |
 | `httpTtsSetEnabled` | HTTP TTS（§2.25 扩展） | 启用/禁用 HTTP TTS 配置 |
 
@@ -583,9 +583,9 @@
 
 | # | 绑定 | 所属组 | 备注 |
 |---|------|--------|------|
-| 1 | `sourceIsLoginUiV2` | 登录 UI V2 整组（§2.3） | 书源登录 V2 判定，UI 未接入 |
-| 2 | `sourceLoginUiV2` | 登录 UI V2 整组（§2.3） | 登录 UI V2 脚本执行，UI 未接入 |
-| 3 | `sourceLoginActionV2` | 登录 UI V2 整组（§2.3） | 登录动作 V2 执行，UI 未接入 |
+| 1 | `sourceIsLoginUiV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.isLoginUiV2`，书详/阅读器登录链路接入） |
+| 2 | `sourceLoginUiV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.loginUiV2`） |
+| 3 | `sourceLoginActionV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.loginActionV2`） |
 | 4 | `quicCreateClient` | QUIC 客户端六件套（§2.41） | UI 未封装 |
 | 5 | `quicGet` | QUIC 客户端六件套（§2.41） | UI 未封装 |
 | 6 | `quicPost` | QUIC 客户端六件套（§2.41） | UI 未封装 |
@@ -593,11 +593,13 @@
 | 8 | `quicIsInitialized` | QUIC 客户端六件套（§2.41） | UI 未封装 |
 | 9 | `quicCleanup` | QUIC 客户端六件套（§2.41） | UI 未封装 |
 | 10 | `backupList` | 其他（§2.41） | 备份三件套之一，rust_api.dart 待切换 |
-| 11 | `cacheGetChapter` | 其他（§2.41） | 离线缓存 UI 批次依赖 |
+| 11 | `cacheGetChapter` | 其他（§2.41） | ✅ 已封装接通（本次评审修复提交，`RustApi.getCachedChapter`，书架缓存导出） |
 | 12 | `bookGroupSetShow` | 其他（§2.41） | 分组显示开关 |
 | 13 | `httpTtsSetEnabled` | 其他（§2.41） | TTS 配置启停 |
-| 14 | `ttsSpeak` | TTS 真实合成管线（§2.42） | `audioSpeak` 改接真实管线（Task #113 缺口②） |
-| 15 | `ttsSetCacheDir` | TTS 真实合成管线（§2.42） | 应用缓存目录注入（初始化时调用） |
+| 14 | `ttsSpeak` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（522e1c1be，`audioSpeak` 改接真实管线，Task #113 缺口②） |
+| 15 | `ttsSetCacheDir` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（本次评审修复提交，`RustApi.init` 内 `_initTtsCacheDir` 注入应用支持目录 tts_cache） |
+
+> **销记更新（本次评审修复提交）**：已封装接通 5 项——登录 UI V2 三件套 + `ttsSpeak`（均 522e1c1be），`cacheGetChapter` + `ttsSetCacheDir`（本次提交）；另 `rssUpdateSource`（§2.17）经 `updateRssSource` 接通（不在本表 13 项之列，一并销记）。剩余待封装 9 项：QUIC 客户端六件套（6）+ backupList/bookGroupSetShow/httpTtsSetEnabled（3）。
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，

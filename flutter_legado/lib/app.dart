@@ -58,7 +58,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     final themeState = ref.watch(themeNotifierProvider);
     return MaterialApp(
       title: 'Legado',
-      // 平台桥接服务经此 Key 分发页面跳转 / SnackBar（Task #114，服务层无 BuildContext）— QoderCN
+      // [UI-fix v2.0.2 | 2026-08-06] 平台桥接服务经此 Key 分发页面跳转 / SnackBar
+      //（Task #114，服务层无 BuildContext） — QoderCN
       navigatorKey: PlatformBridgeService.navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
