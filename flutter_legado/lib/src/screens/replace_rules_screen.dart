@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
+import 'replace_rule_import_confirm_screen.dart';
 
 /// 替换规则管理页面
 class ReplaceRulesScreen extends ConsumerStatefulWidget {
@@ -78,6 +83,19 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           ),
         ),
         actions: [
+          // [UI-fix v2.0.1 | 2026-08-06] 导入入口接 ReplaceRuleImportConfirmScreen
+          // （对标原版 ReplaceRuleActivity menu_import；本地导入已接通，
+          // 网络/二维码导入缺 replace 导入 service，留批次2） — Qoder
+          PopupMenuButton<String>(
+            tooltip: '导入',
+            icon: const Icon(Icons.file_download_outlined),
+            onSelected: _handleImportMenu,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'local', child: Text('本地导入')),
+              PopupMenuItem(value: 'online', child: Text('网络导入')),
+              PopupMenuItem(value: 'qrcode', child: Text('二维码导入')),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () => _showRuleForm(context),
@@ -180,6 +198,109 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
         );
       },
     );
+  }
+
+  /// [UI-fix v2.0.1 | 2026-08-06] 导入菜单分发 — Qoder
+  void _handleImportMenu(String value) {
+    switch (value) {
+      case 'local':
+        _importFromFile();
+      case 'online':
+      case 'qrcode':
+        // 网络/二维码导入依赖替换规则导入 service（尚未实现），留批次2 — Qoder
+        final name = value == 'online' ? '网络' : '二维码';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('「$name导入」后续版本支持')),
+        );
+    }
+  }
+
+  /// 本地文件导入（对标原版 menu_import_local：任选文件，解析层容错）
+  ///
+  /// 注：与书源/RSS 导入同策略，不使用扩展名过滤（低版本 Android SAF
+  /// MIME 匹配问题），解析失败由提示兜底。
+  Future<void> _importFromFile() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final picked = await FilePicker.platform.pickFiles();
+      if (picked == null || picked.files.isEmpty) return;
+      final path = picked.files.single.path;
+      if (path == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('无法获取文件路径')),
+        );
+        return;
+      }
+      final text = await File(path).readAsString();
+      if (!mounted) return;
+      await _parseAndConfirm(text);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('从文件导入失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// 解析替换规则文本（对标原版 ImportReplaceRuleDialog 容错：
+  /// 数组 / {"replaceRules": [...]} / 单对象均可）
+  List<Map<String, dynamic>> _parseRulesText(String text) {
+    final decoded = jsonDecode(text.trim());
+    if (decoded is List) {
+      return decoded
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    if (decoded is Map) {
+      final list = decoded['replaceRules'];
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return [Map<String, dynamic>.from(decoded)];
+    }
+    throw const FormatException('格式错误，未解析到替换规则');
+  }
+
+  /// 候选规则 → 导入确认页（对标原版 comparisonSource 流程：
+  /// 用户勾选确认后才入库）
+  Future<void> _parseAndConfirm(String text) async {
+    List<Map<String, dynamic>> candidates;
+    try {
+      candidates = _parseRulesText(text);
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('格式错误，未解析到替换规则')),
+      );
+      return;
+    }
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('格式错误，未解析到替换规则')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final localRules = ref.read(replaceRuleNotifierProvider).rules;
+    final imported = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        builder: (_) => ReplaceRuleImportConfirmScreen(
+          raws: candidates,
+          localRules: localRules,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    // 确认页返回导入成功条数；取消返回 null/0
+    if (imported != null && imported > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入完成（$imported 条）')),
+      );
+    }
   }
 
   void _showRuleForm(BuildContext context, {ReplaceRule? rule}) {

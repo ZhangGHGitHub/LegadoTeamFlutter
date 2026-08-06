@@ -313,6 +313,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         await api.updateBook(updated);
         if (mounted) setState(() => _future = _loadData());
         break;
+      case 'log':
+        // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
+        Navigator.pushNamed(context, AppRoutes.appLog);
+        break;
       default:
         _todo(value);
         break;
@@ -330,7 +334,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       'bookVariable': '设置书籍变量',
       'deleteAlert': '删除警告',
       'clearCache': '清除缓存',
-      'log': '日志',
     };
     final feature = names[value] ?? value;
     ScaffoldMessenger.of(context).showSnackBar(

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
+import '../routes.dart';
 
 /// 预设定时时长（分钟）
 const List<int> _kPresetMinutes = [5, 10, 15, 30];
@@ -498,6 +499,18 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
                 child: Text('${(provider.config.volume * 100).toInt()}%'),
               ),
             ],
+          ),
+          // [UI-fix v2.0.1 | 2026-08-06] 朗读设置区入口接 ReadAloudConfigScreen
+          // （对标原版 ReadAloudDialog 朗读引擎入口 pref_aloud；此前该页为孤儿页） — Qoder
+          const SizedBox(height: 4),
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.tune, size: 20),
+            title: const Text('朗读引擎'),
+            subtitle: const Text('管理 HTTP TTS 朗读引擎'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.pushNamed(context, AppRoutes.readAloudConfig),
           ),
         ],
       ),

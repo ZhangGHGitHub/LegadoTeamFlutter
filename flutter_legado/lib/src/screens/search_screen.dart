@@ -6,6 +6,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/search/search_notifier.dart';
+import '../routes.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -127,7 +128,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 SearchFilterPanel.show(context);
                 break;
               case 'log':
-                _todo(context, '日志');
+                // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
+                Navigator.pushNamed(context, AppRoutes.appLog);
                 break;
             }
           },

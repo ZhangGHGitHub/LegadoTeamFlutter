@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
+import 'reader_settings_sheet.dart';
 
 /// 阅读器顶部工具栏
 ///
@@ -146,17 +147,24 @@ class ReaderTopBar extends ConsumerWidget {
                         // 对标原版 ReadMenu → HighlightRuleActivity
                         Navigator.pushNamed(context, AppRoutes.highlightRules);
                         break;
+                      case 'pageAnim':
+                        // [UI-fix v2.0.1 | 2026-08-06] 翻页动画接阅读设置面板
+                        // （面板内含翻页模式设置，对标原版 ReadStyleDialog） — Qoder
+                        ReaderSettingsSheet.show(context);
+                        break;
+                      case 'log':
+                        // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
+                        Navigator.pushNamed(context, AppRoutes.appLog);
+                        break;
                       default:
                         const names = {
                           'editContent': '编辑内容',
-                          'pageAnim': '翻页动画',
                           'reverseContent': '反转内容',
                           'simulatedReading': '模拟追读',
                           'enableReplace': '替换规则',
                           'reSegment': '重新分段',
                           'imageStyle': '图片样式',
                           'updateToc': '更新目录',
-                          'log': '日志',
                           'help': '帮助',
                         };
                         _todo(context, names[value] ?? value);

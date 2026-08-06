@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [未发布]
+## [2.0.1] - 2026-08-06
+
+### 修复（批次0 纯接线快赢）
+- 阅读器翻页动画入口：reader_top_bar 翻页动画菜单接 ReaderSettingsSheet（对标原版 ReadStyleDialog）
+- 日志入口接线：书架/搜索/书详/书源编辑/阅读器菜单的「日志」项接通 AppLogScreen（对标原版 menu_log → AppLogDialog）
+- 朗读配置页入口：听书页 TTS 设置面板新增「朗读引擎」入口，接通孤儿页 ReadAloudConfigScreen（对标原版 pref_aloud）
+- 替换规则导入：replace_rules_screen 新增导入菜单，本地文件导入接通 ReplaceRuleImportConfirmScreen；网络/二维码导入缺导入 service，留批次2
 
 ### 新增（2026-07-31 重构遗留任务收尾）
 - 排版引擎渲染侧整合（Task #34）：paragraph_layout_engine 接入 reader_screen，屏级分页 + 中文避头尾 + 两端对齐，847+ 测试通过

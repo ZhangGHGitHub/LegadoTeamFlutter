@@ -671,7 +671,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'import_list':
         Navigator.pushNamed(context, AppRoutes.importBooks);
       case 'log':
-        _todo(context, '日志');
+        // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
+        Navigator.pushNamed(context, AppRoutes.appLog);
       case 'sources':
         Navigator.pushNamed(context, AppRoutes.sources);
     }
