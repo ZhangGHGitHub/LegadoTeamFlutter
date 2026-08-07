@@ -1,5 +1,14 @@
 //! FFI 桥接层 — 旧式 C ABI 导出函数（向后兼容）
 //!
+//! **DEPRECATED（Task #136 R12）**：本模块整体标记为废弃，处于
+//! 「保留 + 计划性废弃」状态：
+//!
+//! - **冻结新增**：新功能一律在 frb 主链路（`ffi.rs`）暴露，
+//!   本模块不再新增任何 `#[no_mangle]` 导出；
+//! - **不改行为**：既有导出保持现有签名与语义不变（存量调用方兼容），
+//!   待 Flutter 侧全部切换到 frb 绑定后随版本计划移除；
+//! - 存量盘点：无 Rust 内部调用点，仅历史 Dart C ABI 绑定引用。
+//!
 //! 所有对外暴露的 FFI 函数均使用 `catch_unwind` 包装，防止 panic 跨越 FFI 边界。
 //! 数据通过 JSON 字符串（`*mut c_char`）在 Rust 与 Dart 之间传递。
 //!
@@ -1782,96 +1791,6 @@ pub unsafe extern "C" fn ffi_archive_is_archive(file_path: *const c_char) -> boo
         crate::api::archive_import_api::is_archive_file(path)
     })
     .unwrap_or(false)
-}
-
-// ─── QUIC/HTTP3 网络 FFI 函数 ─────────────────────────
-
-/// 创建 QUIC 客户端（config_json 为空指针时使用默认配置）
-#[no_mangle]
-pub unsafe extern "C" fn ffi_quic_create_client(config_json: *const c_char) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        let config = if config_json.is_null() {
-            None
-        } else {
-            Some(c_char_to_str(config_json)?.to_string())
-        };
-        crate::api::quic_api::create_quinn_client(config)
-    }))
-}
-
-/// 通过 QUIC 发送 GET 请求
-#[no_mangle]
-pub unsafe extern "C" fn ffi_quic_get(
-    url: *const c_char,
-    headers_json: *const c_char,
-) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        let u = c_char_to_str(url)?.to_string();
-        let headers = if headers_json.is_null() {
-            None
-        } else {
-            Some(c_char_to_str(headers_json)?.to_string())
-        };
-        crate::api::quic_api::quinn_get(u, headers)
-    }))
-}
-
-/// 通过 QUIC 发送 POST 请求（body 为 base64 编码）
-#[no_mangle]
-pub unsafe extern "C" fn ffi_quic_post(
-    url: *const c_char,
-    body_base64: *const c_char,
-    headers_json: *const c_char,
-) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        let u = c_char_to_str(url)?.to_string();
-        let body = c_char_to_str(body_base64)?.to_string();
-        let headers = if headers_json.is_null() {
-            None
-        } else {
-            Some(c_char_to_str(headers_json)?.to_string())
-        };
-        crate::api::quic_api::quinn_post(u, body, headers)
-    }))
-}
-
-/// QUIC 性能测试
-#[no_mangle]
-pub unsafe extern "C" fn ffi_quic_performance_test(url: *const c_char) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        let u = c_char_to_str(url)?.to_string();
-        crate::api::quic_api::quinn_performance_test(u)
-    }))
-}
-
-/// 检查 QUIC 客户端是否已初始化
-#[no_mangle]
-pub extern "C" fn ffi_quic_is_initialized() -> bool {
-    catch_unwind(crate::api::quic_api::quinn_is_initialized).unwrap_or(false)
-}
-
-/// 清理 QUIC 连接池
-#[no_mangle]
-pub extern "C" fn ffi_quic_cleanup() -> *mut c_char {
-    match catch_unwind(crate::api::quic_api::quinn_cleanup) {
-        Ok(result) => to_c_char(&result),
-        Err(_) => to_c_char("QUIC cleanup failed"),
-    }
-}
-
-/// 设置主网络链路 QUIC 传输开关
-#[no_mangle]
-pub extern "C" fn ffi_net_set_quic_enabled(enabled: bool) -> *mut c_char {
-    match catch_unwind(|| crate::api::quic_api::net_set_quic_enabled(enabled)) {
-        Ok(result) => to_c_char(&result),
-        Err(_) => to_c_char("设置 QUIC 开关失败"),
-    }
-}
-
-/// 查询主网络链路 QUIC 传输开关状态
-#[no_mangle]
-pub extern "C" fn ffi_net_is_quic_enabled() -> bool {
-    catch_unwind(crate::api::quic_api::net_is_quic_enabled).unwrap_or(false)
 }
 
 // ─── 自动任务 FFI 函数 ───────────────────────────────

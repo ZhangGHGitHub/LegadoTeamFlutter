@@ -1160,6 +1160,80 @@ pub mod ffi {
         Ok(true)
     }
 
+    /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
+    ///
+    /// `title` / `chapter_url` 为空串时从 DB 章节表回填；
+    /// 复用 CacheBookRepository.insert（INSERT OR REPLACE）。
+    pub fn save_chapter_content(
+        book_url: String,
+        chapter_index: i32,
+        title: String,
+        content: String,
+        chapter_url: String,
+    ) -> Result<bool, BridgeError> {
+        let ok = crate::api::cache_api::save_chapter_content(
+            &book_url,
+            chapter_index,
+            &title,
+            &content,
+            &chapter_url,
+        )?;
+        Ok(ok)
+    }
+
+    // ─── 批量缓存下载（Task #136 R7，API_CONTRACT §2.43.3）─────
+
+    /// 创建批量缓存下载任务，返回任务 ID（字符串）
+    ///
+    /// `start_chapter` / `end_chapter` 含端点；负值按 0、超出按末章截断。
+    /// 对标 Kotlin CacheActivity：复用正文抓取链路 + 任务表/取消令牌。
+    /// 同一本书已有进行中任务时复用返回既有 ID（契约 §2.43.3）。
+    pub fn cache_download_start(
+        book_url: String,
+        start_chapter: i32,
+        end_chapter: i32,
+    ) -> Result<String, BridgeError> {
+        let task_id =
+            crate::api::cache_download_api::cache_download_start(
+                &book_url,
+                start_chapter,
+                end_chapter,
+            )?;
+        Ok(task_id.to_string())
+    }
+
+    /// 查询批量下载任务进度（JSON：taskId/bookUrl/status/total/completed/failed；
+    /// 未知任务 status=notFound）
+    pub fn cache_download_progress(task_id: i64) -> Result<String, BridgeError> {
+        let task = crate::api::cache_download_api::cache_download_progress(task_id as u64)?;
+        to_json(&task)
+    }
+
+    /// 取消批量下载任务（对照书源校验流取消机制）；未知任务返回 false
+    pub fn cache_download_cancel(task_id: i64) -> Result<bool, BridgeError> {
+        let ok = crate::api::cache_download_api::cache_download_cancel(task_id as u64)?;
+        Ok(ok)
+    }
+
+    /// 列出所有批量下载任务（JSON 数组，按任务 ID 升序）
+    pub fn cache_download_list() -> Result<String, BridgeError> {
+        let tasks = crate::api::cache_download_api::cache_download_list()?;
+        to_json(&tasks)
+    }
+
+    // ─── 章节购买动作（Task #136 R6，API_CONTRACT §2.43.2）─────
+
+    /// 执行章节购买动作（对照 Kotlin ReadBookActivity.payAction）
+    ///
+    /// 返回 JSON：`{"kind": "url"/"success"/"none", "value": "<JS 返回原文>"}`；
+    /// kind=url 时 UI 打开支付页，kind=success 时已清当前章正文缓存。
+    /// 需 quickjs 构建（非 quickjs 返回错误）。
+    pub fn chapter_pay_action(book_url: String, chapter_index: i32) -> Result<String, BridgeError> {
+        let result =
+            crate::api::pay_action_api::chapter_pay_action(&book_url, chapter_index)?;
+        to_json(&result)
+    }
+
     // ─── 配置管理 ─────────────────────────────────────
 
     /// 获取配置项
@@ -1507,6 +1581,25 @@ pub mod ffi {
         to_json(&result)
     }
 
+    /// 带选项导出书籍（Task #136 R8，API_CONTRACT §2.43.4）
+    ///
+    /// `options_json` 透传：encoding（仅 TXT）/ startChapter / endChapter（-1=不限）/
+    /// fileNameTemplate（{name}/{author} 占位符）；空串 = 全缺省（行为等同 book_export）。
+    pub fn book_export_with_options(
+        book_url: String,
+        format: String,
+        include_toc: bool,
+        options_json: String,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::book_export::export_book_with_options(
+            &book_url,
+            &format,
+            include_toc,
+            &options_json,
+        )?;
+        to_json(&result)
+    }
+
     // ─── 压缩包导入与编码检测 ─────────────────────────
 
     /// 导入 ZIP 压缩包中的书籍文件（返回 ArchiveImportResult JSON）
@@ -1564,58 +1657,6 @@ pub mod ffi {
     /// 判断文件是否为压缩包格式
     pub fn archive_is_archive(file_path: String) -> bool {
         crate::api::archive_import_api::is_archive_file(&file_path)
-    }
-
-    // ─── QUIC/HTTP3 网络 ──────────────────────────────
-
-    /// 创建 QUIC 客户端（config_json 为空时使用默认配置）
-    pub fn quic_create_client(config_json: Option<String>) -> Result<String, BridgeError> {
-        Ok(crate::api::quic_api::create_quinn_client(config_json)?)
-    }
-
-    /// 通过 QUIC 发送 GET 请求（返回响应 JSON）
-    pub fn quic_get(url: String, headers_json: Option<String>) -> Result<String, BridgeError> {
-        Ok(crate::api::quic_api::quinn_get(url, headers_json)?)
-    }
-
-    /// 通过 QUIC 发送 POST 请求（body 为 base64 编码，返回响应 JSON）
-    pub fn quic_post(
-        url: String,
-        body_base64: String,
-        headers_json: Option<String>,
-    ) -> Result<String, BridgeError> {
-        Ok(crate::api::quic_api::quinn_post(
-            url,
-            body_base64,
-            headers_json,
-        )?)
-    }
-
-    /// QUIC 性能测试（返回 PerformanceMetrics JSON）
-    pub fn quic_performance_test(url: String) -> Result<String, BridgeError> {
-        Ok(crate::api::quic_api::quinn_performance_test(url)?)
-    }
-
-    /// 检查 QUIC 客户端是否已初始化
-    pub fn quic_is_initialized() -> bool {
-        crate::api::quic_api::quinn_is_initialized()
-    }
-
-    /// 清理 QUIC 连接池
-    pub fn quic_cleanup() -> String {
-        crate::api::quic_api::quinn_cleanup()
-    }
-
-    /// 设置主网络链路 QUIC 传输开关
-    ///
-    /// 启用后 LegadoClient 的 HTTPS 请求优先走 QUIC/HTTP3，失败自动 fallback 到 HTTP/2。
-    pub fn net_set_quic_enabled(enabled: bool) -> String {
-        crate::api::quic_api::net_set_quic_enabled(enabled)
-    }
-
-    /// 查询主网络链路 QUIC 传输开关状态
-    pub fn net_is_quic_enabled() -> bool {
-        crate::api::quic_api::net_is_quic_enabled()
     }
 
     // ─── 自动任务 ─────────────────────────────────────

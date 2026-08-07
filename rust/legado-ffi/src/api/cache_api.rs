@@ -1,8 +1,11 @@
 //! 缓存管理 API
 //!
-//! 提供缓存大小查询、清理、章节缓存读取操作。
+//! 提供缓存大小查询、清理、章节缓存读取操作；
+//! Task #136 R5 补齐写侧（[`save_chapter_content`]）。
 
-use legado_core::LegadoResult;
+use legado_core::cache_book::CachedChapter;
+use legado_core::{LegadoError, LegadoResult};
+use legado_db::repository::book_chapter_repository::BookChapterRepository;
 use legado_db::{CacheBookRepository, CacheRepository};
 
 use crate::db_state::with_database;
@@ -60,6 +63,68 @@ pub fn get_cache_chapter_count() -> LegadoResult<i32> {
     })
 }
 
+/// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
+///
+/// 复用 [`CacheBookRepository::insert`]（INSERT OR REPLACE），供阅读器
+/// 「编辑内容/反转」闭环回写章节缓存；正文按原文存储（不做净化，
+/// 与正文抓取链路缓存写入一致，读取时再净化）。
+///
+/// `title` / `chapter_url` 为空串时从 DB 章节表回填（章节也不存在则报错）。
+pub fn save_chapter_content(
+    book_url: &str,
+    chapter_index: i32,
+    title: &str,
+    content: &str,
+    chapter_url: &str,
+) -> LegadoResult<bool> {
+    // 缺省字段回填：对齐 Kotlin cached_chapters 主键（book_url + chapter_url）
+    let (chapter_title, chapter_url) = if title.is_empty() || chapter_url.is_empty() {
+        let ch = with_database(|db| {
+            let repo = BookChapterRepository::new(db.connection());
+            repo.find_by_book_url_and_index(book_url, chapter_index)
+        })?
+        .ok_or_else(|| {
+            LegadoError::Database(format!("章节 {chapter_index} 不存在: {book_url}"))
+        })?;
+        (
+            if title.is_empty() {
+                ch.title
+            } else {
+                title.to_string()
+            },
+            if chapter_url.is_empty() {
+                ch.url
+            } else {
+                chapter_url.to_string()
+            },
+        )
+    } else {
+        (title.to_string(), chapter_url.to_string())
+    };
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    let chapter = CachedChapter {
+        id: 0,
+        book_url: book_url.to_string(),
+        chapter_index,
+        chapter_title,
+        chapter_url,
+        content: content.to_string(),
+        cached_at: now_ms,
+        size_bytes: content.len() as i64,
+    };
+
+    with_database(|db| {
+        let repo = CacheBookRepository::new(db.connection());
+        repo.insert(&chapter)?;
+        Ok(true)
+    })
+}
+
 /// 清除指定时间之前的缓存，返回删除的行数
 pub fn clear_cache_before(before_timestamp: i64) -> LegadoResult<i64> {
     with_database(|db| {
@@ -96,5 +161,31 @@ mod tests {
 
         // 清空缓存不报错
         assert!(clear_cache().unwrap());
+    }
+
+    /// Task #136 R5：写入→cache_get 读回一致
+    #[test]
+    fn test_save_chapter_content_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_cache().unwrap();
+
+        let book_url = "http://save-chapter.example.com/book1";
+        let chapter_url = "http://save-chapter.example.com/ch3";
+        let content = "第三章正文：缓存写侧闭环测试。";
+
+        // 写入（显式 title/chapter_url）
+        assert!(save_chapter_content(book_url, 3, "第三章", content, chapter_url).unwrap());
+
+        // 读回一致
+        let read_back = get_chapter_cache(book_url, 3).unwrap();
+        assert_eq!(read_back, content, "写入后读回应一致");
+
+        // 覆盖写入（INSERT OR REPLACE）
+        let edited = "第三章正文（用户编辑后）";
+        assert!(save_chapter_content(book_url, 3, "第三章", edited, chapter_url).unwrap());
+        assert_eq!(get_chapter_cache(book_url, 3).unwrap(), edited);
+
+        // 清理测试数据
+        clear_cache().unwrap();
     }
 }

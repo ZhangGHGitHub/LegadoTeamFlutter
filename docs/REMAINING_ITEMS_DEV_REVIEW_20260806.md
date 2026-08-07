@@ -5,9 +5,13 @@
 **报告定位**: 下一轮开发的逐项执行依据——现状证据（文件:行）、所需交付、跨轨依赖、实现方案要点、工作量、批次建议与风险
 **方法**: 全部结论基于源码 grep/阅读实证与两份文档登记，不臆测；行号为 2026-08-06 工作区快照
 
+> ✅ **状态更新（2026-08-07，Task #140）**：Rust 剩余项全批（R1-R10+R12）已闭合——留项 1（saveChapterContent，R5）/3（payAction，R6）/8 步骤2（bridge.rs DEPRECATED 标注，R12）/9（subContent+replaceRegex+server 正文+dict 规则引擎，R1-R4）已闭合；留项 11 Rust 大头已闭合（R7 缓存批量下载 + R8 导出参数，book_export 已支持四格式）；留项 13 QUIC 六件套改为**已移除**（用户决策，纯重构边界）。销记台账见 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §5.10。仍开放：留项 2/4/5/6/7（schema v102 保持触发型延后）/10/13 非 QUIC 部分（backupList/bookGroupSetShow/httpTtsSetEnabled）及留项 11 UI 侧部分；留项 12 已随 Task #131（2026-08-07）另行闭合。
+
 ---
 
 ## 1. 章节内容保存 FFI（saveChapterContent）
+
+> ✅ **已闭合（2026-08-07，R5，Task #140）**：saveChapterContent FFI 新增（契约 §2.43.1），复用 CacheBookRepository 写侧，读写键与 cacheGetChapter 一致。
 
 | 字段 | 内容 |
 |------|------|
@@ -32,6 +36,8 @@
 | **风险/注意事项** | 行分隔符需与正文净化管线输出一致（\n）；无缓存章节时（未抓取正文）应先取正文再反转，避免空转 |
 
 ## 3. 章节购买 payAction
+
+> ✅ **已闭合（2026-08-07，R6，Task #140）**：chapterPayAction FFI 新增（契约 §2.43.2），复用登录 V2 JS 执行设施，url/success/none 三态返回，本地书短路 kind=none。
 
 | 字段 | 内容 |
 |------|------|
@@ -93,6 +99,8 @@
 
 ## 8. bridge.rs C ABI 三步废弃
 
+> ✅ **步骤2 已完成（2026-08-07，R12，Task #140）**：bridge.rs 模块级 DEPRECATED 标注 + 冻结新增（新能力一律进 frb 主链路，本批 §2.43 七方法不在 C ABI 面暴露）；步骤3 物理移除仍挂下一大版本节点。
+
 | 字段 | 内容 |
 |------|------|
 | **现状证据** | [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §4.2.3 P2-1 决策记录（L650-653，Task #118）：决策为**保留 + 计划性废弃**。现状事实：`rust/legado-ffi/src/bridge.rs` 实测 2116 行、约 196 个 `ffi_*` extern "C" 导出；Rust 侧零调用点；Dart 全量走 frb 主链路（ffi.rs 166 函数 ↔ ffi.dart 166 绑定 100% 对齐）；移除前置条件 txt_search 迁 frb 已满足（Task #165）。三步走：① ✅ 决策记录（已完成）→ ② DEPRECATED 标注 + 冻结新增 → ③ 下一大版本物理移除 |
@@ -104,6 +112,8 @@
 | **风险/注意事项** | 直接删除会改变 cdylib 导出符号面且不可逆（决策记录保留理由 L652）；步骤3 前必须确认历史 C ABI 接入方已不存在，宁可多留一个大版本 |
 
 ## 9. Rust P2 缺口（subContent、contentRule.replaceRegex、legado-server 正文桩、dict 18 词占位）
+
+> ✅ **已闭合（2026-08-07，R1-R4，Task #140）**：① subContent 副内容（txt/http 分支）+ replaceRegex 全文替换真实实现（web_book.rs，对标 BookContent.kt L128-174）；② legado-server 正文接口接 RealBookSourceFetcher 真实链路；③ dict_api 重写为原版字典规则引擎（dict_rules 逐规则执行 + 表空注入原版默认 5 字典源 seed，不再自造静态表）。
 
 | 字段 | 内容 |
 |------|------|
@@ -129,6 +139,8 @@
 
 ## 11. 书架缓存导出扩展项（缓存管理页/epub/pdf/模板/WebDAV）
 
+> ✅ **Rust 大头已闭合（2026-08-07，R7/R8，Task #140）**：缓存批量下载 4 方法 FFI（契约 §2.43.3，内存任务表 + worker + 取消令牌）+ bookExportWithOptions 导出参数扩展（契约 §2.43.4，**book_export 已支持四格式**，格式/charset/章节范围/文件名模板透传）；剩余为缓存管理页 UI、模板/WebDAV 接线与进度/取消 UI。原「EPUB/PDF 为最大工作量」口径修正：导出引擎侧已随 R8 就绪。
+
 | 字段 | 内容 |
 |------|------|
 | **现状证据** | Flutter：`flutter_legado/lib/src/screens/bookshelf_screen.dart` L719-725 `TODO(留批次)` 明细列出缺项——缓存管理独立页（书籍列表/缓存进度/单本导出入口）、缓存下载（download_after/download_all）、epub/pdf 导出类型、导出文件夹选择与文件名模板、自定义导出设置（charset/章节范围/不导出章节名）、导出进度与 WebDav；已交付部分：单本 TXT 正文导出（L719-721 注释：经 cacheGetChapter 逐章拼接 TXT，分享通道保存）。Kotlin 原版：`app/src/main/java/io/legado/app/ui/book/cache/CacheActivity.kt`（L70 cache/download 双功能页、L77 exportTypes = txt/epub/pdf、L85-98 导出目录选择持久化、L138-142 缓存下载菜单 download_after/download_all、L458-472 epub 分卷/范围参数）+ `app/src/main/java/io/legado/app/service/ExportBookService.kt`（L197，epublib 生成 EPUB，支持 txt/pdf、文件名模板、章节范围、charset） |
@@ -153,6 +165,8 @@
 
 ## 13. 9 个待封装 bridge 绑定（QUIC 六件套 + backupList/bookGroupSetShow/httpTtsSetEnabled）
 
+> ✅ **QUIC 部分已处置（2026-08-07，Task #140，用户授权）**：QUIC 客户端六件套连同总开关共 8+8 FFI 导出已从 Rust/FFI/Dart 全链路**移除**（用户决策，纯重构边界：QUIC 为 Rust 轨扩展、原版无对应能力），不再需要封装决策；剩余 backupList/bookGroupSetShow/httpTtsSetEnabled 3 项仍待 UI 封装。
+
 | 字段 | 内容 |
 |------|------|
 | **现状证据** | [API_CONTRACT.md](API_CONTRACT.md) §3 待封装表（L586-602）：剩 9 项——QUIC 客户端六件套 `quicCreateClient/quicGet/quicPost/quicPerformanceTest/quicIsInitialized/quicCleanup`（L589-594）、`backupList`（L595）、`bookGroupSetShow`（L597）、`httpTtsSetEnabled`（L598）。Dart 绑定均已生成但未被 BookApi/UI 封装：`flutter_legado/lib/src/bridge/ffi/ffi.dart` L778（bookGroupSetShow）/L858（httpTtsSetEnabled）/L912（backupList）/L1173-1178（quicCreateClient/quicGet）。Rust 实现均在：ffi.rs L1084（book_group_set_show）/L1200（http_tts_set_enabled）/L1256（backup_list）/L1562 起（quic 系列）。消费侧现状：备份恢复为设置页底部弹窗（`settings_screen.dart` L424-436 `_showBackupSheet`，无备份文件列表）；朗读引擎页仅增删改无启停（`read_aloud_config_screen.dart` L18-142）；书架分组页无显示开关接线；QUIC 开关对（netSetQuicEnabled/netIsQuicEnabled）已封装（`book_api.dart` L556-560） |
@@ -173,7 +187,7 @@
 
 1. **留项 5 前提修正**：原版「语速跟随系统」不读系统实时语速，仅用默认语速常量（AppConfig.kt L393）——无需系统通道，纯配置修正即可对齐。
 2. **留项 10 口径修正**：autoTask 执行 FFI（execute/executeWithId/nextDueAt）已交付且已封装，真实缺口是 Flutter 侧调度器，非「FFI 未移植」。
-3. **留项 11 工作量口径**：EPUB/PDF 导出为全清单最重单项（11-17d），必须拆子项分批，避免单批超载。
+3. **留项 11 工作量口径**：EPUB/PDF 导出为全清单最重单项（11-17d），必须拆子项分批，避免单批超载。（**2026-08-07 补记**：Rust 侧导出大头已随 R7/R8 闭合，book_export 已支持四格式，剩余工作量降为 UI 页面与模板/WebDAV 接线。）
 
 ---
 

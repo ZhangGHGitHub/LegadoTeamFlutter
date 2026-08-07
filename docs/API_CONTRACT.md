@@ -514,22 +514,11 @@
 | `txtSearchInChapter(String path, String query, int chapterIndex, {bool caseSensitive = false, int maxResults = 50})` | path, query, chapterIndex（0 起） | `Future<List<Map<String, dynamic>>>` | 指定章节内搜索，返回格式同上 |
 | `txtSearchCount(String path, String query, {bool caseSensitive = false})` | path, query | `Future<int>` | 匹配总数计数（不返回完整结果，供 UI 显示） |
 
-### 2.41 契约外已实现 FFI 补登记（2026-08-06 审计，12 个）
+### 2.41 契约外已实现 FFI 补登记（2026-08-06 审计，4 个）
 
 > 以下函数已在 `rust/legado-ffi/src/ffi.rs` 实现并生成 Dart 绑定（`ffi.dart`），但此前未登记本契约（违反 §1.2「新增 API 须同步更新文档」），本节为补登记（承接 REMAINING_PLAN §4.2.2 P1-3）。其中多数尚未封装进 `BookApi` 抽象层，UI 封装计划见 §3「待 UI 封装清单」。
-
-**QUIC 系列（8 个）**
-
-| 函数 | 说明 |
-|------|------|
-| `quicCreateClient` | 创建 QUIC 客户端实例 |
-| `quicGet` | QUIC GET 请求 |
-| `quicPost` | QUIC POST 请求 |
-| `quicPerformanceTest` | QUIC 性能测试 |
-| `quicIsInitialized` | QUIC 客户端初始化状态查询 |
-| `quicCleanup` | QUIC 资源清理 |
-| `netSetQuicEnabled` | QUIC 总开关设置（默认关闭，见 REMAINING_PLAN P3-7 核销） |
-| `netIsQuicEnabled` | QUIC 总开关状态查询（现被 other_settings_screen 直调 bridge，待上收 BookApi，见 REMAINING_PLAN §4.3 P2-1） |
+>
+> **注（2026-08-07，Task #139）**：原 QUIC 系列 8 个函数（quicCreateClient / quicGet / quicPost / quicPerformanceTest / quicIsInitialized / quicCleanup / netSetQuicEnabled / netIsQuicEnabled）属原版不存在的新增能力，按「项目目标是纯重构」的用户决策已整体移除，不再作为契约项。
 
 **其他（4 个）**
 
@@ -555,6 +544,56 @@
 | `ttsSpeak({required String text, required String engineUrl, double speed = 1.0})` | text: 朗读文本，engineUrl: 引擎 URL 模板，speed: 语速 | `Future<Map<String, dynamic>>` | TTS 真实合成。返回字段（camelCase）：`audioPath: String`（本地音频文件绝对路径）/ `fromCache: bool`（是否缓存命中）/ `contentType: String`（音频 MIME 类型）。服务器返回 json/text 时以响应体文本抛出 BridgeError |
 | `ttsSetCacheDir(String path)` | path: 缓存目录绝对路径 | `Future<bool>` | 设置 TTS 音频缓存目录（全局生效） |
 
+### 2.43 缓存写/购买/批量下载/导出扩展（Task #136 R5+R6+R7+R8，7 个方法）
+
+> Task #136 合并批次，均为**加法式**新增（不改既有签名/行为）。仅走 frb 主链路（`ffi.rs`），
+> 旧式 C ABI（`bridge.rs`）已按 Task #136 R12 冻结新增并标注 DEPRECATED，故本批不在 C ABI 面暴露。
+
+#### 2.43.1 R5 缓存写（1 个方法）
+
+> 缓存系 FFI 此前仅读侧（§2.16 + §2.41 `cacheGetChapter`），写侧补齐：
+> 复用 `legado-db` `CacheBookRepository.insert`（INSERT OR REPLACE），供阅读器「编辑内容/反转」闭环回写章节缓存。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `saveChapterContent({required String bookUrl, required int chapterIndex, required String title, required String content, String chapterUrl = ''})` | bookUrl, chapterIndex（0 起）, title（空串=从 DB 章节表回填）, content（正文原文，不做净化）, chapterUrl（空串=从 DB 章节表回填） | `Future<bool>` | 写入/覆盖单章缓存（cached_chapters 表），cached_at=当前毫秒、size_bytes=content 字节数；写入后可经 `cacheGetChapter` 读回一致 |
+
+#### 2.43.2 R6 章节购买（1 个方法）
+
+> 对齐 Kotlin `ReadBookActivity.payAction`：取书源 `ruleContent.payAction`（js 或含 `{{js}}` 的 url，空则报错 "no pay action"）→
+> 复用登录 V2 JS 执行基础设施（书源 URL 分桶引擎池 + `eval_with_bindings`）执行，注入绑定 `baseUrl`=章节 url、
+> `title`=章节标题、`book`/`chapter`=实体 JSON 对象、`source`=书源对象（Kotlin 另注入 java/result/src，Rust `java` 命名空间已全局注册，result/src 原版即为 null）。
+> **结果语义（对照 Kotlin onSuccess）**：返回绝对 URL → UI 打开支付页 WebView；返回 "true" → 购买成功（Kotlin 随后清当前章缓存并刷新目录，UI 轨自行对应）；其他 → 原样回传。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `chapterPayAction({required String bookUrl, required int chapterIndex})` | bookUrl（本地书短路返回 kind=none，对齐 Kotlin isLocal 短路）, chapterIndex | `Future<String>` | 结果 JSON（camelCase）：`{"kind": "url"/"success"/"none", "value": "<JS 返回原文>"}`；kind=success 时 Rust 侧已清当前章正文缓存；需 quickjs 构建，否则返回 JsEngine 错误 |
+
+#### 2.43.3 R7 缓存批量下载（4 个方法）
+
+> 对标 Kotlin `CacheActivity` + `CacheBook` 批量缓存下载。任务表为进程内内存结构（独立 worker 线程 + `AtomicBool` 取消令牌，
+> worker 不用 tokio spawn 因正文抓取链路含 `block_on` 不可嵌套；取消对齐 §2.3 `cancelCheckSources` 的书源校验流机制）；逐章复用正文抓取链路 `get_chapter_content_full`
+> （缓存命中免网络 → 网络抓取 → 缓存写入；本地书走解析器 + R5 写缓存），失败章计入 failed 并继续。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `cacheDownloadStart({required String bookUrl, required int startChapter, required int endChapter})` | bookUrl, startChapter/endChapter（章节 index，闭区间；越界自动收敛） | `Future<String>` | 创建并后台启动批量下载任务，返回任务 ID（字符串）；同一本书已有进行中任务时复用返回既有 ID |
+| `cacheDownloadProgress(String taskId)` | taskId | `Future<String>` | 进度 JSON（camelCase）：`taskId`/`bookUrl`/`status`（running/completed/cancelled/failed/notFound）/`total`/`completed`/`failed` |
+| `cacheDownloadCancel(String taskId)` | taskId | `Future<bool>` | 取消进行中任务（当前章完成后停止），返回任务是否存在 |
+| `cacheDownloadList()` | 无 | `Future<String>` | 全部任务进度 JSON 数组（字段同上） |
+
+#### 2.43.4 R8 书籍导出参数扩展（1 个方法）
+
+> 加法式扩展：既有 `bookExport`（§2.31）签名与行为不变（缺省=现行为）。新方法以 `optionsJson` 透传参数，
+> 对照 Kotlin `ExportBookService`（`AppConfig.exportCharset` 编码 / 章节范围 / `getExportFileName` 文件名规则）：
+> - `encoding`：UTF-8（缺省）/ GB2312 / GBK / GB18030 / UTF-16 / UTF-16LE / ASCII（对齐 Kotlin `AppConst.charsets`），仅作用于 TXT；不可映射字符以 `?` 替代
+> - `startChapter` / `endChapter`：章节 index 闭区间，缺省/`-1` = 不限
+> - `fileNameTemplate`：`{name}` / `{author}` 占位符模板，缺省 = 现行为 `{书名}.{扩展名}`
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `bookExportWithOptions({required String bookUrl, required String format, required bool includeToc, String optionsJson = ''})` | bookUrl, format（txt/epub/html/pdf）, includeToc, optionsJson（`{"encoding":"GBK","startChapter":0,"endChapter":9,"fileNameTemplate":"{name} 作者：{author}"}`，空串=全缺省） | `Future<String>` | ExportResult JSON（同 §2.31 `bookExport` 返回结构） |
+
 ---
 
 ## 3. UI 轨需求登记区
@@ -568,7 +607,7 @@
 | `importBooks`（新增） | `String jsonArray` | `Future<int>`（批量导入书籍，返回成功导入数量，用于 WebDAV 书架批量回写） | 2026-08-02 | ✅ 已完成 |
 | `searchMultiStream`（新增） | `String query, {List<String>? sourceUrls}` | `Stream<Map<String, dynamic>>`（多源渐进式搜索，逐书源推送批次，用于 Phase 3.3 渐进搜索） | 2026-08-02 | ✅ 已完成 |
 | `searchCover`（新增） | `String bookName` | `Future<List<Map<String, dynamic>>>`（网络封面候选列表，字段建议 `url` / `width` / `height`，用于 Phase 6 P1 `change_cover_screen` 封面搜索） | 2026-08-01 | ✅ 已完成 |
-| `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询） | 2026-08-01 | ✅ 已完成 |
+| `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询；Task #137 起数据源由静态占位表改为 dict_rules 字典规则引擎，见需求 4 补记） | 2026-08-01 | ✅ 已完成 |
 | `highlight*` / `highlightRule*`（新增） | 见 §2.36 方法清单 | 高亮记录 CRUD + 高亮规则 CRUD（对齐上游 DB v96-v99，用于阅读器正文高亮一期） | 2026-08-04 | ✅ 已完成 |
 | `reviewGetReplies`（新增） | `String sourceJson, String requestJson, int page` | `Future<String>`（段评回复按需加载，对标 Android `ReviewDetailDialog.loadReplies` + `ReviewRuleParser.parseReplyPage`，上游 #519；返回 `{items, nextPageUrl}` 对象包装，Flutter 段评弹窗回复 UI 由 UI 轨后续接入） | 2026-08-04 | ✅ 已完成 |
 | `appLog*`（新增，Task #79） | 见 §2.38 方法清单 | 应用日志体系：Rust 侧三级环形缓冲（message/crash/http）+ 写入/查询/清空/导出 FFI（对齐 Kotlin AppLog 旧欠账 + 上游 #543 导出 64K 截断），日志页面 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
@@ -579,7 +618,7 @@
 | `setChineseConvertType` / `getChineseConvertType`（新增，Task #100） | 见 §2.9 方法清单 | 繁简转换 FFI 透传：reader.rs 硬编码 `chinese_convert: None` 改为读取持久化配置（键 `chineseConverterType`，0/1/2 → None/t2s/s2t），新增 set/get 接口；章节标题在展示路径补齐 t2s/s2t（对齐 Kotlin getDisplayTitle）；阅读器样式面板控件由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `ttsSpeak` / `ttsSetCacheDir`（新增，Task #113 缺口②） | 见 §2.42 方法清单 | TTS 真实合成管线：url 模板替换（speakText/speakSpeed）→ HTTP 拉取音频二进制（legado-net 新增 get_raw）→ Content-Type 校验 → MD5 命名本地缓存（命中免请求）；请 UI 轨将 `audioSpeak`（§2.26）的 `http.get` 探活 fallback 改接 `ttsSpeak`，音频播放器播放返回的 `audioPath` | 2026-08-06 | ✅ 已完成 |
 
-#### 待 UI 封装清单（2026-08-06 审计：13 个 bridge 绑定已实现未被 UI 层封装）
+#### 待 UI 封装清单（2026-08-06 审计：7 个 bridge 绑定已实现未被 UI 层封装）
 
 > 以下 bridge 绑定（ffi.dart）已实现但未被 BookApi/rust_api.dart 封装或未被 UI 调用，登记于此供 UI 轨排期封装；封装后逐项销记。
 
@@ -588,20 +627,16 @@
 | 1 | `sourceIsLoginUiV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.isLoginUiV2`，书详/阅读器登录链路接入） |
 | 2 | `sourceLoginUiV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.loginUiV2`） |
 | 3 | `sourceLoginActionV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.loginActionV2`） |
-| 4 | `quicCreateClient` | QUIC 客户端六件套（§2.41） | UI 未封装 |
-| 5 | `quicGet` | QUIC 客户端六件套（§2.41） | UI 未封装 |
-| 6 | `quicPost` | QUIC 客户端六件套（§2.41） | UI 未封装 |
-| 7 | `quicPerformanceTest` | QUIC 客户端六件套（§2.41） | UI 未封装 |
-| 8 | `quicIsInitialized` | QUIC 客户端六件套（§2.41） | UI 未封装 |
-| 9 | `quicCleanup` | QUIC 客户端六件套（§2.41） | UI 未封装 |
-| 10 | `backupList` | 其他（§2.41） | 备份三件套之一，rust_api.dart 待切换 |
-| 11 | `cacheGetChapter` | 其他（§2.41） | ✅ 已封装接通（本次评审修复提交，`RustApi.getCachedChapter`，书架缓存导出） |
-| 12 | `bookGroupSetShow` | 其他（§2.41） | 分组显示开关 |
-| 13 | `httpTtsSetEnabled` | 其他（§2.41） | TTS 配置启停 |
-| 14 | `ttsSpeak` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（522e1c1be，`audioSpeak` 改接真实管线，Task #113 缺口②） |
-| 15 | `ttsSetCacheDir` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（本次评审修复提交，`RustApi.init` 内 `_initTtsCacheDir` 注入应用支持目录 tts_cache） |
+| 4 | `backupList` | 其他（§2.41） | 备份三件套之一，rust_api.dart 待切换 |
+| 5 | `cacheGetChapter` | 其他（§2.41） | ✅ 已封装接通（本次评审修复提交，`RustApi.getCachedChapter`，书架缓存导出） |
+| 6 | `bookGroupSetShow` | 其他（§2.41） | 分组显示开关 |
+| 7 | `httpTtsSetEnabled` | 其他（§2.41） | TTS 配置启停 |
+| 8 | `ttsSpeak` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（522e1c1be，`audioSpeak` 改接真实管线，Task #113 缺口②） |
+| 9 | `ttsSetCacheDir` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（本次评审修复提交，`RustApi.init` 内 `_initTtsCacheDir` 注入应用支持目录 tts_cache） |
 
-> **销记更新（本次评审修复提交）**：已封装接通 5 项——登录 UI V2 三件套 + `ttsSpeak`（均 522e1c1be），`cacheGetChapter` + `ttsSetCacheDir`（本次提交）；另 `rssUpdateSource`（§2.17）经 `updateRssSource` 接通（不在本表 13 项之列，一并销记）。剩余待封装 9 项：QUIC 客户端六件套（6）+ backupList/bookGroupSetShow/httpTtsSetEnabled（3）。
+> **销记更新（本次评审修复提交）**：已封装接通 5 项——登录 UI V2 三件套 + `ttsSpeak`（均 522e1c1be），`cacheGetChapter` + `ttsSetCacheDir`（本次提交）；另 `rssUpdateSource`（§2.17）经 `updateRssSource` 接通（不在本表之列，一并销记）。剩余待封装 3 项：backupList/bookGroupSetShow/httpTtsSetEnabled。
+>
+> **移除记录（2026-08-07，Task #139）**：原表中 QUIC 客户端六件套（quicCreateClient/quicGet/quicPost/quicPerformanceTest/quicIsInitialized/quicCleanup）连同 netSetQuicEnabled/netIsQuicEnabled 总开关共 8 项 FFI，属原版不存在的新增能力，按纯重构决策已从 Rust/FFI/Dart 全链路移除，从本清单销记。
 
 > **需求 1：getSearchHistory 字段修复（Bug）**
 > 当前 Rust `search_history_api::get_search_history` 返回 DTO 字段为 `keyword` / `book_name` / `time`，
@@ -634,6 +669,17 @@
 > **UI 侧现状（Mock 先行）**：`DictNotifier.lookup` 已封装查询职责，当前以本地内置词典 `_localDict` 为占位数据；
 > 在线词典规则跳转经 `getConfig/setConfig` 持久化，不依赖本契约。Rust 交付后将 `_localDict[key]` 替换为
 > `await api.dictLookup(key)`（届时 `lookup` 转异步）即可，模型字段即契约。
+>
+> **Task #137 补记（2026-08-07，数据源对齐原版字典规则，签名不变）**：
+> Rust 侧 `dictLookup` 数据源由 18 词静态占位表改为对齐 Android 原版字典规则（dict_rules）体系：
+> ① 查询 `dict_rules` 表全部启用规则（按 sortNumber 排序），逐条执行原版 `DictRule.search(word)`
+> 等价链路（AnalyzeUrl urlRule 模板/`{{key}}`/data: URI → HTTP → AnalyzeRule showRule，`@js:` 经
+> quickjs 特性执行）；② 表为空时注入原版默认 5 个字典源（海词中文/海词英文/有道/哔哩/百度汉语，
+> 数据与 `assets/defaultData/dictRules.json` 逐字节同源）；③ 每条成功规则结果为一个 `definitions`
+> 条目（前缀 `【规则名】`，原版为每规则独立页签），HTML 释义做轻量纯文本化；`phonetic` 恒为空；
+> ④ 无启用规则/DB 未初始化返回空列表（非异常），单规则失败记日志跳过；
+> ⑤ 入参仅 trim 不再小写（中文词兼容，原版原样传词）；⑥ 原版部分规则依赖 Rhino 专属能力
+> （JavaImporter/org.jsoup/cache.putMemory）在 QuickJS 下不可等价复现，规则数据不改写、失败即跳过。
 
 ---
 
@@ -681,7 +727,8 @@
 | 38 | 应用日志 | 5 |
 | 39 | 规则订阅 | 7 |
 | 40 | 本地 TXT 全文搜索 | 4 |
-| 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 12 |
+| 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
-| | **合计（BookApi 方法）** | **205** |
-| | **补登记 FFI（待封装）** | **+14** |
+| 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
+| | **合计（BookApi 方法）** | **212** |
+| | **补登记 FFI（待封装）** | **+6** |

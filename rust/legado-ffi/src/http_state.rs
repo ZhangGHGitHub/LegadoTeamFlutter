@@ -1,14 +1,14 @@
 //! 共享 HTTP 客户端单例（Phase 1b）
 //!
 //! 背景：取章/搜索/发现等链路此前每次都 `LegadoClient::new()`，各自持有全新的
-//! reqwest 连接池 + CookieStore + QUIC 客户端，导致 TLS 握手重复、Cookie 丢失。
+//! reqwest 连接池 + CookieStore，导致 TLS 握手重复、Cookie 丢失。
 //!
 //! 本模块提供进程级共享的 [`LegadoClient`] 单例。`LegadoClient` 已 `#[derive(Clone)]`
 //! 且内部全为 `Arc`，clone 廉价；所有调用点改为 `shared_client()` 取同一底层客户端，
 //! 复用连接池与 Cookie 存储。
 //!
 //! 单例以 `RwLock<Option<...>>` 承载（而非裸 `OnceLock`），以便 [`reset_shared_client`]
-//! 在 QUIC 开关切换等场景清空并重建。
+//! 在需要时清空并重建。
 //!
 //! ## Cookie 持久化（Task #72）
 //!
@@ -122,7 +122,6 @@ pub fn shared_client() -> LegadoClient {
 /// 重置共享客户端
 ///
 /// 清空单例缓存，下次 [`shared_client`] 调用将重新构建。
-/// 用于 QUIC 传输开关切换等需要重建底层客户端的场景。
 pub fn reset_shared_client() {
     let mut guard = client_slot().write().unwrap();
     *guard = None;

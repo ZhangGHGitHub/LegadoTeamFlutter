@@ -32,7 +32,24 @@ pub struct ExportResult {
     pub error: Option<String>,
 }
 
-/// 导出书籍
+/// 导出选项 DTO（Task #136 R8，API_CONTRACT §2.43.4，所有字段可选）
+///
+/// 对照 Kotlin `ExportBookService`（编码）/ `getExportFileName`（文件名模板）。
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportOptions {
+    /// 输出编码（仅 TXT 生效）：UTF-8（缺省）/ GB2312 / GBK / GB18030 / UTF-16 / UTF-16LE / ASCII
+    pub encoding: Option<String>,
+    /// 起始章节 index（闭区间；缺省/-1 = 不限）
+    pub start_chapter: Option<i32>,
+    /// 结束章节 index（闭区间；缺省/-1 = 不限）
+    pub end_chapter: Option<i32>,
+    /// 文件名模板：`{name}` / `{author}` 占位符（对照 Kotlin getExportFileName
+    /// 缺省 `"$name 作者：$author"`；此处缺省保持现行为 `{书名}.{扩展名}`）
+    pub file_name_template: Option<String>,
+}
+
+/// 导出书籍（既有签名与行为不变；等价于全缺省选项的 [`export_book_with_options`]）
 ///
 /// # 参数
 /// - `book_url`: 书籍 URL
@@ -42,6 +59,45 @@ pub struct ExportResult {
 /// # 返回
 /// 导出结果，包含 base64 编码的文件内容
 pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoResult<ExportResult> {
+    export_book_inner(book_url, format, include_toc, &ExportOptions::default())
+}
+
+/// 带选项导出书籍（Task #136 R8，API_CONTRACT §2.43.4）
+///
+/// `options_json` 为空串/`"{}"` 时全缺省（行为等同 [`export_book`]）。
+/// 字段见 [`ExportOptions`]；非法 JSON 返回错误结果（不 panic）。
+pub fn export_book_with_options(
+    book_url: &str,
+    format: &str,
+    include_toc: bool,
+    options_json: &str,
+) -> LegadoResult<ExportResult> {
+    let options = if options_json.trim().is_empty() {
+        ExportOptions::default()
+    } else {
+        match serde_json::from_str::<ExportOptions>(options_json) {
+            Ok(o) => o,
+            Err(e) => {
+                return Ok(ExportResult {
+                    success: false,
+                    data_base64: None,
+                    file_name: None,
+                    mime_type: None,
+                    error: Some(format!("导出选项 JSON 解析失败: {e}")),
+                });
+            }
+        }
+    };
+    export_book_inner(book_url, format, include_toc, &options)
+}
+
+/// 导出内层实现（选项全部缺省时行为与旧版一致）
+fn export_book_inner(
+    book_url: &str,
+    format: &str,
+    include_toc: bool,
+    options: &ExportOptions,
+) -> LegadoResult<ExportResult> {
     // 解析导出格式
     let export_format = match ExportFormat::from_str(format) {
         Some(f) => f,
@@ -92,10 +148,24 @@ pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoRes
         })?
     };
 
+    // 章节范围筛选（R8：startChapter/endChapter 闭区间，缺省/-1 = 不限）
+    let range_ok = |index: i32| {
+        let start_ok = match options.start_chapter {
+            Some(s) if s >= 0 => index >= s,
+            _ => true,
+        };
+        let end_ok = match options.end_chapter {
+            Some(e) if e >= 0 => index <= e,
+            _ => true,
+        };
+        start_ok && end_ok
+    };
+
     // 逐章取正文（与阅读器 get_chapter_content 同源）并应用净化，与 Android 导出经 ContentProcessor 一致
     let local = is_local_book(book_url);
     let export_chapters: Vec<ExportChapter> = chapters
         .iter()
+        .filter(|ch| range_ok(ch.index))
         .map(|ch| {
             let raw_content = if local {
                 // 本地书：走解析器读取文件正文（修复仅读缓存导致本地书导出全空的回归）
@@ -144,7 +214,12 @@ pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoRes
         format: export_format,
         include_toc,
         chapter_separator: String::new(),
-        encoding: "UTF-8".to_string(),
+        // R8：编码透传（仅 TXT 生效，缺省 UTF-8 行为不变）
+        encoding: options
+            .encoding
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "UTF-8".to_string()),
     };
 
     // 图片书 PDF 导出：注入网络图片获取器（复用共享 HTTP 客户端，与阅读器下载链路同源）
@@ -166,7 +241,16 @@ pub fn export_book(book_url: &str, format: &str, include_toc: bool) -> LegadoRes
         Ok(bytes) => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            let file_name = format!("{}.{}", book.name, export_format.extension());
+            // R8：文件名模板（{name}/{author} 占位符），缺省 = 现行为 `{书名}.{扩展名}`
+            let file_name = match options.file_name_template.as_deref().filter(|s| !s.trim().is_empty()) {
+                Some(template) => {
+                    let base = template
+                        .replace("{name}", &book.name)
+                        .replace("{author}", &book.author);
+                    format!("{}.{}", base, export_format.extension())
+                }
+                None => format!("{}.{}", book.name, export_format.extension()),
+            };
             ExportResult {
                 success: true,
                 data_base64: Some(b64),
@@ -371,6 +455,83 @@ mod tests {
                 "导出失败应提示字体问题: {err}"
             );
         }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Task #136 R8：GBK 编码导出（对照 Kotlin AppConfig.exportCharset）
+    #[test]
+    fn test_export_with_gbk_encoding() {
+        let path = create_temp_txt("gbk");
+        let _db_guard = register_book_and_chapters(&path, "导出测试书GBK");
+
+        let result = export_book_with_options(&path, "txt", false, r#"{"encoding":"GBK"}"#).unwrap();
+        assert!(result.success, "GBK 导出应成功: {:?}", result.error);
+
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(result.data_base64.as_ref().unwrap())
+            .unwrap();
+        // GBK 输出非合法 UTF-8（中文首字节 ≥ 0x81）
+        assert!(std::str::from_utf8(&bytes).is_err(), "GBK 输出不应为 UTF-8");
+        // 首字符「导」的 GBK 编码为 0xB5 0xBC
+        assert_eq!(&bytes[0..2], &[0xB5, 0xBC], "首字符应按 GBK 编码");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Task #136 R8：章节范围筛选（startChapter/endChapter 闭区间）
+    #[test]
+    fn test_export_with_chapter_range() {
+        let path = create_temp_txt("range");
+        let _db_guard = register_book_and_chapters(&path, "导出测试书范围");
+
+        // 仅导出第 2 章（index=1）
+        let result =
+            export_book_with_options(&path, "txt", false, r#"{"startChapter":1,"endChapter":1}"#)
+                .unwrap();
+        let text = decode_export(&result);
+        assert!(text.contains("第二章"), "应包含范围内章节");
+        assert!(!text.contains("这是第一章的正文"), "不应包含范围外章节");
+
+        // -1 = 不限（全量）
+        let result =
+            export_book_with_options(&path, "txt", false, r#"{"startChapter":-1,"endChapter":-1}"#)
+                .unwrap();
+        let text = decode_export(&result);
+        assert!(text.contains("这是第一章的正文") && text.contains("这是第二章的正文"));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Task #136 R8：文件名模板（{name}/{author} 占位符）与缺省兼容
+    #[test]
+    fn test_export_with_file_name_template() {
+        let path = create_temp_txt("filename");
+        let _db_guard = register_book_and_chapters(&path, "导出测试书模板");
+
+        let result = export_book_with_options(
+            &path,
+            "txt",
+            false,
+            r#"{"fileNameTemplate":"{name} 作者：{author}"}"#,
+        )
+        .unwrap();
+        assert!(result.success);
+        // 测试书 author 为空 → 模板展开为 「导出测试书模板 作者：.txt」
+        assert_eq!(
+            result.file_name.as_deref(),
+            Some("导出测试书模板 作者：.txt")
+        );
+
+        // 缺省（空 optionsJson）行为不变：`{书名}.txt`
+        let result = export_book_with_options(&path, "txt", false, "").unwrap();
+        assert_eq!(result.file_name.as_deref(), Some("导出测试书模板.txt"));
+
+        // 非法 JSON：返回错误结果不 panic
+        let result = export_book_with_options(&path, "txt", false, "{bad").unwrap();
+        assert!(!result.success);
+        assert!(result.error.unwrap().contains("导出选项 JSON 解析失败"));
 
         let _ = std::fs::remove_file(&path);
     }

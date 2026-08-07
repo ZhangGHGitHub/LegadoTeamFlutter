@@ -1,14 +1,14 @@
 # Legado Rust+Flutter 重构进度
 
-> 最后更新：2026-08-06（批次3治理闭合 Task #118：platform.rs 死代码桩删除、一次性脚本清理、README/DEVELOPMENT 表述修正、bridge.rs 去留决策与 v102 schema 评估；双轨缺口审计：Rust 完成度修订为 96-97%（源码级复查），登记 4 项 P1 实质缺口；「零 TODO/桩实现」表述口径修正）
+> 最后更新：2026-08-07（Rust 剩余项全批闭合 Task #140：R1-R10+R12 全部实现（subContent/replaceRegex/server 正文/字典规则引擎/缓存写与批量下载/payAction/导出参数/字体 cmap/JS 段评/bridge.rs DEPRECATED）+ QUIC 代码整体移除（用户决策，纯重构边界）；契约 §2.43 新增 7 方法 + §2.41 QUIC 移除记录；验证 cargo test --workspace 全绿、quickjs 213 全过、flutter analyze 0 error）
 
 ---
 
 ## 总览
 
 - **已完成**：168 / 168 原子任务（100%）
-- **完成度（2026-08-06 源码级复查）**：Rust 轨道 **96-97%**（修订此前「95%+」口径）；Flutter UI 主链路已对齐，剩约 92 项 UI 缺口（详见 docs/REFACTORING_AUDIT_REPORT_20260806.md）；早期 2026-07-29 审计口径「整体迁移 ~80%（Rust ~85% / Flutter UI ~78%）」作废
-- **剩余 P1 实质缺口（4 项）**：① 正文 nextContentUrl 分页抓取（2-3d）；② audioSpeak TTS 真实管线（3-5d，跨轨）；③ WebView 桥接载荷 Flutter 侧拦截执行（2-3d，跨轨）；④ rssUpdateSource 原子更新 FFI（0.5d）——详见下方「剩余 P1 实质缺口（2026-08-06 审计）」小节
+- **完成度（2026-08-07 R 系列闭合后）**：Rust 轨道剩余项仅剩 **schema v102 重建表（触发型延后，见 docs/REFACTORING_REMAINING_PLAN.md §4.2.1）+ normalizeJsResult 引擎差异观察项**；此前审计口径 96-97% 及其 4 项 P1 实质缺口、Rust P2 缺口（subContent/replaceRegex/server 正文桩/dict 占位）均已闭合；QUIC 扩展能力按用户决策移除（纯重构边界）；Flutter UI 侧留项（缓存管理页、MoreConfig、定时调度器等）见 docs/REMAINING_ITEMS_DEV_REVIEW_20260806.md
+- **剩余 P1 实质缺口（4 项）**：✅ 已全部闭合（2026-08-06 批次，见下方小节各销记）；2026-08-07 R 系列闭合后无新增实质缺口
 - **测试状态**：cargo test 2283 passed（Rust workspace）+ 547 passed（quickjs feature）| flutter test 1087 passed（2026-08-05 实测） | flutter analyze 0 issues（缺口清单清零批次测试统计待回归更新）
 - **QuickJS feature**：547 tests passed | legado-ffi：175 tests passed
 - **里程碑**：🎉 上游同步窗口 2 跟进完成（141 提交同步 + 高亮体系一期 + P0/P1/P2 全部跟进项 + E2E 遗留修复闭环）+ 跨轨阻塞四连解除（MOBI 完整解析 / 书源校验 FFI / 规则订阅全链路 / 验证码交互通道）+ 缺口清单清零批次（Task #162~#168）
@@ -420,7 +420,7 @@
 |-------|--------|------|
 | legado-core | 743 | 数据模型、规则定义、加密工具、排版引擎、换源匹配器、WebBook、CacheBook、ReadAloud、DebugSession、TocUpdater、ReadState、AudioPreload、AutoTask、DownloadManager、AudioCache、Cron、Passphrase、QueryTtf、SourceLock、SourceLogin、ContentHelp、ContentProcessor、PDF 导出、规则订阅服务 |
 | legado-parser | 163 | RuleAnalyzer + 4 解析器 + AnalyzeRule 门面 + AnalyzeUrl 完整模板 + RuleComplete 自动补全 + review_rule_parser 段评回复 |
-| legado-net | 224 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + QUIC + gzip/brotli/deflate + SOCKS5 凭据认证 + SOCKS5 凭据代理 e2e + Cookie 持久化 |
+| legado-net | 224 | LegadoClient + CookieStore + URL 模板 + RSS + WebDAV + 并发去重 + UA/代理/SSL + SourceChecker + gzip/brotli/deflate + SOCKS5 凭据认证 + SOCKS5 凭据代理 e2e + Cookie 持久化（QUIC 测试已随 2026-08-07 QUIC 移除，实际数以最新 cargo test 为准） |
 | legado-js | 402（默认）/ 547（quickjs） | 引擎池 + 宿主 API + 沙箱 + SourceEngine + java 命名空间 + ArchiveUtils 解压缩 + JsSourceConfig + 登录 V2 + 验证码 JS 钩子（getVerificationCode/startBrowserAwait） |
 | legado-book | 140 | EPUB/TXT/MOBI/PDF 解析器 + LocalBook + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 + MOBI HUFF/CDIC/INDX/TAGX/KF8(AZW3)/NCX 完整解析 |
 | legado-db | 260 | Schema v100 + highlights/highlightRules 表 + ruleSubscriptions 表 + Repository + MigrationRegistry + RoomImporter + DefaultData（CAS 乐观锁/批量启停/阅读记录作者合并） |
@@ -441,7 +441,9 @@
 | ③ | WebView 桥接载荷 Flutter 侧拦截执行 | Rust 已交付 7 个 action JSON，Flutter lib 无拦截代码 | 2-3d | 跨轨 |
 | ④ | rssUpdateSource 原子更新 FFI | 现用「删旧+加新」workaround | 0.5d | 承接 REMAINING_PLAN §4.3 P1-2 |
 
-**P2 与治理项（不阻塞单机功能）**：subContent/contentRule.replaceRegex、legado-server 正文桩、dict 小规模静态数据；12 个 FFI 已实现未登记（已补登 API_CONTRACT.md §2.41）、13 个 bridge 绑定待 UI 封装、schema 偏离（rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources 双列冗余）v102 重建表建议延后（评估见 REMAINING_PLAN §4.2.1）；治理项已随批次3闭合（Task #118）：README「零 TODO」表述已修正、platform.rs 5 桩已删除、一次性脚本已清理、DEVELOPMENT.md 已知限制表已更新、bridge.rs C ABI 决策已记录（保留+废弃计划）。Task #131 timeFormat/toURL 别名已闭合。
+> ✅ **销记（2026-08-07，Task #140）**：上表 4 项 P1 已于 2026-08-06 批次闭合；本批 R 系列（R1-R10+R12）进一步闭合 P2 与治理项：subContent/replaceRegex、legado-server 正文桩、dict 占位（改为原版字典规则引擎 + 5 源 seed）、缓存写/批量下载/购买/导出参数 FFI（契约 §2.43）、字体 cmap 反爬真实替换、JS 书源段评回复、bridge.rs DEPRECATED 标注（步骤2）；QUIC 扩展能力整体移除（用户决策）。销记台账：docs/REFACTORING_REMAINING_PLAN.md §5.10。
+
+**P2 与治理项（2026-08-07 更新）**：subContent/contentRule.replaceRegex ✅、legado-server 正文桩 ✅、dict 静态占位 ✅（重写为原版字典规则引擎）；12 个 FFI 补登 ✅（其中 QUIC 8 项随后移除）；待 UI 封装剩 backupList/bookGroupSetShow/httpTtsSetEnabled 3 项（QUIC 六件套已移除）；schema v102 重建表保持触发型延后（评估见 REMAINING_PLAN §4.2.1）；治理项已随批次3闭合（Task #118）；bridge.rs C ABI 废弃三步走已完成步骤2（R12 DEPRECATED 标注 + 冻结新增）；normalizeJsResult 引擎差异保留为观察项。
 
 ---
 
@@ -516,7 +518,7 @@
 
 | 不迁移项 | 原因 | 状态 |
 |----------|------|------|
-| Cronet 网络库 | Flutter 端使用 Rust reqwest + QUIC 替代，无需引入 Cronet | ✅ 用户已确认不迁移（2026-08-04） |
+| Cronet 网络库 | Flutter 端使用 Rust reqwest 替代，无需引入 Cronet（原「+ QUIC 替代」表述随 2026-08-07 QUIC 移除修正） | ✅ 用户已确认不迁移（2026-08-04） |
 | 旧版备份恢复逻辑 | 已有新版 BackupService 替代，旧版不再迁移 | ✅ 用户已确认不迁移（2026-08-04） |
 | 应用自更新 | `help/update/` 4 文件 + UpdateDialog（上游 #520/#526/#528）；Android 平台特性（APK 下载+系统安装器），Flutter 跨平台目标以 Windows 为主，无真实需求；Android 端更新可走应用商店。备注：可选中间态“检查新版本提示”已建议单独登记 P2 待决策 | ✅ 用户已确认不迁移（2026-08-04） |
 

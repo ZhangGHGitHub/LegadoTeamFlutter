@@ -23,7 +23,6 @@ pub mod cover;
 pub mod direct_link_upload;
 pub mod middleware;
 pub mod proxy;
-pub mod quic;
 pub mod rate_limit;
 pub mod remote_book;
 pub mod request;
@@ -43,7 +42,7 @@ pub mod webdav;
 mod socks5_e2e;
 
 // 常用类型重导出
-pub use client::{is_quic_enabled, set_quic_enabled, LegadoClient, LegadoClientConfig};
+pub use client::{LegadoClient, LegadoClientConfig};
 pub use cookie_store::{CookiePersistence, CookieStore};
 pub use cover::CoverCache;
 pub use middleware::{Middleware, MiddlewareChain};

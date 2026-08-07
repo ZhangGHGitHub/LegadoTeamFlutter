@@ -935,8 +935,8 @@ flutter test                  # 全量测试通过
 
 | 类别 | 内容 | 处置去向 |
 |------|------|----------|
-| 契约补登 | 12 个 FFI 已实现未登记（QUIC 8 + backupList + cacheGetChapter + bookGroupSetShow + httpTtsSetEnabled） | ✅ 已补登至 API_CONTRACT.md §2.41（2026-08-06） |
-| UI 封装 | 13 个 bridge 绑定已实现未被 UI 层封装（含登录 UI V2 整组 + QUIC 客户端六件套） | 已登记至 API_CONTRACT.md §3 待封装清单 |
+| 契约补登 | 12 个 FFI 已实现未登记（QUIC 8 + backupList + cacheGetChapter + bookGroupSetShow + httpTtsSetEnabled） | ✅ 已补登至 API_CONTRACT.md §2.41（2026-08-06）；QUIC 8 项随后整体移除（见 §5.10，2026-08-07） |
+| UI 封装 | 13 个 bridge 绑定已实现未被 UI 层封装（含登录 UI V2 整组 + QUIC 客户端六件套） | QUIC 客户端六件套：**已移除（用户决策，纯重构边界，2026-08-07，见 §5.10）**；其余已登记至 API_CONTRACT.md §3 待封装清单 |
 | schema 偏离 | rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources enableCookieJar/enabledCookieJar 双列冗余（P1 治理） | 均不阻塞单机功能；v102 评估已完成（Task #118）：**建议延后**，与 ruleSubs/dictRules 等结构偏离合并为 schema 对齐专项（见 §4.2.1） |
 | 文档治理 | README「零 TODO/桩实现」表述需修正、DEVELOPMENT.md 已知限制表过期 | ✅ 已闭合（Task #118）：docs/README.md + rust/PROGRESS.md + rust/DEVELOPMENT.md 均已按实际口径修正 |
 | 代码治理 | platform.rs 5 个死代码桩清理、一次性脚本清理（承接 §4.2.3 P2-4）、bridge.rs C ABI 去留决策（承接 §4.2.3 P2-1） | ✅ 已随批次3闭合（Task #118）：platform.rs 5 桩已删除、10 个一次性脚本已清理、bridge.rs 决策为保留+计划性废弃（见 §4.2.3 P2-1 决策记录） |
@@ -963,16 +963,37 @@ flutter test                  # 全量测试通过
 |---|------|----------|------|
 | 1 | ~~searchSource 分组过滤~~（已闭合） | `flutter_legado/lib/src/screens/change_source_screen.dart` `_showGroupPicker` | ✅ Task #131（2026-08-07）销记：Rust `source_switch_search` 加 `source_urls_json` 参数复用 `load_search_sources` 过滤，换源页按分组过滤生效；另修复主搜索页选分组/书源后关闭面板不自动重搜（留项#12 闭合） |
 | 2 | 定时服务后端 | `flutter_legado/lib/src/screens/auto_task_screen.dart` | autoTask 后台执行 FFI 未移植，开关仅持久化 `isEnabled`，无后台调度（评审修复补登） |
-| 3 | 书架缓存导出扩展项 | `flutter_legado/lib/src/screens/bookshelf_screen.dart` | 缓存管理页/缓存下载/epub·pdf/模板/WebDav 等，已交付 TXT 导出（评审修复补登） |
+| 3 | 书架缓存导出扩展项 | `flutter_legado/lib/src/screens/bookshelf_screen.dart` | 缓存管理页/缓存下载/epub·pdf/模板/WebDav 等，已交付 TXT 导出（评审修复补登）。Rust 侧大头已随 R7/R8 闭合（缓存批量下载 4 方法 + bookExportWithOptions 四格式导出参数，见 §5.10）；剩余为 UI 页面与模板/WebDAV 接线 |
+
+### §5.10 R 系列 Rust 剩余项全批闭合记录（2026-08-07，Task #140）
+
+> ✅ **闭合销记（2026-08-07）**：Rust 剩余项全批（R1-R10+R12）已闭合并统一提交，对应留项评审 [REMAINING_ITEMS_DEV_REVIEW_20260806.md](REMAINING_ITEMS_DEV_REVIEW_20260806.md) 留项 1/3/8（步骤2）/9/11（Rust 大头）/13（QUIC 部分）。契约 §2.43 新增 7 方法（加法式、仅走 frb 主链路）+ §2.41 QUIC 移除记录；验证 cargo test --workspace 全绿、quickjs 213 全过、flutter analyze 0 error。
+
+| R# | 内容 | 闭合方式 | 对应留项 |
+|----|------|----------|----------|
+| R1+R2 | web_book.rs subContent 副内容 + replaceRegex 全文替换 | 真实实现（对标 BookContent.kt L128-174，txt/http 分支） | 留项 9① |
+| R3 | legado-server 正文接口 | 真实实现（接 RealBookSourceFetcher 正文链路） | 留项 9② |
+| R4 | dict_api 字典数据源 | 重写为原版字典规则引擎（dict_rules 逐规则执行 + 表空注入原版默认 5 字典源 seed） | 留项 9③ |
+| R5 | saveChapterContent 缓存写 FFI | 新增（契约 §2.43.1） | 留项 1 |
+| R6 | chapterPayAction 章节购买 FFI | 新增（契约 §2.43.2） | 留项 3 |
+| R7 | 缓存批量下载 4 方法 FFI | 新增（契约 §2.43.3） | 留项 11 Rust 大头 |
+| R8 | bookExportWithOptions 导出参数扩展 | 新增（契约 §2.43.4，支持四格式） | 留项 11 Rust 大头 |
+| R9 | font_api 字体反爬 cmap 真实替换 | 新增 query_ttf.rs 真实实现 | 引擎差异观察项 |
+| R10 | JS 书源段评回复 | js_source_book.rs 真实实现 | 段评链路补齐 |
+| R12 | bridge.rs C ABI DEPRECATED 标注 | 模块级标注 + 冻结新增（废弃三步走步骤2） | 留项 8 步骤2 |
+| QUIC | QUIC 客户端六件套 + 总开关共 8+8 FFI 导出 | **已移除**（用户决策，纯重构边界：原版无对应能力）：legado-net/quic.rs、quic_api.rs 删除、quinn 等依赖删除、Dart UI 开关清理、契约 §2.41 登记移除、§3 待封装清单销记 | 留项 13（QUIC 部分） |
+
+**R 系列闭合后 Rust 轨剩余项**：仅剩 schema v102 重建表（保持触发型延后，见留项 7 / §4.2.1）+ normalizeJsResult 引擎差异观察项；UI 侧留项（缓存管理页、MoreConfig、定时调度器等）不受本批影响、按原波次排期。
 
 ---
 
-**文档版本**: 1.10  
+**文档版本**: 1.11  
 **最后更新**: 2026-08-07  
 **维护人**: Qoder  
 **最后修改**: Qoder
 
 **版本记录**：
+- v1.11（2026-08-07）R 系列全批闭合销记（Task #140）：新增 §5.10 R1-R10+R12 销记明细；QUIC 客户端六件套由「待封装」改为「已移除（用户决策，纯重构边界）」；§5.9 留项 3 补记 R7/R8 Rust 大头已闭合；schema v102 保持触发型延后
 - v1.10（2026-08-07）留项#12 闭合销记（Task #131）：§5.9 留项 1 searchSource 分组过滤全链修复（Rust sourceSwitchSearch 加 sourceUrlsJson 参数 + 换源页按分组过滤 + 主搜索页选分组自动重搜）
 - v1.9（2026-08-06）评审修复口径修正（Task #122）：日志入口销记修正为 7/7（source_edit_screen 补接，补提交）、缺口④补记 UI 接线提交、新增 §5.9 TODO(留批次) 正式登记（searchSource 分组过滤等 3 项）
 - v1.8（2026-08-06）批次0-3 缺口闭合销记（Task #119）：§5.1-§5.6 全部销记（8 提交：0cde41a5c/873abea29/b7368193a/9ac94b173/522e1c1be/6633c25e3/0c452f4b5/13a11220e），Rust 4 项 P1 实质缺口闭合，残留留项见审计报告 §7

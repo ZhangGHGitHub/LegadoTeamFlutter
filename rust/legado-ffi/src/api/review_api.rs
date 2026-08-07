@@ -98,6 +98,10 @@ pub fn review_delete_chapter(book_url: &str, chapter_index: i32) -> LegadoResult
 /// 2. 发起 HTTP 请求获取回复页面；
 /// 3. 以 reply* 规则族解析回复列表。
 ///
+/// JS 书源分支（Task #134）：对标 Kotlin ReviewDetailDialog JS 分支，
+/// 复用 JS 编排器调用 `getReviewDetail`，回复随详情条目嵌套返回
+/// （嵌套回复已扁平化），无独立 reply 请求协议。
+///
 /// # 参数
 /// - `source_json`: BookSource JSON 字符串（含 ruleReview）
 /// - `request_json`: 请求上下文 JSON，支持字段：
@@ -115,11 +119,10 @@ pub fn review_delete_chapter(book_url: &str, chapter_index: i32) -> LegadoResult
 pub fn review_get_replies(source_json: &str, request_json: &str, page: i32) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
 
-    // 对标 Kotlin：JS 书源的回复随 getReviewDetail 嵌套返回，无独立 reply 协议
+    // JS 书源分支（Task #134）：复用 JS 编排器调用 getReviewDetail 实现按需加载，
+    // 移除旧版"暂不支持"降级（对标 Kotlin ReviewDetailDialog 的 isJsSource 分支）
     if source.is_js_source() {
-        return Err(LegadoError::Internal(
-            "JS 书源暂不支持段评回复按需加载".into(),
-        ));
+        return js_review_get_replies(&source, request_json, page);
     }
 
     let rule = source
@@ -268,6 +271,101 @@ pub fn review_get_replies(source_json: &str, request_json: &str, page: i32) -> L
     serde_json::to_string(&payload).map_err(LegadoError::Serialization)
 }
 
+/// JS 书源段评回复按需加载（Task #134），对标 Kotlin
+/// `ReviewDetailDialog` 的 JS 分支（`JsSourceReview.getReviewDetailAwait`）：
+/// JS 书源回复随 getReviewDetail 条目嵌套返回（嵌套回复已扁平化），
+/// 无独立 reply 请求协议。
+///
+/// `request_json` 可选字段：
+/// - `book` / `chapter`：Book/BookChapter JSON 对象（缺失时用默认值，
+///   chapter.url 以 `chapterUrl` 回填，对标 Kotlin 传入 ReadBook.book/chapter）；
+/// - `paraIndex` / `paraData` / `chapterUrl`：与规则路径同义。
+fn js_review_get_replies(
+    source: &BookSource,
+    request_json: &str,
+    page: i32,
+) -> LegadoResult<String> {
+    let request: serde_json::Value = serde_json::from_str(request_json)
+        .map_err(|e| LegadoError::Internal(format!("回复请求参数解析失败: {e}")))?;
+
+    let para_index = request
+        .get("paraIndex")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0) as i32;
+    let para_data = request
+        .get("paraData")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let chapter_url = request
+        .get("chapterUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // Book/Chapter 上下文：优先调用方提供的字段，缺失时用默认值
+    let book: legado_core::models::Book = request
+        .get("book")
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+        .map_err(|e| LegadoError::Internal(format!("book 参数解析失败: {e}")))?
+        .unwrap_or_default();
+    let mut chapter: legado_core::models::BookChapter = request
+        .get("chapter")
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+        .map_err(|e| LegadoError::Internal(format!("chapter 参数解析失败: {e}")))?
+        .unwrap_or_default();
+    if chapter.url.is_empty() {
+        chapter.url = chapter_url;
+    }
+
+    let mut orchestrator = crate::api::web_book::build_js_orchestrator(source)?
+        .ok_or_else(|| LegadoError::Internal("JS 书源 mainJs 为空，无法加载段评回复".into()))?;
+
+    // JS 分派：spawn_blocking 避免嵌套 runtime 死锁（同 webbook_search 模式）
+    let detail_page = crate::runtime::block_on(async {
+        tokio::task::spawn_blocking(move || {
+            orchestrator.get_review_detail(&book, &chapter, para_index, &para_data, page)
+        })
+        .await
+        .map_err(|e| LegadoError::Internal(format!("JS 段评回复任务异常: {e}")))?
+    })?;
+
+    // 转换为与规则路径兼容的响应格式（camelCase 契约，API_CONTRACT.md 已登记）
+    let items = convert_js_review_items(detail_page.items);
+    let payload = serde_json::json!({
+        "items": items,
+        "nextPageUrl": detail_page.next_page_url,
+    });
+    serde_json::to_string(&payload).map_err(LegadoError::Serialization)
+}
+
+/// js_source_review 条目 → review_rule_parser camelCase 响应条目转换（Task #134）
+///
+/// JS 书源 getReviewDetail 协议仅含 id/name/content/avatar/badge/replies，
+/// imageUrl/audioUrl/time/likeCount/replyCount 无对应字段置 None。
+fn convert_js_review_items(
+    items: Vec<legado_js::js_source::js_source_review::ReviewDetailItem>,
+) -> Vec<legado_parser::review_rule_parser::ReviewDetailItem> {
+    items
+        .into_iter()
+        .map(|it| legado_parser::review_rule_parser::ReviewDetailItem {
+            id: it.id,
+            avatar: it.avatar,
+            name: it.name,
+            badges: it.badges,
+            content: Some(it.content),
+            image_url: None,
+            audio_url: None,
+            time: None,
+            like_count: None,
+            reply_count: None,
+            replies: convert_js_review_items(it.replies),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,11 +398,104 @@ mod tests {
     }
 
     #[test]
-    fn test_review_get_replies_js_source_rejected() {
+    fn test_review_get_replies_js_source_dispatched() {
+        // Task #134：JS 书源不再拒绝，进入 JS 编排器分派路径；
+        // 未启用 quickjs 时占位引擎报错（错误源自 JS 引擎而非"暂不支持"降级）
         let mut source = BookSource::default();
         source.main_js = Some("// js source".into());
         let source_json = serde_json::to_string(&source).unwrap();
         let err = review_get_replies(&source_json, "{}", 1).unwrap_err();
-        assert!(err.to_string().contains("JS 书源"));
+        assert!(
+            !err.to_string().contains("暂不支持"),
+            "降级分支应已移除"
+        );
+    }
+
+    #[test]
+    fn test_js_review_get_replies_empty_main_js_rejected() {
+        // mainJs 为空的 JS 书源 → 明确错误（无编排器可构建）
+        let mut source = BookSource::default();
+        source.main_js = Some("   ".into());
+        let err = js_review_get_replies(&source, "{}", 1).unwrap_err();
+        assert!(err.to_string().contains("mainJs"));
+    }
+
+    #[test]
+    fn test_convert_js_review_items_mapping() {
+        use legado_js::js_source::js_source_review::ReviewDetailItem;
+        let items = vec![ReviewDetailItem {
+            id: Some("c1".into()),
+            name: Some("用户A".into()),
+            content: "好看".into(),
+            avatar: Some("http://img.com/a.jpg".into()),
+            badges: vec!["大佬".into()],
+            replies: vec![ReviewDetailItem {
+                id: Some("r1".into()),
+                name: None,
+                content: "同意".into(),
+                avatar: None,
+                badges: vec![],
+                replies: vec![],
+            }],
+        }];
+        let converted = convert_js_review_items(items);
+        assert_eq!(converted.len(), 1);
+        assert_eq!(converted[0].id.as_deref(), Some("c1"));
+        assert_eq!(converted[0].content.as_deref(), Some("好看"));
+        assert_eq!(converted[0].badges, vec!["大佬".to_string()]);
+        // 嵌套回复递归转换且不再嵌套（扁平化已在解析层完成）
+        assert_eq!(converted[0].replies.len(), 1);
+        assert_eq!(converted[0].replies[0].content.as_deref(), Some("同意"));
+        assert!(converted[0].image_url.is_none());
+        assert!(converted[0].like_count.is_none());
+    }
+
+    /// quickjs 真实引擎端到端：JS getReviewDetail 返回含嵌套回复的详情分页
+    ///
+    /// 注：Kotlin 原版 normalizeJsResult 对 Scriptable 对象自动 JSON.stringify；
+    /// Rust QuickJsEngine 对象返回值降级为 Debug 格式（非 JSON），故测试 JS
+    /// 显式 JSON.stringify（书源侧兼容写法）。该引擎层差异待专项对齐。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_review_get_replies_js_source_quickjs_e2e() {
+        let mut source = BookSource::default();
+        source.main_js = Some(
+            r#"
+            function getReviewDetail(chapter, book, paraIndex, paraData, page) {
+                return JSON.stringify({
+                    items: [{
+                        id: "c1", name: "用户A", content: paraData + ":" + paraIndex,
+                        avatar: "/a.png", badge: "作者",
+                        replies: [{ id: "r1", content: "一级回复" }]
+                    }],
+                    nextPageUrl: page < 2 ? "more" : null
+                });
+            }
+            "#.to_string(),
+        );
+        let source_json = serde_json::to_string(&source).unwrap();
+        let request_json = serde_json::json!({
+            "paraIndex": 3,
+            "paraData": "token",
+            "chapterUrl": "https://example.com/chap/1.html",
+        })
+        .to_string();
+
+        let result = review_get_replies(&source_json, &request_json, 1).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(payload["nextPageUrl"], serde_json::json!("more"));
+        let items = payload["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["id"], "c1");
+        assert_eq!(items[0]["content"], "token:3");
+        assert_eq!(items[0]["avatar"], "https://example.com/a.png");
+        let replies = items[0]["replies"].as_array().unwrap();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0]["content"], "一级回复");
+
+        // 第二页：nextPageUrl 为 null
+        let result2 = review_get_replies(&source_json, &request_json, 2).unwrap();
+        let payload2: serde_json::Value = serde_json::from_str(&result2).unwrap();
+        assert!(payload2["nextPageUrl"].is_null());
     }
 }

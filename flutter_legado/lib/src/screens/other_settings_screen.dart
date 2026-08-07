@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../l10n/app_strings.dart';
-import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart' show ReaderBackground;
 import '../routes.dart';
 import '../services/settings_service.dart';
@@ -13,7 +12,7 @@ import '../services/settings_service.dart';
 /// 对标 Android 原版「其他设置」（OtherConfigFragment）中 Flutter 已实现的部分：
 /// - 语言切换
 /// - 默认阅读设置（字号 / 行距 / 背景色）
-/// - 网络设置（代理 / 请求超时 / QUIC·HTTP3）
+/// - 网络设置（代理 / 请求超时）
 /// - 缓存管理入口
 ///
 /// 拆分自原单体 SettingsScreen，作为设置枢纽「其他设置」入口的目标页。
@@ -39,7 +38,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   String _proxyHost = '';
   int _proxyPort = 0;
   int _timeoutSeconds = 30;
-  bool _quicEnabled = false; // QUIC/HTTP3 开关（实验性，默认关闭）
 
   @override
   void initState() {
@@ -69,12 +67,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     _proxyHost = await _settingsService.getProxyHost();
     _proxyPort = await _settingsService.getProxyPort();
     _timeoutSeconds = await _settingsService.getRequestTimeout();
-    // 加载 QUIC 开关状态（经 BookApi 查询 Rust 侧全局配置）
-    try {
-      _quicEnabled = await ref.read(bookApiProvider).netIsQuicEnabled();
-    } catch (_) {
-      _quicEnabled = false; // FFI 不可用时默认关闭
-    }
     if (mounted) setState(() {});
   }
 
@@ -129,23 +121,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
             title: Text(AppStrings.requestTimeout),
             subtitle: Text('$_timeoutSeconds ${AppStrings.secondsUnit}'),
             onTap: () => _showTimeoutSettings(context),
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.speed),
-            title: const Text('QUIC/HTTP3'),
-            subtitle: const Text('启用 HTTP/3 传输（实验性）'),
-            value: _quicEnabled,
-            onChanged: (value) async {
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await ref.read(bookApiProvider).netSetQuicEnabled(value);
-                setState(() => _quicEnabled = value);
-              } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text('QUIC 设置失败: $e')),
-                );
-              }
-            },
           ),
           const Divider(),
 

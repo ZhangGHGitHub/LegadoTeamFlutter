@@ -23,6 +23,7 @@ pub mod misc_api;
 #[cfg(feature = "quickjs")]
 pub mod network;
 pub mod platform;
+pub mod query_ttf;
 pub mod regex_utils;
 #[cfg(feature = "quickjs")]
 pub mod runtime_bridge;

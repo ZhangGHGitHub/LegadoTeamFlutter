@@ -1335,16 +1335,6 @@ class RustApi implements BookApi {
   Future<String> httpPost(String url, String body) =>
       bridge.httpPost(url: url, body: body);
 
-  /// 查询 QUIC/HTTP3 传输开关状态
-  @override
-  Future<bool> netIsQuicEnabled() => bridge.netIsQuicEnabled();
-
-  /// 设置 QUIC/HTTP3 传输开关（实验性）
-  @override
-  Future<void> netSetQuicEnabled(bool enabled) async {
-    await bridge.netSetQuicEnabled(enabled: enabled);
-  }
-
   // ========== JS 引擎 ==========
 
   /// 执行 JS 脚本

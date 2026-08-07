@@ -141,7 +141,9 @@ impl BookExporter {
                 output.push('\n');
             }
         }
-        Ok(output.into_bytes())
+        // 按 config.encoding 编码输出（Task #136 R8，对齐 Kotlin ExportBookService
+        // `Charset.forName(AppConfig.exportCharset)`；仅 TXT 生效，缺省 UTF-8 行为不变）
+        Ok(encode_text(&output, &config.encoding))
     }
 
     /// 导出为 EPUB
@@ -550,6 +552,48 @@ pub fn extract_image_sources(content: &str) -> Vec<String> {
             }
         })
         .collect()
+}
+
+/// 按指定编码编码文本（Task #136 R8，对齐 Kotlin ExportBookService
+/// `Charset.forName(AppConfig.exportCharset)` 的 TXT 导出编码配置）
+///
+/// 支持标签对齐 Kotlin `AppConst.charsets`：UTF-8 / GB2312 / GB18030 / GBK /
+/// UTF-16 / UTF-16LE / ASCII（WHATWG 标签归一，GB2312 归入 GBK）。
+/// 空串/未知编码/UTF-8 回落 UTF-8 字节（加法式：缺省行为不变）；
+/// 不可映射字符以 `?` 替代（对齐 Kotlin 编码器 REPLACE 语义）。
+pub fn encode_text(text: &str, encoding: &str) -> Vec<u8> {
+    let label = encoding.trim();
+    if label.is_empty() || label.eq_ignore_ascii_case("utf-8") {
+        return text.as_bytes().to_vec();
+    }
+    let enc = match encoding_rs::Encoding::for_label_no_replacement(label.as_bytes()) {
+        Some(e) => e,
+        None => return text.as_bytes().to_vec(),
+    };
+    if enc == encoding_rs::UTF_8 {
+        return text.as_bytes().to_vec();
+    }
+
+    // 逐块编码，不可映射字符替换为 '?'
+    let mut encoder = enc.new_encoder();
+    let mut out = Vec::with_capacity(text.len());
+    let mut rest = text;
+    let mut chunk = [0u8; 8192];
+    loop {
+        let (result, read, written) =
+            encoder.encode_from_utf8_without_replacement(rest, &mut chunk, true);
+        out.extend_from_slice(&chunk[..written]);
+        match result {
+            encoding_rs::EncoderResult::InputEmpty => break,
+            encoding_rs::EncoderResult::OutputFull => continue,
+            encoding_rs::EncoderResult::Unmappable(_) => {
+                out.push(b'?');
+                // encoding_rs 语义：read 已计入不可映射字符本身，直接从 read 处续编
+                rest = &rest[read..];
+            }
+        }
+    }
+    out
 }
 
 /// 将图片源解析为原始字节
@@ -1058,6 +1102,31 @@ mod tests {
         assert!(text.contains("这是第一章的内容。"));
         assert!(text.contains("第二章 发展"));
         assert!(text.contains("第三章 结局"));
+    }
+
+    /// Task #136 R8：编码转换（对齐 Kotlin AppConfig.exportCharset）
+    #[test]
+    fn test_encode_text() {
+        // 缺省/UTF-8/空串 → 原字节
+        assert_eq!(encode_text("中文abc", ""), "中文abc".as_bytes());
+        assert_eq!(encode_text("中文abc", "UTF-8"), "中文abc".as_bytes());
+
+        // GBK：「中」= 0xD6 0xD0；GB2312 标签归入 GBK
+        assert_eq!(&encode_text("中", "GBK")[..2], &[0xD6, 0xD0]);
+        assert_eq!(&encode_text("中", "GB2312")[..2], &[0xD6, 0xD0]);
+
+        // ASCII：不可映射字符以 '?' 替代（对齐 Kotlin REPLACE 语义）
+        assert_eq!(encode_text("A中B", "ASCII"), b"A?B");
+
+        // 未知编码回落 UTF-8（加法式缺省兼容）
+        assert_eq!(encode_text("中文", "NO-SUCH"), "中文".as_bytes());
+
+        // TXT 导出按 encoding 生效
+        let data = sample_data();
+        let mut config = default_config(ExportFormat::Txt);
+        config.encoding = "GBK".to_string();
+        let bytes = BookExporter::export_txt(&data, &config).unwrap();
+        assert!(std::str::from_utf8(&bytes).is_err(), "GBK 输出不应为 UTF-8");
     }
 
     #[test]

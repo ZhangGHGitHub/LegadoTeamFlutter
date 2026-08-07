@@ -2223,7 +2223,8 @@ mod tests {
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["type"], "url");
-        assert_eq!(parsed["valid"], true);
+        // 真实实现：字体下载/解析失败时句柄标记 valid=false（降级）
+        assert_eq!(parsed["valid"], false);
     }
 
     #[test]
@@ -2238,7 +2239,8 @@ mod tests {
         let engine = make_engine();
         let result = engine.eval("java.queryBase64TTF('AAECAwQF')").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed["valid"], true);
+        // 真实实现：非法 base64 字体解析失败 → valid=false
+        assert_eq!(parsed["valid"], false);
     }
 
     #[test]
@@ -2253,7 +2255,7 @@ mod tests {
     #[test]
     fn test_java_replace_font_stub() {
         let engine = make_engine();
-        // 桩化实现：原样返回
+        // 句柄无效（下载失败）时降级原样返回，与 Kotlin null 句柄分支一致
         let result = engine
             .eval(
                 "var e = java.queryTTF('https://e.com/f.ttf'); \
@@ -2262,6 +2264,41 @@ mod tests {
             )
             .unwrap();
         assert_eq!(result, "测试");
+    }
+
+    #[test]
+    fn test_java_replace_font_real_cmap() {
+        // 端到端：真实 cmap/glyf 解析，经 JS 契约完成防爬字体替换
+        use base64::Engine;
+        use crate::host_api::font_api::tests::{build_minimal_ttf, Segment};
+        let err_font = build_minimal_ttf(
+            &[Segment {
+                start: 0xE001,
+                end: 0xE003,
+                id_delta: 0x2000,
+            }],
+            false,
+        );
+        let ok_font = build_minimal_ttf(
+            &[Segment {
+                start: 0x41,
+                end: 0x43,
+                id_delta: -0x40,
+            }],
+            false,
+        );
+        let err_b64 = base64::engine::general_purpose::STANDARD.encode(&err_font);
+        let ok_b64 = base64::engine::general_purpose::STANDARD.encode(&ok_font);
+
+        let engine = make_engine();
+        let script = format!(
+            "var e = java.queryTTF('{}'); \
+             var c = java.queryTTF('{}'); \
+             java.replaceFont('\\uE001\\uE002\\uE003结尾', e, c)",
+            err_b64, ok_b64
+        );
+        let result = engine.eval(&script).unwrap();
+        assert_eq!(result, "ABC结尾");
     }
 
     #[test]

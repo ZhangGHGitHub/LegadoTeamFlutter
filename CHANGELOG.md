@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-07
 
+### 变更（Rust 剩余项全批闭合 R1-R10+R12 + QUIC 代码移除，用户决策纯重构边界——Nora/Paul/Hunk/Ivan/Simon/Dylan/Nick）
+- Rust 剩余项全批闭合：R1+R2 web_book 正文 subContent 副内容（在线 txt/http 二次请求分支）与 replaceRegex 全文替换（对标 BookContent.kt L128-174）；R3 legado-server 正文接口真实实现（接 RealBookSourceFetcher 正文链路，替换元数据桩）；R4 dict_api 重写为原版字典规则引擎（dict_rules 表逐规则执行 DictRule.search 等价链路 + 表空时注入原版默认 5 字典源 seed，与 assets/defaultData/dictRules.json 同源）；R5 saveChapterContent 缓存写 FFI；R6 chapterPayAction 章节购买 FFI（复用登录 V2 JS 执行设施，url/success/none 三态）；R7 缓存批量下载 4 方法（内存任务表 + worker 线程 + 取消令牌）；R8 bookExportWithOptions 导出参数扩展（格式/charset/章节范围/文件名模板）；R9 font_api 字体反爬 cmap 真实替换（新增 query_ttf.rs）；R10 JS 书源段评回复（js_source_book.rs）；R12 bridge.rs C ABI 模块级 DEPRECATED 标注 + 冻结新增（废弃三步走之步骤2）
+- QUIC 代码移除（用户决策，纯重构边界：QUIC 为 Rust 轨扩展、原版无对应能力）：删除 legado-net/quic.rs 与 legado-ffi quic_api.rs、QUIC 8+8 FFI 导出、quinn 等依赖，Dart UI 开关清理（other_settings_screen/book_api/mock_book_api/rust_api），codegen 重跑；契约 §2.41 登记移除记录、§3 待封装清单销记
+- 契约：API_CONTRACT.md §2.43 新增 7 方法（R5 缓存写 / R6 购买 / R7 批量下载 4 方法 / R8 导出参数，均加法式、仅走 frb 主链路）+ §2.41 QUIC 移除记录
+- 验证：cargo test --workspace 全绿、quickjs feature 213 全过、flutter analyze 0 error；台账销记见 REFACTORING_REMAINING_PLAN.md §5.10
+
 ### 变更（主搜索页分组选择改原版锚定菜单方式：点选即生效自动重搜，解决底部弹窗高度小列表截断——Qoder）
 - 分组选择改锚定 PopupMenu：三点菜单「分组或书源」不再直接打开底部弹窗分组 Tab，改为 `showMenu` 弹出锚定三点按钮下方的分组菜单（对齐原版 SearchActivity.onMenuOpened 溢出菜单形态）——「全部书源」+ 各分组名，当前选中分组带勾选标记；点未选分组=单选替换（对标原版 `update(title)`）、点已选分组=取消（对标原版 `remove(title)`）、点「全部书源」=清空；点选即生效且已有关键词时自动重搜（对标原版 scope 变更观察者重搜行为），无需确定按钮；菜单高度自适应、分组多时自动滚动不截断
 - 书源多选保留：锚定菜单底部「书源多选…」入口打开 SearchFilterPanel；面板分组 Tab 移除（已被锚定菜单替代），仅保留书源多选（全选/搜索过滤/确定批量生效）；弹窗初始高度由 0.6 加大至 0.9（max 0.95），解决书源列表截断

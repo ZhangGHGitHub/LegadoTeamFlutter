@@ -610,10 +610,26 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let next_url_rule = content_rule
             .and_then(|r| r.next_content_url.as_deref())
             .unwrap_or("");
+        // R1/R2 规则（Task #134）：subContent 副内容 + replaceRegex 全文替换
+        let sub_content_rule = content_rule
+            .and_then(|r| r.sub_content.as_deref())
+            .map(str::trim)
+            .unwrap_or("");
+        let replace_regex_rule = content_rule
+            .and_then(|r| r.replace_regex.as_deref())
+            .map(str::trim)
+            .unwrap_or("");
 
         // 音频/视频书源获取的是链接，不需要 HTML 格式化
         let is_media = source.book_source_type == legado_core::models::book_source::book_source_type::AUDIO
             || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
+
+        // R1（Task #134）：副内容基于首页响应体提取，分页前保留一份首页 body
+        let first_page_body = if sub_content_rule.is_empty() {
+            None
+        } else {
+            Some(body.clone())
+        };
 
         let (first_content, next_urls) = parse_content_page(
             body,
@@ -626,7 +642,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
         let source_headers_clone = source_headers.clone();
-        let content = fetch_paginated_content(
+        let mut content = fetch_paginated_content(
             first_content,
             next_urls,
             &chapter.url,
@@ -641,7 +657,41 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         )
         .await;
 
-        // 4. 空内容检查（卷章豁免）
+        // 4. R1 subContent 副内容（Task #134）：分页循环完成后从首页提取副内容并追加。
+        //    执行顺序对标原版 BookContent.kt L128-165：nextContentUrl 分页之后、
+        //    replaceRegex 全文替换之前。
+        if let Some(page_body) = first_page_body {
+            let sub_headers = source_headers.clone();
+            if let Some(sub) = fetch_sub_content(
+                page_body,
+                sub_content_rule,
+                &chapter.url,
+                &source.book_source_url,
+                |url: String| {
+                    let headers = sub_headers.clone();
+                    async move { self.fetch_simple(&url, headers.as_ref()).await }
+                },
+            )
+            .await
+            {
+                // 对标 Kotlin contentList.add(subContent) 后 joinToString("\n")
+                content.push('\n');
+                content.push_str(&sub);
+            }
+        }
+
+        // 5. R2 contentRule.replaceRegex 全文替换（Task #134），
+        //    对标原版 BookContent.kt L166-175：正文拼接完成后按替换规则全文替换
+        if !replace_regex_rule.is_empty() {
+            content = apply_content_replace_regex(
+                content,
+                replace_regex_rule,
+                &chapter.url,
+                &source.book_source_url,
+            )?;
+        }
+
+        // 6. 空内容检查（卷章豁免）
         if !chapter.is_volume && content.trim().is_empty() {
             return Err(LegadoError::ContentEmpty(format!(
                 "章节 {} 正文为空",
@@ -811,6 +861,157 @@ where
 
     // 按页拼接（对标 Kotlin `contentList.joinToString("\n")`）
     content_list.join("\n")
+}
+
+// ─── R1 subContent 副内容（Task #134） ──────────────────────────────────────
+
+/// R1 副内容提取与二次请求（Task #134）
+///
+/// 对标 Kotlin `BookContent.kt` L128-165 的 subContent 处理：
+/// - 在首页 analyzer 上以 subContent 规则提取原始副内容
+///   （对标 `analyzeRule.getString(subContentRule)`）；
+/// - 提取结果 trim 后以 http 开头（不区分大小写，对标
+///   `it.startsWith("http", true)`）：发起二次 HTTP 请求取响应体作为副内容；
+/// - 否则直接以规则提取结果作为副内容。
+/// - 对标 Kotlin `runCatching`：任何失败仅记日志，不影响主正文返回。
+///
+/// 对齐差异说明：原版按书籍类型分流（isOnLineTxt → 原始文本直加；
+/// isAudio → putLyric 歌词；isVideo → putDanmaku 弹幕），Rust 侧 FFI
+/// 无状态签名无 Book 上下文，统一追加到正文文本（避免副内容丢失）；
+/// 待阅读器支持歌词/弹幕承载后可再按类型分流。另原版 isOnLineTxt
+/// 跳过 http 二次请求，Rust 侧无书籍类型信息，统一执行二次请求判定。
+async fn fetch_sub_content<F, Fut>(
+    page_body: String,
+    sub_rule: &str,
+    page_url: &str,
+    source_url: &str,
+    fetch: F,
+) -> Option<String>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = LegadoResult<String>>,
+{
+    let analyzer = crate::js_executor::construct_analyzer(
+        page_body,
+        page_url.to_string(),
+        source_url,
+    );
+    let raw = match eval_rule_string(&analyzer, sub_rule) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[web_book] subContent 规则解析失败（已忽略）: {e}");
+            return None;
+        }
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.to_ascii_lowercase().starts_with("http") {
+        // 对标 Kotlin AnalyzeUrl(mUrl = it).getStrResponseAwait().body
+        match fetch(raw.to_string()).await {
+            Ok(body) => Some(body),
+            Err(e) => {
+                eprintln!("[web_book] subContent 二次请求失败（已忽略）: {e}");
+                None
+            }
+        }
+    } else {
+        Some(raw.to_string())
+    }
+}
+
+// ─── R2 replaceRegex 全文替换（Task #134） ──────────────────────────────────
+
+/// R2 正文全文替换（Task #134），对标 Kotlin `BookContent.kt` L166-175：
+/// 1. replaceRegex 非空时先按换行拆分、逐行 trim 再拼回
+///    （对标 `contentStr.split(AppPattern.LFRegex).joinToString("\n") { it.trim() }`）；
+/// 2. 以拼接后正文为内容执行替换规则
+///    （对标 `analyzeRule.getString(replaceRegex, contentStr)`）。
+///
+/// 对齐差异说明：原版 isOnLineTxt 书籍替换后每行前缀全角空格缩进
+/// （`"　　$it"`），Rust 侧 FFI 无状态签名无书籍类型上下文，未实现该缩进。
+fn apply_content_replace_regex(
+    content: String,
+    replace_regex: &str,
+    base_url: &str,
+    source_url: &str,
+) -> LegadoResult<String> {
+    let trimmed = content
+        .split('\n')
+        .map(|line| line.trim())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let analyzer = crate::js_executor::construct_analyzer(
+        trimmed,
+        base_url.to_string(),
+        source_url,
+    );
+    eval_rule_string(&analyzer, replace_regex)
+}
+
+/// 拆分 Kotlin SourceRule 的 `##` 替换语法（对标 AnalyzeRule.makeUpRule L819-829）：
+/// `rule##replaceRegex##replacement##第四段(仅存在即置 replaceFirst=true)`。
+/// 返回（基础规则，可选替换三元组）。
+fn split_rule_replace_parts(rule: &str) -> (&str, Option<(&str, &str, bool)>) {
+    let parts: Vec<&str> = rule.split("##").collect();
+    let base = parts.first().copied().unwrap_or("").trim();
+    if parts.len() <= 1 {
+        return (base, None);
+    }
+    let pattern = parts.get(1).copied().unwrap_or("");
+    let replacement = parts.get(2).copied().unwrap_or("");
+    let replace_first = parts.len() > 3;
+    (base, Some((pattern, replacement, replace_first)))
+}
+
+/// 执行规则字符串并应用 `##` 替换部分
+///
+/// 对标 Kotlin `AnalyzeRule.getString` + `SourceRule.replaceRegex` 组合语义：
+/// - 基础规则为空：直接以当前内容为替换对象（replaceRegex 纯替换规则场景）；
+/// - 基础规则非空：先按规则提取，再对提取结果应用替换；
+/// - 替换部分：`apply_regex_replace`（对标 AnalyzeRule.replaceRegex L539-563）。
+fn eval_rule_string(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> LegadoResult<String> {
+    let (base_rule, replace) = split_rule_replace_parts(rule);
+    let mut result = if base_rule.is_empty() {
+        analyzer.content().to_string()
+    } else {
+        analyzer.get_string(base_rule)?
+    };
+    if let Some((pattern, replacement, replace_first)) = replace {
+        result = apply_regex_replace(&result, pattern, replacement, replace_first);
+    }
+    Ok(result)
+}
+
+/// 正则替换（对标 Kotlin `AnalyzeRule.replaceRegex` L539-563）：
+/// - replaceFirst 分支（`##match##replace##第四段`）：仅取首个匹配段文本做替换后返回
+///   （对标 `matcher.group(0).replaceFirst(regex, replacement)`，无匹配返回空串）；
+/// - 全文替换分支：`result.replace(regex, replacement)`，replacement 支持 `$1` 捕获组引用；
+/// - 正则非法时降级字面量替换（对标 Kotlin runCatching 回退 `result.replace(replaceRegex, replacement)`；
+///   replaceFirst 分支正则非法时对标原版直接返回 replacement）。
+fn apply_regex_replace(text: &str, pattern: &str, replacement: &str, replace_first: bool) -> String {
+    match regex::Regex::new(pattern) {
+        Ok(re) => {
+            if replace_first {
+                match re.find(text) {
+                    Some(m) => re
+                        .replacen(&text[m.start()..m.end()], 1, replacement)
+                        .into_owned(),
+                    None => String::new(),
+                }
+            } else {
+                re.replace_all(text, replacement).into_owned()
+            }
+        }
+        Err(_) => {
+            if replace_first {
+                replacement.to_string()
+            } else {
+                text.replace(pattern, replacement)
+            }
+        }
+    }
 }
 
 // ─── 规则路径增强辅助函数（B1-B3） ─────────────────────────────
@@ -1638,5 +1839,157 @@ mod tests {
             MAX_CONTENT_PAGES,
             "页数上限保护应截断于 {MAX_CONTENT_PAGES} 页"
         );
+    }
+
+    // ─── R1 subContent 单测（Task #134，对标 BookContent.kt L128-165） ─────
+
+    #[test]
+    fn test_fetch_sub_content_text_rule_appends_directly() {
+        // 规则提取结果非 URL → 直接作为副内容返回，不发起二次请求
+        let body = "<html><body><div class='content'>正文</div>\
+                    <div class='sub'>作者有话说</div></body></html>";
+        let result = runtime::block_on(fetch_sub_content(
+            body.to_string(),
+            ".sub@html",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            |_url: String| async { panic!("文本副内容不应触发二次请求") },
+        ));
+        assert_eq!(
+            result.as_deref(),
+            Some("<div class=\"sub\">作者有话说</div>")
+        );
+    }
+
+    #[test]
+    fn test_fetch_sub_content_url_rule_triggers_second_request() {
+        // 规则提取结果以 http 开头 → 发起二次请求，以响应体作为副内容
+        // （对标 Kotlin AnalyzeUrl(mUrl = it).getStrResponseAwait().body）
+        let body = "<html><body><div class='content'>正文</div>\
+                    <a class='sublink' href='https://example.com/sub.html'>副</a></body></html>";
+        let result = runtime::block_on(fetch_sub_content(
+            body.to_string(),
+            ".sublink@href",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            |url: String| async move {
+                assert_eq!(url, "https://example.com/sub.html");
+                Ok("远程副内容正文".to_string())
+            },
+        ));
+        assert_eq!(result.as_deref(), Some("远程副内容正文"));
+    }
+
+    #[test]
+    fn test_fetch_sub_content_second_request_failure_ignored() {
+        // 二次请求失败 → 返回 None（对标 Kotlin runCatching：不影响主正文）
+        let body = "<html><body><a class='sublink' href='https://example.com/sub.html'>副</a></body></html>";
+        let result = runtime::block_on(fetch_sub_content(
+            body.to_string(),
+            ".sublink@href",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            |_url: String| async { Err(LegadoError::Network("500".into())) },
+        ));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_fetch_sub_content_empty_extract_returns_none() {
+        // 规则提取结果为空 → 返回 None（无副内容可追加）
+        let body = "<html><body><div class='content'>正文</div></body></html>";
+        let result = runtime::block_on(fetch_sub_content(
+            body.to_string(),
+            ".nonexist@html",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            |_url: String| async { panic!("空副内容不应触发二次请求") },
+        ));
+        assert!(result.is_none());
+    }
+
+    // ─── R2 replaceRegex 单测（Task #134，对标 BookContent.kt L166-175） ────
+
+    #[test]
+    fn test_split_rule_replace_parts_syntax() {
+        // 对标 AnalyzeRule.makeUpRule L819-829 的 ## 四段拆分
+        let (base, rep) = split_rule_replace_parts(".content@html");
+        assert_eq!(base, ".content@html");
+        assert!(rep.is_none());
+
+        let (base, rep) = split_rule_replace_parts("##广告##");
+        assert_eq!(base, "");
+        assert_eq!(rep, Some(("广告", "", false)));
+
+        let (_, rep) = split_rule_replace_parts(".c@html##pat##rep");
+        assert_eq!(rep, Some(("pat", "rep", false)));
+
+        // 第四段存在（即使为空）→ replaceFirst=true
+        let (_, rep) = split_rule_replace_parts("##pat##rep##");
+        assert_eq!(rep, Some(("pat", "rep", true)));
+    }
+
+    #[test]
+    fn test_apply_regex_replace_full_text() {
+        // 全文替换分支（对标 result.replace(regex, replacement)）
+        assert_eq!(
+            apply_regex_replace("广告1正文广告2", "广告\\d", "", false),
+            "正文"
+        );
+    }
+
+    #[test]
+    fn test_apply_regex_replace_capture_group() {
+        // replacement 支持 $1 捕获组引用
+        assert_eq!(
+            apply_regex_replace("第1章 第2章", "第(\\d+)章", "Chapter $1", false),
+            "Chapter 1 Chapter 2"
+        );
+    }
+
+    #[test]
+    fn test_apply_regex_replace_replace_first() {
+        // replaceFirst 分支：仅取首个匹配段做替换
+        // （对标 matcher.group(0).replaceFirst(regex, replacement)）
+        assert_eq!(apply_regex_replace("aa bb aa", "aa", "X", true), "X");
+        // 无匹配 → 返回空串
+        assert_eq!(apply_regex_replace("bb cc", "aa", "X", true), "");
+    }
+
+    #[test]
+    fn test_apply_regex_replace_invalid_regex_fallback() {
+        // 正则非法降级字面量替换（对标 Kotlin runCatching 回退）
+        assert_eq!(
+            apply_regex_replace("a[unclosed b", "[unclosed", "X", false),
+            "aX b"
+        );
+        // replaceFirst + 正则非法 → 直接返回 replacement（对标原版）
+        assert_eq!(apply_regex_replace("abc", "[bad", "X", true), "X");
+    }
+
+    #[test]
+    fn test_apply_content_replace_regex_trims_lines_then_replaces() {
+        // 对标 BookContent.kt：先逐行 trim 再执行替换规则
+        let result = apply_content_replace_regex(
+            "  第一行  \n  第二行广告  ".to_string(),
+            "##广告##",
+            "https://example.com/c.html",
+            "https://example.com",
+        )
+        .unwrap();
+        assert_eq!(result, "第一行\n第二行");
+    }
+
+    #[test]
+    fn test_apply_content_replace_regex_with_base_rule() {
+        // 基础规则非空：先按规则提取再替换（纯替换规则场景基础规则为空见上例）
+        let result = apply_content_replace_regex(
+            "广告前<div class='c'>正文广告</div>广告后".to_string(),
+            ".c@text##广告##",
+            "https://example.com/c.html",
+            "https://example.com",
+        )
+        .unwrap();
+        assert_eq!(result, "正文");
     }
 }

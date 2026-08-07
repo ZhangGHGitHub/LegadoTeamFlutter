@@ -13,6 +13,7 @@ use crate::engine::JsValue;
 use crate::source_engine::JsSourceEngine;
 
 use super::js_source_marshaller::{JsBookInfo as MarshalledBookInfo, JsSourceMarshaller};
+use super::js_source_review::{JsSourceReview, ReviewDetailPage};
 
 /// JS 源搜索请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,6 +294,47 @@ impl JsSourceBookOrchestrator {
 
         Ok(JsSourceMarshaller::marshal_content(&content))
     }
+
+    /// 段评详情：JS 书源 getReviewDetailAwait（R10，Task #134）
+    ///
+    /// 参考 Kotlin JsSourceReview.kt:57-78：
+    /// 调用 JS: callFunction("getReviewDetail", {chapter, book, paraIndex, paraData, page})，
+    /// 返回 JSON `{items, nextPageUrl}`，经 [`JsSourceReview::parse_detail_page`]
+    /// 解析（含嵌套回复扁平化 + avatar 相对 URL 绝对化，baseUrl 取 chapter.url）。
+    ///
+    /// 与 Kotlin 差异说明：原版返回 null 时 UI 层不更新；此处降级为空页
+    /// （items 为空、无下一页），便于 FFI 调用方统一按空列表处理。
+    pub fn get_review_detail(
+        &mut self,
+        book: &Book,
+        chapter: &BookChapter,
+        para_index: i32,
+        para_data: &str,
+        page: i32,
+    ) -> LegadoResult<ReviewDetailPage> {
+        let chapter_json = serde_json::to_string(chapter)?;
+        let book_json = serde_json::to_string(book)?;
+        let result = self.engine.call_function(
+            "getReviewDetail",
+            &[
+                ("chapter", JsValue::String(chapter_json)),
+                ("book", JsValue::String(book_json)),
+                ("paraIndex", JsValue::Int(para_index as i64)),
+                ("paraData", JsValue::String(para_data.to_string())),
+                ("page", JsValue::Int(page as i64)),
+            ],
+        )?;
+        let json = match result {
+            Some(j) => j,
+            None => {
+                return Ok(ReviewDetailPage {
+                    items: Vec::new(),
+                    next_page_url: None,
+                })
+            }
+        };
+        JsSourceReview::parse_detail_page(&json, &chapter.url).map_err(LegadoError::Parser)
+    }
 }
 
 #[cfg(test)]
@@ -424,6 +466,103 @@ mod tests {
         let filtered = JsSourceBookManager::filter_valid_results(results);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].book_name, "有效");
+    }
+
+    // ─── R10 get_review_detail 测试（Task #134，mock JS 执行） ─────────────
+
+    use crate::engine::{CompiledScript as TestCompiledScript, JsEngine as TestJsEngine};
+    use crate::JsSourceConfig;
+
+    /// 固定返回预设 JSON 的 mock JS 引擎（模拟 getReviewDetail 执行结果）
+    struct FixedJsonEngine {
+        response: String,
+    }
+
+    impl TestJsEngine for FixedJsonEngine {
+        fn eval(&self, _code: &str) -> LegadoResult<String> {
+            Ok(String::new())
+        }
+
+        fn eval_with_bindings(
+            &self,
+            _code: &str,
+            _bindings: &[(&str, JsValue)],
+        ) -> LegadoResult<String> {
+            Ok(String::new())
+        }
+
+        fn compile(&self, code: &str) -> LegadoResult<TestCompiledScript> {
+            Ok(TestCompiledScript::new(code.to_string()))
+        }
+
+        fn execute_compiled(&self, _script: &TestCompiledScript) -> LegadoResult<String> {
+            Ok(self.response.clone())
+        }
+
+        fn execute_compiled_with_bindings(
+            &self,
+            _script: &TestCompiledScript,
+            _bindings: &[(&str, JsValue)],
+        ) -> LegadoResult<String> {
+            Ok(self.response.clone())
+        }
+    }
+
+    fn make_review_orchestrator(response: &str) -> JsSourceBookOrchestrator {
+        let config = JsSourceConfig::new(
+            "http://js-source.example.com".to_string(),
+            "function getReviewDetail() {}".to_string(),
+        );
+        let engine = crate::source_engine::JsSourceEngine::with_engine(
+            config,
+            Box::new(FixedJsonEngine {
+                response: response.to_string(),
+            }),
+        );
+        JsSourceBookOrchestrator::new(engine)
+    }
+
+    #[test]
+    fn test_get_review_detail_parses_js_json() {
+        let json = r#"{"items":[{"id":"1","name":"用户A","content":"好看","avatar":"/a/1.jpg","badge":"大佬","replies":[{"name":"用户B","content":"同意"}]}],"nextPageUrl":"http://example.com/p2"}"#;
+        let mut orch = make_review_orchestrator(json);
+        let book = Book::default();
+        let chapter = BookChapter {
+            url: "http://example.com/ch1".to_string(),
+            ..BookChapter::default()
+        };
+        let page = orch.get_review_detail(&book, &chapter, 2, "段落数据", 1).unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].name.as_deref(), Some("用户A"));
+        // 嵌套回复扁平化
+        assert_eq!(page.items[0].replies.len(), 1);
+        assert_eq!(page.items[0].replies[0].content, "同意");
+        // avatar 相对 URL 基于 chapter.url 绝对化
+        assert_eq!(
+            page.items[0].avatar.as_deref(),
+            Some("http://example.com/a/1.jpg")
+        );
+        assert_eq!(page.next_page_url.as_deref(), Some("http://example.com/p2"));
+    }
+
+    #[test]
+    fn test_get_review_detail_null_result_returns_empty_page() {
+        // JS 返回 "null" → 归一化为 None → 空页（对标 Kotlin `?: return null` 的降级）
+        let mut orch = make_review_orchestrator("null");
+        let page = orch
+            .get_review_detail(&Book::default(), &BookChapter::default(), 1, "", 1)
+            .unwrap();
+        assert!(page.items.is_empty());
+        assert!(page.next_page_url.is_none());
+    }
+
+    #[test]
+    fn test_get_review_detail_invalid_json_errors() {
+        let mut orch = make_review_orchestrator("这不是JSON");
+        let err = orch
+            .get_review_detail(&Book::default(), &BookChapter::default(), 1, "", 1)
+            .unwrap_err();
+        assert!(matches!(err, LegadoError::Parser(_)));
     }
 
     #[test]

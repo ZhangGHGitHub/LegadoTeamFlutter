@@ -12,12 +12,12 @@ legado-parser = { path = "../legado-parser" }
 # 注意："bindgen" 需要 libclang；已移除，使用预生成的绑定
 rquickjs = { version = "0.9", features = ["parallel", "classes", "properties", "loader", "chrono", "macro"], optional = true }
 
-# 编解码与加密 crate（可选，随 quickjs feature 一起启用）
+# 编解码与加密 crate（sha2/base64 为字体反爬 cmap 解析必需，非可选；其余随 quickjs feature 启用）
 md-5     = { version = "0.10", features = ["oid"], optional = true }
 sha1     = { version = "0.10", features = ["oid"], optional = true }
-sha2     = { version = "0.10", features = ["oid"], optional = true }
+sha2     = { version = "0.10", features = ["oid"] }
 hmac     = { version = "0.12", optional = true }
-base64   = { version = "0.22", optional = true }
+base64   = { version = "0.22" }
 hex      = { version = "0.4", optional = true }
 
 # RSA 非对称加密/签名（对齐 Kotlin AsymmetricCrypto / Sign，hutool 语义）
@@ -56,9 +56,7 @@ quickjs = [
     "dep:rquickjs",
     "dep:md-5",
     "dep:sha1",
-    "dep:sha2",
     "dep:hmac",
-    "dep:base64",
     "dep:hex",
     "dep:rsa",
     "dep:signature",

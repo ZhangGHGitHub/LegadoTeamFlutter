@@ -828,6 +828,65 @@ Future<bool> cacheClearBefore({required PlatformInt64 beforeTimestampMs}) =>
       beforeTimestampMs: beforeTimestampMs,
     );
 
+/// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
+///
+/// `title` / `chapter_url` 为空串时从 DB 章节表回填；
+/// 复用 CacheBookRepository.insert（INSERT OR REPLACE）。
+Future<bool> saveChapterContent({
+  required String bookUrl,
+  required int chapterIndex,
+  required String title,
+  required String content,
+  required String chapterUrl,
+}) => RustLib.instance.api.crateFfiFfiSaveChapterContent(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  title: title,
+  content: content,
+  chapterUrl: chapterUrl,
+);
+
+/// 创建批量缓存下载任务，返回任务 ID（字符串）
+///
+/// `start_chapter` / `end_chapter` 含端点；负值按 0、超出按末章截断。
+/// 对标 Kotlin CacheActivity：复用正文抓取链路 + 任务表/取消令牌。
+/// 同一本书已有进行中任务时复用返回既有 ID（契约 §2.43.3）。
+Future<String> cacheDownloadStart({
+  required String bookUrl,
+  required int startChapter,
+  required int endChapter,
+}) => RustLib.instance.api.crateFfiFfiCacheDownloadStart(
+  bookUrl: bookUrl,
+  startChapter: startChapter,
+  endChapter: endChapter,
+);
+
+/// 查询批量下载任务进度（JSON：taskId/bookUrl/status/total/completed/failed；
+/// 未知任务 status=notFound）
+Future<String> cacheDownloadProgress({required PlatformInt64 taskId}) =>
+    RustLib.instance.api.crateFfiFfiCacheDownloadProgress(taskId: taskId);
+
+/// 取消批量下载任务（对照书源校验流取消机制）；未知任务返回 false
+Future<bool> cacheDownloadCancel({required PlatformInt64 taskId}) =>
+    RustLib.instance.api.crateFfiFfiCacheDownloadCancel(taskId: taskId);
+
+/// 列出所有批量下载任务（JSON 数组，按任务 ID 升序）
+Future<String> cacheDownloadList() =>
+    RustLib.instance.api.crateFfiFfiCacheDownloadList();
+
+/// 执行章节购买动作（对照 Kotlin ReadBookActivity.payAction）
+///
+/// 返回 JSON：`{"kind": "url"/"success"/"none", "value": "<JS 返回原文>"}`；
+/// kind=url 时 UI 打开支付页，kind=success 时已清当前章正文缓存。
+/// 需 quickjs 构建（非 quickjs 返回错误）。
+Future<String> chapterPayAction({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiChapterPayAction(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
 /// 获取配置项
 Future<String> configGet({required String key}) =>
     RustLib.instance.api.crateFfiFfiConfigGet(key: key);
@@ -1121,6 +1180,22 @@ Future<String> bookExportInfo({
   format: format,
 );
 
+/// 带选项导出书籍（Task #136 R8，API_CONTRACT §2.43.4）
+///
+/// `options_json` 透传：encoding（仅 TXT）/ startChapter / endChapter（-1=不限）/
+/// fileNameTemplate（{name}/{author} 占位符）；空串 = 全缺省（行为等同 book_export）。
+Future<String> bookExportWithOptions({
+  required String bookUrl,
+  required String format,
+  required bool includeToc,
+  required String optionsJson,
+}) => RustLib.instance.api.crateFfiFfiBookExportWithOptions(
+  bookUrl: bookUrl,
+  format: format,
+  includeToc: includeToc,
+  optionsJson: optionsJson,
+);
+
 /// 导入 ZIP 压缩包中的书籍文件（返回 ArchiveImportResult JSON）
 Future<String> archiveImportZip({
   required String zipPath,
@@ -1172,46 +1247,6 @@ Future<String> archiveConvertEncoding({
 /// 判断文件是否为压缩包格式
 Future<bool> archiveIsArchive({required String filePath}) =>
     RustLib.instance.api.crateFfiFfiArchiveIsArchive(filePath: filePath);
-
-/// 创建 QUIC 客户端（config_json 为空时使用默认配置）
-Future<String> quicCreateClient({String? configJson}) =>
-    RustLib.instance.api.crateFfiFfiQuicCreateClient(configJson: configJson);
-
-/// 通过 QUIC 发送 GET 请求（返回响应 JSON）
-Future<String> quicGet({required String url, String? headersJson}) =>
-    RustLib.instance.api.crateFfiFfiQuicGet(url: url, headersJson: headersJson);
-
-/// 通过 QUIC 发送 POST 请求（body 为 base64 编码，返回响应 JSON）
-Future<String> quicPost({
-  required String url,
-  required String bodyBase64,
-  String? headersJson,
-}) => RustLib.instance.api.crateFfiFfiQuicPost(
-  url: url,
-  bodyBase64: bodyBase64,
-  headersJson: headersJson,
-);
-
-/// QUIC 性能测试（返回 PerformanceMetrics JSON）
-Future<String> quicPerformanceTest({required String url}) =>
-    RustLib.instance.api.crateFfiFfiQuicPerformanceTest(url: url);
-
-/// 检查 QUIC 客户端是否已初始化
-Future<bool> quicIsInitialized() =>
-    RustLib.instance.api.crateFfiFfiQuicIsInitialized();
-
-/// 清理 QUIC 连接池
-Future<String> quicCleanup() => RustLib.instance.api.crateFfiFfiQuicCleanup();
-
-/// 设置主网络链路 QUIC 传输开关
-///
-/// 启用后 LegadoClient 的 HTTPS 请求优先走 QUIC/HTTP3，失败自动 fallback 到 HTTP/2。
-Future<String> netSetQuicEnabled({required bool enabled}) =>
-    RustLib.instance.api.crateFfiFfiNetSetQuicEnabled(enabled: enabled);
-
-/// 查询主网络链路 QUIC 传输开关状态
-Future<bool> netIsQuicEnabled() =>
-    RustLib.instance.api.crateFfiFfiNetIsQuicEnabled();
 
 /// 构建书籍更新定时任务（返回 AutoTaskRule JSON）
 Future<String> autoTaskBuildBookUpdate({
