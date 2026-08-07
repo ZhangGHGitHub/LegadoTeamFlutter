@@ -20,11 +20,21 @@ class ReaderTopBar extends ConsumerWidget {
   final VoidCallback onAddBookmark;
   final VoidCallback onOpenAdvancedConfig;
 
+  // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
+
+  /// 显示标题附加区（书名后追加章名，对标原版 showReadTitleAddition）
+  final bool showTitleAddition;
+
+  /// 工具栏样式跟随阅读页（对标原版 readBarStyleFollowPage/immersiveMenu）
+  final bool styleFollowPage;
+
   const ReaderTopBar({
     super.key,
     required this.onOpenContentSearch,
     required this.onAddBookmark,
     required this.onOpenAdvancedConfig,
+    this.showTitleAddition = true,
+    this.styleFollowPage = false,
   });
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 溢出菜单去存根（对标原版
@@ -207,8 +217,8 @@ class ReaderTopBar extends ConsumerWidget {
     );
   }
 
-  /// 编辑章节内容（最小可用：可编辑预览；saveChapterContent FFI 未交付，
-  /// 保存不持久化，诚实标注）
+  /// 编辑章节内容（对标原版 EditContentDialog：可编辑正文，保存经
+  /// saveChapterContent FFI 持久化后重载当前章）
   void _showEditContentDialog(BuildContext context, WidgetRef ref) {
     final state = ref.read(readerNotifierProvider);
     final chapter = state.currentChapter;
@@ -234,8 +244,9 @@ class ReaderTopBar extends ConsumerWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              // TODO(留批次): 待 Rust 交付 saveChapterContent FFI 后持久化 — Qoder
-              _snack(context, '章节内容保存 FFI 未交付，编辑暂不持久化');
+              // [UI-fix v2.0.3 | 2026-08-08] 保存接线（对标原版
+              // saveContent → BookHelp.saveText + loadContent） — Qoder
+              unawaited(_saveEditedContent(context, ref, ctrl.text));
             },
             child: const Text('保存'),
           ),
@@ -244,10 +255,72 @@ class ReaderTopBar extends ConsumerWidget {
     );
   }
 
-  /// 反转内容（原版按行倒序重排正文）
-  void _reverseContent(BuildContext context) {
-    // TODO(留批次): 无章节内容保存 FFI，反转结果无法持久化 — Qoder
-    _snack(context, '「反转内容」待章节保存 FFI 交付后支持');
+  // [UI-fix v2.0.3 | 2026-08-08] 编辑内容保存闭环：saveChapterContent
+  // FFI（契约 §2.43.1）写回缓存后重载当前章正文 — Qoder
+  Future<void> _saveEditedContent(
+    BuildContext context,
+    WidgetRef ref,
+    String content,
+  ) async {
+    final state = ref.read(readerNotifierProvider);
+    final book = state.currentBook;
+    if (book == null) return;
+    try {
+      final ok = await ref.read(bookApiProvider).saveChapterContent(
+            bookUrl: book.bookUrl,
+            chapterIndex: state.currentChapterIndex,
+            title: state.currentChapter?.title ?? '',
+            content: content,
+          );
+      if (!context.mounted) return;
+      if (ok) {
+        await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
+        if (context.mounted) _snack(context, '章节内容已保存');
+      } else {
+        _snack(context, '章节内容保存失败');
+      }
+    } catch (e) {
+      if (context.mounted) _snack(context, '章节内容保存失败: $e');
+    }
+  }
+
+  /// 反转内容（对标原版 ReadBookViewModel.reverseContent L447-459：
+  /// toStringArray（StringExtensions L143，按码点拆单字符）逐个 insert(0)
+  /// 即整串码点级倒序，随后 saveText 写回并 loadContent 重载）
+  // [UI-fix v2.0.3 | 2026-08-08] 反转内容闭环：先取正文（无缓存时经
+  // getChapterContentFull 联网取，避免空转）→ runes 倒序 → saveChapterContent
+  // 写回 → 重载当前章 — Qoder
+  Future<void> _reverseContent(BuildContext context, WidgetRef ref) async {
+    final state = ref.read(readerNotifierProvider);
+    final book = state.currentBook;
+    if (book == null) return;
+    final chapterIndex = state.currentChapterIndex;
+    try {
+      final content = await ref
+          .read(bookApiProvider)
+          .getChapterContentFull(book.bookUrl, chapterIndex);
+      if (content.isEmpty) {
+        if (context.mounted) _snack(context, '暂无正文可反转');
+        return;
+      }
+      // 码点级倒序（runes 反转保证 emoji 等补充平面字符安全）
+      final reversed = String.fromCharCodes(content.runes.toList().reversed);
+      final ok = await ref.read(bookApiProvider).saveChapterContent(
+            bookUrl: book.bookUrl,
+            chapterIndex: chapterIndex,
+            title: state.currentChapter?.title ?? '',
+            content: reversed,
+          );
+      if (!context.mounted) return;
+      if (ok) {
+        await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
+        if (context.mounted) _snack(context, '内容已反转');
+      } else {
+        _snack(context, '反转内容保存失败');
+      }
+    } catch (e) {
+      if (context.mounted) _snack(context, '反转内容失败: $e');
+    }
   }
 
   // [UI-fix v2.0.3 | 2026-08-06] 设置编码（对标原版 menu_set_charset →
@@ -449,24 +522,41 @@ class ReaderTopBar extends ConsumerWidget {
     final isDark = state.isDarkBackground;
     final progressPct = (state.readingProgress * 100).toStringAsFixed(1);
 
+    // [UI-fix v2.0.3 | 2026-08-08] 工具栏跟随页面：背景/前景色跟随当前
+    // 阅读页配色（对标原版 ReadMenu immersiveMenu：bgColor=页面背景、
+    // textColor=页面文字色）；关闭时维持主题 surface — Qoder
+    final followColor = styleFollowPage ? state.backgroundColor : null;
+    final foreground = styleFollowPage ? state.textColor : null;
+    // [UI-fix v2.0.3 | 2026-08-08] 标题附加区：书名 · 章名（对标原版
+    // showReadTitleAddition 开启时菜单顶栏显示章名）— Qoder
+    final chapterTitle = state.currentChapter?.title ?? '';
+    final titleText = (showTitleAddition && chapterTitle.isNotEmpty)
+        ? '${state.currentBook?.name ?? ''} · $chapterTitle'
+        : (state.currentBook?.name ?? '');
+
     return Positioned(
       top: 0,
       left: 0,
       right: 0,
       child: Material(
-        color: Theme.of(context).colorScheme.surface,
+        color: followColor ?? Theme.of(context).colorScheme.surface,
         // iOS 风格：无阴影 + hairline 底边
         elevation: 0,
         shape: Border(
           bottom: BorderSide(
-            color: Theme.of(context).dividerTheme.color ??
-                Theme.of(context).dividerColor,
+            color: styleFollowPage
+                ? state.textColor.withValues(alpha: 0.2)
+                : (Theme.of(context).dividerTheme.color ??
+                    Theme.of(context).dividerColor),
             width: 0.0,
           ),
         ),
         child: SafeArea(
           bottom: false,
-          child: SizedBox(
+          child: IconTheme(
+            // 跟随页面时图标前景色改用页面文字色
+            data: IconThemeData(color: foreground),
+            child: SizedBox(
             height: kToolbarHeight,
             child: Row(
               children: [
@@ -476,10 +566,12 @@ class ReaderTopBar extends ConsumerWidget {
                 ),
                 Expanded(
                   child: Text(
-                    state.currentBook?.name ?? '',
+                    titleText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: foreground,
+                        ),
                   ),
                 ),
                 // 阅读进度百分比
@@ -488,7 +580,9 @@ class ReaderTopBar extends ConsumerWidget {
                   child: Text(
                     '$progressPct%',
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
+                          color: styleFollowPage
+                              ? state.textColor
+                              : Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w600,
                         ),
                   ),
@@ -566,7 +660,7 @@ class ReaderTopBar extends ConsumerWidget {
                         _showEditContentDialog(context, ref);
                         break;
                       case 'reverseContent':
-                        _reverseContent(context);
+                        unawaited(_reverseContent(context, ref));
                         break;
                       case 'simulatedReading':
                         _showSimulatedReadingDialog(context, ref);
@@ -668,6 +762,7 @@ class ReaderTopBar extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),

@@ -389,6 +389,17 @@ abstract class BookApi {
     String sourceUrl,
   );
 
+  /// 写入/覆盖单章缓存正文（契约 §2.43.1，saveChapterContent FFI）
+  ///
+  /// 对标原版 BookHelp.saveText 写回链路（编辑内容/反转内容持久化）；
+  /// [title] 为空串时由实现侧从 DB 章节表回填。返回是否写入成功。
+  Future<bool> saveChapterContent({
+    required String bookUrl,
+    required int chapterIndex,
+    required String title,
+    required String content,
+  });
+
   /// 更新阅读进度
   Future<void> updateReadingProgress({
     required String bookUrl,

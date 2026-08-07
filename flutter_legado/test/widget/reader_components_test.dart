@@ -117,7 +117,9 @@ void main() {
 
       await openBookAndPump(tester);
 
-      expect(find.text('测试书籍'), findsOneWidget);
+      // [UI-fix v2.0.3 | 2026-08-08] showReadTitleAddition 默认开启（对标
+      // 原版）：顶栏标题为「书名 · 章名」，断言包含书名即可 — Qoder
+      expect(find.textContaining('测试书籍'), findsOneWidget);
     });
 
     testWidgets('点击夜间模式按钮切换为背景深色', (tester) async {

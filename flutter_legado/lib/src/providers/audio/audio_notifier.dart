@@ -19,7 +19,11 @@ export 'audio_state.dart';
 /// - 管理播放状态机（idle/playing/paused/loading/error）
 /// - 管理媒体会话（后台播放 + 媒体按钮 + 焦点管理，透传 AudioService）
 /// - 管理 TTS 配置与播放模式
-class AudioNotifier extends Notifier<AudioState> {
+///
+/// [UI-fix v2.0.3 | 2026-08-08] 段落化朗读（留项4）：章节正文按段拆分逐段
+/// 送 audioSpeak（对标原版 BaseReadAloudService contentList/nowSpeak 段落队列），
+/// 段落进度经 ChangeNotifier 混入通知（不动 freezed State，避免 codegen） — Qoder
+class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 音频服务（后台媒体按钮 + 焦点管理）
   ///
   /// build() 时捕获实例，便于在 onDispose 中安全释放（避免 dispose 期再读 ref）。
@@ -34,6 +38,50 @@ class AudioNotifier extends Notifier<AudioState> {
   /// BookApi 读取入口（与 explore/search 模块保持一致的注入方式）
   BookApi get _api => ref.read(bookApiProvider);
 
+  // ===== [UI-fix v2.0.3 | 2026-08-08] 段落化朗读状态（留项4） — Qoder =====
+
+  /// 中文 TTS 平均语速（字/秒，1.0x 基准），用于段落时长估算
+  ///
+  /// 探活级 audioSpeak 无真实播放完成回调（原版 TTS 引擎有 utterance 完成
+  /// 回调、HttpReadAloudService 有 MediaPlayer 完成回调），段落推进暂以
+  /// 字数/语速估算时长驱动；真实 TTS 管线接入后改接完成回调。
+  static const double _kCharsPerSecond = 5.0;
+
+  /// 段落播放时长下限/上限（避免极短/极长段落体验失衡）
+  static const Duration _kMinParagraphDuration = Duration(milliseconds: 800);
+  static const Duration _kMaxParagraphDuration = Duration(seconds: 90);
+
+  /// 当前章拆分后的段落文本队列（对标原版 contentList）
+  List<String> _paragraphs = [];
+
+  /// 当前朗读段落索引（对标原版 nowSpeak）
+  int _paragraphIndex = 0;
+
+  /// 段落自动推进定时器（对标原版引擎播放完成回调）
+  Timer? _paragraphTimer;
+
+  /// 播放令牌：每次起播/停止递增，令陈旧异步回调与定时器失效
+  int _playToken = 0;
+
+  /// startReadAloud(startChapterPos) 映射出的待播段落索引（下次 play 消费）
+  int? _pendingParagraphIndex;
+
+  /// Notifier 是否已销毁（防御陈旧定时器回调）
+  bool _disposed = false;
+
+  /// 当前段落索引（UI 展示：上一段/下一段可用性、段落进度）
+  int get currentParagraphIndex => _paragraphIndex;
+
+  /// 当前章段落总数
+  int get paragraphCount => _paragraphs.length;
+
+  /// 是否存在上一段
+  bool get hasPrevParagraph => _paragraphs.isNotEmpty && _paragraphIndex > 0;
+
+  /// 是否存在下一段
+  bool get hasNextParagraph =>
+      _paragraphs.isNotEmpty && _paragraphIndex < _paragraphs.length - 1;
+
   @override
   AudioState build() {
     _audioService = ref.read(audioServiceProvider);
@@ -41,6 +89,7 @@ class AudioNotifier extends Notifier<AudioState> {
     ref.onDispose(() {
       _mediaButtonSub?.cancel();
       _audioFocusSub?.cancel();
+      _paragraphTimer?.cancel();
       _audioService.dispose();
     });
     // 初始状态：注入默认 TTS 配置，其余字段取默认值
@@ -157,6 +206,12 @@ class AudioNotifier extends Notifier<AudioState> {
     required String bookUrl,
     required String bookName,
     int chapterIndex = 0,
+    // [UI-fix v2.0.3 | 2026-08-08] 留项4：段落级起播偏移（章节正文字符偏移，
+    // 对标原版 ReadAloud 以 chapterPos 定位 nowSpeak 段落）。
+    // 分页排版模式下 ParagraphInfo.startIndex 恒为 0，偏移不可用时以
+    // [startParagraphText] 段落文本匹配兜底定位 — Qoder
+    int? startChapterPos,
+    String? startParagraphText,
   }) async {
     // 换书或章节未加载时需要重新拉取章节列表
     final needReload = state.chapters.isEmpty || state.bookUrl != bookUrl;
@@ -178,7 +233,37 @@ class AudioNotifier extends Notifier<AudioState> {
     if (target != state.currentIndex) {
       state = state.copyWith(currentIndex: target);
     }
+    // [UI-fix v2.0.3 | 2026-08-08] 留项4：字符偏移映射段落索引起播
+    // （对标原版 BaseReadAloudService getParagraphs 定位 nowSpeak）；
+    // 偏移无效时按段落文本匹配兜底（分页排版 startIndex 恒 0 场景） — Qoder
+    _pendingParagraphIndex = null;
+    try {
+      final content = await _ensureChapterContent(state.currentIndex);
+      final pos = startChapterPos;
+      if (pos != null && pos > 0) {
+        _pendingParagraphIndex = _mapOffsetToParagraph(content, pos);
+      }
+      final paraText = startParagraphText?.trim();
+      if (_pendingParagraphIndex == null &&
+          paraText != null &&
+          paraText.isNotEmpty) {
+        _pendingParagraphIndex = _mapTextToParagraph(content, paraText);
+      }
+    } catch (e) {
+      debugPrint('朗读起点定位失败（回退章首）: $e');
+    }
     await play();
+  }
+
+  /// 段落文本 → 段落索引（偏移不可用时的兜底定位）
+  ///
+  /// 与拆段同口径 trim 后精确匹配；未命中时回退 null（从段首起播）。
+  static int? _mapTextToParagraph(String content, String text) {
+    final paragraphs = _splitParagraphsWithOffsets(content);
+    for (var i = 0; i < paragraphs.length; i++) {
+      if (paragraphs[i].text == text) return i;
+    }
+    return null;
   }
 
   /// 从 HTTP TTS 引擎列表取首个作为默认朗读引擎
@@ -200,54 +285,213 @@ class AudioNotifier extends Notifier<AudioState> {
   }
 
   /// 播放当前章节
-  Future<void> play() async {
+  ///
+  /// [UI-fix v2.0.3 | 2026-08-08] 留项4 段落化：章节正文按段拆分入队，
+  /// 逐段送 audioSpeak，段尾自动推进下一段，章末自动下一章 — Qoder
+  ///
+  /// [paragraphIndex]：指定起播段落（null = 续播当前段落；同章重播默认回段首）
+  Future<void> play({int? paragraphIndex}) async {
     if (state.chapters.isEmpty) return;
     state = state.copyWith(state: PlayerState.loading);
+    final token = ++_playToken;
 
     try {
       // 加载章节文本内容
-      final chapter = state.chapters[state.currentIndex];
-      if (chapter.text.isEmpty) {
-        final content =
-            await _api.getChapterContent(state.bookUrl, state.currentIndex);
-        final chapters = [...state.chapters];
-        chapters[state.currentIndex] = AudioChapter(
-          index: chapter.index,
-          title: chapter.title,
-          text: content,
-        );
-        state = state.copyWith(chapters: chapters);
-      }
+      final content = await _ensureChapterContent(state.currentIndex);
+      if (token != _playToken || _disposed) return;
 
-      // 调用 TTS 合成语音
-      final config = state.config;
-      if (config.engineUrl.isNotEmpty) {
-        // [UI-fix v2.0.1 | 2026-08-06] 真实 TTS 管线待批次2（Rust audioSpeak 缺口②） — Qoder
-        // 当前 audioSpeak 为探活级实现（http.get 探活），探活失败不阻断朗读 UI
-        // 状态机，仅留痕便于排障；批次2接入真实管线后移除该保护。
-        try {
-          await _api.audioSpeak(
-            text: state.chapters[state.currentIndex].text,
-            engineUrl: config.engineUrl,
-            speed: config.speed,
-            pitch: config.pitch,
-            volume: config.volume,
-            voiceName: config.voiceName,
-          );
-        } catch (e) {
-          debugPrint('audioSpeak 探活失败（不影响朗读 UI 状态）: $e');
-        }
+      // 按阅读器排版同口径拆段入队（对标原版 contentList 构建）
+      final paragraphs = _splitParagraphsWithOffsets(content)
+          .map((p) => p.text)
+          .toList();
+      if (paragraphs.isEmpty && content.trim().isNotEmpty) {
+        // 拆段异常时兜底整章一段，保证朗读不中断
+        paragraphs.add(content.trim());
       }
+      _paragraphs = paragraphs;
+
+      // 起播段落：显式指定 > startReadAloud 偏移映射 > 续播 > 段首
+      final pending = _pendingParagraphIndex;
+      _pendingParagraphIndex = null;
+      final target = paragraphIndex ??
+          pending ??
+          (_paragraphs.isNotEmpty
+              ? _paragraphIndex.clamp(0, _paragraphs.length - 1)
+              : 0);
+      _paragraphIndex =
+          _paragraphs.isEmpty ? 0 : target.clamp(0, _paragraphs.length - 1);
+      notifyListeners();
 
       state = state.copyWith(state: PlayerState.playing);
 
       // 通知媒体会话：请求焦点 + 更新元数据 + 更新播放状态
       await _syncMediaSession();
+      if (token != _playToken || _disposed) return;
+
+      // 送播当前段落并排程自动推进
+      await _speakCurrentParagraph(token);
     } catch (e) {
       state = state.copyWith(
         errorMessage: e.toString(),
         state: PlayerState.error,
       );
+    }
+  }
+
+  /// 确保指定章节正文已加载（复用 play 的内容缓存逻辑）
+  Future<String> _ensureChapterContent(int chapterIndex) async {
+    final chapter = state.chapters[chapterIndex];
+    if (chapter.text.isNotEmpty) return chapter.text;
+    final content = await _api.getChapterContent(state.bookUrl, chapterIndex);
+    final chapters = [...state.chapters];
+    chapters[chapterIndex] = AudioChapter(
+      index: chapter.index,
+      title: chapter.title,
+      text: content,
+    );
+    state = state.copyWith(chapters: chapters);
+    return content;
+  }
+
+  /// 章节正文拆段（含段落起始字符偏移）
+  ///
+  /// [UI-fix v2.0.3 | 2026-08-08] 分段口径与阅读器排版引擎
+  /// ParagraphLayoutEngine._splitParagraphs 完全一致（双换行优先，否则单换行，
+  /// 逐段 trim 并过滤空段），保证偏移映射起点与排版段落对齐 — Qoder
+  static List<({int start, String text})> _splitParagraphsWithOffsets(
+    String content,
+  ) {
+    final result = <({int start, String text})>[];
+    if (content.trim().isEmpty) return result;
+    final splitter =
+        content.contains('\n\n') ? RegExp(r'\n\s*\n') : RegExp('\n');
+    var pos = 0;
+    void emit(String segment, int segmentStart) {
+      final trimmed = segment.trim();
+      if (trimmed.isEmpty) return;
+      // trim 结果必为原片段的连续子串，indexOf 即段落真实起始偏移
+      result.add((
+        start: segmentStart + segment.indexOf(trimmed),
+        text: trimmed,
+      ));
+    }
+
+    for (final match in splitter.allMatches(content)) {
+      emit(content.substring(pos, match.start), pos);
+      pos = match.end;
+    }
+    emit(content.substring(pos), pos);
+    return result;
+  }
+
+  /// 章节正文字符偏移 → 段落索引（对标原版 pos → nowSpeak 段落定位）
+  ///
+  /// 取最后一个 start <= offset 的段落；越界偏移落到末段。
+  static int _mapOffsetToParagraph(String content, int offset) {
+    final paragraphs = _splitParagraphsWithOffsets(content);
+    if (paragraphs.isEmpty) return 0;
+    var index = 0;
+    for (var i = 0; i < paragraphs.length; i++) {
+      if (paragraphs[i].start <= offset) index = i;
+    }
+    return index;
+  }
+
+  /// 送播当前段落并排程段尾自动推进
+  Future<void> _speakCurrentParagraph(int token) async {
+    _paragraphTimer?.cancel();
+    if (_paragraphs.isEmpty) return;
+    final text = _paragraphs[_paragraphIndex];
+    final config = state.config;
+    if (config.engineUrl.isNotEmpty) {
+      // [UI-fix v2.0.1 | 2026-08-06] 探活级 audioSpeak：失败不阻断状态机 — Qoder
+      try {
+        await _api.audioSpeak(
+          text: text,
+          engineUrl: config.engineUrl,
+          speed: config.speed,
+          pitch: config.pitch,
+          volume: config.volume,
+          voiceName: config.voiceName,
+        );
+      } catch (e) {
+        debugPrint('audioSpeak 探活失败（不影响朗读 UI 状态）: $e');
+      }
+    }
+    if (token != _playToken || _disposed) return;
+
+    // 段落时长估算：字数 / (基准语速 × 倍速)，clamp 至合理区间
+    final speed = config.speed <= 0 ? 1.0 : config.speed;
+    final seconds = text.length / (_kCharsPerSecond * speed);
+    var duration = Duration(milliseconds: (seconds * 1000).round());
+    if (duration < _kMinParagraphDuration) {
+      duration = _kMinParagraphDuration;
+    } else if (duration > _kMaxParagraphDuration) {
+      duration = _kMaxParagraphDuration;
+    }
+    _paragraphTimer = Timer(duration, () {
+      if (token != _playToken || _disposed) return;
+      unawaited(_onParagraphFinished());
+    });
+  }
+
+  /// 段落播完：自动下一段，章末自动下一章（保留既有跨章逻辑）
+  Future<void> _onParagraphFinished() async {
+    if (state.state != PlayerState.playing) return;
+    if (_paragraphIndex < _paragraphs.length - 1) {
+      _paragraphIndex++;
+      notifyListeners();
+      await _speakCurrentParagraph(_playToken);
+      return;
+    }
+    // 章末：按播放模式推进（sequential 末章则停止，对齐原版读完即停）
+    if (state.mode == AudioPlayMode.singleLoop) {
+      _paragraphIndex = 0;
+      notifyListeners();
+      await _speakCurrentParagraph(_playToken);
+      return;
+    }
+    if (state.hasNext) {
+      await next();
+      return;
+    }
+    stop();
+  }
+
+  /// 下一段（对标原版 ReadAloud.nextParagraph → IntentAction.nextParagraph）
+  ///
+  /// 章内末段时跨到下一章段首（对齐原版 nextParagraph 越过 contentList 末尾
+  /// 后走下一章朗读的行为）。
+  Future<void> nextParagraph() async {
+    if (_paragraphs.isEmpty || state.state == PlayerState.idle) return;
+    if (_paragraphIndex < _paragraphs.length - 1) {
+      _paragraphIndex++;
+      notifyListeners();
+      final token = _playToken;
+      if (state.isPlaying) await _speakCurrentParagraph(token);
+      return;
+    }
+    if (state.hasNext) {
+      _paragraphIndex = 0;
+      await next();
+    }
+  }
+
+  /// 上一段（对标原版 ReadAloud.prevParagraph → IntentAction.prevParagraph）
+  ///
+  /// 章内首段时跨到上一章段首重播。
+  Future<void> prevParagraph() async {
+    if (_paragraphs.isEmpty || state.state == PlayerState.idle) return;
+    if (_paragraphIndex > 0) {
+      _paragraphIndex--;
+      notifyListeners();
+      final token = _playToken;
+      if (state.isPlaying) await _speakCurrentParagraph(token);
+      return;
+    }
+    if (state.hasPrevious) {
+      _paragraphIndex = 0; // play() 重载上一章后会重建段落队列并回段首
+      await previous();
     }
   }
 
@@ -273,6 +517,9 @@ class AudioNotifier extends Notifier<AudioState> {
   /// 暂停
   void pause() {
     if (state.state == PlayerState.playing) {
+      // [UI-fix v2.0.3 | 2026-08-08] 段落化：暂停同时冻结段落推进定时器 — Qoder
+      _paragraphTimer?.cancel();
+      _playToken++;
       state = state.copyWith(state: PlayerState.paused);
       // 通知媒体会话暂停状态
       _audioService.notifyPaused();
@@ -281,6 +528,11 @@ class AudioNotifier extends Notifier<AudioState> {
 
   /// 停止播放并释放焦点
   void stop() {
+    _paragraphTimer?.cancel();
+    _playToken++;
+    _paragraphs = [];
+    _paragraphIndex = 0;
+    notifyListeners();
     state = state.copyWith(state: PlayerState.idle);
     _audioService.notifyStopped();
     _audioService.abandonAudioFocus();
@@ -289,26 +541,32 @@ class AudioNotifier extends Notifier<AudioState> {
   /// 下一章
   Future<void> next() async {
     if (!state.hasNext && state.mode != AudioPlayMode.singleLoop) return;
+    _paragraphTimer?.cancel();
+    _paragraphIndex = 0;
     if (state.mode == AudioPlayMode.singleLoop) {
-      await play();
+      await play(paragraphIndex: 0);
       return;
     }
     state = state.copyWith(currentIndex: state.currentIndex + 1);
-    await play();
+    await play(paragraphIndex: 0);
   }
 
   /// 上一章
   Future<void> previous() async {
     if (!state.hasPrevious) return;
+    _paragraphTimer?.cancel();
+    _paragraphIndex = 0;
     state = state.copyWith(currentIndex: state.currentIndex - 1);
-    await play();
+    await play(paragraphIndex: 0);
   }
 
   /// 跳转到指定章节
   Future<void> jumpTo(int index) async {
     if (index < 0 || index >= state.chapters.length) return;
+    _paragraphTimer?.cancel();
+    _paragraphIndex = 0;
     state = state.copyWith(currentIndex: index);
-    await play();
+    await play(paragraphIndex: 0);
   }
 
   /// 更新播放模式
@@ -334,6 +592,13 @@ class AudioNotifier extends Notifier<AudioState> {
       volume: volume != null ? volume.clamp(0.0, 1.0) : config.volume,
     );
     state = state.copyWith(config: updated);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _paragraphTimer?.cancel();
+    super.dispose();
   }
 }
 

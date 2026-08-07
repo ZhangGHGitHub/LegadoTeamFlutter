@@ -365,7 +365,10 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   /// 朗读所选：对齐原版 menu_aloud → speak(selectedText)
   void _readAloud() {
     // [UI-fix v2.0.2 | 2026-08-06] 闭合留批次项：接朗读链路
-    // （AudioNotifier.startReadAloud → audioSpeak FFI） — Qoder
+    // （AudioNotifier.startReadAloud → audioSpeak FFI）。
+    // [UI-fix v2.0.3 | 2026-08-08] 留项4 闭合：传入选区起始 chapterPos，
+    // 由 AudioNotifier 映射段落索引实现段落级起播（对标原版从选中文本
+    // 位置起读的行为） — Qoder
     final state = ref.read(readerNotifierProvider);
     final book = state.currentBook;
     if (book == null) {
@@ -374,12 +377,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     }
     final chapterIndex = state.currentChapterIndex;
     _close();
-    // TODO(留批次): 段落级起点（chapterPos）待 startReadAloud 支持偏移参数 — Qoder
     unawaited(
       ref.read(audioNotifierProvider.notifier).startReadAloud(
             bookUrl: book.bookUrl,
             bookName: book.name,
             chapterIndex: chapterIndex,
+            startChapterPos: widget.chapterPos,
+            // 分页排版下 ParagraphInfo.startIndex 恒 0，段落文本匹配兜底定位
+            startParagraphText: widget.text,
           ),
     );
   }

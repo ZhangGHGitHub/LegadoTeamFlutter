@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../models/book.dart';
+import '../models/source_match.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
@@ -51,10 +55,72 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// （收起后朗读继续，再次点击底栏朗读按钮重新展开） — Qoder
   bool _aloudBarHidden = false;
 
+  // [UI-fix v2.0.3 | 2026-08-08] 自动换源（autoChangeSource）防循环状态 — Qoder
+
+  /// 自动换源进行中（避免并发触发）
+  bool _autoSwitching = false;
+
+  /// 当前正在自动换源的书 bookUrl（换书时重置尝试计数）
+  String? _autoSwitchBookUrl;
+
+  /// 同一本书连续自动换源尝试次数（上限 3 次，避免无可用源时死循环）
+  int _autoSwitchAttempts = 0;
+
+  static const int _autoSwitchMaxAttempts = 3;
+
   @override
   void initState() {
     super.initState();
     _loadAdvancedConfig();
+  }
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    // [UI-fix v2.0.3 | 2026-08-08] 退出阅读器恢复系统 UI 与方向
+    // （hideStatusBar/hideNavigationBar/screenOrientation 仅阅读页内生效，
+    // 对标原版 ReadBookActivity 退出时 upSystemUiMode 还原）— Qoder
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(const []);
+    super.dispose();
+  }
+
+  // ===== [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批系统级生效 =====
+
+  /// 应用隐藏状态栏/导航栏与屏幕方向（对标原版 MoreConfigDialog
+  /// onSharedPreferenceChanged：hideStatusBar/hideNavigationBar → UP_CONFIG
+  /// 重建沉浸式；screenOrientation → setOrientation）— Qoder
+  void _applySystemChrome(ReaderAdvancedConfig cfg) {
+    final overlays = <SystemUiOverlay>[];
+    if (!cfg.hideStatusBar) overlays.add(SystemUiOverlay.top);
+    if (!cfg.hideNavigationBar) overlays.add(SystemUiOverlay.bottom);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: overlays);
+    SystemChrome.setPreferredOrientations(
+        _orientationsFor(cfg.screenOrientation));
+    // keep_light（保持亮屏）：项目未引入 wakelock 依赖（不改 pubspec），
+    // 设置仅持久化，待平台能力接入后生效（与 audio_screen audioWakeLock
+    // 标注一致，诚实标注平台限制）— Qoder
+  }
+
+  /// 原版 screen_direction_value → Flutter DeviceOrientation 映射
+  List<DeviceOrientation> _orientationsFor(int orientation) {
+    switch (orientation) {
+      case 1: // 竖屏
+        return const [DeviceOrientation.portraitUp];
+      case 2: // 横屏
+        return const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ];
+      case 3: // 自动(传感器)
+        return DeviceOrientation.values.toList();
+      case 4: // 反向竖屏
+        return const [DeviceOrientation.portraitDown];
+      case 5: // 反向横屏
+        return const [DeviceOrientation.landscapeRight];
+      default: // 跟随系统：空列表解除锁定
+        return const [];
+    }
   }
 
   Future<void> _loadAdvancedConfig() async {
@@ -62,6 +128,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     if (!mounted) return;
     setState(() => _advConfig = config);
     _syncAutoTimer();
+    // [UI-fix v2.0.3 | 2026-08-08] 进入阅读器即应用隐藏栏/方向配置 — Qoder
+    _applySystemChrome(config);
   }
 
   /// 根据配置同步自动翻页定时器
@@ -81,12 +149,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         pageView.prevPageOrChapter();
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _autoTimer?.cancel();
-    super.dispose();
   }
 
   /// 章节内容加载完成后，后台预加载相邻章节
@@ -143,6 +205,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     _maybePreloadAdjacentChapters(state);
 
+    // [UI-fix v2.0.3 | 2026-08-08] 自动换源监听：章节加载新产生错误时，
+    // autoChangeSource 开启且在线书 → 自动搜索替代书源并切换（对标原版
+    // ReadBook AutoChangeSource 加载失败自动换源语义的最小路径）— Qoder
+    ref.listen(readerNotifierProvider, (prev, next) {
+      if (next.error != null && (prev?.error ?? null) == null) {
+        _maybeAutoChangeSource(next);
+      }
+    });
+
     return PopScope<Object?>(
       // 退出阅读器时确保阅读进度已保存到书架
       onPopInvokedWithResult: (didPop, result) {
@@ -169,6 +240,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 marginBottom: _advConfig.pageMarginBottom,
                 marginLeft: _advConfig.pageMarginLeft,
                 marginRight: _advConfig.pageMarginRight,
+                // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批：长按选择
+                // 文本开关与滚动翻页无动画接入内容区 — Qoder
+                selectText: _advConfig.selectText,
+                noAnimScroll: _advConfig.noAnimScrollPage,
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
               // 全局页码指示器（跨章节连续分页已注册时显示）
@@ -202,6 +277,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   onOpenContentSearch: () => _openContentSearch(state),
                   onAddBookmark: () => _addBookmark(state),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
+                  // [UI-fix v2.0.3 | 2026-08-08] 显示标题附加区/工具栏跟随页面 — Qoder
+                  showTitleAddition: _advConfig.showReadTitleAddition,
+                  styleFollowPage: _advConfig.readBarStyleFollowPage,
                 ),
               // [UI-fix v2.0.1 | 2026-08-06] 朗读激活时以 ReadAloudBar 替代底部
               // 功能栏（对标原版 ReadAloudDialog 覆盖 ReadMenu 底部的行为） — Qoder
@@ -219,6 +297,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   onOpenSettings: () => ReaderSettingsSheet.show(context),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
                   onReadAloud: _onReadAloudTap,
+                  // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批：亮度控件
+                  // 显隐/进度条行为（调章内页驱动 PageView 跳页）/工具栏
+                  // 跟随页面 — Qoder
+                  showBrightnessView: _advConfig.showBrightnessView,
+                  progressBehavior: _advConfig.progressBarBehavior,
+                  onSeekPage: (page) =>
+                      _pageViewKey.currentState?.goToPage(page),
+                  styleFollowPage: _advConfig.readBarStyleFollowPage,
                 ),
             ],
           ),
@@ -358,8 +444,99 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       onChanged: (cfg) {
         _advConfig = cfg;
         _syncAutoTimer();
+        // [UI-fix v2.0.3 | 2026-08-08] 面板内变更隐藏栏/方向等系统级
+        // 配置后立即生效（对标原版 onSharedPreferenceChanged 即时语义）— Qoder
+        _applySystemChrome(cfg);
         if (mounted) setState(() {});
       },
     );
+  }
+
+  // ===== [UI-fix v2.0.3 | 2026-08-08] 自动换源最小路径 =====
+  // 对标原版 ReadBook 内容加载失败后 AutoChangeSource 按书名搜替代源并切换：
+  // 复用 searchSource/switchSource FFI（与换源页同源链路）；完整重试策略/
+  // 失败源禁用等复杂逻辑留待后续批次 — Qoder
+
+  /// 章节加载失败时尝试自动换源（在线书且开关开启时）
+  void _maybeAutoChangeSource(ReaderState state) {
+    if (!_advConfig.autoChangeSource) return;
+    if (_autoSwitching) return;
+    final book = state.currentBook;
+    if (book == null) return;
+    // 本地书/WebDAV 书无书源可换（对标原版仅网络书自动换源）
+    if (book.origin == BookType.localTag ||
+        book.origin.startsWith(BookType.webDavTag)) {
+      return;
+    }
+    if (_autoSwitchBookUrl != book.bookUrl) {
+      _autoSwitchBookUrl = book.bookUrl;
+      _autoSwitchAttempts = 0;
+    }
+    if (_autoSwitchAttempts >= _autoSwitchMaxAttempts) return;
+    _autoSwitchAttempts++;
+    unawaited(_doAutoChangeSource(book));
+  }
+
+  /// 执行自动换源：搜索替代书源 → 取首个非同源候选 → switchSource → 重开书
+  Future<void> _doAutoChangeSource(Book book) async {
+    _autoSwitching = true;
+    try {
+      final api = ref.read(bookApiProvider);
+      final matches = (await api.searchSource(book.name, book.author))
+          .map(SourceMatch.fromJson)
+          .toList();
+      SourceMatch? target;
+      for (final m in matches) {
+        if (m.sourceUrl.isNotEmpty && m.sourceUrl != book.origin) {
+          target = m;
+          break;
+        }
+      }
+      if (!mounted) return;
+      if (target == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('自动换源：无可用替代书源')),
+        );
+        return;
+      }
+      final updatedJson = await api.switchSource(
+        book.bookUrl,
+        target.sourceUrl,
+        target.bookUrl,
+      );
+      var newBookUrl = target.bookUrl;
+      try {
+        final decoded = jsonDecode(updatedJson);
+        if (decoded is Map<String, dynamic>) {
+          final url = decoded['bookUrl'] as String?;
+          if (url != null && url.isNotEmpty) newBookUrl = url;
+        }
+      } catch (_) {
+        // 解析失败回退候选项 bookUrl（与换源页同策略）
+      }
+      if (!mounted) return;
+      final updated = book.copyWith(
+        bookUrl: newBookUrl,
+        origin: target.sourceUrl,
+        originName: target.sourceName,
+      );
+      final notifier = ref.read(readerNotifierProvider.notifier);
+      notifier.updateCurrentBook(updated);
+      await notifier.openBook(updated);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('章节加载失败，已自动换源：${target.sourceName}')),
+      );
+      // 换源成功后重置尝试计数（新书源可再次触发）
+      _autoSwitchAttempts = 0;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('自动换源失败: $e')),
+        );
+      }
+    } finally {
+      _autoSwitching = false;
+    }
   }
 }

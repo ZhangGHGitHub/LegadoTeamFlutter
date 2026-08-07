@@ -2,7 +2,8 @@
 //
 // 验证 Phase 5.4 provider→Riverpod 迁移后的设置页（对标 Android pref_main 枢纽结构）：
 // - SettingsScreen 以菜单入口聚合各管理功能与子设置页
-// - OtherSettingsScreen 承接语言/阅读默认/网络（含 QUIC）/缓存入口
+// - OtherSettingsScreen 承接语言/阅读默认/网络/缓存入口
+//   （QUIC 开关已随 2.0.3 QUIC 移除批清理，断言同步销记）
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -139,7 +140,7 @@ void main() {
   });
 
   group('OtherSettingsScreen 其他设置', () {
-    testWidgets('渲染语言/阅读/网络/缓存分组（含 QUIC 开关）', (tester) async {
+    testWidgets('渲染语言/阅读/网络/缓存分组', (tester) async {
       await tester.pumpWidget(wrap(const OtherSettingsScreen()));
       await tester.pumpAndSettle();
 
@@ -147,11 +148,7 @@ void main() {
       expect(find.text('阅读设置'), findsOneWidget);
       expect(find.text('网络设置'), findsOneWidget);
 
-      // QUIC 开关与缓存入口在折叠区，需滚动可见
-      await tester.scrollUntilVisible(find.text('QUIC/HTTP3'), 100);
-      await tester.pumpAndSettle();
-      expect(find.text('QUIC/HTTP3'), findsOneWidget);
-
+      // 缓存入口在折叠区，需滚动可见（QUIC 开关已随 2.0.3 QUIC 移除批清理）
       await tester.scrollUntilVisible(find.text('缓存管理'), 100);
       await tester.pumpAndSettle();
       expect(find.text('缓存管理'), findsOneWidget);

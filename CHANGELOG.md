@@ -5,13 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-08-08
+
+### 修复（留项 1+2 闭合：阅读器编辑内容保存 + 反转内容闭环接线 saveChapterContent FFI，署名 Qoder/QoderCN）
+- 封装层：`BookApi.saveChapterContent` 接口新增（book_api.dart），`rust_api.dart` 直调 bridge 绑定（契约 §2.43.1，chapterUrl 传空串由 Rust 侧从 DB 章节表回填），`mock_book_api.dart` 同步回写 _contentCache 保证后续读回新内容（署名 QoderCN）
+- 编辑内容（留项 1）：`reader_top_bar._showEditContentDialog` 保存按钮接通 saveChapterContent，成功后经 `ReaderNotifier.reloadChapterContent` 重载当前章（对标原版 saveContent → BookHelp.saveText + loadContent），失败给错误提示；移除「FFI 未交付」诚实标注与 TODO(留批次)
+- 反转内容（留项 2）：先 `getChapterContentFull` 取正文（无缓存章节联网取，避免空转）→ 按原版真实语义码点级整串倒序（ReadBookViewModel.reverseContent L447-459 经 toStringArray 按码点拆单字符逐个 insert(0)，StringExtensions L143 注释明确「拆分为单个字符」，非按行；Dart 用 runes 反转保证 emoji 安全）→ saveChapterContent 写回 → 重载当前章；移除 TODO 标注
+- 收口修复：reader_page_view 分页缓存键纳入正文内容（编辑/反转保存后同章重载强制重分页渲染新正文，修复命中旧分页缓存页面仍显旧文）；E2E 实机验证编辑保存即时生效 + DB WAL 持久化确认
+
 ## [2.0.3] - 2026-08-07
+
+### 变更（留项6 第①批：阅读器 MoreConfig 无平台依赖配置项落地，每项真实生效，键名对齐原版 AppConfig——Qoder）
+- MoreConfig 面板补齐第①批 11 项（对标原版 pref_config_read.xml 项序与文案，持久化键名=原版键）：屏幕方向 screenOrientation / 保持亮屏 keep_light / 隐藏状态栏 hideStatusBar / 隐藏导航栏 hideNavigationBar / 进度条行为 progressBarBehavior / 自动换源 autoChangeSource / 长按选择文本 selectText / 显示亮度控件 showBrightnessView / 滚动翻页无动画 noAnimScrollPage / 显示标题附加区 showReadTitleAddition / 工具栏跟随页面 readBarStyleFollowPage
+- 逐项生效方式（对标 MoreConfigDialog.onSharedPreferenceChanged 事件语义）：隐藏状态栏/导航栏→SystemChrome.setEnabledSystemUIMode 手动 overlay 组合（退出阅读器还原 edgeToEdge），分页缓存键新增系统栏 padding 自动重新分页；屏幕方向→SystemChrome.setPreferredOrientations（0跟随系统/1竖屏/2横屏/3传感器/4反向竖屏/5反向横屏，退出还原）；进度条行为=page→底栏滑条改调章内页（跨章分页器取页数、currentChapterPos 取当前页，拖动驱动 ReaderPageView.goToPage，未注册时回退调章节）；自动换源→章节加载失败经 searchSource 取首个非同源候选→switchSource FFI→重开书（限在线书，同书最多 3 次防循环）；选择文本→关闭后正文段落长按选区面板入口移除（分页/滚动两路渲染）；亮度控件→底栏亮度行随开关显隐；无动画滚动→程序化翻页（点击区域/自动翻页/底栏调页）jumpToPage 无动画，滚动模式新增按屏翻页（到底/到顶跨章）；显示标题附加区→顶栏「书名 · 章名」；工具栏跟随页面→顶/底栏背景与前景色跟随阅读页配色（对标 ReadMenu immersiveMenu）
+- 平台限制诚实标注：保持亮屏 keep_light 因项目未引入 wakelock 依赖（不改 pubspec）仅持久化，待平台能力接入后生效（与 audio_screen audioWakeLock 标注一致）；音量键翻页等平台相关项留第②批
+- 既有测试同步：reader_components_test 顶栏书名断言适配标题附加区默认开启；settings_test 销记已移除的 QUIC 开关断言（2.0.3 QUIC 移除批遗留）
 
 ### 变更（Rust 剩余项全批闭合 R1-R10+R12 + QUIC 代码移除，用户决策纯重构边界——Nora/Paul/Hunk/Ivan/Simon/Dylan/Nick）
 - Rust 剩余项全批闭合：R1+R2 web_book 正文 subContent 副内容（在线 txt/http 二次请求分支）与 replaceRegex 全文替换（对标 BookContent.kt L128-174）；R3 legado-server 正文接口真实实现（接 RealBookSourceFetcher 正文链路，替换元数据桩）；R4 dict_api 重写为原版字典规则引擎（dict_rules 表逐规则执行 DictRule.search 等价链路 + 表空时注入原版默认 5 字典源 seed，与 assets/defaultData/dictRules.json 同源）；R5 saveChapterContent 缓存写 FFI；R6 chapterPayAction 章节购买 FFI（复用登录 V2 JS 执行设施，url/success/none 三态）；R7 缓存批量下载 4 方法（内存任务表 + worker 线程 + 取消令牌）；R8 bookExportWithOptions 导出参数扩展（格式/charset/章节范围/文件名模板）；R9 font_api 字体反爬 cmap 真实替换（新增 query_ttf.rs）；R10 JS 书源段评回复（js_source_book.rs）；R12 bridge.rs C ABI 模块级 DEPRECATED 标注 + 冻结新增（废弃三步走之步骤2）
 - QUIC 代码移除（用户决策，纯重构边界：QUIC 为 Rust 轨扩展、原版无对应能力）：删除 legado-net/quic.rs 与 legado-ffi quic_api.rs、QUIC 8+8 FFI 导出、quinn 等依赖，Dart UI 开关清理（other_settings_screen/book_api/mock_book_api/rust_api），codegen 重跑；契约 §2.41 登记移除记录、§3 待封装清单销记
 - 契约：API_CONTRACT.md §2.43 新增 7 方法（R5 缓存写 / R6 购买 / R7 批量下载 4 方法 / R8 导出参数，均加法式、仅走 frb 主链路）+ §2.41 QUIC 移除记录
 - 验证：cargo test --workspace 全绿、quickjs feature 213 全过、flutter analyze 0 error；台账销记见 REFACTORING_REMAINING_PLAN.md §5.10
+
+### 修复（留项4+5：朗读段落化起点 + 语速跟随配置对齐原版——Qoder）
+- 留项4 朗读段落化（AudioNotifier）：整章一次性送 audioSpeak 改为章节正文按段拆分入队逐段送播（对标原版 BaseReadAloudService contentList/nowSpeak 段落队列）；分段口径与阅读器排版引擎 ParagraphLayoutEngine._splitParagraphs 完全一致（双换行优先、否则单换行、逐段 trim 过滤空段），保证偏移映射起点与排版段落对齐；段落播完自动下一段（探活级 audioSpeak 无真实完成回调，暂以字数/语速估算时长驱动，clamp 0.8s~90s）、章末自动下一章（sequential/singleLoop/末章读完即停均保留既有跨章语义）；新增 nextParagraph/prevParagraph（对标原版 ReadAloud.nextParagraph/prevParagraph，章内边界自动跨章），播放令牌机制防陈旧异步/定时器回调；段落进度经 ChangeNotifier 混入通知 UI（不动 freezed State，免 codegen），rust_api 既有 audioSpeak 封装未动
+- 留项4 段落级起播：startReadAloud 新增可选 startChapterPos 字符偏移参数，偏移映射段落索引起播（取最后一个 start<=offset 的段落，对标原版 pos→nowSpeak 定位）；另增 startParagraphText 段落文本匹配兜底（分页排版模式下 ParagraphInfo.startIndex 恒为 0、偏移不可用场景）；text_selection_panel 朗读所选传入 chapterPos + 段落文本，移除降级标注 TODO
+- 留项4 read_aloud_bar 解禁：上一段/下一段按钮接入段落切换（朗读激活且段落队列非空时可用），头部新增「·段 x/y」段落进度指示
+- 收口修复：read_aloud_bar 底行四按钮窄屏（720px 级）横排溢出 59px 黄条，改 Expanded 均分 + 紧凑内边距，任意屏宽不溢出；E2E 实机验证朗读控制条上一段/下一段可点、无溢出
+- 留项5 语速跟随系统语义对齐原版：原版并非实时读系统语速，而是 ttsFlowSys 时 speechRatePlay=defaultSpeechRate(=5) 默认语速常量（AppConfig.kt L393）；勾选跟随→应用默认倍速 1.0x（即原版刻度 5 的等价映射）并禁用手动滑条、速度位显示「默认」，开关状态持久化生效时同步应用，无需系统语速读取通道
+- 回归：audio_provider_test 63 项全绿（播放/暂停/停止/上下章/播放模式/配置全链路）；flutter test 1115 过、仅 2 失败为并行代理改动所致（ReaderTopBar 显示书名/OtherSettingsScreen QUIC 开关已移除，均不涉及本任务文件）；flutter analyze 本任务文件 0 error/warning
 
 ### 变更（主搜索页分组选择改原版锚定菜单方式：点选即生效自动重搜，解决底部弹窗高度小列表截断——Qoder）
 - 分组选择改锚定 PopupMenu：三点菜单「分组或书源」不再直接打开底部弹窗分组 Tab，改为 `showMenu` 弹出锚定三点按钮下方的分组菜单（对齐原版 SearchActivity.onMenuOpened 溢出菜单形态）——「全部书源」+ 各分组名，当前选中分组带勾选标记；点未选分组=单选替换（对标原版 `update(title)`）、点已选分组=取消（对标原版 `remove(title)`）、点「全部书源」=清空；点选即生效且已有关键词时自动重搜（对标原版 scope 变更观察者重搜行为），无需确定按钮；菜单高度自适应、分组多时自动滚动不截断

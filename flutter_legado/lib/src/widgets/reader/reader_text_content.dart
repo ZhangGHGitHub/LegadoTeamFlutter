@@ -31,6 +31,10 @@ class ReaderTypographicPage extends StatelessWidget {
   // ReadBookConfig 四向 padding），默认保持历史硬编码值 — Qoder
   final EdgeInsets contentPadding;
 
+  // [UI-fix v2.0.3 | 2026-08-08] 长按选择文本开关（对标原版 selectText，
+  // 关闭后长按正文不再弹出选区面板）— Qoder
+  final bool selectText;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -46,6 +50,7 @@ class ReaderTypographicPage extends StatelessWidget {
     this.globalTotalPages,
     this.contentPadding =
         const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+    this.selectText = true,
   });
 
   @override
@@ -89,6 +94,8 @@ class ReaderTypographicPage extends StatelessWidget {
               lineHeight: lineHeight,
               paragraphSpacing: paragraphSpacing,
               textColor: textColor,
+              // [UI-fix v2.0.3 | 2026-08-08] selectText 开关透传 — Qoder
+              selectText: selectText,
             ),
           ),
           // 页码指示（对齐安卓端底部页码显示）
@@ -142,6 +149,10 @@ class ReaderTextContent extends StatelessWidget {
   /// 两端对齐开关（对标 MoreConfig textFullJustify）
   final bool justify;
 
+  // [UI-fix v2.0.3 | 2026-08-08] 长按选择文本开关（对标原版 selectText，
+  // 关闭后长按不弹选区面板，对标 ReadView.textSelectAble 事件语义）— Qoder
+  final bool selectText;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -152,6 +163,7 @@ class ReaderTextContent extends StatelessWidget {
     this.letterSpacing = 0.0,
     this.fontFamily,
     this.justify = true,
+    this.selectText = true,
   });
 
   @override
@@ -215,11 +227,12 @@ class ReaderTextContent extends StatelessWidget {
       }
 
       // [UI-fix v2.0.1 | 2026-08-06] 段落级长按入口：弹出选区操作面板
-      // （对齐原版 ReadView.onLongPress → showTextActionMenu；P0-1 审计修复）— Qoder
+      // （对齐原版 ReadView.onLongPress → showTextActionMenu；P0-1 审计修复）
+      // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
       final paraText = para.lines.map((l) => l.words.join('')).join();
       widgets.add(
         GestureDetector(
-          onLongPress: paraText.trim().isEmpty
+          onLongPress: (paraText.trim().isEmpty || !selectText)
               ? null
               : () => TextSelectionPanel.show(
                     context,
@@ -253,6 +266,9 @@ class ReaderParagraphs extends StatelessWidget {
   final double letterSpacing;
   final String? fontFamily;
 
+  // [UI-fix v2.0.3 | 2026-08-08] 长按选择文本开关 — Qoder
+  final bool selectText;
+
   const ReaderParagraphs({
     super.key,
     required this.content,
@@ -262,6 +278,7 @@ class ReaderParagraphs extends StatelessWidget {
     required this.textColor,
     this.letterSpacing = 0.0,
     this.fontFamily,
+    this.selectText = true,
   });
 
   @override
@@ -271,9 +288,10 @@ class ReaderParagraphs extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final p in paragraphs)
-          // [UI-fix v2.0.1 | 2026-08-06] 滚动回退模式段落级长按入口 — Qoder
+          // [UI-fix v2.0.1 | 2026-08-06] 滚动回退模式段落级长按入口
+          // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
           GestureDetector(
-            onLongPress: p.trim().isEmpty
+            onLongPress: (p.trim().isEmpty || !selectText)
                 ? null
                 : () => TextSelectionPanel.show(context, text: p),
             child: Padding(

@@ -74,6 +74,44 @@ class ReaderAdvancedConfig {
   // 翻页模式
   FlipMode flipMode;
 
+  // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批无平台依赖项落地：
+  // 键名对齐原版 AppConfig/PreferKey（见 MoreConfigDialog.onSharedPreferenceChanged
+  // 事件语义与 pref_config_read.xml），持久化不使用 reader_adv_ 前缀 — Qoder
+
+  /// 屏幕方向（0跟随系统 1竖屏 2横屏 3自动传感器 4反向竖屏 5反向横屏，
+  /// 对标原版 screenOrientation/screen_direction_value）
+  int screenOrientation;
+
+  /// 保持亮屏时长（秒：0默认 60/300/600 -1常亮，对标原版 keep_light/screen_time_out）
+  int keepLight;
+
+  /// 隐藏状态栏（对标原版 hideStatusBar）
+  bool hideStatusBar;
+
+  /// 隐藏导航栏（对标原版 hideNavigationBar）
+  bool hideNavigationBar;
+
+  /// 进度条行为（'page'=调章内页 'chapter'=调章节，对标原版 progressBarBehavior）
+  String progressBarBehavior;
+
+  /// 滚动翻页无动画（对标原版 noAnimScrollPage）
+  bool noAnimScrollPage;
+
+  /// 自动换源：章节加载失败自动切换书源（对标原版 autoChangeSource）
+  bool autoChangeSource;
+
+  /// 长按选择文本（对标原版 selectText/textSelectAble）
+  bool selectText;
+
+  /// 底栏亮度控件显隐（对标原版 showBrightnessView）
+  bool showBrightnessView;
+
+  /// 顶栏显示标题附加区（书名后追加章名，对标原版 showReadTitleAddition）
+  bool showReadTitleAddition;
+
+  /// 工具栏样式跟随阅读页（背景/文字色跟随页面，对标原版 readBarStyleFollowPage）
+  bool readBarStyleFollowPage;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -94,6 +132,17 @@ class ReaderAdvancedConfig {
     this.showProgress = true,
     this.showChapterName = true,
     this.flipMode = FlipMode.slide,
+    this.screenOrientation = 0,
+    this.keepLight = 0,
+    this.hideStatusBar = false,
+    this.hideNavigationBar = false,
+    this.progressBarBehavior = 'page',
+    this.noAnimScrollPage = false,
+    this.autoChangeSource = true,
+    this.selectText = true,
+    this.showBrightnessView = true,
+    this.showReadTitleAddition = true,
+    this.readBarStyleFollowPage = false,
   });
 
   /// 从持久化存储加载
@@ -132,6 +181,21 @@ class ReaderAdvancedConfig {
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
       showChapterName: prefs.getBool('${_prefix}show_chapter_name') ?? true,
       flipMode: FlipMode.fromIndex(prefs.getInt('${_prefix}flip_mode') ?? FlipMode.slide.index),
+      // [UI-fix v2.0.3 | 2026-08-08] 第①批 MoreConfig 项读取（键名=原版键）— Qoder
+      screenOrientation:
+          (prefs.getInt('screenOrientation') ?? 0).clamp(0, 5),
+      keepLight: prefs.getInt('keep_light') ?? 0,
+      hideStatusBar: prefs.getBool('hideStatusBar') ?? false,
+      hideNavigationBar: prefs.getBool('hideNavigationBar') ?? false,
+      progressBarBehavior: (prefs.getString('progressBarBehavior') == 'chapter')
+          ? 'chapter'
+          : 'page',
+      noAnimScrollPage: prefs.getBool('noAnimScrollPage') ?? false,
+      autoChangeSource: prefs.getBool('autoChangeSource') ?? true,
+      selectText: prefs.getBool('selectText') ?? true,
+      showBrightnessView: prefs.getBool('showBrightnessView') ?? true,
+      showReadTitleAddition: prefs.getBool('showReadTitleAddition') ?? true,
+      readBarStyleFollowPage: prefs.getBool('readBarStyleFollowPage') ?? false,
     );
   }
 
@@ -157,6 +221,18 @@ class ReaderAdvancedConfig {
     await prefs.setBool('${_prefix}show_progress', showProgress);
     await prefs.setBool('${_prefix}show_chapter_name', showChapterName);
     await prefs.setInt('flip_mode', flipMode.index);
+    // [UI-fix v2.0.3 | 2026-08-08] 第①批 MoreConfig 项持久化（键名=原版键）— Qoder
+    await prefs.setInt('screenOrientation', screenOrientation);
+    await prefs.setInt('keep_light', keepLight);
+    await prefs.setBool('hideStatusBar', hideStatusBar);
+    await prefs.setBool('hideNavigationBar', hideNavigationBar);
+    await prefs.setString('progressBarBehavior', progressBarBehavior);
+    await prefs.setBool('noAnimScrollPage', noAnimScrollPage);
+    await prefs.setBool('autoChangeSource', autoChangeSource);
+    await prefs.setBool('selectText', selectText);
+    await prefs.setBool('showBrightnessView', showBrightnessView);
+    await prefs.setBool('showReadTitleAddition', showReadTitleAddition);
+    await prefs.setBool('readBarStyleFollowPage', readBarStyleFollowPage);
   }
 
   ReaderAdvancedConfig copy() => ReaderAdvancedConfig(
@@ -179,6 +255,17 @@ class ReaderAdvancedConfig {
         showProgress: showProgress,
         showChapterName: showChapterName,
         flipMode: flipMode,
+        screenOrientation: screenOrientation,
+        keepLight: keepLight,
+        hideStatusBar: hideStatusBar,
+        hideNavigationBar: hideNavigationBar,
+        progressBarBehavior: progressBarBehavior,
+        noAnimScrollPage: noAnimScrollPage,
+        autoChangeSource: autoChangeSource,
+        selectText: selectText,
+        showBrightnessView: showBrightnessView,
+        showReadTitleAddition: showReadTitleAddition,
+        readBarStyleFollowPage: readBarStyleFollowPage,
       );
 }
 
@@ -692,9 +779,239 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
             _commit();
           },
         ),
-        // TODO(留批次): 原版 MoreConfig 其余项（显示标题/滚动条/音量键翻页等）
-        // 待后续批次补齐 — Qoder
+        // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批无平台依赖项：
+        // 按原版 pref_config_read.xml 项序与文案补齐，每项真实生效
+        // （对标 MoreConfigDialog.onSharedPreferenceChanged 事件语义）— Qoder
+        // 屏幕方向（原版第 1 项 screenOrientation）
+        _moreRow('屏幕方向', _orientationLabel(_config.screenOrientation), () {
+          _showChoiceDialog<int>(
+            title: '屏幕方向',
+            current: _config.screenOrientation,
+            options: const {
+              0: '跟随系统',
+              1: '竖屏',
+              2: '横屏',
+              3: '自动(传感器)',
+              4: '反向竖屏',
+              5: '反向横屏',
+            },
+            onPick: (v) {
+              _config.screenOrientation = v;
+              _commit();
+            },
+          );
+        }),
+        // 保持亮屏（原版第 2 项 keep_light；平台限制诚实标注：项目未引入
+        // wakelock 依赖（不改 pubspec），设置仅持久化，待平台能力接入后生效，
+        // 与 audio_screen 的 audioWakeLock 标注一致）
+        _moreRow('保持亮屏', _keepLightLabel(_config.keepLight), () {
+          _showChoiceDialog<int>(
+            title: '保持亮屏',
+            current: _config.keepLight,
+            options: const {
+              0: '默认',
+              60: '1 分钟',
+              300: '5 分钟',
+              600: '10 分钟',
+              -1: '常亮',
+            },
+            onPick: (v) {
+              _config.keepLight = v;
+              _commit();
+            },
+          );
+        }),
+        // 隐藏状态栏（原版第 3 项：SystemUiMode 移除顶部 overlay）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('隐藏状态栏'),
+          subtitle: const Text('阅读时隐藏系统状态栏'),
+          value: _config.hideStatusBar,
+          onChanged: (v) {
+            _config.hideStatusBar = v;
+            _commit();
+          },
+        ),
+        // 隐藏导航栏（原版第 4 项：SystemUiMode 移除底部 overlay）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('隐藏导航栏'),
+          subtitle: const Text('阅读时隐藏系统导航栏'),
+          value: _config.hideNavigationBar,
+          onChanged: (v) {
+            _config.hideNavigationBar = v;
+            _commit();
+          },
+        ),
+        // 进度条行为（原版第 8 项 progressBarBehavior：调章内页/调章节）
+        _moreRow('进度条行为',
+            _config.progressBarBehavior == 'page' ? '调章内页' : '调章节', () {
+          _showChoiceDialog<String>(
+            title: '进度条行为',
+            current: _config.progressBarBehavior,
+            options: const {
+              'page': '调章内页',
+              'chapter': '调章节',
+            },
+            onPick: (v) {
+              _config.progressBarBehavior = v;
+              _commit();
+            },
+          );
+        }),
+        // 自动换源（原版 autoChangeSource：章节加载失败自动切换书源）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('自动换源'),
+          subtitle: const Text('章节加载失败时自动切换书源'),
+          value: _config.autoChangeSource,
+          onChanged: (v) {
+            _config.autoChangeSource = v;
+            _commit();
+          },
+        ),
+        // 长按选择文本（原版 selectText：长按正文选区面板启停）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('长按选择文本'),
+          subtitle: const Text('长按正文段落弹出选择面板'),
+          value: _config.selectText,
+          onChanged: (v) {
+            _config.selectText = v;
+            _commit();
+          },
+        ),
+        // 显示亮度控件（原版 showBrightnessView：底栏亮度行显隐）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('显示亮度控件'),
+          subtitle: const Text('底栏显示亮度调节滑条'),
+          value: _config.showBrightnessView,
+          onChanged: (v) {
+            _config.showBrightnessView = v;
+            _commit();
+          },
+        ),
+        // 滚动翻页无动画（原版 noAnimScrollPage：程序化翻页去除动画）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('滚动翻页无动画'),
+          subtitle: const Text('点击/自动翻页直接切换不带动画'),
+          value: _config.noAnimScrollPage,
+          onChanged: (v) {
+            _config.noAnimScrollPage = v;
+            _commit();
+          },
+        ),
+        // 显示标题附加区（原版 showReadTitleAddition：顶栏书名后追加章名）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('显示标题附加区'),
+          subtitle: const Text('顶栏书名后显示当前章名'),
+          value: _config.showReadTitleAddition,
+          onChanged: (v) {
+            _config.showReadTitleAddition = v;
+            _commit();
+          },
+        ),
+        // 工具栏跟随页面（原版 readBarStyleFollowPage：顶/底栏背景与文字色
+        // 跟随当前阅读页配色，对标 ReadMenu immersiveMenu）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('工具栏跟随页面'),
+          subtitle: const Text('顶/底栏配色跟随阅读页背景'),
+          value: _config.readBarStyleFollowPage,
+          onChanged: (v) {
+            _config.readBarStyleFollowPage = v;
+            _commit();
+          },
+        ),
+        // TODO(留批次): 音量键翻页/鼠标滚轮翻页（平台按键事件，第②批）、
+        // 双页横向/中文排版/避头尾等排版引擎增强项 — Qoder
       ],
+    );
+  }
+
+  // ===== MoreConfig 第①批辅助构建方法 =====
+
+  String _orientationLabel(int v) {
+    const labels = ['跟随系统', '竖屏', '横屏', '自动(传感器)', '反向竖屏', '反向横屏'];
+    if (v < 0 || v >= labels.length) return '跟随系统';
+    return labels[v];
+  }
+
+  String _keepLightLabel(int v) {
+    switch (v) {
+      case 60:
+        return '1 分钟';
+      case 300:
+        return '5 分钟';
+      case 600:
+        return '10 分钟';
+      case -1:
+        return '常亮';
+      default:
+        return '默认';
+    }
+  }
+
+  /// 列表选择行（当前值 + 点击弹出单选对话框）
+  Widget _moreRow(String title, String current, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(title, style: Theme.of(context).textTheme.bodyMedium),
+            ),
+            Text(current,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    )),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 单选对话框（对标原版 ListPreference 弹层选择交互）
+  void _showChoiceDialog<T>({
+    required String title,
+    required T current,
+    required Map<T, String> options,
+    required ValueChanged<T> onPick,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(title),
+        children: [
+          for (final entry in options.entries)
+            RadioListTile<T>(
+              title: Text(entry.value),
+              value: entry.key,
+              groupValue: current,
+              onChanged: (v) {
+                Navigator.pop(dialogContext);
+                if (v != null) onPick(v);
+              },
+            ),
+        ],
+      ),
     );
   }
 

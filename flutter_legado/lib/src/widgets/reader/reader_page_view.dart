@@ -43,6 +43,14 @@ class ReaderPageView extends ConsumerStatefulWidget {
   final double marginLeft;
   final double marginRight;
 
+  // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
+
+  /// 长按选择文本开关（对标原版 selectText，关闭后长按不弹选区面板）
+  final bool selectText;
+
+  /// 滚动翻页无动画（对标原版 noAnimScrollPage：程序化翻页去除动画）
+  final bool noAnimScroll;
+
   const ReaderPageView({
     super.key,
     required this.paragraphSpacing,
@@ -53,6 +61,8 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.marginBottom = 24,
     this.marginLeft = 20,
     this.marginRight = 20,
+    this.selectText = true,
+    this.noAnimScroll = false,
   });
 
   @override
@@ -61,6 +71,10 @@ class ReaderPageView extends ConsumerStatefulWidget {
 
 class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   final PageController _pageController = PageController();
+
+  /// [UI-fix v2.0.3 | 2026-08-08] 滚动模式控制器（支撑滚动模式下的
+  //  程序化翻页：点击区域/自动翻页/无动画翻页均按屏滚动）— Qoder
+  final ScrollController _scrollController = ScrollController();
 
   // ===== 排版引擎分页状态 =====
 
@@ -88,6 +102,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   // [UI-fix v2.0.3 | 2026-08-06] 分页缓存键新增页面边距 — Qoder
   String _paginatedMargins = '';
 
+  // [UI-fix v2.0.3 | 2026-08-08] 分页缓存键新增系统栏 padding（隐藏
+  // 状态栏/导航栏后可用高度变化需重新分页）— Qoder
+  String _paginatedSysPadding = '';
+
+  // [UI-fix v2.0.3 | 2026-08-08] 分页缓存键纳入正文内容：编辑内容/反转
+  // 内容保存后同章重载（reloadChapterContent）时正文变化但章节索引不变，
+  // 不比对内容会命中旧分页缓存导致页面仍显示旧正文 — Qoder
+  String _paginatedContent = '';
+
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
 
@@ -103,24 +126,82 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 当前页索引
   int get currentPageIndex => _currentPageIndex;
 
+  /// 当前章分页总数（进度条「调章内页」行为消费）
+  int get pageCount => _paginatedPages.length;
+
+  // [UI-fix v2.0.3 | 2026-08-08] 程序化翻页统一入口：noAnimScrollPage
+  // 开启时 jumpToPage 无动画，否则保留 300ms 动画（对标原版
+  // ReadBook.callBack?.upPageAnim 后的 PageAnim.NONE 语义）— Qoder
+  void _navigateToPage(int index) {
+    _currentPageIndex = index;
+    if (_pageController.hasClients) {
+      if (widget.noAnimScroll) {
+        _pageController.jumpToPage(index);
+      } else {
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+    } else {
+      setState(() {});
+    }
+    // 同步全局页索引
+    ref.read(readerNotifierProvider.notifier).updatePosition(index);
+  }
+
+  /// 滚动模式：按一屏高度滚动（前进/后退，动画随 noAnimScrollPage）
+  void _scrollByViewport(bool forward) {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (!pos.hasViewportDimension) return;
+    final delta = forward ? pos.viewportDimension : -pos.viewportDimension;
+    final target = (pos.pixels + delta).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+    if (widget.noAnimScroll) {
+      _scrollController.jumpTo(target);
+    } else {
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  /// 跳转到章内指定页（进度条「调章内页」行为，对标原版
+  //  progressBarBehavior=page 时 seek_read_page 调页语义）— Qoder
+  void goToPage(int index) {
+    if (_paginatedPages.isEmpty) return;
+    final target = index.clamp(0, _paginatedPages.length - 1);
+    _navigateToPage(target);
+  }
+
   /// 前进（下一页或下一章）
   ///
   /// 跨章节无缝翻页：到达本章最后一页时自动进入下一章第一页。
   void nextPageOrChapter() {
     final notifier = ref.read(readerNotifierProvider.notifier);
-    if (_currentPageIndex < _paginatedPages.length - 1) {
-      _currentPageIndex++;
-      if (_pageController.hasClients) {
-        _pageController.animateToPage(
-          _currentPageIndex,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
+    // [UI-fix v2.0.3 | 2026-08-08] 滚动模式下程序化翻页按屏滚动 — Qoder
+    if (ref.read(readerNotifierProvider).pageTurnMode == PageTurnMode.scroll) {
+      if (_scrollController.hasClients) {
+        final pos = _scrollController.position;
+        if (pos.hasViewportDimension &&
+            pos.pixels >= pos.maxScrollExtent - 1) {
+          notifier.nextChapter();
+        } else {
+          _scrollByViewport(true);
+        }
       } else {
-        setState(() {});
+        notifier.nextChapter();
       }
-      // 同步全局页索引
-      notifier.updatePosition(_currentPageIndex);
+      return;
+    }
+    if (_currentPageIndex < _paginatedPages.length - 1) {
+      _navigateToPage(_currentPageIndex + 1);
     } else {
       // 本章最后一页 → 跨章节无缝进入下一章
       notifier.nextChapter();
@@ -132,19 +213,23 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 跨章节无缝翻页：到达本章第一页时自动进入上一章最后一页。
   void prevPageOrChapter() {
     final notifier = ref.read(readerNotifierProvider.notifier);
-    if (_currentPageIndex > 0) {
-      _currentPageIndex--;
-      if (_pageController.hasClients) {
-        _pageController.animateToPage(
-          _currentPageIndex,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
+    // [UI-fix v2.0.3 | 2026-08-08] 滚动模式下程序化翻页按屏滚动 — Qoder
+    if (ref.read(readerNotifierProvider).pageTurnMode == PageTurnMode.scroll) {
+      if (_scrollController.hasClients) {
+        final pos = _scrollController.position;
+        if (pos.hasViewportDimension &&
+            pos.pixels <= pos.minScrollExtent + 1) {
+          notifier.prevChapter();
+        } else {
+          _scrollByViewport(false);
+        }
       } else {
-        setState(() {});
+        notifier.prevChapter();
       }
-      // 同步全局页索引
-      notifier.updatePosition(_currentPageIndex);
+      return;
+    }
+    if (_currentPageIndex > 0) {
+      _navigateToPage(_currentPageIndex - 1);
     } else {
       // 本章第一页 → 跨章节无缝进入上一章
       notifier.prevChapter();
@@ -202,6 +287,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   @override
   void dispose() {
     _pageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -223,9 +309,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // [UI-fix v2.0.3 | 2026-08-06] 页面边距变化同样触发重新分页 — Qoder
     final margins =
         '${widget.marginTop}_${widget.marginBottom}_${widget.marginLeft}_${widget.marginRight}';
+    // [UI-fix v2.0.3 | 2026-08-08] 系统栏显隐改变可用高度时重新分页 — Qoder
+    final sysPadding = MediaQuery.of(context).padding;
+    final sysPaddingKey =
+        '${sysPadding.top}_${sysPadding.bottom}_${sysPadding.left}_${sysPadding.right}';
 
     final needRepaginate = content.isNotEmpty &&
-        (chapterIndex != _paginatedChapterIndex ||
+        (content != _paginatedContent ||
+            chapterIndex != _paginatedChapterIndex ||
             fontSize != _paginatedFontSize ||
             lineHeight != _paginatedLineHeight ||
             spacing != _paginatedParagraphSpacing ||
@@ -233,7 +324,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             indent != _paginatedIndent ||
             justify != _paginatedJustify ||
             fontFamily != _paginatedFontFamily ||
-            margins != _paginatedMargins);
+            margins != _paginatedMargins ||
+            sysPaddingKey != _paginatedSysPadding);
 
     if (!needRepaginate) return;
 
@@ -268,6 +360,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final pages = engine.paginateChapter(content, availableWidth, availableHeight);
 
     _paginatedPages = pages;
+    _paginatedContent = content;
     _paginatedChapterIndex = chapterIndex;
     _paginatedFontSize = fontSize;
     _paginatedLineHeight = lineHeight;
@@ -277,6 +370,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedJustify = justify;
     _paginatedFontFamily = fontFamily;
     _paginatedMargins = margins;
+    _paginatedSysPadding = sysPaddingKey;
     _currentPageIndex = 0;
 
     // 跨章节分页：注册本章页数到全局分页器
@@ -335,6 +429,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       top: !state.showControls,
       bottom: !state.showControls,
       child: SingleChildScrollView(
+        controller: _scrollController,
         // [UI-fix v2.0.3 | 2026-08-06] 滚动模式边距接页面边距配置 — Qoder
         padding: EdgeInsets.only(
           left: widget.marginLeft,
@@ -370,6 +465,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   letterSpacing: widget.letterSpacing,
                   fontFamily: _fontFamily,
                   justify: widget.textFullJustify,
+                  // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入长按选择 — Qoder
+                  selectText: widget.selectText,
                 )
             else if (state.chapterContent.isNotEmpty)
               ReaderParagraphs(
@@ -380,6 +477,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 textColor: textColor,
                 letterSpacing: widget.letterSpacing,
                 fontFamily: _fontFamily,
+                // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入滚动回退渲染 — Qoder
+                selectText: widget.selectText,
               )
             else if (!state.isLoading)
               Center(
@@ -626,6 +725,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       paragraphSpacing: widget.paragraphSpacing,
       backgroundColor: state.backgroundColor,
       textColor: state.textColor,
+      // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入分页页正文渲染 — Qoder
+      selectText: widget.selectText,
       // [UI-fix v2.0.3 | 2026-08-06] 分页页内容边距接配置 — Qoder
       contentPadding: EdgeInsets.only(
         left: widget.marginLeft,

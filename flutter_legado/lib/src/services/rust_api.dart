@@ -881,6 +881,23 @@ class RustApi implements BookApi {
         ),
       );
 
+  // [Service-fix v2.0.3 | 2026-08-08] 写入/覆盖单章缓存正文
+  // （契约 §2.43.1，对标原版 BookHelp.saveText 写回链路） — QoderCN
+  Future<bool> saveChapterContent({
+    required String bookUrl,
+    required int chapterIndex,
+    required String title,
+    required String content,
+  }) async =>
+      bridge.saveChapterContent(
+        bookUrl: bookUrl,
+        chapterIndex: chapterIndex,
+        title: title,
+        content: content,
+        // 空串由 Rust 侧从 DB 章节表回填 chapter_url
+        chapterUrl: '',
+      );
+
   /// 更新阅读进度
   Future<void> updateReadingProgress({
     required String bookUrl,

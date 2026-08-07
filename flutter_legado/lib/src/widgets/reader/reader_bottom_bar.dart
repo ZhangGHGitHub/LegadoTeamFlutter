@@ -27,12 +27,30 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
   /// 朗读按钮回调（启动/切换朗读，由 ReaderScreen 接线到 AudioNotifier）
   final VoidCallback onReadAloud;
 
+  // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
+
+  /// 亮度控件显隐（对标原版 showBrightnessView）
+  final bool showBrightnessView;
+
+  /// 进度条行为（'page'=调章内页 'chapter'=调章节，对标原版 progressBarBehavior）
+  final String progressBehavior;
+
+  /// 调章内页回调（progressBehavior='page' 时滑条拖动驱动 ReaderPageView 跳页）
+  final ValueChanged<int>? onSeekPage;
+
+  /// 工具栏样式跟随阅读页（对标原版 readBarStyleFollowPage/immersiveMenu）
+  final bool styleFollowPage;
+
   const ReaderBottomBar({
     super.key,
     required this.onOpenCatalog,
     required this.onOpenSettings,
     required this.onOpenAdvancedConfig,
     required this.onReadAloud,
+    this.showBrightnessView = true,
+    this.progressBehavior = 'chapter',
+    this.onSeekPage,
+    this.styleFollowPage = false,
   });
 
   @override
@@ -157,28 +175,58 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
         audio.bookUrl == book.bookUrl &&
         audio.state != PlayerState.idle;
 
-    return Positioned(
+    // [UI-fix v2.0.3 | 2026-08-08] 进度条行为=调章内页时的章内分页信息
+    // （页数来自跨章分页器，当前页=state.currentChapterPos）；未注册或
+    // 单页时回退调章节滑条，不阻断 — Qoder
+    final chapterPageCount =
+        notifier.paginator.pageCountForChapter(state.currentChapterIndex);
+    final usePageSeek = widget.progressBehavior == 'page' &&
+        chapterPageCount > 1 &&
+        widget.onSeekPage != null;
+    final currentPage = state.currentChapterPos.clamp(
+      0,
+      chapterPageCount > 0 ? chapterPageCount - 1 : 0,
+    );
+
+    // [UI-fix v2.0.3 | 2026-08-08] 工具栏跟随页面：背景/前景色跟随阅读页
+    // （对标原版 ReadMenu immersiveMenu）— Qoder
+    final followColor = widget.styleFollowPage ? state.backgroundColor : null;
+    final foreground = widget.styleFollowPage ? state.textColor : null;
+
+    final bar = Positioned(
       bottom: 0,
       left: 0,
       right: 0,
       child: Material(
-        color: Theme.of(context).colorScheme.surface,
+        color: followColor ?? Theme.of(context).colorScheme.surface,
         // iOS 风格：无阴影 + hairline 顶边
         elevation: 0,
         shape: Border(
           top: BorderSide(
-            color: Theme.of(context).dividerTheme.color ??
-                Theme.of(context).dividerColor,
+            color: widget.styleFollowPage
+                ? state.textColor.withValues(alpha: 0.2)
+                : (Theme.of(context).dividerTheme.color ??
+                    Theme.of(context).dividerColor),
             width: 0.0,
           ),
         ),
         child: SafeArea(
           top: false,
-          child: Column(
+          child: IconTheme(
+            data: IconThemeData(color: foreground),
+            child: TextButtonTheme(
+              // 跟随页面时上/下一章按钮前景色改用页面文字色
+              data: TextButtonThemeData(
+                style: foreground == null
+                    ? null
+                    : TextButton.styleFrom(foregroundColor: foreground),
+              ),
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // 亮度行（对标 ll_brightness：自动亮度 + 亮度滑条）
-              if (_brightnessSupported)
+              // [UI-fix v2.0.3 | 2026-08-08] showBrightnessView 关闭时隐藏 — Qoder
+              if (_brightnessSupported && widget.showBrightnessView)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Row(
@@ -211,6 +259,8 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                   ),
                 ),
               // 进度条（对标 tv_pre + seek_read_page + tv_next）
+              // [UI-fix v2.0.3 | 2026-08-08] progressBarBehavior=page 时滑条
+              // 调章内页（对标原版 UP_SEEK_BAR 后 seekReadPage 调页语义）— Qoder
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -222,21 +272,31 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                       child: Text(AppStrings.previousChapter),
                     ),
                     Expanded(
-                      child: Slider(
-                        value: state.chapters.isNotEmpty
-                            ? state.currentChapterIndex.toDouble()
-                            : 0,
-                        min: 0,
-                        max: state.chapters.length > 1
-                            ? (state.chapters.length - 1).toDouble()
-                            : 1,
-                        divisions: state.chapters.length > 1
-                            ? state.chapters.length - 1
-                            : null,
-                        onChanged: (value) {
-                          notifier.goToChapter(value.toInt());
-                        },
-                      ),
+                      child: usePageSeek
+                          ? Slider(
+                              value: currentPage.toDouble(),
+                              min: 0,
+                              max: (chapterPageCount - 1).toDouble(),
+                              divisions: chapterPageCount - 1,
+                              label: '${currentPage + 1}/$chapterPageCount',
+                              onChanged: (value) =>
+                                  widget.onSeekPage!(value.toInt()),
+                            )
+                          : Slider(
+                              value: state.chapters.isNotEmpty
+                                  ? state.currentChapterIndex.toDouble()
+                                  : 0,
+                              min: 0,
+                              max: state.chapters.length > 1
+                                  ? (state.chapters.length - 1).toDouble()
+                                  : 1,
+                              divisions: state.chapters.length > 1
+                                  ? state.chapters.length - 1
+                                  : null,
+                              onChanged: (value) {
+                                notifier.goToChapter(value.toInt());
+                              },
+                            ),
                     ),
                     TextButton(
                       onPressed: state.hasNextChapter
@@ -287,6 +347,7 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                     Icons.toc,
                     AppStrings.catalog,
                     widget.onOpenCatalog,
+                    foreground: foreground,
                   ),
                   _buildBottomAction(
                     context,
@@ -297,12 +358,14 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                     AppStrings.readAloud,
                     widget.onReadAloud,
                     highlighted: aloudActive,
+                    foreground: foreground,
                   ),
                   _buildBottomAction(
                     context,
                     Icons.palette_outlined,
                     AppStrings.interfaceSetting,
                     widget.onOpenSettings,
+                    foreground: foreground,
                   ),
                   _buildBottomAction(
                     context,
@@ -310,15 +373,19 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                     AppStrings.settings,
                     // 对标 ll_setting：打开更多/高级设置面板
                     widget.onOpenAdvancedConfig,
+                    foreground: foreground,
                   ),
                 ],
               ),
               const SizedBox(height: 8),
             ],
+              ),
+            ),
           ),
         ),
       ),
     );
+    return bar;
   }
 
   Widget _buildBottomAction(
@@ -327,8 +394,11 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
     String label,
     VoidCallback onTap, {
     bool highlighted = false,
+    // [UI-fix v2.0.3 | 2026-08-08] 工具栏跟随页面时的前景色 — Qoder
+    Color? foreground,
   }) {
     final highlightColor = Theme.of(context).colorScheme.primary;
+    final baseColor = foreground;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -339,13 +409,13 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
             Icon(
               icon,
               size: 22,
-              color: highlighted ? highlightColor : null,
+              color: highlighted ? highlightColor : baseColor,
             ),
             const SizedBox(height: 2),
             Text(
               label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: highlighted ? highlightColor : null,
+                    color: highlighted ? highlightColor : baseColor,
                   ),
             ),
           ],

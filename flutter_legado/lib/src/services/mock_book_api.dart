@@ -966,6 +966,20 @@ class MockBookApi implements BookApi {
     return '（Mock 模式：网络章节内容）\n\n这是从网络获取的章节正文。';
   }
 
+  // [Service-fix v2.0.3 | 2026-08-08] 写入/覆盖单章缓存正文（Mock：
+  // 回写 _contentCache，后续 getChapterContent* 读到新内容） — QoderCN
+  @override
+  Future<bool> saveChapterContent({
+    required String bookUrl,
+    required int chapterIndex,
+    required String title,
+    required String content,
+  }) async {
+    _contentCache.putIfAbsent(bookUrl, () => <int, String>{})[chapterIndex] =
+        content;
+    return true;
+  }
+
   @override
   Future<void> updateReadingProgress({
     required String bookUrl,

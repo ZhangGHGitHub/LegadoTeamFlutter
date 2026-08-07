@@ -19,8 +19,8 @@ import '../../routes.dart';
 /// - tv_pre / tv_next（上一章/下一章）→ 已实现
 /// - iv_play_pause（播放/暂停）/ iv_stop（停止）→ 已实现
 /// - seekTtsSpeechRate（语速）→ 已实现（Slider 0.5x~3.0x）
-/// - iv_play_prev / iv_play_next（上一段/下一段）→ UI 呈现，禁用
-///   （段落级定位依赖真实 TTS 播放进度，Rust TTS 管线并行中）
+/// - iv_play_prev / iv_play_next（上一段/下一段）→
+///   [UI-fix v2.0.3 | 2026-08-08] 已接入 AudioNotifier 段落化队列（留项4） — Qoder
 /// - [UI-fix v2.0.2 | 2026-08-06] ivTimer/SleepTimerDialog 定时停止 +
 ///   按章停 + 引擎选择 + 语速跟随系统开关 — Qoder
 /// - ll_catalog / ll_setting / ll_to_backstage（目录/朗读设置/转后台）→ 已实现
@@ -52,6 +52,12 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   /// 语速跟随系统开关持久化键（对标原版 cbTtsFollowSystem）
   static const _keyFollowSystem = 'read_aloud_follow_system_speed';
 
+  /// [UI-fix v2.0.3 | 2026-08-08] 留项5：语速跟随系统时使用的默认语速常量
+  /// （对标原版 AppConfig.speechRatePlay = if (ttsFlowSys) defaultSpeechRate(=5)）：
+  /// 原版并非实时读系统语速，而是回落到默认语速常量；Flutter 侧默认倍速 1.0x
+  /// 即原版 defaultSpeechRate=5（0-10 刻度中位）的等价映射 — Qoder
+  static const double _kFollowSystemDefaultSpeed = 1.0;
+
   // ===== 定时停止状态 =====
   Timer? _stopTimer;
   int _remainingSeconds = 0;
@@ -65,26 +71,46 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   // ===== 语速跟随系统 =====
   bool _followSystemSpeed = false;
 
+  /// 段落进度订阅的 Notifier 引用（dispose 时安全注销，避免 dispose 期读 ref）
+  AudioNotifier? _paragraphSubNotifier;
+
   @override
   void initState() {
     super.initState();
     unawaited(_loadFollowSystem());
+    // [UI-fix v2.0.3 | 2026-08-08] 段落进度订阅：AudioNotifier 混入
+    // ChangeNotifier 通知段落切换（freezed State 仅承载章节级状态） — Qoder
+    final notifier = ref.read(audioNotifierProvider.notifier);
+    _paragraphSubNotifier = notifier;
+    notifier.addListener(_onParagraphChanged);
   }
 
   @override
   void dispose() {
+    _paragraphSubNotifier?.removeListener(_onParagraphChanged);
+    _paragraphSubNotifier = null;
     _stopTimer?.cancel();
     _customMinutesCtrl.dispose();
     super.dispose();
+  }
+
+  void _onParagraphChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadFollowSystem() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
-      setState(
-        () => _followSystemSpeed = prefs.getBool(_keyFollowSystem) ?? false,
-      );
+      final follow = prefs.getBool(_keyFollowSystem) ?? false;
+      setState(() => _followSystemSpeed = follow);
+      // [UI-fix v2.0.3 | 2026-08-08] 留项5：跟随系统时应用默认语速常量
+      // （对标原版 speechRatePlay 语义，非实时读系统语速） — Qoder
+      if (follow) {
+        ref
+            .read(audioNotifierProvider.notifier)
+            .updateConfig(speed: _kFollowSystemDefaultSpeed);
+      }
     } catch (_) {
       // 读取失败保持默认关闭
     }
@@ -291,7 +317,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildHeader(context, audio, theme),
+              _buildHeader(context, audio, notifier, theme),
               _buildTransport(context, audio, notifier, theme),
               _buildSpeedRow(context, audio, notifier),
               _buildBottomActions(context, audio),
@@ -303,7 +329,12 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   }
 
   /// 第一行：朗读状态 + 章节信息 + 定时按钮 + 收起按钮
-  Widget _buildHeader(BuildContext context, AudioState audio, ThemeData theme) {
+  Widget _buildHeader(
+    BuildContext context,
+    AudioState audio,
+    AudioNotifier notifier,
+    ThemeData theme,
+  ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 4, 0),
       child: Row(
@@ -339,6 +370,15 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
             '${audio.currentIndex + 1}/${audio.totalChapters}',
             style: theme.textTheme.labelSmall,
           ),
+          // [UI-fix v2.0.3 | 2026-08-08] 留项4：段落进度指示（对标原版
+          // 朗读进度文本的段落维度） — Qoder
+          if (notifier.paragraphCount > 0)
+            Text(
+              '·段${notifier.currentParagraphIndex + 1}/${notifier.paragraphCount}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
           // [UI-fix v2.0.2 | 2026-08-06] 定时停止入口（对标原版 ivTimer） — Qoder
           IconButton(
             icon: Icon(
@@ -389,12 +429,15 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
             onPressed: audio.hasPrevious ? notifier.previous : null,
             child: const Text('上一章'),
           ),
-          // 段落级切换依赖真实 TTS 播放进度（Rust TTS 管线并行中，勿等），
-          // UI 保持禁用并标注 — Qoder
+          // [UI-fix v2.0.3 | 2026-08-08] 留项4：上一段接入段落化队列，
+          // 对标原版 ivPlayPrev → ReadAloud.prevParagraph — Qoder
           IconButton(
             icon: const Icon(Icons.chevron_left),
-            tooltip: '上一段（待 Rust TTS 管线交付真实播放进度）',
-            onPressed: null,
+            tooltip: '上一段',
+            onPressed: audio.state != PlayerState.idle &&
+                    notifier.paragraphCount > 0
+                ? notifier.prevParagraph
+                : null,
           ),
           SizedBox(
             width: 56,
@@ -421,10 +464,15 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
                     ),
             ),
           ),
+          // [UI-fix v2.0.3 | 2026-08-08] 留项4：下一段接入段落化队列，
+          // 对标原版 ivPlayNext → ReadAloud.nextParagraph — Qoder
           IconButton(
             icon: const Icon(Icons.chevron_right),
-            tooltip: '下一段（待 Rust TTS 管线交付真实播放进度）',
-            onPressed: null,
+            tooltip: '下一段',
+            onPressed: audio.state != PlayerState.idle &&
+                    notifier.paragraphCount > 0
+                ? notifier.nextParagraph
+                : null,
           ),
           TextButton(
             onPressed: audio.hasNext ? notifier.next : null,
@@ -457,8 +505,9 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           const Text('语速'),
           Expanded(
             // [UI-fix v2.0.2 | 2026-08-06] 语速跟随系统开关（对标原版
-            // cbTtsFollowSystem）：开启时禁用手动滑条；系统语速实时读取
-            // 通道暂缺，持久化开关 + 标注 — Qoder
+            // cbTtsFollowSystem）：开启时禁用手动滑条。
+            // [UI-fix v2.0.3 | 2026-08-08] 留项5 语义对齐原版 speechRatePlay：
+            // 跟随系统 = 使用默认语速常量（非实时读系统语速） — Qoder
             child: Slider(
               value: audio.config.speed,
               min: 0.5,
@@ -472,7 +521,11 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           ),
           SizedBox(
             width: 40,
-            child: Text('${audio.config.speed.toStringAsFixed(1)}x'),
+            child: Text(
+              _followSystemSpeed
+                  ? '默认'
+                  : '${audio.config.speed.toStringAsFixed(1)}x',
+            ),
           ),
           // 引擎选择（对标原版引擎下拉）
           IconButton(
@@ -486,50 +539,80 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   }
 
   /// 第四行：目录/引擎与语速跟随/朗读设置/转后台
+  ///
+  /// [UI-fix v2.0.3 | 2026-08-08] 窄屏（720px 级）四按钮横排溢出 59px
+  /// 黄条：每项套 Expanded 均分宽度 + 紧凑内边距，任意屏宽不溢出 — Qoder
   Widget _buildBottomActions(BuildContext context, AudioState audio) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          TextButton.icon(
-            icon: const Icon(Icons.toc, size: 18),
-            label: const Text('目录'),
-            onPressed: widget.onOpenCatalog,
+          Expanded(
+            child: TextButton.icon(
+              icon: const Icon(Icons.toc, size: 18),
+              label: const Text('目录'),
+              style: _compactButtonStyle,
+              onPressed: widget.onOpenCatalog,
+            ),
           ),
-          TextButton.icon(
-            icon: const Icon(Icons.tune, size: 18),
-            label: const Text('朗读设置'),
-            onPressed: () =>
-                Navigator.pushNamed(context, AppRoutes.readAloudConfig),
+          Expanded(
+            child: TextButton.icon(
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text('朗读设置'),
+              style: _compactButtonStyle,
+              onPressed: () =>
+                  Navigator.pushNamed(context, AppRoutes.readAloudConfig),
+            ),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 语速跟随系统开关（显式入口，
-          // 持久化到 SharedPreferences；系统语速实时同步待通道交付） — Qoder
-          // TODO(留批次): 语速跟随系统需系统 TTS 语速读取通道 — Qoder
-          TextButton.icon(
-            icon: Icon(
-              _followSystemSpeed
-                  ? Icons.speed
-                  : Icons.speed_outlined,
-              size: 18,
+          // 持久化到 SharedPreferences）。
+          // [UI-fix v2.0.3 | 2026-08-08] 留项5 闭合：勾选→应用默认语速常量
+          // （对标原版 ttsFlowSys 时 speechRatePlay=defaultSpeechRate，
+          // 无需系统语速读取通道） — Qoder
+          Expanded(
+            child: TextButton.icon(
+              icon: Icon(
+                _followSystemSpeed
+                    ? Icons.speed
+                    : Icons.speed_outlined,
+                size: 18,
+              ),
+              label: Text(_followSystemSpeed ? '语速:跟随系统' : '语速:手动'),
+              style: _compactButtonStyle,
+              onPressed: () async {
+                final prefs = await SharedPreferences.getInstance();
+                final next = !_followSystemSpeed;
+                await prefs.setBool(_keyFollowSystem, next);
+                if (!mounted) return;
+                setState(() => _followSystemSpeed = next);
+                if (next) {
+                  // 开启跟随：即刻回落到默认语速常量（原版语义）
+                  ref
+                      .read(audioNotifierProvider.notifier)
+                      .updateConfig(speed: _kFollowSystemDefaultSpeed);
+                }
+              },
             ),
-            label: Text(_followSystemSpeed ? '语速:跟随系统' : '语速:手动'),
-            onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              final next = !_followSystemSpeed;
-              await prefs.setBool(_keyFollowSystem, next);
-              if (mounted) setState(() => _followSystemSpeed = next);
-            },
           ),
-          TextButton.icon(
-            icon: const Icon(Icons.logout, size: 18),
-            label: const Text('转后台'),
-            onPressed: widget.onBackstage,
+          Expanded(
+            child: TextButton.icon(
+              icon: const Icon(Icons.logout, size: 18),
+              label: const Text('转后台'),
+              style: _compactButtonStyle,
+              onPressed: widget.onBackstage,
+            ),
           ),
         ],
       ),
     );
   }
+
+  /// 紧凑按钮样式：缩小内边距，窄屏下四按钮可均分不溢出
+  ButtonStyle get _compactButtonStyle => TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      );
 
   String _statusText(AudioState audio) {
     switch (audio.state) {
