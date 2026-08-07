@@ -132,13 +132,55 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   ///
   /// [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：传入当前选中分组，
   /// 分组过滤全链生效（Rust sourceSwitchSearch 的 sourceUrlsJson） — Qoder
-  Future<void> _search() => ref
-      .read(changeSourceNotifierProvider.notifier)
-      .search(
-        widget.effectiveBookName,
-        widget.effectiveAuthor,
-        group: _searchGroup,
-      );
+  /// [UI-fix v2.0.3 | 2026-08-08] 留项#12（Task #145）：Rust 侧已原生读取
+  /// searchGroup config 过滤；搜索完成后分组过滤零结果时弹
+  /// 「是否切换到全部分组」对话框（对标 ChangeChapterSourceDialog L90-97） — Qoder
+  Future<void> _search() async {
+    await ref
+        .read(changeSourceNotifierProvider.notifier)
+        .search(
+          widget.effectiveBookName,
+          widget.effectiveAuthor,
+          group: _searchGroup,
+        );
+    if (!mounted) return;
+    final state = ref.read(changeSourceNotifierProvider);
+    if (state.error == null &&
+        state.results.isEmpty &&
+        _searchGroup.isNotEmpty) {
+      _showEmptyGroupResultDialog();
+    }
+  }
+
+  /// [UI-fix v2.0.3 | 2026-08-08] 分组搜索结果为空对话框（Task #145，对标原版
+  /// ChangeChapterSourceDialog L90-97：「xx分组搜索结果为空,是否切换到全部分组」，
+  /// 确认后清空 searchGroup config 并重搜） — Qoder
+  Future<void> _showEmptyGroupResultDialog() async {
+    final group = _searchGroup;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('搜索结果为空'),
+        content: Text('$group分组搜索结果为空，是否切换到全部分组'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('切换'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _searchGroup = '');
+    try {
+      await ref.read(bookApiProvider).setConfig('searchGroup', '');
+    } catch (_) {}
+    if (mounted && !_stopped) await _search();
+  }
 
   /// 应用选中的书源
   Future<void> _applySource(SourceMatch result) async {

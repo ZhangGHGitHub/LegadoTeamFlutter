@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.3] - 2026-08-08
 
+### 变更（留项10：定时服务应用内调度器落地，对齐 Kotlin AutoTaskScheduler/AutoTaskJobService，署名 Qoder/QoderCN）
+- 新建 `services/auto_task_scheduler.dart`（署名 QoderCN）：应用内 Timer 调度器单例，经 autoTaskListRules + autoTaskNextDueAt 计算最近到期（基准时间对齐原版 baseTime：lastRunAt>0 取之、否则 now-5 分钟首次宽限，对标 FIRST_RUN_GRACE_MS）；Timer 到点筛 isEnabled 且到期任务（对标 dueRules）逐个 autoTaskExecuteWithId；串行隔离：_running 执行锁同刻仅一批、重复触发跳过（对标 executionLock）；单任务失败不影响整批（对标 runTask 逐任务 catch），批次级失败 60s 退避重试（对标 jobFinished(retry=true)+RETRY_BACKOFF_MS）；批次完成后按 nextAfterBatchAt 语义重排；并发 refresh 以代数作废旧结果
+- 触发点对齐原版：app.dart initState 装配 attach（对标 App.kt 启动 refresh）+ 应用自后台恢复 resumed 重算（WidgetsBindingObserver）；auto_task_screen 增删改/启停/立即运行/导入后经 _resyncScheduler 重算（对标 AutoTask.save/delete/updateEnabled 后 refresh）；设置页开关开启→refresh/关闭→cancelAll（对标 MyFragment 开关分支），持久化开关加载时恢复调度
+- 过时标注清理：移除设置页「后端未移植/后续版本支持」TODO，副标题改为诚实描述「前台应用内调度（应用退出后不执行）」；真后台（进程被杀后仍调度）需 WorkManager，属决策项不在本批范围，保留诚实标注
+
+## [2.0.3] - 2026-08-08
+
+### 变更（Task #147：payAction 章节购买 UI 接线，契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction，署名 Qoder/QoderCN）
+- 封装层：`BookApi.chapterPayAction` 接口新增（book_api.dart，返回 `({String kind, String value})` 元组），`rust_api.dart` 直调 bridge 绑定并解析 `{"kind","value"}` JSON（kind 缺失视为 none），`mock_book_api.dart` 同步返回 kind=none（署名 QoderCN）
+- reader_bottom_bar 源菜单「章节购买」接通：调用 chapterPayAction(bookUrl, 当前章 index) 后按 kind 三分支处理——url→内置浏览器打开购买页（AppRoutes.browser，标题「章节购买」，对标原版 WebViewActivity + chapter_pay 标题）；success→提示「购买成功」并经 ReaderNotifier.reloadChapterContent 重载当前章（Rust 侧已清章缓存，重载路径参考留项 1 编辑保存）；none→提示「当前章节无需购买或书源未配置购买动作」；异常→错误提示（对标原版 onError）；移除原 TODO(留批次) 占位标注
+- 本地书隐藏：源菜单章节购买项对本地书不显示（对标原版 isLocal 短路，且源操作行本身本地书已隐藏）
+
+## [2.0.3] - 2026-08-08
+
+### 修复（留项12 增强：换源 searchSource 分组过滤 Rust 原生实现 + 空结果对话框，零契约签名变更——Qoder）
+- Rust 侧：`source_switch::resolve_switch_sources` 追加按 config `searchGroup` 的原生分组过滤（内部读 config 仓储，零 FFI 签名变更，对齐原版 ChangeBookSourceViewModel L197-206 读 AppConfig.searchGroup 后走 getEnabledPartByGroup 行为）；包含判定对齐原版 SOURCE_GROUP_MEMBERSHIP_FILTER SQL 语义：分组字段按 `,`/`;`/`，`/`；` 规范化拆分、逐组名 trim 后与目标分组精确相等匹配（非子串），空分组=全部启用源；新增单测 4 项（多组包含匹配/纯语义判定/空分组全量/过滤后零结果），既有 Task #131 用例补 searchGroup 清空隔离
+- UI 侧：`change_source_screen._search` 搜索完成后分组过滤零结果时弹「xx分组搜索结果为空，是否切换到全部分组」对话框（对标原版 ChangeChapterSourceDialog L90-97），确认后清空 searchGroup config 并自动重搜
+- 契约：API_CONTRACT.md §2.4 searchSource 登记 Task #145 行为增强说明（零签名变更，无需 codegen/重建 .so）
+
 ### 修复（留项 1+2 闭合：阅读器编辑内容保存 + 反转内容闭环接线 saveChapterContent FFI，署名 Qoder/QoderCN）
 - 封装层：`BookApi.saveChapterContent` 接口新增（book_api.dart），`rust_api.dart` 直调 bridge 绑定（契约 §2.43.1，chapterUrl 传空串由 Rust 侧从 DB 章节表回填），`mock_book_api.dart` 同步回写 _contentCache 保证后续读回新内容（署名 QoderCN）
 - 编辑内容（留项 1）：`reader_top_bar._showEditContentDialog` 保存按钮接通 saveChapterContent，成功后经 `ReaderNotifier.reloadChapterContent` 重载当前章（对标原版 saveContent → BookHelp.saveText + loadContent），失败给错误提示；移除「FFI 未交付」诚实标注与 TODO(留批次)

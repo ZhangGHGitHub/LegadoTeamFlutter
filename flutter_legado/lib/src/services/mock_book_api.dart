@@ -1193,6 +1193,15 @@ class MockBookApi implements BookApi {
   Future<String> getCachedChapter(String bookUrl, int chapterIndex) async =>
       '（mock 缓存正文：$bookUrl 第 $chapterIndex 章）';
 
+  // ========== 章节购买 ==========
+
+  @override
+  Future<({String kind, String value})> chapterPayAction({
+    required String bookUrl,
+    required int chapterIndex,
+  }) async =>
+      (kind: 'none', value: '');
+
   // ========== WebBook 操作 ==========
 
   @override

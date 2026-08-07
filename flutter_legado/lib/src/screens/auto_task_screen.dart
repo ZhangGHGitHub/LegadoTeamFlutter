@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../providers/auto_task/auto_task_notifier.dart';
+import '../services/auto_task_scheduler.dart';
 
 /// 定时任务管理页面
 class AutoTaskScreen extends ConsumerStatefulWidget {
@@ -20,6 +21,10 @@ class AutoTaskScreen extends ConsumerStatefulWidget {
 }
 
 class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
+  // [UI-fix v2.0.3 | 2026-08-08] 任务增删改后通知应用内调度器重算
+  //（Task #146，对齐原版 AutoTask.save/delete/updateEnabled 后 refresh） — Qoder
+  void _resyncScheduler() => AutoTaskScheduler.instance.refresh();
+
   @override
   void initState() {
     super.initState();
@@ -178,7 +183,8 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       ),
       trailing: Switch(
         value: task.isEnabled,
-        onChanged: (value) => provider.toggleTask(task.id, value),
+        onChanged: (value) =>
+            provider.toggleTask(task.id, value).then((_) => _resyncScheduler()),
       ),
       onLongPress: () => _showTaskOptions(context, provider, task),
       isThreeLine: task.lastRunAt != null,
@@ -267,6 +273,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
 
     if (result != null && context.mounted) {
       await ref.read(autoTaskNotifierProvider.notifier).createTask(result);
+      _resyncScheduler();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已添加任务: ${result.name}')),
@@ -290,7 +297,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               subtitle: Text(task.name),
               onTap: () {
                 Navigator.pop(ctx);
-                provider.runNow(task.id);
+                provider.runNow(task.id).then((_) => _resyncScheduler());
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('正在运行: ${task.name}')),
                 );
@@ -399,6 +406,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       await ref.read(autoTaskNotifierProvider.notifier).deleteTask(task.id);
       if (context.mounted) {
         await ref.read(autoTaskNotifierProvider.notifier).createTask(result);
+        _resyncScheduler();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('已更新任务: ${result.name}')),
@@ -571,6 +579,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         // 单条失败不阻断整体导入
       }
     }
+    _resyncScheduler();
     if (context.mounted) _snack(context, '已导入 $count 个任务');
   }
 
@@ -646,7 +655,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
-              provider.deleteTask(task.id);
+              provider.deleteTask(task.id).then((_) => _resyncScheduler());
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('已删除任务: ${task.name}')),
               );

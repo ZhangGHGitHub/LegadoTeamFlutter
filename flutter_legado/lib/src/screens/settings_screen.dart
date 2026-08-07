@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_strings.dart';
 import '../routes.dart';
+import '../services/auto_task_scheduler.dart';
 import '../services/book_api.dart';
 import '../services/crash_log_service.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
@@ -38,7 +39,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _restoreLoading = false;
   // 服务开关（对标 pref_main SwitchPreference）
   // [UI-fix v2.0.2 | 2026-08-06] Web 服务开关接通 Rust server_start/server_stop，
-  // 状态持久化于 config 键 webService；定时服务无后端 FFI，仅持久化开关 + TODO — Qoder
+  // 状态持久化于 config 键 webService — Qoder
+  // [UI-fix v2.0.3 | 2026-08-08] 定时服务开关联动应用内调度器（Task #146） — Qoder
   bool _autoTaskService = false;
   bool _webService = false;
   bool _mcpService = false;
@@ -66,6 +68,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         final status = await api.getServerStatus();
         if (!mounted) return;
         setState(() => _webServiceStatus = status);
+      }
+      // [UI-fix v2.0.3 | 2026-08-08] 持久化开关加载恢复：开启时重算调度
+      //（对齐原版启动时按 PreferKey.autoTaskService 决定 refresh/cancelAll） — Qoder
+      if (_autoTaskService) {
+        AutoTaskScheduler.instance.refresh();
       }
     } catch (_) {
       // 首启无配置时静默失败，保持默认关
@@ -111,8 +118,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// 定时任务服务开关（对标原版 AutoTaskService SwitchPreference）
   ///
-  /// TODO(UI-fix v2.0.2): Rust 侧尚无定时调度服务启停 FFI（仅有 autoTask
-  /// 任务构建/执行类契约），当前仅持久化开关状态，待后端接入后接通。— Qoder
+  /// [UI-fix v2.0.3 | 2026-08-08] 应用内调度器联动（Task #146）：开启 →
+  /// 启动调度；关闭 → 取消 Timer（对齐原版 MyFragment 开关分支
+  /// refresh/cancelAll）。真后台调度需 WorkManager，不在应用内范围。 — Qoder
   Future<void> _toggleAutoTaskService(bool v) async {
     setState(() => _autoTaskService = v);
     try {
@@ -122,6 +130,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
     } catch (_) {
       // 持久化失败不阻断 UI 切换
+    }
+    if (v) {
+      AutoTaskScheduler.instance.refresh();
+    } else {
+      AutoTaskScheduler.instance.cancelAll();
     }
   }
 
@@ -163,11 +176,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 showDisclosure: true,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.autoTasks),
               ),
-              // [UI-fix v2.0.2 | 2026-08-06] 定时服务后端未移植：开关持久化 + TODO — Qoder
+              // [UI-fix v2.0.3 | 2026-08-08] 定时服务应用内调度器已接通（Task #146）；
+              // 真后台（进程被杀后仍调度）需 WorkManager，保留诚实标注 — Qoder
               SwitchListTile(
                 secondary: const Icon(Icons.autorenew),
                 title: const Text('定时任务服务'),
-                subtitle: const Text('定时任务后台服务（后续版本支持）'),
+                subtitle: const Text('前台应用内调度（应用退出后不执行）'),
                 value: _autoTaskService,
                 onChanged: _toggleAutoTaskService,
               ),

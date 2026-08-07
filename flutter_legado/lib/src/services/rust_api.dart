@@ -1191,6 +1191,29 @@ class RustApi implements BookApi {
   Future<String> getCachedChapter(String bookUrl, int chapterIndex) =>
       bridge.cacheGetChapter(bookUrl: bookUrl, chapterIndex: chapterIndex);
 
+  // ========== 章节购买 ==========
+
+  /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）
+  ///
+  /// 解析 Rust 返回的 `{"kind": ..., "value": ...}` JSON 为元组；
+  /// kind 缺失时视为 none，value 缺失时视为空串。
+  /// [UI-fix v2.0.3 | 2026-08-08] — QoderCN
+  @override
+  Future<({String kind, String value})> chapterPayAction({
+    required String bookUrl,
+    required int chapterIndex,
+  }) async {
+    final json = await bridge.chapterPayAction(
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+    );
+    final map = _decodeMap(json, 'chapterPayAction');
+    return (
+      kind: (map['kind'] ?? 'none').toString(),
+      value: (map['value'] ?? '').toString(),
+    );
+  }
+
   // ========== WebBook 操作 ==========
   // 以下解析类方法统一经平台桥接拦截（Task #114）：Rust 侧 webView 类 JS API
   // 无头运行时返回桥接载荷 JSON，恰为整体结果时由此执行并以真实结果回填 — QoderCN

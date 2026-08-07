@@ -10,6 +10,7 @@ import '../../models/book_source.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../../routes.dart';
 import '../../screens/source_edit_screen.dart';
 import '../../screens/source_login_screen.dart';
 import '../../services/system_brightness.dart';
@@ -119,7 +120,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
       items: [
         if (loginUrl.isNotEmpty)
           const PopupMenuItem(value: 'login', child: Text('登录源')),
-        const PopupMenuItem(value: 'chapterPay', child: Text('章节购买')),
+        // 本地书隐藏章节购买项（对标原版 isLocal 短路）— Qoder
+        if (book.origin != BookType.localTag)
+          const PopupMenuItem(value: 'chapterPay', child: Text('章节购买')),
         const PopupMenuItem(value: 'editSource', child: Text('编辑源')),
         const PopupMenuItem(value: 'disableSource', child: Text('禁用源')),
       ],
@@ -139,8 +142,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
           ),
         );
       case 'chapterPay':
-        // TODO(留批次): 章节购买需书源 payAction 后端支持，当前无 FFI — Qoder
-        _snack(context, '章节购买需书源 payAction 支持，暂未实现');
+        // [UI-fix v2.0.3 | 2026-08-08] 章节购买接线（契约 §2.43.2），
+        // 移除原 TODO 占位 — Qoder
+        await _chapterPay(context, book);
       case 'editSource':
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -161,6 +165,53 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
 
   void _snack(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  // [UI-fix v2.0.3 | 2026-08-08] 章节购买（契约 §2.43.2，对照 Kotlin
+  // ReadBookActivity.payAction 的 onSuccess 三分支）：
+  // url → 内置浏览器打开购买页；success → 提示购买成功并重载当前章
+  // （Rust 侧已清章节缓存）；none → 提示无需购买；异常 → 错误提示 — Qoder
+  Future<void> _chapterPay(BuildContext context, Book book) async {
+    final api = ref.read(bookApiProvider);
+    final chapterIndex =
+        ref.read(readerNotifierProvider).currentChapterIndex;
+    _snack(context, '正在执行章节购买…');
+    try {
+      final result = await api.chapterPayAction(
+        bookUrl: book.bookUrl,
+        chapterIndex: chapterIndex,
+      );
+      if (!context.mounted) return;
+      switch (result.kind) {
+        case 'url':
+          // 购买页地址：内置浏览器打开（对标原版 WebViewActivity，
+          // 标题为 chapter_pay 字符串）
+          Navigator.of(context).pushNamed(
+            AppRoutes.browser,
+            arguments: <String, String>{
+              'url': result.value,
+              'title': '章节购买',
+            },
+          );
+        case 'success':
+          // 购买成功：重载当前章正文（参考编辑保存后的重载路径）；
+          // 重载失败不影响购买结果提示
+          try {
+            await ref
+                .read(readerNotifierProvider.notifier)
+                .reloadChapterContent();
+          } catch (e) {
+            debugPrint('购买成功后重载章节失败: $e');
+          }
+          if (context.mounted) _snack(context, '购买成功');
+        default:
+          // kind=none：本地书短路/书源未配置 payAction/不支持
+          _snack(context, '当前章节无需购买或书源未配置购买动作');
+      }
+    } catch (e) {
+      // 对标原版 onError：执行购买操作出错
+      if (context.mounted) _snack(context, '章节购买失败: $e');
+    }
   }
 
   @override

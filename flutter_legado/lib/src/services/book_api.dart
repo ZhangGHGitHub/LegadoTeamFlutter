@@ -529,6 +529,18 @@ abstract class BookApi {
   /// 获取章节缓存正文（未缓存返回空串，供缓存导出拼装 TXT）
   Future<String> getCachedChapter(String bookUrl, int chapterIndex);
 
+  // ========== 章节购买 ==========
+
+  /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）
+  ///
+  /// 返回结果元组：kind='url'（购买页地址，UI 打开内置浏览器）/
+  /// 'success'（购买成功，Rust 侧已清当前章正文缓存）/'none'（无需或不支持）；
+  /// value 为 JS 返回原文。本地书由 Rust 侧短路 kind=none。
+  Future<({String kind, String value})> chapterPayAction({
+    required String bookUrl,
+    required int chapterIndex,
+  });
+
   // ========== WebBook 操作 ==========
 
   /// 搜索书籍（书源规则驱动）
