@@ -6,12 +6,13 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
 
-/// 搜索范围筛选面板
+/// 搜索范围筛选面板（书源多选）
 ///
-/// 对齐安卓端 SearchScopeDialog，支持两种筛选模式：
-/// - 分组模式：按书源分组多选（Checkbox）
-/// - 书源模式：按单个书源多选（Checkbox）
+/// [UI-fix v2.0.3 | 2026-08-07] 分组选择改由搜索页锚定 PopupMenu 承担
+/// （对齐原版溢出菜单分组列表：点选即生效、无需确定），本面板仅保留
+/// 书源多选 Tab；弹窗初始高度由 0.6 加大至 0.9，避免列表截断 — Qoder
 ///
+/// 对齐安卓端 SearchScopeDialog 的书源多选模式（Checkbox 多选 + 确定生效），
 /// 筛选状态由 [SearchNotifier]（Riverpod）管理。
 class SearchFilterPanel extends ConsumerStatefulWidget {
   const SearchFilterPanel({super.key});
@@ -19,49 +20,38 @@ class SearchFilterPanel extends ConsumerStatefulWidget {
   @override
   ConsumerState<SearchFilterPanel> createState() => _SearchFilterPanelState();
 
-  /// 便捷入口：弹出筛选面板
+  /// 便捷入口：弹出筛选面板（初始高度 0.9，避免书源列表截断）
   static Future<void> show(BuildContext context) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.6,
-        minChildSize: 0.3,
-        maxChildSize: 0.9,
+        initialChildSize: 0.9,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
         builder: (_, scrollController) => const SearchFilterPanel(),
       ),
     );
   }
 }
 
-class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
-    with SingleTickerProviderStateMixin {
+class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
   List<BookSource> _sources = [];
   bool _loading = true;
   String? _error;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
-  late final TabController _tabController;
-
-  /// 从书源列表中提取的所有分组名
-  List<String> _groups = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    // Tab 切换后刷新统计行与全选按钮状态
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) setState(() {});
-    });
     _loadSources();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -72,7 +62,6 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
       if (mounted) {
         setState(() {
           _sources = sources;
-          _groups = _extractGroups(sources);
           _loading = false;
         });
       }
@@ -86,23 +75,6 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
     }
   }
 
-  /// 从书源列表中提取所有不重复的分组名
-  List<String> _extractGroups(List<BookSource> sources) {
-    final groupSet = <String>{};
-    for (final source in sources) {
-      final group = source.bookSourceGroup;
-      if (group != null && group.isNotEmpty) {
-        // 书源分组可能包含多个组名（逗号分隔）
-        final parts = group.split(RegExp(r'[,，]')).map((g) => g.trim());
-        for (final g in parts) {
-          if (g.isNotEmpty) groupSet.add(g);
-        }
-      }
-    }
-    final list = groupSet.toList()..sort();
-    return list;
-  }
-
   /// 按搜索关键字过滤后的书源列表
   List<BookSource> get _filteredSources {
     if (_searchQuery.isEmpty) return _sources;
@@ -110,14 +82,6 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
         .where((s) =>
             s.bookSourceName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
             s.bookSourceUrl.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
-  }
-
-  /// 按搜索关键字过滤后的分组列表
-  List<String> get _filteredGroups {
-    if (_searchQuery.isEmpty) return _groups;
-    return _groups
-        .where((g) => g.toLowerCase().contains(_searchQuery.toLowerCase()))
         .toList();
   }
 
@@ -138,16 +102,19 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurfaceVariant
+                      .withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            // 标题行
+            // 标题行（[UI-fix v2.0.3 | 2026-08-07] 分组 Tab 移除后仅余书源多选）— Qoder
             Row(
               children: [
-                Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
+                Text('选择书源', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
                 if (state.hasFilter)
                   TextButton(
@@ -159,22 +126,6 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
                     },
                     child: const Text('清除全部'),
                   ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            // Tab 切换：分组 / 书源（位于浅色表面，覆盖全局白色 TabBar 主题）
-            // [UI-fix v2.0.3 | 2026-08-06] 全局 tabBarTheme 设了 TabAlignment.start（仅滚动 TabBar 合法），
-            // 此非滚动双 Tab 面板在 debug 下触发断言红屏；显式 fill 覆盖主题修复 — Qoder
-            TabBar(
-              controller: _tabController,
-              tabAlignment: TabAlignment.fill,
-              labelColor: Theme.of(context).colorScheme.primary,
-              unselectedLabelColor:
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-              indicatorColor: Theme.of(context).colorScheme.primary,
-              tabs: const [
-                Tab(text: '分组'),
-                Tab(text: '书源'),
               ],
             ),
             const SizedBox(height: 8),
@@ -196,7 +147,8 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 isDense: true,
               ),
               onChanged: (value) => setState(() => _searchQuery = value),
@@ -211,16 +163,10 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
                       ? _buildErrorView()
-                      : TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildGroupList(state),
-                            _buildSourceList(state),
-                          ],
-                        ),
+                      : _buildSourceList(state),
             ),
             const SizedBox(height: 8),
-            // 确定按钮
+            // 确定按钮（书源多选批量生效）
             SizedBox(
               width: double.infinity,
               child: FilledButton(
@@ -234,60 +180,39 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
     );
   }
 
-  /// 统计信息行
+  /// 统计信息行（书源多选）
   Widget _buildStatsRow(SearchState state) {
-    final isGroupTab = _tabController.index == 0;
-    String info;
-    if (isGroupTab) {
-      info = '已选择 ${state.selectedGroups.length} / ${_groups.length} 个分组';
-    } else {
-      info = '已选择 ${state.selectedSourceUrls.length} / ${_sources.length} 个书源';
-    }
-
     return Row(
       children: [
-        Text(info, style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          '已选择 ${state.selectedSourceUrls.length} / ${_sources.length} 个书源',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         const Spacer(),
         TextButton(
           onPressed: () {
             final notifier = ref.read(searchNotifierProvider.notifier);
-            if (isGroupTab) {
-              // 全选/取消全部分组
-              if (state.selectedGroups.length == _groups.length) {
-                notifier.clearGroupFilter();
-              } else {
-                for (final group in _groups) {
-                  if (!state.selectedGroups.contains(group)) {
-                    notifier.toggleGroup(group);
-                  }
-                }
-              }
+            // 全选/取消全部书源
+            if (state.selectedSourceUrls.length == _sources.length) {
+              notifier.clearSourceFilter();
             } else {
-              // 全选/取消全部书源
-              if (state.selectedSourceUrls.length == _sources.length) {
-                notifier.clearSourceFilter();
-              } else {
-                for (final source in _sources) {
-                  if (!state.selectedSourceUrls.contains(source.bookSourceUrl)) {
-                    notifier.toggleSource(source.bookSourceUrl);
-                  }
+              for (final source in _sources) {
+                if (!state.selectedSourceUrls
+                    .contains(source.bookSourceUrl)) {
+                  notifier.toggleSource(source.bookSourceUrl);
                 }
               }
             }
           },
-          child: Text(_isAllSelected(state, isGroupTab) ? '取消全选' : '全选'),
+          child: Text(_isAllSelected(state) ? '取消全选' : '全选'),
         ),
       ],
     );
   }
 
-  bool _isAllSelected(SearchState state, bool isGroupTab) {
-    if (isGroupTab) {
-      return _groups.isNotEmpty && state.selectedGroups.length == _groups.length;
-    } else {
-      return _sources.isNotEmpty &&
-          state.selectedSourceUrls.length == _sources.length;
-    }
+  bool _isAllSelected(SearchState state) {
+    return _sources.isNotEmpty &&
+        state.selectedSourceUrls.length == _sources.length;
   }
 
   /// 错误视图
@@ -310,76 +235,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel>
     );
   }
 
-  /// 分组列表（对齐安卓端 SearchScopeDialog 的分组模式）
-  Widget _buildGroupList(SearchState state) {
-    final filteredGroups = _filteredGroups;
-    if (filteredGroups.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.folder_off,
-                size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(height: 8),
-            Text(
-              _groups.isEmpty ? '暂无书源分组' : '未找到匹配的分组',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: filteredGroups.length,
-      itemBuilder: (context, index) {
-        final group = filteredGroups[index];
-        final isSelected = state.selectedGroups.contains(group);
-        // 计算该分组下的书源数量
-        final count = _countSourcesInGroup(group);
-        return CheckboxListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          value: isSelected,
-          onChanged: (value) {
-            ref.read(searchNotifierProvider.notifier).toggleGroup(group);
-          },
-          title: Text(
-            group,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            '$count 个书源',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-          secondary: Icon(
-            isSelected ? Icons.check_circle : Icons.circle_outlined,
-            color: isSelected
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        );
-      },
-    );
-  }
-
-  /// 计算某个分组下的书源数量
-  int _countSourcesInGroup(String group) {
-    int count = 0;
-    for (final source in _sources) {
-      final sourceGroup = source.bookSourceGroup;
-      if (sourceGroup != null && sourceGroup.isNotEmpty) {
-        final parts = sourceGroup.split(RegExp(r'[,，]')).map((g) => g.trim());
-        if (parts.contains(group)) count++;
-      }
-    }
-    return count;
-  }
-
-  /// 书源列表（对齐安卓端 SearchScopeDialog 的书源模式）
+  /// 书源列表（对齐安卓端 SearchScopeDialog 的书源多选模式）
   Widget _buildSourceList(SearchState state) {
     final filteredSources = _filteredSources;
     if (filteredSources.isEmpty) {

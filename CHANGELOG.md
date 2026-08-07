@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-08-07
+
+### 变更（主搜索页分组选择改原版锚定菜单方式：点选即生效自动重搜，解决底部弹窗高度小列表截断——Qoder）
+- 分组选择改锚定 PopupMenu：三点菜单「分组或书源」不再直接打开底部弹窗分组 Tab，改为 `showMenu` 弹出锚定三点按钮下方的分组菜单（对齐原版 SearchActivity.onMenuOpened 溢出菜单形态）——「全部书源」+ 各分组名，当前选中分组带勾选标记；点未选分组=单选替换（对标原版 `update(title)`）、点已选分组=取消（对标原版 `remove(title)`）、点「全部书源」=清空；点选即生效且已有关键词时自动重搜（对标原版 scope 变更观察者重搜行为），无需确定按钮；菜单高度自适应、分组多时自动滚动不截断
+- 书源多选保留：锚定菜单底部「书源多选…」入口打开 SearchFilterPanel；面板分组 Tab 移除（已被锚定菜单替代），仅保留书源多选（全选/搜索过滤/确定批量生效）；弹窗初始高度由 0.6 加大至 0.9（max 0.95），解决书源列表截断
+- 实机 E2E 验证（emulator-5556）：锚定菜单弹出「全部书源」带勾选 → 点「快速书源」立即自动重搜 170→75 条且显示「1 分组」chip，重开菜单「快速书源」带勾选；菜单可滚动不截断；「书源多选」面板加高后列表完整不截断
+
 ## [2.0.3] - 2026-08-06
 
 ### 修复（「按分组搜索用不了」：换源页分组过滤生效 + 主搜索页选分组自动重搜，留项#12 闭合，跨 Rust+UI 全链，契约先行——Qoder/QoderCN）

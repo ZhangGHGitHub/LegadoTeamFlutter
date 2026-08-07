@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
+import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
 import '../routes.dart';
 import '../widgets/book_cover.dart';
@@ -27,6 +28,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _focusNode = FocusNode();
   // 精准搜索开关（对标原版 menu_precision_search，展示层精确书名过滤）
   bool _precision = false;
+  // [UI-fix v2.0.3 | 2026-08-07] 锚定菜单定位键：分组 PopupMenu 锚定三点按钮下方 — Qoder
+  final _menuButtonKey = GlobalKey();
 
   @override
   void dispose() {
@@ -112,6 +115,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         // 安卓原版：三点菜单（book_search.xml：精准搜索/显示搜索记录/书源管理/分组或书源/日志）
         PopupMenuButton<String>(
+          key: _menuButtonKey,
           onSelected: (value) {
             switch (value) {
               case 'precision':
@@ -124,10 +128,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 Navigator.pushNamed(context, '/sources');
                 break;
               case 'scope':
-                // [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：选完分组/书源
-                // 关闭面板后自动重搜（筛选变更且有关键词时），对齐原版选 scope
-                // 后自动重搜行为，避免「选了没用」 — Qoder
-                _showScopePanelAndAutoSearch();
+                // [UI-fix v2.0.3 | 2026-08-07] 分组选择改原版锚定菜单：
+                // 弹出锚定三点按钮下方的分组 PopupMenu（带勾选、点选即生效
+                // 自动重搜），替代原底部弹窗分组 Tab；书源多选经菜单内
+                // 「书源多选…」入口保留 — Qoder
+                _showGroupScopeMenu();
                 break;
               case 'log':
                 // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
@@ -355,6 +360,114 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('「$feature」后续版本支持')),
     );
+  }
+
+  /// [UI-fix v2.0.3 | 2026-08-07] 原版锚定菜单方式的分组选择：
+  /// 对齐 SearchActivity.onMenuOpened——「全部书源」+ 各分组（当前选中带勾选），
+  /// 锚定三点按钮下方弹出；点未选分组=单选替换（原版 update(title)）、
+  /// 点已选分组=取消（原版 remove(title)）、点「全部书源」=清空；
+  /// 点选即生效且有关键词时自动重搜（原版 stateLiveData 观察者行为），
+  /// 无需确定按钮；菜单高度自适应、分组多时自动滚动不截断。
+  /// 「书源多选…」入口保留 SearchFilterPanel 书源多选弹窗 — Qoder
+  Future<void> _showGroupScopeMenu() async {
+    List<BookSource> sources;
+    try {
+      sources = await ref.read(bookApiProvider).getEnabledBookSources();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('书源加载失败: $e')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    final groups = _extractGroups(sources);
+    final state = ref.read(searchNotifierProvider);
+
+    // 锚定位置：三点菜单按钮正下方（对标原版溢出菜单锚定顶栏按钮）
+    final buttonBox =
+        _menuButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (buttonBox == null || overlayBox == null || !buttonBox.attached) return;
+    final buttonRect = Rect.fromPoints(
+      buttonBox.localToGlobal(Offset.zero, ancestor: overlayBox),
+      buttonBox.localToGlobal(buttonBox.size.bottomRight(Offset.zero),
+          ancestor: overlayBox),
+    );
+    final position =
+        RelativeRect.fromRect(buttonRect, Offset.zero & overlayBox.size);
+
+    final selectedSourceCount = state.selectedSourceUrls.length;
+    final selected = await showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        CheckedPopupMenuItem<String>(
+          value: '__all__',
+          checked:
+              state.selectedGroups.isEmpty && selectedSourceCount == 0,
+          child: const Text('全部书源'),
+        ),
+        for (final group in groups)
+          CheckedPopupMenuItem<String>(
+            value: 'group:$group',
+            checked: state.selectedGroups.contains(group),
+            child: Text(group),
+          ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: '__sources__',
+          child: Text(selectedSourceCount > 0
+              ? '书源多选（已选 $selectedSourceCount）'
+              : '书源多选…'),
+        ),
+      ],
+    );
+    if (!mounted || selected == null) return;
+
+    final notifier = ref.read(searchNotifierProvider.notifier);
+    if (selected == '__sources__') {
+      // 书源多选保留底部弹窗（已加高），关闭后筛选变更且有关键词自动重搜
+      await _showScopePanelAndAutoSearch();
+      return;
+    }
+    if (selected == '__all__') {
+      notifier.clearAllFilter();
+    } else if (selected.startsWith('group:')) {
+      final group = selected.substring('group:'.length);
+      if (state.selectedGroups.contains(group)) {
+        // 点已勾选分组 = 取消该分组（对标原版 menu_group_1 → remove）
+        notifier.toggleGroup(group);
+      } else {
+        // 点未勾选分组 = 单选替换（对标原版 menu_group_2 → update(title)）
+        notifier.clearGroupFilter();
+        notifier.toggleGroup(group);
+      }
+    } else {
+      return;
+    }
+    // 点选即生效：有关键词时自动重搜（对标原版 scope 变更观察者重搜）
+    final after = ref.read(searchNotifierProvider);
+    if (after.keyword.isNotEmpty) {
+      notifier.search(after.keyword);
+    }
+  }
+
+  /// 从书源列表中提取所有不重复的分组名（与 SearchFilterPanel 同逻辑）
+  List<String> _extractGroups(List<BookSource> sources) {
+    final groupSet = <String>{};
+    for (final source in sources) {
+      final group = source.bookSourceGroup;
+      if (group != null && group.isNotEmpty) {
+        // 书源分组可能包含多个组名（逗号分隔）
+        final parts = group.split(RegExp(r'[,，]')).map((g) => g.trim());
+        for (final g in parts) {
+          if (g.isNotEmpty) groupSet.add(g);
+        }
+      }
+    }
+    return groupSet.toList()..sort();
   }
 
   /// 弹出搜索范围面板，关闭后若筛选变更且已有搜索关键词则自动重搜
