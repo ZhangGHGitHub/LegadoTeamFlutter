@@ -1002,6 +1002,37 @@ P2-7 (设置项) ───────┘
 - 结构治理：删除 `rss_config_screen.dart`（与 `rss_source_manage_screen.dart` 重复，前者 5 存根），删除前核销替代覆盖
 - 逐条明细见综合报告附录；完成一项即在 [REFACTORING_REMAINING_PLAN.md §5](REFACTORING_REMAINING_PLAN.md) 销记一项
 
+### 批次 4：阅读器页面对齐 Android 原版（2026-08-08）——✅ 已完成
+
+> 按功能一致性基准，将阅读器相关页面的结构与交互对齐 Android 原版（`legado/app` ReadBookActivity/ReadStyleDialog/MoreConfigDialog/TocActivity/BookInfoActivity），Windows 桌面端实测复核通过（1117 用例全绿 + 运行时复测）。
+
+| 模块 | 屏幕/组件 | 任务概要 |
+|------|-----------|----------|
+| A | 阅读页顶栏/底栏 | 顶栏结构（书名/章节 URL 行/换源入口）与底栏四按钮（目录/朗读/界面/设置）对齐原版；目录入口切换为独立目录页 |
+| B | 界面面板 ReadStyleDialog | 阅读设置面板项与布局对齐原版（字重/字体/缩进/简繁/边距/信息 + 滑条组 + 翻页模式 + 背景色 + 共用布局） |
+| C | 设置面板 MoreConfig 第②批 | MoreConfigDialog 第②批设置项对齐（含"删除重复标题"等预留项 Toast 提示） |
+| D | 独立目录页 TocScreen | 新增独立目录页（目录/书签/标注三 Tab、当前章高亮、底部进度与跳转），替换原底栏抽屉目录 |
+| E | BookInfo deleteAlert | 书籍详情删除提醒对齐原版（本地书附带"同时删除源文件"选项） |
+
+**评审修复批次**（三维度评审 + 实测问题收口）：字距旧值迁移（letterSpacing 旧比例值归一）、分页底部 RenderFlex 溢出（reader_page_view/paragraph_layout_engine 改实测标题块与页脚高度并区分首页容量）、顶栏章节 URL 行交互（点击按偏好开内置/系统浏览器、长按三选项菜单）、TocScreen TabBar `tabAlignment` 断言修复、"删除重复标题"Toast 与 shareLayout 副标题文案。
+
+**后置项**：已登记 [REFACTORING_REMAINING_PLAN.md §5.11/§5.12](REFACTORING_REMAINING_PLAN.md)（删除重复标题正文效果、shareLayout 日夜双配置接入等）。
+
+### 批次 5：主题设置页与其他设置页对齐 Android 原版（2026-08-08）——✅ 已完成
+
+> 按功能一致性基准，将主题设置页与其他设置页的设置项结构与行为对齐 Android 原版（`legado/app` ThemeConfigFragment/OtherConfigFragment），Windows 桌面端实测复核通过（`flutter analyze` 0 error + 1117 用例全绿 + 运行时实测与评审修复后抽查）。
+
+| 模块 | 屏幕/组件 | 任务概要 |
+|------|-----------|----------|
+| F | 主题设置页 theme_config_screen | 原版 24 项三分类落点：可实现项对齐实现（主题模式、日/夜自定义颜色、恢复默认等）、Android 专属项以"仅 Android 生效"标注保留、其余后置登记 §5.13 |
+| G | 其他设置页 other_settings_screen | 原版 33 项三分类落点：可实现项对齐实现（主界面/阅读/网络/Web 服务/清理等分组）、Android 专属项标注保留、其余后置登记 §5.13 |
+
+**行为接通项**：8 色换肤（日/夜 主色调/强调色/背景色/底部操作栏，`applyColors` 批量写入后一次性生效）、动态 Tab（显示发现/显示订阅开关联动主界面底栏）、webPort（经 `BookApi.setServerPort` 写入引擎配置）、日志开关（经 CrashLogService 接通记录行为）、欢迎页样式（welcomeShowText/welcomeShowTime）。
+
+**评审修复批次**（三维度评审 + 实测问题收口）：两设置页异步对话框后补 `mounted` 防护共 15 处；`app_theme.dart` 修复"仅设背景色时 AppBar 前景对比度不足"（appBarForeground 一律按实际 AppBar 背景亮度动态取色，与背景明暗校验同判定）；自定义颜色改 `applyColors` 批量写入避免逐项重建主题。
+
+**后置项**：已登记 [REFACTORING_REMAINING_PLAN.md §5.13](REFACTORING_REMAINING_PLAN.md) 共 10 项（customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/jsSourceApiToken/clearWebViewData/shrinkDatabase/coverRule，均缺 WebView/Cronet/Room/JS 引擎等跨轨支撑）。
+
 ### 跨轨依赖汇总（本批次）
 
 | 依赖项 | 提供方 | 阻塞的 UI 任务 | 状态 |
@@ -1015,5 +1046,5 @@ P2-7 (设置项) ───────┘
 ---
 
 **文档生成时间**: 2026-08-06  
-**文档版本**: v2.2（批次0-3 全部完成销记，Task #119）  
+**文档版本**: v2.4（新增批次 5 设置页对齐销记，2026-08-08）  
 **下次更新**: 留项（审计报告 §7）闭合后销记更新

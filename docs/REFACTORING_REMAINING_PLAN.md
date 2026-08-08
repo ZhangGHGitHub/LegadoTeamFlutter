@@ -985,14 +985,64 @@ flutter test                  # 全量测试通过
 
 **R 系列闭合后 Rust 轨剩余项**：仅剩 schema v102 重建表（保持触发型延后，见留项 7 / §4.2.1）+ normalizeJsResult 引擎差异观察项；UI 侧留项（缓存管理页、MoreConfig、定时调度器等）不受本批影响、按原波次排期。
 
+### §5.11 BookInfo/TocScreen 占位项与 FFI 接口建议登记（2026-08-08，模块 D+E 交付时新增）
+
+> 独立目录页 TocScreen（对齐原版 TocActivity）与书籍详情页菜单收尾交付时，因 FFI 缺失或本批不实现而登记的占位项与接口建议。
+
+| # | 项 | 代码位置 | 现状与建议 |
+|---|-----|----------|------------|
+| 1 | 上传至远程 | `flutter_legado/lib/src/screens/book_info_screen.dart` `_todo('upload')` | 菜单项已显示（仅本地书），点击 Toast 占位；建议新增 FFI `upload_book_remote`（对标原版 RemoteBookWebDav.upload） |
+| 2 | 创建书籍更新任务 | 同上 `_todo('updateTask')` | 菜单项已显示（在架+书源+非本地+允许更新）；建议新增 FFI `create_update_task`（对标原版 AppWorkManager 更新任务） |
+| 3 | 设置源变量 | 同上 `_todo('sourceVariable')` | 菜单项已显示（书源存在）；建议新增 FFI `set_source_variable`（对标原版 source.setVariable） |
+| 4 | 设置书籍变量 | 同上 `_todo('bookVariable')` | 菜单项已显示（书源存在）；建议新增 FFI `set_book_variable`（对标原版 book.setVariable） |
+| 5 | 导出书签 / 导出 Markdown | `flutter_legado/lib/src/screens/toc_screen.dart` `_handleMenu('exportBookmark'/'exportMd')` | 菜单项已显示（书签 Tab），点击 Toast「后续版本支持」；建议新增 FFI `export_bookmarks`（对标原版 BookmarkFragment 导出 json/md 双格式） |
+| 6 | 章节缓存状态云图标 | `toc_screen.dart` 目录 Tab 章节行 | 原版 ChapterListAdapter 按 cacheFileNames 显示已缓存图标；核实 Rust `BookChapter` serde 字段无缓存状态、亦无章节缓存清单 FFI，本批跳过；建议新增 FFI（如 `cache_chapter_names`）后接入 |
+| 7 | 删除重复标题正文处理链路 | `flutter_legado/lib/src/widgets/reader/reader_top_bar.dart` `_toggleSameTitleRemoved` | 菜单勾选仅 SharedPreferences 本地持久化（键 `sameTitleRemoved_<bookUrl>`），正文不发生重复标题移除，切换时已 Toast「设置已保存，正文效果待后续版本支持」；建议新增 FFI `toggle_same_title_removed(bookUrl, chapterIndex)`（对齐原版 ContentProcessor/reverseRemoveSameTitle）后接通正文重载 |
+
+### §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（2026-08-08，三维度评审修复时新增）
+
+> 以下开关/参数已按原版键名持久化（`reader_config_panel.dart` ReaderAdvancedConfig）且 UI 已诚实标注，但尚无行为消费方；后续接线时按建议位置接入，接通一项销记一项。
+
+| # | 键（=原版键） | 语义 | 后续消费位置建议 |
+|---|----------------|------|------------------|
+| 1 | `doubleHorizontalPage` | 双页模式（0-3 档） | `reader_page_view.dart` 分页渲染：按窗口宽高比/档位分列双栏排版 |
+| 2 | `useZhLayout` | 自定义中文分行 | 排版引擎已内置 ZhLayout，待按开关动态启用/禁用分行规则（Rust legado-parser 或 Dart 测量层） |
+| 3 | `hangingPunctuation` | 段首标点悬挂 | 同上，排版引擎悬挂规则按开关切换 |
+| 4 | `pageTouchSlop` | 滑动翻页阈值 px | `reader_page_view.dart` 手势识别（GestureDetector 拖动阈值） |
+| 5 | `pageTouchClick` | 边缘点击阈值 px | `reader_page_view.dart` 点击区域划分（左右边缘排除带） |
+| 6 | `readBodyToLh` | 正文延伸到刘海 | 仅 Android：`reader_screen.dart` SystemUiMode/SafeArea 接线 |
+| 7 | `paddingDisplayCutouts` | 填充刘海区域 | 仅 Android：同上，AndroidManifest layoutInDisplayCutoutMode 配合 |
+| 8 | `volumeKeyPage` / `volumeKeyPageOnPlay` | 音量键翻页/朗读时音量键翻页 | 仅 Android：平台通道拦截 KeyEvent 后接 `reader_page_view` 翻页 API |
+| 9 | `shareLayout` | 日/夜配置共用布局 | 待日夜双配置体系接入（ReadBookConfig 双套布局参数）后在 `reader_settings_sheet.dart` 生效；UI 副标题已标注「暂不生效」 |
+
+### §5.13 主题设置页/其他设置页「缺跨轨支撑后置」集中清单（2026-08-08，任务 #8 原版对齐时新增）
+
+> 以下原版（pref_config_theme.xml / pref_config_other.xml / pref_config_cover.xml）设置项依赖 WebView/Cronet/Room 数据库/JS 引擎等跨轨能力，经核查 `flutter_legado/lib/src/bridge` 与 `book_api.dart` 均无对应 FFI 支撑，按三分类原则 UI 不显示空壳项，登记待后续接线；接通一项销记一项。
+
+| # | 项/原版键 | 原版代码位置 | 现状与建议 |
+|---|-----------|--------------|------------|
+| 1 | 自定义 hosts（`customHosts`） | OtherConfigFragment → HandleFileContract 导入 JSON | 需 Rust 网络层 DNS 解析钩子；建议新增 FFI `set_custom_hosts(json)` 后在其他设置页补 UI |
+| 2 | 校验书源配置（`checkSource`） | OtherConfigFragment → CheckSourceConfig 对话框 | 依赖书源校验服务（CheckSourceService）；待 Rust 侧提供批量校验 FFI 后一并接入 |
+| 3 | 直链上传规则（`directLinkUploadRule`） | OtherConfigFragment → DirectLinkUpload.getConfig | 依赖 JS 规则执行（上传接口规则解析）；建议随分享/上传功能批次一并设计 FFI |
+| 4 | Cronet 开关（`Cronet`） | pref_config_other.xml（AppConst.isPlayChannel 才显示） | Android Play 渠道专属网络栈，桌面端 Rust reqwest 无对应物；长期不适用，仅登记不实现 |
+| 5 | 视频播放设置（`videoSetting`） | OtherConfigFragment → VideoSettingDialog | 依赖视频播放器模块（Flutter 端尚未重构视频播放）；待播放器模块落地后补 |
+| 6 | MCP 服务端口（`mcpPort`） | OtherConfigFragment → MCPServerService | 依赖原版 MCP 服务进程；Rust 侧无对应服务，待跨轨评估后再定 |
+| 7 | JS Source API Token（`jsSourceApiToken`） | pref_config_other.xml → SourceApi 鉴权 | 依赖 JS 引擎 SourceApi 服务；待 legado-parser JS 扩展能力对齐后补 |
+| 8 | 清除 WebView 数据（`clearWebViewData`） | OtherConfigFragment.clearWebViewData | 桌面端无 WebView 组件（未引入 webview_flutter/webf）；引入 WebView 方案后一并接入 |
+| 9 | 压缩数据库（`shrinkDatabase`） | OtherConfigFragment → AppDatabase VACUUM | 数据库在 Rust 侧（SQLite）；建议新增 FFI `shrink_database()` 执行 VACUUM 后在缓存管理/其他设置补入口 |
+| 10 | 封面规则（`coverRule`，封面设置子项） | CoverConfigDialog → BookCover.CoverRule（JS 规则搜封面） | 依赖 JS 规则执行搜索封面；主题设置页封面设置对话框已实现 4 项开关，此子项待 FFI 后补 |
+
 ---
 
-**文档版本**: 1.11  
-**最后更新**: 2026-08-07  
+**文档版本**: 1.14  
+**最后更新**: 2026-08-08  
 **维护人**: Qoder  
 **最后修改**: Qoder
 
 **版本记录**：
+- v1.14（2026-08-08）任务 #8 主题/其他设置页原版对齐登记：新增 §5.13「缺跨轨支撑后置」集中清单（10 项：customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/jsSourceApiToken/clearWebViewData/shrinkDatabase/coverRule）；主题页 24 项、其他页 33 项已按三分类落地（实现/仅 Android 标注/登记后置）
+- v1.13（2026-08-08）三维度评审修复登记：§5.11 追加删除重复标题正文处理链路（建议 FFI `toggle_same_title_removed`）；新增 §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（9 项含后续消费位置建议）
+- v1.12（2026-08-08）模块 D+E 交付登记：新增 §5.11 BookInfo 4 个占位项 + 导出书签/Markdown FFI 建议（set_source_variable/set_book_variable/upload_book_remote/create_update_task/export_bookmarks）+ 章节缓存云图标后置登记
 - v1.11（2026-08-07）R 系列全批闭合销记（Task #140）：新增 §5.10 R1-R10+R12 销记明细；QUIC 客户端六件套由「待封装」改为「已移除（用户决策，纯重构边界）」；§5.9 留项 3 补记 R7/R8 Rust 大头已闭合；schema v102 保持触发型延后
 - v1.10（2026-08-07）留项#12 闭合销记（Task #131）：§5.9 留项 1 searchSource 分组过滤全链修复（Rust sourceSwitchSearch 加 sourceUrlsJson 参数 + 换源页按分组过滤 + 主搜索页选分组自动重搜）
 - v1.9（2026-08-06）评审修复口径修正（Task #122）：日志入口销记修正为 7/7（source_edit_screen 补接，补提交）、缺口④补记 UI 接线提交、新增 §5.9 TODO(留批次) 正式登记（searchSource 分组过滤等 3 项）
