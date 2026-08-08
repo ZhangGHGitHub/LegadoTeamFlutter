@@ -45,6 +45,23 @@ pub fn get_chapter_cache(book_url: &str, chapter_index: i32) -> LegadoResult<Str
     })
 }
 
+/// 列出某本书已缓存章节的 chapter_url 集合（Task #22，目录页云图标缓存态）
+///
+/// 复用 [`CacheBookRepository::get_by_book`]（按 book_url 复合键查询，不串本），
+/// 仅提取 chapter_url 供 Flutter 目录页据此为每章标记「已缓存/未缓存」渲染
+/// 云图标；返回顺序按 chapter_index 升序（仓储已排序），空 chapter_url 过滤。
+pub fn list_cached_chapter_urls(book_url: &str) -> LegadoResult<Vec<String>> {
+    with_database(|db| {
+        let repo = CacheBookRepository::new(db.connection());
+        let chapters = repo.get_by_book(book_url)?;
+        Ok(chapters
+            .into_iter()
+            .map(|c| c.chapter_url)
+            .filter(|u| !u.trim().is_empty())
+            .collect())
+    })
+}
+
 /// 获取缓存书籍数量
 pub fn get_cache_book_count() -> LegadoResult<i32> {
     with_database(|db| {

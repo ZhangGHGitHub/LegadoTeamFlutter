@@ -78,6 +78,10 @@ pub fn list_tools() -> Vec<McpTool> {
                 "type": "object",
                 "properties": {
                     "chapter_url": { "type": "string" },
+                    "book_url": {
+                        "type": "string",
+                        "description": "章节所属书籍的 bookUrl；提供时按 (book_url, chapter_url) 复合键精确定位缓存，避免多本书共用同 chapter_url 时串本；缺省时回退为仅按 chapter_url 单键查找"
+                    },
                     "source_url": { "type": "string" }
                 },
                 "required": ["chapter_url"]
@@ -483,11 +487,24 @@ async fn call_read_chapter(
         });
     }
 
+    // book_url 为可选参数（Task #19）：提供时按复合键精确查找，避免串本
+    let book_url = args.get("book_url").and_then(|v| v.as_str()).unwrap_or("");
+
     let db = state.db.lock().await;
     let conn = db.connection();
     let repo = legado_db::CacheBookRepository::new(conn);
 
-    match repo.get_by_chapter_url(chapter_url).map_err(db_err)? {
+    // 提供 book_url 时用 (book_url, chapter_url) 复合键；缺省时回退旧行为（仅按
+    // chapter_url 单键）以兼容旧调用——此时若多本书共用同 chapter_url 会读到任意一本，
+    // 调用方应尽量传入 book_url。
+    let cached = if book_url.is_empty() {
+        repo.get_by_chapter_url(chapter_url).map_err(db_err)?
+    } else {
+        repo.get_by_book_and_chapter_url(book_url, chapter_url)
+            .map_err(db_err)?
+    };
+
+    match cached {
         Some(cached) => {
             let text = format!("【{}】\n\n{}", cached.chapter_title, cached.content);
             Ok(mcp_text(text))

@@ -83,8 +83,10 @@ pub fn chapter_pay_action(book_url: &str, chapter_index: i32) -> LegadoResult<Pa
     let kind = classify_pay_result(&raw);
     if kind == "success" {
         // 购买成功 → 清当前章正文缓存，强制下次重新抓取
+        // 按 (book_url, chapter.url) 复合键精确清除（Task #19），避免误删其他书同 URL 缓存
         with_database(|db| {
-            CacheBookRepository::new(db.connection()).delete_by_chapter_url(&chapter.url)
+            CacheBookRepository::new(db.connection())
+                .delete_by_book_and_chapter_url(book_url, &chapter.url)
         })?;
     }
     Ok(PayActionResult {

@@ -1142,6 +1142,15 @@ pub mod ffi {
         Ok(content)
     }
 
+    /// 列出某本书已缓存章节的 chapter_url 集合（Task #22，目录页云图标）
+    ///
+    /// 返回 JSON 字符串数组（`["url1","url2",...]`），供 Flutter 目录页解析为
+    /// 已缓存 chapter_url 集合，据此为每章渲染「已缓存实心 / 未缓存空心云」图标。
+    pub fn cache_list_cached_chapter_urls(book_url: String) -> Result<String, BridgeError> {
+        let urls = crate::api::cache_api::list_cached_chapter_urls(&book_url)?;
+        to_json(&urls)
+    }
+
     /// 获取缓存书籍数量
     pub fn cache_get_book_count() -> Result<i32, BridgeError> {
         let count = crate::api::cache_api::get_cache_book_count()?;

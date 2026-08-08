@@ -259,17 +259,53 @@ pub fn chapter_to_local_info(ch: &BookChapter) -> legado_book::ChapterInfo {
 /// 3. 将 WebChapter 转换为 BookChapter 并存入数据库
 /// 4. 返回 JSON 格式的章节列表
 pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterListResponse> {
-    // 1. 从数据库获取书源配置
-    let source = with_database(|db| {
-        let repo = BookSourceRepository::new(db.connection());
-        repo.find_by_url(source_url)
-    })?
-    .ok_or_else(|| LegadoError::Database(format!("书源不存在: {source_url}")))?;
+    // 1. 从数据库获取书源配置 + 书籍记录（书籍用于确定真实的目录抓取 URL）
+    let (source, existing_book) = with_database(|db| {
+        let source = BookSourceRepository::new(db.connection()).find_by_url(source_url)?;
+        let book = legado_db::BookRepository::new(db.connection()).find_by_url(book_url)?;
+        Ok((source, book))
+    })?;
+    let source =
+        source.ok_or_else(|| LegadoError::Database(format!("书源不存在: {source_url}")))?;
+
+    // Task #21 修复：抓取目录用书籍的 tocUrl，而非 bookUrl。换源后 bookUrl 作为
+    // 稳定主键保持旧源 URL（在新源上并非有效地址），tocUrl 才指向当前书源的
+    // 详情/目录页；用 bookUrl 抓取会把旧源 URL 传给新源解析器导致目录获取失败
+    // （用户反馈「目录也获取不到」的根因之一）。tocUrl 为空时回退 bookUrl，
+    // 对齐原版 WebBook.getChapterList 以 book.tocUrl 为目录页地址的行为。
+    let fetch_url = existing_book
+        .as_ref()
+        .map(|b| b.toc_url.trim())
+        .filter(|u| !u.is_empty())
+        .map(|u| u.to_string())
+        .unwrap_or_else(|| book_url.to_string());
 
     // 2. 使用 WebBookEngine 从网络获取章节列表
     let engine = super::web_book::build_engine();
     let web_chapters: Vec<WebChapter> =
-        runtime::block_on(async { engine.get_chapters(&source, book_url).await })?;
+        runtime::block_on(async { engine.get_chapters(&source, &fetch_url).await })?;
+
+    // Task #21 修复：空结果保护。新抓取未解析到任何章节时（get_chapters 返回
+    // Ok(vec![]) 而非错误，如书源失效/页面改版），绝不清空已有目录——否则会把
+    // 书留成「无章节」状态，比刷新前更糟（换源/刷新「越刷越糟」回归）。
+    // 有旧章节则原样返回旧目录；无旧章节才返回可读错误。
+    if web_chapters.is_empty() {
+        let existing = with_database(|db| {
+            BookChapterRepository::new(db.connection()).find_by_book_url(book_url)
+        })?;
+        if !existing.is_empty() {
+            let mut existing = existing;
+            apply_title_convert(&mut existing);
+            let total = existing.len() as i32;
+            return Ok(ChapterListResponse {
+                total,
+                chapters: existing,
+            });
+        }
+        return Err(LegadoError::Parser(
+            "刷新目录失败：未从书源解析到任何章节（书源可能失效，请尝试换源）".into(),
+        ));
+    }
 
     // 3. 转换为 BookChapter 并存入数据库
     let book_chapters: Vec<BookChapter> = web_chapters
@@ -354,9 +390,11 @@ fn fetch_chapter_content_inner(
     chapter_title: &str,
 ) -> LegadoResult<String> {
     // 1. 检查 DB 缓存
+    // Task #16 P0：按 (book_url, chapter_url) 复合键查找，避免不同书籍共用
+    // 相同 chapter_url 时命中他书缓存（正文张冠李戴）。
     let cached = with_database(|db| {
         let repo = CacheBookRepository::new(db.connection());
-        repo.get_by_chapter_url(chapter_url)
+        repo.get_by_book_and_chapter_url(book_url, chapter_url)
     })?;
 
     if let Some(cached_chapter) = cached {
@@ -387,31 +425,50 @@ fn fetch_chapter_content_inner(
     let engine = super::web_book::build_engine();
     let content = runtime::block_on(async { engine.get_content(&source, &web_chapter).await })?;
 
-    // 3. 存入 DB 缓存
+    // 3. 抓取成功后写入 DB 缓存（对齐原版 BookContent.analyzeContent
+    //    L207-209 `needSave → BookHelp.saveContent` 的「获取成功即写」时机）。
+    //    写失败仅告警不传播——缓存写入失败不得导致阅读获取失败。
+    save_chapter_cache(book_url, chapter_index, chapter_title, chapter_url, &content);
+
+    // 缓存写入原始正文，返回净化后的正文（透传真实章节标题，使去重复标题生效）
+    Ok(apply_content_processing(book_url, &content, chapter_title))
+}
+
+/// 阅读获取（非缓存命中）成功后把正文写入 cached_chapters
+///
+/// 对齐 Android 原版「阅读即缓存」语义：正文成功解析后按
+/// (book_url, chapter_url) 复合键立即写入（含 chapter_index 等字段），
+/// 目录页云图标据此变为已缓存态。写失败仅告警不传播——原版
+/// saveContent 为异步 fire-and-forget，缓存写失败不得使阅读主流程失败。
+fn save_chapter_cache(
+    book_url: &str,
+    chapter_index: i32,
+    chapter_title: &str,
+    chapter_url: &str,
+    content: &str,
+) {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-
     let cached_chapter = CachedChapter {
         id: 0,
         book_url: book_url.to_string(),
         chapter_index,
         chapter_title: chapter_title.to_string(),
         chapter_url: chapter_url.to_string(),
-        content: content.clone(),
+        content: content.to_string(),
         cached_at: now_ms,
         size_bytes: content.len() as i64,
     };
-
-    with_database(|db| {
+    let result = with_database(|db| {
         let repo = CacheBookRepository::new(db.connection());
         repo.insert(&cached_chapter)?;
         Ok(())
-    })?;
-
-    // 缓存写入原始正文，返回净化后的正文（透传真实章节标题，使去重复标题生效）
-    Ok(apply_content_processing(book_url, &content, chapter_title))
+    });
+    if let Err(e) = result {
+        log::warn!("阅读缓存写入失败（已忽略，不影响阅读）: {e}");
+    }
 }
 
 /// 一次调用获取章节正文（合并 get_chapter_content + fetch_chapter_content）
@@ -701,6 +758,54 @@ mod tests {
         // 第二次调用：应命中缓存，返回相同内容
         let content2 = fetch_chapter_content(book_url, chapter_url, source_url).unwrap();
         assert_eq!(content1, content2);
+    }
+
+    // ─── 阅读获取成功后写入缓存测试（Task #26）─────────────────────
+
+    /// 阅读获取成功后缓存写入生效：save_chapter_cache 写入 cached_chapters，
+    /// 复合键可查、目录页云图标数据源 list_cached_chapter_urls 可见，
+    /// 重复写入（同章再次阅读）覆盖不报错
+    #[test]
+    fn test_save_chapter_cache_after_successful_fetch() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://cache-write-t26.example.com/book/1";
+        let chapter_url = "https://cache-write-t26.example.com/ch/4";
+
+        // 前置：该章未缓存（目录页空心云）
+        let before = with_database(|db| {
+            let repo = CacheBookRepository::new(db.connection());
+            repo.get_by_book_and_chapter_url(book_url, chapter_url)
+        })
+        .unwrap();
+        assert!(before.is_none());
+
+        // 抓取成功后写缓存（fetch_chapter_content_inner 同一时机）
+        save_chapter_cache(book_url, 4, "第四章", chapter_url, "第四章正文");
+
+        // 复合键命中（目录页实心云）
+        let cached = with_database(|db| {
+            let repo = CacheBookRepository::new(db.connection());
+            repo.get_by_book_and_chapter_url(book_url, chapter_url)
+        })
+        .unwrap()
+        .expect("阅读获取成功后应写入缓存");
+        assert_eq!(cached.content, "第四章正文");
+        assert_eq!(cached.chapter_index, 4);
+        assert_eq!(cached.chapter_title, "第四章");
+
+        // 目录页云图标数据源可见
+        let urls = crate::api::cache_api::list_cached_chapter_urls(book_url).unwrap();
+        assert!(urls.contains(&chapter_url.to_string()));
+
+        // 同章重复写入覆盖不报错（INSERT OR REPLACE）
+        save_chapter_cache(book_url, 4, "第四章", chapter_url, "第四章正文v2");
+        let cached = with_database(|db| {
+            let repo = CacheBookRepository::new(db.connection());
+            repo.get_by_book_and_chapter_url(book_url, chapter_url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(cached.content, "第四章正文v2");
     }
 
     #[test]
