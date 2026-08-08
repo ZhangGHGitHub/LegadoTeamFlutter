@@ -12,7 +12,9 @@ use legado_core::{LegadoError, LegadoResult};
 /// - v99：对齐上游 Room AppDatabase v99
 /// - v100：Rust 轨自有扩展（rule_subs 补全 Kotlin RuleSub 字段）
 /// - v101：偏离表修复（rssArticles/rssStars/readRecord/txtTocRules 补齐 Room 99.json 缺列）
-pub const SCHEMA_VERSION: u32 = 101;
+/// - v102：cached_chapters 唯一索引由 chapter_url 单列改为 (book_url, chapter_url)
+///   复合键（Task #16 P0：修复跨书缓存串本导致「正文显示为另一本书内容」）
+pub const SCHEMA_VERSION: u32 = 102;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -462,7 +464,10 @@ CREATE TABLE IF NOT EXISTS cached_chapters (
     size_bytes INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_cached_chapters_book ON cached_chapters(book_url);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_chapters_url ON cached_chapters(chapter_url);
+-- Task #16 P0：唯一键改为 (book_url, chapter_url) 复合键，避免不同书籍共用
+-- 相同 chapter_url 时 INSERT OR REPLACE 跨书覆盖、查找串本（正文张冠李戴）。
+-- 存量库经 Migration101To102 显式 DROP 旧的 idx_cached_chapters_url 后重建本索引。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_chapters_book_url ON cached_chapters(book_url, chapter_url);
 ";
 
 pub const CREATE_CHAPTER_REVIEWS: &str = "

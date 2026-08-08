@@ -14,6 +14,9 @@
 //!   updateInterval/silentUpdate/js/showRule/sourceUrl，Rust 轨自有扩展）
 //! - v100 → v101: 偏离表修复（rssArticles/rssStars/readRecord/txtTocRules
 //!   补齐 Room 99.json 缺列，对齐 Android 遗留库互读/迁移）
+//! - v101 → v102: cached_chapters 唯一索引由 chapter_url 单列改为
+//!   (book_url, chapter_url) 复合键（Task #16 P0：修复跨书缓存串本），
+//!   迁移时先按新复合键去重（保留最新）再 DROP 旧索引、建新复合唯一索引
 //!
 //! 历史说明：原 Rust 自有 `Migration95To96`（books/rssSources 补列）与上游 v96
 //! 语义撞车，已改造为不占版本号的幂等修复函数 [`repair_legacy_columns`]，
@@ -77,9 +80,35 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// v90 → v91: book_sources 新增 mainJs 列
-// ---------------------------------------------------------------------------
+/// 幂等清理「空 bookUrl 僵尸书籍」（Task #21）
+///
+/// 历史换源 Bug 曾产生 `bookUrl=''`（主键为空）的僵尸书籍记录：它没有有效
+/// 身份、无法定位书源、永远抓不到目录（用户反馈「目录也获取不到」的遗留污染
+/// 之一）。bookUrl 是书籍主键/抓取身份，空值必属损坏数据，正常书籍绝不会为空，
+/// 故删除是安全的（不会误删正常书与阅读进度）。
+///
+/// 保守起见仅按 `trim(bookUrl)=''` 精确定位，并连带清理其孤儿章节/缓存。
+/// 幂等：无僵尸记录时为空操作，可在任意版本安全重复执行。
+pub fn cleanup_zombie_books(conn: &Connection) -> LegadoResult<()> {
+    // 先清孤儿章节/缓存（避免外键约束阻断删除），再删僵尸书籍本体
+    if table_exists(conn, "chapters")? {
+        conn.execute("DELETE FROM chapters WHERE trim(bookUrl) = ''", [])
+            .map_err(|e| LegadoError::Database(format!("清理孤儿章节失败: {e}")))?;
+    }
+    if table_exists(conn, "cached_chapters")? {
+        conn.execute("DELETE FROM cached_chapters WHERE trim(book_url) = ''", [])
+            .map_err(|e| LegadoError::Database(format!("清理孤儿缓存失败: {e}")))?;
+    }
+    if table_exists(conn, "books")? {
+        let removed = conn
+            .execute("DELETE FROM books WHERE trim(bookUrl) = ''", [])
+            .map_err(|e| LegadoError::Database(format!("清理僵尸书籍失败: {e}")))?;
+        if removed > 0 {
+            eprintln!("[Task #21] 已清理 {removed} 条空 bookUrl 僵尸书籍记录");
+        }
+    }
+    Ok(())
+}
 
 /// 从 v90 升级到 v91
 ///
@@ -603,6 +632,80 @@ impl Migration for Migration100To101 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v101 → v102: cached_chapters 唯一索引改复合键 (book_url, chapter_url)
+// ---------------------------------------------------------------------------
+
+/// 从 v101 升级到 v102（Task #16 P0）
+///
+/// 背景：cached_chapters 原唯一索引 `idx_cached_chapters_url` 仅建在
+/// `chapter_url` 单列上。当不同书籍（尤其换源/多源）出现相同 chapter_url 时，
+/// `INSERT OR REPLACE` 会跨书覆盖，读取 `get_by_chapter_url` 也会命中错书的
+/// 缓存，导致「正文显示为另一本书内容」。
+///
+/// 变更内容（幂等、可安全重复执行）：
+/// 1. 先按新复合键 (book_url, chapter_url) 去重：同组仅保留 id 最大者
+///    （INSERT OR REPLACE 语义下 id 越大越新），避免建唯一索引时冲突。
+/// 2. DROP 旧的单列唯一索引 `idx_cached_chapters_url`。
+/// 3. 建新的复合唯一索引 `idx_cached_chapters_book_url(book_url, chapter_url)`。
+///
+/// 清理策略（保守）：仅做「按新复合键去重 cached_chapters」这一安全清理，
+/// 不主动删除疑似僵尸书记录（bookUrl 启发式判定不稳妥，宁可保留避免误删
+/// 用户数据）。缓存为可再生数据，去重不会造成不可恢复的损失。
+pub struct Migration101To102;
+
+impl Migration for Migration101To102 {
+    fn from_version(&self) -> u32 {
+        101
+    }
+    fn to_version(&self) -> u32 {
+        102
+    }
+    fn description(&self) -> &str {
+        "cached_chapters 唯一索引改复合键 (book_url, chapter_url)，先去重再重建"
+    }
+
+    fn up(&self, conn: &Connection) -> LegadoResult<()> {
+        // 仅当表存在时处理（防御跳表升级的极端场景）
+        if !table_exists(conn, "cached_chapters")? {
+            return Ok(());
+        }
+
+        // 1. 按新复合键去重：同 (book_url, chapter_url) 仅保留 id 最大者
+        conn.execute_batch(
+            "DELETE FROM cached_chapters WHERE id NOT IN (
+                SELECT MAX(id) FROM cached_chapters GROUP BY book_url, chapter_url
+            );",
+        )
+        .map_err(|e| LegadoError::Database(format!("cached_chapters 去重失败: {e}")))?;
+
+        // 2. DROP 旧的单列唯一索引
+        conn.execute_batch("DROP INDEX IF EXISTS idx_cached_chapters_url;")
+            .map_err(|e| LegadoError::Database(format!("删除旧唯一索引失败: {e}")))?;
+
+        // 3. 建新的复合唯一索引
+        conn.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_chapters_book_url
+             ON cached_chapters(book_url, chapter_url);",
+        )
+        .map_err(|e| LegadoError::Database(format!("创建复合唯一索引失败: {e}")))?;
+        Ok(())
+    }
+
+    fn down(&self, conn: &Connection) -> LegadoResult<()> {
+        // 回退：删除复合索引并恢复旧的单列唯一索引
+        // （注意：若存量数据已有跨书重复 chapter_url，恢复单列唯一索引可能失败，
+        //  此为已知的不可逆风险，仅用于测试/紧急回退）
+        conn.execute_batch(
+            "DROP INDEX IF EXISTS idx_cached_chapters_book_url;
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_chapters_url
+             ON cached_chapters(chapter_url);",
+        )
+        .map_err(|e| LegadoError::Database(format!("回退 cached_chapters 索引失败: {e}")))?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -722,11 +825,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -875,7 +978,7 @@ mod tests {
     fn test_fresh_db_reaches_v101_with_deviation_columns() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
@@ -1039,7 +1142,7 @@ mod tests {
 
     #[test]
     fn test_migration_100_to_101_via_registry() {
-        // 经注册表从 v100 升级到最新（v101）
+        // 经注册表从 v100 升级到最新（v102）
         let db = Database::open_in_memory_raw().unwrap();
         let conn = db.connection();
         conn.execute_batch(
@@ -1059,8 +1162,199 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 101);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "readRecord", "lastRead"));
+    }
+
+    /// 判定指定索引是否存在
+    fn index_exists(conn: &Connection, index: &str) -> bool {
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?",
+                [index],
+                |row| row.get(0),
+            )
+            .unwrap();
+        count > 0
+    }
+
+    /// Task #16 P0：v101 → v102 —— cached_chapters 唯一索引改复合键并去重
+    #[test]
+    fn test_migration_101_to_102_cached_chapters_composite_index() {
+        // 构造 v101 形态：cached_chapters + 旧的单列唯一索引
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TABLE cached_chapters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_url TEXT NOT NULL,
+                chapter_index INTEGER NOT NULL,
+                chapter_title TEXT NOT NULL DEFAULT '',
+                chapter_url TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                cached_at INTEGER NOT NULL,
+                size_bytes INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_cached_chapters_book ON cached_chapters(book_url);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_chapters_url ON cached_chapters(chapter_url);",
+        )
+        .unwrap();
+        // 存量数据：书 A 的一条缓存（旧单列唯一索引下 chapter_url 唯一）
+        conn.execute(
+            "INSERT INTO cached_chapters (book_url, chapter_index, chapter_url, content, cached_at)
+             VALUES ('bookA', 0, 'http://ex.com/ch1', '甲书正文', 1000)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 101).unwrap();
+
+        // 执行 v101 → v102
+        let m = Migration101To102;
+        m.up(conn).unwrap();
+        // 幂等：重复执行不报错
+        m.up(conn).unwrap();
+
+        // 旧索引已删除，新复合索引已建立
+        assert!(!index_exists(conn, "idx_cached_chapters_url"));
+        assert!(index_exists(conn, "idx_cached_chapters_book_url"));
+
+        // 关键：不同 book_url 可共用相同 chapter_url（旧单列唯一索引下会冲突）
+        conn.execute(
+            "INSERT INTO cached_chapters (book_url, chapter_index, chapter_url, content, cached_at)
+             VALUES ('bookB', 0, 'http://ex.com/ch1', '乙书正文', 2000)",
+            [],
+        )
+        .unwrap();
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM cached_chapters WHERE chapter_url = 'http://ex.com/ch1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2, "复合键下不同书应各存一份缓存，互不覆盖");
+
+        // 各自读取应拿到本书正文（按 book_url + chapter_url 定位）
+        let content_a: String = conn
+            .query_row(
+                "SELECT content FROM cached_chapters WHERE book_url='bookA' AND chapter_url='http://ex.com/ch1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(content_a, "甲书正文");
+    }
+
+    /// Task #16 P0：迁移前若存在同 (book_url, chapter_url) 重复行，去重保留最新（id 最大）
+    #[test]
+    fn test_migration_101_to_102_dedup_keeps_latest() {
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        // 不建旧唯一索引，先人为制造复合键重复行（模拟历史污染）
+        conn.execute_batch(
+            "CREATE TABLE cached_chapters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_url TEXT NOT NULL,
+                chapter_index INTEGER NOT NULL,
+                chapter_title TEXT NOT NULL DEFAULT '',
+                chapter_url TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                cached_at INTEGER NOT NULL,
+                size_bytes INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO cached_chapters (book_url, chapter_index, chapter_url, content, cached_at)
+             VALUES ('bookA', 0, 'http://ex.com/ch1', '旧内容', 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO cached_chapters (book_url, chapter_index, chapter_url, content, cached_at)
+             VALUES ('bookA', 0, 'http://ex.com/ch1', '新内容', 2000)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 101).unwrap();
+
+        Migration101To102.up(conn).unwrap();
+
+        // 去重后仅保留 1 行，且为 id 最大（最新）者
+        let (cnt, content): (i32, String) = conn
+            .query_row(
+                "SELECT COUNT(*), MAX(content) FROM cached_chapters
+                 WHERE book_url='bookA' AND chapter_url='http://ex.com/ch1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1, "同复合键去重后应仅剩一行");
+        assert_eq!(content, "新内容", "应保留最新（id 最大）的缓存");
+        // 建成复合唯一索引
+        assert!(index_exists(conn, "idx_cached_chapters_book_url"));
+    }
+
+    /// Task #21：幂等清理空 bookUrl 僵尸书籍——仅删空主键记录及其孤儿章节，
+    /// 正常书籍与其章节一律不受影响；且可安全重复执行（幂等）。
+    #[test]
+    fn test_cleanup_zombie_books() {
+        let db = create_v95_db();
+        let conn = db.connection();
+        // 正常书 + 其章节
+        conn.execute(
+            "INSERT INTO books(bookUrl, name) VALUES('http://ok.com/1', '正常书')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chapters(url, title, bookUrl, \"index\") \
+             VALUES('http://ok.com/1/c0', '第一章', 'http://ok.com/1', 0)",
+            [],
+        )
+        .unwrap();
+        // 空 bookUrl 僵尸书 + 其孤儿章节
+        conn.execute("INSERT INTO books(bookUrl, name) VALUES('', '僵尸书')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO chapters(url, title, bookUrl, \"index\") \
+             VALUES('http://zombie/c0', '孤儿章', '', 0)",
+            [],
+        )
+        .unwrap();
+
+        cleanup_zombie_books(conn).unwrap();
+
+        // 僵尸书与孤儿章节被清；正常书与其章节保留
+        let zombie: i32 = conn
+            .query_row("SELECT COUNT(*) FROM books WHERE trim(bookUrl)=''", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(zombie, 0, "空 bookUrl 僵尸书应被清理");
+        let orphan: i32 = conn
+            .query_row("SELECT COUNT(*) FROM chapters WHERE trim(bookUrl)=''", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(orphan, 0, "孤儿章节应被清理");
+        let ok_books: i32 = conn
+            .query_row("SELECT COUNT(*) FROM books WHERE bookUrl='http://ok.com/1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(ok_books, 1, "正常书不得被误删");
+        let ok_ch: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chapters WHERE bookUrl='http://ok.com/1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ok_ch, 1, "正常书章节不得被误删");
+
+        // 幂等：再次执行不报错且不再变化
+        cleanup_zombie_books(conn).unwrap();
+        let total: i32 = conn
+            .query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 1, "幂等重跑后仅剩正常书");
     }
 }

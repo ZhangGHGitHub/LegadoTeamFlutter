@@ -86,49 +86,64 @@ impl<'a> BookChapterRepository<'a> {
     }
 
     /// 批量插入章节（使用事务提高性能）
+    ///
+    /// 内部自开一个事务保证批量插入的原子性，适用于独立调用场景。
+    /// 若调用方已处于外层事务中（如换源流程），请改用
+    /// [`Self::insert_batch_no_tx`]，避免嵌套 `BEGIN` 触发
+    /// "cannot start a transaction within a transaction" 错误。
     pub fn insert_batch(&self, chapters: &[BookChapter]) -> LegadoResult<()> {
         let tx = self
             .conn
             .unchecked_transaction()
             .map_err(|e| LegadoError::Database(format!("开启事务失败: {e}")))?;
 
-        {
-            let mut stmt = tx
-                .prepare(
-                    "INSERT OR REPLACE INTO chapters
-                     (url, title, isVolume, baseUrl, bookUrl, \"index\", isVip, isPay,
-                      resourceUrl, tag, wordCount, start, end, startFragmentId,
-                      endFragmentId, variable, imgUrl)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
-                )
-                .map_err(|e| LegadoError::Database(format!("准备插入失败: {e}")))?;
-
-            for ch in chapters {
-                stmt.execute(params![
-                    ch.url,
-                    ch.title,
-                    ch.is_volume,
-                    ch.base_url,
-                    ch.book_url,
-                    ch.index,
-                    ch.is_vip,
-                    ch.is_pay,
-                    ch.resource_url,
-                    ch.tag,
-                    ch.word_count,
-                    ch.start,
-                    ch.end,
-                    ch.start_fragment_id,
-                    ch.end_fragment_id,
-                    ch.variable,
-                    ch.img_url,
-                ])
-                .map_err(|e| LegadoError::Database(format!("批量插入失败: {e}")))?;
-            }
-        }
+        // 复用无事务版本执行实际插入，保持单一 SQL 实现
+        self.insert_batch_no_tx(chapters)?;
 
         tx.commit()
             .map_err(|e| LegadoError::Database(format!("提交事务失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 批量插入章节（不自开事务版本）
+    ///
+    /// 直接在 `self.conn` 上执行插入，不发起 `BEGIN`/`COMMIT`。
+    /// 供已由外层持有事务的调用方复用（如换源流程 source_switch），
+    /// 使清缓存+删旧章节+写新章节能包裹进同一个 DB 事务，中途失败整体回滚。
+    pub fn insert_batch_no_tx(&self, chapters: &[BookChapter]) -> LegadoResult<()> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "INSERT OR REPLACE INTO chapters
+                 (url, title, isVolume, baseUrl, bookUrl, \"index\", isVip, isPay,
+                  resourceUrl, tag, wordCount, start, end, startFragmentId,
+                  endFragmentId, variable, imgUrl)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备插入失败: {e}")))?;
+
+        for ch in chapters {
+            stmt.execute(params![
+                ch.url,
+                ch.title,
+                ch.is_volume,
+                ch.base_url,
+                ch.book_url,
+                ch.index,
+                ch.is_vip,
+                ch.is_pay,
+                ch.resource_url,
+                ch.tag,
+                ch.word_count,
+                ch.start,
+                ch.end,
+                ch.start_fragment_id,
+                ch.end_fragment_id,
+                ch.variable,
+                ch.img_url,
+            ])
+            .map_err(|e| LegadoError::Database(format!("批量插入失败: {e}")))?;
+        }
         Ok(())
     }
 }
@@ -334,5 +349,65 @@ mod tests {
         let empty: Vec<BookChapter> = vec![];
         repo.insert_batch(&empty).unwrap();
         assert_eq!(repo.find_all().unwrap().len(), 0);
+    }
+
+    /// Task #19 补强1：换源事务失败应整体回滚，保留原章节
+    ///
+    /// 模拟 source_switch 的"删旧章节 + 写新章节"包事务：先删除 book1
+    /// 的旧章节，再写入一条引用不存在父书的章节→触发外键约束失败。
+    /// 事务未 commit，drop 时回滚，原 2 章节应仍在（不会留下"无章节"状态）。
+    #[test]
+    fn test_source_switch_tx_rollback_preserves_chapters() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        insert_parent_book(conn, "book1");
+        let repo = BookChapterRepository::new(conn);
+        repo.insert_batch(&[
+            make_chapter("book1", 0, "第1章"),
+            make_chapter("book1", 1, "第2章"),
+        ])
+        .unwrap();
+        assert_eq!(repo.count_by_book_url("book1").unwrap(), 2);
+
+        // 包事务执行：删旧章节 + 写新章节（引用不存在的 book_ghost 触发 FK 失败）
+        let result: LegadoResult<()> = (|| {
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| LegadoError::Database(format!("开启事务失败: {e}")))?;
+            repo.delete_by_book_url("book1")?;
+            repo.insert_batch_no_tx(&[make_chapter("book_ghost", 0, "坏章节")])?;
+            tx.commit()
+                .map_err(|e| LegadoError::Database(format!("提交失败: {e}")))?;
+            Ok(())
+        })();
+        assert!(result.is_err(), "写入引用不存在父书的章节应因外键约束失败");
+
+        // 事务未提交，drop 时回滚，原 2 章节保留
+        assert_eq!(
+            repo.count_by_book_url("book1").unwrap(),
+            2,
+            "事务回滚后应保留原章节"
+        );
+    }
+
+    /// Task #19 补强1：外层事务内调用 insert_batch_no_tx 不报嵌套 BEGIN
+    ///
+    /// 验证无事务版本可安全地在已有事务内复用，并在 commit 后生效。
+    #[test]
+    fn test_insert_batch_no_tx_within_outer_tx() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        insert_parent_book(conn, "book1");
+        let repo = BookChapterRepository::new(conn);
+
+        let tx = conn.unchecked_transaction().unwrap();
+        repo.insert_batch_no_tx(&[
+            make_chapter("book1", 0, "c0"),
+            make_chapter("book1", 1, "c1"),
+        ])
+        .unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(repo.count_by_book_url("book1").unwrap(), 2);
     }
 }

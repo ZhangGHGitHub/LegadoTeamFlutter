@@ -177,6 +177,8 @@ impl Database {
         }
         // 无论版本号如何，始终校验列完整性（修复版本号与实际 schema 不一致的情况）
         Self::ensure_schema_integrity(conn)?;
+        // Task #21：幂等清理历史换源 Bug 遗留的空 bookUrl 僵尸书籍（无僵尸时为空操作）
+        migration::migrations::cleanup_zombie_books(conn)?;
         Ok(())
     }
 

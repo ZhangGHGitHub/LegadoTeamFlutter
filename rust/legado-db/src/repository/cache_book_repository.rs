@@ -37,20 +37,23 @@ impl<'a> CacheBookRepository<'a> {
     }
 
     /// 更新缓存章节内容
+    ///
+    /// Task #16 P0：WHERE 改为 (book_url, chapter_url) 复合键，与新的复合唯一索引
+    /// 对齐；避免仅按 chapter_url 更新时误改到其他书籍的同 URL 章节（跨书串本）。
     pub fn update(&self, chapter: &CachedChapter) -> LegadoResult<()> {
         self.conn
             .execute(
                 "UPDATE cached_chapters SET
-                 book_url = ?1, chapter_index = ?2, chapter_title = ?3,
-                 content = ?4, cached_at = ?5, size_bytes = ?6
-                 WHERE chapter_url = ?7",
+                 chapter_index = ?1, chapter_title = ?2,
+                 content = ?3, cached_at = ?4, size_bytes = ?5
+                 WHERE book_url = ?6 AND chapter_url = ?7",
                 params![
-                    chapter.book_url,
                     chapter.chapter_index,
                     chapter.chapter_title,
                     chapter.content,
                     chapter.cached_at,
                     chapter.size_bytes,
+                    chapter.book_url,
                     chapter.chapter_url,
                 ],
             )
@@ -59,12 +62,34 @@ impl<'a> CacheBookRepository<'a> {
     }
 
     /// 按 chapter_url 删除缓存
+    ///
+    /// 注意（Task #19）：仅按 chapter_url 单键删除会误删其他书同 URL 的缓存，
+    /// 已知书上下文时请改用 [`Self::delete_by_book_and_chapter_url`]。
     pub fn delete_by_chapter_url(&self, chapter_url: &str) -> LegadoResult<usize> {
         let count = self
             .conn
             .execute(
                 "DELETE FROM cached_chapters WHERE chapter_url = ?1",
                 params![chapter_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("删除缓存章节失败: {e}")))?;
+        Ok(count)
+    }
+
+    /// 按 (book_url, chapter_url) 复合键删除缓存（Task #19）
+    ///
+    /// 与复合唯一索引 (book_url, chapter_url) 对齐，仅删除当前书的指定章节，
+    /// 不误伤其他书同 chapter_url 的缓存（避免跨书串本式误删）。
+    pub fn delete_by_book_and_chapter_url(
+        &self,
+        book_url: &str,
+        chapter_url: &str,
+    ) -> LegadoResult<usize> {
+        let count = self
+            .conn
+            .execute(
+                "DELETE FROM cached_chapters WHERE book_url = ?1 AND chapter_url = ?2",
+                params![book_url, chapter_url],
             )
             .map_err(|e| LegadoError::Database(format!("删除缓存章节失败: {e}")))?;
         Ok(count)
@@ -91,6 +116,11 @@ impl<'a> CacheBookRepository<'a> {
     }
 
     /// 按 chapter_url 查询单条缓存
+    ///
+    /// 注意（Task #16）：仅按 chapter_url 查找在不同书籍共用相同章节 URL 时
+    /// 会串本（返回错误书籍的缓存）。阅读器正文抓取链路应改用
+    /// [`Self::get_by_book_and_chapter_url`]。本方法保留供 legado-server 等
+    /// 已明确单书上下文的调用方使用。
     pub fn get_by_chapter_url(&self, chapter_url: &str) -> LegadoResult<Option<CachedChapter>> {
         let mut stmt = self
             .conn
@@ -103,6 +133,32 @@ impl<'a> CacheBookRepository<'a> {
 
         let result = stmt
             .query_map(params![chapter_url], row_to_cached_chapter)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .next();
+        Ok(result)
+    }
+
+    /// 按 (book_url, chapter_url) 复合键查询单条缓存（Task #16 P0）
+    ///
+    /// 与新的复合唯一索引 `idx_cached_chapters_book_url` 对齐，保证同一
+    /// chapter_url 在不同书籍下互不串本——只返回属于指定 book_url 的缓存。
+    pub fn get_by_book_and_chapter_url(
+        &self,
+        book_url: &str,
+        chapter_url: &str,
+    ) -> LegadoResult<Option<CachedChapter>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, book_url, chapter_index, chapter_title, chapter_url, content, cached_at, size_bytes
+                 FROM cached_chapters
+                 WHERE book_url = ?1 AND chapter_url = ?2",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let result = stmt
+            .query_map(params![book_url, chapter_url], row_to_cached_chapter)
             .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
             .filter_map(|r| r.ok())
             .next();
@@ -310,5 +366,104 @@ mod tests {
 
         let result = repo.get_by_chapter_url("http://ex.com/ch1").unwrap();
         assert!(result.is_none());
+    }
+
+    /// Task #16 P0：不同 book_url 共用相同 chapter_url 时缓存互不串本
+    ///
+    /// 验证复合唯一索引 (book_url, chapter_url) + 复合查找：
+    /// - 两本书插入同一 chapter_url 各自独立存在（不因单列唯一键被覆盖）
+    /// - 按 (book_url, chapter_url) 复合查找各自返回本书内容
+    #[test]
+    fn test_composite_key_no_cross_book_pollution() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = CacheBookRepository::new(db.connection());
+
+        let shared_url = "http://ex.com/chapter_1.html";
+        let mut a = make_cached("bookA", shared_url, 0, 1000);
+        a.content = "这是 A 书的正文".to_string();
+        let mut b = make_cached("bookB", shared_url, 0, 2000);
+        b.content = "这是 B 书的正文".to_string();
+        repo.insert(&a).unwrap();
+        repo.insert(&b).unwrap();
+
+        // 两条记录并存（旧的单列唯一键会把后者覆盖前者，导致总数为 1）
+        assert_eq!(repo.get_stats().unwrap().total_chapters, 2);
+
+        // 复合查找各自返回本书内容，互不串本
+        let got_a = repo
+            .get_by_book_and_chapter_url("bookA", shared_url)
+            .unwrap()
+            .unwrap();
+        let got_b = repo
+            .get_by_book_and_chapter_url("bookB", shared_url)
+            .unwrap()
+            .unwrap();
+        assert_eq!(got_a.content, "这是 A 书的正文");
+        assert_eq!(got_b.content, "这是 B 书的正文");
+    }
+
+    /// Task #16 P0：复合键更新只影响本书，不误改其他书同 URL 章节
+    #[test]
+    fn test_composite_update_isolated_per_book() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = CacheBookRepository::new(db.connection());
+
+        let shared_url = "http://ex.com/chapter_1.html";
+        repo.insert(&make_cached("bookA", shared_url, 0, 1000))
+            .unwrap();
+        repo.insert(&make_cached("bookB", shared_url, 0, 2000))
+            .unwrap();
+
+        // 仅更新 bookA 的正文
+        let mut updated = make_cached("bookA", shared_url, 0, 1000);
+        updated.content = "A 更新后的正文".to_string();
+        repo.update(&updated).unwrap();
+
+        let got_a = repo
+            .get_by_book_and_chapter_url("bookA", shared_url)
+            .unwrap()
+            .unwrap();
+        let got_b = repo
+            .get_by_book_and_chapter_url("bookB", shared_url)
+            .unwrap()
+            .unwrap();
+        assert_eq!(got_a.content, "A 更新后的正文");
+        // bookB 不受影响，仍为原始内容
+        assert_eq!(got_b.content, "content here");
+    }
+
+    /// Task #19 补强3：复合键删除只删本书，不误伤其他书同 URL 缓存
+    ///
+    /// 两本书共用相同 chapter_url，按 (bookA, url) 复合键删除后：
+    /// - bookA 的该章节被删
+    /// - bookB 的同 URL 章节保留（不因单键删除被误伤）
+    #[test]
+    fn test_delete_by_book_and_chapter_url_isolated() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = CacheBookRepository::new(db.connection());
+
+        let shared_url = "http://ex.com/chapter_1.html";
+        repo.insert(&make_cached("bookA", shared_url, 0, 1000))
+            .unwrap();
+        repo.insert(&make_cached("bookB", shared_url, 0, 2000))
+            .unwrap();
+        assert_eq!(repo.get_stats().unwrap().total_chapters, 2);
+
+        // 仅删除 bookA 的该章节
+        let deleted = repo
+            .delete_by_book_and_chapter_url("bookA", shared_url)
+            .unwrap();
+        assert_eq!(deleted, 1);
+
+        // bookA 已删，bookB 保留
+        assert!(repo
+            .get_by_book_and_chapter_url("bookA", shared_url)
+            .unwrap()
+            .is_none());
+        assert!(repo
+            .get_by_book_and_chapter_url("bookB", shared_url)
+            .unwrap()
+            .is_some());
+        assert_eq!(repo.get_stats().unwrap().total_chapters, 1);
     }
 }
