@@ -14,6 +14,7 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/book_api.dart';
+import '../services/settings_service.dart';
 import 'source_login_screen.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/error_view.dart';
@@ -49,14 +50,24 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   BookSource? _bookSource;
   // 书架状态（对标原版 tv_shelf 加入书架/移出书架切换）
   bool _inBookshelf = false;
+  // [UI-fix v2.0.3 | 2026-08-08] 删除提醒开关（对齐原版 LocalConfig.deleteBookAlert，本地持久化） — Qoder
+  final SettingsService _settingsService = SettingsService();
+  bool _deleteBookAlert = true;
 
   @override
   void initState() {
     super.initState();
     _future = _loadData();
+    _loadDeleteBookAlert();
     _searchCtrl.addListener(() {
       setState(() => _filter = _searchCtrl.text.trim().toLowerCase());
     });
+  }
+
+  /// 加载「删除提醒」开关（对齐原版 LocalConfig.deleteBookAlert）
+  Future<void> _loadDeleteBookAlert() async {
+    final v = await _settingsService.getDeleteBookAlert();
+    if (mounted) setState(() => _deleteBookAlert = v);
   }
 
   @override
@@ -354,11 +365,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                     checked: book.readConfig?.splitLongChapter ?? true,
                     child: const Text('拆分长章节'),
                   ),
-                // 删除提醒（勾选态；_todo 占位，LocalConfig 未移植）
-                const CheckedPopupMenuItem(
+                // [UI-fix v2.0.3 | 2026-08-08] 删除提醒接通本地持久化
+                // （对齐原版 LocalConfig.deleteBookAlert） — Qoder
+                CheckedPopupMenuItem(
                   value: 'deleteAlert',
-                  checked: false,
-                  child: Text('删除提醒'),
+                  checked: _deleteBookAlert,
+                  child: const Text('删除提醒'),
                 ),
                 const PopupMenuItem(
                     value: 'clearCache', child: Text('清理缓存')),
@@ -492,6 +504,13 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         // [UI-fix v2.0.2 | 2026-08-06] 清缓存接通 clearCache FFI — Qoder
         await _clearCache();
         break;
+      case 'deleteAlert':
+        // [UI-fix v2.0.3 | 2026-08-08] 删除提醒开关持久化（对齐原版
+        // LocalConfig.deleteBookAlert：删除/移出书籍时是否弹确认框） — Qoder
+        final next = !_deleteBookAlert;
+        await _settingsService.setDeleteBookAlert(next);
+        if (mounted) setState(() => _deleteBookAlert = next);
+        break;
       default:
         _todo(value);
         break;
@@ -505,7 +524,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       'updateTask': '创建书籍更新任务',
       'sourceVariable': '设置源变量',
       'bookVariable': '设置书籍变量',
-      'deleteAlert': '删除提醒',
     };
     final feature = names[value] ?? value;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -709,13 +727,15 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           _summaryRow(context, Icons.groups_outlined, _groupText(book),
               action: _smallAction(context, '换组', _showChangeGroup)),
           // 目录行（对标 ll_toc：ic_folder_open + tv_toc + tv_toc_view）
+          // [UI-fix v2.0.3 | 2026-08-08] 入口改跳独立目录页 TocScreen（对齐原版
+          // tv_toc_view → TocActivityResult），返回章节 index 走现有阅读跳转链路 — Qoder
           InkWell(
             onTap: _scrollToToc,
             child: _summaryRow(
               context,
               Icons.folder_open,
               '目录：共 ${book.totalChapterNum} 章',
-              action: _smallAction(context, '查看目录', _scrollToToc),
+              action: _smallAction(context, '更多目录', _openTocScreen),
             ),
           ),
           // 简介（对标 tv_intro_container + tv_intro_toggle）
@@ -744,7 +764,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               style: TextStyle(fontSize: 13, color: summaryColor),
             ),
           ),
-          if (action != null) action,
+          // [UI-fix v2.0.3 | 2026-08-08] lint：改用 null-aware 元素语法 — Qoder
+          ?action,
         ],
       ),
     );
@@ -894,10 +915,49 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     }
   }
 
+  /// 打开独立目录页（对齐原版 tv_toc_view → TocActivityResult），
+  /// 返回选中章节 index 后走现有阅读跳转链路
+  /// [UI-fix v2.0.3 | 2026-08-08] 模块 E：目录入口改造 — Qoder
+  Future<void> _openTocScreen() async {
+    final book = _loadedBook;
+    if (book == null) return;
+    final result = await Navigator.pushNamed(
+      context,
+      AppRoutes.toc,
+      arguments: book,
+    );
+    if (!mounted) return;
+    if (result is int) {
+      await _openReader(context, book, result);
+    }
+  }
+
   /// 加入书架 / 移出书架（对标原版 tv_shelf 切换逻辑）
   Future<void> _toggleShelf(Book book) async {
     final notifier = ref.read(bookshelfNotifierProvider.notifier);
     if (_inBookshelf) {
+      // [UI-fix v2.0.3 | 2026-08-08] 移出书架按「删除提醒」开关弹确认框
+      // （对齐原版 deleteBook + LocalConfig.deleteBookAlert） — Qoder
+      if (_deleteBookAlert) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('移出书架'),
+            content: Text('确定将《${book.name}》移出书架吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+      }
       await notifier.removeBook(book.bookUrl);
       if (!mounted) return;
       setState(() => _inBookshelf = false);

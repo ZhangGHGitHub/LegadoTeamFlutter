@@ -13,6 +13,7 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../services/settings_service.dart';
 import '../utils/book_progress_utils.dart';
 import '../utils/responsive.dart';
 import '../utils/share_utils.dart';
@@ -479,8 +480,20 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   /// 确认删除书籍对话框
-  void _confirmDeleteBook(BuildContext context, WidgetRef ref, Book book) {
+  /// [UI-fix v2.0.3 | 2026-08-08] 接「删除提醒」开关（对齐原版
+  /// LocalConfig.deleteBookAlert）：开关关闭时跳过确认框直接删除 — Qoder
+  Future<void> _confirmDeleteBook(
+      BuildContext context, WidgetRef ref, Book book) async {
     final messenger = ScaffoldMessenger.of(context);
+    final deleteAlert = await SettingsService().getDeleteBookAlert();
+    if (!context.mounted) return;
+    if (!deleteAlert) {
+      ref.read(bookshelfNotifierProvider.notifier).removeBook(book.bookUrl);
+      messenger.showSnackBar(
+        SnackBar(content: Text('已删除「${book.name}」')),
+      );
+      return;
+    }
     showDialog<void>(
       context: context,
       builder: (dialogContext) {

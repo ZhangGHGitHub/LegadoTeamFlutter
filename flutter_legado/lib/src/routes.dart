@@ -43,6 +43,7 @@ import 'screens/rss_source_edit_screen.dart';
 import 'screens/source_debug_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
 import 'screens/theme_config_screen.dart';
+import 'screens/toc_screen.dart';
 import 'screens/txt_toc_rules_screen.dart';
 import 'screens/video_screen.dart';
 import 'screens/webdav_settings_screen.dart';
@@ -80,6 +81,8 @@ class AppRoutes {
   static const bookGroups = '/book_groups';
   static const bookshelfManage = '/bookshelf/manage';
   static const searchContent = '/search_content';
+  // [UI-fix v2.0.3 | 2026-08-08] 新增独立目录页路由（对齐原版 TocActivity） — Qoder
+  static const toc = '/toc';
   static const about = '/about';
   static const appLog = '/app_log';
   // discover 路由已删除（原版不存在的功能）
@@ -224,6 +227,19 @@ class AppRoutes {
           return const SearchContentScreen();
         },
         about: (_) => const AboutScreen(),
+        // [UI-fix v2.0.3 | 2026-08-08] 独立目录页（对齐原版 TocActivity）：
+        // 优先接收 Book 对象，兼容 Map 传参（is Map 运行时判定规范） — Qoder
+        toc: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is Book) {
+            return TocScreen(book: args);
+          }
+          if (args is Map && args['book'] is Book) {
+            return TocScreen(book: args['book'] as Book);
+          }
+          // 缺少书籍对象时回退到首页，避免崩溃
+          return const HomeScreen();
+        },
         appLog: (_) => const AppLogScreen(),
         rssSourceManage: (_) => const RssSourceManageScreen(),
         rssFavorites: (_) => const RssFavoritesScreen(),

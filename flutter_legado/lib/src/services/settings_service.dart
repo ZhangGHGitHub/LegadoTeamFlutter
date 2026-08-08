@@ -16,6 +16,10 @@ class SettingsService {
   static const _keyShowBookshelfStats = 'bookshelf_show_stats';
   static const _keyBookshelfTabPosition = 'bookshelf_tab_position';
   static const _keyBookshelfLayout = 'bookshelf_layout'; // true=网格 false=列表
+  // [UI-fix v2.0.3 | 2026-08-08] 删除提醒/目录页加载字数开关（对齐原版
+  // LocalConfig.deleteBookAlert / AppConfig.tocCountWords） — Qoder
+  static const _keyDeleteBookAlert = 'delete_book_alert';
+  static const _keyTocLoadWordCount = 'toc_load_word_count';
 
   // ===== 字体大小 =====
 
@@ -578,6 +582,138 @@ class SettingsService {
       await prefs.setInt(_keyLastSyncTime, time.millisecondsSinceEpoch);
     } catch (e) {
       debugPrint('SettingsService.setLastSyncTime 异常: $e');
+    }
+  }
+
+  // ===== 删除提醒（对齐原版 LocalConfig.deleteBookAlert，默认开启） =====
+  // [UI-fix v2.0.3 | 2026-08-08] 删除书籍时是否弹确认框 — Qoder
+
+  Future<bool> getDeleteBookAlert() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyDeleteBookAlert) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getDeleteBookAlert 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> setDeleteBookAlert(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyDeleteBookAlert, value);
+    } catch (e) {
+      debugPrint('SettingsService.setDeleteBookAlert 异常: $e');
+    }
+  }
+
+  // ===== 目录页加载字数（对齐原版 AppConfig.tocCountWords，默认开启） =====
+  // [UI-fix v2.0.3 | 2026-08-08] 控制目录页章节字数显隐 — Qoder
+
+  Future<bool> getTocLoadWordCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyTocLoadWordCount) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getTocLoadWordCount 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> setTocLoadWordCount(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyTocLoadWordCount, value);
+    } catch (e) {
+      debugPrint('SettingsService.setTocLoadWordCount 异常: $e');
+    }
+  }
+
+  // ===== 通用偏好读写助手 =====
+  // [UI-fix v2.0.5 | 2026-08-08] 主题/其他设置页对齐原版新增大量键，
+  // 提供按键名直接读写的通用助手，键名统一收敛在 PrefKeys 常量类 — Qoder
+
+  /// 读取布尔偏好（键不存在时返回 [defaultValue]）
+  Future<bool> getBoolPref(String key, {required bool defaultValue}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(key) ?? defaultValue;
+    } catch (e) {
+      debugPrint('SettingsService.getBoolPref($key) 异常: $e');
+      return defaultValue;
+    }
+  }
+
+  /// 写入布尔偏好
+  Future<void> setBoolPref(String key, bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(key, value);
+    } catch (e) {
+      debugPrint('SettingsService.setBoolPref($key) 异常: $e');
+    }
+  }
+
+  /// 读取整数偏好（键不存在时返回 [defaultValue]）
+  Future<int> getIntPref(String key, {required int defaultValue}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(key) ?? defaultValue;
+    } catch (e) {
+      debugPrint('SettingsService.getIntPref($key) 异常: $e');
+      return defaultValue;
+    }
+  }
+
+  /// 写入整数偏好
+  Future<void> setIntPref(String key, int value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(key, value);
+    } catch (e) {
+      debugPrint('SettingsService.setIntPref($key) 异常: $e');
+    }
+  }
+
+  /// 读取可空整数偏好（键不存在时返回 null，用于"未设置"语义，如自定义主题色）
+  Future<int?> getIntPrefOrNull(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(key);
+    } catch (e) {
+      debugPrint('SettingsService.getIntPrefOrNull($key) 异常: $e');
+      return null;
+    }
+  }
+
+  /// 读取字符串偏好（键不存在时返回 [defaultValue]）
+  Future<String> getStringPref(String key, {String defaultValue = ''}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(key) ?? defaultValue;
+    } catch (e) {
+      debugPrint('SettingsService.getStringPref($key) 异常: $e');
+      return defaultValue;
+    }
+  }
+
+  /// 写入字符串偏好
+  Future<void> setStringPref(String key, String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(key, value);
+    } catch (e) {
+      debugPrint('SettingsService.setStringPref($key) 异常: $e');
+    }
+  }
+
+  /// 移除偏好（恢复默认，对齐原版 removePref）
+  Future<void> removePref(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    } catch (e) {
+      debugPrint('SettingsService.removePref($key) 异常: $e');
     }
   }
 }
