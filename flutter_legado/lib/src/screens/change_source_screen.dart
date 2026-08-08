@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../bridge/ffi.dart' show BridgeError;
 import '../providers/change_source/change_source_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
@@ -218,8 +219,12 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       Navigator.pop(context, newBookUrl);
     } catch (e) {
       if (!mounted) return;
+      // [fix Task#24 | 2026-08-08] BridgeError 未重写 toString，直接内插得到
+      // 无信息的「Instance of 'BridgeError'」。改用 .message 暴露 Rust 侧真实
+      // 错误（如「新书源未解析到任何章节」），便于用户与排查 — Qoder
+      final msg = e is BridgeError ? e.message : e.toString();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('换源失败: $e')),
+        SnackBar(content: Text('换源失败: $msg')),
       );
     }
   }

@@ -814,6 +814,15 @@ Future<String> cacheGetChapter({
   chapterIndex: chapterIndex,
 );
 
+/// 列出某本书已缓存章节的 chapter_url 集合（Task #22，目录页云图标）
+///
+/// 返回 JSON 字符串数组（`["url1","url2",...]`），供 Flutter 目录页解析为
+/// 已缓存 chapter_url 集合，据此为每章渲染「已缓存实心 / 未缓存空心云」图标。
+Future<String> cacheListCachedChapterUrls({required String bookUrl}) => RustLib
+    .instance
+    .api
+    .crateFfiFfiCacheListCachedChapterUrls(bookUrl: bookUrl);
+
 /// 获取缓存书籍数量
 Future<int> cacheGetBookCount() =>
     RustLib.instance.api.crateFfiFfiCacheGetBookCount();

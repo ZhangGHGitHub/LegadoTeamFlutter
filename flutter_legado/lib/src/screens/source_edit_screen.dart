@@ -695,9 +695,10 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
 
   /// 二维码导入（对标原版 menu_qr_code_camera：扫码内容解析回填表单）
   Future<void> _importFromQr() async {
-    final content = await Navigator.of(context).pushNamed<String>(
-      AppRoutes.qrcode,
-    );
+    // [fix Task#24 | 2026-08-08] 去掉 <String> 泛型，避免 routes 表
+    // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
+    final raw = await Navigator.of(context).pushNamed(AppRoutes.qrcode);
+    final content = raw is String ? raw : null;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     if (content == null || content.trim().isEmpty) return;

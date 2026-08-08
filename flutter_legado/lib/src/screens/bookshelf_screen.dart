@@ -395,7 +395,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// 打开书籍信息编辑页，保存成功后刷新书架
   Future<void> _editBookInfo(BuildContext context, WidgetRef ref, Book book) async {
-    final saved = await Navigator.pushNamed<bool>(
+    // [fix Task#24 | 2026-08-08] 去掉 <bool> 泛型，避免 routes 表
+    // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
+    final saved = await Navigator.pushNamed(
       context,
       AppRoutes.editBookInfo,
       arguments: book,

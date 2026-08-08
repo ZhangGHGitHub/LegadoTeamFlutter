@@ -1106,8 +1106,10 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
   /// 二维码导入（对标原版 menu_import_qr）：
   /// HTTP URL → 远程拉取；JSON → 直接解析
   Future<void> _importFromQrCode() async {
-    final content =
-        await Navigator.of(context).pushNamed<String>(AppRoutes.qrcode);
+    // [fix Task#24 | 2026-08-08] 去掉 <String> 泛型，避免 routes 表
+    // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
+    final raw = await Navigator.of(context).pushNamed(AppRoutes.qrcode);
+    final content = raw is String ? raw : null;
     if (!mounted) return;
     if (content == null || content.trim().isEmpty) return;
     final trimmed = content.trim();

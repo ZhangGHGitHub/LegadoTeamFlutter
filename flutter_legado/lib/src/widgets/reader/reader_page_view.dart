@@ -9,7 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../models/models.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../../routes.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/instant_scroll_physics.dart';
 import '../../widgets/loading_indicator.dart';
@@ -470,14 +472,28 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     }
 
     if (state.error != null) {
+      final book = state.currentBook;
+      // [fix Task#24 | 2026-08-08] 正文/章节加载失败（如「正文为空」，多由换源
+      // 匹配错书导致）时，除「重试」外引导用户「换源」逃离坏书源（对齐原版）— Qoder
+      final isOnline = book != null &&
+          book.origin != BookType.localTag &&
+          !book.origin.startsWith(BookType.webDavTag);
       return ErrorView(
         message: state.error!,
         onRetry: () {
-          final book = state.currentBook;
           if (book != null) {
             notifier.openBook(book);
           }
         },
+        onSecondaryAction: isOnline
+            ? () => Navigator.pushNamed(
+                  context,
+                  AppRoutes.changeSource,
+                  arguments: book,
+                )
+            : null,
+        secondaryActionLabel: '换源',
+        secondaryActionIcon: Icons.swap_horiz,
       );
     }
 

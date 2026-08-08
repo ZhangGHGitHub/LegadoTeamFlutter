@@ -1369,8 +1369,10 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   /// 扫码页返回内容后按类型分流：HTTP URL → 远程拉取；书源 JSON → 直接解析；
   /// legado:// 协议链接 → 提示使用关联导入页（支持多类型）。
   Future<void> _importFromQrCode(BuildContext context) async {
-    final content = await Navigator.of(context)
-        .pushNamed<String>(AppRoutes.qrcode);
+    // [fix Task#24 | 2026-08-08] 去掉 <String> 泛型，避免 routes 表
+    // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
+    final raw = await Navigator.of(context).pushNamed(AppRoutes.qrcode);
+    final content = raw is String ? raw : null;
     if (!context.mounted) return;
     if (content == null || content.trim().isEmpty) return;
 
