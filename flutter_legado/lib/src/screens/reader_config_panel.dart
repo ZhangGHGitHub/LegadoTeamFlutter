@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -54,9 +55,22 @@ class ReaderAdvancedConfig {
 
   // [UI-fix v2.0.2 | 2026-08-06] 对标原版 ReadBookConfig：
   // 字距调节/首行缩进/两端对齐（MoreConfig textFullJustify） — Qoder
+  // [UI-fix v2.0.4 | 2026-08-08] 字距语义升级为 em（-0.5~1.0，对标原版
+  // dsbTextLetterSpacing (it-50)/100，渲染时乘以字号转 px）；首行缩进由
+  // bool 升级为 int 档位（0-3 字符，对标原版 tvTextIndent 缩进选择），
+  // 旧 bool 值兼容读取：true→2、false→0 — Qoder
   double letterSpacing;
-  bool paragraphIndent;
+  int paragraphIndent;
   bool textFullJustify;
+
+  // [UI-fix v2.0.4 | 2026-08-08] 界面面板（对标原版 ReadStyleDialog）新增：
+  // 文字字重（textBold：0中/1粗/2细，对标 TextFontWeightConverter）、
+  // 共用布局（shareLayout：原版语义为日间/夜间配置共用布局参数，桌面端
+  // 暂无日夜双配置体系，仅持久化）、自定义文字颜色（长按背景圆圈弹出的
+  // 自定义配色，ARGB 存储，0=跟随背景自动） — Qoder
+  int textBold;
+  bool shareLayout;
+  int customTextColor;
 
   // [UI-fix v2.0.3 | 2026-08-06] 页面边距（对标原版 ReadBookConfig
   // paddingTop/paddingBottom/paddingLeft/paddingRight） — Qoder
@@ -112,6 +126,42 @@ class ReaderAdvancedConfig {
   /// 工具栏样式跟随阅读页（背景/文字色跟随页面，对标原版 readBarStyleFollowPage）
   bool readBarStyleFollowPage;
 
+  // [UI-fix v2.0.4 | 2026-08-08] MoreConfig 第②批（键名逐项对齐原版
+  // pref_config_read.xml，平台受限项仅持久化并在 UI 中诚实标注）— Qoder
+
+  /// 音量键翻页（对标原版 volumeKeyPage；桌面端无音量键，仅 Android 生效）
+  bool volumeKeyPage;
+
+  /// 朗读时音量键翻页（对标原版 volumeKeyPageOnPlay；仅 Android 生效）
+  bool volumeKeyPageOnPlay;
+
+  /// 鼠标滚轮翻页（对标原版 mouseWheelPage，桌面端真实生效）
+  bool mouseWheelPage;
+
+  /// 双页模式（0全局单页/1全局双页/2横屏双页/3平板或横屏双页，
+  /// 对标原版 doubleHorizontalPage；桌面端双页渲染暂未接入，仅持久化）
+  int doubleHorizontalPage;
+
+  /// 使用自定义中文分行（对标原版 useZhLayout；本项目排版引擎已内置
+  /// ZhLayout 中文分行，此开关仅持久化）
+  bool useZhLayout;
+
+  /// 段首标点悬挂（对标原版 hangingPunctuation；排版引擎悬挂规则暂未
+  /// 按此开关切换，仅持久化）
+  bool hangingPunctuation;
+
+  /// 滑动翻页阈值（px，0=系统默认值，对标原版 pageTouchSlop）
+  int pageTouchSlop;
+
+  /// 边缘点击阈值（px，左右边缘多少距离不触发点击，对标原版 pageTouchClick）
+  int pageTouchClick;
+
+  /// 扩展到刘海（正文延伸到刘海区域，对标原版 readBodyToLh；仅 Android 生效）
+  bool readBodyToLh;
+
+  /// 填充刘海区域（对标原版 paddingDisplayCutouts；仅 Android 生效）
+  bool paddingDisplayCutouts;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -121,8 +171,11 @@ class ReaderAdvancedConfig {
     this.rightAction = TapAction.nextPage,
     this.paragraphSpacing = 12,
     this.letterSpacing = 0,
-    this.paragraphIndent = true,
+    this.paragraphIndent = 2,
     this.textFullJustify = true,
+    this.textBold = 0,
+    this.shareLayout = false,
+    this.customTextColor = 0,
     this.pageMarginTop = 24,
     this.pageMarginBottom = 24,
     this.pageMarginLeft = 20,
@@ -143,6 +196,16 @@ class ReaderAdvancedConfig {
     this.showBrightnessView = true,
     this.showReadTitleAddition = true,
     this.readBarStyleFollowPage = false,
+    this.volumeKeyPage = true,
+    this.volumeKeyPageOnPlay = false,
+    this.mouseWheelPage = true,
+    this.doubleHorizontalPage = 0,
+    this.useZhLayout = false,
+    this.hangingPunctuation = false,
+    this.pageTouchSlop = 0,
+    this.pageTouchClick = 0,
+    this.readBodyToLh = true,
+    this.paddingDisplayCutouts = false,
   });
 
   /// 从持久化存储加载
@@ -152,6 +215,37 @@ class ReaderAdvancedConfig {
       final i = prefs.getInt('$_prefix$key');
       if (i == null || i < 0 || i >= TapAction.values.length) return def;
       return TapAction.values[i];
+    }
+
+    // [UI-fix v2.0.4 | 2026-08-08] 字距旧值一次性迁移：旧版以 px 存储
+    // （0~5，UI 25 档），若仅按 raw>1.0 判断会漏掉 0<raw≤1.0 的旧 px
+    // 值（如 0.5px 会被当作 0.5em，渲染后放大一个数量级）。首次读取
+    // 若无迁移标志，则将存量值一律按 px 语义 ÷18（默认字号）换算为
+    // em 并写回 + 置标志；标志存在后直接按 em 读取，重复启动不再
+    // 二次缩放（幂等）；save() 同步置标志防止新写入的 em 值被误
+    // 迁移 — Qoder
+    const migratedKey = '${_prefix}letter_spacing_migrated';
+    if (!(prefs.getBool(migratedKey) ?? false)) {
+      final legacyPx = prefs.getDouble('${_prefix}letter_spacing');
+      if (legacyPx != null) {
+        final em = (legacyPx / 18.0).clamp(-0.5, 1.0);
+        await prefs.setDouble('${_prefix}letter_spacing', em.toDouble());
+      }
+      await prefs.setBool(migratedKey, true);
+    }
+    double letterSpacingEm() {
+      final raw = prefs.getDouble('${_prefix}letter_spacing') ?? 0;
+      return raw.clamp(-0.5, 1.0);
+    }
+
+    // [UI-fix v2.0.4 | 2026-08-08] 缩进档位兼容：新 int 键缺失时读取
+    // 旧 bool 键（true→2 字符 / false→0），默认 2 字符 — Qoder
+    int indentChars() {
+      final v = prefs.getInt('${_prefix}paragraph_indent_chars');
+      if (v != null) return v.clamp(0, 3);
+      final legacy = prefs.getBool('${_prefix}paragraph_indent');
+      if (legacy == null) return 2;
+      return legacy ? 2 : 0;
     }
 
     return ReaderAdvancedConfig(
@@ -164,10 +258,12 @@ class ReaderAdvancedConfig {
       rightAction: tap('right_action', TapAction.nextPage),
       paragraphSpacing: (prefs.getDouble('${_prefix}paragraph_spacing') ?? 12)
           .clamp(0.0, 48.0),
-      letterSpacing: (prefs.getDouble('${_prefix}letter_spacing') ?? 0)
-          .clamp(0.0, 10.0),
-      paragraphIndent: prefs.getBool('${_prefix}paragraph_indent') ?? true,
+      letterSpacing: letterSpacingEm(),
+      paragraphIndent: indentChars(),
       textFullJustify: prefs.getBool('${_prefix}text_full_justify') ?? true,
+      textBold: (prefs.getInt('textBold') ?? 0).clamp(0, 2),
+      shareLayout: prefs.getBool('shareLayout') ?? false,
+      customTextColor: prefs.getInt('${_prefix}custom_text_color') ?? 0,
       pageMarginTop: (prefs.getDouble('${_prefix}margin_top') ?? 24)
           .clamp(0.0, 80.0),
       pageMarginBottom: (prefs.getDouble('${_prefix}margin_bottom') ?? 24)
@@ -196,6 +292,19 @@ class ReaderAdvancedConfig {
       showBrightnessView: prefs.getBool('showBrightnessView') ?? true,
       showReadTitleAddition: prefs.getBool('showReadTitleAddition') ?? true,
       readBarStyleFollowPage: prefs.getBool('readBarStyleFollowPage') ?? false,
+      // [UI-fix v2.0.4 | 2026-08-08] 第②批 MoreConfig 项读取（键名=原版键，
+      // 默认值对齐 pref_config_read.xml android:defaultValue）— Qoder
+      volumeKeyPage: prefs.getBool('volumeKeyPage') ?? true,
+      volumeKeyPageOnPlay: prefs.getBool('volumeKeyPageOnPlay') ?? false,
+      mouseWheelPage: prefs.getBool('mouseWheelPage') ?? true,
+      doubleHorizontalPage:
+          (prefs.getInt('doubleHorizontalPage') ?? 0).clamp(0, 3),
+      useZhLayout: prefs.getBool('useZhLayout') ?? false,
+      hangingPunctuation: prefs.getBool('hangingPunctuation') ?? false,
+      pageTouchSlop: (prefs.getInt('pageTouchSlop') ?? 0).clamp(0, 9999),
+      pageTouchClick: (prefs.getInt('pageTouchClick') ?? 0).clamp(0, 399),
+      readBodyToLh: prefs.getBool('readBodyToLh') ?? true,
+      paddingDisplayCutouts: prefs.getBool('paddingDisplayCutouts') ?? false,
     );
   }
 
@@ -210,7 +319,11 @@ class ReaderAdvancedConfig {
     await prefs.setInt('${_prefix}right_action', rightAction.index);
     await prefs.setDouble('${_prefix}paragraph_spacing', paragraphSpacing);
     await prefs.setDouble('${_prefix}letter_spacing', letterSpacing);
-    await prefs.setBool('${_prefix}paragraph_indent', paragraphIndent);
+    // [UI-fix v2.0.4 | 2026-08-08] 写入即为 em 语义，同步置迁移标志，
+    // 避免 save 先于 load 时新值被误当旧 px 二次换算 — Qoder
+    await prefs.setBool('${_prefix}letter_spacing_migrated', true);
+    // [UI-fix v2.0.4 | 2026-08-08] 缩进档位写新 int 键（旧 bool 键保留不再更新）— Qoder
+    await prefs.setInt('${_prefix}paragraph_indent_chars', paragraphIndent);
     await prefs.setBool('${_prefix}text_full_justify', textFullJustify);
     await prefs.setDouble('${_prefix}margin_top', pageMarginTop);
     await prefs.setDouble('${_prefix}margin_bottom', pageMarginBottom);
@@ -233,6 +346,21 @@ class ReaderAdvancedConfig {
     await prefs.setBool('showBrightnessView', showBrightnessView);
     await prefs.setBool('showReadTitleAddition', showReadTitleAddition);
     await prefs.setBool('readBarStyleFollowPage', readBarStyleFollowPage);
+    // [UI-fix v2.0.4 | 2026-08-08] 界面面板 + 第②批 MoreConfig 项持久化
+    // （textBold/shareLayout 及第②批键名=原版键）— Qoder
+    await prefs.setInt('textBold', textBold);
+    await prefs.setBool('shareLayout', shareLayout);
+    await prefs.setInt('${_prefix}custom_text_color', customTextColor);
+    await prefs.setBool('volumeKeyPage', volumeKeyPage);
+    await prefs.setBool('volumeKeyPageOnPlay', volumeKeyPageOnPlay);
+    await prefs.setBool('mouseWheelPage', mouseWheelPage);
+    await prefs.setInt('doubleHorizontalPage', doubleHorizontalPage);
+    await prefs.setBool('useZhLayout', useZhLayout);
+    await prefs.setBool('hangingPunctuation', hangingPunctuation);
+    await prefs.setInt('pageTouchSlop', pageTouchSlop);
+    await prefs.setInt('pageTouchClick', pageTouchClick);
+    await prefs.setBool('readBodyToLh', readBodyToLh);
+    await prefs.setBool('paddingDisplayCutouts', paddingDisplayCutouts);
   }
 
   ReaderAdvancedConfig copy() => ReaderAdvancedConfig(
@@ -246,6 +374,9 @@ class ReaderAdvancedConfig {
         letterSpacing: letterSpacing,
         paragraphIndent: paragraphIndent,
         textFullJustify: textFullJustify,
+        textBold: textBold,
+        shareLayout: shareLayout,
+        customTextColor: customTextColor,
         pageMarginTop: pageMarginTop,
         pageMarginBottom: pageMarginBottom,
         pageMarginLeft: pageMarginLeft,
@@ -266,8 +397,47 @@ class ReaderAdvancedConfig {
         showBrightnessView: showBrightnessView,
         showReadTitleAddition: showReadTitleAddition,
         readBarStyleFollowPage: readBarStyleFollowPage,
+        volumeKeyPage: volumeKeyPage,
+        volumeKeyPageOnPlay: volumeKeyPageOnPlay,
+        mouseWheelPage: mouseWheelPage,
+        doubleHorizontalPage: doubleHorizontalPage,
+        useZhLayout: useZhLayout,
+        hangingPunctuation: hangingPunctuation,
+        pageTouchSlop: pageTouchSlop,
+        pageTouchClick: pageTouchClick,
+        readBodyToLh: readBodyToLh,
+        paddingDisplayCutouts: paddingDisplayCutouts,
       );
 }
+
+// [UI-fix v2.0.4 | 2026-08-08] 高级配置共享 Provider：界面 Sheet
+// （reader_settings_sheet）与本面板的修改统一推送到此，reader_screen
+// 经 watch 同步 _advConfig（Sheet 调用点位于 reader_screen 禁改区，
+// 无法注入回调，借共享状态打通两条修改路径）— Qoder
+class ReaderAdvConfigNotifier extends Notifier<ReaderAdvancedConfig?> {
+  @override
+  ReaderAdvancedConfig? build() {
+    // 异步自加载持久化配置；若 UI 已先行推送则不覆盖
+    Future.microtask(() async {
+      final cfg = await ReaderAdvancedConfig.load();
+      state ??= cfg;
+    });
+    return null;
+  }
+
+  /// 推送最新配置（调用方负责持久化 save()）
+  void apply(ReaderAdvancedConfig config) => state = config;
+}
+
+/// 阅读器高级配置共享 Provider（null 表示尚未完成首次加载）
+final readerAdvConfigProvider =
+    NotifierProvider<ReaderAdvConfigNotifier, ReaderAdvancedConfig?>(
+  ReaderAdvConfigNotifier.new,
+);
+
+/// 面板可单独展示的区块（界面 Sheet 的「边距/信息」按钮对标原版
+/// ReadStyleDialog 的 showPaddingConfig / TipConfigDialog 独立弹层）
+enum ReaderConfigSection { all, margins, statusBar }
 
 /// 阅读器高级配置面板
 ///
@@ -285,10 +455,15 @@ class ReaderConfigPanel extends ConsumerStatefulWidget {
   /// 配置变更回调（每次修改后触发，便于阅读器实时应用）
   final ValueChanged<ReaderAdvancedConfig>? onChanged;
 
+  // [UI-fix v2.0.4 | 2026-08-08] 区块过滤：界面 Sheet 的「边距/信息」
+  // 按钮仅展示对应区块（对标原版独立弹层）— Qoder
+  final ReaderConfigSection section;
+
   const ReaderConfigPanel({
     super.key,
     required this.config,
     this.onChanged,
+    this.section = ReaderConfigSection.all,
   });
 
   /// 便捷入口：弹出配置面板
@@ -296,18 +471,24 @@ class ReaderConfigPanel extends ConsumerStatefulWidget {
     BuildContext context, {
     required ReaderAdvancedConfig config,
     ValueChanged<ReaderAdvancedConfig>? onChanged,
+    ReaderConfigSection section = ReaderConfigSection.all,
   }) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.75,
+        // 单区块展示时降低初始高度（内容更短）
+        initialChildSize: section == ReaderConfigSection.all ? 0.75 : 0.5,
         minChildSize: 0.4,
         maxChildSize: 0.92,
         builder: (_, scrollController) => SingleChildScrollView(
           controller: scrollController,
-          child: ReaderConfigPanel(config: config, onChanged: onChanged),
+          child: ReaderConfigPanel(
+            config: config,
+            onChanged: onChanged,
+            section: section,
+          ),
         ),
       ),
     );
@@ -357,11 +538,48 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
   void _commit() {
     unawaited(_config.save());
     widget.onChanged?.call(_config.copy());
+    // [UI-fix v2.0.4 | 2026-08-08] 同步推送共享 Provider（界面 Sheet /
+    // reader_screen 经 watch 实时感知面板修改）— Qoder
+    ref.read(readerAdvConfigProvider.notifier).apply(_config.copy());
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    // [UI-fix v2.0.4 | 2026-08-08] 区块过滤模式：仅渲染指定区块 — Qoder
+    final List<Widget> children;
+    switch (widget.section) {
+      case ReaderConfigSection.margins:
+        children = [_buildPageMargins()];
+        break;
+      case ReaderConfigSection.statusBar:
+        children = [_buildStatusBar()];
+        break;
+      case ReaderConfigSection.all:
+        children = [
+          Text('高级阅读设置', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          _buildFlipMode(),
+          const Divider(),
+          _buildAutoPageTurn(),
+          const Divider(),
+          _buildTapZones(),
+          const Divider(),
+          _buildParagraphSpacing(),
+          const Divider(),
+          _buildTypography(),
+          const Divider(),
+          _buildPageMargins(),
+          const Divider(),
+          _buildMoreConfig(),
+          const Divider(),
+          _buildBrightnessControl(),
+          const Divider(),
+          _buildStatusBar(),
+        ];
+        break;
+    }
+
     return SafeArea(
       top: false,
       child: Padding(
@@ -380,25 +598,7 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
               ),
             ),
             const SizedBox(height: 12),
-            Text('高级阅读设置', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            _buildFlipMode(),
-            const Divider(),
-            _buildAutoPageTurn(),
-            const Divider(),
-            _buildTapZones(),
-            const Divider(),
-            _buildParagraphSpacing(),
-            const Divider(),
-            _buildTypography(),
-            const Divider(),
-            _buildPageMargins(),
-            const Divider(),
-            _buildMoreConfig(),
-            const Divider(),
-            _buildBrightnessControl(),
-            const Divider(),
-            _buildStatusBar(),
+            ...children,
           ],
         ),
       ),
@@ -614,16 +814,18 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           },
         ),
         // 字距调节（对标原版 ReadBookConfig.letterSpacing）
+        // [UI-fix v2.0.4 | 2026-08-08] 语义升级为 em：-0.5~1.0 步长 0.02
+        // （对标原版 dsbTextLetterSpacing (it-50)/100）— Qoder
         Row(
           children: [
             Text('字距', style: Theme.of(context).textTheme.bodyMedium),
             Expanded(
               child: Slider(
-                value: _config.letterSpacing,
-                min: 0,
-                max: 5,
-                divisions: 25,
-                label: _config.letterSpacing.toStringAsFixed(1),
+                value: _config.letterSpacing.clamp(-0.5, 1.0),
+                min: -0.5,
+                max: 1.0,
+                divisions: 75,
+                label: _config.letterSpacing.toStringAsFixed(2),
                 onChanged: (v) {
                   _config.letterSpacing = v;
                   _commit();
@@ -633,27 +835,40 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
             SizedBox(
               width: 48,
               child: Text(
-                _config.letterSpacing.toStringAsFixed(1),
+                _config.letterSpacing.toStringAsFixed(2),
                 textAlign: TextAlign.end,
                 style: Theme.of(context).textTheme.labelMedium,
               ),
             ),
           ],
         ),
-        // 首行缩进（对标原版 paragraphIndent）
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('首行缩进'),
-          subtitle: const Text('段落首行缩进两个字符'),
-          value: _config.paragraphIndent,
-          onChanged: (v) {
-            _config.paragraphIndent = v;
-            _commit();
-          },
-        ),
+        // 首行缩进（对标原版 tvTextIndent 缩进选择器）
+        // [UI-fix v2.0.4 | 2026-08-08] bool 开关升级为 0-3 字符档位 — Qoder
+        _moreRow('首行缩进', _indentLabel(_config.paragraphIndent), () {
+          _showChoiceDialog<int>(
+            title: '首行缩进',
+            current: _config.paragraphIndent,
+            options: const {
+              0: '无缩进',
+              1: '一字符',
+              2: '二字符',
+              3: '三字符',
+            },
+            onPick: (v) {
+              _config.paragraphIndent = v;
+              _commit();
+            },
+          );
+        }),
       ],
     );
+  }
+
+  /// 缩进档位显示文案
+  String _indentLabel(int v) {
+    const labels = ['无缩进', '一字符', '二字符', '三字符'];
+    if (v < 0 || v >= labels.length) return '二字符';
+    return labels[v];
   }
 
   // ===== 页面边距（对标原版 ReadStyleDialog 的四向 padding 调节） =====
@@ -934,9 +1149,189 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
             _commit();
           },
         ),
-        // TODO(留批次): 音量键翻页/鼠标滚轮翻页（平台按键事件，第②批）、
-        // 双页横向/中文排版/避头尾等排版引擎增强项 — Qoder
+        // [UI-fix v2.0.4 | 2026-08-08] MoreConfig 第②批：按原版
+        // pref_config_read.xml 项序与文案补齐，平台受限项以副标题
+        // 灰字诚实标注（不引入新依赖）— Qoder
+        // 扩展到刘海（原版 readBodyToLh；仅 Android 生效）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('扩展到刘海'),
+          subtitle: const Text('正文延伸到刘海区域（仅 Android 生效）'),
+          value: _config.readBodyToLh,
+          onChanged: (v) {
+            _config.readBodyToLh = v;
+            _commit();
+          },
+        ),
+        // 填充刘海区域（原版 paddingDisplayCutouts；仅 Android 生效）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('填充刘海区域'),
+          subtitle: const Text('页面边距避开刘海区域（仅 Android 生效）'),
+          value: _config.paddingDisplayCutouts,
+          onChanged: (v) {
+            _config.paddingDisplayCutouts = v;
+            _commit();
+          },
+        ),
+        // 平板/横屏双页（原版 doubleHorizontalPage，4 档；桌面端双页
+        // 渲染暂未接入，设置仅持久化）
+        _moreRow('平板/横屏双页',
+            _doublePageLabel(_config.doubleHorizontalPage), () {
+          _showChoiceDialog<int>(
+            title: '平板/横屏双页',
+            current: _config.doubleHorizontalPage,
+            options: const {
+              0: '全局单页',
+              1: '全局双页',
+              2: '横屏双页',
+              3: '平板/横屏双页',
+            },
+            onPick: (v) {
+              _config.doubleHorizontalPage = v;
+              _commit();
+            },
+          );
+        }),
+        // 使用自定义中文分行（原版 useZhLayout；本项目排版引擎已内置
+        // ZhLayout 中文分行，开关仅持久化）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('使用自定义中文分行'),
+          subtitle: const Text('排版引擎已内置中文分行，开关仅持久化'),
+          value: _config.useZhLayout,
+          onChanged: (v) {
+            _config.useZhLayout = v;
+            _commit();
+          },
+        ),
+        // 段首标点悬挂（原版 hangingPunctuation；排版引擎悬挂规则暂未
+        // 按此开关切换，仅持久化）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('段首标点悬挂'),
+          subtitle: const Text('段首引号等标点悬挂于缩进内，使正文首字与其他段落对齐'),
+          value: _config.hangingPunctuation,
+          onChanged: (v) {
+            _config.hangingPunctuation = v;
+            _commit();
+          },
+        ),
+        // 鼠标滚轮翻页（原版 mouseWheelPage；桌面端真实生效）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('鼠标滚轮翻页'),
+          subtitle: const Text('分页模式下滚轮上下滚动翻页'),
+          value: _config.mouseWheelPage,
+          onChanged: (v) {
+            _config.mouseWheelPage = v;
+            _commit();
+          },
+        ),
+        // 音量键翻页（原版 volumeKeyPage；桌面端无音量键事件）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('音量键翻页'),
+          subtitle: const Text('仅 Android 生效'),
+          value: _config.volumeKeyPage,
+          onChanged: (v) {
+            _config.volumeKeyPage = v;
+            _commit();
+          },
+        ),
+        // 朗读时音量键翻页（原版 volumeKeyPageOnPlay；仅 Android 生效）
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('朗读时音量键翻页'),
+          subtitle: const Text('仅 Android 生效'),
+          value: _config.volumeKeyPageOnPlay,
+          onChanged: (v) {
+            _config.volumeKeyPageOnPlay = v;
+            _commit();
+          },
+        ),
+        // 滑动翻页阈值（原版 pageTouchSlop：NumberPicker 0-9999，
+        // 0=系统默认值；桌面端手势阈值暂未接入，仅持久化）
+        _moreRow('滑动翻页阈值',
+            _config.pageTouchSlop == 0 ? '系统默认' : '${_config.pageTouchSlop}px',
+            () {
+          _showNumberDialog(
+            title: '滑动翻页阈值（0 = 系统默认值）',
+            current: _config.pageTouchSlop,
+            max: 9999,
+            onPick: (v) {
+              _config.pageTouchSlop = v;
+              _commit();
+            },
+          );
+        }),
+        // 边缘点击阈值（原版 pageTouchClick：NumberPicker 0-399，
+        // 左右边缘多少距离不触发点击；桌面端仅持久化）
+        _moreRow('边缘点击阈值', '${_config.pageTouchClick}px', () {
+          _showNumberDialog(
+            title: '边缘点击阈值',
+            current: _config.pageTouchClick,
+            max: 399,
+            onPick: (v) {
+              _config.pageTouchClick = v;
+              _commit();
+            },
+          );
+        }),
       ],
+    );
+  }
+
+  // ===== MoreConfig 第②批辅助构建方法 =====
+
+  /// 双页模式档位显示文案（对齐原版 R.array.double_page_title）
+  String _doublePageLabel(int v) {
+    const labels = ['全局单页', '全局双页', '横屏双页', '平板/横屏双页'];
+    if (v < 0 || v >= labels.length) return '全局单页';
+    return labels[v];
+  }
+
+  /// 数值输入对话框（对标原版 NumberPickerDialog，桌面端用文本输入）
+  void _showNumberDialog({
+    required String title,
+    required int current,
+    required int max,
+    required ValueChanged<int> onPick,
+  }) {
+    final controller = TextEditingController(text: current.toString());
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: InputDecoration(hintText: '0 ~ $max'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final v = int.tryParse(controller.text) ?? current;
+              Navigator.pop(dialogContext);
+              onPick(v.clamp(0, max));
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -988,7 +1383,9 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
     );
   }
 
-  /// 单选对话框（对标原版 ListPreference 弹层选择交互）
+  /// 单选对话框（对标原版 ListPreference 弹层选择交互；
+  /// [UI-fix v2.0.4 | 2026-08-08] RadioListTile 改 ListTile+勾选，
+  /// 避开 groupValue/onChanged 弃用 API — Qoder）
   void _showChoiceDialog<T>({
     required String title,
     required T current,
@@ -1001,13 +1398,15 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
         title: Text(title),
         children: [
           for (final entry in options.entries)
-            RadioListTile<T>(
+            ListTile(
               title: Text(entry.value),
-              value: entry.key,
-              groupValue: current,
-              onChanged: (v) {
+              trailing: current == entry.key
+                  ? Icon(Icons.check,
+                      color: Theme.of(dialogContext).colorScheme.primary)
+                  : null,
+              onTap: () {
                 Navigator.pop(dialogContext);
-                if (v != null) onPick(v);
+                onPick(entry.key);
               },
             ),
         ],

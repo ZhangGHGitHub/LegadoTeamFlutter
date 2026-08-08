@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -27,11 +28,13 @@ class ReaderPageView extends ConsumerStatefulWidget {
   // [UI-fix v2.0.2 | 2026-08-06] 阅读配置面板新增参数接入排版：
   // 字距调节/首行缩进/两端对齐（MoreConfig） — Qoder
 
-  /// 字距（对标原版 ReadBookConfig.letterSpacing）
+  /// 字距（em 语义，对标原版 ReadBookConfig.letterSpacing；渲染/测量时
+  /// 乘以字号换算为 px，[UI-fix v2.0.4 | 2026-08-08] — Qoder）
   final double letterSpacing;
 
-  /// 首行缩进开关（true=缩进两字符，对标原版 paragraphIndent）
-  final bool paragraphIndent;
+  /// 首行缩进字符数（0-3，对标原版 paragraphIndent 缩进档位；
+  /// [UI-fix v2.0.4 | 2026-08-08] 由 bool 升级为 int 档位）
+  final int paragraphIndent;
 
   /// 两端对齐开关（对标 MoreConfig textFullJustify）
   final bool textFullJustify;
@@ -51,11 +54,23 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 滚动翻页无动画（对标原版 noAnimScrollPage：程序化翻页去除动画）
   final bool noAnimScroll;
 
+  // [UI-fix v2.0.4 | 2026-08-08] 界面面板/MoreConfig 第②批消费点 — Qoder
+
+  /// 文字字重（0中/1粗/2细，对标原版 textBold）
+  final int textBold;
+
+  /// 自定义文字颜色（ARGB，0=跟随背景自动，对标原版自定义配色）
+  final int customTextColor;
+
+  /// 鼠标滚轮翻页（对标原版 mouseWheelPage；分页模式下滚轮上下滚动翻页，
+  /// 滚动模式不拦截交给内层 Scrollable）
+  final bool mouseWheelPage;
+
   const ReaderPageView({
     super.key,
     required this.paragraphSpacing,
     this.letterSpacing = 0.0,
-    this.paragraphIndent = true,
+    this.paragraphIndent = 2,
     this.textFullJustify = true,
     this.marginTop = 24,
     this.marginBottom = 24,
@@ -63,6 +78,9 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.marginRight = 20,
     this.selectText = true,
     this.noAnimScroll = false,
+    this.textBold = 0,
+    this.customTextColor = 0,
+    this.mouseWheelPage = true,
   });
 
   @override
@@ -95,7 +113,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   // [UI-fix v2.0.2 | 2026-08-06] 分页缓存键新增字距/缩进/对齐/字体 — Qoder
   double _paginatedLetterSpacing = double.nan;
-  bool _paginatedIndent = true;
+  // [UI-fix v2.0.4 | 2026-08-08] 缩进改 int 档位；新增字重缓存键 — Qoder
+  int _paginatedIndent = -1;
+  int _paginatedTextBold = -1;
   bool _paginatedJustify = true;
   String? _paginatedFontFamily;
 
@@ -125,6 +145,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   /// 当前页索引
   int get currentPageIndex => _currentPageIndex;
+
+  // [UI-fix v2.0.4 | 2026-08-08] 鼠标滚轮翻页节流时间戳（300ms 防连翻，
+  // 对标原版 ReadView 滚轮事件单次翻页语义）— Qoder
+  DateTime _lastWheelTurn = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// 当前章分页总数（进度条「调章内页」行为消费）
   int get pageCount => _paginatedPages.length;
@@ -302,8 +326,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final spacing = widget.paragraphSpacing;
     final chapterIndex = state.currentChapterIndex;
     // [UI-fix v2.0.2 | 2026-08-06] 字距/首行缩进/两端对齐/字体变化同样触发重新分页 — Qoder
-    final letterSpacing = widget.letterSpacing;
+    // [UI-fix v2.0.4 | 2026-08-08] 字距 em → px（×字号）；缩进改档位；
+    // 字重变化同样触发重新分页（测量与渲染同参保证分页一致）— Qoder
+    final letterSpacing = widget.letterSpacing * fontSize;
     final indent = widget.paragraphIndent;
+    final textBold = widget.textBold;
     final justify = widget.textFullJustify;
     final fontFamily = _fontFamily;
     // [UI-fix v2.0.3 | 2026-08-06] 页面边距变化同样触发重新分页 — Qoder
@@ -322,6 +349,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             spacing != _paginatedParagraphSpacing ||
             letterSpacing != _paginatedLetterSpacing ||
             indent != _paginatedIndent ||
+            textBold != _paginatedTextBold ||
             justify != _paginatedJustify ||
             fontFamily != _paginatedFontFamily ||
             margins != _paginatedMargins ||
@@ -335,29 +363,76 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final availableWidth = screenSize.width -
         widget.marginLeft -
         widget.marginRight;
+    // [UI-fix v2.0.4 | 2026-08-08] 分页可用高度与渲染容器严格一致：
+    // 渲染侧（ReaderTypographicPage）Column = 首页标题块 +
+    // Expanded(正文) + 页码指示（top 8 + 11 号文字）；此前用固定
+    // 40 估算页脚且未扣首页标题块高度，满页正文首页底部
+    // RenderFlex 溢出 ~16-27px（随字号增大）。改为 TextPainter 按
+    // 渲染同参实测页脚与标题块高度，首页容量单独下发排版引擎 — Qoder
+    final textScaler = MediaQuery.textScalerOf(context);
+    // 实测样式合并 DefaultTextStyle（与渲染侧 Text 的主题字体一致，
+    // 避免字体度量差异引入像素级偏差）
+    final baseStyle = DefaultTextStyle.of(context).style;
+    final indicatorPainter = TextPainter(
+      text: TextSpan(
+        text: '0/0',
+        style: baseStyle.merge(const TextStyle(fontSize: 11)),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: textScaler,
+    )..layout();
+    final footerHeight = 8 + indicatorPainter.height;
+    indicatorPainter.dispose();
     final availableHeight = screenSize.height -
         padding.top -
         padding.bottom -
-        40 -
+        footerHeight -
         widget.marginTop -
         widget.marginBottom;
+
+    // 首页标题块高度（与渲染侧 pageIndex==0 分支同参：标题按
+    // availableWidth 换行实测 + 20 底部间距）
+    var firstPageHeight = availableHeight;
+    final chapterTitle = state.currentChapter?.title;
+    if (chapterTitle != null) {
+      final titlePainter = TextPainter(
+        text: TextSpan(
+          text: chapterTitle,
+          style: baseStyle.merge(TextStyle(
+            fontSize: fontSize + 4,
+            fontWeight: FontWeight.bold,
+          )),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: textScaler,
+      )..layout(maxWidth: availableWidth);
+      firstPageHeight = availableHeight - titlePainter.height - 20;
+      titlePainter.dispose();
+      // 极端小窗口兼底：首页至少容纳一行正文
+      final minHeight = fontSize * lineHeight;
+      if (firstPageHeight < minHeight) firstPageHeight = minHeight;
+    }
 
     final config = ParagraphConfig(
       fontSize: fontSize,
       lineHeight: lineHeight,
       paragraphSpacing: spacing,
-      // [UI-fix v2.0.2 | 2026-08-06] 首行缩进接入配置（关闭时为 0，
-      // 排版引擎按全角空格实现；单字符缩进待排版引擎增强） — Qoder
-      indent: indent ? fontSize * 2 : 0,
+      // [UI-fix v2.0.4 | 2026-08-08] 缩进档位（0-3 字符）接入排版引擎；
+      // 字重接入测量（与渲染同参）— Qoder
+      indent: indent > 0 ? fontSize * indent : 0,
+      indentCount: indent,
+      fontWeight: _fontWeightFor(textBold),
       justify: justify,
-      textColor: state.textColor,
+      textColor: _resolveTextColor(state),
       backgroundColor: state.backgroundColor,
       letterSpacing: letterSpacing,
       fontFamily: fontFamily,
     );
 
     final engine = ParagraphLayoutEngine(config: config, context: context);
-    final pages = engine.paginateChapter(content, availableWidth, availableHeight);
+    // [UI-fix v2.0.4 | 2026-08-08] 首页容量单独下发（扣标题块）— Qoder
+    final pages = engine.paginateChapter(content, availableWidth, availableHeight,
+        firstPageHeight: firstPageHeight);
 
     _paginatedPages = pages;
     _paginatedContent = content;
@@ -367,6 +442,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedParagraphSpacing = spacing;
     _paginatedLetterSpacing = letterSpacing;
     _paginatedIndent = indent;
+    _paginatedTextBold = textBold;
     _paginatedJustify = justify;
     _paginatedFontFamily = fontFamily;
     _paginatedMargins = margins;
@@ -408,22 +484,91 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 排版引擎：检测是否需要重新分页
     _paginateIfNeeded(context, state);
 
+    final Widget content;
     switch (state.pageTurnMode) {
       case PageTurnMode.scroll:
-        return _buildScrollContent(state);
+        content = _buildScrollContent(state);
+        break;
       case PageTurnMode.slide:
-        return _buildSlideContent(state);
+        content = _buildSlideContent(state);
+        break;
       case PageTurnMode.simulate:
-        return _buildSimulateContent(state);
+        content = _buildSimulateContent(state);
+        break;
       case PageTurnMode.none:
-        return _buildNoneContent(state);
+        content = _buildNoneContent(state);
+        break;
       case PageTurnMode.cover:
-        return _buildCoverContent(state);
+        content = _buildCoverContent(state);
+        break;
+    }
+
+    // [UI-fix v2.0.4 | 2026-08-08] 鼠标滚轮翻页（对标原版 mouseWheelPage）：
+    // 分页模式下用顶层覆盖 Listener 拦截滚轮事件（内层 PageView 的
+    // Scrollable 在命中测试中先注册 pointerSignalResolver 会胜出，
+    // 覆盖层居顶保证先注册；translucent 不影响下层点击/拖拽）；
+    // 滚动模式不拦截，滚轮交给正文 Scrollable 自然滚动 — Qoder
+    if (state.pageTurnMode == PageTurnMode.scroll || !widget.mouseWheelPage) {
+      return content;
+    }
+    return Stack(
+      children: [
+        content,
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerSignal: _handlePointerSignal,
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 滚轮事件处理：下滚下一页 / 上滚上一页（300ms 节流）
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (e) {
+      final scroll = e as PointerScrollEvent;
+      final now = DateTime.now();
+      if (now.difference(_lastWheelTurn).inMilliseconds < 300) return;
+      _lastWheelTurn = now;
+      if (scroll.scrollDelta.dy > 0) {
+        nextPageOrChapter();
+      } else if (scroll.scrollDelta.dy < 0) {
+        prevPageOrChapter();
+      }
+    });
+  }
+
+  /// textBold 档位 → FontWeight（0中/1粗/2细，对标原版
+  /// TextFontWeightConverter 的 normal/bold/light）
+  FontWeight? _fontWeightFor(int bold) {
+    switch (bold) {
+      case 1:
+        return FontWeight.w700;
+      case 2:
+        return FontWeight.w300;
+      default:
+        return null;
     }
   }
 
+  /// 解析正文文字颜色：自定义色优先；自定义背景（非预设）按亮度
+  /// 自适应深/浅文字色；否则沿用预设派生色（state.textColor）
+  Color _resolveTextColor(ReaderState state) {
+    if (widget.customTextColor != 0) return Color(widget.customTextColor);
+    if (!ReaderBackground.presets.contains(state.backgroundColor)) {
+      return state.backgroundColor.computeLuminance() < 0.5
+          ? const Color(0xFFCCCCCC)
+          : const Color(0xFF333333);
+    }
+    return state.textColor;
+  }
+
   Widget _buildScrollContent(ReaderState state) {
-    final textColor = state.textColor;
+    // [UI-fix v2.0.4 | 2026-08-08] 文字色经自定义配色解析 — Qoder
+    final textColor = _resolveTextColor(state);
 
     return SafeArea(
       top: !state.showControls,
@@ -462,8 +607,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   paragraphSpacing: widget.paragraphSpacing,
                   textColor: textColor,
                   // [UI-fix v2.0.2 | 2026-08-06] 字距/字体/两端对齐透传到正文渲染 — Qoder
-                  letterSpacing: widget.letterSpacing,
+                  // [UI-fix v2.0.4 | 2026-08-08] 字距 em→px；字重接线 — Qoder
+                  letterSpacing: widget.letterSpacing * state.fontSize,
                   fontFamily: _fontFamily,
+                  fontWeight: _fontWeightFor(widget.textBold),
                   justify: widget.textFullJustify,
                   // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入长按选择 — Qoder
                   selectText: widget.selectText,
@@ -475,8 +622,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 lineHeight: state.lineHeight,
                 paragraphSpacing: widget.paragraphSpacing,
                 textColor: textColor,
-                letterSpacing: widget.letterSpacing,
+                // [UI-fix v2.0.4 | 2026-08-08] 字距 em→px；字重接线 — Qoder
+                letterSpacing: widget.letterSpacing * state.fontSize,
                 fontFamily: _fontFamily,
+                fontWeight: _fontWeightFor(widget.textBold),
                 // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入滚动回退渲染 — Qoder
                 selectText: widget.selectText,
               )
@@ -724,7 +873,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       lineHeight: state.lineHeight,
       paragraphSpacing: widget.paragraphSpacing,
       backgroundColor: state.backgroundColor,
-      textColor: state.textColor,
+      // [UI-fix v2.0.4 | 2026-08-08] 文字色经自定义配色解析；字距/字体/
+      // 对齐/字重透传到分页页渲染（与测量同参）— Qoder
+      textColor: _resolveTextColor(state),
+      letterSpacing: widget.letterSpacing * state.fontSize,
+      fontFamily: _fontFamily,
+      justify: widget.textFullJustify,
+      fontWeight: _fontWeightFor(widget.textBold),
       // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入分页页正文渲染 — Qoder
       selectText: widget.selectText,
       // [UI-fix v2.0.3 | 2026-08-06] 分页页内容边距接配置 — Qoder

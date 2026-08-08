@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:ui' show Color;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
@@ -44,6 +48,14 @@ class ReaderNotifier extends Notifier<ReaderState> {
     var backgroundColor = state.backgroundColor;
     if (bgIndex >= 0 && bgIndex < ReaderBackground.presets.length) {
       backgroundColor = ReaderBackground.presets[bgIndex];
+    }
+
+    // [UI-fix v2.0.4 | 2026-08-08] 恢复自定义背景色（界面 Sheet 长按
+    // 背景圆圈自定义配色，对标原版 ReadBookConfig 自定义背景）— Qoder
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('reader_bg_use_custom') ?? false) {
+      final custom = prefs.getInt('reader_custom_bg_color');
+      if (custom != null) backgroundColor = Color(custom);
     }
 
     state = state.copyWith(
@@ -154,19 +166,34 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   /// 更新行高
+  // [UI-fix v2.0.4 | 2026-08-08] 上限 2.5 → 3.0（界面 Sheet 行距连续
+  // 滑条 1.0-3.0，对标原版 dsbLineSize 范围）— Qoder
   void updateLineHeight(double height) {
-    final clamped = height.clamp(1.0, 2.5);
+    final clamped = height.clamp(1.0, 3.0);
     state = state.copyWith(lineHeight: clamped);
     _settings.setLineHeight(clamped);
   }
 
-  /// 更新背景色
+  /// 更新背景色（预设）
   void updateBackgroundColor(dynamic color) {
     state = state.copyWith(backgroundColor: color);
     final index = ReaderBackground.presets.indexOf(color);
     if (index >= 0) {
       _settings.setBgColorIndex(index);
+      // [UI-fix v2.0.4 | 2026-08-08] 选中预设时清除自定义背景标志，
+      // 下次启动按预设恢复 — Qoder
+      unawaited(SharedPreferences.getInstance()
+          .then((p) => p.setBool('reader_bg_use_custom', false)));
     }
+  }
+
+  // [UI-fix v2.0.4 | 2026-08-08] 自定义背景色（界面 Sheet 长按背景圆圈
+  // 自定义配色）：即时应用并持久化，启动时经 _loadSettings 恢复 — Qoder
+  Future<void> updateCustomBackgroundColor(Color color) async {
+    state = state.copyWith(backgroundColor: color);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('reader_custom_bg_color', color.toARGB32());
+    await prefs.setBool('reader_bg_use_custom', true);
   }
 
   /// 更新翻页模式

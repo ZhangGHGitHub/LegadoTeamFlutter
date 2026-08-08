@@ -85,6 +85,12 @@ class ParagraphConfig {
   final double letterSpacing;
   final String? fontFamily;
 
+  // [UI-fix v2.0.4 | 2026-08-08] 界面面板对齐原版 ReadStyleDialog：
+  // 缩进字符数档位（0-3，对标原版 tvTextIndent "　".repeat(index)）与
+  // 文字字重（textBold 映射 FontWeight，测量与渲染同参避免分页偏差） — Qoder
+  final int indentCount;
+  final FontWeight? fontWeight;
+
   const ParagraphConfig({
     this.fontSize = 16.0,
     this.lineHeight = 1.6,
@@ -95,6 +101,8 @@ class ParagraphConfig {
     this.textColor = Colors.black,
     this.letterSpacing = 0.0,
     this.fontFamily,
+    this.indentCount = 2,
+    this.fontWeight,
   });
 
   ParagraphConfig copyWith({
@@ -107,6 +115,8 @@ class ParagraphConfig {
     Color? textColor,
     double? letterSpacing,
     String? fontFamily,
+    int? indentCount,
+    FontWeight? fontWeight,
   }) {
     return ParagraphConfig(
       fontSize: fontSize ?? this.fontSize,
@@ -118,6 +128,8 @@ class ParagraphConfig {
       textColor: textColor ?? this.textColor,
       letterSpacing: letterSpacing ?? this.letterSpacing,
       fontFamily: fontFamily ?? this.fontFamily,
+      indentCount: indentCount ?? this.indentCount,
+      fontWeight: fontWeight ?? this.fontWeight,
     );
   }
 }
@@ -271,13 +283,22 @@ class ParagraphLayoutEngine {
   /// 移植自 TextChapterLayout.kt getTextChapter + prepareNextPageIfNeed：
   /// 逐段排版，累积到当前页；超出页面高度时开始新页。
   /// 返回的每个 PageInfo 代表一屏内容。
-  List<PageInfo> paginateChapter(String content, double availableWidth, double pageHeight) {
+  ///
+  /// [UI-fix v2.0.4 | 2026-08-08] 新增 [firstPageHeight]：首页可用高度
+  /// （渲染侧首页预留章节标题块，容量小于后续页；不传则与
+  /// pageHeight 一致），修复满页正文首页底部 RenderFlex 溢出 — Qoder
+  List<PageInfo> paginateChapter(String content, double availableWidth, double pageHeight,
+      {double? firstPageHeight}) {
     final paragraphs = _splitParagraphs(content);
     if (paragraphs.isEmpty) return [];
 
     final pages = <PageInfo>[];
     var currentPageParagraphs = <ParagraphInfo>[];
     var currentHeight = 0.0;
+
+    // 指定页的可用高度：首页按 firstPageHeight，其余页按 pageHeight
+    double capacityFor(int pageIndex) =>
+        pageIndex == 0 ? (firstPageHeight ?? pageHeight) : pageHeight;
 
     for (var i = 0; i < paragraphs.length; i++) {
       final para = paragraphs[i];
@@ -286,23 +307,28 @@ class ParagraphLayoutEngine {
       // 段落间距（对应 Kotlin durY += textHeight * paragraphSpacing / 10f）
       double spacingHeight = currentPageParagraphs.isNotEmpty ? config.paragraphSpacing : 0.0;
 
-      // 单段超出整页高度时，按行拆分到多页
-      if (paraInfo.totalHeight > pageHeight) {
+      // 单段超出其起始页容量时，按行拆分到多页（当前页已有内容则
+      // 段落从下一页起排，按整页容量判断）
+      final startCapacity =
+          currentPageParagraphs.isEmpty ? capacityFor(pages.length) : pageHeight;
+      if (paraInfo.totalHeight > startCapacity) {
         // 先把之前累积的段落存为一页
         if (currentPageParagraphs.isNotEmpty) {
           pages.add(PageInfo(paragraphs: List.from(currentPageParagraphs), totalHeight: currentHeight));
           currentPageParagraphs = [];
           currentHeight = 0.0;
         }
-        // 按行拆分超长段落
-        final subPages = _splitTallParagraph(paraInfo, pageHeight);
+        // 按行拆分超长段落（首张子页若落在章首页则按首页容量）
+        final subPages = _splitTallParagraph(paraInfo, pageHeight,
+            firstPageCapacity: capacityFor(pages.length));
         pages.addAll(subPages);
         continue;
       }
 
       // 检查是否需要换页（对应 Kotlin prepareNextPageIfNeed）
       if (currentPageParagraphs.isNotEmpty &&
-          (currentHeight + spacingHeight + paraInfo.totalHeight > pageHeight)) {
+          (currentHeight + spacingHeight + paraInfo.totalHeight >
+              capacityFor(pages.length))) {
         // 当前页已满，保存并开始新页
         pages.add(PageInfo(paragraphs: List.from(currentPageParagraphs), totalHeight: currentHeight));
         currentPageParagraphs = [paraInfo];
@@ -323,14 +349,20 @@ class ParagraphLayoutEngine {
 
   /// 将超出单页高度的段落按行拆分到多页
   ///
-  /// 对应 Kotlin TextChapterLayout 中单段超长时的逐行分页逻辑
-  List<PageInfo> _splitTallParagraph(ParagraphInfo paraInfo, double pageHeight) {
+  /// 对应 Kotlin TextChapterLayout 中单段超长时的逐行分页逻辑；
+  /// [UI-fix v2.0.4 | 2026-08-08] 支持首张子页按 [firstPageCapacity]
+  /// 限容（落在章首页时预留标题块高度）— Qoder
+  List<PageInfo> _splitTallParagraph(ParagraphInfo paraInfo, double pageHeight,
+      {double? firstPageCapacity}) {
     final pages = <PageInfo>[];
     final textHeight = config.fontSize * config.lineHeight;
-    final linesPerPage = (pageHeight / textHeight).floor().clamp(1, 9999);
 
     var lineIdx = 0;
+    var subPageNo = 0;
     while (lineIdx < paraInfo.lines.length) {
+      final capacity =
+          subPageNo == 0 ? (firstPageCapacity ?? pageHeight) : pageHeight;
+      final linesPerPage = (capacity / textHeight).floor().clamp(1, 9999);
       final endIdx = (lineIdx + linesPerPage).clamp(0, paraInfo.lines.length);
       final pageLines = paraInfo.lines.sublist(lineIdx, endIdx);
       final height = pageLines.length * textHeight;
@@ -344,6 +376,7 @@ class ParagraphLayoutEngine {
         totalHeight: height,
       ));
       lineIdx = endIdx;
+      subPageNo++;
     }
     return pages;
   }
@@ -386,8 +419,9 @@ class ParagraphLayoutEngine {
     String processableText = trimmedPara;
     
     if (config.indent > 0) {
-      // 使用全角空格实现缩进（对应 Kotlin ChapterProvider.indentChar）
-      const indentChars = '\u3000\u3000'; // 两个全角空格
+      // [UI-fix v2.0.4 | 2026-08-08] 缩进改按字符数档位生成全角空格
+      // （对应原版 ReadBookConfig.paragraphIndent "　".repeat(index)） — Qoder
+      final indentChars = '\u3000' * config.indentCount;
       processableText = '$indentChars$trimmedPara';
     }
     
@@ -430,7 +464,8 @@ class ParagraphLayoutEngine {
       words: words,
       widths: widths,
       availableWidth: availableWidth,
-      indentSize: config.indent > 0 ? 2 : 0,
+      // [UI-fix v2.0.4 | 2026-08-08] 缩进档位接入断行引擎 — Qoder
+      indentSize: config.indent > 0 ? config.indentCount : 0,
       cnCharWidth: cnCharWidth,
     );
 
@@ -479,10 +514,12 @@ class ParagraphLayoutEngine {
   List<double> _measureCharWidths(String text, double maxWidth) {
     final widths = List<double>.filled(text.length, 0.0);
     // [UI-fix v2.0.2 | 2026-08-06] 测量样式同步字距/字体配置 — Qoder
+    // [UI-fix v2.0.4 | 2026-08-08] 测量样式同步字重（textBold） — Qoder
     final style = TextStyle(
       fontSize: config.fontSize,
       letterSpacing: config.letterSpacing != 0 ? config.letterSpacing : null,
       fontFamily: config.fontFamily,
+      fontWeight: config.fontWeight,
     );
 
     // 确保中文通用宽度已初始化
@@ -518,6 +555,7 @@ class ParagraphLayoutEngine {
   double _measureSingleChar(String char) {
     final painter = TextPainter(
       // [UI-fix v2.0.2 | 2026-08-06] 单字宽度测量同步字距/字体配置 — Qoder
+      // [UI-fix v2.0.4 | 2026-08-08] 同步字重（textBold） — Qoder
       text: TextSpan(
         text: char,
         style: TextStyle(
@@ -525,6 +563,7 @@ class ParagraphLayoutEngine {
           letterSpacing:
               config.letterSpacing != 0 ? config.letterSpacing : null,
           fontFamily: config.fontFamily,
+          fontWeight: config.fontWeight,
         ),
       ),
       textDirection: TextDirection.ltr,

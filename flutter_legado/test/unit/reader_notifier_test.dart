@@ -213,11 +213,13 @@ void main() {
       expect(readState().lineHeight, equals(1.0));
     });
 
-    test('updateLineHeight 超过上限被 clamp 到 2.5', () async {
+    // [UI-fix v2.0.4 | 2026-08-08] 行距上限 2.5 → 3.0（同步界面 Sheet
+    // 行距滑条 1.0-3.0，对标原版 dsbLineSize 范围） — Qoder
+    test('updateLineHeight 超过上限被 clamp 到 3.0', () async {
       container.read(readerNotifierProvider);
       await pumpInit();
       readNotifier().updateLineHeight(4.0);
-      expect(readState().lineHeight, equals(2.5));
+      expect(readState().lineHeight, equals(3.0));
     });
 
     test('updateBackgroundColor 设置为预设绿色', () async {

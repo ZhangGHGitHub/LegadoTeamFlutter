@@ -35,6 +35,14 @@ class ReaderTypographicPage extends StatelessWidget {
   // 关闭后长按正文不再弹出选区面板）— Qoder
   final bool selectText;
 
+  // [UI-fix v2.0.4 | 2026-08-08] 分页页渲染补齐排版参数透传：字距/字体/
+  // 两端对齐/字重（此前分页模式仅测量时生效、渲染未应用导致宽度不一致；
+  // 字重对标原版 textBold → TextPaint.typeface 加粗/细体）— Qoder
+  final double letterSpacing;
+  final String? fontFamily;
+  final bool justify;
+  final FontWeight? fontWeight;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -51,6 +59,10 @@ class ReaderTypographicPage extends StatelessWidget {
     this.contentPadding =
         const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
     this.selectText = true,
+    this.letterSpacing = 0.0,
+    this.fontFamily,
+    this.justify = true,
+    this.fontWeight,
   });
 
   @override
@@ -96,6 +108,11 @@ class ReaderTypographicPage extends StatelessWidget {
               textColor: textColor,
               // [UI-fix v2.0.3 | 2026-08-08] selectText 开关透传 — Qoder
               selectText: selectText,
+              // [UI-fix v2.0.4 | 2026-08-08] 字距/字体/对齐/字重透传 — Qoder
+              letterSpacing: letterSpacing,
+              fontFamily: fontFamily,
+              justify: justify,
+              fontWeight: fontWeight,
             ),
           ),
           // 页码指示（对齐安卓端底部页码显示）
@@ -153,6 +170,10 @@ class ReaderTextContent extends StatelessWidget {
   // 关闭后长按不弹选区面板，对标 ReadView.textSelectAble 事件语义）— Qoder
   final bool selectText;
 
+  // [UI-fix v2.0.4 | 2026-08-08] 文字字重（对标原版 textBold：中/粗/细，
+  // null=正常字重）— Qoder
+  final FontWeight? fontWeight;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -164,6 +185,7 @@ class ReaderTextContent extends StatelessWidget {
     this.fontFamily,
     this.justify = true,
     this.selectText = true,
+    this.fontWeight,
   });
 
   @override
@@ -214,6 +236,8 @@ class ReaderTextContent extends StatelessWidget {
                 height: lineHeight,
                 color: textColor,
                 fontFamily: fontFamily,
+                // [UI-fix v2.0.4 | 2026-08-08] 字重接线（与测量同参）— Qoder
+                fontWeight: fontWeight,
                 // [UI-fix v2.0.2 | 2026-08-06] 基础字距 + 对齐额外字距 — Qoder
                 letterSpacing: (letterSpacing + extraLetterSpacing) != 0
                     ? letterSpacing + extraLetterSpacing
@@ -269,6 +293,9 @@ class ReaderParagraphs extends StatelessWidget {
   // [UI-fix v2.0.3 | 2026-08-08] 长按选择文本开关 — Qoder
   final bool selectText;
 
+  // [UI-fix v2.0.4 | 2026-08-08] 文字字重（对标原版 textBold）— Qoder
+  final FontWeight? fontWeight;
+
   const ReaderParagraphs({
     super.key,
     required this.content,
@@ -279,6 +306,7 @@ class ReaderParagraphs extends StatelessWidget {
     this.letterSpacing = 0.0,
     this.fontFamily,
     this.selectText = true,
+    this.fontWeight,
   });
 
   @override
@@ -303,6 +331,8 @@ class ReaderParagraphs extends StatelessWidget {
                   height: lineHeight,
                   color: textColor,
                   fontFamily: fontFamily,
+                  // [UI-fix v2.0.4 | 2026-08-08] 字重接线 — Qoder
+                  fontWeight: fontWeight,
                   letterSpacing: letterSpacing != 0 ? letterSpacing : null,
                 ),
               ),

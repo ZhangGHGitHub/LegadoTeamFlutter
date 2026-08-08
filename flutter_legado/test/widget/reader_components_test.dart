@@ -11,7 +11,6 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_bottom_bar.dart';
-import 'package:flutter_legado/src/widgets/reader/reader_catalog_drawer.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_status_strip.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_top_bar.dart';
 
@@ -20,8 +19,11 @@ import '../mocks/mocks.dart';
 /// 阅读器子组件 Widget 测试
 ///
 /// 验证 Phase 2.2 拆分出的真实组件（ReaderTopBar / ReaderBottomBar /
-/// ReaderStatusStrip / ReaderCatalogDrawer）在 Riverpod 架构下忠实渲染，
-/// 对齐重构前的界面样式（Phase 2.5 工具栏 + Phase 2.6 目录/书签/进度跳转）。
+/// ReaderStatusStrip）在 Riverpod 架构下忠实渲染，
+/// 对齐重构前的界面样式（Phase 2.5 工具栏 + Phase 2.6 书签/进度跳转）。
+/// [UI-fix v2.0.4 | 2026-08-08] 对齐原版 ReadMenu：目录抽屉已删除
+/// （改独立目录页 TocScreen，测试组同步移除）；搜索/夜间按钮自顶栏
+/// 迁至底栏悬浮按钮行，断言同步迁移 — Qoder
 void main() {
   late MockRustApi mockApi;
   late ProviderContainer container;
@@ -76,32 +78,23 @@ void main() {
     );
   }
 
-  /// 将普通组件包裹于 Scaffold body（Drawer 等）
-  Widget wrapPlain(Widget child) {
-    return UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp(home: Scaffold(body: child)),
-    );
-  }
-
   Future<void> openBookAndPump(WidgetTester tester) async {
     await container.read(readerNotifierProvider.notifier).openBook(testBook);
     await tester.pump();
   }
 
   group('ReaderTopBar（Phase 2.5 工具栏）', () {
-    testWidgets('渲染返回/搜索/书签/高级设置按钮与初始进度', (tester) async {
+    // [UI-fix v2.0.4 | 2026-08-08] 顶栏对齐原版 ReadMenu：搜索/书签/高级
+    // 设置常驻图标已迁出（书签→溢出菜单，搜索→底栏悬浮按钮），
+    // 断言改为返回/溢出菜单/初始进度 — Qoder
+    testWidgets('渲染返回/溢出菜单按钮与初始进度', (tester) async {
       await tester.pumpWidget(wrapStack(ReaderTopBar(
-        onOpenContentSearch: () {},
         onAddBookmark: () {},
-        onOpenAdvancedConfig: () {},
       )));
       await tester.pump();
 
       expect(find.byIcon(Icons.arrow_back_ios_new), findsOneWidget);
-      expect(find.byIcon(Icons.search), findsOneWidget);
-      expect(find.byIcon(Icons.bookmark_add_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.more_vert), findsOneWidget);
+      expect(find.byType(PopupMenuButton<String>), findsOneWidget);
       // 初始无书籍时进度为 0.0%
       expect(find.text('0.0%'), findsOneWidget);
     });
@@ -109,9 +102,7 @@ void main() {
     testWidgets('打开书籍后显示书名', (tester) async {
       stubOpenBook();
       await tester.pumpWidget(wrapStack(ReaderTopBar(
-        onOpenContentSearch: () {},
         onAddBookmark: () {},
-        onOpenAdvancedConfig: () {},
       )));
       await tester.pump();
 
@@ -119,14 +110,43 @@ void main() {
 
       // [UI-fix v2.0.3 | 2026-08-08] showReadTitleAddition 默认开启（对标
       // 原版）：顶栏标题为「书名 · 章名」，断言包含书名即可 — Qoder
-      expect(find.textContaining('测试书籍'), findsOneWidget);
+      expect(find.textContaining('测试书籍'), findsWidgets);
+    });
+  });
+
+  group('ReaderBottomBar（Phase 2.5/2.6 章节导航 + 功能按钮）', () {
+    testWidgets('渲染上一章/下一章/进度滑块与目录/朗读/界面/设置按钮', (tester) async {
+      await tester.pumpWidget(wrapStack(ReaderBottomBar(
+        onOpenCatalog: () {},
+        onOpenSettings: () {},
+        onOpenAdvancedConfig: () {},
+        onOpenContentSearch: () {},
+        onReadAloud: () {},
+      )));
+      await tester.pump();
+
+      expect(find.text(AppStrings.previousChapter), findsOneWidget);
+      expect(find.text(AppStrings.nextChapter), findsOneWidget);
+      expect(find.byType(Slider), findsOneWidget);
+      expect(find.byIcon(Icons.toc), findsOneWidget);
+      expect(find.byIcon(Icons.record_voice_over_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.palette_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.settings), findsOneWidget);
+      // [UI-fix v2.0.4 | 2026-08-08] 悬浮按钮行（对标原版
+      // fabSearch/fabNightTheme）自顶栏迁入底栏 — Qoder
+      expect(find.byIcon(Icons.search), findsOneWidget);
+      expect(find.byIcon(Icons.dark_mode), findsOneWidget);
     });
 
+    // [UI-fix v2.0.4 | 2026-08-08] 夜间/搜索按钮测试自顶栏组迁入
+    // （入口位置对齐原版 ll_floating_button，功能不变） — Qoder
     testWidgets('点击夜间模式按钮切换为背景深色', (tester) async {
-      await tester.pumpWidget(wrapStack(ReaderTopBar(
-        onOpenContentSearch: () {},
-        onAddBookmark: () {},
+      await tester.pumpWidget(wrapStack(ReaderBottomBar(
+        onOpenCatalog: () {},
+        onOpenSettings: () {},
         onOpenAdvancedConfig: () {},
+        onOpenContentSearch: () {},
+        onReadAloud: () {},
       )));
       await tester.pump();
 
@@ -144,10 +164,12 @@ void main() {
 
     testWidgets('点击搜索按钮触发回调', (tester) async {
       var searchTapped = false;
-      await tester.pumpWidget(wrapStack(ReaderTopBar(
-        onOpenContentSearch: () => searchTapped = true,
-        onAddBookmark: () {},
+      await tester.pumpWidget(wrapStack(ReaderBottomBar(
+        onOpenCatalog: () {},
+        onOpenSettings: () {},
         onOpenAdvancedConfig: () {},
+        onOpenContentSearch: () => searchTapped = true,
+        onReadAloud: () {},
       )));
       await tester.pump();
 
@@ -155,26 +177,6 @@ void main() {
       await tester.pump();
 
       expect(searchTapped, isTrue);
-    });
-  });
-
-  group('ReaderBottomBar（Phase 2.5/2.6 章节导航 + 功能按钮）', () {
-    testWidgets('渲染上一章/下一章/进度滑块与目录/朗读/界面/设置按钮', (tester) async {
-      await tester.pumpWidget(wrapStack(ReaderBottomBar(
-        onOpenCatalog: () {},
-        onOpenSettings: () {},
-        onOpenAdvancedConfig: () {},
-        onReadAloud: () {},
-      )));
-      await tester.pump();
-
-      expect(find.text(AppStrings.previousChapter), findsOneWidget);
-      expect(find.text(AppStrings.nextChapter), findsOneWidget);
-      expect(find.byType(Slider), findsOneWidget);
-      expect(find.byIcon(Icons.toc), findsOneWidget);
-      expect(find.byIcon(Icons.record_voice_over_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.palette_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.settings), findsOneWidget);
     });
 
     testWidgets('打开书籍后点击目录按钮触发回调', (tester) async {
@@ -184,6 +186,7 @@ void main() {
         onOpenCatalog: () => catalogTapped = true,
         onOpenSettings: () {},
         onOpenAdvancedConfig: () {},
+        onOpenContentSearch: () {},
         onReadAloud: () {},
       )));
       await tester.pump();
@@ -201,6 +204,7 @@ void main() {
         onOpenCatalog: () {},
         onOpenSettings: () {},
         onOpenAdvancedConfig: () {},
+        onOpenContentSearch: () {},
         onReadAloud: () {},
       )));
       await tester.pump();
@@ -239,42 +243,6 @@ void main() {
       await tester.pump();
 
       expect(find.byIcon(Icons.battery_std), findsNothing);
-    });
-  });
-
-  group('ReaderCatalogDrawer（Phase 2.6 目录 + 进度跳转）', () {
-    testWidgets('打开书籍后显示章节列表', (tester) async {
-      stubOpenBook();
-      await tester.pumpWidget(wrapPlain(const ReaderCatalogDrawer()));
-      await tester.pump();
-      await openBookAndPump(tester);
-
-      expect(find.text('测试书籍'), findsOneWidget);
-      expect(find.text('第一章'), findsOneWidget);
-      expect(find.text('第二章'), findsOneWidget);
-      expect(find.text('第三章'), findsOneWidget);
-    });
-
-    testWidgets('无章节时显示空提示', (tester) async {
-      await tester.pumpWidget(wrapPlain(const ReaderCatalogDrawer()));
-      await tester.pump();
-
-      // 初始无章节，显示目录标题（fallback）
-      expect(find.byType(TextField), findsOneWidget);
-    });
-
-    testWidgets('搜索框过滤章节', (tester) async {
-      stubOpenBook();
-      await tester.pumpWidget(wrapPlain(const ReaderCatalogDrawer()));
-      await tester.pump();
-      await openBookAndPump(tester);
-
-      await tester.enterText(find.byType(TextField), '第二');
-      await tester.pump();
-
-      expect(find.text('第二章'), findsOneWidget);
-      expect(find.text('第一章'), findsNothing);
-      expect(find.text('第三章'), findsNothing);
     });
   });
 }
