@@ -1,21 +1,34 @@
+// [UI-fix v2.0.5 | 2026-08-08] 其他设置页对齐原版 pref_config_other.xml +
+// OtherConfigFragment（33 项）：语言 + 主界面分组（自动刷新/仅更新已读/
+// 默认进入阅读/显示发现/显示订阅/默认首页）+ 其他分组（本地密码/UserAgent/
+// Web 服务唤醒锁/默认书籍保存位置/源编辑最大行数/抗锯齿/图片缓存/图片保留/
+// 预下载/替换净化默认/媒体按钮 ×3/自动清除过期/加书架提示/变种更新/漫画界面/
+// Web 端口/缓存管理/线程数/文本菜单/记录日志 ×3）。
+// 显示发现/显示订阅/默认首页经 MainPrefsNotifier 接通首页底栏；
+// Web 端口经 BookApi.setServerPort 接通；记录日志经 CrashLogService 接通；
+// Android 专属项持久化并以灰字"仅 Android 生效"标注；
+// customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/
+// jsSourceApiToken/clearWebViewData/shrinkDatabase 缺少跨轨支撑，
+// 已登记 docs/REFACTORING_REMAINING_PLAN.md §5.13，UI 不显示空壳 — Qoder
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../constants/pref_keys.dart';
 import '../l10n/app_strings.dart';
+import '../providers/main_prefs_notifier.dart';
+import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart' show ReaderBackground;
 import '../routes.dart';
+import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
+import '../widgets/ios_widgets.dart';
 
-/// 其他设置页面
+/// 其他设置页面（对齐原版 OtherConfigFragment）
 ///
-/// 对标 Android 原版「其他设置」（OtherConfigFragment）中 Flutter 已实现的部分：
-/// - 语言切换
-/// - 默认阅读设置（字号 / 行距 / 背景色）
-/// - 网络设置（代理 / 请求超时）
-/// - 缓存管理入口
-///
-/// 拆分自原单体 SettingsScreen，作为设置枢纽「其他设置」入口的目标页。
+/// 分组与排序对齐原版 pref_config_other.xml category 结构，
+/// 并保留 Flutter 端既有的默认阅读设置/网络设置分组（避免功能回归）。
 class OtherSettingsScreen extends ConsumerStatefulWidget {
   const OtherSettingsScreen({super.key});
 
@@ -39,16 +52,52 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   int _proxyPort = 0;
   int _timeoutSeconds = 30;
 
+  // ===== 主界面分组（对齐原版 auto_refresh 等键）=====
+  bool _autoRefresh = false;
+  bool _onlyUpdateRead = false;
+  bool _defaultToRead = false;
+
+  // ===== 其他分组 =====
+  String _localPassword = '';
+  String _userAgent = '';
+  bool _webServiceWakeLock = false;
+  String _defaultBookTreeUri = '';
+  int _sourceEditMaxLine = 99;
+  bool _antiAlias = false;
+  int _bitmapCacheSize = 50;
+  int _imageRetainNum = 100;
+  int _preDownloadNum = 10;
+  bool _replaceEnableDefault = true;
+  bool _mediaButtonOnExit = true;
+  bool _readAloudByMediaButton = false;
+  bool _ignoreAudioFocus = false;
+  bool _autoClearExpired = true;
+  bool _showAddToShelfAlert = true;
+  bool _autoUpdateVariant = true;
+  bool _showMangaUi = true;
+  int _webPort = 1122;
+  int _threadCount = 16;
+  bool _processText = true;
+  bool _recordLog = false;
+  bool _recordHttpLog = false;
+  bool _recordHeapDump = false;
+
+  /// Android 专属项统一灰字标注（与阅读设置面板刘海项先例一致）
+  static const _androidOnly = '仅 Android 生效';
+
   @override
   void initState() {
     super.initState();
     _loadLocale();
     _loadReadSettings();
     _loadNetworkSettings();
+    _loadOtherSettings();
   }
 
   Future<void> _loadLocale() async {
     _localeValue = await _settingsService.getLocale();
+    // 约定：'system' 不调用 setLocale，生效 AppStrings 默认值 'zh'（系统=中文，
+    // 与 _showLocalePicker 选“系统”时回退 'zh' 的行为保持一致）
     if (_localeValue != 'system') {
       AppStrings.setLocale(_localeValue);
     }
@@ -70,83 +119,446 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     if (mounted) setState(() {});
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('其他设置')),
-      body: ListView(
-        children: [
-          // ===== 语言 =====
-          _buildSectionHeader(context, AppStrings.language),
-          ListTile(
-            leading: const Icon(Icons.language),
-            title: Text(AppStrings.language),
-            subtitle: Text(_localeLabel),
-            onTap: () => _showLocalePicker(context),
-          ),
-          const Divider(),
-
-          // ===== 默认阅读设置 =====
-          _buildSectionHeader(context, AppStrings.readingSettings),
-          ListTile(
-            leading: const Icon(Icons.text_fields),
-            title: Text(AppStrings.defaultFontSize),
-            subtitle: Text(_fontSize.toStringAsFixed(0)),
-            onTap: () => _showDefaultReadSettings(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.format_line_spacing),
-            title: Text(AppStrings.defaultLineHeight),
-            subtitle: Text('${_lineHeight.toStringAsFixed(1)}x'),
-            onTap: () => _showDefaultReadSettings(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.palette),
-            title: Text(AppStrings.defaultBgColor),
-            subtitle: Text(_bgColorLabel),
-            onTap: () => _showDefaultReadSettings(context),
-          ),
-          const Divider(),
-
-          // ===== 网络设置 =====
-          _buildSectionHeader(context, AppStrings.networkSettings),
-          ListTile(
-            leading: const Icon(Icons.wifi),
-            title: Text(AppStrings.proxySettings),
-            subtitle: Text(_proxyLabel),
-            onTap: () => _showProxySettings(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.timer),
-            title: Text(AppStrings.requestTimeout),
-            subtitle: Text('$_timeoutSeconds ${AppStrings.secondsUnit}'),
-            onTap: () => _showTimeoutSettings(context),
-          ),
-          const Divider(),
-
-          // ===== 缓存 =====
-          _buildSectionHeader(context, '缓存'),
-          ListTile(
-            leading: const Icon(Icons.cleaning_services),
-            title: const Text('缓存管理'),
-            subtitle: const Text('缓存统计、自动过期策略与清理'),
-            onTap: () => Navigator.pushNamed(context, AppRoutes.cacheSettings),
-          ),
-          const SizedBox(height: 24),
-        ],
-      ),
+  /// 加载原版对齐新增项（键名对齐 PreferKey）
+  Future<void> _loadOtherSettings() async {
+    final s = _settingsService;
+    _autoRefresh =
+        await s.getBoolPref(PrefKeys.autoRefreshBook, defaultValue: false);
+    _onlyUpdateRead =
+        await s.getBoolPref(PrefKeys.onlyUpdateRead, defaultValue: false);
+    _defaultToRead =
+        await s.getBoolPref(PrefKeys.defaultToRead, defaultValue: false);
+    _localPassword = await s.getStringPref(PrefKeys.localPassword);
+    _userAgent = await s.getStringPref(PrefKeys.userAgent);
+    _webServiceWakeLock =
+        await s.getBoolPref(PrefKeys.webServiceWakeLock, defaultValue: false);
+    _defaultBookTreeUri = await s.getStringPref(PrefKeys.defaultBookTreeUri);
+    _sourceEditMaxLine =
+        await s.getIntPref(PrefKeys.sourceEditMaxLine, defaultValue: 99);
+    _antiAlias = await s.getBoolPref(PrefKeys.antiAlias, defaultValue: false);
+    _bitmapCacheSize =
+        await s.getIntPref(PrefKeys.bitmapCacheSize, defaultValue: 50);
+    _imageRetainNum =
+        await s.getIntPref(PrefKeys.imageRetainNum, defaultValue: 100);
+    _preDownloadNum =
+        await s.getIntPref(PrefKeys.preDownloadNum, defaultValue: 10);
+    _replaceEnableDefault =
+        await s.getBoolPref(PrefKeys.replaceEnableDefault, defaultValue: true);
+    _mediaButtonOnExit =
+        await s.getBoolPref(PrefKeys.mediaButtonOnExit, defaultValue: true);
+    _readAloudByMediaButton = await s.getBoolPref(
+      PrefKeys.readAloudByMediaButton,
+      defaultValue: false,
     );
+    _ignoreAudioFocus =
+        await s.getBoolPref(PrefKeys.ignoreAudioFocus, defaultValue: false);
+    _autoClearExpired =
+        await s.getBoolPref(PrefKeys.autoClearExpired, defaultValue: true);
+    _showAddToShelfAlert =
+        await s.getBoolPref(PrefKeys.showAddToShelfAlert, defaultValue: true);
+    _autoUpdateVariant =
+        await s.getBoolPref(PrefKeys.autoUpdateVariant, defaultValue: true);
+    _showMangaUi =
+        await s.getBoolPref(PrefKeys.showMangaUi, defaultValue: true);
+    _webPort = await s.getIntPref(PrefKeys.webPort, defaultValue: 1122);
+    _threadCount = await s.getIntPref(PrefKeys.threadCount, defaultValue: 16);
+    _processText =
+        await s.getBoolPref(PrefKeys.processText, defaultValue: true);
+    // 日志开关经 CrashLogService（已接通日志记录行为）
+    _recordLog = await CrashLogService.instance.getRecordLog();
+    _recordHttpLog = await CrashLogService.instance.getRecordHttpLog();
+    _recordHeapDump = await CrashLogService.instance.getRecordHeapDump();
+    if (mounted) setState(() {});
   }
 
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mainPrefs = ref.watch(mainPrefsProvider);
+    final mainPrefsNotifier = ref.read(mainPrefsProvider.notifier);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('其他设置')),
+      body: IosGroupedBody(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 32),
+          children: [
+            // ===== 语言（对齐原版 language ListPreference）=====
+            IosSectionHeader(AppStrings.language),
+            IosGroup(children: [
+              IosListTile(
+                icon: Icons.language,
+                iconBackground: Colors.blue,
+                title: AppStrings.language,
+                value: _localeLabel,
+                showDisclosure: true,
+                onTap: () => _showLocalePicker(context),
+              ),
+            ]),
+
+            // ===== 主界面（对齐原版「主界面」分组）=====
+            const IosSectionHeader('主界面'),
+            IosGroup(children: [
+              SwitchListTile(
+                title: const Text('自动刷新'),
+                subtitle: const Text('打开软件时自动更新书籍'),
+                value: _autoRefresh,
+                onChanged: (v) {
+                  setState(() => _autoRefresh = v);
+                  _settingsService.setBoolPref(PrefKeys.autoRefreshBook, v);
+                },
+              ),
+              // 对齐原版可见性依赖：仅自动刷新开启时显示
+              if (_autoRefresh)
+                SwitchListTile(
+                  title: const Text('仅更新已读书籍'),
+                  subtitle: const Text('自动刷新时跳过未读过的书籍'),
+                  value: _onlyUpdateRead,
+                  onChanged: (v) {
+                    setState(() => _onlyUpdateRead = v);
+                    _settingsService.setBoolPref(PrefKeys.onlyUpdateRead, v);
+                  },
+                ),
+              SwitchListTile(
+                title: const Text('默认进入阅读界面'),
+                subtitle: const Text('打开书架书籍时直接进入上次阅读'),
+                value: _defaultToRead,
+                onChanged: (v) {
+                  setState(() => _defaultToRead = v);
+                  _settingsService.setBoolPref(PrefKeys.defaultToRead, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('显示发现'),
+                subtitle: const Text('在主界面底栏显示发现页'),
+                value: mainPrefs.showDiscovery,
+                onChanged: (v) => mainPrefsNotifier.setShowDiscovery(v),
+              ),
+              SwitchListTile(
+                title: const Text('显示订阅'),
+                subtitle: const Text('在主界面底栏显示订阅页'),
+                value: mainPrefs.showRss,
+                onChanged: (v) => mainPrefsNotifier.setShowRss(v),
+              ),
+              IosListTile(
+                icon: Icons.home_outlined,
+                iconBackground: Colors.teal,
+                title: '默认首页',
+                value: _homePageLabel(mainPrefs.defaultHomePage),
+                showDisclosure: true,
+                onTap: () => _showHomePagePicker(mainPrefs, mainPrefsNotifier),
+              ),
+            ]),
+
+            // ===== 默认阅读设置（Flutter 既有分组，保留避免回归）=====
+            IosSectionHeader(AppStrings.readingSettings),
+            IosGroup(children: [
+              IosListTile(
+                icon: Icons.text_fields,
+                iconBackground: Colors.orange,
+                title: AppStrings.defaultFontSize,
+                value: _fontSize.toStringAsFixed(0),
+                showDisclosure: true,
+                onTap: () => _showDefaultReadSettings(context),
+              ),
+              IosListTile(
+                icon: Icons.format_line_spacing,
+                iconBackground: Colors.orange,
+                title: AppStrings.defaultLineHeight,
+                value: '${_lineHeight.toStringAsFixed(1)}x',
+                showDisclosure: true,
+                onTap: () => _showDefaultReadSettings(context),
+              ),
+              IosListTile(
+                icon: Icons.palette,
+                iconBackground: Colors.orange,
+                title: AppStrings.defaultBgColor,
+                value: _bgColorLabel,
+                showDisclosure: true,
+                onTap: () => _showDefaultReadSettings(context),
+              ),
+            ]),
+
+            // ===== 网络设置（Flutter 既有分组，保留避免回归）=====
+            IosSectionHeader(AppStrings.networkSettings),
+            IosGroup(children: [
+              IosListTile(
+                icon: Icons.wifi,
+                iconBackground: Colors.green,
+                title: AppStrings.proxySettings,
+                value: _proxyLabel,
+                showDisclosure: true,
+                onTap: () => _showProxySettings(context),
+              ),
+              IosListTile(
+                icon: Icons.timer,
+                iconBackground: Colors.green,
+                title: AppStrings.requestTimeout,
+                value: '$_timeoutSeconds ${AppStrings.secondsUnit}',
+                showDisclosure: true,
+                onTap: () => _showTimeoutSettings(context),
+              ),
+            ]),
+
+            // ===== 其他（对齐原版「其他」分组，顺序与 XML 一致）=====
+            const IosSectionHeader('其他'),
+            IosGroup(children: [
+              IosListTile(
+                icon: Icons.password,
+                iconBackground: Colors.red,
+                title: '本地密码',
+                subtitle: '用于 Web 服务访问鉴权',
+                value: _localPassword.isEmpty ? '未设置' : '已设置',
+                showDisclosure: true,
+                onTap: _showLocalPasswordDialog,
+              ),
+              IosListTile(
+                icon: Icons.public,
+                iconBackground: Colors.blueGrey,
+                title: '浏览器标识（UserAgent）',
+                subtitle: _userAgent.isEmpty ? '默认' : _userAgent,
+                showDisclosure: true,
+                onTap: _showUserAgentDialog,
+              ),
+              SwitchListTile(
+                title: const Text('Web 服务唤醒锁'),
+                subtitle: const Text(_androidOnly),
+                value: _webServiceWakeLock,
+                onChanged: (v) {
+                  setState(() => _webServiceWakeLock = v);
+                  _settingsService.setBoolPref(PrefKeys.webServiceWakeLock, v);
+                },
+              ),
+              IosListTile(
+                icon: Icons.folder_outlined,
+                iconBackground: Colors.amber,
+                title: '默认书籍保存位置',
+                subtitle: _defaultBookTreeUri.isEmpty ? '未设置' : _defaultBookTreeUri,
+                showDisclosure: true,
+                onTap: _showBookTreeUriDialog,
+              ),
+              IosListTile(
+                icon: Icons.format_list_numbered,
+                iconBackground: Colors.brown,
+                title: '源编辑框最大行数',
+                value: '$_sourceEditMaxLine',
+                showDisclosure: true,
+                onTap: () => _editIntPref(
+                  title: '源编辑框最大行数',
+                  key: PrefKeys.sourceEditMaxLine,
+                  current: _sourceEditMaxLine,
+                  min: 10,
+                  max: 99999,
+                  apply: (v) => setState(() => _sourceEditMaxLine = v),
+                ),
+              ),
+              SwitchListTile(
+                title: const Text('图片抗锯齿'),
+                subtitle: const Text('提高图片渲染质量，可能降低性能'),
+                value: _antiAlias,
+                onChanged: (v) {
+                  setState(() => _antiAlias = v);
+                  _settingsService.setBoolPref(PrefKeys.antiAlias, v);
+                },
+              ),
+              IosListTile(
+                icon: Icons.memory,
+                iconBackground: Colors.deepPurple,
+                title: '图片解码缓存',
+                value: '$_bitmapCacheSize MB',
+                showDisclosure: true,
+                onTap: () => _editIntPref(
+                  title: '图片解码缓存（MB）',
+                  key: PrefKeys.bitmapCacheSize,
+                  current: _bitmapCacheSize,
+                  min: 1,
+                  max: 1024,
+                  apply: (v) => setState(() => _bitmapCacheSize = v),
+                ),
+              ),
+              IosListTile(
+                icon: Icons.photo_library_outlined,
+                iconBackground: Colors.deepPurple,
+                title: '图片文件保留数量',
+                value: '$_imageRetainNum',
+                showDisclosure: true,
+                onTap: () => _editIntPref(
+                  title: '图片文件保留数量',
+                  key: PrefKeys.imageRetainNum,
+                  current: _imageRetainNum,
+                  min: 0,
+                  max: 999,
+                  apply: (v) => setState(() => _imageRetainNum = v),
+                ),
+              ),
+              IosListTile(
+                icon: Icons.download_outlined,
+                iconBackground: Colors.indigo,
+                title: '预下载章节数量',
+                value: '$_preDownloadNum',
+                showDisclosure: true,
+                onTap: () => _editIntPref(
+                  title: '预下载章节数量',
+                  key: PrefKeys.preDownloadNum,
+                  current: _preDownloadNum,
+                  min: 0,
+                  max: 9999,
+                  apply: (v) => setState(() => _preDownloadNum = v),
+                ),
+              ),
+              SwitchListTile(
+                title: const Text('替换净化默认启用'),
+                subtitle: const Text('新加入书架的书籍默认开启替换净化'),
+                value: _replaceEnableDefault,
+                onChanged: (v) {
+                  setState(() => _replaceEnableDefault = v);
+                  _settingsService.setBoolPref(
+                      PrefKeys.replaceEnableDefault, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('退出应用时停止朗读'),
+                subtitle: const Text(_androidOnly),
+                value: _mediaButtonOnExit,
+                onChanged: (v) {
+                  setState(() => _mediaButtonOnExit = v);
+                  _settingsService.setBoolPref(PrefKeys.mediaButtonOnExit, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('媒体按钮触发朗读'),
+                subtitle: const Text(_androidOnly),
+                value: _readAloudByMediaButton,
+                onChanged: (v) {
+                  setState(() => _readAloudByMediaButton = v);
+                  _settingsService.setBoolPref(
+                      PrefKeys.readAloudByMediaButton, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('朗读时忽略音频焦点'),
+                subtitle: const Text(_androidOnly),
+                value: _ignoreAudioFocus,
+                onChanged: (v) {
+                  setState(() => _ignoreAudioFocus = v);
+                  _settingsService.setBoolPref(PrefKeys.ignoreAudioFocus, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('自动清除过期数据'),
+                subtitle: const Text('清除一天前的搜索数据'),
+                value: _autoClearExpired,
+                onChanged: (v) {
+                  setState(() => _autoClearExpired = v);
+                  _settingsService.setBoolPref(PrefKeys.autoClearExpired, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('显示添加书架提示'),
+                subtitle: const Text('浏览书籍详情离开时提示加入书架'),
+                value: _showAddToShelfAlert,
+                onChanged: (v) {
+                  setState(() => _showAddToShelfAlert = v);
+                  _settingsService.setBoolPref(
+                      PrefKeys.showAddToShelfAlert, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('自动更新到最佳变种版本'),
+                subtitle: const Text(_androidOnly),
+                value: _autoUpdateVariant,
+                onChanged: (v) {
+                  setState(() => _autoUpdateVariant = v);
+                  _settingsService.setBoolPref(PrefKeys.autoUpdateVariant, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('显示漫画界面'),
+                subtitle: const Text('以漫画模式打开图片流书籍'),
+                value: _showMangaUi,
+                onChanged: (v) {
+                  setState(() => _showMangaUi = v);
+                  _settingsService.setBoolPref(PrefKeys.showMangaUi, v);
+                },
+              ),
+              IosListTile(
+                icon: Icons.settings_ethernet,
+                iconBackground: Colors.cyan,
+                title: 'Web 服务端口',
+                subtitle: '修改后重启 Web 服务生效',
+                value: '$_webPort',
+                showDisclosure: true,
+                onTap: _showWebPortDialog,
+              ),
+              IosListTile(
+                icon: Icons.cleaning_services,
+                iconBackground: Colors.grey,
+                title: '缓存管理',
+                subtitle: '缓存统计、自动过期策略与清理',
+                showDisclosure: true,
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.cacheSettings),
+              ),
+              IosListTile(
+                icon: Icons.sync,
+                iconBackground: Colors.lightBlue,
+                title: '线程数量',
+                subtitle: '更新书籍、缓存书籍时的并发数量',
+                value: '$_threadCount',
+                showDisclosure: true,
+                onTap: () => _editIntPref(
+                  title: '线程数量',
+                  key: PrefKeys.threadCount,
+                  current: _threadCount,
+                  min: 1,
+                  max: 999,
+                  apply: (v) => setState(() => _threadCount = v),
+                ),
+              ),
+              SwitchListTile(
+                title: const Text('文本操作菜单显示应用'),
+                subtitle: const Text(_androidOnly),
+                value: _processText,
+                onChanged: (v) {
+                  setState(() => _processText = v);
+                  _settingsService.setBoolPref(PrefKeys.processText, v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('记录日志'),
+                subtitle: const Text('记录应用运行日志用于问题诊断'),
+                value: _recordLog,
+                onChanged: (v) {
+                  setState(() => _recordLog = v);
+                  CrashLogService.instance.setRecordLog(v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('记录 HTTP 请求日志'),
+                value: _recordHttpLog,
+                onChanged: (v) {
+                  setState(() => _recordHttpLog = v);
+                  CrashLogService.instance.setRecordHttpLog(v);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('记录内存堆转储'),
+                subtitle: const Text('崩溃时保存内存快照用于诊断'),
+                value: _recordHeapDump,
+                onChanged: (v) {
+                  setState(() => _recordHeapDump = v);
+                  CrashLogService.instance.setRecordHeapDump(v);
+                },
+              ),
+            ]),
+          ],
+        ),
       ),
     );
   }
@@ -182,6 +594,253 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     }
   }
 
+  /// 默认首页值 → 展示文案（对齐原版 default_home_page 数组）
+  String _homePageLabel(String value) {
+    switch (value) {
+      case 'explore':
+        return '发现';
+      case 'rss':
+        return '订阅';
+      case 'my':
+        return '我的';
+      default:
+        return '书架';
+    }
+  }
+
+  /// 默认首页选择（对齐原版 defaultHomePage ListPreference）
+  Future<void> _showHomePagePicker(
+    MainPrefsState prefs,
+    MainPrefsNotifier notifier,
+  ) async {
+    const options = [
+      ('bookshelf', '书架'),
+      ('explore', '发现'),
+      ('rss', '订阅'),
+      ('my', '我的'),
+    ];
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('默认首页'),
+        children: [
+          // 用 RadioGroup 统一管理选中值（避免 groupValue/onChanged 废弃 API）
+          RadioGroup<String>(
+            groupValue: prefs.defaultHomePage,
+            onChanged: (v) => Navigator.pop(ctx, v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (value, label) in options)
+                  RadioListTile<String>(
+                    title: Text(label),
+                    value: value,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    // [UI-fix v2.0.5 | 2026-08-08] 异步对话框返回后统一补 mounted 防护，
+    // 避免页面已销毁时继续 setState/持久化 — Qoder
+    if (selected == null || !mounted) return;
+    await notifier.setDefaultHomePage(selected);
+  }
+
+  /// 本地密码编辑（对齐原版 localPassword EditTextPreference）
+  Future<void> _showLocalPasswordDialog() async {
+    final value = await _showTextInputDialog(
+      title: '本地密码',
+      hint: '用于 Web 服务访问鉴权，留空清除',
+      current: _localPassword,
+      obscure: true,
+    );
+    // 异步对话框返回后先检查 mounted，再 setState/持久化
+    if (value == null || !mounted) return;
+    setState(() => _localPassword = value);
+    if (value.isEmpty) {
+      await _settingsService.removePref(PrefKeys.localPassword);
+    } else {
+      await _settingsService.setStringPref(PrefKeys.localPassword, value);
+    }
+  }
+
+  /// UserAgent 编辑（对齐原版 userAgent 对话框，留空恢复默认）
+  Future<void> _showUserAgentDialog() async {
+    final value = await _showTextInputDialog(
+      title: '浏览器标识（UserAgent）',
+      hint: '留空使用默认 UserAgent',
+      current: _userAgent,
+      maxLines: 3,
+    );
+    // 异步对话框返回后先检查 mounted，再 setState/持久化
+    if (value == null || !mounted) return;
+    setState(() => _userAgent = value);
+    if (value.isEmpty) {
+      await _settingsService.removePref(PrefKeys.userAgent);
+    } else {
+      await _settingsService.setStringPref(PrefKeys.userAgent, value);
+    }
+  }
+
+  /// 默认书籍保存位置（对齐原版 defaultBookTreeUri 目录选择）
+  Future<void> _showBookTreeUriDialog() async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('默认书籍保存位置'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'select'),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('选择文件夹'),
+            ),
+          ),
+          if (_defaultBookTreeUri.isNotEmpty)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'clear'),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('清除'),
+              ),
+            ),
+        ],
+      ),
+    );
+    // 异步对话框/文件选择器返回后先检查 mounted，再 setState/持久化
+    if (!mounted) return;
+    if (action == 'select') {
+      final dir = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择默认书籍保存位置',
+      );
+      if (dir == null || !mounted) return;
+      setState(() => _defaultBookTreeUri = dir);
+      await _settingsService.setStringPref(PrefKeys.defaultBookTreeUri, dir);
+    } else if (action == 'clear') {
+      setState(() => _defaultBookTreeUri = '');
+      await _settingsService.removePref(PrefKeys.defaultBookTreeUri);
+    }
+  }
+
+  /// Web 服务端口设置（对齐原版 webPort 1024~60000；
+  /// 经 BookApi.setServerPort 写入引擎配置，重启 Web 服务后生效）
+  Future<void> _showWebPortDialog() async {
+    final value = await _showNumberInputDialog(
+      title: 'Web 服务端口',
+      current: _webPort,
+      min: 1024,
+      max: 60000,
+    );
+    // 异步对话框返回后先检查 mounted，再 setState/持久化与引擎同步
+    if (value == null || value == _webPort || !mounted) return;
+    setState(() => _webPort = value);
+    await _settingsService.setIntPref(PrefKeys.webPort, value);
+    // 行为接通：同步到 Rust 引擎配置（对齐原版 webPort 变更重启 WebService）
+    try {
+      await ref.read(bookApiProvider).setServerPort(value);
+      _toast('端口已保存，重启 Web 服务后生效');
+    } catch (e) {
+      debugPrint('OtherSettingsScreen 设置 Web 端口异常: $e');
+      _toast('端口已保存（引擎同步失败，重启应用后生效）');
+    }
+  }
+
+  /// 通用整数偏好编辑（输入校验 + 持久化 + 回写状态）
+  Future<void> _editIntPref({
+    required String title,
+    required String key,
+    required int current,
+    required int min,
+    required int max,
+    required ValueChanged<int> apply,
+  }) async {
+    final value = await _showNumberInputDialog(
+      title: title,
+      current: current,
+      min: min,
+      max: max,
+    );
+    // 异步对话框返回后先检查 mounted，apply 内部会调用 setState
+    if (value == null || !mounted) return;
+    apply(value);
+    await _settingsService.setIntPref(key, value);
+  }
+
+  /// 通用数字输入对话框（返回 null 表示取消）
+  Future<int?> _showNumberInputDialog({
+    required String title,
+    required int current,
+    required int min,
+    required int max,
+  }) async {
+    final controller = TextEditingController(text: '$current');
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(hintText: '$min ~ $max'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(controller.text.trim());
+              if (parsed == null || parsed < min || parsed > max) {
+                _toast('请输入 $min ~ $max 之间的数字');
+                return;
+              }
+              Navigator.pop(ctx, parsed);
+            },
+            child: Text(AppStrings.confirm),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 通用文本输入对话框（返回 null 表示取消，返回空串表示清除）
+  Future<String?> _showTextInputDialog({
+    required String title,
+    required String hint,
+    required String current,
+    bool obscure = false,
+    int maxLines = 1,
+  }) async {
+    final controller = TextEditingController(text: current);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: obscure,
+          maxLines: obscure ? 1 : maxLines,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text(AppStrings.confirm),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showLocalePicker(BuildContext context) {
     showDialog<String>(
       context: context,
@@ -194,16 +853,20 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         ],
       ),
     ).then((selectedLocale) async {
-      if (selectedLocale != null) {
-        setState(() => _localeValue = selectedLocale);
-        await _settingsService.setLocale(selectedLocale);
-        if (selectedLocale == 'system') {
-          AppStrings.setLocale('zh');
-        } else {
-          AppStrings.setLocale(selectedLocale);
-        }
-        if (mounted) setState(() {});
+      // 进入 .then 回调后第一时间检查 mounted，再 setState/持久化
+      if (selectedLocale == null || !mounted) return;
+      setState(() => _localeValue = selectedLocale);
+      await _settingsService.setLocale(selectedLocale);
+      // [UI-fix v2.0.5 | 2026-08-08] 项目约定：“跟随系统”=中文。
+      // AppStrings 无系统语言解析能力，其 _locale 默认值即 'zh'（冷启动时
+      // _loadLocale 对 'system' 不调用 setLocale，最终生效的就是默认 'zh'），
+      // 故此处选“系统”时立即回退 'zh'，与重启后效果保持一致 — Qoder
+      if (selectedLocale == 'system') {
+        AppStrings.setLocale('zh');
+      } else {
+        AppStrings.setLocale(selectedLocale);
       }
+      if (mounted) setState(() {});
     });
   }
 
@@ -325,7 +988,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         ),
       ),
     ).then((saved) async {
-      if (saved != true) return;
+      // 进入 .then 回调后第一时间检查 mounted，再 setState/持久化
+      if (saved != true || !mounted) return;
       setState(() {
         _fontSize = fontSize;
         _lineHeight = lineHeight;
@@ -414,7 +1078,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       final port = int.tryParse(portController.text.trim()) ?? 0;
       hostController.dispose();
       portController.dispose();
-      if (saved != true) return;
+      // 进入 .then 回调后（控件释放完毕）检查 mounted，再 setState/持久化
+      if (saved != true || !mounted) return;
 
       if (proxyType != 'none' && (host.isEmpty || port <= 0 || port > 65535)) {
         messenger.showSnackBar(
@@ -479,7 +1144,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         ),
       ),
     ).then((saved) async {
-      if (saved != true) return;
+      // 进入 .then 回调后第一时间检查 mounted，再 setState/持久化
+      if (saved != true || !mounted) return;
       setState(() => _timeoutSeconds = seconds.round());
       await _settingsService.setRequestTimeout(seconds.round());
       messenger.showSnackBar(

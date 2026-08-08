@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../l10n/app_strings.dart';
+import '../providers/main_prefs_notifier.dart';
 import 'bookshelf_screen.dart';
 import 'explore_screen.dart';
 import 'rss_screen.dart';
@@ -16,14 +19,20 @@ import 'settings_screen.dart';
 ///   （对标 onNavigationItemReselected → gotoTop/compressExplore）
 /// - 返回键两段式：非书架页先回书架页；书架页 2 秒内二次返回退出
 ///   （对标 onBackPressedDispatcher + double_click_exit）
-class HomeScreen extends StatefulWidget {
+/// - [UI-fix v2.0.5 | 2026-08-08] 接通其他设置页主界面分组：显示发现/
+///   显示订阅控制 Tab 显隐、默认首页控制启动落地页
+///   （对标原版 AppConfig.showDiscovery/showRSS/defaultHomePage） — Qoder
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+/// 首页逻辑 Tab（与底栏索引解耦，便于按偏好动态显隐）
+enum _HomeTab { bookshelf, explore, rss, my }
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 底栏双击判定窗口（对标原版 bookshelfReselected/exploreReselected 300ms）
   static const _reselectInterval = Duration(milliseconds: 300);
 
@@ -31,10 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _exitInterval = Duration(seconds: 2);
 
   final PageController _pageController = PageController();
-  int _currentIndex = 0;
 
-  /// 已访问过的 Tab 索引集合（首屏默认访问书架）— 保留懒构建语义
-  final Set<int> _visitedTabs = {0};
+  /// 当前逻辑 Tab（Tab 显隐变化时据此重新定位索引）
+  _HomeTab _currentTab = _HomeTab.bookshelf;
+
+  /// 已访问过的 Tab 集合（首屏默认访问书架）— 保留懒构建语义
+  final Set<_HomeTab> _visitedTabs = {_HomeTab.bookshelf};
 
   /// 书架页回滚顶部信号（双击书架底栏项时自增）
   final ValueNotifier<int> _bookshelfScrollTopSignal = ValueNotifier(0);
@@ -46,6 +57,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _lastTapIndex = -1;
   DateTime? _lastBackTime;
 
+  /// 默认首页是否已应用（偏好异步加载完成后仅跳转一次）
+  bool _defaultHomePageApplied = false;
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -54,45 +68,70 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _onDestinationSelected(int index) {
+  /// 按主界面偏好计算可见 Tab 列表（对标原版 showDiscovery/showRSS 显隐）
+  List<_HomeTab> _visibleTabs(MainPrefsState prefs) => [
+        _HomeTab.bookshelf,
+        if (prefs.showDiscovery) _HomeTab.explore,
+        if (prefs.showRss) _HomeTab.rss,
+        _HomeTab.my,
+      ];
+
+  /// 默认首页偏好值 → 逻辑 Tab（对标原版 defaultHomePage 数组值）
+  _HomeTab _tabOfHomePage(String value) {
+    switch (value) {
+      case 'explore':
+        return _HomeTab.explore;
+      case 'rss':
+        return _HomeTab.rss;
+      case 'my':
+        return _HomeTab.my;
+      default:
+        return _HomeTab.bookshelf;
+    }
+  }
+
+  void _onDestinationSelected(List<_HomeTab> tabs, int index) {
     final now = DateTime.now();
+    final currentIndex = tabs.indexOf(_currentTab);
     // 双击检测：300ms 内再次点击当前选中项 → 触发 reselect 动作
-    if (index == _currentIndex &&
+    if (index == currentIndex &&
         _lastTapIndex == index &&
         _lastTapTime != null &&
         now.difference(_lastTapTime!) <= _reselectInterval) {
       _lastTapTime = null;
-      _onReselect(index);
+      _onReselect(tabs[index]);
       return;
     }
     _lastTapTime = now;
     _lastTapIndex = index;
-    if (index != _currentIndex) {
+    if (index != currentIndex) {
       // 对标原版 setCurrentItem(position, false)：无过渡动画
       _pageController.jumpToPage(index);
     }
   }
 
   /// 底栏双击动作（对标 onNavigationItemReselected）
-  void _onReselect(int index) {
-    switch (index) {
-      case 0: // 书架：gotoTop
+  void _onReselect(_HomeTab tab) {
+    switch (tab) {
+      case _HomeTab.bookshelf: // 书架：gotoTop
         _bookshelfScrollTopSignal.value++;
-      case 1: // 发现：compressExplore（收起已展开的分类）
+      case _HomeTab.explore: // 发现：compressExplore（收起已展开的分类）
         _exploreCollapseSignal.value++;
+      default:
+        break;
     }
   }
 
-  void _onPageChanged(int index) {
+  void _onPageChanged(List<_HomeTab> tabs, int index) {
     setState(() {
-      _currentIndex = index;
-      _visitedTabs.add(index);
+      _currentTab = tabs[index];
+      _visitedTabs.add(_currentTab);
     });
   }
 
   /// 返回键两段式处理（对标 MainActivity.onBackPressedDispatcher）
   Future<void> _handleBack() async {
-    if (_currentIndex != 0) {
+    if (_currentTab != _HomeTab.bookshelf) {
       _pageController.jumpToPage(0);
       return;
     }
@@ -113,8 +152,90 @@ class _HomeScreenState extends State<HomeScreen> {
       );
   }
 
+  /// 构建底栏项（未选中/选中双色 SVG 图标）
+  NavigationDestination _destination(
+    BuildContext context,
+    String assetName,
+    String label,
+  ) {
+    return NavigationDestination(
+      icon: SvgPicture.asset(
+        'assets/icons/${assetName}_e.svg',
+        width: 24,
+        height: 24,
+        colorFilter: ColorFilter.mode(
+          Theme.of(context).colorScheme.onSurfaceVariant,
+          BlendMode.srcIn,
+        ),
+      ),
+      selectedIcon: SvgPicture.asset(
+        'assets/icons/${assetName}_s.svg',
+        width: 24,
+        height: 24,
+        colorFilter: ColorFilter.mode(
+          Theme.of(context).colorScheme.primary,
+          BlendMode.srcIn,
+        ),
+      ),
+      label: label,
+    );
+  }
+
+  /// 逻辑 Tab → 页面内容（未访问过的 Tab 用占位以保留懒构建语义）
+  Widget _pageOf(_HomeTab tab) {
+    switch (tab) {
+      case _HomeTab.bookshelf:
+        return BookshelfScreen(scrollTopSignal: _bookshelfScrollTopSignal);
+      case _HomeTab.explore:
+        return _visitedTabs.contains(tab)
+            ? ExploreScreen(collapseSignal: _exploreCollapseSignal)
+            : const SizedBox.shrink();
+      case _HomeTab.rss:
+        return _visitedTabs.contains(tab)
+            ? const RssScreen()
+            : const SizedBox.shrink();
+      case _HomeTab.my:
+        return _visitedTabs.contains(tab)
+            ? const SettingsScreen()
+            : const SizedBox.shrink();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final prefs = ref.watch(mainPrefsProvider);
+    final tabs = _visibleTabs(prefs);
+    // 偏好加载完成后应用默认首页（仅启动时生效一次，对标原版
+    // ViewPager 初始 setCurrentItem(defaultHomePage)）
+    ref.listen(mainPrefsProvider, (previous, next) {
+      if (_defaultHomePageApplied) return;
+      final target = _tabOfHomePage(next.defaultHomePage);
+      if (target == _HomeTab.bookshelf) {
+        _defaultHomePageApplied = true;
+        return;
+      }
+      final targetIndex = _visibleTabs(next).indexOf(target);
+      // 目标 Tab 被隐藏或用户已手动切页时不再跳转
+      if (targetIndex >= 0 && _currentTab == _HomeTab.bookshelf) {
+        _defaultHomePageApplied = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _pageController.hasClients) {
+            _pageController.jumpToPage(targetIndex);
+          }
+        });
+      }
+    });
+    // Tab 显隐变化后当前 Tab 可能被隐藏，回退书架并同步页面位置
+    var currentIndex = tabs.indexOf(_currentTab);
+    if (currentIndex < 0) {
+      _currentTab = _HomeTab.bookshelf;
+      currentIndex = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pageController.hasClients) {
+          _pageController.jumpToPage(0);
+        }
+      });
+    }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -128,113 +249,26 @@ class _HomeScreenState extends State<HomeScreen> {
           bottom: false,
           child: PageView(
             controller: _pageController,
-            onPageChanged: _onPageChanged,
-            children: [
-              BookshelfScreen(scrollTopSignal: _bookshelfScrollTopSignal),
-              if (_visitedTabs.contains(1))
-                ExploreScreen(collapseSignal: _exploreCollapseSignal)
-              else
-                const SizedBox.shrink(),
-              if (_visitedTabs.contains(2))
-                const RssScreen()
-              else
-                const SizedBox.shrink(),
-              if (_visitedTabs.contains(3))
-                const SettingsScreen()
-              else
-                const SizedBox.shrink(),
-            ],
+            onPageChanged: (index) => _onPageChanged(tabs, index),
+            children: [for (final tab in tabs) _pageOf(tab)],
           ),
         ),
         bottomNavigationBar: NavigationBar(
           labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-          selectedIndex: _currentIndex,
-          onDestinationSelected: _onDestinationSelected,
+          selectedIndex: currentIndex,
+          onDestinationSelected: (index) => _onDestinationSelected(tabs, index),
           destinations: [
-            NavigationDestination(
-              icon: SvgPicture.asset(
-                'assets/icons/ic_bottom_books_e.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-                  BlendMode.srcIn,
-                ),
-              ),
-              selectedIcon: SvgPicture.asset(
-                'assets/icons/ic_bottom_books_s.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.primary,
-                  BlendMode.srcIn,
-                ),
-              ),
-              label: AppStrings.bookshelf,
-            ),
-            NavigationDestination(
-              icon: SvgPicture.asset(
-                'assets/icons/ic_bottom_explore_e.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-                  BlendMode.srcIn,
-                ),
-              ),
-              selectedIcon: SvgPicture.asset(
-                'assets/icons/ic_bottom_explore_s.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.primary,
-                  BlendMode.srcIn,
-                ),
-              ),
-              label: AppStrings.discover,
-            ),
-            NavigationDestination(
-              icon: SvgPicture.asset(
-                'assets/icons/ic_bottom_rss_feed_e.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-                  BlendMode.srcIn,
-                ),
-              ),
-              selectedIcon: SvgPicture.asset(
-                'assets/icons/ic_bottom_rss_feed_s.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.primary,
-                  BlendMode.srcIn,
-                ),
-              ),
-              label: AppStrings.rss,
-            ),
-            NavigationDestination(
-              icon: SvgPicture.asset(
-                'assets/icons/ic_bottom_person_e.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-                  BlendMode.srcIn,
-                ),
-              ),
-              selectedIcon: SvgPicture.asset(
-                'assets/icons/ic_bottom_person_s.svg',
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(
-                  Theme.of(context).colorScheme.primary,
-                  BlendMode.srcIn,
-                ),
-              ),
-              label: AppStrings.my,
-            ),
+            for (final tab in tabs)
+              switch (tab) {
+                _HomeTab.bookshelf => _destination(
+                    context, 'ic_bottom_books', AppStrings.bookshelf),
+                _HomeTab.explore => _destination(
+                    context, 'ic_bottom_explore', AppStrings.discover),
+                _HomeTab.rss => _destination(
+                    context, 'ic_bottom_rss_feed', AppStrings.rss),
+                _HomeTab.my =>
+                  _destination(context, 'ic_bottom_person', AppStrings.my),
+              },
           ],
         ),
       ),

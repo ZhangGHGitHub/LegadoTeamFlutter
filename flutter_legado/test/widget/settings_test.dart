@@ -145,7 +145,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('语言'), findsWidgets);
+
+      // [UI-fix v2.0.5 | 2026-08-08] 其他设置页对齐原版后新增「主界面」分组，
+      // 阅读/网络分组被推出首屏，改为滚动后断言 — Qoder
+      await tester.scrollUntilVisible(find.text('阅读设置'), 100);
+      await tester.pumpAndSettle();
       expect(find.text('阅读设置'), findsOneWidget);
+
+      await tester.scrollUntilVisible(find.text('网络设置'), 100);
+      await tester.pumpAndSettle();
       expect(find.text('网络设置'), findsOneWidget);
 
       // 缓存入口在折叠区，需滚动可见（QUIC 开关已随 2.0.3 QUIC 移除批清理）

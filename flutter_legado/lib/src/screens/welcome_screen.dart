@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/pref_keys.dart';
 import '../routes.dart';
+import '../services/settings_service.dart';
 
 /// 欢迎页
 ///
@@ -20,6 +22,28 @@ class WelcomeScreen extends StatefulWidget {
 class _WelcomeScreenState extends State<WelcomeScreen> {
   final _pageController = PageController();
   int _currentPage = 0;
+
+  // [UI-fix v2.0.5 | 2026-08-08] 接通主题设置页「欢迎页样式」偏好：
+  // welcomeShowIcon 控制 Logo 图标显隐、welcomeShowText 控制文字显隐，
+  // 键名对齐原版 PreferKey（pref_config_welcome.xml，默认均为开） — Qoder
+  bool _showIcon = true;
+  bool _showText = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWelcomeStyle();
+  }
+
+  /// 读取欢迎页样式偏好（主题设置页「欢迎页样式」对话框写入）
+  Future<void> _loadWelcomeStyle() async {
+    final settings = SettingsService();
+    _showIcon =
+        await settings.getBoolPref(PrefKeys.welcomeShowIcon, defaultValue: true);
+    _showText =
+        await settings.getBoolPref(PrefKeys.welcomeShowText, defaultValue: true);
+    if (mounted) setState(() {});
+  }
 
   static const _introPages = [
     _IntroPage(
@@ -82,37 +106,43 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 child: const Text('跳过'),
               ),
             ),
-            // Logo + 名称
+            // Logo + 名称（显隐受「欢迎页样式」偏好控制）
             Padding(
               padding: const EdgeInsets.only(top: 8, bottom: 16),
               child: Column(
                 children: [
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(20),
+                  // [UI-fix v2.0.5 | 2026-08-08] welcomeShowIcon 控制 Logo 显隐 — Qoder
+                  if (_showIcon) ...[
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Icon(
+                        Icons.auto_stories,
+                        size: 40,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.auto_stories,
-                      size: 40,
-                      color: theme.colorScheme.onPrimaryContainer,
+                    const SizedBox(height: 12),
+                  ],
+                  // [UI-fix v2.0.5 | 2026-08-08] welcomeShowText 控制文字显隐 — Qoder
+                  if (_showText) ...[
+                    Text(
+                      'Legado',
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Legado',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                    Text(
+                      '开源阅读 · Rust 引擎驱动',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '开源阅读 · Rust 引擎驱动',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),

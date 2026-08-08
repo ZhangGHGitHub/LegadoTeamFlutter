@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import 'src/providers/providers.dart';
+import 'src/providers/theme/theme_colors_notifier.dart';
 import 'src/providers/theme/theme_notifier.dart';
 import 'src/routes.dart';
 import 'src/services/auto_task_scheduler.dart';
@@ -62,14 +63,28 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeNotifierProvider);
+    // [UI-fix v2.0.5 | 2026-08-08] 自定义主题颜色接入 MaterialApp（对齐原版
+    // ThemeConfigFragment 日间/夜间颜色配置，设置页修改后全局即时生效） — Qoder
+    final themeColors = ref.watch(themeColorsProvider);
+    Color? c(int? argb) => argb != null ? Color(argb) : null;
     return MaterialApp(
       title: 'Legado',
       // [UI-fix v2.0.2 | 2026-08-06] 平台桥接服务经此 Key 分发页面跳转 / SnackBar
       //（Task #114，服务层无 BuildContext） — QoderCN
       navigatorKey: PlatformBridgeService.navigatorKey,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      theme: AppTheme.lightCustom(
+        primary: c(themeColors.primary),
+        accent: c(themeColors.accent),
+        background: c(themeColors.background),
+        bottomBackground: c(themeColors.bottomBackground),
+      ),
+      darkTheme: AppTheme.darkCustom(
+        primary: c(themeColors.primaryNight),
+        accent: c(themeColors.accentNight),
+        background: c(themeColors.backgroundNight),
+        bottomBackground: c(themeColors.bottomBackgroundNight),
+      ),
       // 主题模式由 ThemeNotifier 驱动（亮/暗/跟随系统，全局实时切换）
       themeMode: themeState.themeMode,
       // 全局统一滚动物理（BouncingScrollPhysics，对齐安卓原版回弹手感）

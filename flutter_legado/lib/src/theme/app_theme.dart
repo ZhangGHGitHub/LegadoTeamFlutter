@@ -57,6 +57,97 @@ class AppTheme {
         fill: AppColors.darkTertiaryFill,
       );
 
+  // [UI-fix v2.0.5 | 2026-08-08] 自定义主题颜色支持：对齐原版
+  // ThemeConfigFragment 日间/夜间 主色调/强调色/背景色/底部操作栏颜色，
+  // 映射：colorPrimary→AppBar 背景（colorBackground 在未设置 primary 时
+  // 同时作为 AppBar 背景回退）、colorAccent→全局 Tint+ColorScheme、
+  // colorBackground→Scaffold 背景、colorBottomBackground→底部 TabBar 背景；
+  // 进入自定义分支后 AppBar 前景一律按 _onColor(appBarBg) 动态计算，
+  // 保证深色背景下标题可辨；四参数全为 null 时短路返回内置 light/dark，
+  // 与未自定义用户逐像素等价 — Qoder
+
+  /// 亮色主题（支持用户自定义颜色，null 项回退内置默认）
+  static ThemeData lightCustom({
+    Color? primary,
+    Color? accent,
+    Color? background,
+    Color? bottomBackground,
+  }) {
+    if (primary == null &&
+        accent == null &&
+        background == null &&
+        bottomBackground == null) {
+      return light;
+    }
+    final tint = accent ?? AppColors.lightPrimary;
+    final appBarBg = primary ?? background ?? AppColors.lightBackground;
+    return _buildTheme(
+      brightness: Brightness.light,
+      colorScheme: AppColors.lightColorScheme.copyWith(
+        primary: tint,
+        secondary: tint,
+        onPrimary: _onColor(tint),
+      ),
+      textTheme: AppTypography.lightTextTheme,
+      scaffoldBackground: background ?? AppColors.lightBackground,
+      appBarBackground: appBarBg,
+      // 前景一律按实际 AppBar 背景明暗动态计算（仅设背景色时同样生效，
+      // 避免深色背景配固定深色文字导致不可辨）
+      appBarForeground: _onColor(appBarBg),
+      separator: AppColors.lightBgDividerLine,
+      cardColor: AppColors.lightBackgroundCard,
+      tabBarBg: bottomBackground ?? AppColors.lightNavigationBarBg,
+      tint: tint,
+      secondaryLabel: AppColors.lightSecondaryText,
+      systemGreen: AppColors.iosGreenLight,
+      fill: AppColors.lightTertiaryFill,
+    );
+  }
+
+  /// 暗色主题（支持用户自定义颜色，null 项回退内置默认）
+  static ThemeData darkCustom({
+    Color? primary,
+    Color? accent,
+    Color? background,
+    Color? bottomBackground,
+  }) {
+    if (primary == null &&
+        accent == null &&
+        background == null &&
+        bottomBackground == null) {
+      return dark;
+    }
+    final tint = accent ?? AppColors.darkPrimary;
+    final appBarBg = primary ?? background ?? AppColors.darkBackground;
+    return _buildTheme(
+      brightness: Brightness.dark,
+      colorScheme: AppColors.darkColorScheme.copyWith(
+        primary: tint,
+        secondary: tint,
+        onPrimary: _onColor(tint),
+      ),
+      textTheme: AppTypography.darkTextTheme,
+      scaffoldBackground: background ?? AppColors.darkBackground,
+      appBarBackground: appBarBg,
+      // 前景一律按实际 AppBar 背景明暗动态计算（仅设背景色时同样生效，
+      // 避免浅色背景配固定浅色文字导致不可辨）
+      appBarForeground: _onColor(appBarBg),
+      separator: AppColors.darkBgDividerLine,
+      cardColor: AppColors.darkBackgroundCard,
+      tabBarBg: bottomBackground ?? AppColors.darkNavigationBarBg,
+      tint: tint,
+      secondaryLabel: AppColors.darkSecondaryText,
+      systemGreen: AppColors.iosGreenDark,
+      fill: AppColors.darkTertiaryFill,
+    );
+  }
+
+  /// 根据背景明暗计算前景对比色（对齐原版 ColorUtils.isColorLight 逻辑）
+  static Color _onColor(Color bg) =>
+      ThemeData.estimateBrightnessForColor(bg) == Brightness.light
+          ? Colors.black87
+          : Colors.white;
+
   /// 构建 ThemeData 通用方法
   static ThemeData _buildTheme({
     required Brightness brightness,
