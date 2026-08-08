@@ -5,25 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../l10n/app_strings.dart';
-import '../../models/book.dart';
-import '../../models/book_source.dart';
 import '../../providers/audio/audio_notifier.dart';
-import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
-import '../../routes.dart';
-import '../../screens/source_edit_screen.dart';
-import '../../screens/source_login_screen.dart';
 import '../../services/system_brightness.dart';
 
 /// 阅读器底部工具栏
 ///
 /// 对齐安卓原版 ReadMenu 底部栏（view_read_menu.xml）：
-/// 亮度行（自动亮度+亮度滑条）+ 上一章/章节进度条/下一章
+/// 悬浮按钮行（搜索/夜间，对标 ll_floating_button）
+/// + 亮度行（自动亮度+亮度滑条）+ 上一章/章节进度条/下一章
 /// + 目录/朗读/界面/设置四功能按钮
+/// [UI-fix v2.0.4 | 2026-08-08] 源操作行移除（原版底栏无此行，源操作
+/// 已迁至顶栏源名称徽章，对标 tv_source_action）；搜索/夜间自顶栏迁入
+/// 悬浮按钮行（对标 fabSearch/fabNightTheme） — Qoder
 class ReaderBottomBar extends ConsumerStatefulWidget {
   final VoidCallback onOpenCatalog;
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenAdvancedConfig;
+
+  /// 全文搜索回调（对标原版 fabSearch 悬浮按钮）
+  final VoidCallback onOpenContentSearch;
 
   /// 朗读按钮回调（启动/切换朗读，由 ReaderScreen 接线到 AudioNotifier）
   final VoidCallback onReadAloud;
@@ -47,6 +48,7 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
     required this.onOpenCatalog,
     required this.onOpenSettings,
     required this.onOpenAdvancedConfig,
+    required this.onOpenContentSearch,
     required this.onReadAloud,
     this.showBrightnessView = true,
     this.progressBehavior = 'chapter',
@@ -88,131 +90,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
     }
   }
 
-  // ===== [UI-fix v2.0.2 | 2026-08-06] 源操作菜单（对标原版 ReadMenu
-  // sourceMenu：登录源/章节购买/编辑源/禁用源） — Qoder =====
-
-  /// 显示源操作菜单（先查书源详情获取登录地址等）
-  Future<void> _showSourceMenu(BuildContext context, Book book) async {
-    final api = ref.read(bookApiProvider);
-    final sourceUrl = book.origin;
-    // 查找当前书籍对应书源（失败时仍提供编辑/禁用入口）
-    BookSource? source;
-    try {
-      final sources = await api.getBookSources();
-      for (final s in sources) {
-        if (s.bookSourceUrl == sourceUrl) {
-          source = s;
-          break;
-        }
-      }
-    } catch (_) {
-      // 书源列表不可用时降级：登录项隐藏，其余入口保留
-    }
-    if (!context.mounted) return;
-
-    final loginUrl = source?.loginUrl ?? '';
-    final sourceName =
-        (source?.bookSourceName ?? book.originName).trim();
-
-    final action = await showMenu<String>(
-      context: context,
-      position: const RelativeRect.fromLTRB(0, 0, 16, 120),
-      items: [
-        if (loginUrl.isNotEmpty)
-          const PopupMenuItem(value: 'login', child: Text('登录源')),
-        // 本地书隐藏章节购买项（对标原版 isLocal 短路）— Qoder
-        if (book.origin != BookType.localTag)
-          const PopupMenuItem(value: 'chapterPay', child: Text('章节购买')),
-        const PopupMenuItem(value: 'editSource', child: Text('编辑源')),
-        const PopupMenuItem(value: 'disableSource', child: Text('禁用源')),
-      ],
-    );
-    if (action == null || !context.mounted) return;
-
-    switch (action) {
-      case 'login':
-        // 对标原版 menu_login → 登录 V2 页面
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => SourceLoginScreen(
-              sourceUrl: sourceUrl,
-              sourceName: sourceName,
-              loginUrl: loginUrl,
-            ),
-          ),
-        );
-      case 'chapterPay':
-        // [UI-fix v2.0.3 | 2026-08-08] 章节购买接线（契约 §2.43.2），
-        // 移除原 TODO 占位 — Qoder
-        await _chapterPay(context, book);
-      case 'editSource':
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => SourceEditScreen(sourceUrl: sourceUrl),
-          ),
-        );
-      case 'disableSource':
-        try {
-          await api.disableBookSource(sourceUrl);
-          if (context.mounted) {
-            _snack(context, '已禁用书源：$sourceName');
-          }
-        } catch (e) {
-          if (context.mounted) _snack(context, '禁用书源失败: $e');
-        }
-    }
-  }
-
-  void _snack(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  // [UI-fix v2.0.3 | 2026-08-08] 章节购买（契约 §2.43.2，对照 Kotlin
-  // ReadBookActivity.payAction 的 onSuccess 三分支）：
-  // url → 内置浏览器打开购买页；success → 提示购买成功并重载当前章
-  // （Rust 侧已清章节缓存）；none → 提示无需购买；异常 → 错误提示 — Qoder
-  Future<void> _chapterPay(BuildContext context, Book book) async {
-    final api = ref.read(bookApiProvider);
-    final chapterIndex =
-        ref.read(readerNotifierProvider).currentChapterIndex;
-    _snack(context, '正在执行章节购买…');
-    try {
-      final result = await api.chapterPayAction(
-        bookUrl: book.bookUrl,
-        chapterIndex: chapterIndex,
-      );
-      if (!context.mounted) return;
-      switch (result.kind) {
-        case 'url':
-          // 购买页地址：内置浏览器打开（对标原版 WebViewActivity，
-          // 标题为 chapter_pay 字符串）
-          Navigator.of(context).pushNamed(
-            AppRoutes.browser,
-            arguments: <String, String>{
-              'url': result.value,
-              'title': '章节购买',
-            },
-          );
-        case 'success':
-          // 购买成功：重载当前章正文（参考编辑保存后的重载路径）；
-          // 重载失败不影响购买结果提示
-          try {
-            await ref
-                .read(readerNotifierProvider.notifier)
-                .reloadChapterContent();
-          } catch (e) {
-            debugPrint('购买成功后重载章节失败: $e');
-          }
-          if (context.mounted) _snack(context, '购买成功');
-        default:
-          // kind=none：本地书短路/书源未配置 payAction/不支持
-          _snack(context, '当前章节无需购买或书源未配置购买动作');
-      }
-    } catch (e) {
-      // 对标原版 onError：执行购买操作出错
-      if (context.mounted) _snack(context, '章节购买失败: $e');
-    }
-  }
+  // [UI-fix v2.0.4 | 2026-08-08] 源操作菜单（_showSourceMenu/_chapterPay）
+  // 已整体迁移至顶栏 ReaderTopBar 源名称徽章（对标原版 tv_source_action
+  // 点击弹 sourceMenu），功能无丢失 — Qoder
 
   @override
   Widget build(BuildContext context) {
@@ -248,7 +128,44 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
       bottom: 0,
       left: 0,
       right: 0,
-      child: Material(
+      // [UI-fix v2.0.4 | 2026-08-08] 悬浮按钮行（对标原版 ll_floating_button：
+      // fabSearch 居左 / fabNightTheme 居右；原版另有 fabAutoPage/fabReplaceRule，
+      // Flutter 侧暂无自动翻页功能且替换规则入口在溢出菜单，不新增） — Qoder
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                FloatingActionButton(
+                  mini: true,
+                  heroTag: null,
+                  tooltip: '全文搜索',
+                  onPressed: widget.onOpenContentSearch,
+                  child: const Icon(Icons.search),
+                ),
+                FloatingActionButton(
+                  mini: true,
+                  heroTag: null,
+                  tooltip: state.isDarkBackground ? '日间模式' : '夜间模式',
+                  onPressed: () => notifier.updateBackgroundColor(
+                    state.isDarkBackground
+                        ? ReaderBackground.white
+                        : ReaderBackground.dark,
+                  ),
+                  child: Icon(
+                    state.isDarkBackground
+                        ? Icons.light_mode
+                        : Icons.dark_mode,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Material(
         color: followColor ?? Theme.of(context).colorScheme.surface,
         // iOS 风格：无阴影 + hairline 顶边
         elevation: 0,
@@ -358,37 +275,6 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                   ],
                 ),
               ),
-              // [UI-fix v2.0.2 | 2026-08-06] 源操作行（对标原版
-              // tvSourceAction：本地书隐藏） — Qoder
-              if (book != null && book.origin != BookType.localTag)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.link,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          (book.originName.isNotEmpty
-                                  ? book.originName
-                                  : '书籍来源')
-                              ,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => _showSourceMenu(context, book),
-                        child: const Text('源菜单'),
-                      ),
-                    ],
-                  ),
-                ),
               // 功能按钮（对标 ll_catalog/ll_read_aloud/ll_font/ll_setting）
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -434,6 +320,8 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
             ),
           ),
         ),
+          ),
+        ],
       ),
     );
     return bar;

@@ -1,28 +1,39 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/book.dart';
+import '../../models/book_source.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
+import '../../screens/source_edit_screen.dart';
+import '../../screens/source_login_screen.dart';
 import 'reader_settings_sheet.dart';
 
 /// 阅读器顶部工具栏
 ///
-/// 对齐安卓原版 ReadMenu 顶部 TitleBar 与 book_read.xml 菜单：
-/// 返回键 + 书名 + 阅读进度百分比 + 换源/刷新/缓存（在线书）
-/// + 夜间模式 + 正文搜索 + 书签 + 溢出菜单（高级设置等）
-class ReaderTopBar extends ConsumerWidget {
-  final VoidCallback onOpenContentSearch;
+/// [UI-fix v2.0.4 | 2026-08-08] 模块 A：对齐安卓原版 view_read_menu.xml
+/// TitleBar + book_read.xml 菜单 — Qoder
+/// - 常驻图标：在线书=换源/刷新/缓存（menu_group_on_line），本地书=设置编码
+///   （menu_group_local），窄窗口用紧凑图标防溢出
+/// - 标题附加区（title_bar_addition，受 showReadTitleAddition 控制）：
+///   章节名 + 章节 URL（点击复制）+ 书源徽章（tv_source_action，点击弹源操作菜单）
+/// - 溢出菜单顺序/条件显隐逐项对齐 book_read.xml（visible=false 项不实现）
+/// - 夜间/搜索按钮迁至底栏悬浮按钮行（对齐原版 fabNightTheme/fabSearch）；
+///   书签迁入溢出菜单（对齐原版 menu_add_bookmark showAsAction=never）
+class ReaderTopBar extends ConsumerStatefulWidget {
+  /// 添加书签回调（溢出菜单 menu_add_bookmark）
   final VoidCallback onAddBookmark;
-  final VoidCallback onOpenAdvancedConfig;
 
   // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
 
-  /// 显示标题附加区（书名后追加章名，对标原版 showReadTitleAddition）
+  /// 显示标题附加区（章节名/URL/源徽章，对标原版 showReadTitleAddition）
   final bool showTitleAddition;
 
   /// 工具栏样式跟随阅读页（对标原版 readBarStyleFollowPage/immersiveMenu）
@@ -30,12 +41,50 @@ class ReaderTopBar extends ConsumerWidget {
 
   const ReaderTopBar({
     super.key,
-    required this.onOpenContentSearch,
     required this.onAddBookmark,
-    required this.onOpenAdvancedConfig,
     this.showTitleAddition = true,
     this.styleFollowPage = false,
   });
+
+  @override
+  ConsumerState<ReaderTopBar> createState() => _ReaderTopBarState();
+}
+
+class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
+  // [UI-fix v2.0.4 | 2026-08-08] EPUB delTag 位标（对齐 Kotlin Book.hTag=2、
+  // Book.rubyTag=4，经 ReadConfig.delTag 位运算持久化） — Qoder
+  static const int _hTag = 2;
+  static const int _rubyTag = 4;
+
+  /// 删除重复标题本地开关（原版 menu_same_title_removed 依赖
+  /// ContentProcessor.sameTitleRemoved 章级状态；Flutter 侧 ReadConfig/FFI
+  /// 均无该字段（已 grep 确认无数据链路），按任务要求本地持久化，
+  /// Rust 正文处理链路暂未消费，待契约补齐后接通）
+  bool _sameTitleRemovedLocal = false;
+
+  /// 已启用替换规则计数（menu_effective_replaces 只读展示；原版为当前章
+  /// 生效规则列表，Flutter 侧无章级 API，降级为全局启用计数）
+  int? _effectiveReplaceCount;
+
+  /// 已加载本地开关的书籍 bookUrl（换书后重新加载）
+  String? _flagsLoadedForBook;
+
+  /// 加载本地开关与替换规则计数（书籍变化时调用）
+  Future<void> _loadLocalFlags(String bookUrl) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final removed = prefs.getBool('sameTitleRemoved_$bookUrl') ?? false;
+      if (mounted) setState(() => _sameTitleRemovedLocal = removed);
+    } catch (_) {
+      // 持久化不可用时保持默认关闭
+    }
+    try {
+      final rules = await ref.read(bookApiProvider).getEnabledReplaceRules();
+      if (mounted) setState(() => _effectiveReplaceCount = rules.length);
+    } catch (_) {
+      // 替换规则 API 不可用时不展示计数
+    }
+  }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 溢出菜单去存根（对标原版
   // ReadBookActivity 菜单 handler） — Qoder =====
@@ -423,11 +472,11 @@ class ReaderTopBar extends ConsumerWidget {
         content: const SingleChildScrollView(
           child: Text(
             '• 点击屏幕中央可显示/隐藏工具栏\n'
-            '• 顶栏：换源、刷新、缓存、夜间模式、搜索、书签、更多菜单\n'
-            '• 底栏：目录、夜间、设置、朗读、源操作\n'
+            '• 顶栏：换源、刷新、缓存（在线书）/设置编码（本地书）、更多菜单\n'
+            '• 顶栏下方：章节名与链接（点击复制）、书源徽章（点击弹源操作）\n'
+            '• 底栏：搜索/夜间悬浮按钮、上一章/进度/下一章、目录、朗读、界面、设置\n'
             '• 左右滑动或点击两侧区域翻页\n'
             '• 长按正文可选择文本（复制/搜索/替换/朗读等）\n'
-            '• 高级设置：翻页模式/自动翻页/点击区域/字体与排版\n'
             '• 遇到问题可在“更多→日志”查看运行日志',
           ),
         ),
@@ -515,24 +564,335 @@ class ReaderTopBar extends ConsumerWidget {
     );
   }
 
+  // ===== [UI-fix v2.0.4 | 2026-08-08] 模块 A 新增：源操作菜单自底栏
+  // 迁入（承接原底栏“源菜单”全部功能，对齐原版 tv_source_action 点击
+  // 弹 book_read_source 菜单：登录源/章节购买/编辑源/禁用源） — Qoder =====
+
+  /// 显示源操作菜单（先查书源详情获取登录地址等）
+  Future<void> _showSourceMenu(BuildContext context, Book book) async {
+    final api = ref.read(bookApiProvider);
+    final sourceUrl = book.origin;
+    // 查找当前书籍对应书源（失败时仍提供编辑/禁用入口）
+    BookSource? source;
+    try {
+      final sources = await api.getBookSources();
+      for (final s in sources) {
+        if (s.bookSourceUrl == sourceUrl) {
+          source = s;
+          break;
+        }
+      }
+    } catch (_) {
+      // 书源列表不可用时降级：登录项隐藏，其余入口保留
+    }
+    if (!context.mounted) return;
+
+    final loginUrl = source?.loginUrl ?? '';
+    final sourceName =
+        (source?.bookSourceName ?? book.originName).trim();
+
+    // 菜单锚在顶栏下缘右侧（徽章位置），不遮挡顶栏内容
+    final screenWidth = MediaQuery.of(context).size.width;
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+          screenWidth - 200, kToolbarHeight + 56, 8, 0),
+      items: [
+        if (loginUrl.isNotEmpty)
+          const PopupMenuItem(value: 'login', child: Text('登录源')),
+        // 本地书隐藏章节购买项（对标原版 isLocal 短路）— Qoder
+        if (book.origin != BookType.localTag)
+          const PopupMenuItem(value: 'chapterPay', child: Text('章节购买')),
+        const PopupMenuItem(value: 'editSource', child: Text('编辑源')),
+        const PopupMenuItem(value: 'disableSource', child: Text('禁用源')),
+      ],
+    );
+    if (action == null || !context.mounted) return;
+
+    switch (action) {
+      case 'login':
+        // 对标原版 menu_login → 登录 V2 页面
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => SourceLoginScreen(
+              sourceUrl: sourceUrl,
+              sourceName: sourceName,
+              loginUrl: loginUrl,
+            ),
+          ),
+        );
+      case 'chapterPay':
+        // [UI-fix v2.0.3 | 2026-08-08] 章节购买接线（契约 §2.43.2） — Qoder
+        await _chapterPay(context, book);
+      case 'editSource':
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => SourceEditScreen(sourceUrl: sourceUrl),
+          ),
+        );
+      case 'disableSource':
+        try {
+          await api.disableBookSource(sourceUrl);
+          if (context.mounted) {
+            _snack(context, '已禁用书源：$sourceName');
+          }
+        } catch (e) {
+          if (context.mounted) _snack(context, '禁用书源失败: $e');
+        }
+    }
+  }
+
+  // [UI-fix v2.0.3 | 2026-08-08] 章节购买（契约 §2.43.2，对照 Kotlin
+  // ReadBookActivity.payAction 的 onSuccess 三分支）：
+  // url → 内置浏览器打开购买页；success → 提示购买成功并重载当前章
+  // （Rust 侧已清章节缓存）；none → 提示无需购买；异常 → 错误提示 — Qoder
+  Future<void> _chapterPay(BuildContext context, Book book) async {
+    final api = ref.read(bookApiProvider);
+    final chapterIndex =
+        ref.read(readerNotifierProvider).currentChapterIndex;
+    _snack(context, '正在执行章节购买…');
+    try {
+      final result = await api.chapterPayAction(
+        bookUrl: book.bookUrl,
+        chapterIndex: chapterIndex,
+      );
+      if (!context.mounted) return;
+      switch (result.kind) {
+        case 'url':
+          // 购买页地址：内置浏览器打开（对标原版 WebViewActivity，
+          // 标题为 chapter_pay 字符串）
+          Navigator.of(context).pushNamed(
+            AppRoutes.browser,
+            arguments: <String, String>{
+              'url': result.value,
+              'title': '章节购买',
+            },
+          );
+        case 'success':
+          // 购买成功：重载当前章正文（参考编辑保存后的重载路径）；
+          // 重载失败不影响购买结果提示
+          try {
+            await ref
+                .read(readerNotifierProvider.notifier)
+                .reloadChapterContent();
+          } catch (e) {
+            debugPrint('购买成功后重载章节失败: $e');
+          }
+          if (context.mounted) _snack(context, '购买成功');
+        default:
+          // kind=none：本地书短路/书源未配置 payAction/不支持
+          _snack(context, '当前章节无需购买或书源未配置购买动作');
+      }
+    } catch (e) {
+      // 对标原版 onError：执行购买操作出错
+      if (context.mounted) _snack(context, '章节购买失败: $e');
+    }
+  }
+
+  // ===== [UI-fix v2.0.4 | 2026-08-08] 模块 A 新增：溢出菜单补缺项与
+  // 标题附加区辅助 — Qoder =====
+
+  /// 是否 EPUB 书籍（对齐 Kotlin Book.isEpub：本地书且文件名 .epub 后缀，
+  /// menu_group_epub 仅 EPUB 可见）
+  bool _isEpub(Book? book) {
+    if (book == null || book.origin != BookType.localTag) return false;
+    final name =
+        (book.originName.isNotEmpty ? book.originName : book.bookUrl)
+            .toLowerCase();
+    return name.endsWith('.epub');
+  }
+
+  /// delTag 位标是否启用（对齐 Kotlin Book.getDelTag）
+  bool _hasDelTag(Book? book, int tag) =>
+      ((book?.readConfig?.delTag ?? 0) & tag) != 0;
+
+  /// 切换 delTag 位标并重载正文（对齐 Kotlin addDelTag/removeDelTag 后
+  /// refreshContentAll；ReadConfig.delTag 经 updateBook 持久化）
+  void _toggleDelTag(BuildContext context, int tag, String label) {
+    final book = ref.read(readerNotifierProvider).currentBook;
+    final enabled = _hasDelTag(book, tag);
+    unawaited(_updateBookConfig(
+      context,
+      ref,
+      (c) => c.copyWith(delTag: enabled ? (c.delTag & ~tag) : (c.delTag | tag)),
+    ));
+    if (context.mounted) {
+      _snack(context, enabled ? '已关闭$label' : '已开启$label');
+    }
+  }
+
+  /// 切换删除重复标题（本地持久化，见 _sameTitleRemovedLocal 注释）
+  Future<void> _toggleSameTitleRemoved(BuildContext context) async {
+    final book = ref.read(readerNotifierProvider).currentBook;
+    if (book == null) return;
+    final next = !_sameTitleRemovedLocal;
+    setState(() => _sameTitleRemovedLocal = next);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('sameTitleRemoved_${book.bookUrl}', next);
+    } catch (_) {
+      // 持久化失败不阻断开关切换
+    }
+    if (context.mounted) {
+      // [UI-fix v2.0.4 | 2026-08-08] 诚实提示仅持久化未接正文链路（与导出
+      // 书签占位先例一致；待 FFI toggle_same_title_removed 接通，已登记
+      // REFACTORING_REMAINING_PLAN.md §5.11）— Qoder
+      _snack(context, '设置已保存，正文效果待后续版本支持');
+    }
+  }
+
+  /// 有效替换规则只读展示（对标原版 menu_effective_replaces →
+  /// EffectiveReplacesDialog；降级为全局启用计数展示）
+  void _showEffectiveReplacesDialog(BuildContext context) {
+    final count = _effectiveReplaceCount;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('有效替换规则'),
+        content: Text(
+          count != null
+              ? '当前已启用替换规则 $count 条（全局启用计数；原版为当前章节生效规则列表，章级数据待 FFI 契约补齐）'
+              : '替换规则数据暂不可用',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// URL 中间省略截断（对齐原版 tv_chapter_url singleLine 展示，任务要求
+  /// 中间省略；Flutter Text 无内置 middle ellipsis，按字符数截断）
+  String _middleEllipsis(String text, {int maxLength = 60}) {
+    if (text.length <= maxLength) return text;
+    final head = maxLength ~/ 2;
+    final tail = maxLength - head - 1;
+    return '${text.substring(0, head)}…${text.substring(text.length - tail)}';
+  }
+
+  /// 复制章节 URL 到剪贴板并提示
+  Future<void> _copyChapterUrl(BuildContext context, String url) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (context.mounted) _snack(context, '章节链接已复制');
+  }
+
+  // [UI-fix v2.0.4 | 2026-08-08] 章节 URL 行交互对齐原版 tv_chapter_url：
+  // 点击按持久化偏好打开（键名对齐原版 readUrlInBrowser，默认内置
+  // BrowserScreen，桌面无 WebView 时其内部已降级 url_launcher），
+  // 长按弹选择菜单（内置/系统浏览器/复制链接，选择打开方式同时
+  // 记住偏好）— Qoder
+
+  /// 点击章节 URL：按 readUrlInBrowser 偏好打开（false=内置，true=系统）
+  Future<void> _openChapterUrl(BuildContext context, String url) async {
+    var inSystemBrowser = false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      inSystemBrowser = prefs.getBool('readUrlInBrowser') ?? false;
+    } catch (_) {
+      // 偏好读取失败时默认内置打开
+    }
+    if (!context.mounted) return;
+    if (inSystemBrowser) {
+      await _openUrlInSystemBrowser(context, url);
+    } else {
+      Navigator.of(context).pushNamed(
+        AppRoutes.browser,
+        arguments: <String, String>{'url': url, 'title': '章节链接'},
+      );
+    }
+  }
+
+  /// 系统浏览器打开（url_launcher 已在 pubspec 依赖中）
+  Future<void> _openUrlInSystemBrowser(
+      BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
+    final ok = uri != null &&
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) _snack(context, '无法打开链接：$url');
+  }
+
+  /// 长按章节 URL：选择打开方式（选内置/系统同时持久化偏好）
+  Future<void> _showChapterUrlMenu(BuildContext context, String url) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('打开方式'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'inner'),
+            child: const Text('内置浏览器打开'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'system'),
+            child: const Text('系统浏览器打开'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'copy'),
+            child: const Text('复制链接'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case 'inner':
+      case 'system':
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('readUrlInBrowser', choice == 'system');
+        } catch (_) {
+          // 偏好持久化失败不阻断本次打开
+        }
+        if (!context.mounted) return;
+        if (choice == 'system') {
+          await _openUrlInSystemBrowser(context, url);
+        } else {
+          Navigator.of(context).pushNamed(
+            AppRoutes.browser,
+            arguments: <String, String>{'url': url, 'title': '章节链接'},
+          );
+        }
+      case 'copy':
+        await _copyChapterUrl(context, url);
+    }
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
-    final isDark = state.isDarkBackground;
     final progressPct = (state.readingProgress * 100).toStringAsFixed(1);
+    final book = state.currentBook;
+
+    // [UI-fix v2.0.4 | 2026-08-08] 换书后加载本地开关与替换规则计数
+    // （顶栏仅在 showControls 时挂载，每次展示均可刷新） — Qoder
+    if (book != null && _flagsLoadedForBook != book.bookUrl) {
+      _flagsLoadedForBook = book.bookUrl;
+      unawaited(_loadLocalFlags(book.bookUrl));
+    }
+
+    // 在线书判定（对齐原版 onLine = !book.isLocal，WebDAV 视作本地）
+    final isOnline = book != null &&
+        book.origin != BookType.localTag &&
+        !book.origin.startsWith(BookType.webDavTag);
 
     // [UI-fix v2.0.3 | 2026-08-08] 工具栏跟随页面：背景/前景色跟随当前
     // 阅读页配色（对标原版 ReadMenu immersiveMenu：bgColor=页面背景、
     // textColor=页面文字色）；关闭时维持主题 surface — Qoder
-    final followColor = styleFollowPage ? state.backgroundColor : null;
-    final foreground = styleFollowPage ? state.textColor : null;
-    // [UI-fix v2.0.3 | 2026-08-08] 标题附加区：书名 · 章名（对标原版
-    // showReadTitleAddition 开启时菜单顶栏显示章名）— Qoder
-    final chapterTitle = state.currentChapter?.title ?? '';
-    final titleText = (showTitleAddition && chapterTitle.isNotEmpty)
-        ? '${state.currentBook?.name ?? ''} · $chapterTitle'
-        : (state.currentBook?.name ?? '');
+    final followColor = widget.styleFollowPage ? state.backgroundColor : null;
+    final foreground = widget.styleFollowPage ? state.textColor : null;
+    // [UI-fix v2.0.4 | 2026-08-08] 标题附加区数据（对齐原版 upBookView：
+    // tv_chapter_name=章名，tv_chapter_url 仅在线书可见） — Qoder
+    final chapter = state.currentChapter;
+    final chapterTitle = chapter?.title ?? '';
+    final chapterUrl = chapter?.url ?? '';
+    // 附加区文字弱化色（对齐原版 immersiveMenu lightenColor 0.75 透明度）
+    final additionColor = widget.styleFollowPage
+        ? state.textColor.withValues(alpha: 0.75)
+        : Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Positioned(
       top: 0,
@@ -544,7 +904,7 @@ class ReaderTopBar extends ConsumerWidget {
         elevation: 0,
         shape: Border(
           bottom: BorderSide(
-            color: styleFollowPage
+            color: widget.styleFollowPage
                 ? state.textColor.withValues(alpha: 0.2)
                 : (Theme.of(context).dividerTheme.color ??
                     Theme.of(context).dividerColor),
@@ -556,213 +916,344 @@ class ReaderTopBar extends ConsumerWidget {
           child: IconTheme(
             // 跟随页面时图标前景色改用页面文字色
             data: IconThemeData(color: foreground),
-            child: SizedBox(
-            height: kToolbarHeight,
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                Expanded(
-                  child: Text(
-                    titleText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: foreground,
+                SizedBox(
+                  height: kToolbarHeight,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      Expanded(
+                        child: Text(
+                          book?.name ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(color: foreground),
                         ),
-                  ),
-                ),
-                // 阅读进度百分比
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    '$progressPct%',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: styleFollowPage
-                              ? state.textColor
-                              : Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.w600,
+                      ),
+                      // 阅读进度百分比
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          '$progressPct%',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(
+                                color: widget.styleFollowPage
+                                    ? state.textColor
+                                    : Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
-                  ),
-                ),
-                // [UI-fix v2.0.3 | 2026-08-06] 顶栏图标过多致 RIGHT OVERFLOWED，
-                // 将换源/刷新/缓存（原 menu_group_on_line 三枚 IconButton）收入溢出
-                // 菜单，顶栏仅保留高频的夜间/搜索/书签，Row 不再溢出（对标 iOS 精简导航栏） — Qoder
-                // 夜间模式快速切换
-                IconButton(
-                  icon: Icon(
-                    isDark ? Icons.light_mode : Icons.dark_mode,
-                  ),
-                  tooltip: isDark ? '日间模式' : '夜间模式',
-                  onPressed: () {
-                    notifier.updateBackgroundColor(
-                      isDark ? ReaderBackground.white : ReaderBackground.dark,
-                    );
-                  },
-                ),
-                // 正文搜索
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  tooltip: '搜索正文',
-                  onPressed: onOpenContentSearch,
-                ),
-                // 书签按钮
-                IconButton(
-                  icon: const Icon(Icons.bookmark_add_outlined),
-                  tooltip: '添加书签',
-                  onPressed: onAddBookmark,
-                ),
-                // 安卓原版：溢出菜单（book_read.xml never 项）
-                PopupMenuButton<String>(
-                  tooltip: '更多',
-                  onSelected: (value) async {
-                    switch (value) {
-                      // [UI-fix v2.0.3 | 2026-08-06] 换源/刷新/缓存由顶栏
-                      // IconButton 迁入溢出菜单（修复顶栏溢出） — Qoder
-                      case 'changeSource':
-                        Navigator.pushNamed(
-                          context,
-                          AppRoutes.changeSource,
-                          arguments: state.currentBook,
-                        );
-                        break;
-                      case 'refreshBook':
-                        final book = state.currentBook;
-                        if (book != null) {
-                          await notifier.openBook(book);
-                          if (context.mounted) _snack(context, '已刷新');
-                        }
-                        break;
-                      case 'cache':
-                        _showCacheDialog(context, ref);
-                        break;
-                      case 'advanced':
-                        onOpenAdvancedConfig();
-                        break;
-                      case 'highlightRule':
-                        // 对标原版 ReadMenu → HighlightRuleActivity
-                        Navigator.pushNamed(context, AppRoutes.highlightRules);
-                        break;
-                      case 'pageAnim':
-                        // [UI-fix v2.0.1 | 2026-08-06] 翻页动画接阅读设置面板
-                        // （面板内含翻页模式设置，对标原版 ReadStyleDialog） — Qoder
-                        ReaderSettingsSheet.show(context);
-                        break;
-                      case 'log':
-                        // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
-                        Navigator.pushNamed(context, AppRoutes.appLog);
-                        break;
-                      // [UI-fix v2.0.2 | 2026-08-06] 以下菜单项去存根，
-                      // 逐项对标原版 ReadBookActivity — Qoder
-                      case 'editContent':
-                        _showEditContentDialog(context, ref);
-                        break;
-                      case 'reverseContent':
-                        unawaited(_reverseContent(context, ref));
-                        break;
-                      case 'simulatedReading':
-                        _showSimulatedReadingDialog(context, ref);
-                        break;
-                      case 'enableReplace':
-                        _toggleReplaceRule(context, ref);
-                        break;
-                      case 'reSegment':
-                        _toggleReSegment(context, ref);
-                        break;
-                      case 'imageStyle':
-                        _showImageStyleDialog(context, ref);
-                        break;
-                      case 'setCharset':
-                        // [UI-fix v2.0.3 | 2026-08-06] 设置编码接通 — Qoder
-                        _showCharsetDialog(context, ref);
-                        break;
-                      case 'updateToc':
-                        unawaited(_updateToc(context, ref));
-                        break;
-                      case 'help':
-                        _showHelpDialog(context);
-                        break;
-                    }
-                  },
-                  itemBuilder: (_) {
-                    // [UI-fix v2.0.2 | 2026-08-06] 替换规则/重新分段以勾选
-                    // 样式展示当前启用状态（对标原版 checkable 菜单项） — Qoder
-                    final book = ref.read(readerNotifierProvider).currentBook;
-                    final replaceOn = book?.readConfig?.useReplaceRule ?? true;
-                    final segmentOn = book?.readConfig?.reSegment ?? false;
-                    // 在线书才显示换源/刷新/缓存（对标原版 menu_group_on_line）
-                    final isOnline = book != null &&
-                        book.origin != BookType.localTag &&
-                        !book.origin.startsWith(BookType.webDavTag);
-                    Widget checked(String text, bool on) => Row(
-                          children: [
-                            if (on) ...[
-                              Icon(Icons.check, size: 16,
-                                  color: Theme.of(context).colorScheme.primary),
-                              const SizedBox(width: 6),
-                            ],
-                            Text(text),
-                          ],
-                        );
-                    return [
-                      // [UI-fix v2.0.3 | 2026-08-06] 换源/刷新/缓存（仅在线书）— Qoder
+                      ),
+                      // [UI-fix v2.0.4 | 2026-08-08] 换源/刷新/缓存提为顶栏
+                      // 常驻图标（对齐原版 menu_group_on_line
+                      // showAsAction=always，仅在线书可见）；本地书展示设置
+                      // 编码（menu_group_local）；统一紧凑尺寸防窄窗口
+                      // RIGHT OVERFLOWED（标题 Expanded 吸收余宽） — Qoder
                       if (isOnline) ...[
-                        const PopupMenuItem(
-                            value: 'changeSource', child: Text('换源')),
-                        const PopupMenuItem(
-                            value: 'refreshBook', child: Text('刷新')),
-                        const PopupMenuItem(value: 'cache', child: Text('缓存')),
-                        const PopupMenuDivider(),
-                      ],
-                      const PopupMenuItem(
-                        value: 'advanced',
-                        child: Text('高级设置'),
+                        IconButton(
+                          icon: const Icon(Icons.swap_horiz, size: 22),
+                          tooltip: '换源',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppRoutes.changeSource,
+                              arguments: book,
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh, size: 22),
+                          tooltip: '刷新',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () async {
+                            await notifier.openBook(book);
+                            if (context.mounted) _snack(context, '已刷新');
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.download_outlined, size: 22),
+                          tooltip: '缓存（离线缓存）',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _showCacheDialog(context, ref),
+                        ),
+                      ] else if (book != null)
+                        IconButton(
+                          icon: const Icon(Icons.translate, size: 22),
+                          tooltip: '设置编码',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _showCharsetDialog(context, ref),
+                        ),
+                      // 溢出菜单（顺序对齐 book_read.xml never 项；
+                      // [UI-fix v2.0.4 | 2026-08-08] 书签迁入、补删除重复
+                      // 标题/EPUB 标签清理/有效替换规则，移除与常驻图标
+                      // 重复的换源/刷新/缓存/设置编码与原版不存在的
+                      // 高级设置项（底栏设置按钮承接） — Qoder）
+                      PopupMenuButton<String>(
+                        tooltip: '更多',
+                        // 菜单自顶栏正下方展开（项目菜单定位规范）
+                        position: PopupMenuPosition.under,
+                        onSelected: (value) async {
+                          switch (value) {
+                            case 'addBookmark':
+                              // 对标原版 menu_add_bookmark → addBookmark()
+                              widget.onAddBookmark();
+                              break;
+                            case 'highlightRule':
+                              // 对标原版 ReadMenu → HighlightRuleActivity
+                              Navigator.pushNamed(
+                                  context, AppRoutes.highlightRules);
+                              break;
+                            case 'editContent':
+                              _showEditContentDialog(context, ref);
+                              break;
+                            case 'pageAnim':
+                              // [UI-fix v2.0.1 | 2026-08-06] 翻页动画接阅读
+                              // 设置面板（对标原版 ReadStyleDialog） — Qoder
+                              ReaderSettingsSheet.show(context);
+                              break;
+                            case 'reverseContent':
+                              unawaited(_reverseContent(context, ref));
+                              break;
+                            case 'simulatedReading':
+                              _showSimulatedReadingDialog(context, ref);
+                              break;
+                            case 'enableReplace':
+                              _toggleReplaceRule(context, ref);
+                              break;
+                            case 'sameTitleRemoved':
+                              unawaited(_toggleSameTitleRemoved(context));
+                              break;
+                            case 'reSegment':
+                              _toggleReSegment(context, ref);
+                              break;
+                            case 'delRubyTag':
+                              _toggleDelTag(context, _rubyTag, '删除 Ruby 标签');
+                              break;
+                            case 'delHTag':
+                              _toggleDelTag(context, _hTag, '删除 H 标签');
+                              break;
+                            case 'imageStyle':
+                              _showImageStyleDialog(context, ref);
+                              break;
+                            case 'updateToc':
+                              unawaited(_updateToc(context, ref));
+                              break;
+                            case 'effectiveReplaces':
+                              _showEffectiveReplacesDialog(context);
+                              break;
+                            case 'log':
+                              // [UI-fix v2.0.1 | 2026-08-06] 日志接通
+                              // AppLogScreen（对标 menu_log） — Qoder
+                              Navigator.pushNamed(context, AppRoutes.appLog);
+                              break;
+                            case 'help':
+                              _showHelpDialog(context);
+                              break;
+                          }
+                        },
+                        itemBuilder: (_) {
+                          // [UI-fix v2.0.2 | 2026-08-06] checkable 菜单项以
+                          // 勾选样式展示当前启用状态 — Qoder
+                          final replaceOn =
+                              book?.readConfig?.useReplaceRule ?? true;
+                          final segmentOn =
+                              book?.readConfig?.reSegment ?? false;
+                          final isEpub = _isEpub(book);
+                          Widget checked(String text, bool on) => Row(
+                                children: [
+                                  if (on) ...[
+                                    Icon(Icons.check,
+                                        size: 16,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  Text(text),
+                                ],
+                              );
+                          return [
+                            // 顺序对齐 book_read.xml：add_bookmark →
+                            // highlight_rule → edit_content → page_anim →
+                            // reverse_content(仅在线) → simulated_reading →
+                            // enable_replace → same_title_removed →
+                            // re_segment → epub 组(仅 EPUB) → image_style →
+                            // update_toc → effective_replaces → log → help；
+                            // get_progress/cover_progress/enable_review 为
+                            // 原版 visible=false 项，不实现
+                            const PopupMenuItem(
+                                value: 'addBookmark', child: Text('添加书签')),
+                            const PopupMenuItem(
+                                value: 'highlightRule', child: Text('高亮规则')),
+                            const PopupMenuItem(
+                                value: 'editContent', child: Text('编辑内容')),
+                            const PopupMenuItem(
+                                value: 'pageAnim', child: Text('翻页动画')),
+                            // 反转内容仅在线书可见（对齐 upMenu
+                            // isVisible=onLine）
+                            if (isOnline)
+                              const PopupMenuItem(
+                                  value: 'reverseContent',
+                                  child: Text('反转内容')),
+                            const PopupMenuItem(
+                                value: 'simulatedReading',
+                                child: Text('模拟追读')),
+                            PopupMenuItem(
+                              value: 'enableReplace',
+                              child: checked('替换规则', replaceOn),
+                            ),
+                            // [UI-fix v2.0.4 | 2026-08-08] 删除重复标题（对齐
+                            // menu_same_title_removed；本地持久化开关） — Qoder
+                            PopupMenuItem(
+                              value: 'sameTitleRemoved',
+                              child:
+                                  checked('删除重复标题', _sameTitleRemovedLocal),
+                            ),
+                            PopupMenuItem(
+                              value: 'reSegment',
+                              child: checked('重新分段', segmentOn),
+                            ),
+                            // [UI-fix v2.0.4 | 2026-08-08] EPUB 标签清理组
+                            // （对齐 menu_group_epub 仅 EPUB 可见，经
+                            // ReadConfig.delTag 位标持久化） — Qoder
+                            if (isEpub) ...[
+                              PopupMenuItem(
+                                value: 'delRubyTag',
+                                child: checked(
+                                    '删除 Ruby 标签', _hasDelTag(book, _rubyTag)),
+                              ),
+                              PopupMenuItem(
+                                value: 'delHTag',
+                                child: checked(
+                                    '删除 H 标签', _hasDelTag(book, _hTag)),
+                              ),
+                            ],
+                            const PopupMenuItem(
+                                value: 'imageStyle', child: Text('图片样式')),
+                            const PopupMenuItem(
+                                value: 'updateToc', child: Text('更新目录')),
+                            // [UI-fix v2.0.4 | 2026-08-08] 有效替换规则只读
+                            // 展示（对齐 menu_effective_replaces） — Qoder
+                            PopupMenuItem(
+                              value: 'effectiveReplaces',
+                              child: Text(_effectiveReplaceCount != null
+                                  ? '有效替换规则（$_effectiveReplaceCount 条启用）'
+                                  : '有效替换规则'),
+                            ),
+                            const PopupMenuItem(
+                                value: 'log', child: Text('日志')),
+                            const PopupMenuItem(
+                                value: 'help', child: Text('帮助')),
+                          ];
+                        },
                       ),
-                      const PopupMenuItem(
-                        value: 'highlightRule',
-                        child: Text('高亮规则'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'editContent',
-                        child: Text('编辑内容'),
-                      ),
-                      const PopupMenuItem(value: 'pageAnim', child: Text('翻页动画')),
-                      const PopupMenuItem(
-                        value: 'reverseContent',
-                        child: Text('反转内容'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'simulatedReading',
-                        child: Text('模拟追读'),
-                      ),
-                      PopupMenuItem(
-                        value: 'enableReplace',
-                        child: checked('替换规则', replaceOn),
-                      ),
-                      PopupMenuItem(
-                        value: 'reSegment',
-                        child: checked('重新分段', segmentOn),
-                      ),
-                      const PopupMenuItem(
-                        value: 'imageStyle',
-                        child: Text('图片样式'),
-                      ),
-                      // [UI-fix v2.0.3 | 2026-08-06] 新增设置编码菜单项 — Qoder
-                      const PopupMenuItem(
-                        value: 'setCharset',
-                        child: Text('设置编码'),
-                      ),
-                      const PopupMenuItem(value: 'updateToc', child: Text('更新目录')),
-                      const PopupMenuItem(value: 'log', child: Text('日志')),
-                      const PopupMenuItem(value: 'help', child: Text('帮助')),
-                    ];
-                  },
+                    ],
+                  ),
                 ),
+                // [UI-fix v2.0.4 | 2026-08-08] 标题附加区（对齐原版
+                // title_bar_addition，受 showReadTitleAddition 控制）：
+                // 章节名 + 章节 URL（点击复制）+ 书源徽章
+                // （tv_source_action，点击弹源操作菜单，本地书隐藏） — Qoder
+                if (widget.showTitleAddition &&
+                    book != null &&
+                    (chapterTitle.isNotEmpty || isOnline))
+                  Padding(
+                    padding:
+                        const EdgeInsets.only(left: 16, right: 12, bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (chapterTitle.isNotEmpty)
+                                Text(
+                                  chapterTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: additionColor),
+                                ),
+                              // [UI-fix v2.0.4 | 2026-08-08] 章节 URL 行
+                              // （仅在线书，对齐 upBookView isLocalBook
+                              // 隐藏）：点击按偏好打开，长按选择
+                              // 打开方式（对齐原版 tv_chapter_url）— Qoder
+                              if (isOnline && chapterUrl.isNotEmpty)
+                                InkWell(
+                                  onTap: () => unawaited(
+                                      _openChapterUrl(context, chapterUrl)),
+                                  onLongPress: () => unawaited(
+                                      _showChapterUrlMenu(
+                                          context, chapterUrl)),
+                                  child: Text(
+                                    _middleEllipsis(chapterUrl),
+                                    maxLines: 1,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            color: additionColor,
+                                            fontSize: 11),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        // 书源徽章（对齐 tv_source_action：maxWidth 120、
+                        // 强调色底；承接原底栏“源菜单”入口）
+                        if (isOnline) ...[
+                          const SizedBox(width: 8),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () =>
+                                unawaited(_showSourceMenu(context, book)),
+                            child: Container(
+                              constraints:
+                                  const BoxConstraints(maxWidth: 120),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                book.originName.isNotEmpty
+                                    ? book.originName
+                                    : '书源',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                // 强调色底徽章用 onPrimary 白色文字
+                                // （项目配色可访问性规范）
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onPrimary),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
               ],
             ),
-          ),
           ),
         ),
       ),

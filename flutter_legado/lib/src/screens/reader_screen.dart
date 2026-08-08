@@ -15,7 +15,6 @@ import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../widgets/reader/read_aloud_bar.dart';
 import '../widgets/reader/reader_bottom_bar.dart';
-import '../widgets/reader/reader_catalog_drawer.dart';
 import '../widgets/reader/reader_page_view.dart';
 import '../widgets/reader/reader_settings_sheet.dart';
 import '../widgets/reader/reader_status_strip.dart';
@@ -35,7 +34,6 @@ class ReaderScreen extends ConsumerStatefulWidget {
 }
 
 class _ReaderScreenState extends ConsumerState<ReaderScreen> {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<ReaderPageViewState> _pageViewKey =
       GlobalKey<ReaderPageViewState>();
 
@@ -222,7 +220,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         }
       },
       child: Scaffold(
-        key: _scaffoldKey,
         backgroundColor: state.backgroundColor,
         body: GestureDetector(
           onTapUp: (details) => _handleTap(context, details),
@@ -230,7 +227,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             children: [
               ReaderPageView(
                 key: _pageViewKey,
-                paragraphSpacing: _advConfig.paragraphSpacing,
+                // [UI-fix v2.0.4 | 2026-08-08] 共享配置源：面板/界面 Sheet 的
+                // 修改统一推送 readerAdvConfigProvider，watch 触发重建并同步
+                // _advConfig（Stack 子级按序求值，后续 ReaderStatusStrip 等
+                // 消费点拿到最新配置；provider 未加载完成时兜底用自加载值）— Qoder
+                paragraphSpacing: (_advConfig =
+                        ref.watch(readerAdvConfigProvider) ?? _advConfig)
+                    .paragraphSpacing,
                 // [UI-fix v2.0.2 | 2026-08-06] 阅读配置面板新增排版参数接入分页渲染 — Qoder
                 letterSpacing: _advConfig.letterSpacing,
                 paragraphIndent: _advConfig.paragraphIndent,
@@ -244,6 +247,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 // 文本开关与滚动翻页无动画接入内容区 — Qoder
                 selectText: _advConfig.selectText,
                 noAnimScroll: _advConfig.noAnimScrollPage,
+                // [UI-fix v2.0.4 | 2026-08-08] 界面面板字重/自定义文字色与
+                // MoreConfig 第②批鼠标滚轮翻页接入内容区 — Qoder
+                textBold: _advConfig.textBold,
+                customTextColor: _advConfig.customTextColor,
+                mouseWheelPage: _advConfig.mouseWheelPage,
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
               // 全局页码指示器（跨章节连续分页已注册时显示）
@@ -274,9 +282,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 ),
               if (state.showControls)
                 ReaderTopBar(
-                  onOpenContentSearch: () => _openContentSearch(state),
                   onAddBookmark: () => _addBookmark(state),
-                  onOpenAdvancedConfig: () => _openAdvancedConfig(context),
+                  // [UI-fix v2.0.4 | 2026-08-08] 顶栏对齐原版 ReadMenu：搜索/
+                  // 高级设置入口已迁出（搜索→底栏悬浮按钮，设置→底栏设置按钮），
+                  // 不再传入对应回调 — Qoder
                   // [UI-fix v2.0.3 | 2026-08-08] 显示标题附加区/工具栏跟随页面 — Qoder
                   showTitleAddition: _advConfig.showReadTitleAddition,
                   styleFollowPage: _advConfig.readBarStyleFollowPage,
@@ -286,16 +295,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               if (aloudActive && !_aloudBarHidden)
                 ReadAloudBar(
                   onDismiss: () => setState(() => _aloudBarHidden = true),
-                  onOpenCatalog: () =>
-                      _scaffoldKey.currentState?.openEndDrawer(),
+                  // [UI-fix v2.0.4 | 2026-08-08] 目录入口切换为独立目录页
+                  // TocScreen（对标原版 TocActivity），抽屉已删除 — Qoder
+                  onOpenCatalog: () => unawaited(_openToc()),
                   onBackstage: () => Navigator.of(context).maybePop(),
                 )
               else if (state.showControls)
                 ReaderBottomBar(
-                  onOpenCatalog: () =>
-                      _scaffoldKey.currentState?.openEndDrawer(),
+                  onOpenCatalog: () => unawaited(_openToc()),
                   onOpenSettings: () => ReaderSettingsSheet.show(context),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
+                  // [UI-fix v2.0.4 | 2026-08-08] 全文搜索自顶栏迁入底栏悬浮
+                  // 按钮行（对标原版 fabSearch） — Qoder
+                  onOpenContentSearch: () => _openContentSearch(state),
                   onReadAloud: _onReadAloudTap,
                   // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批：亮度控件
                   // 显隐/进度条行为（调章内页驱动 PageView 跳页）/工具栏
@@ -309,12 +321,27 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             ],
           ),
         ),
-        endDrawer: const ReaderCatalogDrawer(),
       ),
     );
   }
 
   // ===== 交互 =====
+
+  /// 打开独立目录页（对标原版 ll_catalog → TocActivity）
+  ///
+  /// [UI-fix v2.0.4 | 2026-08-08] 目录入口由侧边抽屉改为独立目录页
+  /// TocScreen（/toc 路由，传当前 Book）；页面 pop 返回选中章节原始
+  /// index（int）后跳转对应章节 — Qoder
+  Future<void> _openToc() async {
+    final book = ref.read(readerNotifierProvider).currentBook;
+    if (book == null) return;
+    final result =
+        await Navigator.pushNamed(context, AppRoutes.toc, arguments: book);
+    if (!mounted) return;
+    if (result is int) {
+      await ref.read(readerNotifierProvider.notifier).goToChapter(result);
+    }
+  }
 
   /// 底栏朗读按钮点击处理
   ///
@@ -386,7 +413,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       case TapAction.toggleControls:
         notifier.toggleControls();
       case TapAction.openCatalog:
-        _scaffoldKey.currentState?.openEndDrawer();
+        unawaited(_openToc());
     }
   }
 
