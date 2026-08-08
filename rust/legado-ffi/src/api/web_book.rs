@@ -1674,6 +1674,32 @@ mod tests {
         assert_eq!(content, raw);
     }
 
+    /// 回归（Task #24）：真实 95590 章节页 + 真实书源 ruleContent `.entry-content@html`。
+    /// 该书源在实机报「正文为空」，此测试固定真实页面证明解析管线本身能抽到非空正文，
+    /// 从而将「正文为空」根因锁定为数据/换源匹配错书（章节 URL 指向异书），而非解析代码 bug。
+    #[test]
+    fn test_parse_content_page_real_95590_entry_content() {
+        let html = include_str!("../../tests/fixtures_95590_ch9.html");
+        let (content, _next) = parse_content_page(
+            html.to_string(),
+            ".entry-content@html",
+            "a[rel='next']@href",
+            "https://www.95590.org/2014/05/55.html",
+            "https://www.95590.org",
+            false,
+        );
+        // 解析管线（CSS `.entry-content@html` + format_keep_img + unescape）应产出非空正文
+        assert!(
+            !content.trim().is_empty(),
+            "真实页面经解析管线不应为空：说明解析代码正常"
+        );
+        // 校验确实抽到了正文段落文本
+        assert!(
+            content.contains("陈庆蓉") || content.contains("侯卫东"),
+            "应抽取到章节正文段落文本"
+        );
+    }
+
     /// 脚本化响应的抓取闭包（离线模拟多页，不走真实网络）
     fn scripted_fetch(
         pages: std::collections::HashMap<String, String>,

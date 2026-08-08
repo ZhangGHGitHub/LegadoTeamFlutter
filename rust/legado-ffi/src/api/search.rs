@@ -541,7 +541,10 @@ pub(crate) fn load_search_sources(source_urls_json: &str) -> LegadoResult<Vec<Bo
 ///
 /// 完整链路：AnalyzeUrl 构建请求 → LegadoClient 发送 → AnalyzeRule 解析结果
 /// JS 书源走 JsSourceBookOrchestrator 路径（R1: spawn_blocking 避免嵌套 runtime 死锁）
-async fn search_single_source(
+///
+/// Task #16 P1：改为 `pub(crate)` 供换源场景（source_switch.rs）复用，
+/// 使换源候选拿到真实的详情页 book_url（而非搜索结果页 URL）。
+pub(crate) async fn search_single_source(
     client: &LegadoClient,
     source: &BookSource,
     keyword: &str,

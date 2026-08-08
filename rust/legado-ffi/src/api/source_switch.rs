@@ -3,12 +3,11 @@
 //! 提供搜索可替换书源和切换书籍来源的功能。
 //! 复用 legado-net 的 HTTP 客户端和 legado-core 的 SourceMatcher 评分逻辑。
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 
-use legado_core::models::BookSource;
+use legado_core::models::{BookChapter, BookSource};
 use legado_core::source_matcher::{SearchCandidate, SourceMatch, SourceMatcher};
+use legado_core::web_book::WebChapter;
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::LegadoClient;
 
@@ -70,7 +69,17 @@ pub fn search_alternative_sources(
         Ok::<_, LegadoError>(all_candidates)
     })?;
 
-    // 使用 SourceMatcher 评分排序
+    // Task #25：对齐原版 ChangeBookSourceViewModel L266-270 的换源硬过滤：
+    // 只保留同名书（fName == name），可选「校验作者」开关（原版
+    // AppConfig.changeSourceCheckAuthor，键名一致）。此前仅打分排序不过滤，
+    // match_score 为 0 的毫不相关错书仍全部进入换源列表（Task #25 现象）。
+    // config 读取失败按关闭处理（不误伤同名过滤主语义）。
+    let check_author = crate::api::config_api::get_config("changeSourceCheckAuthor")
+        .map(|v| v.trim() == "true")
+        .unwrap_or(false);
+    let candidates = SourceMatcher::filter_for_change(candidates, book_name, author, check_author);
+
+    // 使用 SourceMatcher 评分排序（同名同作者高分在前）
     let matches = SourceMatcher::rank_candidates(candidates, book_name, author);
 
     Ok(SourceSwitchResponse {
@@ -82,11 +91,17 @@ pub fn search_alternative_sources(
 
 /// 切换到新书源
 ///
-/// `book_url` — 当前书籍的 bookUrl（用于定位书籍记录）
+/// `book_url` — 当前书籍的 bookUrl（稳定主键，换源后保持不变）
 /// `new_source_url` — 新书源的 URL
 /// `new_book_url` — 新书源中该书籍的详情页 URL
 ///
 /// 返回更新后的书籍信息（JSON）。
+///
+/// Task #16 P0（方案 A，对齐 Android 原版）：**bookUrl 作为稳定主键，换源时不
+/// 变更 bookUrl**。仅更新书源相关字段（origin/originName/tocUrl），随后清除该
+/// bookUrl 下的旧章节与旧缓存正文，并用 new_book_url 从新源重新抓取目录、以
+/// 稳定的原 bookUrl 落库。避免旧实现「先改 book_url 再按新值 update」命中 0 行
+/// 回退 insert 导致的僵尸记录与章节孤儿；同时清缓存避免跨源正文串本。
 pub fn switch_book_source(
     book_url: &str,
     new_source_url: &str,
@@ -96,31 +111,109 @@ pub fn switch_book_source(
     use legado_db::repository::Repository;
     use legado_db::BookRepository;
 
-    with_database(|db| {
+    // Task #21 修复：换源目标详情页 URL 为空时提前返回可读错误。
+    // 否则空 URL 会传入 WebBookEngine::get_chapters（步骤 2），触发解析器
+    // 抛出令人困惑的 "bookUrl不能为空"（web_book.rs get_chapters 空值校验）。
+    // 空 book_url 通常源于书源 ruleSearch.bookUrl 未解析出详情页 URL 的候选，
+    // 此处兜底防御，主过滤在 search_for_switch（不让空候选进入换源列表）。
+    if new_book_url.trim().is_empty() {
+        return Err(LegadoError::Parser(
+            "换源目标书籍详情页 URL 为空，无法切换书源（该候选未解析出有效链接）".into(),
+        ));
+    }
+
+    // 1. 定位书籍 + 加载新书源配置（只读：先不写库，待新目录抓取
+    //    成功后才在步骤 4 的事务里统一落库，避免新源抰 0 章时已改了
+    //    origin/tocUrl 却没有章节的不一致中间态）
+    let (mut book, source) = with_database(|db| {
         let repo = BookRepository::new(db.connection());
-        let mut book = repo
+        let book = repo
             .find_by_url(book_url)?
             .ok_or_else(|| LegadoError::Database("书籍不存在".into()))?;
 
-        // 更新书源信息
-        book.origin = new_source_url.to_string();
-
-        // 尝试从书源获取书源名称
+        // 新书源配置：既用于抓取新目录，也用于取书源名称
         let source_repo = legado_db::BookSourceRepository::new(db.connection());
-        if let Ok(Some(source)) = source_repo.find_by_url(new_source_url) {
-            book.origin_name = source.book_source_name;
-        }
+        let source = source_repo
+            .find_by_url(new_source_url)?
+            .ok_or_else(|| LegadoError::Database(format!("书源不存在: {new_source_url}")))?;
 
-        // 更新书籍 URL
-        book.book_url = new_book_url.to_string();
+        Ok((book, source))
+    })?;
 
-        // 标记需要重新获取章节列表
-        book.last_check_time = 0;
-        book.last_check_count = 0;
+    // 2. 用 new_book_url（新源详情页）从新书源抓取章节列表
+    let engine = super::web_book::build_engine();
+    let web_chapters: Vec<WebChapter> =
+        runtime::block_on(async { engine.get_chapters(&source, new_book_url).await })?;
 
-        repo.update(&book)?;
-        serde_json::to_string(&book).map_err(LegadoError::Serialization)
-    })
+    // Task #21 修复：空结果保护。新书源未解析到任何章节时（get_chapters 返回
+    //    Ok(vec![]) 而非错误），直接返回可读错误，且不改动任何库记录
+    //    （保留原 origin/tocUrl 与原目录），避免把书换成「无章节」而比未换源
+    //    更糟的回归。
+    if web_chapters.is_empty() {
+        return Err(LegadoError::Parser(
+            "换源失败：新书源未解析到任何章节，已保留原书源与目录".into(),
+        ));
+    }
+
+    // 3. 转换为 BookChapter，base_url/book_url 均落稳定的原 bookUrl
+    let book_chapters: Vec<BookChapter> = web_chapters
+        .iter()
+        .map(|wc| BookChapter {
+            url: wc.url.clone(),
+            title: wc.title.clone(),
+            is_volume: false,
+            base_url: book_url.to_string(),
+            book_url: book_url.to_string(),
+            index: wc.index,
+            is_vip: wc.is_vip,
+            is_pay: false,
+            resource_url: None,
+            tag: None,
+            word_count: None,
+            start: None,
+            end: None,
+            start_fragment_id: None,
+            end_fragment_id: None,
+            variable: None,
+            img_url: None,
+        })
+        .collect();
+
+    // 4. 将书源字段更新 + 清旧缓存/旧章节 + 写入新章节，全部包进单个 DB 事务：
+    //    全部成功才提交；中途失败自动回滚，保留原书源与原章节，
+    //    避免留下"无章节"状态（比未换源更糟）。bookUrl 保持稳定，仅改
+    //    origin/originName/tocUrl，update 的 WHERE 命中原行（稳定主键）。
+    //    connection() 返回共享的 &Connection（r2d2 池），无法用需 &mut 的
+    //    Connection::transaction()，故沿用项目既有的 unchecked_transaction()
+    //    模式（见 highlight_rule_repository / book_chapter_repository）。
+    //    insert_batch 内部会自开事务，此处改用 insert_batch_no_tx 避免嵌套 BEGIN。
+    // 仅更新书源相关字段；bookUrl 不变 → update 的 WHERE 命中原行（稳定主键）
+    book.origin = new_source_url.to_string();
+    book.origin_name = source.book_source_name.clone();
+    // tocUrl 指向新源详情页，供后续刷新目录定位（bookUrl 仍为旧源 URL）
+    book.toc_url = new_book_url.to_string();
+    // 标记需要重新获取章节列表
+    book.last_check_time = 0;
+    book.last_check_count = 0;
+    with_database(|db| {
+        let conn = db.connection();
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启换源事务失败: {e}")))?;
+
+        BookRepository::new(conn).update(&book)?;
+        let cache_repo = legado_db::CacheBookRepository::new(conn);
+        cache_repo.delete_by_book(book_url)?;
+        let chapter_repo = legado_db::BookChapterRepository::new(conn);
+        chapter_repo.delete_by_book_url(book_url)?;
+        chapter_repo.insert_batch_no_tx(&book_chapters)?;
+
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交换源事务失败: {e}")))?;
+        Ok(())
+    })?;
+
+    serde_json::to_string(&book).map_err(LegadoError::Serialization)
 }
 
 /// 解析换源场景待搜索的书源列表（留项#12，Task #131/Task #145）
@@ -175,51 +268,34 @@ fn source_group_contains(source_group: &str, target: &str) -> bool {
 }
 
 /// 对单个书源执行搜索（用于换源场景）
+///
+/// Task #16 P1：复用 [`crate::api::search::search_single_source`] 的完整
+/// AnalyzeRule 解析链路，确保每个候选的 `book_url` 是真实的书籍**详情页 URL**
+/// （而非搜索结果页 URL），使后续 [`switch_book_source`]/refresh_toc 能正确
+/// 定位并获取目录。旧实现直接把响应 URL 当作 book_url，导致换源后目录抓取失败。
 async fn search_for_switch(
     client: &LegadoClient,
     source: &BookSource,
     keyword: &str,
 ) -> LegadoResult<Vec<SearchCandidate>> {
-    let search_url_template = match source.search_url.as_ref() {
-        Some(u) => u,
-        None => return Ok(Vec::new()),
-    };
-
-    // 简单替换关键词占位符
-    let search_url = search_url_template
-        .replace("{{key}}", keyword)
-        .replace("{key}", keyword)
-        .replace("searchKey", keyword);
-
-    // 解析自定义请求头
-    let headers: Option<HashMap<String, String>> = source
-        .header
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok());
-
-    // 发起 GET 请求
-    let response = match client.get(&search_url, headers).await {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    if !response.is_success() {
-        return Ok(Vec::new());
-    }
-
-    // 简化实现：将响应作为单条候选结果
-    // 生产环境应使用 AnalyzeRule 解析 HTML/JSON 获取完整搜索结果列表
-    let candidate = SearchCandidate {
-        source_url: source.book_source_url.clone(),
-        source_name: source.book_source_name.clone(),
-        book_url: response.url,
-        book_name: keyword.to_string(),
-        author: String::new(),
-        latest_chapter: None,
-        word_count: None,
-    };
-
-    Ok(vec![candidate])
+    let results = crate::api::search::search_single_source(client, source, keyword).await?;
+    let candidates = results
+        .into_iter()
+        // Task #21 修复：过滤掉未解析出详情页 URL 的候选。空 book_url 无法用于
+        // switch_book_source/refresh_toc 定位书籍，若进入换源列表被用户选中，
+        // 会以空 URL 调用解析器抛 "bookUrl不能为空"。此处从源头剔除无效候选。
+        .filter(|r| !r.book_url.trim().is_empty())
+        .map(|r| SearchCandidate {
+            source_url: r.source_url,
+            source_name: r.source_name,
+            book_url: r.book_url,
+            book_name: r.book_name,
+            author: r.author,
+            latest_chapter: r.latest_chapter,
+            word_count: None,
+        })
+        .collect();
+    Ok(candidates)
 }
 
 #[cfg(test)]
@@ -366,5 +442,172 @@ mod tests {
         let filtered = resolve_switch_sources("").expect("分组过滤解析失败");
         assert!(filtered.is_empty(), "目标分组无源时应返回空列表");
         crate::api::config_api::set_config("searchGroup", "").expect("清空 searchGroup 失败");
+    }
+
+    /// Task #16 P0：换源保持 bookUrl 稳定——不产生僵尸记录且旧章节/旧缓存被清理
+    ///
+    /// `switch_book_source` 的网络抓取部分（get_chapters）需真实网络，见下方
+    /// `#[ignore]` 集成测试；本用例在 DB 层确定性验证修复后的契约：
+    /// 仅更新书源字段且 **bookUrl 保持不变** 时 `BookRepository::update` 命中原行
+    /// （不会因 WHERE 落空而 insert 出新 new_book_url 僵尸行），且旧章节与旧缓存
+    /// 可经 `delete_by_book_url`/`delete_by_book` 清理干净。
+    #[test]
+    fn test_switch_keeps_book_url_stable_no_zombie() {
+        use crate::db_state::with_database;
+        use legado_core::cache_book::CachedChapter;
+        use legado_core::models::{Book, BookChapter};
+        use legado_db::repository::Repository;
+        use legado_db::{BookChapterRepository, BookRepository, CacheBookRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://task16-old-src.example.com/book/1";
+        let new_url = "https://task16-new-src.example.com/book/1";
+
+        // 初始数据：旧源书籍 + 旧章节 + 旧缓存正文
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let book = Book {
+                book_url: old_url.to_string(),
+                origin: "https://task16-old-src.example.com".to_string(),
+                origin_name: "旧源".to_string(),
+                ..Book::default()
+            };
+            repo.insert(&book)?;
+
+            let chapter_repo = BookChapterRepository::new(db.connection());
+            chapter_repo.insert_batch(&[BookChapter {
+                url: format!("{old_url}/ch0"),
+                title: "旧章节".to_string(),
+                base_url: old_url.to_string(),
+                book_url: old_url.to_string(),
+                index: 0,
+                ..BookChapter::default()
+            }])?;
+
+            let cache_repo = CacheBookRepository::new(db.connection());
+            cache_repo.insert(&CachedChapter {
+                id: 0,
+                book_url: old_url.to_string(),
+                chapter_index: 0,
+                chapter_title: "旧章节".to_string(),
+                chapter_url: format!("{old_url}/ch0"),
+                content: "旧源正文".to_string(),
+                cached_at: 1,
+                size_bytes: 9,
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        // 复现 switch_book_source 的 DB 部分：仅改书源字段，bookUrl 保持稳定，然后清旧章节+缓存
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let mut book = repo.find_by_url(old_url)?.expect("书籍应存在");
+            book.origin = "https://task16-new-src.example.com".to_string();
+            book.origin_name = "新源".to_string();
+            book.toc_url = new_url.to_string();
+            repo.update(&book)?; // WHERE bookUrl=old_url 命中原行
+
+            let cache_repo = CacheBookRepository::new(db.connection());
+            cache_repo.delete_by_book(old_url)?;
+            let chapter_repo = BookChapterRepository::new(db.connection());
+            chapter_repo.delete_by_book_url(old_url)?;
+            Ok(())
+        })
+        .expect("换源 DB 更新失败");
+
+        // 断言：原 bookUrl 仍在且已换源；无 new_url 僵尸记录；旧章节/旧缓存已清
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let updated = repo.find_by_url(old_url)?.expect("原 bookUrl 记录应仍存在");
+            assert_eq!(updated.origin, "https://task16-new-src.example.com");
+            assert_eq!(updated.origin_name, "新源");
+            assert_eq!(updated.toc_url, new_url);
+            assert!(
+                repo.find_by_url(new_url)?.is_none(),
+                "不应出现 new_book_url 僵尸记录"
+            );
+
+            let chapter_repo = BookChapterRepository::new(db.connection());
+            assert_eq!(
+                chapter_repo.count_by_book_url(old_url)?,
+                0,
+                "旧章节应被清理"
+            );
+            let cache_repo = CacheBookRepository::new(db.connection());
+            assert!(
+                cache_repo.get_by_book(old_url)?.is_empty(),
+                "旧缓存正文应被清理"
+            );
+            Ok(())
+        })
+        .expect("断言查询失败");
+
+        // 收尾：删除本用例书籍，避免污染共享测试库
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            repo.delete(old_url)
+        })
+        .ok();
+    }
+
+    /// Task #16 P0：换源完整链路集成测试（需真实网络，CI 忽略）
+    ///
+    /// 验证 switch_book_source 返回的 JSON 中 bookUrl 与传入的原 bookUrl 一致（稳定主键）。
+    #[test]
+    #[ignore = "requires network access"]
+    fn test_switch_book_source_keeps_book_url_in_returned_json() {
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_db::repository::Repository;
+        use legado_db::{BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://switch-old.example.com/book/1";
+        let new_source = "https://switch-new.example.com";
+        let new_book_url = "https://switch-new.example.com/book/1";
+
+        with_database(|db| {
+            let brepo = BookRepository::new(db.connection());
+            brepo.insert(&Book {
+                book_url: old_url.to_string(),
+                ..Book::default()
+            })?;
+            let srepo = BookSourceRepository::new(db.connection());
+            srepo.insert(&BookSource {
+                book_source_url: new_source.to_string(),
+                book_source_name: "新源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .unwrap();
+
+        let json = switch_book_source(old_url, new_source, new_book_url).unwrap();
+        let decoded: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded["bookUrl"].as_str(), Some(old_url), "返回 bookUrl 应保持稳定");
+    }
+
+    /// Task #21 回归：换源目标详情页 URL 为空时应提前返回可读错误，
+    /// 而非把空 URL 传进解析器抛出令人困惑的 "bookUrl不能为空"。
+    ///
+    /// guard 位于 switch_book_source 最顶部（DB/网络访问之前），故本用例
+    /// 无需任何 DB/网络即可确定性验证：空串与纯空白 new_book_url 均被拦截，
+    /// 且错误信息可读（不含裸 "bookUrl不能为空"）。
+    #[test]
+    fn test_switch_book_source_rejects_empty_new_book_url() {
+        for empty in ["", "   ", "\t\n"] {
+            let err = switch_book_source("https://any-book.example.com/1", "https://any-src.example.com", empty)
+                .expect_err("空 new_book_url 应返回错误");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("详情页 URL 为空"),
+                "错误信息应可读地说明详情页 URL 为空，实际: {msg}"
+            );
+            assert!(
+                !msg.contains("bookUrl不能为空"),
+                "不应暴露解析器内部的 bookUrl不能为空，实际: {msg}"
+            );
+        }
     }
 }
