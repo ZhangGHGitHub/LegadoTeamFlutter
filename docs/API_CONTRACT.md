@@ -596,6 +596,17 @@
 |------|------|------|------|
 | `bookExportWithOptions({required String bookUrl, required String format, required bool includeToc, String optionsJson = ''})` | bookUrl, format（txt/epub/html/pdf）, includeToc, optionsJson（`{"encoding":"GBK","startChapter":0,"endChapter":9,"fileNameTemplate":"{name} 作者：{author}"}`，空串=全缺省） | `Future<String>` | ExportResult JSON（同 §2.31 `bookExport` 返回结构） |
 
+#### 2.43.5 目录页缓存态查询（Task #22，1 个方法）
+
+> [UI-fix v2.0.6 | 2026-08-08] 加法式新增（不改既有签名/行为），仅走 frb 主链路（`ffi.rs`）。
+> 目录页云图标缓存态数据源：复用 `legado-db` `CacheBookRepository.get_by_book`（按
+> `book_url` 复合键查询，不串本），仅提取 `chapter_url`。对齐 Kotlin
+> `item_chapter_list` 的 `iv_toc_cache`（已缓存实心云 / 未缓存空心云）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `cacheListCachedChapterUrls({required String bookUrl})` | bookUrl | `Future<String>` | 已缓存 `chapter_url` 的 JSON 字符串数组（`["url1","url2",...]`，按 chapter_index 升序、空 url 过滤）；Dart 侧 `RustApi.listCachedChapterUrls` 解析为 `List<String>` 供目录页渲染云图标 |
+
 ---
 
 ## 3. UI 轨需求登记区
