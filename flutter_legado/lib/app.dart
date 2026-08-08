@@ -10,6 +10,7 @@ import 'src/routes.dart';
 import 'src/services/auto_task_scheduler.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/theme/app_theme.dart';
+import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/crash_log_dialog.dart';
 import 'src/widgets/verification_code_listener.dart';
@@ -72,6 +73,10 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       // [UI-fix v2.0.2 | 2026-08-06] 平台桥接服务经此 Key 分发页面跳转 / SnackBar
       //（Task #114，服务层无 BuildContext） — QoderCN
       navigatorKey: PlatformBridgeService.navigatorKey,
+      // [UI-fix v2.0.7 | 2026-08-09] 全局路由观察器（Task #26）：目录页等
+      // 「返回重现需刷新」的页面经 RouteAware 订阅，从阅读器返回时
+      // 即时刷新缓存云图标/当前章节（对齐原版 SAVE_CONTENT 事件刷新）
+      navigatorObservers: [appRouteObserver],
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightCustom(
         primary: c(themeColors.primary),

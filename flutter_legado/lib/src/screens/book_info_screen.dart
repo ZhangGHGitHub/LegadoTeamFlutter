@@ -39,10 +39,7 @@ class BookInfoScreen extends ConsumerStatefulWidget {
 
 class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   late Future<_BookInfoData> _future;
-  final TextEditingController _searchCtrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey _tocHeaderKey = GlobalKey();
-  String _filter = '';
   bool _isLoading = false;
   // 当前书籍（供 AppBar 溢出菜单读取勾选态）
   Book? _loadedBook;
@@ -59,9 +56,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     super.initState();
     _future = _loadData();
     _loadDeleteBookAlert();
-    _searchCtrl.addListener(() {
-      setState(() => _filter = _searchCtrl.text.trim().toLowerCase());
-    });
   }
 
   /// 加载「删除提醒」开关（对齐原版 LocalConfig.deleteBookAlert）
@@ -72,7 +66,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -256,7 +249,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                   final book = data.book;
                   if (book == null) return;
                   if (!context.mounted) return;
-                  final saved = await Navigator.pushNamed<bool>(
+                  // [fix Task#24 | 2026-08-08] 去掉 <bool> 泛型，避免 routes 表
+                  // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
+                  final saved = await Navigator.pushNamed(
                     context,
                     AppRoutes.editBookInfo,
                     arguments: book,
@@ -532,99 +527,26 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 
   Widget _buildBody(BuildContext context, Book book, List<BookChapter> chapters) {
-    final filteredChapters = _filter.isEmpty
-        ? chapters
-        : chapters
-            .where((c) => c.title.toLowerCase().contains(_filter))
-            .toList();
     final cs = Theme.of(context).colorScheme;
-    // [UI-fix v2.0.3 | 2026-08-06] 书详情页仅顶部封面区虚化景深，章节列表区纯色背景 — Qoder
-    // 封面虚化背景层（见 _buildPage）仅透过顶部透明的 _buildHeader 封面区显现；
-    // 自 _buildSummaryPanel 起（含章节搜索/列表）均用不透明 cs.surface 盖住虚化，
-    // 形成「顶部封面虚化景深 → 章节列表纯色」的自然过渡（不再整页透出）。
+    // [UI-fix v2.0.6 | 2026-08-08] 移除详情页内嵌「搜索章节」框与完整章节列表，
+    // 对齐原版 activity_book_info（详情页不含目录列表，目录由 tv_toc_view 跳转
+    // 独立 TocActivity 查看）。详情页仅保留封面卡 + 信息面板（含目录行显示当前
+    // 章节名 + 查看目录按钮）。封面虚化背景层（见 _buildPage）仅透过顶部透明的
+    // _buildHeader 封面区显现；信息面板起铺不透明 cs.surface 盖住虚化，底部用
+    // SliverFillRemaining 续铺纯色，避免短内容时下方透出虚化封面。 — Qoder
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
         // 封面卡（对标原版 ArcView + CardView 110x160 居中）
         SliverToBoxAdapter(child: _buildHeader(context, book)),
-        // 信息面板：书名/标签/摘要行/简介（对标原版 ll_info）
-        SliverToBoxAdapter(child: _buildSummaryPanel(context, book)),
-        // 章节搜索与列表头（不透明纯色面板，接在虚化 header 之下）
+        // 信息面板：书名/字数标签/摘要行/简介（对标原版 ll_info）
         SliverToBoxAdapter(
-          child: Container(
-            color: cs.surface,
-            child: Column(
-              children: [
-                _buildChapterSearch(context),
-                Container(
-                  key: _tocHeaderKey,
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: Text(
-                    '章节列表（${chapters.length}）',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: _buildSummaryPanel(context, book, chapters),
         ),
-        // 章节列表
-        if (filteredChapters.isEmpty)
-          SliverToBoxAdapter(
-            child: Container(
-              color: cs.surface,
-              child: const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: Text('暂无匹配章节')),
-              ),
-            ),
-          )
-        else
-          // [UI-fix v2.0.3 | 2026-08-06] 章节列表用 DecoratedSliver 铺不透明 cs.surface 底色，
-          // 盖住 _buildPage 全屏封面虚化层（ListTile.tileColor 在此栈上不可靠地绘制不透明背景，
-          // 早期无虚化层时被不透明 Scaffold 底色掩盖，加虚化后暴露 → 显式加不透明背景容器） — Qoder
-          DecoratedSliver(
-            decoration: BoxDecoration(color: cs.surface),
-            sliver: SliverList.builder(
-              itemCount: filteredChapters.length,
-              itemBuilder: (context, index) {
-                final chapter = filteredChapters[index];
-                final isCurrentRead = chapter.index == book.durChapterIndex;
-                return ListTile(
-                  // tileColor 延续纯色面板背景（不能用 ColoredBox 包裹，会遮挡 ink 效果）
-                  tileColor: cs.surface,
-                  title: Text(
-                    chapter.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight:
-                          isCurrentRead ? FontWeight.bold : FontWeight.normal,
-                      color: isCurrentRead
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                    ),
-                  ),
-                  subtitle: chapter.wordCount != null &&
-                          chapter.wordCount!.isNotEmpty
-                      ? Text('${chapter.wordCount} 字')
-                      : null,
-                  dense: true,
-                  trailing: isCurrentRead
-                      ? const Icon(Icons.play_circle, size: 20)
-                      : null,
-                  onTap: () => _openReader(context, book, chapter.index),
-                  onLongPress: () =>
-                      _showChapterMenu(context, book, chapter, index),
-                );
-              },
-            ),
-          ),
-        SliverToBoxAdapter(
-          child: Container(color: cs.surface, height: 24),
+        // 底部续铺纯色：内容不足一屏时填满剩余视口，避免透出封面虚化层
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Container(color: cs.surface),
         ),
       ],
     );
@@ -651,12 +573,16 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     );
   }
 
-  /// 信息面板（对标原版 ll_info：书名 18sp 居中 + 标签栏 + 5 行 13sp 摘要行 + 简介）
-  Widget _buildSummaryPanel(BuildContext context, Book book) {
+  /// 信息面板（对标原版 ll_info：书名 18sp 居中 + 标签栏 + 摘要行 + 简介）
+  Widget _buildSummaryPanel(
+      BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
     final latest = (book.latestChapterTitle ?? '').isNotEmpty
         ? '最新：${book.latestChapterTitle}'
         : '共 ${book.totalChapterNum} 章';
+    // [UI-fix v2.0.6 | 2026-08-08] 目录行标题对齐原版（当前章节名）+ 字数标签 — Qoder
+    final tocTitle = _resolveTocTitle(book, chapters);
+    final wordCount = (book.wordCount ?? '').trim();
     final kinds = (book.kind ?? '')
         .split(',')
         .map((e) => e.trim())
@@ -685,14 +611,30 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               color: cs.onSurface,
             ),
           ),
-          // 标签栏（对标 lb_kind，kind 非空时显示）
-          if (kinds.isNotEmpty) ...[
+          // 标签栏（对标 lb_kind + 字数标签 tv_word_count）
+          // [UI-fix v2.0.6 | 2026-08-08] 补齐字数标签（红色胶囊置于分类标签前，
+          // 对齐原版 711万字 醒目标签） — Qoder
+          if (wordCount.isNotEmpty || kinds.isNotEmpty) ...[
             const SizedBox(height: 6),
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 6,
               runSpacing: 4,
               children: [
+                if (wordCount.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: cs.errorContainer,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      wordCount,
+                      style: TextStyle(
+                          fontSize: 11, color: cs.onErrorContainer),
+                    ),
+                  ),
                 for (final kind in kinds)
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -724,19 +666,19 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           // 最新行（对标 ic_book_last + tv_lasted）
           _summaryRow(context, Icons.menu_book_outlined, latest),
           // 分组行（对标 ic_groups + tv_group + tv_change_group）
+          // [UI-fix v2.0.6 | 2026-08-08] 按钮文案「换组」→「设置分组」对齐原版
+          // change_group="Group settings"（点击设置该书所属分组，行为不变） — Qoder
           _summaryRow(context, Icons.groups_outlined, _groupText(book),
-              action: _smallAction(context, '换组', _showChangeGroup)),
+              action: _smallAction(context, '设置分组', _showChangeGroup)),
           // 目录行（对标 ll_toc：ic_folder_open + tv_toc + tv_toc_view）
-          // [UI-fix v2.0.3 | 2026-08-08] 入口改跳独立目录页 TocScreen（对齐原版
-          // tv_toc_view → TocActivityResult），返回章节 index 走现有阅读跳转链路 — Qoder
-          InkWell(
-            onTap: _scrollToToc,
-            child: _summaryRow(
-              context,
-              Icons.folder_open,
-              '目录：共 ${book.totalChapterNum} 章',
-              action: _smallAction(context, '更多目录', _openTocScreen),
-            ),
+          // [UI-fix v2.0.6 | 2026-08-08] 对齐原版：显示当前章节名
+          // （resolveBookInfoTocTitle：durChapterTitle 优先，否则按 durChapterIndex
+          // 取章、末章兜底）+「查看目录」按钮跳独立 TocScreen（不再内嵌章节列表） — Qoder
+          _summaryRow(
+            context,
+            Icons.folder_open,
+            '目录：$tocTitle',
+            action: _smallAction(context, '查看目录', _openTocScreen),
           ),
           // 简介（对标 tv_intro_container + tv_intro_toggle）
           _buildIntro(context, book),
@@ -799,38 +741,40 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     return '分组：${names.isEmpty ? '无' : names.join('，')}';
   }
 
-  Widget _buildIntro(BuildContext context, Book book) {
-    final intro = book.customIntro ?? book.intro;
-    if (intro == null || intro.isEmpty) return const SizedBox.shrink();
+  /// 目录行标题（对齐原版 BookInfoActivity.resolveBookInfoTocTitle）：
+  /// durChapterTitle 非空优先，否则按 durChapterIndex 取章、末章兜底
+  /// [UI-fix v2.0.6 | 2026-08-08] — Qoder
+  String _resolveTocTitle(Book book, List<BookChapter> chapters) {
+    final stored = (book.durChapterTitle ?? '').trim();
+    if (stored.isNotEmpty) return stored;
+    BookChapter? ch;
+    final idx = book.durChapterIndex;
+    if (idx >= 0 && idx < chapters.length) {
+      ch = chapters[idx];
+    } else if (chapters.isNotEmpty) {
+      ch = chapters.last;
+    }
+    final title = (ch?.title ?? '').trim();
+    return title.isNotEmpty ? title : '暂无最新章节';
+  }
 
+  Widget _buildIntro(BuildContext context, Book book) {
+    final raw = book.customIntro ?? book.intro;
+    if (raw == null || raw.isEmpty) return const SizedBox.shrink();
+    // [UI-fix v2.0.7 | 2026-08-08] 展示层清洗：剥离书源 intro 自带的「简介：」前缀
+    // （原版直接显示正文无前缀），清洗后为空则不渲染简介区 — Qoder
+    final intro = _cleanIntro(raw);
+    if (intro.isEmpty) return const SizedBox.shrink();
     return _ExpandableText(text: intro);
   }
 
-  Widget _buildChapterSearch(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: TextField(
-        controller: _searchCtrl,
-        decoration: InputDecoration(
-          hintText: '搜索章节...',
-          prefixIcon: const Icon(Icons.search, size: 20),
-          suffixIcon: _filter.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear, size: 18),
-                  onPressed: () {
-                    _searchCtrl.clear();
-                  },
-                )
-              : null,
-          isDense: true,
-          // iOS 风格填充搜索框（无边框，走主题 inputDecorationTheme 圆角）
-          filled: true,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none,
-          ),
-        ),
-      ),
+  /// 清洗简介正文：剥离开头的「简介：」「简介 :」等前缀
+  /// （兼容全/半角冒号及前后空白，仅剥离一次；对齐原版无前缀直接显示正文）
+  /// [UI-fix v2.0.7 | 2026-08-08] — Qoder
+  String _cleanIntro(String raw) {
+    return raw.replaceFirst(
+      RegExp(r'^[\s\u3000]*简介[\s\u3000]*[：:][\s\u3000]*'),
+      '',
     );
   }
 
@@ -1009,18 +953,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     if (mounted) setState(() => _future = _loadData());
   }
 
-  /// 查看目录：滚动到本页章节列表区（对标原版 tv_toc_view）
-  void _scrollToToc() {
-    final ctx = _tocHeaderKey.currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(
-        ctx,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    }
-  }
-
   // ===== [UI-fix v2.0.2 | 2026-08-06] 登录 / 置顶 / 清缓存 — Qoder =====
 
   /// 书源登录（对标 Kotlin BookInfoActivity menu_login）：
@@ -1183,12 +1115,17 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   /// 打开换源页面，换源成功后用新的 bookUrl 重新加载详情页
   Future<void> _showChangeSourceDialog(Book book) async {
-    final newBookUrl = await Navigator.pushNamed<String>(
+    // [fix Task#24 | 2026-08-08] routes 表统一生成 MaterialPageRoute<dynamic>，
+    // pushNamed<String> 会触发运行时强转崩溃
+    // （'MaterialPageRoute<dynamic>' is not a subtype of 'Route<String?>?'），
+    // 表现为点「换源」无任何反应。改用无类型 pushNamed + is 判定（与 _openTocScreen 一致）— Qoder
+    final result = await Navigator.pushNamed(
       context,
       AppRoutes.changeSource,
       arguments: book,
     );
     if (!mounted) return;
+    final newBookUrl = result is String ? result : null;
     // 换源成功后 bookUrl 会变化，需要用新 URL 替换当前详情页
     if (newBookUrl != null && newBookUrl.isNotEmpty) {
       Navigator.pushReplacementNamed(
@@ -1196,39 +1133,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         AppRoutes.bookInfo,
         arguments: book.copyWith(bookUrl: newBookUrl),
       );
-    }
-  }
-
-  Future<void> _showChapterMenu(
-    BuildContext context,
-    Book book,
-    BookChapter chapter,
-    int index,
-  ) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.flag),
-              title: const Text('设为阅读起点'),
-              onTap: () => Navigator.pop(ctx, 'start'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.play_arrow),
-              title: const Text('从此章开始阅读'),
-              onTap: () => Navigator.pop(ctx, 'read'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (action == null) return;
-    if (!context.mounted) return;
-    if (action == 'start' || action == 'read') {
-      await _openReader(context, book, chapter.index);
     }
   }
 }
@@ -1512,50 +1416,66 @@ class _ExpandableText extends StatefulWidget {
 class _ExpandableTextState extends State<_ExpandableText> {
   bool _expanded = false;
 
+  /// 折叠态显示行数（对齐原版折叠约 3 行）
+  static const int _collapsedLines = 3;
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final style = Theme.of(context).textTheme.bodyMedium;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '简介',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
+      // [UI-fix v2.0.7 | 2026-08-08] 用 TextPainter 预测折叠态是否真的截断正文：
+      // 仅在超过 _collapsedLines 行时才显示「展开/收起」控件，短简介整段直接显示
+      // （按内容自适应，替代此前 length>100 的粗略字数阈值——后者会漏判「刚好
+      // 超 3 行但不足百字」的简介，导致尾部被省略号截断却无展开入口） — Qoder
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final painter = TextPainter(
+            text: TextSpan(text: widget.text, style: style),
+            maxLines: _collapsedLines,
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout(maxWidth: constraints.maxWidth);
+          final showToggle = painter.didExceedMaxLines;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // [UI-fix v2.0.7 | 2026-08-08] 移除「简介」标题 heading：对齐原版
+              // 无标签、直接显示简介正文 — Qoder
+              AnimatedCrossFade(
+                firstChild: Text(
+                  widget.text,
+                  maxLines: _collapsedLines,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
                 ),
-          ),
-          const SizedBox(height: 4),
-          AnimatedCrossFade(
-            firstChild: Text(
-              widget.text,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            secondChild: Text(
-              widget.text,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            crossFadeState:
-                _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 200),
-          ),
-          if (widget.text.length > 100)
-            GestureDetector(
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  _expanded ? '收起' : '展开全部',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontSize: 13,
+                secondChild: Text(widget.text, style: style),
+                crossFadeState: _expanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 200),
+              ),
+              // [UI-fix v2.0.7 | 2026-08-08] 展开/收起：右对齐 + 主题色文字，
+              // 对齐原版底部右下角切换控件（省略号硬截断改为可展开/收起） — Qoder
+              if (showToggle)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _expanded ? '收起' : '展开',
+                        style: TextStyle(color: cs.primary, fontSize: 13),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

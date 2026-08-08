@@ -1193,6 +1193,11 @@ class MockBookApi implements BookApi {
   Future<String> getCachedChapter(String bookUrl, int chapterIndex) async =>
       '（mock 缓存正文：$bookUrl 第 $chapterIndex 章）';
 
+  // [UI-fix v2.0.6 | 2026-08-08] Task #22：mock 返回空集（目录页云图标均未缓存态） — Qoder
+  @override
+  Future<List<String>> listCachedChapterUrls(String bookUrl) async =>
+      const <String>[];
+
   // ========== 章节购买 ==========
 
   @override

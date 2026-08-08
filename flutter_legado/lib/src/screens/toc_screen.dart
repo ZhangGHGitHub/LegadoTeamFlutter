@@ -10,6 +10,7 @@ import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
 import '../services/settings_service.dart';
+import '../utils/app_route_observer.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
 ///
@@ -20,8 +21,9 @@ import '../services/settings_service.dart';
 /// - 书签/标注 Tab：数据经 BookApi（bookmarkNotifier / highlightListByBook）
 /// - 溢出菜单对齐 book_toc.xml 顺序与条件显隐（随 Tab 切换，对齐 TocActivity.onMenuOpened）
 /// - 返回值：选中章节 index（int），供调用方走现有阅读跳转链路
-/// - 章节缓存状态云图标：Rust 侧章节 JSON 无缓存状态字段，登记后置（见
-///   docs/REFACTORING_REMAINING_PLAN.md §5.11）
+/// - 章节缓存状态云图标：经 BookApi.listCachedChapterUrls（Rust
+///   cache_list_cached_chapter_urls FFI）查询 cached_chapters 已缓存 chapter_url
+///   集合，据此为每章渲染实心/空心云（[UI-fix v2.0.6 | 2026-08-08] Task #22）
 class TocScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book book;
@@ -33,7 +35,7 @@ class TocScreen extends ConsumerStatefulWidget {
 }
 
 class _TocScreenState extends ConsumerState<TocScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   /// 目录章节行估算高度（ListView.builder itemExtent，供初次进入按 index 定位）
   static const double _chapterRowExtent = 48;
 
@@ -65,6 +67,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
   bool _chaptersLoading = true;
   String? _chaptersError;
 
+  /// 已缓存章节的 chapter_url 集合（目录页云图标缓存态，
+  /// 经 BookApi.listCachedChapterUrls）
+  Set<String> _cachedChapterUrls = {};
+
   /// 标注列表（BookHighlight JSON 解析后的 Map，经 BookApi.highlightListByBook）
   List<Map<String, dynamic>> _highlights = [];
   bool _highlightsLoading = true;
@@ -89,12 +95,49 @@ class _TocScreenState extends ConsumerState<TocScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // [UI-fix v2.0.7 | 2026-08-09] Task #26：订阅全局路由观察器，
+    // 从阅读器返回本页（didPopNext）时刷新缓存云图标/当前章节
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     _debounce?.cancel();
     _tabController.dispose();
     _tocScrollController.dispose();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// [UI-fix v2.0.7 | 2026-08-09] Task #26：页面重现（从阅读器返回）时刷新。
+  /// 对齐原版 ChapterListFragment 经 EventBus.SAVE_CONTENT 增量刷新语义：
+  /// 阅读过程写入 cached_chapters 的章节云图标应变实心，同时同步书籍
+  /// 进度（durChapterIndex/Title）使当前章对勾与底部信息条不陈旧。
+  @override
+  void didPopNext() {
+    _refreshOnReshow();
+  }
+
+  Future<void> _refreshOnReshow() async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final cached =
+          (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
+      final fresh = await api.getBook(_book.bookUrl);
+      if (!mounted) return;
+      setState(() {
+        _cachedChapterUrls = cached;
+        if (fresh != null) _book = fresh;
+      });
+    } catch (_) {
+      // 刷新失败不阻断展示，保持旧状态
+    }
   }
 
   /// 加载「加载字数」开关（本地持久化）
@@ -111,10 +154,26 @@ class _TocScreenState extends ConsumerState<TocScreen>
     });
     try {
       final api = ref.read(bookApiProvider);
-      final chapters = await api.getChapters(_book.bookUrl);
+      var chapters = await api.getChapters(_book.bookUrl);
+      // [Task #21 | 2026-08-08] 自愈：本地库无目录的在线书籍（含换源后旧章节
+      // 已清、或历史遗留未拉取过目录的书），自动经书源规则从网络刷新目录。
+      // 与 reader_notifier.openBook 的回退保持一致，使打开目录页时也能触发
+      // 目录获取，修复用户反馈的「目录也获取不到」。refresh_toc 内部以书籍
+      // tocUrl 为抓取地址（换源后指向当前书源），tocUrl 空时回退 bookUrl。
+      if (chapters.isEmpty && _book.origin.isNotEmpty) {
+        chapters = await api.refreshToc(_book.bookUrl, _book.origin);
+      }
+      if (!mounted) return;
+      // [UI-fix v2.0.6 | 2026-08-08] Task #22：加载已缓存章节 url 集合，供每章
+      // 渲染云图标；查询失败不阻断目录展示（降级为全部未缓存态）
+      Set<String> cached = {};
+      try {
+        cached = (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _chapters = chapters;
+        _cachedChapterUrls = cached;
         _chaptersLoading = false;
       });
       // 初次进入自动滚动定位当前章节（按 index 估算偏移）
@@ -458,11 +517,14 @@ class _TocScreenState extends ConsumerState<TocScreen>
     );
   }
 
-  /// 章节行：当前章节高亮；字数受「加载字数」开关控制显隐
+  /// 章节行：当前章节高亮；右侧缓存状态云图标 + 可选字数（受「加载字数」开关控制）
+  /// [UI-fix v2.0.6 | 2026-08-08] Task #22：新增缓存状态云图标（对齐原版 iv_toc_cache） — Qoder
   Widget _buildChapterRow(BuildContext context, BookChapter chapter) {
     final cs = Theme.of(context).colorScheme;
     final isCurrent = chapter.index == _book.durChapterIndex;
     final wordCount = chapter.wordCount;
+    final showWordCount =
+        _loadWordCount && wordCount != null && wordCount.isNotEmpty;
     return ListTile(
       dense: true,
       selected: isCurrent,
@@ -475,14 +537,38 @@ class _TocScreenState extends ConsumerState<TocScreen>
           color: isCurrent ? cs.primary : null,
         ),
       ),
-      trailing: _loadWordCount && wordCount != null && wordCount.isNotEmpty
-          ? Text(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showWordCount) ...[
+            Text(
               '$wordCount 字',
               style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-            )
-          : null,
+            ),
+            const SizedBox(width: 8),
+          ],
+          _cacheStatusIcon(context, chapter, isCurrent),
+        ],
+      ),
       // 返回选中章节 index，由调用方走现有阅读跳转链路（对齐原版 openChapter setResult）
       onTap: () => Navigator.of(context).pop(chapter.index),
+    );
+  }
+
+  /// 章节缓存状态图标（对齐原版 item_chapter_list 的 iv_toc_cache）：
+  /// 当前阅读章 → 对勾高亮；已缓存 → 实心云；未缓存 → 空心云
+  /// [UI-fix v2.0.6 | 2026-08-08] Task #22 — Qoder
+  Widget _cacheStatusIcon(
+      BuildContext context, BookChapter chapter, bool isCurrent) {
+    final cs = Theme.of(context).colorScheme;
+    if (isCurrent) {
+      return Icon(Icons.check, size: 18, color: cs.primary);
+    }
+    final cached = _cachedChapterUrls.contains(chapter.url);
+    return Icon(
+      cached ? Icons.cloud_done : Icons.cloud_outlined,
+      size: 18,
+      color: cached ? cs.primary : cs.onSurfaceVariant,
     );
   }
 

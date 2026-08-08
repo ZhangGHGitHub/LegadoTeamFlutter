@@ -1191,6 +1191,20 @@ class RustApi implements BookApi {
   Future<String> getCachedChapter(String bookUrl, int chapterIndex) =>
       bridge.cacheGetChapter(bookUrl: bookUrl, chapterIndex: chapterIndex);
 
+  /// 列出某本书已缓存章节的 chapter_url 集合（目录页云图标缓存态）
+  ///
+  /// [UI-fix v2.0.6 | 2026-08-08] Task #22：接通 cacheListCachedChapterUrls FFI，
+  /// 解析 Rust 返回的 JSON 字符串数组为 String 列表（非数组降级空列表）。 — Qoder
+  @override
+  Future<List<String>> listCachedChapterUrls(String bookUrl) async {
+    final json = await bridge.cacheListCachedChapterUrls(bookUrl: bookUrl);
+    final decoded = jsonDecode(json);
+    if (decoded is List) {
+      return decoded.map((e) => e.toString()).toList();
+    }
+    return const <String>[];
+  }
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

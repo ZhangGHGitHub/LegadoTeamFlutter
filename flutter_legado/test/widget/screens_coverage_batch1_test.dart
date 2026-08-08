@@ -150,7 +150,10 @@ void main() {
       expect(find.textContaining('测试作者'), findsWidgets);
     });
 
-    testWidgets('渲染章节目录', (tester) async {
+    // [UI-fix v2.0.6 | 2026-08-08] 对齐原版：详情页目录行只显示当前章节名 +
+    // 「查看目录」按钮，不再内嵌完整章节列表（列表移至独立 TocScreen） — Qoder
+    testWidgets('目录行显示当前章节名与「查看目录」按钮（不内嵌章节列表）',
+        (tester) async {
       when(() => mockApi.getBook(any())).thenAnswer((_) async => book);
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => const [
             BookChapter(bookUrl: 'https://src.com/book/1', index: 0, title: '第一章 开端'),
@@ -160,17 +163,74 @@ void main() {
       await tester.pumpWidget(wrap(const BookInfoScreen(book: book)));
       await tester.pumpAndSettle();
 
-      // 书详页头部较高（居中封面卡 + 信息面板），章节列表在首屏外，先滚动
-      final firstChapter = find.textContaining('第一章 开端');
+      // 书详页头部较高（居中封面卡 + 信息面板），目录行在首屏外，先滚动
+      final tocRow = find.textContaining('第一章 开端');
       await tester.dragUntilVisible(
-        firstChapter,
+        tocRow,
         find.byType(CustomScrollView),
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();
 
-      expect(firstChapter, findsWidgets);
-      expect(find.textContaining('第二章 发展'), findsWidgets);
+      // 目录行对齐原版：显示当前章节名（durChapterIndex=0 → 第一章）+「查看目录」按钮
+      expect(tocRow, findsWidgets);
+      expect(find.text('查看目录'), findsOneWidget);
+      // 详情页不再内嵌完整章节列表（第二章仅存在于独立目录页）
+      expect(find.textContaining('第二章 发展'), findsNothing);
+    });
+
+    // [UI-fix v2.0.7 | 2026-08-08] 对齐原版简介区：无「简介」标题、无「简介：」
+    // 前缀、省略号硬截断改为可展开/收起（右对齐主题色切换） — Qoder
+    testWidgets('简介区无「简介」标题与「简介：」前缀，支持展开/收起',
+        (tester) async {
+      // 折叠/展开是否显示切换控件取决于「折叠 3 行是否截断正文」（TextPainter 实测），
+      // 与屏幕宽度相关；故固定为手机窗口尺寸，并让 intro 足够长以稳定超过 3 行
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      // 书源 intro 自带「简介：」前缀 + 足够长（清洗后远超折叠 3 行）以触发展开/收起控件
+      const introBody = '灵气复苏的世界主角觉醒吞噬系统一路高歌猛进不断变强战胜强敌'
+          '守护身边之人最终登临绝巅笑傲苍穹的热血玄幻长篇故事精彩纷呈引人入胜'
+          '天赋异禀奇遇连连历经磨难终成大道恩怨情仇跌宕起伏令人拍案叫绝欲罢不能'
+          '再攀高峰续写传奇书写属于自己的不朽神话篇章荧屏前精彩不容错过'
+          '风起云涌群雄逐鹿一步步揭开上古秘辛探寻天地至理感悟大道真意'
+          '身负血海深仇却始终坚守本心以无上意志碾碎一切阻碍勇往直前';
+      const bookWithIntro = Book(
+        bookUrl: 'https://src.com/book/2',
+        name: '测试书籍',
+        author: '测试作者',
+        intro: '简介：$introBody',
+        origin: 'https://src.com',
+        originName: '测试源',
+      );
+      when(() => mockApi.getBook(any()))
+          .thenAnswer((_) async => bookWithIntro);
+      when(() => mockApi.getChapters(any())).thenAnswer((_) async => const []);
+
+      await tester.pumpWidget(wrap(const BookInfoScreen(book: bookWithIntro)));
+      await tester.pumpAndSettle();
+
+      // 滚动到简介区的「展开」控件
+      final toggle = find.text('展开');
+      await tester.dragUntilVisible(
+        toggle,
+        find.byType(CustomScrollView),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+
+      // 无「简介」标题 heading、无「简介：」前缀（展示层已清洗）
+      expect(find.text('简介'), findsNothing);
+      expect(find.textContaining('简介：'), findsNothing);
+      // 正文按清洗后内容显示（不含前缀）
+      expect(find.textContaining(introBody), findsWidgets);
+      // 折叠态显示「展开」，点击后切换为「收起」
+      expect(toggle, findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(find.text('收起'), findsOneWidget);
+      expect(find.text('展开'), findsNothing);
     });
   });
 }

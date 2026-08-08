@@ -529,6 +529,10 @@ abstract class BookApi {
   /// 获取章节缓存正文（未缓存返回空串，供缓存导出拼装 TXT）
   Future<String> getCachedChapter(String bookUrl, int chapterIndex);
 
+  /// 列出某本书已缓存章节的 chapter_url 集合（目录页云图标缓存态）
+  /// [UI-fix v2.0.6 | 2026-08-08] Task #22 — Qoder
+  Future<List<String>> listCachedChapterUrls(String bookUrl);
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）
