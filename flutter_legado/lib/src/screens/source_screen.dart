@@ -1218,7 +1218,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       ),
     );
     if (keyword == null || !context.mounted) return;
-    // 空关键词交给 Rust 侧使用书源自带校验关键词
+    // [fix Task#45 | 2026-08-09] 更正当过时注释（Med2）：空关键词回落
+    // 持久化（或默认）校验关键词，而非交给 Rust 侧用源自带关键词 — Qoder
     await checkNotifier.start(
       sourceUrls: state.selectedUrls.toList(),
       keyword: keyword,

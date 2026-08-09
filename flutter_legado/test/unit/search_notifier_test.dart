@@ -1,7 +1,7 @@
 // SearchNotifier 单元测试
 //
 // 覆盖：初始状态/搜索历史（去重置顶截断持久化）/联想（前缀过滤）/书源筛选/分组筛选/
-// search（空关键词/正常/异常/trim/sourceUrls 传递/分组解析/多组名/空解析/降级/搜全部）/isEmpty
+// search 流式契约（空关键词/正常批次/多源追加去重/进度/异常/trim/sourceUrls 传递/分组解析/多组名/空解析/降级/搜全部）/isEmpty
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +11,7 @@ import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/search/search_notifier.dart';
+import 'package:flutter_legado/src/providers/search/search_state.dart';
 
 import '../mocks/mocks.dart';
 
@@ -30,6 +31,11 @@ void main() {
     when(() => mockApi.addSearchKeyword(any(), any()))
         .thenAnswer((_) async {});
     when(() => mockApi.clearSearchHistory()).thenAnswer((_) async {});
+    // [fix31] 流式搜索契约默认桩：取消 no-op + 空流（各测试可覆写 searchMultiStream）
+    when(() => mockApi.cancelSearch()).thenAnswer((_) async {});
+    when(() =>
+            mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+        .thenAnswer((_) => const Stream<Map<String, dynamic>>.empty());
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );
@@ -41,6 +47,32 @@ void main() {
     await Future.delayed(Duration.zero);
     await Future.delayed(Duration.zero);
   }
+
+  /// 等待流式批次事件（listen onData/onError/onDone）送达
+  Future<void> pumpStream({int turns = 20}) async {
+    for (var i = 0; i < turns; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  /// 构造 Rust searchMultiStream 批次（字段契约见 BookApi.searchMultiStream）
+  Map<String, dynamic> makeBatch({
+    List<Map<String, dynamic>> books = const [],
+    String? error,
+    int finished = 1,
+    int total = 1,
+    bool isLast = true,
+  }) =>
+      {
+        'source_index': 0,
+        'source_url': 'https://a.com',
+        'source_name': '笔趣阁',
+        'books': books,
+        'error': error,
+        'finished_count': finished,
+        'total_count': total,
+        'is_last': isLast,
+      };
 
   SearchState readState() => container.read(searchNotifierProvider);
   SearchNotifier readNotifier() =>
@@ -61,6 +93,61 @@ void main() {
       expect(readState().selectedGroups, isEmpty);
       expect(readState().isEmpty, isFalse);
       expect(readState().hasFilter, isFalse);
+    });
+  });
+
+  group('SearchNotifier 打开页重置（fix33：默认不显示上次结果）', () {
+    test('resetForOpen 清空上次结果/关键词/进度，不 auto-search', () async {
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+                makeBatch(books: [
+                  {
+                    'origin': 'https://a.com',
+                    'originName': '笔趣阁',
+                    'name': '上次结果书',
+                    'author': '作者',
+                    'bookUrl': 'https://a.com/b/1',
+                  },
+                ]),
+              ]));
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      // 先搜一次，state 残留结果（模拟全局单例跨页面保留）
+      await readNotifier().search('上次的词');
+      await pumpStream();
+      expect(readState().results, isNotEmpty);
+      expect(readState().keyword, equals('上次的词'));
+
+      // 打开搜索页 → resetForOpen
+      readNotifier().resetForOpen();
+      await pumpStream();
+
+      expect(readState().results, isEmpty, reason: '打开页默认不显示上次结果');
+      expect(readState().keyword, equals(''));
+      expect(readState().inputText, equals(''));
+      expect(readState().isLoading, isFalse);
+      expect(readState().searchedCount, equals(0));
+      expect(readState().totalCount, equals(0));
+      expect(readState().error, isNull);
+      expect(readState().isEmpty, isFalse, reason: '未搜索不显示空态');
+      // 不 auto-search：searchMultiStream 仍只被调用一次（上次主动搜索）
+      verify(() => mockApi.searchMultiStream(any(),
+              sourceUrls: any(named: 'sourceUrls')))
+          .called(1);
+    });
+
+    test('resetForOpen 保留历史与筛选范围（对齐原版持久化语义）', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+      await readNotifier().addToHistory('重生');
+      readNotifier().toggleGroup('正版');
+
+      readNotifier().resetForOpen();
+
+      expect(readState().searchHistory, contains('重生'));
+      expect(readState().selectedGroups, contains('正版'));
     });
   });
 
@@ -320,72 +407,158 @@ void main() {
       await readNotifier().search('   ');
       expect(readState().isLoading, isFalse);
       expect(readState().keyword, equals(''));
-      verifyNever(
-          () => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')));
+      verifyNever(() => mockApi
+          .searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')));
     });
 
-    test('正常搜索返回结果', () async {
-      final fakeResults = [
-        SearchResult(
-          book: const Book(name: '斗破苍穹', author: '天蚕土豆'),
-          sourceName: '笔趣阁',
-        ),
-      ];
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => fakeResults);
+    test('正常搜索流式返回结果', () async {
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+                makeBatch(books: [
+                  {
+                    'name': '斗破苍穹',
+                    'author': '天蚕土豆',
+                    'bookUrl': 'https://a.com/1',
+                    'origin': 'https://a.com',
+                    'originName': '笔趣阁',
+                  },
+                ]),
+              ]));
 
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('斗破苍穹');
+      await pumpStream();
 
       expect(readState().keyword, equals('斗破苍穹'));
       expect(readState().results.length, equals(1));
       expect(readState().results.first.book.name, equals('斗破苍穹'));
+      expect(readState().results.first.book.author, equals('天蚕土豆'));
       expect(readState().isLoading, isFalse);
       expect(readState().error, isNull);
       expect(readState().hasResults, isTrue);
     });
 
-    test('搜索完成后 loading 为 false', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
+    test('多源批次逐源追加且同名同作者去重（进度 x/y 更新）', () async {
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+                makeBatch(
+                  books: [
+                    {
+                      'name': '遮天',
+                      'author': '辰东',
+                      'bookUrl': 'https://a.com/1',
+                      'origin': 'https://a.com',
+                      'originName': '笔趣阁',
+                    },
+                  ],
+                  finished: 1,
+                  total: 2,
+                  isLast: false,
+                ),
+                makeBatch(
+                  books: [
+                    // 与第一批同名同作者 → 应去重
+                    {
+                      'name': '遮天',
+                      'author': '辰东',
+                      'bookUrl': 'https://b.com/1',
+                      'origin': 'https://b.com',
+                      'originName': '起点中文网',
+                    },
+                    {
+                      'name': '完美世界',
+                      'author': '辰东',
+                      'bookUrl': 'https://b.com/2',
+                      'origin': 'https://b.com',
+                      'originName': '起点中文网',
+                    },
+                  ],
+                  finished: 2,
+                  total: 2,
+                  isLast: true,
+                ),
+              ]));
 
       container.read(searchNotifierProvider);
       await pumpInit();
+      await readNotifier().search('遮天');
+      await pumpStream();
+
+      // 两源结果都保留，同名同作者去重 → 2 条
+      expect(readState().results.length, equals(2));
+      expect(readState().results.map((r) => r.book.name),
+          containsAll(['遮天', '完美世界']));
+      // 进度对齐批次 finished_count/total_count
+      expect(readState().searchedCount, equals(2));
+      expect(readState().totalCount, equals(2));
+      expect(readState().isLoading, isFalse);
+    });
+
+    test('空批次记 0 条 success 不报错（无匹配源，整体正常完成）', () async {
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+                makeBatch(books: const [], finished: 1, total: 2, isLast: false),
+                makeBatch(books: const [], finished: 2, total: 2, isLast: true),
+              ]));
+
+      container.read(searchNotifierProvider);
+      await pumpInit();
+      await readNotifier().search('无匹配关键词');
+      await pumpStream();
+
+      expect(readState().results, isEmpty);
+      expect(readState().error, isNull, reason: '空批次是 success 而非 error');
+      expect(readState().isLoading, isFalse, reason: '整体搜索正常完成');
+      expect(readState().searchedCount, equals(2));
+      expect(readState().totalCount, equals(2));
+      expect(readState().isEmpty, isTrue, reason: 'UI 应显示无结果空态');
+    });
+
+    test('搜索完成后 loading 为 false（空流）', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
       await readNotifier().search('测试');
+      await pumpStream();
 
       expect(readState().isLoading, isFalse);
     });
 
-    test('搜索异常时设置 error（BridgeError）', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenThrow(const BridgeError(message: '网络超时'));
+    test('流错误时设置 error（BridgeError）', () async {
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream<Map<String, dynamic>>.error(
+              const BridgeError(message: '网络超时')));
 
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('测试');
+      await pumpStream();
 
       expect(readState().error, equals('网络超时'));
       expect(readState().isLoading, isFalse);
       expect(readState().results, isEmpty);
     });
 
-    test('搜索异常时设置 error（普通异常）', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenThrow(Exception('未知错误'));
+    test('流错误时设置 error（普通异常）', () async {
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer(
+              (_) => Stream<Map<String, dynamic>>.error(Exception('未知错误')));
 
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('测试');
+      await pumpStream();
 
       expect(readState().error, contains('未知错误'));
       expect(readState().isLoading, isFalse);
     });
 
     test('搜索后关键词被 trim', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
-
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('  斗破苍穹  ');
@@ -394,9 +567,6 @@ void main() {
     });
 
     test('搜索后关键词被加入历史', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
-
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('遮天');
@@ -405,15 +575,13 @@ void main() {
     });
 
     test('有选中书源时传递 sourceUrls 参数', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
-
       container.read(searchNotifierProvider);
       await pumpInit();
       readNotifier().toggleSource('https://a.com');
       await readNotifier().search('测试');
+      await pumpStream();
 
-      verify(() => mockApi.searchBooks(
+      verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://a.com'],
           )).called(1);
@@ -433,15 +601,14 @@ void main() {
         ),
       ];
       when(() => mockApi.getEnabledBookSources()).thenAnswer((_) async => sources);
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
 
       container.read(searchNotifierProvider);
       await pumpInit();
       readNotifier().toggleGroup('玄幻');
       await readNotifier().search('测试');
+      await pumpStream();
 
-      verify(() => mockApi.searchBooks(
+      verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://xuanhuan.com'],
           )).called(1);
@@ -456,15 +623,14 @@ void main() {
         ),
       ];
       when(() => mockApi.getEnabledBookSources()).thenAnswer((_) async => sources);
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
 
       container.read(searchNotifierProvider);
       await pumpInit();
       readNotifier().toggleGroup('仙侠');
       await readNotifier().search('测试');
+      await pumpStream();
 
-      verify(() => mockApi.searchBooks(
+      verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://multi.com'],
           )).called(1);
@@ -479,64 +645,143 @@ void main() {
       await readNotifier().search('测试');
 
       expect(readState().error, equals('所选筛选范围内无有效书源，请调整筛选条件'));
-      verifyNever(
-          () => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')));
+      verifyNever(() => mockApi
+          .searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')));
     });
 
     test('分组解析失败时仅使用直接选中的书源', () async {
       when(() => mockApi.getEnabledBookSources())
           .thenThrow(Exception('DB error'));
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
 
       container.read(searchNotifierProvider);
       await pumpInit();
       readNotifier().toggleSource('https://direct.com');
       readNotifier().toggleGroup('玄幻');
       await readNotifier().search('测试');
+      await pumpStream();
 
-      verify(() => mockApi.searchBooks(
+      verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://direct.com'],
           )).called(1);
     });
 
     test('无筛选条件时 sourceUrls 传 null（搜索全部）', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
-
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('全部搜索');
+      await pumpStream();
 
-      verify(() => mockApi.searchBooks('全部搜索', sourceUrls: null)).called(1);
+      verify(() => mockApi.searchMultiStream('全部搜索', sourceUrls: null))
+          .called(1);
     });
   });
 
   group('SearchNotifier isEmpty 逻辑', () {
     test('有结果时 isEmpty 为 false', () async {
-      final fakeResults = [
-        SearchResult(book: const Book(name: 'a'), sourceName: 's'),
-      ];
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => fakeResults);
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+                makeBatch(books: [
+                  {
+                    'name': 'a',
+                    'author': '',
+                    'bookUrl': 'https://a.com/1',
+                    'origin': 'https://a.com',
+                    'originName': 's',
+                  },
+                ]),
+              ]));
 
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('a');
+      await pumpStream();
 
       expect(readState().isEmpty, isFalse);
     });
 
     test('无结果且有关键词且非加载时 isEmpty 为 true', () async {
-      when(() => mockApi.searchBooks(any(), sourceUrls: any(named: 'sourceUrls')))
-          .thenAnswer((_) async => []);
-
       container.read(searchNotifierProvider);
       await pumpInit();
       await readNotifier().search('无结果关键词');
+      await pumpStream();
 
       expect(readState().isEmpty, isTrue);
+    });
+  });
+
+  group('applyPrecisionSearch 精准搜索（fix34：对齐原版 SearchModel 语义）', () {
+    SearchResult mk(String name, String author, {String? kind}) =>
+        SearchResult(book: Book(name: name, author: author, kind: kind));
+
+    test('同名/同作者精确命中保留且排最前（equal 桶）', () {
+      final results = [
+        mk('重生1990', '张三'),
+        mk('重生', '李四'),
+        mk('某书', '重生'),
+      ];
+
+      final out = applyPrecisionSearch(results, '重生');
+
+      expect(out, hasLength(3));
+      expect(out.map((r) => r.book.name), equals(['重生', '某书', '重生1990']));
+      expect(out.first.book.name, equals('重生'));
+    });
+
+    test('书名/作者包含关键词保留（contains 桶，非精确相等）', () {
+      final results = [
+        mk('重生之门', '王五'),
+        mk('平凡之路', '重生者'),
+      ];
+
+      final out = applyPrecisionSearch(results, '重生');
+
+      expect(out, hasLength(2));
+      expect(out[0].book.name, equals('重生之门'));
+      expect(out[1].book.name, equals('平凡之路'));
+    });
+
+    test('kind 标签包含关键词保留（tags 桶，顺序 equal→tags→contains）', () {
+      final results = [
+        mk('重生之路', '甲'), // contains
+        mk('都市情缘', '乙', kind: '重生,都市'), // tags
+        mk('重生', '丙'), // equal
+      ];
+
+      final out = applyPrecisionSearch(results, '重生');
+
+      expect(out.map((r) => r.book.name), equals(['重生', '都市情缘', '重生之路']));
+    });
+
+    test('无关项（other 桶）被丢弃', () {
+      final results = [
+        mk('重生', '甲'),
+        mk('斗破苍穹', '天蚕土豆', kind: '玄幻'),
+      ];
+
+      final out = applyPrecisionSearch(results, '重生');
+
+      expect(out, hasLength(1));
+      expect(out.single.book.name, equals('重生'));
+    });
+
+    test('归一化一致：kind 为 null 不抛错且按空串处理', () {
+      final results = [
+        mk('重生之门', '甲'), // kind null
+        mk('斗破', '乙'),
+      ];
+
+      final out = applyPrecisionSearch(results, '重生');
+
+      expect(out, hasLength(1));
+      expect(out.single.book.name, equals('重生之门'));
+    });
+
+    test('关键词为空返回原列表', () {
+      final results = [mk('斗破苍穹', '天蚕土豆')];
+
+      expect(applyPrecisionSearch(results, ''), same(results));
     });
   });
 }

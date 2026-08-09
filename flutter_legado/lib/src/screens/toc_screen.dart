@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../constants/pref_keys.dart';
 import '../models/models.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../services/bookmark_export.dart';
 import '../services/settings_service.dart';
 import '../utils/app_route_observer.dart';
 
@@ -368,18 +370,63 @@ class _TocScreenState extends ConsumerState<TocScreen>
         if (mounted) setState(() => _loadWordCount = next);
         break;
       case 'exportBookmark':
+        // [Task #40 | 2026-08-09] §5.11-5 接线：导出书签 JSON
+        //（对齐原版 menu_export_bookmark → TocViewModel.saveBookmark） — Qoder
+        await _exportBookmarks(asMarkdown: false);
+        break;
       case 'exportMd':
-        // FFI 缺失（export_bookmarks），登记后置：见 REFACTORING_REMAINING_PLAN §5.11
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '「${value == 'exportMd' ? '导出 Markdown' : '导出书签'}」后续版本支持'),
-          ),
-        );
+        // [Task #40 | 2026-08-09] §5.11-5 接线：导出 Markdown
+        //（对齐原版 menu_export_bookmark_md → saveBookmarkMd） — Qoder
+        await _exportBookmarks(asMarkdown: true);
         break;
       case 'log':
         Navigator.pushNamed(context, AppRoutes.appLog);
         break;
+    }
+  }
+
+  /// 导出书签（JSON / Markdown 双格式，对齐原版 TocViewModel.saveBookmark/
+  /// saveBookmarkMd 交互流程：菜单触发 → 选目录 → 写文件 → Toast 结果）
+  /// [Task #40 | 2026-08-09] §5.11-5 — Qoder
+  Future<void> _exportBookmarks({required bool asMarkdown}) async {
+    try {
+      // 书签数据经 BookApi.getBookmarks 获取（契约 §2.7）
+      final bookmarks =
+          await ref.read(bookApiProvider).getBookmarks(_book.name);
+      if (!mounted) return;
+      if (bookmarks.isEmpty) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('暂无书签可导出')));
+        return;
+      }
+      // 「默认书籍保存位置」已设置时作为目录选择器初始路径
+      final initialDir = await _settings.getStringPref(
+        PrefKeys.defaultBookTreeUri,
+      );
+      if (!mounted) return;
+      final savedPath = asMarkdown
+          ? await BookmarkExport.exportMarkdown(
+              book: _book,
+              bookmarks: bookmarks,
+              initialDirectory: initialDir,
+            )
+          : await BookmarkExport.exportJson(
+              book: _book,
+              bookmarks: bookmarks,
+              initialDirectory: initialDir,
+            );
+      if (!mounted) return;
+      // 用户取消目录选择时静默返回（对齐原版 SAF 取消语义）
+      if (savedPath == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出成功: $savedPath')),
+      );
+    } catch (e) {
+      // 写入失败给出可读错误（对齐原版 AppLog.put「导出失败」提示语义）
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败: ${_errMsg(e)}')),
+      );
     }
   }
 
