@@ -335,29 +335,7 @@ pub mod ffi {
         let results = crate::api::search::search_books(&keyword, &source_urls_json)?;
         let books: Vec<legado_core::models::SearchBook> = results
             .into_iter()
-            .map(|r| legado_core::models::SearchBook {
-                book_url: r.book_url,
-                origin: r.source_url,
-                origin_name: r.source_name,
-                book_type: 0,
-                name: r.book_name,
-                author: r.author,
-                kind: None,
-                cover_url: r.cover_url,
-                intro: r.intro,
-                word_count: None,
-                latest_chapter_title: r.latest_chapter,
-                toc_url: String::new(),
-                time: 0,
-                variable: None,
-                origin_order: 0,
-                chapter_word_count_text: None,
-                chapter_word_count: -1,
-                respond_time: -1,
-                // 阅读记录标识（由 api::search 批量附加后透传）
-                has_read_record: r.has_read_record,
-                read_record_author: r.read_record_author,
-            })
+            .map(crate::api::search::result_to_search_book)
             .collect();
         to_json(&books)
     }

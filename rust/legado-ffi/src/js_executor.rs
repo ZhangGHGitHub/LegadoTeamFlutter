@@ -13,6 +13,8 @@
 //!   默认构建仍走 stub 且编译通过。
 
 use legado_parser::AnalyzeRule;
+use legado_parser::AnalyzeUrl;
+use std::collections::HashMap;
 
 /// 构造规则解析器，并按构建特性决定是否注入 JS 执行器。
 ///
@@ -87,6 +89,65 @@ pub fn execute_login_check_js(
 ) -> Result<(), String> {
     // 未启用 quickjs 时无法执行 JS，静默跳过
     Ok(())
+}
+
+/// 构建搜索 URL 的 AnalyzeUrl（接线 `{{JS表达式}}` 模板渲染）
+///
+/// 对齐原版 AnalyzeUrl.kt `replaceKeyPageJs` 语义：
+/// - 模板含 `{{...}}` 时走 `AnalyzeUrl::parse_with_js`，注入 `key`/`page`
+///   变量并用 JS 引擎求值，支持 `{{encodeURIComponent(key)}}`、
+///   `{{page > 1 ? '/' + page : ''}}` 等标准 legado 模板；
+/// - 未启用 quickjs 或解析失败时降级：`AnalyzeUrl::parse`（简单变量查找）
+///   或回退旧版字面替换路径，纯 `{key}`/`{page}`/`searchKey` 模板行为不变（回归保护）。
+///
+/// `source_tag` 传书源 URL，用于引擎池分桶与 base URL 拼接。
+pub fn build_search_url(
+    template: &str,
+    keyword: &str,
+    page: i32,
+    source_tag: &str,
+) -> AnalyzeUrl {
+    let page_u32 = page.max(1) as u32;
+    if template.contains("{{") && template.contains("}}") {
+        // searchKey 字面替换（对齐旧版 init_url 行为）
+        let pre = template.replace("searchKey", keyword);
+        // 变量集对齐原版 AnalyzeUrl.kt evalJS 绑定：key/page/baseUrl
+        // （searchKey 额外注入，使 `{{searchKey}}` 模板亦可渲染）
+        let mut variables = HashMap::new();
+        variables.insert("key".to_string(), keyword.to_string());
+        variables.insert("page".to_string(), page.to_string());
+        variables.insert("baseUrl".to_string(), source_tag.to_string());
+        variables.insert("searchKey".to_string(), keyword.to_string());
+        if let Ok(analyzed) = search_url_with_js(&pre, &variables, page, source_tag) {
+            return analyzed;
+        }
+    }
+    // 旧版路径：字面占位符替换 + AnalyzeUrl::new
+    let url_with_key = template.replace("{{key}}", keyword).replace("{key}", keyword);
+    AnalyzeUrl::new(&url_with_key, Some(keyword), Some(page_u32), source_tag, None)
+}
+
+/// quickjs 启用：用 QuickJS 引擎求值 `{{expression}}`
+#[cfg(feature = "quickjs")]
+fn search_url_with_js(
+    template: &str,
+    variables: &HashMap<String, String>,
+    page: i32,
+    source_tag: &str,
+) -> legado_core::LegadoResult<AnalyzeUrl> {
+    let executor = QuickJsExecutor::new(source_tag);
+    AnalyzeUrl::parse_with_js(template, variables, page, &executor)
+}
+
+/// 未启用 quickjs：降级为标准 parse（简单变量查找，复杂表达式保留原样）
+#[cfg(not(feature = "quickjs"))]
+fn search_url_with_js(
+    template: &str,
+    variables: &HashMap<String, String>,
+    page: i32,
+    _source_tag: &str,
+) -> legado_core::LegadoResult<AnalyzeUrl> {
+    AnalyzeUrl::parse(template, variables, page)
 }
 
 // ─── quickjs 启用时的适配器实现 ────────────────────────────────────────────────
@@ -214,5 +275,49 @@ mod tests {
         let r2 = executor.execute_js("100 + 1").unwrap();
         assert_eq!(r1, "100");
         assert_eq!(r2, "101");
+    }
+
+    /// {{JS表达式}} 搜索模板渲染（sto66 真实模板回归）：
+    /// `encodeURIComponent(key)` 产出百分号编码关键词、`page>1?...'` 分页求值。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_build_search_url_js_template_render() {
+        let template = "https://www.sto66.com/search/{{encodeURIComponent(key)}}{{page > 1 ? '/' + page : ''}}.html";
+        let u1 = build_search_url(template, "重生高考前99天", 1, "sto66_test").url().to_string();
+        assert!(!u1.contains("{{"), "模板应被完整渲染: {u1}");
+        assert!(
+            u1.contains("%E9%87%8D%E7%94%9F%E9%AB%98%E8%80%83%E5%89%8D99%E5%A4%A9"),
+            "关键词应被 URI 编码: {u1}"
+        );
+        assert!(u1.ends_with(".html"), "page=1 分页应渲染为空串: {u1}");
+
+        let u2 = build_search_url(template, "99", 2, "sto66_test").url().to_string();
+        assert!(!u2.contains("{{"), "模板应被完整渲染: {u2}");
+        assert!(u2.contains("/2.html"), "page=2 分页应渲染为 '/2': {u2}");
+    }
+
+    /// 纯字面模板回归：`{key}`/`{{key}}`/`searchKey` 行为不变。
+    #[test]
+    fn test_build_search_url_literal_regression() {
+        let u1 = build_search_url("https://example.com/search?q={key}", "斗破苍穹", 1, "lit_test")
+            .url()
+            .to_string();
+        assert!(u1.contains("斗破苍穹") || u1.contains("%E6%96%97"), "{u1}");
+
+        let u2 = build_search_url("https://example.com/search?q=searchKey", "rust", 1, "lit_test")
+            .url()
+            .to_string();
+        assert!(u2.contains("rust"), "{u2}");
+
+        let u3 = build_search_url("https://example.com/search?q={{key}}", "三体", 1, "lit_test")
+            .url()
+            .to_string();
+        assert!(u3.contains("三体") || u3.contains("%E4%B8%89"), "{u3}");
+
+        // `{{baseUrl}}` 简单变量直接查找（对齐原版 evalJS baseUrl 绑定）
+        let u4 = build_search_url("https://example.com/r?u={{baseUrl}}", "k", 1, "https://src.example")
+            .url()
+            .to_string();
+        assert!(u4.contains("https%3A%2F%2Fsrc.example") || u4.contains("https://src.example"), "{u4}");
     }
 }

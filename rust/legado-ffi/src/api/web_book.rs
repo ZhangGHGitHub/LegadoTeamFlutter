@@ -279,13 +279,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let source_headers = Self::parse_source_headers(source);
 
-        // 1. 解析搜索 URL 模板
-        let analyze_url = AnalyzeUrl::new(
+        // 1. 解析搜索 URL 模板（`{{JS表达式}}` 模板经 JS 引擎求值渲染，
+        //    纯字面模板走旧版路径；见 js_executor::build_search_url）
+        let analyze_url = crate::js_executor::build_search_url(
             search_url,
-            Some(query),
-            Some(page.max(1) as u32),
+            query,
+            page,
             &source.book_source_url,
-            source_headers.clone(),
         );
 
         // 2. 发起 HTTP 请求
@@ -385,15 +385,15 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 &source.book_source_url,
             );
 
-            let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
+            let name = eval_rule_string(&elem_analyzer, name_rule).unwrap_or_default();
             if name.is_empty() {
                 continue;
             }
 
-            let author = elem_analyzer.get_string(author_rule).unwrap_or_default();
+            let author = eval_rule_string(&elem_analyzer, author_rule).unwrap_or_default();
 
             // B1.4 bookUrl 绝对化（对标 Kotlin getString(ruleBookUrl, isUrl=true)），空时回退 baseUrl
-            let raw_book_url = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
+            let raw_book_url = eval_rule_string(&elem_analyzer, book_url_rule).unwrap_or_default();
             let book_url = if raw_book_url.is_empty() {
                 base_url.clone()
             } else {
@@ -402,7 +402,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
             // B1.4 coverUrl 绝对化（对标 Kotlin NetworkUtils.getAbsoluteURL(baseUrl, it)）
             let cover_url = {
-                let v = elem_analyzer.get_string(cover_url_rule).unwrap_or_default();
+                let v = eval_rule_string(&elem_analyzer, cover_url_rule).unwrap_or_default();
                 if v.is_empty() {
                     None
                 } else {
@@ -953,7 +953,7 @@ fn apply_content_replace_regex(
 /// 拆分 Kotlin SourceRule 的 `##` 替换语法（对标 AnalyzeRule.makeUpRule L819-829）：
 /// `rule##replaceRegex##replacement##第四段(仅存在即置 replaceFirst=true)`。
 /// 返回（基础规则，可选替换三元组）。
-fn split_rule_replace_parts(rule: &str) -> (&str, Option<(&str, &str, bool)>) {
+pub(crate) fn split_rule_replace_parts(rule: &str) -> (&str, Option<(&str, &str, bool)>) {
     let parts: Vec<&str> = rule.split("##").collect();
     let base = parts.first().copied().unwrap_or("").trim();
     if parts.len() <= 1 {
@@ -971,7 +971,7 @@ fn split_rule_replace_parts(rule: &str) -> (&str, Option<(&str, &str, bool)>) {
 /// - 基础规则为空：直接以当前内容为替换对象（replaceRegex 纯替换规则场景）；
 /// - 基础规则非空：先按规则提取，再对提取结果应用替换；
 /// - 替换部分：`apply_regex_replace`（对标 AnalyzeRule.replaceRegex L539-563）。
-fn eval_rule_string(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> LegadoResult<String> {
+pub(crate) fn eval_rule_string(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> LegadoResult<String> {
     let (base_rule, replace) = split_rule_replace_parts(rule);
     let mut result = if base_rule.is_empty() {
         analyzer.content().to_string()
@@ -990,7 +990,7 @@ fn eval_rule_string(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> Legado
 /// - 全文替换分支：`result.replace(regex, replacement)`，replacement 支持 `$1` 捕获组引用；
 /// - 正则非法时降级字面量替换（对标 Kotlin runCatching 回退 `result.replace(replaceRegex, replacement)`；
 ///   replaceFirst 分支正则非法时对标原版直接返回 replacement）。
-fn apply_regex_replace(text: &str, pattern: &str, replacement: &str, replace_first: bool) -> String {
+pub(crate) fn apply_regex_replace(text: &str, pattern: &str, replacement: &str, replace_first: bool) -> String {
     match regex::Regex::new(pattern) {
         Ok(re) => {
             if replace_first {
@@ -1017,11 +1017,13 @@ fn apply_regex_replace(text: &str, pattern: &str, replacement: &str, replace_fir
 // ─── 规则路径增强辅助函数（B1-B3） ─────────────────────────────
 
 /// 提取可选字段：规则为空或解析结果为空时返回 None
+///
+/// 规则经 `eval_rule_string` 执行，支持 Kotlin SourceRule 的 `##` 替换语法。
 fn optional_field(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> Option<String> {
     if rule.is_empty() {
         return None;
     }
-    let v = analyzer.get_string(rule).unwrap_or_default();
+    let v = eval_rule_string(analyzer, rule).unwrap_or_default();
     if v.is_empty() {
         None
     } else {

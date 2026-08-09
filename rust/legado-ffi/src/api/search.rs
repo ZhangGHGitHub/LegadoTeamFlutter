@@ -6,12 +6,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use futures::StreamExt;
 
-use legado_core::models::BookSource;
+use legado_core::models::{BookSource, SearchBook as CoreSearchBook};
 use legado_core::search_engine::{MultiSourceSearcher, SearchConfig};
 use legado_core::source_matcher::SearchCandidate;
 use legado_core::{LegadoError, LegadoResult};
@@ -25,6 +26,16 @@ use crate::runtime;
 
 /// 全局搜索取消标志
 static SEARCH_CANCELLED: AtomicBool = AtomicBool::new(false);
+
+/// 多源搜索并发上限
+///
+/// 对齐原版 `SearchModel` 固定线程池语义：
+/// `min(AppConfig.threadCount 默认 32, AppConst.MAX_THREAD 9)` = 9。
+/// 避免数百书源无限制并发 spawn 导致 socket/连接池耗尽、整体长时间阻塞。
+pub(crate) const SEARCH_CONCURRENCY: usize = 9;
+
+/// 单源搜索超时（对齐原版 `SearchModel` `withTimeout(30000)`）
+pub(crate) const SEARCH_SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 搜索结果项
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +56,15 @@ pub struct SearchResult {
     pub intro: Option<String>,
     /// 封面 URL
     pub cover_url: Option<String>,
+    /// 分类标签（对齐原版 ruleSearch.kind 解析，逗号分隔多标签）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// 字数展示文本（对齐原版 ruleSearch.wordCount + `wordCountFormat`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_count: Option<String>,
+    /// BookType 位标志（对齐原版 `bookSource.getBookType()`，源级多媒体类型）
+    #[serde(default)]
+    pub book_type: i32,
     /// 是否有阅读记录（对齐上游 `SearchViewModel.hasReadRecord`，
     /// 加法式字段：无记录时恒为 false）
     #[serde(default, rename = "hasReadRecord")]
@@ -93,7 +113,7 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
                     book_name: r.book_name,
                     author: r.author,
                     latest_chapter: r.latest_chapter,
-                    word_count: None,
+                    word_count: r.word_count,
                 })
                 .collect(),
             Err(_) => Vec::new(),
@@ -114,25 +134,29 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
         return Ok(Vec::new());
     }
 
-    // 使用 tokio runtime 并行搜索
+    // 限流并发 + 单源超时 + 异常隔离（对齐原版 SearchModel 线程池语义），
+    // 逐源完成后累积结果；失败源跳过不阻断整体。
+    let keyword_owned = keyword.to_string();
     let mut results = runtime::block_on(async {
         let client = crate::http_state::shared_client();
-
-        let mut handles = Vec::new();
-        for source in sources {
-            let client = client.clone();
-            let keyword = keyword.to_string();
-            handles.push(tokio::spawn(async move {
-                search_single_source(&client, &source, &keyword).await
-            }));
-        }
-
         let mut all_results: Vec<SearchResult> = Vec::new();
-        for handle in handles {
-            if let Ok(Ok(mut items)) = handle.await {
-                all_results.append(&mut items);
-            }
-        }
+        drive_source_batches(
+            sources,
+            SEARCH_CONCURRENCY,
+            SEARCH_SOURCE_TIMEOUT,
+            move |source: BookSource| {
+                let client = client.clone();
+                let keyword = keyword_owned.clone();
+                async move { search_single_source(&client, &source, &keyword).await }
+            },
+            |outcome| {
+                if let Ok(mut items) = outcome.result {
+                    all_results.append(&mut items);
+                }
+                Ok(())
+            },
+        )
+        .await;
         Ok::<_, LegadoError>(all_results)
     })?;
 
@@ -278,8 +302,9 @@ pub struct SearchSourceBatch {
     pub source_url: String,
     /// 书源名称
     pub source_name: String,
-    /// 该书源命中的书籍列表
-    pub books: Vec<SearchResult>,
+    /// 该书源命中的书籍列表（原版 `SearchBook` camelCase 序列化契约，
+    /// 与 Dart 侧 `SearchBook.fromJson` 字段一一对应）
+    pub books: Vec<CoreSearchBook>,
     /// 该书源搜索失败时的错误信息（成功为 None）
     pub error: Option<String>,
     /// 当前已完成（已推送批次）的书源数量
@@ -311,8 +336,7 @@ where
 
     // 书源加载失败时以空流结束（Dart 侧表现为无结果）
     let sources = load_search_sources(&source_urls_json).unwrap_or_default();
-    let total = sources.len();
-    if total == 0 {
+    if sources.is_empty() {
         return;
     }
 
@@ -321,62 +345,186 @@ where
     // 一次性构建阅读记录索引，逐批附加标识（对齐 ReadRecordIndex 思路）
     let read_record_index = ReadRecordIndex::load();
 
-    // 为每个书源 spawn 独立任务，附带原始索引
+    drive_source_batches(
+        sources,
+        SEARCH_CONCURRENCY,
+        SEARCH_SOURCE_TIMEOUT,
+        move |source: BookSource| {
+            let client = client.clone();
+            let query = query.clone();
+            async move { search_single_source(&client, &source, &query).await }
+        },
+        |outcome| {
+            let (mut books, error) = match outcome.result {
+                Ok(list) => (list, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            };
+
+            // 批次推送前附加阅读记录标识
+            annotate_results(&mut books, &read_record_index);
+
+            let batch = SearchSourceBatch {
+                source_index: outcome.index,
+                source_url: outcome.source_url,
+                source_name: outcome.source_name,
+                books: books.into_iter().map(result_to_search_book).collect(),
+                error,
+                finished_count: outcome.finished_count,
+                total_count: outcome.total_count,
+                is_last: outcome.is_last,
+            };
+
+            let json = serde_json::to_string(&batch).map_err(|e| e.to_string())?;
+            // sink 关闭（Err）时提前终止
+            on_batch(json)
+        },
+    )
+    .await;
+}
+
+/// 单源搜索完成结果（驱动器回调载荷）
+pub(crate) struct SourceBatchOutcome {
+    /// 书源在请求列表中的索引
+    pub index: usize,
+    pub source_url: String,
+    pub source_name: String,
+    /// 该源搜索结果（失败/超时/panic 均为 Err，不阻断其他源）
+    pub result: LegadoResult<Vec<SearchResult>>,
+    pub finished_count: usize,
+    pub total_count: usize,
+    pub is_last: bool,
+}
+
+/// 多源并发搜索驱动器（严格对齐原版 `SearchModel` 语义）
+///
+/// - **限流并发**：信号量将同时进行的单源搜索限制为 `concurrency`
+///   （对应原版固定线程池 `min(threadCount, MAX_THREAD)`）；
+/// - **单源超时**：每源包裹 `per_source_timeout`（对应原版 `withTimeout(30000)`）；
+/// - **异常隔离**：单源 Err/超时/任务 panic 均转为错误结果批次，
+///   不中断整体（对应原版 `mapParallelSafe` 单源异常不外溢）；
+/// - **渐进回调**：每完成一个书源调用一次 `on_source`（附 finished/total 进度），
+///   返回 `Err` 时提前终止（如 sink 已关闭）；
+/// - **取消**：循环内检查全局 `SEARCH_CANCELLED`。
+pub(crate) async fn drive_source_batches<F, Fut, G>(
+    sources: Vec<BookSource>,
+    concurrency: usize,
+    per_source_timeout: Duration,
+    search_one: F,
+    mut on_source: G,
+) where
+    F: Fn(BookSource) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = LegadoResult<Vec<SearchResult>>> + Send + 'static,
+    G: FnMut(SourceBatchOutcome) -> Result<(), String>,
+{
+    use futures::FutureExt;
+    use std::panic::AssertUnwindSafe;
+
+    let total = sources.len();
+    if total == 0 {
+        return;
+    }
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
+    let search_one = Arc::new(search_one);
+
     let mut tasks = Vec::with_capacity(total);
     for (index, source) in sources.into_iter().enumerate() {
-        let client = client.clone();
-        let query = query.clone();
+        let semaphore = Arc::clone(&semaphore);
+        let search_one = Arc::clone(&search_one);
         tasks.push(tokio::spawn(async move {
             let source_url = source.book_source_url.clone();
             let source_name = source.book_source_name.clone();
-            let outcome = search_single_source(&client, &source, &query).await;
-            (index, source_url, source_name, outcome)
+            // 限流并发：获取许可后才真正发起搜索（等价原版线程池排队）
+            let permit = match semaphore.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    return (
+                        index,
+                        source_url,
+                        source_name,
+                        Err(LegadoError::Network("并发信号量已关闭".into())),
+                    )
+                }
+            };
+            // 单源超时 + panic 隔离（catch_unwind 保证单源崩溃不传染）
+            let outcome = tokio::time::timeout(
+                per_source_timeout,
+                AssertUnwindSafe(search_one(source)).catch_unwind(),
+            )
+            .await;
+            drop(permit);
+            let result = match outcome {
+                Ok(Ok(res)) => res,
+                Ok(Err(_panic)) => {
+                    Err(LegadoError::Network("单源搜索异常（已隔离）".into()))
+                }
+                Err(_) => Err(LegadoError::Network(format!(
+                    "搜索超时（{}s）",
+                    per_source_timeout.as_secs()
+                ))),
+            };
+            (index, source_url, source_name, result)
         }));
     }
 
     let mut set = futures::stream::FuturesUnordered::from_iter(tasks);
     let mut finished: usize = 0;
-
     while let Some(joined) = set.next().await {
-        // 任务被取消/panic 时跳过，但仍计入进度
-        let (index, source_url, source_name, outcome) = match joined {
-            Ok(v) => v,
-            Err(_) => {
-                finished += 1;
-                continue;
-            }
-        };
-
+        finished += 1;
         if SEARCH_CANCELLED.load(Ordering::SeqCst) {
             break;
         }
-
-        finished += 1;
-        let (mut books, error) = match outcome {
-            Ok(list) => (list, None),
-            Err(e) => (Vec::new(), Some(e.to_string())),
+        // 任务级 JoinError 兑底隔离（正常路径已被 catch_unwind 覆盖）
+        let (index, source_url, source_name, result) = match joined {
+            Ok(v) => v,
+            Err(e) => (
+                0,
+                String::new(),
+                String::new(),
+                Err(LegadoError::Network(format!("搜索任务异常: {e}"))),
+            ),
         };
-
-        // 批次推送前附加阅读记录标识
-        annotate_results(&mut books, &read_record_index);
-
-        let batch = SearchSourceBatch {
-            source_index: index,
+        let outcome = SourceBatchOutcome {
+            index,
             source_url,
             source_name,
-            books,
-            error,
+            result,
             finished_count: finished,
             total_count: total,
             is_last: finished >= total,
         };
-
-        if let Ok(json) = serde_json::to_string(&batch) {
-            // sink 关闭（Err）时提前终止
-            if on_batch(json).is_err() {
-                break;
-            }
+        if on_source(outcome).is_err() {
+            break;
         }
+    }
+}
+
+/// 搜索结果 → 原版 `SearchBook` camelCase 序列化结构
+///
+/// 契约对齐 Dart 侧 `SearchBook.fromJson`（name/originName/bookUrl/…），
+/// 供 searchBooks 一次性返回与渐进批次共用同一序列化契约。
+pub(crate) fn result_to_search_book(r: SearchResult) -> CoreSearchBook {
+    CoreSearchBook {
+        book_url: r.book_url,
+        origin: r.source_url,
+        origin_name: r.source_name,
+        book_type: r.book_type,
+        name: r.book_name,
+        author: r.author,
+        kind: r.kind,
+        cover_url: r.cover_url,
+        intro: r.intro,
+        word_count: r.word_count,
+        latest_chapter_title: r.latest_chapter,
+        toc_url: String::new(),
+        time: 0,
+        variable: None,
+        origin_order: 0,
+        chapter_word_count_text: None,
+        chapter_word_count: -1,
+        respond_time: -1,
+        // 阅读记录标识（由 api::search 批量附加后透传）
+        has_read_record: r.has_read_record,
+        read_record_author: r.read_record_author,
     }
 }
 
@@ -564,8 +712,17 @@ pub(crate) async fn search_single_source(
         return Err(LegadoError::Parser("书源 searchUrl 为空".into()));
     }
 
-    // 2. 使用 AnalyzeUrl 构建请求
-    let analyze_url = build_search_url(search_url_template, keyword, source);
+    // 2. 使用 AnalyzeUrl 构建请求（同步且可能执行 {{JS}} 表达式；
+    //    移入阻塞线程：恶意/超长同步计算不会占住 tokio worker，
+    //    保证单源超时能在 await 点生效，避免整体挂起）
+    let template = search_url_template.clone();
+    let key = keyword.to_string();
+    let build_base = source.book_source_url.clone();
+    let analyze_url = tokio::task::spawn_blocking(move || {
+        crate::js_executor::build_search_url(&template, &key, 1, &build_base)
+    })
+    .await
+    .map_err(|e| LegadoError::Internal(format!("搜索 URL 构建任务异常: {e}")))?;
 
     // 3. 合并请求头：书源全局 header + AnalyzeUrl 提取的 header
     let mut headers = parse_header_option(source.header.as_deref()).unwrap_or_default();
@@ -592,28 +749,24 @@ pub(crate) async fn search_single_source(
         )));
     }
 
-    // 5. 使用 AnalyzeRule 解析搜索结果
-    parse_search_response(&response.body, &response.url, source)
+    // 5. 使用 AnalyzeRule 解析搜索结果（同步解析同样移入阻塞线程，
+    //    灾难性正则/超大页面不会阻塞 runtime，单源超时可中断）
+    let body = response.body;
+    let final_url = response.url;
+    let source_clone = source.clone();
+    tokio::task::spawn_blocking(move || parse_search_response(&body, &final_url, &source_clone))
+        .await
+        .map_err(|e| LegadoError::Internal(format!("搜索解析任务异常: {e}")))?
 }
 
 /// 构建搜索 URL
 ///
-/// 处理 `{key}`、`{{key}}`、`searchKey` 等关键词占位符，
+/// 处理 `{key}`、`{{key}}`、`searchKey` 等关键词占位符与 `{{JS表达式}}`
+/// 模板（如 `{{encodeURIComponent(key)}}`、`{{page > 1 ? '/' + page : ''}}`），
 /// 然后通过 AnalyzeUrl 解析 URL 选项（method/headers/body 等）。
+/// 统一委托 [`crate::js_executor::build_search_url`]，与调试/搜索路径共用同一模板渲染语义。
 fn build_search_url(template: &str, keyword: &str, source: &BookSource) -> AnalyzeUrl {
-    // 替换关键词占位符（在 AnalyzeUrl 处理之前）
-    let url_with_key = template
-        .replace("{{key}}", keyword)
-        .replace("{key}", keyword);
-
-    // AnalyzeUrl::new 内部会替换 "searchKey" 和处理 URL 选项
-    AnalyzeUrl::new(
-        &url_with_key,
-        Some(keyword),
-        Some(1),
-        &source.book_source_url,
-        None,
-    )
+    crate::js_executor::build_search_url(template, keyword, 1, &source.book_source_url)
 }
 
 /// 解析搜索响应（HTML 或 JSON）
@@ -659,20 +812,27 @@ fn parse_search_response(
         );
 
         // 提取书名（必填，无书名则跳过）
-        let book_name = get_field_first(&item_analyzer, rule_search.name.as_deref());
+        let book_name = eval_field_string(&item_analyzer, rule_search.name.as_deref());
         if book_name.is_empty() {
             continue;
         }
 
         // 提取作者
-        let author = get_field_first(&item_analyzer, rule_search.author.as_deref());
+        let author = eval_field_string(&item_analyzer, rule_search.author.as_deref());
 
-        // 提取书籍详情页 URL
-        let raw_book_url = get_field_first(&item_analyzer, rule_search.book_url.as_deref());
+        // 提取分类（部分失败不致整条丢弃，对齐原版逐字段 try/catch 语义）
+        let kind = eval_field_optional(&item_analyzer, rule_search.kind.as_deref());
+
+        // 提取字数并格式化（对齐原版 wordCountFormat）
+        let word_count =
+            word_count_format(&eval_field_string(&item_analyzer, rule_search.word_count.as_deref()));
+
+        // 书籍详情页 URL
+        let raw_book_url = eval_field_string(&item_analyzer, rule_search.book_url.as_deref());
         let book_url = resolve_url(&raw_book_url, base_url);
 
         // 提取封面 URL
-        let raw_cover = get_field_first(&item_analyzer, rule_search.cover_url.as_deref());
+        let raw_cover = eval_field_string(&item_analyzer, rule_search.cover_url.as_deref());
         let cover_url = if raw_cover.is_empty() {
             None
         } else {
@@ -680,11 +840,11 @@ fn parse_search_response(
         };
 
         // 提取简介
-        let intro = get_field_optional(&item_analyzer, rule_search.intro.as_deref());
+        let intro = eval_field_optional(&item_analyzer, rule_search.intro.as_deref());
 
         // 提取最新章节
         let latest_chapter =
-            get_field_optional(&item_analyzer, rule_search.last_chapter.as_deref());
+            eval_field_optional(&item_analyzer, rule_search.last_chapter.as_deref());
 
         results.push(SearchResult {
             source_url: source.book_source_url.clone(),
@@ -695,6 +855,9 @@ fn parse_search_response(
             latest_chapter,
             intro,
             cover_url,
+            kind,
+            word_count,
+            book_type: book_type_of_source(source.book_source_type),
             // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
             has_read_record: false,
             read_record_author: None,
@@ -704,26 +867,77 @@ fn parse_search_response(
     Ok(results)
 }
 
-/// 从 AnalyzeRule 中获取字段的第一个值（返回 String，无结果返回空串）
-fn get_field_first(analyzer: &AnalyzeRule, rule: Option<&str>) -> String {
+/// BookType 位标志（对齐原版 `io.legado.app.constant.BookType`）
+pub(crate) mod book_type {
+    /// 4 视频
+    pub const VIDEO: i32 = 0b100;
+    /// 8 文本
+    pub const TEXT: i32 = 0b1000;
+    /// 32 音频
+    pub const AUDIO: i32 = 0b100000;
+    /// 64 图片（漫画）
+    pub const IMAGE: i32 = 0b1000000;
+    /// 128 只提供下载服务的网站
+    pub const WEB_FILE: i32 = 0b10000000;
+}
+
+/// 书源类型 → BookType（对齐原版 `BookSource.getBookType()`：
+/// file→text|webFile、image→image、audio→audio、video→video、其余→text）
+pub(crate) fn book_type_of_source(source_type: i32) -> i32 {
+    use legado_core::models::book_source_type as st;
+    match source_type {
+        st::FILE => book_type::TEXT | book_type::WEB_FILE,
+        st::IMAGE => book_type::IMAGE,
+        st::AUDIO => book_type::AUDIO,
+        st::VIDEO => book_type::VIDEO,
+        _ => book_type::TEXT,
+    }
+}
+
+/// 字数格式化（对齐原版 `StringUtils.wordCountFormat(String)`：
+/// 纯数字 >10000 → 「x.x万字」；>0 → 「n字」；非数字原样；空/<=0 → None）
+fn word_count_format(raw: &str) -> Option<String> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return None;
+    }
+    match t.parse::<i64>() {
+        Ok(n) if n > 10000 => {
+            let v = n as f64 / 10000.0;
+            let scaled = (v * 10.0).round();
+            let s = if scaled % 10.0 == 0.0 {
+                format!("{}", scaled as i64 / 10)
+            } else {
+                format!("{:.1}", scaled / 10.0)
+            };
+            Some(format!("{s}万字"))
+        }
+        Ok(n) if n > 0 => Some(format!("{n}字")),
+        Ok(_) => None,
+        Err(_) => Some(t.to_string()),
+    }
+}
+
+/// 从 AnalyzeRule 中获取字段值（无结果返回空串）
+///
+/// 对标原版 `AnalyzeRule.getString(sourceRule)`：规则支持 Kotlin SourceRule 的
+/// `##replaceRegex##replacement` 替换语法（复用 web_book::eval_rule_string）。
+fn eval_field_string(analyzer: &AnalyzeRule, rule: Option<&str>) -> String {
     match rule {
-        Some(r) if !r.is_empty() => analyzer.get_string(r).unwrap_or_default(),
+        Some(r) if !r.is_empty() => {
+            super::web_book::eval_rule_string(analyzer, r).unwrap_or_default()
+        }
         _ => String::new(),
     }
 }
 
-/// 从 AnalyzeRule 中获取字段（返回 Option<String>）
-fn get_field_optional(analyzer: &AnalyzeRule, rule: Option<&str>) -> Option<String> {
-    match rule {
-        Some(r) if !r.is_empty() => {
-            let val = analyzer.get_string(r).unwrap_or_default();
-            if val.is_empty() {
-                None
-            } else {
-                Some(val)
-            }
-        }
-        _ => None,
+/// 从 AnalyzeRule 中获取字段（返回 Option<String>），支持 `##` 替换语法
+fn eval_field_optional(analyzer: &AnalyzeRule, rule: Option<&str>) -> Option<String> {
+    let val = eval_field_string(analyzer, rule);
+    if val.is_empty() {
+        None
+    } else {
+        Some(val)
     }
 }
 
@@ -823,6 +1037,16 @@ async fn search_js_source(
                     .and_then(|c| c.as_str())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string()),
+                kind: v
+                    .get("kind")
+                    .and_then(|k| k.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+                word_count: v
+                    .get("wordCount")
+                    .and_then(|w| w.as_str())
+                    .and_then(word_count_format),
+                book_type: book_type_of_source(source.book_source_type),
                 // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
                 has_read_record: false,
                 read_record_author: None,
@@ -926,6 +1150,210 @@ mod tests {
         assert_eq!(results[1].book_name, "凡人修仙传");
         assert_eq!(results[1].author, "忘语");
         assert_eq!(results[1].book_url, "https://www.example.com/book/2");
+    }
+
+    // ─── 测试 1.5: sto66 真实响应体复现（XPath bookList + ## 替换）───────────
+
+    /// Task #30 复现：sto66.com 搜索页（真实结构：无引号属性、未闭合 meta/link、
+    /// 内嵌脚本），ruleSearch 为 XPath 规则且带 `##` 替换后缀。
+    /// 修复前：严格 XML 解析失败→bookList 0 条；修复后：应解析出 >0 条。
+    #[test]
+    fn test_parse_sto66_real_response_xpath() {
+        // 真实响应体片段（取自 https://www.sto66.com/search/99.html，保留致 XML 解析失败的特征）
+        let html = "<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"zh-CN\">\
+            <head><title>搜索:99-思绪阅读</title>\
+            <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/>\
+            <meta name=\"viewport\" content=\"width=device-width\">\
+            <link rel=\"icon\" href=\"/sto/images/app-icon72x72.png\">\
+            <script src=\"/sto/js/default.js\" type=\"text/javascript\"></script>\
+            </head><body>\
+            <div class=header-left><a href=\"/\" class=\"logo\">思绪阅读</a></div>\
+            <div class=\"bookbox\"><div class=\"p10\"><span class=\"num\">1</span>\
+            <div class=\"bookinfo\"><h2 class=\"bookname\">\
+            <a href=\"/book/26zvJv0kmLb9N2oyvORpxn.html\">重案1990</a></h2>\
+            <div class=\"author\">作者：高山流水</div>\
+            <div class=\"author\">字数：125.6万</div>\
+            <div class=\"cat\"><span>现代都市</span>\
+            <a href=\"/chapter/26zvJv0kmLb9N2oyvORpxn/2FqUlMjy8jQylEJA0rygGF.html\">第353章 大结局</a></div>\
+            <div class=\"update\"><span>简介：</span>重回1990年的刑侦故事</div>\
+            </div><div class=\"delbutton\">\
+            <a class=\"del_but\" href=\"/book/26zvJv0kmLb9N2oyvORpxn.html\">阅读</a>\
+            </div></div></div>\
+            <div class=\"bookbox\"><div class=\"p10\"><span class=\"num\">2</span>\
+            <div class=\"bookinfo\"><h2 class=\"bookname\">\
+            <a href=\"/book/63c1MuMNVQJEGWKNltSyG8.html\">全能魔女1994</a></h2>\
+            <div class=\"author\">作者：云中鹤</div>\
+            <div class=\"author\">字数：411.5万</div>\
+            <div class=\"cat\"><span>现代都市</span>\
+            <a href=\"/chapter/63c1MuMNVQJEGWKNltSyG8/6nthAhzx8ioLiPhVN4roWq.html\">第一章 重生</a></div>\
+            <div class=\"update\"><span>简介：</span>魔女重生的故事</div>\
+            </div><div class=\"delbutton\">\
+            <a class=\"del_but\" href=\"/book/63c1MuMNVQJEGWKNltSyG8.html\">阅读</a>\
+            </div></div></div>\
+            <div class=\"clear\"></div>\
+            <div class=\"pages\"><div class=\"pagelink\">\
+            <em id=\"pagestats\">1/6</em><a href=\"/search/99/2.html\">2</a>\
+            </div></div></body></html>";
+
+        // sto66 真实 ruleSearch（设备 DB 抓取）
+        let source = BookSource {
+            book_source_url: "https://www.sto66.com".to_string(),
+            book_source_name: "思绪阅读".to_string(),
+            rule_search: Some(SearchRule {
+                book_list: Some("//*[contains(@class, 'bookbox')]".to_string()),
+                name: Some("@XPath:.//*[contains(@class, 'bookname')]/a/text()".to_string()),
+                author: Some(
+                    "@XPath:.//*[contains(@class, 'author')][1]/text()##作者：".to_string(),
+                ),
+                book_url: Some(
+                    "@XPath:.//*[contains(@class, 'bookname')]/a/@href".to_string(),
+                ),
+                intro: Some(
+                    "@XPath:.//*[contains(@class, 'update')]//text()##简介：".to_string(),
+                ),
+                last_chapter: Some(
+                    "@XPath:.//*[contains(@class, 'cat')]//a/text()".to_string(),
+                ),
+                ..SearchRule::default()
+            }),
+            ..BookSource::default()
+        };
+
+        let results =
+            parse_search_response(html, "https://www.sto66.com/search/99.html", &source)
+                .unwrap();
+
+        assert!(
+            results.len() >= 2,
+            "bookList 应解析出 ≥2 条，实际 {} 条",
+            results.len()
+        );
+        assert_eq!(results[0].book_name, "重案1990");
+        // ## 替换：作者前缀应被剔除
+        assert_eq!(results[0].author, "高山流水");
+        // 相对 URL 绝对化
+        assert_eq!(
+            results[0].book_url,
+            "https://www.sto66.com/book/26zvJv0kmLb9N2oyvORpxn.html"
+        );
+        assert_eq!(results[0].latest_chapter, Some("第353章 大结局".to_string()));
+        // ## 替换：简介前缀应被剔除（//text() 多节点按原版以换行连接，trim 后比较）
+        assert_eq!(
+            results[0].intro.as_deref().map(str::trim),
+            Some("重回1990年的刑侦故事")
+        );
+        assert_eq!(results[1].book_name, "全能魔女1994");
+        assert_eq!(results[1].author, "云中鹤");
+    }
+
+    // ─── 测试 1.6: 多源并发驱动器（异常隔离 + 限流 + 超时）───────────────
+
+    /// Task #31：多源并发搜索语义——部分源成功/部分源失败/超时/panic 时，
+    /// 成功源结果全部保留、失败源不阻断、并发数不超过上限。
+    #[tokio::test]
+    async fn test_drive_source_batches_isolation_concurrency_timeout() {
+        use std::sync::atomic::AtomicUsize;
+
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let sources: Vec<BookSource> = ["ok1", "ok2", "fail", "slow", "panic"]
+            .into_iter()
+            .map(|u| BookSource {
+                book_source_url: format!("https://{u}.example.com"),
+                book_source_name: format!("源{u}"),
+                ..BookSource::default()
+            })
+            .collect();
+
+        let active_c = Arc::clone(&active);
+        let max_c = Arc::clone(&max_active);
+        let search_one = move |source: BookSource| {
+            let active = Arc::clone(&active_c);
+            let max_active = Arc::clone(&max_c);
+            async move {
+                let cur = active.fetch_add(1, Ordering::SeqCst) + 1;
+                max_active.fetch_max(cur, Ordering::SeqCst);
+                let url = source.book_source_url.clone();
+                let name = source.book_source_name.clone();
+                let result = if url.contains("slow") {
+                    // 超过单源超时（500ms）→ 应被驱动器判为超时错误
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    Ok(Vec::new())
+                } else if url.contains("panic") {
+                    panic!("故意 panic：验证单源崩溃隔离");
+                } else if url.contains("fail") {
+                    Err(LegadoError::Network("故意失败".into()))
+                } else {
+                    Ok(vec![SearchResult {
+                        source_url: url.clone(),
+                        source_name: name.clone(),
+                        book_name: format!("书{name}"),
+                        author: "作者".into(),
+                        book_url: format!("{url}/book/1"),
+                        latest_chapter: None,
+                        intro: None,
+                        cover_url: None,
+                        kind: None,
+                        word_count: None,
+                        book_type: book_type::TEXT,
+                        has_read_record: false,
+                        read_record_author: None,
+                    }])
+                };
+                // 持有并发窗口一小段时间，使最大并发观测可靠
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                active.fetch_sub(1, Ordering::SeqCst);
+                result
+            }
+        };
+
+        let outcomes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let outcomes_c = Arc::clone(&outcomes);
+        drive_source_batches(
+            sources,
+            2,
+            Duration::from_millis(500),
+            search_one,
+            move |o| {
+                let (n, err) = match o.result {
+                    Ok(ref b) => (Some(b.len()), None),
+                    Err(ref e) => (None, Some(e.to_string())),
+                };
+                outcomes_c
+                    .lock()
+                    .unwrap()
+                    .push((o.source_url, n, err, o.finished_count, o.total_count));
+                Ok(())
+            },
+        )
+        .await;
+
+        let got = outcomes.lock().unwrap();
+        assert_eq!(got.len(), 5, "每个书源都应产出一个批次（含失败/超时/panic）");
+        // 成功源结果全部保留
+        let ok_books: usize = got.iter().filter_map(|(_, n, _, _, _)| *n).sum();
+        assert_eq!(ok_books, 2, "两个成功源各 1 本书应全部保留");
+        // 失败/超时/panic 均有错误信息且不阻断其他源
+        assert!(
+            got.iter()
+                .any(|(u, _, e, _, _)| u.contains("fail") && e.is_some())
+        );
+        assert!(got.iter().any(|(u, _, e, _, _)| u.contains("slow")
+            && e.as_deref().is_some_and(|m| m.contains("超时"))));
+        assert!(
+            got.iter()
+                .any(|(u, _, e, _, _)| u.contains("panic") && e.is_some())
+        );
+        // 进度 total 正确且存在收尾批次（finished == total）
+        assert!(got.iter().all(|(_, _, _, _, t)| *t == 5));
+        assert!(got.iter().any(|(_, _, _, f, t)| f == t));
+        // 并发上限：最大同时在跑的单源搜索不超过 2
+        assert!(
+            max_active.load(Ordering::SeqCst) <= 2,
+            "最大并发 {} 超过上限 2",
+            max_active.load(Ordering::SeqCst)
+        );
     }
 
     // ─── 测试 2: JSON 搜索结果解析 ────────────────────────────────────────────
@@ -1168,6 +1596,140 @@ mod tests {
         }
     }
 
+    // ─── 测试 fix32: 无匹配/字段完整/多媒体识别 ───────────────────────
+
+    /// 无匹配：bookList 匹配为空 → 记 0 条 success（非 error、不挂起，对齐原版空列表语义）
+    #[test]
+    fn test_parse_no_match_is_zero_success() {
+        let source = make_source_with_rules(
+            ".book-item",
+            ".name",
+            ".author",
+            ".name@href",
+            ".cover@src",
+            ".intro",
+            ".last",
+        );
+        let body = "<html><body><p>没有找到相关书籍</p></body></html>";
+        let results =
+            parse_search_response(body, "https://www.example.com/search?q=zzz", &source)
+                .unwrap();
+        assert!(results.is_empty(), "无匹配应记 0 条而非 error");
+    }
+
+    /// 字段完整性：kind/wordCount/cover 绝对化/bookType；部分字段缺失不致整条丢弃
+    #[test]
+    fn test_parse_fields_complete_and_partial_failure_isolated() {
+        let mut source = make_source_with_rules(
+            ".book-item",
+            ".name",
+            ".author",
+            ".name@href",
+            ".cover@src",
+            ".intro",
+            ".last",
+        );
+        if let Some(r) = source.rule_search.as_mut() {
+            r.kind = Some(".kind".into());
+            r.word_count = Some(".wc".into());
+        }
+        // image（漫画）源 → BookType.image
+        source.book_source_type = 2;
+        let html = r#"<html><body>
+            <div class="book-item">
+                <a class="name" href="/b/1">漫画书</a>
+                <span class="author">作者</span>
+                <img class="cover" src="/c/1.jpg" />
+                <span class="kind">漫画,热血</span>
+                <span class="wc">123456</span>
+            </div>
+            <div class="book-item">
+                <a class="name" href="/b/2">缺字段书</a>
+                <span class="author">乙</span>
+            </div>
+        </body></html>"#;
+
+        let results =
+            parse_search_response(html, "https://www.example.com/search", &source).unwrap();
+        assert_eq!(results.len(), 2);
+        let first = &results[0];
+        assert_eq!(first.kind.as_deref(), Some("漫画,热血"));
+        assert_eq!(first.word_count.as_deref(), Some("12.3万字"));
+        // cover 相对路径绝对化（对齐原版 NetworkUtils.getAbsoluteURL）
+        assert_eq!(
+            first.cover_url.as_deref(),
+            Some("https://www.example.com/c/1.jpg")
+        );
+        assert_eq!(first.book_type, book_type::IMAGE);
+        // 第二条缺 cover/kind/wordCount 仍保留（只剔空 name/url）
+        let second = &results[1];
+        assert_eq!(second.book_name, "缺字段书");
+        assert!(second.cover_url.is_none());
+        assert!(second.kind.is_none());
+        assert!(second.word_count.is_none());
+        assert_eq!(second.book_type, book_type::IMAGE);
+    }
+
+    /// bookType 判定对齐原版 `BookSource.getBookType()`
+    #[test]
+    fn test_book_type_of_source_mapping() {
+        assert_eq!(book_type_of_source(0), book_type::TEXT);
+        assert_eq!(book_type_of_source(1), book_type::AUDIO);
+        assert_eq!(book_type_of_source(2), book_type::IMAGE);
+        assert_eq!(book_type_of_source(3), book_type::TEXT | book_type::WEB_FILE);
+        assert_eq!(book_type_of_source(4), book_type::VIDEO);
+    }
+
+    /// wordCountFormat 对齐原版 StringUtils.wordCountFormat
+    #[test]
+    fn test_word_count_format_aligns_original() {
+        assert_eq!(word_count_format("123456").as_deref(), Some("12.3万字"));
+        assert_eq!(word_count_format("20000").as_deref(), Some("2万字"));
+        assert_eq!(word_count_format("5000").as_deref(), Some("5000字"));
+        assert_eq!(word_count_format(""), None);
+        assert_eq!(word_count_format("0"), None);
+        assert_eq!(word_count_format("连载中").as_deref(), Some("连载中"));
+    }
+
+    /// 回归：单源超时对阻塞型同步计算生效，整体不挂起
+    ///
+    /// 实机缺陷回归：同步解析占住 tokio worker 时 `tokio::time::timeout`
+    /// 无法触发，信号量排队导致整体挂起（691/692 卡死）。
+    /// 修复后同步长计算在阻塞线程执行（spawn_blocking），超时在 await 点生效：
+    /// 超时源记错误批次、整体立即完成，不等阻塞任务。
+    #[tokio::test]
+    async fn test_drive_timeout_effective_for_blocking_parse() {
+        use std::time::Duration;
+        let sources = vec![make_source_with_rules(".b", ".n", ".a", ".u", "", "", "")];
+        let mut batch_errors = Vec::new();
+        let started = std::time::Instant::now();
+        super::drive_source_batches(
+            sources,
+            1,
+            Duration::from_millis(300),
+            |_source| async {
+                // 模拟修复后实现：同步长计算移入阻塞线程（await 点可中断）
+                tokio::task::spawn_blocking(|| {
+                    std::thread::sleep(Duration::from_millis(3000));
+                    Ok(Vec::new())
+                })
+                .await
+                .map_err(|e| LegadoError::Internal(e.to_string()))?
+            },
+            |outcome| {
+                batch_errors.push(outcome.result.is_err());
+                Ok(())
+            },
+        )
+        .await;
+        assert_eq!(batch_errors.len(), 1, "超时源仍应推送一个批次");
+        assert!(batch_errors[0], "超时源应记错误批次而非挂起");
+        assert!(
+            started.elapsed() < Duration::from_millis(1500),
+            "整体应在超时后立即完成，不等阻塞任务"
+        );
+    }
+
     // ─── 测试 10: 封面候选提取（过滤空值 + 去重）────────────────────────────
 
     /// 构造带指定封面的 SearchResult
@@ -1181,6 +1743,9 @@ mod tests {
             latest_chapter: None,
             intro: None,
             cover_url: cover.map(|s| s.to_string()),
+            kind: None,
+            word_count: None,
+            book_type: book_type::TEXT,
             has_read_record: false,
             read_record_author: None,
         }
@@ -1351,6 +1916,9 @@ mod tests {
             latest_chapter: None,
             intro: None,
             cover_url: None,
+            kind: None,
+            word_count: None,
+            book_type: book_type::TEXT,
             has_read_record: false,
             read_record_author: None,
         }
