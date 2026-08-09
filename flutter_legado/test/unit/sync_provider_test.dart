@@ -136,11 +136,12 @@ void main() {
       expect(notified, isTrue);
     });
 
-    test('buildConfigJson 输出 Rust WebDavConfig 结构', () async {
+    test('buildConfigJson 输出 Rust WebDavConfig 结构（含 remote_dir 必需字段，Task #52）', () async {
       await readNotifier().saveConfig('https://dav.com', 'user', 'pass', '/dir/');
       expect(
         readNotifier().buildConfigJson(),
-        equals('{"url":"https://dav.com","username":"user","password":"pass"}'),
+        equals(
+            '{"url":"https://dav.com","username":"user","password":"pass","remote_dir":"/dir/"}'),
       );
     });
 

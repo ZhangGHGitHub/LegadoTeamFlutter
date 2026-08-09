@@ -8,10 +8,12 @@
 // Web 端口经 BookApi.setServerPort 接通；记录日志经 CrashLogService 接通；
 // Android 专属项持久化并以灰字"仅 Android 生效"标注；
 // customHosts/uploadRule/Cronet/videoSetting/mcpPort/
-// jsSourceApiToken/clearWebViewData/shrinkDatabase 缺少跨轨支撑，
+// jsSourceApiToken/clearWebViewData 缺少跨轨支撑，
 // 已登记 docs/REFACTORING_REMAINING_PLAN.md §5.13，UI 不显示空壳；
 // [Task #40 | 2026-08-09] checkSource 配置入口已接线（§5.13-2，
-// 「校验书源配置」对话框经 CheckSourceNotifier 持久化并入 configJson） — Qoder
+// 「校验书源配置」对话框经 CheckSourceNotifier 持久化并入 configJson）；
+// [Task #52 | 2026-08-10] 压缩数据库已接线（§5.13-9，经 BookApi.shrinkDatabase
+// 接通 cacheShrinkDatabase FFI，契约 §2.16.6） — Qoder
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -515,6 +517,17 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 onTap: () =>
                     Navigator.pushNamed(context, AppRoutes.cacheSettings),
               ),
+              // [Task #52 | 2026-08-10] §5.13-9：压缩数据库（对齐原版
+              // pref_config_other.xml shrink_database → OtherConfigFragment
+              // shrinkDatabase：确认对话框 + VACUUM 后 Toast 提示） — Qoder
+              IosListTile(
+                icon: Icons.compress,
+                iconBackground: Colors.grey,
+                title: '压缩数据库',
+                subtitle: '减小数据库文件的大小',
+                showDisclosure: true,
+                onTap: _shrinkDatabase,
+              ),
               IosListTile(
                 icon: Icons.sync,
                 iconBackground: Colors.lightBlue,
@@ -767,6 +780,54 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     }
   }
 
+  /// 压缩数据库（对齐原版 OtherConfigFragment.shrinkDatabase：
+  /// 确认对话框 → VACUUM → Toast 提示）
+  /// [Task #52 | 2026-08-10] §5.13-9，契约 §2.16.6 — Qoder
+  Future<void> _shrinkDatabase() async {
+    // 原版确认对话框（alert(sure, shrink_database)）
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认'),
+        content: const Text('压缩数据库？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(AppStrings.confirm),
+          ),
+        ],
+      ),
+    );
+    // 异步对话框返回后先检查 mounted，再执行压缩
+    if (confirmed != true || !mounted) return;
+    _toast('正在压缩数据库…');
+    try {
+      final freed = await ref.read(bookApiProvider).shrinkDatabase();
+      if (!mounted) return;
+      if (freed <= 0) {
+        // 契约约定：失败/未初始化降级返回 0
+        _toast('无需压缩或压缩失败');
+      } else {
+        _toast('压缩完成，释放 ${_formatBytes(freed)}');
+      }
+    } catch (e) {
+      debugPrint('OtherSettingsScreen 压缩数据库异常: $e');
+      if (mounted) _toast('压缩失败: $e');
+    }
+  }
+
+  /// 字节数格式化（KB/MB 展示，对齐任务要求的释放空间提示格式）
+  String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+
   /// 校验书源配置摘要（对齐原版 CheckSource.summary：超时 + 已启用校验项）
   /// [Task #40 | 2026-08-09] §5.13-2 — Qoder
   String get _checkSourceConfigSummary {
@@ -788,140 +849,36 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   /// 级联约束对齐原版：校验搜索 → 目录 → 正文 逐级依赖，
   /// 关闭上级步骤时同步关闭下级。
   /// [Task #40 | 2026-08-09] §5.13-2 — Qoder
+  /// [Task #54 | 2026-08-10] 缺陷②修复：对话框提取为自持 StatefulWidget
+  /// （_CheckSourceConfigDialog），controller 在 State 内创建/dispose 中释放，
+  /// 确认回传值而非 controller，消除退场动画期间 dispose 引发的框架断言红屏 — Qoder
   Future<void> _showCheckSourceConfigDialog() async {
-    final keywordController = TextEditingController(
-      text: (_checkSourceConfig['keyword'] ?? '').toString(),
-    );
-    final timeoutController = TextEditingController(
-      text: '${((_checkSourceConfig['step_timeout_ms'] as num?)?.toInt() ?? CheckSourceNotifier.defaultStepTimeoutMs) ~/ 1000}',
-    );
-    var checkSearch = _checkSourceConfig['check_search'] == true;
-    var checkToc = _checkSourceConfig['check_toc'] == true;
-    var checkContent = _checkSourceConfig['check_content'] == true;
-    var detectCaptcha = _checkSourceConfig['detect_captcha'] == true;
-    var detectRedirect = _checkSourceConfig['detect_redirect'] == true;
-
-    final saved = await showDialog<bool>(
+    final result = await showDialog<_CheckSourceConfigResult>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('校验书源配置'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: keywordController,
-                    decoration: const InputDecoration(
-                      labelText: '搜索关键词',
-                      hintText: '默认：我的',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: timeoutController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '校验超时（秒）',
-                      hintText: '单个校验步骤的超时时间',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // 校验步骤级联（对齐原版 checkSearch→checkInfo→checkCategory
-                  // →checkContent 依赖链，映射到 Rust 侧三步开关）
-                  SwitchListTile(
-                    title: const Text('校验搜索'),
-                    subtitle: const Text('搜索关键词并校验结果'),
-                    value: checkSearch,
-                    onChanged: (v) => setDialogState(() {
-                      checkSearch = v;
-                      if (!v) {
-                        checkToc = false;
-                        checkContent = false;
-                      }
-                    }),
-                  ),
-                  SwitchListTile(
-                    title: const Text('校验目录'),
-                    subtitle: const Text('依赖校验搜索结果'),
-                    value: checkToc,
-                    // 上级步骤关闭时下级不可切换（对齐原版 isEnabled 联动）
-                    onChanged: !checkSearch
-                        ? null
-                        : (v) => setDialogState(() {
-                              checkToc = v;
-                              if (!v) checkContent = false;
-                            }),
-                  ),
-                  SwitchListTile(
-                    title: const Text('校验正文'),
-                    subtitle: const Text('依赖校验目录结果'),
-                    value: checkContent,
-                    onChanged: (!checkSearch || !checkToc)
-                        ? null
-                        : (v) => setDialogState(() => checkContent = v),
-                  ),
-                  SwitchListTile(
-                    title: const Text('验证码拦截检测'),
-                    subtitle: const Text('识别疑似验证码页面并标记'),
-                    value: detectCaptcha,
-                    onChanged: (v) => setDialogState(() => detectCaptcha = v),
-                  ),
-                  SwitchListTile(
-                    title: const Text('重定向检测'),
-                    subtitle: const Text('识别登录/拦截重定向并标记'),
-                    value: detectRedirect,
-                    onChanged: (v) => setDialogState(() => detectRedirect = v),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(AppStrings.cancel),
-            ),
-            FilledButton(
-              onPressed: () {
-                // 超时校验对齐原版 CheckSourceConfig.tvOk：非空且 > 0 秒
-                final text = timeoutController.text.trim();
-                final seconds = int.tryParse(text);
-                if (text.isEmpty) {
-                  _toast('超时时间不能为空');
-                  return;
-                }
-                if (seconds == null || seconds <= 0) {
-                  _toast('超时时间必须大于 0 秒');
-                  return;
-                }
-                Navigator.pop(ctx, true);
-              },
-              child: Text(AppStrings.confirm),
-            ),
-          ],
-        ),
+      builder: (_) => _CheckSourceConfigDialog(
+        initialKeyword: (_checkSourceConfig['keyword'] ?? '').toString(),
+        initialSeconds:
+            ((_checkSourceConfig['step_timeout_ms'] as num?)?.toInt() ??
+                    CheckSourceNotifier.defaultStepTimeoutMs) ~/
+                1000,
+        initialCheckSearch: _checkSourceConfig['check_search'] == true,
+        initialCheckToc: _checkSourceConfig['check_toc'] == true,
+        initialCheckContent: _checkSourceConfig['check_content'] == true,
+        initialDetectCaptcha: _checkSourceConfig['detect_captcha'] == true,
+        initialDetectRedirect: _checkSourceConfig['detect_redirect'] == true,
       ),
     );
-    final keyword = keywordController.text.trim();
-    final seconds = int.tryParse(timeoutController.text.trim()) ?? 0;
-    keywordController.dispose();
-    timeoutController.dispose();
     // 异步对话框返回后先检查 mounted，再 setState/持久化
-    if (saved != true || !mounted) return;
+    if (result == null || !mounted) return;
     // 字段映射到契约 §2.3 CheckerConfig（step_timeout_ms 以毫秒传递）
     final config = <String, dynamic>{
-      'keyword': keyword,
-      'step_timeout_ms': seconds * 1000,
-      'check_search': checkSearch,
-      'check_toc': checkToc,
-      'check_content': checkContent,
-      'detect_captcha': detectCaptcha,
-      'detect_redirect': detectRedirect,
+      'keyword': result.keyword,
+      'step_timeout_ms': result.seconds * 1000,
+      'check_search': result.checkSearch,
+      'check_toc': result.checkToc,
+      'check_content': result.checkContent,
+      'detect_captcha': result.detectCaptcha,
+      'detect_redirect': result.detectRedirect,
     };
     await ref
         .read(checkSourceNotifierProvider.notifier)
@@ -1336,5 +1293,201 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         SnackBar(content: Text(AppStrings.configSaved)),
       );
     });
+  }
+}
+
+/// 校验书源配置对话框确认结果（回传值而非 controller）
+/// [Task #54 | 2026-08-10] — Qoder
+class _CheckSourceConfigResult {
+  final String keyword;
+  final int seconds;
+  final bool checkSearch;
+  final bool checkToc;
+  final bool checkContent;
+  final bool detectCaptcha;
+  final bool detectRedirect;
+
+  const _CheckSourceConfigResult({
+    required this.keyword,
+    required this.seconds,
+    required this.checkSearch,
+    required this.checkToc,
+    required this.checkContent,
+    required this.detectCaptcha,
+    required this.detectRedirect,
+  });
+}
+
+/// 校验书源配置对话框（自持 StatefulWidget，照 _TextPromptDialog 模式）：
+/// controller 在 State 内创建、dispose 中随子树卸载统一释放，
+/// 避免 Navigator.pop 后立即 dispose 在退场动画期间触发
+/// framework.dart _dependents.isEmpty 断言红屏。
+/// [Task #54 | 2026-08-10] — Qoder
+class _CheckSourceConfigDialog extends StatefulWidget {
+  final String initialKeyword;
+  final int initialSeconds;
+  final bool initialCheckSearch;
+  final bool initialCheckToc;
+  final bool initialCheckContent;
+  final bool initialDetectCaptcha;
+  final bool initialDetectRedirect;
+
+  const _CheckSourceConfigDialog({
+    required this.initialKeyword,
+    required this.initialSeconds,
+    required this.initialCheckSearch,
+    required this.initialCheckToc,
+    required this.initialCheckContent,
+    required this.initialDetectCaptcha,
+    required this.initialDetectRedirect,
+  });
+
+  @override
+  State<_CheckSourceConfigDialog> createState() =>
+      _CheckSourceConfigDialogState();
+}
+
+class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
+  late final TextEditingController _keywordController =
+      TextEditingController(text: widget.initialKeyword);
+  late final TextEditingController _timeoutController =
+      TextEditingController(text: '${widget.initialSeconds}');
+  late bool _checkSearch = widget.initialCheckSearch;
+  late bool _checkToc = widget.initialCheckToc;
+  late bool _checkContent = widget.initialCheckContent;
+  late bool _detectCaptcha = widget.initialDetectCaptcha;
+  late bool _detectRedirect = widget.initialDetectRedirect;
+
+  /// 超时输入校验错误回显（非空且 > 0 秒，对齐原版 CheckSourceConfig.tvOk）
+  String? _timeoutError;
+
+  @override
+  void dispose() {
+    _keywordController.dispose();
+    _timeoutController.dispose();
+    super.dispose();
+  }
+
+  void _onConfirm() {
+    final text = _timeoutController.text.trim();
+    final seconds = int.tryParse(text);
+    if (text.isEmpty) {
+      setState(() => _timeoutError = '超时时间不能为空');
+      return;
+    }
+    if (seconds == null || seconds <= 0) {
+      setState(() => _timeoutError = '超时时间必须大于 0 秒');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _CheckSourceConfigResult(
+        keyword: _keywordController.text.trim(),
+        seconds: seconds,
+        checkSearch: _checkSearch,
+        checkToc: _checkToc,
+        checkContent: _checkContent,
+        detectCaptcha: _detectCaptcha,
+        detectRedirect: _detectRedirect,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('校验书源配置'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _keywordController,
+                decoration: const InputDecoration(
+                  labelText: '搜索关键词',
+                  hintText: '默认：我的',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _timeoutController,
+                keyboardType: TextInputType.number,
+                onChanged: (_) {
+                  if (_timeoutError != null) {
+                    setState(() => _timeoutError = null);
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: '校验超时（秒）',
+                  hintText: '单个校验步骤的超时时间',
+                  border: const OutlineInputBorder(),
+                  errorText: _timeoutError,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 校验步骤级联（对齐原版 checkSearch→checkInfo→checkCategory
+              // →checkContent 依赖链，映射到 Rust 侧三步开关）
+              SwitchListTile(
+                title: const Text('校验搜索'),
+                subtitle: const Text('搜索关键词并校验结果'),
+                value: _checkSearch,
+                onChanged: (v) => setState(() {
+                  _checkSearch = v;
+                  if (!v) {
+                    _checkToc = false;
+                    _checkContent = false;
+                  }
+                }),
+              ),
+              SwitchListTile(
+                title: const Text('校验目录'),
+                subtitle: const Text('依赖校验搜索结果'),
+                value: _checkToc,
+                // 上级步骤关闭时下级不可切换（对齐原版 isEnabled 联动）
+                onChanged: !_checkSearch
+                    ? null
+                    : (v) => setState(() {
+                          _checkToc = v;
+                          if (!v) _checkContent = false;
+                        }),
+              ),
+              SwitchListTile(
+                title: const Text('校验正文'),
+                subtitle: const Text('依赖校验目录结果'),
+                value: _checkContent,
+                onChanged: (!_checkSearch || !_checkToc)
+                    ? null
+                    : (v) => setState(() => _checkContent = v),
+              ),
+              SwitchListTile(
+                title: const Text('验证码拦截检测'),
+                subtitle: const Text('识别疑似验证码页面并标记'),
+                value: _detectCaptcha,
+                onChanged: (v) => setState(() => _detectCaptcha = v),
+              ),
+              SwitchListTile(
+                title: const Text('重定向检测'),
+                subtitle: const Text('识别登录/拦截重定向并标记'),
+                value: _detectRedirect,
+                onChanged: (v) => setState(() => _detectRedirect = v),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(AppStrings.cancel),
+        ),
+        FilledButton(
+          onPressed: _onConfirm,
+          child: Text(AppStrings.confirm),
+        ),
+      ],
+    );
   }
 }

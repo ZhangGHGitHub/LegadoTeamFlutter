@@ -24,11 +24,23 @@ class SyncNotifier extends Notifier<SyncState> {
     return const SyncState();
   }
 
-  /// 构建 Rust 侧 WebDavConfig 期望的 JSON（{url, username, password}）
+  /// 远端子目录（保证以 '/' 结尾；Rust WebDavClient 拼接
+  /// full_url = url + remote_dir + path，直接拼接 path）
+  /// [Task #52 | 2026-08-10] — Qoder
+  String get normalizedRemoteDir {
+    final dir = state.remoteDir.isEmpty ? '/legado/' : state.remoteDir;
+    return dir.endsWith('/') ? dir : '$dir/';
+  }
+
+  /// 构建 Rust 侧 WebDavConfig 期望的 JSON（{url, username, password, remote_dir}）
+  ///
+  /// [Task #52 | 2026-08-10] 补齐 remote_dir（legado-net WebDavConfig 必需字段，
+  /// 缺失会导致 Rust 侧配置解析失败） — Qoder
   String buildConfigJson() => jsonEncode({
         'url': state.webDavUrl,
         'username': state.webDavUsername,
         'password': state.webDavPassword,
+        'remote_dir': normalizedRemoteDir,
       });
 
   // ===== 配置管理 =====

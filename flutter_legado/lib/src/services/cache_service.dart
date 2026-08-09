@@ -50,6 +50,27 @@ class CacheService {
     return cleared > 0 ? cleared : 0;
   }
 
+  /// 清除章级「删除重复标题」开关的 SP 镜像键（Task #55 F4）
+  ///
+  /// Rust 侧全局清缓存（clearCache / clearCacheBefore）会复位 caches 表的
+  /// sameTitleRemoved:* 章级开关，而阅读器顶栏的开关显示态依赖
+  /// `sameTitleRemoved_{bookUrl}_{chapterIndex}` SP 镜像键辅助展示；
+  /// 若不清理会造成显示态漂移（Rust 已复位而顶栏仍显示旧态）。
+  /// 在「清除缓存」成功后的链路上调用本方法，顶栏下次加载自然回归默认态。
+  /// 失败不阻断主流程（仅影响展示态，行为以 FFI 为准）。
+  static Future<void> clearSameTitleRemovedFlags() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys =
+          prefs.getKeys().where((k) => k.startsWith('sameTitleRemoved_'));
+      for (final key in keys.toList()) {
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      debugPrint('CacheService.clearSameTitleRemovedFlags 异常: $e');
+    }
+  }
+
   /// 设置自动过期天数
   ///
   /// [days] 为 0 表示永不过期。

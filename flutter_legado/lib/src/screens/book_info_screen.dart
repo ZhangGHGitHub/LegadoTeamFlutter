@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,13 +9,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
+import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
 import '../services/book_api.dart';
+import '../services/cache_service.dart';
 import '../services/settings_service.dart';
 import 'source_login_screen.dart';
 import '../widgets/book_cover.dart';
@@ -259,7 +263,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                   );
                   // 编辑保存成功后重新加载书籍信息
                   if (saved == true && mounted) {
-                    setState(() => _future = _loadData());
+                    setState(() { _future = _loadData(); });
                   }
                 } catch (e) {
                   // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
@@ -317,7 +321,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               final hasLogin = (source?.loginUrl ?? '').isNotEmpty;
               final canUpd = book?.canUpdate ?? true;
               return [
-                // 上传至远程（仅本地书；_todo 占位）
+                // 上传至远程（仅本地书；[Task #52 §5.11-1] 接通
+                // webdavUploadFile FFI，对齐原版 menu_upload）
                 if (isLocal)
                   const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
                 const PopupMenuItem(value: 'refresh', child: Text('刷新')),
@@ -387,7 +392,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           if (snapshot.hasError) {
             return ErrorView(
               message: snapshot.error.toString(),
-              onRetry: () => setState(() => _future = _loadData()),
+              onRetry: () => setState(() { _future = _loadData(); }),
             );
           }
           final data = snapshot.data!;
@@ -427,7 +432,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         SafeArea(
           top: false,
           child: RefreshIndicator(
-            onRefresh: () async => setState(() => _future = _loadData()),
+            onRefresh: () async => setState(() { _future = _loadData(); }),
             child: _buildBody(context, book, chapters),
           ),
         ),
@@ -445,7 +450,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         if (book != null && _isOnlineBook(book)) {
           await _refreshToc();
         } else {
-          setState(() => _future = _loadData());
+          setState(() { _future = _loadData(); });
         }
         break;
       case 'copyBookUrl':
@@ -484,7 +489,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           );
         }
         await api.updateBook(updated);
-        if (mounted) setState(() => _future = _loadData());
+        if (mounted) setState(() { _future = _loadData(); });
         break;
       case 'log':
         // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
@@ -521,6 +526,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         // findBookUpdateTask 已存在→编辑，否则 buildBookUpdateTask 新建） — Qoder
         await _openBookUpdateTask();
         break;
+      case 'upload':
+        // [Task #52 | 2026-08-10] §5.11-1：上传至远程接通（对齐原版
+        // BookInfoActivity.menu_upload → RemoteBookWebDav.upload：
+        // WebDav PUT 本地书籍文件 → book.origin = webDavTag+putUrl → update） — Qoder
+        await _uploadToRemote();
+        break;
       default:
         _todo(value);
         break;
@@ -530,13 +541,127 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   /// 未移植功能提示（占位项，待后续版本对齐原版）
   void _todo(String value) {
     const names = {
-      'upload': '上传至远程',
       'sourceVariable': '设置源变量',
     };
     final feature = names[value] ?? value;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('「$feature」后续版本支持')),
     );
+  }
+
+  /// 上传至远程（Task #52 §5.11-1，对齐原版 RemoteBookWebDav.upload）
+  ///
+  /// 原版语义（BookInfoActivity.menu_upload → upLoadBook）：
+  /// - 仅本地书可见（isLocal = localTag 或 webDavTag，菜单已限定）
+  /// - 已有远程地址时先确认（sure_upload），否则直接上传
+  /// - WebDav PUT 本地书籍文件到远程 books 目录（rootBookUrl + originName）
+  /// - 成功后 book.origin = webDavTag + 远程地址，并刷新 lastCheckTime
+  Future<void> _uploadToRemote() async {
+    final api = ref.read(bookApiProvider);
+    final book = _loadedBook;
+    if (book == null) return;
+    // 防御：仅本地书支持上传（在线书无本地文件，按原版语义不支持）
+    if (_isOnlineBook(book)) {
+      _snack('上传至远程仅支持本地书籍');
+      return;
+    }
+    // 前置：读取已保存的 WebDAV 配置（复用 SyncNotifier 既有配置链路）
+    final syncNotifier = ref.read(syncNotifierProvider.notifier);
+    await syncNotifier.loadConfig();
+    if (!mounted) return;
+    final sync = ref.read(syncNotifierProvider);
+    if (!sync.isConfigured) {
+      // 未配置 → 提示并引导跳转 WebDAV 设置（对齐原版「未配置webDav」异常提示）
+      await _showWebDavNotConfiguredDialog();
+      return;
+    }
+    // 已有远程地址 → 确认是否覆盖（对齐原版 sure_upload 对话框）
+    if (book.origin.startsWith(BookType.webDavTag)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('提示'),
+          content: const Text('已存在远程 webDav 地址，继续上传？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(AppStrings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(AppStrings.confirm),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    // 本地书 bookUrl 即本地文件路径（对齐 Rust import_local_book 落库约定）
+    final localPath = book.bookUrl;
+    final fileName = book.originName.isNotEmpty
+        ? book.originName
+        : localPath.split(Platform.pathSeparator).last;
+    // 远程路径规则对齐原版 RemoteBookWebDav：rootBookUrl(books/) + originName；
+    // path 相对 remote_dir，Rust 侧 full_url = url + remote_dir + path
+    final remotePath = 'books/$fileName';
+    _snack('正在上传至远程…');
+    // [Task #55 F9 | 2026-08-10] 上传与 origin 回写分两段 try/catch：
+    // 回写失败时提示「上传成功但保存记录失败」而非误报「上传失败」 — Qoder
+    try {
+      await api.webdavUploadFile(
+        syncNotifier.buildConfigJson(),
+        remotePath,
+        localPath,
+      );
+    } catch (e) {
+      debugPrint('上传至远程失败: $e');
+      if (mounted) _snack('上传失败: ${_errMsg(e)}');
+      return;
+    }
+    if (!mounted) return;
+    try {
+      // 回写 book.origin（webDav 标记 + 远程完整地址）；从库中读回完整 Book
+      // 再 copyWith，防全行覆盖（与 _setBookVariable 同模式）
+      final full = await api.getBook(book.bookUrl) ?? book;
+      final remoteUrl =
+          '${sync.webDavUrl}${syncNotifier.normalizedRemoteDir}$remotePath';
+      await api.updateBook(full.copyWith(
+        origin: BookType.webDavTag + remoteUrl,
+        // 对齐原版：刷新最后检查时间，使之比远程书籍的时间新
+        lastCheckTime: DateTime.now().millisecondsSinceEpoch,
+      ));
+      if (!mounted) return;
+      setState(() { _future = _loadData(); });
+      _snack('上传至远程成功');
+    } catch (e) {
+      debugPrint('上传成功但保存记录失败: $e');
+      if (mounted) _snack('上传成功但保存记录失败，请重试');
+    }
+  }
+
+  /// WebDAV 未配置引导对话框（确认后跳转 WebDAV 设置页）
+  Future<void> _showWebDavNotConfiguredDialog() async {
+    final goSettings = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('未配置 WebDAV'),
+        content: const Text('上传至远程需要先配置 WebDAV 服务器信息'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('去设置'),
+          ),
+        ],
+      ),
+    );
+    // 异步对话框返回后先检查 mounted，再跳转
+    if (goSettings == true && mounted) {
+      Navigator.pushNamed(context, AppRoutes.webdavSettings);
+    }
   }
 
   /// SnackBar 轻提示（统一入口）
@@ -637,7 +762,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       }
       await api.updateBook(full.copyWith(variable: jsonEncode(varMap)));
       if (!mounted) return;
-      setState(() => _future = _loadData());
+      setState(() { _future = _loadData(); });
       _snack('书籍变量已保存');
     } catch (e) {
       debugPrint('保存书籍变量失败: $e');
@@ -1029,7 +1154,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('目录已更新，共 ${chapters.length} 章')),
       );
-      setState(() => _future = _loadData());
+      setState(() { _future = _loadData(); });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1131,7 +1256,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     );
     if (selected == null || !mounted) return;
     await ref.read(bookApiProvider).updateBook(book.copyWith(group: selected));
-    if (mounted) setState(() => _future = _loadData());
+    if (mounted) setState(() { _future = _loadData(); });
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 登录 / 置顶 / 清缓存 — Qoder =====
@@ -1250,6 +1375,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     if (confirmed != true || !mounted) return;
     try {
       await ref.read(bookApiProvider).clearCache();
+      // [Task #55 F4 | 2026-08-10] 清缓存成功后同步清除章级「删除重复
+      // 标题」开关的 SP 镜像键，避免阅读器顶栏开关显示态漂移 — Qoder
+      await CacheService.clearSameTitleRemovedFlags();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('缓存已清除')),

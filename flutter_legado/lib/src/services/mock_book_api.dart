@@ -1018,6 +1018,27 @@ class MockBookApi implements BookApi {
     return int.tryParse(_configs[_chineseConvertKey] ?? '') ?? 0;
   }
 
+  /// 章级「删除重复标题」opt-out 记录（契约 §2.9.10，Task #50）
+  ///
+  /// Mock 内存态：集合内存放「保留原标题」的 `${bookUrl}#$chapterIndex`。
+  final Set<String> _sameTitleOptOut = {};
+
+  @override
+  Future<void> toggleSameTitleRemoved(
+    String bookUrl,
+    int chapterIndex,
+    bool enable,
+  ) async {
+    // Mock：短延迟模拟 FFI 往返；enable=true 恢复全局默认，false 章级 opt-out
+    await Future.delayed(const Duration(milliseconds: 50));
+    final key = '$bookUrl#$chapterIndex';
+    if (enable) {
+      _sameTitleOptOut.remove(key);
+    } else {
+      _sameTitleOptOut.add(key);
+    }
+  }
+
   // ========== 配置操作 ==========
 
   @override
@@ -1192,6 +1213,15 @@ class MockBookApi implements BookApi {
 
   @override
   Future<void> clearCacheBefore(int beforeTimestampMs) async {}
+
+  /// 压缩数据库（契约 §2.16.6，Task #50）
+  ///
+  /// Mock：短延迟模拟 VACUUM 耗时，固定返回 10MB 释放量。
+  @override
+  Future<int> shrinkDatabase() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return 10 * 1024 * 1024;
+  }
 
   @override
   Future<String> getCachedChapter(String bookUrl, int chapterIndex) async =>
@@ -1497,6 +1527,18 @@ class MockBookApi implements BookApi {
 
   @override
   Future<void> webdavUpload(String configJson, String path, String data) async {}
+
+  /// WebDAV 本地文件上传（契约 §2.28.6，Task #50）
+  ///
+  /// Mock：短延迟模拟上传耗时，不做真实网络请求。
+  @override
+  Future<void> webdavUploadFile(
+    String configJson,
+    String path,
+    String localFilePath,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+  }
 
   @override
   Future<String> webdavDownload(String configJson, String path) async => '';

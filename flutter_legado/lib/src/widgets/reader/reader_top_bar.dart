@@ -56,27 +56,35 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
   static const int _hTag = 2;
   static const int _rubyTag = 4;
 
-  /// 删除重复标题本地开关（原版 menu_same_title_removed 依赖
-  /// ContentProcessor.sameTitleRemoved 章级状态；Flutter 侧 ReadConfig/FFI
-  /// 均无该字段（已 grep 确认无数据链路），按任务要求本地持久化，
-  /// Rust 正文处理链路暂未消费，待契约补齐后接通）
-  bool _sameTitleRemovedLocal = false;
+  /// 章级「删除重复标题」开关展示态（Task #52 §5.11-7，契约 §2.9.10）
+  ///
+  /// true=去除重复标题（全局默认，FFI enable=true）；false=该章保留
+  /// 原标题（章级 opt-out，FFI enable=false），方向与原版
+  /// reverseRemoveSameTitle 一致。Rust 侧无查询 API，初始态用本地
+  /// 切换记录辅助显示，行为以 FFI 为准。
+  bool _sameTitleRemoved = true;
 
   /// 已启用替换规则计数（menu_effective_replaces 只读展示；原版为当前章
   /// 生效规则列表，Flutter 侧无章级 API，降级为全局启用计数）
   int? _effectiveReplaceCount;
 
-  /// 已加载本地开关的书籍 bookUrl（换书后重新加载）
-  String? _flagsLoadedForBook;
+  /// 已加载章级开关的复合键（bookUrl#chapterIndex，换书/换章后重新加载）
+  String? _flagsLoadedKey;
 
-  /// 加载本地开关与替换规则计数（书籍变化时调用）
-  Future<void> _loadLocalFlags(String bookUrl) async {
+  /// 加载章级开关与替换规则计数（书籍/章节变化时调用）
+  Future<void> _loadLocalFlags(String bookUrl, int chapterIndex) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final removed = prefs.getBool('sameTitleRemoved_$bookUrl') ?? false;
-      if (mounted) setState(() => _sameTitleRemovedLocal = removed);
+      // [Task #55 F10 | 2026-08-10] 一次性移除旧书级键（不带章节后缀的
+      // 早期格式），幂等无副作用；键已不存在时 remove 亦不报错 — Qoder
+      await prefs.remove('sameTitleRemoved_$bookUrl');
+      // [Task #52 | 2026-08-10] Rust 侧无查询 API，用本地切换记录辅助
+      // 显示；默认 true（全局默认=去除重复标题） — Qoder
+      final removed =
+          prefs.getBool('sameTitleRemoved_${bookUrl}_$chapterIndex') ?? true;
+      if (mounted) setState(() => _sameTitleRemoved = removed);
     } catch (_) {
-      // 持久化不可用时保持默认关闭
+      // 持久化不可用时保持默认开启
     }
     try {
       final rules = await ref.read(bookApiProvider).getEnabledReplaceRules();
@@ -721,23 +729,39 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
     }
   }
 
-  /// 切换删除重复标题（本地持久化，见 _sameTitleRemovedLocal 注释）
+  /// 切换章级「删除重复标题」（Task #52 §5.11-7，契约 §2.9.10）
+  ///
+  /// 对齐原版 ReadBookActivity.menu_same_title_removed →
+  /// reverseRemoveSameTitle：开关 ON=去除（enable=true，全局默认），
+  /// OFF=该章保留原标题（enable=false，章级 opt-out）；
+  /// 切换成功后重载当前章正文（对齐原版 ReadBook.loadContent）。
   Future<void> _toggleSameTitleRemoved(BuildContext context) async {
-    final book = ref.read(readerNotifierProvider).currentBook;
+    final state = ref.read(readerNotifierProvider);
+    final book = state.currentBook;
     if (book == null) return;
-    final next = !_sameTitleRemovedLocal;
-    setState(() => _sameTitleRemovedLocal = next);
+    final chapterIndex = state.currentChapterIndex;
+    final next = !_sameTitleRemoved;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('sameTitleRemoved_${book.bookUrl}', next);
-    } catch (_) {
-      // 持久化失败不阻断开关切换
-    }
-    if (context.mounted) {
-      // [UI-fix v2.0.4 | 2026-08-08] 诚实提示仅持久化未接正文链路（与导出
-      // 书签占位先例一致；待 FFI toggle_same_title_removed 接通，已登记
-      // REFACTORING_REMAINING_PLAN.md §5.11）— Qoder
-      _snack(context, '设置已保存，正文效果待后续版本支持');
+      await ref
+          .read(bookApiProvider)
+          .toggleSameTitleRemoved(book.bookUrl, chapterIndex, next);
+      if (!mounted) return;
+      setState(() => _sameTitleRemoved = next);
+      // 本地辅助显示缓存（Rust 侧无查询 API，行为以 FFI 为准）
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(
+            'sameTitleRemoved_${book.bookUrl}_$chapterIndex', next);
+      } catch (_) {
+        // 持久化失败不阻断开关切换
+      }
+      // 重载当前章正文，使开关立即生效（对齐原版 loadContent）
+      await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
+      if (context.mounted) {
+        _snack(context, next ? '已去除重复标题' : '该章已保留原标题');
+      }
+    } catch (e) {
+      if (context.mounted) _snack(context, '设置失败: $e');
     }
   }
 
@@ -867,11 +891,12 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
     final progressPct = (state.readingProgress * 100).toStringAsFixed(1);
     final book = state.currentBook;
 
-    // [UI-fix v2.0.4 | 2026-08-08] 换书后加载本地开关与替换规则计数
-    // （顶栏仅在 showControls 时挂载，每次展示均可刷新） — Qoder
-    if (book != null && _flagsLoadedForBook != book.bookUrl) {
-      _flagsLoadedForBook = book.bookUrl;
-      unawaited(_loadLocalFlags(book.bookUrl));
+    // [Task #52 | 2026-08-10] §5.11-7：删重标题开关改章级，换书/换章后
+    // 重新加载辅助显示态（顶栏仅在 showControls 时挂载） — Qoder
+    final flagsKey = '${book?.bookUrl}#${state.currentChapterIndex}';
+    if (book != null && _flagsLoadedKey != flagsKey) {
+      _flagsLoadedKey = flagsKey;
+      unawaited(_loadLocalFlags(book.bookUrl, state.currentChapterIndex));
     }
 
     // 在线书判定（对齐原版 onLine = !book.isLocal，WebDAV 视作本地）
@@ -1113,12 +1138,13 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                               value: 'enableReplace',
                               child: checked('替换规则', replaceOn),
                             ),
-                            // [UI-fix v2.0.4 | 2026-08-08] 删除重复标题（对齐
-                            // menu_same_title_removed；本地持久化开关） — Qoder
+                            // [Task #52 | 2026-08-10] 删除重复标题接通章级 FFI
+                            // （契约 §2.9.10 toggleSameTitleRemoved；对齐原版
+                            // menu_same_title_removed → reverseRemoveSameTitle） — Qoder
                             PopupMenuItem(
                               value: 'sameTitleRemoved',
                               child:
-                                  checked('删除重复标题', _sameTitleRemovedLocal),
+                                  checked('删除重复标题', _sameTitleRemoved),
                             ),
                             PopupMenuItem(
                               value: 'reSegment',

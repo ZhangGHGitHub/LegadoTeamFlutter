@@ -419,6 +419,18 @@ abstract class BookApi {
   /// 获取当前繁简转换类型（0=不转换 / 1=繁转简 / 2=简转繁）
   Future<int> getChineseConvertType();
 
+  /// 章级「删除重复标题」开关（契约 §2.9.10，Task #50 加法式新增）
+  ///
+  /// 对齐原版 [BookHelp.setRemoveSameTitle] 章级 opt-out 语义：
+  /// [enable]=true 恢复全局默认（去除重复标题）；false 该章保留原始标题。
+  /// 状态由实现侧持久化（重启后保持）。错误码：书籍不存在 → Internal；
+  /// 章节不存在 → Db。切换后正文读取按章应用该开关。
+  Future<void> toggleSameTitleRemoved(
+    String bookUrl,
+    int chapterIndex,
+    bool enable,
+  );
+
   // ========== 配置操作 ==========
 
   /// 获取配置值
@@ -525,6 +537,13 @@ abstract class BookApi {
 
   /// 清除指定时间之前的缓存
   Future<void> clearCacheBefore(int beforeTimestampMs);
+
+  /// 执行 SQLite VACUUM 压缩数据库，返回释放的字节数（契约 §2.16.6，
+  /// Task #50 加法式新增）
+  ///
+  /// VACUUM 失败（数据库锁/文件损坏）或数据库未初始化时降级返回 0，
+  /// 不抛异常阻断业务。
+  Future<int> shrinkDatabase();
 
   /// 获取章节缓存正文（未缓存返回空串，供缓存导出拼装 TXT）
   Future<String> getCachedChapter(String bookUrl, int chapterIndex);
@@ -722,6 +741,17 @@ abstract class BookApi {
 
   /// WebDAV 上传文件
   Future<void> webdavUpload(String configJson, String path, String data);
+
+  /// WebDAV 从本地文件路径读取并上传（契约 §2.28.6，Task #50 加法式新增）
+  ///
+  /// 大文件场景（如本地书籍上传至远程 books 目录），区别于
+  /// [webdavUpload] 的 String data 直传。
+  /// 错误码：文件不存在/读取失败 → Io；上传失败 → Net；配置解析失败 → Internal。
+  Future<void> webdavUploadFile(
+    String configJson,
+    String path,
+    String localFilePath,
+  );
 
   /// WebDAV 下载文件
   Future<String> webdavDownload(String configJson, String path);

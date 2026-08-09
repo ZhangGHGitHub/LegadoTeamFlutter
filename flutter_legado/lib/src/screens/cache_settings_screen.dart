@@ -110,6 +110,9 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
     setState(() => _clearing = true);
     try {
       final cleared = await _cacheService.clearCache();
+      // [Task #55 F4 | 2026-08-10] 清缓存成功后同步清除章级「删除重复
+      // 标题」开关的 SP 镜像键，避免阅读器顶栏开关显示态漂移 — Qoder
+      await CacheService.clearSameTitleRemovedFlags();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

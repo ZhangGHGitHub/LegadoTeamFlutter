@@ -943,6 +943,22 @@ class RustApi implements BookApi {
   /// 获取当前繁简转换类型（0=不转换 / 1=繁转简 / 2=简转繁）
   Future<int> getChineseConvertType() => bridge.readerGetChineseConvert();
 
+  /// 章级「删除重复标题」开关（契约 §2.9.10，Task #50 加法式新增）
+  ///
+  /// enable=true 恢复全局默认（去除重复标题）；false 该章保留原始标题。
+  /// 状态持久化于 Rust 侧 DB，重启后保持。
+  @override
+  Future<void> toggleSameTitleRemoved(
+    String bookUrl,
+    int chapterIndex,
+    bool enable,
+  ) =>
+      bridge.readerToggleSameTitleRemoved(
+        bookUrl: bookUrl,
+        chapterIndex: chapterIndex,
+        enable: enable,
+      );
+
   // ========== 配置操作 ==========
 
   /// 获取配置值
@@ -1182,6 +1198,14 @@ class RustApi implements BookApi {
   /// 清除指定时间之前的缓存
   Future<void> clearCacheBefore(int beforeTimestampMs) async {
     await bridge.cacheClearBefore(beforeTimestampMs: beforeTimestampMs);
+  }
+
+  /// 执行 SQLite VACUUM 压缩数据库，返回释放的字节数（契约 §2.16.6，
+  /// Task #50 加法式新增；失败/未初始化时 Rust 侧降级返回 0）
+  @override
+  Future<int> shrinkDatabase() async {
+    final freed = await bridge.cacheShrinkDatabase();
+    return freed.toInt();
   }
 
   /// 获取章节缓存正文（未缓存返回空串，供缓存导出拼装 TXT）
@@ -1808,6 +1832,19 @@ class RustApi implements BookApi {
           String configJson, String path, String data) =>
       bridge.webdavUpload(
           configJson: configJson, path: path, data: data);
+
+  /// WebDAV 从本地文件路径读取并上传（契约 §2.28.6，Task #50 加法式新增）
+  @override
+  Future<void> webdavUploadFile(
+    String configJson,
+    String path,
+    String localFilePath,
+  ) =>
+      bridge.webdavUploadFile(
+        configJson: configJson,
+        path: path,
+        localFilePath: localFilePath,
+      );
 
   /// WebDAV 下载文件
   Future<String> webdavDownload(String configJson, String path) =>
