@@ -501,9 +501,10 @@ fn replace_with_js(
 
 /// 编译后的正则（双引擎）：优先 regex crate（线性时间），
 /// regex crate 不支持的 Java 方言语法回退到 fancy-regex。
+/// 两个分支均经 [`crate::regex_safe`] 统一安全入口编译（1KB 上限 + 缓存/隔离线程）。
 enum CompiledRegex {
     /// regex crate 编译结果（高性能，不支持 lookaround/backreference）
-    Fast(regex::Regex),
+    Fast(Arc<regex::Regex>),
     /// fancy-regex 编译结果（支持 lookbehind/lookahead/backreference/原子组）
     Fancy(fancy_regex::Regex),
 }
@@ -536,16 +537,25 @@ impl CompiledRegex {
     }
 }
 
-/// 编译正则：Java 方言适配 → regex crate 优先 → fancy-regex 回退
+/// 编译正则：Java 方言适配 → 统一安全入口（regex crate 优先 → fancy-regex 回退）
+///
+/// 防御语义（与原版降级行为对齐）：
+/// - 快速路径走 [`crate::regex_safe::compile_regex_safe`]：
+///   1KB 长度上限 + nest_limit 嵌套防御 + 全局编译缓存（含失败负缓存）；
+/// - fancy 回退走 [`crate::regex_safe::compile_fancy_regex_safe`]：
+///   同 1KB 上限 + 8MB 栈隔离线程编译（lookaround 语法无法 nest_limit 预解析，
+///   1KB 上限已天然限定嵌套深度上界）；
+/// - 编译失败/超限 → Err，由调用方跳过该规则（对齐原版 replaceRegex
+///   runCatching 失败降级语义）。
 fn compile_regex(pattern: &str) -> Result<CompiledRegex, String> {
     let adapted = adapt_java_regex(pattern);
-    if let Ok(re) = regex::Regex::new(&adapted) {
+    if let Some(re) = crate::regex_safe::compile_regex_safe(&adapted) {
         return Ok(CompiledRegex::Fast(re));
     }
     // regex crate 编译失败（lookbehind / backreference 等）→ 回退 fancy-regex
-    fancy_regex::Regex::new(&adapted)
+    crate::regex_safe::compile_fancy_regex_safe(&adapted)
         .map(CompiledRegex::Fancy)
-        .map_err(|e| e.to_string())
+        .ok_or_else(|| format!("Invalid regex pattern: {}", pattern))
 }
 
 /// Java 正则方言适配：将 Java `Pattern` 专有语法转换为 Rust 正则等价形式

@@ -17,7 +17,7 @@ use legado_core::{LegadoError, LegadoResult};
 use legado_js::js_source::js_source_book::JsSourceBookOrchestrator;
 use legado_js::JsSourceConfig;
 use legado_net::LegadoClient;
-use legado_parser::{AnalyzeUrl, RequestMethod};
+use legado_parser::{compile_regex_safe, AnalyzeUrl, RequestMethod};
 
 use crate::runtime;
 
@@ -988,11 +988,12 @@ pub(crate) fn eval_rule_string(analyzer: &legado_parser::AnalyzeRule, rule: &str
 /// - replaceFirst 分支（`##match##replace##第四段`）：仅取首个匹配段文本做替换后返回
 ///   （对标 `matcher.group(0).replaceFirst(regex, replacement)`，无匹配返回空串）；
 /// - 全文替换分支：`result.replace(regex, replacement)`，replacement 支持 `$1` 捕获组引用；
-/// - 正则非法时降级字面量替换（对标 Kotlin runCatching 回退 `result.replace(replaceRegex, replacement)`；
+/// - 正则非法/编译失败（含病态 pattern 栈溢出防护 compile_regex_safe）时降级字面量替换
+///   （对标 Kotlin runCatching 回退 `result.replace(replaceRegex, replacement)`；
 ///   replaceFirst 分支正则非法时对标原版直接返回 replacement）。
 pub(crate) fn apply_regex_replace(text: &str, pattern: &str, replacement: &str, replace_first: bool) -> String {
-    match regex::Regex::new(pattern) {
-        Ok(re) => {
+    match compile_regex_safe(pattern) {
+        Some(re) => {
             if replace_first {
                 match re.find(text) {
                     Some(m) => re
@@ -1004,7 +1005,7 @@ pub(crate) fn apply_regex_replace(text: &str, pattern: &str, replacement: &str, 
                 re.replace_all(text, replacement).into_owned()
             }
         }
-        Err(_) => {
+        None => {
             if replace_first {
                 replacement.to_string()
             } else {
@@ -1033,9 +1034,9 @@ fn optional_field(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> Option<S
 
 /// 判断 URL 是否命中 bookUrlPattern 正则（对标 Kotlin `baseUrl.matches(it.toRegex())`）
 ///
-/// 正则非法时静默返回 false，不影响主流程。
+/// 正则非法/编译失败（compile_regex_safe 栈溢出防护）时静默返回 false，不影响主流程。
 fn matches_book_url_pattern(pattern: &str, url: &str) -> bool {
-    regex::Regex::new(pattern)
+    compile_regex_safe(pattern)
         .map(|re| re.is_match(url))
         .unwrap_or(false)
 }

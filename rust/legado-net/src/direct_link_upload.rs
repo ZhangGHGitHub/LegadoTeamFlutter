@@ -107,9 +107,9 @@ impl DirectLinkUploader {
         current.as_str().map(|s| s.to_string())
     }
 
-    /// 正则提取（取第一个捕获组）
+    /// 正则提取（取第一个捕获组；规则为用户可配置 pattern，走统一安全入口）
     fn extract_regex(response: &str, rule: &str) -> Option<String> {
-        let re = regex::Regex::new(rule).ok()?;
+        let re = legado_core::regex_safe::compile_regex_safe(rule)?;
         re.captures(response)
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string())

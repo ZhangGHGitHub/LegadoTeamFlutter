@@ -135,13 +135,20 @@ foreach ($key in $SelectedKeys) {
     Write-Host ""
     Write-Host ">> Building $triple ($($info.abi))..." -ForegroundColor Yellow
 
+    # cargo 的正常编译警告会输出到 stderr，PowerShell 5.1 在 EAP=Stop 下会将其包装为
+    # NativeCommandError 并中断脚本（导致 .so 未生成且无明确失败提示）。
+    # 因此 cargo 调用段临时切换为 Continue，编译成败以 $LASTEXITCODE 判定，结束后恢复。
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     if ($Mode -eq "release") {
         cargo build --release --target $triple -p legado-ffi --features quickjs 2>&1
     } else {
         cargo build --target $triple -p legado-ffi --features quickjs 2>&1
     }
+    $buildExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
 
-    if ($LASTEXITCODE -ne 0) {
+    if ($buildExit -ne 0) {
         Write-Error "Build failed for $triple"
         exit 1
     }

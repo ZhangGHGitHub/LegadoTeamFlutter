@@ -10,7 +10,14 @@
 // ============================================================
 #[cfg(feature = "quickjs")]
 mod impl_regex_utils {
-    use regex::Regex;
+    use legado_core::regex_safe::compile_regex_safe;
+
+    /// 编译失败统一错误描述（宿主层会把 Err 降级为空串/错误文本交给 JS 侧消化，
+    /// 对齐原版 Kotlin JsExtensions 行为；绝不 panic）
+    fn compile_err(pattern: &str) -> String {
+        let head: String = pattern.chars().take(64).collect();
+        format!("Regex compile error: invalid or over-limit pattern: {}", head)
+    }
 
     /// 正则匹配，返回指定捕获组内容
     ///
@@ -18,8 +25,11 @@ mod impl_regex_utils {
     /// - group = 0 表示整个匹配
     /// - group > 0 表示对应捕获组
     /// - 若未匹配则返回空字符串
+    ///
+    /// 动态 pattern 编译一律走统一安全入口 [`compile_regex_safe`]
+    /// （1KB 上限 + nest_limit + 全局缓存/负缓存），禁止裸 Regex::new。
     pub fn reg_exp(text: &str, pattern: &str, group: usize) -> Result<String, String> {
-        let re = Regex::new(pattern).map_err(|e| format!("Regex compile error: {}", e))?;
+        let re = compile_regex_safe(pattern).ok_or_else(|| compile_err(pattern))?;
         match re.captures(text) {
             Some(caps) => caps
                 .get(group)
@@ -33,7 +43,7 @@ mod impl_regex_utils {
     ///
     /// 对应 Kotlin: `regExpReplace(text, pattern, replacement)`
     pub fn reg_exp_replace(text: &str, pattern: &str, replacement: &str) -> Result<String, String> {
-        let re = Regex::new(pattern).map_err(|e| format!("Regex compile error: {}", e))?;
+        let re = compile_regex_safe(pattern).ok_or_else(|| compile_err(pattern))?;
         Ok(re.replace_all(text, replacement).to_string())
     }
 
@@ -41,7 +51,7 @@ mod impl_regex_utils {
     ///
     /// 对应 Kotlin: `regExpFindAll(text, pattern)`
     pub fn reg_exp_find_all(text: &str, pattern: &str) -> Result<Vec<String>, String> {
-        let re = Regex::new(pattern).map_err(|e| format!("Regex compile error: {}", e))?;
+        let re = compile_regex_safe(pattern).ok_or_else(|| compile_err(pattern))?;
         Ok(re.find_iter(text).map(|m| m.as_str().to_string()).collect())
     }
 
@@ -51,7 +61,7 @@ mod impl_regex_utils {
         pattern: &str,
         group: usize,
     ) -> Result<Vec<String>, String> {
-        let re = Regex::new(pattern).map_err(|e| format!("Regex compile error: {}", e))?;
+        let re = compile_regex_safe(pattern).ok_or_else(|| compile_err(pattern))?;
         Ok(re
             .captures_iter(text)
             .filter_map(|caps| caps.get(group).map(|m| m.as_str().to_string()))
@@ -60,7 +70,7 @@ mod impl_regex_utils {
 
     /// 检查文本是否匹配正则
     pub fn reg_exp_matches(text: &str, pattern: &str) -> Result<bool, String> {
-        let re = Regex::new(pattern).map_err(|e| format!("Regex compile error: {}", e))?;
+        let re = compile_regex_safe(pattern).ok_or_else(|| compile_err(pattern))?;
         Ok(re.is_match(text))
     }
 }
@@ -176,5 +186,45 @@ mod tests {
     #[test]
     fn test_invalid_regex() {
         assert!(reg_exp("hello", r"[invalid", 0).is_err());
+    }
+
+    /// 深嵌套字符类病态 pattern（`[a-[b-[c-...]]]` 200 层）：
+    /// regExp 宿主 API 安全降级返回 Err（由 JS 侧消化为空串），绝不 panic/崩溃
+    fn nested_char_class_pattern() -> String {
+        let mut p = String::from("z");
+        for _ in 0..200 {
+            p = format!("[a-[{}]]", p);
+        }
+        p
+    }
+
+    #[test]
+    fn test_reg_exp_pathological_pattern_degrades() {
+        let p = nested_char_class_pattern();
+        assert!(reg_exp("abc", &p, 0).is_err(), "病态 pattern 应降级为 Err");
+        assert!(
+            reg_exp_replace("abc", &p, "x").is_err(),
+            "病态 pattern 应降级为 Err"
+        );
+        assert!(
+            reg_exp_find_all("abc", &p).is_err(),
+            "病态 pattern 应降级为 Err"
+        );
+    }
+
+    #[test]
+    fn test_reg_exp_overlong_pattern_degrades() {
+        // 超 1KB 上限 pattern：直接拒绝，不进入编译
+        let p = "a|".repeat(600);
+        assert!(reg_exp("abc", &p, 0).is_err());
+        assert!(reg_exp_matches("abc", &p).is_err());
+    }
+
+    #[test]
+    fn test_reg_exp_cache_hit_behavior_unchanged() {
+        // 同一 pattern 反复调用：缓存命中，行为不变
+        for _ in 0..3 {
+            assert_eq!(reg_exp("abc123", r"\d+", 0).unwrap(), "123");
+        }
     }
 }

@@ -14,6 +14,7 @@ use encoding_rs::UTF_8;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use legado_core::regex_safe::compile_regex_safe;
 use legado_core::{LegadoError, LegadoResult};
 
 use crate::txt::TxtParser;
@@ -102,10 +103,10 @@ impl TxtSearch {
         // 读取文件内容
         let text = read_and_decode(path)?;
 
-        // 构建搜索正则
+        // 构建搜索正则（用户查询可构造任意 pattern，一律走统一安全入口）
         let search_pattern = build_search_pattern(query, options)?;
-        let re = Regex::new(&search_pattern)
-            .map_err(|e| LegadoError::BookParse(format!("搜索正则编译失败: {e}")))?;
+        let re = compile_regex_safe(&search_pattern)
+            .ok_or_else(|| LegadoError::BookParse("搜索正则编译失败（非法或超限）".to_string()))?;
 
         let mut results = Vec::new();
 
@@ -117,7 +118,7 @@ impl TxtSearch {
             let chapter_results = search_in_chapter(
                 &text,
                 chapter,
-                &re,
+                re.as_ref(),
                 query,
                 options,
                 options.max_total_results - results.len(),
@@ -147,13 +148,13 @@ impl TxtSearch {
 
         let text = read_and_decode(path)?;
         let search_pattern = build_search_pattern(query, options)?;
-        let re = Regex::new(&search_pattern)
-            .map_err(|e| LegadoError::BookParse(format!("搜索正则编译失败: {e}")))?;
+        let re = compile_regex_safe(&search_pattern)
+            .ok_or_else(|| LegadoError::BookParse("搜索正则编译失败（非法或超限）".to_string()))?;
 
         Ok(search_in_chapter(
             &text,
             chapter,
-            &re,
+            re.as_ref(),
             query,
             options,
             options.max_results_per_chapter,
@@ -168,8 +169,8 @@ impl TxtSearch {
 
         let text = read_and_decode(path)?;
         let search_pattern = build_search_pattern(query, options)?;
-        let re = Regex::new(&search_pattern)
-            .map_err(|e| LegadoError::BookParse(format!("搜索正则编译失败: {e}")))?;
+        let re = compile_regex_safe(&search_pattern)
+            .ok_or_else(|| LegadoError::BookParse("搜索正则编译失败（非法或超限）".to_string()))?;
 
         Ok(re.find_iter(&text).count())
     }
@@ -208,9 +209,9 @@ fn build_search_pattern(query: &str, options: &SearchOptions) -> LegadoResult<St
             regex::escape(query)
         }
         SearchMode::Regex => {
-            // 验证正则合法性
-            Regex::new(query)
-                .map_err(|e| LegadoError::BookParse(format!("无效正则表达式: {e}")))?;
+            // 验证正则合法性（统一安全入口：1KB 上限 + nest_limit + 负缓存）
+            compile_regex_safe(query)
+                .ok_or_else(|| LegadoError::BookParse("无效正则表达式（非法或超限）".to_string()))?;
             query.to_string()
         }
     };

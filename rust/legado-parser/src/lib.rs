@@ -43,7 +43,9 @@ pub use curl_converter::{
 };
 pub use html::HtmlParser;
 pub use jsonpath::JsonPathParser;
-pub use regex_engine::RegexEngine;
+pub use regex_engine::{
+    compile_regex_on_stack, compile_regex_safe, RegexEngine, MAX_REGEX_PATTERN_LEN,
+};
 pub use review_rule_parser::{parse_reply_page, parse_reply_page_with, ReviewDetailItem};
 pub use rule_analyzer::RuleAnalyzer;
 pub use xpath::XPathParser;

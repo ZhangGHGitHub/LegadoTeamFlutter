@@ -49,6 +49,8 @@ pub mod read_aloud;
 pub mod read_state;
 pub mod reader_state;
 pub mod reading_stats;
+/// 统一安全正则编译入口（1KB 长度上限 + nest_limit 嵌套防御 + 失败负缓存）
+pub mod regex_safe;
 pub mod review;
 pub mod search_engine;
 pub mod source_lock;
@@ -63,6 +65,9 @@ pub mod video_state;
 pub mod web_book;
 
 pub use error::{LegadoError, LegadoResult};
+pub use regex_safe::{
+    compile_fancy_regex_safe, compile_regex_on_stack, compile_regex_safe, MAX_REGEX_PATTERN_LEN,
+};
 pub use search_engine::{
     MultiSourceSearcher, NoopSourceSearcher, SearchConfig, SearchResult, SourceSearcher,
 };

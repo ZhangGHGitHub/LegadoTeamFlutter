@@ -1805,6 +1805,7 @@ dependencies = [
  "fancy-regex",
  "md5",
  "regex",
+ "regex-syntax",
  "serde",
  "serde_json",
  "thiserror",

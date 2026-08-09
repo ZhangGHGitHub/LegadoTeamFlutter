@@ -169,15 +169,15 @@ impl<'a> ReplaceRuleRepository<'a> {
             }
 
             if rule.is_regex {
-                // 正则替换
-                match regex::Regex::new(&rule.pattern) {
-                    Ok(re) => {
+                // 正则替换：统一安全入口（1KB 上限 + nest_limit + 全局缓存/负缓存）
+                match legado_core::regex_safe::compile_regex_safe(&rule.pattern) {
+                    Some(re) => {
                         result = re
                             .replace_all(&result, rule.replacement.as_str())
                             .to_string();
                     }
-                    Err(_) => {
-                        // 正则表达式无效，跳过此规则
+                    None => {
+                        // 正则表达式无效/超限，跳过此规则（对齐原版降级语义）
                         continue;
                     }
                 }

@@ -465,9 +465,9 @@ impl SourceChecker {
 
     /// 从搜索结果页提取第一个书籍链接
     fn extract_first_book_url(&self, body: &str, source: &BookSource) -> Result<String, String> {
-        // 如果有 bookUrlPattern，用正则提取
+        // 如果有 bookUrlPattern，用正则提取（书源可控 pattern，走统一安全入口）
         if let Some(ref pattern) = source.book_url_pattern {
-            if let Ok(re) = regex::Regex::new(pattern) {
+            if let Some(re) = legado_core::regex_safe::compile_regex_safe(pattern) {
                 if let Some(m) = re.find(body) {
                     return Ok(m.as_str().to_string());
                 }

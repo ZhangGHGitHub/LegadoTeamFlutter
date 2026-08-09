@@ -9,8 +9,8 @@ use std::fs::File;
 use std::io::Read;
 
 use encoding_rs::{Encoding, UTF_8};
-use regex::Regex;
 
+use legado_core::regex_safe::compile_regex_safe;
 use legado_core::{LegadoError, LegadoResult};
 
 use crate::{BookFormat, BookMetadata, ChapterInfo};
@@ -58,10 +58,10 @@ impl TxtParser {
         let text_bytes = read_file_bytes(path)?;
         let text = decode_text(&text_bytes, &encoding_name);
 
-        // 合并所有正则为一个
+        // 合并所有正则为一个（内置常量 pattern 拼接，仍走统一安全入口以命中全局编译缓存）
         let pattern = CHAPTER_PATTERNS.join("|");
-        let re = Regex::new(&pattern)
-            .map_err(|e| LegadoError::BookParse(format!("正则编译失败: {e}")))?;
+        let re = compile_regex_safe(&pattern)
+            .ok_or_else(|| LegadoError::BookParse("章节正则编译失败（非法或超限）".to_string()))?;
 
         let mut chapters = Vec::new();
         let mut idx = 0i32;
@@ -208,13 +208,16 @@ fn decode_text(bytes: &[u8], encoding_name: &str) -> String {
 
 /// 判断标题是否为卷名（第X卷/第X部等）
 fn is_volume_title(line: &str) -> bool {
-    let re = Regex::new(r"第[零一二三四五六七八九十百千万\d]+[卷部]").unwrap();
-    re.is_match(line)
+    // 内置常量 pattern（非用户可控），直连编译；同样经安全入口以复用全局缓存
+    compile_regex_safe(r"第[零一二三四五六七八九十百千万\d]+[卷部]")
+        .is_some_and(|re| re.is_match(line))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // 测试内直连编译仅限内置常量 pattern（非用户可控）
+    use regex::Regex;
 
     #[test]
     fn test_is_volume_title_true() {
