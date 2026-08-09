@@ -71,6 +71,16 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
     return _logs.where((log) => _enabledLevels.contains(log.level)).toList();
   }
 
+  /// 提取真实错误消息：BridgeError 带 message 字段，直接内插 `$e`
+  /// 只会显示 "Instance of 'BridgeError'"；取不到时回退 toString。
+  String _errMsg(Object e) {
+    try {
+      final m = (e as dynamic).message;
+      if (m is String && m.isNotEmpty) return m;
+    } catch (_) {}
+    return e.toString();
+  }
+
   Future<void> _runDebug() async {
     final sourceUrl = _sourceUrlCtrl.text.trim();
     final keyword = _keywordCtrl.text.trim();
@@ -127,9 +137,10 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
       } else {
         for (var i = 0; i < results.length && i < 10; i++) {
           final item = results[i] as Map<String, dynamic>;
-          final name = item['bookName'] ?? item['name'] ?? '未知';
+          // Rust webbookSearch / mock 序列化键为 snake_case（SearchResult serde 默认）
+          final name = item['book_name'] ?? item['name'] ?? '未知';
           final author = item['author'] ?? '';
-          final bookUrl = item['bookUrl'] ?? '';
+          final bookUrl = item['book_url'] ?? '';
           _appendLog('  [$i] $name ${author.toString().isNotEmpty ? '- $author' : ''}');
           _appendLog('      URL: $bookUrl');
         }
@@ -140,7 +151,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
 
       _appendLog('=== 调试完成 ===', level: _DebugLogLevel.success);
     } catch (e) {
-      _appendLog('异常: $e', level: _DebugLogLevel.error);
+      _appendLog('异常: ${_errMsg(e)}', level: _DebugLogLevel.error);
     } finally {
       if (mounted) {
         setState(() => _running = false);
@@ -251,36 +262,43 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                // 各级别过滤芯片
-                ..._DebugLogLevel.values.map((level) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: FilterChip(
-                      label: Text(level.label),
-                      selected: _enabledLevels.contains(level),
-                      onSelected: (selected) {
-                        setState(() {
-                          if (selected) {
-                            _enabledLevels.add(level);
-                          } else {
-                            _enabledLevels.remove(level);
-                          }
-                        });
-                      },
-                      selectedColor: level.chipColor(theme),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      labelStyle: TextStyle(
-                        fontSize: 11,
-                        // 选中时背景为深色 shade（见 chipColor），白色保证对比度
-                        color: _enabledLevels.contains(level)
-                            ? Colors.white
-                            : level.color(theme),
-                      ),
+                // 各级别过滤芯片（横向可滚动，避免窄屏右溢出）
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _DebugLogLevel.values.map((level) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: FilterChip(
+                            label: Text(level.label),
+                            selected: _enabledLevels.contains(level),
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _enabledLevels.add(level);
+                                } else {
+                                  _enabledLevels.remove(level);
+                                }
+                              });
+                            },
+                            selectedColor: level.chipColor(theme),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            labelStyle: TextStyle(
+                              fontSize: 11,
+                              // 选中时背景为深色 shade（见 chipColor），白色保证对比度
+                              color: _enabledLevels.contains(level)
+                                  ? Colors.white
+                                  : level.color(theme),
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
-                  );
-                }),
-                const Spacer(),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 // 日志计数
                 Text(
                   '${filteredLogs.length} / ${_logs.length} 条',
