@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
+import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
@@ -320,7 +321,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 if (isLocal)
                   const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
                 const PopupMenuItem(value: 'refresh', child: Text('刷新')),
-                // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；_todo 占位）
+                // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
+                // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
                 if (_inBookshelf && hasSource && !isLocal && canUpd)
                   const PopupMenuItem(
                     value: 'updateTask',
@@ -330,7 +332,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 if (hasLogin)
                   const PopupMenuItem(value: 'login', child: Text('登录')),
                 const PopupMenuItem(value: 'top', child: Text('置顶')),
-                // 设置源变量 / 设置书籍变量（书源存在；_todo 占位）
+                // 设置源变量（仍为占位）/ 设置书籍变量
+                //（[Task #39 §5.11-4] 已接通变量对话框 + updateBook 保存）
                 if (hasSource)
                   const PopupMenuItem(
                     value: 'sourceVariable',
@@ -506,6 +509,18 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         await _settingsService.setDeleteBookAlert(next);
         if (mounted) setState(() => _deleteBookAlert = next);
         break;
+      case 'bookVariable':
+        // [UI-fix v2.0.3 | 2026-08-09] 设置书籍变量接通保存链路（Task #39
+        // §5.11-4，对齐原版 BookInfoActivity.setBookVariable + setVariable
+        // 的 bookUrl 分支：putCustomVariable + saveBook） — Qoder
+        await _setBookVariable();
+        break;
+      case 'updateTask':
+        // [UI-fix v2.0.3 | 2026-08-09] 创建书籍更新任务接通（Task #39
+        // §5.11-2，对齐原版 BookInfoActivity.openBookUpdateTask：
+        // findBookUpdateTask 已存在→编辑，否则 buildBookUpdateTask 新建） — Qoder
+        await _openBookUpdateTask();
+        break;
       default:
         _todo(value);
         break;
@@ -516,13 +531,179 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   void _todo(String value) {
     const names = {
       'upload': '上传至远程',
-      'updateTask': '创建书籍更新任务',
       'sourceVariable': '设置源变量',
-      'bookVariable': '设置书籍变量',
     };
     final feature = names[value] ?? value;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('「$feature」后续版本支持')),
+    );
+  }
+
+  /// SnackBar 轻提示（统一入口）
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 设置书籍变量（对齐原版 setBookVariable + setVariable 的 bookUrl 分支）
+  ///
+  /// 弹输入对话框（含说明文案，对齐原版 VariableDialog 的 comment 展示：
+  /// 书源 variableComment 非空优先，否则用默认提示），确认后把变量
+  /// 写入 Book 并经 update_book 保存。
+  ///
+  /// [fix Task#45 | 2026-08-09] 对齐原版 BaseBook.putCustomVariable /
+  /// getCustomVariable 语义（M4）：variable 为 JSON Map 串，自定义变量
+  /// 挂 "custom" 键；输入框初值取 map['custom']，保存时回写该键
+  /// （空输入移除键）后 jsonEncode 整体写回。另补原版 inBookshelf
+  /// 守卫（M5）：非在架时不 saveBook，避免 upsert 进 books 表 — Qoder
+  ///
+  /// 防坑：update_book 为全行 UPDATE，保存前必须基于从库中读回的完整
+  /// Book 对象（含 readConfig 等字段）仅修改 variable 后回写，
+  /// 禁止用页面缓存的不完整对象覆盖。
+  Future<void> _setBookVariable() async {
+    final api = ref.read(bookApiProvider);
+    final book = _loadedBook;
+    final source = _bookSource;
+    if (book == null || source == null) {
+      _snack('书源不存在');
+      return;
+    }
+    // 说明文案（对齐原版 getDisplayVariableComment：书源注释优先）
+    final srcComment = (source.variableComment ?? '').trim();
+    final comment = srcComment.isNotEmpty
+        ? srcComment
+        : '书籍变量可在js中通过book.getVariable("custom")获取';
+    // 输入框初值：解析 variable JSON Map 取 custom 键（解析失败视为空 Map）
+    final customInit = _parseVariableMap(book.variable)['custom'];
+    final controller =
+        TextEditingController(text: customInit?.toString() ?? '');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('设置书籍变量'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                comment,
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                minLines: 3,
+                maxLines: null,
+                decoration: const InputDecoration(
+                  labelText: 'variable',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    final input = controller.text;
+    controller.dispose();
+    if (confirmed != true || !mounted) return;
+    // 原版 inBookshelf 守卫：仅在架时 saveBook，否则无条件 updateBook
+    // 会把非在架书 upsert 进 books 表（M5）
+    if (!_inBookshelf) {
+      _snack('请先加入书架');
+      return;
+    }
+    try {
+      // 从库中读回完整 Book（含 readConfig 等）仅改 variable 后回写
+      final full = await api.getBook(book.bookUrl) ?? book;
+      // putCustomVariable 语义：其余键原样保留，仅回写 custom 键
+      final varMap = _parseVariableMap(full.variable);
+      if (input.isEmpty) {
+        varMap.remove('custom');
+      } else {
+        varMap['custom'] = input;
+      }
+      await api.updateBook(full.copyWith(variable: jsonEncode(varMap)));
+      if (!mounted) return;
+      setState(() => _future = _loadData());
+      _snack('书籍变量已保存');
+    } catch (e) {
+      debugPrint('保存书籍变量失败: $e');
+      if (mounted) _snack('保存书籍变量失败');
+    }
+  }
+
+  /// 解析 variable 为可变 Map（非法/空串视为空 Map，
+  /// 对齐原版 getVariableMap 解析失败回落空表的容错）
+  Map<String, dynamic> _parseVariableMap(String? variable) {
+    final raw = (variable ?? '').trim();
+    if (raw.isEmpty) return <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      // 解析失败视为空 Map
+    }
+    return <String, dynamic>{};
+  }
+
+  /// 创建书籍更新任务（对齐原版 openBookUpdateTask）
+  ///
+  /// 先经 findBookUpdateTask 查该书是否已有更新任务：
+  /// - 已存在 → 携 editTaskId 跳转 AutoTaskScreen 定位并进入该任务编辑；
+  /// - 不存在 → 用 buildBookUpdateTask 构建默认任务（任务名对齐原版
+  ///   auto_task_book_update_name：更新 %s），携 newTask 进入创建流程。
+  Future<void> _openBookUpdateTask() async {
+    final book = _loadedBook;
+    if (book == null) return;
+    final notifier = ref.read(autoTaskNotifierProvider.notifier);
+    // findBookUpdateTask 基于 notifier 内任务列表匹配，先静默加载确保最新
+    await notifier.loadTasks(silent: true);
+    if (!mounted) return;
+    final existing = await notifier.findBookUpdateTask(
+      bookUrl: book.bookUrl,
+      bookName: book.name,
+      bookAuthor: book.author,
+    );
+    if (!mounted) return;
+    if (existing != null) {
+      final id = existing['id']?.toString() ?? '';
+      await Navigator.pushNamed(
+        context,
+        AppRoutes.autoTasks,
+        arguments: <String, dynamic>{'editTaskId': id},
+      );
+      return;
+    }
+    final built = await notifier.buildBookUpdateTask(
+      bookUrl: book.bookUrl,
+      bookName: book.name,
+      bookAuthor: book.author,
+      // [fix Task#45 | 2026-08-09] 文案对齐原版 auto_task_book_update_name
+      // （「更新 %s」含空格）— Qoder
+      name: '更新 ${book.name}',
+    );
+    if (!mounted) return;
+    if (built == null) {
+      _snack('创建任务失败');
+      return;
+    }
+    await Navigator.pushNamed(
+      context,
+      AppRoutes.autoTasks,
+      arguments: <String, dynamic>{'newTask': built},
     );
   }
 
@@ -706,8 +887,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               style: TextStyle(fontSize: 13, color: summaryColor),
             ),
           ),
-          // [UI-fix v2.0.3 | 2026-08-08] lint：改用 null-aware 元素语法 — Qoder
-          ?action,
+          // [UI-fix v2.0.3 | 2026-08-08] lint：null-aware 元素语法与 build_runner 内置分析器不兼容，用 if-element 等价表达 — Qoder
+          if (action != null) action,
         ],
       ),
     );

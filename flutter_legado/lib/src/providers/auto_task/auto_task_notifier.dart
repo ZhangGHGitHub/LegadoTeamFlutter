@@ -158,6 +158,100 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
     }
   }
 
+  /// 创建任务（保留原始规则 JSON；Task #39 §5.11-2）
+  ///
+  /// 适用于书籍更新任务等 script 为复杂 JSON action 的任务：
+  /// 不能经 [AutoTask] 模型中转（会按 taskType 重新生成占位脚本，
+  /// 丢失指向具体书籍的 refreshToc action）。优先 FFI，降级 REST。
+  ///
+  /// [fix Task#45 | 2026-08-09] 返回 bool：成功 true / 任何失败 false，
+  /// 供调用方按结果提示并决定是否重同步调度器 — Qoder
+  Future<bool> createTaskRaw(String ruleJson) async {
+    // FFI 优先路径
+    final rustApi = _rustApi;
+    if (rustApi != null) {
+      try {
+        await rustApi.autoTaskCreateRule(ruleJson: ruleJson);
+        await loadTasks(silent: true);
+        return true;
+      } catch (_) {
+        // FFI 失败，降级到 REST
+      }
+    }
+
+    // REST 降级路径
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_baseUrl),
+            headers: const {'Content-Type': 'application/json'},
+            body: ruleJson,
+          )
+          .timeout(_timeout);
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+      await loadTasks(silent: true);
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: '创建任务失败: $e');
+      return false;
+    }
+  }
+
+  /// 更新任务（保留原始规则 JSON；Task #39 §5.11-2）
+  ///
+  /// 与 [createTaskRaw] 同理，保存时仅回写调用方修改过的字段，
+  /// script 等其余字段原样保留。优先 FFI，降级 REST。
+  ///
+  /// [fix Task#45 | 2026-08-09] 返回 bool：成功 true / 任何失败 false；
+  /// jsonDecode 挪入 try/catch（Med3）：解码失败或 id 缺失时写 error
+  /// 状态并返回 false，不再裸抛 FormatException — Qoder
+  Future<bool> updateTaskRaw(String ruleJson) async {
+    String id;
+    try {
+      final decoded = jsonDecode(ruleJson);
+      id = decoded is Map ? decoded['id']?.toString() ?? '' : '';
+    } catch (e) {
+      state = state.copyWith(error: '更新任务失败: 规则 JSON 无效: $e');
+      return false;
+    }
+    if (id.isEmpty) {
+      state = state.copyWith(error: '更新任务失败: 缺少任务 id');
+      return false;
+    }
+    // FFI 优先路径
+    final rustApi = _rustApi;
+    if (rustApi != null) {
+      try {
+        await rustApi.autoTaskUpdateRule(ruleJson: ruleJson);
+        await loadTasks(silent: true);
+        return true;
+      } catch (_) {
+        // FFI 失败，降级到 REST
+      }
+    }
+
+    // REST 降级路径
+    try {
+      final response = await _client
+          .put(
+            Uri.parse('$_baseUrl/$id'),
+            headers: const {'Content-Type': 'application/json'},
+            body: ruleJson,
+          )
+          .timeout(_timeout);
+      if (response.statusCode != 200) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+      await loadTasks(silent: true);
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: '更新任务失败: $e');
+      return false;
+    }
+  }
+
   /// 切换任务启用状态
   ///
   /// 乐观更新，失败时回滚。优先 FFI，降级 REST。
@@ -386,6 +480,13 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   /// 查找书籍更新任务（FFI）
   ///
   /// 优先按 ID 精确匹配，其次按书名 + 作者匹配。未找到返回 null。
+  ///
+  /// [fix Task#45 | 2026-08-09] 匹配输入改为从 DB 读全量规则：
+  /// AutoTask 模型不保存 script，toJson 按 taskType 生成占位脚本，
+  /// Rust 侧 generated_book_identity 要求带 generatedBy 标记的真实
+  /// action，占位脚本永远解析失败导致「书名+作者」分支恒失效
+  /// （换源后 bookUrl 变化时会重复建任务）。list 失败时退化为模型
+  /// 序列化输入，至少保留 ID 精确匹配分支可用 — Qoder
   Future<Map<String, dynamic>?> findBookUpdateTask({
     required String bookUrl,
     required String bookName,
@@ -393,8 +494,15 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   }) async {
     final rustApi = _rustApi;
     if (rustApi == null) return null;
+    List<Map<String, dynamic>> rules;
     try {
-      final tasksJson = jsonEncode(state.tasks.map((t) => t.toJson()).toList());
+      rules = await rustApi.autoTaskListRules();
+    } catch (_) {
+      // list 失败降级：保留 ID 匹配分支可用
+      rules = state.tasks.map((t) => t.toJson()).toList();
+    }
+    try {
+      final tasksJson = jsonEncode(rules);
       return await rustApi.autoTaskFindBookUpdateTask(
         tasksJson: tasksJson,
         bookUrl: bookUrl,

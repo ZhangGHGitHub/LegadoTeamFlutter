@@ -10,11 +10,24 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../providers/auto_task/auto_task_notifier.dart';
+import '../providers/providers.dart';
 import '../services/auto_task_scheduler.dart';
 
 /// 定时任务管理页面
 class AutoTaskScreen extends ConsumerStatefulWidget {
-  const AutoTaskScreen({super.key});
+  /// 待编辑任务 ID（路由参数 Map {'editTaskId': String} 传入；
+  /// [Task #39 §5.11-2] 书籍详情页「创建书籍更新任务」已存在时定位编辑）
+  final String? initialEditTaskId;
+
+  /// 待新建的默认任务（路由参数 Map {'newTask': Map} 传入，完整
+  /// AutoTaskRule JSON，由 buildBookUpdateTask 构建）
+  final Map<String, dynamic>? initialNewTask;
+
+  const AutoTaskScreen({
+    super.key,
+    this.initialEditTaskId,
+    this.initialNewTask,
+  });
 
   @override
   ConsumerState<AutoTaskScreen> createState() => _AutoTaskScreenState();
@@ -28,9 +41,178 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(autoTaskNotifierProvider.notifier).loadTasks();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(autoTaskNotifierProvider.notifier).loadTasks();
+      if (!mounted) return;
+      // [Task #39 §5.11-2] 列表就绪后处理路由参数意图（编辑/新建） — Qoder
+      await _handleInitialIntent();
     });
+  }
+
+  /// 处理路由参数意图（仅首帧后执行一次）
+  Future<void> _handleInitialIntent() async {
+    final editId = widget.initialEditTaskId;
+    if (editId != null && editId.isNotEmpty) {
+      await _openEditForTaskId(editId);
+      return;
+    }
+    final newTask = widget.initialNewTask;
+    if (newTask != null && newTask.isNotEmpty) {
+      await _showBookUpdateTaskDialog(
+        Map<String, dynamic>.from(newTask),
+        isNew: true,
+      );
+    }
+  }
+
+  /// 按任务 ID 定位并进入编辑（[Task #39 §5.11-2]）
+  ///
+  /// 从 DB 读完整规则 JSON（保留 script 中的书籍更新 action）。
+  /// [fix Task#45 | 2026-08-09] raw 缺失时不再退化到模型化编辑：
+  /// 该路径经 deleteTask+createTask(AutoTask) 会用占位脚本覆盖真实
+  /// script，改为提示稍后重试；任务不存在时照常提示 — Qoder
+  Future<void> _openEditForTaskId(String taskId) async {
+    Map<String, dynamic>? raw;
+    var listFailed = false;
+    try {
+      final rules = await ref.read(bookApiProvider).autoTaskListRules();
+      raw = rules.where((r) => r['id']?.toString() == taskId).firstOrNull;
+    } catch (_) {
+      // FFI 不可用：标记读取失败，不走模型化编辑避免洗掉 script
+      listFailed = true;
+    }
+    if (!mounted) return;
+    if (raw != null) {
+      await _showBookUpdateTaskDialog(raw, isNew: false);
+      return;
+    }
+    final exists = ref
+        .read(autoTaskNotifierProvider)
+        .tasks
+        .any((t) => t.id == taskId);
+    if (exists || listFailed) {
+      if (mounted) _snack(context, '暂时无法编辑该任务，请稍后重试');
+    } else if (mounted) {
+      _snack(context, '未找到对应的定时任务');
+    }
+  }
+
+  /// 书籍更新任务创建/编辑对话框（[Task #39 §5.11-2]，对齐原版
+  /// AutoTaskEditActivity 核心字段：任务名 + cron 表达式）
+  ///
+  /// [rule] 为完整 AutoTaskRule JSON（script 含指向具体书籍的
+  /// refreshToc action）；保存时仅回写 name/cron，其余字段原样保留，
+  /// 避免经 [AutoTask] 模型中转丢失更新动作。
+  Future<void> _showBookUpdateTaskDialog(
+    Map<String, dynamic> rule, {
+    required bool isNew,
+  }) async {
+    final nameController =
+        TextEditingController(text: (rule['name'] ?? '').toString());
+    final cronController =
+        TextEditingController(text: (rule['cron'] ?? '').toString());
+    // [fix Task#45 | 2026-08-09] 确认时校验 cron（Med1）：非法时
+    // 阻止关闭对话框并经 errorText 提示 — Qoder
+    String? cronError;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(isNew ? '创建书籍更新任务' : '编辑书籍更新任务'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '到期后自动刷新该书目录并提示更新',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: '任务名称',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: cronController,
+                  decoration: InputDecoration(
+                    labelText: 'Cron 表达式',
+                    hintText: '*/30 * * * *',
+                    border: const OutlineInputBorder(),
+                    helperText: '标准5位 cron 表达式（分 时 日 月 周）',
+                    errorText: cronError,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (nameController.text.trim().isEmpty) return;
+                final cronText = cronController.text.trim();
+                if (!await _isCronValid(cronText)) {
+                  setDialogState(
+                    () => cronError = 'Cron 表达式无效，请检查格式',
+                  );
+                  return;
+                }
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              },
+              child: Text(isNew ? '创建' : '保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final name = nameController.text.trim();
+    final cron = cronController.text.trim();
+    nameController.dispose();
+    cronController.dispose();
+    if (confirmed != true || !mounted) return;
+    // 仅回写 name/cron，script 等其余字段原样保留
+    final updated = Map<String, dynamic>.from(rule)
+      ..['name'] = name
+      ..['cron'] = cron;
+    // [fix Task#45 | 2026-08-09] 按 Raw 返回值提示（M6）：失败时
+    // 不再误报成功，且不重同步调度器 — Qoder
+    final notifier = ref.read(autoTaskNotifierProvider.notifier);
+    final ok = isNew
+        ? await notifier.createTaskRaw(jsonEncode(updated))
+        : await notifier.updateTaskRaw(jsonEncode(updated));
+    if (!mounted) return;
+    if (ok) {
+      _resyncScheduler();
+      if (mounted) {
+        _snack(context, isNew ? '已创建任务: $name' : '已更新任务: $name');
+      }
+    } else if (mounted) {
+      _snack(context, '保存失败');
+    }
+  }
+
+  /// cron 合法性校验（[fix Task#45 | 2026-08-09] Med1）
+  ///
+  /// 优先复用 notifier.nextDueAt：FFI 返回非 -1 即合法；FFI 不可用
+  /// （返回 null）时退化为 5 段非空基础校验 — Qoder
+  Future<bool> _isCronValid(String cron) async {
+    if (cron.isEmpty) return false;
+    final due = await ref
+        .read(autoTaskNotifierProvider.notifier)
+        .nextDueAt(cron: cron);
+    if (due != null) return due != -1;
+    final parts = cron.split(RegExp(r'\s+'));
+    return parts.length == 5 && parts.every((p) => p.isNotEmpty);
   }
 
   @override

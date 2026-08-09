@@ -184,7 +184,24 @@ class AppRoutes {
           final pattern = args is String ? args : null;
           return ReplaceRulesScreen(initialPattern: pattern);
         },
-        autoTasks: (_) => const AutoTaskScreen(),
+        autoTasks: (context) {
+          // [UI-fix v2.0.3 | 2026-08-09] 支持按任务编辑/预建新建路由参数
+          //（Task #39 §5.11-2）：Map<String,dynamic>
+          // {'editTaskId': String} 或 {'newTask': Map<String,dynamic>}，
+          // is Map 运行时兼容判定 — Qoder
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is Map) {
+            final editId = args['editTaskId'];
+            final newTask = args['newTask'];
+            return AutoTaskScreen(
+              initialEditTaskId: editId is String ? editId : null,
+              initialNewTask: newTask is Map
+                  ? Map<String, dynamic>.from(newTask)
+                  : null,
+            );
+          }
+          return const AutoTaskScreen();
+        },
         association: (_) => const AssociationScreen(),
         sourceDebug: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
