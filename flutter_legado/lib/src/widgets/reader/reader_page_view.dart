@@ -12,6 +12,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
+import '../../screens/reader_config_panel.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/instant_scroll_physics.dart';
 import '../../widgets/loading_indicator.dart';
@@ -524,20 +525,48 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // Scrollable 在命中测试中先注册 pointerSignalResolver 会胜出，
     // 覆盖层居顶保证先注册；translucent 不影响下层点击/拖拽）；
     // 滚动模式不拦截，滚轮交给正文 Scrollable 自然滚动 — Qoder
+    final Widget result;
     if (state.pageTurnMode == PageTurnMode.scroll || !widget.mouseWheelPage) {
-      return content;
-    }
-    return Stack(
-      children: [
-        content,
-        Positioned.fill(
-          child: Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerSignal: _handlePointerSignal,
-            child: const SizedBox.expand(),
+      result = content;
+    } else {
+      result = Stack(
+        children: [
+          content,
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerSignal: _handlePointerSignal,
+              child: const SizedBox.expand(),
+            ),
           ),
-        ),
-      ],
+        ],
+      );
+    }
+
+    // [fix Task#41 | 2026-08-09] pageTouchSlop 消费点（对标原版
+    // ReadView.upPageSlopSquare：0=系统默认值，非 0 用自定义阈值）：
+    // 经 MediaQuery.gestureSettings 覆写内层 PageView/Scrollable 拖拽
+    // 识别器的 touchSlop；面板修改经 readerAdvConfigProvider watch 触发
+    // 重建即时生效（Scrollable.didChangeDependencies 重读 gestureSettings），
+    // 无需重启阅读页
+    // [fix Task#45 | 2026-08-09] 滚动模式不包裹（M3）：原版该阈值仅
+    // 作用于横向翻页手势，滚动模式正文纵向起拖不应被放大阈值，
+    // 强制取 0 走系统默认；其余模式保持现实现 — Qoder
+    final advCfg = ref.watch(readerAdvConfigProvider);
+    final slop = state.pageTurnMode == PageTurnMode.scroll
+        ? 0
+        : (advCfg?.pageTouchSlop ?? 0);
+    return _applyPageTouchSlop(context, result, slop);
+  }
+
+  /// 按 pageTouchSlop 包裹自定义滑动阈值（0=系统默认值，不包裹）
+  Widget _applyPageTouchSlop(BuildContext context, Widget child, int slop) {
+    if (slop <= 0) return child;
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        gestureSettings: DeviceGestureSettings(touchSlop: slop.toDouble()),
+      ),
+      child: child,
     );
   }
 

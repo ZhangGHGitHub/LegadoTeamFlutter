@@ -1258,7 +1258,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           },
         ),
         // 滑动翻页阈值（原版 pageTouchSlop：NumberPicker 0-9999，
-        // 0=系统默认值；桌面端手势阈值暂未接入，仅持久化）
+        // 0=系统默认值；[fix Task#41 | 2026-08-09] 已经 reader_page_view
+        // 的 MediaQuery.gestureSettings 覆写拖拽识别阈值，修改即时生效）
         _moreRow('滑动翻页阈值',
             _config.pageTouchSlop == 0 ? '系统默认' : '${_config.pageTouchSlop}px',
             () {
@@ -1273,7 +1274,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           );
         }),
         // 边缘点击阈值（原版 pageTouchClick：NumberPicker 0-399，
-        // 左右边缘多少距离不触发点击；桌面端仅持久化）
+        // 左右边缘多少距离不触发点击；[fix Task#41 | 2026-08-09] 已经
+        // reader_screen._handleTap 收缩左右分区边缘死区，修改即时生效）
         _moreRow('边缘点击阈值', '${_config.pageTouchClick}px', () {
           _showNumberDialog(
             title: '边缘点击阈值',

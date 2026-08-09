@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -392,6 +393,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     final tapX = details.globalPosition.dx;
     final notifier = ref.read(readerNotifierProvider.notifier);
     final pageView = _pageViewKey.currentState;
+
+    // [fix Task#41 | 2026-08-09] pageTouchClick 消费点（对标原版
+    // ReadView.setRect9x：左右边缘 pageTouchClick px 内不落入任何点击
+    // 分区，即该条带内的点击不触发任何动作）；默认值 0 与原版一致，
+    // 不影响既有左 30%/中 40%/右 30% 分区
+    // [fix Task#45 | 2026-08-09] 死区钳制到半屏以内（M2）：阈值最大
+    // 399，窄窗口下左右死区重叠会吞掉全部点击（含中央菜单唤出），
+    // 钳制后中央至少保留 2px 可点击区；默认 0 行为不变 — Qoder
+    final deadZone = math.min(
+      _advConfig.pageTouchClick.toDouble(),
+      screenWidth / 2 - 1,
+    );
+    if (deadZone > 0 && (tapX < deadZone || tapX > screenWidth - deadZone)) {
+      return;
+    }
 
     TapAction action;
     if (tapX < screenWidth * 0.3) {
