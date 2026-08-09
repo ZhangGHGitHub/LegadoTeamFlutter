@@ -966,18 +966,25 @@ impl AnalyzeUrl {
                 variables.get(expr).cloned().unwrap_or_default()
             } else {
                 // 复杂表达式：用 JS 引擎执行
-                // 先构建变量注入前缀
+                // 先构建变量注入前缀（纯整数以数字注入，对齐原版 page 数值语义，
+                // 保证 `page > 1` 等比较与算术表达式正确求值）
                 let mut js_code = String::new();
                 for (k, v) in variables {
-                    // 转义单引号
-                    let escaped = v.replace('\\', "\\\\").replace('\'', "\\'");
-                    js_code.push_str(&format!("var {} = '{}';\n", k, escaped));
+                    if v.parse::<i64>().is_ok() {
+                        js_code.push_str(&format!("var {} = {};\n", k, v));
+                    } else {
+                        // 转义单引号
+                        let escaped = v.replace('\\', "\\\\").replace('\'', "\\'");
+                        js_code.push_str(&format!("var {} = '{}';\n", k, escaped));
+                    }
                 }
                 js_code.push_str(expr);
 
                 match js_executor.execute_js(&js_code) {
                     Ok(result) => result,
-                    Err(_) => caps[0].to_string(),
+                    // 对齐原版 AnalyzeUrl.kt replaceKeyPageJs：evalJS 失败/null → 空串，
+                    // 避免未渲染模板原样进入请求 URL
+                    Err(_) => String::new(),
                 }
             }
         })
@@ -1718,6 +1725,51 @@ mod tests {
         let url = AnalyzeUrl::parse_with_js("@js:1+1", &vars, 1, &executor).unwrap();
         // JS 执行结果 "2" 作为 URL
         assert_eq!(url.url(), "2");
+    }
+
+    /// 原样返回收到的 JS 代码，用于断言变量注入形态
+    struct EchoJsExecutor;
+
+    impl crate::analyze_rule::JsExecutor for EchoJsExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            Ok(js_code.to_string())
+        }
+    }
+
+    /// 总是失败，用于断言求值失败空串回退
+    struct FailJsExecutor;
+
+    impl crate::analyze_rule::JsExecutor for FailJsExecutor {
+        fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+            Err("模拟执行失败".to_string())
+        }
+    }
+
+    // --- 21.1 {{expression}} 变量注入：纯整数以数字注入（对齐原版 page 数值语义） ---
+    #[test]
+    fn test_inner_expression_numeric_injection() {
+        let mut vars = HashMap::new();
+        vars.insert("key".to_string(), "重生".to_string());
+        vars.insert("page".to_string(), "2".to_string());
+        let out = AnalyzeUrl::replace_inner_expressions_with_js(
+            "{{key}}|{{page}}|{{page > 1 ? '/' + page : ''}}",
+            &vars,
+            &EchoJsExecutor,
+        );
+        // 简单变量名直接查找（不经过 JS）
+        assert!(out.starts_with("重生|2|"), "简单变量应直接替换: {out}");
+        let code = &out["重生|2|".len()..];
+        assert!(code.contains("var page = 2;"), "page 应以数字注入: {code}");
+        assert!(code.contains("var key = '重生';"), "key 应以字符串注入: {code}");
+    }
+
+    // --- 21.2 {{expression}} 求值失败 → 空串（对齐原版 evalJS null → ""） ---
+    #[test]
+    fn test_inner_expression_fail_to_empty() {
+        let vars = HashMap::new();
+        let out =
+            AnalyzeUrl::replace_inner_expressions_with_js("pre{{someFn()}}post", &vars, &FailJsExecutor);
+        assert_eq!(out, "prepost");
     }
 
     // --- 22. parse_with_context (bookName/title 内置变量) ---

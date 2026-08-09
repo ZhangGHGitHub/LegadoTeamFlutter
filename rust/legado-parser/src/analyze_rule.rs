@@ -169,7 +169,11 @@ impl AnalyzeRule {
         Ok(strings.join("\n"))
     }
 
-    /// 根据规则获取元素 HTML 列表（仅 CSS）
+    /// 根据规则获取元素 HTML 列表
+    ///
+    /// CSS 规则返回元素 outerHtml；XPath/正则/JSON/JS 规则返回字符串列表
+    /// （XPath 元素节点序列化为外层标记，供子规则二次解析，
+    /// 对标原版 AnalyzeRule.getElements 按 Mode 分派）。
     pub fn get_elements(&self, rule: &str) -> LegadoResult<Vec<String>> {
         if rule.is_empty() {
             return Ok(vec![]);
@@ -178,8 +182,15 @@ impl AnalyzeRule {
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
 
         match rule_type {
-            RuleType::Css | RuleType::Auto => {
-                self.html_parser.get_elements(&self.content, actual_rule)
+            RuleType::Css => self.html_parser.get_elements(&self.content, actual_rule),
+            RuleType::Auto => {
+                // 无显式前缀时按规则/内容特征检测（避免 `//*[...]` 等 XPath
+                // 规则被误路由到 CSS 解析器）
+                let detected = self.detect_rule_type_for_content(actual_rule);
+                match detected {
+                    RuleType::Css => self.html_parser.get_elements(&self.content, actual_rule),
+                    _ => self.get_strings(rule),
+                }
             }
             _ => self.get_strings(rule),
         }
@@ -513,10 +524,10 @@ mod tests {
         // 切换到 XML 内容
         rule.set_content("<?xml version=\"1.0\"?><root><item>test</item></root>".to_string());
         assert!(!rule.is_json());
-        // 自动检测应使用 XPath
+        // 自动检测应使用 XPath；元素节点返回外层标记（对标原版 getElements 语义）
         let result = rule.get_strings("//item").unwrap();
         assert!(!result.is_empty());
-        assert_eq!(result[0], "test");
+        assert_eq!(result[0], "<item>test</item>");
     }
 
     // --- JsExecutor 测试 ---

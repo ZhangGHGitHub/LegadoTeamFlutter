@@ -8,6 +8,7 @@ legado-core = { path = "../legado-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 scraper = "0.22"
+ego-tree = "0.10"
 sxd-xpath = "0.4"
 sxd-document = "0.3"
 regex = "1"

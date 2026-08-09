@@ -165,8 +165,21 @@ impl XPathParser {
             return Ok(vec![]);
         }
 
-        let package = sxd_document::parser::parse(xml)
-            .map_err(|e| LegadoError::Parser(format!("XML parse error: {:?}", e)))?;
+        // 先按严格 XML 解析；真实 HTML 页面（无引号属性、未闭合 void 标签等）
+        // 会解析失败，回退 html5ever 宽容解析→XHTML（对标原版
+        // AnalyzeByXPath.strToJXDocument 的 Jsoup 宽容解析语义）
+        let package = match sxd_document::parser::parse(xml) {
+            Ok(p) => p,
+            Err(primary_err) => {
+                let xhtml = Self::html_to_xhtml(xml)?;
+                sxd_document::parser::parse(&xhtml).map_err(|e| {
+                    LegadoError::Parser(format!(
+                        "XML parse error: {:?} (HTML fallback: {:?})",
+                        primary_err, e
+                    ))
+                })?
+            }
+        };
         let doc = package.as_document();
 
         let factory = Factory::new();
@@ -185,7 +198,9 @@ impl XPathParser {
         let results = match value {
             XPathValue::Nodeset(nodeset) => {
                 let mut results = Vec::new();
-                for node in nodeset.iter() {
+                // 按文档序返回（对标原版 JXDocument 的文档顺序，
+                // 保证 bookList 等列表结果顺序稳定）
+                for node in nodeset.document_order() {
                     let text = self.node_to_string(&node);
                     if !text.is_empty() {
                         results.push(text);
@@ -208,51 +223,163 @@ impl XPathParser {
     }
 
     /// 将 XPath 节点转换为字符串
+    ///
+    /// 元素节点序列化为外层标记（对标原版 AnalyzeByXPath getElements 返回
+    /// JXNode 元素、后续规则在其上继续解析的语义），供 bookList 等
+    /// 子规则二次解析；文本/属性节点返回其值。
     fn node_to_string(&self, node: &sxd_xpath::nodeset::Node) -> String {
         use sxd_xpath::nodeset::Node;
         match node {
-            Node::Element(elem) => {
-                // 获取元素的文本内容
-                let mut text = String::new();
-                for child in elem.children() {
-                    if let sxd_document::dom::ChildOfElement::Text(t) = child {
-                        text.push_str(t.text());
-                    }
-                }
-                text
-            }
+            Node::Element(elem) => Self::element_outer_xml(elem),
             Node::Attribute(attr) => attr.value().to_string(),
             Node::Text(text) => text.text().to_string(),
             Node::Comment(comment) => comment.text().to_string(),
             Node::ProcessingInstruction(pi) => pi.target().to_string(),
             Node::Root(root) => {
-                let mut text = String::new();
+                let mut out = String::new();
                 for child in root.children() {
                     if let sxd_document::dom::ChildOfRoot::Element(elem) = child {
-                        text.push_str(&self.element_text_recursive(&elem));
+                        out.push_str(&Self::element_outer_xml(&elem));
                     }
                 }
-                text
+                out
             }
             _ => String::new(),
         }
     }
 
-    /// 递归获取元素的全部文本
-    fn element_text_recursive(&self, elem: &sxd_document::dom::Element) -> String {
-        let mut text = String::new();
+    /// 将 sxd 元素序列化为外层 XML 标记
+    fn element_outer_xml(elem: &sxd_document::dom::Element) -> String {
+        let mut out = String::new();
+        Self::write_element_xml(&mut out, elem);
+        out
+    }
+
+    fn write_element_xml(out: &mut String, elem: &sxd_document::dom::Element) {
+        let name = elem.name().local_part();
+        out.push('<');
+        out.push_str(name);
+        for attr in elem.attributes() {
+            out.push(' ');
+            out.push_str(attr.name().local_part());
+            out.push_str("=\"");
+            out.push_str(&Self::escape_xml_text(attr.value()));
+            out.push('"');
+        }
+        out.push('>');
         for child in elem.children() {
             match child {
                 sxd_document::dom::ChildOfElement::Text(t) => {
-                    text.push_str(t.text());
+                    out.push_str(&Self::escape_xml_text(t.text()));
                 }
                 sxd_document::dom::ChildOfElement::Element(e) => {
-                    text.push_str(&self.element_text_recursive(&e));
+                    Self::write_element_xml(out, &e);
                 }
                 _ => {}
             }
         }
-        text
+        out.push_str("</");
+        out.push_str(name);
+        out.push('>');
+    }
+
+    /// XML 文本/属性值转义
+    fn escape_xml_text(text: &str) -> String {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    }
+
+    /// HTML 回退：html5ever 宽容解析（对标原版 Jsoup）后序列化为良构 XHTML，
+    /// 供 sxd-xpath 求值。跳过 doctype/注释/PI，void 元素自闭合，
+    /// script/style 文本按 CDATA 包裹。
+    fn html_to_xhtml(html: &str) -> LegadoResult<String> {
+        let document = scraper::Html::parse_document(html);
+        let mut out = String::new();
+        Self::write_node_xhtml(&mut out, &document.tree.root(), false);
+        if out.trim().is_empty() {
+            return Err(LegadoError::Parser(
+                "HTML→XHTML 转换结果为空".into(),
+            ));
+        }
+        Ok(out)
+    }
+
+    fn write_node_xhtml(
+        out: &mut String,
+        node: &ego_tree::NodeRef<'_, scraper::node::Node>,
+        raw_text: bool,
+    ) {
+        match node.value() {
+            // 文档根节点：递归子节点
+            scraper::node::Node::Document => {
+                for child in node.children() {
+                    Self::write_node_xhtml(out, &child, false);
+                }
+            }
+            scraper::node::Node::Element(elem) => {
+                let name = elem.name();
+                out.push('<');
+                out.push_str(name);
+                for (qname, value) in elem.attrs.iter() {
+                    out.push(' ');
+                    out.push_str(&qname.local);
+                    out.push_str("=\"");
+                    out.push_str(&Self::escape_xml_text(value));
+                    out.push('"');
+                }
+                if Self::is_void_element(name) {
+                    out.push_str("/>");
+                    return;
+                }
+                out.push('>');
+                let raw = matches!(name, "script" | "style");
+                for child in node.children() {
+                    Self::write_node_xhtml(out, &child, raw);
+                }
+                out.push_str("</");
+                out.push_str(name);
+                out.push('>');
+            }
+            scraper::node::Node::Text(text) => {
+                let t: &str = text;
+                if raw_text {
+                    if t.contains('<') || t.contains('&') {
+                        out.push_str("<![CDATA[");
+                        out.push_str(&t.replace("]]>", "]]]]><![CDATA[>"));
+                        out.push_str("]]>");
+                    } else {
+                        out.push_str(t);
+                    }
+                } else {
+                    out.push_str(&Self::escape_xml_text(t));
+                }
+            }
+            // doctype/注释/PI 跳过，保证输出为良构 XML
+            _ => {}
+        }
+    }
+
+    /// HTML void 元素（无闭合标签，XHTML 序列化时自闭合）
+    fn is_void_element(name: &str) -> bool {
+        matches!(
+            name,
+            "area"
+                | "base"
+                | "br"
+                | "col"
+                | "embed"
+                | "hr"
+                | "img"
+                | "input"
+                | "link"
+                | "meta"
+                | "param"
+                | "source"
+                | "track"
+                | "wbr"
+        )
     }
 
     /// 合并多组结果
@@ -298,8 +425,13 @@ mod tests {
         let xml = "<root><item>hello</item><item>world</item></root>";
         let result = parser.parse_xpath(xml, "//item").unwrap();
         assert_eq!(result.len(), 2);
-        assert!(result.contains(&"hello".to_string()));
-        assert!(result.contains(&"world".to_string()));
+        // 元素节点返回外层标记（供子规则二次解析，对标原版 getElements）
+        assert!(result.contains(&"<item>hello</item>".to_string()));
+        assert!(result.contains(&"<item>world</item>".to_string()));
+        // 文本节点仍返回文本值
+        let texts = parser.parse_xpath(xml, "//item/text()").unwrap();
+        assert!(texts.contains(&"hello".to_string()));
+        assert!(texts.contains(&"world".to_string()));
     }
 
     #[test]
@@ -309,8 +441,8 @@ mod tests {
         let xml = "<tr><td>a</td><td>b</td></tr>";
         let result = parser.parse_xpath(xml, "//td").unwrap();
         assert_eq!(result.len(), 2);
-        assert!(result.contains(&"a".to_string()));
-        assert!(result.contains(&"b".to_string()));
+        assert!(result.contains(&"<td>a</td>".to_string()));
+        assert!(result.contains(&"<td>b</td>".to_string()));
     }
 
     #[test]
@@ -319,10 +451,10 @@ mod tests {
         // 以 </td> 结尾的片段应被 <tr> 再 <table> 包装
         let xml = "<td>x</td><td>y</td>";
         let result = parser.parse_xpath(xml, "//td").unwrap();
-        // XPath 节点集不保证顺序，只检查结果都包含
+        // 结果按文档序返回
         assert_eq!(result.len(), 2);
-        assert!(result.contains(&"x".to_string()));
-        assert!(result.contains(&"y".to_string()));
+        assert!(result.contains(&"<td>x</td>".to_string()));
+        assert!(result.contains(&"<td>y</td>".to_string()));
     }
 
     #[test]
@@ -338,8 +470,8 @@ mod tests {
         let xml = "<root><a>1</a><b>2</b></root>";
         let result = parser.parse_xpath(xml, "//a&&//b").unwrap();
         assert_eq!(result.len(), 2);
-        assert!(result.contains(&"1".to_string()));
-        assert!(result.contains(&"2".to_string()));
+        assert!(result.contains(&"<a>1</a>".to_string()));
+        assert!(result.contains(&"<b>2</b>".to_string()));
     }
 
     #[test]
@@ -347,6 +479,79 @@ mod tests {
         let parser = XPathParser::new();
         let xml = "<root><a>1</a></root>";
         let result = parser.parse_xpath(xml, "//c||//a").unwrap();
-        assert_eq!(result, vec!["1"]);
+        assert_eq!(result, vec!["<a>1</a>"]);
+    }
+
+    /// 真实 HTML 页面（无引号属性、未闭合 void 标签、脚本）严格 XML 解析必败，
+    /// 应回退 html5ever 宽容解析→XHTML 后正常求值（对标原版 Jsoup+JXDocument）。
+    #[test]
+    fn test_html_document_xpath_fallback() {
+        let parser = XPathParser::new();
+        let html = "<!DOCTYPE html>\n<html lang=\"zh-CN\"><head>\
+            <meta charset=\"utf-8\">\
+            <link rel=\"icon\" href=\"/favicon.ico\">\
+            <script>if (a < b && c > d) { var x = 1; }</script>\
+            </head><body>\
+            <div class=header-left><a href=\"/\">首页</a></div>\
+            <div class=\"bookbox\"><h2 class=\"bookname\"><a href=\"/book/a.html\">书名A</a></h2>\
+            <div class=\"author\">作者：甲</div></div>\
+            <div class=\"bookbox\"><h2 class=\"bookname\"><a href=\"/book/b.html\">书名B</a></h2>\
+            <div class=\"author\">作者：乙</div></div>\
+            </body></html>";
+        let list = parser
+            .parse_xpath(html, "//*[contains(@class, 'bookbox')]")
+            .unwrap();
+        assert_eq!(list.len(), 2, "bookbox 列表应解析出 2 条: {:?}", list);
+        assert!(list[0].contains("bookname"));
+
+        // 子规则相对 XPath：在元素外层标记上二次解析
+        let name = parser
+            .parse_xpath(
+                &list[0],
+                ".//*[contains(@class, 'bookname')]/a/text()",
+            )
+            .unwrap();
+        assert_eq!(name.len(), 1);
+        assert!(
+            name[0] == "书名A" || name[0] == "书名B",
+            "书名应为书名A/书名B，实际: {:?}",
+            name
+        );
+
+        // 属性提取
+        let href = parser
+            .parse_xpath(
+                &list[0],
+                ".//*[contains(@class, 'bookname')]/a/@href",
+            )
+            .unwrap();
+        assert_eq!(href.len(), 1);
+        assert!(href[0].starts_with("/book/"));
+    }
+
+    /// AnalyzeRule 全链路：XPath bookList → 元素外层标记 → 子规则提取字段
+    #[test]
+    fn test_analyze_rule_xpath_booklist_pipeline() {
+        use crate::AnalyzeRule;
+        let html = "<html><body>\
+            <div class=\"bookbox\"><h2 class=\"bookname\"><a href=\"/book/x.html\">测试书名</a></h2>\
+            <div class=\"author\">作者：测试作者</div>\
+            <div class=\"update\"><span>简介：</span>这是简介</div></div>\
+            </body></html>";
+        let analyzer = AnalyzeRule::new(html.to_string(), "https://example.com".to_string());
+        let elements = analyzer
+            .get_elements("//*[contains(@class, 'bookbox')]")
+            .unwrap();
+        assert_eq!(elements.len(), 1);
+
+        let item = AnalyzeRule::new(elements[0].clone(), "https://example.com".to_string());
+        let name = item
+            .get_string("@XPath:.//*[contains(@class, 'bookname')]/a/text()")
+            .unwrap();
+        assert_eq!(name, "测试书名");
+        let url = item
+            .get_string("@XPath:.//*[contains(@class, 'bookname')]/a/@href")
+            .unwrap();
+        assert_eq!(url, "/book/x.html");
     }
 }
