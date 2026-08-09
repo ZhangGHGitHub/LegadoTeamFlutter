@@ -993,15 +993,17 @@ flutter test                  # 全量测试通过
 
 | # | 项 | 代码位置 | 现状与建议 |
 |---|-----|----------|------------|
-| 1 | 上传至远程 | `flutter_legado/lib/src/screens/book_info_screen.dart` `_todo('upload')` | 菜单项已显示（仅本地书），点击 Toast 占位；建议新增 FFI `upload_book_remote`（对标原版 RemoteBookWebDav.upload） |
+| 1 | ~~上传至远程~~（已接线） | `flutter_legado/lib/src/screens/book_info_screen.dart` `_todo('upload')` | ✅ Task #57（2026-08-10）销记：已接线，契约 §2.28.6 webdavUploadFile（本地文件路径上传 + PUT 状态码校验）；详情页菜单对齐原版 RemoteBookWebDav.upload（origin 回写 webDavTag+远端地址、lastCheckTime 刷新、仅本地书） |
 | 2 | ~~创建书籍更新任务~~（已接线） | 同上 `_todo('updateTask')` | ✅ Task #44（2026-08-08/09）销记：book_info_screen 菜单 → `findBookUpdateTask`（全量规则 JSON 匹配，FFI 失败退化模型输入）→ 已存在携 editTaskId 编辑 / 不存在 `buildBookUpdateTask` 新建；AutoTaskScreen 补 initialEditTaskId/initialNewTask 路由参数；新增 createTaskRaw/updateTaskRaw 保留完整 script；cron 合法性校验；失败按结果提示。原建议 FFI `create_update_task` 不再必要（既有 autoTask* 契约已满足） |
 | 3 | 设置源变量 | 同上 `_todo('sourceVariable')` | 菜单项已显示（书源存在）；建议新增 FFI `set_source_variable`（对标原版 source.setVariable） |
 | 4 | ~~设置书籍变量~~（已接线） | 同上 `_todo('bookVariable')` | ✅ Task #44（2026-08-08/09）销记：对齐原版 putCustomVariable 语义（variable 为 JSON Map，custom 键读写）；仅 inBookshelf 时 updateBook 落库，非在架提示先加入书架；保存前读回完整 Book 防全行覆盖。原建议 FFI `set_book_variable` 不再必要（既有 updateBook 已满足） |
 | 5 | ~~导出书签 / 导出 Markdown~~（已接线） | `flutter_legado/lib/src/screens/toc_screen.dart` `_handleMenu('exportBookmark'/'exportMd')` | ✅ Task #44（2026-08-08/09）销记：新建 `services/bookmark_export.dart`，JSON 8 字段对齐原版 GSON 序列化（剔除 id），MD 模板对齐 saveBookmarkMd，file_picker 选目录，文件名 bookmark-书名 作者；原建议 FFI `export_bookmarks` 不必要（原版导出为纯 JSON/MD 序列化，已以纯 Flutter 实现闭合）。遗留差异登记：getBookmarks 契约 §2.7 仅按书名查询（原版按书名+作者），待后续契约批次补 bookAuthor 参数 |
 | 6 | ~~章节缓存状态云图标~~（已闭合） | `toc_screen.dart` 目录 Tab 章节行 | ✅ 销记确认（Task #44 登记，2026-08-08/09）：契约 §2.43.5 `cacheListCachedChapterUrls` 已登记，toc_screen 已消费并提交（9cf205d8d/7fb6d1ba2） |
-| 7 | 删除重复标题正文处理链路 | `flutter_legado/lib/src/widgets/reader/reader_top_bar.dart` `_toggleSameTitleRemoved` | 菜单勾选仅 SharedPreferences 本地持久化（键 `sameTitleRemoved_<bookUrl>`），正文不发生重复标题移除，切换时已 Toast「设置已保存，正文效果待后续版本支持」；建议新增 FFI `toggle_same_title_removed(bookUrl, chapterIndex)`（对齐原版 ContentProcessor/reverseRemoveSameTitle）后接通正文重载 |
+| 7 | ~~删除重复标题正文处理链路~~（已接线） | `flutter_legado/lib/src/widgets/reader/reader_top_bar.dart` `_toggleSameTitleRemoved` | ✅ Task #57（2026-08-10）销记：已接线，契约 §2.9.10 toggleSameTitleRemoved（caches KV 章级 opt-out 持久化、正文净化六链路按章应用、缓存清理复位对齐原版 .nr 语义）；顶栏开关接通并重载正文 |
 
 > ✅ **销记（2026-08-08/09，Task #44 第一批后置项接线）**：6 项中 4 项闭合——②创建书籍更新任务、④设置书籍变量、⑤导出书签/导出 Markdown 接线完成（详见各行销记），⑥章节缓存云图标确认闭合（契约 §2.43.5 + 提交 9cf205d8d/7fb6d1ba2）；剩余 ①上传至远程、③设置源变量、⑦删除重复标题正文链路，待对应 FFI 交付后接通。
+>
+> ✅ **销记（2026-08-10，Task #57 第二批后置项接线）**：①上传至远程（契约 §2.28.6 webdavUploadFile）、⑦删除重复标题正文链路（契约 §2.9.10 toggleSameTitleRemoved）接线完成（详见各行销记）；§5.11 现仅剩 ③设置源变量（需 DB 迁移，列入第三批）。
 
 ### §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（2026-08-08，三维度评审修复时新增）
 
@@ -1035,19 +1037,36 @@ flutter test                  # 全量测试通过
 | 6 | MCP 服务端口（`mcpPort`） | OtherConfigFragment → MCPServerService | ⚠️ 口径更正（2026-08-08/09，Task #44 调研结论）：Rust legado-server 已有 MCP 路由（handlers/mcp.rs：20 工具、/mcp/tools、/mcp/call，挂载于 Web 服务端口），原「Rust 侧无对应服务」描述已过时；剩余决策为独立端口 vs 复用 setServerPort |
 | 7 | JS Source API Token（`jsSourceApiToken`） | pref_config_other.xml → SourceApi 鉴权 | 依赖 JS 引擎 SourceApi 服务；待 legado-parser JS 扩展能力对齐后补 |
 | 8 | 清除 WebView 数据（`clearWebViewData`） | OtherConfigFragment.clearWebViewData | 桌面端无 WebView 组件（未引入 webview_flutter/webf）；引入 WebView 方案后一并接入 |
-| 9 | 压缩数据库（`shrinkDatabase`） | OtherConfigFragment → AppDatabase VACUUM | 数据库在 Rust 侧（SQLite）；建议新增 FFI `shrink_database()` 执行 VACUUM 后在缓存管理/其他设置补入口 |
+| 9 | ~~压缩数据库~~（`shrinkDatabase`，已接线） | OtherConfigFragment → AppDatabase VACUUM | ✅ Task #57（2026-08-10）销记：已接线，契约 §2.16.6 shrinkDatabase（VACUUM + 释放字节统计、失败降级返回 0）；其他设置页对齐原版提示 |
 | 10 | 封面规则（`coverRule`，封面设置子项） | CoverConfigDialog → BookCover.CoverRule（JS 规则搜封面） | 依赖 JS 规则执行搜索封面；主题设置页封面设置对话框已实现 4 项开关，此子项待 FFI 后补 |
 
 > ✅ **销记（2026-08-08/09，Task #44）**：2 校验书源配置接线完成（详见行内销记）；⚠️ 口径更正：6 mcpPort「Rust 侧无对应服务」描述已过时（legado-server 已有 MCP 路由），剩余决策为独立端口 vs 复用 setServerPort；其余 8 项维持后置登记。
+>
+> ✅ **销记（2026-08-10，Task #57 第二批后置项接线）**：9 压缩数据库接线完成（契约 §2.16.6 shrinkDatabase，详见行内销记）；其余 8 项维持后置登记。
+
+### §5.14 第二批后置项与搜索崩溃根治遗留/风险登记（2026-08-10，Task #57 新增）
+
+> 第二批后置项接线与搜索 native 崩溃根治过程中发现的遗留项与已知风险，登记备查，闭合一项销记一项。
+
+| # | 遗留/风险 | 说明 |
+|---|-----------|------|
+| 1 | getSameTitleRemoved 权威查询契约 | 当前 UI 初始态用 SP 镜像回读（键 `sameTitleRemoved_<bookUrl>`），与 Rust 侧 caches KV 章级 opt-out 权威态在清应用数据等场景可能分叉；另原版「未找到可移除的重复标题」提示未复刻。待后续契约批次补权威查询 FFI |
+| 2 | getBookmarks 契约 §2.7 缺 bookAuthor 参数 | 书签按书名查询（原版按书名+作者），同名书可能混入（§5.11-5 销记曾登记为遗留差异，此处正式立项） |
+| 3 | BookRepository::insert OR REPLACE 重复插入隐患 | 重复插入触发 chapters 外键级联删除风险，建议改 upsert（INSERT OR IGNORE + 按需 update）链路 |
+| 4 | webdav_upload_file 大文件内存驻留 | 大文件上传整块驻留内存，流式上传改造立项（Rust WebDavClient 分块 PUT / Body 流式） |
+| 5 | FRB 内置隐藏 runtime 栈 | FRB 内置隐藏 runtime（flutter_rust_bridge rust_async）仍为默认 2MB 栈；根因已由 rule_analyzer 修复 + regex_safe 非递归预检消除，此项为纵深防御可选 |
+| 6 | 个别书源 bookUrl 为空 | QQ阅读等个别书源 bookUrl 为空（「Parser error: bookUrl不能为空」），源数据问题，与代码无关，建议修源 |
+| 7 | 搜索崩溃根治纪要 | （2026-08-10）四轮调查定位 rule_analyzer 零前进无限递归（移植时将原版 throw 改为 break 重试所致），已对齐原版 fail-fast + tailrec 修复并五轮复测零崩溃；正则安全编译统一入口（非递归嵌套预检 + LRU + logcat 诊断）作为纵深防御保留 |
 
 ---
 
-**文档版本**: 1.15  
-**最后更新**: 2026-08-09  
+**文档版本**: 1.16  
+**最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Qoder
 
 **版本记录**：
+- v1.16（2026-08-10）Task #57 第二批后置项接线销记与遗留登记：§5.11 销记 2 项（①上传至远程 §2.28.6 webdavUploadFile、⑦删除重复标题 §2.9.10 toggleSameTitleRemoved）+ 小结更新为仅剩③设置源变量（需 DB 迁移，第三批）；§5.13 销记 1 项（⑨压缩数据库 §2.16.6 shrinkDatabase）；新增 §5.14 本轮遗留/风险登记 7 项（getSameTitleRemoved 权威查询契约缺位与原版提示未复刻、getBookmarks 缺 bookAuthor、BookRepository OR REPLACE 级联删除隐患、webdav_upload_file 大文件流式改造、FRB 隐藏 runtime 栈纵深防御、个别书源 bookUrl 为空的源数据问题、搜索崩溃根治纪要：rule_analyzer 零前进无限递归根因 + 对齐原版 fail-fast/tailrec 修复五轮复测零崩溃 + 正则安全编译统一入口纵深防御保留）
 - v1.15（2026-08-08/09）Task #44 第一批后置项接线销记：§5.11 销记 3 项（创建书籍更新任务/设置书籍变量/导出书签·导出 Markdown）+ 章节缓存云图标闭合确认；§5.12 销记 2 项（pageTouchSlop/pageTouchClick）；§5.13 销记 1 项（校验书源配置）。口径更正 3 处：§5.13-6 mcpPort（legado-server 已有 MCP 路由，剩余决策为独立端口 vs 复用 setServerPort）、§5.9-2 定时服务后端（应用内调度器 auto_task_scheduler.dart 已落地）、§5.11-5 原建议 export_bookmarks FFI 不必要（原版导出为纯 JSON/MD 序列化，已以纯 Flutter 实现闭合）
 - v1.14（2026-08-08）任务 #8 主题/其他设置页原版对齐登记：新增 §5.13「缺跨轨支撑后置」集中清单（10 项：customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/jsSourceApiToken/clearWebViewData/shrinkDatabase/coverRule）；主题页 24 项、其他页 33 项已按三分类落地（实现/仅 Android 标注/登记后置）
 - v1.13（2026-08-08）三维度评审修复登记：§5.11 追加删除重复标题正文处理链路（建议 FFI `toggle_same_title_removed`）；新增 §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（9 项含后续消费位置建议）
