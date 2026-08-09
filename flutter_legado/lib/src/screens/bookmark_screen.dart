@@ -197,7 +197,9 @@ class _BookmarkTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final time = DateTime.fromMillisecondsSinceEpoch(bookmark.time * 1000);
+    // [Task #54 | 2026-08-10] 缺陷⑤修复：Rust 侧 bookmark.time 已是
+    // epoch 毫秒，删除多余的 ×1000 换算（原导致年份 58575） — Qoder
+    final time = DateTime.fromMillisecondsSinceEpoch(bookmark.time);
     final timeStr =
         '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';

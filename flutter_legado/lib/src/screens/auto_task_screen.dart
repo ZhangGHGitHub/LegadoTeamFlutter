@@ -103,87 +103,31 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
   /// [rule] 为完整 AutoTaskRule JSON（script 含指向具体书籍的
   /// refreshToc action）；保存时仅回写 name/cron，其余字段原样保留，
   /// 避免经 [AutoTask] 模型中转丢失更新动作。
+  ///
+  /// [Task #54 | 2026-08-10] 缺陷②修复：对话框提取为自持 StatefulWidget
+  /// （_BookUpdateTaskDialog），controller 在 State 内创建/dispose 中释放，
+  /// 确认回传值而非 controller，消除退场动画期间 dispose 引发的
+  /// 框架断言红屏；保留任务名非空与 cron 合法性校验（errorText 回显） — Qoder
   Future<void> _showBookUpdateTaskDialog(
     Map<String, dynamic> rule, {
     required bool isNew,
   }) async {
-    final nameController =
-        TextEditingController(text: (rule['name'] ?? '').toString());
-    final cronController =
-        TextEditingController(text: (rule['cron'] ?? '').toString());
     // [fix Task#45 | 2026-08-09] 确认时校验 cron（Med1）：非法时
     // 阻止关闭对话框并经 errorText 提示 — Qoder
-    String? cronError;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showDialog<_BookUpdateTaskDialogResult>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(isNew ? '创建书籍更新任务' : '编辑书籍更新任务'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '到期后自动刷新该书目录并提示更新',
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: '任务名称',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: cronController,
-                  decoration: InputDecoration(
-                    labelText: 'Cron 表达式',
-                    hintText: '*/30 * * * *',
-                    border: const OutlineInputBorder(),
-                    helperText: '标准5位 cron 表达式（分 时 日 月 周）',
-                    errorText: cronError,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (nameController.text.trim().isEmpty) return;
-                final cronText = cronController.text.trim();
-                if (!await _isCronValid(cronText)) {
-                  setDialogState(
-                    () => cronError = 'Cron 表达式无效，请检查格式',
-                  );
-                  return;
-                }
-                if (ctx.mounted) Navigator.pop(ctx, true);
-              },
-              child: Text(isNew ? '创建' : '保存'),
-            ),
-          ],
-        ),
+      builder: (_) => _BookUpdateTaskDialog(
+        initialName: (rule['name'] ?? '').toString(),
+        initialCron: (rule['cron'] ?? '').toString(),
+        isNew: isNew,
+        cronValidator: _isCronValid,
       ),
     );
-    final name = nameController.text.trim();
-    final cron = cronController.text.trim();
-    nameController.dispose();
-    cronController.dispose();
-    if (confirmed != true || !mounted) return;
+    if (confirmed == null || !mounted) return;
     // 仅回写 name/cron，script 等其余字段原样保留
     final updated = Map<String, dynamic>.from(rule)
-      ..['name'] = name
-      ..['cron'] = cron;
+      ..['name'] = confirmed.name
+      ..['cron'] = confirmed.cron;
     // [fix Task#45 | 2026-08-09] 按 Raw 返回值提示（M6）：失败时
     // 不再误报成功，且不重同步调度器 — Qoder
     final notifier = ref.read(autoTaskNotifierProvider.notifier);
@@ -194,7 +138,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     if (ok) {
       _resyncScheduler();
       if (mounted) {
-        _snack(context, isNew ? '已创建任务: $name' : '已更新任务: $name');
+        _snack(context, isNew ? '已创建任务: ${confirmed.name}' : '已更新任务: ${confirmed.name}');
       }
     } else if (mounted) {
       _snack(context, '保存失败');
@@ -846,6 +790,138 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 书籍更新任务对话框确认结果（回传值而非 controller）
+/// [Task #54 | 2026-08-10] — Qoder
+class _BookUpdateTaskDialogResult {
+  final String name;
+  final String cron;
+
+  const _BookUpdateTaskDialogResult({required this.name, required this.cron});
+}
+
+/// 书籍更新任务编辑/创建对话框（自持 StatefulWidget，照
+/// source_screen._TextPromptDialog 模式）：controller 在 State 内创建、
+/// dispose 中随子树卸载统一释放，避免 Navigator.pop 后立即 dispose
+/// 在退场动画期间触发 framework.dart _dependents.isEmpty 断言红屏。
+/// [Task #54 | 2026-08-10] — Qoder
+class _BookUpdateTaskDialog extends StatefulWidget {
+  final String initialName;
+  final String initialCron;
+  final bool isNew;
+
+  /// cron 合法性异步校验（由页面传入，复用 _isCronValid）
+  final Future<bool> Function(String cron) cronValidator;
+
+  const _BookUpdateTaskDialog({
+    required this.initialName,
+    required this.initialCron,
+    required this.isNew,
+    required this.cronValidator,
+  });
+
+  @override
+  State<_BookUpdateTaskDialog> createState() => _BookUpdateTaskDialogState();
+}
+
+class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
+  late final TextEditingController _nameController =
+      TextEditingController(text: widget.initialName);
+  late final TextEditingController _cronController =
+      TextEditingController(text: widget.initialCron);
+
+  /// cron 校验错误回显（[fix Task#45] Med1）
+  String? _cronError;
+
+  /// 防重复提交（cron 校验为异步 FFI）
+  bool _validating = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _cronController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onConfirm() async {
+    // 任务名非空校验：为空时不关闭对话框
+    if (_nameController.text.trim().isEmpty) return;
+    if (_validating) return;
+    setState(() => _validating = true);
+    final cronText = _cronController.text.trim();
+    final valid = await widget.cronValidator(cronText);
+    if (!mounted) return;
+    if (!valid) {
+      setState(() {
+        _validating = false;
+        _cronError = 'Cron 表达式无效，请检查格式';
+      });
+      return;
+    }
+    Navigator.pop(
+      context,
+      _BookUpdateTaskDialogResult(
+        name: _nameController.text.trim(),
+        cron: cronText,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.isNew ? '创建书籍更新任务' : '编辑书籍更新任务'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '到期后自动刷新该书目录并提示更新',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: '任务名称',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _cronController,
+              onChanged: (_) {
+                if (_cronError != null) {
+                  setState(() => _cronError = null);
+                }
+              },
+              decoration: InputDecoration(
+                labelText: 'Cron 表达式',
+                hintText: '*/30 * * * *',
+                border: const OutlineInputBorder(),
+                helperText: '标准5位 cron 表达式（分 时 日 月 周）',
+                errorText: _cronError,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _validating ? null : _onConfirm,
+          child: Text(widget.isNew ? '创建' : '保存'),
+        ),
+      ],
     );
   }
 }

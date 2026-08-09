@@ -782,7 +782,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Text(_formatTime(bookmark.time * 1000),
+                  // [Task #54 | 2026-08-10] 缺陷⑤修复：bookmark.time 已是
+                  // epoch 毫秒，删除多余的 ×1000 换算 — Qoder
+                  Text(_formatTime(bookmark.time),
                       style: theme.textTheme.labelSmall),
                 ],
               ),
