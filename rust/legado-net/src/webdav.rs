@@ -83,16 +83,38 @@ impl WebDavClient {
         Self::parse_propfind_response(&xml)
     }
 
-    /// PUT — 上传文件
+    /// PUT — 上传文件（`&[u8]` 借用版，内部转交所有权版本）
+    ///
+    /// 响应状态码非 2xx 一律返回 Network 错误（Task #55 F1：修复
+    /// 401/403/409/507 等被误报为成功）。
     pub async fn put(&self, path: &str, data: &[u8]) -> LegadoResult<()> {
+        self.put_owned(path, data.to_vec()).await
+    }
+
+    /// PUT — 上传文件（接收 `Vec<u8>` 所有权，避免调用方数据二次拷贝；
+    /// Task #55 F3）
+    ///
+    /// 请求完成后校验 HTTP 状态码，非 2xx 返回 Network 错误（Task #55 F1），
+    /// 使既有 `webdav_upload` / `webdav_upload_file` 一并受益。
+    ///
+    /// 大文件上限风险：数据仍以整块 `Vec` 驻留内存后提交，未做分块/流式
+    /// 上传；远超可用内存的文件会触发内存压力，完整流式改造另行立项。
+    pub async fn put_owned(&self, path: &str, data: Vec<u8>) -> LegadoResult<()> {
         let url = self.full_url(path);
-        self.client
+        let response = self
+            .client
             .put(&url)
             .header("Authorization", self.auth_header())
-            .body(data.to_vec())
+            .body(data)
             .send()
             .await
             .map_err(|e| LegadoError::Network(e.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(LegadoError::Network(format!(
+                "WebDAV PUT 失败: HTTP {status}"
+            )));
+        }
         Ok(())
     }
 

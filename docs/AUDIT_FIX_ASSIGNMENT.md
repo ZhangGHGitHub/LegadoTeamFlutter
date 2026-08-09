@@ -14,7 +14,7 @@
 | Rust 核心负责人（QoderCN） | FFI 契约对接缺口：`book_api.dart` / `rust_api.dart` / `mock_book_api.dart` 及 Rust 轨专属文件 | `QoderCN` |
 | Flutter UI 负责人（Qoder） | 界面缺陷、设计规范不符、UI 层逻辑健壮性：`screens/` / `widgets/` / providers | `Qoder` |
 
-署名格式：修复点注释 `// [审计修复 §编号] 说明 — 负责人`。
+署名格式：修复点注释 `// [审计修复 §编号] 说明 — 负责人`。后续署名以 AGENTS.md『Git 纪律与版本控制』章节的署名规范为准。
 
 ---
 
