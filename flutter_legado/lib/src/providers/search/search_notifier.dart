@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../models/models.dart';
 import '../providers.dart';
 import 'search_state.dart';
 
@@ -24,6 +27,12 @@ export 'search_state.dart';
 class SearchNotifier extends Notifier<SearchState> {
   /// 历史保留上限（UI 展示截断，对标原版）
   static const _maxHistory = 20;
+
+  /// 当前流式搜索订阅（新搜索/清空时取消，对齐原版 cancelSearch）
+  StreamSubscription<Map<String, dynamic>>? _searchSub;
+
+  /// 搜索序号（使旧搜索的迟到批次/回调失效，对齐原版 searchID）
+  int _searchSeq = 0;
 
   @override
   SearchState build() {
@@ -88,16 +97,33 @@ class SearchNotifier extends Notifier<SearchState> {
 
   // ===== 搜索 =====
 
-  /// 执行搜索（对齐 SearchViewModel：关键词非空 → 记录历史 → 调用 searchBooks）
+  /// 执行搜索（对齐 SearchViewModel/SearchModel：关键词非空 → 记录历史 →
+  /// 逐源流式搜索）
+  ///
+  /// 使用 Rust `searchMultiStream` 逐源渐进渲染（对齐原版 flow 逐源
+  /// onSearchSuccess + x/y 进度语义）；发起前取消上一次搜索
+  /// （对齐原版 `searchModel.cancelSearch`）。
   Future<void> search(String keyword) async {
     final trimmed = keyword.trim();
     if (trimmed.isEmpty) return;
 
-    state = state.copyWith(keyword: trimmed, isLoading: true, error: null);
+    await _cancelActiveSearch();
+    final seq = ++_searchSeq;
+
+    state = state.copyWith(
+      keyword: trimmed,
+      isLoading: true,
+      error: null,
+      results: const [],
+      searchedCount: 0,
+      totalCount: 0,
+    );
     await addToHistory(trimmed);
+    if (seq != _searchSeq) return;
 
     try {
       final sourceUrls = await _resolveSearchSources();
+      if (seq != _searchSeq) return;
       // 有筛选条件但解析结果为空，说明所选分组/书源无有效书源
       if (sourceUrls != null && sourceUrls.isEmpty) {
         state = state.copyWith(
@@ -106,13 +132,54 @@ class SearchNotifier extends Notifier<SearchState> {
         );
         return;
       }
-      final results = await ref.read(bookApiProvider).searchBooks(
-            trimmed,
-            sourceUrls: sourceUrls,
+      final seen = <String>{};
+      final accumulated = <SearchResult>[];
+      _searchSub = ref
+          .read(bookApiProvider)
+          .searchMultiStream(trimmed, sourceUrls: sourceUrls)
+          .listen(
+        (batch) {
+          if (seq != _searchSeq) return;
+          final books = (batch['books'] as List<dynamic>? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map((e) => SearchResult.fromSearchBook(SearchBook.fromJson(e)));
+          // 按 书名+作者 去重追加（对齐原版 mergeItems 同名同作者合并语义）
+          for (final r in books) {
+            final key = '${r.book.name}|${r.book.author}';
+            if (seen.add(key)) accumulated.add(r);
+          }
+          state = state.copyWith(
+            results: List<SearchResult>.of(accumulated),
+            searchedCount: (batch['finished_count'] as int?) ?? 0,
+            totalCount: (batch['total_count'] as int?) ?? 0,
           );
-      state = state.copyWith(results: results, isLoading: false);
+        },
+        onError: (Object e) {
+          if (seq != _searchSeq) return;
+          state = state.copyWith(error: _mapError(e), isLoading: false);
+        },
+        onDone: () {
+          if (seq != _searchSeq) return;
+          _searchSub = null;
+          state = state.copyWith(isLoading: false);
+        },
+      );
     } catch (e) {
+      if (seq != _searchSeq) return;
       state = state.copyWith(error: _mapError(e), isLoading: false);
+    }
+  }
+
+  /// 取消进行中的搜索（对齐原版 searchModel.cancelSearch）
+  Future<void> _cancelActiveSearch() async {
+    _searchSeq++;
+    await _searchSub?.cancel();
+    _searchSub = null;
+    try {
+      await ref.read(bookApiProvider).cancelSearch();
+    } catch (e) {
+      // 取消失败不阻断新搜索
+      debugPrint('取消搜索失败: $e');
     }
   }
 
@@ -153,9 +220,40 @@ class SearchNotifier extends Notifier<SearchState> {
     return urls.toList();
   }
 
-  /// 清空关键词与结果
+  /// 清空关键词与结果（同时取消进行中的搜索）
   void clearResults() {
-    state = state.copyWith(keyword: '', results: [], error: null);
+    _searchSeq++;
+    _searchSub?.cancel();
+    _searchSub = null;
+    state = state.copyWith(
+      keyword: '',
+      results: [],
+      error: null,
+      isLoading: false,
+      searchedCount: 0,
+      totalCount: 0,
+    );
+  }
+
+  /// 打开搜索页时重置为默认态（对齐原版：每次打开 = 新 ViewModel）
+  ///
+  /// 原版 SearchActivity 每次打开新建 SearchViewModel：results/searchKey 空、
+  /// **不自动执行上次搜索**，仅显示搜索框 + 历史建议；
+  /// Flutter 侧 notifier 为全局单例，若不重置则重开页面默认残留上次结果。
+  /// 历史与筛选范围保留（原版历史读 DB、searchScope 经 AppConfig 持久化）。
+  void resetForOpen() {
+    _searchSeq++;
+    _searchSub?.cancel();
+    _searchSub = null;
+    state = state.copyWith(
+      keyword: '',
+      inputText: '',
+      results: [],
+      error: null,
+      isLoading: false,
+      searchedCount: 0,
+      totalCount: 0,
+    );
   }
 
   // ===== 书源筛选 =====

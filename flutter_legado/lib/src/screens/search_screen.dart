@@ -32,6 +32,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _menuButtonKey = GlobalKey();
 
   @override
+  void initState() {
+    super.initState();
+    // 对齐原版：打开搜索页默认不显示上次结果（新 ViewModel 语义，不 auto-search）。
+    // Riverpod 禁止在 widget 生命周期内同步修改 provider，
+    // 按官方建议延迟到微任务执行。
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(searchNotifierProvider.notifier).resetForOpen();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _focusNode.dispose();
@@ -158,15 +171,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildBody(BuildContext context) {
     final state = ref.watch(searchNotifierProvider);
-    // 精准搜索：展示层按精确书名过滤（对标原版 menu_precision_search）
+    // 精准搜索：对齐原版 SearchModel（contains 匹配 + 分桶排序 + 丢弃无关项），
+    // 修复前误用精确相等（name == keyword）导致勾选后几乎全被滤掉→无结果
     final results = _precision
-        ? state.results
-            .where((r) => r.book.name == state.keyword)
-            .toList(growable: false)
+        ? applyPrecisionSearch(state.results, state.keyword)
         : state.results;
 
-    if (state.isLoading) {
-      return LoadingIndicator(message: AppStrings.searching);
+    if (state.isLoading && !state.hasResults) {
+      // 渐进搜索：尚无结果时显示加载态（带 x/y 进度，对齐原版 searchProgress）
+      return LoadingIndicator(
+        message: state.totalCount > 0
+            ? '${AppStrings.searching} ${state.searchedCount}/${state.totalCount}'
+            : AppStrings.searching,
+      );
     }
 
     if (state.error != null) {
@@ -203,6 +220,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 '${AppStrings.search}: ${results.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              // 渐进搜索进度（对齐原版 x/y；搜索中且已有结果时展示）
+              if (state.isLoading && state.totalCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    '${state.searchedCount}/${state.totalCount}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
               const Spacer(),
               if (state.selectedGroups.isNotEmpty)
                 Padding(
@@ -249,6 +275,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final infoStyle = theme.textTheme.bodySmall?.copyWith(fontSize: 12);
+    // 分类/字数标签（对标原版 ll_kind LabelsBar：wordCount 置顶 + kind 逗号/换行拆分）
+    final kindLabels = <String>[
+      if ((book.wordCount ?? '').isNotEmpty) book.wordCount!,
+      ...?book.kind
+          ?.split(RegExp('[,，\\n]'))
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty),
+    ];
     // 稳定 ValueKey（来源+书址）避免结果列表整表重建；RepaintBoundary 隔离重绘区域
     final tile = InkWell(
       key: ValueKey('${result.sourceName}:${book.bookUrl}'),
@@ -319,6 +353,33 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: infoStyle,
+                      ),
+                    ),
+                  // 分类/字数标签行（对标 ll_kind LabelsBar，位于作者与最新章节之间）
+                  if (kindLabels.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          for (final label in kindLabels)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   // 最新章节行（对标 tv_lasted 12sp）

@@ -25,6 +25,12 @@ mixin _$SearchState {
   /// 是否正在搜索
   bool get isLoading => throw _privateConstructorUsedError;
 
+  /// 渐进搜索：已完成书源数（对齐原版 onSearchProgress searched）
+  int get searchedCount => throw _privateConstructorUsedError;
+
+  /// 渐进搜索：书源总数（对齐原版 onSearchProgress total）
+  int get totalCount => throw _privateConstructorUsedError;
+
   /// 错误信息
   String? get error => throw _privateConstructorUsedError;
 
@@ -56,6 +62,8 @@ abstract class $SearchStateCopyWith<$Res> {
       {String keyword,
       List<SearchResult> results,
       bool isLoading,
+      int searchedCount,
+      int totalCount,
       String? error,
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
@@ -79,6 +87,8 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
     Object? keyword = null,
     Object? results = null,
     Object? isLoading = null,
+    Object? searchedCount = null,
+    Object? totalCount = null,
     Object? error = freezed,
     Object? selectedSourceUrls = null,
     Object? selectedGroups = null,
@@ -98,6 +108,14 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
               as bool,
+      searchedCount: null == searchedCount
+          ? _value.searchedCount
+          : searchedCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalCount: null == totalCount
+          ? _value.totalCount
+          : totalCount // ignore: cast_nullable_to_non_nullable
+              as int,
       error: freezed == error
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
@@ -134,6 +152,8 @@ abstract class _$$SearchStateImplCopyWith<$Res>
       {String keyword,
       List<SearchResult> results,
       bool isLoading,
+      int searchedCount,
+      int totalCount,
       String? error,
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
@@ -155,6 +175,8 @@ class __$$SearchStateImplCopyWithImpl<$Res>
     Object? keyword = null,
     Object? results = null,
     Object? isLoading = null,
+    Object? searchedCount = null,
+    Object? totalCount = null,
     Object? error = freezed,
     Object? selectedSourceUrls = null,
     Object? selectedGroups = null,
@@ -174,6 +196,14 @@ class __$$SearchStateImplCopyWithImpl<$Res>
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
               as bool,
+      searchedCount: null == searchedCount
+          ? _value.searchedCount
+          : searchedCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalCount: null == totalCount
+          ? _value.totalCount
+          : totalCount // ignore: cast_nullable_to_non_nullable
+              as int,
       error: freezed == error
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
@@ -205,6 +235,8 @@ class _$SearchStateImpl implements _SearchState {
       {this.keyword = '',
       final List<SearchResult> results = const [],
       this.isLoading = false,
+      this.searchedCount = 0,
+      this.totalCount = 0,
       this.error,
       final Set<String> selectedSourceUrls = const <String>{},
       final Set<String> selectedGroups = const <String>{},
@@ -236,6 +268,16 @@ class _$SearchStateImpl implements _SearchState {
   @override
   @JsonKey()
   final bool isLoading;
+
+  /// 渐进搜索：已完成书源数（对齐原版 onSearchProgress searched）
+  @override
+  @JsonKey()
+  final int searchedCount;
+
+  /// 渐进搜索：书源总数（对齐原版 onSearchProgress total）
+  @override
+  @JsonKey()
+  final int totalCount;
 
   /// 错误信息
   @override
@@ -287,7 +329,7 @@ class _$SearchStateImpl implements _SearchState {
 
   @override
   String toString() {
-    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, error: $error, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory, inputText: $inputText)';
+    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, searchedCount: $searchedCount, totalCount: $totalCount, error: $error, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory, inputText: $inputText)';
   }
 
   @override
@@ -299,6 +341,10 @@ class _$SearchStateImpl implements _SearchState {
             const DeepCollectionEquality().equals(other._results, _results) &&
             (identical(other.isLoading, isLoading) ||
                 other.isLoading == isLoading) &&
+            (identical(other.searchedCount, searchedCount) ||
+                other.searchedCount == searchedCount) &&
+            (identical(other.totalCount, totalCount) ||
+                other.totalCount == totalCount) &&
             (identical(other.error, error) || other.error == error) &&
             const DeepCollectionEquality()
                 .equals(other._selectedSourceUrls, _selectedSourceUrls) &&
@@ -316,6 +362,8 @@ class _$SearchStateImpl implements _SearchState {
       keyword,
       const DeepCollectionEquality().hash(_results),
       isLoading,
+      searchedCount,
+      totalCount,
       error,
       const DeepCollectionEquality().hash(_selectedSourceUrls),
       const DeepCollectionEquality().hash(_selectedGroups),
@@ -334,6 +382,8 @@ abstract class _SearchState implements SearchState {
       {final String keyword,
       final List<SearchResult> results,
       final bool isLoading,
+      final int searchedCount,
+      final int totalCount,
       final String? error,
       final Set<String> selectedSourceUrls,
       final Set<String> selectedGroups,
@@ -352,6 +402,14 @@ abstract class _SearchState implements SearchState {
 
   /// 是否正在搜索
   bool get isLoading;
+  @override
+
+  /// 渐进搜索：已完成书源数（对齐原版 onSearchProgress searched）
+  int get searchedCount;
+  @override
+
+  /// 渐进搜索：书源总数（对齐原版 onSearchProgress total）
+  int get totalCount;
   @override
 
   /// 错误信息

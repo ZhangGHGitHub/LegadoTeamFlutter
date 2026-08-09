@@ -20,6 +20,12 @@ class SearchState with _$SearchState {
     /// 是否正在搜索
     @Default(false) bool isLoading,
 
+    /// 渐进搜索：已完成书源数（对齐原版 onSearchProgress searched）
+    @Default(0) int searchedCount,
+
+    /// 渐进搜索：书源总数（对齐原版 onSearchProgress total）
+    @Default(0) int totalCount,
+
     /// 错误信息
     String? error,
 
@@ -62,4 +68,35 @@ extension SearchStateDisplay on SearchState {
     if (input.isEmpty) return searchHistory;
     return searchHistory.where((w) => w.startsWith(input)).toList();
   }
+}
+
+/// 精准搜索过滤 + 分桶排序（严格对齐原版 `SearchModel` 语义）
+///
+/// 原版两处协同：
+/// 1. 源侧 filter（SearchModel.startSearch）：`!precision || name.contains(key)
+///    || author.contains(key) || kind?.contains(key) == true`——**包含**匹配而非精确相等；
+/// 2. mergeItems：分桶 equal(name==key|author==key) → tags(kind 包含) →
+///    contains(name|author 包含) → other，precision 时 **丢弃 other**，
+///    最终按 equal→tags→contains 顺序输出。
+///
+/// Flutter 侧在展示层对全量结果应用同一语义（等价于源侧 filter + merge）。
+List<SearchResult> applyPrecisionSearch(List<SearchResult> results, String key) {
+  if (key.isEmpty) return results;
+  final equal = <SearchResult>[];
+  final tags = <SearchResult>[];
+  final contains = <SearchResult>[];
+  for (final r in results) {
+    final name = r.book.name;
+    final author = r.book.author;
+    final kind = r.book.kind ?? '';
+    if (name == key || author == key) {
+      equal.add(r);
+    } else if (kind.contains(key)) {
+      tags.add(r);
+    } else if (name.contains(key) || author.contains(key)) {
+      contains.add(r);
+    }
+    // precision：other 桶丢弃（对齐原版 mergeItems `else if (!precision)`）
+  }
+  return [...equal, ...tags, ...contains];
 }
