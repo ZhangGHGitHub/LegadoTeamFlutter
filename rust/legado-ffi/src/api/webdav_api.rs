@@ -76,6 +76,39 @@ pub fn webdav_upload(config_json: &str, path: &str, data: &str) -> LegadoResult<
     rt.block_on(client.put(path, data.as_bytes()))
 }
 
+/// 从本地文件路径读取并上传到 WebDAV（Task #51，API_CONTRACT §2.28.6）
+///
+/// 区别于既有 [`webdav_upload`] 的 String data 直传，本方法面向大文件
+/// 场景（如书籍上传至远程）：从 `local_file_path` 读取字节后复用既有
+/// WebDAV 客户端 PUT。既有 `webdav_upload` 签名与行为保持不变。
+///
+/// 内存占用说明（Task #55 F3）：文件字节以所有权直传 `put_owned`，
+/// 全程仅一份内存拷贝；但仍是整文件驻留内存后提交，超大文件
+/// （超出可用内存）存在内存上限风险，完整流式上传改造另行立项。
+///
+/// # 错误码
+/// - 配置解析失败 → Internal
+/// - 文件不存在/读取失败 → Io
+/// - 上传失败（含非 2xx 响应，Task #55 F1）→ Network
+pub fn webdav_upload_file(config_json: &str, path: &str, local_file_path: &str) -> LegadoResult<()> {
+    let config: WebDavConfig = serde_json::from_str(config_json)
+        .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
+
+    // 本地文件读取（不存在/无权限/读失败 → Io 错误）
+    let bytes = std::fs::read(local_file_path).map_err(|e| {
+        legado_core::LegadoError::Io(std::io::Error::new(
+            e.kind(),
+            format!("读取本地文件失败: {local_file_path}: {e}"),
+        ))
+    })?;
+
+    let client = WebDavClient::new(config);
+    let rt = tokio::runtime::Handle::try_current()
+        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    // 所有权直传，避免 put(&bytes) 内部的 to_vec 二次拷贝（Task #55 F3）
+    rt.block_on(client.put_owned(path, bytes))
+}
+
 /// 从 WebDAV 下载文件
 ///
 /// # 返回
@@ -184,4 +217,42 @@ pub fn webdav_incremental_sync(
         },
     }))
     .map_err(|e| legado_core::LegadoError::Internal(format!("序列化失败：{e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Task #51：配置解析失败 → Internal 错误
+    #[test]
+    fn test_webdav_upload_file_bad_config() {
+        let err = webdav_upload_file("{invalid json", "/remote/book.epub", "C:/tmp/x.epub")
+            .expect_err("非法配置应报错");
+        assert!(
+            matches!(err, legado_core::LegadoError::Internal(_)),
+            "配置解析失败应为 Internal 错误，实际: {err:?}"
+        );
+    }
+
+    /// Task #51：本地文件不存在 → Io 错误
+    #[test]
+    fn test_webdav_upload_file_missing_file() {
+        let config_json = serde_json::json!({
+            "url": "https://dav.example.com",
+            "username": "user",
+            "password": "pass",
+            "remote_dir": "/legado",
+        })
+        .to_string();
+        let err = webdav_upload_file(
+            &config_json,
+            "/remote/book.epub",
+            "__definitely_missing_file__.bin",
+        )
+        .expect_err("文件不存在应报错");
+        assert!(
+            matches!(err, legado_core::LegadoError::Io(_)),
+            "文件不存在应为 Io 错误，实际: {err:?}"
+        );
+    }
 }

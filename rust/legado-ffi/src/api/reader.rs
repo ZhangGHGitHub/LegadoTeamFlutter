@@ -13,7 +13,7 @@ use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
 use legado_db::{
     BookChapterRepository, BookRepository, BookSourceRepository, CacheBookRepository,
-    ReplaceRuleRepository,
+    CacheRepository, ReplaceRuleRepository,
 };
 
 use crate::db_state::with_database;
@@ -63,6 +63,81 @@ fn chinese_convert_direction(convert_type: i32) -> Option<String> {
 /// 当前配置的管线转换方向（读取持久化配置）
 fn current_chinese_convert_direction() -> Option<String> {
     chinese_convert_direction(get_chinese_convert_type())
+}
+
+// ─── 章级「删除重复标题」开关（API_CONTRACT §2.9.10，Task #51） ───────────────
+
+/// 章级开关存储键前缀（caches 表 KV，零迁移复用既有表结构）
+///
+/// 键格式：`sameTitleRemoved:{book_url}:{chapter_index}`，值 "1" 表示
+/// 该章 opt-out（保留原始标题）；无键/其他值 → 全局默认（去除重复标题）。
+/// 语义对齐原版：原版以 "nr" 后缀章节文件标记不删标题的章（removeSameTitleCache），
+/// 此处等价地以 caches 键表达，缓存清理时开关随之复位为默认，与原版语义一致。
+const SAME_TITLE_REMOVED_KEY_PREFIX: &str = "sameTitleRemoved:";
+
+/// 构造章级开关的 caches 存储键
+fn same_title_removed_key(book_url: &str, chapter_index: i32) -> String {
+    format!("{SAME_TITLE_REMOVED_KEY_PREFIX}{book_url}:{chapter_index}")
+}
+
+/// 该章是否启用「去除重复标题」（全局默认 true；章级 opt-out 时 false）
+///
+/// DB 不可用/读取异常时回退全局默认 true，不阻断正文读取。
+fn is_same_title_removed(book_url: &str, chapter_index: i32) -> bool {
+    let value = with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        repo.get(&same_title_removed_key(book_url, chapter_index))
+    })
+    .ok()
+    .flatten();
+    !matches!(value.as_deref(), Some("1"))
+}
+
+/// 章级「删除重复标题」开关（契约 §2.9.10，加法式新增）
+///
+/// 状态持久化于 caches 表，重启后保持。`enable=true` 恢复全局默认
+/// （去除重复标题，删除 opt-out 记录）；`enable=false` 为该章 opt-out
+/// （保留原始标题）。
+///
+/// 错误码：书籍不存在 → Internal；章节不存在 → Db。
+pub fn toggle_same_title_removed(
+    book_url: &str,
+    chapter_index: i32,
+    enable: bool,
+) -> LegadoResult<()> {
+    // 1. 书籍存在性校验（不存在 → Internal 错误）
+    let book_exists = with_database(|db| {
+        Ok(BookRepository::new(db.connection())
+            .find_by_url(book_url)?
+            .is_some())
+    })?;
+    if !book_exists {
+        return Err(LegadoError::Internal(format!("书籍不存在: {book_url}")));
+    }
+
+    // 2. 章节存在性校验（不存在 → Db 错误）
+    let chapter_exists = with_database(|db| {
+        Ok(BookChapterRepository::new(db.connection())
+            .find_by_book_url_and_index(book_url, chapter_index)?
+            .is_some())
+    })?;
+    if !chapter_exists {
+        return Err(LegadoError::Database(format!(
+            "章节 {chapter_index} 不存在: {book_url}"
+        )));
+    }
+
+    // 3. 持久化：opt-out 写 "1"；恢复默认则删除记录（保持存储精简）
+    with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        let key = same_title_removed_key(book_url, chapter_index);
+        if enable {
+            repo.delete(&key)?;
+        } else {
+            repo.put(&key, "1", 0)?; // ttl=0 永不过期
+        }
+        Ok(())
+    })
 }
 
 /// 按当前繁简配置转换单个标题文本
@@ -212,6 +287,7 @@ fn get_chapter_content_inner(
             &content,
             &chapter.title,
             apply_replace_rules,
+            Some(chapter_index),
         ))
     } else {
         // 在线书籍：返回章节 URL 信息，由上层配合书源规则获取正文
@@ -399,10 +475,11 @@ fn fetch_chapter_content_inner(
 
     if let Some(cached_chapter) = cached {
         // 缓存存储原始正文，返回前应用净化（避免规则变更后缓存陈旧）
-        let processed = apply_content_processing(
+        let processed = apply_content_processing_chapter(
             book_url,
             &cached_chapter.content,
             &cached_chapter.chapter_title,
+            chapter_index,
         );
         return Ok(processed);
     }
@@ -431,7 +508,12 @@ fn fetch_chapter_content_inner(
     save_chapter_cache(book_url, chapter_index, chapter_title, chapter_url, &content);
 
     // 缓存写入原始正文，返回净化后的正文（透传真实章节标题，使去重复标题生效）
-    Ok(apply_content_processing(book_url, &content, chapter_title))
+    Ok(apply_content_processing_chapter(
+        book_url,
+        &content,
+        chapter_title,
+        chapter_index,
+    ))
 }
 
 /// 阅读获取（非缓存命中）成功后把正文写入 cached_chapters
@@ -496,7 +578,12 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
             book_url,
             &chapter_to_local_info(&chapter),
         )?;
-        return Ok(apply_content_processing(book_url, &content, &chapter.title));
+        return Ok(apply_content_processing_chapter(
+            book_url,
+            &content,
+            &chapter.title,
+            chapter.index,
+        ));
     }
 
     // 3. 在线书籍：查找书籍获取书源 URL（book.origin）
@@ -528,27 +615,48 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
 ///
 /// 不在此处做段落重排/简繁转换/缩进/空行修剪，以免改变原始正文排版。
 pub fn apply_content_processing(book_url: &str, raw_content: &str, chapter_title: &str) -> String {
-    apply_content_processing_inner(book_url, raw_content, chapter_title, true)
+    apply_content_processing_inner(book_url, raw_content, chapter_title, true, None)
 }
 
-/// 对原始正文应用内容净化但【不应用替换规则】（用于内容搜索）
+/// 对原始正文应用净化（带章级「删除重复标题」开关，Task #51）
+///
+/// 阅读器正文读取/导出链路调用：按章读取开关（全局默认去除，
+/// 章级 opt-out 时保留原始标题），其余行为与 [`apply_content_processing`] 一致。
+pub fn apply_content_processing_chapter(
+    book_url: &str,
+    raw_content: &str,
+    chapter_title: &str,
+    chapter_index: i32,
+) -> String {
+    apply_content_processing_inner(book_url, raw_content, chapter_title, true, Some(chapter_index))
+}
+
+/// 对原始正文应用内容净化但【不应用替换规则】（内容搜索语义）
 ///
 /// 与 Android 书内搜索默认行为对齐：仅做去重复标题等，不应用替换规则，
 /// 避免被替换/删除的词搜不到。
+///
+/// `chapter_index` 由调用方显式传入（Task #55 F8）：Some(idx) 时按章
+/// 读取「删除重复标题」开关，None 时用全局默认（去除）。当前生产
+/// 内容搜索链路走 [`get_chapter_content_raw`]（内部不经本函数），
+/// 本函数仅测试调用，签名变更不影响 frb 公开接口。
 pub fn apply_content_processing_raw(
     book_url: &str,
     raw_content: &str,
     chapter_title: &str,
+    chapter_index: Option<i32>,
 ) -> String {
-    apply_content_processing_inner(book_url, raw_content, chapter_title, false)
+    apply_content_processing_inner(book_url, raw_content, chapter_title, false, chapter_index)
 }
 
-/// apply_content_processing 的内部实现：`apply_replace_rules` 控制是否应用替换规则
+/// apply_content_processing 的内部实现：`apply_replace_rules` 控制是否应用替换规则；
+/// `chapter_index` 非 None 时按章读取「删除重复标题」开关（缺省全局默认去除）
 fn apply_content_processing_inner(
     book_url: &str,
     raw_content: &str,
     chapter_title: &str,
     apply_replace_rules: bool,
+    chapter_index: Option<i32>,
 ) -> String {
     // 1. 加载启用的替换规则 + 查询书籍名称（用于 scope 过滤）
     let loaded = with_database(|db| {
@@ -577,6 +685,14 @@ fn apply_content_processing_inner(
         None
     };
 
+    // 章级「删除重复标题」开关（Task #51）：无章节上下文时维持全局默认 true；
+    // 带 chapter_index 的路径（阅读器/导出，以及 apply_content_processing_raw
+    // 显式传入时）均尊重章级 opt-out，对齐原版 removeSameTitleCache
+    // 不受 useReplace 影响的行为
+    let remove_duplicate_title = chapter_index
+        .map(|idx| is_same_title_removed(book_url, idx))
+        .unwrap_or(true);
+
     process_content_with_rules_inner(
         raw_content,
         chapter_title,
@@ -584,6 +700,7 @@ fn apply_content_processing_inner(
         &book_name,
         apply_replace_rules,
         chinese_convert,
+        remove_duplicate_title,
     )
 }
 
@@ -595,12 +712,13 @@ fn process_content_with_rules(
     rules: &[ReplaceRule],
     book_name: &str,
 ) -> String {
-    process_content_with_rules_inner(raw_content, chapter_title, rules, book_name, true, None)
+    process_content_with_rules_inner(raw_content, chapter_title, rules, book_name, true, None, true)
 }
 
 /// 净化核心逻辑（纯函数，便于单元测试）：
 /// - `apply_replace_rules` 控制是否应用替换规则
 /// - `chinese_convert` 控制简繁转换方向（None / "t2s" / "s2t"，由调用方从持久化配置读取）
+/// - `remove_duplicate_title` 控制是否去除重复标题（章级开关由调用方预先读取）
 fn process_content_with_rules_inner(
     raw_content: &str,
     chapter_title: &str,
@@ -608,6 +726,7 @@ fn process_content_with_rules_inner(
     book_name: &str,
     apply_replace_rules: bool,
     chinese_convert: Option<String>,
+    remove_duplicate_title: bool,
 ) -> String {
     // 2. 按 scope 过滤（与 Android 语义一致，并修复空 book_name 守卫与精确匹配）：
     //    - None → 全局生效
@@ -636,8 +755,9 @@ fn process_content_with_rules_inner(
     // 3. 构造处理器：启用「去重复标题 + 替换规则 + 简繁转换」，与 Android 净化行为对等
     //    apply_replace_rules 由调用方控制（阅读器/导出=true，内容搜索=false）
     //    chinese_convert 来自持久化配置 chineseConverterType（0/1/2 → None/t2s/s2t）
+    //    remove_duplicate_title 来自章级开关（Task #51，全局默认 true）
     let config = ProcessorConfig {
-        remove_duplicate_title: true,
+        remove_duplicate_title,
         re_segment: false,
         chinese_convert,
         apply_replace_rules,
@@ -1001,10 +1121,12 @@ mod tests {
     fn test_content_processing_raw_keeps_replaced_words() {
         let rules = vec![make_test_rule("去广告", "广告", "", false, true)];
         // apply_replace_rules=false：即使有启用规则，"广告" 仍保留
-        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", false, None);
+        let result =
+            process_content_with_rules_inner("这是广告内容", "", &rules, "", false, None, true);
         assert_eq!(result, "这是广告内容");
         // apply_replace_rules=true：规则生效，"广告" 被删除
-        let result = process_content_with_rules_inner("这是广告内容", "", &rules, "", true, None);
+        let result =
+            process_content_with_rules_inner("这是广告内容", "", &rules, "", true, None, true);
         assert_eq!(result, "这是内容");
     }
 
@@ -1019,6 +1141,7 @@ mod tests {
             "",
             false,
             None,
+            true,
         );
         assert_eq!(result, "正文");
     }
@@ -1036,6 +1159,7 @@ mod tests {
             "",
             true,
             Some("t2s".to_string()),
+            true,
         );
         assert_eq!(result, "测试内容");
     }
@@ -1051,6 +1175,7 @@ mod tests {
             "",
             true,
             Some("s2t".to_string()),
+            true,
         );
         assert_eq!(result, "測試內容");
     }
@@ -1060,7 +1185,7 @@ mod tests {
     fn test_content_processing_chinese_convert_none() {
         let rules: Vec<ReplaceRule> = vec![];
         let result =
-            process_content_with_rules_inner("測試內容abc", "", &rules, "", true, None);
+            process_content_with_rules_inner("測試內容abc", "", &rules, "", true, None, true);
         assert_eq!(result, "測試內容abc");
     }
 
@@ -1106,9 +1231,9 @@ mod tests {
         let result = apply_content_processing(book_url, "繁體正文內容", "");
         assert_eq!(result, "繁體正文內容");
 
-        // raw 路径（内容搜索）不做繁简转换，保持原文
+        // raw 路径（内容搜索语义）不做繁简转换，保持原文（无章节上下文传 None）
         set_chinese_convert_type(1);
-        let result = apply_content_processing_raw(book_url, "繁體正文內容", "");
+        let result = apply_content_processing_raw(book_url, "繁體正文內容", "", None);
         assert_eq!(result, "繁體正文內容");
 
         // 还原默认配置，避免影响其他测试
@@ -1248,8 +1373,8 @@ mod tests {
         // 净化变体（阅读器/导出）：替换规则生效
         let purified = apply_content_processing("https://raw-test.example.com", raw_input, "");
         assert_eq!(purified, "正文含结尾");
-        // raw 变体（内容搜索）：替换规则不生效，原词保留
-        let raw = apply_content_processing_raw("https://raw-test.example.com", raw_input, "");
+        // raw 变体（内容搜索语义）：替换规则不生效，原词保留（无章节上下文传 None）
+        let raw = apply_content_processing_raw("https://raw-test.example.com", raw_input, "", None);
         assert_eq!(raw, raw_input);
 
         with_database(|db| {
@@ -1258,5 +1383,132 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    // ─── toggle_same_title_removed 测试（Task #51，契约 §2.9.10） ─────────────
+
+    /// 插入测试书籍 + 章节（toggle 开关测试专用）
+    ///
+    /// 书籍已存在时跳过插入：INSERT OR REPLACE 会先删旧行再插新行，
+    /// 触发 chapters 外键级联删除，把已有章节一并清掉。
+    fn insert_book_and_chapter(book_url: &str, chapter_index: i32, title: &str) {
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            if book_repo.find_by_url(book_url)?.is_none() {
+                let book = legado_core::models::Book {
+                    book_url: book_url.to_string(),
+                    ..legado_core::models::Book::default()
+                };
+                book_repo.insert(&book)?;
+            }
+
+            let ch_repo = BookChapterRepository::new(db.connection());
+            let ch = legado_core::models::BookChapter {
+                url: format!("{book_url}/chapter/{chapter_index}"),
+                title: title.to_string(),
+                is_volume: false,
+                base_url: book_url.to_string(),
+                book_url: book_url.to_string(),
+                index: chapter_index,
+                is_vip: false,
+                is_pay: false,
+                resource_url: None,
+                tag: None,
+                word_count: None,
+                start: None,
+                end: None,
+                start_fragment_id: None,
+                end_fragment_id: None,
+                variable: None,
+                img_url: None,
+            };
+            ch_repo.insert_batch(&[ch])?;
+            Ok::<(), legado_core::LegadoError>(())
+        })
+        .unwrap();
+    }
+
+    /// 清理测试书籍章节与开关记录
+    fn cleanup_toggle_test_data(book_url: &str) {
+        with_database(|db| {
+            use rusqlite::params;
+            let conn = db.connection();
+            let to_db_err =
+                |e| LegadoError::Database(format!("清理测试数据失败: {e}"));
+            conn.execute("DELETE FROM chapters WHERE bookUrl = ?1", params![book_url])
+                .map_err(to_db_err)?;
+            conn.execute("DELETE FROM books WHERE bookUrl = ?1", params![book_url])
+                .map_err(to_db_err)?;
+            conn.execute(
+                "DELETE FROM caches WHERE key LIKE ?1",
+                params![format!("sameTitleRemoved:{book_url}:%")],
+            )
+            .map_err(to_db_err)?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// Task #51：错误码——书籍不存在 → Internal；章节不存在 → Db
+    #[test]
+    fn test_toggle_same_title_removed_errors() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // 书籍不存在 → Internal 错误
+        let err = toggle_same_title_removed("https://no-such-book.example.com", 0, false)
+            .expect_err("书籍不存在应报错");
+        assert!(
+            matches!(err, LegadoError::Internal(_)),
+            "书籍不存在应为 Internal 错误，实际: {err:?}"
+        );
+
+        // 书籍存在但章节不存在 → Db 错误
+        let book_url = "https://toggle-err-test.example.com/book/1";
+        insert_book_and_chapter(book_url, 0, "第一章 测试");
+        let err = toggle_same_title_removed(book_url, 99, false).expect_err("章节不存在应报错");
+        assert!(
+            matches!(err, LegadoError::Database(_)),
+            "章节不存在应为 Db 错误，实际: {err:?}"
+        );
+        cleanup_toggle_test_data(book_url);
+    }
+
+    /// Task #51：章级开关接通正文净化链路（默认去除 / opt-out 保留 / 恢复默认）
+    #[test]
+    fn test_toggle_same_title_removed_content_pipeline() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let book_url = "https://toggle-pipeline-test.example.com/book/1";
+        let title = "第一章 测试";
+        insert_book_and_chapter(book_url, 0, title);
+        // 正文开头与章节标题重复（去重复标题的目标场景）
+        let raw = "第一章 测试\n正文内容。";
+
+        // 全局默认：去除重复标题
+        let result = apply_content_processing_chapter(book_url, raw, title, 0);
+        assert_eq!(result, "正文内容。");
+
+        // opt-out（enable=false）：保留原始标题
+        toggle_same_title_removed(book_url, 0, false).unwrap();
+        let result = apply_content_processing_chapter(book_url, raw, title, 0);
+        assert_eq!(result, "第一章 测试\n正文内容。");
+
+        // 其他章不受影响（章级隔离，仍走全局默认）
+        insert_book_and_chapter(book_url, 1, "第二章 测试");
+        let raw2 = "第二章 测试\n第二正文。";
+        let result = apply_content_processing_chapter(book_url, raw2, "第二章 测试", 1);
+        assert_eq!(result, "第二正文。");
+
+        // 恢复默认（enable=true）：重新去除重复标题
+        toggle_same_title_removed(book_url, 0, true).unwrap();
+        let result = apply_content_processing_chapter(book_url, raw, title, 0);
+        assert_eq!(result, "正文内容。");
+
+        // 幂等：重复切换不报错
+        toggle_same_title_removed(book_url, 0, true).unwrap();
+        toggle_same_title_removed(book_url, 0, false).unwrap();
+        toggle_same_title_removed(book_url, 0, false).unwrap();
+
+        cleanup_toggle_test_data(book_url);
     }
 }

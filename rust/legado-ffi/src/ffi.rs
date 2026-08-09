@@ -472,6 +472,20 @@ pub mod ffi {
         Ok(crate::api::reader::get_chinese_convert_type())
     }
 
+    /// 章级「删除重复标题」开关（Task #51，API_CONTRACT §2.9.10）
+    ///
+    /// enable=true 恢复全局默认（去除重复标题）；enable=false 该章 opt-out
+    /// （保留原始标题）。状态持久化于 DB，重启后保持。
+    /// 错误码：书籍不存在 → Internal；章节不存在 → Db。
+    pub fn reader_toggle_same_title_removed(
+        book_url: String,
+        chapter_index: i32,
+        enable: bool,
+    ) -> Result<(), BridgeError> {
+        crate::api::reader::toggle_same_title_removed(&book_url, chapter_index, enable)?;
+        Ok(())
+    }
+
     // ─── 书籍导入 ─────────────────────────────────────────────
 
     /// 检测书籍文件格式（JSON）
@@ -1147,6 +1161,13 @@ pub mod ffi {
         Ok(true)
     }
 
+    /// 执行 SQLite VACUUM 压缩数据库，返回释放的字节数（Task #51，API_CONTRACT §2.16.6）
+    ///
+    /// 失败（数据库锁/文件损坏）或数据库未初始化时降级返回 0，不抛异常。
+    pub fn cache_shrink_database() -> Result<i64, BridgeError> {
+        Ok(crate::api::cache_api::shrink_database())
+    }
+
     /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
     ///
     /// `title` / `chapter_url` 为空串时从 DB 章节表回填；
@@ -1405,6 +1426,19 @@ pub mod ffi {
         data: String,
     ) -> Result<(), BridgeError> {
         crate::api::webdav_api::webdav_upload(&config_json, &path, &data)?;
+        Ok(())
+    }
+
+    /// 从本地文件路径读取并上传到 WebDAV（Task #51，API_CONTRACT §2.28.6）
+    ///
+    /// 大文件场景（如书籍上传至远程），区别于 webdav_upload 的 String data 直传。
+    /// 错误码：文件不存在/读取失败 → Io；上传失败 → Net；配置解析失败 → Internal。
+    pub fn webdav_upload_file(
+        config_json: String,
+        path: String,
+        local_file_path: String,
+    ) -> Result<(), BridgeError> {
+        crate::api::webdav_api::webdav_upload_file(&config_json, &path, &local_file_path)?;
         Ok(())
     }
 

@@ -320,6 +320,21 @@ Future<void> readerSetChineseConvert({required int convertType}) => RustLib
 Future<int> readerGetChineseConvert() =>
     RustLib.instance.api.crateFfiFfiReaderGetChineseConvert();
 
+/// 章级「删除重复标题」开关（Task #51，API_CONTRACT §2.9.10）
+///
+/// enable=true 恢复全局默认（去除重复标题）；enable=false 该章 opt-out
+/// （保留原始标题）。状态持久化于 DB，重启后保持。
+/// 错误码：书籍不存在 → Internal；章节不存在 → Db。
+Future<void> readerToggleSameTitleRemoved({
+  required String bookUrl,
+  required int chapterIndex,
+  required bool enable,
+}) => RustLib.instance.api.crateFfiFfiReaderToggleSameTitleRemoved(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  enable: enable,
+);
+
 /// 检测书籍文件格式（JSON）
 Future<String> importDetectFormat({required String filePath}) =>
     RustLib.instance.api.crateFfiFfiImportDetectFormat(filePath: filePath);
@@ -837,6 +852,12 @@ Future<bool> cacheClearBefore({required PlatformInt64 beforeTimestampMs}) =>
       beforeTimestampMs: beforeTimestampMs,
     );
 
+/// 执行 SQLite VACUUM 压缩数据库，返回释放的字节数（Task #51，API_CONTRACT §2.16.6）
+///
+/// 失败（数据库锁/文件损坏）或数据库未初始化时降级返回 0，不抛异常。
+Future<PlatformInt64> cacheShrinkDatabase() =>
+    RustLib.instance.api.crateFfiFfiCacheShrinkDatabase();
+
 /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
 ///
 /// `title` / `chapter_url` 为空串时从 DB 章节表回填；
@@ -1045,6 +1066,20 @@ Future<void> webdavUpload({
   configJson: configJson,
   path: path,
   data: data,
+);
+
+/// 从本地文件路径读取并上传到 WebDAV（Task #51，API_CONTRACT §2.28.6）
+///
+/// 大文件场景（如书籍上传至远程），区别于 webdav_upload 的 String data 直传。
+/// 错误码：文件不存在/读取失败 → Io；上传失败 → Net；配置解析失败 → Internal。
+Future<void> webdavUploadFile({
+  required String configJson,
+  required String path,
+  required String localFilePath,
+}) => RustLib.instance.api.crateFfiFfiWebdavUploadFile(
+  configJson: configJson,
+  path: path,
+  localFilePath: localFilePath,
 );
 
 /// 从 WebDAV 下载文件
