@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2026-08-10
+
+### 新增（第二批后置项三 FFI 接线：压缩数据库/上传至远程/删除重复标题章级开关，契约 §2.16.6/§2.28.6/§2.9.10）
+- 压缩数据库（契约 §2.16.6 shrinkDatabase）：其他设置页接通 VACUUM + 释放字节统计（失败降级返回 0），提示文案对齐原版
+- 上传至远程（契约 §2.28.6 webdavUploadFile）：详情页菜单接通本地文件路径上传 + PUT 状态码校验，对齐原版 RemoteBookWebDav.upload（origin 回写 webDavTag+远端地址、lastCheckTime 刷新、仅本地书）
+- 删除重复标题章级开关（契约 §2.9.10 toggleSameTitleRemoved）：阅读器顶栏开关接通，caches KV 章级 opt-out 持久化、正文净化六链路按章应用、缓存清理复位对齐原版 .nr 语义，切换后重载正文
+
+### 修复（搜索 native 崩溃根治：rule_analyzer 零前进无限递归 + 正则安全编译统一加固）
+- 搜索崩溃根治：四轮调查定位 rule_analyzer 零前进无限递归（移植时将原版 throw 改为 break 重试所致），对齐原版 fail-fast + tailrec 修复，五轮复测零崩溃；正则安全编译统一入口保留为纵深防御（非递归嵌套预检 + LRU 缓存 + logcat 诊断）
+- 对话框红屏、书籍变量 setState 断言、书签导出 SAF 选目录、书签时间戳单位修复
+- WebDAV PUT 状态码校验（非 2xx 不再静默成功）
+
+### 变更
+- tokio runtime 线程栈扩至 8MB（FFI/server/JS/webdav 兜底 runtime 统一，对齐原版 JVM 线程栈水位）
+- 正则缓存 LRU 化（替换 regex-syntax 预解析依赖为 lru 淘汰）
+- build-android.ps1 EAP（ErrorActionPreference）修复
+
 ## [2.0.3] - 2026-08-08
 
 ### 变更（留项10：定时服务应用内调度器落地，对齐 Kotlin AutoTaskScheduler/AutoTaskJobService，署名 Qoder/QoderCN）
