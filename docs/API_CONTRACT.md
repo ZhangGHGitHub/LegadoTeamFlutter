@@ -4,6 +4,13 @@
 **版本**: v1.0
 **维护人**: Legado 开发团队（Qoder / QoderCN）
 
+**更新记录**：
+
+| 日期 | 内容 |
+|------|------|
+| 2026-08-01 | 契约初版冻结（v1.0） |
+| 2026-08-10 | 第二批后置项 FFI 冻结：三个加法式新增——`shrinkDatabase`（§2.16 缓存管理）/ `webdavUploadFile`（§2.28 WebDAV 云同步）/ `toggleSameTitleRemoved`（§2.9 阅读器操作），契约合计方法数 174→177（Task #50） |
+
 ---
 
 ## 1. 契约总则
@@ -50,7 +57,10 @@
 
 ## 2. 方法清单
 
-> 共 **35 个模块**、**174 个方法**（与 `book_api.dart` 一一对应）。
+> 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
+> 为基准，BookApi 接口当前共 **225 个方法**（Task #55 F6 校准，程序化计数）。
+> 附录行合计 234 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
+> 扣除后 224 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 225，与 BookApi 闭合；详见附录口径说明。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -73,7 +83,7 @@
 | `setBookGroup(String bookUrl, int groupId)` | bookUrl, groupId | `Future<void>` | 设置书籍分组 |
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 
-### 2.3 书源操作（10 个方法）
+### 2.3 书源操作（19 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -171,7 +181,7 @@
 | `deleteReplaceRule(int id)` | id | `Future<void>` | 删除替换规则 |
 | `setReplaceRuleEnabled(int id, bool enabled)` | id, enabled | `Future<void>` | 启用/禁用替换规则 |
 
-### 2.9 阅读器操作（9 个方法）
+### 2.9 阅读器操作（10 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -184,6 +194,7 @@
 | `refreshToc(String bookUrl, String sourceUrl)` | bookUrl, sourceUrl | `Future<List<BookChapter>>` | 从网络刷新书籍目录 ⚠️ 双兼容点 |
 | `setChineseConvertType(int type)` | type | `Future<void>` | 设置阅读器繁简转换类型并持久化（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t，对齐 Android `AppConfig.chineseConverterType`，非法值归一为 0） |
 | `getChineseConvertType()` | 无 | `Future<int>` | 获取当前繁简转换类型（0/1/2） |
+| `toggleSameTitleRemoved(String bookUrl, int chapterIndex, bool enable)` | bookUrl: 书籍 URL；chapterIndex: 章节序号（0 起）；enable: true=去除重复标题 / false=保留原始标题 | `Future<void>` | 章级「删除重复标题」开关，覆盖全局默认（全局默认仍为去除）；状态须持久化（建议 DB，重启后保持）；接线后正文读取按章应用该开关。错误码：Db（章节不存在）/ Internal（书籍不存在）。语义对齐原版章级 opt-out 方向（台账 §5.11-7 删除重复标题正文链路，Task #50，加法式新增） |
 
 > ⚠️ `getChapters` / `refreshToc`：Rust 返回 `ChapterListResponse { total, chapters[] }`，Dart 侧提取 `chapters` 字段。
 >
@@ -242,7 +253,7 @@
 | `deleteSearchKeyword(String keyword)` | keyword | `Future<void>` | 删除搜索关键词 |
 | `clearSearchHistory()` | 无 | `Future<void>` | 清空搜索历史 |
 
-### 2.16 缓存管理（5 个方法）
+### 2.16 缓存管理（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -251,6 +262,7 @@
 | `getCacheBookCount()` | 无 | `Future<int>` | 获取缓存书籍数量 |
 | `getCacheChapterCount()` | 无 | `Future<int>` | 获取缓存章节数量 |
 | `clearCacheBefore(int beforeTimestampMs)` | beforeTimestampMs: 毫秒时间戳 | `Future<void>` | 清除指定时间之前的缓存 |
+| `shrinkDatabase()` | 无 | `Future<int>` | 执行 SQLite VACUUM 压缩数据库文件，返回释放的字节数；Rust 侧应在后台线程执行避免阻塞。错误语义：VACUUM 失败（数据库锁/文件损坏）或数据库未初始化 → 返回 0 降级为无操作（不抛异常阻断业务）（台账 §5.13-9，第二批后置项，Task #50，加法式新增） |
 
 ### 2.17 WebBook 操作（4 个方法）
 
@@ -349,7 +361,7 @@
 | `userLogout(String username)` | username | `Future<bool>` | 用户登出 |
 | `checkLoginStatus(String username)` | username | `Future<bool>` | 检查登录状态 |
 
-### 2.28 WebDAV 云同步（5 个方法）
+### 2.28 WebDAV 云同步（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -358,6 +370,7 @@
 | `webdavDownload(String configJson, String path)` | configJson, path | `Future<String>` | WebDAV 下载文件 |
 | `webdavDelete(String configJson, String path)` | configJson, path | `Future<void>` | WebDAV 删除远程文件 |
 | `webdavFullSync(String configJson, String localBooks, String localSources)` | configJson, localBooks, localSources | `Future<String>` | WebDAV 全量同步 |
+| `webdavUploadFile(String configJson, String path, String localFilePath)` | configJson（与既有 `webdavUpload` 相同，WebDavConfig JSON）；path: 远程目标路径；localFilePath: 本地文件绝对路径 | `Future<void>` | WebDAV 从本地文件路径读取并上传（大文件场景，如书籍上传至远程），区别于既有 `webdavUpload` 的 String data 直传；既有 `webdavUpload` 签名保持不变。错误码：Io（文件不存在/读取失败）/ Net（上传失败）/ Internal（配置解析失败）（台账 §5.11-1 上传至远程，Task #50，加法式新增） |
 
 ### 2.29 下载管理器（7 个方法）
 
@@ -702,20 +715,20 @@
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 9 |
-| 3 | 书源操作 | 10 |
+| 3 | 书源操作 | 19 |
 | 4 | 搜索操作 | 7 |
 | 5 | RSS 源操作 | 9 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 6 |
 | 8 | 替换规则操作 | 6 |
-| 9 | 阅读器操作 | 8 |
+| 9 | 阅读器操作 | 10 |
 | 10 | 配置操作 | 4 |
 | 11 | 备份操作 | 2 |
 | 12 | 阅读记录 | 4 |
 | 13 | RSS 收藏操作 | 4 |
 | 14 | 书籍分组 | 4 |
 | 15 | 搜索历史 | 5 |
-| 16 | 缓存管理 | 5 |
+| 16 | 缓存管理 | 6 |
 | 17 | WebBook 操作 | 4 |
 | 18 | 发现页操作 | 2 |
 | 19 | 规则解析 | 1 |
@@ -727,9 +740,9 @@
 | 25 | HTTP TTS | 7 |
 | 26 | 音频播放 | 4 |
 | 27 | 用户管理 | 6 |
-| 28 | WebDAV 云同步 | 5 |
+| 28 | WebDAV 云同步 | 6 |
 | 29 | 下载管理器 | 7 |
-| 30 | 段评/章评 | 4 |
+| 30 | 段评/章评 | 5 |
 | 31 | 书籍导出 | 2 |
 | 32 | 自动任务 | 14 |
 | 33 | 音频播放模式 | 2 |
@@ -743,5 +756,14 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（BookApi 方法）** | **212** |
-| | **补登记 FFI（待封装）** | **+6** |
+| | **合计（§2.1–§2.43 附录行合计）** | **234** |
+
+> 口径说明（Task #55 F6，2026-08-10 校准，基准 = `book_api.dart` 程序化计数 **225**）：
+> - **与 BookApi 闭合**：附录行合计 234 − 尚未封装进 BookApi 的 FFI 10 个
+>   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
+>   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 224；
+>   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **225**。
+> - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 19 行修正（原误记 10，
+>   遗漏登录 V2 3 + 书源校验 3 + 验证码通道 3）；行 30 按 §2.30 标题修正为 5（含 reviewGetReplies，原误记 4）；
+>   §2.3 章节标题同步由「10 个方法」更正为「19 个方法」。
