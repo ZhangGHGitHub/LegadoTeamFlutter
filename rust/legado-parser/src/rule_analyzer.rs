@@ -3,6 +3,18 @@
 //! 参考 Kotlin `RuleAnalyzer.kt`，实现零拷贝切片的高效规则拆分。
 //! 支持操作符 `&&`（与）、`||`（或）、`%%`（排除），
 //! 支持 `@` 前缀标识解析类型，以及 `{...}` 嵌套规则。
+//!
+//! ## 栈安全（任务 #62）
+//!
+//! 原版 Kotlin `splitRule` 标注 `tailrec`（编译为循环），遇未平衡括号
+//! `throw Error("...后未平衡")` 由上层处理。Rust 移植版曾为直接尾递归，
+//! 且 `chomp_balanced` 失败后**零前进重试**（`foo[bar&&baz` 类输入：
+//! 未闭合 `[` + 分隔符 → 每层递归状态完全相同）造成数万层压栈爆栈。
+//! 现修复为：
+//! - 自递归全部改写为 `loop` 迭代（O(1) 栈，对齐原版 tailrec）；
+//! - 平衡组扫描失败时不再原状态重试，将剩余串作为单条规则压入并返回
+//!   （对齐原版 throw 语义的跨 FFI 优雅降级，不 panic）；
+//! - 迭代次数防御上限（`queue.len() + 1`），双保险兜底。
 
 const ESC: char = '\\';
 
@@ -250,130 +262,180 @@ impl<'a> RuleAnalyzer<'a> {
             return self.split_rule_next();
         }
 
-        if !self.consume_to_any(splits) {
-            self.rule.push(&self.queue[self.start_x..]);
-            return self.rule.clone();
-        }
-
-        let end = self.pos;
-        self.pos = self.start;
+        // 迭代上限双保险：每次有效迭代 pos 至少前进 1 字节，
+        // queue.len()+1 为理论上限（对齐原版 tailrec 的循环语义）
+        let mut budget = self.queue.len() + 1;
 
         loop {
-            let st = self.find_to_any(&['[', '(']);
+            if budget == 0 {
+                // 防御兜底：剩余串作为单条规则返回（优雅降级，不 panic）
+                self.rule.push(&self.queue[self.start_x..]);
+                return self.rule.clone();
+            }
+            budget -= 1;
 
-            if st.is_none() {
-                // 没有筛选器，直接按分隔符拆分
-                self.rule = vec![&self.queue[self.start_x..end]];
-                self.elements_type = &self.queue[end..end + self.step];
-                self.pos = end + self.step;
-
-                while self.consume_to(self.elements_type) {
-                    self.rule.push(&self.queue[self.start..self.pos]);
-                    self.pos += self.step;
-                }
-                self.rule.push(&self.queue[self.pos..]);
+            if !self.consume_to_any(splits) {
+                self.rule.push(&self.queue[self.start_x..]);
                 return self.rule.clone();
             }
 
-            let st = st.unwrap();
+            let end = self.pos;
+            self.pos = self.start;
 
-            if st > end {
-                // 分隔符不在选择器中
-                self.rule = vec![&self.queue[self.start_x..end]];
-                self.elements_type = &self.queue[end..end + self.step];
-                self.pos = end + self.step;
+            loop {
+                let st = self.find_to_any(&['[', '(']);
 
-                while self.consume_to(self.elements_type) && self.pos < st {
-                    self.rule.push(&self.queue[self.start..self.pos]);
-                    self.pos += self.step;
-                }
+                if st.is_none() {
+                    // 没有筛选器，直接按分隔符拆分
+                    self.rule = vec![&self.queue[self.start_x..end]];
+                    self.elements_type = &self.queue[end..end + self.step];
+                    self.pos = end + self.step;
 
-                if self.pos > st {
-                    self.start_x = self.start;
-                    return self.split_rule_next();
-                } else {
+                    while self.consume_to(self.elements_type) {
+                        self.rule.push(&self.queue[self.start..self.pos]);
+                        self.pos += self.step;
+                    }
                     self.rule.push(&self.queue[self.pos..]);
                     return self.rule.clone();
                 }
+
+                let st = st.unwrap();
+
+                if st > end {
+                    // 分隔符不在选择器中
+                    self.rule = vec![&self.queue[self.start_x..end]];
+                    self.elements_type = &self.queue[end..end + self.step];
+                    self.pos = end + self.step;
+
+                    while self.consume_to(self.elements_type) && self.pos < st {
+                        self.rule.push(&self.queue[self.start..self.pos]);
+                        self.pos += self.step;
+                    }
+
+                    if self.pos > st {
+                        self.start_x = self.start;
+                        // 原版此处调用 split_rule_next（已改写为迭代，
+                        // O(1) 栈且有预算上限），保持原语义
+                        return self.split_rule_next();
+                    } else {
+                        self.rule.push(&self.queue[self.pos..]);
+                        return self.rule.clone();
+                    }
+                }
+
+                self.pos = st;
+                let ch = self.queue.as_bytes()[self.pos] as char;
+                let next = if ch == '[' { ']' } else { ')' };
+
+                if !self.chomp_balanced(ch, next) {
+                    // 未平衡（原版 RuleAnalyzer.kt L228/L285 此处 throw Error
+                    // "...后未平衡" 由上层处理）：跨 FFI 不能 panic，
+                    // 优雅降级——剩余串作为单条规则压入并返回。
+                    // 关键：不再原状态重试（chomp 失败不推进 pos，
+                    // 重试会构成零前进无限递归/循环）
+                    self.rule.push(&self.queue[self.start_x..]);
+                    return self.rule.clone();
+                }
+
+                if end <= self.pos {
+                    // 分隔符在平衡组内，越过该组继续找下一个分隔符
+                    break;
+                }
             }
 
-            self.pos = st;
-            let ch = self.queue.as_bytes()[self.pos] as char;
-            let next = if ch == '[' { ']' } else { ')' };
-
-            if !self.chomp_balanced(ch, next) {
-                // 不平衡，回退并继续
-                break;
-            }
-
-            if end <= self.pos {
-                break;
-            }
+            self.start = self.pos;
         }
-
-        self.start = self.pos;
-        self.split_rule_inner(splits)
     }
 
     fn split_rule_next(&mut self) -> Vec<&'a str> {
-        let end = self.pos;
-        self.pos = self.start;
+        // 原自递归改写为迭代（对齐原版 Kotlin tailrec，O(1) 栈）；
+        // 迭代上限双保险：每次有效迭代 pos 至少越过一个分隔符（前进
+        // step 字节），queue.len()+1 远超理论上限
+        let mut budget = self.queue.len() + 1;
 
         loop {
-            let st = self.find_to_any(&['[', '(']);
-
-            if st.is_none() {
-                self.rule.push(&self.queue[self.start_x..end]);
-                self.pos = end + self.step;
-
-                while self.consume_to(self.elements_type) {
-                    self.rule.push(&self.queue[self.start..self.pos]);
-                    self.pos += self.step;
-                }
-                self.rule.push(&self.queue[self.pos..]);
+            if budget == 0 {
+                // 防御兜底：剩余串作为单条规则返回（优雅降级，不 panic）
+                self.rule.push(&self.queue[self.start_x..]);
                 return self.rule.clone();
             }
+            budget -= 1;
 
-            let st = st.unwrap();
+            let end = self.pos;
+            self.pos = self.start;
 
-            if st > end {
-                self.rule.push(&self.queue[self.start_x..end]);
-                self.pos = end + self.step;
+            // 内层循环标记：true = 分隔符在平衡组内，需越过该组继续；
+            // false = 本段拆分完成或已降级返回
+            let mut crossed_balanced = false;
 
-                while self.consume_to(self.elements_type) && self.pos < st {
-                    self.rule.push(&self.queue[self.start..self.pos]);
-                    self.pos += self.step;
-                }
+            loop {
+                let st = self.find_to_any(&['[', '(']);
 
-                if self.pos > st {
-                    self.start_x = self.start;
-                    return self.split_rule_next();
-                } else {
+                if st.is_none() {
+                    self.rule.push(&self.queue[self.start_x..end]);
+                    self.pos = end + self.step;
+
+                    while self.consume_to(self.elements_type) {
+                        self.rule.push(&self.queue[self.start..self.pos]);
+                        self.pos += self.step;
+                    }
                     self.rule.push(&self.queue[self.pos..]);
                     return self.rule.clone();
                 }
+
+                let st = st.unwrap();
+
+                if st > end {
+                    self.rule.push(&self.queue[self.start_x..end]);
+                    self.pos = end + self.step;
+
+                    while self.consume_to(self.elements_type) && self.pos < st {
+                        self.rule.push(&self.queue[self.start..self.pos]);
+                        self.pos += self.step;
+                    }
+
+                    if self.pos > st {
+                        self.start_x = self.start;
+                        // 原自递归点（L350）：改写为外层 loop 迭代
+                        // （pos > st >= end，严格前进）
+                        crossed_balanced = false;
+                        break;
+                    } else {
+                        self.rule.push(&self.queue[self.pos..]);
+                        return self.rule.clone();
+                    }
+                }
+
+                self.pos = st;
+                let ch = self.queue.as_bytes()[self.pos] as char;
+                let next = if ch == '[' { ']' } else { ')' };
+
+                if !self.chomp_balanced(ch, next) {
+                    // 未平衡（原版此处 throw Error 由上层处理）：
+                    // 跨 FFI 优雅降级——剩余串作为单条规则压入并返回。
+                    // 关键：chomp 失败不推进 pos，原 break→consume_to 会
+                    // 再次命中同一分隔符构成零前进无限递归（任务 #62 真凶）
+                    self.rule.push(&self.queue[self.start_x..]);
+                    return self.rule.clone();
+                }
+
+                if end <= self.pos {
+                    crossed_balanced = true;
+                    break;
+                }
             }
 
-            self.pos = st;
-            let ch = self.queue.as_bytes()[self.pos] as char;
-            let next = if ch == '[' { ']' } else { ')' };
+            self.start = self.pos;
 
-            if !self.chomp_balanced(ch, next) {
-                break;
+            if crossed_balanced {
+                // 分隔符在平衡组内：越过平衡组后继续找下一个分隔符
+                if !self.consume_to(self.elements_type) {
+                    self.rule.push(&self.queue[self.start_x..]);
+                    return self.rule.clone();
+                }
+                // 原自递归点（L376）：continue 进入下一迭代
+                // （consume_to 成功 ⇒ pos 越过分隔符，严格前进）
             }
-
-            if end <= self.pos {
-                break;
-            }
-        }
-
-        self.start = self.pos;
-
-        if !self.consume_to(self.elements_type) {
-            self.rule.push(&self.queue[self.start_x..]);
-            self.rule.clone()
-        } else {
-            self.split_rule_next()
         }
     }
 
@@ -547,5 +609,93 @@ mod tests {
         let mut ra = RuleAnalyzer::new("before{{js_code}}after", false);
         let result = ra.inner_rule_delimited("{{", "}}", |inner| Some(format!("({})", inner)));
         assert_eq!(result, "before(js_code)after");
+    }
+
+    // ─── 任务 #62：零前进无限递归根治回归 ─────────────────────
+
+    /// 病态输入不挂死不崩溃：未闭合括号 + 分隔符（原零前进递归真凶）。
+    /// 原版 Kotlin 此处 throw Error("...后未平衡")，Rust 侧跨 FFI
+    /// 优雅降级：返回非空结果（剩余串作为单条规则）。
+    #[test]
+    fn test_pathological_unbalanced_inputs_terminate() {
+        let pathological = [
+            "foo[bar&&baz",
+            "a(b||c",
+            "@@.arcurl@textNodes",
+            ".*状态：|\\s.* {{@@.arcurl@textNodes",
+            "[",
+            "((((",
+            "a[&&b[c&&d",
+            "x(y&&z[",
+            "class.bookname&&[未闭合",
+        ];
+        for input in pathological {
+            let mut ra = RuleAnalyzer::new(input, false);
+            let rules = ra.split_rule(&["&&", "||", "%%"]);
+            assert!(!rules.is_empty(), "降级应返回非空结果: {input}");
+            // 单分隔符路径（split_rule_next 直达）同样不挂死
+            let mut ra2 = RuleAnalyzer::new(input, false);
+            let rules2 = ra2.split_rule(&["&&"]);
+            assert!(!rules2.is_empty(), "单分隔符路径应返回非空结果: {input}");
+        }
+    }
+
+    /// 实际致崩规则的拆分路径：`@` 分隔（html.rs 调用方）下的未闭合括号
+    #[test]
+    fn test_pathological_at_split_path() {
+        let input = ".*状态：|\\s.* {{@@.arcurl@textNodes";
+        let mut ra = RuleAnalyzer::new(input, false);
+        let rules = ra.split_rule(&["@"]);
+        assert!(!rules.is_empty());
+        // 单分隔符 + 未闭合 `[` 的组合（split_rule → split_rule_next 直达）
+        let mut ra2 = RuleAnalyzer::new("foo[bar@baz", false);
+        let rules2 = ra2.split_rule(&["@"]);
+        assert!(!rules2.is_empty());
+    }
+
+    /// 在 2MB / 512KB 小栈线程上跑病态用例：验证迭代改写后 O(1) 栈，
+    /// 即使旧递归实现存在数万层压栈场景也不爆栈
+    #[test]
+    fn test_pathological_on_small_stack_threads() {
+        for stack_size in [2usize << 20, 512 << 10] {
+            let handle = std::thread::Builder::new()
+                .stack_size(stack_size)
+                .spawn(|| {
+                    let input = "foo[bar&&baz";
+                    let mut ra = RuleAnalyzer::new(input, false);
+                    let rules = ra.split_rule(&["&&", "||", "%%"]);
+                    assert!(!rules.is_empty());
+                    // 长串深嵌套未闭合构造：旧实现递归深度随输入长度线性增长
+                    let deep = format!("{}&&tail", "[a".repeat(500));
+                    let mut ra2 = RuleAnalyzer::new(&deep, false);
+                    let rules2 = ra2.split_rule(&["&&", "||", "%%"]);
+                    assert!(!rules2.is_empty());
+                })
+                .expect("spawn 失败");
+            handle.join().expect("小栈线程上病态输入不应崩溃");
+        }
+    }
+
+    /// 合法输入行为不变：平衡括号规则内分隔符不拆（既有基线回归）
+    #[test]
+    fn test_legal_inputs_behavior_unchanged() {
+        // %% / 混合分隔符
+        let mut ra = RuleAnalyzer::new("a%%b%%c", false);
+        assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["a", "b", "c"]);
+        assert_eq!(ra.elements_type, "%%");
+        // 括号内分隔符保护 + 括号后继续拆分
+        let mut ra = RuleAnalyzer::new("div[a||b]&&span.c", false);
+        assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["div[a||b]", "span.c"]);
+        // 圆括号平衡组
+        let mut ra = RuleAnalyzer::new("fn(a&&b)||c", false);
+        assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["fn(a&&b)", "c"]);
+        // 嵌套平衡组
+        let mut ra = RuleAnalyzer::new("x[a[b&&c]]&&y", false);
+        assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["x[a[b&&c]]", "y"]);
+        // @js: 前缀语义不受影响
+        assert_eq!(RuleAnalyzer::parse_rule_prefix("@js:result"), ("js", "result"));
+        // 无分隔符单规则
+        let mut ra = RuleAnalyzer::new("class.content", false);
+        assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["class.content"]);
     }
 }
