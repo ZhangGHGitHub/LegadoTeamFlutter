@@ -54,7 +54,18 @@ pub fn webdav_list_dir(config_json: &str, path: &str) -> LegadoResult<String> {
     let client = WebDavClient::new(config);
 
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     let files = rt.block_on(client.list_dir(path))?;
     serde_json::to_string(&files)
         .map_err(|e| legado_core::LegadoError::Internal(format!("序列化失败: {e}")))
@@ -72,7 +83,18 @@ pub fn webdav_upload(config_json: &str, path: &str, data: &str) -> LegadoResult<
     let client = WebDavClient::new(config);
 
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     rt.block_on(client.put(path, data.as_bytes()))
 }
 
@@ -104,7 +126,18 @@ pub fn webdav_upload_file(config_json: &str, path: &str, local_file_path: &str) 
 
     let client = WebDavClient::new(config);
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     // 所有权直传，避免 put(&bytes) 内部的 to_vec 二次拷贝（Task #55 F3）
     rt.block_on(client.put_owned(path, bytes))
 }
@@ -119,7 +152,18 @@ pub fn webdav_download(config_json: &str, path: &str) -> LegadoResult<String> {
     let client = WebDavClient::new(config);
 
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     let bytes = rt.block_on(client.get(path))?;
     String::from_utf8(bytes)
         .map_err(|e| legado_core::LegadoError::Internal(format!("Invalid UTF-8: {e}")))
@@ -132,7 +176,18 @@ pub fn webdav_delete(config_json: &str, path: &str) -> LegadoResult<()> {
     let client = WebDavClient::new(config);
 
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     rt.block_on(client.delete(path))
 }
 
@@ -143,7 +198,18 @@ pub fn webdav_mkdir(config_json: &str, path: &str) -> LegadoResult<()> {
     let client = WebDavClient::new(config);
 
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     rt.block_on(client.mkdir(path))
 }
 
@@ -167,7 +233,18 @@ pub fn webdav_full_sync(
     let manager = BookSyncManager::new(client);
 
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     let (books, sources) = rt.block_on(manager.full_sync(local_books_json, local_sources_json))?;
 
     serde_json::to_string(&serde_json::json!({
@@ -199,7 +276,18 @@ pub fn webdav_incremental_sync(
     let manager = BookSyncManager::new(client);
 
     let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        .unwrap_or_else(|_| {
+            // 兜底 runtime：worker 栈同步扩到 8MB（任务 #60 ②），
+            // 与 FFI/server/JS runtime 保持一致防御水位
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("legado-webdav-fallback")
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .unwrap()
+                .handle()
+                .clone()
+        });
     let (books, sources, sync_result) = rt.block_on(
         manager.incremental_sync(local_books_json, local_sources_json, last_sync_time)
     )?;

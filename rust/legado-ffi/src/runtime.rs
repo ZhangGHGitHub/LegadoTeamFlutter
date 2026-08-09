@@ -10,6 +10,11 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 /// 获取或初始化全局 tokio runtime
 ///
 /// 使用多线程调度器，适合 FFI 场景下的异步 IO 与并发请求。
+///
+/// worker 线程栈 8MB（任务 #60 ②）：默认约 2MB 栈在 spawn_blocking 池上
+/// 执行 regex-syntax 深递归编译/解析时会被击穿（搜索崩溃根因），
+/// 扩栈对齐原版 JVM 线程栈水位；tokio blocking 池为按需创建无法配置栈，
+/// 其风险由 regex_safe 非递归预检兜底。
 pub fn get_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| {
         Builder::new_multi_thread()
@@ -21,6 +26,7 @@ pub fn get_runtime() -> &'static Runtime {
                     .clamp(2, 8),
             )
             .thread_name("legado-ffi-worker")
+            .thread_stack_size(8 * 1024 * 1024)
             .build()
             .expect("Failed to create tokio runtime")
     })

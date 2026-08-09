@@ -29,6 +29,9 @@ fn get_handle_slot() -> &'static std::sync::Mutex<Option<JoinHandle<()>>> {
 }
 
 /// 获取或创建服务器专用 runtime
+///
+/// worker 线程栈 8MB（任务 #60 ②）：与 FFI 主 runtime 同步扩栈，
+/// 防 spawn_blocking 上 regex-syntax 深递归击穿默认 2MB 栈。
 fn get_server_runtime() -> &'static Runtime {
     SERVER_RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
@@ -40,6 +43,7 @@ fn get_server_runtime() -> &'static Runtime {
                     .clamp(2, 8),
             )
             .thread_name("legado-server")
+            .thread_stack_size(8 * 1024 * 1024)
             .build()
             .expect("Failed to create server runtime")
     })

@@ -4,14 +4,27 @@
 //! 调用 legado-net 的异步 LegadoClient（基于 reqwest/tokio）。
 
 use std::sync::OnceLock;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
 /// 全局共享 tokio Runtime（懒初始化）
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 /// 获取或创建全局 tokio Runtime
+///
+/// 任务 #60 ②：原 `Runtime::new()` 无 thread_name 且 worker 栈为默认约 2MB，
+/// 是搜索崩溃（regex-syntax 深递归击穿 worker 栈）的主要宿主。
+/// 改为 Builder 显式配置：worker 栈扩到 8MB（对齐原版 JVM 线程栈水位）
+/// + thread_name 便于崩溃诊断。tokio blocking 池为按需创建无法配置栈，
+/// 其风险由 regex_safe 非递归预检兜底。
 pub fn get_runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))
+    RUNTIME.get_or_init(|| {
+        Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("legado-js-worker")
+            .thread_stack_size(8 * 1024 * 1024)
+            .build()
+            .expect("Failed to create tokio runtime")
+    })
 }
 
 /// 在 JS 线程中同步执行异步操作

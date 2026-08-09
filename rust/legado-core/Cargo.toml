@@ -16,8 +16,8 @@ des = { workspace = true }
 base64 = { workspace = true }
 md5 = "0.7"
 regex = "1"
-# nest_limit 嵌套深度防御预解析（与 regex 1.x 内置的 regex-syntax 0.8 同版本）
-regex-syntax = "0.8"
+# 安全正则编译缓存的 LRU 淘汰（任务 #60 ④，与 legado-js 同版本）
+lru = "0.12"
 # Java 正则方言支持（lookbehind / backreference / 原子组等 regex crate 不支持的语法）
 fancy-regex = "0.19.0"
 
