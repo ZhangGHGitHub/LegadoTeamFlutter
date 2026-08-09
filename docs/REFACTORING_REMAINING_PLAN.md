@@ -962,8 +962,10 @@ flutter test                  # 全量测试通过
 | # | 留项 | 代码位置 | 说明 |
 |---|------|----------|------|
 | 1 | ~~searchSource 分组过滤~~（已闭合） | `flutter_legado/lib/src/screens/change_source_screen.dart` `_showGroupPicker` | ✅ Task #131（2026-08-07）销记：Rust `source_switch_search` 加 `source_urls_json` 参数复用 `load_search_sources` 过滤，换源页按分组过滤生效；另修复主搜索页选分组/书源后关闭面板不自动重搜（留项#12 闭合） |
-| 2 | 定时服务后端 | `flutter_legado/lib/src/screens/auto_task_screen.dart` | autoTask 后台执行 FFI 未移植，开关仅持久化 `isEnabled`，无后台调度（评审修复补登） |
+| 2 | 定时服务后端 | `flutter_legado/lib/src/screens/auto_task_screen.dart` | ⚠️ 口径更正（2026-08-09，Task #44）：应用内调度器 `auto_task_scheduler.dart` 已落地，原「无后台调度」描述部分过时；原登记「autoTask 后台执行 FFI 未移植，开关仅持久化 `isEnabled`」保留备查 |
 | 3 | 书架缓存导出扩展项 | `flutter_legado/lib/src/screens/bookshelf_screen.dart` | 缓存管理页/缓存下载/epub·pdf/模板/WebDav 等，已交付 TXT 导出（评审修复补登）。Rust 侧大头已随 R7/R8 闭合（缓存批量下载 4 方法 + bookExportWithOptions 四格式导出参数，见 §5.10）；剩余为 UI 页面与模板/WebDAV 接线 |
+
+> ⚠️ **口径更正（2026-08-08/09，Task #44）**：留项 2 定时服务后端——应用内调度器 `auto_task_scheduler.dart` 已落地，原「无后台调度」描述部分过时；剩余决策仅为原生前台服务化的必要性与时机。
 
 ### §5.10 R 系列 Rust 剩余项全批闭合记录（2026-08-07，Task #140）
 
@@ -992,12 +994,14 @@ flutter test                  # 全量测试通过
 | # | 项 | 代码位置 | 现状与建议 |
 |---|-----|----------|------------|
 | 1 | 上传至远程 | `flutter_legado/lib/src/screens/book_info_screen.dart` `_todo('upload')` | 菜单项已显示（仅本地书），点击 Toast 占位；建议新增 FFI `upload_book_remote`（对标原版 RemoteBookWebDav.upload） |
-| 2 | 创建书籍更新任务 | 同上 `_todo('updateTask')` | 菜单项已显示（在架+书源+非本地+允许更新）；建议新增 FFI `create_update_task`（对标原版 AppWorkManager 更新任务） |
+| 2 | ~~创建书籍更新任务~~（已接线） | 同上 `_todo('updateTask')` | ✅ Task #44（2026-08-08/09）销记：book_info_screen 菜单 → `findBookUpdateTask`（全量规则 JSON 匹配，FFI 失败退化模型输入）→ 已存在携 editTaskId 编辑 / 不存在 `buildBookUpdateTask` 新建；AutoTaskScreen 补 initialEditTaskId/initialNewTask 路由参数；新增 createTaskRaw/updateTaskRaw 保留完整 script；cron 合法性校验；失败按结果提示。原建议 FFI `create_update_task` 不再必要（既有 autoTask* 契约已满足） |
 | 3 | 设置源变量 | 同上 `_todo('sourceVariable')` | 菜单项已显示（书源存在）；建议新增 FFI `set_source_variable`（对标原版 source.setVariable） |
-| 4 | 设置书籍变量 | 同上 `_todo('bookVariable')` | 菜单项已显示（书源存在）；建议新增 FFI `set_book_variable`（对标原版 book.setVariable） |
-| 5 | 导出书签 / 导出 Markdown | `flutter_legado/lib/src/screens/toc_screen.dart` `_handleMenu('exportBookmark'/'exportMd')` | 菜单项已显示（书签 Tab），点击 Toast「后续版本支持」；建议新增 FFI `export_bookmarks`（对标原版 BookmarkFragment 导出 json/md 双格式） |
-| 6 | 章节缓存状态云图标 | `toc_screen.dart` 目录 Tab 章节行 | 原版 ChapterListAdapter 按 cacheFileNames 显示已缓存图标；核实 Rust `BookChapter` serde 字段无缓存状态、亦无章节缓存清单 FFI，本批跳过；建议新增 FFI（如 `cache_chapter_names`）后接入 |
+| 4 | ~~设置书籍变量~~（已接线） | 同上 `_todo('bookVariable')` | ✅ Task #44（2026-08-08/09）销记：对齐原版 putCustomVariable 语义（variable 为 JSON Map，custom 键读写）；仅 inBookshelf 时 updateBook 落库，非在架提示先加入书架；保存前读回完整 Book 防全行覆盖。原建议 FFI `set_book_variable` 不再必要（既有 updateBook 已满足） |
+| 5 | ~~导出书签 / 导出 Markdown~~（已接线） | `flutter_legado/lib/src/screens/toc_screen.dart` `_handleMenu('exportBookmark'/'exportMd')` | ✅ Task #44（2026-08-08/09）销记：新建 `services/bookmark_export.dart`，JSON 8 字段对齐原版 GSON 序列化（剔除 id），MD 模板对齐 saveBookmarkMd，file_picker 选目录，文件名 bookmark-书名 作者；原建议 FFI `export_bookmarks` 不必要（原版导出为纯 JSON/MD 序列化，已以纯 Flutter 实现闭合）。遗留差异登记：getBookmarks 契约 §2.7 仅按书名查询（原版按书名+作者），待后续契约批次补 bookAuthor 参数 |
+| 6 | ~~章节缓存状态云图标~~（已闭合） | `toc_screen.dart` 目录 Tab 章节行 | ✅ 销记确认（Task #44 登记，2026-08-08/09）：契约 §2.43.5 `cacheListCachedChapterUrls` 已登记，toc_screen 已消费并提交（9cf205d8d/7fb6d1ba2） |
 | 7 | 删除重复标题正文处理链路 | `flutter_legado/lib/src/widgets/reader/reader_top_bar.dart` `_toggleSameTitleRemoved` | 菜单勾选仅 SharedPreferences 本地持久化（键 `sameTitleRemoved_<bookUrl>`），正文不发生重复标题移除，切换时已 Toast「设置已保存，正文效果待后续版本支持」；建议新增 FFI `toggle_same_title_removed(bookUrl, chapterIndex)`（对齐原版 ContentProcessor/reverseRemoveSameTitle）后接通正文重载 |
+
+> ✅ **销记（2026-08-08/09，Task #44 第一批后置项接线）**：6 项中 4 项闭合——②创建书籍更新任务、④设置书籍变量、⑤导出书签/导出 Markdown 接线完成（详见各行销记），⑥章节缓存云图标确认闭合（契约 §2.43.5 + 提交 9cf205d8d/7fb6d1ba2）；剩余 ①上传至远程、③设置源变量、⑦删除重复标题正文链路，待对应 FFI 交付后接通。
 
 ### §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（2026-08-08，三维度评审修复时新增）
 
@@ -1008,12 +1012,14 @@ flutter test                  # 全量测试通过
 | 1 | `doubleHorizontalPage` | 双页模式（0-3 档） | `reader_page_view.dart` 分页渲染：按窗口宽高比/档位分列双栏排版 |
 | 2 | `useZhLayout` | 自定义中文分行 | 排版引擎已内置 ZhLayout，待按开关动态启用/禁用分行规则（Rust legado-parser 或 Dart 测量层） |
 | 3 | `hangingPunctuation` | 段首标点悬挂 | 同上，排版引擎悬挂规则按开关切换 |
-| 4 | `pageTouchSlop` | 滑动翻页阈值 px | `reader_page_view.dart` 手势识别（GestureDetector 拖动阈值） |
-| 5 | `pageTouchClick` | 边缘点击阈值 px | `reader_page_view.dart` 点击区域划分（左右边缘排除带） |
+| 4 | ~~`pageTouchSlop`~~（已接线） | 滑动翻页阈值 px | ✅ Task #44（2026-08-08/09）销记：`reader_page_view.dart` 经 MediaQuery gestureSettings 覆写拖拽阈值，滚动模式除外（对齐原版仅横向翻页语义），即时生效 |
+| 5 | ~~`pageTouchClick`~~（已接线） | 边缘点击阈值 px | ✅ Task #44（2026-08-08/09）销记：`reader_screen.dart` 点击边缘死区（钳制半屏以内防窄窗重叠），对齐原版 setRect9x 边缘条带语义，即时生效 |
 | 6 | `readBodyToLh` | 正文延伸到刘海 | 仅 Android：`reader_screen.dart` SystemUiMode/SafeArea 接线 |
 | 7 | `paddingDisplayCutouts` | 填充刘海区域 | 仅 Android：同上，AndroidManifest layoutInDisplayCutoutMode 配合 |
 | 8 | `volumeKeyPage` / `volumeKeyPageOnPlay` | 音量键翻页/朗读时音量键翻页 | 仅 Android：平台通道拦截 KeyEvent 后接 `reader_page_view` 翻页 API |
 | 9 | `shareLayout` | 日/夜配置共用布局 | 待日夜双配置体系接入（ReadBookConfig 双套布局参数）后在 `reader_settings_sheet.dart` 生效；UI 副标题已标注「暂不生效」 |
+
+> ✅ **销记（2026-08-08/09，Task #44）**：4 `pageTouchSlop` / 5 `pageTouchClick` 两项行为接线完成（详见各行销记）；剩余 7 项待后续批次接通。
 
 ### §5.13 主题设置页/其他设置页「缺跨轨支撑后置」集中清单（2026-08-08，任务 #8 原版对齐时新增）
 
@@ -1022,24 +1028,27 @@ flutter test                  # 全量测试通过
 | # | 项/原版键 | 原版代码位置 | 现状与建议 |
 |---|-----------|--------------|------------|
 | 1 | 自定义 hosts（`customHosts`） | OtherConfigFragment → HandleFileContract 导入 JSON | 需 Rust 网络层 DNS 解析钩子；建议新增 FFI `set_custom_hosts(json)` 后在其他设置页补 UI |
-| 2 | 校验书源配置（`checkSource`） | OtherConfigFragment → CheckSourceConfig 对话框 | 依赖书源校验服务（CheckSourceService）；待 Rust 侧提供批量校验 FFI 后一并接入 |
+| 2 | ~~校验书源配置~~（`checkSource`，已接线） | OtherConfigFragment → CheckSourceConfig 对话框 | ✅ Task #44（2026-08-08/09）销记：`other_settings_screen.dart` 新增配置对话框，字段对齐契约 §2.3 CheckerConfig 7 项（keyword/step_timeout_ms/check_search/check_toc/check_content/detect_captcha/detect_redirect），级联约束与超时校验对齐原版 CheckSourceConfig，持久化并入 start() configJson |
 | 3 | 直链上传规则（`directLinkUploadRule`） | OtherConfigFragment → DirectLinkUpload.getConfig | 依赖 JS 规则执行（上传接口规则解析）；建议随分享/上传功能批次一并设计 FFI |
 | 4 | Cronet 开关（`Cronet`） | pref_config_other.xml（AppConst.isPlayChannel 才显示） | Android Play 渠道专属网络栈，桌面端 Rust reqwest 无对应物；长期不适用，仅登记不实现 |
 | 5 | 视频播放设置（`videoSetting`） | OtherConfigFragment → VideoSettingDialog | 依赖视频播放器模块（Flutter 端尚未重构视频播放）；待播放器模块落地后补 |
-| 6 | MCP 服务端口（`mcpPort`） | OtherConfigFragment → MCPServerService | 依赖原版 MCP 服务进程；Rust 侧无对应服务，待跨轨评估后再定 |
+| 6 | MCP 服务端口（`mcpPort`） | OtherConfigFragment → MCPServerService | ⚠️ 口径更正（2026-08-08/09，Task #44 调研结论）：Rust legado-server 已有 MCP 路由（handlers/mcp.rs：20 工具、/mcp/tools、/mcp/call，挂载于 Web 服务端口），原「Rust 侧无对应服务」描述已过时；剩余决策为独立端口 vs 复用 setServerPort |
 | 7 | JS Source API Token（`jsSourceApiToken`） | pref_config_other.xml → SourceApi 鉴权 | 依赖 JS 引擎 SourceApi 服务；待 legado-parser JS 扩展能力对齐后补 |
 | 8 | 清除 WebView 数据（`clearWebViewData`） | OtherConfigFragment.clearWebViewData | 桌面端无 WebView 组件（未引入 webview_flutter/webf）；引入 WebView 方案后一并接入 |
 | 9 | 压缩数据库（`shrinkDatabase`） | OtherConfigFragment → AppDatabase VACUUM | 数据库在 Rust 侧（SQLite）；建议新增 FFI `shrink_database()` 执行 VACUUM 后在缓存管理/其他设置补入口 |
 | 10 | 封面规则（`coverRule`，封面设置子项） | CoverConfigDialog → BookCover.CoverRule（JS 规则搜封面） | 依赖 JS 规则执行搜索封面；主题设置页封面设置对话框已实现 4 项开关，此子项待 FFI 后补 |
 
+> ✅ **销记（2026-08-08/09，Task #44）**：2 校验书源配置接线完成（详见行内销记）；⚠️ 口径更正：6 mcpPort「Rust 侧无对应服务」描述已过时（legado-server 已有 MCP 路由），剩余决策为独立端口 vs 复用 setServerPort；其余 8 项维持后置登记。
+
 ---
 
-**文档版本**: 1.14  
-**最后更新**: 2026-08-08  
+**文档版本**: 1.15  
+**最后更新**: 2026-08-09  
 **维护人**: Qoder  
 **最后修改**: Qoder
 
 **版本记录**：
+- v1.15（2026-08-08/09）Task #44 第一批后置项接线销记：§5.11 销记 3 项（创建书籍更新任务/设置书籍变量/导出书签·导出 Markdown）+ 章节缓存云图标闭合确认；§5.12 销记 2 项（pageTouchSlop/pageTouchClick）；§5.13 销记 1 项（校验书源配置）。口径更正 3 处：§5.13-6 mcpPort（legado-server 已有 MCP 路由，剩余决策为独立端口 vs 复用 setServerPort）、§5.9-2 定时服务后端（应用内调度器 auto_task_scheduler.dart 已落地）、§5.11-5 原建议 export_bookmarks FFI 不必要（原版导出为纯 JSON/MD 序列化，已以纯 Flutter 实现闭合）
 - v1.14（2026-08-08）任务 #8 主题/其他设置页原版对齐登记：新增 §5.13「缺跨轨支撑后置」集中清单（10 项：customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/jsSourceApiToken/clearWebViewData/shrinkDatabase/coverRule）；主题页 24 项、其他页 33 项已按三分类落地（实现/仅 Android 标注/登记后置）
 - v1.13（2026-08-08）三维度评审修复登记：§5.11 追加删除重复标题正文处理链路（建议 FFI `toggle_same_title_removed`）；新增 §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（9 项含后续消费位置建议）
 - v1.12（2026-08-08）模块 D+E 交付登记：新增 §5.11 BookInfo 4 个占位项 + 导出书签/Markdown FFI 建议（set_source_variable/set_book_variable/upload_book_remote/create_update_task/export_bookmarks）+ 章节缓存云图标后置登记
