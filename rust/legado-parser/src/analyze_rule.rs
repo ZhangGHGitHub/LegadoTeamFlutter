@@ -137,6 +137,18 @@ impl AnalyzeRule {
             return Ok(vec![]);
         }
 
+        // `<js>...</js>` 包裹的 JS 规则（对齐原版 RuleAnalyzer Mode.Js）：
+        // 漫画/视频/音频源 ruleContent 常写作 `<js>代码</js>`（yckceo 书源
+        // 大量用例），JS 结果直接作为提取结果，不再按 CSS/XPath 解析。
+        // [UI-fix 2026-08-10 | Reasonix] 此前仅支持 `@js:` 前缀，`<js>` 标签
+        // 落入 Auto/CSS 解析 → 正文为空（「搜到书但正文图片不显示/无法播放」）。
+        if rule.trim_start().starts_with("<js>") {
+            if let Some(end) = rule.find("</js>") {
+                let js_code = &rule["<js>".len()..end];
+                return self.execute_js_rule(js_code);
+            }
+        }
+
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
 
         match rule_type {

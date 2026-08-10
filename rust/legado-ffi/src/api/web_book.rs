@@ -184,10 +184,11 @@ impl RealBookSourceFetcher {
         existing_author: &str,
     ) -> WebBookInfo {
         let info_rule = source.rule_book_info.as_ref();
-        let analyzer = crate::js_executor::construct_analyzer(
+        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
             body,
             book_url.to_string(),
             &source.book_source_url,
+            source.js_lib.as_deref(),
         );
 
         // B2.1 canReName 双条件门控
@@ -356,10 +357,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.book_list.as_deref())
             .unwrap_or("");
 
-        let analyzer = crate::js_executor::construct_analyzer(
+        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
             body.clone(),
             base_url.clone(),
             &source.book_source_url,
+            source.js_lib.as_deref(),
         );
 
         let elements = if book_list_rule.is_empty() {
@@ -406,10 +408,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let mut results = Vec::new();
         for elem in elements.iter().take(50) {
-            let elem_analyzer = crate::js_executor::construct_analyzer(
+            let elem_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
                 elem.clone(),
                 base_url.clone(),
                 &source.book_source_url,
+                source.js_lib.as_deref(),
             );
 
             let name = eval_rule_string(&elem_analyzer, name_rule).unwrap_or_default();
@@ -494,10 +497,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         Self::execute_login_check(source, &info_body, book_url, 200)?;
 
         let info_rule = source.rule_book_info.as_ref();
-        let info_analyzer = crate::js_executor::construct_analyzer(
+        let info_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
             info_body.clone(),
             book_url.to_string(),
             &source.book_source_url,
+            source.js_lib.as_deref(),
         );
 
         let raw_toc = info_rule
@@ -533,8 +537,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             chapter_list_rule = stripped;
         }
 
-        let analyzer =
-            crate::js_executor::construct_analyzer(toc_body, toc_url.clone(), &source.book_source_url);
+        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            toc_body,
+            toc_url.clone(),
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+        );
 
         let elements = if chapter_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
@@ -554,10 +562,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let mut chapters = Vec::new();
         for (index, elem) in elements.iter().enumerate() {
-            let elem_analyzer = crate::js_executor::construct_analyzer(
+            let elem_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
                 elem.clone(),
                 toc_url.clone(),
                 &source.book_source_url,
+                source.js_lib.as_deref(),
             );
 
             let title = elem_analyzer.get_string(name_rule).unwrap_or_default();
@@ -658,13 +667,14 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             Some(body.clone())
         };
 
-        let (first_content, next_urls) = parse_content_page(
+        let (first_content, next_urls) = parse_content_page_with_js_lib(
             body,
             content_rule_str,
             next_url_rule,
             &chapter.url,
             &source.book_source_url,
             is_media,
+            source.js_lib.as_deref(),
         );
 
         // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
@@ -677,6 +687,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             content_rule_str,
             next_url_rule,
             is_media,
+            source.js_lib.as_deref(),
             |url: String| {
                 let headers = source_headers_clone.clone();
                 async move { self.fetch_simple(&url, headers.as_ref()).await }
@@ -694,6 +705,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 sub_content_rule,
                 &chapter.url,
                 &source.book_source_url,
+                source.js_lib.as_deref(),
                 |url: String| {
                     let headers = sub_headers.clone();
                     async move { self.fetch_simple(&url, headers.as_ref()).await }
@@ -715,6 +727,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 replace_regex_rule,
                 &chapter.url,
                 &source.book_source_url,
+                source.js_lib.as_deref(),
             )?;
         }
 
@@ -748,6 +761,9 @@ const MAX_CONTENT_PAGES: usize = 99;
 /// - 正文规则提取 + HtmlFormatter 净化管线（音视频源跳过格式化）
 /// - next_url_rule 非空时解析下一页 URL 列表（对标 Kotlin
 ///   `analyzeRule.getStringList(nextUrlRule, isUrl = true)`），并基于本页 URL 绝对化
+/// 无 jsLib 版本（测试与旧调用兼容；生产正文解析走
+/// [`parse_content_page_with_js_lib`] 注入书源 jsLib）
+#[cfg(test)]
 fn parse_content_page(
     body: String,
     content_rule_str: &str,
@@ -756,10 +772,34 @@ fn parse_content_page(
     source_url: &str,
     is_media: bool,
 ) -> (String, Vec<String>) {
-    let analyzer = crate::js_executor::construct_analyzer(
+    parse_content_page_with_js_lib(
+        body,
+        content_rule_str,
+        next_url_rule,
+        page_url,
+        source_url,
+        is_media,
+        None,
+    )
+}
+
+/// [UI-fix 2026-08-10 | Reasonix] 正文解析注入书源 jsLib：漫画/视频/音频源
+/// ruleContent 常以 `<js>`/`@js:` 引用 jsLib 定义的函数（Reload/getHosts 等），
+/// 此前不注入 → 正文 JS 抛错 → 正文为空（「搜到书但正文图片不显示/无法播放」）。
+fn parse_content_page_with_js_lib(
+    body: String,
+    content_rule_str: &str,
+    next_url_rule: &str,
+    page_url: &str,
+    source_url: &str,
+    is_media: bool,
+    js_lib: Option<&str>,
+) -> (String, Vec<String>) {
+    let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
         body,
         page_url.to_string(),
         source_url,
+        js_lib,
     );
 
     let raw_content = if content_rule_str.is_empty() {
@@ -814,6 +854,7 @@ async fn fetch_paginated_content<F, Fut>(
     content_rule_str: &str,
     next_url_rule: &str,
     is_media: bool,
+    js_lib: Option<&str>,
     mut fetch_page: F,
 ) -> String
 where
@@ -837,13 +878,14 @@ where
                 }
                 match fetch_page(raw_url.clone()).await {
                     Ok(next_body) => {
-                        let (page_content, _) = parse_content_page(
+                        let (page_content, _) = parse_content_page_with_js_lib(
                             next_body,
                             content_rule_str,
                             "", // getNextPageUrl = false
                             &raw_url,
                             source_url,
                             is_media,
+                            js_lib,
                         );
                         content_list.push(page_content);
                     }
@@ -865,13 +907,14 @@ where
                         break;
                     }
                 };
-                let (page_content, following) = parse_content_page(
+                let (page_content, following) = parse_content_page_with_js_lib(
                     next_body,
                     content_rule_str,
                     next_url_rule,
                     &next_url,
                     source_url,
                     is_media,
+                    js_lib,
                 );
                 content_list.push(page_content);
                 // 仅在获得单个下一页时继续串行（对标 Kotlin size==1 分支）；
@@ -912,16 +955,18 @@ async fn fetch_sub_content<F, Fut>(
     sub_rule: &str,
     page_url: &str,
     source_url: &str,
+    js_lib: Option<&str>,
     fetch: F,
 ) -> Option<String>
 where
     F: FnOnce(String) -> Fut,
     Fut: std::future::Future<Output = LegadoResult<String>>,
 {
-    let analyzer = crate::js_executor::construct_analyzer(
+    let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
         page_body,
         page_url.to_string(),
         source_url,
+        js_lib,
     );
     let raw = match eval_rule_string(&analyzer, sub_rule) {
         Ok(v) => v,
@@ -963,16 +1008,18 @@ fn apply_content_replace_regex(
     replace_regex: &str,
     base_url: &str,
     source_url: &str,
+    js_lib: Option<&str>,
 ) -> LegadoResult<String> {
     let trimmed = content
         .split('\n')
         .map(|line| line.trim())
         .collect::<Vec<_>>()
         .join("\n");
-    let analyzer = crate::js_executor::construct_analyzer(
+    let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
         trimmed,
         base_url.to_string(),
         source_url,
+        js_lib,
     );
     eval_rule_string(&analyzer, replace_regex)
 }
@@ -1778,6 +1825,7 @@ mod tests {
             ".content@html",
             ".next@href",
             false,
+            None,
             scripted_fetch(pagination_pages()),
         ));
         // 多页拼接（顺序 + \n 连接）
@@ -1808,6 +1856,7 @@ mod tests {
             ".content@html",
             "",
             false,
+            None,
             scripted_fetch(pagination_pages()),
         ));
         assert!(result.contains("第一页正文"));
@@ -1848,6 +1897,7 @@ mod tests {
             ".content@html",
             ".next@href&&.alt@href",
             false,
+            None,
             scripted_fetch(pages),
         ));
         let parts: Vec<&str> = result.split('\n').collect();
@@ -1887,6 +1937,7 @@ mod tests {
             ".content@html",
             ".next@href",
             false,
+            None,
             scripted_fetch(pages),
         ));
         let parts: Vec<&str> = result.split('\n').collect();
@@ -1909,6 +1960,7 @@ mod tests {
             ".sub@html",
             "https://example.com/chap/1.html",
             "https://example.com",
+            None,
             |_url: String| async { panic!("文本副内容不应触发二次请求") },
         ));
         assert_eq!(
@@ -1928,6 +1980,7 @@ mod tests {
             ".sublink@href",
             "https://example.com/chap/1.html",
             "https://example.com",
+            None,
             |url: String| async move {
                 assert_eq!(url, "https://example.com/sub.html");
                 Ok("远程副内容正文".to_string())
@@ -1945,6 +1998,7 @@ mod tests {
             ".sublink@href",
             "https://example.com/chap/1.html",
             "https://example.com",
+            None,
             |_url: String| async { Err(LegadoError::Network("500".into())) },
         ));
         assert!(result.is_none());
@@ -1959,6 +2013,7 @@ mod tests {
             ".nonexist@html",
             "https://example.com/chap/1.html",
             "https://example.com",
+            None,
             |_url: String| async { panic!("空副内容不应触发二次请求") },
         ));
         assert!(result.is_none());
@@ -2031,6 +2086,7 @@ mod tests {
             "##广告##",
             "https://example.com/c.html",
             "https://example.com",
+            None,
         )
         .unwrap();
         assert_eq!(result, "第一行\n第二行");
@@ -2044,8 +2100,54 @@ mod tests {
             ".c@text##广告##",
             "https://example.com/c.html",
             "https://example.com",
+            None,
         )
         .unwrap();
         assert_eq!(result, "正文");
+    }
+
+    // ─── jsLib 注入正文链路（2026-08-10 | Reasonix） ─────────────────────
+    // 漫画/视频源 ruleContent 常以 `<js>eval(String(Reload('...')))</js>` 引用
+    // jsLib 定义的函数；正文解析必须注入 jsLib，否则 JS 抛错 → 正文为空。
+
+    #[test]
+    fn test_parse_content_page_with_js_lib_resolves_lib_function() {
+        // 原版语义：jsLib 的 Reload(url) 网络加载远端 JS 代码串并返回，
+        // 模板 `<js>eval(String(Reload('...')))</js>` 执行该代码取回 URL 字面量
+        let js_lib = "function Reload(u) { return 'String(\"https://img.example.com/p1.jpg\")'; }";
+        let rule = "<js>eval(String(Reload('https://cdn.example.com/loader.js')))</js>";
+        let (content, _) = parse_content_page_with_js_lib(
+            "<html><body>忽略</body></html>".to_string(),
+            rule,
+            "",
+            "https://manga.example.com/chapter/1.html",
+            "https://manga.example.com",
+            false,
+            Some(js_lib),
+        );
+        assert!(
+            content.contains("https://img.example.com/p1.jpg"),
+            "jsLib 注入后应解析出图片地址，实际: {content}"
+        );
+    }
+
+    #[test]
+    fn test_parse_content_page_without_js_lib_degrades() {
+        // 无 jsLib（旧行为）时库函数未定义 → 模板求值失败 → 无库调用结果。
+        // 注意：source_tag 须与注入测试不同（引擎按 tag 复用，jsLib 副作用残留）
+        let rule = "<js>eval(String(Reload('https://img.example.com/p1.jpg')))</js>";
+        let (content, _) = parse_content_page_with_js_lib(
+            "<html><body>忽略</body></html>".to_string(),
+            rule,
+            "",
+            "https://manga.example.com/chapter/1.html",
+            "no_js_lib_tag.example.com",
+            false,
+            None,
+        );
+        assert!(
+            !content.contains("img.example.com"),
+            "无 jsLib 时不应解析出库函数结果，实际: {content}"
+        );
     }
 }
