@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.15] - 2026-08-10
+
+### 修复（图片源搜索 + 漫画正文图片 + 视频播放，对齐原版）
+- 图片书源分组搜索无结果：5 个图片源（爱妹子/Asian Porn Image/爱轻写真/学姐吧/萌图社）中 `@js:` 前缀 searchUrl 与 `{{encodeURIComponent(key)}}` 模板在搜索链路已由 v2.0.14 修复；本版补 **AnalyzeRule 不支持 `<js>` 标签**的核心缺口——规则引擎仅认 `@js:` 前缀，`<js>...</js>` 包裹落入 CSS/Auto 解析返回空（原版 RuleAnalyzer 将两者同视为 Mode.Js，JS 结果直接作为提取结果）。修复：`AnalyzeRule.get_strings` 识别 `<js>...</js>` 包裹并执行 JS（对齐原版 Mode.Js 语义）（Reasonix）
+- 漫画正文图片不显示：① 正文/目录/书籍信息/搜索解析链路（web_book.rs 全部 9 处 construct_analyzer 调用点 + parse_content_page / fetch_paginated_content / fetch_sub_content / apply_content_replace_regex）**注入书源 jsLib**（漫画源 ruleContent 大量 `<js>eval(String(Reload('...')))</js>` 引用 jsLib 函数，不注入则 JS 抛错 → 空正文）；② Flutter 漫画阅读器：图片请求带**书源防盗链 header**（CachedNetworkImage httpHeaders，对齐原版 glide getGlideUrl 带 headerMap——CDN 校验 Referer 时无 header 403）；③ 相对图片路径以章节 URL 为 base 转绝对（对齐原版 BookHelp.flowImages getAbsoluteURL）；④ 图片 URL 解析兼容 JSON 数组/逗号列表（解析 img 标签 + 每行 URL 白名单外再补 JSON 数组解析）（Reasonix）
+- 视频正文无法播放：① 正文链路 jsLib 注入（同漫画）；② `_extractVideoUrl` 增强——支持 `<iframe>/<video>/<source>/<embed>` 标签 src 提取（视频源 ruleContent 常返回播放器页 HTML，纯正则取首个 URL 会取到无关链接），兜底保持首个 `https?://` URL；③ 播放请求带书源防盗链 header（VideoPlayerController.networkUrl httpHeaders，对齐原版 player.mapHeadData）（Reasonix）
+
+### 测试
+- 新增 Rust 测试 3 个：`<js>` 标签 + jsLib 注入正文解析（web_book parse_content_page_with_js_lib）、无 jsLib 降级、js_executor jsLib 注入；cargo test（quickjs）legado-ffi 261 + legado-parser 178 全过；flutter analyze 0 error、flutter test 1143/1143 全过
+
 ## [2.0.14] - 2026-08-10
 
 ### 修复（Rust 搜索链路，对齐原版）

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -53,6 +54,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
   /// 图片加载失败的索引集合（用于显示重试按钮）
   final Set<int> _failedIndices = {};
+
+  /// 书源防盗链 header（Referer/UA 等，对齐原版 glide getGlideUrl 带书源 headerMap）
+  /// [UI-fix 2026-08-10 | Reasonix] 漫画 CDN 常校验 Referer，无 header 时 403
+  Map<String, String> _imageHeaders = const {};
 
   /// 预加载缓存（前后各 2 页）
   static const int _preloadRange = 2;
@@ -135,6 +140,18 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       final api = ref.read(bookApiProvider);
       final chapter = _chapters[_currentChapterIndex];
 
+      // 书源防盗链 header（仅取一次；对齐原版 OkHttpStreamFetcher 带书源
+      // headerMap 加载漫画图）— Reasonix
+      if (_imageHeaders.isEmpty && _book != null && _book!.origin.isNotEmpty) {
+        final sources = await api.getBookSources();
+        for (final s in sources) {
+          if (s.bookSourceUrl == _book!.origin && s.header != null && s.header!.isNotEmpty) {
+            _imageHeaders = _parseHeaderMap(s.header!);
+            break;
+          }
+        }
+      }
+
       // 获取章节内容
       String content;
       if (chapter.url.isNotEmpty && _book != null) {
@@ -156,6 +173,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
       // 解析图片 URL（支持多种格式）
       _imageUrls = _parseImageUrls(content);
+
+      // 相对路径转绝对（对齐原版 BookHelp.flowImages：
+      // NetworkUtils.getAbsoluteURL(bookChapter.url, src)）— Reasonix
+      if (_imageUrls.any((u) => !u.startsWith('http'))) {
+        _imageUrls = _imageUrls
+            .map((u) => _resolveImageUrl(chapter.url, u))
+            .toList();
+      }
 
       // 如果章节有 imgUrl 字段，也作为图片源
       if (chapter.imgUrl != null && chapter.imgUrl!.isNotEmpty) {
@@ -224,6 +249,46 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         lower.contains('/image') ||
         lower.contains('/img') ||
         lower.contains('/pic');
+  }
+
+  /// 解析书源 header 字符串（JSON 或 key: value 行）— Reasonix
+  Map<String, String> _parseHeaderMap(String header) {
+    final trimmed = header.trim();
+    if (trimmed.isEmpty) return const {};
+    if (trimmed.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map<String, dynamic>) {
+          return decoded.map((k, v) => MapEntry(k, v.toString()));
+        }
+      } catch (_) {
+        // JSON 解析失败走行解析
+      }
+    }
+    final map = <String, String>{};
+    for (final line in trimmed.split('\n')) {
+      final idx = line.indexOf(':');
+      if (idx > 0) {
+        map[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+      }
+    }
+    return map;
+  }
+
+  /// 相对路径转绝对（以章节 URL 为 base，对齐原版 NetworkUtils.getAbsoluteURL）
+  String _resolveImageUrl(String chapterUrl, String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('//')) return 'https:$url';
+    final uri = Uri.tryParse(chapterUrl);
+    if (uri == null) return url;
+    final base = uri.scheme.isNotEmpty && uri.host.isNotEmpty
+        ? '${uri.scheme}://${uri.host}'
+        : chapterUrl;
+    if (url.startsWith('/')) return '$base$url';
+    // 相对当前目录：章节 URL 去掉最后一段
+    final path = uri.path;
+    final dir = path.substring(0, path.lastIndexOf('/') + 1);
+    return '$base$dir$url';
   }
 
   /// 滚动监听，触发预加载
@@ -419,6 +484,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
     return CachedNetworkImage(
       imageUrl: url,
+      httpHeaders: _imageHeaders, // 防盗链 header（对齐原版）— Reasonix
       fit: BoxFit.fitWidth,
       width: double.infinity,
       // 漫画页按屏宽全分辨率显示，不限制 memCacheWidth（磁盘缓存默认开启）

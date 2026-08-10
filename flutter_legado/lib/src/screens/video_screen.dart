@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -63,6 +65,10 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 章节加载/切换错误信息（book 模式）
   String? _chapterError;
 
+  /// 书源防盗链 header（Referer/UA 等，对齐原版 VideoPlay player.mapHeadData）
+  /// [UI-fix 2026-08-10 | Reasonix] 视频 CDN 常校验 Referer，无 header 时 403
+  Map<String, String> _videoHeaders = const {};
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +85,20 @@ class _VideoScreenState extends State<VideoScreen> {
     setState(() => _loadingChapter = true);
     try {
       final api = ProviderScope.containerOf(context).read(bookApiProvider);
+      // 书源防盗链 header（仅取一次）— Reasonix
+      if (_videoHeaders.isEmpty && book.origin.isNotEmpty) {
+        try {
+          final sources = await api.getBookSources();
+          for (final s in sources) {
+            if (s.bookSourceUrl == book.origin &&
+                s.header != null &&
+                s.header!.isNotEmpty) {
+              _videoHeaders = _parseHeaderMap(s.header!);
+              break;
+            }
+          }
+        } catch (_) {}
+      }
       _chapters = await api.getChapters(book.bookUrl);
       if (_chapters.isEmpty) {
         setState(() {
@@ -141,13 +161,52 @@ class _VideoScreenState extends State<VideoScreen> {
     }
   }
 
-  /// 从章节正文提取视频链接（正文可能为纯链接、多行或多个 URL，取首个）
+  /// 从章节正文提取视频链接
+  ///
+  /// 支持：纯 URL、`<iframe src=...>`、`<video src=...>`、`source src=...`；
+  /// 兜底取首个 `https?://` URL（对齐原版 VideoPlay 正文即播放地址语义）
+  /// [UI-fix 2026-08-10 | Reasonix] 视频源 ruleContent 常返回播放器页 HTML
   String _extractVideoUrl(String content) {
     final trimmed = content.trim();
     if (trimmed.isEmpty) return '';
+    // 优先提取 iframe/video/source 标签的 src（播放器页 HTML 场景）
+    for (final tag in ['iframe', 'video', 'source', 'embed']) {
+      final tagM = RegExp('<$tag[^>]+src=["\']([^"\'>]+)["\']', caseSensitive: false)
+          .firstMatch(trimmed);
+      if (tagM != null) {
+        final tagUrl = tagM.group(1)!.trim();
+        if (tagUrl.isNotEmpty) {
+          return tagUrl;
+        }
+      }
+    }
     final m = RegExp(r'https?://\S+').firstMatch(trimmed);
     if (m == null) return trimmed;
     return m.group(0)!.trim().replaceAll(RegExp(r'[)\]}>"\x27]+$'), '');
+  }
+
+  /// 解析书源 header 字符串（JSON 或 key: value 行）— Reasonix
+  Map<String, String> _parseHeaderMap(String header) {
+    final trimmed = header.trim();
+    if (trimmed.isEmpty) return const {};
+    if (trimmed.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map<String, dynamic>) {
+          return decoded.map((k, v) => MapEntry(k, v.toString()));
+        }
+      } catch (_) {
+        // JSON 解析失败走行解析
+      }
+    }
+    final map = <String, String>{};
+    for (final line in trimmed.split('\n')) {
+      final idx = line.indexOf(':');
+      if (idx > 0) {
+        map[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+      }
+    }
+    return map;
   }
 
   /// 切换上一集/下一集
@@ -171,7 +230,10 @@ class _VideoScreenState extends State<VideoScreen> {
       return;
     }
 
-    _controller = VideoPlayerController.networkUrl(uri);
+    _controller = VideoPlayerController.networkUrl(
+      uri,
+      httpHeaders: _videoHeaders, // 防盗链 header（对齐原版 AnalyzeUrl.headerMap）— Reasonix
+    );
     _initializeVideoPlayerFuture = _controller.initialize().then((_) {
       // 初始化成功后自动开始播放
       if (mounted) {
