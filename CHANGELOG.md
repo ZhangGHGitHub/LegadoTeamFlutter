@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.13] - 2026-08-10
+
+### 修复
+- 图片源/音频源/视频源打不开（分流失效根治）：搜索输出不带 `type`（Flutter 侧 bookType 恒 0）且阅读前落库只写 `notShelf` 位（8/32/64 类型位丢失）→ 第二次起分流落回文本阅读器。修复（对齐原版 BookInfoActivity.startReadActivity）：
+  - `_openReader` 解析类型位：bookType 缺类型位（0/仅状态位）时按书源类型（bookSourceType：1=音频/2=图片/3=文件/4=视频）映射补全位标记（text=8/audio=32/image=64/video=4/webFile=128）
+  - 落库以正确类型位 + notShelf；已入库缺类型位旧数据回填 updateBook
+  - 分流补齐 video 分支：视频源书 → `/video`（章节播放）
+- 视频源书阅读（对齐原版 VideoPlayerActivity）：VideoScreen 支持 `book` 参数——加载章节列表、取当前章正文（视频链接，Rust is_media 分支不做 HTML 格式化）播放、上一集/下一集切换、章节标题显示；`_controller` 未初始化防御（异步加载中退出/首次播放）
+- 新增 4 个分流 widget 测试（音频/图片/文本/视频 + 已入库缺类型位回归），全量 flutter test 1143/1143（Reasonix）
+
 ## [2.0.12] - 2026-08-10
 
 ### 修复

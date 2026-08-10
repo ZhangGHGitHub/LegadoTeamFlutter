@@ -1080,12 +1080,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.24  
+**文档版本**: 1.25  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.25（2026-08-10）图片/音频/视频源分流失效根治（v2.0.13，Reasonix 实施）：根因双断点——① Rust 搜索输出 AnnotatedCandidate 不带 type（Flutter bookType 恒 0）；② 阅读前落库 `0|notShelf` 致 8/32/64 类型位永久丢失（第二次起 `bt≠0` 兜底不触发→落回文本阅读器）。修复：_openReader 缺类型位时按书源类型映射补全位标记、落库/回填正确类型位、video 分支进 /video；VideoScreen 支持视频源书章节播放（章节列表+当前章链接+上/下集，对齐原版 VideoPlayerActivity）；新增 4 个分流 widget 测试（含缺类型位回归），全量 1143/1143。实机验证受限说明：5558 无法 adb 输入中文关键词（cmd clipboard 不可用），图片源真实书搜索交由用户验证（分组选「图片书源」→中文关键词→点开→开始阅读）
 - v1.24（2026-08-10）阅读进度恢复 + 图片/音频源分流修复登记（v2.0.12，Reasonix 实施）：① 进度不恢复——详情页旧快照不刷新（Rust books 表已存 dur_chapter_index 但页面实例不重读），_openReader 阅读返回后 setState 重载 + openBook 恢复 durChapterPos，5558 实机验证「第5章跳转→返回→再进」正确恢复；② 图片/音频源——BookType 常量 0/1/2 枚举误义修正为位标记（text=8/audio=32/image=64，与 Rust 返回 type 一致）、_openReader 按位标记分流（audio→/audio、image→/reader-comic、文本→/reader，缺失兜底按 bookSourceType）、书架音频/视频分组改位运算；新增 3 个分流 widget 测试，全量 flutter test 1141/1141、5558 冒烟 5/5 通过
 - v1.23（2026-08-10）搜索/阅读 UI 三问题修复登记（v2.0.11，Reasonix 实施）：① 搜索异常书源弹窗消除——批次 error 消费补齐（单源失败静默不弹 UI、appLogPush error 级留痕「书源搜索出错」，对齐原版 SearchModel 仅 AppLog.put；经原版源码核实「原版批次错误弹 SnackBar」为误判，原版单源失败无任何 UI 提示）；② 搜索框文字垂直裁切——isDense + textAlignVertical.center + suffixIcon 32×32 约束；③ 书籍信息页简介默认全部显示（_ExpandableText 默认展开保留收起）。新增 search_notifier 单测 2 个（失败批次静默留痕/全败空态），flutter analyze 0 error、相关测试 58/58 与全量 1138/1138 全过，模拟器冒烟 5556 通过
 - v1.22（2026-08-10）搜索三修复登记（v2.0.10，Reasonix 实施）：① 排序对齐原版 mergeItems 四档分桶（默认搜索也按匹配度排序，精准丢 other+重搜）；② 卡顿修复（分桶移入批次回调，build 直接消费）；③ bookUrl 空校验文案可读化（legado-core 两处 + 测试断言更新）
