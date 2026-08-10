@@ -11,7 +11,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 | 路径 | 内容 |
 |---|---|
-| `app/` | Kotlin Android 主模块（1200+ 源文件），含 `app/src/main/java/io/legado/app/` |
+| `app/` | Kotlin Android 主模块（约 1000 个 .kt 源文件），含 `app/src/main/java/io/legado/app/` |
 | `modules/book/`、`modules/rhino/`、`modules/web/` | Android 子模块（书源、Rhino JS 引擎、Web 辅助） |
 | `flutter_legado/` | Flutter UI（Windows 构建主模块），`lib/` 为 Dart 源码 |
 | `rust/` | Rust 工作区（legado-book / legado-core / legado-db / legado-ffi / legado-js / legado-net / legado-parser / legado-server） |
@@ -36,12 +36,12 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 ## 关键约束
 
-- **原版对齐**：功能实现逻辑必须参照 Android 原版源码（功能基准：`com.legado.app.release` 3.26073003）；界面功能、页面结构与交互流程必须与原版保持一致；**UI 视觉风格允许自由改变**（配色、字体、设计语言等不受原版约束，2026-08-05 用户确认），且 UI 开发必须使用 apple-ui-designer 技能
+- **原版对齐**：功能实现逻辑必须参照 Android 原版源码（功能基准：`com.legado.app.release` 3.26081008）；界面功能、页面结构与交互流程必须与原版保持一致；**UI 视觉风格允许自由改变**（配色、字体、设计语言等不受原版约束，2026-08-05 用户确认），且 UI 开发必须使用 apple-ui-designer 技能
 - **双轨并存**：旧 Android 代码暂不删除，保持双轨并存；Rust 核心逻辑 + Flutter UI 为新架构
 - **FFI 变更**：修改 Rust/Dart FFI 边界前，先更新 `docs/API_CONTRACT.md` 契约，再实施代码；跨轨阻塞项须 Rust 轨先行交付契约；契约修改需双方（Qoder/QoderCN）确认；Mock 数据使用从原 Android 应用抓取的真实 JSON
 - **重构红线**：本项目为重构项目，禁止新增 Android 原版不存在的创意功能；发现偏离项（如推荐算法、阅读统计等）必须清理，一切以不偏离重构核心为目标
 - **执行边界**：不得超范围删除或修改文件，删除/修改代码前必须先确认范围无误
-- **计划驱动**：每阶段开发前先审查计划与进度文档（DEVELOPMENT.md / PROGRESS.md / REFACTORING_PLAN.md 等），确认进度符合度后按 P0/P1/P2 优先级顺序执行
+- **计划驱动**：每阶段开发前先审查计划与进度文档（docs/ 下 REFACTORING_PLAN.md / REFACTORING_REMAINING_PLAN.md 等），确认进度符合度后按 P0/P1/P2 优先级顺序执行
 - **UI 层职责边界**：UI 层只做界面渲染、交互与状态管理，不含业务逻辑；数据经 Rust Bridge 获取；遵循 UI 层与底层分离原则
 - **文档存放**：新建计划/报告/交接类 `.md` 必须放 `docs/`；根目录仅保留 README.md、CHANGELOG.md、LICENSE、AGENTS.md 等约定文件
 - **全中文规范**：汇报、commit 说明、代码注释全部使用中文
@@ -53,7 +53,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 - 分支策略：`feature/rust-*` 与 `feature/ui-*` 独立开发，集成使用 `integration/*` 分支；仅从当前 HEAD 创建规范分支，不得改动已提交历史
 - 署名规范：UI 层代码署名「— 子代理名称 + UI」，Bridge 层代码署名「— 子代理名称 + Bridge」，文档末尾附编写者署名与日期
 - 批次修复按 pubspec 版本 patch 递增（如 2.0.0+2 → 2.0.1+3），每批同步更新 CHANGELOG，记录版本号与贡献者
-- 进度文档（PROGRESS.md 等）须与 git 提交记录保持同步，任务编号不得重叠
+- 进度文档（docs/ 下）须与 git 提交记录保持同步，任务编号不得重叠
 
 ## 验证与交付流程
 
@@ -74,7 +74,8 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 - `.qoder/agents/builtin/`：Qoder 产品内置专家团模板（code-reviewer、full-stack-engineer、qa、researcher、ui-operator），仅含 frontmatter，由产品自动维护，**勿手动编辑**；需要项目专用 agent 请创建到 `.qoder/agents/`（非 builtin 目录）
 - `.agents/skills/`：**技能权威路径**，当前 53 个技能（资产清单与 lint 仅统计该处）
-- `.qoder/skills/` 与 `.claude/skills/`：同源副本，当前 43 个与权威路径逐字节一致；10 个 flutter-* 技能尚未同步到副本。修改技能请改 `.agents/skills/` 并同步副本
+- `.qoder/skills/` 与 `.claude/skills/`：同源副本；以 `.agents/skills/` 为权威路径，修改技能后同步副本
 - `.qoder/rules/legado-dev-conventions.md`：项目唯一规则文件，与本文档配合使用
 
 编写者：Qoder ｜ 2026-08-10
+修订：Reasonix ｜ 2026-08-10（更新上游版本基准 3.26081008、计划文档引用、app 文件数；精简技能同步说明）
