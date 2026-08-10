@@ -1423,20 +1423,61 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   // ===== 操作 =====
 
+  /// 书源类型 → 书籍类型位标记（对齐原版 BookSourceExtensions.getBookType：
+  /// 文本→text(8)、音频→audio(32)、图片→image(64)、文件→text|webFile(136)、
+  /// 视频→video(4)；位标记语义与 Rust search.rs book_type 一致）— Reasonix
+  static int _typeBitsForSource(int bookSourceType) {
+    switch (bookSourceType) {
+      case 1:
+        return BookType.audio;
+      case 2:
+        return BookType.image;
+      case 3:
+        return BookType.text | BookType.webFile;
+      case 4:
+        return BookType.video;
+      default:
+        return BookType.text;
+    }
+  }
+
   Future<void> _openReader(
       BuildContext context, Book book, int chapterIndex) async {
     // [UI-fix v2.0.3 | 2026-08-06] 对齐原版 readBook：未入库在线书阅读前先落库 — Qoder
     // 带正确 origin 落库，使阅读器 DB 依赖成立（get_chapter_content_full 按
     // book.origin 找书源取正文），规避「章节不存在 / 未配置书源」；已入库则幂等跳过。
     final api = ref.read(bookApiProvider);
+    // [UI-fix v2.0.12 | 2026-08-10] 解析书籍类型位（对齐原版 BookType 位标记）：
+    // 搜索输出不带 type（bookType=0）或旧库只有 notShelf 位时，按书源类型
+    // （bookSourceType：1=音频/2=图片/3=文件/4=视频）映射补全，保证分流与
+    // 落库类型正确（修复图片/音频/视频源「打不开」——类型位丢失致分流落回
+    // 文本阅读器）— Reasonix
+    const typeMask = BookType.video |
+        BookType.text |
+        BookType.audio |
+        BookType.image |
+        BookType.webFile;
+    var typeBits = book.bookType & typeMask;
+    if (typeBits == 0 && _isOnlineBook(book)) {
+      final source = await _findSourceByOrigin(api, book.origin);
+      if (source != null) {
+        typeBits = _typeBitsForSource(source.bookSourceType);
+      }
+    }
     try {
       if (_isOnlineBook(book)) {
         final existing = await api.getBook(book.bookUrl);
         if (existing == null) {
-          // 以 notShelf 位标记临时落库：阅读器 DB 依赖成立（按 origin 取正文），
-          // 但不进书架列表；用户显式「加入书架」时再清标记转正（见 _toggleShelf）。
+          // 以正确类型位 + notShelf 位标记临时落库：阅读器 DB 依赖成立
+          // （按 origin 取正文），但不进书架列表；用户显式「加入书架」时再
+          // 清标记转正（见 _toggleShelf）。
           await api.addBook(
-              book.copyWith(bookType: book.bookType | BookType.notShelf));
+              book.copyWith(bookType: typeBits | BookType.notShelf));
+        } else if (typeBits != 0 &&
+            (existing.bookType & typeMask) == 0) {
+          // 已入库但缺类型位（旧数据/占位落库）→ 回填，保证后续分流正确
+          await api.updateBook(
+              existing.copyWith(bookType: existing.bookType | typeBits));
         }
       }
     } catch (e) {
@@ -1445,26 +1486,29 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     if (!context.mounted) return;
     final container = ProviderScope.containerOf(context);
     final bookToRead = chapterIndex != book.durChapterIndex
-        ? book.copyWith(durChapterIndex: chapterIndex)
-        : book;
-    // [UI-fix v2.0.11 | 2026-08-10] 按书籍类型分流阅读器（对齐原版
-    // BookInfoActivity.startReadActivity：audio→AudioPlayActivity /
-    // image→漫画阅读器 / 文本→ReadBookActivity）。bookType 为位标记
-    // （text=8/audio=32/image=64）；搜索等路径 bookType 缺失（0）时
-    // 兜底按书源类型（bookSourceType：1=音频/2=图片）判定 — Reasonix
-    final bt = bookToRead.bookType;
-    var isAudio = (bt & BookType.audio) != 0;
-    var isImage = (bt & BookType.image) != 0;
-    if (!isAudio && !isImage && bt == 0 && _isOnlineBook(book)) {
-      final source = await _findSourceByOrigin(api, book.origin);
-      if (source != null) {
-        isAudio = source.bookSourceType == 1;
-        isImage = source.bookSourceType == 2;
+        ? book.copyWith(durChapterIndex: chapterIndex, bookType: typeBits)
+        : book.copyWith(bookType: typeBits);
+    // 按类型分流（对齐原版 BookInfoActivity.startReadActivity：video→
+    // VideoPlayerActivity / audio→AudioPlayActivity / image→漫画阅读器 /
+    // 文本→ReadBookActivity）— Reasonix
+    final isVideo = (typeBits & BookType.video) != 0;
+    final isAudio = (typeBits & BookType.audio) != 0;
+    final isImage = (typeBits & BookType.image) != 0;
+    if (isVideo) {
+      if (!context.mounted) return;
+      // 视频源书：章节正文为播放链接，进入章节播放页（对齐原版
+      // VideoPlayerActivity 接收 bookUrl 语义）
+      await Navigator.pushNamed(context, AppRoutes.video, arguments: bookToRead);
+      if (mounted) {
+        setState(() {
+          _future = _loadData();
+        });
       }
+      return;
     }
     if (isAudio) {
       if (!context.mounted) return;
-      await Navigator.pushNamed(context, AppRoutes.audio, arguments: book);
+      await Navigator.pushNamed(context, AppRoutes.audio, arguments: bookToRead);
       if (mounted) {
         setState(() {
           _future = _loadData();
@@ -1475,7 +1519,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     if (isImage) {
       if (!context.mounted) return;
       await Navigator.pushNamed(
-          context, AppRoutes.readerComic, arguments: book.bookUrl);
+          context, AppRoutes.readerComic, arguments: bookToRead.bookUrl);
       if (mounted) {
         setState(() {
           _future = _loadData();

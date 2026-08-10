@@ -14,6 +14,7 @@ import 'package:flutter_legado/src/screens/book_group_screen.dart';
 import 'package:flutter_legado/src/screens/book_info_screen.dart';
 import 'package:flutter_legado/src/screens/reader_comic_screen.dart';
 import 'package:flutter_legado/src/screens/reader_screen.dart';
+import 'package:flutter_legado/src/screens/video_screen.dart';
 import 'package:flutter_legado/src/services/audio_service.dart';
 
 import '../mocks/mocks.dart';
@@ -339,6 +340,53 @@ void main() {
 
         expect(pushed, contains(AppRoutes.reader));
         Navigator.of(tester.element(find.byType(ReaderScreen))).pop();
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('视频书（bookType=4）进入视频播放页', (tester) async {
+        const book = Book(bookUrl: 'u1', name: '视频书', bookType: 4);
+        stubCommon(book);
+        await tester
+            .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('开始阅读'));
+        await tester.pumpAndSettle();
+
+        expect(pushed, contains(AppRoutes.video));
+        Navigator.of(tester.element(find.byType(VideoScreen))).pop();
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('已入库缺类型位（bookType=1024）时按书源类型分流图片书',
+          (tester) async {
+        // [UI-fix v2.0.12] 回归：搜索/旧库 type 缺失（0/仅 notShelf）时，
+        // 按书源类型（bookSourceType=2 图片）补全类型位并分流 — Reasonix
+        const book = Book(
+            bookUrl: 'u1',
+            name: '旧库漫画',
+            bookType: BookType.notShelf, // 1024：缺类型位
+            origin: 'https://manga-source.com');
+        stubCommon(book);
+        when(() => mockApi.getBook(any())).thenAnswer((_) async => book);
+        when(() => mockApi.getBookSources()).thenAnswer((_) async => [
+              const BookSource(
+                bookSourceUrl: 'https://manga-source.com',
+                bookSourceName: '漫画源',
+                bookSourceType: 2,
+                enabled: true,
+              ),
+            ]);
+        await tester
+            .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('开始阅读'));
+        await tester.pumpAndSettle();
+
+        // 类型位补全（64）→ 图片源分流到漫画页
+        expect(pushed, contains(AppRoutes.readerComic));
+        Navigator.of(tester.element(find.byType(ReaderComicScreen))).pop();
         await tester.pumpAndSettle();
       });
     });

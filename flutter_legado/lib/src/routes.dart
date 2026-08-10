@@ -310,6 +310,15 @@ class AppRoutes {
               title: args['title'] ?? '视频播放',
             );
           }
+          // [UI-fix v2.0.12] 视频源书籍：章节列表 + 当前章播放（对齐原版
+          // VideoPlayerActivity 接收 bookUrl 语义）— Reasonix
+          if (args is Book) {
+            return VideoScreen(
+              videoUrl: '',
+              title: args.name,
+              book: args,
+            );
+          }
           return const VideoScreen(videoUrl: '');
         },
         webdavSettings: (_) => const WebDavSettingsScreen(),

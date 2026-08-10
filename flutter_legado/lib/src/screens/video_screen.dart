@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+
+import '../models/models.dart';
+import '../providers/providers.dart';
 
 /// 视频播放页面
 ///
@@ -9,6 +13,9 @@ import 'package:video_player/video_player.dart';
 /// - 支持播放/暂停、进度拖拽、时间显示
 /// - 支持全屏切换（横屏模式）
 /// - 加载中指示器与错误处理
+/// - [UI-fix v2.0.12 | 2026-08-10] 视频源（bookSourceType=4）书籍支持：
+///   传入 [book] 时按原版 VideoPlayerActivity 语义加载章节列表，取当前章
+///   正文（视频链接）播放，支持上一集/下一集切换 — Reasonix
 class VideoScreen extends StatefulWidget {
   /// 视频播放地址
   final String videoUrl;
@@ -16,10 +23,14 @@ class VideoScreen extends StatefulWidget {
   /// 视频标题（显示在 AppBar）
   final String title;
 
+  /// 视频源书籍（非空时启用章节列表与切换）
+  final Book? book;
+
   const VideoScreen({
     super.key,
     required this.videoUrl,
     this.title = '视频播放',
+    this.book,
   });
 
   @override
@@ -39,16 +50,119 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 是否显示控制栏（点击视频区域切换）
   bool _showControls = true;
 
+  // ===== 视频源书籍（章节播放）状态 =====
+  /// 章节列表（book 模式）
+  List<BookChapter> _chapters = const [];
+
+  /// 当前章节索引（book 模式）
+  int _chapterIndex = 0;
+
+  /// 章节正文加载中
+  bool _loadingChapter = false;
+
+  /// 章节加载/切换错误信息（book 模式）
+  String? _chapterError;
+
   @override
   void initState() {
     super.initState();
-    _initPlayer();
+    if (widget.book != null) {
+      _loadBookVideo();
+    } else {
+      _initPlayer();
+    }
+  }
+
+  /// 视频源书籍：加载章节列表并播放当前章（对齐原版 VideoPlayerActivity）
+  Future<void> _loadBookVideo() async {
+    final book = widget.book!;
+    setState(() => _loadingChapter = true);
+    try {
+      final api = ProviderScope.containerOf(context).read(bookApiProvider);
+      _chapters = await api.getChapters(book.bookUrl);
+      if (_chapters.isEmpty) {
+        setState(() {
+          _loadingChapter = false;
+          _chapterError = '暂无章节';
+        });
+        return;
+      }
+      var index = book.durChapterIndex;
+      if (index >= _chapters.length) index = 0;
+      _chapterIndex = index;
+      await _playChapter(index);
+    } catch (e) {
+      setState(() {
+        _loadingChapter = false;
+        _chapterError = '$e';
+      });
+    }
+  }
+
+  /// 播放指定章节：取章节正文（视频链接）后初始化播放器
+  Future<void> _playChapter(int index) async {
+    final book = widget.book!;
+    final chapter = _chapters[index];
+    setState(() {
+      _loadingChapter = true;
+      _chapterError = null;
+    });
+    try {
+      final api = ProviderScope.containerOf(context).read(bookApiProvider);
+      // 视频源章节正文为播放链接（Rust is_media 分支不做 HTML 格式化，
+      // 对齐原版 BookContent「音频和视频获取的是链接」语义）
+      final content = book.origin.isNotEmpty
+          ? await api.fetchChapterContent(
+              book.bookUrl, chapter.url, book.origin)
+          : await api.getChapterContent(book.bookUrl, index);
+      final url = _extractVideoUrl(content);
+      if (url.isEmpty) {
+        setState(() {
+          _loadingChapter = false;
+          _chapterError = '章节未解析出视频地址';
+        });
+        return;
+      }
+      // [UI-fix v2.0.12] 首次播放前 _controller 可能未初始化（异步加载中），
+      // 防御性释放（快速退出/加载失败场景）— Reasonix
+      try {
+        _controller.dispose();
+      } catch (_) {}
+      _initPlayer(url);
+      setState(() {
+        _loadingChapter = false;
+        _chapterIndex = index;
+      });
+    } catch (e) {
+      setState(() {
+        _loadingChapter = false;
+        _chapterError = '$e';
+      });
+    }
+  }
+
+  /// 从章节正文提取视频链接（正文可能为纯链接、多行或多个 URL，取首个）
+  String _extractVideoUrl(String content) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) return '';
+    final m = RegExp(r'https?://\S+').firstMatch(trimmed);
+    if (m == null) return trimmed;
+    return m.group(0)!.trim().replaceAll(RegExp(r'[)\]}>"\x27]+$'), '');
+  }
+
+  /// 切换上一集/下一集
+  void _switchChapter(int delta) {
+    if (widget.book == null) return;
+    final next = _chapterIndex + delta;
+    if (next < 0 || next >= _chapters.length) return;
+    _playChapter(next);
   }
 
   /// 初始化视频播放器
-  void _initPlayer() {
-    final uri = Uri.tryParse(widget.videoUrl);
-    if (uri == null || widget.videoUrl.isEmpty) {
+  void _initPlayer([String? url]) {
+    final videoUrl = url ?? widget.videoUrl;
+    final uri = Uri.tryParse(videoUrl);
+    if (uri == null || videoUrl.isEmpty) {
       // URL 无效时创建一个空控制器以触发错误状态
       _controller = VideoPlayerController.networkUrl(Uri.parse(''));
       _initializeVideoPlayerFuture = Future<void>.error(
@@ -79,7 +193,11 @@ class _VideoScreenState extends State<VideoScreen> {
         DeviceOrientation.landscapeRight,
       ]);
     }
-    _controller.dispose();
+    // [UI-fix v2.0.12] book 模式异步加载中退出时 _controller 未初始化，
+    // 防御性释放 — Reasonix
+    try {
+      _controller.dispose();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -133,8 +251,31 @@ class _VideoScreenState extends State<VideoScreen> {
       appBar: _isFullScreen
           ? null
           : AppBar(
-              title: Text(widget.title),
+              title: Text(
+                widget.book != null && _chapters.isNotEmpty
+                    ? _chapters[_chapterIndex].title
+                    : widget.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               actions: [
+                // 视频源书：上一集/下一集切换（对齐原版 VideoPlayerActivity）
+                if (widget.book != null && _chapters.isNotEmpty) ...[
+                  IconButton(
+                    icon: const Icon(Icons.skip_previous),
+                    tooltip: '上一集',
+                    onPressed: _chapterIndex > 0
+                        ? () => _switchChapter(-1)
+                        : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next),
+                    tooltip: '下一集',
+                    onPressed: _chapterIndex < _chapters.length - 1
+                        ? () => _switchChapter(1)
+                        : null,
+                  ),
+                ],
                 // 全屏切换按钮
                 IconButton(
                   icon: const Icon(Icons.fullscreen),
@@ -143,7 +284,43 @@ class _VideoScreenState extends State<VideoScreen> {
                 ),
               ],
             ),
-      body: FutureBuilder<void>(
+      body: _chapterError != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        size: 64, color: Colors.red),
+                    const SizedBox(height: 16),
+                    Text('视频加载失败',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    Text(_chapterError!,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        if (widget.book != null) {
+                          _loadBookVideo();
+                        } else {
+                          _controller.dispose();
+                          _initPlayer();
+                          setState(() {});
+                        }
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重试'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : _loadingChapter
+              ? const Center(child: CircularProgressIndicator())
+              : FutureBuilder<void>(
         future: _initializeVideoPlayerFuture,
         builder: (context, snapshot) {
           // 加载中状态
