@@ -518,6 +518,79 @@ void main() {
       expect(readState().isEmpty, isTrue, reason: 'UI 应显示无结果空态');
     });
 
+    test('失败批次静默不弹错误、仅 appLogPush 留痕（对齐原版 SearchModel）', () async {
+      // [UI-fix v2.0.11 | 2026-08-10] 批次 error 消费：单源失败不阻断整体、
+      // 不写 state.error（杜绝「异常书源」弹窗路径），按原版 AppLog.put 语义留痕 — Reasonix
+      when(() => mockApi.appLogPush(
+          level: any(named: 'level'), message: any(named: 'message')))
+          .thenAnswer((_) async {});
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+                makeBatch(
+                    error: '搜索请求失败: HTTP 500',
+                    finished: 1,
+                    total: 2,
+                    isLast: false),
+                makeBatch(
+                  books: [
+                    {
+                      'origin': 'https://a.com',
+                      'originName': '笔趣阁',
+                      'name': '成功书',
+                      'author': '作者',
+                      'bookUrl': 'https://a.com/b/1',
+                    },
+                  ],
+                  finished: 2,
+                  total: 2,
+                  isLast: true,
+                ),
+              ]));
+
+      container.read(searchNotifierProvider);
+      await pumpInit();
+      await readNotifier().search('关键词');
+      await pumpStream();
+
+      // 静默：error 保持 null，成功源结果正常合并、进度正常推进
+      expect(readState().error, isNull, reason: '失败源不写 UI 错误态');
+      expect(readState().results, hasLength(1));
+      expect(readState().searchedCount, equals(2));
+      expect(readState().isLoading, isFalse);
+      // 留痕：error 级别记录「书源搜索出错」（对齐原版 AppLog.put 文案）
+      final captured = verify(() => mockApi.appLogPush(
+          level: 'error', message: captureAny(named: 'message'))).captured;
+      expect(captured.single, contains('书源搜索出错'));
+    });
+
+    test('全部批次失败时结果为空、error 仍为 null（UI 走无结果空态）', () async {
+      when(() => mockApi.appLogPush(
+          level: any(named: 'level'), message: any(named: 'message')))
+          .thenAnswer((_) async {});
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+                makeBatch(
+                    error: '书源 searchUrl 为空',
+                    finished: 1,
+                    total: 1,
+                    isLast: true),
+              ]));
+
+      container.read(searchNotifierProvider);
+      await pumpInit();
+      await readNotifier().search('关键词');
+      await pumpStream();
+
+      expect(readState().results, isEmpty);
+      expect(readState().error, isNull);
+      expect(readState().isEmpty, isTrue, reason: '全部失败按原版语义显示空态而非错误页');
+      final captured = verify(() => mockApi.appLogPush(
+          level: 'error', message: captureAny(named: 'message'))).captured;
+      expect(captured.single, contains('书源搜索出错'));
+    });
+
     test('搜索完成后 loading 为 false（空流）', () async {
       container.read(searchNotifierProvider);
       await pumpInit();

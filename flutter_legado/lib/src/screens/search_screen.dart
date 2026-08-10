@@ -70,7 +70,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           focusNode: _focusNode,
           // 对标原版 SearchActivity：进入即聚焦弹出键盘
           autofocus: true,
+          // [UI-fix v2.0.11 | 2026-08-10] 文字垂直裁切修复：isDense 压缩
+          // 行高、textAlignVertical 垂直居中，suffixIcon 收敛到 32x32 约束，
+          // 避免默认 IconButton 48px 高度撑破 36px 容器导致文字显示不全 — Reasonix
+          textAlignVertical: TextAlignVertical.center,
           decoration: InputDecoration(
+            isDense: true,
             hintText: AppStrings.searchBookHint,
             // 安卓端 bg_searchview: 35dp圆角胶囊形、半透明填充、0.5dp描边
             filled: true,
@@ -80,6 +85,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             prefixIcon: const Icon(Icons.search, size: 20),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                        minWidth: 32, minHeight: 32),
                     icon: const Icon(Icons.clear, size: 20),
                     onPressed: () {
                       _searchController.clear();

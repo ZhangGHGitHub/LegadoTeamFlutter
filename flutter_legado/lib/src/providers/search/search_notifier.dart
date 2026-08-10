@@ -151,6 +151,18 @@ class SearchNotifier extends Notifier<SearchState> {
           .listen(
         (batch) {
           if (seq != _searchSeq) return;
+          // [UI-fix v2.0.11 | 2026-08-10] 消费批次 error（对齐原版 SearchModel：
+          // 单源失败静默不弹 UI、仅 AppLog.put 留痕，失败源不阻断整体搜索，
+          // 不再产生任何「异常书源」弹窗提示路径）— Reasonix
+          final batchError = batch['error'] as String?;
+          if (batchError != null && batchError.isNotEmpty) {
+            final srcName = (batch['source_name'] as String?) ?? '未知书源';
+            // 日志写入失败不阻断搜索主流程（对齐原版 AppLog.put 尽力而为语义）
+            unawaited(ref
+                .read(bookApiProvider)
+                .appLogPush(level: 'error', message: '书源搜索出错\n$srcName: $batchError')
+                .catchError((_) {}));
+          }
           final books = (batch['books'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>()
               .map((e) => SearchResult.fromSearchBook(SearchBook.fromJson(e)));

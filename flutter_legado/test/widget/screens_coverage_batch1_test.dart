@@ -211,8 +211,8 @@ void main() {
       await tester.pumpWidget(wrap(const BookInfoScreen(book: bookWithIntro)));
       await tester.pumpAndSettle();
 
-      // 滚动到简介区的「展开」控件
-      final toggle = find.text('展开');
+      // 滚动到简介区的「收起」控件（默认展开，[UI-fix v2.0.11]）
+      final toggle = find.text('收起');
       await tester.dragUntilVisible(
         toggle,
         find.byType(CustomScrollView),
@@ -225,12 +225,12 @@ void main() {
       expect(find.textContaining('简介：'), findsNothing);
       // 正文按清洗后内容显示（不含前缀）
       expect(find.textContaining(introBody), findsWidgets);
-      // 折叠态显示「展开」，点击后切换为「收起」
+      // 默认展开态显示「收起」，点击后切换为「展开」
       expect(toggle, findsOneWidget);
       await tester.tap(toggle);
       await tester.pumpAndSettle();
-      expect(find.text('收起'), findsOneWidget);
-      expect(find.text('展开'), findsNothing);
+      expect(find.text('展开'), findsOneWidget);
+      expect(find.text('收起'), findsNothing);
     });
   });
 }

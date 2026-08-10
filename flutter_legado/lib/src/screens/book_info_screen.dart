@@ -1752,7 +1752,9 @@ class _ExpandableText extends StatefulWidget {
 }
 
 class _ExpandableTextState extends State<_ExpandableText> {
-  bool _expanded = false;
+  // [UI-fix v2.0.11 | 2026-08-10] 简介默认全部显示（用户反馈），
+  // 保留「收起」按钮供手动折叠；短简介仍由 showToggle 自适应隐藏切换控件 — Reasonix
+  bool _expanded = true;
 
   /// 折叠态显示行数（对齐原版折叠约 3 行）
   static const int _collapsedLines = 3;
