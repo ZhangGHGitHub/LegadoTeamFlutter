@@ -34,8 +34,9 @@ UI修复和功能开发任务按以下优先级分类：
 1. **修改代码** - 使用 SearchReplace 或其他工具
 2. **运行静态分析** - 执行 `flutter analyze`
 3. **检查编译状态** - 确保无错误（warnings可接受）
-4. **查看变更** - 使用 `git diff` 确认修改内容
-5. **提交或回滚** - 根据验证结果决定
+4. **模拟器冒烟测试** - 执行 `.\scripts\emulator_smoke_test.ps1 -Device emulator-5556`（构建 APK → 安装 → 启动 → 进程/崩溃检查；UI 冒烟加 `-CheckUI`），退出码 0 才可继续
+5. **查看变更** - 使用 `git diff` 确认修改内容
+6. **提交或回滚** - 根据验证结果决定
 
 ### 验证失败处理
 - 如果出现编译错误，立即修复或回滚
@@ -196,6 +197,7 @@ String get icon {
 - `README.md`（项目说明）
 - `CHANGELOG.md`（更新日志）
 - `LICENSE`（许可证）
+- `AGENTS.md`（Agent 工作入口）
 
 ### 现有文档
 根目录原有的过程/报告类文档（UI_FIX 系列、KOTLIN 系列、REFACTORING_FIX_REPORT.md、TASK_76_SUMMARY.md、VERSION_CONTROL.md、DEVELOPMENT.md、api.md 等）已统一迁移至 `docs/`，详见 [docs/README.md](../../docs/README.md) 索引。
