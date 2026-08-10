@@ -25,13 +25,40 @@ use std::collections::HashMap;
 /// `source_tag` 一般传书源 URL（`book_source_url`），用于引擎池缓存分桶。
 #[cfg(feature = "quickjs")]
 pub fn construct_analyzer(content: String, base_url: String, source_tag: &str) -> AnalyzeRule {
-    let executor = QuickJsExecutor::new(source_tag);
-    AnalyzeRule::with_js_executor(content, base_url, std::sync::Arc::new(executor))
+    construct_analyzer_with_js_lib(content, base_url, source_tag, None)
 }
 
 /// 非 quickjs 构建下的降级实现：不注入执行器，保持原样。
 #[cfg(not(feature = "quickjs"))]
 pub fn construct_analyzer(content: String, base_url: String, _source_tag: &str) -> AnalyzeRule {
+    AnalyzeRule::new(content, base_url)
+}
+
+/// 构造规则解析器并注入书源 jsLib（规则 `<js>`/`@js:` 模板执行前先加载库）
+///
+/// [UI-fix 2026-08-10 | Reasonix] yckceo 书源的 searchUrl/ruleContent 模板
+/// 常引用 jsLib 定义（如 `<js>eval(String(Reload('...')))` 的 Reload、聚合源
+/// 的 getHosts() 等），此前模板 JS 执行器不注入 jsLib → 这些书源搜索 URL
+/// 构建失败 → 无结果。对齐原版：每次 JS 执行前先 eval 书源 jsLib。
+#[cfg(feature = "quickjs")]
+pub fn construct_analyzer_with_js_lib(
+    content: String,
+    base_url: String,
+    source_tag: &str,
+    js_lib: Option<&str>,
+) -> AnalyzeRule {
+    let executor = QuickJsExecutor::new(source_tag).with_js_lib(js_lib.map(|s| s.to_string()));
+    AnalyzeRule::with_js_executor(content, base_url, std::sync::Arc::new(executor))
+}
+
+/// 非 quickjs 构建下的降级实现
+#[cfg(not(feature = "quickjs"))]
+pub fn construct_analyzer_with_js_lib(
+    content: String,
+    base_url: String,
+    _source_tag: &str,
+    _js_lib: Option<&str>,
+) -> AnalyzeRule {
     AnalyzeRule::new(content, base_url)
 }
 
@@ -134,8 +161,25 @@ pub fn build_search_url(
     page: i32,
     source_tag: &str,
 ) -> AnalyzeUrl {
+    build_search_url_with_lib(template, keyword, page, source_tag, None)
+}
+
+/// 构建搜索 URL（携带书源 jsLib）
+///
+/// [UI-fix 2026-08-10 | Reasonix] 与 [`build_search_url`] 相同，但模板
+/// `<js>`/`{{JS表达式}}` 执行前先加载书源 jsLib（yckceo 漫画/聚合源依赖）。
+pub fn build_search_url_with_lib(
+    template: &str,
+    keyword: &str,
+    page: i32,
+    source_tag: &str,
+    js_lib: Option<&str>,
+) -> AnalyzeUrl {
     let page_u32 = page.max(1) as u32;
-    if template.contains("{{") && template.contains("}}") {
+    // 含任一 JS 语法（{{表达式}} / <js> 内嵌 / @js: 前缀）都走 JS 求值路径：
+    // [UI-fix 2026-08-10 | Reasonix] <js>/@js: 模板此前落入旧版字面路径，
+    // 而 AnalyzeUrl::new 不执行内嵌 JS → yckceo 漫画源 searchUrl 构建失败
+    if template.contains("{{") || template.contains("<js>") || template.contains("@js:") {
         // searchKey 字面替换（对齐旧版 init_url 行为）
         let pre = template.replace("searchKey", keyword);
         // 变量集对齐原版 AnalyzeUrl.kt evalJS 绑定：key/page/baseUrl
@@ -145,7 +189,9 @@ pub fn build_search_url(
         variables.insert("page".to_string(), page.to_string());
         variables.insert("baseUrl".to_string(), source_tag.to_string());
         variables.insert("searchKey".to_string(), keyword.to_string());
-        if let Ok(analyzed) = search_url_with_js(&pre, &variables, page, source_tag) {
+        if let Ok(analyzed) =
+            search_url_with_js(&pre, &variables, page, source_tag, js_lib)
+        {
             return analyzed;
         }
     }
@@ -161,8 +207,9 @@ fn search_url_with_js(
     variables: &HashMap<String, String>,
     page: i32,
     source_tag: &str,
+    js_lib: Option<&str>,
 ) -> legado_core::LegadoResult<AnalyzeUrl> {
-    let executor = QuickJsExecutor::new(source_tag);
+    let executor = QuickJsExecutor::new(source_tag).with_js_lib(js_lib.map(|s| s.to_string()));
     AnalyzeUrl::parse_with_js(template, variables, page, &executor)
 }
 
@@ -173,6 +220,7 @@ fn search_url_with_js(
     variables: &HashMap<String, String>,
     page: i32,
     _source_tag: &str,
+    _js_lib: Option<&str>,
 ) -> legado_core::LegadoResult<AnalyzeUrl> {
     AnalyzeUrl::parse(template, variables, page)
 }
@@ -205,6 +253,8 @@ mod quickjs_impl {
     pub struct QuickJsExecutor {
         pool: &'static EnginePool,
         source_tag: String,
+        /// 书源 jsLib（共享库代码，执行前先加载，对齐原版每次 eval 前注入）
+        js_lib: Option<String>,
     }
 
     impl QuickJsExecutor {
@@ -213,7 +263,17 @@ mod quickjs_impl {
             Self {
                 pool: global_pool(),
                 source_tag: source_tag.to_string(),
+                js_lib: None,
             }
+        }
+
+        /// 携带书源 jsLib 创建执行器
+        ///
+        /// [UI-fix 2026-08-10 | Reasonix] yckceo 书源（漫画/聚合源）模板
+        /// 引用 jsLib 定义（Reload/getHosts 等），不注入则 URL 构建失败
+        pub fn with_js_lib(mut self, js_lib: Option<String>) -> Self {
+            self.js_lib = js_lib;
+            self
         }
     }
 
@@ -229,6 +289,11 @@ mod quickjs_impl {
             legado_js::host_api::current_source::with_current_source_tag(
                 &self.source_tag,
                 || {
+                    // 执行前先加载书源 jsLib（对齐原版 JsSource 每次调用前
+                    // eval jsLib；jsLib 通常为纯函数定义，重复 eval 幂等）
+                    if let Some(lib) = &self.js_lib {
+                        let _ = legado_js::JsEngine::eval(&*guard, lib);
+                    }
                     // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
                     legado_js::JsEngine::eval(&*guard, js_code).map_err(|e| e.to_string())
                 },
@@ -321,6 +386,59 @@ mod tests {
         let u2 = build_search_url(template, "99", 2, "sto66_test").url().to_string();
         assert!(!u2.contains("{{"), "模板应被完整渲染: {u2}");
         assert!(u2.contains("/2.html"), "page=2 分页应渲染为 '/2': {u2}");
+    }
+
+    /// [UI-fix 2026-08-10 | Reasonix] 书源 jsLib 注入：模板 `<js>` 内嵌 JS 引用
+    /// jsLib 定义的函数（yckceo 漫画源 `<js>eval(String(Reload('...')))` 模式）
+    /// 应能正常渲染；未注入 jsLib 时降级（URL 不含库调用结果）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_build_search_url_with_js_lib() {
+        let lib = "function Reload(url) { return url; }";
+        let template =
+            "<js>eval(String(Reload('https://api.example.com/search?q=test')))</js>";
+        let u = build_search_url_with_lib(
+            template,
+            "都市",
+            1,
+            "lib_source_test",
+            Some(lib),
+        )
+        .url()
+        .to_string();
+        assert!(
+            u.contains("https://api.example.com/search?q=test"),
+            "jsLib 注入后 Reload 应可调用: {u}"
+        );
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_build_search_url_js_block_template() {
+        // <js> 内嵌 JS 模板（不含 {{}}）也应走 JS 求值路径（此前被当字面路径）
+        let template = "<js>var q = 'novel'; q + '-search'</js>";
+        let u = build_search_url(template, "k", 1, "jsblock_test").url().to_string();
+        assert!(
+            u.contains("novel-search"),
+            "<js> 模板应被 JS 求值渲染: {u}"
+        );
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_construct_analyzer_with_js_lib() {
+        // 规则模板引用 jsLib 函数（聚合源 getHosts 模式）
+        let lib = "function getHosts() { return 'https://api.host.example'; }";
+        let analyzer = construct_analyzer_with_js_lib(
+            "{}".to_string(),
+            "http://example.com".to_string(),
+            "lib_analyzer_test",
+            Some(lib),
+        );
+        let result = analyzer
+            .get_string("@js:getHosts()")
+            .unwrap_or_default();
+        assert_eq!(result, "https://api.host.example");
     }
 
     /// 纯字面模板回归：`{key}`/`{{key}}`/`searchKey` 行为不变。

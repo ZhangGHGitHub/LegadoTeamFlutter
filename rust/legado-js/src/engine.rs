@@ -635,6 +635,30 @@ mod quickjs_tests {
     }
 
     #[test]
+    fn test_host_api_encode_uri_component() {
+        // [UI-fix 2026-08-10 | Reasonix] 对齐原版 Rhino 内建 encodeURIComponent：
+        // yckceo 书源（思兔 sto66 等）searchUrl 模板依赖，缺失致搜索 URL 残缺
+        let engine = make_engine();
+        let result = engine
+            .eval("encodeURIComponent('重生')")
+            .expect("encodeURIComponent 应已注册到 quickjs 宿主");
+        assert_eq!(result, "%E9%87%8D%E7%94%9F");
+        // 保留字符集与 JS 标准一致
+        let kept = engine.eval("encodeURIComponent('a-b_c.d!e~f*g(h)i')").unwrap();
+        assert_eq!(kept, "a-b_c.d!e~f*g(h)i");
+    }
+
+    #[test]
+    fn test_host_api_encode_uri_component_search_template() {
+        // 思兔阅读 searchUrl 模板：{{encodeURIComponent(key)}}{{page > 1 ? '/' + page : ''}}
+        let engine = make_engine();
+        let result = engine
+            .eval("var key = '斗破苍穹'; encodeURIComponent(key) + (1 > 1 ? '/' + 1 : '')")
+            .unwrap();
+        assert_eq!(result, "%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9");
+    }
+
+    #[test]
     fn test_host_api_md5_encode_16() {
         let engine = make_engine();
         let result = engine.eval("md5Encode16('hello')").unwrap();

@@ -30,11 +30,17 @@ impl EnginePool {
     /// 创建引擎池
     ///
     /// - `max_size`: 池中最大引擎数量
+    ///
+    /// [UI-fix 2026-08-10 | Reasonix] 默认允许 `eval`/`Function`（allow_script_run）：
+    /// 对齐原版 Rhino 书源 JS 环境——yckceo 书源大量使用
+    /// `<js>eval(String(Reload('...')))` 动态加载模式，禁 eval 致这些书源
+    /// URL 构建失败。书源即用户显式导入的可信代码（与原版信任模型一致）；
+    /// 敏感入口（js_eval 调试端点等）应显式传严格 SandboxConfig::default()。
     pub fn new(max_size: usize) -> Self {
         Self {
             engines: Arc::new(Mutex::new(HashMap::new())),
             max_size,
-            sandbox_config: SandboxConfig::default(),
+            sandbox_config: SandboxConfig::default().with_allow_script_run(true),
         }
     }
 

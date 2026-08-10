@@ -17,7 +17,7 @@ mod impl_encoding {
     use base64::Engine;
     use hmac::{Hmac, Mac};
     use md5::{Digest as Md5Digest, Md5};
-    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+    use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
     use sha1::Sha1;
     use sha2::{Sha256, Sha384, Sha512};
 
@@ -125,6 +125,28 @@ mod impl_encoding {
     /// 这里使用 NON_ALPHANUMERIC 集合作为保守实现。
     pub fn encode_uri(input: &str) -> String {
         utf8_percent_encode(input, NON_ALPHANUMERIC).to_string()
+    }
+
+    /// encodeURIComponent 语义编码（对齐 JS 标准 / Kotlin encodeURIComponent）
+    ///
+    /// [UI-fix 2026-08-10 | Reasonix] 新增：percent-encode 除 `A-Za-z0-9-_.!~*'()`
+    /// 外的全部字符（含 `;/?:@&=+$,#` 等 encodeURI 不编码的保留字符）。
+    /// 背景：yckceo 书源（思兔阅读 sto66 等）searchUrl 用 `{{encodeURIComponent(key)}}`，
+    /// 此前 quickjs 宿主未注册该函数 → 表达式求值失败 → URL 中模板被替换为空串
+    /// → 搜索 URL 残缺 →「原版能搜到、重构版搜不到」。
+    pub fn encode_uri_component(input: &str) -> String {
+        // 保留集：JS encodeURIComponent 不编码 A-Za-z0-9 与 -_.!~*'()
+        const ENCODE_URI_COMPONENT_KEEP: &AsciiSet = &NON_ALPHANUMERIC
+            .remove(b'-')
+            .remove(b'_')
+            .remove(b'.')
+            .remove(b'!')
+            .remove(b'~')
+            .remove(b'*')
+            .remove(b'\'')
+            .remove(b'(')
+            .remove(b')');
+        utf8_percent_encode(input, ENCODE_URI_COMPONENT_KEEP).to_string()
     }
 
     /// SHA-256 摘要 — 返回 64 位十六进制小写字符串
@@ -469,6 +491,25 @@ mod tests {
     fn test_digest_hex_md5() {
         let result = digest_hex("hello", "MD5").unwrap();
         assert_eq!(result, "5d41402abc4b2a76b9719d911017c592");
+    }
+
+    #[test]
+    fn test_encode_uri_component_keeps_unreserved() {
+        // JS encodeURIComponent 保留 A-Za-z0-9-_.!~*'()
+        assert_eq!(encode_uri_component("abcXYZ012-_.!~*'()"), "abcXYZ012-_.!~*'()");
+    }
+
+    #[test]
+    fn test_encode_uri_component_percent_encodes() {
+        // 中文 UTF-8 百分号编码
+        assert_eq!(
+            encode_uri_component("重生"),
+            "%E9%87%8D%E7%94%9F"
+        );
+        // 空格与 +（encodeURI 不编码 +，encodeURIComponent 编码）
+        assert_eq!(encode_uri_component("a b+c"), "a%20b%2Bc");
+        // 保留字符 / ? & = 等全部编码（区别于 encodeURI）
+        assert_eq!(encode_uri_component("/?&="), "%2F%3F%26%3D");
     }
 
     #[test]

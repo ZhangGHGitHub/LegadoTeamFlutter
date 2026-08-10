@@ -718,8 +718,15 @@ pub(crate) async fn search_single_source(
     let template = search_url_template.clone();
     let key = keyword.to_string();
     let build_base = source.book_source_url.clone();
+    let source_lib = source.js_lib.clone();
     let analyze_url = tokio::task::spawn_blocking(move || {
-        crate::js_executor::build_search_url(&template, &key, 1, &build_base)
+        crate::js_executor::build_search_url_with_lib(
+            &template,
+            &key,
+            1,
+            &build_base,
+            source_lib.as_deref(),
+        )
     })
     .await
     .map_err(|e| LegadoError::Internal(format!("搜索 URL 构建任务异常: {e}")))?;
@@ -727,6 +734,10 @@ pub(crate) async fn search_single_source(
     // 3. 合并请求头：书源全局 header + AnalyzeUrl 提取的 header
     let mut headers = parse_header_option(source.header.as_deref()).unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
+    // [UI-fix 2026-08-10 | Reasonix] 对齐原版 BaseSource.kt:202-204 +
+    // AppConfig.userAgent：书源未配置 UA 时补充 Chrome UA（默认 Legado/1.0
+    // 会被反爬站点识别为非浏览器而拒绝/返回空列表）
+    ensure_default_user_agent(&mut headers);
     let headers_opt = if headers.is_empty() {
         None
     } else {
@@ -782,11 +793,13 @@ fn parse_search_response(
         None => return Ok(Vec::new()),
     };
 
-    // 创建顶层 AnalyzeRule（quickjs 启用时注入 JS 执行器，使 @js: 搜索规则生效）
-    let analyzer = crate::js_executor::construct_analyzer(
+    // 创建顶层 AnalyzeRule（quickjs 启用时注入 JS 执行器，使 @js: 搜索规则生效；
+    // 2026-08-10 起同时注入书源 jsLib，模板引用的 Reload/getHosts 等库函数可用）
+    let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
         body.to_string(),
         base_url.to_string(),
         &source.book_source_url,
+        source.js_lib.as_deref(),
     );
 
     // 获取书籍列表元素
@@ -805,10 +818,11 @@ fn parse_search_response(
     // 对每个元素解析各字段
     let mut results = Vec::new();
     for element_html in &elements {
-        let item_analyzer = crate::js_executor::construct_analyzer(
+        let item_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
             element_html.clone(),
             base_url.to_string(),
             &source.book_source_url,
+            source.js_lib.as_deref(),
         );
 
         // 提取书名（必填，无书名则跳过）
@@ -829,7 +843,14 @@ fn parse_search_response(
 
         // 书籍详情页 URL
         let raw_book_url = eval_field_string(&item_analyzer, rule_search.book_url.as_deref());
-        let book_url = resolve_url(&raw_book_url, base_url);
+        // [UI-fix 2026-08-10 | Reasonix] 对齐原版 BookList.kt:282-284 +
+        // AnalyzeRule.kt:369-375：bookUrl 规则解析为空时回退书源主页
+        // （bookSourceUrl），避免 book_url 为空导致结果条目无法打开
+        let book_url = if raw_book_url.is_empty() {
+            source.book_source_url.clone()
+        } else {
+            resolve_url(&raw_book_url, base_url)
+        };
 
         // 提取封面 URL
         let raw_cover = eval_field_string(&item_analyzer, rule_search.cover_url.as_deref());
@@ -978,6 +999,22 @@ fn resolve_url(url: &str, base_url: &str) -> String {
 /// 解析 JSON 格式的请求头字符串
 fn parse_header_option(header_str: Option<&str>) -> Option<HashMap<String, String>> {
     header_str.and_then(|s| serde_json::from_str(s).ok())
+}
+
+/// 请求头缺少 User-Agent 时补充 Chrome UA
+///
+/// [UI-fix 2026-08-10 | Reasonix] 对齐原版 BaseSource.kt:202-204 + AppConfig.userAgent：
+/// 默认 UA（Legado/1.0）会被反爬站点识别为非浏览器而拒绝/返回空列表。
+/// 书源 header 已配置 UA（任意大小写键名）时不覆盖。
+fn ensure_default_user_agent(headers: &mut HashMap<String, String>) {
+    if !headers.keys().any(|k| k.eq_ignore_ascii_case("user-agent")) {
+        headers.insert(
+            "User-Agent".to_string(),
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                .to_string(),
+        );
+    }
 }
 
 /// JS 书源搜索（通过 JsSourceBookOrchestrator 执行）
@@ -1150,6 +1187,65 @@ mod tests {
         assert_eq!(results[1].book_name, "凡人修仙传");
         assert_eq!(results[1].author, "忘语");
         assert_eq!(results[1].book_url, "https://www.example.com/book/2");
+    }
+
+    // ─── 测试 1.1: bookUrl 规则为空时回退 baseUrl（对齐原版 BookList.kt）───
+
+    #[test]
+    fn test_parse_html_book_url_empty_falls_back_to_base() {
+        let html = r#"<html><body>
+            <div class="book-item">
+                <a class="name">斗破苍穹</a>
+                <span class="author">天蚕土豆</span>
+            </div>
+        </body></html>"#;
+        // bookUrl 规则指向不存在的属性 → 解析为空串
+        let source = make_source_with_rules(
+            ".book-item",
+            ".name",
+            ".author",
+            ".missing-attr@href",
+            "",
+            "",
+            "",
+        );
+
+        let results = parse_search_response(
+            html,
+            "https://www.example.com/search?q=test",
+            &source,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        // 空 bookUrl 回退书源主页（bookSourceUrl），保证条目可打开
+        assert_eq!(results[0].book_url, "https://www.example.com");
+    }
+
+    // ─── 测试 1.2: 请求头缺 UA 时补充 Chrome UA ───────────────────────────────
+
+    #[test]
+    fn test_ensure_default_user_agent_adds_when_missing() {
+        let mut headers = HashMap::new();
+        headers.insert("Referer".to_string(), "https://www.example.com".to_string());
+        ensure_default_user_agent(&mut headers);
+        assert!(headers
+            .get("User-Agent")
+            .unwrap()
+            .starts_with("Mozilla/5.0"));
+    }
+
+    #[test]
+    fn test_ensure_default_user_agent_keeps_source_ua() {
+        // 书源 header 已配置 UA（含小写键名）时不覆盖
+        let mut headers = HashMap::new();
+        headers.insert(
+            "user-agent".to_string(),
+            "CustomMobile/1.0".to_string(),
+        );
+        ensure_default_user_agent(&mut headers);
+        assert_eq!(headers.get("user-agent").unwrap(), "CustomMobile/1.0");
+        assert!(headers.keys().all(|k| k != "User-Agent"));
     }
 
     // ─── 测试 1.5: sto66 真实响应体复现（XPath bookList + ## 替换）───────────

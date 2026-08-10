@@ -205,6 +205,20 @@ fn register_encoding_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // encodeURIComponent(str) -> String（JS 标准语义：保留 -_.!~*'()）
+    // [UI-fix 2026-08-10 | Reasonix] 对齐原版 Rhino 内建：yckceo 书源
+    // （思兔 sto66 等）searchUrl 模板 {{encodeURIComponent(key)}} 依赖此函数，
+    // 缺失致表达式求值失败 → URL 残缺 → 搜索无结果
+    mount_dual(
+        java,
+        globals,
+        "encodeURIComponent",
+        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+            encoding::encode_uri_component(&s)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // hmacMd5(data, key) -> String
     mount_dual(
         java,
