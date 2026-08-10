@@ -1074,17 +1074,19 @@ flutter test                  # 全量测试通过
 | 16 | coverRules 表 DDL 游离迁移体系 | （Task #78 登记）coverRules 表以 CREATE TABLE IF NOT EXISTS 双份建表游离迁移体系；schema 对齐专项（§4.2.1）重建表时须包含该表 |
 | 17 | MCP 前置 jsSourceApiToken 校验未实现 | （Task #78 登记）原版 McpService 前置 jsSourceApiToken 非空校验未实现，依赖 §5.13-7 jsSourceApiToken 落地后补 |
 | 18 | ✅ loginCheckJs 登录检测语义修复（2026-08-10，v2.0.8） | 上次审计 WebBook 全链路 P0 缺口（FFI 路径已闭合）：`js_executor.rs` result 注入改为带方法语义对象（原 JSON 字符串致 `result.body()` 全失败）+ 判定剥 JSON 引号；`web_book.rs` 区分「判定未登录→errResponse 双路径→上抛 LoginRequired（错误码 1012，Flutter 可见『书源需要登录，请先在书源菜单中登录后重试』）」与「JS 环境不兼容→降级放行」；server 错误映射 401。遗留：legado-server fetcher 未接同款检测、Flutter 登录跳转自动拉起未做（错误提示已透传） |
+| 19 | ✅ XPath 引擎 xmlns 声明根治（2026-08-10，v2.0.9） | 思兔 sto66 实测「未从书源解析到任何章节」根因：页面源码自带 `<html xmlns=...>` 时 HTML→XHTML 回退原样保留 xmlns 属性 → sxd-document 全部元素进命名空间 → 无前缀 XPath（//dd、//a）全部失配（仅 //* 与谓词字符串可命中）；`write_node_xhtml` 跳过 xmlns 属性根治；回归测试 test_xmlns_declaration_does_not_break_prefixed_xpath；legado-parser 178+1 全过。另确认思兔 loginCheckJs 为空（非登录问题）、tocUrl 链路各环节现状登记 |
 
 ---
 
 
 
-**文档版本**: 1.20  
+**文档版本**: 1.21  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.21（2026-08-10）XPath 引擎 xmlns 修复登记（v2.0.9，Reasonix 实施）：§5.14 追加 #19——页面自带 xmlns 声明导致无前缀 XPath 全部失配（思兔 sto66 实测），`write_node_xhtml` 跳过 xmlns 属性根治，新增回归测试
 - v1.20（2026-08-10）loginCheckJs 登录检测修复登记（v2.0.8，Reasonix 实施）：§5.14 追加 #18——FFI 路径三处语义修正（result 对象注入/判定剥引号/未登录双路径上抛+环境不兼容降级）已销记；遗留登记 legado-server fetcher 登录检测与 Flutter 登录自动跳转
 - v1.19（2026-08-10）§5.12 销记三项纯 Flutter 行为接线（doubleHorizontalPage 双页 0-3 档/useZhLayout 中文分行开关/hangingPunctuation 段首标点悬挂，v2.0.7 批，Reasonix 实施）：`reader_page_view` 双栏整屏渲染+屏索引翻页+分页缓存键；`paragraph_layout_engine` 朴素断行分支+悬挂规则；`zh_layout` 首行悬挂放宽；渲染侧悬挂行左移；全量 flutter test 1135/1135 通过零回归；剩余 4 项（刘海×2/音量键×2 仅 Android、shareLayout 待日夜双配置）延后登记
 

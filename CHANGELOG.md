@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.9] - 2026-08-10
+
+### 修复
+- XPath 引擎 xmlns 声明处理修复（思兔阅读等书源目录/正文/详情解析根治）：
+  - 根因：页面源码自带 `<html xmlns="http://www.w3.org/1999/xhtml">` 时，HTML→XHTML 回退序列化原样保留 xmlns 属性，sxd-document 解析后全部元素进入该命名空间，无前缀 XPath（`//dd`、`//a` 等）全部失配（仅 `//*` 与谓词字符串比较可命中）
+  - 修复：`xpath.rs` `write_node_xhtml` 序列化时跳过 `xmlns`/`xmlns:*` 属性；实测思兔 sto66 详情页 tocUrl 规则（`//*[@id='allchapter']//a[contains(text(), '查看全部章节')]/@href`）从 0 项恢复 1 项、目录页 chapterList/chapterUrl 恢复 500 项
+  - 影响面：所有在源码中声明 xmlns 的网站（含 XHTML 页面）的 XPath 规则此前整体失效，本次根治
+  - 新增回归测试 `test_xmlns_declaration_does_not_break_prefixed_xpath`；legado-parser 178+1 全过
+
 ## [2.0.8] - 2026-08-10
 
 ### 修复

@@ -323,6 +323,16 @@ impl XPathParser {
                 out.push('<');
                 out.push_str(name);
                 for (qname, value) in elem.attrs.iter() {
+                    // [UI-fix v2.0.9 | 2026-08-10] 跳过 xmlns / xmlns:* 声明：
+                    // 页面自带 xmlns 若被原样输出，sxd-document 解析后全部元素
+                    // 进入该命名空间，无前缀 XPath（//dd、//a 等）全部失配
+                    //（仅 //* 与谓词字符串比较可命中）——实测思兔 sto66 等
+                    // 声明 xmlns 的页面目录/正文/详情规则整体失效 — Reasonix
+                    if qname.local.as_ref() == "xmlns"
+                        || qname.prefix.as_ref().map(|p| p.as_ref()) == Some("xmlns")
+                    {
+                        continue;
+                    }
                     out.push(' ');
                     out.push_str(&qname.local);
                     out.push_str("=\"");
@@ -472,6 +482,29 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result.contains(&"<a>1</a>".to_string()));
         assert!(result.contains(&"<b>2</b>".to_string()));
+    }
+
+    #[test]
+    fn test_xmlns_declaration_does_not_break_prefixed_xpath() {
+        // [UI-fix v2.0.9 | 2026-08-10] 回归：页面自带 xmlns 声明时，
+        // HTML→XHTML 回退必须跳过 xmlns 属性，否则 sxd-document 将全部
+        // 元素归入该命名空间，无前缀 XPath（//dd、//a 等）全部失配，
+        // 仅 //* 与谓词字符串比较可命中 —— 实测思兔 sto66 等声明 xmlns
+        // 的页面目录/正文/详情规则整体失效 — Reasonix
+        let parser = XPathParser::new();
+        let html = "<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"zh-CN\">\
+            <head><meta charset=\"utf-8\"></head>\
+            <body><div id=\"allchapter\">\
+            <dd data-num=\"1\"><a href=\"/chapter/1.html\">第一章</a></dd>\
+            <dd data-num=\"2\"><a href=\"/chapter/2.html\">第二章</a></dd>\
+            </div></body></html>";
+        // 严格 XML 解析失败（<meta> 无闭合 → HTML5 宽容标签）→ html5ever 回退路径
+        let result = parser.parse_xpath(html, "//*[@id='allchapter']//dd[a]//a/@href").unwrap();
+        assert_eq!(result.len(), 2, "带 xmlns 页面的无前缀 XPath 应正常匹配");
+        assert!(result.contains(&"/chapter/1.html".to_string()));
+        assert!(result.contains(&"/chapter/2.html".to_string()));
+        let dds = parser.parse_xpath(html, "//*[@id='allchapter']//dd").unwrap();
+        assert_eq!(dds.len(), 2);
     }
 
     #[test]
