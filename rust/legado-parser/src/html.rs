@@ -73,14 +73,17 @@ impl HtmlParser {
 
             // 处理 `selector@attr` 模式：如果最后一段是属性/模式名而非 CSS 选择器，
             // 则将其与上一段合并，由 parse_last_rule 处理属性提取。
-            let (effective_rules, is_single) = Self::resolve_at_chain(&sub_rules);
+            // last_is_attr：最后一段是否为属性/提取模式（任务 #66）——
+            // 不能用 Selector::parse 是否成功判别：href/src/alt/title 等
+            // 都是合法 CSS 类型选择器（parse 返回 Ok），会被误判为选择器
+            let (effective_rules, is_single, last_is_attr) = Self::resolve_at_chain(&sub_rules);
 
             let items = if is_single {
                 // 单级：直接在文档上选择
                 self.extract_from_doc(&document, rule, default_mode)
             } else {
                 // 多级链式选择器：逐级下钻（不重复解析 HTML）
-                self.extract_chained(&document, &effective_rules, default_mode)
+                self.extract_chained(&document, &effective_rules, default_mode, last_is_attr)
             };
 
             if !items.is_empty() {
@@ -160,11 +163,18 @@ impl HtmlParser {
     }
 
     /// 链式选择器：在单个解析文档上逐级下钻
+    ///
+    /// `last_is_attr`（任务 #66）：最后一级是否为属性/提取模式名。
+    /// 对齐原版 AnalyzeByJSoup.getResultLast（约 L270-277）：@ 链最后一级
+    /// 非 text/html 关键字时一律直接 element.attr(lastRule) 属性提取，
+    /// 从不做选择器查询——不能用 Selector::parse 判别（href/src/alt 等
+    /// 都是合法 CSS 类型选择器，会被误判为选择器导致永远 0 命中）。
     fn extract_chained(
         &self,
         document: &Html,
         sub_rules: &[&str],
         default_mode: &str,
+        last_is_attr: bool,
     ) -> Vec<String> {
         let last_idx = sub_rules.len() - 1;
 
@@ -201,6 +211,33 @@ impl HtmlParser {
 
         // 最后一级：提取内容
         let last_rule = sub_rules[last_idx].trim();
+
+        // 任务 #66：最后一级已判定为属性/提取模式名（对齐原版 getResultLast
+        // 语义），跳过 Selector::parse 判别直接提取
+        if last_is_attr {
+            let mut items = Vec::new();
+            if let Some(mode) = Self::bare_extract_mode(last_rule) {
+                // text/textNodes/ownText/html/all 关键字：按模式提取
+                for elem in &current_elements {
+                    if let Some(text) = self.extract_from_element(*elem, mode, "") {
+                        if !text.is_empty() {
+                            items.push(text);
+                        }
+                    }
+                }
+            } else {
+                // 属性名：对当前元素逐个 attr(last)（保留属性路径去重）
+                for elem in &current_elements {
+                    if let Some(text) = self.extract_from_element(*elem, "attr", last_rule) {
+                        if !text.is_empty() && !items.contains(&text) {
+                            items.push(text);
+                        }
+                    }
+                }
+            }
+            return items;
+        }
+
         let (selector_str, extract_mode, attr_name) = self.parse_last_rule(last_rule, default_mode);
 
         let mut items = Vec::new();
@@ -385,12 +422,13 @@ impl HtmlParser {
     /// - `div.list@.item@text` → 链式 [div.list, .item] + 模式 text
     /// - `div@.item@href` → 链式 [div, .item] + 属性 href
     ///
-    /// 返回 (effective_rules, is_single)：
+    /// 返回 (effective_rules, is_single, last_is_attr)：
     /// - is_single=true: 单级选择器，由 extract_from_doc 处理
     /// - is_single=false: 多级链，由 extract_chained 处理
-    fn resolve_at_chain<'a>(sub_rules: &[&'a str]) -> (Vec<&'a str>, bool) {
+    /// - last_is_attr: 最后一段是属性/提取模式名而非选择器（任务 #66）
+    fn resolve_at_chain<'a>(sub_rules: &[&'a str]) -> (Vec<&'a str>, bool, bool) {
         if sub_rules.len() <= 1 {
-            return (sub_rules.to_vec(), true);
+            return (sub_rules.to_vec(), true, false);
         }
 
         let last = sub_rules[sub_rules.len() - 1].trim();
@@ -427,18 +465,16 @@ impl HtmlParser {
             if sub_rules.len() == 2 {
                 // 例如 [".name", "href"] → 单级选择器 ".name@href"
                 // 返回 is_single=true，由 extract_from_doc + parse_last_rule 处理
-                (sub_rules.to_vec(), true)
+                (sub_rules.to_vec(), true, true)
             } else {
-                // 例如 ["div", ".item", "href"] → 链式 [div, .item] + 属性 href
-                // 将属性名合并回最后一个选择器：".item@href"
-                // 但由于生命周期限制，我们返回去掉最后一段的 rules，
-                // 并在 extract_chained 中通过 parse_last_rule 处理
-                // 这里直接返回包含属性后缀的完整规则链
-                (sub_rules.to_vec(), false)
+                // 例如 ["h4", "a", "href"] → 链式 [h4, a] + 属性 href
+                // 三级以上链：last_is_attr=true 告知 extract_chained
+                // 最后一级直接属性提取（对齐原版 getResultLast）
+                (sub_rules.to_vec(), false, true)
             }
         } else {
             // 最后一段是有效选择器，正常链式处理
-            (sub_rules.to_vec(), false)
+            (sub_rules.to_vec(), false, false)
         }
     }
 }
@@ -626,5 +662,58 @@ mod tests {
         let parser = HtmlParser::new();
         let result = parser.get_attr(SAMPLE_HTML, "img", "alt").unwrap();
         assert_eq!(result, vec!["封面"]);
+    }
+
+    // ─── 任务 #66：三级以上 @ 链最后一级属性提取回归 ─────────────
+
+    /// cxzz958 类搜索页 bookUrl 真实结构：三级链 h4@a@href
+    const BOOKBOX_HTML: &str = r#"
+    <div class="bookbox">
+        <h4 class="bookname"><a href="/b/1/">书名</a></h4>
+        <div class="bookimg"><img src="/cover/1.jpg" alt="封面图" /></div>
+    </div>
+    "#;
+
+    #[test]
+    fn test_three_level_chain_href_attr() {
+        // 任务 #66 核心用例：href 是合法 CSS 类型选择器，
+        // 旧实现 Selector::parse("href").is_ok() 误判为选择器 → 0 命中
+        let parser = HtmlParser::new();
+        let result = parser.get_text(BOOKBOX_HTML, "h4@a@href").unwrap();
+        assert_eq!(result, vec!["/b/1/"]);
+        // class 选择器前缀同果
+        let result2 = parser.get_text(BOOKBOX_HTML, ".bookname@a@href").unwrap();
+        assert_eq!(result2, vec!["/b/1/"]);
+    }
+
+    #[test]
+    fn test_three_level_chain_text_mode() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(BOOKBOX_HTML, "h4@a@text").unwrap();
+        assert_eq!(result, vec!["书名"]);
+    }
+
+    #[test]
+    fn test_three_level_chain_src_alt_attr() {
+        let parser = HtmlParser::new();
+        // src 同为合法 CSS 类型选择器，同样曾被误判
+        let result = parser.get_text(BOOKBOX_HTML, ".bookbox@.bookimg@img@src").unwrap();
+        assert_eq!(result, vec!["/cover/1.jpg"]);
+        let result2 = parser.get_text(BOOKBOX_HTML, ".bookbox@.bookimg@img@alt").unwrap();
+        assert_eq!(result2, vec!["封面图"]);
+    }
+
+    #[test]
+    fn test_three_level_chain_selector_last_still_works() {
+        // 最后一级确为选择器的三级链行为不变（last_is_attr=false 路径）
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, ".list@a@text").unwrap();
+        // 注：`a` 无 CSS 元字符但不在关键字白名单……实际 `a` 会被
+        // is_extraction_suffix 的裸 token 分支判为属性名；
+        // 改用带元字符的选择器验证选择器下钻路径
+        let result2 = parser.get_text(SAMPLE_HTML, "body@.list@.item").unwrap();
+        assert_eq!(result2.len(), 3);
+        assert_eq!(result2[0], "第一章");
+        let _ = result;
     }
 }

@@ -408,14 +408,33 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
         .collect();
 
     // 4. 确保书籍记录存在（满足 chapters 表外键约束），然后先删除旧章节，再批量插入新章节
+    // [Task #66 加固] 占位落库须带书源信息（origin/originName）：否则 origin 取默认
+    // loc_book，阅读器随后按 origin 找书源取正文会报「书源不存在: loc_book」
+    // （搜索→目录页→点章节进入阅读的路径，此时 Flutter 尚未执行带 origin 的
+    // addBook）。既有记录 origin 仍为默认值时同样补齐（加法式，不覆盖已有真实书源）。
     with_database(|db| {
         let book_repo = legado_db::BookRepository::new(db.connection());
-        if book_repo.find_by_url(book_url)?.is_none() {
-            let book = legado_core::models::Book {
-                book_url: book_url.to_string(),
-                ..legado_core::models::Book::default()
-            };
-            book_repo.insert(&book)?;
+        match book_repo.find_by_url(book_url)? {
+            None => {
+                let book = legado_core::models::Book {
+                    book_url: book_url.to_string(),
+                    origin: source_url.to_string(),
+                    origin_name: source.book_source_name.clone(),
+                    ..legado_core::models::Book::default()
+                };
+                book_repo.insert(&book)?;
+            }
+            Some(mut existing)
+                if existing.origin.is_empty()
+                    || existing.origin == legado_core::models::book::book_type::LOCAL_TAG =>
+            {
+                existing.origin = source_url.to_string();
+                if existing.origin_name.is_empty() {
+                    existing.origin_name = source.book_source_name.clone();
+                }
+                book_repo.update(&existing)?;
+            }
+            _ => {}
         }
         let repo = BookChapterRepository::new(db.connection());
         repo.delete_by_book_url(book_url)?;

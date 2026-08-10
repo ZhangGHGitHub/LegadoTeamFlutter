@@ -187,7 +187,6 @@ impl Default for RegexEngine {
 mod tests {
     use super::*;
     use legado_core::MAX_REGEX_PATTERN_LEN;
-    use regex::Regex;
 
     #[test]
     fn test_regex_match() {
