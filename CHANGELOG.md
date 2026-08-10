@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.12] - 2026-08-10
+
+### 修复
+- 阅读进度不恢复：搜索结果进入书籍详情页→开始阅读→返回→再次进入总是回到第一章。根因：详情页 `book` 为 initState 旧快照，阅读返回后不重新加载（Rust 侧 `dur_chapter_index` 已正确写入 books 表但从未被该页面实例重读）。修复：`_openReader` 阅读返回后 `setState` 重新 `_loadData()`（对齐原版 BookInfoViewModel 重查语义），按钮按最新进度显示「继续阅读」并定位到上次章节；`ReaderNotifier.openBook` 同步恢复 `durChapterPos` 章内位置（Reasonix）
+- 图片源/音频源不可用：`BookInfoActivity` 分流缺失——`_openReader` 无条件走文本阅读器，漫画阅读器（ReaderComicScreen）与音频播放器（AudioScreen）已实现但零调用方。修复：① `BookType` 常量由 0/1/2 枚举语义修正为位标记（对齐 Kotlin BookType.kt：text=8/audio=32/image=64/video=4/webFile=128）；② `_openReader` 按 `bookType` 位标记分流：audio→`/audio`、image→`/reader-comic`、文本→`/reader`，bookType 缺失（0）时兜底按书源类型（bookSourceType 1=音频/2=图片）判定；③ 书架「音频/视频」分组筛选改用位运算（原 `==` 单值比较恒失配）（Reasonix）
+
+### 测试
+- 新增 3 个分流 widget 测试（音频→音频播放页/图片→漫画阅读页/文本→文本阅读页，NavigatorObserver 断言路由）；AudioScreen.dispose 增加卸载时序防御（快速导航/测试树卸载边界）
+
 ## [2.0.11] - 2026-08-10
 
 ### 修复
