@@ -1080,12 +1080,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.22  
+**文档版本**: 1.23  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.23（2026-08-10）搜索/阅读 UI 三问题修复登记（v2.0.11，Reasonix 实施）：① 搜索异常书源弹窗消除——批次 error 消费补齐（单源失败静默不弹 UI、appLogPush error 级留痕「书源搜索出错」，对齐原版 SearchModel 仅 AppLog.put；经原版源码核实「原版批次错误弹 SnackBar」为误判，原版单源失败无任何 UI 提示）；② 搜索框文字垂直裁切——isDense + textAlignVertical.center + suffixIcon 32×32 约束；③ 书籍信息页简介默认全部显示（_ExpandableText 默认展开保留收起）。新增 search_notifier 单测 2 个（失败批次静默留痕/全败空态），flutter analyze 0 error、相关测试 58/58 与全量 1138/1138 全过，模拟器冒烟 5556 通过
 - v1.22（2026-08-10）搜索三修复登记（v2.0.10，Reasonix 实施）：① 排序对齐原版 mergeItems 四档分桶（默认搜索也按匹配度排序，精准丢 other+重搜）；② 卡顿修复（分桶移入批次回调，build 直接消费）；③ bookUrl 空校验文案可读化（legado-core 两处 + 测试断言更新）
 - v1.21（2026-08-10）XPath 引擎 xmlns 修复登记（v2.0.9，Reasonix 实施）：§5.14 追加 #19——页面自带 xmlns 声明导致无前缀 XPath 全部失配（思兔 sto66 实测），`write_node_xhtml` 跳过 xmlns 属性根治，新增回归测试
 - v1.20（2026-08-10）loginCheckJs 登录检测修复登记（v2.0.8，Reasonix 实施）：§5.14 追加 #18——FFI 路径三处语义修正（result 对象注入/判定剥引号/未登录双路径上抛+环境不兼容降级）已销记；遗留登记 legado-server fetcher 登录检测与 Flutter 登录自动跳转

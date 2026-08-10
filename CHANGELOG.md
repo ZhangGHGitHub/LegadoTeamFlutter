@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.11] - 2026-08-10
+
+### 修复
+- 搜索异常书源弹窗提示消除（对齐原版 SearchModel 静默语义）：批次回调补齐 `error` 字段消费——单书源搜索失败不再产生任何弹窗/整页错误提示路径，失败源不阻断整体搜索，仅按原版 `AppLog.put` 语义以 error 级别写入应用日志（「书源搜索出错」）留痕，可通过日志菜单查看（Reasonix）
+- 搜索框文字显示不全修复：AppBar 搜索框 `isDense` 压缩行高 + `textAlignVertical.center` 垂直居中 + 清除按钮（suffixIcon）约束收敛至 32×32（原默认 IconButton 48px 高度撑破 36px 容器导致文字垂直裁切）
+- 书籍信息页简介默认全部显示：`_ExpandableText` 默认展开（保留「收起」按钮），短简介仍由 TextPainter 自适应隐藏切换控件
+
 ## [2.0.10] - 2026-08-10
 
 ### 修复
