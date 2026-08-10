@@ -310,7 +310,11 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         book_url: &str,
     ) -> LegadoResult<WebBookInfo> {
         if book_url.is_empty() {
-            return Err(LegadoError::Parser("bookUrl不能为空".into()));
+            // [v2.0.10] 可读文案（原裸「bookUrl不能为空」无上下文）— Reasonix
+            return Err(LegadoError::Parser(
+                "书籍详情页地址为空，无法获取详情（该书源搜索/发现规则未解析出详情链接）"
+                    .into(),
+            ));
         }
         self.fetcher.get_book_info(source, book_url).await
     }
@@ -326,7 +330,11 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         book_url: &str,
     ) -> LegadoResult<Vec<WebChapter>> {
         if book_url.is_empty() {
-            return Err(LegadoError::Parser("bookUrl不能为空".into()));
+            // [v2.0.10] 可读文案（原裸「bookUrl不能为空」无上下文）— Reasonix
+            return Err(LegadoError::Parser(
+                "书籍详情页地址为空，无法获取目录（该书源搜索/发现规则未解析出详情链接）"
+                    .into(),
+            ));
         }
         let mut chapters = self.fetcher.get_chapters(source, book_url).await?;
         // 确保章节序号正确（从 0 开始递增）
@@ -557,7 +565,7 @@ mod tests {
         let source = make_test_source();
 
         let err = engine.get_book_info(&source, "").await.unwrap_err();
-        assert!(err.to_string().contains("bookUrl不能为空"));
+        assert!(err.to_string().contains("详情页地址为空"));
     }
 
     #[tokio::test]
@@ -635,7 +643,7 @@ mod tests {
         let source = make_test_source();
 
         let err = engine.get_chapters(&source, "").await.unwrap_err();
-        assert!(err.to_string().contains("bookUrl不能为空"));
+        assert!(err.to_string().contains("详情页地址为空"));
     }
 
     #[tokio::test]
