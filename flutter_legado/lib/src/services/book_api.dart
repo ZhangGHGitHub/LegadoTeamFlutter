@@ -58,6 +58,13 @@ abstract class BookApi {
   /// 更新书源
   Future<void> updateBookSource(BookSource source);
 
+  /// 设置书源自定义变量（契约 §2.3 setSourceVariable，台账 §5.11-3，Task #63 冻结 / #64-65 实现）
+  ///
+  /// 对齐原版 `source.setVariable`：单列 UPDATE 语义仅更新 `variable` 单列，
+  /// 规避 updateBookSource 全行更新风险；[variable] 为空串表示清除。
+  /// 错误码：书源不存在 → Internal；写入失败 → Db。
+  Future<void> setSourceVariable(String sourceUrl, String variable);
+
   /// 删除书源
   Future<void> deleteBookSource(String sourceUrl);
 
@@ -327,6 +334,13 @@ abstract class BookApi {
 
   /// 获取某本书的所有书签
   Future<List<Bookmark>> getBookmarks(String bookName);
+
+  /// 按书名+作者获取某本书的所有书签（契约 §2.7 getBookmarksByBook，
+  /// 台账 §5.14-2，Task #65）
+  ///
+  /// 对齐原版 `bookmarkDao.getByBook(name, author)`，规避同名书混入；
+  /// [getBookmarks]（仅按书名）接口保留兼容。
+  Future<List<Bookmark>> getBookmarksByBook(String bookName, String bookAuthor);
 
   /// 获取所有书签
   Future<List<Bookmark>> getAllBookmarks();

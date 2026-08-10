@@ -104,23 +104,25 @@ void main() {
   });
 
   group('BookmarkNotifier loadByBook', () {
-    test('按书名加载书签', () async {
+    test('按书名+作者加载书签', () async {
       final bookmarks = [
         const Bookmark(id: 1, bookName: '斗破苍穹', chapterName: '第1章'),
       ];
-      when(() => mockApi.getBookmarks(any())).thenAnswer((_) async => bookmarks);
+      // [Task #65] 书签查询改用 getBookmarksByBook（契约 §2.7，台账 §5.14-2）
+      when(() => mockApi.getBookmarksByBook(any(), any()))
+          .thenAnswer((_) async => bookmarks);
 
-      await readNotifier().loadByBook('斗破苍穹');
+      await readNotifier().loadByBook('斗破苍穹', '天蚕土豆');
 
       expect(readState().bookmarks.length, equals(1));
       expect(readState().bookmarks[0].bookName, equals('斗破苍穹'));
     });
 
-    test('按书名加载失败设置错误', () async {
-      when(() => mockApi.getBookmarks(any()))
+    test('按书名+作者加载失败设置错误', () async {
+      when(() => mockApi.getBookmarksByBook(any(), any()))
           .thenThrow(const BridgeError(message: '查询失败'));
 
-      await readNotifier().loadByBook('不存在的书');
+      await readNotifier().loadByBook('不存在的书', '');
 
       expect(readState().error, equals('查询失败'));
     });

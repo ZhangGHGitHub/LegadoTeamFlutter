@@ -42,6 +42,12 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // [Task #70 D2 修复 | 2026-08-10] 搜索框 controller 随 State 重建
+      //（初始为空），但 filterKeyword 位于全局 sourceNotifierProvider：
+      // 若不同步重置，离屏返回时搜索框为空而过滤关键词残留，
+      // filteredSources 恒空 → 整表误显示「暂无书源」（69 实机回归
+      // D2 观察项根因，重启进程后 provider 重建才恢复） — Qoder
+      ref.read(sourceNotifierProvider.notifier).clearFilter();
       ref.read(sourceNotifierProvider.notifier).loadSources();
     });
   }

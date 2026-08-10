@@ -90,9 +90,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
     _loadSettings();
     _loadChapters();
     _loadHighlights();
-    // 书签按书名加载（bookmarks 表以 bookName 关联，对齐原版 BookmarkDao）
+    // 书签按书名+作者加载（对齐原版 bookmarkDao.getByBook，规避同名书混入，
+    // 契约 §2.7 getBookmarksByBook，台账 §5.14-2，Task #65）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(bookmarkNotifierProvider.notifier).loadByBook(_book.name);
+      ref
+          .read(bookmarkNotifierProvider.notifier)
+          .loadByBook(_book.name, _book.author);
     });
   }
 
@@ -390,9 +393,11 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// [Task #40 | 2026-08-09] §5.11-5 — Qoder
   Future<void> _exportBookmarks({required bool asMarkdown}) async {
     try {
-      // 书签数据经 BookApi.getBookmarks 获取（契约 §2.7）
-      final bookmarks =
-          await ref.read(bookApiProvider).getBookmarks(_book.name);
+      // 书签数据经 BookApi.getBookmarksByBook 获取（契约 §2.7，台账
+      // §5.14-2 Task #65：按书名+作者查询，规避同名书混入）
+      final bookmarks = await ref
+          .read(bookApiProvider)
+          .getBookmarksByBook(_book.name, _book.author);
       if (!mounted) return;
       if (bookmarks.isEmpty) {
         ScaffoldMessenger.of(context)
@@ -694,7 +699,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             ElevatedButton(
               onPressed: () => ref
                   .read(bookmarkNotifierProvider.notifier)
-                  .loadByBook(_book.name),
+                  .loadByBook(_book.name, _book.author),
               child: const Text('重试'),
             ),
           ],

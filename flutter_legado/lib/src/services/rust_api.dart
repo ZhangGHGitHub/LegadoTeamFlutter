@@ -245,6 +245,13 @@ class RustApi implements BookApi {
   Future<void> updateBookSource(BookSource source) =>
       bridge.sourceUpdate(sourceJson: jsonEncode(source.toJson()));
 
+  /// 设置书源自定义变量（契约 §2.3，台账 §5.11-3，Task #65）
+  ///
+  /// 直通 set_source_variable FFI（单列 UPDATE，空串=清除）；
+  /// 书源不存在/写入失败由 Rust 侧抛 BridgeError — Qoder
+  Future<void> setSourceVariable(String sourceUrl, String variable) =>
+      bridge.setSourceVariable(sourceUrl: sourceUrl, variable: variable);
+
   /// 删除书源
   Future<void> deleteBookSource(String sourceUrl) =>
       bridge.sourceDelete(sourceUrl: sourceUrl);
@@ -718,6 +725,24 @@ class RustApi implements BookApi {
   /// 获取某本书的所有书签
   Future<List<Bookmark>> getBookmarks(String bookName) async {
     final json = await bridge.bookmarkGetAll(bookName: bookName);
+    final list = _decodeList(json, 'bookApi');
+    return list
+        .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 按书名+作者获取某本书的所有书签（契约 §2.7，台账 §5.14-2，Task #65）
+  ///
+  /// get_bookmarks_by_book FFI 返回裸 JSON Array，解析方式同
+  /// [getBookmarks]（bookmark_get_all）— Qoder
+  Future<List<Bookmark>> getBookmarksByBook(
+    String bookName,
+    String bookAuthor,
+  ) async {
+    final json = await bridge.getBookmarksByBook(
+      bookName: bookName,
+      bookAuthor: bookAuthor,
+    );
     final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))

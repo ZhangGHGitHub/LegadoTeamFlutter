@@ -36,6 +36,11 @@ class BookSource with _$BookSource {
     @JsonKey(name: 'coverDecodeJs') String? coverDecodeJs,
     @JsonKey(name: 'bookSourceComment') String? bookSourceComment,
     @JsonKey(name: 'variableComment') String? variableComment,
+    // 书源自定义变量（契约 §2.3，台账 §5.11-3，Task #63 冻结 / #64-65 实现）：
+    // 对齐原版 BookSource.variable 字段（Rust 书源查询接口自然带出）。
+    // 评审 C1：改 @Default('') 非空——String? 的 toJson 恒输出 "variable": null，
+    // 会击穿 Rust serde 解析；非空串 + Rust lenient_string 双侧双保险 — Qoder
+    @Default('') String variable,
     @Default(0) @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
     @Default(180000) @JsonKey(name: 'respondTime') int respondTime,
     @Default(0) int weight,

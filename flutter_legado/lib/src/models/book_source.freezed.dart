@@ -53,7 +53,12 @@ mixin _$BookSource {
   @JsonKey(name: 'bookSourceComment')
   String? get bookSourceComment => throw _privateConstructorUsedError;
   @JsonKey(name: 'variableComment')
-  String? get variableComment => throw _privateConstructorUsedError;
+  String? get variableComment =>
+      throw _privateConstructorUsedError; // 书源自定义变量（契约 §2.3，台账 §5.11-3，Task #63 冻结 / #64-65 实现）：
+// 对齐原版 BookSource.variable 字段（Rust 书源查询接口自然带出）。
+// 评审 C1：改 @Default('') 非空——String? 的 toJson 恒输出 "variable": null，
+// 会击穿 Rust serde 解析；非空串 + Rust lenient_string 双侧双保险 — Qoder
+  String get variable => throw _privateConstructorUsedError;
   @JsonKey(name: 'lastUpdateTime')
   int get lastUpdateTime => throw _privateConstructorUsedError;
   @JsonKey(name: 'respondTime')
@@ -115,6 +120,7 @@ abstract class $BookSourceCopyWith<$Res> {
       @JsonKey(name: 'coverDecodeJs') String? coverDecodeJs,
       @JsonKey(name: 'bookSourceComment') String? bookSourceComment,
       @JsonKey(name: 'variableComment') String? variableComment,
+      String variable,
       @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
       @JsonKey(name: 'respondTime') int respondTime,
       int weight,
@@ -170,6 +176,7 @@ class _$BookSourceCopyWithImpl<$Res, $Val extends BookSource>
     Object? coverDecodeJs = freezed,
     Object? bookSourceComment = freezed,
     Object? variableComment = freezed,
+    Object? variable = null,
     Object? lastUpdateTime = null,
     Object? respondTime = null,
     Object? weight = null,
@@ -259,6 +266,10 @@ class _$BookSourceCopyWithImpl<$Res, $Val extends BookSource>
           ? _value.variableComment
           : variableComment // ignore: cast_nullable_to_non_nullable
               as String?,
+      variable: null == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String,
       lastUpdateTime: null == lastUpdateTime
           ? _value.lastUpdateTime
           : lastUpdateTime // ignore: cast_nullable_to_non_nullable
@@ -422,6 +433,7 @@ abstract class _$$BookSourceImplCopyWith<$Res>
       @JsonKey(name: 'coverDecodeJs') String? coverDecodeJs,
       @JsonKey(name: 'bookSourceComment') String? bookSourceComment,
       @JsonKey(name: 'variableComment') String? variableComment,
+      String variable,
       @JsonKey(name: 'lastUpdateTime') int lastUpdateTime,
       @JsonKey(name: 'respondTime') int respondTime,
       int weight,
@@ -481,6 +493,7 @@ class __$$BookSourceImplCopyWithImpl<$Res>
     Object? coverDecodeJs = freezed,
     Object? bookSourceComment = freezed,
     Object? variableComment = freezed,
+    Object? variable = null,
     Object? lastUpdateTime = null,
     Object? respondTime = null,
     Object? weight = null,
@@ -570,6 +583,10 @@ class __$$BookSourceImplCopyWithImpl<$Res>
           ? _value.variableComment
           : variableComment // ignore: cast_nullable_to_non_nullable
               as String?,
+      variable: null == variable
+          ? _value.variable
+          : variable // ignore: cast_nullable_to_non_nullable
+              as String,
       lastUpdateTime: null == lastUpdateTime
           ? _value.lastUpdateTime
           : lastUpdateTime // ignore: cast_nullable_to_non_nullable
@@ -656,6 +673,7 @@ class _$BookSourceImpl implements _BookSource {
       @JsonKey(name: 'coverDecodeJs') this.coverDecodeJs,
       @JsonKey(name: 'bookSourceComment') this.bookSourceComment,
       @JsonKey(name: 'variableComment') this.variableComment,
+      this.variable = '',
       @JsonKey(name: 'lastUpdateTime') this.lastUpdateTime = 0,
       @JsonKey(name: 'respondTime') this.respondTime = 180000,
       this.weight = 0,
@@ -728,6 +746,13 @@ class _$BookSourceImpl implements _BookSource {
   @override
   @JsonKey(name: 'variableComment')
   final String? variableComment;
+// 书源自定义变量（契约 §2.3，台账 §5.11-3，Task #63 冻结 / #64-65 实现）：
+// 对齐原版 BookSource.variable 字段（Rust 书源查询接口自然带出）。
+// 评审 C1：改 @Default('') 非空——String? 的 toJson 恒输出 "variable": null，
+// 会击穿 Rust serde 解析；非空串 + Rust lenient_string 双侧双保险 — Qoder
+  @override
+  @JsonKey()
+  final String variable;
   @override
   @JsonKey(name: 'lastUpdateTime')
   final int lastUpdateTime;
@@ -776,7 +801,7 @@ class _$BookSourceImpl implements _BookSource {
 
   @override
   String toString() {
-    return 'BookSource(bookSourceUrl: $bookSourceUrl, bookSourceName: $bookSourceName, bookSourceGroup: $bookSourceGroup, bookSourceType: $bookSourceType, bookUrlPattern: $bookUrlPattern, customOrder: $customOrder, enabled: $enabled, enabledExplore: $enabledExplore, jsLib: $jsLib, enabledCookieJar: $enabledCookieJar, concurrentRate: $concurrentRate, header: $header, loginUrl: $loginUrl, loginUi: $loginUi, loginCheckJs: $loginCheckJs, coverDecodeJs: $coverDecodeJs, bookSourceComment: $bookSourceComment, variableComment: $variableComment, lastUpdateTime: $lastUpdateTime, respondTime: $respondTime, weight: $weight, exploreUrl: $exploreUrl, exploreScreen: $exploreScreen, ruleExplore: $ruleExplore, searchUrl: $searchUrl, ruleSearch: $ruleSearch, ruleBookInfo: $ruleBookInfo, ruleToc: $ruleToc, ruleContent: $ruleContent, ruleReview: $ruleReview, mainJs: $mainJs, eventListener: $eventListener, customButton: $customButton)';
+    return 'BookSource(bookSourceUrl: $bookSourceUrl, bookSourceName: $bookSourceName, bookSourceGroup: $bookSourceGroup, bookSourceType: $bookSourceType, bookUrlPattern: $bookUrlPattern, customOrder: $customOrder, enabled: $enabled, enabledExplore: $enabledExplore, jsLib: $jsLib, enabledCookieJar: $enabledCookieJar, concurrentRate: $concurrentRate, header: $header, loginUrl: $loginUrl, loginUi: $loginUi, loginCheckJs: $loginCheckJs, coverDecodeJs: $coverDecodeJs, bookSourceComment: $bookSourceComment, variableComment: $variableComment, variable: $variable, lastUpdateTime: $lastUpdateTime, respondTime: $respondTime, weight: $weight, exploreUrl: $exploreUrl, exploreScreen: $exploreScreen, ruleExplore: $ruleExplore, searchUrl: $searchUrl, ruleSearch: $ruleSearch, ruleBookInfo: $ruleBookInfo, ruleToc: $ruleToc, ruleContent: $ruleContent, ruleReview: $ruleReview, mainJs: $mainJs, eventListener: $eventListener, customButton: $customButton)';
   }
 
   @override
@@ -816,6 +841,8 @@ class _$BookSourceImpl implements _BookSource {
                 other.bookSourceComment == bookSourceComment) &&
             (identical(other.variableComment, variableComment) ||
                 other.variableComment == variableComment) &&
+            (identical(other.variable, variable) ||
+                other.variable == variable) &&
             (identical(other.lastUpdateTime, lastUpdateTime) ||
                 other.lastUpdateTime == lastUpdateTime) &&
             (identical(other.respondTime, respondTime) ||
@@ -867,6 +894,7 @@ class _$BookSourceImpl implements _BookSource {
         coverDecodeJs,
         bookSourceComment,
         variableComment,
+        variable,
         lastUpdateTime,
         respondTime,
         weight,
@@ -918,6 +946,7 @@ abstract class _BookSource implements BookSource {
           @JsonKey(name: 'coverDecodeJs') final String? coverDecodeJs,
           @JsonKey(name: 'bookSourceComment') final String? bookSourceComment,
           @JsonKey(name: 'variableComment') final String? variableComment,
+          final String variable,
           @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
           @JsonKey(name: 'respondTime') final int respondTime,
           final int weight,
@@ -990,6 +1019,11 @@ abstract class _BookSource implements BookSource {
   @override
   @JsonKey(name: 'variableComment')
   String? get variableComment;
+  @override // 书源自定义变量（契约 §2.3，台账 §5.11-3，Task #63 冻结 / #64-65 实现）：
+// 对齐原版 BookSource.variable 字段（Rust 书源查询接口自然带出）。
+// 评审 C1：改 @Default('') 非空——String? 的 toJson 恒输出 "variable": null，
+// 会击穿 Rust serde 解析；非空串 + Rust lenient_string 双侧双保险 — Qoder
+  String get variable;
   @override
   @JsonKey(name: 'lastUpdateTime')
   int get lastUpdateTime;

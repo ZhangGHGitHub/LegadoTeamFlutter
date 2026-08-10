@@ -73,7 +73,9 @@ void main() {
     when(() => mockApi.listCachedChapterUrls(any()))
         .thenAnswer((_) async => const ['https://src.com/c1']);
     // 目录页其余 Tab / 加载链路依赖：书签、标注返回空
-    when(() => mockApi.getBookmarks(any())).thenAnswer((_) async => const []);
+    // [Task #65] 书签 Tab 改用 getBookmarksByBook（契约 §2.7，台账 §5.14-2）
+    when(() => mockApi.getBookmarksByBook(any(), any()))
+        .thenAnswer((_) async => const []);
     when(() => mockApi.highlightListByBook(bookUrl: any(named: 'bookUrl')))
         .thenAnswer((_) async => '[]');
 

@@ -87,6 +87,11 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   List<SearchResult> _testResults = [];
   String? _testError;
 
+  /// 被编辑书源既有的自定义变量（评审 C1：表单不含 variable 字段，
+  /// 保存时透传此值避免编辑任意书源一次即抹掉已设置的源变量；
+  /// 粘贴/扫码/全屏编辑回填时随 _populateFields 同步更新）
+  String _preservedVariable = '';
+
   bool get isNew => widget.sourceUrl == null;
 
   /// 按 key 惰性获取控制器
@@ -264,6 +269,8 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   void _populateFields(BookSource source) {
     final values = _sourceToValues(source);
     values.forEach((key, value) => _ctrl(key).text = value);
+    // 评审 C1：同步记录既有 variable，_buildSource 时透传不抹掉
+    _preservedVariable = source.variable;
     _enabled = source.enabled;
     _enabledExplore = source.enabledExplore;
     _reviewEnabled = source.ruleReview?.enabled ?? false;
@@ -414,6 +421,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       header: n('header'),
       loginUrl: n('loginUrl'),
       bookSourceComment: n('bookSourceComment'),
+      // 评审 C1：透传被编辑书源既有 variable（表单不编辑此字段，
+      // 避免保存时把已设置的源变量抹掉为空串）
+      variable: _preservedVariable,
       enabledExplore: _enabledExplore,
       // 搜索规则
       searchUrl: n('searchUrl'),

@@ -105,6 +105,31 @@ void main() {
       final json = await api.exportBookSources();
       expect(json, contains('笔趣阁'));
     });
+
+    // [Task #63 冻结 / #64-65 实现，#68 评审 S1/C1 语义对齐]
+    // 契约 §2.3 setSourceVariable（台账 §5.11-3）
+    test('setSourceVariable 写入/清除书源变量', () async {
+      await api.setSourceVariable('https://www.kaixin7days.com', 'key=value');
+      var sources = await api.getBookSources();
+      final src =
+          sources.firstWhere((s) => s.bookSourceUrl == 'https://www.kaixin7days.com');
+      expect(src.variable, 'key=value');
+
+      // 空串=清除（对齐 Rust 单列 UPDATE 语义；C1 后 variable 为非空串）
+      await api.setSourceVariable('https://www.kaixin7days.com', '');
+      sources = await api.getBookSources();
+      final cleared =
+          sources.firstWhere((s) => s.bookSourceUrl == 'https://www.kaixin7days.com');
+      expect(cleared.variable, '');
+    });
+
+    // 评审 S1：书源不存在时抛错，对齐 Rust Internal 语义
+    test('setSourceVariable 书源不存在时抛错', () async {
+      await expectLater(
+        api.setSourceVariable('https://not-exist.example.com', 'x'),
+        throwsException,
+      );
+    });
   });
 
   group('搜索操作', () {
@@ -214,6 +239,34 @@ void main() {
       final list = await api.getBookmarks('斗破苍穹');
       expect(list.length, 1);
       expect(list[0].content, '测试备注');
+    });
+
+    // [Task #65] 契约 §2.7 getBookmarksByBook（台账 §5.14-2）
+    test('getBookmarksByBook 按书名+作者双键过滤', () async {
+      await api.addBookmark(Bookmark(
+        bookName: '斗破苍穹',
+        bookAuthor: '天蚕土豆',
+        chapterIndex: 1,
+        chapterPos: 50,
+        chapterName: '第2章',
+        bookText: '',
+        content: '命中',
+      ));
+      // 同名不同作者不得混入（对齐原版 bookmarkDao.getByBook）
+      await api.addBookmark(Bookmark(
+        bookName: '斗破苍穹',
+        bookAuthor: '同名作者',
+        chapterIndex: 0,
+        chapterPos: 0,
+        chapterName: '干扰项',
+        bookText: '',
+        content: '',
+      ));
+      final hit = await api.getBookmarksByBook('斗破苍穹', '天蚕土豆');
+      expect(hit.length, 1);
+      expect(hit[0].content, '命中');
+      final miss = await api.getBookmarksByBook('斗破苍穹', '不存在的作者');
+      expect(miss, isEmpty);
     });
 
     test('deleteBookmark 删除后为空', () async {

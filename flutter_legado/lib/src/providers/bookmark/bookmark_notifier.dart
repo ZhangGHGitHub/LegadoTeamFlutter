@@ -13,7 +13,7 @@ export 'bookmark_state.dart';
 /// 职责严格限定（对齐原 BookmarkProvider 行为）：
 /// - 调用 BookApi → 接收纯数据 → 更新 immutable State
 /// - 管理 UI 状态（loading/error/data 三态）
-/// - 加载全部 / 按书名加载 / 搜索 / 增删书签
+/// - 加载全部 / 按书名+作者加载 / 搜索 / 增删书签
 /// - 不自动加载（由界面在 initState 后主动调用 [loadAll]）
 class BookmarkNotifier extends Notifier<BookmarkState> {
   @override
@@ -34,12 +34,13 @@ class BookmarkNotifier extends Notifier<BookmarkState> {
     }
   }
 
-  /// 按书名加载书签
-  Future<void> loadByBook(String bookName) async {
+  /// 按书名+作者加载书签（契约 §2.7 getBookmarksByBook，台账 §5.14-2，
+  /// Task #65；对齐原版 bookmarkDao.getByBook(name, author)，规避同名书混入）
+  Future<void> loadByBook(String bookName, String bookAuthor) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final api = ref.read(bookApiProvider);
-      final bookmarks = await api.getBookmarks(bookName);
+      final bookmarks = await api.getBookmarksByBook(bookName, bookAuthor);
       state = state.copyWith(bookmarks: bookmarks, isLoading: false);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isLoading: false);

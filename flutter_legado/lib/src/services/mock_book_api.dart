@@ -366,6 +366,21 @@ class MockBookApi implements BookApi {
     if (idx >= 0) _sources[idx] = source;
   }
 
+  /// 设置书源自定义变量（契约 §2.3，台账 §5.11-3，Task #63 冻结 / #64-65 实现）
+  ///
+  /// Mock：短延迟模拟 FFI 往返；命中内存书源时同步回写 variable 字段
+  /// （空串=清除，对齐 Rust 单列 UPDATE 语义）；书源不存在时抛错，
+  /// 对齐 Rust Internal 语义（评审 S1） — Qoder
+  @override
+  Future<void> setSourceVariable(String sourceUrl, String variable) async {
+    await Future.delayed(const Duration(milliseconds: 50));
+    final idx = _sources.indexWhere((s) => s.bookSourceUrl == sourceUrl);
+    if (idx < 0) {
+      throw Exception('书源不存在: $sourceUrl');
+    }
+    _sources[idx] = _sources[idx].copyWith(variable: variable);
+  }
+
   @override
   Future<void> deleteBookSource(String sourceUrl) async {
     _sources.removeWhere((s) => s.bookSourceUrl == sourceUrl);
@@ -879,6 +894,21 @@ class MockBookApi implements BookApi {
   @override
   Future<List<Bookmark>> getBookmarks(String bookName) async =>
       _bookmarks.where((b) => b.bookName == bookName).toList();
+
+  /// 按书名+作者获取书签（契约 §2.7，台账 §5.14-2，Task #65）
+  ///
+  /// Mock：短延迟后返回内存书签按 bookName + bookAuthor 双键过滤结果，
+  /// 无命中返回空列表（对齐原版 bookmarkDao.getByBook） — Qoder
+  @override
+  Future<List<Bookmark>> getBookmarksByBook(
+    String bookName,
+    String bookAuthor,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 50));
+    return _bookmarks
+        .where((b) => b.bookName == bookName && b.bookAuthor == bookAuthor)
+        .toList();
+  }
 
   @override
   Future<List<Bookmark>> getAllBookmarks() async => List.from(_bookmarks);

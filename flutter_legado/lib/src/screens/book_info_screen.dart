@@ -337,7 +337,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 if (hasLogin)
                   const PopupMenuItem(value: 'login', child: Text('登录')),
                 const PopupMenuItem(value: 'top', child: Text('置顶')),
-                // 设置源变量（仍为占位）/ 设置书籍变量
+                // 设置源变量（Task #63 冻结 / #64-65 实现，§5.11-3 已接通 setSourceVariable）/
+                // 设置书籍变量
                 //（[Task #39 §5.11-4] 已接通变量对话框 + updateBook 保存）
                 if (hasSource)
                   const PopupMenuItem(
@@ -520,6 +521,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         // 的 bookUrl 分支：putCustomVariable + saveBook） — Qoder
         await _setBookVariable();
         break;
+      case 'sourceVariable':
+        // [Task #63 冻结 / #64-65 实现 | 2026-08-10] 设置源变量接通（台账 §5.11-3，对齐原版
+        // BookInfoActivity.setSourceVariable + setVariable 的 source 分支：
+        // bookSource.setVariable 后保存） — Qoder
+        await _setSourceVariable();
+        break;
       case 'updateTask':
         // [UI-fix v2.0.3 | 2026-08-09] 创建书籍更新任务接通（Task #39
         // §5.11-2，对齐原版 BookInfoActivity.openBookUpdateTask：
@@ -540,13 +547,69 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   /// 未移植功能提示（占位项，待后续版本对齐原版）
   void _todo(String value) {
-    const names = {
-      'sourceVariable': '设置源变量',
-    };
-    final feature = names[value] ?? value;
+    final feature = value;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('「$feature」后续版本支持')),
     );
+  }
+
+  /// 设置源变量（Task #63 冻结 / #64-65 实现，台账 §5.11-3，对齐原版 BookInfoActivity
+  /// setSourceVariable + setVariable 的 source 分支）
+  ///
+  /// 原版语义：
+  /// - 书源不存在时 toast「书源不存在」直接返回（菜单层已按 hasSource 隐藏，
+  ///   此处为二次防护，对齐原版 setSourceVariable 的 source==null 分支）
+  /// - 说明文案对齐 getDisplayVariableComment：书源 variableComment
+  ///   非空优先展示，否则用默认文案
+  /// - 输入框预填当前书源 variable；确认后 setSourceVariable（空串=清除）
+  ///   单列 UPDATE 写库，成功后 Toast + 刷新本地书源状态
+  Future<void> _setSourceVariable() async {
+    final api = ref.read(bookApiProvider);
+    final source = _bookSource;
+    if (source == null) {
+      _snack('书源不存在');
+      return;
+    }
+    // 说明文案（对齐原版 getDisplayVariableComment：书源注释优先）
+    final srcComment = (source.variableComment ?? '').trim();
+    final comment = srcComment.isNotEmpty
+        ? srcComment
+        : '源变量可在js中通过source.getVariable()获取';
+    // 输入框预填当前书源 variable（对齐原版 source.getVariable 初值；
+    // 评审 C1 后 variable 为非空串，无需 ?? 兼容）
+    // [Task #70 D1 修复 | 2026-08-10] 重构为自持 StatefulWidget 对话框
+    //（_TextPromptDialog 范式）：原实现 controller 在外部作用域创建 +
+    // pop 后立即 dispose，退场动画期间触发 _dependents.isEmpty 断言 +
+    // OverlayEntry Duplicate GlobalKey 红屏；现 controller 生命周期
+    // 绑定对话框子树，确定按钮先取值再 pop 回传 — Qoder
+    final input = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _VariableDialog(
+        title: '设置源变量',
+        comment: comment,
+        initialText: source.variable,
+      ),
+    );
+    // 取消（pop 无值）不保存；确定恒保存，空串=清除（对齐原版 setVariable）
+    if (input == null || !mounted) return;
+    try {
+      // 单列 UPDATE 语义（契约 §2.3）：仅改 variable 列，空串=清除；
+      // 规避 updateBookSource 全行更新覆盖其它字段的风险
+      await api.setSourceVariable(source.bookSourceUrl, input);
+      if (!mounted) return;
+      // 刷新本地书源状态（重载页面数据，书源查询自然带出新 variable；
+      // 评审 C1：variable 非空串语义，空串即已清除，不再传 null）
+      setState(() {
+        _bookSource = source.copyWith(
+          variable: input,
+        );
+        _future = _loadData();
+      });
+      _snack(input.isEmpty ? '源变量已清除' : '源变量已保存');
+    } catch (e) {
+      debugPrint('设置源变量失败: $e');
+      if (mounted) _snack('设置源变量失败: ${_errMsg(e)}');
+    }
   }
 
   /// 上传至远程（Task #52 §5.11-1，对齐原版 RemoteBookWebDav.upload）
@@ -699,51 +762,17 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         : '书籍变量可在js中通过book.getVariable("custom")获取';
     // 输入框初值：解析 variable JSON Map 取 custom 键（解析失败视为空 Map）
     final customInit = _parseVariableMap(book.variable)['custom'];
-    final controller =
-        TextEditingController(text: customInit?.toString() ?? '');
-    final confirmed = await showDialog<bool>(
+    // [Task #70 D1 修复 | 2026-08-10] 同 _setSourceVariable：重构为自持
+    // StatefulWidget 对话框，消除外部 controller 提前 dispose 隐患 — Qoder
+    final input = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('设置书籍变量'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                comment,
-                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                minLines: 3,
-                maxLines: null,
-                decoration: const InputDecoration(
-                  labelText: 'variable',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (ctx) => _VariableDialog(
+        title: '设置书籍变量',
+        comment: comment,
+        initialText: customInit?.toString() ?? '',
       ),
     );
-    final input = controller.text;
-    controller.dispose();
-    if (confirmed != true || !mounted) return;
+    if (input == null || !mounted) return;
     // 原版 inBookshelf 守卫：仅在架时 saveBook，否则无条件 updateBook
     // 会把非在架书 upsert 进 books 表（M5）
     if (!_inBookshelf) {
@@ -1786,6 +1815,92 @@ class _ExpandableTextState extends State<_ExpandableText> {
           );
         },
       ),
+    );
+  }
+}
+
+/// 变量设置对话框（供设置源变量/设置书籍变量复用）
+///
+/// [Task #70 D1 修复 | 2026-08-10] 照 source_screen.dart 的
+/// _TextPromptDialog 范式实现自持 StatefulWidget：controller 在 State
+/// 内 late final 创建、dispose 随子树卸载统一释放，确定按钮先取值再
+/// Navigator.pop(ctx, value)，规避外部作用域 controller 在退场动画期间
+/// 提前 dispose 引发的 framework.dart '_dependents.isEmpty' 断言 +
+/// OverlayEntry Duplicate GlobalKey 红屏 — Qoder
+///
+/// 回传约定：确定 → pop 输入值（可为空串，空串=清除语义由调用方保持）；
+/// 取消/系统关闭 → pop 无值（null），调用方不保存。
+class _VariableDialog extends StatefulWidget {
+  final String title;
+
+  /// 说明文案（对齐原版 VariableDialog 的 comment 展示）
+  final String comment;
+
+  /// 输入框预填文本
+  final String initialText;
+
+  const _VariableDialog({
+    required this.title,
+    required this.comment,
+    required this.initialText,
+  });
+
+  @override
+  State<_VariableDialog> createState() => _VariableDialogState();
+}
+
+class _VariableDialogState extends State<_VariableDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.comment,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              minLines: 3,
+              maxLines: null,
+              decoration: const InputDecoration(
+                labelText: 'variable',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            // 先取值再 pop（controller 随子树卸载后不可再读）
+            final value = _controller.text;
+            Navigator.pop(context, value);
+          },
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }

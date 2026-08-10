@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -42,6 +43,15 @@ class SourceNotifier extends Notifier<SourceState> {
     try {
       final api = ref.read(bookApiProvider);
       final sources = await api.getBookSources();
+      // [Task #70 D2 加固 | 2026-08-10] 防御性守卫：内存已有书源时，
+      // 空列表返回视为异常时序（如 DB 未就绪）不覆盖，避免显示层
+      // 偶发整表清空（69 实机回归 D2 观察项；真实删除走
+      // deleteSource/batchDelete 增量路径，不受此守卫影响） — Qoder
+      if (sources.isEmpty && state.sources.isNotEmpty) {
+        debugPrint('loadSources: 空列表返回，保留现有 ${state.sources.length} 个书源');
+        state = state.copyWith(loading: false);
+        return;
+      }
       state = state.copyWith(sources: sources, loading: false);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), loading: false);
