@@ -1081,7 +1081,7 @@ flutter test                  # 全量测试通过
 **文档版本**: 1.19  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
-**最后修改**: Qoder
+**最后修改**: Reasonix
 
 **版本记录**：
 - v1.19（2026-08-10）§5.12 销记三项纯 Flutter 行为接线（doubleHorizontalPage 双页 0-3 档/useZhLayout 中文分行开关/hangingPunctuation 段首标点悬挂，v2.0.7 批，Reasonix 实施）：`reader_page_view` 双栏整屏渲染+屏索引翻页+分页缓存键；`paragraph_layout_engine` 朴素断行分支+悬挂规则；`zh_layout` 首行悬挂放宽；渲染侧悬挂行左移；全量 flutter test 1135/1135 通过零回归；剩余 4 项（刘海×2/音量键×2 仅 Android、shareLayout 待日夜双配置）延后登记
