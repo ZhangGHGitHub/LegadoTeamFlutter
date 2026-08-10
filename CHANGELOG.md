@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.8] - 2026-08-10
+
+### 修复
+- 需登录书源目录/正文获取修复（loginCheckJs 三处语义修正，对齐原版 WebBook 双路径）：
+  - `js_executor.rs` result 注入改为**带方法语义的 JS 对象**（原实现 to_string 后注入导致 result 为 JSON 字符串，真实书源 `result.body()`/`url()`/`code()` 写法全部失败）；判定剥除 eval 返回值的 JSON 引号（`"false"` 原无法匹配）
+  - `web_book.rs` execute_login_check 区分两类错误：**判定未登录**（false/未登录/needLogin）→ errResponse（HTTP 500）二次 eval 对齐原版失败路径，仍未登录则上抛 `LoginRequired`（用户可见「书源需要登录，请先在书源菜单中登录后重试」）；**JS 环境不兼容**（依赖 java.* 等）→ 降级放行不阻断
+  - `legado-core/error.rs` 新增 `LoginRequired` 变体（错误码 1012）；`legado-server/error.rs` 映射 HTTP 401 login_required
+  - 新增单测 2 个（对象语义/判定分类），legado-ffi --features quickjs 253/253 通过，workspace 全量 0 failed
+- 模拟器冒烟脚本修正：默认包名 `io.legado.flutter_legado`（与 applicationId 同步）、MainActivity 全限定类名 `io.legado.flutter.MainActivity`（原 `.MainActivity` 报 Activity does not exist）
+
 ## [2.0.7] - 2026-08-10
 
 ### 新增

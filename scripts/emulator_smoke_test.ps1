@@ -15,8 +15,12 @@ param(
   [switch]$SkipBuild,
   [switch]$CheckUI,
   [string]$FlutterDir = "D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado",
-  [string]$Package = "com.legado.legado_flutter",
-  [string]$Activity = ".MainActivity"
+  # 注意：与 android/app/build.gradle.kts 的 applicationId 保持同步
+  #（2026-08-10 确认当前为 io.legado.flutter_legado，勿用旧包名 com.legado.legado_flutter）
+  [string]$Package = "io.legado.flutter_legado",
+  # MainActivity 类位于 io.legado.flutter 包（非 applicationId 同包），
+  # 必须全限定类名（2026-08-10 修正：`.MainActivity` 报 Activity does not exist）
+  [string]$Activity = "io.legado.flutter.MainActivity"
 )
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 # 注：native 命令（adb）的 stderr 警告在 Stop 策略下会被当作异常中止脚本，
