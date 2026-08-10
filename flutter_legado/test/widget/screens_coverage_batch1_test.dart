@@ -7,10 +7,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
+import 'package:flutter_legado/src/routes.dart';
+import 'package:flutter_legado/src/screens/audio_screen.dart';
 import 'package:flutter_legado/src/screens/book_group_screen.dart';
 import 'package:flutter_legado/src/screens/book_info_screen.dart';
+import 'package:flutter_legado/src/screens/reader_comic_screen.dart';
+import 'package:flutter_legado/src/screens/reader_screen.dart';
+import 'package:flutter_legado/src/services/audio_service.dart';
 
 import '../mocks/mocks.dart';
+
+/// 记录 push 的路由名（分流断言用）
+class _PushedRouteObserver extends NavigatorObserver {
+  final List<String> pushed;
+  _PushedRouteObserver(this.pushed);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    pushed.add(route.settings.name ?? '');
+  }
+}
 
 /// screens 层深度覆盖第一批（§9.5 覆盖率推进）：
 /// BookGroupScreen / BookInfoScreen
@@ -24,8 +41,19 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
+    final mockAudio = MockAudioService();
+    when(() => mockAudio.init()).thenAnswer((_) async {});
+    when(() => mockAudio.isInitialized).thenReturn(false);
+    when(() => mockAudio.dispose()).thenAnswer((_) async {});
+    when(() => mockAudio.mediaButtonStream)
+        .thenAnswer((_) => const Stream<MediaButtonEvent>.empty());
+    when(() => mockAudio.audioFocusStream)
+        .thenAnswer((_) => const Stream<AudioFocusEvent>.empty());
     container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      overrides: [
+        bookApiProvider.overrideWithValue(mockApi),
+        audioServiceProvider.overrideWithValue(mockAudio),
+      ],
     );
     addTearDown(container.dispose);
   });
@@ -231,6 +259,88 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('展开'), findsOneWidget);
       expect(find.text('收起'), findsNothing);
+    });
+
+    // [UI-fix v2.0.11 | 2026-08-10] 按书籍类型分流阅读器（对齐原版
+    // BookInfoActivity.startReadActivity：audio→/audio、image→/reader-comic、
+    // 文本→/reader）；bookType 为位标记（text=8/audio=32/image=64）— Reasonix
+    group('开始阅读按类型分流', () {
+      final pushed = <String>[];
+
+      Widget wrapWithRoutes(Widget child) {
+        pushed.clear();
+        final observer = _PushedRouteObserver(pushed);
+        // AppRoutes.routes 含 '/'（home）条目，与 MaterialApp.home 冲突，需剔除
+        final routes = Map<String, WidgetBuilder>.from(AppRoutes.routes)
+          ..remove('/');
+        return UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: child,
+            routes: routes,
+            navigatorObservers: [observer],
+          ),
+        );
+      }
+
+      void stubCommon(Book book) {
+        when(() => mockApi.getBook(any())).thenAnswer((_) async => book);
+        when(() => mockApi.getChapters(any())).thenAnswer((_) async => const [
+              BookChapter(
+                  bookUrl: 'u1', index: 0, title: '第一章', url: 'c1'),
+            ]);
+        when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
+        when(() => mockApi.fetchChapterContent(any(), any(), any()))
+            .thenAnswer((_) async => '正文内容');
+        when(() => mockApi.getChapterContent(any(), any()))
+            .thenAnswer((_) async => '正文内容');
+      }
+
+      testWidgets('音频书（bookType=32）进入音频播放页', (tester) async {
+        const book = Book(bookUrl: 'u1', name: '听书', bookType: 32);
+        stubCommon(book);
+        await tester
+            .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('开始阅读'));
+        await tester.pumpAndSettle();
+
+        expect(pushed, contains(AppRoutes.audio));
+        // 返回详情页，避免媒体会话副作用
+        Navigator.of(tester.element(find.byType(AudioScreen))).pop();
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('图片书（bookType=64）进入漫画阅读页', (tester) async {
+        const book = Book(bookUrl: 'u1', name: '漫画', bookType: 64);
+        stubCommon(book);
+        await tester
+            .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('开始阅读'));
+        await tester.pumpAndSettle();
+
+        expect(pushed, contains(AppRoutes.readerComic));
+        Navigator.of(tester.element(find.byType(ReaderComicScreen))).pop();
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('文本书（bookType=8）进入文本阅读页', (tester) async {
+        const book = Book(bookUrl: 'u1', name: '文本书', bookType: 8);
+        stubCommon(book);
+        await tester
+            .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('开始阅读'));
+        await tester.pumpAndSettle();
+
+        expect(pushed, contains(AppRoutes.reader));
+        Navigator.of(tester.element(find.byType(ReaderScreen))).pop();
+        await tester.pumpAndSettle();
+      });
     });
   });
 }

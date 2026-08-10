@@ -84,12 +84,15 @@ class ReaderNotifier extends Notifier<ReaderState> {
         chapters = await api.refreshToc(book.bookUrl, book.origin);
       }
       var chapterIndex = book.durChapterIndex;
+      var chapterPos = book.durChapterPos;
       if (chapterIndex >= chapters.length && chapters.isNotEmpty) {
         chapterIndex = 0;
+        chapterPos = 0;
       }
       state = state.copyWith(
         chapters: chapters,
         currentChapterIndex: chapterIndex,
+        currentChapterPos: chapterPos,
       );
       await _loadChapterContent();
     } catch (e) {

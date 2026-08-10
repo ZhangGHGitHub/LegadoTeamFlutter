@@ -77,9 +77,10 @@ extension BookshelfStateGrouping on BookshelfState {
       case BookGroupId.local:
         return books.where((b) => _isLocal(b)).toList();
       case BookGroupId.audio:
-        return books.where((b) => b.bookType == BookType.audio).toList();
+        // [UI-fix v2.0.11] bookType 为位标记，用位运算判定（对齐原版 isAudio）— Reasonix
+        return books.where((b) => (b.bookType & BookType.audio) != 0).toList();
       case BookGroupId.video:
-        return books.where((b) => b.bookType == BookType.video).toList();
+        return books.where((b) => (b.bookType & BookType.video) != 0).toList();
       case BookGroupId.netNone:
         return books.where((b) => !_isLocal(b) && b.group == 0).toList();
       case BookGroupId.localNone:

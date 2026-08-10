@@ -77,7 +77,12 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     _stopTimer?.cancel();
     _customMinutesController.dispose();
     // 释放媒体会话资源（后台播放/焦点）
-    ref.read(audioNotifierProvider.notifier).releaseMediaSession();
+    // [UI-fix v2.0.11 | 2026-08-10] 防御卸载时序边界：element 已 dispose
+    // 时（快速连续导航/测试环境树卸载）ref.read 会抛
+    // 「Cannot use ref after the widget was disposed」，跳过释放 — Reasonix
+    try {
+      ref.read(audioNotifierProvider.notifier).releaseMediaSession();
+    } catch (_) {}
     super.dispose();
   }
 

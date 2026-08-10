@@ -3,13 +3,17 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'book.freezed.dart';
 part 'book.g.dart';
 
-/// 书籍类型常量
+/// 书籍类型常量（位标记，对齐 Kotlin `BookType.kt`：
+/// video=4 / text=8 / audio=32 / image=64 / webFile=128 / local=256 /
+/// notShelf=1024；Rust searchBooks/getBook 返回的 `type` 即此位标记，
+/// 判断用位运算 `&`，勿用 `==` 单值比较）
+/// [UI-fix v2.0.11 | 2026-08-10] 由 0/1/2 枚举语义修正为位标记 — Reasonix
 class BookType {
-  static const int text = 0;
-  static const int audio = 1;
-  static const int image = 2;
-  static const int file = 3;
   static const int video = 4;
+  static const int text = 8;
+  static const int audio = 32;
+  static const int image = 64;
+  static const int webFile = 128;
   static const int local = 0x1000;
   /// 未入书架的临时书（对齐 Kotlin `BookType.notShelf`；搜索/发现打开在线书阅读时临时落库）
   static const int notShelf = 0x400;

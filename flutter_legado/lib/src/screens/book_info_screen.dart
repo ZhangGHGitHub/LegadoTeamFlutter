@@ -1447,8 +1447,54 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     final bookToRead = chapterIndex != book.durChapterIndex
         ? book.copyWith(durChapterIndex: chapterIndex)
         : book;
+    // [UI-fix v2.0.11 | 2026-08-10] 按书籍类型分流阅读器（对齐原版
+    // BookInfoActivity.startReadActivity：audio→AudioPlayActivity /
+    // image→漫画阅读器 / 文本→ReadBookActivity）。bookType 为位标记
+    // （text=8/audio=32/image=64）；搜索等路径 bookType 缺失（0）时
+    // 兜底按书源类型（bookSourceType：1=音频/2=图片）判定 — Reasonix
+    final bt = bookToRead.bookType;
+    var isAudio = (bt & BookType.audio) != 0;
+    var isImage = (bt & BookType.image) != 0;
+    if (!isAudio && !isImage && bt == 0 && _isOnlineBook(book)) {
+      final source = await _findSourceByOrigin(api, book.origin);
+      if (source != null) {
+        isAudio = source.bookSourceType == 1;
+        isImage = source.bookSourceType == 2;
+      }
+    }
+    if (isAudio) {
+      if (!context.mounted) return;
+      await Navigator.pushNamed(context, AppRoutes.audio, arguments: book);
+      if (mounted) {
+        setState(() {
+          _future = _loadData();
+        });
+      }
+      return;
+    }
+    if (isImage) {
+      if (!context.mounted) return;
+      await Navigator.pushNamed(
+          context, AppRoutes.readerComic, arguments: book.bookUrl);
+      if (mounted) {
+        setState(() {
+          _future = _loadData();
+        });
+      }
+      return;
+    }
     container.read(readerNotifierProvider.notifier).openBook(bookToRead);
-    Navigator.pushNamed(context, AppRoutes.reader);
+    // [UI-fix v2.0.11 | 2026-08-10] 阅读返回后重新加载详情数据：Rust 已把
+    // 阅读进度（dur_chapter_index/pos）写入 books 表，刷新后「继续阅读」
+    // 按钮能定位到上次章节（修复：搜索结果进入详情页第二次点开始阅读
+    // 总是回第一章——旧快照 book.durChapterIndex=0 未被重新读取）— Reasonix
+    if (!context.mounted) return;
+    await Navigator.pushNamed(context, AppRoutes.reader);
+    if (mounted) {
+      setState(() {
+        _future = _loadData();
+      });
+    }
   }
 
   /// 打开换源页面，换源成功后用新的 bookUrl 重新加载详情页
