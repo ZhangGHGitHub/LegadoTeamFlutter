@@ -14,7 +14,9 @@ use legado_core::{LegadoError, LegadoResult};
 /// - v101：偏离表修复（rssArticles/rssStars/readRecord/txtTocRules 补齐 Room 99.json 缺列）
 /// - v102：cached_chapters 唯一索引由 chapter_url 单列改为 (book_url, chapter_url)
 ///   复合键（Task #16 P0：修复跨书缓存串本导致「正文显示为另一本书内容」）
-pub const SCHEMA_VERSION: u32 = 102;
+/// - v103：book_sources 表补 `variable` 列（台账 §5.11-3，支撑契约 §2.3
+///   setSourceVariable 书源自定义变量，幂等迁移，Task #63）
+pub const SCHEMA_VERSION: u32 = 103;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -163,6 +165,7 @@ CREATE TABLE IF NOT EXISTS book_sources (
     coverDecodeJs TEXT,
     bookSourceComment TEXT,
     variableComment TEXT,
+    variable TEXT DEFAULT '',
     lastUpdateTime INTEGER NOT NULL,
     respondTime INTEGER NOT NULL,
     weight INTEGER NOT NULL,

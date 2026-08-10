@@ -41,6 +41,21 @@ fn lenient_bool<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
     }
 }
 
+/// 宽松反序列化：字符串字段容忍显式 null 与其他标量类型
+///
+/// Dart 侧 String? 字段的 toJson 会恒输出键（值可为 null），第三方书源
+/// JSON 也可能带显式 `"variable": null`；serde 严格模式对 null 直接报错，
+/// 会击穿 add_source/update_source/source_import 全链路（台账评审 C1）。
+/// 规则：Null→空串、String 原样、其他类型 to_string（Gson 式宽松）。
+fn lenient_string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    match &v {
+        serde_json::Value::Null => Ok(String::new()),
+        serde_json::Value::String(s) => Ok(s.clone()),
+        other => Ok(other.to_string()),
+    }
+}
+
 /// 宽松反序列化：Option<bool> 版本（字段缺省时为 None）
 fn lenient_opt_bool<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
@@ -132,6 +147,18 @@ pub struct BookSource {
     /// 自定义变量说明
     #[serde(skip_serializing_if = "Option::is_none", rename = "variableComment")]
     pub variable_comment: Option<String>,
+    /// 自定义变量内容（对齐 Kotlin `BookSource.variable`，由 `setSourceVariable` 写入，
+    /// 空串表示未设置/已清除；台账 §5.11-3，SCHEMA_VERSION 102→103 迁移补列）
+    ///
+    /// lenient_string 容忍 Dart toJson 输出的显式 null（评审 C1 双轨失配修复）；
+    /// skip_serializing_if 对齐 variableComment 惯例，空值不输出避免导出物形态漂移
+    #[serde(
+        default,
+        rename = "variable",
+        deserialize_with = "lenient_string",
+        skip_serializing_if = "str::is_empty"
+    )]
+    pub variable: String,
     /// 最后更新时间，用于排序
     #[serde(default, rename = "lastUpdateTime", deserialize_with = "lenient_i64")]
     pub last_update_time: i64,
@@ -302,6 +329,31 @@ mod tests {
         assert!(bs2.enabled);
         assert!(!bs2.enabled_explore);
         assert!(bs2.event_listener);
+    }
+
+    /// 评审 C1：variable 双轨 null 序列化失配防护——显式 null/缺键/正常串
+    /// 均须反序列化成功（Dart toJson 恒输出该键且可为 null）
+    #[test]
+    fn test_book_source_variable_lenient_deserialize() {
+        // 显式 null → 空串（Dart String? toJson 输出 null 的主场景）
+        let json = r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test","variable":null}"#;
+        let bs: BookSource = serde_json::from_str(json).unwrap();
+        assert_eq!(bs.variable, "");
+
+        // 缺键 → 空串（旧版 Dart 导出物/第三方源无该字段）
+        let json = r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test"}"#;
+        let bs: BookSource = serde_json::from_str(json).unwrap();
+        assert_eq!(bs.variable, "");
+
+        // 正常串原样保留
+        let json = r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test","variable":"abc=1"}"#;
+        let bs: BookSource = serde_json::from_str(json).unwrap();
+        assert_eq!(bs.variable, "abc=1");
+
+        // 空串序列化时不输出该键（对齐 variableComment 惯例）
+        let bs = BookSource::default();
+        let obj = serde_json::to_value(&bs).unwrap();
+        assert!(!obj.as_object().unwrap().contains_key("variable"));
     }
 
     #[test]

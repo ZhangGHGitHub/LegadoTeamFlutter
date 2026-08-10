@@ -168,11 +168,15 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
         };
 
         // 恢复书籍
+        // 评审 W3：失败不再静默吞错——UNIQUE 撞名等写入失败记 warn 日志，
+        // 便于排查「恢复数量少于备份数量」类问题（RestoreStats 仅含成功计数，
+        // 失败不入统计以免变更 FFI 返回结构）
         let book_repo = BookRepository::new(conn);
         for value in &backup.books {
             if let Ok(book) = serde_json::from_value::<Book>(value.clone()) {
-                if book_repo.insert(&book).is_ok() {
-                    stats.books += 1;
+                match book_repo.insert(&book) {
+                    Ok(()) => stats.books += 1,
+                    Err(e) => log::warn!("恢复书籍失败（已跳过）: {} - {e}", book.book_url),
                 }
             }
         }
@@ -181,8 +185,9 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
         let bookmark_repo = BookmarkRepository::new(conn);
         for value in &backup.bookmarks {
             if let Ok(bm) = serde_json::from_value::<Bookmark>(value.clone()) {
-                if bookmark_repo.insert(&bm).is_ok() {
-                    stats.bookmarks += 1;
+                match bookmark_repo.insert(&bm) {
+                    Ok(_) => stats.bookmarks += 1,
+                    Err(e) => log::warn!("恢复书签失败（已跳过）: {} - {e}", bm.book_name),
                 }
             }
         }
@@ -193,8 +198,9 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
             if let Ok(rule) =
                 serde_json::from_value::<legado_core::models::ReplaceRule>(value.clone())
             {
-                if rule_repo.insert(&rule).is_ok() {
-                    stats.replace_rules += 1;
+                match rule_repo.insert(&rule) {
+                    Ok(_) => stats.replace_rules += 1,
+                    Err(e) => log::warn!("恢复替换规则失败（已跳过）: {} - {e}", rule.name),
                 }
             }
         }
@@ -203,8 +209,14 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
         let source_repo = BookSourceRepository::new(conn);
         for value in &backup.book_sources {
             if let Ok(source) = serde_json::from_value::<BookSource>(value.clone()) {
-                if source_repo.insert(&source).is_ok() {
-                    stats.book_sources += 1;
+                match source_repo.insert(&source) {
+                    Ok(()) => stats.book_sources += 1,
+                    Err(e) => {
+                        log::warn!(
+                            "恢复书源失败（已跳过）: {} - {e}",
+                            source.book_source_url
+                        )
+                    }
                 }
             }
         }
@@ -212,8 +224,11 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
         // 恢复 RSS 源
         for value in &backup.rss_sources {
             if let Ok(source) = serde_json::from_value::<RssSource>(value.clone()) {
-                if insert_rss_source(conn, &source).is_ok() {
-                    stats.rss_sources += 1;
+                match insert_rss_source(conn, &source) {
+                    Ok(()) => stats.rss_sources += 1,
+                    Err(e) => {
+                        log::warn!("恢复 RSS 源失败（已跳过）: {} - {e}", source.source_url)
+                    }
                 }
             }
         }
@@ -224,11 +239,11 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
             if let Ok(record) =
                 serde_json::from_value::<legado_core::models::ReadRecord>(value.clone())
             {
-                if record_repo
-                    .upsert(&record.book_name, record.read_time)
-                    .is_ok()
-                {
-                    stats.read_records += 1;
+                match record_repo.upsert(&record.book_name, record.read_time) {
+                    Ok(()) => stats.read_records += 1,
+                    Err(e) => {
+                        log::warn!("恢复阅读记录失败（已跳过）: {} - {e}", record.book_name)
+                    }
                 }
             }
         }

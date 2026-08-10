@@ -28,7 +28,8 @@ impl<'a> BookSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, bookSourceComment, variableComment,
                         lastUpdateTime, respondTime, weight, exploreUrl, exploreScreen,
                         ruleExplore, searchUrl, ruleSearch, ruleBookInfo, ruleToc,
-                        ruleContent, ruleReview, mainJs, eventListener, customButton
+                        ruleContent, ruleReview, mainJs, eventListener, customButton,
+                        variable
                  FROM book_sources WHERE bookSourceUrl = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -55,7 +56,8 @@ impl<'a> BookSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, bookSourceComment, variableComment,
                         lastUpdateTime, respondTime, weight, exploreUrl, exploreScreen,
                         ruleExplore, searchUrl, ruleSearch, ruleBookInfo, ruleToc,
-                        ruleContent, ruleReview, mainJs, eventListener, customButton
+                        ruleContent, ruleReview, mainJs, eventListener, customButton,
+                        variable
                  FROM book_sources WHERE enabled = 1 ORDER BY customOrder ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -79,7 +81,8 @@ impl<'a> BookSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, bookSourceComment, variableComment,
                         lastUpdateTime, respondTime, weight, exploreUrl, exploreScreen,
                         ruleExplore, searchUrl, ruleSearch, ruleBookInfo, ruleToc,
-                        ruleContent, ruleReview, mainJs, eventListener, customButton
+                        ruleContent, ruleReview, mainJs, eventListener, customButton,
+                        variable
                  FROM book_sources WHERE bookSourceGroup = ?1 ORDER BY customOrder ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -151,6 +154,22 @@ impl<'a> BookSourceRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("CAS 更新检查结果失败: {e}")))?;
         Ok(affected > 0)
     }
+
+    /// 单列更新书源自定义变量（契约 §2.3 setSourceVariable 语义，台账 §5.11-3）
+    ///
+    /// 仅更新 `variable` 单列，规避 updateBookSource 全行更新风险（对齐原版
+    /// `source.setVariable`）；空串即清除。返回是否命中书源行
+    /// （`false` 表示书源不存在，调用方据此报 Internal 错误）。
+    pub fn update_variable(&self, source_url: &str, variable: &str) -> LegadoResult<bool> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE book_sources SET variable = ?2 WHERE bookSourceUrl = ?1",
+                params![source_url, variable],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新书源变量失败: {e}")))?;
+        Ok(affected > 0)
+    }
 }
 
 impl<'a> Repository<BookSource> for BookSourceRepository<'a> {
@@ -164,7 +183,8 @@ impl<'a> Repository<BookSource> for BookSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, bookSourceComment, variableComment,
                         lastUpdateTime, respondTime, weight, exploreUrl, exploreScreen,
                         ruleExplore, searchUrl, ruleSearch, ruleBookInfo, ruleToc,
-                        ruleContent, ruleReview, mainJs, eventListener, customButton
+                        ruleContent, ruleReview, mainJs, eventListener, customButton,
+                        variable
                  FROM book_sources ORDER BY customOrder ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -212,9 +232,10 @@ impl<'a> Repository<BookSource> for BookSourceRepository<'a> {
               loginCheckJs, coverDecodeJs, bookSourceComment, variableComment,
               lastUpdateTime, respondTime, weight, exploreUrl, exploreScreen,
               ruleExplore, searchUrl, ruleSearch, ruleBookInfo, ruleToc,
-              ruleContent, ruleReview, mainJs, eventListener, customButton)
+              ruleContent, ruleReview, mainJs, eventListener, customButton, variable)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,
-                     ?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33)",
+                     ?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,
+                     ?34)",
                 params![
                     item.book_source_url,
                     item.book_source_name,
@@ -249,6 +270,7 @@ impl<'a> Repository<BookSource> for BookSourceRepository<'a> {
                     item.main_js,
                     item.event_listener,
                     item.custom_button,
+                    item.variable,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
@@ -313,6 +335,7 @@ fn row_to_book_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookSource> {
         main_js: row.get(30)?,
         event_listener: row.get(31)?,
         custom_button: row.get(32)?,
+        variable: row.get(33)?,
     })
 }
 
@@ -511,5 +534,51 @@ mod tests {
             .unwrap();
         assert!(!ok);
         assert_eq!(repo.find_by_url("u1").unwrap().unwrap().respond_time, 500);
+    }
+
+    /// 台账 §5.11-3：variable 随 insert/查询自然带出，默认空串
+    #[test]
+    fn test_variable_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.enabled = true; // find_enabled 仅返回启用书源
+        src.variable = "初始变量".to_string();
+        repo.insert(&src).unwrap();
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.variable, "初始变量");
+        // find_all / find_enabled 也自然带出 variable
+        assert_eq!(repo.find_all().unwrap()[0].variable, "初始变量");
+        assert_eq!(repo.find_enabled().unwrap()[0].variable, "初始变量");
+
+        // 未显式设置时默认空串
+        repo.insert(&make_source("u2", "s2")).unwrap();
+        assert_eq!(repo.find_by_url("u2").unwrap().unwrap().variable, "");
+    }
+
+    /// 台账 §5.11-3：update_variable 单列更新——命中返回 true，
+    /// 不触碰其他列；书源不存在返回 false；空串即清除
+    #[test]
+    fn test_update_variable_single_column() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "原名");
+        src.book_source_comment = Some("备注".to_string());
+        repo.insert(&src).unwrap();
+
+        // 命中：variable 更新，其他列不受影响
+        assert!(repo.update_variable("u1", "user=abc").unwrap());
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.variable, "user=abc");
+        assert_eq!(found.book_source_name, "原名");
+        assert_eq!(found.book_source_comment.as_deref(), Some("备注"));
+
+        // 空串 = 清除
+        assert!(repo.update_variable("u1", "").unwrap());
+        assert_eq!(repo.find_by_url("u1").unwrap().unwrap().variable, "");
+
+        // 书源不存在 → false
+        assert!(!repo.update_variable("不存在", "x").unwrap());
     }
 }

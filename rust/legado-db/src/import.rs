@@ -8,6 +8,8 @@ use serde_json::Value;
 
 use legado_core::{LegadoError, LegadoResult};
 
+use crate::repository::Repository;
+
 /// 从 Room 导出的 JSON 数据导入
 pub struct RoomImporter;
 
@@ -182,7 +184,7 @@ impl RoomImporter {
             let custom_intro = obj.get("customIntro").and_then(|v| v.as_str());
             let charset = obj.get("charset").and_then(|v| v.as_str());
             let book_type = obj.get("type").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            let group = obj.get("group").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let group = obj.get("group").and_then(|v| v.as_i64()).unwrap_or(0);
             let latest_chapter_title = obj.get("latestChapterTitle").and_then(|v| v.as_str());
             let latest_chapter_time = obj
                 .get("latestChapterTime")
@@ -195,92 +197,87 @@ impl RoomImporter {
             let last_check_count = obj
                 .get("lastCheckCount")
                 .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+                .unwrap_or(0) as i32;
             let total_chapter_num = obj
                 .get("totalChapterNum")
                 .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+                .unwrap_or(0) as i32;
             let dur_chapter_title = obj.get("durChapterTitle").and_then(|v| v.as_str());
             let dur_chapter_index = obj
                 .get("durChapterIndex")
                 .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+                .unwrap_or(0) as i32;
             let dur_volume_index = obj
                 .get("durVolumeIndex")
                 .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+                .unwrap_or(0) as i32;
             let chapter_in_volume_index = obj
                 .get("chapterInVolumeIndex")
                 .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+                .unwrap_or(0) as i32;
             let dur_chapter_pos = obj
                 .get("durChapterPos")
                 .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+                .unwrap_or(0) as i32;
             let dur_chapter_time = obj
                 .get("durChapterTime")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             let word_count = obj.get("wordCount").and_then(|v| v.as_str());
-            let can_update = obj.get("canUpdate").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
+            let can_update = obj
+                .get("canUpdate")
+                .and_then(|v| v.as_i64())
+                .map(|v| v != 0)
+                .unwrap_or(true);
             let order = obj.get("order").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let origin_order = obj.get("originOrder").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let variable = obj.get("variable").and_then(|v| v.as_str());
             let read_config = obj.get("readConfig").and_then(|v| v.as_str());
             let sync_time = obj.get("syncTime").and_then(|v| v.as_i64()).unwrap_or(0);
 
-            conn.execute(
-                "INSERT OR REPLACE INTO books (
-                    bookUrl, tocUrl, origin, originName, name, author,
-                    kind, customTag, coverUrl, customCoverUrl, intro, customIntro,
-                    charset, type, \"group\", latestChapterTitle, latestChapterTime,
-                    lastCheckTime, lastCheckCount, totalChapterNum, durChapterTitle,
-                    durChapterIndex, durVolumeIndex, chapterInVolumeIndex,
-                    durChapterPos, durChapterTime, wordCount, canUpdate,
-                    \"order\", originOrder, variable, readConfig, syncTime
-                ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                    ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-                    ?31, ?32, ?33
-                )",
-                rusqlite::params![
-                    book_url,
-                    toc_url,
-                    origin,
-                    origin_name,
-                    name,
-                    author,
-                    kind,
-                    custom_tag,
-                    cover_url,
-                    custom_cover_url,
-                    intro,
-                    custom_intro,
-                    charset,
-                    book_type,
-                    group,
-                    latest_chapter_title,
-                    latest_chapter_time,
-                    last_check_time,
-                    last_check_count,
-                    total_chapter_num,
-                    dur_chapter_title,
-                    dur_chapter_index,
-                    dur_volume_index,
-                    chapter_in_volume_index,
-                    dur_chapter_pos,
-                    dur_chapter_time,
-                    word_count,
-                    can_update,
-                    order,
-                    origin_order,
-                    variable,
-                    read_config,
-                    sync_time,
-                ],
-            )
-            .map_err(|e| LegadoError::Database(format!("插入书籍失败: {e}")))?;
+            // 台账 §5.14-3（评审 W1）：裸 INSERT OR REPLACE 改走
+            // BookRepository::insert 的 upsert 链路（主键判存在→原地 UPDATE /
+            // insert_replace），避免重复导入同 bookUrl 时删旧行触发 chapters
+            // ON DELETE CASCADE 级联清空目录；列集统一为仓储全列（导入源
+            // 缺失的 infoHtml/tocHtml/downloadUrls/coverOrigin 取模型缺省空值）。
+            let read_config_obj = read_config.and_then(|s| serde_json::from_str(s).ok());
+            let book = legado_core::models::Book {
+                book_url: book_url.to_string(),
+                toc_url: toc_url.to_string(),
+                origin: origin.to_string(),
+                origin_name: origin_name.to_string(),
+                name: name.to_string(),
+                author: author.to_string(),
+                kind: kind.map(str::to_string),
+                custom_tag: custom_tag.map(str::to_string),
+                cover_url: cover_url.map(str::to_string),
+                custom_cover_url: custom_cover_url.map(str::to_string),
+                intro: intro.map(str::to_string),
+                custom_intro: custom_intro.map(str::to_string),
+                charset: charset.map(str::to_string),
+                book_type,
+                group,
+                latest_chapter_title: latest_chapter_title.map(str::to_string),
+                latest_chapter_time,
+                last_check_time,
+                last_check_count,
+                total_chapter_num,
+                dur_chapter_title: dur_chapter_title.map(str::to_string),
+                dur_chapter_index,
+                dur_volume_index,
+                chapter_in_volume_index,
+                dur_chapter_pos,
+                dur_chapter_time,
+                word_count: word_count.map(str::to_string),
+                can_update,
+                order,
+                origin_order,
+                variable: variable.map(str::to_string),
+                read_config: read_config_obj,
+                sync_time,
+                ..legado_core::models::Book::default()
+            };
+            crate::BookRepository::new(conn).insert(&book)?;
             count += 1;
         }
 
@@ -358,6 +355,68 @@ mod tests {
             )
             .unwrap();
         assert_eq!(name, "Test Book");
+    }
+
+    /// 评审 W1：重复导入同一 bookUrl 不丢目录——upsert 改走仓储后
+    /// 原地 UPDATE 不删行，不触发 chapters ON DELETE CASCADE（原裸
+    /// INSERT OR REPLACE 二次导入会删旧行级联清空目录）
+    #[test]
+    fn test_import_books_reimport_keeps_chapters() {
+        use crate::BookChapterRepository;
+        use legado_core::models::BookChapter;
+
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+        let book_url = "https://example.com/book/reimport";
+
+        let json = r#"[{"bookUrl":"https://example.com/book/reimport","name":"Imported Book","author":"A","type":0,"group":0}]"#;
+        RoomImporter::import_books(conn, json).unwrap();
+
+        // 插入 2 章模拟已有目录
+        let chapters: Vec<BookChapter> = (0..2)
+            .map(|i| BookChapter {
+                url: format!("{book_url}/chapter/{i}"),
+                title: format!("第{}章", i + 1),
+                is_volume: false,
+                base_url: book_url.to_string(),
+                book_url: book_url.to_string(),
+                index: i,
+                is_vip: false,
+                is_pay: false,
+                resource_url: None,
+                tag: None,
+                word_count: None,
+                start: None,
+                end: None,
+                start_fragment_id: None,
+                end_fragment_id: None,
+                variable: None,
+                img_url: None,
+            })
+            .collect();
+        BookChapterRepository::new(conn).insert_batch(&chapters).unwrap();
+
+        // 再次导入同 bookUrl（书名更新）：章节应保留且字段被覆盖
+        let json2 = r#"[{"bookUrl":"https://example.com/book/reimport","name":"Imported Book v2","author":"A","type":0,"group":0}]"#;
+        RoomImporter::import_books(conn, json2).unwrap();
+
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chapters WHERE bookUrl='https://example.com/book/reimport'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM books WHERE bookUrl='https://example.com/book/reimport'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "Imported Book v2");
     }
 
     #[test]

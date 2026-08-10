@@ -247,33 +247,12 @@ impl<'a> BookRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("查询 readConfig 失败: {e}")))?;
         Ok(json.flatten())
     }
-}
 
-impl<'a> Repository<Book> for BookRepository<'a> {
-    fn find_all(&self) -> LegadoResult<Vec<Book>> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT bookUrl, tocUrl, origin, originName, name, author, kind, customTag,
-                        coverUrl, customCoverUrl, intro, customIntro, charset, type,
-                        \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
-                        lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
-                        durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
-                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
-                        infoHtml, tocHtml, downloadUrls, coverOrigin
-                 FROM books ORDER BY \"order\" ASC",
-            )
-            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
-
-        let books = stmt
-            .query_map([], row_to_book)
-            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(books)
-    }
-
-    fn insert(&self, item: &Book) -> LegadoResult<()> {
+    /// 直接执行 INSERT OR REPLACE（供 insert/update 的插入分支复用）
+    ///
+    /// 仅用于「目标 bookUrl 行确定不存在」的场景：此时 REPLACE 至多替换
+    /// (name, author) 唯一索引冲突的另一本书，不会删到自身行。
+    fn insert_replace(&self, item: &Book) -> LegadoResult<()> {
         let read_config_json = item
             .read_config
             .as_ref()
@@ -334,6 +313,61 @@ impl<'a> Repository<Book> for BookRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
         Ok(())
+    }
+}
+
+impl<'a> Repository<Book> for BookRepository<'a> {
+    fn find_all(&self) -> LegadoResult<Vec<Book>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT bookUrl, tocUrl, origin, originName, name, author, kind, customTag,
+                        coverUrl, customCoverUrl, intro, customIntro, charset, type,
+                        \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
+                        lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
+                        durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
+                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
+                        infoHtml, tocHtml, downloadUrls, coverOrigin
+                 FROM books ORDER BY \"order\" ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let books = stmt
+            .query_map([], row_to_book)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(books)
+    }
+
+    fn insert(&self, item: &Book) -> LegadoResult<()> {
+        // 台账 §5.14-3：根治 INSERT OR REPLACE 重复插入同 bookUrl 时先删旧行
+        // 再插新行，触发 chapters ON DELETE CASCADE 级联删除（目录丢失）的隐患。
+        // upsert 改为：先按主键判存在——存在则原地全列 UPDATE（不删行、不级联）；
+        // 不存在则直接 INSERT OR REPLACE 入库。
+        //
+        // 注意 books 除主键 bookUrl 外还有二级唯一索引 index_books_name_author
+        // (name, author)：主键不存在但 (name,author) 与他书冲突时，必须沿用
+        // OR REPLACE 语义替换冲突行（对齐改造前行为）；不能用 OR IGNORE，
+        // 否则 INSERT 被静默忽略而行从未创建。此时被替换的是另一 bookUrl 的
+        // 旧行，与「同 bookUrl 重复插入不丢自身目录」的修复目标不冲突。
+        let exists: bool = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM books WHERE bookUrl = ?1",
+                params![item.book_url],
+                |_| Ok(true),
+            )
+            .optional()
+            .map_err(|e| LegadoError::Database(format!("查询书籍失败: {e}")))?
+            .unwrap_or(false);
+
+        if exists {
+            // 行已存在：原地全列 UPDATE，新值覆盖语义与原 INSERT OR REPLACE
+            // 一致；UPDATE 不删旧行，不会误触发 chapters 级联删除。
+            return self.update(item);
+        }
+        self.insert_replace(item)
     }
 
     fn update(&self, item: &Book) -> LegadoResult<()> {
@@ -400,9 +434,12 @@ impl<'a> Repository<Book> for BookRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("更新失败: {e}")))?;
 
-        // 行不存在时退化为插入，保留 upsert 语义（不会误触发级联删除，因为无旧行）
+        // 行不存在时退化为插入，保留 upsert 语义（不会误触发级联删除，因为无旧行）。
+        // 直接走 insert_replace 而非 self.insert()，与 insert 的 exists 分支互不
+        // 回环，彻底切断 insert↔update 互递归（二级唯一索引 index_books_name_author
+        // 冲突曾使 OR IGNORE 静默忽略 + UPDATE 零命中同时成立，导致无限递归）。
         if affected == 0 {
-            self.insert(item)?;
+            self.insert_replace(item)?;
         }
         Ok(())
     }
@@ -683,5 +720,48 @@ mod tests {
         let found = repo.find_by_url("u1").unwrap().unwrap();
         assert_eq!(found.name, "改名");
         assert!(found.read_config.is_none());
+    }
+
+    /// 台账 §5.14-3：重复插入同一 bookUrl 不得触发 chapters 外键级联删除
+    /// （原 INSERT OR REPLACE 会删旧行连带清空目录；修复后章节全量保留，
+    /// 且新字段值照常覆盖，保留 upsert 语义）
+    #[test]
+    fn test_reinsert_same_book_url_keeps_chapters() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookRepository::new(conn);
+        let book = make_book("u1", "书名", "作者");
+        repo.insert(&book).unwrap();
+
+        // 落库两章关联数据
+        let ch_repo = crate::BookChapterRepository::new(conn);
+        let chapters: Vec<legado_core::models::BookChapter> = (0..2)
+            .map(|i| legado_core::models::BookChapter {
+                url: format!("u1/ch{i}"),
+                title: format!("第{i}章"),
+                book_url: "u1".to_string(),
+                base_url: "u1".to_string(),
+                index: i,
+                ..legado_core::models::BookChapter::default()
+            })
+            .collect();
+        ch_repo.insert_batch(&chapters).unwrap();
+        assert_eq!(ch_repo.find_by_book_url("u1").unwrap().len(), 2);
+
+        // 重复插入同一 bookUrl（字段变更）
+        let mut rebook = book.clone();
+        rebook.name = "新书名".to_string();
+        repo.insert(&rebook).unwrap();
+
+        // 书籍仅一本，新字段值覆盖生效（upsert 语义保留）
+        assert_eq!(repo.count().unwrap(), 1);
+        assert_eq!(repo.find_by_url("u1").unwrap().unwrap().name, "新书名");
+
+        // 关键：章节关联数据未丢失
+        assert_eq!(
+            ch_repo.find_by_book_url("u1").unwrap().len(),
+            2,
+            "重复插入不得触发 chapters 外键级联删除"
+        );
     }
 }

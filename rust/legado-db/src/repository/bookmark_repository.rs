@@ -88,6 +88,31 @@ impl<'a> BookmarkRepository<'a> {
         Ok(rows)
     }
 
+    /// 按书名+作者查询所有书签（对齐原版 `bookmarkDao.getByBook(name, author)`，
+    /// 规避同名书混入；台账 §5.14-2，契约 §2.7 getBookmarksByBook）
+    pub fn get_by_book_and_author(
+        &self,
+        book_name: &str,
+        book_author: &str,
+    ) -> LegadoResult<Vec<Bookmark>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, bookName, bookAuthor, chapterIndex, chapterPos,
+                        chapterName, bookText, content, time
+                 FROM bookmarks WHERE bookName = ?1 AND bookAuthor = ?2
+                 ORDER BY time DESC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![book_name, book_author], row_to_bookmark)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
     /// 按章节查询书签
     pub fn get_by_chapter(
         &self,
@@ -193,6 +218,34 @@ mod tests {
             time: 1000,
             ..Bookmark::default()
         }
+    }
+
+    /// 台账 §5.14-2：按书名+作者精准查询——同名不同作者的书签互不混入
+    #[test]
+    fn test_get_by_book_and_author() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookmarkRepository::new(db.connection());
+        // 同名书两本，作者不同
+        let mut bm_a = make_bookmark("同名书", 0, "作者甲的书签");
+        bm_a.book_author = "作者甲".to_string();
+        let mut bm_b = make_bookmark("同名书", 0, "作者乙的书签");
+        bm_b.book_author = "作者乙".to_string();
+        repo.insert(&bm_a).unwrap();
+        repo.insert(&bm_b).unwrap();
+
+        // 仅按书名会混入两本（既有行为保留不动）
+        assert_eq!(repo.get_by_book("同名书").unwrap().len(), 2);
+
+        // 按书名+作者精准命中本书
+        let a = repo.get_by_book_and_author("同名书", "作者甲").unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].book_text, "作者甲的书签");
+
+        // 作者不匹配 → 空结果
+        assert!(repo
+            .get_by_book_and_author("同名书", "不存在作者")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

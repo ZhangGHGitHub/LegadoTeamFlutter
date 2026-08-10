@@ -56,6 +56,7 @@ impl MigrationRegistry {
         self.register(Box::new(migrations::Migration99To100));
         self.register(Box::new(migrations::Migration100To101));
         self.register(Box::new(migrations::Migration101To102));
+        self.register(Box::new(migrations::Migration102To103));
     }
 
     /// 注册单个迁移
@@ -252,7 +253,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 12);
+        assert_eq!(list.len(), 13);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -368,7 +369,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 102);
+        assert_eq!(version, 103);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
     }

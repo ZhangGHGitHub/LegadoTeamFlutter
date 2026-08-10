@@ -195,6 +195,17 @@ pub mod ffi {
         to_json(&sources)
     }
 
+    /// 设置书源自定义变量（契约 §2.3 setSourceVariable，台账 §5.11-3，Task #63）
+    ///
+    /// 对齐原版 `source.setVariable`：单列 UPDATE 语义仅更新 `variable` 单列，
+    /// 规避 updateBookSource 全行更新风险；`variable` 为空串表示清除。
+    /// 错误码：书源不存在 → Internal；写入失败 → Db。
+    /// 书源查询接口（source_list 等）自然带出 variable 字段。
+    pub fn set_source_variable(source_url: String, variable: String) -> Result<(), BridgeError> {
+        crate::api::source::set_source_variable(&source_url, &variable)?;
+        Ok(())
+    }
+
     // ─── 书源校验（Task #87，加法式新增） ─────────────────────
 
     /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
@@ -914,6 +925,19 @@ pub mod ffi {
     /// 获取书籍的所有书签（JSON 数组）
     pub fn bookmark_get_all(book_name: String) -> Result<String, BridgeError> {
         let bookmarks = crate::api::bookmark_api::get_bookmarks(&book_name)?;
+        to_json(&bookmarks)
+    }
+
+    /// 按书名+作者获取某本书的所有书签（裸 JSON 数组，契约 §2.7
+    /// getBookmarksByBook，台账 §5.14-2，Task #63 加法式新增）
+    ///
+    /// 对齐原版 `bookmarkDao.getByBook(name, author)`，规避同名书混入；
+    /// 既有 bookmark_get_all（仅按书名）签名保持不变。
+    pub fn get_bookmarks_by_book(
+        book_name: String,
+        book_author: String,
+    ) -> Result<String, BridgeError> {
+        let bookmarks = crate::api::bookmark_api::get_bookmarks_by_book(&book_name, &book_author)?;
         to_json(&bookmarks)
     }
 

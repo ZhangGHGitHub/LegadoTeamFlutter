@@ -94,3 +94,59 @@ pub fn list_enabled_sources() -> LegadoResult<Vec<BookSource>> {
         repo.find_enabled()
     })
 }
+
+/// 设置书源自定义变量（契约 §2.3 setSourceVariable，台账 §5.11-3，Task #63）
+///
+/// 对齐原版 `source.setVariable`：单列 UPDATE 语义仅更新 `variable` 单列，
+/// 规避 `updateBookSource` 全行更新风险；空串表示清除该变量。
+/// 错误码：书源不存在 → Internal；写入失败 → Db。
+pub fn set_source_variable(source_url: &str, variable: &str) -> LegadoResult<()> {
+    with_database(|db| {
+        let repo = BookSourceRepository::new(db.connection());
+        let hit = repo.update_variable(source_url, variable)?;
+        if !hit {
+            return Err(LegadoError::Internal(format!("书源不存在: {source_url}")));
+        }
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 辅助：初始化内存数据库并设置全局状态（返回串行锁守卫，测试必须绑定到变量）
+    fn setup_test_db() -> std::sync::MutexGuard<'static, ()> {
+        crate::db_state::ensure_test_db()
+    }
+
+    /// 契约 §2.3：设置后可经查询接口自然带出；空串清除；书源不存在报 Internal
+    #[test]
+    fn test_set_source_variable() {
+        let _db_guard = setup_test_db();
+        let url = "https://task63-source-var.example.com";
+        add_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"变量测试源\"}}"
+        ))
+        .unwrap();
+
+        // 设置变量 → getBookSources 查询自然带出
+        set_source_variable(url, "user=abc").unwrap();
+        let sources = list_sources().unwrap();
+        let found = sources.iter().find(|s| s.book_source_url == url).unwrap();
+        assert_eq!(found.variable, "user=abc");
+
+        // 空串 = 清除
+        set_source_variable(url, "").unwrap();
+        let sources = list_sources().unwrap();
+        let found = sources.iter().find(|s| s.book_source_url == url).unwrap();
+        assert_eq!(found.variable, "");
+
+        // 书源不存在 → Internal 错误
+        let err = set_source_variable("https://task63-not-exist.example.com", "x").unwrap_err();
+        assert!(matches!(err, LegadoError::Internal(_)), "书源不存在应报 Internal");
+
+        // 清理测试书源
+        delete_source(url).unwrap();
+    }
+}

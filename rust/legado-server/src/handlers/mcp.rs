@@ -157,11 +157,12 @@ pub fn list_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "get_bookmarks".to_string(),
-            description: "Get bookmarks, optionally filtered by book name".to_string(),
+            description: "Get bookmarks, optionally filtered by book name (and author)".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "book_name": { "type": "string", "description": "Optional: filter by book name" }
+                    "book_name": { "type": "string", "description": "Optional: filter by book name" },
+                    "book_author": { "type": "string", "description": "Optional: filter by book author (used together with book_name to avoid same-name book mixing, ledger §5.14-2)" }
                 }
             }),
         },
@@ -748,13 +749,22 @@ async fn call_get_bookmarks(
     args: &serde_json::Value,
 ) -> Result<serde_json::Value, JsonRpcError> {
     let book_name = args.get("book_name").and_then(|v| v.as_str());
+    let book_author = args.get("book_author").and_then(|v| v.as_str());
 
     let db = state.db.lock().await;
     let conn = db.connection();
     let repo = legado_db::BookmarkRepository::new(conn);
 
+    // 台账 §5.14-2（评审 S2）：显式传 book_author 时按书名+作者双键查询，
+    // 规避同名异书书签混入；未传 author 时保持旧行为（仅按书名），
+    // 对既有调用方加法式兼容。
     let bookmarks = match book_name {
-        Some(name) if !name.is_empty() => repo.get_by_book(name).map_err(db_err)?,
+        Some(name) if !name.is_empty() => match book_author {
+            Some(author) => repo
+                .get_by_book_and_author(name, author)
+                .map_err(db_err)?,
+            None => repo.get_by_book(name).map_err(db_err)?,
+        },
         _ => repo.find_all().map_err(db_err)?,
     };
 

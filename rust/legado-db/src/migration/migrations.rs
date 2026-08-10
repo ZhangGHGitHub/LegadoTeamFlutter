@@ -17,6 +17,8 @@
 //! - v101 → v102: cached_chapters 唯一索引由 chapter_url 单列改为
 //!   (book_url, chapter_url) 复合键（Task #16 P0：修复跨书缓存串本），
 //!   迁移时先按新复合键去重（保留最新）再 DROP 旧索引、建新复合唯一索引
+//! - v102 → v103: book_sources 表补 `variable` 列（台账 §5.11-3，支撑
+//!   契约 §2.3 setSourceVariable 书源自定义变量，Task #63）
 //!
 //! 历史说明：原 Rust 自有 `Migration95To96`（books/rssSources 补列）与上游 v96
 //! 语义撞车，已改造为不占版本号的幂等修复函数 [`repair_legacy_columns`]，
@@ -706,6 +708,47 @@ impl Migration for Migration101To102 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v102 → v103: book_sources 补 variable 列（台账 §5.11-3，Task #63）
+// ---------------------------------------------------------------------------
+
+/// 从 v102 升级到 v103
+///
+/// 变更内容：book_sources 表补 `variable` TEXT DEFAULT '' 列，支撑契约 §2.3
+/// `setSourceVariable`（对齐原版 `source.setVariable` 书源自定义变量）。
+/// 幂等：`add_column_if_not_exists` 检测缺列才补，可安全重复执行；
+/// 存量书源升级后 variable 取默认空串（等价「未设置」）。
+/// 基线协调：schema 对齐专项（台账 §4.2.1）重建 book_sources 表须以 ≥v103
+/// 为基线并保留 variable 列。
+pub struct Migration102To103;
+
+impl Migration for Migration102To103 {
+    fn from_version(&self) -> u32 {
+        102
+    }
+    fn to_version(&self) -> u32 {
+        103
+    }
+    fn description(&self) -> &str {
+        "book_sources 补 variable 列（书源自定义变量）"
+    }
+
+    fn up(&self, conn: &Connection) -> LegadoResult<()> {
+        // 仅当表存在时补列（防御跳表升级的极端场景）
+        if table_exists(conn, "book_sources")? {
+            add_column_if_not_exists(conn, "book_sources", "variable", "TEXT DEFAULT ''")?;
+        }
+        Ok(())
+    }
+
+    fn down(&self, _conn: &Connection) -> LegadoResult<()> {
+        // SQLite 旧版本不支持 DROP COLUMN，回退需重建表，不安全故拒绝
+        Err(LegadoError::Database(
+            "Cannot safely rollback Migration102To103: DROP COLUMN not supported".into(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -825,11 +868,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -978,7 +1021,7 @@ mod tests {
     fn test_fresh_db_reaches_v101_with_deviation_columns() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
@@ -1162,7 +1205,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 102);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "readRecord", "lastRead"));
     }
@@ -1356,5 +1399,70 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))
             .unwrap();
         assert_eq!(total, 1, "幂等重跑后仅剩正常书");
+    }
+
+    /// 台账 §5.11-3（Task #63）：v102 → v103 —— book_sources 补 variable 列。
+    /// 旧库升级幂等（重复执行不报错），存量书源取默认空串，down 拒绝回退。
+    #[test]
+    fn test_migration_102_to_103_book_sources_variable_column() {
+        // 构造 v102 形态：book_sources 无 variable 列 + 存量书源数据
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TABLE book_sources (
+                bookSourceUrl TEXT NOT NULL,
+                bookSourceName TEXT NOT NULL,
+                PRIMARY KEY(bookSourceUrl)
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO book_sources (bookSourceUrl, bookSourceName) VALUES ('https://src.example.com', '存量书源')",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 102).unwrap();
+        assert!(!column_exists(conn, "book_sources", "variable"));
+
+        // 执行 v102 → v103
+        let m = Migration102To103;
+        m.up(conn).unwrap();
+        // 幂等：重复执行不报错
+        m.up(conn).unwrap();
+
+        // 新列存在且存量数据取默认空串
+        assert!(column_exists(conn, "book_sources", "variable"));
+        let variable: String = conn
+            .query_row(
+                "SELECT variable FROM book_sources WHERE bookSourceUrl = 'https://src.example.com'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(variable, "", "存量书源升级后 variable 应为默认空串");
+
+        // down 应报错（不支持 DROP COLUMN）
+        assert!(m.down(conn).is_err());
+    }
+
+    /// 台账 §5.11-3：经注册表从 v102 升级到最新（v103），variable 列随迁移补齐
+    #[test]
+    fn test_migration_102_to_103_via_registry() {
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TABLE book_sources (
+                bookSourceUrl TEXT NOT NULL,
+                bookSourceName TEXT NOT NULL,
+                PRIMARY KEY(bookSourceUrl)
+            );",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 102).unwrap();
+
+        let registry = MigrationRegistry::new();
+        registry.migrate_to_latest(conn).unwrap();
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
+        assert!(column_exists(conn, "book_sources", "variable"));
     }
 }

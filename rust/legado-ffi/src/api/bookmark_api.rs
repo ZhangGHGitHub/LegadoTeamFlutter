@@ -16,6 +16,18 @@ pub fn get_bookmarks(book_name: &str) -> LegadoResult<Vec<Bookmark>> {
     })
 }
 
+/// 按书名+作者获取某本书的所有书签（契约 §2.7 getBookmarksByBook，
+/// 台账 §5.14-2，Task #63 加法式新增）
+///
+/// 对齐原版 `bookmarkDao.getByBook(name, author)`，规避同名书混入；
+/// 既有 `get_bookmarks`（仅按书名）签名保持不变。
+pub fn get_bookmarks_by_book(book_name: &str, book_author: &str) -> LegadoResult<Vec<Bookmark>> {
+    with_database(|db| {
+        let repo = BookmarkRepository::new(db.connection());
+        repo.get_by_book_and_author(book_name, book_author)
+    })
+}
+
 /// 添加书签，返回新书签的 id
 pub fn add_bookmark(
     book_name: &str,
@@ -167,5 +179,26 @@ mod tests {
         // 验证我们添加的书签存在于全量列表中
         assert!(all.iter().any(|b| b.book_name == "bm_书A_6"));
         assert!(all.iter().any(|b| b.book_name == "bm_书B_6"));
+    }
+
+    /// 台账 §5.14-2：get_bookmarks_by_book 按书名+作者精准查询，同名书不混入
+    #[test]
+    fn test_get_bookmarks_by_book() {
+        let _db_guard = setup_test_db();
+        // 同名书两本，作者不同
+        add_bookmark("bm_同名书_7", "作者甲7", 0, 0, "ch0", "甲书签", "").unwrap();
+        add_bookmark("bm_同名书_7", "作者乙7", 0, 0, "ch0", "乙书签", "").unwrap();
+
+        // 仅按书名：两条都命中（既有 get_bookmarks 行为保留）
+        assert_eq!(get_bookmarks("bm_同名书_7").unwrap().len(), 2);
+
+        // 书名+作者：仅命中本书
+        let a = get_bookmarks_by_book("bm_同名书_7", "作者甲7").unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].book_text, "甲书签");
+        assert_eq!(a[0].book_author, "作者甲7");
+
+        // 作者不匹配 → 空列表
+        assert!(get_bookmarks_by_book("bm_同名书_7", "不存在").unwrap().is_empty());
     }
 }
