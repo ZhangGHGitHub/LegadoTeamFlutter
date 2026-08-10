@@ -38,13 +38,26 @@ pub fn construct_analyzer(content: String, base_url: String, _source_tag: &str) 
 /// 执行 loginCheckJs 登录检测脚本
 ///
 /// 将 HTTP 响应上下文以 `result` 绑定注入 JS 环境，
-/// 使书源 loginCheckJs 脚本可访问 `result`（JSON 字符串，含 body/url/code 字段）。
+/// loginCheckJs 检测结果分类（对齐 Kotlin WebBook 双路径语义：
+/// 成功路径判定未登录 → errResponse 二次 eval；JS 环境不兼容 → 降级放行）
+#[derive(Debug)]
+pub enum LoginCheckError {
+    /// 检测判定未登录（JS 返回 false/未登录/needLogin）
+    NotLoggedIn(String),
+    /// JS 执行失败（环境不兼容/脚本错误，非登录判定）
+    JsFailed(String),
+}
+
+/// 使书源 loginCheckJs 脚本可访问 `result`（**对象**语义，含 body/url/code 字段；
+/// 2026-08-10 修复：原实现 to_string 后注入导致 result 为字符串，`result.body()`
+/// 等真实书源写法全部失败）。
 ///
 /// 参考 Kotlin `AnalyzeUrl.evalJS(checkJs, response)` 的双路径模式：
 /// - 成功路径：response 正常时执行 loginCheckJs
-/// - 失败路径：response 异常时构造 errResponse 再执行
+/// - 失败路径：response 异常时构造 errResponse 再执行（由调用方 web_book.rs 处理）
 ///
-/// 返回 Ok(()) 表示检测通过，Err 表示需要登录或检测失败。
+/// 返回 Ok(()) 表示检测通过；Err 区分「判定未登录」（NotLoggedIn）与
+/// 「JS 环境不兼容」（JsFailed），由调用方决定上抛或降级。
 #[cfg(feature = "quickjs")]
 pub fn execute_login_check_js(
     js_code: &str,
@@ -52,27 +65,41 @@ pub fn execute_login_check_js(
     response_url: &str,
     response_code: u16,
     source_tag: &str,
-) -> Result<(), String> {
+) -> Result<(), LoginCheckError> {
     use legado_parser::JsExecutor;
 
     let executor = quickjs_impl::QuickJsExecutor::new(source_tag);
 
-    // 构造响应上下文 JSON
-    let response_json = serde_json::json!({
-        "body": response_body,
-        "url": response_url,
-        "code": response_code,
-    })
-    .to_string();
-
-    // 将 result 变量内联到 JS 代码前缀，通过 execute_js 公共接口执行
-    let wrapped_code = format!("var result = {};\n{}", response_json, js_code);
-    let eval_result = executor.execute_js(&wrapped_code)?;
+    // 构造响应上下文并注入为 **带方法语义的 JS 对象**（对齐 Kotlin
+    // StrResponse 语义：result.body()/url()/code() 为方法调用）：
+    // var result = { body: function(){...}, url: function(){...}, code: function(){...} };
+    // 2026-08-10 修复：原实现 to_string 注入导致 result 为 JSON 字符串，
+    // 真实书源 loginCheckJs 中 result.body() 等写法全部失败
+    let body_lit = serde_json::to_string(response_body)
+        .map_err(|e| LoginCheckError::JsFailed(format!("响应体转义失败: {e}")))?;
+    let url_lit = serde_json::to_string(response_url)
+        .map_err(|e| LoginCheckError::JsFailed(format!("响应 URL 转义失败: {e}")))?;
+    let wrapped_code = format!(
+        "var __result_body = {body_lit};\n\
+         var __result_url = {url_lit};\n\
+         var __result_code = {response_code};\n\
+         var result = {{ body: function() {{ return __result_body; }},\n\
+         url: function() {{ return __result_url; }},\n\
+         code: function() {{ return __result_code; }} }};\n\
+         {js_code}"
+    );
+    let eval_result = executor.execute_js(&wrapped_code).map_err(|e| {
+        LoginCheckError::JsFailed(format!("loginCheckJs 执行失败: {e}"))
+    })?;
 
     // 检测返回值：如果 JS 返回明确的错误指示，视为登录失败
-    let trimmed = eval_result.trim();
+    //（eval 返回值经 JSON 序列化，字符串字面量会带引号如 "false"，
+    // 剥除引号后再判定——2026-08-10 修复）
+    let trimmed = eval_result.trim().trim_matches('"').trim();
     if trimmed == "false" || trimmed.contains("未登录") || trimmed.contains("needLogin") {
-        return Err(format!("loginCheckJs 检测未登录: {trimmed}"));
+        return Err(LoginCheckError::NotLoggedIn(format!(
+            "loginCheckJs 检测未登录: {trimmed}"
+        )));
     }
 
     Ok(())
@@ -86,7 +113,7 @@ pub fn execute_login_check_js(
     _response_url: &str,
     _response_code: u16,
     _source_tag: &str,
-) -> Result<(), String> {
+) -> Result<(), LoginCheckError> {
     // 未启用 quickjs 时无法执行 JS，静默跳过
     Ok(())
 }
@@ -319,5 +346,41 @@ mod tests {
             .url()
             .to_string();
         assert!(u4.contains("https%3A%2F%2Fsrc.example") || u4.contains("https://src.example"), "{u4}");
+    }
+
+    // [UI-fix v2.0.8 | 2026-08-10] loginCheckJs 对象语义与判定分类 — Reasonix
+    //（quickjs 为非默认 feature：仅在本 feature 启用时运行，
+    // 生产构建 build-android.ps1 已显式 --features quickjs）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn login_check_js_result_object_semantics() {
+        // 对象注入验证：真实书源写法 result.body() 方法可调用且返回响应体
+        let js = "if (result.body().indexOf('需要登录') >= 0) { 'false' } else { 'ok' }";
+        let r = execute_login_check_js(js, "需要登录页面", "http://x", 200, "lit_test");
+        assert!(
+            matches!(r, Err(LoginCheckError::NotLoggedIn(_))),
+            "应判定未登录，实际: {r:?}"
+        );
+        let r2 = execute_login_check_js(js, "正常内容", "http://x", 200, "lit_test");
+        assert!(r2.is_ok(), "应通过检测，实际: {r2:?}");
+
+        // url()/code() 方法同样可调用
+        let js2 = "if (result.url().indexOf('login') >= 0 || result.code() === 200) { 'false' } else { 'ok' }";
+        let r3 = execute_login_check_js(js2, "b", "http://login.example", 200, "lit_test");
+        assert!(matches!(r3, Err(LoginCheckError::NotLoggedIn(_))), "实际: {r3:?}");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn login_check_js_plain_false_and_error_classify() {
+        // 纯 'false' 返回值判定未登录
+        let r = execute_login_check_js("'false'", "body", "http://x", 200, "lit_test");
+        assert!(matches!(r, Err(LoginCheckError::NotLoggedIn(_))), "实际: {r:?}");
+        // 正常返回值通过
+        let r2 = execute_login_check_js("'true'", "body", "http://x", 200, "lit_test");
+        assert!(r2.is_ok(), "实际: {r2:?}");
+        // 语法错误归类为 JsFailed（环境/脚本问题，非登录判定）
+        let r3 = execute_login_check_js("function {{", "body", "http://x", 200, "lit_test");
+        assert!(matches!(r3, Err(LoginCheckError::JsFailed(_))), "实际: {r3:?}");
     }
 }

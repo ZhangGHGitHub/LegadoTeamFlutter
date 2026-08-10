@@ -117,21 +117,48 @@ impl RealBookSourceFetcher {
             _ => return Ok(()), // 无 loginCheckJs 配置，跳过
         };
 
-        // 对齐原版语义：loginCheckJs 仅为登录态检查（常依赖 java.*/cookie.*
-        // 等 Android 运行时对象），执行失败不应阻断详情/目录/正文获取，降级放行
-        if let Err(e) = crate::js_executor::execute_login_check_js(
+        // 对齐原版 Kotlin WebBook 双路径语义（WebBook.kt:226-250 等）：
+        // - 成功路径：正常响应 eval，判定未登录（false/未登录/needLogin）
+        //   → 构造 errResponse（HTTP 500）二次 eval（JS 可在此自动登录并返回新响应）
+        //   → 仍判定未登录则上抛 LoginRequired（提示用户先登录书源）
+        // - JS 环境不兼容（依赖 java.* 等 Android 运行时对象）→ 降级放行，
+        //   避免阻断无需登录检测能力的书源获取
+        match crate::js_executor::execute_login_check_js(
             login_check_js,
             response_body,
             response_url,
             response_code,
             &source.book_source_url,
         ) {
-            eprintln!(
-                "[web_book] loginCheckJs 执行失败（已忽略）: {}",
-                e
-            );
+            Ok(()) => Ok(()),
+            Err(crate::js_executor::LoginCheckError::NotLoggedIn(msg)) => {
+                let err_body = format!("HTTP/1.1 500 Internal Server Error\n\n{msg}");
+                match crate::js_executor::execute_login_check_js(
+                    login_check_js,
+                    &err_body,
+                    response_url,
+                    500,
+                    &source.book_source_url,
+                ) {
+                    Ok(()) => Ok(()),
+                    Err(crate::js_executor::LoginCheckError::NotLoggedIn(_)) => Err(
+                        LegadoError::LoginRequired(
+                            "书源需要登录，请先在书源菜单中登录后重试".into(),
+                        ),
+                    ),
+                    Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
+                        eprintln!(
+                            "[web_book] loginCheckJs errResponse 路径执行失败（降级放行）: {e}"
+                        );
+                        Ok(())
+                    }
+                }
+            }
+            Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
+                eprintln!("[web_book] loginCheckJs 执行失败（环境不兼容，降级放行）: {e}");
+                Ok(())
+            }
         }
-        Ok(())
     }
 
     /// 从详情页响应体解析书籍详情（可复用辅助方法）

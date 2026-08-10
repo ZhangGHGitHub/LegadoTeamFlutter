@@ -38,6 +38,10 @@ pub enum LegadoError {
     #[error("Content empty: {0}")]
     ContentEmpty(String),
 
+    /// 书源需要登录（loginCheckJs 检测判定未登录，对齐原版 LoginSourceException 语义）
+    #[error("Login required: {0}")]
+    LoginRequired(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -60,6 +64,7 @@ impl LegadoError {
             LegadoError::Timeout(_) => 1009,
             LegadoError::TocEmpty(_) => 1010,
             LegadoError::ContentEmpty(_) => 1011,
+            LegadoError::LoginRequired(_) => 1012,
             LegadoError::Internal(_) => 1999,
         }
     }

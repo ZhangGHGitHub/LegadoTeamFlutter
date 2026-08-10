@@ -24,6 +24,7 @@ impl IntoResponse for ApiError {
             LegadoError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, "timeout"),
             LegadoError::TocEmpty(_) => (StatusCode::NOT_FOUND, "toc_empty"),
             LegadoError::ContentEmpty(_) => (StatusCode::NOT_FOUND, "content_empty"),
+            LegadoError::LoginRequired(_) => (StatusCode::UNAUTHORIZED, "login_required"),
             LegadoError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
 
