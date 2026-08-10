@@ -627,6 +627,12 @@ impl AnalyzeUrl {
     fn split_url_option(rule: &str) -> (String, Option<String>) {
         let rule = rule.trim();
 
+        // data: URI 豁免：对齐原版 AnalyzeUrl.kt 先经 dataUriRegex 判定，
+        // data 段本身可能以 `,{...}` 开头（如 JSON 内容），不可误判为请求选项
+        if rule.starts_with("data:") {
+            return (rule.to_string(), None);
+        }
+
         if let Some(comma_pos) = rule.find(',') {
             let after_comma = rule[comma_pos + 1..].trim();
             if after_comma.starts_with('{') && after_comma.ends_with('}') {

@@ -9,6 +9,7 @@ pub mod bookmark_repository;
 pub mod cache_book_repository;
 pub mod cache_repository;
 pub mod cookie_repository;
+pub mod cover_rule_repository;
 pub mod dict_rule_repository;
 pub mod download_task_repository;
 pub mod highlight_repository;

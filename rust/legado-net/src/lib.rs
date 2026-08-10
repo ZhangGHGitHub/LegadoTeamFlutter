@@ -20,6 +20,7 @@
 pub mod client;
 pub mod cookie_store;
 pub mod cover;
+pub mod custom_hosts;
 pub mod direct_link_upload;
 pub mod middleware;
 pub mod proxy;
@@ -45,6 +46,9 @@ mod socks5_e2e;
 pub use client::{LegadoClient, LegadoClientConfig};
 pub use cookie_store::{CookiePersistence, CookieStore};
 pub use cover::CoverCache;
+pub use custom_hosts::{
+    apply_custom_hosts, clear_custom_hosts, lookup_ips, CustomHostsResolver,
+};
 pub use middleware::{Middleware, MiddlewareChain};
 pub use proxy::{parse_proxy_config, ProxyConfig, ProxyCredentials, ProxyPool, ProxyType};
 pub use rate_limit::{DomainRateLimiter, RateLimiter};

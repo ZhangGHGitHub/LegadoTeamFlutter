@@ -1042,6 +1042,29 @@ Future<String> serverStop() => RustLib.instance.api.crateFfiFfiServerStop();
 /// 获取服务器状态（JSON）
 Future<String> serverStatus() => RustLib.instance.api.crateFfiFfiServerStatus();
 
+/// 设置独立 MCP 服务端口（契约 §2.22.5，Task #72/#73）
+///
+/// - port>0：启动/重启独立 MCP 服务监听该端口（合法区间 1024..65530，
+///   越界或占用报 Internal）；port≤0：停止独立服务；
+/// - Web 端口的 /mcp/* 挂载不受影响（兼容并存）；端口持久化并启动时恢复。
+Future<void> setMcpPort({required int port}) =>
+    RustLib.instance.api.crateFfiFfiSetMcpPort(port: port);
+
+/// 设置自定义 hosts 映射（契约 §2.20.3，Task #72/#73）
+///
+/// hostsJson 为 JSON 对象 `域名 → 单 IP 字符串或 IP 数组`（对齐原版
+/// AppConfig.hostMap）；空串/空对象 = 清除映射恢复系统 DNS。
+/// 应用后网络层 DNS 即时生效，并持久化到 `config:customHosts`。
+Future<void> setCustomHosts({required String hostsJson}) =>
+    RustLib.instance.api.crateFfiFfiSetCustomHosts(hostsJson: hostsJson);
+
+/// 按书名执行启用封面规则搜封面（契约 §2.4.8，Task #72/#73）
+///
+/// 返回候选封面 URL 裸 JSON Array（§1.4 铁律）；无启用规则或
+/// 全部失败返回 `[]`（非异常）。
+Future<String> searchCoverRules({required String name}) =>
+    RustLib.instance.api.crateFfiFfiSearchCoverRules(name: name);
+
 /// 获取所有用户（JSON 数组）
 Future<String> userGetAll() => RustLib.instance.api.crateFfiFfiUserGetAll();
 

@@ -183,7 +183,9 @@ fn build_request(rule: &DictRule, key: &str) -> Result<AnalyzeUrl, String> {
 }
 
 /// 取响应 body：data: URI 直接解码，否则发起 HTTP 请求
-async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, String> {
+///
+/// `pub(crate)`：cover_api（契约 §2.4.8 searchCoverRules）复用同一取体链路。
+pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, String> {
     // data: URI（如百度汉语规则的 data:;base64,{{...}}）无需网络
     if analyze_url.is_data_uri() {
         return analyze_url

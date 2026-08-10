@@ -142,6 +142,11 @@ impl LegadoClient {
             builder = builder.proxy(proxy);
         }
 
+        // 自定义 hosts DNS 覆盖（契约 §2.20.3，Task #73）：
+        // resolver 每次解析实时读取全局映射，setCustomHosts 变更对已构建
+        // 的客户端即时生效（命中映射直连 IP，未命中回落系统 DNS）
+        builder = builder.dns_resolver(crate::custom_hosts::resolver());
+
         let client = builder
             .build()
             .map_err(|e| LegadoError::Network(format!("Failed to build HTTP client: {}", e)))?;

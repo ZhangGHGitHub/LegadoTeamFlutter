@@ -19,6 +19,24 @@ use legado_db::Database;
 /// 全局连接池（线程安全，内部使用 Arc 共享）
 static DB_POOL: OnceLock<Pool<SqliteConnectionManager>> = OnceLock::new();
 
+/// 全局 DB 文件路径（db_open 时记录，Task #76）
+///
+/// 供独立 MCP 服务等二次连接池场景复用同一 DB 文件（WAL 并发安全），
+/// 避免硬编码相对路径在 Android cwd 不可写/桌面双库数据漂移。
+static DB_PATH: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// 记录 DB 文件路径（由 db_open 在初始化前调用）
+pub fn record_db_path(path: &str) {
+    if let Ok(mut guard) = DB_PATH.lock() {
+        *guard = Some(path.to_string());
+    }
+}
+
+/// 获取当前 DB 文件路径（未记录时返回 None）
+pub fn current_db_path() -> Option<String> {
+    DB_PATH.lock().ok().and_then(|guard| guard.clone())
+}
+
 /// 初始化全局数据库连接池（由 `ffi_db_open` 调用）
 ///
 /// 从 `Database` 实例中提取连接池并存储到全局状态。

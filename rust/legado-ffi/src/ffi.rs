@@ -88,8 +88,15 @@ pub mod ffi {
             eprintln!("[legado-ffi] 数据库已初始化，忽略重复 db_open 调用");
             return Ok(());
         }
+        // 记录 DB 文件路径（Task #76：独立 MCP 服务等二次连接池
+        // 场景复用同一文件，避免硬编码相对路径）
+        crate::db_state::record_db_path(&path);
         let db = legado_db::init_database(&path)?;
         crate::db_state::init_database(db)?;
+        // 启动时恢复配置（契约 §2.20.3 / §2.22.5，Task #73）：
+        // 读回 customHosts 映射与独立 MCP 端口，尽力而为（失败仅记日志）
+        crate::api::net_api::restore_custom_hosts();
+        crate::api::server_api::restore_mcp_port();
         Ok(())
     }
 
@@ -1389,6 +1396,35 @@ pub mod ffi {
     /// 获取服务器状态（JSON）
     pub fn server_status() -> String {
         crate::api::server_api::server_status()
+    }
+
+    /// 设置独立 MCP 服务端口（契约 §2.22.5，Task #72/#73）
+    ///
+    /// - port>0：启动/重启独立 MCP 服务监听该端口（合法区间 1024..65530，
+    ///   越界或占用报 Internal）；port≤0：停止独立服务；
+    /// - Web 端口的 /mcp/* 挂载不受影响（兼容并存）；端口持久化并启动时恢复。
+    pub fn set_mcp_port(port: i32) -> Result<(), BridgeError> {
+        crate::api::server_api::set_mcp_port(port)?;
+        Ok(())
+    }
+
+    /// 设置自定义 hosts 映射（契约 §2.20.3，Task #72/#73）
+    ///
+    /// hostsJson 为 JSON 对象 `域名 → 单 IP 字符串或 IP 数组`（对齐原版
+    /// AppConfig.hostMap）；空串/空对象 = 清除映射恢复系统 DNS。
+    /// 应用后网络层 DNS 即时生效，并持久化到 `config:customHosts`。
+    pub fn set_custom_hosts(hosts_json: String) -> Result<(), BridgeError> {
+        crate::api::net_api::set_custom_hosts(&hosts_json)?;
+        Ok(())
+    }
+
+    /// 按书名执行启用封面规则搜封面（契约 §2.4.8，Task #72/#73）
+    ///
+    /// 返回候选封面 URL 裸 JSON Array（§1.4 铁律）；无启用规则或
+    /// 全部失败返回 `[]`（非异常）。
+    pub fn search_cover_rules(name: String) -> Result<String, BridgeError> {
+        let json = crate::api::cover_api::search_cover_rules(&name)?;
+        Ok(json)
     }
 
     // ─── 用户管理 ─────────────────────────────────────
