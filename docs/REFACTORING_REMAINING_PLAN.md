@@ -1080,12 +1080,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.25  
+**文档版本**: 1.26  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.26（2026-08-10）搜索无结果根治（v2.0.14，[Rust] 轨，Reasonix 实施）：根因链三段——① yckceo 书源 896/968 源 searchUrl 含 `{{}}` 模板，大量 `{{encodeURIComponent(key)}}`（思兔 sto66 等）而 quickjs 宿主未注册该函数 → URL 残缺；② 漫画/视频/聚合源 searchUrl 用 `<js>eval(String(Reload('...')))` 动态加载与 jsLib 函数（getHosts 等），模板执行器不注入 jsLib 且沙箱禁 eval → URL 构建失败（图片/视频源搜索无结果主因）；③ bookUrl 空不回退、缺 UA 被反爬拒。修复：encodeURIComponent 注册（JS 标准语义）；QuickJsExecutor/construct_analyzer/build_search_url 支持 jsLib 注入（对齐原版每次 eval 前加载库）；EnginePool 默认允许 eval（对齐原版 Rhino 书源信任模型，js_eval 调试端点仍严格沙箱）；`<js>`/`@js:` 模板统一走 JS 求值路径；bookUrl 空回退书源主页；搜索请求补 Chrome UA。实测：思兔 URL 渲染正确、sto66 HTTP 200 出书条目。新增 10 个 Rust 测试，legado-ffi 259 + legado-js 468 全过；5558 重建 APK 冒烟 5/5（版本标签 2.0.14）
 - v1.25（2026-08-10）图片/音频/视频源分流失效根治（v2.0.13，Reasonix 实施）：根因双断点——① Rust 搜索输出 AnnotatedCandidate 不带 type（Flutter bookType 恒 0）；② 阅读前落库 `0|notShelf` 致 8/32/64 类型位永久丢失（第二次起 `bt≠0` 兜底不触发→落回文本阅读器）。修复：_openReader 缺类型位时按书源类型映射补全位标记、落库/回填正确类型位、video 分支进 /video；VideoScreen 支持视频源书章节播放（章节列表+当前章链接+上/下集，对齐原版 VideoPlayerActivity）；新增 4 个分流 widget 测试（含缺类型位回归），全量 1143/1143。实机验证受限说明：5558 无法 adb 输入中文关键词（cmd clipboard 不可用），图片源真实书搜索交由用户验证（分组选「图片书源」→中文关键词→点开→开始阅读）
 - v1.24（2026-08-10）阅读进度恢复 + 图片/音频源分流修复登记（v2.0.12，Reasonix 实施）：① 进度不恢复——详情页旧快照不刷新（Rust books 表已存 dur_chapter_index 但页面实例不重读），_openReader 阅读返回后 setState 重载 + openBook 恢复 durChapterPos，5558 实机验证「第5章跳转→返回→再进」正确恢复；② 图片/音频源——BookType 常量 0/1/2 枚举误义修正为位标记（text=8/audio=32/image=64，与 Rust 返回 type 一致）、_openReader 按位标记分流（audio→/audio、image→/reader-comic、文本→/reader，缺失兜底按 bookSourceType）、书架音频/视频分组改位运算；新增 3 个分流 widget 测试，全量 flutter test 1141/1141、5558 冒烟 5/5 通过
 - v1.23（2026-08-10）搜索/阅读 UI 三问题修复登记（v2.0.11，Reasonix 实施）：① 搜索异常书源弹窗消除——批次 error 消费补齐（单源失败静默不弹 UI、appLogPush error 级留痕「书源搜索出错」，对齐原版 SearchModel 仅 AppLog.put；经原版源码核实「原版批次错误弹 SnackBar」为误判，原版单源失败无任何 UI 提示）；② 搜索框文字垂直裁切——isDense + textAlignVertical.center + suffixIcon 32×32 约束；③ 书籍信息页简介默认全部显示（_ExpandableText 默认展开保留收起）。新增 search_notifier 单测 2 个（失败批次静默留痕/全败空态），flutter analyze 0 error、相关测试 58/58 与全量 1138/1138 全过，模拟器冒烟 5556 通过

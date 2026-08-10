@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.14] - 2026-08-10
+
+### 修复（Rust 搜索链路，对齐原版）
+- 搜索无结果根治（原版可搜到、重构版搜不到）：yckceo 书源包（968 源中 896 个 searchUrl 含 `{{}}` 模板）大量使用 `{{encodeURIComponent(key)}}`（思兔阅读 sto66 等核心源），而 quickjs 宿主**未注册 encodeURIComponent** → 表达式求值失败 → URL 中模板被替换为空串 → 搜索 URL 残缺 → 无结果。修复：
+  - `legado-js` 新增 `encode_uri_component`（JS 标准语义：percent-encode 除 `A-Za-z0-9-_.!~*'()` 外全部字符）并注册到 quickjs 宿主（`encodeURIComponent`，java + globals，对齐原版 Rhino 内建）
+  - 实测：思兔 `https://www.sto66.com/search/{{encodeURIComponent(key)}}.html` 渲染 `都市` → `/search/%E9%83%BD%E5%B8%82.html`，真实站点 HTTP 200 返回书条目
+- 书源 jsLib 未注入模板 JS 执行器（图片/视频/漫画源搜索无结果主因之一）：yckceo 漫画源 searchUrl 大量使用 `<js>eval(String(Reload('...')))` 动态加载与 jsLib 定义的函数（getHosts 等），此前模板执行器不注入 jsLib 且沙箱禁用 eval → URL 构建失败。修复：
+  - `QuickJsExecutor` 支持 `with_js_lib`，`construct_analyzer_with_js_lib`/`build_search_url_with_lib` 注入书源 jsLib（每次 JS 执行前先 eval 库，对齐原版 JsSource 语义）；搜索解析与 URL 构建链路接入
+  - `EnginePool` 默认沙箱允许 `eval`/`Function`（对齐原版 Rhino 书源信任模型；js_eval 调试端点仍用严格 SandboxConfig::default()，安全边界保留）
+  - `build_search_url` JS 路径条件扩展：含 `<js>`/`@js:`/`{{` 任一语法即走 JS 求值（此前 `<js>` 模板落入字面路径未被执行）
+- 搜索结果 bookUrl 规则解析为空时回退书源主页（bookSourceUrl，对齐原版 `BookList.kt:282-284` + `AnalyzeRule.kt:369-375`），避免条目无法打开
+- 搜索请求头缺 User-Agent 时补充 Chrome UA（对齐原版 `BaseSource.kt:202-204` + `AppConfig.userAgent`；默认 `Legado/1.0` 会被反爬站点拒绝）
+- 新增 10 个 Rust 测试（encodeURIComponent 语义×2 + quickjs eval 渲染×2 + jsLib 注入×3 + bookUrl 回退 + UA 补充×2），全量 cargo test（quickjs）：legado-ffi 259、legado-js 468 全过（Reasonix）
+
 ## [2.0.13] - 2026-08-10
 
 ### 修复
