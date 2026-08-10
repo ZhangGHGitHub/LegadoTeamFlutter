@@ -10,6 +10,7 @@
 |------|------|
 | 2026-08-01 | 契约初版冻结（v1.0） |
 | 2026-08-10 | 第二批后置项 FFI 冻结：三个加法式新增——`shrinkDatabase`（§2.16 缓存管理）/ `webdavUploadFile`（§2.28 WebDAV 云同步）/ `toggleSameTitleRemoved`（§2.9 阅读器操作），契约合计方法数 174→177（Task #50） |
+| 2026-08-10 | 第三批后置项 FFI 冻结：两个加法式新增——`setSourceVariable`（§2.3 书源操作）/ `getBookmarksByBook`（§2.7 书签操作，书签作者维度查询）+ `book_sources` 表补 `variable` 列 schema 迁移预告（SCHEMA_VERSION 102→103，幂等迁移），契约合计方法数 225→227（Task #63） |
 
 ---
 
@@ -58,9 +59,9 @@
 ## 2. 方法清单
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
-> 为基准，BookApi 接口当前共 **225 个方法**（Task #55 F6 校准，程序化计数）。
-> 附录行合计 234 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
-> 扣除后 224 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 225，与 BookApi 闭合；详见附录口径说明。
+> 为基准，BookApi 接口当前共 **227 个方法**（Task #55 F6 校准、Task #63 第三批后置项登记后口径，程序化计数）。
+> 附录行合计 236 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
+> 扣除后 226 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 227，与 BookApi 闭合；详见附录口径说明。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -83,7 +84,7 @@
 | `setBookGroup(String bookUrl, int groupId)` | bookUrl, groupId | `Future<void>` | 设置书籍分组 |
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 
-### 2.3 书源操作（19 个方法）
+### 2.3 书源操作（20 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -106,6 +107,7 @@
 | `verificationRequestStream()` | 无 | `Stream<Map<String, dynamic>>` | 验证码请求事件流（长期存活，订阅时先回放进行中请求），事件字段：`key` / `source_url` / `source_name` / `image_url` / `title` / `use_browser`（恒 false，已降级）/ `created_at_ms`（Task #90，加法式新增） |
 | `submitVerificationResult(String key, String code)` | key: resultKey；code: 用户输入的验证码 | `Future<bool>` | 提交验证码结果唤醒 JS 等待方（对齐 Kotlin `setResult`：空值也唤醒，空值判定在等待侧），返回是否命中进行中请求（Task #90，加法式新增） |
 | `cancelVerificationRequest(String key)` | key: resultKey | `Future<bool>` | 取消验证码请求（对齐 Kotlin `checkResult`：以空结果唤醒等待方），返回是否命中（Task #90，加法式新增） |
+| `setSourceVariable(String sourceUrl, String variable)` | sourceUrl: 书源 URL；variable: 自定义变量内容（空串=清除） | `Future<void>` | 设置书源自定义变量（对齐原版 `source.setVariable`），单列 UPDATE 语义仅更新 `variable` 单列，规避 `updateBookSource` 全行更新风险；variable 为空串表示清除该变量。错误码：Internal（书源不存在）/ Db（写入失败）。**DB schema 变更预告**：`book_sources` 表补 `variable` 列（幂等迁移，SCHEMA_VERSION 102→103）（台账 §5.11-3，第三批后置项，Task #63，加法式新增） |
 
 > ℹ️ **登录 UI V2 动态状态协议（#402/#488）**：Rust 侧 `ffi::source_is_login_ui_v2 / source_login_ui_v2 / source_login_action_v2`（核心实现 `legado-core/src/login_ui_v2.rs`，对齐 Kotlin `LoginUiV2.kt` + `BaseSource.evalLoginUiV2/evalLoginActionV2`）。`loginUi` 为 `{"version":2}` 标记时启用；登录脚本取自 `mainJs`（JS 单文件书源）或 `loginUrl`，须实现 `loginUi(state)` / `loginAction(action, state, form)`。`userInputJson` 契约：`{"action":"...","stateJson":"...","formJson":{...}}`（stateJson/formJson 支持字符串或对象）。JS 返回 null/undefined 时返回空字符串；需 quickjs 特性构建。RowUi V2 扩展字段：key/hint/value/options/countdown。冻结契约保持不变，本组方法为加法式新增。
 >
@@ -159,11 +161,12 @@
 | `detectFormat(String filePath)` | filePath | `Future<String>` | 检测书籍文件格式 |
 | `parseMetadata(String filePath)` | filePath | `Future<String>` | 解析书籍元数据（返回 JSON） |
 
-### 2.7 书签操作（6 个方法）
+### 2.7 书签操作（7 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `getBookmarks(String bookName)` | bookName | `Future<List<Bookmark>>` | 获取某本书的所有书签 |
+| `getBookmarks(String bookName)` | bookName | `Future<List<Bookmark>>` | 获取某本书的所有书签（仅按书名查询；同名书会混入，兼容保留，推荐用 `getBookmarksByBook`） |
+| `getBookmarksByBook(String bookName, String bookAuthor)` | bookName, bookAuthor | `Future<List<Bookmark>>` | 按书名+作者获取某本书的所有书签（对齐原版 `bookmarkDao.getByBook(name, author)`，规避同名书混入）；返回书签列表（遵守 §1.4 裸数组铁律）。既有 `getBookmarks` 签名保持不变，本方法为加法式新增。方案说明：不采用给 `getBookmarks` 追加可选参数方案，避免触碰既有冻结签名；新增独立方法对既有调用方零破坏（台账 §5.14-2，第三批后置项，Task #63，加法式新增） |
 | `getAllBookmarks()` | 无 | `Future<List<Bookmark>>` | 获取所有书签 |
 | `addBookmark(Bookmark bookmark)` | bookmark: Bookmark 对象 | `Future<Bookmark>` | 添加书签 |
 | `updateBookmark(Bookmark bookmark)` | bookmark: Bookmark 对象 | `Future<void>` | 更新书签 |
@@ -622,6 +625,16 @@
 
 ---
 
+### 2.44 数据层实现备注（不涉契约签名）
+
+> 本节登记数据层内部实现变更预告，均不改变任何契约签名，仅供 Rust 轨实施与双轨知会。
+> 本节不含方法，不计入模块数与附录统计（模块仍为 43 个，§2.1–§2.43）。
+>
+> ℹ️ **BookRepository::insert 级联删除隐患（第三批后置项，Task #63）**：`BookRepository::insert` 当前走
+> INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
+
+---
+
 ## 3. UI 轨需求登记区
 
 > UI 轨需要新数据时，在此登记需求，Rust 轨按契约实现。流程见 [TWO_TRACK_DEV_SPEC.md § 4.3](TWO_TRACK_DEV_SPEC.md)。
@@ -715,11 +728,11 @@
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 9 |
-| 3 | 书源操作 | 19 |
+| 3 | 书源操作 | 20 |
 | 4 | 搜索操作 | 7 |
 | 5 | RSS 源操作 | 9 |
 | 6 | 本地书籍操作 | 4 |
-| 7 | 书签操作 | 6 |
+| 7 | 书签操作 | 7 |
 | 8 | 替换规则操作 | 6 |
 | 9 | 阅读器操作 | 10 |
 | 10 | 配置操作 | 4 |
@@ -756,14 +769,13 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **234** |
+| | **合计（§2.1–§2.43 附录行合计）** | **236** |
 
-> 口径说明（Task #55 F6，2026-08-10 校准，基准 = `book_api.dart` 程序化计数 **225**）：
-> - **与 BookApi 闭合**：附录行合计 234 − 尚未封装进 BookApi 的 FFI 10 个
+> 口径说明（Task #55 F6，2026-08-10 校准；Task #63 第三批后置项登记后延续同口径，基准 = `book_api.dart` 程序化计数 **227**）：
+> - **与 BookApi 闭合**：附录行合计 236 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 224；
->   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **225**。
-> - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 19 行修正（原误记 10，
->   遗漏登录 V2 3 + 书源校验 3 + 验证码通道 3）；行 30 按 §2.30 标题修正为 5（含 reviewGetReplies，原误记 4）；
->   §2.3 章节标题同步由「10 个方法」更正为「19 个方法」。
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 226；
+>   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **227**。
+> - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 20 行（原 19 + 第三批 `setSourceVariable` 1）；
+>   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 5（含 reviewGetReplies）。
