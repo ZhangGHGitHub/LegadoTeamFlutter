@@ -1254,6 +1254,37 @@ class RustApi implements BookApi {
     return const <String>[];
   }
 
+  // ========== 批量缓存下载（对齐原版 CacheActivity，契约 §2.43.3） ==========
+
+  /// [UI-fix v2.0.16 | 2026-08-10] 接通 cacheDownloadStart FFI（真实下载写缓存）— Reasonix
+  @override
+  Future<int> cacheDownloadStart(
+      String bookUrl, int startChapter, int endChapter) async {
+    final json =
+        await bridge.cacheDownloadStart(bookUrl: bookUrl, startChapter: startChapter, endChapter: endChapter);
+    final taskId = int.tryParse(json.trim());
+    if (taskId == null) {
+      throw Exception('缓存任务启动失败: $json');
+    }
+    return taskId;
+  }
+
+  @override
+  Future<String> cacheDownloadProgress(int taskId) async {
+    // PlatformInt64 即 int 的 typedef，直接传值
+    return bridge.cacheDownloadProgress(taskId: taskId);
+  }
+
+  @override
+  Future<bool> cacheDownloadCancel(int taskId) async {
+    return bridge.cacheDownloadCancel(taskId: taskId);
+  }
+
+  @override
+  Future<String> cacheDownloadList() async {
+    return bridge.cacheDownloadList();
+  }
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

@@ -566,6 +566,23 @@ abstract class BookApi {
   /// [UI-fix v2.0.6 | 2026-08-08] Task #22 — Qoder
   Future<List<String>> listCachedChapterUrls(String bookUrl);
 
+  // ========== 批量缓存下载（对齐原版 CacheActivity，契约 §2.43.3） ==========
+
+  /// 启动批量缓存下载任务（真实抓取并写入 cached_chapters；
+  /// start/end 为 0-based 章节索引含端点），返回 taskId
+  /// [UI-fix v2.0.16 | 2026-08-10] 此前 UI 仅走 downloadAddTask（只登记
+  /// 内存任务不执行下载，cached_chapters 永不写入→目录页图标不更新）— Reasonix
+  Future<int> cacheDownloadStart(String bookUrl, int startChapter, int endChapter);
+
+  /// 查询批量下载任务进度（返回任务 JSON：taskId/status/total/completed/failed）
+  Future<String> cacheDownloadProgress(int taskId);
+
+  /// 取消批量下载任务（未知任务返回 false）
+  Future<bool> cacheDownloadCancel(int taskId);
+
+  /// 列出全部批量下载任务（JSON 数组）
+  Future<String> cacheDownloadList();
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

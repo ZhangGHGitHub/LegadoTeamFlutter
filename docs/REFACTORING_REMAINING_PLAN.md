@@ -1080,12 +1080,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.27  
+**文档版本**: 1.28  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.28（2026-08-10）缓存下载链路根治登记（v2.0.16，[UI] 轨，Reasonix 实施）：根因——阅读页缓存走 downloadAddTask（Rust download_api.rs 仅内存任务登记无下载执行，cached_chapters 永不写入→目录云图标不亮）；cacheDownloadStart/Progress/List/Cancel FFI 已生成但 Dart 零调用；无下载队列页。修复：BookApi/RustApi/MockBookApi 封装 4 方法；阅读页缓存对话框改 cacheDownloadStart（真实下载）；新增 CacheDownloadScreen 队列页（任务列表/进度/取消，2s 轮询，路由 /cache_downloads + 书籍信息页菜单入口）；目录页云图标 2s 轮询实时刷新（对齐原版 EventBus.SAVE_CONTENT）。新增 widget 测试 2 个，flutter test 1145/1145、analyze 0 error；5558 冒烟 5/5。遗留：① 缓存任务表为进程内内存表（重启进度丢失），建议后续落库 download_tasks（表与 Repository 已就绪）；② 实机端到端（缓存→图标变实心）受 5558 书源站点可用性影响未完整跑通（爱书小说网/陌上阁m 目录 404，Rust 真实网络测试证明为站点 URL 问题非代码问题），用户验收时以可读书源为准
 - v1.27（2026-08-10）图片源搜索 + 漫画正文 + 视频播放链路根治（v2.0.15，[Rust]+[UI] 双轨，Reasonix 实施）：① 图片书源分组搜不到——AnalyzeRule 不支持 `<js>` 标签（仅认 `@js:` 前缀，`<js>...</js>` 落入 CSS/Auto 解析返回空；原版 RuleAnalyzer 两者同视为 Mode.Js），get_strings 补 `<js>` 包裹识别执行；② 漫画正文图片不显示——正文/目录/信息/搜索解析全链路（web_book.rs 9 处 analyzer 调用点 + parse_content_page/fetch_paginated_content/fetch_sub_content/apply_content_replace_regex）注入书源 jsLib（漫画源 ruleContent 大量 `<js>eval(String(Reload('...')))</js>`，不注入 JS 抛错→空正文）；Flutter 漫画阅读器图片请求带书源防盗链 header（CDN 校验 Referer 否则 403）+ 相对路径以章节 URL 为 base 转绝对；③ 视频无法播放——正文 jsLib 注入 + `_extractVideoUrl` 支持 iframe/video/source/embed 标签 src（播放器页 HTML 场景）+ 播放请求带书源 header。新增 Rust 测试 3 个（`<js>`+jsLib 正文解析/无 jsLib 降级/web_book jsLib），cargo test legado-ffi 261 + legado-parser 178 全过，flutter analyze 0 error、flutter test 1143/1143，5558 实机待用户验证（图片源分组中文词搜索→点开→开始阅读看正文图；视频源同理看播放）
 - v1.26（2026-08-10）搜索无结果根治（v2.0.14，[Rust] 轨，Reasonix 实施）：根因链三段——① yckceo 书源 896/968 源 searchUrl 含 `{{}}` 模板，大量 `{{encodeURIComponent(key)}}`（思兔 sto66 等）而 quickjs 宿主未注册该函数 → URL 残缺；② 漫画/视频/聚合源 searchUrl 用 `<js>eval(String(Reload('...')))` 动态加载与 jsLib 函数（getHosts 等），模板执行器不注入 jsLib 且沙箱禁 eval → URL 构建失败（图片/视频源搜索无结果主因）；③ bookUrl 空不回退、缺 UA 被反爬拒。修复：encodeURIComponent 注册（JS 标准语义）；QuickJsExecutor/construct_analyzer/build_search_url 支持 jsLib 注入（对齐原版每次 eval 前加载库）；EnginePool 默认允许 eval（对齐原版 Rhino 书源信任模型，js_eval 调试端点仍严格沙箱）；`<js>`/`@js:` 模板统一走 JS 求值路径；bookUrl 空回退书源主页；搜索请求补 Chrome UA。实测：思兔 URL 渲染正确、sto66 HTTP 200 出书条目。新增 10 个 Rust 测试，legado-ffi 259 + legado-js 468 全过；5558 重建 APK 冒烟 5/5（版本标签 2.0.14）
 - v1.25（2026-08-10）图片/音频/视频源分流失效根治（v2.0.13，Reasonix 实施）：根因双断点——① Rust 搜索输出 AnnotatedCandidate 不带 type（Flutter bookType 恒 0）；② 阅读前落库 `0|notShelf` 致 8/32/64 类型位永久丢失（第二次起 `bt≠0` 兜底不触发→落回文本阅读器）。修复：_openReader 缺类型位时按书源类型映射补全位标记、落库/回填正确类型位、video 分支进 /video；VideoScreen 支持视频源书章节播放（章节列表+当前章链接+上/下集，对齐原版 VideoPlayerActivity）；新增 4 个分流 widget 测试（含缺类型位回归），全量 1143/1143。实机验证受限说明：5558 无法 adb 输入中文关键词（cmd clipboard 不可用），图片源真实书搜索交由用户验证（分组选「图片书源」→中文关键词→点开→开始阅读）

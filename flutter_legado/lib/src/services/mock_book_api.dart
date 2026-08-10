@@ -1262,6 +1262,20 @@ class MockBookApi implements BookApi {
   Future<List<String>> listCachedChapterUrls(String bookUrl) async =>
       const <String>[];
 
+  @override
+  Future<int> cacheDownloadStart(
+      String bookUrl, int startChapter, int endChapter) async =>
+      1;
+
+  @override
+  Future<String> cacheDownloadProgress(int taskId) async => '{"taskId":$taskId,"status":"completed","total":0,"completed":0,"failed":0}';
+
+  @override
+  Future<bool> cacheDownloadCancel(int taskId) async => true;
+
+  @override
+  Future<String> cacheDownloadList() async => '[]';
+
   // ========== 章节购买 ==========
 
   @override

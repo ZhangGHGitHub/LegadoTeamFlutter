@@ -499,7 +499,9 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
   }
 
   /// 离线缓存对话框（对标原版 CacheActivity/showDownloadDialog：
-  /// 选择起止章节 → downloadAddTask 逐章加入下载队列）
+  /// 选择起止章节 → cacheDownloadStart 批量任务真实下载写缓存）
+  /// [UI-fix v2.0.16 | 2026-08-10] 原实现逐章 downloadAddTask 仅登记内存
+  /// 任务不执行下载，cached_chapters 永不写入→目录页图标不更新 — Reasonix
   void _showCacheDialog(BuildContext context, WidgetRef ref) {
     final state = ref.read(readerNotifierProvider);
     final book = state.currentBook;
@@ -546,23 +548,17 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                 return;
               }
               final api = ref.read(bookApiProvider);
-              var count = 0;
-              for (var i = start - 1; i <= end - 1; i++) {
-                final ch = chapters[i];
-                try {
-                  await api.downloadAddTask(
-                    bookUrl: book.bookUrl,
-                    chapterUrl: ch.url,
-                    chapterTitle: ch.title,
-                    chapterIndex: i,
-                  );
-                  count++;
-                } catch (_) {
-                  // 单章失败不阻断整体缓存任务
+              final count = end - start + 1;
+              try {
+                // 0-based 索引（含端点）；Rust 侧超界自动截断
+                await api.cacheDownloadStart(book.bookUrl, start - 1, end - 1);
+                if (context.mounted) {
+                  _snack(context, '已加入缓存队列：$count 章（可在书籍菜单「缓存管理」查看进度）');
                 }
-              }
-              if (context.mounted) {
-                _snack(context, '已加入缓存队列：$count 章');
+              } catch (e) {
+                if (context.mounted) {
+                  _snack(context, '缓存启动失败：$e');
+                }
               }
             },
             child: const Text('开始缓存'),

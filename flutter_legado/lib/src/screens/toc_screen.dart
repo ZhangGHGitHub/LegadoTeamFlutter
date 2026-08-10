@@ -73,6 +73,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 经 BookApi.listCachedChapterUrls）
   Set<String> _cachedChapterUrls = {};
 
+  /// 缓存态轮询定时器（页面可见期间每 2s 轻量查询，实现云图标实时刷新；
+  /// 对齐原版 EventBus.SAVE_CONTENT 实时语义）
+  /// [UI-fix v2.0.16 | 2026-08-10] 下载进行中目录页图标即时变实心 — Reasonix
+  Timer? _cachePollTimer;
   /// 标注列表（BookHighlight JSON 解析后的 Map，经 BookApi.highlightListByBook）
   List<Map<String, dynamic>> _highlights = [];
   bool _highlightsLoading = true;
@@ -90,6 +94,13 @@ class _TocScreenState extends ConsumerState<TocScreen>
     _loadSettings();
     _loadChapters();
     _loadHighlights();
+    // 在线书启动缓存态轮询（本地 SQLite 轻量查询；页面销毁自动停止）
+    if (_book.origin != BookType.localTag) {
+      _cachePollTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _refreshCachedUrls(),
+      );
+    }
     // 书签按书名+作者加载（对齐原版 bookmarkDao.getByBook，规避同名书混入，
     // 契约 §2.7 getBookmarksByBook，台账 §5.14-2，Task #65）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -112,12 +123,29 @@ class _TocScreenState extends ConsumerState<TocScreen>
 
   @override
   void dispose() {
+    _cachePollTimer?.cancel();
     appRouteObserver.unsubscribe(this);
     _debounce?.cancel();
     _tabController.dispose();
     _tocScrollController.dispose();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// 缓存态轮询刷新（轻量查询；列表变化才 setState，避免无谓重建）
+  Future<void> _refreshCachedUrls() async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final cached =
+          (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
+      if (!mounted) return;
+      if (cached.length != _cachedChapterUrls.length ||
+          !cached.containsAll(_cachedChapterUrls)) {
+        setState(() => _cachedChapterUrls = cached);
+      }
+    } catch (_) {
+      // 查询失败静默（保持旧状态，下一轮重试）
+    }
   }
 
   /// [UI-fix v2.0.7 | 2026-08-09] Task #26：页面重现（从阅读器返回）时刷新。

@@ -378,6 +378,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 ),
                 const PopupMenuItem(
                     value: 'clearCache', child: Text('清理缓存')),
+                const PopupMenuItem(
+                    value: 'cacheDownloads', child: Text('缓存下载队列')),
                 const PopupMenuItem(value: 'log', child: Text('日志')),
               ];
             },
@@ -507,6 +509,11 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       case 'clearCache':
         // [UI-fix v2.0.2 | 2026-08-06] 清缓存接通 clearCache FFI — Qoder
         await _clearCache();
+        break;
+      case 'cacheDownloads':
+        // [UI-fix v2.0.16 | 2026-08-10] 缓存下载队列页（对齐原版 CacheActivity）— Reasonix
+        if (!context.mounted) break;
+        await Navigator.pushNamed(context, AppRoutes.cacheDownloads);
         break;
       case 'deleteAlert':
         // [UI-fix v2.0.3 | 2026-08-08] 删除提醒开关持久化（对齐原版

@@ -11,6 +11,7 @@ import 'screens/auto_task_screen.dart';
 import 'screens/book_group_screen.dart';
 import 'screens/book_info_screen.dart';
 import 'screens/bookshelf_manage_screen.dart';
+import 'screens/cache_download_screen.dart';
 import 'screens/cache_settings_screen.dart';
 import 'screens/edit_book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
@@ -61,6 +62,7 @@ class AppRoutes {
   static const settings = '/settings';
   static const otherSettings = '/other_settings';
   static const cacheSettings = '/cache_settings';
+  static const cacheDownloads = '/cache_downloads';
   static const rss = '/rss';
   static const ruleSub = '/rule_sub';
   static const audio = '/audio';
@@ -122,6 +124,7 @@ class AppRoutes {
         settings: (_) => const SettingsScreen(),
         otherSettings: (_) => const OtherSettingsScreen(),
         cacheSettings: (_) => const CacheSettingsScreen(),
+        cacheDownloads: (_) => const CacheDownloadScreen(),
         rss: (_) => const RssScreen(),
         ruleSub: (_) => const RuleSubScreen(),
         audio: (context) {

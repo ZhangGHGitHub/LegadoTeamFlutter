@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.16] - 2026-08-10
+
+### 修复（缓存下载链路根治：真实下载 + 队列页 + 目录图标实时刷新，对齐原版 CacheActivity）
+- **根因**：阅读页「缓存」按钮走 `downloadAddTask`——Rust `download_api.rs` 仅内存任务登记**无下载执行**（不抓正文、不写 cached_chapters）→ 目录页云图标永不亮（「无法识别是否已经下载」）；且无下载队列页（CacheSettingsScreen 仅统计/清理，无进度列表）。真正下载的 `cacheDownloadStart/Progress/List/Cancel` FFI 已生成但 Dart 侧零调用
+- 修复：① BookApi/RustApi/MockBookApi 封装 4 个缓存下载方法（接通 FFI）；② 阅读页缓存对话框改用 `cacheDownloadStart` 批量任务（真实逐章下载写 cached_chapters，Rust worker 已在 v2.0.14 就绪）；③ 新增**缓存下载队列页**（CacheDownloadScreen，对齐原版 CacheActivity：任务列表/进度条/状态/取消，2s 轮询），路由 `/cache_downloads` + 书籍信息页菜单「缓存下载队列」入口；④ 目录页**云图标实时刷新**（在线书每 2s 轻量轮询 listCachedChapterUrls，对齐原版 EventBus.SAVE_CONTENT 语义——下载进行中图标即时变实心）
+- 说明：任务表为 Rust 进程内内存表（重启后任务进度不可恢复，同批登记到 REMAINING_PLAN 遗留项）；下载正文依赖书源正文规则（站点不可用时该章失败计入 failed，不阻断整体）（Reasonix）
+
+### 测试
+- 新增缓存下载队列页 widget 测试 2 个（空态/任务列表状态与取消按钮）；cargo test（quickjs）legado-ffi 全量通过（缓存下载写表逻辑已有 test_local_book_batch_download 覆盖）；flutter analyze 0 error、flutter test 1145/1145
+
 ## [2.0.15] - 2026-08-10
 
 ### 修复（图片源搜索 + 漫画正文图片 + 视频播放，对齐原版）
