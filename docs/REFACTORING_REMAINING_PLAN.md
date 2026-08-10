@@ -995,7 +995,7 @@ flutter test                  # 全量测试通过
 |---|-----|----------|------------|
 | 1 | ~~上传至远程~~（已接线） | `flutter_legado/lib/src/screens/book_info_screen.dart` `_todo('upload')` | ✅ Task #57（2026-08-10）销记：已接线，契约 §2.28.6 webdavUploadFile（本地文件路径上传 + PUT 状态码校验）；详情页菜单对齐原版 RemoteBookWebDav.upload（origin 回写 webDavTag+远端地址、lastCheckTime 刷新、仅本地书） |
 | 2 | ~~创建书籍更新任务~~（已接线） | 同上 `_todo('updateTask')` | ✅ Task #44（2026-08-08/09）销记：book_info_screen 菜单 → `findBookUpdateTask`（全量规则 JSON 匹配，FFI 失败退化模型输入）→ 已存在携 editTaskId 编辑 / 不存在 `buildBookUpdateTask` 新建；AutoTaskScreen 补 initialEditTaskId/initialNewTask 路由参数；新增 createTaskRaw/updateTaskRaw 保留完整 script；cron 合法性校验；失败按结果提示。原建议 FFI `create_update_task` 不再必要（既有 autoTask* 契约已满足） |
-| 3 | 设置源变量 | 同上 `_todo('sourceVariable')` | 菜单项已显示（书源存在）；建议新增 FFI `set_source_variable`（对标原版 source.setVariable） |
+| 3 | ~~设置源变量~~（已接线） | 同上 `_todo('sourceVariable')` | ✅ Task #71（2026-08-10）销记：已接线，契约 §2.3 setSourceVariable（单列 UPDATE、lenient 序列化双保险）+ Migration102To103 补列；详情页 `_VariableDialog` 对话框对齐原版 setVariable 的 source 分支 |
 | 4 | ~~设置书籍变量~~（已接线） | 同上 `_todo('bookVariable')` | ✅ Task #44（2026-08-08/09）销记：对齐原版 putCustomVariable 语义（variable 为 JSON Map，custom 键读写）；仅 inBookshelf 时 updateBook 落库，非在架提示先加入书架；保存前读回完整 Book 防全行覆盖。原建议 FFI `set_book_variable` 不再必要（既有 updateBook 已满足） |
 | 5 | ~~导出书签 / 导出 Markdown~~（已接线） | `flutter_legado/lib/src/screens/toc_screen.dart` `_handleMenu('exportBookmark'/'exportMd')` | ✅ Task #44（2026-08-08/09）销记：新建 `services/bookmark_export.dart`，JSON 8 字段对齐原版 GSON 序列化（剔除 id），MD 模板对齐 saveBookmarkMd，file_picker 选目录，文件名 bookmark-书名 作者；原建议 FFI `export_bookmarks` 不必要（原版导出为纯 JSON/MD 序列化，已以纯 Flutter 实现闭合）。遗留差异登记：getBookmarks 契约 §2.7 仅按书名查询（原版按书名+作者），待后续契约批次补 bookAuthor 参数 |
 | 6 | ~~章节缓存状态云图标~~（已闭合） | `toc_screen.dart` 目录 Tab 章节行 | ✅ 销记确认（Task #44 登记，2026-08-08/09）：契约 §2.43.5 `cacheListCachedChapterUrls` 已登记，toc_screen 已消费并提交（9cf205d8d/7fb6d1ba2） |
@@ -1004,6 +1004,8 @@ flutter test                  # 全量测试通过
 > ✅ **销记（2026-08-08/09，Task #44 第一批后置项接线）**：6 项中 4 项闭合——②创建书籍更新任务、④设置书籍变量、⑤导出书签/导出 Markdown 接线完成（详见各行销记），⑥章节缓存云图标确认闭合（契约 §2.43.5 + 提交 9cf205d8d/7fb6d1ba2）；剩余 ①上传至远程、③设置源变量、⑦删除重复标题正文链路，待对应 FFI 交付后接通。
 >
 > ✅ **销记（2026-08-10，Task #57 第二批后置项接线）**：①上传至远程（契约 §2.28.6 webdavUploadFile）、⑦删除重复标题正文链路（契约 §2.9.10 toggleSameTitleRemoved）接线完成（详见各行销记）；§5.11 现仅剩 ③设置源变量（需 DB 迁移，列入第三批）。
+>
+> ✅ **销记（2026-08-10，Task #71 第三批后置项接线）**：③设置源变量（契约 §2.3 setSourceVariable + Migration102To103）接线完成（详见行内销记）；**§5.11 全部 7 项至此全部闭合**。
 
 ### §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（2026-08-08，三维度评审修复时新增）
 
@@ -1051,21 +1053,30 @@ flutter test                  # 全量测试通过
 | # | 遗留/风险 | 说明 |
 |---|-----------|------|
 | 1 | getSameTitleRemoved 权威查询契约 | 当前 UI 初始态用 SP 镜像回读（键 `sameTitleRemoved_<bookUrl>`），与 Rust 侧 caches KV 章级 opt-out 权威态在清应用数据等场景可能分叉；另原版「未找到可移除的重复标题」提示未复刻。待后续契约批次补权威查询 FFI |
-| 2 | getBookmarks 契约 §2.7 缺 bookAuthor 参数 | 书签按书名查询（原版按书名+作者），同名书可能混入（§5.11-5 销记曾登记为遗留差异，此处正式立项） |
-| 3 | BookRepository::insert OR REPLACE 重复插入隐患 | 重复插入触发 chapters 外键级联删除风险，建议改 upsert（INSERT OR IGNORE + 按需 update）链路 |
+| 2 | ~~getBookmarks 契约 §2.7 缺 bookAuthor 参数~~（已闭合） | ~~书签按书名查询（原版按书名+作者），同名书可能混入（§5.11-5 销记曾登记为遗留差异，此处正式立项）~~ ✅ Task #71（2026-08-10）销记：契约 §2.7 getBookmarksByBook（书名+作者双键，加法式）已冻结并实现；消费方全切换（bookmark_notifier/toc_screen/书签导出）；MCP 宿主加法式可选 book_author 参数；单键旧查询兼容保留（见 #11） |
+| 3 | ~~BookRepository::insert OR REPLACE 重复插入隐患~~（已闭合） | ~~重复插入触发 chapters 外键级联删除风险，建议改 upsert（INSERT OR IGNORE + 按需 update）链路~~ ✅ Task #71（2026-08-10）销记：upsert 重构（主键判存在 + 原地 UPDATE / insert_replace）+ import_books 覆盖链路同步改造 + 新增重复插入保留 chapters 测试；残余见 #10 |
 | 4 | webdav_upload_file 大文件内存驻留 | 大文件上传整块驻留内存，流式上传改造立项（Rust WebDavClient 分块 PUT / Body 流式） |
 | 5 | FRB 内置隐藏 runtime 栈 | FRB 内置隐藏 runtime（flutter_rust_bridge rust_async）仍为默认 2MB 栈；根因已由 rule_analyzer 修复 + regex_safe 非递归预检消除，此项为纵深防御可选 |
 | 6 | 个别书源 bookUrl 为空 | QQ阅读等个别书源 bookUrl 为空（「Parser error: bookUrl不能为空」），源数据问题，与代码无关，建议修源 |
 | 7 | 搜索崩溃根治纪要 | （2026-08-10）四轮调查定位 rule_analyzer 零前进无限递归（移植时将原版 throw 改为 break 重试所致），已对齐原版 fail-fast + tailrec 修复并五轮复测零崩溃；正则安全编译统一入口（非递归嵌套预检 + LRU + logcat 诊断）作为纵深防御保留 |
+| 8 | 69 实机回归 D1/D2 修复纪要（Task #70） | （2026-08-10）D1：设置源变量对话框「确定」100% 红屏，根因为 TextEditingController 在外部函数作用域创建 + Navigator.pop 后退场动画期间提前 dispose（`_dependents.isEmpty` 断言 + OverlayEntry Duplicate GlobalKey）；已按 _TextPromptDialog 范式重构为自持 StatefulWidget `_VariableDialog`（controller 在 State 内 late final 创建、dispose 随子树卸载、确定先取值再 pop），_setBookVariable 同式加固。D2：源列表偶发整表显示「暂无书源」（重启恢复、非数据丢失），根因为搜索框 filterKeyword 位于全局 provider 而搜索框 controller 随 State 重建，离屏返回后关键词残留致 filteredSources 恒空；已修复：source_screen dispose 同步 clearFilter + loadSources 空列表不覆盖非空内存的防御守卫 |
+| 9 | 书签作者改写边界 | （Task #71 登记）书籍作者被元数据刷新改写后，旧书签（存旧 author）在书签 Tab/导出不可见；此为对齐原版双键查询语义的预期行为，验收知悉项，不另行修复 |
+| 10 | 二级索引 (name,author) 冲突时 insert_replace 跨书级联残余 | （Task #71 登记）同 name+author 不同书的极端冲突下 insert_replace 仍可能跨书级联（与 upsert 改造前一致）；后续加固方向：插入前 find_by_name_author 预检 |
+| 11 | getBookmarks 单键查询兼容保留 | （Task #71 登记）getBookmarks 单键（仅书名）查询已无生产消费方，为兼容既有调用保留；建议后续标注 @Deprecated 并择机移除 |
+| 12 | JS 链书源 bookUrl 为空 | （Task #66 实机发现）w.heiyan.com/kuaikan/zhuguang 等依赖 `<js>` 求值的 bookUrl 取空，属 JS 执行器独立路径待查（与 §5.14-6 源数据问题不同源） |
 
 ---
 
-**文档版本**: 1.16  
+
+
+**文档版本**: 1.17  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Qoder
 
 **版本记录**：
+
+- v1.17（2026-08-10）Task #71 第三批后置项接线销记与遗留登记：§5.11 销记 ③设置源变量（契约 §2.3 setSourceVariable + Migration102To103 补列 + `_VariableDialog` 对齐原版 source 分支），**§5.11 全部 7 项至此闭合**；§5.14 销记 2 项（#2 getBookmarks 补 bookAuthor → 契约 §2.7 getBookmarksByBook 双键查询 + 消费方全切换 + MCP 加法式可选参数；#3 BookRepository upsert 重构根治级联删除 + import_books 覆盖 + 重复插入保留 chapters 测试）；§5.14 追加登记 4 项（#9 书签作者改写边界验收知悉项、#10 二级索引冲突 insert_replace 跨书级联残余与预检加固方向、#11 getBookmarks 单键查询兼容保留建议 @Deprecated、#12 JS 链书源 bookUrl 为空待查）；另 frb 配对纪律入 TWO_TRACK_DEV_SPEC §3.5
 - v1.16（2026-08-10）Task #57 第二批后置项接线销记与遗留登记：§5.11 销记 2 项（①上传至远程 §2.28.6 webdavUploadFile、⑦删除重复标题 §2.9.10 toggleSameTitleRemoved）+ 小结更新为仅剩③设置源变量（需 DB 迁移，第三批）；§5.13 销记 1 项（⑨压缩数据库 §2.16.6 shrinkDatabase）；新增 §5.14 本轮遗留/风险登记 7 项（getSameTitleRemoved 权威查询契约缺位与原版提示未复刻、getBookmarks 缺 bookAuthor、BookRepository OR REPLACE 级联删除隐患、webdav_upload_file 大文件流式改造、FRB 隐藏 runtime 栈纵深防御、个别书源 bookUrl 为空的源数据问题、搜索崩溃根治纪要：rule_analyzer 零前进无限递归根因 + 对齐原版 fail-fast/tailrec 修复五轮复测零崩溃 + 正则安全编译统一入口纵深防御保留）
 - v1.15（2026-08-08/09）Task #44 第一批后置项接线销记：§5.11 销记 3 项（创建书籍更新任务/设置书籍变量/导出书签·导出 Markdown）+ 章节缓存云图标闭合确认；§5.12 销记 2 项（pageTouchSlop/pageTouchClick）；§5.13 销记 1 项（校验书源配置）。口径更正 3 处：§5.13-6 mcpPort（legado-server 已有 MCP 路由，剩余决策为独立端口 vs 复用 setServerPort）、§5.9-2 定时服务后端（应用内调度器 auto_task_scheduler.dart 已落地）、§5.11-5 原建议 export_bookmarks FFI 不必要（原版导出为纯 JSON/MD 序列化，已以纯 Flutter 实现闭合）
 - v1.14（2026-08-08）任务 #8 主题/其他设置页原版对齐登记：新增 §5.13「缺跨轨支撑后置」集中清单（10 项：customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/jsSourceApiToken/clearWebViewData/shrinkDatabase/coverRule）；主题页 24 项、其他页 33 项已按三分类落地（实现/仅 Android 标注/登记后置）

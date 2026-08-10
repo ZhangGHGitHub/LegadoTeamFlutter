@@ -77,6 +77,28 @@ indicating out-of-sync code
 - Windows 平台遵循项目既有 CMake 自动复制机制（构建时自动将 `legado_ffi.dll` 复制到 Flutter 构建输出目录）。
 - DLL 被运行进程锁定时需先停止 Flutter 进程再编译。
 
+### 3.5 frb 构件配对纪律（评审 W2 登记，持久约束）
+
+> 背景：`lib/src/bridge/ffi.dart` 顶部曾手写配对警示，被一次 codegen 直接抹除——
+> 生成文件里的手写内容不可靠，故将纪律沉淀到本持久文档。
+
+frb（flutter_rust_bridge）的调用桥按 **funcId 序号**把 Dart 调用分派到 Rust 函数，
+两侧生成物（Dart 侧 `bridge/ffi/ffi.dart` 等 + Rust 侧 `frb_generated.rs` + 编译产物
+`.dll`/`.so`）必须满足：
+
+1. **原子重建**：任何 FFI 面变更后，「codegen 生成 → cargo 重编译 → 替换运行环境
+   .dll/.so」必须作为一个原子操作整体完成（Makefile `gen` 目标即为此设），
+   不允许只重生成 Dart 不重编 Rust，或只替换二进制不更新生成物。
+2. **禁止混配**：不同 codegen 批次产出的 Dart 生成物与 .dll/.so 严禁混搭运行
+   （例如新 Dart 绑定配旧 .so）。混配时 funcId 序号错位，Dart 调用会被分派到
+   **另一个 Rust 函数**——后果是参数类型错位的随机崩溃（native segfault/
+   栈溢出）或静默数据错乱，且堆栈无 Dart 符号、极难定位（历史上已多次踩中）。
+3. **content hash 双向抽查**：每次重配后用 `FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH`
+   校验两侧一致——Dart 侧启动报错信息中的 hash 与 Rust 编译时嵌入的 hash
+   必须相同；交付/验收 APK 前先抽查两侧 hash，发现不一致一律整套重建而非局部修补。
+4. **生成文件零手改**：`bridge/` 目录及 `frb_generated.*` 均为 codegen 产物，
+   任何手写注释/警示都会被下次 codegen 抹除；需要持久化的约束一律写入本文档。
+
 ---
 
 ## 4. 契约变更流程
