@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2026-08-10
+
+### 新增
+- 设置源变量（契约 §2.3 setSourceVariable）：单列 UPDATE + lenient 序列化双保险，Migration102To103 补列；详情页 `_VariableDialog` 对齐原版 setVariable 的 source 分支，§5.11 全部 7 项至此闭合
+- 书签双键查询（契约 §2.7 getBookmarksByBook）：书名+作者双键（加法式），消费方全切换（bookmark_notifier/toc_screen/书签导出），MCP 宿主加法式可选 book_author 参数
+
+### 修复
+- 书籍写入 upsert 根治级联删除（主键判存在 + 原地 UPDATE / insert_replace），含 import_books 覆盖链路，新增重复插入保留 chapters 测试
+- BookSource.variable 双轨 null 序列化失配修复（lenient 序列化双保险）
+- 源变量/书籍变量对话框红屏（_VariableDialog 自持 StatefulWidget 范式，D1 修复）
+- 源列表过滤残留（dispose clearFilter + 空列表不覆盖非空内存守卫，D2 修复）
+- 备份恢复失败日志补齐
+
+### 变更
+- frb 配对纪律写入 TWO_TRACK_DEV_SPEC §3.5
+- MCP 书签工具新增可选 book_author 参数（加法式兼容）
+
 ## [2.0.4] - 2026-08-10
 
 ### 新增（第二批后置项三 FFI 接线：压缩数据库/上传至远程/删除重复标题章级开关，契约 §2.16.6/§2.28.6/§2.9.10）
