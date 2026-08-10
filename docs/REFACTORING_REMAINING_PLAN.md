@@ -1031,20 +1031,22 @@ flutter test                  # 全量测试通过
 
 | # | 项/原版键 | 原版代码位置 | 现状与建议 |
 |---|-----------|--------------|------------|
-| 1 | 自定义 hosts（`customHosts`） | OtherConfigFragment → HandleFileContract 导入 JSON | 需 Rust 网络层 DNS 解析钩子；建议新增 FFI `set_custom_hosts(json)` 后在其他设置页补 UI |
+| 1 | ~~自定义 hosts~~（`customHosts`，已接线） | OtherConfigFragment → HandleFileContract 导入 JSON | ✅ Task #78（2026-08-10）销记：已接线，契约 §2.20.3 setCustomHosts；legado-net Resolve DNS 覆盖（实时读全局映射 + 系统 DNS 回落）、持久化启动恢复；其他设置页 JSON 编辑对话框对齐原版。差异注明：非法输入拒绝保存而非原版清除。覆盖缺口见 §5.14-15 |
 | 2 | ~~校验书源配置~~（`checkSource`，已接线） | OtherConfigFragment → CheckSourceConfig 对话框 | ✅ Task #44（2026-08-08/09）销记：`other_settings_screen.dart` 新增配置对话框，字段对齐契约 §2.3 CheckerConfig 7 项（keyword/step_timeout_ms/check_search/check_toc/check_content/detect_captcha/detect_redirect），级联约束与超时校验对齐原版 CheckSourceConfig，持久化并入 start() configJson |
 | 3 | 直链上传规则（`directLinkUploadRule`） | OtherConfigFragment → DirectLinkUpload.getConfig | 依赖 JS 规则执行（上传接口规则解析）；建议随分享/上传功能批次一并设计 FFI |
 | 4 | Cronet 开关（`Cronet`） | pref_config_other.xml（AppConst.isPlayChannel 才显示） | Android Play 渠道专属网络栈，桌面端 Rust reqwest 无对应物；长期不适用，仅登记不实现 |
 | 5 | 视频播放设置（`videoSetting`） | OtherConfigFragment → VideoSettingDialog | 依赖视频播放器模块（Flutter 端尚未重构视频播放）；待播放器模块落地后补 |
-| 6 | MCP 服务端口（`mcpPort`） | OtherConfigFragment → MCPServerService | ⚠️ 口径更正（2026-08-08/09，Task #44 调研结论）：Rust legado-server 已有 MCP 路由（handlers/mcp.rs：20 工具、/mcp/tools、/mcp/call，挂载于 Web 服务端口），原「Rust 侧无对应服务」描述已过时；剩余决策为独立端口 vs 复用 setServerPort |
+| 6 | ~~MCP 服务端口~~（`mcpPort`，已接线） | OtherConfigFragment → MCPServerService | ✅ Task #78（2026-08-10）销记：已接线，契约 §2.22.5 setMcpPort 独立端口（对齐原版 McpService，默认 1236）；差异注明：区间 1024..65530 越界报错（原版无此校验）。评审加固：仅挂 /mcp/tools /mcp/call /health、127.0.0.1 回环绑定、DB 路径对齐主应用、状态机互斥 + 同端口重启竞态修复；实机验证监听地址与重启恢复。后续留项见 §5.14-14/17 |
 | 7 | JS Source API Token（`jsSourceApiToken`） | pref_config_other.xml → SourceApi 鉴权 | 依赖 JS 引擎 SourceApi 服务；待 legado-parser JS 扩展能力对齐后补 |
 | 8 | 清除 WebView 数据（`clearWebViewData`） | OtherConfigFragment.clearWebViewData | 桌面端无 WebView 组件（未引入 webview_flutter/webf）；引入 WebView 方案后一并接入 |
 | 9 | ~~压缩数据库~~（`shrinkDatabase`，已接线） | OtherConfigFragment → AppDatabase VACUUM | ✅ Task #57（2026-08-10）销记：已接线，契约 §2.16.6 shrinkDatabase（VACUUM + 释放字节统计、失败降级返回 0）；其他设置页对齐原版提示 |
-| 10 | 封面规则（`coverRule`，封面设置子项） | CoverConfigDialog → BookCover.CoverRule（JS 规则搜封面） | 依赖 JS 规则执行搜索封面；主题设置页封面设置对话框已实现 4 项开关，此子项待 FFI 后补 |
+| 10 | ~~封面规则~~（`coverRule`，封面设置子项，已接线） | CoverConfigDialog → BookCover.CoverRule（JS 规则搜封面） | ✅ Task #78（2026-08-10）销记：已接线，契约 §2.4.8 searchCoverRules；coverRules 表执行启用规则（key 模板 + isUrl 提取 + 失败隔离），封面设置对话框测试入口。规则 CRUD 管理无契约，诚实标注待后续（见 §5.14-13/16） |
 
 > ✅ **销记（2026-08-08/09，Task #44）**：2 校验书源配置接线完成（详见行内销记）；⚠️ 口径更正：6 mcpPort「Rust 侧无对应服务」描述已过时（legado-server 已有 MCP 路由），剩余决策为独立端口 vs 复用 setServerPort；其余 8 项维持后置登记。
 >
 > ✅ **销记（2026-08-10，Task #57 第二批后置项接线）**：9 压缩数据库接线完成（契约 §2.16.6 shrinkDatabase，详见行内销记）；其余 8 项维持后置登记。
+>
+> ✅ **销记（2026-08-10，Task #78 第四批后置项接线）**：1 自定义 hosts（契约 §2.20.3 setCustomHosts）、6 MCP 服务端口（契约 §2.22.5 setMcpPort 独立端口）、10 封面规则（契约 §2.4.8 searchCoverRules）三项接线完成（详见行内销记）；§5.13 剩余 5 项（3 直链上传规则/4 Cronet/5 视频播放/7 jsSourceApiToken/8 清除 WebView 数据）维持后置登记。
 
 ### §5.14 第二批后置项与搜索崩溃根治遗留/风险登记（2026-08-10，Task #57 新增）
 
@@ -1064,18 +1066,24 @@ flutter test                  # 全量测试通过
 | 10 | 二级索引 (name,author) 冲突时 insert_replace 跨书级联残余 | （Task #71 登记）同 name+author 不同书的极端冲突下 insert_replace 仍可能跨书级联（与 upsert 改造前一致）；后续加固方向：插入前 find_by_name_author 预检 |
 | 11 | getBookmarks 单键查询兼容保留 | （Task #71 登记）getBookmarks 单键（仅书名）查询已无生产消费方，为兼容既有调用保留；建议后续标注 @Deprecated 并择机移除 |
 | 12 | JS 链书源 bookUrl 为空 | （Task #66 实机发现）w.heiyan.com/kuaikan/zhuguang 等依赖 `<js>` 求值的 bookUrl 取空，属 JS 执行器独立路径待查（与 §5.14-6 源数据问题不同源） |
+| 13 | coverRule 规则数据管理 | （Task #78 登记）封面规则 CRUD（增删改/启用开关）需后续契约接口；当前仅执行启用规则 + 封面设置对话框测试入口，规则数据依赖外部写入 |
+| 14 | MCP 服务局域网可达 + token 鉴权 | （Task #78 登记）当前 MCP 独立服务仅 127.0.0.1 回环；原版 allowedHosts/token 语义待后续契约批次 |
+| 15 | customHosts 覆盖缺口 | （Task #78 登记）webdav.rs / rule_update_client / legado-server source_update 直建 reqwest::Client 不经 LegadoClient，hosts 对其不生效；待统一收编客户端构造入口 |
+| 16 | coverRules 表 DDL 游离迁移体系 | （Task #78 登记）coverRules 表以 CREATE TABLE IF NOT EXISTS 双份建表游离迁移体系；schema 对齐专项（§4.2.1）重建表时须包含该表 |
+| 17 | MCP 前置 jsSourceApiToken 校验未实现 | （Task #78 登记）原版 McpService 前置 jsSourceApiToken 非空校验未实现，依赖 §5.13-7 jsSourceApiToken 落地后补 |
 
 ---
 
 
 
-**文档版本**: 1.17  
+**文档版本**: 1.18  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Qoder
 
 **版本记录**：
 
+- v1.18（2026-08-10）Task #78 第四批后置项接线销记与遗留登记：§5.13 销记 3 项（①自定义 hosts §2.20.3 setCustomHosts DNS 覆盖+持久化+JSON 编辑对话框、差异注明非法输入拒绝保存；⑥MCP 服务端口 §2.22.5 setMcpPort 独立端口默认 1236+区间越界报错差异注明，评审加固：仅挂 MCP 路由/回环绑定/DB 路径对齐/状态机互斥+同端口重启竞态修复；⑩封面规则 §2.4.8 searchCoverRules 执行启用规则+测试入口，CRUD 诚实标注待后续）；§5.14 追加登记 5 项（#13 coverRule 规则 CRUD 待契约、#14 MCP 局域网可达+token 鉴权待后续、#15 customHosts 对直建 reqwest::Client 链路不生效的覆盖缺口、#16 coverRules 表 DDL 游离迁移体系须入 schema 对齐专项、#17 原版 McpService 前置 jsSourceApiToken 校验未实现依赖 §5.13-7）
 - v1.17（2026-08-10）Task #71 第三批后置项接线销记与遗留登记：§5.11 销记 ③设置源变量（契约 §2.3 setSourceVariable + Migration102To103 补列 + `_VariableDialog` 对齐原版 source 分支），**§5.11 全部 7 项至此闭合**；§5.14 销记 2 项（#2 getBookmarks 补 bookAuthor → 契约 §2.7 getBookmarksByBook 双键查询 + 消费方全切换 + MCP 加法式可选参数；#3 BookRepository upsert 重构根治级联删除 + import_books 覆盖 + 重复插入保留 chapters 测试）；§5.14 追加登记 4 项（#9 书签作者改写边界验收知悉项、#10 二级索引冲突 insert_replace 跨书级联残余与预检加固方向、#11 getBookmarks 单键查询兼容保留建议 @Deprecated、#12 JS 链书源 bookUrl 为空待查）；另 frb 配对纪律入 TWO_TRACK_DEV_SPEC §3.5
 - v1.16（2026-08-10）Task #57 第二批后置项接线销记与遗留登记：§5.11 销记 2 项（①上传至远程 §2.28.6 webdavUploadFile、⑦删除重复标题 §2.9.10 toggleSameTitleRemoved）+ 小结更新为仅剩③设置源变量（需 DB 迁移，第三批）；§5.13 销记 1 项（⑨压缩数据库 §2.16.6 shrinkDatabase）；新增 §5.14 本轮遗留/风险登记 7 项（getSameTitleRemoved 权威查询契约缺位与原版提示未复刻、getBookmarks 缺 bookAuthor、BookRepository OR REPLACE 级联删除隐患、webdav_upload_file 大文件流式改造、FRB 隐藏 runtime 栈纵深防御、个别书源 bookUrl 为空的源数据问题、搜索崩溃根治纪要：rule_analyzer 零前进无限递归根因 + 对齐原版 fail-fast/tailrec 修复五轮复测零崩溃 + 正则安全编译统一入口纵深防御保留）
 - v1.15（2026-08-08/09）Task #44 第一批后置项接线销记：§5.11 销记 3 项（创建书籍更新任务/设置书籍变量/导出书签·导出 Markdown）+ 章节缓存云图标闭合确认；§5.12 销记 2 项（pageTouchSlop/pageTouchClick）；§5.13 销记 1 项（校验书源配置）。口径更正 3 处：§5.13-6 mcpPort（legado-server 已有 MCP 路由，剩余决策为独立端口 vs 复用 setServerPort）、§5.9-2 定时服务后端（应用内调度器 auto_task_scheduler.dart 已落地）、§5.11-5 原建议 export_bookmarks FFI 不必要（原版导出为纯 JSON/MD 序列化，已以纯 Flutter 实现闭合）
