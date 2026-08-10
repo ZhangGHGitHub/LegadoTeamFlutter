@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] - 2026-08-10
+
+### 新增
+- 自定义 hosts（契约 §2.20.3 setCustomHosts）：legado-net Resolve DNS 覆盖（实时读全局映射 + 系统 DNS 回落）、持久化启动恢复，其他设置页 JSON 编辑对话框对齐原版（非法输入拒绝保存）
+- MCP 独立端口（契约 §2.22.5 setMcpPort）：对齐原版 McpService（默认 1236，区间 1024..65530 越界报错），其他设置页接线
+- 封面规则搜索（契约 §2.4.8 searchCoverRules）：coverRules 表执行启用规则（key 模板 + isUrl 提取 + 失败隔离），封面设置对话框测试入口（规则 CRUD 待后续契约）
+
+### 修复
+- MCP 暴露面收敛：独立服务仅挂 /mcp/tools /mcp/call /health + 127.0.0.1 回环绑定
+- MCP DB 路径对齐主应用（不再另开库）
+- MCP 同端口重启竞态与状态机互斥修复（实机验证监听地址与重启恢复）
+- analyze_url data: URI 豁免对齐原版
+
+### 变更
+- frb 分派表重编号 159 起顺延——.so 与 Dart 生成物必须同批产出禁止混装
+
 ## [2.0.5] - 2026-08-10
 
 ### 新增
