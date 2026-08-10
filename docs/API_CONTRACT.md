@@ -11,6 +11,7 @@
 | 2026-08-01 | 契约初版冻结（v1.0） |
 | 2026-08-10 | 第二批后置项 FFI 冻结：三个加法式新增——`shrinkDatabase`（§2.16 缓存管理）/ `webdavUploadFile`（§2.28 WebDAV 云同步）/ `toggleSameTitleRemoved`（§2.9 阅读器操作），契约合计方法数 174→177（Task #50） |
 | 2026-08-10 | 第三批后置项 FFI 冻结：两个加法式新增——`setSourceVariable`（§2.3 书源操作）/ `getBookmarksByBook`（§2.7 书签操作，书签作者维度查询）+ `book_sources` 表补 `variable` 列 schema 迁移预告（SCHEMA_VERSION 102→103，幂等迁移），契约合计方法数 225→227（Task #63） |
+| 2026-08-10 | 第四批后置项 FFI 冻结（Task #72）：三个加法式新增——`setCustomHosts`（§2.20 网络组，对齐原版 hosts 映射 JSON 对象）/ `setMcpPort`（§2.22 服务器组，**决策：对齐原版独立端口方案**，不复用 `setServerPort`，默认 1236，≤0=停止独立 MCP 服务）/ `searchCoverRules`（§2.4 搜索组，coverRules 表规则搜封面），附录合计 236→239，BookApi 口径 227→230 |
 
 ---
 
@@ -59,9 +60,9 @@
 ## 2. 方法清单
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
-> 为基准，BookApi 接口当前共 **227 个方法**（Task #55 F6 校准、Task #63 第三批后置项登记后口径，程序化计数）。
-> 附录行合计 236 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
-> 扣除后 226 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 227，与 BookApi 闭合；详见附录口径说明。
+> 为基准，BookApi 接口当前共 **230 个方法**（Task #55 F6 校准、Task #63 第三批、Task #72 第四批后置项登记后口径，程序化计数）。
+> 附录行合计 239 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
+> 扣除后 229 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 230，与 BookApi 闭合；详见附录口径说明。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -115,7 +116,7 @@
 >
 > ℹ️ **验证码交互通道（Task #90）**：Rust 侧 `ffi::verification_request_stream / verification_submit / verification_cancel / verification_pending`（核心实现 `legado-core/src/verification_channel.rs`，对齐 Kotlin `SourceVerificationHelp` + `JsExtensions.getVerificationCode/startBrowserAwait`）。JS 书源经宿主 API 钩子挂起等待（std condvar 阻塞 JS 工作线程，不占用 tokio runtime，默认超时 5 分钟对齐 Kotlin）；同书源并发请求经航班去重共享结果（空 source_url 匿名请求不去重）；`use_browser` 一律降级为图片验证码（桌面端无 WebView）。`verificationSubmit` 无论 code 是否为空都唤醒等待方（对齐 Kotlin `setResult`），空值由等待侧报「验证结果为空」；`verificationCancel` 等价 Kotlin `checkResult`（空结果唤醒）；超时返回「source verification timed out」。订阅事件流时先回放当前进行中的请求。冻结契约保持不变，本组方法为加法式新增。
 
-### 2.4 搜索操作（7 个方法）
+### 2.4 搜索操作（8 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -126,6 +127,7 @@
 | `searchSource(String bookName, String author, {List<String>? sourceUrls})` | bookName, author, sourceUrls(可选) | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点（留项#12/Task #131：`sourceUrls` 为加法式新增可选参数，null/空=搜全部启用源，兼容既有调用） |
 | `searchCover(String bookName)` | bookName | `Future<List<Map<String, dynamic>>>` | 搜索书籍封面候选列表：复用多书源搜索提取封面 URL，每项字段 `url` / `width` / `height`（未知尺寸填 0），无候选返回空列表 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
+| `searchCoverRules(String name)` | name: 书名（作为规则搜索关键词，对齐原版 `BookCover.searchCover(book)` 传 `book.name` 语义） | `Future<String>` | 按书名执行 coverRules 表中全部启用规则搜封面（JS 搜索规则语义对齐原版 `BookCover.searchCover` 链路），返回候选封面 URL **裸 JSON Array**（遵守 §1.4 铁律）；无启用规则/无候选返回空数组（非异常）；单规则失败隔离（记日志跳过，不阻断其余规则）。错误码：Internal（coverRules 规则数据读取失败）（台账 §5.13-10，第四批后置项，Task #72，加法式新增） |
 
 > ⚠️ `searchSource`：Rust 返回 `SourceSwitchResponse { book_name, author, matches[] }`，Dart 侧提取 `matches` 字段。
 >
@@ -134,6 +136,8 @@
 > ℹ️ `searchSource` 分组 config 原生过滤（留项#12 增强，Task #145，**零签名变更**）：Rust 侧 `source_switch::resolve_switch_sources` 内部读取 config `searchGroup`（键名对齐原版 `AppConfig.searchGroup`，UI setConfig 已通），非空时对齐原版 `getEnabledPartByGroup` 的 `SOURCE_GROUP_MEMBERSHIP_FILTER` SQL 语义过滤：分组字段按 `,`/`;`/`，`/`；` 规范化拆分、逐组名 trim 后与目标分组精确相等匹配（非子串）；空分组=全部启用源。过滤后零结果由 UI 弹「xx分组搜索结果为空，是否切换到全部分组」对话框（对标 ChangeChapterSourceDialog L90-97，确认后清空 searchGroup 重搜）。
 >
 > ℹ️ `searchMultiStream`：Rust 侧 `ffi::search_multi_stream(query, source_urls_json, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），每完成一个书源推送一个 `SearchSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `books[]` / `error?` / `finished_count` / `total_count` / `is_last`。冻结契约 `searchMulti` 保持不变，本方法为加法式新增。
+>
+> ℹ️ **封面规则搜索（台账 §5.13-10，Task #72）**：原版实现为单条封面规则配置——Kotlin `BookCover.searchCover(book)` 读取 `CoverRule(enable, searchUrl, coverRule)`（用户配置存 CacheManager，缺省回退 `DefaultData.coverRule`，UI 入口 `CoverRuleConfigDialog`），以 `AnalyzeUrl(searchUrl, book.name)` 发起搜索请求，再经 `AnalyzeRule.getString(coverRule, isUrl=true)` 提取封面 URL。本轨差异与对齐方案：规则载体为 `legado-db` 既有 `coverRules` 表（`id` / `name` / `rule` / `enable`，默认数据注入已就位），执行全部 `enable=1` 规则；规则执行复用既有书源搜索/JS 执行基础设施（`legado-net` HTTP 抓取 + `legado-parser`/quickjs 规则解析链路，与 `dictLookup` 字典规则执行同模式），`rule` 文本承载 searchUrl 与提取规则（具体内联格式由 Rust 轨实施时按表内既有数据确定）；单规则失败隔离不阻断其余；与既有 `searchCover`（多书源搜索提取封面）互补并存、互不影响。冻结契约保持不变，本方法为加法式新增。
 
 ### 2.5 RSS 源操作（9 个方法）
 
@@ -291,12 +295,13 @@
 |------|------|------|------|
 | `parseRule(String content, String rule, String ruleType)` | content, rule, ruleType | `Future<String>` | 使用规则解析内容 |
 
-### 2.20 网络操作（2 个方法）
+### 2.20 网络操作（3 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `httpGet(String url)` | url | `Future<String>` | HTTP GET 请求 |
 | `httpPost(String url, String body)` | url, body | `Future<String>` | HTTP POST 请求 |
+| `setCustomHosts(String hostsJson)` | hostsJson: 域名→IP 映射 JSON 对象字符串（对齐原版存储格式） | `Future<void>` | 设置自定义 hosts 映射，配置后网络层 DNS 解析优先使用该映射（命中域名直连映射 IP，未命中回落系统 DNS）。存储格式对齐原版 `AppConfig.customHosts`：JSON **对象** `{"域名":"IP", "域名":["IP1","IP2"]}`（值支持单 IP 字符串或 IP 数组，实读原版 `AppConfig.hostMap/addressCache` 确认）；空串/空对象=清除映射、恢复系统 DNS。配置需持久化（复用既有配置存储语义，caches 表 `config:` 前缀键 `customHosts`，与既有 `setConfig` 同语义）并即时生效（后续请求使用新映射）。Rust 实现要点：legado-net 经 reqwest `ClientBuilder::resolve` 域名覆盖或自定义 DNS resolver 挂钩（现状无 custom_hosts 钩子，实施时补）。错误码：Internal（hostsJson 非合法 JSON 对象）。差异注明：原版非法输入即清除；本契约改为拒绝保存（更防误操作，Task #76 Med2）。既有 `httpGet` / `httpPost` 签名保持不变，本方法为加法式新增（台账 §5.13-1，第四批后置项，Task #72） |
 
 ### 2.21 JS 引擎（2 个方法）
 
@@ -305,7 +310,7 @@
 | `evalJs(String script)` | script | `Future<String>` | 执行 JS 脚本 |
 | `getJsEngineVersion()` | 无 | `Future<String>` | 获取 JS 引擎版本 |
 
-### 2.22 服务器管理（4 个方法）
+### 2.22 服务器管理（5 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -313,6 +318,9 @@
 | `stopServer()` | 无 | `Future<void>` | 停止服务器 |
 | `getServerStatus()` | 无 | `Future<String>` | 获取服务器状态 |
 | `setServerPort(int port)` | port | `Future<void>` | 设置服务器端口 |
+| `setMcpPort(int port)` | port: 独立 MCP 服务端口（合法区间 1024–65530，对齐原版 NumberPicker 取值；缺省语义默认 1236，对齐原版 `AppConfig.mcpPort` 默认值，未配置时 UI 对话框预填 1236 落实该缺省语义）；port ≤ 0 = 停止独立 MCP 服务 | `Future<void>` | 启动/停止独立 MCP 服务端口（**对齐原版独立端口方案**，见下方决策说明）。独立端口启动后提供与既有 Web 端口挂载的 `/mcp/tools`（GET）/ `/mcp/call`（POST）等价能力（同一套 MCP 工具与调用入口，零新增工具）；**并存策略**：独立端口开启时保持 Web 端口 `/mcp/*` 挂载不变（兼容既有消费方），二者共用同一 AppState/工具实现。端口配置需持久化（caches 表 `config:` 前缀键 `mcpPort`，与既有配置语义一致）。错误码：Internal（端口绑定失败，如端口被占用）；Internal（端口越界，合法区间 1024..65530，Task #76 Med2）。既有 `startServer` / `stopServer` / `getServerStatus` / `setServerPort` 签名保持不变，本方法为加法式新增（台账 §5.13-6，第四批后置项，Task #72） |
+
+> ℹ️ **mcpPort 决策说明（台账 §5.13-6，Task #72）**：调研原版 `McpService.kt`——其为**独立前台服务**，ktor CIO embeddedServer 绑定 0.0.0.0 独立端口（`AppConfig.mcpPort` 默认 1236，合法区间 1024..65530，越界回落 1236），与 Web 服务（`WebService` + `webPort`）完全分离；启动前置条件为 `jsSourceApiToken` 非空（否则报错停服），端口变更后运行中服务自动重启。本轨现状：MCP 20 工具经 `legado-server` handlers/mcp.rs 挂载于 Web 服务端口（routes.rs `/mcp/tools` / `/mcp/call`，`server_api.rs` 仅有 server_start/stop/status）。**决策：对齐原版采用独立端口方案，新增 `setMcpPort`，不复用 `setServerPort`**。理由：① 复用 `setServerPort` 会把 MCP 与整个 Web/API 服务绑死于同一端口，无法表达原版「MCP 服务独立启停」（port ≤ 0 停止 MCP 但保留 Web 服务）的语义；② 原版 mcpPort/webPort 为两个独立配置项，复用将造成契约语义歧义；③ 独立端口实施仅需复用既有 `create_router`/MCP handlers 在第二端口监听（同进程内），代价可控，未达「显著更低」门槛，不触发改选条件。差异说明：原版独立 MCP 端口为 MCP 协议端点（configureMcp + token 鉴权 + 局域网 Host/Origin 白名单），本轨以 REST 形式（`/mcp/tools` / `/mcp/call`）提供等价工具能力；token/访问控制语义由 Rust 轨实施时沿用既有 MCP handlers 方案，不在本契约冻结范围。差异：原版越界回落 1236，本契约改为报错（UI 内联区间校验前置拦截，Task #76 Med2）。
 
 ### 2.23 书籍格式解析（3 个方法）
 
@@ -729,7 +737,7 @@
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 9 |
 | 3 | 书源操作 | 20 |
-| 4 | 搜索操作 | 7 |
+| 4 | 搜索操作 | 8 |
 | 5 | RSS 源操作 | 9 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 7 |
@@ -745,9 +753,9 @@
 | 17 | WebBook 操作 | 4 |
 | 18 | 发现页操作 | 2 |
 | 19 | 规则解析 | 1 |
-| 20 | 网络操作 | 2 |
+| 20 | 网络操作 | 3 |
 | 21 | JS 引擎 | 2 |
-| 22 | 服务器管理 | 4 |
+| 22 | 服务器管理 | 5 |
 | 23 | 书籍格式解析 | 3 |
 | 24 | 阅读统计 | 5 |
 | 25 | HTTP TTS | 7 |
@@ -769,13 +777,16 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **236** |
+| | **合计（§2.1–§2.43 附录行合计）** | **239** |
 
-> 口径说明（Task #55 F6，2026-08-10 校准；Task #63 第三批后置项登记后延续同口径，基准 = `book_api.dart` 程序化计数 **227**）：
-> - **与 BookApi 闭合**：附录行合计 236 − 尚未封装进 BookApi 的 FFI 10 个
+> 口径说明（Task #55 F6，2026-08-10 校准；Task #63 第三批、Task #72 第四批后置项登记后延续同口径，基准 = `book_api.dart` 程序化计数 **230**）：
+> - **与 BookApi 闭合**：附录行合计 239 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 226；
->   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **227**。
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 229；
+>   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **230**。
+>   第四批 3 项（`setCustomHosts` / `setMcpPort` / `searchCoverRules`）均为 BookApi 封装口径方法，纳入基准（227 + 3 = 230）。
 > - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 20 行（原 19 + 第三批 `setSourceVariable` 1）；
->   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 5（含 reviewGetReplies）。
+>   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 5（含 reviewGetReplies）；
+>   行 4 按 §2.4 标题为 8（原 7 + 第四批 `searchCoverRules` 1）；行 20 按 §2.20 标题为 3（原 2 + 第四批 `setCustomHosts` 1）；
+>   行 22 按 §2.22 标题为 5（原 4 + 第四批 `setMcpPort` 1）。
