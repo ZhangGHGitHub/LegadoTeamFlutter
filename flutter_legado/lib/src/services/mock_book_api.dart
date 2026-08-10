@@ -1372,6 +1372,52 @@ class MockBookApi implements BookApi {
     _configs['server_port'] = port.toString();
   }
 
+  /// 设置自定义 hosts（契约 §2.20.3，Task #74）
+  ///
+  /// Mock：短延迟成功，持久化到 _configs 供 getConfig 回读；
+  /// 非空且非法 JSON 对象模拟抛错（对齐 Rust Internal 语义）。
+  @override
+  Future<void> setCustomHosts(String hostsJson) async {
+    await Future.delayed(const Duration(milliseconds: 50));
+    final trimmed = hostsJson.trim();
+    if (trimmed.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map) {
+          throw Exception('customHosts 必须为 JSON 对象');
+        }
+      } on FormatException {
+        throw Exception('customHosts 非法 JSON');
+      }
+    }
+    _configs['customHosts'] = hostsJson;
+  }
+
+  /// 设置独立 MCP 端口（契约 §2.22.5，Task #74）
+  ///
+  /// Mock：短延迟成功；port>0 且越界（1024..65530）模拟抛错。
+  @override
+  Future<void> setMcpPort(int port) async {
+    await Future.delayed(const Duration(milliseconds: 50));
+    if (port > 0 && (port < 1024 || port > 65530)) {
+      throw Exception('MCP 端口 $port 越界：合法区间为 1024..65530');
+    }
+    _configs['mcpPort'] = port.toString();
+  }
+
+  /// 封面规则测试搜索（契约 §2.4.8，Task #74）
+  ///
+  /// Mock：短延迟后返回 1-2 个示例 URL。
+  @override
+  Future<List<String>> searchCoverRules(String name) async {
+    await Future.delayed(const Duration(milliseconds: 80));
+    final encoded = Uri.encodeComponent(name);
+    return [
+      'https://mock.cover.example/$encoded/cover_1.jpg',
+      'https://mock.cover.example/$encoded/cover_2.jpg',
+    ];
+  }
+
   // ========== 书籍格式解析 ==========
 
   @override

@@ -1486,8 +1486,30 @@ class RustApi implements BookApi {
   }
 
   /// 设置服务器端口（记录用户选择，下次 startServer 生效）
+  @override
   Future<void> setServerPort(int port) async {
     await bridge.configSet(key: 'server_port', value: port.toString());
+  }
+
+  /// 设置自定义 hosts 映射（契约 §2.20.3，Task #74）
+  @override
+  Future<void> setCustomHosts(String hostsJson) =>
+      bridge.setCustomHosts(hostsJson: hostsJson);
+
+  /// 设置独立 MCP 服务端口（契约 §2.22.5，Task #74）
+  @override
+  Future<void> setMcpPort(int port) => bridge.setMcpPort(port: port);
+
+  /// 封面规则测试搜索（契约 §2.4.8，Task #74）
+  ///
+  /// Rust 返回裸 JSON Array（§1.4 铁律），解析为字符串列表；
+  /// 空结果 `[]` 解析为空列表（非异常）。
+  @override
+  Future<List<String>> searchCoverRules(String name) async {
+    final json = await bridge.searchCoverRules(name: name);
+    final decoded = jsonDecode(json);
+    if (decoded is! List) return [];
+    return decoded.map((e) => e.toString()).toList();
   }
 
   // ========== 书籍格式解析 ==========

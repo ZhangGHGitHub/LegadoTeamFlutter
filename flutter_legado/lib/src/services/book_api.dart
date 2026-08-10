@@ -639,6 +639,27 @@ abstract class BookApi {
   /// 设置服务器端口
   Future<void> setServerPort(int port);
 
+  /// 设置自定义 hosts 映射（契约 §2.20.3，Task #74 加法式新增）
+  ///
+  /// [hostsJson] 为 JSON 对象 `域名 → 单 IP 字符串或 IP 数组`（对齐原版
+  /// `AppConfig.hostMap`）；空串/空对象 = 清除映射恢复系统 DNS。
+  /// 应用后网络层 DNS 即时生效，Rust 侧持久化到 `config:customHosts`
+  ///（回读经既有 [getConfig]）。非法 JSON/非对象 → Internal 错误。
+  Future<void> setCustomHosts(String hostsJson);
+
+  /// 设置独立 MCP 服务端口（契约 §2.22.5，Task #74 加法式新增）
+  ///
+  /// port>0：启动/重启独立 MCP 服务（合法区间 1024..65530，越界或占用
+  /// 报 Internal）；port≤0：停止独立服务。Rust 侧持久化到 `config:mcpPort`
+  ///（回读经既有 [getConfig]）。
+  Future<void> setMcpPort(int port);
+
+  /// 按书名执行启用封面规则搜封面（契约 §2.4.8，Task #74 加法式新增）
+  ///
+  /// 返回候选封面 URL 列表（Rust 裸 JSON Array 解析，§1.4 铁律）；
+  /// 无启用规则或全部失败返回空列表（非异常）。
+  Future<List<String>> searchCoverRules(String name);
+
   // ========== 书籍格式解析 ==========
 
   /// 解析 TXT 文件

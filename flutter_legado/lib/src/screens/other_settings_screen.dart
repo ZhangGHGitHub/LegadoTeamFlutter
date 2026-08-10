@@ -7,19 +7,23 @@
 // 显示发现/显示订阅/默认首页经 MainPrefsNotifier 接通首页底栏；
 // Web 端口经 BookApi.setServerPort 接通；记录日志经 CrashLogService 接通；
 // Android 专属项持久化并以灰字"仅 Android 生效"标注；
-// customHosts/uploadRule/Cronet/videoSetting/mcpPort/
-// jsSourceApiToken/clearWebViewData 缺少跨轨支撑，
-// 已登记 docs/REFACTORING_REMAINING_PLAN.md §5.13，UI 不显示空壳；
+// customHosts/mcpPort 已于 Task #74 接线（契约 §2.20.3/§2.22.5，
+// 回读经 BookApi.getConfig 读 Rust 持久化 config:customHosts/config:mcpPort）；
+// uploadRule/Cronet/videoSetting/jsSourceApiToken/clearWebViewData
+// 缺少跨轨支撑，已登记 docs/REFACTORING_REMAINING_PLAN.md §5.13，UI 不显示空壳；
 // [Task #40 | 2026-08-09] checkSource 配置入口已接线（§5.13-2，
 // 「校验书源配置」对话框经 CheckSourceNotifier 持久化并入 configJson）；
 // [Task #52 | 2026-08-10] 压缩数据库已接线（§5.13-9，经 BookApi.shrinkDatabase
 // 接通 cacheShrinkDatabase FFI，契约 §2.16.6） — Qoder
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../constants/pref_keys.dart';
+import '../bridge/ffi.dart';
 import '../l10n/app_strings.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
@@ -86,6 +90,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   bool _recordLog = false;
   bool _recordHttpLog = false;
   bool _recordHeapDump = false;
+
+  /// 自定义 hosts 当前配置 JSON（Rust 持久化 config:customHosts 回读；
+  /// 空串=未配置；Task #74 §5.13-1）
+  String _customHostsJson = '';
+
+  /// 独立 MCP 服务端口（Rust 持久化 config:mcpPort 回读；
+  /// ≤0=停止/未配置，默认 1236 对齐原版；Task #74 §5.13-6）
+  int _mcpPort = 0;
 
   /// 校验书源配置（经 CheckSourceNotifier 持久化，字段对齐契约 §2.3
   /// CheckerConfig；Task #40 §5.13-2）
@@ -180,6 +192,16 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     // [Task #40 | 2026-08-09] §5.13-2：校验书源配置（含默认值回落） — Qoder
     _checkSourceConfig =
         await ref.read(checkSourceNotifierProvider.notifier).loadCheckConfig();
+    // [Task #74 | 2026-08-10] §5.13-1/§5.13-6：customHosts/mcpPort 回读——
+    // Rust 侧持久化于 caches 表 config:customHosts / config:mcpPort，
+    // 经既有 BookApi.getConfig 回读（最小改动，无需 SP 镜像） — Qoder
+    try {
+      final api = ref.read(bookApiProvider);
+      _customHostsJson = await api.getConfig('customHosts') ?? '';
+      _mcpPort = int.tryParse(await api.getConfig('mcpPort') ?? '') ?? 0;
+    } catch (e) {
+      debugPrint('OtherSettingsScreen 回读 customHosts/mcpPort 异常: $e');
+    }
     if (mounted) setState(() {});
   }
 
@@ -508,6 +530,31 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 showDisclosure: true,
                 onTap: _showWebPortDialog,
               ),
+              // [Task #74 | 2026-08-10] §5.13-6：MCP 服务端口（契约 §2.22.5，
+              // 对齐原版 AppConfig.mcpPort 默认 1236、区间 1024..65530；
+              // 0/留空=停止独立服务） — Qoder
+              IosListTile(
+                icon: Icons.smart_toy_outlined,
+                iconBackground: Colors.indigo,
+                title: 'MCP 服务端口',
+                subtitle: _mcpPort > 0
+                    ? '独立 MCP 服务监听中（1024~65530）'
+                    : '独立 MCP 服务已停止（输入 0 停止）',
+                value: _mcpPort > 0 ? '$_mcpPort' : '停止',
+                showDisclosure: true,
+                onTap: _showMcpPortDialog,
+              ),
+              // [Task #74 | 2026-08-10] §5.13-1：自定义 hosts（契约 §2.20.3，
+              // 对齐原版 OtherConfigFragment.showCustomHostsDialog：
+              // 合法 JSON 对象才保存、空=清除、非法提示不保存） — Qoder
+              IosListTile(
+                icon: Icons.dns_outlined,
+                iconBackground: Colors.teal,
+                title: '自定义 hosts',
+                subtitle: _customHostsSummary,
+                showDisclosure: true,
+                onTap: _showCustomHostsDialog,
+              ),
               IosListTile(
                 icon: Icons.cleaning_services,
                 iconBackground: Colors.grey,
@@ -777,6 +824,96 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     } catch (e) {
       debugPrint('OtherSettingsScreen 设置 Web 端口异常: $e');
       _toast('端口已保存（引擎同步失败，重启应用后生效）');
+    }
+  }
+
+  /// 可读错误消息（BridgeError 取 message，其余 toString）
+  /// [Task #74 | 2026-08-10] — Qoder
+  String _errMsg(Object e) => e is BridgeError ? e.message : e.toString();
+
+  /// 自定义 hosts 配置摘要（副标题：已配置 N 条/未配置；
+  /// Task #74 §5.13-1） — Qoder
+  String get _customHostsSummary {
+    final trimmed = _customHostsJson.trim();
+    if (trimmed.isEmpty) return '未配置（域名 → IP 映射）';
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is Map) return '已配置 ${decoded.length} 条';
+    } catch (_) {
+      // 解析失败仍显示已配置（保存路径已校验，此处仅兑底）
+    }
+    return '已配置';
+  }
+
+  /// MCP 服务端口设置（契约 §2.22.5，对齐原版 AppConfig.mcpPort：
+  /// 默认 1236、区间 1024..65530；0/留空=停止独立服务；
+  /// 端口占用等失败 Toast 可读错误）
+  /// [Task #74 | 2026-08-10] — Qoder
+  Future<void> _showMcpPortDialog() async {
+    final value = await showDialog<int>(
+      context: context,
+      builder: (_) => _McpPortDialog(currentPort: _mcpPort),
+    );
+    // Task #76 Min1：去掉同端口短路（Rust 侧幂等重启语义），
+    // 保证服务异常后可用同端口重启
+    if (value == null || !mounted) return;
+    try {
+      await ref.read(bookApiProvider).setMcpPort(value);
+      if (!mounted) return;
+      setState(() => _mcpPort = value);
+      _toast(value > 0
+          ? 'MCP 端口已保存：$value（独立服务已重启）'
+          : '独立 MCP 服务已停止');
+    } catch (e) {
+      debugPrint('OtherSettingsScreen 设置 MCP 端口异常: $e');
+      if (mounted) _toast('MCP 端口设置失败: ${_errMsg(e)}');
+    }
+  }
+
+  /// 自定义 hosts 编辑对话框（对齐原版 OtherConfigFragment
+  /// .showCustomHostsDialog：预填当前配置，合法 JSON 对象才保存、
+  /// 空=清除、非法 JSON 提示不保存；契约 §2.20.3）
+  /// [Task #74 | 2026-08-10] — Qoder
+  Future<void> _showCustomHostsDialog() async {
+    final input = await showDialog<String>(
+      context: context,
+      builder: (_) => _CustomHostsDialog(initialText: _customHostsJson),
+    );
+    if (input == null || !mounted) return;
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      // 空内容=清除映射恢复系统 DNS（契约 §2.20.3）
+      try {
+        await ref.read(bookApiProvider).setCustomHosts('');
+        if (!mounted) return;
+        setState(() => _customHostsJson = '');
+        _toast('自定义 hosts 已清除');
+      } catch (e) {
+        debugPrint('OtherSettingsScreen 清除 customHosts 异常: $e');
+        if (mounted) _toast('自定义 hosts 清除失败: ${_errMsg(e)}');
+      }
+      return;
+    }
+    // 合法 JSON 对象才保存；非法 JSON 提示不保存（对齐原版）
+    Object? decoded;
+    try {
+      decoded = jsonDecode(trimmed);
+    } catch (_) {
+      _toast('非法 JSON，未保存');
+      return;
+    }
+    if (decoded is! Map) {
+      _toast('须为 JSON 对象（域名 → IP），未保存');
+      return;
+    }
+    try {
+      await ref.read(bookApiProvider).setCustomHosts(trimmed);
+      if (!mounted) return;
+      setState(() => _customHostsJson = trimmed);
+      _toast('自定义 hosts 已保存（${decoded.length} 条）');
+    } catch (e) {
+      debugPrint('OtherSettingsScreen 保存 customHosts 异常: $e');
+      if (mounted) _toast('自定义 hosts 保存失败: ${_errMsg(e)}');
     }
   }
 
@@ -1485,6 +1622,168 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
         ),
         FilledButton(
           onPressed: _onConfirm,
+          child: Text(AppStrings.confirm),
+        ),
+      ],
+    );
+  }
+}
+
+/// MCP 端口输入对话框（自持 StatefulWidget，照 _TextPromptDialog 范式）：
+/// controller 在 State 内创建、dispose 中随子树卸载统一释放，
+/// 确定先取值再 pop 回传，规避退场动画期间 dispose 引发的框架断言红屏。
+/// 留空/0=停止独立服务；>0 校验区间 1024..65530，越界内联报错不 pop。
+/// [Task #74 | 2026-08-10] — Qoder
+class _McpPortDialog extends StatefulWidget {
+  final int currentPort;
+
+  const _McpPortDialog({required this.currentPort});
+
+  @override
+  State<_McpPortDialog> createState() => _McpPortDialogState();
+}
+
+class _McpPortDialogState extends State<_McpPortDialog> {
+  /// 未配置时预填默认端口 1236（Task #76 Med3：落实契约 §2.22.5
+  /// 缺省语义，对齐原版 AppConfig.mcpPort 默认值）
+  static const int _defaultMcpPort = 1236;
+
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.currentPort > 0 ? '${widget.currentPort}' : '$_defaultMcpPort',
+  );
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) {
+      Navigator.pop(context, 0); // 留空=停止独立服务
+      return;
+    }
+    final parsed = int.tryParse(text);
+    if (parsed == null || parsed < 0) {
+      setState(() => _error = '请输入非负数字（0 表示停止）');
+      return;
+    }
+    if (parsed > 0 && (parsed < 1024 || parsed > 65530)) {
+      setState(() => _error = '端口区间 1024~65530，0 表示停止');
+      return;
+    }
+    Navigator.pop(context, parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('MCP 服务端口'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '独立 MCP 服务端口（对齐原版默认 1236）；'
+            '留空或 0 停止独立服务，Web 端 /mcp/* 不受影响。',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              hintText: '1024 ~ 65530，0 停止',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _error!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(AppStrings.cancel),
+        ),
+        FilledButton(
+          onPressed: _confirm,
+          child: Text(AppStrings.confirm),
+        ),
+      ],
+    );
+  }
+}
+
+/// 自定义 hosts JSON 编辑对话框（自持 StatefulWidget，照 _TextPromptDialog
+/// 范式）：多行编辑 + 预填当前配置，确定回传原始文本，调用方做 JSON 对象
+/// 校验（对齐原版 保存/清除/非法不保存 语义）。
+/// [Task #74 | 2026-08-10] — Qoder
+class _CustomHostsDialog extends StatefulWidget {
+  final String initialText;
+
+  const _CustomHostsDialog({required this.initialText});
+
+  @override
+  State<_CustomHostsDialog> createState() => _CustomHostsDialogState();
+}
+
+class _CustomHostsDialogState extends State<_CustomHostsDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('自定义 hosts'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'JSON 对象格式：{"域名": "IP"} 或 {"域名": ["IP1","IP2"]}；'
+            '保存后即时生效，空内容清除并恢复系统 DNS。',
+          ),
+          const SizedBox(height: 12),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 280),
+            child: TextField(
+              controller: _controller,
+              autofocus: true,
+              minLines: 5,
+              maxLines: 12,
+              decoration: const InputDecoration(
+                hintText: '{"example.com": "1.2.3.4"}',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(AppStrings.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
           child: Text(AppStrings.confirm),
         ),
       ],
