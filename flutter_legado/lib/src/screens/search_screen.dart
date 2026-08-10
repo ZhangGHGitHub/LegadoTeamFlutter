@@ -132,7 +132,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           onSelected: (value) {
             switch (value) {
               case 'precision':
+                // [UI-fix v2.0.10 | 2026-08-10] 切换联动 notifier（other 桶
+                // 保留策略）并重搜（对齐原版 SearchActivity 切换后重新搜索）— Reasonix
                 setState(() => _precision = !_precision);
+                ref
+                    .read(searchNotifierProvider.notifier)
+                    .setPrecision(_precision);
+                final kw = ref.read(searchNotifierProvider).keyword;
+                if (kw.isNotEmpty) {
+                  ref.read(searchNotifierProvider.notifier).search(kw);
+                }
                 break;
               case 'readRecord':
                 _todo(context, '显示搜索记录');
@@ -171,11 +180,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildBody(BuildContext context) {
     final state = ref.watch(searchNotifierProvider);
-    // 精准搜索：对齐原版 SearchModel（contains 匹配 + 分桶排序 + 丢弃无关项），
-    // 修复前误用精确相等（name == keyword）导致勾选后几乎全被滤掉→无结果
-    final results = _precision
-        ? applyPrecisionSearch(state.results, state.keyword)
-        : state.results;
+    // 分桶排序在 notifier 批次回调内一次性完成（对齐原版 mergeItems
+    // 无条件执行：默认也按匹配度 equal→tags→contains→other 排序，
+    // 精准搜索丢弃 other 桶），展示层直接消费 state.results，
+    // 避免 build 时全量分桶导致精准搜索卡顿
+    // [UI-fix v2.0.10 | 2026-08-10] — Reasonix
+    final results = state.results;
 
     if (state.isLoading && !state.hasResults) {
       // 渐进搜索：尚无结果时显示加载态（带 x/y 进度，对齐原版 searchProgress）

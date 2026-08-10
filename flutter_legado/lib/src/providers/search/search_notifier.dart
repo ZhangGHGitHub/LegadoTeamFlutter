@@ -34,6 +34,11 @@ class SearchNotifier extends Notifier<SearchState> {
   /// 搜索序号（使旧搜索的迟到批次/回调失效，对齐原版 searchID）
   int _searchSeq = 0;
 
+  /// 精准搜索开关对应的 other 桶保留策略（true=默认保留，false=精准丢弃）
+  /// [UI-fix v2.0.10 | 2026-08-10] 分桶排序移至批次回调内一次性完成，
+  /// build 层直接消费 state.results，避免每帧全量分桶卡顿 — Reasonix
+  bool _keepOther = true;
+
   @override
   SearchState build() {
     // 延迟到 build() 返回后加载历史
@@ -95,6 +100,12 @@ class SearchNotifier extends Notifier<SearchState> {
     state = state.copyWith(inputText: text);
   }
 
+  /// 设置精准搜索开关（对齐原版 SearchActivity 菜单 precision_search：
+  /// 切换后重新搜索，见 search_screen 调用处）
+  void setPrecision(bool precision) {
+    _keepOther = !precision;
+  }
+
   // ===== 搜索 =====
 
   /// 执行搜索（对齐 SearchViewModel/SearchModel：关键词非空 → 记录历史 →
@@ -148,8 +159,16 @@ class SearchNotifier extends Notifier<SearchState> {
             final key = '${r.book.name}|${r.book.author}';
             if (seen.add(key)) accumulated.add(r);
           }
+          // [UI-fix v2.0.10 | 2026-08-10] 分桶排序在批次回调内一次性完成
+          //（对齐原版 mergeItems 每次批次合并后排序），展示层直接读
+          // state.results，避免 build 时全量分桶导致精准搜索卡顿 — Reasonix
+          final sorted = applyPrecisionSearch(
+            accumulated,
+            trimmed,
+            keepOther: _keepOther,
+          );
           state = state.copyWith(
-            results: List<SearchResult>.of(accumulated),
+            results: sorted,
             searchedCount: (batch['finished_count'] as int?) ?? 0,
             totalCount: (batch['total_count'] as int?) ?? 0,
           );
@@ -225,6 +244,7 @@ class SearchNotifier extends Notifier<SearchState> {
     _searchSeq++;
     _searchSub?.cancel();
     _searchSub = null;
+    _keepOther = true;
     state = state.copyWith(
       keyword: '',
       results: [],
@@ -245,6 +265,7 @@ class SearchNotifier extends Notifier<SearchState> {
     _searchSeq++;
     _searchSub?.cancel();
     _searchSub = null;
+    _keepOther = true;
     state = state.copyWith(
       keyword: '',
       inputText: '',

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.10] - 2026-08-10
+
+### 修复
+- 搜索结果排序对齐原版 `SearchModel.mergeItems`：默认搜索也按匹配度分桶排序（equal 完全匹配 → tags kind 匹配 → contains 包含 → other 保底），不再按书源顺序展示；精准搜索丢弃 other 桶，切换精准开关自动重新搜索（对齐原版 SearchActivity）
+- 精准搜索卡顿修复：分桶排序从 build 层移至搜索批次回调（每批次一次，对齐原版每次 mergeItems 后排序），展示层直接消费已排序结果，避免每帧全量分桶遍历
+- bookUrl 空校验文案可读化（Rust）：「bookUrl不能为空」→「书籍详情页地址为空，无法获取详情/目录（该书源搜索/发现规则未解析出详情链接）」；非 JS 搜索路径空 bookUrl 回退 baseUrl 保持，JS 路径与原版一致丢弃空条目
+
 ## [2.0.9] - 2026-08-10
 
 ### 修复

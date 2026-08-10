@@ -754,7 +754,21 @@ void main() {
       expect(out.map((r) => r.book.name), equals(['重生', '都市情缘', '重生之路']));
     });
 
-    test('无关项（other 桶）被丢弃', () {
+    test('无关项（other 桶）精准模式（keepOther: false）被丢弃', () {
+      final results = [
+        mk('重生', '甲'),
+        mk('斗破苍穹', '天蚕土豆', kind: '玄幻'),
+      ];
+
+      final out = applyPrecisionSearch(results, '重生', keepOther: false);
+
+      expect(out, hasLength(1));
+      expect(out.single.book.name, equals('重生'));
+    });
+
+    test('无关项（other 桶）默认模式（keepOther: true）保留且排在末尾', () {
+      // [UI-fix v2.0.10 | 2026-08-10] 对齐原版 mergeItems：默认搜索保留
+      // other 桶（追加末尾），仅精准模式丢弃 — Reasonix
       final results = [
         mk('重生', '甲'),
         mk('斗破苍穹', '天蚕土豆', kind: '玄幻'),
@@ -762,8 +776,9 @@ void main() {
 
       final out = applyPrecisionSearch(results, '重生');
 
-      expect(out, hasLength(1));
-      expect(out.single.book.name, equals('重生'));
+      expect(out, hasLength(2));
+      expect(out.first.book.name, equals('重生'));
+      expect(out.last.book.name, equals('斗破苍穹'));
     });
 
     test('归一化一致：kind 为 null 不抛错且按空串处理', () {
@@ -772,7 +787,7 @@ void main() {
         mk('斗破', '乙'),
       ];
 
-      final out = applyPrecisionSearch(results, '重生');
+      final out = applyPrecisionSearch(results, '重生', keepOther: false);
 
       expect(out, hasLength(1));
       expect(out.single.book.name, equals('重生之门'));

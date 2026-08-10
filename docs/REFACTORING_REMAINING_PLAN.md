@@ -1080,12 +1080,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.21  
+**文档版本**: 1.22  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.22（2026-08-10）搜索三修复登记（v2.0.10，Reasonix 实施）：① 排序对齐原版 mergeItems 四档分桶（默认搜索也按匹配度排序，精准丢 other+重搜）；② 卡顿修复（分桶移入批次回调，build 直接消费）；③ bookUrl 空校验文案可读化（legado-core 两处 + 测试断言更新）
 - v1.21（2026-08-10）XPath 引擎 xmlns 修复登记（v2.0.9，Reasonix 实施）：§5.14 追加 #19——页面自带 xmlns 声明导致无前缀 XPath 全部失配（思兔 sto66 实测），`write_node_xhtml` 跳过 xmlns 属性根治，新增回归测试
 - v1.20（2026-08-10）loginCheckJs 登录检测修复登记（v2.0.8，Reasonix 实施）：§5.14 追加 #18——FFI 路径三处语义修正（result 对象注入/判定剥引号/未登录双路径上抛+环境不兼容降级）已销记；遗留登记 legado-server fetcher 登录检测与 Flutter 登录自动跳转
 - v1.19（2026-08-10）§5.12 销记三项纯 Flutter 行为接线（doubleHorizontalPage 双页 0-3 档/useZhLayout 中文分行开关/hangingPunctuation 段首标点悬挂，v2.0.7 批，Reasonix 实施）：`reader_page_view` 双栏整屏渲染+屏索引翻页+分页缓存键；`paragraph_layout_engine` 朴素断行分支+悬挂规则；`zh_layout` 首行悬挂放宽；渲染侧悬挂行左移；全量 flutter test 1135/1135 通过零回归；剩余 4 项（刘海×2/音量键×2 仅 Android、shareLayout 待日夜双配置）延后登记
