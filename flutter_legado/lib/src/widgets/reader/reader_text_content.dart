@@ -229,23 +229,49 @@ class ReaderTextContent extends StatelessWidget {
         lineWidgets.add(
           SizedBox(
             height: fontSize * lineHeight,
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: fontSize,
-                height: lineHeight,
-                color: textColor,
-                fontFamily: fontFamily,
-                // [UI-fix v2.0.4 | 2026-08-08] 字重接线（与测量同参）— Qoder
-                fontWeight: fontWeight,
-                // [UI-fix v2.0.2 | 2026-08-06] 基础字距 + 对齐额外字距 — Qoder
-                letterSpacing: (letterSpacing + extraLetterSpacing) != 0
-                    ? letterSpacing + extraLetterSpacing
-                    : null,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.clip,
-            ),
+            // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂行：放宽宽度约束至
+            // availableWidth + hangingWidth 避免裁剪，行起点左移 hangingWidth
+            // 使起始引号悬挂进缩进区（对齐原版 TextLine.hangingPunctuation
+            // 语义）— Reasonix
+            child: line.hangingWidth > 0
+                ? OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    maxWidth: availableWidth + line.hangingWidth,
+                    child: Transform.translate(
+                      offset: Offset(-line.hangingWidth, 0),
+                      child: Text(
+                        text,
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          height: lineHeight,
+                          color: textColor,
+                          fontFamily: fontFamily,
+                          fontWeight: fontWeight,
+                          letterSpacing:
+                              (letterSpacing + extraLetterSpacing) != 0
+                                  ? letterSpacing + extraLetterSpacing
+                                  : null,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                      ),
+                    ),
+                  )
+                : Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      height: lineHeight,
+                      color: textColor,
+                      fontFamily: fontFamily,
+                      fontWeight: fontWeight,
+                      letterSpacing: (letterSpacing + extraLetterSpacing) != 0
+                          ? letterSpacing + extraLetterSpacing
+                          : null,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                  ),
           ),
         );
       }

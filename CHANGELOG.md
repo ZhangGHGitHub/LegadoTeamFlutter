@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] - 2026-08-10
+
+### 新增
+- §5.12 纯 Flutter 三项行为接线（Reasonix 实施，全量 flutter test 1135/1135 通过）：
+  - 双页模式（`doubleHorizontalPage` 0-3 档，对齐原版 ChapterProvider.upLayout）：`reader_page_view.dart` 档位判定（0=单页/1=双页/2=横屏双页/3=平板或横屏，滚动模式强制单页，桌面端窗口宽≥700 模拟平板语义），每栏可用宽（屏宽-边距-16 栏间隙）/2，双栏整屏渲染（`_buildSpread` 左 2s 右 2s+1，末屏右栏留白），屏索引翻页（步进 2），slide/simulate/none/cover 四翻页模式适配，分页缓存键
+  - 自定义中文分行开关（`useZhLayout`，对齐原版 useZhLayout=false 走 StaticLayout 语义）：`paragraph_layout_engine.dart` `ParagraphConfig.useZhLayout`（默认 true 保持现行为）+ `_breakLines` 朴素按宽断行分支（无避头尾）
+  - 段首标点悬挂（`hangingPunctuation`，对齐原版 HangingPunctuationRule + ZhLayout.hangingWidth）：`ChinesePunctuationRule.shouldHang`（缩进全角空格+起始引号判定）+ `ZhLayout.compute` 首行宽度上限放宽 + `_breakLines` 两分支首行悬挂 + `LineInfo.hangingWidth` 标记 + 渲染侧 OverflowBox 放宽约束 + Transform.translate 左移（标点悬挂进缩进区）
+
+### 修复
+- 顺带修复既有 lint：`reader_screen.dart` 自动换源监听 `(prev?.error ?? null) == null` 冗余（等价化简）
+
 ## [2.0.6] - 2026-08-10
 
 ### 新增

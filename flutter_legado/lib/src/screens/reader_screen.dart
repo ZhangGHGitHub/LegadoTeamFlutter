@@ -208,7 +208,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     // autoChangeSource 开启且在线书 → 自动搜索替代书源并切换（对标原版
     // ReadBook AutoChangeSource 加载失败自动换源语义的最小路径）— Qoder
     ref.listen(readerNotifierProvider, (prev, next) {
-      if (next.error != null && (prev?.error ?? null) == null) {
+      if (next.error != null && prev?.error == null) {
         _maybeAutoChangeSource(next);
       }
     });
@@ -253,6 +253,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 textBold: _advConfig.textBold,
                 customTextColor: _advConfig.customTextColor,
                 mouseWheelPage: _advConfig.mouseWheelPage,
+                // [UI-fix v2.0.5 | 2026-08-10] 双页模式档位透传（对标原版
+                // doubleHorizontalPage 0-3 档）— Reasonix
+                doubleHorizontalPage: _advConfig.doubleHorizontalPage,
+                // [UI-fix v2.0.5 | 2026-08-10] 中文分行开关透传（对标原版
+                // useZhLayout）— Reasonix
+                useZhLayout: _advConfig.useZhLayout,
+                // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂透传（对标原版
+                // hangingPunctuation）— Reasonix
+                hangingPunctuation: _advConfig.hangingPunctuation,
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
               // 全局页码指示器（跨章节连续分页已注册时显示）

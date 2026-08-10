@@ -67,6 +67,28 @@ class ChinesePunctuationRule {
     }
     return line;
   }
+
+  // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂（对齐原版
+  // HangingPunctuationRule.shouldHang(text, paragraphIndent)）：段首 =
+  // 缩进全角空格（indentCount 个）+ 起始引号，且非 RTL（中文排版无 RTL
+  // 场景，跳过检查）— Reasonix
+
+  /// 段首可悬挂的起始引号字符
+  static const Set<String> hangingChars = {
+    '"', '“', '‘', '「', '『', '﹁', '﹃',
+  };
+
+  /// 判断段首是否应悬挂（缩进空格 + 起始引号）
+  static bool shouldHang(String text, int indentCount) {
+    if (indentCount <= 0) return false;
+    var pos = 0;
+    for (var i = 0; i < indentCount; i++) {
+      if (pos >= text.length || text[pos] != '\u3000') return false;
+      pos++;
+    }
+    if (pos >= text.length) return false;
+    return hangingChars.contains(text[pos]);
+  }
 }
 
 /// 段落样式配置
@@ -91,6 +113,14 @@ class ParagraphConfig {
   final int indentCount;
   final FontWeight? fontWeight;
 
+  // [UI-fix v2.0.5 | 2026-08-10] 自定义中文分行开关（对标原版 useZhLayout：
+  // true=ZhLayout 中文避头尾断行；false=朴素按宽断行）— Reasonix
+  final bool useZhLayout;
+
+  // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂开关（对标原版
+  // hangingPunctuation：段首引号悬挂进缩进区，默认 false 对齐原版）— Reasonix
+  final bool hangingPunctuation;
+
   const ParagraphConfig({
     this.fontSize = 16.0,
     this.lineHeight = 1.6,
@@ -103,6 +133,8 @@ class ParagraphConfig {
     this.fontFamily,
     this.indentCount = 2,
     this.fontWeight,
+    this.useZhLayout = true,
+    this.hangingPunctuation = false,
   });
 
   ParagraphConfig copyWith({
@@ -117,6 +149,8 @@ class ParagraphConfig {
     String? fontFamily,
     int? indentCount,
     FontWeight? fontWeight,
+    bool? useZhLayout,
+    bool? hangingPunctuation,
   }) {
     return ParagraphConfig(
       fontSize: fontSize ?? this.fontSize,
@@ -130,6 +164,8 @@ class ParagraphConfig {
       fontFamily: fontFamily ?? this.fontFamily,
       indentCount: indentCount ?? this.indentCount,
       fontWeight: fontWeight ?? this.fontWeight,
+      useZhLayout: useZhLayout ?? this.useZhLayout,
+      hangingPunctuation: hangingPunctuation ?? this.hangingPunctuation,
     );
   }
 }
@@ -143,12 +179,17 @@ class LineInfo {
   final int startIndex;
   final int endIndex;
 
+  // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂宽度（>0 表示该行为悬挂行，
+  // 渲染侧行起点左移该宽度进入缩进区）— Reasonix
+  final double hangingWidth;
+
   const LineInfo({
     required this.words,
     required this.width,
     required this.height,
     required this.startIndex,
     required this.endIndex,
+    this.hangingWidth = 0,
   });
 }
 
@@ -426,7 +467,19 @@ class ParagraphLayoutEngine {
     }
     
     // 使用 ZhLayout 中文断行引擎进行分行
-    final lines = _breakLines(processableText, availableWidth);
+    // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂：段首 = 缩进全角空格 +
+    // 起始引号时，首行可用宽 + 缩进宽度（标点悬挂进缩进区，对齐原版
+    // HangingPunctuationRule + ZhLayout.hangingWidth 语义）— Reasonix
+    final hangingWidth = config.hangingPunctuation &&
+            config.indent > 0 &&
+            ChinesePunctuationRule.shouldHang(processableText, config.indentCount)
+        ? config.indent
+        : 0.0;
+    final lines = _breakLines(
+      processableText,
+      availableWidth,
+      hangingWidth: hangingWidth,
+    );
     
     // 计算总高度（对应 Kotlin durY += textHeight * lineSpacingExtra）
     final textHeight = config.fontSize * config.lineHeight;
@@ -445,16 +498,66 @@ class ParagraphLayoutEngine {
   /// 移植自 TextChapterLayout.kt 第 940-948 行：
   /// 1. 测量每个字符宽度
   /// 2. 使用 ZhLayout 进行中文标点感知断行
-  List<LineInfo> _breakLines(String text, double availableWidth) {
+  ///
+  /// [UI-fix v2.0.5 | 2026-08-10] `hangingWidth` > 0 时首行可用宽上限
+  /// 增加该宽度（段首标点悬挂）— Reasonix
+  List<LineInfo> _breakLines(
+    String text,
+    double availableWidth, {
+    double hangingWidth = 0,
+  }) {
     if (text.isEmpty) return [];
 
-    // 步骤1：测量每个字符的宽度（对应 Kotlin textPaint.getTextWidthsCompat）
+    // 测量每个字符的宽度（对应 Kotlin textPaint.getTextWidthsCompat）
     final widthsArray = _measureCharWidths(text, availableWidth);
 
     // 步骤2：拆分为字符列表 + 宽度列表（对应 Kotlin measureTextSplit）
     final (words, widths) = TextMeasure.splitByWidths(text, widthsArray);
 
     if (words.isEmpty) return [];
+
+    // [UI-fix v2.0.5 | 2026-08-10] useZhLayout=false：朴素按宽断行
+    //（无中文避头尾，对齐原版 useZhLayout=false 走 StaticLayout 语义）— Reasonix
+    if (!config.useZhLayout) {
+      final plainLines = <LineInfo>[];
+      final textHeight = config.fontSize * config.lineHeight;
+      var lineStartIdx = 0;
+      var lineWidth = 0.0;
+      void flushLine(int endIdx) {
+        final lineWords = words.sublist(lineStartIdx, endIdx);
+        var startOffset = 0;
+        for (var i = 0; i < lineStartIdx && i < words.length; i++) {
+          startOffset += words[i].length;
+        }
+        var endOffset = startOffset;
+        for (var i = lineStartIdx; i < endIdx && i < words.length; i++) {
+          endOffset += words[i].length;
+        }
+        plainLines.add(LineInfo(
+          words: lineWords,
+          width: lineWidth,
+          height: textHeight,
+          startIndex: startOffset,
+          endIndex: endOffset,
+          // 悬挂仅作用于首行（行起点索引 0）
+          hangingWidth: lineStartIdx == 0 ? hangingWidth : 0,
+        ));
+      }
+      for (var i = 0; i < words.length; i++) {
+        final w = widths[i];
+        final limit = lineStartIdx == 0 ? availableWidth + hangingWidth : availableWidth;
+        if (i > lineStartIdx && lineWidth + w > limit) {
+          flushLine(i);
+          lineStartIdx = i;
+          lineWidth = 0.0;
+        }
+        lineWidth += w;
+      }
+      if (lineStartIdx < words.length) {
+        flushLine(words.length);
+      }
+      return plainLines;
+    }
 
     // 步骤3：计算中文字符参考宽度（对应 Kotlin cnCharWidthCache）
     final cnCharWidth = _measureSingleChar('我');
@@ -467,6 +570,8 @@ class ParagraphLayoutEngine {
       // [UI-fix v2.0.4 | 2026-08-08] 缩进档位接入断行引擎 — Qoder
       indentSize: config.indent > 0 ? config.indentCount : 0,
       cnCharWidth: cnCharWidth,
+      // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂：首行宽度上限放宽 — Reasonix
+      hangingWidth: hangingWidth,
     );
 
     // 步骤5：根据断行结果构建 LineInfo 列表
@@ -500,6 +605,8 @@ class ParagraphLayoutEngine {
         height: textHeight,
         startIndex: startOffset,
         endIndex: endOffset,
+        // 悬挂仅作用于首行
+        hangingWidth: lineIndex == 0 ? hangingWidth : 0,
       ));
     }
 

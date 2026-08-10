@@ -68,12 +68,15 @@ class ZhLayout {
   /// 计算断行（推荐入口）
   ///
   /// 忠实移植 Kotlin ZhLayout init 块中的断行算法
+  /// [UI-fix v2.0.5 | 2026-08-10] `hangingWidth` > 0 时首行宽度上限
+  /// 增加该宽度（段首标点悬挂）— Reasonix
   static ZhLayout compute({
     required List<String> words,
     required List<double> widths,
     required double availableWidth,
     int indentSize = 0,
     double cnCharWidth = 18.0,
+    double hangingWidth = 0,
   }) {
     const defaultCapacity = 10;
     var lineStartArr = List<int>.filled(defaultCapacity, 0);
@@ -93,7 +96,7 @@ class ZhLayout {
       var offset = 0.0;
       var breakCharCnt = 0;
 
-      if (lineW > availableWidth) {
+      if (lineW > availableWidth + (line == 0 ? hangingWidth : 0.0)) {
         /* 禁止在行尾的标点处理 */
         if (index >= 1 && _isPrePanc(words[index - 1])) {
           if (index >= 2 && _isPrePanc(words[index - 2])) {

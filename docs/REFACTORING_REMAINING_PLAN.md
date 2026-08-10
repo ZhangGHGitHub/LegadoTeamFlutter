@@ -1013,9 +1013,9 @@ flutter test                  # 全量测试通过
 
 | # | 键（=原版键） | 语义 | 后续消费位置建议 |
 |---|----------------|------|------------------|
-| 1 | `doubleHorizontalPage` | 双页模式（0-3 档） | `reader_page_view.dart` 分页渲染：按窗口宽高比/档位分列双栏排版 |
-| 2 | `useZhLayout` | 自定义中文分行 | 排版引擎已内置 ZhLayout，待按开关动态启用/禁用分行规则（Rust legado-parser 或 Dart 测量层） |
-| 3 | `hangingPunctuation` | 段首标点悬挂 | 同上，排版引擎悬挂规则按开关切换 |
+| 1 | ~~`doubleHorizontalPage`~~（已接线） | 双页模式（0-3 档） | ✅（2026-08-10，v2.0.7 批）销记：`reader_page_view.dart` 档位判定（0=单页/1=双页/2=横屏双页/3=平板或横屏，滚动模式强制单页，桌面端窗口宽≥700 为平板语义）+ 每栏可用宽（屏宽-边距-16 栏间隙）/2 + 双栏整屏渲染（`_buildSpread` 左 2s 右 2s+1，末屏右栏留白）+ 屏索引翻页（步进 2）+ 分页缓存键；slide/simulate/none/cover 四翻页模式适配 |
+| 2 | ~~`useZhLayout`~~（已接线） | 自定义中文分行 | ✅（2026-08-10，v2.0.7 批）销记：`paragraph_layout_engine.dart` `ParagraphConfig.useZhLayout`（默认 true 保持现行为）+ `_breakLines` 朴素按宽断行分支（无避头尾，对齐原版 useZhLayout=false StaticLayout 语义）+ 分页缓存键 |
+| 3 | ~~`hangingPunctuation`~~（已接线） | 段首标点悬挂 | ✅（2026-08-10，v2.0.7 批）销记：`ChinesePunctuationRule.shouldHang`（缩进全角空格+起始引号判定，对齐原版 HangingPunctuationRule）+ `ZhLayout.compute` 首行宽度上限 + 悬挂宽（=缩进宽）+ `_breakLines` 两分支首行悬挂 + `LineInfo.hangingWidth` 标记 + 渲染侧 OverflowBox 放宽约束 + Transform.translate 左移（标点悬挂进缩进区） |
 | 4 | ~~`pageTouchSlop`~~（已接线） | 滑动翻页阈值 px | ✅ Task #44（2026-08-08/09）销记：`reader_page_view.dart` 经 MediaQuery gestureSettings 覆写拖拽阈值，滚动模式除外（对齐原版仅横向翻页语义），即时生效 |
 | 5 | ~~`pageTouchClick`~~（已接线） | 边缘点击阈值 px | ✅ Task #44（2026-08-08/09）销记：`reader_screen.dart` 点击边缘死区（钳制半屏以内防窄窗重叠），对齐原版 setRect9x 边缘条带语义，即时生效 |
 | 6 | `readBodyToLh` | 正文延伸到刘海 | 仅 Android：`reader_screen.dart` SystemUiMode/SafeArea 接线 |
@@ -1023,7 +1023,9 @@ flutter test                  # 全量测试通过
 | 8 | `volumeKeyPage` / `volumeKeyPageOnPlay` | 音量键翻页/朗读时音量键翻页 | 仅 Android：平台通道拦截 KeyEvent 后接 `reader_page_view` 翻页 API |
 | 9 | `shareLayout` | 日/夜配置共用布局 | 待日夜双配置体系接入（ReadBookConfig 双套布局参数）后在 `reader_settings_sheet.dart` 生效；UI 副标题已标注「暂不生效」 |
 
-> ✅ **销记（2026-08-08/09，Task #44）**：4 `pageTouchSlop` / 5 `pageTouchClick` 两项行为接线完成（详见各行销记）；剩余 7 项待后续批次接通。
+> ✅ **销记（2026-08-08/09，Task #44）**：4 `pageTouchSlop` / 5 `pageTouchClick` 两项行为接线完成（详见各行销记）。
+>
+> ✅ **销记（2026-08-10，v2.0.7 批）**：1 `doubleHorizontalPage` / 2 `useZhLayout` / 3 `hangingPunctuation` 三项行为接线完成（详见各行销记；原版语义对齐：双页档位/朴素分行/段首引号悬挂，差异注明：桌面端平板语义以窗口宽≥700 模拟）；**剩余 4 项**（6 `readBodyToLh` / 7 `paddingDisplayCutouts` 仅 Android、8 `volumeKeyPage` 仅 Android、9 `shareLayout` 待日夜双配置体系）登记延后。
 
 ### §5.13 主题设置页/其他设置页「缺跨轨支撑后置」集中清单（2026-08-08，任务 #8 原版对齐时新增）
 
@@ -1076,12 +1078,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.18  
+**文档版本**: 1.19  
 **最后更新**: 2026-08-10  
 **维护人**: Qoder  
 **最后修改**: Qoder
 
 **版本记录**：
+- v1.19（2026-08-10）§5.12 销记三项纯 Flutter 行为接线（doubleHorizontalPage 双页 0-3 档/useZhLayout 中文分行开关/hangingPunctuation 段首标点悬挂，v2.0.7 批，Reasonix 实施）：`reader_page_view` 双栏整屏渲染+屏索引翻页+分页缓存键；`paragraph_layout_engine` 朴素断行分支+悬挂规则；`zh_layout` 首行悬挂放宽；渲染侧悬挂行左移；全量 flutter test 1135/1135 通过零回归；剩余 4 项（刘海×2/音量键×2 仅 Android、shareLayout 待日夜双配置）延后登记
 
 - v1.18（2026-08-10）Task #78 第四批后置项接线销记与遗留登记：§5.13 销记 3 项（①自定义 hosts §2.20.3 setCustomHosts DNS 覆盖+持久化+JSON 编辑对话框、差异注明非法输入拒绝保存；⑥MCP 服务端口 §2.22.5 setMcpPort 独立端口默认 1236+区间越界报错差异注明，评审加固：仅挂 MCP 路由/回环绑定/DB 路径对齐/状态机互斥+同端口重启竞态修复；⑩封面规则 §2.4.8 searchCoverRules 执行启用规则+测试入口，CRUD 诚实标注待后续）；§5.14 追加登记 5 项（#13 coverRule 规则 CRUD 待契约、#14 MCP 局域网可达+token 鉴权待后续、#15 customHosts 对直建 reqwest::Client 链路不生效的覆盖缺口、#16 coverRules 表 DDL 游离迁移体系须入 schema 对齐专项、#17 原版 McpService 前置 jsSourceApiToken 校验未实现依赖 §5.13-7）
 - v1.17（2026-08-10）Task #71 第三批后置项接线销记与遗留登记：§5.11 销记 ③设置源变量（契约 §2.3 setSourceVariable + Migration102To103 补列 + `_VariableDialog` 对齐原版 source 分支），**§5.11 全部 7 项至此闭合**；§5.14 销记 2 项（#2 getBookmarks 补 bookAuthor → 契约 §2.7 getBookmarksByBook 双键查询 + 消费方全切换 + MCP 加法式可选参数；#3 BookRepository upsert 重构根治级联删除 + import_books 覆盖 + 重复插入保留 chapters 测试）；§5.14 追加登记 4 项（#9 书签作者改写边界验收知悉项、#10 二级索引冲突 insert_replace 跨书级联残余与预检加固方向、#11 getBookmarks 单键查询兼容保留建议 @Deprecated、#12 JS 链书源 bookUrl 为空待查）；另 frb 配对纪律入 TWO_TRACK_DEV_SPEC §3.5

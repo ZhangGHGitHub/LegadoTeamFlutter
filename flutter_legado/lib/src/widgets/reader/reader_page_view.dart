@@ -69,6 +69,20 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 滚动模式不拦截交给内层 Scrollable）
   final bool mouseWheelPage;
 
+  // [UI-fix v2.0.5 | 2026-08-10] 双页模式接入（对标原版 doubleHorizontalPage
+  // 0-3 档：0=单页、1=双页、2=横屏双页、3=平板或横屏双页；滚动模式强制单页）
+  /// 双页模式档位（0-3）
+  final int doubleHorizontalPage;
+
+  // [UI-fix v2.0.5 | 2026-08-10] 自定义中文分行开关（对标原版 useZhLayout：
+  // true=ZhLayout 避头尾断行；false=朴素按宽断行）— Reasonix
+  /// 自定义中文分行开关
+  final bool useZhLayout;
+
+  // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂（对标原版 hangingPunctuation）— Reasonix
+  /// 段首标点悬挂开关
+  final bool hangingPunctuation;
+
   const ReaderPageView({
     super.key,
     required this.paragraphSpacing,
@@ -84,6 +98,9 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.textBold = 0,
     this.customTextColor = 0,
     this.mouseWheelPage = true,
+    this.doubleHorizontalPage = 0,
+    this.useZhLayout = true,
+    this.hangingPunctuation = false,
   });
 
   @override
@@ -125,6 +142,20 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   // [UI-fix v2.0.3 | 2026-08-06] 分页缓存键新增页面边距 — Qoder
   String _paginatedMargins = '';
 
+  // [UI-fix v2.0.5 | 2026-08-10] 双页模式分页状态：当前分页是否双栏
+  // （档位/宽高比/翻页模式变化时重新分页）— Reasonix
+  bool _paginatedDoublePage = false;
+
+  /// 当前分页是否为双页模式（单页时恒 false；翻页步进/屏换算消费）
+  bool get _isDoublePage => _paginatedDoublePage;
+
+  // [UI-fix v2.0.5 | 2026-08-10] 中文分行开关分页缓存键（useZhLayout
+  // 变化时重新分页）— Reasonix
+  bool _paginatedUseZhLayout = true;
+
+  // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂分页缓存键 — Reasonix
+  bool _paginatedHangingPunctuation = false;
+
   // [UI-fix v2.0.3 | 2026-08-08] 分页缓存键新增系统栏 padding（隐藏
   // 状态栏/导航栏后可用高度变化需重新分页）— Qoder
   String _paginatedSysPadding = '';
@@ -161,12 +192,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   // ReadBook.callBack?.upPageAnim 后的 PageAnim.NONE 语义）— Qoder
   void _navigateToPage(int index) {
     _currentPageIndex = index;
+    // [UI-fix v2.0.5 | 2026-08-10] 双页模式每屏两页：PageController 按屏
+    // 索引驱动（屏 = 内容页 / 2）— Reasonix
+    final screen = _isDoublePage ? index ~/ 2 : index;
     if (_pageController.hasClients) {
       if (widget.noAnimScroll) {
-        _pageController.jumpToPage(index);
+        _pageController.jumpToPage(screen);
       } else {
         _pageController.animateToPage(
-          index,
+          screen,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
         );
@@ -227,10 +261,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       }
       return;
     }
-    if (_currentPageIndex < _paginatedPages.length - 1) {
-      _navigateToPage(_currentPageIndex + 1);
+    // [UI-fix v2.0.5 | 2026-08-10] 双页模式翻页步进 2（整屏翻动）— Reasonix
+    final step = _isDoublePage ? 2 : 1;
+    if (_currentPageIndex + step < _paginatedPages.length) {
+      _navigateToPage(_currentPageIndex + step);
     } else {
-      // 本章最后一页 → 跨章节无缝进入下一章
+      // 本章最后一屏 → 跨章节无缝进入下一章
       notifier.nextChapter();
     }
   }
@@ -255,10 +291,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       }
       return;
     }
-    if (_currentPageIndex > 0) {
-      _navigateToPage(_currentPageIndex - 1);
+    // [UI-fix v2.0.5 | 2026-08-10] 双页模式翻页步进 2（整屏翻动）— Reasonix
+    final step = _isDoublePage ? 2 : 1;
+    if (_currentPageIndex - step >= 0) {
+      _navigateToPage(_currentPageIndex - step);
     } else {
-      // 本章第一页 → 跨章节无缝进入上一章
+      // 本章第一屏 → 跨章节无缝进入上一章
       notifier.prevChapter();
     }
   }
@@ -344,6 +382,20 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final sysPaddingKey =
         '${sysPadding.top}_${sysPadding.bottom}_${sysPadding.left}_${sysPadding.right}';
 
+    // [UI-fix v2.0.5 | 2026-08-10] 双页档位判定（对齐原版
+    // ChapterProvider.upLayout：0=单页、1=双页、2=横屏双页、3=平板或
+    // 横屏双页；滚动模式 pageAnim==3 强制单页；桌面端以窗口宽 >=700
+    // 作为平板语义）— Reasonix
+    final screenSize = MediaQuery.of(context).size;
+    final doublePage = switch (widget.doubleHorizontalPage) {
+      1 => state.pageTurnMode != PageTurnMode.scroll,
+      2 => screenSize.width > screenSize.height &&
+          state.pageTurnMode != PageTurnMode.scroll,
+      3 => (screenSize.width > screenSize.height || screenSize.width >= 700) &&
+          state.pageTurnMode != PageTurnMode.scroll,
+      _ => false,
+    };
+
     final needRepaginate = content.isNotEmpty &&
         (content != _paginatedContent ||
             chapterIndex != _paginatedChapterIndex ||
@@ -356,16 +408,20 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             justify != _paginatedJustify ||
             fontFamily != _paginatedFontFamily ||
             margins != _paginatedMargins ||
-            sysPaddingKey != _paginatedSysPadding);
+            sysPaddingKey != _paginatedSysPadding ||
+            doublePage != _paginatedDoublePage ||
+            widget.useZhLayout != _paginatedUseZhLayout ||
+            widget.hangingPunctuation != _paginatedHangingPunctuation);
 
     if (!needRepaginate) return;
 
     // 计算可用尺寸（减去配置的页面边距）
-    final screenSize = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
-    final availableWidth = screenSize.width -
-        widget.marginLeft -
-        widget.marginRight;
+    // 双页模式：每栏可用宽 =（屏宽 - 左右边距 - 16 栏间隙）/ 2
+    //（渲染侧左栏右间隙 8 + 右栏左间隙 8，与分页宽严格一致）
+    final availableWidth = doublePage
+        ? (screenSize.width - widget.marginLeft - widget.marginRight - 16) / 2
+        : screenSize.width - widget.marginLeft - widget.marginRight;
     // [UI-fix v2.0.4 | 2026-08-08] 分页可用高度与渲染容器严格一致：
     // 渲染侧（ReaderTypographicPage）Column = 首页标题块 +
     // Expanded(正文) + 页码指示（top 8 + 11 号文字）；此前用固定
@@ -430,6 +486,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       backgroundColor: state.backgroundColor,
       letterSpacing: letterSpacing,
       fontFamily: fontFamily,
+      // [UI-fix v2.0.5 | 2026-08-10] 中文分行开关接入排版引擎 — Reasonix
+      useZhLayout: widget.useZhLayout,
+      // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂接入排版引擎 — Reasonix
+      hangingPunctuation: widget.hangingPunctuation,
     );
 
     final engine = ParagraphLayoutEngine(config: config, context: context);
@@ -450,6 +510,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedFontFamily = fontFamily;
     _paginatedMargins = margins;
     _paginatedSysPadding = sysPaddingKey;
+    _paginatedDoublePage = doublePage;
+    _paginatedUseZhLayout = widget.useZhLayout;
+    _paginatedHangingPunctuation = widget.hangingPunctuation;
     _currentPageIndex = 0;
 
     // 跨章节分页：注册本章页数到全局分页器
@@ -701,12 +764,18 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       bottom: !state.showControls,
       child: PageView.builder(
         controller: _pageController,
-        itemCount: _paginatedPages.isNotEmpty ? _paginatedPages.length : 1,
+        itemCount: _isDoublePage
+            ? (_paginatedPages.length + 1) ~/ 2
+            : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1),
         onPageChanged: (index) {
-          setState(() => _currentPageIndex = index);
-          notifier.updatePosition(index);
+          // [UI-fix v2.0.5 | 2026-08-10] 双页模式：屏索引 → 内容页索引 — Reasonix
+          final page = _isDoublePage ? index * 2 : index;
+          setState(() => _currentPageIndex = page);
+          notifier.updatePosition(page);
         },
-        itemBuilder: (context, index) => _buildTypographicPage(state, index),
+        itemBuilder: (context, index) => _isDoublePage
+            ? _buildSpread(state, index)
+            : _buildTypographicPage(state, index),
       ),
     );
   }
@@ -721,13 +790,22 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         children: [
           PageView.builder(
             controller: _pageController,
-            itemCount: _paginatedPages.isNotEmpty ? _paginatedPages.length : 1,
+            itemCount: _isDoublePage
+                ? (_paginatedPages.length + 1) ~/ 2
+                : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1),
             pageSnapping: true,
             onPageChanged: (index) {
-              setState(() => _currentPageIndex = index);
-              notifier.updatePosition(index);
+              // [UI-fix v2.0.5 | 2026-08-10] 双页模式：屏索引 → 内容页索引 — Reasonix
+              final page = _isDoublePage ? index * 2 : index;
+              setState(() => _currentPageIndex = page);
+              notifier.updatePosition(page);
             },
             itemBuilder: (context, index) {
+              // [UI-fix v2.0.5 | 2026-08-10] 双页模式：双栏整屏渲染
+              //（缩放/阴影动画不适用于整屏双栏，降级为 slide 语义）— Reasonix
+              if (_isDoublePage) {
+                return _buildSpread(state, index);
+              }
               return AnimatedBuilder(
                 animation: _pageController,
                 builder: (context, child) {
@@ -789,12 +867,18 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       child: PageView.builder(
         controller: _pageController,
         physics: const InstantScrollPhysics(), // 无动画瞬间切换
-        itemCount: _paginatedPages.isNotEmpty ? _paginatedPages.length : 1,
+        itemCount: _isDoublePage
+            ? (_paginatedPages.length + 1) ~/ 2
+            : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1),
         onPageChanged: (index) {
-          setState(() => _currentPageIndex = index);
-          notifier.updatePosition(index);
+          // [UI-fix v2.0.5 | 2026-08-10] 双页模式：屏索引 → 内容页索引 — Reasonix
+          final page = _isDoublePage ? index * 2 : index;
+          setState(() => _currentPageIndex = page);
+          notifier.updatePosition(page);
         },
-        itemBuilder: (context, index) => _buildTypographicPage(state, index),
+        itemBuilder: (context, index) => _isDoublePage
+            ? _buildSpread(state, index)
+            : _buildTypographicPage(state, index),
       ),
     );
   }
@@ -806,7 +890,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// - 后退（上一页）：当前页向右滑出，露出下方的新页
   /// 动画时长 300ms，线性曲线（对齐安卓基准）
   Widget _buildCoverContent(ReaderState state) {
-    final targetIndex = _currentPageIndex;
+    // [UI-fix v2.0.5 | 2026-08-10] 双页模式：覆盖翻页按整屏动画（屏索引）— Reasonix
+    final targetIndex = _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex;
     // 检测翻页方向
     if (targetIndex != _coverChapterIndex) {
       _coverForward = targetIndex > _coverChapterIndex;
@@ -891,14 +976,23 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         },
         child: KeyedSubtree(
           key: ValueKey<int>(targetIndex),
-          child: _buildTypographicPage(state, targetIndex),
+          child: _isDoublePage
+              ? _buildSpread(state, targetIndex)
+              : _buildTypographicPage(state, targetIndex),
         ),
       ),
     );
   }
 
   /// 渲染排版引擎分页后的单页内容
-  Widget _buildTypographicPage(ReaderState state, int pageIndex) {
+  ///
+  /// [UI-fix v2.0.5 | 2026-08-10] 双页模式：`doublePageSide` 为 'left'/'right'
+  /// 时按栏调整左右边距（中间间隙 8px，与分页可用宽严格一致）— Reasonix
+  Widget _buildTypographicPage(
+    ReaderState state,
+    int pageIndex, {
+    String? doublePageSide,
+  }) {
     final safeIndex = _paginatedPages.isEmpty
         ? 0
         : pageIndex.clamp(0, _paginatedPages.length - 1);
@@ -928,14 +1022,41 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入分页页正文渲染 — Qoder
       selectText: widget.selectText,
       // [UI-fix v2.0.3 | 2026-08-06] 分页页内容边距接配置 — Qoder
-      contentPadding: EdgeInsets.only(
-        left: widget.marginLeft,
-        right: widget.marginRight,
-        top: widget.marginTop,
-        bottom: widget.marginBottom,
-      ),
+      contentPadding: doublePageSide == null
+          ? EdgeInsets.only(
+              left: widget.marginLeft,
+              right: widget.marginRight,
+              top: widget.marginTop,
+              bottom: widget.marginBottom,
+            )
+          : EdgeInsets.only(
+              left: doublePageSide == 'left' ? widget.marginLeft : 8,
+              right: doublePageSide == 'right' ? widget.marginRight : 8,
+              top: widget.marginTop,
+              bottom: widget.marginBottom,
+            ),
       globalPageIndex: globalIndex,
       globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
+    );
+  }
+
+  /// [UI-fix v2.0.5 | 2026-08-10] 双页模式：一屏左右双栏
+  ///（左 = 2s、右 = 2s+1；奇数页数时末屏右栏留白占位）— Reasonix
+  Widget _buildSpread(ReaderState state, int screenIndex) {
+    final left = screenIndex * 2;
+    final right = left + 1;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: _buildTypographicPage(state, left, doublePageSide: 'left'),
+        ),
+        Expanded(
+          child: right < _paginatedPages.length
+              ? _buildTypographicPage(state, right, doublePageSide: 'right')
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 }

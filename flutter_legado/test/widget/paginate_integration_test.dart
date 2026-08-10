@@ -95,6 +95,126 @@ void main() {
       expect(narrowPages.length, greaterThanOrEqualTo(widePages.length));
     });
 
+    test('双页模式栏宽分页：栏宽减半页数相应增多且行宽不越界', () {
+      // [UI-fix v2.0.5 | 2026-08-10] 对齐原版 doubleHorizontalPage 双页语义：
+      // 每栏可用宽 =（屏宽 - 左右边距 - 16 栏间隙）/ 2 — Reasonix
+      const marginL = 20.0, marginR = 20.0;
+      const fullWidth = 800.0;
+      final content = List.generate(
+        12,
+        (i) => '段落$i：${'双页模式分页测试内容文字。' * 8}',
+      ).join('\n\n');
+      final widePages = engine.paginateChapter(content, fullWidth, 500.0);
+      final columnWidth = (fullWidth - marginL - marginR - 16) / 2;
+      final doublePages = engine.paginateChapter(content, columnWidth, 500.0);
+      // 栏宽分页页数应不少于全宽分页页数（通常接近 2 倍）
+      expect(doublePages.length, greaterThanOrEqualTo(widePages.length));
+      // 栏宽分页每行宽度不超栏宽（与渲染侧分页宽严格一致）
+      for (final page in doublePages) {
+        for (final para in page.paragraphs) {
+          for (final line in para.lines) {
+            expect(
+              line.width,
+              lessThanOrEqualTo(columnWidth + 1),
+              reason: '双页栏宽下行宽越界: ${line.width}',
+            );
+          }
+        }
+      }
+    });
+
+    test('useZhLayout 开关：关闭后朴素断行行数不多于避头尾断行且行宽不越界', () {
+      // [UI-fix v2.0.5 | 2026-08-10] 对齐原版 useZhLayout：true=中文避头尾
+      // 断行（行首禁标点、提前换行）；false=朴素按宽断行 — Reasonix
+      final content = '测试段落，包含中文标点符号，用于验证分行开关行为差异。' * 6;      const width = 140.0, height = 600.0;
+      final zhEngine = ParagraphLayoutEngine(
+        config: const ParagraphConfig(
+          fontSize: 16.0,
+          lineHeight: 1.5,
+          useZhLayout: true,
+        ),
+        context: _FakeBuildContext(),
+      );
+      final plainEngine = ParagraphLayoutEngine(
+        config: const ParagraphConfig(
+          fontSize: 16.0,
+          lineHeight: 1.5,
+          useZhLayout: false,
+        ),
+        context: _FakeBuildContext(),
+      );
+      final zhPages = zhEngine.paginateChapter(content, width, height);
+      final plainPages = plainEngine.paginateChapter(content, width, height);
+      // 朴素断行无避头尾提前换行，行数/页数不多于避头尾模式
+      final zhLines = zhPages.fold<int>(
+          0, (sum, p) => sum + p.paragraphs.fold<int>(0, (s, pa) => s + pa.lines.length));
+      final plainLines = plainPages.fold<int>(
+          0, (sum, p) => sum + p.paragraphs.fold<int>(0, (s, pa) => s + pa.lines.length));
+      expect(plainLines, lessThanOrEqualTo(zhLines));
+      // 朴素断行行宽不越界
+      for (final page in plainPages) {
+        for (final para in page.paragraphs) {
+          for (final line in para.lines) {
+            expect(
+              line.width,
+              lessThanOrEqualTo(width + 1),
+              reason: '朴素断行行宽越界: ${line.width}',
+            );
+          }
+        }
+      }
+    });
+
+    test('hangingPunctuation 悬挂：shouldHang 判定与首行悬挂宽度', () {
+      // [UI-fix v2.0.5 | 2026-08-10] 对齐原版 HangingPunctuationRule +
+      // ZhLayout.hangingWidth：段首 = 缩进全角空格 + 起始引号时首行悬挂 — Reasonix
+      // shouldHang 判定
+      expect(ChinesePunctuationRule.shouldHang('　　“引号开头', 2), isTrue);
+      expect(ChinesePunctuationRule.shouldHang('　　「引号开头', 2), isTrue);
+      expect(ChinesePunctuationRule.shouldHang('　　普通开头', 2), isFalse);
+      expect(ChinesePunctuationRule.shouldHang('“无缩进', 2), isFalse);
+      expect(ChinesePunctuationRule.shouldHang('　　“', 0), isFalse);
+      // 悬挂行为：段首行悬挂宽度 = 缩进宽度，且行宽不超过 可用宽 + 悬挂宽
+      final hangEngine = ParagraphLayoutEngine(
+        config: const ParagraphConfig(
+          fontSize: 16.0,
+          lineHeight: 1.5,
+          indent: 32.0,
+          indentCount: 2,
+          useZhLayout: true,
+          hangingPunctuation: true,
+        ),
+        context: _FakeBuildContext(),
+      );
+      final content = '　　“这是一个带起始引号的段首，用于验证悬挂标点的分页行为表现。’\n\n第二段普通内容。';
+      final pages = hangEngine.paginateChapter(content, 300.0, 600.0);
+      expect(pages, isNotEmpty);
+      final firstPara = pages.first.paragraphs.first;
+      expect(firstPara.lines, isNotEmpty);
+      // 段首行（缩进+引号）应标记悬挂宽度
+      expect(firstPara.lines.first.hangingWidth, greaterThan(0));
+      // 悬挂行总宽不超 可用宽 + 悬挂宽
+      expect(
+        firstPara.lines.first.width,
+        lessThanOrEqualTo(300.0 + firstPara.lines.first.hangingWidth + 1),
+        reason: '悬挂行宽越界: ${firstPara.lines.first.width}',
+      );
+      // 关闭悬挂开关时无悬挂标记
+      final noHangEngine = ParagraphLayoutEngine(
+        config: const ParagraphConfig(
+          fontSize: 16.0,
+          lineHeight: 1.5,
+          indent: 32.0,
+          indentCount: 2,
+          hangingPunctuation: false,
+        ),
+        context: _FakeBuildContext(),
+      );
+      final noHangPages = noHangEngine.paginateChapter(content, 300.0, 600.0);
+      final noHangFirstLine = noHangPages.first.paragraphs.first.lines.first;
+      expect(noHangFirstLine.hangingWidth, equals(0));
+    });
+
     test('页面高度影响总页数', () {
       final content = List.generate(
         10,
