@@ -253,10 +253,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   padding: const EdgeInsets.only(right: 8),
                   child: ActionChip(
                     avatar: const Icon(Icons.folder, size: 16),
-                    label: Text('${state.selectedGroups.length} 分组'),
-                    onPressed: () => ref
-                        .read(searchNotifierProvider.notifier)
-                        .clearGroupFilter(),
+                    // 展示实际分组名（粘性可见），点击清除并重搜
+                    label: Text(state.selectedGroups.length == 1
+                        ? state.selectedGroups.first
+                        : '${state.selectedGroups.length} 分组'),
+                    onPressed: () {
+                      final kw = state.keyword;
+                      ref
+                          .read(searchNotifierProvider.notifier)
+                          .clearGroupFilter();
+                      if (kw.isNotEmpty) {
+                        ref.read(searchNotifierProvider.notifier).search(kw);
+                      }
+                    },
                   ),
                 ),
               if (state.selectedSourceUrls.isNotEmpty)
@@ -264,9 +273,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   avatar: const Icon(Icons.filter_list, size: 16),
                   label: Text(
                       '${state.selectedSourceUrls.length} ${AppStrings.sources}'),
-                  onPressed: () => ref
-                      .read(searchNotifierProvider.notifier)
-                      .clearSourceFilter(),
+                  onPressed: () {
+                    final kw = state.keyword;
+                    ref
+                        .read(searchNotifierProvider.notifier)
+                        .clearSourceFilter();
+                    if (kw.isNotEmpty) {
+                      ref.read(searchNotifierProvider.notifier).search(kw);
+                    }
+                  },
                 ),
             ],
           ),
@@ -328,7 +343,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 书名 16sp + 右侧来源徽标（对标 tv_name + bv_originCount）
+                  // 书名 16sp + 右侧同源数徽标（对标 tv_name + bv_originCount）
                   Row(
                     children: [
                       Expanded(
@@ -342,22 +357,33 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ),
                         ),
                       ),
-                      // 来源徽标（iOS 风格填充胶囊）
+                      // 同源数徽标：对齐原版红数字；单源时显示书源名便于辨认
                       Container(
                         margin: const EdgeInsets.only(left: 8),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
+                          color: result.originsCount > 1
+                              ? colorScheme.primary
+                              : colorScheme.primaryContainer,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          result.sourceName,
+                          result.originsCount > 1
+                              ? '${result.originsCount}'
+                              : (result.sourceName.isNotEmpty
+                                  ? result.sourceName
+                                  : '1'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 11,
-                            color: colorScheme.onPrimaryContainer,
+                            fontWeight: result.originsCount > 1
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: result.originsCount > 1
+                                ? colorScheme.onPrimary
+                                : colorScheme.onPrimaryContainer,
                           ),
                         ),
                       ),
@@ -516,13 +542,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       notifier.clearAllFilter();
     } else if (selected.startsWith('group:')) {
       final group = selected.substring('group:'.length);
-      if (state.selectedGroups.contains(group)) {
-        // 点已勾选分组 = 取消该分组（对标原版 menu_group_1 → remove）
+      if (state.selectedGroups.contains(group) &&
+          state.selectedGroups.length == 1 &&
+          state.selectedSourceUrls.isEmpty) {
+        // 点已勾选唯一分组 = 取消（对标原版 menu_group_1 → remove）
         notifier.toggleGroup(group);
       } else {
-        // 点未勾选分组 = 单选替换（对标原版 menu_group_2 → update(title)）
-        notifier.clearGroupFilter();
-        notifier.toggleGroup(group);
+        // 点未勾选/切换分组 = 单选原子替换（对标原版 menu_group_2 → update）
+        // 使用 selectGroupExclusive 避免 clear+toggle 竞态丢分组
+        notifier.selectGroupExclusive(group);
       }
     } else {
       return;

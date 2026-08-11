@@ -128,9 +128,56 @@ impl HtmlParser {
         Ok(merged)
     }
 
+    /// 对齐原版 `AnalyzeByJSoup.ElementsSingle`：`class.name` / `tag.name` / `id.name`
+    ///
+    /// 原版走 `getElementsByClass` / `getElementsByTag` / `Id` Evaluator；
+    /// Rust 侧若把 `class.comics-card` 直接交给 CSS 解析器，会变成「标签名 class
+    /// + 类 comics-card」，对真实 `<div class="comics-card …">` 永远 0 命中，
+    /// 表现为大量漫画源 `search:empty`（包子/爱看等）。— Auto 2026-08-11
+    fn normalize_jsoup_selector(rule: &str) -> String {
+        let rule = rule.trim();
+        if rule.is_empty() {
+            return String::new();
+        }
+
+        let (prefix, rest) = if let Some(r) = rule.strip_prefix("class.") {
+            ("class", r)
+        } else if let Some(r) = rule.strip_prefix("tag.") {
+            ("tag", r)
+        } else if let Some(r) = rule.strip_prefix("id.") {
+            ("id", r)
+        } else if rule == "children" || rule.starts_with("children.") {
+            return ":scope > *".to_string();
+        } else {
+            return rule.to_string();
+        };
+
+        // `class.comics-card pure-u-1-3 …`：空格后为多余 class 列表，只取首 token
+        // `class.name.0` / `class.name!1` / `class.name[0]`：剥离索引后缀
+        let token = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or(rest)
+            .split(['!', '['])
+            .next()
+            .unwrap_or(rest);
+        let name = token.split('.').next().unwrap_or(token).trim();
+        if name.is_empty() {
+            return rule.to_string();
+        }
+        match prefix {
+            "class" => format!(".{name}"),
+            "tag" => name.to_string(),
+            "id" => format!("#{name}"),
+            _ => rule.to_string(),
+        }
+    }
+
     /// 在已解析的文档上执行选择器并提取内容
     fn extract_from_doc(&self, document: &Html, rule: &str, default_mode: &str) -> Vec<String> {
         let (selector_str, extract_mode, attr_name) = self.parse_last_rule(rule, default_mode);
+        let selector_owned = Self::normalize_jsoup_selector(selector_str);
+        let selector_str = selector_owned.as_str();
 
         // 空选择器：直接对文档 body（或根元素）提取（裸提取关键字场景）
         if selector_str.trim().is_empty() {
@@ -179,8 +226,8 @@ impl HtmlParser {
         let last_idx = sub_rules.len() - 1;
 
         // 逐级选择元素，使用 ElementRef 避免重复解析
-        let first_sel_str = sub_rules[0].trim();
-        let Ok(first_selector) = Selector::parse(first_sel_str) else {
+        let first_owned = Self::normalize_jsoup_selector(sub_rules[0].trim());
+        let Ok(first_selector) = Selector::parse(&first_owned) else {
             return vec![];
         };
 
@@ -188,11 +235,11 @@ impl HtmlParser {
 
         // 中间各级（不含首尾）
         for rule in sub_rules.iter().take(last_idx).skip(1) {
-            let sel_str = rule.trim();
-            if sel_str.is_empty() {
+            let owned = Self::normalize_jsoup_selector(rule.trim());
+            if owned.is_empty() {
                 continue;
             }
-            let Ok(selector) = Selector::parse(sel_str) else {
+            let Ok(selector) = Selector::parse(&owned) else {
                 return vec![];
             };
 
@@ -238,7 +285,9 @@ impl HtmlParser {
             return items;
         }
 
-        let (selector_str, extract_mode, attr_name) = self.parse_last_rule(last_rule, default_mode);
+        let (selector_raw, extract_mode, attr_name) = self.parse_last_rule(last_rule, default_mode);
+        let selector_owned = Self::normalize_jsoup_selector(selector_raw);
+        let selector_str = selector_owned.as_str();
 
         let mut items = Vec::new();
 
@@ -758,5 +807,42 @@ mod tests {
         assert_eq!(result2.len(), 3);
         assert_eq!(result2[0], "第一章");
         let _ = result;
+    }
+
+    #[test]
+    fn test_jsoup_class_prefix_matches_multi_class_elements() {
+        // 对齐原版 getElementsByClass：`class.comics-card` 命中
+        // class="comics-card pure-u-1-2 …"（包子/爱看等漫画搜索列表）
+        let html = r#"
+        <html><body>
+          <div class="comics-card pure-u-1-2 pure-u-md-1-4">
+            <div class="comics-card__title text-truncate">一人之下</div>
+          </div>
+          <div class="comics-card">
+            <div class="comics-card__title">别的书</div>
+          </div>
+          <div class="other">噪声</div>
+        </body></html>"#;
+        let parser = HtmlParser::new();
+        let elems = parser.get_elements(html, "class.comics-card").unwrap();
+        assert_eq!(elems.len(), 2, "应命中 2 个 comics-card，实际: {elems:?}");
+        // 带多余 class 列表的写法（爱看 bookList）只取首 token
+        let elems2 = parser
+            .get_elements(html, "class.comics-card pure-u-1-3 pure-u-md-1-4")
+            .unwrap();
+        assert_eq!(elems2.len(), 2);
+        let titles = parser
+            .get_text(html, "class.comics-card@class.comics-card__title@text")
+            .unwrap();
+        assert!(titles.iter().any(|t| t.contains("一人之下")));
+    }
+
+    #[test]
+    fn test_jsoup_tag_and_id_prefix() {
+        let html = r#"<html><body><p id="x">A</p><span class="s">B</span></body></html>"#;
+        let parser = HtmlParser::new();
+        assert_eq!(parser.get_text(html, "tag.p").unwrap(), vec!["A"]);
+        assert_eq!(parser.get_text(html, "id.x").unwrap(), vec!["A"]);
+        assert_eq!(parser.get_text(html, "class.s").unwrap(), vec!["B"]);
     }
 }

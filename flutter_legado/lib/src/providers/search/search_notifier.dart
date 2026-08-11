@@ -41,8 +41,11 @@ class SearchNotifier extends Notifier<SearchState> {
 
   @override
   SearchState build() {
-    // 延迟到 build() 返回后加载历史
-    Future.microtask(loadHistory);
+    // 延迟到 build() 返回后加载历史 + 恢复搜索范围（对齐原版 AppConfig.searchScope）
+    Future.microtask(() async {
+      await loadHistory();
+      await _restoreSearchScope();
+    });
     return const SearchState();
   }
 
@@ -166,15 +169,14 @@ class SearchNotifier extends Notifier<SearchState> {
           final books = (batch['books'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>()
               .map((e) => SearchResult.fromSearchBook(SearchBook.fromJson(e)));
-          // 按 书名+作者+书源 去重（对齐原版 mergeItems 保留多源：
-          // 同名同作者不同 origin 各自成条；勿用 name|author 吞掉其它漫画源）
+          // 按 书名+作者+书源 去重后进入累积表；展示前由 applyPrecisionSearch
+          // 按书名+作者聚合多 origin（对齐原版 mergeItems.addOrigin）
           for (final r in books) {
             final key = '${r.book.name}|${r.book.author}|${r.book.origin}';
             if (seen.add(key)) accumulated.add(r);
           }
-          // [UI-fix v2.0.10 | 2026-08-10] 分桶排序在批次回调内一次性完成
-          //（对齐原版 mergeItems 每次批次合并后排序），展示层直接读
-          // state.results，避免 build 时全量分桶导致精准搜索卡顿 — Reasonix
+          // [UI-fix v2.0.31 | 2026-08-11] 分桶 + 同书多源聚合，徽章显示
+          // originsCount（对齐原版 bv_originCount）— Auto
           final sorted = applyPrecisionSearch(
             accumulated,
             trimmed,
@@ -220,13 +222,15 @@ class SearchNotifier extends Notifier<SearchState> {
   Future<List<String>?> _resolveSearchSources() async {
     // 无任何筛选条件时搜索全部
     if (state.selectedSourceUrls.isEmpty && state.selectedGroups.isEmpty) {
+      debugPrint('搜索范围: 全部书源（无筛选）');
       return null;
     }
 
     final urls = <String>{...state.selectedSourceUrls};
+    final groups = {...state.selectedGroups};
 
     // 将选中的分组解析为对应的书源 URL
-    if (state.selectedGroups.isNotEmpty) {
+    if (groups.isNotEmpty) {
       try {
         final allSources =
             await ref.read(bookApiProvider).getEnabledBookSources();
@@ -236,7 +240,7 @@ class SearchNotifier extends Notifier<SearchState> {
             // 书源分组可能包含多个组名（逗号分隔）
             final sourceGroups =
                 group.split(RegExp(r'[,，]')).map((g) => g.trim());
-            if (sourceGroups.any(state.selectedGroups.contains)) {
+            if (sourceGroups.any(groups.contains)) {
               urls.add(source.bookSourceUrl);
             }
           }
@@ -248,8 +252,64 @@ class SearchNotifier extends Notifier<SearchState> {
       }
     }
 
+    debugPrint(
+      '搜索范围: groups=$groups sourceUrls=${urls.length} '
+      '(selectedUrls=${state.selectedSourceUrls.length})',
+    );
     // 有筛选条件但解析结果为空，返回空列表（而非 null）以区分"搜索全部"
     return urls.toList();
+  }
+
+  /// 从 AppConfig 恢复搜索范围（对齐原版 SearchScope / searchScope 持久化）
+  Future<void> _restoreSearchScope() async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final scope = (await api.getConfig('searchScope'))?.trim() ?? '';
+      if (scope.isEmpty) return;
+      // 单书源格式 name::url —— 原版不持久化到下次，此处忽略
+      if (scope.contains('::')) return;
+      final groups = scope
+          .split(',')
+          .map((g) => g.trim())
+          .where((g) => g.isNotEmpty)
+          .toSet();
+      if (groups.isEmpty) return;
+      state = state.copyWith(selectedGroups: groups, selectedSourceUrls: {});
+      debugPrint('已恢复搜索范围分组: $groups');
+    } catch (e) {
+      debugPrint('恢复搜索范围失败: $e');
+    }
+  }
+
+  /// 持久化搜索范围（对齐原版 SearchScope.save → AppConfig.searchScope/searchGroup）
+  Future<void> _persistSearchScope() async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final groups = state.selectedGroups.toList()..sort();
+      final urls = state.selectedSourceUrls;
+      String scope;
+      String searchGroup;
+      if (groups.isEmpty && urls.isEmpty) {
+        scope = '';
+        searchGroup = '';
+      } else if (groups.isEmpty && urls.length == 1) {
+        // 单书源不写入 searchGroup（对齐原版 isSource 不缓存为分组）
+        final url = urls.first;
+        scope = '::$url';
+        searchGroup = '';
+      } else if (groups.isNotEmpty && urls.isEmpty) {
+        scope = groups.join(',');
+        searchGroup = groups.length == 1 ? groups.first : '';
+      } else {
+        // 混合多选：以分组为主写入 scope；searchGroup 仅单分组时有值
+        scope = groups.isNotEmpty ? groups.join(',') : '';
+        searchGroup = groups.length == 1 ? groups.first : '';
+      }
+      await api.setConfig('searchScope', scope);
+      await api.setConfig('searchGroup', searchGroup);
+    } catch (e) {
+      debugPrint('持久化搜索范围失败: $e');
+    }
   }
 
   /// 清空关键词与结果（同时取消进行中的搜索）
@@ -301,16 +361,18 @@ class SearchNotifier extends Notifier<SearchState> {
       next.add(sourceUrl);
     }
     state = state.copyWith(selectedSourceUrls: next);
+    unawaited(_persistSearchScope());
   }
 
   /// 清除书源筛选
   void clearSourceFilter() {
     state = state.copyWith(selectedSourceUrls: {});
+    unawaited(_persistSearchScope());
   }
 
   // ===== 分组筛选 =====
 
-  /// 切换分组选中状态
+  /// 切换分组选中状态（多选累加；菜单单选请用 [selectGroupExclusive]）
   void toggleGroup(String group) {
     final next = {...state.selectedGroups};
     if (next.contains(group)) {
@@ -319,16 +381,31 @@ class SearchNotifier extends Notifier<SearchState> {
       next.add(group);
     }
     state = state.copyWith(selectedGroups: next);
+    unawaited(_persistSearchScope());
+  }
+
+  /// 单选替换分组（对齐原版 menu_group_2 → SearchScope.update(title)）
+  ///
+  /// 原子写入 selectedGroups={group} 并清空书源多选，避免 clear+toggle 两步
+  /// 中间态被并发 search 读到空分组而回退全量源（分组粘性根因之一）。
+  void selectGroupExclusive(String group) {
+    state = state.copyWith(
+      selectedGroups: {group},
+      selectedSourceUrls: {},
+    );
+    unawaited(_persistSearchScope());
   }
 
   /// 清除分组筛选
   void clearGroupFilter() {
     state = state.copyWith(selectedGroups: {});
+    unawaited(_persistSearchScope());
   }
 
   /// 清除所有筛选（分组 + 书源）
   void clearAllFilter() {
     state = state.copyWith(selectedSourceUrls: {}, selectedGroups: {});
+    unawaited(_persistSearchScope());
   }
 
   /// 清除错误状态

@@ -2317,6 +2317,150 @@ mod tests {
         }
     }
 
+    /// 抽样：原版有、重构常空的漫画源
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "e2e network probe"]
+    fn probe_missing_manga_sources() {
+        let _db = crate::db_state::ensure_test_db();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp_debug/e2e_5558/probe_missing_srcs.json");
+        let raw = std::fs::read_to_string(&path).expect("probe_missing_srcs.json");
+        let list: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        let _ = crate::api::source::import_sources(&raw);
+        let kw = "一人之下";
+        for v in &list {
+            let name = v
+                .get("bookSourceName")
+                .and_then(|x| x.as_str())
+                .unwrap_or("?");
+            let url = v
+                .get("bookSourceUrl")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let urls_json = serde_json::to_string(&vec![url]).unwrap();
+            match search_books(kw, &urls_json) {
+                Ok(hits) => {
+                    let exact: Vec<_> = hits.iter().filter(|r| r.book_name.contains(kw)).collect();
+                    println!(
+                        "OK\t{name}\tn={}\texact={}\tfirst={}",
+                        hits.len(),
+                        exact.len(),
+                        hits.first().map(|r| r.book_name.as_str()).unwrap_or("-")
+                    );
+                }
+                Err(e) => println!("ERR\t{name}\t{e}"),
+            }
+        }
+    }
+
+    /// 漫画书源分组端到端搜索探针（与模拟器验收同关键词）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "e2e network probe"]
+    fn probe_manga_group_e2e_search() {
+        use std::collections::BTreeMap;
+        let _db = crate::db_state::ensure_test_db();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp_debug/sources.json");
+        let raw = std::fs::read_to_string(&path).expect("sources.json");
+        let mut data: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        let mut manga = Vec::new();
+        for v in &mut data {
+            let group = v
+                .get("bookSourceGroup")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            if !group.contains("漫画书源") {
+                continue;
+            }
+            if let Some(obj) = v.as_object_mut() {
+                for k in [
+                    "enabled",
+                    "enabledExplore",
+                    "enabledCookieJar",
+                    "eventListener",
+                    "customButton",
+                ] {
+                    if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
+                        obj.insert(k.to_string(), serde_json::json!(n != 0));
+                    }
+                }
+            }
+            manga.push(v.clone());
+        }
+        println!("MANGA_GROUP_SOURCES={}", manga.len());
+        let _ = crate::api::source::import_sources(
+            &serde_json::Value::Array(manga.clone()).to_string(),
+        );
+        let urls: Vec<String> = manga
+            .iter()
+            .filter_map(|v| {
+                v.get("bookSourceUrl")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
+        let urls_json = serde_json::to_string(&urls).unwrap();
+        let kw = "一人之下";
+        println!("SEARCH_KW={kw} URLS={}", urls.len());
+        match search_books(kw, &urls_json) {
+            Ok(list) => {
+                // 与原版聚合对比：仅统计书名含关键词的命中（排除作者误匹配等噪声）
+                let exact: Vec<_> = list
+                    .iter()
+                    .filter(|r| r.book_name.contains(kw))
+                    .collect();
+                let mut by_origin: BTreeMap<String, usize> = BTreeMap::new();
+                let mut by_origin_exact: BTreeMap<String, usize> = BTreeMap::new();
+                for r in &list {
+                    *by_origin
+                        .entry(format!("{}|{}", r.source_name, r.source_url))
+                        .or_default() += 1;
+                }
+                for r in &exact {
+                    *by_origin_exact
+                        .entry(format!("{}|{}", r.source_name, r.source_url))
+                        .or_default() += 1;
+                }
+                println!("TOTAL_HITS={}", list.len());
+                println!("ORIGINS_WITH_HITS={}", by_origin.len());
+                println!("EXACT_TITLE_HITS={}", exact.len());
+                println!("EXACT_ORIGINS_WITH_HITS={}", by_origin_exact.len());
+                for (k, n) in &by_origin_exact {
+                    println!("EXACT_ORIGIN\t{n}\t{k}");
+                }
+                for key in ["51", "神漫", "快看"] {
+                    let b = match exact.iter().find(|r| r.source_name.contains(key)) {
+                        Some(r) => *r,
+                        None => match list.iter().find(|r| r.source_name.contains(key)) {
+                            Some(r) => r,
+                            None => {
+                                println!("TOC_SKIP\t{key}\tno search hit");
+                                continue;
+                            }
+                        },
+                    };
+                    let exact_hit = b.book_name.contains(kw);
+                    match crate::api::reader::refresh_toc(&b.book_url, &b.source_url) {
+                        Ok(toc) => println!(
+                            "TOC_OK\t{}\tchapters={}\tbook={}\texact_title={}",
+                            b.source_name,
+                            toc.chapters.len(),
+                            b.book_name,
+                            exact_hit
+                        ),
+                        Err(e) => println!(
+                            "TOC_FAIL\t{}\texact_title={}\t{e}",
+                            b.source_name, exact_hit
+                        ),
+                    }
+                }
+            }
+            Err(e) => println!("SEARCH_ERR={e}"),
+        }
+    }
+
     #[cfg(feature = "quickjs")]
     #[test]
     #[ignore = "requires network"]

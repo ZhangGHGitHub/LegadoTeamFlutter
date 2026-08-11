@@ -36,6 +36,9 @@ void main() {
     when(() =>
             mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
         .thenAnswer((_) => const Stream<Map<String, dynamic>>.empty());
+    // [v2.0.31] 搜索范围持久化：默认无持久化 scope
+    when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+    when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );
@@ -397,6 +400,18 @@ void main() {
       expect(readState().selectedGroups, isEmpty);
       expect(readState().hasFilter, isFalse);
     });
+
+    test('selectGroupExclusive 原子单选并清空书源多选', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      readNotifier().toggleSource('https://a.com');
+      readNotifier().toggleGroup('都市');
+      readNotifier().selectGroupExclusive('漫画书源');
+
+      expect(readState().selectedGroups, equals({'漫画书源'}));
+      expect(readState().selectedSourceUrls, isEmpty);
+    });
   });
 
   group('SearchNotifier search 方法（mock API）', () {
@@ -440,7 +455,7 @@ void main() {
       expect(readState().hasResults, isTrue);
     });
 
-    test('多源批次逐源追加且同名同作者同书源去重（进度 x/y 更新）', () async {
+    test('多源批次同名同作者聚合为一条，originsCount 累加（进度 x/y 更新）', () async {
       when(() =>
               mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
           .thenAnswer((_) => Stream.fromIterable([
@@ -460,7 +475,7 @@ void main() {
                 ),
                 makeBatch(
                   books: [
-                    // 同名同作者但不同 origin → 保留（展示多源）
+                    // 同名同作者不同 origin → 聚合为一条（对齐 mergeItems.addOrigin）
                     {
                       'name': '遮天',
                       'author': '辰东',
@@ -487,14 +502,21 @@ void main() {
       await readNotifier().search('遮天');
       await pumpStream();
 
-      // 两源「遮天」+「完美世界」→ 3 条（去重键含 origin）
-      expect(readState().results.length, equals(3));
-      expect(readState().results.map((r) => r.book.name),
-          containsAll(['遮天', '完美世界']));
+      // 「遮天」两源聚合 1 条 +「完美世界」1 条 → 2 条
+      expect(readState().results.length, equals(2));
+      final zhetian =
+          readState().results.where((r) => r.book.name == '遮天').single;
+      expect(zhetian.originsCount, equals(2));
+      expect(zhetian.effectiveOrigins, containsAll([
+        'https://a.com',
+        'https://b.com',
+      ]));
       expect(
-        readState().results.where((r) => r.book.name == '遮天').length,
-        equals(2),
+        readState().results.map((r) => r.book.name),
+        containsAll(['遮天', '完美世界']),
       );
+      // equal 桶「遮天」应排在 contains「完美世界」之前，且多源优先
+      expect(readState().results.first.book.name, equals('遮天'));
       // 进度对齐批次 finished_count/total_count
       expect(readState().searchedCount, equals(2));
       expect(readState().totalCount, equals(2));
@@ -789,14 +811,29 @@ void main() {
   });
 
   group('applyPrecisionSearch 精准搜索（fix34：对齐原版 SearchModel 语义）', () {
-    SearchResult mk(String name, String author, {String? kind}) =>
-        SearchResult(book: Book(name: name, author: author, kind: kind));
+    SearchResult mk(
+      String name,
+      String author, {
+      String? kind,
+      String origin = '',
+      String sourceName = '',
+    }) =>
+        SearchResult(
+          book: Book(
+            name: name,
+            author: author,
+            kind: kind,
+            origin: origin,
+          ),
+          sourceName: sourceName.isEmpty ? origin : sourceName,
+          origins: origin.isEmpty ? const {} : {origin},
+        );
 
     test('同名/同作者精确命中保留且排最前（equal 桶）', () {
       final results = [
-        mk('重生1990', '张三'),
-        mk('重生', '李四'),
-        mk('某书', '重生'),
+        mk('重生1990', '张三', origin: 'a'),
+        mk('重生', '李四', origin: 'b'),
+        mk('某书', '重生', origin: 'c'),
       ];
 
       final out = applyPrecisionSearch(results, '重生');
@@ -808,8 +845,8 @@ void main() {
 
     test('书名/作者包含关键词保留（contains 桶，非精确相等）', () {
       final results = [
-        mk('重生之门', '王五'),
-        mk('平凡之路', '重生者'),
+        mk('重生之门', '王五', origin: 'a'),
+        mk('平凡之路', '重生者', origin: 'b'),
       ];
 
       final out = applyPrecisionSearch(results, '重生');
@@ -821,9 +858,9 @@ void main() {
 
     test('kind 标签包含关键词保留（tags 桶，顺序 equal→tags→contains）', () {
       final results = [
-        mk('重生之路', '甲'), // contains
-        mk('都市情缘', '乙', kind: '重生,都市'), // tags
-        mk('重生', '丙'), // equal
+        mk('重生之路', '甲', origin: 'a'), // contains
+        mk('都市情缘', '乙', kind: '重生,都市', origin: 'b'), // tags
+        mk('重生', '丙', origin: 'c'), // equal
       ];
 
       final out = applyPrecisionSearch(results, '重生');
@@ -833,8 +870,8 @@ void main() {
 
     test('无关项（other 桶）精准模式（keepOther: false）被丢弃', () {
       final results = [
-        mk('重生', '甲'),
-        mk('斗破苍穹', '天蚕土豆', kind: '玄幻'),
+        mk('重生', '甲', origin: 'a'),
+        mk('斗破苍穹', '天蚕土豆', kind: '玄幻', origin: 'b'),
       ];
 
       final out = applyPrecisionSearch(results, '重生', keepOther: false);
@@ -847,8 +884,8 @@ void main() {
       // [UI-fix v2.0.10 | 2026-08-10] 对齐原版 mergeItems：默认搜索保留
       // other 桶（追加末尾），仅精准模式丢弃 — Reasonix
       final results = [
-        mk('重生', '甲'),
-        mk('斗破苍穹', '天蚕土豆', kind: '玄幻'),
+        mk('重生', '甲', origin: 'a'),
+        mk('斗破苍穹', '天蚕土豆', kind: '玄幻', origin: 'b'),
       ];
 
       final out = applyPrecisionSearch(results, '重生');
@@ -860,8 +897,8 @@ void main() {
 
     test('归一化一致：kind 为 null 不抛错且按空串处理', () {
       final results = [
-        mk('重生之门', '甲'), // kind null
-        mk('斗破', '乙'),
+        mk('重生之门', '甲', origin: 'a'), // kind null
+        mk('斗破', '乙', origin: 'b'),
       ];
 
       final out = applyPrecisionSearch(results, '重生', keepOther: false);
@@ -871,9 +908,49 @@ void main() {
     });
 
     test('关键词为空返回原列表', () {
-      final results = [mk('斗破苍穹', '天蚕土豆')];
+      final results = [mk('斗破苍穹', '天蚕土豆', origin: 'a')];
 
       expect(applyPrecisionSearch(results, ''), same(results));
+    });
+
+    test('同名同作者多源聚合为一条且 originsCount 累加（对齐 mergeItems.addOrigin）',
+        () {
+      final results = [
+        mk('一人之下', '米二', origin: 'https://a.com', sourceName: '源A'),
+        mk('一人之下', '米二', origin: 'https://b.com', sourceName: '源B'),
+        mk('一人之下', '米二', origin: 'https://c.com', sourceName: '源C'),
+        mk('一人之下番外', '米二', origin: 'https://d.com', sourceName: '源D'),
+      ];
+
+      final out = applyPrecisionSearch(results, '一人之下');
+
+      expect(out, hasLength(2));
+      expect(out.first.book.name, equals('一人之下'));
+      expect(out.first.originsCount, equals(3));
+      expect(out.first.effectiveOrigins, containsAll([
+        'https://a.com',
+        'https://b.com',
+        'https://c.com',
+      ]));
+      // 多源条排在单源 contains 之前（equal 桶内按 origins 降序）
+      expect(out.last.book.name, equals('一人之下番外'));
+      expect(out.last.originsCount, equals(1));
+    });
+
+    test('多源条按 originsCount 降序（同桶）', () {
+      final results = [
+        mk('一人之下', '甲', origin: 'https://1.com'),
+        mk('一人之下', '乙', origin: 'https://2a.com'),
+        mk('一人之下', '乙', origin: 'https://2b.com'),
+        mk('一人之下', '乙', origin: 'https://2c.com'),
+      ];
+
+      final out = applyPrecisionSearch(results, '一人之下');
+
+      expect(out.first.book.author, equals('乙'));
+      expect(out.first.originsCount, equals(3));
+      expect(out.last.book.author, equals('甲'));
+      expect(out.last.originsCount, equals(1));
     });
   });
 }

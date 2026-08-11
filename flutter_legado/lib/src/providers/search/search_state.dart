@@ -14,7 +14,7 @@ class SearchState with _$SearchState {
     /// 当前搜索关键词
     @Default('') String keyword,
 
-    /// 搜索结果列表（searchBooks 返回，已按书源聚合）
+    /// 搜索结果列表（已按书名+作者聚合，对齐原版 mergeItems）
     @Default([]) List<SearchResult> results,
 
     /// 是否正在搜索
@@ -70,44 +70,63 @@ extension SearchStateDisplay on SearchState {
   }
 }
 
-/// 精准搜索过滤 + 分桶排序（严格对齐原版 `SearchModel.mergeItems` 语义）
+/// 同书聚合 + 分桶排序（严格对齐原版 `SearchModel.mergeItems`）
 ///
-/// 原版两处协同：
-/// 1. 源侧 filter（SearchModel.startSearch）：`!precision || name.contains(key)
-///    || author.contains(key) || kind?.contains(key) == true`——**包含**匹配而非精确相等；
-/// 2. mergeItems：分桶 equal(name==key|author==key) → tags(kind 包含) →
-///    contains(name|author 包含) → other，precision 时 **丢弃 other**，
-///    最终按 equal→tags→contains→(other) 顺序输出。
+/// 原版行为：
+/// 1. 同名同作者合并为一条，`addOrigin` 累加来源（红数字 = origins.size）；
+/// 2. 分桶 equal(name==key|author==key) → tags(kind 包含) →
+///    contains(name|author 包含) → other；precision 时丢弃 other；
+/// 3. 各桶内按 `origins.size` 降序。
 ///
-/// [UI-fix v2.0.10 | 2026-08-10] 原版 mergeItems 无条件执行（默认搜索也按
-/// 匹配度分桶排序，仅 other 桶受 precision 开关影响）；修复前仅精准模式
-/// 排序、默认模式按书源顺序，与原版不符 — Reasonix
+/// [UI-fix v2.0.31 | 2026-08-11] 此前仅分桶、按 origin 分行，用户体感
+/// 「源少/噪声大」；现对齐原版同书多源聚合 — Auto
 List<SearchResult> applyPrecisionSearch(
   List<SearchResult> results,
   String key, {
   bool keepOther = true,
 }) {
   if (key.isEmpty) return results;
-  final equal = <SearchResult>[];
-  final tags = <SearchResult>[];
-  final contains = <SearchResult>[];
-  final other = <SearchResult>[];
+
+  final equal = <String, SearchResult>{};
+  final tags = <String, SearchResult>{};
+  final contains = <String, SearchResult>{};
+  final other = <String, SearchResult>{};
+
+  void mergeInto(Map<String, SearchResult> bucket, SearchResult item) {
+    final mapKey = '${item.book.name}\u0000${item.book.author}';
+    final existing = bucket[mapKey];
+    if (existing == null) {
+      bucket[mapKey] = item.copyWith(origins: {...item.effectiveOrigins});
+    } else {
+      bucket[mapKey] = existing.withAddedOrigin(item);
+    }
+  }
+
   for (final r in results) {
     final name = r.book.name;
     final author = r.book.author;
     final kind = r.book.kind ?? '';
     if (name == key || author == key) {
-      equal.add(r);
+      mergeInto(equal, r);
     } else if (kind.contains(key)) {
-      tags.add(r);
+      mergeInto(tags, r);
     } else if (name.contains(key) || author.contains(key)) {
-      contains.add(r);
+      mergeInto(contains, r);
     } else if (keepOther) {
-      // 非精准模式：other 桶追加在末尾（对齐原版 mergeItems `else if (!precision)`）
-      other.add(r);
+      mergeInto(other, r);
     }
   }
-  // 原版组内 `sortByDescending { it.origins.size }`（多源聚合后按来源数
-  // 降序）；Flutter 侧当前为「先到先得」去重（无聚合），每组内保持到达顺序
-  return [...equal, ...tags, ...contains, ...other];
+
+  List<SearchResult> sortedBucket(Map<String, SearchResult> bucket) {
+    final list = bucket.values.toList()
+      ..sort((a, b) => b.originsCount.compareTo(a.originsCount));
+    return list;
+  }
+
+  return [
+    ...sortedBucket(equal),
+    ...sortedBucket(tags),
+    ...sortedBucket(contains),
+    if (keepOther) ...sortedBucket(other),
+  ];
 }

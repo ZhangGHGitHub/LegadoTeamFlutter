@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.31] - 2026-08-11
+
+### 修复（搜索分组粘性 + 同书聚合 + `class.` 选择器，[UI]+[Rust]）
+
+对照原版 3.26080322「漫画书源 / 一人之下」：聚合顶条约 **13** 源；重构引擎精确书名曾约 **10~11**，UI 却常搜全量 968 源且按源分行，体感「结果少/源少」。
+
+1. **Flutter 漫画分组粘性（P1）**
+   - **根因**：选分组用 `clearGroupFilter`+`toggleGroup` 两步写状态，并发 search 可能读到空分组而回退全量；搜索范围未持久化。
+   - **修复**：`selectGroupExclusive` 原子单选；`searchScope`/`searchGroup` 读写对齐原版；芯片展示真实分组名，清除后自动重搜。
+
+2. **同书多源聚合（P1）**
+   - **根因**：`applyPrecisionSearch` 只分桶、不 `addOrigin`；徽标显示书源名而非同源数。
+   - **修复**：按书名+作者聚合 `origins`，桶内按 `originsCount` 降序；多源徽标显示数字（对齐 `bv_originCount`）。
+
+3. **引擎 `class.xxx` → 空列表（P0 引擎）**
+   - **根因**：原版 `class.comics-card` 走 JSoup `getElementsByClass`；Rust 原样当 CSS → 匹配「标签 class」永远 0 命中 → 包子/爱看等大量 `search:empty`。
+   - **修复**：`HtmlParser` 将 `class./tag./id.` 转为 `.xxx` / `tag` / `#id`。
+   - **探针（漫画组 83 源，「一人之下」）**：精确书名源 **10→17**（超原版聚合 ~13）；有结果源 **20→34**；总命中 **317→583**；爱看 0→30、包子优+ 0→88。
+
+4. **仍差**
+   - 包子漫画（优）本轮仍 0（站点 SSL/可达性）；快看 TOC `__NUXT__`；部分 `@js`/`jsLib` 源仍空。
+
+编写者：Auto ｜ 2026-08-11
+
 ## [2.0.30] - 2026-08-11
 
 ### 修复（搜索相对 URL 绝对化 + 目录 `<js>$[*]` 链拆解，[Rust] 为主）
