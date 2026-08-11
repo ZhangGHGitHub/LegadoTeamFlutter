@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.24] - 2026-08-11
+
+### 修复（规则 JS 执行引擎池复用 const redeclaration，[Rust] 轨）
+- **模拟器实测仍无目录的差异根因**：Rust 网络测试通过但 app 失败——进程内**引擎池复用**。书源规则常用顶层 `const/let` 声明（51漫画 chapterList `const scripts`），QuickJS 同一引擎第二次执行同一规则必报 `redeclaration of 'scripts'`（全局词法环境残留）。测试每次新进程（干净池）通过；app 内多次刷新/进详情页第二次执行即失败 → 目录空
+- 修复：`QuickJsExecutor.execute_js` 每次执行创建**独立新引擎**（用完即弃），对齐原版 Rhino 每次 evalJS 新作用域语义；移除 QuickJsExecutor 的 pool 字段（global_pool/pool_engine 保留供 imageDecode 等一次性 eval 场景）
+- 测试：legado-ffi 264/264 全过；5556/5558 冒烟 6/6（v2.0.24+26）
+
 ## [2.0.23] - 2026-08-11
 
 ### 修复（漫画源目录「暂无章节」最终根治，[Rust] 轨）
