@@ -733,9 +733,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         )
         .await;
 
-        // 4. R1 subContent 副内容（Task #134）：分页循环完成后从首页提取副内容并追加。
+        // 4. R1 subContent 副内容（Task #134）：分页循环完成后从首页提取副内容。
         //    执行顺序对标原版 BookContent.kt L128-165：nextContentUrl 分页之后、
         //    replaceRegex 全文替换之前。
+        //    音视频：原版 putLyric / putDanmaku，**不**拼进正文（误拼会污染播放 URL）。
         if let Some(page_body) = first_page_body {
             let sub_headers = source_headers.clone();
             if let Some(sub) = fetch_sub_content(
@@ -751,9 +752,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             )
             .await
             {
-                // 对标 Kotlin contentList.add(subContent) 后 joinToString("\n")
-                content.push('\n');
-                content.push_str(&sub);
+                merge_sub_content_into_body(&mut content, &sub, is_media);
             }
         }
 
@@ -1071,11 +1070,9 @@ where
 /// - 否则直接以规则提取结果作为副内容。
 /// - 对标 Kotlin `runCatching`：任何失败仅记日志，不影响主正文返回。
 ///
-/// 对齐差异说明：原版按书籍类型分流（isOnLineTxt → 原始文本直加；
-/// isAudio → putLyric 歌词；isVideo → putDanmaku 弹幕），Rust 侧 FFI
-/// 无状态签名无 Book 上下文，统一追加到正文文本（避免副内容丢失）；
-/// 待阅读器支持歌词/弹幕承载后可再按类型分流。另原版 isOnLineTxt
-/// 跳过 http 二次请求，Rust 侧无书籍类型信息，统一执行二次请求判定。
+/// 对齐差异说明：提取逻辑对齐原版；是否拼进正文由调用方按 `is_media`
+/// 决定（见 [merge_sub_content_into_body]）。另原版 isOnLineTxt 跳过 http
+/// 二次请求，此处统一执行二次请求判定。
 async fn fetch_sub_content<F, Fut>(
     page_body: String,
     sub_rule: &str,
@@ -1117,6 +1114,18 @@ where
     } else {
         Some(raw.to_string())
     }
+}
+
+/// 副内容是否写入正文（对标 BookContent.kt L128-165）
+///
+/// - 文本：拼进 contentList（此处简化为追加）
+/// - 音频/视频：原版 putLyric / putDanmaku，**禁止**拼进播放链接正文
+fn merge_sub_content_into_body(content: &mut String, sub: &str, is_media: bool) {
+    if is_media || sub.is_empty() {
+        return;
+    }
+    content.push('\n');
+    content.push_str(sub);
 }
 
 // ─── R2 replaceRegex 全文替换（Task #134） ──────────────────────────────────
@@ -1578,6 +1587,7 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legado_core::models::book_source::book_source_type;
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {
@@ -2193,6 +2203,18 @@ mod tests {
         assert!(result.is_none());
     }
 
+    #[test]
+    fn test_merge_sub_content_skips_media_to_protect_play_url() {
+        // 视频/音频：副内容不得拼进正文（对齐 putDanmaku / putLyric）
+        let mut video_body = "https://cdn.example/v.mp4".to_string();
+        merge_sub_content_into_body(&mut video_body, "{\"danmaku\":[]}", true);
+        assert_eq!(video_body, "https://cdn.example/v.mp4");
+
+        let mut text_body = "第一章正文".to_string();
+        merge_sub_content_into_body(&mut text_body, "作者有话说", false);
+        assert_eq!(text_body, "第一章正文\n作者有话说");
+    }
+
     // ─── R2 replaceRegex 单测（Task #134，对标 BookContent.kt L166-175） ────
 
     #[test]
@@ -2324,6 +2346,71 @@ mod tests {
         assert!(
             !content.contains("img.example.com"),
             "无 jsLib 时不应解析出库函数结果，实际: {content}"
+        );
+    }
+
+    /// 离线：伪七猫 play HTML + @js 规则应抽出 m3u8
+    #[test]
+    fn qmao_js_rule_extracts_m3u8_from_saved_html() {
+        let html_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../flutter_legado/_debug_db/qmao_play_full.html"
+        );
+        let html = std::fs::read_to_string(html_path).expect("qmao_play_full.html");
+        let json = include_str!("../../tests/fixtures/qmao_min_source.json");
+        let source: BookSource = serde_json::from_str(json).unwrap();
+        let rule = source
+            .rule_content
+            .as_ref()
+            .and_then(|r| r.content.as_deref())
+            .unwrap();
+        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            html,
+            "https://www.qmao.net/vodplay/27017-1-1.html".into(),
+            "https://www.qmao.net",
+            None,
+        );
+        let out = match analyzer.get_string(rule) {
+            Ok(s) => s,
+            Err(e) => panic!("get_string err: {e}"),
+        };
+        eprintln!("offline js out={out}");
+        assert!(
+            out.contains(".m3u8") || out.contains(".mp4"),
+            "js rule should extract media url, got: {out}"
+        );
+    }
+
+    /// 网络冒烟：伪七猫 play 页 @js 抽出 m3u8（验证 VIDEO 正文不被污染）
+    #[test]
+    #[ignore = "network smoke: qmao video content"]
+    fn qmao_video_content_smoke() {
+        let json = include_str!("../../tests/fixtures/qmao_min_source.json");
+        let source: BookSource = serde_json::from_str(json).expect("source json");
+        assert_eq!(source.book_source_type, book_source_type::VIDEO);
+
+        let chapter = WebChapter {
+            index: 0,
+            title: "第1集".into(),
+            url: "https://www.qmao.net/vodplay/27017-1-1.html".into(),
+            is_vip: false,
+            is_volume: false,
+        };
+        let content = webbook_content(json, &serde_json::to_string(&chapter).unwrap())
+            .expect("webbook_content");
+        eprintln!(
+            "qmao content len={} head={}",
+            content.len(),
+            &content[..content.len().min(180)]
+        );
+        let first = content.lines().next().unwrap_or("").trim();
+        assert!(
+            first.contains(".m3u8") || first.contains(".mp4"),
+            "expected media url first line, got: {content}"
+        );
+        assert!(
+            !content.contains("player_aaaa"),
+            "raw html must not leak into play content"
         );
     }
 }

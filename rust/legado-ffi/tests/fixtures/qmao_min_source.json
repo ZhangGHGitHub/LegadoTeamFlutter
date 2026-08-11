@@ -1,0 +1,21 @@
+{
+  "bookSourceUrl": "https://www.qmao.net",
+  "bookSourceName": "伪七猫影视",
+  "bookSourceType": 4,
+  "enabled": true,
+  "searchUrl": "https://www.qmao.net/vodsearch/{{key}}----------{{page}}---.html",
+  "ruleSearch": {
+    "bookList": ".TagBookList_tagItem",
+    "name": ".TagBookList_bookName@text",
+    "bookUrl": "a.TagBookList_bookImageBox@href"
+  },
+  "ruleToc": {
+    "chapterList": ".pcDrama_catalogItem",
+    "chapterName": "text",
+    "chapterUrl": "href"
+  },
+  "ruleContent": {
+    "content": "@js:\nvar html = String(result);\nvar m = html.match(/var player_aaaa=(\\{[\\s\\S]*?\\})\\s*<\\/script>/);\nif (!m) {\n    m = html.match(/var player_aaaa=(\\{[\\s\\S]*?\\})/);\n}\nif (m) {\n    try {\n        var data = JSON.parse(m[1]);\n        result = data.url || '';\n    } catch (e) {\n        var u = m[1].match(/\"url\"\\s*:\\s*\"([^\"]+)\"/);\n        result = u ? u[1] : '';\n    }\n} else {\n    var u2 = html.match(/\"url\"\\s*:\\s*\"([^\"]+)\"/);\n    result = u2 ? u2[1] : '';\n}\nresult = String(result).replace(/\\\\\\//g, '/');\nresult",
+    "sourceRegex": ".*\\.(m3u8|mp4|flv).*"
+  }
+}

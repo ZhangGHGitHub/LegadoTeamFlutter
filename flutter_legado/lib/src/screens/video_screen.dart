@@ -1,25 +1,26 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
-import '../utils/url_utils.dart';
+import '../utils/video_play_utils.dart';
 
 /// 视频播放页面
 ///
-/// 参考 Kotlin 原版 [VideoPlayerActivity] 的设计思路：
+/// 参考 Kotlin 原版 [VideoPlayerActivity] / [VideoPlay]：
 /// - 接收视频 URL 和标题参数
 /// - 支持播放/暂停、进度拖拽、时间显示
 /// - 支持全屏切换（横屏模式）
 /// - 加载中指示器与错误处理
-/// - [UI-fix v2.0.12 | 2026-08-10] 视频源（bookSourceType=4）书籍支持：
-///   传入 [book] 时按原版 VideoPlayerActivity 语义加载章节列表，取当前章
-///   正文（视频链接）播放，支持上一集/下一集切换 — Reasonix
+/// - 视频源（bookSourceType=4）：章节列表、正文经 [resolveVideoPlayTarget]
+///   （相对 URL / 复合 UrlOption header / MPD）后播放，上一集/下一集跳过卷标题
+/// — Reasonix
 class VideoScreen extends StatefulWidget {
   /// 视频播放地址
   final String videoUrl;
@@ -55,61 +56,77 @@ class _VideoScreenState extends State<VideoScreen> {
   bool _showControls = true;
 
   // ===== 视频源书籍（章节播放）状态 =====
-  /// 章节列表（book 模式）
   List<BookChapter> _chapters = const [];
-
-  /// 当前章节索引（book 模式）
   int _chapterIndex = 0;
-
-  /// 章节正文加载中
   bool _loadingChapter = false;
-
-  /// 章节加载/切换错误信息（book 模式）
   String? _chapterError;
 
-  /// 书源防盗链 header（Referer/UA 等，对齐原版 VideoPlay player.mapHeadData）
-  /// [UI-fix 2026-08-10 | Reasonix] 视频 CDN 常校验 Referer，无 header 时 403
+  /// 书源原始 header（JSON / 行格式），每集再与 UrlOption 合并
+  Map<String, String> _sourceHeaders = const {};
+
+  /// 当前集交给播放器的 header（对齐 AnalyzeUrl.headerMap）
   Map<String, String> _videoHeaders = const {};
 
-  /// 当前实际播放地址（book 模式来自章节正文；直链模式为 widget.videoUrl）
-  /// — Reasonix + UI
+  /// 当前实际播放地址（网络 URL 或本地 MPD file URI）
   String _currentPlayUrl = '';
+
+  /// MPD 临时文件（切换章/退出时清理）
+  File? _mpdTempFile;
 
   @override
   void initState() {
     super.initState();
     if (widget.book != null) {
-      // 首帧即 loading，避免访问尚未初始化的 late _controller / Future
       _loadingChapter = true;
       _loadBookVideo();
     } else {
-      _currentPlayUrl = widget.videoUrl;
-      _initPlayer(widget.videoUrl);
+      unawaited(_playDirectUrl(widget.videoUrl));
     }
   }
 
-  /// 视频源书籍：加载章节列表并播放当前章（对齐原版 VideoPlayerActivity）
+  /// 直链模式：同样走复合 URL / header / MPD 解析
+  Future<void> _playDirectUrl(String raw) async {
+    setState(() {
+      _loadingChapter = true;
+      _chapterError = null;
+    });
+    try {
+      final target = resolveVideoPlayTarget(
+        content: raw,
+        chapterUrl: raw,
+        sourceHeaders: _sourceHeaders,
+      );
+      await _startFromTarget(target);
+      if (mounted) setState(() => _loadingChapter = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingChapter = false;
+          _chapterError = '$e';
+        });
+      }
+    }
+  }
+
+  /// 视频源书籍：加载章节列表并播放当前可播章（对齐 VideoPlayerActivity）
   Future<void> _loadBookVideo() async {
     final book = widget.book!;
     setState(() => _loadingChapter = true);
     try {
       final api = ProviderScope.containerOf(context).read(bookApiProvider);
-      // 书源防盗链 header（仅取一次）— Reasonix
-      if (_videoHeaders.isEmpty && book.origin.isNotEmpty) {
+      if (_sourceHeaders.isEmpty && book.origin.isNotEmpty) {
         try {
           final sources = await api.getBookSources();
           for (final s in sources) {
             if (s.bookSourceUrl == book.origin &&
                 s.header != null &&
                 s.header!.isNotEmpty) {
-              _videoHeaders = _parseHeaderMap(s.header!);
+              _sourceHeaders = parseSourceHeaderMap(s.header!);
               break;
             }
           }
         } catch (_) {}
       }
-      // 对齐文本/漫画阅读器：本地无目录的在线书自动 refreshToc
-      // （搜索进详情未落库章节时否则永远「暂无章节」）— Reasonix + UI
       _chapters = await api.getChapters(book.bookUrl);
       if (_chapters.isEmpty && book.origin.isNotEmpty) {
         _chapters = await api.refreshToc(book.bookUrl, book.origin);
@@ -121,8 +138,10 @@ class _VideoScreenState extends State<VideoScreen> {
         });
         return;
       }
-      var index = book.durChapterIndex;
-      if (index >= _chapters.length) index = 0;
+      final index = findPlayableChapterIndex(
+        _chapters.map((c) => c.isVolume).toList(),
+        book.durChapterIndex,
+      );
       _chapterIndex = index;
       await _playChapter(index);
     } catch (e) {
@@ -133,45 +152,51 @@ class _VideoScreenState extends State<VideoScreen> {
     }
   }
 
-  /// 播放指定章节：取章节正文（视频链接）后初始化播放器
+  /// 播放指定章节：正文 → [resolveVideoPlayTarget] → 播放器
   Future<void> _playChapter(int index) async {
     final book = widget.book!;
     final chapter = _chapters[index];
+    if (chapter.isVolume) {
+      final playable = findPlayableChapterIndex(
+        _chapters.map((c) => c.isVolume).toList(),
+        index,
+      );
+      if (playable == index && chapter.isVolume) {
+        setState(() {
+          _loadingChapter = false;
+          _chapterError = '当前为卷标题，无播放地址';
+        });
+        return;
+      }
+      return _playChapter(playable);
+    }
     setState(() {
       _loadingChapter = true;
       _chapterError = null;
     });
     try {
       final api = ProviderScope.containerOf(context).read(bookApiProvider);
-      // 视频源章节正文为播放链接（Rust is_media 分支不做 HTML 格式化，
-      // 对齐原版 BookContent「音频和视频获取的是链接」语义）
       final content = book.origin.isNotEmpty
           ? await api.fetchChapterContent(
               book.bookUrl, chapter.url, book.origin)
           : await api.getChapterContent(book.bookUrl, index);
-      final extracted = _extractVideoUrl(content);
-      // 相对路径以章节 URL 为 base 绝对化（对齐原版 NetworkUtils.getAbsoluteURL）
-      // — Reasonix + UI
-      final url = resolveAbsoluteUrl(chapter.url, extracted);
-      if (url.isEmpty) {
+      final target = resolveVideoPlayTarget(
+        content: content,
+        chapterUrl: chapter.url,
+        sourceHeaders: _sourceHeaders,
+      );
+      if (!target.isMpd && target.url.isEmpty) {
         setState(() {
           _loadingChapter = false;
           _chapterError = '章节未解析出视频地址';
         });
         return;
       }
-      // [UI-fix v2.0.12] 首次播放前 _controller 可能未初始化（异步加载中），
-      // 防御性释放（快速退出/加载失败场景）— Reasonix
-      try {
-        _controller.dispose();
-      } catch (_) {}
-      _currentPlayUrl = url;
-      _initPlayer(url);
+      await _startFromTarget(target);
       setState(() {
         _loadingChapter = false;
         _chapterIndex = index;
       });
-      // 章节切换后写回进度（durChapterIndex；pos 在播放中/退出再更新）
       unawaited(_saveProgress(chapterPos: 0));
     } catch (e) {
       setState(() {
@@ -181,63 +206,52 @@ class _VideoScreenState extends State<VideoScreen> {
     }
   }
 
-  /// 从章节正文提取视频链接
-  ///
-  /// 支持：纯 URL、`<iframe src=...>`、`<video src=...>`、`source src=...`；
-  /// 兜底取首个 `https?://` URL（对齐原版 VideoPlay 正文即播放地址语义）
-  /// [UI-fix 2026-08-10 | Reasonix] 视频源 ruleContent 常返回播放器页 HTML
-  String _extractVideoUrl(String content) {
-    final trimmed = content.trim();
-    if (trimmed.isEmpty) return '';
-    // 优先提取 iframe/video/source 标签的 src（播放器页 HTML 场景）
-    for (final tag in ['iframe', 'video', 'source', 'embed']) {
-      final tagM = RegExp('<$tag[^>]+src=["\']([^"\'>]+)["\']', caseSensitive: false)
-          .firstMatch(trimmed);
-      if (tagM != null) {
-        final tagUrl = tagM.group(1)!.trim();
-        if (tagUrl.isNotEmpty) {
-          return tagUrl;
-        }
-      }
+  /// 将 [VideoPlayTarget] 落到播放器（含 MPD 落盘）
+  Future<void> _startFromTarget(VideoPlayTarget target) async {
+    try {
+      _controller.dispose();
+    } catch (_) {}
+    await _clearMpdTemp();
+
+    _videoHeaders = Map<String, String>.from(target.headers);
+
+    if (target.isMpd) {
+      final dir = await getTemporaryDirectory();
+      final name =
+          'legado_video_${DateTime.now().millisecondsSinceEpoch}.mpd';
+      final file = File('${dir.path}/$name');
+      await file.writeAsString(target.mpdContent!);
+      _mpdTempFile = file;
+      _currentPlayUrl = file.uri.toString();
+      _initPlayer(filePath: file.path);
+      return;
     }
-    final m = RegExp(r'https?://\S+').firstMatch(trimmed);
-    if (m == null) return trimmed;
-    return m.group(0)!.trim().replaceAll(RegExp(r'[)\]}>"\x27]+$'), '');
+
+    _currentPlayUrl = target.url;
+    _initPlayer(networkUrl: target.url);
   }
 
-  /// 解析书源 header 字符串（JSON 或 key: value 行）— Reasonix
-  Map<String, String> _parseHeaderMap(String header) {
-    final trimmed = header.trim();
-    if (trimmed.isEmpty) return const {};
-    if (trimmed.startsWith('{')) {
-      try {
-        final decoded = jsonDecode(trimmed);
-        if (decoded is Map<String, dynamic>) {
-          return decoded.map((k, v) => MapEntry(k, v.toString()));
-        }
-      } catch (_) {
-        // JSON 解析失败走行解析
-      }
-    }
-    final map = <String, String>{};
-    for (final line in trimmed.split('\n')) {
-      final idx = line.indexOf(':');
-      if (idx > 0) {
-        map[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
-      }
-    }
-    return map;
+  Future<void> _clearMpdTemp() async {
+    final f = _mpdTempFile;
+    _mpdTempFile = null;
+    if (f == null) return;
+    try {
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
   }
 
-  /// 切换上一集/下一集
+  /// 上一集/下一集：跳过卷标题
   void _switchChapter(int delta) {
-    if (widget.book == null) return;
-    final next = _chapterIndex + delta;
+    if (widget.book == null || _chapters.isEmpty) return;
+    var next = _chapterIndex + delta;
+    while (next >= 0 && next < _chapters.length && _chapters[next].isVolume) {
+      next += delta;
+    }
     if (next < 0 || next >= _chapters.length) return;
-    _playChapter(next);
+    unawaited(_playChapter(next));
   }
 
-  /// 写回阅读进度（durChapterIndex / durChapterPos）— Reasonix + UI
+  /// 写回阅读进度（durChapterIndex / durChapterPos）
   Future<void> _saveProgress({int? chapterPos}) async {
     final book = widget.book;
     if (book == null) return;
@@ -258,13 +272,10 @@ class _VideoScreenState extends State<VideoScreen> {
         chapterIndex: _chapterIndex,
         chapterPos: pos,
       );
-    } catch (_) {
-      // 进度写回失败不阻断播放
-    }
+    } catch (_) {}
   }
 
-  /// 错误态「重试」：book 模式重试当前章（勿用空 widget.videoUrl）；
-  /// 尚无章节列表时重新拉目录。直链模式重试当前播放 URL。— Reasonix + UI
+  /// 错误态「重试」：book 模式重试当前章；直链模式重解析当前 URL
   void _retryPlayback() {
     if (widget.book != null) {
       if (_chapters.isEmpty) {
@@ -274,21 +285,27 @@ class _VideoScreenState extends State<VideoScreen> {
       }
       return;
     }
-    try {
-      _controller.dispose();
-    } catch (_) {}
-    _initPlayer(_currentPlayUrl.isNotEmpty ? _currentPlayUrl : widget.videoUrl);
-    setState(() {});
+    unawaited(_playDirectUrl(widget.videoUrl));
   }
 
-  /// 初始化视频播放器
-  void _initPlayer([String? url]) {
-    final videoUrl = url ??
+  /// 初始化视频播放器（网络或本地 MPD 文件）
+  void _initPlayer({String? networkUrl, String? filePath}) {
+    if (filePath != null && filePath.isNotEmpty) {
+      _controller = VideoPlayerController.file(File(filePath));
+      _initializeVideoPlayerFuture = _controller.initialize().then((_) {
+        if (mounted) {
+          setState(() {});
+          _controller.play();
+        }
+      });
+      return;
+    }
+
+    final videoUrl = networkUrl ??
         (_currentPlayUrl.isNotEmpty ? _currentPlayUrl : widget.videoUrl);
-    if (url != null) _currentPlayUrl = url;
+    if (networkUrl != null) _currentPlayUrl = networkUrl;
     final uri = Uri.tryParse(videoUrl);
     if (uri == null || videoUrl.isEmpty) {
-      // URL 无效时创建一个空控制器以触发错误状态
       _controller = VideoPlayerController.networkUrl(Uri.parse(''));
       _initializeVideoPlayerFuture = Future<void>.error(
         Exception('无效的视频地址'),
@@ -298,10 +315,9 @@ class _VideoScreenState extends State<VideoScreen> {
 
     _controller = VideoPlayerController.networkUrl(
       uri,
-      httpHeaders: _videoHeaders, // 防盗链 header（对齐原版 AnalyzeUrl.headerMap）— Reasonix
+      httpHeaders: _videoHeaders,
     );
     _initializeVideoPlayerFuture = _controller.initialize().then((_) {
-      // 初始化成功后自动开始播放
       if (mounted) {
         setState(() {});
         _controller.play();
@@ -311,7 +327,6 @@ class _VideoScreenState extends State<VideoScreen> {
 
   @override
   void dispose() {
-    // 退出全屏时恢复系统 UI
     if (_isFullScreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([
@@ -321,33 +336,25 @@ class _VideoScreenState extends State<VideoScreen> {
         DeviceOrientation.landscapeRight,
       ]);
     }
-    // [UI-fix v2.0.12] book 模式异步加载中退出时 _controller 未初始化，
-    // 防御性释放 — Reasonix
     try {
       _controller.dispose();
     } catch (_) {}
+    unawaited(_clearMpdTemp());
     super.dispose();
   }
 
-  /// 切换全屏模式
-  ///
-  /// 参考 Kotlin 版 [toggleFullScreen]：
-  /// - 全屏时隐藏系统栏，切换横屏方向
-  /// - 退出全屏时恢复竖屏方向，显示系统栏
   void _toggleFullScreen() {
     setState(() {
       _isFullScreen = !_isFullScreen;
     });
 
     if (_isFullScreen) {
-      // 进入全屏：隐藏系统 UI，锁定横屏
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
     } else {
-      // 退出全屏：恢复系统 UI，恢复竖屏
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
@@ -358,7 +365,6 @@ class _VideoScreenState extends State<VideoScreen> {
     }
   }
 
-  /// 格式化时长为 mm:ss 或 hh:mm:ss
   String _formatDuration(Duration duration) {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
@@ -374,7 +380,6 @@ class _VideoScreenState extends State<VideoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 退出前写回播放进度（dispose 时 Provider 可能已不可用）— Reasonix + UI
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
         if (didPop && widget.book != null) {
@@ -382,151 +387,137 @@ class _VideoScreenState extends State<VideoScreen> {
         }
       },
       child: Scaffold(
-      // 全屏模式下隐藏 AppBar
-      appBar: _isFullScreen
-          ? null
-          : AppBar(
-              title: Text(
-                widget.book != null && _chapters.isNotEmpty
-                    ? _chapters[_chapterIndex].title
-                    : widget.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              actions: [
-                // 视频源书：上一集/下一集切换（对齐原版 VideoPlayerActivity）
-                if (widget.book != null && _chapters.isNotEmpty) ...[
-                  IconButton(
-                    icon: const Icon(Icons.skip_previous),
-                    tooltip: '上一集',
-                    onPressed: _chapterIndex > 0
-                        ? () => _switchChapter(-1)
-                        : null,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next),
-                    tooltip: '下一集',
-                    onPressed: _chapterIndex < _chapters.length - 1
-                        ? () => _switchChapter(1)
-                        : null,
-                  ),
-                ],
-                // 全屏切换按钮
-                IconButton(
-                  icon: const Icon(Icons.fullscreen),
-                  tooltip: '全屏',
-                  onPressed: _toggleFullScreen,
+        appBar: _isFullScreen
+            ? null
+            : AppBar(
+                title: Text(
+                  widget.book != null && _chapters.isNotEmpty
+                      ? _chapters[_chapterIndex].title
+                      : widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
-      body: _chapterError != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 64, color: Colors.red),
-                    const SizedBox(height: 16),
-                    Text('视频加载失败',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    Text(_chapterError!,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _retryPlayback,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('重试'),
+                actions: [
+                  if (widget.book != null && _chapters.isNotEmpty) ...[
+                    IconButton(
+                      icon: const Icon(Icons.skip_previous),
+                      tooltip: '上一集',
+                      onPressed: _chapterIndex > 0
+                          ? () => _switchChapter(-1)
+                          : null,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.skip_next),
+                      tooltip: '下一集',
+                      onPressed: _chapterIndex < _chapters.length - 1
+                          ? () => _switchChapter(1)
+                          : null,
                     ),
                   ],
-                ),
-              ),
-            )
-          : _loadingChapter
-              ? const Center(child: CircularProgressIndicator())
-              : FutureBuilder<void>(
-        future: _initializeVideoPlayerFuture,
-        builder: (context, snapshot) {
-          // 加载中状态
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('正在加载视频...'),
+                  IconButton(
+                    icon: const Icon(Icons.fullscreen),
+                    tooltip: '全屏',
+                    onPressed: _toggleFullScreen,
+                  ),
                 ],
               ),
-            );
-          }
-
-          // 错误状态（URL 无效或网络错误）
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      '视频加载失败',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      snapshot.error.toString(),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _retryPlayback,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('重试'),
-                    ),
-                  ],
+        body: _chapterError != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          size: 64, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text('视频加载失败',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      Text(_chapterError!,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _retryPlayback,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
+              )
+            : _loadingChapter
+                ? const Center(child: CircularProgressIndicator())
+                : FutureBuilder<void>(
+                    future: _initializeVideoPlayerFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('正在加载视频...'),
+                            ],
+                          ),
+                        );
+                      }
 
-          // 正常播放状态
-          return _buildPlayerView();
-        },
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline,
+                                  size: 64,
+                                  color: Colors.red,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  '视频加载失败',
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  snapshot.error.toString(),
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  onPressed: _retryPlayback,
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('重试'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      return _buildPlayerView();
+                    },
+                  ),
       ),
-    ),
     );
   }
 
-  /// 构建播放器视图
-  ///
-  /// 布局结构：
-  /// - 视频画面区域（16:9 比例）
-  /// - 控制栏（播放/暂停、进度条、时间、全屏按钮）
   Widget _buildPlayerView() {
     return Column(
       children: [
-        // 视频画面区域
         _buildVideoArea(),
-        // 控制栏（全屏或竖屏均显示）
         _buildControlBar(),
-        // 非全屏时显示视频信息
         if (!_isFullScreen) _buildVideoInfo(),
       ],
     );
   }
 
-  /// 视频画面区域，保持 16:9 比例
   Widget _buildVideoArea() {
     final aspectRatio = _controller.value.isInitialized
         ? _controller.value.aspectRatio
@@ -535,20 +526,18 @@ class _VideoScreenState extends State<VideoScreen> {
     return AspectRatio(
       aspectRatio: aspectRatio,
       child: GestureDetector(
-        // 单击切换控制栏显示
         onTap: () => setState(() => _showControls = !_showControls),
-        // 双击切换播放/暂停
         onDoubleTap: () {
           setState(() {
-            _controller.value.isPlaying ? _controller.pause() : _controller.play();
+            _controller.value.isPlaying
+                ? _controller.pause()
+                : _controller.play();
           });
         },
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // 视频画面
             VideoPlayer(_controller),
-            // 控制覆盖层
             if (_showControls) _buildOverlayControls(),
           ],
         ),
@@ -556,9 +545,6 @@ class _VideoScreenState extends State<VideoScreen> {
     );
   }
 
-  /// 覆盖在视频上的控制层
-  ///
-  /// 包含中央播放/暂停按钮和渐变背景
   Widget _buildOverlayControls() {
     return Container(
       color: Colors.black26,
@@ -571,7 +557,9 @@ class _VideoScreenState extends State<VideoScreen> {
           ),
           onPressed: () {
             setState(() {
-              _controller.value.isPlaying ? _controller.pause() : _controller.play();
+              _controller.value.isPlaying
+                  ? _controller.pause()
+                  : _controller.play();
             });
           },
         ),
@@ -579,7 +567,6 @@ class _VideoScreenState extends State<VideoScreen> {
     );
   }
 
-  /// 底部控制栏：播放/暂停 + 进度条 + 时间 + 全屏
   Widget _buildControlBar() {
     return ValueListenableBuilder<VideoPlayerValue>(
       valueListenable: _controller,
@@ -596,7 +583,6 @@ class _VideoScreenState extends State<VideoScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 进度条
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 3,
@@ -611,17 +597,14 @@ class _VideoScreenState extends State<VideoScreen> {
                   value: progress.clamp(0.0, 1.0),
                   onChanged: (v) {
                     final newPosition = Duration(
-                      milliseconds:
-                          (duration.inMilliseconds * v).round(),
+                      milliseconds: (duration.inMilliseconds * v).round(),
                     );
                     _controller.seekTo(newPosition);
                   },
                 ),
               ),
-              // 时间 + 控制按钮
               Row(
                 children: [
-                  // 播放/暂停按钮
                   IconButton(
                     icon: Icon(
                       value.isPlaying ? Icons.pause : Icons.play_arrow,
@@ -635,7 +618,6 @@ class _VideoScreenState extends State<VideoScreen> {
                       });
                     },
                   ),
-                  // 当前时间
                   Text(
                     _formatDuration(position),
                     style: TextStyle(
@@ -647,7 +629,6 @@ class _VideoScreenState extends State<VideoScreen> {
                     ' / ',
                     style: TextStyle(fontSize: 12),
                   ),
-                  // 总时长
                   Text(
                     _formatDuration(duration),
                     style: TextStyle(
@@ -656,7 +637,6 @@ class _VideoScreenState extends State<VideoScreen> {
                     ),
                   ),
                   const Spacer(),
-                  // 全屏切换按钮
                   IconButton(
                     icon: Icon(
                       _isFullScreen
@@ -676,7 +656,6 @@ class _VideoScreenState extends State<VideoScreen> {
     );
   }
 
-  /// 视频信息区域（非全屏时显示）
   Widget _buildVideoInfo() {
     return Padding(
       padding: const EdgeInsets.all(16),

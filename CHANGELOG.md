@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.34] - 2026-08-12
+
+### 修复（视频源播放链路：复合 URL / header / MPD / subContent，[UI]+[Rust]）
+
+对照原版 `VideoPlay.kt` / `VideoPlayerActivity` / `BookContent` isVideo（3.26080322）。
+
+1. **Flutter 播放器接入 `video_play_utils`**
+   - `video_screen` 完整走 `resolveVideoPlayTarget`：相对 URL 绝对化、复合 `url,{json}` UrlOption header、书源 header 合并、默认 UA/Referer、MPD 落临时文件以 file 播放。
+   - 卷标题跳过（`findPlayableChapterIndex` / 上一集下一集）；错误重试当前章；进度写回保留。
+
+2. **Rust `web_book` 视频 subContent**
+   - **根因**：FFI 曾把副内容统一 `\n` 拼进正文；原版视频走 `putDanmaku`、音频 `putLyric`，不污染播放链接。
+   - **修复**：`is_media`（AUDIO/VIDEO）不再合并副内容进正文；文本源仍追加。
+
+3. **验证**
+   - 单测：`video_play_utils_test` + Rust `merge_sub_content_skips_media_to_protect_play_url`。
+   - 设备：emulator-5558 用真实视频源（如「伪七猫」）对照原版验收。
+
+编写者：Reasonix ｜ 2026-08-12
+
 ## [2.0.33] - 2026-08-11
 
 ### 修复（必应漫画 type=0 正文刷 `<img>` HTML，[UI]）
