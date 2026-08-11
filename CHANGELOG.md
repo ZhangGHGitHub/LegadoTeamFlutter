@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.25] - 2026-08-11
+
+### 修复（书架 BookType 分流 + 漫画复合 URL/预加载 + imageDecode 新引擎 + 视频相对 URL/重试/进度 + 媒体 MPD 钩子，[Rust]+[UI] 双轨）
+- **书架/详情 BookType 分流统一**（[UI]）：抽出 `BookOpenUtils`（位标记→路由：video/audio/image/text/webFile），书架已读直开与书详情「开始阅读」共用，避免分流复制漂移；补齐视频路由 `/video`
+- **复合图片 URL 完整抽取**（[Rust]+[UI]）：`HtmlFormatter` / `comic_image_utils` 正则对齐原版——`src="url,{"headers":{...}}"` 引号内嵌 JSON 双引号不再截断为 `...webp,{`；漫画阅读器预加载与正式渲染统一走 FFI（复合 URL / imageDecode / 书源 header）
+- **imageDecode 每次新引擎 + Referer 兜底**（[Rust]）：同源多图连续 decode 勿复用 `pool_engine`（顶层 const/let redeclaration → 退回密文）；jsLib 可选降级；`default_referer_from_source_url` 修正无路径域名不被截成 `https:`
+- **视频相对 URL / 重试 / 进度**（[UI]）：章节正文相对路径以章节 URL 绝对化；错误「重试」按 book/直链正确重试当前章；退出/切章写回 `durChapterIndex`/`durChapterPos`；首帧 loading 避免 late controller 未初始化
+- **媒体 MPD 钩子**（[Rust]）：视频/音频正文跳过 HTML 净化（MPD XML 以 `<` 开头会被剥标签破坏）；经 `VideoPlayerState::normalize_content` 识别空正文/Url/Mpd，清单原文透传供 UI 写临时文件播放
+- 测试：新增复合 URL / BookOpen / 视频绝对化 / MPD 透传单测；5558 冒烟验收（v2.0.25+27）
+- 实现：Reasonix（Rust/UI）；协调/交付：Auto
+- 已知书源侧：favcomic 图床 NXDOMAIN——图片实测请用其他可用漫画源
+
+编写者：Reasonix（实现）/ Auto（协调交付）｜ 2026-08-11
+
 ## [2.0.24] - 2026-08-11
 
 ### 修复（规则 JS 执行引擎池复用 const redeclaration，[Rust] 轨）

@@ -13,6 +13,7 @@ import 'screens/book_info_screen.dart';
 import 'screens/bookshelf_manage_screen.dart';
 import 'screens/cache_download_screen.dart';
 import 'screens/cache_settings_screen.dart';
+import 'screens/offline_cache_screen.dart';
 import 'screens/edit_book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
 import 'screens/change_cover_screen.dart';
@@ -63,6 +64,8 @@ class AppRoutes {
   static const otherSettings = '/other_settings';
   static const cacheSettings = '/cache_settings';
   static const cacheDownloads = '/cache_downloads';
+  // [UI-fix v2.0.17 | 2026-08-11] 离线缓存页（对齐原版 CacheActivity 书籍列表）— Reasonix
+  static const offlineCache = '/offline_cache';
   static const rss = '/rss';
   static const ruleSub = '/rule_sub';
   static const audio = '/audio';
@@ -125,6 +128,7 @@ class AppRoutes {
         otherSettings: (_) => const OtherSettingsScreen(),
         cacheSettings: (_) => const CacheSettingsScreen(),
         cacheDownloads: (_) => const CacheDownloadScreen(),
+        offlineCache: (_) => const OfflineCacheScreen(),
         rss: (_) => const RssScreen(),
         ruleSub: (_) => const RuleSubScreen(),
         audio: (context) {

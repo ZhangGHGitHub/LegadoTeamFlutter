@@ -14,6 +14,7 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/settings_service.dart';
+import '../utils/book_open_utils.dart';
 import '../utils/book_progress_utils.dart';
 import '../utils/responsive.dart';
 import '../utils/share_utils.dart';
@@ -155,7 +156,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
             const PopupMenuDivider(),
             PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
-            const PopupMenuItem(value: 'cache_export', child: Text('缓存导出')),
+            const PopupMenuItem(value: 'offline_cache', child: Text('离线缓存')),
             PopupMenuItem(value: 'groups', child: Text('分组管理')),
             const PopupMenuItem(value: 'layout', child: Text('书架布局')),
             const PopupMenuDivider(),
@@ -373,15 +374,43 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   // ===== 操作 =====
 
-  void _openBook(BuildContext context, WidgetRef ref, Book book) {
-    // 对标原版 startActivityForBook：未读书籍进书籍信息页，已读进阅读器
+  /// 对标原版 startActivityForBook：未读进书详；已读按 BookType 分流到
+  /// video / audio / reader-comic / reader（勿固定文本阅读器）。
+  /// — Reasonix + UI
+  Future<void> _openBook(
+      BuildContext context, WidgetRef ref, Book book) async {
     if (book.durChapterIndex <= 0 && book.durChapterPos <= 0) {
       _openBookInfo(context, book);
       return;
     }
-    // 阅读器状态由 ReaderNotifier（Riverpod）管理
-    ref.read(readerNotifierProvider.notifier).openBook(book);
-    Navigator.pushNamed(context, AppRoutes.reader);
+    var typeBits = BookOpenUtils.typeBitsOf(book);
+    // 旧库缺类型位时按书源类型补全，避免漫画/视频误进文本阅读器
+    if (typeBits == 0 && BookOpenUtils.isOnlineBook(book)) {
+      try {
+        final api = ref.read(bookApiProvider);
+        final sources = await api.getBookSources();
+        for (final s in sources) {
+          if (s.bookSourceUrl == book.origin) {
+            typeBits = BookOpenUtils.typeBitsForSource(s.bookSourceType);
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+    if (!context.mounted) return;
+    final bookToOpen =
+        typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
+    final route = BookOpenUtils.routeForTypeBits(typeBits);
+    if (BookOpenUtils.needsReaderNotifier(route)) {
+      ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
+      await Navigator.pushNamed(context, route);
+      return;
+    }
+    await Navigator.pushNamed(
+      context,
+      route,
+      arguments: BookOpenUtils.argumentsForRoute(route, bookToOpen),
+    );
   }
 
   /// 长按封面直接打开书籍信息页（对齐安卓原版行为）
@@ -672,10 +701,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'manage':
         // 进入书架管理页（对标原版 BookshelfManageActivity）
         Navigator.pushNamed(context, AppRoutes.bookshelfManage);
-      case 'cache_export':
-        // [UI-fix v2.0.2 | 2026-08-06] 缓存导出接通：选书导出已缓存章节 TXT
-        //（对标原版 CacheActivity 导出通道） — Qoder
-        _exportBookCache();
+      case 'offline_cache':
+        // [UI-fix v2.0.17 | 2026-08-11] 离线缓存页（对齐原版书架菜单
+        // menu_download → CacheActivity：书籍列表/缓存进度/下载控制/单本导出）
+        // — Reasonix
+        Navigator.pushNamed(context, AppRoutes.offlineCache);
       case 'groups':
         Navigator.pushNamed(context, AppRoutes.bookGroups);
       case 'layout':
@@ -727,130 +757,6 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         mimeType: 'application/json',
       ),
     ]);
-  }
-
-  /// 缓存导出（对标原版 CacheActivity 导出通道）— Qoder
-  ///
-  /// [UI-fix v2.0.2 | 2026-08-06] 可行部分：书架选一本书，按章节顺序读取
-  /// 已缓存章节（cacheGetChapter），章节标题+正文拼接为 TXT，
-  /// 文件名取书名，经分享通道保存。
-  /// TODO(留批次): CacheActivity 对齐尚缺——缓存管理独立页（书籍列表/
-  /// 缓存进度/单本导出入口）、缓存下载（download_after/download_all）、
-  /// epub/pdf 导出类型、导出文件夹选择与文件名模板、自定义导出设置
-  ///（charset/章节范围/不导出章节名）、导出进度与 WebDav，待对应 FFI 落地。 — Qoder
-  Future<void> _exportBookCache() async {
-    final books = ref.read(bookshelfNotifierProvider).books;
-    if (books.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('书架为空，无可导出的缓存书籍')),
-      );
-      return;
-    }
-    final picked = await showDialog<Book>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('缓存导出'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              for (final b in books)
-                ListTile(
-                  title: Text(b.name),
-                  subtitle: b.author.isEmpty ? null : Text(b.author),
-                  onTap: () => Navigator.pop(dialogContext, b),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-    if (picked == null || !mounted) return;
-
-    final api = ref.read(bookApiProvider);
-    final progress = ValueNotifier<String>('正在读取章节列表...');
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => ValueListenableBuilder<String>(
-        valueListenable: progress,
-        builder: (context, text, _) => AlertDialog(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: 16),
-              Expanded(child: Text(text)),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    final buffer = StringBuffer();
-    var cached = 0;
-    String? loadError;
-    try {
-      final chapters = await api.getChapters(picked.bookUrl);
-      for (var i = 0; i < chapters.length; i++) {
-        progress.value = '正在读取缓存 ${i + 1}/${chapters.length}';
-        String content;
-        try {
-          content = await api.getCachedChapter(picked.bookUrl, i);
-        } catch (e) {
-          debugPrint('读取缓存失败《${picked.name}》第 $i 章：$e');
-          continue;
-        }
-        if (content.trim().isEmpty) continue; // 未缓存章节：跳过
-        buffer.writeln(chapters[i].title);
-        buffer.writeln();
-        buffer.writeln(content.trim());
-        buffer.writeln();
-        cached++;
-      }
-    } catch (e) {
-      loadError = '$e';
-    } finally {
-      if (mounted) Navigator.pop(context); // 关闭进度对话框
-      progress.dispose();
-    }
-    if (!mounted) return;
-    if (loadError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('缓存导出失败：$loadError')),
-      );
-      return;
-    }
-    if (cached == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('《${picked.name}》暂无已缓存章节')),
-      );
-      return;
-    }
-    final fileName =
-        '${picked.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.txt';
-    await Share.shareXFiles([
-      XFile.fromData(
-        utf8.encode(buffer.toString()),
-        name: fileName,
-        mimeType: 'text/plain',
-      ),
-    ]);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已导出缓存章节 $cached 章：$fileName')),
-      );
-    }
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 更新目录 / 添加网址 / 导入书单 — Qoder =====

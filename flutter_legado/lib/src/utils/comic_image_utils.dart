@@ -1,0 +1,72 @@
+// 漫画章节图片 URL 解析工具（对齐原版 HtmlFormatter.formatImagePattern）
+// — Reasonix + UI
+
+/// 是否为「复合图片 URL」：`https://host/path.webp,{"headers":{...}}`
+///
+/// 原版 AnalyzeUrl / ImageUtils 支持 URL 后附 JSON 防盗链 header；
+/// 此类 URL 不能用 CachedNetworkImage 直连。
+bool isCompositeImageUrl(String url) {
+  final comma = url.indexOf(',{');
+  return comma > 0;
+}
+
+/// 判断是否像图片链接（行解析兜底用；复合 URL 先剥 `, {json}` 再判后缀）
+bool looksLikeImageUrl(String url) {
+  final base = isCompositeImageUrl(url)
+      ? url.substring(0, url.indexOf(',{'))
+      : url;
+  final lower = base.toLowerCase();
+  return lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.gif') ||
+      lower.endsWith('.webp') ||
+      lower.endsWith('.bmp') ||
+      lower.contains('/image') ||
+      lower.contains('/img') ||
+      lower.contains('/pic');
+}
+
+/// 对齐原版 [HtmlFormatter.formatImagePattern]：
+/// 1) `src='url,{json}'` 复合 URL（引号内可含 JSON 双引号）
+/// 2) `data-src` / `data-original` / `data-srcset`
+/// 3) 普通双引号 `src="..."`
+/// 4) 其它 data-* / src 单双引号
+///
+/// 旧正则 `src=["']([^"']+)["']` 会在 JSON 内第一个 `"` 处截断，
+/// 得到 `https://.../a.webp,{` → 下游 Invalid image data。
+final RegExp comicImgSrcRegex = RegExp(
+  r'''<img[^>]*\ssrc\s*=\s*['"]([^'"{>]*\{(?:[^{}]|\{[^}>]+\})+\})['"][^>]*>'''
+  r'''|<img[^>]*\sdata-(?:src|original|srcset)\s*=\s*['"]([^'">]+)['"][^>]*>'''
+  r'''|<img[^>]*\ssrc\s*=\s*"([^">]+)"[^>]*>'''
+  r'''|<img[^>]*\s(?:data-[^=>]*|src)=\s*['"]([^'">]*)['"][^>]*>''',
+  caseSensitive: false,
+);
+
+/// 从章节内容解析图片 URL 列表
+///
+/// 支持：HTML img（含复合 URL）、每行一个 URL、常见图片后缀行。
+List<String> parseComicImageUrls(String content) {
+  if (content.isEmpty) return [];
+
+  final urls = <String>[];
+
+  for (final match in comicImgSrcRegex.allMatches(content)) {
+    final url =
+        match.group(1) ?? match.group(2) ?? match.group(3) ?? match.group(4);
+    if (url != null && url.isNotEmpty) {
+      urls.add(url);
+    }
+  }
+
+  if (urls.isEmpty) {
+    for (final line in content.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.startsWith('http') && looksLikeImageUrl(trimmed)) {
+        urls.add(trimmed);
+      }
+    }
+  }
+
+  return urls;
+}

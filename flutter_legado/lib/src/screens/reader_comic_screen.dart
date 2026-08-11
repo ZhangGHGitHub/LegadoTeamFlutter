@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNot
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/book_api.dart';
+import '../utils/comic_image_utils.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 
@@ -219,53 +221,91 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     }
   }
 
-  /// 从章节内容中解析图片 URL 列表
+  /// 从章节内容中解析图片 URL 列表（复合 URL 对齐原版 HtmlFormatter）
+  /// — Reasonix + UI
+  List<String> _parseImageUrls(String content) => parseComicImageUrls(content);
+
+  /// 相对路径转绝对（以章节 URL 为 base，对齐原版 NetworkUtils.getAbsoluteURL）
+  String _resolveImageUrl(String chapterUrl, String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('//')) return 'https:$url';
+    final uri = Uri.tryParse(chapterUrl);
+    if (uri == null) return url;
+    final base = uri.scheme.isNotEmpty && uri.host.isNotEmpty
+        ? '${uri.scheme}://${uri.host}'
+        : chapterUrl;
+    if (url.startsWith('/')) return '$base$url';
+    // 相对当前目录：章节 URL 去掉最后一段
+    final path = uri.path;
+    final dir = path.substring(0, path.lastIndexOf('/') + 1);
+    return '$base$dir$url';
+  }
+
+  /// 滚动监听，触发预加载
+  void _onScroll() {
+    _preloadVisibleImages();
+  }
+
+  /// 预加载当前可见区域前后的图片。
   ///
-  /// 支持以下格式：
-  /// - 每行一个 URL
-  /// - HTML img 标签
-  /// - JSON 数组
-  List<String> _parseImageUrls(String content) {
-    if (content.isEmpty) return [];
+  /// 有书源 / 复合 URL / imageDecode 时与正式渲染统一走 FFI
+  /// `fetchImageWithDecode`（写入 [ComicImageDecodeCache]），禁止
+  /// CachedNetworkImageProvider 旁路（会截断复合 URL 或忽略防盗链）。
+  /// — Reasonix + UI
+  void _preloadVisibleImages() {
+    if (_imageUrls.isEmpty || !mounted) return;
+    // 防御：loading 态 ListView 尚未构建时 ScrollController 未 attach，
+    // 访问 position 抛断言（加载完成 build 后由 _onScroll 再次触发）
+    if (!_scrollController.hasClients) return;
 
-    final urls = <String>[];
+    // 计算当前可见的图片索引范围
+    final viewportHeight = _scrollController.position.viewportDimension;
+    final scrollOffset = _scrollController.offset;
 
-    // 尝试解析 HTML img 标签
-    final imgRegex = RegExp(r'''<img[^>]+src=["']([^"']+)["']''', caseSensitive: false);
-    for (final match in imgRegex.allMatches(content)) {
-      final url = match.group(1);
-      if (url != null && url.isNotEmpty) {
-        urls.add(url);
-      }
-    }
+    // 简单估算：假设每张图高度约为屏幕高度
+    final screenHeight = MediaQuery.of(context).size.height;
+    final firstVisible = (scrollOffset / screenHeight).floor().clamp(0, _imageUrls.length - 1);
+    final lastVisible = ((scrollOffset + viewportHeight) / screenHeight).ceil().clamp(0, _imageUrls.length - 1);
 
-    // 如果没有找到 img 标签，按行分割解析 URL
-    if (urls.isEmpty) {
-      final lines = content.split('\n');
-      for (final line in lines) {
-        final trimmed = line.trim();
-        // 匹配常见的图片 URL 模式
-        if (trimmed.startsWith('http') && _isImageUrl(trimmed)) {
-          urls.add(trimmed);
+    // 扩展预加载范围（前后各 2 页）
+    final preloadStart = (firstVisible - _preloadRange).clamp(0, _imageUrls.length - 1);
+    final preloadEnd = (lastVisible + _preloadRange).clamp(0, _imageUrls.length - 1);
+
+    final useFfi = _bookSource != null;
+    for (var i = preloadStart; i <= preloadEnd; i++) {
+      if (!_preloadedIndices.contains(i)) {
+        _preloadedIndices.add(i);
+        final url = _imageUrls[i];
+        if (useFfi) {
+          unawaited(_preloadViaFfi(url));
+        } else if (isCompositeImageUrl(url)) {
+          // 无书源却含复合 URL：无法直连预加载，跳过（正式渲染亦可能失败）
+        } else {
+          unawaited(
+            precacheImage(CachedNetworkImageProvider(url), context)
+                .catchError((_) {}),
+          );
         }
       }
     }
-
-    return urls;
   }
 
-  /// 判断 URL 是否为图片链接
-  bool _isImageUrl(String url) {
-    final lower = url.toLowerCase();
-    return lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png') ||
-        lower.endsWith('.gif') ||
-        lower.endsWith('.webp') ||
-        lower.endsWith('.bmp') ||
-        lower.contains('/image') ||
-        lower.contains('/img') ||
-        lower.contains('/pic');
+  /// FFI 预加载：与 [_DecodedComicImage] 共用缓存 — Reasonix + UI
+  Future<void> _preloadViaFfi(String url) async {
+    final source = _bookSource;
+    final book = _book;
+    if (source == null || book == null || !mounted) return;
+    try {
+      final api = ref.read(bookApiProvider);
+      await ComicImageDecodeCache.preload(
+        api: api,
+        url: url,
+        sourceJson: jsonEncode(source.toJson()),
+        bookSourceUrl: book.origin,
+      );
+    } catch (_) {
+      // 预加载失败静默；正式渲染会再试并展示错误态
+    }
   }
 
   /// 解析书源 header 字符串（JSON 或 key: value 行）— Reasonix
@@ -290,60 +330,6 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       }
     }
     return map;
-  }
-
-  /// 相对路径转绝对（以章节 URL 为 base，对齐原版 NetworkUtils.getAbsoluteURL）
-  String _resolveImageUrl(String chapterUrl, String url) {
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    if (url.startsWith('//')) return 'https:$url';
-    final uri = Uri.tryParse(chapterUrl);
-    if (uri == null) return url;
-    final base = uri.scheme.isNotEmpty && uri.host.isNotEmpty
-        ? '${uri.scheme}://${uri.host}'
-        : chapterUrl;
-    if (url.startsWith('/')) return '$base$url';
-    // 相对当前目录：章节 URL 去掉最后一段
-    final path = uri.path;
-    final dir = path.substring(0, path.lastIndexOf('/') + 1);
-    return '$base$dir$url';
-  }
-
-  /// 滚动监听，触发预加载
-  void _onScroll() {
-    _preloadVisibleImages();
-  }
-
-  /// 预加载当前可见区域前后的图片
-  void _preloadVisibleImages() {
-    if (_imageUrls.isEmpty || !mounted) return;
-    // 防御：loading 态 ListView 尚未构建时 ScrollController 未 attach，
-    // 访问 position 抛断言（加载完成 build 后由 _onScroll 再次触发）
-    if (!_scrollController.hasClients) return;
-
-    // 计算当前可见的图片索引范围
-    final viewportHeight = _scrollController.position.viewportDimension;
-    final scrollOffset = _scrollController.offset;
-
-    // 简单估算：假设每张图高度约为屏幕高度
-    final screenHeight = MediaQuery.of(context).size.height;
-    final firstVisible = (scrollOffset / screenHeight).floor().clamp(0, _imageUrls.length - 1);
-    final lastVisible = ((scrollOffset + viewportHeight) / screenHeight).ceil().clamp(0, _imageUrls.length - 1);
-
-    // 扩展预加载范围（前后各 2 页）
-    final preloadStart = (firstVisible - _preloadRange).clamp(0, _imageUrls.length - 1);
-    final preloadEnd = (lastVisible + _preloadRange).clamp(0, _imageUrls.length - 1);
-
-    for (var i = preloadStart; i <= preloadEnd; i++) {
-      if (!_preloadedIndices.contains(i)) {
-        _preloadedIndices.add(i);
-        // 使用 Image precache 进行预加载
-        unawaited(
-          precacheImage(CachedNetworkImageProvider(_imageUrls[i]), context).catchError((_) {
-            // 预加载失败静默处理
-          }),
-        );
-      }
-    }
   }
 
   /// 切换到指定章节
@@ -808,6 +794,42 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   }
 }
 
+/// FFI 图片解码结果缓存（预加载与正式渲染共用）— Reasonix + UI
+class ComicImageDecodeCache {
+  ComicImageDecodeCache._();
+
+  static final Map<String, Uint8List> _cache = {};
+
+  static String keyOf(String bookSourceUrl, String url) =>
+      '$bookSourceUrl\u0000$url';
+
+  static Uint8List? get(String bookSourceUrl, String url) =>
+      _cache[keyOf(bookSourceUrl, url)];
+
+  static void put(String bookSourceUrl, String url, Uint8List bytes) {
+    _cache[keyOf(bookSourceUrl, url)] = bytes;
+  }
+
+  /// 预加载：调用 FFI 并写入缓存（已命中则跳过）
+  static Future<void> preload({
+    required BookApi api,
+    required String url,
+    required String sourceJson,
+    required String bookSourceUrl,
+  }) async {
+    if (_cache.containsKey(keyOf(bookSourceUrl, url))) return;
+    final json = await api.fetchImageWithDecode(url, sourceJson);
+    final decoded = jsonDecode(json) as Map<String, dynamic>;
+    final b64 = decoded['base64'] as String? ?? '';
+    if (b64.isEmpty) return;
+    put(bookSourceUrl, url, base64Decode(b64));
+  }
+
+  /// 测试用：清空缓存
+  @visibleForTesting
+  static void clearForTest() => _cache.clear();
+}
+
 /// 走 imageDecode 解码链路的漫画图片项
 ///
 /// 调用 Rust FFI `fetchImageWithDecode`：下载图片 bytes → 注入书源 jsLib +
@@ -834,19 +856,14 @@ class _DecodedComicImage extends ConsumerStatefulWidget {
 }
 
 class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
-  /// 解码结果缓存 key：url + 书源（换书源/URL 时重新解码）
-  static final Map<String, Uint8List> _cache = {};
-
   bool _loading = true;
   Uint8List? _bytes;
   String? _error;
 
-  String get _cacheKey => '${widget.bookSourceUrl}\u0000${widget.url}';
-
   @override
   void initState() {
     super.initState();
-    final hit = _cache[_cacheKey];
+    final hit = ComicImageDecodeCache.get(widget.bookSourceUrl, widget.url);
     if (hit != null) {
       _bytes = hit;
       _loading = false;
@@ -870,7 +887,7 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
       }
       final bytes = base64Decode(b64);
       if (!mounted) return;
-      _cache[_cacheKey] = bytes;
+      ComicImageDecodeCache.put(widget.bookSourceUrl, widget.url, bytes);
       setState(() {
         _bytes = bytes;
         _loading = false;

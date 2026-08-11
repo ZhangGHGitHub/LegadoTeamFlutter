@@ -20,6 +20,7 @@ import '../routes.dart';
 import '../services/book_api.dart';
 import '../services/cache_service.dart';
 import '../services/settings_service.dart';
+import '../utils/book_open_utils.dart';
 import 'source_login_screen.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/error_view.dart';
@@ -157,10 +158,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 
   /// 是否在线书籍（非本地、非 WebDAV）——仅在线书才走网络补全链路
-  bool _isOnlineBook(Book book) =>
-      book.origin.isNotEmpty &&
-      book.origin != BookType.localTag &&
-      !book.origin.startsWith(BookType.webDavTag);
+  bool _isOnlineBook(Book book) => BookOpenUtils.isOnlineBook(book);
 
   /// 元数据是否需要联网补全（封面/简介/目录链接任一缺失）
   bool _needCompleteInfo(Book book) =>
@@ -1430,24 +1428,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   // ===== 操作 =====
 
-  /// 书源类型 → 书籍类型位标记（对齐原版 BookSourceExtensions.getBookType：
-  /// 文本→text(8)、音频→audio(32)、图片→image(64)、文件→text|webFile(136)、
-  /// 视频→video(4)；位标记语义与 Rust search.rs book_type 一致）— Reasonix
-  static int _typeBitsForSource(int bookSourceType) {
-    switch (bookSourceType) {
-      case 1:
-        return BookType.audio;
-      case 2:
-        return BookType.image;
-      case 3:
-        return BookType.text | BookType.webFile;
-      case 4:
-        return BookType.video;
-      default:
-        return BookType.text;
-    }
-  }
-
   Future<void> _openReader(
       BuildContext context, Book book, int chapterIndex) async {
     // [UI-fix v2.0.3 | 2026-08-06] 对齐原版 readBook：未入库在线书阅读前先落库 — Qoder
@@ -1459,16 +1439,13 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     // （bookSourceType：1=音频/2=图片/3=文件/4=视频）映射补全，保证分流与
     // 落库类型正确（修复图片/音频/视频源「打不开」——类型位丢失致分流落回
     // 文本阅读器）— Reasonix
-    const typeMask = BookType.video |
-        BookType.text |
-        BookType.audio |
-        BookType.image |
-        BookType.webFile;
-    var typeBits = book.bookType & typeMask;
+    // 分流逻辑抽至 BookOpenUtils，与书架 startActivityForBook 对齐 — Reasonix + UI
+    const typeMask = BookOpenUtils.typeMask;
+    var typeBits = BookOpenUtils.typeBitsOf(book);
     if (typeBits == 0 && _isOnlineBook(book)) {
       final source = await _findSourceByOrigin(api, book.origin);
       if (source != null) {
-        typeBits = _typeBitsForSource(source.bookSourceType);
+        typeBits = BookOpenUtils.typeBitsForSource(source.bookSourceType);
       }
     }
     try {
@@ -1495,52 +1472,21 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     final bookToRead = chapterIndex != book.durChapterIndex
         ? book.copyWith(durChapterIndex: chapterIndex, bookType: typeBits)
         : book.copyWith(bookType: typeBits);
-    // 按类型分流（对齐原版 BookInfoActivity.startReadActivity：video→
-    // VideoPlayerActivity / audio→AudioPlayActivity / image→漫画阅读器 /
-    // 文本→ReadBookActivity）— Reasonix
-    final isVideo = (typeBits & BookType.video) != 0;
-    final isAudio = (typeBits & BookType.audio) != 0;
-    final isImage = (typeBits & BookType.image) != 0;
-    if (isVideo) {
+    // 按类型分流（对齐原版 BookInfoActivity.startReadActivity）— Reasonix + UI
+    final route = BookOpenUtils.routeForTypeBits(typeBits);
+    if (BookOpenUtils.needsReaderNotifier(route)) {
+      container.read(readerNotifierProvider.notifier).openBook(bookToRead);
+      // [UI-fix v2.0.11 | 2026-08-10] 阅读返回后重新加载详情数据 — Reasonix
       if (!context.mounted) return;
-      // 视频源书：章节正文为播放链接，进入章节播放页（对齐原版
-      // VideoPlayerActivity 接收 bookUrl 语义）
-      await Navigator.pushNamed(context, AppRoutes.video, arguments: bookToRead);
-      if (mounted) {
-        setState(() {
-          _future = _loadData();
-        });
-      }
-      return;
-    }
-    if (isAudio) {
-      if (!context.mounted) return;
-      await Navigator.pushNamed(context, AppRoutes.audio, arguments: bookToRead);
-      if (mounted) {
-        setState(() {
-          _future = _loadData();
-        });
-      }
-      return;
-    }
-    if (isImage) {
+      await Navigator.pushNamed(context, route);
+    } else {
       if (!context.mounted) return;
       await Navigator.pushNamed(
-          context, AppRoutes.readerComic, arguments: bookToRead.bookUrl);
-      if (mounted) {
-        setState(() {
-          _future = _loadData();
-        });
-      }
-      return;
+        context,
+        route,
+        arguments: BookOpenUtils.argumentsForRoute(route, bookToRead),
+      );
     }
-    container.read(readerNotifierProvider.notifier).openBook(bookToRead);
-    // [UI-fix v2.0.11 | 2026-08-10] 阅读返回后重新加载详情数据：Rust 已把
-    // 阅读进度（dur_chapter_index/pos）写入 books 表，刷新后「继续阅读」
-    // 按钮能定位到上次章节（修复：搜索结果进入详情页第二次点开始阅读
-    // 总是回第一章——旧快照 book.durChapterIndex=0 未被重新读取）— Reasonix
-    if (!context.mounted) return;
-    await Navigator.pushNamed(context, AppRoutes.reader);
     if (mounted) {
       setState(() {
         _future = _loadData();

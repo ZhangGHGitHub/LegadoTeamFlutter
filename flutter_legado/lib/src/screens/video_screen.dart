@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../utils/url_utils.dart';
 
 /// 视频播放页面
 ///
@@ -69,13 +71,20 @@ class _VideoScreenState extends State<VideoScreen> {
   /// [UI-fix 2026-08-10 | Reasonix] 视频 CDN 常校验 Referer，无 header 时 403
   Map<String, String> _videoHeaders = const {};
 
+  /// 当前实际播放地址（book 模式来自章节正文；直链模式为 widget.videoUrl）
+  /// — Reasonix + UI
+  String _currentPlayUrl = '';
+
   @override
   void initState() {
     super.initState();
     if (widget.book != null) {
+      // 首帧即 loading，避免访问尚未初始化的 late _controller / Future
+      _loadingChapter = true;
       _loadBookVideo();
     } else {
-      _initPlayer();
+      _currentPlayUrl = widget.videoUrl;
+      _initPlayer(widget.videoUrl);
     }
   }
 
@@ -135,7 +144,10 @@ class _VideoScreenState extends State<VideoScreen> {
           ? await api.fetchChapterContent(
               book.bookUrl, chapter.url, book.origin)
           : await api.getChapterContent(book.bookUrl, index);
-      final url = _extractVideoUrl(content);
+      final extracted = _extractVideoUrl(content);
+      // 相对路径以章节 URL 为 base 绝对化（对齐原版 NetworkUtils.getAbsoluteURL）
+      // — Reasonix + UI
+      final url = resolveAbsoluteUrl(chapter.url, extracted);
       if (url.isEmpty) {
         setState(() {
           _loadingChapter = false;
@@ -148,11 +160,14 @@ class _VideoScreenState extends State<VideoScreen> {
       try {
         _controller.dispose();
       } catch (_) {}
+      _currentPlayUrl = url;
       _initPlayer(url);
       setState(() {
         _loadingChapter = false;
         _chapterIndex = index;
       });
+      // 章节切换后写回进度（durChapterIndex；pos 在播放中/退出再更新）
+      unawaited(_saveProgress(chapterPos: 0));
     } catch (e) {
       setState(() {
         _loadingChapter = false;
@@ -217,9 +232,55 @@ class _VideoScreenState extends State<VideoScreen> {
     _playChapter(next);
   }
 
+  /// 写回阅读进度（durChapterIndex / durChapterPos）— Reasonix + UI
+  Future<void> _saveProgress({int? chapterPos}) async {
+    final book = widget.book;
+    if (book == null) return;
+    try {
+      final api = ProviderScope.containerOf(context).read(bookApiProvider);
+      var pos = chapterPos;
+      if (pos == null) {
+        try {
+          pos = _controller.value.isInitialized
+              ? _controller.value.position.inMilliseconds
+              : 0;
+        } catch (_) {
+          pos = 0;
+        }
+      }
+      await api.updateReadingProgress(
+        bookUrl: book.bookUrl,
+        chapterIndex: _chapterIndex,
+        chapterPos: pos,
+      );
+    } catch (_) {
+      // 进度写回失败不阻断播放
+    }
+  }
+
+  /// 错误态「重试」：book 模式重试当前章（勿用空 widget.videoUrl）；
+  /// 尚无章节列表时重新拉目录。直链模式重试当前播放 URL。— Reasonix + UI
+  void _retryPlayback() {
+    if (widget.book != null) {
+      if (_chapters.isEmpty) {
+        unawaited(_loadBookVideo());
+      } else {
+        unawaited(_playChapter(_chapterIndex));
+      }
+      return;
+    }
+    try {
+      _controller.dispose();
+    } catch (_) {}
+    _initPlayer(_currentPlayUrl.isNotEmpty ? _currentPlayUrl : widget.videoUrl);
+    setState(() {});
+  }
+
   /// 初始化视频播放器
   void _initPlayer([String? url]) {
-    final videoUrl = url ?? widget.videoUrl;
+    final videoUrl = url ??
+        (_currentPlayUrl.isNotEmpty ? _currentPlayUrl : widget.videoUrl);
+    if (url != null) _currentPlayUrl = url;
     final uri = Uri.tryParse(videoUrl);
     if (uri == null || videoUrl.isEmpty) {
       // URL 无效时创建一个空控制器以触发错误状态
@@ -308,7 +369,14 @@ class _VideoScreenState extends State<VideoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // 退出前写回播放进度（dispose 时 Provider 可能已不可用）— Reasonix + UI
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop && widget.book != null) {
+          unawaited(_saveProgress());
+        }
+      },
+      child: Scaffold(
       // 全屏模式下隐藏 AppBar
       appBar: _isFullScreen
           ? null
@@ -364,15 +432,7 @@ class _VideoScreenState extends State<VideoScreen> {
                         style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
-                      onPressed: () {
-                        if (widget.book != null) {
-                          _loadBookVideo();
-                        } else {
-                          _controller.dispose();
-                          _initPlayer();
-                          setState(() {});
-                        }
-                      },
+                      onPressed: _retryPlayback,
                       icon: const Icon(Icons.refresh),
                       label: const Text('重试'),
                     ),
@@ -425,12 +485,7 @@ class _VideoScreenState extends State<VideoScreen> {
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
-                      onPressed: () {
-                        // 重新初始化播放器
-                        _controller.dispose();
-                        _initPlayer();
-                        setState(() {});
-                      },
+                      onPressed: _retryPlayback,
                       icon: const Icon(Icons.refresh),
                       label: const Text('重试'),
                     ),
@@ -444,6 +499,7 @@ class _VideoScreenState extends State<VideoScreen> {
           return _buildPlayerView();
         },
       ),
+    ),
     );
   }
 
@@ -630,7 +686,7 @@ class _VideoScreenState extends State<VideoScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            widget.videoUrl,
+            _currentPlayUrl.isNotEmpty ? _currentPlayUrl : widget.videoUrl,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
