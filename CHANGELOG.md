@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.20] - 2026-08-11
+
+### 修复（书源 jsLib 加载失败降级，[Rust] 轨）
+- **正文全空回归根治**：favcomic 等漫画/视频书源的混淆 jsLib 依赖 Android Rhino 特有全局（`Packages` Java 桥、`decode` 等），QuickJS 无法完整执行（实测 eval 报 `decode is not defined`）。v2.0.19 将 jsLib 求值失败从静默改为**报错阻断**，导致所有带 jsLib 书源的正文解析直接失败 →「能搜到但正文图片/视频无法显示」（全局回归）。修复：jsLib 求值失败**降级为 eprintln 警告并继续执行**——正文规则多为不依赖 jsLib 的纯正则/CSS（favcomic 正文 `<js>src.match(...)` 提取出完整 2966B 图片列表），阻断会误伤；后续 JS 规则引用缺失函数时仍自然抛 ReferenceError 可排错
+- 实测（真实站点，Rust 网络测试）：favcomic 搜索→目录→正文恢复 2966B（此前 jsLib 阻断时 Content empty）；legado-ffi 263/263 全过；5556/5558 冒烟 6/6
+
+### 已知书源侧问题（非代码缺陷）
+- favcomic 图床域名 `ccdeoo.ykxbo.cn` 已 NXDOMAIN（书源写死的域名失效），该源图片显示需书源更新或换源
+
 ## [2.0.19] - 2026-08-11
 
 ### 修复（漫画/图片源 imageDecode 解码 + JS 注入严格模式根治，[Rust]+[UI] 双轨）
