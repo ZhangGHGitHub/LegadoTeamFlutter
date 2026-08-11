@@ -89,4 +89,20 @@ void main() {
       expect(parseComicImageUrls(line), [line]);
     });
   });
+
+  group('looksLikeImageBytes 魔数', () {
+    test('识别 JPEG/PNG/GIF/WEBP，拒绝密文', () {
+      expect(looksLikeImageBytes([0xFF, 0xD8, 0xFF, 0xE0]), isTrue);
+      expect(looksLikeImageBytes([0x89, 0x50, 0x4E, 0x47]), isTrue);
+      expect(looksLikeImageBytes([0x47, 0x49, 0x46, 0x38]), isTrue);
+      expect(
+        looksLikeImageBytes([
+          0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50,
+        ]),
+        isTrue,
+      );
+      expect(looksLikeImageBytes([0x01, 0x02, 0x03, 0x04]), isFalse);
+      expect(looksLikeImageBytes([]), isFalse);
+    });
+  });
 }

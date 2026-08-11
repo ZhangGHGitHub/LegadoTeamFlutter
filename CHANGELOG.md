@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.26] - 2026-08-11
+
+### 修复（对称加密 JS 对象桥 + aesBase64Decode + 图片魔数校验，[Rust]+[UI]）
+- **根因 B（漫画能进正文但图全挂）**：`java.createSymmetricCrypto` 此前只返回 `"AES/CBC"` 字符串，书源 `cipher.decrypt(result)`（如 51漫画 AES/CBC/NoPadding imageDecode）恒失败 → 密文进 `Image.memory` → `Invalid image data` / FlutterImageDecoder 刷屏。修复：返回含 `decrypt`/`decryptStr`/`encrypt*` 的对象；core 补 `AES/CBC/NoPadding`；`fetch_image_with_decode` 在有 imageDecode 时校验 JPEG/PNG/GIF/WEBP 魔数，失败显式报错
+- **根因 A（多数图片源无目录/正文）**：缺 `java.aesBase64DecodeToString`（全网漫画等 init/toc/content AES 解密）。补齐宿主桥；另：个别书源 `bookSourceUrl` 误写为 `…/@遇知` 属源数据问题，会 404
+- **UI**：解密结果魔数校验，拒绝把密文写入预加载缓存
+- 测试：legado-js createSymmetricCrypto/imageDecode/aesBase64；legado-core NoPadding；Flutter looksLikeImageBytes
+- 实现：Reasonix（Rust/UI）
+
+编写者：Reasonix ｜ 2026-08-11
+
 ## [2.0.25] - 2026-08-11
 
 ### 修复（书架 BookType 分流 + 漫画复合 URL/预加载 + imageDecode 新引擎 + 视频相对 URL/重试/进度 + 媒体 MPD 钩子，[Rust]+[UI] 双轨）

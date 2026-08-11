@@ -807,6 +807,8 @@ class ComicImageDecodeCache {
       _cache[keyOf(bookSourceUrl, url)];
 
   static void put(String bookSourceUrl, String url, Uint8List bytes) {
+    // 拒绝缓存非图片字节（imageDecode 失败回退密文时勿污染缓存）— Reasonix + UI
+    if (!looksLikeImageBytes(bytes)) return;
     _cache[keyOf(bookSourceUrl, url)] = bytes;
   }
 
@@ -822,7 +824,9 @@ class ComicImageDecodeCache {
     final decoded = jsonDecode(json) as Map<String, dynamic>;
     final b64 = decoded['base64'] as String? ?? '';
     if (b64.isEmpty) return;
-    put(bookSourceUrl, url, base64Decode(b64));
+    final bytes = base64Decode(b64);
+    if (!looksLikeImageBytes(bytes)) return;
+    put(bookSourceUrl, url, bytes);
   }
 
   /// 测试用：清空缓存
@@ -886,6 +890,11 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
         throw Exception('解码结果为空（imageDecode 未返回有效图片数据）');
       }
       final bytes = base64Decode(b64);
+      if (!looksLikeImageBytes(bytes)) {
+        throw Exception(
+          '解码结果不是有效图片（可能 imageDecode/createSymmetricCrypto 失败）',
+        );
+      }
       if (!mounted) return;
       ComicImageDecodeCache.put(widget.bookSourceUrl, widget.url, bytes);
       setState(() {
