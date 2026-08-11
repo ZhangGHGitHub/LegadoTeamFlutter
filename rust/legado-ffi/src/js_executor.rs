@@ -291,11 +291,15 @@ mod quickjs_impl {
                 || {
                     // 执行前先加载书源 jsLib（对齐原版 JsSource 每次调用前
                     // eval jsLib；jsLib 通常为纯函数定义，重复 eval 幂等）。
-                    // jsLib 求值失败不再静默吞掉——favcomic 等书源规则在
-                    // 正文/imageDecode 中引用 jsLib 函数，失败必须可见可排错
+                    // jsLib 求值失败**降级为警告而非阻断**：部分书源（如
+                    // favcomic 混淆 jsLib）依赖 Android Rhino 特有全局
+                    //（Packages Java 桥等），QuickJS 无法完整执行；正文
+                    // 规则多为不依赖 jsLib 的纯正则/CSS，阻断会致正文全空
+                    //（2026-08-11 实测回归）。失败仅记日志，后续 JS 规则
+                    // 引用缺失函数时自然报 ReferenceError 可排错 — Reasonix
                     if let Some(lib) = &self.js_lib {
                         if let Err(e) = legado_js::JsEngine::eval(&*guard, lib) {
-                            return Err(format!("书源 jsLib 加载失败: {e}"));
+                            eprintln!("[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}", self.source_tag);
                         }
                     }
                     // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
