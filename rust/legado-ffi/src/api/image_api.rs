@@ -103,19 +103,53 @@ pub fn decode_image_bytes(
     }
 }
 
+/// 解析复合图片 URL（`url,{json headers}`）：返回真实 URL 与内嵌 headers
+///
+/// 对齐原版 AnalyzeUrl.kt analyzeUrl 语义：切首个 `,` 前为 URL，后部
+/// JSON（`{"headers":{...}}` 或扁平 `{...}`）解析为请求头。
+/// 无 `,{` 复合段时原样返回 URL 与空 headers — Reasonix
+fn split_composite_image_url(url: &str) -> (String, HashMap<String, String>) {
+    if let Some(comma_pos) = url.find(',') {
+        let after = url[comma_pos + 1..].trim();
+        if after.starts_with('{') && after.ends_with('}') {
+            let analyzed = legado_parser::AnalyzeUrl::new(url, None, None, "", None);
+            let parsed_url = analyzed.url().to_string();
+            if !parsed_url.is_empty() {
+                let headers = analyzed
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<HashMap<String, String>>();
+                return (parsed_url, headers);
+            }
+        }
+    }
+    (url.to_string(), HashMap::new())
+}
+
 /// 下载图片（带书源 header 防盗链）并按 imageDecode 解码，返回 base64
 ///
 /// source_json：书源 JSON（单对象）。无 imageDecode 时返回原始图片 base64。
+///
+/// 支持原版 `url,{json headers}` 复合格式（favcomic 等漫画站图片 URL 内嵌
+/// 防盗链 header，对齐原版 AnalyzeUrl.kt analyzeUrl 切首个 `,` 前为 URL、
+/// 后部解析为 headerMap）：URL 含 `,{...}` 时经 [`split_composite_image_url`]
+/// 拆分，内嵌 headers 与书源 header 合并后请求 — Reasonix
 pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)
         .map_err(|e| LegadoError::Ffi(format!("书源 JSON 解析失败: {e}")))?;
 
-    // 构造请求头：书源 header（Referer 等）+ 默认 UA
+    // 解析复合 URL（url,{json headers}）：拆分出真实 URL 与内嵌 headers
+    let (request_url, embedded_headers) = split_composite_image_url(url);
+
+    // 构造请求头：书源 header（Referer 等）+ 内嵌 header + 默认 UA
     let mut headers: HashMap<String, String> = source
         .header
         .as_deref()
         .map(parse_header_map)
         .unwrap_or_default();
+    // 内嵌 header 优先级最高（书源规则显式指定的防盗链）
+    headers.extend(embedded_headers);
     if !headers.contains_key("User-Agent") && !headers.contains_key("user-agent") {
         headers.insert("User-Agent".to_string(), DEFAULT_UA.to_string());
     }
@@ -128,7 +162,7 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
 
     let resp = crate::runtime::block_on(async {
         let client = crate::http_state::shared_client();
-        client.get_raw(url, Some(headers)).await
+        client.get_raw(&request_url, Some(headers)).await
     })?;
     if !resp.is_success() {
         return Err(LegadoError::Network(format!(
@@ -149,10 +183,37 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
 mod tests {
     use super::*;
 
+    /// 复合图片 URL（url,{json headers}）拆分：真实 URL + 内嵌 headers
+    #[test]
+    fn test_split_composite_image_url() {
+        // favcomic 风格：内嵌 User-Agent/Referer/x-requested-with
+        let (url, headers) = split_composite_image_url(
+            r#"https://cdn.favcomic.net/file/e-media/image/comic/1/1.webp,{"headers":{"User-Agent":"Mozilla/5.0","Referer":"https://cdn.favcomic.net/","x-requested-with":"XBrowser"}}"#,
+        );
+        assert_eq!(
+            url,
+            "https://cdn.favcomic.net/file/e-media/image/comic/1/1.webp"
+        );
+        assert_eq!(headers.get("User-Agent").map(|s| s.as_str()), Some("Mozilla/5.0"));
+        assert_eq!(headers.get("Referer").map(|s| s.as_str()), Some("https://cdn.favcomic.net/"));
+        assert_eq!(headers.get("x-requested-with").map(|s| s.as_str()), Some("XBrowser"));
+
+        // 扁平 JSON 若不包裹 headers 字段则按 AnalyzeUrl 语义不解析 headers
+        //（favcomic 实际使用 {"headers":{...}} 包裹格式，上方已覆盖）
+        let (url2, _headers2) = split_composite_image_url(
+            r#"https://img.example.com/1.jpg,{"Referer":"https://img.example.com/"}"#,
+        );
+        assert_eq!(url2, "https://img.example.com/1.jpg");
+
+        // 无复合段：原样返回
+        let (url3, headers3) = split_composite_image_url("https://img.example.com/2.jpg");
+        assert_eq!(url3, "https://img.example.com/2.jpg");
+        assert!(headers3.is_empty());
+    }
+
     /// 无 imageDecode 规则时原样返回
     #[test]
-    fn test_decode_no_rule_returns_original() {
-        let src: BookSource = serde_json::from_str(
+    fn test_decode_no_rule_returns_original() {        let src: BookSource = serde_json::from_str(
             r#"{"bookSourceUrl":"https://a.example.com","bookSourceName":"t","bookSourceType":0,"searchUrl":"https://a.example.com/search?q={{key}}","ruleSearch":{"bookList":".x"}}"#,
         )
         .unwrap();
@@ -301,4 +362,5 @@ mod tests {
                 || bytes[0] == 0x47 && bytes[1] == 0x49);
         assert!(is_image, "解码后不是有效图片头");
     }
+
 }
