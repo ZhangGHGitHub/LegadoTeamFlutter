@@ -229,7 +229,7 @@ fn search_url_with_js(
 
 #[cfg(feature = "quickjs")]
 mod quickjs_impl {
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::OnceLock;
 
     use legado_js::EnginePool;
     use legado_parser::JsExecutor;
@@ -241,6 +241,9 @@ mod quickjs_impl {
     ///
     /// 使用 `OnceLock` 惰性初始化，保证多线程下仅创建一次；
     /// `EnginePool` 内部以 `Arc<Mutex<...>>` 保护，自身可安全共享。
+    /// 注：规则执行（QuickJsExecutor）已改为每次新建引擎（规避 const
+    /// 全局残留 redeclaration），本池仅供 `pool_engine` 等直接取引擎的
+    /// 场景（imageDecode 等一次性 eval）复用。
     pub(super) fn global_pool() -> &'static EnginePool {
         static POOL: OnceLock<EnginePool> = OnceLock::new();
         POOL.get_or_init(|| EnginePool::new(POOL_MAX_SIZE))
@@ -248,20 +251,20 @@ mod quickjs_impl {
 
     /// QuickJS 执行器适配器
     ///
-    /// 持有共享引擎池引用与所属 `source_tag`；`execute_js` 时按 tag 取
-    /// （或创建）引擎并加锁执行。实现 `Send + Sync`，满足 `Arc<dyn JsExecutor>`。
+    /// 持有所属 `source_tag` 与书源 jsLib；`execute_js` 时**每次创建
+    /// 独立新引擎**执行（对齐原版 Rhino 每次 evalJS 新作用域，规避
+    /// 书源规则顶层 const/let 声明在引擎复用下的 redeclaration）。
+    /// 实现 `Send + Sync`，满足 `Arc<dyn JsExecutor>`。
     pub struct QuickJsExecutor {
-        pool: &'static EnginePool,
         source_tag: String,
         /// 书源 jsLib（共享库代码，执行前先加载，对齐原版每次 eval 前注入）
         js_lib: Option<String>,
     }
 
     impl QuickJsExecutor {
-        /// 以指定 `source_tag` 创建执行器（复用全局引擎池）
+        /// 以指定 `source_tag` 创建执行器
         pub fn new(source_tag: &str) -> Self {
             Self {
-                pool: global_pool(),
                 source_tag: source_tag.to_string(),
                 js_lib: None,
             }
@@ -279,11 +282,16 @@ mod quickjs_impl {
 
     impl JsExecutor for QuickJsExecutor {
         fn execute_js(&self, js_code: &str) -> Result<String, String> {
-            let engine: Arc<Mutex<legado_js::QuickJsEngine>> = self
-                .pool
-                .get_or_create(&self.source_tag)
-                .map_err(|e| format!("JS 引擎获取/创建失败: {e}"))?;
-            let guard = engine.lock().map_err(|e| format!("JS 引擎加锁失败: {e}"))?;
+            // 每次执行用**独立新引擎**（而非池复用）：书源规则常用顶层
+            // `const/let` 声明（51漫画 `const scripts`），同一引擎第二次
+            // 执行同一规则必报 "redeclaration of 'scripts'"（QuickJS 全局
+            // 词法环境残留，实测 SECOND ERR）。原版 Rhino 每次 evalJS 用
+            // 新作用域，重构版对齐：用完即弃，规避跨调用全局污染。
+            // 代价：jsLib 每次重载（一般较小，可接受）— Reasonix
+            let engine = legado_js::QuickJsEngine::new(
+                legado_js::sandbox::SandboxConfig::default().with_allow_script_run(true),
+            )
+            .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
             // 绑定当前书源上下文（供 getVerificationCode 等宿主钩子识别书源，
             // 对齐 Kotlin JsExtensions.getSource()），eval 结束后恢复
             legado_js::host_api::current_source::with_current_source_tag(
@@ -298,12 +306,12 @@ mod quickjs_impl {
                     //（2026-08-11 实测回归）。失败仅记日志，后续 JS 规则
                     // 引用缺失函数时自然报 ReferenceError 可排错 — Reasonix
                     if let Some(lib) = &self.js_lib {
-                        if let Err(e) = legado_js::JsEngine::eval(&*guard, lib) {
+                        if let Err(e) = legado_js::JsEngine::eval(&engine, lib) {
                             eprintln!("[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}", self.source_tag);
                         }
                     }
                     // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
-                    legado_js::JsEngine::eval(&*guard, js_code).map_err(|e| e.to_string())
+                    legado_js::JsEngine::eval(&engine, js_code).map_err(|e| e.to_string())
                 },
             )
         }
