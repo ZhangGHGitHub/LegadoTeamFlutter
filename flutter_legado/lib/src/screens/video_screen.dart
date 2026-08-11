@@ -292,12 +292,7 @@ class _VideoScreenState extends State<VideoScreen> {
   void _initPlayer({String? networkUrl, String? filePath}) {
     if (filePath != null && filePath.isNotEmpty) {
       _controller = VideoPlayerController.file(File(filePath));
-      _initializeVideoPlayerFuture = _controller.initialize().then((_) {
-        if (mounted) {
-          setState(() {});
-          _controller.play();
-        }
-      });
+      _wireControllerInit();
       return;
     }
 
@@ -317,11 +312,21 @@ class _VideoScreenState extends State<VideoScreen> {
       uri,
       httpHeaders: _videoHeaders,
     );
-    _initializeVideoPlayerFuture = _controller.initialize().then((_) {
-      if (mounted) {
-        setState(() {});
-        _controller.play();
+    _wireControllerInit();
+  }
+
+  /// 初始化后恢复进度并自动播放（对齐 VideoPlay.seekOnStart）
+  void _wireControllerInit() {
+    _initializeVideoPlayerFuture = _controller.initialize().then((_) async {
+      if (!mounted) return;
+      final book = widget.book;
+      if (book != null && book.durChapterPos > 0) {
+        try {
+          await _controller.seekTo(Duration(milliseconds: book.durChapterPos));
+        } catch (_) {}
       }
+      setState(() {});
+      _controller.play();
     });
   }
 
