@@ -242,8 +242,9 @@ mod quickjs_impl {
     /// 使用 `OnceLock` 惰性初始化，保证多线程下仅创建一次；
     /// `EnginePool` 内部以 `Arc<Mutex<...>>` 保护，自身可安全共享。
     /// 注：规则执行（QuickJsExecutor）已改为每次新建引擎（规避 const
-    /// 全局残留 redeclaration），本池仅供 `pool_engine` 等直接取引擎的
-    /// 场景（imageDecode 等一次性 eval）复用。
+    /// 全局残留 redeclaration）；imageDecode 亦已改为每次新引擎
+    ///（见 `image_api::decode_image_bytes`）。本池仅供仍直接调用
+    /// `pool_engine` 的模块（payAction / sourceLoginV2 等）复用。
     pub(super) fn global_pool() -> &'static EnginePool {
         static POOL: OnceLock<EnginePool> = OnceLock::new();
         POOL.get_or_init(|| EnginePool::new(POOL_MAX_SIZE))

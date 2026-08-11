@@ -29,8 +29,17 @@ static IMG_TAG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?is)<img\b[^>]*?/?>").unwrap());
 
 /// 从 img 标签中提取指定属性值
-static ATTR_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?i)\b(data-src|data-original|srcset|src)\s*=\s*["']([^"']*)["']"#).unwrap());
+///
+/// 对齐原版 `HtmlFormatter.formatImagePattern`：复合图片 URL
+/// `src="https://cdn/.../a.webp,{"headers":{...}}"` 引号内可含 `{...}` JSON，
+/// 旧正则 `["']([^"']*)["']` 会在首个内嵌 `"` 处截断为 `...webp,{`。
+/// 捕获组：1=属性名，2=复合 URL（可选），3=普通属性值（可选）。
+static ATTR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)\b(data-src|data-original|srcset|src)\s*=\s*(?:["']([^'"{>]*\{(?:[^{}]|\{[^}>]+\})+\})["']|["']([^"']*)["'])"#,
+    )
+    .unwrap()
+});
 
 /// 块级标签 → 换行
 static BLOCK_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -187,7 +196,12 @@ fn extract_img_url(tag: &str) -> Option<String> {
 
     for caps in ATTR_RE.captures_iter(tag) {
         let attr_name = caps[1].to_lowercase();
-        let attr_value = caps[2].trim().to_string();
+        // 组 2=复合 URL（含 {...}），组 3=普通引号值；二者互斥
+        let attr_value = caps
+            .get(2)
+            .or_else(|| caps.get(3))
+            .map(|m| m.as_str().trim().to_string())
+            .unwrap_or_default();
         if attr_value.is_empty() {
             continue;
         }
@@ -524,6 +538,35 @@ mod tests {
         assert_eq!(
             get_absolute_url("https://example.com", "https://already.absolute.com/x"),
             "https://already.absolute.com/x"
+        );
+    }
+
+    /// 复合图片 URL（引号内含 {headers} JSON）须完整抽取，对齐原版 HtmlFormatter
+    #[test]
+    fn test_format_keep_img_composite_url_with_headers_json() {
+        // 对标 favcomic：src="url,{"headers":{...}}"，内嵌双引号不得截断
+        let html = r#"<img src="https://cdn.example.com/comic/a.webp,{"headers":{"User-Agent":"Mozilla/5.0","Referer":"https://cdn.example.com/"}}">"#;
+        let result = format_keep_img(html, "https://example.com");
+        let expected = r#"https://cdn.example.com/comic/a.webp,{"headers":{"User-Agent":"Mozilla/5.0","Referer":"https://cdn.example.com/"}}"#;
+        assert!(
+            result.contains(expected),
+            "复合 URL 应完整保留，实际: {result}"
+        );
+        // 截断回归：旧正则会得到 ...webp,{
+        assert!(
+            !result.contains(r#"a.webp,{">"#) && !result.contains("a.webp,{}\""),
+            "不得截断为 a.webp,{{ 残片，实际: {result}"
+        );
+    }
+
+    /// extract_img_url 直接覆盖复合 src
+    #[test]
+    fn test_extract_img_url_composite() {
+        let tag = r#"<img src="https://cdn.example.com/a.webp,{"headers":{"Referer":"https://cdn.example.com/"}}">"#;
+        let url = extract_img_url(tag).expect("应抽出复合 URL");
+        assert_eq!(
+            url,
+            r#"https://cdn.example.com/a.webp,{"headers":{"Referer":"https://cdn.example.com/"}}"#
         );
     }
 }

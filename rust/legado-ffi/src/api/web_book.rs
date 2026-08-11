@@ -837,7 +837,16 @@ fn parse_content_page_with_js_lib(
 
     // 正文净化管线（对标 Kotlin BookContent.analyzeContent）
     let content = if is_media {
-        raw_content
+        // 视频/音频：跳过 HTML 净化（MPD XML 以 `<` 开头，format_keep_img 会剥标签破坏清单）。
+        // 轻量接通 VideoPlayerState::normalize_content：空正文对齐 ContentEmptyException；
+        // Url vs Mpd 分类仍返回原文 String（保持 FFI 契约），UI 播放前应再调
+        // `VideoPlayerState::normalize_content` / `is_mpd_content` 写临时文件；
+        // 相对 URL 绝对化由 UI 轨处理（本处不改视频卷/弹幕核心）。
+        match legado_core::video_state::VideoPlayerState::normalize_content(&raw_content) {
+            None => String::new(),
+            Some(legado_core::video_state::VideoContent::Mpd(_))
+            | Some(legado_core::video_state::VideoContent::Url(_)) => raw_content,
+        }
     } else {
         // HtmlFormatter.formatKeepImg（保留 img 标签 + 按本页 URL 绝对化）
         let cleaned = legado_core::html_formatter::format_keep_img(&raw_content, page_url);
@@ -1779,6 +1788,42 @@ mod tests {
             true,
         );
         assert_eq!(content, raw);
+    }
+
+    /// 视频 MPD 清单：以 `<` 开头须原文透传（normalize_content 识别为 Mpd，不剥标签）
+    #[test]
+    fn test_parse_content_page_media_mpd_passthrough() {
+        let mpd = r#"<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011"><Period/></MPD>"#;
+        let (content, _) = parse_content_page(
+            mpd.to_string(),
+            "",
+            "",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            true,
+        );
+        assert_eq!(content, mpd);
+        assert!(
+            matches!(
+                legado_core::video_state::VideoPlayerState::normalize_content(&content),
+                Some(legado_core::video_state::VideoContent::Mpd(_))
+            ),
+            "钩子：UI 可用 normalize_content 识别 MPD"
+        );
+    }
+
+    /// 视频空正文：normalize_content 接通后返回空串
+    #[test]
+    fn test_parse_content_page_media_empty() {
+        let (content, _) = parse_content_page(
+            "   ".to_string(),
+            "",
+            "",
+            "https://example.com/chap/1.html",
+            "https://example.com",
+            true,
+        );
+        assert!(content.is_empty());
     }
 
     /// 回归（Task #24）：真实 95590 章节页 + 真实书源 ruleContent `.entry-content@html`。

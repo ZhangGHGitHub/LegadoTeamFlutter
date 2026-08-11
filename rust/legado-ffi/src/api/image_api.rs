@@ -5,11 +5,12 @@
 //! 书源 jsLib 定义解密函数，对图片 bytes 执行 JS 解密后才是可显示的数据。
 //! 重构版此前仅有字段无执行 → 图片加载不解码 → 无法显示。
 //!
-//! 本模块：下载图片 → 若书源配置 imageDecode 且 jsLib，则注入
+//! 本模块：下载图片 → 若书源配置 imageDecode，则**每次新建引擎**注入
 //! result(Uint8Array)/src(URL) 绑定执行 imageDecode JS，返回解密后 bytes。
+//! jsLib 可选（失败降级继续，对齐规则路径 v2.0.24）；勿用 pool_engine
+//!（同源第 2 张起 const/let redeclaration → 退回密文）。
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use base64::Engine as _;
 use legado_core::models::BookSource;
@@ -55,52 +56,114 @@ fn parse_header_map(header: &str) -> HashMap<String, String> {
 ///
 /// bindings 对齐原版 `source.evalJS(ruleJs) { put("result", inputStream); put("src", src) }`
 /// result = 图片 bytes（Uint8Array），src = 图片 URL。
-/// 无 imageDecode / 无 jsLib / 执行失败（规则不适用）→ 原样返回 bytes。
+/// - 无 imageDecode → 原样返回
+/// - 有 imageDecode：每次新建引擎执行（对齐规则路径 v2.0.24，不用 pool）
+/// - jsLib 可选：有则先 eval，失败 eprintln 后仍尝试 decode（勿静默假成功掩盖）
+/// - decode 失败/空结果 → eprintln 可观测，回退原图
 pub fn decode_image_bytes(
     source: &BookSource,
     img_url: &str,
     bytes: &[u8],
 ) -> Vec<u8> {
-    let rule = source
+    let Some(rule) = source
         .rule_content
         .as_ref()
         .and_then(|c| c.image_decode.clone())
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+    else {
+        return bytes.to_vec();
+    };
+
     let js_lib = source
         .js_lib
         .clone()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    match (rule, js_lib) {
-        (Some(rule), Some(lib)) => {
-            // 引擎池按书源 URL 隔离；每次调用先 eval jsLib（幂等）
-            let engine: Arc<std::sync::Mutex<legado_js::QuickJsEngine>> =
-                match crate::js_executor::pool_engine(&source.book_source_url) {
-                    Ok(e) => e,
-                    Err(_) => return bytes.to_vec(),
-                };
-            let guard = match engine.lock() {
-                Ok(g) => g,
-                Err(_) => return bytes.to_vec(),
-            };
-            if JsEngine::eval(&*guard, &lib).is_err() {
+
+    #[cfg(feature = "quickjs")]
+    {
+        // 每次新建引擎：同源多图连续 decode 时顶层 const/let 不会 redeclaration
+        let engine = match legado_js::QuickJsEngine::new(
+            legado_js::sandbox::SandboxConfig::default().with_allow_script_run(true),
+        ) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!(
+                    "[legado-ffi] imageDecode 引擎创建失败（回退原图）: {e} url={img_url}"
+                );
                 return bytes.to_vec();
             }
-            match JsEngine::eval_bytes(
-                &*guard,
-                &rule,
-                &[
-                    ("result", JsValue::Bytes(bytes.to_vec())),
-                    ("src", JsValue::String(img_url.to_string())),
-                ],
-            ) {
-                Ok(decoded) if !decoded.is_empty() => decoded,
-                _ => bytes.to_vec(),
+        };
+
+        if let Some(lib) = js_lib.as_deref() {
+            if let Err(e) = JsEngine::eval(&engine, lib) {
+                // 降级继续：部分书源混淆 jsLib 依赖 Rhino Packages，但仍可能仅靠
+                // imageDecode 内联逻辑；失败必须可观测，勿静默当成功
+                eprintln!(
+                    "[legado-ffi] imageDecode jsLib 加载失败（降级继续 decode）: {e} source={}",
+                    source.book_source_url
+                );
             }
         }
-        _ => bytes.to_vec(),
+
+        match JsEngine::eval_bytes(
+            &engine,
+            &rule,
+            &[
+                ("result", JsValue::Bytes(bytes.to_vec())),
+                ("src", JsValue::String(img_url.to_string())),
+            ],
+        ) {
+            Ok(decoded) if !decoded.is_empty() => decoded,
+            Ok(_) => {
+                eprintln!(
+                    "[legado-ffi] imageDecode 返回空字节（回退原图）url={img_url}"
+                );
+                bytes.to_vec()
+            }
+            Err(e) => {
+                eprintln!(
+                    "[legado-ffi] imageDecode 执行失败（回退原图）: {e} url={img_url}"
+                );
+                bytes.to_vec()
+            }
+        }
     }
+
+    #[cfg(not(feature = "quickjs"))]
+    {
+        let _ = (rule, js_lib, img_url);
+        eprintln!("[legado-ffi] imageDecode 需要 quickjs feature（回退原图）");
+        bytes.to_vec()
+    }
+}
+
+/// 书源主页默认 Referer（对齐图片防盗链兜底）
+///
+/// 无尾斜杠纯域名（如 `https://site.com`）不得 `rsplitn('/')` 截成 `https:`。
+fn default_referer_from_source_url(book_source_url: &str) -> Option<String> {
+    let url = book_source_url.trim();
+    if url.is_empty() {
+        return None;
+    }
+    if url.ends_with('/') {
+        return Some(url.to_string());
+    }
+    // 无路径：整段 URL + /
+    if let Some(scheme_end) = url.find("://") {
+        if !url[scheme_end + 3..].contains('/') {
+            return Some(format!("{url}/"));
+        }
+    }
+    // 有路径：去掉最后一段，保留目录尾斜杠
+    if let Some(pos) = url.rfind('/') {
+        let origin = &url[..=pos];
+        if origin.contains("://") {
+            return Some(origin.to_string());
+        }
+    }
+    Some(format!("{}/", url.trim_end_matches('/')))
 }
 
 /// 解析复合图片 URL（`url,{json headers}`）：返回真实 URL 与内嵌 headers
@@ -155,8 +218,8 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
     }
     // 图片防盗链：无 Referer 时以书源主页兜底（对齐原版 ImageLoader referer）
     if !headers.contains_key("Referer") && !headers.contains_key("referer") {
-        if let Some(origin) = source.book_source_url.rsplitn(2, '/').nth(1) {
-            headers.insert("Referer".to_string(), format!("{}/", origin));
+        if let Some(referer) = default_referer_from_source_url(&source.book_source_url) {
+            headers.insert("Referer".to_string(), referer);
         }
     }
 
@@ -213,12 +276,31 @@ mod tests {
 
     /// 无 imageDecode 规则时原样返回
     #[test]
-    fn test_decode_no_rule_returns_original() {        let src: BookSource = serde_json::from_str(
+    fn test_decode_no_rule_returns_original() {
+        let src: BookSource = serde_json::from_str(
             r#"{"bookSourceUrl":"https://a.example.com","bookSourceName":"t","bookSourceType":0,"searchUrl":"https://a.example.com/search?q={{key}}","ruleSearch":{"bookList":".x"}}"#,
         )
         .unwrap();
         let out = decode_image_bytes(&src, "https://a.example.com/1.jpg", &[1, 2, 3]);
         assert_eq!(out, vec![1, 2, 3]);
+    }
+
+    /// 默认 Referer：无尾斜杠纯域名不得截成 https:
+    #[test]
+    fn test_default_referer_domain_only() {
+        assert_eq!(
+            default_referer_from_source_url("https://site.com"),
+            Some("https://site.com/".to_string())
+        );
+        assert_eq!(
+            default_referer_from_source_url("https://site.com/"),
+            Some("https://site.com/".to_string())
+        );
+        assert_eq!(
+            default_referer_from_source_url("https://site.com/path/page"),
+            Some("https://site.com/path/".to_string())
+        );
+        assert_eq!(default_referer_from_source_url(""), None);
     }
 
     /// imageDecode 规则 + jsLib 解密：bytes 注入为 Uint8Array，JS 按位翻转后返回
@@ -239,6 +321,46 @@ mod tests {
         .unwrap();
         let out = decode_image_bytes(&src, "https://b.example.com/1.jpg", &[0xAA, 0x00, 0x7F]);
         assert_eq!(out, vec![0x55, 0xFF, 0x80]);
+    }
+
+    /// 仅有 imageDecode、无 jsLib：规则内联仍应执行（不强制 jsLib）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_decode_rule_only_without_js_lib() {
+        let src: BookSource = serde_json::from_str(
+            r#"{
+              "bookSourceUrl":"https://c.example.com",
+              "bookSourceName":"t",
+              "bookSourceType":2,
+              "searchUrl":"https://c.example.com/search?q={{key}}",
+              "ruleSearch":{"bookList":".x"},
+              "ruleContent":{"content":".x","imageDecode":"var o=new Uint8Array(result.length);for(var i=0;i<result.length;i++){o[i]=result[i]^0x0F;}o;"}
+            }"#,
+        )
+        .unwrap();
+        let out = decode_image_bytes(&src, "https://c.example.com/1.jpg", &[0x10, 0x20]);
+        assert_eq!(out, vec![0x1F, 0x2F]);
+    }
+
+    /// 同源连续 decode 两次：每次新引擎，顶层 const 不 redeclaration
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_decode_twice_no_redeclaration() {
+        let src: BookSource = serde_json::from_str(
+            r#"{
+              "bookSourceUrl":"https://d.example.com",
+              "bookSourceName":"t",
+              "bookSourceType":2,
+              "searchUrl":"https://d.example.com/search?q={{key}}",
+              "ruleSearch":{"bookList":".x"},
+              "ruleContent":{"content":".x","imageDecode":"const k=1; result;"}
+            }"#,
+        )
+        .unwrap();
+        let a = decode_image_bytes(&src, "https://d.example.com/1.jpg", &[1, 2]);
+        let b = decode_image_bytes(&src, "https://d.example.com/2.jpg", &[3, 4]);
+        assert_eq!(a, vec![1, 2]);
+        assert_eq!(b, vec![3, 4]);
     }
 
     /// 真实站点链路：favcomic 图片下载 → jsLib decode → JPEG 头（需网络）
@@ -265,7 +387,7 @@ mod tests {
         let results = crate::api::search::search_books(keyword, &urls_json).unwrap();
         println!("===== [search] total={}", results.len());
         let mut img_url = String::new();
-        for (bi, first) in results.iter().enumerate().take(3) {
+        for (_bi, first) in results.iter().enumerate().take(3) {
             println!("===== [book] {} {}", first.book_name, first.book_url);
             let toc = crate::api::reader::refresh_toc(&first.book_url, &first.source_url)
                 .unwrap();
