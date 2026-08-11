@@ -43,6 +43,7 @@ class BookListItem extends StatelessWidget {
               width: 66,
               height: 90,
               borderRadius: 4,
+              sourceOrigin: book.origin,
             ),
             const SizedBox(width: 10),
             Expanded(

@@ -166,9 +166,10 @@ class SearchNotifier extends Notifier<SearchState> {
           final books = (batch['books'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>()
               .map((e) => SearchResult.fromSearchBook(SearchBook.fromJson(e)));
-          // 按 书名+作者 去重追加（对齐原版 mergeItems 同名同作者合并语义）
+          // 按 书名+作者+书源 去重（对齐原版 mergeItems 保留多源：
+          // 同名同作者不同 origin 各自成条；勿用 name|author 吞掉其它漫画源）
           for (final r in books) {
-            final key = '${r.book.name}|${r.book.author}';
+            final key = '${r.book.name}|${r.book.author}|${r.book.origin}';
             if (seen.add(key)) accumulated.add(r);
           }
           // [UI-fix v2.0.10 | 2026-08-10] 分桶排序在批次回调内一次性完成

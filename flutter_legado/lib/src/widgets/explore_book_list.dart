@@ -203,7 +203,12 @@ class _BookItem extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 封面（对标 Android iv_cover: 45x60dp）
-            BookCover(coverUrl: book.coverUrl, width: 45, height: 60),
+            BookCover(
+              coverUrl: book.coverUrl,
+              width: 45,
+              height: 60,
+              sourceOrigin: book.origin,
+            ),
             const SizedBox(width: 12),
             // 书籍信息
             Expanded(

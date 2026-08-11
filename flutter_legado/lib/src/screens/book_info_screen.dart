@@ -907,6 +907,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             width: 110,
             height: 160,
             borderRadius: 10,
+            sourceOrigin: book.origin,
           ),
         ),
       ),

@@ -10,6 +10,13 @@ bool isCompositeImageUrl(String url) {
   return comma > 0;
 }
 
+/// 剥离复合 URL 的 `, {json}` 后缀，得到可直连的纯 URL
+String stripCompositeImageUrl(String url) {
+  final comma = url.indexOf(',{');
+  if (comma > 0) return url.substring(0, comma);
+  return url;
+}
+
 /// 判断是否像图片链接（行解析兜底用；复合 URL 先剥 `, {json}` 再判后缀）
 bool looksLikeImageUrl(String url) {
   final base = isCompositeImageUrl(url)

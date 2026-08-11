@@ -1086,6 +1086,7 @@ flutter test                  # 全量测试通过
 **最后修改**: Reasonix
 
 **版本记录**：
+- v1.40（2026-08-11）51封面 coverDecodeJs + AnalyzeRule `@put`/`@js`链/`##`/`{$.}` URL 模板 + 神漫画/Nhentai TOC/正文 + 搜索去重含 origin 销记（v2.0.29，[Rust]+[UI]，Reasonix）：封面密文直连失败；神漫画 bookUrl 内嵌 `{$.comic_id}` 误当 JsonPath；目录 `@put`/`@js` 链与正文 chapter.index/totalChapterNum 缺口；Nhentai `//script@js`。探针：神漫画 TOC=61 CONTENT>2k、Nhentai TOC=1 CONTENT>7k。搜索未声称与原版全网数量完全一致。版本 2.0.29+31
 - v1.39（2026-08-11）漫画空目录自愈销记（v2.0.27，[UI] 为主 + [Rust] 回归，Reasonix）：emulator-5558 取证——51漫画 DB `chapters=0` + `notShelf|image`，详情未落库目录，`ReaderComicScreen` 缺 `refreshToc` 自愈（文本 `ReaderNotifier` 已有）→「暂无章节」导致正文/图链路不可达。Rust 同书源实测搜索/TOC/正文/AES imageDecode 均通。修复 comic/video/audio 空目录 refreshToc + 开读前落库。搜索全网差距未完全对齐（page=1、去重无 addOrigin、部分源 QuickJS 失败），待用户同关键词对比。版本 2.0.27+29
 - v1.38（2026-08-11）对称加密 JS 对象桥 + aesBase64DecodeToString + 图片魔数校验销记（v2.0.26，[Rust]+[UI]，Reasonix）：emulator-5558 实测——① 51漫画等 imageDecode 依赖 `java.createSymmetricCrypto(...).decrypt(Uint8Array)`，旧实现返回字符串致解密失败密文上屏；② 全网漫画等依赖 `java.aesBase64DecodeToString` 解 AES 目录/正文，缺桥致 404/空目录。版本 2.0.26+28
 - v1.37（2026-08-11）书架 BookType 分流 + 复合图片 URL 抽取 + 漫画 FFI 预加载 + imageDecode 每次新引擎/Referer + 视频相对 URL/重试/进度 + 媒体 MPD 钩子销记（v2.0.25，[Rust]+[UI] 双轨，Reasonix 实施，Auto 协调交付）：① `BookOpenUtils` 统一书架/详情按位标记分流（含视频路由）；② HtmlFormatter/comic_image_utils 完整抽取 `url,{headers}` 复合 src；③ 漫画预加载与渲染统一 FFI；④ imageDecode 每次新建引擎（勿 pool redeclaration）+ 主页 Referer 兜底修正；⑤ 视频相对 URL 绝对化、重试当前章、进度写回；⑥ 媒体正文 MPD 跳过 HTML 净化并 normalize_content 钩子透传。版本 2.0.25+27。待用户以可用图片/视频源实测（避开 favcomic NXDOMAIN）

@@ -361,6 +361,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       key: ValueKey(book.bookUrl),
       title: book.name,
       coverUrl: book.customCoverUrl ?? book.coverUrl,
+      sourceOrigin: book.origin,
       unreadNum: unreadChapterNum(book),
       progress: bookReadProgress(book),
       onTap: () => _openBook(context, ref, book),

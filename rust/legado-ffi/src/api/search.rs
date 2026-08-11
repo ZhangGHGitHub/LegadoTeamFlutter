@@ -2140,4 +2140,62 @@ mod tests {
             "批量查找耗时异常: {elapsed:?}"
         );
     }
+
+    /// 设备导出的神漫画/Nhentai/51：search→toc 网络探针
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "requires network + tmp_debug fixtures"]
+    fn probe_manga_sources_from_tmp_debug() {
+        let _db = crate::db_state::ensure_test_db();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug");
+        for (file, kw) in [
+            ("src_51.json", "一人之下"),
+            ("src_shen.json", "一人之下"),
+            ("src_nhentai.json", "姐姐"),
+            ("src_kuaikan.json", "一人之下"),
+            ("src_cola.json", "一人之下"),
+        ] {
+            let path = root.join(file);
+            if !path.exists() {
+                println!("skip missing {file}");
+                continue;
+            }
+            let raw = std::fs::read_to_string(&path).unwrap();
+            let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            if let Some(obj) = v.as_object_mut() {
+                for k in ["enabled", "enabledExplore", "enabledCookieJar", "eventListener", "customButton"] {
+                    if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
+                        obj.insert(k.to_string(), serde_json::json!(n != 0));
+                    }
+                }
+            }
+            let src: legado_core::models::BookSource = serde_json::from_value(v).unwrap();
+            println!("\n==== {} ====", src.book_source_name);
+            let arr = serde_json::json!([src]).to_string();
+            crate::api::source::import_sources(&arr).unwrap();
+            let urls = format!(r#"["{}"]"#, src.book_source_url);
+            match search_books(kw, &urls) {
+                Ok(list) => {
+                    println!("SEARCH n={}", list.len());
+                    if let Some(b) = list.first() {
+                        println!("  {} {}", b.book_name, b.book_url);
+                        match crate::api::reader::refresh_toc(&b.book_url, &b.source_url) {
+                            Ok(toc) => {
+                                println!("  TOC n={}", toc.chapters.len());
+                                if let Some(ch) = toc.chapters.first() {
+                                    match crate::api::reader::get_chapter_content_full(&b.book_url, ch.index) {
+                                        Ok(c) => println!("  CONTENT len={}", c.len()),
+                                        Err(e) => println!("  CONTENT err={e}"),
+                                    }
+                                }
+                            }
+                            Err(e) => println!("  TOC err={e}"),
+                        }
+                    }
+                }
+                Err(e) => println!("SEARCH err={e}"),
+            }
+        }
+    }
+
 }

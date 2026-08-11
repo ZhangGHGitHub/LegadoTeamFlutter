@@ -678,7 +678,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             Some(body.clone())
         };
 
-        let (first_content, next_urls) = parse_content_page_with_js_lib(
+        // 神漫画等内容 JS 依赖 chapter.index + book.totalChapterNum
+        let total_chapters = infer_total_chapter_num(&body, chapter);
+
+        let (first_content, next_urls) = parse_content_page_with_bindings(
             body,
             content_rule_str,
             next_url_rule,
@@ -687,10 +690,14 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             is_media,
             source.js_lib.as_deref(),
             Some(&chapter.title),
+            Some(chapter.index),
+            Some(total_chapters),
         );
 
         // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
         let source_headers_clone = source_headers.clone();
+        let chapter_title = chapter.title.clone();
+        let chapter_index = chapter.index;
         let mut content = fetch_paginated_content(
             first_content,
             next_urls,
@@ -700,7 +707,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             next_url_rule,
             is_media,
             source.js_lib.as_deref(),
-            Some(&chapter.title),
+            Some(chapter_title.as_str()),
+            Some(chapter_index),
+            Some(total_chapters),
             |url: String| {
                 let headers = source_headers_clone.clone();
                 async move { self.fetch_simple(&url, headers.as_ref()).await }
@@ -754,6 +763,24 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         Ok(content)
     }
+}
+
+/// 推断 book.totalChapterNum（神漫画等内容 JS 依赖）
+///
+/// 优先从正文 JSON 的 `data.comic_chapter` 对象/数组长度推断；
+/// 否则退回 `chapter.index + 1`。
+fn infer_total_chapter_num(body: &str, chapter: &WebChapter) -> i32 {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(cc) = v.pointer("/data/comic_chapter") {
+            if let Some(obj) = cc.as_object() {
+                return obj.len() as i32;
+            }
+            if let Some(arr) = cc.as_array() {
+                return arr.len() as i32;
+            }
+        }
+    }
+    chapter.index.saturating_add(1)
 }
 
 /// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
@@ -810,24 +837,62 @@ fn parse_content_page_with_js_lib(
     js_lib: Option<&str>,
     chapter_title: Option<&str>,
 ) -> (String, Vec<String>) {
+    parse_content_page_with_bindings(
+        body,
+        content_rule_str,
+        next_url_rule,
+        page_url,
+        source_url,
+        is_media,
+        js_lib,
+        chapter_title,
+        None,
+        None,
+    )
+}
+
+/// 正文解析（可注入 chapter.index / book.totalChapterNum）
+///
+/// 神漫画等内容规则依赖：
+/// `index=parseInt(chapter.index); num=parseInt(book.totalChapterNum);`
+/// 此前仅注入 title → ReferenceError/NaN → 正文空。— Reasonix
+fn parse_content_page_with_bindings(
+    body: String,
+    content_rule_str: &str,
+    next_url_rule: &str,
+    page_url: &str,
+    source_url: &str,
+    is_media: bool,
+    js_lib: Option<&str>,
+    chapter_title: Option<&str>,
+    chapter_index: Option<i32>,
+    book_total_chapter_num: Option<i32>,
+) -> (String, Vec<String>) {
     let mut analyzer = crate::js_executor::construct_analyzer_with_js_lib(
         body,
         page_url.to_string(),
         source_url,
         js_lib,
     );
-    // 注入原版 evalJS bindings：source/chapter/title（result/src/baseUrl
+    // 注入原版 evalJS bindings：source/chapter/title/book（result/src/baseUrl
     // 由 AnalyzeRule.execute_js_rule 自动注入）——漫画/视频书源正文 JS
-    // 依赖这些变量（如 `chapter.title`、`String(result)`）。
-    // [UI-fix 2026-08-10 | Reasonix]
+    // 依赖这些变量（如 `chapter.title`、`chapter.index`、`book.totalChapterNum`）。
     analyzer = analyzer
         .with_js_binding("source", &serde_json::to_string(source_url).unwrap_or_default());
-    if let Some(t) = chapter_title {
-        let t_json = serde_json::to_string(t).unwrap_or_default();
-        analyzer = analyzer
-            .with_js_binding("chapter", &format!("{{\"title\": {t_json}}}"))
-            .with_js_binding("title", &t_json);
-    }
+    let title = chapter_title.unwrap_or("");
+    let t_json = serde_json::to_string(title).unwrap_or_else(|_| "\"\"".to_string());
+    let idx = chapter_index.unwrap_or(0);
+    analyzer = analyzer
+        .with_js_binding(
+            "chapter",
+            &format!("{{\"title\": {t_json}, \"index\": {idx}}}"),
+        )
+        .with_js_binding("title", &t_json);
+    let total = book_total_chapter_num.unwrap_or(0);
+    analyzer = analyzer.with_js_binding(
+        "book",
+        &format!("{{\"totalChapterNum\": {total}, \"name\": \"\"}}"),
+    );
 
     let raw_content = if content_rule_str.is_empty() {
         analyzer.content().to_string()
@@ -892,6 +957,8 @@ async fn fetch_paginated_content<F, Fut>(
     is_media: bool,
     js_lib: Option<&str>,
     chapter_title: Option<&str>,
+    chapter_index: Option<i32>,
+    book_total_chapter_num: Option<i32>,
     mut fetch_page: F,
 ) -> String
 where
@@ -915,7 +982,7 @@ where
                 }
                 match fetch_page(raw_url.clone()).await {
                     Ok(next_body) => {
-                        let (page_content, _) = parse_content_page_with_js_lib(
+                        let (page_content, _) = parse_content_page_with_bindings(
                             next_body,
                             content_rule_str,
                             "", // getNextPageUrl = false
@@ -924,6 +991,8 @@ where
                             is_media,
                             js_lib,
                             chapter_title,
+                            chapter_index,
+                            book_total_chapter_num,
                         );
                         content_list.push(page_content);
                     }
@@ -945,7 +1014,7 @@ where
                         break;
                     }
                 };
-                let (page_content, following) = parse_content_page_with_js_lib(
+                let (page_content, following) = parse_content_page_with_bindings(
                     next_body,
                     content_rule_str,
                     next_url_rule,
@@ -954,6 +1023,8 @@ where
                     is_media,
                     js_lib,
                     chapter_title,
+                    chapter_index,
+                    book_total_chapter_num,
                 );
                 content_list.push(page_content);
                 // 仅在获得单个下一页时继续串行（对标 Kotlin size==1 分支）；
@@ -1902,6 +1973,8 @@ mod tests {
             false,
             None,
             None,
+            None,
+            None,
             scripted_fetch(pagination_pages()),
         ));
         // 多页拼接（顺序 + \n 连接）
@@ -1932,6 +2005,8 @@ mod tests {
             ".content@html",
             "",
             false,
+            None,
+            None,
             None,
             None,
             scripted_fetch(pagination_pages()),
@@ -1976,6 +2051,8 @@ mod tests {
             false,
             None,
             None,
+            None,
+            None,
             scripted_fetch(pages),
         ));
         let parts: Vec<&str> = result.split('\n').collect();
@@ -2015,6 +2092,8 @@ mod tests {
             ".content@html",
             ".next@href",
             false,
+            None,
+            None,
             None,
             None,
             scripted_fetch(pages),

@@ -1,5 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
+import 'book_cover.dart';
 
 /// 书架网格项（对标原版 item_bookshelf_grid.xml）
 ///
@@ -15,6 +16,9 @@ import 'package:flutter/material.dart';
 class BookGridItem extends StatelessWidget {
   final String title;
   final String? coverUrl;
+
+  /// 书源 origin（封面 coverDecodeJs）
+  final String? sourceOrigin;
 
   /// 未读章节数（>0 时显示右上角角标）
   final int unreadNum;
@@ -35,6 +39,7 @@ class BookGridItem extends StatelessWidget {
     super.key,
     required this.title,
     this.coverUrl,
+    this.sourceOrigin,
     this.unreadNum = 0,
     this.progress,
     this.onTap,
@@ -69,23 +74,20 @@ class BookGridItem extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 child: LayoutBuilder(
                 builder: (context, constraints) {
-                  // 按网格单元实际显示像素宽度限制解码尺寸，避免大图解码
-                  final decodeWidth =
-                      _decodeWidth(context, constraints.maxWidth);
                   return Stack(
                     fit: StackFit.expand,
                     children: [
-                      (coverUrl != null && coverUrl!.isNotEmpty)
-                          ? CachedNetworkImage(
-                              imageUrl: coverUrl!,
-                              fit: BoxFit.cover,
-                              memCacheWidth: decodeWidth,
-                              placeholder: (_, _) =>
-                                  _buildPlaceholder(colorScheme),
-                              errorWidget: (_, _, _) =>
-                                  _buildPlaceholder(colorScheme),
-                            )
-                          : _buildPlaceholder(colorScheme),
+                      BookCover(
+                        coverUrl: coverUrl,
+                        width: constraints.maxWidth.isFinite
+                            ? constraints.maxWidth
+                            : 80,
+                        height: constraints.maxHeight.isFinite
+                            ? constraints.maxHeight
+                            : 110,
+                        borderRadius: 0,
+                        sourceOrigin: sourceOrigin,
+                      ),
                       // 未读角标（对标 bv_unread，右上角）
                       if (unreadNum > 0)
                         Positioned(
@@ -163,26 +165,6 @@ class BookGridItem extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-
-  /// 根据显示宽度计算解码像素宽度（防护无界约束）
-  int? _decodeWidth(BuildContext context, double displayWidth) {
-    if (!displayWidth.isFinite || displayWidth <= 0) return null;
-    final pixelRatio = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
-    return (displayWidth * pixelRatio).round();
-  }
-
-  Widget _buildPlaceholder(ColorScheme colorScheme) {
-    return Container(
-      color: colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          Icons.menu_book,
-          size: 40,
-          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-      ),
     );
   }
 }

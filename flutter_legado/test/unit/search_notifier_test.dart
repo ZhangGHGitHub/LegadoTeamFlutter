@@ -440,7 +440,7 @@ void main() {
       expect(readState().hasResults, isTrue);
     });
 
-    test('多源批次逐源追加且同名同作者去重（进度 x/y 更新）', () async {
+    test('多源批次逐源追加且同名同作者同书源去重（进度 x/y 更新）', () async {
       when(() =>
               mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
           .thenAnswer((_) => Stream.fromIterable([
@@ -460,7 +460,7 @@ void main() {
                 ),
                 makeBatch(
                   books: [
-                    // 与第一批同名同作者 → 应去重
+                    // 同名同作者但不同 origin → 保留（展示多源）
                     {
                       'name': '遮天',
                       'author': '辰东',
@@ -487,10 +487,14 @@ void main() {
       await readNotifier().search('遮天');
       await pumpStream();
 
-      // 两源结果都保留，同名同作者去重 → 2 条
-      expect(readState().results.length, equals(2));
+      // 两源「遮天」+「完美世界」→ 3 条（去重键含 origin）
+      expect(readState().results.length, equals(3));
       expect(readState().results.map((r) => r.book.name),
           containsAll(['遮天', '完美世界']));
+      expect(
+        readState().results.where((r) => r.book.name == '遮天').length,
+        equals(2),
+      );
       // 进度对齐批次 finished_count/total_count
       expect(readState().searchedCount, equals(2));
       expect(readState().totalCount, equals(2));

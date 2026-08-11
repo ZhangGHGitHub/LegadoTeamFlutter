@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.29] - 2026-08-11
+
+### 修复（51封面 + 漫画搜索/目录/正文引擎缺口，[Rust]+[UI]）
+
+1. **51漫画封面不显示**
+   - **根因**：书源 `coverDecodeJs`（AES/CBC/PKCS5Padding）未接入；`BookCover` 直连 `CachedNetworkImage`，密文进 `FlutterImageDecoder`（logcat `Failed to decode image`）。正文 `imageDecode` 已通但封面走另一套规则。
+   - **修复**：`BookCover` 按 origin 加载书源，将 `coverDecodeJs` 映射为既有 `fetchImageWithDecode`；书架/搜索/详情/网格传 `sourceOrigin`。
+
+2. **搜索几乎只有三站出结果**
+   - **根因（引擎级）**：① 神漫画等 `bookUrl`/`coverUrl` 模板 `https://...?id={$.comic_id}` 内嵌替换后仍当 JsonPath 求值 → 空 URL 回退书源主页；② `@put:` / `extract@js:` / `##` 替换缺失致大量规则失败；③ Flutter 按「书名|作者」去重吞掉同名多源。
+   - **修复**：内嵌 `{$.…}` 替换后返回字面量；AnalyzeRule 补 `@put` 剥离、`@js` 链、`##` 替换；去重键改为 `书名|作者|origin`。
+   - **验证**：Rust 探针 神漫画/Nhentai/51/快看/COLA 单源搜索；**未声称与原版全网数量完全一致**（站点挂掉、page=1、其它 JS 缺口仍可能少结果）。
+
+3. **神漫画 / Nhentai 目录与正文**
+   - **核实**：51 目录/正文此前已通（本探针个别书详情页已无「目录」脚本属站点侧）；神漫画/Nhentai 为引擎缺口。
+   - **根因**：神漫画 `chapterName` 含 `@put`、`chapterUrl` 为 `$.id@js:…`；正文 JS 需 `chapter.index`/`book.totalChapterNum`；Nhentai 正文 `//script@js:match…`。
+   - **修复**：同上规则链 + 正文注入 chapter/book；探针：神漫画 TOC=61 CONTENT>2k；Nhentai TOC=1 CONTENT>7k。
+
+编写者：Reasonix ｜ 2026-08-11
+
 ## [2.0.28] - 2026-08-11
 
 ### 修复（51漫画图片全失败：jniLibs 未带上 createSymmetricCrypto/NoPadding，[Rust]+[UI]）

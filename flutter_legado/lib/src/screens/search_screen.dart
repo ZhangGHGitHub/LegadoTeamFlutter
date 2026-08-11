@@ -321,6 +321,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               height: 110,
               // iOS 风格圆角封面
               borderRadius: 10,
+              sourceOrigin: book.origin,
             ),
             const SizedBox(width: 8),
             Expanded(

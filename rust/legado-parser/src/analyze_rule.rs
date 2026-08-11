@@ -152,7 +152,48 @@ impl AnalyzeRule {
     /// - 自动检测规则类型
     /// - `&&`, `||`, `%%` 组合规则
     /// - `{$.rule}` 内嵌规则替换（JsonPath 场景）
+    /// - `@put:{...}` 剥离（对齐原版 `splitPutRule`；神漫画 chapterName 等）
+    /// - 前缀/中缀 `extract@js:...` / `extract<js>...</js>` 链式（对齐
+    ///   `AnalyzeRule.splitSourceRule` + JS_PATTERN；神漫画 chapterUrl、
+    ///   Nhentai 正文 `//script@js:` 等）
+    /// - `##regex##replacement` 结果替换（对齐原版 SourceRule.makeUpRule）
     pub fn get_strings(&self, rule: &str) -> LegadoResult<Vec<String>> {
+        if rule.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // 1) 剥离 @put:{...}（变量写入后续可扩展；先保证主规则可解析）
+        let rule_no_put = strip_put_rules(rule);
+
+        // 2) 拆分 ## 替换段（主规则 ## 匹配 ## 替换 / ### 仅首匹配）
+        let (core_rule, replace_spec) = split_hash_replace(&rule_no_put);
+
+        // 3) `<js>...</js>`（含 `$[*]` 复合）走单步专用路径，避免被
+        //    通用 JS 链拆成 Js+Extract 后丢失 `$[*]` 拆解语义（51漫画）
+        //    其余 `extract@js:` 走链式（神漫画 chapterUrl / Nhentai 正文）
+        let mut results = if core_rule.trim_start().starts_with("<js>") {
+            self.get_strings_single_step(&core_rule)?
+        } else {
+            let steps = split_js_chain_steps(&core_rule);
+            if steps.len() > 1 {
+                self.eval_js_chain_steps(&steps)?
+            } else {
+                self.get_strings_single_step(&core_rule)?
+            }
+        };
+
+        // 4) 应用 ## 替换
+        if let Some(spec) = replace_spec.as_ref() {
+            results = results
+                .into_iter()
+                .map(|s| apply_hash_replace(&s, spec))
+                .collect();
+        }
+        Ok(results)
+    }
+
+    /// 单步规则（无 `@js:` 链、已剥离 `@put` / `##`）
+    fn get_strings_single_step(&self, rule: &str) -> LegadoResult<Vec<String>> {
         if rule.is_empty() {
             return Ok(vec![]);
         }
@@ -207,6 +248,68 @@ impl AnalyzeRule {
         }
     }
 
+    /// 执行 `extract@js:` / `extract<js>` 链（对齐原版 splitSourceRule 多 SourceRule）
+    ///
+    /// 前序提取结果按 `\n` 拼接后注入为下一段 JS 的 `result`（对齐
+    /// `getString` 多值连接语义）；纯 JS 步可接在提取后。
+    fn eval_js_chain_steps(&self, steps: &[JsChainStep<'_>]) -> LegadoResult<Vec<String>> {
+        let mut current_content = self.content.clone();
+        let mut last_is_js = false;
+        let mut last_js_out = Vec::new();
+
+        for (i, step) in steps.iter().enumerate() {
+            match step {
+                JsChainStep::Extract(rule) => {
+                    let rule = rule.trim();
+                    if rule.is_empty() {
+                        continue;
+                    }
+                    // 临时以当前 content 解析（链式：后段基于前段结果文本）
+                    let mut sub = AnalyzeRule::new(current_content.clone(), self.base_url.clone());
+                    if let Some(exec) = self.js_executor() {
+                        sub.set_js_executor(exec);
+                    }
+                    for (n, v) in &self.js_bindings {
+                        sub.add_js_binding(n, v);
+                    }
+                    let extracted = sub.get_strings_single_step(rule)?;
+                    current_content = if extracted.is_empty() {
+                        String::new()
+                    } else if extracted.len() == 1 {
+                        extracted.into_iter().next().unwrap()
+                    } else {
+                        extracted.join("\n")
+                    };
+                    last_is_js = false;
+                }
+                JsChainStep::Js(code) => {
+                    // 以当前结果为 content，使 execute_js_rule 注入 result/src
+                    let mut sub = AnalyzeRule::new(current_content.clone(), self.base_url.clone());
+                    if let Some(exec) = self.js_executor() {
+                        sub.set_js_executor(exec);
+                    }
+                    for (n, v) in &self.js_bindings {
+                        sub.add_js_binding(n, v);
+                    }
+                    let out = sub.execute_js_rule(code)?;
+                    current_content = out.first().cloned().unwrap_or_default();
+                    last_js_out = out;
+                    last_is_js = true;
+                    // 末段若仍有后缀提取（少见），继续
+                    let _ = i;
+                }
+            }
+        }
+
+        if last_is_js {
+            Ok(last_js_out)
+        } else if current_content.is_empty() {
+            Ok(vec![])
+        } else {
+            Ok(vec![current_content])
+        }
+    }
+
     /// 根据规则获取单个字符串（多个结果用换行连接）
     pub fn get_string(&self, rule: &str) -> LegadoResult<String> {
         let strings = self.get_strings(rule)?;
@@ -224,7 +327,77 @@ impl AnalyzeRule {
     /// CSS 规则返回元素 outerHtml；XPath/正则/JSON/JS 规则返回字符串列表
     /// （XPath 元素节点序列化为外层标记，供子规则二次解析，
     /// 对标原版 AnalyzeRule.getElements 按 Mode 分派）。
+    ///
+    /// 支持 `@put` 剥离与 `extract@js:` 链（Nhentai
+    /// `//div.../a[1]@js:[result]` 等）。
     pub fn get_elements(&self, rule: &str) -> LegadoResult<Vec<String>> {
+        if rule.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let rule_no_put = strip_put_rules(rule);
+        let steps = split_js_chain_steps(&rule_no_put);
+        if steps.len() > 1 {
+            // 链式 getElements：首段按元素规则提取，后续 JS 以拼接/单元素为 result
+            let mut elems: Vec<String> = Vec::new();
+            let mut pending_js: Vec<&str> = Vec::new();
+            for step in &steps {
+                match step {
+                    JsChainStep::Extract(r) => {
+                        let r = r.trim();
+                        if r.is_empty() {
+                            continue;
+                        }
+                        elems = self.get_elements_single_step(r)?;
+                    }
+                    JsChainStep::Js(code) => pending_js.push(code),
+                }
+            }
+            if pending_js.is_empty() {
+                return Ok(elems);
+            }
+            // 将元素列表交给 JS：单元素直接作 result；多元素 JSON 数组字符串
+            let result_payload = if elems.len() == 1 {
+                elems[0].clone()
+            } else {
+                serde_json::to_string(&elems).unwrap_or_else(|_| elems.join("\n"))
+            };
+            let mut current = result_payload;
+            let mut last_out = Vec::new();
+            for code in pending_js {
+                let mut sub = AnalyzeRule::new(current.clone(), self.base_url.clone());
+                if let Some(exec) = self.js_executor() {
+                    sub.set_js_executor(exec);
+                }
+                for (n, v) in &self.js_bindings {
+                    sub.add_js_binding(n, v);
+                }
+                last_out = sub.execute_js_rule(code)?;
+                current = last_out.first().cloned().unwrap_or_default();
+            }
+            // JS 返回 JSON 数组时拆成多元素（`[result]` 包装场景）
+            if last_out.len() == 1 {
+                let s = last_out[0].trim();
+                if s.starts_with('[') {
+                    if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(s) {
+                        return Ok(arr
+                            .into_iter()
+                            .map(|v| match v {
+                                serde_json::Value::String(x) => x,
+                                other => other.to_string(),
+                            })
+                            .collect());
+                    }
+                }
+            }
+            return Ok(last_out);
+        }
+
+        self.get_elements_single_step(&rule_no_put)
+    }
+
+    /// 单步 getElements（无 `@js:` 链）
+    fn get_elements_single_step(&self, rule: &str) -> LegadoResult<Vec<String>> {
         if rule.is_empty() {
             return Ok(vec![]);
         }
@@ -233,7 +406,7 @@ impl AnalyzeRule {
         // resolve_rule_type 可能把 `<js>` 前缀判定为 Auto/Css，导致
         // 误走 HTML 解析器 → 目录 0 章（51漫画 chapterList 实测）— Reasonix
         if rule.trim_start().starts_with("<js>") {
-            return self.get_strings(rule);
+            return self.get_strings_single_step(rule);
         }
 
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
@@ -246,10 +419,10 @@ impl AnalyzeRule {
                 let detected = self.detect_rule_type_for_content(actual_rule);
                 match detected {
                     RuleType::Css => self.html_parser.get_elements(&self.content, actual_rule),
-                    _ => self.get_strings(rule),
+                    _ => self.get_strings_single_step(rule),
                 }
             }
-            _ => self.get_strings(rule),
+            _ => self.get_strings_single_step(rule),
         }
     }
 
@@ -291,7 +464,9 @@ impl AnalyzeRule {
             // 书源惯用的裸赋值临时变量名，且 result/src/baseUrl/book 等已
             // 由下方 globalThis 注入，不重复声明（避免与 jsLib let/const
             // 冲突）— Reasonix
-            prologue.push_str("var d, data, json, list, arr, obj, tmp;\n");
+            prologue.push_str(
+                "var d, data, json, list, arr, obj, tmp, index, num, comic_chapter, header, headers, chapter_domain, end_num, rule, pic, html, img_ext;\n",
+            );
             if let Ok(content_json) = serde_json::to_string(&self.content) {
                 // 经 globalThis 属性赋值注入（对齐原版 ScriptableObject.put
                 // 语义）：① 不能裸赋值 `result = ...`——QuickJS eval 处于
@@ -331,10 +506,23 @@ impl AnalyzeRule {
     }
 
     /// 解析 JsonPath 规则，支持 `{$.rule}` 内嵌规则替换
+    ///
+    /// 神漫画 bookUrl/coverUrl：
+    /// `https://...?comic_id={$.comic_id}&...` — 内嵌替换后得到完整 URL，
+    /// **不得再当 JsonPath 求值**（否则空串 → 回退书源主页 → 目录失败）。
     fn resolve_json_with_inner(&self, rule: &str) -> LegadoResult<Vec<String>> {
-        // 处理内嵌规则 {$...}
-        let processed = self.process_inner_rules(rule)?;
-        self.json_parser.parse_jsonpath(&self.content, &processed)
+        if rule.contains("{$") {
+            let processed = self.process_inner_rules(rule)?;
+            let trimmed = processed.trim_start();
+            if !trimmed.starts_with('$') && !trimmed.is_empty() {
+                return Ok(vec![processed]);
+            }
+            if trimmed.is_empty() {
+                return Ok(vec![]);
+            }
+            return self.json_parser.parse_jsonpath(&self.content, &processed);
+        }
+        self.json_parser.parse_jsonpath(&self.content, rule)
     }
 
     /// 处理规则中的 `{$.rule}` 内嵌表达式
@@ -496,6 +684,129 @@ impl AnalyzeRule {
 
         // 默认为 HTML
         RuleType::Css
+    }
+}
+
+// ─── 规则预处理：@put / @js 链 / ## 替换（对齐 AnalyzeRule.SourceRule）────────
+
+/// JS 链步骤（对齐原版 `splitSourceRule` + `JS_PATTERN`）
+enum JsChainStep<'a> {
+    Extract(&'a str),
+    Js(&'a str),
+}
+
+/// 剥离 `@put:{...}`（对齐 `splitPutRule` / `putPattern`）
+///
+/// 神漫画 `$.chapter_name@put:{chapter_id:$.chapter_id}` 若不剥离，
+/// JsonPath 整串失败 → 章名空 → get_chapters 跳过 → 目录为空。
+fn strip_put_rules(rule: &str) -> String {
+    // (?i)@put:(\{[^}]+?\})
+    let re = regex::Regex::new(r"(?i)@put:(\{[^}]+?\})").unwrap();
+    re.replace_all(rule, "").into_owned()
+}
+
+/// 按原版 `JS_PATTERN` 拆分：`<js>...</js>|@js:...`
+///
+/// `@js:` 贪婪吃到末尾（与 Java `[\w\W]*` 一致），故通常至多一段尾部 JS。
+fn split_js_chain_steps(rule: &str) -> Vec<JsChainStep<'_>> {
+    let re = regex::Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap();
+    let mut steps = Vec::new();
+    let mut start = 0;
+    for cap in re.captures_iter(rule) {
+        let m = cap.get(0).unwrap();
+        if m.start() > start {
+            let prefix = rule[start..m.start()].trim();
+            if !prefix.is_empty() {
+                steps.push(JsChainStep::Extract(prefix));
+            }
+        }
+        let js_code = cap
+            .get(2)
+            .or_else(|| cap.get(1))
+            .map(|g| g.as_str())
+            .unwrap_or("");
+        steps.push(JsChainStep::Js(js_code));
+        start = m.end();
+    }
+    if start == 0 {
+        // 无 JS 段：整串作为提取
+        steps.push(JsChainStep::Extract(rule));
+    } else if start < rule.len() {
+        let suffix = rule[start..].trim();
+        if !suffix.is_empty() {
+            steps.push(JsChainStep::Extract(suffix));
+        }
+    }
+    steps
+}
+
+/// `##` 替换规格（对齐 SourceRule.makeUpRule 中 `rule.split("##")`）
+struct HashReplaceSpec {
+    pattern: String,
+    replacement: String,
+    replace_first: bool,
+}
+
+fn split_hash_replace(rule: &str) -> (String, Option<HashReplaceSpec>) {
+    // 避免拆开 URL 中的 ##；仅当 ## 后看起来像正则/替换时拆分
+    // 原版无条件直接 split；书源 `$.x##regex` 极常见。
+    if !rule.contains("##") {
+        return (rule.to_string(), None);
+    }
+    // 保护：纯 `@js:` / `<js>` 整段内可能含 ##，若整串以 js 开头则不拆
+    let trimmed = rule.trim_start();
+    if trimmed.starts_with("@js:") || trimmed.starts_with("<js>") {
+        return (rule.to_string(), None);
+    }
+    let parts: Vec<&str> = rule.splitn(4, "##").collect();
+    let core = parts[0].to_string();
+    if parts.len() == 1 {
+        return (core, None);
+    }
+    let pattern = parts.get(1).unwrap_or(&"").to_string();
+    let mut replacement = parts.get(2).unwrap_or(&"").to_string();
+    let mut replace_first = false;
+    if parts.len() > 3 {
+        // ### → replaceFirst（原版：第三段后还有内容或以 ### 标记）
+        replace_first = true;
+        if replacement.ends_with('#') {
+            replacement.pop();
+        }
+    } else if parts.len() == 2 {
+        // `##regex###` 写法：第二段以 ### 结尾
+        if let Some(stripped) = pattern.strip_suffix("###") {
+            return (
+                core,
+                Some(HashReplaceSpec {
+                    pattern: stripped.to_string(),
+                    replacement: String::new(),
+                    replace_first: true,
+                }),
+            );
+        }
+    }
+    (
+        core,
+        Some(HashReplaceSpec {
+            pattern,
+            replacement,
+            replace_first,
+        }),
+    )
+}
+
+fn apply_hash_replace(input: &str, spec: &HashReplaceSpec) -> String {
+    if spec.pattern.is_empty() {
+        return input.to_string();
+    }
+    let Ok(re) = regex::Regex::new(&spec.pattern) else {
+        return input.to_string();
+    };
+    if spec.replace_first {
+        re.replace(input, spec.replacement.as_str()).into_owned()
+    } else {
+        re.replace_all(input, spec.replacement.as_str())
+            .into_owned()
     }
 }
 
@@ -788,5 +1099,85 @@ mod tests {
         rule.set_js_executor(executor);
         let result = rule.get_strings("@js:x").unwrap();
         assert_eq!(result, vec!["injected"]);
+    }
+
+    /// 神漫画 chapterName：`$.chapter_name@put:{...}` 必须剥离 @put 后 JsonPath 才命中
+    #[test]
+    fn test_strip_put_then_jsonpath() {
+        let content = r#"{"chapter_name":"第1话","chapter_id":"99"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), "https://m.taomanhua.com/api".into());
+        let title = rule
+            .get_string("$.chapter_name@put:{chapter_id:$.chapter_id}")
+            .unwrap();
+        assert_eq!(title, "第1话");
+        assert_eq!(strip_put_rules("$.a@put:{k:$.v}"), "$.a");
+    }
+
+    /// 神漫画 chapterUrl：`$.chapter_id@js:baseUrl+"&chapter_id="+result`
+    #[test]
+    fn test_jsonpath_then_js_chain() {
+        struct EchoAfterBaseUrl;
+        impl JsExecutor for EchoAfterBaseUrl {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                // 从 prologue 注入的 globalThis 中无法在此读取；
+                // Mock：检测链尾 JS 代码形态并拼出期望 URL
+                if js_code.contains("baseUrl") && js_code.contains("chapter_id") {
+                    // 简化：从 prologue 的 globalThis.result 字面量提取
+                    if let Some(pos) = js_code.find("globalThis.result = ") {
+                        let rest = &js_code[pos + "globalThis.result = ".len()..];
+                        if let Some(end) = rest.find('\n') {
+                            let lit = rest[..end].trim().trim_matches('"');
+                            return Ok(format!(
+                                "https://m.taomanhua.com/api/getcomicinfo_body/?comic_id=1&productname=smh&platformname=wap&chapter_id={lit}"
+                            ));
+                        }
+                    }
+                }
+                Ok(String::new())
+            }
+        }
+        let content = r#"{"chapter_id":"18465","chapter_name":"第1话"}"#;
+        let rule = AnalyzeRule::with_js_executor(
+            content.to_string(),
+            "https://m.taomanhua.com/api/getcomicinfo_body/?comic_id=1&productname=smh&platformname=wap"
+                .into(),
+            Arc::new(EchoAfterBaseUrl),
+        );
+        let url = rule
+            .get_string(r#"$.chapter_id@js:baseUrl+"&chapter_id="+result"#)
+            .unwrap();
+        assert!(
+            url.contains("chapter_id=18465"),
+            "链式 @js 应拼出 chapter_id，实际={url}"
+        );
+    }
+
+    /// ## 替换：搜索 kind 等规则
+    #[test]
+    fn test_hash_replace_after_jsonpath() {
+        let content = r#"{"comic_type":"热血Action"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let kind = rule.get_string(r#"$.comic_type##[a-zA-Z]"#).unwrap();
+        assert_eq!(kind, "热血", "kind={kind}");
+    }
+
+    /// 神漫画 bookUrl：`https://...?comic_id={$.comic_id}&...` 内嵌替换后返回字面 URL
+    #[test]
+    fn test_url_template_with_inner_jsonpath() {
+        let content = r#"{"comic_id":"12345","comic_name":"测试"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let url = rule
+            .get_string(
+                "https://m.taomanhua.com/api/getcomicinfo_body/?comic_id={$.comic_id}&productname=smh",
+            )
+            .unwrap();
+        assert_eq!(
+            url,
+            "https://m.taomanhua.com/api/getcomicinfo_body/?comic_id=12345&productname=smh"
+        );
+        let cover = rule
+            .get_string("http://image.mhxk.com/mh/{$.comic_id}.jpg-600x800.webp")
+            .unwrap();
+        assert_eq!(cover, "http://image.mhxk.com/mh/12345.jpg-600x800.webp");
     }
 }
