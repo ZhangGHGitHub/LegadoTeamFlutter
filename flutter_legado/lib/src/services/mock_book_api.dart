@@ -1352,6 +1352,10 @@ class MockBookApi implements BookApi {
   Future<String> httpPost(String url, String body) async =>
       '{"status": "ok", "mock": true}';
 
+  @override
+  Future<String> fetchImageWithDecode(String url, String sourceJson) async =>
+      '{"base64": "", "len": 0}';
+
   // ========== JS 引擎 ==========
 
   @override

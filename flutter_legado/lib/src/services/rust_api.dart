@@ -1469,6 +1469,10 @@ class RustApi implements BookApi {
   Future<String> httpPost(String url, String body) =>
       bridge.httpPost(url: url, body: body);
 
+  /// 图片下载 + imageDecode 解码（返回 JSON：{ base64, len }）— Reasonix
+  Future<String> fetchImageWithDecode(String url, String sourceJson) =>
+      bridge.fetchImageWithDecode(url: url, sourceJson: sourceJson);
+
   // ========== JS 引擎 ==========
 
   /// 执行 JS 脚本

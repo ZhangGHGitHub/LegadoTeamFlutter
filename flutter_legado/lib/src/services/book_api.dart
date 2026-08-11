@@ -634,6 +634,13 @@ abstract class BookApi {
   /// HTTP POST 请求
   Future<String> httpPost(String url, String body);
 
+  /// 图片下载 + imageDecode 解码（返回 JSON：{ base64, len }）
+  ///
+  /// 对齐原版 ImageUtils.decodeImageStream：漫画/图片站图片 bytes 经书源
+  /// imageDecode JS（配合 jsLib）解密后才可显示；无 imageDecode 规则时
+  /// 返回原始图片 base64。[sourceJson] 为书源 JSON（单对象）。
+  Future<String> fetchImageWithDecode(String url, String sourceJson);
+
   // ========== JS 引擎 ==========
 
   /// 执行 JS 脚本

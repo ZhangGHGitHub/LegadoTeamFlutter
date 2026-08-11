@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -58,6 +59,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 书源防盗链 header（Referer/UA 等，对齐原版 glide getGlideUrl 带书源 headerMap）
   /// [UI-fix 2026-08-10 | Reasonix] 漫画 CDN 常校验 Referer，无 header 时 403
   Map<String, String> _imageHeaders = const {};
+
+  /// 当前书源（含 imageDecode 规则；解码走 FFI fetchImageWithDecode）
+  /// [UI-fix v2.0.19 | Reasonix] 对齐原版 ImageUtils.decodeImageStream：
+  /// 漫画/图片站图片 bytes 经书源 imageDecode JS 解密后才可显示
+  BookSource? _bookSource;
+
+  /// 书源是否配置了 imageDecode 规则（决定走解码链路还是直连）
+  bool get _needImageDecode {
+    final rule = _bookSource?.ruleContent?.imageDecode;
+    return rule != null && rule.trim().isNotEmpty;
+  }
 
   /// 预加载缓存（前后各 2 页）
   static const int _preloadRange = 2;
@@ -141,12 +153,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       final chapter = _chapters[_currentChapterIndex];
 
       // 书源防盗链 header（仅取一次；对齐原版 OkHttpStreamFetcher 带书源
-      // headerMap 加载漫画图）— Reasonix
-      if (_imageHeaders.isEmpty && _book != null && _book!.origin.isNotEmpty) {
+      // headerMap 加载漫画图）+ 书源对象（imageDecode 规则判断）— Reasonix
+      if ((_imageHeaders.isEmpty || _bookSource == null) &&
+          _book != null &&
+          _book!.origin.isNotEmpty) {
         final sources = await api.getBookSources();
         for (final s in sources) {
-          if (s.bookSourceUrl == _book!.origin && s.header != null && s.header!.isNotEmpty) {
-            _imageHeaders = _parseHeaderMap(s.header!);
+          if (s.bookSourceUrl == _book!.origin) {
+            _bookSource = s;
+            if (s.header != null && s.header!.isNotEmpty) {
+              _imageHeaders = _parseHeaderMap(s.header!);
+            }
             break;
           }
         }
@@ -299,6 +316,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 预加载当前可见区域前后的图片
   void _preloadVisibleImages() {
     if (_imageUrls.isEmpty || !mounted) return;
+    // 防御：loading 态 ListView 尚未构建时 ScrollController 未 attach，
+    // 访问 position 抛断言（加载完成 build 后由 _onScroll 再次触发）
+    if (!_scrollController.hasClients) return;
 
     // 计算当前可见的图片索引范围
     final viewportHeight = _scrollController.position.viewportDimension;
@@ -480,6 +500,25 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     if (isFailed) {
       // 图片加载失败，显示重试按钮
       return _buildImageErrorPlaceholder(index, url);
+    }
+
+    // 书源配置 imageDecode 规则：走 FFI 下载 + JS 解码（对齐原版
+    // ImageUtils.decodeImageStream）— Reasonix
+    if (_needImageDecode && _bookSource != null) {
+      return _DecodedComicImage(
+        url: url,
+        sourceJson: jsonEncode(_bookSource!.toJson()),
+        bookSourceUrl: _book!.origin,
+        onError: () {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_failedIndices.contains(index)) {
+              setState(() {
+                _failedIndices.add(index);
+              });
+            }
+          });
+        },
+      );
     }
 
     return CachedNetworkImage(
@@ -761,6 +800,139 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 走 imageDecode 解码链路的漫画图片项
+///
+/// 调用 Rust FFI `fetchImageWithDecode`：下载图片 bytes → 注入书源 jsLib +
+/// imageDecode JS 解码（对齐原版 ImageUtils.decodeImageStream）→ 返回
+/// base64 → [Image.memory] 显示。请求头（防盗链 Referer/UA）由 Rust 侧
+/// 按书源 header 自动构造，Flutter 无需重复传 header。
+///
+/// [UI-fix v2.0.19 | 2026-08-11] 漫画/图片源图片解密链路落地 — Reasonix
+class _DecodedComicImage extends ConsumerStatefulWidget {
+  final String url;
+  final String sourceJson;
+  final String bookSourceUrl;
+  final VoidCallback onError;
+
+  const _DecodedComicImage({
+    required this.url,
+    required this.sourceJson,
+    required this.bookSourceUrl,
+    required this.onError,
+  });
+
+  @override
+  ConsumerState<_DecodedComicImage> createState() => _DecodedComicImageState();
+}
+
+class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
+  /// 解码结果缓存 key：url + 书源（换书源/URL 时重新解码）
+  static final Map<String, Uint8List> _cache = {};
+
+  bool _loading = true;
+  Uint8List? _bytes;
+  String? _error;
+
+  String get _cacheKey => '${widget.bookSourceUrl}\u0000${widget.url}';
+
+  @override
+  void initState() {
+    super.initState();
+    final hit = _cache[_cacheKey];
+    if (hit != null) {
+      _bytes = hit;
+      _loading = false;
+    } else {
+      unawaited(_load());
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final api = ref.read(bookApiProvider);
+      final json = await api.fetchImageWithDecode(widget.url, widget.sourceJson);
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      final b64 = decoded['base64'] as String? ?? '';
+      if (b64.isEmpty) {
+        throw Exception('解码结果为空（imageDecode 未返回有效图片数据）');
+      }
+      final bytes = base64Decode(b64);
+      if (!mounted) return;
+      _cache[_cacheKey] = bytes;
+      setState(() {
+        _bytes = bytes;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+      widget.onError();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        color: const Color(0xFF1A1A1A),
+        child: const Center(
+          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF666666)),
+        ),
+      );
+    }
+    final bytes = _bytes;
+    if (bytes != null) {
+      return Image.memory(
+        bytes,
+        fit: BoxFit.fitWidth,
+        width: double.infinity,
+        gaplessPlayback: true,
+        errorBuilder: (context, _, _) => _errorPlaceholder(),
+      );
+    }
+    return _errorPlaceholder();
+  }
+
+  Widget _errorPlaceholder() {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.4,
+      color: const Color(0xFF1A1A1A),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.broken_image, size: 64, color: Color(0xFF666666)),
+            const SizedBox(height: 12),
+            Text(
+              _error ?? '图片加载失败',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('重试'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF444444),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
         ),
       ),
     );

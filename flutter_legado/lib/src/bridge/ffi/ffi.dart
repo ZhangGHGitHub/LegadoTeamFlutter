@@ -580,6 +580,20 @@ Future<String> httpGet({required String url}) =>
 Future<String> httpPost({required String url, required String body}) =>
     RustLib.instance.api.crateFfiFfiHttpPost(url: url, body: body);
 
+/// 图片下载 + imageDecode 解码（返回 JSON：{ base64, len }）
+///
+/// 对齐原版 ImageUtils.decodeImageStream：漫画/图片站图片 bytes 经
+/// 书源 imageDecode JS（配合 jsLib）解密后才可显示；无 imageDecode
+/// 规则时返回原始图片 base64。`source_json` 为书源 JSON（单对象）。
+/// 防盗链 header 取书源 header + 兜底 Referer。— Reasonix
+Future<String> fetchImageWithDecode({
+  required String url,
+  required String sourceJson,
+}) => RustLib.instance.api.crateFfiFfiFetchImageWithDecode(
+  url: url,
+  sourceJson: sourceJson,
+);
+
 /// 搜索书籍（书源规则驱动，返回 JSON 数组）
 ///
 /// `source_json` — BookSource JSON 字符串
