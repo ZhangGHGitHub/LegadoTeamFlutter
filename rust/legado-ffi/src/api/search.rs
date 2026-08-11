@@ -745,25 +745,44 @@ pub(crate) async fn search_single_source(
     };
 
     // 4. 发送 HTTP 请求
-    let response = match analyze_url.method() {
-        RequestMethod::Post => {
-            let body = analyze_url.body().unwrap_or("");
-            client.post(analyze_url.url(), body, headers_opt).await?
+    // charset=gbk 等：原始字节 + 指定编码解码，避免书名乱码导致精确匹配失败。— Reasonix
+    let (body, final_url) = if analyze_url.needs_charset_decode() {
+        let raw = match analyze_url.method() {
+            RequestMethod::Post => {
+                client
+                    .post_raw(analyze_url.url(), analyze_url.request_body(), headers_opt)
+                    .await?
+            }
+            _ => client.get_raw(analyze_url.url(), headers_opt).await?,
+        };
+        if !(200..300).contains(&raw.status) {
+            return Err(LegadoError::Network(format!(
+                "搜索请求失败: HTTP {}",
+                raw.status
+            )));
         }
-        _ => client.get(analyze_url.url(), headers_opt).await?,
+        let decoded =
+            AnalyzeUrl::decode_response_bytes(&raw.body, analyze_url.charset());
+        (decoded, raw.url)
+    } else {
+        let response = match analyze_url.method() {
+            RequestMethod::Post => {
+                let body = analyze_url.request_body();
+                client.post(analyze_url.url(), body, headers_opt).await?
+            }
+            _ => client.get(analyze_url.url(), headers_opt).await?,
+        };
+        if !response.is_success() {
+            return Err(LegadoError::Network(format!(
+                "搜索请求失败: HTTP {}",
+                response.status
+            )));
+        }
+        (response.body, response.url)
     };
-
-    if !response.is_success() {
-        return Err(LegadoError::Network(format!(
-            "搜索请求失败: HTTP {}",
-            response.status
-        )));
-    }
 
     // 5. 使用 AnalyzeRule 解析搜索结果（同步解析同样移入阻塞线程，
     //    灾难性正则/超大页面不会阻塞 runtime，单源超时可中断）
-    let body = response.body;
-    let final_url = response.url;
     let source_clone = source.clone();
     tokio::task::spawn_blocking(move || parse_search_response(&body, &final_url, &source_clone))
         .await
@@ -2352,6 +2371,355 @@ mod tests {
                 Err(e) => println!("ERR\t{name}\t{e}"),
             }
         }
+    }
+
+
+    /// 快速书源（普通小说）分组搜索探针 — 对照原版缺口
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "e2e network probe"]
+    fn probe_fast_group_novel_search() {
+        use std::collections::BTreeMap;
+        let _db = crate::db_state::ensure_test_db();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp_debug/sources.json");
+        let raw = std::fs::read_to_string(&path).expect("sources.json");
+        let mut data: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        let mut fast = Vec::new();
+        for v in &mut data {
+            let group = v
+                .get("bookSourceGroup")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let ty = v.get("bookSourceType").and_then(|x| x.as_i64()).unwrap_or(0);
+            // 快速书源且文本源（type=0）
+            if !group.split(|c| ",;，；".contains(c)).any(|p| p.trim() == "快速书源") {
+                continue;
+            }
+            if ty != 0 {
+                continue;
+            }
+            if let Some(obj) = v.as_object_mut() {
+                for k in [
+                    "enabled",
+                    "enabledExplore",
+                    "enabledCookieJar",
+                    "eventListener",
+                    "customButton",
+                ] {
+                    if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
+                        obj.insert(k.to_string(), serde_json::json!(n != 0));
+                    }
+                }
+            }
+            fast.push(v.clone());
+        }
+        println!("FAST_GROUP_TYPE0_SOURCES={}", fast.len());
+        let _ = crate::api::source::import_sources(
+            &serde_json::Value::Array(fast.clone()).to_string(),
+        );
+        let urls: Vec<String> = fast
+            .iter()
+            .filter_map(|v| {
+                v.get("bookSourceUrl")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
+        let urls_json = serde_json::to_string(&urls).unwrap();
+        let kw = "斗破苍穹";
+        println!("SEARCH_KW={kw} URLS={}", urls.len());
+        match search_books(kw, &urls_json) {
+            Ok(list) => {
+                let exact: Vec<_> = list.iter().filter(|r| r.book_name.contains(kw)).collect();
+                let mut by_origin: BTreeMap<String, usize> = BTreeMap::new();
+                let mut by_origin_exact: BTreeMap<String, usize> = BTreeMap::new();
+                for r in &list {
+                    *by_origin
+                        .entry(format!("{}|{}", r.source_name, r.source_url))
+                        .or_default() += 1;
+                }
+                for r in &exact {
+                    *by_origin_exact
+                        .entry(format!("{}|{}", r.source_name, r.source_url))
+                        .or_default() += 1;
+                }
+                println!("TOTAL_HITS={}", list.len());
+                println!("ORIGINS_WITH_HITS={}", by_origin.len());
+                println!("EXACT_TITLE_HITS={}", exact.len());
+                println!("EXACT_ORIGINS_WITH_HITS={}", by_origin_exact.len());
+                // 聚合口径：精确书名下不同 origin 数 ≈ 原版顶条徽标
+                for (k, n) in by_origin_exact.iter().take(40) {
+                    println!("EXACT_ORIGIN\t{n}\t{k}");
+                }
+                // 抽样前几条书名
+                for r in exact.iter().take(15) {
+                    println!("EXACT_SAMPLE\t{}\t{}\t{}", r.source_name, r.book_name, r.author);
+                }
+            }
+            Err(e) => println!("SEARCH_ERR={e}"),
+        }
+    }
+
+    /// 快速书源 type=0 逐源失败原因分布（斗破苍穹）
+    ///
+    /// 对齐 systematic-debugging：先统计 empty/JS/HTTP/timeout/解析等，
+    /// 再找引擎级整批失败模式。— Reasonix
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "e2e network probe"]
+    fn probe_fast_group_novel_fail_classify() {
+        use std::collections::BTreeMap;
+        let _db = crate::db_state::ensure_test_db();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp_debug/sources.json");
+        let raw = std::fs::read_to_string(&path).expect("sources.json");
+        let mut data: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        let mut fast = Vec::new();
+        for v in &mut data {
+            let group = v
+                .get("bookSourceGroup")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let ty = v.get("bookSourceType").and_then(|x| x.as_i64()).unwrap_or(0);
+            if !group
+                .split(|c| ",;，；".contains(c))
+                .any(|p| p.trim() == "快速书源")
+            {
+                continue;
+            }
+            if ty != 0 {
+                continue;
+            }
+            if let Some(obj) = v.as_object_mut() {
+                for k in [
+                    "enabled",
+                    "enabledExplore",
+                    "enabledCookieJar",
+                    "eventListener",
+                    "customButton",
+                ] {
+                    if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
+                        obj.insert(k.to_string(), serde_json::json!(n != 0));
+                    }
+                }
+            }
+            fast.push(v.clone());
+        }
+        println!("FAST_GROUP_TYPE0_SOURCES={}", fast.len());
+        let kw = "斗破苍穹";
+        let mut ok = 0usize;
+        let mut exact_origins = 0usize;
+        let mut err_counter: BTreeMap<String, usize> = BTreeMap::new();
+        let mut fail_samples: Vec<String> = Vec::new();
+        let client = crate::http_state::shared_client();
+        for (i, v) in fast.iter().enumerate() {
+            let src: BookSource = match serde_json::from_value(v.clone()) {
+                Ok(s) => s,
+                Err(e) => {
+                    *err_counter
+                        .entry(format!("deserialize:{}", e))
+                        .or_default() += 1;
+                    continue;
+                }
+            };
+            let name = src.book_source_name.clone();
+            let search_url = src.search_url.clone().unwrap_or_default();
+            let outcome = crate::runtime::block_on(async {
+                tokio::time::timeout(
+                    SEARCH_SOURCE_TIMEOUT,
+                    search_single_source(&client, &src, kw),
+                )
+                .await
+            });
+            match outcome {
+                Ok(Ok(list)) if !list.is_empty() => {
+                    ok += 1;
+                    if list.iter().any(|r| r.book_name.contains(kw)) {
+                        exact_origins += 1;
+                    }
+                    let empty_url = list.iter().filter(|r| r.book_url.is_empty()).count();
+                    if empty_url > 0 {
+                        *err_counter.entry("warn:bookUrl_empty".into()).or_default() += 1;
+                    }
+                    println!(
+                        "OK\t{name}\tn={}\texact={}\tempty_url={empty_url}",
+                        list.len(),
+                        list.iter().filter(|r| r.book_name.contains(kw)).count()
+                    );
+                }
+                Ok(Ok(_)) => {
+                    *err_counter.entry("empty".into()).or_default() += 1;
+                    // 附加 searchUrl 形态特征，便于找引擎级模式
+                    let feat = if search_url.is_empty() {
+                        "no_searchUrl"
+                    } else if search_url.starts_with('/') || !search_url.contains("://") {
+                        "relative_url"
+                    } else if search_url.contains("<js>") || search_url.contains("@js:") {
+                        "js_block"
+                    } else if search_url.contains("{{") {
+                        "mustache"
+                    } else {
+                        "literal"
+                    };
+                    *err_counter.entry(format!("empty:{feat}")).or_default() += 1;
+                    let bl = src
+                        .rule_search
+                        .as_ref()
+                        .and_then(|r| r.book_list.clone())
+                        .unwrap_or_default();
+                    if bl.starts_with("class.") {
+                        *err_counter.entry("empty:bookList_class.".into()).or_default() += 1;
+                    } else if bl.contains("@js:") || bl.contains("<js>") {
+                        *err_counter.entry("empty:bookList_js".into()).or_default() += 1;
+                    } else if bl.starts_with("$.") || bl.starts_with("$[") {
+                        *err_counter.entry("empty:bookList_json".into()).or_default() += 1;
+                    }
+                    if fail_samples.len() < 40 {
+                        fail_samples.push(format!(
+                            "{name}\tempty\tfeat={feat}\tbookList={}",
+                            bl.chars().take(60).collect::<String>()
+                        ));
+                    }
+                    println!("FAIL\t{name}\tempty\tfeat={feat}");
+                }
+                Ok(Err(e)) => {
+                    let es = e.to_string();
+                    let key = classify_search_err(&es);
+                    *err_counter.entry(key.clone()).or_default() += 1;
+                    if fail_samples.len() < 40 {
+                        fail_samples.push(format!("{name}\t{es}"));
+                    }
+                    println!("FAIL\t{name}\t{key}\t{es}");
+                }
+                Err(_) => {
+                    *err_counter.entry("timeout".into()).or_default() += 1;
+                    println!("FAIL\t{name}\ttimeout");
+                }
+            }
+            if (i + 1) % 20 == 0 {
+                eprintln!("progress {}/{}", i + 1, fast.len());
+            }
+        }
+        println!("\n==== SUMMARY ====");
+        println!(
+            "ok={ok} exact_origins={exact_origins} total={}",
+            fast.len()
+        );
+        println!("top_errors:");
+        let mut errs: Vec<_> = err_counter.into_iter().collect();
+        errs.sort_by(|a, b| b.1.cmp(&a.1));
+        for (k, c) in errs {
+            println!("  {c}\t{k}");
+        }
+        println!("fail_samples:");
+        for s in fail_samples {
+            println!("  {s}");
+        }
+    }
+
+    fn classify_search_err(es: &str) -> String {
+        if es.contains("ReferenceError")
+            || es.contains("TypeError")
+            || es.contains("SyntaxError")
+            || es.contains("JS engine")
+            || es.contains("jsLib")
+            || es.contains("is not defined")
+        {
+            format!("js:{}", es.chars().take(80).collect::<String>())
+        } else if es.contains("timeout") || es.contains("Timeout") || es.contains("timed out") {
+            "http:timeout".into()
+        } else if es.contains("404") {
+            "http:404".into()
+        } else if es.contains("403") {
+            "http:403".into()
+        } else if es.contains("HTTP ") {
+            format!(
+                "http:status:{}",
+                es.chars().take(40).collect::<String>()
+            )
+        } else if es.contains("connect")
+            || es.contains("dns")
+            || es.contains("DNS")
+            || es.contains("TLS")
+            || es.contains("ssl")
+            || es.contains("certificate")
+            || es.contains("resolve")
+        {
+            "http:network".into()
+        } else if es.contains("searchUrl") {
+            "parse:searchUrl".into()
+        } else if es.contains("解析") || es.contains("Parser") || es.contains("selector") {
+            format!("parse:{}", es.chars().take(60).collect::<String>())
+        } else {
+            format!("other:{}", es.chars().take(60).collect::<String>())
+        }
+    }
+
+    /// GBK charset 书源搜索探针（验证请求编码修复）— Reasonix
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "e2e network probe"]
+    fn probe_gbk_charset_novel_search() {
+        let _db = crate::db_state::ensure_test_db();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp_debug/e2e_5558/probe_gbk_srcs.json");
+        let raw = std::fs::read_to_string(&path).expect("probe_gbk_srcs.json");
+        let list: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        println!("GBK_SOURCES={}", list.len());
+        let kw = "斗破苍穹";
+        let client = crate::http_state::shared_client();
+        let mut ok = 0usize;
+        let mut exact = 0usize;
+        for v in &list {
+            let src: BookSource = match serde_json::from_value(v.clone()) {
+                Ok(s) => s,
+                Err(e) => {
+                    println!("DESER_ERR\t{e}");
+                    continue;
+                }
+            };
+            let name = src.book_source_name.clone();
+            // 打印实际请求 URL，确认 GBK 百分号编码
+            if let Some(ref tpl) = src.search_url {
+                let au = crate::js_executor::build_search_url_with_lib(
+                    tpl,
+                    kw,
+                    1,
+                    &src.book_source_url,
+                    src.js_lib.as_deref(),
+                );
+                println!(
+                    "URL\t{name}\tcharset={:?}\t{}",
+                    au.charset(),
+                    au.url()
+                );
+                if au.method() == &RequestMethod::Post {
+                    println!("BODY\t{name}\t{}", au.request_body());
+                }
+            }
+            let outcome = crate::runtime::block_on(async {
+                tokio::time::timeout(
+                    SEARCH_SOURCE_TIMEOUT,
+                    search_single_source(&client, &src, kw),
+                )
+                .await
+            });
+            match outcome {
+                Ok(Ok(hits)) if !hits.is_empty() => {
+                    ok += 1;
+                    let ex = hits.iter().filter(|r| r.book_name.contains(kw)).count();
+                    if ex > 0 {
+                        exact += 1;
+                    }
+                    println!("OK\t{name}\tn={}\texact={ex}\tfirst={}", hits.len(), hits[0].book_name);
+                }
+                Ok(Ok(_)) => println!("EMPTY\t{name}"),
+                Ok(Err(e)) => println!("ERR\t{name}\t{e}"),
+                Err(_) => println!("TIMEOUT\t{name}"),
+            }
+        }
+        println!("SUMMARY ok={ok} exact={exact} total={}", list.len());
     }
 
     /// 漫画书源分组端到端搜索探针（与模拟器验收同关键词）

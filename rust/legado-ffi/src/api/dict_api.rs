@@ -209,7 +209,7 @@ pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, Strin
     let response = match analyze_url.method() {
         RequestMethod::Post => {
             client
-                .post(url, analyze_url.body().unwrap_or(""), headers)
+                .post(url, analyze_url.request_body(), headers)
                 .await
         }
         _ => client.get(url, headers).await,

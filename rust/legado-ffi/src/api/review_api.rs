@@ -210,7 +210,7 @@ pub fn review_get_replies(source_json: &str, request_json: &str, page: i32) -> L
 
     // 发起 HTTP 请求（复用进程共享客户端单例）
     let method = analyze_url.method().clone();
-    let post_body = analyze_url.body().unwrap_or("").to_string();
+    let post_body = analyze_url.request_body().to_string();
     let response = crate::runtime::block_on(async {
         let client = crate::http_state::shared_client();
         match method {

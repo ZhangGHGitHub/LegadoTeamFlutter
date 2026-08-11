@@ -340,6 +340,54 @@ impl LegadoClient {
         self.collect_raw_response(response, &url_for_retry).await
     }
 
+    /// 发送 POST 请求并返回无损原始字节（供 charset=gbk 等响应解码）
+    pub async fn post_raw(
+        &self,
+        url: &str,
+        body: &str,
+        headers: Option<HashMap<String, String>>,
+    ) -> LegadoResult<crate::response::LegadoRawResponse> {
+        let client = self.client.clone();
+        let cookie_store = self.cookie_store.clone();
+        let headers = Arc::new(headers);
+        let url = url.to_string();
+        let body = body.to_string();
+        let url_for_retry = url.clone();
+
+        let factory = move || {
+            let client = client.clone();
+            let cookie_store = cookie_store.clone();
+            let headers = Arc::clone(&headers);
+            let url = url.clone();
+            let body = body.clone();
+            async move {
+                let mut req = client.post(&url).body(body);
+                req = apply_default_headers_static(req);
+                req = apply_custom_headers(req, (*headers).clone());
+                req = apply_cookie_static(req, &cookie_store, &url);
+                req.send().await
+            }
+        };
+
+        let _permit = if let Some(ref limiter) = self.domain_rate_limiter {
+            let domain = crate::rate_limit::extract_domain(&url_for_retry);
+            let slot = limiter.get_or_create(&domain);
+            Some(slot.acquire().await?)
+        } else {
+            None
+        };
+
+        let response = if let Some(ref executor) = self.retry_executor {
+            executor
+                .execute_with_retry(|| async { factory().await.map_err(map_reqwest_error) })
+                .await?
+        } else {
+            factory().await.map_err(map_reqwest_error)?
+        };
+
+        self.collect_raw_response(response, &url_for_retry).await
+    }
+
     /// 发送 POST 请求
     pub async fn post(
         &self,

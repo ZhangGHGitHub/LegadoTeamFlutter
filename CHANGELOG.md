@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.38] - 2026-08-12
+
+### 修复（普通书源搜索出源偏少：GBK 请求编码 + `#` 后缀 baseUrl + 响应解码，[Rust]）
+
+对照原版 `AnalyzeUrl.encodeParams` / `NetworkUtils.getAbsoluteURL` / `SearchModel`；快速书源 type=0「斗破苍穹」探针。
+
+1. **根因（引擎级）**
+   - UrlOption `charset=gbk` 已解析，但查询/表单恒按 UTF-8 `urlencoding` → 经典笔趣阁系搜不到。
+   - `bookSourceUrl` 含 `#🎃`/`#pb1101` 等唯一后缀时，相对 searchUrl 拼成 `https://host#tag/path` 假 URL（约 48/219 快速源）。
+   - GBK 响应经 reqwest `.text()` 当 UTF-8 → 书名乱码，精确匹配失败。
+2. **修复**
+   - `encode_query_params` / `encode_form_params` 按 charset 百分号编码；POST 走 `encoded_form` + form Content-Type。
+   - `get_absolute_url` 拼接前剥离 `,JSON` 与 `#fragment`。
+   - 非 UTF-8 charset：`get_raw`/`post_raw` + `decode_response_bytes`。
+3. **验证（快速组 type0=219，关键词斗破苍穹）**
+   - 有结果源 **38 → 64**；精确书名源 **19 → 45**；总命中 686 → 1595。
+   - 仍低于原版全库顶条聚合 ~336（站点失效、JS/Rhino、`webView`、page>1 等残留）。
+
+编写者：Reasonix ｜ 2026-08-12
+
 ## [2.0.37] - 2026-08-12
 
 ### 修复（红牛/U酷 type=2 误进漫画、非凡进文本、换源 `len`、VideoScreen 溢出，[Rust]+[UI]）

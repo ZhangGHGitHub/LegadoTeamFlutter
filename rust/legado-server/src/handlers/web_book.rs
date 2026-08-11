@@ -138,7 +138,7 @@ impl RealBookSourceFetcher {
 
         let response = match analyze_url.method() {
             RequestMethod::Post => {
-                let body = analyze_url.body().unwrap_or("");
+                let body = analyze_url.request_body();
                 self.client.post(url, body, headers_opt).await?
             }
             _ => self.client.get(url, headers_opt).await?,

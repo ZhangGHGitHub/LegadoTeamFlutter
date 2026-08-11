@@ -1913,6 +1913,7 @@ version = "0.2.0"
 dependencies = [
  "base64",
  "ego-tree",
+ "encoding_rs",
  "legado-core",
  "md-5",
  "regex",

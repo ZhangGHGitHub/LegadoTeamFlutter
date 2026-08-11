@@ -555,15 +555,26 @@ impl AnalyzeUrl {
                     let has_content_type = self.headers.contains_key("Content-Type")
                         || self.headers.contains_key("content-type");
                     if !is_json && !is_xml && !has_content_type {
-                        // Form body: 编码参数
-                        self.encoded_form = Some(Self::encode_form_params(body));
+                        // Form body: 按 charset 编码参数（对齐原版 encodeParams + postForm）
+                        self.encoded_form = Some(Self::encode_form_params(
+                            body,
+                            self.charset.as_deref(),
+                        ));
+                        // 原版 postForm 使用 application/x-www-form-urlencoded
+                        self.headers
+                            .entry("Content-Type".to_string())
+                            .or_insert_with(|| {
+                                "application/x-www-form-urlencoded".to_string()
+                            });
                     }
                 }
             }
             _ => {
                 if let Some(pos) = self.url.find('?') {
                     let query = self.url[pos + 1..].to_string();
-                    let encoded = Self::encode_query_params(&query);
+                    // 对齐原版 analyzeQuery：charset=gbk 时按 GBK 百分号编码关键词
+                    let encoded =
+                        Self::encode_query_params(&query, self.charset.as_deref());
                     self.encoded_query = Some(encoded.clone());
                     self.parse_query_params(&query);
                     self.url_no_query = self.url[..pos].to_string();
@@ -586,8 +597,11 @@ impl AnalyzeUrl {
         }
     }
 
-    /// 编码表单参数
-    fn encode_form_params(body: &str) -> String {
+    /// 编码表单参数（对齐原版 `URLEncoder.encode(value, charset)`）
+    ///
+    /// `charset` 为 `gbk`/`GBK`/`gb2312` 等时按该编码百分号编码；缺省/UTF-8 保持原行为。
+    /// 空格编码为 `+`（application/x-www-form-urlencoded）。— Reasonix 2026-08-12
+    fn encode_form_params(body: &str, charset: Option<&str>) -> String {
         let mut result = String::new();
         for pair in body.split('&') {
             if !result.is_empty() {
@@ -596,23 +610,31 @@ impl AnalyzeUrl {
             if let Some(eq_pos) = pair.find('=') {
                 let key = &pair[..eq_pos];
                 let value = &pair[eq_pos + 1..];
-                result.push_str(&urlencoding::encode(key));
+                result.push_str(&Self::percent_encode_form_component(key, charset));
                 result.push('=');
-                result.push_str(&urlencoding::encode(value));
+                result.push_str(&Self::percent_encode_form_component(value, charset));
             } else {
-                result.push_str(&urlencoding::encode(pair));
+                result.push_str(&Self::percent_encode_form_component(pair, charset));
             }
         }
         result
     }
 
     /// 编码查询参数
-    fn encode_query_params(query: &str) -> String {
+    ///
+    /// 对齐原版 `analyzeQuery`：
+    /// - 已含 `%XX` → 原样
+    /// - 指定非 UTF-8 charset → 整段按该编码百分号编码，保留 `&`/`=` 等分隔符
+    /// - 否则按 UTF-8 对每个 key/value 分别编码
+    fn encode_query_params(query: &str, charset: Option<&str>) -> String {
         // 检查是否已经编码过（包含 %XX 形式）
         if query.contains('%') && Regex::new(r"%[0-9A-Fa-f]{2}").unwrap().is_match(query) {
             return query.to_string();
         }
-        // 对每个 key=value 对的 key 和 value 分别编码
+        if Self::is_non_utf8_charset(charset) {
+            return Self::percent_encode_query_whole(query, charset.unwrap());
+        }
+        // 对每个 key=value 对的 key 和 value 分别编码（UTF-8）
         let mut result = String::new();
         for pair in query.split('&') {
             if !result.is_empty() {
@@ -629,6 +651,95 @@ impl AnalyzeUrl {
             }
         }
         result
+    }
+
+    fn is_non_utf8_charset(charset: Option<&str>) -> bool {
+        match charset.map(|s| s.trim()) {
+            None | Some("") => false,
+            Some(cs) if cs.eq_ignore_ascii_case("utf-8") || cs.eq_ignore_ascii_case("utf8") => {
+                false
+            }
+            Some(_) => true,
+        }
+    }
+
+    /// 解析 charset 标签；未知标签回退 UTF-8
+    fn encoding_for_label(charset: &str) -> &'static encoding_rs::Encoding {
+        encoding_rs::Encoding::for_label(charset.trim().as_bytes())
+            .unwrap_or(encoding_rs::UTF_8)
+    }
+
+    /// 表单分量编码（对齐 Java `URLEncoder`：字母数字 `.-*_` 原样，空格→`+`，其余 `%XX`）
+    fn percent_encode_form_component(value: &str, charset: Option<&str>) -> String {
+        let enc = match charset {
+            Some(cs) if Self::is_non_utf8_charset(Some(cs)) => Self::encoding_for_label(cs),
+            _ => encoding_rs::UTF_8,
+        };
+        if enc == encoding_rs::UTF_8 {
+            // urlencoding 用 %20；表单惯例为空格→+
+            return urlencoding::encode(value).replace("%20", "+");
+        }
+        let (bytes, _, _) = enc.encode(value);
+        Self::percent_encode_bytes_form(&bytes)
+    }
+
+    /// 查询整段编码（对齐原版 queryEncoder：保留 `&` `=` 等分隔符）
+    fn percent_encode_query_whole(query: &str, charset: &str) -> String {
+        let enc = Self::encoding_for_label(charset);
+        let (bytes, _, _) = enc.encode(query);
+        let mut out = String::with_capacity(bytes.len() * 3);
+        for &b in bytes.iter() {
+            // RFC3986 unreserved + 原版额外放行的查询分隔符
+            match b {
+                b'A'..=b'Z'
+                | b'a'..=b'z'
+                | b'0'..=b'9'
+                | b'-'
+                | b'.'
+                | b'_'
+                | b'~'
+                | b'!'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b'/'
+                | b':'
+                | b';'
+                | b'='
+                | b'?'
+                | b'@'
+                | b'['
+                | b']'
+                | b'^'
+                | b'`'
+                | b'{'
+                | b'|'
+                | b'}' => out.push(b as char),
+                b' ' => out.push('+'),
+                _ => out.push_str(&format!("%{b:02X}")),
+            }
+        }
+        out
+    }
+
+    fn percent_encode_bytes_form(bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(bytes.len() * 3);
+        for &b in bytes {
+            match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'*' => {
+                    out.push(b as char);
+                }
+                b' ' => out.push('+'),
+                _ => out.push_str(&format!("%{b:02X}")),
+            }
+        }
+        out
     }
 
     /// 从 URL 中分离 URL 和 JSON 选项
@@ -812,7 +923,11 @@ impl AnalyzeUrl {
             return relative.to_string();
         }
 
-        let base = base.trim();
+        // 对齐原版 NetworkUtils.getAbsoluteURL(baseURL.substringBefore(","))：
+        // 1) 去掉 JSON 选项尾巴；2) 去掉 #fragment（书源 URL 常用 #🎃/#pb1101
+        // 作唯一后缀，Java URL 解析会忽略 fragment，Rust 若原样拼接会得到
+        // `https://host#tag/path` 假 URL → 整批相对 searchUrl 失败）。— Reasonix
+        let base = Self::normalize_base_url_for_join(base.trim());
         if base.is_empty() {
             return relative.to_string();
         }
@@ -855,6 +970,12 @@ impl AnalyzeUrl {
         } else {
             format!("{}/{}", base, relative)
         }
+    }
+
+    /// 拼接用 base：去掉 `,JSON` 选项与 `#fragment`
+    fn normalize_base_url_for_join(base: &str) -> &str {
+        let without_opt = base.split(',').next().unwrap_or(base).trim();
+        without_opt.split('#').next().unwrap_or(without_opt).trim()
     }
 
     // ========== JS 内嵌执行 ==========
@@ -1122,6 +1243,33 @@ impl AnalyzeUrl {
 
     pub fn body(&self) -> Option<&str> {
         self.body.as_deref()
+    }
+
+    /// POST 请求体：优先已 charset 编码的 form，否则原始 body
+    ///
+    /// 对齐原版 `postForm(encodedForm)` / 非 form 时用原始 body。— Reasonix
+    pub fn request_body(&self) -> &str {
+        self.encoded_form
+            .as_deref()
+            .or(self.body.as_deref())
+            .unwrap_or("")
+    }
+
+    /// 是否需要按 UrlOption.charset 手动解码响应体（非 UTF-8）
+    pub fn needs_charset_decode(&self) -> bool {
+        Self::is_non_utf8_charset(self.charset.as_deref())
+    }
+
+    /// 按 UrlOption.charset 解码响应字节（对齐原版搜索 GBK 站正确书名）
+    pub fn decode_response_bytes(bytes: &[u8], charset: Option<&str>) -> String {
+        match charset {
+            Some(cs) if Self::is_non_utf8_charset(Some(cs)) => {
+                let enc = Self::encoding_for_label(cs);
+                let (cow, _, _) = enc.decode(bytes);
+                cow.into_owned()
+            }
+            _ => String::from_utf8_lossy(bytes).into_owned(),
+        }
     }
 
     pub fn charset(&self) -> Option<&str> {
@@ -1395,6 +1543,52 @@ mod tests {
         );
     }
 
+    /// charset=gbk 查询编码（对齐原版 AnalyzeUrl.encodeParams + URLEncoder GBK）
+    /// — Reasonix 2026-08-12
+    #[test]
+    fn test_charset_gbk_query_encoding() {
+        let mut vars = HashMap::new();
+        vars.insert("key".to_string(), "斗破苍穹".to_string());
+        // 单花括号路径（parse 内 replace_brace_vars）；搜索主链路 {{key}} 经 parse_with_js
+        let url = AnalyzeUrl::parse(
+            r#"https://www.example.com/modules/article/search.php?searchkey={key},{"charset":"gbk"}"#,
+            &vars,
+            1,
+        )
+        .unwrap();
+        // GBK("斗破苍穹") = B6B7 C6C6 B2D4 F1B7
+        assert!(
+            url.url().contains("searchkey=%B6%B7%C6%C6%B2%D4%F1%B7"),
+            "expected GBK-encoded searchkey, got {}",
+            url.url()
+        );
+        assert!(
+            !url.url().contains("%E6%96%97"),
+            "must not use UTF-8 percent encoding when charset=gbk: {}",
+            url.url()
+        );
+    }
+
+    /// charset=gbk POST form 编码 — Reasonix 2026-08-12
+    #[test]
+    fn test_charset_gbk_post_form_encoding() {
+        let mut vars = HashMap::new();
+        vars.insert("key".to_string(), "斗破苍穹".to_string());
+        let url = AnalyzeUrl::parse(
+            r#"https://m.example.com/s.php,{"charset":"gbk","method":"POST","body":"search_key={key}"}"#,
+            &vars,
+            1,
+        )
+        .unwrap();
+        assert_eq!(url.method(), &RequestMethod::Post);
+        let body = url.request_body();
+        assert_eq!(body, "search_key=%B6%B7%C6%C6%B2%D4%F1%B7");
+        assert_eq!(
+            url.headers().get("Content-Type").map(|s| s.as_str()),
+            Some("application/x-www-form-urlencoded")
+        );
+    }
+
     // --- 8. 绝对 URL 拼接 ---
     #[test]
     fn test_absolute_url() {
@@ -1413,6 +1607,22 @@ mod tests {
         assert_eq!(
             AnalyzeUrl::get_absolute_url("", "https://other.com/page"),
             "https://other.com/page"
+        );
+        // 书源 URL 带 # 唯一后缀时，相对 path 不得拼进 fragment — Reasonix
+        assert_eq!(
+            AnalyzeUrl::get_absolute_url(
+                "http://www.95dushu.info#wy18-1001",
+                "/modules/article/search.php?ie=gbk&searchkey=x"
+            ),
+            "http://www.95dushu.info/modules/article/search.php?ie=gbk&searchkey=x"
+        );
+        assert_eq!(
+            AnalyzeUrl::get_absolute_url("https://www.bookxuan.com#🎃", "modules/article/search.php"),
+            "https://www.bookxuan.com/modules/article/search.php"
+        );
+        assert_eq!(
+            AnalyzeUrl::get_absolute_url("http://www.dongtanxs.com##", "/search?q=1"),
+            "http://www.dongtanxs.com/search?q=1"
         );
     }
 
