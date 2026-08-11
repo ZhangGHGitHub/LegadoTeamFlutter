@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.22] - 2026-08-11
+
+### 修复（漫画源目录「暂无章节」根治：java HTML 解析桥 + book 绑定，[Rust] 轨）
+- **「暂无章节」根因⑥**：漫画书源目录/正文规则大量使用原版 JsExtensions 的 HTML 元素桥 `java.getElement(css)` / `java.getString(css, html)`（51漫画 chapterList 用 `<js>Array.from(java.getElement("script"))...</js>` 提取目录 JSON、快看/爱优漫等依赖），重构版 java 命名空间仅有工具函数 → ReferenceError → 目录解析空
+- 修复：新增 `legado-js/src/host_api/html_parse.rs`——`getElement`/`getElements` 返回元素对象数组（`html()`=innerHTML / `text()` / `toString()`=outerHTML / `attr(name)`，对齐 JSoup Element），`getString`/`getStrings` 取文本；内容源读 `globalThis.src`（execute_js_rule 注入），getString 第二参 mContent 可覆盖；注册到 java 命名空间（getElement 等为 AnalyzeRule 方法语义，不挂裸全局）；legado-js 新增 scraper 0.22 依赖
+- 修复②：`web_book.get_chapters` 目录解析未注入 `book` 绑定（51漫画规则 `book.name`）——从 ruleBookInfo.name 提取书名注入
+- 测试：legado-js 471/471（新增 html_parse 3 测试）、legado-ffi 264/264；5556/5558 冒烟 6/6（v2.0.22+24）
+
 ## [2.0.21] - 2026-08-11
 
 ### 修复（漫画站图片复合 URL `url,{json headers}` 支持，[Rust]+[UI] 双轨）
