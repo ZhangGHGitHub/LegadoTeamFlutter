@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.23] - 2026-08-11
+
+### 修复（漫画源目录「暂无章节」最终根治，[Rust] 轨）
+- **51漫画真实链路实测打通**（搜索→目录→正文），四层根因：
+  ① QuickJS eval 严格模式禁止裸赋值：书源规则 `d = c ? ... : [...]`（未声明变量赋值）抛 ReferenceError（原版 Rhino 宽松模式允许）。修复：execute_js_rule prologue 预声明常见裸赋值变量（`var d/data/json/list/arr/obj/tmp`，避开书源可能 const 声明的 scripts/c/item 等防冲突）
+  ② `get_elements` 对 `<js>` 规则误路由：`resolve_rule_type` 把 `<js>` 前缀判为 Auto/Css → 走 HTML 解析器 → 目录 0 章。修复：get_elements 开头显式识别 `<js>` 转 get_strings
+  ③ `<js>...</js>\n$[*]` 复合规则：`</js>` 后 JSONPath 后缀被忽略，JS 返回的 JSON 数组未拆解（51漫画 chapterList 用 `JSON.stringify(d)` + `$[*]`）。修复：get_strings 的 `<js>` 分支对 `$[...]` 后缀逐元素 JSONPath 拆解
+  ④ java 桥 `@attr` 链：`.btn-read@href` 需取 href 属性（对齐原版 AnalyzeByJSoup lastIndexOf('@') + getResultLast），非 CSS 选择器。修复：html_parse select_with_attr 拆分 selector@attr + @text 语义
+- 实测：51漫画 refresh_toc 出章节（url=/comic/5957/chapter/18465）、正文 5395B 含真实图片 URL
+- 测试：legado-parser 182/182、legado-js 471/471、legado-ffi 264/264；5556/5558 冒烟 6/6（v2.0.23+25）
+
 ## [2.0.22] - 2026-08-11
 
 ### 修复（漫画源目录「暂无章节」根治：java HTML 解析桥 + book 绑定，[Rust] 轨）
