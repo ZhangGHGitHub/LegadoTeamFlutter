@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.19] - 2026-08-11
+
+### 修复（漫画/图片源 imageDecode 解码 + JS 注入严格模式根治，[Rust]+[UI] 双轨）
+- 漫画/图片站图片无法显示根因③（**imageDecode 解密缺失**）：favcomic 等漫画站图片 bytes 经站点专用加密，书源通过 `ruleContent.imageDecode`（配合 jsLib）JS 解密后才可显示，重构版仅有字段无执行。修复：Rust 新增 `image_api`（下载图片[书源 header 防盗链+兜底 Referer] → 注入 `result`(Uint8Array)/`src`(URL) 绑定执行 imageDecode JS → base64），`legado-js` 新增 `eval_bytes`（`JsValue::Bytes` 以 Uint8Array 注入/结果读回）；`ffi.rs` frb 模块新增 `fetch_image_with_decode`（上一版误加进已冻结的 `bridge.rs`——该模块 DEPRECATED 冻结新增且 Flutter 无 dart:ffi 绑定调不到，已移除恢复冻结约束）；Flutter `reader_comic_screen` 书源含 imageDecode 规则时走 FFI 解码下载（`Image.memory` 显示，带缓存与重试），无规则时保持直连不回归
+- 「搜到书但正文为空」JS 规则执行根因④（**严格模式裸赋值**）：上次将绑定注入由 `var result` 改裸赋值 `result = ...`（规避 jsLib `let/const result` 重复声明），但 QuickJS eval 处于严格模式，裸赋值抛 `ReferenceError: result is not defined` → 全部 `@js:`/jsLib 规则静默返回空（legado-ffi 5 测试失败，即上轮卡点）。修复：改 `globalThis.result = ...`（对齐原版 `ScriptableObject.put` 语义，严格模式合法且不构成重复声明）；jsLib 求值失败不再静默吞（favcomic 正文/imageDecode 引用 jsLib 函数，失败必须可见可排错）
+- 修复既有缺陷：漫画阅读器 `_preloadVisibleImages` 在 loading 态访问未 attach 的 ScrollController 抛断言（`ScrollController not attached`），加 `hasClients` 防御
+
+### 测试
+- 新增：`image_api` XOR 解码单测 + favcomic 真实站点链路（网络测试，`#[ignore]`）；Flutter `reader_comic_decode_test`（含 imageDecode 规则走解码下载 / 无规则不触发）
+- 全量：legado-ffi 263/263、legado-js 468/468、legado-parser 180/180；flutter analyze 0 error、flutter test 1153/1153
+- 实机验证：重建 Rust .so（x86_64+arm64-v8a，quickjs）→ 重打包 → 5556 启动无崩溃 UI 完整渲染（书架/发现/订阅/我的）、5558 冒烟 6/6 全 PASS（此前 content hash 不匹配系 APK 内旧 .so 所致，已根治）
+
 ## [2.0.18] - 2026-08-11
 
 ### 修复（漫画/视频源正文与目录根治，[Rust] 轨）
