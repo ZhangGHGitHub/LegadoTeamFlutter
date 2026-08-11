@@ -83,6 +83,50 @@ impl ElementSnapshot {
     }
 }
 
+/// 拆分 `css@attr` 链（对齐原版 AnalyzeByJSoup `selector@attr` 语义）：
+/// 末段以 `@` 开头且非 HTML 标签名 → 属性/文本提取；否则整体为 CSS 选择器
+/// 如 `.btn-read@href` → (".btn-read", Some("href"))、`script` → ("script", None)
+fn split_attr_chain(css: &str) -> (&str, Option<String>) {
+    let trimmed = css.trim();
+    if let Some(at_pos) = trimmed.rfind('@') {
+        let after = &trimmed[at_pos + 1..];
+        let before = trimmed[..at_pos].trim();
+        // @ 后是属性名/提取模式（非标签选择器）：href/src/text/html/alt/title 等
+        if !before.is_empty()
+            && !after.is_empty()
+            && !after.contains([' ', '.', '#', '[', '>', ','])
+            && !matches!(after, "a" | "div" | "span" | "li" | "p" | "img" | "script" | "body" | "html" | "ul" | "ol" | "table" | "tr" | "td" | "th")
+        {
+            return (before, Some(after.to_string()));
+        }
+    }
+    (trimmed, None)
+}
+
+/// CSS 选择 + 属性/文本提取：返回元素（selector 部分）outerHTML 快照列表
+fn select_with_attr(html: &str, css: &str) -> Vec<ElementSnapshot> {
+    let (selector, attr) = split_attr_chain(css);
+    let snaps = snapshots_from_html(html, selector);
+    match attr {
+        // @text：取元素文本（对齐原版 getResultLast "text" 分支）
+        Some(name) if name == "text" => snaps,
+        // @allText/@ownText/@textNodes 等文本模式：退化为文本
+        Some(name) if matches!(name.as_str(), "allText" | "ownText" | "textNodes") => snaps,
+        // 其他 @ 后缀：属性提取（href/src/data-src 等，对齐原版默认分支）
+        Some(name) => snaps
+            .iter()
+            .map(|s| ElementSnapshot {
+                outer: s.outer.clone(),
+                inner: s.inner.clone(),
+                text: s
+                    .attr(&name)
+                    .unwrap_or_else(|| s.text.clone()),
+            })
+            .collect(),
+        None => snaps,
+    }
+}
+
 /// 从 HTML 快照解析出元素对象（供 select 后的元素转换）
 fn snapshots_from_html(html: &str, css: &str) -> Vec<ElementSnapshot> {
     select_outer_htmls(html, css)
@@ -152,7 +196,8 @@ pub fn get_element<'js>(
     css: String,
     src: String,
 ) -> Result<rquickjs::Array<'js>, LegadoError> {
-    let snaps = snapshots_from_html(&src, &css);
+    let (selector, _attr) = split_attr_chain(&css);
+    let snaps = snapshots_from_html(&src, selector);
     let arr = rquickjs::Array::new(ctx.clone())
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     for (idx, snap) in snaps.iter().enumerate() {
@@ -172,26 +217,29 @@ pub fn get_elements<'js>(
     get_element(ctx, css, src)
 }
 
-/// `java.getString(css, mContent)` → 首条文本（mContent 空=当前 src）
+/// `java.getString(css, mContent)` → 首条文本/属性（mContent 空=当前 src）
+///
+/// 支持 `selector@attr` 链（如 `.btn-read@href` 取属性，对齐原版
+/// AnalyzeByJSoup）；纯 `@text` 后缀按文本处理
 pub fn get_string(css: String, m_content: Opt<String>, src: String) -> String {
     let html = match m_content.0 {
         Some(s) if !s.is_empty() => s,
         _ => src,
     };
-    let snaps = snapshots_from_html(&html, &css);
+    let snaps = select_with_attr(&html, &css);
     if snaps.is_empty() {
         return String::new();
     }
     snaps[0].text.clone()
 }
 
-/// `java.getStrings(css, mContent)` → 文本列表（换行连接，对齐原版多值合并）
+/// `java.getStrings(css, mContent)` → 文本/属性列表（换行连接）
 pub fn get_strings(css: String, m_content: Opt<String>, src: String) -> String {
     let html = match m_content.0 {
         Some(s) if !s.is_empty() => s,
         _ => src,
     };
-    let snaps = snapshots_from_html(&html, &css);
+    let snaps = select_with_attr(&html, &css);
     let texts: Vec<String> = snaps
         .iter()
         .map(|s| s.text.clone())
@@ -238,6 +286,13 @@ mod tests {
             String::new(),
         );
         assert_eq!(s2, "X");
+        // @attr 链：取 a 的 href 属性（对齐 51漫画 java.getString(".btn-read@href", src)）
+        let s3 = get_string(
+            "a@href".to_string(),
+            Opt(None),
+            html.to_string(),
+        );
+        assert_eq!(s3, "/c/1");
     }
 }
 

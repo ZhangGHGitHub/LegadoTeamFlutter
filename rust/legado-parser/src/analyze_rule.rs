@@ -162,10 +162,28 @@ impl AnalyzeRule {
         // 大量用例），JS 结果直接作为提取结果，不再按 CSS/XPath 解析。
         // [UI-fix 2026-08-10 | Reasonix] 此前仅支持 `@js:` 前缀，`<js>` 标签
         // 落入 Auto/CSS 解析 → 正文为空（「搜到书但正文图片不显示/无法播放」）。
+        // [UI-fix v2.0.23 | Reasonix] `<js>...</js>\n$[*]` 复合规则：JS 生成
+        // JSON 数组字符串（如 51漫画 `JSON.stringify(d)`），`</js>` 后的
+        // JSONPath 后缀将数组拆解为多个元素（每章一个对象），供子规则
+        // `$.title`/`$.url` 解析 → 目录不再 0 章。
         if rule.trim_start().starts_with("<js>") {
             if let Some(end) = rule.find("</js>") {
                 let js_code = &rule["<js>".len()..end];
-                return self.execute_js_rule(js_code);
+                let js_result = self.execute_js_rule(js_code)?;
+                // `</js>` 之后若有 JSONPath 后缀（如 `\n$[*]`），对 JS 结果拆解
+                let suffix = rule[end + "</js>".len()..].trim();
+                if suffix.starts_with("$") && !suffix.is_empty() {
+                    // JS 结果为单元素（JSON 数组字符串）或多元素，逐一对
+                    // JSONPath 求值后拼接（对齐原版 getElements 多元素语义）
+                    let mut out = Vec::new();
+                    for item in &js_result {
+                        if let Ok(v) = self.json_parser.parse_jsonpath(item, suffix) {
+                            out.extend(v);
+                        }
+                    }
+                    return Ok(out);
+                }
+                return Ok(js_result);
             }
         }
 
@@ -209,6 +227,13 @@ impl AnalyzeRule {
     pub fn get_elements(&self, rule: &str) -> LegadoResult<Vec<String>> {
         if rule.is_empty() {
             return Ok(vec![]);
+        }
+
+        // `<js>...</js>` 规则（含 `$[*]` 复合）统一走 get_strings：
+        // resolve_rule_type 可能把 `<js>` 前缀判定为 Auto/Css，导致
+        // 误走 HTML 解析器 → 目录 0 章（51漫画 chapterList 实测）— Reasonix
+        if rule.trim_start().starts_with("<js>") {
+            return self.get_strings(rule);
         }
 
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
@@ -258,6 +283,15 @@ impl AnalyzeRule {
             // `String(result)` 与漫画源 `src.match(...)` 全部 ReferenceError
             // → 正文为空（「搜到书但正文图片不显示/无法播放」根因）。
             let mut prologue = String::new();
+            // 预声明常见裸赋值变量（var）：QuickJS eval 处于严格模式，书源
+            // 规则里的 `d = ...`/`data = ...` 等未声明赋值抛 ReferenceError
+            //（51漫画 chapterList 的 `d = c ? ... : [...]`）。var 预声明后
+            // 赋值合法。注意：不可预声明书源可能用 const/let 声明的变量
+            //（如 scripts/c/item 等，var 与 const 同名冲突）；此处仅覆盖
+            // 书源惯用的裸赋值临时变量名，且 result/src/baseUrl/book 等已
+            // 由下方 globalThis 注入，不重复声明（避免与 jsLib let/const
+            // 冲突）— Reasonix
+            prologue.push_str("var d, data, json, list, arr, obj, tmp;\n");
             if let Ok(content_json) = serde_json::to_string(&self.content) {
                 // 经 globalThis 属性赋值注入（对齐原版 ScriptableObject.put
                 // 语义）：① 不能裸赋值 `result = ...`——QuickJS eval 处于
@@ -671,6 +705,54 @@ mod tests {
             AnalyzeRule::with_js_executor("some content".to_string(), String::new(), executor);
         let result = rule.get_strings("@js:result").unwrap();
         assert_eq!(result, vec!["执行结果"]);
+    }
+
+    /// `<js>...</js>\n$[*]` 复合规则：JS 返回 JSON 数组字符串，JSONPath 后缀拆解
+    ///
+    /// 对齐 51漫画 chapterList（`JSON.stringify(d)` + `$[*]`）：JS 结果
+    /// `[{"title":"第1话","url":"/c/1"},...]` 经 `$[*]` 拆为每章一个对象，
+    /// 供子规则 `$.title`/`$.url` 二次解析 — Reasonix
+    #[test]
+    fn test_js_tag_with_jsonpath_suffix() {
+        let executor = Arc::new(MockJsExecutor {
+            result: r#"[{"title":"第1话","url":"/c/1"},{"title":"第2话","url":"/c/2"}]"#
+                .to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            "<html>51漫画目录页</html>".to_string(),
+            "https://51acgs.com/comic/1".to_string(),
+            executor,
+        );
+        let result = rule
+            .get_strings("<js>JSON.stringify(d)</js>\n$[*]")
+            .unwrap();
+        assert_eq!(result.len(), 2, "JSONPath $[*] 应拆出 2 个章节对象");
+        // 每个元素是对象 JSON 字符串，可继续用 $.title 解析
+        let first = &result[0];
+        let title_rule = AnalyzeRule::with_js_executor(
+            first.clone(),
+            String::new(),
+            Arc::new(MockJsExecutor {
+                result: String::new(),
+            }),
+        );
+        let t = title_rule.get_string("$.title").unwrap();
+        assert_eq!(t, "第1话");
+    }
+
+    /// `<js>` 无 JSONPath 后缀：保持原语义（直接返回 JS 结果）
+    #[test]
+    fn test_js_tag_without_suffix() {
+        let executor = Arc::new(MockJsExecutor {
+            result: "直接结果".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            "x".to_string(),
+            String::new(),
+            executor,
+        );
+        let result = rule.get_strings("<js>result</js>").unwrap();
+        assert_eq!(result, vec!["直接结果"]);
     }
 
     #[test]
