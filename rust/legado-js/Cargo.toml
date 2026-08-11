@@ -46,6 +46,9 @@ rar           = { version = "0.4", optional = true }
 # futures 流式并发（用于 ajaxAll 有界并发）
 futures       = { version = "0.3", optional = true }
 
+# HTML 解析（java.getElement/getString 桥：漫画源目录/正文规则依赖）
+scraper       = { version = "0.22", optional = true }
+
 # tokio 运行时桥接（用于在 JS 线程中调用 legado-net 异步 API）
 tokio         = { version = "1", features = ["rt-multi-thread", "sync"], optional = true }
 legado-net    = { path = "../legado-net", optional = true }
@@ -74,6 +77,7 @@ quickjs = [
     "dep:sevenz-rust2",
     "dep:rar",
     "dep:futures",
+    "dep:scraper",
     "dep:tokio",
     "dep:legado-net",
 ]

@@ -508,6 +508,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.toc_url.as_deref())
             .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
             .unwrap_or_default();
+
+        // 书名（供目录规则 `<js>` 中 `book.name` 使用，对齐原版
+        // AnalyzeRule.evalJS 注入 book 绑定；51漫画等目录规则依赖）— Reasonix
+        let book_name = info_rule
+            .and_then(|r| r.name.as_deref())
+            .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
+            .unwrap_or_default();
         let toc_url = if raw_toc.is_empty() {
             book_url.to_string()
         } else {
@@ -542,6 +549,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             toc_url.clone(),
             &source.book_source_url,
             source.js_lib.as_deref(),
+        )
+        .with_js_binding(
+            "book",
+            &serde_json::json!({ "name": book_name }).to_string(),
         );
 
         let elements = if chapter_list_rule.is_empty() {

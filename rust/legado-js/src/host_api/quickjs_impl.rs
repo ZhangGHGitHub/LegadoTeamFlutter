@@ -1,4 +1,4 @@
-//! QuickJS 宿主 API 注册实现
+﻿//! QuickJS 宿主 API 注册实现
 //!
 //! 在 `quickjs` feature 启用时，将 Legado 提供的宿主函数
 //! 注册到 rquickjs 的全局上下文中，供 JS 脚本直接调用。
@@ -27,8 +27,8 @@ use legado_core::LegadoError;
 
 use crate::host_api::{
     archive_utils, asymmetric_crypto, chinese_utils, concurrency_api, config_api, cookie_store,
-    crypto_api, encoding, file_utils, font_api, html_format, json_utils, misc_api, network,
-    platform, regex_utils, register::mount_dual, string_utils, time_utils, variable_store,
+    crypto_api, encoding, file_utils, font_api, html_format, html_parse, json_utils, misc_api,
+    network, platform, regex_utils, register::mount_dual, string_utils, time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
@@ -65,6 +65,7 @@ pub fn register_all_apis<'js>(
     register_cookie_apis(ctx, &java, &globals)?;
     register_crypto_apis(ctx, &java, &globals)?;
     register_html_apis(ctx, &java, &globals)?;
+    register_html_parse_apis(ctx, &java, &globals)?;
     register_chinese_apis(ctx, &java, &globals)?;
     register_config_apis(ctx, &java, &globals)?;
     register_concurrency_apis(ctx, &java, &globals)?;
@@ -1161,6 +1162,84 @@ fn register_html_apis<'js>(
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
+
+    Ok(())
+}
+
+/// 注册 HTML 解析桥 API（java.getElement/getString 等）
+///
+/// 对齐原版 AnalyzeRule.evalJS 注入 `bindings["java"] = this`：
+/// 漫画/图片书源目录/正文规则依赖 CSS 元素选择（51漫画等）。
+/// 仅挂到 `java` 命名空间（getElement 等为 AnalyzeRule 方法语义，
+/// 裸全局无此方法，避免污染书源自定义函数名）— Reasonix
+fn register_html_parse_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+    _globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    // java.getElement(css) -> 元素数组（对当前 src 解析）
+    java.set(
+        "getElement",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, css: String| -> rquickjs::Result<rquickjs::Array<'js>> {
+                let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
+                html_parse::get_element(&ctx, css, src).map_err(|e| rquickjs::Error::FromJs {
+                    from: "String",
+                    to: "Array<Element>",
+                    message: Some(e.to_string()),
+                })
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.getElements(css) -> 元素数组
+    java.set(
+        "getElements",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, css: String| -> rquickjs::Result<rquickjs::Array<'js>> {
+                let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
+                html_parse::get_elements(&ctx, css, src).map_err(|e| rquickjs::Error::FromJs {
+                    from: "String",
+                    to: "Array<Element>",
+                    message: Some(e.to_string()),
+                })
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.getString(css, mContent?) -> 首条文本
+    java.set(
+        "getString",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, css: String, m_content: Opt<String>| -> String {
+                let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
+                html_parse::get_string(css, m_content, src)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.getStrings(css, mContent?) -> 文本列表（换行连接）
+    java.set(
+        "getStrings",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, css: String, m_content: Opt<String>| -> String {
+                let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
+                html_parse::get_strings(css, m_content, src)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     Ok(())
 }
@@ -2731,3 +2810,4 @@ mod tests {
         assert_eq!(parsed["type"], "file");
     }
 }
+
