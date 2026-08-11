@@ -61,6 +61,40 @@ bool isMpdVideoContent(String content) {
   return false;
 }
 
+/// 是否像可播视频/流地址（含无后缀的 CDN 路径，如非凡 vip.ffzy-plays）
+bool looksLikeVideoUrl(String url) {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) return false;
+  final base = isCompositeImageUrl(trimmed)
+      ? trimmed.substring(0, trimmed.indexOf(',{'))
+      : trimmed;
+  final lower = base.toLowerCase();
+  if (!(lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('//'))) {
+    return false;
+  }
+  if (RegExp(r'\.(m3u8|mp4|flv|mkv|webm|mov)(\?|#|$)', caseSensitive: false)
+      .hasMatch(lower)) {
+    return true;
+  }
+  // MacCMS / 常见播放 CDN（无扩展名直链）
+  if (lower.contains('ffzy-plays') ||
+      lower.contains('/play/') ||
+      lower.contains('m3u8') ||
+      lower.contains('/video/') ||
+      lower.contains('vodplay')) {
+    return true;
+  }
+  return false;
+}
+
+/// 正文是否 HLS/m3u8 清单（`#EXTM3U`），此时应回退 chapterUrl
+bool isM3u8PlaylistContent(String content) {
+  final t = content.trimLeft();
+  return t.startsWith('#EXTM3U') || t.startsWith('#EXTINF');
+}
+
 /// 从章节正文提取视频链接
 ///
 /// 支持：纯 URL、复合 `url,{json}`、`<iframe/video/source/embed src>`；
@@ -193,36 +227,54 @@ Map<String, String> mergeVideoHeaders({
 }
 
 /// 从章节正文解析播放目标（对齐 VideoPlay.startPlay + AnalyzeUrl）
+///
+/// 非凡等 MacCMS：章节 URL 已是 m3u8；正文规则 `result=baseUrl`，或 JS 失败时
+/// 正文变成 `#EXTM3U` 清单 → 回退 [chapterUrl]。— Reasonix + UI
 VideoPlayTarget resolveVideoPlayTarget({
   required String content,
   required String chapterUrl,
   Map<String, String> sourceHeaders = const {},
 }) {
   final prepared = prepareVideoContent(content);
-  if (prepared.isEmpty) {
+  final headersFor = (Map<String, String> optionHeaders) => mergeVideoHeaders(
+        sourceHeaders: sourceHeaders,
+        optionHeaders: optionHeaders,
+        referer: chapterUrl,
+      );
+
+  if (prepared.isEmpty || isM3u8PlaylistContent(prepared)) {
+    if (looksLikeVideoUrl(chapterUrl)) {
+      final split = splitUrlOption(chapterUrl.trim());
+      return VideoPlayTarget(
+        url: resolveAbsoluteUrl(chapterUrl, split.url),
+        headers: headersFor(split.headers),
+      );
+    }
+    if (prepared.isEmpty) {
+      return const VideoPlayTarget(url: '');
+    }
+    // 清单但无可用 chapterUrl：无法交给 URL 播放器
     return const VideoPlayTarget(url: '');
   }
   if (isMpdVideoContent(prepared)) {
     return VideoPlayTarget(
       url: '',
-      headers: mergeVideoHeaders(
-        sourceHeaders: sourceHeaders,
-        optionHeaders: const {},
-        referer: chapterUrl,
-      ),
+      headers: headersFor(const {}),
       mpdContent: prepared,
     );
   }
 
   final extracted = extractVideoUrl(prepared);
   final split = splitUrlOption(extracted);
-  final abs = resolveAbsoluteUrl(chapterUrl, split.url);
+  var abs = resolveAbsoluteUrl(chapterUrl, split.url);
+  // 正文非 URL（toast/桥接杂质）时回退章节地址
+  if (!looksLikeVideoUrl(abs) && looksLikeVideoUrl(chapterUrl)) {
+    final chap = splitUrlOption(chapterUrl.trim());
+    abs = resolveAbsoluteUrl(chapterUrl, chap.url);
+    return VideoPlayTarget(url: abs, headers: headersFor(chap.headers));
+  }
   return VideoPlayTarget(
     url: abs,
-    headers: mergeVideoHeaders(
-      sourceHeaders: sourceHeaders,
-      optionHeaders: split.headers,
-      referer: chapterUrl,
-    ),
+    headers: headersFor(split.headers),
   );
 }

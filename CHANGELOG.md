@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.36] - 2026-08-12
+
+### 修复（视频源误进漫画 / type=0 MacCMS 分流与播放，[UI]）
+
+对照原版 `BookInfoActivity.startReadActivity`（`book.isVideo` → VideoPlayer，绝不进 ReadManga）与设备导出源。
+
+1. **根因**：非凡资源网等「影视频源」在库里 `bookSourceType=0`（MacCMS），开读按文本处理；旧逻辑仅在 `typeBits==0` 时补书源类型，抽图启发式可误伤；用户见漫画页「暂无图片」。
+2. **分流**：`BookOpenUtils.resolveTypeBits` — 显式 type 1–4 优先；type=0 时 MacCMS/`vod_play_url`/`影视频源`+播放特征 → `BookType.video`，**优先于**抽图提升；书架/详情/离线缓存共用。
+3. **播放**：`resolveVideoPlayTarget` 正文为空或 `#EXTM3U` 清单时回退 `chapterUrl`；`startBrowser` 对流媒体 URL 跳过外开；`looksLikeImageUrl` 排除 m3u8/mp4。
+4. **验证**：单元测试（非凡启发式 / 伪七猫 type=4 / 必应漫画仍升 comic）；emulator-5558 端到端（VideoScreen + 可播/缓冲态）。
+
+编写者：Reasonix ｜ 2026-08-12
+
 ## [2.0.35] - 2026-08-12
 
 ### 修复（书源 JS `all` / VideoScreen 生命周期 / Array(0x…) 正文，[Rust]+[UI]）

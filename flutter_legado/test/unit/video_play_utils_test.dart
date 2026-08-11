@@ -101,6 +101,36 @@ void main() {
       );
       expect(t.url, 'https://cdn.example/v.m3u8');
     });
+
+    test('正文为 m3u8 清单时回退 chapterUrl（非凡 MacCMS）', () {
+      const chapter =
+          'https://vip.ffzy-plays.com/20250101/49109_508cfab9/index.m3u8';
+      final t = resolveVideoPlayTarget(
+        content: '#EXTM3U\n#EXTINF:10,\nhttps://cdn/seg.ts\n',
+        chapterUrl: chapter,
+      );
+      expect(t.url, chapter);
+      expect(t.headers['Referer'], chapter);
+    });
+
+    test('正文为空且 chapterUrl 可播时回退', () {
+      const chapter = 'https://cdn.example/ep1.mp4';
+      final t = resolveVideoPlayTarget(
+        content: '   ',
+        chapterUrl: chapter,
+      );
+      expect(t.url, chapter);
+    });
+
+    test('looksLikeVideoUrl 识别扩展名与非凡 CDN', () {
+      expect(
+        looksLikeVideoUrl(
+          'https://vip.ffzy-plays.com/2025/49109_508cfab9/index.m3u8',
+        ),
+        isTrue,
+      );
+      expect(looksLikeVideoUrl('https://cdn.example/a.jpg'), isFalse);
+    });
   });
 
   group('parseSourceHeaderMap', () {

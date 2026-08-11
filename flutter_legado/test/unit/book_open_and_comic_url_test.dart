@@ -59,6 +59,75 @@ void main() {
       expect(BookOpenUtils.isImageHtmlContentSource(novel), isFalse);
     });
 
+    test('非凡等 type=0 MacCMS 影视频源 → video，不被抽图启发式升漫画', () {
+      const ffzy = BookSource(
+        bookSourceUrl: 'http://23.225.142.42',
+        bookSourceName: '非凡资源网-www.ffzy.tv',
+        bookSourceGroup: '影视频源',
+        bookSourceType: 0,
+        searchUrl: '/api.php/provide/vod/?ac=detail&wd={{key}}&pg={{page}}',
+        ruleToc: TocRule(
+          chapterList:
+              r'@js:var data=JSON.parse(src);var vod=data.list[0];var playUrl=vod.vod_play_url;',
+          chapterName: 'text',
+          chapterUrl: 'href',
+        ),
+        ruleContent: ContentRule(
+          content:
+              r'''@js:java.startBrowser(baseUrl, book.name);result = baseUrl;''',
+        ),
+      );
+      expect(BookOpenUtils.looksLikeVideoSource(ffzy), isTrue);
+      expect(BookOpenUtils.isImageHtmlContentSource(ffzy), isFalse);
+      // 旧库误标 image / text 也应被纠正为 video
+      expect(
+        BookOpenUtils.resolveTypeBits(BookType.image, ffzy),
+        BookType.video,
+      );
+      expect(
+        BookOpenUtils.resolveTypeBits(BookType.text, ffzy),
+        BookType.video,
+      );
+      expect(
+        BookOpenUtils.routeForTypeBits(
+          BookOpenUtils.resolveTypeBits(0, ffzy),
+        ),
+        AppRoutes.video,
+      );
+    });
+
+    test('显式 bookSourceType=4 优先于书籍旧 image 位', () {
+      const qmao = BookSource(
+        bookSourceUrl: 'https://www.qmao.net',
+        bookSourceName: '伪七猫影视',
+        bookSourceType: 4,
+        ruleContent: ContentRule(
+          content: r'@js:result=data.url',
+          sourceRegex: r'.*\.(m3u8|mp4|flv).*',
+        ),
+      );
+      expect(
+        BookOpenUtils.resolveTypeBits(BookType.image | BookType.text, qmao),
+        BookType.video,
+      );
+    });
+
+    test('必应漫画抽图提升仍生效（非视频）', () {
+      const source = BookSource(
+        bookSourceUrl: 'https://www.biyingmh.com',
+        bookSourceName: '必应漫画',
+        bookSourceType: 0,
+        ruleContent: ContentRule(
+          content: '.img@img@html',
+          imageStyle: 'FULL',
+        ),
+      );
+      expect(
+        BookOpenUtils.resolveTypeBits(0, source),
+        BookType.image,
+      );
+    });
+
     test('argumentsForRoute 漫画传 bookUrl，音视频传 Book', () {
       const book = Book(
         bookUrl: 'https://ex.com/b',
@@ -138,6 +207,16 @@ void main() {
           r'https://cdn.example.com/pic/1.webp,{"headers":{"Referer":"https://x/"}}';
       expect(looksLikeImageUrl(line), isTrue);
       expect(parseComicImageUrls(line), [line]);
+    });
+
+    test('m3u8/视频 URL 不判定为图片', () {
+      expect(
+        looksLikeImageUrl(
+          'https://vip.ffzy-plays.com/2025/49109/index.m3u8',
+        ),
+        isFalse,
+      );
+      expect(isImageDominantContent('https://cdn.example/v.m3u8'), isFalse);
     });
   });
 

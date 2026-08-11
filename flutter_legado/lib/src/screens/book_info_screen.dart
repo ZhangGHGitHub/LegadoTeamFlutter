@@ -1446,16 +1446,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     BookSource? matchedSource;
     if (_isOnlineBook(book)) {
       matchedSource = await _findSourceByOrigin(api, book.origin);
-      if (matchedSource != null) {
-        if (typeBits == 0) {
-          typeBits =
-              BookOpenUtils.typeBitsForSource(matchedSource.bookSourceType);
-        }
-        // 必应漫画等：bookSourceType=0 但正文 `.img@img@html`+FULL → 漫画阅读器
-        // （文本排版尚无内嵌图，否则只显示裸 HTML）— Reasonix + UI
-        typeBits =
-            BookOpenUtils.promoteImageContentSource(typeBits, matchedSource);
-      }
+      // 书源媒体类型 / 视频启发式优先于抽图提升（非凡 type=0 MacCMS 等）
+      // — Reasonix + UI
+      typeBits = BookOpenUtils.resolveTypeBits(typeBits, matchedSource);
     }
     try {
       if (_isOnlineBook(book)) {
@@ -1494,6 +1487,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         : book.copyWith(bookType: typeBits);
     // 按类型分流（对齐原版 BookInfoActivity.startReadActivity）— Reasonix + UI
     final route = BookOpenUtils.routeForTypeBits(typeBits);
+    debugPrint(
+      '[BookOpen] name=${book.name} origin=${book.origin} '
+      'typeBits=$typeBits route=$route '
+      'srcType=${matchedSource?.bookSourceType} '
+      'videoLike=${BookOpenUtils.looksLikeVideoSource(matchedSource)}',
+    );
     if (BookOpenUtils.needsReaderNotifier(route)) {
       container.read(readerNotifierProvider.notifier).openBook(bookToRead);
       // [UI-fix v2.0.11 | 2026-08-10] 阅读返回后重新加载详情数据 — Reasonix

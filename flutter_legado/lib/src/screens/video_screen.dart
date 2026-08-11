@@ -209,6 +209,10 @@ class _VideoScreenState extends State<VideoScreen> {
         });
         return;
       }
+      debugPrint(
+        '[VideoPlay] chapter=${chapter.title} url=${target.url} '
+        'mpd=${target.isMpd} headers=${target.headers.keys.toList()}',
+      );
       await _startFromTarget(target);
       setState(() {
         _loadingChapter = false;
@@ -336,6 +340,12 @@ class _VideoScreenState extends State<VideoScreen> {
   void _wireControllerInit() {
     _initializeVideoPlayerFuture = _controller.initialize().then((_) async {
       if (!mounted) return;
+      debugPrint(
+        '[VideoPlay] controller ready '
+        'size=${_controller.value.size} '
+        'duration=${_controller.value.duration} '
+        'url=$_currentPlayUrl',
+      );
       final book = widget.book;
       if (book != null && book.durChapterPos > 0) {
         try {
@@ -343,7 +353,17 @@ class _VideoScreenState extends State<VideoScreen> {
         } catch (_) {}
       }
       setState(() {});
-      _controller.play();
+      await _controller.play();
+      if (!mounted) return;
+      debugPrint(
+        '[VideoPlay] after play '
+        'isPlaying=${_controller.value.isPlaying} '
+        'isBuffering=${_controller.value.isBuffering} '
+        'position=${_controller.value.position}',
+      );
+    }).catchError((Object e, StackTrace st) {
+      debugPrint('[VideoPlay] controller init FAILED: $e');
+      throw e;
     });
   }
 

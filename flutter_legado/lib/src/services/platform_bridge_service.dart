@@ -431,7 +431,9 @@ class PlatformBridgeService {
     });
   }
 
-  /// startBrowser → 外部浏览器；携带 html 时外部浏览器无法承载，改走应用内
+  /// startBrowser → 外部浏览器；携带 html 时外部浏览器无法承载，改走应用内。
+  /// 流媒体 URL（m3u8/mp4 等）跳过外开：视频源正文常 `java.startBrowser(baseUrl)`，
+  /// 重构进 VideoScreen 播放，避免与外开抢播。— Reasonix + Bridge
   void _startBrowser({
     required String url,
     required String title,
@@ -439,6 +441,13 @@ class PlatformBridgeService {
   }) {
     if (html.isNotEmpty || url.isEmpty) {
       _showBrowser(url: url, html: html);
+      return;
+    }
+    final lower = url.toLowerCase();
+    if (RegExp(r'\.(m3u8|mp4|flv|mkv|webm)(\?|#|$)').hasMatch(lower) ||
+        lower.contains('m3u8') ||
+        lower.contains('ffzy-plays')) {
+      debugPrint('[PlatformBridge] startBrowser 跳过流媒体外开：$url');
       return;
     }
     final uri = Uri.tryParse(url);
