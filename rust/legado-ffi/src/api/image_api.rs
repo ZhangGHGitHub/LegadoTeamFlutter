@@ -386,6 +386,53 @@ mod tests {
         assert_eq!(out, vec![0x1F, 0x2F]);
     }
 
+    /// 离线对齐 51漫画 imageDecode：AES/CBC/NoPadding + createSymmetricCrypto.decrypt
+    /// （规则片段来自设备书源 https://51acgs.com，密文由同 key/iv 加密最小 JPEG）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_decode_51manga_style_aes_nopadding_offline() {
+        use legado_core::crypto::AesCrypto;
+
+        // 最小 JPEG 头 + 填充到 16 字节对齐（NoPadding 要求）
+        let plain = vec![
+            0xFF, 0xD8, 0xFF, 0xD9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        assert_eq!(plain.len() % 16, 0);
+        let key = b"f5d965df75336270"; // 书源 key 码点串还原
+        let iv = b"97b60394abc2fbe1";
+        let cipher = AesCrypto::encrypt_cbc_nopadding(key, iv, &plain).expect("encrypt");
+
+        let image_decode = r#"function decryptImage(src) {
+    const key = "102_53_100_57_54_53_100_102_55_53_51_51_54_50_55_48"
+        .split("_").map(n => String.fromCharCode(parseInt(n))).join("");
+    const iv  = "57_55_98_54_48_51_57_52_97_98_99_50_102_98_101_49"
+        .split("_").map(n => String.fromCharCode(parseInt(n))).join("");
+    const cipher = java.createSymmetricCrypto("AES/CBC/NoPadding", key, iv)
+    return cipher.decrypt(src);
+}
+decryptImage(result);"#;
+
+        let src: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://51acgs.com",
+            "bookSourceName": "51漫画",
+            "bookSourceType": 2,
+            "searchUrl": "https://51acgs.com/search/result/comics?keyword={{key}}&page={{page}}",
+            "ruleSearch": {"bookList": ".x"},
+            "ruleContent": {"content": ".comics@img@html", "imageDecode": image_decode}
+        }))
+        .unwrap();
+
+        let out = decode_image_bytes(&src, "https://pic.example.com/1.jpeg", &cipher);
+        assert!(
+            looks_like_image_bytes(&out),
+            "51 规则解密后应有 JPEG 魔数，got {:02X?}",
+            &out[..out.len().min(4)]
+        );
+        assert_eq!(&out[..2], &[0xFF, 0xD8]);
+        let _ = plain; // 明文长度与密文一致即可，尾部 padding 保留
+    }
+
     /// 同源连续 decode 两次：每次新引擎，顶层 const 不 redeclaration
     #[cfg(feature = "quickjs")]
     #[test]
