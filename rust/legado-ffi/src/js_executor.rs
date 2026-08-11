@@ -290,9 +290,13 @@ mod quickjs_impl {
                 &self.source_tag,
                 || {
                     // 执行前先加载书源 jsLib（对齐原版 JsSource 每次调用前
-                    // eval jsLib；jsLib 通常为纯函数定义，重复 eval 幂等）
+                    // eval jsLib；jsLib 通常为纯函数定义，重复 eval 幂等）。
+                    // jsLib 求值失败不再静默吞掉——favcomic 等书源规则在
+                    // 正文/imageDecode 中引用 jsLib 函数，失败必须可见可排错
                     if let Some(lib) = &self.js_lib {
-                        let _ = legado_js::JsEngine::eval(&*guard, lib);
+                        if let Err(e) = legado_js::JsEngine::eval(&*guard, lib) {
+                            return Err(format!("书源 jsLib 加载失败: {e}"));
+                        }
                     }
                     // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
                     legado_js::JsEngine::eval(&*guard, js_code).map_err(|e| e.to_string())

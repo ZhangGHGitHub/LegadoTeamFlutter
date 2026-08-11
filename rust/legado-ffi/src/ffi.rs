@@ -808,6 +808,20 @@ pub mod ffi {
         }))?)
     }
 
+    /// 图片下载 + imageDecode 解码（返回 JSON：{ base64, len }）
+    ///
+    /// 对齐原版 ImageUtils.decodeImageStream：漫画/图片站图片 bytes 经
+    /// 书源 imageDecode JS（配合 jsLib）解密后才可显示；无 imageDecode
+    /// 规则时返回原始图片 base64。`source_json` 为书源 JSON（单对象）。
+    /// 防盗链 header 取书源 header + 兜底 Referer。— Reasonix
+    pub fn fetch_image_with_decode(
+        url: String,
+        source_json: String,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::image_api::fetch_image_with_decode(&url, &source_json)?;
+        Ok(result)
+    }
+
     // ─── WebBook 书源规则驱动链路 ────────────────────────────────────────────
 
     /// 搜索书籍（书源规则驱动，返回 JSON 数组）

@@ -259,15 +259,22 @@ impl AnalyzeRule {
             // → 正文为空（「搜到书但正文图片不显示/无法播放」根因）。
             let mut prologue = String::new();
             if let Ok(content_json) = serde_json::to_string(&self.content) {
-                prologue.push_str(&format!("var result = {content_json};\n"));
-                prologue.push_str(&format!("var src = {content_json};\n"));
+                // 经 globalThis 属性赋值注入（对齐原版 ScriptableObject.put
+                // 语义）：① 不能裸赋值 `result = ...`——QuickJS eval 处于
+                // 严格模式，未声明变量赋值抛 ReferenceError（实测
+                // "result is not defined"）；② 不能用 `var result = ...`——
+                // 书源 jsLib 若已声明 let/const result，var 同名声明抛
+                // SyntaxError（redeclaration）。globalThis 属性赋值两者
+                // 皆可：严格模式合法、不构成重复声明 — Reasonix
+                prologue.push_str(&format!("globalThis.result = {content_json};\n"));
+                prologue.push_str(&format!("globalThis.src = {content_json};\n"));
             }
             if let Ok(base_json) = serde_json::to_string(&self.base_url) {
-                prologue.push_str(&format!("var baseUrl = {base_json};\n"));
+                prologue.push_str(&format!("globalThis.baseUrl = {base_json};\n"));
             }
             for (name, value) in &self.js_bindings {
-                // json_literal 已是合法 JSON 字面量，直接注入
-                prologue.push_str(&format!("var {name} = {value};\n"));
+                // json_literal 已是合法 JSON 字面量，globalThis 属性赋值注入
+                prologue.push_str(&format!("globalThis.{name} = {value};\n"));
             }
             let wrapped = format!("{prologue}{js_code}");
             match executor.execute_js(&wrapped) {
@@ -640,12 +647,12 @@ mod tests {
         let recorded = executor.executed.lock().unwrap().clone();
         assert_eq!(recorded.len(), 1);
         let code = &recorded[0];
-        assert!(code.contains("var result = \"<html>漫画页</html>\";"), "result 注入: {code}");
-        assert!(code.contains("var src = \"<html>漫画页</html>\";"), "src 注入: {code}");
-        assert!(code.contains("var baseUrl = \"https://manga.example.com/chapter/1.html\";"), "baseUrl 注入: {code}");
-        assert!(code.contains("var source = \"https://manga.example.com\";"), "source 注入: {code}");
-        assert!(code.contains("var title = \"第一章\";"), "title 注入: {code}");
-        assert!(code.contains("var chapter = {\"title\": \"第一章\"};"), "chapter 注入: {code}");
+        assert!(code.contains("globalThis.result = \"<html>漫画页</html>\";"), "result 注入: {code}");
+        assert!(code.contains("globalThis.src = \"<html>漫画页</html>\";"), "src 注入: {code}");
+        assert!(code.contains("globalThis.baseUrl = \"https://manga.example.com/chapter/1.html\";"), "baseUrl 注入: {code}");
+        assert!(code.contains("globalThis.source = \"https://manga.example.com\";"), "source 注入: {code}");
+        assert!(code.contains("globalThis.title = \"第一章\";"), "title 注入: {code}");
+        assert!(code.contains("globalThis.chapter = {\"title\": \"第一章\"};"), "chapter 注入: {code}");
     }
 
     #[test]

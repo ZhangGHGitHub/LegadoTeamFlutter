@@ -148,6 +148,19 @@ pub trait JsEngine: Send + Sync {
         script: &CompiledScript,
         bindings: &[(&str, JsValue)],
     ) -> LegadoResult<String>;
+
+    /// 执行 JS 代码（带绑定），要求 JS 返回字节数组（Uint8Array）。
+    ///
+    /// 用于对齐原版 `ImageUtils.decodeImageStream`（imageDecode 规则）：
+    /// 图片 bytes 传入 JS（result 绑定），JS 解密后返回 bytes。
+    /// 默认实现返回不支持错误，QuickJS 实现将 `JsValue::Bytes` 注入为
+    /// Uint8Array 并将结果 Uint8Array 读回。
+    fn eval_bytes(&self, code: &str, bindings: &[(&str, JsValue)]) -> LegadoResult<Vec<u8>> {
+        let _ = (code, bindings);
+        Err(legado_core::LegadoError::JsEngine(
+            "eval_bytes not supported by this engine".to_string(),
+        ))
+    }
 }
 
 /// 占位 JS 引擎（未启用 quickjs feature 时使用）
@@ -258,12 +271,11 @@ mod quickjs_engine {
                 Ok(js_str.into_value())
             }
             JsValue::Bytes(b) => {
-                // 将字节数组编码为 base64 字符串传入 JS
-                use base64::Engine;
-                let encoded = base64::engine::general_purpose::STANDARD.encode(b);
-                let js_str = rquickjs::String::from_str(ctx.clone(), encoded.as_str())
+                // 字节数组以 Uint8Array 形式注入（对齐原版 JS 对 byte[] 的操作语义：
+                // imageDecode 等规则直接读写字节下标/长度）— Reasonix 2026-08-11
+                let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), b.clone())
                     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
-                Ok(js_str.into_value())
+                Ok(arr.into_value())
             }
             JsValue::Array(items) => {
                 let arr = rquickjs::Array::new(ctx.clone())
@@ -443,7 +455,7 @@ mod quickjs_engine {
             let _ = globals.remove::<&str>("__legado_syntax_check__");
             match result {
                 Ok(_) => Ok(()),
-                Err(_) => Err(Self::take_exception_message(ctx)),
+                Err(_) => Err(Self::take_exception_message(&ctx)),
             }
         }
 
@@ -480,10 +492,13 @@ mod quickjs_engine {
         fn eval(&self, code: &str) -> LegadoResult<String> {
             self.reset_deadline();
             self.context.with(|ctx| {
-                let result = ctx
-                    .eval::<rquickjs::Value, _>(code)
-                    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
-                Ok(Self::result_to_string(&result))
+                // 异常消息提取：rquickjs 的 Display 仅输出 "Exception generated
+                // by QuickJS"（泛化），真实 message 需从 ctx.catch() 取（对齐
+                // 原版 Rhino 异常文案，便于书源规则排错）— Reasonix
+                match ctx.eval::<rquickjs::Value, _>(code) {
+                    Ok(result) => Ok(Self::result_to_string(&result)),
+                    Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
+                }
             })
         }
 
@@ -495,10 +510,35 @@ mod quickjs_engine {
             self.reset_deadline();
             self.context.with(|ctx| {
                 Self::inject_bindings(&ctx, bindings)?;
-                let result = ctx
-                    .eval::<rquickjs::Value, _>(code)
-                    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
-                Ok(Self::result_to_string(&result))
+                match ctx.eval::<rquickjs::Value, _>(code) {
+                    Ok(result) => Ok(Self::result_to_string(&result)),
+                    Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
+                }
+            })
+        }
+
+        fn eval_bytes(&self, code: &str, bindings: &[(&str, JsValue)]) -> LegadoResult<Vec<u8>> {
+            self.reset_deadline();
+            self.context.with(|ctx| {
+                Self::inject_bindings(&ctx, bindings)?;
+                let result: rquickjs::Value = match ctx.eval(code) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return Err(LegadoError::JsEngine(Self::take_exception_message(&ctx)))
+                    }
+                };
+                // 结果必须是 Uint8Array（对齐原版 evalJS 返回 ByteArray 语义）
+                let arr: rquickjs::TypedArray<u8> = result
+                    .get()
+                    .map_err(|e| {
+                        LegadoError::JsEngine(format!("imageDecode 结果不是字节数组: {e}"))
+                    })?;
+                let mut buf = vec![0u8; arr.len()];
+                let slice = arr.as_bytes().ok_or_else(|| {
+                    LegadoError::JsEngine("读取字节数组失败: 非连续缓冲区".to_string())
+                })?;
+                buf.copy_from_slice(slice);
+                Ok(buf)
             })
         }
 

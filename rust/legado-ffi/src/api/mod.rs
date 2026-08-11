@@ -20,6 +20,7 @@ pub mod download_api;
 pub mod explore_api;
 pub mod highlight_api;
 pub mod http_tts_api;
+pub mod image_api;
 pub mod js_source_config_api;
 pub mod log_api;
 pub mod net_api;
