@@ -288,8 +288,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         // 结果列表
         Expanded(
+          // 不 keepAlive：滚出可视区即 dispose，取消排队中的封面解密
           child: ListView.separated(
             itemCount: results.length,
+            addAutomaticKeepAlives: false,
             separatorBuilder: (_, _) => const Divider(height: 1, indent: 88),
             itemBuilder: (context, index) {
               final result = results[index];

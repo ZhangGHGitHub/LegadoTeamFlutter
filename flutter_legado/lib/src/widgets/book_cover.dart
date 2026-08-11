@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,19 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
-import '../models/book_source.dart';
 import '../providers/providers.dart';
+import '../services/cover_decode_loader.dart';
 import '../utils/comic_image_utils.dart';
 
 /// 书籍封面组件 — 支持网络图片 + 占位图 + coverDecodeJs 解密
 ///
-/// 对齐原版 `CoverImageView` + `OkHttpStreamFetcher`：
-/// - 无 `coverDecodeJs`：`CachedNetworkImage` 直连（带可选 Referer）
-/// - 有 `coverDecodeJs`：走 FFI `fetchImageWithDecode`（将 coverDecodeJs
-///   映射为 imageDecode，复用 AES 解密链路；51漫画封面密文直连会
-///   FlutterImageDecoder 失败）
+/// 对齐原版 `CoverImageView` + Glide 列表行为：
+/// - 无 `coverDecodeJs`：`CachedNetworkImage` 直连（缩略 memCacheWidth）
+/// - 有 `coverDecodeJs`：经 [CoverDecodeLoader] 限流/缓存/取消后走 FFI
 ///
-/// [UI-fix v2.0.29 | 2026-08-11] 封面 coverDecodeJs — Reasonix + UI
+/// [UI-FIX v2.0.32 | 2026-08-11] 搜索列表封面解密卡顿 — Reasonix + UI
 class BookCover extends ConsumerWidget {
   final String? coverUrl;
   final double width;
@@ -98,13 +96,23 @@ class _CoverImage extends ConsumerStatefulWidget {
 class _CoverImageState extends ConsumerState<_CoverImage> {
   Uint8List? _decodedBytes;
   bool _loadingDecode = false;
+  bool _useDirect = false;
   bool _decodeFailed = false;
-  String? _resolvedSourceJson;
+  int _loadGen = 0;
+  CoverDecodeTicket? _ticket;
 
   @override
   void initState() {
     super.initState();
-    _maybeStartDecode();
+    unawaited(_startLoad());
+  }
+
+  @override
+  void dispose() {
+    _loadGen++;
+    _ticket?.cancel();
+    _ticket = null;
+    super.dispose();
   }
 
   @override
@@ -113,83 +121,99 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     if (oldWidget.coverUrl != widget.coverUrl ||
         oldWidget.sourceOrigin != widget.sourceOrigin ||
         oldWidget.sourceJson != widget.sourceJson) {
+      _ticket?.cancel();
+      _ticket = null;
       _decodedBytes = null;
       _decodeFailed = false;
-      _resolvedSourceJson = null;
-      _maybeStartDecode();
+      _useDirect = false;
+      unawaited(_startLoad());
     }
   }
 
-  Future<void> _maybeStartDecode() async {
-    final rawJson = widget.sourceJson;
-    if (rawJson != null && rawJson.isNotEmpty) {
-      await _tryDecodeWithSource(rawJson);
-      return;
-    }
-    final origin = widget.sourceOrigin;
-    if (origin == null || origin.isEmpty) return;
-    try {
-      final sources = await ref.read(bookApiProvider).getBookSources();
-      if (!mounted) return;
-      BookSource? source;
-      for (final s in sources) {
-        if (s.bookSourceUrl == origin) {
-          source = s;
-          break;
-        }
-      }
-      if (source == null) return;
-      final json = jsonEncode(source.toJson());
-      await _tryDecodeWithSource(json);
-    } catch (e) {
-      debugPrint('封面书源加载失败: $e');
-    }
-  }
+  Future<void> _startLoad() async {
+    final gen = ++_loadGen;
+    final origin = widget.sourceOrigin?.trim() ?? '';
+    final url = widget.coverUrl;
 
-  Future<void> _tryDecodeWithSource(String sourceJson) async {
-    Map<String, dynamic>? map;
-    try {
-      map = jsonDecode(sourceJson) as Map<String, dynamic>?;
-    } catch (_) {
-      return;
-    }
-    final coverDecode = (map?['coverDecodeJs'] as String?)?.trim();
-    if (coverDecode == null || coverDecode.isEmpty) {
-      // 无解密规则：若为复合 URL 仍走 FFI 原样下载
-      if (!isCompositeImageUrl(widget.coverUrl)) return;
-    }
-    if (_loadingDecode) return;
-    setState(() => _loadingDecode = true);
-    try {
-      // 将 coverDecodeJs 映射为 imageDecode，复用既有 FFI（避免改 FRB 签名）
-      final patched = Map<String, dynamic>.from(map ?? {});
-      if (coverDecode != null && coverDecode.isNotEmpty) {
-        final ruleContent = Map<String, dynamic>.from(
-          (patched['ruleContent'] as Map?)?.cast<String, dynamic>() ?? {},
-        );
-        ruleContent['imageDecode'] = coverDecode;
-        patched['ruleContent'] = ruleContent;
-      }
-      final patchedJson = jsonEncode(patched);
-      _resolvedSourceJson = patchedJson;
-      final resp = await ref
-          .read(bookApiProvider)
-          .fetchImageWithDecode(widget.coverUrl, patchedJson);
-      final decoded = jsonDecode(resp) as Map<String, dynamic>;
-      final b64 = decoded['base64'] as String?;
-      if (b64 == null || b64.isEmpty) {
-        throw Exception('封面解码结果为空');
-      }
-      final bytes = base64Decode(b64);
-      if (!mounted) return;
+    // 1) 内存缓存命中：立即显示，不占并发槽
+    final cached = CoverDecodeLoader.getCached(origin, url);
+    if (cached != null) {
+      if (!mounted || gen != _loadGen) return;
       setState(() {
-        _decodedBytes = bytes;
+        _decodedBytes = cached;
         _loadingDecode = false;
+        _useDirect = false;
         _decodeFailed = false;
       });
+      return;
+    }
+
+    if (!mounted || gen != _loadGen) return;
+    setState(() {
+      _loadingDecode = true;
+      _decodeFailed = false;
+    });
+
+    try {
+      final api = ref.read(bookApiProvider);
+      final patched = await CoverDecodeLoader.resolvePatchedSourceJson(
+        api: api,
+        sourceJson: widget.sourceJson,
+        sourceOrigin: widget.sourceOrigin,
+      );
+      if (!mounted || gen != _loadGen) return;
+
+      if (patched == null) {
+        // 书源解析失败：尝试直连兜底
+        setState(() {
+          _loadingDecode = false;
+          _useDirect = true;
+        });
+        return;
+      }
+
+      final needFfi = CoverDecodeLoader.needsFfiDecode(
+        coverUrl: url,
+        patchedSourceJson: patched,
+      );
+      if (!needFfi) {
+        setState(() {
+          _loadingDecode = false;
+          _useDirect = true;
+        });
+        return;
+      }
+
+      final bytes = await CoverDecodeLoader.load(
+        api: api,
+        coverUrl: url,
+        patchedSourceJson: patched,
+        originOrEmpty: origin,
+        isCancelled: () => gen != _loadGen || !mounted,
+        onTicket: (t) {
+          if (gen != _loadGen) {
+            t?.cancel();
+            return;
+          }
+          _ticket = t;
+        },
+      );
+      if (!mounted || gen != _loadGen) return;
+      if (bytes != null) {
+        setState(() {
+          _decodedBytes = bytes;
+          _loadingDecode = false;
+          _decodeFailed = false;
+        });
+      } else {
+        setState(() {
+          _loadingDecode = false;
+          _decodeFailed = true;
+        });
+      }
     } catch (e) {
-      debugPrint('封面 coverDecodeJs 失败: $e');
-      if (!mounted) return;
+      debugPrint('封面加载失败: $e');
+      if (!mounted || gen != _loadGen) return;
       setState(() {
         _loadingDecode = false;
         _decodeFailed = true;
@@ -197,18 +221,20 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     }
   }
 
-  int _decodeWidth(BuildContext context) {
+  int _thumbWidth(BuildContext context) {
     final pixelRatio = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
-    return (widget.width * pixelRatio).round();
+    return (widget.width * pixelRatio).round().clamp(1, 512);
   }
 
   @override
   Widget build(BuildContext context) {
     if (_decodedBytes != null) {
+      final thumb = _thumbWidth(context);
       return Image.memory(
         _decodedBytes!,
         fit: BoxFit.cover,
         width: widget.width,
+        cacheWidth: thumb,
         gaplessPlayback: true,
         errorBuilder: (_, _, _) => widget.placeholder,
       );
@@ -216,15 +242,17 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     if (_loadingDecode) {
       return widget.placeholder;
     }
-    // 解密失败或无需解密：直连（失败时占位）
-    if (_decodeFailed && _resolvedSourceJson != null) {
+    if (_decodeFailed) {
+      return widget.placeholder;
+    }
+    if (!_useDirect) {
       return widget.placeholder;
     }
     final url = stripCompositeImageUrl(widget.coverUrl);
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
-      memCacheWidth: _decodeWidth(context),
+      memCacheWidth: _thumbWidth(context),
       placeholder: (_, _) => widget.placeholder,
       errorWidget: (_, _, _) => widget.placeholder,
     );

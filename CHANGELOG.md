@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.32] - 2026-08-11
+
+### 修复（搜索/列表封面解密卡顿，[UI]）
+
+1. **卡顿根因**
+   - 上一轮为 51 等源接通 `coverDecodeJs` → `fetchImageWithDecode` 后，搜索列表对**每条结果**立即并发 FFI 解密，无结果缓存、无并发上限、屏外项不取消；漫画源封面密且多，滑动极易卡顿。
+
+2. **修复（对齐原版 Glide 列表节流体感）**
+   - 新增 `CoverDecodeLoader`：解密结果 LRU（64）、全局并发上限 3、同 URL in-flight 去重、dispose 取消排队票证。
+   - `BookCover`：无 `coverDecodeJs` 仍走轻量 `CachedNetworkImage`（`memCacheWidth` 缩略）；有解密则经 Loader；`Image.memory` 使用 `cacheWidth`。
+   - 书源 origin → patched JSON 缓存，避免每张封面重复 `getBookSources`。
+   - 搜索 `ListView`：`addAutomaticKeepAlives: false`，滚出可视区 dispose 并取消排队。
+
+3. **验证**
+   - 单测 `cover_decode_loader_test`（缓存/并发/取消排队）。
+   - 请在 emulator-5558 用漫画源搜列表滑动验收。
+
+编写者：Reasonix + UI ｜ 2026-08-11
+
 ## [2.0.31] - 2026-08-11
 
 ### 修复（搜索分组粘性 + 同书聚合 + `class.` 选择器，[UI]+[Rust]）
