@@ -14,9 +14,9 @@ const _kPngBase64 =
     'h6FO1AAAAABJRU5ErkJggg==';
 
 /// 含 imageDecode 规则的漫画书源（对齐 favcomic 形态）
-BookSource _buildComicSource({bool withDecode = true}) {
+BookSource _buildComicSource({bool withDecode = true, String? url}) {
   return BookSource(
-    bookSourceUrl: 'https://manga.example.com',
+    bookSourceUrl: url ?? 'https://manga.example.com',
     bookSourceName: '测试漫画源',
     bookSourceGroup: '漫画',
     bookSourceType: 2,
@@ -113,10 +113,11 @@ void main() {
     expect(find.byType(RawImage, skipOffstage: false), findsWidgets);
   });
 
-  testWidgets('无 imageDecode 规则：不触发解码下载', (tester) async {
+  testWidgets('无 imageDecode 规则：仍走 FFI 下载（复合 URL/防盗链支持）',
+      (tester) async {
     final decodeCalls = <String>[];
     final api = _ComicMockApi(
-      source: _buildComicSource(withDecode: false),
+      source: _buildComicSource(withDecode: false, url: 'https://manga2.example.com'),
       decodeCalls: decodeCalls,
     );
     final container = ProviderContainer(
@@ -125,12 +126,11 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(buildApp(container));
-    // 有限 pump 而非 pumpAndSettle：无解码时走 CachedNetworkImage 直连，
-    // 其测试环境 HttpClient 恒 400 的失败动画会让 pumpAndSettle 超时
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
-    // 无 imageDecode 规则时不应调用解码 FFI
-    expect(decodeCalls, isEmpty);
+    // 无 imageDecode 规则时同样走 FFI 下载（Rust 原样返回 bytes，
+    // 用于解析 `url,{json headers}` 复合格式与书源防盗链 header）
+    expect(decodeCalls, isNotEmpty);
+    expect(decodeCalls.first, contains('cdn.example.com/img/1.jpg'));
   });
 }

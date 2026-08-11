@@ -502,9 +502,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       return _buildImageErrorPlaceholder(index, url);
     }
 
-    // 书源配置 imageDecode 规则：走 FFI 下载 + JS 解码（对齐原版
-    // ImageUtils.decodeImageStream）— Reasonix
-    if (_needImageDecode && _bookSource != null) {
+    // 统一走 FFI 下载：Rust fetchImageWithDecode 支持书源 header 防盗链与
+    // `url,{json headers}` 复合格式（favcomic 等漫画站图片 URL 内嵌防盗链
+    // header，对齐原版 AnalyzeUrl），且无 imageDecode 规则时原样返回 bytes。
+    // CachedNetworkImage 直连无法解析复合 URL → Invalid image data（实测）— Reasonix
+    if (_needImageDecode || _bookSource != null) {
       return _DecodedComicImage(
         url: url,
         sourceJson: jsonEncode(_bookSource!.toJson()),
