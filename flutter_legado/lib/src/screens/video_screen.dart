@@ -73,14 +73,31 @@ class _VideoScreenState extends State<VideoScreen> {
   /// MPD 临时文件（切换章/退出时清理）
   File? _mpdTempFile;
 
+  /// 是否已在 didChangeDependencies 调度过书籍视频加载
+  ///
+  /// `ProviderScope.containerOf(context)` 依赖 InheritedWidget，不可在
+  /// `initState` 完成前调用（2.0.34 回归：dependOnInheritedWidget… before
+  /// initState completed）。— Reasonix
+  bool _bookVideoLoadScheduled = false;
+
   @override
   void initState() {
     super.initState();
-    if (widget.book != null) {
-      _loadingChapter = true;
-      _loadBookVideo();
-    } else {
+    // 直链模式不依赖 Riverpod，可在 initState 启动
+    if (widget.book == null) {
       unawaited(_playDirectUrl(widget.videoUrl));
+    } else {
+      _loadingChapter = true;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 书籍模式：InheritedWidget 就绪后再读 bookApiProvider
+    if (widget.book != null && !_bookVideoLoadScheduled) {
+      _bookVideoLoadScheduled = true;
+      unawaited(_loadBookVideo());
     }
   }
 

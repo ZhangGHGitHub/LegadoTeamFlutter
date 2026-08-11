@@ -216,6 +216,8 @@ impl AnalyzeRule {
                 if suffix.starts_with("$") && !suffix.is_empty() {
                     // JS 结果为单元素（JSON 数组字符串）或多元素，逐一对
                     // JSONPath 求值后拼接（对齐原版 getElements 多元素语义）
+                    // 注意：此处保留完整 JSON 数组字符串，勿提前 expand——
+                    // `$[*]` 需对根数组求值（51漫画 chapterList）。
                     let mut out = Vec::new();
                     for item in &js_result {
                         if let Ok(v) = self.json_parser.parse_jsonpath(item, suffix) {
@@ -224,7 +226,9 @@ impl AnalyzeRule {
                     }
                     return Ok(out);
                 }
-                return Ok(js_result);
+                // 无 JSONPath 后缀：若 JS 返回 JSON 数组，展开为多元素
+                // （对齐原版 Mode.Js → NativeArray 作为 List 语义）
+                return Ok(expand_js_json_array_result(js_result));
             }
         }
 
@@ -235,7 +239,7 @@ impl AnalyzeRule {
             RuleType::Xpath => self.xpath_parser.parse_xpath(&self.content, actual_rule),
             RuleType::Json => self.resolve_json_with_inner(actual_rule),
             RuleType::Regex => self.regex_engine.regex_match(&self.content, actual_rule),
-            RuleType::Js => self.execute_js_rule(actual_rule),
+            RuleType::Js => self.execute_js_rule_expanded(actual_rule),
             RuleType::Auto => {
                 let detected = self.detect_rule_type_for_content(actual_rule);
                 match detected {
@@ -291,7 +295,7 @@ impl AnalyzeRule {
                     for (n, v) in &self.js_bindings {
                         sub.add_js_binding(n, v);
                     }
-                    let out = sub.execute_js_rule(code)?;
+                    let out = sub.execute_js_rule_expanded(code)?;
                     current_content = out.first().cloned().unwrap_or_default();
                     last_js_out = out;
                     last_is_js = true;
@@ -474,7 +478,7 @@ impl AnalyzeRule {
             // 由下方 globalThis 注入，不重复声明（避免与 jsLib let/const
             // 冲突）— Reasonix
             prologue.push_str(
-                "var d, data, json, list, arr, obj, tmp, index, num, comic_chapter, header, headers, chapter_domain, end_num, rule, pic, html, img_ext;\n",
+                "var d, data, json, list, arr, obj, tmp, index, num, comic_chapter, header, headers, chapter_domain, end_num, rule, pic, html, img_ext, all;\n",
             );
             if let Ok(content_json) = serde_json::to_string(&self.content) {
                 // 经 globalThis 属性赋值注入（对齐原版 ScriptableObject.put
@@ -496,13 +500,7 @@ impl AnalyzeRule {
             }
             let wrapped = format!("{prologue}{js_code}");
             match executor.execute_js(&wrapped) {
-                Ok(result) => {
-                    if result.is_empty() {
-                        Ok(vec![])
-                    } else {
-                        Ok(vec![result])
-                    }
-                }
+                Ok(result) => Ok(normalize_js_rule_result(result)),
                 Err(e) => Err(legado_core::LegadoError::JsEngine(format!(
                     "JS 执行失败: {}",
                     e
@@ -512,6 +510,15 @@ impl AnalyzeRule {
             // 无执行器时降级返回空结果
             Ok(vec![])
         }
+    }
+
+    /// 执行 JS 并将 JSON 数组展开为多元素（对齐原版 NativeArray List 语义）
+    ///
+    /// `<js>…</js>\n$[*]` 复合规则必须先拿完整数组字符串再 JsonPath，
+    /// 故该路径调用 [`Self::execute_js_rule`]（不展开）；其余 `@js:` /
+    /// 无后缀 `<js>` 走本方法。
+    fn execute_js_rule_expanded(&self, js_code: &str) -> LegadoResult<Vec<String>> {
+        Ok(expand_js_json_array_result(self.execute_js_rule(js_code)?))
     }
 
     /// 解析 JsonPath 规则，支持 `{$.rule}` 内嵌规则替换
@@ -739,6 +746,45 @@ impl AnalyzeRule {
 enum JsChainStep<'a> {
     Extract(&'a str),
     Js(&'a str),
+}
+
+/// 规范化 JS 执行器原始返回值（尚未展开数组）
+///
+/// - 空串 / `null` / `undefined` → 空列表
+/// - 其余 → 单元素列表（对象/数组已在引擎层 JSON.stringify）
+fn normalize_js_rule_result(result: String) -> Vec<String> {
+    let trimmed = result.trim();
+    if trimmed.is_empty() || trimmed == "null" || trimmed == "undefined" {
+        Vec::new()
+    } else {
+        vec![result]
+    }
+}
+
+/// 将单元素 JSON 数组展开为多元素（对齐原版 Mode.Js → NativeArray）
+///
+/// - `["书名"]` → `["书名"]`（getString 得「书名」，不再是 `Array(0x…)`）
+/// - `[{...},{...}]` → 每个对象的 JSON 字符串（目录/列表子规则可二次解析）
+/// - 非数组或解析失败 → 原样返回
+fn expand_js_json_array_result(results: Vec<String>) -> Vec<String> {
+    if results.len() != 1 {
+        return results;
+    }
+    let raw = &results[0];
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(serde_json::Value::Array(arr)) => {
+            if arr.is_empty() {
+                return Vec::new();
+            }
+            arr.into_iter()
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s,
+                    other => other.to_string(),
+                })
+                .collect()
+        }
+        _ => results,
+    }
 }
 
 /// 剥离 `@put:{...}`（对齐 `splitPutRule` / `putPattern`）
@@ -1044,6 +1090,81 @@ mod tests {
         assert!(code.contains("globalThis.source = \"https://manga.example.com\";"), "source 注入: {code}");
         assert!(code.contains("globalThis.title = \"第一章\";"), "title 注入: {code}");
         assert!(code.contains("globalThis.chapter = {\"title\": \"第一章\"};"), "chapter 注入: {code}");
+        assert!(
+            code.contains("var d, data, json, list, arr, obj, tmp")
+                && code.contains(", all;"),
+            "应预声明裸赋值变量 all（严格模式）: {code}"
+        );
+    }
+
+    /// 回归：书源常用 `all = ...` 裸赋值，QuickJS 严格模式须预声明
+    #[test]
+    fn test_js_rule_predeclares_all_for_bare_assignment() {
+        let executor = Arc::new(RecordingJsExecutor::new());
+        let rule = AnalyzeRule::with_js_executor(
+            r#"{"list":[]}"#.to_string(),
+            "http://example.com/api.php/provide/vod/".to_string(),
+            executor.clone(),
+        );
+        // 模拟 MacCMS/视频源惯用 `all = JSON.parse(result)`
+        rule.get_strings("@js:all = JSON.parse(result); all").unwrap();
+        let recorded = executor.executed.lock().unwrap().clone();
+        assert_eq!(recorded.len(), 1);
+        assert!(
+            recorded[0].contains(", all;") || recorded[0].contains(" all,"),
+            "prologue 须含 var all: {}",
+            recorded[0]
+        );
+    }
+
+    /// JS 返回 JSON 数组字符串时展开为多元素（对齐 NativeArray）
+    #[test]
+    fn test_js_rule_expands_json_array_result() {
+        let executor = Arc::new(MockJsExecutor {
+            result: r#"["书名A","书名B"]"#.to_string(),
+        });
+        let rule =
+            AnalyzeRule::with_js_executor("{}".to_string(), String::new(), executor);
+        let result = rule.get_strings("@js:['书名A','书名B']").unwrap();
+        assert_eq!(result, vec!["书名A", "书名B"]);
+        // getString：多字符串元素按换行连接（AnalyzeRule.get_string）
+        assert_eq!(rule.get_string("@js:x").unwrap(), "书名A\n书名B");
+        // 单元素字符串数组 → 展开后 getString 得裸书名（非 Array(0x…) / ["书名"]）
+        assert_eq!(
+            expand_js_json_array_result(vec![r#"["唯一书名"]"#.to_string()]),
+            vec!["唯一书名"]
+        );
+        assert_eq!(
+            AnalyzeRule::with_js_executor(
+                "{}".into(),
+                String::new(),
+                Arc::new(MockJsExecutor {
+                    result: r#"["唯一书名"]"#.to_string(),
+                }),
+            )
+            .get_string("@js:['唯一书名']")
+            .unwrap(),
+            "唯一书名"
+        );
+    }
+
+    /// `<js>…</js>\n$[*]` 不得提前展开数组（否则 JsonPath 失根）
+    #[test]
+    fn test_js_tag_jsonpath_suffix_keeps_array_for_split() {
+        let executor = Arc::new(MockJsExecutor {
+            result: r#"[{"title":"第1话"},{"title":"第2话"}]"#.to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            "<html></html>".to_string(),
+            String::new(),
+            executor,
+        );
+        let items = rule
+            .get_strings("<js>JSON.stringify(d)</js>\n$[*]")
+            .unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(items[0].contains("第1话"));
+        assert!(items[1].contains("第2话"));
     }
 
     #[test]

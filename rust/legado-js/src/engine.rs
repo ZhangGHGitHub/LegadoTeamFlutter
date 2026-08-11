@@ -233,8 +233,15 @@ mod quickjs_engine {
     use std::time::Instant;
 
     /// 将 rquickjs::Value 转换为 JsValue
+    ///
+    /// Object/Array 走 `JSON.stringify`（对齐 Kotlin `JsSourceEngine.normalizeJsResult`
+    /// 对 Scriptable 的处理），禁止再降级为 Debug `Array(0x…)`——那会污染
+    /// 书名/正文/目录（视频源 vod API 等返回原生数组时的实测回归）。— Reasonix
     #[cfg(feature = "quickjs")]
-    fn js_value_from_rquickjs(val: &rquickjs::Value) -> JsValue {
+    fn js_value_from_rquickjs<'js>(
+        ctx: &rquickjs::Ctx<'js>,
+        val: &rquickjs::Value<'js>,
+    ) -> JsValue {
         if val.is_undefined() {
             JsValue::Undefined
         } else if val.is_null() {
@@ -247,9 +254,17 @@ mod quickjs_engine {
             JsValue::Number(f)
         } else if let Some(s) = val.as_string() {
             JsValue::String(s.to_string().unwrap_or_default())
+        } else if val.is_array() || val.is_object() {
+            match ctx.json_stringify(val.clone()) {
+                Ok(Some(js_str)) => {
+                    JsValue::String(js_str.to_string().unwrap_or_else(|_| "null".to_string()))
+                }
+                Ok(None) => JsValue::Null,
+                Err(_) => JsValue::String("null".to_string()),
+            }
         } else {
-            // Object / Array / other → 降级为字符串表示
-            JsValue::String(format!("{:?}", val))
+            // 其余类型（symbol/function/…）仍无稳定字符串语义，给 null
+            JsValue::Null
         }
     }
 
@@ -412,8 +427,11 @@ mod quickjs_engine {
         }
 
         /// 将 eval 结果转换为字符串
-        fn result_to_string(val: &rquickjs::Value) -> String {
-            match js_value_from_rquickjs(val) {
+        ///
+        /// 对齐 `JsSourceEngine.normalizeJsResult`：String 原样；null/undefined
+        /// 字面量；Object/Array → JSON.stringify（勿用 Debug `Array(0x…)`）。
+        fn result_to_string<'js>(ctx: &rquickjs::Ctx<'js>, val: &rquickjs::Value<'js>) -> String {
+            match js_value_from_rquickjs(ctx, val) {
                 JsValue::String(s) => s,
                 JsValue::Null => "null".to_string(),
                 JsValue::Undefined => "undefined".to_string(),
@@ -496,7 +514,7 @@ mod quickjs_engine {
                 // by QuickJS"（泛化），真实 message 需从 ctx.catch() 取（对齐
                 // 原版 Rhino 异常文案，便于书源规则排错）— Reasonix
                 match ctx.eval::<rquickjs::Value, _>(code) {
-                    Ok(result) => Ok(Self::result_to_string(&result)),
+                    Ok(result) => Ok(Self::result_to_string(&ctx, &result)),
                     Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
                 }
             })
@@ -511,7 +529,7 @@ mod quickjs_engine {
             self.context.with(|ctx| {
                 Self::inject_bindings(&ctx, bindings)?;
                 match ctx.eval::<rquickjs::Value, _>(code) {
-                    Ok(result) => Ok(Self::result_to_string(&result)),
+                    Ok(result) => Ok(Self::result_to_string(&ctx, &result)),
                     Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
                 }
             })
@@ -554,7 +572,7 @@ mod quickjs_engine {
                 let result = ctx
                     .eval::<rquickjs::Value, _>(script.source.as_str())
                     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
-                Ok(Self::result_to_string(&result))
+                Ok(Self::result_to_string(&ctx, &result))
             })
         }
 
@@ -569,7 +587,7 @@ mod quickjs_engine {
                 let result = ctx
                     .eval::<rquickjs::Value, _>(script.source.as_str())
                     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
-                Ok(Self::result_to_string(&result))
+                Ok(Self::result_to_string(&ctx, &result))
             })
         }
     }
@@ -896,6 +914,36 @@ mod quickjs_tests {
             "Result should contain 'hello': {}",
             result
         );
+    }
+
+    /// 回归：原生 Array/Object 返回值须 JSON.stringify，禁止 Debug `Array(0x…)`
+    ///
+    /// 对齐 Kotlin `JsSourceEngine.normalizeJsResult`；视频源 vod API 等
+    /// 直接 `return list` 时，详情/正文曾刷出指针地址。— Reasonix
+    #[test]
+    fn test_eval_array_object_normalized_to_json() {
+        let engine = make_engine();
+        let arr = engine.eval("[1, 2, \"vod\"]").unwrap();
+        assert!(
+            !arr.contains("Array(0x") && !arr.contains("0x"),
+            "数组不得降级为 Debug 地址: {arr}"
+        );
+        assert!(
+            arr.contains("1") && arr.contains("vod"),
+            "数组应 JSON 序列化: {arr}"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&arr).expect("应为合法 JSON 数组");
+        assert!(parsed.is_array());
+
+        let obj = engine.eval("({name: '测试', id: 32328})").unwrap();
+        assert!(
+            !obj.contains("Object(0x") && !obj.contains("0x"),
+            "对象不得降级为 Debug 地址: {obj}"
+        );
+        let parsed_obj: serde_json::Value =
+            serde_json::from_str(&obj).expect("应为合法 JSON 对象");
+        assert_eq!(parsed_obj["name"], "测试");
+        assert_eq!(parsed_obj["id"], 32328);
     }
 
     #[test]

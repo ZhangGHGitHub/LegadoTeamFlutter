@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.35] - 2026-08-12
+
+### 修复（书源 JS `all` / VideoScreen 生命周期 / Array(0x…) 正文，[Rust]+[UI]）
+
+对照原版 `AnalyzeRule.evalJS` 绑定、`JsSourceEngine.normalizeJsResult`、Riverpod InheritedWidget 约束。
+
+1. **`all is not defined`（QuickJS 严格模式）**
+   - 根因：书源常用 `all = JSON.parse(result)` 等裸赋值；Rhino 非严格可写，QuickJS eval 严格模式抛 ReferenceError。
+   - 修复：`execute_js_rule` prologue 预声明 `var …, all`（与既有 `d/data/list…` 同策略）。
+
+2. **VideoScreen `initState` 过早读 Provider（2.0.34 回归）**
+   - 根因：`_loadBookVideo` 在 `initState` 内调用 `ProviderScope.containerOf(context)`。
+   - 修复：书籍模式改到 `didChangeDependencies` 调度；直链模式仍可在 `initState` 启动。
+
+3. **正文/详情刷 `Array(0x…)`**
+   - 根因：QuickJS 对 Array/Object 降级 `format!("{:?}", val)`；原版 Scriptable 走 `JSON.stringify`。
+   - 修复：引擎 `result_to_string` 对对象/数组 `json_stringify`；无 `$[*]` 后缀时展开 JSON 数组为多元素（对齐 NativeArray）。
+
+4. **验证**
+   - Rust：`test_js_rule_predeclares_all_*` / `test_js_rule_expands_json_array_*` / `test_eval_array_object_normalized_to_json` / `$[*]` 后缀不误展开。
+   - 设备：emulator-5558 安装验收。
+
+编写者：Reasonix ｜ 2026-08-12
+
 ## [2.0.34] - 2026-08-12
 
 ### 修复（视频源播放链路：复合 URL / header / MPD / subContent，[UI]+[Rust]）
