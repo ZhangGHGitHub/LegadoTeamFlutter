@@ -171,7 +171,15 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
     try {
       // 通过 RustApi 获取章节（复用已有的 reader 接口）
-      final chapterList = await _api.getChapters(bookUrl);
+      var chapterList = await _api.getChapters(bookUrl);
+      // 对齐文本/漫画：本地无目录的在线书自动 refreshToc — Reasonix + UI
+      if (chapterList.isEmpty) {
+        final book = await _api.getBook(bookUrl);
+        final origin = book?.origin ?? '';
+        if (origin.isNotEmpty) {
+          chapterList = await _api.refreshToc(bookUrl, origin);
+        }
+      }
       final chapters = chapterList
           .asMap()
           .entries

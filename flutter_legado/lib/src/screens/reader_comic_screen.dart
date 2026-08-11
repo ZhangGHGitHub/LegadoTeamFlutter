@@ -111,8 +111,19 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         return;
       }
 
-      // 获取章节列表
+      // 获取章节列表。对齐原版 / reader_notifier / toc_screen：
+      // 本地库无目录的在线书（搜索进详情未落库章节、或 notShelf 临时书）
+      // 须自动 refreshToc，否则漫画阅读器永远「暂无章节」无法进正文/图片。
+      // 设备实测：51漫画 book.type=notShelf|image、chapters=0，Rust 侧
+      // refresh_toc 可出 1 章+正文图，缺此回退则整链断裂。— Reasonix + UI
       _chapters = await api.getChapters(widget.bookUrl);
+      if (_chapters.isEmpty &&
+          _book != null &&
+          _book!.origin.isNotEmpty &&
+          !_book!.origin.startsWith(BookType.localTag) &&
+          !_book!.origin.startsWith(BookType.webDavTag)) {
+        _chapters = await api.refreshToc(widget.bookUrl, _book!.origin);
+      }
       if (_chapters.isEmpty) {
         setState(() {
           _error = '暂无章节';

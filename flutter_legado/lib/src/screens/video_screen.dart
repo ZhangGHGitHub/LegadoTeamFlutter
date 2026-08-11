@@ -108,7 +108,12 @@ class _VideoScreenState extends State<VideoScreen> {
           }
         } catch (_) {}
       }
+      // 对齐文本/漫画阅读器：本地无目录的在线书自动 refreshToc
+      // （搜索进详情未落库章节时否则永远「暂无章节」）— Reasonix + UI
       _chapters = await api.getChapters(book.bookUrl);
+      if (_chapters.isEmpty && book.origin.isNotEmpty) {
+        _chapters = await api.refreshToc(book.bookUrl, book.origin);
+      }
       if (_chapters.isEmpty) {
         setState(() {
           _loadingChapter = false;

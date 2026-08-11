@@ -1463,6 +1463,17 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           await api.updateBook(
               existing.copyWith(bookType: existing.bookType | typeBits));
         }
+        // 漫画/视频等非文本阅读器只收 bookUrl，不会走 ReaderNotifier 的
+        // 空目录自愈；详情页「未入库」路径又不落库章节 → 必须在开读前
+        // 把目录写入 DB，否则进 comic/video 仍是「暂无章节」。
+        // 对齐原版 readBook 前确保目录可用。— Reasonix + UI
+        if (!BookOpenUtils.needsReaderNotifier(
+            BookOpenUtils.routeForTypeBits(typeBits))) {
+          final existingChapters = await api.getChapters(book.bookUrl);
+          if (existingChapters.isEmpty && book.origin.isNotEmpty) {
+            await api.refreshToc(book.bookUrl, book.origin);
+          }
+        }
       }
     } catch (e) {
       debugPrint('阅读前落库失败: $e');

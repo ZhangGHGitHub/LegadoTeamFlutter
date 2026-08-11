@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.27] - 2026-08-11
+
+### 修复（漫画/视频空目录自愈 + 51漫画链路取证，[UI] 为主 + [Rust] 回归测）
+- **根因（51漫画「看不到正文/图」）**：设备 DB 中该书 `chapters=0` 且 `bookType=notShelf|image`。详情页对未入书架书只内存取目录不落库；「开始阅读」进 `ReaderComicScreen` 仅 `getChapters`，**不像文本阅读器 `ReaderNotifier` 那样在空目录时 `refreshToc`** → 永远「暂无章节」，后续 imageDecode 链路根本走不到。Rust 侧对同一书源实测：搜索 50 条、TOC 回退 1 章、正文含图 URL、AES/CBC/NoPadding imageDecode 出 JPEG——解密本身在 2.0.26 已通。
+- **修复**：[UI] `ReaderComicScreen` / `video_screen` / `audio_notifier` 空目录自动 `refreshToc`；`book_info_screen._openReader` 对非文本路由开读前补拉并落库目录。
+- **回归**：legado-ffi 离线 51 规则 AES imageDecode；Flutter `reader_comic_empty_toc_test`（空目录→refreshToc→出图）。
+- **搜索差距（尚未声称对齐）**：单源 51 搜索 Rust 可出约 50 条；全网差距仍可能来自（1）仅 page=1、无原版翻页；（2）Flutter 按「书名|作者」去重且未 `addOrigin` 合并多源；（3）961 启用源中部分 JS 规则在 QuickJS 失败被静默跳过。需用户用同一关键词对比「仅 51漫画」与「全源」再继续。
+- **书源侧说明**：当前 51acgs 详情页脚本已无「目录」字样，规则走 `.btn-read` 回退（单集「全集」）——与原版同一规则语义，非重构独有缺陷。
+
+编写者：Reasonix ｜ 2026-08-11
+
 ## [2.0.26] - 2026-08-11
 
 ### 修复（对称加密 JS 对象桥 + aesBase64Decode + 图片魔数校验，[Rust]+[UI]）
