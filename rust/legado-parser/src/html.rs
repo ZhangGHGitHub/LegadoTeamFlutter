@@ -433,32 +433,50 @@ impl HtmlParser {
 
         let last = sub_rules[sub_rules.len() - 1].trim();
 
+        // 常见 HTML 标签名（`@a` 等是元素选择链语义，非属性提取；
+        // 原版 AnalyzeByJSoup 的 `@` 链最后一段若是标签名则继续选元素，
+        // 仅当最后一段是属性/提取模式名时才做属性提取。
+        // [UI-fix 2026-08-10 | Reasonix] 此前 `a` 被误判为属性名 → 漫画书源
+        // chapterList `.right_box:nth-child(2)@a` 解析不到章节元素）
+        const COMMON_TAG_NAMES: &[&str] = &[
+            "a", "div", "span", "li", "ul", "ol", "p", "img", "h1", "h2", "h3", "h4", "h5",
+            "h6", "table", "tr", "td", "th", "tbody", "thead", "tfoot", "section", "article",
+            "header", "footer", "nav", "button", "input", "select", "option", "form", "label",
+            "em", "strong", "b", "i", "u", "br", "hr", "blockquote", "pre", "code", "iframe",
+            "video", "audio", "source", "canvas", "svg", "body", "html", "main", "aside",
+            "figure", "figcaption", "dl", "dt", "dd", "sub", "sup", "small", "mark", "time",
+            "abbr", "address", "cite", "dfn", "kbd", "q", "samp", "var", "wbr", "map", "area",
+            "object", "embed", "param", "track", "picture", "summary", "details",
+        ];
+        let is_tag_name = COMMON_TAG_NAMES.contains(&last);
+
         // 判断最后一段是否为提取模式/属性名（而非 CSS 选择器）
-        let is_extraction_suffix = matches!(
-            last,
-            "text"
-                | "textNodes"
-                | "ownText"
-                | "html"
-                | "all"
-                | "href"
-                | "src"
-                | "alt"
-                | "title"
-                | "value"
-                | "data-src"
-                | "data-original"
-                | "content"
-        ) || (!last.is_empty()
-            && !last.contains('.')
-            && !last.contains('#')
-            && !last.contains('[')
-            && !last.contains('>')
-            && !last.contains('~')
-            && !last.contains('+')
-            && !last.contains(':')
-            && !last.contains('*')
-            && !last.contains(' '));
+        let is_extraction_suffix = !is_tag_name
+            && (matches!(
+                last,
+                "text"
+                    | "textNodes"
+                    | "ownText"
+                    | "html"
+                    | "all"
+                    | "href"
+                    | "src"
+                    | "alt"
+                    | "title"
+                    | "value"
+                    | "data-src"
+                    | "data-original"
+                    | "content"
+            ) || (!last.is_empty()
+                && !last.contains('.')
+                && !last.contains('#')
+                && !last.contains('[')
+                && !last.contains('>')
+                && !last.contains('~')
+                && !last.contains('+')
+                && !last.contains(':')
+                && !last.contains('*')
+                && !last.contains(' ')));
 
         if is_extraction_suffix {
             // 最后一段是属性/模式名，不是选择器
@@ -691,6 +709,31 @@ mod tests {
         let parser = HtmlParser::new();
         let result = parser.get_text(BOOKBOX_HTML, "h4@a@text").unwrap();
         assert_eq!(result, vec!["书名"]);
+    }
+
+    #[test]
+    fn test_a_suffix_is_tag_chain_not_attr() {
+        // [UI-fix 2026-08-10 | Reasonix] 漫画书源 chapterList 常写
+        // `.right_box:nth-child(2)@a`（@a = 取 a 标签元素）。
+        // 旧实现把 "a" 误判为属性提取 → 元素列表为空 → 目录 0 章。
+        let html = r#"
+        <html><body>
+          <div class="catalog_box">
+            <div class="left_box">封面</div>
+            <div class="right_box">
+              <a class="item_box" href="/comic/chapter/1">第1话</a>
+              <a class="item_box" href="/comic/chapter/2">第2话</a>
+            </div>
+          </div>
+        </body></html>"#;
+        let parser = HtmlParser::new();
+        let elems = parser.get_elements(html, ".right_box:nth-child(2)@a").unwrap();
+        assert_eq!(elems.len(), 2, "应解析出 2 个 a 章节元素，实际: {elems:?}");
+        assert!(elems[0].contains("/comic/chapter/1"), "元素应含章节链接: {}", elems[0]);
+        // 属性提取语义不受影响（@href 仍是属性）
+        let hrefs = parser.get_text(html, ".right_box@a@href").unwrap();
+        assert_eq!(hrefs.len(), 2);
+        assert_eq!(hrefs[0], "/comic/chapter/1");
     }
 
     #[test]

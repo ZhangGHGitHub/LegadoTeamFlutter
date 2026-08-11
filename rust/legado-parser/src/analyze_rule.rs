@@ -53,6 +53,9 @@ pub struct AnalyzeRule {
     is_json: bool,
     /// 可选的 JS 执行器（通过回调注入模式解决跨 crate 循环依赖）
     js_executor: Option<Arc<dyn JsExecutor>>,
+    /// JS 执行时的注入上下文（对齐原版 AnalyzeRule.evalJS bindings：
+    /// result/src/baseUrl 自动注入；chapter/title/source 等由调用方补充）
+    js_bindings: Vec<(String, String)>,
 }
 
 impl AnalyzeRule {
@@ -70,6 +73,7 @@ impl AnalyzeRule {
             cached_content_type: Some(content_type),
             is_json,
             js_executor: None,
+            js_bindings: Vec::new(),
         }
     }
 
@@ -82,6 +86,22 @@ impl AnalyzeRule {
         let mut rule = Self::new(content, base_url);
         rule.js_executor = Some(executor);
         rule
+    }
+
+    /// 追加 JS 注入变量（对齐原版 evalJS bindings：chapter/title/source 等）
+    ///
+    /// `json_literal` 必须是合法 JSON 字面量：字符串用
+    /// `serde_json::to_string(value)`（自动带引号），对象/数组直接传 JSON。
+    pub fn with_js_binding(mut self, name: &str, json_literal: &str) -> Self {
+        self.js_bindings
+            .push((name.to_string(), json_literal.to_string()));
+        self
+    }
+
+    /// 追加 JS 注入变量（可变版本）
+    pub fn add_js_binding(&mut self, name: &str, json_literal: &str) {
+        self.js_bindings
+            .push((name.to_string(), json_literal.to_string()));
     }
 
     /// 设置 JS 执行器
@@ -232,7 +252,25 @@ impl AnalyzeRule {
     /// 否则降级返回空结果。
     fn execute_js_rule(&self, js_code: &str) -> LegadoResult<Vec<String>> {
         if let Some(executor) = &self.js_executor {
-            match executor.execute_js(js_code) {
+            // 注入原版 evalJS bindings 语义：result/src/baseUrl 自动注入，
+            // 附加变量（chapter/title/source 等）按调用方补充。
+            // [UI-fix 2026-08-10 | Reasonix] 此前零注入 → 视频源
+            // `String(result)` 与漫画源 `src.match(...)` 全部 ReferenceError
+            // → 正文为空（「搜到书但正文图片不显示/无法播放」根因）。
+            let mut prologue = String::new();
+            if let Ok(content_json) = serde_json::to_string(&self.content) {
+                prologue.push_str(&format!("var result = {content_json};\n"));
+                prologue.push_str(&format!("var src = {content_json};\n"));
+            }
+            if let Ok(base_json) = serde_json::to_string(&self.base_url) {
+                prologue.push_str(&format!("var baseUrl = {base_json};\n"));
+            }
+            for (name, value) in &self.js_bindings {
+                // json_literal 已是合法 JSON 字面量，直接注入
+                prologue.push_str(&format!("var {name} = {value};\n"));
+            }
+            let wrapped = format!("{prologue}{js_code}");
+            match executor.execute_js(&wrapped) {
                 Ok(result) => {
                     if result.is_empty() {
                         Ok(vec![])
@@ -555,6 +593,26 @@ mod tests {
         }
     }
 
+    /// 记录注入前奏代码的 Mock（验证 result/src/baseUrl/chapter 变量注入）
+    struct RecordingJsExecutor {
+        executed: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl RecordingJsExecutor {
+        fn new() -> Self {
+            Self {
+                executed: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl JsExecutor for RecordingJsExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            self.executed.lock().unwrap().push(js_code.to_string());
+            Ok(String::new())
+        }
+    }
+
     /// 总是失败的 Mock JS 执行器
     struct FailingJsExecutor;
 
@@ -562,6 +620,32 @@ mod tests {
         fn execute_js(&self, _js_code: &str) -> Result<String, String> {
             Err("模拟执行失败".to_string())
         }
+    }
+
+    #[test]
+    fn test_js_rule_injects_bindings() {
+        // 对齐原版 evalJS bindings：result/src/baseUrl 自动注入，
+        // chapter/title/source 由调用方 with_js_binding 补充。
+        // [UI-fix 2026-08-10 | Reasonix] 视频/漫画源正文 JS 依赖这些变量
+        let executor = Arc::new(RecordingJsExecutor::new());
+        let rule = AnalyzeRule::with_js_executor(
+            "<html>漫画页</html>".to_string(),
+            "https://manga.example.com/chapter/1.html".to_string(),
+            executor.clone(),
+        )
+        .with_js_binding("source", "\"https://manga.example.com\"")
+        .with_js_binding("title", "\"第一章\"")
+        .with_js_binding("chapter", "{\"title\": \"第一章\"}");
+        rule.get_strings("@js:var m = src.match(/漫画/); result").unwrap();
+        let recorded = executor.executed.lock().unwrap().clone();
+        assert_eq!(recorded.len(), 1);
+        let code = &recorded[0];
+        assert!(code.contains("var result = \"<html>漫画页</html>\";"), "result 注入: {code}");
+        assert!(code.contains("var src = \"<html>漫画页</html>\";"), "src 注入: {code}");
+        assert!(code.contains("var baseUrl = \"https://manga.example.com/chapter/1.html\";"), "baseUrl 注入: {code}");
+        assert!(code.contains("var source = \"https://manga.example.com\";"), "source 注入: {code}");
+        assert!(code.contains("var title = \"第一章\";"), "title 注入: {code}");
+        assert!(code.contains("var chapter = {\"title\": \"第一章\"};"), "chapter 注入: {code}");
     }
 
     #[test]

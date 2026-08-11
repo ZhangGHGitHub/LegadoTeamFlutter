@@ -675,6 +675,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             &source.book_source_url,
             is_media,
             source.js_lib.as_deref(),
+            Some(&chapter.title),
         );
 
         // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
@@ -688,6 +689,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             next_url_rule,
             is_media,
             source.js_lib.as_deref(),
+            Some(&chapter.title),
             |url: String| {
                 let headers = source_headers_clone.clone();
                 async move { self.fetch_simple(&url, headers.as_ref()).await }
@@ -780,6 +782,7 @@ fn parse_content_page(
         source_url,
         is_media,
         None,
+        None,
     )
 }
 
@@ -794,13 +797,26 @@ fn parse_content_page_with_js_lib(
     source_url: &str,
     is_media: bool,
     js_lib: Option<&str>,
+    chapter_title: Option<&str>,
 ) -> (String, Vec<String>) {
-    let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+    let mut analyzer = crate::js_executor::construct_analyzer_with_js_lib(
         body,
         page_url.to_string(),
         source_url,
         js_lib,
     );
+    // 注入原版 evalJS bindings：source/chapter/title（result/src/baseUrl
+    // 由 AnalyzeRule.execute_js_rule 自动注入）——漫画/视频书源正文 JS
+    // 依赖这些变量（如 `chapter.title`、`String(result)`）。
+    // [UI-fix 2026-08-10 | Reasonix]
+    analyzer = analyzer
+        .with_js_binding("source", &serde_json::to_string(source_url).unwrap_or_default());
+    if let Some(t) = chapter_title {
+        let t_json = serde_json::to_string(t).unwrap_or_default();
+        analyzer = analyzer
+            .with_js_binding("chapter", &format!("{{\"title\": {t_json}}}"))
+            .with_js_binding("title", &t_json);
+    }
 
     let raw_content = if content_rule_str.is_empty() {
         analyzer.content().to_string()
@@ -855,6 +871,7 @@ async fn fetch_paginated_content<F, Fut>(
     next_url_rule: &str,
     is_media: bool,
     js_lib: Option<&str>,
+    chapter_title: Option<&str>,
     mut fetch_page: F,
 ) -> String
 where
@@ -886,6 +903,7 @@ where
                             source_url,
                             is_media,
                             js_lib,
+                            chapter_title,
                         );
                         content_list.push(page_content);
                     }
@@ -915,6 +933,7 @@ where
                     source_url,
                     is_media,
                     js_lib,
+                    chapter_title,
                 );
                 content_list.push(page_content);
                 // 仅在获得单个下一页时继续串行（对标 Kotlin size==1 分支）；
@@ -1826,6 +1845,7 @@ mod tests {
             ".next@href",
             false,
             None,
+            None,
             scripted_fetch(pagination_pages()),
         ));
         // 多页拼接（顺序 + \n 连接）
@@ -1856,6 +1876,7 @@ mod tests {
             ".content@html",
             "",
             false,
+            None,
             None,
             scripted_fetch(pagination_pages()),
         ));
@@ -1898,6 +1919,7 @@ mod tests {
             ".next@href&&.alt@href",
             false,
             None,
+            None,
             scripted_fetch(pages),
         ));
         let parts: Vec<&str> = result.split('\n').collect();
@@ -1937,6 +1959,7 @@ mod tests {
             ".content@html",
             ".next@href",
             false,
+            None,
             None,
             scripted_fetch(pages),
         ));
@@ -2124,6 +2147,7 @@ mod tests {
             "https://manga.example.com",
             false,
             Some(js_lib),
+            None,
         );
         assert!(
             content.contains("https://img.example.com/p1.jpg"),
@@ -2143,6 +2167,7 @@ mod tests {
             "https://manga.example.com/chapter/1.html",
             "no_js_lib_tag.example.com",
             false,
+            None,
             None,
         );
         assert!(
