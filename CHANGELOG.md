@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.18] - 2026-08-11
+
+### 修复（漫画/视频源正文与目录根治，[Rust] 轨）
+- 漫画/视频源「正文为空、图片不显示、无法播放」根因①：规则 JS 执行器**零变量注入**——原版 AnalyzeRule.evalJS 注入 result/src/baseUrl/chapter/title/source 等 bindings（AnalyzeRule.kt:893-908），重构版 execute_js_rule 直接执行裸 JS → 视频源 `@js: String(result)` 与漫画源 `<js> src.match(...)` 全部 ReferenceError → 正文空。修复：AnalyzeRule 自动注入 `result`/`src`（=当前内容）/`baseUrl`，新增 `with_js_binding` 注入 `chapter`（`{title}` 对象）/`title`/`source`（web_book 正文解析处传入章节标题）
+- 漫画源「目录 0 章」根因②：CSS 规则 `@a` 后缀被误判为**属性提取**（"a" 被当作属性名）而非**标签选择链**——漫画书源 chapterList 常写 `.right_box:nth-child(2)@a`（原版 AnalyzeByJSoup 的 `@` 链末段为标签名时继续选元素）。修复：html.rs 增加常见 HTML 标签名白名单，`@a`/`@div` 等按元素选择链处理，`@href`/`@src`/`@text` 等属性语义不受影响
+- 实测（真实站点全链路）：伪七猫影视（视频源）搜索→目录→正文提取 `https://vod1.maowushi.com/.../index.m3u8` ✅；favcomic（漫画源）搜索→目录 8 章→正文 `2966B` 含 `<img>` 图片列表 ✅（书源原规则即可用，无需改书源）
+
+### 测试
+- 新增：analyze_rule JS bindings 注入测试（result/src/baseUrl/chapter/title/source 断言）、html `@a` 标签链测试（含 `@href` 属性语义回归）；legado-parser 180/180、legado-ffi 261/261 全过
+- 遗留登记：armv7 so 交叉编译失败（NDK 28 链接问题，模拟器 x86_64/真机 arm64 不受影响）
+
+## [2.0.17] - 2026-08-11
+
+### 新增（离线缓存界面，对齐原版 CacheActivity）
+- **缺口**：缓存下载全链路（阅读页缓存 → 队列页 → 缓存管理）缺少**离线缓存界面**——原版 CacheActivity 的书籍列表页（bookshelf_screen TODO 登记「CacheActivity 对齐尚缺——缓存管理独立页（书籍列表/缓存进度/单本导出入口）、缓存下载（download_after/download_all）」）
+- 新增 **OfflineCacheScreen**（路由 `/offline_cache`）：书架书籍缓存状态列表，每项按原版 `item_download.xml` 三行布局（书名/作者/「已缓存 N/总章节数」）+ 右侧播放/停止下载按钮（原版 iv_download）+ 单本导出按钮（原版 tv_export）；顶栏菜单含**全部缓存**（download_all 0..末章）/ **缓存当前章节之后**（download_after 当前章..末章，原版 sureCacheBook 确认对话框）/ **停止全部下载** / **下载队列**；缓存章节数（listCachedChapterUrls）与进行中任务（cacheDownloadList）2s 轮询实时刷新（对齐原版 EventBus 语义）；点击列表项对齐原版 startActivityForBook（未读进书详，已读进阅读器）；本地书显示「本地书籍」并隐藏下载按钮（原版 isLocal 短路）
+- **入口**：书架溢出菜单「缓存导出」替换为「离线缓存」（对齐原版书架菜单 menu_download「缓存/导出」→ CacheActivity），原选书导出对话框迁移为页内单本导出（功能等价：章节标题+已缓存正文拼 TXT 经分享保存）
+- 遗留：epub/pdf 导出类型、导出文件夹选择与文件名模板、自定义导出设置、导出进度与 WebDav 仍待 FFI（同 bookshelf 原 TODO 其余项）
+
+### 测试
+- 新增离线缓存页 widget 测试 5 个（空态/三行列表与本地书短路/单本下载 download_all 参数/菜单批量下载确认对话框/下载中进度与停止按钮）；flutter analyze 0 error、flutter test 1150/1150 全过
+
 ## [2.0.16] - 2026-08-10
 
 ### 修复（缓存下载链路根治：真实下载 + 队列页 + 目录图标实时刷新，对齐原版 CacheActivity）
