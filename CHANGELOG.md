@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.21] - 2026-08-11
+
+### 修复（漫画站图片复合 URL `url,{json headers}` 支持，[Rust]+[UI] 双轨）
+- **图片不显示根因⑤**：favcomic.com 等漫画书源正文图片 URL 为原版复合格式 `url,{"headers":{...}}`（内嵌 User-Agent/Referer/x-requested-with 防盗链，对齐原版 AnalyzeUrl.kt analyzeUrl 切首个 `,` 前为 URL、后部 JSON 解析为 headerMap）。此前 CachedNetworkImage 直连将整体当 URL 请求 → `Invalid image data`（模拟器崩溃日志实测）
+- 修复：[Rust] `fetch_image_with_decode` 新增 `split_composite_image_url` 拆分复合 URL 与内嵌 headers（与书源 header 合并，内嵌优先）；[UI] `reader_comic_screen` 图片统一走 FFI 下载（Rust 支持复合 URL + 防盗链 + imageDecode，无规则原样返回 bytes），`_bookSource == null` 保留 CachedNetworkImage 兜底
+- 实测：Rust 全量 264/264（新增 test_split_composite_image_url）；flutter test 1153/1153、analyze 0 error；5556/5558 冒烟 6/6
+
+### 已知书源侧问题（非代码缺陷）
+- favcomic.net 图床 `ccdeoo.ykxbo.cn` 已 NXDOMAIN；favcomic.com 域名连接失败（站点失效）——图片源请以其他可用漫画源验证
+
 ## [2.0.20] - 2026-08-11
 
 ### 修复（书源 jsLib 加载失败降级，[Rust] 轨）
