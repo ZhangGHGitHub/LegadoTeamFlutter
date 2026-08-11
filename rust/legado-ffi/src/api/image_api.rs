@@ -386,6 +386,54 @@ mod tests {
         assert_eq!(out, vec![0x1F, 0x2F]);
     }
 
+    /// 设备取证回归：51漫画真实 CDN 密文（非自造最小 JPEG）经同款 imageDecode 出 JPEG
+    ///
+    /// 证据：`pic.xmbvxj.cn` 下载 len=346224 magic=4FE8…；桌面 AES/CBC/NoPadding
+    /// 解密后 FFD8 + PIL 可开。若 Android jniLibs 未重编含 createSymmetricCrypto 对象
+    /// 的 .so，实机仍会 FlutterImageDecoder 刷屏。— Reasonix
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_decode_51manga_real_ciphertext_fixture() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/51manga_page_cipher.bin");
+        if !fixture.is_file() {
+            eprintln!("skip: 无设备密文夹具 {}", fixture.display());
+            return;
+        }
+        let cipher = std::fs::read(&fixture).expect("read fixture");
+        assert_eq!(cipher.len() % 16, 0);
+        assert!(
+            !looks_like_image_bytes(&cipher),
+            "夹具应为密文，got magic={:02X?}",
+            &cipher[..cipher.len().min(4)]
+        );
+        let image_decode = r#"function decryptImage(src) {
+    const key = "102_53_100_57_54_53_100_102_55_53_51_51_54_50_55_48"
+        .split("_").map(n => String.fromCharCode(parseInt(n))).join("");
+    const iv  = "57_55_98_54_48_51_57_52_97_98_99_50_102_98_101_49"
+        .split("_").map(n => String.fromCharCode(parseInt(n))).join("");
+    const cipher = java.createSymmetricCrypto("AES/CBC/NoPadding", key, iv)
+    return cipher.decrypt(src);
+}
+decryptImage(result);"#;
+        let src: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://51acgs.com",
+            "bookSourceName": "51漫画",
+            "bookSourceType": 2,
+            "searchUrl": "https://51acgs.com/search",
+            "ruleSearch": {"bookList": ".x"},
+            "ruleContent": {"content": ".comics@img@html", "imageDecode": image_decode}
+        }))
+        .unwrap();
+        let out = decode_image_bytes(&src, "https://pic.xmbvxj.cn/1.jpeg", &cipher);
+        assert!(
+            looks_like_image_bytes(&out),
+            "真实密文解密后应有 JPEG 魔数，got {:02X?}",
+            &out[..out.len().min(4)]
+        );
+        assert_eq!(&out[..2], &[0xFF, 0xD8]);
+    }
+
     /// 离线对齐 51漫画 imageDecode：AES/CBC/NoPadding + createSymmetricCrypto.decrypt
     /// （规则片段来自设备书源 https://51acgs.com，密文由同 key/iv 加密最小 JPEG）
     #[cfg(feature = "quickjs")]

@@ -67,12 +67,6 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 漫画/图片站图片 bytes 经书源 imageDecode JS 解密后才可显示
   BookSource? _bookSource;
 
-  /// 书源是否配置了 imageDecode 规则（决定走解码链路还是直连）
-  bool get _needImageDecode {
-    final rule = _bookSource?.ruleContent?.imageDecode;
-    return rule != null && rule.trim().isNotEmpty;
-  }
-
   /// 预加载缓存（前后各 2 页）
   static const int _preloadRange = 2;
 
@@ -502,8 +496,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     // 统一走 FFI 下载：Rust fetchImageWithDecode 支持书源 header 防盗链与
     // `url,{json headers}` 复合格式（favcomic 等漫画站图片 URL 内嵌防盗链
     // header，对齐原版 AnalyzeUrl），且无 imageDecode 规则时原样返回 bytes。
-    // CachedNetworkImage 直连无法解析复合 URL → Invalid image data（实测）— Reasonix
-    if (_needImageDecode || _bookSource != null) {
+    // CachedNetworkImage 直连无法解析复合 URL / 会把 AES 密文送进
+    // FlutterImageDecoder →「图片加载失败」（51漫画设备实测）。
+    // 漫画阅读器只要能解析到书源就禁止直连 CDN。— Reasonix
+    if (_bookSource != null) {
       return _DecodedComicImage(
         url: url,
         sourceJson: jsonEncode(_bookSource!.toJson()),
@@ -518,6 +514,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
           });
         },
       );
+    }
+    // 有 origin 却未命中书源：勿直连（密文/防盗链），直接失败可重试
+    if (_book != null && _book!.origin.isNotEmpty) {
+      return _buildImageErrorPlaceholder(index, url);
     }
 
     return CachedNetworkImage(

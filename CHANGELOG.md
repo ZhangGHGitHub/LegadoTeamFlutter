@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.28] - 2026-08-11
+
+### 修复（51漫画图片全失败：jniLibs 未带上 createSymmetricCrypto/NoPadding，[Rust]+[UI]）
+- **设备证据（emulator-5558 / 2.0.27+29）**：正文 40 张 `pic.xmbvxj.cn/...jpeg?auth_key=…` 已解析；logcat `FlutterImageDecoderImplDefault: Failed to decode image` / `Input contained an error` 刷屏。书源 `ruleContent.imageDecode` 为 AES/CBC/NoPadding + `java.createSymmetricCrypto(...).decrypt(result)`；raw 下载 magic=`4FE8…`（密文），桌面同 key/iv 解密后 `FFD8` + PIL JPEG 1280×1842。
+- **根因**：2.0.26 已修 `createSymmetricCrypto` 对象桥与 `AES/CBC/NoPadding`，但 **5558 安装包内 `liblegado_ffi.so` 仍是 16:30 旧产物**（缺 `AES/CBC/NoPadding` / `decrypt input must` 等符号）；Dart 版本号升到 2.0.27 却未重编/同步 Android jniLibs → 实机 decrypt 仍失败，密文进解码器。
+- **修复**：按 `rust/scripts/build-android.ps1` 重编 x86_64/arm64 `liblegado_ffi.so`（quickjs）并同步 jniLibs；漫画阅读器有 origin 时禁止 `CachedNetworkImage` 直连密文 CDN。
+- **回归**：设备密文夹具 `tests/fixtures/51manga_page_cipher.bin` + 离线 51 imageDecode；桌面 `fetch_image_with_decode` 实网探针 JPEG。
+
+编写者：Reasonix ｜ 2026-08-11
+
 ## [2.0.27] - 2026-08-11
 
 ### 修复（漫画/视频空目录自愈 + 51漫画链路取证，[UI] 为主 + [Rust] 回归测）
