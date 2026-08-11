@@ -4,7 +4,7 @@
 //! 参考 Kotlin 侧 `SymmetricCryptoAndroid.kt` 与 CryptoJS 集成。
 //!
 //! 支持算法：
-//! - AES（CBC / ECB 模式，PKCS7 填充，128/192/256 位密钥）
+//! - AES（CBC / ECB 模式，PKCS7 或 NoPadding，128/192/256 位密钥）
 //! - DES（CBC 模式，PKCS7 填充）
 //! - RC4（流密码，加解密同操作）
 
@@ -77,6 +77,81 @@ impl AesCrypto {
             32 => Enc256::new_from_slices(key, iv)
                 .map_err(crypto_init_err)?
                 .encrypt_padded_mut::<Pkcs7>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("AES", n, &[16, 24, 32])),
+        };
+        Ok(ct.to_vec())
+    }
+
+    /// AES-CBC 解密（NoPadding；密文长度须为 16 的倍数）
+    ///
+    /// 对齐 Android 漫画站 `AES/CBC/NoPadding` imageDecode（如 51漫画）。
+    /// — Reasonix + Rust
+    pub fn decrypt_cbc_nopadding(key: &[u8], iv: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use aes::{Aes128, Aes192, Aes256};
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+
+        type Dec128 = cbc::Decryptor<Aes128>;
+        type Dec192 = cbc::Decryptor<Aes192>;
+        type Dec256 = cbc::Decryptor<Aes256>;
+
+        if data.len() % AES_BLOCK_SIZE != 0 {
+            return Err(LegadoError::Parser(format!(
+                "AES/CBC/NoPadding ciphertext length must be multiple of {}, got {}",
+                AES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let pt = match key.len() {
+            16 => Dec128::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            24 => Dec192::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            32 => Dec256::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("AES", n, &[16, 24, 32])),
+        };
+        Ok(pt.to_vec())
+    }
+
+    /// AES-CBC 加密（NoPadding；明文长度须为 16 的倍数）
+    pub fn encrypt_cbc_nopadding(key: &[u8], iv: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use aes::{Aes128, Aes192, Aes256};
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockEncryptMut, KeyIvInit};
+
+        type Enc128 = cbc::Encryptor<Aes128>;
+        type Enc192 = cbc::Encryptor<Aes192>;
+        type Enc256 = cbc::Encryptor<Aes256>;
+
+        if data.len() % AES_BLOCK_SIZE != 0 {
+            return Err(LegadoError::Parser(format!(
+                "AES/CBC/NoPadding plaintext length must be multiple of {}, got {}",
+                AES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let ct = match key.len() {
+            16 => Enc128::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            24 => Enc192::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            32 => Enc256::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
                 .map_err(crypto_op_err)?,
             n => return Err(bad_key_len("AES", n, &[16, 24, 32])),
         };
@@ -338,6 +413,111 @@ pub fn parse_transformation(s: &str) -> Result<(String, String, String), String>
     }
 }
 
+/// 是否为 NoPadding（大小写不敏感）
+fn is_no_padding(padding: &str) -> bool {
+    padding.eq_ignore_ascii_case("NoPadding") || padding.eq_ignore_ascii_case("NONE")
+}
+
+/// 按 Java transformation 对称解密原始字节（对齐 hutool SymmetricCrypto.decrypt）
+///
+/// — Reasonix + Rust
+pub fn symmetric_decrypt(
+    transformation: &str,
+    key: &[u8],
+    iv: Option<&[u8]>,
+    data: &[u8],
+) -> LegadoResult<Vec<u8>> {
+    let (algo, mode, padding) = parse_transformation(transformation)
+        .map_err(|e| LegadoError::Parser(e))?;
+    match algo.as_str() {
+        "AES" => {
+            let nopad = is_no_padding(&padding);
+            match mode.as_str() {
+                "CBC" => {
+                    let iv = iv.ok_or_else(|| {
+                        LegadoError::Parser("AES/CBC requires IV".to_string())
+                    })?;
+                    if nopad {
+                        AesCrypto::decrypt_cbc_nopadding(key, iv, data)
+                    } else {
+                        AesCrypto::decrypt_cbc(key, iv, data)
+                    }
+                }
+                "ECB" => {
+                    if nopad {
+                        Err(LegadoError::Parser(
+                            "AES/ECB/NoPadding not implemented".to_string(),
+                        ))
+                    } else {
+                        AesCrypto::decrypt_ecb(key, data)
+                    }
+                }
+                other => Err(LegadoError::Parser(format!(
+                    "Unsupported AES mode: {other}"
+                ))),
+            }
+        }
+        "DES" => {
+            let iv = iv.unwrap_or(b"\0\0\0\0\0\0\0\0");
+            DesCrypto::decrypt_cbc(key, iv, data)
+        }
+        "RC4" => Ok(Rc4Crypto::process(key, data)),
+        other => Err(LegadoError::Parser(format!(
+            "Unsupported algorithm: {other}"
+        ))),
+    }
+}
+
+/// 按 Java transformation 对称加密原始字节（对齐 hutool SymmetricCrypto.encrypt）
+///
+/// — Reasonix + Rust
+pub fn symmetric_encrypt(
+    transformation: &str,
+    key: &[u8],
+    iv: Option<&[u8]>,
+    data: &[u8],
+) -> LegadoResult<Vec<u8>> {
+    let (algo, mode, padding) = parse_transformation(transformation)
+        .map_err(|e| LegadoError::Parser(e))?;
+    match algo.as_str() {
+        "AES" => {
+            let nopad = is_no_padding(&padding);
+            match mode.as_str() {
+                "CBC" => {
+                    let iv = iv.ok_or_else(|| {
+                        LegadoError::Parser("AES/CBC requires IV".to_string())
+                    })?;
+                    if nopad {
+                        AesCrypto::encrypt_cbc_nopadding(key, iv, data)
+                    } else {
+                        AesCrypto::encrypt_cbc(key, iv, data)
+                    }
+                }
+                "ECB" => {
+                    if nopad {
+                        Err(LegadoError::Parser(
+                            "AES/ECB/NoPadding not implemented".to_string(),
+                        ))
+                    } else {
+                        AesCrypto::encrypt_ecb(key, data)
+                    }
+                }
+                other => Err(LegadoError::Parser(format!(
+                    "Unsupported AES mode: {other}"
+                ))),
+            }
+        }
+        "DES" => {
+            let iv = iv.unwrap_or(b"\0\0\0\0\0\0\0\0");
+            DesCrypto::encrypt_cbc(key, iv, data)
+        }
+        "RC4" => Ok(Rc4Crypto::process(key, data)),
+        other => Err(LegadoError::Parser(format!(
+            "Unsupported algorithm: {other}"
+        ))),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------
@@ -530,6 +710,22 @@ mod tests {
     fn test_parse_transformation_invalid_four_parts() {
         let result = parse_transformation("AES/CBC/PKCS5/Extra");
         assert!(result.is_err());
+    }
+
+    /// AES/CBC/NoPadding 往返（对齐 51漫画 imageDecode）
+    #[test]
+    fn test_aes_cbc_nopadding_roundtrip() {
+        let key = b"0123456789abcdef";
+        let iv = b"fedcba9876543210";
+        // 恰好 32 字节（两块）
+        let plaintext = b"0123456789abcdef0123456789abcdef";
+        let ct = AesCrypto::encrypt_cbc_nopadding(key, iv, plaintext).expect("encrypt");
+        assert_eq!(ct.len(), 32);
+        let pt = AesCrypto::decrypt_cbc_nopadding(key, iv, &ct).expect("decrypt");
+        assert_eq!(&pt, plaintext);
+
+        let via = symmetric_decrypt("AES/CBC/NoPadding", key, Some(iv), &ct).expect("dispatch");
+        assert_eq!(&via, plaintext);
     }
 
     // ---- 辅助 ----

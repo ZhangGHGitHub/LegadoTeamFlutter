@@ -28,7 +28,8 @@ use legado_core::LegadoError;
 use crate::host_api::{
     archive_utils, asymmetric_crypto, chinese_utils, concurrency_api, config_api, cookie_store,
     crypto_api, encoding, file_utils, font_api, html_format, html_parse, json_utils, misc_api,
-    network, platform, regex_utils, register::mount_dual, string_utils, time_utils, variable_store,
+    network, platform, regex_utils, register::mount_dual, string_utils, symmetric_crypto,
+    time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
@@ -1076,16 +1077,71 @@ fn register_crypto_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // createSymmetricCrypto(transformation, key, iv?) -> String
+    // createSymmetricCrypto(transformation, key, iv?) -> SymmetricCrypto 对象
+    // 对齐 Kotlin JsEncodeUtils.createSymmetricCrypto（hutool SymmetricCrypto）
+    // 返回对象含 decrypt/decryptStr/encrypt/encryptBase64/encryptHex/setIv
+    // 漫画 imageDecode：cipher.decrypt(Uint8Array) → Uint8Array — Reasonix
     mount_dual(
         java,
         globals,
         "createSymmetricCrypto",
         rquickjs::Function::new(
             ctx.clone(),
-            |transformation: String, key: String, iv: Opt<String>| -> String {
-                crypto_api::create_symmetric_crypto(&transformation, &key, iv.0.as_deref())
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            |ctx: rquickjs::Ctx<'js>,
+             transformation: String,
+             key: rquickjs::Value<'js>,
+             iv: Opt<rquickjs::Value<'js>>|
+             -> rquickjs::Result<rquickjs::Object<'js>> {
+                let (key_bytes, iv_bytes) =
+                    symmetric_crypto::parse_key_iv_args(key, iv)?;
+                symmetric_crypto::build_symmetric_crypto_object(
+                    ctx,
+                    &transformation,
+                    &key_bytes,
+                    iv_bytes.as_deref(),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // aesBase64DecodeToString(str, key, transformation, iv) — 全网漫画等目录/正文 AES
+    // 对齐 JsEncodeUtils.aesBase64DecodeToString（deprecated 但仍被大量书源使用）
+    mount_dual(
+        java,
+        globals,
+        "aesBase64DecodeToString",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |data: String, key: String, transformation: String, iv: String| -> String {
+                symmetric_crypto::aes_base64_decode_to_string(
+                    &data,
+                    &key,
+                    &transformation,
+                    &iv,
+                )
+                .unwrap_or_else(|e| format!("[ERROR] {e}"))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // aesDecodeToString(str, key, transformation, iv) — 同语义别名
+    mount_dual(
+        java,
+        globals,
+        "aesDecodeToString",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |data: String, key: String, transformation: String, iv: String| -> String {
+                // 非 Base64 原始密文场景较少；与 aesBase64 共用入口时先试 Base64
+                symmetric_crypto::aes_base64_decode_to_string(
+                    &data,
+                    &key,
+                    &transformation,
+                    &iv,
+                )
+                .unwrap_or_else(|e| format!("[ERROR] {e}"))
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2097,6 +2153,80 @@ mod tests {
         // 应为非空 Base64 字符串
         assert!(!result.is_empty());
         assert!(!result.starts_with("[ERROR]"));
+    }
+
+    /// createSymmetricCrypto 必须返回对象（含 decrypt），不能是 "AES/CBC" 字符串
+    #[test]
+    fn test_create_symmetric_crypto_returns_object_with_decrypt() {
+        let engine = make_engine();
+        let ty = engine
+            .eval("typeof java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','fedcba9876543210')")
+            .unwrap();
+        assert_eq!(ty, "object", "createSymmetricCrypto 应返回对象而非字符串");
+        let has = engine
+            .eval(
+                "typeof java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','fedcba9876543210').decrypt",
+            )
+            .unwrap();
+        assert_eq!(has, "function");
+    }
+
+    /// 对齐 51漫画 imageDecode：AES/CBC/NoPadding + decrypt(Uint8Array)
+    #[test]
+    fn test_create_symmetric_crypto_image_decode_nopadding() {
+        use crate::engine::JsEngine;
+        use crate::JsValue;
+        use base64::Engine as _;
+        use legado_core::crypto::AesCrypto;
+
+        let key = b"0123456789abcdef";
+        let iv = b"fedcba9876543210";
+        // JPEG 魔数 + 填充到 16 对齐
+        let mut plain = vec![0xFFu8, 0xD8, 0xFF, 0xE0];
+        plain.resize(32, 0x41);
+        let ct = AesCrypto::encrypt_cbc_nopadding(key, iv, &plain).unwrap();
+
+        let engine = make_engine();
+        // 与 51 书源 imageDecode 同构：createSymmetricCrypto(...).decrypt(result)
+        let rule = r#"
+function decryptImage(src) {
+    const key = "0123456789abcdef";
+    const iv  = "fedcba9876543210";
+    const cipher = java.createSymmetricCrypto("AES/CBC/NoPadding", key, iv);
+    return cipher.decrypt(src);
+}
+decryptImage(result);
+"#;
+        let out = JsEngine::eval_bytes(
+            &engine,
+            rule,
+            &[("result", JsValue::Bytes(ct))],
+        )
+        .expect("imageDecode 风格 decrypt 应成功");
+        assert_eq!(out, plain);
+        assert_eq!(&out[..2], &[0xFF, 0xD8]);
+        let _ = base64::engine::general_purpose::STANDARD.encode(&out);
+    }
+
+    /// aesBase64DecodeToString：全网漫画目录/正文 AES 解密
+    #[test]
+    fn test_aes_base64_decode_to_string_host() {
+        use base64::Engine as _;
+        use legado_core::crypto::AesCrypto;
+
+        let key = "0123456789abcdef";
+        let iv = "fedcba9876543210";
+        let plain = "{\"chapters\":[{\"chapter_name\":\"1\"}]}";
+        let ct = AesCrypto::encrypt_cbc(key.as_bytes(), iv.as_bytes(), plain.as_bytes()).unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&ct);
+
+        let engine = make_engine();
+        let js = format!(
+            "java.aesBase64DecodeToString('{b64}', '{key}', 'AES/CBC/PKCS5Padding', '{iv}')"
+        );
+        let out = engine.eval(&js).unwrap();
+        assert_eq!(out, plain);
+        assert!(!out.starts_with("[ERROR]"));
     }
 
     #[test]

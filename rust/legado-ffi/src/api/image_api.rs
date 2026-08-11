@@ -235,9 +235,45 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
     }
     let bytes = resp.body;
 
+    // src 绑定对齐原版：传入完整（可能含复合 header 段）原始 URL
     let decoded = decode_image_bytes(&source, url, &bytes);
+    // 有 imageDecode 时：解密结果必须是可识别图片，禁止把密文当成功回传
+    // （否则 Flutter Image.memory → Invalid image data / Decoder 刷屏）— Reasonix
+    let has_decode_rule = source
+        .rule_content
+        .as_ref()
+        .and_then(|c| c.image_decode.as_ref())
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    if has_decode_rule && !looks_like_image_bytes(&decoded) {
+        return Err(LegadoError::Ffi(format!(
+            "imageDecode 后仍非有效图片（len={} magic={:02X?}），请检查 java.createSymmetricCrypto/解密规则 url={request_url}",
+            decoded.len(),
+            decoded.iter().take(4).copied().collect::<Vec<_>>()
+        )));
+    }
     let b64 = base64::engine::general_purpose::STANDARD.encode(&decoded);
     Ok(serde_json::json!({ "base64": b64, "len": decoded.len() }).to_string())
+}
+
+/// JPEG/PNG/GIF/WEBP 魔数探测（漫画页几乎只用这些）
+fn looks_like_image_bytes(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 {
+        return false;
+    }
+    if bytes.starts_with(&[0xFF, 0xD8]) {
+        return true; // JPEG
+    }
+    if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        return true; // PNG
+    }
+    if bytes.starts_with(b"GIF8") {
+        return true; // GIF
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return true; // WEBP
+    }
+    false
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
@@ -301,6 +337,14 @@ mod tests {
             Some("https://site.com/path/".to_string())
         );
         assert_eq!(default_referer_from_source_url(""), None);
+    }
+
+    #[test]
+    fn test_looks_like_image_bytes() {
+        assert!(looks_like_image_bytes(&[0xFF, 0xD8, 0xFF, 0xE0]));
+        assert!(looks_like_image_bytes(&[0x89, 0x50, 0x4E, 0x47]));
+        assert!(!looks_like_image_bytes(&[1, 2, 3, 4]));
+        assert!(!looks_like_image_bytes(&[]));
     }
 
     /// imageDecode 规则 + jsLib 解密：bytes 注入为 Uint8Array，JS 按位翻转后返回
