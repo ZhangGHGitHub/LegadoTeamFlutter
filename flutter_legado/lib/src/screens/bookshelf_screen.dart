@@ -390,8 +390,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       try {
         final api = ref.read(bookApiProvider);
         final sources = await api.getBookSources();
+        // 去掉尾斜杠，避免 `https://ukuzy.com/` 与 origin 失配 — Reasonix + UI
+        String norm(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
+        final o = norm(book.origin);
         for (final s in sources) {
-          if (s.bookSourceUrl == book.origin) {
+          if (norm(s.bookSourceUrl) == o || s.bookSourceUrl == book.origin) {
             typeBits = BookOpenUtils.resolveTypeBits(typeBits, s);
             break;
           }

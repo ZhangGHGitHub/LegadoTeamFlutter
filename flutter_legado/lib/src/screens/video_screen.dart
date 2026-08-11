@@ -550,38 +550,76 @@ class _VideoScreenState extends State<VideoScreen> {
     );
   }
 
+  /// 播放区布局：视频占剩余高度（Expanded），控件/信息固定在底部，
+  /// 避免宽屏片源 AspectRatio 按宽度算出超高画面导致
+  /// `BOTTOM OVERFLOWED BY … PIXELS`（量子资源网等）。— Reasonix + UI
   Widget _buildPlayerView() {
+    if (_isFullScreen) {
+      // 全屏：画面铺满，控件叠在底部（对齐原版沉浸播放）
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: Colors.black, child: _buildVideoSurface()),
+          if (_showControls)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(top: false, child: _buildControlBar()),
+            ),
+        ],
+      );
+    }
     return Column(
       children: [
-        _buildVideoArea(),
-        _buildControlBar(),
-        if (!_isFullScreen) _buildVideoInfo(),
+        Expanded(
+          child: ColoredBox(
+            color: Colors.black,
+            child: _buildVideoSurface(),
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildControlBar(),
+              _buildVideoInfo(),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildVideoArea() {
-    final aspectRatio = _controller.value.isInitialized
+  /// 在可用约束内居中按比例绘制，绝不撑破父级
+  Widget _buildVideoSurface() {
+    final raw = _controller.value.isInitialized
         ? _controller.value.aspectRatio
         : 16 / 9;
+    // 防御异常 size（宽/高对调或 0）导致比例极端
+    final aspectRatio = (raw.isFinite && raw > 0.2 && raw < 5.0) ? raw : 16 / 9;
 
-    return AspectRatio(
-      aspectRatio: aspectRatio,
-      child: GestureDetector(
-        onTap: () => setState(() => _showControls = !_showControls),
-        onDoubleTap: () {
-          setState(() {
-            _controller.value.isPlaying
-                ? _controller.pause()
-                : _controller.play();
-          });
-        },
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            VideoPlayer(_controller),
-            if (_showControls) _buildOverlayControls(),
-          ],
+    return Center(
+      child: AspectRatio(
+        aspectRatio: aspectRatio,
+        child: GestureDetector(
+          onTap: () => setState(() => _showControls = !_showControls),
+          onDoubleTap: () {
+            setState(() {
+              _controller.value.isPlaying
+                  ? _controller.pause()
+                  : _controller.play();
+            });
+          },
+          child: Stack(
+            alignment: Alignment.center,
+            fit: StackFit.expand,
+            children: [
+              VideoPlayer(_controller),
+              if (_showControls) _buildOverlayControls(),
+            ],
+          ),
         ),
       ),
     );

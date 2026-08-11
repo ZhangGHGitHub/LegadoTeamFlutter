@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.37] - 2026-08-12
+
+### 修复（红牛/U酷 type=2 误进漫画、非凡进文本、换源 `len`、VideoScreen 溢出，[Rust]+[UI]）
+
+对照原版 `BookInfoActivity.startReadActivity`、`AnalyzeRule.evalJS`（Rhino 非严格裸赋值）与 emulator-5558 导出源。
+
+1. **红牛 / U酷**：设备导出 `bookSourceType=2`（误标图片）+ `group=影视频源` + 正文抽 `m3u8`；旧逻辑 `typeBitsForSource(2)` 直进 comic「暂无图片」。
+   - `looksLikeVideoSource` 覆盖 type=0/**2**；`resolveTypeBits` **视频启发式优先于**显式 image；域名/源名（hongniu/ukuzy/ffzy/lzizy）增强。
+2. **非凡**：type=0 MacCMS 仍进文本刷 m3u8 时，加强 origin 尾斜杠匹配 + 开读分流回归。
+3. **换源 JS**：`len is not defined`（榴莲 TOC `len=java.getElements…`）；QuickJS prologue 预声明 `len`/`jm`/`from`（与 `all`/`d`/`data` 同策略）。
+4. **VideoScreen**：`BOTTOM OVERFLOWED BY 239 PIXELS`（量子等）— `AspectRatio` 未约束撑破 Column；改为 `Expanded` 画面区 + 底部控件 `SafeArea`，全屏控件叠层。
+5. **验证**：Dart/Rust 单元测试；emulator-5558 端到端（红牛/非凡/U酷 → VideoScreen；换源无 `len is not defined`；播放页无溢出条）。
+
+编写者：Reasonix ｜ 2026-08-12
+
 ## [2.0.36] - 2026-08-12
 
 ### 修复（视频源误进漫画 / type=0 MacCMS 分流与播放，[UI]）

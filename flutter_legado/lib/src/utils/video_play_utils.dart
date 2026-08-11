@@ -80,6 +80,7 @@ bool looksLikeVideoUrl(String url) {
   }
   // MacCMS / 常见播放 CDN（无扩展名直链）
   if (lower.contains('ffzy-plays') ||
+      lower.contains('ffzy-play') ||
       lower.contains('/play/') ||
       lower.contains('m3u8') ||
       lower.contains('/video/') ||

@@ -96,6 +96,60 @@ void main() {
       );
     });
 
+    test('红牛等 type=2 误标图片 + 影视频源 + m3u8 → video，不进 comic', () {
+      // 设备导出：bookSourceType=2，group=影视频源，正文规则抽 m3u8
+      const hongniu = BookSource(
+        bookSourceUrl: 'https://hongniuziyuan.com',
+        bookSourceName: '红牛资源',
+        bookSourceGroup: '影视频源',
+        bookSourceType: 2,
+        searchUrl:
+            'https://hongniuziyuan.com/index.php/vod/search.html?wd={{key}}&submit=search',
+        ruleToc: TocRule(
+          chapterList: r'@css:.vodplayinfo>div>div>ul>li',
+          chapterName: r'@css:a@text##(.+)\$(.+)##$1',
+          chapterUrl: r'@css:a@text##(.+)\$(.+)##$2',
+        ),
+        ruleContent: ContentRule(
+          content: r'''<js>
+var url="";
+if(/.*\.m3u8.*/.test(baseUrl)){url=baseUrl}
+else{
+jm=java.htmlFormat(result).match(/.*(\{.*\}).*/)[1];
+url=baseUrl.match(/(.*)\/share.*/)[1]+jm.match(/.*url\":\"(.*)\".*/)[1];
+}
+url
+</js>''',
+        ),
+      );
+      expect(BookOpenUtils.looksLikeVideoSource(hongniu), isTrue);
+      expect(BookOpenUtils.isImageHtmlContentSource(hongniu), isFalse);
+      // 关键：不得因 type=2 直接走 typeBitsForSource → image/comic
+      expect(
+        BookOpenUtils.resolveTypeBits(BookType.image, hongniu),
+        BookType.video,
+      );
+      expect(
+        BookOpenUtils.routeForTypeBits(
+          BookOpenUtils.resolveTypeBits(BookType.image, hongniu),
+        ),
+        AppRoutes.video,
+      );
+    });
+
+    test('U酷 type=2 影视频源 + m3u8 → video', () {
+      const uku = BookSource(
+        bookSourceUrl: 'https://ukuzy.com/',
+        bookSourceName: 'U酷资源',
+        bookSourceGroup: '影视频源',
+        bookSourceType: 2,
+        ruleContent: ContentRule(
+          content: r'@js:result=/.*\.m3u8.*/.test(baseUrl)?baseUrl:"";',
+        ),
+      );
+      expect(BookOpenUtils.resolveTypeBits(0, uku), BookType.video);
+    });
+
     test('显式 bookSourceType=4 优先于书籍旧 image 位', () {
       const qmao = BookSource(
         bookSourceUrl: 'https://www.qmao.net',

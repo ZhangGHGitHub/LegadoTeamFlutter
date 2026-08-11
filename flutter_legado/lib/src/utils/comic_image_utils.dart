@@ -28,7 +28,9 @@ bool looksLikeImageUrl(String url) {
       .hasMatch(lower)) {
     return false;
   }
-  if (lower.contains('m3u8') || lower.contains('ffzy-plays')) {
+  if (lower.contains('m3u8') ||
+      lower.contains('ffzy-plays') ||
+      lower.contains('ffzy-play')) {
     return false;
   }
   return lower.endsWith('.jpg') ||

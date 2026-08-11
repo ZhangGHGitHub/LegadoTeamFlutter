@@ -477,8 +477,11 @@ impl AnalyzeRule {
             // 书源惯用的裸赋值临时变量名，且 result/src/baseUrl/book 等已
             // 由下方 globalThis 注入，不重复声明（避免与 jsLib let/const
             // 冲突）— Reasonix
+            // len/jm/from：影视频源 TOC/正文惯用裸赋值（榴莲 `len=java.getElements`
+            // 、红牛 `jm=...`）。不预声明 start/end/host/i/url（书源常 let/const
+            // 同名，var 预声明会 SyntaxError）— Reasonix
             prologue.push_str(
-                "var d, data, json, list, arr, obj, tmp, index, num, comic_chapter, header, headers, chapter_domain, end_num, rule, pic, html, img_ext, all;\n",
+                "var d, data, json, list, arr, obj, tmp, index, num, comic_chapter, header, headers, chapter_domain, end_num, rule, pic, html, img_ext, all, len, jm, from;\n",
             );
             if let Ok(content_json) = serde_json::to_string(&self.content) {
                 // 经 globalThis 属性赋值注入（对齐原版 ScriptableObject.put
@@ -1092,8 +1095,9 @@ mod tests {
         assert!(code.contains("globalThis.chapter = {\"title\": \"第一章\"};"), "chapter 注入: {code}");
         assert!(
             code.contains("var d, data, json, list, arr, obj, tmp")
-                && code.contains(", all;"),
-            "应预声明裸赋值变量 all（严格模式）: {code}"
+                && code.contains(", all,")
+                && code.contains("len,"),
+            "应预声明裸赋值变量 all/len（严格模式）: {code}"
         );
     }
 
@@ -1113,6 +1117,30 @@ mod tests {
         assert!(
             recorded[0].contains(", all;") || recorded[0].contains(" all,"),
             "prologue 须含 var all: {}",
+            recorded[0]
+        );
+    }
+
+    /// 回归：榴莲影视等 `len=java.getElements(...).length` 裸赋值
+    #[test]
+    fn test_js_rule_predeclares_len_for_bare_assignment() {
+        let executor = Arc::new(RecordingJsExecutor::new());
+        let rule = AnalyzeRule::with_js_executor(
+            "<html></html>".to_string(),
+            "https://example.com/vod/".to_string(),
+            executor.clone(),
+        );
+        rule.get_strings("@js:len=3; from='线路'; len").unwrap();
+        let recorded = executor.executed.lock().unwrap().clone();
+        assert_eq!(recorded.len(), 1);
+        assert!(
+            recorded[0].contains(", len,") || recorded[0].contains(" len,") || recorded[0].contains(", len;"),
+            "prologue 须含 var len: {}",
+            recorded[0]
+        );
+        assert!(
+            recorded[0].contains(", jm,") || recorded[0].contains(" jm,") || recorded[0].contains(", jm;"),
+            "prologue 须含 var jm: {}",
             recorded[0]
         );
     }

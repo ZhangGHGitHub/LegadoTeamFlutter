@@ -446,7 +446,8 @@ class PlatformBridgeService {
     final lower = url.toLowerCase();
     if (RegExp(r'\.(m3u8|mp4|flv|mkv|webm)(\?|#|$)').hasMatch(lower) ||
         lower.contains('m3u8') ||
-        lower.contains('ffzy-plays')) {
+        lower.contains('ffzy-plays') ||
+        lower.contains('ffzy-play')) {
       debugPrint('[PlatformBridge] startBrowser 跳过流媒体外开：$url');
       return;
     }

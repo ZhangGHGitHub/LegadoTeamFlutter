@@ -43,45 +43,73 @@ class BookOpenUtils {
       book.origin != BookType.localTag &&
       !book.origin.startsWith(BookType.webDavTag);
 
-  /// type=0 但实为视频源的启发式（MacCMS / 影视频源误标）。
+  /// 实为视频源的启发式（MacCMS / 影视频源误标）。
   ///
-  /// 设备证据：非凡资源网、量子资源网等 `bookSourceGroup=影视频源` 且
-  /// `bookSourceType=0`，正文 `result=baseUrl`（章节 URL 即 m3u8）。
-  /// 原版靠 `java.startBrowser` 外开播放；重构必须进 VideoScreen。
+  /// 设备证据（emulator-5558 导出）：
+  /// - 非凡资源网：`bookSourceType=0` + `group=影视频源` + `provide/vod` /
+  ///   `vod_play_url` + 正文 `result=baseUrl`（章节 URL 即 m3u8）
+  /// - 红牛资源 / U酷资源：`bookSourceType=2`（误标图片）+ `group=影视频源`
+  ///   + 正文规则含 `m3u8` 抽取
   ///
-  /// **仅**在 `bookSourceType==0` 时启用；显式 1/2/3/4 以声明为准。
+  /// 原版靠 `java.startBrowser` 外开；重构必须进 VideoScreen，**绝不**进 comic。
+  /// 对 type=0/2 启用启发式；显式 audio/file/video(1/3/4) 不改写。
   /// 不用裸 `startBrowser`（小说源也常见）。— Reasonix + UI
   static bool looksLikeVideoSource(BookSource? source) {
     if (source == null) return false;
     if (source.bookSourceType == BookSourceType.video) return true;
-    if (source.bookSourceType != BookSourceType.text) return false;
+    // 仅纠正文本(0)与误标图片(2)；音频/文件保持声明
+    final st = source.bookSourceType;
+    if (st != BookSourceType.text && st != BookSourceType.image) {
+      return false;
+    }
 
     final group = (source.bookSourceGroup ?? '').toLowerCase();
+    final name = source.bookSourceName.toLowerCase();
+    final srcUrl = source.bookSourceUrl.toLowerCase();
     final search = (source.searchUrl ?? '').toLowerCase();
     final explore = (source.exploreUrl ?? '').toLowerCase();
     final tocList = (source.ruleToc?.chapterList ?? '').toLowerCase();
     final content = source.ruleContent?.content ?? '';
     final sourceRegex = source.ruleContent?.sourceRegex ?? '';
-    final blob = '$group\n$search\n$explore\n$tocList\n'
-        '${content.toLowerCase()}\n${sourceRegex.toLowerCase()}';
+    final contentLower = content.toLowerCase();
+    final regexLower = sourceRegex.toLowerCase();
+    final blob =
+        '$group\n$name\n$srcUrl\n$search\n$explore\n$tocList\n$contentLower\n$regexLower';
 
     // MacCMS / 聚合资源站：目录或接口含 vod_play_url / provide/vod
     if (blob.contains('provide/vod') || blob.contains('vod_play_url')) {
       return true;
     }
 
-    final isVideoGroup =
-        group.contains('影视') || group.contains('视频源') || group.contains('视频');
-    final playExt =
-        RegExp(r'\.(m3u8|mp4|flv)', caseSensitive: false).hasMatch(
-      '$content\n$sourceRegex',
-    );
+    final isVideoGroup = group.contains('影视') ||
+        group.contains('视频源') ||
+        group.contains('视频');
+    // 源名/域名常见 MacCMS 资源站（红牛/非凡/量子/U酷等）
+    final isVideoName = (name.contains('资源') &&
+            (name.contains('红牛') ||
+                name.contains('非凡') ||
+                name.contains('量子') ||
+                name.contains('乌酷') ||
+                name.contains('u酷') ||
+                name.contains('最大') ||
+                name.contains('影视') ||
+                name.contains('视频'))) ||
+        srcUrl.contains('hongniu') ||
+        srcUrl.contains('ukuzy') ||
+        srcUrl.contains('ffzy') ||
+        srcUrl.contains('lzizy') ||
+        srcUrl.contains('zuidazy');
+    final playExt = RegExp(r'\.(m3u8|mp4|flv)', caseSensitive: false)
+        .hasMatch('$content\n$sourceRegex');
+    final hasStreamToken = RegExp(r'm3u8|mp4|flv|m3u', caseSensitive: false)
+        .hasMatch('$content\n$sourceRegex\n$tocList');
     // 非凡等：正文直接把章节 URL（m3u8）当作播放地址
     final returnsBaseUrl = RegExp(
       r'result\s*=\s*baseUrl',
       caseSensitive: false,
     ).hasMatch(content);
-    if (isVideoGroup && (playExt || returnsBaseUrl)) {
+    if ((isVideoGroup || isVideoName) &&
+        (playExt || hasStreamToken || returnsBaseUrl)) {
       return true;
     }
 
@@ -139,24 +167,24 @@ class BookOpenUtils {
     return (typeBits & ~BookType.text) | BookType.image;
   }
 
-  /// 统一解析开读类型位（**书源媒体类型 / 视频启发式优先于抽图启发式**）。
+  /// 统一解析开读类型位（**视频启发式优先于显式 type=2 与抽图提升**）。
   ///
   /// 对齐原版：`book.isVideo` → VideoPlayer，绝不进 ReadManga。
-  /// 修复：仅当 `typeBits==0` 才补书源类型时，旧库 text/image 位会挡住
-  /// type=4 或 type=0 视频源；抽图提升也曾误伤视频页。— Reasonix + UI
+  /// 修复：红牛等 `bookSourceType=2` 误标图片时，旧逻辑直接 `typeBitsForSource(2)`
+  /// → comic「暂无图片」；非凡 type=0 进文本刷 m3u8。— Reasonix + UI
   static int resolveTypeBits(int bookTypeBits, BookSource? source) {
     final existing = bookTypeBits & typeMask;
 
     if (source != null) {
+      // 视频启发式优先于显式 image(2)：纠正 MacCMS 误标图片源
+      if (looksLikeVideoSource(source)) {
+        return BookType.video;
+      }
       final srcType = source.bookSourceType;
       // 显式音频/图片/文件/视频：书源声明优先于书籍旧位
       if (srcType >= BookSourceType.audio &&
           srcType <= BookSourceType.video) {
         return typeBitsForSource(srcType);
-      }
-      // type=0：视频启发式优先于抽图提升
-      if (looksLikeVideoSource(source)) {
-        return BookType.video;
       }
       final base = existing == 0 ? BookType.text : existing;
       // 已是视频/音频则不再抽图提升

@@ -170,8 +170,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   Future<BookSource?> _findSourceByOrigin(BookApi api, String origin) async {
     try {
       final sources = await api.getBookSources();
+      final o = origin.trim().replaceAll(RegExp(r'/+$'), '');
       for (final s in sources) {
-        if (s.bookSourceUrl == origin) return s;
+        final u = s.bookSourceUrl.trim().replaceAll(RegExp(r'/+$'), '');
+        if (u == o || s.bookSourceUrl == origin) return s;
       }
     } catch (e) {
       debugPrint('获取书源失败: $e');

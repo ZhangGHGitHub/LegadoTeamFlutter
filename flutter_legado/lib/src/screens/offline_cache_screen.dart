@@ -264,8 +264,10 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     if (BookOpenUtils.isOnlineBook(book)) {
       try {
         final sources = await ref.read(bookApiProvider).getBookSources();
+        String norm(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
+        final o = norm(book.origin);
         for (final s in sources) {
-          if (s.bookSourceUrl == book.origin) {
+          if (norm(s.bookSourceUrl) == o || s.bookSourceUrl == book.origin) {
             typeBits = BookOpenUtils.resolveTypeBits(typeBits, s);
             break;
           }
