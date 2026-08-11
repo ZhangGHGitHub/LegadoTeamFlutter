@@ -2197,5 +2197,252 @@ mod tests {
             }
         }
     }
+    /// 批量图片源搜索/目录探针（网络，ignore）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "requires network + tmp_debug/sources.json"]
+    fn probe_all_image_sources_batch() {
+        let _db = crate::db_state::ensure_test_db();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug/sources.json");
+        let raw = std::fs::read_to_string(&path).expect("sources.json");
+        let mut data: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        let mut img = Vec::new();
+        for v in &mut data {
+            if v.get("bookSourceType").and_then(|x| x.as_i64()) != Some(2) {
+                continue;
+            }
+            if let Some(obj) = v.as_object_mut() {
+                for k in ["enabled", "enabledExplore", "enabledCookieJar", "eventListener", "customButton"] {
+                    if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
+                        obj.insert(k.to_string(), serde_json::json!(n != 0));
+                    }
+                }
+            }
+            img.push(v.clone());
+        }
+        println!("IMAGE_SOURCES={}", img.len());
+        let mut ok_search = 0usize;
+        let mut fail_search = 0usize;
+        let mut err_counter: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        let mut ok_names = Vec::new();
+        let mut fail_samples = Vec::new();
+        for (i, v) in img.iter().enumerate() {
+            let src: legado_core::models::BookSource = match serde_json::from_value(v.clone()) {
+                Ok(s) => s,
+                Err(e) => {
+                    fail_search += 1;
+                    *err_counter.entry(format!("deserialize:{e}")).or_default() += 1;
+                    continue;
+                }
+            };
+            let name = src.book_source_name.clone();
+            let url = src.book_source_url.clone();
+            let arr = serde_json::json!([src]).to_string();
+            let _ = crate::api::source::import_sources(&arr);
+            let urls = format!(r#"["{url}"]"#);
+            match search_books("一人之下", &urls) {
+                Ok(list) if !list.is_empty() => {
+                    ok_search += 1;
+                    ok_names.push(format!("{name} n={}", list.len()));
+                    let b = &list[0];
+                    match crate::api::reader::refresh_toc(&b.book_url, &b.source_url) {
+                        Ok(toc) => println!(
+                            "OK_SEARCH+TOC\t{name}\tsearch={}\ttoc={}",
+                            list.len(),
+                            toc.chapters.len()
+                        ),
+                        Err(e) => {
+                            let es = e.to_string();
+                            println!(
+                                "OK_SEARCH+TOC_FAIL\t{name}\tsearch={}\terr={es}",
+                                list.len()
+                            );
+                            *err_counter.entry(format!("toc:{es}")).or_default() += 1;
+                        }
+                    }
+                }
+                Ok(_) => {
+                    fail_search += 1;
+                    *err_counter.entry("search:empty".into()).or_default() += 1;
+                    if fail_samples.len() < 25 {
+                        fail_samples.push(format!("{name}\tempty"));
+                    }
+                    println!("FAIL_SEARCH\t{name}\tempty");
+                }
+                Err(e) => {
+                    fail_search += 1;
+                    let es = e.to_string();
+                    let key = if es.contains("ReferenceError") {
+                        format!("js:{}", es.chars().take(80).collect::<String>())
+                    } else if es.contains("timeout") || es.contains("Timeout") {
+                        "http:timeout".into()
+                    } else if es.contains("404") {
+                        "http:404".into()
+                    } else if es.contains("connect")
+                        || es.contains("dns")
+                        || es.contains("TLS")
+                        || es.contains("ssl")
+                    {
+                        "http:network".into()
+                    } else {
+                        format!("other:{}", es.chars().take(60).collect::<String>())
+                    };
+                    *err_counter.entry(key).or_default() += 1;
+                    if fail_samples.len() < 25 {
+                        fail_samples.push(format!("{name}\t{es}"));
+                    }
+                    println!("FAIL_SEARCH\t{name}\t{es}");
+                }
+            }
+            if i % 10 == 0 {
+                eprintln!("progress {}/{}", i + 1, img.len());
+            }
+        }
+        println!("\n==== SUMMARY ====");
+        println!(
+            "ok_search={ok_search} fail_search={fail_search} total={}",
+            img.len()
+        );
+        println!("ok_names={ok_names:?}");
+        println!("top_errors:");
+        let mut errs: Vec<_> = err_counter.into_iter().collect();
+        errs.sort_by(|a, b| b.1.cmp(&a.1));
+        for (k, c) in errs.iter().take(30) {
+            println!("  {c}\t{k}");
+        }
+        println!("fail_samples:");
+        for s in fail_samples {
+            println!("  {s}");
+        }
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "requires network"]
+    fn probe_51_toc_detail() {
+        let _db = crate::db_state::ensure_test_db();
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug/src_51.json");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        if let Some(obj) = v.as_object_mut() {
+            for k in [
+                "enabled",
+                "enabledExplore",
+                "enabledCookieJar",
+                "eventListener",
+                "customButton",
+            ] {
+                if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
+                    obj.insert(k.to_string(), serde_json::json!(n != 0));
+                }
+            }
+        }
+        let src: legado_core::models::BookSource = serde_json::from_value(v).unwrap();
+        crate::api::source::import_sources(&serde_json::json!([src.clone()]).to_string()).unwrap();
+        let urls = format!(r#"["{}"]"#, src.book_source_url);
+        let list = search_books("一人之下", &urls).expect("search");
+        println!("search n={}", list.len());
+        let b = list.first().expect("hit");
+        println!("book={} url={}", b.book_name, b.book_url);
+        let engine = crate::api::web_book::build_engine();
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        match rt.block_on(engine.get_chapters(&src, &b.book_url)) {
+            Ok(chs) => {
+                println!("engine_toc n={}", chs.len());
+                for c in chs.iter().take(3) {
+                    println!("  {} -> {}", c.title, c.url);
+                }
+            }
+            Err(e) => println!("engine_toc err={e}"),
+        }
+        match crate::api::reader::refresh_toc(&b.book_url, &b.source_url) {
+            Ok(t) => println!("refresh_toc n={}", t.chapters.len()),
+            Err(e) => println!("refresh_toc err={e}"),
+        }
+    }
+
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn offline_51_chapter_list_from_saved_html() {
+        let html = std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug/comic_2122.html"),
+        )
+        .expect("html");
+        let rule = concat!(
+            "<js>\n",
+            "const scripts = Array.from(java.getElement(\"script\")).filter(e => String(e).includes('目录'));\n",
+            "const c = scripts[0];\n",
+            "d = c\n",
+            "  ? JSON.parse(c.html()).itemListElement.map(e => ({ title: e.name, url: e.url }))\n",
+            "  : [{ title: book.name, url: java.getString(\".btn-read@href\", src) }];\n",
+            "JSON.stringify(d);\n",
+            "</js>\n",
+            "$[*]",
+        );
+        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            html.clone(),
+            "https://51acgs.com/comic/2122".into(),
+            "https://51acgs.com",
+            None,
+        )
+        .with_js_binding("book", r#"{"name":"下半身第一主義3"}"#);
+        match analyzer.get_elements(rule) {
+            Ok(els) => {
+                println!("elements n={}", els.len());
+                for (i, e) in els.iter().take(5).enumerate() {
+                    println!("  [{}] {}", i, &e[..e.len().min(200)]);
+                }
+                assert!(!els.is_empty(), "expected fallback chapter");
+            }
+            Err(e) => panic!("get_elements err: {e}"),
+        }
+        let name = crate::js_executor::construct_analyzer_with_js_lib(
+            html,
+            "https://51acgs.com/comic/2122".into(),
+            "https://51acgs.com",
+            None,
+        )
+        .get_string(".comic-content@.text-primary@text")
+        .unwrap_or_default();
+        println!("book_name_rule=>{name:?}");
+    }
+
+
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    #[ignore = "requires network"]
+    fn probe_relative_search_urls() {
+        let _db = crate::db_state::ensure_test_db();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug");
+        let raw = std::fs::read_to_string(root.join("sources.json")).unwrap();
+        let mut data: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        let want = ["漫蛙", "拷贝漫画", "包子漫画（优+）", "爱看漫画", "神漫画", "51漫画"];
+        for v in &mut data {
+            let n = v.get("bookSourceName").and_then(|x| x.as_str()).unwrap_or("");
+            if !want.contains(&n) { continue; }
+            if let Some(obj) = v.as_object_mut() {
+                for k in ["enabled", "enabledExplore", "enabledCookieJar", "eventListener", "customButton"] {
+                    if let Some(num) = obj.get(k).and_then(|x| x.as_i64()) {
+                        obj.insert(k.to_string(), serde_json::json!(num != 0));
+                    }
+                }
+            }
+            let src: legado_core::models::BookSource = serde_json::from_value(v.clone()).unwrap();
+            let _ = crate::api::source::import_sources(&serde_json::json!([src.clone()]).to_string());
+            let urls = format!(r#"["{}"]"#, src.book_source_url);
+            match search_books("一人之下", &urls) {
+                Ok(list) => println!("REL\t{}\tn={}\turl={}", src.book_source_name, list.len(), src.search_url.as_deref().unwrap_or("")),
+                Err(e) => println!("REL\t{}\terr={e}", src.book_source_name),
+            }
+        }
+    }
+
 
 }

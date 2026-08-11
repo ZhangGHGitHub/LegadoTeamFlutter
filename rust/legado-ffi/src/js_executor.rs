@@ -518,4 +518,37 @@ mod tests {
         let r3 = execute_login_check_js("function {{", "body", "http://x", 200, "lit_test");
         assert!(matches!(r3, Err(LoginCheckError::JsFailed(_))), "实际: {r3:?}");
     }
+
+    #[test]
+    fn test_relative_search_url_absolutized() {
+        let u = build_search_url(
+            "/api/search?type=mh&page={{page}}&pageSize=20&keyword={{key}}",
+            "一人之下",
+            1,
+            "https://www.manwa.me",
+        );
+        assert!(
+            u.url().starts_with("https://www.manwa.me/api/search?"),
+            "url={}",
+            u.url()
+        );
+        println!("absolutized={}", u.url());
+    }
+
+    #[test]
+    fn test_relative_search_url_with_java_encode_uri() {
+        let u = build_search_url(
+            "statics/search.aspx?key={{java.encodeURI(key)}}&page={{page}}",
+            "一人之下",
+            1,
+            "https://www.copymanga.site",
+        );
+        assert!(
+            u.url().starts_with("https://www.copymanga.site/"),
+            "url={}",
+            u.url()
+        );
+        println!("encodeURI url={}", u.url());
+    }
+
 }

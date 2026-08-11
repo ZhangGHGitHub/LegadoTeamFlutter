@@ -469,7 +469,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let elements = if chapter_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
         } else {
-            analyzer.get_elements(chapter_list_rule).unwrap_or_default()
+            analyzer.get_elements(chapter_list_rule)?
         };
 
         let mut chapters = Vec::new();

@@ -336,6 +336,15 @@ impl AnalyzeRule {
         }
 
         let rule_no_put = strip_put_rules(rule);
+        // 与 get_strings 对齐：`<js>...</js>`（含 `\n$[*]` 复合后缀）必须走
+        // 单步路径。若先 split_js_chain_steps，会把 `$[*]` 拆成独立 Extract，
+        // 对整页 HTML 做 JSONPath →「JSON parse error」；再被 web_book
+        // `get_elements(...).unwrap_or_default()` 吞成 0 章 →「暂无章节」
+        // （51漫画 chapterList 2026-08-11 复现：站点已无「目录」脚本，走
+        // btn-read 回退本可出 1 章，却因链拆解整链失败）。— Reasonix
+        if rule_no_put.trim_start().starts_with("<js>") {
+            return self.get_elements_single_step(&rule_no_put);
+        }
         let steps = split_js_chain_steps(&rule_no_put);
         if steps.len() > 1 {
             // 链式 getElements：首段按元素规则提取，后续 JS 以拼接/单元素为 result
@@ -525,17 +534,55 @@ impl AnalyzeRule {
         self.json_parser.parse_jsonpath(&self.content, rule)
     }
 
-    /// 处理规则中的 `{$.rule}` 内嵌表达式
+    /// 处理规则中的 `{$.rule}` / `{{$.rule}}` 内嵌表达式
     ///
-    /// 将 `{$.some.path}` 替换为其在当前内容上的解析结果
+    /// 将 `{$.some.path}` 或 `{{$.some.path}}` 替换为其在当前内容上的解析结果。
+    /// 双花括号形式见于丁斐/漫画人等书源：`...?comic_id={{$.comic_id}}&...`；
+    /// 若只剥内层 `{$.x}` 会残留外层花括号变成 `comic_id={106209}` → TOC 422。— Reasonix
     fn process_inner_rules(&self, rule: &str) -> LegadoResult<String> {
         if !rule.contains("{$") {
             return Ok(rule.to_string());
         }
 
-        let mut analyzer = RuleAnalyzer::new(rule, true);
+        let mut current = rule.to_string();
+
+        // 1) 优先处理双花括号 {{$.path}}
+        if current.contains("{{$") {
+            let re = regex::Regex::new(r"\{\{(\$[^}]*)\}\}").unwrap();
+            let mut out = String::with_capacity(current.len());
+            let mut last = 0;
+            for cap in re.captures_iter(&current) {
+                let m = cap.get(0).unwrap();
+                out.push_str(&current[last..m.start()]);
+                let inner = cap.get(1).map(|g| g.as_str()).unwrap_or("");
+                let replaced = self
+                    .json_parser
+                    .parse_jsonpath(&self.content, inner)
+                    .ok()
+                    .and_then(|v| {
+                        if v.is_empty() {
+                            None
+                        } else if v.len() == 1 {
+                            Some(v[0].clone())
+                        } else {
+                            Some(v.join("\n"))
+                        }
+                    })
+                    .unwrap_or_default();
+                out.push_str(&replaced);
+                last = m.end();
+            }
+            out.push_str(&current[last..]);
+            current = out;
+        }
+
+        // 2) 单花括号 {$.path}（神漫画等）
+        if !current.contains("{$") {
+            return Ok(current);
+        }
+
+        let mut analyzer = RuleAnalyzer::new(&current, true);
         let result = analyzer.inner_rule("{$", 1, 1, |inner_rule| {
-            // 递归解析内嵌规则
             self.json_parser
                 .parse_jsonpath(&self.content, inner_rule)
                 .ok()
@@ -551,8 +598,7 @@ impl AnalyzeRule {
         });
 
         if result.is_empty() {
-            // inner_rule 返回空表示没有成功替换任何内嵌规则
-            Ok(rule.to_string())
+            Ok(current)
         } else {
             Ok(result)
         }
@@ -1179,5 +1225,46 @@ mod tests {
             .get_string("http://image.mhxk.com/mh/{$.comic_id}.jpg-600x800.webp")
             .unwrap();
         assert_eq!(cover, "http://image.mhxk.com/mh/12345.jpg-600x800.webp");
+        // 双花括号 {{$.x}}（丁斐/漫画人）不得残留外层 {}
+        let url2 = rule
+            .get_string(
+                "http://comic.321mh.com/app_api/v5/getcomicinfo_body/?comic_id={{$.comic_id}}&from_page=search",
+            )
+            .unwrap();
+        assert_eq!(
+            url2,
+            "http://comic.321mh.com/app_api/v5/getcomicinfo_body/?comic_id=12345&from_page=search"
+        );
+        assert!(!url2.contains("{12345}"), "不得残留花括号: {url2}");
+    }
+
+    /// `<js>...</js>\n$[*]` 必须经 get_elements 单步路径拆解，不能被 JS 链拆成
+    /// Extract("$[*]") 对 HTML 误解析（51漫画目录回归）。
+    #[test]
+    fn test_get_elements_js_tag_with_jsonpath_suffix() {
+        use crate::JsExecutor;
+        use std::sync::Arc;
+
+        struct JsonArrayExec;
+        impl JsExecutor for JsonArrayExec {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                Ok(r#"[{"title":"第1话","url":"/ch/1"},{"title":"第2话","url":"/ch/2"}]"#
+                    .to_string())
+            }
+        }
+
+        let rule = concat!(
+            "<js>\n",
+            "d = [{ title: book.name, url: '/ch/1' }];\n",
+            "JSON.stringify(d);\n",
+            "</js>\n",
+            "$[*]",
+        );
+        let mut analyzer = AnalyzeRule::new("<html></html>".into(), "https://example.com".into());
+        analyzer.set_js_executor(Arc::new(JsonArrayExec));
+        analyzer.add_js_binding("book", r#"{"name":"测试书"}"#);
+        let els = analyzer.get_elements(rule).expect("get_elements");
+        assert_eq!(els.len(), 2, "els={els:?}");
+        assert!(els[0].contains("第1话") || els[0].contains("/ch/1"), "{}", els[0]);
     }
 }

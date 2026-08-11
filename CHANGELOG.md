@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.30] - 2026-08-11
+
+### 修复（搜索相对 URL 绝对化 + 目录 `<js>$[*]` 链拆解，[Rust] 为主）
+
+取证（本机新建 emulator-5558 + 设备导出 sources.json 89 个 type=2）：批量搜索成功率仅 12/89，失败几乎全是 `search:empty`；相对 searchUrl 占 41/89。
+
+1. **搜索结果过少（引擎级）**
+   - **根因**：① `AnalyzeUrl::parse`/`parse_with_js` 未使用 `baseUrl`，相对 searchUrl（`/search?...`、`statics/...`）原样发出；② 无 path 的 host 拼接相对路径时 `rfind('/')` 命中 `://`，拼成 `https://statics/...` 假域名（拷贝漫画等）。
+   - **修复**：`parse` 读取 `variables.baseUrl`；`get_absolute_url` 对「仅域名 base」正确追加路径。
+   - **仍未对齐**：站点失效/空结果、page=1、个别源 JS（如快看 `__NUXT__`）仍会少结果；分组请选「漫画书源」（约 67 源），「图片书源」组本身仅约 4 个源。
+
+2. **「暂无章节」（51 等 `<js>+$[*]` 目录）**
+   - **根因**：`get_elements` 把 `<js>...</js>\n$[*]` 拆成 Js+Extract，对 HTML 跑 `$[*]` → JSON parse error，再被 `unwrap_or_default` 吞成 0 章；站点已无「目录」脚本时本应走 btn-read 回退。
+   - **修复**：`<js>` 规则与 `get_strings` 一样走单步路径；目录解析错误不再静默；空标题+有 URL 仍保留章节；`book.name` 取首行。
+   - **探针**：51 TOC 从 0→1（站点侧仅露出开始阅读章）；神漫画 TOC=61。
+
+3. **`{{$.comic_id}}` 双花括号**
+   - **根因**：丁斐等 `bookUrl` 用 `{{$.id}}`，只剥内层留下 `{106209}` → TOC HTTP 422。
+   - **修复**：`process_inner_rules` 优先替换双花括号形式。
+
+编写者：Reasonix ｜ 2026-08-11
+
 ## [2.0.29] - 2026-08-11
 
 ### 修复（51封面 + 漫画搜索/目录/正文引擎缺口，[Rust]+[UI]）

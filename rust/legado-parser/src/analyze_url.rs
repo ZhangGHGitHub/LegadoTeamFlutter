@@ -200,10 +200,18 @@ impl AnalyzeUrl {
         variables: &HashMap<String, String>,
         page: i32,
     ) -> LegadoResult<Self> {
+        // 对齐原版 AnalyzeUrl(baseUrl=书源 URL)：相对 searchUrl
+        // （如 `/search?q={{key}}`、`statics/search.aspx?...`）必须拼到书源域名。
+        // 变量 `baseUrl` 由 build_search_url 注入；缺省时保持空（绝对 URL 不受影响）。
+        // 此前 base_url 恒空 → 相对路径原样发出 → 图片源约半数搜索空结果。— Reasonix
+        let base_url = variables
+            .get("baseUrl")
+            .cloned()
+            .unwrap_or_default();
         let mut instance = Self {
             rule_url: template.to_string(),
             url: String::new(),
-            base_url: String::new(),
+            base_url,
             url_no_query: String::new(),
             method: RequestMethod::Get,
             headers: HashMap::new(),
@@ -830,7 +838,16 @@ impl AnalyzeUrl {
             return format!("{}/{}", base.trim_end_matches('/'), relative);
         }
 
-        // 相对路径
+        // 相对路径（无前导 /）：对齐 NetworkUtils.getAbsoluteURL
+        // 注意：base 若仅为 `https://host.com`（无 path），`rfind('/')` 会命中
+        // `://` 里的斜杠，拼出 `https://statics/...` 这种假域名（拷贝漫画
+        // searchUrl=`statics/search.aspx?...` 实测）。须跳过 scheme 段。— Reasonix
+        if let Some(scheme_end) = base.find("://") {
+            let after_scheme = &base[scheme_end + 3..];
+            if !after_scheme.contains('/') {
+                return format!("{}/{}", base.trim_end_matches('/'), relative);
+            }
+        }
         if base.ends_with('/') {
             format!("{}{}", base, relative)
         } else if let Some(pos) = base.rfind('/') {
@@ -1489,6 +1506,34 @@ mod tests {
             None,
         );
         assert_eq!(url.url(), "https://example.com/api/search?q=test");
+        // 无 path 的 host + 无前导 / 的相对路径（拷贝漫画 statics/...）
+        assert_eq!(
+            AnalyzeUrl::get_absolute_url(
+                "https://www.copymanga.site",
+                "statics/search.aspx?key=x"
+            ),
+            "https://www.copymanga.site/statics/search.aspx?key=x"
+        );
+    }
+
+    /// parse() 必须读取 variables.baseUrl，否则相对 searchUrl 原样发出
+    #[test]
+    fn test_parse_relative_url_uses_base_url_variable() {
+        let mut vars = HashMap::new();
+        vars.insert("key".to_string(), "一人之下".to_string());
+        vars.insert("page".to_string(), "1".to_string());
+        vars.insert("baseUrl".to_string(), "https://www.manwa.me".to_string());
+        let url = AnalyzeUrl::parse("/api/search?keyword={key}&page={page}", &vars, 1).unwrap();
+        assert!(
+            url.url().starts_with("https://www.manwa.me/api/search?"),
+            "url={}",
+            url.url()
+        );
+        assert!(
+            url.url().contains("一人之下") || url.url().contains("%E4%B8%80"),
+            "url={}",
+            url.url()
+        );
     }
 
     // --- 15. Angle bracket variable ---

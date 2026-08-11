@@ -515,6 +515,14 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.name.as_deref())
             .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
             .unwrap_or_default();
+        // CSS 多匹配时 get_string 用换行拼接（如 51漫画 name 规则会带上「已收藏」）；
+        // 注入 book.name 时只取首行，避免章节标题污染。— Reasonix
+        let book_name = book_name
+            .lines()
+            .map(str::trim)
+            .find(|s| !s.is_empty())
+            .unwrap_or("")
+            .to_string();
         let toc_url = if raw_toc.is_empty() {
             book_url.to_string()
         } else {
@@ -558,7 +566,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let elements = if chapter_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
         } else {
-            analyzer.get_elements(chapter_list_rule).unwrap_or_default()
+            // 勿 unwrap_or_default：规则失败（JS/JSONPath）被吞成空列表后，
+            // refresh_toc 只能报「未解析到任何章节」，掩盖真实引擎错误
+            // （51漫画 `<js>+$[*]` 链拆解回归）。— Reasonix
+            analyzer.get_elements(chapter_list_rule)?
         };
 
         // 规则提到循环外
@@ -580,9 +591,14 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 source.js_lib.as_deref(),
             );
 
-            let title = elem_analyzer.get_string(name_rule).unwrap_or_default();
-            if title.is_empty() {
+            let mut title = elem_analyzer.get_string(name_rule).unwrap_or_default();
+            let raw_url_probe = elem_analyzer.get_string(url_rule).unwrap_or_default();
+            // 对齐原版 BookChapterList：空标题仍保留；仅标题与 URL 皆空时跳过。
+            if title.is_empty() && raw_url_probe.is_empty() {
                 continue;
+            }
+            if title.is_empty() {
+                title = "无标题".to_string();
             }
 
             let is_vip = if vip_rule.is_empty() {
@@ -604,7 +620,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             //    - 卷章 url 空：用 `title + index` 替代（合成唯一标识，不绝对化）
             //    - 普通章 url 空：回退 baseUrl（目录页 url）
             //    - 非空 url：基于 toc_url 绝对化
-            let raw_url = elem_analyzer.get_string(url_rule).unwrap_or_default();
+            let raw_url = raw_url_probe;
             let url = if raw_url.is_empty() {
                 if is_volume {
                     format!("{}{}", title, index)
