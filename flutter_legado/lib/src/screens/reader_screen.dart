@@ -16,10 +16,12 @@ import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../widgets/reader/read_aloud_bar.dart';
 import '../widgets/reader/reader_bottom_bar.dart';
+import '../widgets/reader/reader_image_dominant_body.dart';
 import '../widgets/reader/reader_page_view.dart';
 import '../widgets/reader/reader_settings_sheet.dart';
 import '../widgets/reader/reader_status_strip.dart';
 import '../widgets/reader/reader_top_bar.dart';
+import '../utils/comic_image_utils.dart';
 import 'reader_config_panel.dart';
 
 /// 阅读器页面（Riverpod ConsumerStatefulWidget 薄壳）
@@ -204,6 +206,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     _maybePreloadAdjacentChapters(state);
 
+    // 必应漫画等：正文仅为 <img> HTML 时勿走文本排版（会刷裸标签）
+    final imageDominant = book != null &&
+        !state.isLoading &&
+        state.chapterContent.isNotEmpty &&
+        isImageDominantContent(state.chapterContent);
+
     // [UI-fix v2.0.3 | 2026-08-08] 自动换源监听：章节加载新产生错误时，
     // autoChangeSource 开启且在线书 → 自动搜索替代书源并切换（对标原版
     // ReadBook AutoChangeSource 加载失败自动换源语义的最小路径）— Qoder
@@ -223,9 +231,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       child: Scaffold(
         backgroundColor: state.backgroundColor,
         body: GestureDetector(
-          onTapUp: (details) => _handleTap(context, details),
+          onTapUp: imageDominant
+              ? null
+              : (details) => _handleTap(context, details),
           child: Stack(
             children: [
+              if (imageDominant)
+                ReaderImageDominantBody(
+                  content: state.chapterContent,
+                  book: book,
+                  onToggleControls: notifier.toggleControls,
+                  hasNextChapter: state.hasNextChapter,
+                  hasPrevChapter: state.hasPreviousChapter,
+                  onNextChapter: notifier.nextChapter,
+                  onPrevChapter: notifier.prevChapter,
+                )
+              else
               ReaderPageView(
                 key: _pageViewKey,
                 // [UI-fix v2.0.4 | 2026-08-08] 共享配置源：面板/界面 Sheet 的
@@ -265,7 +286,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
               // 全局页码指示器（跨章节连续分页已注册时显示）
-              if (state.showControls && state.totalPages > 0)
+              if (state.showControls && state.totalPages > 0 && !imageDominant)
                 Positioned(
                   bottom: 80,
                   left: 0,

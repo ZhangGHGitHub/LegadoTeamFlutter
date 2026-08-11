@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.33] - 2026-08-11
+
+### 修复（必应漫画 type=0 正文刷 `<img>` HTML，[UI]）
+
+1. **取证（emulator-5558）**
+   - 书源 `https://www.biyingmh.com`：`bookSourceType=0`，`ruleContent.content=.img@img@html`，`imageStyle=FULL`，无 header / imageDecode / coverDecodeJs。
+   - 正文已抽出明文 JPG（如 `jjmhw6.top/.../1135571.jpg`）；桌面直连与带 Referer 均为 200 + `FFD8` JPEG，**非**防盗链/密文问题。
+   - 书籍位标记 `notShelf|text` → 文本阅读器；排版引擎不渲染 `<img>`，用户看到裸标签。
+
+2. **修复**
+   - `BookOpenUtils`：识别「抽图 HTML」正文规则，将 type=0 源提升为 `BookType.image`，详情/书架开读走漫画阅读器；入库回填媒体位。
+   - 文本阅读器兜底：`isImageDominantContent` 时用纵向图片列表（FFI/`CachedNetworkImage`），避免再刷 HTML。
+
+3. **验证**
+   - 单测：必应规则提升路由、jjmhw6 样例图片主导判定、图文混排不误伤。
+   - 复测：必应漫画搜书 → 详情开始阅读 → 应进漫画纵向出图，不应再显示 `<img src=...>` 文字。
+
+编写者：Reasonix + UI ｜ 2026-08-11
+
 ## [2.0.32] - 2026-08-11
 
 ### 修复（搜索/列表封面解密卡顿，[UI]）

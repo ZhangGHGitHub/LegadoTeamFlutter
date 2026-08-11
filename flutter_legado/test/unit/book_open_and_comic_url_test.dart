@@ -24,6 +24,41 @@ void main() {
       expect(BookOpenUtils.routeForTypeBits(0), AppRoutes.reader);
     });
 
+    test('必应漫画类 type=0 抽图规则提升为 image → comic 路由', () {
+      const source = BookSource(
+        bookSourceUrl: 'https://www.biyingmh.com',
+        bookSourceName: '必应漫画',
+        bookSourceType: 0,
+        ruleContent: ContentRule(
+          content: '.img@img@html',
+          imageStyle: 'FULL',
+        ),
+      );
+      expect(BookOpenUtils.looksLikeImageHtmlContentRule('.img@img@html'), isTrue);
+      expect(BookOpenUtils.isImageHtmlContentSource(source), isTrue);
+      final bits = BookOpenUtils.promoteImageContentSource(
+        BookOpenUtils.typeBitsForSource(0),
+        source,
+      );
+      expect(bits, BookType.image);
+      expect(BookOpenUtils.routeForTypeBits(bits), AppRoutes.readerComic);
+    });
+
+    test('长 JS 小说正文规则不误提升为漫画', () {
+      final longJs = 'a' * 200 + '@html img';
+      expect(BookOpenUtils.looksLikeImageHtmlContentRule(longJs), isFalse);
+      const novel = BookSource(
+        bookSourceUrl: 'https://example.com',
+        bookSourceName: '小说',
+        bookSourceType: 0,
+        ruleContent: ContentRule(
+          content: 'id.content@html',
+          imageStyle: 'FULL',
+        ),
+      );
+      expect(BookOpenUtils.isImageHtmlContentSource(novel), isFalse);
+    });
+
     test('argumentsForRoute 漫画传 bookUrl，音视频传 Book', () {
       const book = Book(
         bookUrl: 'https://ex.com/b',
@@ -71,6 +106,22 @@ void main() {
     test('普通 src 不受影响', () {
       const html = '<img src="https://cdn.example.com/plain.png">';
       expect(parseComicImageUrls(html), ['https://cdn.example.com/plain.png']);
+    });
+
+    test('必应漫画样例：纯 img HTML 判定为图片主导正文', () {
+      const html = '''
+<img src="https://www.jjmhw6.top/static/upload/book/714/30286/1135571.jpg">
+<img src="https://www.jjmhw6.top/static/upload/book/714/30286/1135572.jpg">
+<img src="https://www.jjmhw6.top/static/upload/book/714/30286/1135573.jpg">
+''';
+      expect(isImageDominantContent(html), isTrue);
+      expect(parseComicImageUrls(html), hasLength(3));
+    });
+
+    test('图文混排不判定为图片主导', () {
+      const html =
+          '<p>这是一段足够长的小说正文，用来避免被误判成纯图片章节。</p><img src="https://cdn.example.com/a.jpg">';
+      expect(isImageDominantContent(html), isFalse);
     });
 
     test('旧截断正则会失败的样例：复合 URL 不被切成 url,{', () {

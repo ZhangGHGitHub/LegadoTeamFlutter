@@ -385,14 +385,17 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       return;
     }
     var typeBits = BookOpenUtils.typeBitsOf(book);
-    // 旧库缺类型位时按书源类型补全，避免漫画/视频误进文本阅读器
-    if (typeBits == 0 && BookOpenUtils.isOnlineBook(book)) {
+    // 旧库缺类型位时按书源类型补全；type=0 抽图源提升为漫画（必应漫画）
+    if (BookOpenUtils.isOnlineBook(book)) {
       try {
         final api = ref.read(bookApiProvider);
         final sources = await api.getBookSources();
         for (final s in sources) {
           if (s.bookSourceUrl == book.origin) {
-            typeBits = BookOpenUtils.typeBitsForSource(s.bookSourceType);
+            if (typeBits == 0) {
+              typeBits = BookOpenUtils.typeBitsForSource(s.bookSourceType);
+            }
+            typeBits = BookOpenUtils.promoteImageContentSource(typeBits, s);
             break;
           }
         }

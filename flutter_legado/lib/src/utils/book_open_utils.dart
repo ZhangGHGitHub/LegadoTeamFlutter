@@ -43,6 +43,51 @@ class BookOpenUtils {
       book.origin != BookType.localTag &&
       !book.origin.startsWith(BookType.webDavTag);
 
+  /// 正文规则是否为「抽取 img HTML」（必应漫画等 type=0 看图源）。
+  ///
+  /// 原版文本阅读器会把 `<img>` 排进 TextChapterLayout；重构版文本排版尚无
+  /// 内嵌图，此类源必须走漫画阅读器，否则用户只看到裸 HTML。
+  /// — Reasonix + UI
+  static bool looksLikeImageHtmlContentRule(String? contentRule) {
+    if (contentRule == null) return false;
+    final c = contentRule.trim().toLowerCase();
+    if (c.isEmpty) return false;
+    if (c.contains('@img@html')) return true;
+    if (c.contains('cp_img@html')) return true;
+    // 短规则 + @html + 图相关选择器（避免误伤长 JS 小说正文规则）
+    if (c.length <= 120 &&
+        c.contains('@html') &&
+        (c.contains('img') ||
+            c.contains('lazy-read') ||
+            c.contains('.img') ||
+            c.contains('#cp_img'))) {
+      return true;
+    }
+    return false;
+  }
+
+  /// 书源是否应按漫画 UI 打开（type=0 但 imageStyle=FULL/SINGLE 且抽图规则）
+  static bool isImageHtmlContentSource(BookSource? source) {
+    if (source == null) return false;
+    final style =
+        (source.ruleContent?.imageStyle ?? '').trim().toUpperCase();
+    // TEXT 表示按文字行内小图，仍走文本阅读器
+    if (style == 'TEXT') return false;
+    if (style.isNotEmpty && style != 'FULL' && style != 'SINGLE') {
+      return false;
+    }
+    return looksLikeImageHtmlContentRule(source.ruleContent?.content);
+  }
+
+  /// 文本类型位提升为图片位（保留其它非媒体标记由调用方处理）
+  static int promoteImageContentSource(int typeBits, BookSource? source) {
+    if (!isImageHtmlContentSource(source)) return typeBits;
+    if ((typeBits & (BookType.video | BookType.audio | BookType.image)) != 0) {
+      return typeBits;
+    }
+    return (typeBits & ~BookType.text) | BookType.image;
+  }
+
   /// 按类型位选择路由名（video→/video、audio→/audio、image→/reader-comic、
   /// 其余→/reader）
   static String routeForTypeBits(int typeBits) {

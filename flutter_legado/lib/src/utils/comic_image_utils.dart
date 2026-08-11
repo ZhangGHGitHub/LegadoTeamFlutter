@@ -78,6 +78,23 @@ List<String> parseComicImageUrls(String content) {
   return urls;
 }
 
+/// 章节正文是否以图片为主（几乎无纯文本，仅有 `<img>` / 图片 URL 行）。
+///
+/// 用于文本阅读器兜底：type=0 看图源若仍误进文本页，改为漫画式渲染，
+/// 避免把 `<img src="...">` 当纯文字刷屏（必应漫画设备证据）。
+/// — Reasonix + UI
+bool isImageDominantContent(String content) {
+  if (content.trim().isEmpty) return false;
+  final urls = parseComicImageUrls(content);
+  if (urls.isEmpty) return false;
+  final textOnly = content
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'\s+'), '')
+      .trim();
+  // 允许极短残留（标点/站点碎片）；有实质段落则仍走文本排版
+  return textOnly.length < 24;
+}
+
 /// JPEG/PNG/GIF/WEBP 魔数探测（解密结果校验，避免密文进 Image.memory）
 /// — Reasonix + UI
 bool looksLikeImageBytes(List<int> bytes) {

@@ -1443,10 +1443,18 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     // 分流逻辑抽至 BookOpenUtils，与书架 startActivityForBook 对齐 — Reasonix + UI
     const typeMask = BookOpenUtils.typeMask;
     var typeBits = BookOpenUtils.typeBitsOf(book);
-    if (typeBits == 0 && _isOnlineBook(book)) {
-      final source = await _findSourceByOrigin(api, book.origin);
-      if (source != null) {
-        typeBits = BookOpenUtils.typeBitsForSource(source.bookSourceType);
+    BookSource? matchedSource;
+    if (_isOnlineBook(book)) {
+      matchedSource = await _findSourceByOrigin(api, book.origin);
+      if (matchedSource != null) {
+        if (typeBits == 0) {
+          typeBits =
+              BookOpenUtils.typeBitsForSource(matchedSource.bookSourceType);
+        }
+        // 必应漫画等：bookSourceType=0 但正文 `.img@img@html`+FULL → 漫画阅读器
+        // （文本排版尚无内嵌图，否则只显示裸 HTML）— Reasonix + UI
+        typeBits =
+            BookOpenUtils.promoteImageContentSource(typeBits, matchedSource);
       }
     }
     try {
@@ -1459,10 +1467,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           await api.addBook(
               book.copyWith(bookType: typeBits | BookType.notShelf));
         } else if (typeBits != 0 &&
-            (existing.bookType & typeMask) == 0) {
-          // 已入库但缺类型位（旧数据/占位落库）→ 回填，保证后续分流正确
-          await api.updateBook(
-              existing.copyWith(bookType: existing.bookType | typeBits));
+            (existing.bookType & typeMask) != typeBits) {
+          // 缺类型位，或文本→图片提升（必应漫画）→ 回填媒体位
+          await api.updateBook(existing.copyWith(
+              bookType: (existing.bookType & ~typeMask) | typeBits));
         }
         // 漫画/视频等非文本阅读器只收 bookUrl，不会走 ReaderNotifier 的
         // 空目录自愈；详情页「未入库」路径又不落库章节 → 必须在开读前
