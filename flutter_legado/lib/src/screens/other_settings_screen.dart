@@ -9,8 +9,8 @@
 // Android 专属项持久化并以灰字"仅 Android 生效"标注；
 // customHosts/mcpPort 已于 Task #74 接线（契约 §2.20.3/§2.22.5，
 // 回读经 BookApi.getConfig 读 Rust 持久化 config:customHosts/config:mcpPort）；
-// uploadRule/Cronet/videoSetting/jsSourceApiToken/clearWebViewData
-// 缺少跨轨支撑，已登记 docs/REFACTORING_REMAINING_PLAN.md §5.13，UI 不显示空壳；
+// videoSetting / jsSourceApiToken / clearWebViewData：2026-08-12 已接线；
+// uploadRule（直链上传规则）/ Cronet：缺引擎支撑，诚实不展示空壳；
 // [Task #40 | 2026-08-09] checkSource 配置入口已接线（§5.13-2，
 // 「校验书源配置」对话框经 CheckSourceNotifier 持久化并入 configJson）；
 // [Task #52 | 2026-08-10] 压缩数据库已接线（§5.13-9，经 BookApi.shrinkDatabase
@@ -33,6 +33,8 @@ import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/ios_widgets.dart';
+import '../widgets/video_settings_dialog.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 /// 其他设置页面（对齐原版 OtherConfigFragment）
 ///
@@ -84,6 +86,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   bool _showAddToShelfAlert = true;
   bool _autoUpdateVariant = true;
   bool _showMangaUi = true;
+  String _jsSourceApiToken = '';
   int _webPort = 1122;
   int _threadCount = 16;
   bool _processText = true;
@@ -199,6 +202,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       final api = ref.read(bookApiProvider);
       _customHostsJson = await api.getConfig('customHosts') ?? '';
       _mcpPort = int.tryParse(await api.getConfig('mcpPort') ?? '') ?? 0;
+      _jsSourceApiToken = await api.getConfig('jsSourceApiToken') ?? '';
     } catch (e) {
       debugPrint('OtherSettingsScreen 回读 customHosts/mcpPort 异常: $e');
     }
@@ -520,6 +524,30 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   setState(() => _showMangaUi = v);
                   _settingsService.setBoolPref(PrefKeys.showMangaUi, v);
                 },
+              ),
+              IosListTile(
+                icon: Icons.videocam_outlined,
+                iconBackground: Colors.redAccent,
+                title: '视频设置',
+                subtitle: '自动播放、全屏与长按倍速',
+                showDisclosure: true,
+                onTap: () => showVideoSettingsDialog(context),
+              ),
+              IosListTile(
+                icon: Icons.vpn_key_outlined,
+                iconBackground: Colors.brown,
+                title: 'JS 书源 API Token',
+                subtitle: _jsSourceApiToken.isEmpty ? '未设置' : '已设置',
+                showDisclosure: true,
+                onTap: _editJsSourceApiToken,
+              ),
+              IosListTile(
+                icon: Icons.web_asset_off,
+                iconBackground: Colors.blueGrey,
+                title: '清除 WebView 数据',
+                subtitle: '清除 Cookie（站点登录态等）',
+                showDisclosure: true,
+                onTap: _clearWebViewData,
               ),
               IosListTile(
                 icon: Icons.settings_ethernet,

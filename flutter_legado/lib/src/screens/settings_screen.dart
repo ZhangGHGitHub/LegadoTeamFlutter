@@ -219,10 +219,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               // [UI-fix v2.0.3 | 2026-08-08] 定时服务应用内调度器已接通（Task #146）；
               // 真后台（进程被杀后仍调度）需 WorkManager，保留诚实标注 — Qoder
+              // 真后台需 WorkManager/前台服务；本轮保持应用内调度 + 诚实标注
               SwitchListTile(
                 secondary: const Icon(Icons.autorenew),
                 title: const Text('定时任务服务'),
-                subtitle: const Text('前台应用内调度（应用退出后不执行）'),
+                subtitle: const Text(
+                  '仅前台应用内调度；退出或杀进程后不执行（真后台未移植）',
+                ),
                 value: _autoTaskService,
                 onChanged: _toggleAutoTaskService,
               ),

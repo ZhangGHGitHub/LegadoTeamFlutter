@@ -220,7 +220,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml：
           // 换源/登录/复制播放地址/缓存目录选择/缓存范围/清当前章缓存/
-          // 编辑书源/wakelock开关/跳过片头/日志） — Qoder
+          // 听书溢出菜单可用项：换源/登录/复制地址/编辑书源/日志。
+          // 缓存目录/范围/wakelock/片头：缺能力，诚实不展示。
           PopupMenuButton<String>(
             tooltip: '更多',
             onSelected: _handleOverflowMenu,
@@ -811,10 +812,6 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     );
   }
 
-  /// wakelock 开关（持久化于 config 键 audioWakeLock）
-  ///
-  /// TODO(UI-fix v2.0.2): 未引入 wakelock 依赖（不改 pubspec），
-  /// 当前仅持久化开关，待依赖接入后生效。— Qoder
   /// 统一 snackbar 提示
   void _snack(String message) {
     if (!mounted) return;

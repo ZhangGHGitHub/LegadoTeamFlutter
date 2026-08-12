@@ -210,7 +210,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                             Padding(
                               padding: const EdgeInsets.only(right: 12),
                               child: InkWell(
-                                onTap: () => _saveHighlight(color),
+                                onTap: () => _openHighlightDialog(color),
                                 customBorder: const CircleBorder(),
                                 child: Container(
                                   width: 32,
@@ -319,10 +319,93 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     }
   }
 
+  /// 高亮样式/笔记 Dialog（对齐 HighlightStyleDialog 配色 + HighlightNoteDialog 笔记）
+  Future<void> _openHighlightDialog(Color color) async {
+    final noteCtrl = TextEditingController();
+    final selectedColor = ValueNotifier<Color>(color);
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('高亮', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              Text('样式颜色', style: Theme.of(ctx).textTheme.bodySmall),
+              const SizedBox(height: 8),
+              ValueListenableBuilder<Color>(
+                valueListenable: selectedColor,
+                builder: (_, current, __) => Row(
+                  children: [
+                    for (final c in kHighlightColors)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: InkWell(
+                          onTap: () => selectedColor.value = c,
+                          customBorder: const CircleBorder(),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: c,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: c == current
+                                    ? Theme.of(ctx).colorScheme.primary
+                                    : Theme.of(ctx).dividerColor,
+                                width: c == current ? 2.5 : 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: noteCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '笔记（可选）',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('取消'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('保存高亮'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    final chosen = selectedColor.value;
+    selectedColor.dispose();
+    if (ok != true || !mounted) return;
+    await _saveHighlight(chosen, note: noteCtrl.text.trim());
+  }
+
   /// 高亮：对齐原版 menu_highlight → createHighlight + ReadBook.addHighlight
   ///
   /// BookHighlight JSON 字段对齐 API_CONTRACT.md §2.36（DB v99 highlights 表）。
-  Future<void> _saveHighlight(Color color) async {
+  Future<void> _saveHighlight(Color color, {String note = ''}) async {
     final state = ref.read(readerNotifierProvider);
     final book = state.currentBook;
     if (book == null) {
@@ -348,14 +431,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
         'color':
             '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
       }),
-      'note': '',
+      'note': note,
     };
     try {
       await ref
           .read(bookApiProvider)
           .highlightAdd(highlightJson: jsonEncode(highlight));
       _lastHighlightColor = color;
-      _toast('已添加高亮');
+      _toast(note.isEmpty ? '已添加高亮' : '已添加高亮与笔记');
       _close();
     } catch (e) {
       _toast('添加高亮失败：$e');
