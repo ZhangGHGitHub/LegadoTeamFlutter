@@ -83,6 +83,12 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 段首标点悬挂开关
   final bool hangingPunctuation;
 
+  /// 段评摘要 counts（P2-9）
+  final Map<int, int>? reviewCounts;
+
+  /// 段评角标点击
+  final ReviewTapCallback? onReviewTap;
+
   const ReaderPageView({
     super.key,
     required this.paragraphSpacing,
@@ -101,6 +107,8 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.doubleHorizontalPage = 0,
     this.useZhLayout = true,
     this.hangingPunctuation = false,
+    this.reviewCounts,
+    this.onReviewTap,
   });
 
   @override
@@ -722,6 +730,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   justify: widget.textFullJustify,
                   // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入长按选择 — Qoder
                   selectText: widget.selectText,
+                  reviewCounts: widget.reviewCounts,
+                  onReviewTap: widget.onReviewTap,
                 )
             else if (state.chapterContent.isNotEmpty)
               ReaderParagraphs(
@@ -1037,6 +1047,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             ),
       globalPageIndex: globalIndex,
       globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
+      reviewCounts: widget.reviewCounts,
+      onReviewTap: widget.onReviewTap,
     );
   }
 

@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../widgets/paragraph_layout_engine.dart';
+import 'review_column.dart';
 import 'text_selection_panel.dart';
+
+/// 段评角标点击（段落索引 1-based、评论数）
+typedef ReviewTapCallback = void Function(int paragraphIndex, int count);
 
 /// 阅读器正文排版渲染
 ///
@@ -43,6 +47,9 @@ class ReaderTypographicPage extends StatelessWidget {
   final bool justify;
   final FontWeight? fontWeight;
 
+  final Map<int, int>? reviewCounts;
+  final ReviewTapCallback? onReviewTap;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -63,6 +70,8 @@ class ReaderTypographicPage extends StatelessWidget {
     this.fontFamily,
     this.justify = true,
     this.fontWeight,
+    this.reviewCounts,
+    this.onReviewTap,
   });
 
   @override
@@ -113,6 +122,8 @@ class ReaderTypographicPage extends StatelessWidget {
               fontFamily: fontFamily,
               justify: justify,
               fontWeight: fontWeight,
+              reviewCounts: reviewCounts,
+              onReviewTap: onReviewTap,
             ),
           ),
           // 页码指示（对齐安卓端底部页码显示）
@@ -174,6 +185,12 @@ class ReaderTextContent extends StatelessWidget {
   // null=正常字重）— Qoder
   final FontWeight? fontWeight;
 
+  /// 段评摘要：段落索引 → 评论数（P2-9 ruleReview）
+  final Map<int, int>? reviewCounts;
+
+  /// 段评角标点击
+  final ReviewTapCallback? onReviewTap;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -186,6 +203,8 @@ class ReaderTextContent extends StatelessWidget {
     this.justify = true,
     this.selectText = true,
     this.fontWeight,
+    this.reviewCounts,
+    this.onReviewTap,
   });
 
   @override
@@ -280,6 +299,15 @@ class ReaderTextContent extends StatelessWidget {
       // （对齐原版 ReadView.onLongPress → showTextActionMenu；P0-1 审计修复）
       // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
       final paraText = para.lines.map((l) => l.words.join('')).join();
+      final reviewCount = (para.isParagraphEnd &&
+              para.chapterParagraphIndex > 0 &&
+              reviewCounts != null)
+          ? (reviewCounts![para.chapterParagraphIndex] ?? 0)
+          : 0;
+      final paragraphBody = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: lineWidgets,
+      );
       widgets.add(
         GestureDetector(
           onLongPress: (paraText.trim().isEmpty || !selectText)
@@ -289,10 +317,23 @@ class ReaderTextContent extends StatelessWidget {
                     text: paraText,
                     chapterPos: para.startIndex,
                   ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: lineWidgets,
-          ),
+          child: reviewCount > 0
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(child: paragraphBody),
+                    ReviewColumnBadge(
+                      count: reviewCount,
+                      onTap: onReviewTap == null
+                          ? null
+                          : () => onReviewTap!(
+                                para.chapterParagraphIndex,
+                                reviewCount,
+                              ),
+                    ),
+                  ],
+                )
+              : paragraphBody,
         ),
       );
     }

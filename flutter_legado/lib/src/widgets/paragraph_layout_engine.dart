@@ -201,11 +201,19 @@ class ParagraphInfo {
   final int startIndex;
   final int endIndex;
 
+  /// 章内 1-based 段落序号（对齐原版 TextLine.paragraphNum / 段评 paraIndex）
+  final int chapterParagraphIndex;
+
+  /// 是否为该段落在分页后的最后一片（段末角标只画在此）
+  final bool isParagraphEnd;
+
   const ParagraphInfo({
     required this.lines,
     required this.totalHeight,
     required this.startIndex,
     required this.endIndex,
+    this.chapterParagraphIndex = 0,
+    this.isParagraphEnd = true,
   });
 }
 
@@ -344,6 +352,7 @@ class ParagraphLayoutEngine {
     for (var i = 0; i < paragraphs.length; i++) {
       final para = paragraphs[i];
       final paraInfo = _layoutParagraph(para, availableWidth, isFirst: i == 0);
+      final chapterParaIndex = i + 1; // 1-based，对齐原版段评 paraIndex
 
       // 段落间距（对应 Kotlin durY += textHeight * paragraphSpacing / 10f）
       double spacingHeight = currentPageParagraphs.isNotEmpty ? config.paragraphSpacing : 0.0;
@@ -360,23 +369,36 @@ class ParagraphLayoutEngine {
           currentHeight = 0.0;
         }
         // 按行拆分超长段落（首张子页若落在章首页则按首页容量）
-        final subPages = _splitTallParagraph(paraInfo, pageHeight,
-            firstPageCapacity: capacityFor(pages.length));
+        final subPages = _splitTallParagraph(
+          paraInfo,
+          pageHeight,
+          firstPageCapacity: capacityFor(pages.length),
+          chapterParagraphIndex: chapterParaIndex,
+        );
         pages.addAll(subPages);
         continue;
       }
 
+      final tagged = ParagraphInfo(
+        lines: paraInfo.lines,
+        totalHeight: paraInfo.totalHeight,
+        startIndex: paraInfo.startIndex,
+        endIndex: paraInfo.endIndex,
+        chapterParagraphIndex: chapterParaIndex,
+        isParagraphEnd: true,
+      );
+
       // 检查是否需要换页（对应 Kotlin prepareNextPageIfNeed）
       if (currentPageParagraphs.isNotEmpty &&
-          (currentHeight + spacingHeight + paraInfo.totalHeight >
+          (currentHeight + spacingHeight + tagged.totalHeight >
               capacityFor(pages.length))) {
         // 当前页已满，保存并开始新页
         pages.add(PageInfo(paragraphs: List.from(currentPageParagraphs), totalHeight: currentHeight));
-        currentPageParagraphs = [paraInfo];
-        currentHeight = paraInfo.totalHeight;
+        currentPageParagraphs = [tagged];
+        currentHeight = tagged.totalHeight;
       } else {
-        currentPageParagraphs.add(paraInfo);
-        currentHeight += spacingHeight + paraInfo.totalHeight;
+        currentPageParagraphs.add(tagged);
+        currentHeight += spacingHeight + tagged.totalHeight;
       }
     }
 
@@ -394,7 +416,7 @@ class ParagraphLayoutEngine {
   /// [UI-fix v2.0.4 | 2026-08-08] 支持首张子页按 [firstPageCapacity]
   /// 限容（落在章首页时预留标题块高度）— Qoder
   List<PageInfo> _splitTallParagraph(ParagraphInfo paraInfo, double pageHeight,
-      {double? firstPageCapacity}) {
+      {double? firstPageCapacity, int chapterParagraphIndex = 0}) {
     final pages = <PageInfo>[];
     final textHeight = config.fontSize * config.lineHeight;
 
@@ -407,12 +429,15 @@ class ParagraphLayoutEngine {
       final endIdx = (lineIdx + linesPerPage).clamp(0, paraInfo.lines.length);
       final pageLines = paraInfo.lines.sublist(lineIdx, endIdx);
       final height = pageLines.length * textHeight;
+      final isLast = endIdx >= paraInfo.lines.length;
       pages.add(PageInfo(
         paragraphs: [ParagraphInfo(
           lines: pageLines,
           totalHeight: height,
           startIndex: pageLines.isNotEmpty ? pageLines.first.startIndex : 0,
           endIndex: pageLines.isNotEmpty ? pageLines.last.endIndex : 0,
+          chapterParagraphIndex: chapterParagraphIndex,
+          isParagraphEnd: isLast,
         )],
         totalHeight: height,
       ));

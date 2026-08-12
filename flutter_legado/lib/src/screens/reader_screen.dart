@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/book.dart';
+import '../models/book_source.dart';
 import '../models/source_match.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
@@ -21,6 +22,7 @@ import '../widgets/reader/reader_page_view.dart';
 import '../widgets/reader/reader_settings_sheet.dart';
 import '../widgets/reader/reader_status_strip.dart';
 import '../widgets/reader/reader_top_bar.dart';
+import '../widgets/reader/review_detail_sheet.dart';
 import '../utils/comic_image_utils.dart';
 import 'reader_config_panel.dart';
 
@@ -55,6 +57,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// [UI-fix v2.0.1 | 2026-08-06] 朗读控制条是否被手动收起
   /// （收起后朗读继续，再次点击底栏朗读按钮重新展开） — Qoder
   bool _aloudBarHidden = false;
+
+  /// 段评摘要（P2-9 ruleReview；禁止接本地 CommentService）
+  Map<int, int> _reviewCounts = {};
+  Map<int, String> _reviewKeys = {};
+  String? _reviewSourceJson;
+  int _reviewLoadToken = 0;
 
   // [UI-fix v2.0.3 | 2026-08-08] 自动换源（autoChangeSource）防循环状态 — Qoder
 
@@ -152,6 +160,119 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     });
   }
 
+
+  /// 加载当前章段评摘要（对齐 ReadBookActivity.loadReviewSummaryIfNeeded）
+  Future<void> _loadReviewSummary() async {
+    final token = ++_reviewLoadToken;
+    final state = ref.read(readerNotifierProvider);
+    final book = state.currentBook;
+    if (book == null || book.origin.isEmpty) {
+      if (mounted && token == _reviewLoadToken) {
+        setState(() {
+          _reviewCounts = {};
+          _reviewKeys = {};
+          _reviewSourceJson = null;
+        });
+      }
+      return;
+    }
+    try {
+      final api = ref.read(bookApiProvider);
+      final sources = await api.getBookSources();
+      BookSource? matched;
+      for (final s in sources) {
+        if (s.bookSourceUrl == book.origin) {
+          matched = s;
+          break;
+        }
+      }
+      if (matched == null) {
+        if (mounted && token == _reviewLoadToken) {
+          setState(() {
+            _reviewCounts = {};
+            _reviewKeys = {};
+            _reviewSourceJson = null;
+          });
+        }
+        return;
+      }
+      final rr = matched.ruleReview;
+      final isJs = (matched.mainJs ?? '').trim().isNotEmpty;
+      final enabled = isJs ||
+          (rr != null &&
+              rr.enabled &&
+              (rr.reviewSummaryUrl ?? '').trim().isNotEmpty);
+      if (!enabled) {
+        if (mounted && token == _reviewLoadToken) {
+          setState(() {
+            _reviewCounts = {};
+            _reviewKeys = {};
+            _reviewSourceJson = null;
+          });
+        }
+        return;
+      }
+      final chapter = state.currentChapter;
+      final request = <String, dynamic>{
+        'chapterUrl': chapter?.url ?? '',
+        'book': book.toJson(),
+        if (chapter != null) 'chapter': chapter.toJson(),
+      };
+      final sourceJson = jsonEncode(matched.toJson());
+      final raw = await api.reviewGetSummary(sourceJson, jsonEncode(request));
+      if (!mounted || token != _reviewLoadToken) return;
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final countsRaw = map['counts'] as Map? ?? {};
+      final keysRaw = map['keys'] as Map? ?? {};
+      final counts = <int, int>{};
+      for (final e in countsRaw.entries) {
+        final k = int.tryParse(e.key.toString());
+        final v = (e.value as num?)?.toInt();
+        if (k != null && v != null && v > 0) counts[k] = v;
+      }
+      final keys = <int, String>{};
+      for (final e in keysRaw.entries) {
+        final k = int.tryParse(e.key.toString());
+        if (k != null) keys[k] = e.value.toString();
+      }
+      setState(() {
+        _reviewCounts = counts;
+        _reviewKeys = keys;
+        _reviewSourceJson = sourceJson;
+      });
+    } catch (_) {
+      if (mounted && token == _reviewLoadToken) {
+        setState(() {
+          _reviewCounts = {};
+          _reviewKeys = {};
+          _reviewSourceJson = null;
+        });
+      }
+    }
+  }
+
+  void _onReviewTap(int paragraphIndex, int count) {
+    final state = ref.read(readerNotifierProvider);
+    final book = state.currentBook;
+    final chapter = state.currentChapter;
+    final sourceJson = _reviewSourceJson;
+    if (book == null || chapter == null || sourceJson == null) return;
+    final paraData = _reviewKeys[paragraphIndex] ?? '$paragraphIndex';
+    ReviewDetailSheet.show(
+      context,
+      api: ref.read(bookApiProvider),
+      sourceJson: sourceJson,
+      bookUrl: book.bookUrl,
+      chapterUrl: chapter.url,
+      chapterIndex: state.currentChapterIndex,
+      paragraphIndex: paragraphIndex,
+      paragraphData: paraData,
+      totalCount: count,
+      bookJson: book.toJson(),
+      chapterJson: chapter.toJson(),
+    );
+  }
+
   /// 章节内容加载完成后，后台预加载相邻章节
   void _maybePreloadAdjacentChapters(ReaderState state) {
     if (_wasLoading && !state.isLoading && state.error == null) {
@@ -159,6 +280,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       if (index != _lastPreloadedIndex) {
         _lastPreloadedIndex = index;
         _preloadAdjacentChapters(state);
+        unawaited(_loadReviewSummary());
       }
     }
     _wasLoading = state.isLoading;
@@ -283,6 +405,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂透传（对标原版
                 // hangingPunctuation）— Reasonix
                 hangingPunctuation: _advConfig.hangingPunctuation,
+                reviewCounts: _reviewCounts,
+                onReviewTap: _onReviewTap,
               ),
               if (!state.showControls) ReaderStatusStrip(config: _advConfig),
               // 全局页码指示器（跨章节连续分页已注册时显示）
