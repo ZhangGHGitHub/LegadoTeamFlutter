@@ -46,6 +46,9 @@ pub use jsonpath::JsonPathParser;
 pub use regex_engine::{
     compile_regex_on_stack, compile_regex_safe, RegexEngine, MAX_REGEX_PATTERN_LEN,
 };
-pub use review_rule_parser::{parse_reply_page, parse_reply_page_with, ReviewDetailItem};
+pub use review_rule_parser::{
+    parse_detail_page, parse_detail_page_with, parse_reply_page, parse_reply_page_with,
+    parse_summary, parse_summary_with, ReviewDetailItem, ReviewDetailPage, ReviewSummaryResult,
+};
 pub use rule_analyzer::RuleAnalyzer;
 pub use xpath::XPathParser;

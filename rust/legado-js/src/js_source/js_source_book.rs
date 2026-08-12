@@ -13,7 +13,7 @@ use crate::engine::JsValue;
 use crate::source_engine::JsSourceEngine;
 
 use super::js_source_marshaller::{JsBookInfo as MarshalledBookInfo, JsSourceMarshaller};
-use super::js_source_review::{JsSourceReview, ReviewDetailPage};
+use super::js_source_review::{JsSourceReview, ReviewDetailPage, ReviewSummary};
 
 /// JS 源搜索请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,6 +293,37 @@ impl JsSourceBookOrchestrator {
         }
 
         Ok(JsSourceMarshaller::marshal_content(&content))
+    }
+
+    /// 段评摘要：JS 书源 getReviewSummaryAwait（P2-9）
+    ///
+    /// 参考 Kotlin JsSourceReview.kt:23-54：
+    /// 调用 JS: callFunction("getReviewSummary", {chapter, book})，
+    /// 返回 JSON 数组 `[{paraIndex,count,paraData}]`。
+    /// 函数不存在时返回空摘要（对齐 Kotlin callOptionalFunction + capability 短路）。
+    pub fn get_review_summary(
+        &mut self,
+        book: &Book,
+        chapter: &BookChapter,
+    ) -> LegadoResult<ReviewSummary> {
+        let chapter_json = serde_json::to_string(chapter)?;
+        let book_json = serde_json::to_string(book)?;
+        let result = self.engine.call_function(
+            "getReviewSummary",
+            &[
+                ("chapter", JsValue::String(chapter_json)),
+                ("book", JsValue::String(book_json)),
+            ],
+        );
+        let json = match result {
+            Ok(Some(j)) => j,
+            Ok(None) => return Ok(ReviewSummary::default()),
+            Err(_) => {
+                // 函数缺失/引擎错误 → 空摘要（可选能力）
+                return Ok(ReviewSummary::default());
+            }
+        };
+        JsSourceReview::parse_review_summary(&json).map_err(LegadoError::Parser)
     }
 
     /// 段评详情：JS 书源 getReviewDetailAwait（R10，Task #134）

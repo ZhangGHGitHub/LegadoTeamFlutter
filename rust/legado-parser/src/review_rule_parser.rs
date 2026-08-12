@@ -1,12 +1,15 @@
-//! 段评回复规则解析器
+//! 段评规则解析器
 //!
-//! 移植自 Kotlin `ReviewRuleParser.kt`（上游 #519 段评回复按需加载）的
-//! reply 相关解析逻辑：`parseReplyPage` / `parseDetailItem(isReply=true)`。
+//! 移植自 Kotlin `ReviewRuleParser.kt`：
+//! - `parseSummary`（段评摘要）
+//! - `parseDetailPage`（段评详情分页）
+//! - `parseReplyPage` / `parseDetailItem`（上游 #519 回复按需加载）
 //!
-//! 复用 [`AnalyzeRule`] 基础设施，与主评论解析同套机制：
+//! 复用 [`AnalyzeRule`] 基础设施：
 //! 支持 CSS / XPath / JsonPath / 正则 / `@js:` 规则，
 //! 自动按内容类型（HTML / JSON）选择解析引擎。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use legado_core::models::ReviewRule;
@@ -15,6 +18,25 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::analyze_rule::{AnalyzeRule, JsExecutor};
+
+/// 段评摘要（参考 Kotlin `ReviewRuleParser.SummaryResult`）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewSummaryResult {
+    /// 段落索引 → 评论数（仅 count > 0）
+    pub counts: HashMap<i32, i32>,
+    /// 段落索引 → 段落数据键（paraData）
+    pub keys: HashMap<i32, String>,
+}
+
+/// 段评详情分页（参考 Kotlin `ReviewRuleParser.DetailPage`）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewDetailPage {
+    pub items: Vec<ReviewDetailItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_page_url: Option<String>,
+}
 
 /// 段评/回复条目（参考 Kotlin `ReviewRuleParser.DetailItem`）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -63,10 +85,145 @@ struct ContentProtocol {
     image_url: Option<String>,
     audio_url: Option<String>,
     time: Option<String>,
-    #[allow(dead_code)]
     like_count: Option<i32>,
-    #[allow(dead_code)]
     reply_count: Option<i32>,
+}
+
+/// 解析段评摘要（参考 Kotlin `ReviewRuleParser.parseSummary`）
+///
+/// 按 `summaryListRule` 提取列表，再按 index/count/data 规则填充 maps。
+/// body 为空或必备规则缺失时返回 `None`（对齐 Kotlin 可空返回）。
+pub fn parse_summary(
+    body: &str,
+    rule: &ReviewRule,
+    base_url: &str,
+) -> Option<ReviewSummaryResult> {
+    parse_summary_with(body, rule, base_url, None)
+}
+
+/// 解析段评摘要（可注入 JS 执行器）
+pub fn parse_summary_with(
+    body: &str,
+    rule: &ReviewRule,
+    base_url: &str,
+    executor: Option<Arc<dyn JsExecutor>>,
+) -> Option<ReviewSummaryResult> {
+    if body.trim().is_empty() {
+        return None;
+    }
+    let list_rule = rule.summary_list_rule.as_deref().unwrap_or("").trim();
+    let index_rule = rule
+        .summary_paragraph_index_rule
+        .as_deref()
+        .unwrap_or("")
+        .trim();
+    if list_rule.is_empty() || index_rule.is_empty() {
+        return None;
+    }
+
+    let analyzer = match executor {
+        Some(exec) => AnalyzeRule::with_js_executor(body.to_string(), base_url.to_string(), exec),
+        None => AnalyzeRule::new(body.to_string(), base_url.to_string()),
+    };
+    let items = get_element_list(&analyzer, list_rule).unwrap_or_default();
+    if items.is_empty() {
+        return Some(ReviewSummaryResult::default());
+    }
+
+    let count_rule = rule.summary_count_rule.as_deref().unwrap_or("").trim();
+    let data_rule = rule
+        .summary_paragraph_data_rule
+        .as_deref()
+        .unwrap_or("")
+        .trim();
+    let mut counts = HashMap::new();
+    let mut keys = HashMap::new();
+
+    for (i, item) in items.iter().enumerate() {
+        let mut item_analyzer = AnalyzeRule::new(item.to_string(), base_url.to_string());
+        if let Some(exec) = analyzer.js_executor() {
+            item_analyzer.set_js_executor(exec);
+        }
+        let index_value = safe_rule_string(&item_analyzer, Some(index_rule));
+        let paragraph_index = index_value
+            .as_deref()
+            .and_then(parse_int_str)
+            .unwrap_or((i + 1) as i32);
+        let count = if count_rule.is_empty() {
+            0
+        } else {
+            safe_rule_string(&item_analyzer, Some(count_rule))
+                .as_deref()
+                .and_then(parse_int_str)
+                .unwrap_or(0)
+        };
+        if paragraph_index != 0 && count > 0 {
+            counts.insert(paragraph_index, count);
+            let key = if data_rule.is_empty() {
+                None
+            } else {
+                safe_rule_string(&item_analyzer, Some(data_rule))
+            }
+            .or(index_value)
+            .unwrap_or_else(|| paragraph_index.to_string());
+            keys.insert(paragraph_index, key);
+        }
+    }
+    Some(ReviewSummaryResult { counts, keys })
+}
+
+/// 解析段评详情页（参考 Kotlin `ReviewRuleParser.parseDetailPage`）
+pub fn parse_detail_page(
+    body: &str,
+    rule: &ReviewRule,
+    next_page_rule: Option<&str>,
+    base_url: &str,
+) -> ReviewDetailPage {
+    parse_detail_page_with(body, rule, next_page_rule, base_url, None)
+}
+
+/// 解析段评详情页（可注入 JS 执行器）
+pub fn parse_detail_page_with(
+    body: &str,
+    rule: &ReviewRule,
+    next_page_rule: Option<&str>,
+    base_url: &str,
+    executor: Option<Arc<dyn JsExecutor>>,
+) -> ReviewDetailPage {
+    let list_rule = rule.detail_list_rule.as_deref().unwrap_or("").trim();
+    if list_rule.is_empty() {
+        return ReviewDetailPage::default();
+    }
+
+    let analyzer = match executor {
+        Some(exec) => AnalyzeRule::with_js_executor(body.to_string(), base_url.to_string(), exec),
+        None => AnalyzeRule::new(body.to_string(), base_url.to_string()),
+    };
+    let items = get_element_list(&analyzer, list_rule).unwrap_or_default();
+    let next_page_url = next_page_rule
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .and_then(|r| safe_rule_string(&analyzer, Some(r)))
+        .map(|v| {
+            let trimmed = v.trim().to_string();
+            // 含 AnalyzeUrl 参数模式时保持原样，否则相对路径补全
+            if trimmed.contains(',') && (trimmed.contains("{{") || trimmed.contains("method")) {
+                trimmed
+            } else {
+                crate::analyze_url::AnalyzeUrl::get_absolute_url(base_url, &trimmed)
+            }
+        })
+        .filter(|s| !s.is_empty());
+
+    let parsed_items = items
+        .iter()
+        .filter_map(|item| parse_detail_item(&analyzer, item, rule, base_url, false))
+        .collect();
+
+    ReviewDetailPage {
+        items: parsed_items,
+        next_page_url,
+    }
 }
 
 /// 解析回复页面（参考 Kotlin `ReviewRuleParser.parseReplyPage`）
@@ -110,7 +267,7 @@ pub fn parse_reply_page_with(
     let items = get_element_list(&analyzer, list_rule)?;
     let mut replies = Vec::new();
     for item in &items {
-        if let Some(parsed) = parse_reply_item(&analyzer, item, rule, base_url) {
+        if let Some(parsed) = parse_detail_item(&analyzer, item, rule, base_url, true) {
             replies.push(parsed);
         }
     }
@@ -122,7 +279,7 @@ pub fn parse_reply_page_with(
     Ok(replies)
 }
 
-/// 提取回复列表元素（参考 Kotlin `normalizeList(analyzeRule.getElementsRaw(...))`）
+/// 提取列表元素（参考 Kotlin `normalizeList(analyzeRule.getElementsRaw(...))`）
 fn get_element_list(analyzer: &AnalyzeRule, list_rule: &str) -> LegadoResult<Vec<String>> {
     // JSON 内容走 JsonPath（get_elements 的 Auto 分支仅处理 CSS 选择器）；
     // HTML 内容走 CSS 元素提取。
@@ -153,34 +310,76 @@ fn get_element_list(analyzer: &AnalyzeRule, list_rule: &str) -> LegadoResult<Vec
     Ok(items)
 }
 
-/// 解析单条回复条目（参考 Kotlin `parseDetailItem(..., isReply = true)`）
-fn parse_reply_item(
+/// 解析单条详情/回复条目（参考 Kotlin `parseDetailItem`）
+fn parse_detail_item(
     analyzer: &AnalyzeRule,
     item: &str,
     rule: &ReviewRule,
     base_url: &str,
+    is_reply: bool,
 ) -> Option<ReviewDetailItem> {
     let mut item_analyzer = AnalyzeRule::new(item.to_string(), base_url.to_string());
-    // 透传 @js: 执行能力
     if let Some(exec) = analyzer.js_executor() {
         item_analyzer.set_js_executor(exec);
     }
 
-    let id = safe_rule_string(&item_analyzer, rule.reply_id_rule.as_deref());
-    let avatar = safe_rule_string(&item_analyzer, rule.reply_avatar_rule.as_deref())
-        .map(|v| crate::analyze_url::AnalyzeUrl::get_absolute_url(base_url, &v));
-    let name = safe_rule_string(&item_analyzer, rule.reply_name_rule.as_deref());
-    let badges = safe_rule_list(&item_analyzer, rule.reply_badge_rule.as_deref());
+    let id_rule = if is_reply {
+        rule.reply_id_rule.as_deref()
+    } else {
+        rule.detail_id_rule.as_deref()
+    };
+    let avatar_rule = if is_reply {
+        rule.reply_avatar_rule.as_deref()
+    } else {
+        rule.detail_avatar_rule.as_deref()
+    };
+    let name_rule = if is_reply {
+        rule.reply_name_rule.as_deref()
+    } else {
+        rule.detail_name_rule.as_deref()
+    };
+    let badge_rule = if is_reply {
+        rule.reply_badge_rule.as_deref()
+    } else {
+        rule.detail_badge_rule.as_deref()
+    };
+    let content_rule = if is_reply {
+        rule.reply_content_rule.as_deref()
+    } else {
+        rule.detail_content_rule.as_deref()
+    };
 
-    let raw_content = safe_rule_string(&item_analyzer, rule.reply_content_rule.as_deref());
+    let id = safe_rule_string(&item_analyzer, id_rule);
+    let avatar = safe_rule_string(&item_analyzer, avatar_rule)
+        .map(|v| crate::analyze_url::AnalyzeUrl::get_absolute_url(base_url, &v));
+    let name = safe_rule_string(&item_analyzer, name_rule);
+    let badges = safe_rule_list(&item_analyzer, badge_rule);
+
+    let raw_content = safe_rule_string(&item_analyzer, content_rule);
     let protocol = parse_content_protocol(raw_content.as_deref(), base_url);
-    // 参考 Kotlin: content = protocol?.text ?: if (protocol == null) rawContent else ""
     let content = match &protocol {
         Some(p) => p.text.clone(),
         None => raw_content,
     };
 
-    // 参考 Kotlin: name/content/imageUrl/audioUrl 全空时丢弃该条目
+    // 无独立 quote URL 且配置了 replyListRule 时，嵌套解析回复
+    let has_quote = !rule
+        .review_quote_url
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .is_empty();
+    let reply_list = rule.reply_list_rule.as_deref().unwrap_or("").trim();
+    let replies = if !is_reply && !has_quote && !reply_list.is_empty() {
+        get_element_list(&item_analyzer, reply_list)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|r| parse_detail_item(&item_analyzer, r, rule, base_url, true))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     let empty = name.as_deref().map_or(true, |s| s.trim().is_empty())
         && content.as_deref().map_or(true, |s| s.trim().is_empty())
         && protocol.as_ref().map_or(true, |p| {
@@ -200,10 +399,17 @@ fn parse_reply_item(
         image_url: protocol.as_ref().and_then(|p| p.image_url.clone()),
         audio_url: protocol.as_ref().and_then(|p| p.audio_url.clone()),
         time: protocol.as_ref().and_then(|p| p.time.clone()),
-        // 回复条目不携带点赞数/回复数（参考 Kotlin isReply 分支）
-        like_count: None,
-        reply_count: None,
-        replies: Vec::new(),
+        like_count: if is_reply {
+            None
+        } else {
+            protocol.as_ref().and_then(|p| p.like_count)
+        },
+        reply_count: if is_reply {
+            None
+        } else {
+            protocol.as_ref().and_then(|p| p.reply_count)
+        },
+        replies,
     })
 }
 
@@ -353,16 +559,14 @@ fn string_value(obj: &serde_json::Map<String, Value>, key: &str) -> Option<Strin
 fn parse_int_value(value: &Value) -> Option<i32> {
     match value {
         Value::Number(n) => n.as_i64().map(|v| v as i32),
-        Value::String(s) => {
-            let t = s.trim();
-            t.parse::<i32>().ok().or_else(|| {
-                t.parse::<f64>()
-                    .ok()
-                    .map(|f| f as i32)
-            })
-        }
+        Value::String(s) => parse_int_str(s),
         _ => None,
     }
+}
+
+fn parse_int_str(s: &str) -> Option<i32> {
+    let t = s.trim();
+    t.parse::<i32>().ok().or_else(|| t.parse::<f64>().ok().map(|f| f as i32))
 }
 
 #[cfg(test)]
@@ -380,6 +584,68 @@ mod tests {
             reply_content_rule: Some(content.into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn test_parse_summary_json() {
+        let body = r#"{
+            "data": [
+                {"idx": 1, "cnt": 5, "token": "p1"},
+                {"idx": 2, "cnt": 0, "token": "p2"},
+                {"idx": 3, "cnt": 12, "token": "p3"}
+            ]
+        }"#;
+        let rule = ReviewRule {
+            summary_list_rule: Some("$.data".into()),
+            summary_paragraph_index_rule: Some("$.idx".into()),
+            summary_count_rule: Some("$.cnt".into()),
+            summary_paragraph_data_rule: Some("$.token".into()),
+            ..Default::default()
+        };
+        let result = parse_summary(body, &rule, "http://example.com").unwrap();
+        assert_eq!(result.counts.get(&1), Some(&5));
+        assert_eq!(result.counts.get(&3), Some(&12));
+        assert!(!result.counts.contains_key(&2));
+        assert_eq!(result.keys.get(&1).map(String::as_str), Some("p1"));
+        assert_eq!(result.keys.get(&3).map(String::as_str), Some("p3"));
+    }
+
+    #[test]
+    fn test_parse_summary_blank_body_returns_none() {
+        let rule = ReviewRule {
+            summary_list_rule: Some("$.data".into()),
+            summary_paragraph_index_rule: Some("$.idx".into()),
+            ..Default::default()
+        };
+        assert!(parse_summary("  ", &rule, "http://example.com").is_none());
+    }
+
+    #[test]
+    fn test_parse_detail_page_json() {
+        let body = r#"{
+            "comments": [
+                {"id": "c1", "user": "甲", "text": "好看", "tag": "作者"},
+                {"id": "c2", "user": "乙", "text": "一般"}
+            ],
+            "next": "/page/2"
+        }"#;
+        let rule = ReviewRule {
+            detail_list_rule: Some("$.comments".into()),
+            detail_id_rule: Some("$.id".into()),
+            detail_name_rule: Some("$.user".into()),
+            detail_badge_rule: Some("$.tag".into()),
+            detail_content_rule: Some("$.text".into()),
+            ..Default::default()
+        };
+        let page = parse_detail_page(body, &rule, Some("$.next"), "http://example.com");
+        assert_eq!(page.items.len(), 2);
+        assert_eq!(page.items[0].id.as_deref(), Some("c1"));
+        assert_eq!(page.items[0].name.as_deref(), Some("甲"));
+        assert_eq!(page.items[0].badges, vec!["作者".to_string()]);
+        assert_eq!(
+            page.next_page_url.as_deref(),
+            Some("http://example.com/page/2")
+        );
     }
 
     #[test]

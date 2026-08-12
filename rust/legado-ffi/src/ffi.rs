@@ -1700,6 +1700,36 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 段评摘要（P2-9，对标 loadReviewSummary + parseSummary）
+    ///
+    /// 返回 JSON `{"counts":{"1":5},"keys":{"1":"paraData"}}`。
+    /// `request_json` 支持 chapterUrl；可选 book/chapter。
+    pub fn review_get_summary(
+        source_json: String,
+        request_json: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::review_api::review_get_summary(
+            &source_json,
+            &request_json,
+        )?)
+    }
+
+    /// 段评详情分页（P2-9，对标 ReviewDetailDialog + parseDetailPage）
+    ///
+    /// 返回 JSON `{"items":[...],"nextPageUrl":String?,"hasReplyUrl":bool}`。
+    /// `request_json` 支持 paraIndex/paraData/chapterUrl/detailUrl。
+    pub fn review_get_detail(
+        source_json: String,
+        request_json: String,
+        page: i32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::review_api::review_get_detail(
+            &source_json,
+            &request_json,
+            page,
+        )?)
+    }
+
     /// 按需加载段评回复（上游 #519）
     ///
     /// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`。

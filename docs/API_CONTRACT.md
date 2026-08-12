@@ -18,6 +18,7 @@
 | 2026-08-13 | P2-4 续：恢复忽略项其余键——备份 JSON 注入 `appPrefs`，恢复时按 BackupConfig.keyIsNotIgnore 过滤（readConfig/themeMode/themeConfig/coverConfig/bookshelfLayout/showRss/threadCount）；无新 FFI |
 | 2026-08-13 | P2-1：底栏皮肤最小可用——纯 Flutter（`archive` zip 导入 + PrefKeys.bottomBarSkin）；**无新 FFI** |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
+| 2026-08-13 | P2-9 段评完整 MVP：加法式新增 `reviewGetSummary` / `reviewGetDetail`（§2.30）；对齐原版 `loadReviewSummary`+`parseSummary` / `ReviewDetailDialog`+`parseDetailPage`；复用既有 `reviewGetReplies`。附录合计 244→246，BookApi 口径 235→237。本地库 `reviewGetByChapter`/`reviewAdd`… 仍属偏离创意，UI **禁止**接入 |
 
 ---
 
@@ -66,9 +67,9 @@
 ## 2. 方法清单
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
-> 为基准，BookApi 接口当前共 **235 个方法**（含 2026-08-12 `webdavDownloadFile` / `clearCookie` / P1-14 curl 三方法）。
-> 附录行合计 244 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
-> 扣除后 234 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 235，与 BookApi 闭合；详见附录口径说明。
+> 为基准，BookApi 接口当前共 **237 个方法**（含 2026-08-13 P2-9 `reviewGetSummary` / `reviewGetDetail`）。
+> 附录行合计 246 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
+> 扣除后 236 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 237，与 BookApi 闭合；详见附录口径说明。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -409,14 +410,18 @@
 | `downloadRemoveTask(String taskId)` | taskId | `Future<void>` | 移除下载任务 |
 | `downloadUpdateProgress(String taskId, double progress)` | taskId, progress | `Future<void>` | 更新下载进度 |
 
-### 2.30 段评/章评（5 个方法）
+### 2.30 段评/章评（7 个方法）
+
+> **口径**：`reviewGetSummary` / `reviewGetDetail` / `reviewGetReplies` 为书源 `ruleReview` 路径（对齐原版 ReadBook / ReviewDetailDialog）；本地库 CRUD（`reviewGetByChapter` / `reviewAdd` / `reviewDelete` / `reviewLike`）属偏离创意，**UI 禁止**当作 ruleReview 接入。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `reviewGetByChapter(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 获取指定章节的所有评论 JSON |
-| `reviewAdd({required String bookUrl, required int chapterIndex, int paragraphIndex = -1, required String content, String author = ''})` | bookUrl, chapterIndex, paragraphIndex, content, author | `Future<int>` | 添加评论，返回评论 ID |
-| `reviewDelete(int id)` | id | `Future<bool>` | 删除评论 |
-| `reviewLike(int id)` | id | `Future<void>` | 点赞评论 |
+| `reviewGetByChapter(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 获取指定章节的所有**本地库**评论 JSON（偏离创意；勿接阅读器） |
+| `reviewAdd({required String bookUrl, required int chapterIndex, int paragraphIndex = -1, required String content, String author = ''})` | bookUrl, chapterIndex, paragraphIndex, content, author | `Future<int>` | 添加本地库评论，返回评论 ID（偏离创意） |
+| `reviewDelete(int id)` | id | `Future<bool>` | 删除本地库评论（偏离创意） |
+| `reviewLike(int id)` | id | `Future<void>` | 点赞本地库评论（偏离创意） |
+| `reviewGetSummary(String sourceJson, String requestJson)` | sourceJson, requestJson | `Future<String>` | 段评摘要（对标 `ReadBookActivity.loadReviewSummary*` + `ReviewRuleParser.parseSummary` / JS `getReviewSummary`）。返回 `{"counts":{"1":5},"keys":{"1":"paraData"}}`（键为段落索引字符串；仅 count>0 的段）。requestJson：`chapterUrl`；可选 `book`/`chapter` JSON。规则缺失/未启用返回空 maps（非异常） |
+| `reviewGetDetail(String sourceJson, String requestJson, int page)` | sourceJson, requestJson, page | `Future<String>` | 段评详情分页（对标 `ReviewDetailDialog.loadDetailPage` + `parseDetailPage` / JS `getReviewDetail`）。返回 `{"items":[DetailItem...],"nextPageUrl":String?,"hasReplyUrl":bool}`。requestJson：`paraIndex`/`paraData`/`chapterUrl`；可选 `detailUrl`（翻页直连）、`book`/`chapter`。条目字段同 `reviewGetReplies`，另含 likeCount/replyCount/replies |
 | `reviewGetReplies(String sourceJson, String requestJson, int page)` | sourceJson, requestJson, page | `Future<String>` | 按需加载段评回复（上游 #519），返回 `{"items": [...], "nextPageUrl": String?}` 对象包装（含分页 URL，非裸数组）；requestJson 支持 reviewId/paraIndex/paraData/chapterUrl/replyUrl 字段；回复条目字段：id/avatar/name/badges/content/imageUrl/audioUrl/time |
 
 ### 2.31 书籍导出（2 个方法）
@@ -671,6 +676,8 @@
 | `dictLookup`（新增） | `String word` | `Future<Map<String, dynamic>>`（词典释义，字段对齐 Dart `DictEntry`：`word` / `phonetic` / `definitions[]`，用于 `dict_screen` 真实词典查询；Task #137 起数据源由静态占位表改为 dict_rules 字典规则引擎，见需求 4 补记） | 2026-08-01 | ✅ 已完成 |
 | `highlight*` / `highlightRule*`（新增） | 见 §2.36 方法清单 | 高亮记录 CRUD + 高亮规则 CRUD（对齐上游 DB v96-v99，用于阅读器正文高亮一期） | 2026-08-04 | ✅ 已完成 |
 | `reviewGetReplies`（新增） | `String sourceJson, String requestJson, int page` | `Future<String>`（段评回复按需加载，对标 Android `ReviewDetailDialog.loadReplies` + `ReviewRuleParser.parseReplyPage`，上游 #519；返回 `{items, nextPageUrl}` 对象包装，Flutter 段评弹窗回复 UI 由 UI 轨后续接入） | 2026-08-04 | ✅ 已完成 |
+| `reviewGetSummary`（新增，P2-9） | `String sourceJson, String requestJson` | `Future<String>`（段评摘要，对标 `loadReviewSummary`+`parseSummary`；返回 `{counts, keys}`） | 2026-08-13 | ✅ 已冻结 |
+| `reviewGetDetail`（新增，P2-9） | `String sourceJson, String requestJson, int page` | `Future<String>`（段评详情分页，对标 `ReviewDetailDialog`+`parseDetailPage`；返回 `{items, nextPageUrl, hasReplyUrl}`） | 2026-08-13 | ✅ 已冻结 |
 | `appLog*`（新增，Task #79） | 见 §2.38 方法清单 | 应用日志体系：Rust 侧三级环形缓冲（message/crash/http）+ 写入/查询/清空/导出 FFI（对齐 Kotlin AppLog 旧欠账 + 上游 #543 导出 64K 截断），日志页面 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `checkSource` / `checkSourcesStream` / `cancelCheckSources`（新增，Task #87） | 见 §2.3 方法清单 | 书源校验 FFI 暴露：单本四步校验（CheckResult JSON）+ 批量串行 Stream 进度回推（CheckProgress JSON）+ 取消（包装 legado-net SourceChecker，对齐 Kotlin CheckSource 与 server /sources/check），校验页面 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `ruleSub*`（新增，Task #89） | 见 §2.39 方法清单 | 规则订阅 FFI 暴露：列表/保存/删除/启用切换/拖拽排序 + 检查更新/应用更新（DB v100 补全 Kotlin RuleSub 7 字段，委托 legado-net rule_update_client），订阅管理 UI 由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
@@ -777,7 +784,7 @@
 | 27 | 用户管理 | 6 |
 | 28 | WebDAV 云同步 | 7 |
 | 29 | 下载管理器 | 7 |
-| 30 | 段评/章评 | 5 |
+| 30 | 段评/章评 | 7 |
 | 31 | 书籍导出 | 2 |
 | 32 | 自动任务 | 14 |
 | 33 | 音频播放模式 | 2 |
@@ -791,17 +798,18 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **244** |
+| | **合计（§2.1–§2.43 附录行合计）** | **246** |
 
-> 口径说明（Task #55 F6，2026-08-10 校准；含 2026-08-12 `webdavDownloadFile` / `clearCookie` / P1-14 curl 三方法，基准 = `book_api.dart` 程序化计数 **235**）：
-> - **与 BookApi 闭合**：附录行合计 244 − 尚未封装进 BookApi 的 FFI 10 个
+> 口径说明（Task #55 F6，2026-08-10 校准；含 2026-08-13 P2-9 段评 summary/detail，基准 = `book_api.dart` 程序化计数 **237**）：
+> - **与 BookApi 闭合**：附录行合计 246 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 234；
->   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **235**。
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 236；
+>   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **237**。
 >   第四批 3 项（`setCustomHosts` / `setMcpPort` / `searchCoverRules`）均为 BookApi 封装口径方法；
->   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1 + curl 三方法 3（230 + 5 = 235）。
+>   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1 + curl 三方法 3（230 + 5 = 235）；
+>   2026-08-13 再加 `reviewGetSummary` / `reviewGetDetail` 2（235 + 2 = 237）。
 > - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 24 行（含 `setSourceVariable` / `clearCookie` / curl 三方法）；
->   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 5（含 reviewGetReplies）；
+>   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 7（含 reviewGetReplies/Summary/Detail）；
 >   行 4 按 §2.4 标题为 8（原 7 + 第四批 `searchCoverRules` 1）；行 20 按 §2.20 标题为 3（原 2 + 第四批 `setCustomHosts` 1）；
 >   行 22 按 §2.22 标题为 5（原 4 + 第四批 `setMcpPort` 1）。
