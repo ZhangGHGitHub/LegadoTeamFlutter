@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:share_plus/share_plus.dart';
 
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../services/bottom_bar_skin_format.dart';
@@ -13,7 +14,7 @@ import 'bottom_bar_skin_assign_screen.dart';
 
 /// 底栏皮肤管理（对齐 BottomBarSkinActivity）
 ///
-/// 导入 zip → 分配页选槽位 → 启用/删除/编辑；底栏读 PrefKeys.bottomBarSkin 换图标。
+/// 导入 zip → 分配页选槽位 → 启用/删除/编辑/导出/分享；底栏读 PrefKeys.bottomBarSkin 换图标。
 class BottomBarSkinScreen extends ConsumerWidget {
   const BottomBarSkinScreen({super.key});
 
@@ -219,6 +220,16 @@ class BottomBarSkinScreen extends ConsumerWidget {
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
             ListTile(
+              leading: const Icon(Icons.file_download_outlined),
+              title: const Text('导出'),
+              onTap: () => Navigator.pop(ctx, 'export'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('分享'),
+              onTap: () => Navigator.pop(ctx, 'share'),
+            ),
+            ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('删除'),
               onTap: () => Navigator.pop(ctx, 'delete'),
@@ -232,6 +243,61 @@ class BottomBarSkinScreen extends ConsumerWidget {
       await _confirmDelete(context, notifier, name);
     } else if (action == 'edit') {
       await _edit(context, notifier, name);
+    } else if (action == 'export') {
+      await _exportSkin(context, name);
+    } else if (action == 'share') {
+      await _shareSkin(context, name);
+    }
+  }
+
+  /// 导出图集为 zip（对齐 BottomBarSkinActivity.exportSkin）
+  Future<void> _exportSkin(BuildContext context, String name) async {
+    try {
+      final bytes = await BottomBarSkinService.instance.buildZipBytes(name);
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: '导出底栏皮肤',
+        fileName: '$name.zip',
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsBytes(bytes, flush: true);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已导出到: $savePath')),
+          );
+        }
+        return;
+      }
+      // 平台无保存对话框时走分享
+      final file = await BottomBarSkinService.instance.cacheShareZip(name);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/zip')],
+        subject: name,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// 分享图集 zip（对齐 BottomBarSkinActivity.shareSkin）
+  Future<void> _shareSkin(BuildContext context, String name) async {
+    try {
+      final file = await BottomBarSkinService.instance.cacheShareZip(name);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/zip')],
+        subject: name,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分享失败：$e')),
+        );
+      }
     }
   }
 

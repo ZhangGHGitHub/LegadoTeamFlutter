@@ -359,7 +359,57 @@ class BottomBarSkinService {
     }
   }
 
-  /// ??????????selected/normal?
+  /// 导出图集为 zip 字节（对齐 BottomBarSkinManager.buildZipBytes）
+  Future<List<int>> buildZipBytes(String skinName) async {
+    if (!await hasSkin(skinName)) throw StateError('skin not found');
+    final files = await _canonicalSkinFiles(skinName);
+    if (files.isEmpty) throw StateError('empty skin');
+    var total = 0;
+    for (final f in files) {
+      final len = await f.length();
+      if (len <= 0 || len > _maxEntryBytes) {
+        throw StateError('invalid image size');
+      }
+      total += len;
+      if (total > _maxTotalBytes) throw StateError('skin too large');
+    }
+    final archive = Archive();
+    for (final f in files) {
+      final name = f.path.split(Platform.pathSeparator).last;
+      final data = await f.readAsBytes();
+      archive.addFile(ArchiveFile(name, data.length, data));
+    }
+    final encoded = ZipEncoder().encode(archive);
+    if (encoded.length > _maxArchiveBytes) {
+      throw StateError('skin zip too large');
+    }
+    return encoded;
+  }
+
+  /// 写入缓存供分享（对齐 BottomBarSkinManager.cacheShareZip）
+  Future<File> cacheShareZip(String skinName) async {
+    final bytes = await buildZipBytes(skinName);
+    final cache = await getTemporaryDirectory();
+    final root = Directory(
+      '${cache.path}${Platform.pathSeparator}bottomBarSkinShare',
+    );
+    if (!await root.exists()) await root.create(recursive: true);
+    await _cleanupStaleShareDirs(root);
+    final dir = Directory('${root.path}${Platform.pathSeparator}${_newId()}');
+    await dir.create(recursive: true);
+    try {
+      final file = File(
+        '${dir.path}${Platform.pathSeparator}bottom-bar-skin.zip',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      return file;
+    } catch (e) {
+      await _safeDelete(dir);
+      rethrow;
+    }
+  }
+
+  /// 槽位图标路径（selected/normal）
   Future<BottomBarSkinIcons> iconsForSlot(String skinName, String slot) async {
     if (!BottomBarSkinFormat.mappedSlots.contains(slot)) {
       return const BottomBarSkinIcons();
@@ -376,6 +426,39 @@ class BottomBarSkinService {
       if (normal == null && await n.exists()) normal = n.path;
     }
     return BottomBarSkinIcons(normal: normal, selected: selected);
+  }
+
+  /// 槽位规范文件（任意允许扩展名；原版导出仅 .png）
+  Future<List<File>> _canonicalSkinFiles(String skinName) async {
+    final dir = Directory(
+      '${(await _rootDir()).path}${Platform.pathSeparator}$skinName',
+    );
+    final out = <File>[];
+    for (final slot in BottomBarSkinFormat.mappedSlots) {
+      for (final kind in ['selected', 'normal']) {
+        for (final ext in BottomBarSkinFormat.imageExts) {
+          final f = File(
+            '${dir.path}${Platform.pathSeparator}${slot}_$kind.$ext',
+          );
+          if (await f.exists()) {
+            out.add(f);
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  Future<void> _cleanupStaleShareDirs(Directory root) async {
+    final cutoff = DateTime.now().millisecondsSinceEpoch - _sessionMaxAgeMs;
+    await for (final entity in root.list()) {
+      if (entity is! Directory) continue;
+      final stat = await entity.stat();
+      if (stat.modified.millisecondsSinceEpoch < cutoff) {
+        await _safeDelete(entity);
+      }
+    }
   }
 
   /// Tab ? ?????
