@@ -77,6 +77,8 @@ class AudioChapter {
 /// - [errorMessage]：错误信息（null 表示无错误）
 /// - [bookUrl] / [bookName]：当前听书的书籍标识
 /// - [isMediaSessionReady]：媒体会话是否已就绪（用于 UI 显示后台播放状态）
+/// - [isStreamMode] / [mediaUrl] / [positionMs] / [durationMs] / [lyric]：
+///   音频书流媒体路径（对齐 P0-2 getAudioChapterMedia + video_player）
 @freezed
 class AudioState with _$AudioState {
   const factory AudioState({
@@ -106,6 +108,21 @@ class AudioState with _$AudioState {
 
     /// 媒体会话是否已就绪（用于 UI 显示后台播放状态）
     @Default(false) bool isMediaSessionReady,
+
+    /// 是否音频书流媒体模式（false = TTS 朗读）
+    @Default(false) bool isStreamMode,
+
+    /// 当前可播媒体 URL（流媒体模式；TTS 为空）
+    @Default('') String mediaUrl,
+
+    /// 流媒体播放进度（毫秒）
+    @Default(0) int positionMs,
+
+    /// 流媒体时长（毫秒；未知为 0）
+    @Default(0) int durationMs,
+
+    /// 可选歌词/旁白（getAudioChapterMedia 返回）
+    String? lyric,
   }) = _AudioState;
 }
 

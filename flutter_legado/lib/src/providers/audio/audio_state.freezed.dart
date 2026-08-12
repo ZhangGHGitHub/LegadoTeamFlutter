@@ -43,6 +43,21 @@ mixin _$AudioState {
   /// 媒体会话是否已就绪（用于 UI 显示后台播放状态）
   bool get isMediaSessionReady => throw _privateConstructorUsedError;
 
+  /// 是否音频书流媒体模式（false = TTS 朗读）
+  bool get isStreamMode => throw _privateConstructorUsedError;
+
+  /// 当前可播媒体 URL（流媒体模式；TTS 为空）
+  String get mediaUrl => throw _privateConstructorUsedError;
+
+  /// 流媒体播放进度（毫秒）
+  int get positionMs => throw _privateConstructorUsedError;
+
+  /// 流媒体时长（毫秒；未知为 0）
+  int get durationMs => throw _privateConstructorUsedError;
+
+  /// 可选歌词/旁白（getAudioChapterMedia 返回）
+  String? get lyric => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $AudioStateCopyWith<AudioState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -63,7 +78,12 @@ abstract class $AudioStateCopyWith<$Res> {
       String? errorMessage,
       String bookUrl,
       String bookName,
-      bool isMediaSessionReady});
+      bool isMediaSessionReady,
+      bool isStreamMode,
+      String mediaUrl,
+      int positionMs,
+      int durationMs,
+      String? lyric});
 }
 
 /// @nodoc
@@ -88,6 +108,11 @@ class _$AudioStateCopyWithImpl<$Res, $Val extends AudioState>
     Object? bookUrl = null,
     Object? bookName = null,
     Object? isMediaSessionReady = null,
+    Object? isStreamMode = null,
+    Object? mediaUrl = null,
+    Object? positionMs = null,
+    Object? durationMs = null,
+    Object? lyric = freezed,
   }) {
     return _then(_value.copyWith(
       state: null == state
@@ -126,6 +151,26 @@ class _$AudioStateCopyWithImpl<$Res, $Val extends AudioState>
           ? _value.isMediaSessionReady
           : isMediaSessionReady // ignore: cast_nullable_to_non_nullable
               as bool,
+      isStreamMode: null == isStreamMode
+          ? _value.isStreamMode
+          : isStreamMode // ignore: cast_nullable_to_non_nullable
+              as bool,
+      mediaUrl: null == mediaUrl
+          ? _value.mediaUrl
+          : mediaUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      positionMs: null == positionMs
+          ? _value.positionMs
+          : positionMs // ignore: cast_nullable_to_non_nullable
+              as int,
+      durationMs: null == durationMs
+          ? _value.durationMs
+          : durationMs // ignore: cast_nullable_to_non_nullable
+              as int,
+      lyric: freezed == lyric
+          ? _value.lyric
+          : lyric // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -147,7 +192,12 @@ abstract class _$$AudioStateImplCopyWith<$Res>
       String? errorMessage,
       String bookUrl,
       String bookName,
-      bool isMediaSessionReady});
+      bool isMediaSessionReady,
+      bool isStreamMode,
+      String mediaUrl,
+      int positionMs,
+      int durationMs,
+      String? lyric});
 }
 
 /// @nodoc
@@ -170,6 +220,11 @@ class __$$AudioStateImplCopyWithImpl<$Res>
     Object? bookUrl = null,
     Object? bookName = null,
     Object? isMediaSessionReady = null,
+    Object? isStreamMode = null,
+    Object? mediaUrl = null,
+    Object? positionMs = null,
+    Object? durationMs = null,
+    Object? lyric = freezed,
   }) {
     return _then(_$AudioStateImpl(
       state: null == state
@@ -208,6 +263,26 @@ class __$$AudioStateImplCopyWithImpl<$Res>
           ? _value.isMediaSessionReady
           : isMediaSessionReady // ignore: cast_nullable_to_non_nullable
               as bool,
+      isStreamMode: null == isStreamMode
+          ? _value.isStreamMode
+          : isStreamMode // ignore: cast_nullable_to_non_nullable
+              as bool,
+      mediaUrl: null == mediaUrl
+          ? _value.mediaUrl
+          : mediaUrl // ignore: cast_nullable_to_non_nullable
+              as String,
+      positionMs: null == positionMs
+          ? _value.positionMs
+          : positionMs // ignore: cast_nullable_to_non_nullable
+              as int,
+      durationMs: null == durationMs
+          ? _value.durationMs
+          : durationMs // ignore: cast_nullable_to_non_nullable
+              as int,
+      lyric: freezed == lyric
+          ? _value.lyric
+          : lyric // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -224,7 +299,12 @@ class _$AudioStateImpl implements _AudioState {
       this.errorMessage,
       this.bookUrl = '',
       this.bookName = '',
-      this.isMediaSessionReady = false})
+      this.isMediaSessionReady = false,
+      this.isStreamMode = false,
+      this.mediaUrl = '',
+      this.positionMs = 0,
+      this.durationMs = 0,
+      this.lyric})
       : _chapters = chapters;
 
   /// 播放器状态机
@@ -277,9 +357,33 @@ class _$AudioStateImpl implements _AudioState {
   @JsonKey()
   final bool isMediaSessionReady;
 
+  /// 是否音频书流媒体模式（false = TTS 朗读）
+  @override
+  @JsonKey()
+  final bool isStreamMode;
+
+  /// 当前可播媒体 URL（流媒体模式；TTS 为空）
+  @override
+  @JsonKey()
+  final String mediaUrl;
+
+  /// 流媒体播放进度（毫秒）
+  @override
+  @JsonKey()
+  final int positionMs;
+
+  /// 流媒体时长（毫秒；未知为 0）
+  @override
+  @JsonKey()
+  final int durationMs;
+
+  /// 可选歌词/旁白（getAudioChapterMedia 返回）
+  @override
+  final String? lyric;
+
   @override
   String toString() {
-    return 'AudioState(state: $state, mode: $mode, config: $config, chapters: $chapters, currentIndex: $currentIndex, errorMessage: $errorMessage, bookUrl: $bookUrl, bookName: $bookName, isMediaSessionReady: $isMediaSessionReady)';
+    return 'AudioState(state: $state, mode: $mode, config: $config, chapters: $chapters, currentIndex: $currentIndex, errorMessage: $errorMessage, bookUrl: $bookUrl, bookName: $bookName, isMediaSessionReady: $isMediaSessionReady, isStreamMode: $isStreamMode, mediaUrl: $mediaUrl, positionMs: $positionMs, durationMs: $durationMs, lyric: $lyric)';
   }
 
   @override
@@ -299,7 +403,16 @@ class _$AudioStateImpl implements _AudioState {
             (identical(other.bookName, bookName) ||
                 other.bookName == bookName) &&
             (identical(other.isMediaSessionReady, isMediaSessionReady) ||
-                other.isMediaSessionReady == isMediaSessionReady));
+                other.isMediaSessionReady == isMediaSessionReady) &&
+            (identical(other.isStreamMode, isStreamMode) ||
+                other.isStreamMode == isStreamMode) &&
+            (identical(other.mediaUrl, mediaUrl) ||
+                other.mediaUrl == mediaUrl) &&
+            (identical(other.positionMs, positionMs) ||
+                other.positionMs == positionMs) &&
+            (identical(other.durationMs, durationMs) ||
+                other.durationMs == durationMs) &&
+            (identical(other.lyric, lyric) || other.lyric == lyric));
   }
 
   @override
@@ -313,7 +426,12 @@ class _$AudioStateImpl implements _AudioState {
       errorMessage,
       bookUrl,
       bookName,
-      isMediaSessionReady);
+      isMediaSessionReady,
+      isStreamMode,
+      mediaUrl,
+      positionMs,
+      durationMs,
+      lyric);
 
   @JsonKey(ignore: true)
   @override
@@ -332,7 +450,12 @@ abstract class _AudioState implements AudioState {
       final String? errorMessage,
       final String bookUrl,
       final String bookName,
-      final bool isMediaSessionReady}) = _$AudioStateImpl;
+      final bool isMediaSessionReady,
+      final bool isStreamMode,
+      final String mediaUrl,
+      final int positionMs,
+      final int durationMs,
+      final String? lyric}) = _$AudioStateImpl;
 
   @override
 
@@ -370,6 +493,26 @@ abstract class _AudioState implements AudioState {
 
   /// 媒体会话是否已就绪（用于 UI 显示后台播放状态）
   bool get isMediaSessionReady;
+  @override
+
+  /// 是否音频书流媒体模式（false = TTS 朗读）
+  bool get isStreamMode;
+  @override
+
+  /// 当前可播媒体 URL（流媒体模式；TTS 为空）
+  String get mediaUrl;
+  @override
+
+  /// 流媒体播放进度（毫秒）
+  int get positionMs;
+  @override
+
+  /// 流媒体时长（毫秒；未知为 0）
+  int get durationMs;
+  @override
+
+  /// 可选歌词/旁白（getAudioChapterMedia 返回）
+  String? get lyric;
   @override
   @JsonKey(ignore: true)
   _$$AudioStateImplCopyWith<_$AudioStateImpl> get copyWith =>
