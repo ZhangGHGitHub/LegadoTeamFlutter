@@ -145,6 +145,24 @@ class ReaderNotifier extends Notifier<ReaderState> {
     await _saveProgress();
   }
 
+  /// 应用 WebDAV 云端进度（对齐原版 ReadBook.setProgress）
+  Future<void> applyBookProgress({
+    required int chapterIndex,
+    required int chapterPos,
+  }) async {
+    if (chapterIndex < 0 || chapterIndex >= state.chapters.length) return;
+    await _saveProgress();
+    state = state.copyWith(
+      currentChapterIndex: chapterIndex,
+      currentChapterPos: chapterPos.clamp(0, 1 << 30),
+      isLoading: true,
+      showControls: false,
+    );
+    await _loadChapterContent();
+    state = state.copyWith(isLoading: false);
+    await _saveProgress();
+  }
+
   // ===== 工具栏交互 =====
 
   /// 切换工具栏显隐

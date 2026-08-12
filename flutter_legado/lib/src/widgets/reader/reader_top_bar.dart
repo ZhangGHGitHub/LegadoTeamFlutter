@@ -11,6 +11,7 @@ import '../../models/book.dart';
 import '../../models/book_source.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../../providers/sync/sync_notifier.dart';
 import '../../routes.dart';
 import '../../screens/source_edit_screen.dart';
 import '../../screens/source_login_screen.dart';
@@ -25,7 +26,8 @@ import 'reader_settings_sheet.dart';
 ///   （menu_group_local），窄窗口用紧凑图标防溢出
 /// - 标题附加区（title_bar_addition，受 showReadTitleAddition 控制）：
 ///   章节名 + 章节 URL（点击复制）+ 书源徽章（tv_source_action，点击弹源操作菜单）
-/// - 溢出菜单顺序/条件显隐逐项对齐 book_read.xml（visible=false 项不实现）
+/// - 溢出菜单顺序/条件显隐逐项对齐 book_read.xml（get/cover_progress
+///   在 WebDAV 已配置时显示，对齐 ReadBookActivity.upMenu）
 /// - 夜间/搜索按钮迁至底栏悬浮按钮行（对齐原版 fabNightTheme/fabSearch）；
 ///   书签迁入溢出菜单（对齐原版 menu_add_bookmark showAsAction=never）
 class ReaderTopBar extends ConsumerStatefulWidget {
@@ -72,6 +74,14 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
   /// 已加载章级开关的复合键（bookUrl#chapterIndex，换书/换章后重新加载）
   String? _flagsLoadedKey;
 
+  @override
+  void initState() {
+    super.initState();
+    // 预载 WebDAV 配置，使溢出菜单能即时决定 get/cover_progress 显隐
+    Future.microtask(
+        () => ref.read(syncNotifierProvider.notifier).loadConfig());
+  }
+
   /// 加载章级开关与替换规则计数（书籍/章节变化时调用）
   Future<void> _loadLocalFlags(String bookUrl, int chapterIndex) async {
     try {
@@ -100,6 +110,103 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
 
   void _snack(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 拉取/同步云端进度（对齐 menu_get_progress → syncBookProgress）
+  Future<void> _getCloudProgress(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final reader = ref.read(readerNotifierProvider);
+    final book = reader.currentBook;
+    if (book == null) return;
+    final syncNotifier = ref.read(syncNotifierProvider.notifier);
+    await syncNotifier.loadConfig();
+    final liveBook = book.copyWith(
+      durChapterIndex: reader.currentChapterIndex,
+      durChapterPos: reader.currentChapterPos,
+      durChapterTitle: reader.currentChapter?.title,
+      durChapterTime: DateTime.now().millisecondsSinceEpoch,
+    );
+    try {
+      final result = await syncNotifier.syncBookProgressForBook(
+        liveBook,
+        onCloudNewer: (progress) async {
+          if (!context.mounted) return;
+          final go = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('同步阅读进度'),
+              content: Text(
+                '云端进度更新（第 ${progress.durChapterIndex + 1} 章'
+                '${progress.durChapterTitle != null && progress.durChapterTitle!.isNotEmpty ? '「${progress.durChapterTitle}」' : ''}）。'
+                '\n是否跳转到云端进度？',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('跳转'),
+                ),
+              ],
+            ),
+          );
+          if (go == true && context.mounted) {
+            await ref.read(readerNotifierProvider.notifier).applyBookProgress(
+                  chapterIndex: progress.durChapterIndex,
+                  chapterPos: progress.durChapterPos,
+                );
+          }
+        },
+      );
+      if (!context.mounted) return;
+      switch (result) {
+        case 'uploaded':
+          messenger.showSnackBar(
+            const SnackBar(content: Text('本地进度较新，已上传到云端')),
+          );
+        case 'same':
+          messenger.showSnackBar(
+            const SnackBar(content: Text('进度已与云端一致')),
+          );
+        case 'skipped':
+          messenger.showSnackBar(
+            const SnackBar(content: Text('请先在 WebDAV 设置中开启「同步书籍进度」')),
+          );
+        case 'cloud':
+          break; // 已弹确认框
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('同步进度失败：$e')));
+    }
+  }
+
+  /// 覆盖上传本地进度（对齐 menu_cover_progress → uploadProgress）
+  Future<void> _coverCloudProgress(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final reader = ref.read(readerNotifierProvider);
+    final book = reader.currentBook;
+    if (book == null) return;
+    final syncNotifier = ref.read(syncNotifierProvider.notifier);
+    await syncNotifier.loadConfig();
+    final liveBook = book.copyWith(
+      durChapterIndex: reader.currentChapterIndex,
+      durChapterPos: reader.currentChapterPos,
+      durChapterTitle: reader.currentChapter?.title,
+      durChapterTime: DateTime.now().millisecondsSinceEpoch,
+    );
+    try {
+      await syncNotifier.uploadBookProgress(liveBook);
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('进度上传成功')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('上传进度失败：$e')));
+    }
   }
 
   /// 换源菜单（对标原版 showChangeSourceMenu：单章换源 / 换书源）
@@ -1093,6 +1200,12 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                               // 设置面板（对标原版 ReadStyleDialog） — Qoder
                               ReaderSettingsSheet.show(context);
                               break;
+                            case 'getProgress':
+                              unawaited(_getCloudProgress(context));
+                              break;
+                            case 'coverProgress':
+                              unawaited(_coverCloudProgress(context));
+                              break;
                             case 'reverseContent':
                               unawaited(_reverseContent(context, ref));
                               break;
@@ -1141,6 +1254,8 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                           final segmentOn =
                               book?.readConfig?.reSegment ?? false;
                           final isEpub = _isEpub(book);
+                          final webDavOk =
+                              ref.read(syncNotifierProvider).isConfigured;
                           Widget checked(String text, bool on) => Row(
                                 children: [
                                   if (on) ...[
@@ -1157,12 +1272,11 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                           return [
                             // 顺序对齐 book_read.xml：add_bookmark →
                             // highlight_rule → edit_content → page_anim →
+                            // get_progress/cover_progress（WebDAV 已配置）→
                             // reverse_content(仅在线) → simulated_reading →
                             // enable_replace → same_title_removed →
                             // re_segment → epub 组(仅 EPUB) → image_style →
-                            // update_toc → effective_replaces → log → help；
-                            // get_progress/cover_progress/enable_review 为
-                            // 原版 visible=false 项，不实现
+                            // update_toc → effective_replaces → log → help
                             const PopupMenuItem(
                                 value: 'addBookmark', child: Text('添加书签')),
                             const PopupMenuItem(
@@ -1171,6 +1285,15 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                                 value: 'editContent', child: Text('编辑内容')),
                             const PopupMenuItem(
                                 value: 'pageAnim', child: Text('翻页动画')),
+                            // P1-10：WebDAV 已配置时显示（对齐 upMenu AppWebDav.isOk）
+                            if (webDavOk) ...[
+                              const PopupMenuItem(
+                                  value: 'getProgress',
+                                  child: Text('同步阅读进度')),
+                              const PopupMenuItem(
+                                  value: 'coverProgress',
+                                  child: Text('覆盖云端进度')),
+                            ],
                             // 反转内容仅在线书可见（对齐 upMenu
                             // isVisible=onLine）
                             if (isOnline)

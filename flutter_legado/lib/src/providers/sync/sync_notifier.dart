@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../models/book.dart';
+import '../../models/misc.dart';
 import '../../services/settings_service.dart';
 import '../providers.dart';
 import 'sync_state.dart';
@@ -102,6 +104,113 @@ class SyncNotifier extends Notifier<SyncState> {
   Future<void> setSyncBookProgressPlus(bool enabled) async {
     state = state.copyWith(syncBookProgressPlus: enabled);
     await _settings.setSyncBookProgressPlus(enabled);
+  }
+
+  // ===== 单书进度拉取 / 覆盖（对齐 AppWebDav.getBookProgress / uploadBookProgress）=====
+
+  /// 进度文件相对路径：`bookProgress/{name}_{author}.json`
+  String bookProgressRemotePath(String name, String author) =>
+      'bookProgress/${_progressFileName(name, author)}';
+
+  /// 上传当前书籍进度到 WebDAV（对齐 menu_cover_progress）
+  Future<void> uploadBookProgress(Book book) async {
+    if (!state.isConfigured) {
+      throw StateError('请先配置 WebDAV');
+    }
+    if (!state.syncBookProgress) {
+      throw StateError('未开启「同步书籍进度」');
+    }
+    final progress = BookProgress(
+      name: book.name,
+      author: book.author,
+      durChapterIndex: book.durChapterIndex,
+      durChapterPos: book.durChapterPos,
+      durChapterTime: book.durChapterTime,
+      durChapterTitle: book.durChapterTitle,
+    );
+    final api = ref.read(bookApiProvider);
+    await api.webdavUpload(
+      buildConfigJson(),
+      bookProgressRemotePath(book.name, book.author),
+      jsonEncode(progress.toJson()),
+    );
+  }
+
+  /// 拉取远程进度；无文件 / 解析失败返回 null
+  Future<BookProgress?> fetchBookProgress(Book book) async {
+    if (!state.isConfigured) return null;
+    try {
+      final api = ref.read(bookApiProvider);
+      final jsonStr = await api.webdavDownload(
+        buildConfigJson(),
+        bookProgressRemotePath(book.name, book.author),
+      );
+      if (jsonStr.trim().isEmpty) return null;
+      final map = jsonDecode(jsonStr);
+      if (map is! Map<String, dynamic>) return null;
+      return BookProgress.fromJson(map);
+    } catch (e) {
+      debugPrint('SyncNotifier.fetchBookProgress: $e');
+      return null;
+    }
+  }
+
+  /// 对齐 ReadBook.syncProgress：云端更快 → 回调；本地更快或缺云端 → 上传
+  ///
+  /// 返回值：`cloud`=云端更新、`uploaded`=已上传本地、`same`=一致、`skipped`=开关关闭
+  Future<String> syncBookProgressForBook(
+    Book book, {
+    required Future<void> Function(BookProgress cloud) onCloudNewer,
+  }) async {
+    if (!state.syncBookProgress) return 'skipped';
+    if (!state.isConfigured) {
+      throw StateError('请先配置 WebDAV');
+    }
+    final cloud = await fetchBookProgress(book);
+    if (cloud == null ||
+        cloud.durChapterIndex < book.durChapterIndex ||
+        (cloud.durChapterIndex == book.durChapterIndex &&
+            cloud.durChapterPos < book.durChapterPos)) {
+      await uploadBookProgress(book);
+      return 'uploaded';
+    }
+    if (cloud.durChapterIndex > book.durChapterIndex ||
+        cloud.durChapterPos > book.durChapterPos) {
+      await onCloudNewer(cloud);
+      return 'cloud';
+    }
+    return 'same';
+  }
+
+  static String _progressFileName(String name, String author) {
+    // 对齐 Kotlin：normalizeFileName + UrlUtil.replaceReservedChar
+    var base = '${name}_$author'.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    const reserved = {
+      '%': '%25',
+      ' ': '%20',
+      '"': '%22',
+      '#': '%23',
+      '&': '%26',
+      '(': '%28',
+      ')': '%29',
+      '+': '%2B',
+      ',': '%2C',
+      '/': '%2F',
+      ':': '%3A',
+      ';': '%3B',
+      '<': '%3C',
+      '=': '%3D',
+      '>': '%3E',
+      '?': '%3F',
+      '@': '%40',
+      '\\': '%5C',
+    };
+    final buf = StringBuffer();
+    for (final rune in base.runes) {
+      final ch = String.fromCharCode(rune);
+      buf.write(reserved[ch] ?? ch);
+    }
+    return '${buf.toString()}.json';
   }
 
   // ===== 同步操作（真实 BookApi 调用） =====
