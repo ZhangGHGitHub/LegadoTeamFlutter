@@ -1,17 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
+import 'package:http/http.dart' as http;
 
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
+import '../services/system_brightness.dart';
 import '../utils/comic_image_utils.dart';
+import '../utils/manga_epaper.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
+import '../widgets/manga/manga_config_sheet.dart';
 
 /// 漫画阅读页面
 ///
@@ -70,10 +75,21 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 预加载缓存（前后各 2 页）
   static const int _preloadRange = 2;
 
+  /// 漫画专用配置（对齐原版 PreferKey manga*）— GapAudit P0-3
+  MangaColorFilterConfig _colorFilter = MangaColorFilterConfig();
+  MangaFooterConfig _footerConfig = MangaFooterConfig();
+  bool _enableEInk = false;
+  bool _enableGray = false;
+  int _eInkThreshold = 150;
+
+  /// 页脚用「当前可见页」近似索引（滚动估算）
+  int _visiblePageIndex = 0;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    unawaited(_loadMangaConfig());
     unawaited(_loadBook());
   }
 
@@ -84,6 +100,135 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     // 退出前保存阅读进度
     unawaited(_saveProgress());
     super.dispose();
+  }
+
+  /// 加载漫画配置（config 键对齐原版 PreferKey）
+  Future<void> _loadMangaConfig() async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final filterRaw = await api.getConfig(MangaConfigKeys.colorFilter);
+      final footerRaw = await api.getConfig(MangaConfigKeys.footerConfig);
+      final eInk = await api.getConfig(MangaConfigKeys.enableEInk);
+      final gray = await api.getConfig(MangaConfigKeys.enableGray);
+      final thr = await api.getConfig(MangaConfigKeys.eInkThreshold);
+      if (!mounted) return;
+      setState(() {
+        _colorFilter = MangaColorFilterConfig.fromStorage(filterRaw);
+        _footerConfig = MangaFooterConfig.fromStorage(footerRaw);
+        _enableEInk = eInk == 'true';
+        _enableGray = gray == 'true';
+        _eInkThreshold = int.tryParse(thr ?? '') ?? 150;
+      });
+      await _applyBrightness(_colorFilter.l);
+    } catch (_) {}
+  }
+
+  Future<void> _persistColorFilter(MangaColorFilterConfig cfg) async {
+    _colorFilter = MangaColorFilterConfig(
+      r: cfg.r,
+      g: cfg.g,
+      b: cfg.b,
+      a: cfg.a,
+      l: cfg.l,
+    );
+    setState(() {});
+    try {
+      await ref.read(bookApiProvider).setConfig(
+            MangaConfigKeys.colorFilter,
+            _colorFilter.toStorage(),
+          );
+    } catch (_) {}
+    await _applyBrightness(_colorFilter.l);
+  }
+
+  Future<void> _persistFooter(MangaFooterConfig cfg) async {
+    _footerConfig = MangaFooterConfig.fromJson(cfg.toJson());
+    setState(() {});
+    try {
+      await ref.read(bookApiProvider).setConfig(
+            MangaConfigKeys.footerConfig,
+            _footerConfig.toStorage(),
+          );
+    } catch (_) {}
+  }
+
+  Future<void> _persistEInk(bool enabled) async {
+    setState(() {
+      _enableEInk = enabled;
+      if (enabled) _enableGray = false;
+    });
+    try {
+      final api = ref.read(bookApiProvider);
+      await api.setConfig(MangaConfigKeys.enableEInk, enabled ? 'true' : 'false');
+      if (enabled) {
+        await api.setConfig(MangaConfigKeys.enableGray, 'false');
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistGray(bool enabled) async {
+    setState(() {
+      _enableGray = enabled;
+      if (enabled) _enableEInk = false;
+    });
+    try {
+      final api = ref.read(bookApiProvider);
+      await api.setConfig(MangaConfigKeys.enableGray, enabled ? 'true' : 'false');
+      if (enabled) {
+        await api.setConfig(MangaConfigKeys.enableEInk, 'false');
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistThreshold(int value) async {
+    setState(() => _eInkThreshold = value.clamp(0, 255));
+    try {
+      await ref.read(bookApiProvider).setConfig(
+            MangaConfigKeys.eInkThreshold,
+            '$_eInkThreshold',
+          );
+    } catch (_) {}
+  }
+
+  Future<void> _applyBrightness(int l) async {
+    if (l <= 0) return;
+    try {
+      if (await SystemBrightness.isSupported()) {
+        await SystemBrightness.setBrightness((l / 255.0).clamp(0.0, 1.0));
+      }
+    } catch (_) {}
+  }
+
+  void _openMangaConfig() {
+    MangaConfigSheet.show(
+      context,
+      colorFilter: _colorFilter,
+      footer: _footerConfig,
+      enableEInk: _enableEInk,
+      enableGray: _enableGray,
+      eInkThreshold: _eInkThreshold,
+      onColorFilterChanged: (c) => unawaited(_persistColorFilter(c)),
+      onFooterChanged: (c) => unawaited(_persistFooter(c)),
+      onEnableEInkChanged: (v) => unawaited(_persistEInk(v)),
+      onEnableGrayChanged: (v) => unawaited(_persistGray(v)),
+      onEInkThresholdChanged: (v) => unawaited(_persistThreshold(v)),
+    );
+  }
+
+  /// 图片渲染滤镜：灰度用 ColorFilter；电子纸走真像素二值化（见图片组件）
+  ColorFilter? get _imageColorFilter {
+    if (_enableEInk) return null;
+    if (_enableGray) {
+      return const ColorFilter.matrix(kMangaGrayscaleMatrix);
+    }
+    if (_colorFilter.isIdentity) return null;
+    return ColorFilter.matrix(_colorFilter.toColorMatrix());
+  }
+
+  Widget _wrapImageFilter(Widget child) {
+    final filter = _imageColorFilter;
+    if (filter == null) return child;
+    return ColorFiltered(colorFilter: filter, child: child);
   }
 
   /// 加载书籍信息和章节列表
@@ -248,6 +393,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
   /// 滚动监听，触发预加载
   void _onScroll() {
+    if (_imageUrls.isNotEmpty && _scrollController.hasClients) {
+      final max = _scrollController.position.maxScrollExtent;
+      if (max > 0) {
+        final ratio = (_scrollController.offset / max).clamp(0.0, 1.0);
+        final page = (ratio * (_imageUrls.length - 1)).round();
+        if (page != _visiblePageIndex) {
+          setState(() => _visiblePageIndex = page);
+        }
+      }
+    }
     _preloadVisibleImages();
   }
 
@@ -409,6 +564,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
             children: [
               // 主内容区域
               _buildContent(),
+              // 漫画页脚信息条（对标原版 ReaderInfoBar）
+              if (!_footerConfig.hideFooter) _buildMangaFooter(),
               // 顶部控制栏
               if (_showControls) _buildTopBar(),
               // 底部进度条
@@ -500,11 +657,56 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     // FlutterImageDecoder →「图片加载失败」（51漫画设备实测）。
     // 漫画阅读器只要能解析到书源就禁止直连 CDN。— Reasonix
     if (_bookSource != null) {
-      return _DecodedComicImage(
+      return _wrapImageFilter(
+        _DecodedComicImage(
+          url: url,
+          sourceJson: jsonEncode(_bookSource!.toJson()),
+          bookSourceUrl: _book!.origin,
+          eInkThreshold: _enableEInk ? _eInkThreshold : null,
+          onError: () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && !_failedIndices.contains(index)) {
+                setState(() {
+                  _failedIndices.add(index);
+                });
+              }
+            });
+          },
+        ),
+      );
+    }
+    // 有 origin 却未命中书源：勿直连（密文/防盗链），直接失败可重试
+    if (_book != null && _book!.origin.isNotEmpty) {
+      return _buildImageErrorPlaceholder(index, url);
+    }
+
+    if (_enableEInk) {
+      return _EpaperNetworkImage(
         url: url,
-        sourceJson: jsonEncode(_bookSource!.toJson()),
-        bookSourceUrl: _book!.origin,
+        headers: _imageHeaders,
+        threshold: _eInkThreshold,
         onError: () {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_failedIndices.contains(index)) {
+              setState(() => _failedIndices.add(index));
+            }
+          });
+        },
+      );
+    }
+
+    return _wrapImageFilter(
+      CachedNetworkImage(
+        imageUrl: url,
+        httpHeaders: _imageHeaders, // 防盗链 header（对齐原版）— Reasonix
+        fit: BoxFit.fitWidth,
+        width: double.infinity,
+        // 漫画页按屏宽全分辨率显示，不限制 memCacheWidth（磁盘缓存默认开启）
+        progressIndicatorBuilder: (context, _, progress) =>
+            _buildImageLoadingPlaceholder(progress.progress),
+        errorWidget: (context, _, _) => _buildImageErrorPlaceholder(index, url),
+        errorListener: (_) {
+          // 标记为失败状态（供重建时显示重试按钮）
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_failedIndices.contains(index)) {
               setState(() {
@@ -513,32 +715,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
             }
           });
         },
-      );
-    }
-    // 有 origin 却未命中书源：勿直连（密文/防盗链），直接失败可重试
-    if (_book != null && _book!.origin.isNotEmpty) {
-      return _buildImageErrorPlaceholder(index, url);
-    }
-
-    return CachedNetworkImage(
-      imageUrl: url,
-      httpHeaders: _imageHeaders, // 防盗链 header（对齐原版）— Reasonix
-      fit: BoxFit.fitWidth,
-      width: double.infinity,
-      // 漫画页按屏宽全分辨率显示，不限制 memCacheWidth（磁盘缓存默认开启）
-      progressIndicatorBuilder: (context, _, progress) =>
-          _buildImageLoadingPlaceholder(progress.progress),
-      errorWidget: (context, _, _) => _buildImageErrorPlaceholder(index, url),
-      errorListener: (_) {
-        // 标记为失败状态（供重建时显示重试按钮）
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && !_failedIndices.contains(index)) {
-            setState(() {
-              _failedIndices.add(index);
-            });
-          }
-        });
-      },
+      ),
     );
   }
 
@@ -706,16 +883,68 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
                 ),
                 // 章节标题
                 if (_currentChapterIndex < _chapters.length)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Text(
-                      _chapters[_currentChapterIndex].title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        _chapters[_currentChapterIndex].title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
                     ),
                   ),
+                IconButton(
+                  icon: const Icon(Icons.tune, color: Colors.white),
+                  tooltip: '漫画设置',
+                  onPressed: _openMangaConfig,
+                ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 漫画页脚信息条
+  Widget _buildMangaFooter() {
+    final chapterName = _currentChapterIndex < _chapters.length
+        ? _chapters[_currentChapterIndex].title
+        : '';
+    final label = _footerConfig.buildLabel(
+      chapterName: chapterName,
+      chapterIndex: _currentChapterIndex,
+      chapterSize: _chapters.length,
+      pageIndex: _visiblePageIndex.clamp(
+        0,
+        _imageUrls.isEmpty ? 0 : _imageUrls.length - 1,
+      ),
+      imageCount: _imageUrls.length,
+    );
+    if (label.isEmpty) return const SizedBox.shrink();
+    final align = _footerConfig.footerOrientation == MangaFooterConfig.alignCenter
+        ? Alignment.center
+        : Alignment.centerLeft;
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: _showControls ? 88 : 12,
+      child: IgnorePointer(
+        child: Align(
+          alignment: align,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0x99000000),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ),
@@ -858,12 +1087,15 @@ class _DecodedComicImage extends ConsumerStatefulWidget {
   final String sourceJson;
   final String bookSourceUrl;
   final VoidCallback onError;
+  /// 非 null 时做真像素电子纸二值化（对齐 EpaperTransformation）
+  final int? eInkThreshold;
 
   const _DecodedComicImage({
     required this.url,
     required this.sourceJson,
     required this.bookSourceUrl,
     required this.onError,
+    this.eInkThreshold,
   });
 
   @override
@@ -873,6 +1105,7 @@ class _DecodedComicImage extends ConsumerStatefulWidget {
 class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
   bool _loading = true;
   Uint8List? _bytes;
+  ui.Image? _epaperImage;
   String? _error;
 
   @override
@@ -882,8 +1115,43 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
     if (hit != null) {
       _bytes = hit;
       _loading = false;
+      unawaited(_applyEpaperIfNeeded(hit));
     } else {
       unawaited(_load());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DecodedComicImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.eInkThreshold != widget.eInkThreshold && _bytes != null) {
+      unawaited(_applyEpaperIfNeeded(_bytes!));
+    }
+  }
+
+  @override
+  void dispose() {
+    _epaperImage?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _applyEpaperIfNeeded(Uint8List bytes) async {
+    final thr = widget.eInkThreshold;
+    if (thr == null) {
+      _epaperImage?.dispose();
+      if (mounted) setState(() => _epaperImage = null);
+      return;
+    }
+    try {
+      final img = await mangaEpaperFromBytes(bytes, threshold: thr);
+      if (!mounted) {
+        img.dispose();
+        return;
+      }
+      _epaperImage?.dispose();
+      setState(() => _epaperImage = img);
+    } catch (e) {
+      debugPrint('电子纸二值化失败: $e');
     }
   }
 
@@ -912,6 +1180,7 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
         _bytes = bytes;
         _loading = false;
       });
+      await _applyEpaperIfNeeded(bytes);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -931,6 +1200,14 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
         child: const Center(
           child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF666666)),
         ),
+      );
+    }
+    final epaper = _epaperImage;
+    if (widget.eInkThreshold != null && epaper != null) {
+      return RawImage(
+        image: epaper,
+        fit: BoxFit.fitWidth,
+        width: double.infinity,
       );
     }
     final bytes = _bytes;
@@ -972,6 +1249,120 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 无书源时的网络图电子纸渲染
+class _EpaperNetworkImage extends StatefulWidget {
+  const _EpaperNetworkImage({
+    required this.url,
+    required this.headers,
+    required this.threshold,
+    required this.onError,
+  });
+
+  final String url;
+  final Map<String, String>? headers;
+  final int threshold;
+  final VoidCallback onError;
+
+  @override
+  State<_EpaperNetworkImage> createState() => _EpaperNetworkImageState();
+}
+
+class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
+  bool _loading = true;
+  ui.Image? _image;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _EpaperNetworkImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url ||
+        oldWidget.threshold != widget.threshold) {
+      unawaited(_load());
+    }
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await http
+          .get(Uri.parse(widget.url), headers: widget.headers)
+          .timeout(const Duration(seconds: 30));
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw StateError('HTTP ${res.statusCode}');
+      }
+      final img = await mangaEpaperFromBytes(
+        res.bodyBytes,
+        threshold: widget.threshold,
+      );
+      if (!mounted) {
+        img.dispose();
+        return;
+      }
+      _image?.dispose();
+      setState(() {
+        _image = img;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+      widget.onError();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        color: const Color(0xFF1A1A1A),
+        child: const Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Color(0xFF666666),
+          ),
+        ),
+      );
+    }
+    final img = _image;
+    if (img != null) {
+      return RawImage(
+        image: img,
+        fit: BoxFit.fitWidth,
+        width: double.infinity,
+      );
+    }
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.4,
+      color: const Color(0xFF1A1A1A),
+      child: Center(
+        child: Text(
+          _error ?? '图片加载失败',
+          style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
         ),
       ),
     );
