@@ -4,9 +4,9 @@
 **设备**: emulator-5556（未占用 5558）  
 **包名**: `io.legado.flutter_legado`  
 **安装版本**: **2.0.39**（versionCode=41）  
-**安装时间**: 2026-08-13 04:02:51（含最新 UI 修复重装）  
-**冒烟**: `emulator_smoke_test.ps1 -Device emulator-5556 -SkipBuild -CheckUI` → **6/6 PASS**  
-**HEAD（写本报告时）**: `cd485521b`  
+**安装时间**: 2026-08-13 04:02:51 首装；看门狗复跑于 **04:08:07** 再次 `install -r` 核验  
+**冒烟**: `emulator_smoke_test.ps1 -Device emulator-5556 -SkipBuild -CheckUI` → **6/6 PASS**（04:08 复验）  
+**HEAD（写本报告时）**: `5e0384fd8`（含结果回写）；功能基线 `cd485521b`  
 **相关 commits（本轮门禁覆盖）**:
 
 | commit | 说明 |
@@ -143,3 +143,4 @@
 ---
 
 编写者：Auto（Cursor）｜ 2026-08-13  
+修订：看门狗复跑核验（冒烟 6/6 + 书架有书 + JobScheduler 文案无旧注）｜ 2026-08-13 04:08 
