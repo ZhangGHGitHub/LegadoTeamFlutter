@@ -86,4 +86,11 @@ mod tests {
         let api_err: ApiError = legado_err.into();
         assert!(matches!(api_err.0, LegadoError::Internal(_)));
     }
+
+    #[tokio::test]
+    async fn test_api_error_login_required() {
+        let err = ApiError(LegadoError::LoginRequired("need login".into()));
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
 }

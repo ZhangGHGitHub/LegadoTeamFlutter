@@ -23,6 +23,7 @@ import '../services/cache_service.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
 import '../utils/book_open_utils.dart';
+import '../utils/source_login_prompt.dart';
 import 'source_login_screen.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/error_view.dart';
@@ -1249,9 +1250,24 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       setState(() { _future = _loadData(); });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('更新失败: $e')),
-      );
+      BookSource? source;
+      try {
+        final sources = await ref.read(bookApiProvider).getBookSources();
+        for (final s in sources) {
+          if (s.bookSourceUrl == book.origin) {
+            source = s;
+            break;
+          }
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      if (isSourceLoginRequiredError(e)) {
+        await promptSourceLoginIfNeeded(context, error: e, source: source);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('更新失败: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
