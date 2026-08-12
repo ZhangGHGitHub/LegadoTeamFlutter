@@ -787,7 +787,13 @@ class MockBookApi implements BookApi {
   @override
   Future<int> importRssSources(String jsonArray) async {
     final list = jsonDecode(jsonArray) as List<dynamic>;
-    return list.length;
+    var count = 0;
+    for (final item in list) {
+      if (item is! Map) continue;
+      await addRssSource(RssSource.fromJson(Map<String, dynamic>.from(item)));
+      count++;
+    }
+    return count;
   }
 
   @override

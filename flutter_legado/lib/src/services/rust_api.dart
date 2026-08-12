@@ -560,12 +560,30 @@ class RustApi implements BookApi {
   Future<void> disableRssSource(String sourceUrl) =>
       bridge.sourceDisable(sourceUrl: sourceUrl);
 
-  /// 导入 RSS 源
-  Future<int> importRssSources(String jsonArray) =>
-      bridge.sourceImport(jsonArray: jsonArray);
+  /// 导入 RSS 源（契约 importRssSources）
+  ///
+  /// 历史误接 `sourceImport`（写入书源表）。现改为逐条 `rssAddSource`
+  /// 全字段落 `rssSources`；待 FRB 生成 `rssImportSources` 后可改为批量 FFI。
+  Future<int> importRssSources(String jsonArray) async {
+    final decoded = jsonDecode(jsonArray);
+    if (decoded is! List) {
+      throw FormatException('importRssSources 期望 JSON 数组');
+    }
+    var count = 0;
+    for (final item in decoded) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      await addRssSource(RssSource.fromJson(map));
+      count++;
+    }
+    return count;
+  }
 
-  /// 导出 RSS 源
-  Future<String> exportRssSources() => bridge.sourceExport();
+  /// 导出 RSS 源（契约 exportRssSources；勿走书源 sourceExport）
+  Future<String> exportRssSources() async {
+    final sources = await getRssSources();
+    return jsonEncode(sources.map((s) => s.toJson()).toList());
+  }
 
   /// 获取 RSS 文章列表
   Future<List<RssFeedArticle>> getRssArticles(String sourceUrl) async {

@@ -158,8 +158,8 @@
 | `deleteRssSource(String sourceUrl)` | sourceUrl | `Future<void>` | 删除 RSS 源 |
 | `enableRssSource(String sourceUrl)` | sourceUrl | `Future<void>` | 启用 RSS 源 |
 | `disableRssSource(String sourceUrl)` | sourceUrl | `Future<void>` | 禁用 RSS 源 |
-| `importRssSources(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 导入 RSS 源，返回成功数量 |
-| `exportRssSources()` | 无 | `Future<String>` | 导出 RSS 源 |
+| `importRssSources(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 导入 RSS 源，返回成功数量。✅ **2026-08-12 纠偏**：Flutter `rust_api.importRssSources` 曾误接 `sourceImport`（写入书源表）；现改为逐条 `rssAddSource` 落 `rssSources`。Rust `add_rss_source` 已改走 `RssSourceRepository::insert` 全字段；`import_rss_sources` 已在 `api/rss.rs` 备好，待 FRB 生成后可改批量 FFI |
+| `exportRssSources()` | 无 | `Future<String>` | 导出 RSS 源。✅ **2026-08-12 纠偏**：勿走 `sourceExport`；现导出 `getRssSources()` JSON |
 | `getRssArticles(String sourceUrl)` | sourceUrl | `Future<List<RssFeedArticle>>` | 获取 RSS 文章列表 |
 
 > ℹ️ **RSS 源原子更新（Task #108 缺口④）**：Rust 侧 `ffi::rss_update_source(source_json)`（核心实现 `legado-ffi/src/api/rss.rs::update_rss_source`，DB 层 `legado-db::RssSourceRepository::update_fields`）。对 `rssSources` 表按 `sourceUrl` 主键执行**单条 UPDATE 语句**全字段原子更新（不走 DELETE+INSERT，不触发外键级联）；目标源不存在时返回错误（不静默插入）。Flutter 侧 RSS 源编辑保存应改走本接口，替代原「删旧+加新」workaround。冻结契约保持不变，本方法为加法式新增。
