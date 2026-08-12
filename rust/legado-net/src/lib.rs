@@ -47,7 +47,7 @@ pub use client::{LegadoClient, LegadoClientConfig};
 pub use cookie_store::{CookiePersistence, CookieStore};
 pub use cover::CoverCache;
 pub use custom_hosts::{
-    apply_custom_hosts, clear_custom_hosts, lookup_ips, CustomHostsResolver,
+    apply_custom_hosts, clear_custom_hosts, lookup_ips, resolver, CustomHostsResolver,
 };
 pub use middleware::{Middleware, MiddlewareChain};
 pub use proxy::{parse_proxy_config, ProxyConfig, ProxyCredentials, ProxyPool, ProxyType};
