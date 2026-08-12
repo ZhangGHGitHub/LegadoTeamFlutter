@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
+import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../providers/source_check/check_source_notifier.dart';
 import '../routes.dart';
@@ -15,8 +16,10 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/book_source_group_manage_dialog.dart';
 import '../widgets/confirm_dialog.dart';
 import 'source_edit_screen.dart';
+import 'js_source_edit_screen.dart';
 import 'source_import_confirm_screen.dart';
 import 'source_login_screen.dart';
 
@@ -34,6 +37,9 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
 
   /// 校验会话结束后的总结 SnackBar 是否已展示（防 build 重复触发）
   bool _checkToastShown = false;
+
+  /// 按域名分组显示（对标原版 menu_group_sources_by_domain）
+  bool _groupByDomain = false;
 
   /// 上一帧的校验进行中状态（检测结束瞬间）
   bool _checkingForToast = false;
@@ -201,14 +207,14 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
           position: PopupMenuPosition.under,
           onSelected: (value) => _handleAction(context, value),
           itemBuilder: (_) => [
-            // 对标原版 book_source.xml 溢出菜单（仅原版 7 项，含 leading 图标）
+            // 对标原版 book_source.xml 溢出菜单（JS 书源编辑器未移植前隐藏入口，避免假菜单）
             const PopupMenuItem(
               value: 'new',
               child: _MenuRow(icon: Icons.add, label: '新建书源'),
             ),
             const PopupMenuItem(
               value: 'new_js',
-              child: _MenuRow(icon: Icons.add, label: '新建 JS 书源'),
+              child: _MenuRow(icon: Icons.code, label: '新建 JS 书源'),
             ),
             const PopupMenuItem(
               value: 'import_file',
@@ -223,10 +229,12 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
               value: 'import_qr',
               child: _MenuRow(icon: Icons.qr_code, label: '二维码导入'),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'group_by_domain',
               child: _MenuRow(
-                  icon: Icons.domain, label: '按域名分组显示'),
+                icon: Icons.domain,
+                label: _groupByDomain ? '按域名分组显示 ✓' : '按域名分组显示',
+              ),
             ),
             const PopupMenuItem(
               value: 'help',
@@ -465,9 +473,50 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     return Column(
       children: [
         if (showCheckBanner) _buildCheckBanner(checkState),
-        Expanded(child: _buildSourceList(context, state.filteredSources)),
+        Expanded(
+          child: _buildSourceList(
+            context,
+            _displaySources(state.filteredSources),
+          ),
+        ),
       ],
     );
+  }
+
+  /// 展示用列表：开启域名分组时按二级域名排序（对标 upBookSource）
+  List<BookSource> _displaySources(List<BookSource> sources) {
+    if (!_groupByDomain) return sources;
+    final list = List<BookSource>.of(sources);
+    list.sort((a, b) {
+      final ha = _sourceHost(a.bookSourceUrl);
+      final hb = _sourceHost(b.bookSourceUrl);
+      final aHash = ha == '#' ? 1 : 0;
+      final bHash = hb == '#' ? 1 : 0;
+      final byHash = aHash.compareTo(bHash);
+      if (byHash != 0) return byHash;
+      final byHost = ha.compareTo(hb);
+      if (byHost != 0) return byHost;
+      return b.lastUpdateTime.compareTo(a.lastUpdateTime);
+    });
+    return list;
+  }
+
+  /// 从书源 URL 取二级域名（对标 NetworkUtils.getSubDomainOrNull，失败为 `#`）
+  String _sourceHost(String origin) {
+    final trimmed = origin.trim();
+    if (trimmed.isEmpty) return '#';
+    try {
+      final uri = Uri.parse(trimmed.contains('://') ? trimmed : 'http://$trimmed');
+      final host = uri.host;
+      if (host.isEmpty) return '#';
+      final parts = host.split('.').where((p) => p.isNotEmpty).toList();
+      if (parts.length >= 2) {
+        return parts.sublist(parts.length - 2).join('.');
+      }
+      return host;
+    } catch (_) {
+      return '#';
+    }
   }
 
   /// 校验进度/结果横幅（对标原版持续 Snackbar：进度 n/total + 当前源名）
@@ -543,6 +592,33 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
 
     final state = ref.watch(sourceNotifierProvider);
 
+    // 域名分组：插入域名头行（对标 adapter.isItemHeader / getHeaderText）
+    if (_groupByDomain) {
+      final rows = <_SourceListRow>[];
+      String? lastHost;
+      for (final source in sources) {
+        final host = _sourceHost(source.bookSourceUrl);
+        if (host != lastHost) {
+          rows.add(_SourceListRow.header(host));
+          lastHost = host;
+        }
+        rows.add(_SourceListRow.item(source));
+      }
+      return ListView.builder(
+        itemCount: rows.length,
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          if (row.isHeader) {
+            return _buildDomainHeader(context, row.header!);
+          }
+          final source = row.source!;
+          return state.batchMode
+              ? _buildBatchSourceItem(context, source, state)
+              : _buildSourceItem(context, source);
+        },
+      );
+    }
+
     return ListView.separated(
       itemCount: sources.length,
       separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
@@ -552,6 +628,24 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             ? _buildBatchSourceItem(context, source, state)
             : _buildSourceItem(context, source);
       },
+    );
+  }
+
+  /// 域名分组头（轻量列表分组，对齐原版 sticky 域名条信息架构）
+  Widget _buildDomainHeader(BuildContext context, String host) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+      child: Text(
+        host,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 
@@ -861,8 +955,11 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
           ),
         );
       case 'search':
-        // 原版为单源搜索调试；Flutter 搜索页暂未支持单源范围
-        _todo(context, '单源搜索');
+        // 对标原版 BookSourceActivity → SearchActivity.start(this, bookSource)
+        final search = ref.read(searchNotifierProvider.notifier);
+        search.clearAllFilter();
+        search.toggleSource(source.bookSourceUrl);
+        Navigator.of(context).pushNamed(AppRoutes.search);
       case 'debug':
         Navigator.of(context)
             .pushNamed(AppRoutes.sourceDebug, arguments: source.bookSourceUrl);
@@ -948,7 +1045,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                       section(
                           '右上角有分组菜单，可以按分组筛选书源'),
                       section('右上角更多菜单里包含', [
-                        '新建书源 / 新建 JS 书源 / 本地导入 / 网络导入 / 二维码导入',
+                        '新建书源 / 本地导入 / 网络导入 / 二维码导入',
                         '按域名分组显示 / 帮助',
                       ]),
                       section(
@@ -976,9 +1073,17 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   }
 
   /// 分组菜单处理（对标原版 BookSourceActivity 分组子菜单）
-  void _handleGroupAction(BuildContext context, String value) {
+  Future<void> _handleGroupAction(BuildContext context, String value) async {
     if (value == 'group_manage') {
-      _todo(context, '分组管理');
+      // P1-1：接通书源分组管理（对标 GroupManageDialog）
+      final sources = ref.read(sourceNotifierProvider).sources;
+      final changed = await showDialog<bool>(
+        context: context,
+        builder: (_) => BookSourceGroupManageDialog(sources: sources),
+      );
+      if (changed == true && context.mounted) {
+        await ref.read(sourceNotifierProvider.notifier).loadSources();
+      }
       return;
     }
     // 再次点击当前特殊分组时取消筛选
@@ -1003,7 +1108,10 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         );
         break;
       case 'new_js':
-        _todo(context, '新建 JS 书源');
+        // P0-1：最小可用 JS 书源编辑器（extractJsSource + 保存）
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const JsSourceEditScreen()),
+        );
         break;
       case 'import_url':
         _showImportUrlDialog(context);
@@ -1015,7 +1123,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         _importFromQrCode(context);
         break;
       case 'group_by_domain':
-        _todo(context, '按域名分组显示');
+        setState(() => _groupByDomain = !_groupByDomain);
         break;
       case 'help':
         // 对标原版 showHelp("SourceMBookHelp")
@@ -1024,11 +1132,11 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     }
   }
 
-  /// 尚未移植的原版功能统一提示
-  void _todo(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$feature」功能尚未移植')),
-    );
+  /// 选中所选区间（对标 adapter.checkSelectedInterval）
+  void _selectSelectedInterval() {
+    final state = ref.read(sourceNotifierProvider);
+    final ordered = _displaySources(state.filteredSources);
+    ref.read(sourceNotifierProvider.notifier).selectSelectedInterval(ordered);
   }
 
   /// 排序菜单项（对标 Android menu_sort_manual/auto/name/url + menu_sort_desc）
@@ -1170,7 +1278,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         await _startCheck(context);
         break;
       case 'select_range':
-        _todo(context, '选中所选区间');
+        _selectSelectedInterval();
         break;
       case 'delete':
         if (!context.mounted) return;
@@ -1485,6 +1593,17 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       }
     }
   }
+}
+
+/// 书源列表行：域名头或书源项（域名分组模式）
+class _SourceListRow {
+  final String? header;
+  final BookSource? source;
+
+  const _SourceListRow.header(this.header) : source = null;
+  const _SourceListRow.item(this.source) : header = null;
+
+  bool get isHeader => header != null;
 }
 
 /// 溢出菜单图标行（对标原版菜单项的 icon + title 结构）

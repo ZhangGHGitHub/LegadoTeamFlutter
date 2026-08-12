@@ -283,6 +283,28 @@ class SourceNotifier extends Notifier<SourceState> {
     state = state.copyWith(selectedUrls: newSet);
   }
 
+  /// 选中所选区间（对标原版 BookSourceAdapter.checkSelectedInterval）
+  ///
+  /// [ordered] 为当前屏幕展示顺序（含域名分组排序）；缺省用 filteredSources。
+  void selectSelectedInterval([List<BookSource>? ordered]) {
+    final list = ordered ?? state.filteredSources;
+    if (list.isEmpty || state.selectedUrls.isEmpty) return;
+    var min = -1;
+    var max = -1;
+    for (var i = 0; i < list.length; i++) {
+      if (state.selectedUrls.contains(list[i].bookSourceUrl)) {
+        if (min < 0) min = i;
+        max = i;
+      }
+    }
+    if (min < 0) return;
+    final newSet = {...state.selectedUrls};
+    for (var i = min; i <= max; i++) {
+      newSet.add(list[i].bookSourceUrl);
+    }
+    state = state.copyWith(selectedUrls: newSet);
+  }
+
   /// 切换单个书源的发现启用状态（对标长按菜单 启用/禁用发现）
   Future<void> toggleExplore(String sourceUrl) async {
     final index =
