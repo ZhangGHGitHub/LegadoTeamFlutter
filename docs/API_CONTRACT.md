@@ -625,8 +625,10 @@
 
 #### 2.43.3 R7 缓存批量下载（4 个方法）
 
-> 对标 Kotlin `CacheActivity` + `CacheBook` 批量缓存下载。任务表为进程内内存结构（独立 worker 线程 + `AtomicBool` 取消令牌，
-> worker 不用 tokio spawn 因正文抓取链路含 `block_on` 不可嵌套；取消对齐 §2.3 `cancelCheckSources` 的书源校验流机制）；逐章复用正文抓取链路 `get_chapter_content_full`
+> 对标 Kotlin `CacheActivity` + `CacheBook` 批量缓存下载。运行态为进程内内存表（独立 worker 线程 + `AtomicBool` 取消令牌，
+> worker 不用 tokio spawn 因正文抓取链路含 `block_on` 不可嵌套；取消对齐 §2.3 `cancelCheckSources` 的书源校验流机制）；
+> **进度快照落库**至 `caches` 表（键前缀 `cacheDownloadTask:` / 索引 `cacheDownloadTaskIndex`，重启后恢复进行中任务并续跑；
+> 终态任务亦可经 `cacheDownloadProgress`/`List` 回读）。逐章复用正文抓取链路 `get_chapter_content_full`
 > （缓存命中免网络 → 网络抓取 → 缓存写入；本地书走解析器 + R5 写缓存），失败章计入 failed 并继续。
 
 | 方法 | 入参 | 返回 | 说明 |

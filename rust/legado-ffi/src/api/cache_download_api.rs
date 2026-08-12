@@ -313,16 +313,31 @@ pub fn cache_download_progress(task_id: u64) -> LegadoResult<CacheDownloadTask> 
         .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?
         .get(&task_id)
         .cloned();
-    Ok(match task {
-        Some(t) => snapshot(task_id, &t),
-        None => CacheDownloadTask {
-            task_id,
-            book_url: String::new(),
-            status: "notFound".into(),
-            total: 0,
-            completed: 0,
-            failed: 0,
-        },
+    if let Some(t) = task {
+        return Ok(snapshot(task_id, &t));
+    }
+    // 内存无任务时回读落库快照（终态/进程重启后仍可查进度）
+    if let Ok(Some(json)) =
+        with_database(|db| CacheRepository::new(db.connection()).get(&persist_key(task_id)))
+    {
+        if let Ok(row) = serde_json::from_str::<PersistedTask>(&json) {
+            return Ok(CacheDownloadTask {
+                task_id: row.task_id,
+                book_url: row.book_url,
+                status: row.status,
+                total: row.total,
+                completed: row.completed,
+                failed: row.failed,
+            });
+        }
+    }
+    Ok(CacheDownloadTask {
+        task_id,
+        book_url: String::new(),
+        status: "notFound".into(),
+        total: 0,
+        completed: 0,
+        failed: 0,
     })
 }
 

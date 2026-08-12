@@ -47,6 +47,7 @@ pub use repository::cache_repository::CacheRepository;
 pub use repository::cookie_repository::CookieRepository;
 pub use repository::cover_rule_repository::{CoverRule, CoverRuleRepository};
 pub use repository::dict_rule_repository::{default_dict_rules, DictRule, DictRuleRepository};
+pub use repository::download_task_repository::DownloadTaskRepository;
 pub use repository::highlight_repository::HighlightRepository;
 pub use repository::highlight_rule_repository::HighlightRuleRepository;
 pub use repository::http_tts_repository::{HttpTts, HttpTtsRepository};
