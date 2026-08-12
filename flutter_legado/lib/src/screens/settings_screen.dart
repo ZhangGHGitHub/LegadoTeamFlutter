@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,15 +9,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/book.dart';
 import '../routes.dart';
 import '../services/auto_task_scheduler.dart';
 import '../services/book_api.dart';
 import '../services/crash_log_service.dart';
+import '../services/settings_service.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../theme/app_colors.dart';
 import '../widgets/ios_widgets.dart';
+import '../widgets/restore_ignore_dialog.dart';
 
 /// 我的页面（枢纽菜单）
 ///
@@ -519,12 +525,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Navigator.pushNamed(context, AppRoutes.webdavSettings);
                 },
               ),
-              // P2-4：恢复忽略项 / 导入旧版数据 — Rust 契约未支持，诚实隐藏（2026-08-12）
+              ListTile(
+                leading: const Icon(Icons.filter_list),
+                title: const Text('恢复忽略项'),
+                subtitle: const Text('恢复时跳过勾选项（当前仅本地书籍生效）'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showRestoreIgnore(context);
+                },
+              ),
+              // P2-4 导入旧版：需 myBookShelf/myBookSource 格式转换契约，入口保持隐藏直至提问确认
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// 恢复忽略项（对齐 BackupConfigFragment.backupIgnore）
+  Future<void> _showRestoreIgnore(BuildContext context) async {
+    final settings = SettingsService();
+    final initial = await settings.getRestoreIgnoreConfig();
+    if (!context.mounted) return;
+    final result = await showDialog<Map<String, bool>>(
+      context: context,
+      builder: (ctx) => RestoreIgnoreDialog(initial: initial),
+    );
+    if (result == null) return;
+    await settings.saveRestoreIgnoreConfig(result);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存恢复忽略项')),
+      );
+    }
   }
 
   /// 本地备份（对标原版 BackupConfigFragment.backup）
@@ -562,8 +595,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// 本地恢复（对标原版 BackupConfigFragment.restoreFromLocal）
   ///
-  /// 选择备份文件后经 [BookApi.restore] 全量恢复（书源/RSS 源/书籍/替换规则/HTTP TTS），
-  /// 并刷新书架。
+  /// 选择备份文件后经 [BookApi.restore] 全量恢复；若勾选忽略本地书，
+  /// 先按 [SettingsService] 配置过滤备份 JSON 中的本地书再恢复。
   Future<void> _doRestore(BuildContext context) async {
     setState(() => _restoreLoading = true);
     final api = ref.read(bookApiProvider);
@@ -575,7 +608,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final backupPath = result?.files.single.path;
       if (backupPath == null) return; // 用户取消选择
 
-      await api.restore(backupPath);
+      var pathToRestore = backupPath;
+      final ignore = await SettingsService().getRestoreIgnoreConfig();
+      if (ignore['localBook'] == true &&
+          backupPath.toLowerCase().endsWith('.json')) {
+        pathToRestore = await _backupPathSkippingLocalBooks(backupPath);
+      }
+
+      await api.restore(pathToRestore);
       if (context.mounted) {
         ref.read(bookshelfNotifierProvider.notifier).refresh();
         ScaffoldMessenger.of(
@@ -591,6 +631,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _restoreLoading = false);
     }
+  }
+
+  /// 生成去掉本地书的临时备份 JSON（对齐 Restore 中 ignoreLocalBook）
+  Future<String> _backupPathSkippingLocalBooks(String backupPath) async {
+    final raw = await File(backupPath).readAsString();
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) return backupPath;
+    final books = decoded['books'];
+    if (books is! List) return backupPath;
+
+    decoded['books'] = books.where((item) {
+      if (item is! Map) return true;
+      final origin = item['origin']?.toString() ?? '';
+      final type = item['type'];
+      final typeInt = type is int ? type : int.tryParse('$type') ?? 0;
+      final isLocal = origin == BookType.localTag ||
+          origin.startsWith(BookType.webDavTag) ||
+          (typeInt & BookType.local) != 0;
+      return !isLocal;
+    }).toList();
+
+    final dir = Directory.systemTemp;
+    final out = File(
+      '${dir.path}${Platform.pathSeparator}legado_restore_no_local_${DateTime.now().millisecondsSinceEpoch}.json',
+    );
+    await out.writeAsString(jsonEncode(decoded));
+    return out.path;
   }
 
   /// 退出应用（对标 pref_main exit）

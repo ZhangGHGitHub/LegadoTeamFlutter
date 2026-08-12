@@ -14,7 +14,7 @@
 | 2026-08-10 | 第四批后置项 FFI 冻结（Task #72）：三个加法式新增——`setCustomHosts`（§2.20 网络组，对齐原版 hosts 映射 JSON 对象）/ `setMcpPort`（§2.22 服务器组，**决策：对齐原版独立端口方案**，不复用 `setServerPort`，默认 1236，≤0=停止独立 MCP 服务）/ `searchCoverRules`（§2.4 搜索组，coverRules 表规则搜封面），附录合计 236→239，BookApi 口径 227→230 |
 | 2026-08-12 | 远程书库（P1-5）加法式新增——`webdavDownloadFile`（§2.28 WebDAV 云同步，镜像 `webdavUploadFile`，二进制落盘）；远程服务器列表沿用 Flutter `SettingsService` 持久化（对齐原版 `servers` 表语义，不新增 Server CRUD FFI）。附录合计 239→240，BookApi 口径 230→231 |
 | 2026-08-12 | P1-2 加法式新增——`clearCookie`（§2.3 书源操作，对齐原版 `CookieStore.removeCookie`）：按 URL 二级域名清除持久层 + 共享 HTTP 内存 CookieStore + JS 宿主 Cookie；附录合计 240→241，BookApi 口径 231→232 |
-| 2026-08-12 | P0-2 听书流媒体取址：升级既有 `getAudioChapterMedia`（§2.26）语义——对齐原版 `AudioPlay.loadRemotePlayUrl` → `WebBook.getContent`，返回可播 `mediaUrl` 等元数据；Rust FFI `audioGetChapterMedia` 加法式落地。BookApi 方法数不变（签名兼容，返回字段扩展） |
+| 2026-08-13 | P2-4 部分：恢复忽略项 UI + `localBook` 在调用 `restore` 前由 Flutter 过滤备份 JSON（无新 FFI）；「导入旧版」仍隐藏待确认 |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
 
 ---
@@ -229,7 +229,7 @@
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `backup(String dirPath)` | dirPath | `Future<String>` | 备份数据，返回备份文件路径 |
-| `restore(String backupPath)` | backupPath | `Future<void>` | 恢复数据 |
+| `restore(String backupPath)` | backupPath | `Future<void>` | 恢复数据。**P2-4（2026-08-13）**：UI 在调用前可读 `SettingsService.restoreIgnore`；若 `localBook=true` 且备份为 JSON，先过滤 `origin=loc_book` / `dav:` / `type&LOCAL` 本地书再调用本方法（无需改 FFI 签名）。其余 ignore 键（readConfig/theme* 等）待备份含 prefs/主题文件后接线；「导入旧版」另需格式转换契约 |
 
 ### 2.12 阅读记录（4 个方法）
 

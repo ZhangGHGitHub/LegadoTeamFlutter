@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -784,6 +786,69 @@ class SettingsService {
       await prefs.setInt(_keyReadRecordSort, value);
     } catch (e) {
       debugPrint('SettingsService.setReadRecordSort 异常: $e');
+    }
+  }
+
+  // ===== 恢复忽略项（对齐 BackupConfig.restoreIgnore.json）=====
+
+  /// 忽略键顺序与原版 [BackupConfig.ignoreKeys] 一致
+  static const restoreIgnoreKeys = <String>[
+    'readConfig',
+    'themeMode',
+    'themeConfig',
+    'coverConfig',
+    'bookshelfLayout',
+    'showRss',
+    'threadCount',
+    'localBook',
+  ];
+
+  /// 忽略项标题（对齐 BackupConfig.ignoreTitle）
+  static const restoreIgnoreTitles = <String>[
+    '阅读界面配置',
+    '主题模式',
+    '主题配置',
+    '封面规则',
+    '书架布局',
+    '显示订阅',
+    '线程数',
+    '本地书籍',
+  ];
+
+  static const _keyRestoreIgnore = 'restoreIgnore';
+
+  /// 读取恢复忽略配置（缺省全 false）
+  Future<Map<String, bool>> getRestoreIgnoreConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_keyRestoreIgnore);
+      if (raw == null || raw.isEmpty) {
+        return {for (final k in restoreIgnoreKeys) k: false};
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return {for (final k in restoreIgnoreKeys) k: false};
+      }
+      return {
+        for (final k in restoreIgnoreKeys)
+          k: decoded[k] == true,
+      };
+    } catch (e) {
+      debugPrint('SettingsService.getRestoreIgnoreConfig 异常: $e');
+      return {for (final k in restoreIgnoreKeys) k: false};
+    }
+  }
+
+  /// 持久化恢复忽略配置（对齐 BackupConfig.saveIgnoreConfig）
+  Future<void> saveRestoreIgnoreConfig(Map<String, bool> config) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final normalized = {
+        for (final k in restoreIgnoreKeys) k: config[k] == true,
+      };
+      await prefs.setString(_keyRestoreIgnore, jsonEncode(normalized));
+    } catch (e) {
+      debugPrint('SettingsService.saveRestoreIgnoreConfig 异常: $e');
     }
   }
 

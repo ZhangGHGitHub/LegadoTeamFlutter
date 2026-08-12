@@ -107,7 +107,7 @@ void main() {
       expect(find.text('深色'), findsOneWidget);
     });
 
-    testWidgets('点击备份恢复弹出底部弹窗（含延后项占位）', (tester) async {
+    testWidgets('点击备份恢复弹出底部弹窗（含恢复忽略项）', (tester) async {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
@@ -116,15 +116,13 @@ void main() {
       await tester.tap(find.text('备份恢复'));
       await tester.pumpAndSettle();
 
-      // 底部弹窗聚合：备份/恢复/WebDAV 同步
+      // 底部弹窗聚合：备份/恢复/WebDAV 同步/恢复忽略项
       expect(find.text('备份数据'), findsOneWidget);
       expect(find.text('恢复数据'), findsOneWidget);
       expect(find.text('WebDAV 同步'), findsOneWidget);
-
-      // 延后项占位（禁用，副标题「后续版本支持」）
       expect(find.text('恢复忽略项'), findsOneWidget);
-      expect(find.text('导入旧版数据'), findsOneWidget);
-      expect(find.text('后续版本支持'), findsNWidgets(2));
+      // 导入旧版仍诚实隐藏（格式转换契约未确认）
+      expect(find.text('导入旧版数据'), findsNothing);
     });
 
     testWidgets('滚动可见导出日志入口', (tester) async {
