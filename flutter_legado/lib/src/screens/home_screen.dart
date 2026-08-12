@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -5,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../l10n/app_strings.dart';
+import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
+import '../services/bottom_bar_skin_service.dart';
 import 'bookshelf_screen.dart';
 import 'explore_screen.dart';
 import 'rss_screen.dart';
@@ -152,30 +156,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
   }
 
-  /// 构建底栏项（未选中/选中双色 SVG 图标）
+  /// 构建底栏项（皮肤图优先，否则未选中/选中双色 SVG）
   NavigationDestination _destination(
     BuildContext context,
     String assetName,
-    String label,
-  ) {
+    String label, {
+    String? skinSlot,
+    String activeSkin = '',
+  }) {
+    Widget fallbackIcon({required bool selected}) {
+      return SvgPicture.asset(
+        'assets/icons/${assetName}_${selected ? 's' : 'e'}.svg',
+        width: 24,
+        height: 24,
+        colorFilter: ColorFilter.mode(
+          selected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+          BlendMode.srcIn,
+        ),
+      );
+    }
+
+    if (activeSkin.isEmpty || skinSlot == null) {
+      return NavigationDestination(
+        icon: fallbackIcon(selected: false),
+        selectedIcon: fallbackIcon(selected: true),
+        label: label,
+      );
+    }
+
     return NavigationDestination(
-      icon: SvgPicture.asset(
-        'assets/icons/${assetName}_e.svg',
-        width: 24,
-        height: 24,
-        colorFilter: ColorFilter.mode(
-          Theme.of(context).colorScheme.onSurfaceVariant,
-          BlendMode.srcIn,
-        ),
+      icon: _SkinIcon(
+        skin: activeSkin,
+        slot: skinSlot,
+        selected: false,
+        fallback: fallbackIcon(selected: false),
       ),
-      selectedIcon: SvgPicture.asset(
-        'assets/icons/${assetName}_s.svg',
-        width: 24,
-        height: 24,
-        colorFilter: ColorFilter.mode(
-          Theme.of(context).colorScheme.primary,
-          BlendMode.srcIn,
-        ),
+      selectedIcon: _SkinIcon(
+        skin: activeSkin,
+        slot: skinSlot,
+        selected: true,
+        fallback: fallbackIcon(selected: true),
       ),
       label: label,
     );
@@ -204,6 +226,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(mainPrefsProvider);
+    final skinState = ref.watch(bottomBarSkinProvider);
+    final activeSkin = skinState.active;
     final tabs = _visibleTabs(prefs);
     // 偏好加载完成后应用默认首页（仅启动时生效一次，对标原版
     // ViewPager 初始 setCurrentItem(defaultHomePage)）
@@ -261,17 +285,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             for (final tab in tabs)
               switch (tab) {
                 _HomeTab.bookshelf => _destination(
-                    context, 'ic_bottom_books', AppStrings.bookshelf),
+                    context,
+                    'ic_bottom_books',
+                    AppStrings.bookshelf,
+                    skinSlot: 'bookshelf',
+                    activeSkin: activeSkin,
+                  ),
                 _HomeTab.explore => _destination(
-                    context, 'ic_bottom_explore', AppStrings.discover),
+                    context,
+                    'ic_bottom_explore',
+                    AppStrings.discover,
+                    skinSlot: 'home',
+                    activeSkin: activeSkin,
+                  ),
                 _HomeTab.rss => _destination(
-                    context, 'ic_bottom_rss_feed', AppStrings.rss),
-                _HomeTab.my =>
-                  _destination(context, 'ic_bottom_person', AppStrings.my),
+                    context,
+                    'ic_bottom_rss_feed',
+                    AppStrings.rss,
+                    skinSlot: 'notes',
+                    activeSkin: activeSkin,
+                  ),
+                _HomeTab.my => _destination(
+                    context,
+                    'ic_bottom_person',
+                    AppStrings.my,
+                    skinSlot: 'settings',
+                    activeSkin: activeSkin,
+                  ),
               },
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 底栏皮肤图标（缺图回退系统 SVG）
+class _SkinIcon extends StatelessWidget {
+  const _SkinIcon({
+    required this.skin,
+    required this.slot,
+    required this.selected,
+    required this.fallback,
+  });
+
+  final String skin;
+  final String slot;
+  final bool selected;
+  final Widget fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<BottomBarSkinIcons>(
+      future: BottomBarSkinService.instance.iconsForSlot(skin, slot),
+      builder: (context, snap) {
+        final icons = snap.data;
+        final path = selected
+            ? (icons?.selected ?? icons?.normal)
+            : (icons?.normal ?? icons?.selected);
+        if (path == null) return fallback;
+        final child = Image.file(
+          File(path),
+          width: 24,
+          height: 24,
+          fit: BoxFit.contain,
+          errorBuilder: (_, error, stack) => fallback,
+        );
+        if (selected || icons?.normal != null) return child;
+        // 无 normal 时对 selected 图降透明（对齐原版 alpha=102）
+        return Opacity(opacity: 0.4, child: child);
+      },
     );
   }
 }

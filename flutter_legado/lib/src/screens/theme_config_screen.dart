@@ -256,7 +256,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       showDisclosure: true,
                       onTap: _showThemeListDialog,
                     ),
-                    // P2-1：原版 BottomBarSkin 为皮肤包管理（非 bool 开关），Flutter 未移植管理屏——诚实隐藏入口（2026-08-12）
+                    IosListTile(
+                      icon: Icons.grid_view_rounded,
+                      iconBackground: Colors.teal,
+                      title: '底部操作栏皮肤',
+                      subtitle: '导入图集并切换底栏图标',
+                      showDisclosure: true,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        AppRoutes.bottomBarSkin,
+                      ),
+                    ),
                     SwitchListTile(
                       title: const Text('壁纸取色'),
                       subtitle: const Text(_androidOnly),

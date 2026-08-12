@@ -27,7 +27,9 @@ dependencies:
   flutter_riverpod: ^2.5.0
   riverpod_annotation: ^2.3.0
   mobile_scanner: ^7.0.0
+  qr_flutter: ^4.1.0
   saf: ^2.1.0
+  archive: ^4.0.9
 
 dev_dependencies:
   flutter_test:

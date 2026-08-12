@@ -45,6 +45,7 @@ import 'screens/rss_source_edit_screen.dart';
 import 'screens/source_debug_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
 import 'screens/theme_config_screen.dart';
+import 'screens/bottom_bar_skin_screen.dart';
 import 'screens/toc_screen.dart';
 import 'screens/txt_toc_rules_screen.dart';
 import 'screens/video_screen.dart';
@@ -83,6 +84,7 @@ class AppRoutes {
   static const rssSourceEdit = '/rss/edit';
   static const readAloudConfig = '/read_aloud_config';
   static const themeConfig = '/theme_config';
+  static const bottomBarSkin = '/bottom_bar_skin';
   static const importBooks = '/import_books';
   static const remoteBooks = '/remote_books';
   static const bookGroups = '/book_groups';
@@ -235,6 +237,7 @@ class AppRoutes {
         },
         readAloudConfig: (_) => const ReadAloudConfigScreen(),
         themeConfig: (_) => const ThemeConfigScreen(),
+        bottomBarSkin: (_) => const BottomBarSkinScreen(),
         importBooks: (_) => const ImportScreen(),
         remoteBooks: (_) => const RemoteBookScreen(),
         bookGroups: (_) => const BookGroupScreen(),
