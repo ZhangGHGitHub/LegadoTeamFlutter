@@ -18,6 +18,7 @@ import '../constants/pref_keys.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
+import '../routes.dart';
 import '../services/settings_service.dart';
 import '../widgets/ios_widgets.dart';
 
@@ -205,9 +206,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       icon: Icons.waving_hand_outlined,
                       iconBackground: Colors.teal,
                       title: '欢迎页样式',
-                      subtitle: '启动欢迎页的图标与文字显示',
+                      subtitle: '闪屏时长、背景图与文字图标',
                       showDisclosure: true,
-                      onTap: _showWelcomeStyleDialog,
+                      onTap: () {
+                        Navigator.of(context)
+                            .pushNamed(AppRoutes.welcomeConfig);
+                      },
                     ),
                     SwitchListTile(
                       title: const Text('沉浸式状态栏'),
@@ -505,78 +509,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     if (selected == null || !mounted) return;
     setState(() => _launcherIcon = selected);
     await _settings.setStringPref(PrefKeys.launcherIcon, selected);
-  }
-
-  /// 欢迎页样式配置（对齐原版 pref_config_welcome：显示时长/图标/文字）
-  Future<void> _showWelcomeStyleDialog() async {
-    var showTime = await _settings.getIntPref(
-      PrefKeys.welcomeShowTime,
-      defaultValue: 600,
-    );
-    var showIcon = await _settings.getBoolPref(
-      PrefKeys.welcomeShowIcon,
-      defaultValue: true,
-    );
-    var showText = await _settings.getBoolPref(
-      PrefKeys.welcomeShowText,
-      defaultValue: true,
-    );
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('欢迎页样式'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('显示图标'),
-                value: showIcon,
-                onChanged: (v) {
-                  setDialogState(() => showIcon = v);
-                  _settings.setBoolPref(PrefKeys.welcomeShowIcon, v);
-                },
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('显示文字'),
-                value: showText,
-                onChanged: (v) {
-                  setDialogState(() => showText = v);
-                  _settings.setBoolPref(PrefKeys.welcomeShowText, v);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('显示时长'),
-                subtitle: Text('$showTime 毫秒'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  final value = await _showNumberInputDialog(
-                    title: '显示时长（毫秒）',
-                    current: showTime,
-                    min: 0,
-                    max: 9999,
-                  );
-                  if (value != null) {
-                    setDialogState(() => showTime = value);
-                    _settings.setIntPref(PrefKeys.welcomeShowTime, value);
-                  }
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   /// 封面设置（对齐原版 pref_config_cover 布尔项；封面规则依赖书源引擎，

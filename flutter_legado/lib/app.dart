@@ -21,7 +21,7 @@ import 'src/widgets/verification_code_listener.dart';
 
 /// Legado App 入口 Widget
 class LegadoApp extends ConsumerStatefulWidget {
-  /// 初始路由（首次启动时为欢迎页）
+  /// 初始路由（冷启动为闪屏 /welcome，对齐 WelcomeActivity）
   final String initialRoute;
 
   /// 上次崩溃日志内容（null 表示无崩溃记录）

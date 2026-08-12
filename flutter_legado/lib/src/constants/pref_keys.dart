@@ -67,16 +67,31 @@ class PrefKeys {
   /// 夜间导航栏透明（仅 Android 生效，默认 false）
   static const transparentNavBarNight = 'transparentNavBarNight';
 
-  // ===== 欢迎页样式（pref_config_welcome.xml）=====
+  // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
-  /// 欢迎页显示时长（毫秒，默认 600）
+  /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）
   static const welcomeShowTime = 'welcomeShowTime';
 
-  /// 欢迎页显示文字（默认 true）
+  /// 自定义欢迎页（默认 false）
+  static const customWelcome = 'customWelcome';
+
+  /// 白天欢迎背景图路径（PreferKey.welcomeImage = welcomeImagePath）
+  static const welcomeImage = 'welcomeImagePath';
+
+  /// 夜间欢迎背景图路径
+  static const welcomeImageDark = 'welcomeImagePathDark';
+
+  /// 欢迎页显示文字（白天，默认 true）
   static const welcomeShowText = 'welcomeShowText';
 
-  /// 欢迎页显示图标（默认 true）
+  /// 欢迎页显示文字（夜间，默认 true）
+  static const welcomeShowTextDark = 'welcomeShowTextDark';
+
+  /// 欢迎页显示图标（白天，默认 true）
   static const welcomeShowIcon = 'welcomeShowIcon';
+
+  /// 欢迎页显示图标（夜间，默认 true）
+  static const welcomeShowIconDark = 'welcomeShowIconDark';
 
   // ===== 封面设置（pref_config_cover.xml）=====
 

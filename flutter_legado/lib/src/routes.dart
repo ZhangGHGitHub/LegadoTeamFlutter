@@ -27,7 +27,7 @@ import 'screens/home_screen.dart';
 import 'screens/import_screen.dart';
 import 'screens/qrcode_screen.dart';
 import 'screens/search_content_screen.dart';
-import 'screens/reading_stats_screen.dart';
+import 'screens/read_record_screen.dart';
 import 'screens/reader_screen.dart';
 import 'screens/reader_comic_screen.dart';
 import 'screens/remote_book_screen.dart';
@@ -49,6 +49,7 @@ import 'screens/toc_screen.dart';
 import 'screens/txt_toc_rules_screen.dart';
 import 'screens/video_screen.dart';
 import 'screens/webdav_settings_screen.dart';
+import 'screens/welcome_config_screen.dart';
 import 'screens/welcome_screen.dart';
 
 /// 路由配置
@@ -72,7 +73,8 @@ class AppRoutes {
   static const bookInfo = '/book_info';
   static const editBookInfo = '/edit_book_info';
   static const changeSource = '/change_source';
-  static const readingStats = '/reading_stats';
+  static const readingStats = '/reading_stats'; // 历史别名，重定向到阅读记录
+  static const readRecord = '/read_record';
   static const bookmarks = '/bookmarks';
   static const replaceRules = '/replace_rules';
   static const autoTasks = '/auto_tasks';
@@ -103,6 +105,7 @@ class AppRoutes {
   static const fileManage = '/file_manage';
   static const qrcode = '/qrcode';
   static const welcome = '/welcome';
+  static const welcomeConfig = '/welcome_config';
   static const browser = '/browser';
   static const video = '/video';
   static const webdavSettings = '/webdav_settings';
@@ -116,7 +119,16 @@ class AppRoutes {
           final bookUrl = args is String ? args : (args is Map ? (args['bookUrl'] as String? ?? '') : '');
           return ReaderComicScreen(bookUrl: bookUrl);
         },
-        search: (_) => const SearchScreen(),
+        search: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          String? initialQuery;
+          if (args is String) {
+            initialQuery = args;
+          } else if (args is Map && args['query'] is String) {
+            initialQuery = args['query'] as String;
+          }
+          return SearchScreen(initialQuery: initialQuery);
+        },
         sources: (_) => const SourceScreen(),
         sourceEdit: (_) => const SourceEditScreen(),
         exploreShow: (context) {
@@ -182,7 +194,8 @@ class AppRoutes {
           }
           return const ChangeSourceScreen();
         },
-        readingStats: (_) => const ReadingStatsScreen(),
+        readingStats: (_) => const ReadRecordScreen(),
+        readRecord: (_) => const ReadRecordScreen(),
         bookmarks: (_) => const BookmarkScreen(),
         replaceRules: (context) {
           // [UI-fix v2.0.2 | 2026-08-06] 支持 String 路由参数：阅读器长按
@@ -295,6 +308,7 @@ class AppRoutes {
         fileManage: (_) => const FileManageScreen(),
         qrcode: (_) => const QrcodeScreen(),
         welcome: (_) => const WelcomeScreen(),
+        welcomeConfig: (_) => const WelcomeConfigScreen(),
         browser: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           // 平台桥接分发携带 url/html/title（Task #114）— QoderCN

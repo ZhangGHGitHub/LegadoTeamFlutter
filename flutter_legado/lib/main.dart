@@ -8,9 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'src/routes.dart';
-import 'src/screens/welcome_screen.dart';
 import 'src/services/crash_log_service.dart';
-import 'src/services/book_api.dart';
 import 'src/services/mock_book_api.dart';
 import 'src/services/rust_api.dart';
 
@@ -38,24 +36,23 @@ void main() {
     final lastCrash = await CrashLogService.instance.getLastCrashLog();
 
     // 4. 并行初始化：SharedPreferences 与 Rust FFI 无依赖，可并行
+    // SharedPreferences 预热供 SettingsService；RustApi.initialize 装载引擎单例
+    //（bookApiProvider 随后取同一 FFI 句柄）。
     sw = Stopwatch()..start();
     const useMock = bool.fromEnvironment('USE_MOCK', defaultValue: false);
-    final BookApi rustApi;
-    final SharedPreferences prefs;
     try {
       if (useMock) {
-        // Mock 模式：跳过 Rust 引擎初始化，使用纯 Dart Mock 实现
-        rustApi = MockBookApi();
-        prefs = await SharedPreferences.getInstance();
-        await rustApi.initialize();
+        final rustApi = MockBookApi();
+        await Future.wait([
+          SharedPreferences.getInstance(),
+          rustApi.initialize(),
+        ]);
       } else {
         final realApi = RustApi();
-        final results = await Future.wait([
+        await Future.wait([
           SharedPreferences.getInstance(),
           realApi.initialize(),
         ]);
-        prefs = results[0] as SharedPreferences;
-        rustApi = realApi;
       }
     } catch (e, stack) {
       CrashLogService.instance.logError(e, stack);
@@ -65,9 +62,8 @@ void main() {
     }
     debugPrint('[启动] 并行初始化（prefs+FFI）耗时：${sw.elapsedMilliseconds}ms');
 
-    // 5. 计算初始路由
-    final welcomeShown = prefs.getBool(WelcomeScreen.kWelcomeShownKey) ?? false;
-    final initialRoute = welcomeShown ? AppRoutes.home : AppRoutes.welcome;
+    // 5. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
+    const initialRoute = AppRoutes.welcome;
 
     debugPrint('[启动] 总启动耗时：${totalSw.elapsedMilliseconds}ms');
     
