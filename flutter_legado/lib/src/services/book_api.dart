@@ -65,6 +65,11 @@ abstract class BookApi {
   /// 错误码：书源不存在 → Internal；写入失败 → Db。
   Future<void> setSourceVariable(String sourceUrl, String variable);
 
+  /// 清除指定 URL 所属二级域名的 Cookie（契约 §2.3 clearCookie，2026-08-12 P1-2）
+  ///
+  /// 对齐原版 `CookieStore.removeCookie` / 编辑页 `menu_clear_cookie`。
+  Future<void> clearCookie(String url);
+
   /// 删除书源
   Future<void> deleteBookSource(String sourceUrl);
 
@@ -812,8 +817,18 @@ abstract class BookApi {
     String localFilePath,
   );
 
-  /// WebDAV 下载文件
+  /// WebDAV 下载文件（仅 UTF-8 文本；二进制请用 [webdavDownloadFile]）
   Future<String> webdavDownload(String configJson, String path);
+
+  /// WebDAV 下载二进制到本地文件（契约 §2.28，2026-08-12 P1-5）
+  ///
+  /// 对齐远程书库导入；镜像 [webdavUploadFile]。
+  /// 错误码：写盘失败 → Io；下载失败 → Net；配置解析失败 → Internal。
+  Future<void> webdavDownloadFile(
+    String configJson,
+    String path,
+    String localFilePath,
+  );
 
   /// WebDAV 删除远程文件
   Future<void> webdavDelete(String configJson, String path);

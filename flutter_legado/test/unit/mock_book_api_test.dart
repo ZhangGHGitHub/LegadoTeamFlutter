@@ -130,6 +130,12 @@ void main() {
         throwsException,
       );
     });
+
+    // 契约 §2.3 clearCookie（2026-08-12 P1-2）
+    test('clearCookie 空 url 抛错，合法 url 成功', () async {
+      await expectLater(api.clearCookie('  '), throwsException);
+      await api.clearCookie('https://www.example.com/path');
+    });
   });
 
   group('搜索操作', () {

@@ -1,16 +1,21 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:path_provider/path_provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../routes.dart';
 import '../widgets/loading_indicator.dart';
@@ -599,9 +604,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       case 'login':
         _openLogin();
       case 'search':
-        _todo('搜索');
+        await _searchWithSource();
       case 'clear_cookie':
-        _todo('清除 Cookie');
+        await _clearCookie();
       case 'auto_complete':
         setState(() => _autoComplete = !_autoComplete);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -614,25 +619,126 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       case 'paste_source':
         await _pasteSource();
       case 'set_source_variable':
-        _todo('设置源变量');
+        await _setSourceVariable();
       case 'import_qr':
         await _importFromQr();
       case 'share_qr':
-        _todo('二维码分享');
+        await _shareQr();
       case 'share_str':
         await _shareSource();
       case 'log':
-        // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
+        // [UI-FIX v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
         Navigator.pushNamed(context, AppRoutes.appLog);
       case 'help':
         _showHelp();
     }
   }
 
-  /// 待 FFI 层支持的原版功能占位提示
-  void _todo(String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$feature」功能开发中')),
+  /// 保存当前书源后，以该源为搜索范围打开搜索页
+  /// （对标原版 menu_search → SearchActivity.start(this, source)）
+  Future<void> _searchWithSource() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      final source = _buildSource();
+      await ref.read(sourceNotifierProvider.notifier).saveSource(source);
+      if (!mounted) return;
+      final search = ref.read(searchNotifierProvider.notifier);
+      search.clearAllFilter();
+      search.toggleSource(source.bookSourceUrl);
+      await Navigator.of(context).pushNamed(AppRoutes.search);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('打开搜索失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// 清除 Cookie（对标原版 menu_clear_cookie → CookieStore.removeCookie）
+  Future<void> _clearCookie() async {
+    final url = _ctrl('bookSourceUrl').text.trim();
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先填写书源 URL')),
+      );
+      return;
+    }
+    try {
+      await ref.read(bookApiProvider).clearCookie(url);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cookie 已清除')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('清除 Cookie 失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// 设置源变量（对标原版 menu_set_source_variable + VariableDialog）
+  Future<void> _setSourceVariable() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      final source = _buildSource();
+      await ref.read(sourceNotifierProvider.notifier).saveSource(source);
+      if (!mounted) return;
+      final srcComment = (source.variableComment ?? '').trim();
+      final comment = srcComment.isNotEmpty
+          ? srcComment
+          : '源变量可在js中通过source.getVariable()获取';
+      final input = await showDialog<String>(
+        context: context,
+        builder: (ctx) => _SourceVariableDialog(
+          title: '设置源变量',
+          comment: comment,
+          initialText: _preservedVariable,
+        ),
+      );
+      if (input == null || !mounted) return;
+      await ref.read(bookApiProvider).setSourceVariable(
+            source.bookSourceUrl,
+            input,
+          );
+      if (!mounted) return;
+      setState(() => _preservedVariable = input);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(input.isEmpty ? '源变量已清除' : '源变量已保存')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('设置源变量失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// 二维码分享（对标原版 menu_share_qr → shareWithQr）
+  Future<void> _shareQr() async {
+    final json = jsonEncode(_buildSource().toJson());
+    if (json.length > 2000) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('内容过长，无法生成二维码，请使用字符串分享')),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _QrShareDialog(
+        title: '分享书源',
+        payload: json,
+      ),
     );
   }
 
@@ -866,7 +972,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
                 const PopupMenuItem(value: 'search', child: Text('搜索')),
                 const PopupMenuItem(
                   value: 'clear_cookie',
-                  child: Text('清除 Cookie'),
+                  child: Text('清除Cookie'),
                 ),
                 CheckedPopupMenuItem(
                   value: 'auto_complete',
@@ -1386,6 +1492,152 @@ class _FullscreenJsonEditDialogState
           ),
         ),
       ),
+    );
+  }
+}
+
+
+/// 源变量对话框（自持 controller，对齐 book_info_screen._VariableDialog）
+class _SourceVariableDialog extends StatefulWidget {
+  final String title;
+  final String comment;
+  final String initialText;
+
+  const _SourceVariableDialog({
+    required this.title,
+    required this.comment,
+    required this.initialText,
+  });
+
+  @override
+  State<_SourceVariableDialog> createState() => _SourceVariableDialogState();
+}
+
+class _SourceVariableDialogState extends State<_SourceVariableDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(widget.title),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.comment,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              maxLines: 6,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: '输入源变量（空则清除）',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 二维码分享对话框：预览 + 分享 PNG（对标原版 shareWithQr）
+class _QrShareDialog extends StatelessWidget {
+  final String title;
+  final String payload;
+
+  const _QrShareDialog({required this.title, required this.payload});
+
+  Future<void> _shareImage(BuildContext context) async {
+    try {
+      final painter = QrPainter(
+        data: payload,
+        version: QrVersions.auto,
+        errorCorrectionLevel: QrErrorCorrectLevel.L,
+        gapless: true,
+        // ignore: deprecated_member_use
+        color: const Color(0xFF000000),
+        // ignore: deprecated_member_use
+        emptyColor: const Color(0xFFFFFFFF),
+      );
+      final imageData = await painter.toImageData(
+        512,
+        format: ui.ImageByteFormat.png,
+      );
+      if (imageData == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('二维码生成失败')),
+          );
+        }
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/legado_source_qr.png');
+      await file.writeAsBytes(imageData.buffer.asUint8List());
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'image/png')],
+        subject: title,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分享失败：$e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(title),
+      content: SizedBox(
+        width: 240,
+        height: 240,
+        child: QrImageView(
+          data: payload,
+          version: QrVersions.auto,
+          errorCorrectionLevel: QrErrorCorrectLevel.L,
+          backgroundColor: Colors.white,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+        FilledButton(
+          onPressed: () => _shareImage(context),
+          child: const Text('分享图片'),
+        ),
+      ],
     );
   }
 }

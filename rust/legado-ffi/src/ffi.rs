@@ -213,6 +213,15 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 清除指定 URL 所属二级域名的 Cookie（契约 §2.3 clearCookie，2026-08-12 P1-2）
+    ///
+    /// 对齐原版 `CookieStore.removeCookie`：持久层 + 共享 HTTP 内存 CookieStore +
+    /// JS 宿主 cookie 表。url 为空 → Internal。
+    pub fn clear_cookie(url: String) -> Result<(), BridgeError> {
+        crate::api::net_api::clear_cookie(&url)?;
+        Ok(())
+    }
+
     // ─── 书源校验（Task #87，加法式新增） ─────────────────────
 
     /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
@@ -1522,6 +1531,18 @@ pub mod ffi {
             &config_json,
             &path,
         )?)
+    }
+
+    /// 从 WebDAV 下载二进制到本地文件（API_CONTRACT §2.28，2026-08-12 P1-5）
+    ///
+    /// 错误码：配置解析失败 → Internal；下载失败 → Net；写盘失败 → Io。
+    pub fn webdav_download_file(
+        config_json: String,
+        path: String,
+        local_file_path: String,
+    ) -> Result<(), BridgeError> {
+        crate::api::webdav_api::webdav_download_file(&config_json, &path, &local_file_path)?;
+        Ok(())
     }
 
     /// 删除 WebDAV 远程文件

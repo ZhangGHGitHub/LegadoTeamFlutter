@@ -355,12 +355,40 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
         }
       case 'paste':
         await _pasteSource();
+      case 'clear_cookie':
+        await _clearCookie();
       case 'share':
         final json = jsonEncode(_buildSource().toJson());
         await Share.share(json,
             subject: '订阅源分享：${_ctrls['sourceName']!.text.trim()}');
       case 'help':
         _showHelpSheet();
+    }
+  }
+
+  /// 清除 Cookie（对标原版 RssSourceEdit menu_clear_cookie）
+  Future<void> _clearCookie() async {
+    final url = _ctrls['sourceUrl']!.text.trim();
+    if (url.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先填写源 URL')),
+        );
+      }
+      return;
+    }
+    try {
+      await ref.read(bookApiProvider).clearCookie(url);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cookie 已清除')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('清除 Cookie 失败：$e')),
+        );
+      }
     }
   }
 
@@ -506,6 +534,8 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
                       value: 'copy', child: Text('复制源')),
                   const PopupMenuItem(
                       value: 'paste', child: Text('粘贴源')),
+                  const PopupMenuItem(
+                      value: 'clear_cookie', child: Text('清除Cookie')),
                   const PopupMenuItem(
                       value: 'share', child: Text('分享文本')),
                   const PopupMenuItem(

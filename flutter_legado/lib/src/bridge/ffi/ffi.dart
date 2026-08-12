@@ -100,6 +100,13 @@ Future<void> setSourceVariable({
   variable: variable,
 );
 
+/// 清除指定 URL 所属二级域名的 Cookie（契约 §2.3 clearCookie，2026-08-12 P1-2）
+///
+/// 对齐原版 `CookieStore.removeCookie`：持久层 + 共享 HTTP 内存 CookieStore +
+/// JS 宿主 cookie 表。url 为空 → Internal。
+Future<void> clearCookie({required String url}) =>
+    RustLib.instance.api.crateFfiFfiClearCookie(url: url);
+
 /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
 ///
 /// 返回 CheckResult JSON：`source_url` / `search_ok` / `toc_ok` /
@@ -1153,6 +1160,19 @@ Future<String> webdavDownload({
 }) => RustLib.instance.api.crateFfiFfiWebdavDownload(
   configJson: configJson,
   path: path,
+);
+
+/// 从 WebDAV 下载二进制到本地文件（API_CONTRACT §2.28，2026-08-12 P1-5）
+///
+/// 错误码：配置解析失败 → Internal；下载失败 → Net；写盘失败 → Io。
+Future<void> webdavDownloadFile({
+  required String configJson,
+  required String path,
+  required String localFilePath,
+}) => RustLib.instance.api.crateFfiFfiWebdavDownloadFile(
+  configJson: configJson,
+  path: path,
+  localFilePath: localFilePath,
 );
 
 /// 删除 WebDAV 远程文件

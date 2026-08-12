@@ -8,8 +8,11 @@
 //! - 应用后网络层 DNS 解析即时生效（legado-net resolver 实时读全局映射）；
 //! - 持久化：caches 表 `config:` 前缀键 `customHosts`（与既有 setConfig 同语义），
 //!   启动时由 [`restore_custom_hosts`] 读回应用。
+//!
+//! `clear_cookie`（契约 §2.3，2026-08-12 P1-2）：对齐原版
+//! `CookieStore.removeCookie`，按 URL 二级域名清除持久层 + 内存 Cookie。
 
-use legado_core::LegadoResult;
+use legado_core::{LegadoError, LegadoResult};
 
 /// 配置持久化键（caches 表 `config:` 前缀，与既有 setConfig 同语义）
 const CUSTOM_HOSTS_CONFIG_KEY: &str = "customHosts";
@@ -33,6 +36,67 @@ pub fn set_custom_hosts(hosts_json: &str) -> LegadoResult<()> {
     } else {
         log::debug!("数据库未初始化，customHosts 配置不持久化");
     }
+    Ok(())
+}
+
+/// 从 URL 或域名提取二级域名（对齐 Kotlin `NetworkUtils.getSubDomain`）
+///
+/// 与 MCP `clear_cookies` / HTTP Cookie 持久化键一致：取 host 最后两段。
+fn get_sub_domain(url: &str) -> String {
+    let without_scheme = url
+        .split("://")
+        .last()
+        .unwrap_or(url)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .trim();
+    let host = without_scheme.split('@').next_back().unwrap_or("");
+    let host = host.split(':').next().unwrap_or("").trim();
+    if host.is_empty() {
+        return url.trim().to_string();
+    }
+    let parts: Vec<&str> = host.split('.').filter(|p| !p.is_empty()).collect();
+    if parts.len() >= 2 {
+        parts[parts.len() - 2..].join(".")
+    } else {
+        host.to_string()
+    }
+}
+
+/// 清除指定 URL 所属二级域名的 Cookie（契约 §2.3 `clearCookie`）
+///
+/// 对齐原版 `CookieStore.removeCookie`：
+/// 1. 共享 HTTP 客户端内存 [`CookieStore`](legado_net::CookieStore)
+/// 2. cookies 表持久层（DB 已初始化时）
+/// 3. JS 宿主 `cookie_store` 内存表
+///
+/// 差距：原版另清 WebView Cookie / CacheManager 会话；本实现无独立 WebView 层。
+pub fn clear_cookie(url: &str) -> LegadoResult<()> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(LegadoError::Internal("url 不能为空".into()));
+    }
+    let domain = get_sub_domain(url);
+
+    // 1. 内存 CookieStore（共享客户端；未初始化时 shared_client 会惰性创建）
+    {
+        let client = crate::http_state::shared_client();
+        let mut store = client.cookie_store().write().unwrap();
+        store.remove_domain(&domain);
+    }
+
+    // 2. 持久层（DB 未初始化时跳过，与 MCP clear_cookies 行为一致）
+    if crate::db_state::is_initialized() {
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.delete_by_tag(&domain)
+        })?;
+    }
+
+    // 3. JS 宿主 Cookie（java.clearCookies(tag) 同源）
+    legado_js::host_api::cookie_store::clear_cookies(&domain);
+
     Ok(())
 }
 
@@ -98,7 +162,45 @@ mod tests {
 
         // 收尾：清除映射与配置残留
         set_custom_hosts("").unwrap();
-        crate::api::config_api::set_config("customHosts", "").unwrap();
+    }
+
+    /// 契约 §2.3：按二级域名清除 DB + 内存 Cookie
+    #[test]
+    fn test_clear_cookie_by_subdomain() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // 二级域名键与 HTTP Cookie 持久化一致（host 最后两段）
+        let domain = "cookieclear.test";
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.upsert(domain, "session=abc; token=xyz")
+        })
+        .unwrap();
+        {
+            let client = crate::http_state::shared_client();
+            let mut store = client.cookie_store().write().unwrap();
+            store.set_cookies_from_string(domain, "session=abc; token=xyz");
+        }
+        legado_js::host_api::cookie_store::set_cookie(domain, "session", "abc");
+
+        clear_cookie("https://www.cookieclear.test/path").unwrap();
+
+        let remaining = crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.get_by_tag(domain)
+        })
+        .unwrap();
+        assert!(remaining.is_none());
+
+        let client = crate::http_state::shared_client();
+        let store = client.cookie_store().read().unwrap();
+        assert!(store.get_cookies(domain).is_empty());
+        drop(store);
+        assert!(legado_js::host_api::cookie_store::get_cookie(domain).is_empty());
+
+        let err = clear_cookie("  ").unwrap_err();
+        assert!(matches!(err, LegadoError::Internal(_)));
     }
 
     /// 非法 JSON：报 Internal 错误且不落库

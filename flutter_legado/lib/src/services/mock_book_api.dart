@@ -381,6 +381,15 @@ class MockBookApi implements BookApi {
     _sources[idx] = _sources[idx].copyWith(variable: variable);
   }
 
+  /// Mock：短延迟；无真实 Cookie 存储，调用即成功（对齐 void 语义）
+  @override
+  Future<void> clearCookie(String url) async {
+    await Future.delayed(const Duration(milliseconds: 30));
+    if (url.trim().isEmpty) {
+      throw Exception('url 不能为空');
+    }
+  }
+
   @override
   Future<void> deleteBookSource(String sourceUrl) async {
     _sources.removeWhere((s) => s.bookSourceUrl == sourceUrl);
@@ -1636,6 +1645,16 @@ class MockBookApi implements BookApi {
 
   @override
   Future<String> webdavDownload(String configJson, String path) async => '';
+
+  /// WebDAV 二进制下载到本地（契约 §2.28，2026-08-12 P1-5）
+  @override
+  Future<void> webdavDownloadFile(
+    String configJson,
+    String path,
+    String localFilePath,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 50));
+  }
 
   @override
   Future<void> webdavDelete(String configJson, String path) async {}

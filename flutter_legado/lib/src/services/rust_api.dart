@@ -252,6 +252,10 @@ class RustApi implements BookApi {
   Future<void> setSourceVariable(String sourceUrl, String variable) =>
       bridge.setSourceVariable(sourceUrl: sourceUrl, variable: variable);
 
+  /// 清除 Cookie（契约 §2.3 clearCookie，对齐原版 CookieStore.removeCookie）
+  @override
+  Future<void> clearCookie(String url) => bridge.clearCookie(url: url);
+
   /// 删除书源
   Future<void> deleteBookSource(String sourceUrl) =>
       bridge.sourceDelete(sourceUrl: sourceUrl);
@@ -398,9 +402,13 @@ class RustApi implements BookApi {
     );
     final list = _decodeList(json, 'bookApi');
     return list
-        .map((e) => SearchResult.fromSearchBook(
-              SearchBook.fromJson(e as Map<String, dynamic>),
-            ))
+        .map((e) {
+          final map = e as Map<String, dynamic>;
+          return SearchResult.fromSearchBook(
+            SearchBook.fromJson(map),
+            hasReadRecord: map['hasReadRecord'] == true,
+          );
+        })
         .toList();
   }
 
@@ -1931,6 +1939,19 @@ class RustApi implements BookApi {
   /// WebDAV 下载文件
   Future<String> webdavDownload(String configJson, String path) =>
       bridge.webdavDownload(configJson: configJson, path: path);
+
+  /// WebDAV 下载二进制到本地文件（契约 §2.28，2026-08-12 P1-5）
+  @override
+  Future<void> webdavDownloadFile(
+    String configJson,
+    String path,
+    String localFilePath,
+  ) =>
+      bridge.webdavDownloadFile(
+        configJson: configJson,
+        path: path,
+        localFilePath: localFilePath,
+      );
 
   /// WebDAV 删除远程文件
   Future<void> webdavDelete(String configJson, String path) =>
