@@ -345,31 +345,27 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final source = widget.source;
+    final bookName = widget.source.bookSourceName;
 
-    // 提取书源信息
-    final bookName = source.bookSourceName;
-    final bookSourceComment = source.bookSourceComment ?? '';
-    final url = source.bookSourceUrl;
-
-    // 安卓端 item_find_book.xml: 分组标题行样式
-    // paddingLeft/Right=10dp, paddingTop/Bottom=6dp, 名称左侧 + 箭头图标右侧
+    // 安卓端 item_find_book.xml：ll_title 带 bg_find_book_group，
+    // 仅 tv_name + iv_status，无评论/URL 副行
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: () => _toggleExpand(),
-          // 对标原版长按项弹出菜单（编辑/删除）
-          onLongPress: _showItemMenu,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Material(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: () => _toggleExpand(),
+              onLongPress: _showItemMenu,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                child: Row(
                   children: [
-                    // 书源名称（安卓端 tv_name: primaryText 色）
                     Expanded(
                       child: Text(
                         bookName,
@@ -380,7 +376,6 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    // 安卓端 iv_status: 箭头图标 20x20 secondaryText色
                     Icon(
                       _expanded
                           ? Icons.arrow_drop_down
@@ -390,36 +385,10 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
                     ),
                   ],
                 ),
-                // 摘要信息
-                if (bookSourceComment.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      bookSourceComment,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                // URL 信息
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    url,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
-        // 分类列表（展开时显示，对标 Android ExploreAdapter 分类标签）
         if (_expanded) _buildCategoryList(theme, colorScheme),
       ],
     );
