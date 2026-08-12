@@ -291,60 +291,7 @@ void main() {
     });
   });
 
-  // ===== ComicReaderScreen Widget 测试 =====
-
-  group('ComicReaderScreen', () {
-    /// 构建测试用 ComicReaderScreen（使用空图片列表）
-    Widget buildTestScreen({
-      List<String>? imageUrls,
-      int initialPage = 0,
-      String title = '测试漫画',
-      String chapterTitle = '第一章',
-    }) {
-      return MaterialApp(
-        home: ComicReaderScreen(
-          bookUrl: 'https://example.com/book',
-          imageUrls: imageUrls ?? [],
-          initialPage: initialPage,
-          title: title,
-          chapterTitle: chapterTitle,
-        ),
-      );
-    }
-
-    testWidgets('基本构建成功', (tester) async {
-      await tester.pumpWidget(buildTestScreen());
-
-      expect(find.byType(ComicReaderScreen), findsOneWidget);
-      expect(find.byType(ComicPageView), findsOneWidget);
-    });
-
-    testWidgets('Scaffold 背景为黑色', (tester) async {
-      await tester.pumpWidget(buildTestScreen());
-
-      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
-      expect(scaffold.backgroundColor, equals(Colors.black));
-    });
-
-    testWidgets('Stack 布局存在', (tester) async {
-      await tester.pumpWidget(buildTestScreen());
-
-      expect(find.byType(Stack), findsWidgets);
-    });
-
-    testWidgets('GestureDetector 存在（点击切换控制栏）', (tester) async {
-      await tester.pumpWidget(buildTestScreen());
-
-      expect(find.byType(GestureDetector), findsWidgets);
-    });
-
-    testWidgets('初始状态控制栏不可见', (tester) async {
-      await tester.pumpWidget(buildTestScreen());
-
-      // 初始状态控制栏不可见
-      expect(find.text('测试漫画'), findsNothing);
-    });
-  });
+  // ===== ComicReaderScreen 已删除（P2-10：路由使用 ReaderComicScreen）=====
 
   // ===== 缩放范围限制测试 =====
 

@@ -308,6 +308,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             },
           ),
           // 安卓原版三点菜单（book_info.xml，条目顺序/可见性对齐原版）
+          // P2-2：menu_custom_btn 诚实不展示——SourceCallBack.callBackBtn 需
+          // 中途 UI 副作用桥（refreshBookInfo/BottomWebView 等），现有
+          // PlatformBridge 仅拦截终端 FFI 结果，短期不可安全加法式落地。
           PopupMenuButton<String>(
             tooltip: '更多',
             onSelected: _handleMenu,
