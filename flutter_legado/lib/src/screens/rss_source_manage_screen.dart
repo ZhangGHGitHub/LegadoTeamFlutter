@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../providers/rss/rss_notifier.dart' show syncDefaultRssSources;
 import '../routes.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
@@ -1125,13 +1126,14 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
   }
 
   /// 导入默认规则（对标原版 menu_import_default →
-  /// DefaultData.importDefaultRssSources，数据源 assets/defaultData/rssSources.json）
+  /// `RssSourceViewModel.importDefault` → `DefaultData.importDefaultRssSources`：
+  /// 覆盖 `legado` 分组后灌入 assets 默认源，不经确认对话框）
   Future<void> _importDefault() async {
     try {
-      final text =
-          await rootBundle.loadString('assets/default_data/rssSources.json');
+      final n = await syncDefaultRssSources(ref.read(bookApiProvider));
+      await _load();
       if (!mounted) return;
-      await _parseAndConfirm(text);
+      _toast(n > 0 ? '已导入 $n 条默认订阅源' : '默认订阅源已同步');
     } catch (e) {
       _toast('导入默认规则失败：$e');
     }

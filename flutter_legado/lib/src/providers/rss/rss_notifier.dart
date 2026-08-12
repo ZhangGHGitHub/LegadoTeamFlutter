@@ -12,8 +12,28 @@ import 'rss_state.dart';
 export 'rss_state.dart';
 
 /// 对齐 Android `LocalConfig.needUpRssSources` 的版本号
-const _kRssSourceVersionKey = 'rssSourceVersion';
-const _kRssSourceVersion = 6;
+const kRssSourceVersionKey = 'rssSourceVersion';
+const kRssSourceVersion = 6;
+
+/// 默认订阅源资源路径（对齐 `app/src/main/assets/defaultData/rssSources.json`）
+const kDefaultRssSourcesAsset = 'assets/default_data/rssSources.json';
+
+/// 对齐 Android `DefaultData.importDefaultRssSources`：
+/// 删除 `sourceGroup == legado` 后灌入 assets 默认源，返回导入条数。
+///
+/// [jsonOverride] 仅用于单测注入，生产路径传 null 走 assets。
+Future<int> syncDefaultRssSources(
+  BookApi api, {
+  String? jsonOverride,
+}) async {
+  final existing = await api.getRssSources();
+  for (final s in existing.where((e) => e.sourceGroup == 'legado')) {
+    await api.deleteRssSource(s.sourceUrl);
+  }
+  final text = jsonOverride ??
+      await rootBundle.loadString(kDefaultRssSourcesAsset);
+  return api.importRssSources(text);
+}
 
 /// RSS Riverpod Notifier
 ///
@@ -53,17 +73,22 @@ class RssNotifier extends Notifier<RssState> {
   /// 首启/版本升级时导入默认订阅源（对标 DefaultData.upVersion + importDefaultRssSources）
   Future<void> _ensureDefaultRssSources(BookApi api) async {
     final prefs = await SharedPreferences.getInstance();
-    final version = prefs.getInt(_kRssSourceVersionKey) ?? 0;
-    if (version >= _kRssSourceVersion) return;
+    final version = prefs.getInt(kRssSourceVersionKey) ?? 0;
+    if (version >= kRssSourceVersion) return;
 
-    final existing = await api.getRssSources();
-    for (final s in existing.where((e) => e.sourceGroup == 'legado')) {
-      await api.deleteRssSource(s.sourceUrl);
-    }
-    final text =
-        await rootBundle.loadString('assets/default_data/rssSources.json');
-    await api.importRssSources(text);
-    await prefs.setInt(_kRssSourceVersionKey, _kRssSourceVersion);
+    await syncDefaultRssSources(api);
+    await prefs.setInt(kRssSourceVersionKey, kRssSourceVersion);
+  }
+
+  /// 菜单「导入默认」：立即覆盖 legado 分组（对齐 RssSourceViewModel.importDefault）
+  Future<int> importDefaultSources() async {
+    final api = ref.read(bookApiProvider);
+    final n = await syncDefaultRssSources(api);
+    final sources = await api.getRssSources();
+    state = state.copyWith(sources: sources, error: null);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(kRssSourceVersionKey, kRssSourceVersion);
+    return n;
   }
 
   /// 选择源并加载文章

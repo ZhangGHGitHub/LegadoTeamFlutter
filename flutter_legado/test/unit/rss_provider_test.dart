@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
@@ -27,6 +28,8 @@ void main() {
   });
 
   setUp(() {
+    // 跳过首启默认源导入（对标已达 LocalConfig.rssSourceVersion=6）
+    SharedPreferences.setMockInitialValues({kRssSourceVersionKey: 6});
     mockApi = MockRustApi();
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
@@ -394,6 +397,34 @@ void main() {
       container.listen(rssNotifierProvider, (_, __) => notified = true);
       readNotifier().setGroup('科技');
       expect(notified, isTrue);
+    });
+  });
+
+  group('DefaultData 默认订阅源同步', () {
+    test('syncDefaultRssSources 删除 legado 分组后导入', () async {
+      final legado = const RssSource(
+        sourceUrl: 'https://old.legado',
+        sourceName: '旧默认',
+        sourceGroup: 'legado',
+      );
+      final custom = const RssSource(
+        sourceUrl: 'https://custom',
+        sourceName: '自定义',
+        sourceGroup: '我的',
+      );
+      when(() => mockApi.getRssSources())
+          .thenAnswer((_) async => [legado, custom]);
+      when(() => mockApi.deleteRssSource(any())).thenAnswer((_) async {});
+      when(() => mockApi.importRssSources(any())).thenAnswer((_) async => 4);
+
+      const payload =
+          '[{"sourceUrl":"https://www.yuque.com/legado","sourceName":"使用说明","sourceGroup":"legado"}]';
+      final n = await syncDefaultRssSources(mockApi, jsonOverride: payload);
+
+      expect(n, equals(4));
+      verify(() => mockApi.deleteRssSource('https://old.legado')).called(1);
+      verifyNever(() => mockApi.deleteRssSource('https://custom'));
+      verify(() => mockApi.importRssSources(payload)).called(1);
     });
   });
 }
