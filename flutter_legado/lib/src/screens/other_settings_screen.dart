@@ -18,6 +18,7 @@
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -34,7 +35,6 @@ import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/video_settings_dialog.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 /// 其他设置页面（对齐原版 OtherConfigFragment）
 ///
@@ -942,6 +942,65 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     } catch (e) {
       debugPrint('OtherSettingsScreen 保存 customHosts 异常: $e');
       if (mounted) _toast('自定义 hosts 保存失败: ${_errMsg(e)}');
+    }
+  }
+
+
+  Future<void> _editJsSourceApiToken() async {
+    final ctrl = TextEditingController(text: _jsSourceApiToken);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('JS 书源 API Token'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            hintText: '用于 JS 书源调用外部 API 的令牌',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    try {
+      final api = ref.read(bookApiProvider);
+      if (result.isEmpty) {
+        await api.deleteConfig('jsSourceApiToken');
+      } else {
+        await api.setConfig('jsSourceApiToken', result);
+      }
+      setState(() => _jsSourceApiToken = result);
+      _toast(result.isEmpty ? '已清除 Token' : 'Token 已保存');
+    } catch (e) {
+      _toast('保存失败：$e');
+    }
+  }
+
+  Future<void> _clearWebViewData() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清除 WebView 数据'),
+        content: const Text('将清除 WebView Cookie。确定继续吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清除')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await WebViewCookieManager().clearCookies();
+      _toast('WebView Cookie 已清除');
+    } catch (e) {
+      _toast('清除失败：$e');
     }
   }
 
