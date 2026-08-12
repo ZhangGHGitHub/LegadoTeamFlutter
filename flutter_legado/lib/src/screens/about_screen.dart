@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../services/app_update_service.dart';
+import '../widgets/update_dialog.dart';
 
 /// 关于页面
 ///
@@ -19,9 +21,9 @@ class AboutScreen extends ConsumerStatefulWidget {
 
 class _AboutScreenState extends ConsumerState<AboutScreen>
     with SingleTickerProviderStateMixin {
-  static const _appVersion = '2.0.0';
-  static const _repoUrl = 'https://github.com/gedoor/legado';
-  static const _issueUrl = 'https://github.com/gedoor/legado/issues';
+  static const _appVersion = AppUpdateService.currentVersionName;
+  static const _repoUrl = 'https://github.com/LegadoTeam/legado';
+  static const _issueUrl = 'https://github.com/LegadoTeam/legado/issues';
   static const _sponsorUrl = 'https://github.com/gedoor/legado#赞助';
 
   late final AnimationController _controller;
@@ -71,31 +73,54 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
       _checkingUpdate = true;
       _updateResult = null;
     });
-    // 无远端 release API 时本地给出「已最新」说明 Dialog（对标原版 UpdateDialog 形态）
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    setState(() => _checkingUpdate = false);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('当前版本 v$_appVersion'),
-        content: const SingleChildScrollView(
-          child: Text(
-            '当前已是最新版本。\n\n'
-            '说明：重构版尚未对接 GitHub Release 检查接口；'
-            '有新版本时将在此展示更新日志，并可选择下载或忽略该版本。',
+    final service = AppUpdateService();
+    try {
+      // 对齐 AppUpdateGitHub.check → UpdateDialog
+      final info = await service.check(currentVersion: _appVersion);
+      if (!mounted) return;
+      setState(() => _checkingUpdate = false);
+      if (info == null) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('当前版本 v$_appVersion'),
+            content: const Text('当前已是最新版本。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('关闭'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _updateResult = '当前已是最新版本 v$_appVersion');
+        );
+        if (mounted) {
+          setState(() => _updateResult = '当前已是最新版本 v$_appVersion');
+        }
+        return;
+      }
+      if (await service.isIgnored(info.tagName)) {
+        if (!mounted) return;
+        setState(() => _updateResult = '已忽略版本 ${info.tagName}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已忽略版本 ${info.tagName}')),
+        );
+        return;
+      }
+      if (!mounted) return;
+      await showAppUpdateDialog(context, info: info, service: service);
+      if (mounted) {
+        setState(() => _updateResult = '发现新版本 ${info.tagName}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _checkingUpdate = false;
+        _updateResult = '检查失败';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('检查更新失败：$e')),
+      );
+    }
   }
 
   @override

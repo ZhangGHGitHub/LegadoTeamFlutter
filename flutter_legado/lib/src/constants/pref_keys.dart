@@ -208,4 +208,9 @@ class PrefKeys {
 
   /// 点击书名打开书籍信息（对齐原版 openBookInfoByClickTitle，默认 false）
   static const openBookInfoByClickTitle = 'openBookInfoByClickTitle';
+
+  // ===== 检查更新（LocalConfig）=====
+
+  /// 忽略的更新版本号（对齐 LocalConfig.ignoreUpdateVersion）
+  static const ignoreUpdateVersion = 'ignoreUpdateVersion';
 }
