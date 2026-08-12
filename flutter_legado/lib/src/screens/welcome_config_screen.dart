@@ -134,123 +134,125 @@ class _WelcomeConfigScreenState extends State<WelcomeConfigScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
           : IosGroupedBody(
-              children: [
-                const IosSectionHeader('显示时长'),
-                IosGroup(children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '启动闪屏停留 $_showTime 毫秒',
-                            style: Theme.of(context).textTheme.bodyLarge,
+              child: ListView(
+                children: [
+                  const IosSectionHeader('显示时长'),
+                  IosGroup(children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '启动闪屏停留 $_showTime 毫秒',
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '$_showTime',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
+                          Text(
+                            '$_showTime',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Slider(
-                    value: _showTime.toDouble(),
-                    min: 0,
-                    max: 800,
-                    divisions: 80,
-                    label: '$_showTime',
-                    onChanged: (v) {
-                      setState(() => _showTime = v.round());
-                    },
-                    onChangeEnd: (v) {
-                      final ms = v.round().clamp(0, 800);
-                      setState(() => _showTime = ms);
-                      _settings.setIntPref(PrefKeys.welcomeShowTime, ms);
-                    },
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Text(
-                      '设为 0 则跳过闪屏直接进入主页',
-                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    Slider(
+                      value: _showTime.toDouble(),
+                      min: 0,
+                      max: 800,
+                      divisions: 80,
+                      label: '$_showTime',
+                      onChanged: (v) {
+                        setState(() => _showTime = v.round());
+                      },
+                      onChangeEnd: (v) {
+                        final ms = v.round().clamp(0, 800);
+                        setState(() => _showTime = ms);
+                        _settings.setIntPref(PrefKeys.welcomeShowTime, ms);
+                      },
                     ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Text(
+                        '设为 0 则跳过闪屏直接进入主页',
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ),
+                  ]),
+                  const IosSectionHeader('自定义'),
+                  IosGroup(children: [
+                    SwitchListTile.adaptive(
+                      title: const Text('自定义欢迎页'),
+                      subtitle: const Text('启用后可设置日/夜背景图'),
+                      value: _customWelcome,
+                      onChanged: (v) {
+                        setState(() => _customWelcome = v);
+                        _settings.setBoolPref(PrefKeys.customWelcome, v);
+                      },
+                    ),
+                  ]),
+                  const IosSectionHeader('白天'),
+                  IosGroup(children: [
+                    IosListTile(
+                      icon: Icons.wallpaper_outlined,
+                      iconBackground: Colors.teal,
+                      title: '背景图片',
+                      subtitle: _imageDay.isEmpty ? '选择图片' : _imageDay,
+                      showDisclosure: true,
+                      onTap: () => _pickImage(dark: false),
+                    ),
+                    SwitchListTile.adaptive(
+                      title: const Text('显示文字'),
+                      subtitle: const Text('阅读 / 享受美好时光 / 品读万千故事'),
+                      value: _showText,
+                      onChanged: (v) {
+                        setState(() => _showText = v);
+                        _settings.setBoolPref(PrefKeys.welcomeShowText, v);
+                      },
+                    ),
+                    SwitchListTile.adaptive(
+                      title: const Text('显示图标'),
+                      subtitle: const Text('默认书本图标'),
+                      value: _showIcon,
+                      onChanged: (v) {
+                        setState(() => _showIcon = v);
+                        _settings.setBoolPref(PrefKeys.welcomeShowIcon, v);
+                      },
+                    ),
+                  ]),
+                  const IosSectionHeader('夜间'),
+                  IosGroup(children: [
+                    IosListTile(
+                      icon: Icons.wallpaper_outlined,
+                      iconBackground: Colors.indigo,
+                      title: '背景图片',
+                      subtitle: _imageNight.isEmpty ? '选择图片' : _imageNight,
+                      showDisclosure: true,
+                      onTap: () => _pickImage(dark: true),
+                    ),
+                    SwitchListTile.adaptive(
+                      title: const Text('显示文字'),
+                      subtitle: const Text('阅读 / 享受美好时光 / 品读万千故事'),
+                      value: _showTextDark,
+                      onChanged: (v) {
+                        setState(() => _showTextDark = v);
+                        _settings.setBoolPref(PrefKeys.welcomeShowTextDark, v);
+                      },
+                    ),
+                    SwitchListTile.adaptive(
+                      title: const Text('显示图标'),
+                      subtitle: const Text('默认书本图标'),
+                      value: _showIconDark,
+                      onChanged: (v) {
+                        setState(() => _showIconDark = v);
+                        _settings.setBoolPref(PrefKeys.welcomeShowIconDark, v);
+                      },
+                    ),
+                  ]),
+                  const IosSectionFooter(
+                    '闪屏结构对齐原版 WelcomeActivity；背景图仅在开启「自定义欢迎页」时生效。',
                   ),
-                ]),
-                const IosSectionHeader('自定义'),
-                IosGroup(children: [
-                  SwitchListTile.adaptive(
-                    title: const Text('自定义欢迎页'),
-                    subtitle: const Text('启用后可设置日/夜背景图'),
-                    value: _customWelcome,
-                    onChanged: (v) {
-                      setState(() => _customWelcome = v);
-                      _settings.setBoolPref(PrefKeys.customWelcome, v);
-                    },
-                  ),
-                ]),
-                const IosSectionHeader('白天'),
-                IosGroup(children: [
-                  IosListTile(
-                    icon: Icons.wallpaper_outlined,
-                    iconBackground: Colors.teal,
-                    title: '背景图片',
-                    subtitle: _imageDay.isEmpty ? '选择图片' : _imageDay,
-                    showDisclosure: true,
-                    onTap: () => _pickImage(dark: false),
-                  ),
-                  SwitchListTile.adaptive(
-                    title: const Text('显示文字'),
-                    subtitle: const Text('阅读 / 享受美好时光 / 品读万千故事'),
-                    value: _showText,
-                    onChanged: (v) {
-                      setState(() => _showText = v);
-                      _settings.setBoolPref(PrefKeys.welcomeShowText, v);
-                    },
-                  ),
-                  SwitchListTile.adaptive(
-                    title: const Text('显示图标'),
-                    subtitle: const Text('默认书本图标'),
-                    value: _showIcon,
-                    onChanged: (v) {
-                      setState(() => _showIcon = v);
-                      _settings.setBoolPref(PrefKeys.welcomeShowIcon, v);
-                    },
-                  ),
-                ]),
-                const IosSectionHeader('夜间'),
-                IosGroup(children: [
-                  IosListTile(
-                    icon: Icons.wallpaper_outlined,
-                    iconBackground: Colors.indigo,
-                    title: '背景图片',
-                    subtitle: _imageNight.isEmpty ? '选择图片' : _imageNight,
-                    showDisclosure: true,
-                    onTap: () => _pickImage(dark: true),
-                  ),
-                  SwitchListTile.adaptive(
-                    title: const Text('显示文字'),
-                    subtitle: const Text('阅读 / 享受美好时光 / 品读万千故事'),
-                    value: _showTextDark,
-                    onChanged: (v) {
-                      setState(() => _showTextDark = v);
-                      _settings.setBoolPref(PrefKeys.welcomeShowTextDark, v);
-                    },
-                  ),
-                  SwitchListTile.adaptive(
-                    title: const Text('显示图标'),
-                    subtitle: const Text('默认书本图标'),
-                    value: _showIconDark,
-                    onChanged: (v) {
-                      setState(() => _showIconDark = v);
-                      _settings.setBoolPref(PrefKeys.welcomeShowIconDark, v);
-                    },
-                  ),
-                ]),
-                const IosSectionFooter(
-                  '闪屏结构对齐原版 WelcomeActivity；背景图仅在开启「自定义欢迎页」时生效。',
-                ),
-              ],
+                ],
+              ),
             ),
     );
   }
