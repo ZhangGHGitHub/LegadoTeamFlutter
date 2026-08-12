@@ -1082,6 +1082,10 @@ Future<String> backupRestore({required String path}) =>
 Future<String> backupList({required String dir}) =>
     RustLib.instance.api.crateFfiFfiBackupList(dir: dir);
 
+/// 导入旧版（阅读 2.x）备份目录，返回统计 JSON
+Future<String> importOldData({required String dir}) =>
+    RustLib.instance.api.crateFfiFfiImportOldData(dir: dir);
+
 /// 启动 legado-server，返回状态消息
 Future<String> serverStart({required int port}) =>
     RustLib.instance.api.crateFfiFfiServerStart(port: port);

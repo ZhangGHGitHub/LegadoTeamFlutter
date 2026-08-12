@@ -1208,6 +1208,16 @@ class MockBookApi implements BookApi {
   @override
   Future<void> restore(String backupPath) async {}
 
+  @override
+  Future<String> importOldData(String dirPath) async {
+    return jsonEncode({
+      'books': 0,
+      'bookSources': 0,
+      'replaceRules': 0,
+      'messages': <String>['mock: 未找到旧版备份文件'],
+    });
+  }
+
   // ========== 阅读记录 ==========
 
   @override

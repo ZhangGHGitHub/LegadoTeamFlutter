@@ -493,6 +493,12 @@ abstract class BookApi {
   /// 恢复数据
   Future<void> restore(String backupPath);
 
+  /// 导入旧版（阅读 2.x）备份目录
+  ///
+  /// 对齐 [API_CONTRACT] §2.11 `importOldData` / 原版 `ImportOldData.importUri`。
+  /// 返回统计 JSON：`{books, bookSources, replaceRules, messages}`。
+  Future<String> importOldData(String dirPath);
+
   // ========== 阅读记录 ==========
 
   /// 获取所有阅读记录

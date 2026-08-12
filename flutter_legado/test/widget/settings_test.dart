@@ -116,13 +116,12 @@ void main() {
       await tester.tap(find.text('备份恢复'));
       await tester.pumpAndSettle();
 
-      // 底部弹窗聚合：备份/恢复/WebDAV 同步/恢复忽略项
+      // 底部弹窗聚合：备份/恢复/WebDAV 同步/恢复忽略项/导入旧版
       expect(find.text('备份数据'), findsOneWidget);
       expect(find.text('恢复数据'), findsOneWidget);
       expect(find.text('WebDAV 同步'), findsOneWidget);
       expect(find.text('恢复忽略项'), findsOneWidget);
-      // 导入旧版仍诚实隐藏（格式转换契约未确认）
-      expect(find.text('导入旧版数据'), findsNothing);
+      expect(find.text('导入旧版数据'), findsOneWidget);
     });
 
     testWidgets('滚动可见导出日志入口', (tester) async {

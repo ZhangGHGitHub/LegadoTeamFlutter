@@ -1110,6 +1110,15 @@ class RustApi implements BookApi {
     await bridge.backupRestore(path: backupPath);
   }
 
+  /// 导入旧版数据（委托 Rust import_old_data）
+  Future<String> importOldData(String dirPath) async {
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) {
+      throw RustApiException('目录不存在: $dirPath', operation: 'importOldData');
+    }
+    return bridge.importOldData(dir: dirPath);
+  }
+
   // ========== 阅读记录 ==========
 
   /// 获取所有阅读记录

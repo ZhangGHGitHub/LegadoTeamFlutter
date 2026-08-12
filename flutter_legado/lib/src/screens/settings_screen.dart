@@ -43,6 +43,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _backupLoading = false;
   bool _restoreLoading = false;
+  bool _importOldLoading = false;
   // 服务开关（对标 pref_main SwitchPreference）
   // [UI-fix v2.0.2 | 2026-08-06] Web 服务开关接通 Rust server_start/server_stop，
   // 状态持久化于 config 键 webService — Qoder
@@ -317,15 +318,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 iconBackground: AppColors.iosGreenLight,
                 title: '备份恢复',
                 subtitle: '备份/恢复数据与 WebDAV 同步',
-                trailing: (_backupLoading || _restoreLoading)
+                trailing: (_backupLoading || _restoreLoading || _importOldLoading)
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : null,
-                showDisclosure: !(_backupLoading || _restoreLoading),
-                onTap: (_backupLoading || _restoreLoading)
+                showDisclosure: !(_backupLoading ||
+                    _restoreLoading ||
+                    _importOldLoading),
+                onTap: (_backupLoading || _restoreLoading || _importOldLoading)
                     ? null
                     : () => _showBackupSheet(context),
               ),
@@ -526,7 +529,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.filter_list),
+                leading: const Icon(Icons.filter_list_outlined),
                 title: const Text('恢复忽略项'),
                 subtitle: const Text('恢复时跳过勾选项（当前仅本地书籍生效）'),
                 onTap: () {
@@ -534,7 +537,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _showRestoreIgnore(context);
                 },
               ),
-              // P2-4 导入旧版：需 myBookShelf/myBookSource 格式转换契约，入口保持隐藏直至提问确认
+              ListTile(
+                leading: const Icon(Icons.folder_open_outlined),
+                title: const Text('导入旧版数据'),
+                subtitle: const Text('选择含 myBookShelf 等文件的阅读 2.x 备份目录'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _doImportOldData(context);
+                },
+              ),
             ],
           ),
         ),
@@ -630,6 +641,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } finally {
       if (mounted) setState(() => _restoreLoading = false);
+    }
+  }
+
+  /// 导入旧版数据（对齐 BackupConfigFragment.restoreOld / ImportOldData.importUri）
+  ///
+  /// 选择目录后调用 [BookApi.importOldData]，展示 messages 汇总反馈。
+  Future<void> _doImportOldData(BuildContext context) async {
+    setState(() => _importOldLoading = true);
+    try {
+      final dirPath = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择旧版备份目录',
+      );
+      if (dirPath == null) return;
+
+      final api = ref.read(bookApiProvider);
+      final raw = await api.importOldData(dirPath);
+      final decoded = jsonDecode(raw);
+      String message;
+      if (decoded is Map) {
+        final msgs = decoded['messages'];
+        if (msgs is List && msgs.isNotEmpty) {
+          message = msgs.map((e) => '$e').join('\n');
+        } else {
+          final books = decoded['books'] ?? 0;
+          final sources = decoded['bookSources'] ?? 0;
+          final rules = decoded['replaceRules'] ?? 0;
+          message = '书架 $books · 书源 $sources · 替换规则 $rules';
+        }
+      } else {
+        message = '导入完成';
+      }
+
+      ref.read(bookshelfNotifierProvider.notifier).refresh();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入旧版数据失败: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importOldLoading = false);
     }
   }
 
