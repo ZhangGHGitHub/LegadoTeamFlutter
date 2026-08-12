@@ -20,6 +20,7 @@
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
 | 2026-08-13 | P2-9 段评完整 MVP：加法式新增 `reviewGetSummary` / `reviewGetDetail`（§2.30）；对齐原版 `loadReviewSummary`+`parseSummary` / `ReviewDetailDialog`+`parseDetailPage`；复用既有 `reviewGetReplies`。附录合计 244→246，BookApi 口径 235→237。本地库 `reviewGetByChapter`/`reviewAdd`… 仍属偏离创意，UI **禁止**接入 |
 | 2026-08-13 | P2-8：检查更新对接 GitHub Release API（`AppUpdateService` + `UpdateDialog`）；纯 Flutter HTTP，**无新 FFI** |
+| 2026-08-13 | P2-7：AutoTaskDebug 流式调试——UI 逐行回调 + `TaskResult.details` 对齐 LogFormatter；复用 `autoTaskExecuteWithId`，**无新 StreamSink FFI** |
 
 ---
 

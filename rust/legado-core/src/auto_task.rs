@@ -133,12 +133,21 @@ impl AutoTaskRunner {
             TaskAction::Notify(msg) => (true, format!("Notification sent: {msg}")),
             TaskAction::Custom(js) => Self::do_custom_js(js),
         };
+        let duration_ms = start.elapsed().as_millis() as u64;
+        // 对齐 AutoTaskLogFormatter：供调试 Dialog 分行流式展示
+        let details = if success {
+            Some(format!(
+                "[OK] Elapsed: {duration_ms}ms\n- {message}"
+            ))
+        } else {
+            Some(format!("[FAIL] Elapsed: {duration_ms}ms\n- {message}"))
+        };
         TaskResult {
             task_id: task_id.to_string(),
             success,
             message,
-            duration_ms: start.elapsed().as_millis() as u64,
-            details: None,
+            duration_ms,
+            details,
         }
     }
 
