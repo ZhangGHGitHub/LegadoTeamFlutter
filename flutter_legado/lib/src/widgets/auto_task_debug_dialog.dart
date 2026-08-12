@@ -1,14 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers/auto_task/auto_task_notifier.dart';
+import '../providers/providers.dart';
 import '../services/auto_task_scheduler.dart';
 
-/// 定时任务调试 Dialog（对标原版 `AutoTaskDebugActivity`）
+/// 定时任务调试 Dialog（对标原版 `AutoTaskDebugActivity` + `Debug.Callback`）
 ///
-/// 执行一次任务并展示结果摘要；不接原版 Debug 流式日志（Flutter 侧
-/// AutoTask 为简化模型，无独立 Debug.Callback 通道）。
+/// 以 Stream 逐行追加日志（对齐 `printLog` 流式观感）；执行走既有
+/// `autoTaskExecuteWithId`，无新 FFI StreamSink（协议动作非 Rhino 中途回调）。
 class AutoTaskDebugDialog extends ConsumerStatefulWidget {
   final AutoTask task;
 
@@ -21,7 +25,9 @@ class AutoTaskDebugDialog extends ConsumerStatefulWidget {
 
 class _AutoTaskDebugDialogState extends ConsumerState<AutoTaskDebugDialog> {
   final _output = StringBuffer();
+  final _scroll = ScrollController();
   bool _running = false;
+  int _runGen = 0;
 
   @override
   void initState() {
@@ -29,41 +35,157 @@ class _AutoTaskDebugDialogState extends ConsumerState<AutoTaskDebugDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _run());
   }
 
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _append(String line) {
+    if (!mounted) return;
+    setState(() => _output.writeln(line));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
+
   Future<void> _run() async {
     if (_running) return;
+    final gen = ++_runGen;
     setState(() {
       _running = true;
       _output.clear();
-      _output.writeln('[debug] 开始执行：${widget.task.name}');
-      _output.writeln(
-        '[debug] type=${widget.task.taskType} cron=${widget.task.cron}',
-      );
     });
-    try {
-      await ref
-          .read(autoTaskNotifierProvider.notifier)
-          .runNow(widget.task.id);
-      AutoTaskScheduler.instance.refresh();
-      final refreshed = ref
-          .read(autoTaskNotifierProvider)
-          .tasks
-          .where((t) => t.id == widget.task.id)
-          .firstOrNull;
-      if (!mounted) return;
-      setState(() {
-        _output.writeln(
-          '[result] ${refreshed?.lastResult ?? "完成"}'
-          ' @ ${refreshed?.lastRunAt ?? "-"}',
-        );
-        _running = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _output.writeln('[error] $e');
-        _running = false;
-      });
+
+    final startMs = DateTime.now().millisecondsSinceEpoch;
+    String stamp(String msg) {
+      final elapsed = DateTime.now().millisecondsSinceEpoch - startMs;
+      final m = (elapsed ~/ 60000).toString().padLeft(2, '0');
+      final s = ((elapsed % 60000) ~/ 1000).toString().padLeft(2, '0');
+      final ms = (elapsed % 1000).toString().padLeft(3, '0');
+      return '[$m:$s.$ms] $msg';
     }
+
+    void emit(String msg) {
+      if (gen != _runGen || !mounted) return;
+      _append(stamp(msg));
+    }
+
+    emit('Running ${widget.task.name}');
+    emit(
+      'type=${widget.task.taskType} cron=${widget.task.cron}',
+    );
+
+    try {
+      final api = ref.read(bookApiProvider);
+      Map<String, dynamic>? rule;
+      try {
+        rule = await api.autoTaskFindRuleById(id: widget.task.id);
+      } catch (_) {}
+      if (gen != _runGen) return;
+
+      final script = rule?['script']?.toString() ?? '';
+      if (script.isNotEmpty) {
+        final preview = script.length > 120
+            ? '${script.substring(0, 120)}…'
+            : script;
+        emit('script: $preview');
+      }
+
+      final protocolJson = _buildProtocolJson(widget.task, rule);
+      emit('Executing…');
+
+      final result = await api.autoTaskExecuteWithId(
+        protocolJson: protocolJson,
+        taskId: widget.task.id,
+      );
+      if (gen != _runGen) return;
+
+      final success = result['success'] as bool? ?? false;
+      final message = result['message']?.toString() ?? '';
+      final duration = result['duration_ms'] ?? result['durationMs'];
+      final details = result['details']?.toString();
+
+      if (success) {
+        emit('Task completed');
+      } else {
+        emit(message.isEmpty ? 'Task failed' : message);
+      }
+
+      // 对齐 AutoTaskDebugActivity：追加 result.log 分行（流式写入 UI）
+      final logBody = (details != null && details.isNotEmpty)
+          ? details
+          : '[${success ? 'OK' : 'FAIL'}] Elapsed: ${duration ?? '-'}ms'
+              '${message.isEmpty ? '' : '\n- $message'}';
+      for (final line in logBody.split('\n')) {
+        if (line.trim().isEmpty) continue;
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+        if (gen != _runGen) return;
+        _append(line);
+      }
+
+      // 同步列表摘要（persist=false 语义：调试不强制写库，但刷新展示）
+      try {
+        await ref.read(autoTaskNotifierProvider.notifier).loadTasks(silent: true);
+      } catch (_) {}
+      AutoTaskScheduler.instance.refresh();
+    } catch (e) {
+      if (gen == _runGen) emit('error: $e');
+    } finally {
+      if (mounted && gen == _runGen) {
+        setState(() => _running = false);
+      }
+    }
+  }
+
+  /// 构建 TaskProtocol JSON（对齐 Rust `TaskAction` 外部标签）
+  String _buildProtocolJson(AutoTask task, Map<String, dynamic>? rule) {
+    final script = rule?['script']?.toString().trim() ?? '';
+    if (script.startsWith('{')) {
+      try {
+        final map = jsonDecode(script);
+        if (map is Map && map.containsKey('action')) {
+          // 已是协议或含 action 的脚本 JSON
+          if (map['params'] is Map || map['action'] is Map || map['action'] is String) {
+            // 若仅有 Kotlin 风格业务 JSON，仍尝试原样交给执行器
+            return script;
+          }
+        }
+      } catch (_) {}
+    }
+
+    switch (task.taskType) {
+      case 'refreshToc':
+        return jsonEncode({
+          'action': 'RefreshToc',
+          'params': _paramsFromScript(script),
+        });
+      case 'updateSources':
+        return jsonEncode({'action': 'UpdateSources', 'params': {}});
+      case 'backup':
+        return jsonEncode({'action': 'Backup', 'params': {}});
+      default:
+        final js = script.isNotEmpty ? script : task.taskType;
+        return jsonEncode({
+          'action': {'Custom': js},
+          'params': {},
+        });
+    }
+  }
+
+  Map<String, String> _paramsFromScript(String script) {
+    if (!script.startsWith('{')) return {};
+    try {
+      final map = jsonDecode(script);
+      if (map is! Map) return {};
+      final bookUrl = map['bookUrl'] ?? map['book_url'];
+      if (bookUrl != null && bookUrl.toString().isNotEmpty) {
+        return {'bookUrl': bookUrl.toString()};
+      }
+    } catch (_) {}
+    return {};
   }
 
   @override
@@ -83,8 +205,9 @@ class _AutoTaskDebugDialogState extends ConsumerState<AutoTaskDebugDialog> {
       ),
       content: SizedBox(
         width: double.maxFinite,
-        height: 280,
+        height: 320,
         child: SingleChildScrollView(
+          controller: _scroll,
           child: SelectableText(
             _output.isEmpty ? '准备中…' : _output.toString(),
             style: const TextStyle(
