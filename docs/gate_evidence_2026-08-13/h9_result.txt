@@ -1,0 +1,1 @@
+PASS ['调试：GateDebug', '[00:00.000] Running GateDebug|[00:00.001] type=refreshToc cron=0 8 * * *|[00:00.002] script: refreshToc()|[00:00.002] Executing…|[00:00.003] refreshToc requires bookUrl parameter|[FAIL] Elapsed: 0ms|- refreshToc requires bookUrl parameter|', '重新运行', '关闭', 'Dismiss']

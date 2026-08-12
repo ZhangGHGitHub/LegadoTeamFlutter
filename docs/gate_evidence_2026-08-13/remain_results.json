@@ -1,0 +1,22 @@
+[
+  {
+    "item": "C3",
+    "status": "PASS",
+    "evidence": "after=['退出批量模式', '已选择 968 项', '懒人听书app本地源（同人）', '编辑', '更多选项', '七猫四合一本地版（同人）', '编辑', '更多选项', '书旗小说本地源（同人）', '编辑', '更多选项', '绅士漫画（下拉）', '编辑', '更多选项', '思兔阅读', '编辑', '更多选项', '&#128218;书山聚合', '编辑', '更多选项']"
+  },
+  {
+    "item": "E1",
+    "status": "PASS",
+    "evidence": "sheet=['Dismiss', '单章换源|第17章、这一碗是送的', '换书源|切换整本书的书源', 'Scrim']"
+  },
+  {
+    "item": "G3",
+    "status": "阻塞",
+    "evidence": "subscription cards open browser/link; need RSS articles screen for 清空文章/设置源变量"
+  },
+  {
+    "item": "H9",
+    "status": "阻塞",
+    "evidence": "cannot create task labels=['Back', '定时任务', 'Show menu', '暂无定时任务', '点击右下角按钮添加新任务']"
+  }
+]
