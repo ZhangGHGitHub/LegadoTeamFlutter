@@ -85,17 +85,13 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
   /// 加载章级开关与替换规则计数（书籍/章节变化时调用）
   Future<void> _loadLocalFlags(String bookUrl, int chapterIndex) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      // [Task #55 F10 | 2026-08-10] 一次性移除旧书级键（不带章节后缀的
-      // 早期格式），幂等无副作用；键已不存在时 remove 亦不报错 — Qoder
-      await prefs.remove('sameTitleRemoved_$bookUrl');
-      // [Task #52 | 2026-08-10] Rust 侧无查询 API，用本地切换记录辅助
-      // 显示；默认 true（全局默认=去除重复标题） — Qoder
-      final removed =
-          prefs.getBool('sameTitleRemoved_${bookUrl}_$chapterIndex') ?? true;
+      // 权威态：caches KV（getSameTitleRemoved）；失败保持默认开启
+      final removed = await ref
+          .read(bookApiProvider)
+          .getSameTitleRemoved(bookUrl, chapterIndex);
       if (mounted) setState(() => _sameTitleRemoved = removed);
     } catch (_) {
-      // 持久化不可用时保持默认开启
+      // FFI 不可用时保持默认开启（不再以 SP 镜像为权威态）
     }
     try {
       final rules = await ref.read(bookApiProvider).getEnabledReplaceRules();
@@ -899,22 +895,40 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
     final book = state.currentBook;
     if (book == null) return;
     final chapterIndex = state.currentChapterIndex;
+    final chapterTitle = state.currentChapter?.title ?? '';
     final next = !_sameTitleRemoved;
+
+    // 对齐原版：开启去除且正文无可移除重复标题时提示
+    if (next && chapterTitle.isNotEmpty) {
+      try {
+        final raw = await ref
+            .read(bookApiProvider)
+            .getCachedChapter(book.bookUrl, chapterIndex);
+        final head = raw.trimLeft();
+        final hasDupAtStart = head.startsWith(chapterTitle) ||
+            RegExp(
+              r'^[\s\p{P}]*' + RegExp.escape(chapterTitle),
+              unicode: true,
+            ).hasMatch(head);
+        if (!hasDupAtStart && context.mounted) {
+          _snack(context, '未找到可移除的重复标题');
+        }
+      } catch (_) {
+        // 无缓存时跳过提示，仍执行切换
+      }
+    }
+
     try {
       await ref
           .read(bookApiProvider)
           .toggleSameTitleRemoved(book.bookUrl, chapterIndex, next);
       if (!mounted) return;
       setState(() => _sameTitleRemoved = next);
-      // 本地辅助显示缓存（Rust 侧无查询 API，行为以 FFI 为准）
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(
             'sameTitleRemoved_${book.bookUrl}_$chapterIndex', next);
-      } catch (_) {
-        // 持久化失败不阻断开关切换
-      }
-      // 重载当前章正文，使开关立即生效（对齐原版 loadContent）
+      } catch (_) {}
       await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
       if (context.mounted) {
         _snack(context, next ? '已去除重复标题' : '该章已保留原标题');

@@ -559,6 +559,30 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 权威查询章级「删除重复标题」开关（caches KV）
+    ///
+    /// true=去除重复标题（全局默认）；false=该章 opt-out。
+    pub fn reader_get_same_title_removed(
+        book_url: String,
+        chapter_index: i32,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::reader::get_same_title_removed(
+            &book_url,
+            chapter_index,
+        ))
+    }
+
+    /// 试算当前正文是否含可移除的重复标题（对齐原版「未找到可移除的重复标题」）
+    pub fn reader_can_remove_same_title(
+        chapter_title: String,
+        raw_content: String,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::reader::can_remove_same_title(
+            &chapter_title,
+            &raw_content,
+        ))
+    }
+
     // ─── 书籍导入 ─────────────────────────────────────────────
 
     /// 检测书籍文件格式（JSON）

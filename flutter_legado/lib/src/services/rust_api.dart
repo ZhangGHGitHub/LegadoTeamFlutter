@@ -1026,6 +1026,20 @@ class RustApi implements BookApi {
         enable: enable,
       );
 
+  @override
+  Future<bool> getSameTitleRemoved(String bookUrl, int chapterIndex) =>
+      bridge.readerGetSameTitleRemoved(
+        bookUrl: bookUrl,
+        chapterIndex: chapterIndex,
+      );
+
+  @override
+  Future<bool> canRemoveSameTitle(String chapterTitle, String rawContent) =>
+      bridge.readerCanRemoveSameTitle(
+        chapterTitle: chapterTitle,
+        rawContent: rawContent,
+      );
+
   // ========== 配置操作 ==========
 
   /// 获取配置值

@@ -462,6 +462,14 @@ abstract class BookApi {
     bool enable,
   );
 
+  /// 权威查询章级「删除重复标题」开关（caches KV，对齐原版 opt-out 态）
+  ///
+  /// true=去除重复标题（全局默认）；false=该章 opt-out。
+  Future<bool> getSameTitleRemoved(String bookUrl, int chapterIndex);
+
+  /// 试算正文开头是否含可移除的重复标题（对齐原版空提示）
+  Future<bool> canRemoveSameTitle(String chapterTitle, String rawContent);
+
   // ========== 配置操作 ==========
 
   /// 获取配置值

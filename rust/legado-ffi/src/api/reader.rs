@@ -93,6 +93,22 @@ fn is_same_title_removed(book_url: &str, chapter_index: i32) -> bool {
     !matches!(value.as_deref(), Some("1"))
 }
 
+/// 权威查询章级「删除重复标题」开关（caches KV，对齐 §5.14 遗留）
+///
+/// 返回值语义同 [`is_same_title_removed`]：true=去除重复标题（默认），
+/// false=该章 opt-out。供 Flutter 菜单勾选态回读，避免仅依赖 SP 镜像分叉。
+pub fn get_same_title_removed(book_url: &str, chapter_index: i32) -> bool {
+    is_same_title_removed(book_url, chapter_index)
+}
+
+/// 试算正文开头是否含可移除的重复标题（对齐原版 toast「未找到可移除的重复标题」）
+pub fn can_remove_same_title(chapter_title: &str, raw_content: &str) -> bool {
+    if chapter_title.is_empty() || raw_content.is_empty() {
+        return false;
+    }
+    raw_content.trim_start().starts_with(chapter_title)
+}
+
 /// 章级「删除重复标题」开关（契约 §2.9.10，加法式新增）
 ///
 /// 状态持久化于 caches 表，重启后保持。`enable=true` 恢复全局默认

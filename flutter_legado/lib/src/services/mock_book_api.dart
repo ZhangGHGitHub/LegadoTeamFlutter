@@ -1144,6 +1144,17 @@ class MockBookApi implements BookApi {
     }
   }
 
+  @override
+  Future<bool> getSameTitleRemoved(String bookUrl, int chapterIndex) async {
+    return !_sameTitleOptOut.contains('$bookUrl#$chapterIndex');
+  }
+
+  @override
+  Future<bool> canRemoveSameTitle(String chapterTitle, String rawContent) async {
+    if (chapterTitle.isEmpty || rawContent.isEmpty) return false;
+    return rawContent.trimLeft().startsWith(chapterTitle);
+  }
+
   // ========== 配置操作 ==========
 
   @override

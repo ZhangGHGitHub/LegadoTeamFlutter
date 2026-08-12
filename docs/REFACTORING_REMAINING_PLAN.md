@@ -310,7 +310,7 @@ flutter test                  # 全量测试通过
 | 遗留项 | 说明 | 处置 |
 |--------|------|------|
 | 跨章节连续分页 | 排版引擎当前以章为单位分页，跨章节连续阅读流未打通 | ✅ 已完成（2026-08-01）：CrossChapterPaginator 实现 + reader_notifier 全局导航 + reader_screen 接入 |
-| 自定义字体族 | 用户自定义字体加载/切换尚未实现 | 后续迭代 |
+| 自定义字体族 | 用户自定义字体加载/切换 | ✅ **已闭合（2026-08-13 核销）**：`FontScreen` 导入 ttf/otf + `FontLoader`；阅读器 `reader_page_view._refreshFontFamily` 消费；设置入口对齐 FontSelect |
 | 平台依赖测试缺口 | MediaSession/后台播放等平台 Channel 逻辑缺乏自动化测试覆盖 | 补充平台 mock 测试 |
 | 真机复核 | 后台媒体按钮、QUIC 等需真机环境验证 | 安排真机回归 |
 | 旧代码删除推迟 | 旧 Android 代码（app/、modules/）保持双轨并存 | 用户决策：重构稳定后另行评估 |
@@ -1056,10 +1056,10 @@ flutter test                  # 全量测试通过
 
 | # | 遗留/风险 | 说明 |
 |---|-----------|------|
-| 1 | getSameTitleRemoved 权威查询契约 | 当前 UI 初始态用 SP 镜像回读（键 `sameTitleRemoved_<bookUrl>`），与 Rust 侧 caches KV 章级 opt-out 权威态在清应用数据等场景可能分叉；另原版「未找到可移除的重复标题」提示未复刻。待后续契约批次补权威查询 FFI |
+| 1 | ✅ getSameTitleRemoved 权威查询 | 2026-08-13：`reader_get_same_title_removed` + UI 勾选态权威回读；「未找到可移除的重复标题」提示已复刻 |
 | 2 | ~~getBookmarks 契约 §2.7 缺 bookAuthor 参数~~（已闭合） | ~~书签按书名查询（原版按书名+作者），同名书可能混入（§5.11-5 销记曾登记为遗留差异，此处正式立项）~~ ✅ Task #71（2026-08-10）销记：契约 §2.7 getBookmarksByBook（书名+作者双键，加法式）已冻结并实现；消费方全切换（bookmark_notifier/toc_screen/书签导出）；MCP 宿主加法式可选 book_author 参数；单键旧查询兼容保留（见 #11） |
 | 3 | ~~BookRepository::insert OR REPLACE 重复插入隐患~~（已闭合） | ~~重复插入触发 chapters 外键级联删除风险，建议改 upsert（INSERT OR IGNORE + 按需 update）链路~~ ✅ Task #71（2026-08-10）销记：upsert 重构（主键判存在 + 原地 UPDATE / insert_replace）+ import_books 覆盖链路同步改造 + 新增重复插入保留 chapters 测试；残余见 #10 |
-| 4 | webdav_upload_file 大文件内存驻留 | 大文件上传整块驻留内存，流式上传改造立项（Rust WebDavClient 分块 PUT / Body 流式） |
+| 4 | ✅ webdav_upload_file 大文件流式 | 2026-08-13：`WebDavClient::put_file` ReaderStream 边读边 PUT；FFI 不再整文件读入内存 |
 | 5 | FRB 内置隐藏 runtime 栈 | FRB 内置隐藏 runtime（flutter_rust_bridge rust_async）仍为默认 2MB 栈；根因已由 rule_analyzer 修复 + regex_safe 非递归预检消除，此项为纵深防御可选 |
 | 6 | 个别书源 bookUrl 为空 | QQ阅读等个别书源 bookUrl 为空（「Parser error: bookUrl不能为空」），源数据问题，与代码无关，建议修源 |
 | 7 | 搜索崩溃根治纪要 | （2026-08-10）四轮调查定位 rule_analyzer 零前进无限递归（移植时将原版 throw 改为 break 重试所致），已对齐原版 fail-fast + tailrec 修复并五轮复测零崩溃；正则安全编译统一入口（非递归嵌套预检 + LRU + logcat 诊断）作为纵深防御保留 |
@@ -1070,7 +1070,7 @@ flutter test                  # 全量测试通过
 | 12 | JS 链书源 bookUrl 为空 | （Task #66 实机发现）w.heiyan.com/kuaikan/zhuguang 等依赖 `<js>` 求值的 bookUrl 取空，属 JS 执行器独立路径待查（与 §5.14-6 源数据问题不同源） |
 | 13 | coverRule 规则数据管理 | （Task #78 登记）封面规则 CRUD（增删改/启用开关）需后续契约接口；当前仅执行启用规则 + 封面设置对话框测试入口，规则数据依赖外部写入 |
 | 14 | MCP 服务局域网可达 + token 鉴权 | （Task #78 登记）当前 MCP 独立服务仅 127.0.0.1 回环；原版 allowedHosts/token 语义待后续契约批次 |
-| 15 | customHosts 覆盖缺口 | （Task #78 登记）webdav.rs / rule_update_client / legado-server source_update 直建 reqwest::Client 不经 LegadoClient，hosts 对其不生效；待统一收编客户端构造入口 |
+| 15 | ✅ customHosts 覆盖缺口 | 2026-08-13：webdav / rule_update_client / legado-server source_update 直建 Client 均挂 `custom_hosts::resolver()` |
 | 16 | coverRules 表 DDL 游离迁移体系 | （Task #78 登记）coverRules 表以 CREATE TABLE IF NOT EXISTS 双份建表游离迁移体系；schema 对齐专项（§4.2.1）重建表时须包含该表 |
 | 17 | MCP 前置 jsSourceApiToken 校验未实现 | （Task #78 登记）原版 McpService 前置 jsSourceApiToken 非空校验未实现，依赖 §5.13-7 jsSourceApiToken 落地后补 |
 | 18 | ✅ loginCheckJs 登录检测语义修复（2026-08-10，v2.0.8） | 上次审计 WebBook 全链路 P0 缺口（FFI 路径已闭合）：`js_executor.rs` result 注入改为带方法语义对象（原 JSON 字符串致 `result.body()` 全失败）+ 判定剥 JSON 引号；`web_book.rs` 区分「判定未登录→errResponse 双路径→上抛 LoginRequired（错误码 1012，Flutter 可见『书源需要登录，请先在书源菜单中登录后重试』）」与「JS 环境不兼容→降级放行」；server 错误映射 401。遗留：legado-server fetcher 未接同款检测、Flutter 登录跳转自动拉起未做（错误提示已透传） |
