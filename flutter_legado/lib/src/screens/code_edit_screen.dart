@@ -3,15 +3,24 @@ import 'package:flutter/services.dart';
 
 import 'curl_analyze_url_sheet.dart';
 
+/// 代码编辑结果（对齐 CodeEditActivity RESULT_ACTION_*）
+class CodeEditResult {
+  const CodeEditResult(this.text, {this.debugRequested = false});
+
+  final String text;
+  final bool debugRequested;
+}
+
 /// 规则/代码全屏编辑（对标原版 `CodeEditActivity` 最小可用）
 ///
-/// 能力：等宽编辑、保存回写、查找、cURL↔AnalyzeUrl 转换。
+/// 能力：等宽编辑、保存回写、查找、cURL↔AnalyzeUrl 转换、可选「调试」。
 /// 视觉：Apple 式冷静顶栏 + 系统灰编辑区，不做语法高亮/主题切换。
 class CodeEditScreen extends StatefulWidget {
   final String title;
   final String initialText;
   final int cursorPosition;
   final bool writable;
+  final bool showDebugSource;
 
   const CodeEditScreen({
     super.key,
@@ -19,6 +28,7 @@ class CodeEditScreen extends StatefulWidget {
     required this.initialText,
     this.cursorPosition = 0,
     this.writable = true,
+    this.showDebugSource = false,
   });
 
   /// 打开编辑器；保存返回文本，取消返回 `null`
@@ -28,14 +38,34 @@ class CodeEditScreen extends StatefulWidget {
     required String initialText,
     int cursorPosition = 0,
     bool writable = true,
+  }) async {
+    final result = await openExtended(
+      context,
+      title: title,
+      initialText: initialText,
+      cursorPosition: cursorPosition,
+      writable: writable,
+    );
+    return result?.text;
+  }
+
+  /// 带调试动作的打开方式（JS 书源用）
+  static Future<CodeEditResult?> openExtended(
+    BuildContext context, {
+    required String title,
+    required String initialText,
+    int cursorPosition = 0,
+    bool writable = true,
+    bool showDebugSource = false,
   }) {
-    return Navigator.of(context).push<String>(
+    return Navigator.of(context).push<CodeEditResult>(
       MaterialPageRoute(
         builder: (_) => CodeEditScreen(
           title: title,
           initialText: initialText,
           cursorPosition: cursorPosition,
           writable: writable,
+          showDebugSource: showDebugSource,
         ),
       ),
     );
@@ -100,12 +130,14 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
     if (leave == true && mounted) Navigator.of(context).pop();
   }
 
-  void _save() {
+  void _save({bool debug = false}) {
     if (!widget.writable) {
       Navigator.of(context).pop();
       return;
     }
-    Navigator.of(context).pop(_controller.text);
+    Navigator.of(context).pop(
+      CodeEditResult(_controller.text, debugRequested: debug),
+    );
   }
 
   Future<void> _openCurlConverter() async {
@@ -176,9 +208,15 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
             onPressed: _handlePop,
           ),
           actions: [
+            if (widget.writable && widget.showDebugSource)
+              IconButton(
+                tooltip: '调试',
+                icon: const Icon(Icons.bug_report_outlined),
+                onPressed: () => _save(debug: true),
+              ),
             if (widget.writable)
               TextButton(
-                onPressed: _save,
+                onPressed: () => _save(),
                 child: const Text('保存'),
               ),
             PopupMenuButton<String>(
@@ -190,6 +228,8 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
                     setState(() => _showFind = !_showFind);
                   case 'curl':
                     await _openCurlConverter();
+                  case 'debug':
+                    _save(debug: true);
                   case 'copy_all':
                     await Clipboard.setData(
                       ClipboardData(text: _controller.text),
@@ -201,10 +241,12 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
                     }
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'find', child: Text('查找')),
-                PopupMenuItem(value: 'curl', child: Text('cURL 转换')),
-                PopupMenuItem(value: 'copy_all', child: Text('复制全部')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'find', child: Text('查找')),
+                const PopupMenuItem(value: 'curl', child: Text('cURL 转换')),
+                if (widget.writable && widget.showDebugSource)
+                  const PopupMenuItem(value: 'debug', child: Text('调试')),
+                const PopupMenuItem(value: 'copy_all', child: Text('复制全部')),
               ],
             ),
           ],

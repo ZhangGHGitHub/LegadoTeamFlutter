@@ -28,10 +28,14 @@ class JsSourceEditScreen extends ConsumerStatefulWidget {
 
 class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  final _focusNode = FocusNode();
   bool _loading = true;
   bool _saving = false;
   String? _openedSourceUrl;
   String? _error;
+  String? _syntaxBanner;
+  int? _syntaxLine;
 
   @override
   void initState() {
@@ -43,6 +47,8 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _scrollController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -79,14 +85,29 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
     setState(() => _saving = true);
     try {
       final api = ref.read(bookApiProvider);
-      // 语法检查（失败不阻断保存，仅提示）
+      // 语法检查（失败不阻断保存，仅提示；并写入横幅便于定位）
       try {
         final checkRaw = await api.checkJsSourceSyntax(content);
         final check = jsonDecode(checkRaw) as Map<String, dynamic>;
         if (check['valid'] == false) {
           final msg = check['message']?.toString() ?? '语法错误';
           final line = check['line'];
-          _toast(line != null ? '语法警告 L$line：$msg' : '语法警告：$msg');
+          final lineNum = line is int
+              ? line
+              : int.tryParse(line?.toString() ?? '');
+          if (mounted) {
+            setState(() {
+              _syntaxBanner =
+                  lineNum != null ? '语法警告 L$lineNum：$msg' : '语法警告：$msg';
+              _syntaxLine = lineNum;
+            });
+          }
+          _toast(_syntaxBanner ?? '语法警告：$msg');
+        } else if (mounted) {
+          setState(() {
+            _syntaxBanner = null;
+            _syntaxLine = null;
+          });
         }
       } catch (_) {}
 
@@ -139,7 +160,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   }
 
   Future<void> _openCodeEdit() async {
-    final result = await CodeEditScreen.open(
+    final result = await CodeEditScreen.openExtended(
       context,
       title: 'JS 书源',
       initialText: _controller.text,
@@ -147,13 +168,68 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
         0,
         _controller.text.length,
       ),
+      showDebugSource: true,
     );
     if (result == null || !mounted) return;
     setState(() {
-      _controller.text = result;
+      _controller.text = result.text;
       _controller.selection =
-          TextSelection.collapsed(offset: result.length);
+          TextSelection.collapsed(offset: result.text.length);
     });
+    if (result.debugRequested) {
+      await _save(openDebug: true);
+    }
+  }
+
+  /// 跳转到语法错误行（对齐编辑器内定位体验）
+  void _jumpToSyntaxLine() {
+    final line = _syntaxLine;
+    if (line == null || line < 1) return;
+    final text = _controller.text;
+    var offset = 0;
+    var current = 1;
+    for (final rune in text.runes) {
+      if (current >= line) break;
+      if (rune == 0x0A) current++;
+      offset++;
+    }
+    offset = offset.clamp(0, text.length);
+    _controller.selection = TextSelection.collapsed(offset: offset);
+    _focusNode.requestFocus();
+  }
+
+  Future<void> _checkSyntaxOnly() async {
+    final content = _controller.text;
+    if (content.trim().isEmpty) {
+      _toast('脚本不能为空');
+      return;
+    }
+    try {
+      final checkRaw =
+          await ref.read(bookApiProvider).checkJsSourceSyntax(content);
+      final check = jsonDecode(checkRaw) as Map<String, dynamic>;
+      if (check['valid'] == false) {
+        final msg = check['message']?.toString() ?? '语法错误';
+        final line = check['line'];
+        final lineNum =
+            line is int ? line : int.tryParse(line?.toString() ?? '');
+        setState(() {
+          _syntaxBanner =
+              lineNum != null ? '语法警告 L$lineNum：$msg' : '语法警告：$msg';
+          _syntaxLine = lineNum;
+        });
+        _jumpToSyntaxLine();
+        _toast(_syntaxBanner!);
+      } else {
+        setState(() {
+          _syntaxBanner = null;
+          _syntaxLine = null;
+        });
+        _toast('语法检查通过');
+      }
+    } catch (e) {
+      _toast('语法检查失败：$e');
+    }
   }
 
   Future<void> _openCurl() async {
@@ -188,6 +264,11 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
               : '编辑 JS 书源',
         ),
         actions: [
+          IconButton(
+            tooltip: '语法检查',
+            onPressed: _loading || _saving ? null : _checkSyntaxOnly,
+            icon: const Icon(Icons.spellcheck_outlined),
+          ),
           IconButton(
             tooltip: '代码编辑',
             onPressed: _loading || _saving ? null : _openCodeEdit,
@@ -234,6 +315,47 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                       ),
                     ),
                   ),
+                if (_syntaxBanner != null)
+                  Material(
+                    color: const Color(0xFFFFF8E1),
+                    child: InkWell(
+                      onTap: _jumpToSyntaxLine,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              size: 18,
+                              color: Color(0xFFF9A825),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _syntaxBanner!,
+                                style: const TextStyle(
+                                  color: Color(0xFF6D4C41),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            if (_syntaxLine != null)
+                              Text(
+                                '跳转',
+                                style: TextStyle(
+                                  color: cs.primary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -244,6 +366,8 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                       ),
                       child: TextField(
                         controller: _controller,
+                        focusNode: _focusNode,
+                        scrollController: _scrollController,
                         maxLines: null,
                         expands: true,
                         keyboardType: TextInputType.multiline,
