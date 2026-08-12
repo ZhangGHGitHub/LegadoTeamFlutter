@@ -2071,6 +2071,22 @@ class RustApi implements BookApi {
   /// 点赞评论
   Future<void> reviewLike(int id) => bridge.reviewLike(id: id);
 
+  /// 段评摘要（P2-9）
+  Future<String> reviewGetSummary(String sourceJson, String requestJson) =>
+      bridge.reviewGetSummary(
+        sourceJson: sourceJson,
+        requestJson: requestJson,
+      );
+
+  /// 段评详情分页（P2-9）
+  Future<String> reviewGetDetail(
+          String sourceJson, String requestJson, int page) =>
+      bridge.reviewGetDetail(
+        sourceJson: sourceJson,
+        requestJson: requestJson,
+        page: page,
+      );
+
   /// 按需加载段评回复（上游 #519）
   ///
   /// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`。

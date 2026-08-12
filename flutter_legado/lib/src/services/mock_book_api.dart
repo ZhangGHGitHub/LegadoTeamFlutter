@@ -1806,6 +1806,42 @@ class MockBookApi implements BookApi {
   Future<void> reviewLike(int id) async {}
 
   @override
+  Future<String> reviewGetSummary(String sourceJson, String requestJson) async {
+    return jsonEncode({
+      'counts': {'1': 3, '2': 1},
+      'keys': {'1': 'mock-para-1', '2': 'mock-para-2'},
+    });
+  }
+
+  @override
+  Future<String> reviewGetDetail(
+      String sourceJson, String requestJson, int page) async {
+    return jsonEncode({
+      'items': [
+        {
+          'id': 'mock_detail_$page-1',
+          'name': '读者甲',
+          'content': 'Mock 段评内容一（第$page 页）',
+          'badges': <String>['作者'],
+          'time': '刚刚',
+          'replyCount': 2,
+          'replies': <Map<String, dynamic>>[],
+        },
+        {
+          'id': 'mock_detail_$page-2',
+          'name': '读者乙',
+          'content': 'Mock 段评内容二（第$page 页）',
+          'badges': <String>[],
+          'replyCount': 0,
+          'replies': <Map<String, dynamic>>[],
+        },
+      ],
+      'nextPageUrl': page < 2 ? 'mock://next' : null,
+      'hasReplyUrl': true,
+    });
+  }
+
+  @override
   Future<String> reviewGetReplies(
       String sourceJson, String requestJson, int page) async {
     // Mock 返回两条示例回复，便于 UI 轨联调段评回复弹窗

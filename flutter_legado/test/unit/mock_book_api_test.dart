@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/services/mock_book_api.dart';
@@ -580,6 +582,28 @@ void main() {
     test('reviewGetByChapter 返回 JSON 数组', () async {
       final result = await api.reviewGetByChapter('mock://book/1', 0);
       expect(result, '[]');
+    });
+
+    test('reviewGetSummary 返回 counts/keys', () async {
+      final result = await api.reviewGetSummary('{}', '{}');
+      final map = jsonDecode(result) as Map<String, dynamic>;
+      expect(map['counts'], isA<Map>());
+      expect(map['keys'], isA<Map>());
+      expect((map['counts'] as Map)['1'], 3);
+    });
+
+    test('reviewGetDetail 返回 items/hasReplyUrl', () async {
+      final result = await api.reviewGetDetail('{}', '{}', 1);
+      final map = jsonDecode(result) as Map<String, dynamic>;
+      expect(map['items'], isA<List>());
+      expect(map['hasReplyUrl'], isTrue);
+      expect((map['items'] as List).length, greaterThan(0));
+    });
+
+    test('reviewGetReplies 返回 items', () async {
+      final result = await api.reviewGetReplies('{}', '{}', 1);
+      final map = jsonDecode(result) as Map<String, dynamic>;
+      expect(map['items'], isA<List>());
     });
   });
 }

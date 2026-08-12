@@ -1302,6 +1302,32 @@ Future<bool> reviewDelete({required PlatformInt64 id}) =>
 Future<void> reviewLike({required PlatformInt64 id}) =>
     RustLib.instance.api.crateFfiFfiReviewLike(id: id);
 
+/// 段评摘要（P2-9，对标 loadReviewSummary + parseSummary）
+///
+/// 返回 JSON `{"counts":{"1":5},"keys":{"1":"paraData"}}`。
+/// `request_json` 支持 chapterUrl；可选 book/chapter。
+Future<String> reviewGetSummary({
+  required String sourceJson,
+  required String requestJson,
+}) => RustLib.instance.api.crateFfiFfiReviewGetSummary(
+  sourceJson: sourceJson,
+  requestJson: requestJson,
+);
+
+/// 段评详情分页（P2-9，对标 ReviewDetailDialog + parseDetailPage）
+///
+/// 返回 JSON `{"items":[...],"nextPageUrl":String?,"hasReplyUrl":bool}`。
+/// `request_json` 支持 paraIndex/paraData/chapterUrl/detailUrl。
+Future<String> reviewGetDetail({
+  required String sourceJson,
+  required String requestJson,
+  required int page,
+}) => RustLib.instance.api.crateFfiFfiReviewGetDetail(
+  sourceJson: sourceJson,
+  requestJson: requestJson,
+  page: page,
+);
+
 /// 按需加载段评回复（上游 #519）
 ///
 /// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`。

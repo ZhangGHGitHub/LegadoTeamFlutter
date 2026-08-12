@@ -910,6 +910,18 @@ abstract class BookApi {
   /// 点赞评论
   Future<void> reviewLike(int id);
 
+  /// 段评摘要（P2-9，对标 loadReviewSummary + parseSummary）
+  ///
+  /// 返回 JSON `{"counts":{"1":5},"keys":{"1":"paraData"}}`。
+  /// 规则缺失/未启用返回空 maps（非异常）。
+  Future<String> reviewGetSummary(String sourceJson, String requestJson);
+
+  /// 段评详情分页（P2-9，对标 ReviewDetailDialog + parseDetailPage）
+  ///
+  /// 返回 JSON `{"items":[...],"nextPageUrl":String?,"hasReplyUrl":bool}`。
+  Future<String> reviewGetDetail(
+      String sourceJson, String requestJson, int page);
+
   /// 按需加载段评回复（上游 #519）
   ///
   /// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`；
