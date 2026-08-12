@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
@@ -184,68 +185,51 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             );
           }
 
-          // 「规则订阅」入口格常驻（对标原版 header 不随列表空态隐藏），
-          // 列表为空时网格仅含入口格 + 空态提示
+          // 「规则订阅」入口格常驻（对标原版 header）；空态时网格仍在，
+          // tvEmptyMsg 叠在 RecyclerView 中央（fragment_rss.xml）
           final displaySources = _applySearch(state.filteredSources);
-          if (state.isEmpty) {
-            return Column(
-              children: [
-                _buildRuleSubHeader(context),
-                // 安卓原版：纯灰字居中空状态
-                const Expanded(
-                  child: EmptyState(
-                    icon: Icons.rss_feed,
-                    title: '当前没有订阅源！',
-                    simple: true,
-                  ),
-                ),
-              ],
-            );
-          }
-
-          // 分组/搜索过滤后为空：仅展示入口格
-          if (displaySources.isEmpty) {
-            return Column(
-              children: [
-                _buildRuleSubHeader(context),
-                const Expanded(
-                  child: EmptyState(
-                    icon: Icons.rss_feed,
-                    title: '当前分组暂无订阅源',
-                    simple: true,
-                  ),
-                ),
-              ],
-            );
-          }
+          final emptyMsg = state.isEmpty
+              ? '当前没有订阅源！'
+              : (displaySources.isEmpty ? '当前分组暂无订阅源' : null);
 
           return RefreshIndicator(
             onRefresh: () => notifier.loadSources(),
-            // 安卓端使用 GridLayoutManager spanCount=4
-            // 手机 4 列对齐原版，宽屏上限 6 列
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final columns =
                     Responsive.rssGridColumnsForWidth(constraints.maxWidth);
                 final aspectRatio =
                     Responsive.rssGridChildAspectRatio(constraints.maxWidth);
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    childAspectRatio: aspectRatio,
-                    // iOS 风格：加大网格间距，配合图标阴影留出呼吸感
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                  ),
-                  itemCount: displaySources.length + 1,
-                  itemBuilder: (context, index) {
-                    // 首格为「规则订阅」入口（对标原版 RssFragment
-                    // 列表 header item → RuleSubActivity）
-                    if (index == 0) return _buildRuleSubEntry(context);
-                    final source = displaySources[index - 1];
-                    return _buildSourceItem(context, source);
-                  },
+                return Stack(
+                  children: [
+                    GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                      // 空态也允许下拉刷新（AlwaysScrollable）
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        childAspectRatio: aspectRatio,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                      ),
+                      itemCount: displaySources.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == 0) return _buildRuleSubEntry(context);
+                        final source = displaySources[index - 1];
+                        return _buildSourceItem(context, source);
+                      },
+                    ),
+                    if (emptyMsg != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: EmptyState(
+                            icon: Icons.rss_feed,
+                            title: emptyMsg,
+                            simple: true,
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               },
             ),
@@ -255,39 +239,32 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     );
   }
 
-  /// 空态分支的入口格头部：网格参数与主网格（Responsive 列数/宽高比/
-  /// 8px 间距）保持一致，高度按实际格高动态计算，
-  /// 避免固定 120 高度 + 0.9 宽高比导致的 BOTTOM OVERFLOW
-  Widget _buildRuleSubHeader(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns =
-            Responsive.rssGridColumnsForWidth(constraints.maxWidth);
-        final aspectRatio =
-            Responsive.rssGridChildAspectRatio(constraints.maxWidth);
-        const crossAxisSpacing = 8.0;
-        const horizontalPadding = 24.0; // fromLTRB(12, _, 12, _)
-        final cellWidth = (constraints.maxWidth -
-                horizontalPadding -
-                crossAxisSpacing * (columns - 1)) /
-            columns;
-        final cellHeight = cellWidth / aspectRatio;
-        return SizedBox(
-          height: 12 + cellHeight,
-          child: GridView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              childAspectRatio: aspectRatio,
-              crossAxisSpacing: crossAxisSpacing,
-              mainAxisSpacing: crossAxisSpacing,
-            ),
-            children: [_buildRuleSubEntry(context)],
-          ),
-        );
-      },
-    );
+  /// 打开订阅源（对标 RssFragment.openRss：singleUrl → 阅读页/外链，否则文章列表）
+  Future<void> _openRss(RssSource source) async {
+    if (!source.singleUrl) {
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RssArticlesScreen(source: source),
+        ),
+      );
+      return;
+    }
+    final url = source.sourceUrl.trim();
+    if (url.toLowerCase().startsWith('http://') ||
+        url.toLowerCase().startsWith('https://')) {
+      if (!mounted) return;
+      await Navigator.pushNamed(
+        context,
+        AppRoutes.browser,
+        arguments: url,
+      );
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   /// 「规则订阅」入口格（对标原版 RssFragment header：图标 + 文字，
@@ -360,14 +337,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     // 稳定 ValueKey（sourceUrl）+ RepaintBoundary 隔离网格项重绘区域
     final item = InkWell(
       key: ValueKey(source.sourceUrl),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => RssArticlesScreen(source: source),
-          ),
-        );
-      },
+      onTap: () => _openRss(source),
       onLongPress: () => _confirmDeleteSource(source),
       borderRadius: BorderRadius.circular(8),
       child: Padding(

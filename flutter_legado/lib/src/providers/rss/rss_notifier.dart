@@ -1,12 +1,19 @@
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
+import '../../services/book_api.dart';
 import '../providers.dart';
 import 'rss_state.dart';
 
 export 'rss_state.dart';
+
+/// 对齐 Android `LocalConfig.needUpRssSources` 的版本号
+const _kRssSourceVersionKey = 'rssSourceVersion';
+const _kRssSourceVersion = 6;
 
 /// RSS Riverpod Notifier
 ///
@@ -35,11 +42,28 @@ class RssNotifier extends Notifier<RssState> {
 
     try {
       final api = ref.read(bookApiProvider);
+      await _ensureDefaultRssSources(api);
       final sources = await api.getRssSources();
       state = state.copyWith(sources: sources, isLoadingSources: false);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isLoadingSources: false);
     }
+  }
+
+  /// 首启/版本升级时导入默认订阅源（对标 DefaultData.upVersion + importDefaultRssSources）
+  Future<void> _ensureDefaultRssSources(BookApi api) async {
+    final prefs = await SharedPreferences.getInstance();
+    final version = prefs.getInt(_kRssSourceVersionKey) ?? 0;
+    if (version >= _kRssSourceVersion) return;
+
+    final existing = await api.getRssSources();
+    for (final s in existing.where((e) => e.sourceGroup == 'legado')) {
+      await api.deleteRssSource(s.sourceUrl);
+    }
+    final text =
+        await rootBundle.loadString('assets/default_data/rssSources.json');
+    await api.importRssSources(text);
+    await prefs.setInt(_kRssSourceVersionKey, _kRssSourceVersion);
   }
 
   /// 选择源并加载文章
