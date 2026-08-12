@@ -455,39 +455,38 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
       fontSize: 12,
       color: cs.onSurfaceVariant,
     );
-    return InkWell(
-      onTap: () => _notifier.toggleSelect(book.bookUrl),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Row(
-          children: [
-            Checkbox(
-              value: selected,
-              onChanged: (_) => _notifier.toggleSelect(book.bookUrl),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
+    // [UI-fix 2026-08-13] 勾选「点击书名打开书籍信息」时，信息列点击进详情、
+    // 仅 Checkbox 负责多选；避免外层 InkWell 抢走书名点击 — Auto
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          Checkbox(
+            value: selected,
+            onChanged: (_) => _notifier.toggleSelect(book.bookUrl),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: InkWell(
+              onTap: _openInfoByTitle
+                  ? () => Navigator.pushNamed(
+                        context,
+                        AppRoutes.bookInfo,
+                        arguments: book,
+                      )
+                  : () => _notifier.toggleSelect(book.bookUrl),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    onTap: _openInfoByTitle
-                        ? () => Navigator.pushNamed(
-                              context,
-                              AppRoutes.bookInfo,
-                              arguments: book,
-                            )
-                        : null,
-                    child: Text(
-                      book.name.isEmpty ? '未命名书籍' : book.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: _openInfoByTitle
-                            ? Theme.of(context).colorScheme.primary
-                            : cs.onSurface,
-                      ),
+                  Text(
+                    book.name.isEmpty ? '未命名书籍' : book.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: _openInfoByTitle
+                          ? Theme.of(context).colorScheme.primary
+                          : cs.onSurface,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -512,15 +511,16 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                   ),
                 ],
               ),
-            ),            // 删除按钮（对标原版 tv_delete）
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              tooltip: '删除',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _confirmDeleteSingle(book),
             ),
-          ],
-        ),
+          ),
+          // 删除按钮（对标原版 tv_delete）
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20),
+            tooltip: '删除',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _confirmDeleteSingle(book),
+          ),
+        ],
       ),
     );
   }
