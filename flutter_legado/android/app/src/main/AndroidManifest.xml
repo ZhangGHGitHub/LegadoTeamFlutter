@@ -17,8 +17,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- 唤醒锁（阅读时常亮） -->
+    <!-- 唤醒锁（阅读时常亮 / 听书 PARTIAL_WAKE_LOCK） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 定时任务 JobScheduler 持久化（对齐原版 setPersisted） -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- 相机权限（扫描二维码导入书源） -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -69,6 +71,12 @@
                 <data android:scheme="yuedu" />
             </intent-filter>
         </activity>
+
+        <!-- P1-16：定时任务 JobService（对齐原版 AutoTaskJobService） -->
+        <service
+            android:name=".AutoTaskJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
 
         <!-- FileProvider：用于文件分享 -->
         <provider

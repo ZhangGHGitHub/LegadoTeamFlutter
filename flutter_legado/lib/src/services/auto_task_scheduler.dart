@@ -6,7 +6,10 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'book_api.dart';
@@ -58,6 +61,9 @@ class AutoTaskScheduler with WidgetsBindingObserver {
   /// 刷新代数：并发的 [refresh] 互相作废旧一代的延迟结果
   int _generation = 0;
 
+  static const MethodChannel _jobChannel = MethodChannel('legado/auto_task_job');
+  bool _jobHandlerBound = false;
+
   /// 装配入口（app.dart initState，参考 PlatformBridgeService.navigatorKey）
   ///
   /// 注入 BookApi 并注册生命周期观察（后台恢复时重算调度），
@@ -65,7 +71,38 @@ class AutoTaskScheduler with WidgetsBindingObserver {
   void attach(BookApi api) {
     _api = api;
     WidgetsBinding.instance.addObserver(this);
+    _bindJobChannel();
     refresh();
+  }
+
+  void _bindJobChannel() {
+    if (_jobHandlerBound || !Platform.isAndroid) return;
+    _jobHandlerBound = true;
+    _jobChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onJobDue') {
+        await _onTimer();
+      }
+    });
+  }
+
+  Future<void> _syncNativeSchedule(Duration delay) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _jobChannel.invokeMethod('schedule', {
+        'delayMs': delay.inMilliseconds.clamp(0, 1 << 30),
+      });
+    } catch (e) {
+      debugPrint('[AutoTaskScheduler] JobScheduler schedule failed: $e');
+    }
+  }
+
+  Future<void> _cancelNativeSchedule() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _jobChannel.invokeMethod('cancelAll');
+    } catch (e) {
+      debugPrint('[AutoTaskScheduler] JobScheduler cancel failed: $e');
+    }
   }
 
   /// 应用自后台恢复：Timer 在挂起期间可能已过期，重算一次调度
@@ -91,6 +128,7 @@ class AutoTaskScheduler with WidgetsBindingObserver {
     _generation++;
     _timer?.cancel();
     _timer = null;
+    await _cancelNativeSchedule();
   }
 
   /// 重算调度（对标 AutoTaskScheduler.refresh）
@@ -106,6 +144,7 @@ class AutoTaskScheduler with WidgetsBindingObserver {
       if (!await _isEnabled()) {
         _timer?.cancel();
         _timer = null;
+        await _cancelNativeSchedule();
         return;
       }
       final rules = await api.autoTaskListRules();
@@ -123,6 +162,7 @@ class AutoTaskScheduler with WidgetsBindingObserver {
       if (runAt == null) return;
       final delay = Duration(milliseconds: (runAt - now).clamp(0, 1 << 62));
       _timer = Timer(delay, _onTimer);
+      await _syncNativeSchedule(delay);
       debugPrint(
         '[AutoTaskScheduler] 下次执行：${DateTime.fromMillisecondsSinceEpoch(runAt)}'
         '（${delay.inSeconds}s 后）',

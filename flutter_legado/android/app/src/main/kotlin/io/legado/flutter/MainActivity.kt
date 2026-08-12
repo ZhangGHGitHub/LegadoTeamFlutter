@@ -16,7 +16,9 @@ class MainActivity : FlutterActivity() {
     private val mediaSessionBridge = MediaSessionBridge()
 
     private var deepLinkChannel: MethodChannel? = null
+    private var autoTaskJobChannel: MethodChannel? = null
     private var initialDeepLink: String? = null
+    private var pendingAutoTaskDue = false
 
     companion object {
         private const val CHANNEL_WEBVIEW = "legado/webview"
@@ -80,11 +82,26 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // P1-16：定时任务 JobScheduler 真后台桥
+        autoTaskJobChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, AutoTaskJobBridge.CHANNEL
+        )
+        AutoTaskJobBridge.setMethodChannel(autoTaskJobChannel)
+        autoTaskJobChannel?.setMethodCallHandler { call, result ->
+            AutoTaskJobBridge.handleMethodCall(call, result, this)
+        }
+        if (pendingAutoTaskDue) {
+            pendingAutoTaskDue = false
+            autoTaskJobChannel?.invokeMethod("onJobDue", null)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initialDeepLink = intent?.dataString
+        pendingAutoTaskDue =
+            intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false) == true
         applyThemeStatusBarColor()
     }
 
@@ -94,6 +111,10 @@ class MainActivity : FlutterActivity() {
         val link = intent.dataString
         if (!link.isNullOrEmpty()) {
             deepLinkChannel?.invokeMethod("onLink", link)
+        }
+        if (intent.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false)) {
+            autoTaskJobChannel?.invokeMethod("onJobDue", null)
+                ?: run { pendingAutoTaskDue = true }
         }
     }
 
