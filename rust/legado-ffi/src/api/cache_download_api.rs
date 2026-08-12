@@ -4,7 +4,7 @@
 //!
 //! - 复用正文抓取链路 [`crate::api::reader::get_chapter_content_full`]
 //!   （在线书抓取后自动写缓存；本地书解析后经 R5 [`crate::api::cache_api::save_chapter_content`] 写入）；
-//! - 任务表为进程内内存表（重启即失效，对齐 Kotlin 前台服务生命周期语义）；
+//! - 任务表进程内内存 + caches KV 落库（重启后恢复进行中任务）；
 //! - 取消机制对照书源校验流（`source_check_api::CHECK_CANCELLED`）的
 //!   AtomicBool 模式，每任务独立取消令牌；
 //! - worker 运行于独立系统线程：正文抓取内部含 `runtime::block_on`，
@@ -16,19 +16,26 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::book_chapter_repository::BookChapterRepository;
+use legado_db::repository::cache_repository::CacheRepository;
 use legado_db::BookRepository;
+use serde::{Deserialize, Serialize};
 
 use crate::db_state::with_database;
 
-/// 任务 ID 分配器（进程内递增）
+/// 任务 ID 分配器（进程内递增；启动时从 DB 恢复最大值）
 static NEXT_TASK_ID: AtomicU64 = AtomicU64::new(1);
 
 /// 进程内任务表：task_id → 任务内部状态
-///（LazyLock：`HashMap::new` 非 const fn，静态初始化需延迟构造）
 static TASKS: LazyLock<Mutex<HashMap<u64, Arc<TaskInner>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// 任务内部状态（跨线程共享）
+/// 是否已从 DB 恢复过进行中任务
+static RESTORED: AtomicBool = AtomicBool::new(false);
+
+const PERSIST_PREFIX: &str = "cacheDownloadTask:";
+const PERSIST_INDEX: &str = "cacheDownloadTaskIndex";
+const PERSIST_NEXT_ID: &str = "cacheDownloadNextId";
+
 struct TaskInner {
     book_url: String,
     start_chapter: i32,
@@ -36,41 +43,144 @@ struct TaskInner {
     total: i32,
     completed: AtomicI32,
     failed: AtomicI32,
-    /// 取消令牌（对照 source_check_api 的 AtomicBool 模式）
+    next_index: AtomicI32,
     cancel: AtomicBool,
-    /// 终态标记：running / completed / cancelled / failed
     status: Mutex<String>,
 }
 
-/// 批量下载任务快照（camelCase 序列化，跨 FFI 以 JSON 传递）
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CacheDownloadTask {
-    /// 任务 ID
     pub task_id: u64,
-    /// 书籍 bookUrl
     pub book_url: String,
-    /// 状态：running / completed / cancelled / failed（progress 查询未知任务时为 notFound）
     pub status: String,
-    /// 计划下载章节总数
     pub total: i32,
-    /// 已完成章节数
     pub completed: i32,
-    /// 失败章节数
     pub failed: i32,
 }
 
-/// 创建批量缓存下载任务，返回任务 ID
-///
-/// - `book_url` — 书籍 bookUrl（必须已入库且有章节目录）
-/// - `start_chapter` / `end_chapter` — 起止章节索引（含端点）；
-///   负值按 0 处理，超出目录末章按末章截断
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedTask {
+    task_id: u64,
+    book_url: String,
+    start_chapter: i32,
+    end_chapter: i32,
+    total: i32,
+    completed: i32,
+    failed: i32,
+    next_index: i32,
+    status: String,
+}
+
+fn persist_key(task_id: u64) -> String {
+    format!("{PERSIST_PREFIX}{task_id}")
+}
+
+fn persist_snapshot(task_id: u64, task: &TaskInner) {
+    let status = task
+        .status
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "running".to_string());
+    let row = PersistedTask {
+        task_id,
+        book_url: task.book_url.clone(),
+        start_chapter: task.start_chapter,
+        end_chapter: task.end_chapter,
+        total: task.total,
+        completed: task.completed.load(Ordering::SeqCst),
+        failed: task.failed.load(Ordering::SeqCst),
+        next_index: task.next_index.load(Ordering::SeqCst),
+        status,
+    };
+    let Ok(json) = serde_json::to_string(&row) else {
+        return;
+    };
+    let _ = with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        repo.put(&persist_key(task_id), &json, 0)?;
+        let mut ids: Vec<u64> = repo
+            .get(PERSIST_INDEX)?
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        if !ids.contains(&task_id) {
+            ids.push(task_id);
+            ids.sort_unstable();
+            let idx = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into());
+            repo.put(PERSIST_INDEX, &idx, 0)?;
+        }
+        let next = NEXT_TASK_ID.load(Ordering::SeqCst);
+        repo.put(PERSIST_NEXT_ID, &next.to_string(), 0)?;
+        Ok(())
+    });
+}
+
+fn ensure_restored() {
+    if RESTORED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let restored: Vec<PersistedTask> = with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        if let Some(next_s) = repo.get(PERSIST_NEXT_ID)? {
+            if let Ok(next) = next_s.parse::<u64>() {
+                NEXT_TASK_ID.fetch_max(next, Ordering::SeqCst);
+            }
+        }
+        let ids: Vec<u64> = repo
+            .get(PERSIST_INDEX)?
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for id in ids {
+            if let Some(json) = repo.get(&persist_key(id))? {
+                if let Ok(row) = serde_json::from_str::<PersistedTask>(&json) {
+                    out.push(row);
+                }
+            }
+        }
+        Ok(out)
+    })
+    .unwrap_or_default();
+
+    for row in restored {
+        if row.status != "running" {
+            continue;
+        }
+        let task_id = row.task_id;
+        NEXT_TASK_ID.fetch_max(task_id + 1, Ordering::SeqCst);
+        let task = Arc::new(TaskInner {
+            book_url: row.book_url,
+            start_chapter: row.start_chapter,
+            end_chapter: row.end_chapter,
+            total: row.total,
+            completed: AtomicI32::new(row.completed),
+            failed: AtomicI32::new(row.failed),
+            next_index: AtomicI32::new(row.next_index.max(row.start_chapter)),
+            cancel: AtomicBool::new(false),
+            status: Mutex::new("running".to_string()),
+        });
+        if let Ok(mut map) = TASKS.lock() {
+            if map.contains_key(&task_id) {
+                continue;
+            }
+            map.insert(task_id, Arc::clone(&task));
+        } else {
+            continue;
+        }
+        let _ = std::thread::Builder::new()
+            .name(format!("cache-download-resume-{task_id}"))
+            .spawn(move || run_download(task_id, task));
+    }
+}
+
 pub fn cache_download_start(
     book_url: &str,
     start_chapter: i32,
     end_chapter: i32,
 ) -> LegadoResult<u64> {
-    // 同一本书已有进行中任务时复用返回既有 ID（契约 §2.43.3）
+    ensure_restored();
+
     {
         let map = TASKS
             .lock()
@@ -91,7 +201,6 @@ pub fn cache_download_start(
         }
     }
 
-    // 书与章节目录校验
     let book_exists = with_database(|db| {
         BookRepository::new(db.connection()).find_by_url(book_url)
     })?
@@ -108,7 +217,6 @@ pub fn cache_download_start(
         )));
     }
 
-    // 区间裁剪：负值按 0、超出按末章
     let start = start_chapter.max(0);
     let end = end_chapter.min(chapter_count as i32 - 1);
     if end < start {
@@ -125,6 +233,7 @@ pub fn cache_download_start(
         total: end - start + 1,
         completed: AtomicI32::new(0),
         failed: AtomicI32::new(0),
+        next_index: AtomicI32::new(start),
         cancel: AtomicBool::new(false),
         status: Mutex::new("running".to_string()),
     });
@@ -134,8 +243,8 @@ pub fn cache_download_start(
         .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?
         .insert(task_id, Arc::clone(&task));
 
-    // worker 独立系统线程（正文抓取内部含 runtime::block_on，
-    // 不可在 tokio worker 内嵌套执行）
+    persist_snapshot(task_id, &task);
+
     std::thread::Builder::new()
         .name(format!("cache-download-{task_id}"))
         .spawn(move || run_download(task_id, task))
@@ -144,18 +253,17 @@ pub fn cache_download_start(
     Ok(task_id)
 }
 
-/// worker 主循环：逐章抓取 + 写缓存，支持取消
 fn run_download(task_id: u64, task: Arc<TaskInner>) {
     let book_url = task.book_url.clone();
-    for index in task.start_chapter..=task.end_chapter {
-        // 取消检查（对照 CHECK_CANCELLED 置位即停）
+    let mut index = task.next_index.load(Ordering::SeqCst);
+    while index <= task.end_chapter {
         if task.cancel.load(Ordering::SeqCst) {
             set_status(&task, "cancelled");
+            persist_snapshot(task_id, &task);
             return;
         }
 
-        let result = download_one(&book_url, index);
-        match result {
+        match download_one(&book_url, index) {
             Ok(()) => {
                 task.completed.fetch_add(1, Ordering::SeqCst);
             }
@@ -163,19 +271,18 @@ fn run_download(task_id: u64, task: Arc<TaskInner>) {
                 task.failed.fetch_add(1, Ordering::SeqCst);
             }
         }
+        index += 1;
+        task.next_index.store(index, Ordering::SeqCst);
+        persist_snapshot(task_id, &task);
     }
 
-    // 终态判定：全部失败 → failed；否则 completed（部分失败亦按完成，
-    // 对齐 Kotlin CacheActivity 逐章容错语义）
     let all_failed = task.failed.load(Ordering::SeqCst) == task.total;
     set_status(&task, if all_failed { "failed" } else { "completed" });
-    let _ = task_id;
+    persist_snapshot(task_id, &task);
 }
 
-/// 抓取单章并写入缓存
 fn download_one(book_url: &str, chapter_index: i32) -> LegadoResult<()> {
     if crate::api::reader::is_local_book(book_url) {
-        // 本地书：解析原文（不净化）+ R5 写入缓存
         let chapter = with_database(|db| {
             BookChapterRepository::new(db.connection())
                 .find_by_book_url_and_index(book_url, chapter_index)
@@ -194,14 +301,13 @@ fn download_one(book_url: &str, chapter_index: i32) -> LegadoResult<()> {
         )?;
         Ok(())
     } else {
-        // 在线书：正文抓取链路内部完成「缓存检查→网络抓取→缓存写入」
         crate::api::reader::get_chapter_content_full(book_url, chapter_index)?;
         Ok(())
     }
 }
 
-/// 查询任务进度；未知任务返回 `status=notFound` 的占位快照
 pub fn cache_download_progress(task_id: u64) -> LegadoResult<CacheDownloadTask> {
+    ensure_restored();
     let task = TASKS
         .lock()
         .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?
@@ -220,8 +326,8 @@ pub fn cache_download_progress(task_id: u64) -> LegadoResult<CacheDownloadTask> 
     })
 }
 
-/// 取消任务；任务不存在返回 false（终态任务的取消为幂等 no-op）
 pub fn cache_download_cancel(task_id: u64) -> LegadoResult<bool> {
+    ensure_restored();
     let task = TASKS
         .lock()
         .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?
@@ -236,20 +342,48 @@ pub fn cache_download_cancel(task_id: u64) -> LegadoResult<bool> {
     }
 }
 
-/// 列出所有任务快照（按任务 ID 升序）
 pub fn cache_download_list() -> LegadoResult<Vec<CacheDownloadTask>> {
+    ensure_restored();
     let map = TASKS
         .lock()
         .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?;
     let mut ids: Vec<u64> = map.keys().copied().collect();
+    if let Ok(db_ids) = with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        Ok(repo
+            .get(PERSIST_INDEX)?
+            .and_then(|s| serde_json::from_str::<Vec<u64>>(&s).ok())
+            .unwrap_or_default())
+    }) {
+        for id in db_ids {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
     ids.sort_unstable();
-    Ok(ids
-        .into_iter()
-        .filter_map(|id| map.get(&id).map(|t| snapshot(id, t)))
-        .collect())
+    let mut out = Vec::new();
+    for id in ids {
+        if let Some(t) = map.get(&id) {
+            out.push(snapshot(id, t));
+        } else if let Ok(Some(json)) = with_database(|db| {
+            CacheRepository::new(db.connection()).get(&persist_key(id))
+        }) {
+            if let Ok(row) = serde_json::from_str::<PersistedTask>(&json) {
+                out.push(CacheDownloadTask {
+                    task_id: row.task_id,
+                    book_url: row.book_url,
+                    status: row.status,
+                    total: row.total,
+                    completed: row.completed,
+                    failed: row.failed,
+                });
+            }
+        }
+    }
+    Ok(out)
 }
 
-/// 构造任务快照
 fn snapshot(task_id: u64, task: &TaskInner) -> CacheDownloadTask {
     let status = task
         .status
@@ -266,7 +400,6 @@ fn snapshot(task_id: u64, task: &TaskInner) -> CacheDownloadTask {
     }
 }
 
-/// 写入终态/状态（锁中毒时静默降级）
 fn set_status(task: &TaskInner, status: &str) {
     if let Ok(mut guard) = task.status.lock() {
         *guard = status.to_string();
