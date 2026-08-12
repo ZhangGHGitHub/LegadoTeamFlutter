@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../routes.dart';
+import '../utils/legado_deep_link.dart';
+import 'deep_link_service.dart';
 
 /// Rust 平台桥接载荷拦截执行服务（Task #114 批次2 跨轨管线③） — QoderCN
 ///
@@ -470,14 +472,18 @@ class PlatformBridgeService {
     }
   }
 
-  /// openUrl → http/https 走应用内浏览器；其他协议（legado:// / yuedu:// 等）
-  /// 交由系统处理。
-  /// TODO(QoderCN，批次3)：legado:// / yuedu:// 导入协议接入 AssociationScreen
-  /// 书源识别流程（需要 UI 轨配合路由参数）。
+  /// openUrl → http/https 走应用内浏览器；legado:// / yuedu:// 走关联导入；
+  /// 其他协议交由系统处理。
   void _openUrl({required String url, required String mimeType}) {
     if (url.isEmpty) return;
     if (url.startsWith('http://') || url.startsWith('https://')) {
       _showBrowser(url: url, html: '');
+      return;
+    }
+    if (LegadoDeepLink.isImportScheme(url)) {
+      // 忽略未 await：深链导航为 fire-and-forget UI 动作
+      // ignore: unawaited_futures
+      DeepLinkService.instance.handleUrl(url);
       return;
     }
     final uri = Uri.tryParse(url);

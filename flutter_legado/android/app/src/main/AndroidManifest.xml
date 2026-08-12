@@ -60,6 +60,14 @@
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
+            <!-- legado:// / yuedu:// 一键导入（对齐原版 OnLineImportActivity） -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="legado" />
+                <data android:scheme="yuedu" />
+            </intent-filter>
         </activity>
 
         <!-- FileProvider：用于文件分享 -->

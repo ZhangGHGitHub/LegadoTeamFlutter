@@ -19,6 +19,42 @@ class AssociationScreen extends ConsumerStatefulWidget {
 
 class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   final _urlController = TextEditingController();
+  bool _bootstrapped = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bootstrapped) return;
+    _bootstrapped = true;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final url = args['url'];
+      final typeName = args['type'];
+      final autoLoad = args['autoLoad'] == true;
+      if (url is String && url.isNotEmpty) {
+        _urlController.text = url;
+        final type = _parseType(typeName);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ref.read(associationNotifierProvider.notifier).bootstrapFromDeepLink(
+                type: type,
+                srcUrl: url,
+                autoLoad: autoLoad && type != null,
+              );
+        });
+      }
+    }
+  }
+
+  ImportType? _parseType(Object? name) {
+    return switch (name) {
+      'bookSource' => ImportType.bookSource,
+      'rssSource' => ImportType.rssSource,
+      'replaceRule' => ImportType.replaceRule,
+      'theme' => ImportType.theme,
+      _ => null,
+    };
+  }
 
   @override
   void dispose() {

@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
+import '../providers/association/association_state.dart';
 import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../providers/source_check/check_source_notifier.dart';
 import '../routes.dart';
 import '../services/source_import_service.dart' show SourcePreview;
 import '../theme/app_colors.dart';
+import '../utils/legado_deep_link.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
@@ -1511,9 +1513,22 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       return;
     }
 
-    if (trimmed.startsWith('legado://')) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('legado 协议链接请使用「关联导入」页处理')),
+    if (trimmed.startsWith('legado://') || trimmed.startsWith('yuedu://')) {
+      final parsed = LegadoDeepLink.tryParse(trimmed);
+      await Navigator.of(context).pushNamed(
+        AppRoutes.association,
+        arguments: <String, dynamic>{
+          'raw': trimmed,
+          'url': parsed?.srcUrl ?? '',
+          if (parsed?.importType != null)
+            'type': switch (parsed!.importType!) {
+              ImportType.bookSource => 'bookSource',
+              ImportType.rssSource => 'rssSource',
+              ImportType.replaceRule => 'replaceRule',
+              ImportType.theme => 'theme',
+            },
+          'autoLoad': parsed?.importType != null,
+        },
       );
       return;
     }

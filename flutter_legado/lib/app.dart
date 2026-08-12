@@ -11,6 +11,7 @@ import 'src/providers/theme/theme_colors_notifier.dart';
 import 'src/providers/theme/theme_notifier.dart';
 import 'src/routes.dart';
 import 'src/services/auto_task_scheduler.dart';
+import 'src/services/deep_link_service.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/theme/app_theme.dart';
 import 'src/utils/app_route_observer.dart';
@@ -62,6 +63,10 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     //（Task #146，对齐原版 App.kt 启动时 AutoTaskScheduler.refresh；
     // 引擎已在 main.dart 先行初始化，此处可直接注入 BookApi） — QoderCN
     AutoTaskScheduler.instance.attach(ref.read(bookApiProvider));
+    // P1-11：监听系统 legado:// / yuedu:// 深链 → Association
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      DeepLinkService.instance.attach(PlatformBridgeService.navigatorKey);
+    });
   }
 
   @override

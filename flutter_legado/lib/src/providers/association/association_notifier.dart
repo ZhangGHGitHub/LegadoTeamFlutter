@@ -92,6 +92,28 @@ class AssociationNotifier extends Notifier<AssociationState> {
     state = const AssociationState();
   }
 
+  /// 深链 / 扫码预填：设置类型与 URL，可选自动拉取预览
+  Future<void> bootstrapFromDeepLink({
+    ImportType? type,
+    required String srcUrl,
+    bool autoLoad = true,
+  }) async {
+    final resolvedType = type ?? ImportType.bookSource;
+    state = state.copyWith(
+      type: resolvedType,
+      source: ImportSource.url,
+      urlInput: srcUrl,
+      step: type == null ? ImportStep.selectType : ImportStep.inputSource,
+      previewItems: [],
+      error: null,
+      lastResult: null,
+    );
+    if (autoLoad && type != null && srcUrl.isNotEmpty) {
+      state = state.copyWith(step: ImportStep.preview);
+      await loadFromUrl(srcUrl);
+    }
+  }
+
   /// 从 URL 加载预览
   Future<void> loadFromUrl(String url) async {
     state = state.copyWith(isLoading: true, error: null);

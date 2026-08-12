@@ -1,6 +1,5 @@
 package io.legado.flutter
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.util.TypedValue
@@ -16,6 +15,9 @@ class MainActivity : FlutterActivity() {
     private val filePickerBridge = FilePickerBridge()
     private val mediaSessionBridge = MediaSessionBridge()
 
+    private var deepLinkChannel: MethodChannel? = null
+    private var initialDeepLink: String? = null
+
     companion object {
         private const val CHANNEL_WEBVIEW = "legado/webview"
         private const val CHANNEL_TTS = "legado/tts"
@@ -23,6 +25,7 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL_NOTIFICATION = "legado/notification"
         private const val CHANNEL_BRIGHTNESS = "io.legado.app/brightness"
         private const val CHANNEL_MEDIA_SESSION = "legado/media_session"
+        private const val CHANNEL_DEEP_LINK = "legado/deep_link"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -66,11 +69,32 @@ class MainActivity : FlutterActivity() {
         mediaSessionChannel.setMethodCallHandler { call, result ->
             mediaSessionBridge.handleMethodCall(call, result, this)
         }
+
+        // P1-11：legado:// / yuedu:// 深链
+        deepLinkChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, CHANNEL_DEEP_LINK
+        )
+        deepLinkChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getInitialLink" -> result.success(initialDeepLink)
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        initialDeepLink = intent?.dataString
         applyThemeStatusBarColor()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val link = intent.dataString
+        if (!link.isNullOrEmpty()) {
+            deepLinkChannel?.invokeMethod("onLink", link)
+        }
     }
 
     override fun onPostResume() {
