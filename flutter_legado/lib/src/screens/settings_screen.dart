@@ -227,14 +227,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 showDisclosure: true,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.autoTasks),
               ),
-              // [UI-fix v2.0.3 | 2026-08-08] 定时服务应用内调度器已接通（Task #146）；
-              // 真后台（进程被杀后仍调度）需 WorkManager，保留诚实标注 — Qoder
-              // 真后台需 WorkManager/前台服务；本轮保持应用内调度 + 诚实标注
+              // [UI-fix 2026-08-13] P1-16：JobScheduler + AutoTaskJobService 真后台已接通；
+              // 冷启动无 FlutterEngine 时 Job 会拉起 MainActivity 再执行 — Auto
               SwitchListTile(
                 secondary: const Icon(Icons.autorenew),
                 title: const Text('定时任务服务'),
                 subtitle: const Text(
-                  '仅前台应用内调度；退出或杀进程后不执行（真后台未移植）',
+                  '应用内调度 + JobScheduler 真后台（进程被杀后仍可到期唤醒）',
                 ),
                 value: _autoTaskService,
                 onChanged: _toggleAutoTaskService,
