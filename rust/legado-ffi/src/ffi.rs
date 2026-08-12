@@ -222,6 +222,25 @@ pub mod ffi {
         Ok(())
     }
 
+    // ─── cURL ↔ AnalyzeUrl（P1-14，对齐 CurlAnalyzeUrlConverter） ─
+
+    /// 判断文本是否形似 cURL 命令（对齐 Kotlin `CurlAnalyzeUrlConverter.looksLikeCurl`）
+    pub fn looks_like_curl(text: String) -> Result<bool, BridgeError> {
+        Ok(legado_parser::looks_like_curl(&text))
+    }
+
+    /// cURL 命令 → AnalyzeUrl 模板字符串（对齐 `curlToAnalyzeUrl`）
+    ///
+    /// 失败时 BridgeError.message 含 `[CURL_*]` 前缀，便于 UI 映射提示。
+    pub fn curl_to_analyze_url(text: String) -> Result<String, BridgeError> {
+        Ok(legado_parser::curl_to_analyze_url(&text)?)
+    }
+
+    /// AnalyzeUrl 模板字符串 → cURL 命令（对齐 `analyzeUrlToCurl`）
+    pub fn analyze_url_to_curl(text: String) -> Result<String, BridgeError> {
+        Ok(legado_parser::analyze_url_to_curl(&text)?)
+    }
+
     // ─── 书源校验（Task #87，加法式新增） ─────────────────────
 
     /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）

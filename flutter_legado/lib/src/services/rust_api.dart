@@ -256,6 +256,18 @@ class RustApi implements BookApi {
   @override
   Future<void> clearCookie(String url) => bridge.clearCookie(url: url);
 
+  @override
+  Future<bool> looksLikeCurl(String text) => bridge.looksLikeCurl(text: text);
+
+  @override
+  Future<String> curlToAnalyzeUrl(String text) =>
+      bridge.curlToAnalyzeUrl(text: text);
+
+  @override
+  Future<String> analyzeUrlToCurl(String text) =>
+      bridge.analyzeUrlToCurl(text: text);
+
+
   /// 删除书源
   Future<void> deleteBookSource(String sourceUrl) =>
       bridge.sourceDelete(sourceUrl: sourceUrl);

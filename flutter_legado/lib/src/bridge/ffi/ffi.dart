@@ -107,6 +107,18 @@ Future<void> setSourceVariable({
 Future<void> clearCookie({required String url}) =>
     RustLib.instance.api.crateFfiFfiClearCookie(url: url);
 
+/// 判断文本是否形似 cURL 命令（契约 §2.3 looksLikeCurl，2026-08-12 P1-14）
+Future<bool> looksLikeCurl({required String text}) =>
+    RustLib.instance.api.crateFfiFfiLooksLikeCurl(text: text);
+
+/// cURL → AnalyzeUrl 模板（契约 §2.3 curlToAnalyzeUrl，2026-08-12 P1-14）
+Future<String> curlToAnalyzeUrl({required String text}) =>
+    RustLib.instance.api.crateFfiFfiCurlToAnalyzeUrl(text: text);
+
+/// AnalyzeUrl → cURL（契约 §2.3 analyzeUrlToCurl，2026-08-12 P1-14）
+Future<String> analyzeUrlToCurl({required String text}) =>
+    RustLib.instance.api.crateFfiFfiAnalyzeUrlToCurl(text: text);
+
 /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
 ///
 /// 返回 CheckResult JSON：`source_url` / `search_ok` / `toc_ok` /

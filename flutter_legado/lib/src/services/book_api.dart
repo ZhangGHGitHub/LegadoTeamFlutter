@@ -70,6 +70,15 @@ abstract class BookApi {
   /// 对齐原版 `CookieStore.removeCookie` / 编辑页 `menu_clear_cookie`。
   Future<void> clearCookie(String url);
 
+  /// 判断文本是否形似 cURL 命令（契约 §2.3 looksLikeCurl，2026-08-12 P1-14）
+  Future<bool> looksLikeCurl(String text);
+
+  /// cURL → AnalyzeUrl 模板（契约 §2.3 curlToAnalyzeUrl，2026-08-12 P1-14）
+  Future<String> curlToAnalyzeUrl(String text);
+
+  /// AnalyzeUrl → cURL（契约 §2.3 analyzeUrlToCurl，2026-08-12 P1-14）
+  Future<String> analyzeUrlToCurl(String text);
+
   /// 删除书源
   Future<void> deleteBookSource(String sourceUrl);
 

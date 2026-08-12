@@ -15,6 +15,7 @@
 | 2026-08-12 | 远程书库（P1-5）加法式新增——`webdavDownloadFile`（§2.28 WebDAV 云同步，镜像 `webdavUploadFile`，二进制落盘）；远程服务器列表沿用 Flutter `SettingsService` 持久化（对齐原版 `servers` 表语义，不新增 Server CRUD FFI）。附录合计 239→240，BookApi 口径 230→231 |
 | 2026-08-12 | P1-2 加法式新增——`clearCookie`（§2.3 书源操作，对齐原版 `CookieStore.removeCookie`）：按 URL 二级域名清除持久层 + 共享 HTTP 内存 CookieStore + JS 宿主 Cookie；附录合计 240→241，BookApi 口径 231→232 |
 | 2026-08-12 | P0-2 听书流媒体取址：升级既有 `getAudioChapterMedia`（§2.26）语义——对齐原版 `AudioPlay.loadRemotePlayUrl` → `WebBook.getContent`，返回可播 `mediaUrl` 等元数据；Rust FFI `audioGetChapterMedia` 加法式落地。BookApi 方法数不变（签名兼容，返回字段扩展） |
+| 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
 
 ---
 
@@ -63,9 +64,9 @@
 ## 2. 方法清单
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
-> 为基准，BookApi 接口当前共 **232 个方法**（含 2026-08-12 `webdavDownloadFile` / `clearCookie`）。
-> 附录行合计 241 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
-> 扣除后 231 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 232，与 BookApi 闭合；详见附录口径说明。
+> 为基准，BookApi 接口当前共 **235 个方法**（含 2026-08-12 `webdavDownloadFile` / `clearCookie` / P1-14 curl 三方法）。
+> 附录行合计 244 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
+> 扣除后 234 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 235，与 BookApi 闭合；详见附录口径说明。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -88,7 +89,7 @@
 | `setBookGroup(String bookUrl, int groupId)` | bookUrl, groupId | `Future<void>` | 设置书籍分组 |
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 
-### 2.3 书源操作（21 个方法）
+### 2.3 书源操作（24 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -113,6 +114,9 @@
 | `cancelVerificationRequest(String key)` | key: resultKey | `Future<bool>` | 取消验证码请求（对齐 Kotlin `checkResult`：以空结果唤醒等待方），返回是否命中（Task #90，加法式新增） |
 | `setSourceVariable(String sourceUrl, String variable)` | sourceUrl: 书源 URL；variable: 自定义变量内容（空串=清除） | `Future<void>` | 设置书源自定义变量（对齐原版 `source.setVariable`），单列 UPDATE 语义仅更新 `variable` 单列，规避 `updateBookSource` 全行更新风险；variable 为空串表示清除该变量。错误码：Internal（书源不存在）/ Db（写入失败）。**DB schema 变更预告**：`book_sources` 表补 `variable` 列（幂等迁移，SCHEMA_VERSION 102→103）（台账 §5.11-3，第三批后置项，Task #63，加法式新增） |
 | `clearCookie(String url)` | url: 书源/订阅源 URL（或任意含域名的地址） | `Future<void>` | 清除该 URL 所属二级域名的 Cookie（对齐原版 `CookieStore.removeCookie` / 编辑页 `menu_clear_cookie`）。清除范围：① cookies 表持久层；② 共享 HTTP 客户端内存 CookieStore；③ JS 宿主 `java.clearCookies` 内存表。差距说明：原版另清 WebView Cookie / 会话 CacheManager，本实现无独立 WebView Cookie 层（与 MCP `clear_cookies` 一致）。url 为空 → Internal。加法式新增（2026-08-12 P1-2） |
+| `looksLikeCurl(String text)` | text: 待判定文本 | `Future<bool>` | 判断是否形似 cURL 命令（对齐 `CurlAnalyzeUrlConverter.looksLikeCurl`）。加法式新增（2026-08-12 P1-14） |
+| `curlToAnalyzeUrl(String text)` | text: cURL 命令 | `Future<String>` | cURL → AnalyzeUrl 模板（`url` 或 `url,{options}`）。错误消息含 `[CURL_*]` 前缀。加法式新增（2026-08-12 P1-14） |
+| `analyzeUrlToCurl(String text)` | text: AnalyzeUrl 模板 | `Future<String>` | AnalyzeUrl → cURL 命令。错误消息含 `[CURL_*]` 前缀。加法式新增（2026-08-12 P1-14） |
 
 > ℹ️ **登录 UI V2 动态状态协议（#402/#488）**：Rust 侧 `ffi::source_is_login_ui_v2 / source_login_ui_v2 / source_login_action_v2`（核心实现 `legado-core/src/login_ui_v2.rs`，对齐 Kotlin `LoginUiV2.kt` + `BaseSource.evalLoginUiV2/evalLoginActionV2`）。`loginUi` 为 `{"version":2}` 标记时启用；登录脚本取自 `mainJs`（JS 单文件书源）或 `loginUrl`，须实现 `loginUi(state)` / `loginAction(action, state, form)`。`userInputJson` 契约：`{"action":"...","stateJson":"...","formJson":{...}}`（stateJson/formJson 支持字符串或对象）。JS 返回 null/undefined 时返回空字符串；需 quickjs 特性构建。RowUi V2 扩展字段：key/hint/value/options/countdown。冻结契约保持不变，本组方法为加法式新增。
 >
@@ -743,7 +747,7 @@
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 9 |
-| 3 | 书源操作 | 21 |
+| 3 | 书源操作 | 24 |
 | 4 | 搜索操作 | 8 |
 | 5 | RSS 源操作 | 9 |
 | 6 | 本地书籍操作 | 4 |
@@ -784,17 +788,17 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **241** |
+| | **合计（§2.1–§2.43 附录行合计）** | **244** |
 
-> 口径说明（Task #55 F6，2026-08-10 校准；含 2026-08-12 `webdavDownloadFile` / `clearCookie`，基准 = `book_api.dart` 程序化计数 **232**）：
-> - **与 BookApi 闭合**：附录行合计 241 − 尚未封装进 BookApi 的 FFI 10 个
+> 口径说明（Task #55 F6，2026-08-10 校准；含 2026-08-12 `webdavDownloadFile` / `clearCookie` / P1-14 curl 三方法，基准 = `book_api.dart` 程序化计数 **235**）：
+> - **与 BookApi 闭合**：附录行合计 244 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 231；
->   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **232**。
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 234；
+>   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **235**。
 >   第四批 3 项（`setCustomHosts` / `setMcpPort` / `searchCoverRules`）均为 BookApi 封装口径方法；
->   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1（230 + 2 = 232）。
-> - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 21 行（含 `setSourceVariable` / `clearCookie`）；
+>   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1 + curl 三方法 3（230 + 5 = 235）。
+> - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 24 行（含 `setSourceVariable` / `clearCookie` / curl 三方法）；
 >   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 5（含 reviewGetReplies）；
 >   行 4 按 §2.4 标题为 8（原 7 + 第四批 `searchCoverRules` 1）；行 20 按 §2.20 标题为 3（原 2 + 第四批 `setCustomHosts` 1）；
 >   行 22 按 §2.22 标题为 5（原 4 + 第四批 `setMcpPort` 1）。

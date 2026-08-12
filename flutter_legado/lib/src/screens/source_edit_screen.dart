@@ -19,6 +19,7 @@ import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../routes.dart';
 import '../widgets/loading_indicator.dart';
+import 'code_edit_screen.dart';
 import 'source_login_screen.dart';
 
 /// 书源编辑页面
@@ -76,6 +77,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
 
   /// 所有文本字段控制器（按 key 惰性创建）
   final Map<String, TextEditingController> _ctrls = {};
+  final Map<String, FocusNode> _focusNodes = {};
+  String? _focusedFieldKey;
+  final Map<String, String> _fieldLabels = {};
 
   // 开关状态（非文本字段，对标原版可折叠「设置」面板）
   bool _enabled = true;
@@ -102,6 +106,15 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   /// 按 key 惰性获取控制器
   TextEditingController _ctrl(String key) =>
       _ctrls.putIfAbsent(key, () => TextEditingController());
+
+  FocusNode _focus(String key) => _focusNodes.putIfAbsent(
+    key,
+    () => FocusNode()..addListener(() {
+      if (_focusNodes[key]?.hasFocus == true) {
+        _focusedFieldKey = key;
+      }
+    }),
+  );
 
   /// 书源类型（对标原版 sp_type / @array/source_type）
   static const _typeLabels = ['文本', '音频', '图片', '文件', '视频'];
@@ -291,6 +304,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   void dispose() {
     for (final controller in _ctrls.values) {
       controller.dispose();
+    }
+    for (final node in _focusNodes.values) {
+      node.dispose();
     }
     _testKeywordCtrl.dispose();
     super.dispose();
@@ -629,6 +645,8 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       case 'log':
         // [UI-FIX v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
         Navigator.pushNamed(context, AppRoutes.appLog);
+      case 'json_edit':
+        await _showJsonEdit();
       case 'help':
         _showHelp();
     }
@@ -885,11 +903,40 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     }
   }
 
-  /// 全屏编辑（对标原版 menu_fullscreen_edit：整体编辑书源 JSON）
+  /// 全屏代码编辑（对标原版 menu_fullscreen_edit → CodeEditActivity）
+  ///
+  /// 需当前聚焦某一表单字段；无焦点时提示。JSON 整体编辑见 [_showJsonEdit]。
   Future<void> _showFullscreenEdit() async {
-    // controller 由对话框内容组件自持（随子树卸载释放，
-    // 避免退场动画期间 dispose 引发框架断言）；
-    // 关闭返回 null，应用返回编辑后的 JSON 文本
+    final key = _focusedFieldKey;
+    if (key == null || !_ctrls.containsKey(key)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先将光标放在要编辑的输入框')),
+      );
+      return;
+    }
+    await _openCodeEditForField(key, title: _fieldLabels[key] ?? key);
+  }
+
+  Future<void> _openCodeEditForField(String key, {required String title}) async {
+    final ctrl = _ctrl(key);
+    final focus = _focus(key);
+    final cursor = ctrl.selection.baseOffset.clamp(0, ctrl.text.length);
+    final result = await CodeEditScreen.open(
+      context,
+      title: title,
+      initialText: ctrl.text,
+      cursorPosition: cursor < 0 ? 0 : cursor,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      ctrl.text = result;
+      ctrl.selection = TextSelection.collapsed(offset: result.length);
+    });
+    focus.requestFocus();
+  }
+
+  /// 整体 JSON 编辑（保留原 Flutter 便利能力，入口改到 overflow）
+  Future<void> _showJsonEdit() async {
     final text = await showDialog<String>(
       context: context,
       builder: (_) => _FullscreenJsonEditDialog(
@@ -933,7 +980,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
             ],
           ),
           actions: [
-            // 全屏编辑（对标原版 menu_fullscreen_edit，always）
+            // 全屏代码编辑（对标原版 menu_fullscreen_edit → CodeEdit，需聚焦字段）
             IconButton(
               icon: const Icon(Icons.code),
               tooltip: '全屏编辑',
@@ -1004,6 +1051,10 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
                   child: Text('字符串分享'),
                 ),
                 const PopupMenuItem(value: 'log', child: Text('日志')),
+                const PopupMenuItem(
+                  value: 'json_edit',
+                  child: Text('JSON编辑'),
+                ),
                 const PopupMenuItem(value: 'help', child: Text('帮助')),
               ],
             ),
@@ -1109,15 +1160,27 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
 
   /// 构建单个表单字段
   Widget _buildField(_Field field) {
+    _fieldLabels[field.key] = field.label;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: _ctrl(field.key),
+        focusNode: _focus(field.key),
         maxLines: field.maxLines,
         decoration: InputDecoration(
           labelText: field.required ? '${field.label} *' : field.label,
           hintText: field.hint,
           border: const OutlineInputBorder(),
+          suffixIcon: field.maxLines >= 2
+              ? IconButton(
+                  tooltip: '代码编辑',
+                  icon: const Icon(Icons.code, size: 20),
+                  onPressed: () => _openCodeEditForField(
+                    field.key,
+                    title: field.label,
+                  ),
+                )
+              : null,
         ),
         validator: field.required
             ? (value) => (value == null || value.trim().isEmpty)

@@ -7775,6 +7775,106 @@ fn wire__crate__ffi__ffi__webdav_upload_file_impl(
     )
 }
 
+fn wire__crate__ffi__ffi__analyze_url_to_curl_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "analyze_url_to_curl",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_text = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::analyze_url_to_curl(api_text)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__curl_to_analyze_url_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "curl_to_analyze_url",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_text = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::curl_to_analyze_url(api_text)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__looks_like_curl_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "looks_like_curl",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_text = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::looks_like_curl(api_text)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+
 // Section: dart2rust
 
 impl SseDecode for flutter_rust_bridge::for_generated::anyhow::Error {
@@ -8227,6 +8327,9 @@ fn pde_ffi_dispatcher_primary_impl(
         222 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
         223 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
         224 => wire__crate__ffi__ffi__webdav_upload_file_impl(port, ptr, rust_vec_len, data_len),
+        225 => wire__crate__ffi__ffi__analyze_url_to_curl_impl(port, ptr, rust_vec_len, data_len),
+        226 => wire__crate__ffi__ffi__curl_to_analyze_url_impl(port, ptr, rust_vec_len, data_len),
+        227 => wire__crate__ffi__ffi__looks_like_curl_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

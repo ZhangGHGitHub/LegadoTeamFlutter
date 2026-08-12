@@ -138,6 +138,19 @@ void main() {
     });
   });
 
+  group('cURL AnalyzeUrl', () {
+    test('looksLikeCurl / roundtrip 最简路径', () async {
+      expect(await api.looksLikeCurl('curl -L https://example.com'), isTrue);
+      expect(await api.looksLikeCurl('https://example.com'), isFalse);
+      final a = await api.curlToAnalyzeUrl('curl -L https://example.com/book');
+      expect(a, 'https://example.com/book');
+      final c = await api.analyzeUrlToCurl(a);
+      expect(c, contains('curl'));
+      expect(c, contains('https://example.com/book'));
+    });
+  });
+
+
   group('搜索操作', () {
     test('searchBooks 返回 5 条结果', () async {
       final results = await api.searchBooks('斗破');

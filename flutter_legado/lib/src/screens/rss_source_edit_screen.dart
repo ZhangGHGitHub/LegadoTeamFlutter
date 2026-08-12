@@ -11,6 +11,7 @@ import '../providers/providers.dart';
 import '../routes.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/ios_widgets.dart';
+import 'code_edit_screen.dart';
 
 /// 编辑字段定义（key 与 RssSource JSON 字段名一致）
 class _FieldSpec {
@@ -100,6 +101,8 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
   static const _styleLabels = ['列表', '单列', '双列', '瀑布', '三列'];
 
   final Map<String, TextEditingController> _ctrls = {};
+  final Map<String, FocusNode> _focusNodes = {};
+  String? _focusedFieldKey;
 
   // 选项面板开关（对标原版 cb_is_enable 等）
   late bool _enabled;
@@ -151,10 +154,53 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     _initialSnapshot = _snapshot();
   }
 
+  FocusNode _focusNodeFor(String key) => _focusNodes.putIfAbsent(
+    key,
+    () => FocusNode()..addListener(() {
+      if (_focusNodes[key]?.hasFocus == true) {
+        _focusedFieldKey = key;
+      }
+    }),
+  );
+
+  Future<void> _openCodeEdit(String key, String title) async {
+    final ctrl = _ctrls[key]!;
+    final cursor = ctrl.selection.baseOffset.clamp(0, ctrl.text.length);
+    final result = await CodeEditScreen.open(
+      context,
+      title: title,
+      initialText: ctrl.text,
+      cursorPosition: cursor < 0 ? 0 : cursor,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      ctrl.text = result;
+      ctrl.selection = TextSelection.collapsed(offset: result.length);
+    });
+  }
+
+  Future<void> _fullscreenCodeEdit() async {
+    final key = _focusedFieldKey;
+    if (key == null || !_ctrls.containsKey(key)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先将光标放在要编辑的输入框')),
+      );
+      return;
+    }
+    final label = _allFieldSpecs
+        .where((s) => s.key == key)
+        .map((s) => s.label)
+        .firstOrNull;
+    await _openCodeEdit(key, label ?? key);
+  }
+
   @override
   void dispose() {
     for (final c in _ctrls.values) {
       c.dispose();
+    }
+    for (final n in _focusNodes.values) {
+      n.dispose();
     }
     super.dispose();
   }
@@ -357,6 +403,8 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
         await _pasteSource();
       case 'clear_cookie':
         await _clearCookie();
+      case 'code_edit':
+        await _fullscreenCodeEdit();
       case 'share':
         final json = jsonEncode(_buildSource().toJson());
         await Share.share(json,
@@ -537,6 +585,8 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
                   const PopupMenuItem(
                       value: 'clear_cookie', child: Text('清除Cookie')),
                   const PopupMenuItem(
+                      value: 'code_edit', child: Text('代码编辑')),
+                  const PopupMenuItem(
                       value: 'share', child: Text('分享文本')),
                   const PopupMenuItem(
                       value: 'help', child: Text('帮助')),
@@ -689,12 +739,20 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: _ctrls[spec.key],
+        focusNode: _focusNodeFor(spec.key),
         maxLines: spec.maxLines,
         decoration: InputDecoration(
           labelText: spec.label,
           hintText: spec.hint.isEmpty ? null : spec.hint,
           border: const OutlineInputBorder(),
           isDense: true,
+          suffixIcon: spec.maxLines >= 2
+              ? IconButton(
+                  tooltip: '代码编辑',
+                  icon: const Icon(Icons.code, size: 20),
+                  onPressed: () => _openCodeEdit(spec.key, spec.label),
+                )
+              : null,
         ),
       ),
     );
