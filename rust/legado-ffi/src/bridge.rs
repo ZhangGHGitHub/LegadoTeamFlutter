@@ -1305,6 +1305,18 @@ pub unsafe extern "C" fn ffi_audio_save_progress(
     }))
 }
 
+/// 音频章节取址（契约 §2.26）：WebBook.getContent → 可播 mediaUrl JSON
+#[no_mangle]
+pub unsafe extern "C" fn ffi_audio_get_chapter_media(
+    book_url: *const c_char,
+    chapter_index: i32,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let url = c_char_to_str(book_url)?;
+        crate::api::audio_api::get_audio_chapter_media(url, chapter_index)
+    }))
+}
+
 // ─── 备份/恢复 FFI 函数 ─────────────────────────────────────
 
 /// 创建备份

@@ -14,6 +14,7 @@
 | 2026-08-10 | 第四批后置项 FFI 冻结（Task #72）：三个加法式新增——`setCustomHosts`（§2.20 网络组，对齐原版 hosts 映射 JSON 对象）/ `setMcpPort`（§2.22 服务器组，**决策：对齐原版独立端口方案**，不复用 `setServerPort`，默认 1236，≤0=停止独立 MCP 服务）/ `searchCoverRules`（§2.4 搜索组，coverRules 表规则搜封面），附录合计 236→239，BookApi 口径 227→230 |
 | 2026-08-12 | 远程书库（P1-5）加法式新增——`webdavDownloadFile`（§2.28 WebDAV 云同步，镜像 `webdavUploadFile`，二进制落盘）；远程服务器列表沿用 Flutter `SettingsService` 持久化（对齐原版 `servers` 表语义，不新增 Server CRUD FFI）。附录合计 239→240，BookApi 口径 230→231 |
 | 2026-08-12 | P1-2 加法式新增——`clearCookie`（§2.3 书源操作，对齐原版 `CookieStore.removeCookie`）：按 URL 二级域名清除持久层 + 共享 HTTP 内存 CookieStore + JS 宿主 Cookie；附录合计 240→241，BookApi 口径 231→232 |
+| 2026-08-12 | P0-2 听书流媒体取址：升级既有 `getAudioChapterMedia`（§2.26）语义——对齐原版 `AudioPlay.loadRemotePlayUrl` → `WebBook.getContent`，返回可播 `mediaUrl` 等元数据；Rust FFI `audioGetChapterMedia` 加法式落地。BookApi 方法数不变（签名兼容，返回字段扩展） |
 
 ---
 
@@ -359,8 +360,8 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `audioSpeak({required String text, required String engineUrl, double speed = 1.0, double pitch = 1.0, double volume = 1.0, String? voiceName})` | text, engineUrl, speed, pitch, volume, voiceName | `Future<void>` | TTS 朗读 |
-| `getAudioChapterMedia(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<Map<String, dynamic>>` | 获取章节媒体信息 |
+| `audioSpeak({required String text, required String engineUrl, double speed = 1.0, double pitch = 1.0, double volume = 1.0, String? voiceName})` | text, engineUrl, speed, pitch, volume, voiceName | `Future<void>` | TTS 朗读（文本书朗读路径；与音频书流媒体互斥） |
+| `getAudioChapterMedia(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<Map<String, dynamic>>` | **音频书章节取址**（对齐原版 `AudioPlay` → `WebBook.getContent`）。Rust FFI：`audioGetChapterMedia` → JSON。返回字段（camelCase）：`chapterIndex` / `title` / **`mediaUrl`**（可播地址，即 getContent 正文 trim）/ `url`（章节页 URL，兼容旧字段）/ `resourceUrl` / `isVolume`（卷章无媒体，调用方应跳过）/ `fromCache` / `lyric` / `sourceUrl`。流程：查章 → 卷章短路 → DB 章节内容缓存命中则直接作 `mediaUrl` → 否则按 `book.origin` 书源 `getContent`（**正文规则为空时回退章节 URL**，对齐 Kotlin）→ 写入缓存。空 `mediaUrl` 且非卷章表示取址失败。错误码：章节/书籍不存在 → Database；书源网络/解析失败向上抛。与 TTS `audioSpeak` 分流：仅 `BookType.audio` 走本接口流媒体 |
 | `getAudioProgress(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<Map<String, dynamic>?>` | 获取音频播放进度 |
 | `saveAudioProgress(String bookUrl, int chapterIndex, int positionMs)` | bookUrl, chapterIndex, positionMs | `Future<void>` | 保存音频播放进度 |
 

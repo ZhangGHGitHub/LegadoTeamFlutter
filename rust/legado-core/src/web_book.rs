@@ -347,13 +347,17 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
     /// 获取章节内容
     ///
     /// 流程（对标 Kotlin WebBook.getContentAwait）：
-    /// 1. 校验 ruleContent 不为空
-    /// 2. 委托 fetcher 请求章节页并提取正文
+    /// 1. 非 JS 源且 ruleContent 为空 → **直接返回章节 URL**（原版：
+    ///    「正文规则为空,使用章节链接」；音频书常用直链章 URL）
+    /// 2. 否则委托 fetcher 请求章节页并提取正文
     pub async fn get_content(
         &self,
         source: &BookSource,
         chapter: &WebChapter,
     ) -> LegadoResult<String> {
+        if chapter.url.is_empty() {
+            return Err(LegadoError::Parser("章节URL不能为空".into()));
+        }
         // 校验正文规则（JS 书源由脚本直接返回内容，豁免规则校验）
         if !source.is_js_source() {
             let has_content_rule = source
@@ -361,11 +365,9 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
                 .as_ref()
                 .is_some_and(|r| r.content.as_ref().is_some_and(|c| !c.is_empty()));
             if !has_content_rule {
-                return Err(LegadoError::Parser("正文规则为空".into()));
+                // 对齐 Kotlin：正文规则为空时回退章节链接（听书/直链源关键路径）
+                return Ok(chapter.url.clone());
             }
-        }
-        if chapter.url.is_empty() {
-            return Err(LegadoError::Parser("章节URL不能为空".into()));
         }
         self.fetcher.get_content(source, chapter).await
     }
@@ -701,19 +703,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_content_no_content_rule_returns_error() {
+    async fn test_get_content_no_content_rule_falls_back_to_chapter_url() {
         let mock = MockBookSourceFetcher::new();
         let engine = WebBookEngine::new(mock);
-        // source 无 ruleContent
+        // source 无 ruleContent → 对齐 Kotlin 回退章节 URL
         let source = BookSource {
             book_source_url: "https://example.com".to_string(),
             rule_content: None,
             ..BookSource::default()
         };
-        let chapter = WebChapter::new(0, "第一章", "url1");
+        let chapter = WebChapter::new(0, "第一章", "https://cdn.example.com/a.mp3");
 
-        let err = engine.get_content(&source, &chapter).await.unwrap_err();
-        assert!(err.to_string().contains("正文规则为空"));
+        let content = engine.get_content(&source, &chapter).await.unwrap();
+        assert_eq!(content, "https://cdn.example.com/a.mp3");
     }
 
     #[tokio::test]
@@ -728,7 +730,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_content_empty_content_rule_string_returns_error() {
+    async fn test_get_content_empty_content_rule_string_falls_back_to_chapter_url() {
         let mock = MockBookSourceFetcher::new();
         let engine = WebBookEngine::new(mock);
         let source = BookSource {
@@ -739,10 +741,10 @@ mod tests {
             }),
             ..BookSource::default()
         };
-        let chapter = WebChapter::new(0, "第一章", "url1");
+        let chapter = WebChapter::new(0, "第一章", "https://cdn.example.com/ch1.m4a");
 
-        let err = engine.get_content(&source, &chapter).await.unwrap_err();
-        assert!(err.to_string().contains("正文规则为空"));
+        let content = engine.get_content(&source, &chapter).await.unwrap();
+        assert_eq!(content, "https://cdn.example.com/ch1.m4a");
     }
 
     #[tokio::test]

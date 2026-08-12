@@ -1384,6 +1384,17 @@ pub mod ffi {
         Ok(ok)
     }
 
+    /// 音频章节取址（契约 §2.26 getAudioChapterMedia）
+    ///
+    /// 对齐原版 `AudioPlay` → `WebBook.getContent`：返回可播 `mediaUrl` 等元数据 JSON。
+    pub fn audio_get_chapter_media(
+        book_url: String,
+        chapter_index: i32,
+    ) -> Result<String, BridgeError> {
+        let dto = crate::api::audio_api::get_audio_chapter_media(&book_url, chapter_index)?;
+        to_json(&dto)
+    }
+
     // ─── 备份/恢复 ───────────────────────────────────────
 
     /// 创建备份到指定路径，返回备份文件路径

@@ -240,8 +240,8 @@ pub async fn get_chapter_media(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<ChapterMediaRequest>,
 ) -> Result<Json<ChapterMediaResponse>, ApiError> {
-    // 当前为简化实现，返回空媒体信息
-    // 完整实现需要解析书源规则获取实际音频 URL
+    // 完整取址在 FFI `audio_get_chapter_media`（legado-ffi audio_api）。
+    // Server 进程未嵌入 FFI DB 会话时仍返回结构兼容桩；客户端请走 BookApi。
     let title = format!("Chapter {}", req.chapter_index + 1);
     Ok(Json(ChapterMediaResponse {
         media_url: None,
