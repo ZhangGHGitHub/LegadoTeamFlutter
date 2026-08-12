@@ -39,6 +39,7 @@ pub mod error;
 pub mod explore;
 pub mod ffi_macros;
 pub mod html_formatter;
+pub mod import_old;
 pub mod layout;
 pub mod login_ui_v2;
 pub mod manga_state;

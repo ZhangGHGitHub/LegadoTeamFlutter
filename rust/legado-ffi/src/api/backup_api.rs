@@ -296,6 +296,128 @@ pub fn backup_list(dir: &str) -> String {
     serde_json::to_string(&files).unwrap_or_else(|_| "[]".to_string())
 }
 
+/// 导入旧版（阅读 2.x）备份目录
+///
+/// 对齐 `ImportOldData.importUri`：扫描 `myBookShelf.json` / `myBookSource.json` /
+/// `myBookReplaceRule.json`，字段映射后写入 DB。缺文件不致命，记入 messages。
+pub fn import_old_data(dir: &str) -> LegadoResult<String> {
+    let dir_path = Path::new(dir);
+    if !dir_path.is_dir() {
+        return Err(LegadoError::Io(std::io::Error::other(format!(
+            "目录不存在或不可用: {dir}"
+        ))));
+    }
+
+    let mut messages: Vec<String> = Vec::new();
+    let mut books_n = 0usize;
+    let mut sources_n = 0usize;
+    let mut rules_n = 0usize;
+
+    // 书架
+    let shelf_path = dir_path.join("myBookShelf.json");
+    if shelf_path.is_file() {
+        match fs::read_to_string(&shelf_path) {
+            Ok(json) => match with_database(|db| {
+                let conn = db.connection();
+                let book_repo = BookRepository::new(conn);
+                let existing: std::collections::HashSet<String> = book_repo
+                    .find_all()?
+                    .into_iter()
+                    .map(|b| b.book_url)
+                    .collect();
+                let books = legado_core::import_old::from_old_books(&json, &existing);
+                let mut n = 0usize;
+                for book in &books {
+                    match book_repo.insert(book) {
+                        Ok(()) => n += 1,
+                        Err(e) => log::warn!("导入旧版书籍失败（已跳过）: {} - {e}", book.book_url),
+                    }
+                }
+                Ok(n)
+            }) {
+                Ok(n) => {
+                    books_n = n;
+                    messages.push(format!("成功导入书架{n}"));
+                }
+                Err(e) => messages.push(format!("导入书架失败: {e}")),
+            },
+            Err(e) => messages.push(format!("导入书架失败: {e}")),
+        }
+    } else {
+        messages.push("未找到 myBookShelf.json".to_string());
+    }
+
+    // 书源
+    let source_path = dir_path.join("myBookSource.json");
+    if source_path.is_file() {
+        match fs::read_to_string(&source_path) {
+            Ok(json) => match with_database(|db| {
+                let conn = db.connection();
+                let source_repo = BookSourceRepository::new(conn);
+                let sources = legado_core::import_old::from_old_book_sources(&json);
+                let mut n = 0usize;
+                for source in &sources {
+                    match source_repo.insert(source) {
+                        Ok(()) => n += 1,
+                        Err(e) => log::warn!(
+                            "导入旧版书源失败（已跳过）: {} - {e}",
+                            source.book_source_url
+                        ),
+                    }
+                }
+                Ok(n)
+            }) {
+                Ok(n) => {
+                    sources_n = n;
+                    messages.push(format!("成功导入书源{n}"));
+                }
+                Err(e) => messages.push(format!("导入源失败: {e}")),
+            },
+            Err(e) => messages.push(format!("导入源失败: {e}")),
+        }
+    } else {
+        messages.push("未找到 myBookSource.json".to_string());
+    }
+
+    // 替换规则
+    let rule_path = dir_path.join("myBookReplaceRule.json");
+    if rule_path.is_file() {
+        match fs::read_to_string(&rule_path) {
+            Ok(json) => match with_database(|db| {
+                let conn = db.connection();
+                let rule_repo = ReplaceRuleRepository::new(conn);
+                let rules = legado_core::import_old::from_old_replace_rules(&json);
+                let mut n = 0usize;
+                for rule in &rules {
+                    match rule_repo.insert(rule) {
+                        Ok(_) => n += 1,
+                        Err(e) => log::warn!("导入旧版替换规则失败（已跳过）: {} - {e}", rule.name),
+                    }
+                }
+                Ok(n)
+            }) {
+                Ok(n) => {
+                    rules_n = n;
+                    messages.push(format!("成功导入替换规则{n}"));
+                }
+                Err(e) => messages.push(format!("导入替换规则失败: {e}")),
+            },
+            Err(e) => messages.push(format!("导入替换规则失败: {e}")),
+        }
+    } else {
+        messages.push("未找到替换规则".to_string());
+    }
+
+    let result = serde_json::json!({
+        "books": books_n,
+        "bookSources": sources_n,
+        "replaceRules": rules_n,
+        "messages": messages,
+    });
+    serde_json::to_string(&result)
+        .map_err(|e| LegadoError::Internal(format!("统计序列化失败: {e}")))
+}
+
 /// 收集 RSS 源（直接 SQL）
 fn collect_rss_sources(conn: &rusqlite::Connection) -> LegadoResult<Vec<serde_json::Value>> {
     let mut stmt = conn

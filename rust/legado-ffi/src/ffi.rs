@@ -1439,6 +1439,12 @@ pub mod ffi {
         crate::api::backup_api::backup_list(&dir)
     }
 
+    /// 导入旧版（阅读 2.x）备份目录，返回统计 JSON
+    pub fn import_old_data(dir: String) -> Result<String, BridgeError> {
+        let result = crate::api::backup_api::import_old_data(&dir)?;
+        Ok(result)
+    }
+
     // ─── 服务器管理 ─────────────────────────────────────
 
     /// 启动 legado-server，返回状态消息
