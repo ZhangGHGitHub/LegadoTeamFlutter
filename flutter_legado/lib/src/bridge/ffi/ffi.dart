@@ -389,6 +389,26 @@ Future<void> readerToggleSameTitleRemoved({
   enable: enable,
 );
 
+/// 权威查询章级「删除重复标题」开关（caches KV）
+///
+/// true=去除重复标题（全局默认）；false=该章 opt-out。
+Future<bool> readerGetSameTitleRemoved({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiReaderGetSameTitleRemoved(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
+/// 试算当前正文是否含可移除的重复标题（对齐原版「未找到可移除的重复标题」）
+Future<bool> readerCanRemoveSameTitle({
+  required String chapterTitle,
+  required String rawContent,
+}) => RustLib.instance.api.crateFfiFfiReaderCanRemoveSameTitle(
+  chapterTitle: chapterTitle,
+  rawContent: rawContent,
+);
+
 /// 检测书籍文件格式（JSON）
 Future<String> importDetectFormat({required String filePath}) =>
     RustLib.instance.api.crateFfiFfiImportDetectFormat(filePath: filePath);

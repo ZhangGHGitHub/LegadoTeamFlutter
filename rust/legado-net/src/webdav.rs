@@ -129,8 +129,8 @@ impl WebDavClient {
     /// 请求完成后校验 HTTP 状态码，非 2xx 返回 Network 错误（Task #55 F1），
     /// 使既有 `webdav_upload` / `webdav_upload_file` 一并受益。
     ///
-    /// 大文件上限风险：数据仍以整块 `Vec` 驻留内存后提交，未做分块/流式
-    /// 上传；远超可用内存的文件会触发内存压力，完整流式改造另行立项。
+    /// 大文件上限风险：数据仍以整块 `Vec` 驻留内存后提交；大文件请改用
+    /// [`put_file`] 流式读盘上传（`webdav_upload_file` 已走该路径）。
     pub async fn put_owned(&self, path: &str, data: Vec<u8>) -> LegadoResult<()> {
         let url = self.full_url(path);
         let response = self

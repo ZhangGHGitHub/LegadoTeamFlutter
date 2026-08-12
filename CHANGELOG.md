@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.43] - 2026-08-13
+
+### Added
+- [Bridge]+[UI] `getSameTitleRemoved` / `canRemoveSameTitle`：caches KV 权威查询 +「未找到可移除的重复标题」试算
+- [Rust] `webdav_upload_file` 大文件 `ReaderStream` 流式 PUT；直建 Client（WebDAV / rule_update / source_update）挂 customHosts DNS
+- [Rust]+[UI] loginCheckJs：legado-server fetcher 接入 + 阅读器自动拉登录
+- [Rust] 缓存批量下载任务落库 caches KV（重启续传）
+
+### Notes
+- 自定义字体族（FontScreen 导入/切换）此前已具备，本批核销
+- schema v102：计划结论为延后（无遗留库互操作触发）；待用户确认是否强制做
+
 ## [2.0.42] - 2026-08-13
 
 ### Fixed

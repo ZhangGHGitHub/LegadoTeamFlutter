@@ -898,19 +898,16 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
     final chapterTitle = state.currentChapter?.title ?? '';
     final next = !_sameTitleRemoved;
 
-    // 对齐原版：开启去除且正文无可移除重复标题时提示
+    // 对齐原版：开启去除且正文无可移除重复标题时提示（权威试算走 FFI）
     if (next && chapterTitle.isNotEmpty) {
       try {
         final raw = await ref
             .read(bookApiProvider)
             .getCachedChapter(book.bookUrl, chapterIndex);
-        final head = raw.trimLeft();
-        final hasDupAtStart = head.startsWith(chapterTitle) ||
-            RegExp(
-              r'^[\s\p{P}]*' + RegExp.escape(chapterTitle),
-              unicode: true,
-            ).hasMatch(head);
-        if (!hasDupAtStart && context.mounted) {
+        final canRemove = await ref
+            .read(bookApiProvider)
+            .canRemoveSameTitle(chapterTitle, raw);
+        if (!canRemove && context.mounted) {
           _snack(context, '未找到可移除的重复标题');
         }
       } catch (_) {
@@ -924,11 +921,6 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
           .toggleSameTitleRemoved(book.bookUrl, chapterIndex, next);
       if (!mounted) return;
       setState(() => _sameTitleRemoved = next);
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(
-            'sameTitleRemoved_${book.bookUrl}_$chapterIndex', next);
-      } catch (_) {}
       await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
       if (context.mounted) {
         _snack(context, next ? '已去除重复标题' : '该章已保留原标题');

@@ -21,7 +21,7 @@
 | 2026-08-13 | P2-9 段评完整 MVP：加法式新增 `reviewGetSummary` / `reviewGetDetail`（§2.30）；对齐原版 `loadReviewSummary`+`parseSummary` / `ReviewDetailDialog`+`parseDetailPage`；复用既有 `reviewGetReplies`。附录合计 244→246，BookApi 口径 235→237。本地库 `reviewGetByChapter`/`reviewAdd`… 仍属偏离创意，UI **禁止**接入 |
 | 2026-08-13 | P2-8：检查更新对接 GitHub Release API（`AppUpdateService` + `UpdateDialog`）；纯 Flutter HTTP，**无新 FFI** |
 | 2026-08-13 | P2-7：AutoTaskDebug 流式调试——UI 逐行回调 + `TaskResult.details` 对齐 LogFormatter；复用 `autoTaskExecuteWithId`，**无新 StreamSink FFI** |
-| 2026-08-13 | `getSameTitleRemoved` 权威查询 FFI（§2.9）；UI 勾选态改读 caches KV；复刻「未找到可移除的重复标题」提示 |
+| 2026-08-13 | `getSameTitleRemoved` / `canRemoveSameTitle` 权威查询与试算 FFI（§2.9）；UI 勾选态改读 caches KV；复刻「未找到可移除的重复标题」提示 |
 
 ---
 
@@ -217,6 +217,7 @@
 | `getChineseConvertType()` | 无 | `Future<int>` | 获取当前繁简转换类型（0/1/2） |
 | `toggleSameTitleRemoved(String bookUrl, int chapterIndex, bool enable)` | bookUrl: 书籍 URL；chapterIndex: 章节序号（0 起）；enable: true=去除重复标题 / false=保留原始标题 | `Future<void>` | 章级「删除重复标题」开关，覆盖全局默认（全局默认仍为去除）；状态须持久化（建议 DB，重启后保持）；接线后正文读取按章应用该开关。错误码：Db（章节不存在）/ Internal（书籍不存在）。语义对齐原版章级 opt-out 方向（台账 §5.11-7 删除重复标题正文链路，Task #50，加法式新增） |
 | `getSameTitleRemoved(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<bool>` | 权威查询章级开关（caches KV `sameTitleRemoved:{bookUrl}:{chapterIndex}`）；true=去除（默认），false=opt-out。UI 菜单勾选态须以此为准，避免仅 SP 镜像分叉（2026-08-13 加法式新增） |
+| `canRemoveSameTitle(String chapterTitle, String rawContent)` | chapterTitle, rawContent | `Future<bool>` | 试算正文 trim 后是否以标题开头（对齐原版「未找到可移除的重复标题」提示条件；2026-08-13 加法式新增） |
 
 > ⚠️ `getChapters` / `refreshToc`：Rust 返回 `ChapterListResponse { total, chapters[] }`，Dart 侧提取 `chapters` 字段。
 >
