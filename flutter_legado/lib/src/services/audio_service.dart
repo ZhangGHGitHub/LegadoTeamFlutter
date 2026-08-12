@@ -224,6 +224,20 @@ class AudioService {
     }
   }
 
+  /// 听书 PARTIAL_WAKE_LOCK（对齐 PreferKey.audioPlayWakeLock / AudioPlayService）
+  Future<void> setWakeLock(bool enabled) async {
+    if (!_initialized) {
+      await init();
+    }
+    try {
+      await _channel.invokeMethod<void>('setWakeLock', {'enabled': enabled});
+    } on PlatformException {
+      // 静默处理
+    } on MissingPluginException {
+      // 静默处理
+    }
+  }
+
   // ===== 便捷方法 =====
 
   /// 通知系统当前正在播放

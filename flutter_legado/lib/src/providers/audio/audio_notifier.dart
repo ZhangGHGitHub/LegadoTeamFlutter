@@ -7,6 +7,7 @@ import '../../models/book.dart';
 import '../../services/audio_service.dart';
 import '../../services/book_api.dart';
 import '../../services/stream_audio_player.dart';
+import '../../utils/audio_skip_policy.dart';
 import '../providers.dart';
 import 'audio_state.dart';
 
@@ -38,6 +39,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   Timer? _paragraphTimer;
   int _playToken = 0;
   int? _pendingParagraphIndex;
+  bool _introSkipEvaluated = false;
+  AudioSkipWindow? _skipWindow;
+  Book? _book;
   bool _disposed = false;
   int _lastProgressEmitMs = 0;
 
@@ -75,6 +79,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       final now = DateTime.now().millisecondsSinceEpoch;
       if (now - _lastProgressEmitMs < _kProgressThrottleMs &&
           dur.inMilliseconds == state.durationMs) {
+        // 片尾仍需检测
+        unawaited(_maybeApplySkip(pos.inMilliseconds, dur.inMilliseconds));
         return;
       }
       _lastProgressEmitMs = now;
@@ -82,6 +88,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         positionMs: pos.inMilliseconds,
         durationMs: dur.inMilliseconds,
       );
+      unawaited(_maybeApplySkip(pos.inMilliseconds, dur.inMilliseconds));
     };
     ref.onDispose(() {
       _disposed = true;
@@ -308,15 +315,21 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         await _streamPlayer.playUrl(mediaUrl, speed: state.config.speed);
         if (token != _playToken || _disposed) return;
         await _syncMediaSession();
-        // 恢复进度
+        _introSkipEvaluated = false;
+        _skipWindow = null;
+        // 恢复进度；从头播放时再套用片头跳过
+        var restoredPos = 0;
         try {
           final progress = await _api.getAudioProgress(state.bookUrl, index);
-          final pos = (progress?['position'] as num?)?.toInt() ?? 0;
-          if (pos > 1500 && token == _playToken && !_disposed) {
-            await _streamPlayer.seek(Duration(milliseconds: pos));
+          restoredPos = (progress?['position'] as num?)?.toInt() ?? 0;
+          if (restoredPos > 1500 && token == _playToken && !_disposed) {
+            await _streamPlayer.seek(Duration(milliseconds: restoredPos));
           }
         } catch (e) {
           debugPrint('恢复音频进度失败: $e');
+        }
+        if (restoredPos <= 1500) {
+          await _applyIntroSkipIfNeeded(token);
         }
         return;
       }
@@ -523,6 +536,85 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       album: state.bookName,
     );
     await _audioService.notifyPlaying();
+  }
+
+  /// 绑定当前书籍（片头/片尾读 readConfig）
+  void bindBook(Book? book) {
+    _book = book;
+  }
+
+  /// 听书唤醒锁（对齐 audioPlayWakeLock）
+  Future<void> setWakeLockEnabled(bool enabled) async {
+    await _audioService.setWakeLock(enabled);
+    try {
+      await _api.setConfig(kAudioPlayWakeLockKey, enabled ? 'true' : 'false');
+    } catch (_) {}
+  }
+
+  Future<bool> isWakeLockEnabled() async {
+    try {
+      return await _api.getConfig(kAudioPlayWakeLockKey) == 'true';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _applyIntroSkipIfNeeded(int token) async {
+    if (_introSkipEvaluated || token != _playToken || _disposed) return;
+    final dur = _streamPlayer.duration.inMilliseconds;
+    if (dur <= 0) return;
+    final window = await _resolveSkipWindow(dur);
+    _skipWindow = window;
+    _introSkipEvaluated = true;
+    if (window == null) return;
+    final seekTo = introSeekPosition(currentPositionMs: 0, window: window);
+    if (seekTo == null) return;
+    await _streamPlayer.seek(Duration(milliseconds: seekTo));
+    state = state.copyWith(positionMs: seekTo, durationMs: dur);
+  }
+
+  Future<void> _maybeApplySkip(int positionMs, int durationMs) async {
+    if (!state.isStreamMode || state.state != PlayerState.playing) return;
+    if (!_introSkipEvaluated && positionMs <= 0) {
+      await _applyIntroSkipIfNeeded(_playToken);
+    }
+    final window = _skipWindow ?? await _resolveSkipWindow(durationMs);
+    _skipWindow = window;
+    if (window == null) return;
+    if (shouldSkipOutro(currentPositionMs: positionMs, window: window)) {
+      await _onStreamCompleted();
+    }
+  }
+
+  Future<AudioSkipWindow?> _resolveSkipWindow(int durationMs) async {
+    var globalOpen = 0;
+    var globalClose = 0;
+    try {
+      globalOpen =
+          int.tryParse(await _api.getConfig(kAudioSkipOpenCreditsKey) ?? '0') ??
+              0;
+      globalClose =
+          int.tryParse(await _api.getConfig(kAudioSkipCloseCreditsKey) ?? '0') ??
+              0;
+    } catch (_) {}
+    final cfg = _book?.readConfig;
+    final cfgMap = cfg == null
+        ? null
+        : <String, dynamic>{
+            'openCredits': cfg.openCredits,
+            'closeCredits': cfg.closeCredits,
+            // freezed 暂无该字段：有书级非零片头/片尾则视为书级
+            'useGlobalAudioSkip':
+                cfg.openCredits == 0 && cfg.closeCredits == 0,
+          };
+    final open = resolveOpenCredits(readConfig: cfgMap, globalOpen: globalOpen);
+    final close =
+        resolveCloseCredits(readConfig: cfgMap, globalClose: globalClose);
+    return resolveAudioSkipWindow(
+      durationMs: durationMs,
+      introSeconds: open,
+      outroSeconds: close,
+    );
   }
 
   void pause() {

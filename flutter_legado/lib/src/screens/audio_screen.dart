@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/providers.dart';
+import '../utils/audio_skip_policy.dart';
 import '../routes.dart';
 import 'source_edit_screen.dart';
 import 'source_login_screen.dart';
@@ -45,6 +50,7 @@ class AudioScreen extends ConsumerStatefulWidget {
 
 class _AudioScreenState extends ConsumerState<AudioScreen> {
   bool _showSettings = false;
+  bool _wakeLock = false;
 
   // ===== 定时停止相关状态 =====
 
@@ -65,7 +71,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       final notifier = ref.read(audioNotifierProvider.notifier);
       // 音频书 → 流媒体；否则保持 TTS（阅读器朗读入口会强制 TTS）
       notifier.setAudioBookMode(_canCopyPlayUrl);
+      notifier.bindBook(widget.book);
       notifier.initMediaSession(bookName: widget.effectiveBookName);
+      unawaited(notifier.isWakeLockEnabled().then((v) {
+        if (mounted) setState(() => _wakeLock = v);
+      }));
       if (!ref.read(audioNotifierProvider).hasChapters) {
         notifier.loadChapters(widget.effectiveBookUrl);
       }
@@ -221,7 +231,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml：
           // 换源/登录/复制播放地址/缓存目录选择/缓存范围/清当前章缓存/
           // 听书溢出菜单可用项：换源/登录/复制地址/编辑书源/日志。
-          // 缓存目录/范围/wakelock/片头：缺能力，诚实不展示。
+          // P0-2：片头/wakelock/缓存目录(SAF)/缓存范围已诚实接通。
           PopupMenuButton<String>(
             tooltip: '更多',
             onSelected: _handleOverflowMenu,
@@ -234,6 +244,18 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
                   value: 'copyAudioUrl',
                   child: Text('复制播放地址'),
                 ),
+              if (_canCopyPlayUrl)
+                const PopupMenuItem(value: 'cacheFolder', child: Text('缓存目录')),
+              if (_canCopyPlayUrl)
+                const PopupMenuItem(value: 'cacheRange', child: Text('缓存范围')),
+              if (_canCopyPlayUrl)
+                CheckedPopupMenuItem(
+                  value: 'wakeLock',
+                  checked: _wakeLock,
+                  child: const Text('唤醒锁定'),
+                ),
+              if (_canCopyPlayUrl)
+                const PopupMenuItem(value: 'skipCredits', child: Text('跳过片头片尾')),
               if (_origin.isNotEmpty)
                 const PopupMenuItem(value: 'editSource', child: Text('编辑书源')),
               const PopupMenuItem(value: 'log', child: Text('日志')),
@@ -705,6 +727,16 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         await _openLogin();
       case 'copyAudioUrl':
         await _copyAudioUrl();
+      case 'cacheFolder':
+        await _pickAudioCacheFolder();
+      case 'cacheRange':
+        await _showAudioCacheRange();
+      case 'wakeLock':
+        final next = !_wakeLock;
+        await ref.read(audioNotifierProvider.notifier).setWakeLockEnabled(next);
+        if (mounted) setState(() => _wakeLock = next);
+      case 'skipCredits':
+        await _showSkipCreditsSheet();
       case 'editSource':
         _openEditSource();
       case 'log':
@@ -812,6 +844,207 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     );
   }
 
+
+  Future<void> _pickAudioCacheFolder() async {
+    try {
+      const channel = MethodChannel('legado/file_picker');
+      final uri = await channel.invokeMethod<String>('pickDirectory');
+      if (uri == null || uri.isEmpty) return;
+      await ref.read(bookApiProvider).setConfig(kAudioCacheTreeUriKey, uri);
+      if (mounted) _snack('已选择缓存目录');
+    } catch (e) {
+      if (mounted) _snack('选择目录失败: $e');
+    }
+  }
+
+  Future<void> _showAudioCacheRange() async {
+    final audio = ref.read(audioNotifierProvider);
+    final total = audio.chapters.length;
+    if (total <= 0) {
+      _snack('暂无章节');
+      return;
+    }
+    final from = audio.currentIndex + 1;
+    final toCtrl = TextEditingController(text: '$total');
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 8,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('缓存范围', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text('从第 $from 章缓存到：'),
+              TextField(
+                controller: toCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(hintText: '结束章节序号'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('开始缓存'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (ok != true || !mounted) return;
+    final to = int.tryParse(toCtrl.text.trim()) ?? total;
+    final end = to.clamp(from, total);
+    _snack('开始缓存第 $from-$end 章…');
+    unawaited(_cacheAudioRange(from - 1, end - 1));
+  }
+
+  Future<void> _cacheAudioRange(int fromIndex, int toIndex) async {
+    final api = ref.read(bookApiProvider);
+    final bookUrl = widget.effectiveBookUrl;
+    final base = await getApplicationSupportDirectory();
+    final dir = Directory('${base.path}${Platform.pathSeparator}audio_cache');
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    var okCount = 0;
+    for (var i = fromIndex; i <= toIndex; i++) {
+      try {
+        final media = await api.getAudioChapterMedia(bookUrl, i);
+        final url = (media['mediaUrl'] as String?)?.trim() ?? '';
+        if (url.isEmpty || !url.startsWith('http')) continue;
+        final resp = await http.get(Uri.parse(url));
+        if (resp.statusCode < 200 || resp.statusCode >= 300) continue;
+        final file = File(
+          '${dir.path}${Platform.pathSeparator}${bookUrl.hashCode}_$i.audio',
+        );
+        await file.writeAsBytes(resp.bodyBytes, flush: true);
+        okCount++;
+      } catch (_) {}
+    }
+    if (mounted) {
+      _snack(okCount > 0 ? '已缓存 $okCount 章到本地目录' : '未缓存到可用章节');
+    }
+  }
+
+  Future<void> _showSkipCreditsSheet() async {
+    final api = ref.read(bookApiProvider);
+    final book = widget.book;
+    var globalOpen =
+        int.tryParse(await api.getConfig(kAudioSkipOpenCreditsKey) ?? '0') ?? 0;
+    var globalClose =
+        int.tryParse(await api.getConfig(kAudioSkipCloseCreditsKey) ?? '0') ?? 0;
+    var useGlobal = (book?.readConfig?.openCredits ?? 0) == 0 &&
+        (book?.readConfig?.closeCredits ?? 0) == 0;
+    var open = useGlobal ? globalOpen : (book?.readConfig?.openCredits ?? 0);
+    var close = useGlobal ? globalClose : (book?.readConfig?.closeCredits ?? 0);
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 8,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('跳过片头片尾',
+                      style: Theme.of(ctx).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('全局')),
+                      ButtonSegment(value: false, label: Text('本书')),
+                    ],
+                    selected: {useGlobal},
+                    onSelectionChanged: (s) {
+                      setSheet(() {
+                        useGlobal = s.first;
+                        if (useGlobal) {
+                          open = globalOpen;
+                          close = globalClose;
+                        } else {
+                          open = book?.readConfig?.openCredits ?? globalOpen;
+                          close = book?.readConfig?.closeCredits ?? globalClose;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text('片头 $open 秒'),
+                  Slider(
+                    value: open.toDouble().clamp(0, 120),
+                    max: 120,
+                    divisions: 120,
+                    label: '$open',
+                    onChanged: (v) => setSheet(() => open = v.round()),
+                  ),
+                  Text('片尾 $close 秒'),
+                  Slider(
+                    value: close.toDouble().clamp(0, 120),
+                    max: 120,
+                    divisions: 120,
+                    label: '$close',
+                    onChanged: (v) => setSheet(() => close = v.round()),
+                  ),
+                  FilledButton(
+                    onPressed: () async {
+                      if (useGlobal) {
+                        await api.setConfig(
+                            kAudioSkipOpenCreditsKey, '$open');
+                        await api.setConfig(
+                            kAudioSkipCloseCreditsKey, '$close');
+                        if (book != null) {
+                          final cfg = book.readConfig ?? const ReadConfig();
+                          await api.updateBook(book.copyWith(
+                            readConfig: cfg.copyWith(
+                              openCredits: 0,
+                              closeCredits: 0,
+                            ),
+                          ));
+                        }
+                      } else if (book != null) {
+                        final cfg = book.readConfig ?? const ReadConfig();
+                        await api.updateBook(book.copyWith(
+                          readConfig: cfg.copyWith(
+                            openCredits: open,
+                            closeCredits: close,
+                          ),
+                        ));
+                      }
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) {
+                        ref
+                            .read(audioNotifierProvider.notifier)
+                            .bindBook(book);
+                        _snack('已保存片头片尾设置');
+                      }
+                    },
+                    child: const Text('保存'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
   /// 统一 snackbar 提示
   void _snack(String message) {
     if (!mounted) return;

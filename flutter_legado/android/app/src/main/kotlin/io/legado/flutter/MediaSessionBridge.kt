@@ -1,6 +1,8 @@
 package io.legado.flutter
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.os.PowerManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -49,6 +51,8 @@ class MediaSessionBridge {
 
     /// 当前是否正在播放
     private var isPlaying = false
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockEnabled = false
 
     /// MediaSession 支持的操作（复刻原版 MediaHelp.MEDIA_SESSION_ACTIONS）
     private val mediaSessionActions = (
@@ -129,6 +133,12 @@ class MediaSessionBridge {
             }
             "setPlaying" -> {
                 isPlaying = call.argument<Boolean>("playing") ?: false
+                syncWakeLockWithPlayback()
+                result.success(null)
+            }
+            "setWakeLock" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: false
+                setWakeLock(context, enabled)
                 result.success(null)
             }
             "release" -> {
@@ -139,11 +149,41 @@ class MediaSessionBridge {
         }
     }
 
-    /**
-     * 设置 MethodChannel 引用（用于 Android → Flutter 回调）
-     */
     fun setMethodChannel(channel: MethodChannel) {
         this.methodChannel = channel
+    }
+
+    @SuppressLint("WakelockTimeout")
+    private fun setWakeLock(context: Context, enabled: Boolean) {
+        wakeLockEnabled = enabled
+        if (!enabled) {
+            try {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+            } catch (_: Exception) {
+            }
+            wakeLock = null
+            return
+        }
+        if (wakeLock == null) {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "legado:AudioPlayWakeLock")
+            wakeLock?.setReferenceCounted(false)
+        }
+        if (isPlaying && wakeLock?.isHeld != true) {
+            wakeLock?.acquire()
+        }
+    }
+
+    private fun syncWakeLockWithPlayback() {
+        if (!wakeLockEnabled) return
+        try {
+            if (isPlaying) {
+                if (wakeLock?.isHeld != true) wakeLock?.acquire()
+            } else if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     /**
