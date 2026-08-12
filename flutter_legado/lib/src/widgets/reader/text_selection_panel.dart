@@ -20,10 +20,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/bookmark/bookmark_notifier.dart';
-import '../../providers/dict/dict_notifier.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
+import '../dict_dialog.dart';
 
 /// 高亮配色（对齐原版 HighlightStyle 多色能力，颜色写入 BookHighlight.style JSON）
 const List<Color> kHighlightColors = [
@@ -390,15 +390,13 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   }
 
   /// 词典：对齐原版 menu_dict → DictDialog(selectedText)
-  ///
-  /// 复用现有 DictScreen + DictNotifier（查询经 BookApi.dictLookup 委托 Rust）。
   void _lookupDict() {
     final word = _selectedText.trim();
     if (word.isEmpty) return;
-    unawaited(ref.read(dictNotifierProvider.notifier).lookup(word));
     final navigator = Navigator.of(context, rootNavigator: true);
+    final ctx = navigator.context;
     _close();
-    navigator.pushNamed(AppRoutes.dict);
+    unawaited(showDictDialog(ctx, word: word));
   }
 
   /// 搜正文：对齐原版 menu_search_content → openSearchActivity(selectedText)
