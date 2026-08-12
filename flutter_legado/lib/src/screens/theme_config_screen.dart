@@ -364,7 +364,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                   ]),
                   const IosSectionFooter(
-                      '背景图片当前仅持久化保存，Flutter 端全局背景渲染将在后续版本接线'),
+                      '背景图片将作为全局窗口壁纸显示（分组列表卡片保持不透明底）'),
                 ],
               ),
             ),
@@ -827,7 +827,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     _toast('已保存主题「$name」');
   }
 
-  /// 背景图片选择/删除（对齐原版 backgroundImage 对话框；当前仅持久化路径）
+  /// 背景图片选择/删除（对齐原版 backgroundImage；经 ThemeColorsNotifier
+  /// 驱动 MaterialApp 全局壁纸即时生效）
   Future<void> _showBgImageDialog(String key) async {
     final isNight = key == PrefKeys.bgImageN;
     final current = isNight ? _bgImageNight : _bgImage;
@@ -870,7 +871,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           _bgImage = path;
         }
       });
-      await _settings.setStringPref(key, path);
+      final notifier = ref.read(themeColorsProvider.notifier);
+      if (isNight) {
+        await notifier.setBgImage(night: path);
+      } else {
+        await notifier.setBgImage(day: path);
+      }
     } else if (action == 'delete') {
       setState(() {
         if (isNight) {
@@ -879,7 +885,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           _bgImage = '';
         }
       });
-      await _settings.removePref(key);
+      final notifier = ref.read(themeColorsProvider.notifier);
+      if (isNight) {
+        await notifier.setBgImage(night: '');
+      } else {
+        await notifier.setBgImage(day: '');
+      }
     }
   }
 

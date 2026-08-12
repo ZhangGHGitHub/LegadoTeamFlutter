@@ -37,6 +37,12 @@ class ThemeColorsState {
   /// 夜间底部操作栏颜色（colorBottomBackgroundNight）
   final int? bottomBackgroundNight;
 
+  /// 日间背景图片本地路径（对齐原版 backgroundImage；空=未设置）
+  final String bgImage;
+
+  /// 夜间背景图片本地路径（对齐原版 backgroundImageNight）
+  final String bgImageNight;
+
   const ThemeColorsState({
     this.primary,
     this.accent,
@@ -46,7 +52,13 @@ class ThemeColorsState {
     this.accentNight,
     this.backgroundNight,
     this.bottomBackgroundNight,
+    this.bgImage = '',
+    this.bgImageNight = '',
   });
+
+  /// 按当前亮度返回应渲染的背景图路径（空串表示无图）
+  String bgImageFor(Brightness brightness) =>
+      brightness == Brightness.dark ? bgImageNight : bgImage;
 
   /// 按偏好键返回对应颜色值（供设置页展示当前值）
   int? valueOf(String key) {
@@ -84,6 +96,24 @@ class ThemeColorsState {
       backgroundNight: key == PrefKeys.cNBackground ? value : backgroundNight,
       bottomBackgroundNight:
           key == PrefKeys.cNBBackground ? value : bottomBackgroundNight,
+      bgImage: bgImage,
+      bgImageNight: bgImageNight,
+    );
+  }
+
+  /// 替换背景图路径后的新状态
+  ThemeColorsState withBgImage({String? day, String? night}) {
+    return ThemeColorsState(
+      primary: primary,
+      accent: accent,
+      background: background,
+      bottomBackground: bottomBackground,
+      primaryNight: primaryNight,
+      accentNight: accentNight,
+      backgroundNight: backgroundNight,
+      bottomBackgroundNight: bottomBackgroundNight,
+      bgImage: day ?? bgImage,
+      bgImageNight: night ?? bgImageNight,
     );
   }
 }
@@ -98,7 +128,7 @@ class ThemeColorsNotifier extends Notifier<ThemeColorsState> {
     return const ThemeColorsState();
   }
 
-  /// 启动时异步加载持久化的自定义颜色
+  /// 启动时异步加载持久化的自定义颜色与背景图
   Future<void> _load() async {
     state = ThemeColorsState(
       primary: await _settings.getIntPrefOrNull(PrefKeys.cPrimary),
@@ -110,7 +140,30 @@ class ThemeColorsNotifier extends Notifier<ThemeColorsState> {
       backgroundNight: await _settings.getIntPrefOrNull(PrefKeys.cNBackground),
       bottomBackgroundNight:
           await _settings.getIntPrefOrNull(PrefKeys.cNBBackground),
+      bgImage: await _settings.getStringPref(PrefKeys.bgImage),
+      bgImageNight: await _settings.getStringPref(PrefKeys.bgImageN),
     );
+  }
+
+  /// 设置日间/夜间背景图片路径（空串或 null = 清除；对齐原版 decorView 背景图）
+  Future<void> setBgImage({String? day, String? night}) async {
+    final nextDay = day ?? state.bgImage;
+    final nextNight = night ?? state.bgImageNight;
+    state = state.withBgImage(day: nextDay, night: nextNight);
+    if (day != null) {
+      if (day.isEmpty) {
+        await _settings.removePref(PrefKeys.bgImage);
+      } else {
+        await _settings.setStringPref(PrefKeys.bgImage, day);
+      }
+    }
+    if (night != null) {
+      if (night.isEmpty) {
+        await _settings.removePref(PrefKeys.bgImageN);
+      } else {
+        await _settings.setStringPref(PrefKeys.bgImageN, night);
+      }
+    }
   }
 
   /// 设置单个自定义颜色并持久化（value 传 null 表示恢复内置默认色）

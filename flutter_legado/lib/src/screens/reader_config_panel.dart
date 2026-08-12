@@ -139,15 +139,13 @@ class ReaderAdvancedConfig {
   bool mouseWheelPage;
 
   /// 双页模式（0全局单页/1全局双页/2横屏双页/3平板或横屏双页，
-  /// 对标原版 doubleHorizontalPage；桌面端双页渲染暂未接入，仅持久化）
+  /// 对标原版 doubleHorizontalPage；已接入 ReaderPageView 分页/渲染）
   int doubleHorizontalPage;
 
-  /// 使用自定义中文分行（对标原版 useZhLayout；本项目排版引擎已内置
-  /// ZhLayout 中文分行，此开关仅持久化）
+  /// 使用自定义中文分行（对标原版 useZhLayout；false=朴素按宽断行）
   bool useZhLayout;
 
-  /// 段首标点悬挂（对标原版 hangingPunctuation；排版引擎悬挂规则暂未
-  /// 按此开关切换，仅持久化）
+  /// 段首标点悬挂（对标原版 hangingPunctuation；已接入排版引擎）
   bool hangingPunctuation;
 
   /// 滑动翻页阈值（px，0=系统默认值，对标原版 pageTouchSlop）
@@ -1176,8 +1174,7 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
             _commit();
           },
         ),
-        // 平板/横屏双页（原版 doubleHorizontalPage，4 档；桌面端双页
-        // 渲染暂未接入，设置仅持久化）
+        // 平板/横屏双页（原版 doubleHorizontalPage，4 档；已接入渲染）
         _moreRow('平板/横屏双页',
             _doublePageLabel(_config.doubleHorizontalPage), () {
           _showChoiceDialog<int>(
@@ -1195,21 +1192,19 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
             },
           );
         }),
-        // 使用自定义中文分行（原版 useZhLayout；本项目排版引擎已内置
-        // ZhLayout 中文分行，开关仅持久化）
+        // 使用自定义中文分行（原版 useZhLayout；关闭后走朴素按宽断行）
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
           title: const Text('使用自定义中文分行'),
-          subtitle: const Text('排版引擎已内置中文分行，开关仅持久化'),
+          subtitle: const Text('开启后启用中文避头尾与更优断行'),
           value: _config.useZhLayout,
           onChanged: (v) {
             _config.useZhLayout = v;
             _commit();
           },
         ),
-        // 段首标点悬挂（原版 hangingPunctuation；排版引擎悬挂规则暂未
-        // 按此开关切换，仅持久化）
+        // 段首标点悬挂（原版 hangingPunctuation；已接入排版引擎）
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
