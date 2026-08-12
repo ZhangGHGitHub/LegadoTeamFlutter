@@ -20,6 +20,9 @@ class SettingsService {
   // LocalConfig.deleteBookAlert / AppConfig.tocCountWords） — Qoder
   static const _keyDeleteBookAlert = 'delete_book_alert';
   static const _keyTocLoadWordCount = 'toc_load_word_count';
+  // 对齐原版 PreferKey.enableReadRecord / LocalConfig readRecordSort
+  static const _keyEnableReadRecord = 'enableReadRecord';
+  static const _keyReadRecordSort = 'readRecordSort';
 
   // ===== 字体大小 =====
 
@@ -279,7 +282,7 @@ class SettingsService {
   Future<bool> getBookshelfLayout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_keyBookshelfLayout) ?? true; // 默认网格视图
+      return prefs.getBool(_keyBookshelfLayout) ?? false; // 默认列表（对齐 AppConfig.bookshelfLayout=0）
     } catch (e) {
       debugPrint('SettingsService.getBookshelfLayout 异常: $e');
       return true;
@@ -412,6 +415,11 @@ class SettingsService {
   static const _keySyncBookProgressPlus = 'sync_book_progress_plus';
   static const _keyAutoSync = 'sync_auto';
   static const _keyLastSyncTime = 'sync_last_time';
+  // 远程书库服务器（对齐原版 servers 表 + AppConfig.remoteServerId）
+  static const _keyRemoteServers = 'remote_servers';
+  static const _keyRemoteServerId = 'remote_server_id';
+  /// 默认 WebDAV（同步设置），对齐原版 DEFAULT_WEBDAV_ID = -1
+  static const int defaultRemoteServerId = -1;
 
   Future<String> getWebDavUrl() async {
     try {
@@ -505,6 +513,46 @@ class SettingsService {
       await prefs.setString(_keyWebDavDeviceName, value);
     } catch (e) {
       debugPrint('SettingsService.setWebDavDeviceName 异常: $e');
+    }
+  }
+
+  /// 远程书库自定义服务器列表 JSON（`[{id,name,url,username,password}]`）
+  Future<String> getRemoteServersJson() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyRemoteServers) ?? '[]';
+    } catch (e) {
+      debugPrint('SettingsService.getRemoteServersJson 异常: $e');
+      return '[]';
+    }
+  }
+
+  Future<void> setRemoteServersJson(String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyRemoteServers, value);
+    } catch (e) {
+      debugPrint('SettingsService.setRemoteServersJson 异常: $e');
+    }
+  }
+
+  /// 当前选用的远程服务器 id（-1 = 默认 WebDAV）
+  Future<int> getRemoteServerId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyRemoteServerId) ?? defaultRemoteServerId;
+    } catch (e) {
+      debugPrint('SettingsService.getRemoteServerId 异常: $e');
+      return defaultRemoteServerId;
+    }
+  }
+
+  Future<void> setRemoteServerId(int id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyRemoteServerId, id);
+    } catch (e) {
+      debugPrint('SettingsService.setRemoteServerId 异常: $e');
     }
   }
 
@@ -694,6 +742,48 @@ class SettingsService {
     } catch (e) {
       debugPrint('SettingsService.getStringPref($key) 异常: $e');
       return defaultValue;
+    }
+  }
+
+  // ===== 阅读记录（对齐 ReadRecordActivity） =====
+
+  /// 是否启用阅读时长记录（默认 true）
+  Future<bool> getEnableReadRecord() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyEnableReadRecord) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getEnableReadRecord 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> setEnableReadRecord(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyEnableReadRecord, value);
+    } catch (e) {
+      debugPrint('SettingsService.setEnableReadRecord 异常: $e');
+    }
+  }
+
+  /// 阅读记录排序：0=书名 1=时长 2=最后阅读（对齐 LocalConfig readRecordSort）
+  Future<int> getReadRecordSort() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyReadRecordSort) ?? 0;
+    } catch (e) {
+      debugPrint('SettingsService.getReadRecordSort 异常: $e');
+      return 0;
+    }
+  }
+
+  Future<void> setReadRecordSort(int value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyReadRecordSort, value);
+    } catch (e) {
+      debugPrint('SettingsService.setReadRecordSort 异常: $e');
     }
   }
 

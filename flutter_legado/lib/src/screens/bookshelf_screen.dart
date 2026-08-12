@@ -13,11 +13,9 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
-import '../services/settings_service.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/book_progress_utils.dart';
 import '../utils/responsive.dart';
-import '../utils/share_utils.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_list_item.dart';
 import '../widgets/custom_refresh_indicator.dart';
@@ -367,8 +365,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       onTap: () => _openBook(context, ref, book),
       // 封面长按：打开书籍信息页（对齐安卓原版）
       onCoverLongPress: () => _openBookInfo(context, book),
-      // 标题/信息区域长按：弹出操作菜单
-      onInfoLongPress: () => _showBookActionSheet(context, ref, book),
+      // 书名区长按：与封面一致直达书籍信息（对齐原版 U1）
+      onInfoLongPress: () => _openBookInfo(context, book),
     );
     return RepaintBoundary(child: item);
   }
@@ -417,147 +415,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
   }
 
-  /// 长按封面直接打开书籍信息页（对齐安卓原版行为）
+  /// 长按封面/书名直接打开书籍信息页（对齐安卓原版行为）
   void _openBookInfo(BuildContext context, Book book) {
     Navigator.pushNamed(
       context,
       AppRoutes.bookInfo,
       arguments: book,
-    );
-  }
-
-  /// 打开书籍信息编辑页，保存成功后刷新书架
-  Future<void> _editBookInfo(BuildContext context, WidgetRef ref, Book book) async {
-    // [fix Task#24 | 2026-08-08] 去掉 <bool> 泛型，避免 routes 表
-    // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
-    final saved = await Navigator.pushNamed(
-      context,
-      AppRoutes.editBookInfo,
-      arguments: book,
-    );
-    if (saved == true) {
-      ref.read(bookshelfNotifierProvider.notifier).refresh();
-    }
-  }
-
-  /// 分享书籍（对齐 Android 原版：书名 + 作者 + 来源）
-  void _shareBook(Book book) {
-    Share.share(buildBookShareText(book));
-  }
-
-  /// 长按标题/信息区域弹出操作菜单（对齐安卓原版底部菜单）
-  void _showBookActionSheet(BuildContext context, WidgetRef ref, Book book) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 菜单标题：书名
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  book.name,
-                  style: Theme.of(sheetContext).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('书籍信息'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openBookInfo(context, book);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('编辑'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _editBookInfo(context, ref, book);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share_outlined),
-                title: const Text('分享'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _shareBook(book);
-                },
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.delete_outline,
-                  color: Theme.of(sheetContext).colorScheme.error,
-                ),
-                title: Text(
-                  '删除',
-                  style: TextStyle(
-                    color: Theme.of(sheetContext).colorScheme.error,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmDeleteBook(context, ref, book);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// 确认删除书籍对话框
-  /// [UI-fix v2.0.3 | 2026-08-08] 接「删除提醒」开关（对齐原版
-  /// LocalConfig.deleteBookAlert）：开关关闭时跳过确认框直接删除 — Qoder
-  Future<void> _confirmDeleteBook(
-      BuildContext context, WidgetRef ref, Book book) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final deleteAlert = await SettingsService().getDeleteBookAlert();
-    if (!context.mounted) return;
-    if (!deleteAlert) {
-      ref.read(bookshelfNotifierProvider.notifier).removeBook(book.bookUrl);
-      messenger.showSnackBar(
-        SnackBar(content: Text('已删除「${book.name}」')),
-      );
-      return;
-    }
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('删除书籍'),
-          content: Text('确定要从书架中删除「${book.name}」吗？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                ref.read(bookshelfNotifierProvider.notifier).removeBook(book.bookUrl);
-                messenger.showSnackBar(
-                  SnackBar(content: Text('已删除「${book.name}」')),
-                );
-              },
-              child: Text(
-                '删除',
-                style: TextStyle(
-                  color: Theme.of(dialogContext).colorScheme.error,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 

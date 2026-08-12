@@ -37,7 +37,7 @@ class BookshelfState with _$BookshelfState {
     String? error,
 
     /// 展示层：网格/列表视图模式
-    @Default(true) bool isGridView,
+    @Default(false) bool isGridView,
 
     /// 展示层：分组显示模式
     @Default(GroupMode.none) GroupMode groupMode,

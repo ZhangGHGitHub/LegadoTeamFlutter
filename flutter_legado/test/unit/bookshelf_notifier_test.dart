@@ -65,12 +65,12 @@ void main() {
       verify(() => mockApi.getBooks()).called(1);
     });
 
-    test('初始状态：网格视图 + 不分组', () async {
+    test('初始状态：列表视图 + 不分组（对齐原版 bookshelfLayout=0）', () async {
       when(() => mockApi.getBooks()).thenAnswer((_) async => []);
       container.read(bookshelfNotifierProvider);
       await pumpInit();
 
-      expect(readState().isGridView, isTrue);
+      expect(readState().isGridView, isFalse);
       expect(readState().groupMode, equals(GroupMode.none));
       expect(readState().showRecentReading, isTrue);
       expect(readState().showStats, isTrue);
@@ -199,19 +199,19 @@ void main() {
       container.read(bookshelfNotifierProvider);
     });
 
-    test('toggleViewMode 切换网格/列表并持久化', () async {
+    test('toggleViewMode 切换列表/网格并持久化', () async {
       await pumpInit();
+      expect(readState().isGridView, isFalse);
+
+      await readNotifier().toggleViewMode();
       expect(readState().isGridView, isTrue);
+      var prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('bookshelf_layout'), isTrue);
 
       await readNotifier().toggleViewMode();
       expect(readState().isGridView, isFalse);
-      var prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('bookshelf_layout'), isFalse);
-
-      await readNotifier().toggleViewMode();
-      expect(readState().isGridView, isTrue);
       prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('bookshelf_layout'), isTrue);
+      expect(prefs.getBool('bookshelf_layout'), isFalse);
     });
 
     test('布局偏好重启后恢复（对标原版 bookshelfLayout 持久化）', () async {

@@ -219,7 +219,7 @@ class _$BookshelfStateImpl implements _BookshelfState {
       {final List<Book> books = const [],
       this.isLoading = false,
       this.error,
-      this.isGridView = true,
+      this.isGridView = false,
       this.groupMode = GroupMode.none,
       this.showRecentReading = true,
       this.showStats = true,
