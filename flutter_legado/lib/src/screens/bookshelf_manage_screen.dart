@@ -1,12 +1,19 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../constants/pref_keys.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bookshelf_manage/bookshelf_manage_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../services/settings_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -28,6 +35,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
   final _searchCtrl = TextEditingController();
   String _filter = '';
 
+  /// 点击书名打开书籍信息（对齐 openBookInfoByClickTitle）
+  bool _openInfoByTitle = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,7 +46,14 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(bookshelfManageNotifierProvider.notifier).load();
+      _loadOpenInfoPref();
     });
+  }
+
+  Future<void> _loadOpenInfoPref() async {
+    final v = await SettingsService()
+        .getBoolPref(PrefKeys.openBookInfoByClickTitle, defaultValue: false);
+    if (mounted) setState(() => _openInfoByTitle = v);
   }
 
   @override
@@ -305,8 +322,20 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                   value: 'group_manage', child: Text('分组管理')),
               const PopupMenuItem(
                   value: 'export_all', child: Text('导出所有使用书源的书籍')),
-              const PopupMenuItem(
-                  value: 'open_by_title', child: Text('点击书名打开书籍信息')),
+              PopupMenuItem(
+                value: 'open_by_title',
+                child: Row(
+                  children: [
+                    if (_openInfoByTitle) ...[
+                      Icon(Icons.check,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 6),
+                    ],
+                    const Text('点击书名打开书籍信息'),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -319,19 +348,60 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
   }
 
   /// 溢出菜单处理（对标原版 BookshelfManageActivity.onOptionsItemSelected）
-  void _handleMenu(String value) {
+  Future<void> _handleMenu(String value) async {
     switch (value) {
       case 'group_manage':
         Navigator.pushNamed(context, AppRoutes.bookGroups);
         break;
-      default:
-        const names = {
-          'export_all': '导出所有使用书源的书籍',
-          'open_by_title': '点击书名打开书籍信息',
-        };
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('「${names[value] ?? value}」后续版本支持')),
+      case 'export_all':
+        await _exportAllUsedBookSources();
+        break;
+      case 'open_by_title':
+        final next = !_openInfoByTitle;
+        setState(() => _openInfoByTitle = next);
+        await SettingsService()
+            .setBoolPref(PrefKeys.openBookInfoByClickTitle, next);
+        break;
+    }
+  }
+
+  /// 导出书架上所有在用书源 JSON（对齐 saveAllUseBookSourceToFile）
+  Future<void> _exportAllUsedBookSources() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(bookApiProvider);
+      final books = await api.getBooks();
+      final origins = books
+          .map((b) => b.origin)
+          .where((o) => o.isNotEmpty)
+          .toSet();
+      if (origins.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('当前书架没有使用网络书源的书籍')),
         );
+        return;
+      }
+      final sources = await api.getBookSources();
+      final used = sources
+          .where((s) => origins.contains(s.bookSourceUrl))
+          .map((s) => s.toJson())
+          .toList();
+      if (used.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('未找到对应书源（可能已删除）')),
+        );
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/bookSource.json');
+      await file.writeAsString(const JsonEncoder.withIndent('  ').convert(used));
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        text: '导出 ${used.length} 个在用书源',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('导出失败：$e')));
     }
   }
 
@@ -400,11 +470,25 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    book.name.isEmpty ? '未命名书籍' : book.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 15, color: cs.onSurface),
+                  GestureDetector(
+                    onTap: _openInfoByTitle
+                        ? () => Navigator.pushNamed(
+                              context,
+                              AppRoutes.bookInfo,
+                              arguments: book,
+                            )
+                        : null,
+                    child: Text(
+                      book.name.isEmpty ? '未命名书籍' : book.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: _openInfoByTitle
+                            ? Theme.of(context).colorScheme.primary
+                            : cs.onSurface,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -428,8 +512,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                   ),
                 ],
               ),
-            ),
-            // 删除按钮（对标原版 tv_delete）
+            ),            // 删除按钮（对标原版 tv_delete）
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 20),
               tooltip: '删除',

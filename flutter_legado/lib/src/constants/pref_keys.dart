@@ -188,4 +188,9 @@ class PrefKeys {
   /// 记录内存堆转储（预留键，暂未接线；当前真源为 CrashLogService
   /// 的 crash_record_heap_dump 键）
   static const recordHeapDump = 'recordHeapDump';
+
+  // ===== 书架管理（BookshelfManageActivity）=====
+
+  /// 点击书名打开书籍信息（对齐原版 openBookInfoByClickTitle，默认 false）
+  static const openBookInfoByClickTitle = 'openBookInfoByClickTitle';
 }
