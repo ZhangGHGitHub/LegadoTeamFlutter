@@ -1409,6 +1409,22 @@ class RustApi implements BookApi {
         await bridge.webbookContent(sourceJson: sourceJson, chapterJson: chapterJson),
       );
 
+  /// 流式书源调试（对齐 Debug.Callback）
+  @override
+  Stream<Map<String, dynamic>> debugBookSourceStream(
+    String sourceUrl,
+    String key,
+  ) =>
+      bridge
+          .debugBookSourceStream(sourceUrl: sourceUrl, key: key)
+          .map((item) => _decodeMap(item, 'debugBookSourceStream'));
+
+  /// 取消正在进行的书源调试
+  @override
+  Future<void> cancelDebugBookSource() async {
+    await bridge.debugBookSourceCancel();
+  }
+
   // ========== 发现页操作 ==========
 
   /// 解析 exploreUrl 为分类列表

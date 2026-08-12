@@ -40,6 +40,7 @@ pub mod server_api;
 pub mod source;
 pub mod source_callback_api;
 pub mod source_check_api;
+pub mod source_debug_api;
 pub mod source_login_v2_api;
 pub mod source_switch;
 pub mod txt_search_api;

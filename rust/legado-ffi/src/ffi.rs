@@ -286,6 +286,33 @@ pub mod ffi {
         Ok(())
     }
 
+    // ─── 书源调试流（对齐 Debug.Callback，加法式新增） ─────────
+
+    /// 流式调试书源（Stream&lt;String&gt;）
+    ///
+    /// 对齐 Kotlin `Debug.startDebug` + `Debug.Callback.printLog(state, msg)`。
+    /// 每条推送 JSON：`{"state":int,"msg":String}`；`state=-1` 失败、`1000` 完成。
+    /// 关键字分流：绝对 URL→详情；`::`→发现；`++`→目录；`--`→正文；否则搜索。
+    ///
+    /// `source_url` — 已入库书源 URL；`key` — 调试关键字
+    pub async fn debug_book_source_stream(
+        source_url: String,
+        key: String,
+        sink: StreamSink<String>,
+    ) -> Result<(), BridgeError> {
+        crate::api::source_debug_api::run_debug_book_source_stream(source_url, key, move |item| {
+            sink.add(item).map_err(|e| e.to_string())
+        })
+        .await;
+        Ok(())
+    }
+
+    /// 取消正在进行的书源调试
+    pub fn debug_book_source_cancel() -> Result<(), BridgeError> {
+        crate::api::source_debug_api::cancel_debug_book_source();
+        Ok(())
+    }
+
     // ─── 验证码交互通道（Task #90，加法式新增） ───────────────
 
     /// 订阅验证码请求事件流（长期存活，Stream<String>）

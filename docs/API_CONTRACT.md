@@ -21,6 +21,7 @@
 | 2026-08-13 | P2-9 段评完整 MVP：加法式新增 `reviewGetSummary` / `reviewGetDetail`（§2.30）；对齐原版 `loadReviewSummary`+`parseSummary` / `ReviewDetailDialog`+`parseDetailPage`；复用既有 `reviewGetReplies`。附录合计 244→246，BookApi 口径 235→237。本地库 `reviewGetByChapter`/`reviewAdd`… 仍属偏离创意，UI **禁止**接入 |
 | 2026-08-13 | P2-8：检查更新对接 GitHub Release API（`AppUpdateService` + `UpdateDialog`）；纯 Flutter HTTP，**无新 FFI** |
 | 2026-08-13 | P2-7：AutoTaskDebug 流式调试——UI 逐行回调 + `TaskResult.details` 对齐 LogFormatter；复用 `autoTaskExecuteWithId`，**无新 StreamSink FFI** |
+| 2026-08-13 | 书源调试流式 Debug.Callback：加法式新增 `debugBookSourceStream` / `cancelDebugBookSource`（§2.17）；对齐 Kotlin `Debug.startDebug`+`Callback.printLog(state,msg)`；附录合计 246→248，BookApi 口径 237→239 |
 
 ---
 
@@ -70,7 +71,7 @@
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
 > 为基准，BookApi 接口当前共 **237 个方法**（含 2026-08-13 P2-9 `reviewGetSummary` / `reviewGetDetail`）。
-> 附录行合计 246 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
+> 附录行合计 248 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
 > 扣除后 236 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 237，与 BookApi 闭合；详见附录口径说明。
 
 ### 2.1 初始化/版本（2 个方法）
@@ -285,7 +286,7 @@
 | `clearCacheBefore(int beforeTimestampMs)` | beforeTimestampMs: 毫秒时间戳 | `Future<void>` | 清除指定时间之前的缓存 |
 | `shrinkDatabase()` | 无 | `Future<int>` | 执行 SQLite VACUUM 压缩数据库文件，返回释放的字节数；Rust 侧应在后台线程执行避免阻塞。错误语义：VACUUM 失败（数据库锁/文件损坏）或数据库未初始化 → 返回 0 降级为无操作（不抛异常阻断业务）（台账 §5.13-9，第二批后置项，Task #50，加法式新增） |
 
-### 2.17 WebBook 操作（4 个方法）
+### 2.17 WebBook 操作（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -293,8 +294,12 @@
 | `webbookInfo(String sourceJson, String bookUrl)` | sourceJson, bookUrl | `Future<String>` | 获取书籍详情 JSON |
 | `webbookChapters(String sourceJson, String bookUrl)` | sourceJson, bookUrl | `Future<String>` | 获取章节列表 JSON |
 | `webbookContent(String sourceJson, String chapterJson)` | sourceJson, chapterJson | `Future<String>` | 获取章节正文（含 nextContentUrl 分页抓取，见下） |
+| `debugBookSourceStream(String sourceUrl, String key)` | sourceUrl（已入库书源 URL）, key（调试关键字） | `Stream<Map<String, dynamic>>` | 流式书源调试（对齐 Kotlin `Debug.startDebug` + `Callback.printLog`）。每条 JSON：`state`（int）/ `msg`（String，含 `[mm:ss.SSS]` 时间戳）；`state=-1` 失败终止、`1000` 成功完成；关键字分流：绝对 URL→详情、`分类名::url`→发现、`++tocUrl`→目录、`--chapterUrl`→正文、否则搜索→详情→目录→正文。流在完成/取消/sink 关闭后结束 |
+| `cancelDebugBookSource()` | 无 | `Future<void>` | 取消正在进行的书源调试（对齐 `Debug.cancelDebug`） |
 
 > ℹ️ **nextContentUrl 分页抓取行为（Task #108 缺口①）**：`webbookContent` 签名不变，行为完善——消费 `contentRule.nextContentUrl` 规则（对标 Kotlin `BookContent.analyzeContent` 分页循环）：解析当前页正文后解析下一页 URL 规则，非空且未重复则继续抓取并按页拼接（`\n` 连接，同 Kotlin `contentList.joinToString("\n")`）；每页正文独立走 HtmlFormatter 净化（按该页 URL 绝对化 img）。防死循环保护：已访问 URL 去重（含首章 URL）+ 最大页数上限 99（原版无显式上限，Rust 轨加法式加固）；nextContentUrl 命中下一章 URL 的截断判定因无状态签名不可得 nextChapterUrl，由 URL 去重与页数上限兜底。音视频源不参与分页净化（同单页行为）。
+
+> ℹ️ **流式 Debug.Callback（2026-08-13）**：Rust 侧 `ffi::debug_book_source_stream / debug_book_source_cancel`（实现 `legado-ffi/src/api/source_debug_api.rs`），复用既有 `webbook*` / `exploreFetchBooks` 链路推送逐步日志与字段摘要（`JsSourceDebugFormatter` 风格）。冻结 `webbook*` 契约不变，本组为加法式新增。
 
 ### 2.18 发现页操作（2 个方法）
 
@@ -773,7 +778,7 @@
 | 14 | 书籍分组 | 4 |
 | 15 | 搜索历史 | 5 |
 | 16 | 缓存管理 | 6 |
-| 17 | WebBook 操作 | 4 |
+| 17 | WebBook 操作 | 6 |
 | 18 | 发现页操作 | 2 |
 | 19 | 规则解析 | 1 |
 | 20 | 网络操作 | 3 |
@@ -800,10 +805,10 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **246** |
+| | **合计（§2.1–§2.43 附录行合计）** | **248** |
 
 > 口径说明（Task #55 F6，2026-08-10 校准；含 2026-08-13 P2-9 段评 summary/detail，基准 = `book_api.dart` 程序化计数 **237**）：
-> - **与 BookApi 闭合**：附录行合计 246 − 尚未封装进 BookApi 的 FFI 10 个
+> - **与 BookApi 闭合**：附录行合计 248 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
 >   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 236；

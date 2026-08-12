@@ -645,6 +645,18 @@ abstract class BookApi {
   /// 获取章节正文
   Future<String> webbookContent(String sourceJson, String chapterJson);
 
+  /// 流式书源调试（对齐 Kotlin Debug.Callback.printLog）
+  ///
+  /// 每条 Map：`state`（int）/ `msg`（String）。
+  /// `state=-1` 失败、`1000` 完成。
+  Stream<Map<String, dynamic>> debugBookSourceStream(
+    String sourceUrl,
+    String key,
+  );
+
+  /// 取消正在进行的书源调试
+  Future<void> cancelDebugBookSource();
+
   // ========== 发现页操作 ==========
 
   /// 解析 exploreUrl 为分类列表

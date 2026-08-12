@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.40] - 2026-08-13
+
+### Added
+- [Bridge]/[Rust]/[UI] 书源调试流式 Debug.Callback：`debugBookSourceStream` / `cancelDebugBookSource`，对齐原版 `Debug.Callback.printLog`
+
 ## [2.0.39] - 2026-08-13
 
 ### 修复（书源导出 / 阅读记录写入 / 默认字典与 TXT 目录规则，[UI]+[Rust]）

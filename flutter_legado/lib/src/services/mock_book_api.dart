@@ -1403,6 +1403,28 @@ class MockBookApi implements BookApi {
   Future<String> webbookContent(String sourceJson, String chapterJson) async =>
       '（Mock 章节内容）';
 
+  @override
+  Stream<Map<String, dynamic>> debugBookSourceStream(
+    String sourceUrl,
+    String key,
+  ) async* {
+    yield {
+      'state': 1,
+      'msg': '[00:00.000] ⇒开始搜索关键字:$key',
+    };
+    yield {
+      'state': 1,
+      'msg': '[00:00.010] 书源 URL: $sourceUrl',
+    };
+    yield {
+      'state': 1000,
+      'msg': '[00:00.020] ︽Mock 调试完成',
+    };
+  }
+
+  @override
+  Future<void> cancelDebugBookSource() async {}
+
   // ========== 发现页操作 ==========
 
   @override

@@ -159,6 +159,25 @@ Stream<String> sourceCheckStream({
 Future<void> sourceCheckCancel() =>
     RustLib.instance.api.crateFfiFfiSourceCheckCancel();
 
+/// 流式调试书源（Stream&lt;String&gt;）
+///
+/// 对齐 Kotlin `Debug.startDebug` + `Debug.Callback.printLog(state, msg)`。
+/// 每条推送 JSON：`{"state":int,"msg":String}`；`state=-1` 失败、`1000` 完成。
+/// 关键字分流：绝对 URL→详情；`::`→发现；`++`→目录；`--`→正文；否则搜索。
+///
+/// `source_url` — 已入库书源 URL；`key` — 调试关键字
+Stream<String> debugBookSourceStream({
+  required String sourceUrl,
+  required String key,
+}) => RustLib.instance.api.crateFfiFfiDebugBookSourceStream(
+  sourceUrl: sourceUrl,
+  key: key,
+);
+
+/// 取消正在进行的书源调试
+Future<void> debugBookSourceCancel() =>
+    RustLib.instance.api.crateFfiFfiDebugBookSourceCancel();
+
 /// 订阅验证码请求事件流（长期存活，Stream<String>）
 ///
 /// 书源 JS 经 `getVerificationCode` 钩子挂起等待时，每个请求推送

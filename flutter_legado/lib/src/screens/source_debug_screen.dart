@@ -1,9 +1,8 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
-import '../models/models.dart';
 import '../providers/providers.dart';
 
 /// 书源调试页面
@@ -99,196 +98,54 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
       _logs.clear();
     });
 
-    final startMs = DateTime.now().millisecondsSinceEpoch;
-    String stamp() {
-      final elapsed = DateTime.now().millisecondsSinceEpoch - startMs;
-      final m = (elapsed ~/ 60000).toString().padLeft(2, '0');
-      final s = ((elapsed % 60000) ~/ 1000).toString().padLeft(2, '0');
-      final ms = (elapsed % 1000).toString().padLeft(3, '0');
-      return '[$m:$s.$ms]';
-    }
+    _appendLog('⇒开始调试');
 
-    void step(String msg, {_DebugLogLevel level = _DebugLogLevel.info}) {
-      _appendLog('${stamp()} $msg', level: level);
-    }
-
-    step('⇒开始调试');
-    step('书源 URL: $sourceUrl');
-    step('关键字: $keyword');
-
+    StreamSubscription<Map<String, dynamic>>? sub;
     try {
       final api = ref.read(bookApiProvider);
-      final sources = await api.getBookSources();
-      final source = sources.cast<BookSource?>().firstWhere(
-            (s) => s!.bookSourceUrl == sourceUrl,
-            orElse: () => null,
-          );
-
-      if (source == null) {
-        step('错误：未找到书源 $sourceUrl', level: _DebugLogLevel.error);
-        step('提示：请确认书源已导入且 URL 正确', level: _DebugLogLevel.warn);
-        return;
-      }
-
-      step('书源名称: ${source.bookSourceName}', level: _DebugLogLevel.success);
-      final sourceJson = jsonEncode(source.toJson());
-
-      // 对齐 Debug.startDebug 关键字分流：绝对 URL / ::发现 / ++目录 / --正文 / 搜索
-      if (keyword.startsWith('--')) {
-        final chapterUrl = keyword.substring(2);
-        step('⇒开始访正文页:$chapterUrl');
-        await _debugContent(api, sourceJson, chapterUrl, step);
-      } else if (keyword.startsWith('++')) {
-        final tocUrl = keyword.substring(2);
-        step('⇒开始访目录页:$tocUrl');
-        await _debugTocThenContent(api, sourceJson, tocUrl, step);
-      } else if (keyword.contains('::')) {
-        step('⇒发现页调试暂未接线（需 exploreBook API）', level: _DebugLogLevel.warn);
-        step('请使用普通关键词走搜索链路', level: _DebugLogLevel.warn);
-      } else if (_looksLikeAbsUrl(keyword)) {
-        step('⇒开始访问详情页:$keyword');
-        await _debugInfoTocContent(api, sourceJson, keyword, step);
-      } else {
-        step('⇒开始搜索关键字:$keyword');
-        step('︾开始解析搜索页');
-        final resultJson = await api.webbookSearch(sourceJson, keyword, 1);
-        final results = jsonDecode(resultJson) as List;
-        if (results.isEmpty) {
-          step('︽未获取到书籍', level: _DebugLogLevel.error);
-          return;
-        }
-        step('︽搜索页解析完成', level: _DebugLogLevel.success);
-        for (var i = 0; i < results.length && i < 5; i++) {
-          final item = results[i] as Map<String, dynamic>;
-          final name = item['book_name'] ?? item['name'] ?? '未知';
-          final author = item['author'] ?? '';
-          step('  [$i] $name${author.toString().isNotEmpty ? ' - $author' : ''}');
-        }
-        final first = results.first as Map<String, dynamic>;
-        final bookUrl =
-            (first['book_url'] ?? first['bookUrl'] ?? '').toString();
-        if (bookUrl.isEmpty) {
-          step('首条结果无 bookUrl，结束', level: _DebugLogLevel.error);
-          return;
-        }
-        await _debugInfoTocContent(api, sourceJson, bookUrl, step);
-      }
-
-      step('=== 调试完成 ===', level: _DebugLogLevel.success);
+      sub = api.debugBookSourceStream(sourceUrl, keyword).listen(
+        (item) {
+          if (!mounted) return;
+          final state = item['state'] is int
+              ? item['state'] as int
+              : int.tryParse('${item['state']}') ?? 1;
+          final msg = (item['msg'] ?? '').toString();
+          if (msg.isEmpty) return;
+          final level = state < 0
+              ? _DebugLogLevel.error
+              : state >= 1000
+                  ? _DebugLogLevel.success
+                  : _DebugLogLevel.info;
+          _appendLog(msg, level: level);
+        },
+        onError: (Object e) {
+          if (!mounted) return;
+          _appendLog('异常: ${_errMsg(e)}', level: _DebugLogLevel.error);
+        },
+        onDone: () {
+          if (!mounted) return;
+          setState(() => _running = false);
+        },
+        cancelOnError: true,
+      );
+      await sub.asFuture<void>();
     } catch (e) {
-      step('异常: ${_errMsg(e)}', level: _DebugLogLevel.error);
+      _appendLog('异常: ${_errMsg(e)}', level: _DebugLogLevel.error);
     } finally {
+      await sub?.cancel();
       if (mounted) {
         setState(() => _running = false);
       }
     }
   }
 
-  bool _looksLikeAbsUrl(String s) {
-    final lower = s.toLowerCase();
-    return lower.startsWith('http://') || lower.startsWith('https://');
-  }
-
-  Future<void> _debugInfoTocContent(
-    dynamic api,
-    String sourceJson,
-    String bookUrl,
-    void Function(String, {_DebugLogLevel level}) step,
-  ) async {
-    step('︾开始解析详情页');
-    final infoJson = await api.webbookInfo(sourceJson, bookUrl);
-    step('︽详情页解析完成', level: _DebugLogLevel.success);
+  Future<void> _cancelDebug() async {
     try {
-      final info = jsonDecode(infoJson);
-      if (info is Map) {
-        final name = info['name'] ?? info['book_name'] ?? '';
-        final author = info['author'] ?? '';
-        if (name.toString().isNotEmpty) {
-          step('书名: $name${author.toString().isNotEmpty ? ' / $author' : ''}');
-        }
-      }
-    } catch (_) {
-      step('详情原始: ${_preview(infoJson)}');
+      await ref.read(bookApiProvider).cancelDebugBookSource();
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _running = false);
     }
-    await _debugTocThenContent(api, sourceJson, bookUrl, step);
-  }
-
-  Future<void> _debugTocThenContent(
-    dynamic api,
-    String sourceJson,
-    String bookUrl,
-    void Function(String, {_DebugLogLevel level}) step,
-  ) async {
-    step('︾开始解析目录页');
-    final chaptersJson = await api.webbookChapters(sourceJson, bookUrl);
-    final chapters = jsonDecode(chaptersJson);
-    if (chapters is! List || chapters.isEmpty) {
-      step('︽未获取到目录', level: _DebugLogLevel.error);
-      return;
-    }
-    step('︽目录解析完成，共 ${chapters.length} 章', level: _DebugLogLevel.success);
-    for (var i = 0; i < chapters.length && i < 3; i++) {
-      final c = chapters[i];
-      if (c is Map) {
-        step('  [$i] ${c['title'] ?? c['name'] ?? '章节'}');
-      }
-    }
-    final first = chapters.first;
-    if (first is! Map) {
-      step('首章格式异常', level: _DebugLogLevel.error);
-      return;
-    }
-    final chapterUrl =
-        (first['url'] ?? first['chapter_url'] ?? first['link'] ?? '').toString();
-    if (chapterUrl.isEmpty) {
-      // 仍尝试用整章 JSON 取正文
-      step('⇒开始获取正文（首章 JSON）');
-      await _debugContentWithJson(
-        api,
-        sourceJson,
-        jsonEncode(first),
-        step,
-      );
-      return;
-    }
-    step('⇒开始获取正文:$chapterUrl');
-    await _debugContentWithJson(api, sourceJson, jsonEncode(first), step);
-  }
-
-  Future<void> _debugContent(
-    dynamic api,
-    String sourceJson,
-    String chapterUrl,
-    void Function(String, {_DebugLogLevel level}) step,
-  ) async {
-    final chapterJson = jsonEncode({
-      'title': '调试',
-      'url': chapterUrl,
-    });
-    await _debugContentWithJson(api, sourceJson, chapterJson, step);
-  }
-
-  Future<void> _debugContentWithJson(
-    dynamic api,
-    String sourceJson,
-    String chapterJson,
-    void Function(String, {_DebugLogLevel level}) step,
-  ) async {
-    step('︾开始解析正文');
-    final content = await api.webbookContent(sourceJson, chapterJson);
-    final text = content.toString();
-    if (text.trim().isEmpty) {
-      step('︽正文为空', level: _DebugLogLevel.warn);
-      return;
-    }
-    step('︽正文解析完成（${text.length} 字）', level: _DebugLogLevel.success);
-    step(_preview(text), level: _DebugLogLevel.info);
-  }
-
-  String _preview(String text, {int max = 400}) {
-    final t = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (t.length <= max) return t;
-    return '${t.substring(0, max)}…';
   }
 
   @override
@@ -346,7 +203,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                     ),
                     const SizedBox(width: 12),
                     FilledButton.icon(
-                      onPressed: _running ? null : _runDebug,
+                      onPressed: _running ? _cancelDebug : _runDebug,
                       icon: _running
                           ? const SizedBox(
                               width: 16,
@@ -354,7 +211,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.play_arrow),
-                      label: Text(_running ? '运行中' : '调试'),
+                      label: Text(_running ? '停止' : '调试'),
                     ),
                   ],
                 ),
