@@ -71,13 +71,31 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
       _checkingUpdate = true;
       _updateResult = null;
     });
-    // 模拟检查更新流程（真实实现可对接 release API）
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    // 无远端 release API 时本地给出「已最新」说明 Dialog（对标原版 UpdateDialog 形态）
+    await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
-    setState(() {
-      _checkingUpdate = false;
-      _updateResult = '当前已是最新版本 v$_appVersion';
-    });
+    setState(() => _checkingUpdate = false);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('当前版本 v$_appVersion'),
+        content: const SingleChildScrollView(
+          child: Text(
+            '当前已是最新版本。\n\n'
+            '说明：重构版尚未对接 GitHub Release 检查接口；'
+            '有新版本时将在此展示更新日志，并可选择下载或忽略该版本。',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _updateResult = '当前已是最新版本 v$_appVersion');
   }
 
   @override

@@ -516,20 +516,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Navigator.pushNamed(context, AppRoutes.webdavSettings);
                 },
               ),
-              const Divider(),
-              // 延后项：Rust 契约暂不支持，占位禁用（后续版本支持）
-              ListTile(
-                leading: const Icon(Icons.filter_alt_off),
-                title: const Text('恢复忽略项'),
-                subtitle: const Text('后续版本支持'),
-                enabled: false,
-              ),
-              ListTile(
-                leading: const Icon(Icons.archive),
-                title: const Text('导入旧版数据'),
-                subtitle: const Text('后续版本支持'),
-                enabled: false,
-              ),
+              // P2-4：恢复忽略项 / 导入旧版数据 — Rust 契约未支持，诚实隐藏（2026-08-12）
             ],
           ),
         ),

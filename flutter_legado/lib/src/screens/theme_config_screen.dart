@@ -42,7 +42,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   bool _transparentStatusBar = true;
   bool _immNavigationBar = true;
   int _barElevation = 0;
-  bool _bottomBarSkin = false;
   bool _wallpaperColorFollow = false;
   bool _wallpaperColorAutoUpdate = true;
 
@@ -95,10 +94,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     );
     final barElevation =
         await _settings.getIntPref(PrefKeys.barElevation, defaultValue: 0);
-    final bottomBarSkin = await _settings.getBoolPref(
-      PrefKeys.bottomBarSkin,
-      defaultValue: false,
-    );
     final wallpaperColorFollow = await _settings.getBoolPref(
       PrefKeys.wallpaperColorFollow,
       defaultValue: false,
@@ -123,7 +118,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       _transparentStatusBar = transparentStatusBar;
       _immNavigationBar = immNavigationBar;
       _barElevation = barElevation;
-      _bottomBarSkin = bottomBarSkin;
       _wallpaperColorFollow = wallpaperColorFollow;
       _wallpaperColorAutoUpdate = wallpaperColorAutoUpdate;
       _bgImage = bgImage;
@@ -258,15 +252,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       showDisclosure: true,
                       onTap: _showThemeListDialog,
                     ),
-                    SwitchListTile(
-                      title: const Text('底部操作栏皮肤'),
-                      subtitle: const Text(_androidOnly),
-                      value: _bottomBarSkin,
-                      onChanged: (v) {
-                        setState(() => _bottomBarSkin = v);
-                        _settings.setBoolPref(PrefKeys.bottomBarSkin, v);
-                      },
-                    ),
+                    // P2-1：原版 BottomBarSkin 为皮肤包管理（非 bool 开关），Flutter 未移植管理屏——诚实隐藏入口（2026-08-12）
                     SwitchListTile(
                       title: const Text('壁纸取色'),
                       subtitle: const Text(_androidOnly),

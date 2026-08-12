@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
@@ -1575,6 +1576,10 @@ class _LoginV2DialogState extends State<_LoginV2Dialog> {
   final Map<String, String> _selects = {};
   String? _error;
   bool _busy = false;
+  /// action → 剩余秒数（对标 SourceLoginV2Delegate.countdownLeft）
+  final Map<String, int> _countdownLeft = {};
+  final Map<String, Timer> _countdownTimers = {};
+  final Map<String, String> _buttonLabels = {};
 
   @override
   void initState() {
@@ -1584,10 +1589,35 @@ class _LoginV2DialogState extends State<_LoginV2Dialog> {
 
   @override
   void dispose() {
+    for (final t in _countdownTimers.values) {
+      t.cancel();
+    }
+    _countdownTimers.clear();
     for (final c in _controllers.values) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  void _startCountdown(String action, int seconds) {
+    _countdownTimers.remove(action)?.cancel();
+    _countdownLeft[action] = seconds;
+    setState(() {});
+    _countdownTimers[action] = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final left = (_countdownLeft[action] ?? 1) - 1;
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (left <= 0) {
+        timer.cancel();
+        _countdownTimers.remove(action);
+        _countdownLeft.remove(action);
+        setState(() {});
+      } else {
+        setState(() => _countdownLeft[action] = left);
+      }
+    });
   }
 
   /// 拉取动态 UI 描述（首次/收到 state 命令后重渲染）
@@ -1648,7 +1678,8 @@ class _LoginV2DialogState extends State<_LoginV2Dialog> {
   }
 
   /// 执行 action 命令（button 行触发），处理返回命令键
-  Future<void> _doAction(String action) async {
+  Future<void> _doAction(String action, {int? countdownSeconds}) async {
+    if ((_countdownLeft[action] ?? 0) > 0) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -1681,6 +1712,10 @@ class _LoginV2DialogState extends State<_LoginV2Dialog> {
           _busy = false;
         });
         return;
+      }
+      // 成功且配置了 countdown：启动按钮倒计时（对齐 Kotlin）
+      if (countdownSeconds != null && countdownSeconds > 0) {
+        _startCountdown(action, countdownSeconds);
       }
       if (res['state'] is Map) {
         _stateJson = jsonEncode(res['state']);
@@ -1777,13 +1812,24 @@ class _LoginV2DialogState extends State<_LoginV2Dialog> {
         );
       case 'button':
         final action = row['action']?.toString() ?? '';
-        // TODO: button countdown 倒计时暂未实现（后续对齐 — Qoder）
+        final countdownRaw = row['countdown'];
+        final countdown = countdownRaw is int
+            ? countdownRaw
+            : int.tryParse(countdownRaw?.toString() ?? '');
+        if (action.isNotEmpty && name.isNotEmpty) {
+          _buttonLabels.putIfAbsent(action, () => name);
+        }
+        final left = _countdownLeft[action] ?? 0;
+        final label = left > 0
+            ? '${_buttonLabels[action] ?? name} (${left}s)'
+            : (_buttonLabels[action] ?? name);
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: OutlinedButton(
-            onPressed:
-                _busy || action.isEmpty ? null : () => _doAction(action),
-            child: Text(name),
+            onPressed: _busy || action.isEmpty || left > 0
+                ? null
+                : () => _doAction(action, countdownSeconds: countdown),
+            child: Text(label),
           ),
         );
       case 'password':
