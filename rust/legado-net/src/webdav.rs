@@ -35,7 +35,10 @@ pub struct WebDavClient {
 
 impl WebDavClient {
     pub fn new(config: WebDavConfig) -> Self {
-        let client = reqwest::Client::builder().build().unwrap_or_default();
+        let client = reqwest::Client::builder()
+            .dns_resolver(crate::custom_hosts::resolver())
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self { config, client }
     }
 
@@ -81,6 +84,35 @@ impl WebDavClient {
             .map_err(|e| LegadoError::Network(e.to_string()))?;
 
         Self::parse_propfind_response(&xml)
+    }
+
+    /// PUT — 从本地文件流式上传（避免大文件整块驻留内存）
+    ///
+    /// 使用 `tokio::fs::File` + `ReaderStream` 边读边传；非 2xx 返回 Network。
+    pub async fn put_file(&self, path: &str, local_file_path: &str) -> LegadoResult<()> {
+        use tokio_util::io::ReaderStream;
+
+        let url = self.full_url(path);
+        let file = tokio::fs::File::open(local_file_path)
+            .await
+            .map_err(|e| LegadoError::Io(e))?;
+        let stream = ReaderStream::new(file);
+        let body = reqwest::Body::wrap_stream(stream);
+        let response = self
+            .client
+            .put(&url)
+            .header("Authorization", self.auth_header())
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| LegadoError::Network(e.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(LegadoError::Network(format!(
+                "WebDAV PUT 失败: HTTP {status}"
+            )));
+        }
+        Ok(())
     }
 
     /// PUT — 上传文件（`&[u8]` 借用版，内部转交所有权版本）

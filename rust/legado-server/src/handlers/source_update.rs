@@ -119,6 +119,7 @@ pub async fn check_updates(State(state): State<Arc<AppState>>) -> Result<Json<Va
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .danger_accept_invalid_certs(true)
+        .dns_resolver(legado_net::custom_hosts::resolver())
         .build()
         .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
 
@@ -156,6 +157,7 @@ pub async fn execute_update(
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .danger_accept_invalid_certs(true)
+        .dns_resolver(legado_net::custom_hosts::resolver())
         .build()
         .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
 
