@@ -15,7 +15,7 @@
 | 2026-08-12 | 远程书库（P1-5）加法式新增——`webdavDownloadFile`（§2.28 WebDAV 云同步，镜像 `webdavUploadFile`，二进制落盘）；远程服务器列表沿用 Flutter `SettingsService` 持久化（对齐原版 `servers` 表语义，不新增 Server CRUD FFI）。附录合计 239→240，BookApi 口径 230→231 |
 | 2026-08-12 | P1-2 加法式新增——`clearCookie`（§2.3 书源操作，对齐原版 `CookieStore.removeCookie`）：按 URL 二级域名清除持久层 + 共享 HTTP 内存 CookieStore + JS 宿主 Cookie；附录合计 240→241，BookApi 口径 231→232 |
 | 2026-08-13 | P2-4 部分：恢复忽略项 UI + `localBook` 在调用 `restore` 前由 Flutter 过滤备份 JSON（无新 FFI）；「导入旧版」仍隐藏待确认 |
-| 2026-08-13 | P2-4 续：加法式新增 `importOldData`（§2.11 备份操作）——对齐原版 `ImportOldData.importUri`：扫描目录内 `myBookShelf.json` / `myBookSource.json` / `myBookReplaceRule.json`，经 `toNewRule`/`toNewUrl`/`toNewUrls` 字段映射后写入 DB；返回统计 JSON。附录合计 244→245，BookApi 口径 235→236 |
+| 2026-08-13 | P2-4 续：恢复忽略项其余键——备份 JSON 注入 `appPrefs`，恢复时按 BackupConfig.keyIsNotIgnore 过滤（readConfig/themeMode/themeConfig/coverConfig/bookshelfLayout/showRss/threadCount）；无新 FFI |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
 
 ---
@@ -229,8 +229,8 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `backup(String dirPath)` | dirPath | `Future<String>` | 备份数据，返回备份文件路径 |
-| `restore(String backupPath)` | backupPath | `Future<void>` | 恢复数据。**P2-4（2026-08-13）**：UI 在调用前可读 `SettingsService.restoreIgnore`；若 `localBook=true` 且备份为 JSON，先过滤 `origin=loc_book` / `dav:` / `type&LOCAL` 本地书再调用本方法（无需改 FFI 签名）。其余 ignore 键（readConfig/theme* 等）待备份含 prefs/主题文件后接线 |
+| `backup(String dirPath)` | dirPath | `Future<String>` | 备份数据，返回备份文件路径。**P2-4（2026-08-13）**：Flutter 在 FFI 写出 JSON 后注入 `appPrefs`（当前 SharedPreferences 快照，已按 restoreIgnore + alwaysIgnore 过滤）；无新 FFI 签名 |
+| `restore(String backupPath)` | backupPath | `Future<void>` | 恢复数据。**P2-4（2026-08-13）**：UI 先读 `SettingsService.restoreIgnore`；`localBook` 预过滤备份 JSON 本地书；其余 ignore 键在应用备份内 `appPrefs` 时经 `RestoreIgnorePrefs.keyIsNotIgnore` 跳过（对齐 BackupConfig）；再调用本方法恢复业务表（无需改 FFI 签名） |
 | `importOldData(String dirPath)` | dirPath：含旧版备份文件的目录 | `Future<String>`（统计 JSON） | **P2-4（2026-08-13）**：对齐原版 `ImportOldData.importUri`。读取目录下 `myBookShelf.json` / `myBookSource.json` / `myBookReplaceRule.json`（缺文件不致命，计入 `messages`）；书架字段映射（`noteUrl`→`bookUrl`、`bookInfoBean.*` 等）；书源经 `toNewRule`/`toNewUrl`/`toNewUrls`/`uaToHeader` 迁到 3.x 规则结构；替换规则兼容新格式或旧字段（`regex`/`replaceSummary`/`useTo`/`enable`/`serialNumber`）。已存在 `bookUrl` 的书跳过。返回 JSON：`{books, bookSources, replaceRules, messages: string[]}` |
 
 ### 2.12 阅读记录（4 个方法）

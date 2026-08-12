@@ -14,9 +14,12 @@ import '../routes.dart';
 import '../services/auto_task_scheduler.dart';
 import '../services/book_api.dart';
 import '../services/crash_log_service.dart';
+import '../services/restore_ignore_prefs.dart';
 import '../services/settings_service.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
+import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../theme/app_colors.dart';
 import '../widgets/ios_widgets.dart';
@@ -531,7 +534,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.filter_list_outlined),
                 title: const Text('恢复忽略项'),
-                subtitle: const Text('恢复时跳过勾选项（当前仅本地书籍生效）'),
+                subtitle: const Text('备份/恢复时跳过勾选项'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showRestoreIgnore(context);
@@ -588,6 +591,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await crashLog.setBackupPath(dirPath);
       }
       final filePath = await api.backup(dirPath);
+      final ignore = await SettingsService().getRestoreIgnoreConfig();
+      await RestoreIgnorePrefs.injectAppPrefsIntoBackupFile(filePath, ignore);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${AppStrings.backupSuccess}：$filePath')),
@@ -606,8 +611,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// 本地恢复（对标原版 BackupConfigFragment.restoreFromLocal）
   ///
-  /// 选择备份文件后经 [BookApi.restore] 全量恢复；若勾选忽略本地书，
-  /// 先按 [SettingsService] 配置过滤备份 JSON 中的本地书再恢复。
+  /// 选择备份文件后经 [BookApi.restore] 全量恢复；按恢复忽略项：
+  /// - localBook：预过滤备份 JSON 本地书
+  /// - 其余键：经 [RestoreIgnorePrefs] 应用备份内 `appPrefs` 时跳过
   Future<void> _doRestore(BuildContext context) async {
     setState(() => _restoreLoading = true);
     final api = ref.read(bookApiProvider);
@@ -626,9 +632,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         pathToRestore = await _backupPathSkippingLocalBooks(backupPath);
       }
 
+      // 先应用偏好（对齐原版 Restore 写 SharedPreferences），再恢复 DB
+      await RestoreIgnorePrefs.applyAppPrefsFromBackupFile(
+        backupPath,
+        ignore,
+      );
       await api.restore(pathToRestore);
       if (context.mounted) {
-        ref.read(bookshelfNotifierProvider.notifier).refresh();
+        await _reloadPrefsAfterRestore();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(AppStrings.restoreSuccess)));
@@ -642,6 +653,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _restoreLoading = false);
     }
+  }
+
+  /// 恢复后刷新内存中的主题/主界面/书架布局（对齐原版 ThemeConfig.applyDayNight）
+  Future<void> _reloadPrefsAfterRestore() async {
+    await ref.read(themeNotifierProvider.notifier).load();
+    ref.invalidate(themeColorsProvider);
+    ref.invalidate(mainPrefsProvider);
+    // 书架布局等展示偏好随书架 Notifier 重建加载
+    ref.invalidate(bookshelfNotifierProvider);
   }
 
   /// 导入旧版数据（对齐 BackupConfigFragment.restoreOld / ImportOldData.importUri）

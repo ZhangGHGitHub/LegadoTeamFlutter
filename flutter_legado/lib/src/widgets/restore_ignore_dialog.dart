@@ -4,8 +4,8 @@ import '../services/settings_service.dart';
 
 /// 恢复忽略项多选 Dialog（对齐原版 BackupConfigFragment.backupIgnore）
 ///
-/// 当前备份 JSON 仅含业务表数据；恢复时**仅「本地书籍」生效**（预过滤）。
-/// 其余键持久化对齐原版，待备份含 prefs/主题/阅读配置后接线。
+/// 勾选项在备份/恢复时经 [RestoreIgnorePrefs] 过滤偏好；
+/// 「本地书籍」在调用 restore 前预过滤备份 JSON 中的本地书。
 class RestoreIgnoreDialog extends StatefulWidget {
   const RestoreIgnoreDialog({super.key, required this.initial});
 
@@ -39,27 +39,22 @@ class _RestoreIgnoreDialogState extends State<RestoreIgnoreDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '勾选后恢复时跳过对应项。当前备份格式下仅「本地书籍」会生效；其余项已保存，待备份含主题/阅读配置后生效。',
+                '勾选后备份与恢复时跳过对应项（对齐原版）。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
               ),
               const SizedBox(height: 8),
               for (var i = 0; i < SettingsService.restoreIgnoreKeys.length; i++)
-                Builder(
-                  builder: (ctx) {
-                    final key = SettingsService.restoreIgnoreKeys[i];
-                    final title = SettingsService.restoreIgnoreTitles[i];
-                    final effective = key == 'localBook';
-                    return CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      value: _checked[key] == true,
-                      title: Text(title),
-                      subtitle: effective ? null : const Text('待备份格式扩展'),
-                      onChanged: (v) {
-                        setState(() => _checked[key] = v == true);
-                      },
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: _checked[SettingsService.restoreIgnoreKeys[i]] == true,
+                  title: Text(SettingsService.restoreIgnoreTitles[i]),
+                  onChanged: (v) {
+                    setState(
+                      () => _checked[SettingsService.restoreIgnoreKeys[i]] =
+                          v == true,
                     );
                   },
                 ),
@@ -73,7 +68,8 @@ class _RestoreIgnoreDialogState extends State<RestoreIgnoreDialog> {
           child: const Text('取消'),
         ),
         TextButton(
-          onPressed: () => Navigator.pop(context, Map<String, bool>.from(_checked)),
+          onPressed: () =>
+              Navigator.pop(context, Map<String, bool>.from(_checked)),
           child: const Text('确定'),
         ),
       ],

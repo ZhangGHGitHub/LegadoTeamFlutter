@@ -817,6 +817,9 @@ class SettingsService {
 
   static const _keyRestoreIgnore = 'restoreIgnore';
 
+  /// 恢复忽略配置持久化键（供备份始终排除，避免恢复时覆盖本地忽略策略）
+  static const restoreIgnoreStorageKey = _keyRestoreIgnore;
+
   /// 读取恢复忽略配置（缺省全 false）
   Future<Map<String, bool>> getRestoreIgnoreConfig() async {
     try {
