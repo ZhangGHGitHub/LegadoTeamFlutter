@@ -2153,6 +2153,22 @@ class RustApi implements BookApi {
     return _decodeMap(json, 'bookApi');
   }
 
+  @override
+  Future<Map<String, dynamic>> bookExportWithOptions({
+    required String bookUrl,
+    required String format,
+    required bool includeToc,
+    String optionsJson = '',
+  }) async {
+    final json = await bridge.bookExportWithOptions(
+      bookUrl: bookUrl,
+      format: format,
+      includeToc: includeToc,
+      optionsJson: optionsJson,
+    );
+    return _decodeMap(json, 'bookApi');
+  }
+
   /// 获取导出预览信息（返回 ExportResult JSON）
   Future<Map<String, dynamic>> bookExportInfo({
     required String bookUrl,

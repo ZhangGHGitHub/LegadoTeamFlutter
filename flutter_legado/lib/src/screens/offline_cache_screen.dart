@@ -4,13 +4,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
+import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
+import '../services/export_service.dart';
 import '../utils/book_open_utils.dart';
+import '../widgets/export_dialog.dart';
 import '../widgets/loading_indicator.dart';
 
 /// 离线缓存界面（对齐原版 CacheActivity）
@@ -290,84 +292,30 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     );
   }
 
-  // ===== 单本导出（对齐原版 CacheActivity 导出通道，原书架 _exportBookCache 迁移） =====
+  // ===== 单本导出（对齐原版 CacheActivity → ExportBookService） =====
 
-  /// 按章节顺序读取已缓存章节（cacheGetChapter），章节标题+正文拼 TXT，
-  /// 文件名取书名，经分享通道保存（对齐原版 ExportBookService 单本导出语义）
+  /// 打开导出对话框：格式 txt/epub/pdf、charset、文件名模板、章节范围、进度与 WebDAV
   Future<void> _exportBook(Book book) async {
     final api = ref.read(bookApiProvider);
-    final progress = ValueNotifier<String>('正在读取章节列表...');
-    // 导出期间用户可能手动关闭进度对话框（系统返回键），
-    // 以标志位防止 finally 里误 pop 页面本身（迁移自书架旧实现时顺手修复）
-    var dialogOpen = true;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => ValueListenableBuilder<String>(
-        valueListenable: progress,
-        builder: (context, text, _) => AlertDialog(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: 16),
-              Expanded(child: Text(text)),
-            ],
-          ),
-        ),
-      ),
-    ).whenComplete(() => dialogOpen = false);
+    final sync = ref.read(syncNotifierProvider);
+    String? webDavConfig;
+    if (sync.webDavUrl.trim().isNotEmpty) {
+      webDavConfig = ref.read(syncNotifierProvider.notifier).buildConfigJson();
+    }
 
-    final buffer = StringBuffer();
-    var cached = 0;
-    String? loadError;
-    try {
-      final chapters = await api.getChapters(book.bookUrl);
-      for (var i = 0; i < chapters.length; i++) {
-        progress.value = '正在读取缓存 ${i + 1}/${chapters.length}';
-        String content;
-        try {
-          content = await api.getCachedChapter(book.bookUrl, i);
-        } catch (e) {
-          debugPrint('读取缓存失败《${book.name}》第 $i 章：$e');
-          continue;
-        }
-        if (content.trim().isEmpty) continue; // 未缓存章节：跳过
-        buffer.writeln(chapters[i].title);
-        buffer.writeln();
-        buffer.writeln(content.trim());
-        buffer.writeln();
-        cached++;
-      }
-    } catch (e) {
-      loadError = '$e';
-    } finally {
-      if (mounted && dialogOpen) Navigator.pop(context); // 关闭进度对话框
-      progress.dispose();
-    }
-    if (!mounted) return;
-    if (loadError != null) {
-      _snack('缓存导出失败：$loadError');
-      return;
-    }
-    if (cached == 0) {
-      _snack('《${book.name}》暂无已缓存章节');
-      return;
-    }
-    final fileName =
-        '${book.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.txt';
-    await Share.shareXFiles([
-      XFile.fromData(
-        utf8.encode(buffer.toString()),
-        name: fileName,
-        mimeType: 'text/plain',
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => ExportDialog(
+        book: book,
+        exportService: ExportService(api),
+        rustApi: api,
+        webDavConfig: webDavConfig,
       ),
-    ]);
-    if (mounted) {
-      _snack('已导出《${book.name}》$cached 章缓存');
+    );
+    if (!mounted || result == null) return;
+    if (result['success'] == true) {
+      final name = result['file_name'] ?? book.name;
+      _snack('已导出 $name');
     }
   }
 

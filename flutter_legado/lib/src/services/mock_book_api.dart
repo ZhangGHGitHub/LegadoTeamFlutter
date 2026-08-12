@@ -1923,6 +1923,20 @@ class MockBookApi implements BookApi {
   }
 
   @override
+  Future<Map<String, dynamic>> bookExportWithOptions({
+    required String bookUrl,
+    required String format,
+    required bool includeToc,
+    String optionsJson = '',
+  }) async {
+    return bookExport(
+      bookUrl: bookUrl,
+      format: format,
+      includeToc: includeToc,
+    );
+  }
+
+  @override
   Future<Map<String, dynamic>> bookExportInfo({
     required String bookUrl,
     required String format,

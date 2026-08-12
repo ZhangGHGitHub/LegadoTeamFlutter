@@ -969,6 +969,16 @@ abstract class BookApi {
     required bool includeToc,
   });
 
+  /// 带选项导出（对齐 ExportBookService / API_CONTRACT §2.43.4）
+  ///
+  /// [optionsJson] 示例：`{"encoding":"GBK","startChapter":0,"endChapter":9,"fileNameTemplate":"{name} 作者：{author}"}`
+  Future<Map<String, dynamic>> bookExportWithOptions({
+    required String bookUrl,
+    required String format,
+    required bool includeToc,
+    String optionsJson = '',
+  });
+
   /// 获取导出预览信息
   Future<Map<String, dynamic>> bookExportInfo({
     required String bookUrl,

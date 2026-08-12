@@ -57,6 +57,13 @@ class _ExportDialogState extends State<ExportDialog> {
   // 导出路径（用户选择的目录）
   String? _exportPath;
 
+  // 文件名模板（{name}/{author}）
+  final _fileNameCtrl = TextEditingController(text: '{name}');
+
+  // 章节范围（可选；空=全部）
+  final _startChapterCtrl = TextEditingController();
+  final _endChapterCtrl = TextEditingController();
+
   // 导出状态
   ExportStatus _status = ExportStatus.idle;
 
@@ -69,12 +76,19 @@ class _ExportDialogState extends State<ExportDialog> {
   @override
   void initState() {
     super.initState();
-    // 默认从支持的格式中选择第一个
     if (widget.exportService.supportedFormats.contains('epub')) {
       _selectedFormat = 'epub';
     } else {
       _selectedFormat = 'txt';
     }
+  }
+
+  @override
+  void dispose() {
+    _fileNameCtrl.dispose();
+    _startChapterCtrl.dispose();
+    _endChapterCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -101,6 +115,14 @@ class _ExportDialogState extends State<ExportDialog> {
 
             // 字符集选择
             _buildEncodingSelector(),
+            const Divider(height: 32),
+
+            // 文件名模板
+            _buildFileNameTemplate(),
+            const Divider(height: 32),
+
+            // 章节范围
+            _buildChapterRange(),
             const Divider(height: 32),
 
             // 导出路径选择
@@ -197,6 +219,82 @@ class _ExportDialogState extends State<ExportDialog> {
               _selectedEncoding = value ?? 'UTF-8';
             });
           },
+        ),
+      ],
+    );
+  }
+
+  /// 文件名模板（对齐原版 bookExportFileName：{name}/{author}）
+  Widget _buildFileNameTemplate() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('文件名模板',
+            style: TextStyle(fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        Text(
+          '可用变量：{name} {author}',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _fileNameCtrl,
+          decoration: const InputDecoration(
+            hintText: '{name}',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 章节范围（对齐 ExportBookService 范围；空=全部）
+  Widget _buildChapterRange() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('章节范围',
+            style: TextStyle(fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        Text(
+          '索引从 0 起；留空表示全部章节',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _startChapterCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '起始',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('—'),
+            ),
+            Expanded(
+              child: TextField(
+                controller: _endChapterCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '结束',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -412,12 +510,18 @@ class _ExportDialogState extends State<ExportDialog> {
     });
 
     try {
-      // 调用导出 API
+      final start = int.tryParse(_startChapterCtrl.text.trim());
+      final end = int.tryParse(_endChapterCtrl.text.trim());
+
+      // 调用导出 API（options：charset / 范围 / 文件名模板）
       final result = await widget.exportService.export(
         bookUrl: widget.book.bookUrl,
         format: _selectedFormat,
         includeToc: _includeToc,
         encoding: _selectedEncoding,
+        startChapter: start,
+        endChapter: end,
+        fileNameTemplate: _fileNameCtrl.text.trim(),
       );
 
       // 更新进度
@@ -426,6 +530,8 @@ class _ExportDialogState extends State<ExportDialog> {
         _progressText = '导出完成，正在写入文件...';
       });
 
+      String? writtenPath;
+
       // 非 WebDAV 模式下将导出文件写入用户选择的目录
       if (_exportPath != null && !_enableWebDav) {
         try {
@@ -433,8 +539,8 @@ class _ExportDialogState extends State<ExportDialog> {
           final fileName = result['file_name'] as String? ?? 'export.txt';
           if (dataBase64 != null) {
             final bytes = base64Decode(dataBase64);
-            final filePath = '$_exportPath${Platform.pathSeparator}$fileName';
-            await File(filePath).writeAsBytes(bytes);
+            writtenPath = '$_exportPath${Platform.pathSeparator}$fileName';
+            await File(writtenPath).writeAsBytes(bytes);
           }
         } catch (e) {
           debugPrint('[ExportDialog] 写入文件失败：$e');
@@ -445,7 +551,7 @@ class _ExportDialogState extends State<ExportDialog> {
         }
       }
 
-      // 检查是否需要上传到 WebDAV
+      // 检查是否需要上传到 WebDAV（二进制走 webdavUploadFile）
       if (_enableWebDav && widget.webDavConfig != null) {
         try {
           final data = result['data_base64'] as String?;
@@ -456,11 +562,21 @@ class _ExportDialogState extends State<ExportDialog> {
               _progressText = '上传到 WebDAV...';
             });
 
-            await widget.exportService.webdavUpload(
-              widget.webDavConfig!,
-              '/books/$fileName',
-              data,
+            final tmp = File(
+              '${Directory.systemTemp.path}${Platform.pathSeparator}$fileName',
             );
+            await tmp.writeAsBytes(base64Decode(data));
+            try {
+              await widget.exportService.webdavUploadFile(
+                widget.webDavConfig!,
+                '/books/$fileName',
+                tmp.path,
+              );
+            } finally {
+              if (await tmp.exists()) {
+                await tmp.delete();
+              }
+            }
 
             setState(() {
               _progress = 1.0;
@@ -477,7 +593,7 @@ class _ExportDialogState extends State<ExportDialog> {
       } else {
         setState(() {
           _progress = 1.0;
-          _progressText = '导出成功！';
+          _progressText = writtenPath != null ? '已保存：$writtenPath' : '导出成功！';
         });
       }
 
