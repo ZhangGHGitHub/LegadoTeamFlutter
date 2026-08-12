@@ -202,6 +202,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .fetch_url(&analyze_url, source_headers.as_ref())
             .await?;
 
+        crate::login_check::execute_login_check(source, &body, analyze_url.url(), 200)?;
+
         // 3. 使用搜索规则解析结果
         let search_rule = source.rule_search.as_ref();
         let book_list_rule = search_rule
@@ -315,6 +317,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 1. 请求书籍详情页
         let body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
+
+        // 1.5 loginCheckJs
+        crate::login_check::execute_login_check(source, &body, book_url, 200)?;
 
         // 2. 使用 bookInfo 规则解析
         let info_rule = source.rule_book_info.as_ref();
@@ -432,6 +437,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 1. 先获取详情页以确定 toc_url
         let info_body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
+        crate::login_check::execute_login_check(source, &info_body, book_url, 200)?;
         let info_rule = source.rule_book_info.as_ref();
         let info_analyzer = AnalyzeRule::new(info_body, book_url.to_string());
 
@@ -520,6 +526,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let body = self
             .fetch_simple(&chapter.url, source_headers.as_ref())
             .await?;
+
+        crate::login_check::execute_login_check(source, &body, &chapter.url, 200)?;
 
         // 2. 使用正文规则解析首页（Task #135：含 nextContentUrl 分页规则提取）
         let content_rule = source.rule_content.as_ref();

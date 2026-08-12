@@ -34,6 +34,7 @@
 
 pub mod error;
 pub mod handlers;
+pub mod login_check;
 pub mod routes;
 pub mod server;
 pub mod state;

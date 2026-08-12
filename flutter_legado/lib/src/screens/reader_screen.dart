@@ -24,6 +24,7 @@ import '../widgets/reader/reader_status_strip.dart';
 import '../widgets/reader/reader_top_bar.dart';
 import '../widgets/reader/review_detail_sheet.dart';
 import '../utils/comic_image_utils.dart';
+import '../utils/source_login_prompt.dart';
 import 'reader_config_panel.dart';
 
 /// 阅读器页面（Riverpod ConsumerStatefulWidget 薄壳）
@@ -339,6 +340,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     // ReadBook AutoChangeSource 加载失败自动换源语义的最小路径）— Qoder
     ref.listen(readerNotifierProvider, (prev, next) {
       if (next.error != null && prev?.error == null) {
+        unawaited(_maybePromptSourceLogin(next));
         _maybeAutoChangeSource(next);
       }
     });
@@ -653,6 +655,35 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   // 对标原版 ReadBook 内容加载失败后 AutoChangeSource 按书名搜替代源并切换：
   // 复用 searchSource/switchSource FFI（与换源页同源链路）；完整重试策略/
   // 失败源禁用等复杂逻辑留待后续批次 — Qoder
+
+  /// loginCheckJs 判定未登录时自动拉起登录页（§5.14-18）
+  Future<void> _maybePromptSourceLogin(ReaderState state) async {
+    if (!isSourceLoginRequiredError(state.error)) return;
+    final book = state.currentBook;
+    if (book == null) return;
+    if (book.origin == BookType.localTag ||
+        book.origin.startsWith(BookType.webDavTag)) {
+      return;
+    }
+    BookSource? source;
+    try {
+      final sources = await ref.read(bookApiProvider).getBookSources();
+      for (final s in sources) {
+        if (s.bookSourceUrl == book.origin) {
+          source = s;
+          break;
+        }
+      }
+    } catch (_) {
+      return;
+    }
+    if (!mounted || source == null) return;
+    await promptSourceLoginIfNeeded(
+      context,
+      error: state.error,
+      source: source,
+    );
+  }
 
   /// 章节加载失败时尝试自动换源（在线书且开关开启时）
   void _maybeAutoChangeSource(ReaderState state) {
