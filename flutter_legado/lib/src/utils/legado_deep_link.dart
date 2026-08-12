@@ -61,7 +61,7 @@ class LegadoDeepLink {
     final key = pathKey.toLowerCase();
     // importonline 变体：host 即为类型（booksource / rsssource / replace）
     final token = (host == 'importonline' || host == 'import') ? key : host;
-    switch (token) {
+    switch (token.isNotEmpty ? token : key) {
       case 'booksource':
         return ImportType.bookSource;
       case 'rsssource':
@@ -71,23 +71,16 @@ class LegadoDeepLink {
         return ImportType.replaceRule;
       case 'theme':
         return ImportType.theme;
+      case 'httptts':
+        return ImportType.httpTts;
+      case 'dictrule':
+        return ImportType.dictRule;
+      case 'texttocrule':
+      case 'txttocrule':
+      case 'txtrule':
+        return ImportType.txtTocRule;
       default:
-        // 再看 pathKey（legado://import/bookSource）
-        switch (key) {
-          case 'booksource':
-            return ImportType.bookSource;
-          case 'rsssource':
-            return ImportType.rssSource;
-          case 'replacerule':
-          case 'replace':
-            return ImportType.replaceRule;
-          case 'theme':
-            return ImportType.theme;
-          default:
-            // httpTTS / dictRule / textTocRule / autoTask / readConfig 等：
-            // Association 暂无独立类型 → P1-12；此处返回 null 让用户自选
-            return null;
-        }
+        return null;
     }
   }
 }

@@ -17,6 +17,15 @@ enum ImportType {
 
   /// 主题配置
   theme,
+
+  /// HTTP TTS
+  httpTts,
+
+  /// 字典规则
+  dictRule,
+
+  /// TXT 目录规则
+  txtTocRule,
 }
 
 /// 导入来源方式
@@ -101,6 +110,12 @@ extension AssociationStateDisplay on AssociationState {
         return '替换规则';
       case ImportType.theme:
         return '主题配置';
+      case ImportType.httpTts:
+        return 'HTTP TTS';
+      case ImportType.dictRule:
+        return '字典规则';
+      case ImportType.txtTocRule:
+        return 'TXT 目录规则';
     }
   }
 

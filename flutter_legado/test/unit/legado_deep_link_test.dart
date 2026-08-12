@@ -20,12 +20,18 @@ void main() {
       expect(link!.importType, ImportType.rssSource);
     });
 
-    test('unknown type keeps src but null importType', () {
+    test('parses httpTTS path', () {
       final link = LegadoDeepLink.tryParse(
         'legado://import/httpTTS?src=https://example.com/tts.json',
       );
-      expect(link!.srcUrl, 'https://example.com/tts.json');
-      expect(link.importType, isNull);
+      expect(link!.importType, ImportType.httpTts);
+    });
+
+    test('parses dictRule path', () {
+      final link = LegadoDeepLink.tryParse(
+        'legado://import/dictRule?src=https://example.com/dict.json',
+      );
+      expect(link!.importType, ImportType.dictRule);
     });
 
     test('missing src returns null', () {

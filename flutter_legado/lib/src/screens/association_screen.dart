@@ -52,6 +52,9 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
       'rssSource' => ImportType.rssSource,
       'replaceRule' => ImportType.replaceRule,
       'theme' => ImportType.theme,
+      'httpTts' => ImportType.httpTts,
+      'dictRule' => ImportType.dictRule,
+      'txtTocRule' => ImportType.txtTocRule,
       _ => null,
     };
   }
@@ -196,6 +199,9 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
       (ImportType.rssSource, Icons.rss_feed, 'RSS 源', '导入 RSS 订阅源'),
       (ImportType.replaceRule, Icons.find_replace, '替换规则', '导入内容替换规则'),
       (ImportType.theme, Icons.palette, '主题配置', '导入应用主题配置'),
+      (ImportType.httpTts, Icons.record_voice_over, 'HTTP TTS', '导入在线朗读引擎'),
+      (ImportType.dictRule, Icons.menu_book_outlined, '字典规则', '导入在线词典规则'),
+      (ImportType.txtTocRule, Icons.article_outlined, 'TXT 目录规则', '导入本地 TXT 分章规则'),
     ];
 
     return ListView(

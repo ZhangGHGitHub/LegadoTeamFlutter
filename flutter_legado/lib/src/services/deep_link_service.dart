@@ -73,5 +73,8 @@ class DeepLinkService {
         ImportType.rssSource => 'rssSource',
         ImportType.replaceRule => 'replaceRule',
         ImportType.theme => 'theme',
+        ImportType.httpTts => 'httpTts',
+        ImportType.dictRule => 'dictRule',
+        ImportType.txtTocRule => 'txtTocRule',
       };
 }

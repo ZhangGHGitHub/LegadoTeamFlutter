@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
+import '../../models/misc.dart';
 import '../../services/source_import_service.dart';
 import '../providers.dart';
 import 'association_state.dart';
@@ -228,6 +229,15 @@ class AssociationNotifier extends Notifier<AssociationState> {
         case ImportType.theme:
           result = await _importTheme();
           break;
+        case ImportType.httpTts:
+          result = await _importHttpTts();
+          break;
+        case ImportType.dictRule:
+          result = await _importDictRules();
+          break;
+        case ImportType.txtTocRule:
+          result = await _importTxtTocRules();
+          break;
       }
 
       state = state.copyWith(
@@ -389,6 +399,127 @@ class AssociationNotifier extends Notifier<AssociationState> {
       success: success,
       failed: failed,
       skipped: 0,
+      errors: errors,
+    );
+  }
+
+  /// 导入 HTTP TTS（对齐 importHttpTts FFI）
+  Future<ImportResult> _importHttpTts() async {
+    final jsonStr = jsonEncode(state.previewItems);
+    final n = await ref.read(bookApiProvider).importHttpTts(jsonStr);
+    return ImportResult(
+      total: state.previewItems.length,
+      success: n,
+      failed: (state.previewItems.length - n).clamp(0, 1 << 30),
+      skipped: 0,
+      errors: const [],
+    );
+  }
+
+  /// 导入字典规则（合并写入配置键 dict_rules）
+  Future<ImportResult> _importDictRules() async {
+    final api = ref.read(bookApiProvider);
+    const key = 'dict_rules';
+    final existingRaw = await api.getConfig(key);
+    final existing = <Map<String, dynamic>>[];
+    if (existingRaw != null && existingRaw.isNotEmpty) {
+      final decoded = jsonDecode(existingRaw);
+      if (decoded is List) {
+        for (final e in decoded) {
+          if (e is Map<String, dynamic>) existing.add(e);
+        }
+      }
+    }
+    final names = existing.map((e) => e['name'] as String? ?? '').toSet();
+    var success = 0;
+    var skipped = 0;
+    final errors = <String>[];
+    for (final item in state.previewItems) {
+      if (item is! Map<String, dynamic>) {
+        errors.add('无效的字典规则格式');
+        continue;
+      }
+      try {
+        final rule = DictRule.fromJson(item);
+        if (rule.name.isEmpty) {
+          errors.add('字典规则缺少名称');
+          continue;
+        }
+        if (names.contains(rule.name)) {
+          skipped++;
+          continue;
+        }
+        existing.add(rule.toJson());
+        names.add(rule.name);
+        success++;
+      } catch (e) {
+        errors.add('导入字典规则失败：$e');
+      }
+    }
+    await api.setConfig(key, jsonEncode(existing));
+    return ImportResult(
+      total: state.previewItems.length,
+      success: success,
+      failed: errors.length,
+      skipped: skipped,
+      errors: errors,
+    );
+  }
+
+  /// 导入 TXT 目录规则（合并写入配置键 txt_toc_rules）
+  Future<ImportResult> _importTxtTocRules() async {
+    final api = ref.read(bookApiProvider);
+    const key = 'txt_toc_rules';
+    final existingRaw = await api.getConfig(key);
+    final existing = <Map<String, dynamic>>[];
+    if (existingRaw != null && existingRaw.isNotEmpty) {
+      final decoded = jsonDecode(existingRaw);
+      if (decoded is List) {
+        for (final e in decoded) {
+          if (e is Map<String, dynamic>) existing.add(e);
+        }
+      }
+    }
+    final names = existing.map((e) => e['name'] as String? ?? '').toSet();
+    var nextId =
+        existing.fold<int>(0, (m, e) => ((e['id'] as num?)?.toInt() ?? 0) > m
+            ? (e['id'] as num).toInt()
+            : m) +
+            1;
+    var success = 0;
+    var skipped = 0;
+    final errors = <String>[];
+    for (final item in state.previewItems) {
+      if (item is! Map<String, dynamic>) {
+        errors.add('无效的 TXT 规则格式');
+        continue;
+      }
+      try {
+        var rule = TxtTocRule.fromJson(item);
+        if (rule.name.isEmpty || rule.rule.isEmpty) {
+          errors.add('TXT 规则缺少名称或正则');
+          continue;
+        }
+        if (names.contains(rule.name)) {
+          skipped++;
+          continue;
+        }
+        if (rule.id <= 0) {
+          rule = rule.copyWith(id: nextId++, serialNumber: existing.length);
+        }
+        existing.add(rule.toJson());
+        names.add(rule.name);
+        success++;
+      } catch (e) {
+        errors.add('导入 TXT 规则失败：$e');
+      }
+    }
+    await api.setConfig(key, jsonEncode(existing));
+    return ImportResult(
+      total: state.previewItems.length,
+      success: success,
+      failed: errors.length,
+      skipped: skipped,
       errors: errors,
     );
   }
