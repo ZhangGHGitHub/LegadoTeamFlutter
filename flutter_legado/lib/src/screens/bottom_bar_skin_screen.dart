@@ -9,10 +9,11 @@ import '../providers/bottom_bar_skin_notifier.dart';
 import '../services/bottom_bar_skin_format.dart';
 import '../services/bottom_bar_skin_service.dart';
 import '../widgets/ios_widgets.dart';
+import 'bottom_bar_skin_assign_screen.dart';
 
-/// 底栏皮肤管理（对齐原版 BottomBarSkinActivity 最小可用）
+/// 底栏皮肤管理（对齐 BottomBarSkinActivity）
 ///
-/// 设计：iOS 分组列表——系统默认 + 已导入皮肤；导入命名槽位 zip；点选启用。
+/// 导入 zip → 分配页选槽位 → 启用/删除/编辑；底栏读 PrefKeys.bottomBarSkin 换图标。
 class BottomBarSkinScreen extends ConsumerWidget {
   const BottomBarSkinScreen({super.key});
 
@@ -56,16 +57,17 @@ class BottomBarSkinScreen extends ConsumerWidget {
                     ),
                     title: Text(name),
                     trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmDelete(context, notifier, name),
+                      icon: const Icon(Icons.more_horiz),
+                      onPressed: () => _showItemMenu(context, notifier, name),
                     ),
                     onTap: () => notifier.setActive(name),
+                    onLongPress: () => _showItemMenu(context, notifier, name),
                   ),
               ],
             ),
             const IosSectionFooter(
-              '导入 zip：文件名需为 bookshelf/home/notes/settings 的 '
-              '_selected / _normal 图片（对齐原版槽位命名）。',
+              '导入 zip 后进入分配页：为书架/发现/订阅/我的各选「选中」图'
+              '（「未选」可空）。若文件名已是 bookshelf_selected 等，将自动预填。',
             ),
             if (state.loading)
               const Padding(
@@ -130,7 +132,10 @@ class BottomBarSkinScreen extends ConsumerWidget {
             else
               const Icon(Icons.image_not_supported_outlined, size: 28),
             const SizedBox(height: 4),
-            Text(slot, style: const TextStyle(fontSize: 10)),
+            Text(
+              BottomBarSkinFormat.slotLabels[slot] ?? slot,
+              style: const TextStyle(fontSize: 10),
+            ),
           ],
         ),
       );
@@ -148,17 +153,123 @@ class BottomBarSkinScreen extends ConsumerWidget {
     );
     final path = result?.files.single.path;
     if (path == null) return;
+    final zip = File(path);
+    String? sessionId;
     try {
-      final name = await notifier.importZipFile(File(path));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已导入并启用：$name')),
-        );
+      sessionId =
+          await BottomBarSkinService.instance.extractZipToSession(zip);
+      final preferred = zip.uri.pathSegments.last.replaceAll(
+        RegExp(r'\.zip$', caseSensitive: false),
+        '',
+      );
+      if (!context.mounted) {
+        await BottomBarSkinService.instance.discardSession(sessionId);
+        return;
+      }
+      final name = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => BottomBarSkinAssignScreen(
+            sessionId: sessionId!,
+            preferredName: preferred,
+          ),
+        ),
+      );
+      sessionId = null; // Assign 屏负责 discard 或已保存
+      if (name != null) {
+        await notifier.reload();
+        await notifier.setActive(name);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已保存并启用：$name')),
+          );
+        }
+      } else {
+        await notifier.reload();
       }
     } catch (e) {
+      if (sessionId != null) {
+        await BottomBarSkinService.instance.discardSession(sessionId);
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('导入失败：$e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showItemMenu(
+    BuildContext context,
+    BottomBarSkinNotifier notifier,
+    String name,
+  ) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(name),
+              enabled: false,
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('编辑'),
+              onTap: () => Navigator.pop(ctx, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('删除'),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (action == 'delete') {
+      await _confirmDelete(context, notifier, name);
+    } else if (action == 'edit') {
+      await _edit(context, notifier, name);
+    }
+  }
+
+  Future<void> _edit(
+    BuildContext context,
+    BottomBarSkinNotifier notifier,
+    String name,
+  ) async {
+    String? sessionId;
+    try {
+      sessionId = await BottomBarSkinService.instance.stageExisting(name);
+      if (!context.mounted) {
+        await BottomBarSkinService.instance.discardSession(sessionId);
+        return;
+      }
+      final saved = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => BottomBarSkinAssignScreen(
+            sessionId: sessionId!,
+            preferredName: name,
+            editName: name,
+          ),
+        ),
+      );
+      sessionId = null;
+      await notifier.reload();
+      if (saved != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已更新：$saved')),
+        );
+      }
+    } catch (e) {
+      if (sessionId != null) {
+        await BottomBarSkinService.instance.discardSession(sessionId);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('无法编辑：$e')),
         );
       }
     }

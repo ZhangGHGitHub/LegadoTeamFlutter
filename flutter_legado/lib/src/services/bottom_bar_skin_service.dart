@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
@@ -8,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/pref_keys.dart';
 import 'bottom_bar_skin_format.dart';
 
-/// 底栏皮肤路径解析结果
+/// ??????????
 class BottomBarSkinIcons {
   const BottomBarSkinIcons({this.normal, this.selected});
 
@@ -16,10 +17,25 @@ class BottomBarSkinIcons {
   final String? selected;
 }
 
-/// 底栏皮肤本地管理（对齐 BottomBarSkinManager 最小可用子集）
+/// ???????? / ???
+class BottomBarSkinPrefill {
+  const BottomBarSkinPrefill({this.selected, this.normal});
+
+  final File? selected;
+  final File? normal;
+}
+
+/// ??????????????
+class BottomBarSkinSlotAssign {
+  const BottomBarSkinSlotAssign({required this.selected, this.normal});
+
+  final File selected;
+  final File? normal;
+}
+
+/// ??????????? BottomBarSkinManager?
 ///
-/// MVP：导入已命名槽位图片的 zip（`bookshelf_selected.png` 等）→ 列表/启用/删除。
-/// 不含原版 AssignActivity 交互式槽位分配。
+/// ??????? zip ? ?? session ? Assign ????????? zip ?????
 class BottomBarSkinService {
   BottomBarSkinService._();
   static final instance = BottomBarSkinService._();
@@ -28,8 +44,11 @@ class BottomBarSkinService {
   static const _maxEntryBytes = 8 * 1024 * 1024;
   static const _maxTotalBytes = 32 * 1024 * 1024;
   static const _maxEntries = 64;
+  static const _sessionDirName = '.staging';
+  static const _sessionMaxAgeMs = 24 * 60 * 60 * 1000;
 
   Directory? _root;
+  final _random = Random();
 
   Future<Directory> _rootDir() async {
     if (_root != null) return _root!;
@@ -40,12 +59,22 @@ class BottomBarSkinService {
     return dir;
   }
 
+  Future<Directory> _sessionRoot() async {
+    final root = await _rootDir();
+    final dir = Directory(
+      '${root.path}${Platform.pathSeparator}$_sessionDirName',
+    );
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
   Future<List<String>> list() async {
     final root = await _rootDir();
     final names = <String>[];
     await for (final entity in root.list()) {
       if (entity is! Directory) continue;
       final basename = entity.path.split(Platform.pathSeparator).last;
+      if (basename.startsWith('.')) continue;
       if (BottomBarSkinFormat.isValidSkinName(basename)) {
         names.add(basename);
       }
@@ -91,66 +120,246 @@ class BottomBarSkinService {
       if (active == name) await setActive('');
       return true;
     } catch (e) {
-      debugPrint('BottomBarSkinService.delete 异常: $e');
+      debugPrint('BottomBarSkinService.delete exception: $e');
       return false;
     }
   }
 
-  /// 导入 zip：仅接受已按槽位命名的图片（对齐智能预填 parseEntryName）
-  Future<String> importZip(File zipFile, {String? preferredName}) async {
+  /// ?? zip ???????? sessionId??? extractImages?
+  Future<String> extractZipToSession(File zipFile) async {
     final bytes = await zipFile.readAsBytes();
     if (bytes.length > _maxArchiveBytes) {
-      throw StateError('压缩包过大');
+      throw StateError('archive too large');
     }
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final mapped = <String, List<int>>{}; // filename -> bytes
-    var entryCount = 0;
-    var totalBytes = 0;
+    final session = await _createSessionDir();
+    try {
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final used = <String>{};
+      var entryCount = 0;
+      var totalBytes = 0;
+      var wrote = 0;
 
-    for (final entry in archive) {
-      entryCount++;
-      if (entryCount > _maxEntries) throw StateError('压缩包条目过多');
-      if (entry.isDirectory) continue;
-      final imageName = BottomBarSkinFormat.sanitizeImageName(entry.name);
-      if (imageName == null) continue;
-      final parsed = BottomBarSkinFormat.parseEntryName(imageName);
-      if (parsed == null) continue;
-      final data = entry.content;
-      if (data.length > _maxEntryBytes) throw StateError('单文件过大');
-      totalBytes += data.length;
-      if (totalBytes > _maxTotalBytes) throw StateError('压缩包内容过大');
-      final ext = imageName.split('.').last.toLowerCase();
-      final outName =
-          '${parsed.slot}_${parsed.selected ? 'selected' : 'normal'}.$ext';
-      mapped[outName] = data;
+      for (final entry in archive) {
+        entryCount++;
+        if (entryCount > _maxEntries) throw StateError('too many zip entries');
+        if (entry.isDirectory) continue;
+        final imageName = BottomBarSkinFormat.sanitizeImageName(entry.name);
+        if (imageName == null) continue;
+        final data = entry.content;
+        if (data.length > _maxEntryBytes) throw StateError('zip entry too large');
+        totalBytes += data.length;
+        if (totalBytes > _maxTotalBytes) throw StateError('zip content too large');
+        final unique = BottomBarSkinFormat.uniqueImageName(imageName, used);
+        await File('${session.path}${Platform.pathSeparator}$unique')
+            .writeAsBytes(data, flush: true);
+        wrote++;
+      }
+      if (wrote == 0) throw StateError('no images in zip');
+      return session.path.split(Platform.pathSeparator).last;
+    } catch (e) {
+      await _safeDelete(session);
+      rethrow;
     }
-
-    if (mapped.isEmpty) {
-      throw StateError('未找到有效槽位图片（需 bookshelf/home/notes/settings 的 _selected/_normal）');
-    }
-    final hasSelected =
-        mapped.keys.any((k) => k.contains('_selected.'));
-    if (!hasSelected) {
-      throw StateError('至少需要一张 *_selected 图片');
-    }
-
-    final existing = await list();
-    final baseName = preferredName?.isNotEmpty == true
-        ? preferredName!
-        : zipFile.uri.pathSegments.last.replaceAll(RegExp(r'\.zip$', caseSensitive: false), '');
-    final skinName = BottomBarSkinFormat.uniqueName(baseName, existing);
-    final skinDir = Directory(
-      '${(await _rootDir()).path}${Platform.pathSeparator}$skinName',
-    );
-    await skinDir.create(recursive: true);
-    for (final e in mapped.entries) {
-      await File('${skinDir.path}${Platform.pathSeparator}${e.key}')
-          .writeAsBytes(e.value, flush: true);
-    }
-    return skinName;
   }
 
-  /// 读取某槽位图标路径（selected/normal）
+  /// ??????????????
+  Future<String> stageExisting(String skinName) async {
+    if (!await hasSkin(skinName)) throw StateError('skin not found');
+    final source = Directory(
+      '${(await _rootDir()).path}${Platform.pathSeparator}$skinName',
+    );
+    final session = await _createSessionDir();
+    try {
+      var totalBytes = 0;
+      await for (final entity in source.list()) {
+        if (entity is! File) continue;
+        final name = entity.path.split(Platform.pathSeparator).last;
+        if (!BottomBarSkinFormat.isImageName(name)) continue;
+        final len = await entity.length();
+        if (len <= 0 || len > _maxEntryBytes) {
+          throw StateError('invalid image');
+        }
+        totalBytes += len;
+        if (totalBytes > _maxTotalBytes) throw StateError('skin too large');
+        await entity.copy(
+          '${session.path}${Platform.pathSeparator}$name',
+        );
+      }
+      final imgs =
+          await stagingImages(session.path.split(Platform.pathSeparator).last);
+      if (imgs.isEmpty) throw StateError('no images');
+      return session.path.split(Platform.pathSeparator).last;
+    } catch (e) {
+      await _safeDelete(session);
+      rethrow;
+    }
+  }
+
+  Future<List<File>> stagingImages(String sessionId) async {
+    final session = await _resolveSessionDir(sessionId);
+    if (session == null) return const [];
+    final files = <File>[];
+    await for (final entity in session.list()) {
+      if (entity is! File) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (!BottomBarSkinFormat.isImageName(name)) continue;
+      final len = await entity.length();
+      if (len <= 0 || len > _maxEntryBytes) continue;
+      files.add(entity);
+    }
+    files.sort((a, b) => a.path.compareTo(b.path));
+    return files;
+  }
+
+  Future<void> discardSession(String sessionId) async {
+    final session = await _resolveSessionDir(sessionId);
+    if (session != null) await _safeDelete(session);
+  }
+
+  /// ????????????? buildPrefill?
+  static Map<String, BottomBarSkinPrefill> buildPrefill(List<File> images) {
+    final selected = <String, File>{};
+    final normal = <String, File>{};
+    for (final file in images) {
+      final name = file.path.split(Platform.pathSeparator).last;
+      final parsed = BottomBarSkinFormat.parseEntryName(name);
+      if (parsed == null) continue;
+      if (parsed.selected) {
+        selected.putIfAbsent(parsed.slot, () => file);
+      } else {
+        normal.putIfAbsent(parsed.slot, () => file);
+      }
+    }
+    final keys = {...selected.keys, ...normal.keys};
+    return {
+      for (final slot in keys)
+        slot: BottomBarSkinPrefill(
+          selected: selected[slot],
+          normal: normal[slot],
+        ),
+    };
+  }
+
+  /// ???????????? saveSkin?
+  Future<String> saveFromAssign({
+    required String desiredName,
+    required Map<String, BottomBarSkinSlotAssign> assigns,
+    required String sessionId,
+    String? editName,
+  }) async {
+    if (assigns.isEmpty) throw StateError('no assignment');
+    if (!assigns.keys.every(BottomBarSkinFormat.mappedSlots.contains)) {
+      throw StateError('invalid slot');
+    }
+    final session = await _resolveSessionDir(sessionId);
+    if (session == null) throw StateError('staging session not found');
+
+    final currentNames = await list();
+    final sanitized = BottomBarSkinFormat.sanitize(desiredName);
+    if (editName != null && !await hasSkin(editName)) {
+      throw StateError('skin not found');
+    }
+    final finalName = editName == null
+        ? BottomBarSkinFormat.uniqueName(sanitized, currentNames)
+        : (sanitized == editName
+            ? editName
+            : BottomBarSkinFormat.uniqueName(
+                sanitized,
+                currentNames.where((n) => n != editName),
+              ));
+
+    final root = await _rootDir();
+    final target = Directory('${root.path}${Platform.pathSeparator}$finalName');
+    final temp = Directory(
+      '${root.path}${Platform.pathSeparator}.save-${_newId()}',
+    );
+    await temp.create(recursive: true);
+    try {
+      for (final e in assigns.entries) {
+        final slot = e.key;
+        final assign = e.value;
+        await _requireSessionFile(session, assign.selected);
+        final selExt = _extOf(assign.selected);
+        await assign.selected.copy(
+          '${temp.path}${Platform.pathSeparator}${slot}_selected.$selExt',
+        );
+        if (assign.normal != null) {
+          await _requireSessionFile(session, assign.normal!);
+          final nExt = _extOf(assign.normal!);
+          await assign.normal!.copy(
+            '${temp.path}${Platform.pathSeparator}${slot}_normal.$nExt',
+          );
+        }
+      }
+
+      if (editName != null && editName != finalName) {
+        if (await target.exists()) throw StateError('skin already exists');
+        await temp.rename(target.path);
+        final wasActive = (await getActive()) == editName;
+        final old = Directory('${root.path}${Platform.pathSeparator}$editName');
+        await old.delete(recursive: true);
+        if (wasActive) await setActive(finalName);
+      } else if (editName != null && editName == finalName) {
+        if (await target.exists()) {
+          await target.delete(recursive: true);
+        }
+        await temp.rename(target.path);
+        await setActive(finalName);
+      } else {
+        if (await target.exists()) {
+          await target.delete(recursive: true);
+        }
+        await temp.rename(target.path);
+        await setActive(finalName);
+      }
+
+      await discardSession(sessionId);
+      return finalName;
+    } catch (e) {
+      if (await temp.exists()) await _safeDelete(temp);
+      rethrow;
+    }
+  }
+
+  /// ?????????? zip ??????? / ? UI ???
+  Future<String> importZip(File zipFile, {String? preferredName}) async {
+    final sessionId = await extractZipToSession(zipFile);
+    try {
+      final images = await stagingImages(sessionId);
+      final prefill = buildPrefill(images);
+      final assigns = <String, BottomBarSkinSlotAssign>{};
+      for (final e in prefill.entries) {
+        final sel = e.value.selected;
+        if (sel != null) {
+          assigns[e.key] = BottomBarSkinSlotAssign(
+            selected: sel,
+            normal: e.value.normal,
+          );
+        }
+      }
+      if (assigns.isEmpty) {
+        throw StateError(
+          'no slot images (need bookshelf/home/notes/settings _selected/_normal)',
+        );
+      }
+      final baseName = preferredName?.isNotEmpty == true
+          ? preferredName!
+          : zipFile.uri.pathSegments.last.replaceAll(
+              RegExp(r'\.zip$', caseSensitive: false),
+              '',
+            );
+      return await saveFromAssign(
+        desiredName: baseName,
+        assigns: assigns,
+        sessionId: sessionId,
+      );
+    } catch (e) {
+      await discardSession(sessionId);
+      rethrow;
+    }
+  }
+
+  /// ??????????selected/normal?
   Future<BottomBarSkinIcons> iconsForSlot(String skinName, String slot) async {
     if (!BottomBarSkinFormat.mappedSlots.contains(slot)) {
       return const BottomBarSkinIcons();
@@ -166,11 +375,10 @@ class BottomBarSkinService {
       if (selected == null && await s.exists()) selected = s.path;
       if (normal == null && await n.exists()) normal = n.path;
     }
-    // 导入统一写成 .png，但也兼容其它后缀
     return BottomBarSkinIcons(normal: normal, selected: selected);
   }
 
-  /// Tab → 原版槽位名
+  /// Tab ? ?????
   static String slotForTab(String tab) {
     switch (tab) {
       case 'bookshelf':
@@ -184,5 +392,74 @@ class BottomBarSkinService {
       default:
         return tab;
     }
+  }
+
+  Future<Directory> _createSessionDir() async {
+    await _cleanupStaleSessions();
+    final root = await _sessionRoot();
+    final dir = Directory('${root.path}${Platform.pathSeparator}${_newId()}');
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  Future<void> _cleanupStaleSessions() async {
+    final root = await _sessionRoot();
+    final cutoff = DateTime.now().millisecondsSinceEpoch - _sessionMaxAgeMs;
+    await for (final entity in root.list()) {
+      if (entity is! Directory) continue;
+      final stat = await entity.stat();
+      if (stat.modified.millisecondsSinceEpoch < cutoff) {
+        await _safeDelete(entity);
+      }
+    }
+  }
+
+  Future<Directory?> _resolveSessionDir(String sessionId) async {
+    if (!_isSafeSessionId(sessionId)) return null;
+    final root = await _sessionRoot();
+    final dir = Directory('${root.path}${Platform.pathSeparator}$sessionId');
+    if (!await dir.exists()) return null;
+    return dir;
+  }
+
+  Future<File> _requireSessionFile(Directory session, File file) async {
+    if (!await file.exists()) throw StateError('image missing');
+    final sessionPath =
+        (await session.resolveSymbolicLinks()).toLowerCase();
+    final filePath = (await file.resolveSymbolicLinks()).toLowerCase();
+    final sep = Platform.pathSeparator;
+    final ok = filePath == sessionPath ||
+        filePath.startsWith('$sessionPath$sep');
+    if (!ok) throw StateError('image outside staging session');
+    return file;
+  }
+
+  Future<void> _safeDelete(FileSystemEntity entity) async {
+    try {
+      if (await entity.exists()) {
+        await entity.delete(recursive: true);
+      }
+    } catch (e) {
+      debugPrint('BottomBarSkinService._safeDelete: $e');
+    }
+  }
+
+  String _extOf(File file) {
+    final name = file.path.split(Platform.pathSeparator).last.toLowerCase();
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0) return 'png';
+    final ext = name.substring(dot + 1);
+    return BottomBarSkinFormat.imageExts.contains(ext) ? ext : 'png';
+  }
+
+  String _newId() {
+    final a = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    final b = _random.nextInt(0x7fffffff).toRadixString(16);
+    return '$a$b';
+  }
+
+  bool _isSafeSessionId(String id) {
+    if (id.isEmpty || id.length > 64) return false;
+    return RegExp(r'^[a-fA-F0-9]+$').hasMatch(id);
   }
 }

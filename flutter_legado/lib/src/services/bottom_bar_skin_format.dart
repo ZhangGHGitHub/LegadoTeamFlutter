@@ -103,6 +103,41 @@ class BottomBarSkinFormat {
     return '$stem$suffix';
   }
 
+  /// 在扩展名前插入后缀（对齐 `addImageNameSuffix`，用于暂存重名）
+  static String addImageNameSuffix(String name, String suffix) {
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0) throw ArgumentError('invalid image name');
+    final extension = name.substring(dot);
+    final stem = _truncate(
+      name.substring(0, dot),
+      maxImageNameLength - suffix.length - extension.length,
+      maxImageNameBytes -
+          utf8.encode(suffix).length -
+          utf8.encode(extension).length,
+    ).replaceAll(RegExp(r'[.\s]+$'), '');
+    if (stem.isEmpty) throw ArgumentError('invalid image name');
+    return '$stem$suffix$extension';
+  }
+
+  /// 暂存目录内生成不冲突的图片名
+  static String uniqueImageName(String desired, Set<String> usedLower) {
+    if (usedLower.add(desired.toLowerCase())) return desired;
+    var i = 2;
+    while (true) {
+      final candidate = addImageNameSuffix(desired, ' ($i)');
+      if (usedLower.add(candidate.toLowerCase())) return candidate;
+      i++;
+    }
+  }
+
+  /// 槽位中文标签（分配页）
+  static const slotLabels = {
+    'bookshelf': '书架',
+    'home': '发现',
+    'notes': '订阅',
+    'settings': '我的',
+  };
+
   static String _truncate(String value, int maxCodePoints, int maxBytes) {
     final result = StringBuffer();
     var codePoints = 0;

@@ -26,5 +26,26 @@ void main() {
       expect(BottomBarSkinFormat.isValidSkinName('底栏图集'), isTrue);
       expect(BottomBarSkinFormat.isValidSkinName('../skin'), isFalse);
     });
+
+    test('uniqueImageName 重名追加后缀', () {
+      final used = <String>{};
+      expect(
+        BottomBarSkinFormat.uniqueImageName('icon.png', used),
+        'icon.png',
+      );
+      expect(
+        BottomBarSkinFormat.uniqueImageName('icon.png', used),
+        'icon (2).png',
+      );
+      expect(
+        BottomBarSkinFormat.uniqueImageName('ICON.PNG', used),
+        'ICON (3).PNG',
+      );
+    });
+
+    test('slotLabels 覆盖四槽', () {
+      expect(BottomBarSkinFormat.slotLabels.keys.toList(),
+          BottomBarSkinFormat.mappedSlots);
+    });
   });
 }
