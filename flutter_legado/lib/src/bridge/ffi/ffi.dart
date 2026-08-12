@@ -1608,6 +1608,24 @@ Future<String> audioResolvePlayBook({
   cachedBookJson: cachedBookJson,
 );
 
+/// 书源 callBackBtn（对齐 SourceCallBack.callBackBtn + 中途 UI 队列）
+///
+/// 返回 JSON：`{invoked, jsTrue, raw, actions:[...]}`。
+/// `actions` 供 Flutter PlatformBridge 回放（refreshBookInfo / openBrowser 等）。
+Future<String> sourceCallBackBtn({
+  required String event,
+  required String bookUrl,
+  int? chapterIndex,
+  String? result,
+  required int bookType,
+}) => RustLib.instance.api.crateFfiFfiSourceCallBackBtn(
+  event: event,
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  result: result,
+  bookType: bookType,
+);
+
 /// 提取 JS 单文件书源配置（返回 BookSource JSON）
 ///
 /// `content` — 完整 JS 书源脚本文本；需 quickjs 构建，否则返回错误

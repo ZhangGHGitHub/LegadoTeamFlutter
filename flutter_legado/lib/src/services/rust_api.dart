@@ -1359,6 +1359,24 @@ class RustApi implements BookApi {
     );
   }
 
+  @override
+  Future<Map<String, dynamic>> sourceCallBackBtn({
+    required String event,
+    required String bookUrl,
+    int? chapterIndex,
+    String? result,
+    int bookType = 0,
+  }) async {
+    final json = await bridge.sourceCallBackBtn(
+      event: event,
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+      result: result,
+      bookType: bookType,
+    );
+    return _decodeMap(json, 'sourceCallBackBtn');
+  }
+
   // ========== WebBook 操作 ==========
   // 以下解析类方法统一经平台桥接拦截（Task #114）：Rust 侧 webView 类 JS API
   // 无头运行时返回桥接载荷 JSON，恰为整体结果时由此执行并以真实结果回填 — QoderCN

@@ -618,6 +618,19 @@ abstract class BookApi {
     required int chapterIndex,
   });
 
+  /// 书源 callBackBtn（P2-2，对齐 SourceCallBack + 中途 UI 队列）
+  ///
+  /// 返回 map：`invoked` / `jsTrue` / `raw` / `actions`。
+  /// UI 应先 `PlatformBridgeService.dispatchActions(actions)`，
+  /// 若 `!invoked || !jsTrue` 再执行 noCall 默认行为。
+  Future<Map<String, dynamic>> sourceCallBackBtn({
+    required String event,
+    required String bookUrl,
+    int? chapterIndex,
+    String? result,
+    int bookType = 0,
+  });
+
   // ========== WebBook 操作 ==========
 
   /// 搜索书籍（书源规则驱动）

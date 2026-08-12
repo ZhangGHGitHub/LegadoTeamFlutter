@@ -20,6 +20,7 @@ import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
 import '../services/book_api.dart';
 import '../services/cache_service.dart';
+import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
 import '../utils/book_open_utils.dart';
 import 'source_login_screen.dart';
@@ -63,6 +64,17 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     super.initState();
     _future = _loadData();
     _loadDeleteBookAlert();
+    PlatformBridgeService.refreshSignal.addListener(_onBridgeRefresh);
+  }
+
+  void _onBridgeRefresh() {
+    final signal = PlatformBridgeService.refreshSignal.value;
+    if (!mounted || signal == null) return;
+    if (signal == 'bookInfo' || signal == 'bookToc') {
+      setState(() {
+        _future = _loadData();
+      });
+    }
   }
 
   /// 加载「删除提醒」开关（对齐原版 LocalConfig.deleteBookAlert）
@@ -73,6 +85,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   @override
   void dispose() {
+    PlatformBridgeService.refreshSignal.removeListener(_onBridgeRefresh);
     _scrollController.dispose();
     super.dispose();
   }
@@ -307,26 +320,27 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               }
             },
           ),
-          // 安卓原版三点菜单（book_info.xml，条目顺序/可见性对齐原版）
-          // P2-2：menu_custom_btn 诚实不展示——SourceCallBack.callBackBtn 需
-          // 中途 UI 副作用桥（refreshBookInfo/BottomWebView 等），现有
-          // PlatformBridge 仅拦截终端 FFI 结果，短期不可安全加法式落地。
+          if (_bookSource?.customButton == true)
+            IconButton(
+              icon: const Icon(Icons.extension_outlined),
+              tooltip: '自定义',
+              onPressed: _onCustomButton,
+            ),
+          // 安卓原版三点菜单；P2-2 自定义按钮已接通 callBackBtn 中途 UI 桥
           PopupMenuButton<String>(
             tooltip: '更多',
             onSelected: _handleMenu,
             itemBuilder: (_) {
-              // [UI-fix v2.0.3 | 2026-08-06] 菜单条目顺序/可见性对齐原版
-              // book_info.xml + onMenuOpened 判定逻辑 — Qoder
               final book = _loadedBook;
               final source = _bookSource;
               final hasSource = source != null;
               final isLocal = book != null && !_isOnlineBook(book);
-              final isLocalTxt = isLocal; // 本地书视为可拆分长章节候选
+              final isLocalTxt = isLocal;
               final hasLogin = (source?.loginUrl ?? '').isNotEmpty;
               final canUpd = book?.canUpdate ?? true;
               return [
-                // 上传至远程（仅本地书；[Task #52 §5.11-1] 接通
-                // webdavUploadFile FFI，对齐原版 menu_upload）
+                if (source?.customButton == true)
+                  const PopupMenuItem(value: 'customBtn', child: Text('自定义')),
                 if (isLocal)
                   const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
                 const PopupMenuItem(value: 'refresh', child: Text('刷新')),
@@ -447,11 +461,48 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     );
   }
 
+
+  /// P2-2 自定义按钮：SourceCallBack.callBackBtn + 中途 UI 回放
+  Future<void> _onCustomButton() async {
+    final book = _loadedBook;
+    if (book == null) return;
+    final api = ref.read(bookApiProvider);
+    try {
+      final r = await api.sourceCallBackBtn(
+        event: 'clickCustomButton',
+        bookUrl: book.bookUrl,
+        bookType: book.bookType,
+      );
+      final actions = r['actions'];
+      if (actions is List) {
+        await PlatformBridgeService.instance.dispatchActions(actions);
+      }
+      final invoked = r['invoked'] == true;
+      final jsTrue = r['jsTrue'] == true;
+      if (!invoked || !jsTrue) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('未配置回调或回调未接管')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('自定义按钮失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('自定义按钮执行失败: $e')),
+        );
+      }
+    }
+  }
   /// 溢出菜单处理（对标原版 BookInfoActivity.onOptionsItemSelected）
   Future<void> _handleMenu(String value) async {
     final api = ref.read(bookApiProvider);
     final book = _loadedBook;
     switch (value) {
+      case 'customBtn':
+        await _onCustomButton();
+        break;
       case 'refresh':
         // 对齐原版：刷新即含目录更新（在线书走 refreshToc，本地书仅重加载）
         if (book != null && _isOnlineBook(book)) {

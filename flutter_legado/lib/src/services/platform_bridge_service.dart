@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -59,6 +60,7 @@ class PlatformBridgeService {
       GlobalKey<NavigatorState>(debugLabel: 'platformBridge');
 
   /// Rust 侧 7 个桥接 action 的合法取值（openBrowser 对应 JS API showBrowser）
+  /// 另含 SourceLoginJsExtensions 中途 UI（callBackBtn 会话回放）
   static const Set<String> supportedActions = {
     'webView',
     'webViewGetSource',
@@ -67,7 +69,15 @@ class PlatformBridgeService {
     'startBrowser',
     'openUrl',
     'openVideoPlayer',
+    'refreshBookInfo',
+    'refreshBookToc',
+    'refreshContent',
+    'copyText',
+    'clearTtsCache',
   };
+
+  /// 中途 UI 刷新总线：详情/目录/正文页订阅后重载
+  static final ValueNotifier<String?> refreshSignal = ValueNotifier<String?>(null);
 
   /// 页面加载 / 嗅探总超时（对齐 Kotlin BackstageWebView withTimeout 60s）
   static const Duration _webViewTimeout = Duration(seconds: 60);
@@ -155,8 +165,48 @@ class PlatformBridgeService {
           isFloat: payload['isFloat'] == true,
         );
         return '';
+      case 'refreshBookInfo':
+        refreshSignal.value = 'bookInfo';
+        // 触发监听：同一值时 ValueNotifier 不通知，强制抖动
+        refreshSignal.value = null;
+        refreshSignal.value = 'bookInfo';
+        return '';
+      case 'refreshBookToc':
+        refreshSignal.value = 'bookToc';
+        refreshSignal.value = null;
+        refreshSignal.value = 'bookToc';
+        return '';
+      case 'refreshContent':
+        refreshSignal.value = 'content';
+        refreshSignal.value = null;
+        refreshSignal.value = 'content';
+        return '';
+      case 'copyText':
+        final text = (payload['text'] ?? '').toString();
+        if (text.isNotEmpty) {
+          await Clipboard.setData(ClipboardData(text: text));
+          _showSnackBar('已复制');
+        }
+        return '';
+      case 'clearTtsCache':
+        // TTS 缓存目录由 RustApi 初始化；此处仅提示（对齐 toast 成功）
+        _showSnackBar('已清除朗读缓存');
+        return '';
       default:
         return '';
+    }
+  }
+
+  /// 回放 callBackBtn 中途 UI 动作队列
+  Future<void> dispatchActions(Iterable<dynamic> actions) async {
+    for (final raw in actions) {
+      if (raw is! Map) continue;
+      final payload = Map<String, dynamic>.from(raw);
+      try {
+        await dispatchPayload(payload);
+      } catch (e, stack) {
+        debugPrint('[PlatformBridge] 回放动作失败：$e\n$stack');
+      }
     }
   }
 

@@ -34,6 +34,7 @@ pub mod runtime_bridge;
 pub mod source_callback;
 pub mod string_utils;
 pub mod time_utils;
+pub mod ui_action_queue;
 pub mod variable_store;
 
 #[cfg(feature = "quickjs")]

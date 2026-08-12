@@ -1370,6 +1370,21 @@ class MockBookApi implements BookApi {
   }) async =>
       (kind: 'none', value: '');
 
+  @override
+  Future<Map<String, dynamic>> sourceCallBackBtn({
+    required String event,
+    required String bookUrl,
+    int? chapterIndex,
+    String? result,
+    int bookType = 0,
+  }) async =>
+      {
+        'invoked': false,
+        'jsTrue': false,
+        'raw': '',
+        'actions': <dynamic>[],
+      };
+
   // ========== WebBook 操作 ==========
 
   @override

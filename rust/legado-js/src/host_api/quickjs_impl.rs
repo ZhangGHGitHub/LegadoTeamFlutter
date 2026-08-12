@@ -1688,6 +1688,53 @@ fn register_misc_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // SourceLoginJsExtensions 中途 UI（callBackBtn 会话经 ui_action_queue 回放）
+    mount_dual(
+        java,
+        globals,
+        "refreshBookInfo",
+        rquickjs::Function::new(ctx.clone(), || {
+            crate::host_api::ui_action_queue::source_login_ext::refresh_book_info();
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+    mount_dual(
+        java,
+        globals,
+        "refreshBookToc",
+        rquickjs::Function::new(ctx.clone(), || {
+            crate::host_api::ui_action_queue::source_login_ext::refresh_book_toc();
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+    mount_dual(
+        java,
+        globals,
+        "refreshContent",
+        rquickjs::Function::new(ctx.clone(), || {
+            crate::host_api::ui_action_queue::source_login_ext::refresh_content();
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+    mount_dual(
+        java,
+        globals,
+        "copyText",
+        rquickjs::Function::new(ctx.clone(), |text: String| {
+            crate::host_api::ui_action_queue::source_login_ext::copy_text(&text);
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+    mount_dual(
+        java,
+        globals,
+        "clearTtsCache",
+        rquickjs::Function::new(ctx.clone(), || {
+            crate::host_api::ui_action_queue::source_login_ext::clear_tts_cache();
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // startBrowser(url, title?, html?) -> String（桥接载荷）
     // 对应 Kotlin: startBrowser(url, title, html?)
     mount_dual(

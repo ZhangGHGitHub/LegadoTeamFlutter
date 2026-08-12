@@ -2057,6 +2057,27 @@ pub mod ffi {
         to_json(&book)
     }
 
+    /// 书源 callBackBtn（对齐 SourceCallBack.callBackBtn + 中途 UI 队列）
+    ///
+    /// 返回 JSON：`{invoked, jsTrue, raw, actions:[...]}`。
+    /// `actions` 供 Flutter PlatformBridge 回放（refreshBookInfo / openBrowser 等）。
+    pub fn source_call_back_btn(
+        event: String,
+        book_url: String,
+        chapter_index: Option<i32>,
+        result: Option<String>,
+        book_type: i32,
+    ) -> Result<String, BridgeError> {
+        let dto = crate::api::source_callback_api::source_call_back_btn(
+            &event,
+            &book_url,
+            chapter_index,
+            result.as_deref(),
+            book_type,
+        )?;
+        to_json(&dto)
+    }
+
     // ─── JS 单文件书源配置（JsSourceConfig 对齐）────────────────
 
     /// 提取 JS 单文件书源配置（返回 BookSource JSON）

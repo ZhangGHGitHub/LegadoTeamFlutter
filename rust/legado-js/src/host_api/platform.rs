@@ -44,13 +44,15 @@ use super::current_source;
 /// {"action":"webView","html":"...","url":"...","js":"..."}
 /// ```
 pub fn web_view(html: &str, url: &str, js: &str) -> String {
-    serde_json::json!({
+    let payload = serde_json::json!({
         "action": "webView",
         "html": html,
         "url": url,
         "js": js,
     })
-    .to_string()
+    .to_string();
+    super::ui_action_queue::push_payload_json(&payload);
+    payload
 }
 
 /// webViewGetSource(html, url, js, sourceRegex) → 结构化桥接载荷
@@ -65,14 +67,16 @@ pub fn web_view(html: &str, url: &str, js: &str) -> String {
 /// {"action":"webViewGetSource","html":"...","url":"...","js":"...","sourceRegex":"..."}
 /// ```
 pub fn web_view_get_source(html: &str, url: &str, js: &str, source_regex: &str) -> String {
-    serde_json::json!({
+    let payload = serde_json::json!({
         "action": "webViewGetSource",
         "html": html,
         "url": url,
         "js": js,
         "sourceRegex": source_regex,
     })
-    .to_string()
+    .to_string();
+    super::ui_action_queue::push_payload_json(&payload);
+    payload
 }
 
 /// WebView API — 获取 WebView 拦截的跳转 URL → 结构化桥接载荷
@@ -96,7 +100,7 @@ pub fn web_view_get_override_url(
     cache_first: bool,
     delay_time: i64,
 ) -> String {
-    serde_json::json!({
+    let payload = serde_json::json!({
         "action": "webViewGetOverrideUrl",
         "html": html,
         "url": url,
@@ -105,7 +109,9 @@ pub fn web_view_get_override_url(
         "cacheFirst": cache_first,
         "delayTime": delay_time,
     })
-    .to_string()
+    .to_string();
+    super::ui_action_queue::push_payload_json(&payload);
+    payload
 }
 
 /// showBrowser(url, html?, preloadJs?, config?) → 结构化桥接载荷
@@ -118,14 +124,17 @@ pub fn web_view_get_override_url(
 /// {"action":"openBrowser","url":"...","html":"...","preloadJs":"...","config":"..."}
 /// ```
 pub fn show_browser(url: &str, html: &str, preload_js: &str, config: &str) -> String {
-    serde_json::json!({
+    let payload = serde_json::json!({
         "action": "openBrowser",
         "url": url,
         "html": html,
         "preloadJs": preload_js,
         "config": config,
     })
-    .to_string()
+    .to_string();
+    // SourceCallBack 中途 UI：收集副作用供 Flutter 回放
+    super::ui_action_queue::push_payload_json(&payload);
+    payload
 }
 
 /// startBrowser(url, title, html?) → 结构化桥接载荷
@@ -140,13 +149,15 @@ pub fn show_browser(url: &str, html: &str, preload_js: &str, config: &str) -> St
 /// {"action":"startBrowser","url":"...","title":"...","html":"..."}
 /// ```
 pub fn start_browser(url: &str, title: &str, html: &str) -> String {
-    serde_json::json!({
+    let payload = serde_json::json!({
         "action": "startBrowser",
         "url": url,
         "title": title,
         "html": html,
     })
-    .to_string()
+    .to_string();
+    super::ui_action_queue::push_payload_json(&payload);
+    payload
 }
 
 /// openUrl(url, mimeType?) → 结构化桥接载荷
@@ -161,12 +172,14 @@ pub fn start_browser(url: &str, title: &str, html: &str) -> String {
 /// {"action":"openUrl","url":"...","mimeType":"..."}
 /// ```
 pub fn open_url(url: &str, mime_type: &str) -> String {
-    serde_json::json!({
+    let payload = serde_json::json!({
         "action": "openUrl",
         "url": url,
         "mimeType": mime_type,
     })
-    .to_string()
+    .to_string();
+    super::ui_action_queue::push_payload_json(&payload);
+    payload
 }
 
 /// getVerificationCode(imageUrl) — 图片验证码交互（阻塞等待用户输入）
@@ -229,13 +242,15 @@ pub fn start_browser_await(url: &str, title: &str) -> String {
 /// {"action":"openVideoPlayer","url":"...","title":"...","isFloat":false}
 /// ```
 pub fn open_video_player(url: &str, title: &str, is_float: bool) -> String {
-    serde_json::json!({
+    let payload = serde_json::json!({
         "action": "openVideoPlayer",
         "url": url,
         "title": title,
         "isFloat": is_float,
     })
-    .to_string()
+    .to_string();
+    super::ui_action_queue::push_payload_json(&payload);
+    payload
 }
 
 #[cfg(test)]
