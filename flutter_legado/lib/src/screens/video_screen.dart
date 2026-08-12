@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../utils/video_play_utils.dart';
+import '../widgets/video_settings_dialog.dart';
 
 /// 视频播放页面
 ///
@@ -80,14 +81,26 @@ class _VideoScreenState extends State<VideoScreen> {
   /// initState completed）。— Reasonix
   bool _bookVideoLoadScheduled = false;
 
+  VideoPlaySettings _playSettings = VideoPlaySettings();
+
   @override
   void initState() {
     super.initState();
+    unawaited(_loadPlaySettings());
     // 直链模式不依赖 Riverpod，可在 initState 启动
     if (widget.book == null) {
       unawaited(_playDirectUrl(widget.videoUrl));
     } else {
       _loadingChapter = true;
+    }
+  }
+
+  Future<void> _loadPlaySettings() async {
+    final s = await VideoPlaySettings.load();
+    if (!mounted) return;
+    setState(() => _playSettings = s);
+    if (s.startFull && !_isFullScreen) {
+      _toggleFullScreen();
     }
   }
 
@@ -353,7 +366,9 @@ class _VideoScreenState extends State<VideoScreen> {
         } catch (_) {}
       }
       setState(() {});
-      await _controller.play();
+      if (_playSettings.autoPlay) {
+        await _controller.play();
+      }
       if (!mounted) return;
       debugPrint(
         '[VideoPlay] after play '
@@ -456,6 +471,17 @@ class _VideoScreenState extends State<VideoScreen> {
                           : null,
                     ),
                   ],
+                  // P2-15：视频设置（对标原版 menu_config_settings → SettingsDialog）
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    tooltip: '播放设置',
+                    onPressed: () async {
+                      final updated = await showVideoSettingsDialog(context);
+                      if (updated != null && mounted) {
+                        setState(() => _playSettings = updated);
+                      }
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.fullscreen),
                     tooltip: '全屏',

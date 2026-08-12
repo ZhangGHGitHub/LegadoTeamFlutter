@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/providers.dart';
 import '../services/auto_task_scheduler.dart';
+import '../widgets/auto_task_debug_dialog.dart';
 
 /// 定时任务管理页面
 class AutoTaskScreen extends ConsumerStatefulWidget {
@@ -429,6 +430,16 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                 );
               },
             ),
+            // P2-7：调试（对标原版 AutoTaskDebugActivity）
+            ListTile(
+              leading: const Icon(Icons.bug_report_outlined),
+              title: const Text('调试'),
+              subtitle: const Text('执行并查看结果日志'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openTaskDebug(context, task);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('编辑任务'),
@@ -449,6 +460,14 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// P2-7：最小调试屏（对标 AutoTaskDebugActivity）
+  Future<void> _openTaskDebug(BuildContext context, AutoTask task) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AutoTaskDebugDialog(task: task),
     );
   }
 
