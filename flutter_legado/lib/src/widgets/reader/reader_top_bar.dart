@@ -14,6 +14,7 @@ import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/source_edit_screen.dart';
 import '../../screens/source_login_screen.dart';
+import 'change_chapter_source_sheet.dart';
 import 'reader_settings_sheet.dart';
 
 /// 阅读器顶部工具栏
@@ -99,6 +100,61 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
 
   void _snack(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 换源菜单（对标原版 showChangeSourceMenu：单章换源 / 换书源）
+  void _showChangeSourceMenu(BuildContext context, Book book) {
+    final state = ref.read(readerNotifierProvider);
+    final chapter = state.currentChapter;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.article_outlined),
+                title: const Text('单章换源'),
+                subtitle: Text(
+                  chapter?.title.isNotEmpty == true
+                      ? chapter!.title
+                      : '仅替换当前章正文',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  showChangeChapterSourceSheet(
+                    context,
+                    bookUrl: book.bookUrl,
+                    bookName: book.name,
+                    author: book.author,
+                    chapterIndex: state.currentChapterIndex,
+                    chapterTitle: chapter?.title ?? '',
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.swap_horiz),
+                title: const Text('换书源'),
+                subtitle: const Text('切换整本书的书源'),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  Navigator.pushNamed(
+                    context,
+                    AppRoutes.changeSource,
+                    arguments: book,
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// 切换书籍 ReadConfig 字段并持久化，随后重载当前章正文
@@ -480,7 +536,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
         content: const SingleChildScrollView(
           child: Text(
             '• 点击屏幕中央可显示/隐藏工具栏\n'
-            '• 顶栏：换源、刷新、缓存（在线书）/设置编码（本地书）、更多菜单\n'
+            '• 顶栏：换源（单章/整书）、刷新、缓存（在线书）/设置编码（本地书）、更多菜单\n'
             '• 顶栏下方：章节名与链接（点击复制）、书源徽章（点击弹源操作）\n'
             '• 底栏：搜索/夜间悬浮按钮、上一章/进度/下一章、目录、朗读、界面、设置\n'
             '• 左右滑动或点击两侧区域翻页\n'
@@ -985,13 +1041,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                           icon: const Icon(Icons.swap_horiz, size: 22),
                           tooltip: '换源',
                           visualDensity: VisualDensity.compact,
-                          onPressed: () {
-                            Navigator.pushNamed(
-                              context,
-                              AppRoutes.changeSource,
-                              arguments: book,
-                            );
-                          },
+                          onPressed: () => _showChangeSourceMenu(context, book),
                         ),
                         IconButton(
                           icon: const Icon(Icons.refresh, size: 22),
