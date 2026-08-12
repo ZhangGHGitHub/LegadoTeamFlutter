@@ -45,7 +45,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _webService = false;
   bool _mcpService = false;
   bool _webServiceBusy = false;
+  bool _mcpServiceBusy = false;
   String _webServiceStatus = '';
+  int _mcpPort = 0;
 
   @override
   void initState() {
@@ -53,16 +55,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _initServiceStates();
   }
 
-  /// 恢复服务开关持久化状态（config 键 webService / autoTaskService）
+  /// 恢复服务开关持久化状态（config 键 webService / autoTaskService / mcpPort）
   Future<void> _initServiceStates() async {
     final api = ref.read(bookApiProvider);
     try {
       final web = await api.getConfig('webService');
       final autoTask = await api.getConfig('autoTaskService');
+      final mcpPortRaw = await api.getConfig('mcpPort');
+      final mcpPort = int.tryParse(mcpPortRaw ?? '') ?? 0;
       if (!mounted) return;
       setState(() {
         _webService = web == 'true';
         _autoTaskService = autoTask == 'true';
+        _mcpPort = mcpPort;
+        _mcpService = mcpPort > 0;
       });
       if (_webService) {
         final status = await api.getServerStatus();
@@ -113,6 +119,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
     } finally {
       if (mounted) setState(() => _webServiceBusy = false);
+    }
+  }
+
+  /// MCP 独立服务开关（契约 §2.22.5 `setMcpPort`）
+  ///
+  /// 开启：端口默认 1236（对齐原版 AppConfig.mcpPort）；关闭：port=0 停服。
+  /// 细调端口见「其他设置」→ MCP 服务端口。
+  Future<void> _toggleMcpService(bool v) async {
+    if (_mcpServiceBusy) return;
+    setState(() => _mcpServiceBusy = true);
+    final api = ref.read(bookApiProvider);
+    try {
+      if (v) {
+        final port = _mcpPort > 0 ? _mcpPort : 1236;
+        await api.setMcpPort(port);
+        if (!mounted) return;
+        setState(() {
+          _mcpService = true;
+          _mcpPort = port;
+        });
+      } else {
+        await api.setMcpPort(0);
+        if (!mounted) return;
+        setState(() {
+          _mcpService = false;
+          _mcpPort = 0;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('MCP 服务切换失败: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _mcpServiceBusy = false);
     }
   }
 
@@ -238,17 +279,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChanged: _webServiceBusy ? null : _toggleWebService,
               ),
               SwitchListTile(
-                secondary: const Icon(Icons.cable),
+                secondary: _mcpServiceBusy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cable),
                 title: const Text('MCP 服务'),
-                subtitle: const Text('MCP 服务（后续版本支持）'),
+                subtitle: Text(
+                  _mcpService && _mcpPort > 0
+                      ? '独立 MCP 端口 $_mcpPort（细调见其他设置）'
+                      : '独立 MCP 工具服务（默认端口 1236）',
+                ),
                 value: _mcpService,
-                onChanged: (v) {
-                  if (v) {
-                    _todo(context, 'MCP 服务');
-                  } else {
-                    setState(() => _mcpService = false);
-                  }
-                },
+                onChanged: _mcpServiceBusy ? null : _toggleMcpService,
               ),
             ],
           ),
@@ -313,10 +358,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 icon: Icons.history,
                 iconBackground: AppColors.iosTealLight,
                 title: '阅读记录',
-                subtitle: '查看阅读时长与书籍分布',
+                subtitle: '查看阅读时长书单',
                 showDisclosure: true,
                 onTap: () =>
-                    Navigator.pushNamed(context, AppRoutes.readingStats),
+                    Navigator.pushNamed(context, AppRoutes.readRecord),
               ),
               IosListTile(
                 icon: Icons.folder_outlined,
