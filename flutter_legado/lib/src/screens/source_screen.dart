@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
@@ -1410,14 +1413,23 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     }
   }
 
-  /// 分享选中书源（对标原版 shareSelectedSource）
+  /// 分享选中书源（对标原版 shareSelectedSource：写文件再分享，避免 Intent 过大）
   Future<void> _shareBatchSelected(BuildContext context) async {
     try {
       final notifier = ref.read(sourceNotifierProvider.notifier);
       final state = ref.read(sourceNotifierProvider);
       final json = await notifier.backupService
           .exportSelectedSources(state.selectedUrls.toList());
-      await Share.share(json, subject: '书源分享（${state.selectedCount} 个）');
+      final dir = await getTemporaryDirectory();
+      final name = state.selectedCount == 1
+          ? 'bookSource.json'
+          : 'bookSource_${DateTime.now().millisecondsSinceEpoch}.json';
+      final file = File('${dir.path}/$name');
+      await file.writeAsString(json);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        text: '书源分享（${state.selectedCount} 个）',
+      );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

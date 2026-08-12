@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.39] - 2026-08-13
+
+### 修复（书源导出 / 阅读记录写入 / 默认字典与 TXT 目录规则，[UI]+[Rust]）
+
+1. **书源导出**：`BookSource.toJson` 嵌套规则未 `explicit_to_json`，`JsonEncoder` 抛 Converting object failed；改为嵌套 `.toJson()` + 写临时文件 `Share.shareXFiles`（对齐原版 saveToFile）。
+2. **阅读记录**：阅读器从未调用 `putReadRecord`；`ReaderNotifier` 接通累计时长写入；FFI `ReadRecordDto` 改 camelCase + lastRead。
+3. **字典/TXT 默认规则**：对齐 Android `defaultData/dictRules.json`、`txtTocRule.json` 首启/「导入默认」。
+
+编写者：Auto（Cursor）｜ 2026-08-13
+
 ## [2.0.38] - 2026-08-12
 
 ### 修复（普通书源搜索出源偏少：GBK 请求编码 + `#` 后缀 baseUrl + 响应解码，[Rust]）

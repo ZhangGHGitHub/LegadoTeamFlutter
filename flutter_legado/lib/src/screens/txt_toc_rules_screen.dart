@@ -45,6 +45,19 @@ It was a dark and stormy night.''';
         title: const Text('TXT 目录规则'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.restore),
+            tooltip: '导入默认',
+            onPressed: () async {
+              final n = await ref
+                  .read(txtTocRulesNotifierProvider.notifier)
+                  .importDefaultRules();
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('已导入 $n 条原版默认 TXT 目录规则')),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             tooltip: '添加规则',
             onPressed: () => _showRuleForm(context),

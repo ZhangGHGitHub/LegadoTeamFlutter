@@ -814,11 +814,17 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     }
   }
 
-  /// 字符串分享（对标原版 menu_share_str）
+  /// 字符串分享（对标原版 menu_share_str：写缓存文件再分享）
   Future<void> _shareSource() async {
     try {
-      final json = jsonEncode(_buildSource().toJson());
-      await Share.share(json, subject: '书源分享');
+      final json = const JsonEncoder.withIndent('  ').convert(_buildSource().toJson());
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/bookSource_share.json');
+      await file.writeAsString(json);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        text: '书源分享',
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

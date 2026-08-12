@@ -9,11 +9,15 @@ use legado_db::ReadRecordRepository;
 
 use crate::db_state::with_database;
 
-/// 阅读记录 DTO
+/// 阅读记录 DTO（camelCase 对齐 Flutter `ReadRecord.fromJson`）
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadRecordDto {
     pub book_name: String,
     pub read_time: i64,
+    pub last_read: i64,
+    #[serde(default)]
+    pub device_id: String,
 }
 
 /// 获取所有阅读记录（按 readTime 降序）
@@ -26,16 +30,26 @@ pub fn get_read_records() -> LegadoResult<Vec<ReadRecordDto>> {
             .map(|r| ReadRecordDto {
                 book_name: r.book_name,
                 read_time: r.read_time,
+                last_read: r.last_read,
+                device_id: r.device_id,
             })
             .collect())
     })
 }
 
-/// 添加/更新阅读记录，返回阅读时长
+/// 添加/更新阅读记录，返回阅读时长；写入 lastRead=当前毫秒（对齐原版 upReadTime）
 pub fn upsert_read_record(book_name: &str, read_time: i64) -> LegadoResult<i64> {
     with_database(|db| {
         let repo = ReadRecordRepository::new(db.connection());
-        repo.upsert(book_name, read_time)?;
+        let last_read = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let (device_id, author) = match repo.get_record(book_name)? {
+            Some(r) => (r.device_id, r.author),
+            None => (String::new(), String::new()),
+        };
+        repo.upsert_full(&device_id, book_name, &author, read_time, last_read)?;
         Ok(read_time)
     })
 }

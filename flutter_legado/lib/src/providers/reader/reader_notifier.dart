@@ -30,6 +30,12 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 获取分页器（供 UI 层查询全局页信息）
   CrossChapterPaginator get paginator => _paginator;
 
+  /// 本次打开阅读器时累计起点（对标 ReadBook.readStartTime，毫秒）
+  int _readStartMs = 0;
+
+  /// 进入阅读器前已累计的阅读时长（毫秒，对标 ReadBook.readRecord.readTime）
+  int _baseReadTimeMs = 0;
+
   @override
   ReaderState build() {
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
@@ -74,6 +80,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       error: null,
       showControls: false,
     );
+    await _beginReadRecordSession(book);
 
     try {
       final api = ref.read(bookApiProvider);
@@ -331,8 +338,53 @@ class ReaderNotifier extends Notifier<ReaderState> {
         chapterIndex: state.currentChapterIndex,
         chapterPos: state.currentChapterPos,
       );
+      await _upReadTime(book);
     } catch (_) {
       // 保存失败不阻断阅读流程
+    }
+  }
+
+  /// 进入阅读会话：加载已有时长并重置计时起点（对标 ReadBook.resetData）
+  Future<void> _beginReadRecordSession(Book book) async {
+    _readStartMs = DateTime.now().millisecondsSinceEpoch;
+    _baseReadTimeMs = 0;
+    try {
+      final enable = await _settings.getEnableReadRecord();
+      if (!enable) return;
+      final records = await ref.read(bookApiProvider).getReadRecords();
+      for (final r in records) {
+        if (r.bookName == book.name) {
+          _baseReadTimeMs += r.readTime;
+        }
+      }
+    } catch (_) {
+      // 忽略：阅读记录失败不阻断打开书籍
+    }
+  }
+
+  /// 累计并写入阅读时长（对标 ReadBook.upReadTime）
+  Future<void> _upReadTime(Book book) async {
+    try {
+      final enable = await _settings.getEnableReadRecord();
+      if (!enable) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (_readStartMs <= 0) {
+        _readStartMs = now;
+        return;
+      }
+      final delta = now - _readStartMs;
+      if (delta <= 0) return;
+      _baseReadTimeMs += delta;
+      _readStartMs = now;
+      await ref.read(bookApiProvider).putReadRecord(
+            ReadRecord(
+              bookName: book.name,
+              readTime: _baseReadTimeMs,
+              lastRead: now,
+            ),
+          );
+    } catch (_) {
+      // 写记录失败不阻断阅读
     }
   }
 

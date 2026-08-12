@@ -313,6 +313,20 @@ class _DictScreenState extends ConsumerState<DictScreen> {
             ),
             actions: [
               TextButton(
+                onPressed: () async {
+                  final n = await ref
+                      .read(dictNotifierProvider.notifier)
+                      .importDefaultRules();
+                  setDialogState(() {});
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('已导入 $n 条原版默认词典规则')),
+                    );
+                  }
+                },
+                child: const Text('导入默认'),
+              ),
+              TextButton(
                 onPressed: () =>
                     _showRuleEditor(ctx, onSaved: setDialogState),
                 child: const Text('添加规则'),

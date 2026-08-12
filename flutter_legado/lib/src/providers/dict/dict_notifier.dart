@@ -1,61 +1,88 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
+import '../../services/book_api.dart';
 import '../providers.dart';
 import 'dict_state.dart';
 
 export 'dict_state.dart';
+
+/// 对齐 Android `LocalConfig.needUpDictRule` 的版本号
+const kDictRuleVersionKey = 'dictRuleVersion';
+const kDictRuleVersion = 1;
+
+/// 默认字典规则资源（对齐 `app/src/main/assets/defaultData/dictRules.json`）
+const kDefaultDictRulesAsset = 'assets/default_data/dictRules.json';
+
+/// 对齐 Android `DefaultData.importDefaultDictRules`：覆盖写入原版默认字典规则。
+Future<int> syncDefaultDictRules(
+  BookApi api, {
+  String? jsonOverride,
+}) async {
+  final text =
+      jsonOverride ?? await rootBundle.loadString(kDefaultDictRulesAsset);
+  final list = jsonDecode(text) as List<dynamic>;
+  final rules = list
+      .whereType<Map<String, dynamic>>()
+      .map(DictRule.fromJson)
+      .toList();
+  await api.setConfig('dict_rules', jsonEncode(rules.map((r) => r.toJson()).toList()));
+  return rules.length;
+}
 
 /// 字典查询页 Riverpod Notifier
 ///
 /// 职责严格限定（对齐 UI_RESTRUCTURE_PLAN.md §0.2 铁律）：
 /// - 在线词典规则经 BookApi.getConfig/setConfig 持久化到 Rust 配置库，键 `dict_rules`，
 ///   不再使用 SharedPreferences。
-/// - 词典释义查询经 `BookApi.dictLookup` 委托 Rust（字段对齐 [DictEntry]：
-///   `word`/`phonetic`/`definitions`，未收录词返回空 `definitions`，
-///   契约见 API_CONTRACT.md §3 需求 4）。
-/// - 在线跳转仅为 URL 构造，规则 CRUD 透传。
+/// - 首启/版本升级灌入原版 `dictRules.json`（对标 DefaultData.upVersion）。
+/// - 词典释义查询经 `BookApi.dictLookup` 委托 Rust。
 class DictNotifier extends Notifier<DictState> {
   /// 配置键
   static const _configKey = 'dict_rules';
 
-  /// 默认在线词典（首次使用时写入）
-  static const _defaultRules = [
-    DictRule(
-      name: '有道词典',
-      urlRule: 'https://dict.youdao.com/w/{{key}}',
-    ),
-    DictRule(
-      name: '剑桥词典',
-      urlRule:
-          'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/{{key}}',
-    ),
-  ];
-
   @override
   DictState build() => const DictState();
 
-  /// 加载在线词典规则；无持久化数据时写入默认规则
+  /// 加载在线词典规则；首启写入原版默认规则
   Future<void> loadRules() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final api = ref.read(bookApiProvider);
+      await _ensureDefaultDictRules(api);
       final raw = await api.getConfig(_configKey);
-      List<DictRule> rules;
-      if (raw == null || raw.isEmpty) {
-        rules = _defaultRules;
-        await api.setConfig(_configKey, _encode(rules));
-      } else {
-        rules = _decode(raw);
-      }
+      final rules = (raw == null || raw.isEmpty) ? <DictRule>[] : _decode(raw);
       state = state.copyWith(rules: rules, isLoading: false);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isLoading: false);
     }
+  }
+
+  /// 首启/版本升级导入默认字典规则（对标 DefaultData.upVersion + importDefaultDictRules）
+  Future<void> _ensureDefaultDictRules(BookApi api) async {
+    final prefs = await SharedPreferences.getInstance();
+    final version = prefs.getInt(kDictRuleVersionKey) ?? 0;
+    if (version >= kDictRuleVersion) return;
+    await syncDefaultDictRules(api);
+    await prefs.setInt(kDictRuleVersionKey, kDictRuleVersion);
+  }
+
+  /// 菜单「导入默认」：立即覆盖为原版默认内容
+  Future<int> importDefaultRules() async {
+    final api = ref.read(bookApiProvider);
+    final n = await syncDefaultDictRules(api);
+    final raw = await api.getConfig(_configKey);
+    final rules = (raw == null || raw.isEmpty) ? <DictRule>[] : _decode(raw);
+    state = state.copyWith(rules: rules, error: null);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(kDictRuleVersionKey, kDictRuleVersion);
+    return n;
   }
 
   /// 添加在线词典规则
@@ -74,8 +101,6 @@ class DictNotifier extends Notifier<DictState> {
   }
 
   /// 查询单词（经 BookApi.dictLookup 委托 Rust）
-  ///
-  /// 空字符串 / 纯空白被忽略；未收录词返回空 `definitions`（非异常）。
   Future<void> lookup(String word) async {
     final key = word.trim().toLowerCase();
     if (key.isEmpty) return;
@@ -96,7 +121,6 @@ class DictNotifier extends Notifier<DictState> {
     }
   }
 
-  /// 持久化全量规则到 Rust 配置库
   Future<void> _persist(List<DictRule> rules) async {
     try {
       await ref.read(bookApiProvider).setConfig(_configKey, _encode(rules));
@@ -116,20 +140,12 @@ class DictNotifier extends Notifier<DictState> {
         .toList();
   }
 
-  /// 统一错误映射
   String _mapError(Object e) {
     if (e is BridgeError) return e.message;
     return e.toString();
   }
 }
 
-/// 字典查询 Notifier 全局 Provider
-///
-/// 使用方式：
-/// ```dart
-/// final state = ref.watch(dictNotifierProvider);
-/// ref.read(dictNotifierProvider.notifier).loadRules();
-/// ```
 final dictNotifierProvider = NotifierProvider<DictNotifier, DictState>(
   DictNotifier.new,
 );

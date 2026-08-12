@@ -1,0 +1,8 @@
+# 嵌套 freezed 模型 toJson 必须展开为 Map，否则 JsonEncoder 导出书源会报
+# Converting object to an encodable object failed（书源导出根因）
+targets:
+  $default:
+    builders:
+      json_serializable:
+        options:
+          explicit_to_json: true

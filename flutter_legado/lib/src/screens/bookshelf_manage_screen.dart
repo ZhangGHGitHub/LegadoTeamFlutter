@@ -321,7 +321,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
               const PopupMenuItem(
                   value: 'group_manage', child: Text('分组管理')),
               const PopupMenuItem(
-                  value: 'export_all', child: Text('导出所有使用书源的书籍')),
+                  value: 'export_all', child: Text('导出所有使用书源')),
               PopupMenuItem(
                 value: 'open_by_title',
                 child: Row(
