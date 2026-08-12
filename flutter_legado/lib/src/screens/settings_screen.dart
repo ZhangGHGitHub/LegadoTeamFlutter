@@ -603,13 +603,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  /// 未移植功能提示
-  void _todo(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$feature」后续版本支持')),
-    );
-  }
-
   /// 退出应用（对标 pref_main exit）
   Future<void> _confirmExit() async {
     final confirmed = await showDialog<bool>(
