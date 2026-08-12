@@ -753,6 +753,9 @@ abstract class BookApi {
   });
 
   /// 获取章节媒体信息
+  ///
+  /// 音频书取址（对齐 `AudioPlay` → `WebBook.getContent`）。
+  /// 返回 Map 含 `mediaUrl`（可播地址）/ `url` / `isVolume` / `fromCache` 等，见契约 §2.26。
   Future<Map<String, dynamic>> getAudioChapterMedia(
     String bookUrl,
     int chapterIndex,

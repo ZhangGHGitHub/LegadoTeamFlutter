@@ -1041,6 +1041,17 @@ Future<bool> audioSaveProgress({
   position: position,
 );
 
+/// 音频章节取址（契约 §2.26 getAudioChapterMedia）
+///
+/// 对齐原版 `AudioPlay` → `WebBook.getContent`：返回可播 `mediaUrl` 等元数据 JSON。
+Future<String> audioGetChapterMedia({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiAudioGetChapterMedia(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
 /// 创建备份到指定路径，返回备份文件路径
 Future<String> backupCreate({required String path}) =>
     RustLib.instance.api.crateFfiFfiBackupCreate(path: path);

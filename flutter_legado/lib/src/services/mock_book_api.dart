@@ -1572,11 +1572,23 @@ class MockBookApi implements BookApi {
     if (chapterIndex < 0 || chapterIndex >= chapters.length) {
       return {'error': 'Invalid chapter index'};
     }
+    final chapter = chapters[chapterIndex];
+    final isVolume = chapter.isVolume;
+    // Mock：直链章 URL 即 mediaUrl（对齐正文规则为空回退）
+    final mediaUrl = isVolume
+        ? ''
+        : ((chapter.resourceUrl?.trim().isNotEmpty ?? false)
+            ? chapter.resourceUrl!.trim()
+            : chapter.url.trim());
     return {
       'chapterIndex': chapterIndex,
-      'title': chapters[chapterIndex].title,
-      'url': chapters[chapterIndex].url,
-      'resourceUrl': chapters[chapterIndex].resourceUrl,
+      'title': chapter.title,
+      'mediaUrl': mediaUrl,
+      'url': chapter.url,
+      'resourceUrl': chapter.resourceUrl,
+      'isVolume': isVolume,
+      'fromCache': false,
+      'sourceUrl': '',
     };
   }
 

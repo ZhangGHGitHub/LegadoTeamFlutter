@@ -1821,27 +1821,19 @@ class RustApi implements BookApi {
     }
   }
 
-  /// 获取章节媒体信息（待 FFI 实现，当前返回基本信息）
+  /// 获取章节媒体信息（音频书取址，契约 §2.26）
   ///
-  /// ⚠️ 死代码标注（批次3治理 Task #118）：此 fallback 在全工程已无任何
-  /// 调用点（audioSpeak 已接真实 Rust TTS 管线，听书不再依赖此接口）。
-  /// 仅为保持 [BookApi] 契约面不变而保留，勿删除；后续如需清理须同步
-  /// book_api.dart / mock_book_api.dart 声明。
+  /// 对齐原版 `AudioPlay` → `WebBook.getContent`：经 FFI `audioGetChapterMedia`
+  /// 解析可播 `mediaUrl`。返回含 `mediaUrl` / `url` / `isVolume` / `fromCache` 等。
   Future<Map<String, dynamic>> getAudioChapterMedia(
     String bookUrl,
     int chapterIndex,
   ) async {
-    final chapters = await getChapters(bookUrl);
-    if (chapterIndex < 0 || chapterIndex >= chapters.length) {
-      return {'error': 'Invalid chapter index'};
-    }
-    final chapter = chapters[chapterIndex];
-    return {
-      'chapterIndex': chapterIndex,
-      'title': chapter.title,
-      'url': chapter.url,
-      'resourceUrl': chapter.resourceUrl,
-    };
+    final json = await bridge.audioGetChapterMedia(
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+    );
+    return (jsonDecode(json) as Map<String, dynamic>).cast<String, dynamic>();
   }
 
   /// 获取音频播放进度
