@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
 import '../routes.dart';
+import '../widgets/replace_rule_group_manage_dialog.dart';
 import 'replace_rule_import_confirm_screen.dart';
 
 /// 替换规则管理页面
@@ -122,6 +123,12 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
               for (final g in _collectGroups(state.rules))
                 PopupMenuItem<String?>(value: g, child: Text('分组：$g')),
             ],
+          ),
+          // P2-12：分组管理（对标原版 menu_group_manage → GroupManageDialog）
+          IconButton(
+            icon: const Icon(Icons.folder_outlined),
+            tooltip: '分组管理',
+            onPressed: () => _showGroupManage(context, state.rules),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 导入入口接 ReplaceRuleImportConfirmScreen
           // （对标原版 ReplaceRuleActivity menu_import：本地/网络/二维码均已接通） — Qoder
@@ -270,6 +277,20 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 分组筛选 — Qoder =====
+
+  /// P2-12：分组管理弹窗（对标原版 GroupManageDialog）
+  Future<void> _showGroupManage(
+    BuildContext context,
+    List<ReplaceRule> rules,
+  ) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (_) => ReplaceRuleGroupManageDialog(rules: rules),
+    );
+    if (changed == true && mounted) {
+      await ref.read(replaceRuleNotifierProvider.notifier).load();
+    }
+  }
 
   /// 收集所有分组名（规则的 group 字段可含逗号分隔多分组）
   List<String> _collectGroups(List<ReplaceRule> rules) {
