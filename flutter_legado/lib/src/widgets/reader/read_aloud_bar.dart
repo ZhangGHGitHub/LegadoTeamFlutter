@@ -49,8 +49,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   /// 定时停止预设（分钟），复用听书页 SleepTimer 模式
   static const _kPresetMinutes = [10, 20, 30, 60];
 
-  /// 语速跟随系统开关持久化键（对标原版 cbTtsFollowSystem）
-  static const _keyFollowSystem = 'read_aloud_follow_system_speed';
+  /// 语速跟随系统开关持久化键（对齐原版 PreferKey / AppConfig.ttsFlowSys）
+  static const _keyFollowSystem = 'ttsFollowSys';
 
   /// [UI-fix v2.0.3 | 2026-08-08] 留项5：语速跟随系统时使用的默认语速常量
   /// （对标原版 AppConfig.speechRatePlay = if (ttsFlowSys) defaultSpeechRate(=5)）：
@@ -68,8 +68,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   /// 目标章节索引：朗读 currentIndex 到达后自动暂停（null=未启用）
   int? _chapterStopTarget;
 
-  // ===== 语速跟随系统 =====
-  bool _followSystemSpeed = false;
+  // ===== 语速跟随系统（原版默认 true） =====
+  bool _followSystemSpeed = true;
 
   /// 段落进度订阅的 Notifier 引用（dispose 时安全注销，避免 dispose 期读 ref）
   AudioNotifier? _paragraphSubNotifier;
@@ -100,20 +100,47 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
 
   Future<void> _loadFollowSystem() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final api = ref.read(bookApiProvider);
+      // 优先 config（对齐业务数据不经 SharedPreferences）；兼容旧 SP 键迁移
+      var raw = await api.getConfig(_keyFollowSystem);
+      if (raw == null || raw.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        final legacy = prefs.getBool('read_aloud_follow_system_speed');
+        if (legacy != null) {
+          raw = legacy ? 'true' : 'false';
+          await api.setConfig(_keyFollowSystem, raw);
+          await prefs.remove('read_aloud_follow_system_speed');
+        }
+      }
       if (!mounted) return;
-      final follow = prefs.getBool(_keyFollowSystem) ?? false;
+      // 缺省对齐原版 AppConfig.ttsFlowSys = true
+      final follow = raw == null || raw.isEmpty
+          ? true
+          : raw == 'true' || raw == '1';
       setState(() => _followSystemSpeed = follow);
-      // [UI-fix v2.0.3 | 2026-08-08] 留项5：跟随系统时应用默认语速常量
-      // （对标原版 speechRatePlay 语义，非实时读系统语速） — Qoder
       if (follow) {
         ref
             .read(audioNotifierProvider.notifier)
             .updateConfig(speed: _kFollowSystemDefaultSpeed);
       }
     } catch (_) {
-      // 读取失败保持默认关闭
+      // 读取失败保持原版默认开启
+      if (mounted) {
+        setState(() => _followSystemSpeed = true);
+        ref
+            .read(audioNotifierProvider.notifier)
+            .updateConfig(speed: _kFollowSystemDefaultSpeed);
+      }
     }
+  }
+
+  Future<void> _persistFollowSystem(bool follow) async {
+    try {
+      await ref.read(bookApiProvider).setConfig(
+            _keyFollowSystem,
+            follow ? 'true' : 'false',
+          );
+    } catch (_) {}
   }
 
   bool get _isTimerActive => _remainingSeconds > 0;
@@ -564,11 +591,11 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
                   Navigator.pushNamed(context, AppRoutes.readAloudConfig),
             ),
           ),
-          // [UI-fix v2.0.2 | 2026-08-06] 语速跟随系统开关（显式入口，
-          // 持久化到 SharedPreferences）。
+          // [UI-fix v2.0.2 | 2026-08-06] 语速跟随系统开关（显式入口）。
           // [UI-fix v2.0.3 | 2026-08-08] 留项5 闭合：勾选→应用默认语速常量
           // （对标原版 ttsFlowSys 时 speechRatePlay=defaultSpeechRate，
-          // 无需系统语速读取通道） — Qoder
+          // 无需系统语速读取通道）。
+          // [UI-fix v2.0.41 | 2026-08-13] 默认 true + 持久化迁 config 键 ttsFollowSys — Auto
           Expanded(
             child: TextButton.icon(
               icon: Icon(
@@ -580,9 +607,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               label: Text(_followSystemSpeed ? '语速:跟随系统' : '语速:手动'),
               style: _compactButtonStyle,
               onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
                 final next = !_followSystemSpeed;
-                await prefs.setBool(_keyFollowSystem, next);
+                await _persistFollowSystem(next);
                 if (!mounted) return;
                 setState(() => _followSystemSpeed = next);
                 if (next) {

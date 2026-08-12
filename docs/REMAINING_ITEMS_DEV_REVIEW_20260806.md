@@ -25,15 +25,17 @@
 
 ## 2. 反转内容持久化
 
+> ✅ **已闭合（2026-08-13 核销）**：`reader_top_bar._reverseContent` → runes 倒序 → `saveChapterContent` → `reloadChapterContent`。
+
 | 字段 | 内容 |
 |------|------|
-| **现状证据** | Flutter：`reader_top_bar.dart` L248-251 `TODO(留批次)`——菜单项存在但仅 SnackBar 提示。Kotlin 原版：`ReadBookViewModel.reverseContent`（ReadBookViewModel.kt L447-459）：取当前章正文 → 按行 `insert(0, it)` 倒序 → `BookHelp.saveText` 持久化 → `ReadBook.loadContent` 重载 |
+| **现状证据** | ~~菜单仅 SnackBar~~ → 已接 saveChapterContent FFI |
 | **所需交付** | 纯 UI/Dart 逻辑；**依赖留项 1 的 FFI**，无需新契约 |
-| **跨轨依赖** | 被留项 1 阻塞（同批交付即可解） |
-| **实现方案要点** | Dart 侧将当前章文本按行反转拼接，调用留项 1 的 saveChapterContent 写回，成功后重载当前章；严格对标原版「按行倒序」语义（逐行 insert 到头部，非整串 reverse） |
-| **工作量估算** | 0.5 人日 |
-| **建议优先级与批次** | P1；波次4，与留项 1 同批 |
-| **风险/注意事项** | 行分隔符需与正文净化管线输出一致（\n）；无缓存章节时（未抓取正文）应先取正文再反转，避免空转 |
+| **跨轨依赖** | 已解 |
+| **实现方案要点** | 已交付 |
+| **工作量估算** | — |
+| **建议优先级与批次** | 已完成 |
+| **风险/注意事项** | — |
 
 ## 3. 章节购买 payAction
 
@@ -51,15 +53,17 @@
 
 ## 4. 段落级 TTS 切换起点（startReadAloud 偏移参数）
 
+> ✅ **已闭合（2026-08-13 核销）**：`AudioNotifier.startReadAloud(startChapterPos:)` + 段落队列；`text_selection_panel`「朗读所选」传入 `chapterPos`。
+
 | 字段 | 内容 |
 |------|------|
-| **现状证据** | Flutter：`flutter_legado/lib/src/widgets/reader/text_selection_panel.dart` L377-383 `TODO(留批次)`——「朗读所选」调 `startReadAloud` 仅传 chapterIndex，而选区面板已持有 `widget.chapterPos`（L341-342 高亮路径在用）；`flutter_legado/lib/src/providers/audio/audio_notifier.dart` L156-160 `startReadAloud` 签名无偏移参数；**且当前朗读为整章一次性送读**（L229-234 audioSpeak 传整章 text），非段落管线。Kotlin 原版：`ReadBook.readAloud(play, startPos)`（`app/src/main/java/io/legado/app/model/ReadBook.kt` L862）、选区入口 `ReadView.kt` L672-673（`getPosByLineColumn` → startPos）；原版朗读为逐段管线（BaseReadAloudService 有 nextParagraph 等段落推进） |
-| **所需交付** | 纯 Flutter 状态/逻辑改造（audioSpeak FFI 接受任意 text，无需契约变更） |
-| **跨轨依赖** | 无跨轨阻塞 |
-| **实现方案要点** | ① AudioNotifier 改段落化：章节文本按段拆分入队、逐段送 audioSpeak、跟踪段落进度（同步获得原版「下一段/上一段」能力）；② `startReadAloud` 增 `startChapterPos` 可选参数，将字符偏移映射到段落索引后起播；③ text_selection_panel 传入 `widget.chapterPos` |
-| **工作量估算** | 2-3 人日（段落队列重构 + 偏移映射 + 测试） |
-| **建议优先级与批次** | P1；波次4（阅读器闭环） |
-| **风险/注意事项** | 段落拆分口径需与阅读器排版一致，否则起点偏移不准；改造触及播放状态机与媒体会话，需回归听书全链路（播放/暂停/上下章/定时） |
+| **现状证据** | ~~整章送读~~ → 段落管线 + startChapterPos |
+| **所需交付** | 纯 Flutter |
+| **跨轨依赖** | 无 |
+| **实现方案要点** | 已交付 |
+| **工作量估算** | — |
+| **建议优先级与批次** | 已完成 |
+| **风险/注意事项** | — |
 
 ## 5. 语速跟随系统实时通道
 

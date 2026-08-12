@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.42] - 2026-08-13
+
+### Fixed
+- [UI] TTS「跟随系统」默认 true，持久化迁 config 键 `ttsFollowSys`（对齐 AppConfig.ttsFlowSys）
+
+### Notes
+- 反转内容 / 段落级 TTS「朗读所选」此前已接 saveChapterContent 与 startChapterPos，本批核销
+
 ## [2.0.41] - 2026-08-13
 
 ### Added
