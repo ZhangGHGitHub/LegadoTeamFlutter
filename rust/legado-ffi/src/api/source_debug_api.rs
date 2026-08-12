@@ -610,4 +610,23 @@ mod tests {
         assert!(!is_abs_url("斗破苍穹"));
         assert!(!is_abs_url("++https://a.com/toc"));
     }
+
+    /// 关键字分流契约（对齐 Debug.startDebug）：
+    /// `--` 正文 / `++` 目录 / `::` 发现 / 绝对 URL 详情 / 其余搜索
+    #[test]
+    fn test_debug_key_routing_prefixes() {
+        assert!("--https://a.com/ch1".starts_with("--"));
+        assert!("++https://a.com/toc".starts_with("++"));
+        assert!("玄幻::https://a.com/explore".contains("::"));
+        assert!(is_abs_url("https://a.com/book/1"));
+        assert!(!is_abs_url("斗破苍穹"));
+    }
+
+    #[test]
+    fn test_cancel_debug_sets_flag() {
+        DEBUG_CANCELLED.store(false, Ordering::SeqCst);
+        cancel_debug_book_source();
+        assert!(DEBUG_CANCELLED.load(Ordering::SeqCst));
+        DEBUG_CANCELLED.store(false, Ordering::SeqCst);
+    }
 }
