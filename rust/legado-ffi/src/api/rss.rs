@@ -15,6 +15,7 @@ use crate::runtime;
 
 /// RSS 文章项
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RssArticle {
     /// 标题
     pub title: String,
@@ -127,44 +128,115 @@ pub fn update_rss_source(source_json: &str) -> LegadoResult<RssSource> {
     })
 }
 
-/// 获取 RSS 源的文章列表（通过网络请求获取）
+/// 清空指定 RSS 源的本地文章缓存（对齐 RssSortViewModel.clearArticles）
+pub fn clear_rss_articles(source_url: &str) -> LegadoResult<()> {
+    with_database(|db| {
+        let repo = legado_db::RssArticleRepository::new(db.connection());
+        repo.delete_by_source(source_url)
+    })
+}
+
+/// 获取 RSS 源的文章列表
+///
+/// - `cacheFirst`：优先返回本地 rssArticles 缓存
+/// - 网络拉取后解析 RSS/Atom（legado-net），并写入本地缓存
 pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
-    // 从数据库获取源信息
-    let source = with_database(|db| {
+    let (feed_url, cache_first) = with_database(|db| {
         let conn = db.connection();
         let mut stmt = conn
-            .prepare("SELECT sourceUrl, sourceName FROM rssSources WHERE sourceUrl = ?1")
+            .prepare(
+                "SELECT sourceUrl, COALESCE(cacheFirst, 0) FROM rssSources WHERE sourceUrl = ?1",
+            )
             .map_err(|e| LegadoError::Database(format!("查询 RSS 源失败: {e}")))?;
         let mut rows = stmt
             .query_map(rusqlite::params![source_url], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? != 0))
             })
             .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
         match rows.next() {
-            Some(Ok((url, name))) => Ok((url, name)),
+            Some(Ok(v)) => Ok(v),
             _ => Err(LegadoError::Database("RSS 源不存在".into())),
         }
     })?;
 
-    // 通过网络获取 RSS 内容
+    if cache_first {
+        let cached = with_database(|db| {
+            let repo = legado_db::RssArticleRepository::new(db.connection());
+            repo.find_by_source(source_url, 500)
+        })?;
+        if !cached.is_empty() {
+            return Ok(cached
+                .into_iter()
+                .map(|a| RssArticle {
+                    title: a.title,
+                    link: a.link.unwrap_or_default(),
+                    description: a.description,
+                    pub_date: a.pub_date,
+                    image_url: a.image,
+                })
+                .collect());
+        }
+    }
+
     let articles = runtime::block_on(async {
         let client = crate::http_state::shared_client();
-        let response = client.get(&source.0, None).await?;
+        let response = client.get(&feed_url, None).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(
                 "获取 RSS 内容失败: HTTP {}",
                 response.status
             )));
         }
-        // 简化实现：返回原始内容作为单条文章
-        Ok(vec![RssArticle {
-            title: source.1,
-            link: source.0,
-            description: Some(response.body.chars().take(200).collect()),
-            pub_date: None,
-            image_url: None,
-        }])
+        match legado_net::rss::parse_feed(&response.body) {
+            Ok(feed) if !feed.articles.is_empty() => Ok(feed
+                .articles
+                .into_iter()
+                .map(|a| RssArticle {
+                    title: a.title,
+                    link: a.link,
+                    description: a.description,
+                    pub_date: a.pub_date,
+                    image_url: a.image_url,
+                })
+                .collect::<Vec<_>>()),
+            _ => {
+                // 非标准 XML / 规则源：保留单条摘要回退，避免整页空白
+                Ok(vec![RssArticle {
+                    title: feed_url.clone(),
+                    link: feed_url.clone(),
+                    description: Some(response.body.chars().take(200).collect()),
+                    pub_date: None,
+                    image_url: None,
+                }])
+            }
+        }
     })?;
+
+    // 写入本地文章缓存（对齐原版 rssArticles）
+    let _ = with_database(|db| {
+        let repo = legado_db::RssArticleRepository::new(db.connection());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        for (i, a) in articles.iter().enumerate() {
+            let record = legado_db::RssArticleRecord {
+                origin: source_url.to_string(),
+                sort: String::new(),
+                title: a.title.clone(),
+                order: now - i as i64,
+                link: Some(a.link.clone()),
+                pub_date: a.pub_date.clone(),
+                description: a.description.clone(),
+                content: None,
+                image: a.image_url.clone(),
+                variable: None,
+                ..Default::default()
+            };
+            let _ = repo.insert(&record);
+        }
+        Ok(())
+    });
 
     Ok(articles)
 }

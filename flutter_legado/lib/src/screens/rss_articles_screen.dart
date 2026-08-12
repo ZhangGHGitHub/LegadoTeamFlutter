@@ -418,16 +418,20 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
     }
   }
 
-  /// 设置源变量（对标原版 VariableDialog）
+  /// 设置源变量（对标原版 VariableDialog + BaseSource.setVariable）
   ///
-  /// TODO(UI-fix v2.0.2): RssSource 模型/Rust FFI 尚无 variable 字段，
-  /// 暂持久化于 config 键 rssSourceVariable_<sourceUrl>，待契约补齐后切换。— Qoder
+  /// 持久化键对齐 Kotlin CacheManager：`sourceVariable_${getKey()}`，经 config FFI。
   Future<void> _showSetVariableDialog() async {
     final api = ref.read(bookApiProvider);
-    final key = 'rssSourceVariable_${widget.source.sourceUrl}';
+    final key = 'sourceVariable_${widget.source.sourceUrl}';
     String? initial;
     try {
       initial = await api.getConfig(key);
+      if (initial == null || initial.isEmpty) {
+        initial = await api.getConfig(
+          'rssSourceVariable_${widget.source.sourceUrl}',
+        );
+      }
     } catch (_) {}
     if (!mounted) return;
     final ctrl = TextEditingController(text: initial ?? '');
@@ -461,7 +465,14 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
     );
     if (result == null || !mounted) return;
     try {
-      await api.setConfig(key, result);
+      if (result.isEmpty) {
+        await api.deleteConfig(key);
+      } else {
+        await api.setConfig(key, result);
+      }
+      try {
+        await api.deleteConfig('rssSourceVariable_${widget.source.sourceUrl}');
+      } catch (_) {}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('源变量已保存')),
@@ -492,18 +503,13 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
     }
   }
 
-  /// 清空（对标原版 menu_clear → clearArticles 删本缓存文章）
-  ///
-  /// TODO(UI-fix v2.0.2): Flutter 端不本地缓存文章列表（实时拉取），
-  /// 无按源清文章 FFI；映射为确认后清空全部订阅阅读记录。— Qoder
+  /// 清空（对标原版 menu_clear → clearArticles 删本源本地缓存文章）
   Future<void> _clearArticles() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空'),
-        content: const Text(
-          '本客户端不本地缓存文章，此操作将清空全部订阅的阅读记录，确定继续吗？',
-        ),
+        content: const Text('将清空本源本地缓存的文章列表，确定继续吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -518,11 +524,11 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await ref.read(bookApiProvider).rssClearReadRecords();
+      await ref.read(bookApiProvider).rssClearArticles(widget.source.sourceUrl);
+      ref.read(rssNotifierProvider.notifier).refreshArticles();
       if (mounted) {
-        setState(() => _readArticles.clear());
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('阅读记录已清空')),
+          const SnackBar(content: Text('本源文章缓存已清空')),
         );
       }
     } catch (e) {
@@ -533,6 +539,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
       }
     }
   }
+
 }
 
 /// [UI-fix v2.0.2 | 2026-08-06] 阅读记录对话框（对标原版 ReadRecordDialog：

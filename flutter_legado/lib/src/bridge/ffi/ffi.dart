@@ -107,15 +107,17 @@ Future<void> setSourceVariable({
 Future<void> clearCookie({required String url}) =>
     RustLib.instance.api.crateFfiFfiClearCookie(url: url);
 
-/// 判断文本是否形似 cURL 命令（契约 §2.3 looksLikeCurl，2026-08-12 P1-14）
+/// 判断文本是否形似 cURL 命令（对齐 Kotlin `CurlAnalyzeUrlConverter.looksLikeCurl`）
 Future<bool> looksLikeCurl({required String text}) =>
     RustLib.instance.api.crateFfiFfiLooksLikeCurl(text: text);
 
-/// cURL → AnalyzeUrl 模板（契约 §2.3 curlToAnalyzeUrl，2026-08-12 P1-14）
+/// cURL 命令 → AnalyzeUrl 模板字符串（对齐 `curlToAnalyzeUrl`）
+///
+/// 失败时 BridgeError.message 含 `[CURL_*]` 前缀，便于 UI 映射提示。
 Future<String> curlToAnalyzeUrl({required String text}) =>
     RustLib.instance.api.crateFfiFfiCurlToAnalyzeUrl(text: text);
 
-/// AnalyzeUrl → cURL（契约 §2.3 analyzeUrlToCurl，2026-08-12 P1-14）
+/// AnalyzeUrl 模板字符串 → cURL 命令（对齐 `analyzeUrlToCurl`）
 Future<String> analyzeUrlToCurl({required String text}) =>
     RustLib.instance.api.crateFfiFfiAnalyzeUrlToCurl(text: text);
 
@@ -464,6 +466,10 @@ Future<void> rssDeleteSource({required String sourceUrl}) =>
 /// 获取 RSS 源的文章列表（JSON 数组）
 Future<String> rssFetchArticles({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssFetchArticles(sourceUrl: sourceUrl);
+
+/// 清空指定 RSS 源的本地文章缓存（对齐 clearArticles）
+Future<void> rssClearArticles({required String sourceUrl}) =>
+    RustLib.instance.api.crateFfiFfiRssClearArticles(sourceUrl: sourceUrl);
 
 /// 获取所有 RSS 收藏（JSON 数组）
 Future<String> rssStarList() => RustLib.instance.api.crateFfiFfiRssStarList();

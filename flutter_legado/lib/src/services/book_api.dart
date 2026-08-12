@@ -265,6 +265,9 @@ abstract class BookApi {
   /// 获取 RSS 文章列表
   Future<List<RssFeedArticle>> getRssArticles(String sourceUrl);
 
+  /// 清空指定 RSS 源本地文章缓存（对齐 clearArticles）
+  Future<void> rssClearArticles(String sourceUrl);
+
   // ========== RSS 已读记录 ==========
 
   /// 标记 RSS 文章为已读

@@ -809,6 +809,11 @@ class MockBookApi implements BookApi {
     });
   }
 
+  @override
+  Future<void> rssClearArticles(String sourceUrl) async {
+    // Mock：无本地文章表，空实现即可
+  }
+
   // ========== RSS 已读记录 ==========
 
   final Set<String> _rssReadLinks = {};

@@ -584,6 +584,10 @@ class RustApi implements BookApi {
     }).toList();
   }
 
+  /// 清空指定 RSS 源本地文章缓存
+  Future<void> rssClearArticles(String sourceUrl) =>
+      bridge.rssClearArticles(sourceUrl: sourceUrl);
+
   // ========== RSS 已读记录 ==========
 
   /// 标记 RSS 文章为已读

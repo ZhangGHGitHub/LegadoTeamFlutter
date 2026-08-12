@@ -655,6 +655,12 @@ pub mod ffi {
         to_json(&articles)
     }
 
+    /// 清空指定 RSS 源的本地文章缓存（对齐 clearArticles）
+    pub fn rss_clear_articles(source_url: String) -> Result<(), BridgeError> {
+        crate::api::rss::clear_rss_articles(&source_url)?;
+        Ok(())
+    }
+
     // ─── RSS 收藏 ────────────────────────────────────────
 
     /// 获取所有 RSS 收藏（JSON 数组）
