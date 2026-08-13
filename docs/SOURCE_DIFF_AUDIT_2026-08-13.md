@@ -160,8 +160,8 @@
 | P0-1 `@put`/`@get`/`setLocal` | ✅ 已闭合 | `14517217b` |
 | P0-2 `preciseSearch` | ✅ Rust+FFI；Dart 待 FRB | `099b5ebc7` |
 | P0-4 `runPreUpdateJs` | ✅ refreshToc 接线 | `099b5ebc7` |
-| P1-9 `imageStyle` 排版 | ✅ ReaderImageDominantBody | 本批 `[UI]` |
-| P1-10 `sourceRegex`+`webJs` | ✅ get_content 钩子（无头近似） | 本批 `[Rust]` |
+| P1-9 `imageStyle` 排版 | ✅ ReaderImageDominantBody | `6b1eb163c` |
+| P1-10 `sourceRegex`+`webJs` | ✅ get_content 钩子（无头近似） | `e05746a4c` |
 | 本审计仍开放 | P1-5（规则级 WebJs 完整 DOM）/6/7；P2-12/13；P1-11 与 N/A 边界 | 见上文 |
 
 编写者：Reasonix ｜ 2026-08-13（源码级只读审计）  
