@@ -1331,38 +1331,6 @@ Future<void> downloadUpdateProgress({
   progress: progress,
 );
 
-/// 获取指定章节的所有评论（JSON 数组）
-Future<String> reviewGetByChapter({
-  required String bookUrl,
-  required int chapterIndex,
-}) => RustLib.instance.api.crateFfiFfiReviewGetByChapter(
-  bookUrl: bookUrl,
-  chapterIndex: chapterIndex,
-);
-
-/// 添加评论，返回评论 ID
-Future<PlatformInt64> reviewAdd({
-  required String bookUrl,
-  required int chapterIndex,
-  required int paragraphIndex,
-  required String content,
-  required String author,
-}) => RustLib.instance.api.crateFfiFfiReviewAdd(
-  bookUrl: bookUrl,
-  chapterIndex: chapterIndex,
-  paragraphIndex: paragraphIndex,
-  content: content,
-  author: author,
-);
-
-/// 删除评论
-Future<bool> reviewDelete({required PlatformInt64 id}) =>
-    RustLib.instance.api.crateFfiFfiReviewDelete(id: id);
-
-/// 点赞评论
-Future<void> reviewLike({required PlatformInt64 id}) =>
-    RustLib.instance.api.crateFfiFfiReviewLike(id: id);
-
 /// 段评摘要（P2-9，对标 loadReviewSummary + parseSummary）
 ///
 /// 返回 JSON `{"counts":{"1":5},"keys":{"1":"paraData"}}`。

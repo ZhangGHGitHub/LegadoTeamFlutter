@@ -1849,26 +1849,7 @@ class MockBookApi implements BookApi {
   @override
   Future<void> downloadUpdateProgress(String taskId, double progress) async {}
 
-  // ========== 段评/章评 ==========
-
-  @override
-  Future<String> reviewGetByChapter(String bookUrl, int chapterIndex) async =>
-      jsonEncode([]);
-
-  @override
-  Future<int> reviewAdd({
-    required String bookUrl,
-    required int chapterIndex,
-    int paragraphIndex = -1,
-    required String content,
-    String author = '',
-  }) async => _nextId++;
-
-  @override
-  Future<bool> reviewDelete(int id) async => true;
-
-  @override
-  Future<void> reviewLike(int id) async {}
+  // ========== 段评（书源 ruleReview）==========
 
   @override
   Future<String> reviewGetSummary(String sourceJson, String requestJson) async {

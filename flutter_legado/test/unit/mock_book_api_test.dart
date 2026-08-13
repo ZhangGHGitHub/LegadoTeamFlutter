@@ -544,21 +544,7 @@ void main() {
     });
   });
 
-  group('段评/章评', () {
-    test('reviewAdd 返回 ID', () async {
-      final id = await api.reviewAdd(
-        bookUrl: 'mock://book/1',
-        chapterIndex: 0,
-        content: '好文章',
-      );
-      expect(id, greaterThan(0));
-    });
-
-    test('reviewGetByChapter 返回 JSON 数组', () async {
-      final result = await api.reviewGetByChapter('mock://book/1', 0);
-      expect(result, '[]');
-    });
-
+  group('段评（ruleReview）', () {
     test('reviewGetSummary 返回 counts/keys', () async {
       final result = await api.reviewGetSummary('{}', '{}');
       final map = jsonDecode(result) as Map<String, dynamic>;

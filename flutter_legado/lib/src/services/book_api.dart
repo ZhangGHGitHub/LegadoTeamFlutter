@@ -937,34 +937,7 @@ abstract class BookApi {
   /// 更新下载进度
   Future<void> downloadUpdateProgress(String taskId, double progress);
 
-  // ========== 段评/章评 ==========
-
-  /// 获取指定章节的所有**本地库**评论（偏离创意 CRUD）
-  ///
-  /// **F7 禁止**：不得当作原版 `ruleReview` 书源段评使用。
-  /// 阅读器段评请走 [reviewGetSummary] / [reviewGetDetail] / [reviewGetReplies]。
-  @Deprecated('本地段评 CRUD，禁止当 ruleReview；请用 reviewGetSummary/Detail')
-  Future<String> reviewGetByChapter(String bookUrl, int chapterIndex);
-
-  /// 添加**本地库**评论（偏离创意）
-  ///
-  /// **F7 禁止**：不得当作 ruleReview。
-  @Deprecated('本地段评 CRUD，禁止当 ruleReview')
-  Future<int> reviewAdd({
-    required String bookUrl,
-    required int chapterIndex,
-    int paragraphIndex = -1,
-    required String content,
-    String author = '',
-  });
-
-  /// 删除**本地库**评论（偏离创意；F7 禁止当 ruleReview）
-  @Deprecated('本地段评 CRUD，禁止当 ruleReview')
-  Future<bool> reviewDelete(int id);
-
-  /// 点赞**本地库**评论（偏离创意；F7 禁止当 ruleReview）
-  @Deprecated('本地段评 CRUD，禁止当 ruleReview')
-  Future<void> reviewLike(int id);
+  // ========== 段评（书源 ruleReview，对齐原版）==========
 
   /// 段评摘要（P2-9，对标 loadReviewSummary + parseSummary）
   ///

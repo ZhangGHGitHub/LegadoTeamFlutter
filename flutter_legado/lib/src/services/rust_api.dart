@@ -2079,37 +2079,7 @@ class RustApi implements BookApi {
   Future<void> downloadUpdateProgress(String taskId, double progress) =>
       bridge.downloadUpdateProgress(taskId: taskId, progress: progress);
 
-  // ========== 段评/章评 ==========
-
-  /// 获取指定章节的所有评论（JSON 数组）
-  Future<String> reviewGetByChapter(String bookUrl, int chapterIndex) =>
-      bridge.reviewGetByChapter(
-          bookUrl: bookUrl, chapterIndex: chapterIndex);
-
-  /// 添加评论，返回评论 ID
-  Future<int> reviewAdd({
-    required String bookUrl,
-    required int chapterIndex,
-    int paragraphIndex = -1,
-    required String content,
-    String author = '',
-  }) async {
-    final id = await bridge.reviewAdd(
-      bookUrl: bookUrl,
-      chapterIndex: chapterIndex,
-      paragraphIndex: paragraphIndex,
-      content: content,
-      author: author,
-    );
-    return id.toInt();
-  }
-
-  /// 删除评论
-  Future<bool> reviewDelete(int id) =>
-      bridge.reviewDelete(id: id);
-
-  /// 点赞评论
-  Future<void> reviewLike(int id) => bridge.reviewLike(id: id);
+  // ========== 段评（书源 ruleReview）==========
 
   /// 段评摘要（P2-9）
   Future<String> reviewGetSummary(String sourceJson, String requestJson) =>
