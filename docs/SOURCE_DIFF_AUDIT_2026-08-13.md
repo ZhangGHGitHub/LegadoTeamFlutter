@@ -28,28 +28,30 @@
 
 ### P0 级（影响书源兼容性）
 
-1. **`@put:` 变量系统**（put/get/setLocal）
+1. ~~**`@put:` 变量系统**（put/get/setLocal）~~ → **✅ 已落地（2026-08-13）**
    - 原版：`$.chapter_name@put:{chapter_id:$.chapter_id}` 写入变量，后续规则 `@get:chapter_id` / `{{get.chapter_id}}` 读取
-   - 重构：`strip_put_rules` 仅剥离 `@put:{...}` 后**丢弃**（analyze_rule.rs:165 注释"变量写入后续可扩展"），无存储/读取 API
-   - 影响：神漫画类书源的跨规则变量传递（正文分页/目录链）完全失效
+   - 重构：`AnalyzeRule` 会话变量 + `apply_put_map` / `expand_get_refs`；章节 `WebChapter.variable` → `BookChapter.variable` 落库并在正文解析种子注入；JS `java.put`/`get`/`setLocal`
+   - 证据：commit `14517217b`；单测 `test_strip_put_then_jsonpath` / `test_put_init_then_get_fields`
 
-2. **`preciseSearch` 精确搜索**
+2. ~~**`preciseSearch` 精确搜索**~~ → **✅ 已落地（2026-08-13）**
    - 原版：`WebBook.preciseSearchAwait`（换源/精搜场景）
-   - 重构：Rust 全无对应
+   - 重构：`search::precise_search` + FFI `preciseSearch`（需 FRB codegen 后 Dart 接通）
+   - 证据：commit `099b5ebc7`
 
 3. **`checkRedirect` 重定向检测**（影响偏弱）
    - 原版：`WebBook.checkRedirect`（`WebBook.kt`）——实测主要为 **Debug.log 记录重定向**，并非强制重请求
    - 重构：无对等日志/钩子；**不宜按「兼容性阻断」排 P0**，保留为可观测性缺口
 
-4. **`runPreUpdateJs` 更新前 JS 钩子**
+4. ~~**`runPreUpdateJs` 更新前 JS 钩子**~~ → **✅ 已落地（2026-08-13）**
    - 原版：`WebBook.runPreUpdateJs`（TocRule.preUpdateJs，目录更新前执行）
-   - 重构：toc_rule.rs 仅有模型字段，**无执行逻辑**
+   - 重构：`refresh_toc` 调用 `pre_update::run_pre_update_js`（失败仅日志，不阻断目录刷新）
+   - 证据：commit `099b5ebc7`；`reGetBook`/`refreshTocUrl` JS 宿主钩子仍缺（preUpdateJs 内调用时降级）
 
 ### P1 级（功能缺口）
 
-5. **`getWebJsResult`（WebView JS 执行模式）**
+5. **`getWebJsResult`（WebView JS 执行模式）** — **部分开放**
    - 原版：AnalyzeRule WebJs 模式经 WebView 执行 JS 取结果
-   - 重构：仅 webView 开屏存在，规则级 WebJs 模式缺失
+   - 重构：正文 `contentRule.webJs` 已无头 QuickJS 近似接线；**规则级 Mode.WebJs / 完整 DOM WebView 仍缺**
 
 6. **`setRedirectUrl`**：AnalyzeRule 重定向 URL 回填缺失（绝对化多处手传 `redirect_url`，无规则 API）
 
@@ -57,9 +59,12 @@
 
 8. ~~**AnalyzeByJSoup `@html` 提取模式**~~ → **✅ 已对齐（复核销记）**：`legado-parser/src/html.rs` 已实现 `@html`/`html`/`all` 提取（`elem.html()`）；正文单测广泛使用 `.content@html`
 
-9. **`imageStyle` 正文图片样式**：模型+书源编辑+阅读器菜单可持久化；`book_open_utils` 用 ContentRule.imageStyle 做漫画路由；**阅读器排版执行点仍弱**（`full`/`text`/`single` 未驱动 page layout）
+9. ~~**`imageStyle` 正文图片样式**~~ → **✅ 排版执行已接线（2026-08-13）**
+   - 模型+书源编辑+阅读器菜单可持久化；`ReaderImageDominantBody` 执行 `FULL`/`TEXT`/`SINGLE`（对齐 TextChapterLayout 语义）
 
-10. **`sourceRegex` 正文应用**：仅 webViewGetSource 桥有参数；`web_book.rs` getContent 链路未把 `contentRule.sourceRegex`/`webJs` 传入请求（原版 `WebBook.getContent` → `AnalyzeUrl.getStrResponseAwait(jsStr=webJs, sourceRegex=…)`）
+10. ~~**`sourceRegex` 正文应用**~~ → **✅ 已接线（2026-08-13）**
+   - `get_content` 经 `apply_content_web_hooks`：`sourceRegex` 无头嗅探匹配 URL；`webJs` QuickJS 执行（无 DOM，失败回退原文）
+   - 完整 BackstageWebView DOM 嗅探仍依赖平台桥（与 P1-5 相关）
 
 11. **`upload(fileName, file, contentType)` 多部件上传**：AnalyzeUrl 无（直链上传规则依赖；产品侧直链入口已正式 N/A，见 GAP §10.2 / RESIDUAL「不做」）
 
@@ -133,10 +138,10 @@
 
 ## 5. 建议修复顺序
 
-1. P0-1 `@put:` 变量系统（影响神漫画类书源，最大兼容性缺口）
-2. P0-4 `runPreUpdateJs` / P0-2 `preciseSearch`（Rust 权威实现；UI 书架导入仅有近似）
-3. P1 `sourceRegex`+`webJs` 正文请求接线 / `imageStyle` 阅读器排版执行
-4. P1 getWebJsResult / setRedirectUrl / isUrl·unescape 通用化
+1. ~~P0-1 `@put:` 变量系统~~ ✅
+2. ~~P0-4 `runPreUpdateJs` / P0-2 `preciseSearch`~~ ✅（preciseSearch 待 FRB codegen → Dart）
+3. ~~P1 `sourceRegex`+`webJs` 正文请求接线 / `imageStyle` 阅读器排版执行~~ ✅（webJs 无头近似；完整 WebView DOM 归 P1-5）
+4. P1 getWebJsResult（规则级 Mode.WebJs） / setRedirectUrl / isUrl·unescape 通用化
 5. P2 getReadBookConfigMap/getThemeConfigMap、DownloadService；（upload 与直链 N/A 联动，勿单独重开产品入口）
 6. ~~P0-3 checkRedirect~~ 降为日志级；~~P1 `@html`~~ 已销；~~§4.1 版本硬编码~~ 已销
 
@@ -152,7 +157,13 @@
 | `@html` | ✅ 本审计误判，已实现 | `legado-parser/src/html.rs` |
 | Cronet / 直链上传产品入口 | N/A | GAP §10.2；RESIDUAL「不做」 |
 | GAP UI 缺口清单 | 大体已销；开放多为 A 类环境验收 | `GAP_AUDIT` §10 / `RESIDUAL` A* |
-| 本审计仍开放 | §2 P0-1/2/4；P1-5/6/7/9/10；P2-12/13；P1-11 与 N/A 边界 | 见上文 |
+| P0-1 `@put`/`@get`/`setLocal` | ✅ 已闭合 | `14517217b` |
+| P0-2 `preciseSearch` | ✅ Rust+FFI；Dart 待 FRB | `099b5ebc7` |
+| P0-4 `runPreUpdateJs` | ✅ refreshToc 接线 | `099b5ebc7` |
+| P1-9 `imageStyle` 排版 | ✅ ReaderImageDominantBody | 本批 `[UI]` |
+| P1-10 `sourceRegex`+`webJs` | ✅ get_content 钩子（无头近似） | 本批 `[Rust]` |
+| 本审计仍开放 | P1-5（规则级 WebJs 完整 DOM）/6/7；P2-12/13；P1-11 与 N/A 边界 | 见上文 |
 
 编写者：Reasonix ｜ 2026-08-13（源码级只读审计）  
-修订：Auto（Cursor）｜ 2026-08-13（交叉验证：销记 PackageInfo/@html；降级 checkRedirect；标注 imageStyle/sourceRegex 真实现状）
+修订：Auto（Cursor）｜ 2026-08-13（交叉验证：销记 PackageInfo/@html；降级 checkRedirect；标注 imageStyle/sourceRegex 真实现状）  
+修订：Auto（Cursor）｜ 2026-08-13（实现销记 P0-1/2/4、P1-9/10；P1-5 降为部分开放）

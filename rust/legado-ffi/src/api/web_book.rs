@@ -670,15 +670,25 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求章节页面
-        let body = self
+        let mut body = self
             .fetch_simple(&chapter.url, source_headers.as_ref())
             .await?;
 
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &body, &chapter.url, 200)?;
 
-        // 2. 使用正文规则解析首页
+        // 1.6 正文 webJs / sourceRegex（对齐 WebBook.getContent →
+        // AnalyzeUrl.getStrResponseAwait(jsStr=webJs, sourceRegex=…)）
         let content_rule = source.rule_content.as_ref();
+        body = apply_content_web_hooks(
+            body,
+            content_rule,
+            &chapter.url,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+        );
+
+        // 2. 使用正文规则解析首页
         let content_rule_str = content_rule
             .and_then(|r| r.content.as_deref())
             .unwrap_or("");
@@ -811,6 +821,90 @@ fn infer_total_chapter_num(body: &str, chapter: &WebChapter) -> i32 {
         }
     }
     chapter.index.saturating_add(1)
+}
+
+/// 正文抓取后 webJs / sourceRegex 钩子
+///
+/// 对齐原版 `AnalyzeUrl.getStrResponseAwait(jsStr=webJs, sourceRegex=…)`：
+/// - `sourceRegex`：无头嗅探 HTML/正文中匹配的 URL（近似 `SnifferWebClient.onLoadResource`）
+/// - `webJs`：以页面正文为 `result` 执行 JS（近似 `HtmlWebViewClient` 评测；
+///   完整 DOM WebView 仍依赖平台桥，规则级 Mode.WebJs 见 SOURCE_DIFF P1-5）
+fn apply_content_web_hooks(
+    body: String,
+    content_rule: Option<&legado_core::models::rule::ContentRule>,
+    page_url: &str,
+    source_url: &str,
+    js_lib: Option<&str>,
+) -> String {
+    let source_regex = content_rule
+        .and_then(|r| r.source_regex.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let web_js = content_rule
+        .and_then(|r| r.web_js.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    if source_regex.is_none() && web_js.is_none() {
+        return body;
+    }
+
+    // sourceRegex 优先：命中则整段响应替换为匹配 URL（对齐 Sniffer 回调 body=resUrl）
+    if let Some(re_str) = source_regex {
+        if let Some(hit) = sniff_source_regex_url(&body, re_str) {
+            return hit;
+        }
+    }
+
+    // webJs：QuickJS 执行（无 DOM；脚本若依赖 document 会失败并回退原文）
+    if let Some(js) = web_js {
+        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            body.clone(),
+            page_url.to_string(),
+            source_url,
+            js_lib,
+        );
+        match analyzer.get_string(&format!("@js:{js}")) {
+            Ok(out) if !out.trim().is_empty() => return out,
+            Ok(_) => {}
+            Err(e) => eprintln!("[web_book] contentRule.webJs 执行失败（回退原文）: {e}"),
+        }
+    }
+
+    body
+}
+
+/// 从 HTML/文本中嗅探匹配 sourceRegex 的 URL
+fn sniff_source_regex_url(body: &str, source_regex: &str) -> Option<String> {
+    let re = regex::Regex::new(source_regex).ok()?;
+    // 1) 整段 body 即 URL
+    let trimmed = body.trim();
+    if !trimmed.contains('<') && re.is_match(trimmed) {
+        return Some(trimmed.to_string());
+    }
+    // 2) 引号内 URL / src|href 属性
+    let url_re =
+        regex::Regex::new(r#"(?i)(?:src|href|url)\s*=\s*["']([^"']+)["']|["'](https?://[^"']+)["']"#)
+            .ok()?;
+    for cap in url_re.captures_iter(body) {
+        let candidate = cap
+            .get(1)
+            .or_else(|| cap.get(2))
+            .map(|m| m.as_str())
+            .unwrap_or("");
+        if !candidate.is_empty() && re.is_match(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    // 3) 裸 http(s) 子串
+    let bare = regex::Regex::new(r#"https?://[^\s"'<>]+"#).ok()?;
+    for m in bare.find_iter(body) {
+        let u = m.as_str().trim_end_matches(|c| matches!(c, ')' | ']' | ',' | ';'));
+        if re.is_match(u) {
+            return Some(u.to_string());
+        }
+    }
+    None
 }
 
 /// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
@@ -2445,5 +2539,33 @@ mod tests {
             !content.contains("player_aaaa"),
             "raw html must not leak into play content"
         );
+    }
+
+    #[test]
+    fn test_sniff_source_regex_url_from_html() {
+        let html = r#"<html><body>
+            <script src="/player.js"></script>
+            <video src="https://cdn.example.com/a.m3u8?token=1"></video>
+            </body></html>"#;
+        let hit = sniff_source_regex_url(html, r".*\.m3u8.*").expect("should sniff");
+        assert!(hit.contains(".m3u8"), "hit={hit}");
+    }
+
+    #[test]
+    fn test_apply_content_web_hooks_source_regex() {
+        use legado_core::models::rule::ContentRule;
+        let html = r#"<a href="https://cdn.example.com/v.mp4">play</a>"#;
+        let rule = ContentRule {
+            source_regex: Some(r".*\.mp4.*".into()),
+            ..ContentRule::default()
+        };
+        let out = apply_content_web_hooks(
+            html.into(),
+            Some(&rule),
+            "https://example.com/c",
+            "https://example.com",
+            None,
+        );
+        assert_eq!(out, "https://cdn.example.com/v.mp4");
     }
 }
