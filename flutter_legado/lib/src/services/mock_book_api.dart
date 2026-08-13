@@ -633,6 +633,21 @@ class MockBookApi implements BookApi {
   }
 
   @override
+  Future<SearchBook> preciseSearch(
+    String name,
+    String author, {
+    List<String>? sourceUrls,
+  }) async {
+    return SearchBook(
+      name: name,
+      author: author,
+      bookUrl: 'mock://precise/$name',
+      origin: 'https://www.kaixin7days.com',
+      originName: '消消乐听书',
+    );
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> searchMulti(
     String query, {
     List<String>? sourceUrls,

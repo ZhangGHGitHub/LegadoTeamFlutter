@@ -932,24 +932,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         continue;
       }
       try {
-        // 对标 Kotlin WebBook.preciseSearch：在启用书源中搜同名书取最优匹配
-        final results = await api.searchBooks(
+        // 对标 Kotlin WebBook.preciseSearchAwait（FFI preciseSearch）
+        final hit = await api.preciseSearch(
           name,
+          author,
           sourceUrls: enabledUrls.isEmpty ? null : enabledUrls,
         );
-        Book? best;
-        for (final r in results) {
-          if (r.book.name != name) continue;
-          if (author.isEmpty || r.book.author == author) {
-            best = r.book;
-            break;
-          }
-          best ??= r.book;
-        }
-        if (best == null) {
-          fail++;
-          continue;
-        }
+        final best = SearchResult.fromSearchBook(hit).book;
         await api.addBook(best);
         existing.add('$name|$author');
         ok++;

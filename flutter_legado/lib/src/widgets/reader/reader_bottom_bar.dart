@@ -130,7 +130,7 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
       right: 0,
       // [UI-fix v2.0.4 | 2026-08-08] 悬浮按钮行（对标原版 ll_floating_button：
       // fabSearch 居左 / fabNightTheme 居右；原版另有 fabAutoPage/fabReplaceRule，
-      // Flutter 侧暂无自动翻页功能且替换规则入口在溢出菜单，不新增） — Qoder
+      // 自动翻页由 reader_screen `_syncAutoTimer` 驱动；替换规则入口在溢出菜单）— Qoder
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -424,6 +424,23 @@ class RustApi implements BookApi {
         .toList();
   }
 
+  /// 精确搜索（对齐原版 `WebBook.preciseSearchAwait`）
+  @override
+  Future<SearchBook> preciseSearch(
+    String name,
+    String author, {
+    List<String>? sourceUrls,
+  }) async {
+    final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
+    final json = await bridge.preciseSearch(
+      name: name,
+      author: author,
+      sourceUrlsJson: urlsJson,
+    );
+    final map = jsonDecode(json) as Map<String, dynamic>;
+    return SearchBook.fromJson(map);
+  }
+
   /// 多源并行搜索
   Future<List<Map<String, dynamic>>> searchMulti(
     String query, {

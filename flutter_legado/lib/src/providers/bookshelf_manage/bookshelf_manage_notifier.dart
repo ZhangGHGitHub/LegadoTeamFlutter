@@ -134,25 +134,16 @@ class BookshelfManageNotifier extends Notifier<BookshelfManageState> {
         final book = targets[i];
         onProgress?.call(i + 1, targets.length, book.name);
         try {
-          final results = await api.searchBooks(
+          // 对标 Kotlin preciseSearchAwait（FFI preciseSearch）
+          final hit = await api.preciseSearch(
             book.name,
+            book.author,
             sourceUrls: [targetSourceUrl],
           );
-          // 对标 Kotlin preciseSearch：仅取同名书，作者相等优先
-          Book? best;
-          for (final r in results) {
-            if (r.book.name != book.name) continue;
-            if (book.author.isEmpty || r.book.author == book.author) {
-              best = r.book;
-              break;
-            }
-            best ??= r.book;
-          }
-          if (best == null) continue;
           await api.switchSource(
             book.bookUrl,
             targetSourceUrl,
-            best.bookUrl,
+            hit.bookUrl,
           );
           success++;
         } catch (_) {

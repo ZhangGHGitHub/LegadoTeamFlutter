@@ -254,6 +254,20 @@ Future<String> searchBooks({
   sourceUrlsJson: sourceUrlsJson,
 );
 
+/// 精确搜索（对齐原版 `WebBook.preciseSearchAwait`）
+///
+/// 返回首个 name+author 完全匹配的 SearchBook JSON；未命中抛 BridgeError。
+/// `source_urls_json` 语义同 `searchBooks`（空=全部启用源）。
+Future<String> preciseSearch({
+  required String name,
+  required String author,
+  required String sourceUrlsJson,
+}) => RustLib.instance.api.crateFfiFfiPreciseSearch(
+  name: name,
+  author: author,
+  sourceUrlsJson: sourceUrlsJson,
+);
+
 /// 多源并行搜索（返回 JSON 数组）
 ///
 /// `query` — 搜索关键词

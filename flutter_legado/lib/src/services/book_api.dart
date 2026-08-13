@@ -190,6 +190,15 @@ abstract class BookApi {
     List<String>? sourceUrls,
   });
 
+  /// 精确搜索（对齐原版 `WebBook.preciseSearchAwait` / 契约 §2.4）
+  ///
+  /// 启用源中搜书名，返回首个 name+author 完全匹配；未命中抛错。
+  Future<SearchBook> preciseSearch(
+    String name,
+    String author, {
+    List<String>? sourceUrls,
+  });
+
   /// 多源并行搜索
   Future<List<Map<String, dynamic>>> searchMulti(
     String query, {
