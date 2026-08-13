@@ -22,6 +22,7 @@ import '../screens/explore_show_screen.dart';
 import '../utils/responsive.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
+import '../widgets/explore_kind_layout.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -355,12 +356,13 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Material(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-            borderRadius: BorderRadius.circular(8),
+            // 对标 Android bg_find_book_group（transparent10 圆角横条）
+            color: colorScheme.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(6),
             child: InkWell(
               onTap: () => _toggleExpand(),
               onLongPress: _showItemMenu,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -472,40 +474,17 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
       );
     }
 
-    // 分类标签流式布局（对标 Android flexbox 布局）
+    // 分类 Flexbox 布局（对标 Android ExploreAdapter flexbox + style）
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: widget.isTablet ? 16 : 10,
-        vertical: 8,
+      padding: EdgeInsets.only(
+        left: widget.isTablet ? 16 : 8,
+        right: widget.isTablet ? 16 : 8,
+        top: 4,
+        bottom: 8,
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: categories.map((category) {
-          final hasUrl = category.url != null && category.url!.isNotEmpty;
-          // 分组标题行（url 为空，对标 ExploreKind 仅 title）
-          if (!hasUrl) {
-            return Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                category.title,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            );
-          }
-          return ActionChip(
-            label: Text(category.title),
-            onPressed: hasUrl
-                ? () => widget.onCategoryTap?.call(
-                      category.title,
-                      category.url!,
-                    )
-                : null,
-          );
-        }).toList(),
+      child: ExploreKindLayout(
+        categories: categories,
+        onCategoryTap: widget.onCategoryTap,
       ),
     );
   }

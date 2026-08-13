@@ -14,13 +14,108 @@ use serde::{Deserialize, Serialize};
 
 // ─── 数据结构 ─────────────────────────────────────────────────────────────────
 
+fn default_url_type() -> String {
+    "url".to_string()
+}
+
+fn default_zero_f32() -> f32 {
+    0.0
+}
+
+fn default_one_f32() -> f32 {
+    1.0
+}
+
+fn default_neg_one_f32() -> f32 {
+    -1.0
+}
+
+fn default_auto_str() -> String {
+    "auto".to_string()
+}
+
+/// Flexbox 子元素样式（对标 Android FlexChildStyle）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct FlexChildStyle {
+    #[serde(
+        rename = "layout_flexGrow",
+        default = "default_zero_f32",
+        skip_serializing_if = "is_default_flex_grow"
+    )]
+    pub layout_flex_grow: f32,
+    #[serde(
+        rename = "layout_flexShrink",
+        default = "default_one_f32",
+        skip_serializing_if = "is_default_flex_shrink"
+    )]
+    pub layout_flex_shrink: f32,
+    #[serde(
+        rename = "layout_alignSelf",
+        default = "default_auto_str",
+        skip_serializing_if = "is_default_auto"
+    )]
+    pub layout_align_self: String,
+    #[serde(
+        rename = "layout_flexBasisPercent",
+        default = "default_neg_one_f32",
+        skip_serializing_if = "is_default_flex_basis"
+    )]
+    pub layout_flex_basis_percent: f32,
+    #[serde(
+        rename = "layout_wrapBefore",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub layout_wrap_before: bool,
+    #[serde(
+        rename = "layout_justifySelf",
+        default = "default_auto_str",
+        skip_serializing_if = "is_default_auto"
+    )]
+    pub layout_justify_self: String,
+}
+
+fn is_default_flex_grow(v: &f32) -> bool {
+    (*v - 0.0).abs() < f32::EPSILON
+}
+
+fn is_default_flex_shrink(v: &f32) -> bool {
+    (*v - 1.0).abs() < f32::EPSILON
+}
+
+fn is_default_flex_basis(v: &f32) -> bool {
+    (*v - (-1.0)).abs() < f32::EPSILON
+}
+
+fn is_default_auto(v: &String) -> bool {
+    v == "auto"
+}
+
 /// 发现分类项（对标 Android ExploreKind）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ExploreCategory {
     /// 分类标题
     pub title: String,
     /// 分类 URL（可能包含页码占位符；分组标题行可为 None）
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// 控件类型：url / text / button / toggle / select
+    #[serde(default = "default_url_type", skip_serializing_if = "is_default_type")]
+    pub r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chars: Option<Vec<Option<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "default")]
+    pub default_value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "viewName")]
+    pub view_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<FlexChildStyle>,
+}
+
+fn is_default_type(v: &String) -> bool {
+    v == "url"
 }
 
 // ─── exploreUrl 解析 ──────────────────────────────────────────────────────────
@@ -38,15 +133,16 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
         return vec![];
     }
 
-    // 尝试 JSON 数组解析
+    // 尝试 JSON 数组解析（保留 style / type 等字段）
     if trimmed.starts_with('[') {
-        if let Ok(kinds) = serde_json::from_str::<Vec<JsonExploreKind>>(trimmed) {
+        if let Ok(kinds) = serde_json::from_str::<Vec<ExploreCategory>>(trimmed) {
             return kinds
                 .into_iter()
                 .filter(|k| !k.title.trim().is_empty())
-                .map(|k| ExploreCategory {
-                    title: k.title.trim().to_string(),
-                    url: k.url.filter(|u| !u.trim().is_empty()),
+                .map(|mut k| {
+                    k.title = k.title.trim().to_string();
+                    k.url = k.url.filter(|u| !u.trim().is_empty());
+                    k
                 })
                 .collect();
         }
@@ -69,6 +165,7 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
                     categories.push(ExploreCategory {
                         title,
                         url: if url.is_empty() { None } else { Some(url) },
+                        ..ExploreCategory::default()
                     });
                 }
             } else {
@@ -76,21 +173,13 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
                 categories.push(ExploreCategory {
                     title: part.to_string(),
                     url: None,
+                    ..ExploreCategory::default()
                 });
             }
         }
     }
 
     categories
-}
-
-/// JSON 格式的 ExploreKind（用于反序列化）
-#[derive(Debug, Deserialize)]
-struct JsonExploreKind {
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    url: Option<String>,
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
@@ -134,6 +223,19 @@ mod tests {
         );
         assert_eq!(result[1].title, "都市");
         assert_eq!(result[1].url, None);
+    }
+
+    #[test]
+    fn test_parse_explore_url_json_preserves_style() {
+        let input = r#"[{"title":"分组","url":"","style":{"layout_flexGrow":1,"layout_flexBasisPercent":1}},{"title":"玄幻","url":"/xh","style":{"layout_flexGrow":1,"layout_flexBasisPercent":0.25}}]"#;
+        let result = parse_explore_url(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].title, "分组");
+        assert_eq!(result[0].url, None);
+        let style0 = result[0].style.as_ref().unwrap();
+        assert!((style0.layout_flex_basis_percent - 1.0).abs() < f32::EPSILON);
+        let style1 = result[1].style.as_ref().unwrap();
+        assert!((style1.layout_flex_basis_percent - 0.25).abs() < f32::EPSILON);
     }
 
     #[test]

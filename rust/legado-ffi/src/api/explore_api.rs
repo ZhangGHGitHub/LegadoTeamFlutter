@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_explore_parse_url_json_with_style() {
-        let input = r#"[{"title":"都市","url":"http://example.com/a","style":{"layout_flexGrow":1}},{"title":"玄幻","url":"http://example.com/b"}]"#;
+        let input = r#"[{"title":"都市","url":"http://example.com/a","style":{"layout_flexGrow":1,"layout_flexBasisPercent":1}},{"title":"玄幻","url":"http://example.com/b","style":{"layout_flexGrow":1,"layout_flexBasisPercent":0.25}}]"#;
         let json = explore_parse_url(input, "").unwrap();
         let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
         assert_eq!(categories.len(), 2);
@@ -430,6 +430,10 @@ mod tests {
             categories[0].url,
             Some("http://example.com/a".to_string())
         );
+        let style0 = categories[0].style.as_ref().unwrap();
+        assert!((style0.layout_flex_basis_percent - 1.0).abs() < f32::EPSILON);
+        let style1 = categories[1].style.as_ref().unwrap();
+        assert!((style1.layout_flex_basis_percent - 0.25).abs() < f32::EPSILON);
     }
 
     #[test]

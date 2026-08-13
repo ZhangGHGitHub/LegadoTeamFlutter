@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'rule/rule.dart';
+
 part 'misc.freezed.dart';
 part 'misc.g.dart';
 
@@ -42,25 +44,49 @@ class ExploreCategory {
   /// 分类标题
   final String title;
 
-  /// 分类 URL（可能包含页码占位符）
+  /// 分类 URL（可能包含页码占位符；分组标题行可为 null）
   final String? url;
 
-  const ExploreCategory({required this.title, this.url});
+  /// 控件类型：url / text / button / toggle / select
+  final String type;
+
+  /// Flexbox 布局样式（wide/cell 等，对标 FlexChildStyle）
+  final FlexChildStyle? style;
+
+  const ExploreCategory({
+    required this.title,
+    this.url,
+    this.type = 'url',
+    this.style,
+  });
 
   factory ExploreCategory.fromJson(Map<String, dynamic> json) {
     return ExploreCategory(
       title: json['title'] as String? ?? '',
-      url: json['url'] as String?,
+      url: _parseOptionalString(json['url']),
+      type: json['type'] as String? ?? 'url',
+      style: json['style'] is Map<String, dynamic>
+          ? FlexChildStyle.fromJson(json['style'] as Map<String, dynamic>)
+          : null,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'title': title,
         if (url != null) 'url': url,
+        if (type != 'url') 'type': type,
+        if (style != null) 'style': style!.toJson(),
       };
 
+  static String? _parseOptionalString(Object? value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    return text.isEmpty ? null : text;
+  }
+
   @override
-  String toString() => 'ExploreCategory(title: $title, url: $url)';
+  String toString() =>
+      'ExploreCategory(title: $title, url: $url, type: $type, style: $style)';
 }
 
 // ─── ReplaceRule ──────────────────────────────────────────
