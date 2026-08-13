@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../bridge/ffi.dart';
 import '../constants/pref_keys.dart';
 import '../providers/providers.dart';
+import '../providers/theme/system_bar_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../routes.dart';
@@ -174,18 +175,22 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       title: const Text('沉浸式状态栏'),
                       subtitle: const Text('状态栏颜色透明'),
                       value: _transparentStatusBar,
-                      onChanged: (v) {
+                      onChanged: (v) async {
                         setState(() => _transparentStatusBar = v);
-                        _settings.setBoolPref(PrefKeys.transparentStatusBar, v);
+                        await ref
+                            .read(systemBarProvider.notifier)
+                            .setTransparentStatusBar(v);
                       },
                     ),
                     SwitchListTile(
                       title: const Text('沉浸式导航栏'),
                       subtitle: const Text('导航栏颜色透明'),
                       value: _immNavigationBar,
-                      onChanged: (v) {
+                      onChanged: (v) async {
                         setState(() => _immNavigationBar = v);
-                        _settings.setBoolPref(PrefKeys.immNavigationBar, v);
+                        await ref
+                            .read(systemBarProvider.notifier)
+                            .setImmNavigationBar(v);
                       },
                     ),
                     IosListTile(

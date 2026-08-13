@@ -2,7 +2,6 @@ import 'dart:io' show File;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -16,6 +15,7 @@ import 'src/services/platform_bridge_service.dart';
 import 'src/theme/app_theme.dart';
 import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
+import 'src/widgets/system_bar_binder.dart';
 import 'src/widgets/crash_log_dialog.dart';
 import 'src/widgets/verification_code_listener.dart';
 import 'src/widgets/webview_bridge_listener.dart';
@@ -42,16 +42,7 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   @override
   void initState() {
     super.initState();
-    // 无 AppBar 页面（欢迎页/阅读器全屏等）的状态栏图标兜底样式：
-    // 页面背景为浅色，图标用深色，避免白底白图标全白不可见。
-    // 有 AppBar 的页面由 AppBarTheme.systemOverlayStyle 覆盖为白色图标。
-    // 注意：不设置 statusBarColor——状态栏底色由 Android 主题
-    // （styles.xml android:statusBarColor，primaryDark 色）固化，
-    // 此处若传 transparent 会在运行时覆盖主题色，导致顶部显示白色窗口背景。
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarIconBrightness: Brightness.dark,
-      statusBarBrightness: Brightness.light,
-    ));
+    // 系统栏样式由 [SystemBarBinder] 按偏好与主题统一驱动
     // 首帧渲染后检查上次崩溃日志并弹窗提示
     if (widget.lastCrashLog != null && widget.lastCrashLog!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -124,6 +115,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
         Widget wrapped = VerificationCodeListener(child: child!);
         // BackstageWebView DOM 通道（@webjs / 正文 webJs / java.webView*）
         wrapped = WebViewBridgeListener(child: wrapped);
+        // 沉浸式状态栏 / 导航栏：对齐原版 transparentStatusBar / immNavigationBar
+        wrapped = SystemBarBinder(child: wrapped);
         // P1-8：按当前亮度叠全局背景图（分组卡片仍自带不透明底，可读性保留）
         wrapped = _ThemeBackgroundLayer(
           path: themeColors.bgImageFor(Theme.of(context).brightness),

@@ -9,6 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../l10n/app_strings.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
+import '../providers/theme/system_bar_notifier.dart';
 import '../services/bottom_bar_skin_service.dart';
 import 'bookshelf_screen.dart';
 import 'explore_screen.dart';
@@ -266,10 +267,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (!didPop) _handleBack();
       },
       child: Scaffold(
-        // SafeArea 覆盖手势导航与刘海屏场景
-        // bottom: false — 底部 NavigationBar 已自带 SafeArea 处理
-        // 阅读器为独立路由页面（沉浸式），不受此处影响
+        // 沉浸式状态栏开启时顶栏延伸至状态栏区域（对标原版 fullScreen +
+        // AppConfig.isTransparentStatusBar）；关闭时保留顶部 SafeArea
         body: SafeArea(
+          top: !ref.watch(systemBarProvider.select((s) => s.transparentStatusBar)),
           bottom: false,
           child: PageView(
             controller: _pageController,

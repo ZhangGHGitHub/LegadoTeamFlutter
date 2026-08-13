@@ -95,6 +95,19 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bg = backgroundColor ??
+        Theme.of(context).appBarTheme.backgroundColor ??
+        Theme.of(context).colorScheme.surface;
+    final isLight =
+        ThemeData.estimateBrightnessForColor(bg) == Brightness.light;
+    final effectiveOverlay = systemOverlayStyle ??
+        SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness:
+              isLight ? Brightness.dark : Brightness.light,
+          statusBarBrightness: isLight ? Brightness.light : Brightness.dark,
+        );
+
     return AppBar(
       leading: _buildLeading(context),
       automaticallyImplyLeading: false,
@@ -121,7 +134,7 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
       leadingWidth: leadingWidth,
       toolbarTextStyle: toolbarTextStyle,
       titleTextStyle: titleTextStyle,
-      systemOverlayStyle: systemOverlayStyle,
+      systemOverlayStyle: effectiveOverlay,
       forceMaterialTransparency: forceMaterialTransparency ?? false,
     );
   }
