@@ -206,13 +206,18 @@ async fn explore_books_async(
         }
 
         let author = elem_analyzer.get_string(author_rule).unwrap_or_default();
-        let book_url = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
+        let book_url_raw = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
+        let book_url = if book_url_raw.is_empty() {
+            String::new()
+        } else {
+            AnalyzeUrl::get_absolute_url(&base_url, &book_url_raw)
+        };
         let cover_url = {
             let v = elem_analyzer.get_string(cover_url_rule).unwrap_or_default();
             if v.is_empty() {
                 None
             } else {
-                Some(v)
+                Some(AnalyzeUrl::get_absolute_url(&base_url, &v))
             }
         };
         let intro = {
@@ -233,6 +238,20 @@ async fn explore_books_async(
                 Some(v)
             }
         };
+        let kind_rule = if use_search_fallback {
+            search_rule.and_then(|r| r.kind.as_deref()).unwrap_or("")
+        } else {
+            explore_rule.and_then(|r| r.kind.as_deref()).unwrap_or("")
+        };
+        let kind = {
+            let v = elem_analyzer.get_string(kind_rule).unwrap_or_default();
+            if v.is_empty() {
+                None
+            } else {
+                // 多段 kind（如 dd.2:3）get_string 以 \n 拼接，对齐原版 join(",")
+                Some(v.split('\n').filter(|s| !s.is_empty()).collect::<Vec<_>>().join(","))
+            }
+        };
 
         results.push(WebSearchResult {
             name,
@@ -242,7 +261,7 @@ async fn explore_books_async(
             intro,
             latest_chapter,
             source_url: source.book_source_url.clone(),
-            kind: None,
+            kind,
             word_count: None,
         });
     }
@@ -329,9 +348,38 @@ mod tests {
                 assert!(!json.contains("{1}"), "响应不得含未替换占位: {json}");
                 let books: Vec<serde_json::Value> =
                     serde_json::from_str(&json).expect("应为书籍 JSON 数组");
+                eprintln!("siluke explore books={}", books.len());
+                for (i, b) in books.iter().take(5).enumerate() {
+                    eprintln!(
+                        "  [{i}] name={:?} author={:?} bookUrl={:?} kind={:?} last={:?}",
+                        b.get("name"),
+                        b.get("author"),
+                        b.get("bookUrl").or_else(|| b.get("book_url")),
+                        b.get("kind"),
+                        b.get("latestChapter")
+                            .or_else(|| b.get("latest_chapter"))
+                            .or_else(|| b.get("lastChapter")),
+                    );
+                }
+                let empty_url = books
+                    .iter()
+                    .filter(|b| {
+                        b.get("bookUrl")
+                            .or_else(|| b.get("book_url"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .is_empty()
+                    })
+                    .count();
+                eprintln!("empty bookUrl count={empty_url}/{}", books.len());
                 assert!(
-                    !books.is_empty(),
-                    "思路客玄幻发现应解析到书籍，实际: {json}"
+                    books.len() >= 5,
+                    "思路客玄幻发现应有多本书，实际 {} 本: {json}",
+                    books.len()
+                );
+                assert!(
+                    empty_url < books.len() / 2,
+                    "多数书籍 bookUrl 为空会导致 Flutter 按 URL 去重后只剩 1 本: {json}"
                 );
             }
             Err(e) => {

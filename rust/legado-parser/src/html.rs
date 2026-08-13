@@ -22,6 +22,122 @@ fn own_text_of(elem: ElementRef<'_>) -> String {
     parts.join(" ")
 }
 
+/// 阅读原版点号/叹号索引（`AnalyzeByJSoup.ElementsSingle` 非 `[]` 写法）
+///
+/// 例：`a.0`、`dd.1`、`span.0`、`dd.2:3`、`li.-1`
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DotIndex {
+    /// `.` 选取 / `!` 排除
+    exclude: bool,
+    /// 已按应用顺序排列的下标（支持负数）
+    indices: Vec<i32>,
+}
+
+/// 从规则末尾拆出点号索引；无索引时返回 `(rule, None)`
+fn split_dot_index(rule: &str) -> (String, Option<DotIndex>) {
+    let rus = rule.trim();
+    if rus.is_empty() || rus.ends_with(']') {
+        // `]` 结尾走 [] 索引写法，此处不处理
+        return (rus.to_string(), None);
+    }
+
+    let chars: Vec<char> = rus.chars().collect();
+    let mut len = chars.len();
+    let mut cur_minus = false;
+    let mut l = String::new();
+    let mut index_default: Vec<i32> = Vec::new();
+
+    // 逆向扫描，对齐原版 findIndexSet 的 else 分支
+    while len > 0 {
+        len -= 1;
+        let rl = chars[len];
+        if rl == ' ' {
+            continue;
+        }
+        if rl.is_ascii_digit() {
+            l.insert(0, rl);
+            continue;
+        }
+        if rl == '-' {
+            cur_minus = true;
+            continue;
+        }
+
+        if rl == '!' || rl == '.' || rl == ':' {
+            if l.is_empty() {
+                break;
+            }
+            let n: i32 = match l.parse::<i32>() {
+                Ok(v) => {
+                    if cur_minus {
+                        -v
+                    } else {
+                        v
+                    }
+                }
+                Err(_) => break,
+            };
+            index_default.push(n);
+
+            if rl != ':' {
+                let before: String = chars[..len].iter().collect();
+                // index_default 为逆向压入，应用时再倒序对齐原版
+                let mut indices = index_default;
+                indices.reverse();
+                return (
+                    before.trim().to_string(),
+                    Some(DotIndex {
+                        exclude: rl == '!',
+                        indices,
+                    }),
+                );
+            }
+
+            l.clear();
+            cur_minus = false;
+            continue;
+        }
+
+        break;
+    }
+
+    (rus.to_string(), None)
+}
+
+/// 按索引筛选元素列表（对齐原版 ElementsSingle 选取/排除）
+fn apply_dot_index<'a>(elements: Vec<ElementRef<'a>>, index: &DotIndex) -> Vec<ElementRef<'a>> {
+    let len = elements.len() as i32;
+    let mut resolved: Vec<usize> = Vec::new();
+    for &it in &index.indices {
+        let idx = if it >= 0 && it < len {
+            Some(it as usize)
+        } else if it < 0 && len >= -it {
+            Some((it + len) as usize)
+        } else {
+            None
+        };
+        if let Some(i) = idx {
+            if !resolved.contains(&i) {
+                resolved.push(i);
+            }
+        }
+    }
+
+    if index.exclude {
+        elements
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !resolved.contains(i))
+            .map(|(_, e)| e)
+            .collect()
+    } else {
+        resolved
+            .into_iter()
+            .filter_map(|i| elements.get(i).copied())
+            .collect()
+    }
+}
+
 /// HTML 解析器
 pub struct HtmlParser;
 
@@ -191,7 +307,8 @@ impl HtmlParser {
     /// 在已解析的文档上执行选择器并提取内容
     fn extract_from_doc(&self, document: &Html, rule: &str, default_mode: &str) -> Vec<String> {
         let (selector_str, extract_mode, attr_name) = self.parse_last_rule(rule, default_mode);
-        let selector_owned = Self::normalize_jsoup_selector(selector_str);
+        let (selector_no_index, dot_index) = split_dot_index(selector_str);
+        let selector_owned = Self::normalize_jsoup_selector(&selector_no_index);
         let selector_str = selector_owned.as_str();
 
         // 空选择器：直接对文档 body（或根元素）提取（裸提取关键字场景）
@@ -211,10 +328,15 @@ impl HtmlParser {
             return vec![];
         };
 
+        let mut matched: Vec<ElementRef> = document.select(&selector).collect();
+        if let Some(ref idx) = dot_index {
+            matched = apply_dot_index(matched, idx);
+        }
+
         let mut items = Vec::new();
         // 对标 Kotlin：仅属性提取路径去重，text/html 逐元素保留
         let dedup = extract_mode == "attr";
-        for elem in document.select(&selector) {
+        for elem in matched {
             if let Some(text) = self.extract_from_element(elem, extract_mode, &attr_name) {
                 if !text.is_empty() && (!dedup || !items.contains(&text)) {
                     items.push(text);
@@ -222,6 +344,44 @@ impl HtmlParser {
             }
         }
         items
+    }
+
+    /// 在父元素集合上按单段规则（可含点号索引）选取子元素
+    fn select_step<'a>(
+        parents: &[ElementRef<'a>],
+        rule: &str,
+    ) -> Vec<ElementRef<'a>> {
+        let (selector_no_index, dot_index) = split_dot_index(rule.trim());
+        let owned = Self::normalize_jsoup_selector(&selector_no_index);
+        if owned.is_empty() {
+            return parents.to_vec();
+        }
+        let Ok(selector) = Selector::parse(&owned) else {
+            return vec![];
+        };
+
+        let mut next = Vec::new();
+        for elem in parents {
+            for child in elem.select(&selector) {
+                next.push(child);
+            }
+        }
+        if let Some(ref idx) = dot_index {
+            // 索引是相对于「每个父节点下的匹配结果」还是「全局合并列表」？
+            // 原版 AnalyzeByJSoup 链式 @ 时，每一级对单个 element 调用 getElementsSingle，
+            // 即索引相对当前父元素。此处 parents 可能多个；对每个 parent 分别索引再合并。
+            if parents.len() == 1 {
+                return apply_dot_index(next, idx);
+            }
+            let mut per_parent = Vec::new();
+            for elem in parents {
+                let mut kids: Vec<ElementRef> = elem.select(&selector).collect();
+                kids = apply_dot_index(kids, idx);
+                per_parent.extend(kids);
+            }
+            return per_parent;
+        }
+        next
     }
 
     /// 链式选择器：在单个解析文档上逐级下钻
@@ -240,32 +400,22 @@ impl HtmlParser {
     ) -> Vec<String> {
         let last_idx = sub_rules.len() - 1;
 
-        // 逐级选择元素，使用 ElementRef 避免重复解析
-        let first_owned = Self::normalize_jsoup_selector(sub_rules[0].trim());
+        // 首级：从 document 选（可含点号索引，如 `dd.1`）
+        let first_rule = sub_rules[0].trim();
+        let (first_no_index, first_index) = split_dot_index(first_rule);
+        let first_owned = Self::normalize_jsoup_selector(&first_no_index);
         let Ok(first_selector) = Selector::parse(&first_owned) else {
             return vec![];
         };
 
         let mut current_elements: Vec<ElementRef> = document.select(&first_selector).collect();
+        if let Some(ref idx) = first_index {
+            current_elements = apply_dot_index(current_elements, idx);
+        }
 
         // 中间各级（不含首尾）
         for rule in sub_rules.iter().take(last_idx).skip(1) {
-            let owned = Self::normalize_jsoup_selector(rule.trim());
-            if owned.is_empty() {
-                continue;
-            }
-            let Ok(selector) = Selector::parse(&owned) else {
-                return vec![];
-            };
-
-            let mut next_elements = Vec::new();
-            for elem in &current_elements {
-                for child in elem.select(&selector) {
-                    next_elements.push(child);
-                }
-            }
-            current_elements = next_elements;
-
+            current_elements = Self::select_step(&current_elements, rule.trim());
             if current_elements.is_empty() {
                 return vec![];
             }
@@ -301,7 +451,8 @@ impl HtmlParser {
         }
 
         let (selector_raw, extract_mode, attr_name) = self.parse_last_rule(last_rule, default_mode);
-        let selector_owned = Self::normalize_jsoup_selector(selector_raw);
+        let (selector_no_index, last_index) = split_dot_index(selector_raw);
+        let selector_owned = Self::normalize_jsoup_selector(&selector_no_index);
         let selector_str = selector_owned.as_str();
 
         let mut items = Vec::new();
@@ -339,7 +490,11 @@ impl HtmlParser {
         } else {
             let selector = Selector::parse(selector_str).unwrap();
             for elem in &current_elements {
-                for child in elem.select(&selector) {
+                let mut kids: Vec<ElementRef> = elem.select(&selector).collect();
+                if let Some(ref idx) = last_index {
+                    kids = apply_dot_index(kids, idx);
+                }
+                for child in kids {
                     if let Some(text) = self.extract_from_element(child, extract_mode, &attr_name) {
                         if !text.is_empty() && !items.contains(&text) {
                             items.push(text);
@@ -886,5 +1041,71 @@ mod tests {
         // text 仍含子孙
         let all = parser.get_text(html, "#d").unwrap();
         assert!(all[0].contains("子级"));
+    }
+
+    #[test]
+    fn test_split_dot_index_basic() {
+        assert_eq!(
+            split_dot_index("a.0"),
+            (
+                "a".into(),
+                Some(DotIndex {
+                    exclude: false,
+                    indices: vec![0]
+                })
+            )
+        );
+        assert_eq!(
+            split_dot_index("dd.2:3"),
+            (
+                "dd".into(),
+                Some(DotIndex {
+                    exclude: false,
+                    indices: vec![2, 3]
+                })
+            )
+        );
+        assert_eq!(split_dot_index(".col-md-6").0, ".col-md-6");
+        assert!(split_dot_index(".col-md-6").1.is_none());
+        assert_eq!(
+            split_dot_index("li!-1"),
+            (
+                "li".into(),
+                Some(DotIndex {
+                    exclude: true,
+                    indices: vec![-1]
+                })
+            )
+        );
+    }
+
+    /// 思路客 search 规则：`a.0@href` / `dd.1@span.0@text` / `dd.2:3@text`
+    #[test]
+    fn test_dot_index_siluke_book_fields() {
+        let html = r#"
+        <dl>
+          <dt><a href="/135/135252/"><img src="/images/cover.jpg" alt="x"></a></dt>
+          <dd><h3><a href="/135/135252/">从铬龙开始</a></h3></dd>
+          <dd class="book_other">作者：<span><a href="/search.php?q=a">欢声</a></span></dd>
+          <dd class="book_other">状态：连载</dd>
+          <dd class="book_other">更新时间：08-13 14:58:01</dd>
+          <dd class="book_other">最新章节：<a href="/135/135252/1.html">第131章</a></dd>
+        </dl>
+        "#;
+        let parser = HtmlParser::new();
+
+        let hrefs = parser.get_text(html, "a.0@href").unwrap();
+        assert_eq!(hrefs, vec!["/135/135252/"]);
+
+        let author = parser.get_text(html, "dd.1@span.0@text").unwrap();
+        assert_eq!(author, vec!["欢声"]);
+
+        let kind = parser.get_text(html, "dd.2:3@text").unwrap();
+        assert_eq!(kind.len(), 2, "dd.2 与 dd.3 应各一条: {kind:?}");
+        assert!(kind[0].contains("连载"), "{kind:?}");
+        assert!(kind[1].contains("更新时间"), "{kind:?}");
+
+        let last = parser.get_text(html, "dd.4@a@text").unwrap();
+        assert_eq!(last, vec!["第131章"]);
     }
 }
