@@ -133,7 +133,7 @@
 - **涉及文件**：git 操作（无代码改动）
 - **实施要点**：① 确认并提交 75 个删除（含 repowiki 废弃、根目录历史垃圾）；② 提交真实测试 `offline_cache_screen_test.dart`；③ feature/rust-core → master 合入（或创建 `integration/*` 承接，按 AGENTS.md 分支策略）；④ 核对 master 与上游 #672 同步状态。
 - **验收**：master 承接全部近期成果；`git status` 无悬空删除；工作树收敛到可预期状态。
-- **工作量**：M ｜ **前置**：F1-1/F1-2（先让 master 处于绿态）
+- **工作量**：M ｜ **前置**：F1-1/F1-2（先让 master 处于绿态）｜ **状态**：✅（`integration/audit-fix-20260814` 承接 feature/rust-core 全量审计修复 + repowiki/垃圾清理/offline_cache 测试；待用户合入 master）
 
 ### F2-10 `[工程]` .gitignore 补全与仓库垃圾清理
 - **来源**：P1-10
