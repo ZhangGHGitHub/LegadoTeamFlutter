@@ -78,12 +78,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   static const int _autoSwitchMaxAttempts = 3;
 
+  /// F6：跟踪主题日夜，变化时重载布局桶（shareLayout=false）
+  bool? _layoutIsNight;
+
   @override
   void initState() {
     super.initState();
     _loadAdvancedConfig();
     // F6：音量键翻页（对标 volumeKeyPage / volumeKeyPageOnPlay）
     HardwareKeyboard.instance.addHandler(_onHardwareKey);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    if (_layoutIsNight != null && _layoutIsNight != isNight) {
+      unawaited(_loadAdvancedConfig());
+    }
+    _layoutIsNight = isNight;
   }
 
   @override
@@ -137,9 +150,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   Future<void> _loadAdvancedConfig() async {
-    final config = await ReaderAdvancedConfig.load();
+    // F6：按当前主题亮度选择日/夜布局桶（shareLayout 时走共用桶）
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    _layoutIsNight = isNight;
+    final config = await ReaderAdvancedConfig.load(isNight: isNight);
     if (!mounted) return;
     setState(() => _advConfig = config);
+    ref.read(readerAdvConfigProvider.notifier).apply(config);
     _syncAutoTimer();
     // [UI-fix v2.0.3 | 2026-08-08] 进入阅读器即应用隐藏栏/方向配置 — Qoder
     _applySystemChrome(config);

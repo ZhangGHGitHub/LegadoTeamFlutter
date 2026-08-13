@@ -98,7 +98,9 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
 
   /// 持久化并推送共享 Provider（reader_screen 经 watch 实时应用）
   void _commitAdv(ReaderAdvancedConfig cfg) {
-    unawaited(cfg.save());
+    // F6：按当前主题写入日/夜或共用布局桶
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    unawaited(cfg.save(isNight: isNight));
     ref.read(readerAdvConfigProvider.notifier).apply(cfg);
   }
 
@@ -249,15 +251,16 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             const Divider(height: 20),
 
             // ===== 共用布局（对标原版 ReadBookConfig.shareLayout：
-            // 日/夜配置是否共用布局参数；桌面端暂无日夜双配置体系，
-            // 开关仅持久化，待日夜配置接入后生效） =====
+            // 开启后日/夜共用边距/字距/缩进/字重/翻页模式；关闭则分桶） =====
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: const Text('共用布局'),
-              // [UI-fix v2.0.4 | 2026-08-08] 文案诚实标注暂不生效，避免用户
-              // 误以为开关已有实际效果 — Qoder
-              subtitle: const Text('暂不生效，预留配置（待日夜双配置接入）'),
+              subtitle: Text(
+                adv.shareLayout
+                    ? '日夜共用边距与排版参数'
+                    : '日夜分别保存布局（切换主题自动切换）',
+              ),
               value: adv.shareLayout,
               onChanged: (v) {
                 final cfg = adv.copy()..shareLayout = v;

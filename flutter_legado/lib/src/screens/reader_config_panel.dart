@@ -206,9 +206,26 @@ class ReaderAdvancedConfig {
     this.paddingDisplayCutouts = false,
   });
 
+  /// F6：布局字段前缀（对齐原版 shareConfig / durConfig）
+  /// shareLayout=true → 共用；否则按日/夜分桶。
+  static String layoutPrefix({required bool shareLayout, required bool isNight}) {
+    if (shareLayout) return 'reader_layout_share_';
+    return isNight ? 'reader_layout_night_' : 'reader_layout_day_';
+  }
+
   /// 从持久化存储加载
-  static Future<ReaderAdvancedConfig> load() async {
+  ///
+  /// [isNight]：当前是否夜间阅读样式（决定非共用时的布局桶）；
+  /// 会写入 `reader_layout_is_night` 供后续 save 缺省使用。
+  static Future<ReaderAdvancedConfig> load({bool? isNight}) async {
     final prefs = await SharedPreferences.getInstance();
+    final shareLayout = prefs.getBool('shareLayout') ?? false;
+    final night = isNight ?? prefs.getBool('reader_layout_is_night') ?? false;
+    if (isNight != null) {
+      await prefs.setBool('reader_layout_is_night', isNight);
+    }
+    final lp = layoutPrefix(shareLayout: shareLayout, isNight: night);
+
     TapAction tap(String key, TapAction def) {
       final i = prefs.getInt('$_prefix$key');
       if (i == null || i < 0 || i >= TapAction.values.length) return def;
@@ -231,15 +248,24 @@ class ReaderAdvancedConfig {
       }
       await prefs.setBool(migratedKey, true);
     }
+
+    // F6：布局字段优先读日夜/共用桶，缺省回退 reader_adv_ 旧键（迁移）
+    double layoutDouble(String key, double def) =>
+        (prefs.getDouble('$lp$key') ?? prefs.getDouble('$_prefix$key') ?? def)
+            .toDouble();
+    int layoutInt(String key, int def) =>
+        prefs.getInt('$lp$key') ?? prefs.getInt('$_prefix$key') ?? def;
+
     double letterSpacingEm() {
-      final raw = prefs.getDouble('${_prefix}letter_spacing') ?? 0;
+      final raw = layoutDouble('letter_spacing', 0);
       return raw.clamp(-0.5, 1.0);
     }
 
     // [UI-fix v2.0.4 | 2026-08-08] 缩进档位兼容：新 int 键缺失时读取
     // 旧 bool 键（true→2 字符 / false→0），默认 2 字符 — Qoder
     int indentChars() {
-      final v = prefs.getInt('${_prefix}paragraph_indent_chars');
+      final v = prefs.getInt('${lp}paragraph_indent_chars') ??
+          prefs.getInt('${_prefix}paragraph_indent_chars');
       if (v != null) return v.clamp(0, 3);
       final legacy = prefs.getBool('${_prefix}paragraph_indent');
       if (legacy == null) return 2;
@@ -254,27 +280,27 @@ class ReaderAdvancedConfig {
       leftAction: tap('left_action', TapAction.prevPage),
       centerAction: tap('center_action', TapAction.toggleControls),
       rightAction: tap('right_action', TapAction.nextPage),
-      paragraphSpacing: (prefs.getDouble('${_prefix}paragraph_spacing') ?? 12)
-          .clamp(0.0, 48.0),
+      paragraphSpacing: layoutDouble('paragraph_spacing', 12).clamp(0.0, 48.0),
       letterSpacing: letterSpacingEm(),
       paragraphIndent: indentChars(),
       textFullJustify: prefs.getBool('${_prefix}text_full_justify') ?? true,
-      textBold: (prefs.getInt('textBold') ?? 0).clamp(0, 2),
-      shareLayout: prefs.getBool('shareLayout') ?? false,
+      textBold: (prefs.getInt('${lp}textBold') ??
+              prefs.getInt('textBold') ??
+              0)
+          .clamp(0, 2),
+      shareLayout: shareLayout,
       customTextColor: prefs.getInt('${_prefix}custom_text_color') ?? 0,
-      pageMarginTop: (prefs.getDouble('${_prefix}margin_top') ?? 24)
-          .clamp(0.0, 80.0),
-      pageMarginBottom: (prefs.getDouble('${_prefix}margin_bottom') ?? 24)
-          .clamp(0.0, 80.0),
-      pageMarginLeft: (prefs.getDouble('${_prefix}margin_left') ?? 20)
-          .clamp(0.0, 80.0),
-      pageMarginRight: (prefs.getDouble('${_prefix}margin_right') ?? 20)
-          .clamp(0.0, 80.0),
+      pageMarginTop: layoutDouble('margin_top', 24).clamp(0.0, 80.0),
+      pageMarginBottom: layoutDouble('margin_bottom', 24).clamp(0.0, 80.0),
+      pageMarginLeft: layoutDouble('margin_left', 20).clamp(0.0, 80.0),
+      pageMarginRight: layoutDouble('margin_right', 20).clamp(0.0, 80.0),
       showBattery: prefs.getBool('${_prefix}show_battery') ?? true,
       showTime: prefs.getBool('${_prefix}show_time') ?? true,
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
       showChapterName: prefs.getBool('${_prefix}show_chapter_name') ?? true,
-      flipMode: FlipMode.fromIndex(prefs.getInt('${_prefix}flip_mode') ?? FlipMode.slide.index),
+      flipMode: FlipMode.fromIndex(
+        layoutInt('flip_mode', FlipMode.slide.index),
+      ),
       // [UI-fix v2.0.3 | 2026-08-08] 第①批 MoreConfig 项读取（键名=原版键）— Qoder
       screenOrientation:
           (prefs.getInt('screenOrientation') ?? 0).clamp(0, 5),
@@ -307,22 +333,38 @@ class ReaderAdvancedConfig {
   }
 
   /// 持久化当前配置
-  Future<void> save() async {
+  ///
+  /// [isNight]：写入哪一套日夜布局桶（shareLayout=true 时忽略，写入共用桶）。
+  Future<void> save({bool? isNight}) async {
     final prefs = await SharedPreferences.getInstance();
+    final night = isNight ?? prefs.getBool('reader_layout_is_night') ?? false;
+    if (isNight != null) {
+      await prefs.setBool('reader_layout_is_night', isNight);
+    }
+    final lp = layoutPrefix(shareLayout: shareLayout, isNight: night);
+
     await prefs.setBool('${_prefix}auto_page_turn', autoPageTurn);
     await prefs.setDouble('${_prefix}auto_interval', autoPageTurnInterval);
     await prefs.setBool('${_prefix}auto_forward', autoPageTurnForward);
     await prefs.setInt('${_prefix}left_action', leftAction.index);
     await prefs.setInt('${_prefix}center_action', centerAction.index);
     await prefs.setInt('${_prefix}right_action', rightAction.index);
+    // F6：布局字段写入日夜/共用桶（并对齐旧 reader_adv_ 键便于未升级路径）
+    await prefs.setDouble('${lp}paragraph_spacing', paragraphSpacing);
     await prefs.setDouble('${_prefix}paragraph_spacing', paragraphSpacing);
+    await prefs.setDouble('${lp}letter_spacing', letterSpacing);
     await prefs.setDouble('${_prefix}letter_spacing', letterSpacing);
     // [UI-fix v2.0.4 | 2026-08-08] 写入即为 em 语义，同步置迁移标志，
     // 避免 save 先于 load 时新值被误当旧 px 二次换算 — Qoder
     await prefs.setBool('${_prefix}letter_spacing_migrated', true);
     // [UI-fix v2.0.4 | 2026-08-08] 缩进档位写新 int 键（旧 bool 键保留不再更新）— Qoder
+    await prefs.setInt('${lp}paragraph_indent_chars', paragraphIndent);
     await prefs.setInt('${_prefix}paragraph_indent_chars', paragraphIndent);
     await prefs.setBool('${_prefix}text_full_justify', textFullJustify);
+    await prefs.setDouble('${lp}margin_top', pageMarginTop);
+    await prefs.setDouble('${lp}margin_bottom', pageMarginBottom);
+    await prefs.setDouble('${lp}margin_left', pageMarginLeft);
+    await prefs.setDouble('${lp}margin_right', pageMarginRight);
     await prefs.setDouble('${_prefix}margin_top', pageMarginTop);
     await prefs.setDouble('${_prefix}margin_bottom', pageMarginBottom);
     await prefs.setDouble('${_prefix}margin_left', pageMarginLeft);
@@ -331,6 +373,7 @@ class ReaderAdvancedConfig {
     await prefs.setBool('${_prefix}show_time', showTime);
     await prefs.setBool('${_prefix}show_progress', showProgress);
     await prefs.setBool('${_prefix}show_chapter_name', showChapterName);
+    await prefs.setInt('${lp}flip_mode', flipMode.index);
     await prefs.setInt('flip_mode', flipMode.index);
     // [UI-fix v2.0.3 | 2026-08-08] 第①批 MoreConfig 项持久化（键名=原版键）— Qoder
     await prefs.setInt('screenOrientation', screenOrientation);
@@ -346,6 +389,7 @@ class ReaderAdvancedConfig {
     await prefs.setBool('readBarStyleFollowPage', readBarStyleFollowPage);
     // [UI-fix v2.0.4 | 2026-08-08] 界面面板 + 第②批 MoreConfig 项持久化
     // （textBold/shareLayout 及第②批键名=原版键）— Qoder
+    await prefs.setInt('${lp}textBold', textBold);
     await prefs.setInt('textBold', textBold);
     await prefs.setBool('shareLayout', shareLayout);
     await prefs.setInt('${_prefix}custom_text_color', customTextColor);
@@ -417,10 +461,16 @@ class ReaderAdvConfigNotifier extends Notifier<ReaderAdvancedConfig?> {
   ReaderAdvancedConfig? build() {
     // 异步自加载持久化配置；若 UI 已先行推送则不覆盖
     Future.microtask(() async {
+      // 无 BuildContext：用上次保存的日夜标志；阅读器进入时会按主题重载
       final cfg = await ReaderAdvancedConfig.load();
       state ??= cfg;
     });
     return null;
+  }
+
+  /// F6：按日夜重载布局（主题切换后调用）
+  Future<void> reloadForNight(bool isNight) async {
+    state = await ReaderAdvancedConfig.load(isNight: isNight);
   }
 
   /// 推送最新配置（调用方负责持久化 save()）
