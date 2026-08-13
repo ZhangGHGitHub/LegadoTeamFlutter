@@ -1543,6 +1543,24 @@ pub mod ffi {
         Ok(json)
     }
 
+    /// 读取封面规则配置（契约 §2.4 F4，对齐 BookCover.getCoverRule）
+    pub fn get_cover_rule() -> Result<String, BridgeError> {
+        let json = crate::api::cover_api::get_cover_rule()?;
+        Ok(json)
+    }
+
+    /// 保存封面规则配置（契约 §2.4 F4，对齐 BookCover.saveCoverRule）
+    pub fn save_cover_rule(rule_json: String) -> Result<bool, BridgeError> {
+        let ok = crate::api::cover_api::save_cover_rule(&rule_json)?;
+        Ok(ok)
+    }
+
+    /// 删除封面规则配置（契约 §2.4 F4，对齐 BookCover.delCoverRule）
+    pub fn delete_cover_rule() -> Result<bool, BridgeError> {
+        let ok = crate::api::cover_api::delete_cover_rule()?;
+        Ok(ok)
+    }
+
     // ─── 用户管理 ─────────────────────────────────────
 
     /// 获取所有用户（JSON 数组）

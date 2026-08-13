@@ -1,24 +1,14 @@
-//! 封面规则搜索 API（契约 §2.4.8 `searchCoverRules`，Task #72/#73）
+//! 封面规则 API（契约 §2.4 `searchCoverRules` / F4 CRUD）
 //!
-//! 按书名执行 coverRules 表中全部启用规则搜封面，对齐原版
-//! `BookCover.searchCover(book)` 链路（传 `book.name` 作搜索关键词）：
-//!
-//! 1. 数据源为 coverRules 表（`CoverRuleRepository::find_enabled`，
-//!    仅 enable=1）；rule 字段为 JSON `{"searchUrl":"...","coverRule":"..."}`；
-//! 2. searchUrl 经 [`crate::js_executor::build_search_url`] 渲染
-//!    （`{{key}}`/`{{JS表达式}}`/`searchKey` 模板，key=书名），
-//!    复用 dictLookup 同款的取体链路（data: URI / HTTP GET/POST）；
-//! 3. coverRule 经 `AnalyzeRule::get_string` 提取（getString isUrl=true
-//!    语义：提取结果按 URL 处理，相对路径经
-//!    `AnalyzeUrl::get_absolute_url` 补全为绝对 URL）；
-//! 4. 单规则失败隔离（记日志跳过，不阻断其余规则）；无启用规则或
-//!    全部失败返回空数组 `[]`（非异常）；并发可串行（规则规模小）。
-//!
-//! 返回值为候选封面 URL 的**裸 JSON Array**（契约 §1.4 铁律）。
+//! - 搜索：按书名执行 coverRules 表中全部启用规则搜封面，对齐原版
+//!   `BookCover.searchCover(book)`（传 `book.name`）。
+//! - CRUD：`getCoverRule` / `saveCoverRule` / `deleteCoverRule` 对齐原版
+//!   `BookCover.getCoverRule` / `saveCoverRule` / `delCoverRule`
+//!   （UI：`CoverRuleConfigDialog` 单配置语义）。
 
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{CoverRule, CoverRuleRepository};
@@ -26,22 +16,121 @@ use legado_parser::{AnalyzeRule, AnalyzeUrl};
 
 use crate::db_state::with_database;
 
+/// 原版默认封面规则（与 Android assets 同源）
+const DEFAULT_COVER_RULE_JSON: &str =
+    include_str!("../../../../app/src/main/assets/defaultData/coverRule.json");
+
+/// 主配置行名称（单配置语义，对齐 CoverRuleConfigDialog）
+const PRIMARY_COVER_RULE_NAME: &str = "legadoCoverRule";
+
 /// 单条封面规则的请求超时（秒）
 ///
 /// 原版无显式超时（跟随全局 OkHttp）；此处限制单规则耗时，
 /// 避免离线场景下多规则串行拖垮查询（与 dict_api 同款保护）。
 const COVER_RULE_TIMEOUT_SECS: u64 = 15;
 
-/// coverRules 表 rule 字段的 JSON 结构（对齐原版 CoverRule 配置）
-#[derive(Debug, Clone, Deserialize)]
+/// coverRules 表 rule 字段 / FFI 配置 JSON（对齐原版 `BookCover.CoverRule`）
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CoverRuleConfig {
+    #[serde(default = "default_true")]
+    enable: bool,
     /// 搜索 URL 模板（支持 `{{key}}` 等模板，key=书名）
     #[serde(default)]
     search_url: String,
     /// 封面提取规则（AnalyzeRule getString isUrl=true 语义）
     #[serde(default)]
     cover_rule: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_cover_rule_config() -> LegadoResult<CoverRuleConfig> {
+    serde_json::from_str(DEFAULT_COVER_RULE_JSON)
+        .map_err(|e| LegadoError::Internal(format!("解析默认封面规则失败: {e}")))
+}
+
+/// 读取封面规则（对齐 `BookCover.getCoverRule`）
+///
+/// 返回裸 JSON `{enable,searchUrl,coverRule}`；表空时回退默认 assets。
+pub fn get_cover_rule() -> LegadoResult<String> {
+    let config = if crate::db_state::is_initialized() {
+        let rows = with_database(|db| {
+            let repo = CoverRuleRepository::new(db.connection());
+            repo.find_all()
+        })?;
+        if let Some(row) = rows
+            .iter()
+            .find(|r| r.name == PRIMARY_COVER_RULE_NAME)
+            .or_else(|| rows.first())
+        {
+            match serde_json::from_str::<CoverRuleConfig>(&row.rule) {
+                Ok(mut c) => {
+                    c.enable = row.enable;
+                    c
+                }
+                Err(_) => {
+                    // rule 非 JSON 对象时：把整段当 coverRule，searchUrl 空
+                    CoverRuleConfig {
+                        enable: row.enable,
+                        search_url: String::new(),
+                        cover_rule: row.rule.clone(),
+                    }
+                }
+            }
+        } else {
+            default_cover_rule_config()?
+        }
+    } else {
+        default_cover_rule_config()?
+    };
+    serde_json::to_string(&config)
+        .map_err(|e| LegadoError::Internal(format!("封面规则序列化失败: {e}")))
+}
+
+/// 保存封面规则（对齐 `BookCover.saveCoverRule`）
+pub fn save_cover_rule(rule_json: &str) -> LegadoResult<bool> {
+    let config: CoverRuleConfig = serde_json::from_str(rule_json)
+        .map_err(|e| LegadoError::Internal(format!("封面规则 JSON 无效: {e}")))?;
+    if config.search_url.trim().is_empty() || config.cover_rule.trim().is_empty() {
+        return Err(LegadoError::Internal(
+            "搜索url和cover规则不能为空".into(),
+        ));
+    }
+    if !crate::db_state::is_initialized() {
+        return Err(LegadoError::Internal("数据库未初始化".into()));
+    }
+    let inner = serde_json::json!({
+        "searchUrl": config.search_url,
+        "coverRule": config.cover_rule,
+    });
+    with_database(|db| {
+        let repo = CoverRuleRepository::new(db.connection());
+        // 单配置语义：清空后写入主配置行（与 Dialog 一致）
+        repo.delete_all()?;
+        repo.insert(&CoverRule {
+            id: 0,
+            name: PRIMARY_COVER_RULE_NAME.into(),
+            rule: inner.to_string(),
+            enable: config.enable,
+        })?;
+        Ok(())
+    })?;
+    Ok(true)
+}
+
+/// 删除用户封面规则（对齐 `BookCover.delCoverRule`）
+pub fn delete_cover_rule() -> LegadoResult<bool> {
+    if !crate::db_state::is_initialized() {
+        return Ok(true);
+    }
+    with_database(|db| {
+        let repo = CoverRuleRepository::new(db.connection());
+        repo.delete_all()
+    })?;
+    Ok(true)
 }
 
 /// 按书名执行全部启用封面规则搜封面
@@ -157,6 +246,39 @@ mod tests {
             })
         })
         .unwrap()
+    }
+
+    /// F4：get/save/delete 单配置往返 + 删除后回退默认
+    #[test]
+    fn test_cover_rule_crud_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_cover_rules();
+
+        let empty_get = get_cover_rule().unwrap();
+        let default_cfg: CoverRuleConfig = serde_json::from_str(&empty_get).unwrap();
+        assert!(!default_cfg.search_url.is_empty());
+
+        let saved = r#"{"enable":true,"searchUrl":"https://s.example/{{key}}","coverRule":"$.cover"}"#;
+        assert!(save_cover_rule(saved).unwrap());
+        let got: CoverRuleConfig = serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
+        assert!(got.enable);
+        assert_eq!(got.search_url, "https://s.example/{{key}}");
+        assert_eq!(got.cover_rule, "$.cover");
+
+        assert!(delete_cover_rule().unwrap());
+        let after_del: CoverRuleConfig =
+            serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
+        assert_eq!(after_del.search_url, default_cfg.search_url);
+    }
+
+    /// F4：空 searchUrl/coverRule 拒绝保存
+    #[test]
+    fn test_save_cover_rule_rejects_blank() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let err = save_cover_rule(r#"{"enable":true,"searchUrl":"","coverRule":"x"}"#).unwrap_err();
+        assert!(err.to_string().contains("不能为空"));
     }
 
     /// 无启用规则：返回空数组（非异常）

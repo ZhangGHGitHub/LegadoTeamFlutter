@@ -23,6 +23,8 @@
 | 2026-08-13 | P2-7：AutoTaskDebug 流式调试——UI 逐行回调 + `TaskResult.details` 对齐 LogFormatter；复用 `autoTaskExecuteWithId`，**无新 StreamSink FFI** |
 | 2026-08-13 | `getSameTitleRemoved` / `canRemoveSameTitle` 权威查询与试算 FFI（§2.9）；UI 勾选态改读 caches KV；复刻「未找到可移除的重复标题」提示 |
 | 2026-08-13 | **DB schema 结构对齐专项落地**（台账称「schema v102」，代码版本号 **103→104**，因 102/103 已分别用于 cached_chapters 复合索引与 book_sources.variable）：rssArticles/rssStars/readRecord 主键重建；rssReadRecords/httpTTS（原 http_tts）/search_keywords 结构对齐 Room v95；rssSources 去掉 enableCookieJar 冗余列；coverRules 纳入建表清单。无新 FFI；Repository 列名随表结构适配。残留：rule_subs/dict_rules/keyboard_assists 表名仍为 snake_case（见台账 §4.2.1） |
+| 2026-08-13 | **D1**：SCHEMA 104→105，`ruleSubs`/`dictRules`/`keyboardAssists` 对齐 Room 表名列名（Migration104To105） |
+| 2026-08-13 | **F4**：封面规则 CRUD 加法式新增——`getCoverRule` / `saveCoverRule` / `deleteCoverRule`（§2.4，对齐原版 `BookCover` + `CoverRuleConfigDialog`） |
 
 ---
 
@@ -143,6 +145,9 @@
 | `searchCover(String bookName)` | bookName | `Future<List<Map<String, dynamic>>>` | 搜索书籍封面候选列表：复用多书源搜索提取封面 URL，每项字段 `url` / `width` / `height`（未知尺寸填 0），无候选返回空列表 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
 | `searchCoverRules(String name)` | name: 书名（作为规则搜索关键词，对齐原版 `BookCover.searchCover(book)` 传 `book.name` 语义） | `Future<String>` | 按书名执行 coverRules 表中全部启用规则搜封面（JS 搜索规则语义对齐原版 `BookCover.searchCover` 链路），返回候选封面 URL **裸 JSON Array**（遵守 §1.4 铁律）；无启用规则/无候选返回空数组（非异常）；单规则失败隔离（记日志跳过，不阻断其余规则）。错误码：Internal（coverRules 规则数据读取失败）（台账 §5.13-10，第四批后置项，Task #72，加法式新增） |
+| `getCoverRule()` | 无 | `Future<String>` | 读取封面规则配置（对齐原版 `BookCover.getCoverRule`）：返回裸 JSON 对象 `{enable, searchUrl, coverRule}`；表空时回退 `DefaultData.coverRule`（assets 同源）。错误码：Internal |
+| `saveCoverRule(String ruleJson)` | ruleJson: `{enable, searchUrl, coverRule}` | `Future<bool>` | 保存封面规则（对齐原版 `BookCover.saveCoverRule`）：写入 coverRules 表（单配置语义，REPLACE 主配置行）；searchUrl/coverRule 为空 → Internal。F4 |
+| `deleteCoverRule()` | 无 | `Future<bool>` | 删除用户封面规则配置（对齐原版 `BookCover.delCoverRule`）：清空 coverRules；随后 `getCoverRule` 回退默认。F4 |
 
 > ⚠️ `searchSource`：Rust 返回 `SourceSwitchResponse { book_name, author, matches[] }`，Dart 侧提取 `matches` 字段。
 >
