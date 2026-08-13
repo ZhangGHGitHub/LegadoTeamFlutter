@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../providers/reader/reader_notifier.dart';
 import '../../screens/reader_config_panel.dart';
+import 'reader_page_chrome.dart';
 
 /// 隐藏控制栏时顶部的状态提示栏（电量/时间/进度/章节名）
 ///
@@ -11,7 +12,14 @@ import '../../screens/reader_config_panel.dart';
 class ReaderStatusStrip extends ConsumerWidget {
   final ReaderAdvancedConfig config;
 
-  const ReaderStatusStrip({super.key, required this.config});
+  /// 正文延伸至状态栏（readBodyToLh）
+  final bool readBodyToLh;
+
+  const ReaderStatusStrip({
+    super.key,
+    required this.config,
+    this.readBodyToLh = true,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -37,6 +45,14 @@ class ReaderStatusStrip extends ConsumerWidget {
       right: 0,
       child: SafeArea(
         bottom: false,
+        minimum: EdgeInsets.only(
+          top: config.hideStatusBar
+              ? 0
+              : readerOverlayStatusBarInset(
+                  context,
+                  readBodyToLh: readBodyToLh,
+                ),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: DefaultTextStyle(

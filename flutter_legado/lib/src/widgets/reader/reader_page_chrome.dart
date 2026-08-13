@@ -2,6 +2,35 @@ import 'package:flutter/material.dart';
 
 import '../../screens/reader_config_panel.dart';
 
+/// 阅读页避让系统状态栏的顶部 inset（对标原版 TitleBar fitStatusBar /
+/// WindowInsetsCompat.Type.systemBars）。
+///
+/// 沉浸式 edge-to-edge（`setDecorFitsSystemWindows(false)`）下
+/// [MediaQuery.padding] 的 top 可能为 0，须用 [MediaQuery.viewPadding]，
+/// 否则顶栏标题/页眉会与电量、时间重叠。
+double readerSystemStatusBarInset(BuildContext context) =>
+    MediaQuery.viewPaddingOf(context).top;
+
+/// 正文区稳定顶 inset：readBodyToLh 且未隐藏状态栏时预留（不随工具栏显隐
+/// 变化，避免切换 ReadMenu 时正文上跳；外层 SafeArea 已避让时不再重复）。
+double readerContentStatusBarInset(
+  BuildContext context, {
+  required bool hideStatusBar,
+  required bool readBodyToLh,
+}) {
+  if (hideStatusBar || !readBodyToLh) return 0;
+  return readerSystemStatusBarInset(context);
+}
+
+/// 顶栏/状态条 overlay inset：正文延伸至状态栏时须显式避让系统栏。
+double readerOverlayStatusBarInset(
+  BuildContext context, {
+  required bool readBodyToLh,
+}) {
+  if (!readBodyToLh) return 0;
+  return readerSystemStatusBarInset(context);
+}
+
 /// 阅读页页眉/页脚与标题样式（对标原版 ReadBookConfig + ReadTipConfig）
 class ReaderPageChromeConfig {
   final int headerMode;

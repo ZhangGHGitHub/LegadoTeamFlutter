@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.64] - 2026-08-14
+
+### Fixed
+- [UI] 阅读页顶栏标题与系统状态栏（电量/时间）重叠：edge-to-edge 下改用 `viewPadding.top` 避让；ReadMenu 展开时强制显示状态栏（对标原版 `upSystemUiVisibility`）；正文区在未隐藏状态栏配置下恒定预留顶 inset，切换工具栏不再上跳
+
+## [2.0.64] - 2026-08-14
+
+### Fixed
+- [UI] 阅读页顶栏/页眉与系统状态栏（电量/时间）重叠：edge-to-edge 下 SafeArea 的 padding.top 为 0，改用 viewPadding.top 避让；正文 viewport 与分页扣减同步，切换工具栏时 layout 稳定
+
 ## [2.0.63] - 2026-08-14
 
 ### Fixed

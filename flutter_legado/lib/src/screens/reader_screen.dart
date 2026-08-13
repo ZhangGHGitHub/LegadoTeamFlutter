@@ -117,9 +117,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// 应用隐藏状态栏/导航栏与屏幕方向（对标原版 MoreConfigDialog
   /// onSharedPreferenceChanged：hideStatusBar/hideNavigationBar → UP_CONFIG
   /// 重建沉浸式；screenOrientation → setOrientation）— Qoder
-  void _applySystemChrome(ReaderAdvancedConfig cfg) {
+  ///
+  /// [menuVisible] 为 true 时强制显示状态栏（对标原版
+  /// `upSystemUiVisibility(toolBarHide=false)`，ReadMenu 展开时不隐藏状态栏）。
+  void _applySystemChrome(
+    ReaderAdvancedConfig cfg, {
+    bool? menuVisible,
+  }) {
+    final showMenu =
+        menuVisible ?? ref.read(readerNotifierProvider).showControls;
     final overlays = <SystemUiOverlay>[];
-    if (!cfg.hideStatusBar) overlays.add(SystemUiOverlay.top);
+    if (!cfg.hideStatusBar || showMenu) overlays.add(SystemUiOverlay.top);
     if (!cfg.hideNavigationBar) overlays.add(SystemUiOverlay.bottom);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: overlays);
     SystemChrome.setPreferredOrientations(
@@ -387,6 +395,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         _maybeAutoChangeSource(next);
       }
     });
+    // 工具栏显隐时同步系统状态栏（对标原版 ReadMenu 动画回调 upSystemUiVisibility）
+    ref.listen(
+      readerNotifierProvider.select((s) => s.showControls),
+      (prev, next) {
+        if (prev != next) {
+          _applySystemChrome(_advConfig, menuVisible: next);
+        }
+      },
+    );
 
     return PopScope<Object?>(
       // 退出阅读器时确保阅读进度已保存到书架
@@ -439,6 +456,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 marginLeft: _advConfig.pageMarginLeft,
                 marginRight: _advConfig.pageMarginRight,
                 pageChrome: ReaderPageChromeConfig.fromAdvanced(_advConfig),
+                readBodyToLh: cfg.readBodyToLh,
                 // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批：长按选择
                 // 文本开关与滚动翻页无动画接入内容区 — Qoder
                 selectText: _advConfig.selectText,
@@ -460,7 +478,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 reviewCounts: _reviewCounts,
                 onReviewTap: _onReviewTap,
               ),
-              if (!state.showControls) ReaderStatusStrip(config: _advConfig),
+              if (!state.showControls)
+                ReaderStatusStrip(
+                  config: _advConfig,
+                  readBodyToLh: cfg.readBodyToLh,
+                ),
               // 全局页码指示器（跨章节连续分页已注册时显示）
               if (state.showControls && state.totalPages > 0 && !imageDominant)
                 Positioned(
@@ -496,6 +518,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   // [UI-fix v2.0.3 | 2026-08-08] 显示标题附加区/工具栏跟随页面 — Qoder
                   showTitleAddition: _advConfig.showReadTitleAddition,
                   styleFollowPage: _advConfig.readBarStyleFollowPage,
+                  readBodyToLh: cfg.readBodyToLh,
                 ),
               // [UI-fix v2.0.1 | 2026-08-06] 朗读激活时以 ReadAloudBar 替代底部
               // 功能栏（对标原版 ReadAloudDialog 覆盖 ReadMenu 底部的行为） — Qoder

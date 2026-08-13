@@ -53,6 +53,9 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 页眉/页脚提示与标题样式（对标 ReadView PageView）
   final ReaderPageChromeConfig pageChrome;
 
+  /// 正文延伸至状态栏（readBodyToLh；对标原版 readBodyToLh）
+  final bool readBodyToLh;
+
   // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
 
   /// 长按选择文本开关（对标原版 selectText，关闭后长按不弹选区面板）
@@ -104,6 +107,7 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.marginLeft = 20,
     this.marginRight = 20,
     this.pageChrome = const ReaderPageChromeConfig(),
+    this.readBodyToLh = true,
     this.selectText = true,
     this.noAnimScroll = false,
     this.textBold = 0,
@@ -393,8 +397,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         '${widget.marginTop}_${widget.marginBottom}_${widget.marginLeft}_${widget.marginRight}';
     // [UI-fix v2.0.3 | 2026-08-08] 系统栏显隐改变可用高度时重新分页 — Qoder
     final sysPadding = MediaQuery.of(context).padding;
+    final statusBarTop = readerContentStatusBarInset(
+      context,
+      hideStatusBar: widget.pageChrome.hideStatusBar,
+      readBodyToLh: widget.readBodyToLh,
+    );
     final sysPaddingKey =
-        '${sysPadding.top}_${sysPadding.bottom}_${sysPadding.left}_${sysPadding.right}';
+        '${statusBarTop}_${sysPadding.bottom}_${sysPadding.left}_${sysPadding.right}';
 
     // [UI-fix v2.0.5 | 2026-08-10] 双页档位判定（对齐原版
     // ChapterProvider.upLayout：0=单页、1=双页、2=横屏双页、3=平板或
@@ -431,7 +440,6 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (!needRepaginate) return;
 
     // 计算可用尺寸（减去配置的页面边距）
-    final padding = MediaQuery.of(context).padding;
     // 双页模式：每栏可用宽 =（屏宽 - 左右边距 - 16 栏间隙）/ 2
     //（渲染侧左栏右间隙 8 + 右栏左间隙 8，与分页宽严格一致）
     final availableWidth = doublePage
@@ -451,8 +459,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final headerBlock = ReaderPageLayoutMetrics.headerBlockHeight(context, chrome);
     final footerBlock = ReaderPageLayoutMetrics.footerBlockHeight(context, chrome);
     final availableHeight = screenSize.height -
-        padding.top -
-        padding.bottom -
+        statusBarTop -
+        sysPadding.bottom -
         headerBlock -
         footerBlock -
         widget.marginTop -
@@ -693,13 +701,26 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 正文 viewport：工具栏为 Stack overlay，显隐不得改变正文布局约束
   /// （对标原版 ReadView 全屏 + ReadMenu 浮层；此前 showControls 联动
   /// SafeArea 导致切换工具栏时正文上跳并重算分页）— Cursor UI
-  Widget _contentViewport(Widget child) => child;
+  ///
+  /// 未隐藏状态栏时恒定预留 viewPadding.top（与分页扣减一致），避免
+  /// 章节标题/页眉绘制到系统状态栏区域；hideStatusBar 时不预留，以免
+  /// 切换 ReadMenu 时正文位移。
+  Widget _contentViewport(BuildContext context, Widget child) {
+    final top = readerContentStatusBarInset(
+      context,
+      hideStatusBar: widget.pageChrome.hideStatusBar,
+      readBodyToLh: widget.readBodyToLh,
+    );
+    if (top <= 0) return child;
+    return Padding(padding: EdgeInsets.only(top: top), child: child);
+  }
 
   Widget _buildScrollContent(ReaderState state) {
     // [UI-fix v2.0.4 | 2026-08-08] 文字色经自定义配色解析 — Qoder
     final textColor = _resolveTextColor(state);
 
     return _contentViewport(
+      context,
       SingleChildScrollView(
         controller: _scrollController,
         // [UI-fix v2.0.3 | 2026-08-06] 滚动模式边距接页面边距配置 — Qoder
@@ -781,6 +802,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   Widget _buildSlideContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
     return _contentViewport(
+      context,
       PageView.builder(
         controller: _pageController,
         itemCount: _isDoublePage
@@ -803,6 +825,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final notifier = ref.read(readerNotifierProvider.notifier);
     // 仿真翻页：PageView + 翻页阴影 + 缩放动画效果
     return _contentViewport(
+      context,
       Stack(
         children: [
           PageView.builder(
@@ -879,6 +902,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final notifier = ref.read(readerNotifierProvider.notifier);
     // 无动画翻页：使用 PageView 但禁用动画
     return _contentViewport(
+      context,
       PageView.builder(
         controller: _pageController,
         physics: const InstantScrollPhysics(), // 无动画瞬间切换
@@ -915,6 +939,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final forward = _coverForward;
 
     return _contentViewport(
+      context,
       AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         switchInCurve: Curves.linear,

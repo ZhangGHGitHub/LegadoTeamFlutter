@@ -18,6 +18,7 @@ import '../../screens/source_login_screen.dart';
 import '../help/help_assets.dart';
 import '../help/show_help.dart';
 import 'change_chapter_source_sheet.dart';
+import 'reader_page_chrome.dart';
 import 'reader_settings_sheet.dart';
 
 /// 阅读器顶部工具栏
@@ -44,11 +45,15 @@ class ReaderTopBar extends ConsumerStatefulWidget {
   /// 工具栏样式跟随阅读页（对标原版 readBarStyleFollowPage/immersiveMenu）
   final bool styleFollowPage;
 
+  /// 正文延伸至状态栏（readBodyToLh）；为 true 时顶栏须显式避让系统栏
+  final bool readBodyToLh;
+
   const ReaderTopBar({
     super.key,
     required this.onAddBookmark,
     this.showTitleAddition = true,
     this.styleFollowPage = false,
+    this.readBodyToLh = true,
   });
 
   @override
@@ -1083,6 +1088,13 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
         ),
         child: SafeArea(
           bottom: false,
+          // edge-to-edge 下 padding.top 可能为 0，须保底 viewPadding.top
+          minimum: EdgeInsets.only(
+            top: readerOverlayStatusBarInset(
+              context,
+              readBodyToLh: widget.readBodyToLh,
+            ),
+          ),
           child: IconTheme(
             // 跟随页面时图标前景色改用页面文字色
             data: IconThemeData(color: foreground),

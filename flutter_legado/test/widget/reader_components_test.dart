@@ -100,6 +100,38 @@ void main() {
       expect(find.text('0.0%'), findsOneWidget);
     });
 
+    testWidgets('edge-to-edge 下顶栏内容避让 viewPadding.top', (tester) async {
+      const statusBarHeight = 48.0;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: EdgeInsets.zero,
+                viewPadding: EdgeInsets.only(top: statusBarHeight),
+              ),
+              child: Scaffold(
+                body: Stack(
+                  children: [
+                    ReaderTopBar(onAddBookmark: () {}),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final safeArea = tester.widget<SafeArea>(find.byType(SafeArea));
+      expect(safeArea.minimum.top, statusBarHeight);
+      expect(
+        tester.getTopLeft(find.byIcon(Icons.arrow_back_ios_new)).dy,
+        greaterThanOrEqualTo(statusBarHeight),
+      );
+    });
+
     testWidgets('打开书籍后显示书名', (tester) async {
       stubOpenBook();
       await tester.pumpWidget(wrapStack(ReaderTopBar(
