@@ -133,7 +133,7 @@
 - **涉及文件**：git 操作（无代码改动）
 - **实施要点**：① 确认并提交 75 个删除（含 repowiki 废弃、根目录历史垃圾）；② 提交真实测试 `offline_cache_screen_test.dart`；③ feature/rust-core → master 合入（或创建 `integration/*` 承接，按 AGENTS.md 分支策略）；④ 核对 master 与上游 #672 同步状态。
 - **验收**：master 承接全部近期成果；`git status` 无悬空删除；工作树收敛到可预期状态。
-- **工作量**：M ｜ **前置**：F1-1/F1-2（先让 master 处于绿态）｜ **状态**：✅（`integration/audit-fix-20260814` 承接 feature/rust-core 全量审计修复 + repowiki/垃圾清理/offline_cache 测试；待用户合入 master）
+- **工作量**：M ｜ **前置**：F1-1/F1-2（先让 master 处于绿态）｜ **状态**：✅（fast-forward 合入 master @ `85b013d22`；`integration/audit-fix-20260814` 与 master 同 HEAD）
 
 ### F2-10 `[工程]` .gitignore 补全与仓库垃圾清理
 - **来源**：P1-10
@@ -165,7 +165,7 @@
 - **涉及文件**：`webdav_api.rs`（9 处 `thread::Builder...build().unwrap()`）、`server_api.rs`（5 处 expect 含 mutex 中毒）、`http_state.rs`/`net_api.rs`（锁 unwrap）
 - **实施要点**：改为 `map_err` 返回 BridgeError/LegadoError；mutex 中毒用 `poisoned.into_inner()` 恢复或返回错误。
 - **验收**：FFI 生产代码零 unwrap/expect（测试模块除外）；`cargo test --workspace` 全绿。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（webdav/server/http_state/net_api 生产路径已收敛；shared_client 初始化失败仍 panic 兜底，待后续改 Result）
 
 ### F3-2 `[Rust]` check_syntax 超时与内存上限
 - **来源**：D2
@@ -186,7 +186,7 @@
 - **涉及文件**：`rust/legado-js/README.md`、`sandbox.rs` 模块文档、`docs/README.md`（如涉及）
 - **实施要点**：按 D3 决策统一「eval/Function 实际策略」表述（生产启用 or 禁用），消除文档与代码矛盾。
 - **验收**：文档描述与 `engine_pool.rs:43`/`js_executor.rs` 实际行为一致。
-- **工作量**：S ｜ **前置**：D3
+- **工作量**：S ｜ **前置**：D3 ｜ **状态**：✅（D3=A：sandbox.rs + rust/README 书源路径 eval/Function 启用口径；js_eval 严格入口分离）
 
 ### F3-5 `[Rust]` FFI 非 Result 导出改造
 - **来源**：D5
@@ -235,7 +235,7 @@
 - **涉及文件**：`docs/README.md`、`docs/REFACTORING_REMAINING_PLAN.md`、`docs/REFACTORING_AUDIT_REPORT_20260806.md` 等
 - **实施要点**：统一测试数（以实测为准：Rust workspace 全量 + quickjs 547 + Flutter 1209）；修正「约 3400」算术；对账原子任务 148/168；统一版本口径（2.0.x 系列）。
 - **验收**：各文档量化声明互洽且与实测一致。
-- **工作量**：M ｜ **前置**：F2-4（测试口径基准确定）
+- **工作量**：M ｜ **前置**：F2-4（测试口径基准确定）｜ **状态**：✅（docs/README.md 门禁口径：ffi quickjs 311 + flutter 1171）
 
 ### F3-12 `[文档]` 根 README 更新
 - **来源**：D16
@@ -249,7 +249,7 @@
 - **涉及文件**：方案 A：`rust/legado-ffi/src/`（新增 video 解析 FFI，对齐 AnalyzeUrl/VideoPlay）、`docs/API_CONTRACT.md`、`video_play_utils.dart`（改调 FFI）、`video_screen.dart`、`test/unit/video_url_resolve_test.dart`（迁移 Rust 测试）；方案 B：登记豁免。
 - **实施要点**：按 D4 决策执行；下沉时保留现有播放行为不回退。
 - **验收**：播放行为与原实现等价；契约同步。
-- **工作量**：L（A）/ S（B）｜ **前置**：D4
+- **工作量**：L（A）/ S（B）｜ **前置**：D4 ｜ **状态**：✅（D4=B：API_CONTRACT 登记 Flutter `video_play_utils` 豁免）
 
 ### F3-14 `[双轨]` 裸 http 收敛到 Rust 网络层
 - **来源**：D17（8 处：auto_task_screen:631、rule_sub_screen:496、audio_screen:940、reader_comic_screen:1259、replace_rules_screen:497、rss_source_manage_screen:1092、association_notifier:7、source_import_service:105/250）
@@ -263,7 +263,7 @@
 - **涉及文件**：`comic_reader_screen.dart`（删除）、段评 CRUD 死面（`book_api.dart:974-999` + `ffi.dart:1370-1398` + `rust_api.dart:2156-2183` + `mock_book_api.dart:1902-1918` + `review_api.rs:18-83`）、阅读统计死面（随 D1 一并处理）
 - **实施要点**：确认零 UI 调用后删除或按 D1 决策保留。
 - **验收**：无死契约面残留；`flutter analyze` 0 error。
-- **工作量**：M ｜ **前置**：D1（阅读统计部分）
+- **工作量**：M ｜ **前置**：D1（阅读统计部分）｜ **状态**：⏳（已删 `comic_reader_screen.dart` + 孤儿 `comic_reader_test.dart`；本地段评 CRUD 死契约面待 FRB 移除）
 
 ### F3-16 `[双轨]` 页面覆盖缺口处置
 - **来源**：D19
