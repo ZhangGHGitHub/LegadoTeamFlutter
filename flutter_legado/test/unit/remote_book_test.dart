@@ -4,81 +4,75 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/models/book.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/remote_book/remote_book_notifier.dart';
+import 'package:flutter_legado/src/providers/sync/sync_notifier.dart';
 
 import '../mocks/mocks.dart';
 
 void main() {
-  group('RemoteBookNotifier.parseUrls', () {
-    test('多行解析：去空白/空行/去重/仅 http(s)', () {
-      final urls = RemoteBookNotifier.parseUrls(
-        'https://a.com/1\n'
-        '  https://a.com/2  \n'
-        '\n'
-        'https://a.com/1\n'
-        'ftp://a.com/3\n'
-        '不是链接\n'
-        'http://b.com/4',
-      );
-      expect(urls, equals([
-        'https://a.com/1',
-        'https://a.com/2',
-        'http://b.com/4',
-      ]));
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('RemoteBookState path helpers', () {
+    test('默认服务器 displayPath / listPath', () {
+      const state = RemoteBookState(serverId: -1);
+      expect(state.displayPath, 'books/');
+      expect(state.listPath, 'books/');
     });
 
-    test('空文本返回空列表', () {
-      expect(RemoteBookNotifier.parseUrls('  \n  '), isEmpty);
+    test('进入子目录后拼接路径', () {
+      const state = RemoteBookState(
+        serverId: -1,
+        dirStack: [
+          RemoteBookItem(
+            filename: 'novels',
+            relativePath: 'books/novels/',
+            isDir: true,
+          ),
+        ],
+      );
+      expect(state.displayPath, 'books/novels/');
+      expect(state.listPath, 'books/novels/');
+    });
+
+    test('筛选与排序：目录置顶', () {
+      const state = RemoteBookState(
+        items: [
+          RemoteBookItem(filename: 'b.txt', relativePath: 'books/b.txt'),
+          RemoteBookItem(
+            filename: 'a_dir',
+            relativePath: 'books/a_dir/',
+            isDir: true,
+          ),
+          RemoteBookItem(filename: 'a.txt', relativePath: 'books/a.txt'),
+        ],
+        sortKey: RemoteBookSort.name,
+        sortAscending: true,
+      );
+      final names = state.visibleItems.map((e) => e.filename).toList();
+      expect(names.first, 'a_dir');
+      expect(names.sublist(1), ['a.txt', 'b.txt']);
     });
   });
 
-  group('RemoteBookNotifier.nameFromUrl', () {
-    test('取路径末段并去扩展名', () {
-      expect(
-        RemoteBookNotifier.nameFromUrl('https://a.com/book/123.html'),
-        equals('123'),
-      );
-    });
-
-    test('URL 解码末段', () {
-      expect(
-        RemoteBookNotifier.nameFromUrl('https://a.com/book/Hello%20World'),
-        equals('Hello World'),
-      );
-    });
-
-    test('截断百分号编码兜底原串（不抛异常）', () {
-      expect(
-        RemoteBookNotifier.nameFromUrl('https://a.com/book/abc%E4'),
-        equals('https://a.com/book/abc%E4'),
-      );
-    });
-
-    test('UTF-8 多字节百分号编码正常解码', () {
-      expect(
-        RemoteBookNotifier.nameFromUrl(
-            'https://a.com/book/%E4%B8%89%E4%BD%93'),
-        equals('三体'),
-      );
-    });
-
-    test('无路径时兜底主机名', () {
-      expect(
-        RemoteBookNotifier.nameFromUrl('https://a.com/'),
-        equals('a.com'),
-      );
-    });
-  });
-
-  group('RemoteBookNotifier.importUrls', () {
+  group('RemoteBookNotifier.refresh / import', () {
     late MockRustApi mockApi;
     late ProviderContainer container;
 
     setUpAll(registerFallbacks);
 
-    setUp(() {
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({
+        'sync_webdav_url': 'https://dav.example.com/',
+        'sync_webdav_username': 'u',
+        'sync_webdav_password': 'p',
+        'sync_webdav_remote_dir': '/legado/',
+        'remote_server_id': -1,
+        'remote_servers': '[]',
+      });
       mockApi = MockRustApi();
       container = ProviderContainer(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
@@ -86,55 +80,86 @@ void main() {
       addTearDown(container.dispose);
     });
 
-    RemoteBookState readState() => container.read(remoteBookNotifierProvider);
     RemoteBookNotifier readNotifier() =>
         container.read(remoteBookNotifierProvider.notifier);
+    RemoteBookState readState() => container.read(remoteBookNotifierProvider);
 
-    test('初始状态为空', () {
-      final state = readState();
-      expect(state.isImporting, isFalse);
-      expect(state.importedCount, isNull);
-      expect(state.error, isNull);
+    test('refresh 解析目录并过滤非书籍文件', () async {
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'novel.epub',
+            'path': '/legado/books/novel.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+          {
+            'name': 'readme.md',
+            'path': '/legado/books/readme.md',
+            'size': 1,
+            'is_dir': false,
+          },
+          {
+            'name': 'folder',
+            'path': '/legado/books/folder/',
+            'size': 0,
+            'is_dir': true,
+          },
+        ]),
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      await readNotifier().init();
+
+      final items = readState().items;
+      expect(items.map((e) => e.filename).toSet(), {'novel.epub', 'folder'});
+      verify(() => mockApi.webdavListDir(any(), 'books/')).called(1);
     });
 
-    test('导入成功记录数量并透传 JSON', () async {
-      when(() => mockApi.importBooks(any())).thenAnswer((_) async => 2);
+    test('addSelectedToBookshelf 下载并 importLocalBook', () async {
+      when(() => mockApi.webdavListDir(any(), any()))
+          .thenAnswer((_) async => jsonEncode([]));
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+      when(() => mockApi.webdavDownloadFile(any(), any(), any()))
+          .thenAnswer((_) async {});
+      when(() => mockApi.importLocalBook(any())).thenAnswer(
+        (_) async => const Book(
+          bookUrl: '/tmp/novel.epub',
+          name: 'novel',
+          origin: 'loc:',
+          originName: 'novel.epub',
+        ),
+      );
+      when(() => mockApi.updateBook(any())).thenAnswer((_) async {});
 
-      await readNotifier().importUrls('https://a.com/1\nhttps://a.com/2');
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      await readNotifier().init();
 
-      final state = readState();
-      expect(state.isImporting, isFalse);
-      expect(state.importedCount, equals(2));
-      expect(state.error, isNull);
+      // 注入可选中条目
+      container.read(remoteBookNotifierProvider.notifier);
+      final n = readNotifier();
+      // 直接改 state 较难；通过 refresh 数据再选
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'novel.epub',
+            'path': '/legado/books/novel.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+        ]),
+      );
+      await n.refresh();
+      final item = readState().items.single;
+      n.toggleSelect(item);
+      await n.addSelectedToBookshelf();
 
-      final captured = verify(() => mockApi.importBooks(captureAny()))
-          .captured
-          .single as String;
-      final list = jsonDecode(captured) as List<dynamic>;
-      expect(list.length, equals(2));
-      expect(list.first['bookUrl'], equals('https://a.com/1'));
-      expect(list.first['origin'], equals('web'));
-    });
-
-    test('无有效链接时记录错误且不触发契约', () async {
-      await readNotifier().importUrls('随便一些文字');
-
-      final state = readState();
-      expect(state.isImporting, isFalse);
-      expect(state.importedCount, isNull);
-      expect(state.error, isNotNull);
-      verifyNever(() => mockApi.importBooks(any()));
-    });
-
-    test('异常时兜底并记录 error', () async {
-      when(() => mockApi.importBooks(any())).thenThrow(Exception('ffi'));
-
-      await readNotifier().importUrls('https://a.com/1');
-
-      final state = readState();
-      expect(state.isImporting, isFalse);
-      expect(state.importedCount, isNull);
-      expect(state.error, isNotNull);
+      expect(readState().importedCount, 1);
+      verify(() => mockApi.webdavDownloadFile(any(), 'books/novel.epub', any()))
+          .called(1);
+      verify(() => mockApi.importLocalBook(any())).called(1);
+      verify(() => mockApi.updateBook(any())).called(1);
     });
   });
 }
