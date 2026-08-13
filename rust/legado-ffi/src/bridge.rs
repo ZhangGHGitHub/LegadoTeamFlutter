@@ -792,7 +792,7 @@ pub unsafe extern "C" fn ffi_http_get(url: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let url_str = c_char_to_str(url)?;
         let response = crate::runtime::block_on(async {
-            let client = crate::http_state::shared_client();
+            let client = crate::http_state::shared_client()?;
             client.get(url_str, None).await
         })?;
         Ok::<_, LegadoError>(response)
@@ -806,7 +806,7 @@ pub unsafe extern "C" fn ffi_http_post(url: *const c_char, body: *const c_char) 
         let url_str = c_char_to_str(url)?;
         let body_str = c_char_to_str(body)?;
         let response = crate::runtime::block_on(async {
-            let client = crate::http_state::shared_client();
+            let client = crate::http_state::shared_client()?;
             client.post(url_str, body_str, None).await
         })?;
         Ok::<_, LegadoError>(response)

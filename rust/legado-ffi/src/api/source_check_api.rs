@@ -67,11 +67,11 @@ fn parse_config(config_json: &str) -> LegadoResult<CheckerConfig> {
 }
 
 /// 创建共享 HTTP 客户端上的书源检查器
-fn create_checker(config: CheckerConfig) -> SourceChecker {
+fn create_checker(config: CheckerConfig) -> LegadoResult<SourceChecker> {
     // shared_client 内部为 Arc 全共享结构，clone 廉价；
     // 校验链路复用全局连接池与 Cookie 存储（对齐搜索/取章链路）
-    let client = Arc::new(crate::http_state::shared_client());
-    SourceChecker::with_config(client, config)
+    let client = Arc::new(crate::http_state::shared_client()?);
+    Ok(SourceChecker::with_config(client, config))
 }
 
 // ─── 单本校验 ─────────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ pub fn check_source(source_json: &str, config_json: &str) -> LegadoResult<CheckR
     let source: BookSource = serde_json::from_str(source_json)
         .map_err(|e| LegadoError::Ffi(format!("BookSource JSON 解析失败: {e}")))?;
     let config = parse_config(config_json)?;
-    let checker = create_checker(config);
+    let checker = create_checker(config)?;
     Ok(crate::runtime::block_on(async move {
         checker.check_full(&source).await
     }))
@@ -160,7 +160,13 @@ async fn run_check_sources_stream_inner<F>(
     }
 
     let config = parse_config(config_json).unwrap_or_default();
-    let checker = create_checker(config);
+    let checker = match create_checker(config) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("书源校验：共享 HTTP 客户端初始化失败: {e}");
+            return;
+        }
+    };
 
     // 串行逐个校验（对齐 Kotlin CheckSourceService，避免对书源站并发压力）
     for (index, source) in sources.into_iter().enumerate() {

@@ -71,7 +71,7 @@ pub fn search_alternative_sources(
     // 使用 tokio runtime 并行搜索
     let sources_for_search = sources.clone();
     let candidates = runtime::block_on(async {
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client()?;
 
         let mut handles = Vec::new();
         for source in sources_for_search {
@@ -174,7 +174,7 @@ pub fn switch_book_source(
     })?;
 
     // 2. 用 new_book_url（新源详情页）从新书源抓取章节列表
-    let engine = super::web_book::build_engine();
+    let engine = super::web_book::build_engine()?;
     let web_chapters: Vec<WebChapter> =
         runtime::block_on(async { engine.get_chapters(&source, new_book_url).await })?;
 
@@ -404,8 +404,12 @@ async fn enrich_one_switch_candidate(
         return candidate;
     }
 
-    let engine = build_engine();
-    let fetcher = RealBookSourceFetcher::new();
+    let Ok(engine) = build_engine() else {
+        return candidate;
+    };
+    let Ok(fetcher) = RealBookSourceFetcher::new() else {
+        return candidate;
+    };
     let book_url = candidate.book_url.clone();
     let mut toc_url = String::new();
 

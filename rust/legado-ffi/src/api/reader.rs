@@ -394,7 +394,7 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
         .unwrap_or_else(|| book_url.to_string());
 
     // 2. 使用 WebBookEngine 从网络获取章节列表
-    let engine = super::web_book::build_engine();
+    let engine = super::web_book::build_engine()?;
     let web_chapters: Vec<WebChapter> =
         runtime::block_on(async { engine.get_chapters(&source, &fetch_url).await })?;
 
@@ -568,7 +568,7 @@ fn fetch_chapter_content_inner(
         variable: chapter_variable.map(|s| s.to_string()),
     };
 
-    let engine = super::web_book::build_engine();
+    let engine = super::web_book::build_engine()?;
     let content = runtime::block_on(async { engine.get_content(&source, &web_chapter).await })?;
 
     // 3. 抓取成功后写入 DB 缓存（对齐原版 BookContent.analyzeContent

@@ -230,6 +230,7 @@ fn export_book_inner(
         Some(Box::new(|src: &str| {
             crate::runtime::block_on(async {
                 crate::http_state::shared_client()
+                    .map_err(|e| e.to_string())?
                     .get_bytes(src, None)
                     .await
                     .map_err(|e| e.to_string())

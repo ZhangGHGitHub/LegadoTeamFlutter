@@ -23,6 +23,7 @@
 
 use std::sync::{Arc, OnceLock, RwLock};
 
+use legado_core::{LegadoError, LegadoResult};
 use legado_net::{CookiePersistence, LegadoClient, LegadoClientConfig};
 
 fn read_client_slot(
@@ -105,19 +106,19 @@ fn client_slot() -> &'static RwLock<Option<LegadoClient>> {
 /// 后续调用返回缓存客户端的廉价 clone（共享同一底层连接池与 CookieStore）。
 ///
 /// 采用双重检查锁：读路径走 `read()` 快路径，仅在未初始化时升级 `write()`。
-pub fn shared_client() -> LegadoClient {
+pub fn shared_client() -> LegadoResult<LegadoClient> {
     // 快路径：已初始化则直接 clone 返回
     {
         let guard = read_client_slot();
         if let Some(client) = guard.as_ref() {
-            return client.clone();
+            return Ok(client.clone());
         }
     }
 
     // 慢路径：加写锁初始化（再次检查，避免并发重复创建）
     let mut guard = write_client_slot();
     if let Some(client) = guard.as_ref() {
-        return client.clone();
+        return Ok(client.clone());
     }
 
     let client = match make_cookie_persistence() {
@@ -126,13 +127,9 @@ pub fn shared_client() -> LegadoClient {
         }
         None => LegadoClient::new(LegadoClientConfig::default()),
     }
-    .unwrap_or_else(|e| {
-        log::error!("初始化共享 HTTP 客户端失败（默认配置）: {e}");
-        LegadoClient::new(LegadoClientConfig::default())
-            .unwrap_or_else(|e2| panic!("共享 HTTP 客户端无法初始化: {e}; {e2}"))
-    });
+    .map_err(|e| LegadoError::Network(format!("初始化共享 HTTP 客户端失败: {e}")))?;
     *guard = Some(client.clone());
-    client
+    Ok(client)
 }
 
 /// 重置共享客户端
@@ -160,8 +157,8 @@ mod tests {
     #[test]
     fn test_shared_client_same_underlying() {
         let _g = TEST_LOCK.lock().unwrap();
-        let c1 = shared_client();
-        let c2 = shared_client();
+        let c1 = shared_client().unwrap();
+        let c2 = shared_client().unwrap();
         assert!(
             Arc::ptr_eq(c1.cookie_store(), c2.cookie_store()),
             "多次 shared_client 应共享同一底层 CookieStore"
@@ -172,13 +169,13 @@ mod tests {
     #[test]
     fn test_shared_client_concurrent() {
         let _g = TEST_LOCK.lock().unwrap();
-        let baseline = shared_client();
+        let baseline = shared_client().unwrap();
         let baseline_ptr = Arc::as_ptr(baseline.cookie_store()) as usize;
 
         let mut handles = Vec::new();
         for _ in 0..8 {
             handles.push(std::thread::spawn(move || {
-                let c = shared_client();
+                let c = shared_client().unwrap();
                 let ptr = Arc::as_ptr(c.cookie_store()) as usize;
                 assert_eq!(ptr, baseline_ptr, "并发 shared_client 应共享同一底层客户端");
             }));
@@ -192,9 +189,9 @@ mod tests {
     #[test]
     fn test_reset_shared_client_rebuilds() {
         let _g = TEST_LOCK.lock().unwrap();
-        let before = shared_client();
+        let before = shared_client().unwrap();
         reset_shared_client();
-        let after = shared_client();
+        let after = shared_client().unwrap();
         assert!(
             !Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
             "reset 后应重建底层客户端"
@@ -219,7 +216,7 @@ mod tests {
 
         // reset 后重建客户端，应从 DB 加载 Cookie
         reset_shared_client();
-        let client = shared_client();
+        let client = shared_client().unwrap();
         assert!(
             client.cookie_persistence().is_some(),
             "DB 已初始化时共享客户端应携带持久化后端"

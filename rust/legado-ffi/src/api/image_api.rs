@@ -224,7 +224,7 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
     }
 
     let resp = crate::runtime::block_on(async {
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client()?;
         client.get_raw(&request_url, Some(headers)).await
     })?;
     if !resp.is_success() {
@@ -535,7 +535,7 @@ decryptImage(result);"#;
             println!("===== [chapter] {} {}", ch.title, ch.url);
             // 诊断：直接下载章节页，检查 images 数据形态
             let raw = crate::runtime::block_on(async {
-                let client = crate::http_state::shared_client();
+                let client = crate::http_state::shared_client().expect("shared client");
                 client
                     .get_raw(&ch.url, None)
                     .await

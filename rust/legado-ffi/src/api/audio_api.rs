@@ -211,7 +211,7 @@ pub fn get_audio_chapter_media(
         variable: chapter.variable.clone(),
     };
 
-    let engine = super::web_book::build_engine();
+    let engine = super::web_book::build_engine()?;
     let content =
         runtime::block_on(async { engine.get_content(&source, &web_chapter).await })?;
     let media_url = content.trim().to_string();

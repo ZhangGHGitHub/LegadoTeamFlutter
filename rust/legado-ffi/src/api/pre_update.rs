@@ -122,7 +122,7 @@ fn re_get_book_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> 
 /// 对齐 `AnalyzeRule.refreshTocUrl`：重新拉详情写 tocUrl 等
 #[cfg(feature = "quickjs")]
 fn refresh_toc_url_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> {
-    let engine = crate::api::web_book::build_engine();
+    let engine = crate::api::web_book::build_engine()?;
     let info = crate::runtime::block_on(async {
         engine.get_book_info(source, &book.book_url).await
     })?;

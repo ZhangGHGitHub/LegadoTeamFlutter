@@ -95,10 +95,10 @@ pub struct RealBookSourceFetcher {
 }
 
 impl RealBookSourceFetcher {
-    pub fn new() -> Self {
+    pub fn new() -> LegadoResult<Self> {
         // 复用进程共享的 HTTP 客户端单例（共享连接池与 CookieStore，clone 廉价）
-        let client = crate::http_state::shared_client();
-        Self { client }
+        let client = crate::http_state::shared_client()?;
+        Ok(Self { client })
     }
 
     /// 解析书源 header 字段为请求头
@@ -383,7 +383,7 @@ impl RealBookSourceFetcher {
 
 impl Default for RealBookSourceFetcher {
     fn default() -> Self {
-        Self::new()
+        Self::new().unwrap_or_else(|e| panic!("shared HTTP client init: {e}"))
     }
 }
 
@@ -1375,8 +1375,8 @@ fn sniff_source_regex_url(body: &str, source_regex: &str) -> Option<String> {
 }
 
 /// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
-pub fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
-    WebBookEngine::new(RealBookSourceFetcher::new())
+pub fn build_engine() -> LegadoResult<WebBookEngine<RealBookSourceFetcher>> {
+    Ok(WebBookEngine::new(RealBookSourceFetcher::new()?))
 }
 
 /// 缺口① nextContentUrl 分页最大页数保护（审计 2026-08-06，加法式）
@@ -2033,7 +2033,7 @@ pub fn webbook_search(source_json: &str, query: &str, page: i32) -> LegadoResult
     }
 
     // 规则书源路径（现有逻辑不变）
-    let engine = build_engine();
+    let engine = build_engine()?;
     let results: Vec<WebSearchResult> =
         runtime::block_on(async { engine.search(&source, query, page).await })?;
     serde_json::to_string(&results).map_err(LegadoError::Serialization)
@@ -2091,7 +2091,7 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
     }
 
     // 规则书源路径
-    let engine = build_engine();
+    let engine = build_engine()?;
     let info: WebBookInfo =
         runtime::block_on(async { engine.get_book_info(&source, book_url).await })?;
     serde_json::to_string(&info).map_err(LegadoError::Serialization)
@@ -2150,7 +2150,7 @@ pub fn webbook_chapters(
     }
 
     // 规则书源路径
-    let fetcher = RealBookSourceFetcher::new();
+    let fetcher = RealBookSourceFetcher::new()?;
     let chapters: Vec<WebChapter> = runtime::block_on(async {
         fetcher
             .get_chapters_with_hints(&source, book_url, known_toc_opt, name_hint_opt)
@@ -2194,7 +2194,7 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
     }
 
     // 规则书源路径
-    let engine = build_engine();
+    let engine = build_engine()?;
     runtime::block_on(async { engine.get_content(&source, &chapter).await })
 }
 
@@ -2318,7 +2318,7 @@ mod tests {
     #[test]
     fn test_build_engine_creates_real_fetcher() {
         // 验证 build_engine 能正常构建（不 panic）
-        let _engine = build_engine();
+        let _engine = build_engine().expect("build_engine");
     }
 
     #[test]

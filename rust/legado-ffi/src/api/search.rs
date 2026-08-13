@@ -142,7 +142,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     // 逐源完成后累积结果；失败源跳过不阻断整体。
     let keyword_owned = keyword.to_string();
     let mut results = runtime::block_on(async {
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client()?;
         let mut all_results: Vec<SearchResult> = Vec::new();
         drive_source_batches(
             sources,
@@ -193,7 +193,7 @@ pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> Legad
 
     // 按书源顺序检索，命中即停（对齐 preciseSearch 串行 + shouldBreak）
     let hit = runtime::block_on(async {
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client()?;
         for source in sources {
             let items = match search_single_source(&client, &source, &name_owned).await {
                 Ok(v) => v,
@@ -250,7 +250,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
     };
 
     let results = runtime::block_on(async {
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client()?;
 
         let searcher = MultiSourceSearcher::new(WebSourceSearcher::new(client));
         let cancel = Arc::new(AtomicBool::new(false));
@@ -400,7 +400,13 @@ where
         return;
     }
 
-    let client = crate::http_state::shared_client();
+    let client = match crate::http_state::shared_client() {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("流式搜索：共享 HTTP 客户端初始化失败: {e}");
+            return;
+        }
+    };
 
     // 一次性构建阅读记录索引，逐批附加标识（对齐 ReadRecordIndex 思路）
     let read_record_index = ReadRecordIndex::load();
@@ -2614,7 +2620,7 @@ mod tests {
         let mut exact_origins = 0usize;
         let mut err_counter: BTreeMap<String, usize> = BTreeMap::new();
         let mut fail_samples: Vec<String> = Vec::new();
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client().unwrap();
         for (i, v) in fast.iter().enumerate() {
             let src: BookSource = match serde_json::from_value(v.clone()) {
                 Ok(s) => s,
@@ -2770,7 +2776,7 @@ mod tests {
         let list: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
         println!("GBK_SOURCES={}", list.len());
         let kw = "斗破苍穹";
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client().unwrap();
         let mut ok = 0usize;
         let mut exact = 0usize;
         for v in &list {
@@ -2960,7 +2966,7 @@ mod tests {
         println!("search n={}", list.len());
         let b = list.first().expect("hit");
         println!("book={} url={}", b.book_name, b.book_url);
-        let engine = crate::api::web_book::build_engine();
+        let engine = crate::api::web_book::build_engine().expect("build_engine");
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()

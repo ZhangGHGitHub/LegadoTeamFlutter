@@ -199,7 +199,7 @@ pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, Strin
         return Err("AnalyzeUrl 解析后 URL 为空".to_string());
     }
 
-    let client = crate::http_state::shared_client();
+    let client = crate::http_state::shared_client().map_err(|e| e.to_string())?;
     let headers = if analyze_url.headers().is_empty() {
         None
     } else {

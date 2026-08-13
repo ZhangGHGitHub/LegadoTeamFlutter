@@ -81,7 +81,7 @@ pub fn clear_cookie(url: &str) -> LegadoResult<()> {
 
     // 1. 内存 CookieStore（共享客户端；未初始化时 shared_client 会惰性创建）
     {
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client()?;
         let mut store = client
             .cookie_store()
             .write()
@@ -181,7 +181,7 @@ mod tests {
         })
         .unwrap();
         {
-            let client = crate::http_state::shared_client();
+            let client = crate::http_state::shared_client().unwrap();
             let mut store = client.cookie_store().write().unwrap();
             store.set_cookies_from_string(domain, "session=abc; token=xyz");
         }
@@ -196,7 +196,7 @@ mod tests {
         .unwrap();
         assert!(remaining.is_none());
 
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client().unwrap();
         let store = client.cookie_store().read().unwrap();
         assert!(store.get_cookies(domain).is_empty());
         drop(store);
