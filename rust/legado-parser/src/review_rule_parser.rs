@@ -380,11 +380,11 @@ fn parse_detail_item(
         Vec::new()
     };
 
-    let empty = name.as_deref().map_or(true, |s| s.trim().is_empty())
-        && content.as_deref().map_or(true, |s| s.trim().is_empty())
-        && protocol.as_ref().map_or(true, |p| {
-            p.image_url.as_deref().map_or(true, |s| s.trim().is_empty())
-                && p.audio_url.as_deref().map_or(true, |s| s.trim().is_empty())
+    let empty = name.as_deref().is_none_or(|s| s.trim().is_empty())
+        && content.as_deref().is_none_or(|s| s.trim().is_empty())
+        && protocol.as_ref().is_none_or(|p| {
+            p.image_url.as_deref().is_none_or(|s| s.trim().is_empty())
+                && p.audio_url.as_deref().is_none_or(|s| s.trim().is_empty())
         });
     if empty {
         return None;

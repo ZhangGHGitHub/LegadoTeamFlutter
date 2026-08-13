@@ -53,7 +53,7 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
     // 纯文本格式：按 \n 或 && 分隔，每条按 :: 分割为 标题::URL
     let mut categories = Vec::new();
     // 对标 Android: ruleStr.split("(&&|\n)+".toRegex())
-    for segment in trimmed.split(|c: char| c == '\n' || c == '\r') {
+    for segment in trimmed.split(['\n', '\r']) {
         for part in segment.split("&&") {
             let part = part.trim();
             if part.is_empty() {

@@ -95,7 +95,7 @@ impl WebDavClient {
         let url = self.full_url(path);
         let file = tokio::fs::File::open(local_file_path)
             .await
-            .map_err(|e| LegadoError::Io(e))?;
+            .map_err(LegadoError::Io)?;
         let stream = ReaderStream::new(file);
         let body = reqwest::Body::wrap_stream(stream);
         let response = self

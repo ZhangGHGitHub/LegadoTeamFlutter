@@ -29,20 +29,15 @@ use crate::reading_stats::{ReadingSession, ReadingStatsCalculator};
 /// - 1 = 滑动翻页（Slide）
 /// - 2 = 覆盖翻页（Cover，归入 Slide）
 /// - 3 = 滚动翻页（Scroll）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ReadingMode {
     /// 仿真翻页（模拟纸张翻转效果）
+    #[default]
     Simulation,
     /// 滑动翻页（左右滑动切换页面）
     Slide,
     /// 滚动翻页（上下连续滚动）
     Scroll,
-}
-
-impl Default for ReadingMode {
-    fn default() -> Self {
-        Self::Simulation
-    }
 }
 
 impl ReadingMode {

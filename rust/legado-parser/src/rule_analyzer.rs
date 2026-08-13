@@ -364,9 +364,9 @@ impl<'a> RuleAnalyzer<'a> {
             let end = self.pos;
             self.pos = self.start;
 
-            // 内层循环标记：Some(true) = 分隔符在平衡组内，需越过该组继续；
-            // Some(false) = 进入下一迭代继续拆分；None = 已返回
-            let mut crossed_balanced: Option<bool> = None;
+            // 内层循环标记：true = 分隔符在平衡组内，需越过该组继续；
+            // false = 进入下一迭代继续拆分
+            let mut crossed_balanced = false;
 
             loop {
                 let st = self.find_to_any(&['[', '(']);
@@ -398,7 +398,6 @@ impl<'a> RuleAnalyzer<'a> {
                         self.start_x = self.start;
                         // 原自递归点（L350）：改写为外层 loop 迭代
                         // （pos > st >= end，严格前进）
-                        crossed_balanced = Some(false);
                         break;
                     } else {
                         self.rule.push(&self.queue[self.pos..]);
@@ -420,14 +419,14 @@ impl<'a> RuleAnalyzer<'a> {
                 }
 
                 if end <= self.pos {
-                    crossed_balanced = Some(true);
+                    crossed_balanced = true;
                     break;
                 }
             }
 
             self.start = self.pos;
 
-            if crossed_balanced == Some(true) {
+            if crossed_balanced {
                 // 分隔符在平衡组内：越过平衡组后继续找下一个分隔符
                 if !self.consume_to(self.elements_type) {
                     self.rule.push(&self.queue[self.start_x..]);

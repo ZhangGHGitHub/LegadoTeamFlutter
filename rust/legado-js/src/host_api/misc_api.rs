@@ -175,9 +175,7 @@ pub fn parse_js_url(url_str: &str, base_url: &str) -> Result<UrlParts, String> {
     let rest = &resolved[scheme_end + 3..];
 
     // authority（host[:port]）到第一个 '/' '?' '#' 为止
-    let auth_end = rest
-        .find(|c| c == '/' || c == '?' || c == '#')
-        .unwrap_or(rest.len());
+    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let mut authority = &rest[..auth_end];
     let remainder = &rest[auth_end..];
 
@@ -252,9 +250,7 @@ fn resolve_url(url_str: &str, base_url: &str) -> Result<String, String> {
         return Ok(format!("{}:{}", scheme, url_str));
     }
 
-    let auth_end = rest
-        .find(|c| c == '/' || c == '?' || c == '#')
-        .unwrap_or(rest.len());
+    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let authority = &rest[..auth_end];
 
     // 绝对路径：/path

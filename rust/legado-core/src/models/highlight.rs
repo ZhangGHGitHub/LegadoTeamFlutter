@@ -20,6 +20,7 @@ pub const DEFAULT_TIMEOUT_MILLISECONDS: i64 = 3000;
 /// 主键为 `time`（Unix 毫秒），bookUrl/chapterUrl 定位高亮所属书籍与章节，
 /// chapterPos/chapterPosEnd 为高亮在章节排版布局中的起止位置（含标题长度偏移）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(non_snake_case)] // Room/FFI JSON 列名必须为 camelCase
 pub struct BookHighlight {
     /// 高亮创建时间（Unix 毫秒，主键）
     pub time: i64,
@@ -90,6 +91,7 @@ impl Default for BookHighlight {
 /// 对齐 Kotlin `HighlightRule`：`order` 字段在 Room 中映射为 `sortOrder` 列，
 /// Rust 侧直接使用列名 `sortOrder` 作为序列化字段名。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(non_snake_case)] // Room/FFI JSON 列名必须为 camelCase
 pub struct HighlightRule {
     /// 规则 ID（自增主键，0 表示未保存）
     #[serde(default)]

@@ -168,8 +168,8 @@ fn validate_credentials(creds: &ProxyCredentials, proxy_type: ProxyType) -> Lega
         ));
     }
     if proxy_type == ProxyType::Socks5 {
-        let user_len = creds.username.as_bytes().len();
-        let pass_len = creds.password.as_bytes().len();
+        let user_len = creds.username.len();
+        let pass_len = creds.password.len();
         if !(1..=255).contains(&user_len) || !(1..=255).contains(&pass_len) {
             return Err(LegadoError::Network(
                 "SOCKS5 凭据非法：用户名/密码 UTF-8 字节长度须在 1..=255".into(),
@@ -250,7 +250,7 @@ pub fn parse_proxy_config(raw_proxy: &str) -> LegadoResult<ProxyConfig> {
     let host = parsed
         .host_str()
         .ok_or_else(invalid_proxy)
-        .and_then(|h| normalize_host(h))?;
+        .and_then(normalize_host)?;
     // 上游要求显式端口；url crate 对非特殊 scheme 不做默认端口填充
     let port = parsed
         .port()

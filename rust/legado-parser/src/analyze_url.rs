@@ -1124,12 +1124,9 @@ impl AnalyzeUrl {
                 }
                 js_code.push_str(expr);
 
-                match js_executor.execute_js(&js_code) {
-                    Ok(result) => result,
-                    // 对齐原版 AnalyzeUrl.kt replaceKeyPageJs：evalJS 失败/null → 空串，
-                    // 避免未渲染模板原样进入请求 URL
-                    Err(_) => String::new(),
-                }
+                // 对齐原版 AnalyzeUrl.kt replaceKeyPageJs：evalJS 失败/null → 空串，
+                // 避免未渲染模板原样进入请求 URL
+                js_executor.execute_js(&js_code).unwrap_or_default()
             }
         })
         .to_string()

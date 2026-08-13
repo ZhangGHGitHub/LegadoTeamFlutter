@@ -820,7 +820,7 @@ pub fn latest_chapter_title(chapters: &[ChapterSnapshot]) -> Option<&str> {
         .iter()
         .rev()
         .find(|c| !c.is_volume)
-        .or_else(|| chapters.iter().rev().next())
+        .or_else(|| chapters.last())
         .map(|c| c.title.as_str())
 }
 

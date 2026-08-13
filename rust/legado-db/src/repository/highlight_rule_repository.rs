@@ -69,7 +69,7 @@ impl<'a> HighlightRuleRepository<'a> {
                     ],
                 )
                 .map_err(|e| LegadoError::Database(format!("插入高亮规则失败: {e}")))?;
-            Ok(self.conn.last_insert_rowid() as i64)
+            Ok(self.conn.last_insert_rowid())
         }
     }
 

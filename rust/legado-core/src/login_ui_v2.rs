@@ -95,19 +95,19 @@ fn is_row_valid(row: &RowUi) -> bool {
     if row.name.trim().is_empty() {
         return false;
     }
-    if row.countdown.map_or(false, |c| c < 0) {
+    if row.countdown.is_some_and(|c| c < 0) {
         return false;
     }
     match row.r#type.as_str() {
         row_ui_type::TEXT | row_ui_type::PASSWORD => {
-            row.key.as_deref().map_or(false, |k| !k.trim().is_empty())
+            row.key.as_deref().is_some_and(|k| !k.trim().is_empty())
         }
         row_ui_type::LABEL => true,
         row_ui_type::SELECT => {
-            row.key.as_deref().map_or(false, |k| !k.trim().is_empty())
-                && row.options.as_ref().map_or(false, |o| !o.is_empty())
+            row.key.as_deref().is_some_and(|k| !k.trim().is_empty())
+                && row.options.as_ref().is_some_and(|o| !o.is_empty())
         }
-        row_ui_type::BUTTON => row.action.as_deref().map_or(false, |a| !a.trim().is_empty()),
+        row_ui_type::BUTTON => row.action.as_deref().is_some_and(|a| !a.trim().is_empty()),
         // toggle 等其余类型在 V2 渲染中视为非法（对齐 Kotlin else 分支）
         _ => false,
     }

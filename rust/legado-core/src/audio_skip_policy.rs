@@ -135,7 +135,7 @@ pub fn set_audio_skip_using_global(
 ///
 /// readConfig 为空时对齐上游默认回退（useGlobalAudioSkip = true）。
 pub fn is_audio_skip_using_global(read_config: Option<&ReadConfig>) -> bool {
-    read_config.map_or(true, |c| c.use_global_audio_skip)
+    read_config.is_none_or(|c| c.use_global_audio_skip)
 }
 
 /// 计算片头跳过后的起播位置（对齐上游 `applyIntroSkipIfNeeded`）

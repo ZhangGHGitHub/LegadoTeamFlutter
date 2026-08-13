@@ -465,13 +465,11 @@ pub fn analyze_url_to_curl(text: &str) -> LegadoResult<String> {
                         has_body = true;
                     }
                 }
-                "followRedirects" => {
-                    if v != "null" {
-                        follow_redirects = v
-                            .parse::<bool>()
-                            .ok()
-                            .ok_or_else(|| conv_err(CurlErrorReason::InvalidAnalyzeUrl, ""))?;
-                    }
+                "followRedirects" if v != "null" => {
+                    follow_redirects = v
+                        .parse::<bool>()
+                        .ok()
+                        .ok_or_else(|| conv_err(CurlErrorReason::InvalidAnalyzeUrl, ""))?;
                 }
                 _ => {}
             }
@@ -882,9 +880,7 @@ fn validate_url(value: &str, glob_off: bool) -> LegadoResult<()> {
     } else {
         return Err(conv_err(CurlErrorReason::UnsupportedOption, "HTTP(S) URL"));
     };
-    let authority_end = rest
-        .find(|c| c == '/' || c == '?' || c == '#')
-        .unwrap_or(rest.len());
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let authority = &rest[..authority_end];
     if authority.is_empty() || authority.contains('@') {
         return Err(conv_err(CurlErrorReason::UnsupportedOption, "URL userinfo"));
@@ -905,12 +901,12 @@ fn has_curl_glob(value: &str) -> bool {
         None => return true,
     };
     let authority_end = value[authority_start..]
-        .find(|c| c == '/' || c == '?' || c == '#')
+        .find(['/', '?', '#'])
         .map(|i| authority_start + i)
         .unwrap_or(value.len());
     let authority = &value[authority_start..authority_end];
     let ipv6 = regex::Regex::new(r"^(?:[^@]+@)?\[[0-9A-Fa-f:.%]+\](?::[0-9]+)?$").unwrap();
-    !ipv6.is_match(authority) || value[authority_end..].contains(|c| c == '[' || c == ']')
+    !ipv6.is_match(authority) || value[authority_end..].contains(['[', ']'])
 }
 
 /// 检测文本中是否存在 AnalyzeUrl 参数模式 `\s*,\s*(?=\{)`

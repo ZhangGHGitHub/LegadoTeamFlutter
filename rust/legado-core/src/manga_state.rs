@@ -382,6 +382,7 @@ impl MangaReaderState {
     /// 对齐 Kotlin ReadManga.preDownload：
     /// - 前向：[cur+2, cur+preDownloadNum]
     /// - 后向：[cur-2, cur-min(5, preDownloadNum)]
+    ///
     /// 跳过已缓存和已熔断的章节。
     pub fn pre_download_indices(&self) -> Vec<i32> {
         let mut indices = Vec::new();

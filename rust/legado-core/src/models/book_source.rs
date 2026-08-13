@@ -215,7 +215,7 @@ impl BookSource {
     ///
     /// 参考 Kotlin `BookSource.kt:238`: `fun isJsSource(): Boolean = !mainJs.isNullOrBlank()`
     pub fn is_js_source(&self) -> bool {
-        self.main_js.as_ref().map_or(false, |s| !s.trim().is_empty())
+        self.main_js.as_ref().is_some_and(|s| !s.trim().is_empty())
     }
 }
 

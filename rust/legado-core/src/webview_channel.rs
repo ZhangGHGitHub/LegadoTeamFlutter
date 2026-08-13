@@ -234,7 +234,7 @@ impl WebViewHandle {
 static MANAGER: OnceLock<&'static WebViewManager> = OnceLock::new();
 
 pub fn webview_manager() -> &'static WebViewManager {
-    *MANAGER.get_or_init(WebViewManager::new_leaked)
+    MANAGER.get_or_init(WebViewManager::new_leaked)
 }
 
 pub fn has_subscribers() -> bool {

@@ -344,20 +344,14 @@ fn parse_exth(data: &[u8]) -> LegadoResult<ExthData> {
             EXTH_TITLE => {
                 result.title = Some(String::from_utf8_lossy(payload).to_string());
             }
-            EXTH_BOUNDARY => {
-                if payload.len() >= 4 {
-                    result.boundary = Some(read_u32(payload, 0));
-                }
+            EXTH_BOUNDARY if payload.len() >= 4 => {
+                result.boundary = Some(read_u32(payload, 0));
             }
-            EXTH_COVER_OFFSET => {
-                if payload.len() >= 4 {
-                    result.cover_offset = Some(read_u32(payload, 0));
-                }
+            EXTH_COVER_OFFSET if payload.len() >= 4 => {
+                result.cover_offset = Some(read_u32(payload, 0));
             }
-            EXTH_THUMBNAIL_OFFSET => {
-                if payload.len() >= 4 {
-                    result.thumbnail_offset = Some(read_u32(payload, 0));
-                }
+            EXTH_THUMBNAIL_OFFSET if payload.len() >= 4 => {
+                result.thumbnail_offset = Some(read_u32(payload, 0));
             }
             _ => {}
         }

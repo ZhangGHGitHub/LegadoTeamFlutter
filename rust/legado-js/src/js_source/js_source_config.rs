@@ -13,6 +13,7 @@
 // 非 quickjs 构建下，仅供 quickjs 路径使用的辅助函数/常量不参与编译用途
 #![cfg_attr(not(feature = "quickjs"), allow(dead_code))]
 
+#[cfg(feature = "quickjs")]
 use legado_core::models::book_source::book_source_type;
 use legado_core::models::BookSource;
 use legado_core::{LegadoError, LegadoResult};
@@ -499,7 +500,7 @@ pub fn stamp_last_update_time(text: &str, stamp: i64) -> Option<String> {
         return None;
     }
     // 从后向前替换，避免偏移量失效
-    ranges.sort_by(|a, b| b.0.cmp(&a.0));
+    ranges.sort_by_key(|(start, _)| std::cmp::Reverse(*start));
     let stamp_str = stamp.to_string();
     let mut result = text.to_string();
     for (start, end) in ranges {
@@ -896,9 +897,7 @@ fn skip_value(b: &[u8], mut i: usize) -> usize {
                 i += 1;
             }
             b')' => {
-                if d > 0 {
-                    d -= 1;
-                }
+                d = d.saturating_sub(1);
                 i += 1;
             }
             b',' | b';' if d == 0 => return i,

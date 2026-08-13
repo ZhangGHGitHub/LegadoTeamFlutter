@@ -200,10 +200,10 @@ impl SpeakCache {
             let path = entry.path();
             if path.is_file() {
                 let name = path.file_name().map(|n| n.to_string_lossy().to_string());
-                if name.is_some_and(|n| n.starts_with(SPEAK_CACHE_PREFIX)) {
-                    if std::fs::remove_file(&path).is_ok() {
-                        removed += 1;
-                    }
+                if name.is_some_and(|n| n.starts_with(SPEAK_CACHE_PREFIX))
+                    && std::fs::remove_file(&path).is_ok()
+                {
+                    removed += 1;
                 }
             }
         }

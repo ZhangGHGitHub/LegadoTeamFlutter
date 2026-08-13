@@ -1312,6 +1312,7 @@ fn extract_put_rules(rule: &str) -> (String, HashMap<String, String>) {
 }
 
 /// 剥离 `@put:{...}`（兼容旧调用 / 单测）
+#[cfg(test)]
 fn strip_put_rules(rule: &str) -> String {
     extract_put_rules(rule).0
 }

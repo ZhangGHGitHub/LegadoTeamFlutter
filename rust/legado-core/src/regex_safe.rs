@@ -45,10 +45,13 @@ const SAFE_COMPILE_STACK_SIZE: usize = 8 << 20;
 /// 编译缓存容量上限：LRU 淘汰（超限逐出最久未用条目，**不再整体清空**）
 const REGEX_CACHE_CAPACITY: usize = 2048;
 
+/// 编译结果（含负缓存失败描述）
+type RegexCacheValue = Result<Arc<Regex>, String>;
+
 /// 编译结果 LRU 缓存：pattern → Ok(Arc<Regex>)/Err(失败描述)。
 /// 失败结果同样缓存（负缓存），避免病态/非法 pattern 反复触发编译。
 /// 对齐原版 Kotlin `AnalyzeRule.regexCache` 的全局正则缓存设计。
-static REGEX_CACHE: LazyLock<Mutex<LruCache<String, Result<Arc<Regex>, String>>>> =
+static REGEX_CACHE: LazyLock<Mutex<LruCache<String, RegexCacheValue>>> =
     LazyLock::new(|| {
         Mutex::new(LruCache::new(
             NonZeroUsize::new(REGEX_CACHE_CAPACITY).expect("容量常量非法"),

@@ -151,7 +151,7 @@ impl JsSourceBookOrchestrator {
         )?;
         let json_str = result.unwrap_or_default();
         let results = JsSourceMarshaller::marshal_search(&json_str)
-            .map_err(|e| LegadoError::Parser(e))?;
+            .map_err(LegadoError::Parser)?;
         Ok(results)
     }
 
@@ -174,7 +174,7 @@ impl JsSourceBookOrchestrator {
         )?;
         let json_str = result.unwrap_or_default();
         let results = JsSourceMarshaller::marshal_search(&json_str)
-            .map_err(|e| LegadoError::Parser(e))?;
+            .map_err(LegadoError::Parser)?;
         Ok(results)
     }
 
@@ -208,7 +208,7 @@ impl JsSourceBookOrchestrator {
                 }
 
                 // tocUrl 空回退 bookUrl
-                if info.toc_url.as_ref().map_or(true, |u| u.trim().is_empty()) {
+                if info.toc_url.as_ref().is_none_or(|u| u.trim().is_empty()) {
                     info.toc_url = Some(book.book_url.clone());
                 }
 

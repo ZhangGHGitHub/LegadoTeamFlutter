@@ -359,7 +359,7 @@ static MANAGER: OnceLock<&'static VerificationManager> = OnceLock::new();
 
 /// 获取全局验证码请求管理器
 pub fn verification_manager() -> &'static VerificationManager {
-    *MANAGER.get_or_init(VerificationManager::new_leaked)
+    MANAGER.get_or_init(VerificationManager::new_leaked)
 }
 
 /// 便捷入口：发起验证码请求并以默认超时（5 分钟）阻塞等待结果

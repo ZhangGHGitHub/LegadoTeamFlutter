@@ -96,7 +96,7 @@ impl AesCrypto {
         type Dec192 = cbc::Decryptor<Aes192>;
         type Dec256 = cbc::Decryptor<Aes256>;
 
-        if data.len() % AES_BLOCK_SIZE != 0 {
+        if !data.len().is_multiple_of(AES_BLOCK_SIZE) {
             return Err(LegadoError::Parser(format!(
                 "AES/CBC/NoPadding ciphertext length must be multiple of {}, got {}",
                 AES_BLOCK_SIZE,
@@ -132,7 +132,7 @@ impl AesCrypto {
         type Enc192 = cbc::Encryptor<Aes192>;
         type Enc256 = cbc::Encryptor<Aes256>;
 
-        if data.len() % AES_BLOCK_SIZE != 0 {
+        if !data.len().is_multiple_of(AES_BLOCK_SIZE) {
             return Err(LegadoError::Parser(format!(
                 "AES/CBC/NoPadding plaintext length must be multiple of {}, got {}",
                 AES_BLOCK_SIZE,
@@ -427,8 +427,8 @@ pub fn symmetric_decrypt(
     iv: Option<&[u8]>,
     data: &[u8],
 ) -> LegadoResult<Vec<u8>> {
-    let (algo, mode, padding) = parse_transformation(transformation)
-        .map_err(|e| LegadoError::Parser(e))?;
+    let (algo, mode, padding) =
+        parse_transformation(transformation).map_err(LegadoError::Parser)?;
     match algo.as_str() {
         "AES" => {
             let nopad = is_no_padding(&padding);
@@ -477,8 +477,8 @@ pub fn symmetric_encrypt(
     iv: Option<&[u8]>,
     data: &[u8],
 ) -> LegadoResult<Vec<u8>> {
-    let (algo, mode, padding) = parse_transformation(transformation)
-        .map_err(|e| LegadoError::Parser(e))?;
+    let (algo, mode, padding) =
+        parse_transformation(transformation).map_err(LegadoError::Parser)?;
     match algo.as_str() {
         "AES" => {
             let nopad = is_no_padding(&padding);

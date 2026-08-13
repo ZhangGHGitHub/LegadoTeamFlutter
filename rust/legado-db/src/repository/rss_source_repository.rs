@@ -343,7 +343,6 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
         preload: row.get(41)?,
         cache_first: row.get(42)?,
         search_url: row.get(43)?,
-        ..RssSource::default()
     })
 }
 

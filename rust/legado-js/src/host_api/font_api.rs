@@ -9,7 +9,8 @@
 //!    - URL：先查本地磁盘缓存（目录同 TTS 缓存模式，文件名 = SHA-256(data)），
 //!      未命中时经 legado-net 下载并落盘；
 //!    - 文件：直接读取；Base64：解码。
-//!    解析成功后得到 [`crate::host_api::query_ttf::QueryTtf`]（cmap + glyf 轮廓签名），
+//!
+//!    解析成功后得到 [`crate::host_api::query_ttf::QueryTtf`]（cmap 与 glyf 轮廓签名），
 //!    存入内存 LRU 缓存，并返回结构化 JSON 字体句柄。
 //! 2. [`replace_font`] 与 Kotlin `replaceFont` 逐行对齐：
 //!    错误字体中每个字符经 cmap 取 glyphId → glyf 轮廓签名 →

@@ -116,12 +116,12 @@ impl CheckResult {
 
     /// 是否检测到验证码
     pub fn has_captcha(&self) -> bool {
-        self.captcha.as_ref().map_or(false, |c| c.detected)
+        self.captcha.as_ref().is_some_and(|c| c.detected)
     }
 
     /// 是否发生了重定向
     pub fn has_redirect(&self) -> bool {
-        self.redirect.as_ref().map_or(false, |r| r.redirected)
+        self.redirect.as_ref().is_some_and(|r| r.redirected)
     }
 
     /// 书源是否可用（快速判断：搜索通过且无验证码阻断）
