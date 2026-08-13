@@ -1531,7 +1531,12 @@ class MockBookApi implements BookApi {
   // ========== 网络操作 ==========
 
   @override
-  Future<String> httpGet(String url) async => '{"status": "ok", "mock": true}';
+  Future<String> httpGet(String url) async =>
+      '{"status":200,"body":"","url":"$url"}';
+
+  @override
+  Future<String> httpGetBytes(String url, {String headersJson = ''}) async =>
+      '{"status":200,"bodyBase64":"","url":"$url"}';
 
   @override
   Future<String> httpPost(String url, String body) async =>

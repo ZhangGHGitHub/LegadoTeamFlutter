@@ -7,7 +7,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:http/http.dart' as http;
+import '../services/bridge_http.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1089,16 +1089,19 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 30));
+      final api = ref.read(bookApiProvider);
+      final response = await bridgeHttpGet(
+        api,
+        url,
+        timeout: const Duration(seconds: 30),
+      );
       if (!mounted) return;
       Navigator.of(context).pop(); // 关闭加载指示
-      if (response.statusCode != 200) {
+      if (!response.isSuccess) {
         _toast('获取订阅源失败：HTTP ${response.statusCode}');
         return;
       }
-      await _parseAndConfirm(utf8.decode(response.bodyBytes));
+      await _parseAndConfirm(response.body);
     } catch (e) {
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();

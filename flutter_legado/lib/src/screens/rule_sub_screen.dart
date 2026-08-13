@@ -5,7 +5,8 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:http/http.dart' as http;
+import '../services/bridge_http.dart';
+import '../providers/providers.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
@@ -492,12 +493,16 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
 
   /// 拉取订阅 URL 并解析为 JSON 数组（对象包装时收拢为单元素数组）
   Future<List<dynamic>> _fetchJsonArray(String url) async {
-    final response =
-        await http.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
-    if (response.statusCode != 200) {
+    final api = ref.read(bookApiProvider);
+    final response = await bridgeHttpGet(
+      api,
+      url,
+      timeout: const Duration(seconds: 30),
+    );
+    if (!response.isSuccess) {
       throw Exception('HTTP ${response.statusCode}');
     }
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    final decoded = jsonDecode(response.body);
     if (decoded is List) return decoded;
     if (decoded is Map<String, dynamic>) return [decoded];
     throw const FormatException('订阅内容不是 JSON 数组或对象');

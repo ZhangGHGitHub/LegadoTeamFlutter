@@ -1,7 +1,7 @@
 ﻿import 'dart:async';
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
+import '../services/bridge_http.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:saf/saf.dart';
 
@@ -937,22 +937,22 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         final media = await api.getAudioChapterMedia(bookUrl, i);
         final url = (media['mediaUrl'] as String?)?.trim() ?? '';
         if (url.isEmpty || !url.startsWith('http')) continue;
-        final resp = await http.get(Uri.parse(url));
-        if (resp.statusCode < 200 || resp.statusCode >= 300) continue;
+        final fetched = await bridgeHttpGetBytes(api, url);
+        if (fetched.statusCode < 200 || fetched.statusCode >= 300) continue;
         final name = '${bookUrl.hashCode}_$i.audio';
         if (saf != null) {
           await saf.writeFileBytes(
             treeUri,
             name,
             'application/octet-stream',
-            Uint8List.fromList(resp.bodyBytes),
+            Uint8List.fromList(fetched.bytes),
             overwrite: true,
           );
         } else {
           final file = File(
             '${fallbackDir!.path}${Platform.pathSeparator}$name',
           );
-          await file.writeAsBytes(resp.bodyBytes, flush: true);
+          await file.writeAsBytes(fetched.bytes, flush: true);
         }
         okCount++;
       } catch (_) {}

@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
+import 'bridge_http.dart';
 
 import '../bridge/ffi.dart' show BridgeError;
 import 'book_api.dart';
@@ -101,16 +102,15 @@ class SourceImportService {
   /// 对标原版 ImportBookSourceViewModel.importSourceUrl + comparisonSource：
   /// 先拉取解析出全部候选书源，由 UI 层展示确认页供用户选择后再导入。
   Future<List<SourcePreview>> fetchSourcesFromUrl(String url) async {
-    final uri = Uri.parse(url);
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 30),
-      onTimeout: () => throw TimeoutException('请求超时（30秒）'),
+    final response = await bridgeHttpGet(
+      _api,
+      url,
+      timeout: const Duration(seconds: 30),
     );
-    if (response.statusCode != 200) {
+    if (!response.isSuccess) {
       throw FormatException('HTTP 请求失败：状态码 ${response.statusCode}');
     }
-    final body = utf8.decode(response.bodyBytes);
-    return parseSourcesText(body);
+    return parseSourcesText(response.body);
   }
 
   /// 从本地文件拉取并解析书源列表（仅预览，不写入数据库）
@@ -246,13 +246,13 @@ class SourceImportService {
   /// 从 URL 导入书源
   Future<ImportResult> importFromUrl(String url) async {
     try {
-      final uri = Uri.parse(url);
-      final response = await http.get(uri).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw TimeoutException('请求超时（30秒）'),
+      final response = await bridgeHttpGet(
+        _api,
+        url,
+        timeout: const Duration(seconds: 30),
       );
 
-      if (response.statusCode != 200) {
+      if (!response.isSuccess) {
         return ImportResult(
           total: 0,
           success: 0,
@@ -262,8 +262,7 @@ class SourceImportService {
         );
       }
 
-      final body = utf8.decode(response.bodyBytes);
-      return await importFromJson(body);
+      return await importFromJson(response.body);
     } on TimeoutException catch (e) {
       return ImportResult(
         total: 0,

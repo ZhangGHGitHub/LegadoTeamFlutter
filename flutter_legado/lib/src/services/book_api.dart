@@ -734,6 +734,12 @@ abstract class BookApi {
   /// HTTP POST 请求
   Future<String> httpPost(String url, String body);
 
+  /// HTTP GET 二进制响应（F3-14）
+  ///
+  /// 返回 JSON `{"status": int, "bodyBase64": string, "url": string}`。
+  /// [headersJson] 为空时不附加请求头；否则为 JSON 对象字符串。
+  Future<String> httpGetBytes(String url, {String headersJson = ''});
+
   /// 图片下载 + imageDecode 解码（返回 JSON：{ base64, len }）
   ///
   /// 对齐原版 ImageUtils.decodeImageStream：漫画/图片站图片 bytes 经书源

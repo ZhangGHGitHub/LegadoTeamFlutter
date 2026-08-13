@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:http/http.dart' as http;
+import '../../services/bridge_http.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
@@ -120,12 +120,14 @@ class AssociationNotifier extends Notifier<AssociationState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      final uri = Uri.parse(url);
-      final response = await http
-          .get(uri)
-          .timeout(const Duration(seconds: 30));
+      final api = ref.read(bookApiProvider);
+      final response = await bridgeHttpGet(
+        api,
+        url,
+        timeout: const Duration(seconds: 30),
+      );
 
-      if (response.statusCode != 200) {
+      if (!response.isSuccess) {
         state = state.copyWith(
           error: 'HTTP 请求失败：状态码 ${response.statusCode}',
           isLoading: false,
@@ -133,8 +135,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         return;
       }
 
-      final body = utf8.decode(response.bodyBytes);
-      _parsePreviewContent(body);
+      _parsePreviewContent(response.body);
     } catch (e) {
       state = state.copyWith(error: '从 URL 加载失败：$e', isLoading: false);
     }

@@ -6,7 +6,7 @@ import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
-import 'package:http/http.dart' as http;
+import '../services/bridge_http.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
@@ -682,6 +682,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
     if (_enableEInk) {
       return _EpaperNetworkImage(
+        api: ref.read(bookApiProvider),
         url: url,
         headers: _imageHeaders,
         threshold: _eInkThreshold,
@@ -1258,12 +1259,14 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
 /// 无书源时的网络图电子纸渲染
 class _EpaperNetworkImage extends StatefulWidget {
   const _EpaperNetworkImage({
+    required this.api,
     required this.url,
     required this.headers,
     required this.threshold,
     required this.onError,
   });
 
+  final BookApi api;
   final String url;
   final Map<String, String>? headers;
   final int threshold;
@@ -1305,14 +1308,17 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
       _error = null;
     });
     try {
-      final res = await http
-          .get(Uri.parse(widget.url), headers: widget.headers)
-          .timeout(const Duration(seconds: 30));
+      final res = await bridgeHttpGetBytes(
+        widget.api,
+        widget.url,
+        headers: widget.headers,
+        timeout: const Duration(seconds: 30),
+      );
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw StateError('HTTP ${res.statusCode}');
       }
       final img = await mangaEpaperFromBytes(
-        res.bodyBytes,
+        res.bytes,
         threshold: widget.threshold,
       );
       if (!mounted) {

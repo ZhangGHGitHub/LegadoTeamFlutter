@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart'
     show ExternalLibrary;
-import 'package:http/http.dart' as http;
+import 'bridge_http.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
@@ -1633,6 +1633,10 @@ class RustApi implements BookApi {
   /// HTTP GET 请求
   Future<String> httpGet(String url) => bridge.httpGet(url: url);
 
+  /// HTTP GET 二进制响应
+  Future<String> httpGetBytes(String url, {String headersJson = ''}) =>
+      bridge.httpGetBytes(url: url, headersJson: headersJson);
+
   /// HTTP POST 请求
   Future<String> httpPost(String url, String body) =>
       bridge.httpPost(url: url, body: body);
@@ -1942,7 +1946,10 @@ class RustApi implements BookApi {
       if (voiceName != null) {
         url = url.replaceAll('{{voice}}', Uri.encodeComponent(voiceName));
       }
-      await http.get(Uri.parse(url));
+      final probe = await bridgeHttpGet(this, url);
+      if (!probe.isSuccess) {
+        throw StateError('HTTP ${probe.statusCode}');
+      }
     }
   }
 
