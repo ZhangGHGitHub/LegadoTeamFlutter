@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.48] - 2026-08-14
+
+### Fixed
+- [UI] 帮助弹窗 Markdown 补 H1/H2 标题下分隔线（对标 Markwon headingBreak），显式 hr 增加可见高度与上下间距
+
 ## [2.0.47] - 2026-08-14
 
 ### Fixed

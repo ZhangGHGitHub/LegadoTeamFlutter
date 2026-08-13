@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
+/// 帮助 Markdown 分隔线色（对标 `md_light_dividers` / `md_dark_dividers`）
+Color helpMarkdownDividerColor(ThemeData theme) {
+  return theme.brightness == Brightness.dark
+      ? const Color(0x1FFFFFFF)
+      : const Color(0x1F000000);
+}
+
 /// 帮助 Markdown 样式（对标 Android HelpMarkwonTheme + secondaryText）
 MarkdownStyleSheet helpMarkdownStyleSheet(ThemeData theme) {
   final cs = theme.colorScheme;
@@ -9,10 +16,7 @@ MarkdownStyleSheet helpMarkdownStyleSheet(ThemeData theme) {
   final bodyColor =
       isDark ? const Color(0xB3FFFFFF) : const Color(0x8A000000);
   final accent = cs.primary;
-  final breakColor = Color.alphaBlend(
-    cs.onSurface.withValues(alpha: 0.18),
-    cs.surface,
-  );
+  final breakColor = helpMarkdownDividerColor(theme);
   final codeBg = Color.alphaBlend(
     cs.onSurface.withValues(alpha: 0.06),
     cs.surface,
@@ -49,9 +53,9 @@ MarkdownStyleSheet helpMarkdownStyleSheet(ThemeData theme) {
     p: base,
     pPadding: const EdgeInsets.only(bottom: 10),
     h1: heading(1),
-    h1Padding: const EdgeInsets.only(top: 4, bottom: 12),
+    h1Padding: const EdgeInsets.only(top: 4, bottom: 0),
     h2: heading(2, color: cs.onSurfaceVariant),
-    h2Padding: const EdgeInsets.only(top: 20, bottom: 8),
+    h2Padding: const EdgeInsets.only(top: 20, bottom: 0),
     h2Align: WrapAlignment.start,
     h3: heading(3, color: cs.onSurface),
     h3Padding: const EdgeInsets.only(top: 14, bottom: 6),
@@ -87,9 +91,8 @@ MarkdownStyleSheet helpMarkdownStyleSheet(ThemeData theme) {
       borderRadius: BorderRadius.circular(6),
     ),
     horizontalRuleDecoration: BoxDecoration(
-      border: Border(
-        top: BorderSide(color: breakColor, width: 1),
-      ),
+      color: breakColor,
+      borderRadius: BorderRadius.zero,
     ),
     tableHead: heading(4, color: cs.onSurface),
     tableBody: base,

@@ -4,6 +4,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../screens/code_edit_screen.dart';
+import 'help_markdown_builders.dart';
 import 'help_markdown_styles.dart';
 import 'help_sections.dart';
 
@@ -175,6 +176,7 @@ class _HelpScreenState extends State<HelpScreen> {
         if (href != null) _openLink(href);
       },
       styleSheet: helpMarkdownStyleSheet(theme),
+      builders: helpMarkdownBuilders(theme),
     );
   }
 
