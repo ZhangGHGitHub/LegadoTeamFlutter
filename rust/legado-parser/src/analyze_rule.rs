@@ -71,6 +71,8 @@ pub struct AnalyzeRule {
     ///
     /// `isUrl` 绝对化时作为 base；默认等于 `base_url`，可由 `set_redirect_url` 更新。
     redirect_url: String,
+    /// 对齐原版 `stringRuleCache`：规则字符串 → 编译后结构（put/##/js 链）
+    string_rule_cache: Mutex<HashMap<String, Arc<CompiledSourceRule>>>,
 }
 
 impl AnalyzeRule {
@@ -93,6 +95,7 @@ impl AnalyzeRule {
             variables: Arc::new(Mutex::new(HashMap::new())),
             local_bindings: Arc::new(Mutex::new(HashMap::new())),
             redirect_url,
+            string_rule_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -310,21 +313,24 @@ impl AnalyzeRule {
             return Ok(vec![]);
         }
 
-        // 1) 分离并执行 @put:{...}（对齐 splitPutRule + putRule）
-        let (rule_no_put, put_map) = extract_put_rules(rule);
-        self.apply_put_map(&put_map)?;
+        // 1) 编译缓存：put 剥离 +（无 @get 时）## / js 链预拆
+        let compiled = self.compile_source_rule_cached(rule);
+        self.apply_put_map(&compiled.put_map)?;
 
         // 纯 @put 规则（详情 init）：仅副作用，无主规则
-        if rule_no_put.trim().is_empty() {
+        if compiled.rule_no_put.trim().is_empty() {
             return Ok(vec![]);
         }
 
         // 2) 展开 @get:{key}（对齐 makeUpRule getRuleType）
-        let had_get = rule_no_put.to_ascii_lowercase().contains("@get:");
-        let rule_expanded = self.expand_get_refs(&rule_no_put);
+        let rule_expanded = if compiled.has_get_marker {
+            self.expand_get_refs(&compiled.rule_no_put)
+        } else {
+            compiled.rule_no_put.clone()
+        };
         // 纯 `@get:{k}` / `http:@get:{k}` 等：makeUpRule 后 Mode.Regex，
         // 求值走 `else -> rule` 直接返回拼装字符串，不再当选择器解析。
-        if had_get && !looks_like_extract_rule(&rule_expanded) {
+        if compiled.has_get_marker && !looks_like_extract_rule(&rule_expanded) {
             let raw = if rule_expanded.is_empty() {
                 vec![]
             } else {
@@ -337,21 +343,39 @@ impl AnalyzeRule {
             });
         }
 
-        // 3) 拆分 ## 替换段（主规则 ## 匹配 ## 替换 / ### 仅首匹配）
-        let (core_rule, replace_spec) = split_hash_replace(&rule_expanded);
+        // 3) ## / js 链：无 @get 命中预编译；有 @get 则对展开后规则现场拆
+        let (core_rule, replace_spec, js_steps_owned) =
+            if let Some(pre) = compiled.pre_hash.as_ref() {
+                (
+                    pre.core_rule.clone(),
+                    pre.replace_spec.clone(),
+                    pre.js_steps.clone(),
+                )
+            } else {
+                let compiled_hash = compile_hash_and_chain(&rule_expanded);
+                (
+                    compiled_hash.core_rule,
+                    compiled_hash.replace_spec,
+                    compiled_hash.js_steps,
+                )
+            };
 
         // 4) `<js>...</js>`（含 `$[*]` 复合）走单步专用路径，避免被
         //    通用 JS 链拆成 Js+Extract 后丢失 `$[*]` 拆解语义（51漫画）
         //    其余 `extract@js:` 走链式（神漫画 chapterUrl / Nhentai 正文）
         let mut results = if core_rule.trim_start().starts_with("<js>") {
             self.get_strings_single_step(&core_rule)?
+        } else if js_steps_owned.len() > 1 {
+            let borrowed: Vec<JsChainStep<'_>> = js_steps_owned
+                .iter()
+                .map(|s| match s {
+                    OwnedJsChainStep::Extract(e) => JsChainStep::Extract(e.as_str()),
+                    OwnedJsChainStep::Js(j) => JsChainStep::Js(j.as_str()),
+                })
+                .collect();
+            self.eval_js_chain_steps(&borrowed)?
         } else {
-            let steps = split_js_chain_steps(&core_rule);
-            if steps.len() > 1 {
-                self.eval_js_chain_steps(&steps)?
-            } else {
-                self.get_strings_single_step(&core_rule)?
-            }
+            self.get_strings_single_step(&core_rule)?
         };
 
         // 5) 应用 ## 替换
@@ -434,7 +458,9 @@ impl AnalyzeRule {
             .strip_prefix("@webjs:")
             .or_else(|| trimmed.strip_prefix("@webJs:"))
             .or_else(|| {
-                if trimmed.len() > 7 && trimmed[..7].eq_ignore_ascii_case("@webjs:") {
+                // 仅 ASCII 前缀安全切片，避免 `@js:…中文` 踩 UTF-8 边界
+                let bytes = trimmed.as_bytes();
+                if bytes.len() >= 7 && bytes[..7].eq_ignore_ascii_case(b"@webjs:") {
                     Some(&trimmed[7..])
                 } else {
                     None
@@ -833,14 +859,41 @@ impl AnalyzeRule {
     fn resolve_json_with_inner(&self, rule: &str) -> LegadoResult<Vec<String>> {
         if rule.contains("{$") {
             let processed = self.process_inner_rules(rule)?;
-            let trimmed = processed.trim_start();
-            if !trimmed.starts_with('$') && !trimmed.is_empty() {
-                return Ok(vec![processed]);
-            }
+            let trimmed = processed.trim();
             if trimmed.is_empty() {
                 return Ok(vec![]);
             }
-            return self.json_parser.parse_jsonpath(&self.content, &processed);
+            if trimmed.starts_with('$') {
+                return self.json_parser.parse_jsonpath(&self.content, trimmed);
+            }
+            // 整规则仅为 `{$.x}` / `{{$.x}}` 且替换后为裸字段名 → 再求 JsonPath
+            // （`getString("{$.key}")` → 先得 name 再取 $.name → 张三）
+            let only_inner = {
+                let t = rule.trim();
+                (t.starts_with('{') && t.ends_with('}') && !t[1..t.len() - 1].contains('{'))
+                    || (t.starts_with("{{") && t.ends_with("}}"))
+            };
+            if only_inner
+                && !trimmed.contains("://")
+                && !trimmed.contains('/')
+                && !trimmed.contains('?')
+                && !trimmed.contains('&')
+                && !trimmed.contains('=')
+                && !trimmed.contains('\n')
+            {
+                let as_path = if trimmed.starts_with('$') {
+                    trimmed.to_string()
+                } else {
+                    format!("$.{trimmed}")
+                };
+                if let Ok(v) = self.json_parser.parse_jsonpath(&self.content, &as_path) {
+                    if !v.is_empty() {
+                        return Ok(v);
+                    }
+                }
+            }
+            // URL/字面量模板：替换后不再当 JsonPath（神漫画 bookUrl 等）
+            return Ok(vec![processed]);
         }
         self.json_parser.parse_jsonpath(&self.content, rule)
     }
@@ -935,9 +988,9 @@ impl AnalyzeRule {
     /// 优先：Flutter 已订阅时经 `webview_channel` 走真实 DOM（BackstageWebView 语义）；
     /// 回退：无头 QuickJS 注入 `result`/`src`/`html`/`baseUrl`。
     ///
-    /// **近似边界**：DOM 路径提供 `document`/`window`/`window.result`；
-    /// WebView 页内 `java`/`source` JavascriptInterface 未注入（依赖宿主 API
-    /// 的脚本仍依赖无头路径或 `java.webView` 通道外的宿主绑定）。
+    /// **边界**：DOM 路径提供 `document`/`window`/`window.result`；
+    /// Android 页内经原生 Backstage 注入 `java`/`source`/`cache` JavascriptInterface
+    ///（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。
     fn execute_web_js_rule(&self, js_code: &str) -> LegadoResult<String> {
         // 1) DOM 通道（对齐 AnalyzeRule.getWebJsResult → BackstageWebView isRule）
         if legado_core::webview_channel::has_subscribers() {
@@ -1111,6 +1164,88 @@ impl AnalyzeRule {
 }
 
 // ─── 规则预处理：@put / @js 链 / ## 替换（对齐 AnalyzeRule.SourceRule）────────
+
+/// 编译后的规则结构（对齐原版 `stringRuleCache` / `SourceRule` 列表）
+///
+/// 缓存 put 剥离、`##` 替换与 `@js`/`<js>` 链拆分，避免同一规则在列表解析
+/// 中被反复正则拆解。`@get:{k}` 仍在求值期展开（依赖运行时变量）。
+#[derive(Debug, Clone)]
+struct CompiledSourceRule {
+    put_map: HashMap<String, String>,
+    /// 剥离 `@put` 后的主规则（仍可能含 `@get:`）
+    rule_no_put: String,
+    /// `rule_no_put` 在 `@get` 展开前是否含 `@get:`（大小写不敏感探测用原文）
+    has_get_marker: bool,
+    /// 若无 `@get`，可预拆 ## / js 链；有 `@get` 则在展开后再拆
+    pre_hash: Option<CompiledHashAndChain>,
+}
+
+#[derive(Debug, Clone)]
+struct CompiledHashAndChain {
+    core_rule: String,
+    replace_spec: Option<HashReplaceSpec>,
+    /// 预拆的 js 链（owned）；单步时 steps 仅 Extract(core)
+    js_steps: Vec<OwnedJsChainStep>,
+}
+
+#[derive(Debug, Clone)]
+enum OwnedJsChainStep {
+    Extract(String),
+    Js(String),
+}
+
+impl AnalyzeRule {
+    /// 对齐 `splitSourceRuleCacheString`：按规则原文取编译缓存
+    fn compile_source_rule_cached(&self, rule: &str) -> Arc<CompiledSourceRule> {
+        if let Ok(guard) = self.string_rule_cache.lock() {
+            if let Some(hit) = guard.get(rule) {
+                return Arc::clone(hit);
+            }
+        }
+        let compiled = Arc::new(compile_source_rule(rule));
+        if let Ok(mut guard) = self.string_rule_cache.lock() {
+            // 限制体积，对齐 getOrPutLimit 量级（原版单条规则缓存无硬上限，
+            // 此处防异常长会话膨胀）
+            if guard.len() >= 256 {
+                guard.clear();
+            }
+            guard.insert(rule.to_string(), Arc::clone(&compiled));
+        }
+        compiled
+    }
+}
+
+fn compile_source_rule(rule: &str) -> CompiledSourceRule {
+    let (rule_no_put, put_map) = extract_put_rules(rule);
+    let has_get_marker = rule_no_put.to_ascii_lowercase().contains("@get:");
+    let pre_hash = if has_get_marker || rule_no_put.trim().is_empty() {
+        None
+    } else {
+        Some(compile_hash_and_chain(&rule_no_put))
+    };
+    CompiledSourceRule {
+        put_map,
+        rule_no_put,
+        has_get_marker,
+        pre_hash,
+    }
+}
+
+fn compile_hash_and_chain(rule: &str) -> CompiledHashAndChain {
+    let (core_rule, replace_spec) = split_hash_replace(rule);
+    let js_steps = split_js_chain_steps(&core_rule)
+        .into_iter()
+        .map(|s| match s {
+            JsChainStep::Extract(e) => OwnedJsChainStep::Extract(e.to_string()),
+            JsChainStep::Js(j) => OwnedJsChainStep::Js(j.to_string()),
+        })
+        .collect();
+    CompiledHashAndChain {
+        core_rule,
+        replace_spec,
+        js_steps,
+    }
+}
 
 /// JS 链步骤（对齐原版 `splitSourceRule` + `JS_PATTERN`）
 enum JsChainStep<'a> {
@@ -1300,6 +1435,7 @@ fn split_js_chain_steps(rule: &str) -> Vec<JsChainStep<'_>> {
 }
 
 /// `##` 替换规格（对齐 SourceRule.makeUpRule 中 `rule.split("##")`）
+#[derive(Debug, Clone)]
 struct HashReplaceSpec {
     pattern: String,
     replacement: String,

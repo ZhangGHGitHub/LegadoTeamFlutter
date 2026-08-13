@@ -7,6 +7,21 @@ use scraper::{ElementRef, Html, Selector};
 
 use crate::rule_analyzer::RuleAnalyzer;
 
+/// 对齐 Jsoup `Element.ownText()`：仅汇总本元素的直接文本子节点，
+/// 不含子孙元素内文本（与 `text()` 全树文本不同）。
+fn own_text_of(elem: ElementRef<'_>) -> String {
+    let mut parts = Vec::new();
+    for child in elem.children() {
+        if let Some(text) = child.value().as_text() {
+            let t = text.trim();
+            if !t.is_empty() {
+                parts.push(t.to_string());
+            }
+        }
+    }
+    parts.join(" ")
+}
+
 /// HTML 解析器
 pub struct HtmlParser;
 
@@ -349,11 +364,21 @@ impl HtmlParser {
                 let t: String = elem.text().collect::<Vec<_>>().join(" ");
                 t.trim().to_string()
             }
-            "textNodes" => elem.text().collect::<Vec<_>>().join("\n"),
-            "ownText" => {
-                let t: String = elem.text().collect::<Vec<_>>().join(" ");
-                t.trim().to_string()
+            // 对齐 Jsoup Element.textNodes()：仅直接文本子节点，trim 后用 \n 拼接
+            "textNodes" => {
+                let mut nodes = Vec::new();
+                for child in elem.children() {
+                    if let Some(text) = child.value().as_text() {
+                        let t = text.trim();
+                        if !t.is_empty() {
+                            nodes.push(t.to_string());
+                        }
+                    }
+                }
+                nodes.join("\n")
             }
+            // 对齐 Jsoup Element.ownText()：仅本元素直接文本，不含子孙元素文本
+            "ownText" => own_text_of(elem),
             "html" => elem.html(),
             "all" => elem.html(),
             "attr" => elem.value().attr(attr_name).map(|v| v.to_string())?,
@@ -844,5 +869,22 @@ mod tests {
         assert_eq!(parser.get_text(html, "tag.p").unwrap(), vec!["A"]);
         assert_eq!(parser.get_text(html, "id.x").unwrap(), vec!["A"]);
         assert_eq!(parser.get_text(html, "class.s").unwrap(), vec!["B"]);
+    }
+
+    /// 对齐 Jsoup ownText：子孙文本不计入；仅直接文本子节点
+    #[test]
+    fn test_own_text_excludes_descendants() {
+        let html = r#"<html><body>
+            <div id="d">前缀<span>子级</span>后缀</div>
+            <div id="e"><b>只有子级</b></div>
+        </body></html>"#;
+        let parser = HtmlParser::new();
+        let own = parser.get_content(html, "#d", "ownText").unwrap();
+        assert_eq!(own, vec!["前缀 后缀"]);
+        let empty = parser.get_content(html, "#e", "ownText").unwrap();
+        assert!(empty.is_empty(), "无直接文本时应为空，实际: {empty:?}");
+        // text 仍含子孙
+        let all = parser.get_text(html, "#d").unwrap();
+        assert!(all[0].contains("子级"));
     }
 }

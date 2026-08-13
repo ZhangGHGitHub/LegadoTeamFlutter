@@ -8,8 +8,9 @@
 //! - 默认超时 60s（对齐 `BackstageWebView` withTimeout）；规则级 Mode.WebJs 用 10s
 //! - 无订阅者时请求方应走无头 QuickJS 回退（本模块 `has_subscribers`）
 //! - 空结果允许唤醒（对齐原版 evaluateJavascript 返回 `""`/`null` 的可空语义）
-//! - **近似边界**：DOM `document`/`window`/`result` 可用；WebView 页内
-//!   `java`/`source` JavascriptInterface 注入未做（依赖宿主 API 的脚本仍走无头）
+//! - **边界**：DOM `document`/`window`/`result` 可用；Android 页内经原生
+//!   Backstage 注入 `java`/`source`/`cache` JavascriptInterface；`cacheFirst`
+//!   → `LOAD_CACHE_ELSE_NETWORK`
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
