@@ -306,14 +306,14 @@
 
 | 编号 | 轨道 | 任务 | 来源 | 要点 | 工作量 |
 |---|---|---|---|---|---|
-| F4-1 | 工程 | 硬编码路径参数化 | P3-1 | `emulator_smoke_test.ps1:17` FlutterDir 改相对/环境变量 | S |
-| F4-2 | 工程 | 临时文件清理 | P3-2 | flutter_legado 根级截图、`_debug_db/`、scripts `_tmp_*` 归档或删除 | S |
-| F4-3 | 工程 | FRB 生成物版本统一 | P3-5 | `bridge/api/*.dart` 4 文件 2.12.0 头与整体 2.11.1 混杂；下次 codegen 统一 | S |
-| F4-4 | UI | @override 补全 | P3-6 | rust_api.dart 185 个方法补 @override 或启用 `annotate_overrides` lint | M |
-| F4-5 | UI | uploadRule/Cronet 占位收口 | P3-11 | 评估引擎接入或按 RESIDUAL「不做」销记 | S |
-| F4-6 | 工程 | 文档存放规范收口 | P3-3 | 根目录 tmp_*/Makefile/package.json 处置（归档或补说明）；reasonix.toml 移出 | S |
-| F4-7 | UI | l10n 推进 | P3-7 | 按 D5 决策：全面国际化或维持现状登记 | L（视范围） |
-| F4-8 | Rust | payAction `{{js}}` 模板 | P3-11 | 补 URL 模板形态支持或契约登记 R6 留项 | M |
+| F4-1 | 工程 | 硬编码路径参数化 | P3-1 | `emulator_smoke_test.ps1:17` FlutterDir 改相对/环境变量 | S | ✅ |
+| F4-2 | 工程 | 临时文件清理 | P3-2 | flutter_legado 根级截图、`_debug_db/`、scripts `_tmp_*` 归档或删除 | S | ✅ |
+| F4-3 | 工程 | FRB 生成物版本统一 | P3-5 | `bridge/api/*.dart` 4 文件 2.12.0 头与整体 2.11.1 混杂；下次 codegen 统一 | S | ✅ |
+| F4-4 | UI | @override 补全 | P3-6 | rust_api.dart 185 个方法补 @override 或启用 `annotate_overrides` lint | M | ✅ |
+| F4-5 | UI | uploadRule/Cronet 占位收口 | P3-11 | 评估引擎接入或按 RESIDUAL「不做」销记 | S | ✅ |
+| F4-6 | 工程 | 文档存放规范收口 | P3-3 | 根目录 tmp_*/Makefile/package.json 处置（归档或补说明）；reasonix.toml 移出 | S | ✅ |
+| F4-7 | UI | l10n 推进 | P3-7 | 按 D5 决策：全面国际化或维持现状登记 | L（视范围） | ✅ |
+| F4-8 | Rust | payAction `{{js}}` 模板 | P3-11 | 补 URL 模板形态支持或契约登记 R6 留项 | M | ✅ |
 
 ---
 

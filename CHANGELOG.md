@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.62] - 2026-08-14
+
+### Changed
+- [工程] F4-1 冒烟脚本 FlutterDir 改相对路径/LEGADO_FLUTTER_DIR 环境变量
+- [工程] F4-2 清理临时调试物并补 .gitignore 规则
+- [工程] F4-3 FRB 生成物版本头统一为 2.11.1（对齐 pubspec）
+- [UI] F4-4 rust_api.dart 补 174 个 @override；启用 annotate_overrides lint
+- [UI] F4-5 移除 Cronet/直链上传空壳占位（RESIDUAL 不做销记）
+- [docs] F4-6 ROOT_ENGINEERING_FILES.md 登记根目录 Makefile/package.json
+- [docs] F4-7 D5=B：AGENTS.md 登记 l10n 维持中文主语言
+- [docs] F4-8 API_CONTRACT §2.43.2 登记 payAction `{{js}}` URL 模板 R6 留项
+
 ## [2.0.61] - 2026-08-14
 
 ### Added
