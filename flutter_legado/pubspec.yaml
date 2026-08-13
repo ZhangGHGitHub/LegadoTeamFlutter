@@ -1,7 +1,7 @@
 name: flutter_legado
 description: "Legado - A reading app powered by Rust + Flutter"
 publish_to: 'none'
-version: 2.0.60+62
+version: 2.0.61+63
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
@@ -59,3 +59,6 @@ flutter:
     # 帮助文档（对标 Android assets/web/help/md + storageHelp.md）
     - assets/web/help/md/
     - assets/storageHelp.md
+    # About 页（对标 Android assets/updateLog.md + disclaimer.md）
+    - assets/updateLog.md
+    - assets/disclaimer.md
