@@ -441,5 +441,58 @@ void main() {
       expect(readState().categoriesFor('https://s1.com'), isEmpty);
       expect(readState().isLoadingCategories('https://s1.com'), isFalse);
     });
+
+    test('空缓存失败后可重试（非幂等阻塞）', () async {
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
+      var calls = 0;
+      when(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).thenAnswer((_) async {
+        calls++;
+        if (calls == 1) {
+          throw Exception('首次失败');
+        }
+        return const [ExploreCategory(title: '重试成功', url: 'u')];
+      });
+      container.read(exploreNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().loadCategories(source);
+      expect(readState().categoriesFor('https://s1.com'), isEmpty);
+
+      await readNotifier().loadCategories(source);
+      expect(readState().categoriesFor('https://s1.com'), hasLength(1));
+      expect(readState().categoriesFor('https://s1.com')!.first.title, '重试成功');
+      expect(calls, 2);
+    });
+
+    test('@js: 书源传递 sourceJson', () async {
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
+      when(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).thenAnswer(
+        (_) async => const [ExploreCategory(title: '热门', url: '/hot')],
+      );
+      container.read(exploreNotifierProvider);
+      await pumpInit();
+
+      const jsSource = BookSource(
+        bookSourceUrl: 'https://js.example.com',
+        bookSourceName: 'JS源',
+        enabledExplore: true,
+        exploreUrl: '@js:[{title:"热门",url:"/hot"}]',
+      );
+      await readNotifier().loadCategories(jsSource);
+
+      final captured = verify(() => mockApi.exploreParseUrl(
+            captureAny(),
+            sourceJson: captureAny(named: 'sourceJson'),
+          )).captured;
+      expect(captured[0], jsSource.exploreUrl);
+      expect(captured[1], contains('"bookSourceUrl"'));
+      expect(captured[1], contains('https://js.example.com'));
+    });
   });
 }

@@ -134,37 +134,55 @@ fn extract_js_tag_body(s: &str) -> String {
 /// 执行 exploreUrl 内嵌 JS（对标 Android runScriptWithContext + evalJS + infoMap）
 #[cfg(feature = "quickjs")]
 fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
-    use legado_js::{JsEngine, JsValue};
+    use legado_js::JsEngine;
+    use legado_js::host_api::current_source::with_current_source_tag;
 
-    let engine = crate::js_executor::pool_engine(&source.book_source_url)?;
+    let tag = source.book_source_url.clone();
+    let engine = crate::js_executor::pool_engine(&tag)?;
     let guard = engine
         .lock()
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
 
-    // 对齐原版：每次 eval 前先加载 jsLib
-    if let Some(lib) = source.js_lib.as_deref() {
-        let lib = lib.trim();
-        if !lib.is_empty() {
-            guard
-                .eval(lib)
-                .map_err(|e| LegadoError::JsEngine(format!("jsLib 加载失败: {e}")))?;
+    with_current_source_tag(&tag, || {
+        // 对齐原版：每次 eval 前先加载 jsLib（失败降级，部分混淆 jsLib 依赖 Rhino）
+        if let Some(lib) = source.js_lib.as_deref() {
+            let lib = lib.trim();
+            if !lib.is_empty() {
+                if let Err(e) = guard.eval(lib) {
+                    eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
+                }
+            }
         }
-    }
 
-    let base_url = source.book_source_url.clone();
-    let mut bindings: Vec<(&str, JsValue)> = vec![
-        ("baseUrl", JsValue::String(base_url.clone())),
-        ("infoMap", JsValue::Object(vec![])),
-    ];
-    if let Ok(value) = serde_json::to_value(source) {
-        bindings.push(("source", json_to_js_value(value)));
-    }
+        let source_json = serde_json::to_string(source)?;
+        let base_url_json = serde_json::to_string(&tag)?;
 
-    let result = guard
-        .eval_with_bindings(js_code, &bindings)
-        .map_err(|e| LegadoError::JsEngine(format!("exploreUrl JS 执行失败: {e}")))?;
+        // 对齐 Android BaseSource.evalJS：java 全局已注册；source 须含 get/put/getVariable/setVariable
+        let setup = format!(
+            r#"
+var baseUrl = {base_url_json};
+var __srcData = {source_json};
+var source = Object.assign({{}}, __srcData);
+source.get = function(k) {{ return get('v_' + baseUrl + '_' + k) || ''; }};
+source.put = function(k, v) {{ put('v_' + baseUrl + '_' + k, String(v)); return v; }};
+source.getVariable = function() {{ return getVariable('sourceVariable_' + baseUrl) || ''; }};
+source.setVariable = function(v) {{ setVariable('sourceVariable_' + baseUrl, String(v)); return v; }};
+var infoMap = {{}};
+"#,
+            base_url_json = base_url_json,
+            source_json = source_json,
+        );
 
-    Ok(result.trim().to_string())
+        guard
+            .eval(&setup)
+            .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 上下文初始化失败: {e}")))?;
+
+        let result = guard
+            .eval(js_code)
+            .map_err(|e| LegadoError::JsEngine(format!("exploreUrl JS 执行失败: {e}")))?;
+
+        Ok(result.trim().to_string())
+    })
 }
 
 #[cfg(not(feature = "quickjs"))]
@@ -172,28 +190,6 @@ fn eval_explore_js(_js_code: &str, _source: &BookSource) -> LegadoResult<String>
     Err(LegadoError::JsEngine(
         "QuickJS engine not enabled. Build with --features quickjs".into(),
     ))
-}
-
-#[cfg(feature = "quickjs")]
-fn json_to_js_value(value: serde_json::Value) -> legado_js::JsValue {
-    use legado_js::JsValue;
-    match value {
-        serde_json::Value::Null => JsValue::Null,
-        serde_json::Value::Bool(b) => JsValue::Bool(b),
-        serde_json::Value::Number(n) => match n.as_i64() {
-            Some(i) => JsValue::Int(i),
-            None => JsValue::Number(n.as_f64().unwrap_or(0.0)),
-        },
-        serde_json::Value::String(s) => JsValue::String(s),
-        serde_json::Value::Array(items) => {
-            JsValue::Array(items.into_iter().map(json_to_js_value).collect())
-        }
-        serde_json::Value::Object(map) => JsValue::Object(
-            map.into_iter()
-                .map(|(k, v)| (k, json_to_js_value(v)))
-                .collect(),
-        ),
-    }
 }
 
 // ─── 内部异步实现 ─────────────────────────────────────────────────────────────
@@ -424,9 +420,66 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_js_tag_body() {
-        let s = "<js>return 1</js>";
-        assert_eq!(extract_js_tag_body(s), "return 1");
+    fn test_explore_parse_url_json_with_style() {
+        let input = r#"[{"title":"都市","url":"http://example.com/a","style":{"layout_flexGrow":1}},{"title":"玄幻","url":"http://example.com/b"}]"#;
+        let json = explore_parse_url(input, "").unwrap();
+        let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
+        assert_eq!(categories.len(), 2);
+        assert_eq!(categories[0].title, "都市");
+        assert_eq!(
+            categories[0].url,
+            Some("http://example.com/a".to_string())
+        );
+    }
+
+    #[test]
+    fn test_explore_parse_url_text_without_source_json() {
+        let json = explore_parse_url("玄幻::https://a.com\n都市::https://b.com", "").unwrap();
+        let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
+        assert_eq!(categories.len(), 2);
+        assert_eq!(categories[0].title, "玄幻");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_parse_url_js_returns_json_array() {
+        let source = BookSource {
+            book_source_url: "https://explore-js.test".to_string(),
+            book_source_name: "JS测试".to_string(),
+            ..BookSource::default()
+        };
+        let source_json = serde_json::to_string(&source).unwrap();
+        let explore_url = "@js:[{title:'热门',url:'/hot'},{title:'新书',url:'/new'}]";
+        let json = explore_parse_url(explore_url, &source_json).unwrap();
+        let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
+        assert_eq!(categories.len(), 2);
+        assert_eq!(categories[0].title, "热门");
+        assert_eq!(categories[0].url, Some("/hot".to_string()));
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_parse_url_js_source_get_put() {
+        let source = BookSource {
+            book_source_url: "https://explore-get.test".to_string(),
+            book_source_name: "get/put".to_string(),
+            ..BookSource::default()
+        };
+        let source_json = serde_json::to_string(&source).unwrap();
+        let explore_url = r#"@js:
+source.put('k','v');
+if(source.get('k')!=='v'){throw new Error('source.get/put failed');}
+[{title:'OK',url:'/ok'}]"#;
+        let json = explore_parse_url(explore_url, &source_json).unwrap();
+        let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
+        assert_eq!(categories.len(), 1);
+        assert_eq!(categories[0].title, "OK");
+    }
+
+    #[test]
+    fn test_explore_parse_url_js_requires_source_json() {
+        let err = explore_parse_url("@js:[]", "").unwrap_err();
+        assert!(err.to_string().contains("书源 JSON"));
     }
 
     #[test]

@@ -84,9 +84,10 @@ class ExploreNotifier extends Notifier<ExploreState> {
       }
       return;
     }
-    // 已缓存或正在加载：幂等返回
-    if (state.categoriesCache.containsKey(url) ||
-        state.loadingCategories.contains(url)) {
+    // 已缓存（非空）或正在加载：幂等返回；空缓存允许重试（对齐 Android 可刷新发现）
+    final cached = state.categoriesCache[url];
+    if (state.loadingCategories.contains(url) ||
+        (cached != null && cached.isNotEmpty)) {
       return;
     }
     state = state.copyWith(
