@@ -229,26 +229,7 @@ fn search_url_with_js(
 
 #[cfg(feature = "quickjs")]
 mod quickjs_impl {
-    use std::sync::OnceLock;
-
-    use legado_js::EnginePool;
     use legado_parser::JsExecutor;
-
-    /// 全局引擎池容量（按书源 URL 缓存的上限）
-    const POOL_MAX_SIZE: usize = 32;
-
-    /// 进程级共享引擎池
-    ///
-    /// 使用 `OnceLock` 惰性初始化，保证多线程下仅创建一次；
-    /// `EnginePool` 内部以 `Arc<Mutex<...>>` 保护，自身可安全共享。
-    /// 注：规则执行（QuickJsExecutor）已改为每次新建引擎（规避 const
-    /// 全局残留 redeclaration）；imageDecode 亦已改为每次新引擎
-    ///（见 `image_api::decode_image_bytes`）。本池仅供仍直接调用
-    /// `pool_engine` 的模块（payAction / sourceLoginV2 等）复用。
-    pub(super) fn global_pool() -> &'static EnginePool {
-        static POOL: OnceLock<EnginePool> = OnceLock::new();
-        POOL.get_or_init(|| EnginePool::new(POOL_MAX_SIZE))
-    }
 
     /// QuickJS 执行器适配器
     ///
@@ -322,15 +303,24 @@ mod quickjs_impl {
 #[cfg(feature = "quickjs")]
 pub use quickjs_impl::QuickJsExecutor;
 
-/// 按 `source_tag` 从全局引擎池获取（或创建）QuickJS 引擎
-///
-/// 供需要直接操作引擎（如带绑定 eval）的模块复用，
-/// 与 [`QuickJsExecutor`] 共享同一进程级引擎池。
+/// 创建独立 QuickJS 引擎（F3-6：payAction/login/explore/callback 等非主路径
+/// 每次新建，对齐 QuickJsExecutor 主路径策略，规避引擎池全局残留串扰）
+#[cfg(feature = "quickjs")]
+pub fn fresh_engine(
+    _source_tag: &str,
+) -> legado_core::LegadoResult<std::sync::Arc<std::sync::Mutex<legado_js::QuickJsEngine>>> {
+    let engine = legado_js::QuickJsEngine::new(
+        legado_js::sandbox::SandboxConfig::default().with_allow_script_run(true),
+    )?;
+    Ok(std::sync::Arc::new(std::sync::Mutex::new(engine)))
+}
+
+/// 获取书源 JS 引擎（F3-6 起等同 [`fresh_engine`]，不再复用进程级引擎池）
 #[cfg(feature = "quickjs")]
 pub fn pool_engine(
     source_tag: &str,
 ) -> legado_core::LegadoResult<std::sync::Arc<std::sync::Mutex<legado_js::QuickJsEngine>>> {
-    quickjs_impl::global_pool().get_or_create(source_tag)
+    fresh_engine(source_tag)
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
@@ -373,7 +363,7 @@ mod tests {
         assert_eq!(result, "legado-js");
     }
 
-    /// quickjs 启用时，同一 source_tag 复用引擎池（执行结果一致且不为空）。
+    /// quickjs 启用时，同一 executor 可连续执行多条脚本（每次仍为新引擎）。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_quickjs_executor_reuse() {
@@ -384,6 +374,27 @@ mod tests {
         let r2 = executor.execute_js("100 + 1").unwrap();
         assert_eq!(r1, "100");
         assert_eq!(r2, "101");
+    }
+
+    /// F3-6：fresh_engine 每次独立，全局变量不跨调用串扰
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_fresh_engine_no_global_leak() {
+        use legado_js::JsEngine;
+
+        let e1 = fresh_engine("tag_a").unwrap();
+        e1.lock()
+            .unwrap()
+            .eval("globalThis.__f3_6_flag = 42")
+            .unwrap();
+
+        let e2 = fresh_engine("tag_a").unwrap();
+        let ty = e2
+            .lock()
+            .unwrap()
+            .eval("typeof globalThis.__f3_6_flag")
+            .unwrap();
+        assert_eq!(ty, "undefined");
     }
 
     /// {{JS表达式}} 搜索模板渲染（sto66 真实模板回归）：

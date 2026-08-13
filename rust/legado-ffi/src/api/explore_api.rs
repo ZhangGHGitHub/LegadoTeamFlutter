@@ -138,7 +138,7 @@ fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
     use legado_js::host_api::current_source::with_current_source_tag;
 
     let tag = source.book_source_url.clone();
-    let engine = crate::js_executor::pool_engine(&tag)?;
+    let engine = crate::js_executor::fresh_engine(&tag)?;
     let guard = engine
         .lock()
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;

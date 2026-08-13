@@ -135,7 +135,7 @@ fn eval_call_back_js(
     use legado_js::{JsEngine, JsValue};
 
     legado_js::host_api::ui_action_queue::begin_collect();
-    let engine = crate::js_executor::pool_engine(&source.book_source_url).map_err(|e| {
+    let engine = crate::js_executor::fresh_engine(&source.book_source_url).map_err(|e| {
         legado_js::host_api::ui_action_queue::discard_collect();
         e
     })?;

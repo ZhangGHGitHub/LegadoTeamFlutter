@@ -125,7 +125,7 @@ fn eval_pay_action(
     // JsEngine trait 提供 eval_with_bindings（对照 source_login_v2_api）
     use legado_js::{JsEngine, JsValue};
 
-    let engine = crate::js_executor::pool_engine(&source.book_source_url)?;
+    let engine = crate::js_executor::fresh_engine(&source.book_source_url)?;
     let guard = engine
         .lock()
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
