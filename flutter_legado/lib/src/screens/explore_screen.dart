@@ -483,6 +483,19 @@ class _SourceItemState extends ConsumerState<_SourceItem> {
         runSpacing: 8,
         children: categories.map((category) {
           final hasUrl = category.url != null && category.url!.isNotEmpty;
+          // 分组标题行（url 为空，对标 ExploreKind 仅 title）
+          if (!hasUrl) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                category.title,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            );
+          }
           return ActionChip(
             label: Text(category.title),
             onPressed: hasUrl

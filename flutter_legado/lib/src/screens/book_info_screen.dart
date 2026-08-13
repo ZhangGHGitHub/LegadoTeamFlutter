@@ -28,6 +28,7 @@ import 'source_login_screen.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/list_footer.dart';
 
 /// 书籍详情页面
 class BookInfoScreen extends ConsumerStatefulWidget {
@@ -53,6 +54,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   bool _pageLoading = true;
   /// 目录联网补全中（信息区已可交互）
   bool _tocLoading = false;
+  /// 顶栏网络加载（对标原版 refreshProgressBar.isAutoLoading）
+  bool _networkLoading = false;
   String? _loadError;
   // 当前书籍（供 AppBar 溢出菜单读取勾选态）
   Book? _loadedBook;
@@ -62,6 +65,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   // 书架状态（对标原版 tv_shelf 加入书架/移出书架切换）
   bool _inBookshelf = false;
   // [UI-FIX v2.0.3 | 2026-08-08] 删除提醒开关（对齐原版 LocalConfig.deleteBookAlert，本地持久化） — Qoder
+  // 书源按 origin 缓存，避免每次详情页全量扫描书源列表
+  static final Map<String, BookSource?> _sourceByOriginCache = {};
   final SettingsService _settingsService = SettingsService();
   bool _deleteBookAlert = true;
 
@@ -157,38 +162,81 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         var b = book;
         if (source != null) {
           final sourceJson = jsonEncode(source.toJson());
-          // a. 补全元数据（现象3：封面/简介/tocUrl/字数缺失）
-          if (_needCompleteInfo(b)) {
-            try {
-              final tInfo = Stopwatch()..start();
-              final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
-              debugPrint(
-                '[BookInfo] webbookInfo ${tInfo.elapsedMilliseconds}ms',
-              );
-              b = _mergeWebInfo(b, infoJson);
-              if (mounted) setState(() => _loadedBook = b);
-            } catch (e) {
-              debugPrint('webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}');
-            }
+          if (mounted) {
+            setState(() {
+              _networkLoading = true;
+              _tocLoading = true;
+            });
           }
-          // b. 取目录（现象1）
+
+          final hasTocUrl = b.tocUrl.isNotEmpty;
+          final needInfo = _needCompleteInfo(b);
+
           try {
-            final tToc = Stopwatch()..start();
-            if (inShelf) {
-              // 已入库：走 DB 刷新（refreshToc 内部落库章节）
-              chapters = await api.refreshToc(b.bookUrl, b.origin);
+            if (hasTocUrl && !needInfo) {
+              // 对齐原版 upBook：已有 tocUrl 且元数据齐全 → 直接 loadChapter
+              chapters = await _fetchWebChaptersOnline(
+                api,
+                b,
+                sourceJson: sourceJson,
+              );
+            } else if (hasTocUrl && needInfo) {
+              // 详情与目录并行（tocUrl 已知，目录不必等 info）
+              final tParallel = Stopwatch()..start();
+              final infoFuture = api.webbookInfo(sourceJson, b.bookUrl);
+              final tocFuture = api.webbookChapters(
+                sourceJson,
+                b.bookUrl,
+                tocUrl: b.tocUrl,
+                bookName: b.name,
+              );
+              final results = await Future.wait([infoFuture, tocFuture]);
+              debugPrint('[BookInfo] 并行 info+toc ${tParallel.elapsedMilliseconds}ms');
+              try {
+                b = _mergeWebInfo(b, results[0] as String);
+              } catch (e) {
+                debugPrint('webbookInfo 补全失败: ${_errMsg(e)}');
+              }
+              chapters = BookOpenUtils.parseWebChapters(
+                results[1] as String,
+                b.bookUrl,
+              );
             } else {
-              // 未入库：仅网络取目录用于展示，不落库
-              final chJson = await api.webbookChapters(sourceJson, b.bookUrl);
-              chapters = BookOpenUtils.parseWebChapters(chJson, b.bookUrl);
+              // tocUrl 缺失：先 info 补 tocUrl，再拉目录
+              if (needInfo) {
+                try {
+                  final tInfo = Stopwatch()..start();
+                  final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
+                  debugPrint(
+                    '[BookInfo] webbookInfo ${tInfo.elapsedMilliseconds}ms',
+                  );
+                  b = _mergeWebInfo(b, infoJson);
+                  if (mounted) setState(() => _loadedBook = b);
+                } catch (e) {
+                  debugPrint(
+                    'webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}',
+                  );
+                }
+              }
+              final tToc = Stopwatch()..start();
+              if (inShelf) {
+                chapters = await api.refreshToc(b.bookUrl, b.origin);
+              } else {
+                chapters = await _fetchWebChaptersOnline(
+                  api,
+                  b,
+                  sourceJson: sourceJson,
+                );
+              }
+              debugPrint(
+                '[BookInfo] toc ${tToc.elapsedMilliseconds}ms '
+                'chapters=${chapters.length}',
+              );
             }
-            debugPrint(
-              '[BookInfo] toc ${tToc.elapsedMilliseconds}ms '
-              'chapters=${chapters.length}',
-            );
           } catch (e) {
             debugPrint(
-                '取目录失败(bookUrl=${b.bookUrl}, origin=${b.origin}): ${_errMsg(e)}');
+              '取目录失败(bookUrl=${b.bookUrl}, origin=${b.origin}): ${_errMsg(e)}',
+            );
           }
           // 目录数回填 totalChapterNum（供「目录：共 N 章」摘要行显示）
           if (chapters.isNotEmpty) {
@@ -208,10 +256,14 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             _loadedBook = b;
             _chapters = chapters;
             _tocLoading = false;
+            _networkLoading = false;
           });
         }
       } else if (mounted) {
-        setState(() => _tocLoading = false);
+        setState(() {
+          _tocLoading = false;
+          _networkLoading = false;
+        });
       }
       debugPrint('[BookInfo] 全量完成 ${sw.elapsedMilliseconds}ms');
     } catch (e) {
@@ -246,16 +298,23 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   /// 按 origin（书源 URL）查找对应书源（供 webbookInfo/webbookChapters 传参）
   Future<BookSource?> _findSourceByOrigin(BookApi api, String origin) async {
+    final key = origin.trim().replaceAll(RegExp(r'/+$'), '');
+    if (_sourceByOriginCache.containsKey(key)) {
+      return _sourceByOriginCache[key];
+    }
     try {
       final sources = await api.getBookSources();
-      final o = origin.trim().replaceAll(RegExp(r'/+$'), '');
       for (final s in sources) {
         final u = s.bookSourceUrl.trim().replaceAll(RegExp(r'/+$'), '');
-        if (u == o || s.bookSourceUrl == origin) return s;
+        if (u == key || s.bookSourceUrl == origin) {
+          _sourceByOriginCache[key] = s;
+          return s;
+        }
       }
     } catch (e) {
       debugPrint('获取书源失败: $e');
     }
+    _sourceByOriginCache[key] = null;
     return null;
   }
 
@@ -294,13 +353,17 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   /// 未入库在线书：仅网络取目录用于展示，不写 DB（对齐原版 loadChapter !inBookshelf）
   Future<List<BookChapter>> _fetchWebChaptersOnline(
     BookApi api,
-    Book book,
-  ) async {
-    final source = await _findSourceByOrigin(api, book.origin);
-    if (source == null) return const [];
+    Book book, {
+    String? sourceJson,
+  }) async {
+    final encoded = sourceJson ??
+        jsonEncode((await _findSourceByOrigin(api, book.origin))?.toJson());
+    if (encoded.isEmpty || encoded == 'null') return const [];
     final chJson = await api.webbookChapters(
-      jsonEncode(source.toJson()),
+      encoded,
       book.bookUrl,
+      tocUrl: book.tocUrl,
+      bookName: book.name,
     );
     return BookOpenUtils.parseWebChapters(chJson, book.bookUrl);
   }
@@ -504,6 +567,15 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           child: RefreshIndicator(
             onRefresh: () async => _reload(),
             child: _buildBody(context, book, chapters),
+          ),
+        ),
+        // 顶栏加载条（对标原版 refreshProgressBar.isAutoLoading）
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: TopNetworkLoadingBar(
+            isLoading: _networkLoading || _tocLoading,
           ),
         ),
       ],

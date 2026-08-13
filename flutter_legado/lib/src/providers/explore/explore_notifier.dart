@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -92,7 +94,10 @@ class ExploreNotifier extends Notifier<ExploreState> {
     );
     try {
       final api = ref.read(bookApiProvider);
-      final categories = await api.exploreParseUrl(exploreUrl);
+      final categories = await api.exploreParseUrl(
+        exploreUrl,
+        sourceJson: jsonEncode(source.toJson()),
+      );
       state = state.copyWith(
         categoriesCache: {...state.categoriesCache, url: categories},
         loadingCategories: {...state.loadingCategories}..remove(url),

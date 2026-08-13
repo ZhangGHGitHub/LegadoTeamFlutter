@@ -298,6 +298,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
       final chJson = await api.webbookChapters(
         jsonEncode(source.toJson()),
         _book.bookUrl,
+        tocUrl: _book.tocUrl,
+        bookName: _book.name,
       );
       return BookOpenUtils.parseWebChapters(chJson, _book.bookUrl);
     } catch (_) {

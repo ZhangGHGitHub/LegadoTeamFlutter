@@ -31,6 +31,9 @@ class AppStrings {
   // 对齐原版 R.string.double_click_exit
   static String get doubleClickExit => _get('再按一次退出程序', 'Press again to exit');
 
+  /// 列表触底提示（对齐原版 R.string.bottom_line）
+  static String get bottomLine => _get('我是有底线的', "That's all");
+
   // 书架
   static String get startReading => _get('开始阅读', 'Start Reading');
   static String get addToBookshelf => _get('加入书架', 'Add to Bookshelf');

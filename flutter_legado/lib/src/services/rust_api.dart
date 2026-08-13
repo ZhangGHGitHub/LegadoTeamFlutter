@@ -1446,9 +1446,19 @@ class RustApi implements BookApi {
       );
 
   /// 获取章节列表
-  Future<String> webbookChapters(String sourceJson, String bookUrl) async =>
+  Future<String> webbookChapters(
+    String sourceJson,
+    String bookUrl, {
+    String tocUrl = '',
+    String bookName = '',
+  }) async =>
       PlatformBridgeService.instance.interceptResult(
-        await bridge.webbookChapters(sourceJson: sourceJson, bookUrl: bookUrl),
+        await bridge.webbookChapters(
+          sourceJson: sourceJson,
+          bookUrl: bookUrl,
+          tocUrl: tocUrl,
+          bookName: bookName,
+        ),
       );
 
   /// 获取章节正文
@@ -1479,8 +1489,14 @@ class RustApi implements BookApi {
   ///
   /// 返回 `List<ExploreCategory>`，每项包含 title 和 url。
   /// 对标 Android BookSourceExtensions.exploreKinds()
-  Future<List<ExploreCategory>> exploreParseUrl(String exploreUrl) async {
-    final json = await bridge.exploreParseUrl(exploreUrl: exploreUrl);
+  Future<List<ExploreCategory>> exploreParseUrl(
+    String exploreUrl, {
+    String sourceJson = '',
+  }) async {
+    final json = await bridge.exploreParseUrl(
+      exploreUrl: exploreUrl,
+      sourceJson: sourceJson,
+    );
     final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => ExploreCategory.fromJson(e as Map<String, dynamic>))

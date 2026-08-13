@@ -365,7 +365,10 @@ void main() {
 
     test('成功解析并缓存分类', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      when(() => mockApi.exploreParseUrl(any())).thenAnswer(
+      when(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).thenAnswer(
         (_) async => const [
           ExploreCategory(title: '玄幻', url: 'https://s1.com/xuanhuan'),
           ExploreCategory(title: '都市', url: 'https://s1.com/dushi'),
@@ -398,12 +401,18 @@ void main() {
       await readNotifier().loadCategories(noExplore);
 
       expect(readState().categoriesFor('https://s2.com'), isEmpty);
-      verifyNever(() => mockApi.exploreParseUrl(any()));
+      verifyNever(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          ));
     });
 
     test('幂等：已缓存时不重复请求', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      when(() => mockApi.exploreParseUrl(any())).thenAnswer(
+      when(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).thenAnswer(
         (_) async => const [ExploreCategory(title: '玄幻', url: 'u')],
       );
       container.read(exploreNotifierProvider);
@@ -412,13 +421,18 @@ void main() {
       await readNotifier().loadCategories(source);
       await readNotifier().loadCategories(source);
 
-      verify(() => mockApi.exploreParseUrl(any())).called(1);
+      verify(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).called(1);
     });
 
     test('解析失败时缓存空分类（静默失败）', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
-      when(() => mockApi.exploreParseUrl(any()))
-          .thenThrow(Exception('解析失败'));
+      when(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).thenThrow(Exception('解析失败'));
       container.read(exploreNotifierProvider);
       await pumpInit();
 

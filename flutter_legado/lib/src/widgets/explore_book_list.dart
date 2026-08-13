@@ -17,6 +17,7 @@ import '../routes.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
+import '../widgets/list_footer.dart';
 import '../widgets/loading_indicator.dart';
 
 /// 发现分类书籍列表（自管理滚动分页）
@@ -94,56 +95,51 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       );
     }
 
-    // 书籍列表（支持下拉刷新）
-    return RefreshIndicator(
-      onRefresh: () =>
-          ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: widget.padding,
-        // +1 用于底部加载指示器
-        itemCount: state.books.length + 1,
-        itemBuilder: (context, index) {
-          // 底部加载指示器
-          if (index == state.books.length) {
-            return _buildLoadMoreIndicator(args, state);
-          }
+    // 书籍列表（支持下拉刷新 + 顶栏加载条）
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TopNetworkLoadingBar(isLoading: state.isLoading && state.books.isNotEmpty),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () =>
+                ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: widget.padding,
+              // +1 用于底部加载指示器
+              itemCount: state.books.length + 1,
+              itemBuilder: (context, index) {
+                // 底部加载指示器
+                if (index == state.books.length) {
+                  return _buildLoadMoreIndicator(args, state);
+                }
 
-          final book = state.books[index];
-          // 稳定 ValueKey（bookUrl）+ RepaintBoundary 隔离列表项重绘区域
-          return RepaintBoundary(
-            child: _BookItem(
-              key: ValueKey(book.bookUrl),
-              book: book,
-              onTap: () => _showBookInfo(book),
+                final book = state.books[index];
+                // 稳定 ValueKey（bookUrl）+ RepaintBoundary 隔离列表项重绘区域
+                return RepaintBoundary(
+                  child: _BookItem(
+                    key: ValueKey(book.bookUrl),
+                    book: book,
+                    onTap: () => _showBookInfo(book),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 
   /// 底部加载指示器（对标 Android LoadMoreView）
   Widget _buildLoadMoreIndicator(ExploreShowArgs args, ExploreShowState state) {
     if (state.isLoading) {
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      );
+      return const ListLoadMoreFooter();
     }
 
     if (!state.hasMore) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Center(
-          child: Text(
-            '没有更多了',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ),
-      );
+      return const ListBottomLineFooter();
     }
 
     if (state.error != null) {

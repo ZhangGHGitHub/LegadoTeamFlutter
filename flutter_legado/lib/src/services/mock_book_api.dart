@@ -1433,7 +1433,12 @@ class MockBookApi implements BookApi {
       jsonEncode({'name': 'Mock书籍', 'author': 'Mock作者'});
 
   @override
-  Future<String> webbookChapters(String sourceJson, String bookUrl) async =>
+  Future<String> webbookChapters(
+    String sourceJson,
+    String bookUrl, {
+    String tocUrl = '',
+    String bookName = '',
+  }) async =>
       jsonEncode([]);
 
   @override
@@ -1465,7 +1470,10 @@ class MockBookApi implements BookApi {
   // ========== 发现页操作 ==========
 
   @override
-  Future<List<ExploreCategory>> exploreParseUrl(String exploreUrl) async {
+  Future<List<ExploreCategory>> exploreParseUrl(
+    String exploreUrl, {
+    String sourceJson = '',
+  }) async {
     if (exploreUrl.isEmpty) return [];
     return exploreUrl.split('\n').where((l) => l.contains('::')).map((line) {
       final parts = line.split('::');

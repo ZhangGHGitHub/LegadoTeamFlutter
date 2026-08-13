@@ -729,9 +729,13 @@ Future<String> webbookInfo({
 Future<String> webbookChapters({
   required String sourceJson,
   required String bookUrl,
+  String tocUrl = '',
+  String bookName = '',
 }) => RustLib.instance.api.crateFfiFfiWebbookChapters(
   sourceJson: sourceJson,
   bookUrl: bookUrl,
+  tocUrl: tocUrl,
+  bookName: bookName,
 );
 
 /// 获取章节正文内容
@@ -749,8 +753,13 @@ Future<String> webbookContent({
 /// 解析 exploreUrl 为分类列表（返回 JSON 数组）
 ///
 /// `explore_url` — 书源的 exploreUrl 字段
-Future<String> exploreParseUrl({required String exploreUrl}) =>
-    RustLib.instance.api.crateFfiFfiExploreParseUrl(exploreUrl: exploreUrl);
+Future<String> exploreParseUrl({
+  required String exploreUrl,
+  String sourceJson = '',
+}) => RustLib.instance.api.crateFfiFfiExploreParseUrl(
+  exploreUrl: exploreUrl,
+  sourceJson: sourceJson,
+);
 
 /// 抓取发现分类的书籍列表（返回 WebSearchResult JSON 数组）
 ///

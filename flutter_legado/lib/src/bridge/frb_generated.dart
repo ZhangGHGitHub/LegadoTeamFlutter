@@ -372,7 +372,10 @@ abstract class RustLibApi extends BaseApi {
     required int page,
   });
 
-  Future<String> crateFfiFfiExploreParseUrl({required String exploreUrl});
+  Future<String> crateFfiFfiExploreParseUrl({
+    required String exploreUrl,
+    required String sourceJson,
+  });
 
   Future<String> crateFfiFfiFetchImageWithDecode({
     required String url,
@@ -872,6 +875,8 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateFfiFfiWebbookChapters({
     required String sourceJson,
     required String bookUrl,
+    required String tocUrl,
+    required String bookName,
   });
 
   Future<String> crateFfiFfiWebbookContent({
@@ -3655,12 +3660,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<String> crateFfiFfiExploreParseUrl({required String exploreUrl}) {
+  Future<String> crateFfiFfiExploreParseUrl({
+    required String exploreUrl,
+    required String sourceJson,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(exploreUrl, serializer);
+          sse_encode_String(sourceJson, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3673,7 +3682,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiExploreParseUrlConstMeta,
-        argValues: [exploreUrl],
+        argValues: [exploreUrl, sourceJson],
         apiImpl: this,
       ),
     );
@@ -3681,7 +3690,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateFfiFfiExploreParseUrlConstMeta => const TaskConstMeta(
     debugName: "explore_parse_url",
-    argNames: ["exploreUrl"],
+    argNames: ["exploreUrl", "sourceJson"],
   );
 
   @override
@@ -8213,6 +8222,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateFfiFfiWebbookChapters({
     required String sourceJson,
     required String bookUrl,
+    required String tocUrl,
+    required String bookName,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8220,6 +8231,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(sourceJson, serializer);
           sse_encode_String(bookUrl, serializer);
+          sse_encode_String(tocUrl, serializer);
+          sse_encode_String(bookName, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8232,7 +8245,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiWebbookChaptersConstMeta,
-        argValues: [sourceJson, bookUrl],
+        argValues: [sourceJson, bookUrl, tocUrl, bookName],
         apiImpl: this,
       ),
     );
@@ -8240,7 +8253,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateFfiFfiWebbookChaptersConstMeta => const TaskConstMeta(
     debugName: "webbook_chapters",
-    argNames: ["sourceJson", "bookUrl"],
+    argNames: ["sourceJson", "bookUrl", "tocUrl", "bookName"],
   );
 
   @override

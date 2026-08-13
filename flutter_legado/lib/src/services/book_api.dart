@@ -671,7 +671,14 @@ abstract class BookApi {
   Future<String> webbookInfo(String sourceJson, String bookUrl);
 
   /// 获取章节列表
-  Future<String> webbookChapters(String sourceJson, String bookUrl);
+  ///
+  /// [tocUrl] / [bookName] 可选：发现/搜索已带入时传给 Rust，跳过重复拉详情页。
+  Future<String> webbookChapters(
+    String sourceJson,
+    String bookUrl, {
+    String tocUrl = '',
+    String bookName = '',
+  });
 
   /// 获取章节正文
   Future<String> webbookContent(String sourceJson, String chapterJson);
@@ -691,7 +698,12 @@ abstract class BookApi {
   // ========== 发现页操作 ==========
 
   /// 解析 exploreUrl 为分类列表
-  Future<List<ExploreCategory>> exploreParseUrl(String exploreUrl);
+  ///
+  /// [sourceJson] — `@js:` / `<js>` exploreUrl 必填书源 JSON
+  Future<List<ExploreCategory>> exploreParseUrl(
+    String exploreUrl, {
+    String sourceJson = '',
+  });
 
   /// 抓取发现分类的书籍列表
   Future<List<SearchBook>> exploreFetchBooks(
