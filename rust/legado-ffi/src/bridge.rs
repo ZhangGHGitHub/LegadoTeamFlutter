@@ -876,7 +876,7 @@ pub unsafe extern "C" fn ffi_source_switch_search(
         let name = c_char_to_str(book_name)?;
         let author_str = c_char_to_str(author)?;
         let urls = c_char_to_str(source_urls_json)?;
-        crate::api::source_switch::search_alternative_sources(name, author_str, urls)
+        crate::api::source_switch::search_alternative_sources(name, author_str, urls, "")
     }))
 }
 

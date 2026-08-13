@@ -84,7 +84,7 @@
 - **涉及文件**：`flutter_legado/lib/src/screens/change_source_screen.dart:125-131/375-387`、`rust/legado-ffi/src/api/source_switch.rs`（如需接线）
 - **实施要点**：二选一——① Rust 侧实现 `changeSourceLoadWordCount/LoadInfo/LoadToc` 消费逻辑（对齐原版 search 时加载选项）并接线 `_search()`；② 若原版语义不适用，移除开关并登记说明。不可保留假开关。
 - **验收**：三开关有实际效果或已移除；UI 无误导性控件；契约同步。
-- **工作量**：M ｜ **前置**：无 ｜ **状态**：⏸ 阻塞（需 Rust `source_switch_search` 扩展 loadInfo/loadToc/loadWordCount 语义，本批未交付）
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（`source_switch_search` 第四参 options_json + loadInfo/loadToc/loadWordCount enrichment + wordCountComparator 排序；Flutter 传参/重搜/UI 展示）
 
 ### F2-3 `[双轨]` 按书清缓存 FFI 补齐
 - **来源**：P1-3

@@ -13,6 +13,23 @@ use legado_net::LegadoClient;
 
 use crate::runtime;
 
+/// 换源搜索高级选项（对齐 AppConfig changeSourceLoad* 三开关）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SwitchSearchOptions {
+    #[serde(default, rename = "loadInfo")]
+    pub load_info: bool,
+    #[serde(default, rename = "loadToc")]
+    pub load_toc: bool,
+    #[serde(default, rename = "loadWordCount")]
+    pub load_word_count: bool,
+}
+
+impl SwitchSearchOptions {
+    fn needs_enrichment(&self) -> bool {
+        self.load_info || self.load_toc || self.load_word_count
+    }
+}
+
 /// 换源搜索响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceSwitchResponse {
@@ -31,13 +48,17 @@ pub struct SourceSwitchResponse {
 /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；
 /// 空串/空数组/缺省=搜索所有启用源（留项#12/Task #131，语义与
 /// `search_books` 的 `source_urls_json` 一致，复用 `search::load_search_sources`）。
+/// `options_json` — 可选 JSON 对象 `{loadInfo,loadToc,loadWordCount}`；
+/// 空串/缺省时回退读取 config 同名键（对齐 AppConfig）。
 ///
 /// 在指定（或全部启用）的书源中搜索，返回按匹配度排序的候选列表。
 pub fn search_alternative_sources(
     book_name: &str,
     author: &str,
     source_urls_json: &str,
+    options_json: &str,
 ) -> LegadoResult<SourceSwitchResponse> {
+    let options = resolve_switch_options(options_json);
     let sources = resolve_switch_sources(source_urls_json)?;
     if sources.is_empty() {
         return Ok(SourceSwitchResponse {
@@ -48,11 +69,12 @@ pub fn search_alternative_sources(
     }
 
     // 使用 tokio runtime 并行搜索
+    let sources_for_search = sources.clone();
     let candidates = runtime::block_on(async {
         let client = crate::http_state::shared_client();
 
         let mut handles = Vec::new();
-        for source in sources {
+        for source in sources_for_search {
             let client = client.clone();
             let keyword = book_name.to_string();
             handles.push(tokio::spawn(async move {
@@ -79,8 +101,19 @@ pub fn search_alternative_sources(
         .unwrap_or(false);
     let candidates = SourceMatcher::filter_for_change(candidates, book_name, author, check_author);
 
-    // 使用 SourceMatcher 评分排序（同名同作者高分在前）
-    let matches = SourceMatcher::rank_candidates(candidates, book_name, author);
+    let candidates = if options.needs_enrichment() {
+        enrich_switch_candidates(&sources, candidates, &options)?
+    } else {
+        candidates
+    };
+
+    // 使用 SourceMatcher 评分排序（loadWordCount 开启时用字数 comparator）
+    let matches = SourceMatcher::rank_candidates_with_options(
+        candidates,
+        book_name,
+        author,
+        options.load_word_count,
+    );
 
     Ok(SourceSwitchResponse {
         book_name: book_name.to_string(),
@@ -292,10 +325,167 @@ async fn search_for_switch(
             book_name: r.book_name,
             author: r.author,
             latest_chapter: r.latest_chapter,
-            word_count: None,
+            word_count: r.word_count,
+            chapter_word_count_text: None,
+            chapter_word_count: -1,
+            respond_time: -1,
+            origin_order: source.custom_order,
         })
         .collect();
     Ok(candidates)
+}
+
+fn config_flag(key: &str) -> bool {
+    crate::api::config_api::get_config(key)
+        .map(|v| v.trim() == "true")
+        .unwrap_or(false)
+}
+
+/// 解析换源搜索选项：优先 options_json，缺省回退 config
+pub(crate) fn resolve_switch_options(options_json: &str) -> SwitchSearchOptions {
+    let trimmed = options_json.trim();
+    if !trimmed.is_empty() && trimmed != "null" {
+        if let Ok(opts) = serde_json::from_str::<SwitchSearchOptions>(trimmed) {
+            return opts;
+        }
+    }
+    SwitchSearchOptions {
+        load_info: config_flag("changeSourceLoadInfo"),
+        load_toc: config_flag("changeSourceLoadToc"),
+        load_word_count: config_flag("changeSourceLoadWordCount"),
+    }
+}
+
+/// 按开关加载详情/目录/试读字数（对齐 ChangeBookSourceViewModel.loadBookInfo/Toc/WordCount）
+fn enrich_switch_candidates(
+    sources: &[BookSource],
+    candidates: Vec<SearchCandidate>,
+    options: &SwitchSearchOptions,
+) -> LegadoResult<Vec<SearchCandidate>> {
+    use std::collections::HashMap;
+
+    let source_map: HashMap<String, BookSource> = sources
+        .iter()
+        .map(|s| (s.book_source_url.clone(), s.clone()))
+        .collect();
+
+    runtime::block_on(async {
+        let mut handles = Vec::new();
+        let mut orphans = Vec::new();
+        for candidate in candidates {
+            let Some(source) = source_map.get(&candidate.source_url).cloned() else {
+                orphans.push(candidate);
+                continue;
+            };
+            let opts = options.clone();
+            handles.push(tokio::spawn(async move {
+                enrich_one_switch_candidate(&source, candidate, &opts).await
+            }));
+        }
+        let mut out = orphans;
+        for handle in handles {
+            if let Ok(c) = handle.await {
+                out.push(c);
+            }
+        }
+        Ok::<_, LegadoError>(out)
+    })
+}
+
+async fn enrich_one_switch_candidate(
+    source: &BookSource,
+    mut candidate: SearchCandidate,
+    options: &SwitchSearchOptions,
+) -> SearchCandidate {
+    use super::web_book::{build_engine, RealBookSourceFetcher};
+
+    candidate.origin_order = source.custom_order;
+    if !(options.load_info || options.load_toc || options.load_word_count) {
+        return candidate;
+    }
+
+    let engine = build_engine();
+    let fetcher = RealBookSourceFetcher::new();
+    let book_url = candidate.book_url.clone();
+    let mut toc_url = String::new();
+
+    if options.load_info {
+        if let Ok(info) = engine.get_book_info(source, &book_url).await {
+            if candidate.latest_chapter.as_ref().is_none_or(|s| s.is_empty()) {
+                candidate.latest_chapter = info.last_chapter;
+            }
+            if candidate.word_count.as_ref().is_none_or(|s| s.is_empty()) {
+                candidate.word_count = info.word_count;
+            }
+            toc_url = info.toc_url;
+        }
+    }
+
+    if options.load_toc || options.load_word_count {
+        let toc_opt = if toc_url.trim().is_empty() {
+            None
+        } else {
+            Some(toc_url.as_str())
+        };
+        match fetcher
+            .get_chapters_with_hints(source, &book_url, toc_opt, Some(&candidate.book_name))
+            .await
+        {
+            Ok(chapters) if !chapters.is_empty() => {
+                if options.load_word_count {
+                    apply_word_count_sample(&mut candidate, source, &fetcher, &chapters).await;
+                }
+            }
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
+
+    candidate
+}
+
+async fn apply_word_count_sample(
+    candidate: &mut SearchCandidate,
+    source: &BookSource,
+    engine: &impl legado_core::web_book::BookSourceFetcher,
+    chapters: &[WebChapter],
+) {
+    let chapter_index = chapters.len().saturating_sub(1);
+    let chapter = &chapters[chapter_index];
+    let mut title = chapter.title.trim().to_string();
+    if title.chars().count() > 20 {
+        title = format!("{}…", title.chars().take(20).collect::<String>());
+    }
+    let start = std::time::Instant::now();
+    let web_ch = WebChapter {
+        url: chapter.url.clone(),
+        title: chapter.title.clone(),
+        index: chapter.index,
+        is_vip: chapter.is_vip,
+        is_volume: chapter.is_volume,
+        variable: chapter.variable.clone(),
+    };
+    let (count, text) = match engine.get_content(source, &web_ch).await {
+        Ok(content) => {
+            let len = content.chars().count() as i32;
+            (
+                len,
+                format!("[{}] {}\n字数：{}", chapter_index + 1, title, len),
+            )
+        }
+        Err(e) => (
+            -1,
+            format!(
+                "[{}] {}\n获取字数失败：{}",
+                chapter_index + 1,
+                title,
+                e
+            ),
+        ),
+    };
+    candidate.chapter_word_count = count;
+    candidate.chapter_word_count_text = Some(text);
+    candidate.respond_time = start.elapsed().as_millis() as i32;
 }
 
 #[cfg(test)]
@@ -354,8 +544,6 @@ mod tests {
     }
 
     /// Task #145（留项#12）：分组包含判定纯语义单测
-    /// 多组分隔符规范化（`,`/`;`/`，`/`；`）+ 组名 trim + 精确匹配非子串，
-    /// 对齐原版 SOURCE_GROUP_MEMBERSHIP_FILTER SQL 语义
     #[test]
     fn test_source_group_contains_membership() {
         // 逗号分隔多组：首/尾/中间组均命中
@@ -373,6 +561,24 @@ mod tests {
         // 空分组字段不命中任何目标
         assert!(!source_group_contains("", "玄幻"));
         assert!(!source_group_contains("  ,  ", "玄幻"));
+    }
+
+    #[test]
+    fn test_resolve_switch_options_from_json_and_config() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let json = r#"{"loadInfo":true,"loadToc":false,"loadWordCount":true}"#;
+        let opts = resolve_switch_options(json);
+        assert!(opts.load_info);
+        assert!(!opts.load_toc);
+        assert!(opts.load_word_count);
+
+        crate::api::config_api::set_config("changeSourceLoadInfo", "false").unwrap();
+        crate::api::config_api::set_config("changeSourceLoadToc", "true").unwrap();
+        crate::api::config_api::set_config("changeSourceLoadWordCount", "false").unwrap();
+        let from_config = resolve_switch_options("");
+        assert!(!from_config.load_info);
+        assert!(from_config.load_toc);
+        assert!(!from_config.load_word_count);
     }
 
     /// Task #145（留项#12）：多组包含匹配——分组字段含多组的源按目标组命中

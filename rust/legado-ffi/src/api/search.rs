@@ -114,6 +114,10 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
                     author: r.author,
                     latest_chapter: r.latest_chapter,
                     word_count: r.word_count,
+                    chapter_word_count_text: None,
+                    chapter_word_count: -1,
+                    respond_time: -1,
+                    origin_order: source.custom_order,
                 })
                 .collect(),
             Err(_) => Vec::new(),

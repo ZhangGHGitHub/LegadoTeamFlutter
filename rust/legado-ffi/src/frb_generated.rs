@@ -7238,6 +7238,7 @@ fn wire__crate__ffi__ffi__source_switch_search_impl(
             let api_book_name = <String>::sse_decode(&mut deserializer);
             let api_author = <String>::sse_decode(&mut deserializer);
             let api_source_urls_json = <String>::sse_decode(&mut deserializer);
+            let api_options_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
@@ -7245,6 +7246,7 @@ fn wire__crate__ffi__ffi__source_switch_search_impl(
                         api_book_name,
                         api_author,
                         api_source_urls_json,
+                        api_options_json,
                     )?;
                     Ok(output_ok)
                 })())

@@ -237,6 +237,10 @@ mod tests {
             author: author.to_string(),
             latest_chapter: None,
             word_count: None,
+            chapter_word_count_text: None,
+            chapter_word_count: -1,
+            respond_time: -1,
+            origin_order: 0,
         }
     }
 

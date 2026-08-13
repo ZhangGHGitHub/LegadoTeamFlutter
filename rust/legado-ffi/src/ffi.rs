@@ -896,11 +896,13 @@ pub mod ffi {
         book_name: String,
         author: String,
         source_urls_json: String,
+        options_json: String,
     ) -> Result<String, BridgeError> {
         let resp = crate::api::source_switch::search_alternative_sources(
             &book_name,
             &author,
             &source_urls_json,
+            &options_json,
         )?;
         to_json(&resp)
     }

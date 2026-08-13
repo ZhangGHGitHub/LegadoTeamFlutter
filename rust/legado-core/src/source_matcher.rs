@@ -23,6 +23,26 @@ pub struct SourceMatch {
     pub word_count: Option<String>,
     /// 匹配度评分（0.0 ~ 100.0）
     pub score: f64,
+    /// 试读章节字数展示（对齐 SearchBook.chapterWordCountText）
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "chapter_word_count_text"
+    )]
+    pub chapter_word_count_text: Option<String>,
+    /// 试读章节字数（-1=未知，对齐 SearchBook.chapterWordCount）
+    #[serde(default = "default_neg_one")]
+    pub chapter_word_count: i32,
+    /// 取字耗时毫秒（-1=未知，对齐 SearchBook.respondTime）
+    #[serde(default = "default_neg_one")]
+    pub respond_time: i32,
+    /// 书源排序权重（对齐 SearchBook.originOrder / BookSource.customOrder）
+    #[serde(default)]
+    pub origin_order: i32,
+}
+
+fn default_neg_one() -> i32 {
+    -1
 }
 
 /// 搜索候选结果（来自单个书源的原始搜索结果）
@@ -42,6 +62,18 @@ pub struct SearchCandidate {
     pub latest_chapter: Option<String>,
     /// 字数信息
     pub word_count: Option<String>,
+    /// 试读章节字数展示
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter_word_count_text: Option<String>,
+    /// 试读章节字数（-1=未知）
+    #[serde(default = "default_neg_one")]
+    pub chapter_word_count: i32,
+    /// 取字耗时毫秒（-1=未知）
+    #[serde(default = "default_neg_one")]
+    pub respond_time: i32,
+    /// 书源 customOrder
+    #[serde(default)]
+    pub origin_order: i32,
 }
 
 /// 书源匹配器
@@ -54,30 +86,72 @@ impl SourceMatcher {
         target_name: &str,
         target_author: &str,
     ) -> Vec<SourceMatch> {
+        Self::rank_candidates_with_options(candidates, target_name, target_author, false)
+    }
+
+    /// 换源搜索排序；`use_word_count_sort=true` 时对齐原版 wordCountComparator
+    pub fn rank_candidates_with_options(
+        candidates: Vec<SearchCandidate>,
+        target_name: &str,
+        target_author: &str,
+        use_word_count_sort: bool,
+    ) -> Vec<SourceMatch> {
         let mut matches: Vec<SourceMatch> = candidates
             .into_iter()
-            .map(|c| {
-                let score = Self::match_score(&c.book_name, &c.author, target_name, target_author);
-                SourceMatch {
-                    source_url: c.source_url,
-                    source_name: c.source_name,
-                    book_url: c.book_url,
-                    book_name: c.book_name,
-                    author: c.author,
-                    latest_chapter: c.latest_chapter,
-                    word_count: c.word_count,
-                    score,
-                }
-            })
+            .map(|c| Self::candidate_to_match(c, target_name, target_author))
             .collect();
 
-        // 按评分降序排列
+        if use_word_count_sort {
+            Self::sort_by_word_count(&mut matches);
+        } else {
+            matches.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.origin_order.cmp(&b.origin_order))
+            });
+        }
+        matches
+    }
+
+    fn candidate_to_match(
+        c: SearchCandidate,
+        target_name: &str,
+        target_author: &str,
+    ) -> SourceMatch {
+        let score = Self::match_score(&c.book_name, &c.author, target_name, target_author);
+        SourceMatch {
+            source_url: c.source_url,
+            source_name: c.source_name,
+            book_url: c.book_url,
+            book_name: c.book_name,
+            author: c.author,
+            latest_chapter: c.latest_chapter,
+            word_count: c.word_count,
+            score,
+            chapter_word_count_text: c.chapter_word_count_text,
+            chapter_word_count: c.chapter_word_count,
+            respond_time: c.respond_time,
+            origin_order: c.origin_order,
+        }
+    }
+
+    /// 对齐 ChangeBookSourceViewModel.wordCountComparator
+    fn sort_by_word_count(matches: &mut [SourceMatch]) {
         matches.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    (b.chapter_word_count > 1000).cmp(&(a.chapter_word_count > 1000))
+                })
+                .then_with(|| {
+                    chapter_num_from_text(b.chapter_word_count_text.as_deref())
+                        .cmp(&chapter_num_from_text(a.chapter_word_count_text.as_deref()))
+                })
+                .then_with(|| b.chapter_word_count.cmp(&a.chapter_word_count))
+                .then_with(|| a.origin_order.cmp(&b.origin_order))
         });
-        matches
     }
 
     /// Task #25：书名规范化比较 — 对齐原版换源硬过滤的比较口径。
@@ -228,6 +302,18 @@ impl SourceMatcher {
     }
 }
 
+/// 从 chapterWordCountText 提取 `[n]` 章节序号（对齐原版 chapterNumRegex）
+fn chapter_num_from_text(text: Option<&str>) -> i32 {
+    let Some(text) = text else {
+        return -1;
+    };
+    text.trim_start()
+        .strip_prefix('[')
+        .and_then(|rest| rest.split(']').next())
+        .and_then(|num| num.parse::<i32>().ok())
+        .unwrap_or(-1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +353,10 @@ mod tests {
                 author: "天蚕土豆".into(),
                 latest_chapter: None,
                 word_count: None,
+                chapter_word_count_text: None,
+                chapter_word_count: -1,
+                respond_time: -1,
+                origin_order: 0,
             },
             SearchCandidate {
                 source_url: "s2".into(),
@@ -276,6 +366,10 @@ mod tests {
                 author: "忘语".into(),
                 latest_chapter: None,
                 word_count: None,
+                chapter_word_count_text: None,
+                chapter_word_count: -1,
+                respond_time: -1,
+                origin_order: 0,
             },
         ];
 
@@ -296,6 +390,10 @@ mod tests {
             latest_chapter: None,
             word_count: None,
             score: 80.0,
+            chapter_word_count_text: None,
+            chapter_word_count: -1,
+            respond_time: -1,
+            origin_order: 0,
         };
         assert!(SourceMatcher::is_good_match(&good));
 
@@ -315,6 +413,10 @@ mod tests {
             author: author.into(),
             latest_chapter: None,
             word_count: None,
+            chapter_word_count_text: None,
+            chapter_word_count: -1,
+            respond_time: -1,
+            origin_order: 0,
         }
     }
 
