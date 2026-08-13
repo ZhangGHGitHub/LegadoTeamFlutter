@@ -2,16 +2,19 @@
 
 <cite>
 **本文引用的文件**   
-- [App.kt](file://app/src/main/java/io/legado/app/App.kt)
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
-- [ReaderSettings.kt](file://app/src/main/java/io/legado/app/model/reader/ReaderSettings.kt)
-- [AudioPlaybackPreference.kt](file://app/src/main/java/io/legado/app/model/AudioPlaybackPreference.kt)
+- [SettingsService.kt](file://flutter_legado/lib/src/services/settings_service.dart)
+- [ThemeProvider.kt](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [App.kt](file://flutter_legado/lib/app.dart)
+- [settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
+- [theme_provider_test.dart](file://flutter_legado/test/unit/theme_provider_test.dart)
 </cite>
+
+## 更新摘要
+**所做更改**   
+- 新增全局字体缩放功能（getFontScale/setFontScale）
+- 增强ThemeProvider与SettingsService的集成，实现响应式UI更新
+- 完善字体缩放的边界处理和默认值管理
+- 添加完整的单元测试覆盖新功能的验证
 
 ## 目录
 1. [简介](#简介)
@@ -26,389 +29,279 @@
 10. [附录](#附录)
 
 ## 简介
-本文件围绕应用“设置Provider”进行系统化技术文档化，聚焦用户偏好、主题配置、字体设置等设置的存储与管理机制。内容涵盖：
+本文件围绕应用"设置Provider"进行系统化技术文档化，聚焦用户偏好、主题配置、字体设置等设置的存储与管理机制。内容涵盖：
 - 持久化方案与数据序列化（SharedPreferences 的使用）
 - 设置验证与默认值处理
 - 设置变更监听与响应机制
 - 多语言配置的动态切换实现
 - 设置项扩展方法与自定义配置的实现指南
+- **新增**：全局字体缩放功能的完整实现与集成
 
 ## 项目结构
-在 Android 应用中，设置相关能力通常由以下模块协作完成：
-- 全局初始化入口：负责应用启动时加载并缓存关键设置
-- 设置提供者：统一读写 SharedPreferences，提供类型安全的访问接口
-- 配置管理器：聚合业务域配置（如阅读、音频播放），并提供校验与默认值
-- 主题与字体管理器：基于设置驱动 UI 主题与字体渲染
-- 本地化工具：管理语言资源与运行时语言切换
-- 工具类：封装 SharedPreferences 的常用操作
+在 Flutter 应用中，设置相关能力由以下模块协作完成：
+- 设置服务（SettingsService）：统一读写 SharedPreferences，提供类型安全的访问接口
+- 主题提供者（ThemeProvider）：管理主题状态和字体缩放，驱动响应式UI更新
+- 应用入口（LegadoApp）：集成ThemeProvider，应用全局字体缩放
+- 测试套件：完整的单元测试覆盖所有设置功能
 
 ```mermaid
 graph TB
-App["应用入口<br/>App.kt"] --> Settings["设置提供者<br/>SettingsProvider.kt"]
-App --> ConfigMgr["配置管理器<br/>ConfigManager.kt"]
-ConfigMgr --> ReaderSet["阅读器设置<br/>ReaderSettings.kt"]
-ConfigMgr --> AudioPref["音频播放偏好<br/>AudioPlaybackPreference.kt"]
-Settings --> ThemeMgr["主题管理器<br/>ThemeManager.kt"]
-Settings --> FontMgr["字体管理器<br/>FontManager.kt"]
-Settings --> LocaleH["本地化工具<br/>LocaleHelper.kt"]
-Settings --> PrefUtil["偏好工具<br/>PreferenceUtils.kt"]
+App["应用入口<br/>app.dart"] --> ThemeProvider["主题提供者<br/>theme_provider.dart"]
+ThemeProvider --> SettingsService["设置服务<br/>settings_service.dart"]
+SettingsService --> SharedPreferences["SharedPreferences<br/>持久化存储"]
+App --> MediaQuery["MediaQuery<br/>字体缩放应用"]
 ```
 
 **图表来源** 
-- [App.kt](file://app/src/main/java/io/legado/app/App.kt)
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
-- [ReaderSettings.kt](file://app/src/main/java/io/legado/app/model/reader/ReaderSettings.kt)
-- [AudioPlaybackPreference.kt](file://app/src/main/java/io/legado/app/model/AudioPlaybackPreference.kt)
+- [app.dart](file://flutter_legado/lib/app.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
 
 **章节来源**
-- [App.kt](file://app/src/main/java/io/legado/app/App.kt)
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
+- [app.dart](file://flutter_legado/lib/app.dart)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
 
 ## 核心组件
-- 设置提供者（SettingsProvider）
-  - 职责：集中管理 SharedPreferences 的读写，暴露类型安全的方法；维护键名常量；支持监听器注册与回调。
-  - 关键点：线程安全、默认值回退、批量写入、事件分发。
-- 配置管理器（ConfigManager）
-  - 职责：聚合各业务域的配置对象（阅读器、音频等），提供统一的获取与更新入口；负责配置校验与默认值填充。
-- 主题管理器（ThemeManager）
-  - 职责：根据设置中的主题键值切换系统/应用主题，必要时触发界面重建。
-- 字体管理器（FontManager）
-  - 职责：根据设置选择字体族/大小，影响文本渲染与预览。
-- 本地化工具（LocaleHelper）
-  - 职责：读取语言设置，动态切换应用语言环境，确保资源匹配。
-- 偏好工具（PreferenceUtils）
-  - 职责：对 SharedPreferences 的常见操作进行封装，简化调用。
+- 设置服务（SettingsService）
+  - 职责：集中管理 SharedPreferences 的读写，暴露类型安全的方法；维护键名常量；支持异步操作和异常处理。
+  - 关键点：异步IO、默认值回退、异常捕获、批量写入。
+- 主题提供者（ThemeProvider）
+  - 职责：管理主题模式和全局字体缩放，提供响应式状态管理；通过ChangeNotifier驱动UI更新。
+  - 关键点：状态同步、通知机制、边界处理、计算属性。
+- 应用入口（LegadoApp）
+  - 职责：集成ThemeProvider，应用全局字体缩放到整个应用。
+  - 关键点：MediaQuery集成、条件渲染、性能优化。
 
 **章节来源**
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [app.dart](file://flutter_legado/lib/app.dart)
 
 ## 架构总览
-设置体系采用“提供者 + 管理器 + 工具”的分层设计：
-- 提供者层：直接对接 SharedPreferences，保证数据一致性与可观测性
-- 管理层：面向业务域，封装复杂逻辑（校验、默认值、组合配置）
-- 工具层：通用能力（读写、序列化、监听）
+设置体系采用"服务 + 提供者 + 应用"的分层设计：
+- 服务层：直接对接 SharedPreferences，保证数据一致性与异步操作
+- 状态管理层：面向UI状态，封装复杂逻辑（校验、默认值、计算属性）
+- 应用层：集成状态管理，应用全局配置到UI树
 
 ```mermaid
 classDiagram
-class SettingsProvider {
-+读取(key, default)
-+写入(key, value)
-+批量写入(map)
-+移除(key)
-+监听(onChange)
-+取消监听()
+class SettingsService {
++getFontSize()
++setFontSize()
++getFontScale()
++setFontScale()
++getThemeMode()
++setThemeMode()
++getLocale()
++setLocale()
 }
-class ConfigManager {
-+获取阅读器设置()
-+获取音频偏好()
-+校验配置()
-+应用默认值()
+class ThemeProvider {
++themeMode
++fontScaleRaw
++fontScale
++isSystemFontScale
++load()
++setThemeMode()
++setFontScale()
 }
-class ThemeManager {
-+应用主题(themeKey)
-+刷新UI()
+class LegadoApp {
++build()
++Consumer~ThemeProvider~
++MediaQuery~builder~
 }
-class FontManager {
-+设置字体(fontFamily,size)
-+刷新渲染()
-}
-class LocaleHelper {
-+设置语言(locale)
-+重启Activity()
-}
-class PreferenceUtils {
-+getBoolean()
-+getString()
-+getInt()
-+putString()
-+putInt()
-}
-SettingsProvider --> PreferenceUtils : "使用"
-ConfigManager --> SettingsProvider : "读写"
-ThemeManager --> SettingsProvider : "读取主题键"
-FontManager --> SettingsProvider : "读取字体键"
-LocaleHelper --> SettingsProvider : "读取语言键"
+SettingsService --> SharedPreferences : "使用"
+ThemeProvider --> SettingsService : "读写"
+LegadoApp --> ThemeProvider : "消费状态"
 ```
 
 **图表来源** 
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [app.dart](file://flutter_legado/lib/app.dart)
 
 ## 详细组件分析
 
-### 设置提供者（SettingsProvider）
+### 设置服务（SettingsService）
 - 存储与序列化
   - 基于 SharedPreferences 进行键值对持久化
-  - 支持基础类型与简单对象的序列化（如 JSON 字符串）
-  - 提供批量写入以提升性能
+  - 支持基础类型与简单对象的序列化
+  - 提供异步方法避免阻塞主线程
 - 默认值与验证
   - 读取时若缺失则返回默认值
-  - 写入前可进行范围或格式校验，非法值拒绝写入并记录日志
-- 监听机制
-  - 支持注册监听器，当指定 key 变化时触发回调
-  - 支持按 key 精确订阅或全量监听
-- 线程模型
-  - 读写建议在主线程或协程调度器上执行，避免并发冲突
-  - 内部可使用锁或原子操作保证一致性
+  - 异常捕获确保稳定性
+- 字体缩放功能
+  - getFontScale(): 获取全局字体缩放原始值（0=跟随系统，8~16=0.8x~1.6x）
+  - setFontScale(): 设置字体缩放并持久化
+  - 键名：app_font_scale
 
 ```mermaid
 flowchart TD
-Start(["写入请求"]) --> Validate["参数校验"]
-Validate --> Valid{"是否有效?"}
-Valid --> |否| Reject["拒绝写入并返回错误"]
+Start(["字体缩放设置"]) --> Validate["参数校验"]
+Validate --> Valid{"值是否有效?"}
+Valid --> |否| Default["使用默认值(跟随系统)"]
 Valid --> |是| Write["写入SharedPreferences"]
-Write --> Notify["通知监听器"]
-Notify --> End(["完成"])
-Reject --> End
+Write --> Success["保存成功"]
+Default --> Success
+Success --> End(["完成"])
 ```
 
 **图表来源** 
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
 
 **章节来源**
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
 
-### 配置管理器（ConfigManager）
-- 职责
-  - 聚合阅读器、音频等配置对象
-  - 提供统一的获取与更新接口
-  - 负责配置校验与默认值填充
-- 数据流
-  - 首次启动或迁移后，从 SharedPreferences 加载配置
-  - 未命中时生成默认配置并写回
-  - 后续变更通过 SettingsProvider 持久化
-
-```mermaid
-sequenceDiagram
-participant Caller as "调用方"
-participant Cfg as "配置管理器"
-participant SP as "设置提供者"
-Caller->>Cfg : 获取阅读器设置()
-Cfg->>SP : 读取键集合
-alt 存在缓存
-SP-->>Cfg : 返回已解析配置
-else 不存在缓存
-Cfg->>SP : 读取原始键值
-Cfg->>Cfg : 校验与默认值填充
-Cfg->>SP : 写回规范化后的配置
-Cfg-->>Caller : 返回配置对象
-end
-```
-
-**图表来源** 
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ReaderSettings.kt](file://app/src/main/java/io/legado/app/model/reader/ReaderSettings.kt)
-
-**章节来源**
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
-- [ReaderSettings.kt](file://app/src/main/java/io/legado/app/model/reader/ReaderSettings.kt)
-
-### 主题管理器（ThemeManager）
+### 主题提供者（ThemeProvider）
 - 功能
-  - 根据设置中的主题键切换应用主题
-  - 触发必要的界面重建以生效
-- 交互
-  - 从 SettingsProvider 读取主题键
-  - 调用系统 API 应用主题
-  - 广播或回调通知 UI 层刷新
+  - 管理主题模式（亮/暗/跟随系统）
+  - 管理全局字体缩放（原始值与计算值）
+  - 提供响应式状态更新
+- 字体缩放处理
+  - fontScaleRaw: 原始存储值（0, 8~16）
+  - fontScale: 计算后的实际缩放倍数（null表示跟随系统）
+  - isSystemFontScale: 判断是否跟随系统
+  - fontScaleLabel: 显示文本（如"当前字体大小：1.2"）
+- 状态管理
+  - load(): 启动时加载持久化设置
+  - setThemeMode(): 设置主题并通知监听者
+  - setFontScale(): 设置字体缩放并通知监听者
 
 ```mermaid
 sequenceDiagram
 participant UI as "界面"
-participant TM as "主题管理器"
-participant SP as "设置提供者"
-UI->>TM : 应用主题(themeKey)
-TM->>SP : 读取主题键
-TM->>TM : 计算主题样式
-TM->>UI : 触发界面重建
-UI-->>TM : 完成刷新
+participant TP as "主题提供者"
+participant SS as "设置服务"
+UI->>TP : setFontScale(12)
+TP->>TP : 更新内部状态
+TP->>SS : setFontScale(12)
+TP->>UI : notifyListeners()
+UI-->>TP : 重新构建Widget
 ```
 
 **图表来源** 
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
 
 **章节来源**
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
 
-### 字体管理器（FontManager）
+### 应用入口（LegadoApp）
 - 功能
-  - 根据设置选择字体族与字号
-  - 影响文本渲染与预览效果
-- 交互
-  - 从 SettingsProvider 读取字体相关键
-  - 更新字体缓存并在需要时刷新渲染
+  - 集成ThemeProvider作为全局状态管理
+  - 应用全局字体缩放到整个应用
+  - 条件渲染MediaQuery以应用字体缩放
+- 字体缩放应用
+  - 通过Consumer监听ThemeProvider状态变化
+  - 当fontScale不为null时，使用MediaQuery包装子Widget
+  - TextScaler.linear(scale)实现线性缩放
 
 ```mermaid
 flowchart TD
-A["设置字体键变更"] --> B["读取字体族/字号"]
-B --> C{"是否合法?"}
-C --> |否| D["回退到默认字体"]
-C --> |是| E["更新字体缓存"]
-E --> F["刷新渲染"]
-D --> F
+A["ThemeProvider状态变化"] --> B["Consumer监听"]
+B --> C{"fontScale是否为null?"}
+C --> |是| D["直接渲染子Widget"]
+C --> |否| E["创建MediaQuery包装"]
+E --> F["TextScaler.linear(scale)"]
+F --> G["渲染带字体缩放的子Widget"]
+D --> H["完成渲染"]
+G --> H
 ```
 
 **图表来源** 
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
+- [app.dart](file://flutter_legado/lib/app.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
 
 **章节来源**
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
+- [app.dart](file://flutter_legado/lib/app.dart)
 
-### 本地化工具（LocaleHelper）
-- 功能
-  - 读取语言设置键
-  - 动态切换应用语言环境
-  - 必要时重启 Activity 以完全生效
-- 流程
-  - 修改语言键后，重新构建资源上下文
-  - 通知 UI 层刷新显示
-
-```mermaid
-sequenceDiagram
-participant User as "用户"
-participant LCH as "本地化工具"
-participant SP as "设置提供者"
-participant UI as "界面"
-User->>LCH : 切换语言(locale)
-LCH->>SP : 保存语言键
-LCH->>LCH : 重建资源上下文
-LCH->>UI : 提示重启或自动刷新
-UI-->>LCH : 完成
-```
-
-**图表来源** 
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
+### 测试覆盖
+- SettingsService测试
+  - 字体大小、行距、背景色等基础功能测试
+  - 字体缩放功能的完整测试覆盖
+  - 主题模式、语言设置等高级功能测试
+- ThemeProvider测试
+  - 初始状态验证
+  - 加载持久化设置测试
+  - 字体缩放边界值测试（8→0.8, 16→1.6）
+  - 跟随系统逻辑测试（值为0或超出范围）
 
 **章节来源**
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
-
-### 偏好工具（PreferenceUtils）
-- 功能
-  - 封装 SharedPreferences 的 get/put 方法
-  - 提供布尔、整型、字符串等类型的便捷存取
-- 优势
-  - 减少样板代码
-  - 统一异常处理与日志记录
-
-**章节来源**
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
-
-### 阅读器设置（ReaderSettings）
-- 内容
-  - 阅读背景、行距、翻页模式、夜间模式等
-- 特点
-  - 与 UI 强相关，变更需即时生效
-  - 提供默认值与边界校验
-
-**章节来源**
-- [ReaderSettings.kt](file://app/src/main/java/io/legado/app/model/reader/ReaderSettings.kt)
-
-### 音频播放偏好（AudioPlaybackPreference）
-- 内容
-  - 播放速度、音量策略、后台播放开关等
-- 特点
-  - 与播放器状态联动，变更需同步至播放引擎
-
-**章节来源**
-- [AudioPlaybackPreference.kt](file://app/src/main/java/io/legado/app/model/AudioPlaybackPreference.kt)
+- [settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
+- [theme_provider_test.dart](file://flutter_legado/test/unit/theme_provider_test.dart)
 
 ## 依赖关系分析
 - 低耦合
-  - 设置提供者不依赖具体业务，仅关注键值读写与监听
-  - 管理器依赖提供者，但不反向依赖 UI
+  - SettingsService不依赖具体业务，仅关注键值读写
+  - ThemeProvider依赖SettingsService，但不反向依赖UI
+  - LegadoApp依赖ThemeProvider，实现松耦合的状态管理
 - 高内聚
-  - 每个管理器专注单一领域（主题、字体、语言、配置）
+  - 每个组件专注单一领域（设置持久化、状态管理、UI应用）
 - 外部依赖
-  - SharedPreferences（系统级持久化）
-  - 资源系统（主题、字体、语言资源）
+  - SharedPreferences（Flutter官方持久化插件）
+  - Provider（状态管理）
+  - Material Design（UI框架）
 
 ```mermaid
 graph LR
-SP["设置提供者"] --> PU["偏好工具"]
-CM["配置管理器"] --> SP
-TM["主题管理器"] --> SP
-FM["字体管理器"] --> SP
-LH["本地化工具"] --> SP
+SS["设置服务"] --> SP["SharedPreferences"]
+TP["主题提供者"] --> SS
+LA["应用入口"] --> TP
+LA --> MQ["MediaQuery"]
 ```
 
 **图表来源** 
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [PreferenceUtils.kt](file://app/src/main/java/io/legado/app/utils/PreferenceUtils.kt)
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [app.dart](file://flutter_legado/lib/app.dart)
 
 **章节来源**
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ConfigManager.kt](file://app/src/main/java/io/legado/app/help/ConfigManager.kt)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [app.dart](file://flutter_legado/lib/app.dart)
 
 ## 性能考虑
 - 读写优化
-  - 批量写入减少磁盘 IO
+  - 异步IO避免阻塞主线程
   - 延迟加载与缓存热点配置
-- 监听优化
-  - 按需订阅，避免全量监听造成开销
+- 状态更新优化
+  - 按需订阅，避免不必要的重建
   - 去抖与节流变更回调
-- 序列化
-  - 大对象尽量分片或压缩存储
-  - 避免频繁 GC 的临时对象分配
-
-[本节为通用指导，无需特定文件引用]
+- 内存管理
+  - 及时释放监听器
+  - 避免循环引用
 
 ## 故障排查指南
 - 常见问题
-  - 设置未生效：检查键名是否正确、是否被覆盖、监听是否注册
-  - 主题/字体切换无效：确认 UI 是否重建、资源是否可用
-  - 语言切换失败：确认资源包是否存在、是否需要重启 Activity
+  - 字体缩放未生效：检查fontScale值是否正确，MediaQuery是否正确应用
+  - 主题切换无效：确认ThemeProvider是否正确初始化，notifyListeners是否调用
+  - 设置持久化失败：检查SharedPreferences权限，异常处理日志
 - 定位步骤
-  - 查看写入日志与返回值
-  - 检查 SharedPreferences 中对应键的值
-  - 验证监听器回调是否触发
-  - 核对默认值与校验逻辑
+  - 查看设置服务的异常日志
+  - 检查ThemeProvider的状态变化
+  - 验证SharedPreferences中的键值
+  - 调试MediaQuery的textScaler值
 
 **章节来源**
-- [SettingsProvider.kt](file://app/src/main/java/io/legado/app/utils/SettingsProvider.kt)
-- [ThemeManager.kt](file://app/src/main/java/io/legado/app/ui/theme/ThemeManager.kt)
-- [FontManager.kt](file://app/src/main/java/io/legado/app/ui/font/FontManager.kt)
-- [LocaleHelper.kt](file://app/src/main/java/io/legado/app/utils/LocaleHelper.kt)
+- [settings_service.dart](file://flutter_legado/lib/src/services/settings_service.dart)
+- [theme_provider.dart](file://flutter_legado/lib/src/providers/theme_provider.dart)
+- [app.dart](file://flutter_legado/lib/app.dart)
 
 ## 结论
-设置体系通过清晰的层次划分与职责分离，实现了稳定、可扩展且高性能的用户偏好管理。借助 SharedPreferences 的持久化能力与监听机制，结合管理器层的校验与默认值策略，能够保障用户体验的一致性与可靠性。未来可在性能优化与跨端一致性方面继续演进。
-
-[本节为总结性内容，无需特定文件引用]
+设置体系通过清晰的分层设计与响应式状态管理，实现了稳定、可扩展且高性能的用户偏好管理。新增的全局字体缩放功能进一步完善了应用的个性化设置能力，通过与ThemeProvider的深度集成，实现了真正的响应式UI更新。借助SharedPreferences的持久化能力与Provider的状态管理机制，结合完善的测试覆盖，能够保障用户体验的一致性与可靠性。
 
 ## 附录
 - 扩展设置项的建议
-  - 新增键名：在设置提供者中定义常量，提供读写方法
-  - 默认值：在配置管理器中声明默认值与校验规则
-  - 监听：在需要处订阅变更，避免全局监听
-  - 测试：为新增设置编写单元测试，覆盖默认值与边界条件
+  - 在SettingsService中定义新的get/set方法
+  - 在ThemeProvider中添加相应的状态管理
+  - 在LegadoApp中集成新的UI应用逻辑
+  - 编写完整的单元测试覆盖新功能
 - 自定义配置实现指南
   - 定义配置数据结构（含字段、默认值、校验）
-  - 在配置管理器中集成该配置
-  - 在 SettingsProvider 中提供对应的键值存取
-  - 在 UI 层绑定设置项，确保实时反馈
-
-[本节为通用指导，无需特定文件引用]
+  - 在SettingsService中集成该配置
+  - 在ThemeProvider中管理相关状态
+  - 在UI层绑定设置项，确保实时反馈
+- 字体缩放最佳实践
+  - 遵循0=跟随系统，8~16=0.8x~1.6x的映射规则
+  - 使用isSystemFontScale判断是否需要应用缩放
+  - 提供友好的用户界面展示当前缩放级别

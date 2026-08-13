@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: master
 nodes_managed: true
-exported_at: "2026-07-30T09:46:51Z"
+exported_at: "2026-08-01T01:22:01Z"
 modules:
     "":
-        dir_name: Legado 阅读器仓库聚合根
-        title: Legado 阅读器仓库聚合根
+        dir_name: Legado 阅读器仓库级聚合根
+        title: Legado 阅读器仓库级聚合根
         scope:
             - README.md
             - Makefile
@@ -26,10 +26,20 @@ modules:
             - settings.gradle
         source_files: []
         children:
+            - agents_skills
             - android_app
             - flutter_app
             - github_ci
             - rust_workspace
+        depends_on: []
+        related_to: []
+    agents_skills:
+        dir_name: Agent Skills 配置目录
+        title: Agent Skills 配置目录
+        scope:
+            - .agents/
+        source_files: []
+        children: []
         depends_on: []
         related_to: []
     android_app:
@@ -40,16 +50,18 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: rust_workspace
     flutter_app:
-        dir_name: Legado Flutter 跨平台阅读应用前端
-        title: Legado Flutter 跨平台阅读应用前端
+        dir_name: Legado Flutter 跨平台电子书阅读应用
+        title: Legado Flutter 跨平台电子书阅读应用
         scope:
             - flutter_legado/
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: rust_workspace
     github_ci:
         dir_name: GitHub 自动化与协作配置
         title: GitHub 自动化与协作配置
@@ -60,11 +72,13 @@ modules:
         depends_on: []
         related_to: []
     rust_workspace:
-        dir_name: Legado Rust 工作区（核心引擎与 FFI_Server 层）
-        title: Legado Rust 工作区（核心引擎与 FFI/Server 层）
+        dir_name: Legado Rust 后端工作区（Cargo Workspace）
+        title: Legado Rust 后端工作区（Cargo Workspace）
         scope:
             - rust/
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: android_app
+            - path: flutter_app

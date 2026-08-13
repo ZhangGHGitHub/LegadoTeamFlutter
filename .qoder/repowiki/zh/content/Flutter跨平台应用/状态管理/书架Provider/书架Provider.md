@@ -3,6 +3,8 @@
 <cite>
 **本文引用的文件**   
 - [bookshelf_provider_test.dart](file://flutter_legado/test/unit/bookshelf_provider_test.dart)
+- [bookshelf_notifier_test.dart](file://flutter_legado/test/unit/bookshelf_notifier_test.dart)
+- [bookshelf_manage_test.dart](file://flutter_legado/test/unit/bookshelf_manage_test.dart)
 - [bookshelf.rs](file://rust/legado-ffi/src/api/bookshelf.rs)
 - [book_repository.rs](file://rust/legado-db/src/repository/book_repository.rs)
 - [book_group_repository.rs](file://rust/legado-db/src/repository/book_group_repository.rs)
@@ -17,6 +19,13 @@
 - [read_state.rs](file://rust/legado-core/src/read_state.rs)
 - [reading_stats.rs](file://rust/legado-core/src/reading_stats.rs)
 </cite>
+
+## 更新摘要
+**变更内容**   
+- 增强了书架Provider的书籍管理功能，新增临时书籍智能识别和过滤机制
+- 在书架列表查询中自动过滤临时书籍（notShelf标记），确保用户只看到正式添加到书架的书籍
+- 优化了书籍添加和更新流程，支持临时书转正时的安全处理
+- 更新了相关测试用例以验证临时书籍过滤功能的正确性
 
 ## 目录
 1. [简介](#简介)
@@ -33,6 +42,8 @@
 ## 简介
 本文件面向BookshelfProvider（书架Provider）的完整技术文档，聚焦于书籍书架管理的核心能力：书籍的增删改、分类与分组管理、搜索（全文与元数据）、导入导出、以及阅读进度的同步与管理。文档从系统架构、数据流、关键算法与接口契约出发，提供可操作的API使用示例与错误处理方案，帮助开发者快速集成与扩展书架功能。
 
+**更新** 新增了临时书籍智能识别和过滤功能，确保书架列表只显示正式添加到书架的书籍，排除搜索/发现时产生的临时阅读记录。
+
 ## 项目结构
 书架相关能力由Flutter层测试用例驱动验证，Rust侧通过FFI暴露API，底层由数据库仓库与领域模型支撑。整体分层如下：
 - Flutter测试层：用于校验Provider行为与边界条件
@@ -44,6 +55,8 @@
 graph TB
 subgraph "Flutter测试"
 T["bookshelf_provider_test.dart"]
+TN["bookshelf_notifier_test.dart"]
+TM["bookshelf_manage_test.dart"]
 end
 subgraph "FFI API"
 A1["bookshelf.rs"]
@@ -64,6 +77,8 @@ M3["read_state.rs"]
 M4["reading_stats.rs"]
 end
 T --> A1
+TN --> A1
+TM --> A1
 T --> A2
 T --> A3
 T --> A4
@@ -82,55 +97,59 @@ R4 --> M4
 
 图表来源
 - [bookshelf_provider_test.dart:1-200](file://flutter_legado/test/unit/bookshelf_provider_test.dart#L1-L200)
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf_notifier_test.dart:1-441](file://flutter_legado/test/unit/bookshelf_notifier_test.dart#L1-L441)
+- [bookshelf_manage_test.dart:1-161](file://flutter_legado/test/unit/bookshelf_manage_test.dart#L1-L161)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
 - [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
 - [search.rs:1-200](file://rust/legado-ffi/src/api/search.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [book.rs:1-353](file://rust/legado-core/src/models/book.rs#L1-L353)
 - [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
 - [read_state.rs:1-200](file://rust/legado-core/src/read_state.rs#L1-L200)
 - [reading_stats.rs:1-200](file://rust/legado-core/src/reading_stats.rs#L1-L200)
 
 章节来源
 - [bookshelf_provider_test.dart:1-200](file://flutter_legado/test/unit/bookshelf_provider_test.dart#L1-L200)
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf_notifier_test.dart:1-441](file://flutter_legado/test/unit/bookshelf_notifier_test.dart#L1-L441)
+- [bookshelf_manage_test.dart:1-161](file://flutter_legado/test/unit/bookshelf_manage_test.dart#L1-L161)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
 - [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
 - [search.rs:1-200](file://rust/legado-ffi/src/api/search.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [book.rs:1-353](file://rust/legado-core/src/models/book.rs#L1-L353)
 - [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
 - [read_state.rs:1-200](file://rust/legado-core/src/read_state.rs#L1-L200)
 - [reading_stats.rs:1-200](file://rust/legado-core/src/reading_stats.rs#L1-L200)
 
 ## 核心组件
 - 书架API（bookshelf.rs）：聚合书籍CRUD、分组管理、进度同步、批量操作等上层编排逻辑，并负责错误码转换与事务控制。
-- 书籍仓库（book_repository.rs）：实现书籍实体的增删改查、索引维护、分页与排序、批量更新。
+- 书籍仓库（book_repository.rs）：实现书籍实体的增删改查、索引维护、分页与排序、批量更新，**新增临时书籍过滤功能**。
 - 分组仓库（book_group_repository.rs）：自定义分组的创建、重命名、删除、成员增减、排序与可见性。
 - 阅读记录仓库（read_record_repository.rs）：章节级阅读进度读写、书签、最后阅读位置、阅读时长累计。
 - 阅读统计仓库（reading_stats_repository.rs）：按日/周/月维度统计阅读时长、翻页次数、完成度等指标。
-- 领域模型（book.rs, book_chapter.rs, read_state.rs, reading_stats.rs）：定义书籍、章节、阅读状态、统计数据的结构与约束。
+- 领域模型（book.rs, book_chapter.rs, read_state.rs, reading_stats.rs）：定义书籍、章节、阅读状态、统计数据的结构与约束，**包含临时书籍标识常量**。
 
 章节来源
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [book.rs:1-353](file://rust/legado-core/src/models/book.rs#L1-L353)
 - [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
 - [read_state.rs:1-200](file://rust/legado-core/src/read_state.rs#L1-L200)
 - [reading_stats.rs:1-200](file://rust/legado-core/src/reading_stats.rs#L1-L200)
 
 ## 架构总览
-书架Provider采用“FFI API -> 仓库 -> 领域模型”的分层设计，确保职责清晰、易于测试与扩展。
+书架Provider采用"FFI API -> 仓库 -> 领域模型"的分层设计，确保职责清晰、易于测试与扩展。
 
 ```mermaid
 classDiagram
@@ -150,6 +169,7 @@ class BookRepository {
 +删除()
 +查询()
 +批量操作()
++find_all_in_shelf()
 }
 class BookGroupRepository {
 +创建分组()
@@ -173,6 +193,7 @@ class BookModel {
 +作者
 +封面
 +元数据
++book_type
 }
 class ChapterModel {
 +id
@@ -204,12 +225,12 @@ ReadingStatsRepository --> ReadingStatsModel : "读写"
 ```
 
 图表来源
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [book.rs:1-353](file://rust/legado-core/src/models/book.rs#L1-L353)
 - [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
 - [read_state.rs:1-200](file://rust/legado-core/src/read_state.rs#L1-L200)
 - [reading_stats.rs:1-200](file://rust/legado-core/src/reading_stats.rs#L1-L200)
@@ -240,14 +261,55 @@ ReturnErr --> End
 ```
 
 图表来源
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
 
 章节来源
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
+
+### 临时书籍智能识别与过滤
+**新增功能** 实现了临时书籍的智能识别和过滤机制，确保书架列表只显示正式添加到书架的书籍。
+
+- **临时书籍标识**：使用`NOT_SHELF`位掩码（0b100_0000_0000）标记临时书籍，这些书籍来自搜索/发现页面的在线阅读体验，但未正式加入书架。
+- **书架列表过滤**：在`find_all_in_shelf()`方法中，通过SQL条件`(type & 1024) = 0`过滤掉临时书籍，确保用户只看到正式书籍。
+- **安全更新机制**：当临时书籍被正式添加到书架时，使用原地UPDATE语义避免触发级联删除，保护章节目录完整性。
+
+```mermaid
+sequenceDiagram
+participant Client as "客户端"
+participant Shelf as "BookshelfApi"
+participant Repo as "BookRepository"
+participant DB as "数据库"
+Note over Client,DB : 书架列表加载流程
+Client->>Shelf : "获取书架书籍列表"
+Shelf->>Repo : "find_all_in_shelf()"
+Repo->>DB : "SELECT ... WHERE (type & 1024) = 0"
+DB-->>Repo : "返回正式书籍(过滤临时书)"
+Repo-->>Shelf : "过滤后的书籍列表"
+Shelf-->>Client : "书架书籍列表"
+Note over Client,DB : 临时书转正流程
+Client->>Shelf : "添加书籍到书架"
+Shelf->>Repo : "update(book)"
+Repo->>DB : "UPDATE books SET type=... WHERE bookUrl=..."
+DB-->>Repo : "更新成功(不触发级联删除)"
+Repo-->>Shelf : "更新完成"
+Shelf-->>Client : "添加成功"
+```
+
+图表来源
+- [bookshelf.rs:14-20](file://rust/legado-ffi/src/api/bookshelf.rs#L14-L20)
+- [book_repository.rs:74-99](file://rust/legado-db/src/repository/book_repository.rs#L74-L99)
+- [book_repository.rs:339-408](file://rust/legado-db/src/repository/book_repository.rs#L339-L408)
+- [book.rs:12-15](file://rust/legado-core/src/models/book.rs#L12-L15)
+
+章节来源
+- [bookshelf.rs:14-20](file://rust/legado-ffi/src/api/bookshelf.rs#L14-L20)
+- [book_repository.rs:74-99](file://rust/legado-db/src/repository/book_repository.rs#L74-L99)
+- [book_repository.rs:339-408](file://rust/legado-db/src/repository/book_repository.rs#L339-L408)
+- [book.rs:12-15](file://rust/legado-core/src/models/book.rs#L12-L15)
 
 ### 搜索功能（全文与元数据）
 - 全文搜索：基于章节内容建立倒排索引或使用全文检索引擎，支持关键词匹配、高亮与分页。
@@ -271,11 +333,11 @@ Api-->>Client : "返回搜索结果(分页/高亮)"
 
 图表来源
 - [search.rs:1-200](file://rust/legado-ffi/src/api/search.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 
 章节来源
 - [search.rs:1-200](file://rust/legado-ffi/src/api/search.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 
 ### 导入导出（Provider层）
 - 导入：支持多种格式（EPUB/TXT/PDF等），解析元数据与章节，去重策略，批量入库，失败回滚。
@@ -296,12 +358,12 @@ Persist --> IEnd(["导入结束"])
 
 图表来源
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 
 章节来源
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
 - [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 
 ### 阅读进度同步与管理
 - 进度写入：章节级页码、时间戳、阅读时长累计，支持并发安全与幂等更新。
@@ -323,12 +385,12 @@ Shelf-->>Reader : "返回成功"
 ```
 
 图表来源
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
 
 章节来源
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
 
@@ -352,24 +414,24 @@ RSR --> SM["ReadingStatsModel"]
 
 图表来源
 - [bookshelf_provider_test.dart:1-200](file://flutter_legado/test/unit/bookshelf_provider_test.dart#L1-L200)
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [book.rs:1-353](file://rust/legado-core/src/models/book.rs#L1-L353)
 - [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
 - [read_state.rs:1-200](file://rust/legado-core/src/read_state.rs#L1-L200)
 - [reading_stats.rs:1-200](file://rust/legado-core/src/reading_stats.rs#L1-L200)
 
 章节来源
 - [bookshelf_provider_test.dart:1-200](file://flutter_legado/test/unit/bookshelf_provider_test.dart#L1-L200)
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-200](file://rust/legado-db/src/repository/book_repository.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_group_repository.rs:1-200](file://rust/legado-db/src/repository/book_group_repository.rs#L1-L200)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [book.rs:1-353](file://rust/legado-core/src/models/book.rs#L1-L353)
 - [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
 - [read_state.rs:1-200](file://rust/legado-core/src/read_state.rs#L1-L200)
 - [reading_stats.rs:1-200](file://rust/legado-core/src/reading_stats.rs#L1-L200)
@@ -380,6 +442,7 @@ RSR --> SM["ReadingStatsModel"]
 - 异步处理：大文件解析与网络请求应异步执行，避免阻塞主线程。
 - 内存管理：分页加载与流式处理，防止大对象驻留导致OOM。
 - 缓存策略：封面与章节元数据缓存，提高二次访问速度。
+- **临时书籍过滤优化**：通过SQL位运算`(type & 1024) = 0`高效过滤临时书籍，避免应用层额外处理开销。
 
 [本节为通用指导，无需引用具体文件]
 
@@ -398,15 +461,22 @@ RSR --> SM["ReadingStatsModel"]
   - 回滚事务，清理中间状态
   - 重建索引或修复损坏数据
   - 重试机制与退避策略
+- **临时书籍相关问题**
+  - 书架列表显示临时书籍：检查`find_all_in_shelf()`方法的SQL过滤条件
+  - 临时书转正失败：确认使用原地UPDATE而非INSERT OR REPLACE，避免触发级联删除
+  - 临时书籍数据污染：验证`NOT_SHELF`位掩码设置是否正确
 
 章节来源
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
 - [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
 - [search.rs:1-200](file://rust/legado-ffi/src/api/search.rs#L1-L200)
+- [book_repository.rs:74-99](file://rust/legado-db/src/repository/book_repository.rs#L74-L99)
 
 ## 结论
 BookshelfProvider以清晰的层次结构与稳健的错误处理为核心，提供完整的书架管理能力。通过仓库抽象与领域模型解耦，既保证了可扩展性，也提升了可测试性与可维护性。结合全文与元数据搜索、导入导出与进度同步，满足多样化使用场景。
+
+**更新** 新增的临时书籍智能识别和过滤功能显著提升了用户体验，确保书架列表的纯净性和准确性，同时保持了良好的性能和向后兼容性。
 
 [本节为总结，无需引用具体文件]
 
@@ -438,12 +508,18 @@ BookshelfProvider以清晰的层次结构与稳健的错误处理为核心，提
   - 上报：书籍ID、章节ID、页码、时间戳
   - 读取：书籍ID或章节ID，返回最近位置与书签
   - 统计：日期范围、聚合维度
+- **临时书籍管理**
+  - 书架列表：自动过滤临时书籍，仅显示正式书籍
+  - 临时书转正：安全更新type字段，避免触发级联删除
+  - 临时书籍识别：通过NOT_SHELF位掩码标识临时阅读记录
 
 章节来源
 - [bookshelf_provider_test.dart:1-200](file://flutter_legado/test/unit/bookshelf_provider_test.dart#L1-L200)
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
 - [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
 - [search.rs:1-200](file://rust/legado-ffi/src/api/search.rs#L1-L200)
 - [read_record_repository.rs:1-200](file://rust/legado-db/src/repository/read_record_repository.rs#L1-L200)
 - [reading_stats_repository.rs:1-200](file://rust/legado-db/src/repository/reading_stats_repository.rs#L1-L200)
+- [book_repository.rs:74-99](file://rust/legado-db/src/repository/book_repository.rs#L74-L99)
+- [book.rs:12-15](file://rust/legado-core/src/models/book.rs#L12-L15)

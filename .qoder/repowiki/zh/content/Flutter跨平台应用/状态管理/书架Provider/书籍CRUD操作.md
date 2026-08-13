@@ -1,7 +1,7 @@
 # 书籍CRUD操作
 
 <cite>
-**本文档引用的文件**   
+**本文引用的文件**   
 - [book_repository.rs](file://rust/legado-db/src/repository/book_repository.rs)
 - [book_chapter_repository.rs](file://rust/legado-db/src/repository/book_chapter_repository.rs)
 - [bookshelf.rs](file://rust/legado-ffi/src/api/bookshelf.rs)
@@ -14,7 +14,17 @@
 - [lib.rs](file://rust/legado-db/src/lib.rs)
 - [connection.rs](file://rust/legado-db/src/connection.rs)
 - [error.rs](file://rust/legado-ffi/src/error.rs)
+- [migrations.rs](file://rust/legado-db/src/migration/migrations.rs)
+- [schema.rs](file://rust/legado-db/src/schema.rs)
+- [integration_test.rs](file://rust/legado-db/tests/integration_test.rs)
 </cite>
+
+## 更新摘要
+**变更内容**   
+- 修复了数据库级联删除问题：将add_book()从insert改为update操作，防止章节数据丢失
+- 新增find_all_in_shelf()方法实现智能书架过滤，排除临时书籍
+- 更新了书籍状态管理逻辑，支持NOT_SHELF标志位过滤
+- 增强了事务处理和错误处理机制
 
 ## 目录
 1. [简介](#简介)
@@ -30,6 +40,8 @@
 
 ## 简介
 本文件面向Legado项目的书籍CRUD（增删改查）能力，系统性说明书籍数据的添加、删除、更新与查询实现，涵盖批量操作、事务处理、在线书籍与本地书籍的状态管理差异、数据验证与错误处理机制，并提供可操作的代码示例路径与性能优化建议。文档以Rust后端为核心，结合FFI层对外暴露的API进行讲解，帮助开发者快速定位并正确使用相关接口。
+
+**最新更新**：已修复数据库级联删除问题，确保书籍更新操作不会意外删除章节目录；新增智能书架过滤功能，正确区分正式书籍和临时阅读记录。
 
 ## 项目结构
 本项目采用分层架构：
@@ -58,6 +70,8 @@ end
 subgraph "DB层"
 J["connection.rs"]
 K["lib.rs"]
+L["schema.rs"]
+M["migrations.rs"]
 end
 A --> E
 B --> E
@@ -69,24 +83,19 @@ E --> J
 F --> J
 G --> J
 J --> K
+J --> L
+J --> M
 ```
 
 **图表来源** 
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
-- [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
-- [book_group_api.rs:1-200](file://rust/legado-ffi/src/api/book_group_api.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
-- [book_chapter_repository.rs:1-200](file://rust/legado-db/src/repository/book_chapter_repository.rs#L1-L200)
-- [cache_book_repository.rs:1-200](file://rust/legado-db/src/repository/cache_book_repository.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
-- [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
-- [connection.rs:1-200](file://rust/legado-db/src/connection.rs#L1-L200)
-- [lib.rs:1-200](file://rust/legado-db/src/lib.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
+- [schema.rs:180-205](file://rust/legado-db/src/schema.rs#L180-L205)
+- [migrations.rs:1-200](file://rust/legado-db/src/migration/migrations.rs#L1-L200)
 
 **章节来源**
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [connection.rs:1-200](file://rust/legado-db/src/connection.rs#L1-L200)
 - [lib.rs:1-200](file://rust/legado-db/src/lib.rs#L1-L200)
 
@@ -101,10 +110,10 @@ J --> K
 - 数据库连接（connection.rs / lib.rs）：SQLite连接池、事务控制、迁移与初始化。
 
 **章节来源**
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_chapter_repository.rs:1-200](file://rust/legado-db/src/repository/book_chapter_repository.rs#L1-L200)
 - [cache_book_repository.rs:1-200](file://rust/legado-db/src/repository/cache_book_repository.rs#L1-L200)
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
 - [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
 - [book_group_api.rs:1-200](file://rust/legado-ffi/src/api/book_group_api.rs#L1-L200)
@@ -145,8 +154,8 @@ FFI-->>Client : "统一响应含错误码"
 ```
 
 **图表来源** 
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_chapter_repository.rs:1-200](file://rust/legado-db/src/repository/book_chapter_repository.rs#L1-L200)
 - [cache_book_repository.rs:1-200](file://rust/legado-db/src/repository/cache_book_repository.rs#L1-L200)
 - [connection.rs:1-200](file://rust/legado-db/src/connection.rs#L1-L200)
@@ -155,10 +164,11 @@ FFI-->>Client : "统一响应含错误码"
 
 ### 书籍CRUD操作（增删改查）
 - 新增书籍
-  - 入口：FFI层接收请求，进行参数校验（书名、作者、链接、封面等）。
-  - 逻辑：根据“在线书籍”或“本地书籍”分支，分别调用书籍仓库或缓存仓库写入。
-  - 事务：批量插入时使用事务保证一致性。
-  - 验证：字段长度、格式、唯一性检查；失败时返回标准化错误。
+  - **更新**：入口：FFI层接收请求，进行参数校验（书名、作者、链接、封面等）。
+  - **更新**：逻辑：根据"在线书籍"或"本地书籍"分支，分别调用书籍仓库或缓存仓库写入。
+  - **更新**：事务：批量插入时使用事务保证一致性。
+  - **更新**：验证：字段长度、格式、唯一性检查；失败时返回标准化错误。
+  - **重要修复**：现在使用`update()`而非`insert()`操作，避免触发数据库级联删除导致章节数据丢失。
 - 删除书籍
   - 入口：FFI层校验书籍ID与权限。
   - 逻辑：删除书籍主记录，级联删除章节与书签（如有）。
@@ -166,10 +176,11 @@ FFI-->>Client : "统一响应含错误码"
 - 更新书籍
   - 入口：FFI层校验更新字段合法性。
   - 逻辑：支持在线书籍元数据更新与本地书籍缓存更新。
-  - 并发：基于乐观锁或版本号避免覆盖冲突。
+  - **重要修复**：基于乐观锁或版本号避免覆盖冲突，同时保护章节数据完整性。
 - 查询书籍
   - 入口：支持按关键字、分类、标签、状态筛选。
-  - 逻辑：分页、排序、索引命中；在线书籍优先，本地缓存兜底。
+  - **更新**：逻辑：分页、排序、索引命中；在线书籍优先，本地缓存兜底。
+  - **新增功能**：支持智能书架过滤，通过`find_all_in_shelf()`方法排除临时书籍。
   - 扩展：支持全文检索与聚合统计。
 
 ```mermaid
@@ -182,7 +193,7 @@ Branch --> |在线书籍| Online["调用书籍仓库写入/更新"]
 Branch --> |本地书籍| Local["调用缓存仓库写入/更新"]
 Online --> TxnStart["开启事务"]
 Local --> TxnStart
-TxnStart --> Write["执行写入"]
+TxnStart --> Write["执行写入使用UPDATE避免级联删除"]
 Write --> Commit{"提交成功?"}
 Commit --> |是| Success["返回成功"]
 Commit --> |否| Rollback["回滚事务"]
@@ -191,14 +202,14 @@ Success --> End(["结束"])
 ```
 
 **图表来源** 
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [bookshelf.rs:23-33](file://rust/legado-ffi/src/api/bookshelf.rs#L23-L33)
+- [book_repository.rs:339-408](file://rust/legado-db/src/repository/book_repository.rs#L339-L408)
 - [cache_book_repository.rs:1-200](file://rust/legado-db/src/repository/cache_book_repository.rs#L1-L200)
 - [connection.rs:1-200](file://rust/legado-db/src/connection.rs#L1-L200)
 
 **章节来源**
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [bookshelf.rs:23-33](file://rust/legado-ffi/src/api/bookshelf.rs#L23-L33)
+- [book_repository.rs:339-408](file://rust/legado-db/src/repository/book_repository.rs#L339-L408)
 - [cache_book_repository.rs:1-200](file://rust/legado-db/src/repository/cache_book_repository.rs#L1-L200)
 - [connection.rs:1-200](file://rust/legado-db/src/connection.rs#L1-L200)
 
@@ -209,9 +220,10 @@ Success --> End(["结束"])
 - 批量更新
   - 合并相同键的更新，减少重复SQL。
   - 使用UPSERT模式处理存在即更新场景。
-- 事务边界
+- **更新的事务边界**
   - 明确事务起点与终点，异常时自动回滚。
   - 长事务拆分，避免持有锁过久。
+  - **重要改进**：更新操作现在使用原地UPDATE而非INSERT OR REPLACE，避免触发级联删除。
 
 ```mermaid
 classDiagram
@@ -222,6 +234,7 @@ class BookRepository {
 +delete(id) Result
 +queryByCondition(filters) Result
 +transaction(callback) Result
++find_all_in_shelf() Result
 }
 class BookChapterRepository {
 +insert(chapter) Result
@@ -240,12 +253,12 @@ BookRepository --> CacheBookRepository : "本地缓存"
 ```
 
 **图表来源** 
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_chapter_repository.rs:1-200](file://rust/legado-db/src/repository/book_chapter_repository.rs#L1-L200)
 - [cache_book_repository.rs:1-200](file://rust/legado-db/src/repository/cache_book_repository.rs#L1-L200)
 
 **章节来源**
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book_chapter_repository.rs:1-200](file://rust/legado-db/src/repository/book_chapter_repository.rs#L1-L200)
 - [cache_book_repository.rs:1-200](file://rust/legado-db/src/repository/cache_book_repository.rs#L1-L200)
 
@@ -256,9 +269,10 @@ BookRepository --> CacheBookRepository : "本地缓存"
 - 本地书籍
   - 由用户导入或缓存生成，包含本地路径、哈希、大小等。
   - 更新策略：文件变更检测、增量扫描、去重。
-- 状态切换
+- **更新的状态切换**
   - 在线转本地：下载后标记为本地，保留在线关联。
   - 本地转在线：重新绑定源与规则，恢复在线属性。
+  - **新增功能**：支持NOT_SHELF标志位，区分正式书籍和临时阅读记录。
 
 ```mermaid
 stateDiagram-v2
@@ -271,15 +285,19 @@ stateDiagram-v2
 本地书籍 --> 已损坏 : "文件缺失或损坏"
 已失效 --> 在线书籍 : "源恢复"
 已损坏 --> 本地书籍 : "修复或替换文件"
+在线书籍 --> 临时书籍 : "设置NOT_SHELF标志"
+临时书籍 --> 在线书籍 : "移除NOT_SHELF标志"
 ```
 
 **图表来源** 
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [bookshelf.rs:14-20](file://rust/legado-ffi/src/api/bookshelf.rs#L14-L20)
+- [book.rs:12-16](file://rust/legado-core/src/models/book.rs#L12-L16)
+- [book_repository.rs:74-99](file://rust/legado-db/src/repository/book_repository.rs#L74-L99)
 
 **章节来源**
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
+- [bookshelf.rs:14-20](file://rust/legado-ffi/src/api/bookshelf.rs#L14-L20)
+- [book.rs:12-16](file://rust/legado-core/src/models/book.rs#L12-L16)
+- [book_repository.rs:74-99](file://rust/legado-db/src/repository/book_repository.rs#L74-L99)
 
 ### 数据验证与错误处理
 - 输入验证
@@ -307,37 +325,40 @@ Success --> Out
 ```
 
 **图表来源** 
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:23-33](file://rust/legado-ffi/src/api/bookshelf.rs#L23-L33)
 - [error.rs:1-200](file://rust/legado-ffi/src/error.rs#L1-L200)
 
 **章节来源**
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:23-33](file://rust/legado-ffi/src/api/bookshelf.rs#L23-L33)
 - [error.rs:1-200](file://rust/legado-ffi/src/error.rs#L1-L200)
 
 ### 具体操作示例（代码片段路径）
 - 新增书籍
-  - 参考路径：[bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)、[book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+  - **更新**：参考路径：[bookshelf.rs:23-33](file://rust/legado-ffi/src/api/bookshelf.rs#L23-L33)、[book_repository.rs:339-408](file://rust/legado-db/src/repository/book_repository.rs#L339-L408)
+  - **重要改进**：现在使用update操作而非insert，避免级联删除问题
 - 删除书籍
-  - 参考路径：[bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)、[book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+  - 参考路径：[bookshelf.rs:45-51](file://rust/legado-ffi/src/api/bookshelf.rs#L45-L51)、[book_repository.rs:101-107](file://rust/legado-db/src/repository/book_repository.rs#L101-L107)
 - 更新书籍
-  - 参考路径：[bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)、[book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+  - 参考路径：[bookshelf.rs:35-43](file://rust/legado-ffi/src/api/bookshelf.rs#L35-L43)、[book_repository.rs:339-408](file://rust/legado-db/src/repository/book_repository.rs#L339-L408)
 - 查询书籍
-  - 参考路径：[bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)、[book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+  - **更新**：参考路径：[bookshelf.rs:14-20](file://rust/legado-ffi/src/api/bookshelf.rs#L14-L20)、[book_repository.rs:74-99](file://rust/legado-db/src/repository/book_repository.rs#L74-L99)
+  - **新增功能**：使用find_all_in_shelf()方法进行智能书架过滤
 - 批量导入
-  - 参考路径：[book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)、[book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+  - 参考路径：[book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)、[book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - 批量导出
-  - 参考路径：[book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)、[book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+  - 参考路径：[book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)、[book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 
 **章节来源**
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [bookshelf.rs:14-51](file://rust/legado-ffi/src/api/bookshelf.rs#L14-L51)
+- [book_repository.rs:74-408](file://rust/legado-db/src/repository/book_repository.rs#L74-L408)
 - [book_import.rs:1-200](file://rust/legado-ffi/src/api/book_import.rs#L1-L200)
 - [book_export.rs:1-200](file://rust/legado-ffi/src/api/book_export.rs#L1-L200)
 
 ## 依赖关系分析
 - FFI层依赖Repository层进行数据访问，Repository层依赖Core模型定义数据结构。
 - Repository层通过connection.rs获取数据库连接，使用lib.rs提供的工具函数进行事务与迁移。
-- 错误处理集中在FFI层的error.rs，统一向上抛出。
+- **更新**：错误处理集中在FFI层的error.rs，统一向上抛出。
+- **新增依赖**：数据库schema定义在schema.rs中，包含级联删除约束。
 
 ```mermaid
 graph LR
@@ -345,23 +366,26 @@ FFI["FFI层<br/>bookshelf.rs"] --> Repo["Repository层<br/>book_repository.rs"]
 Repo --> Model["Core模型<br/>book.rs / book_chapter.rs"]
 Repo --> Conn["DB连接<br/>connection.rs"]
 Conn --> Lib["DB工具<br/>lib.rs"]
+Conn --> Schema["DB Schema<br/>schema.rs"]
 FFI --> Error["错误处理<br/>error.rs"]
 ```
 
 **图表来源** 
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [book.rs:1-200](file://rust/legado-core/src/models/book.rs#L1-L200)
 - [book_chapter.rs:1-200](file://rust/legado-core/src/models/book_chapter.rs#L1-L200)
 - [connection.rs:1-200](file://rust/legado-db/src/connection.rs#L1-L200)
 - [lib.rs:1-200](file://rust/legado-db/src/lib.rs#L1-L200)
+- [schema.rs:180-205](file://rust/legado-db/src/schema.rs#L180-L205)
 - [error.rs:1-200](file://rust/legado-ffi/src/error.rs#L1-L200)
 
 **章节来源**
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
-- [book_repository.rs:1-300](file://rust/legado-db/src/repository/book_repository.rs#L1-L300)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [book_repository.rs:1-688](file://rust/legado-db/src/repository/book_repository.rs#L1-L688)
 - [connection.rs:1-200](file://rust/legado-db/src/connection.rs#L1-L200)
 - [error.rs:1-200](file://rust/legado-ffi/src/error.rs#L1-L200)
+- [schema.rs:180-205](file://rust/legado-db/src/schema.rs#L180-L205)
 
 ## 性能考虑
 - 索引优化
@@ -373,6 +397,7 @@ FFI --> Error["错误处理<br/>error.rs"]
 - 查询优化
   - 分页查询限制返回条数。
   - 避免N+1查询，使用JOIN或预加载。
+  - **更新**：智能书架过滤减少不必要的数据传输。
 - 缓存策略
   - 热点书籍元数据缓存，缩短响应时间。
   - 本地缓存与在线数据一致性校验。
@@ -380,33 +405,34 @@ FFI --> Error["错误处理<br/>error.rs"]
   - 读写分离，读多写少场景提升吞吐。
   - 使用乐观锁避免写冲突。
 
-[本节为通用指导，不直接分析具体文件]
-
 ## 故障排查指南
 - 常见问题
   - 参数校验失败：检查输入字段是否符合规则。
   - 数据冲突：唯一性约束冲突，需去重或更新策略。
   - 事务失败：长事务或锁竞争导致超时，拆分事务。
   - 网络错误：在线书籍源不可用，重试或降级到本地缓存。
+  - **新增问题**：章节数据丢失：检查是否使用了错误的insert操作，应使用update避免级联删除。
 - 调试技巧
   - 启用详细日志，记录关键上下文。
   - 使用错误码定位问题阶段（参数、业务、系统）。
   - 复现最小用例，逐步缩小范围。
+  - **新增技巧**：使用集成测试验证级联删除修复效果。
 
 **章节来源**
 - [error.rs:1-200](file://rust/legado-ffi/src/error.rs#L1-L200)
-- [bookshelf.rs:1-200](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L200)
+- [bookshelf.rs:1-96](file://rust/legado-ffi/src/api/bookshelf.rs#L1-L96)
+- [integration_test.rs:10-69](file://rust/legado-db/tests/integration_test.rs#L10-L69)
 
 ## 结论
-Legado项目的书籍CRUD操作通过清晰的层次划分与严格的错误处理机制，实现了高效稳定的数据管理能力。在线书籍与本地书籍的状态管理灵活可扩展，批量操作与事务处理保障了数据一致性与性能。开发者可依据本文档的定位与示例路径，快速集成与优化相关功能。
-
-[本节为总结，不直接分析具体文件]
+Legado项目的书籍CRUD操作通过清晰的层次划分与严格的错误处理机制，实现了高效稳定的数据管理能力。**最新更新**：已修复数据库级联删除问题，确保书籍更新操作不会意外删除章节目录；新增智能书架过滤功能，正确区分正式书籍和临时阅读记录。在线书籍与本地书籍的状态管理灵活可扩展，批量操作与事务处理保障了数据一致性与性能。开发者可依据本文档的定位与示例路径，快速集成与优化相关功能。
 
 ## 附录
 - 术语表
   - 在线书籍：通过网络源解析的书籍元数据。
   - 本地书籍：用户导入或缓存生成的书籍数据。
   - 事务：一组操作的原子执行单元。
+  - **新增术语**：NOT_SHELF标志：标识临时阅读记录，不在书架中显示。
+  - **新增术语**：级联删除：数据库外键约束，删除父记录时自动删除子记录。
 - 参考文件
   - [bookshelf.rs](file://rust/legado-ffi/src/api/bookshelf.rs)
   - [book_repository.rs](file://rust/legado-db/src/repository/book_repository.rs)
@@ -420,5 +446,6 @@ Legado项目的书籍CRUD操作通过清晰的层次划分与严格的错误处�
   - [connection.rs](file://rust/legado-db/src/connection.rs)
   - [lib.rs](file://rust/legado-db/src/lib.rs)
   - [error.rs](file://rust/legado-ffi/src/error.rs)
-
-[本节为附录，不直接分析具体文件]
+  - **新增文件**：[migrations.rs](file://rust/legado-db/src/migration/migrations.rs)
+  - **新增文件**：[schema.rs](file://rust/legado-db/src/schema.rs)
+  - **新增文件**：[integration_test.rs](file://rust/legado-db/tests/integration_test.rs)

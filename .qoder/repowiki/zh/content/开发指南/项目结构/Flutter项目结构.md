@@ -17,7 +17,16 @@
 - [flutter_legado/linux/runner/CMakeLists.txt](file://flutter_legado/linux/runner/CMakeLists.txt)
 - [flutter_legado/web/index.html](file://flutter_legado/web/index.html)
 - [flutter_legado/web/manifest.json](file://flutter_legado/web/manifest.json)
+- [flutter_legado/flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
+- [rust/legado-ffi/src/lib.rs](file://rust/legado-ffi/src/lib.rs)
 </cite>
+
+## 更新摘要
+**所做更改**   
+- 移除了对已删除的 rust_bridge.dart 模块的引用
+- 更新了FFI绑定系统相关章节，反映新的Rust FFI架构
+- 新增了Rust FFI集成说明和架构图
+- 更新了平台桥接部分的实现方式
 
 ## 目录
 1. [简介](#简介)
@@ -32,11 +41,12 @@
 10. [附录](#附录)
 
 ## 简介
-本文件面向Flutter跨平台应用“Legado”的Flutter工程，系统性说明其项目结构与组织方式。重点覆盖：
+本文件面向Flutter跨平台应用"Legado"的Flutter工程，系统性说明其项目结构与组织方式。重点覆盖：
 - lib目录的组织原则与入口、应用配置、src分层
 - 状态管理（Provider）与页面路由管理
 - 多平台特定代码与资源管理（Android、iOS、Windows、macOS、Linux、Web）
 - 依赖管理策略（pubspec.yaml、第三方库集成、本地插件开发）
+- Rust FFI绑定系统与原生代码集成
 - 测试文件组织结构（单元测试、Widget测试、集成测试）
 
 ## 项目结构
@@ -46,6 +56,7 @@ Flutter工程位于 flutter_legado 目录，遵循标准Flutter多平台工程�
 - android/ios/windows/macos/linux/web：各平台原生工程与资源
 - pubspec.yaml：依赖与资源声明
 - analysis_options.yaml：静态分析与格式化规则
+- flutter_rust_bridge.yaml：Rust FFI绑定配置
 
 ```mermaid
 graph TB
@@ -59,6 +70,7 @@ A --> H["linux"]
 A --> I["web"]
 A --> J["pubspec.yaml"]
 A --> K["analysis_options.yaml"]
+A --> L["flutter_rust_bridge.yaml"]
 B --> B1["main.dart"]
 B --> B2["app.dart"]
 B --> B3["src/*"]
@@ -72,6 +84,7 @@ G --> G1["Runner/Info.plist"]
 H --> H1["runner/CMakeLists.txt"]
 I --> I1["index.html"]
 I --> I2["manifest.json"]
+L --> M["rust/*"]
 ```
 
 图表来源
@@ -79,6 +92,7 @@ I --> I2["manifest.json"]
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 - [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
 - [flutter_legado/analysis_options.yaml](file://flutter_legado/analysis_options.yaml)
+- [flutter_legado/flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
 - [flutter_legado/android/app/build.gradle.kts](file://flutter_legado/android/app/build.gradle.kts)
 - [flutter_legado/ios/Runner/Info.plist](file://flutter_legado/ios/Runner/Info.plist)
 - [flutter_legado/macos/Runner/Info.plist](file://flutter_legado/macos/Runner/Info.plist)
@@ -92,22 +106,25 @@ I --> I2["manifest.json"]
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 - [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
 - [flutter_legado/analysis_options.yaml](file://flutter_legado/analysis_options.yaml)
+- [flutter_legado/flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
 
 ## 核心组件
 - 入口文件 main.dart：负责初始化全局环境、启动应用根组件。通常在此设置主题、国际化、错误捕获等。
 - 应用配置 app.dart：定义 MaterialApp/WidgetsApp 的配置项，如路由表、主题、语言包、初始页面、导航守卫等。
 - src 业务层：按功能域或层次划分（如 ui、services、models、providers、utils），保持高内聚低耦合。
+- Rust FFI绑定：通过 flutter_rust_bridge.yaml 配置，自动生成类型安全的Rust-Dart绑定。
 
 章节来源
 - [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+- [flutter_legado/flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
 
 ## 架构总览
-整体采用“UI层 + Provider状态层 + 服务/数据层 + 平台桥接”的分层架构：
+整体采用"UI层 + Provider状态层 + 服务/数据层 + Rust FFI桥接"的分层架构：
 - UI层：由 app.dart 统一装配页面与路由，页面组件通过 Provider 订阅状态变化。
 - 状态层：使用 Provider 管理应用级与模块级状态，提供响应式更新。
 - 服务/数据层：封装网络、数据库、本地存储等能力，供上层调用。
-- 平台桥接：通过 platform channels 或插件与 Android/iOS/桌面/Web 平台交互。
+- Rust FFI桥接：通过自动生成的FFI绑定与Rust高性能计算模块交互，替代原有的platform channels方案。
 
 ```mermaid
 graph TB
@@ -124,7 +141,12 @@ Svc_Network["src/services/network.dart"]
 Svc_Storage["src/services/storage.dart"]
 Svc_DB["src/services/database.dart"]
 end
-subgraph "平台桥接"
+subgraph "Rust FFI层"
+FFI_Bridge["flutter_rust_bridge.yaml<br/>FFI绑定配置"]
+FFI_Generated["frb_generated.rs<br/>自动生成的绑定"]
+FFI_Rust["rust/legado-ffi/*<br/>Rust核心实现"]
+end
+subgraph "平台适配层"
 Plat_A["android/*"]
 Plat_I["ios/*"]
 Plat_W["windows/*"]
@@ -138,18 +160,24 @@ UI_Pages --> State_Provider
 State_Provider --> Svc_Network
 State_Provider --> Svc_Storage
 State_Provider --> Svc_DB
-Svc_Network --> Plat_A
-Svc_Network --> Plat_I
-Svc_Network --> Plat_W
-Svc_Network --> Plat_M
-Svc_Network --> Plat_L
-Svc_Network --> Plat_WEB
+Svc_Network --> FFI_Bridge
+Svc_Storage --> FFI_Bridge
+Svc_DB --> FFI_Bridge
+FFI_Bridge --> FFI_Generated
+FFI_Generated --> FFI_Rust
+FFI_Rust --> Plat_A
+FFI_Rust --> Plat_I
+FFI_Rust --> Plat_W
+FFI_Rust --> Plat_M
+FFI_Rust --> Plat_L
+FFI_Rust --> Plat_WEB
 ```
 
 图表来源
 - [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
-- [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
+- [flutter_legado/flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
+- [rust/legado-ffi/src/lib.rs](file://rust/legado-ffi/src/lib.rs)
 
 ## 详细组件分析
 
@@ -172,10 +200,6 @@ App->>Router : "配置路由与初始页面"
 Router-->>App : "渲染首页"
 App-->>OS : "应用进入前台"
 ```
-
-图表来源
-- [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
-- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 
 章节来源
 - [flutter_legado/lib/main.dart](file://flutter_legado/lib/main.dart)
@@ -219,9 +243,6 @@ SettingsProvider <.. BookshelfProvider : "主题/语言"
 SettingsProvider <.. ReaderProvider : "主题/字体"
 ```
 
-图表来源
-- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
-
 章节来源
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
 
@@ -246,11 +267,45 @@ FeatureA --> DetailA["详情页A"]
 FeatureB --> DetailB["详情页B"]
 ```
 
-图表来源
-- [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
-
 章节来源
 - [flutter_legado/lib/app.dart](file://flutter_legado/lib/app.dart)
+
+### Rust FFI绑定系统
+**更新** 移除了旧的 rust_bridge.dart 模块，采用基于 flutter_rust_bridge 的现代化FFI绑定系统。
+
+- flutter_rust_bridge.yaml：配置Rust FFI绑定的生成规则和接口定义
+- 自动生成 frb_generated.rs：类型安全的Rust-Dart双向绑定代码
+- 支持复杂数据类型、异步调用、错误处理等高级特性
+- 编译时验证接口一致性，减少运行时错误
+
+```mermaid
+graph TB
+subgraph "Dart层"
+Dart_API["Dart API接口"]
+Dart_FRB["frb_generated.dart<br/>自动生成的绑定"]
+end
+subgraph "FFI层"
+FFI_Config["flutter_rust_bridge.yaml<br/>绑定配置"]
+FFI_Gen["frb_generated.rs<br/>Rust侧绑定"]
+end
+subgraph "Rust层"
+Rust_Core["legado-ffi/src/lib.rs<br/>核心实现"]
+Rust_API["api/*<br/>API接口"]
+end
+Dart_API --> Dart_FRB
+Dart_FRB --> FFI_Config
+FFI_Config --> FFI_Gen
+FFI_Gen --> Rust_Core
+Rust_Core --> Rust_API
+```
+
+图表来源
+- [flutter_legado/flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
+- [rust/legado-ffi/src/lib.rs](file://rust/legado-ffi/src/lib.rs)
+
+章节来源
+- [flutter_legado/flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
+- [rust/legado-ffi/src/lib.rs](file://rust/legado-ffi/src/lib.rs)
 
 ### 平台特定代码与资源管理
 - Android：在 android/app/src/main 下配置权限、签名、Cronet等；资源放在 res/ 目录。
@@ -287,15 +342,6 @@ WEB2["web/manifest.json"]
 end
 ```
 
-图表来源
-- [flutter_legado/android/app/build.gradle.kts](file://flutter_legado/android/app/build.gradle.kts)
-- [flutter_legado/ios/Runner/Info.plist](file://flutter_legado/ios/Runner/Info.plist)
-- [flutter_legado/macos/Runner/Info.plist](file://flutter_legado/macos/Runner/Info.plist)
-- [flutter_legado/windows/runner/CMakeLists.txt](file://flutter_legado/windows/runner/CMakeLists.txt)
-- [flutter_legado/linux/runner/CMakeLists.txt](file://flutter_legado/linux/runner/CMakeLists.txt)
-- [flutter_legado/web/index.html](file://flutter_legado/web/index.html)
-- [flutter_legado/web/manifest.json](file://flutter_legado/web/manifest.json)
-
 章节来源
 - [flutter_legado/android/app/build.gradle.kts](file://flutter_legado/android/app/build.gradle.kts)
 - [flutter_legado/ios/Runner/Info.plist](file://flutter_legado/ios/Runner/Info.plist)
@@ -322,9 +368,6 @@ Build --> Test["运行测试"]
 Test --> Deploy["部署到目标平台"]
 ```
 
-图表来源
-- [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
-
 章节来源
 - [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
 
@@ -346,11 +389,6 @@ W --> W2["badge_widget_test.dart"]
 I --> I1["e2e_book_flow_test.dart"]
 ```
 
-图表来源
-- [flutter_legado/test/unit/bookshelf_provider_test.dart](file://flutter_legado/test/unit/bookshelf_provider_test.dart)
-- [flutter_legado/test/widget/bookshelf_test.dart](file://flutter_legado/test/widget/bookshelf_test.dart)
-- [flutter_legado/test/widget_test.dart](file://flutter_legado/test/widget_test.dart)
-
 章节来源
 - [flutter_legado/test/unit/bookshelf_provider_test.dart](file://flutter_legado/test/unit/bookshelf_provider_test.dart)
 - [flutter_legado/test/widget/bookshelf_test.dart](file://flutter_legado/test/widget/bookshelf_test.dart)
@@ -360,6 +398,7 @@ I --> I1["e2e_book_flow_test.dart"]
 - 直接依赖：通过 pubspec.yaml 声明，包括框架扩展、状态管理、网络、数据库等。
 - 间接依赖：由包管理器自动解析，需关注冲突与版本兼容。
 - 平台依赖：Android Gradle、iOS CocoaPods、Windows/macOS/Linux CMake 等。
+- Rust依赖：通过 Cargo.toml 管理Rust crate依赖，与Dart层通过FFI解耦。
 
 ```mermaid
 graph TB
@@ -368,15 +407,14 @@ P --> D2["dio/http"]
 P --> D3["sqflite/shared_preferences"]
 P --> D4["go_router/navigator"]
 P --> D5["intl/localization"]
+P --> D6["flutter_rust_bridge"]
 D1 --> D1a["state_notifier"]
 D2 --> D2a["http_parser"]
 D3 --> D3a["path_provider"]
 D4 --> D4a["auto_route"]
 D5 --> D5a["flutter_localizations"]
+D6 --> D6a["frb_runtime"]
 ```
-
-图表来源
-- [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
 
 章节来源
 - [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
@@ -385,12 +423,12 @@ D5 --> D5a["flutter_localizations"]
 - 状态更新优化：使用 Selector 精确订阅，避免全量重建。
 - 图片与资源：按需加载，使用缓存策略，减少内存占用。
 - 网络请求：合并请求、分页加载、错误重试与超时控制。
+- Rust FFI优化：批量数据处理、零拷贝传输、异步非阻塞调用。
 - 平台优化：启用 ProGuard/R8、裁剪无用资源、使用 Release 模式构建。
-
-[本节为通用指导，无需具体文件引用]
 
 ## 故障排查指南
 - 构建失败：检查 pubspec.yaml 依赖版本、平台 SDK 版本、Gradle/CocoaPods/CMake 配置。
+- Rust FFI问题：确认 flutter_rust_bridge.yaml 配置正确、Cargo.toml 依赖完整、FFI接口匹配。
 - 运行时崩溃：查看日志输出、异常堆栈、Platform Channel 通信错误。
 - 资源缺失：确认 assets 路径正确、平台资源已正确声明。
 - 测试失败：检查测试环境初始化、Mock数据、异步操作等待。
@@ -399,13 +437,10 @@ D5 --> D5a["flutter_localizations"]
 - [flutter_legado/analysis_options.yaml](file://flutter_legado/analysis_options.yaml)
 
 ## 结论
-本Flutter工程采用清晰的分层架构与模块化组织，结合Provider状态管理与多平台适配，具备良好的可扩展性与可维护性。通过规范的依赖管理与测试结构，可有效保障代码质量与交付效率。
-
-[本节为总结性内容，无需具体文件引用]
+本Flutter工程采用清晰的分层架构与模块化组织，结合Provider状态管理与Rust FFI高性能计算，具备良好的可扩展性与可维护性。通过规范的依赖管理与测试结构，可有效保障代码质量与交付效率。新的FFI绑定系统提供了更好的类型安全和性能表现。
 
 ## 附录
 - 最佳实践：保持单一职责、接口抽象、错误边界处理。
 - 代码规范：遵循 analysis_options.yaml 中的静态分析与格式化规则。
 - 发布流程：使用脚本自动化构建、签名、打包与分发。
-
-[本节为补充信息，无需具体文件引用]
+- Rust开发：参考 rust/DEVELOPMENT.md 了解Rust模块开发规范。

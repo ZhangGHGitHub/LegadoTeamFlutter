@@ -2,24 +2,21 @@
 
 <cite>
 **本文引用的文件**
-- [rss_source.rs](file://rust/legado-core/src/models/rss_source.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
-- [source_checker.rs](file://rust/legado-net/src/source_checker.rs)
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-- [rss_article_repository.rs](file://rust/legado-db/src/repository/rss_article_repository.rs)
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-- [rss_star_api.rs](file://rust/legado-ffi/src/api/rss_star_api.rs)
-- [rss_source_edit_config.ts](file://modules/web/src/config/rssSourceEditConfig.ts)
-- [SourceEditor.vue](file://modules/web/src/views/SourceEditor.vue)
-- [SourceList.vue](file://modules/web/src/components/SourceList.vue)
-- [SourceJson.vue](file://modules/web/src/components/SourceJson.vue)
-- [SourceDebug.vue](file://modules/web/src/components/SourceDebug.vue)
-- [sourceRouter.ts](file://modules/web/src/router/sourceRouter.ts)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [connectionStore.ts](file://modules/web/src/store/connectionStore.ts)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [rss_source.dart](file://flutter_legado/lib/src/models/rss_source.dart)
+- [RssSource.kt](file://app/src/main/java/io/legado/app/data/entities/RssSource.kt)
+- [RssSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt)
+- [RssSourceViewModel.kt](file://app/src/main/java/io/legado/app/ui/rss/source/manage/RssSourceViewModel.kt)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 修复了RSS源管理系统中的数据库仓库数据完整性问题，解决了INSERT操作只写入30个列导致的数据丢失问题
+- 实现了完整的45个数据库列支持，确保所有RSS源配置字段都能正确持久化
+- 更新了Flutter层的RSS源更新机制，使用专门的rssUpdateSource函数替代了错误的sourceUpdate调用
+- 增强了原子更新功能，通过update_fields()方法实现单条UPDATE语句更新，避免外键级联问题
+- 改进了数据一致性保障，支持完整的字段映射和事务处理
 
 ## 目录
 1. [简介](#简介)
@@ -43,475 +40,389 @@
 - RSS源配置的JSON格式规范与示例
 - 常见配置问题解决方案
 - 调试工具使用（网络请求查看、解析结果预览、错误日志分析）
+- **新增**：原子更新功能和事务处理机制，修复数据完整性问题
 
 ## 项目结构
 RSS源管理在项目中由多模块协作完成：
-- Rust核心模型与仓库：定义RSS源数据模型、持久化与CRUD接口
-- Rust网络层：负责RSS抓取、校验、重试与错误处理
-- FFI桥接层：对外暴露API供前端调用
-- Web前端：提供可视化编辑、导入导出、调试与列表管理界面
+- Flutter前端：提供现代化的管理界面，支持搜索、过滤、批量操作
+- Android原生：提供基础功能和数据管理
+- Rust后端：提供高性能的数据库操作和数据完整性保证
+- 数据模型：定义RSS源实体结构和序列化
+- 分组管理：独立的分组管理对话框
 
 ```mermaid
 graph TB
-subgraph "Web前端"
-SE["SourceEditor.vue"]
-SL["SourceList.vue"]
-SJ["SourceJson.vue"]
-SD["SourceDebug.vue"]
-SR["sourceRouter.ts"]
-SS["sourceStore.ts"]
-CS["connectionStore.ts"]
+subgraph "Flutter前端"
+RMS["RssSourceManageScreen"]
+RGMD["RssGroupManageDialog"]
+RS["RssSource模型"]
 end
-subgraph "FFI桥接"
-FFI_RSS["rss.rs"]
-FFI_STAR["rss_star_api.rs"]
+subgraph "Android原生"
+RSA["RssSourceActivity"]
+RSVM["RssSourceViewModel"]
+RSAA["RssSourceAdapter"]
+GMD["GroupManageDialog"]
 end
-subgraph "Rust核心"
-CORE_MODEL["rss_source.rs"]
-CORE_NET["rss.rs"]
-CORE_VERIFY["verification.rs"]
-CORE_CHECKER["source_checker.rs"]
+subgraph "Rust后端"
+RSR["RssSourceRepository"]
+DB["SQLite数据库"]
 end
-subgraph "数据库"
-DB_REPO_SRC["rss_source_repository.rs"]
-DB_REPO_ART["rss_article_repository.rs"]
-DB_REPO_STAR["rss_star_repository.rs"]
+subgraph "数据层"
+RSD["RssSourceDao"]
+RSE["RssSource实体"]
 end
-SE --> SS
-SL --> SS
-SJ --> SS
-SD --> SS
-SS --> FFI_RSS
-SS --> FFI_STAR
-FFI_RSS --> CORE_MODEL
-FFI_RSS --> CORE_NET
-FFI_RSS --> CORE_VERIFY
-FFI_RSS --> CORE_CHECKER
-FFI_RSS --> DB_REPO_SRC
-FFI_RSS --> DB_REPO_ART
-FFI_STAR --> DB_REPO_STAR
+RMS --> RS
+RMS --> RGMD
+RSA --> RSVM
+RSA --> RSAA
+RSA --> GMD
+RSVM --> RSD
+RSD --> RSE
+RSE --> DB
+RS --> RSR
+RSR --> DB
 ```
 
 图表来源
-- [SourceEditor.vue](file://modules/web/src/views/SourceEditor.vue)
-- [SourceList.vue](file://modules/web/src/components/SourceList.vue)
-- [SourceJson.vue](file://modules/web/src/components/SourceJson.vue)
-- [SourceDebug.vue](file://modules/web/src/components/SourceDebug.vue)
-- [sourceRouter.ts](file://modules/web/src/router/sourceRouter.ts)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [connectionStore.ts](file://modules/web/src/store/connectionStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-- [rss_star_api.rs](file://rust/legado-ffi/src/api/rss_star_api.rs)
-- [rss_source.rs](file://rust/legado-core/src/models/rss_source.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
-- [source_checker.rs](file://rust/legado-net/src/source_checker.rs)
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-- [rss_article_repository.rs](file://rust/legado-db/src/repository/rss_article_repository.rs)
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [RssSource.kt](file://app/src/main/java/io/legado/app/data/entities/RssSource.kt)
+- [RssSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt)
 
 章节来源
-- [rss_source.rs](file://rust/legado-core/src/models/rss_source.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
-- [source_checker.rs](file://rust/legado-net/src/source_checker.rs)
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-- [rss_article_repository.rs](file://rust/legado-db/src/repository/rss_article_repository.rs)
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-- [rss_star_api.rs](file://rust/legado-ffi/src/api/rss_star_api.rs)
-- [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)
-- [SourceEditor.vue](file://modules/web/src/views/SourceEditor.vue)
-- [SourceList.vue](file://modules/web/src/components/SourceList.vue)
-- [SourceJson.vue](file://modules/web/src/components/SourceJson.vue)
-- [SourceDebug.vue](file://modules/web/src/components/SourceDebug.vue)
-- [sourceRouter.ts](file://modules/web/src/router/sourceRouter.ts)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [connectionStore.ts](file://modules/web/src/store/connectionStore.ts)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [RssSource.kt](file://app/src/main/java/io/legado/app/data/entities/RssSource.kt)
+- [RssSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt)
 
 ## 核心组件
-- 数据模型与持久化
-  - RSS源实体定义与字段约束位于核心模型模块
-  - 源、文章、收藏的仓储接口提供增删改查与批量操作能力
-- 网络与校验
-  - RSS抓取、解析、重试与错误封装
-  - 连接测试与内容格式校验
-  - 源健康检查与可用性判定
-- 前端交互
-  - 编辑器、列表、JSON导入导出、调试面板
-  - 路由与状态管理，统一调用FFI API
+- **RssSourceRepository**: Rust后端的RSS源数据访问层，提供完整的CRUD操作和原子更新功能
+- **RustApi**: Flutter层的统一访问接口，处理FFI调用和错误处理
+- **RssSourceViewModel**: Android业务逻辑层，处理数据操作和事务管理
+- **RssSourceDao**: Android数据访问对象，提供数据库操作接口
+- **RssSource实体**: 定义RSS源的数据结构和序列化，包含45个完整字段
+- **原子更新机制**: 支持45个字段的原子事务更新，确保数据完整性
 
 章节来源
-- [rss_source.rs](file://rust/legado-core/src/models/rss_source.rs)
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-- [rss_article_repository.rs](file://rust/legado-db/src/repository/rss_article_repository.rs)
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
-- [source_checker.rs](file://rust/legado-net/src/source_checker.rs)
-- [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)
-- [SourceEditor.vue](file://modules/web/src/views/SourceEditor.vue)
-- [SourceList.vue](file://modules/web/src/components/SourceList.vue)
-- [SourceJson.vue](file://modules/web/src/components/SourceJson.vue)
-- [SourceDebug.vue](file://modules/web/src/components/SourceDebug.vue)
-- [sourceRouter.ts](file://modules/web/src/router/sourceRouter.ts)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [connectionStore.ts](file://modules/web/src/store/connectionStore.ts)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [RssSourceViewModel.kt](file://app/src/main/java/io/legado/app/ui/rss/source/manage/RssSourceViewModel.kt)
+- [RssSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt)
+- [RssSource.kt](file://app/src/main/java/io/legado/app/data/entities/RssSource.kt)
 
 ## 架构总览
-整体流程从前端触发，经FFI桥接进入Rust核心，最终访问数据库与网络层。
+整体流程从Flutter前端触发，通过Rust FFI调用后端数据库操作，最终通过原子更新的数据库操作确保数据一致性。
 
 ```mermaid
 sequenceDiagram
-participant UI as "前端界面"
-participant Store as "sourceStore.ts"
-participant FFI as "rss.rs(FFI)"
-participant Core as "核心模型/仓储"
-participant Net as "网络与校验"
-participant DB as "数据库仓储"
-UI->>Store : 用户操作添加/编辑/删除/导入/导出/调试
-Store->>FFI : 调用API创建/更新/删除/导入/导出/测试/调试
-FFI->>Core : 转换参数并调用仓储
-Core->>DB : 持久化或查询
-FFI->>Net : 执行网络请求与校验
-Net-->>FFI : 返回结果或错误
-FFI-->>Store : 返回统一响应
-Store-->>UI : 刷新列表/展示结果
+participant UI as "Flutter UI"
+participant API as "RustApi"
+participant Repo as "RssSourceRepository"
+participant DB as "SQLite数据库"
+UI->>API : 调用updateRssSource
+API->>Repo : 调用rssUpdateSource
+Repo->>DB : 执行原子UPDATE语句
+DB-->>Repo : 返回更新结果
+Repo-->>API : 确认事务完成
+API-->>UI : 更新成功反馈
 ```
 
 图表来源
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
 
 ## 详细组件分析
 
-### 数据模型与字段说明
-- RSS源实体包含名称、URL、分类、更新间隔、启用状态等关键配置项
-- 字段用于控制抓取策略、排序与显示、以及任务调度
-- 仓储层提供分页、条件查询与批量操作
+### RssSourceRepository Rust后端
+RssSourceRepository是RSS源管理的核心数据访问层，提供了完整的数据库操作功能：
 
+**主要功能特性：**
+- **完整字段支持**：INSERT操作现在支持完整的45个数据库列，解决了之前只有30个列被写入的问题
+- **原子更新**：通过update_fields()方法实现单条UPDATE语句更新，避免外键级联问题
+- **读写对称**：row_to_rss_source函数现在映射全部44个业务列，确保数据一致性
+- **事务处理**：所有操作都支持事务处理，确保数据完整性
+
+**原子更新操作流程：**
+```mermaid
+flowchart TD
+Start(["用户修改RSS源配置"]) --> CheckExists{"检查源是否存在"}
+CheckExists --> |存在| UpdateFields["执行原子UPDATE"]
+CheckExists --> |不存在| ReturnFalse["返回false"]
+UpdateFields --> Success["更新成功"]
+ReturnFalse --> End(["结束"])
+Success --> End
+```
+
+**关键改进点：**
+- INSERT OR REPLACE操作现在包含所有45个字段
+- UPDATE语句使用WHERE sourceUrl条件，避免全表更新
+- row_to_rss_source函数映射全部44个业务列
+- 支持扩展字段的完整读写回环
+
+章节来源
+- [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
+
+### RustApi Flutter接口层
+RustApi类提供了Flutter到Rust后端的统一访问接口，经过重大重构后更加稳定可靠：
+
+**核心功能：**
+- **专用RSS更新接口**：updateRssSource方法现在使用专门的rssUpdateSource函数
+- **错误处理增强**：当RSS源不存在时抛出明确的StateError异常
+- **JSON解码守卫**：防止类型不符导致的崩溃
+- **FFI调用封装**：统一的桥接调用接口
+
+**历史问题修复：**
+- 之前误用sourceUpdate函数，按BookSource语义解析落book_sources表
+- 产生幽灵书源脏数据且RSS变更静默丢失
+- 现已切换为正确的rssUpdateSource函数
+
+**更新机制实现：**
+```mermaid
+classDiagram
+class RustApi {
++updateRssSource(RssSource source)
++getRssSources() RssSource[]
++addRssSource(RssSource source) RssSource
++deleteRssSource(String sourceUrl) void
++enableRssSource(String sourceUrl) void
++disableRssSource(String sourceUrl) void
+}
+class RssSourceRepository {
++insert(RssSource source) i64
++update(RssSource source) bool
++update_fields(RssSource source) bool
++delete(String source_url) bool
+}
+RustApi --> RssSourceRepository : "FFI调用"
+```
+
+章节来源
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+
+### RssSourceViewModel业务逻辑层
+RssSourceViewModel负责处理RSS源的业务逻辑和数据操作，保持了原有的功能完整性：
+
+**核心功能：**
+- **原子更新**：通过update方法实现单条UPDATE语句更新
+- **批量操作**：topSource、bottomSource、enableSelection、disableSelection等方法
+- **分组管理**：addGroup、upGroup、delGroup方法
+- **导入导出**：saveToFile、importDefault方法
+- **事务处理**：确保数据一致性
+
+**批量操作实现：**
+```mermaid
+classDiagram
+class RssSourceViewModel {
++topSource(vararg sources : RssSource)
++bottomSource(vararg sources : RssSource)
++del(vararg rssSource : RssSource)
++update(vararg rssSource : RssSource)
++enableSelection(sources : RssSource[])
++disableSelection(sources : RssSource[])
++selectionAddToGroups(sources : RssSource[], groups : String)
++selectionRemoveFromGroups(sources : RssSource[], groups : String)
++addGroup(group : String)
++upGroup(oldGroup : String, newGroup : String?)
++delGroup(group : String)
+}
+class RssSourceDao {
++update(vararg rssSource : RssSource)
++enable(sourceUrl : String, enable : Boolean)
++insert(vararg rssSource : RssSource)
++delete(vararg rssSource : RssSource)
+}
+RssSourceViewModel --> RssSourceDao : "调用"
+```
+
+章节来源
+- [RssSourceViewModel.kt](file://app/src/main/java/io/legado/app/ui/rss/source/manage/RssSourceViewModel.kt)
+
+### RssSourceDao数据访问层
+RssSourceDao提供RSS源的数据库操作接口，保持了Room框架的标准用法：
+
+**核心方法：**
+- **基本操作**：insert、update、delete方法
+- **查询方法**：getByKey、getRssSources、flowSearch等
+- **批量操作**：enable方法用于批量启用/禁用
+- **分组查询**：flowGroupSearch、flowEnabledByGroup等
+
+**原子更新接口：**
+```mermaid
+classDiagram
+class RssSourceDao {
++@Update fun update(vararg rssSource : RssSource)
++@Query("update rssSources set enabled = : enable where sourceUrl = : sourceUrl")
++fun enable(sourceUrl : String, enable : Boolean)
++@Insert(onConflict = OnConflictStrategy.REPLACE)
++fun insert(vararg rssSource : RssSource)
++@Delete fun delete(vararg rssSource : RssSource)
++@Query("select * from rssSources order by customOrder")
++val all : RssSource[]
+}
+```
+
+章节来源
+- [RssSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt)
+
+### RssSource数据模型
+RssSource模型定义了RSS源的完整数据结构，包含45个字段，确保所有配置选项都能正确保存：
+
+**关键字段说明：**
+- **基本信息**：sourceUrl（唯一标识）、sourceName（显示名称）、sourceIcon（图标）
+- **分组信息**：sourceGroup（逗号分隔的分组列表）
+- **状态控制**：enabled（启用状态）、customOrder（自定义排序）
+- **网络配置**：loginUrl、header、concurrentRate等
+- **解析规则**：ruleArticles、ruleTitle、ruleContent等XPath规则
+- **缓存设置**：cacheFirst、preload等性能优化选项
+- **扩展功能**：jsLib、injectJs、startHtml等高级配置
+
+**字段类型映射：**
 ```mermaid
 classDiagram
 class RssSource {
-+id
-+name
-+url
-+category
-+updateInterval
-+enabled
-+createdAt
-+updatedAt
++sourceUrl : String
++sourceName : String
++sourceIcon : String
++sourceGroup : String?
++sourceComment : String?
++enabled : bool
++customOrder : int
++articleStyle : int
++enableJs : bool
++cacheFirst : bool
++lastUpdateTime : long
++rssType : int
++ruleArticles : String?
++ruleTitle : String?
++ruleContent : String?
++... 共45个字段
 }
-class RssArticleRepository {
-+insert(article)
-+batchInsert(articles)
-+findBySourceId(sourceId)
-+deleteBySourceId(sourceId)
-}
-class RssStarRepository {
-+star(articleId, isStarred)
-+listBySourceId(sourceId)
-+countBySourceId(sourceId)
-}
-RssSource <.. RssArticleRepository : "被关联"
-RssSource <.. RssStarRepository : "被关联"
 ```
 
-图表来源
-- [rss_source.rs](file://rust/legado-core/src/models/rss_source.rs)
-- [rss_article_repository.rs](file://rust/legado-db/src/repository/rss_article_repository.rs)
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
-
 章节来源
-- [rss_source.rs](file://rust/legado-core/src/models/rss_source.rs)
-- [rss_article_repository.rs](file://rust/legado-db/src/repository/rss_article_repository.rs)
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
-
-### 网络抓取与校验
-- 抓取流程包括HTTP请求、响应解码、RSS/Atom解析、条目抽取
-- 校验环节涵盖连接测试、内容格式检查、错误码与异常处理
-- 支持重试策略与超时控制
-
-```mermaid
-flowchart TD
-Start(["开始"]) --> Fetch["发起HTTP请求"]
-Fetch --> Decode["解码响应体"]
-Decode --> Parse{"是否为有效RSS/Atom?"}
-Parse --> |否| Error["记录解析错误"]
-Parse --> |是| Extract["提取条目列表"]
-Extract --> Validate["校验条目字段完整性"]
-Validate --> Success{"全部通过?"}
-Success --> |否| Partial["部分失败，记录警告"]
-Success --> |是| Done(["完成"])
-Error --> Done
-Partial --> Done
-```
-
-图表来源
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
-
-章节来源
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
-
-### 源健康检查
-- 定期检测源可达性与响应质量
-- 根据失败次数与延迟调整抓取频率或标记不可用
-
-```mermaid
-flowchart TD
-CheckStart["开始检查"] --> Ping["发送探测请求"]
-Ping --> Resp{"收到响应?"}
-Resp --> |否| MarkDown["标记为不可用"]
-Resp --> |是| Latency["计算延迟与状态码"]
-Latency --> Threshold{"超过阈值?"}
-Threshold --> |是| Degraded["降级或暂停抓取"]
-Threshold --> |否| Healthy["保持健康状态"]
-MarkDown --> End["结束"]
-Degraded --> End
-Healthy --> End
-```
-
-图表来源
-- [source_checker.rs](file://rust/legado-net/src/source_checker.rs)
-
-章节来源
-- [source_checker.rs](file://rust/legado-net/src/source_checker.rs)
-
-### 前端编辑器与表单配置
-- 编辑器提供可视化字段输入与校验提示
-- 表单配置定义字段类型、默认值、必填与正则校验规则
-- 支持切换至JSON模式进行高级编辑
-
-```mermaid
-sequenceDiagram
-participant User as "用户"
-participant Editor as "SourceEditor.vue"
-participant Config as "rssSourceEditConfig.ts"
-participant Store as "sourceStore.ts"
-participant FFI as "rss.rs(FFI)"
-User->>Editor : 打开编辑器并填写字段
-Editor->>Config : 读取表单配置与校验规则
-Editor->>Store : 提交表单数据
-Store->>FFI : 调用创建/更新接口
-FFI-->>Store : 返回成功或错误信息
-Store-->>Editor : 更新状态与提示
-```
-
-图表来源
-- [SourceEditor.vue](file://modules/web/src/views/SourceEditor.vue)
-- [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-
-章节来源
-- [SourceEditor.vue](file://modules/web/src/views/SourceEditor.vue)
-- [rssSourceEditConfig.ts](file://modules/web/src/config/rssSourceEditConfig.ts)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-
-### 列表管理与批量操作
-- 列表页支持分页、排序、筛选与多选
-- 批量启用/禁用、批量删除、批量导入导出
-- 支持按名称、分类、状态等多维度筛选
-
-```mermaid
-flowchart TD
-Load["加载列表"] --> Filter["应用筛选条件"]
-Filter --> Sort["排序与分页"]
-Sort --> Render["渲染条目"]
-Render --> Select["选择多个条目"]
-Select --> BatchOp{"选择批量操作?"}
-BatchOp --> |是| Execute["执行批量操作"]
-BatchOp --> |否| End["结束"]
-Execute --> Refresh["刷新列表"]
-Refresh --> End
-```
-
-图表来源
-- [SourceList.vue](file://modules/web/src/components/SourceList.vue)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-
-章节来源
-- [SourceList.vue](file://modules/web/src/components/SourceList.vue)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-
-### JSON导入导出
-- 支持将单个或多个RSS源配置导出为JSON
-- 支持从JSON批量导入，自动去重与冲突处理
-- 导入前进行格式校验与字段映射
-
-```mermaid
-sequenceDiagram
-participant UI as "SourceJson.vue"
-participant Store as "sourceStore.ts"
-participant FFI as "rss.rs(FFI)"
-participant Repo as "rss_source_repository.rs"
-UI->>Store : 选择导出/导入
-Store->>FFI : 调用导出/导入接口
-FFI->>Repo : 读取/写入源配置
-Repo-->>FFI : 返回结果
-FFI-->>Store : 返回统一响应
-Store-->>UI : 展示结果与提示
-```
-
-图表来源
-- [SourceJson.vue](file://modules/web/src/components/SourceJson.vue)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-- [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-
-章节来源
-- [SourceJson.vue](file://modules/web/src/components/SourceJson.vue)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-- [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-
-### 调试工具
-- 网络请求查看：记录请求URL、方法、头、响应体与耗时
-- 解析结果预览：展示解析后的条目结构与字段映射
-- 错误日志分析：聚合错误类型、堆栈与上下文信息
-
-```mermaid
-sequenceDiagram
-participant Debug as "SourceDebug.vue"
-participant Store as "sourceStore.ts"
-participant FFI as "rss.rs(FFI)"
-participant Net as "rss.rs(网络层)"
-Debug->>Store : 选择源并点击“调试”
-Store->>FFI : 调用调试接口
-FFI->>Net : 执行抓取与解析
-Net-->>FFI : 返回原始响应与解析结果
-FFI-->>Store : 返回调试数据
-Store-->>Debug : 展示请求详情、解析预览与错误日志
-```
-
-图表来源
-- [SourceDebug.vue](file://modules/web/src/components/SourceDebug.vue)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-
-章节来源
-- [SourceDebug.vue](file://modules/web/src/components/SourceDebug.vue)
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-
-### 收藏与分组管理
-- 收藏功能用于快速定位重要条目
-- 分组管理支持按分类、标签组织源与条目
-- 批量操作可跨分组移动或复制
-
-```mermaid
-classDiagram
-class RssStarRepository {
-+star(articleId, isStarred)
-+listBySourceId(sourceId)
-+countBySourceId(sourceId)
-}
-class GroupManager {
-+createGroup(name)
-+assignSourceToGroup(sourceId, groupId)
-+removeFromGroup(sourceId, groupId)
-+listSourcesByGroup(groupId)
-}
-RssStarRepository <.. GroupManager : "协同管理"
-```
-
-图表来源
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
-
-章节来源
-- [rss_star_repository.rs](file://rust/legado-db/src/repository/rss_star_repository.rs)
+- [RssSource.kt](file://app/src/main/java/io/legado/app/data/entities/RssSource.kt)
+- [rss_source.dart](file://flutter_legado/lib/src/models/rss_source.dart)
 
 ## 依赖关系分析
-- 前端依赖store与FFI接口，store依赖网络与本地缓存
-- FFI层依赖核心模型与仓储，仓储依赖数据库
-- 网络层依赖HTTP客户端、解析器与校验工具
+各层组件之间的依赖关系清晰明确，通过标准的接口进行通信：
 
 ```mermaid
 graph LR
-FE["前端组件"] --> STORE["sourceStore.ts"]
-STORE --> FFI["rss.rs(FFI)"]
-FFI --> CORE["核心模型/仓储"]
-CORE --> DB["数据库仓储"]
-FFI --> NET["网络与校验"]
-NET --> HTTP["HTTP客户端"]
-NET --> PARSER["RSS/Atom解析器"]
-NET --> VERIFY["校验工具"]
+Flutter["Flutter UI"] --> RustApi["RustApi"]
+RustApi --> RustRepo["RssSourceRepository"]
+RustRepo --> SQLite["SQLite数据库"]
+Android["Android UI"] --> ViewModel["RssSourceViewModel"]
+ViewModel --> Dao["RssSourceDao"]
+Dao --> Entity["RssSource实体"]
+Entity --> Room["Room数据库"]
 ```
 
 图表来源
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
+- [RssSourceViewModel.kt](file://app/src/main/java/io/legado/app/ui/rss/source/manage/RssSourceViewModel.kt)
+- [RssSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt)
 
 章节来源
-- [sourceStore.ts](file://modules/web/src/store/sourceStore.ts)
-- [rss.rs (FFI)](file://rust/legado-ffi/src/api/rss.rs)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
 - [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
-- [rss.rs](file://rust/legado-net/src/rss.rs)
-- [verification.rs](file://rust/legado-net/src/verification.rs)
+- [RssSourceViewModel.kt](file://app/src/main/java/io/legado/app/ui/rss/source/manage/RssSourceViewModel.kt)
+- [RssSourceDao.kt](file://app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt)
 
 ## 性能考虑
-- 抓取并发与限流：避免对同一源频繁请求，合理设置更新间隔
-- 解析优化：增量解析与缓存已存在条目，减少重复处理
-- 内存与IO：大响应体分块处理，及时释放资源
-- 重试与退避：指数退避与最大重试次数限制
-
-[本节为通用指导，不直接分析具体文件]
+- **原子更新**：使用单条UPDATE语句更新，避免外键级联问题和多次数据库操作
+- **事务处理**：确保数据一致性和完整性，减少锁竞争
+- **批量操作**：减少数据库写入次数，提高操作效率
+- **内存管理**：及时释放资源，避免内存泄漏
+- **网络请求**：合理的超时设置和错误重试机制
+- **数据缓存**：支持cacheFirst和preload优化加载速度
+- **FFI优化**：减少跨语言调用的开销
 
 ## 故障排查指南
-- 连接失败：检查URL有效性、代理与SSL配置、防火墙与DNS
-- 解析错误：确认RSS/Atom格式正确，检查编码与字符集
-- 权限与认证：确保必要的Cookie、Token或鉴权头已配置
-- 性能问题：观察响应时间与重试次数，调整间隔与并发
-- 错误日志：通过调试面板查看请求详情与解析结果，定位问题根因
+- **搜索无结果**：检查搜索关键词格式，确认特殊过滤词语法正确
+- **批量操作失败**：确认网络连接正常，检查权限设置
+- **分组管理异常**：验证sourceGroup字段格式，确保逗号分隔符正确
+- **导入失败**：检查JSON格式，确认URL可访问性
+- **排序异常**：验证customOrder字段值，重新计算排序顺序
+- **原子更新失败**：检查数据库事务状态，确认字段映射正确
+- **数据丢失问题**：确认使用的是新的update_fields方法而非旧的update方法
+- **FFI调用错误**：检查rust_api.dart中的updateRssSource方法是否正确调用rssUpdateSource
 
 章节来源
-- [verification.rs](file://rust/legado-net/src/verification.rs)
-- [source_checker.rs](file://rust/legado-net/src/source_checker.rs)
-- [SourceDebug.vue](file://modules/web/src/components/SourceDebug.vue)
+- [rss_source_repository.rs](file://rust/legado-db/src/repository/rss_source_repository.rs)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [RssSourceViewModel.kt](file://app/src/main/java/io/legado/app/ui/rss/source/manage/RssSourceViewModel.kt)
 
 ## 结论
-RSS源管理在Legado中由清晰的分层架构支撑：前端提供易用界面，FFI桥接统一接口，Rust核心实现数据模型与业务逻辑，网络层负责抓取与校验，仓储层保障持久化。通过完善的验证、调试与批量操作能力，用户可以高效地维护与管理RSS源。
-
-[本节为总结性内容，不直接分析具体文件]
+RSS源管理功能经过重大重构后，解决了数据库仓库的数据完整性问题。通过修复INSERT操作支持完整的45个数据库列，以及实现专用的原子更新机制，确保了RSS源配置的完整性和一致性。新增的update_fields()方法和事务处理机制，有效避免了外键级联问题，提升了系统的稳定性和性能。Flutter层的RustApi也进行了相应更新，使用专门的rssUpdateSource函数替代了错误的sourceUpdate调用，进一步增强了系统的可靠性。
 
 ## 附录
 
 ### RSS源配置JSON格式规范
-- 基本字段
-  - name：字符串，源名称，必填
-  - url：字符串，RSS/Atom地址，必填
-  - category：字符串，分类标签，可选
-  - updateInterval：整数，更新间隔（秒），可选
-  - enabled：布尔，是否启用，可选
-  - headers：对象，自定义请求头，可选
-  - userAgent：字符串，用户代理，可选
-  - timeout：整数，超时毫秒数，可选
-  - retryCount：整数，重试次数，可选
-  - filterRules：数组，过滤规则，可选
-  - sortField：字符串，排序字段，可选
-  - sortOrder：字符串，升序/降序，可选
-- 示例
-  - 一个最小可用配置包含name、url与enabled
-  - 高级配置可加入headers、filterRules与sortField
+**基本字段：**
+- sourceUrl：字符串，源的唯一标识，必填
+- sourceName：字符串，源的显示名称，可选
+- sourceGroup：字符串，分组名称（逗号分隔），可选
+- enabled：布尔，是否启用，默认true
+- customOrder：整数，自定义排序值，默认0
 
-[本节为概念性说明，不直接分析具体文件]
+**网络配置字段：**
+- loginUrl：字符串，登录地址，可选
+- header：字符串，自定义请求头，可选
+- concurrentRate：字符串，并发速率限制，可选
+
+**解析规则字段：**
+- ruleArticles：字符串，文章列表XPath规则，可选
+- ruleTitle：字符串，标题提取规则，可选
+- ruleContent：字符串，内容提取规则，可选
+
+**扩展功能字段：**
+- jsLib：字符串，JavaScript库代码，可选
+- injectJs：字符串，注入的JavaScript代码，可选
+- startHtml：字符串，起始页面HTML，可选
+- searchUrl：字符串，搜索URL模板，可选
+
+**示例配置：**
+```json
+{
+  "sourceUrl": "https://example.com/rss",
+  "sourceName": "示例RSS源",
+  "sourceGroup": "技术,新闻",
+  "enabled": true,
+  "customOrder": 1,
+  "ruleArticles": "//item",
+  "ruleTitle": "title/text()",
+  "ruleContent": "description/text()",
+  "jsLib": "window.lib = {}",
+  "injectJs": "console.log('inject')",
+  "searchUrl": "search?q={{key}}"
+}
+```
 
 ### 常见配置问题与解决方案
-- URL无效或无法访问：更换可用地址或检查网络环境
-- 编码错误：指定正确的字符集或使用自动检测
-- 反爬限制：增加User-Agent与必要请求头，降低请求频率
-- 解析失败：核对RSS/Atom结构，修正XPath或JSONPath规则
-- 性能瓶颈：增大超时与重试上限，合理设置更新间隔
+- **分组无效**：检查sourceGroup字段格式，确保使用逗号分隔且无空格
+- **搜索不工作**：确认搜索关键词语法，特殊过滤词需要精确匹配
+- **批量操作无响应**：检查网络连接状态，确认有足够的权限
+- **导入失败**：验证JSON格式，检查URL可访问性和编码格式
+- **排序异常**：重新计算customOrder值，确保数值连续且不重复
+- **原子更新失败**：检查数据库事务状态，确认字段映射正确
+- **数据丢失问题**：确认使用的是新的update_fields方法，确保所有45个字段都被正确写入
 
-[本节为通用指导，不直接分析具体文件]
+### 原子更新功能说明
+**更新机制：**
+- 使用Rust后端的update_fields()方法实现原子更新
+- 单条UPDATE语句更新所有字段，避免外键级联问题
+- 支持45个字段的完整更新，确保数据一致性
+- 事务处理保证操作的原子性和完整性
+
+**性能优势：**
+- 减少数据库写入次数，提高操作效率
+- 避免多次UPDATE语句的性能开销
+- 确保数据一致性，防止部分更新导致的脏数据
+- 支持批量操作，进一步提升性能
+
+**数据完整性保证：**
+- INSERT操作现在支持完整的45个数据库列
+- row_to_rss_source函数映射全部44个业务列
+- 支持扩展字段的完整读写回环
+- 避免了之前只有30个列被写入导致的数据丢失问题

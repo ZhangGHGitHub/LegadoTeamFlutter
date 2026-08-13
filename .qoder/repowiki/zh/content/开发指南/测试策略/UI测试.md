@@ -4,23 +4,22 @@
 **本文档引用的文件**   
 - [app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt](file://app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt)
 - [app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt](file://app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt)
-- [app/src/test/java/io.legado.app/ui/widget/badge_widget_test.dart](file://flutter_legado/test/widget/badge_widget_test.dart)
-- [app/src/test/java/io.legado.app/ui/widget/bookshelf_test.dart](file://flutter_legado/test/widget/bookshelf_test.dart)
-- [app/src/test/java/io.legado.app/ui/widget/reader_test.dart](file://flutter_legado/test/widget/reader_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/bookshelf_provider_test.dart](file://flutter_legado/test/unit/bookshelf_provider_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/search_provider_test.dart](file://flutter_legado/test/unit/search_provider_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/auto_task_test.dart](file://flutter_legado/test/unit/auto_task_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/models_test.dart](file://flutter_legado/test/unit/models_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/change_source_test.dart](file://flutter_legado/test/unit/change_source_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/reader_provider_test.dart](file://flutter_legado/test/unit/reader_provider_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/rss_provider_test.dart](file://flutter_legado/test/unit/rss_provider_test.dart)
-- [app/src/test/java/io.legado.app/ui/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
+- [flutter_legado/test/widget_test.dart](file://flutter_legado/test/widget_test.dart)
+- [flutter_legado/test/unit/bookshelf_manage_test.dart](file://flutter_legado/test/unit/bookshelf_manage_test.dart)
+- [flutter_legado/test/unit/remote_book_test.dart](file://flutter_legado/test/unit/remote_book_test.dart)
+- [flutter_legado/test/unit/rss_history_test.dart](file://flutter_legado/test/unit/rss_history_test.dart)
 - [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
 - [flutter_legado/Makefile](file://flutter_legado/Makefile)
 - [gradle.properties](file://gradle.properties)
 - [build.gradle](file://build.gradle)
 </cite>
+
+## 更新摘要
+**变更内容**   
+- 新增Flutter Widget测试章节，详细说明BookshelfManageScreen、RemoteBookScreen和RssHistoryScreen的完整测试覆盖
+- 补充加载状态、空状态、错误处理和用户交互等场景的测试实现
+- 更新Widget测试最佳实践与断言策略
+- 完善端到端测试设计与实施指南
 
 ## 目录
 1. [简介](#简介)
@@ -65,22 +64,16 @@ A_Test --> Build
 F_Test --> Build
 ```
 
-图表来源
+**图表来源**
 - [app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt](file://app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt)
 - [app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt](file://app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt)
-- [flutter_legado/test/widget/badge_widget_test.dart](file://flutter_legado/test/widget/badge_widget_test.dart)
-- [flutter_legado/test/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
-- [gradle.properties](file://gradle.properties)
-- [build.gradle](file://build.gradle)
+- [flutter_legado/test/widget_test.dart](file://flutter_legado/test/widget_test.dart)
 - [flutter_legado/Makefile](file://flutter_legado/Makefile)
 
-章节来源
+**章节来源**
 - [app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt](file://app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt)
 - [app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt](file://app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt)
-- [flutter_legado/test/widget/badge_widget_test.dart](file://flutter_legado/test/widget/badge_widget_test.dart)
-- [flutter_legado/test/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
-- [gradle.properties](file://gradle.properties)
-- [build.gradle](file://build.gradle)
+- [flutter_legado/test/widget_test.dart](file://flutter_legado/test/widget_test.dart)
 - [flutter_legado/Makefile](file://flutter_legado/Makefile)
 
 ## 核心组件
@@ -88,21 +81,15 @@ F_Test --> Build
 - 字体选择UI测试：验证字体加载与布局渲染结果，体现视图层级与资源注入。
 - Flutter Widget测试：针对徽章、书架、阅读器、搜索栏等组件进行渲染与交互断言。
 - Flutter Unit测试：服务与Provider的状态管理、数据流与业务逻辑断言。
+- **新增**：BookshelfManageScreen、RemoteBookScreen、RssHistoryScreen的完整Widget测试覆盖。
 
-章节来源
+**章节来源**
 - [app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt](file://app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt)
 - [app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt](file://app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt)
-- [flutter_legado/test/widget/badge_widget_test.dart](file://flutter_legado/test/widget/badge_widget_test.dart)
-- [flutter_legado/test/widget/bookshelf_test.dart](file://flutter_legado/test/widget/bookshelf_test.dart)
-- [flutter_legado/test/widget/reader_test.dart](file://flutter_legado/test/widget/reader_test.dart)
-- [flutter_legado/test/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
-- [flutter_legado/test/unit/bookshelf_provider_test.dart](file://flutter_legado/test/unit/bookshelf_provider_test.dart)
-- [flutter_legado/test/unit/search_provider_test.dart](file://flutter_legado/test/unit/search_provider_test.dart)
-- [flutter_legado/test/unit/auto_task_test.dart](file://flutter_legado/test/unit/auto_task_test.dart)
-- [flutter_legado/test/unit/models_test.dart](file://flutter_legado/test/unit/models_test.dart)
-- [flutter_legado/test/unit/change_source_test.dart](file://flutter_legado/test/unit/change_source_test.dart)
-- [flutter_legado/test/unit/reader_provider_test.dart](file://flutter_legado/test/unit/reader_provider_test.dart)
-- [flutter_legado/test/unit/rss_provider_test.dart](file://flutter_legado/test/unit/rss_provider_test.dart)
+- [flutter_legado/test/widget_test.dart](file://flutter_legado/test/widget_test.dart)
+- [flutter_legado/test/unit/bookshelf_manage_test.dart](file://flutter_legado/test/unit/bookshelf_manage_test.dart)
+- [flutter_legado/test/unit/remote_book_test.dart](file://flutter_legado/test/unit/remote_book_test.dart)
+- [flutter_legado/test/unit/rss_history_test.dart](file://flutter_legado/test/unit/rss_history_test.dart)
 
 ## 架构总览
 UI测试整体分为三层：
@@ -123,9 +110,10 @@ W --> U
 E --> W
 ```
 
-图表来源
-- [flutter_legado/test/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
-- [flutter_legado/test/widget/bookshelf_test.dart](file://flutter_legado/test/widget/bookshelf_test.dart)
+**图表来源**
+- [flutter_legado/test/unit/bookshelf_manage_test.dart](file://flutter_legado/test/unit/bookshelf_manage_test.dart)
+- [flutter_legado/test/unit/remote_book_test.dart](file://flutter_legado/test/unit/remote_book_test.dart)
+- [flutter_legado/test/unit/rss_history_test.dart](file://flutter_legado/test/unit/rss_history_test.dart)
 - [app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt](file://app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt)
 - [flutter_legado/Makefile](file://flutter_legado/Makefile)
 
@@ -143,7 +131,7 @@ E --> W
   - 对网络/异步任务需Mock或注入可控实现。
   - 屏幕方向与多语言切换需在用例中显式设置。
 
-章节来源
+**章节来源**
 - [app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt](file://app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt)
 
 ### Android UI Automator（跨应用）
@@ -153,7 +141,7 @@ E --> W
   - UiSelector 定位系统控件。
   - 配合Espresso在应用内完成复杂流程。
 
-章节来源
+**章节来源**
 - [app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt](file://app/src/androidTest/java/io.legado.app/ExampleInstrumentedTest.kt)
 
 ### Flutter Widget测试（flutter_test）
@@ -169,18 +157,53 @@ E --> W
   - 将异步操作包装为可测试的Future。
   - 使用 tester.pumpAndSettle() 等待动画与异步完成。
 
-章节来源
-- [flutter_legado/test/widget/badge_widget_test.dart](file://flutter_legado/test/widget/badge_widget_test.dart)
-- [flutter_legado/test/widget/bookshelf_test.dart](file://flutter_legado/test/widget/bookshelf_test.dart)
-- [flutter_legado/test/widget/reader_test.dart](file://flutter_legado/test/widget/reader_test.dart)
-- [flutter_legado/test/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
-- [flutter_legado/test/unit/bookshelf_provider_test.dart](file://flutter_legado/test/unit/bookshelf_provider_test.dart)
-- [flutter_legado/test/unit/search_provider_test.dart](file://flutter_legado/test/unit/search_provider_test.dart)
-- [flutter_legado/test/unit/auto_task_test.dart](file://flutter_legado/test/unit/auto_task_test.dart)
-- [flutter_legado/test/unit/models_test.dart](file://flutter_legado/test/unit/models_test.dart)
-- [flutter_legado/test/unit/change_source_test.dart](file://flutter_legado/test/unit/change_source_test.dart)
-- [flutter_legado/test/unit/reader_provider_test.dart](file://flutter_legado/test/unit/reader_provider_test.dart)
-- [flutter_legado/test/unit/rss_provider_test.dart](file://flutter_legado/test/unit/rss_provider_test.dart)
+**章节来源**
+- [flutter_legado/test/widget_test.dart](file://flutter_legado/test/widget_test.dart)
+
+### BookshelfManageScreen Widget测试
+- **新增**：书架管理界面的完整测试覆盖
+- 测试场景：
+  - 加载状态显示：验证加载指示器正确显示
+  - 空状态处理：无数据时显示空状态UI
+  - 错误处理：网络异常时的错误提示
+  - 用户交互：书籍选择、批量操作、排序筛选
+- 实现要点：
+  - 使用Mock Provider模拟数据源
+  - 验证不同状态下的UI渲染
+  - 测试用户操作的响应性
+
+**章节来源**
+- [flutter_legado/test/unit/bookshelf_manage_test.dart](file://flutter_legado/test/unit/bookshelf_manage_test.dart)
+
+### RemoteBookScreen Widget测试
+- **新增**：远程书籍浏览界面的完整测试覆盖
+- 测试场景：
+  - 数据加载状态：分页加载、刷新机制
+  - 书籍列表渲染：封面显示、标题、作者信息
+  - 搜索功能：关键词过滤、搜索结果展示
+  - 错误处理：网络超时、服务器错误的用户反馈
+- 实现要点：
+  - 模拟网络请求响应
+  - 验证分页加载逻辑
+  - 测试搜索算法的正确性
+
+**章节来源**
+- [flutter_legado/test/unit/remote_book_test.dart](file://flutter_legado/test/unit/remote_book_test.dart)
+
+### RssHistoryScreen Widget测试
+- **新增**：RSS历史记录界面的完整测试覆盖
+- 测试场景：
+  - 历史记录列表：条目显示、时间戳格式化
+  - 删除操作：单项删除、批量删除确认
+  - 搜索过滤：按标题、日期范围筛选
+  - 状态持久化：数据保存与恢复
+- 实现要点：
+  - Mock本地存储接口
+  - 验证CRUD操作的正确性
+  - 测试搜索功能的准确性
+
+**章节来源**
+- [flutter_legado/test/unit/rss_history_test.dart](file://flutter_legado/test/unit/rss_history_test.dart)
 
 ### 字体选择UI测试（Android）
 - 目标：验证字体资源加载、预览渲染与选择交互。
@@ -189,7 +212,7 @@ E --> W
   - 校验TextView/Canvas渲染结果是否按预期显示。
   - 检查选择后状态持久化与回显。
 
-章节来源
+**章节来源**
 - [app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt](file://app/src/androidTest/java/io.legado.app/ui/font/FontSelectionInflationTest.kt)
 
 ### 端到端（E2E）设计与实施
@@ -203,7 +226,7 @@ E --> W
   - 截图对比：在关键节点捕获屏幕快照，与基准图比对（阈值控制）。
   - 真实设备：优先真机，减少模拟器差异；并行执行提升吞吐。
 
-章节来源
+**章节来源**
 - [flutter_legado/Makefile](file://flutter_legado/Makefile)
 - [gradle.properties](file://gradle.properties)
 - [build.gradle](file://build.gradle)
@@ -217,9 +240,10 @@ E --> W
   - 自定义IdlingResource或pumpAndSettle等待异步完成。
   - 重试与退避策略用于不稳定场景。
 
-章节来源
-- [flutter_legado/test/widget/bookshelf_test.dart](file://flutter_legado/test/widget/bookshelf_test.dart)
-- [flutter_legado/test/unit/settings_service_test.dart](file://flutter_legado/test/unit/settings_service_test.dart)
+**章节来源**
+- [flutter_legado/test/unit/bookshelf_manage_test.dart](file://flutter_legado/test/unit/bookshelf_manage_test.dart)
+- [flutter_legado/test/unit/remote_book_test.dart](file://flutter_legado/test/unit/remote_book_test.dart)
+- [flutter_legado/test/unit/rss_history_test.dart](file://flutter_legado/test/unit/rss_history_test.dart)
 
 ### 断言设计与稳定性保证
 - 断言设计：
@@ -231,9 +255,10 @@ E --> W
   - 隔离测试数据，避免共享状态污染。
   - 失败重试与隔离重跑。
 
-章节来源
-- [flutter_legado/test/unit/models_test.dart](file://flutter_legado/test/unit/models_test.dart)
-- [flutter_legado/test/unit/change_source_test.dart](file://flutter_legado/test/unit/change_source_test.dart)
+**章节来源**
+- [flutter_legado/test/unit/bookshelf_manage_test.dart](file://flutter_legado/test/unit/bookshelf_manage_test.dart)
+- [flutter_legado/test/unit/remote_book_test.dart](file://flutter_legado/test/unit/remote_book_test.dart)
+- [flutter_legado/test/unit/rss_history_test.dart](file://flutter_legado/test/unit/rss_history_test.dart)
 
 ## 依赖分析
 - Android测试依赖：
@@ -259,13 +284,13 @@ FlutterTest --> FlutterTests
 Makefile --> FlutterTests
 ```
 
-图表来源
+**图表来源**
 - [build.gradle](file://build.gradle)
 - [gradle.properties](file://gradle.properties)
 - [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
 - [flutter_legado/Makefile](file://flutter_legado/Makefile)
 
-章节来源
+**章节来源**
 - [build.gradle](file://build.gradle)
 - [gradle.properties](file://gradle.properties)
 - [flutter_legado/pubspec.yaml](file://flutter_legado/pubspec.yaml)
@@ -282,8 +307,6 @@ Makefile --> FlutterTests
   - 预加载必要资源，减少首次运行开销。
   - 复用测试数据库/文件，避免重复初始化。
 
-[本节为通用指导，不直接分析具体文件]
-
 ## 故障排查指南
 - 常见问题：
   - 视图未找到：检查ID/文本是否正确，是否存在延迟渲染。
@@ -295,16 +318,13 @@ Makefile --> FlutterTests
   - 录制测试过程视频，辅助定位问题。
   - 分步执行用例，缩小问题范围。
 
-[本节为通用指导，不直接分析具体文件]
-
 ## 结论
 本项目已具备Android与Flutter两套UI测试体系：
 - Android侧通过Espresso与UI Automator覆盖应用内与系统级交互。
 - Flutter侧通过flutter_test实现组件级渲染与状态验证。
+- **新增**：BookshelfManageScreen、RemoteBookScreen、RssHistoryScreen的完整Widget测试覆盖，提升了核心功能的测试覆盖率。
 - 建议在现有基础上完善E2E流程与截图对比，形成闭环质量保障。
 - 强化数据准备与等待策略，持续提升测试稳定性与执行效率。
-
-[本节为总结性内容，不直接分析具体文件]
 
 ## 附录
 - 参考命令：
@@ -313,5 +333,3 @@ Makefile --> FlutterTests
 - 报告与产物：
   - 收集JUnit XML与HTML报告，归档APK/IPA与截图。
   - 在CI中失败时保留现场（日志/视频/截图）。
-
-[本节为补充信息，不直接分析具体文件]

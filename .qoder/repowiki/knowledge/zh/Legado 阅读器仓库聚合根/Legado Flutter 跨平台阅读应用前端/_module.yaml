@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: flutter_app
-title: Legado Flutter 跨平台阅读应用前端
-scope:
-    - flutter_legado/
-source_files: []
-depends_on: []
-related_to: []

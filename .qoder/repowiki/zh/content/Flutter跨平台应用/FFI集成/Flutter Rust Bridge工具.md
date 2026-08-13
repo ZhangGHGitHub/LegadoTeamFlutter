@@ -13,7 +13,19 @@
 - [api/mod.rs](file://rust/legado-ffi/src/api/mod.rs)
 - [Cargo.toml](file://rust/Cargo.toml)
 - [Makefile](file://Makefile)
+- [book_api.dart](file://flutter_legado/lib/src/services/book_api.dart)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [mock_book_api.dart](file://flutter_legado/lib/src/services/mock_book_api.dart)
+- [ffi.dart](file://flutter_legado/lib/src/bridge/ffi.dart)
+- [ffi.rs](file://rust/legado-ffi/src/ffi.rs)
 </cite>
+
+## 更新摘要
+**所做更改**   
+- 新增验证码交互通道章节，详细说明verificationRequestStream()、submitVerificationResult()和cancelVerificationRequest()方法
+- 更新FFI层实现说明，包含新的验证码相关API
+- 扩展Dart侧绑定代码示例，展示验证码流的使用方法
+- 添加验证码交互流程图和最佳实践指南
 
 ## 目录
 1. [简介](#简介)
@@ -21,11 +33,12 @@
 3. [核心组件](#核心组件)
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
-6. [依赖关系分析](#依赖关系分析)
-7. [性能考虑](#性能考虑)
-8. [故障排查指南](#故障排查指南)
-9. [结论](#结论)
-10. [附录](#附录)
+6. [验证码交互通道](#验证码交互通道)
+7. [依赖关系分析](#依赖关系分析)
+8. [性能考虑](#性能考虑)
+9. [故障排查指南](#故障排查指南)
+10. [结论](#结论)
+11. [附录](#附录)
 
 ## 简介
 本文件面向使用 Flutter + Rust 的开发者，系统化说明本项目中 Flutter Rust Bridge（FRB）的配置、代码生成与使用方式。内容涵盖：
@@ -34,6 +47,7 @@
 - Rust 侧 #[frb] 属性注解的使用与参数
 - Dart 侧生成的绑定代码结构与调用方式
 - 完整配置示例与最佳实践（错误处理、异步调用、内存管理等）
+- **新增**：验证码交互通道的完整实现与使用指南
 
 ## 项目结构
 本项目在 Flutter 工程根目录下维护 FRB 配置文件与生成脚本，Rust 侧通过 FFI 模块暴露接口并生成 frb_generated.rs 供 Dart 调用。关键位置如下：
@@ -47,23 +61,30 @@ subgraph "Flutter"
 A["flutter_rust_bridge.yaml"]
 B["scripts/generate-bridge.*"]
 C["Dart 应用代码"]
+D["BookApi 接口定义"]
+E["RustApi 实现"]
+F["MockBookApi 模拟实现"]
 end
 subgraph "Rust"
-D["legado-ffi/src/lib.rs"]
-E["legado-ffi/src/bridge.rs"]
-F["legado-ffi/src/frb_generated.rs"]
-G["legado-ffi/Cargo.toml"]
+G["legado-ffi/src/lib.rs"]
+H["legado-ffi/src/ffi.rs"]
+I["legado-ffi/src/frb_generated.rs"]
+J["legado-ffi/Cargo.toml"]
+K["验证码交互API"]
 end
-H["顶层 Makefile"]
-I["rust/Cargo.toml"]
+L["顶层 Makefile"]
+M["rust/Cargo.toml"]
 A --> B
-B --> F
-C --> F
-D --> F
-E --> F
-G --> F
-H --> B
-I --> G
+B --> I
+C --> I
+D --> E
+E --> H
+H --> I
+G --> I
+H --> K
+J --> I
+L --> B
+M --> J
 ```
 
 **图表来源** 
@@ -75,6 +96,10 @@ I --> G
 - [frb_generated.rs](file://rust/legado-ffi/src/frb_generated.rs)
 - [Cargo.toml](file://rust/Cargo.toml)
 - [Makefile](file://Makefile)
+- [book_api.dart](file://flutter_legado/lib/src/services/book_api.dart)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [mock_book_api.dart](file://flutter_legado/lib/src/services/mock_book_api.dart)
+- [ffi.rs](file://rust/legado-ffi/src/ffi.rs)
 
 **章节来源**
 - [flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
@@ -91,6 +116,7 @@ I --> G
 - 生成脚本：封装跨平台命令执行，统一触发 FRB 生成流程。
 - Rust FFI 层：通过 #[frb] 注解暴露函数/结构体给 Dart；生成 frb_generated.rs 作为双向桥接。
 - Dart 绑定：由 FRB 自动生成，提供类型安全、异步友好的 API 供 Flutter 调用。
+- **新增**：验证码交互通道：提供JS引擎与UI之间的验证码请求-响应机制。
 
 **章节来源**
 - [flutter_rust_bridge.yaml](file://flutter_legado/flutter_rust_bridge.yaml)
@@ -117,6 +143,7 @@ FRB-->>DartBind : 生成 Dart 绑定代码
 FRB-->>RustFFI : 生成 frb_generated.rs
 Dev->>DartBind : 在 Flutter 中调用生成的 API
 DartBind->>RustFFI : 通过 FFI 调用 Rust 实现
+Note over DartBind,RustFFI : 验证码交互通道<br/>verificationRequestStream()<br/>submitVerificationResult()<br/>cancelVerificationRequest()
 ```
 
 **图表来源** 
@@ -158,7 +185,7 @@ DartBind->>RustFFI : 通过 FFI 调用 Rust 实现
 
 ### Rust 侧 FFI 与 #[frb] 注解
 - lib.rs：定义 FFI 入口与模块组织，导出需暴露给 Dart 的公共接口。
-- bridge.rs：集中定义业务 API 与数据模型，配合 #[frb] 注解暴露给 Dart。
+- ffi.rs：集中定义业务 API 与数据模型，配合 #[frb] 注解暴露给 Dart。
 - frb_generated.rs：由 FRB 自动生成的双向桥接代码，负责序列化和调用转发。
 - #[frb] 注解要点：
   - 标注函数、结构体、枚举，使其参与代码生成。
@@ -174,6 +201,7 @@ class Lib {
 class BridgeAPI {
 +方法A(参数) 返回值
 +方法B(参数) 返回值
++验证码交互()
 }
 class GeneratedBridge {
 +序列化()
@@ -236,6 +264,182 @@ BridgeAPI --> GeneratedBridge : "被生成器消费"
 **章节来源**
 - [api/mod.rs](file://rust/legado-ffi/src/api/mod.rs)
 
+## 验证码交互通道
+
+### 概述
+验证码交互通道是 Flutter Rust Bridge 工具的新增功能，用于处理书源 JS 引擎中的验证码请求。该通道实现了完整的请求-响应机制，支持事件流推送、结果提交和请求取消等操作。
+
+### 核心方法
+
+#### verificationRequestStream()
+订阅验证码请求事件流，长期存活。当书源 JS 经 `getVerificationCode` 钩子挂起等待时，每个请求会推送一条事件 Map。
+
+**方法签名**：
+```dart
+Stream<Map<String, dynamic>> verificationRequestStream();
+```
+
+**事件字段**：
+- `key`：resultKey，用于标识特定的验证码请求
+- `source_url`：书源 URL
+- `source_name`：书源名称  
+- `image_url`：验证码图片地址
+- `title`：验证码标题
+- `use_browser`：桌面端恒 false（浏览器模式已降级）
+- `created_at_ms`：请求创建时间戳
+
+**实现位置**：
+- 接口定义：[book_api.dart:124-132](file://flutter_legado/lib/src/services/book_api.dart#L124-L132)
+- Rust 实现：[rust_api.dart:311-315](file://flutter_legado/lib/src/services/rust_api.dart#L311-L315)
+- FFI 层：[ffi.rs:255-263](file://rust/legado-ffi/src/ffi.rs#L255-L263)
+
+#### submitVerificationResult()
+提交验证码结果，唤醒 JS 等待方。对齐 Kotlin `setResult` 语义。
+
+**方法签名**：
+```dart
+Future<bool> submitVerificationResult(String key, String code);
+```
+
+**参数说明**：
+- `key`：请求事件中的 resultKey
+- `code`：用户输入的验证码
+
+**返回值**：是否命中进行中的请求
+
+**实现位置**：
+- 接口定义：[book_api.dart:134-138](file://flutter_legado/lib/src/services/book_api.dart#L134-L138)
+- Rust 实现：[rust_api.dart:319-320](file://flutter_legado/lib/src/services/rust_api.dart#L319-L320)
+- FFI 层：[ffi.rs:269-271](file://rust/legado-ffi/src/ffi.rs#L269-L271)
+
+#### cancelVerificationRequest()
+取消验证码请求，对齐 Kotlin `checkResult` 语义。以空结果唤醒等待方。
+
+**方法签名**：
+```dart
+Future<bool> cancelVerificationRequest(String key);
+```
+
+**参数说明**：
+- `key`：resultKey
+
+**返回值**：是否命中请求
+
+**实现位置**：
+- 接口定义：[book_api.dart:140-143](file://flutter_legado/lib/src/services/book_api.dart#L140-L143)
+- Rust 实现：[rust_api.dart:324-325](file://flutter_legado/lib/src/services/rust_api.dart#L324-L325)
+- FFI 层：[ffi.rs:276-278](file://rust/legado-ffi/src/ffi.rs#L276-L278)
+
+### 验证码交互流程
+
+```mermaid
+sequenceDiagram
+participant UI as "UI 层"
+participant BookApi as "BookApi 接口"
+participant RustApi as "RustApi 实现"
+participant FFI as "FFI 层"
+participant JS as "JS 引擎"
+Note over UI,JS : 验证码请求流程
+UI->>BookApi : subscription.verificationRequestStream()
+BookApi->>RustApi : verificationRequestStream()
+RustApi->>FFI : bridge.verificationRequestStream()
+FFI->>JS : getVerificationCode()
+JS-->>FFI : 验证码请求事件
+FFI-->>RustApi : Stream<String>
+RustApi-->>BookApi : Stream<Map<String,dynamic>>
+BookApi-->>UI : 验证码事件流
+Note over UI,JS : 验证码响应流程
+UI->>BookApi : submitVerificationResult(key, code)
+BookApi->>RustApi : submitVerificationResult(key, code)
+RustApi->>FFI : verification_submit(key, code)
+FFI->>JS : setResult(code)
+JS-->>FFI : 验证完成
+FFI-->>RustApi : true/false
+RustApi-->>BookApi : bool
+BookApi-->>UI : 操作结果
+```
+
+**图表来源** 
+- [book_api.dart](file://flutter_legado/lib/src/services/book_api.dart)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [ffi.rs](file://rust/legado-ffi/src/ffi.rs)
+
+### Mock 实现
+MockBookApi 提供了验证码交互通道的模拟实现，用于无 DLL 环境下的开发测试：
+
+**实现位置**：[mock_book_api.dart:497-511](file://flutter_legado/lib/src/services/mock_book_api.dart#L497-L511)
+
+**特点**：
+- 空流实现：不产生任何验证码请求
+- 返回 false：所有提交和取消操作都返回未命中
+- 适用于 UI 开发和功能演示
+
+### 使用示例
+
+#### 基本订阅和使用
+```dart
+// 订阅验证码请求流
+final stream = bookApi.verificationRequestStream();
+stream.listen((event) {
+  // 显示验证码对话框
+  showDialog(context: context, builder: (ctx) {
+    return VerificationDialog(
+      imageUrl: event['image_url'],
+      onSubmit: (code) {
+        // 提交验证码结果
+        bookApi.submitVerificationResult(event['key'], code);
+      },
+      onCancel: () {
+        // 取消验证码请求
+        bookApi.cancelVerificationRequest(event['key']);
+      },
+    );
+  });
+});
+```
+
+#### 错误处理
+```dart
+try {
+  final stream = bookApi.verificationRequestStream();
+  await for (final event in stream) {
+    // 处理验证码事件
+    if (event.containsKey('error')) {
+      // 处理错误情况
+      print('验证码请求失败: ${event['error']}');
+    } else {
+      // 正常处理验证码请求
+      showVerificationDialog(event);
+    }
+  }
+} catch (e) {
+  // 处理流订阅异常
+  print('验证码流订阅失败: $e');
+}
+```
+
+### 最佳实践
+
+#### 资源管理
+- 确保在适当时机取消流订阅，避免内存泄漏
+- 使用 `StreamSubscription` 的 `cancel()` 方法释放资源
+
+#### 用户体验
+- 验证码对话框应支持超时自动关闭
+- 提供清晰的错误提示信息
+- 支持网络图片加载失败的降级处理
+
+#### 安全性
+- 对用户输入的验证码进行基本验证
+- 防止重复提交相同的验证码
+- 合理设置验证码有效期
+
+**章节来源**
+- [book_api.dart](file://flutter_legado/lib/src/services/book_api.dart)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [mock_book_api.dart](file://flutter_legado/lib/src/services/mock_book_api.dart)
+- [ffi.rs](file://rust/legado-ffi/src/ffi.rs)
+
 ## 依赖关系分析
 FRB 依赖 Rust 工具链与 Cargo 包管理，Flutter 侧通过脚本驱动生成。
 
@@ -246,6 +450,10 @@ B --> C["frb_generated.rs"]
 D["Rust FFI(#[frb])"] --> B
 E["Cargo.toml"] --> D
 F["Makefile"] --> B
+G["BookApi 接口"] --> H["RustApi 实现"]
+H --> I["FFI 层"]
+I --> C
+J["验证码交互通道"] --> I
 ```
 
 **图表来源** 
@@ -254,6 +462,9 @@ F["Makefile"] --> B
 - [Makefile](file://Makefile)
 - [frb_generated.rs](file://rust/legado-ffi/src/frb_generated.rs)
 - [lib.rs](file://rust/legado-ffi/src/lib.rs)
+- [book_api.dart](file://flutter_legado/lib/src/services/book_api.dart)
+- [rust_api.dart](file://flutter_legado/lib/src/services/rust_api.dart)
+- [ffi.rs](file://rust/legado-ffi/src/ffi.rs)
 
 **章节来源**
 - [Cargo.toml](file://rust/Cargo.toml)
@@ -264,18 +475,19 @@ F["Makefile"] --> B
 - 异步调用：将 CPU 密集或 IO 操作标记为异步，提升响应性。
 - 内存管理：大对象分块传输，及时释放不再使用的资源。
 - 生成产物缓存：CI 中缓存生成结果，缩短构建时间。
-
-[本节为通用指导，不直接分析具体文件]
+- **验证码流优化**：合理使用流式传输，避免大量并发验证码请求导致内存压力。
 
 ## 故障排查指南
 - 常见问题：
   - 生成失败：检查 flutter_rust_bridge.yaml 语法与路径是否正确。
   - 类型不匹配：确认 Rust 与 Dart 类型映射一致。
   - 运行时崩溃：检查 FFI 生命周期与资源释放。
+  - 验证码流异常：检查流订阅是否正确管理，是否存在内存泄漏。
 - 排查步骤：
   - 查看生成脚本输出日志。
   - 验证 frb_generated.rs 是否存在且最新。
   - 在 Rust 侧添加日志定位问题。
+  - 检查验证码请求的生命周期管理。
 
 **章节来源**
 - [generate-bridge.sh](file://flutter_legado/scripts/generate-bridge.sh)
@@ -283,9 +495,7 @@ F["Makefile"] --> B
 - [error.rs](file://rust/legado-ffi/src/error.rs)
 
 ## 结论
-通过 FRB 配置文件与生成脚本，可实现 Flutter 与 Rust 之间高效、类型安全的互操作。遵循本文的最佳实践，可显著提升开发效率与运行稳定性。
-
-[本节为总结，不直接分析具体文件]
+通过 FRB 配置文件与生成脚本，可实现 Flutter 与 Rust 之间高效、类型安全的互操作。新增的验证码交互通道进一步完善了 JS 引擎与 UI 层的通信机制，提升了应用的健壮性和用户体验。遵循本文的最佳实践，可显著提升开发效率与运行稳定性。
 
 ## 附录
 - 常用命令：
@@ -294,5 +504,4 @@ F["Makefile"] --> B
 - 参考文件：
   - flutter_rust_bridge.yaml：配置中心。
   - frb_generated.rs：生成产物，用于调试与理解映射。
-
-[本节为补充信息，不直接分析具体文件]
+  - **新增**：验证码交互相关 API 文档和示例代码。

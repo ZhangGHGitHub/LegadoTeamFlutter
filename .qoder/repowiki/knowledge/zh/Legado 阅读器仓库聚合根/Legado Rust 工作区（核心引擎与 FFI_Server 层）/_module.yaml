@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: rust_workspace
-title: Legado Rust 工作区（核心引擎与 FFI/Server 层）
-scope:
-    - rust/
-source_files: []
-depends_on: []
-related_to: []
