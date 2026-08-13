@@ -765,6 +765,41 @@ fn register_variable_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // 对齐 AnalyzeRule.put / get / setLocal（与 getVariable 共用全局表作 JS 会话变量）
+    mount_dual(
+        java,
+        globals,
+        "put",
+        rquickjs::Function::new(ctx.clone(), |key: String, value: String| -> String {
+            let _ = variable_store::set_variable(&key, &value);
+            value
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    mount_dual(
+        java,
+        globals,
+        "get",
+        rquickjs::Function::new(ctx.clone(), |key: String| -> String {
+            variable_store::get_variable(&key)
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    mount_dual(
+        java,
+        globals,
+        "setLocal",
+        rquickjs::Function::new(ctx.clone(), |key: String, value: String| -> bool {
+            variable_store::set_variable(&key, &value).is_ok()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     Ok(())
 }
 

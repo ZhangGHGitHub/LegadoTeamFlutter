@@ -3,7 +3,8 @@
 //! 参考 Kotlin `AnalyzeRule.kt`，实现统一调度，根据规则前缀或内容类型
 //! 自动选择 HTML(CSS)、XPath、JsonPath、正则 解析引擎。
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use legado_core::LegadoResult;
 
@@ -56,6 +57,12 @@ pub struct AnalyzeRule {
     /// JS 执行时的注入上下文（对齐原版 AnalyzeRule.evalJS bindings：
     /// result/src/baseUrl 自动注入；chapter/title/source 等由调用方补充）
     js_bindings: Vec<(String, String)>,
+    /// 规则变量表（对齐原版 chapter/book/ruleData.putVariable）
+    ///
+    /// `@put:{k:rule}` 写入、`@get:{k}` / `java.get` 读取；跨 get_string 调用共享。
+    variables: Arc<Mutex<HashMap<String, String>>>,
+    /// 本地绑定（对齐原版 `localBindings` / `setLocal`；优先于 variables）
+    local_bindings: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl AnalyzeRule {
@@ -74,6 +81,8 @@ impl AnalyzeRule {
             is_json,
             js_executor: None,
             js_bindings: Vec::new(),
+            variables: Arc::new(Mutex::new(HashMap::new())),
+            local_bindings: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -102,6 +111,97 @@ impl AnalyzeRule {
     pub fn add_js_binding(&mut self, name: &str, json_literal: &str) {
         self.js_bindings
             .push((name.to_string(), json_literal.to_string()));
+    }
+
+    /// 保存变量（对齐原版 `AnalyzeRule.put`）
+    pub fn put(&self, key: &str, value: &str) -> String {
+        if let Ok(mut guard) = self.variables.lock() {
+            guard.insert(key.to_string(), value.to_string());
+        }
+        value.to_string()
+    }
+
+    /// 读取变量（对齐原版 `AnalyzeRule.get`：localBindings → variables）
+    pub fn get(&self, key: &str) -> String {
+        if let Ok(guard) = self.local_bindings.lock() {
+            if let Some(v) = guard.get(key) {
+                return v.clone();
+            }
+        }
+        // 特殊键：从 js_bindings 中的 book/chapter 对象取 name/title
+        if key == "bookName" {
+            if let Some((_, lit)) = self.js_bindings.iter().rev().find(|(n, _)| n == "book") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(lit) {
+                    if let Some(name) = v.get("name").and_then(|x| x.as_str()) {
+                        return name.to_string();
+                    }
+                }
+            }
+        }
+        if key == "title" {
+            if let Some((_, lit)) = self.js_bindings.iter().rev().find(|(n, _)| n == "title") {
+                if let Ok(s) = serde_json::from_str::<String>(lit) {
+                    return s;
+                }
+            }
+            if let Some((_, lit)) = self.js_bindings.iter().rev().find(|(n, _)| n == "chapter") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(lit) {
+                    if let Some(title) = v.get("title").and_then(|x| x.as_str()) {
+                        return title.to_string();
+                    }
+                }
+            }
+        }
+        if let Ok(guard) = self.variables.lock() {
+            if let Some(v) = guard.get(key) {
+                if !v.is_empty() {
+                    return v.clone();
+                }
+            }
+        }
+        String::new()
+    }
+
+    /// 设置本地绑定（对齐原版 `AnalyzeRule.setLocal`）
+    pub fn set_local(&self, key: &str, value: &str) {
+        if let Ok(mut guard) = self.local_bindings.lock() {
+            guard.insert(key.to_string(), value.to_string());
+        }
+    }
+
+    /// 从 JSON 对象字符串注入变量（章节 `variable` 列 / 书变量）
+    pub fn seed_variables_json(&self, json: &str) {
+        let trimmed = json.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(trimmed) {
+            self.seed_variables(map);
+        }
+    }
+
+    /// 批量注入变量
+    pub fn seed_variables(&self, map: HashMap<String, String>) {
+        if let Ok(mut guard) = self.variables.lock() {
+            for (k, v) in map {
+                guard.insert(k, v);
+            }
+        }
+    }
+
+    /// 导出当前变量表为 JSON（写入 BookChapter.variable）
+    pub fn export_variables_json(&self) -> Option<String> {
+        let guard = self.variables.lock().ok()?;
+        if guard.is_empty() {
+            return None;
+        }
+        serde_json::to_string(&*guard).ok()
+    }
+
+    /// 克隆变量 Arc 到子解析器（链式/子元素解析共享 put/get 状态）
+    fn share_variable_store_into(&self, child: &mut AnalyzeRule) {
+        child.variables = Arc::clone(&self.variables);
+        child.local_bindings = Arc::clone(&self.local_bindings);
     }
 
     /// 设置 JS 执行器
@@ -152,7 +252,8 @@ impl AnalyzeRule {
     /// - 自动检测规则类型
     /// - `&&`, `||`, `%%` 组合规则
     /// - `{$.rule}` 内嵌规则替换（JsonPath 场景）
-    /// - `@put:{...}` 剥离（对齐原版 `splitPutRule`；神漫画 chapterName 等）
+    /// - `@put:{...}` 写入变量 + 剥离（对齐原版 `splitPutRule` + `putRule`）
+    /// - `@get:{key}` 读取变量（对齐原版 SourceRule.makeUpRule）
     /// - 前缀/中缀 `extract@js:...` / `extract<js>...</js>` 链式（对齐
     ///   `AnalyzeRule.splitSourceRule` + JS_PATTERN；神漫画 chapterUrl、
     ///   Nhentai 正文 `//script@js:` 等）
@@ -162,13 +263,32 @@ impl AnalyzeRule {
             return Ok(vec![]);
         }
 
-        // 1) 剥离 @put:{...}（变量写入后续可扩展；先保证主规则可解析）
-        let rule_no_put = strip_put_rules(rule);
+        // 1) 分离并执行 @put:{...}（对齐 splitPutRule + putRule）
+        let (rule_no_put, put_map) = extract_put_rules(rule);
+        self.apply_put_map(&put_map)?;
 
-        // 2) 拆分 ## 替换段（主规则 ## 匹配 ## 替换 / ### 仅首匹配）
-        let (core_rule, replace_spec) = split_hash_replace(&rule_no_put);
+        // 纯 @put 规则（详情 init）：仅副作用，无主规则
+        if rule_no_put.trim().is_empty() {
+            return Ok(vec![]);
+        }
 
-        // 3) `<js>...</js>`（含 `$[*]` 复合）走单步专用路径，避免被
+        // 2) 展开 @get:{key}（对齐 makeUpRule getRuleType）
+        let had_get = rule_no_put.to_ascii_lowercase().contains("@get:");
+        let rule_expanded = self.expand_get_refs(&rule_no_put);
+        // 纯 `@get:{k}` / `http:@get:{k}` 等：makeUpRule 后 Mode.Regex，
+        // 求值走 `else -> rule` 直接返回拼装字符串，不再当选择器解析。
+        if had_get && !looks_like_extract_rule(&rule_expanded) {
+            return Ok(if rule_expanded.is_empty() {
+                vec![]
+            } else {
+                vec![rule_expanded]
+            });
+        }
+
+        // 3) 拆分 ## 替换段（主规则 ## 匹配 ## 替换 / ### 仅首匹配）
+        let (core_rule, replace_spec) = split_hash_replace(&rule_expanded);
+
+        // 4) `<js>...</js>`（含 `$[*]` 复合）走单步专用路径，避免被
         //    通用 JS 链拆成 Js+Extract 后丢失 `$[*]` 拆解语义（51漫画）
         //    其余 `extract@js:` 走链式（神漫画 chapterUrl / Nhentai 正文）
         let mut results = if core_rule.trim_start().starts_with("<js>") {
@@ -182,7 +302,7 @@ impl AnalyzeRule {
             }
         };
 
-        // 4) 应用 ## 替换
+        // 5) 应用 ## 替换
         if let Some(spec) = replace_spec.as_ref() {
             results = results
                 .into_iter()
@@ -270,6 +390,7 @@ impl AnalyzeRule {
                     }
                     // 临时以当前 content 解析（链式：后段基于前段结果文本）
                     let mut sub = AnalyzeRule::new(current_content.clone(), self.base_url.clone());
+                    self.share_variable_store_into(&mut sub);
                     if let Some(exec) = self.js_executor() {
                         sub.set_js_executor(exec);
                     }
@@ -289,6 +410,7 @@ impl AnalyzeRule {
                 JsChainStep::Js(code) => {
                     // 以当前结果为 content，使 execute_js_rule 注入 result/src
                     let mut sub = AnalyzeRule::new(current_content.clone(), self.base_url.clone());
+                    self.share_variable_store_into(&mut sub);
                     if let Some(exec) = self.js_executor() {
                         sub.set_js_executor(exec);
                     }
@@ -339,7 +461,12 @@ impl AnalyzeRule {
             return Ok(vec![]);
         }
 
-        let rule_no_put = strip_put_rules(rule);
+        let (rule_no_put, put_map) = extract_put_rules(rule);
+        self.apply_put_map(&put_map)?;
+        if rule_no_put.trim().is_empty() {
+            return Ok(vec![]);
+        }
+        let rule_no_put = self.expand_get_refs(&rule_no_put);
         // 与 get_strings 对齐：`<js>...</js>`（含 `\n$[*]` 复合后缀）必须走
         // 单步路径。若先 split_js_chain_steps，会把 `$[*]` 拆成独立 Extract，
         // 对整页 HTML 做 JSONPath →「JSON parse error」；再被 web_book
@@ -379,6 +506,7 @@ impl AnalyzeRule {
             let mut last_out = Vec::new();
             for code in pending_js {
                 let mut sub = AnalyzeRule::new(current.clone(), self.base_url.clone());
+                self.share_variable_store_into(&mut sub);
                 if let Some(exec) = self.js_executor() {
                     sub.set_js_executor(exec);
                 }
@@ -455,6 +583,39 @@ impl AnalyzeRule {
         self.regex_engine.regex_chain_match(&self.content, patterns)
     }
 
+    /// 执行 putMap（对齐原版 `putRule`：对每个 value 再 getString 后 put）
+    fn apply_put_map(&self, put_map: &HashMap<String, String>) -> LegadoResult<()> {
+        for (key, value_rule) in put_map {
+            // 直接单步求值，避免 value_rule 内嵌 @put 时递归炸栈；
+            // 常见值为 `$.chapter_id` / CSS 选择器，不含 @put。
+            let (cleaned, nested) = extract_put_rules(value_rule);
+            // 嵌套 @put 极少见；若有则先剥离再求值（嵌套 map 忽略）
+            let _ = nested;
+            let val = if cleaned.trim().is_empty() {
+                String::new()
+            } else {
+                // 展开已有 @get，再单步提取（不走完整 get_strings，防 put 递归）
+                let expanded = self.expand_get_refs(&cleaned);
+                self.get_strings_single_step(&expanded)?
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default()
+            };
+            self.put(key, &val);
+        }
+        Ok(())
+    }
+
+    /// 将规则中的 `@get:{key}` 替换为已存变量（对齐 makeUpRule getRuleType）
+    fn expand_get_refs(&self, rule: &str) -> String {
+        let re = regex::Regex::new(r"(?i)@get:\{([^}]+)\}").unwrap();
+        re.replace_all(rule, |caps: &regex::Captures| {
+            let key = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            self.get(key)
+        })
+        .into_owned()
+    }
+
     // --- 内部方法 ---
 
     /// 执行 JS 规则
@@ -500,6 +661,18 @@ impl AnalyzeRule {
             for (name, value) in &self.js_bindings {
                 // json_literal 已是合法 JSON 字面量，globalThis 属性赋值注入
                 prologue.push_str(&format!("globalThis.{name} = {value};\n"));
+            }
+            // 对齐原版 java.put / java.get / java.setLocal（会话变量）
+            if let Ok(guard) = self.variables.lock() {
+                let vars_json = serde_json::to_string(&*guard).unwrap_or_else(|_| "{}".into());
+                prologue.push_str(&format!(
+                    "if (typeof java !== 'undefined') {{\n\
+                     var __lgVars = {vars_json};\n\
+                     java.put = function(k,v){{ __lgVars[k]=String(v==null?'':v); return __lgVars[k]; }};\n\
+                     java.get = function(k){{ return (__lgVars[k]!=null)?String(__lgVars[k]):''; }};\n\
+                     java.setLocal = function(k,v){{ __lgVars[k]=String(v==null?'':v); return java; }};\n\
+                     }}\n"
+                ));
             }
             let wrapped = format!("{prologue}{js_code}");
             match executor.execute_js(&wrapped) {
@@ -790,14 +963,111 @@ fn expand_js_json_array_result(results: Vec<String>) -> Vec<String> {
     }
 }
 
-/// 剥离 `@put:{...}`（对齐 `splitPutRule` / `putPattern`）
+/// 分离 `@put:{...}`（对齐 `splitPutRule` / `putPattern`）
 ///
+/// 返回 (剥离后主规则, putMap)。putMap 的 value 仍是待求值规则字符串。
 /// 神漫画 `$.chapter_name@put:{chapter_id:$.chapter_id}` 若不剥离，
 /// JsonPath 整串失败 → 章名空 → get_chapters 跳过 → 目录为空。
-fn strip_put_rules(rule: &str) -> String {
-    // (?i)@put:(\{[^}]+?\})
+fn extract_put_rules(rule: &str) -> (String, HashMap<String, String>) {
     let re = regex::Regex::new(r"(?i)@put:(\{[^}]+?\})").unwrap();
-    re.replace_all(rule, "").into_owned()
+    let mut put_map = HashMap::new();
+    for cap in re.captures_iter(rule) {
+        if let Some(json_body) = cap.get(1) {
+            for (k, v) in parse_put_json_object(json_body.as_str()) {
+                put_map.insert(k, v);
+            }
+        }
+    }
+    let cleaned = re.replace_all(rule, "").into_owned();
+    (cleaned, put_map)
+}
+
+/// 剥离 `@put:{...}`（兼容旧调用 / 单测）
+fn strip_put_rules(rule: &str) -> String {
+    extract_put_rules(rule).0
+}
+
+/// 展开后的规则是否仍像可解析规则（否则按字面量返回）
+fn looks_like_extract_rule(rule: &str) -> bool {
+    let t = rule.trim_start();
+    if t.is_empty() {
+        return false;
+    }
+    t.starts_with('$')
+        || t.starts_with('@')
+        || t.starts_with("//")
+        || t.starts_with('<')
+        || t.starts_with("@@")
+        || t.contains("@js:")
+        || t.contains("<js>")
+}
+
+/// 解析 `@put` 对象：兼容规范 JSON 与书源惯用非规范形态
+/// `{chapter_id:$.chapter_id}` / `{n:"css",a:"css2"}`
+fn parse_put_json_object(raw: &str) -> HashMap<String, String> {
+    // 先尝试标准 JSON
+    if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(raw) {
+        return map;
+    }
+    // 宽松：去掉外层 {}，按顶层逗号拆（忽略引号内逗号）
+    let inner = raw
+        .trim()
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .trim();
+    let mut map = HashMap::new();
+    if inner.is_empty() {
+        return map;
+    }
+    for part in split_top_level_commas(inner) {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (key, value) = match part.split_once(':') {
+            Some((k, v)) => (k.trim(), v.trim()),
+            None => continue,
+        };
+        let key = key.trim_matches('"').trim_matches('\'').to_string();
+        let value = if (value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\''))
+        {
+            // 去掉引号并处理常见转义
+            let unquoted = &value[1..value.len() - 1];
+            unquoted.replace("\\\"", "\"").replace("\\n", "\n")
+        } else {
+            value.to_string()
+        };
+        if !key.is_empty() {
+            map.insert(key, value);
+        }
+    }
+    map
+}
+
+/// 按顶层逗号分割（不切开引号内的逗号）
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_quote: Option<char> = None;
+    let mut depth = 0i32;
+    for (i, ch) in s.char_indices() {
+        match (ch, in_quote) {
+            ('"' | '\'', None) => in_quote = Some(ch),
+            (q, Some(oq)) if q == oq => in_quote = None,
+            ('{', None) => depth += 1,
+            ('}', None) => depth -= 1,
+            (',', None) if depth == 0 => {
+                parts.push(&s[start..i]);
+                start = i + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if start <= s.len() {
+        parts.push(&s[start..]);
+    }
+    parts
 }
 
 /// 按原版 `JS_PATTERN` 拆分：`<js>...</js>|@js:...`
@@ -1296,7 +1566,22 @@ mod tests {
         assert_eq!(result, vec!["injected"]);
     }
 
-    /// 神漫画 chapterName：`$.chapter_name@put:{...}` 必须剥离 @put 后 JsonPath 才命中
+    #[test]
+    fn test_parse_put_json_and_apply() {
+        let (cleaned, map) = extract_put_rules("$.chapter_name@put:{chapter_id:$.chapter_id}");
+        assert_eq!(cleaned, "$.chapter_name");
+        assert_eq!(map.get("chapter_id").map(String::as_str), Some("$.chapter_id"));
+
+        let content = r#"{"chapter_name":"第1话","chapter_id":"99"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let step = rule.get_strings_single_step("$.chapter_id").unwrap();
+        assert_eq!(step, vec!["99".to_string()], "single_step={step:?}");
+        rule.apply_put_map(&map).unwrap();
+        assert_eq!(rule.get("chapter_id"), "99", "after apply_put_map");
+    }
+
+    /// 神漫画 chapterName：`$.chapter_name@put:{...}` 必须剥离 @put 后 JsonPath 才命中，
+    /// 且 chapter_id 写入变量可供后续 `@get:{chapter_id}` 读取
     #[test]
     fn test_strip_put_then_jsonpath() {
         let content = r#"{"chapter_name":"第1话","chapter_id":"99"}"#;
@@ -1306,6 +1591,42 @@ mod tests {
             .unwrap();
         assert_eq!(title, "第1话");
         assert_eq!(strip_put_rules("$.a@put:{k:$.v}"), "$.a");
+        assert_eq!(rule.get("chapter_id"), "99");
+        assert_eq!(rule.get_string("@get:{chapter_id}").unwrap(), "99");
+    }
+
+    /// 详情 init 纯 `@put` + 字段 `@get`（夜寒书库形态）
+    #[test]
+    fn test_put_init_then_get_fields() {
+        let content = r#"{"book_name":"书名A","author":"作者B"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let _ = rule
+            .get_string(r#"@put:{n:"$.book_name",a:"$.author"}"#)
+            .unwrap();
+        assert_eq!(rule.get("n"), "书名A");
+        assert_eq!(rule.get("a"), "作者B");
+        assert_eq!(rule.get_string("@get:{n}").unwrap(), "书名A");
+        assert_eq!(rule.get_string("http:@get:{a}").unwrap(), "http:作者B");
+    }
+
+    /// setLocal 优先于 put 变量
+    #[test]
+    fn test_set_local_overrides_get() {
+        let rule = AnalyzeRule::new("{}".into(), String::new());
+        rule.put("k", "from_put");
+        rule.set_local("k", "from_local");
+        assert_eq!(rule.get("k"), "from_local");
+    }
+
+    /// 变量导出 / 注入 JSON（章节 variable 列）
+    #[test]
+    fn test_export_seed_variables_json() {
+        let rule = AnalyzeRule::new("{}".into(), String::new());
+        rule.put("chapter_id", "42");
+        let json = rule.export_variables_json().unwrap();
+        let rule2 = AnalyzeRule::new("{}".into(), String::new());
+        rule2.seed_variables_json(&json);
+        assert_eq!(rule2.get("chapter_id"), "42");
     }
 
     /// 神漫画 chapterUrl：`$.chapter_id@js:baseUrl+"&chapter_id="+result`

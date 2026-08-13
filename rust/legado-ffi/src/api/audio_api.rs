@@ -208,6 +208,7 @@ pub fn get_audio_chapter_media(
         url: chapter.url.clone(),
         is_vip: chapter.is_vip,
         is_volume: chapter.is_volume,
+        variable: chapter.variable.clone(),
     };
 
     let engine = super::web_book::build_engine();

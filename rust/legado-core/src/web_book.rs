@@ -50,6 +50,9 @@ pub struct WebChapter {
     /// 是否卷章（卷章不检查空内容）
     #[serde(default)]
     pub is_volume: bool,
+    /// 规则变量 JSON（对齐 BookChapter.variable；@put 写入）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable: Option<String>,
 }
 
 /// 书籍详情
@@ -404,6 +407,7 @@ impl WebChapter {
             url: url.into(),
             is_vip: false,
             is_volume: false,
+            variable: None,
         }
     }
 }

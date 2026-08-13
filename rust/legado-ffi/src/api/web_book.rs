@@ -191,6 +191,14 @@ impl RealBookSourceFetcher {
             source.js_lib.as_deref(),
         );
 
+        // 详情页 init（对齐 BookInfo：先执行 init 规则写入 @put 变量，再解析字段）
+        if let Some(init_rule) = info_rule.and_then(|r| r.init.as_deref()) {
+            let init_rule = init_rule.trim();
+            if !init_rule.is_empty() {
+                let _ = analyzer.get_string(init_rule);
+            }
+        }
+
         // B2.1 canReName 双条件门控
         let rule_can_re_name = info_rule
             .and_then(|r| r.can_re_name.as_deref())
@@ -631,12 +639,16 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 AnalyzeUrl::get_absolute_url(&toc_url, &raw_url)
             };
 
+            // @put 变量写入章节（对齐 BookChapter.putVariable → variable JSON）
+            let variable = elem_analyzer.export_variables_json();
+
             chapters.push(WebChapter {
                 index: index as i32,
                 title,
                 url,
                 is_vip,
                 is_volume,
+                variable,
             });
         }
 
@@ -708,12 +720,14 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             Some(&chapter.title),
             Some(chapter.index),
             Some(total_chapters),
+            chapter.variable.as_deref(),
         );
 
         // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
         let source_headers_clone = source_headers.clone();
         let chapter_title = chapter.title.clone();
         let chapter_index = chapter.index;
+        let chapter_variable = chapter.variable.clone();
         let mut content = fetch_paginated_content(
             first_content,
             next_urls,
@@ -726,6 +740,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             Some(chapter_title.as_str()),
             Some(chapter_index),
             Some(total_chapters),
+            chapter_variable.as_deref(),
             |url: String| {
                 let headers = source_headers_clone.clone();
                 async move { self.fetch_simple(&url, headers.as_ref()).await }
@@ -863,6 +878,7 @@ fn parse_content_page_with_js_lib(
         chapter_title,
         None,
         None,
+        None,
     )
 }
 
@@ -882,6 +898,7 @@ fn parse_content_page_with_bindings(
     chapter_title: Option<&str>,
     chapter_index: Option<i32>,
     book_total_chapter_num: Option<i32>,
+    chapter_variable_json: Option<&str>,
 ) -> (String, Vec<String>) {
     let mut analyzer = crate::js_executor::construct_analyzer_with_js_lib(
         body,
@@ -908,6 +925,10 @@ fn parse_content_page_with_bindings(
         "book",
         &format!("{{\"totalChapterNum\": {total}, \"name\": \"\"}}"),
     );
+    // 种子章节 @put 变量（对齐 AnalyzeRule.setChapter → getVariable）
+    if let Some(vars) = chapter_variable_json {
+        analyzer.seed_variables_json(vars);
+    }
 
     let raw_content = if content_rule_str.is_empty() {
         analyzer.content().to_string()
@@ -974,6 +995,7 @@ async fn fetch_paginated_content<F, Fut>(
     chapter_title: Option<&str>,
     chapter_index: Option<i32>,
     book_total_chapter_num: Option<i32>,
+    chapter_variable_json: Option<&str>,
     mut fetch_page: F,
 ) -> String
 where
@@ -1008,6 +1030,7 @@ where
                             chapter_title,
                             chapter_index,
                             book_total_chapter_num,
+                            chapter_variable_json,
                         );
                         content_list.push(page_content);
                     }
@@ -1040,6 +1063,7 @@ where
                     chapter_title,
                     chapter_index,
                     book_total_chapter_num,
+                    chapter_variable_json,
                 );
                 content_list.push(page_content);
                 // 仅在获得单个下一页时继续串行（对标 Kotlin size==1 分支）；
@@ -1387,6 +1411,10 @@ fn convert_js_chapters(values: Vec<serde_json::Value>) -> Vec<WebChapter> {
                 url,
                 is_vip,
                 is_volume: false,
+                variable: v
+                    .get("variable")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string()),
             }
         })
         .collect()
@@ -1996,47 +2024,49 @@ mod tests {
             "https://example.com",
             ".content@html",
             ".next@href",
-            false,
-            None,
-            None,
-            None,
-            None,
-            scripted_fetch(pagination_pages()),
-        ));
-        // 多页拼接（顺序 + \n 连接）
-        let parts: Vec<&str> = result.split('\n').collect();
-        assert_eq!(parts.len(), 3);
-        assert!(parts[0].contains("第一页正文"));
-        assert!(parts[1].contains("第二页正文"));
-        assert!(parts[2].contains("第三页正文"));
-        // 循环终止：首页正文仅出现一次（next 指回自身被去重拦截）
-        assert_eq!(result.matches("第一页正文").count(), 1);
-    }
+              false,
+              None,
+              None,
+              None,
+              None,
+              None,
+              scripted_fetch(pagination_pages()),
+          ));
+          // 多页拼接（顺序 + \n 连接）
+          let parts: Vec<&str> = result.split('\n').collect();
+          assert_eq!(parts.len(), 3);
+          assert!(parts[0].contains("第一页正文"));
+          assert!(parts[1].contains("第二页正文"));
+          assert!(parts[2].contains("第三页正文"));
+          // 循环终止：首页正文仅出现一次（next 指回自身被去重拦截）
+          assert_eq!(result.matches("第一页正文").count(), 1);
+      }
 
-    #[test]
-    fn test_pagination_empty_next_rule_stops_at_first_page() {
-        let (first_content, next_urls) = parse_content_page(
-            PAGE1_HTML.to_string(),
-            ".content@html",
-            "", // 无 nextContentUrl 规则 → 单页行为不变
-            "https://example.com/chap/1.html",
-            "https://example.com",
-            false,
-        );
-        let result = runtime::block_on(fetch_paginated_content(
-            first_content,
-            next_urls,
-            "https://example.com/chap/1.html",
-            "https://example.com",
-            ".content@html",
-            "",
-            false,
-            None,
-            None,
-            None,
-            None,
-            scripted_fetch(pagination_pages()),
-        ));
+      #[test]
+      fn test_pagination_empty_next_rule_stops_at_first_page() {
+          let (first_content, next_urls) = parse_content_page(
+              PAGE1_HTML.to_string(),
+              ".content@html",
+              "", // 无 nextContentUrl 规则 → 单页行为不变
+              "https://example.com/chap/1.html",
+              "https://example.com",
+              false,
+          );
+          let result = runtime::block_on(fetch_paginated_content(
+              first_content,
+              next_urls,
+              "https://example.com/chap/1.html",
+              "https://example.com",
+              ".content@html",
+              "",
+              false,
+              None,
+              None,
+              None,
+              None,
+              None,
+              scripted_fetch(pagination_pages()),
+          ));
         assert!(result.contains("第一页正文"));
         assert!(!result.contains("第二页正文"));
     }
@@ -2075,6 +2105,7 @@ mod tests {
             ".content@html",
             ".next@href&&.alt@href",
             false,
+            None,
             None,
             None,
             None,
@@ -2118,6 +2149,7 @@ mod tests {
             ".content@html",
             ".next@href",
             false,
+            None,
             None,
             None,
             None,
@@ -2395,6 +2427,7 @@ mod tests {
             url: "https://www.qmao.net/vodplay/27017-1-1.html".into(),
             is_vip: false,
             is_volume: false,
+            variable: None,
         };
         let content = webbook_content(json, &serde_json::to_string(&chapter).unwrap())
             .expect("webbook_content");

@@ -509,6 +509,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 url,
                 is_vip,
                 is_volume: false,
+                variable: None,
             });
         }
 

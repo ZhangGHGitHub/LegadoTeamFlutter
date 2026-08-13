@@ -418,7 +418,7 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
             end: None,
             start_fragment_id: None,
             end_fragment_id: None,
-            variable: None,
+            variable: wc.variable.clone(),
             img_url: None,
         })
         .collect();
@@ -484,8 +484,16 @@ pub fn fetch_chapter_content(
     source_url: &str,
 ) -> LegadoResult<String> {
     // 取得真实章节序号与标题（供去重复标题与缓存使用）
-    let (chapter_index, chapter_title) = get_chapter_index_and_title(book_url, chapter_url)?;
-    fetch_chapter_content_inner(book_url, chapter_url, source_url, chapter_index, &chapter_title)
+    let (chapter_index, chapter_title, chapter_variable) =
+        get_chapter_index_title_variable(book_url, chapter_url)?;
+    fetch_chapter_content_inner(
+        book_url,
+        chapter_url,
+        source_url,
+        chapter_index,
+        &chapter_title,
+        chapter_variable.as_deref(),
+    )
 }
 
 /// 章节正文抓取核心逻辑（不含 get_chapter_index_and_title 查询）
@@ -499,6 +507,7 @@ fn fetch_chapter_content_inner(
     source_url: &str,
     chapter_index: i32,
     chapter_title: &str,
+    chapter_variable: Option<&str>,
 ) -> LegadoResult<String> {
     // 1. 检查 DB 缓存
     // Task #16 P0：按 (book_url, chapter_url) 复合键查找，避免不同书籍共用
@@ -532,6 +541,7 @@ fn fetch_chapter_content_inner(
         url: chapter_url.to_string(),
         is_vip: false,
         is_volume: false,
+        variable: chapter_variable.map(|s| s.to_string()),
     };
 
     let engine = super::web_book::build_engine();
@@ -636,7 +646,14 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
     let source_url = book.origin;
 
     // 直接调用 inner，复用已持有的章节信息，避免冗余的 get_chapter_index_and_title 查询
-    fetch_chapter_content_inner(book_url, &chapter.url, &source_url, chapter.index, &chapter.title)
+    fetch_chapter_content_inner(
+        book_url,
+        &chapter.url,
+        &source_url,
+        chapter.index,
+        &chapter.title,
+        chapter.variable.as_deref(),
+    )
 }
 
 /// 对原始正文应用「替换规则 + 内容净化」，返回净化后的正文（读取时净化）
@@ -803,8 +820,11 @@ fn process_content_with_rules_inner(
     processor.process(raw_content, chapter_title, &entries)
 }
 
-/// 根据 chapter_url 查找章节序号与标题（找不到时返回 (0, 空标题)）
-fn get_chapter_index_and_title(book_url: &str, chapter_url: &str) -> LegadoResult<(i32, String)> {
+/// 根据 chapter_url 查找章节序号、标题与变量（找不到时返回 (0, 空标题, None)）
+fn get_chapter_index_title_variable(
+    book_url: &str,
+    chapter_url: &str,
+) -> LegadoResult<(i32, String, Option<String>)> {
     let chapters = with_database(|db| {
         let repo = BookChapterRepository::new(db.connection());
         repo.find_by_book_url(book_url)
@@ -812,8 +832,8 @@ fn get_chapter_index_and_title(book_url: &str, chapter_url: &str) -> LegadoResul
     Ok(chapters
         .iter()
         .find(|ch| ch.url == chapter_url)
-        .map(|ch| (ch.index, ch.title.clone()))
-        .unwrap_or((0, String::new())))
+        .map(|ch| (ch.index, ch.title.clone(), ch.variable.clone()))
+        .unwrap_or((0, String::new(), None)))
 }
 
 #[cfg(test)]
