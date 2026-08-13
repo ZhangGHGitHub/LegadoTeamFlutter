@@ -729,8 +729,8 @@ Future<String> webbookInfo({
 Future<String> webbookChapters({
   required String sourceJson,
   required String bookUrl,
-  String tocUrl = '',
-  String bookName = '',
+  required String tocUrl,
+  required String bookName,
 }) => RustLib.instance.api.crateFfiFfiWebbookChapters(
   sourceJson: sourceJson,
   bookUrl: bookUrl,
@@ -755,7 +755,7 @@ Future<String> webbookContent({
 /// `explore_url` — 书源的 exploreUrl 字段
 Future<String> exploreParseUrl({
   required String exploreUrl,
-  String sourceJson = '',
+  required String sourceJson,
 }) => RustLib.instance.api.crateFfiFfiExploreParseUrl(
   exploreUrl: exploreUrl,
   sourceJson: sourceJson,
@@ -949,20 +949,6 @@ Future<bool> bookGroupSetShow({
   required PlatformInt64 id,
   required bool show_,
 }) => RustLib.instance.api.crateFfiFfiBookGroupSetShow(id: id, show_: show_);
-
-/// 获取今日阅读统计（JSON）
-Future<String> statsToday() => RustLib.instance.api.crateFfiFfiStatsToday();
-
-/// 获取最近 N 天每日统计（JSON 数组）
-Future<String> statsDaily({required int days}) =>
-    RustLib.instance.api.crateFfiFfiStatsDaily(days: days);
-
-/// 获取按书籍分组的统计（JSON 数组）
-Future<String> statsByBook() => RustLib.instance.api.crateFfiFfiStatsByBook();
-
-/// 获取阅读热力图数据（JSON 数组）
-Future<String> statsHeatmap({required int days}) =>
-    RustLib.instance.api.crateFfiFfiStatsHeatmap(days: days);
 
 /// 获取缓存总大小（字节）
 Future<PlatformInt64> cacheGetSize() =>
@@ -1214,39 +1200,6 @@ Future<bool> saveCoverRule({required String ruleJson}) =>
 /// 删除封面规则配置（契约 §2.4 F4，对齐 BookCover.delCoverRule）
 Future<bool> deleteCoverRule() =>
     RustLib.instance.api.crateFfiFfiDeleteCoverRule();
-
-/// 获取所有用户（JSON 数组）
-Future<String> userGetAll() => RustLib.instance.api.crateFfiFfiUserGetAll();
-
-/// 保存用户，返回用户 ID
-Future<PlatformInt64> userSave({
-  required String username,
-  required String password,
-  required String sourceUrl,
-}) => RustLib.instance.api.crateFfiFfiUserSave(
-  username: username,
-  password: password,
-  sourceUrl: sourceUrl,
-);
-
-/// 删除用户
-Future<bool> userDelete({required String username}) =>
-    RustLib.instance.api.crateFfiFfiUserDelete(username: username);
-
-/// 用户登录
-Future<bool> userLogin({required String username, required String password}) =>
-    RustLib.instance.api.crateFfiFfiUserLogin(
-      username: username,
-      password: password,
-    );
-
-/// 用户登出
-Future<bool> userLogout({required String username}) =>
-    RustLib.instance.api.crateFfiFfiUserLogout(username: username);
-
-/// 检查登录状态
-Future<bool> userCheckLogin({required String username}) =>
-    RustLib.instance.api.crateFfiFfiUserCheckLogin(username: username);
 
 /// 列出 WebDAV 远程目录（JSON 数组）
 Future<String> webdavListDir({

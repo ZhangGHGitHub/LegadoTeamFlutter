@@ -9,7 +9,6 @@
 //!
 //! 与现有模块的关系：
 //! - [`crate::read_state::ReadBookState`] — 三章滑动窗口 + LRU 缓存 + 预下载（本模块复用）
-//! - [`crate::reading_stats`] — 阅读统计计算（本模块在会话结束时生成统计数据）
 //! - [`crate::layout::LayoutEngine`] — 排版分页（本模块使用其分页结果定位页码）
 
 use std::time::{Duration, Instant};
@@ -18,7 +17,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::{LayoutConfig, LayoutEngine, LayoutPage};
 use crate::read_state::ReadBookState;
-use crate::reading_stats::{ReadingSession, ReadingStatsCalculator};
+
+/// 单次阅读会话快照（仅内存，不持久化；对齐原版无热力图/会话表）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReaderSessionSnapshot {
+    pub book_url: String,
+    pub chapter_index: i32,
+    pub chapter_name: Option<String>,
+    pub start_time: i64,
+    pub end_time: Option<i64>,
+    pub word_count: i32,
+    pub reading_speed: f64,
+}
+
+fn calculate_reading_speed(word_count: i32, duration_ms: i64) -> f64 {
+    if duration_ms <= 0 {
+        return 0.0;
+    }
+    (word_count as f64) / (duration_ms as f64 / 60_000.0)
+}
 
 // ─── 阅读模式 ─────────────────────────────────────────────
 
@@ -243,20 +260,16 @@ impl ReaderStateMachine {
     }
 
     /// 结束阅读会话（关闭书籍时调用），返回本次会话统计
-    pub fn end_session(&mut self) -> Option<ReadingSession> {
+    pub fn end_session(&mut self) -> Option<ReaderSessionSnapshot> {
         let start = self.session_start.take()?;
         let elapsed = start.elapsed();
         self.total_reading_time += elapsed;
 
         let duration_ms = elapsed.as_millis() as i64;
-        let speed = ReadingStatsCalculator::calculate_speed(
-            self.session_chars_read as i32,
-            duration_ms,
-        );
+        let speed = calculate_reading_speed(self.session_chars_read as i32, duration_ms);
 
         let now_ms = current_millis();
-        Some(ReadingSession {
-            id: 0, // 由持久层分配
+        Some(ReaderSessionSnapshot {
             book_url: self.book_url.clone(),
             chapter_index: self.current_chapter,
             chapter_name: None,
@@ -271,10 +284,7 @@ impl ReaderStateMachine {
     pub fn live_stats(&self) -> LiveReadingStats {
         let elapsed = self.session_start.map(|s| s.elapsed()).unwrap_or_default();
         let duration_ms = elapsed.as_millis() as i64;
-        let speed = ReadingStatsCalculator::calculate_speed(
-            self.session_chars_read as i32,
-            duration_ms,
-        );
+        let speed = calculate_reading_speed(self.session_chars_read as i32, duration_ms);
         LiveReadingStats {
             elapsed,
             chars_read: self.session_chars_read,

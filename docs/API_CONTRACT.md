@@ -257,7 +257,7 @@
 | `restore(String backupPath)` | backupPath | `Future<void>` | 恢复数据。**P2-4（2026-08-13）**：UI 先读 `SettingsService.restoreIgnore`；`localBook` 预过滤备份 JSON 本地书；其余 ignore 键在应用备份内 `appPrefs` 时经 `RestoreIgnorePrefs.keyIsNotIgnore` 跳过（对齐 BackupConfig）；再调用本方法恢复业务表（无需改 FFI 签名） |
 | `importOldData(String dirPath)` | dirPath：含旧版备份文件的目录 | `Future<String>`（统计 JSON） | **P2-4（2026-08-13）**：对齐原版 `ImportOldData.importUri`。读取目录下 `myBookShelf.json` / `myBookSource.json` / `myBookReplaceRule.json`（缺文件不致命，计入 `messages`）；书架字段映射（`noteUrl`→`bookUrl`、`bookInfoBean.*` 等）；书源经 `toNewRule`/`toNewUrl`/`toNewUrls`/`uaToHeader` 迁到 3.x 规则结构；替换规则兼容新格式或旧字段（`regex`/`replaceSummary`/`useTo`/`enable`/`serialNumber`）。已存在 `bookUrl` 的书跳过。返回 JSON：`{books, bookSources, replaceRules, messages: string[]}` |
 
-### 2.12 阅读记录（4 个方法）
+### 2.12 阅读记录（5 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -265,6 +265,7 @@
 | `putReadRecord(ReadRecord record)` | record: ReadRecord 对象 | `Future<void>` | 更新阅读记录 |
 | `deleteReadRecord(String bookName)` | bookName | `Future<void>` | 删除阅读记录 |
 | `clearReadRecords()` | 无 | `Future<void>` | 清空阅读记录 |
+| `recordReadingTime(String bookName, int seconds)` | bookName, seconds | `Future<void>` | 记录阅读时长（对齐原版 ReadRecord，非统计子系统） |
 
 ### 2.13 RSS 收藏操作（4 个方法）
 
@@ -368,16 +369,6 @@
 | `parseEpub(String filePath)` | filePath | `Future<List<BookChapter>>` | 解析 EPUB 文件 |
 | `exportBook(String bookUrl, String format, String outDir)` | bookUrl, format, outDir | `Future<String>` | 导出书籍（将章节内容写入文件） |
 
-### 2.24 阅读统计（5 个方法）
-
-| 方法 | 入参 | 返回 | 说明 |
-|------|------|------|------|
-| `getTodayReadingStats()` | 无 | `Future<ReadingStatsToday>` | 获取今日阅读统计 |
-| `getDailyReadingStats({required int days})` | days | `Future<Map<String, int>>` | 获取每日阅读统计 |
-| `getBookReadingStats()` | 无 | `Future<Map<String, int>>` | 获取书籍阅读统计 |
-| `getReadingHeatmap({required int days})` | days | `Future<Map<String, int>>` | 获取阅读热力图 |
-| `recordReadingTime(String bookName, int seconds)` | bookName, seconds | `Future<void>` | 记录阅读时长 |
-
 ### 2.25 HTTP TTS（7 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
@@ -398,17 +389,6 @@
 | `getAudioChapterMedia(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<Map<String, dynamic>>` | **音频书章节取址**（对齐原版 `AudioPlay` → `WebBook.getContent`）。Rust FFI：`audioGetChapterMedia` → JSON。返回字段（camelCase）：`chapterIndex` / `title` / **`mediaUrl`**（可播地址，即 getContent 正文 trim）/ `url`（章节页 URL，兼容旧字段）/ `resourceUrl` / `isVolume`（卷章无媒体，调用方应跳过）/ `fromCache` / `lyric` / `sourceUrl`。流程：查章 → 卷章短路 → DB 章节内容缓存命中则直接作 `mediaUrl` → 否则按 `book.origin` 书源 `getContent`（**正文规则为空时回退章节 URL**，对齐 Kotlin）→ 写入缓存。空 `mediaUrl` 且非卷章表示取址失败。错误码：章节/书籍不存在 → Database；书源网络/解析失败向上抛。与 TTS `audioSpeak` 分流：仅 `BookType.audio` 走本接口流媒体 |
 | `getAudioProgress(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<Map<String, dynamic>?>` | 获取音频播放进度 |
 | `saveAudioProgress(String bookUrl, int chapterIndex, int positionMs)` | bookUrl, chapterIndex, positionMs | `Future<void>` | 保存音频播放进度 |
-
-### 2.27 用户管理（6 个方法）
-
-| 方法 | 入参 | 返回 | 说明 |
-|------|------|------|------|
-| `getUsers()` | 无 | `Future<List<Map<String, dynamic>>>` | 获取所有用户 |
-| `saveUser({required String username, required String password, required String sourceUrl})` | username, password, sourceUrl | `Future<int>` | 保存用户，返回用户 ID |
-| `deleteUser(String username)` | username | `Future<bool>` | 删除用户 |
-| `userLogin({required String username, required String password})` | username, password | `Future<bool>` | 用户登录 |
-| `userLogout(String username)` | username | `Future<bool>` | 用户登出 |
-| `checkLoginStatus(String username)` | username | `Future<bool>` | 检查登录状态 |
 
 ### 2.28 WebDAV 云同步（7 个方法）
 
@@ -794,7 +774,7 @@
 | 9 | 阅读器操作 | 10 |
 | 10 | 配置操作 | 4 |
 | 11 | 备份操作 | 2 |
-| 12 | 阅读记录 | 4 |
+| 12 | 阅读记录 | 5 |
 | 13 | RSS 收藏操作 | 4 |
 | 14 | 书籍分组 | 4 |
 | 15 | 搜索历史 | 5 |
@@ -806,11 +786,9 @@
 | 21 | JS 引擎 | 2 |
 | 22 | 服务器管理 | 5 |
 | 23 | 书籍格式解析 | 3 |
-| 24 | 阅读统计 | 5 |
-| 25 | HTTP TTS | 7 |
-| 26 | 音频播放 | 4 |
-| 27 | 用户管理 | 6 |
-| 28 | WebDAV 云同步 | 7 |
+| 24 | HTTP TTS | 7 |
+| 25 | 音频播放 | 4 |
+| 26 | WebDAV 云同步 | 7 |
 | 29 | 下载管理器 | 7 |
 | 30 | 段评/章评 | 7 |
 | 31 | 书籍导出 | 2 |

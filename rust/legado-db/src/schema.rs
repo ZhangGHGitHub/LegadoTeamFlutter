@@ -58,8 +58,6 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 readRecord 表失败: {e}")))?;
     conn.execute_batch(CREATE_AUTO_TASK_RULES)
         .map_err(|e| LegadoError::Database(format!("创建 auto_task_rules 表失败: {e}")))?;
-    conn.execute_batch(CREATE_READING_SESSIONS)
-        .map_err(|e| LegadoError::Database(format!("创建 reading_sessions 表失败: {e}")))?;
     conn.execute_batch(CREATE_CACHED_CHAPTERS)
         .map_err(|e| LegadoError::Database(format!("创建 cached_chapters 表失败: {e}")))?;
     conn.execute_batch(CREATE_CHAPTER_REVIEWS)
@@ -70,8 +68,6 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 caches 表失败: {e}")))?;
     conn.execute_batch(CREATE_HTTP_TTS)
         .map_err(|e| LegadoError::Database(format!("创建 httpTTS 表失败: {e}")))?;
-    conn.execute_batch(CREATE_USERS)
-        .map_err(|e| LegadoError::Database(format!("创建 users 表失败: {e}")))?;
     conn.execute_batch(CREATE_DICT_RULES)
         .map_err(|e| LegadoError::Database(format!("创建 dictRules 表失败: {e}")))?;
     conn.execute_batch(CREATE_KEYBOARD_ASSISTS)
@@ -451,21 +447,6 @@ CREATE TABLE IF NOT EXISTS auto_task_rules (
 );
 ";
 
-pub const CREATE_READING_SESSIONS: &str = "
-CREATE TABLE IF NOT EXISTS reading_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    book_url TEXT NOT NULL,
-    chapter_index INTEGER NOT NULL DEFAULT 0,
-    chapter_name TEXT,
-    start_time INTEGER NOT NULL,
-    end_time INTEGER,
-    word_count INTEGER NOT NULL DEFAULT 0,
-    reading_speed REAL NOT NULL DEFAULT 0.0
-);
-CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_url);
-CREATE INDEX IF NOT EXISTS idx_reading_sessions_time ON reading_sessions(start_time);
-";
-
 pub const CREATE_CACHED_CHAPTERS: &str = "
 CREATE TABLE IF NOT EXISTS cached_chapters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -560,27 +541,6 @@ CREATE TABLE IF NOT EXISTS coverRules (
     name TEXT NOT NULL DEFAULT '',
     rule TEXT NOT NULL DEFAULT '',
     enable INTEGER NOT NULL DEFAULT 1
-);
-";
-
-/// users 表（Rust 轨自有扩展，Room 无此表）
-///
-/// 命名差异说明（台账 §4.2.1 P0-2 登记）：
-/// Kotlin 侧的 `servers` 表存储 WebDAV 备份服务器配置
-/// （id/name/type/config/sortNumber，见 `Server.kt`），与本表语义完全不同；
-/// 本表为 Rust 轨自建的用户账户存储（替代 SharedPreferences），
-/// 并非 Kotlin servers 的等价物。为避免破坏现有 API，两表均不改名，
-/// 互读/迁移差异另行登记。
-pub const CREATE_USERS: &str = "
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT DEFAULT '',
-    source_url TEXT DEFAULT '',
-    token TEXT DEFAULT '',
-    is_logged_in INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
 );
 ";
 

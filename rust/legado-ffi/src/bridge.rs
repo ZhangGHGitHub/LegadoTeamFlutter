@@ -1122,36 +1122,6 @@ pub extern "C" fn ffi_book_group_set_show(id: i64, show: bool) -> *mut c_char {
     }))
 }
 
-// ─── 阅读统计 FFI 函数 ─────────────────────────────────────
-
-/// 获取今日阅读统计
-#[no_mangle]
-pub extern "C" fn ffi_stats_today() -> *mut c_char {
-    to_ffi_response(catch_unwind(crate::api::reading_stats_api::get_today_stats))
-}
-
-/// 获取最近 N 天每日统计
-#[no_mangle]
-pub extern "C" fn ffi_stats_daily(days: i32) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        crate::api::reading_stats_api::get_daily_stats(days)
-    }))
-}
-
-/// 获取按书籍分组的统计
-#[no_mangle]
-pub extern "C" fn ffi_stats_by_book() -> *mut c_char {
-    to_ffi_response(catch_unwind(crate::api::reading_stats_api::get_book_stats))
-}
-
-/// 获取阅读热力图数据
-#[no_mangle]
-pub extern "C" fn ffi_stats_heatmap(days: i32) -> *mut c_char {
-    to_ffi_response(catch_unwind(|| {
-        crate::api::reading_stats_api::get_reading_heatmap(days)
-    }))
-}
-
 // ─── 缓存管理 FFI 函数 ─────────────────────────────────────
 
 /// 获取缓存总大小
@@ -1373,74 +1343,6 @@ pub extern "C" fn ffi_server_status() -> *mut c_char {
         Ok(result) => to_c_char(&result),
         Err(_) => to_c_char(r#"{"running":false,"port":0}"#),
     }
-}
-
-// ─── 用户管理 ────────────────────────────────────────
-
-/// 获取所有用户
-#[no_mangle]
-pub extern "C" fn ffi_user_get_all() -> *mut c_char {
-    to_ffi_response(catch_unwind(crate::api::user_api::get_users))
-}
-
-/// 保存用户
-#[no_mangle]
-pub unsafe extern "C" fn ffi_user_save(
-    username: *const c_char,
-    password: *const c_char,
-    source_url: *const c_char,
-) -> *mut c_char {
-    let result = catch_unwind(|| {
-        let u = c_char_to_str(username)?;
-        let p = c_char_to_str(password)?;
-        let s = c_char_to_str(source_url)?;
-        crate::api::user_api::save_user(u, p, s)
-    });
-    to_ffi_response(result)
-}
-
-/// 删除用户
-#[no_mangle]
-pub unsafe extern "C" fn ffi_user_delete(username: *const c_char) -> *mut c_char {
-    let result = catch_unwind(|| {
-        let u = c_char_to_str(username)?;
-        crate::api::user_api::delete_user(u)
-    });
-    to_ffi_response(result)
-}
-
-/// 用户登录
-#[no_mangle]
-pub unsafe extern "C" fn ffi_user_login(
-    username: *const c_char,
-    password: *const c_char,
-) -> *mut c_char {
-    let result = catch_unwind(|| {
-        let u = c_char_to_str(username)?;
-        let p = c_char_to_str(password)?;
-        crate::api::user_api::login(u, p)
-    });
-    to_ffi_response(result)
-}
-
-/// 用户登出
-#[no_mangle]
-pub unsafe extern "C" fn ffi_user_logout(username: *const c_char) -> *mut c_char {
-    let result = catch_unwind(|| {
-        let u = c_char_to_str(username)?;
-        crate::api::user_api::logout(u)
-    });
-    to_ffi_response(result)
-}
-
-/// 检查登录状态
-#[no_mangle]
-pub unsafe extern "C" fn ffi_user_check_login(username: *const c_char) -> *mut c_char {
-    let result = catch_unwind(|| {
-        let u = c_char_to_str(username)?;
-        crate::api::user_api::check_login_status(u)
-    });
-    to_ffi_response(result)
 }
 
 // ─── 登录 UI V2 动态状态协议（#402/#488，加法式新增） ────

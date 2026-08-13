@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.51] - 2026-08-14
+
+### Removed
+- [Rust] 删除阅读统计子系统（reading_stats/reading_sessions 表/server /stats 路由/FFI 4 函数）；保留 `recordReadingTime` 对齐 ReadRecord（审计 F2-7，D1=A）
+- [Rust] 删除 users 表及明文密码路径（UserRepository/FFI 6 函数/契约面）（审计 F2-8，D2=A）
+
 ## [2.0.50] - 2026-08-14
 
 ### Fixed

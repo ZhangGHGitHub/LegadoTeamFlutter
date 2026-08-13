@@ -1816,58 +1816,10 @@ class RustApi implements BookApi {
     return filePath;
   }
 
-  // ========== 阅读统计 ==========
-
-  /// 获取今日阅读统计
-  Future<ReadingStatsToday> getTodayReadingStats() async {
-    final json = await bridge.statsToday();
-    final m = _decodeMap(json, 'bookApi');
-    return ReadingStatsToday(
-      totalSeconds: m['totalSeconds'] as int? ?? 0,
-      bookCount: m['bookCount'] as int? ?? 0,
-      durationSeconds: m['durationSeconds'] as int? ?? 0,
-      wordCount: m['wordCount'] as int? ?? 0,
-      readingSpeed: (m['readingSpeed'] as num? ?? 0).toDouble(),
-    );
-  }
-
-  /// 获取每日阅读统计
-  Future<Map<String, int>> getDailyReadingStats({required int days}) async {
-    final json = await bridge.statsDaily(days: days);
-    final list = _decodeList(json, 'bookApi');
-    final result = <String, int>{};
-    for (final e in list) {
-      final m = e as Map<String, dynamic>;
-      result[m['date'] as String? ?? ''] = m['seconds'] as int? ?? 0;
-    }
-    return result;
-  }
-
-  /// 获取书籍阅读统计
-  Future<Map<String, int>> getBookReadingStats() async {
-    final json = await bridge.statsByBook();
-    final list = _decodeList(json, 'bookApi');
-    final result = <String, int>{};
-    for (final e in list) {
-      final m = e as Map<String, dynamic>;
-      result[m['bookName'] as String? ?? ''] = m['seconds'] as int? ?? 0;
-    }
-    return result;
-  }
-
-  /// 获取阅读热力图
-  Future<Map<String, int>> getReadingHeatmap({required int days}) async {
-    final json = await bridge.statsHeatmap(days: days);
-    final list = _decodeList(json, 'bookApi');
-    final result = <String, int>{};
-    for (final e in list) {
-      final m = e as Map<String, dynamic>;
-      result[m['date'] as String? ?? ''] = m['seconds'] as int? ?? 0;
-    }
-    return result;
-  }
+  // ========== 阅读记录 ==========
 
   /// 记录阅读时长（通过 readRecordUpsert 实现）
+  @override
   Future<void> recordReadingTime(String bookName, int seconds) async {
     await bridge.readRecordUpsert(bookName: bookName, readTime: seconds);
   }
@@ -2014,48 +1966,6 @@ class RustApi implements BookApi {
       position: positionMs,
     );
   }
-
-  // ========== 用户管理 ==========
-
-  /// 获取所有用户
-  Future<List<Map<String, dynamic>>> getUsers() async {
-    final json = await bridge.userGetAll();
-    final list = _decodeList(json, 'bookApi');
-    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
-  }
-
-  /// 保存用户，返回用户 ID
-  Future<int> saveUser({
-    required String username,
-    required String password,
-    required String sourceUrl,
-  }) async {
-    final id = await bridge.userSave(
-      username: username,
-      password: password,
-      sourceUrl: sourceUrl,
-    );
-    return id.toInt();
-  }
-
-  /// 删除用户
-  Future<bool> deleteUser(String username) =>
-      bridge.userDelete(username: username);
-
-  /// 用户登录
-  Future<bool> userLogin({
-    required String username,
-    required String password,
-  }) =>
-      bridge.userLogin(username: username, password: password);
-
-  /// 用户登出
-  Future<bool> userLogout(String username) =>
-      bridge.userLogout(username: username);
-
-  /// 检查登录状态
-  Future<bool> checkLoginStatus(String username) =>
-      bridge.userCheckLogin(username: username);
 
   // ========== WebDAV 云同步 ==========
 

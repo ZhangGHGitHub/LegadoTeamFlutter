@@ -797,21 +797,7 @@ abstract class BookApi {
   /// 导出书籍（将章节内容写入文件）
   Future<String> exportBook(String bookUrl, String format, String outDir);
 
-  // ========== 阅读统计 ==========
-
-  /// 获取今日阅读统计
-  Future<ReadingStatsToday> getTodayReadingStats();
-
-  /// 获取每日阅读统计
-  Future<Map<String, int>> getDailyReadingStats({required int days});
-
-  /// 获取书籍阅读统计
-  Future<Map<String, int>> getBookReadingStats();
-
-  /// 获取阅读热力图
-  Future<Map<String, int>> getReadingHeatmap({required int days});
-
-  /// 记录阅读时长
+  /// 记录阅读时长（经 readRecordUpsert，对齐原版 ReadRecord）
   Future<void> recordReadingTime(String bookName, int seconds);
 
   // ========== HTTP TTS ==========
@@ -870,33 +856,6 @@ abstract class BookApi {
     int chapterIndex,
     int positionMs,
   );
-
-  // ========== 用户管理 ==========
-
-  /// 获取所有用户
-  Future<List<Map<String, dynamic>>> getUsers();
-
-  /// 保存用户，返回用户 ID
-  Future<int> saveUser({
-    required String username,
-    required String password,
-    required String sourceUrl,
-  });
-
-  /// 删除用户
-  Future<bool> deleteUser(String username);
-
-  /// 用户登录
-  Future<bool> userLogin({
-    required String username,
-    required String password,
-  });
-
-  /// 用户登出
-  Future<bool> userLogout(String username);
-
-  /// 检查登录状态
-  Future<bool> checkLoginStatus(String username);
 
   // ========== WebDAV 云同步 ==========
 

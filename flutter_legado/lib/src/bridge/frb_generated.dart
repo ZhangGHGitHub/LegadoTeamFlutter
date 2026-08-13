@@ -65,7 +65,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1591679505;
+  int get rustContentHash => -555324311;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -796,14 +796,6 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateFfiFfiSourceUpdate({required String sourceJson});
 
-  Future<String> crateFfiFfiStatsByBook();
-
-  Future<String> crateFfiFfiStatsDaily({required int days});
-
-  Future<String> crateFfiFfiStatsHeatmap({required int days});
-
-  Future<String> crateFfiFfiStatsToday();
-
   Future<bool> crateFfiFfiTtsSetCacheDir({required String path});
 
   Future<String> crateFfiFfiTtsSpeak({
@@ -838,25 +830,6 @@ abstract class RustLibApi extends BaseApi {
     required String pattern,
     required bool caseSensitive,
     required int maxResults,
-  });
-
-  Future<bool> crateFfiFfiUserCheckLogin({required String username});
-
-  Future<bool> crateFfiFfiUserDelete({required String username});
-
-  Future<String> crateFfiFfiUserGetAll();
-
-  Future<bool> crateFfiFfiUserLogin({
-    required String username,
-    required String password,
-  });
-
-  Future<bool> crateFfiFfiUserLogout({required String username});
-
-  Future<PlatformInt64> crateFfiFfiUserSave({
-    required String username,
-    required String password,
-    required String sourceUrl,
   });
 
   Future<bool> crateFfiFfiVerificationCancel({required String key});
@@ -7551,116 +7524,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "source_update", argNames: ["sourceJson"]);
 
   @override
-  Future<String> crateFfiFfiStatsByBook() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 209,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiStatsByBookConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiStatsByBookConstMeta =>
-      const TaskConstMeta(debugName: "stats_by_book", argNames: []);
-
-  @override
-  Future<String> crateFfiFfiStatsDaily({required int days}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_i_32(days, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 210,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiStatsDailyConstMeta,
-        argValues: [days],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiStatsDailyConstMeta =>
-      const TaskConstMeta(debugName: "stats_daily", argNames: ["days"]);
-
-  @override
-  Future<String> crateFfiFfiStatsHeatmap({required int days}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_i_32(days, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 211,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiStatsHeatmapConstMeta,
-        argValues: [days],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiStatsHeatmapConstMeta =>
-      const TaskConstMeta(debugName: "stats_heatmap", argNames: ["days"]);
-
-  @override
-  Future<String> crateFfiFfiStatsToday() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 212,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiStatsTodayConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiStatsTodayConstMeta =>
-      const TaskConstMeta(debugName: "stats_today", argNames: []);
-
-  @override
   Future<bool> crateFfiFfiTtsSetCacheDir({required String path}) {
     return handler.executeNormal(
       NormalTask(
@@ -7670,7 +7533,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 213,
+            funcId: 209,
             port: port_,
           );
         },
@@ -7704,7 +7567,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 214,
+            funcId: 210,
             port: port_,
           );
         },
@@ -7742,7 +7605,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 215,
+            funcId: 211,
             port: port_,
           );
         },
@@ -7778,7 +7641,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 216,
+            funcId: 212,
             port: port_,
           );
         },
@@ -7818,7 +7681,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 217,
+            funcId: 213,
             port: port_,
           );
         },
@@ -7863,7 +7726,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 218,
+            funcId: 214,
             port: port_,
           );
         },
@@ -7884,189 +7747,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<bool> crateFfiFfiUserCheckLogin({required String username}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(username, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 219,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiUserCheckLoginConstMeta,
-        argValues: [username],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiUserCheckLoginConstMeta => const TaskConstMeta(
-    debugName: "user_check_login",
-    argNames: ["username"],
-  );
-
-  @override
-  Future<bool> crateFfiFfiUserDelete({required String username}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(username, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 220,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiUserDeleteConstMeta,
-        argValues: [username],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiUserDeleteConstMeta =>
-      const TaskConstMeta(debugName: "user_delete", argNames: ["username"]);
-
-  @override
-  Future<String> crateFfiFfiUserGetAll() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 221,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiUserGetAllConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiUserGetAllConstMeta =>
-      const TaskConstMeta(debugName: "user_get_all", argNames: []);
-
-  @override
-  Future<bool> crateFfiFfiUserLogin({
-    required String username,
-    required String password,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(username, serializer);
-          sse_encode_String(password, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 222,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiUserLoginConstMeta,
-        argValues: [username, password],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiUserLoginConstMeta => const TaskConstMeta(
-    debugName: "user_login",
-    argNames: ["username", "password"],
-  );
-
-  @override
-  Future<bool> crateFfiFfiUserLogout({required String username}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(username, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 223,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiUserLogoutConstMeta,
-        argValues: [username],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiUserLogoutConstMeta =>
-      const TaskConstMeta(debugName: "user_logout", argNames: ["username"]);
-
-  @override
-  Future<PlatformInt64> crateFfiFfiUserSave({
-    required String username,
-    required String password,
-    required String sourceUrl,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(username, serializer);
-          sse_encode_String(password, serializer);
-          sse_encode_String(sourceUrl, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 224,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_i_64,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateFfiFfiUserSaveConstMeta,
-        argValues: [username, password, sourceUrl],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateFfiFfiUserSaveConstMeta => const TaskConstMeta(
-    debugName: "user_save",
-    argNames: ["username", "password", "sourceUrl"],
-  );
-
-  @override
   Future<bool> crateFfiFfiVerificationCancel({required String key}) {
     return handler.executeNormal(
       NormalTask(
@@ -8076,7 +7756,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 225,
+            funcId: 215,
             port: port_,
           );
         },
@@ -8103,7 +7783,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 226,
+            funcId: 216,
             port: port_,
           );
         },
@@ -8133,7 +7813,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 227,
+              funcId: 217,
               port: port_,
             );
           },
@@ -8170,7 +7850,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 228,
+            funcId: 218,
             port: port_,
           );
         },
@@ -8200,7 +7880,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 229,
+            funcId: 219,
             port: port_,
           );
         },
@@ -8236,7 +7916,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 230,
+            funcId: 220,
             port: port_,
           );
         },
@@ -8270,7 +7950,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 231,
+            funcId: 221,
             port: port_,
           );
         },
@@ -8304,7 +7984,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 232,
+            funcId: 222,
             port: port_,
           );
         },
@@ -8340,7 +8020,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 233,
+            funcId: 223,
             port: port_,
           );
         },
@@ -8374,7 +8054,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 234,
+            funcId: 224,
             port: port_,
           );
         },
@@ -8408,7 +8088,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 235,
+            funcId: 225,
             port: port_,
           );
         },
@@ -8444,7 +8124,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 236,
+            funcId: 226,
             port: port_,
           );
         },
@@ -8481,7 +8161,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 237,
+            funcId: 227,
             port: port_,
           );
         },
@@ -8515,7 +8195,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 238,
+            funcId: 228,
             port: port_,
           );
         },
@@ -8551,7 +8231,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 239,
+            funcId: 229,
             port: port_,
           );
         },
@@ -8587,7 +8267,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 240,
+            funcId: 230,
             port: port_,
           );
         },
@@ -8618,7 +8298,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 241,
+            funcId: 231,
             port: port_,
           );
         },
@@ -8645,7 +8325,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 242,
+            funcId: 232,
             port: port_,
           );
         },
@@ -8675,7 +8355,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 243,
+              funcId: 233,
               port: port_,
             );
           },
@@ -8712,7 +8392,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 244,
+            funcId: 234,
             port: port_,
           );
         },

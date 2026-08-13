@@ -119,14 +119,14 @@
 - **涉及文件**：方案 A（清理）：`rust/legado-core/src/reading_stats.rs`、`rust/legado-db/src/repository/reading_stats_repository.rs`、`legado-db/src/schema.rs:454-466`（表+索引）、`rust/legado-ffi/src/api/reading_stats_api.rs`、`ffi.rs:1288-1309`、`rust/legado-server/src/handlers/stats.rs` + `routes.rs:88-92`、`book_api.dart:800-815` 死契约面；方案 B（豁免）：仅更新 AGENTS.md 豁免清单 + 补契约登记。
 - **实施要点**：按 D1 决策执行；若清理，同步删 Flutter 侧 `book_api.dart` 阅读统计方法与 mock 实现。
 - **验收**：按所选方案，仓库无半成品残留；`cargo test --workspace` 全绿。
-- **工作量**：L（A）/ S（B）｜ **前置**：D1
+- **工作量**：L（A）/ S（B）｜ **前置**：D1 ｜ **状态**：✅（D1=A：删 reading_stats 子系统+reading_sessions 表+server /stats+FFI；保留 recordReadingTime/readRecord；reader 内 LiveReadingStats 仅内存）
 
 ### F2-8 `[Rust]` users 表处理
 - **来源**：P1-8（需先决策 D2）
 - **涉及文件**：方案 A（删除）：`schema.rs:73` CREATE_USERS、`user_repository.rs`、`user_api.rs`、`book_api.dart:877-896` 死契约面；方案 B（豁免）：密码改哈希（argon2/bcrypt）+ 契约登记。
 - **实施要点**：按 D2 决策执行；若删除，注意 RESIDUAL「users vs servers」说明同步更新。
 - **验收**：仓库无明文密码存储路径；相关测试全绿。
-- **工作量**：M ｜ **前置**：D2
+- **工作量**：M ｜ **前置**：D2 ｜ **状态**：✅（D2=A：删 users 表+UserRepository+FFI 6 函数+契约/mock）
 
 ### F2-9 `[工程]` 分支合入与悬空变更提交
 - **来源**：P1-9、P1-10（部分）

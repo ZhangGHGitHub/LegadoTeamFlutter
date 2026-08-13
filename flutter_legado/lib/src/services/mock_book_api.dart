@@ -1662,44 +1662,6 @@ class MockBookApi implements BookApi {
     return '$outDir/export_mock.$format';
   }
 
-  // ========== 阅读统计 ==========
-
-  @override
-  Future<ReadingStatsToday> getTodayReadingStats() async {
-    return const ReadingStatsToday(
-      totalSeconds: 3600,
-      bookCount: 2,
-      durationSeconds: 3600,
-      wordCount: 15000,
-      readingSpeed: 250.0,
-    );
-  }
-
-  @override
-  Future<Map<String, int>> getDailyReadingStats({required int days}) async {
-    final result = <String, int>{};
-    for (var i = 0; i < days; i++) {
-      final date = DateTime.now().subtract(Duration(days: i));
-      result['${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'] =
-          (i + 1) * 600;
-    }
-    return result;
-  }
-
-  @override
-  Future<Map<String, int>> getBookReadingStats() async {
-    return {
-      '斗破苍穹': 7200,
-      '凡人修仙传': 5400,
-      '三体': 3600,
-    };
-  }
-
-  @override
-  Future<Map<String, int>> getReadingHeatmap({required int days}) async {
-    return getDailyReadingStats(days: days);
-  }
-
   @override
   Future<void> recordReadingTime(String bookName, int seconds) async {}
 
@@ -1794,33 +1756,6 @@ class MockBookApi implements BookApi {
     int chapterIndex,
     int positionMs,
   ) async {}
-
-  // ========== 用户管理 ==========
-
-  @override
-  Future<List<Map<String, dynamic>>> getUsers() async => [];
-
-  @override
-  Future<int> saveUser({
-    required String username,
-    required String password,
-    required String sourceUrl,
-  }) async => _nextId++;
-
-  @override
-  Future<bool> deleteUser(String username) async => true;
-
-  @override
-  Future<bool> userLogin({
-    required String username,
-    required String password,
-  }) async => true;
-
-  @override
-  Future<bool> userLogout(String username) async => true;
-
-  @override
-  Future<bool> checkLoginStatus(String username) async => false;
 
   // ========== WebDAV 云同步 ==========
 

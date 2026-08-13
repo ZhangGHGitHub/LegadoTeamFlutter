@@ -17,7 +17,6 @@ pub mod highlight_rule_repository;
 pub mod http_tts_repository;
 pub mod keyboard_assist_repository;
 pub mod read_record_repository;
-pub mod reading_stats_repository;
 pub mod replace_rule_repository;
 pub mod review_repository;
 pub mod rss_article_repository;
@@ -28,7 +27,6 @@ pub mod rule_sub_repository;
 pub mod search_book_repository;
 pub mod search_keyword_repository;
 pub mod txt_toc_rule_repository;
-pub mod user_repository;
 
 use legado_core::LegadoResult;
 

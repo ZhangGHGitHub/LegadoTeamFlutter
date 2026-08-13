@@ -1282,32 +1282,6 @@ pub mod ffi {
         Ok(ok)
     }
 
-    // ─── 阅读统计 ─────────────────────────────────────
-
-    /// 获取今日阅读统计（JSON）
-    pub fn stats_today() -> Result<String, BridgeError> {
-        let stats = crate::api::reading_stats_api::get_today_stats()?;
-        to_json(&stats)
-    }
-
-    /// 获取最近 N 天每日统计（JSON 数组）
-    pub fn stats_daily(days: i32) -> Result<String, BridgeError> {
-        let stats = crate::api::reading_stats_api::get_daily_stats(days)?;
-        to_json(&stats)
-    }
-
-    /// 获取按书籍分组的统计（JSON 数组）
-    pub fn stats_by_book() -> Result<String, BridgeError> {
-        let stats = crate::api::reading_stats_api::get_book_stats()?;
-        to_json(&stats)
-    }
-
-    /// 获取阅读热力图数据（JSON 数组）
-    pub fn stats_heatmap(days: i32) -> Result<String, BridgeError> {
-        let data = crate::api::reading_stats_api::get_reading_heatmap(days)?;
-        to_json(&data)
-    }
-
     // ─── 缓存管理 ─────────────────────────────────────
 
     /// 获取缓存总大小（字节）
@@ -1622,48 +1596,6 @@ pub mod ffi {
     /// 删除封面规则配置（契约 §2.4 F4，对齐 BookCover.delCoverRule）
     pub fn delete_cover_rule() -> Result<bool, BridgeError> {
         let ok = crate::api::cover_api::delete_cover_rule()?;
-        Ok(ok)
-    }
-
-    // ─── 用户管理 ─────────────────────────────────────
-
-    /// 获取所有用户（JSON 数组）
-    pub fn user_get_all() -> Result<String, BridgeError> {
-        let json = crate::api::user_api::get_users()?;
-        Ok(json)
-    }
-
-    /// 保存用户，返回用户 ID
-    pub fn user_save(
-        username: String,
-        password: String,
-        source_url: String,
-    ) -> Result<i64, BridgeError> {
-        let id = crate::api::user_api::save_user(&username, &password, &source_url)?;
-        Ok(id)
-    }
-
-    /// 删除用户
-    pub fn user_delete(username: String) -> Result<bool, BridgeError> {
-        let ok = crate::api::user_api::delete_user(&username)?;
-        Ok(ok)
-    }
-
-    /// 用户登录
-    pub fn user_login(username: String, password: String) -> Result<bool, BridgeError> {
-        let ok = crate::api::user_api::login(&username, &password)?;
-        Ok(ok)
-    }
-
-    /// 用户登出
-    pub fn user_logout(username: String) -> Result<bool, BridgeError> {
-        let ok = crate::api::user_api::logout(&username)?;
-        Ok(ok)
-    }
-
-    /// 检查登录状态
-    pub fn user_check_login(username: String) -> Result<bool, BridgeError> {
-        let ok = crate::api::user_api::check_login_status(&username)?;
         Ok(ok)
     }
 

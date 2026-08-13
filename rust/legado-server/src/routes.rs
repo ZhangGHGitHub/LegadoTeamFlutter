@@ -85,11 +85,6 @@ fn api_routes() -> Router<Arc<AppState>> {
             "/audio/chapter-media",
             post(handlers::audio::get_chapter_media),
         )
-        // 阅读统计
-        .route("/stats/today", get(handlers::stats::get_today_stats))
-        .route("/stats/daily", get(handlers::stats::get_daily_stats))
-        .route("/stats/books", get(handlers::stats::get_books_stats))
-        .route("/stats/heatmap", get(handlers::stats::get_heatmap))
         // RSS 订阅源
         .route("/rss/articles", post(handlers::rss::get_articles))
         .route(

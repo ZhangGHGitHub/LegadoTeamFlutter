@@ -49,7 +49,6 @@ pub mod query_ttf;
 pub mod read_aloud;
 pub mod read_state;
 pub mod reader_state;
-pub mod reading_stats;
 /// 统一安全正则编译入口（1KB 长度上限 + nest_limit 嵌套防御 + 失败负缓存）
 pub mod regex_safe;
 pub mod review;

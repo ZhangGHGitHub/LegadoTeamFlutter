@@ -350,19 +350,6 @@ void main() {
     });
   });
 
-  group('阅读统计', () {
-    test('getTodayReadingStats 返回合理数据', () async {
-      final stats = await api.getTodayReadingStats();
-      expect(stats.totalSeconds, greaterThan(0));
-      expect(stats.bookCount, greaterThan(0));
-    });
-
-    test('getDailyReadingStats 返回指定天数', () async {
-      final stats = await api.getDailyReadingStats(days: 7);
-      expect(stats.length, 7);
-    });
-  });
-
   group('HTTP TTS', () {
     test('addHttpTts/getHttpTts 读写一致', () async {
       await api.addHttpTts(HttpTts(name: '测试引擎', url: 'http://tts.example.com'));
@@ -513,18 +500,6 @@ void main() {
       await api.stopServer();
       final status = await api.getServerStatus();
       expect(status, 'stopped');
-    });
-  });
-
-  group('用户管理', () {
-    test('userLogin 返回 true', () async {
-      final result = await api.userLogin(username: 'test', password: '123');
-      expect(result, true);
-    });
-
-    test('getUsers 返回空列表', () async {
-      final users = await api.getUsers();
-      expect(users, isEmpty);
     });
   });
 

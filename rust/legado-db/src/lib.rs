@@ -55,7 +55,6 @@ pub use repository::keyboard_assist_repository::{KeyboardAssist, KeyboardAssistR
 pub use repository::read_record_repository::{
     merge_read_record_authors, ReadRecord, ReadRecordRepository,
 };
-pub use repository::reading_stats_repository::ReadingStatsRepository;
 pub use repository::replace_rule_repository::ReplaceRuleRepository;
 pub use repository::review_repository::ReviewRepository;
 pub use repository::rss_article_repository::{RssArticleRecord, RssArticleRepository};
@@ -66,7 +65,6 @@ pub use repository::rule_sub_repository::{RuleSubRecord, RuleSubRepository};
 pub use repository::search_book_repository::SearchBookRepository;
 pub use repository::search_keyword_repository::SearchKeywordRepository;
 pub use repository::txt_toc_rule_repository::{TxtTocRuleRecord, TxtTocRuleRepository};
-pub use repository::user_repository::{UserRecord, UserRepository};
 pub use schema::SCHEMA_VERSION;
 
 use legado_core::LegadoResult;
