@@ -16,6 +16,8 @@ import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart' show syncDefaultRssSources;
 import '../routes.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
@@ -1142,81 +1144,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
 
   /// 帮助页（对标原版 showHelp("SourceMRssHelp")）
   void _showHelpSheet() {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    Widget section(String title, [List<String> bullets = const []]) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w600)),
-            for (final bullet in bullets)
-              Padding(
-                padding: const EdgeInsets.only(top: 6, left: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('• ',
-                        style: textTheme.bodyMedium
-                            ?.copyWith(color: colorScheme.primary)),
-                    Expanded(
-                      child: Text(bullet,
-                          style: textTheme.bodyMedium
-                              ?.copyWith(color: colorScheme.onSurfaceVariant)),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Center(child: IosGrabber()),
-              const SizedBox(height: 12),
-              Text('订阅源管理帮助',
-                  style: textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      section('搜索框支持特殊过滤词', [
-                        '「启用」「禁用」「需登录」「未分组」按状态过滤',
-                        '「group:分组名」按分组过滤',
-                        '其他内容按名称/URL 搜索',
-                      ]),
-                      section('分组菜单可按分组筛选订阅源，分组管理支持重命名与删除分组'),
-                      section('长按列表项可拖拽排序'),
-                      section('勾选列表项左侧勾选框进入批量模式，底部菜单包含', [
-                        '启用选中 / 禁用选中 / 添加到分组 / 移除分组',
-                        '选中置顶 / 选中置底 / 导出选中 / 分享源 / 选择区间',
-                      ]),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    showHelp(context, HelpAssets.sourceMRssHelp);
   }
 }
 

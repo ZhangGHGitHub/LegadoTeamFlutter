@@ -14,6 +14,8 @@ import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/providers.dart';
 import '../services/auto_task_scheduler.dart';
 import '../widgets/auto_task_debug_dialog.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 
 /// 定时任务管理页面
 class AutoTaskScreen extends ConsumerStatefulWidget {
@@ -760,29 +762,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
 
   /// 帮助对话框（对标 menu_help → autoTaskHelp）
   void _showHelpDialog(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('定时任务帮助'),
-        content: const SingleChildScrollView(
-          child: Text(
-            '• 支持三种任务：刷新目录、更新书源、自动备份\n'
-            '• cron 表达式为标准 5 位格式：分 时 日 月 周\n'
-            '  例：0 8 * * *（每天 8:00）、0 */6 * * *（每 6 小时）\n'
-            '• 开关可随时通过列表项右侧切换\n'
-            '• 长按任务可立即运行、编辑或删除\n'
-            '• 可通过菜单导入本地/线上任务文件（txt/json），'
-            '或导出全部任务备份',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('知道了'),
-          ),
-        ],
-      ),
-    );
+    showHelp(context, HelpAssets.autoTaskHelp);
   }
 
   /// 确认删除

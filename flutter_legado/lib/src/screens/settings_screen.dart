@@ -11,6 +11,8 @@ import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../theme/app_colors.dart';
 import '../widgets/ios_widgets.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 
 /// 我的页面（枢纽菜单）
 ///
@@ -387,29 +389,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// 帮助（对标 main_my.xml → showHelp("appHelp")）
   void _showHelp() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('帮助'),
-        content: const SingleChildScrollView(
-          child: Text(
-            '欢迎使用 Legado 阅读。\n\n'
-            '· 书架：顶栏菜单可添加本地书籍、切换书架布局与管理分组；'
-            '长按书籍可编辑、分享或删除。\n'
-            '· 发现：展开书源查看业务分类，长按书源可编辑或删除。\n'
-            '· 订阅：顶栏可进入历史、收藏与订阅设置，长按订阅源可删除。\n'
-            '· 备份：「备份与恢复」支持本地备份/恢复与 WebDAV 同步。\n\n'
-            '详细文档请访问 Legado 官方帮助页面。',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
+    showHelp(context, HelpAssets.appHelp);
   }
 
   void _showThemePicker(BuildContext context) {

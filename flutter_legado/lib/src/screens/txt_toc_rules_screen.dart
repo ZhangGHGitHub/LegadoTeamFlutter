@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 
 /// TXT 目录规则管理页面
 ///
@@ -45,6 +47,11 @@ It was a dark and stormy night.''';
       appBar: LegadoAppBar(
         title: const Text('TXT 目录规则'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: '帮助',
+            onPressed: () => showHelp(context, HelpAssets.txtTocRuleHelp),
+          ),
           IconButton(
             icon: const Icon(Icons.restore),
             tooltip: '导入默认',

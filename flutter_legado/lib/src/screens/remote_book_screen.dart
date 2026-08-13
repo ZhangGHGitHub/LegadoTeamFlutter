@@ -7,6 +7,8 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/remote_book/remote_book_notifier.dart';
 import '../routes.dart';
 import '../services/settings_service.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 
 /// 远程书库（对齐原版 RemoteBookActivity）
 ///
@@ -74,6 +76,11 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
         appBar: LegadoAppBar(
           title: const Text('远程书籍'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              tooltip: '帮助',
+              onPressed: () => showHelp(context, HelpAssets.webDavBookHelp),
+            ),
             IconButton(
               tooltip: '刷新',
               icon: const Icon(Icons.refresh),

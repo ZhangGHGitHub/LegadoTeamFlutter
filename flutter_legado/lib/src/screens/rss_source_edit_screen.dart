@@ -11,6 +11,8 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 import '../widgets/ios_widgets.dart';
 import 'code_edit_screen.dart';
 
@@ -493,40 +495,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
   }
 
   void _showHelpSheet() {
-    final textTheme = Theme.of(context).textTheme;
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Center(child: IosGrabber()),
-              const SizedBox(height: 12),
-              Text('订阅源编辑帮助',
-                  style: textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Text(
-                    '• 源名称与源 URL 为必填项\n'
-                    '• 源 URL 支持网页地址、RSS 订阅地址或应用协议链接\n'
-                    '• 列表规则用于从网页解析文章列表，标准 RSS 源可不填\n'
-                    '• WEB_VIEW 页选项控制文章正文 WebView 加载行为\n'
-                    '• 预处理 JS 在页面加载前执行，可用于反爬处理\n'
-                    '• 粘贴源可从剪贴板导入订阅源 JSON 进行编辑',
-                    style: textTheme.bodyMedium,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    showHelp(context, HelpAssets.rssRuleHelp);
   }
 
   // ===== 构建 =====

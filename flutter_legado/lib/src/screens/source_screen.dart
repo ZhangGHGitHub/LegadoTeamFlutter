@@ -23,6 +23,8 @@ import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/book_source_group_manage_dialog.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 import '../widgets/confirm_dialog.dart';
 import 'source_edit_screen.dart';
 import 'js_source_edit_screen.dart';
@@ -985,97 +987,9 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     }
   }
 
-  /// 书源管理帮助页（对标原版 showHelp("SourceMBookHelp")，
-  /// 内容取自 assets/web/help/md/SourceMBookHelp.md 全文）
+  /// 书源管理帮助页（对标原版 showHelp("SourceMBookHelp")）
   void _showHelpSheet(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    Widget section(String title, [List<String> bullets = const []]) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style:
-                    textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-            for (final bullet in bullets)
-              Padding(
-                padding: const EdgeInsets.only(top: 6, left: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('• ',
-                        style: textTheme.bodyMedium
-                            ?.copyWith(color: colorScheme.primary)),
-                    Expanded(
-                      child: Text(bullet,
-                          style: textTheme.bodyMedium
-                              ?.copyWith(color: colorScheme.onSurfaceVariant)),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Center(child: IosGrabber()),
-              const SizedBox(height: 12),
-              Text('书源管理界面帮助',
-                  style:
-                      textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      section('书源右上角标志', [
-                        '绿点表示书源有发现，且启用了发现',
-                        '红点表示书源有发现，但是未启用',
-                        '没有标志表示此书源没有发现',
-                      ]),
-                      section(
-                          '右上角有分组菜单，可以按分组筛选书源'),
-                      section('右上角更多菜单里包含', [
-                        '新建书源 / 本地导入 / 网络导入 / 二维码导入',
-                        '按域名分组显示 / 帮助',
-                      ]),
-                      section(
-                          '选择源的更多操作在底部菜单里面，操作都是针对选择的书源', [
-                        '启用所选 / 禁用所选 / 添加分组 / 移除分组',
-                        '启用发现 / 禁用发现 / 置顶所选 / 置底所选',
-                        '导出所选 / 校验所选',
-                      ]),
-                      section(
-                          '校验书源可批量校验书源，由于网络等原因结果仅供参考', [
-                        '“校验成功”是指所选的校验项目全部通过',
-                        '可正常识别搜索为空、发现为空、搜索(发现)目录为空、搜索(发现)正文为空、校验超时、js执行错误导致的失效，其余的原因视为网站失效',
-                        '校验搜索优先使用书源填写的校验关键词，不存在时使用用户输入的关键词',
-                        '校验结束后会自动筛选“失效”书源',
-                      ]),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    showHelp(context, HelpAssets.sourceMBookHelp);
   }
 
   /// 分组菜单处理（对标原版 BookSourceActivity 分组子菜单）

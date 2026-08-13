@@ -5,6 +5,8 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 
 /// 书源调试页面
 ///
@@ -158,6 +160,11 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
       appBar: LegadoAppBar(
         title: const Text('书源调试'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: '帮助',
+            onPressed: () => showHelp(context, HelpAssets.debugHelp),
+          ),
           // 清除日志按钮
           IconButton(
             icon: const Icon(Icons.delete_outline),

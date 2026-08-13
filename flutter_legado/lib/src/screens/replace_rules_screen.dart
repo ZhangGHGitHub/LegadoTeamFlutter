@@ -13,6 +13,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
 import '../routes.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 import '../widgets/replace_rule_group_manage_dialog.dart';
 import 'replace_rule_import_confirm_screen.dart';
 
@@ -148,6 +150,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
             icon: const Icon(Icons.checklist),
             tooltip: '批量操作',
             onPressed: () => setState(() => _batchMode = true),
+          ),
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: '帮助',
+            onPressed: () => showHelp(context, HelpAssets.replaceRuleHelp),
           ),
           IconButton(
             icon: const Icon(Icons.add),

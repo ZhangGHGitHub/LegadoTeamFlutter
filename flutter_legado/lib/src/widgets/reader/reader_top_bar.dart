@@ -15,6 +15,8 @@ import '../../providers/sync/sync_notifier.dart';
 import '../../routes.dart';
 import '../../screens/source_edit_screen.dart';
 import '../../screens/source_login_screen.dart';
+import '../help/help_assets.dart';
+import '../help/show_help.dart';
 import 'change_chapter_source_sheet.dart';
 import 'reader_settings_sheet.dart';
 
@@ -632,29 +634,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
 
   /// 帮助对话框（对标原版 menu_help）
   void _showHelpDialog(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('阅读器帮助'),
-        content: const SingleChildScrollView(
-          child: Text(
-            '• 点击屏幕中央可显示/隐藏工具栏\n'
-            '• 顶栏：换源（单章/整书）、刷新、缓存（在线书）/设置编码（本地书）、更多菜单\n'
-            '• 顶栏下方：章节名与链接（点击复制）、书源徽章（点击弹源操作）\n'
-            '• 底栏：搜索/夜间悬浮按钮、上一章/进度/下一章、目录、朗读、界面、设置\n'
-            '• 左右滑动或点击两侧区域翻页\n'
-            '• 长按正文可选择文本（复制/搜索/替换/朗读等）\n'
-            '• 遇到问题可在“更多→日志”查看运行日志',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('知道了'),
-          ),
-        ],
-      ),
-    );
+    showHelp(context, HelpAssets.readMenuHelp);
   }
 
   /// 离线缓存对话框（对标原版 CacheActivity/showDownloadDialog：

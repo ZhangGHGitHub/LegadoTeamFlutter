@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../providers/dict/dict_notifier.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 
 /// 字典查询页面
 ///
@@ -65,6 +67,11 @@ class _DictScreenState extends ConsumerState<DictScreen> {
       appBar: LegadoAppBar(
         title: const Text('字典查询'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: '帮助',
+            onPressed: () => showHelp(context, HelpAssets.dictRuleHelp),
+          ),
           IconButton(
             icon: const Icon(Icons.rule_folder_outlined),
             tooltip: '词典规则管理',

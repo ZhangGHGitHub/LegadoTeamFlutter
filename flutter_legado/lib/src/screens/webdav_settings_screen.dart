@@ -21,6 +21,8 @@ import '../services/crash_log_service.dart';
 import '../services/restore_ignore_prefs.dart';
 import '../services/settings_service.dart';
 import '../widgets/ios_widgets.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 import '../widgets/restore_ignore_dialog.dart';
 
 /// 备份与恢复（对齐 BackupConfigFragment + pref_config_backup.xml）
@@ -341,23 +343,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   }
 
   void _showHelp() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('帮助'),
-        content: const Text(
-          '配置 WebDAV 后可与本地一并备份。\n'
-          '「恢复」优先从 WebDAV 拉取；长按「恢复」可从本地文件恢复。\n'
-          '「导入旧版数据」从菜单进入，选择含 myBookShelf 等文件的目录。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
+    showHelp(context, HelpAssets.webDavHelp);
   }
 
   @override

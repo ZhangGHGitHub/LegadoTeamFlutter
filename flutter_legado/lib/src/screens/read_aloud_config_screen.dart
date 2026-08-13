@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNot
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../widgets/help/help_assets.dart';
+import '../widgets/help/show_help.dart';
 
 /// 朗读引擎配置页面
 ///
@@ -117,6 +119,11 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       appBar: LegadoAppBar(
         title: const Text('朗读引擎'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: '帮助',
+            onPressed: () => showHelp(context, HelpAssets.httpTtsHelp),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '刷新',
