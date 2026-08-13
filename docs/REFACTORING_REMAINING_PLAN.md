@@ -1043,16 +1043,18 @@ flutter test                  # 全量测试通过
 | 4 | Cronet 开关（`Cronet`） | pref_config_other.xml（AppConst.isPlayChannel 才显示） | Android Play 渠道专属网络栈，桌面端 Rust reqwest 无对应物；长期不适用，仅登记不实现 |
 | 5 | 视频播放设置（`videoSetting`） | OtherConfigFragment → VideoSettingDialog | 依赖视频播放器模块（Flutter 端尚未重构视频播放）；待播放器模块落地后补 |
 | 6 | ~~MCP 服务端口~~（`mcpPort`，已接线） | OtherConfigFragment → MCPServerService | ✅ Task #78（2026-08-10）销记：已接线，契约 §2.22.5 setMcpPort 独立端口（对齐原版 McpService，默认 1236）；差异注明：区间 1024..65530 越界报错（原版无此校验）。评审加固：仅挂 /mcp/tools /mcp/call /health、127.0.0.1 回环绑定、DB 路径对齐主应用、状态机互斥 + 同端口重启竞态修复；实机验证监听地址与重启恢复。后续留项见 §5.14-14/17 |
-| 7 | JS Source API Token（`jsSourceApiToken`） | pref_config_other.xml → SourceApi 鉴权 | 依赖 JS 引擎 SourceApi 服务；待 legado-parser JS 扩展能力对齐后补 |
+| 7 | ~~JS Source API Token（`jsSourceApiToken`，已接线）~~ | pref_config_other.xml → SourceApi / McpService | ✅ 2026-08-13（F5）：`set_mcp_port` 前置非空 `config:jsSourceApiToken`；`/mcp/*` 校验 `X-Legado-Token`；LAN 绑定 `0.0.0.0`（对齐原版局域网可达） |
 | 8 | 清除 WebView 数据（`clearWebViewData`） | OtherConfigFragment.clearWebViewData | 桌面端无 WebView 组件（未引入 webview_flutter/webf）；引入 WebView 方案后一并接入 |
 | 9 | ~~压缩数据库~~（`shrinkDatabase`，已接线） | OtherConfigFragment → AppDatabase VACUUM | ✅ Task #57（2026-08-10）销记：已接线，契约 §2.16.6 shrinkDatabase（VACUUM + 释放字节统计、失败降级返回 0）；其他设置页对齐原版提示 |
-| 10 | ~~封面规则~~（`coverRule`，封面设置子项，已接线） | CoverConfigDialog → BookCover.CoverRule（JS 规则搜封面） | ✅ Task #78（2026-08-10）销记：已接线，契约 §2.4.8 searchCoverRules；coverRules 表执行启用规则（key 模板 + isUrl 提取 + 失败隔离），封面设置对话框测试入口。规则 CRUD 管理无契约，诚实标注待后续（见 §5.14-13/16） |
+| 10 | ~~封面规则~~（`coverRule`，封面设置子项，已接线） | CoverConfigDialog → BookCover.CoverRule（JS 规则搜封面） | ✅ Task #78（2026-08-10）销记：searchCoverRules；✅ 2026-08-13（F4）：契约 get/save/deleteCoverRule + 主题页配置对话框；coverRules DDL 已入 schema（§5.14-16） |
 
 > ✅ **销记（2026-08-08/09，Task #44）**：2 校验书源配置接线完成（详见行内销记）；⚠️ 口径更正：6 mcpPort「Rust 侧无对应服务」描述已过时（legado-server 已有 MCP 路由），剩余决策为独立端口 vs 复用 setServerPort；其余 8 项维持后置登记。
 >
 > ✅ **销记（2026-08-10，Task #57 第二批后置项接线）**：9 压缩数据库接线完成（契约 §2.16.6 shrinkDatabase，详见行内销记）；其余 8 项维持后置登记。
 >
 > ✅ **销记（2026-08-10，Task #78 第四批后置项接线）**：1 自定义 hosts（契约 §2.20.3 setCustomHosts）、6 MCP 服务端口（契约 §2.22.5 setMcpPort 独立端口）、10 封面规则（契约 §2.4.8 searchCoverRules）三项接线完成（详见行内销记）；§5.13 剩余 5 项（3 直链上传规则/4 Cronet/5 视频播放/7 jsSourceApiToken/8 清除 WebView 数据）维持后置登记。
+>
+> ✅ **销记（2026-08-13，F4/F5）**：7 jsSourceApiToken（MCP 前置校验 + X-Legado-Token）、10 封面规则 CRUD（get/save/deleteCoverRule）闭合；§5.13 剩余故意后置 4 项（3 直链上传/4 Cronet N/A/5 视频播放/8 清除 WebView）。
 
 ### §5.14 第二批后置项与搜索崩溃根治遗留/风险登记（2026-08-10，Task #57 新增）
 
@@ -1071,12 +1073,12 @@ flutter test                  # 全量测试通过
 | 9 | 书签作者改写边界 | （Task #71 登记）书籍作者被元数据刷新改写后，旧书签（存旧 author）在书签 Tab/导出不可见；此为对齐原版双键查询语义的预期行为，验收知悉项，不另行修复 |
 | 10 | 二级索引 (name,author) 冲突时 insert_replace 跨书级联残余 | （Task #71 登记）同 name+author 不同书的极端冲突下 insert_replace 仍可能跨书级联（与 upsert 改造前一致）；后续加固方向：插入前 find_by_name_author 预检 |
 | 11 | getBookmarks 单键查询兼容保留 | （Task #71 登记）getBookmarks 单键（仅书名）查询已无生产消费方，为兼容既有调用保留；建议后续标注 @Deprecated 并择机移除 |
-| 12 | JS 链书源 bookUrl 为空 | （Task #66 实机发现）w.heiyan.com/kuaikan/zhuguang 等依赖 `<js>` 求值的 bookUrl 取空，属 JS 执行器独立路径待查（与 §5.14-6 源数据问题不同源） |
-| 13 | coverRule 规则数据管理 | （Task #78 登记）封面规则 CRUD（增删改/启用开关）需后续契约接口；当前仅执行启用规则 + 封面设置对话框测试入口，规则数据依赖外部写入 |
-| 14 | MCP 服务局域网可达 + token 鉴权 | （Task #78 登记）当前 MCP 独立服务仅 127.0.0.1 回环；原版 allowedHosts/token 语义待后续契约批次 |
+| 12 | ~~JS 链书源 bookUrl 为空~~ | ✅ 2026-08-13（T6）：CSS→`@js:` 链 `test_parse_search_book_url_css_js_chain`（quickjs）通过；空 bookUrl 回退书源主页（v1.26）已落地；个别源数据空链仍见 #6 |
+| 13 | ~~coverRule 规则数据管理~~ | ✅ 2026-08-13（F4）：契约 get/save/deleteCoverRule + 主题设置配置对话框 |
+| 14 | ~~MCP 服务局域网可达 + token 鉴权~~ | ✅ 2026-08-13（F5）：`0.0.0.0` LAN + 非空 `jsSourceApiToken` + `X-Legado-Token` |
 | 15 | ✅ customHosts 覆盖缺口 | 2026-08-13：webdav / rule_update_client / legado-server source_update 直建 Client 均挂 `custom_hosts::resolver()` |
 | 16 | coverRules 表 DDL 游离迁移体系 | ✅ 已完成（2026-08-13）：`CREATE_COVER_RULES` 纳入 `schema.rs` init_schema + Migration103To104 确保建表 |
-| 17 | MCP 前置 jsSourceApiToken 校验未实现 | （Task #78 登记）原版 McpService 前置 jsSourceApiToken 非空校验未实现，依赖 §5.13-7 jsSourceApiToken 落地后补 |
+| 17 | ~~MCP 前置 jsSourceApiToken 校验未实现~~ | ✅ 2026-08-13（F5）：与 §5.13-7 一并闭合 |
 | 18 | ✅ loginCheckJs（含 server/UI） | 2026-08-13：legado-server fetcher 四链路接 loginCheckJs；Flutter 阅读器遇 LoginRequired 自动拉登录。此前 FFI 路径 v2.0.8 已闭合 |
 | 19 | ✅ XPath 引擎 xmlns 声明根治（2026-08-10，v2.0.9） | 思兔 sto66 实测「未从书源解析到任何章节」根因：页面源码自带 `<html xmlns=...>` 时 HTML→XHTML 回退原样保留 xmlns 属性 → sxd-document 全部元素进命名空间 → 无前缀 XPath（//dd、//a）全部失配（仅 //* 与谓词字符串可命中）；`write_node_xhtml` 跳过 xmlns 属性根治；回归测试 test_xmlns_declaration_does_not_break_prefixed_xpath；legado-parser 178+1 全过。另确认思兔 loginCheckJs 为空（非登录问题）、tocUrl 链路各环节现状登记 |
 
