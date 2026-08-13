@@ -19,6 +19,8 @@
 //!   迁移时先按新复合键去重（保留最新）再 DROP 旧索引、建新复合唯一索引
 //! - v102 → v103: book_sources 表补 `variable` 列（台账 §5.11-3，支撑
 //!   契约 §2.3 setSourceVariable 书源自定义变量，Task #63）
+//! - v103 → v104: 台账「schema v102 结构对齐专项」落地（见
+//!   [`crate::migration::schema_align_v104`]；版本号避开已占用的 102/103）
 //!
 //! 历史说明：原 Rust 自有 `Migration95To96`（books/rssSources 补列）与上游 v96
 //! 语义撞车，已改造为不占版本号的幂等修复函数 [`repair_legacy_columns`]，
@@ -868,11 +870,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -1021,7 +1023,7 @@ mod tests {
     fn test_fresh_db_reaches_v101_with_deviation_columns() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
@@ -1185,7 +1187,7 @@ mod tests {
 
     #[test]
     fn test_migration_100_to_101_via_registry() {
-        // 经注册表从 v100 升级到最新（v102）
+        // 经注册表从 v100 升级到最新（v104）
         let db = Database::open_in_memory_raw().unwrap();
         let conn = db.connection();
         conn.execute_batch(
@@ -1205,7 +1207,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "readRecord", "lastRead"));
     }
@@ -1445,7 +1447,7 @@ mod tests {
         assert!(m.down(conn).is_err());
     }
 
-    /// 台账 §5.11-3：经注册表从 v102 升级到最新（v103），variable 列随迁移补齐
+    /// 台账 §5.11-3：经注册表从 v102 升级到最新，variable 列随迁移补齐
     #[test]
     fn test_migration_102_to_103_via_registry() {
         let db = Database::open_in_memory_raw().unwrap();
@@ -1462,7 +1464,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 103);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
         assert!(column_exists(conn, "book_sources", "variable"));
     }
 }

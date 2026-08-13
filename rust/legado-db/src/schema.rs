@@ -16,7 +16,12 @@ use legado_core::{LegadoError, LegadoResult};
 ///   复合键（Task #16 P0：修复跨书缓存串本导致「正文显示为另一本书内容」）
 /// - v103：book_sources 表补 `variable` 列（台账 §5.11-3，支撑契约 §2.3
 ///   setSourceVariable 书源自定义变量，幂等迁移，Task #63）
-pub const SCHEMA_VERSION: u32 = 103;
+/// - v104：台账「schema v102 结构对齐专项」落地（版本号避开已被占用的 102/103）：
+///   rssArticles/rssStars 主键重建、readRecord 主键重建、rssReadRecords/httpTTS
+///   结构对齐 Room v95、rssSources 去掉 enableCookieJar 冗余列、search_keywords
+///   对齐 word/usage/lastUseTime、coverRules 纳入建表清单。rule_subs/dict_rules/
+///   keyboard_assists 表名重命名留残（见台账 §4.2.1）
+pub const SCHEMA_VERSION: u32 = 104;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -63,13 +68,15 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
     conn.execute_batch(CREATE_CACHES)
         .map_err(|e| LegadoError::Database(format!("创建 caches 表失败: {e}")))?;
     conn.execute_batch(CREATE_HTTP_TTS)
-        .map_err(|e| LegadoError::Database(format!("创建 http_tts 表失败: {e}")))?;
+        .map_err(|e| LegadoError::Database(format!("创建 httpTTS 表失败: {e}")))?;
     conn.execute_batch(CREATE_USERS)
         .map_err(|e| LegadoError::Database(format!("创建 users 表失败: {e}")))?;
     conn.execute_batch(CREATE_DICT_RULES)
         .map_err(|e| LegadoError::Database(format!("创建 dict_rules 表失败: {e}")))?;
     conn.execute_batch(CREATE_KEYBOARD_ASSISTS)
         .map_err(|e| LegadoError::Database(format!("创建 keyboard_assists 表失败：{e}")))?;
+    conn.execute_batch(CREATE_COVER_RULES)
+        .map_err(|e| LegadoError::Database(format!("创建 coverRules 表失败: {e}")))?;
     conn.execute_batch(CREATE_DOWNLOAD_TASKS)
         .map_err(|e| LegadoError::Database(format!("创建 download_tasks 表失败：{e}")))?;
     conn.execute_batch(CREATE_HIGHLIGHTS)
@@ -252,12 +259,15 @@ CREATE TABLE IF NOT EXISTS searchBooks (
 );
 ";
 
+/// search_keywords 表（对齐 Room v95：word/usage/lastUseTime，主键 word）
 pub const CREATE_SEARCH_KEYWORDS: &str = "
 CREATE TABLE IF NOT EXISTS search_keywords (
-    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-    keyword TEXT NOT NULL,
-    time INTEGER NOT NULL
+    word TEXT NOT NULL,
+    usage INTEGER NOT NULL DEFAULT 1,
+    lastUseTime INTEGER NOT NULL,
+    PRIMARY KEY(word)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS index_search_keywords_word ON search_keywords (word);
 ";
 
 pub const CREATE_COOKIES: &str = "
@@ -297,7 +307,6 @@ CREATE TABLE IF NOT EXISTS rssSources (
     ruleLink TEXT,
     ruleContent TEXT,
     style TEXT,
-    enableCookieJar INTEGER DEFAULT 0,
     articleStyle INTEGER NOT NULL DEFAULT 0,
     singleUrl INTEGER NOT NULL DEFAULT 0,
     jsLib TEXT,
@@ -333,17 +342,14 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 );
 ";
 
-/// rssArticles 表（对齐 Room 99.json 列集，v101 补齐 group/read/type/durPos）
-///
-/// 注意：Room 主键为 (origin, link, sort)，Rust 轨历史主键为 (origin, title)，
-/// 主键差异属结构级偏离，本次仅补列不重建表（登记于台账 §4.2.1 P0-2）。
+/// rssArticles 表（对齐 Room v95：主键 (origin, link, sort)，link NOT NULL）
 pub const CREATE_RSS_ARTICLES: &str = "
 CREATE TABLE IF NOT EXISTS rssArticles (
     origin TEXT NOT NULL,
     sort TEXT NOT NULL,
     title TEXT NOT NULL,
     \"order\" INTEGER NOT NULL,
-    link TEXT,
+    link TEXT NOT NULL,
     pubDate TEXT,
     description TEXT,
     content TEXT,
@@ -353,29 +359,36 @@ CREATE TABLE IF NOT EXISTS rssArticles (
     variable TEXT,
     type INTEGER NOT NULL DEFAULT 0,
     durPos INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(origin, title)
+    PRIMARY KEY(origin, link, sort)
 );
 ";
 
+/// rssReadRecords 表（对齐 Room v95：主键 record）
 pub const CREATE_RSS_READ_RECORDS: &str = "
 CREATE TABLE IF NOT EXISTS rssReadRecords (
-    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-    origin TEXT NOT NULL,
-    title TEXT NOT NULL,
-    readTime INTEGER NOT NULL,
-    link TEXT,
-    variable TEXT
+    record TEXT NOT NULL,
+    title TEXT,
+    readTime INTEGER,
+    \"read\" INTEGER NOT NULL DEFAULT 1,
+    origin TEXT NOT NULL DEFAULT '',
+    sort TEXT NOT NULL DEFAULT '',
+    image TEXT,
+    type INTEGER NOT NULL DEFAULT 0,
+    durPos INTEGER NOT NULL DEFAULT 0,
+    pubDate TEXT,
+    PRIMARY KEY(record)
 );
+CREATE INDEX IF NOT EXISTS index_rssReadRecords_origin ON rssReadRecords (origin);
 ";
 
-/// rssStars 表（对齐 Room 99.json 列集，v101 补齐 group/type/durPos）
+/// rssStars 表（对齐 Room v95：主键 (origin, link)，link NOT NULL）
 pub const CREATE_RSS_STARS: &str = "
 CREATE TABLE IF NOT EXISTS rssStars (
     origin TEXT NOT NULL,
     sort TEXT NOT NULL,
     title TEXT NOT NULL,
     starTime INTEGER NOT NULL,
-    link TEXT,
+    link TEXT NOT NULL,
     pubDate TEXT,
     description TEXT,
     content TEXT,
@@ -384,7 +397,7 @@ CREATE TABLE IF NOT EXISTS rssStars (
     variable TEXT,
     type INTEGER NOT NULL DEFAULT 0,
     durPos INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(origin, title)
+    PRIMARY KEY(origin, link)
 );
 ";
 
@@ -401,18 +414,15 @@ CREATE TABLE IF NOT EXISTS txtTocRules (
 );
 ";
 
-/// readRecord 表（对齐 Room 99.json 列集，v101 补齐 deviceId/lastRead）
-///
-/// 注意：Room 主键为 (deviceId, bookName)，Rust 轨历史主键为 (bookName)，
-/// 主键差异属结构级偏离，本次仅补列不重建表（登记于台账 §4.2.1 P0-2）。
+/// readRecord 表（对齐 Room v95 主键 (deviceId, bookName)；author 为 Rust/上游超集列）
 pub const CREATE_READ_RECORD: &str = "
 CREATE TABLE IF NOT EXISTS readRecord (
     deviceId TEXT NOT NULL DEFAULT '',
     bookName TEXT NOT NULL,
     author TEXT NOT NULL DEFAULT '',
-    readTime INTEGER NOT NULL,
+    readTime INTEGER NOT NULL DEFAULT 0,
     lastRead INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(bookName)
+    PRIMARY KEY(deviceId, bookName)
 );
 ";
 
@@ -517,14 +527,34 @@ CREATE TABLE IF NOT EXISTS caches (
 CREATE INDEX IF NOT EXISTS idx_caches_deadline ON caches(deadline);
 ";
 
+/// httpTTS 表（对齐 Room v95 列集；`isEnabled` 为 Rust 轨超集，支撑启用开关 API）
 pub const CREATE_HTTP_TTS: &str = "
-CREATE TABLE IF NOT EXISTS http_tts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE IF NOT EXISTS httpTTS (
+    id INTEGER NOT NULL,
     name TEXT NOT NULL,
     url TEXT NOT NULL,
-    content_type TEXT DEFAULT '',
-    is_enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL
+    contentType TEXT,
+    pauseDuration INTEGER NOT NULL DEFAULT 0,
+    concurrentRate TEXT DEFAULT '0',
+    loginUrl TEXT,
+    loginUi TEXT,
+    header TEXT,
+    jsLib TEXT,
+    enabledCookieJar INTEGER DEFAULT 0,
+    loginCheckJs TEXT,
+    lastUpdateTime INTEGER NOT NULL DEFAULT 0,
+    isEnabled INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY(id)
+);
+";
+
+/// coverRules 表（纳入迁移体系，对齐 default_data / CoverRuleRepository DDL）
+pub const CREATE_COVER_RULES: &str = "
+CREATE TABLE IF NOT EXISTS coverRules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    rule TEXT NOT NULL DEFAULT '',
+    enable INTEGER NOT NULL DEFAULT 1
 );
 ";
 

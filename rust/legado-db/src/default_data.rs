@@ -69,15 +69,16 @@ impl DefaultDataManager {
                 name TEXT NOT NULL DEFAULT '',
                 url TEXT NOT NULL DEFAULT '',
                 contentType TEXT,
-                concurrentRate TEXT,
+                pauseDuration INTEGER NOT NULL DEFAULT 0,
+                concurrentRate TEXT DEFAULT '0',
                 loginUrl TEXT,
                 loginUi TEXT,
                 loginCheckJs TEXT,
                 header TEXT,
                 jsLib TEXT,
-                enabledCookieJar INTEGER NOT NULL DEFAULT 0,
+                enabledCookieJar INTEGER DEFAULT 0,
                 lastUpdateTime INTEGER NOT NULL DEFAULT 0,
-                respondTime INTEGER NOT NULL DEFAULT 0,
+                isEnabled INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY(id)
             );
             CREATE TABLE IF NOT EXISTS dictRules (

@@ -1,4 +1,4 @@
-//! RssReadRecord Repository - rssReadRecords 表 CRUD
+//! RssReadRecord Repository - rssReadRecords 表 CRUD（对齐 Room v95：主键 record）
 
 use rusqlite::{params, Connection};
 
@@ -11,7 +11,7 @@ pub struct RssReadRecordRow {
     pub origin: String,
     /// 文章标题
     pub title: String,
-    /// 文章链接
+    /// 文章链接（= Room record 主键）
     pub link: Option<String>,
     /// 阅读时间（Unix 毫秒）
     pub read_time: i64,
@@ -27,28 +27,33 @@ impl<'a> RssReadRecordRepository<'a> {
         Self { conn }
     }
 
-    /// 标记文章为已读
+    /// 标记文章为已读（主键 record = link；无 link 时用 legacy:origin:title）
     pub fn mark_read(&self, origin: &str, title: &str, link: Option<&str>) -> LegadoResult<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as i64;
+        let record = match link {
+            Some(l) if !l.trim().is_empty() => l.to_string(),
+            _ => format!("legacy:{origin}:{title}"),
+        };
         self.conn
             .execute(
-                "INSERT INTO rssReadRecords (origin, title, readTime, link)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![origin, title, now, link],
+                "INSERT OR REPLACE INTO rssReadRecords
+                 (record, title, readTime, \"read\", origin, sort, image, type, durPos, pubDate)
+                 VALUES (?1, ?2, ?3, 1, ?4, '', NULL, 0, 0, NULL)",
+                params![record, title, now, origin],
             )
             .map_err(|e| LegadoError::Database(format!("标记已读失败: {e}")))?;
         Ok(())
     }
 
-    /// 判断文章是否已读（按 link 匹配）
+    /// 判断文章是否已读（按 record/link 匹配）
     pub fn is_read(&self, link: &str) -> LegadoResult<bool> {
         let count: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM rssReadRecords WHERE link = ?1",
+                "SELECT COUNT(*) FROM rssReadRecords WHERE record = ?1",
                 params![link],
                 |row| row.get(0),
             )
@@ -87,23 +92,27 @@ impl<'a> RssReadRecordRepository<'a> {
     }
 
     /// 获取已读记录列表（按 readTime 降序）
-    ///
-    /// `limit` — 最大返回条数，None 时默认 100
     pub fn list_records(&self, limit: Option<i32>) -> LegadoResult<Vec<RssReadRecordRow>> {
         let limit = limit.unwrap_or(100);
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT origin, title, link, readTime FROM rssReadRecords ORDER BY readTime DESC LIMIT ?1",
+                "SELECT origin, title, record, readTime FROM rssReadRecords
+                 ORDER BY readTime DESC LIMIT ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
         let rows = stmt
             .query_map(params![limit], |row| {
+                let record: String = row.get(2)?;
                 Ok(RssReadRecordRow {
                     origin: row.get(0)?,
-                    title: row.get(1)?,
-                    link: row.get(2)?,
-                    read_time: row.get(3)?,
+                    title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    link: if record.is_empty() {
+                        None
+                    } else {
+                        Some(record)
+                    },
+                    read_time: row.get::<_, Option<i64>>(3)?.unwrap_or(0),
                 })
             })
             .map_err(|e| LegadoError::Database(format!("查询已读记录失败: {e}")))?;
@@ -174,6 +183,7 @@ mod tests {
 
         assert!(repo.is_read_by_title("https://rss.com", "NoLink").unwrap());
         assert_eq!(repo.count().unwrap(), 1);
+        assert!(repo.is_read("legacy:https://rss.com:NoLink").unwrap());
     }
 
     #[test]
@@ -181,25 +191,20 @@ mod tests {
         let db = crate::init_in_memory_database().unwrap();
         let repo = RssReadRecordRepository::new(db.connection());
 
-        // 空列表
         let records = repo.list_records(None).unwrap();
         assert!(records.is_empty());
 
-        // 插入多条
         for i in 0..5 {
             repo.mark_read("https://rss.com", &format!("Title{i}"), Some(&format!("link{i}")))
                 .unwrap();
         }
 
-        // 默认 limit=100 返回全部
         let records = repo.list_records(None).unwrap();
         assert_eq!(records.len(), 5);
 
-        // 限制返回条数
         let records = repo.list_records(Some(3)).unwrap();
         assert_eq!(records.len(), 3);
 
-        // 验证字段
         let first = &records[0];
         assert_eq!(first.origin, "https://rss.com");
         assert!(first.link.is_some());

@@ -28,7 +28,7 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, enableCookieJar, articleStyle, singleUrl,
+                        style, articleStyle, singleUrl,
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
@@ -56,7 +56,7 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, enableCookieJar, articleStyle, singleUrl,
+                        style, articleStyle, singleUrl,
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
@@ -87,7 +87,7 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, enableCookieJar, articleStyle, singleUrl,
+                        style, articleStyle, singleUrl,
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
@@ -120,14 +120,14 @@ impl<'a> RssSourceRepository<'a> {
               loginCheckJs, coverDecodeJs, concurrentRate,
               ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
               ruleDescription, ruleImage, ruleLink, ruleContent,
-              style, enableCookieJar, articleStyle, singleUrl,
+              style, articleStyle, singleUrl,
               jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
               shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
               startStyle, startJs, showWebLog, type, preload, cacheFirst,
               searchUrl)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
-                     ?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,
-                     ?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44,?45)",
+                     ?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,
+                     ?30,?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44)",
                 params![
                     source.source_url,
                     source.source_name,
@@ -156,7 +156,6 @@ impl<'a> RssSourceRepository<'a> {
                     source.rule_link,
                     source.rule_content,
                     source.style,
-                    source.enabled_cookie_jar,
                     source.article_style,
                     source.single_url,
                     source.js_lib,
@@ -205,12 +204,12 @@ impl<'a> RssSourceRepository<'a> {
                     loginUrl = ?14, loginUi = ?15, loginCheckJs = ?16, coverDecodeJs = ?17,
                     concurrentRate = ?18, ruleArticles = ?19, ruleNextPage = ?20, ruleTitle = ?21,
                     rulePubDate = ?22, ruleDescription = ?23, ruleImage = ?24, ruleLink = ?25,
-                    ruleContent = ?26, style = ?27, enableCookieJar = ?28, articleStyle = ?29,
-                    singleUrl = ?30, jsLib = ?31, enabledCookieJar = ?32,
-                    contentWhitelist = ?33, contentBlacklist = ?34,
-                    shouldOverrideUrlLoading = ?35, injectJs = ?36, preloadJs = ?37,
-                    startHtml = ?38, startStyle = ?39, startJs = ?40, showWebLog = ?41,
-                    type = ?42, preload = ?43, cacheFirst = ?44, searchUrl = ?45
+                    ruleContent = ?26, style = ?27, articleStyle = ?28,
+                    singleUrl = ?29, jsLib = ?30, enabledCookieJar = ?31,
+                    contentWhitelist = ?32, contentBlacklist = ?33,
+                    shouldOverrideUrlLoading = ?34, injectJs = ?35, preloadJs = ?36,
+                    startHtml = ?37, startStyle = ?38, startJs = ?39, showWebLog = ?40,
+                    type = ?41, preload = ?42, cacheFirst = ?43, searchUrl = ?44
                  WHERE sourceUrl = ?1",
                 params![
                     source.source_url,
@@ -240,7 +239,6 @@ impl<'a> RssSourceRepository<'a> {
                     source.rule_link,
                     source.rule_content,
                     source.style,
-                    source.enabled_cookie_jar,
                     source.article_style,
                     source.single_url,
                     source.js_lib,
@@ -298,15 +296,7 @@ impl<'a> RssSourceRepository<'a> {
     }
 }
 
-/// 将 rusqlite Row 转换为 RssSource
-///
-/// 评审修复（读写不对称，中危）：原先仅映射 30 列，其余 14 个扩展字段
-/// 以默认值填充，与 `update_fields` 全字段 UPDATE 不对称导致回写清空。
-/// 现覆盖 rssSources 表全部 44 业务列。
-///
-/// 注：模型仅有单一 `enabled_cookie_jar` 字段，表中 `enableCookieJar`（idx 27）
-/// 与 `enabledCookieJar`（idx 31）为历史冗余双列，取后者（与 `update_fields`
-/// 主写列一致），其余列以 `..Default` 补齐（均为零值）。
+/// 将 rusqlite Row 转换为 RssSource（v104：无 enableCookieJar 冗余列，共 44 列）
 fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
     Ok(RssSource {
         source_url: row.get(0)?,
@@ -336,23 +326,23 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
         rule_link: row.get(24)?,
         rule_content: row.get(25)?,
         style: row.get(26)?,
-        article_style: row.get(28)?,
-        single_url: row.get(29)?,
-        js_lib: row.get(30)?,
-        enabled_cookie_jar: row.get(31)?,
-        content_whitelist: row.get(32)?,
-        content_blacklist: row.get(33)?,
-        should_override_url_loading: row.get(34)?,
-        inject_js: row.get(35)?,
-        preload_js: row.get(36)?,
-        start_html: row.get(37)?,
-        start_style: row.get(38)?,
-        start_js: row.get(39)?,
-        show_web_log: row.get(40)?,
-        rss_type: row.get(41)?,
-        preload: row.get(42)?,
-        cache_first: row.get(43)?,
-        search_url: row.get(44)?,
+        article_style: row.get(27)?,
+        single_url: row.get(28)?,
+        js_lib: row.get(29)?,
+        enabled_cookie_jar: row.get(30)?,
+        content_whitelist: row.get(31)?,
+        content_blacklist: row.get(32)?,
+        should_override_url_loading: row.get(33)?,
+        inject_js: row.get(34)?,
+        preload_js: row.get(35)?,
+        start_html: row.get(36)?,
+        start_style: row.get(37)?,
+        start_js: row.get(38)?,
+        show_web_log: row.get(39)?,
+        rss_type: row.get(40)?,
+        preload: row.get(41)?,
+        cache_first: row.get(42)?,
+        search_url: row.get(43)?,
         ..RssSource::default()
     })
 }

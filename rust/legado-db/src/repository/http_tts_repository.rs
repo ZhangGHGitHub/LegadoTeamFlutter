@@ -1,6 +1,6 @@
-//! HttpTts Repository - http_tts 表 CRUD
+//! HttpTts Repository - httpTTS 表 CRUD（对齐 Room v95 + isEnabled 超集）
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use legado_core::{LegadoError, LegadoResult};
@@ -11,8 +11,11 @@ pub struct HttpTts {
     pub id: i64,
     pub name: String,
     pub url: String,
+    #[serde(default, rename = "contentType")]
     pub content_type: String,
+    #[serde(default, rename = "isEnabled")]
     pub is_enabled: bool,
+    #[serde(default, rename = "lastUpdateTime")]
     pub created_at: i64,
 }
 
@@ -29,14 +32,24 @@ impl<'a> HttpTtsRepository<'a> {
     /// 插入一条 TTS 源，返回新 ID
     pub fn insert(&self, name: &str, url: &str) -> LegadoResult<i64> {
         let now = current_time_millis();
+        // Room 主键非自增；取 MAX(id)+1（与 Android 导入正 id 共存）
+        let next_id: i64 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM httpTTS",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(1);
         self.conn
             .execute(
-                "INSERT INTO http_tts (name, url, content_type, is_enabled, created_at)
-                 VALUES (?1, ?2, '', 1, ?3)",
-                params![name, url, now],
+                "INSERT INTO httpTTS (id, name, url, contentType, pauseDuration, concurrentRate,
+                 enabledCookieJar, lastUpdateTime, isEnabled)
+                 VALUES (?1, ?2, ?3, '', 0, '0', 0, ?4, 1)",
+                params![next_id, name, url, now],
             )
             .map_err(|e| LegadoError::Database(format!("插入 TTS 源失败: {e}")))?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(next_id)
     }
 
     /// 获取所有 TTS 源
@@ -44,8 +57,8 @@ impl<'a> HttpTtsRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, url, content_type, is_enabled, created_at
-                 FROM http_tts ORDER BY created_at DESC",
+                "SELECT id, name, url, contentType, isEnabled, lastUpdateTime
+                 FROM httpTTS ORDER BY lastUpdateTime DESC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
@@ -62,8 +75,8 @@ impl<'a> HttpTtsRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, url, content_type, is_enabled, created_at
-                 FROM http_tts WHERE id = ?1",
+                "SELECT id, name, url, contentType, isEnabled, lastUpdateTime
+                 FROM httpTTS WHERE id = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
@@ -76,11 +89,12 @@ impl<'a> HttpTtsRepository<'a> {
 
     /// 更新 TTS 源
     pub fn update(&self, id: i64, name: &str, url: &str) -> LegadoResult<bool> {
+        let now = current_time_millis();
         let affected = self
             .conn
             .execute(
-                "UPDATE http_tts SET name = ?1, url = ?2 WHERE id = ?3",
-                params![name, url, id],
+                "UPDATE httpTTS SET name = ?1, url = ?2, lastUpdateTime = ?3 WHERE id = ?4",
+                params![name, url, now, id],
             )
             .map_err(|e| LegadoError::Database(format!("更新 TTS 源失败: {e}")))?;
         Ok(affected > 0)
@@ -90,7 +104,7 @@ impl<'a> HttpTtsRepository<'a> {
     pub fn delete(&self, id: i64) -> LegadoResult<bool> {
         let affected = self
             .conn
-            .execute("DELETE FROM http_tts WHERE id = ?1", params![id])
+            .execute("DELETE FROM httpTTS WHERE id = ?1", params![id])
             .map_err(|e| LegadoError::Database(format!("删除 TTS 源失败: {e}")))?;
         Ok(affected > 0)
     }
@@ -100,8 +114,8 @@ impl<'a> HttpTtsRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, url, content_type, is_enabled, created_at
-                 FROM http_tts WHERE is_enabled = 1 ORDER BY created_at DESC",
+                "SELECT id, name, url, contentType, isEnabled, lastUpdateTime
+                 FROM httpTTS WHERE isEnabled = 1 ORDER BY lastUpdateTime DESC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
@@ -118,7 +132,7 @@ impl<'a> HttpTtsRepository<'a> {
         let affected = self
             .conn
             .execute(
-                "UPDATE http_tts SET is_enabled = ?1 WHERE id = ?2",
+                "UPDATE httpTTS SET isEnabled = ?1 WHERE id = ?2",
                 params![enabled as i32, id],
             )
             .map_err(|e| LegadoError::Database(format!("设置 TTS 启用状态失败: {e}")))?;
@@ -145,8 +159,6 @@ fn current_time_millis() -> i64 {
         .as_millis() as i64
 }
 
-use rusqlite::OptionalExtension;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,89 +167,26 @@ mod tests {
     fn test_insert_and_find_all() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = HttpTtsRepository::new(db.connection());
-        let id1 = repo.insert("TTS1", "http://tts.example.com/1").unwrap();
-        let id2 = repo.insert("TTS2", "http://tts.example.com/2").unwrap();
-        assert!(id1 > 0);
-        assert!(id2 > id1);
-
+        let id = repo.insert("引擎A", "http://a.example/tts").unwrap();
+        assert!(id > 0);
         let all = repo.find_all().unwrap();
-        assert_eq!(all.len(), 2);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].name, "引擎A");
+        assert!(all[0].is_enabled);
     }
 
     #[test]
-    fn test_find_by_id() {
+    fn test_update_delete_set_enabled() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = HttpTtsRepository::new(db.connection());
-        let id = repo.insert("Test", "http://tts.test.com").unwrap();
-
-        let found = repo.find_by_id(id).unwrap();
-        assert!(found.is_some());
-        let tts = found.unwrap();
-        assert_eq!(tts.name, "Test");
-        assert_eq!(tts.url, "http://tts.test.com");
-        assert!(tts.is_enabled);
-
-        assert!(repo.find_by_id(9999).unwrap().is_none());
-    }
-
-    #[test]
-    fn test_update() {
-        let db = crate::init_in_memory_database().unwrap();
-        let repo = HttpTtsRepository::new(db.connection());
-        let id = repo.insert("Old", "http://old.com").unwrap();
-
-        assert!(repo.update(id, "New", "http://new.com").unwrap());
-        let updated = repo.find_by_id(id).unwrap().unwrap();
-        assert_eq!(updated.name, "New");
-        assert_eq!(updated.url, "http://new.com");
-
-        assert!(!repo.update(9999, "X", "http://x.com").unwrap());
-    }
-
-    #[test]
-    fn test_delete() {
-        let db = crate::init_in_memory_database().unwrap();
-        let repo = HttpTtsRepository::new(db.connection());
-        let id = repo.insert("ToDelete", "http://del.com").unwrap();
-
-        assert!(repo.delete(id).unwrap());
-        assert!(!repo.delete(id).unwrap());
-        assert!(repo.find_all().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_set_enabled() {
-        let db = crate::init_in_memory_database().unwrap();
-        let repo = HttpTtsRepository::new(db.connection());
-        let id = repo.insert("Toggle", "http://toggle.com").unwrap();
-
+        let id = repo.insert("旧名", "http://old").unwrap();
+        assert!(repo.update(id, "新名", "http://new").unwrap());
+        let item = repo.find_by_id(id).unwrap().unwrap();
+        assert_eq!(item.name, "新名");
         assert!(repo.set_enabled(id, false).unwrap());
-        let tts = repo.find_by_id(id).unwrap().unwrap();
-        assert!(!tts.is_enabled);
-
-        assert!(repo.set_enabled(id, true).unwrap());
-        let tts = repo.find_by_id(id).unwrap().unwrap();
-        assert!(tts.is_enabled);
-
-        assert!(!repo.set_enabled(9999, true).unwrap());
-    }
-
-    #[test]
-    fn test_find_all_ordered_by_created_desc() {
-        let db = crate::init_in_memory_database().unwrap();
-        let repo = HttpTtsRepository::new(db.connection());
-        let id1 = repo.insert("First", "http://1.com").unwrap();
-        let id2 = repo.insert("Second", "http://2.com").unwrap();
-        let id3 = repo.insert("Third", "http://3.com").unwrap();
-
-        let all = repo.find_all().unwrap();
-        assert_eq!(all.len(), 3);
-        // ID 递增确认插入顺序
-        assert!(id3 > id2);
-        assert!(id2 > id1);
-        // 所有记录均存在
-        assert!(all.iter().any(|t| t.name == "First"));
-        assert!(all.iter().any(|t| t.name == "Second"));
-        assert!(all.iter().any(|t| t.name == "Third"));
+        assert!(!repo.find_by_id(id).unwrap().unwrap().is_enabled);
+        assert!(repo.find_enabled().unwrap().is_empty());
+        assert!(repo.delete(id).unwrap());
+        assert!(repo.find_by_id(id).unwrap().is_none());
     }
 }

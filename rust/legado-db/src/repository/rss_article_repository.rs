@@ -61,7 +61,7 @@ impl<'a> RssArticleRepository<'a> {
         Self { conn }
     }
 
-    /// 插入文章（主键冲突时替换），覆盖 v101 全部列（含 group/read/type/durPos）
+    /// 插入文章（主键冲突时替换），主键 (origin, link, sort)
     pub fn insert(&self, article: &RssArticleRecord) -> LegadoResult<()> {
         // 空分组回退为默认分组（对齐 Kotlin 实体默认值）
         let group = if article.group.is_empty() {
@@ -69,6 +69,12 @@ impl<'a> RssArticleRepository<'a> {
         } else {
             &article.group
         };
+        let link = resolve_rss_link(
+            &article.origin,
+            &article.title,
+            &article.sort,
+            article.link.as_deref(),
+        );
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO rssArticles (origin, sort, title, \"order\", link,
@@ -80,7 +86,7 @@ impl<'a> RssArticleRepository<'a> {
                     article.sort,
                     article.title,
                     article.order,
-                    article.link,
+                    link,
                     article.pub_date,
                     article.description,
                     article.content,
@@ -96,7 +102,7 @@ impl<'a> RssArticleRepository<'a> {
         Ok(())
     }
 
-    /// 标记文章已读状态（对齐 Kotlin 对 read 列的更新语义）
+    /// 标记文章已读状态（按 origin+title；同标题多 link 时批量更新）
     pub fn update_read(&self, origin: &str, title: &str, read: bool) -> LegadoResult<()> {
         self.conn
             .execute(
@@ -160,13 +166,21 @@ impl<'a> RssArticleRepository<'a> {
     }
 }
 
+fn resolve_rss_link(origin: &str, title: &str, sort: &str, link: Option<&str>) -> String {
+    match link {
+        Some(l) if !l.trim().is_empty() => l.to_string(),
+        _ => format!("legacy:{origin}:{title}:{sort}"),
+    }
+}
+
 fn row_to_article(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssArticleRecord> {
+    let link: String = row.get(4)?;
     Ok(RssArticleRecord {
         origin: row.get(0)?,
         sort: row.get(1)?,
         title: row.get(2)?,
         order: row.get(3)?,
-        link: row.get(4)?,
+        link: if link.is_empty() { None } else { Some(link) },
         pub_date: row.get(5)?,
         description: row.get(6)?,
         content: row.get(7)?,
@@ -220,7 +234,7 @@ mod tests {
         let repo = RssArticleRepository::new(db.connection());
         repo.insert(&make_article("https://rss.com", "Article1", 1))
             .unwrap();
-        // 相同主键 (origin, title) 替换
+        // 相同主键 (origin, link, sort) 替换
         let mut updated = make_article("https://rss.com", "Article1", 5);
         updated.description = Some("updated".to_string());
         repo.insert(&updated).unwrap();

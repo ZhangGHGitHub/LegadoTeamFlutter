@@ -65,6 +65,10 @@ impl<'a> RssStarRepository<'a> {
         } else {
             &star.group
         };
+        let link = match star.link.as_deref() {
+            Some(l) if !l.trim().is_empty() => l.to_string(),
+            _ => format!("legacy:{}:{}:{}", star.origin, star.title, star.sort),
+        };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO rssStars (origin, sort, title, starTime, link,
@@ -75,7 +79,7 @@ impl<'a> RssStarRepository<'a> {
                     star.sort,
                     star.title,
                     star.star_time,
-                    star.link,
+                    link,
                     star.pub_date,
                     star.description,
                     star.content,
@@ -141,12 +145,13 @@ impl<'a> RssStarRepository<'a> {
 }
 
 fn row_to_star(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssStarRecord> {
+    let link: String = row.get(4)?;
     Ok(RssStarRecord {
         origin: row.get(0)?,
         sort: row.get(1)?,
         title: row.get(2)?,
         star_time: row.get(3)?,
-        link: row.get(4)?,
+        link: if link.is_empty() { None } else { Some(link) },
         pub_date: row.get(5)?,
         description: row.get(6)?,
         content: row.get(7)?,

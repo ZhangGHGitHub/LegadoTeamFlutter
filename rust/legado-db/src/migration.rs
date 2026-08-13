@@ -6,6 +6,7 @@
 //! - 使用 SQLite `user_version` PRAGMA 追踪当前版本
 
 pub mod migrations;
+pub mod schema_align_v104;
 
 use rusqlite::Connection;
 
@@ -57,6 +58,7 @@ impl MigrationRegistry {
         self.register(Box::new(migrations::Migration100To101));
         self.register(Box::new(migrations::Migration101To102));
         self.register(Box::new(migrations::Migration102To103));
+        self.register(Box::new(schema_align_v104::Migration103To104));
     }
 
     /// 注册单个迁移
@@ -174,6 +176,44 @@ pub(crate) fn table_exists(conn: &Connection, table: &str) -> LegadoResult<bool>
     Ok(count > 0)
 }
 
+/// 检查列是否存在（供迁移幂等检测）
+pub(crate) fn column_exists(conn: &Connection, table: &str, column: &str) -> LegadoResult<bool> {
+    let bare = column.trim_matches('"');
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| LegadoError::Database(format!("查询表结构失败: {e}")))?;
+    let exists = stmt
+        .query_map([], |row| {
+            let name: String = row.get(1)?;
+            Ok(name == bare)
+        })
+        .map_err(|e| LegadoError::Database(format!("遍历表结构失败: {e}")))?
+        .filter_map(|r| r.ok())
+        .any(|b| b);
+    Ok(exists)
+}
+
+/// 返回表主键列名（按 pk 序号排序）
+pub(crate) fn primary_key_columns(conn: &Connection, table: &str) -> LegadoResult<Vec<String>> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| LegadoError::Database(format!("查询表结构失败: {e}")))?;
+    let mut cols: Vec<(i32, String)> = stmt
+        .query_map([], |row| {
+            let name: String = row.get(1)?;
+            let pk: i32 = row.get(5)?;
+            Ok((pk, name))
+        })
+        .map_err(|e| LegadoError::Database(format!("遍历表结构失败: {e}")))?
+        .filter_map(|r| r.ok())
+        .filter(|(pk, _)| *pk > 0)
+        .collect();
+    cols.sort_by_key(|(pk, _)| *pk);
+    Ok(cols.into_iter().map(|(_, n)| n).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,7 +293,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 13);
+        assert_eq!(list.len(), 14);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -369,7 +409,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 103);
+        assert_eq!(version, 104);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
     }

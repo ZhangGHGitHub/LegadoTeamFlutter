@@ -103,9 +103,12 @@ impl<'a> ReadRecordRepository<'a> {
     /// 说明：本方法签名保持不变（FFI 既有契约），deviceId/lastRead 依赖列默认值
     /// （''/0）；需要写入新字段时使用 [`upsert_full`]。
     pub fn upsert(&self, book_name: &str, read_time: i64) -> LegadoResult<()> {
+        // 主键 (deviceId, bookName)；单设备 deviceId=''；保留 author/lastRead
         self.conn
             .execute(
-                "INSERT OR REPLACE INTO readRecord (bookName, readTime) VALUES (?1, ?2)",
+                "INSERT INTO readRecord (deviceId, bookName, readTime)
+                 VALUES ('', ?1, ?2)
+                 ON CONFLICT(deviceId, bookName) DO UPDATE SET readTime = excluded.readTime",
                 params![book_name, read_time],
             )
             .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
@@ -163,11 +166,14 @@ impl<'a> ReadRecordRepository<'a> {
         // 2. 作者集合并（对应上游 ReadRecordAuthors.merge）
         let merged = merge_read_record_authors(&existing, author);
 
-        // 3. 整行替换写入（对应上游 insertRaw(record.copy(author = author))）
+        // 3. upsert 写入（主键含 deviceId；保留 lastRead）
         self.conn
             .execute(
-                "INSERT OR REPLACE INTO readRecord (bookName, author, readTime)
-                 VALUES (?1, ?2, ?3)",
+                "INSERT INTO readRecord (deviceId, bookName, author, readTime)
+                 VALUES ('', ?1, ?2, ?3)
+                 ON CONFLICT(deviceId, bookName) DO UPDATE SET
+                   author = excluded.author,
+                   readTime = excluded.readTime",
                 params![book_name, merged, read_time],
             )
             .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
