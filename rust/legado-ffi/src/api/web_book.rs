@@ -7,6 +7,8 @@
 //! 实现完整的搜索→详情→目录→正文链路。
 
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use legado_core::models::BookSource;
 use legado_core::models::{Book, BookChapter};
@@ -20,6 +22,67 @@ use legado_net::LegadoClient;
 use legado_parser::{compile_regex_safe, AnalyzeUrl, RequestMethod};
 
 use crate::runtime;
+
+/// 详情/目录短时 HTML 缓存（对齐原版 Book.infoHtml / Book.tocHtml 进程内复用）
+///
+/// Flutter 信息页串行 `webbookInfo` → `webbookChapters` 时，原版在 analyzeBookInfo
+/// 后把 body 写入 tocHtml，目录阶段不再二次 HTTP。无状态 FFI 无法携带 Book，
+/// 故用 URL 键短 TTL 缓存承接同一次进入详情的重复拉页。
+const PAGE_BODY_CACHE_TTL: Duration = Duration::from_secs(45);
+const PAGE_BODY_CACHE_MAX: usize = 32;
+
+struct PageBodyCache {
+    entries: HashMap<String, (Instant, String)>,
+}
+
+impl PageBodyCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    fn get(&mut self, url: &str) -> Option<String> {
+        let now = Instant::now();
+        self.entries.retain(|_, (t, _)| now.duration_since(*t) < PAGE_BODY_CACHE_TTL);
+        self.entries.get(url).map(|(_, b)| b.clone())
+    }
+
+    fn put(&mut self, url: &str, body: String) {
+        let now = Instant::now();
+        self.entries.retain(|_, (t, _)| now.duration_since(*t) < PAGE_BODY_CACHE_TTL);
+        if self.entries.len() >= PAGE_BODY_CACHE_MAX {
+            // 简单淘汰：丢掉最旧一条
+            if let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (t, _))| *t)
+                .map(|(k, _)| k.clone())
+            {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.entries.insert(url.to_string(), (now, body));
+    }
+}
+
+fn page_body_cache() -> &'static Mutex<PageBodyCache> {
+    static CACHE: OnceLock<Mutex<PageBodyCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(PageBodyCache::new()))
+}
+
+fn cache_get_page_body(url: &str) -> Option<String> {
+    page_body_cache()
+        .lock()
+        .ok()
+        .and_then(|mut c| c.get(url))
+}
+
+fn cache_put_page_body(url: &str, body: &str) {
+    if let Ok(mut c) = page_body_cache().lock() {
+        c.put(url, body.to_string());
+    }
+}
 
 // ─── Real Fetcher（真实网络请求 + 规则解析） ────────────────────────────────────
 
@@ -87,11 +150,28 @@ impl RealBookSourceFetcher {
     }
 
     /// 直接 GET 一个 URL（用于章节内容等简单场景）
+    ///
+    /// `use_page_cache`：详情→目录同页复用时读/写短时缓存（对标 infoHtml/tocHtml）。
     async fn fetch_simple(
         &self,
         url: &str,
         source_headers: Option<&HashMap<String, String>>,
     ) -> LegadoResult<String> {
+        self.fetch_simple_cached(url, source_headers, false).await
+    }
+
+    async fn fetch_simple_cached(
+        &self,
+        url: &str,
+        source_headers: Option<&HashMap<String, String>>,
+        use_page_cache: bool,
+    ) -> LegadoResult<String> {
+        if use_page_cache {
+            if let Some(cached) = cache_get_page_body(url) {
+                eprintln!("[web_book] page body cache hit: {url}");
+                return Ok(cached);
+            }
+        }
         let headers_opt = source_headers.cloned();
         let response = self.client.get(url, headers_opt).await?;
         if !response.is_success() {
@@ -101,6 +181,9 @@ impl RealBookSourceFetcher {
             )));
         }
         check_redirect_log(url, &response.url);
+        if use_page_cache {
+            cache_put_page_body(url, &response.body);
+        }
         Ok(response.body)
     }
 
@@ -480,18 +563,32 @@ impl BookSourceFetcher for RealBookSourceFetcher {
     ) -> LegadoResult<WebBookInfo> {
         let source_headers = Self::parse_source_headers(source);
 
-        // 1. 请求书籍详情页
-        //    注：B2.2 infoHtml 缓存复用需要上游传入带 info_html 的 Book 对象，
-        //    当前无状态 FFI 签名（book_url）无法携带，故此处始终发 HTTP（见报告说明）。
-        let body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
+        // 1. 请求书籍详情页（写入短时缓存，供紧随其后的 get_chapters 复用）
+        //    对标原版 Book.infoHtml / tocHtml：无状态 FFI 无法携带 Book，故用 URL 短 TTL 缓存。
+        let t_fetch = std::time::Instant::now();
+        let body = self
+            .fetch_simple_cached(book_url, source_headers.as_ref(), true)
+            .await?;
+        eprintln!(
+            "[web_book] get_book_info fetch {} in {:?}",
+            book_url,
+            t_fetch.elapsed()
+        );
 
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &body, book_url, 200)?;
 
         // 2. 使用 bookInfo 规则解析（无状态上下文无已有书名，canReName=true、existing 为空）
-        Ok(Self::parse_book_info_from_body(
+        let t_parse = std::time::Instant::now();
+        let info = Self::parse_book_info_from_body(
             source, body, book_url, book_url, true, "", "",
-        ))
+        );
+        eprintln!(
+            "[web_book] get_book_info parse in {:?} name={}",
+            t_parse.elapsed(),
+            info.name
+        );
+        Ok(info)
     }
 
     async fn get_chapters(
@@ -500,9 +597,16 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         book_url: &str,
     ) -> LegadoResult<Vec<WebChapter>> {
         let source_headers = Self::parse_source_headers(source);
+        let t0 = std::time::Instant::now();
 
-        // 1. 先获取详情页以确定 toc_url
-        let info_body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
+        // 1. 先获取详情页以确定 toc_url（优先命中 get_book_info 写入的短时缓存）
+        let info_body = self
+            .fetch_simple_cached(book_url, source_headers.as_ref(), true)
+            .await?;
+        eprintln!(
+            "[web_book] get_chapters info_body in {:?}",
+            t0.elapsed()
+        );
 
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &info_body, book_url, 200)?;
@@ -545,7 +649,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let toc_body = if toc_url == book_url {
             info_body
         } else {
-            self.fetch_simple(&toc_url, source_headers.as_ref()).await?
+            self.fetch_simple_cached(&toc_url, source_headers.as_ref(), true)
+                .await?
         };
 
         // 3. B3.4 反转标记：chapterList 规则以 "-" 前缀表示倒序，"+" 前缀仅为标记（对标 Kotlin BookChapterList）
@@ -574,6 +679,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             &serde_json::json!({ "name": book_name }).to_string(),
         );
 
+        let t_list = std::time::Instant::now();
         let elements = if chapter_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
         } else {
@@ -582,6 +688,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             // （51漫画 `<js>+$[*]` 链拆解回归）。— Reasonix
             analyzer.get_elements(chapter_list_rule)?
         };
+        eprintln!(
+            "[web_book] get_chapters elements={} in {:?}",
+            elements.len(),
+            t_list.elapsed()
+        );
 
         // 规则提到循环外
         let name_rule = toc_rule
@@ -593,14 +704,20 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let vip_rule = toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or("");
         let volume_rule = toc_rule.and_then(|r| r.is_volume.as_deref()).unwrap_or("");
 
-        let mut chapters = Vec::new();
+        // 对齐原版 BookChapterList：单一 AnalyzeRule + setContent(item) 循环，
+        // 复用 stringRuleCache / JsExecutor，避免每章新建解析器（数百章时差一个数量级）。
+        let mut elem_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            String::new(),
+            toc_url.clone(),
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+        );
+
+        let t_parse = std::time::Instant::now();
+        let mut chapters = Vec::with_capacity(elements.len());
         for (index, elem) in elements.iter().enumerate() {
-            let elem_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
-                elem.clone(),
-                toc_url.clone(),
-                &source.book_source_url,
-                source.js_lib.as_deref(),
-            );
+            elem_analyzer.clear_variables();
+            elem_analyzer.set_content(elem.clone());
 
             let mut title = elem_analyzer.get_string(name_rule).unwrap_or_default();
             let raw_url_probe = elem_analyzer.get_string(url_rule).unwrap_or_default();
@@ -653,6 +770,239 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 is_volume,
                 variable,
             });
+        }
+        eprintln!(
+            "[web_book] get_chapters parse {} chapters in {:?} (total {:?})",
+            chapters.len(),
+            t_parse.elapsed(),
+            t0.elapsed()
+        );
+
+        // B3.5 nextTocUrl 分页（对标 Kotlin BookChapterList）：
+        // - 0：无分页
+        // - 1：串行跟下一页（每页再取 next）
+        // - >1：并发拉取各分页（思路客等 JS 展开全部分页 URL）
+        let next_toc_rule = toc_rule
+            .and_then(|r| r.next_toc_url.as_deref())
+            .unwrap_or("")
+            .trim();
+        if !next_toc_rule.is_empty() {
+            let t_next = std::time::Instant::now();
+            let mut next_urls: Vec<String> = analyzer
+                .get_strings_ex(next_toc_rule, true)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|u| !u.is_empty() && u != &toc_url)
+                .collect();
+            // 去重保序
+            {
+                let mut seen = std::collections::HashSet::new();
+                next_urls.retain(|u| seen.insert(u.clone()));
+            }
+            eprintln!(
+                "[web_book] get_chapters nextTocUrl pages={} in {:?}",
+                next_urls.len(),
+                t_next.elapsed()
+            );
+
+            if next_urls.len() == 1 {
+                let mut visited = std::collections::HashSet::new();
+                visited.insert(toc_url.clone());
+                let mut next_url = next_urls.remove(0);
+                while !next_url.is_empty() && visited.insert(next_url.clone()) {
+                    let page_body = self
+                        .fetch_simple_cached(&next_url, source_headers.as_ref(), true)
+                        .await?;
+                    let page_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+                        page_body,
+                        next_url.clone(),
+                        &source.book_source_url,
+                        source.js_lib.as_deref(),
+                    );
+                    let page_elements = if chapter_list_rule.is_empty() {
+                        vec![page_analyzer.content().to_string()]
+                    } else {
+                        page_analyzer
+                            .get_elements(chapter_list_rule)
+                            .unwrap_or_default()
+                    };
+                    let base = next_url.clone();
+                    let start_idx = chapters.len();
+                    for (i, elem) in page_elements.iter().enumerate() {
+                        elem_analyzer.clear_variables();
+                        elem_analyzer.set_base_url(base.clone());
+                        elem_analyzer.set_content(elem.clone());
+                        let mut title =
+                            elem_analyzer.get_string(name_rule).unwrap_or_default();
+                        let raw_url_probe =
+                            elem_analyzer.get_string(url_rule).unwrap_or_default();
+                        if title.is_empty() && raw_url_probe.is_empty() {
+                            continue;
+                        }
+                        if title.is_empty() {
+                            title = "无标题".to_string();
+                        }
+                        let is_vip = if vip_rule.is_empty() {
+                            false
+                        } else {
+                            let v = elem_analyzer.get_string(vip_rule).unwrap_or_default();
+                            v == "true" || v == "1"
+                        };
+                        let is_volume = if volume_rule.is_empty() {
+                            false
+                        } else {
+                            let v = elem_analyzer.get_string(volume_rule).unwrap_or_default();
+                            v == "true" || v == "1"
+                        };
+                        let index = start_idx + i;
+                        let url = if raw_url_probe.is_empty() {
+                            if is_volume {
+                                format!("{}{}", title, index)
+                            } else {
+                                base.clone()
+                            }
+                        } else {
+                            AnalyzeUrl::get_absolute_url(&base, &raw_url_probe)
+                        };
+                        chapters.push(WebChapter {
+                            index: index as i32,
+                            title,
+                            url,
+                            is_vip,
+                            is_volume,
+                            variable: elem_analyzer.export_variables_json(),
+                        });
+                    }
+                    let more = page_analyzer
+                        .get_strings_ex(next_toc_rule, true)
+                        .unwrap_or_default();
+                    next_url = more
+                        .into_iter()
+                        .find(|u| !u.is_empty() && !visited.contains(u))
+                        .unwrap_or_default();
+                }
+            } else if next_urls.len() > 1 {
+                // 并发拉页（对齐 mapAsync(threadCount)）
+                let headers = source_headers.clone();
+                let source_url = source.book_source_url.clone();
+                let js_lib = source.js_lib.clone();
+                let list_rule = chapter_list_rule.to_string();
+                let name_r = name_rule.to_string();
+                let url_r = url_rule.to_string();
+                let vip_r = vip_rule.to_string();
+                let volume_r = volume_rule.to_string();
+                let client = self.client.clone();
+
+                let futs: Vec<_> = next_urls
+                    .into_iter()
+                    .map(|page_url| {
+                        let headers = headers.clone();
+                        let source_url = source_url.clone();
+                        let js_lib = js_lib.clone();
+                        let list_rule = list_rule.clone();
+                        let name_r = name_r.clone();
+                        let url_r = url_r.clone();
+                        let vip_r = vip_r.clone();
+                        let volume_r = volume_r.clone();
+                        let client = client.clone();
+                        async move {
+                            let body = {
+                                if let Some(cached) = cache_get_page_body(&page_url) {
+                                    cached
+                                } else {
+                                    let response = client.get(&page_url, headers).await?;
+                                    if !response.is_success() {
+                                        return Err(LegadoError::Network(format!(
+                                            "HTTP {} for {}",
+                                            response.status, page_url
+                                        )));
+                                    }
+                                    cache_put_page_body(&page_url, &response.body);
+                                    response.body
+                                }
+                            };
+                            let page_analyzer =
+                                crate::js_executor::construct_analyzer_with_js_lib(
+                                    body,
+                                    page_url.clone(),
+                                    &source_url,
+                                    js_lib.as_deref(),
+                                );
+                            let page_elements = if list_rule.is_empty() {
+                                vec![page_analyzer.content().to_string()]
+                            } else {
+                                page_analyzer.get_elements(&list_rule).unwrap_or_default()
+                            };
+                            let mut elem = crate::js_executor::construct_analyzer_with_js_lib(
+                                String::new(),
+                                page_url.clone(),
+                                &source_url,
+                                js_lib.as_deref(),
+                            );
+                            let mut page_chs = Vec::with_capacity(page_elements.len());
+                            for (i, el) in page_elements.iter().enumerate() {
+                                elem.clear_variables();
+                                elem.set_content(el.clone());
+                                let mut title = elem.get_string(&name_r).unwrap_or_default();
+                                let raw = elem.get_string(&url_r).unwrap_or_default();
+                                if title.is_empty() && raw.is_empty() {
+                                    continue;
+                                }
+                                if title.is_empty() {
+                                    title = "无标题".to_string();
+                                }
+                                let is_vip = if vip_r.is_empty() {
+                                    false
+                                } else {
+                                    let v = elem.get_string(&vip_r).unwrap_or_default();
+                                    v == "true" || v == "1"
+                                };
+                                let is_volume = if volume_r.is_empty() {
+                                    false
+                                } else {
+                                    let v = elem.get_string(&volume_r).unwrap_or_default();
+                                    v == "true" || v == "1"
+                                };
+                                let url = if raw.is_empty() {
+                                    if is_volume {
+                                        format!("{}{}", title, i)
+                                    } else {
+                                        page_url.clone()
+                                    }
+                                } else {
+                                    AnalyzeUrl::get_absolute_url(&page_url, &raw)
+                                };
+                                page_chs.push(WebChapter {
+                                    index: i as i32,
+                                    title,
+                                    url,
+                                    is_vip,
+                                    is_volume,
+                                    variable: elem.export_variables_json(),
+                                });
+                            }
+                            Ok::<_, LegadoError>(page_chs)
+                        }
+                    })
+                    .collect();
+                let all = futures::future::join_all(futs).await;
+                for page in all {
+                    match page {
+                        Ok(chs) => chapters.extend(chs),
+                        Err(e) => eprintln!("[web_book] toc page fetch failed: {e}"),
+                    }
+                }
+            }
+            eprintln!(
+                "[web_book] get_chapters after nextTocUrl total_chapters={} in {:?}",
+                chapters.len(),
+                t0.elapsed()
+            );
+        }
+
+        // 重编号
+        for (i, ch) in chapters.iter_mut().enumerate() {
+            ch.index = i as i32;
         }
 
         // B3.4 去重 + 反转管线（对标 Kotlin BookChapterList 双反转去重逻辑，去重键为 url）
@@ -1786,6 +2136,79 @@ mod tests {
             ..BookSource::default()
         })
         .unwrap()
+    }
+
+    #[test]
+    fn test_siluke_full_rules_next_toc() {
+        use std::time::Instant;
+        let source_json = include_str!("../../tests/fixtures/siluke_rules.json");
+        let book_url = "http://www.silukezw.com/135/135188/";
+        let t0 = Instant::now();
+        let _ = webbook_info(source_json, book_url);
+        let t1 = Instant::now();
+        let ch = webbook_chapters(source_json, book_url).expect("chapters");
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&ch).unwrap();
+        eprintln!(
+            "[timing-full] chapters={} toc={:?} total={:?}",
+            arr.len(),
+            t1.elapsed(),
+            t0.elapsed()
+        );
+        // 思路客分页：首页约100，全量应明显更多（若 nextTocUrl 生效）
+        assert!(arr.len() >= 100, "got {}", arr.len());
+    }
+
+    #[test]
+    fn test_siluke_book_info_chapters_timing_and_cache() {
+        use std::time::Instant;
+        let source = serde_json::json!({
+            "bookSourceUrl": "http://www.silukezw.com",
+            "bookSourceName": "思路客#2",
+            "bookSourceType": 0,
+            "ruleBookInfo": {
+                "name": "[property=\"og:title\"]@content",
+                "author": "meta[property=\"og:novel:author\"]@content",
+                "intro": "#intro@text",
+                "coverUrl": "meta[property=\"og:image\"]@content",
+                "tocUrl": "",
+                "lastChapter": "meta[property=\"og:novel:latest_chapter_name\"]@content"
+            },
+            "ruleToc": {
+                "chapterList": ".book_list2 li a",
+                "chapterName": "text",
+                "chapterUrl": "href"
+            }
+        });
+        let source_json = source.to_string();
+        let book_url = "http://www.silukezw.com/135/135188/";
+
+        let t0 = Instant::now();
+        let info = webbook_info(&source_json, book_url);
+        let info_ms = t0.elapsed();
+        assert!(info.is_ok(), "info err: {:?}", info.err());
+        eprintln!("[timing] webbook_info {:?}", info_ms);
+
+        let t1 = Instant::now();
+        let ch = webbook_chapters(&source_json, book_url);
+        let ch_ms = t1.elapsed();
+        match &ch {
+            Ok(s) => {
+                let arr: Vec<serde_json::Value> = serde_json::from_str(s).unwrap_or_default();
+                eprintln!(
+                    "[timing] webbook_chapters {} chapters in {:?} (after info)",
+                    arr.len(),
+                    ch_ms
+                );
+                assert!(arr.len() > 20, "思路客首页应有多章，实际 {}", arr.len());
+            }
+            Err(e) => panic!("chapters err: {e}"),
+        }
+        eprintln!("[timing] sequential total {:?}", t0.elapsed());
+        // 目录阶段应命中详情页短时缓存；解析复用 AnalyzeRule 后通常远快于二次 HTTP
+        assert!(
+            ch_ms < info_ms + std::time::Duration::from_secs(8),
+            "chapters after info unexpectedly slow: info={info_ms:?} chapters={ch_ms:?}"
+        );
     }
 
     #[test]

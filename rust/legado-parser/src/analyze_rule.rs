@@ -211,6 +211,16 @@ impl AnalyzeRule {
         serde_json::to_string(&*guard).ok()
     }
 
+    /// 清空 @put 变量表（目录循环复用同一 AnalyzeRule 时，对齐原版每章独立 ruleData）
+    pub fn clear_variables(&self) {
+        if let Ok(mut guard) = self.variables.lock() {
+            guard.clear();
+        }
+        if let Ok(mut guard) = self.local_bindings.lock() {
+            guard.clear();
+        }
+    }
+
     /// 克隆变量 Arc 到子解析器（链式/子元素解析共享 put/get 状态）
     fn share_variable_store_into(&self, child: &mut AnalyzeRule) {
         child.variables = Arc::clone(&self.variables);

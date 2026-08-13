@@ -362,6 +362,11 @@ impl HtmlParser {
 
         let mut next = Vec::new();
         for elem in parents {
+            // 对齐 JSoup：`getElementsByTag` / 部分 Evaluator 命中时包含自身。
+            // 否则 `.page-link@a@href` 在已是 `<a class="page-link">` 上会空（思路客 nextTocUrl）。
+            if selector.matches(elem) {
+                next.push(*elem);
+            }
             for child in elem.select(&selector) {
                 next.push(child);
             }
@@ -375,7 +380,11 @@ impl HtmlParser {
             }
             let mut per_parent = Vec::new();
             for elem in parents {
-                let mut kids: Vec<ElementRef> = elem.select(&selector).collect();
+                let mut kids: Vec<ElementRef> = Vec::new();
+                if selector.matches(elem) {
+                    kids.push(*elem);
+                }
+                kids.extend(elem.select(&selector));
                 kids = apply_dot_index(kids, idx);
                 per_parent.extend(kids);
             }
@@ -938,6 +947,24 @@ mod tests {
         let parser = HtmlParser::new();
         let result = parser.get_text(BOOKBOX_HTML, "h4@a@text").unwrap();
         assert_eq!(result, vec!["书名"]);
+    }
+
+    #[test]
+    fn test_tag_chain_includes_self_like_jsoup() {
+        // 思路客 nextTocUrl：`.page-link@a@href`，节点本身即 <a class="page-link">
+        let html = r#"
+        <html><body>
+          <a class="page-link">1/3</a>
+          <a class="page-link" href="/book/index_1.html">1</a>
+          <a class="page-link" href="/book/index_2.html">2</a>
+        </body></html>"#;
+        let parser = HtmlParser::new();
+        let hrefs = parser.get_text(html, ".page-link@a@href").unwrap();
+        assert!(
+            hrefs.len() >= 2,
+            "应含自身 a 的 href，实际: {hrefs:?}"
+        );
+        assert!(hrefs.iter().any(|h| h.contains("index_2")));
     }
 
     #[test]

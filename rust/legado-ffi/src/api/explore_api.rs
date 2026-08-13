@@ -148,6 +148,7 @@ async fn explore_books_async(
     };
 
     let base_url = final_url.clone();
+    let t_parse = std::time::Instant::now();
     let analyzer =
         crate::js_executor::construct_analyzer(body, base_url.clone(), &source.book_source_url);
 
@@ -157,48 +158,53 @@ async fn explore_books_async(
         analyzer.get_elements(book_list_rule).unwrap_or_default()
     };
 
-    let mut results = Vec::new();
-    for elem in elements.iter().take(50) {
-        let elem_analyzer = crate::js_executor::construct_analyzer(
-            elem.clone(),
-            base_url.clone(),
-            &source.book_source_url,
-        );
+    // 规则提到循环外；单一 AnalyzeRule + setContent 复用（对齐原版 BookList）
+    let name_rule = if use_search_fallback {
+        search_rule.and_then(|r| r.name.as_deref()).unwrap_or("")
+    } else {
+        explore_rule.and_then(|r| r.name.as_deref()).unwrap_or("")
+    };
+    let author_rule = if use_search_fallback {
+        search_rule.and_then(|r| r.author.as_deref()).unwrap_or("")
+    } else {
+        explore_rule.and_then(|r| r.author.as_deref()).unwrap_or("")
+    };
+    let book_url_rule = if use_search_fallback {
+        search_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
+    } else {
+        explore_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
+    };
+    let cover_url_rule = if use_search_fallback {
+        search_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
+    } else {
+        explore_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
+    };
+    let intro_rule = if use_search_fallback {
+        search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("")
+    } else {
+        explore_rule.and_then(|r| r.intro.as_deref()).unwrap_or("")
+    };
+    let last_chapter_rule = if use_search_fallback {
+        search_rule
+            .and_then(|r| r.last_chapter.as_deref())
+            .unwrap_or("")
+    } else {
+        explore_rule
+            .and_then(|r| r.last_chapter.as_deref())
+            .unwrap_or("")
+    };
+    let kind_rule = if use_search_fallback {
+        search_rule.and_then(|r| r.kind.as_deref()).unwrap_or("")
+    } else {
+        explore_rule.and_then(|r| r.kind.as_deref()).unwrap_or("")
+    };
 
-        let name_rule = if use_search_fallback {
-            search_rule.and_then(|r| r.name.as_deref()).unwrap_or("")
-        } else {
-            explore_rule.and_then(|r| r.name.as_deref()).unwrap_or("")
-        };
-        let author_rule = if use_search_fallback {
-            search_rule.and_then(|r| r.author.as_deref()).unwrap_or("")
-        } else {
-            explore_rule.and_then(|r| r.author.as_deref()).unwrap_or("")
-        };
-        let book_url_rule = if use_search_fallback {
-            search_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
-        } else {
-            explore_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
-        };
-        let cover_url_rule = if use_search_fallback {
-            search_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
-        } else {
-            explore_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
-        };
-        let intro_rule = if use_search_fallback {
-            search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("")
-        } else {
-            explore_rule.and_then(|r| r.intro.as_deref()).unwrap_or("")
-        };
-        let last_chapter_rule = if use_search_fallback {
-            search_rule
-                .and_then(|r| r.last_chapter.as_deref())
-                .unwrap_or("")
-        } else {
-            explore_rule
-                .and_then(|r| r.last_chapter.as_deref())
-                .unwrap_or("")
-        };
+    let mut elem_analyzer =
+        crate::js_executor::construct_analyzer(String::new(), base_url.clone(), &source.book_source_url);
+
+    let mut results = Vec::with_capacity(elements.len().min(50));
+    for elem in elements.iter().take(50) {
+        elem_analyzer.set_content(elem.clone());
 
         let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
         if name.is_empty() {
@@ -238,18 +244,18 @@ async fn explore_books_async(
                 Some(v)
             }
         };
-        let kind_rule = if use_search_fallback {
-            search_rule.and_then(|r| r.kind.as_deref()).unwrap_or("")
-        } else {
-            explore_rule.and_then(|r| r.kind.as_deref()).unwrap_or("")
-        };
         let kind = {
             let v = elem_analyzer.get_string(kind_rule).unwrap_or_default();
             if v.is_empty() {
                 None
             } else {
                 // 多段 kind（如 dd.2:3）get_string 以 \n 拼接，对齐原版 join(",")
-                Some(v.split('\n').filter(|s| !s.is_empty()).collect::<Vec<_>>().join(","))
+                Some(
+                    v.split('\n')
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                )
             }
         };
 
@@ -265,6 +271,12 @@ async fn explore_books_async(
             word_count: None,
         });
     }
+    eprintln!(
+        "[explore] parse {} books from {} elements in {:?}",
+        results.len(),
+        elements.len(),
+        t_parse.elapsed()
+    );
 
     Ok(results)
 }
