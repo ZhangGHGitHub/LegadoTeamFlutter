@@ -39,6 +39,18 @@ class ThemeNotifier extends Notifier<ThemeState> {
     await _settings.setThemeMode(mode);
   }
 
+  /// 切换日间/夜间（对齐原版 ReadMenu.fabNightTheme）
+  ///
+  /// 原版：`AppConfig.isNightTheme = !AppConfig.isNightTheme` 后
+  /// `ThemeConfig.applyDayNight(context)`，并将 themeMode 显式写为
+  /// "1"(日)/"2"(夜)。此处同样写入明确的 [ThemeMode.light]/[ThemeMode.dark]，
+  /// 驱动 MaterialApp.themeMode，使书架/我的/底栏等外层即时联动。
+  ///
+  /// [isNight]：当前是否为夜间（通常取 `Theme.of(context).brightness == dark`）。
+  Future<void> toggleDayNight({required bool isNight}) async {
+    await setThemeMode(isNight ? ThemeMode.light : ThemeMode.dark);
+  }
+
   /// 设置字体缩放原始值（0 = 跟随系统；8~16 → 0.8x~1.6x）
   Future<void> setFontScale(int raw) async {
     if (state.fontScaleRaw == raw) return;

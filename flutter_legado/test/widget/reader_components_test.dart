@@ -9,6 +9,7 @@ import 'package:flutter_legado/src/l10n/app_strings.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
+import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_bottom_bar.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_status_strip.dart';
@@ -140,7 +141,9 @@ void main() {
 
     // [UI-fix v2.0.4 | 2026-08-08] 夜间/搜索按钮测试自顶栏组迁入
     // （入口位置对齐原版 ll_floating_button，功能不变） — Qoder
-    testWidgets('点击夜间模式按钮切换为背景深色', (tester) async {
+    // [UI-FIX | 2026-08-13] 夜间按钮同步全局 ThemeMode（对齐原版
+    // AppConfig.isNightTheme + ThemeConfig.applyDayNight）— Qoder
+    testWidgets('点击夜间模式按钮切换全局主题与阅读页背景', (tester) async {
       await tester.pumpWidget(wrapStack(ReaderBottomBar(
         onOpenCatalog: () {},
         onOpenSettings: () {},
@@ -152,13 +155,22 @@ void main() {
 
       // 初始为浅色背景，显示 dark_mode 图标
       expect(find.byIcon(Icons.dark_mode), findsOneWidget);
+      expect(
+        container.read(themeNotifierProvider).themeMode,
+        equals(ThemeMode.system),
+      );
 
       await tester.tap(find.byIcon(Icons.dark_mode));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
       expect(
         container.read(readerNotifierProvider).backgroundColor,
         equals(ReaderBackground.dark),
+      );
+      expect(
+        container.read(themeNotifierProvider).themeMode,
+        equals(ThemeMode.dark),
       );
     });
 

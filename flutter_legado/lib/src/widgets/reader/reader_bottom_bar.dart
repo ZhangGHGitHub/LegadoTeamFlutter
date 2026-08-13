@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../l10n/app_strings.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../../providers/theme/theme_notifier.dart';
 import '../../services/system_brightness.dart';
 
 /// 阅读器底部工具栏
@@ -150,14 +151,29 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                 FloatingActionButton(
                   mini: true,
                   heroTag: null,
-                  tooltip: state.isDarkBackground ? '日间模式' : '夜间模式',
-                  onPressed: () => notifier.updateBackgroundColor(
-                    state.isDarkBackground
-                        ? ReaderBackground.white
-                        : ReaderBackground.dark,
-                  ),
+                  // 对齐原版 fabNightTheme：切换全局日夜主题
+                  // （AppConfig.isNightTheme + ThemeConfig.applyDayNight），
+                  // 不再仅改阅读页局部背景 — Qoder
+                  tooltip: Theme.of(context).brightness == Brightness.dark
+                      ? '日间模式'
+                      : '夜间模式',
+                  onPressed: () {
+                    final isNight =
+                        Theme.of(context).brightness == Brightness.dark;
+                    unawaited(
+                      ref
+                          .read(themeNotifierProvider.notifier)
+                          .toggleDayNight(isNight: isNight),
+                    );
+                    // 同步阅读页预设背景，贴近原版日/夜配置桶切换观感
+                    notifier.updateBackgroundColor(
+                      isNight
+                          ? ReaderBackground.white
+                          : ReaderBackground.dark,
+                    );
+                  },
                   child: Icon(
-                    state.isDarkBackground
+                    Theme.of(context).brightness == Brightness.dark
                         ? Icons.light_mode
                         : Icons.dark_mode,
                   ),

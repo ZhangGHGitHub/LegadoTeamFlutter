@@ -110,6 +110,22 @@ void main() {
       await readNotifier().setThemeMode(ThemeMode.system); // 与默认相同
       expect(notified, equals(0));
     });
+
+    test('toggleDayNight 从日间切到夜间并持久化', () async {
+      createContainer();
+      await pumpInit();
+      await readNotifier().toggleDayNight(isNight: false);
+      expect(readState().themeMode, ThemeMode.dark);
+      expect(await SettingsService().getThemeMode(), ThemeMode.dark);
+    });
+
+    test('toggleDayNight 从夜间切回日间并持久化', () async {
+      createContainer({'app_theme_mode': 'dark'});
+      await pumpInit();
+      await readNotifier().toggleDayNight(isNight: true);
+      expect(readState().themeMode, ThemeMode.light);
+      expect(await SettingsService().getThemeMode(), ThemeMode.light);
+    });
   });
 
   group('ThemeNotifier 字体缩放', () {
