@@ -129,11 +129,23 @@ async fn explore_books_async(
 
     let body = response.body;
 
-    // 使用 ruleExplore 规则解析书籍列表
+    // 对齐原版 BookList：explore.bookList 为空时回退 search 规则
     let explore_rule = source.rule_explore.as_ref();
-    let book_list_rule = explore_rule
+    let search_rule = source.rule_search.as_ref();
+    let use_search_fallback = explore_rule
         .and_then(|r| r.book_list.as_deref())
-        .unwrap_or("");
+        .unwrap_or("")
+        .is_empty();
+
+    let book_list_rule = if use_search_fallback {
+        search_rule
+            .and_then(|r| r.book_list.as_deref())
+            .unwrap_or("")
+    } else {
+        explore_rule
+            .and_then(|r| r.book_list.as_deref())
+            .unwrap_or("")
+    };
 
     let base_url = final_url.clone();
     let analyzer =
@@ -153,18 +165,40 @@ async fn explore_books_async(
             &source.book_source_url,
         );
 
-        let name_rule = explore_rule.and_then(|r| r.name.as_deref()).unwrap_or("");
-        let author_rule = explore_rule.and_then(|r| r.author.as_deref()).unwrap_or("");
-        let book_url_rule = explore_rule
-            .and_then(|r| r.book_url.as_deref())
-            .unwrap_or("");
-        let cover_url_rule = explore_rule
-            .and_then(|r| r.cover_url.as_deref())
-            .unwrap_or("");
-        let intro_rule = explore_rule.and_then(|r| r.intro.as_deref()).unwrap_or("");
-        let last_chapter_rule = explore_rule
-            .and_then(|r| r.last_chapter.as_deref())
-            .unwrap_or("");
+        let name_rule = if use_search_fallback {
+            search_rule.and_then(|r| r.name.as_deref()).unwrap_or("")
+        } else {
+            explore_rule.and_then(|r| r.name.as_deref()).unwrap_or("")
+        };
+        let author_rule = if use_search_fallback {
+            search_rule.and_then(|r| r.author.as_deref()).unwrap_or("")
+        } else {
+            explore_rule.and_then(|r| r.author.as_deref()).unwrap_or("")
+        };
+        let book_url_rule = if use_search_fallback {
+            search_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
+        } else {
+            explore_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
+        };
+        let cover_url_rule = if use_search_fallback {
+            search_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
+        } else {
+            explore_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
+        };
+        let intro_rule = if use_search_fallback {
+            search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("")
+        } else {
+            explore_rule.and_then(|r| r.intro.as_deref()).unwrap_or("")
+        };
+        let last_chapter_rule = if use_search_fallback {
+            search_rule
+                .and_then(|r| r.last_chapter.as_deref())
+                .unwrap_or("")
+        } else {
+            explore_rule
+                .and_then(|r| r.last_chapter.as_deref())
+                .unwrap_or("")
+        };
 
         let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
         if name.is_empty() {
@@ -248,5 +282,70 @@ mod tests {
         let source_json = serde_json::to_string(&BookSource::default()).unwrap();
         let err = explore_fetch_books(&source_json, "", 1).unwrap_err();
         assert!(err.to_string().contains("URL 为空"));
+    }
+
+    /// 发现页 URL 组装：`{{page}}` 须展开为页码，禁止误伤成字面量 `{1}`（思路客回归）
+    #[test]
+    fn test_explore_analyze_url_double_brace_page() {
+        let analyze = AnalyzeUrl::new(
+            "/list1/{{page}}.html",
+            None,
+            Some(1),
+            "http://www.silukezw.com",
+            None,
+        );
+        assert_eq!(analyze.url(), "http://www.silukezw.com/list1/1.html");
+        assert!(!analyze.url().contains('{'), "URL 不得残留花括号占位: {}", analyze.url());
+    }
+
+    /// 网络回归：思路客发现「玄幻」页码展开后应 HTTP 成功并解析到书名
+    #[test]
+    fn test_explore_fetch_siluke_xuanhuan_live() {
+        let source = serde_json::json!({
+            "bookSourceUrl": "http://www.silukezw.com",
+            "bookSourceName": "思路客#2",
+            "bookSourceType": 0,
+            "ruleExplore": {
+                "bookList": "",
+                "name": "",
+                "author": "",
+                "bookUrl": "",
+                "coverUrl": ""
+            },
+            "ruleSearch": {
+                "bookList": ".col-md-6@dl",
+                "name": "h3@a@text##.*\\]|小说全文阅读|小说全集",
+                "author": "dd.1@span.0@text",
+                "bookUrl": "a.0@href",
+                "coverUrl": "img@src",
+                "kind": "dd.2:3@text##.*：|.*：",
+                "lastChapter": "dd.4@a@text"
+            }
+        });
+        let source_json = source.to_string();
+        let result = explore_fetch_books(&source_json, "/list1/{{page}}.html", 1);
+        match result {
+            Ok(json) => {
+                assert!(!json.contains("{1}"), "响应不得含未替换占位: {json}");
+                let books: Vec<serde_json::Value> =
+                    serde_json::from_str(&json).expect("应为书籍 JSON 数组");
+                assert!(
+                    !books.is_empty(),
+                    "思路客玄幻发现应解析到书籍，实际: {json}"
+                );
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    !msg.contains("{1}"),
+                    "失败信息不得含未替换占位 {{1}}: {msg}"
+                );
+                assert!(
+                    !msg.contains("404"),
+                    "页码未替换导致的 404 回归: {msg}"
+                );
+                panic!("网络/解析失败（非占位符问题）: {msg}");
+            }
+        }
     }
 }

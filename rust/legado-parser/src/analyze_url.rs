@@ -7,7 +7,7 @@
 //! - `${key}` — JS 表达式变量（在此实现中作为变量查找）
 //! - `{{expression}}` — 内嵌表达式替换（支持 JS 执行）
 //! - `@js:...` / `<js>...</js>` — 内嵌 JS 执行并替换
-//! - 分页参数：`{page}` / `<page,N1,N2,...>` 自动递增
+//! - 分页参数：`{{page}}` / `{page}` / 原版 `<(.*?)>` 页码列表；兼容旧式 `{1}` / `{1,2,3}`
 //! - 编码管道：`|urlencode`、`|base64`、`|md5`
 //! - POST body 模板：JSON/Form body 中的变量替换
 //! - 请求配置提取：`@Header:{key:value}`、`@Body:{json}` 格式
@@ -208,6 +208,18 @@ impl AnalyzeUrl {
             .get("baseUrl")
             .cloned()
             .unwrap_or_default();
+
+        // 确保 {{page}} 在 replace_inner_expressions 阶段可解析（对齐原版 bindings["page"]）
+        let owned_vars;
+        let variables = if page > 0 && !variables.contains_key("page") {
+            let mut merged = variables.clone();
+            merged.insert("page".to_string(), page.to_string());
+            owned_vars = merged;
+            &owned_vars
+        } else {
+            variables
+        };
+
         let mut instance = Self {
             rule_url: template.to_string(),
             url: String::new(),
@@ -273,6 +285,9 @@ impl AnalyzeUrl {
     }
 
     /// 初始化 URL：替换参数 → 解析 URL → 解析选项
+    ///
+    /// 对齐原版 `AnalyzeUrl.initUrl`：先处理 `{{key}}`/`{{page}}`，再处理 `<...>` 页码列表。
+    /// 发现页（explore）走本路径，必须正确展开 `/list1/{{page}}.html`。
     fn init_url(&mut self, key: Option<&str>, page: Option<u32>) {
         // 0. 提取 @Header 和 @Body 配置
         let (rule, extracted_headers, extracted_body) = Self::extract_config(&self.rule_url);
@@ -282,12 +297,14 @@ impl AnalyzeUrl {
             self.body = extracted_body;
         }
 
-        // 1. 替换关键字
+        // 1. 替换关键字（`{{key}}` 须先于可能的 `{key}` 扩展）
         if let Some(k) = key {
+            self.rule_url = self.rule_url.replace("{{key}}", k);
             self.rule_url = self.rule_url.replace("searchKey", k);
+            self.rule_url = self.rule_url.replace("{key}", k);
         }
 
-        // 2. 替换页码
+        // 2. 替换页码（含 {{page}} / 页码列表 / {page}）
         if let Some(p) = page {
             self.replace_page(p);
         }
@@ -383,76 +400,76 @@ impl AnalyzeUrl {
 
     // ========== 分页参数 ==========
 
-    /// 替换页码参数 `{page}` 和 `<page,N1,N2,...>`
+    /// 替换页码参数，对齐原版 `AnalyzeUrl.replaceKeyPageJs` 中的 page 段：
+    /// 1. 先展开 `{{page}}`（禁止用 `{page}` 子串误伤，否则 `{{page}}`→`{1}`）
+    /// 2. 再按原版 `pagePattern = <(.*?)>` 做页码列表选取
+    /// 3. 兼容未迁移旧源的 `{1}` / `{1,2,3}` 花括号页码列表
+    /// 4. 最后替换独立 `{page}`
     fn replace_page(&mut self, page: u32) {
-        let rule = &self.rule_url;
+        let page_str = page.to_string();
+        let mut rule = self.rule_url.clone();
 
-        // 简单模式: {page} → 页码数字
-        let rule = rule.replace("{page}", &page.to_string());
+        // 1. {{page}} 必须先于 {page}，否则 "{{page}}".replace("{page}","1") → "{1}"
+        rule = rule.replace("{{page}}", &page_str);
 
-        // 列表模式: <page,N1,N2,...> → 根据页码选择对应值
-        let rule = Self::replace_page_list_angle(&rule, page);
+        // 2. 原版角度括号页码列表 <a,b,c> / <1> / <,2.html>
+        rule = Self::replace_page_list_angle(&rule, page);
 
-        // 列表模式: {page,N1,N2,...} → 根据页码选择对应值
-        let rule = Self::replace_page_list_brace(&rule, page);
+        // 3. 旧式花括号页码列表 {1} / {1,2,3} / {index.html,p2.html}
+        //    （不含 {page} 字母键；{page,a,b} 亦按列表处理）
+        rule = Self::replace_page_list_brace(&rule, page);
+
+        // 4. 独立 {page}（此时 {{page}} 已消除，可安全替换）
+        rule = rule.replace("{page}", &page_str);
 
         self.rule_url = rule;
     }
 
-    /// 替换 `<page,N1,N2,...>` 角度括号分页列表
-    fn replace_page_list_angle(rule: &str, page: u32) -> String {
-        let mut result = rule.to_string();
-        let page_idx = page as usize;
-
-        while let Some(start) = result.find("<page,") {
-            if let Some(end) = result[start..].find('>') {
-                let end = start + end;
-                let params_str = &result[start + 6..end];
-                let params: Vec<&str> = params_str.split(',').collect();
-
-                let replacement = if page_idx > 0 && page_idx <= params.len() {
-                    params[page_idx - 1].trim()
-                } else if !params.is_empty() {
-                    params.last().unwrap().trim()
-                } else {
-                    ""
-                };
-
-                result = format!("{}{}{}", &result[..start], replacement, &result[end + 1..]);
-            } else {
-                break;
-            }
+    /// 按页码从逗号列表取值（对齐原版：`page < size` 用 `pages[page-1]`，否则用 last）
+    fn pick_page_list_value(pages: &[&str], page: u32) -> String {
+        if pages.is_empty() {
+            return String::new();
         }
-
-        result
+        let page_idx = page as usize;
+        let value = if page_idx > 0 && page_idx < pages.len() {
+            pages[page_idx - 1]
+        } else {
+            pages[pages.len() - 1]
+        };
+        value.trim().to_string()
     }
 
-    /// 替换 `{page,N1,N2,...}` 花括号分页列表
+    /// 替换原版 `<(.*?)>` 角度括号分页列表
+    fn replace_page_list_angle(rule: &str, page: u32) -> String {
+        let re = Regex::new(r"<([^<>]*)>").unwrap();
+        re.replace_all(rule, |caps: &regex::Captures| {
+            let pages: Vec<&str> = caps[1].split(',').collect();
+            Self::pick_page_list_value(&pages, page)
+        })
+        .to_string()
+    }
+
+    /// 替换花括号页码列表：
+    /// - `{page,a,b,c}`：`page,` 为标记前缀，按页码从 a,b,c 取值（历史扩展）
+    /// - `{1}` / `{1,2,3}`：旧源未迁移形态（导入后原版会变成 `<1>` / `<1,2,3>`）
     fn replace_page_list_brace(rule: &str, page: u32) -> String {
-        let mut result = rule.to_string();
-        let page_idx = page as usize;
+        // `{page,a,b,c}` 标记前缀列表
+        let re_marked = Regex::new(r"\{page,([^}]*)\}").unwrap();
+        let result = re_marked
+            .replace_all(rule, |caps: &regex::Captures| {
+                let pages: Vec<&str> = caps[1].split(',').collect();
+                Self::pick_page_list_value(&pages, page)
+            })
+            .to_string();
 
-        while let Some(start) = result.find("{page,") {
-            if let Some(end) = result[start..].find('}') {
-                let end = start + end;
-                let params_str = &result[start + 6..end];
-                let params: Vec<&str> = params_str.split(',').collect();
-
-                let replacement = if page_idx > 0 && page_idx <= params.len() {
-                    params[page_idx - 1].trim()
-                } else if !params.is_empty() {
-                    params.last().unwrap().trim()
-                } else {
-                    ""
-                };
-
-                result = format!("{}{}{}", &result[..start], replacement, &result[end + 1..]);
-            } else {
-                break;
-            }
-        }
-
-        result
+        // 旧式 `{1}` / `{1,2,3}`（以数字开头的列表）
+        let re_numeric = Regex::new(r"\{(\d+(?:\s*,\s*[^}]*)?)\}").unwrap();
+        re_numeric
+            .replace_all(&result, |caps: &regex::Captures| {
+                let pages: Vec<&str> = caps[1].split(',').collect();
+                Self::pick_page_list_value(&pages, page)
+            })
+            .to_string()
     }
 
     // ========== 管道编码 ==========
@@ -1378,16 +1395,88 @@ mod tests {
         assert_eq!(url.url(), "https://example.com/list?page=3");
     }
 
+    /// 回归：思路客类 `/list1/{{page}}.html` 不得被 `{page}` 子串替换成 `/list1/{1}.html`
     #[test]
-    fn test_page_list_angle_bracket() {
+    fn test_double_brace_page_not_mangled_to_literal_brace() {
         let url = AnalyzeUrl::new(
-            "https://example.com/list/<page,1,page/2,page/3>",
+            "http://www.silukezw.com/list1/{{page}}.html",
+            None,
+            Some(1),
+            "http://www.silukezw.com",
+            None,
+        );
+        assert_eq!(url.url(), "http://www.silukezw.com/list1/1.html");
+        assert!(
+            !url.url().contains("{1}"),
+            "不得残留字面量 {{page}}→{{1}} 误替换产物: {}",
+            url.url()
+        );
+
+        let url2 = AnalyzeUrl::new(
+            "/list1/{{page}}.html",
+            None,
+            Some(2),
+            "http://www.silukezw.com",
+            None,
+        );
+        assert_eq!(url2.url(), "http://www.silukezw.com/list1/2.html");
+    }
+
+    /// 旧式 `{1}` 页码列表（导入迁移前形态，对齐转为 `<1>` 后的选取语义）
+    #[test]
+    fn test_legacy_brace_numeric_page_list() {
+        let url = AnalyzeUrl::new(
+            "http://www.silukezw.com/list1/{1}.html",
+            None,
+            Some(1),
+            "",
+            None,
+        );
+        assert_eq!(url.url(), "http://www.silukezw.com/list1/1.html");
+
+        let url2 = AnalyzeUrl::new(
+            "https://example.com/list/{1,2,3}.html",
             None,
             Some(2),
             "",
             None,
         );
-        assert_eq!(url.url(), "https://example.com/list/page/2");
+        assert_eq!(url2.url(), "https://example.com/list/2.html");
+    }
+
+    #[test]
+    fn test_page_list_angle_bracket() {
+        // 对齐原版 pagePattern `<(.*?)>`：`<index.html,p2.html,p3.html>` page=2 → p2.html
+        let url = AnalyzeUrl::new(
+            "https://example.com/list/<index.html,p2.html,p3.html>",
+            None,
+            Some(2),
+            "",
+            None,
+        );
+        assert_eq!(url.url(), "https://example.com/list/p2.html");
+    }
+
+    #[test]
+    fn test_page_list_angle_first_empty() {
+        // 常见写法：第一页无后缀 `<,_{{page}}>` → page=1 取空段
+        let url = AnalyzeUrl::new(
+            "https://example.com/index<,_{{page}}>.html",
+            None,
+            Some(1),
+            "",
+            None,
+        );
+        assert_eq!(url.url(), "https://example.com/index.html");
+
+        let url2 = AnalyzeUrl::new(
+            "https://example.com/index<,_{{page}}>.html",
+            None,
+            Some(2),
+            "",
+            None,
+        );
+        assert_eq!(url2.url(), "https://example.com/index_2.html");
     }
 
     #[test]
@@ -1405,7 +1494,7 @@ mod tests {
     #[test]
     fn test_page_overflow_uses_last() {
         let url = AnalyzeUrl::new(
-            "https://example.com/<page,p1,p2,p3>",
+            "https://example.com/<p1,p2,p3>",
             None,
             Some(10),
             "",
