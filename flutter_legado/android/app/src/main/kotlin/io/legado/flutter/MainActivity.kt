@@ -162,6 +162,17 @@ class MainActivity : FlutterActivity() {
         applySystemBarFromState()
     }
 
+
+    /** Dart MethodChannel 在部分 API 上传 32 位 ARGB 为 Long，避免 argument<Int> ClassCastException。 */
+    private fun intArgFromCall(call: MethodCall, key: String): Int? {
+        return when (val raw = call.argument<Any>(key)) {
+            is Int -> raw
+            is Long -> raw.toInt()
+            is Number -> raw.toInt()
+            else -> null
+        }
+    }
+
     private fun handleSystemBarCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "apply" -> {
@@ -169,10 +180,11 @@ class MainActivity : FlutterActivity() {
                     call.argument<Boolean>("transparentStatusBar") ?: true
                 systemBarImmNav =
                     call.argument<Boolean>("immNavigationBar") ?: true
-                call.argument<Int>("statusBarColor")?.let {
+                // MethodChannel 可能将 32 位 ARGB 以 Long 传递，勿直接 argument<Int>
+                intArgFromCall(call, "statusBarColor")?.let {
                     systemBarStatusColor = it
                 }
-                call.argument<Int>("navigationBarColor")?.let {
+                intArgFromCall(call, "navigationBarColor")?.let {
                     systemBarNavColor = it
                 }
                 systemBarLightIcons =

@@ -113,13 +113,23 @@ else { Pass "无崩溃日志（FATAL/E/flutter）" }
 # ---- 7.（可选）UI 元素冒烟 ----
 if ($CheckUI) {
   $remote = "/sdcard/ui_smoke.xml"
-  & $adb -s $Device shell uiautomator dump $remote 2>&1 | Out-Null
-  # 注：用 pull 二进制传输 + 显式 UTF-8 读取，避免 PowerShell 5.1 管道
-  # 对 adb 输出的 ANSI 解码导致中文 content-desc 乱码
   $local = Join-Path $env:TEMP "ui_smoke_$Device.xml"
-  & $adb -s $Device pull $remote $local 2>&1 | Out-Null
-  $xmlText = Get-Content $local -Raw -Encoding UTF8
-  $found = @("书架", "发现", "订阅", "我的") | Where-Object { $xmlText -match [regex]::Escape($_) }
+  # UTF-8 字节构造底栏标签，避免 .ps1 源文件编码导致匹配失败
+  $uiTabLabels = @(
+    [System.Text.Encoding]::UTF8.GetString([byte[]](0xE4,0xB9,0xA6,0xE6,0x9E,0xB6)),
+    [System.Text.Encoding]::UTF8.GetString([byte[]](0xE5,0x8F,0x91,0xE7,0x8E,0xB0)),
+    [System.Text.Encoding]::UTF8.GetString([byte[]](0xE8,0xAE,0xA2,0xE9,0x98,0x85)),
+    [System.Text.Encoding]::UTF8.GetString([byte[]](0xE6,0x88,0x91,0xE7,0x9A,0x84))
+  )
+  $found = @()
+  for ($uiTry = 0; $uiTry -lt 15; $uiTry++) {
+    & $adb -s $Device shell uiautomator dump $remote 2>&1 | Out-Null
+    & $adb -s $Device pull $remote $local 2>&1 | Out-Null
+    $xmlText = [System.IO.File]::ReadAllText($local, [System.Text.Encoding]::UTF8)
+    $found = $uiTabLabels | Where-Object { $xmlText -match [regex]::Escape($_) }
+    if ($found.Count -ge 2) { break }
+    Start-Sleep -Seconds 2
+  }
   if ($found.Count -ge 2) { Pass "UI 主界面渲染正常（检测到：$($found -join '/')）" }
   else { Fail "UI 主界面元素未检出（检测到：$($found -join '/')）" }
 }

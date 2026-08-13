@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.63] - 2026-08-14
+
+### Fixed
+- [UI] MainActivity `legado/system_bar` 通道 ARGB 颜色 Long→Int 强转异常（emulator-5558 logcat ClassCastException）
+- [工程] 冒烟脚本 `-CheckUI` 用 UTF-8 字节构造底栏标签并轮询 uiautomator，修复 Windows PS 编码导致误报 FAIL
+
 ## [2.0.62] - 2026-08-14
 
 ### Changed
