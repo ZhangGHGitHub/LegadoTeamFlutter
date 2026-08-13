@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.60] - 2026-08-14
+
+### Added
+- [Rust] F3-17 `rssListReadRecordsByOrigin` FFI（对齐原版 getRecordsByOrigin）
+- [UI] F3-17 RSS 阅读记录对话框改按源查询，移除客户端全量过滤
+
+### Fixed
+- [Rust] F3-6 payAction/login/explore/callback 改 fresh_engine，消除 JS 引擎池串扰
+- [Rust] F3-7 删除 legacy-ffi/、context.rs、ffi_macros.rs；parse_rule 消费 ruleType
+
+### Changed
+- [docs] F3-10 API_CONTRACT 全面同步（BookApi 247、附录 251、§1.7 命名等价表）
+
 ## [2.0.59] - 2026-08-14
 
 ### Changed
