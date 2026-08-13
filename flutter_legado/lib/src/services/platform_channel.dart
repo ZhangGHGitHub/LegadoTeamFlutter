@@ -36,6 +36,13 @@ class PlatformChannel {
     });
   }
 
+  /// Android BackstageWebView：cacheFirst→LOAD_CACHE_ELSE_NETWORK；
+  /// isRule 时注入 java/source/cache JavascriptInterface。
+  static Future<String?> backstageEval(Map<String, dynamic> args) async {
+    final raw = await webview.invokeMethod<dynamic>('backstageEval', args);
+    return raw?.toString();
+  }
+
   /// 在当前 WebView 上执行 JavaScript
   static Future<String?> evaluateJs(String js) async {
     return await webview.invokeMethod<String>('evaluateJs', {

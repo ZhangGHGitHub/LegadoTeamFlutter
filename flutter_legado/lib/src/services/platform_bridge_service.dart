@@ -10,6 +10,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../routes.dart';
 import '../utils/legado_deep_link.dart';
 import 'deep_link_service.dart';
+import 'platform_channel.dart';
 
 /// Rust 平台桥接载荷拦截执行服务（Task #114 批次2 跨轨管线③） — QoderCN
 ///
@@ -226,6 +227,16 @@ class PlatformBridgeService {
     final html = (payload['html'] ?? '').toString();
     final js = (payload['js'] ?? '').toString();
     if (url.isEmpty && html.isEmpty) return '';
+
+    // Android：走原生 BackstageWebView（真实 cacheMode + java/source 注入）
+    if (Platform.isAndroid) {
+      try {
+        return await _nativeBackstageEval(action, payload);
+      } catch (e) {
+        debugPrint('[PlatformBridge] 原生 backstageEval 失败，回退 Flutter WebView：$e');
+      }
+    }
+
     try {
       switch (action) {
         case 'webView':
@@ -264,6 +275,30 @@ class PlatformBridgeService {
     return '';
   }
 
+  /// Android 原生 Backstage：LOAD_CACHE_ELSE_NETWORK + JavascriptInterface
+  Future<String> _nativeBackstageEval(
+    String action,
+    Map<String, dynamic> payload,
+  ) async {
+    final raw = await PlatformChannel.webview.invokeMethod<dynamic>(
+      'backstageEval',
+      <String, dynamic>{
+        'action': action,
+        'url': (payload['url'] ?? '').toString(),
+        'html': (payload['html'] ?? '').toString(),
+        'javaScript': (payload['js'] ?? '').toString(),
+        'sourceRegex': (payload['sourceRegex'] ?? '').toString(),
+        'overrideUrlRegex': (payload['overrideUrlRegex'] ?? '').toString(),
+        'cacheFirst': payload['cacheFirst'] == true,
+        'isRule': payload['isRule'] == true,
+        'result': (payload['result'] ?? '').toString(),
+        'delayTime': _delayOf(payload),
+        'sourceKey': (payload['sourceKey'] ?? payload['tag'] ?? '').toString(),
+      },
+    );
+    return _normalizeJsResult(raw);
+  }
+
   /// delayTime 解析（毫秒；Kotlin 无 js 时默认 900ms 等待渲染）
   int _delayOf(Map<String, dynamic> payload) {
     final raw = payload['delayTime'];
@@ -295,7 +330,7 @@ class PlatformBridgeService {
   /// webView：加载页面 → 延时 → 执行 JS（缺省取 outerHTML）→ 返回结果
   ///
   /// [isRule] 对齐 Kotlin BackstageWebView.isRule：注入 `window.result`。
-  /// [cacheFirst]：webview_flutter 无直接 cacheMode API，仅作日志记录（近似边界）。
+  /// [cacheFirst]：非 Android 回退路径无原生 cacheMode，仅日志（Android 走原生）。
   Future<String> _webViewEval({
     required String url,
     required String html,
@@ -306,7 +341,9 @@ class PlatformBridgeService {
     bool cacheFirst = false,
   }) async {
     if (cacheFirst) {
-      debugPrint('[PlatformBridge] cacheFirst=true（Flutter WebView 无 cacheMode，近似忽略）');
+      debugPrint(
+        '[PlatformBridge] cacheFirst=true（非 Android 回退路径无 cacheMode）',
+      );
     }
     final controller = _newController();
     await _loadAndWaitFinished(controller, url: url, html: html);
@@ -337,7 +374,7 @@ class PlatformBridgeService {
   }) async {
     if (sourceRegex.isEmpty) return '';
     if (cacheFirst) {
-      debugPrint('[PlatformBridge] webViewGetSource cacheFirst=true（近似忽略）');
+      debugPrint('[PlatformBridge] webViewGetSource cacheFirst（非 Android 回退）');
     }
     final regex = RegExp(sourceRegex);
     final controller = _newController();
@@ -397,7 +434,7 @@ class PlatformBridgeService {
     if (overrideUrlRegex.isEmpty) return '';
     if (cacheFirst) {
       debugPrint(
-        '[PlatformBridge] webViewGetOverrideUrl cacheFirst=true（近似忽略）',
+        '[PlatformBridge] webViewGetOverrideUrl cacheFirst（非 Android 回退）',
       );
     }
     final regex = RegExp(overrideUrlRegex);
