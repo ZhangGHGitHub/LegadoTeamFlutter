@@ -596,61 +596,254 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         source: &BookSource,
         book_url: &str,
     ) -> LegadoResult<Vec<WebChapter>> {
-        let source_headers = Self::parse_source_headers(source);
-        let t0 = std::time::Instant::now();
+        self.get_chapters_with_hints(source, book_url, None, None)
+            .await
+    }
 
-        // 1. 先获取详情页以确定 toc_url（优先命中 get_book_info 写入的短时缓存）
-        let info_body = self
-            .fetch_simple_cached(book_url, source_headers.as_ref(), true)
+    async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String> {
+        let source_headers = Self::parse_source_headers(source);
+
+        // 1. 请求章节页面
+        let mut body = self
+            .fetch_simple(&chapter.url, source_headers.as_ref())
             .await?;
-        eprintln!(
-            "[web_book] get_chapters info_body in {:?}",
-            t0.elapsed()
-        );
 
         // 1.5 loginCheckJs 登录检测
-        Self::execute_login_check(source, &info_body, book_url, 200)?;
+        Self::execute_login_check(source, &body, &chapter.url, 200)?;
 
-        let info_rule = source.rule_book_info.as_ref();
-        let info_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
-            info_body.clone(),
-            book_url.to_string(),
+        // 1.6 正文 webJs / sourceRegex（对齐 WebBook.getContent →
+        // AnalyzeUrl.getStrResponseAwait(jsStr=webJs, sourceRegex=…)）
+        let content_rule = source.rule_content.as_ref();
+        body = apply_content_web_hooks(
+            body,
+            content_rule,
+            &chapter.url,
             &source.book_source_url,
             source.js_lib.as_deref(),
         );
 
-        let raw_toc = info_rule
-            .and_then(|r| r.toc_url.as_deref())
-            .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
-            .unwrap_or_default();
-
-        // 书名（供目录规则 `<js>` 中 `book.name` 使用，对齐原版
-        // AnalyzeRule.evalJS 注入 book 绑定；51漫画等目录规则依赖）— Reasonix
-        let book_name = info_rule
-            .and_then(|r| r.name.as_deref())
-            .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
-            .unwrap_or_default();
-        // CSS 多匹配时 get_string 用换行拼接（如 51漫画 name 规则会带上「已收藏」）；
-        // 注入 book.name 时只取首行，避免章节标题污染。— Reasonix
-        let book_name = book_name
-            .lines()
+        // 2. 使用正文规则解析首页
+        let content_rule_str = content_rule
+            .and_then(|r| r.content.as_deref())
+            .unwrap_or("");
+        let next_url_rule = content_rule
+            .and_then(|r| r.next_content_url.as_deref())
+            .unwrap_or("");
+        // R1/R2 规则（Task #134）：subContent 副内容 + replaceRegex 全文替换
+        let sub_content_rule = content_rule
+            .and_then(|r| r.sub_content.as_deref())
             .map(str::trim)
-            .find(|s| !s.is_empty())
-            .unwrap_or("")
-            .to_string();
-        let toc_url = if raw_toc.is_empty() {
-            book_url.to_string()
+            .unwrap_or("");
+        let replace_regex_rule = content_rule
+            .and_then(|r| r.replace_regex.as_deref())
+            .map(str::trim)
+            .unwrap_or("");
+
+        // 音频/视频书源获取的是链接，不需要 HTML 格式化
+        let is_media = source.book_source_type == legado_core::models::book_source::book_source_type::AUDIO
+            || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
+
+        // R1（Task #134）：副内容基于首页响应体提取，分页前保留一份首页 body
+        let first_page_body = if sub_content_rule.is_empty() {
+            None
         } else {
-            AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
+            Some(body.clone())
         };
 
-        // 2. B3.1 tocHtml 缓存复用：当 tocUrl == bookUrl 时复用详情页响应体，避免重复请求
-        //    （对标 Kotlin BookInfo `if (book.tocUrl == baseUrl) book.tocHtml = body` + BookChapterList 缓存复用）
-        let toc_body = if toc_url == book_url {
-            info_body
+        // 神漫画等内容 JS 依赖 chapter.index + book.totalChapterNum
+        let total_chapters = infer_total_chapter_num(&body, chapter);
+
+        let (first_content, next_urls) = parse_content_page_with_bindings(
+            body,
+            content_rule_str,
+            next_url_rule,
+            &chapter.url,
+            &source.book_source_url,
+            is_media,
+            source.js_lib.as_deref(),
+            Some(&chapter.title),
+            Some(chapter.index),
+            Some(total_chapters),
+            chapter.variable.as_deref(),
+        );
+
+        // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
+        let source_headers_clone = source_headers.clone();
+        let chapter_title = chapter.title.clone();
+        let chapter_index = chapter.index;
+        let chapter_variable = chapter.variable.clone();
+        let mut content = fetch_paginated_content(
+            first_content,
+            next_urls,
+            &chapter.url,
+            &source.book_source_url,
+            content_rule_str,
+            next_url_rule,
+            is_media,
+            source.js_lib.as_deref(),
+            Some(chapter_title.as_str()),
+            Some(chapter_index),
+            Some(total_chapters),
+            chapter_variable.as_deref(),
+            |url: String| {
+                let headers = source_headers_clone.clone();
+                async move { self.fetch_simple(&url, headers.as_ref()).await }
+            },
+        )
+        .await;
+
+        // 4. R1 subContent 副内容（Task #134）：分页循环完成后从首页提取副内容。
+        if let Some(page_body) = first_page_body {
+            let sub_headers = source_headers.clone();
+            if let Some(sub) = fetch_sub_content(
+                page_body,
+                sub_content_rule,
+                &chapter.url,
+                &source.book_source_url,
+                source.js_lib.as_deref(),
+                |url: String| {
+                    let headers = sub_headers.clone();
+                    async move { self.fetch_simple(&url, headers.as_ref()).await }
+                },
+            )
+            .await
+            {
+                merge_sub_content_into_body(&mut content, &sub, is_media);
+            }
+        }
+
+        // 5. R2 contentRule.replaceRegex 全文替换（Task #134）
+        if !replace_regex_rule.is_empty() {
+            content = apply_content_replace_regex(
+                content,
+                replace_regex_rule,
+                &chapter.url,
+                &source.book_source_url,
+                source.js_lib.as_deref(),
+            )?;
+        }
+
+        // 6. 空内容检查（卷章豁免）
+        if !chapter.is_volume && content.trim().is_empty() {
+            return Err(LegadoError::ContentEmpty(format!(
+                "章节 {} 正文为空",
+                chapter.title
+            )));
+        }
+
+        Ok(content)
+    }
+}
+
+impl RealBookSourceFetcher {
+    /// 获取章节列表（可选传入已知 tocUrl / 书名，跳过重复拉详情页）
+    pub async fn get_chapters_with_hints(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        let source_headers = Self::parse_source_headers(source);
+        let t0 = std::time::Instant::now();
+
+        let info_rule = source.rule_book_info.as_ref();
+        let mut book_name = book_name_hint.unwrap_or("").trim().to_string();
+
+        // 对齐原版 WebBook.getChapterListAwait：直接使用 book.tocUrl 拉目录，
+        // 不必每次都先解析详情页（发现/搜索带入 tocUrl 时可省一次 HTTP）。
+        let (toc_url, toc_body) = if let Some(raw_toc) = known_toc_url.filter(|u| !u.is_empty()) {
+            let toc_url = if raw_toc.starts_with("http://") || raw_toc.starts_with("https://") {
+                raw_toc.to_string()
+            } else {
+                AnalyzeUrl::get_absolute_url(book_url, raw_toc)
+            };
+            eprintln!(
+                "[web_book] get_chapters use known tocUrl={} skip info in {:?}",
+                toc_url,
+                t0.elapsed()
+            );
+            if toc_url == book_url {
+                let info_body = self
+                    .fetch_simple_cached(book_url, source_headers.as_ref(), true)
+                    .await?;
+                Self::execute_login_check(source, &info_body, book_url, 200)?;
+                if book_name.is_empty() {
+                    let info_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+                        info_body.clone(),
+                        book_url.to_string(),
+                        &source.book_source_url,
+                        source.js_lib.as_deref(),
+                    );
+                    book_name = info_rule
+                        .and_then(|r| r.name.as_deref())
+                        .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
+                        .unwrap_or_default()
+                        .lines()
+                        .map(str::trim)
+                        .find(|s| !s.is_empty())
+                        .unwrap_or("")
+                        .to_string();
+                }
+                (toc_url, info_body)
+            } else {
+                let body = self
+                    .fetch_simple_cached(&toc_url, source_headers.as_ref(), true)
+                    .await?;
+                (toc_url, body)
+            }
         } else {
-            self.fetch_simple_cached(&toc_url, source_headers.as_ref(), true)
-                .await?
+            // 1. 先获取详情页以确定 toc_url（优先命中 get_book_info 写入的短时缓存）
+            let info_body = self
+                .fetch_simple_cached(book_url, source_headers.as_ref(), true)
+                .await?;
+            eprintln!(
+                "[web_book] get_chapters info_body in {:?}",
+                t0.elapsed()
+            );
+
+            // 1.5 loginCheckJs 登录检测
+            Self::execute_login_check(source, &info_body, book_url, 200)?;
+
+            let info_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+                info_body.clone(),
+                book_url.to_string(),
+                &source.book_source_url,
+                source.js_lib.as_deref(),
+            );
+
+            let raw_toc = info_rule
+                .and_then(|r| r.toc_url.as_deref())
+                .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
+                .unwrap_or_default();
+
+            // 书名（供目录规则 `<js>` 中 `book.name` 使用，对齐原版
+            // AnalyzeRule.evalJS 注入 book 绑定；51漫画等目录规则依赖）— Reasonix
+            if book_name.is_empty() {
+                book_name = info_rule
+                    .and_then(|r| r.name.as_deref())
+                    .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::trim)
+                    .find(|s| !s.is_empty())
+                    .unwrap_or("")
+                    .to_string();
+            }
+            let toc_url = if raw_toc.is_empty() {
+                book_url.to_string()
+            } else {
+                AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
+            };
+
+            // 2. B3.1 tocHtml 缓存复用：当 tocUrl == bookUrl 时复用详情页响应体，避免重复请求
+            let toc_body = if toc_url == book_url {
+                info_body
+            } else {
+                self.fetch_simple_cached(&toc_url, source_headers.as_ref(), true)
+                    .await?
+            };
+            (toc_url, toc_body)
         };
 
         // 3. B3.4 反转标记：chapterList 规则以 "-" 前缀表示倒序，"+" 前缀仅为标记（对标 Kotlin BookChapterList）
@@ -1017,144 +1210,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         };
 
         Ok(chapters)
-    }
-
-    async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String> {
-        let source_headers = Self::parse_source_headers(source);
-
-        // 1. 请求章节页面
-        let mut body = self
-            .fetch_simple(&chapter.url, source_headers.as_ref())
-            .await?;
-
-        // 1.5 loginCheckJs 登录检测
-        Self::execute_login_check(source, &body, &chapter.url, 200)?;
-
-        // 1.6 正文 webJs / sourceRegex（对齐 WebBook.getContent →
-        // AnalyzeUrl.getStrResponseAwait(jsStr=webJs, sourceRegex=…)）
-        let content_rule = source.rule_content.as_ref();
-        body = apply_content_web_hooks(
-            body,
-            content_rule,
-            &chapter.url,
-            &source.book_source_url,
-            source.js_lib.as_deref(),
-        );
-
-        // 2. 使用正文规则解析首页
-        let content_rule_str = content_rule
-            .and_then(|r| r.content.as_deref())
-            .unwrap_or("");
-        let next_url_rule = content_rule
-            .and_then(|r| r.next_content_url.as_deref())
-            .unwrap_or("");
-        // R1/R2 规则（Task #134）：subContent 副内容 + replaceRegex 全文替换
-        let sub_content_rule = content_rule
-            .and_then(|r| r.sub_content.as_deref())
-            .map(str::trim)
-            .unwrap_or("");
-        let replace_regex_rule = content_rule
-            .and_then(|r| r.replace_regex.as_deref())
-            .map(str::trim)
-            .unwrap_or("");
-
-        // 音频/视频书源获取的是链接，不需要 HTML 格式化
-        let is_media = source.book_source_type == legado_core::models::book_source::book_source_type::AUDIO
-            || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
-
-        // R1（Task #134）：副内容基于首页响应体提取，分页前保留一份首页 body
-        let first_page_body = if sub_content_rule.is_empty() {
-            None
-        } else {
-            Some(body.clone())
-        };
-
-        // 神漫画等内容 JS 依赖 chapter.index + book.totalChapterNum
-        let total_chapters = infer_total_chapter_num(&body, chapter);
-
-        let (first_content, next_urls) = parse_content_page_with_bindings(
-            body,
-            content_rule_str,
-            next_url_rule,
-            &chapter.url,
-            &source.book_source_url,
-            is_media,
-            source.js_lib.as_deref(),
-            Some(&chapter.title),
-            Some(chapter.index),
-            Some(total_chapters),
-            chapter.variable.as_deref(),
-        );
-
-        // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
-        let source_headers_clone = source_headers.clone();
-        let chapter_title = chapter.title.clone();
-        let chapter_index = chapter.index;
-        let chapter_variable = chapter.variable.clone();
-        let mut content = fetch_paginated_content(
-            first_content,
-            next_urls,
-            &chapter.url,
-            &source.book_source_url,
-            content_rule_str,
-            next_url_rule,
-            is_media,
-            source.js_lib.as_deref(),
-            Some(chapter_title.as_str()),
-            Some(chapter_index),
-            Some(total_chapters),
-            chapter_variable.as_deref(),
-            |url: String| {
-                let headers = source_headers_clone.clone();
-                async move { self.fetch_simple(&url, headers.as_ref()).await }
-            },
-        )
-        .await;
-
-        // 4. R1 subContent 副内容（Task #134）：分页循环完成后从首页提取副内容。
-        //    执行顺序对标原版 BookContent.kt L128-165：nextContentUrl 分页之后、
-        //    replaceRegex 全文替换之前。
-        //    音视频：原版 putLyric / putDanmaku，**不**拼进正文（误拼会污染播放 URL）。
-        if let Some(page_body) = first_page_body {
-            let sub_headers = source_headers.clone();
-            if let Some(sub) = fetch_sub_content(
-                page_body,
-                sub_content_rule,
-                &chapter.url,
-                &source.book_source_url,
-                source.js_lib.as_deref(),
-                |url: String| {
-                    let headers = sub_headers.clone();
-                    async move { self.fetch_simple(&url, headers.as_ref()).await }
-                },
-            )
-            .await
-            {
-                merge_sub_content_into_body(&mut content, &sub, is_media);
-            }
-        }
-
-        // 5. R2 contentRule.replaceRegex 全文替换（Task #134），
-        //    对标原版 BookContent.kt L166-175：正文拼接完成后按替换规则全文替换
-        if !replace_regex_rule.is_empty() {
-            content = apply_content_replace_regex(
-                content,
-                replace_regex_rule,
-                &chapter.url,
-                &source.book_source_url,
-                source.js_lib.as_deref(),
-            )?;
-        }
-
-        // 6. 空内容检查（卷章豁免）
-        if !chapter.is_volume && content.trim().is_empty() {
-            return Err(LegadoError::ContentEmpty(format!(
-                "章节 {} 正文为空",
-                chapter.title
-            )));
-        }
-
-        Ok(content)
     }
 }
 
@@ -2048,18 +2103,40 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
 /// `book_url` — 书籍详情页 URL
 ///
 /// 返回 `WebChapter` JSON 数组字符串
-pub fn webbook_chapters(source_json: &str, book_url: &str) -> LegadoResult<String> {
+pub fn webbook_chapters(
+    source_json: &str,
+    book_url: &str,
+    toc_url: &str,
+    book_name: &str,
+) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
+    let known_toc = toc_url.trim();
+    let known_toc_opt = if known_toc.is_empty() {
+        None
+    } else {
+        Some(known_toc)
+    };
+    let name_hint = book_name.trim();
+    let name_hint_opt = if name_hint.is_empty() {
+        None
+    } else {
+        Some(name_hint)
+    };
 
     // JS 书源分派
     if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
         let source_clone = source.clone();
         let url = book_url.to_string();
+        let toc = known_toc_opt
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| url.clone());
+        let book_name_owned = name_hint.to_string();
         let values = runtime::block_on(async {
             tokio::task::spawn_blocking(move || {
                 let book = Book {
                     book_url: url.clone(),
-                    toc_url: url,
+                    toc_url: toc,
+                    name: book_name_owned,
                     origin: source_clone.book_source_url.clone(),
                     ..Book::default()
                 };
@@ -2073,9 +2150,12 @@ pub fn webbook_chapters(source_json: &str, book_url: &str) -> LegadoResult<Strin
     }
 
     // 规则书源路径
-    let engine = build_engine();
-    let chapters: Vec<WebChapter> =
-        runtime::block_on(async { engine.get_chapters(&source, book_url).await })?;
+    let fetcher = RealBookSourceFetcher::new();
+    let chapters: Vec<WebChapter> = runtime::block_on(async {
+        fetcher
+            .get_chapters_with_hints(&source, book_url, known_toc_opt, name_hint_opt)
+            .await
+    })?;
     serde_json::to_string(&chapters).map_err(LegadoError::Serialization)
 }
 
@@ -2146,7 +2226,7 @@ mod tests {
         let t0 = Instant::now();
         let _ = webbook_info(source_json, book_url);
         let t1 = Instant::now();
-        let ch = webbook_chapters(source_json, book_url).expect("chapters");
+        let ch = webbook_chapters(source_json, book_url, "", "").expect("chapters");
         let arr: Vec<serde_json::Value> = serde_json::from_str(&ch).unwrap();
         eprintln!(
             "[timing-full] chapters={} toc={:?} total={:?}",
@@ -2189,7 +2269,7 @@ mod tests {
         eprintln!("[timing] webbook_info {:?}", info_ms);
 
         let t1 = Instant::now();
-        let ch = webbook_chapters(&source_json, book_url);
+        let ch = webbook_chapters(&source_json, book_url, "", "");
         let ch_ms = t1.elapsed();
         match &ch {
             Ok(s) => {
@@ -2225,7 +2305,7 @@ mod tests {
 
     #[test]
     fn test_webbook_chapters_invalid_source_json() {
-        let err = webbook_chapters("bad json", "https://example.com/book/1").unwrap_err();
+        let err = webbook_chapters("bad json", "https://example.com/book/1", "", "").unwrap_err();
         assert!(matches!(err, LegadoError::Serialization(_)));
     }
 

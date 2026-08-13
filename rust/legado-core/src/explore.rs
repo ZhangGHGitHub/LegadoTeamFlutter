@@ -6,6 +6,7 @@
 //! exploreUrl 格式（对标 BookSourceExtensions.kt）：
 //! - 纯文本：`分类名::URL` 多条以 `\n` 或 `&&` 分隔
 //! - JSON 数组：`[{"title":"分类","url":"..."}]`
+//! - `@js:` / `<js>`：由 legado-ffi explore_api 执行 JS 后再解析
 //!
 //! 网络抓取逻辑位于 legado-ffi 的 explore_api.rs（依赖 legado-net/legado-parser）
 
@@ -18,13 +19,13 @@ use serde::{Deserialize, Serialize};
 pub struct ExploreCategory {
     /// 分类标题
     pub title: String,
-    /// 分类 URL（可能包含页码占位符）
+    /// 分类 URL（可能包含页码占位符；分组标题行可为 None）
     pub url: Option<String>,
 }
 
 // ─── exploreUrl 解析 ──────────────────────────────────────────────────────────
 
-/// 解析 exploreUrl 字符串为分类列表
+/// 解析 exploreUrl 规则字符串为分类列表（不含 `@js:` 执行，由 FFI 层先 resolve）
 ///
 /// 支持格式：
 /// 1. 纯文本：`分类名::URL` 多条以 `\n` 或 `&&` 分隔
@@ -42,9 +43,10 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
         if let Ok(kinds) = serde_json::from_str::<Vec<JsonExploreKind>>(trimmed) {
             return kinds
                 .into_iter()
+                .filter(|k| !k.title.trim().is_empty())
                 .map(|k| ExploreCategory {
-                    title: k.title,
-                    url: k.url,
+                    title: k.title.trim().to_string(),
+                    url: k.url.filter(|u| !u.trim().is_empty()),
                 })
                 .collect();
         }
@@ -132,6 +134,16 @@ mod tests {
         );
         assert_eq!(result[1].title, "都市");
         assert_eq!(result[1].url, None);
+    }
+
+    #[test]
+    fn test_parse_explore_url_json_null_url_header() {
+        let input = r#"[{"title":"排行榜","url":null},{"title":"玄幻","url":"https://a.com"}]"#;
+        let result = parse_explore_url(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].title, "排行榜");
+        assert_eq!(result[0].url, None);
+        assert_eq!(result[1].title, "玄幻");
     }
 
     #[test]

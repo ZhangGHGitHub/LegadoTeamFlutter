@@ -989,10 +989,17 @@ pub mod ffi {
     ///
     /// `source_json` — BookSource JSON 字符串
     /// `book_url` — 书籍详情页 URL
-    pub fn webbook_chapters(source_json: String, book_url: String) -> Result<String, BridgeError> {
+    pub fn webbook_chapters(
+        source_json: String,
+        book_url: String,
+        toc_url: String,
+        book_name: String,
+    ) -> Result<String, BridgeError> {
         Ok(crate::api::web_book::webbook_chapters(
             &source_json,
             &book_url,
+            &toc_url,
+            &book_name,
         )?)
     }
 
@@ -1015,8 +1022,14 @@ pub mod ffi {
     /// 解析 exploreUrl 为分类列表（返回 JSON 数组）
     ///
     /// `explore_url` — 书源的 exploreUrl 字段
-    pub fn explore_parse_url(explore_url: String) -> Result<String, BridgeError> {
-        Ok(crate::api::explore_api::explore_parse_url(&explore_url)?)
+    pub fn explore_parse_url(
+        explore_url: String,
+        source_json: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::explore_api::explore_parse_url(
+            &explore_url,
+            &source_json,
+        )?)
     }
 
     /// 抓取发现分类的书籍列表（返回 WebSearchResult JSON 数组）

@@ -20,10 +20,12 @@ use crate::runtime;
 /// 解析 exploreUrl 为分类列表
 ///
 /// `explore_url` — 书源的 exploreUrl 字段
+/// `source_json` — BookSource JSON（`@js:` / `<js>` exploreUrl 必填；纯文本可为空）
 ///
 /// 返回 `ExploreCategory` JSON 数组字符串
-pub fn explore_parse_url(explore_url: &str) -> LegadoResult<String> {
-    let categories: Vec<ExploreCategory> = parse_explore_url(explore_url);
+pub fn explore_parse_url(explore_url: &str, source_json: &str) -> LegadoResult<String> {
+    let rule_str = resolve_explore_rule_str(explore_url, source_json)?;
+    let categories: Vec<ExploreCategory> = parse_explore_url(&rule_str);
     serde_json::to_string(&categories).map_err(LegadoError::Serialization)
 }
 
@@ -73,6 +75,125 @@ pub fn explore_fetch_books(source_json: &str, url: &str, page: i32) -> LegadoRes
         runtime::block_on(async { explore_books_async(&source, url, page).await })?;
 
     serde_json::to_string(&results).map_err(LegadoError::Serialization)
+}
+
+// ─── exploreUrl @js: 解析 ─────────────────────────────────────────────────────
+
+/// 将 exploreUrl 解析为可分类的规则字符串（对标 Android exploreKinds）
+fn resolve_explore_rule_str(explore_url: &str, source_json: &str) -> LegadoResult<String> {
+    let trimmed = explore_url.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("@js:") {
+        let js_code = trimmed.get(4..).unwrap_or("").trim();
+        if js_code.is_empty() {
+            return Ok(String::new());
+        }
+        let source = parse_source_for_explore(source_json)?;
+        return eval_explore_js(js_code, &source);
+    }
+
+    if lower.starts_with("<js>") {
+        let js_code = extract_js_tag_body(trimmed);
+        if js_code.is_empty() {
+            return Ok(String::new());
+        }
+        let source = parse_source_for_explore(source_json)?;
+        return eval_explore_js(&js_code, &source);
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn parse_source_for_explore(source_json: &str) -> LegadoResult<BookSource> {
+    if source_json.trim().is_empty() {
+        return Err(LegadoError::Internal(
+            "@js: exploreUrl 需要书源 JSON 上下文".into(),
+        ));
+    }
+    serde_json::from_str(source_json).map_err(LegadoError::Serialization)
+}
+
+fn extract_js_tag_body(s: &str) -> String {
+    let lower = s.to_ascii_lowercase();
+    if let Some(start) = lower.find("<js>") {
+        let content_start = start + "<js>".len();
+        if let Some(end) = lower.rfind("</js>") {
+            if end >= content_start {
+                return s[content_start..end].trim().to_string();
+            }
+        }
+        return s[content_start..].trim().to_string();
+    }
+    String::new()
+}
+
+/// 执行 exploreUrl 内嵌 JS（对标 Android runScriptWithContext + evalJS + infoMap）
+#[cfg(feature = "quickjs")]
+fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
+    use legado_js::{JsEngine, JsValue};
+
+    let engine = crate::js_executor::pool_engine(&source.book_source_url)?;
+    let guard = engine
+        .lock()
+        .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
+
+    // 对齐原版：每次 eval 前先加载 jsLib
+    if let Some(lib) = source.js_lib.as_deref() {
+        let lib = lib.trim();
+        if !lib.is_empty() {
+            guard
+                .eval(lib)
+                .map_err(|e| LegadoError::JsEngine(format!("jsLib 加载失败: {e}")))?;
+        }
+    }
+
+    let base_url = source.book_source_url.clone();
+    let mut bindings: Vec<(&str, JsValue)> = vec![
+        ("baseUrl", JsValue::String(base_url.clone())),
+        ("infoMap", JsValue::Object(vec![])),
+    ];
+    if let Ok(value) = serde_json::to_value(source) {
+        bindings.push(("source", json_to_js_value(value)));
+    }
+
+    let result = guard
+        .eval_with_bindings(js_code, &bindings)
+        .map_err(|e| LegadoError::JsEngine(format!("exploreUrl JS 执行失败: {e}")))?;
+
+    Ok(result.trim().to_string())
+}
+
+#[cfg(not(feature = "quickjs"))]
+fn eval_explore_js(_js_code: &str, _source: &BookSource) -> LegadoResult<String> {
+    Err(LegadoError::JsEngine(
+        "QuickJS engine not enabled. Build with --features quickjs".into(),
+    ))
+}
+
+#[cfg(feature = "quickjs")]
+fn json_to_js_value(value: serde_json::Value) -> legado_js::JsValue {
+    use legado_js::JsValue;
+    match value {
+        serde_json::Value::Null => JsValue::Null,
+        serde_json::Value::Bool(b) => JsValue::Bool(b),
+        serde_json::Value::Number(n) => match n.as_i64() {
+            Some(i) => JsValue::Int(i),
+            None => JsValue::Number(n.as_f64().unwrap_or(0.0)),
+        },
+        serde_json::Value::String(s) => JsValue::String(s),
+        serde_json::Value::Array(items) => {
+            JsValue::Array(items.into_iter().map(json_to_js_value).collect())
+        }
+        serde_json::Value::Object(map) => JsValue::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, json_to_js_value(v)))
+                .collect(),
+        ),
+    }
 }
 
 // ─── 内部异步实现 ─────────────────────────────────────────────────────────────
@@ -289,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_explore_parse_url_text() {
-        let json = explore_parse_url("玄幻::https://a.com\n都市::https://b.com").unwrap();
+        let json = explore_parse_url("玄幻::https://a.com\n都市::https://b.com", "").unwrap();
         let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
         assert_eq!(categories.len(), 2);
         assert_eq!(categories[0].title, "玄幻");
@@ -297,9 +418,15 @@ mod tests {
 
     #[test]
     fn test_explore_parse_url_empty() {
-        let json = explore_parse_url("").unwrap();
+        let json = explore_parse_url("", "").unwrap();
         let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
         assert!(categories.is_empty());
+    }
+
+    #[test]
+    fn test_extract_js_tag_body() {
+        let s = "<js>return 1</js>";
+        assert_eq!(extract_js_tag_body(s), "return 1");
     }
 
     #[test]
@@ -361,18 +488,6 @@ mod tests {
                 let books: Vec<serde_json::Value> =
                     serde_json::from_str(&json).expect("应为书籍 JSON 数组");
                 eprintln!("siluke explore books={}", books.len());
-                for (i, b) in books.iter().take(5).enumerate() {
-                    eprintln!(
-                        "  [{i}] name={:?} author={:?} bookUrl={:?} kind={:?} last={:?}",
-                        b.get("name"),
-                        b.get("author"),
-                        b.get("bookUrl").or_else(|| b.get("book_url")),
-                        b.get("kind"),
-                        b.get("latestChapter")
-                            .or_else(|| b.get("latest_chapter"))
-                            .or_else(|| b.get("lastChapter")),
-                    );
-                }
                 let empty_url = books
                     .iter()
                     .filter(|b| {
@@ -383,7 +498,6 @@ mod tests {
                             .is_empty()
                     })
                     .count();
-                eprintln!("empty bookUrl count={empty_url}/{}", books.len());
                 assert!(
                     books.len() >= 5,
                     "思路客玄幻发现应有多本书，实际 {} 本: {json}",

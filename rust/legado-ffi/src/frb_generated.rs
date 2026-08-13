@@ -3007,10 +3007,12 @@ fn wire__crate__ffi__ffi__explore_parse_url_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_explore_url = <String>::sse_decode(&mut deserializer);
+            let api_source_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok = crate::ffi::ffi::explore_parse_url(api_explore_url)?;
+                    let output_ok =
+                        crate::ffi::ffi::explore_parse_url(api_explore_url, api_source_json)?;
                     Ok(output_ok)
                 })())
             }
@@ -7973,11 +7975,17 @@ fn wire__crate__ffi__ffi__webbook_chapters_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_source_json = <String>::sse_decode(&mut deserializer);
             let api_book_url = <String>::sse_decode(&mut deserializer);
+            let api_toc_url = <String>::sse_decode(&mut deserializer);
+            let api_book_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok =
-                        crate::ffi::ffi::webbook_chapters(api_source_json, api_book_url)?;
+                    let output_ok = crate::ffi::ffi::webbook_chapters(
+                        api_source_json,
+                        api_book_url,
+                        api_toc_url,
+                        api_book_name,
+                    )?;
                     Ok(output_ok)
                 })())
             }
