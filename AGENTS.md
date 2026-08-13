@@ -45,6 +45,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 - **UI 层职责边界**：UI 层只做界面渲染、交互与状态管理，不含业务逻辑；数据经 Rust Bridge 获取；遵循 UI 层与底层分离原则
 - **文档存放**：新建计划/报告/交接类 `.md` 必须放 `docs/`；根目录仅保留 README.md、CHANGELOG.md、LICENSE、AGENTS.md 等约定文件
 - **全中文规范**：汇报、commit 说明、代码注释全部使用中文
+- **l10n 范围（D5=B，F4-7）**：维持中文主语言；UI 文案以 `AppStrings`/硬编码中文为主，不推进全面国际化；新增页面沿用中文，英文仅保留系统 locale 切换入口（其他设置页语言项）
 
 ## Git 纪律与版本控制
 

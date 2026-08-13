@@ -39,7 +39,7 @@ import '../widgets/video_settings_dialog.dart';
 ///
 /// 分组与排序严格对齐原版 pref_config_other.xml：语言 → 主界面 → 其他。
 /// 已移除原版不存在的「默认阅读设置 / 网络设置」创意分组。
-/// Cronet / 直链上传规则：诚实占位（暂不可用）。
+/// Cronet / 直链上传规则：F4-5 按 RESIDUAL「不做」销记，不展示空壳控件。
 class OtherSettingsScreen extends ConsumerStatefulWidget {
   const OtherSettingsScreen({super.key});
 
@@ -322,18 +322,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 subtitle: _checkSourceConfigSummary,
                 showDisclosure: true,
                 onTap: _showCheckSourceConfigDialog,
-              ),
-              // 诚实占位：无直链上传引擎
-              const IosListTile(
-                title: '直链上传规则',
-                subtitle: '暂不可用（无 Flutter 数据源）',
-              ),
-              // 诚实占位：无 Cronet
-              const SwitchListTile(
-                title: Text('Cronet'),
-                subtitle: Text('暂不可用（无 Flutter 数据源）'),
-                value: false,
-                onChanged: null,
               ),
               SwitchListTile(
                 title: const Text('抗锯齿'),

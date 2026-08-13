@@ -659,6 +659,7 @@
 > 复用登录 V2 JS 执行基础设施（书源 URL 分桶引擎池 + `eval_with_bindings`）执行，注入绑定 `baseUrl`=章节 url、
 > `title`=章节标题、`book`/`chapter`=实体 JSON 对象、`source`=书源对象（Kotlin 另注入 java/result/src，Rust `java` 命名空间已全局注册，result/src 原版即为 null）。
 > **结果语义（对照 Kotlin onSuccess）**：返回绝对 URL → UI 打开支付页 WebView；返回 "true" → 购买成功（Kotlin 随后清当前章缓存并刷新目录，UI 轨自行对应）；其他 → 原样回传。
+> **R6 留项（F4-8，2026-08-14）**：含 `{{js}}` 的 URL 模板形态依赖 Android WebView 注入执行，Rust 侧**仅实现纯 JS 脚本**路径；URL 模板形态登记为后续留项（见 `pay_action_api.rs` 模块注释），不影响当前纯 JS payAction 书源。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
