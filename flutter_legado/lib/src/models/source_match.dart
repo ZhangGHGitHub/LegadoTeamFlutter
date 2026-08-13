@@ -34,6 +34,18 @@ class SourceMatch with _$SourceMatch {
 
     /// 匹配度评分（0.0 ~ 100.0）
     @Default(0.0) double score,
+
+    /// 试读章节字数展示
+    @JsonKey(name: 'chapter_word_count_text') String? chapterWordCountText,
+
+    /// 试读章节字数（-1=未知）
+    @Default(-1) @JsonKey(name: 'chapter_word_count') int chapterWordCount,
+
+    /// 取字耗时毫秒
+    @Default(-1) @JsonKey(name: 'respond_time') int respondTime,
+
+    /// 书源 customOrder
+    @Default(0) @JsonKey(name: 'origin_order') int originOrder,
   }) = _SourceMatch;
 
   factory SourceMatch.fromJson(Map<String, dynamic> json) =>

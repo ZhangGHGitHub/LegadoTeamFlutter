@@ -658,10 +658,12 @@ Future<String> sourceSwitchSearch({
   required String bookName,
   required String author,
   required String sourceUrlsJson,
+  required String optionsJson,
 }) => RustLib.instance.api.crateFfiFfiSourceSwitchSearch(
   bookName: bookName,
   author: author,
   sourceUrlsJson: sourceUrlsJson,
+  optionsJson: optionsJson,
 );
 
 /// 切换到新书源（返回更新后的书籍 JSON）

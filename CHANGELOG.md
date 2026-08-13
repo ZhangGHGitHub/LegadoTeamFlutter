@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.53] - 2026-08-14
+
+### Added
+- [Rust] 换源页三开关真实行为：`source_switch_search` 第四参 `options_json` 消费 loadInfo/loadToc/loadWordCount，试读字数与 wordCountComparator 排序（审计 F2-2）
+- [UI] 换源页传参接线、开关开启重搜、列表展示试读字数/耗时（审计 F2-2）
+
 ## [2.0.52] - 2026-08-14
 
 ### Added

@@ -33,6 +33,9 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     String bookName,
     String author, {
     String group = '',
+    bool loadInfo = false,
+    bool loadToc = false,
+    bool loadWordCount = false,
   }) async {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
@@ -60,8 +63,21 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
       }
       final api = ref.read(bookApiProvider);
       final raw = sourceUrls == null
-          ? await api.searchSource(bookName, author)
-          : await api.searchSource(bookName, author, sourceUrls: sourceUrls);
+          ? await api.searchSource(
+              bookName,
+              author,
+              loadInfo: loadInfo,
+              loadToc: loadToc,
+              loadWordCount: loadWordCount,
+            )
+          : await api.searchSource(
+              bookName,
+              author,
+              sourceUrls: sourceUrls,
+              loadInfo: loadInfo,
+              loadToc: loadToc,
+              loadWordCount: loadWordCount,
+            );
       final matches = raw.map(SourceMatch.fromJson).toList();
       state = state.copyWith(results: matches, isLoading: false);
     } catch (e) {

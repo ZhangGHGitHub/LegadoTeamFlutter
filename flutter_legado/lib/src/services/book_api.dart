@@ -246,6 +246,9 @@ abstract class BookApi {
     String bookName,
     String author, {
     List<String>? sourceUrls,
+    bool loadInfo = false,
+    bool loadToc = false,
+    bool loadWordCount = false,
   });
 
   /// 搜索书籍封面候选列表

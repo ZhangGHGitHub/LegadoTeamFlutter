@@ -796,6 +796,7 @@ abstract class RustLibApi extends BaseApi {
     required String bookName,
     required String author,
     required String sourceUrlsJson,
+    required String optionsJson,
   });
 
   Future<void> crateFfiFfiSourceUpdate({required String sourceJson});
@@ -7526,6 +7527,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String bookName,
     required String author,
     required String sourceUrlsJson,
+    required String optionsJson,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -7534,6 +7536,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(bookName, serializer);
           sse_encode_String(author, serializer);
           sse_encode_String(sourceUrlsJson, serializer);
+          sse_encode_String(optionsJson, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -7546,7 +7549,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiSourceSwitchSearchConstMeta,
-        argValues: [bookName, author, sourceUrlsJson],
+        argValues: [bookName, author, sourceUrlsJson, optionsJson],
         apiImpl: this,
       ),
     );
@@ -7555,7 +7558,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateFfiFfiSourceSwitchSearchConstMeta =>
       const TaskConstMeta(
         debugName: "source_switch_search",
-        argNames: ["bookName", "author", "sourceUrlsJson"],
+        argNames: ["bookName", "author", "sourceUrlsJson", "optionsJson"],
       );
 
   @override

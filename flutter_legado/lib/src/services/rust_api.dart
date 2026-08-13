@@ -503,12 +503,21 @@ class RustApi implements BookApi {
     String bookName,
     String author, {
     List<String>? sourceUrls,
+    bool loadInfo = false,
+    bool loadToc = false,
+    bool loadWordCount = false,
   }) async {
     final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
+    final optionsJson = jsonEncode({
+      'loadInfo': loadInfo,
+      'loadToc': loadToc,
+      'loadWordCount': loadWordCount,
+    });
     final json = await bridge.sourceSwitchSearch(
       bookName: bookName,
       author: author,
       sourceUrlsJson: urlsJson,
+      optionsJson: optionsJson,
     );
     final decoded = jsonDecode(json);
     // Rust 侧返回 SourceSwitchResponse 对象，需提取 matches 字段

@@ -732,6 +732,9 @@ class MockBookApi implements BookApi {
     String bookName,
     String author, {
     List<String>? sourceUrls,
+    bool loadInfo = false,
+    bool loadToc = false,
+    bool loadWordCount = false,
   }) async {
     const srcNames = ['消消乐听书', '笔趣阁', '起点中文网'];
     const srcUrls = [

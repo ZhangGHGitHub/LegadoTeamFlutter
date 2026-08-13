@@ -122,8 +122,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     } catch (_) {}
   }
 
-  /// 开关项持久化（键名对齐原版 AppConfig；TODO: 待 Rust 匹配器
-  /// searchSource 读取这些 config 后全链生效）— Qoder
+  /// 开关项持久化（键名对齐原版 AppConfig）
   Future<void> _persistBool(String key, bool value) async {
     try {
       await ref.read(bookApiProvider).setConfig(key, value ? 'true' : 'false');
@@ -144,6 +143,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           widget.effectiveBookName,
           widget.effectiveAuthor,
           group: _searchGroup,
+          loadInfo: _loadInfo,
+          loadToc: _loadToc,
+          loadWordCount: _loadWordCount,
         );
     if (!mounted) return;
     final state = ref.read(changeSourceNotifierProvider);
@@ -376,15 +378,18 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       case 'loadWordCount':
         // 对标 menu_load_word_count（AppConfig.changeSourceLoadWordCount）
         setState(() => _loadWordCount = !_loadWordCount);
-        _persistBool('changeSourceLoadWordCount', _loadWordCount);
+        await _persistBool('changeSourceLoadWordCount', _loadWordCount);
+        if (_loadWordCount && !_stopped) await _search();
       case 'loadInfo':
         // 对标 menu_load_info（AppConfig.changeSourceLoadInfo）
         setState(() => _loadInfo = !_loadInfo);
-        _persistBool('changeSourceLoadInfo', _loadInfo);
+        await _persistBool('changeSourceLoadInfo', _loadInfo);
+        if (_loadInfo && !_stopped) await _search();
       case 'loadToc':
         // 对标 menu_load_toc（AppConfig.changeSourceLoadToc）
         setState(() => _loadToc = !_loadToc);
-        _persistBool('changeSourceLoadToc', _loadToc);
+        await _persistBool('changeSourceLoadToc', _loadToc);
+        if (_loadToc && !_stopped) await _search();
       case 'group':
         await _showGroupPicker();
       case 'close':
@@ -558,6 +563,18 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
             Text(
               item.wordCount!,
               style: TextStyle(fontSize: 12, color: colorScheme.outline),
+            ),
+          if (_loadWordCount &&
+              item.chapterWordCountText != null &&
+              item.chapterWordCountText!.isNotEmpty)
+            Text(
+              item.chapterWordCountText!,
+              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+            ),
+          if (_loadWordCount && item.respondTime >= 0)
+            Text(
+              '耗时 ${item.respondTime}ms',
+              style: TextStyle(fontSize: 11, color: colorScheme.outline),
             ),
         ],
       ),
