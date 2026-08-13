@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.61] - 2026-08-14
+
+### Added
+- [UI] F3-18 `settingsProvider` 统一注入，8 个 screen 移除直接 `SettingsService()` 实例化
+- [UI] F3-20 BookApi 补 5 项延迟封装（backupList/bookGroupSetShow/httpTtsSetEnabled/ttsSpeak/ttsSetCacheDir）
+- [UI] F3-19 About 页同步原版 updateLog.md / disclaimer.md 资产
+
+### Changed
+- [docs] F3-16 SOURCE_DIFF §8 登记 HandleFile N/A、RssSort 降级
+- [docs] F3-20 API_CONTRACT §3 待 UI 封装清单清零
+- [Rust] F3-9 encoding.rs 登记 chardetng 计划偏差（维持自研启发式）
+
 ## [2.0.60] - 2026-08-14
 
 ### Added

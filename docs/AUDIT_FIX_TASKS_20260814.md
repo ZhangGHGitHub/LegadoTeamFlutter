@@ -221,7 +221,7 @@
 - **涉及文件**：`legado-book/src/encoding.rs`
 - **实施要点**：评估自研启发式与 chardetng 覆盖差异；若等价，登记计划文字偏差即可，不必强改。
 - **验收**：GBK/GB2312/UTF-8 检测用例通过。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅（自研 BOM+启发式与 chardetng 等价；encoding.rs 登记计划偏差；GBK/UTF-8 用例已通过）
 
 ### F3-10 `[文档]` 契约文档全面同步
 - **来源**：D10/D11/D12/D12b
@@ -270,7 +270,7 @@
 - **涉及文件**：`HandleFileActivity`（Android 专属，评估深链/插件方案或登记 N/A）、`RssSortActivity`（Flutter 补排序页或登记降级说明）
 - **实施要点**：每项二选一——实现或登记「N/A/降级」说明至 SOURCE_DIFF。
 - **验收**：SOURCE_DIFF 覆盖表如实记录两项状态。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（SOURCE_DIFF §8：HandleFile N/A、RssSort 降级登记）
 
 ### F3-17 `[双轨]` RSS 阅读记录按源查询 FFI
 - **来源**：D21
@@ -284,21 +284,21 @@
 - **涉及文件**：8 个 screen（bookshelf_manage/book_info/other_settings/welcome/welcome_config/webdav_settings/toc/theme_config）
 - **实施要点**：改走 `settingsProvider`/Riverpod 注入，移除直接 `SettingsService()` 实例化。
 - **验收**：无直接实例化残留；`flutter test` 全绿。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（settingsProvider + 8 screen 改注入）
 
 ### F3-19 `[UI]` About 页资产补齐
 - **来源**：P3-10（提升至本批）
 - **涉及文件**：`about_screen.dart:138-157`、`assets/updateLog.md`/`assets/disclaimer.md`（从原版 assets 同步）、`pubspec.yaml`（assets 声明）
 - **实施要点**：同步原版 updateLog/disclaimer 资产并声明。
 - **验收**：About 页展示真实更新日志与免责声明，无占位文案。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅（同步原版 assets + pubspec 声明）
 
 ### F3-20 `[双轨]` 契约延迟封装项收口
 - **来源**：D12b
 - **涉及文件**：`book_api.dart`（backupList/bookGroupSetShow/httpTtsSetEnabled 入抽象）、`rust_api.dart`（ttsSpeak/ttsSetCacheDir 入抽象）
 - **实施要点**：5 个延迟项补入 BookApi 抽象与 UI 封装（或按契约 §3 明确永不封装并销记）。
 - **验收**：契约延迟清单清零或显式销记。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（BookApi 补 5 项 + RustApi/Mock 双实现；§3 待封装清单清零）
 
 ---
 
