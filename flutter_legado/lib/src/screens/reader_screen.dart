@@ -411,6 +411,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 ReaderImageDominantBody(
                   content: state.chapterContent,
                   book: book,
+                  imageStyle: book.readConfig?.imageStyle,
                   onToggleControls: notifier.toggleControls,
                   hasNextChapter: state.hasNextChapter,
                   hasPrevChapter: state.hasPreviousChapter,
