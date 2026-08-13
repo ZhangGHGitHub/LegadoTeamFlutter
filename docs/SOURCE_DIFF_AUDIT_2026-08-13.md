@@ -170,3 +170,16 @@
 修订：Auto（Cursor）｜ 2026-08-13（补编译修复 `30c48ded2` + 5556 冒烟证据）  
 修订：Auto（Cursor）｜ 2026-08-13（DOM WebView 通道 + JS 次要重载 + checkRedirect）  
 修订：Auto（Cursor）｜ 2026-08-13（页内 java/source + cacheMode + ownText + 编译缓存；§5.15 仅剩 A\*）
+
+---
+
+## 8. 页面覆盖缺口登记（F3-16，2026-08-14）
+
+> 审计 D19：原版 53 个 `ui/*Activity` 中 2 项在 Flutter 侧无 1:1 Screen；本节如实登记处置结论，供 GAP/REMAINING 交叉引用。
+
+| 原版 Activity | 路径 | Flutter 处置 | 说明 |
+|---|---|---|---|
+| `HandleFileActivity` | `ui/file/` | **N/A** | Android SAF/Intent 统一文件中转（打开方式、分享接收、EXPORT 模式）。Flutter 跨平台各入口已用 `file_picker` / 平台通道等价，不单独移植 Activity（与 GAP_AUDIT P2-14、REMAINING Doc5 一致） |
+| `RssSortActivity` | `ui/rss/article/` | **降级** | 原版 RSS 文章排序页。Flutter `RssArticlesScreen` 保留列表与阅读，**无**独立排序 UI；排序语义暂不提供（非 P0 书源兼容项，后续若需对齐再单独立项） |
+
+编写者：Cursor 子代理 ｜ 2026-08-14（F3-16 SOURCE_DIFF 缺口登记）
