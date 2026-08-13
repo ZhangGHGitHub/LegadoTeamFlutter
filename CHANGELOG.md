@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.47] - 2026-08-14
+
+### Fixed
+- [UI] 帮助页改回弹窗模态（约 90% 屏高、圆角），顶栏对齐原版目录/源码/关闭；Markdown 样式对齐 `TextDialog`/`HelpMarkwonTheme`
+
 ## [2.0.46] - 2026-08-14
 
 ### Added

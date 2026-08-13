@@ -3,12 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../legado_app_bar.dart';
+import '../../screens/code_edit_screen.dart';
+import 'help_markdown_styles.dart';
 import 'help_sections.dart';
 
-/// 帮助文档全页（对标 Android TextDialog Mode.MD + showToc）
+/// 帮助文档弹窗（对标 Android TextDialog Mode.MD + showToc）
 ///
-/// 从 assets 加载原版 Markdown，支持目录抽屉与 iOS 风格 Large Title 排版。
+/// 约 90% 屏高、圆角模态；顶栏目录/源码/关闭；Markdown 样式对齐 HelpMarkwonTheme。
 class HelpScreen extends StatefulWidget {
   const HelpScreen({
     super.key,
@@ -79,46 +80,81 @@ class _HelpScreenState extends State<HelpScreen> {
   }
 
   void _selectSection(int index) {
-    setState(() {
-      _selectedSection = index;
-    });
+    setState(() => _selectedSection = index);
     if (_scrollCtrl.hasClients) {
       _scrollCtrl.jumpTo(0);
     }
-    Navigator.of(context).pop();
+    _scaffoldKey.currentState?.closeEndDrawer();
   }
+
+  Future<void> _openSourceView() async {
+    final content = _markdown;
+    if (content == null) return;
+    await CodeEditScreen.open(
+      context,
+      title: widget.title,
+      initialText: content,
+      writable: false,
+    );
+  }
+
+  void _close() => Navigator.of(context).pop();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final size = MediaQuery.sizeOf(context);
 
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: theme.scaffoldBackgroundColor,
-      endDrawer: _sections.isEmpty ? null : _buildTocDrawer(theme, cs),
-      appBar: LegadoAppBar(
-        showBack: false,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          tooltip: '关闭',
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(widget.title),
-        actions: [
-          if (_sections.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.list_alt_outlined),
-              tooltip: '目录',
-              onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-            ),
-        ],
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: size.width * 0.05,
+        vertical: size.height * 0.05,
       ),
-      body: _buildBody(theme, cs),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: SizedBox(
+        width: size.width * 0.9,
+        height: size.height * 0.9,
+        child: Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: theme.scaffoldBackgroundColor,
+          endDrawer: _sections.isEmpty ? null : _buildTocDrawer(theme, cs),
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            centerTitle: false,
+            title: Text(
+              widget.title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            actions: [
+              if (_sections.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.list_alt_outlined),
+                  tooltip: '目录',
+                  onPressed: () =>
+                      _scaffoldKey.currentState?.openEndDrawer(),
+                ),
+              IconButton(
+                icon: const Icon(Icons.code_outlined),
+                tooltip: '源码',
+                onPressed: _markdown == null ? null : _openSourceView,
+              ),
+              TextButton(
+                onPressed: _close,
+                child: const Text('关闭'),
+              ),
+            ],
+          ),
+          body: _buildBody(theme),
+        ),
+      ),
     );
   }
 
-  Widget _buildBody(ThemeData theme, ColorScheme cs) {
+  Widget _buildBody(ThemeData theme) {
     if (_error != null) {
       return Center(
         child: Padding(
@@ -133,50 +169,19 @@ class _HelpScreenState extends State<HelpScreen> {
 
     return Markdown(
       controller: _scrollCtrl,
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
       data: _displayMarkdown,
       onTapLink: (_, href, linkText) {
         if (href != null) _openLink(href);
       },
-      styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-        h1: theme.textTheme.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          height: 1.2,
-        ),
-        h2: theme.textTheme.titleLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-          height: 1.25,
-        ),
-        h3: theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
-        p: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
-        listBullet: theme.textTheme.bodyLarge,
-        blockquote: theme.textTheme.bodyMedium?.copyWith(
-          color: cs.onSurfaceVariant,
-        ),
-        blockquoteDecoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        code: TextStyle(
-          fontFamily: 'Menlo',
-          fontFamilyFallback: const ['Consolas', 'monospace'],
-          fontSize: 13,
-          backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.6),
-        ),
-        horizontalRuleDecoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.6)),
-          ),
-        ),
-      ),
+      styleSheet: helpMarkdownStyleSheet(theme),
     );
   }
 
   Widget _buildTocDrawer(ThemeData theme, ColorScheme cs) {
     final labels = ['全部', ..._sections.map((s) => s.title)];
     return Drawer(
+      width: 264,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
