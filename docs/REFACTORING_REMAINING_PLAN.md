@@ -2,9 +2,16 @@
 
 > ✅ **计划完成声明**：本计划 P0-P3 共 7 项遗留任务已于 **2026-07-31 全部完成并验证通过**，整合的 UI 一致性修复 13 项亦全部完成。文档转入归档核销状态，遗留项见文末「遗留项（转入后续迭代）」小节。
 >
-> ⚠️ **Doc8 口径修正（2026-08-13）**：文首「P0–P3 全部完成」仅指原 7 项计划任务；**后续开放残留**（schema 三表名、半接通、验收债等）以 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)、[GAP_AUDIT_2026-08-12.md](GAP_AUDIT_2026-08-12.md)、[USER_TEST_RESULTS_2026-08-13.md](USER_TEST_RESULTS_2026-08-13.md) 为准。
+> ⚠️ **Doc8 口径修正（2026-08-13）**：文首「P0–P3 全部完成」仅指原 7 项计划任务；**不表示全库无开放项**。
 >
-> **Doc7**：文档名「schema v102 专项」= 代码 `Migration103To104` / `SCHEMA_VERSION=104`（v102/v103 号段已占用）。
+> **2026-08-13 旁证台账**（权威开放项，避免双信号）：
+> - 工程残留收口：[RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)（D1/F1–F7/T6/Doc* 等多数 ✅；**A\*** 环境验收仍 ⛔）
+> - 源码级兼容缺口：[SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md)（仍开放 P0/P1 见本文 **§5.15**）
+> - GAP / 用户门禁：[GAP_AUDIT_2026-08-12.md](GAP_AUDIT_2026-08-12.md)、[USER_TEST_RESULTS_2026-08-13.md](USER_TEST_RESULTS_2026-08-13.md)
+>
+> **Doc7**：文档名「schema v102 专项」= 代码 `Migration103To104` / `SCHEMA_VERSION=104`；三表 Room 名对齐 = `Migration104To105` / `SCHEMA_VERSION=105`（v102/v103 号段已占用）。
+>
+> **听书**：以 GAP **轮5** 为准——片头/片尾/wakelock/缓存入口已恢复；「诚实隐藏」旧表述作废（见 GAP Doc1）。
 
 > 状态请以 [docs/README.md](README.md) 的“当前状态”小节为准。
 
@@ -595,7 +602,8 @@ flutter test                  # 全量测试通过
 > **剩余结构偏离（5 项）**：① rssArticles 主键 (origin,title) vs Room (origin,link,sort)；② readRecord 主键 (bookName) vs Room (deviceId,bookName)；③ rssReadRecords 结构偏离；④ httpTTS 严重偏离；⑤ rssSources enableCookieJar/enabledCookieJar 双列冗余。
 > **落地说明**：文档名「schema v102」与代码链冲突（v102=cached_chapters、v103=book_sources.variable），故以 **Migration103To104 / SCHEMA_VERSION=104** 落地。实现：`rust/legado-db/src/migration/schema_align_v104.rs`（幂等主键/列形态检测 → 重建表 → 数据搬迁：空 link 回退 `legacy:origin:title:sort`；同主键 `INSERT OR IGNORE`+ORDER BY 保留较新行；http_tts→httpTTS；rssSources 合并 cookie jar 后 drop enableCookieJar；search_keywords→word/usage/lastUseTime；coverRules 入建表清单）。Repository 已适配。契约登记见 API_CONTRACT 更新记录。
 > ✅ **核销（2026-08-13）**：上述 5 项 + rssStars 主键 (origin,link) + search_keywords + coverRules 入体系已完成；legado-db 297 单测通过（含 v103→v104 全链路）。
-> **残留**：rule_subs / dict_rules / keyboard_assists 仍为 snake_case 表名与列名（与 Room ruleSubs/dictRules/keyboardAssists 未统一），default_data 侧 dictRules/keyboardAssists 仍可并行建表；users vs servers 语义差异维持不改名。后续若需 Android 遗留库全表互读再开批次。
+> ✅ **SCHEMA 105（2026-08-13，D1，`18003a7b9`）**：`Migration104To105` 将 `rule_subs`/`dict_rules`/`keyboard_assists` 对齐 Room 表名列名（`ruleSubs`/`dictRules`/`keyboardAssists`；`ruleSubs.type` Int；`keyboardAssists` 主键 `(type,key)` + `serialNo`）；运维说明见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) §迁移运维。~~「三表名仍残留」旧句作废~~。
+> **仍登记**：users vs servers 语义差异维持不改名（远程服务器列表走 Flutter `SettingsService`）。
 
 **P0-3 rssSources 双列冗余处理**
 
@@ -707,7 +715,7 @@ flutter test                  # 全量测试通过
 | 缺口项 | 处置 | 对应任务 |
 |--------|------|----------|
 | 图片书 PDF 导出（对齐 #483） | ✅ 已完成：图片提取 + 注入式获取管线 + A4 宽高比写入 | Task #162 |
-| DB schema 偏离表 | ✅ 已完成：v101 补列 + **v104 结构对齐**（主键/重建表/httpTTS/rssSources/search_keywords/coverRules；users/servers 语义差异登记不改名；rule_subs/dict_rules/keyboard_assists 表名残留） | Task #163 + 2026-08-13 schema v102 专项 |
+| DB schema 偏离表 | ✅ 已完成：v101 补列 + **v104 结构对齐** + **v105 三表 Room 名对齐**（ruleSubs/dictRules/keyboardAssists；users/servers 语义差异登记不改名） | Task #163 + 2026-08-13 schema v102/v105（D1） |
 | JS 宿主 API 零星项 | ✅ 已完成：unzip 断线修复 + 6 个零星 API | Task #164（承接 §3.4 P2-6） |
 | txt_search frb 主链路 | ✅ 已完成：接入 frb 主链路，Dart 可达 | Task #165（承接 §4.2.2 P1-2） |
 | unzip 断线 | ✅ 已完成 | Task #164 |
@@ -941,7 +949,7 @@ flutter test                  # 全量测试通过
 |------|------|----------|
 | 契约补登 | 12 个 FFI 已实现未登记（QUIC 8 + backupList + cacheGetChapter + bookGroupSetShow + httpTtsSetEnabled） | ✅ 已补登至 API_CONTRACT.md §2.41（2026-08-06）；QUIC 8 项随后整体移除（见 §5.10，2026-08-07） |
 | UI 封装 | 13 个 bridge 绑定已实现未被 UI 层封装（含登录 UI V2 整组 + QUIC 客户端六件套） | QUIC 客户端六件套：**已移除（用户决策，纯重构边界，2026-08-07，见 §5.10）**；其余已登记至 API_CONTRACT.md §3 待封装清单 |
-| schema 偏离 | rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources 双列冗余 | ✅ 已完成（2026-08-13，SCHEMA_VERSION=104 / Migration103To104）；残留 rule_subs/dict_rules/keyboard_assists 表名（见 §4.2.1） |
+| schema 偏离 | rssArticles/readRecord 主键、rssReadRecords/httpTTS 结构、rssSources 双列冗余；三表 Room 名 | ✅ 已完成（2026-08-13，SCHEMA 104 + **105**/Migration104To105；见 §4.2.1） |
 | 文档治理 | README「零 TODO/桩实现」表述需修正、DEVELOPMENT.md 已知限制表过期 | ✅ 已闭合（Task #118）：docs/README.md + rust/PROGRESS.md + rust/DEVELOPMENT.md 均已按实际口径修正 |
 | 代码治理 | platform.rs 5 个死代码桩清理、一次性脚本清理（承接 §4.2.3 P2-4）、bridge.rs C ABI 去留决策（承接 §4.2.3 P2-1） | ✅ 已随批次3闭合（Task #118）：platform.rs 5 桩已删除、10 个一次性脚本已清理、bridge.rs 决策为保留+计划性废弃（见 §4.2.3 P2-1 决策记录） |
 | 已闭合 | Task #131 timeFormat/toURL 别名 | ✅ 已闭合 |
@@ -1013,7 +1021,7 @@ flutter test                  # 全量测试通过
 
 ### §5.12 MoreConfig/界面面板「仅持久化待行为接线」集中清单（2026-08-08，三维度评审修复时新增）
 
-> 以下开关/参数已按原版键名持久化（`reader_config_panel.dart` ReaderAdvancedConfig）且 UI 已诚实标注，但尚无行为消费方；后续接线时按建议位置接入，接通一项销记一项。
+> ~~以下开关/参数已按原版键名持久化且尚无行为消费方~~ → ✅ **2026-08-13：九项行为接线全部闭合**（见下行销记）。历史登记保留备查。
 
 | # | 键（=原版键） | 语义 | 后续消费位置建议 |
 |---|----------------|------|------------------|
@@ -1022,14 +1030,16 @@ flutter test                  # 全量测试通过
 | 3 | ~~`hangingPunctuation`~~（已接线） | 段首标点悬挂 | ✅（2026-08-10，v2.0.7 批）销记：`ChinesePunctuationRule.shouldHang`（缩进全角空格+起始引号判定，对齐原版 HangingPunctuationRule）+ `ZhLayout.compute` 首行宽度上限 + 悬挂宽（=缩进宽）+ `_breakLines` 两分支首行悬挂 + `LineInfo.hangingWidth` 标记 + 渲染侧 OverflowBox 放宽约束 + Transform.translate 左移（标点悬挂进缩进区） |
 | 4 | ~~`pageTouchSlop`~~（已接线） | 滑动翻页阈值 px | ✅ Task #44（2026-08-08/09）销记：`reader_page_view.dart` 经 MediaQuery gestureSettings 覆写拖拽阈值，滚动模式除外（对齐原版仅横向翻页语义），即时生效 |
 | 5 | ~~`pageTouchClick`~~（已接线） | 边缘点击阈值 px | ✅ Task #44（2026-08-08/09）销记：`reader_screen.dart` 点击边缘死区（钳制半屏以内防窄窗重叠），对齐原版 setRect9x 边缘条带语义，即时生效 |
-| 6 | `readBodyToLh` | 正文延伸到刘海 | 仅 Android：`reader_screen.dart` SystemUiMode/SafeArea 接线 |
-| 7 | `paddingDisplayCutouts` | 填充刘海区域 | 仅 Android：同上，AndroidManifest layoutInDisplayCutoutMode 配合 |
-| 8 | `volumeKeyPage` / `volumeKeyPageOnPlay` | 音量键翻页/朗读时音量键翻页 | 仅 Android：平台通道拦截 KeyEvent 后接 `reader_page_view` 翻页 API |
-| 9 | `shareLayout` | 日/夜配置共用布局 | 待日夜双配置体系接入（ReadBookConfig 双套布局参数）后在 `reader_settings_sheet.dart` 生效；UI 副标题已标注「暂不生效」 |
+| 6 | ~~`readBodyToLh`~~（已接线） | 正文延伸到刘海 | ✅ 2026-08-13（F6，`01302e3b1`）：Android `SystemUiMode`/SafeArea 刘海边距接线 |
+| 7 | ~~`paddingDisplayCutouts`~~（已接线） | 填充刘海区域 | ✅ 2026-08-13（F6）：与 #6 一并闭合 |
+| 8 | ~~`volumeKeyPage` / `volumeKeyPageOnPlay`~~（已接线） | 音量键翻页/朗读时音量键翻页 | ✅ 2026-08-13（F6，`01302e3b1`）：平台通道拦截 KeyEvent → 翻页 API |
+| 9 | ~~`shareLayout`~~（已接线） | 日/夜配置共用布局 | ✅ 2026-08-13（F6，`729eb970f`）：日夜/共用布局桶 + 主题切换重载；~~「暂不生效」旧标注作废~~ |
 
 > ✅ **销记（2026-08-08/09，Task #44）**：4 `pageTouchSlop` / 5 `pageTouchClick` 两项行为接线完成（详见各行销记）。
 >
-> ✅ **销记（2026-08-10，v2.0.7 批）**：1 `doubleHorizontalPage` / 2 `useZhLayout` / 3 `hangingPunctuation` 三项行为接线完成（详见各行销记；原版语义对齐：双页档位/朴素分行/段首引号悬挂，差异注明：桌面端平板语义以窗口宽≥700 模拟）；**剩余 4 项**（6 `readBodyToLh` / 7 `paddingDisplayCutouts` 仅 Android、8 `volumeKeyPage` 仅 Android、9 `shareLayout` 待日夜双配置体系）登记延后。
+> ✅ **销记（2026-08-10，v2.0.7 批）**：1 `doubleHorizontalPage` / 2 `useZhLayout` / 3 `hangingPunctuation` 三项行为接线完成（详见各行销记；原版语义对齐：双页档位/朴素分行/段首引号悬挂，差异注明：桌面端平板语义以窗口宽≥700 模拟）；当时剩余 4 项已于下方 2026-08-13 销记。
+>
+> ✅ **销记（2026-08-13，F6）**：6–9 刘海×2 / 音量键 / shareLayout 日夜共用桶全部接线；**§5.12 九项至此全部闭合**。
 
 ### §5.13 主题设置页/其他设置页「缺跨轨支撑后置」集中清单（2026-08-08，任务 #8 原版对齐时新增）
 
@@ -1081,17 +1091,38 @@ flutter test                  # 全量测试通过
 | 17 | ~~MCP 前置 jsSourceApiToken 校验未实现~~ | ✅ 2026-08-13（F5）：与 §5.13-7 一并闭合 |
 | 18 | ✅ loginCheckJs（含 server/UI） | 2026-08-13：legado-server fetcher 四链路接 loginCheckJs；Flutter 阅读器遇 LoginRequired 自动拉登录。此前 FFI 路径 v2.0.8 已闭合 |
 | 19 | ✅ XPath 引擎 xmlns 声明根治（2026-08-10，v2.0.9） | 思兔 sto66 实测「未从书源解析到任何章节」根因：页面源码自带 `<html xmlns=...>` 时 HTML→XHTML 回退原样保留 xmlns 属性 → sxd-document 全部元素进命名空间 → 无前缀 XPath（//dd、//a）全部失配（仅 //* 与谓词字符串可命中）；`write_node_xhtml` 跳过 xmlns 属性根治；回归测试 test_xmlns_declaration_does_not_break_prefixed_xpath；legado-parser 178+1 全过。另确认思兔 loginCheckJs 为空（非登录问题）、tocUrl 链路各环节现状登记 |
+| 20 | ✅ PackageInfo 版本同源 | ✅ 2026-08-13（`46ebfa085`）：`PackageInfo.fromPlatform()` 替代硬编码 `2.0.38`（关于页 / 检查更新 / UA）；见 SOURCE_DIFF §4.1 |
+
+### §5.15 SOURCE_DIFF 仍开放 backlog（2026-08-13）
+
+> 权威比对：[SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md)。下表仅列**仍开放**的书源兼容/功能缺口；**勿与 N/A 或已销记项混写**。工程残留（A\* 等）见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)。
+
+| 优先级 | 项 | 状态 | 说明 |
+|--------|-----|------|------|
+| P0 | `@put:` / `@get:` / setLocal 变量系统 | 开放 | `strip_put_rules` 仅剥离丢弃，无存储/读取；神漫画类跨规则变量失效 |
+| P0 | `runPreUpdateJs` | 开放 | TocRule.preUpdateJs 仅有模型字段，无执行 |
+| P0 | `preciseSearch` | 开放 | 原版 `WebBook.preciseSearchAwait`；Rust 全无对应 |
+| P1 | 正文 `sourceRegex` / `webJs` | 开放 | getContent 链路未传入 AnalyzeUrl（原版 jsStr/sourceRegex） |
+| P1 | `getWebJsResult` | 开放 | 规则级 WebJs 模式缺失（仅开屏 webView） |
+| P1 | `imageStyle` 排版执行 | 开放 | 模型+菜单可持久化；阅读器 `full`/`text`/`single` 未驱动 page layout |
+| P1 | `setRedirectUrl` / isUrl·unescape 通用重载 | 开放 | 见 SOURCE_DIFF §2 P1-6/7 |
+| P2 | DownloadService；getReadBookConfigMap/getThemeConfigMap | 开放 | 形态/JS Map 配置；优先级低于 P0/P1 |
+
+**明确不纳入本 backlog（N/A 或已销）**：Cronet / 直链上传产品入口（N/A）；`@html`（已实现）；PackageInfo 硬编码（已修）；checkRedirect（降为可观测性，非兼容性阻断）；F4/F5/F6/T6/D1 SCHEMA105（见 §5.12–§5.14 / RESIDUAL）。
+
+**A\***：真机/实网/样例书验收仍 ⛔，不得由模拟器冒烟销账。
 
 ---
 
 
 
-**文档版本**: 1.30  
-**最后更新**: 2026-08-11  
+**文档版本**: 1.43  
+**最后更新**: 2026-08-13  
 **维护人**: Qoder  
-**最后修改**: Reasonix
+**最后修改**: Auto（Cursor）
 
 **版本记录**：
+- ✅ **v1.43（2026-08-13）旁证台账回写**：Doc8 链 RESIDUAL + SOURCE_DIFF；SCHEMA 104+105（D1）销「三表名残留」；§5.12 F6 刘海/音量键/shareLayout 全部闭合；F4/F5/T6/PackageInfo 与 §5.13/§5.14 对齐 ✅；新增 §5.15 SOURCE_DIFF 开放 P0/P1 backlog；听书以 GAP 轮5 为准。commits：`18003a7b9`/`46ebfa085`/`f7bcf4425`/`d83e6eb26`/`5cb4d4ca3`/`729eb970f`/`c3dd3a0b3`/`fcbfea4ff`/`3ff496355` 等。
 - v1.42（2026-08-11）必应漫画 type=0 正文刷 `<img>` HTML 销记（v2.0.33，[UI]，Reasonix）：书源 type=0 + `.img@img@html`+FULL，图片直连 200 JPEG 无防盗链问题；文本阅读器不渲染 img → 裸标签。修复抽图规则提升为 image 走漫画阅读器 + 文本侧图片主导正文兜底。版本 2.0.33+35
 - v1.41（2026-08-11）搜索相对 URL 绝对化 + 目录 `<js>$[*]` 链拆解 + `{{$.}}` 双花括号销记（v2.0.30，[Rust]，Reasonix）：批量探针 type=2 仅 12/89 有搜索命中；根因——parse 缺 baseUrl、无 path host 拼接命中 `://` 假域名、get_elements 误拆 `<js>+$[*]` 吞错、`{{$.id}}` 残留花括号。51 TOC 0→1；神漫画 TOC=61。版本 2.0.30+32
 - v1.40（2026-08-11）51封面 coverDecodeJs + AnalyzeRule `@put`/`@js`链/`##`/`{$.}` URL 模板 + 神漫画/Nhentai TOC/正文 + 搜索去重含 origin 销记（v2.0.29，[Rust]+[UI]，Reasonix）：封面密文直连失败；神漫画 bookUrl 内嵌 `{$.comic_id}` 误当 JsonPath；目录 `@put`/`@js` 链与正文 chapter.index/totalChapterNum 缺口；Nhentai `//script@js`。探针：神漫画 TOC=61 CONTENT>2k、Nhentai TOC=1 CONTENT>7k。搜索未声称与原版全网数量完全一致。版本 2.0.29+31
@@ -1106,7 +1137,7 @@ flutter test                  # 全量测试通过
 - v1.31（2026-08-11）漫画/图片源 imageDecode 解码 + JS 注入严格模式根治登记（v2.0.19，[Rust]+[UI] 双轨，Reasonix 实施）：① 漫画/图片站图片无法显示根因③——**imageDecode 解密缺失**（favcomic 等站点图片 bytes 经加密，书源 `ruleContent.imageDecode` 配合 jsLib JS 解密后才可显示，重构版仅有字段无执行）。修复：Rust 新增 `image_api`（下载[书源 header 防盗链+兜底 Referer] → 注入 `result`(Uint8Array)/`src`(URL) 执行 imageDecode JS → base64），`legado-js` 新增 `eval_bytes`（`JsValue::Bytes` 改 Uint8Array 注入/结果读回，异常消息取 ctx.catch 真实文案），`ffi.rs` frb 模块新增 `fetch_image_with_decode`（上一版误加进已冻结的 `bridge.rs` 调不到，已移除恢复冻结约束）；Flutter `reader_comic_screen` 书源含 imageDecode 规则时走 FFI 解码下载（Image.memory，缓存+重试），无规则保持直连不回归；② JS 规则严格模式裸赋值根因④（上轮卡点）——绑定注入改 `globalThis.result = ...`（裸赋值在 QuickJS 严格模式抛 ReferenceError 致全部 @js:/jsLib 规则空，var 版本与 jsLib let/const 冲突，globalThis 两者兼得，对齐原版 ScriptableObject.put）；jsLib 求值失败不再静默吞；③ 修复 `_preloadVisibleImages` loading 态访问未 attach ScrollController 断言。测试：legado-ffi 263/263、legado-js 468/468、legado-parser 180/180、flutter analyze 0 error、flutter test 1153/1153。实机：重建 .so（x86_64+arm64-v8a quickjs）→ 5556 无崩溃 UI 完整渲染、5558 冒烟 6/6（此前 content hash 不匹配系 APK 旧 .so）。遗留：armv7 so 编译失败（NDK 28 链接问题，模拟器 x86_64/arm64 真机不受影响）；favcomic 图片解码实机端到端待用户以可读书源验收
 - v1.30（2026-08-11）漫画/视频源正文与目录根治登记（v2.0.18，[Rust] 轨，Reasonix 实施）：双根因——① JS 规则执行零变量注入（原版 evalJS bindings result/src/baseUrl/chapter/title/source，AnalyzeRule.kt:893-908；重构版 execute_js_rule 裸执行 → 视频源 `String(result)`/漫画源 `src.match()` ReferenceError → 正文空）；② `@a` 后缀误判为属性提取（"a" 是标签选择链语义，非属性）→ 漫画 chapterList `.right_box:nth-child(2)@a` 目录 0 章。修复：AnalyzeRule 自动注入 result/src/baseUrl + with_js_binding 补充 chapter/title/source（web_book 正文解析传章节标题）；html.rs 常见标签名白名单。实测真实站点：伪七猫影视（视频）目录+正文 m3u8 ✅；favcomic（漫画）目录 8 章+正文 2966B `<img>` 列表 ✅（书源原规则可用）。legado-parser 180/180、legado-ffi 261/261。遗留：armv7 so 编译失败（NDK 28 链接问题，模拟器 x86_64/arm64 真机不受影响）
 - v1.29（2026-08-11）离线缓存界面交付登记（v2.0.17，[UI] 轨，Reasonix 实施）：§5.2 #4 销记——新增 OfflineCacheScreen（路由 /offline_cache，对齐原版 CacheActivity）：书架书籍缓存状态列表（item_download.xml 三行布局：书名/作者/「已缓存 N/总章节数」+ 播放/停止下载按钮 + 单本导出按钮）；顶栏菜单全部缓存（download_all）/缓存当前章节之后（download_after，sureCacheBook 确认框）/停止全部下载/下载队列；缓存数 + 任务状态 2s 轮询（对齐 EventBus 语义）；书架菜单「缓存导出」替换为「离线缓存」（对齐 menu_download 入口，原选书导出对话框迁移为页内单本导出，功能等价）。新增 widget 测试 5 个，flutter analyze 0 error、flutter test 1150/1150。
-- ✅ **v1.38（2026-08-13）schema v102 结构对齐专项强制落地（SCHEMA_VERSION 103→104）**：台账 §4.2.1 五项结构偏离 + rssStars 主键 + search_keywords + coverRules 入体系；Migration103To104 幂等重建；契约/台账同步销记。残留 rule_subs/dict_rules/keyboard_assists 表名未改。
+- ✅ **v1.38（2026-08-13）schema v102 结构对齐专项强制落地（SCHEMA_VERSION 103→104）**：台账 §4.2.1 五项结构偏离 + rssStars 主键 + search_keywords + coverRules 入体系；Migration103To104 幂等重建；契约/台账同步销记。三表名残留已于 v1.43 / SCHEMA 105（D1）闭合。
 - ✅ **v1.37（2026-08-13）增强遗留 C 批销记（v2.0.43）**：§5.14 #1 getSameTitleRemoved/`canRemoveSameTitle`；#4 webdav 流式 PUT；#15 customHosts 直建 Client；#18 loginCheckJs server+UI；缓存任务落库；自定义字体族核销（FontScreen）。schema v102 已于 v1.38 强制执行。
 - v1.28（2026-08-10）缓存下载链路根治登记（v2.0.16，[UI] 轨，Reasonix 实施）：根因——阅读页缓存走 downloadAddTask（Rust download_api.rs 仅内存任务登记无下载执行，cached_chapters 永不写入→目录云图标不亮）；cacheDownloadStart/Progress/List/Cancel FFI 已生成但 Dart 零调用；无下载队列页。修复：BookApi/RustApi/MockBookApi 封装 4 方法；阅读页缓存对话框改 cacheDownloadStart（真实下载）；新增 CacheDownloadScreen 队列页（任务列表/进度/取消，2s 轮询，路由 /cache_downloads + 书籍信息页菜单入口）；目录页云图标 2s 轮询实时刷新（对齐原版 EventBus.SAVE_CONTENT）。新增 widget 测试 2 个，flutter test 1145/1145、analyze 0 error；5558 冒烟 5/5。✅ **2026-08-13 销记遗留①**：缓存任务落库 caches KV（`cacheDownloadTask:*`）+ 进程重启续传。
 - v1.27（2026-08-10）图片源搜索 + 漫画正文 + 视频播放链路根治（v2.0.15，[Rust]+[UI] 双轨，Reasonix 实施）：① 图片书源分组搜不到——AnalyzeRule 不支持 `<js>` 标签（仅认 `@js:` 前缀，`<js>...</js>` 落入 CSS/Auto 解析返回空；原版 RuleAnalyzer 两者同视为 Mode.Js），get_strings 补 `<js>` 包裹识别执行；② 漫画正文图片不显示——正文/目录/信息/搜索解析全链路（web_book.rs 9 处 analyzer 调用点 + parse_content_page/fetch_paginated_content/fetch_sub_content/apply_content_replace_regex）注入书源 jsLib（漫画源 ruleContent 大量 `<js>eval(String(Reload('...')))</js>`，不注入 JS 抛错→空正文）；Flutter 漫画阅读器图片请求带书源防盗链 header（CDN 校验 Referer 否则 403）+ 相对路径以章节 URL 为 base 转绝对；③ 视频无法播放——正文 jsLib 注入 + `_extractVideoUrl` 支持 iframe/video/source/embed 标签 src（播放器页 HTML 场景）+ 播放请求带书源 header。新增 Rust 测试 3 个（`<js>`+jsLib 正文解析/无 jsLib 降级/web_book jsLib），cargo test legado-ffi 261 + legado-parser 178 全过，flutter analyze 0 error、flutter test 1143/1143，5558 实机待用户验证（图片源分组中文词搜索→点开→开始阅读看正文图；视频源同理看播放）
@@ -1137,5 +1168,6 @@ flutter test                  # 全量测试通过
 - v1.0（2026-07-31）初版：P0-P3 共 7 项遗留任务 + UI 一致性 13 项整合
 
 ---
-编写者：Qoder
-日期：2026-08-06
+编写者：Qoder  
+日期：2026-08-06  
+修订：Auto（Cursor）｜ 2026-08-13（v1.43：旁证台账 / SCHEMA105 / F4–F6 / T6 / PackageInfo / §5.15 SOURCE_DIFF backlog）

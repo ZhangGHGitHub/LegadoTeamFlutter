@@ -48,8 +48,9 @@
 
 ### 🔄 进行中项
 
-- **残留风险收口（2026-08-13）**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)（Doc/F1–F6/D1/D5 等）；高亮体系二期渲染层仍属 UI 轨后续。
-- **schema**：v104 主路径已落地；D1 三表名 Room 全对齐分步中（已清 default_data 双建表）。
+- **残留风险收口（2026-08-13）**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)（D1/F1–F7/T6 等多数已闭合；**A\*** 环境验收仍 ⛔）；主台账 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) v1.43。
+- **源码兼容 backlog**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) / REMAINING **§5.15**（`@put:` / `runPreUpdateJs` / `preciseSearch` / 正文 sourceRegex·webJs 等）。
+- **schema**：v104 + **v105**（Migration104To105，ruleSubs/dictRules/keyboardAssists Room 对齐）已落地。
 
 ### 👥 各轨负责人与分支
 
@@ -91,8 +92,9 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) | 重构剩余工作计划（P0-P3 遗留任务清单与执行顺序） |
-| [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) | 残留风险销账表（权威开放项） |
+| [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) | 重构剩余工作计划（P0-P3 遗留任务清单与执行顺序；§5.15 SOURCE_DIFF backlog） |
+| [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) | 残留风险销账表（工程收口；A* 仍 ⛔） |
+| [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) | 源码级差异审计（仍开放 P0/P1 书源兼容缺口） |
 | [GAP_AUDIT_2026-08-12.md](GAP_AUDIT_2026-08-12.md) | 原版 vs 重构缺口审计 |
 | [USER_TEST_RESULTS_2026-08-13.md](USER_TEST_RESULTS_2026-08-13.md) | 5556 全量门禁实测 |
 

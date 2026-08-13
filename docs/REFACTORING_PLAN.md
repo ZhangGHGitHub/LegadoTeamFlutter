@@ -6,7 +6,7 @@
 >
 > 新的唯一依据是以下《Legado Flutter + Rust 三端通用重构计划》，请严格以此为准开展工作。
 
-> **📌 当前状态（2026-08-06）**：本文档为重构启动阶段的历史纲领文档，不作重写。最新缺口台账与执行计划以 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) **§5「UI 细节与功能缺口专项（2026-08-06 实测审计）」**（Flutter 92 项 UI 缺口 + Rust 4 项 P1 实质缺口）为准；量化统计与时间表见 [REFACTORING_AUDIT_REPORT_20260806.md](REFACTORING_AUDIT_REPORT_20260806.md)；UI 可执行任务清单见 [UI_FIX_PLAN.md](UI_FIX_PLAN.md)「UI 缺口修复批次（2026-08-06）」。
+> **📌 当前状态（2026-08-06）**：本文档为重构启动阶段的历史纲领文档，不作重写。最新缺口台账与执行计划以 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) **§5「UI 细节与功能缺口专项」**及 **§5.15 SOURCE_DIFF backlog** 为准；工程残留以 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) 为准；源码级开放项以 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) 为准。量化统计与时间表见 [REFACTORING_AUDIT_REPORT_20260806.md](REFACTORING_AUDIT_REPORT_20260806.md)；UI 可执行任务清单见 [UI_FIX_PLAN.md](UI_FIX_PLAN.md)「UI 缺口修复批次（2026-08-06）」。
 
 ---
 
