@@ -1569,6 +1569,36 @@ class MockBookApi implements BookApi {
     ];
   }
 
+  Map<String, dynamic> _mockCoverRule = {
+    'enable': true,
+    'searchUrl': 'https://mock.cover.example/search?q={{key}}',
+    'coverRule': '\$.cover',
+  };
+
+  @override
+  Future<Map<String, dynamic>> getCoverRule() async {
+    await Future.delayed(const Duration(milliseconds: 20));
+    return Map<String, dynamic>.from(_mockCoverRule);
+  }
+
+  @override
+  Future<bool> saveCoverRule(Map<String, dynamic> rule) async {
+    await Future.delayed(const Duration(milliseconds: 20));
+    _mockCoverRule = Map<String, dynamic>.from(rule);
+    return true;
+  }
+
+  @override
+  Future<bool> deleteCoverRule() async {
+    await Future.delayed(const Duration(milliseconds: 20));
+    _mockCoverRule = {
+      'enable': true,
+      'searchUrl': 'https://mock.cover.example/search?q={{key}}',
+      'coverRule': '\$.cover',
+    };
+    return true;
+  }
+
   // ========== 书籍格式解析 ==========
 
   @override

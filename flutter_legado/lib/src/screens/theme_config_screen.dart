@@ -585,15 +585,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   _settings.setBoolPref(PrefKeys.coverShowAuthor, v);
                 },
               ),
-              // [Task #74 | 2026-08-10] §5.13-10：封面规则子项（契约 §2.4.8
-              // searchCoverRules 测试入口；对齐原版 CoverRuleConfigDialog
-              // 按书名测试语义；规则数据管理待后续契约） — Qoder
+              // F4：对齐原版 CoverRuleConfigDialog（get/save/delete + 测试搜索）
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('封面规则'),
-                subtitle: const Text('按书名测试启用规则搜封面（规则管理待后续契约）'),
+                subtitle: const Text('配置搜索 URL 与提取规则，可按书名测试'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: _showCoverRuleTestDialog,
+                onTap: _showCoverRuleConfigDialog,
               ),
             ],
           ),
@@ -608,18 +606,16 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     );
   }
 
-  /// 封面规则测试对话框（契约 §2.4.8 searchCoverRules；
-  /// 对齐原版 CoverRuleConfigDialog 按书名测试语义）
-  ///
-  /// 契约能力边界：searchCoverRules 仅支持「按书名执行启用规则搜封面」，
-  /// 规则数据管理（增删改/启用开关）无契约 CRUD 接口，本批不做，
-  /// UI 诚实标注「规则管理待后续契约」。 — Qoder
-  Future<void> _showCoverRuleTestDialog() async {
+  /// 封面规则配置对话框（契约 §2.4 F4；对齐原版 CoverRuleConfigDialog）
+  Future<void> _showCoverRuleConfigDialog() async {
+    final api = ref.read(bookApiProvider);
     await showDialog<void>(
       context: context,
-      builder: (_) => _CoverRuleTestDialog(
-        onSearch: (name) =>
-            ref.read(bookApiProvider).searchCoverRules(name),
+      builder: (_) => _CoverRuleConfigDialog(
+        loadRule: api.getCoverRule,
+        saveRule: api.saveCoverRule,
+        deleteRule: api.deleteCoverRule,
+        onSearch: api.searchCoverRules,
       ),
     );
   }
@@ -936,35 +932,120 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 }
 
-/// 封面规则测试对话框（自持 StatefulWidget，照 _TextPromptDialog 范式）：
-/// controller 在 State 内创建、dispose 中随子树卸载统一释放。
-/// 输入书名 → onSearch（searchCoverRules）→ 候选封面 URL 列表
-/// （可预览/复制）；空结果/失败均有提示。
-/// [Task #74 | 2026-08-10] — Qoder
-class _CoverRuleTestDialog extends StatefulWidget {
-  /// 搜索回调（由调用方注入 BookApi.searchCoverRules）
+/// 封面规则配置对话框（对齐原版 CoverRuleConfigDialog + 测试搜索）
+/// F4 | 2026-08-13 — Auto + UI
+class _CoverRuleConfigDialog extends StatefulWidget {
+  final Future<Map<String, dynamic>> Function() loadRule;
+  final Future<bool> Function(Map<String, dynamic> rule) saveRule;
+  final Future<bool> Function() deleteRule;
   final Future<List<String>> Function(String name) onSearch;
 
-  const _CoverRuleTestDialog({required this.onSearch});
+  const _CoverRuleConfigDialog({
+    required this.loadRule,
+    required this.saveRule,
+    required this.deleteRule,
+    required this.onSearch,
+  });
 
   @override
-  State<_CoverRuleTestDialog> createState() => _CoverRuleTestDialogState();
+  State<_CoverRuleConfigDialog> createState() => _CoverRuleConfigDialogState();
 }
 
-class _CoverRuleTestDialogState extends State<_CoverRuleTestDialog> {
+class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
+  late final TextEditingController _searchUrlController =
+      TextEditingController();
+  late final TextEditingController _coverRuleController =
+      TextEditingController();
   late final TextEditingController _nameController = TextEditingController();
-  bool _loading = false;
+  bool _enable = true;
+  bool _loading = true;
+  bool _saving = false;
+  bool _searching = false;
   bool _searched = false;
   String? _error;
   List<String> _results = [];
 
   @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
   void dispose() {
+    _searchUrlController.dispose();
+    _coverRuleController.dispose();
     _nameController.dispose();
     super.dispose();
   }
 
   String _errMsg(Object e) => e is BridgeError ? e.message : e.toString();
+
+  Future<void> _load() async {
+    try {
+      final rule = await widget.loadRule();
+      if (!mounted) return;
+      setState(() {
+        _enable = rule['enable'] == true || rule['enable'] == 1;
+        _searchUrlController.text = '${rule['searchUrl'] ?? ''}';
+        _coverRuleController.text = '${rule['coverRule'] ?? ''}';
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('CoverRuleConfig 加载失败: $e');
+      if (!mounted) return;
+      setState(() {
+        _error = '加载失败: ${_errMsg(e)}';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    final searchUrl = _searchUrlController.text.trim();
+    final coverRule = _coverRuleController.text.trim();
+    if (searchUrl.isEmpty || coverRule.isEmpty) {
+      setState(() => _error = '搜索url和cover规则不能为空');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.saveRule({
+        'enable': _enable,
+        'searchUrl': searchUrl,
+        'coverRule': coverRule,
+      });
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '保存失败: ${_errMsg(e)}';
+        _saving = false;
+      });
+    }
+  }
+
+  Future<void> _delete() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.deleteRule();
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '删除失败: ${_errMsg(e)}';
+        _saving = false;
+      });
+    }
+  }
 
   Future<void> _search() async {
     final name = _nameController.text.trim();
@@ -973,7 +1054,7 @@ class _CoverRuleTestDialogState extends State<_CoverRuleTestDialog> {
       return;
     }
     setState(() {
-      _loading = true;
+      _searching = true;
       _error = null;
     });
     try {
@@ -982,21 +1063,19 @@ class _CoverRuleTestDialogState extends State<_CoverRuleTestDialog> {
       setState(() {
         _results = list;
         _searched = true;
-        _loading = false;
+        _searching = false;
       });
     } catch (e) {
-      debugPrint('ThemeConfigScreen 封面规则测试搜索异常: $e');
       if (!mounted) return;
       setState(() {
         _error = '搜索失败: ${_errMsg(e)}';
         _results = [];
         _searched = true;
-        _loading = false;
+        _searching = false;
       });
     }
   }
 
-  /// 候选封面预览（网络图加载失败兑底提示）
   void _preview(String url) {
     showDialog<void>(
       context: context,
@@ -1036,107 +1115,162 @@ class _CoverRuleTestDialogState extends State<_CoverRuleTestDialog> {
       title: const Text('封面规则'),
       content: SizedBox(
         width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '按书名测试启用中的封面规则；'
-              '规则数据管理（增删改）待后续契约支持。',
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _nameController,
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      hintText: '输入书名',
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _search(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _loading ? null : _search,
-                  child: const Text('测试搜索'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
               )
-            else if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 13,
-                ),
-              )
-            else if (_searched && _results.isEmpty)
-              const Text(
-                '未搜到候选封面（无启用规则或全部失败）',
-                style: TextStyle(fontSize: 13),
-              )
-            else if (_results.isNotEmpty)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 240),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _results.length,
-                  separatorBuilder: (_, _) =>
-                      const Divider(height: 1),
-                  itemBuilder: (_, i) {
-                    final url = _results[i];
-                    return ListTile(
-                      dense: true,
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        url,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12),
+                      title: const Text('启用'),
+                      value: _enable,
+                      onChanged: _saving
+                          ? null
+                          : (v) => setState(() => _enable = v),
+                    ),
+                    TextField(
+                      controller: _searchUrlController,
+                      decoration: const InputDecoration(
+                        labelText: '搜索 URL',
+                        hintText: '支持 {{key}} 模板',
+                        border: OutlineInputBorder(),
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.image_outlined, size: 18),
-                            tooltip: '预览',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => _preview(url),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy, size: 18),
-                            tooltip: '复制',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => _copy(url),
-                          ),
-                        ],
+                      minLines: 2,
+                      maxLines: 4,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _coverRuleController,
+                      decoration: const InputDecoration(
+                        labelText: '封面提取规则',
+                        border: OutlineInputBorder(),
                       ),
-                    );
-                  },
+                      minLines: 2,
+                      maxLines: 6,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '按书名测试',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _nameController,
+                            decoration: const InputDecoration(
+                              hintText: '输入书名',
+                              border: OutlineInputBorder(),
+                            ),
+                            onSubmitted: (_) => _search(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _searching || _saving ? null : _search,
+                          child: const Text('测试'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (_searching)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      )
+                    else if (_error != null)
+                      Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 13,
+                        ),
+                      )
+                    else if (_searched && _results.isEmpty)
+                      const Text(
+                        '未搜到候选封面（无启用规则或全部失败）',
+                        style: TextStyle(fontSize: 13),
+                      )
+                    else if (_results.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _results.length,
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1),
+                          itemBuilder: (_, i) {
+                            final url = _results[i];
+                            return ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                url,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.image_outlined,
+                                      size: 18,
+                                    ),
+                                    tooltip: '预览',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => _preview(url),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.copy, size: 18),
+                                    tooltip: '复制',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => _copy(url),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
                 ),
               ),
-          ],
-        ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
+          onPressed: _saving ? null : _delete,
+          child: Text(
+            '删除',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('确定'),
         ),
       ],
     );

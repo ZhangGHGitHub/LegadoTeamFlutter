@@ -1646,6 +1646,19 @@ class RustApi implements BookApi {
     return decoded.map((e) => e.toString()).toList();
   }
 
+  @override
+  Future<Map<String, dynamic>> getCoverRule() async {
+    final json = await bridge.getCoverRule();
+    return _decodeMap(json, 'getCoverRule');
+  }
+
+  @override
+  Future<bool> saveCoverRule(Map<String, dynamic> rule) =>
+      bridge.saveCoverRule(ruleJson: jsonEncode(rule));
+
+  @override
+  Future<bool> deleteCoverRule() => bridge.deleteCoverRule();
+
   // ========== 书籍格式解析 ==========
 
   /// 解析 TXT 文件（按章节标题模式分割）

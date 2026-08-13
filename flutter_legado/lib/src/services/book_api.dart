@@ -740,6 +740,17 @@ abstract class BookApi {
   /// 无启用规则或全部失败返回空列表（非异常）。
   Future<List<String>> searchCoverRules(String name);
 
+  /// 读取封面规则配置（契约 §2.4 F4，对齐 BookCover.getCoverRule）
+  ///
+  /// 返回 `{enable, searchUrl, coverRule}`；表空时回退默认规则。
+  Future<Map<String, dynamic>> getCoverRule();
+
+  /// 保存封面规则（契约 §2.4 F4，对齐 BookCover.saveCoverRule）
+  Future<bool> saveCoverRule(Map<String, dynamic> rule);
+
+  /// 删除封面规则配置（契约 §2.4 F4，对齐 BookCover.delCoverRule）
+  Future<bool> deleteCoverRule();
+
   // ========== 书籍格式解析 ==========
 
   /// 解析 TXT 文件

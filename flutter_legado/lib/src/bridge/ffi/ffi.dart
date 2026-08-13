@@ -1158,6 +1158,17 @@ Future<void> setCustomHosts({required String hostsJson}) =>
 Future<String> searchCoverRules({required String name}) =>
     RustLib.instance.api.crateFfiFfiSearchCoverRules(name: name);
 
+/// 读取封面规则配置（契约 §2.4 F4，对齐 BookCover.getCoverRule）
+Future<String> getCoverRule() => RustLib.instance.api.crateFfiFfiGetCoverRule();
+
+/// 保存封面规则配置（契约 §2.4 F4，对齐 BookCover.saveCoverRule）
+Future<bool> saveCoverRule({required String ruleJson}) =>
+    RustLib.instance.api.crateFfiFfiSaveCoverRule(ruleJson: ruleJson);
+
+/// 删除封面规则配置（契约 §2.4 F4，对齐 BookCover.delCoverRule）
+Future<bool> deleteCoverRule() =>
+    RustLib.instance.api.crateFfiFfiDeleteCoverRule();
+
 /// 获取所有用户（JSON 数组）
 Future<String> userGetAll() => RustLib.instance.api.crateFfiFfiUserGetAll();
 
