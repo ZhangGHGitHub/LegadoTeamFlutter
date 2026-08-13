@@ -67,15 +67,17 @@
 
 ## 5. 语速跟随系统实时通道
 
+> ✅ **已闭合（2026-08-13）**：默认 true；config 键 `ttsFollowSys`；跟随=1.0x 默认语速（非系统实时通道）；旧 SP 键自动迁移。
+
 | 字段 | 内容 |
 |------|------|
-| **现状证据** | Flutter：`flutter_legado/lib/src/widgets/reader/read_aloud_bar.dart` L506-523——跟随系统开关仅持久化到 SharedPreferences，开启时禁用速度滑杆（L468-470），L508 `TODO(留批次)` 写「需系统 TTS 语速读取通道」。**原版语义核查（评审关键发现）**：Kotlin `AppConfig.ttsFlowSys`（`app/src/main/java/io/legado/app/help/config/AppConfig.kt` L364-368，默认 **true**）+ L393 `speechRatePlay = if (ttsFlowSys) defaultSpeechRate else ttsSpeechRate`，其中 `defaultSpeechRate` 为常量 5（L373，即 1.0x）；`ReadAloudDialog.kt` L124-128 勾选跟随后仅禁用滑杆。**原版并不实时读取系统 TTS 语速**——「跟随系统」= 使用默认语速 |
-| **所需交付** | 纯 UI/配置修正——**无需任何系统通道或 FFI**（TODO 的前提比原版更严格，属过度设计预警） |
+| **现状证据** | 对齐原版 `ttsFlowSys` + `speechRatePlay` |
+| **所需交付** | 纯 UI/配置 |
 | **跨轨依赖** | 无 |
-| **实现方案要点** | 对齐原版语义：跟随系统开启时朗读使用默认语速（1.0x，对应 Rust/FFI speed 参数换算）、滑杆禁用；默认值对齐原版 true（当前 Flutter 默认 false）；持久化键迁出 SharedPreferences 至 config 存取（键名对齐原版 `ttsFollowSys`，遵守业务数据不经 SharedPreferences 的架构铁律）；audio_notifier 取 speed 时读取该开关 |
-| **工作量估算** | 0.5 人日 |
-| **建议优先级与批次** | P2 快赢；波次4 快赢组 |
-| **风险/注意事项** | SharedPreferences→config 迁移需处理旧值读取；若未来确需「真·系统语速」属新增功能，违反纯迁移边界，须用户确认后再立项 |
+| **实现方案要点** | 已交付 |
+| **工作量估算** | — |
+| **建议优先级与批次** | 已完成 |
+| **风险/注意事项** | — |
 
 ## 6. MoreConfig 其余项（显示标题/滚动条/音量键翻页等）
 
@@ -91,15 +93,14 @@
 
 ## 7. schema v102 重建表（合并 schema 对齐专项）
 
+> ✅ **已完成（2026-08-13）**：用户确认强制执行。代码版本号为 **SCHEMA_VERSION 103→104**（避开已占用的 v102/v103）。实现见 `rust/legado-db/src/migration/schema_align_v104.rs`；契约/台账销记见 API_CONTRACT 与 REFACTORING_REMAINING_PLAN §4.2.1。残留：rule_subs/dict_rules/keyboard_assists 表名未改。
+
 | 字段 | 内容 |
 |------|------|
-| **现状证据** | [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §4.2.1（L590-594）Task #118 评估已完成：**剩余结构偏离 5 项**——① rssArticles 主键 (origin,title) vs Room (origin,link,sort)；② readRecord 主键 (bookName) vs Room (deviceId,bookName)；③ rssReadRecords 结构偏离；④ httpTTS 严重偏离（http_tts 6 列 snake_case vs Room 13 列 camelCase）；⑤ rssSources enableCookieJar/enabledCookieJar 双列冗余。评估结论：**建议延后**，与 ruleSubs/dictRules/keyboardAssists/search_keywords 结构偏离（§4.2.1 偏离明细表 L566-583）合并为一次「schema 对齐专项」。列级偏离已随 v101 补齐（L588 核销记录）。代码位点：`rust/legado-db/src/schema.rs`（SCHEMA_VERSION=101）、`rust/legado-db/src/migration/migrations.rs` |
-| **所需交付** | Rust DB 迁移专项：新迁移 v101→102（重建 5+4 张偏离表）+ 相关 Repository 修订 + 备份恢复/Room 导入链路验证；非 FFI 加法，无 UI 阻塞 |
-| **跨轨依赖** | 不阻塞 UI（五项偏离均不影响单机功能，审计确认）；需在 API_CONTRACT.md/TWO_TRACK_DEV_SPEC.md 登记 SCHEMA_VERSION=102 语义 |
-| **实现方案要点** | 按 §4.2.1 既定方案（L592）：SQLite 不支持改主键/改列名 → 逐表「新建表 → 数据搬迁（主键变更需去重冲突策略）→ drop 旧表 rename」；修订 RssArticleRepository/RssReadRecordRepository/ReadRecordRepository/HttpTtsRepository/RssSourceRepository；构造 v95 Android 遗留库验证 95→…→102 全链路；**先行零风险项**：rssSources 双列代码层收敛（读写统一 enabledCookieJar，enableCookieJar 保留不写，待 v102 一并 drop） |
-| **工作量估算** | 3-5 人日（§4.2.1 L593 既定估算，含全链路回归） |
-| **建议优先级与批次** | P2 触发型；波次6（治理专项）。**执行触发条件**（§4.2.1 L594）：出现与 Android 遗留库/备份文件互操作需求，或上游同步要求结构一致时启动 |
-| **风险/注意事项** | 数据风险最高的一项：rssArticles 主键变更可能合并重名文章行造成数据丢失；v95→v102 迁移回滚复杂；WebDAV 备份导入导出一致性受影响；必须备份策略 + 迁移单测全覆盖后才可上线 |
+| **现状证据** | 已落地：Migration103To104；legado-db 297 单测含 v103→v104 全链路 |
+| **所需交付** | ✅ 结构对齐 5 项 + rssStars 主键 + search_keywords + coverRules |
+| **跨轨依赖** | 无新 FFI；冷启动打开库升级即可 |
+| **残留** | rule_subs/dict_rules/keyboard_assists 表名/列名 snake_case |
 
 ## 8. bridge.rs C ABI 三步废弃
 
