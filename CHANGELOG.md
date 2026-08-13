@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.58] - 2026-08-14
+
+### Added
+- [Rust] F3-14 新增 `httpGetBytes` FFI（二进制 GET，bodyBase64 响应）
+- [UI] F3-14 `bridge_http.dart` 收敛 8 处裸 `http.get` 至 Rust Bridge
+
+### Changed
+- [docs] F3-5 §1.6 登记 9 个 FFI 非 Result 导出豁免
+- [docs] F3-8 §2.44 注明 infoHtml/tocHtml/downloadUrls 瞬态字段语义
+- [docs] F3-12 根 README 更新（2.0.x、62 Screen、CI 徽标）
+- [docs] API_CONTRACT BookApi 234 方法；附录 245
+
 ## [2.0.57] - 2026-08-14
 
 ### Fixed
@@ -17,15 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.56] - 2026-08-14
 
-### Added
-- [Rust] F3-14 新增 `httpGetBytes` FFI（二进制 GET，bodyBase64 响应）
-- [UI] F3-14 `bridge_http.dart` 收敛 8 处裸 `http.get` 至 Rust Bridge
-
 ### Changed
-- [docs] F3-5 §1.6 登记 9 个 FFI 非 Result 导出豁免
-- [docs] F3-8 §2.44 注明 infoHtml/tocHtml/downloadUrls 瞬态字段语义
-- [docs] F3-12 根 README 更新（2.0.x、62 Screen、CI 徽标）
-- [docs] API_CONTRACT BookApi 234 方法；附录 245
+- [docs] API_CONTRACT 变更记录预登记（本批 F3 代码于 2.0.58 合入）
 
 ## [2.0.55] - 2026-08-14
 
