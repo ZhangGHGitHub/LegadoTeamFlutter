@@ -138,6 +138,10 @@
 | P2-13 ConfigMap | ✅ | 本轮 |
 | §4.2 过时注释 | ✅ | 本轮 |
 | Cronet / 直链上传产品入口 | N/A | GAP / RESIDUAL |
+| Android x86_64 so + 5556 冒烟 | ✅ 本轮补验证 | `30c48ded2` 修编译后重编 so；`emulator_smoke_test.ps1 -Device emulator-5556` **5/5 PASS**（无 FATAL） |
+
+**本轮终态仍开放（勿销）**：完整 BackstageWebView DOM（平台桥）；JS 次要重载（§3.4）；checkRedirect 可观测性。
 
 编写者：Reasonix ｜ 2026-08-13（源码级只读审计）  
-修订：Auto（Cursor）｜ 2026-08-13（实现销记 P0/P1/P2 开放项；DownloadService/upload 标 N/A）
+修订：Auto（Cursor）｜ 2026-08-13（实现销记 P0/P1/P2 开放项；DownloadService/upload 标 N/A）  
+修订：Auto（Cursor）｜ 2026-08-13（补编译修复 `30c48ded2` + 5556 冒烟证据）

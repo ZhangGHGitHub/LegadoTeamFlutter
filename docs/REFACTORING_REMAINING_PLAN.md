@@ -1119,7 +1119,7 @@ flutter test                  # 全量测试通过
 **最后修改**: Auto（Cursor）
 
 **版本记录**：
-- ✅ **v1.44（2026-08-13）SOURCE_DIFF 开放项续销**：preciseSearch Dart/FRB；reGetBook/refreshTocUrl；setRedirectUrl + isUrl/unescape；`@webjs` 无头；ConfigMap；DownloadService/upload 标 N/A；§5.15 收窄为 DOM WebView / 次要重载。
+- ✅ **v1.44（2026-08-13）SOURCE_DIFF 开放项续销**：preciseSearch Dart/FRB；reGetBook/refreshTocUrl；setRedirectUrl + isUrl/unescape；`@webjs` 无头；ConfigMap；DownloadService/upload 标 N/A；§5.15 收窄为 DOM WebView / 次要重载。验证：`30c48ded2` 修 Android quickjs 编译；x86_64 so 重编；5556 冒烟 5/5 PASS。
 - ✅ **v1.43（2026-08-13）旁证台账回写**：Doc8 链 RESIDUAL + SOURCE_DIFF；SCHEMA 104+105（D1）销「三表名残留」；§5.12 F6 刘海/音量键/shareLayout 全部闭合；F4/F5/T6/PackageInfo 与 §5.13/§5.14 对齐 ✅；新增 §5.15 SOURCE_DIFF 开放 P0/P1 backlog；听书以 GAP 轮5 为准。commits：`18003a7b9`/`46ebfa085`/`f7bcf4425`/`d83e6eb26`/`5cb4d4ca3`/`729eb970f`/`c3dd3a0b3`/`fcbfea4ff`/`3ff496355` 等。
 - v1.42（2026-08-11）必应漫画 type=0 正文刷 `<img>` HTML 销记（v2.0.33，[UI]，Reasonix）：书源 type=0 + `.img@img@html`+FULL，图片直连 200 JPEG 无防盗链问题；文本阅读器不渲染 img → 裸标签。修复抽图规则提升为 image 走漫画阅读器 + 文本侧图片主导正文兜底。版本 2.0.33+35
 - v1.41（2026-08-11）搜索相对 URL 绝对化 + 目录 `<js>$[*]` 链拆解 + `{{$.}}` 双花括号销记（v2.0.30，[Rust]，Reasonix）：批量探针 type=2 仅 12/89 有搜索命中；根因——parse 缺 baseUrl、无 path host 拼接命中 `://` 假域名、get_elements 误拆 `<js>+$[*]` 吞错、`{{$.id}}` 残留花括号。51 TOC 0→1；神漫画 TOC=61。版本 2.0.30+32
