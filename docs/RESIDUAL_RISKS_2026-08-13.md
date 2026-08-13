@@ -91,3 +91,4 @@ $adb = "D:\Android\platform-tools\adb.exe"
 | `[UI]+[Android]` | F1 SAF 落盘 + F2 Job headless |
 | `[Rust]` | D5 name+author 预检 + D1 清双建表 + F3 单测 |
 | `[UI]` | F5/F6/F7 MCP 文案 / 音量键刘海 / 本地段评 Deprecated |
+| `[UI]` | **版本同源已修**：`package_info_plus` 替代硬编码 `2.0.38`（关于页 / 检查更新 / UA） |

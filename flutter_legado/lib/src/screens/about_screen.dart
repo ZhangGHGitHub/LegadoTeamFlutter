@@ -21,7 +21,6 @@ class AboutScreen extends ConsumerStatefulWidget {
 
 class _AboutScreenState extends ConsumerState<AboutScreen>
     with SingleTickerProviderStateMixin {
-  static const _appVersion = AppUpdateService.currentVersionName;
   static const _repoUrl = 'https://github.com/LegadoTeam/legado';
   static const _issueUrl = 'https://github.com/LegadoTeam/legado/issues';
   static const _sponsorUrl = 'https://github.com/gedoor/legado#赞助';
@@ -29,6 +28,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
   late final AnimationController _controller;
   bool _checkingUpdate = false;
   String? _updateResult;
+  String _appVersion = '';
   String _rustVersion = '';
 
   @override
@@ -38,13 +38,25 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..forward();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadRustVersion());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAppVersion();
+      _loadRustVersion();
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final v = await AppUpdateService.resolveCurrentVersionName();
+      if (mounted) setState(() => _appVersion = v);
+    } catch (e) {
+      debugPrint('获取应用版本号失败: $e');
+    }
   }
 
   Future<void> _loadRustVersion() async {
@@ -75,15 +87,21 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
     });
     final service = AppUpdateService();
     try {
-      // 对齐 AppUpdateGitHub.check → UpdateDialog
-      final info = await service.check(currentVersion: _appVersion);
+      // 对齐 AppUpdateGitHub.check → UpdateDialog；版本走 PackageInfo
+      final version = _appVersion.isEmpty
+          ? await AppUpdateService.resolveCurrentVersionName()
+          : _appVersion;
+      if (mounted && _appVersion.isEmpty) {
+        setState(() => _appVersion = version);
+      }
+      final info = await service.check(currentVersion: version);
       if (!mounted) return;
       setState(() => _checkingUpdate = false);
       if (info == null) {
         await showDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: Text('当前版本 v$_appVersion'),
+            title: Text('当前版本 v$version'),
             content: const Text('当前已是最新版本。'),
             actions: [
               TextButton(
@@ -94,7 +112,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
           ),
         );
         if (mounted) {
-          setState(() => _updateResult = '当前已是最新版本 v$_appVersion');
+          setState(() => _updateResult = '当前已是最新版本 v$version');
         }
         return;
       }
@@ -189,17 +207,23 @@ class _AboutScreenState extends ConsumerState<AboutScreen>
                 ),
               ),
               const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  'v$_appVersion',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: colorScheme.onSecondaryContainer,
-                    fontWeight: FontWeight.w600,
+              // 系统感版本胶囊：加载完成前轻量占位，避免硬编码滞后
+              AnimatedOpacity(
+                opacity: _appVersion.isEmpty ? 0.45 : 1,
+                duration: const Duration(milliseconds: 220),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: colorScheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _appVersion.isEmpty ? '版本…' : 'v$_appVersion',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: colorScheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),

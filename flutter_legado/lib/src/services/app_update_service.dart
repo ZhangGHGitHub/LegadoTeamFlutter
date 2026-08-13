@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
@@ -51,10 +52,23 @@ class AppUpdateService {
   static const releasesUrl =
       'https://api.github.com/repos/LegadoTeam/legado/releases?per_page=30';
 
-  /// 与 pubspec.yaml version 保持同步（无 package_info 时）
-  static const currentVersionName = '2.0.38';
+  /// 进程内缓存：与 pubspec / 构建产物 versionName 同源（PackageInfo）
+  static String? _cachedVersionName;
 
   final http.Client _client;
+
+  /// 读取运行时 version（`pubspec.yaml` 的 `x.y.z` 段），避免硬编码滞后。
+  static Future<String> resolveCurrentVersionName() async {
+    final cached = _cachedVersionName;
+    if (cached != null && cached.isNotEmpty) return cached;
+    final info = await PackageInfo.fromPlatform();
+    final version = info.version.trim();
+    if (version.isEmpty) {
+      throw StateError('无法读取应用版本号');
+    }
+    _cachedVersionName = version;
+    return version;
+  }
 
   /// 检查更新；已最新时返回 null；网络/解析失败抛异常。
   ///
@@ -66,8 +80,8 @@ class AppUpdateService {
     bool preferArm = true,
     bool sameMajorOnly = true,
   }) async {
-    final version = currentVersion ?? currentVersionName;
-    final releases = await _fetchReleases();
+    final version = currentVersion ?? await resolveCurrentVersionName();
+    final releases = await _fetchReleases(userAgentVersion: version);
     final selected = _selectUpdateRelease(
       releases: releases,
       appVariant: variant,
@@ -103,13 +117,15 @@ class AppUpdateService {
     }
   }
 
-  Future<List<_ReleaseCandidate>> _fetchReleases() async {
+  Future<List<_ReleaseCandidate>> _fetchReleases({
+    required String userAgentVersion,
+  }) async {
     final res = await _client
         .get(
           Uri.parse(releasesUrl),
           headers: {
             'Accept': 'application/vnd.github+json',
-            'User-Agent': 'legado-flutter/$currentVersionName',
+            'User-Agent': 'legado-flutter/$userAgentVersion',
           },
         )
         .timeout(const Duration(seconds: 10));

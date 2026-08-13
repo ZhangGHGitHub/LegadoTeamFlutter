@@ -13,9 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [Rust]+[UI] loginCheckJs：legado-server fetcher 接入 + 阅读器自动拉登录
 - [Rust] 缓存批量下载任务落库 caches KV（重启续传）
 
+### Fixed
+- [UI] 应用版本同源：`package_info_plus` 运行时读取 version；关于页 / 检查更新 / User-Agent 不再硬编码滞后
+
 ### Notes
 - 自定义字体族（FontScreen 导入/切换）此前已具备，本批核销
 - schema v102：计划结论为延后（无遗留库互操作触发）；待用户确认是否强制做
+- **版本同源已修**：升版只改 `pubspec.yaml`，勿再手写 `currentVersionName`
 
 ## [2.0.42] - 2026-08-13
 
