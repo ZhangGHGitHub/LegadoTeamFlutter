@@ -1,19 +1,21 @@
 // 设置枢纽菜单 / 其他设置页 widget 测试
 //
-// 验证 Phase 5.4 provider→Riverpod 迁移后的设置页（对标 Android pref_main 枢纽结构）：
-// - SettingsScreen 以菜单入口聚合各管理功能与子设置页
-// - OtherSettingsScreen 承接语言/阅读默认/网络/缓存入口
-//   （QUIC 开关已随 2.0.3 QUIC 移除批清理，断言同步销记）
+// 对齐 2026-08-13「我的」设置树（pref_main / pref_config_other）：
+// - SettingsScreen：字典规则、备份与恢复全页、无导出日志
+// - OtherSettingsScreen：语言/主界面/清理缓存；无创意「阅读/网络」分组
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
+import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
+import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 
 import '../mocks/mocks.dart';
 
@@ -34,10 +36,13 @@ void main() {
     addTearDown(container.dispose);
   });
 
-  Widget wrap(Widget child) {
+  Widget wrap(Widget child, {Map<String, WidgetBuilder>? routes}) {
     return UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(home: child),
+      child: MaterialApp(
+        home: child,
+        routes: routes ?? const {},
+      ),
     );
   }
 
@@ -46,27 +51,29 @@ void main() {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
-      // 顶部管理入口（对标 pref_main 顶层项）
+      // 顶部管理入口（对标 pref_main；字典规则非「词典规则」）
       expect(find.text('书源管理'), findsOneWidget);
       expect(find.text('定时任务'), findsOneWidget);
       expect(find.text('TXT 目录规则'), findsOneWidget);
       expect(find.text('替换净化'), findsOneWidget);
-      expect(find.text('词典规则'), findsOneWidget);
+      expect(find.text('字典规则'), findsOneWidget);
       expect(find.text('主题模式'), findsOneWidget);
 
-      // AppBar 标题为「我的」（对标原版 fragment_my_config）
       expect(find.text('我的'), findsOneWidget);
-      // 「设置」分组头位于视口外缓存区内（对标 pref_main PreferenceCategory）
       expect(find.text('设置', skipOffstage: false), findsOneWidget);
-      // 备份恢复在默认视口折叠区外（ListView 懒构建），需滚动可见
-      await tester.scrollUntilVisible(find.text('备份恢复'), 100);
+
+      await tester.scrollUntilVisible(find.text('备份与恢复'), 100);
       await tester.pumpAndSettle();
-      expect(find.text('备份恢复'), findsOneWidget);
-      // 主题设置/其他设置在默认视口折叠区外，需滚动可见
+      expect(find.text('备份与恢复'), findsOneWidget);
+
       await tester.scrollUntilVisible(find.text('主题设置'), 100);
       await tester.pumpAndSettle();
       expect(find.text('主题设置'), findsOneWidget);
       expect(find.text('其他设置'), findsOneWidget);
+
+      // 已删除创意项
+      expect(find.text('导出日志'), findsNothing);
+      expect(find.text('词典规则'), findsNothing);
     });
 
     testWidgets('滚动可见其他分组（书签/阅读记录/关于）', (tester) async {
@@ -85,78 +92,70 @@ void main() {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
-      // 默认跟随系统（subtitle）
       expect(find.text('跟随系统'), findsOneWidget);
       expect(
         container.read(themeNotifierProvider).themeMode,
         ThemeMode.system,
       );
 
-      // 点击主题模式弹出选择对话框
+      // 点标题「主题模式」（subtitle「选择主题模式」同屏，勿用模糊 finder）
       await tester.tap(find.text('主题模式'));
       await tester.pumpAndSettle();
-      expect(find.text('选择主题模式'), findsOneWidget);
-      expect(find.text('浅色'), findsOneWidget);
-      expect(find.text('深色'), findsOneWidget);
 
-      // 选择深色 → ThemeNotifier 状态更新（驱动 MaterialApp 全局切换）
-      await tester.tap(find.text('深色'));
+      // 底栏标题与列表 subtitle 可能同文案，用 ListTile 精确匹配选项
+      expect(find.widgetWithText(ListTile, '浅色'), findsOneWidget);
+      expect(find.widgetWithText(ListTile, '深色'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ListTile, '深色'));
       await tester.pumpAndSettle();
 
       expect(container.read(themeNotifierProvider).themeMode, ThemeMode.dark);
       expect(find.text('深色'), findsOneWidget);
     });
 
-    testWidgets('点击备份恢复弹出底部弹窗（含恢复忽略项）', (tester) async {
-      await tester.pumpWidget(wrap(const SettingsScreen()));
+    testWidgets('点击备份与恢复进入全页 WebDAV/备份设置', (tester) async {
+      await tester.pumpWidget(wrap(
+        const SettingsScreen(),
+        routes: {
+          AppRoutes.webdavSettings: (_) => const WebDavSettingsScreen(),
+        },
+      ));
       await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(find.text('备份恢复'), 100);
+      await tester.scrollUntilVisible(find.text('备份与恢复'), 100);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('备份恢复'));
-      await tester.pumpAndSettle();
-
-      // 底部弹窗聚合：备份/恢复/WebDAV 同步/恢复忽略项/导入旧版
-      expect(find.text('备份数据'), findsOneWidget);
-      expect(find.text('恢复数据'), findsOneWidget);
-      expect(find.text('WebDAV 同步'), findsOneWidget);
-      expect(find.text('恢复忽略项'), findsOneWidget);
-      expect(find.text('导入旧版数据'), findsOneWidget);
-    });
-
-    testWidgets('滚动可见导出日志入口', (tester) async {
-      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.tap(find.text('备份与恢复'));
       await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(find.text('导出日志'), 100);
+      // 全页（非底部弹窗）：AppBar + 配置项
+      expect(find.text('备份与恢复'), findsWidgets);
+      expect(find.text('WebDAV 服务器地址'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('备份'), 80);
       await tester.pumpAndSettle();
-
-      expect(find.text('导出日志'), findsOneWidget);
-      expect(find.text('分享应用日志文件用于问题诊断'), findsOneWidget);
+      expect(find.text('备份'), findsOneWidget);
+      expect(find.text('恢复'), findsOneWidget);
+      expect(find.text('恢复忽略列表'), findsOneWidget);
     });
   });
 
   group('OtherSettingsScreen 其他设置', () {
-    testWidgets('渲染语言/阅读/网络/缓存分组', (tester) async {
+    testWidgets('渲染语言/主界面/清理缓存（无创意阅读网络分组）', (tester) async {
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+
       await tester.pumpWidget(wrap(const OtherSettingsScreen()));
       await tester.pumpAndSettle();
 
       expect(find.text('语言'), findsWidgets);
+      expect(find.text('主界面'), findsOneWidget);
 
-      // [UI-fix v2.0.5 | 2026-08-08] 其他设置页对齐原版后新增「主界面」分组，
-      // 阅读/网络分组被推出首屏，改为滚动后断言 — Qoder
-      await tester.scrollUntilVisible(find.text('阅读设置'), 100);
-      await tester.pumpAndSettle();
-      expect(find.text('阅读设置'), findsOneWidget);
+      // 创意分组已删
+      expect(find.text('阅读设置'), findsNothing);
+      expect(find.text('网络设置'), findsNothing);
+      expect(find.text('缓存管理'), findsNothing);
 
-      await tester.scrollUntilVisible(find.text('网络设置'), 100);
+      await tester.scrollUntilVisible(find.text('清理缓存'), 100);
       await tester.pumpAndSettle();
-      expect(find.text('网络设置'), findsOneWidget);
-
-      // 缓存入口在折叠区，需滚动可见（QUIC 开关已随 2.0.3 QUIC 移除批清理）
-      await tester.scrollUntilVisible(find.text('缓存管理'), 100);
-      await tester.pumpAndSettle();
-      expect(find.text('缓存管理'), findsOneWidget);
+      expect(find.text('清理缓存'), findsOneWidget);
     });
   });
 }

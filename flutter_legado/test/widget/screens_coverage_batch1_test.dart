@@ -13,8 +13,6 @@ import 'package:flutter_legado/src/screens/audio_screen.dart';
 import 'package:flutter_legado/src/screens/book_group_screen.dart';
 import 'package:flutter_legado/src/screens/book_info_screen.dart';
 import 'package:flutter_legado/src/screens/reader_comic_screen.dart';
-import 'package:flutter_legado/src/screens/reader_screen.dart';
-import 'package:flutter_legado/src/screens/video_screen.dart';
 import 'package:flutter_legado/src/services/audio_service.dart';
 
 import '../mocks/mocks.dart';
@@ -271,9 +269,18 @@ void main() {
       Widget wrapWithRoutes(Widget child) {
         pushed.clear();
         final observer = _PushedRouteObserver(pushed);
-        // AppRoutes.routes 含 '/'（home）条目，与 MaterialApp.home 冲突，需剔除
+        // 分流断言只关心路由名；reader/video 用桩页规避测试环境
+        // Theme.of / video_player 副作用（真实页由专项测试覆盖）
         final routes = Map<String, WidgetBuilder>.from(AppRoutes.routes)
           ..remove('/');
+        routes[AppRoutes.reader] = (_) => const Scaffold(
+              key: Key('reader-stub'),
+              body: Text('文本阅读页'),
+            );
+        routes[AppRoutes.video] = (_) => const Scaffold(
+              key: Key('video-stub'),
+              body: Text('视频播放页'),
+            );
         return UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
@@ -295,6 +302,12 @@ void main() {
             .thenAnswer((_) async => '正文内容');
         when(() => mockApi.getChapterContent(any(), any()))
             .thenAnswer((_) async => '正文内容');
+        when(() => mockApi.addBook(any())).thenAnswer((inv) async {
+          return inv.positionalArguments[0] as Book;
+        });
+        when(() => mockApi.updateBook(any())).thenAnswer((_) async {});
+        when(() => mockApi.refreshToc(any(), any()))
+            .thenAnswer((_) async => []);
       }
 
       testWidgets('音频书（bookType=32）进入音频播放页', (tester) async {
@@ -339,8 +352,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.reader));
-        Navigator.of(tester.element(find.byType(ReaderScreen))).pop();
-        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('reader-stub')), findsOneWidget);
       });
 
       testWidgets('视频书（bookType=4）进入视频播放页', (tester) async {
@@ -354,8 +366,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.video));
-        Navigator.of(tester.element(find.byType(VideoScreen))).pop();
-        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('video-stub')), findsOneWidget);
       });
 
       testWidgets('已入库缺类型位（bookType=1024）时按书源类型分流图片书',

@@ -84,7 +84,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAdvancedConfig();
     // F6：音量键翻页（对标 volumeKeyPage / volumeKeyPageOnPlay）
     HardwareKeyboard.instance.addHandler(_onHardwareKey);
   }
@@ -92,8 +91,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Theme.of 不可在 initState 调用；首次与日夜切换时加载高级配置
     final isNight = Theme.of(context).brightness == Brightness.dark;
-    if (_layoutIsNight != null && _layoutIsNight != isNight) {
+    if (_layoutIsNight == null || _layoutIsNight != isNight) {
       unawaited(_loadAdvancedConfig());
     }
     _layoutIsNight = isNight;

@@ -16,8 +16,12 @@ void main() {
   group('TxtTocRulesNotifier', () {
     late MockRustApi mockApi;
     late ProviderContainer container;
+    late Map<String, String?> configStore;
 
-    setUpAll(registerFallbacks);
+    setUpAll(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      registerFallbacks();
+    });
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({
@@ -25,6 +29,16 @@ void main() {
         kTxtTocRuleVersionKey: kTxtTocRuleVersion,
       });
       mockApi = MockRustApi();
+      configStore = {};
+      when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
+        final key = inv.positionalArguments[0] as String;
+        return configStore[key];
+      });
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((inv) async {
+        final key = inv.positionalArguments[0] as String;
+        final value = inv.positionalArguments[1] as String;
+        configStore[key] = value;
+      });
       container = ProviderContainer(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
       );
@@ -36,9 +50,12 @@ void main() {
     TxtTocRulesNotifier readNotifier() =>
         container.read(txtTocRulesNotifierProvider.notifier);
 
-    void stubConfig({String? stored}) {
-      when(() => mockApi.getConfig(any())).thenAnswer((_) async => stored);
-      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+    void stubStored(String? stored) {
+      if (stored == null) {
+        configStore.remove('txt_toc_rules');
+      } else {
+        configStore['txt_toc_rules'] = stored;
+      }
     }
 
     test('初始状态为空', () {
@@ -49,22 +66,24 @@ void main() {
 
     test('load 无持久化且需升级时写入原版默认规则', () async {
       SharedPreferences.setMockInitialValues({});
-      stubConfig();
+      stubStored(null);
 
       await readNotifier().load();
 
       final state = readState();
       expect(state.isLoading, isFalse);
+      expect(state.error, isNull);
       expect(state.rules, isNotEmpty);
       expect(state.rules.first.id, lessThan(0)); // 原版默认 id 为负数
-      verify(() => mockApi.setConfig('txt_toc_rules', any())).called(greaterThan(0));
+      verify(() => mockApi.setConfig('txt_toc_rules', any()))
+          .called(greaterThan(0));
     });
 
     test('load 解析已持久化的规则（不重复写回）', () async {
       final stored = jsonEncode([
         {'id': 9, 'name': '自定义', 'rule': r'^\d+', 'enable': true},
       ]);
-      stubConfig(stored: stored);
+      stubStored(stored);
 
       await readNotifier().load();
 
@@ -75,13 +94,11 @@ void main() {
     });
 
     test('addRule 自动生成 id 与 serialNumber 并持久化', () async {
-      stubConfig(
-        stored: jsonEncode([
-          {'id': 1, 'name': 'a', 'rule': r'^a', 'enable': true, 'serialNumber': 0},
-          {'id': 2, 'name': 'b', 'rule': r'^b', 'enable': true, 'serialNumber': 1},
-          {'id': 3, 'name': 'c', 'rule': r'^c', 'enable': false, 'serialNumber': 2},
-        ]),
-      );
+      stubStored(jsonEncode([
+        {'id': 1, 'name': 'a', 'rule': r'^a', 'enable': true, 'serialNumber': 0},
+        {'id': 2, 'name': 'b', 'rule': r'^b', 'enable': true, 'serialNumber': 1},
+        {'id': 3, 'name': 'c', 'rule': r'^c', 'enable': false, 'serialNumber': 2},
+      ]));
       await readNotifier().load();
 
       await readNotifier().addRule(const TxtTocRule(name: '新增', rule: r'^x'));
@@ -95,11 +112,9 @@ void main() {
     });
 
     test('updateRule 更新指定规则', () async {
-      stubConfig(
-        stored: jsonEncode([
-          {'id': 2, 'name': '旧', 'rule': r'^第', 'enable': true, 'serialNumber': 1},
-        ]),
-      );
+      stubStored(jsonEncode([
+        {'id': 2, 'name': '旧', 'rule': r'^第', 'enable': true, 'serialNumber': 1},
+      ]));
       await readNotifier().load();
 
       await readNotifier().updateRule(
@@ -113,12 +128,10 @@ void main() {
     });
 
     test('deleteRule 删除指定规则', () async {
-      stubConfig(
-        stored: jsonEncode([
-          {'id': 1, 'name': 'a', 'rule': r'^a', 'enable': true},
-          {'id': 2, 'name': 'b', 'rule': r'^b', 'enable': true},
-        ]),
-      );
+      stubStored(jsonEncode([
+        {'id': 1, 'name': 'a', 'rule': r'^a', 'enable': true},
+        {'id': 2, 'name': 'b', 'rule': r'^b', 'enable': true},
+      ]));
       await readNotifier().load();
 
       await readNotifier().deleteRule(1);
@@ -129,11 +142,9 @@ void main() {
     });
 
     test('setEnabled 切换启停', () async {
-      stubConfig(
-        stored: jsonEncode([
-          {'id': 3, 'name': 'c', 'rule': r'^c', 'enable': false},
-        ]),
-      );
+      stubStored(jsonEncode([
+        {'id': 3, 'name': 'c', 'rule': r'^c', 'enable': false},
+      ]));
       await readNotifier().load();
 
       await readNotifier().setEnabled(3, true);

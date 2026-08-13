@@ -43,7 +43,7 @@ void main() {
   }
 
   group('SourceScreen 溢出菜单（对标原版 book_source.xml）', () {
-    testWidgets('菜单与原版一致：仅 7 项，无扩展项', (tester) async {
+    testWidgets('菜单与原版对齐：含新建 JS 书源入口', (tester) async {
       await tester.pumpWidget(wrapSourceScreen());
       await tester.pumpAndSettle();
 
@@ -54,7 +54,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // 原版 7 项
+      // 对标原版 book_source.xml（含 menu_add_js_source）；已接通最小 JS 编辑器
       expect(find.text('新建书源'), findsOneWidget);
       expect(find.text('新建 JS 书源'), findsOneWidget);
       expect(find.text('本地导入'), findsOneWidget);

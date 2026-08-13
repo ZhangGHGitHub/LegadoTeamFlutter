@@ -13,18 +13,19 @@ import '../mocks/mocks.dart';
 
 /// 书架网格多尺寸渲染验证（REFACTORING_REMAINING_PLAN §4.3 P2-3④）
 ///
-/// 真实渲染 BookshelfScreen，在不同窗口宽度下断言网格 delegate 的
-/// 列数与宽高比，与 Responsive 断点规则一一对应。
+/// 默认布局为列表；本套件强制网格布局后断言响应式列数。
 void main() {
   setUpAll(registerFallbacks);
 
   Future<void> pumpBookshelf(WidgetTester tester, MockRustApi mockApi) async {
-    SharedPreferences.setMockInitialValues({});
+    // 强制网格（SettingsService._keyBookshelfLayout）
+    SharedPreferences.setMockInitialValues({'bookshelf_layout': true});
     when(() => mockApi.getBooks()).thenAnswer((_) async => const [
           Book(bookUrl: 'u1', name: '书一'),
           Book(bookUrl: 'u2', name: '书二'),
           Book(bookUrl: 'u3', name: '书三'),
         ]);
+    when(() => mockApi.getBookGroups()).thenAnswer((_) async => []);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
@@ -86,7 +87,6 @@ void main() {
     await pumpBookshelf(tester, MockRustApi());
     expect(gridDelegate(tester).crossAxisCount, equals(3));
 
-    // 模拟窗口拉宽到桌面尺寸
     tester.view.physicalSize = const Size(1300 * 3, 900);
     await tester.pumpAndSettle();
     expect(gridDelegate(tester).crossAxisCount, equals(6));

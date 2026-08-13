@@ -140,47 +140,33 @@ void main() {
   });
 
   group('RemoteBookScreen', () {
-    testWidgets('渲染输入区与导入按钮', (tester) async {
+    testWidgets('渲染远程书籍页与筛选框', (tester) async {
       when(() => mockApi.getBooks()).thenAnswer((_) async => []);
 
       await tester.pumpWidget(wrap(const RemoteBookScreen()));
+      // init→未配置 WebDAV 后展示空态/提示（避免无限 spinner）
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.text('远程书籍导入'), findsOneWidget);
-      expect(find.text('导入到书架'), findsOneWidget);
-      expect(find.byType(TextField), findsOneWidget);
-    });
-
-    testWidgets('无有效链接导入给出错误提示', (tester) async {
-      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
-
-      await tester.pumpWidget(wrap(const RemoteBookScreen()));
-      await tester.pump();
-
-      await tester.enterText(find.byType(TextField), '随便一些文字');
-      await tester.tap(find.text('导入到书架'));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('未找到有效的书籍链接'), findsOneWidget);
-      verifyNever(() => mockApi.importBooks(any()));
-    });
-
-    testWidgets('有效链接导入成功反馈数量并调用契约', (tester) async {
-      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
-      when(() => mockApi.importBooks(any())).thenAnswer((_) async => 1);
-
-      await tester.pumpWidget(wrap(const RemoteBookScreen()));
-      await tester.pump();
-
-      await tester.enterText(
-        find.byType(TextField),
-        'https://example.com/book/1',
+      expect(find.text('远程书籍'), findsOneWidget);
+      expect(find.text('筛选 • 远程书籍'), findsOneWidget);
+      expect(
+        find.textContaining('请先在备份设置中配置默认 WebDAV'),
+        findsOneWidget,
       );
-      await tester.tap(find.text('导入到书架'));
-      await tester.pumpAndSettle();
+    });
 
-      verify(() => mockApi.importBooks(any())).called(1);
-      expect(find.text('成功导入 1 本书'), findsOneWidget);
+    testWidgets('顶栏含刷新与服务器配置入口', (tester) async {
+      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
+
+      await tester.pumpWidget(wrap(const RemoteBookScreen()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.byIcon(Icons.refresh), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      expect(find.text('服务器配置'), findsOneWidget);
     });
   });
 
@@ -191,16 +177,18 @@ void main() {
             {
               'origin': 'https://rss.example.com/feed',
               'title': '文章一',
+              'link': 'https://rss.example.com/a1',
               'read_time': 1750000000000,
             },
           ]);
 
       await tester.pumpWidget(wrap(const RssScreen()));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
-      // 顶栏 4 入口（对标原版 main_rss.xml）
       await tester.tap(find.byIcon(Icons.history));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('阅读记录'), findsOneWidget);
       expect(find.text('文章一'), findsOneWidget);
@@ -214,13 +202,14 @@ void main() {
           .thenAnswer((_) async => []);
 
       await tester.pumpWidget(wrap(const RssScreen()));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
       await tester.tap(find.byIcon(Icons.history));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('暂无阅读记录'), findsOneWidget);
-      // 清除按钮禁用（TextButton onPressed null）
       final clearButton = tester.widget<TextButton>(
         find
             .ancestor(

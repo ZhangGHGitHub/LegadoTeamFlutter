@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/dict/dict_notifier.dart';
@@ -28,11 +29,27 @@ void main() {
   group('DictNotifier', () {
     late MockRustApi mockApi;
     late ProviderContainer container;
+    late Map<String, String?> configStore;
 
-    setUpAll(registerFallbacks);
+    setUpAll(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      registerFallbacks();
+    });
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       mockApi = MockRustApi();
+      configStore = {};
+      // getConfig 回读 setConfig 写入值，模拟 Rust 配置库
+      when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
+        final key = inv.positionalArguments[0] as String;
+        return configStore[key];
+      });
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((inv) async {
+        final key = inv.positionalArguments[0] as String;
+        final value = inv.positionalArguments[1] as String;
+        configStore[key] = value;
+      });
       container = ProviderContainer(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
       );
@@ -51,23 +68,25 @@ void main() {
     });
 
     test('loadRules 无持久化数据时写入默认规则', () async {
-      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
-      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
-
       await readNotifier().loadRules();
 
       final state = readState();
       expect(state.isLoading, isFalse);
-      expect(state.rules.length, equals(2));
-      expect(state.rules.first.name, equals('有道词典'));
+      expect(state.error, isNull);
+      expect(state.rules, isNotEmpty);
+      expect(state.rules.first.name, equals('百度汉语'));
       verify(() => mockApi.setConfig('dict_rules', any())).called(1);
     });
 
     test('loadRules 解析已持久化规则（不重复写回）', () async {
+      // 已完成默认导入版本，避免 assets 覆盖
+      SharedPreferences.setMockInitialValues({
+        kDictRuleVersionKey: kDictRuleVersion,
+      });
       final stored = jsonEncode([
         {'name': '自定义', 'urlRule': 'https://x.com/{{key}}'},
       ]);
-      when(() => mockApi.getConfig(any())).thenAnswer((_) async => stored);
+      configStore['dict_rules'] = stored;
 
       await readNotifier().loadRules();
 
@@ -76,8 +95,6 @@ void main() {
     });
 
     test('addRule 添加并持久化', () async {
-      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
-
       await readNotifier().addRule(
         const DictRule(
           name: '必应',
@@ -90,13 +107,15 @@ void main() {
     });
 
     test('deleteRule 删除指定下标规则', () async {
-      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
-      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
-      await readNotifier().loadRules(); // 2 条默认
+      await readNotifier().loadRules(); // 默认多条
+      final before = readState().rules.length;
+      expect(before, greaterThan(1));
+      final secondName = readState().rules[1].name;
 
       await readNotifier().deleteRule(0);
 
-      expect(readState().rules.single.name, equals('剑桥词典'));
+      expect(readState().rules.length, equals(before - 1));
+      expect(readState().rules.first.name, equals(secondName));
     });
 
     test('lookup 委托 Rust dictLookup 并解析（大小写归一化）', () async {
