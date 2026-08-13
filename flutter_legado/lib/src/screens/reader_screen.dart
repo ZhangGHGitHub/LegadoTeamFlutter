@@ -510,18 +510,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   onOpenCatalog: () => unawaited(_openToc()),
                   onOpenSettings: () => ReaderSettingsSheet.show(context),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
-                  // [UI-fix v2.0.4 | 2026-08-08] 全文搜索自顶栏迁入底栏悬浮
-                  // 按钮行（对标原版 fabSearch） — Qoder
                   onOpenContentSearch: () => _openContentSearch(state),
                   onReadAloud: _onReadAloudTap,
-                  // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批：亮度控件
-                  // 显隐/进度条行为（调章内页驱动 PageView 跳页）/工具栏
-                  // 跟随页面 — Qoder
                   showBrightnessView: _advConfig.showBrightnessView,
                   progressBehavior: _advConfig.progressBarBehavior,
                   onSeekPage: (page) =>
                       _pageViewKey.currentState?.goToPage(page),
                   styleFollowPage: _advConfig.readBarStyleFollowPage,
+                  onToggleAutoPage: _toggleAutoPage,
+                  onOpenReplaceRules: () =>
+                      Navigator.pushNamed(context, AppRoutes.replaceRules),
                 ),
             ],
           ),
@@ -596,6 +594,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       return;
     }
     unawaited(_startReadAloud(state));
+  }
+
+  /// 底栏自动翻页 FAB（对标原版 fabAutoPage → autoPage）
+  void _toggleAutoPage() {
+    _advConfig = _advConfig.copy()..autoPageTurn = !_advConfig.autoPageTurn;
+    unawaited(_advConfig.save());
+    ref.read(readerAdvConfigProvider.notifier).apply(_advConfig.copy());
+    _syncAutoTimer();
+    if (mounted) setState(() {});
   }
 
   /// 启动当前书的朗读（链路：AudioNotifier.startReadAloud → play → audioSpeak）

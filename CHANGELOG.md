@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.57] - 2026-08-14
+
+### Fixed
+- [UI] 阅读器工具栏切换时正文上跳：移除 `showControls` 联动 SafeArea，工具栏保持 Stack overlay 不挤占 viewport（对标原版 ReadView + ReadMenu 浮层）
+- [UI] 底栏悬浮按钮补齐自动翻页/替换规则（对标原版 fabAutoPage/fabReplaceRule）
+
+### Changed
+- [UI] 边距设置对齐原版 PaddingConfigDialog：页眉/正文/页脚 Tab、± 步进、左右联动、分隔线开关
+- [UI] 阅读提示信息对齐原版 TipConfigDialog：页眉页脚显示模式、三列提示项、标题样式
+
+## [2.0.56] - 2026-08-14
+
+### Added
+- [Rust] F3-14 新增 `httpGetBytes` FFI（二进制 GET，bodyBase64 响应）
+- [UI] F3-14 `bridge_http.dart` 收敛 8 处裸 `http.get` 至 Rust Bridge
+
+### Changed
+- [docs] F3-5 §1.6 登记 9 个 FFI 非 Result 导出豁免
+- [docs] F3-8 §2.44 注明 infoHtml/tocHtml/downloadUrls 瞬态字段语义
+- [docs] F3-12 根 README 更新（2.0.x、62 Screen、CI 徽标）
+- [docs] API_CONTRACT BookApi 234 方法；附录 245
+
 ## [2.0.55] - 2026-08-14
 
 ### Fixed

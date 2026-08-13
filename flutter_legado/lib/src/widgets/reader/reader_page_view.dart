@@ -682,14 +682,17 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     return state.textColor;
   }
 
+  /// 正文 viewport：工具栏为 Stack overlay，显隐不得改变正文布局约束
+  /// （对标原版 ReadView 全屏 + ReadMenu 浮层；此前 showControls 联动
+  /// SafeArea 导致切换工具栏时正文上跳并重算分页）— Cursor UI
+  Widget _contentViewport(Widget child) => child;
+
   Widget _buildScrollContent(ReaderState state) {
     // [UI-fix v2.0.4 | 2026-08-08] 文字色经自定义配色解析 — Qoder
     final textColor = _resolveTextColor(state);
 
-    return SafeArea(
-      top: !state.showControls,
-      bottom: !state.showControls,
-      child: SingleChildScrollView(
+    return _contentViewport(
+      SingleChildScrollView(
         controller: _scrollController,
         // [UI-fix v2.0.3 | 2026-08-06] 滚动模式边距接页面边距配置 — Qoder
         padding: EdgeInsets.only(
@@ -769,10 +772,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   Widget _buildSlideContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
-    return SafeArea(
-      top: !state.showControls,
-      bottom: !state.showControls,
-      child: PageView.builder(
+    return _contentViewport(
+      PageView.builder(
         controller: _pageController,
         itemCount: _isDoublePage
             ? (_paginatedPages.length + 1) ~/ 2
@@ -793,10 +794,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   Widget _buildSimulateContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
     // 仿真翻页：PageView + 翻页阴影 + 缩放动画效果
-    return SafeArea(
-      top: !state.showControls,
-      bottom: !state.showControls,
-      child: Stack(
+    return _contentViewport(
+      Stack(
         children: [
           PageView.builder(
             controller: _pageController,
@@ -871,10 +870,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   Widget _buildNoneContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
     // 无动画翻页：使用 PageView 但禁用动画
-    return SafeArea(
-      top: !state.showControls,
-      bottom: !state.showControls,
-      child: PageView.builder(
+    return _contentViewport(
+      PageView.builder(
         controller: _pageController,
         physics: const InstantScrollPhysics(), // 无动画瞬间切换
         itemCount: _isDoublePage
@@ -909,10 +906,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     }
     final forward = _coverForward;
 
-    return SafeArea(
-      top: !state.showControls,
-      bottom: !state.showControls,
-      child: AnimatedSwitcher(
+    return _contentViewport(
+      AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         switchInCurve: Curves.linear,
         switchOutCurve: Curves.linear,

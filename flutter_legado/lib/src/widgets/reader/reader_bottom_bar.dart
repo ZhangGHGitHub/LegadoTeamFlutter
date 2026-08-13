@@ -8,6 +8,7 @@ import '../../l10n/app_strings.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/theme/theme_notifier.dart';
+import '../../screens/reader_config_panel.dart';
 import '../../services/system_brightness.dart';
 
 /// 阅读器底部工具栏
@@ -44,6 +45,12 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
   /// 工具栏样式跟随阅读页（对标原版 readBarStyleFollowPage/immersiveMenu）
   final bool styleFollowPage;
 
+  /// 自动翻页开关（对标原版 fabAutoPage）
+  final VoidCallback? onToggleAutoPage;
+
+  /// 打开替换规则（对标原版 fabReplaceRule）
+  final VoidCallback? onOpenReplaceRules;
+
   const ReaderBottomBar({
     super.key,
     required this.onOpenCatalog,
@@ -55,6 +62,8 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
     this.progressBehavior = 'chapter',
     this.onSeekPage,
     this.styleFollowPage = false,
+    this.onToggleAutoPage,
+    this.onOpenReplaceRules,
   });
 
   @override
@@ -124,6 +133,8 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
     // （对标原版 ReadMenu immersiveMenu）— Qoder
     final followColor = widget.styleFollowPage ? state.backgroundColor : null;
     final foreground = widget.styleFollowPage ? state.textColor : null;
+    final adv = ref.watch(readerAdvConfigProvider);
+    final autoPageActive = adv?.autoPageTurn ?? false;
 
     final bar = Positioned(
       bottom: 0,
@@ -139,7 +150,6 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 FloatingActionButton(
                   mini: true,
@@ -148,6 +158,28 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                   onPressed: widget.onOpenContentSearch,
                   child: const Icon(Icons.search),
                 ),
+                const Spacer(),
+                FloatingActionButton(
+                  mini: true,
+                  heroTag: null,
+                  tooltip: autoPageActive ? '停止自动翻页' : '自动翻页',
+                  backgroundColor: autoPageActive
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : null,
+                  onPressed: widget.onToggleAutoPage,
+                  child: Icon(
+                    autoPageActive ? Icons.pause : Icons.auto_stories_outlined,
+                  ),
+                ),
+                const Spacer(),
+                FloatingActionButton(
+                  mini: true,
+                  heroTag: null,
+                  tooltip: '替换规则',
+                  onPressed: widget.onOpenReplaceRules,
+                  child: const Icon(Icons.find_replace),
+                ),
+                const Spacer(),
                 FloatingActionButton(
                   mini: true,
                   heroTag: null,

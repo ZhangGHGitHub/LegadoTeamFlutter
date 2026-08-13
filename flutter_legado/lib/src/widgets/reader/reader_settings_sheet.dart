@@ -9,6 +9,8 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import 'reader_padding_config_sheet.dart';
+import 'reader_tip_config_sheet.dart';
 import '../ios_widgets.dart';
 
 /// 阅读设置底部弹出面板（「界面」面板）
@@ -313,24 +315,24 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           caption: '转换',
           onTap: _cycleConvertType,
         ),
-        // 边距：打开高级面板的页面边距区块（对标原版 tvPadding）
+        // 边距：打开页眉/正文/页脚边距面板（对标原版 tvPadding → PaddingConfigDialog）
         _topButton(
           value: '边距',
           caption: '设置',
-          onTap: () => ReaderConfigPanel.show(
+          onTap: () => ReaderPaddingConfigSheet.show(
             context,
             config: adv.copy(),
-            section: ReaderConfigSection.margins,
+            onChanged: _commitAdv,
           ),
         ),
-        // 信息：打开状态栏提示信息区块（对标原版 tvTip → TipConfigDialog）
+        // 信息：打开阅读提示信息面板（对标原版 tvTip → TipConfigDialog）
         _topButton(
           value: '信息',
           caption: '设置',
-          onTap: () => ReaderConfigPanel.show(
+          onTap: () => ReaderTipConfigSheet.show(
             context,
             config: adv.copy(),
-            section: ReaderConfigSection.statusBar,
+            onChanged: _commitAdv,
           ),
         ),
       ],
