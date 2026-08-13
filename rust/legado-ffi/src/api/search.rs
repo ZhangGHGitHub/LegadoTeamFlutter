@@ -168,6 +168,62 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     Ok(results)
 }
 
+/// 精确搜索（对齐原版 `WebBook.preciseSearchAwait` / `preciseSearch`）
+///
+/// 在指定（或全部启用）书源中以书名为关键词搜索，返回**首个**
+/// `name` 完全相等且（`author` 为空或 `author` 完全相等）的命中，
+/// 序列化为 SearchBook camelCase JSON。未命中返回错误。
+pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> LegadoResult<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(LegadoError::Parser("精确搜索书名不能为空".into()));
+    }
+    let author = author.trim();
+    let sources = load_search_sources(source_urls_json)?;
+    if sources.is_empty() {
+        return Err(LegadoError::Network("没有可用书源".into()));
+    }
+
+    let name_owned = name.to_string();
+    let author_owned = author.to_string();
+
+    // 按书源顺序检索，命中即停（对齐 preciseSearch 串行 + shouldBreak）
+    let hit = runtime::block_on(async {
+        let client = crate::http_state::shared_client();
+        for source in sources {
+            let items = match search_single_source(&client, &source, &name_owned).await {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!(
+                        "[precise_search] 书源 {} 失败（跳过）: {e}",
+                        source.book_source_name
+                    );
+                    continue;
+                }
+            };
+            for item in items {
+                if item.book_name != name_owned {
+                    continue;
+                }
+                if author_owned.is_empty() || item.author == author_owned {
+                    return Ok::<_, LegadoError>(Some(item));
+                }
+            }
+        }
+        Ok(None)
+    })?;
+
+    match hit {
+        Some(r) => {
+            let sb = result_to_search_book(r);
+            Ok(serde_json::to_string(&sb)?)
+        }
+        None => Err(LegadoError::Network(format!(
+            "未搜索到 {name}({author}) 书籍"
+        ))),
+    }
+}
+
 /// 多源并行搜索（同步包装）
 ///
 /// `query` — 搜索关键词

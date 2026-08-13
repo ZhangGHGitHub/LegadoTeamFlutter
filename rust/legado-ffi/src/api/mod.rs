@@ -25,6 +25,7 @@ pub mod js_source_config_api;
 pub mod log_api;
 pub mod net_api;
 pub mod pay_action_api;
+pub mod pre_update;
 pub mod read_record_api;
 pub mod reader;
 pub mod reading_stats_api;

@@ -372,6 +372,13 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
         .map(|u| u.to_string())
         .unwrap_or_else(|| book_url.to_string());
 
+    // 目录更新前钩子（对齐 WebBook.getChapterListAwait(runPerJs=true) → runPreUpdateJs）
+    if let Some(ref book) = existing_book {
+        if let Err(e) = crate::api::pre_update::run_pre_update_js(&source, book) {
+            eprintln!("[refresh_toc] preUpdateJs: {e}");
+        }
+    }
+
     // 2. 使用 WebBookEngine 从网络获取章节列表
     let engine = super::web_book::build_engine();
     let web_chapters: Vec<WebChapter> =

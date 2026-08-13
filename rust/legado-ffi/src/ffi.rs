@@ -413,6 +413,22 @@ pub mod ffi {
         to_json(&books)
     }
 
+    /// 精确搜索（对齐原版 `WebBook.preciseSearchAwait`）
+    ///
+    /// 返回首个 name+author 完全匹配的 SearchBook JSON；未命中抛 BridgeError。
+    /// `source_urls_json` 语义同 `searchBooks`（空=全部启用源）。
+    pub fn precise_search(
+        name: String,
+        author: String,
+        source_urls_json: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::search::precise_search(
+            &name,
+            &author,
+            &source_urls_json,
+        )?)
+    }
+
     /// 多源并行搜索（返回 JSON 数组）
     ///
     /// `query` — 搜索关键词
