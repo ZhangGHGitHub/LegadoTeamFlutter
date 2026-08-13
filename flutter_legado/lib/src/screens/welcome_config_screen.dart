@@ -1,23 +1,26 @@
 ﻿import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import '../widgets/legado_app_bar.dart';
 
 import '../constants/pref_keys.dart';
+import '../providers/providers.dart';
 import '../services/settings_service.dart';
 import '../widgets/ios_widgets.dart';
 
 /// 欢迎页样式配置（对齐原版 WelcomeConfigFragment + pref_config_welcome.xml）
 ///
 /// 分组：显示时长 / 自定义欢迎 / 白天 / 夜间。视觉用 iOS 分组列表（apple-ui-designer）。
-class WelcomeConfigScreen extends StatefulWidget {
+class WelcomeConfigScreen extends ConsumerStatefulWidget {
   const WelcomeConfigScreen({super.key});
 
   @override
-  State<WelcomeConfigScreen> createState() => _WelcomeConfigScreenState();
+  ConsumerState<WelcomeConfigScreen> createState() => _WelcomeConfigScreenState();
 }
 
-class _WelcomeConfigScreenState extends State<WelcomeConfigScreen> {
-  final _settings = SettingsService();
+class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
+  SettingsService get _settings => ref.read(settingsProvider);
   bool _loading = true;
 
   int _showTime = 500;

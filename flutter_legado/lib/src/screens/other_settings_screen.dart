@@ -49,7 +49,7 @@ class OtherSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
-  final SettingsService _settingsService = SettingsService();
+  SettingsService get _settingsService => ref.read(settingsProvider);
   String _localeValue = 'system'; // system / zh / en
 
   // ===== 主界面分组（对齐原版 auto_refresh 等键）=====

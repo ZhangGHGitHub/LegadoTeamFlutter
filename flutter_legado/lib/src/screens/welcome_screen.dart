@@ -28,7 +28,7 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
     with SingleTickerProviderStateMixin {
-  final _settings = SettingsService();
+  SettingsService get _settings => ref.read(settingsProvider);
   Timer? _timer;
   bool _navigating = false;
 

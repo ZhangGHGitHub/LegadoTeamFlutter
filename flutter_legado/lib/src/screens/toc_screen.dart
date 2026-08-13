@@ -47,7 +47,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
   late final TabController _tabController;
   final ScrollController _tocScrollController = ScrollController();
   final TextEditingController _searchCtrl = TextEditingController();
-  final SettingsService _settings = SettingsService();
+  SettingsService get _settings => ref.read(settingsProvider);
 
   /// 搜索防抖计时器（300ms，对齐任务规范）
   Timer? _debounce;

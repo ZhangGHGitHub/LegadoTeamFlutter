@@ -36,7 +36,7 @@ class ThemeConfigScreen extends ConsumerStatefulWidget {
 }
 
 class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
-  final _settings = SettingsService();
+  SettingsService get _settings => ref.read(settingsProvider);
 
   bool _loading = true;
 

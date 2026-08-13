@@ -46,7 +46,7 @@ class WebDavSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
-  final _settings = SettingsService();
+  SettingsService get _settings => ref.read(settingsProvider);
 
   String _url = '';
   String _user = '';

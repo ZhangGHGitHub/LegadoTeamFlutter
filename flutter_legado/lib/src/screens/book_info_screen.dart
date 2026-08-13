@@ -68,7 +68,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   // [UI-FIX v2.0.3 | 2026-08-08] 删除提醒开关（对齐原版 LocalConfig.deleteBookAlert，本地持久化） — Qoder
   // 书源按 origin 缓存，避免每次详情页全量扫描书源列表
   static final Map<String, BookSource?> _sourceByOriginCache = {};
-  final SettingsService _settingsService = SettingsService();
+  SettingsService get _settingsService => ref.read(settingsProvider);
   bool _deleteBookAlert = true;
 
   @override

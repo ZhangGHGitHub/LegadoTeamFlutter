@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/book_api.dart';
 import '../services/mock_book_api.dart';
 import '../services/rust_api.dart';
+import '../services/settings_service.dart';
 
 /// BookApi 全局 Provider（Riverpod 注入层）
 ///
@@ -15,3 +16,6 @@ final bookApiProvider = Provider<BookApi>((ref) {
   const useMock = bool.fromEnvironment('USE_MOCK', defaultValue: false);
   return useMock ? MockBookApi() : RustApi();
 });
+
+/// SettingsService 全局 Provider（F3-18：统一注入，禁止 UI 直接 new）
+final settingsProvider = Provider<SettingsService>((ref) => SettingsService());

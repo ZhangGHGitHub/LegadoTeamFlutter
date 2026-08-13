@@ -52,7 +52,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
   }
 
   Future<void> _loadOpenInfoPref() async {
-    final v = await SettingsService()
+    final v = await ref
+        .read(settingsProvider)
         .getBoolPref(PrefKeys.openBookInfoByClickTitle, defaultValue: false);
     if (mounted) setState(() => _openInfoByTitle = v);
   }
@@ -360,7 +361,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
       case 'open_by_title':
         final next = !_openInfoByTitle;
         setState(() => _openInfoByTitle = next);
-        await SettingsService()
+        await ref
+            .read(settingsProvider)
             .setBoolPref(PrefKeys.openBookInfoByClickTitle, next);
         break;
     }
