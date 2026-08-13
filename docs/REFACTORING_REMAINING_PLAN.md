@@ -1099,16 +1099,13 @@ flutter test                  # 全量测试通过
 
 | 优先级 | 项 | 状态 | 说明 |
 |--------|-----|------|------|
-| P0 | `@put:` / `@get:` / setLocal 变量系统 | 开放 | `strip_put_rules` 仅剥离丢弃，无存储/读取；神漫画类跨规则变量失效 |
-| P0 | `runPreUpdateJs` | 开放 | TocRule.preUpdateJs 仅有模型字段，无执行 |
-| P0 | `preciseSearch` | 开放 | 原版 `WebBook.preciseSearchAwait`；Rust 全无对应 |
-| P1 | 正文 `sourceRegex` / `webJs` | 开放 | getContent 链路未传入 AnalyzeUrl（原版 jsStr/sourceRegex） |
-| P1 | `getWebJsResult` | 开放 | 规则级 WebJs 模式缺失（仅开屏 webView） |
-| P1 | `imageStyle` 排版执行 | 开放 | 模型+菜单可持久化；阅读器 `full`/`text`/`single` 未驱动 page layout |
-| P1 | `setRedirectUrl` / isUrl·unescape 通用重载 | 开放 | 见 SOURCE_DIFF §2 P1-6/7 |
-| P2 | DownloadService；getReadBookConfigMap/getThemeConfigMap | 开放 | 形态/JS Map 配置；优先级低于 P0/P1 |
+| P1 | 完整 DOM WebView（规则级 / 正文 webJs） | 部分开放 | `@webjs`/正文 webJs 已无头 QuickJS 近似；BackstageWebView DOM 依赖平台桥 |
+| P2 | JS 次要重载（webView cacheFirst、downloadFile 双参、getFile、timeFormatUTC 等） | 开放 | 见 SOURCE_DIFF §3.4；优先级低于书源主路径 |
+| — | checkRedirect 可观测性 | 低 | Debug.log 级，非兼容阻断 |
 
-**明确不纳入本 backlog（N/A 或已销）**：Cronet / 直链上传产品入口（N/A）；`@html`（已实现）；PackageInfo 硬编码（已修）；checkRedirect（降为可观测性，非兼容性阻断）；F4/F5/F6/T6/D1 SCHEMA105（见 §5.12–§5.14 / RESIDUAL）。
+**本轮已销（2026-08-13）**：`@put`/`preciseSearch`(含 Dart FRB)/`runPreUpdateJs`+reGetBook/refreshTocUrl/`sourceRegex`+webJs 无头/`imageStyle`/`setRedirectUrl`/isUrl·unescape/`@webjs` 无头/ConfigMap；卫生注释。
+
+**明确不纳入本 backlog（N/A 或已销）**：Cronet / 直链 upload（N/A）；DownloadService 前台形态（N/A，功能由 downloadFile+url_launcher 覆盖）；`@html`；PackageInfo；F4/F5/F6/T6/D1 SCHEMA105（见 §5.12–§5.14 / RESIDUAL）。
 
 **A\***：真机/实网/样例书验收仍 ⛔，不得由模拟器冒烟销账。
 
@@ -1116,12 +1113,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.43  
+**文档版本**: 1.44  
 **最后更新**: 2026-08-13  
 **维护人**: Qoder  
 **最后修改**: Auto（Cursor）
 
 **版本记录**：
+- ✅ **v1.44（2026-08-13）SOURCE_DIFF 开放项续销**：preciseSearch Dart/FRB；reGetBook/refreshTocUrl；setRedirectUrl + isUrl/unescape；`@webjs` 无头；ConfigMap；DownloadService/upload 标 N/A；§5.15 收窄为 DOM WebView / 次要重载。
 - ✅ **v1.43（2026-08-13）旁证台账回写**：Doc8 链 RESIDUAL + SOURCE_DIFF；SCHEMA 104+105（D1）销「三表名残留」；§5.12 F6 刘海/音量键/shareLayout 全部闭合；F4/F5/T6/PackageInfo 与 §5.13/§5.14 对齐 ✅；新增 §5.15 SOURCE_DIFF 开放 P0/P1 backlog；听书以 GAP 轮5 为准。commits：`18003a7b9`/`46ebfa085`/`f7bcf4425`/`d83e6eb26`/`5cb4d4ca3`/`729eb970f`/`c3dd3a0b3`/`fcbfea4ff`/`3ff496355` 等。
 - v1.42（2026-08-11）必应漫画 type=0 正文刷 `<img>` HTML 销记（v2.0.33，[UI]，Reasonix）：书源 type=0 + `.img@img@html`+FULL，图片直连 200 JPEG 无防盗链问题；文本阅读器不渲染 img → 裸标签。修复抽图规则提升为 image 走漫画阅读器 + 文本侧图片主导正文兜底。版本 2.0.33+35
 - v1.41（2026-08-11）搜索相对 URL 绝对化 + 目录 `<js>$[*]` 链拆解 + `{{$.}}` 双花括号销记（v2.0.30，[Rust]，Reasonix）：批量探针 type=2 仅 12/89 有搜索命中；根因——parse 缺 baseUrl、无 path host 拼接命中 `://` 假域名、get_elements 误拆 `<js>+$[*]` 吞错、`{{$.id}}` 残留花括号。51 TOC 0→1；神漫画 TOC=61。版本 2.0.30+32

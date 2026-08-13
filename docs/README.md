@@ -49,7 +49,7 @@
 ### 🔄 进行中项
 
 - **残留风险收口（2026-08-13）**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)（D1/F1–F7/T6 等多数已闭合；**A\*** 环境验收仍 ⛔）；主台账 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) v1.43。
-- **源码兼容 backlog**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) / REMAINING **§5.15**（`@put:` / `runPreUpdateJs` / `preciseSearch` / 正文 sourceRegex·webJs 等）。
+- **源码兼容 backlog**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) / REMAINING **§5.15**（主路径 P0/P1 已销；残留完整 DOM WebView / 次要 JS 重载）。
 - **schema**：v104 + **v105**（Migration104To105，ruleSubs/dictRules/keyboardAssists Room 对齐）已落地。
 
 ### 👥 各轨负责人与分支
