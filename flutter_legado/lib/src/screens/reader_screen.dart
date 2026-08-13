@@ -82,10 +82,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   void initState() {
     super.initState();
     _loadAdvancedConfig();
+    // F6：音量键翻页（对标 volumeKeyPage / volumeKeyPageOnPlay）
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _autoTimer?.cancel();
     // [UI-fix v2.0.3 | 2026-08-08] 退出阅读器恢复系统 UI 与方向
     // （hideStatusBar/hideNavigationBar/screenOrientation 仅阅读页内生效，
@@ -140,6 +143,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _syncAutoTimer();
     // [UI-fix v2.0.3 | 2026-08-08] 进入阅读器即应用隐藏栏/方向配置 — Qoder
     _applySystemChrome(config);
+  }
+
+  /// F6：音量键翻页（仅 Android 有效；桌面无音量键事件）
+  bool _onHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final isVolUp = event.logicalKey == LogicalKeyboardKey.audioVolumeUp;
+    final isVolDown = event.logicalKey == LogicalKeyboardKey.audioVolumeDown;
+    if (!isVolUp && !isVolDown) return false;
+
+    final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
+    final aloud = ref.read(audioNotifierProvider).isPlaying;
+    final allow = cfg.volumeKeyPage && (!aloud || cfg.volumeKeyPageOnPlay);
+    if (!allow) return false;
+
+    final pageView = _pageViewKey.currentState;
+    if (pageView == null) return false;
+    if (isVolDown) {
+      pageView.nextPageOrChapter();
+    } else {
+      pageView.prevPageOrChapter();
+    }
+    return true; // 消费事件，避免系统调音量
   }
 
   /// 根据配置同步自动翻页定时器
@@ -354,7 +379,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       },
       child: Scaffold(
         backgroundColor: state.backgroundColor,
-        body: GestureDetector(
+        // F6：刘海/挖孔边距（paddingDisplayCutouts / readBodyToLh）
+        body: Builder(
+          builder: (context) {
+            final cfg =
+                ref.watch(readerAdvConfigProvider) ?? _advConfig;
+            Widget body = GestureDetector(
           onTapUp: imageDominant
               ? null
               : (details) => _handleTap(context, details),
@@ -477,6 +507,30 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 ),
             ],
           ),
+        );
+            // F6：填充刘海 / 扩展到刘海
+            if (cfg.paddingDisplayCutouts) {
+              final vp = MediaQuery.viewPaddingOf(context);
+              body = Padding(
+                padding: EdgeInsets.only(
+                  top: cfg.readBodyToLh ? 0 : vp.top,
+                  left: vp.left,
+                  right: vp.right,
+                  bottom: vp.bottom,
+                ),
+                child: body,
+              );
+            } else if (!cfg.readBodyToLh) {
+              body = SafeArea(
+                left: true,
+                right: true,
+                top: true,
+                bottom: false,
+                child: body,
+              );
+            }
+            return body;
+          },
         ),
       ),
     );

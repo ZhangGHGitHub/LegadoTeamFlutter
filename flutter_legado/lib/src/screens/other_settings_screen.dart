@@ -566,8 +566,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 iconBackground: Colors.indigo,
                 title: 'MCP 服务端口',
                 subtitle: _mcpPort > 0
-                    ? '独立 MCP 服务监听中（1024~65530）'
-                    : '独立 MCP 服务已停止（输入 0 停止）',
+                    ? '仅本机 127.0.0.1:$_mcpPort（无 LAN/token；见残留 F5）'
+                    : '独立 MCP 已停止（仅回环；输入 0 停止）',
                 value: _mcpPort > 0 ? '$_mcpPort' : '停止',
                 showDisclosure: true,
                 onTap: _showMcpPortDialog,
