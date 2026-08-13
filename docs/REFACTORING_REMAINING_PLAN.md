@@ -1,6 +1,10 @@
 # 重构剩余工作计划
 
 > ✅ **计划完成声明**：本计划 P0-P3 共 7 项遗留任务已于 **2026-07-31 全部完成并验证通过**，整合的 UI 一致性修复 13 项亦全部完成。文档转入归档核销状态，遗留项见文末「遗留项（转入后续迭代）」小节。
+>
+> ⚠️ **Doc8 口径修正（2026-08-13）**：文首「P0–P3 全部完成」仅指原 7 项计划任务；**后续开放残留**（schema 三表名、半接通、验收债等）以 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)、[GAP_AUDIT_2026-08-12.md](GAP_AUDIT_2026-08-12.md)、[USER_TEST_RESULTS_2026-08-13.md](USER_TEST_RESULTS_2026-08-13.md) 为准。
+>
+> **Doc7**：文档名「schema v102 专项」= 代码 `Migration103To104` / `SCHEMA_VERSION=104`（v102/v103 号段已占用）。
 
 > 状态请以 [docs/README.md](README.md) 的“当前状态”小节为准。
 
@@ -786,11 +790,11 @@ flutter test                  # 全量测试通过
 
 | 项目 | 内容 |
 |------|------|
-| **问题** | 相对 Android 原版 54 个 Activity，Flutter 缺失：① 校验书源 CheckSource（已由 P1-3 立项，Rust 契约已交付 sourceCheck/sourceCheckStream/sourceCheckCancel，待 UI 轨接入）；② VerificationCodeActivity 验证码页（Rust 契约已交付 verification 事件流/提交回传，待 UI 轨接入）；③ BookshelfManageActivity 书架管理页；④ RemoteBookActivity 远程书籍导入页（import_screen 仅本地扫描）；⑤ RssSourceDebugActivity RSS 源调试；⑥ RuleSubActivity 规则订阅管理（Rust 契约已交付 ruleSub* 7 方法，待 UI 轨接入）；⑦ JsSourceEditActivity/CodeEditActivity（部分已并入 source_edit）；⑧ BottomBarSkinActivity 底栏皮肤自定义（Flutter 底栏固定）；⑨ FileManageActivity/HandleFileActivity（Android SAF 特有，Windows 可不对齐） |
-| **证据** | Tina 审计 §4（Android `app/src/main/java/io/legado/app/ui/` 54 Activity 对照） |
-| **解决方案** | 按原版对齐优先级逐个立项（校验 > 验证码/远程导入 > 书架管理/RSS 调试/规则订阅 > 底栏皮肤；SAF 类可豁免） |
-| **实施步骤** | 每页单独立项：页面 + Notifier + 路由注册 + 测试 |
-| **验收** | 立项页面逐个对齐原版行为并核销 |
+| **问题（历史）** | 相对 Android 原版 54 个 Activity，曾登记缺失多项页面 |
+| **Doc5 销记（2026-08-13）** | 对照 GAP/用户实测，下列**已交付**，勿再按「缺失」排期：③ 书架管理 `BookshelfManageScreen`；④ 远程书库 `RemoteBookScreen`；⑤ RSS 源调试；⑥ 规则订阅；⑦ JS/CodeEdit；⑧ 底栏皮肤 Assign/导出/分享；① 书源校验 FFI 已交付；② 验证码事件流已交付。⑨ HandleFile **N/A**（Flutter file_picker）。仍开放项见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) |
+| **证据** | Tina 审计 §4；GAP_AUDIT；USER_TEST_RESULTS |
+| **解决方案** | 已交付页不再立项；剩余按残留风险表推进 |
+| **验收** | 以 GAP / USER_TEST 为准 |
 
 **P2-3 UI 对齐收尾**
 

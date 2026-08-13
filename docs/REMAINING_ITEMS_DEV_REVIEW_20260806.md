@@ -6,6 +6,11 @@
 **方法**: 全部结论基于源码 grep/阅读实证与两份文档登记，不臆测；行号为 2026-08-06 工作区快照
 
 > ✅ **状态更新（2026-08-07，Task #140）**：Rust 剩余项全批（R1-R10+R12）已闭合——留项 1（saveChapterContent，R5）/3（payAction，R6）/8 步骤2（bridge.rs DEPRECATED 标注，R12）/9（subContent+replaceRegex+server 正文+dict 规则引擎，R1-R4）已闭合；留项 11 Rust 大头已闭合（R7 缓存批量下载 + R8 导出参数，book_export 已支持四格式）；留项 13 QUIC 六件套改为**已移除**（用户决策，纯重构边界）。销记台账见 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §5.10。仍开放：留项 2/4/5/6/7（schema v102 保持触发型延后）/10/13 非 QUIC 部分（backupList/bookGroupSetShow/httpTtsSetEnabled）及留项 11 UI 侧部分；留项 12 已随 Task #131（2026-08-07）另行闭合。
+>
+> ✅ **Doc2（2026-08-13）**：§7「schema v102」已强制落地为 **SCHEMA_VERSION=104 / Migration103To104**；勿再按「触发型延后」排期。残留：rule_subs/dict_rules/keyboard_assists 表名（D1 分步；default_data 双建表已清）。权威开放项见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)。
+>
+> ✅ **Doc4**：定时服务已 JobScheduler 双轨接通（非「仅应用内」）；F2 冷启动尽量 headless。
+> ✅ **F9**：离线缓存导出模板/WebDAV 已接线（`335fcb11c`）。
 
 ---
 

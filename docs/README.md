@@ -48,7 +48,8 @@
 
 ### 🔄 进行中项
 
-- **高亮体系二期**：Flutter 渲染层（高亮样式渲染与交互，UI 轨）——当前唯一进行中项。
+- **残留风险收口（2026-08-13）**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)（Doc/F1–F6/D1/D5 等）；高亮体系二期渲染层仍属 UI 轨后续。
+- **schema**：v104 主路径已落地；D1 三表名 Room 全对齐分步中（已清 default_data 双建表）。
 
 ### 👥 各轨负责人与分支
 
@@ -91,6 +92,9 @@
 | 文档 | 说明 |
 | --- | --- |
 | [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) | 重构剩余工作计划（P0-P3 遗留任务清单与执行顺序） |
+| [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) | 残留风险销账表（权威开放项） |
+| [GAP_AUDIT_2026-08-12.md](GAP_AUDIT_2026-08-12.md) | 原版 vs 重构缺口审计 |
+| [USER_TEST_RESULTS_2026-08-13.md](USER_TEST_RESULTS_2026-08-13.md) | 5556 全量门禁实测 |
 
 ### 规范类
 
