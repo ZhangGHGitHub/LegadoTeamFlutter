@@ -47,23 +47,31 @@ class BookInfoScreen extends ConsumerStatefulWidget {
 }
 
 class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
-  late Future<_BookInfoData> _future;
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
+  /// 整页首屏：仅在连 Book 壳都没有时显示（对齐原版先 post bookData）
+  bool _pageLoading = true;
+  /// 目录联网补全中（信息区已可交互）
+  bool _tocLoading = false;
+  String? _loadError;
   // 当前书籍（供 AppBar 溢出菜单读取勾选态）
   Book? _loadedBook;
+  List<BookChapter> _chapters = const [];
   // 当前书源（供溢出菜单条件项：设置变量/允许更新/登录/创建更新任务判定）
   BookSource? _bookSource;
   // 书架状态（对标原版 tv_shelf 加入书架/移出书架切换）
   bool _inBookshelf = false;
-  // [UI-fix v2.0.3 | 2026-08-08] 删除提醒开关（对齐原版 LocalConfig.deleteBookAlert，本地持久化） — Qoder
+  // [UI-FIX v2.0.3 | 2026-08-08] 删除提醒开关（对齐原版 LocalConfig.deleteBookAlert，本地持久化） — Qoder
   final SettingsService _settingsService = SettingsService();
   bool _deleteBookAlert = true;
 
   @override
   void initState() {
     super.initState();
-    _future = _loadData();
+    // 发现/搜索带入的 Book 立刻上屏（对齐原版 bookData.postValue 先于网络）
+    _loadedBook = widget.book;
+    _pageLoading = widget.book == null && widget.effectiveBookUrl.isEmpty;
+    _loadData();
     _loadDeleteBookAlert();
     PlatformBridgeService.refreshSignal.addListener(_onBridgeRefresh);
   }
@@ -72,10 +80,19 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     final signal = PlatformBridgeService.refreshSignal.value;
     if (!mounted || signal == null) return;
     if (signal == 'bookInfo' || signal == 'bookToc') {
-      setState(() {
-        _future = _loadData();
-      });
+      _reload();
     }
+  }
+
+  /// 重新加载详情（刷新/编辑后）
+  void _reload() {
+    if (!mounted) return;
+    setState(() {
+      _pageLoading = _loadedBook == null;
+      _loadError = null;
+      _tocLoading = false;
+    });
+    _loadData();
   }
 
   /// 加载「删除提醒」开关（对齐原版 LocalConfig.deleteBookAlert）
@@ -91,76 +108,120 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     super.dispose();
   }
 
-  Future<_BookInfoData> _loadData() async {
+  Future<void> _loadData() async {
+    final sw = Stopwatch()..start();
     final api = ref.read(bookApiProvider);
     final url = widget.effectiveBookUrl;
-    // 优先从数据库取最新记录（换源/刷新后元数据才会更新），传入对象仅兜底
-    final dbBook = await api.getBook(url);
-    // DB 有记录且未打 notShelf 位才视为已入书架（对标原版 inBookshelf；
-    // 搜索/发现打开的在线书会以 notShelf 临时落库，不算在书架内）
-    final inShelf =
-        dbBook != null && (dbBook.bookType & BookType.notShelf) == 0;
-    var book = dbBook ?? widget.book;
-    var chapters = await api.getChapters(url);
-    // 书源查询一次即复用：既供菜单条件项判定，也供下方联网补全传参
-    BookSource? source;
-    if (book != null && _isOnlineBook(book)) {
-      source = await _findSourceByOrigin(api, book.origin);
-    }
-
-    // [UI-fix v2.0.3 | 2026-08-06] 未入库在线书进入即联网补全目录/详情/封面 — Qoder
-    // 对齐原版 BookInfoViewModel.upBook：tocUrl/详情缺失→loadBookInfo 补
-    // cover/intro/tocUrl；DB 无章节→loadChapter 取目录。关键：未入库时「仅展示
-    // 不落库」（对齐原版 loadChapter 在 !inBookshelf 时不写 DB）；真正落库延迟到
-    // 开始阅读（见 _openReader），且以 notShelf 位标记，书架列表(list_books)过滤，不污染书架。
-    if (book != null && chapters.isEmpty && _isOnlineBook(book)) {
-      var b = book;
-      if (source != null) {
-        final sourceJson = jsonEncode(source.toJson());
-        // a. 补全元数据（现象3：封面/简介/tocUrl/字数缺失）
-        if (_needCompleteInfo(b)) {
-          try {
-            final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
-            b = _mergeWebInfo(b, infoJson);
-          } catch (e) {
-            debugPrint('webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}');
-          }
-        }
-        // b. 取目录（现象1）
-        try {
-          if (inShelf) {
-            // 已入库：走 DB 刷新（refreshToc 内部落库章节）
-            chapters = await api.refreshToc(b.bookUrl, b.origin);
-          } else {
-            // 未入库：仅网络取目录用于展示，不落库
-            final chJson = await api.webbookChapters(sourceJson, b.bookUrl);
-            chapters = _parseWebChapters(chJson, b.bookUrl);
-          }
-        } catch (e) {
-          debugPrint(
-              '取目录失败(bookUrl=${b.bookUrl}, origin=${b.origin}): ${_errMsg(e)}');
-        }
-        // 目录数回填 totalChapterNum（供「目录：共 N 章」摘要行显示）
-        if (chapters.isNotEmpty) {
-          b = b.copyWith(totalChapterNum: chapters.length);
-        }
-        // 已入库书：把补全的元数据写回 DB（对标原版 inBookshelf 时 update）
-        if (inShelf) {
-          try {
-            await api.updateBook(b);
-          } catch (e) {
-            debugPrint('更新书籍元数据失败: $e');
-          }
-        }
+    try {
+      // 优先从数据库取最新记录（换源/刷新后元数据才会更新），传入对象仅兜底
+      final dbBook = url.isEmpty ? null : await api.getBook(url);
+      // DB 有记录且未打 notShelf 位才视为已入书架（对标原版 inBookshelf；
+      // 搜索/发现打开的在线书会以 notShelf 临时落库，不算在书架内）
+      final inShelf =
+          dbBook != null && (dbBook.bookType & BookType.notShelf) == 0;
+      var book = dbBook ?? widget.book;
+      var chapters =
+          url.isEmpty ? <BookChapter>[] : await api.getChapters(url);
+      // 书源查询一次即复用：既供菜单条件项判定，也供下方联网补全传参
+      BookSource? source;
+      if (book != null && _isOnlineBook(book)) {
+        source = await _findSourceByOrigin(api, book.origin);
       }
-      book = b;
-    }
 
-    _loadedBook = book;
-    _bookSource = source;
-    // 书架中已存在该书记录时按钮显示「移出书架」（对标原版 upTvBookshelf）
-    if (mounted) setState(() => _inBookshelf = inShelf);
-    return _BookInfoData(book: book, chapters: chapters);
+      _bookSource = source;
+      if (mounted) {
+        setState(() {
+          _loadedBook = book;
+          _chapters = chapters;
+          _inBookshelf = inShelf;
+          _pageLoading = book == null;
+          _loadError = null;
+          // 在线书无本地目录：先上屏信息，再后台补全（对齐原版章节 LiveData 后至）
+          _tocLoading =
+              book != null && chapters.isEmpty && _isOnlineBook(book);
+        });
+      }
+      debugPrint(
+        '[BookInfo] 首屏就绪 ${sw.elapsedMilliseconds}ms '
+        'name=${book?.name} chapters=${chapters.length} tocLoading=$_tocLoading',
+      );
+
+      // [UI-FIX v2.0.3 | 2026-08-06] 未入库在线书进入即联网补全目录/详情/封面 — Qoder
+      // 对齐原版 BookInfoViewModel.upBook：tocUrl/详情缺失→loadBookInfo 补
+      // cover/intro/tocUrl；DB 无章节→loadChapter 取目录。关键：未入库时「仅展示
+      // 不落库」（对齐原版 loadChapter 在 !inBookshelf 时不写 DB）；真正落库延迟到
+      // 开始阅读（见 _openReader），且以 notShelf 位标记，书架列表(list_books)过滤，不污染书架。
+      if (book != null && chapters.isEmpty && _isOnlineBook(book)) {
+        var b = book;
+        if (source != null) {
+          final sourceJson = jsonEncode(source.toJson());
+          // a. 补全元数据（现象3：封面/简介/tocUrl/字数缺失）
+          if (_needCompleteInfo(b)) {
+            try {
+              final tInfo = Stopwatch()..start();
+              final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
+              debugPrint(
+                '[BookInfo] webbookInfo ${tInfo.elapsedMilliseconds}ms',
+              );
+              b = _mergeWebInfo(b, infoJson);
+              if (mounted) setState(() => _loadedBook = b);
+            } catch (e) {
+              debugPrint('webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}');
+            }
+          }
+          // b. 取目录（现象1）
+          try {
+            final tToc = Stopwatch()..start();
+            if (inShelf) {
+              // 已入库：走 DB 刷新（refreshToc 内部落库章节）
+              chapters = await api.refreshToc(b.bookUrl, b.origin);
+            } else {
+              // 未入库：仅网络取目录用于展示，不落库
+              final chJson = await api.webbookChapters(sourceJson, b.bookUrl);
+              chapters = _parseWebChapters(chJson, b.bookUrl);
+            }
+            debugPrint(
+              '[BookInfo] toc ${tToc.elapsedMilliseconds}ms '
+              'chapters=${chapters.length}',
+            );
+          } catch (e) {
+            debugPrint(
+                '取目录失败(bookUrl=${b.bookUrl}, origin=${b.origin}): ${_errMsg(e)}');
+          }
+          // 目录数回填 totalChapterNum（供「目录：共 N 章」摘要行显示）
+          if (chapters.isNotEmpty) {
+            b = b.copyWith(totalChapterNum: chapters.length);
+          }
+          // 已入库书：把补全的元数据写回 DB（对标原版 inBookshelf 时 update）
+          if (inShelf) {
+            try {
+              await api.updateBook(b);
+            } catch (e) {
+              debugPrint('更新书籍元数据失败: $e');
+            }
+          }
+        }
+        if (mounted) {
+          setState(() {
+            _loadedBook = b;
+            _chapters = chapters;
+            _tocLoading = false;
+          });
+        }
+      } else if (mounted) {
+        setState(() => _tocLoading = false);
+      }
+      debugPrint('[BookInfo] 全量完成 ${sw.elapsedMilliseconds}ms');
+    } catch (e) {
+      debugPrint('[BookInfo] 加载失败: ${_errMsg(e)}');
+      if (mounted) {
+        setState(() {
+          _pageLoading = false;
+          _tocLoading = false;
+          _loadError = _errMsg(e);
+        });
+      }
+    }
   }
 
   /// 提取错误信息：BridgeError 等封装类型带 message 字段，直接 `$e` 只得类型名。
@@ -265,8 +326,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               tooltip: '编辑书籍信息',
               onPressed: () async {
                 try {
-                  final data = await _future;
-                  final book = data.book;
+                  final book = _loadedBook;
                   if (book == null) return;
                   if (!context.mounted) return;
                   // [fix Task#24 | 2026-08-08] 去掉 <bool> 泛型，避免 routes 表
@@ -278,7 +338,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                   );
                   // 编辑保存成功后重新加载书籍信息
                   if (saved == true && mounted) {
-                    setState(() { _future = _loadData(); });
+                    _reload();
                   }
                 } catch (e) {
                   // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
@@ -296,8 +356,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             tooltip: '分享',
             onPressed: () async {
               try {
-                final data = await _future;
-                final book = data.book;
+                final book = _loadedBook;
                 if (book == null) return;
                 final buffer = StringBuffer('《${book.name}》');
                 if (book.author.isNotEmpty) {
@@ -405,26 +464,16 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<_BookInfoData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const LoadingIndicator(message: '加载书籍信息...');
-          }
-          if (snapshot.hasError) {
-            return ErrorView(
-              message: snapshot.error.toString(),
-              onRetry: () => setState(() { _future = _loadData(); }),
-            );
-          }
-          final data = snapshot.data!;
-          final book = data.book;
-          if (book == null) {
-            return const ErrorView(message: '书籍不存在');
-          }
-          return _buildPage(context, book, data.chapters);
-        },
-      ),
+      body: _pageLoading
+          ? const LoadingIndicator(message: '加载书籍信息...')
+          : _loadError != null && _loadedBook == null
+              ? ErrorView(
+                  message: _loadError!,
+                  onRetry: _reload,
+                )
+              : _loadedBook == null
+                  ? const ErrorView(message: '书籍不存在')
+                  : _buildPage(context, _loadedBook!, _chapters),
       bottomNavigationBar: _buildBottomBar(),
     );
   }
@@ -454,7 +503,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         SafeArea(
           top: false,
           child: RefreshIndicator(
-            onRefresh: () async => setState(() { _future = _loadData(); }),
+            onRefresh: () async => _reload(),
             child: _buildBody(context, book, chapters),
           ),
         ),
@@ -509,7 +558,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         if (book != null && _isOnlineBook(book)) {
           await _refreshToc();
         } else {
-          setState(() { _future = _loadData(); });
+          _reload();
         }
         break;
       case 'copyBookUrl':
@@ -548,7 +597,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           );
         }
         await api.updateBook(updated);
-        if (mounted) setState(() { _future = _loadData(); });
+        if (mounted) _reload();
         break;
       case 'log':
         // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
@@ -666,8 +715,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         _bookSource = source.copyWith(
           variable: input,
         );
-        _future = _loadData();
       });
+      _reload();
       _snack(input.isEmpty ? '源变量已清除' : '源变量已保存');
     } catch (e) {
       debugPrint('设置源变量失败: $e');
@@ -757,7 +806,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         lastCheckTime: DateTime.now().millisecondsSinceEpoch,
       ));
       if (!mounted) return;
-      setState(() { _future = _loadData(); });
+      _reload();
       _snack('上传至远程成功');
     } catch (e) {
       debugPrint('上传成功但保存记录失败: $e');
@@ -854,7 +903,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       }
       await api.updateBook(full.copyWith(variable: jsonEncode(varMap)));
       if (!mounted) return;
-      setState(() { _future = _loadData(); });
+      _reload();
       _snack('书籍变量已保存');
     } catch (e) {
       debugPrint('保存书籍变量失败: $e');
@@ -980,7 +1029,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         ? '最新：${book.latestChapterTitle}'
         : '共 ${book.totalChapterNum} 章';
     // [UI-fix v2.0.6 | 2026-08-08] 目录行标题对齐原版（当前章节名）+ 字数标签 — Qoder
-    final tocTitle = _resolveTocTitle(book, chapters);
+    final tocTitle = _tocLoading ? '加载中…' : _resolveTocTitle(book, chapters);
     final wordCount = (book.wordCount ?? '').trim();
     final kinds = (book.kind ?? '')
         .split(',')
@@ -1180,58 +1229,52 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   /// 底部操作条（对标原版 fl_action：tv_shelf 加书架/移出书架 + tv_read 阅读，
   /// 各 weight 1、高 48、radius 8、15sp）
   Widget _buildBottomBar() {
-    return FutureBuilder<_BookInfoData>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        final book = snapshot.data!.book;
-        if (book == null) return const SizedBox.shrink();
-        final cs = Theme.of(context).colorScheme;
-        return SafeArea(
-          top: false,
-          child: Container(
-            color: cs.surfaceContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 48,
-                    child: FilledButton.tonal(
-                      onPressed: () => _toggleShelf(book),
-                      style: FilledButton.styleFrom(
-                        textStyle: const TextStyle(fontSize: 15),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(_inBookshelf ? '移出书架' : '加入书架'),
+    final book = _loadedBook;
+    if (book == null) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: Container(
+        color: cs.surfaceContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: FilledButton.tonal(
+                  onPressed: () => _toggleShelf(book),
+                  style: FilledButton.styleFrom(
+                    textStyle: const TextStyle(fontSize: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
+                  child: Text(_inBookshelf ? '移出书架' : '加入书架'),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 48,
-                    child: FilledButton(
-                      onPressed: () =>
-                          _openReader(context, book, book.durChapterIndex),
-                      style: FilledButton.styleFrom(
-                        textStyle: const TextStyle(fontSize: 15),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child:
-                          Text(book.durChapterIndex > 0 ? '继续阅读' : '开始阅读'),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+            const SizedBox(width: 12),
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: FilledButton(
+                  onPressed: () =>
+                      _openReader(context, book, book.durChapterIndex),
+                  style: FilledButton.styleFrom(
+                    textStyle: const TextStyle(fontSize: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child:
+                      Text(book.durChapterIndex > 0 ? '继续阅读' : '开始阅读'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1247,7 +1290,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('目录已更新，共 ${chapters.length} 章')),
       );
-      setState(() { _future = _loadData(); });
+      _reload();
     } catch (e) {
       if (!mounted) return;
       BookSource? source;
@@ -1364,7 +1407,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     );
     if (selected == null || !mounted) return;
     await ref.read(bookApiProvider).updateBook(book.copyWith(group: selected));
-    if (mounted) setState(() { _future = _loadData(); });
+    if (mounted) _reload();
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 登录 / 置顶 / 清缓存 — Qoder =====
@@ -1580,9 +1623,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       );
     }
     if (mounted) {
-      setState(() {
-        _future = _loadData();
-      });
+      _reload();
     }
   }
 
@@ -1610,13 +1651,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 }
 
-/// 书籍信息加载结果
-class _BookInfoData {
-  final Book? book;
-  final List<BookChapter> chapters;
-
-  const _BookInfoData({required this.book, required this.chapters});
-}
 
 /// 登录 V2 动态状态协议对话框（对标 Kotlin SourceLoginDialogV2，上游 #402/#488）
 ///
