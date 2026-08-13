@@ -182,6 +182,20 @@ abstract class BookApi {
   /// 以空结果唤醒等待方（等待侧报「验证结果为空」，对齐 Kotlin 语义）。
   Future<bool> cancelVerificationRequest(String key);
 
+  /// BackstageWebView DOM 执行请求事件流（SOURCE_DIFF P1）
+  ///
+  /// 字段：`key` / `action` / `html` / `url` / `js` / `source_regex` /
+  /// `override_url_regex` / `cache_first` / `delay_time` / `is_rule` /
+  /// `result` / `created_at_ms`。订阅后 Rust 侧 `@webjs`/正文 webJs/
+  /// `java.webView*` 可走真实 DOM。
+  Stream<Map<String, dynamic>> webviewRequestStream();
+
+  /// 提交 WebView 执行结果，唤醒 Rust 等待方
+  Future<bool> submitWebviewResult(String key, String result);
+
+  /// 取消 WebView 请求（空结果唤醒）
+  Future<bool> cancelWebviewRequest(String key);
+
   // ========== 搜索操作 ==========
 
   /// 搜索书籍

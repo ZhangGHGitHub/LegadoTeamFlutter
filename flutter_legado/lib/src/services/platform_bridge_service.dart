@@ -229,8 +229,15 @@ class PlatformBridgeService {
     try {
       switch (action) {
         case 'webView':
-          return await _webViewEval(url: url, html: html, js: js,
-              delayMs: _delayOf(payload));
+          return await _webViewEval(
+            url: url,
+            html: html,
+            js: js,
+            delayMs: _delayOf(payload),
+            isRule: payload['isRule'] == true,
+            resultJson: (payload['result'] ?? '').toString(),
+            cacheFirst: payload['cacheFirst'] == true,
+          );
         case 'webViewGetSource':
           return await _webViewSniffSource(
             url: url,
@@ -238,6 +245,7 @@ class PlatformBridgeService {
             js: js,
             sourceRegex: (payload['sourceRegex'] ?? '').toString(),
             delayMs: _delayOf(payload),
+            cacheFirst: payload['cacheFirst'] == true,
           );
         case 'webViewGetOverrideUrl':
           return await _webViewSniffOverrideUrl(
@@ -246,6 +254,7 @@ class PlatformBridgeService {
             js: js,
             overrideUrlRegex: (payload['overrideUrlRegex'] ?? '').toString(),
             delayMs: _delayOf(payload),
+            cacheFirst: payload['cacheFirst'] == true,
           );
       }
     } catch (e) {
@@ -284,14 +293,27 @@ class PlatformBridgeService {
   }
 
   /// webView：加载页面 → 延时 → 执行 JS（缺省取 outerHTML）→ 返回结果
+  ///
+  /// [isRule] 对齐 Kotlin BackstageWebView.isRule：注入 `window.result`。
+  /// [cacheFirst]：webview_flutter 无直接 cacheMode API，仅作日志记录（近似边界）。
   Future<String> _webViewEval({
     required String url,
     required String html,
     required String js,
     required int delayMs,
+    bool isRule = false,
+    String resultJson = '',
+    bool cacheFirst = false,
   }) async {
+    if (cacheFirst) {
+      debugPrint('[PlatformBridge] cacheFirst=true（Flutter WebView 无 cacheMode，近似忽略）');
+    }
     final controller = _newController();
     await _loadAndWaitFinished(controller, url: url, html: html);
+    if (isRule && resultJson.isNotEmpty) {
+      // resultJson 已是 Rust serde_json 字面量（对齐 GSON.toJson → window.result）
+      await controller.runJavaScript('window.result = $resultJson;');
+    }
     // 对齐 Kotlin：无 js 时默认等待 900ms 渲染；有 js 时等待 100ms + delayTime
     final waitMs = js.isEmpty ? (delayMs > 0 ? delayMs : 900) : 100 + delayMs;
     await Future<void>.delayed(Duration(milliseconds: waitMs));
@@ -311,8 +333,12 @@ class PlatformBridgeService {
     required String js,
     required String sourceRegex,
     required int delayMs,
+    bool cacheFirst = false,
   }) async {
     if (sourceRegex.isEmpty) return '';
+    if (cacheFirst) {
+      debugPrint('[PlatformBridge] webViewGetSource cacheFirst=true（近似忽略）');
+    }
     final regex = RegExp(sourceRegex);
     final controller = _newController();
     await _loadAndWaitFinished(controller, url: url, html: html);
@@ -366,8 +392,14 @@ class PlatformBridgeService {
     required String js,
     required String overrideUrlRegex,
     required int delayMs,
+    bool cacheFirst = false,
   }) async {
     if (overrideUrlRegex.isEmpty) return '';
+    if (cacheFirst) {
+      debugPrint(
+        '[PlatformBridge] webViewGetOverrideUrl cacheFirst=true（近似忽略）',
+      );
+    }
     final regex = RegExp(overrideUrlRegex);
     final capture = Completer<String>();
 

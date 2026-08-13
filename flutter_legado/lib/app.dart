@@ -18,6 +18,7 @@ import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/crash_log_dialog.dart';
 import 'src/widgets/verification_code_listener.dart';
+import 'src/widgets/webview_bridge_listener.dart';
 
 /// Legado App 入口 Widget
 class LegadoApp extends ConsumerStatefulWidget {
@@ -121,6 +122,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
         // 全局验证码请求监听（对标原版 SourceVerificationHelp 全局监听，
         // 书源 JS 挂起等待验证码时跨页面弹窗）
         Widget wrapped = VerificationCodeListener(child: child!);
+        // BackstageWebView DOM 通道（@webjs / 正文 webJs / java.webView*）
+        wrapped = WebViewBridgeListener(child: wrapped);
         // P1-8：按当前亮度叠全局背景图（分组卡片仍自带不透明底，可读性保留）
         wrapped = _ThemeBackgroundLayer(
           path: themeColors.bgImageFor(Theme.of(context).brightness),

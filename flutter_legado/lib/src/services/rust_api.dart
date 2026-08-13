@@ -398,6 +398,23 @@ class RustApi implements BookApi {
   Future<bool> cancelVerificationRequest(String key) =>
       bridge.verificationCancel(key: key);
 
+  // ========== BackstageWebView DOM 通道（SOURCE_DIFF P1） ==========
+
+  @override
+  Stream<Map<String, dynamic>> webviewRequestStream() {
+    return bridge
+        .webviewRequestStream()
+        .map((item) => _decodeMap(item, 'webviewRequestStream'));
+  }
+
+  @override
+  Future<bool> submitWebviewResult(String key, String result) =>
+      bridge.webviewSubmit(key: key, result: result);
+
+  @override
+  Future<bool> cancelWebviewRequest(String key) =>
+      bridge.webviewCancel(key: key);
+
   // ========== 搜索操作 ==========
 
   /// 搜索书籍

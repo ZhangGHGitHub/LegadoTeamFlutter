@@ -605,6 +605,17 @@ class MockBookApi implements BookApi {
     return false;
   }
 
+  @override
+  Stream<Map<String, dynamic>> webviewRequestStream() async* {
+    // Mock 占位：无真实 WebView 通道
+  }
+
+  @override
+  Future<bool> submitWebviewResult(String key, String result) async => false;
+
+  @override
+  Future<bool> cancelWebviewRequest(String key) async => false;
+
   // ========== 搜索操作 ==========
 
   @override

@@ -208,6 +208,29 @@ Future<bool> verificationCancel({required String key}) =>
 Future<String> verificationPending() =>
     RustLib.instance.api.crateFfiFfiVerificationPending();
 
+/// 订阅 WebView DOM 执行请求事件流（长期存活，Stream\<String\>）
+///
+/// 书源 `@webjs` / 正文 webJs / `java.webView*` 在 Flutter 已订阅时
+/// 经此通道挂起等待真实 WebView 执行。事件 JSON 字段（snake_case）：
+/// `key` / `action` / `html` / `url` / `js` / `source_regex` /
+/// `override_url_regex` / `cache_first` / `delay_time` / `is_rule` /
+/// `result` / `created_at_ms`。订阅时先回放进行中请求。
+/// UI 执行后经 [`webview_submit`] 回传；超时/取消调 [`webview_cancel`]。
+Stream<String> webviewRequestStream() =>
+    RustLib.instance.api.crateFfiFfiWebviewRequestStream();
+
+/// 提交 WebView 执行结果，唤醒 Rust 等待方
+Future<bool> webviewSubmit({required String key, required String result}) =>
+    RustLib.instance.api.crateFfiFfiWebviewSubmit(key: key, result: result);
+
+/// 取消 WebView 请求（以空结果唤醒）
+Future<bool> webviewCancel({required String key}) =>
+    RustLib.instance.api.crateFfiFfiWebviewCancel(key: key);
+
+/// 当前进行中的 WebView 请求列表（JSON 数组）
+Future<String> webviewPending() =>
+    RustLib.instance.api.crateFfiFfiWebviewPending();
+
 /// 判定书源登录 UI 是否为 V2 动态状态协议
 ///
 /// `source_json` — BookSource JSON
