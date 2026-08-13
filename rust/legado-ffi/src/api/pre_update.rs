@@ -38,7 +38,6 @@ pub fn run_pre_update_js(source: &BookSource, book: &mut Book) -> LegadoResult<(
 fn run_pre_update_js_inner(source: &BookSource, book: &mut Book, js: &str) -> LegadoResult<()> {
     use std::sync::{Arc, Mutex};
 
-    use legado_core::web_book::WebBookInfo;
     use legado_core::LegadoError;
     use legado_parser::JsExecutor;
 
@@ -123,11 +122,9 @@ fn re_get_book_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> 
 /// 对齐 `AnalyzeRule.refreshTocUrl`：重新拉详情写 tocUrl 等
 #[cfg(feature = "quickjs")]
 fn refresh_toc_url_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> {
-    use legado_core::web_book::{BookSourceFetcher, WebBookInfo};
-
     let engine = crate::api::web_book::build_engine();
-    let info: WebBookInfo = crate::runtime::block_on(async {
-        BookSourceFetcher::get_book_info(&engine, source, &book.book_url).await
+    let info = crate::runtime::block_on(async {
+        engine.get_book_info(source, &book.book_url).await
     })?;
     apply_web_info_to_book(book, &info);
     Ok(())
