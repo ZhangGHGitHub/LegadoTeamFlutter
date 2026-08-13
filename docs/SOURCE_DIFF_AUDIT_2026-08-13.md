@@ -36,8 +36,8 @@
    - Dart/FRB：codegen + `BookApi.preciseSearch`；书单导入/批量换源已接线
    - 证据：commit `099b5ebc7` + 本轮 FRB/UI 接线
 
-3. **`checkRedirect` 重定向检测**（影响偏弱）
-   - 主要为 Debug.log 可观测性缺口，非兼容性阻断
+3. ~~**`checkRedirect` 重定向检测**~~ → **✅ 可观测性已落地（2026-08-13）**
+   - `web_book::check_redirect_log`：请求 URL ≠ 最终 URL 时 eprintln（对齐 Debug.log）
 
 4. ~~**`runPreUpdateJs` 更新前 JS 钩子**~~ → **✅ 已落地（2026-08-13）**
    - `refresh_toc` 调用 `pre_update::run_pre_update_js`（写回 book + 持久化）
@@ -46,9 +46,10 @@
 
 ### P1 级（功能缺口）
 
-5. ~~**`getWebJsResult`（规则级 Mode.WebJs）**~~ → **✅ 无头近似已落地（2026-08-13）**
-   - `@webjs:` / `@webJs:` 前缀路由；注入 `result`/`src`/`html`/`baseUrl` 经 QuickJS 执行
-   - **完整 BackstageWebView DOM 仍缺**（平台桥依赖；与正文 webJs 同源边界）
+5. ~~**`getWebJsResult`（规则级 Mode.WebJs）**~~ → **✅ DOM 通道 + 无头回退（2026-08-13）**
+   - Flutter 订阅 `webviewRequestStream` 时走真实 BackstageWebView DOM（`window.result`/`document`）
+   - 无订阅者回退无头 QuickJS（`result`/`src`/`html`/`baseUrl`）
+   - **近似边界**：WebView 页内 `java`/`source` JavascriptInterface 未注入；`cacheFirst` 无 Flutter cacheMode
 
 6. ~~**`setRedirectUrl`**~~ → **✅ 已落地（2026-08-13）**
    - `AnalyzeRule::set_redirect_url` + `redirect_url`；`isUrl` 绝对化使用该 base
@@ -79,10 +80,10 @@
 
 ## 3. 差异明细（按层）
 
-### 3.1 AnalyzeRule（约 90%）
+### 3.1 AnalyzeRule（约 90%→更高）
 
-- ✅ get_string/get_strings/get_elements/… / `@put`/`@get`/setLocal / setRedirectUrl / isUrl·unescape / `@webjs` 无头近似
-- ⚠️ 完整 WebView DOM WebJs、编译缓存层仍缺
+- ✅ get_string/get_strings/get_elements/… / `@put`/`@get`/setLocal / setRedirectUrl / isUrl·unescape / `@webjs` DOM 通道+无头回退
+- ⚠️ 编译缓存层仍缺；WebView 页内 java/source 注入仍缺
 
 ### 3.2 AnalyzeByJSoup（约 85%→更高）
 
@@ -92,10 +93,11 @@
 
 - ❌ upload 多部件（N/A 边界）
 
-### 3.4 JsExtensions / java 桥（约 95%）
+### 3.4 JsExtensions / java 桥（约 95%→更高）
 
 - ✅ getReadBookConfigMap/getThemeConfigMap；reGetBook/refreshTocUrl（preUpdate 门控）
-- ⚠️ webView cacheFirst、downloadFile 双参、getFile、unArchiveFile、openVideoPlayer isFloat、timeFormatUTC 等次要重载
+- ✅ webView `cacheFirst` 参数、downloadFile 双参（含 hex 废弃重载）、getFile 对象、unArchiveFile 别名、openVideoPlayer isFloat、timeFormatUTC（`sh`=毫秒偏移）
+- ⚠️ cacheFirst 在 Flutter WebView 无 cacheMode（日志近似）
 
 ### 3.5–3.8
 
@@ -118,7 +120,7 @@
 3. ~~P1 `sourceRegex`+`webJs` / `imageStyle`~~ ✅
 4. ~~P1 getWebJsResult（无头）/ setRedirectUrl / isUrl·unescape~~ ✅
 5. ~~P2 ConfigMap~~ ✅；DownloadService 形态 N/A；upload N/A
-6. 残留：完整 DOM WebView（平台桥）、次要 JS 重载、A\* 实网验收
+6. 残留：AnalyzeRule 编译缓存、ownText 近似、A\* 实网验收；DOM 页内 java/source 注入
 
 ---
 
@@ -129,19 +131,22 @@
 | P0-1 `@put`/`@get`/`setLocal` | ✅ | `14517217b` |
 | P0-2 `preciseSearch` | ✅ Rust+FFI+Dart FRB | `099b5ebc7` + 本轮 |
 | P0-4 `runPreUpdateJs` + reGetBook/refreshTocUrl | ✅ | `099b5ebc7` + 本轮 |
-| P1-5 `@webjs` 无头近似 | ✅（完整 DOM 仍开放） | 本轮 |
+| P0-3 checkRedirect 可观测性 | ✅ | 本轮 `check_redirect_log` |
+| P1-5 `@webjs` / 正文 webJs DOM | ✅（页内 java/source 仍近似） | 本轮 webview_channel + WebViewBridgeListener |
 | P1-6 `setRedirectUrl` | ✅ | 本轮 |
 | P1-7 isUrl·unescape | ✅ | 本轮 |
 | P1-9/10 imageStyle/sourceRegex·webJs | ✅ | `6b1eb163c`/`e05746a4c` |
 | P1-11 upload | N/A | 直链边界 |
 | P2-12 DownloadService | 形态 N/A | downloadFile + url_launcher |
 | P2-13 ConfigMap | ✅ | 本轮 |
+| §3.4 JS 次要重载 | ✅（cacheFirst 形态近似） | 本轮 |
 | §4.2 过时注释 | ✅ | 本轮 |
 | Cronet / 直链上传产品入口 | N/A | GAP / RESIDUAL |
-| Android x86_64 so + 5556 冒烟 | ✅ 本轮补验证 | `30c48ded2` 修编译后重编 so；`emulator_smoke_test.ps1 -Device emulator-5556` **5/5 PASS**（无 FATAL） |
+| Android x86_64 so + 5556 冒烟 | ✅ 本轮 | `build-android.ps1 -Targets x86_64`；`emulator_smoke_test.ps1 -Device emulator-5556` **5/5 PASS** |
 
-**本轮终态仍开放（勿销）**：完整 BackstageWebView DOM（平台桥）；JS 次要重载（§3.4）；checkRedirect 可观测性。
+**本轮终态仍开放（勿销）**：WebView 页内 `java`/`source` JavascriptInterface；AnalyzeRule 编译缓存；ownText 近似；A\* 素材验收。
 
 编写者：Reasonix ｜ 2026-08-13（源码级只读审计）  
 修订：Auto（Cursor）｜ 2026-08-13（实现销记 P0/P1/P2 开放项；DownloadService/upload 标 N/A）  
-修订：Auto（Cursor）｜ 2026-08-13（补编译修复 `30c48ded2` + 5556 冒烟证据）
+修订：Auto（Cursor）｜ 2026-08-13（补编译修复 `30c48ded2` + 5556 冒烟证据）  
+修订：Auto（Cursor）｜ 2026-08-13（DOM WebView 通道 + JS 次要重载 + checkRedirect）

@@ -1099,11 +1099,12 @@ flutter test                  # 全量测试通过
 
 | 优先级 | 项 | 状态 | 说明 |
 |--------|-----|------|------|
-| P1 | 完整 DOM WebView（规则级 / 正文 webJs） | 部分开放 | `@webjs`/正文 webJs 已无头 QuickJS 近似；BackstageWebView DOM 依赖平台桥 |
-| P2 | JS 次要重载（webView cacheFirst、downloadFile 双参、getFile、timeFormatUTC 等） | 开放 | 见 SOURCE_DIFF §3.4；优先级低于书源主路径 |
-| — | checkRedirect 可观测性 | 低 | Debug.log 级，非兼容阻断 |
+| P1 | WebView 页内 java/source 注入 | 部分开放 | DOM 通道已通；页内 JavascriptInterface 未注入（诚实近似） |
+| — | AnalyzeRule 编译缓存 / ownText 近似 | 低 | 非书源主路径阻断 |
 
-**本轮已销（2026-08-13）**：`@put`/`preciseSearch`(含 Dart FRB)/`runPreUpdateJs`+reGetBook/refreshTocUrl/`sourceRegex`+webJs 无头/`imageStyle`/`setRedirectUrl`/isUrl·unescape/`@webjs` 无头/ConfigMap；卫生注释。
+**本轮已销（2026-08-13 v1.45）**：完整 DOM WebView 通道（webview_channel + FFI + WebViewBridgeListener；`@webjs`/正文 webJs/`java.webView*`）；JS 次要重载（cacheFirst 参数、downloadFile 双参、getFile、unArchiveFile、timeFormatUTC 毫秒偏移）；checkRedirect 可观测性。
+
+**此前已销（2026-08-13）**：`@put`/`preciseSearch`(含 Dart FRB)/`runPreUpdateJs`+reGetBook/refreshTocUrl/`sourceRegex`+webJs 无头/`imageStyle`/`setRedirectUrl`/isUrl·unescape/`@webjs` 无头/ConfigMap；卫生注释。
 
 **明确不纳入本 backlog（N/A 或已销）**：Cronet / 直链 upload（N/A）；DownloadService 前台形态（N/A，功能由 downloadFile+url_launcher 覆盖）；`@html`；PackageInfo；F4/F5/F6/T6/D1 SCHEMA105（见 §5.12–§5.14 / RESIDUAL）。
 
@@ -1113,12 +1114,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.44  
+**文档版本**: 1.45  
 **最后更新**: 2026-08-13  
 **维护人**: Qoder  
 **最后修改**: Auto（Cursor）
 
 **版本记录**：
+- ✅ **v1.45（2026-08-13）SOURCE_DIFF DOM WebView + JS 次要重载**：`webview_channel`/`webviewRequestStream`；`@webjs`/正文 webJs DOM 优先+无头回退；webView cacheFirst、downloadFile 双参、getFile、unArchiveFile、timeFormatUTC(sh=ms)；checkRedirect 日志。近似：页内 java/source 注入、Flutter cacheMode。验证：见本轮 commit + 5556 冒烟。
 - ✅ **v1.44（2026-08-13）SOURCE_DIFF 开放项续销**：preciseSearch Dart/FRB；reGetBook/refreshTocUrl；setRedirectUrl + isUrl/unescape；`@webjs` 无头；ConfigMap；DownloadService/upload 标 N/A；§5.15 收窄为 DOM WebView / 次要重载。验证：`30c48ded2` 修 Android quickjs 编译；x86_64 so 重编；5556 冒烟 5/5 PASS。
 - ✅ **v1.43（2026-08-13）旁证台账回写**：Doc8 链 RESIDUAL + SOURCE_DIFF；SCHEMA 104+105（D1）销「三表名残留」；§5.12 F6 刘海/音量键/shareLayout 全部闭合；F4/F5/T6/PackageInfo 与 §5.13/§5.14 对齐 ✅；新增 §5.15 SOURCE_DIFF 开放 P0/P1 backlog；听书以 GAP 轮5 为准。commits：`18003a7b9`/`46ebfa085`/`f7bcf4425`/`d83e6eb26`/`5cb4d4ca3`/`729eb970f`/`c3dd3a0b3`/`fcbfea4ff`/`3ff496355` 等。
 - v1.42（2026-08-11）必应漫画 type=0 正文刷 `<img>` HTML 销记（v2.0.33，[UI]，Reasonix）：书源 type=0 + `.img@img@html`+FULL，图片直连 200 JPEG 无防盗链问题；文本阅读器不渲染 img → 裸标签。修复抽图规则提升为 image 走漫画阅读器 + 文本侧图片主导正文兜底。版本 2.0.33+35
@@ -1169,3 +1171,4 @@ flutter test                  # 全量测试通过
 编写者：Qoder  
 日期：2026-08-06  
 修订：Auto（Cursor）｜ 2026-08-13（v1.43：旁证台账 / SCHEMA105 / F4–F6 / T6 / PackageInfo / §5.15 SOURCE_DIFF backlog）
+修订：Auto（Cursor）｜ 2026-08-13（v1.45：DOM WebView 通道 + JS 次要重载 + checkRedirect；§5.15 收窄）
