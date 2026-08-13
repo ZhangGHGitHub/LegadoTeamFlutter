@@ -536,6 +536,9 @@ abstract class BookApi {
   /// 恢复数据
   Future<void> restore(String backupPath);
 
+  /// 列出目录下备份文件（JSON 数组，F3-20）
+  Future<List<String>> backupList(String dir);
+
   /// 导入旧版（阅读 2.x）备份目录
   ///
   /// 对齐 [API_CONTRACT] §2.11 `importOldData` / 原版 `ImportOldData.importUri`。
@@ -583,6 +586,9 @@ abstract class BookApi {
 
   /// 删除书籍分组
   Future<void> deleteBookGroup(int groupId);
+
+  /// 设置分组显示状态（FFI bookGroupSetShow，F3-20）
+  Future<bool> bookGroupSetShow(int groupId, bool show);
 
   // ========== 搜索历史 ==========
 
@@ -844,6 +850,9 @@ abstract class BookApi {
   /// 导出 HTTP TTS 配置
   Future<String> exportHttpTts();
 
+  /// 设置 HTTP TTS 源启用/禁用（F3-20）
+  Future<bool> httpTtsSetEnabled(int id, bool enabled);
+
   // ========== 音频播放 ==========
 
   /// TTS 朗读
@@ -855,6 +864,16 @@ abstract class BookApi {
     double volume = 1.0,
     String? voiceName,
   });
+
+  /// TTS 真实合成（返回 audioPath/fromCache/contentType，F3-20）
+  Future<Map<String, dynamic>> ttsSpeak({
+    required String text,
+    required String engineUrl,
+    double speed = 1.0,
+  });
+
+  /// 设置 TTS 音频缓存目录（F3-20）
+  Future<bool> ttsSetCacheDir(String path);
 
   /// 获取章节媒体信息
   ///

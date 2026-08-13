@@ -1273,6 +1273,9 @@ class MockBookApi implements BookApi {
   Future<void> restore(String backupPath) async {}
 
   @override
+  Future<List<String>> backupList(String dir) async => [];
+
+  @override
   Future<String> importOldData(String dirPath) async {
     return jsonEncode({
       'books': 0,
@@ -1345,6 +1348,9 @@ class MockBookApi implements BookApi {
   Future<void> deleteBookGroup(int groupId) async {
     _bookGroups.removeWhere((g) => g.groupId == groupId);
   }
+
+  @override
+  Future<bool> bookGroupSetShow(int groupId, bool show) async => true;
 
   // ========== 搜索历史 ==========
 
@@ -1736,6 +1742,9 @@ class MockBookApi implements BookApi {
   Future<String> exportHttpTts() async =>
       jsonEncode(_httpTtsList.map((t) => t.toJson()).toList());
 
+  @override
+  Future<bool> httpTtsSetEnabled(int id, bool enabled) async => true;
+
   // ========== 音频播放 ==========
 
   @override
@@ -1747,6 +1756,17 @@ class MockBookApi implements BookApi {
     double volume = 1.0,
     String? voiceName,
   }) async {}
+
+  @override
+  Future<Map<String, dynamic>> ttsSpeak({
+    required String text,
+    required String engineUrl,
+    double speed = 1.0,
+  }) async =>
+      {'audioPath': '', 'fromCache': false, 'contentType': 'audio/mpeg'};
+
+  @override
+  Future<bool> ttsSetCacheDir(String path) async => true;
 
   @override
   Future<Map<String, dynamic>> getAudioChapterMedia(

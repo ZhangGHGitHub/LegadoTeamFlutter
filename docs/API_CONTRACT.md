@@ -18,6 +18,7 @@
 | 2026-08-13 | P2-4 续：恢复忽略项其余键——备份 JSON 注入 `appPrefs`，恢复时按 BackupConfig.keyIsNotIgnore 过滤（readConfig/themeMode/themeConfig/coverConfig/bookshelfLayout/showRss/threadCount）；无新 FFI |
 | 2026-08-13 | P2-1：底栏皮肤最小可用——纯 Flutter（`archive` zip 导入 + PrefKeys.bottomBarSkin）；**无新 FFI** |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
+| 2026-08-14 | **F3-20**：BookApi 补 5 项延迟封装，§3 待 UI 封装清单清零；BookApi **252** 方法 |
 | 2026-08-14 | **F3-17**：加法式 `rssListReadRecordsByOrigin`（§2.35）；**F3-10** 契约全面同步至 BookApi **247** 方法、附录 **251** |
 | 2026-08-14 | **F3-14**：加法式新增 `httpGetBytes`（§2.20）；UI 层 8 处裸 `http.get` 收敛至 Bridge；附录 244→245，BookApi 233→234 |
 | 2026-08-14 | **F3-5**：§1.6 登记 9 个 FFI 非 Result 导出豁免（只读/哨兵语义，不改签名） |
@@ -114,8 +115,8 @@
 ## 2. 方法清单
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 程序化计数
-> 为基准，BookApi 接口当前共 **247 个方法**（2026-08-14 F3-17 加 `rssListReadRecordsByOrigin` 1）。
-> 附录 §2.1–§2.43 行合计 **251**；扣除尚未封装进 BookApi 的 FFI 10 个（见附录口径）+ 命名等价闭合 = **247**。
+> 为基准，BookApi 接口当前共 **252 个方法**（2026-08-14 F3-20 补 backupList/bookGroupSetShow/httpTtsSetEnabled/ttsSpeak/ttsSetCacheDir 5）。
+> 附录 §2.1–§2.43 行合计 **251**；扣除尚未封装进 BookApi 的 FFI 5 个（§2.43 缓存下载等，见附录口径）+ 命名等价闭合 = **252**（F3-20 后 §3 待封装清单清零，BookApi 已含原 §2.41/§2.42 待封装 5 项）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -617,10 +618,10 @@
 
 | 函数 | 所属模块 | 说明 |
 |------|----------|------|
-| `backupList` | 备份操作（§2.11 扩展） | 列出备份文件（RustApi/MockBookApi 封装待补，见 §4.3 P1-1 备份三件套） |
+| `backupList` | 备份操作（§2.11 扩展） | 列出备份文件——✅ 已封装 `BookApi.backupList`（F3-20） |
 | `cacheGetChapter` | 缓存管理（§2.16 扩展） | 获取已缓存章节内容（离线缓存 UI 批次依赖）——✅ 已封装接通（本次评审修复提交，`RustApi.getCachedChapter` 封装，书架菜单缓存导出） |
-| `bookGroupSetShow` | 书籍分组（§2.14 扩展） | 设置分组显示状态 |
-| `httpTtsSetEnabled` | HTTP TTS（§2.25 扩展） | 启用/禁用 HTTP TTS 配置 |
+| `bookGroupSetShow` | 书籍分组（§2.14 扩展） | 设置分组显示状态——✅ 已封装 `BookApi.bookGroupSetShow`（F3-20） |
+| `httpTtsSetEnabled` | HTTP TTS（§2.25 扩展） | 启用/禁用 HTTP TTS 配置——✅ 已封装 `BookApi.httpTtsSetEnabled`（F3-20） |
 | `dictLookup` | 词典（§3 需求 4） | 词典释义查询——✅ 已封装 `BookApi.dictLookup`（F3-10 补登记） |
 
 ### 2.42 TTS 真实合成管线（Task #113 批次 2 缺口②，2 个方法）
@@ -748,14 +749,14 @@
 | 1 | `sourceIsLoginUiV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.isLoginUiV2`，书详/阅读器登录链路接入） |
 | 2 | `sourceLoginUiV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.loginUiV2`） |
 | 3 | `sourceLoginActionV2` | 登录 UI V2 整组（§2.3） | ✅ 已封装接通（522e1c1be，`RustApi.loginActionV2`） |
-| 4 | `backupList` | 其他（§2.41） | 备份三件套之一，rust_api.dart 待切换 |
+| 4 | `backupList` | 其他（§2.41） | ✅ 已封装 `BookApi.backupList`（F3-20） |
 | 5 | `cacheGetChapter` | 其他（§2.41） | ✅ 已封装接通（本次评审修复提交，`RustApi.getCachedChapter`，书架缓存导出） |
-| 6 | `bookGroupSetShow` | 其他（§2.41） | 分组显示开关 |
-| 7 | `httpTtsSetEnabled` | 其他（§2.41） | TTS 配置启停 |
-| 8 | `ttsSpeak` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（522e1c1be，`audioSpeak` 改接真实管线，Task #113 缺口②） |
-| 9 | `ttsSetCacheDir` | TTS 真实合成管线（§2.42） | ✅ 已封装接通（本次评审修复提交，`RustApi.init` 内 `_initTtsCacheDir` 注入应用支持目录 tts_cache） |
+| 6 | `bookGroupSetShow` | 其他（§2.41） | ✅ 已封装 `BookApi.bookGroupSetShow`（F3-20） |
+| 7 | `httpTtsSetEnabled` | 其他（§2.41） | ✅ 已封装 `BookApi.httpTtsSetEnabled`（F3-20） |
+| 8 | `ttsSpeak` | TTS 真实合成管线（§2.42） | ✅ 已封装 `BookApi.ttsSpeak`（F3-20；`audioSpeak` 内部亦调用） |
+| 9 | `ttsSetCacheDir` | TTS 真实合成管线（§2.42） | ✅ 已封装 `BookApi.ttsSetCacheDir`（F3-20；`RustApi.init` 内 `_initTtsCacheDir` 注入应用支持目录 tts_cache） |
 
-> **销记更新（本次评审修复提交）**：已封装接通 5 项——登录 UI V2 三件套 + `ttsSpeak`（均 522e1c1be），`cacheGetChapter` + `ttsSetCacheDir`（本次提交）；另 `rssUpdateSource`（§2.17）经 `updateRssSource` 接通（不在本表之列，一并销记）。剩余待封装 3 项：backupList/bookGroupSetShow/httpTtsSetEnabled。
+> **销记更新（F3-20，2026-08-14）**：§3 待 UI 封装清单 **9 项全部销记**——登录 UI V2 三件套 + `cacheGetChapter` + `ttsSpeak`/`ttsSetCacheDir`（先前批次）+ `backupList`/`bookGroupSetShow`/`httpTtsSetEnabled`（本批补入 BookApi 抽象与 RustApi/MockBookApi 双实现）。**剩余待封装：0 项。**
 >
 > **移除记录（2026-08-07，Task #139）**：原表中 QUIC 客户端六件套（quicCreateClient/quicGet/quicPost/quicPerformanceTest/quicIsInitialized/quicCleanup）连同 netSetQuicEnabled/netIsQuicEnabled 总开关共 8 项 FFI，属原版不存在的新增能力，按纯重构决策已从 Rust/FFI/Dart 全链路移除，从本清单销记。
 

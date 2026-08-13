@@ -1191,6 +1191,13 @@ class RustApi implements BookApi {
     return bridge.importOldData(dir: dirPath);
   }
 
+  @override
+  Future<List<String>> backupList(String dir) async {
+    final json = await bridge.backupList(dir: dir);
+    final list = jsonDecode(json) as List<dynamic>;
+    return list.map((e) => e.toString()).toList();
+  }
+
   // ========== 阅读记录 ==========
 
   /// 获取所有阅读记录
@@ -1284,6 +1291,11 @@ class RustApi implements BookApi {
   Future<void> deleteBookGroup(int groupId) async {
     await bridge.bookGroupDelete(id: groupId);
   }
+
+  /// 设置分组显示状态（F3-20）
+  @override
+  Future<bool> bookGroupSetShow(int groupId, bool show) =>
+      bridge.bookGroupSetShow(id: groupId, show_: show);
 
   // ========== 搜索历史 ==========
 
@@ -1910,6 +1922,11 @@ class RustApi implements BookApi {
     return jsonEncode(list.map((e) => e.toJson()).toList());
   }
 
+  /// 设置 HTTP TTS 源启用/禁用（F3-20）
+  @override
+  Future<bool> httpTtsSetEnabled(int id, bool enabled) =>
+      bridge.httpTtsSetEnabled(id: id, enabled: enabled);
+
   // ========== 音频播放 ==========
 
   // [UI-fix v2.0.2 | 2026-08-06] audioSpeak 改接 ttsSpeak 真实管线（缺口②闭合） — QoderCN
@@ -1963,6 +1980,25 @@ class RustApi implements BookApi {
       }
     }
   }
+
+  /// TTS 真实合成（F3-20 BookApi 抽象）
+  @override
+  Future<Map<String, dynamic>> ttsSpeak({
+    required String text,
+    required String engineUrl,
+    double speed = 1.0,
+  }) async {
+    final resultJson = await bridge.ttsSpeak(
+      text: text,
+      engineUrl: engineUrl,
+      speed: speed,
+    );
+    return (jsonDecode(resultJson) as Map<String, dynamic>).cast<String, dynamic>();
+  }
+
+  /// 设置 TTS 音频缓存目录（F3-20）
+  @override
+  Future<bool> ttsSetCacheDir(String path) => bridge.ttsSetCacheDir(path: path);
 
   /// 获取章节媒体信息（音频书取址，契约 §2.26）
   ///
