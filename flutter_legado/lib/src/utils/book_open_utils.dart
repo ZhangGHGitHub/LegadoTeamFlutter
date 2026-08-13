@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../models/models.dart';
 import '../routes.dart';
 
@@ -222,4 +224,42 @@ class BookOpenUtils {
 
   /// 是否走文本阅读器（需先 openBook 到 ReaderNotifier）
   static bool needsReaderNotifier(String route) => route == AppRoutes.reader;
+
+  /// DB 记录是否已入书架（对标原版 inBookshelf = bookDao 有记录且非 notShelf）
+  static bool isInBookshelf(Book? dbBook) =>
+      dbBook != null && (dbBook.bookType & BookType.notShelf) == 0;
+
+  /// refresh_toc 历史占位行：库内无名无作者，路由带完整元数据
+  static bool isRefreshTocPlaceholder(Book dbBook, Book? routeBook) {
+    if (routeBook == null) return false;
+    return dbBook.name.trim().isEmpty &&
+        dbBook.author.trim().isEmpty &&
+        routeBook.name.trim().isNotEmpty;
+  }
+
+  /// 详情/目录页在架判定（排除 notShelf 与 refresh_toc 误插入占位）
+  static bool resolveInBookshelf(Book? dbBook, Book? routeBook) {
+    if (dbBook == null) return false;
+    if ((dbBook.bookType & BookType.notShelf) != 0) return false;
+    if (isRefreshTocPlaceholder(dbBook, routeBook)) return false;
+    return true;
+  }
+
+  /// 解析 webbookChapters 返回的 WebChapter 数组（snake_case）
+  static List<BookChapter> parseWebChapters(String json, String bookUrl) {
+    final decoded = jsonDecode(json);
+    if (decoded is! List) return const [];
+    return [
+      for (final e in decoded)
+        if (e is Map)
+          BookChapter(
+            index: (e['index'] as num?)?.toInt() ?? 0,
+            title: e['title']?.toString() ?? '',
+            url: e['url']?.toString() ?? '',
+            bookUrl: bookUrl,
+            isVolume: e['is_volume'] == true,
+            isVip: e['is_vip'] == true,
+          ),
+    ];
+  }
 }

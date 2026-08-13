@@ -10,9 +10,11 @@ import '../models/models.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../services/book_api.dart';
 import '../services/bookmark_export.dart';
 import '../services/settings_service.dart';
 import '../utils/app_route_observer.dart';
+import '../utils/book_open_utils.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
 ///
@@ -64,6 +66,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 当前书籍（菜单勾选项更新后刷新，如 useReplaceRule/splitLongChapter）
   late Book _book;
 
+  /// 是否在架（对标原版 inBookshelf；未在架时不 refreshToc 落库）
+  bool _inBookshelf = false;
+
   /// 章节列表（含卷行）
   List<BookChapter> _chapters = [];
   bool _chaptersLoading = true;
@@ -91,8 +96,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
       ..addListener(() {
         if (mounted) setState(() {});
       });
+    _initBookshelfState();
     _loadSettings();
-    _loadChapters();
     _loadHighlights();
     // 在线书启动缓存态轮询（本地 SQLite 轻量查询；页面销毁自动停止）
     if (_book.origin != BookType.localTag) {
@@ -108,6 +113,22 @@ class _TocScreenState extends ConsumerState<TocScreen>
           .read(bookmarkNotifierProvider.notifier)
           .loadByBook(_book.name, _book.author);
     });
+  }
+
+  /// 初始化在架状态（DB 有记录且非 notShelf / refresh_toc 占位）
+  Future<void> _initBookshelfState() async {
+    try {
+      final dbBook =
+          await ref.read(bookApiProvider).getBook(_book.bookUrl);
+      if (!mounted) return;
+      setState(() {
+        _inBookshelf =
+            BookOpenUtils.resolveInBookshelf(dbBook, widget.book);
+      });
+    } catch (_) {
+      // 查询失败视为未在架，避免误 refreshToc 落库
+    }
+    await _loadChapters();
   }
 
   @override
@@ -194,7 +215,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
       // 目录获取，修复用户反馈的「目录也获取不到」。refresh_toc 内部以书籍
       // tocUrl 为抓取地址（换源后指向当前书源），tocUrl 空时回退 bookUrl。
       if (chapters.isEmpty && _book.origin.isNotEmpty) {
-        chapters = await api.refreshToc(_book.bookUrl, _book.origin);
+        if (_inBookshelf) {
+          chapters = await api.refreshToc(_book.bookUrl, _book.origin);
+        } else {
+          // 未入库：仅网络取目录展示，不落库（对齐 BookInfoScreen / 原版 !inBookshelf）
+          chapters = await _fetchWebChaptersOnline(api);
+        }
       }
       if (!mounted) return;
       // [UI-fix v2.0.6 | 2026-08-08] Task #22：加载已缓存章节 url 集合，供每章
@@ -248,6 +274,34 @@ class _TocScreenState extends ConsumerState<TocScreen>
         _highlightsError = _errMsg(e);
         _highlightsLoading = false;
       });
+    }
+  }
+
+  /// 未入库在线书：webbookChapters 仅展示，不写 DB
+  Future<List<BookChapter>> _fetchWebChaptersOnline(BookApi api) async {
+    BookSource? source;
+    try {
+      final sources = await api.getBookSources();
+      final o = _book.origin.trim().replaceAll(RegExp(r'/+$'), '');
+      for (final s in sources) {
+        final u = s.bookSourceUrl.trim().replaceAll(RegExp(r'/+$'), '');
+        if (u == o || s.bookSourceUrl == _book.origin) {
+          source = s;
+          break;
+        }
+      }
+    } catch (_) {
+      return const [];
+    }
+    if (source == null) return const [];
+    try {
+      final chJson = await api.webbookChapters(
+        jsonEncode(source.toJson()),
+        _book.bookUrl,
+      );
+      return BookOpenUtils.parseWebChapters(chJson, _book.bookUrl);
+    } catch (_) {
+      return const [];
     }
   }
 

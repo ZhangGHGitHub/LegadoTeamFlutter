@@ -117,9 +117,11 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       final dbBook = url.isEmpty ? null : await api.getBook(url);
       // DB 有记录且未打 notShelf 位才视为已入书架（对标原版 inBookshelf；
       // 搜索/发现打开的在线书会以 notShelf 临时落库，不算在书架内）
-      final inShelf =
-          dbBook != null && (dbBook.bookType & BookType.notShelf) == 0;
-      var book = dbBook ?? widget.book;
+      final inShelf = BookOpenUtils.resolveInBookshelf(dbBook, widget.book);
+      // 未在架时优先用路由带入的发现/搜索元数据，避免 DB 占位壳覆盖
+      var book = (!inShelf && widget.book != null)
+          ? widget.book!
+          : (dbBook ?? widget.book);
       var chapters =
           url.isEmpty ? <BookChapter>[] : await api.getChapters(url);
       // 书源查询一次即复用：既供菜单条件项判定，也供下方联网补全传参
@@ -178,7 +180,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             } else {
               // 未入库：仅网络取目录用于展示，不落库
               final chJson = await api.webbookChapters(sourceJson, b.bookUrl);
-              chapters = _parseWebChapters(chJson, b.bookUrl);
+              chapters = BookOpenUtils.parseWebChapters(chJson, b.bookUrl);
             }
             debugPrint(
               '[BookInfo] toc ${tToc.elapsedMilliseconds}ms '
@@ -288,22 +290,19 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     );
   }
 
-  /// 解析 webbookChapters 返回的 WebChapter 数组（snake_case）为展示用章节列表
-  List<BookChapter> _parseWebChapters(String json, String bookUrl) {
-    final decoded = jsonDecode(json);
-    if (decoded is! List) return const [];
-    return [
-      for (final e in decoded)
-        if (e is Map)
-          BookChapter(
-            index: (e['index'] as num?)?.toInt() ?? 0,
-            title: e['title']?.toString() ?? '',
-            url: e['url']?.toString() ?? '',
-            bookUrl: bookUrl,
-            isVolume: e['is_volume'] == true,
-            isVip: e['is_vip'] == true,
-          ),
-    ];
+
+  /// 未入库在线书：仅网络取目录用于展示，不写 DB（对齐原版 loadChapter !inBookshelf）
+  Future<List<BookChapter>> _fetchWebChaptersOnline(
+    BookApi api,
+    Book book,
+  ) async {
+    final source = await _findSourceByOrigin(api, book.origin);
+    if (source == null) return const [];
+    final chJson = await api.webbookChapters(
+      jsonEncode(source.toJson()),
+      book.bookUrl,
+    );
+    return BookOpenUtils.parseWebChapters(chJson, book.bookUrl);
   }
 
   @override
@@ -584,6 +583,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       case 'canUpdate':
       case 'splitLongChapter':
         if (book == null) return;
+        if (!_inBookshelf) {
+          _snack('请先加入书架');
+          return;
+        }
         final Book updated;
         if (value == 'canUpdate') {
           updated = book.copyWith(canUpdate: !book.canUpdate);
@@ -1285,12 +1288,21 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     setState(() => _isLoading = true);
     try {
       final api = ref.read(bookApiProvider);
-      final chapters = await api.refreshToc(book.bookUrl, book.origin);
+      final List<BookChapter> chapters;
+      if (!_inBookshelf) {
+        // 未入库：仅内存拉目录，不落库（对齐原版 loadChapter !inBookshelf）
+        chapters = await _fetchWebChaptersOnline(api, book);
+      } else {
+        chapters = await api.refreshToc(book.bookUrl, book.origin);
+      }
       if (!mounted) return;
+      setState(() => _chapters = chapters);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('目录已更新，共 ${chapters.length} 章')),
       );
-      _reload();
+      if (_inBookshelf) {
+        _reload();
+      }
     } catch (e) {
       if (!mounted) return;
       BookSource? source;
