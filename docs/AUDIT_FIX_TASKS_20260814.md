@@ -140,7 +140,7 @@
 - **涉及文件**：`.gitignore`、根目录 `tmp_*`、`tmp_debug/`、`tmp_device_probe/`、`expired_2026-08/`、`_debug_51manga/`、`flutter_legado/legado.db*`（已跟踪，应 untrack）、`docs/screenshots/v1_3/legado.db`、`scripts/_tmp_*`
 - **实施要点**：.gitignore 追加 `tmp_debug/`、`expired_2026-08/`、`tmp_*`、`*.db`/`*.db-shm`/`*.db-wal`（保留测试夹具白名单例外）；对已跟踪的 runtime DB 执行 untrack；临时调试物清理或归档。
 - **验收**：`git status` 未跟踪条目大幅收敛（仅剩有意文件）；CI 不受影响。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（.gitignore 补全 tmp/db 规则；runtime DB 与 tmp_diff 等已 untrack/移除跟踪）
 
 ### F2-11 `[文档]` README 死代码口径修正
 - **来源**：P1-11

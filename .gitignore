@@ -39,3 +39,21 @@ flutter_legado/android/app/src/main/jniLibs/
 # 签名密钥不入库（CI 经 secrets 注入）
 *.jks
 *.keystore
+
+# === F2-10 临时调试物与 runtime DB（审计 2026-08-14）===
+/tmp_debug/
+tmp_debug/
+/expired_2026-08/
+/tmp_device_probe/
+/_debug_51manga/
+/tmp_*
+flutter_legado/tmp_*
+flutter_legado/_debug_db/
+scripts/_tmp_*
+
+# Runtime SQLite（不入库；测试夹具目录白名单例外）
+*.db
+*.db-shm
+*.db-wal
+!**/test/fixtures/**/*.db
+!**/tests/fixtures/**/*.db
