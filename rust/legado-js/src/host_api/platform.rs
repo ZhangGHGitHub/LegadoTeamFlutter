@@ -29,69 +29,98 @@
 //! 批次3治理（Task #118）：曾存在的同名降级桩因无任何调用点已删除。
 
 use legado_core::verification_channel;
+use legado_core::webview_channel::{self, WebViewRequest, DEFAULT_WEBVIEW_TIMEOUT};
 
 use super::current_source;
 
-/// webView(html, url, js) → 结构化桥接载荷
+/// 有 Flutter 订阅时走阻塞 DOM 通道；否则返回桥接载荷（interceptResult 兼容）
+fn run_or_payload(mut req: WebViewRequest) -> String {
+    if webview_channel::has_subscribers() {
+        match webview_channel::request_and_wait(req, DEFAULT_WEBVIEW_TIMEOUT) {
+            Ok(s) => s,
+            Err(e) => format!("[ERROR] {e}"),
+        }
+    } else {
+        // 无订阅：保留历史载荷模式，供 FFI 结果管线 interceptResult
+        let payload = serde_json::json!({
+            "action": req.action,
+            "html": req.html,
+            "url": req.url,
+            "js": req.js,
+            "sourceRegex": req.source_regex,
+            "overrideUrlRegex": req.override_url_regex,
+            "cacheFirst": req.cache_first,
+            "delayTime": req.delay_time,
+        })
+        .to_string();
+        super::ui_action_queue::push_payload_json(&payload);
+        // 避免 unused mut 警告路径：req 已消费字段
+        let _ = &mut req;
+        payload
+    }
+}
+
+/// webView(html, url, js, cacheFirst?) → DOM 结果或桥接载荷
 ///
-/// 对应 Kotlin: `webView(html: String?, url: String?, js: String?): String?`
-///
-/// 加载指定 URL 并执行 JS，返回渲染/执行结果。
-/// Rust 无头运行时返回桥接载荷，由 Flutter 侧使用真实 WebView 处理。
-///
-/// 返回 JSON：
-/// ```json
-/// {"action":"webView","html":"...","url":"...","js":"..."}
-/// ```
+/// 对应 Kotlin: `webView(html, url, js)` / `webView(html, url, js, cacheFirst)`
 pub fn web_view(html: &str, url: &str, js: &str) -> String {
-    let payload = serde_json::json!({
-        "action": "webView",
-        "html": html,
-        "url": url,
-        "js": js,
-    })
-    .to_string();
-    super::ui_action_queue::push_payload_json(&payload);
-    payload
+    web_view_ex(html, url, js, false, 0)
 }
 
-/// webViewGetSource(html, url, js, sourceRegex) → 结构化桥接载荷
-///
-/// 对应 Kotlin: `webViewGetSource(html, url, js, sourceRegex): String?`
-///
-/// 获取 WebView 页面源码（匹配 sourceRegex 的内容）。
-/// Rust 无头运行时返回桥接载荷，由 Flutter 侧处理。
-///
-/// 返回 JSON：
-/// ```json
-/// {"action":"webViewGetSource","html":"...","url":"...","js":"...","sourceRegex":"..."}
-/// ```
+/// webView 完整参数（含 cacheFirst / delayTime）
+pub fn web_view_ex(
+    html: &str,
+    url: &str,
+    js: &str,
+    cache_first: bool,
+    delay_time: i64,
+) -> String {
+    run_or_payload(WebViewRequest {
+        key: String::new(),
+        action: "webView".into(),
+        html: html.to_string(),
+        url: url.to_string(),
+        js: js.to_string(),
+        source_regex: String::new(),
+        override_url_regex: String::new(),
+        cache_first,
+        delay_time,
+        is_rule: false,
+        result: String::new(),
+        created_at_ms: 0,
+    })
+}
+
+/// webViewGetSource(html, url, js, sourceRegex, cacheFirst?, delayTime?)
 pub fn web_view_get_source(html: &str, url: &str, js: &str, source_regex: &str) -> String {
-    let payload = serde_json::json!({
-        "action": "webViewGetSource",
-        "html": html,
-        "url": url,
-        "js": js,
-        "sourceRegex": source_regex,
-    })
-    .to_string();
-    super::ui_action_queue::push_payload_json(&payload);
-    payload
+    web_view_get_source_ex(html, url, js, source_regex, false, 0)
 }
 
-/// WebView API — 获取 WebView 拦截的跳转 URL → 结构化桥接载荷
-///
-/// 对应 Kotlin: `webViewGetOverrideUrl(html, url, js, overrideUrlRegex,
-/// cacheFirst, delayTime): String?`（内部用 BackstageWebView 拦截跳转 URL）。
-///
-/// Rust 无头运行时无法执行真实 WebView，因此返回桥接载荷，
-/// 由 Flutter 侧使用真实 WebView 处理后回填结果（与 webView / webViewGetSource 同模式）。
-///
-/// 返回 JSON：
-/// ```json
-/// {"action":"webViewGetOverrideUrl","html":"...","url":"...","js":"...",
-///  "overrideUrlRegex":"...","cacheFirst":false,"delayTime":0}
-/// ```
+pub fn web_view_get_source_ex(
+    html: &str,
+    url: &str,
+    js: &str,
+    source_regex: &str,
+    cache_first: bool,
+    delay_time: i64,
+) -> String {
+    run_or_payload(WebViewRequest {
+        key: String::new(),
+        action: "webViewGetSource".into(),
+        html: html.to_string(),
+        url: url.to_string(),
+        js: js.to_string(),
+        source_regex: source_regex.to_string(),
+        override_url_regex: String::new(),
+        cache_first,
+        delay_time,
+        is_rule: false,
+        result: String::new(),
+        created_at_ms: 0,
+    })
+}
+
+/// webViewGetOverrideUrl(...)
 pub fn web_view_get_override_url(
     html: &str,
     url: &str,
@@ -100,18 +129,20 @@ pub fn web_view_get_override_url(
     cache_first: bool,
     delay_time: i64,
 ) -> String {
-    let payload = serde_json::json!({
-        "action": "webViewGetOverrideUrl",
-        "html": html,
-        "url": url,
-        "js": js,
-        "overrideUrlRegex": override_url_regex,
-        "cacheFirst": cache_first,
-        "delayTime": delay_time,
+    run_or_payload(WebViewRequest {
+        key: String::new(),
+        action: "webViewGetOverrideUrl".into(),
+        html: html.to_string(),
+        url: url.to_string(),
+        js: js.to_string(),
+        source_regex: String::new(),
+        override_url_regex: override_url_regex.to_string(),
+        cache_first,
+        delay_time,
+        is_rule: false,
+        result: String::new(),
+        created_at_ms: 0,
     })
-    .to_string();
-    super::ui_action_queue::push_payload_json(&payload);
-    payload
 }
 
 /// showBrowser(url, html?, preloadJs?, config?) → 结构化桥接载荷

@@ -80,6 +80,8 @@ impl RealBookSourceFetcher {
                 response.status, url
             )));
         }
+        // 对齐 Kotlin WebBook.checkRedirect（Debug.log 可观测性）
+        check_redirect_log(url, &response.url);
 
         Ok(response.body)
     }
@@ -98,6 +100,7 @@ impl RealBookSourceFetcher {
                 response.status, url
             )));
         }
+        check_redirect_log(url, &response.url);
         Ok(response.body)
     }
 
@@ -823,12 +826,23 @@ fn infer_total_chapter_num(body: &str, chapter: &WebChapter) -> i32 {
     chapter.index.saturating_add(1)
 }
 
+/// 对齐 Kotlin `WebBook.checkRedirect`：请求 URL 与最终 URL 不同时打日志
+fn check_redirect_log(request_url: &str, final_url: &str) {
+    if final_url.is_empty() || request_url == final_url {
+        return;
+    }
+    // 对齐 Kotlin WebBook.checkRedirect → Debug.log
+    eprintln!("[WebBook] ≡检测到重定向");
+    eprintln!("[WebBook] ┌重定向后地址");
+    eprintln!("[WebBook] └{final_url}");
+}
+
 /// 正文抓取后 webJs / sourceRegex 钩子
 ///
 /// 对齐原版 `AnalyzeUrl.getStrResponseAwait(jsStr=webJs, sourceRegex=…)`：
-/// - `sourceRegex`：无头嗅探 HTML/正文中匹配的 URL（近似 `SnifferWebClient.onLoadResource`）
-/// - `webJs`：以页面正文为 `result` 执行 JS（近似 `HtmlWebViewClient` 评测；
-///   完整 DOM WebView 仍依赖平台桥，规则级 Mode.WebJs 见 SOURCE_DIFF P1-5）
+/// - `sourceRegex`：无头嗅探 HTML/正文中匹配的 URL（近似 `SnifferWebClient.onLoadResource`）；
+///   Flutter 已订阅时优先 DOM 嗅探（`webViewGetSource`）
+/// - `webJs`：优先 DOM 通道（BackstageWebView）；失败回退无头 `@js:`
 fn apply_content_web_hooks(
     body: String,
     content_rule: Option<&legado_core::models::rule::ContentRule>,
@@ -849,15 +863,63 @@ fn apply_content_web_hooks(
         return body;
     }
 
-    // sourceRegex 优先：命中则整段响应替换为匹配 URL（对齐 Sniffer 回调 body=resUrl）
+    // sourceRegex：DOM 嗅探优先，否则无头 URL 扫描
     if let Some(re_str) = source_regex {
+        if legado_core::webview_channel::has_subscribers() {
+            let req = legado_core::webview_channel::WebViewRequest {
+                key: String::new(),
+                action: "webViewGetSource".into(),
+                html: body.clone(),
+                url: page_url.to_string(),
+                js: String::new(),
+                source_regex: re_str.to_string(),
+                override_url_regex: String::new(),
+                cache_first: false,
+                delay_time: 0,
+                is_rule: false,
+                result: String::new(),
+                created_at_ms: 0,
+            };
+            if let Ok(hit) = legado_core::webview_channel::request_and_wait(
+                req,
+                legado_core::webview_channel::DEFAULT_WEBVIEW_TIMEOUT,
+            ) {
+                if !hit.trim().is_empty() && !hit.starts_with("[ERROR]") {
+                    return hit;
+                }
+            }
+        }
         if let Some(hit) = sniff_source_regex_url(&body, re_str) {
             return hit;
         }
     }
 
-    // webJs：QuickJS 执行（无 DOM；脚本若依赖 document 会失败并回退原文）
+    // webJs：DOM 优先（对齐 AnalyzeUrl + BackstageWebView），再无头 QuickJS
     if let Some(js) = web_js {
+        if legado_core::webview_channel::has_subscribers() {
+            let req = legado_core::webview_channel::WebViewRequest {
+                key: String::new(),
+                action: "webView".into(),
+                html: body.clone(),
+                url: page_url.to_string(),
+                js: js.to_string(),
+                source_regex: String::new(),
+                override_url_regex: String::new(),
+                cache_first: false,
+                delay_time: 0,
+                is_rule: false,
+                result: String::new(),
+                created_at_ms: 0,
+            };
+            if let Ok(out) = legado_core::webview_channel::request_and_wait(
+                req,
+                legado_core::webview_channel::DEFAULT_WEBVIEW_TIMEOUT,
+            ) {
+                if !out.trim().is_empty() && !out.starts_with("[ERROR]") {
+                    return out;
+                }
+            }
+        }
         let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
             body.clone(),
             page_url.to_string(),

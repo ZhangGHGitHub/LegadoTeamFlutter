@@ -213,6 +213,42 @@ mod impl_file_utils {
         Ok(dest.to_string_lossy().into_owned())
     }
 
+    /// downloadFile(contentHex, url) — 废弃重载：十六进制内容按 url 类型落盘
+    ///
+    /// 对应 Kotlin: `@Deprecated downloadFile(content, url)`
+    pub fn download_file_from_hex(content_hex: &str, url: &str) -> Result<String, String> {
+        use md5::{Digest, Md5};
+
+        // 从 url 猜扩展名（对齐 AnalyzeUrl.type / UrlUtil.getSuffix 的轻量近似）
+        let type_hint = url
+            .split(',')
+            .next()
+            .unwrap_or(url)
+            .rsplit('.')
+            .next()
+            .filter(|s| s.len() <= 8 && s.chars().all(|c| c.is_ascii_alphanumeric()))
+            .unwrap_or("bin");
+
+        let mut hasher = Md5::new();
+        hasher.update(url.as_bytes());
+        let hash16 = hex::encode(hasher.finalize());
+        let hash16 = if hash16.len() >= 16 {
+            &hash16[..16]
+        } else {
+            &hash16
+        };
+        let name = format!("{hash16}.{type_hint}");
+        let dest = resolve_safe_path(&name)?;
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
+        }
+        let bytes = hex::decode(content_hex.trim())
+            .map_err(|e| format!("Hex decode error: {}", e))?;
+        fs::write(&dest, &bytes).map_err(|e| format!("Write error: {}", e))?;
+        // 返回相对路径（对齐 Kotlin substring(cachePath.length)）
+        Ok(name)
+    }
+
     /// cacheFile(url) — 缓存文件（URL MD5 hash 为文件名）
     ///
     /// 对应 Kotlin: `cacheFile(url)`
@@ -337,6 +373,9 @@ mod stub_file_utils {
         Err(not_available())
     }
     pub fn download_file(_url: &str, _file_name: Option<&str>) -> Result<String, String> {
+        Err(not_available())
+    }
+    pub fn download_file_from_hex(_content_hex: &str, _url: &str) -> Result<String, String> {
         Err(not_available())
     }
     pub fn cache_file(_url: &str) -> Result<String, String> {

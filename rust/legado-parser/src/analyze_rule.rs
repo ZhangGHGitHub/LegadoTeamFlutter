@@ -930,11 +930,47 @@ impl AnalyzeRule {
         (rule_type, actual_rule)
     }
 
-    /// 无头近似执行 `@webjs:`（对齐原版 `getWebJsResult` 的可落地子集）
+    /// 执行 `@webjs:`（对齐原版 `getWebJsResult`）
     ///
-    /// 原版走 `BackstageWebView` 完整 DOM；此处以当前 content 为 `result`/`src`/`html`
-    /// 注入 QuickJS 执行脚本。依赖 `document` 的脚本会失败并返回空串（调用方可回退）。
+    /// 优先：Flutter 已订阅时经 `webview_channel` 走真实 DOM（BackstageWebView 语义）；
+    /// 回退：无头 QuickJS 注入 `result`/`src`/`html`/`baseUrl`。
+    ///
+    /// **近似边界**：DOM 路径提供 `document`/`window`/`window.result`；
+    /// WebView 页内 `java`/`source` JavascriptInterface 未注入（依赖宿主 API
+    /// 的脚本仍依赖无头路径或 `java.webView` 通道外的宿主绑定）。
     fn execute_web_js_rule(&self, js_code: &str) -> LegadoResult<String> {
+        // 1) DOM 通道（对齐 AnalyzeRule.getWebJsResult → BackstageWebView isRule）
+        if legado_core::webview_channel::has_subscribers() {
+            let result_json =
+                serde_json::to_string(&self.content).unwrap_or_else(|_| "\"\"".into());
+            let req = legado_core::webview_channel::WebViewRequest {
+                key: String::new(),
+                action: "webView".into(),
+                html: self.content.clone(),
+                url: self.base_url.clone(),
+                js: js_code.to_string(),
+                source_regex: String::new(),
+                override_url_regex: String::new(),
+                cache_first: true,
+                delay_time: 0,
+                is_rule: true,
+                result: result_json,
+                created_at_ms: 0,
+            };
+            match legado_core::webview_channel::request_and_wait(
+                req,
+                legado_core::webview_channel::RULE_WEBVIEW_TIMEOUT,
+            ) {
+                Ok(s) if !s.trim().is_empty() && !s.starts_with("[ERROR]") => {
+                    return Ok(s);
+                }
+                Ok(_) | Err(_) => {
+                    eprintln!("[AnalyzeRule] @webjs DOM 通道未得有效结果，回退无头");
+                }
+            }
+        }
+
+        // 2) 无头 QuickJS 近似
         let Some(executor) = self.js_executor.as_ref() else {
             return Ok(String::new());
         };

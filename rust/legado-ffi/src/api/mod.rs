@@ -48,5 +48,6 @@ pub mod txt_search_api;
 pub mod tts_speak_api;
 pub mod user_api;
 pub mod verification_api;
+pub mod webview_api;
 pub mod web_book;
 pub mod webdav_api;

@@ -62,6 +62,7 @@ pub mod toc_updater;
 pub mod tts_speak;
 pub mod types;
 pub mod verification_channel;
+pub mod webview_channel;
 pub mod video_state;
 pub mod web_book;
 

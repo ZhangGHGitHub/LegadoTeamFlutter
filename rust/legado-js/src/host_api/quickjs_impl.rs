@@ -563,13 +563,14 @@ fn register_time_apis<'js>(
         "timeFormatUTC",
         rquickjs::Function::new(
             ctx.clone(),
-            |ts: i64, format: String, offset_secs: i32| -> String {
+            |ts: i64, format: String, sh: i32| -> String {
+                // 对齐 Kotlin SimpleTimeZone(sh, "UTC")：sh 为毫秒偏移
                 let fmt = if format.is_empty() {
                     None
                 } else {
                     Some(format.as_str())
                 };
-                time_utils::format_time_utc(ts, fmt, offset_secs)
+                time_utils::format_time_utc(ts, fmt, sh)
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
         )
@@ -662,18 +663,81 @@ fn register_file_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // downloadFile(url, fileName?) -> String
+    // downloadFile 重载对齐 Kotlin JsExtensions：
+    // - downloadFile(url) / downloadFile(url, fileName?)
+    // - downloadFile(contentHex, url)（@Deprecated：十六进制内容落盘）
     mount_dual(
         java,
         globals,
         "downloadFile",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, file_name: Opt<String>| -> String {
-                file_utils::download_file(&url, file_name.0.as_deref())
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            |arg1: String, arg2: Opt<String>| -> String {
+                match arg2.0.as_deref() {
+                    None => file_utils::download_file(&arg1, None)
+                        .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+                    Some(second)
+                        if second.starts_with("http://")
+                            || second.starts_with("https://")
+                            || second.contains(",{") =>
+                    {
+                        // 废弃重载：content(hex) + url
+                        file_utils::download_file_from_hex(&arg1, second)
+                            .unwrap_or_else(|e| format!("[ERROR] {}", e))
+                    }
+                    Some(file_name) => file_utils::download_file(&arg1, Some(file_name))
+                        .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+                }
             },
         )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getFile(path) -> File 风格对象（exists/getName/getAbsolutePath/toString）
+    // 对齐 Kotlin JsExtensions.getFile(path): File（沙箱路径）
+    mount_dual(
+        java,
+        globals,
+        "getFile",
+        rquickjs::Function::new(ctx.clone(), |ctx, path: String| {
+            let abs = match file_utils::resolve_safe_path(&path) {
+                Ok(p) => p,
+                Err(e) => {
+                    return Err(rquickjs::Exception::throw_message(
+                        &ctx,
+                        &format!("getFile: {e}"),
+                    ));
+                }
+            };
+            let abs_str = abs.to_string_lossy().into_owned();
+            let name = abs
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let exists = abs.exists();
+            let obj = rquickjs::Object::new(ctx.clone())?;
+            obj.set("path", abs_str.clone())?;
+            obj.set(
+                "exists",
+                rquickjs::Function::new(ctx.clone(), move || exists)?,
+            )?;
+            let name_c = name.clone();
+            obj.set(
+                "getName",
+                rquickjs::Function::new(ctx.clone(), move || name_c.clone())?,
+            )?;
+            let abs_c = abs_str.clone();
+            obj.set(
+                "getAbsolutePath",
+                rquickjs::Function::new(ctx.clone(), move || abs_c.clone())?,
+            )?;
+            let abs_c2 = abs_str;
+            obj.set(
+                "toString",
+                rquickjs::Function::new(ctx.clone(), move || abs_c2.clone())?,
+            )?;
+            Ok(obj)
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1718,28 +1782,32 @@ fn register_misc_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // webView(html?, url?, js?) -> String（桥接载荷）
-    // 对应 Kotlin: webView(html, url, js): String?
-    // Rust 无头运行时返回结构化桥接载荷，由 Flutter 侧使用真实 WebView 处理
+    // webView(html?, url?, js?, cacheFirst?) -> String
+    // 对应 Kotlin: webView(html, url, js) / webView(html, url, js, cacheFirst)
     mount_dual(
         java,
         globals,
         "webView",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: Opt<String>, url: Opt<String>, js: Opt<String>| -> String {
-                platform::web_view(
+            |html: Opt<String>,
+             url: Opt<String>,
+             js: Opt<String>,
+             cache_first: Opt<bool>|
+             -> String {
+                platform::web_view_ex(
                     html.0.as_deref().unwrap_or(""),
                     url.0.as_deref().unwrap_or(""),
                     js.0.as_deref().unwrap_or(""),
+                    cache_first.0.unwrap_or(false),
+                    0,
                 )
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // webViewGetSource(html?, url?, js?, sourceRegex?) -> String（桥接载荷）
-    // 对应 Kotlin: webViewGetSource(html, url, js, sourceRegex): String?
+    // webViewGetSource(html?, url?, js?, sourceRegex?, cacheFirst?, delayTime?)
     mount_dual(
         java,
         globals,
@@ -1749,13 +1817,17 @@ fn register_misc_apis<'js>(
             |html: Opt<String>,
              url: Opt<String>,
              js: Opt<String>,
-             source_regex: Opt<String>|
+             source_regex: Opt<String>,
+             cache_first: Opt<bool>,
+             delay_time: Opt<i64>|
              -> String {
-                platform::web_view_get_source(
+                platform::web_view_get_source_ex(
                     html.0.as_deref().unwrap_or(""),
                     url.0.as_deref().unwrap_or(""),
                     js.0.as_deref().unwrap_or(""),
                     source_regex.0.as_deref().unwrap_or(""),
+                    cache_first.0.unwrap_or(false),
+                    delay_time.0.unwrap_or(0),
                 )
             },
         )
@@ -1943,22 +2015,26 @@ fn register_archive_apis<'js>(
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
 ) -> Result<(), LegadoError> {
-    // unzipFile(zipPath) -> String（解压目标目录）
-    // 对应 Kotlin: unzipFile(zipPath) -> unArchiveFile(zipPath)（自动检测压缩格式）；
-    // 空路径返回空串（对齐 Kotlin）
-    mount_dual(
-        java,
-        globals,
-        "unzipFile",
-        rquickjs::Function::new(ctx.clone(), |zip_path: String| -> String {
-            if zip_path.is_empty() {
-                return String::new();
-            }
-            archive_utils::un_archive_file(&zip_path, None)
-                .unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
-    )?;
+    // unzipFile / unArchiveFile(zipPath) -> String（解压目标目录）
+    // 对应 Kotlin: unzipFile → unArchiveFile；空路径返回空串
+    let unarchive = rquickjs::Function::new(ctx.clone(), |zip_path: String| -> String {
+        if zip_path.is_empty() {
+            return String::new();
+        }
+        archive_utils::un_archive_file(&zip_path, None)
+            .unwrap_or_else(|e| format!("[ERROR] {}", e))
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("unzipFile", unarchive.clone())
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    globals
+        .set("unzipFile", unarchive.clone())
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("unArchiveFile", unarchive.clone())
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    globals
+        .set("unArchiveFile", unarchive)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     // getZipStringContent(url, path, charsetName?) -> String
     // 对应 Kotlin: getZipStringContent(url, path[, charsetName])；

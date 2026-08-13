@@ -29,21 +29,21 @@ mod impl_time_utils {
         Ok(local_dt.format(fmt).to_string())
     }
 
-    /// 将毫秒时间戳格式化为 UTC 时间字符串
+    /// 将毫秒时间戳格式化为指定时区偏移的时间字符串
     ///
-    /// 对应 Kotlin: `timeFormatUTC(time, format, sh)`
-    /// - `offset_seconds` 为时区偏移秒数
+    /// 对应 Kotlin: `timeFormatUTC(time, format, sh)` + `SimpleTimeZone(sh, "UTC")`
+    /// - `offset_ms` 为时区原始偏移（**毫秒**，与 Java `SimpleTimeZone` 一致）
     pub fn format_time_utc(
         timestamp_ms: i64,
         format: Option<&str>,
-        offset_seconds: i32,
+        offset_ms: i32,
     ) -> Result<String, String> {
         let fmt = format.unwrap_or(DEFAULT_FORMAT);
         let secs = timestamp_ms / 1000;
         let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
         let dt =
             DateTime::from_timestamp(secs, nanos).ok_or_else(|| "Invalid timestamp".to_string())?;
-        let naive = dt.naive_utc() + chrono::Duration::seconds(offset_seconds as i64);
+        let naive = dt.naive_utc() + chrono::Duration::milliseconds(offset_ms as i64);
         Ok(naive.format(fmt).to_string())
     }
 
@@ -130,8 +130,9 @@ mod tests {
 
     #[test]
     fn test_format_time_with_offset() {
-        // +8 hours (CST)
-        let result = format_time_utc(1704067200000, Some("%Y-%m-%d %H:%M:%S"), 8 * 3600).unwrap();
+        // +8 hours (CST)：对齐 Kotlin SimpleTimeZone(rawOffsetMs)
+        let result =
+            format_time_utc(1704067200000, Some("%Y-%m-%d %H:%M:%S"), 8 * 3600 * 1000).unwrap();
         assert_eq!(result, "2024-01-01 08:00:00");
     }
 

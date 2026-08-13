@@ -355,6 +355,41 @@ pub mod ffi {
         Ok(crate::api::verification_api::pending_requests_json())
     }
 
+    // ─── BackstageWebView DOM 执行通道（SOURCE_DIFF P1，加法式新增） ─
+
+    /// 订阅 WebView DOM 执行请求事件流（长期存活，Stream\<String\>）
+    ///
+    /// 书源 `@webjs` / 正文 webJs / `java.webView*` 在 Flutter 已订阅时
+    /// 经此通道挂起等待真实 WebView 执行。事件 JSON 字段（snake_case）：
+    /// `key` / `action` / `html` / `url` / `js` / `source_regex` /
+    /// `override_url_regex` / `cache_first` / `delay_time` / `is_rule` /
+    /// `result` / `created_at_ms`。订阅时先回放进行中请求。
+    /// UI 执行后经 [`webview_submit`] 回传；超时/取消调 [`webview_cancel`]。
+    pub async fn webview_request_stream(
+        sink: StreamSink<String>,
+    ) -> Result<(), BridgeError> {
+        crate::api::webview_api::run_webview_request_stream(|event| {
+            sink.add(event).map_err(|e| e.to_string())
+        })
+        .await;
+        Ok(())
+    }
+
+    /// 提交 WebView 执行结果，唤醒 Rust 等待方
+    pub fn webview_submit(key: String, result: String) -> Result<bool, BridgeError> {
+        Ok(crate::api::webview_api::submit_webview_result(&key, &result))
+    }
+
+    /// 取消 WebView 请求（以空结果唤醒）
+    pub fn webview_cancel(key: String) -> Result<bool, BridgeError> {
+        Ok(crate::api::webview_api::cancel_webview_request(&key))
+    }
+
+    /// 当前进行中的 WebView 请求列表（JSON 数组）
+    pub fn webview_pending() -> Result<String, BridgeError> {
+        Ok(crate::api::webview_api::pending_requests_json())
+    }
+
     // ─── 登录 UI V2 动态状态协议（#402/#488，加法式新增） ─────────
 
     /// 判定书源登录 UI 是否为 V2 动态状态协议

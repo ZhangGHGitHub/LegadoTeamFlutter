@@ -28,6 +28,7 @@
 | 2026-08-13 | **F5**：`setMcpPort` 对齐原版 LAN（`0.0.0.0`）+ `jsSourceApiToken` 启动前置 + `X-Legado-Token` 鉴权（§2.22） |
 | 2026-08-13 | **SOURCE_DIFF P0-1**：`@put:`/`@get:`/`setLocal` 变量系统落地——`AnalyzeRule` 会话变量 + 章节 `WebChapter.variable` / `BookChapter.variable` 透传；**无新 FFI 方法**（既有 webbook/reader JSON 加法式字段） |
 | 2026-08-13 | **SOURCE_DIFF P0-2/4**：加法式新增 `preciseSearch`（§2.4，对齐 `WebBook.preciseSearchAwait`）；`refreshToc` 接线 `runPreUpdateJs`（TocRule.preUpdateJs，无新 FFI） |
+| 2026-08-13 | **SOURCE_DIFF P1 DOM WebView**：加法式新增 `webviewRequestStream` / `webviewSubmit` / `webviewCancel` / `webviewPending`（§2.3）：对齐 `BackstageWebView` 挂起-唤醒；Flutter 订阅后 `@webjs`/正文 webJs/`java.webView*` 走真实 DOM。近似边界：页内 `java`/`source` JavascriptInterface 未注入；`cacheFirst` 在 Flutter WebView 无 cacheMode。附录合计随 codegen +4 |
 
 ---
 
@@ -124,6 +125,9 @@
 | `verificationRequestStream()` | 无 | `Stream<Map<String, dynamic>>` | 验证码请求事件流（长期存活，订阅时先回放进行中请求），事件字段：`key` / `source_url` / `source_name` / `image_url` / `title` / `use_browser`（恒 false，已降级）/ `created_at_ms`（Task #90，加法式新增） |
 | `submitVerificationResult(String key, String code)` | key: resultKey；code: 用户输入的验证码 | `Future<bool>` | 提交验证码结果唤醒 JS 等待方（对齐 Kotlin `setResult`：空值也唤醒，空值判定在等待侧），返回是否命中进行中请求（Task #90，加法式新增） |
 | `cancelVerificationRequest(String key)` | key: resultKey | `Future<bool>` | 取消验证码请求（对齐 Kotlin `checkResult`：以空结果唤醒等待方），返回是否命中（Task #90，加法式新增） |
+| `webviewRequestStream()` | 无 | `Stream<Map<String, dynamic>>` | BackstageWebView DOM 执行请求流（长期存活，订阅时回放进行中请求）。事件字段：`key` / `action` / `html` / `url` / `js` / `source_regex` / `override_url_regex` / `cache_first` / `delay_time` / `is_rule` / `result` / `created_at_ms`（SOURCE_DIFF P1，加法式新增） |
+| `submitWebviewResult(String key, String result)` | key: resultKey；result: WebView 执行结果（可空） | `Future<bool>` | 提交 DOM 执行结果唤醒 Rust 等待方，返回是否命中（SOURCE_DIFF P1，加法式新增） |
+| `cancelWebviewRequest(String key)` | key: resultKey | `Future<bool>` | 取消 WebView 请求（空结果唤醒），返回是否命中（SOURCE_DIFF P1，加法式新增） |
 | `setSourceVariable(String sourceUrl, String variable)` | sourceUrl: 书源 URL；variable: 自定义变量内容（空串=清除） | `Future<void>` | 设置书源自定义变量（对齐原版 `source.setVariable`），单列 UPDATE 语义仅更新 `variable` 单列，规避 `updateBookSource` 全行更新风险；variable 为空串表示清除该变量。错误码：Internal（书源不存在）/ Db（写入失败）。**DB schema 变更预告**：`book_sources` 表补 `variable` 列（幂等迁移，SCHEMA_VERSION 102→103）（台账 §5.11-3，第三批后置项，Task #63，加法式新增） |
 | `clearCookie(String url)` | url: 书源/订阅源 URL（或任意含域名的地址） | `Future<void>` | 清除该 URL 所属二级域名的 Cookie（对齐原版 `CookieStore.removeCookie` / 编辑页 `menu_clear_cookie`）。清除范围：① cookies 表持久层；② 共享 HTTP 客户端内存 CookieStore；③ JS 宿主 `java.clearCookies` 内存表。差距说明：原版另清 WebView Cookie / 会话 CacheManager，本实现无独立 WebView Cookie 层（与 MCP `clear_cookies` 一致）。url 为空 → Internal。加法式新增（2026-08-12 P1-2） |
 | `looksLikeCurl(String text)` | text: 待判定文本 | `Future<bool>` | 判断是否形似 cURL 命令（对齐 `CurlAnalyzeUrlConverter.looksLikeCurl`）。加法式新增（2026-08-12 P1-14） |
@@ -135,6 +139,8 @@
 > ℹ️ **书源校验（Task #87）**：Rust 侧 `ffi::source_check / source_check_stream / source_check_cancel`（核心实现 `legado-ffi/src/api/source_check_api.rs`，包装 `legado-net::source_checker::SourceChecker`，与 legado-server `/sources/check` 同源）。`checkSource` 返回 CheckResult JSON：`source_url` / `search_ok` / `toc_ok` / `content_ok` / `search_error` / `toc_error` / `content_error` / `total_time_ms` / `captcha`（detected/captcha_type/matched_keyword）/ `redirect`（redirected/original_url/final_url/is_login_redirect）。`checkSourcesStream` 每完成一个书源推送一条 CheckProgress JSON：`index` / `total` / `is_last` / `source_name` / `result`（CheckResult）；**串行**校验（对齐 Kotlin `CheckSourceService` flow 顺序执行，避免对书源站并发压力），不存在的书源推送失败结果而非跳过（序号连续）。`configJson` 契约：`{"keyword":String,"step_timeout_ms":int,"check_search":bool,"check_toc":bool,"check_content":bool,"detect_captcha":bool,"detect_redirect":bool}`，全部字段可选，缺省回落 CheckerConfig 默认值（keyword="我的"、step_timeout_ms=180000、其余全开）。冻结契约保持不变，本组方法为加法式新增。
 >
 > ℹ️ **验证码交互通道（Task #90）**：Rust 侧 `ffi::verification_request_stream / verification_submit / verification_cancel / verification_pending`（核心实现 `legado-core/src/verification_channel.rs`，对齐 Kotlin `SourceVerificationHelp` + `JsExtensions.getVerificationCode/startBrowserAwait`）。JS 书源经宿主 API 钩子挂起等待（std condvar 阻塞 JS 工作线程，不占用 tokio runtime，默认超时 5 分钟对齐 Kotlin）；同书源并发请求经航班去重共享结果（空 source_url 匿名请求不去重）；`use_browser` 一律降级为图片验证码（桌面端无 WebView）。`verificationSubmit` 无论 code 是否为空都唤醒等待方（对齐 Kotlin `setResult`），空值由等待侧报「验证结果为空」；`verificationCancel` 等价 Kotlin `checkResult`（空结果唤醒）；超时返回「source verification timed out」。订阅事件流时先回放当前进行中的请求。冻结契约保持不变，本组方法为加法式新增。
+>
+> ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**近似边界**：DOM `document`/`window`/`window.result` 可用；WebView 页内 `java`/`source` JavascriptInterface 未注入；`cacheFirst` 在 webview_flutter 无 cacheMode（日志记录）。加法式新增。
 
 ### 2.4 搜索操作（8 个方法）
 
