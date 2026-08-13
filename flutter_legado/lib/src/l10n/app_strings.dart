@@ -158,10 +158,6 @@ class AppStrings {
   static String get addedToBookshelf => _get('已加入书架', 'Added to bookshelf');
 
   // 阅读
-  static String get readingStats => _get('阅读统计', 'Reading Stats');
-  static String get todayReading => _get('今日阅读', 'Today');
-  static String get totalTime => _get('总时长', 'Total Time');
-  static String get totalWords => _get('总字数', 'Total Words');
   static String get fontSize => _get('字体大小', 'Font Size');
   static String get lineHeight => _get('行距', 'Line Height');
   static String get flipMode => _get('翻页模式', 'Flip Mode');
