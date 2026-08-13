@@ -1,6 +1,7 @@
 # 「我的」设置树对齐原版说明（2026-08-13）
 
-编写者：UI 子代理 ｜ 2026-08-13
+编写者：UI 子代理 ｜ 2026-08-13  
+Commit：`47d8e37a6`（主对齐）+ 分组标题 CJK 修正（若有后续 commit）
 
 ## 基准
 
@@ -8,43 +9,51 @@
   `pref_config_theme.xml` / `pref_config_other.xml` / `pref_config_backup.xml`；
   `AboutFragment` + `about.xml`
 - Flutter：`SettingsScreen` 及 `theme_config` / `other_settings` /
-  `webdav_settings`（备份与恢复）/ `about` 等
+  `webdav_settings`（备份与恢复）/ `about`
 
-## 改动屏幕
+## 改动屏幕（整棵子树覆盖）
 
 | 屏幕 | 文件 | 对齐要点 |
 |------|------|----------|
-| 我的枢纽 | `settings_screen.dart` | 文案对齐 values-zh；删「导出日志」；备份进全页；字典规则命名 |
-| 备份与恢复 | `webdav_settings_screen.dart` | 全页结构对齐 pref_config_backup；菜单：帮助/导入旧版/日志；恢复长按本地 |
-| 其他设置 | `other_settings_screen.dart` | 删创意「默认阅读/网络」分组；条目顺序对齐 XML；清理缓存；Cronet/直链占位 |
-| 主题设置 | `theme_config_screen.dart` | 去掉重复「主题模式」；通用项顺序对齐；白天/夜间分组 |
-| 关于 | `about_screen.dart` | 条目对齐 about.xml；去掉技术栈/捐赠等创意块 |
+| 我的枢纽 | `settings_screen.dart` | 文案/顺序对齐 pref_main；删「导出日志」；备份进全页；字典规则 |
+| 备份与恢复 | `webdav_settings_screen.dart` | pref_config_backup 两组；菜单帮助/导入旧版/日志；恢复长按本地 |
+| 其他设置 | `other_settings_screen.dart` | 删创意「默认阅读/网络」；XML 顺序；清理缓存；Cronet/直链占位 |
+| 主题设置 | `theme_config_screen.dart` | 去掉重复主题模式；通用项顺序；白天/夜间 |
+| 关于 | `about_screen.dart` | about.xml；去掉技术栈/捐赠创意块 |
+| 叶子入口 | 书源/定时任务/TXT/替换/字典/书签/阅读记录/文件管理 | 仍为既有管理页，枢纽入口保留 |
 
-## 差异表（原版 vs 改后 Flutter）
+## emulator-5556 验证（2026-08-13）
 
-| 项 | 原版 | 改前 Flutter | 改后 |
+冒烟：`emulator_smoke_test.ps1 -Device emulator-5556 -CheckUI` → **PASSED**（构建/安装/存活/无崩溃/底栏四字）。
+
+| 范围 | 结果 |
+|------|------|
+| 枢纽条目（滚动采集） | 书源…退出均出现；**无「导出日志」**；Web/MCP 小步滚动可见 |
+| 备份与恢复 | WebDav 组 + 备份路径/备份/恢复/忽略/仅最新/自动检查 **均可见** |
+| 其他设置 | 主界面/本地密码/Hosts/校验/直链占位/Cronet 占位/清理缓存 **有**；默认阅读/网络 **无** |
+| 主题设置 | 切换图标…底栏图集/白天/夜间 **有**；页内主题模式 **无** |
+| 关于 | 开发人员…免责声明 **有**；技术栈/捐赠 **无** |
+
+## 差异表（诚实终态）
+
+| 项 | 原版 | Flutter 现状 | 判定 |
 |----|------|--------------|------|
-| 枢纽「导出日志」 | 无（在关于/备份菜单） | 有 | 已删 |
-| 备份入口 | ConfigActivity 全页 | 底部 Sheet | 全页「备份与恢复」 |
-| 定时任务开关标题 | 运行定时任务 | 定时任务服务 | 已对齐 |
-| 字典规则 | 字典规则 | 词典规则 | 已对齐 |
-| 其他设置阅读/网络分组 | 无 | 有（创意） | 已删 |
-| 清理缓存 | Preference 动作 | 缓存管理子页入口 | 清理缓存动作 |
-| Cronet / 直链上传 | 有 | 隐藏 | 诚实占位「暂不可用」 |
-| 主题页主题模式 | 仅枢纽 | 枢纽+主题页双份 | 仅枢纽 |
-| 关于 | 开发人员/更新日志/检查更新+其他 6 项 | 技术栈卡片+营销入口 | 对齐 about.xml |
-| 创建堆转储 | Android 实现 | — | 诚实占位 Toast |
-| 更新日志/免责 MD | assets | 无资产 | 内置占位文案 |
+| 枢纽信息架构 | pref_main | 同序同组 | ✅ |
+| 备份入口 | 全页 Config | 全页（非 Sheet） | ✅ |
+| 其他设置创意分组 | 无 | 已删除 | ✅ |
+| 关于创意块 | 无 | 已删除 | ✅ |
+| Cronet / 直链上传 | 有引擎 | **诚实占位「暂不可用」** | ⚠️ 占位 |
+| 创建堆转储 | Android API | **Toast 占位** | ⚠️ 占位 |
+| 更新日志/免责 MD | assets | **内置占位文案**（无打包 MD） | ⚠️ 占位 |
+| 仅最新备份/自动检查 | 完整行为 | UI+偏好已存；后台检查待接通 | ⚠️ 半接线 |
+| 默认阅读字体/代理 | 不在 OtherConfig | 已移出该页；数据仍在 SettingsService | ✅（不造创意项） |
+| 视觉 | Material Pref | iOS 分组 inset（apple-ui-designer） | ✅ 允许 |
 
-## 未接线 / 占位（勿当假功能）
+## 未接线 / 勿当假功能
 
-1. **Cronet**、**直链上传规则**：无 Flutter/Rust 等价引擎 → UI 占位不可用
-2. **创建堆转储**：无桌面/Flutter 堆转储 API → Toast 说明
-3. **更新日志 / 免责声明** MD：未打包 assets → 占位正文
-4. **仅保留最新备份 / 自动检查新备份**：已持久化偏好键；后台检查逻辑待 Bridge 行为接通
-5. **默认阅读字体/代理超时**：已从「其他设置」移除；阅读器内设置与既有 SettingsService 仍保留数据
+1. Cronet、直链上传规则：无 Flutter/Rust 等价引擎  
+2. 创建堆转储：无堆转储 API  
+3. 更新日志 / 免责声明：未打包 `assets/*.md`  
+4. 「仅保留最新备份 / 自动检查新备份」：偏好已落盘，后台检查逻辑待 Bridge  
 
-## 视觉
-
-apple-ui-designer：`IosGroupedBody` / `IosGroup` / `IosSectionHeader` 分组 inset 列表；
-枢纽主题模式用系统感 Bottom Sheet；配色/字体可与原版 Material 不同。
+视觉：`IosGroupedBody` / `IosGroup` / `IosSectionHeader`（含中文分组标题不再强制 upper）。

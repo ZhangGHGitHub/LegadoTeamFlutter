@@ -57,13 +57,17 @@ class IosSectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // 含中文/混排标题保持原样（避免「WebDav 设置」→「WEBDAV 设置」）；
+    // 纯拉丁短标题仍用大写，贴近 iOS Settings section 习惯。
+    final hasCjk = RegExp(r'[\u4e00-\u9fff]').hasMatch(text);
+    final label = hasCjk ? text : text.toUpperCase();
     return Padding(
       padding: padding,
       child: Text(
-        text.toUpperCase(),
+        label,
         style: theme.textTheme.labelMedium?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
-          letterSpacing: 0.6,
+          letterSpacing: hasCjk ? 0.2 : 0.6,
         ),
       ),
     );
