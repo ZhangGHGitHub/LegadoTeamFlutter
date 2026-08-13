@@ -226,14 +226,14 @@ rust/
 
 `legado-js` crate 在启用 `quickjs` feature 后，通过 `SandboxConfig` 实施以下安全策略：
 
-| 维度 | 默认策略 | 说明 |
-|------|----------|------|
+| 维度 | 策略 | 说明 |
+|------|------|------|
 | 执行超时 | 5s | 超时后中断脚本 |
-| eval / Function 构造器 | 禁用 | 防止动态代码注入 |
+| eval / Function | **书源主路径启用** | `EnginePool` 默认 `allow_script_run=true`（对齐 Rhino）；`SandboxConfig::default()` 仍禁用，供 `js_eval` 严格入口 |
 | 文件 IO | 禁止 | `allow_file_access=false`，不注册 readFile/writeFile 等宿主 API |
 | 网络 | 受控保留 | 经 legado-net 统一通道，30s 超时 / 限流，与 Kotlin 原版书源对等 |
 | 内存上限 | 16 MB | QuickJS 分配失败即报错 |
-| 栈深度 | 512 | 防止无限递归 |
+| 栈深度 | 512 | 配置项（enforcement 见 F3-3） |
 
 > 详细实现见 `legado-js/src/sandbox.rs` 模块文档。
 

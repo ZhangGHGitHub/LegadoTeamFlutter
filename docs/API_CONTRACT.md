@@ -27,7 +27,8 @@
 | 2026-08-13 | **F4**：封面规则 CRUD 加法式新增——`getCoverRule` / `saveCoverRule` / `deleteCoverRule`（§2.4，对齐原版 `BookCover` + `CoverRuleConfigDialog`） |
 | 2026-08-13 | **F5**：`setMcpPort` 对齐原版 LAN（`0.0.0.0`）+ `jsSourceApiToken` 启动前置 + `X-Legado-Token` 鉴权（§2.22） |
 | 2026-08-13 | **SOURCE_DIFF P0-1**：`@put:`/`@get:`/`setLocal` 变量系统落地——`AnalyzeRule` 会话变量 + 章节 `WebChapter.variable` / `BookChapter.variable` 透传；**无新 FFI 方法**（既有 webbook/reader JSON 加法式字段） |
-| 2026-08-13 | **SOURCE_DIFF P0-2/4**：加法式新增 `preciseSearch`（§2.4，对齐 `WebBook.preciseSearchAwait`）；`refreshToc` 接线 `runPreUpdateJs`（TocRule.preUpdateJs，无新 FFI） |
+| 2026-08-14 | **F3-13（D4=B）**：`video_play_utils.dart` 视频 URL/MPD 解析保留 Flutter 层（对齐原版 VideoPlay 复合 URL 语义）；**登记豁免**，不新增 video FFI |
+| 2026-08-14 | **F3-4（D3=A）**：沙箱文档口径——书源主路径 `EnginePool` 启用 eval/Function（Rhino 对齐）；`js_eval` 仍用严格 `SandboxConfig::default()` |
 | 2026-08-13 | **SOURCE_DIFF P1 DOM WebView**：加法式新增 `webviewRequestStream` / `webviewSubmit` / `webviewCancel` / `webviewPending`（§2.3）：对齐 `BackstageWebView` 挂起-唤醒；Flutter 订阅后 `@webjs`/正文 webJs/`java.webView*` 走真实 DOM。附录合计随 codegen +4 |
 | 2026-08-13 | **SOURCE_DIFF 纯工程收口（无新 FFI）**：Android 原生 `backstageEval` 落地页内 `java`/`source`/`cache` JavascriptInterface + `cacheFirst`→`LOAD_CACHE_ELSE_NETWORK`；Rust `ownText`/`string_rule_cache`。契约语义边界更新，方法表不变 |
 

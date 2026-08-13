@@ -11,14 +11,14 @@
 //! | 维度 | 默认策略（`SandboxConfig::default()`） | 说明 |
 //! |------|----------------------------------------|------|
 //! | 执行超时 | 5 秒 | 超时后中断脚本执行 |
-//! | eval / Function | 禁用 | `allow_script_run = false`，防止动态代码注入 |
-//! | 文件 IO | 禁止 | `allow_file_access = false`，不注册 readFile/writeFile 等宿主 API |
+//! | eval / Function | **书源路径启用** | `EnginePool` 默认 `allow_script_run=true`（对齐 Rhino 书源信任模型，v1.26）；`SandboxConfig::default()` 仍为 false，供 `js_eval` 等调试/严格入口 |
+//! | 文件 IO | 禁止 | `allow_file_access=false`，不注册 readFile/writeFile 等宿主 API |
 //! | 网络 | 受控保留 | 经 legado-net 统一通道，受 30s 超时 / 限流约束，与 Kotlin 原版书源对等 |
 //! | 内存 | 16 MB | 超过后 QuickJS 分配失败 |
-//! | 栈深度 | 512 | 防止无限递归 |
+//! | 栈深度 | 512 | 防止无限递归（配置项；完整 enforcement 见 F3-3 待办） |
 //!
-//! 调试端点（`js_eval` FFI）使用 `SandboxConfig::default()` 而非 `permissive()`，
-//! 确保即使经 FFI 直接调用也不会获得文件/eval 权限。
+//! 调试端点（`js_eval` FFI）使用 `SandboxConfig::default()`（禁用 eval/Function），
+//! 与书源主路径的 permissive 策略分离。
 
 use std::time::Duration;
 
