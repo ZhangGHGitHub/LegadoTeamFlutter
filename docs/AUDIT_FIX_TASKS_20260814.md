@@ -200,14 +200,14 @@
 - **涉及文件**：`js_executor.rs:244-247/330-334`、`engine_pool.rs`
 - **实施要点**：payAction/login/explore 等非主路径调用改为每次新建引擎（对齐 v1.36 主路径策略）或按调用链隔离 tag；评估 `main_js_loaded` 按实例缓存跳过重载问题。
 - **验收**：同一书源不同调用链无 JS 全局残留串扰；相关回归测试。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（fresh_engine 替代引擎池；payAction/login/explore/callback 每次新建引擎 + 回归测试）
 
 ### F3-7 `[Rust]` 死模块/桩清理
 - **来源**：D7
 - **涉及文件**：`rust/legacy-ffi/`（孤儿目录，物理删除或归档）、`legado-js/src/context.rs`、`scope.rs`、`legado-core/src/ffi_macros.rs`、`ffi.rs:1060`（`let _ = &rule_type` 桩）
 - **实施要点**：逐一确认零生产引用后删除；`parse_rule` 补 rule_type 使用或移除参数。
 - **验收**：`cargo test --workspace` 全绿；无死代码告警（legado-ffi clippy 含入后零警告）。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（删 legacy-ffi/、context.rs、ffi_macros.rs；parse_rule 消费 ruleType；scope.rs 保留因 source_engine 引用）
 
 ### F3-8 `[Rust]` 瞬态字段落库治理
 - **来源**：D8
@@ -228,7 +228,7 @@
 - **涉及文件**：`docs/API_CONTRACT.md`
 - **实施要点**：① 方法数 237→257 及附录合计 248→实测值；② §2.3/2.4/2.5/2.9/2.11/2.43 标题/表格/附录三方对齐；③ 补登记 `fetchImageWithDecode`/`rssClearArticles`/`sourceCallBackBtn`；④ `taskId` 改数字语义；⑤ 命名等价差异 8 对加注说明。
 - **验收**：契约与 BookApi 257 方法一一对应；附录合计正确。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（BookApi 247、附录 251；§1.7 命名等价 8 对；补登记 5 缺失项；taskId 字符串语义）
 
 ### F3-11 `[文档]` 测试/版本口径统一
 - **来源**：D13/D14/D15
@@ -277,7 +277,7 @@
 - **涉及文件**：`docs/API_CONTRACT.md`、`rust/legado-ffi/src/api/rss_api.rs`（新增 `get_records_by_origin`）、`book_api.dart`/`rust_api.dart`/`mock_book_api.dart`、`rss_articles_screen.dart:570-573`
 - **实施要点**：契约登记 → Rust 实现 → codegen → UI 改按源查询。
 - **验收**：按源查询生效；大记录量性能问题消除。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（`rssListReadRecordsByOrigin` FFI + UI 按源加载，对齐 getRecordsByOrigin）
 
 ### F3-18 `[UI]` SettingsService 注入收敛
 - **来源**：D20

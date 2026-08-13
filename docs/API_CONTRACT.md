@@ -18,6 +18,7 @@
 | 2026-08-13 | P2-4 续：恢复忽略项其余键——备份 JSON 注入 `appPrefs`，恢复时按 BackupConfig.keyIsNotIgnore 过滤（readConfig/themeMode/themeConfig/coverConfig/bookshelfLayout/showRss/threadCount）；无新 FFI |
 | 2026-08-13 | P2-1：底栏皮肤最小可用——纯 Flutter（`archive` zip 导入 + PrefKeys.bottomBarSkin）；**无新 FFI** |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
+| 2026-08-14 | **F3-17**：加法式 `rssListReadRecordsByOrigin`（§2.35）；**F3-10** 契约全面同步至 BookApi **247** 方法、附录 **251** |
 | 2026-08-14 | **F3-14**：加法式新增 `httpGetBytes`（§2.20）；UI 层 8 处裸 `http.get` 收敛至 Bridge；附录 244→245，BookApi 233→234 |
 | 2026-08-14 | **F3-5**：§1.6 登记 9 个 FFI 非 Result 导出豁免（只读/哨兵语义，不改签名） |
 | 2026-08-13 | P2-8：检查更新对接 GitHub Release API（`AppUpdateService` + `UpdateDialog`）；纯 Flutter HTTP，**无新 FFI** |
@@ -93,14 +94,28 @@
 
 > 其余新增 FFI 仍遵循 `Result<_, BridgeError>` 铁律；本表仅销记历史非 Result 面，**不扩范围**。
 
+### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
+
+以下 8 对 Dart `BookApi` 方法名与契约/FFI 登记名不一致，语义等价，计数时勿重复：
+
+| BookApi（Dart） | 契约 §2.x / FFI 登记名 |
+|-----------------|------------------------|
+| `extractJsSource` | `jsSourceExtract`（§2.37） |
+| `checkJsSourceSyntax` | `jsSourceSyntaxCheck`（§2.37） |
+| `stampJsSourceLastUpdateTime` | `jsSourceStampLastUpdateTime`（§2.37） |
+| `isLoginUiV2` | `sourceIsLoginUiV2`（§2.3） |
+| `loginUiV2` | `sourceLoginUiV2`（§2.3） |
+| `loginActionV2` | `sourceLoginActionV2`（§2.3） |
+| `listCachedChapterUrls` | `cacheListCachedChapterUrls`（§2.43.5） |
+| `getCachedChapter` | `cacheGetChapter`（§2.16 / §2.41） |
+
 ---
 
 ## 2. 方法清单
 
-> 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
-> 为基准，BookApi 接口当前共 **234 个方法**（2026-08-14 F3-14 加 `httpGetBytes` 1）。
-> 附录行合计 248 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
-> 扣除后 232 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 233，与 BookApi 闭合；详见附录口径说明。
+> 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 程序化计数
+> 为基准，BookApi 接口当前共 **247 个方法**（2026-08-14 F3-17 加 `rssListReadRecordsByOrigin` 1）。
+> 附录 §2.1–§2.43 行合计 **251**；扣除尚未封装进 BookApi 的 FFI 10 个（见附录口径）+ 命名等价闭合 = **247**。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -124,7 +139,7 @@
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 | `reorderBooks(List<Map<String, dynamic>> orders)` | orders: `[{bookUrl, order}, ...]` | `Future<void>` | 批量持久化拖拽排序（对齐原版 BookAdapter.swap 后 updateBook） |
 
-### 2.3 书源操作（24 个方法）
+### 2.3 书源操作（25 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -155,6 +170,7 @@
 | `looksLikeCurl(String text)` | text: 待判定文本 | `Future<bool>` | 判断是否形似 cURL 命令（对齐 `CurlAnalyzeUrlConverter.looksLikeCurl`）。加法式新增（2026-08-12 P1-14） |
 | `curlToAnalyzeUrl(String text)` | text: cURL 命令 | `Future<String>` | cURL → AnalyzeUrl 模板（`url` 或 `url,{options}`）。错误消息含 `[CURL_*]` 前缀。加法式新增（2026-08-12 P1-14） |
 | `analyzeUrlToCurl(String text)` | text: AnalyzeUrl 模板 | `Future<String>` | AnalyzeUrl → cURL 命令。错误消息含 `[CURL_*]` 前缀。加法式新增（2026-08-12 P1-14） |
+| `sourceCallBackBtn({required String event, required String bookUrl, int? chapterIndex, String? result, int bookType = 0})` | event, bookUrl, chapterIndex(可选), result(可选), bookType | `Future<Map<String, dynamic>>` | 书源 callBackBtn JS（对齐 SourceCallBack）；返回 `invoked` / `jsTrue` / `raw` / `actions`（F3-10 补登记） |
 
 > ℹ️ **登录 UI V2 动态状态协议（#402/#488）**：Rust 侧 `ffi::source_is_login_ui_v2 / source_login_ui_v2 / source_login_action_v2`（核心实现 `legado-core/src/login_ui_v2.rs`，对齐 Kotlin `LoginUiV2.kt` + `BaseSource.evalLoginUiV2/evalLoginActionV2`）。`loginUi` 为 `{"version":2}` 标记时启用；登录脚本取自 `mainJs`（JS 单文件书源）或 `loginUrl`，须实现 `loginUi(state)` / `loginAction(action, state, form)`。`userInputJson` 契约：`{"action":"...","stateJson":"...","formJson":{...}}`（stateJson/formJson 支持字符串或对象）。JS 返回 null/undefined 时返回空字符串；需 quickjs 特性构建。RowUi V2 扩展字段：key/hint/value/options/countdown。冻结契约保持不变，本组方法为加法式新增。
 >
@@ -164,7 +180,7 @@
 >
 > ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**Android**：`PlatformBridgeService`→原生 `legado/webview.backstageEval`：`cacheFirst`→`WebSettings.LOAD_CACHE_ELSE_NETWORK`；`isRule`+html 时注入 `java`/`source`/`cache` JavascriptInterface（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。非 Android 回退 `webview_flutter`（无 cacheMode）。加法式新增。
 
-### 2.4 搜索操作（8 个方法）
+### 2.4 搜索操作（12 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -193,7 +209,7 @@
 >
 > ℹ️ **封面规则搜索（台账 §5.13-10，Task #72）**：原版实现为单条封面规则配置——Kotlin `BookCover.searchCover(book)` 读取 `CoverRule(enable, searchUrl, coverRule)`（用户配置存 CacheManager，缺省回退 `DefaultData.coverRule`，UI 入口 `CoverRuleConfigDialog`），以 `AnalyzeUrl(searchUrl, book.name)` 发起搜索请求，再经 `AnalyzeRule.getString(coverRule, isUrl=true)` 提取封面 URL。本轨差异与对齐方案：规则载体为 `legado-db` 既有 `coverRules` 表（`id` / `name` / `rule` / `enable`，默认数据注入已就位），执行全部 `enable=1` 规则；规则执行复用既有书源搜索/JS 执行基础设施（`legado-net` HTTP 抓取 + `legado-parser`/quickjs 规则解析链路，与 `dictLookup` 字典规则执行同模式），`rule` 文本承载 searchUrl 与提取规则（具体内联格式由 Rust 轨实施时按表内既有数据确定）；单规则失败隔离不阻断其余；与既有 `searchCover`（多书源搜索提取封面）互补并存、互不影响。冻结契约保持不变，本方法为加法式新增。
 
-### 2.5 RSS 源操作（9 个方法）
+### 2.5 RSS 源操作（10 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -207,6 +223,7 @@
 | `importRssSources(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 导入 RSS 源，返回成功数量。✅ **2026-08-12 纠偏**：Flutter `rust_api.importRssSources` 曾误接 `sourceImport`（写入书源表）；现改为逐条 `rssAddSource` 落 `rssSources`。Rust `add_rss_source` 已改走 `RssSourceRepository::insert` 全字段；`import_rss_sources` 已在 `api/rss.rs` 备好，待 FRB 生成后可改批量 FFI |
 | `exportRssSources()` | 无 | `Future<String>` | 导出 RSS 源。✅ **2026-08-12 纠偏**：勿走 `sourceExport`；现导出 `getRssSources()` JSON |
 | `getRssArticles(String sourceUrl)` | sourceUrl | `Future<List<RssFeedArticle>>` | 获取 RSS 文章列表 |
+| `rssClearArticles(String sourceUrl)` | sourceUrl | `Future<void>` | 清空指定 RSS 源本地文章缓存（对齐原版 clearArticles，F3-10 补登记） |
 
 > ℹ️ **RSS 源原子更新（Task #108 缺口④）**：Rust 侧 `ffi::rss_update_source(source_json)`（核心实现 `legado-ffi/src/api/rss.rs::update_rss_source`，DB 层 `legado-db::RssSourceRepository::update_fields`）。对 `rssSources` 表按 `sourceUrl` 主键执行**单条 UPDATE 语句**全字段原子更新（不走 DELETE+INSERT，不触发外键级联）；目标源不存在时返回错误（不静默插入）。Flutter 侧 RSS 源编辑保存应改走本接口，替代原「删旧+加新」workaround。冻结契约保持不变，本方法为加法式新增。
 
@@ -318,7 +335,7 @@
 | `deleteSearchKeyword(String keyword)` | keyword | `Future<void>` | 删除搜索关键词 |
 | `clearSearchHistory()` | 无 | `Future<void>` | 清空搜索历史 |
 
-### 2.16 缓存管理（7 个方法）
+### 2.16 缓存管理（8 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -329,6 +346,7 @@
 | `getCacheChapterCount()` | 无 | `Future<int>` | 获取缓存章节数量 |
 | `clearCacheBefore(int beforeTimestampMs)` | beforeTimestampMs: 毫秒时间戳 | `Future<void>` | 清除指定时间之前的缓存 |
 | `shrinkDatabase()` | 无 | `Future<int>` | 执行 SQLite VACUUM 压缩数据库文件，返回释放的字节数；Rust 侧应在后台线程执行避免阻塞。错误语义：VACUUM 失败（数据库锁/文件损坏）或数据库未初始化 → 返回 0 降级为无操作（不抛异常阻断业务）（台账 §5.13-9，第二批后置项，Task #50，加法式新增） |
+| `getCachedChapter(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 读取已缓存章节正文（FFI `cacheGetChapter`，F3-10 补登记 §1.7 命名等价） |
 
 ### 2.17 WebBook 操作（6 个方法）
 
@@ -356,15 +374,16 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `parseRule(String content, String rule, String ruleType)` | content, rule, ruleType | `Future<String>` | 使用规则解析内容 |
+| `parseRule(String content, String rule, String ruleType)` | content, rule, ruleType（css/xpath/json/regex 等，rule 无 `@` 前缀时拼为 `@type:rule`） | `Future<String>` | 使用规则解析内容，返回 `{results,count}` JSON |
 
-### 2.20 网络操作（4 个方法）
+### 2.20 网络操作（5 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `httpGet(String url)` | url | `Future<String>` | HTTP GET 请求，返回 JSON `{"status": int, "body": string, "url": string}`（文本 body） |
 | `httpPost(String url, String body)` | url, body | `Future<String>` | HTTP POST 请求，返回格式同 httpGet |
 | `httpGetBytes(String url, {String headersJson = ''})` | url；headersJson 可选 JSON 对象 | `Future<String>` | HTTP GET 二进制响应，返回 JSON `{"status": int, "bodyBase64": string, "url": string}`（F3-14，经 legado-net 共享客户端） |
+| `fetchImageWithDecode(String url, String sourceJson)` | url, sourceJson（BookSource JSON） | `Future<String>` | 图片下载 + imageDecode JS 解密，返回 `{base64,len}` JSON（F3-10 补登记） |
 | `setCustomHosts(String hostsJson)` | hostsJson: 域名→IP 映射 JSON 对象字符串（对齐原版存储格式） | `Future<void>` | 设置自定义 hosts 映射，配置后网络层 DNS 解析优先使用该映射（命中域名直连映射 IP，未命中回落系统 DNS）。存储格式对齐原版 `AppConfig.customHosts`：JSON **对象** `{"域名":"IP", "域名":["IP1","IP2"]}`（值支持单 IP 字符串或 IP 数组，实读原版 `AppConfig.hostMap/addressCache` 确认）；空串/空对象=清除映射、恢复系统 DNS。配置需持久化（复用既有配置存储语义，caches 表 `config:` 前缀键 `customHosts`，与既有 `setConfig` 同语义）并即时生效（后续请求使用新映射）。Rust 实现要点：legado-net 经 reqwest `ClientBuilder::resolve` 域名覆盖或自定义 DNS resolver 挂钩（现状无 custom_hosts 钩子，实施时补）。错误码：Internal（hostsJson 非合法 JSON 对象）。差异注明：原版非法输入即清除；本契约改为拒绝保存（更防误操作，Task #76 Med2）。既有 `httpGet` / `httpPost` 签名保持不变，本方法为加法式新增（台账 §5.13-1，第四批后置项，Task #72） |
 
 ### 2.21 JS 引擎（2 个方法）
@@ -433,13 +452,13 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `downloadAddTask({required String bookUrl, required String chapterUrl, required String chapterTitle, required int chapterIndex, int priority = 0})` | bookUrl, chapterUrl, chapterTitle, chapterIndex, priority | `Future<String>` | 添加下载任务，返回任务 ID |
+| `downloadAddTask({required String bookUrl, required String chapterUrl, required String chapterTitle, required int chapterIndex, int priority = 0})` | bookUrl, chapterUrl, chapterTitle, chapterIndex, priority | `Future<String>` | 添加下载任务，返回任务 ID（**字符串**，opaque 标识符，非数字序号） |
 | `downloadGetStats()` | 无 | `Future<String>` | 获取下载统计信息 JSON |
 | `downloadListByBook(String bookUrl)` | bookUrl | `Future<String>` | 获取指定书籍的下载任务 JSON |
 | `downloadPauseAll()` | 无 | `Future<void>` | 暂停所有下载 |
 | `downloadResumeAll()` | 无 | `Future<void>` | 恢复所有下载 |
-| `downloadRemoveTask(String taskId)` | taskId | `Future<void>` | 移除下载任务 |
-| `downloadUpdateProgress(String taskId, double progress)` | taskId, progress | `Future<void>` | 更新下载进度 |
+| `downloadRemoveTask(String taskId)` | taskId（字符串 opaque ID） | `Future<void>` | 移除下载任务 |
+| `downloadUpdateProgress(String taskId, double progress)` | taskId（字符串 opaque ID）, progress | `Future<void>` | 更新下载进度 |
 
 ### 2.30 段评（3 个方法，书源 ruleReview）
 
@@ -467,7 +486,7 @@
 | `autoTaskUpdateCronBatch({required String rulesJson, required String idsJson, required String cron})` | rulesJson, idsJson, cron | `Future<List<Map<String, dynamic>>>` | 批量更新 cron 表达式 |
 | `autoTaskPrepareImported({required String localTasksJson, required String importedJson})` | localTasksJson, importedJson | `Future<List<Map<String, dynamic>>>` | 准备导入任务 |
 | `autoTaskExecute({required String protocolJson})` | protocolJson | `Future<Map<String, dynamic>>` | 执行任务协议 |
-| `autoTaskExecuteWithId({required String protocolJson, required String taskId})` | protocolJson, taskId | `Future<Map<String, dynamic>>` | 带任务 ID 执行任务协议 |
+| `autoTaskExecuteWithId({required String protocolJson, required String taskId})` | protocolJson, taskId（自动任务规则 ID，字符串 UUID/主键，非下载 taskId） | `Future<Map<String, dynamic>>` | 带任务 ID 执行任务协议 |
 | `autoTaskNormalizeScript({required String script})` | script | `Future<String>` | 规范化脚本 |
 | `autoTaskCanRefreshBookToc({required bool canUpdate, required bool respectCanUpdate})` | canUpdate, respectCanUpdate | `Future<bool>` | 判断书籍是否允许刷新目录 |
 | `autoTaskFindBookUpdateTask({required String tasksJson, required String bookUrl, required String bookName, required String bookAuthor})` | tasksJson, bookUrl, bookName, bookAuthor | `Future<Map<String, dynamic>?>` | 查找书籍更新任务 |
@@ -497,7 +516,7 @@
 | `archiveConvertEncoding({required String filePath, required String fromEncoding, required String toEncoding})` | filePath, fromEncoding, toEncoding | `Future<Map<String, dynamic>>` | 转换 TXT 文件编码 |
 | `archiveIsArchive({required String filePath})` | filePath | `Future<bool>` | 判断文件是否为压缩包格式 |
 
-### 2.35 RSS 已读记录（6 个方法）
+### 2.35 RSS 已读记录（7 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -507,6 +526,7 @@
 | `rssClearReadRecords()` | 无 | `Future<void>` | 清空所有已读记录 |
 | `rssReadRecordCount()` | 无 | `Future<int>` | 获取已读记录总数 |
 | `rssListReadRecords({int? limit})` | limit(可选，默认100) | `Future<List<RssReadRecordRow>>` | 获取已读记录列表（按 readTime 降序） |
+| `rssListReadRecordsByOrigin(String origin, {int? limit})` | origin, limit(可选，默认100) | `Future<List<RssReadRecordRow>>` | 按 RSS 源 origin 获取已读记录（对齐原版 `getRecordsByOrigin`，F3-17） |
 
 ### 2.36 正文高亮（highlight FFI）（11 个方法）
 
@@ -587,13 +607,13 @@
 | `txtSearchInChapter(String path, String query, int chapterIndex, {bool caseSensitive = false, int maxResults = 50})` | path, query, chapterIndex（0 起） | `Future<List<Map<String, dynamic>>>` | 指定章节内搜索，返回格式同上 |
 | `txtSearchCount(String path, String query, {bool caseSensitive = false})` | path, query | `Future<int>` | 匹配总数计数（不返回完整结果，供 UI 显示） |
 
-### 2.41 契约外已实现 FFI 补登记（2026-08-06 审计，4 个）
+### 2.41 契约外已实现 FFI 补登记（2026-08-06 审计，5 个）
 
 > 以下函数已在 `rust/legado-ffi/src/ffi.rs` 实现并生成 Dart 绑定（`ffi.dart`），但此前未登记本契约（违反 §1.2「新增 API 须同步更新文档」），本节为补登记（承接 REMAINING_PLAN §4.2.2 P1-3）。其中多数尚未封装进 `BookApi` 抽象层，UI 封装计划见 §3「待 UI 封装清单」。
 >
 > **注（2026-08-07，Task #139）**：原 QUIC 系列 8 个函数（quicCreateClient / quicGet / quicPost / quicPerformanceTest / quicIsInitialized / quicCleanup / netSetQuicEnabled / netIsQuicEnabled）属原版不存在的新增能力，按「项目目标是纯重构」的用户决策已整体移除，不再作为契约项。
 
-**其他（4 个）**
+**其他（5 个）**
 
 | 函数 | 所属模块 | 说明 |
 |------|----------|------|
@@ -601,6 +621,7 @@
 | `cacheGetChapter` | 缓存管理（§2.16 扩展） | 获取已缓存章节内容（离线缓存 UI 批次依赖）——✅ 已封装接通（本次评审修复提交，`RustApi.getCachedChapter` 封装，书架菜单缓存导出） |
 | `bookGroupSetShow` | 书籍分组（§2.14 扩展） | 设置分组显示状态 |
 | `httpTtsSetEnabled` | HTTP TTS（§2.25 扩展） | 启用/禁用 HTTP TTS 配置 |
+| `dictLookup` | 词典（§3 需求 4） | 词典释义查询——✅ 已封装 `BookApi.dictLookup`（F3-10 补登记） |
 
 ### 2.42 TTS 真实合成管线（Task #113 批次 2 缺口②，2 个方法）
 
@@ -789,9 +810,9 @@
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 10 |
-| 3 | 书源操作 | 24 |
-| 4 | 搜索操作 | 8 |
-| 5 | RSS 源操作 | 9 |
+| 3 | 书源操作 | 25 |
+| 4 | 搜索操作 | 12 |
+| 5 | RSS 源操作 | 10 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 7 |
 | 8 | 替换规则操作 | 6 |
@@ -802,11 +823,11 @@
 | 13 | RSS 收藏操作 | 4 |
 | 14 | 书籍分组 | 4 |
 | 15 | 搜索历史 | 5 |
-| 16 | 缓存管理 | 7 |
+| 16 | 缓存管理 | 8 |
 | 17 | WebBook 操作 | 6 |
 | 18 | 发现页操作 | 2 |
 | 19 | 规则解析 | 1 |
-| 20 | 网络操作 | 4 |
+| 20 | 网络操作 | 5 |
 | 21 | JS 引擎 | 2 |
 | 22 | 服务器管理 | 5 |
 | 23 | 书籍格式解析 | 3 |
@@ -819,23 +840,24 @@
 | 32 | 自动任务 | 14 |
 | 33 | 音频播放模式 | 2 |
 | 34 | 压缩包导入 | 7 |
-| 35 | RSS 已读记录 | 6 |
+| 35 | RSS 已读记录 | 7 |
 | 36 | 正文高亮 | 11 |
 | 37 | JS 单文件书源配置 | 3 |
 | 38 | 应用日志 | 5 |
 | 39 | 规则订阅 | 7 |
 | 40 | 本地 TXT 全文搜索 | 4 |
-| 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
+| 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **245** |
+| | **合计（§2.1–§2.43 附录行合计）** | **251** |
 
-> 口径说明（Task #55 F6，2026-08-10 校准；2026-08-14 F3-15 移除本地段评 CRUD 4 方法，基准 = `book_api.dart` 程序化计数 **234**）：
-> - **与 BookApi 闭合**：附录行合计 245 − 尚未封装进 BookApi 的 FFI 10 个
+> 口径说明（F3-10，2026-08-14 校准；基准 = `book_api.dart` 程序化计数 **247**）：
+> - **与 BookApi 闭合**：附录行合计 251 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 233；
->   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **234**。
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 241；
+>   − 行 41 中 `dictLookup` 已在 BookApi 实现但附录重复计数 1 = 240；
+>   + §1.7 命名等价 8 对中 BookApi 侧 7 个已在 §2.x 表格计数、仅 `dictLookup` 见上行 = **247**。
 >   第四批 3 项（`setCustomHosts` / `setMcpPort` / `searchCoverRules`）均为 BookApi 封装口径方法；
 >   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1 + curl 三方法 3（230 + 5 = 235）；
 >   2026-08-13 加 `reviewGetSummary` / `reviewGetDetail` 2；2026-08-14 F3-15 移除本地 CRUD 4 → **233**。
