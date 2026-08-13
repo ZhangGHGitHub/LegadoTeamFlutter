@@ -1,6 +1,7 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:path_provider/path_provider.dart';
@@ -266,11 +267,14 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   }
 
   PreferredSizeWidget _buildAppBar() {
-    return AppBar(
+    return LegadoAppBar(
       title: Text(AppStrings.addLocalBook),
       leading: _currentDir == null
-          ? const BackButton()
-          : IconButton(icon: const Icon(Icons.arrow_upward), onPressed: _goUp),
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.arrow_upward),
+              onPressed: _goUp,
+            ),
       actions: [
         // 远程书籍导入入口（对标原版 RemoteBookActivity）
         IconButton(

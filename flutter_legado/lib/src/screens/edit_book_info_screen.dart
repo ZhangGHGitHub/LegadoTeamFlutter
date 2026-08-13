@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
@@ -56,7 +57,7 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('书籍信息编辑'),
         actions: [
           TextButton(

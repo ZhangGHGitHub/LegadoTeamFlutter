@@ -1,7 +1,8 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
@@ -119,7 +120,7 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('缓存下载队列'),
         actions: [
           IconButton(

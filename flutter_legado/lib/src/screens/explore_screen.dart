@@ -1,4 +1,4 @@
-/// 书源探索页面（ExploreScreen）
+﻿/// 书源探索页面（ExploreScreen）
 ///
 /// 参考 Android 原版 ExploreFragment.kt 实现
 /// 核心功能：
@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -78,7 +79,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       builder: (context, constraints) {
         final isTablet = constraints.maxWidth >= Responsive.mediumMax;
         return Scaffold(
-          appBar: AppBar(
+          appBar: LegadoAppBar(
             titleSpacing: 8,
             // iOS 顶栏嵌入式搜索：克制圆角、系统灰底
             title: SizedBox(

@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -142,7 +143,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
   Widget build(BuildContext context) {
     final state = ref.watch(sourceLoginNotifierProvider);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text('登录 - ${widget.sourceName}'),
         bottom: TabBar(
           controller: _tabController,

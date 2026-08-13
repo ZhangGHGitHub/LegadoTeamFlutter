@@ -1,9 +1,10 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -969,7 +970,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     return DefaultTabController(
       length: 8,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: LegadoAppBar(
           title: Text(isNew ? '新建书源' : '编辑书源'),
           bottom: const TabBar(
             isScrollable: true,
@@ -1533,7 +1534,7 @@ class _FullscreenJsonEditDialogState
   Widget build(BuildContext context) {
     return Dialog.fullscreen(
       child: Scaffold(
-        appBar: AppBar(
+        appBar: LegadoAppBar(
           title: const Text('全屏编辑'),
           leading: IconButton(
             icon: const Icon(Icons.close),

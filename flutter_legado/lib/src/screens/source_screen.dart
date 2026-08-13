@@ -1,7 +1,8 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -94,7 +95,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context, SourceState state) {
-    return AppBar(
+    return LegadoAppBar(
       // 原版 TitleBar 内嵌 view_search：搜索框与菜单图标同行，无标题文字
       // 收紧 titleSpacing 保证搜索框宽度，「搜索书源」提示不被截断
       titleSpacing: 8,
@@ -256,7 +257,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   /// 全选/反选/更多操作统一收进底部操作栏，与原版底部操作区一致。
   PreferredSizeWidget _buildBatchAppBar(
       BuildContext context, SourceState state) {
-    return AppBar(
+    return LegadoAppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
         tooltip: '退出批量模式',

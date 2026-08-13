@@ -1,5 +1,6 @@
-import 'package:file_picker/file_picker.dart';
+﻿import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 
 import '../constants/pref_keys.dart';
 import '../services/settings_service.dart';
@@ -130,7 +131,7 @@ class _WelcomeConfigScreenState extends State<WelcomeConfigScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('欢迎页样式')),
+      appBar: LegadoAppBar(title: const Text('欢迎页样式')),
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
           : IosGroupedBody(

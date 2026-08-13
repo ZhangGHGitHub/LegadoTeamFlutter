@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -55,7 +56,7 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: TextField(
           controller: _searchController,
           textAlignVertical: TextAlignVertical.center,

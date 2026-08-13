@@ -1,8 +1,9 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -138,7 +139,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
     final previewUrl = _selectedUrl ?? widget.effectiveCurrentCover;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('更换封面'),
         actions: [
           TextButton.icon(

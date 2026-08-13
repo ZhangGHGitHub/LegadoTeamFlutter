@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -61,7 +62,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
     final theme = Theme.of(context);
     final state = ref.watch(dictNotifierProvider);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('字典查询'),
         actions: [
           IconButton(

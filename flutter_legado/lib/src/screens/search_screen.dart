@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -83,7 +84,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return AppBar(
+    return LegadoAppBar(
       title: Container(
         height: 36,
         margin: const EdgeInsets.symmetric(vertical: 4),

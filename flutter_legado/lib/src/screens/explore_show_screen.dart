@@ -1,4 +1,4 @@
-/// 发现分类书籍浏览页面（ExploreShowScreen）
+﻿/// 发现分类书籍浏览页面（ExploreShowScreen）
 ///
 /// 参考 Android 原版 ExploreShowActivity.kt 实现
 /// 核心功能：
@@ -11,6 +11,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -34,7 +35,7 @@ class ExploreShowScreen extends ConsumerWidget {
     // 参数缺失兜底（正常路径由 routes.dart 保证非空）
     if (args == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('')),
+        appBar: LegadoAppBar(title: const Text('')),
         body: const EmptyState(
           icon: Icons.explore_outlined,
           title: '参数错误',
@@ -49,7 +50,7 @@ class ExploreShowScreen extends ConsumerWidget {
     );
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: LegadoAppBar(title: Text(title)),
       body: ExploreBookList(args: args),
     );
   }

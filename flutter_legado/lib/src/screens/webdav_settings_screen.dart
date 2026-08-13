@@ -1,8 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -365,7 +366,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     final notifier = ref.read(syncNotifierProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('备份与恢复'),
         actions: [
           IconButton(

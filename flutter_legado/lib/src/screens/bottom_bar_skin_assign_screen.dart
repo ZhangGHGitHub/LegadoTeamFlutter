@@ -1,6 +1,7 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 
 import '../services/bottom_bar_skin_format.dart';
 import '../services/bottom_bar_skin_service.dart';
@@ -268,7 +269,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
   Widget build(BuildContext context) {
     final editing = widget.editName != null;
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text(editing ? '编辑' : '分配图标'),
         actions: [
           TextButton(

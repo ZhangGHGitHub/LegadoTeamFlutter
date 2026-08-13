@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
@@ -149,7 +150,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('缓存管理')),
+      appBar: LegadoAppBar(title: const Text('缓存管理')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(

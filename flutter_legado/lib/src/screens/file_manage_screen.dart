@@ -1,6 +1,7 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -210,7 +211,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
         _gotoLastDir();
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: LegadoAppBar(
           title: TextField(
             controller: _searchCtrl,
             decoration: InputDecoration(

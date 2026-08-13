@@ -1,6 +1,7 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../l10n/app_strings.dart';
@@ -214,7 +215,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text('搜索正文', style: Theme.of(context).textTheme.titleMedium),
         actions: [
           if (_searching)

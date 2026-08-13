@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -106,7 +107,7 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
   Widget build(BuildContext context) {
     final state = ref.watch(appLogNotifierProvider);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('应用日志'),
         // AppBar 内 TabBar 必须白色系前景（设计规范 §5.1 / 既往缺陷模式）
         bottom: TabBar(

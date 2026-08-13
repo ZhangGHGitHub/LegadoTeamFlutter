@@ -1,8 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
@@ -134,7 +135,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         tabs: state.groups.map((g) => Tab(text: g.groupName)).toList(),
       );
     }
-    return AppBar(
+    return LegadoAppBar(
       title: title,
       actions: [
         IconButton(

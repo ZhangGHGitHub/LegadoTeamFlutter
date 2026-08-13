@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -233,7 +234,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(changeSourceNotifierProvider);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text('换源 - ${widget.effectiveBookName}'),
         actions: [
           // [UI-fix v2.0.2 | 2026-08-06] 搜索筛选入口（对标 menu_screen）— Qoder

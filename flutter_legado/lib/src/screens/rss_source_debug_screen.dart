@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -131,7 +132,7 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
     final filteredLogs = _filteredLogs;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('RSS 源调试'),
         actions: [
           IconButton(

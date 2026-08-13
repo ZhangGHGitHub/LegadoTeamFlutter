@@ -1,5 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
+﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:url_launcher/url_launcher.dart';
@@ -87,7 +88,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     final state = ref.watch(rssNotifierProvider);
     final notifier = ref.read(rssNotifierProvider.notifier);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         // 对标原版 view_search.xml：TitleBar 内嵌胶囊搜索框（hint「订阅」），
         // 与右侧 4 个图标入口同行，无标题文字
         title: SizedBox(

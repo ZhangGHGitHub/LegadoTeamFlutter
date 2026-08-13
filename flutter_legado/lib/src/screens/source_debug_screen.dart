@@ -1,6 +1,7 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
@@ -154,7 +155,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
     final filteredLogs = _filteredLogs;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('书源调试'),
         actions: [
           // 清除日志按钮

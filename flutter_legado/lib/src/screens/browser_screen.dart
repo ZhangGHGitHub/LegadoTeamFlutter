@@ -1,6 +1,7 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -230,7 +231,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final theme = Theme.of(context);
     final embedded = _webViewController;
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text(widget.title?.isNotEmpty == true
             ? widget.title!
             : '内置浏览器'),

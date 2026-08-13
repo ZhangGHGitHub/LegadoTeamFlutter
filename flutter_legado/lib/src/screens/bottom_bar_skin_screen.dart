@@ -1,7 +1,8 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
@@ -24,7 +25,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
     final notifier = ref.read(bottomBarSkinProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('底部操作栏皮肤'),
         actions: [
           IconButton(

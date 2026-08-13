@@ -1,7 +1,8 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:path_provider/path_provider.dart';
@@ -278,7 +279,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final state = ref.watch(bookshelfManageNotifierProvider);
     final selectedCount = state.selectedUrls.length;
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         // 原版 TitleBar 内嵌 view_search：搜索框与菜单图标同行，无标题文字
         title: SizedBox(
           height: 36,

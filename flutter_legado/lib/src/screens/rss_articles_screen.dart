@@ -1,5 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
+﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -45,7 +46,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
     final state = ref.watch(rssNotifierProvider);
     final notifier = ref.read(rssNotifierProvider.notifier);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text(widget.source.sourceName),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new),

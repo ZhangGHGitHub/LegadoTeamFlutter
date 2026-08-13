@@ -1,8 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:http/http.dart' as http;
@@ -165,7 +166,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     final state = ref.watch(autoTaskNotifierProvider);
     final notifier = ref.read(autoTaskNotifierProvider.notifier);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('定时任务'),
         // [UI-fix v2.0.3 | 2026-08-06] 溢出菜单（对标原版 AutoTaskActivity
         // menu_import_local / menu_import_on_line / menu_export / menu_help）

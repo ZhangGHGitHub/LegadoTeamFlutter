@@ -1,7 +1,8 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -257,7 +258,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: const Color(0xFFF2F2F7),
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text(
           _openedSourceUrl == null || _openedSourceUrl!.isEmpty
               ? '新建 JS 书源'

@@ -1,8 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -141,7 +142,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('扫码导入')),
+      appBar: LegadoAppBar(title: const Text('扫码导入')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

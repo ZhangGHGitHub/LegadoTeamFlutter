@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
@@ -41,7 +42,7 @@ It was a dark and stormy night.''';
   Widget build(BuildContext context) {
     final state = ref.watch(txtTocRulesNotifierProvider);
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('TXT 目录规则'),
         actions: [
           IconButton(

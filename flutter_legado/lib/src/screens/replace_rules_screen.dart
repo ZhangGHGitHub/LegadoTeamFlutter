@@ -1,8 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:http/http.dart' as http;
@@ -67,7 +68,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     final filtered = _applyFilters(state.rules);
     return Scaffold(
       // 对齐原版 activity_replace_rule.xml：TitleBar 内嵌 view_search 搜索框
-      appBar: _batchMode ? _buildBatchAppBar() : AppBar(
+      appBar: _batchMode ? _buildBatchAppBar() : LegadoAppBar(
         titleSpacing: 0,
         title: SizedBox(
           height: 36,
@@ -362,7 +363,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
 
   /// 批量模式顶栏（对标原版 SelectActionBar：关闭 + 已选计数 + 全选）
   PreferredSizeWidget _buildBatchAppBar() {
-    return AppBar(
+    return LegadoAppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
         tooltip: '退出批量模式',

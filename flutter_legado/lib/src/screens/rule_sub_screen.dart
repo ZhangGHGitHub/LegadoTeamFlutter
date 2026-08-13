@@ -1,6 +1,7 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -48,7 +49,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
 
     return Scaffold(
       // 原版顶栏：标题「规则订阅」+ 新增按钮（menu_add）
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('规则订阅'),
         actions: [
           IconButton(

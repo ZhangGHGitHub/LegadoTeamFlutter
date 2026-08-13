@@ -1,7 +1,8 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -446,7 +447,7 @@ class _VideoScreenState extends State<VideoScreen> {
       child: Scaffold(
         appBar: _isFullScreen
             ? null
-            : AppBar(
+            : LegadoAppBar(
                 title: Text(
                   widget.book != null && _chapters.isNotEmpty
                       ? _chapters[_chapterIndex].title

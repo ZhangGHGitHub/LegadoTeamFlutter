@@ -1,6 +1,7 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -540,7 +541,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       child: DefaultTabController(
         length: 4,
         child: Scaffold(
-          appBar: AppBar(
+          appBar: LegadoAppBar(
             leading: IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: _tryExit,

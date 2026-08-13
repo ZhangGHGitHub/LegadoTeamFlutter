@@ -1,10 +1,11 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -373,7 +374,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     // 对标原版 activity_book_info.xml：封面背景 + 半透明遮罩 + 深色 TitleBar
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: const Text('书籍信息'),
         backgroundColor: Colors.transparent,
         elevation: 0,

@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 
 import 'curl_analyze_url_sheet.dart';
@@ -201,7 +202,7 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
       },
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
+        appBar: LegadoAppBar(
           title: Text(widget.title),
           leading: IconButton(
             icon: const Icon(Icons.close),

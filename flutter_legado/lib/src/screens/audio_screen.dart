@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:saf/saf.dart';
 
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -220,7 +221,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     return ListenableBuilder(
       listenable: notifier,
       builder: (context, _) => Scaffold(
-      appBar: AppBar(
+      appBar: LegadoAppBar(
         title: Text(widget.effectiveBookName.isNotEmpty ? widget.effectiveBookName : '听书'),
         actions: [
           // 定时停止按钮

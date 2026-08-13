@@ -1,8 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -172,7 +173,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     final colorScheme = Theme.of(context).colorScheme;
-    return AppBar(
+    return LegadoAppBar(
       // 原版 TitleBar 内嵌搜索框：无标题文字
       titleSpacing: 8,
       title: SizedBox(
@@ -290,7 +291,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
 
   /// 批量模式顶栏（对标原版 SelectActionBar：关闭 + 已选计数）
   PreferredSizeWidget _buildBatchAppBar() {
-    return AppBar(
+    return LegadoAppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
         tooltip: '退出批量模式',
