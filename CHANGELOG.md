@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.55] - 2026-08-14
+
+### Fixed
+- [Rust] F3-15 移除本地段评 CRUD 死契约（原版无本地库段评；保留 ruleReview 三方法）
+- [Rust] F3-1 `shared_client()` 改 `LegadoResult` 去 panic 兜底
+- [Rust] F3-2 `check_syntax` 独立 Runtime 5s 超时 + 16MB 内存上限
+
+### Changed
+- [docs] F3-3 沙箱 `max_stack_depth`/`allow_network` 文档对齐（D3=A 配置口径说明）
+- [docs] API_CONTRACT BookApi 233 方法（段评 §2.30 7→3）
+
 ## [2.0.54] - 2026-08-14
 
 ### Fixed
