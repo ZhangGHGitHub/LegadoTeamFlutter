@@ -143,7 +143,8 @@ class IosGroup extends StatelessWidget {
 ///
 /// 对 [ListTile] 的薄封装，统一 leading 图标容器为 iOS 圆角色块。
 class IosListTile extends StatelessWidget {
-  final IconData icon;
+  /// 可选；嵌套设置页常见无图标行（对齐系统 Preferences）
+  final IconData? icon;
   final Color? iconColor;
   final Color? iconBackground;
   final String title;
@@ -155,7 +156,7 @@ class IosListTile extends StatelessWidget {
 
   const IosListTile({
     super.key,
-    required this.icon,
+    this.icon,
     required this.title,
     this.iconColor,
     this.iconBackground,
@@ -197,17 +198,19 @@ class IosListTile extends StatelessWidget {
     }
 
     return ListTile(
-      leading: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(7),
-        ),
-        alignment: Alignment.center,
-        // [审计修复 §3.3] 兜底前景改用 onPrimary Token（与默认 primary 背景配对） — Qoder
-        child: Icon(icon, size: 19, color: iconColor ?? scheme.onPrimary),
-      ),
+      leading: icon == null
+          ? null
+          : Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              alignment: Alignment.center,
+              // [审计修复 §3.3] 兜底前景改用 onPrimary Token（与默认 primary 背景配对） — Qoder
+              child: Icon(icon, size: 19, color: iconColor ?? scheme.onPrimary),
+            ),
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle!) : null,
       trailing: trailing,

@@ -213,4 +213,12 @@ class PrefKeys {
 
   /// 忽略的更新版本号（对齐 LocalConfig.ignoreUpdateVersion）
   static const ignoreUpdateVersion = 'ignoreUpdateVersion';
+
+  // ===== 备份与恢复（pref_config_backup.xml）=====
+
+  /// 本地备份仅保留最新备份文件（默认 true）
+  static const onlyLatestBackup = 'onlyLatestBackup';
+
+  /// 打开软件时自动检查新备份（默认 true）
+  static const autoCheckNewBackup = 'autoCheckNewBackup';
 }

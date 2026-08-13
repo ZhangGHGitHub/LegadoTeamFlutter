@@ -150,52 +150,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 32),
                 children: [
-                  // === 主题模式（Flutter 侧全局深浅色切换）===
-                  const IosSectionHeader('主题模式'),
-                  SegmentedButton<ThemeMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        label: Text('跟随系统'),
-                        icon: Icon(Icons.brightness_auto),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        label: Text('浅色'),
-                        icon: Icon(Icons.light_mode),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        label: Text('深色'),
-                        icon: Icon(Icons.dark_mode),
-                      ),
-                    ],
-                    selected: {themeState.themeMode},
-                    onSelectionChanged: (selected) =>
-                        themeNotifier.setThemeMode(selected.first),
-                  ),
-
-                  // === 全局字体缩放（对齐原版 fontScale）===
-                  const IosSectionHeader('全局字体大小'),
+                  // === 通用（对齐原版顶部未分组项；主题模式仅在「我的」枢纽）===
                   IosGroup(children: [
                     IosListTile(
-                      icon: Icons.format_size,
-                      iconBackground: Colors.indigo,
-                      title: '字体缩放',
-                      subtitle: themeState.fontScaleLabel,
-                      showDisclosure: true,
-                      onTap: () => _showFontScalePicker(
-                          context, themeState, themeNotifier),
-                    ),
-                  ]),
-
-                  // === 通用（对齐原版顶部未分组项）===
-                  const IosSectionHeader('通用'),
-                  IosGroup(children: [
-                    IosListTile(
-                      icon: Icons.apps,
-                      iconBackground: Colors.blueGrey,
-                      title: '启动图标',
+                      title: '切换图标',
                       subtitle: _androidOnly,
                       value: _launcherIconLabels[
                           _launcherIcons.indexOf(_launcherIcon).clamp(0, 6)],
@@ -203,10 +161,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       onTap: _showLauncherIconPicker,
                     ),
                     IosListTile(
-                      icon: Icons.waving_hand_outlined,
-                      iconBackground: Colors.teal,
-                      title: '欢迎页样式',
-                      subtitle: '闪屏时长、背景图与文字图标',
+                      title: '启动界面样式',
+                      subtitle: '设定显示时间，更改背景图片，是否显示文字等',
                       showDisclosure: true,
                       onTap: () {
                         Navigator.of(context)
@@ -215,7 +171,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                     SwitchListTile(
                       title: const Text('沉浸式状态栏'),
-                      subtitle: const Text(_androidOnly),
+                      subtitle: const Text('状态栏颜色透明'),
                       value: _transparentStatusBar,
                       onChanged: (v) {
                         setState(() => _transparentStatusBar = v);
@@ -224,7 +180,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                     SwitchListTile(
                       title: const Text('沉浸式导航栏'),
-                      subtitle: const Text(_androidOnly),
+                      subtitle: const Text('导航栏颜色透明'),
                       value: _immNavigationBar,
                       onChanged: (v) {
                         setState(() => _immNavigationBar = v);
@@ -232,35 +188,33 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       },
                     ),
                     IosListTile(
-                      icon: Icons.layers_outlined,
-                      iconBackground: Colors.brown,
                       title: '导航栏阴影',
-                      subtitle: _androidOnly,
-                      value: '$_barElevation',
+                      subtitle: '当前阴影大小（elevation）：$_barElevation',
                       showDisclosure: true,
                       onTap: _showBarElevationDialog,
                     ),
                     IosListTile(
-                      icon: Icons.image_outlined,
-                      iconBackground: Colors.deepOrange,
+                      title: '字体大小',
+                      subtitle: themeState.fontScaleLabel,
+                      showDisclosure: true,
+                      onTap: () => _showFontScalePicker(
+                          context, themeState, themeNotifier),
+                    ),
+                    IosListTile(
                       title: '封面设置',
-                      subtitle: '书籍默认封面显示方式',
+                      subtitle: '通用封面规则及默认封面样式',
                       showDisclosure: true,
                       onTap: _showCoverConfigDialog,
                     ),
                     IosListTile(
-                      icon: Icons.color_lens_outlined,
-                      iconBackground: Colors.purple,
                       title: '主题列表',
-                      subtitle: '保存/切换自定义主题配置',
+                      subtitle: '使用、保存、导入或分享主题',
                       showDisclosure: true,
                       onTap: _showThemeListDialog,
                     ),
                     IosListTile(
-                      icon: Icons.grid_view_rounded,
-                      iconBackground: Colors.teal,
-                      title: '底部操作栏皮肤',
-                      subtitle: '导入图集并切换底栏图标',
+                      title: '底栏图集',
+                      subtitle: '导入 zip 自定义底栏图标',
                       showDisclosure: true,
                       onTap: () => Navigator.pushNamed(
                         context,
@@ -268,19 +222,20 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                     ),
                     SwitchListTile(
-                      title: const Text('壁纸取色'),
-                      subtitle: const Text(_androidOnly),
+                      title: const Text('跟随壁纸配色'),
+                      subtitle: const Text(
+                        '使用系统壁纸色板生成日间和夜间主题（Android 12+）',
+                      ),
                       value: _wallpaperColorFollow,
                       onChanged: (v) {
                         setState(() => _wallpaperColorFollow = v);
                         _settings.setBoolPref(PrefKeys.wallpaperColorFollow, v);
                       },
                     ),
-                    // 对齐原版 dependency="wallpaperColorFollow"：开启后才可见
                     if (_wallpaperColorFollow)
                       SwitchListTile(
-                        title: const Text('壁纸变化时自动更新取色'),
-                        subtitle: const Text(_androidOnly),
+                        title: const Text('壁纸变化时自动更新'),
+                        subtitle: const Text('系统壁纸变化后自动应用新色板'),
                         value: _wallpaperColorAutoUpdate,
                         onChanged: (v) {
                           setState(() => _wallpaperColorAutoUpdate = v);
@@ -290,8 +245,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                   ]),
 
-                  // === 白天主题（对齐原版 day_theme 分组）===
-                  const IosSectionHeader('白天主题'),
+                  // === 白天（对齐原版 day category）===
+                  const IosSectionHeader('白天'),
                   IosGroup(children: [
                     _colorTile(PrefKeys.cPrimary, '主色调', colors),
                     _colorTile(PrefKeys.cAccent, '强调色', colors),
@@ -325,8 +280,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                   ]),
 
-                  // === 夜间主题（对齐原版 night_theme 分组）===
-                  const IosSectionHeader('夜间主题'),
+                  // === 夜间（对齐原版 night category）===
+                  const IosSectionHeader('夜间'),
                   IosGroup(children: [
                     _colorTile(PrefKeys.cNPrimary, '主色调', colors,
                         isNight: true),

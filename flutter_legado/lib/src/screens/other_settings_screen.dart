@@ -30,7 +30,6 @@ import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart' show ReaderBackground;
 import '../providers/source_check/check_source_notifier.dart';
-import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/ios_widgets.dart';
@@ -38,8 +37,9 @@ import '../widgets/video_settings_dialog.dart';
 
 /// 其他设置页面（对齐原版 OtherConfigFragment）
 ///
-/// 分组与排序对齐原版 pref_config_other.xml category 结构，
-/// 并保留 Flutter 端既有的默认阅读设置/网络设置分组（避免功能回归）。
+/// 分组与排序严格对齐原版 pref_config_other.xml：语言 → 主界面 → 其他。
+/// 已移除原版不存在的「默认阅读设置 / 网络设置」创意分组。
+/// Cronet / 直链上传规则：诚实占位（暂不可用）。
 class OtherSettingsScreen extends ConsumerStatefulWidget {
   const OtherSettingsScreen({super.key});
 
@@ -227,20 +227,19 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 32),
           children: [
-            // ===== 语言（对齐原版 language ListPreference）=====
-            IosSectionHeader(AppStrings.language),
+            // ===== 语言（对齐原版 language，无独立 category）=====
             IosGroup(children: [
               IosListTile(
                 icon: Icons.language,
                 iconBackground: Colors.blue,
-                title: AppStrings.language,
+                title: '语言',
                 value: _localeLabel,
                 showDisclosure: true,
                 onTap: () => _showLocalePicker(context),
               ),
             ]),
 
-            // ===== 主界面（对齐原版「主界面」分组）=====
+            // ===== 主界面 =====
             const IosSectionHeader('主界面'),
             IosGroup(children: [
               SwitchListTile(
@@ -252,11 +251,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   _settingsService.setBoolPref(PrefKeys.autoRefreshBook, v);
                 },
               ),
-              // 对齐原版可见性依赖：仅自动刷新开启时显示
               if (_autoRefresh)
                 SwitchListTile(
-                  title: const Text('仅更新已读书籍'),
-                  subtitle: const Text('自动刷新时跳过未读过的书籍'),
+                  title: const Text('仅更新已读完'),
+                  subtitle: const Text('自动刷新时，只更新已读完的书籍'),
                   value: _onlyUpdateRead,
                   onChanged: (v) {
                     setState(() => _onlyUpdateRead = v);
@@ -264,8 +262,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   },
                 ),
               SwitchListTile(
-                title: const Text('默认进入阅读界面'),
-                subtitle: const Text('打开书架书籍时直接进入上次阅读'),
+                title: const Text('自动跳转最近阅读'),
+                subtitle: const Text('默认打开书架'),
                 value: _defaultToRead,
                 onChanged: (v) {
                   setState(() => _defaultToRead = v);
@@ -274,95 +272,48 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               SwitchListTile(
                 title: const Text('显示发现'),
-                subtitle: const Text('在主界面底栏显示发现页'),
                 value: mainPrefs.showDiscovery,
                 onChanged: (v) => mainPrefsNotifier.setShowDiscovery(v),
               ),
               SwitchListTile(
                 title: const Text('显示订阅'),
-                subtitle: const Text('在主界面底栏显示订阅页'),
                 value: mainPrefs.showRss,
                 onChanged: (v) => mainPrefsNotifier.setShowRss(v),
               ),
               IosListTile(
                 icon: Icons.home_outlined,
                 iconBackground: Colors.teal,
-                title: '默认首页',
+                title: '默认主页',
                 value: _homePageLabel(mainPrefs.defaultHomePage),
                 showDisclosure: true,
                 onTap: () => _showHomePagePicker(mainPrefs, mainPrefsNotifier),
               ),
             ]),
 
-            // ===== 默认阅读设置（Flutter 既有分组，保留避免回归）=====
-            IosSectionHeader(AppStrings.readingSettings),
+            // ===== 其他（顺序严格对齐 pref_config_other.xml）=====
+            const IosSectionHeader('其他设置'),
             IosGroup(children: [
               IosListTile(
-                icon: Icons.text_fields,
-                iconBackground: Colors.orange,
-                title: AppStrings.defaultFontSize,
-                value: _fontSize.toStringAsFixed(0),
-                showDisclosure: true,
-                onTap: () => _showDefaultReadSettings(context),
-              ),
-              IosListTile(
-                icon: Icons.format_line_spacing,
-                iconBackground: Colors.orange,
-                title: AppStrings.defaultLineHeight,
-                value: '${_lineHeight.toStringAsFixed(1)}x',
-                showDisclosure: true,
-                onTap: () => _showDefaultReadSettings(context),
-              ),
-              IosListTile(
-                icon: Icons.palette,
-                iconBackground: Colors.orange,
-                title: AppStrings.defaultBgColor,
-                value: _bgColorLabel,
-                showDisclosure: true,
-                onTap: () => _showDefaultReadSettings(context),
-              ),
-            ]),
-
-            // ===== 网络设置（Flutter 既有分组，保留避免回归）=====
-            IosSectionHeader(AppStrings.networkSettings),
-            IosGroup(children: [
-              IosListTile(
-                icon: Icons.wifi,
-                iconBackground: Colors.green,
-                title: AppStrings.proxySettings,
-                value: _proxyLabel,
-                showDisclosure: true,
-                onTap: () => _showProxySettings(context),
-              ),
-              IosListTile(
-                icon: Icons.timer,
-                iconBackground: Colors.green,
-                title: AppStrings.requestTimeout,
-                value: '$_timeoutSeconds ${AppStrings.secondsUnit}',
-                showDisclosure: true,
-                onTap: () => _showTimeoutSettings(context),
-              ),
-            ]),
-
-            // ===== 其他（对齐原版「其他」分组，顺序与 XML 一致）=====
-            const IosSectionHeader('其他'),
-            IosGroup(children: [
-              IosListTile(
-                icon: Icons.password,
-                iconBackground: Colors.red,
-                title: '本地密码',
-                subtitle: '用于 Web 服务访问鉴权',
+                title: '设置本地密码',
+                subtitle:
+                    '本地密码用来对备份的敏感信息加密和解密,如需在不同设备之间同步,本地密码需一致.',
                 value: _localPassword.isEmpty ? '未设置' : '已设置',
                 showDisclosure: true,
                 onTap: _showLocalPasswordDialog,
               ),
               IosListTile(
-                icon: Icons.public,
-                iconBackground: Colors.blueGrey,
-                title: '浏览器标识（UserAgent）',
+                title: '用户代理',
                 subtitle: _userAgent.isEmpty ? '默认' : _userAgent,
                 showDisclosure: true,
                 onTap: _showUserAgentDialog,
+              ),
+              IosListTile(
+                title: '自定义Hosts',
+                subtitle: _customHostsSummary.isEmpty
+                    ? '域名到IP的映射'
+                    : _customHostsSummary,
+                showDisclosure: true,
+                onTap: _showCustomHostsDialog,
               ),
               SwitchListTile(
                 title: const Text('Web 服务唤醒锁'),
@@ -374,16 +325,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               IosListTile(
-                icon: Icons.folder_outlined,
-                iconBackground: Colors.amber,
-                title: '默认书籍保存位置',
-                subtitle: _defaultBookTreeUri.isEmpty ? '未设置' : _defaultBookTreeUri,
+                title: '书籍保存位置',
+                subtitle: _defaultBookTreeUri.isEmpty
+                    ? '从其它应用打开的书籍保存位置'
+                    : _defaultBookTreeUri,
                 showDisclosure: true,
                 onTap: _showBookTreeUriDialog,
               ),
               IosListTile(
-                icon: Icons.format_list_numbered,
-                iconBackground: Colors.brown,
                 title: '源编辑框最大行数',
                 value: '$_sourceEditMaxLine',
                 showDisclosure: true,
@@ -396,9 +345,27 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   apply: (v) => setState(() => _sourceEditMaxLine = v),
                 ),
               ),
+              IosListTile(
+                title: '校验设置',
+                subtitle: _checkSourceConfigSummary,
+                showDisclosure: true,
+                onTap: _showCheckSourceConfigDialog,
+              ),
+              // 诚实占位：无直链上传引擎
+              const IosListTile(
+                title: '直链上传规则',
+                subtitle: '暂不可用（无 Flutter 数据源）',
+              ),
+              // 诚实占位：无 Cronet
+              const SwitchListTile(
+                title: Text('Cronet'),
+                subtitle: Text('暂不可用（无 Flutter 数据源）'),
+                value: false,
+                onChanged: null,
+              ),
               SwitchListTile(
-                title: const Text('图片抗锯齿'),
-                subtitle: const Text('提高图片渲染质量，可能降低性能'),
+                title: const Text('抗锯齿'),
+                subtitle: const Text('绘制图片时抗锯齿'),
                 value: _antiAlias,
                 onChanged: (v) {
                   setState(() => _antiAlias = v);
@@ -406,13 +373,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               IosListTile(
-                icon: Icons.memory,
-                iconBackground: Colors.deepPurple,
-                title: '图片解码缓存',
-                value: '$_bitmapCacheSize MB',
+                title: '图片绘制缓存',
+                subtitle: '当前最大缓存 $_bitmapCacheSize MB',
                 showDisclosure: true,
                 onTap: () => _editIntPref(
-                  title: '图片解码缓存（MB）',
+                  title: '图片绘制缓存（MB）',
                   key: PrefKeys.bitmapCacheSize,
                   current: _bitmapCacheSize,
                   min: 1,
@@ -421,13 +386,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               IosListTile(
-                icon: Icons.photo_library_outlined,
-                iconBackground: Colors.deepPurple,
-                title: '图片文件保留数量',
-                value: '$_imageRetainNum',
+                title: '漫画保留数量',
+                subtitle: '保留已读章节数量 $_imageRetainNum',
                 showDisclosure: true,
                 onTap: () => _editIntPref(
-                  title: '图片文件保留数量',
+                  title: '漫画保留数量',
                   key: PrefKeys.imageRetainNum,
                   current: _imageRetainNum,
                   min: 0,
@@ -436,10 +399,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               IosListTile(
-                icon: Icons.download_outlined,
-                iconBackground: Colors.indigo,
-                title: '预下载章节数量',
-                value: '$_preDownloadNum',
+                title: '预下载',
+                subtitle: '预先下载 $_preDownloadNum 章正文',
                 showDisclosure: true,
                 onTap: () => _editIntPref(
                   title: '预下载章节数量',
@@ -451,8 +412,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               SwitchListTile(
-                title: const Text('替换净化默认启用'),
-                subtitle: const Text('新加入书架的书籍默认开启替换净化'),
+                title: const Text('默认启用替换净化'),
+                subtitle: const Text('新加入书架的书是否启用替换净化'),
                 value: _replaceEnableDefault,
                 onChanged: (v) {
                   setState(() => _replaceEnableDefault = v);
@@ -461,8 +422,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('退出应用时停止朗读'),
-                subtitle: const Text(_androidOnly),
+                title: const Text('全程响应耳机按键'),
+                subtitle: const Text('即使退出软件也响应耳机按键'),
                 value: _mediaButtonOnExit,
                 onChanged: (v) {
                   setState(() => _mediaButtonOnExit = v);
@@ -470,8 +431,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('媒体按钮触发朗读'),
-                subtitle: const Text(_androidOnly),
+                title: const Text('耳机按键启动朗读'),
+                subtitle: const Text('通过耳机按键来启动朗读'),
                 value: _readAloudByMediaButton,
                 onChanged: (v) {
                   setState(() => _readAloudByMediaButton = v);
@@ -480,8 +441,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('朗读时忽略音频焦点'),
-                subtitle: const Text(_androidOnly),
+                title: const Text('忽略音频焦点'),
+                subtitle: const Text('允许与其他应用同时播放音频'),
                 value: _ignoreAudioFocus,
                 onChanged: (v) {
                   setState(() => _ignoreAudioFocus = v);
@@ -489,8 +450,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('自动清除过期数据'),
-                subtitle: const Text('清除一天前的搜索数据'),
+                title: const Text('自动清除过期搜索数据'),
+                subtitle: const Text('超过一天的搜索数据'),
                 value: _autoClearExpired,
                 onChanged: (v) {
                   setState(() => _autoClearExpired = v);
@@ -498,8 +459,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('显示添加书架提示'),
-                subtitle: const Text('浏览书籍详情离开时提示加入书架'),
+                title: const Text('返回时提示放入书架'),
+                subtitle: const Text('阅读未放入书架的书籍在返回时提示放入书架'),
                 value: _showAddToShelfAlert,
                 onChanged: (v) {
                   setState(() => _showAddToShelfAlert = v);
@@ -508,8 +469,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('自动更新到最佳变种版本'),
-                subtitle: const Text(_androidOnly),
+                title: const Text('自动更新'),
+                subtitle: const Text('每天自动检查软件是否更新'),
                 value: _autoUpdateVariant,
                 onChanged: (v) {
                   setState(() => _autoUpdateVariant = v);
@@ -517,8 +478,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('显示漫画界面'),
-                subtitle: const Text('以漫画模式打开图片流书籍'),
+                title: const Text('漫画浏览'),
                 value: _showMangaUi,
                 onChanged: (v) {
                   setState(() => _showMangaUi = v);
@@ -526,88 +486,51 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               IosListTile(
-                icon: Icons.videocam_outlined,
-                iconBackground: Colors.redAccent,
                 title: '视频设置',
-                subtitle: '自动播放、全屏与长按倍速',
+                subtitle: '自动播放、全屏播放等配置',
                 showDisclosure: true,
                 onTap: () => showVideoSettingsDialog(context),
               ),
               IosListTile(
-                icon: Icons.vpn_key_outlined,
-                iconBackground: Colors.brown,
-                title: 'JS 书源 API Token',
-                subtitle: _jsSourceApiToken.isEmpty ? '未设置' : '已设置',
+                title: 'Web 端口',
+                subtitle: '当前端口 $_webPort',
+                showDisclosure: true,
+                onTap: _showWebPortDialog,
+              ),
+              IosListTile(
+                title: 'MCP 端口',
+                subtitle: _mcpPort > 0 ? '当前端口 $_mcpPort' : '当前端口 0（已停止）',
+                showDisclosure: true,
+                onTap: _showMcpPortDialog,
+              ),
+              IosListTile(
+                title: 'Web 书源访问令牌',
+                subtitle: _jsSourceApiToken.isEmpty
+                    ? 'MCP、纯 JS、书源写入、搜索和调试接口均需要'
+                    : '已配置',
                 showDisclosure: true,
                 onTap: _editJsSourceApiToken,
               ),
               IosListTile(
-                icon: Icons.web_asset_off,
-                iconBackground: Colors.blueGrey,
+                title: '清理缓存',
+                subtitle: '清除已下载书籍和字体缓存',
+                showDisclosure: true,
+                onTap: _cleanCache,
+              ),
+              IosListTile(
                 title: '清除 WebView 数据',
-                subtitle: '清除 Cookie（站点登录态等）',
+                subtitle: '清除内置浏览器所有数据',
                 showDisclosure: true,
                 onTap: _clearWebViewData,
               ),
               IosListTile(
-                icon: Icons.settings_ethernet,
-                iconBackground: Colors.cyan,
-                title: 'Web 服务端口',
-                subtitle: '修改后重启 Web 服务生效',
-                value: '$_webPort',
-                showDisclosure: true,
-                onTap: _showWebPortDialog,
-              ),
-              // [Task #74 | 2026-08-10] §5.13-6：MCP 服务端口（契约 §2.22.5，
-              // 对齐原版 AppConfig.mcpPort 默认 1236、区间 1024..65530；
-              // 0/留空=停止独立服务） — Qoder
-              IosListTile(
-                icon: Icons.smart_toy_outlined,
-                iconBackground: Colors.indigo,
-                title: 'MCP 服务端口',
-                subtitle: _mcpPort > 0
-                    ? 'LAN 0.0.0.0:$_mcpPort（需 JS 书源 API Token；头 X-Legado-Token）'
-                    : '独立 MCP 已停止（启动需 Token；输入 0 停止）',
-                value: _mcpPort > 0 ? '$_mcpPort' : '停止',
-                showDisclosure: true,
-                onTap: _showMcpPortDialog,
-              ),
-              // [Task #74 | 2026-08-10] §5.13-1：自定义 hosts（契约 §2.20.3，
-              // 对齐原版 OtherConfigFragment.showCustomHostsDialog：
-              // 合法 JSON 对象才保存、空=清除、非法提示不保存） — Qoder
-              IosListTile(
-                icon: Icons.dns_outlined,
-                iconBackground: Colors.teal,
-                title: '自定义 hosts',
-                subtitle: _customHostsSummary,
-                showDisclosure: true,
-                onTap: _showCustomHostsDialog,
-              ),
-              IosListTile(
-                icon: Icons.cleaning_services,
-                iconBackground: Colors.grey,
-                title: '缓存管理',
-                subtitle: '缓存统计、自动过期策略与清理',
-                showDisclosure: true,
-                onTap: () =>
-                    Navigator.pushNamed(context, AppRoutes.cacheSettings),
-              ),
-              // [Task #52 | 2026-08-10] §5.13-9：压缩数据库（对齐原版
-              // pref_config_other.xml shrink_database → OtherConfigFragment
-              // shrinkDatabase：确认对话框 + VACUUM 后 Toast 提示） — Qoder
-              IosListTile(
-                icon: Icons.compress,
-                iconBackground: Colors.grey,
                 title: '压缩数据库',
                 subtitle: '减小数据库文件的大小',
                 showDisclosure: true,
                 onTap: _shrinkDatabase,
               ),
               IosListTile(
-                icon: Icons.sync,
-                iconBackground: Colors.lightBlue,
-                title: '线程数量',
-                subtitle: '更新书籍、缓存书籍时的并发数量',
+                title: '更新和搜索线程数（太多会卡顿）',
                 value: '$_threadCount',
                 showDisclosure: true,
                 onTap: () => _editIntPref(
@@ -619,19 +542,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   apply: (v) => setState(() => _threadCount = v),
                 ),
               ),
-              // [Task #40 | 2026-08-09] §5.13-2：校验书源配置入口
-              //（对齐原版 pref_config_other.xml check_source → CheckSourceConfig 对话框） — Qoder
-              IosListTile(
-                icon: Icons.verified_user_outlined,
-                iconBackground: Colors.blue,
-                title: '校验书源配置',
-                subtitle: _checkSourceConfigSummary,
-                showDisclosure: true,
-                onTap: _showCheckSourceConfigDialog,
-              ),
               SwitchListTile(
-                title: const Text('文本操作菜单显示应用'),
-                subtitle: const Text(_androidOnly),
+                title: const Text('文字操作显示搜索'),
+                subtitle: const Text('长按文字在操作菜单中显示阅读·搜索'),
                 value: _processText,
                 onChanged: (v) {
                   setState(() => _processText = v);
@@ -640,7 +553,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               SwitchListTile(
                 title: const Text('记录日志'),
-                subtitle: const Text('记录应用运行日志用于问题诊断'),
+                subtitle: const Text('记录调试日志'),
                 value: _recordLog,
                 onChanged: (v) {
                   setState(() => _recordLog = v);
@@ -648,7 +561,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('记录 HTTP 请求日志'),
+                title: const Text('记录 HTTP 请求'),
+                subtitle: const Text(
+                  '在内存中保留最近 50 条已脱敏的请求与响应记录',
+                ),
                 value: _recordHttpLog,
                 onChanged: (v) {
                   setState(() => _recordHttpLog = v);
@@ -656,8 +572,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SwitchListTile(
-                title: const Text('记录内存堆转储'),
-                subtitle: const Text('崩溃时保存内存快照用于诊断'),
+                title: const Text('记录堆转储'),
+                subtitle: const Text('当应用发生OOM崩溃时保存堆转储'),
                 value: _recordHeapDump,
                 onChanged: (v) {
                   setState(() => _recordHeapDump = v);
@@ -980,6 +896,34 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       _toast(result.isEmpty ? '已清除 Token' : 'Token 已保存');
     } catch (e) {
       _toast('保存失败：$e');
+    }
+  }
+
+  /// 清理缓存（对齐原版 cleanCache）
+  Future<void> _cleanCache() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清理缓存'),
+        content: const Text('清除已下载书籍和字体缓存？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清理'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await ref.read(bookApiProvider).clearCache();
+      if (mounted) _toast('成功清理缓存');
+    } catch (e) {
+      if (mounted) _toast('清理失败：$e');
     }
   }
 
