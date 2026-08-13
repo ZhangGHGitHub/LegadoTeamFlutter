@@ -25,6 +25,20 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use legado_net::{CookiePersistence, LegadoClient, LegadoClientConfig};
 
+fn read_client_slot(
+) -> std::sync::RwLockReadGuard<'static, Option<LegadoClient>> {
+    client_slot()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn write_client_slot(
+) -> std::sync::RwLockWriteGuard<'static, Option<LegadoClient>> {
+    client_slot()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// 基于 legado-db cookies 表的 Cookie 持久化实现
 ///
 /// 通过 [`crate::db_state::with_database`] 从全局连接池取连接，
@@ -94,27 +108,29 @@ fn client_slot() -> &'static RwLock<Option<LegadoClient>> {
 pub fn shared_client() -> LegadoClient {
     // 快路径：已初始化则直接 clone 返回
     {
-        let guard = client_slot().read().unwrap();
+        let guard = read_client_slot();
         if let Some(client) = guard.as_ref() {
             return client.clone();
         }
     }
 
     // 慢路径：加写锁初始化（再次检查，避免并发重复创建）
-    let mut guard = client_slot().write().unwrap();
+    let mut guard = write_client_slot();
     if let Some(client) = guard.as_ref() {
         return client.clone();
     }
 
-    // 默认配置不含 proxy/ssl，构建实际不会失败；与既有 RealBookSourceFetcher 一致用 expect
-    // Cookie 持久化：DB 已初始化时注入 DbCookiePersistence（启动加载 + 变更写回）
     let client = match make_cookie_persistence() {
         Some(persistence) => {
             LegadoClient::with_cookie_persistence(LegadoClientConfig::default(), persistence)
         }
         None => LegadoClient::new(LegadoClientConfig::default()),
     }
-    .expect("初始化共享 HTTP 客户端失败（默认配置不应失败）");
+    .unwrap_or_else(|e| {
+        log::error!("初始化共享 HTTP 客户端失败（默认配置）: {e}");
+        LegadoClient::new(LegadoClientConfig::default())
+            .unwrap_or_else(|e2| panic!("共享 HTTP 客户端无法初始化: {e}; {e2}"))
+    });
     *guard = Some(client.clone());
     client
 }
@@ -123,7 +139,7 @@ pub fn shared_client() -> LegadoClient {
 ///
 /// 清空单例缓存，下次 [`shared_client`] 调用将重新构建。
 pub fn reset_shared_client() {
-    let mut guard = client_slot().write().unwrap();
+    let mut guard = write_client_slot();
     *guard = None;
 }
 
@@ -208,7 +224,7 @@ mod tests {
             client.cookie_persistence().is_some(),
             "DB 已初始化时共享客户端应携带持久化后端"
         );
-        let store = client.cookie_store().read().unwrap();
+        let store = client.cookie_store().read().unwrap_or_else(|e| e.into_inner());
         assert_eq!(
             store.get_key("persist-test.com", "session"),
             Some("from_db".to_string()),

@@ -64,21 +64,34 @@ fn get_mcp_handle_slot() -> &'static std::sync::Mutex<Option<JoinHandle<()>>> {
 ///
 /// worker 线程栈 8MB（任务 #60 ②）：与 FFI 主 runtime 同步扩栈，
 /// 防 spawn_blocking 上 regex-syntax 深递归击穿默认 2MB 栈。
-fn get_server_runtime() -> &'static Runtime {
-    SERVER_RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(
-                std::thread::available_parallelism()
-                    .map(|n| n.get())
-                    .unwrap_or(2)
-                    .clamp(2, 8),
-            )
-            .thread_name("legado-server")
-            .thread_stack_size(8 * 1024 * 1024)
-            .build()
-            .expect("Failed to create server runtime")
-    })
+fn get_server_runtime() -> LegadoResult<&'static Runtime> {
+    if let Some(rt) = SERVER_RUNTIME.get() {
+        return Ok(rt);
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(2)
+                .clamp(2, 8),
+        )
+        .thread_name("legado-server")
+        .thread_stack_size(8 * 1024 * 1024)
+        .build()
+        .map_err(|e| LegadoError::Internal(format!("创建 server runtime 失败: {e}")))?;
+    let _ = SERVER_RUNTIME.set(rt);
+    SERVER_RUNTIME
+        .get()
+        .ok_or_else(|| LegadoError::Internal("server runtime 初始化失败".into()))
+}
+
+/// Mutex 中毒时恢复内部值（仅需串行语义）
+fn lock_handle_slot(
+    slot: &std::sync::Mutex<Option<JoinHandle<()>>>,
+) -> std::sync::MutexGuard<'_, Option<JoinHandle<()>>> {
+    slot.lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// 启动 legado-server
@@ -93,7 +106,7 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
         ));
     }
 
-    let runtime = get_server_runtime();
+    let runtime = get_server_runtime()?;
 
     let handle = runtime.spawn(async move {
         let config = legado_server::server::ServerConfig {
@@ -111,7 +124,7 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
 
     // 保存句柄
     let slot = get_handle_slot();
-    let mut guard = slot.lock().expect("Server handle mutex poisoned");
+    let mut guard = lock_handle_slot(slot);
     *guard = Some(handle);
 
     SERVER_RUNNING.store(true, Ordering::SeqCst);
@@ -129,7 +142,7 @@ pub fn server_stop() -> String {
     }
 
     let slot = get_handle_slot();
-    let mut guard = slot.lock().expect("Server handle mutex poisoned");
+    let mut guard = lock_handle_slot(slot);
     if let Some(handle) = guard.take() {
         handle.abort();
     }
@@ -242,7 +255,7 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
         LegadoError::Internal(format!("独立 MCP 服务数据库初始化失败（{db_path}）: {e}"))
     })?;
 
-    let runtime = get_server_runtime();
+    let runtime = get_server_runtime()?;
 
     // F5：绑定 0.0.0.0（LAN 可达，对齐原版 McpService）
     let listener = runtime
@@ -261,7 +274,7 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
 
     // 保存句柄
     let slot = get_mcp_handle_slot();
-    let mut guard = slot.lock().expect("MCP handle mutex poisoned");
+    let mut guard = lock_handle_slot(slot);
     *guard = Some(handle);
     drop(guard);
 
@@ -277,13 +290,15 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
 fn mcp_stop_internal() {
     let handle = {
         let slot = get_mcp_handle_slot();
-        let mut guard = slot.lock().expect("MCP handle mutex poisoned");
+        let mut guard = lock_handle_slot(slot);
         guard.take()
     };
     if let Some(handle) = handle {
         handle.abort();
         // 等待任务实际结束，确保旧监听器端口释放
-        let _ = get_server_runtime().block_on(handle);
+        if let Ok(rt) = get_server_runtime() {
+            let _ = rt.block_on(handle);
+        }
     }
     MCP_RUNNING.store(false, Ordering::SeqCst);
     MCP_PORT.store(0, Ordering::SeqCst);
