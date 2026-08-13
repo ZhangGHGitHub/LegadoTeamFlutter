@@ -15,7 +15,7 @@ void main() {
     layoutFlexBasisPercent: 1,
   );
 
-  testWidgets('cell 项按行分组，wide 项独占全宽行', (tester) async {
+  testWidgets('cell 项按 flexBasisPercent 网格排布，wide 项独占一行', (tester) async {
     final categories = [
       const ExploreCategory(title: '推荐', url: '/rec', style: cellStyle),
       const ExploreCategory(title: '小说', url: '/novel', style: cellStyle),
@@ -35,7 +35,12 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ExploreKindLayout(categories: categories),
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              child: ExploreKindLayout(categories: categories),
+            ),
+          ),
         ),
       ),
     );
@@ -45,17 +50,25 @@ void main() {
     expect(find.text('音乐频道'), findsOneWidget);
     expect(find.text('排行榜'), findsOneWidget);
 
-    // 可点击 wide 行带 chevron（与标题同 Row）
-    expect(
-      find.descendant(
-        of: find.ancestor(
-          of: find.text('排行榜'),
+    // 分类 Chip 不使用 chevron（对齐 Android item_fillet_text）
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+
+    // 4 个 0.25 cell 首行应同宽
+    Size cellSize(String title) => tester.getSize(find.ancestor(
+          of: find.text(title),
           matching: find.byType(InkWell),
-        ),
-        matching: find.byIcon(Icons.chevron_right),
-      ),
-      findsOneWidget,
+        ));
+    final w0 = cellSize('推荐').width;
+    final w1 = cellSize('小说').width;
+    expect(w0, closeTo(w1, 1));
+    expect(w0, closeTo(84.5, 2));
+
+    // wide 项 Container 应占满 360 宽
+    final wideChip = find.ancestor(
+      of: find.text('排行榜'),
+      matching: find.byType(InkWell),
     );
+    expect(tester.getSize(wideChip).width, closeTo(360, 2));
   });
 
   testWidgets('可点击 cell 项触发 onCategoryTap', (tester) async {

@@ -403,7 +403,7 @@ class _SourceItemState extends ConsumerState<_SourceItem>
                           child: Icon(
                             Icons.chevron_right,
                             size: 20,
-                            color: colorScheme.outlineVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
