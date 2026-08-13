@@ -560,17 +560,16 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(rssHistoryNotifierProvider.notifier).load();
+      ref
+          .read(rssHistoryNotifierProvider.notifier)
+          .load(origin: widget.origin);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(rssHistoryNotifierProvider);
-    // FFI 无按源查询接口，客户端按 origin 过滤（TODO: 待 getRecordsByOrigin 补齐）
-    final records = state.records
-        .where((r) => r.origin == widget.origin)
-        .toList();
+    final records = state.records;
     return AlertDialog(
       title: const Text('阅读记录'),
       content: SizedBox(

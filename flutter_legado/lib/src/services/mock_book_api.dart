@@ -899,6 +899,18 @@ class MockBookApi implements BookApi {
     return _rssReadRecords.take(l).toList();
   }
 
+  @override
+  Future<List<Map<String, dynamic>>> rssListReadRecordsByOrigin(
+    String origin, [
+    int? limit,
+  ]) async {
+    final l = limit ?? 100;
+    return _rssReadRecords
+        .where((r) => r['origin'] == origin)
+        .take(l)
+        .toList();
+  }
+
   // ========== 本地书籍操作 ==========
 
   @override

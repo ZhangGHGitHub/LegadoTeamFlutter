@@ -317,6 +317,12 @@ abstract class BookApi {
   /// 获取 RSS 已读记录列表（按 readTime 降序）
   Future<List<Map<String, dynamic>>> rssListReadRecords([int? limit]);
 
+  /// 按 RSS 源 origin 获取已读记录（对齐原版 getRecordsByOrigin）
+  Future<List<Map<String, dynamic>>> rssListReadRecordsByOrigin(
+    String origin, [
+    int? limit,
+  ]);
+
   // ========== 本地书籍操作 ==========
 
   /// 导入本地书籍

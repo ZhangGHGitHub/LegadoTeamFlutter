@@ -680,6 +680,17 @@ class RustApi implements BookApi {
     return list.map((e) => e as Map<String, dynamic>).toList();
   }
 
+  @override
+  Future<List<Map<String, dynamic>>> rssListReadRecordsByOrigin(
+    String origin, [
+    int? limit,
+  ]) async {
+    final json =
+        await bridge.rssListReadRecordsByOrigin(origin: origin, limit: limit);
+    final list = _decodeList(json, 'bookApi');
+    return list.map((e) => e as Map<String, dynamic>).toList();
+  }
+
   // ========== 本地书籍操作 ==========
 
   /// 导入本地书籍

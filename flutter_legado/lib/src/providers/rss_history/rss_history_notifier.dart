@@ -18,11 +18,14 @@ class RssHistoryNotifier extends Notifier<RssHistoryState> {
   @override
   RssHistoryState build() => const RssHistoryState();
 
-  /// 加载已读记录列表
-  Future<void> load({int? limit}) async {
+  /// 加载已读记录列表；[origin] 非空时走按源查询（F3-17）
+  Future<void> load({int? limit, String? origin}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final raw = await ref.read(bookApiProvider).rssListReadRecords(limit);
+      final api = ref.read(bookApiProvider);
+      final raw = origin != null
+          ? await api.rssListReadRecordsByOrigin(origin, limit)
+          : await api.rssListReadRecords(limit);
       final records = raw
           .whereType<Map<String, dynamic>>()
           .map(RssReadRecordRow.fromJson)
