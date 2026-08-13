@@ -841,6 +841,16 @@ pub mod ffi {
         to_json(&records)
     }
 
+    /// 按 RSS 源 origin 获取已读记录（JSON 数组，对齐原版 getRecordsByOrigin）
+    pub fn rss_list_read_records_by_origin(
+        origin: String,
+        limit: Option<i32>,
+    ) -> Result<String, BridgeError> {
+        let records =
+            crate::api::rss_read_record_api::list_records_by_origin(&origin, limit)?;
+        to_json(&records)
+    }
+
     // ─── 搜索历史 ────────────────────────────────────────
 
     /// 获取最近搜索历史（JSON 数组）
@@ -1070,9 +1080,15 @@ pub mod ffi {
         rule: String,
         rule_type: String,
     ) -> Result<String, BridgeError> {
-        let _ = &rule_type; // 暂未使用
+        let effective_rule = if rule.starts_with('@') || rule.starts_with('<') {
+            rule
+        } else if !rule_type.trim().is_empty() {
+            format!("@{}:{}", rule_type.trim(), rule)
+        } else {
+            rule
+        };
         let analyzer = legado_parser::AnalyzeRule::new(content, String::new());
-        let results = analyzer.get_strings(&rule)?;
+        let results = analyzer.get_strings(&effective_rule)?;
         Ok(serde_json::to_string(&serde_json::json!({
             "results": results,
             "count": results.len(),

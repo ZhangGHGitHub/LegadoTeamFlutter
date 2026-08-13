@@ -37,7 +37,6 @@ pub mod debug_session;
 pub mod download_manager;
 pub mod error;
 pub mod explore;
-pub mod ffi_macros;
 pub mod html_formatter;
 pub mod import_old;
 pub mod layout;

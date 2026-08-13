@@ -21,7 +21,6 @@
 //! let result = engine.eval("1 + 1"); // 未启用 quickjs 时返回错误
 //! ```
 
-pub mod context;
 pub mod engine;
 pub mod engine_pool;
 pub mod host_api;
@@ -31,7 +30,6 @@ pub mod scope;
 pub mod source_engine;
 
 // 核心类型重导出
-pub use context::JsContext;
 #[cfg(feature = "quickjs")]
 pub use engine::QuickJsEngine;
 pub use engine::{CompiledScript, JsEngine, JsValue, StubJsEngine};
