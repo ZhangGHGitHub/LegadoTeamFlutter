@@ -121,6 +121,39 @@ impl<'a> RssReadRecordRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("Row mapping failed: {e}")))?;
         Ok(records)
     }
+
+    /// 按 origin 获取已读记录（按 readTime 降序，对齐原版 getRecordsByOrigin）
+    pub fn list_records_by_origin(
+        &self,
+        origin: &str,
+        limit: Option<i32>,
+    ) -> LegadoResult<Vec<RssReadRecordRow>> {
+        let limit = limit.unwrap_or(100);
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT origin, title, record, readTime FROM rssReadRecords
+                 WHERE origin = ?1 ORDER BY readTime DESC LIMIT ?2",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+        let rows = stmt
+            .query_map(params![origin, limit], |row| {
+                let record: String = row.get(2)?;
+                Ok(RssReadRecordRow {
+                    origin: row.get(0)?,
+                    title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    link: if record.is_empty() {
+                        None
+                    } else {
+                        Some(record)
+                    },
+                    read_time: row.get::<_, Option<i64>>(3)?.unwrap_or(0),
+                })
+            })
+            .map_err(|e| LegadoError::Database(format!("查询已读记录失败: {e}")))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| LegadoError::Database(format!("Row mapping failed: {e}")))
+    }
 }
 
 #[cfg(test)]
@@ -209,5 +242,23 @@ mod tests {
         assert_eq!(first.origin, "https://rss.com");
         assert!(first.link.is_some());
         assert!(first.read_time > 0);
+    }
+
+    #[test]
+    fn test_list_records_by_origin() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+
+        repo.mark_read("https://a.com", "A1", Some("l1")).unwrap();
+        repo.mark_read("https://b.com", "B1", Some("l2")).unwrap();
+        repo.mark_read("https://a.com", "A2", Some("l3")).unwrap();
+
+        let a_records = repo.list_records_by_origin("https://a.com", None).unwrap();
+        assert_eq!(a_records.len(), 2);
+        assert!(a_records.iter().all(|r| r.origin == "https://a.com"));
+
+        let b_records = repo.list_records_by_origin("https://b.com", None).unwrap();
+        assert_eq!(b_records.len(), 1);
+        assert_eq!(b_records[0].title, "B1");
     }
 }

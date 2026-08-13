@@ -55,6 +55,17 @@ pub fn list_records(limit: Option<i32>) -> LegadoResult<Vec<RssReadRecordRow>> {
     })
 }
 
+/// 按 origin 获取已读记录列表（对齐原版 RssReadRecordDao.getRecordsByOrigin）
+pub fn list_records_by_origin(
+    origin: &str,
+    limit: Option<i32>,
+) -> LegadoResult<Vec<RssReadRecordRow>> {
+    with_database(|db| {
+        let repo = RssReadRecordRepository::new(db.connection());
+        repo.list_records_by_origin(origin, limit)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +92,12 @@ mod tests {
         // 列表
         let records = list_records(Some(10)).unwrap();
         assert!(records.iter().any(|r| r.title == "Test Article"));
+
+        // 按 origin 列表
+        mark_read("https://other.com", "Other", Some("https://link.com/2")).unwrap();
+        let by_origin = list_records_by_origin("https://rss.example.com", None).unwrap();
+        assert!(by_origin.iter().all(|r| r.origin == "https://rss.example.com"));
+        assert_eq!(by_origin.len(), 1);
 
         // 清空
         clear_all().unwrap();

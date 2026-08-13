@@ -611,6 +611,15 @@ Future<PlatformInt64> rssReadRecordCount() =>
 Future<String> rssListReadRecords({int? limit}) =>
     RustLib.instance.api.crateFfiFfiRssListReadRecords(limit: limit);
 
+/// 按 RSS 源 origin 获取已读记录（JSON 数组，对齐原版 getRecordsByOrigin）
+Future<String> rssListReadRecordsByOrigin({
+  required String origin,
+  int? limit,
+}) => RustLib.instance.api.crateFfiFfiRssListReadRecordsByOrigin(
+  origin: origin,
+  limit: limit,
+);
+
 /// 获取最近搜索历史（JSON 数组）
 Future<String> searchHistoryList({required int limit}) =>
     RustLib.instance.api.crateFfiFfiSearchHistoryList(limit: limit);
