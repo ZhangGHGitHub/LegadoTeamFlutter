@@ -193,7 +193,7 @@
 - **涉及文件**：`ffi.rs`（version/backup_list/server_stop/server_status/archive_is_archive/auto_task_normalize_script/auto_task_can_refresh_toc/auto_task_next_due_at/audio_with_play_mode 共 9 个）
 - **实施要点**：改为返回 Result（契约 §3.3 对齐）或在契约登记豁免（只读查询吞错语义）；同步 Dart 侧调用点。
 - **验收**：契约与实现一致；`cargo test -p legado-ffi --features quickjs` 全绿。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（§1.6 登记 9 项豁免，不改签名）
 
 ### F3-6 `[Rust]` 引擎池状态串扰治理
 - **来源**：D6
@@ -214,7 +214,7 @@
 - **涉及文件**：`rust/legado-db/`（infoHtml/tocHtml/downloadUrls 字段）
 - **实施要点**：评估改存 KV/缓存或保留；若保留，契约注明瞬态语义。
 - **验收**：数据语义明确；无异常行为。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅（API_CONTRACT §2.44 注明 infoHtml/tocHtml/downloadUrls 瞬态语义）
 
 ### F3-9 `[Rust]` 编码检测计划对齐（chardetng）
 - **来源**：D9
@@ -242,7 +242,7 @@
 - **涉及文件**：`README.md`（根）
 - **实施要点**：版本（v4.0.0-alpha → 2.0.x）、页面数（18 → 实际）、CI 徽标仓库链接（废弃仓库 → 当前仓库）。
 - **验收**：根 README 与现状一致。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅（2.0.56+58、62 Screen、CI 徽标指向 LegadoTeamFlutter）
 
 ### F3-13 `[双轨]` video_play_utils 逻辑下沉
 - **来源**：D17（需先决策 D4）
@@ -256,7 +256,7 @@
 - **涉及文件**：上述 8 处 + `rust/legado-net`（新增通用 fetch FFI 或复用既有能力）+ 契约
 - **实施要点**：逐处改为经 Rust Bridge 请求（统一 UA/Cookie/超时/限流语义）；无对应 FFI 的先补契约。
 - **验收**：UI 层零裸 http；请求行为与改造前等价。
-- **工作量**：L ｜ **前置**：无
+- **工作量**：L ｜ **前置**：无 ｜ **状态**：✅（新增 `httpGetBytes` FFI + `bridge_http.dart`；8 处收敛；豁免 localhost REST / GitHub Release / CachedNetworkImage）
 
 ### F3-15 `[双轨]` 死文件/死契约面清理
 - **来源**：D18

@@ -18,7 +18,8 @@
 | 2026-08-13 | P2-4 续：恢复忽略项其余键——备份 JSON 注入 `appPrefs`，恢复时按 BackupConfig.keyIsNotIgnore 过滤（readConfig/themeMode/themeConfig/coverConfig/bookshelfLayout/showRss/threadCount）；无新 FFI |
 | 2026-08-13 | P2-1：底栏皮肤最小可用——纯 Flutter（`archive` zip 导入 + PrefKeys.bottomBarSkin）；**无新 FFI** |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
-| 2026-08-14 | F3-15 移除本地段评 CRUD：`reviewGetByChapter`/`reviewAdd`/`reviewDelete`/`reviewLike` 四方法（原版无本地库段评，仅保留 ruleReview 三方法）。附录合计 248→244，BookApi 口径 237→233 |
+| 2026-08-14 | **F3-14**：加法式新增 `httpGetBytes`（§2.20）；UI 层 8 处裸 `http.get` 收敛至 Bridge；附录 244→245，BookApi 233→234 |
+| 2026-08-14 | **F3-5**：§1.6 登记 9 个 FFI 非 Result 导出豁免（只读/哨兵语义，不改签名） |
 | 2026-08-13 | P2-8：检查更新对接 GitHub Release API（`AppUpdateService` + `UpdateDialog`）；纯 Flutter HTTP，**无新 FFI** |
 | 2026-08-13 | P2-7：AutoTaskDebug 流式调试——UI 逐行回调 + `TaskResult.details` 对齐 LogFormatter；复用 `autoTaskExecuteWithId`，**无新 StreamSink FFI** |
 | 2026-08-13 | `getSameTitleRemoved` / `canRemoveSameTitle` 权威查询与试算 FFI（§2.9）；UI 勾选态改读 caches KV；复刻「未找到可移除的重复标题」提示 |
@@ -74,12 +75,30 @@
 | `RustApi` | `rust_api.dart` | 真实 FFI 实现（需 Rust DLL） |
 | `MockBookApi` | `mock_book_api.dart` | 纯 Dart Mock（`--dart-define=USE_MOCK=true`） |
 
+### 1.6 FFI 非 Result 导出豁免（F3-5，2026-08-14）
+
+以下 9 个 `ffi.rs` 导出**刻意**不包 `Result<_, BridgeError>`，BookApi/Dart 侧保持既有签名；语义为只读查询或哨兵返回值，失败不抛 bridge 异常：
+
+| FFI 函数 | 返回类型 | 豁免理由 |
+|----------|----------|----------|
+| `version` | `String` | 编译期常量版本号，永真 |
+| `backup_list` | `String` | 目录列表 JSON；IO 失败返回 `[]` 空数组字符串 |
+| `server_stop` | `String` | 状态消息字符串（对齐 stopServer 吞错语义） |
+| `server_status` | `String` | 状态 JSON；未启动时返回 `{running:false}` |
+| `archive_is_archive` | `bool` | 纯路径扩展名判定，无 IO |
+| `auto_task_normalize_script` | `String` | 纯字符串变换，输入必返字符串 |
+| `auto_task_can_refresh_toc` | `bool` | 纯布尔逻辑组合 |
+| `auto_task_next_due_at` | `i64` | cron 无法解析时返回 **-1** 哨兵（非异常） |
+| `audio_with_play_mode` | `String` | readConfig JSON 变换；非法 JSON 回落 `{}` |
+
+> 其余新增 FFI 仍遵循 `Result<_, BridgeError>` 铁律；本表仅销记历史非 Result 面，**不扩范围**。
+
 ---
 
 ## 2. 方法清单
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
-> 为基准，BookApi 接口当前共 **233 个方法**（2026-08-14 F3-15 移除本地段评 CRUD 4 方法后）。
+> 为基准，BookApi 接口当前共 **234 个方法**（2026-08-14 F3-14 加 `httpGetBytes` 1）。
 > 附录行合计 248 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
 > 扣除后 232 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 233，与 BookApi 闭合；详见附录口径说明。
 
@@ -339,12 +358,13 @@
 |------|------|------|------|
 | `parseRule(String content, String rule, String ruleType)` | content, rule, ruleType | `Future<String>` | 使用规则解析内容 |
 
-### 2.20 网络操作（3 个方法）
+### 2.20 网络操作（4 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `httpGet(String url)` | url | `Future<String>` | HTTP GET 请求 |
-| `httpPost(String url, String body)` | url, body | `Future<String>` | HTTP POST 请求 |
+| `httpGet(String url)` | url | `Future<String>` | HTTP GET 请求，返回 JSON `{"status": int, "body": string, "url": string}`（文本 body） |
+| `httpPost(String url, String body)` | url, body | `Future<String>` | HTTP POST 请求，返回格式同 httpGet |
+| `httpGetBytes(String url, {String headersJson = ''})` | url；headersJson 可选 JSON 对象 | `Future<String>` | HTTP GET 二进制响应，返回 JSON `{"status": int, "bodyBase64": string, "url": string}`（F3-14，经 legado-net 共享客户端） |
 | `setCustomHosts(String hostsJson)` | hostsJson: 域名→IP 映射 JSON 对象字符串（对齐原版存储格式） | `Future<void>` | 设置自定义 hosts 映射，配置后网络层 DNS 解析优先使用该映射（命中域名直连映射 IP，未命中回落系统 DNS）。存储格式对齐原版 `AppConfig.customHosts`：JSON **对象** `{"域名":"IP", "域名":["IP1","IP2"]}`（值支持单 IP 字符串或 IP 数组，实读原版 `AppConfig.hostMap/addressCache` 确认）；空串/空对象=清除映射、恢复系统 DNS。配置需持久化（复用既有配置存储语义，caches 表 `config:` 前缀键 `customHosts`，与既有 `setConfig` 同语义）并即时生效（后续请求使用新映射）。Rust 实现要点：legado-net 经 reqwest `ClientBuilder::resolve` 域名覆盖或自定义 DNS resolver 挂钩（现状无 custom_hosts 钩子，实施时补）。错误码：Internal（hostsJson 非合法 JSON 对象）。差异注明：原版非法输入即清除；本契约改为拒绝保存（更防误操作，Task #76 Med2）。既有 `httpGet` / `httpPost` 签名保持不变，本方法为加法式新增（台账 §5.13-1，第四批后置项，Task #72） |
 
 ### 2.21 JS 引擎（2 个方法）
@@ -669,6 +689,8 @@
 >
 > ℹ️ **BookRepository::insert 级联删除隐患（第三批后置项，Task #63）**：`BookRepository::insert` 当前走
 > INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
+>
+> ℹ️ **瞬态 HTML/下载字段（F3-8，2026-08-14）**：`books` 表 `infoHtml` / `tocHtml` / `downloadUrls` 对齐原版 Room 列，存书源详情/目录页原始 HTML 与下载地址缓存，**非用户持久配置**；换源/清缓存时可被覆盖或清空，UI 不应当作权威书元数据。
 
 ---
 
@@ -784,7 +806,7 @@
 | 17 | WebBook 操作 | 6 |
 | 18 | 发现页操作 | 2 |
 | 19 | 规则解析 | 1 |
-| 20 | 网络操作 | 3 |
+| 20 | 网络操作 | 4 |
 | 21 | JS 引擎 | 2 |
 | 22 | 服务器管理 | 5 |
 | 23 | 书籍格式解析 | 3 |
@@ -806,14 +828,14 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **244** |
+| | **合计（§2.1–§2.43 附录行合计）** | **245** |
 
-> 口径说明（Task #55 F6，2026-08-10 校准；2026-08-14 F3-15 移除本地段评 CRUD 4 方法，基准 = `book_api.dart` 程序化计数 **233**）：
-> - **与 BookApi 闭合**：附录行合计 244 − 尚未封装进 BookApi 的 FFI 10 个
+> 口径说明（Task #55 F6，2026-08-10 校准；2026-08-14 F3-15 移除本地段评 CRUD 4 方法，基准 = `book_api.dart` 程序化计数 **234**）：
+> - **与 BookApi 闭合**：附录行合计 245 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 232；
->   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **233**。
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 233；
+>   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **234**。
 >   第四批 3 项（`setCustomHosts` / `setMcpPort` / `searchCoverRules`）均为 BookApi 封装口径方法；
 >   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1 + curl 三方法 3（230 + 5 = 235）；
 >   2026-08-13 加 `reviewGetSummary` / `reviewGetDetail` 2；2026-08-14 F3-15 移除本地 CRUD 4 → **233**。
