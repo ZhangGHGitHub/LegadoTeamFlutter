@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.54] - 2026-08-14
+
+### Fixed
+- [Rust] F3-1 FFI unwrap/expect 收敛：webdav/server/http_state/net_api 生产路径
+- [UI] F3-15 删除死文件 `comic_reader_screen.dart`（路由已用 ReaderComicScreen）
+
+### Changed
+- [docs] F3-11 测试统计口径统一（ffi quickjs 311 + flutter 1171）
+- [docs] F3-4 沙箱 eval/Function 文档对齐 D3=A；F3-13 video_play_utils 登记豁免 D4=B
+- [工程] F2-9 integration/audit-fix-20260814 已 fast-forward 合入 master
+
 ## [2.0.53] - 2026-08-14
 
 ### Added
