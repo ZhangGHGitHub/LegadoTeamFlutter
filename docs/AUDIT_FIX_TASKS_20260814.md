@@ -165,21 +165,21 @@
 - **涉及文件**：`webdav_api.rs`（9 处 `thread::Builder...build().unwrap()`）、`server_api.rs`（5 处 expect 含 mutex 中毒）、`http_state.rs`/`net_api.rs`（锁 unwrap）
 - **实施要点**：改为 `map_err` 返回 BridgeError/LegadoError；mutex 中毒用 `poisoned.into_inner()` 恢复或返回错误。
 - **验收**：FFI 生产代码零 unwrap/expect（测试模块除外）；`cargo test --workspace` 全绿。
-- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（webdav/server/http_state/net_api 生产路径已收敛；shared_client 初始化失败仍 panic 兜底，待后续改 Result）
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（`shared_client()` 改 `LegadoResult` 去 panic；`build_engine`/`RealBookSourceFetcher::new` 同步；流式搜索/校验失败降级日志）
 
 ### F3-2 `[Rust]` check_syntax 超时与内存上限
 - **来源**：D2
 - **涉及文件**：`legado-js/src/engine.rs:452-459`、`js_source_config.rs:388`（调用点）
 - **实施要点**：`check_syntax` 独立 Runtime 设置 interrupt 超时（对齐 5s 基线）+ 内存上限；病态输入返回错误而非挂起。
 - **验收**：超长/深嵌套 JS 语法检查有限时返回；新增超时测试。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（独立 Runtime 5s/16MB；补 valid/invalid/deep nesting 测试）
 
 ### F3-3 `[Rust]` 沙箱死配置处置
 - **来源**：D3
 - **涉及文件**：`sandbox.rs`（`max_stack_depth`、`allow_network`、`ALLOWED_GLOBALS` 白名单）
 - **实施要点**：三选一逐项处理——实现（栈深度经 rquickjs 能力落地/网络按配置门控/白名单实际应用）或删除配置字段与文档声明（避免死配置误导）。
 - **验收**：README 声称的安全项与代码一致；无 `#[allow(dead_code)]` 白名单。
-- **工作量**：M ｜ **前置**：D3（策略相关）
+- **工作量**：M ｜ **前置**：D3（策略相关）｜ **状态**：✅（D3=A 文档对齐：`max_stack_depth`/`allow_network` 标注配置预留/文档口径，非 Runtime 门控）
 
 ### F3-4 `[文档]` 沙箱文档与实现对齐
 - **来源**：D4（需先决策 D3）
@@ -263,7 +263,7 @@
 - **涉及文件**：`comic_reader_screen.dart`（删除）、段评 CRUD 死面（`book_api.dart:974-999` + `ffi.dart:1370-1398` + `rust_api.dart:2156-2183` + `mock_book_api.dart:1902-1918` + `review_api.rs:18-83`）、阅读统计死面（随 D1 一并处理）
 - **实施要点**：确认零 UI 调用后删除或按 D1 决策保留。
 - **验收**：无死契约面残留；`flutter analyze` 0 error。
-- **工作量**：M ｜ **前置**：D1（阅读统计部分）｜ **状态**：⏳（已删 `comic_reader_screen.dart` + 孤儿 `comic_reader_test.dart`；本地段评 CRUD 死契约面待 FRB 移除）
+- **工作量**：M ｜ **前置**：D1（阅读统计部分）｜ **状态**：✅（删 comic_reader 死文件；移除本地段评 CRUD 四方法 FFI+BookApi+FRB codegen；保留 ruleReview 三方法）
 
 ### F3-16 `[双轨]` 页面覆盖缺口处置
 - **来源**：D19

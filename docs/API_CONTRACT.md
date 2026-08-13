@@ -18,7 +18,7 @@
 | 2026-08-13 | P2-4 续：恢复忽略项其余键——备份 JSON 注入 `appPrefs`，恢复时按 BackupConfig.keyIsNotIgnore 过滤（readConfig/themeMode/themeConfig/coverConfig/bookshelfLayout/showRss/threadCount）；无新 FFI |
 | 2026-08-13 | P2-1：底栏皮肤最小可用——纯 Flutter（`archive` zip 导入 + PrefKeys.bottomBarSkin）；**无新 FFI** |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
-| 2026-08-13 | P2-9 段评完整 MVP：加法式新增 `reviewGetSummary` / `reviewGetDetail`（§2.30）；对齐原版 `loadReviewSummary`+`parseSummary` / `ReviewDetailDialog`+`parseDetailPage`；复用既有 `reviewGetReplies`。附录合计 244→246，BookApi 口径 235→237。本地库 `reviewGetByChapter`/`reviewAdd`… 仍属偏离创意，UI **禁止**接入 |
+| 2026-08-14 | F3-15 移除本地段评 CRUD：`reviewGetByChapter`/`reviewAdd`/`reviewDelete`/`reviewLike` 四方法（原版无本地库段评，仅保留 ruleReview 三方法）。附录合计 248→244，BookApi 口径 237→233 |
 | 2026-08-13 | P2-8：检查更新对接 GitHub Release API（`AppUpdateService` + `UpdateDialog`）；纯 Flutter HTTP，**无新 FFI** |
 | 2026-08-13 | P2-7：AutoTaskDebug 流式调试——UI 逐行回调 + `TaskResult.details` 对齐 LogFormatter；复用 `autoTaskExecuteWithId`，**无新 StreamSink FFI** |
 | 2026-08-13 | `getSameTitleRemoved` / `canRemoveSameTitle` 权威查询与试算 FFI（§2.9）；UI 勾选态改读 caches KV；复刻「未找到可移除的重复标题」提示 |
@@ -79,9 +79,9 @@
 ## 2. 方法清单
 
 > 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 实际方法数
-> 为基准，BookApi 接口当前共 **237 个方法**（含 2026-08-13 P2-9 `reviewGetSummary` / `reviewGetDetail`）。
+> 为基准，BookApi 接口当前共 **233 个方法**（2026-08-14 F3-15 移除本地段评 CRUD 4 方法后）。
 > 附录行合计 248 中含 10 个尚未封装进 BookApi 的 FFI（行 41/42/43 部分项），
-> 扣除后 236 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 237，与 BookApi 闭合；详见附录口径说明。
+> 扣除后 232 + 词典查询 `dictLookup` 1（§3 需求 4，附录无独立模块行）= 233，与 BookApi 闭合；详见附录口径说明。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -421,16 +421,13 @@
 | `downloadRemoveTask(String taskId)` | taskId | `Future<void>` | 移除下载任务 |
 | `downloadUpdateProgress(String taskId, double progress)` | taskId, progress | `Future<void>` | 更新下载进度 |
 
-### 2.30 段评/章评（7 个方法）
+### 2.30 段评（3 个方法，书源 ruleReview）
 
-> **口径**：`reviewGetSummary` / `reviewGetDetail` / `reviewGetReplies` 为书源 `ruleReview` 路径（对齐原版 ReadBook / ReviewDetailDialog）；本地库 CRUD（`reviewGetByChapter` / `reviewAdd` / `reviewDelete` / `reviewLike`）属偏离创意，**UI 禁止**当作 ruleReview 接入。
+> **口径**：`reviewGetSummary` / `reviewGetDetail` / `reviewGetReplies` 为书源 `ruleReview` 路径（对齐原版 ReadBook / ReviewDetailDialog / ReviewController）。  
+> **已移除**（F3-15）：本地库 CRUD（`reviewGetByChapter` / `reviewAdd` / `reviewDelete` / `reviewLike`）——原版 Android 无本地段评表/CRUD，属重构偏离创意，已从 FFI 与 BookApi 删除。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `reviewGetByChapter(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<String>` | 获取指定章节的所有**本地库**评论 JSON（偏离创意；勿接阅读器） |
-| `reviewAdd({required String bookUrl, required int chapterIndex, int paragraphIndex = -1, required String content, String author = ''})` | bookUrl, chapterIndex, paragraphIndex, content, author | `Future<int>` | 添加本地库评论，返回评论 ID（偏离创意） |
-| `reviewDelete(int id)` | id | `Future<bool>` | 删除本地库评论（偏离创意） |
-| `reviewLike(int id)` | id | `Future<void>` | 点赞本地库评论（偏离创意） |
 | `reviewGetSummary(String sourceJson, String requestJson)` | sourceJson, requestJson | `Future<String>` | 段评摘要（对标 `ReadBookActivity.loadReviewSummary*` + `ReviewRuleParser.parseSummary` / JS `getReviewSummary`）。返回 `{"counts":{"1":5},"keys":{"1":"paraData"}}`（键为段落索引字符串；仅 count>0 的段）。requestJson：`chapterUrl`；可选 `book`/`chapter` JSON。规则缺失/未启用返回空 maps（非异常） |
 | `reviewGetDetail(String sourceJson, String requestJson, int page)` | sourceJson, requestJson, page | `Future<String>` | 段评详情分页（对标 `ReviewDetailDialog.loadDetailPage` + `parseDetailPage` / JS `getReviewDetail`）。返回 `{"items":[DetailItem...],"nextPageUrl":String?,"hasReplyUrl":bool}`。requestJson：`paraIndex`/`paraData`/`chapterUrl`；可选 `detailUrl`（翻页直连）、`book`/`chapter`。条目字段同 `reviewGetReplies`，另含 likeCount/replyCount/replies |
 | `reviewGetReplies(String sourceJson, String requestJson, int page)` | sourceJson, requestJson, page | `Future<String>` | 按需加载段评回复（上游 #519），返回 `{"items": [...], "nextPageUrl": String?}` 对象包装（含分页 URL，非裸数组）；requestJson 支持 reviewId/paraIndex/paraData/chapterUrl/replyUrl 字段；回复条目字段：id/avatar/name/badges/content/imageUrl/audioUrl/time |
@@ -795,7 +792,7 @@
 | 25 | 音频播放 | 4 |
 | 26 | WebDAV 云同步 | 7 |
 | 29 | 下载管理器 | 7 |
-| 30 | 段评/章评 | 7 |
+| 30 | 段评（ruleReview） | 3 |
 | 31 | 书籍导出 | 2 |
 | 32 | 自动任务 | 14 |
 | 33 | 音频播放模式 | 2 |
@@ -809,18 +806,18 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 4 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **248** |
+| | **合计（§2.1–§2.43 附录行合计）** | **244** |
 
-> 口径说明（Task #55 F6，2026-08-10 校准；含 2026-08-13 P2-9 段评 summary/detail，基准 = `book_api.dart` 程序化计数 **237**）：
-> - **与 BookApi 闭合**：附录行合计 248 − 尚未封装进 BookApi 的 FFI 10 个
+> 口径说明（Task #55 F6，2026-08-10 校准；2026-08-14 F3-15 移除本地段评 CRUD 4 方法，基准 = `book_api.dart` 程序化计数 **233**）：
+> - **与 BookApi 闭合**：附录行合计 244 − 尚未封装进 BookApi 的 FFI 10 个
 >   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
 >   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 236；
->   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **237**。
+>   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 232；
+>   + 词典查询 `dictLookup` 1（§3 需求 4，已在 BookApi 实现，附录无独立模块行）= **233**。
 >   第四批 3 项（`setCustomHosts` / `setMcpPort` / `searchCoverRules`）均为 BookApi 封装口径方法；
 >   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1 + curl 三方法 3（230 + 5 = 235）；
->   2026-08-13 再加 `reviewGetSummary` / `reviewGetDetail` 2（235 + 2 = 237）。
+>   2026-08-13 加 `reviewGetSummary` / `reviewGetDetail` 2；2026-08-14 F3-15 移除本地 CRUD 4 → **233**。
 > - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 24 行（含 `setSourceVariable` / `clearCookie` / curl 三方法）；
->   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 7（含 reviewGetReplies/Summary/Detail）；
+>   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 **3**（reviewGetReplies/Summary/Detail）；
 >   行 4 按 §2.4 标题为 8（原 7 + 第四批 `searchCoverRules` 1）；行 20 按 §2.20 标题为 3（原 2 + 第四批 `setCustomHosts` 1）；
 >   行 22 按 §2.22 标题为 5（原 4 + 第四批 `setMcpPort` 1）。
