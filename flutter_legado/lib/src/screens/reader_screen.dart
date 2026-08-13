@@ -17,6 +17,7 @@ import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../widgets/reader/read_aloud_bar.dart';
 import '../widgets/reader/reader_bottom_bar.dart';
+import '../widgets/reader/reader_page_chrome.dart';
 import '../widgets/reader/reader_image_dominant_body.dart';
 import '../widgets/reader/reader_page_view.dart';
 import '../widgets/reader/reader_settings_sheet.dart';
@@ -437,6 +438,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 marginBottom: _advConfig.pageMarginBottom,
                 marginLeft: _advConfig.pageMarginLeft,
                 marginRight: _advConfig.pageMarginRight,
+                pageChrome: ReaderPageChromeConfig.fromAdvanced(_advConfig),
                 // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批：长按选择
                 // 文本开关与滚动翻页无动画接入内容区 — Qoder
                 selectText: _advConfig.selectText,

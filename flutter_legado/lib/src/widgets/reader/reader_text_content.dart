@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_strings.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import 'review_column.dart';
+import 'reader_page_chrome.dart';
 import 'text_selection_panel.dart';
 
 /// 段评角标点击（段落索引 1-based、评论数）
@@ -47,6 +48,10 @@ class ReaderTypographicPage extends StatelessWidget {
   final bool justify;
   final FontWeight? fontWeight;
 
+  // [UI-fix v2.0.59 | 2026-08-14] 页眉/页脚提示与标题样式 — Cursor UI
+  final ReaderPageChromeConfig pageChrome;
+  final ReaderTipContext tipContext;
+
   final Map<int, int>? reviewCounts;
   final ReviewTapCallback? onReviewTap;
 
@@ -65,6 +70,8 @@ class ReaderTypographicPage extends StatelessWidget {
     this.globalTotalPages,
     this.contentPadding =
         const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+    this.pageChrome = const ReaderPageChromeConfig(),
+    this.tipContext = const ReaderTipContext(pageIndex: 0, totalPages: 1),
     this.selectText = true,
     this.letterSpacing = 0.0,
     this.fontFamily,
@@ -88,58 +95,114 @@ class ReaderTypographicPage extends StatelessWidget {
       );
     }
 
+    final chrome = pageChrome;
+    final showHeader = chrome.showPageHeader && chrome.hasHeaderTips;
+    final showFooter = chrome.showPageFooter && chrome.hasFooterTips;
+    final showTitle = pageIndex == 0 &&
+        chapterTitle != null &&
+        chrome.titleMode.clamp(0, 2) != 2;
+    final titleAlign = switch (chrome.titleMode.clamp(0, 2)) {
+      1 => TextAlign.center,
+      _ => TextAlign.start,
+    };
+
     return Container(
       color: backgroundColor,
-      padding: contentPadding,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 第一页显示章节标题
-          if (pageIndex == 0 && chapterTitle != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Text(
-                chapterTitle!,
-                style: TextStyle(
-                  fontSize: fontSize + 4,
-                  fontWeight: FontWeight.bold,
-                  color: textColor,
-                ),
+          if (showHeader)
+            ReaderPageTipBar(
+              padding: EdgeInsets.fromLTRB(
+                chrome.headerPaddingLeft,
+                chrome.headerPaddingTop,
+                chrome.headerPaddingRight,
+                chrome.headerPaddingBottom,
               ),
-            ),
-          // 使用排版引擎渲染分页内容
-          Expanded(
-            child: ReaderTextContent(
-              pageInfo: info,
-              fontSize: fontSize,
-              lineHeight: lineHeight,
-              paragraphSpacing: paragraphSpacing,
+              leftTip: chrome.tipHeaderLeft,
+              middleTip: chrome.tipHeaderMiddle,
+              rightTip: chrome.tipHeaderRight,
+              tipContext: tipContext,
               textColor: textColor,
-              // [UI-fix v2.0.3 | 2026-08-08] selectText 开关透传 — Qoder
-              selectText: selectText,
-              // [UI-fix v2.0.4 | 2026-08-08] 字距/字体/对齐/字重透传 — Qoder
-              letterSpacing: letterSpacing,
-              fontFamily: fontFamily,
-              justify: justify,
-              fontWeight: fontWeight,
-              reviewCounts: reviewCounts,
-              onReviewTap: onReviewTap,
+              showDivider: chrome.showHeaderLine,
+              dividerOnTop: false,
             ),
-          ),
-          // 页码指示（对齐安卓端底部页码显示）
-          // 显示格式："章内页/章总页 · 全局页/全局总页"
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Center(
-              child: Text(
-                _buildPageIndicator(),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: textColor.withValues(alpha: 0.4),
-                ),
+          Expanded(
+            child: Padding(
+              padding: contentPadding,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (showTitle)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: chrome.titleTopSpacing.toDouble(),
+                        bottom: chrome.titleBottomSpacing.toDouble(),
+                      ),
+                      child: Align(
+                        alignment: titleAlign == TextAlign.center
+                            ? Alignment.center
+                            : Alignment.centerLeft,
+                        child: Text(
+                          chapterTitle!,
+                          textAlign: titleAlign,
+                          style: TextStyle(
+                            fontSize: fontSize + chrome.titleSize,
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: ReaderTextContent(
+                      pageInfo: info,
+                      fontSize: fontSize,
+                      lineHeight: lineHeight,
+                      paragraphSpacing: paragraphSpacing,
+                      textColor: textColor,
+                      selectText: selectText,
+                      letterSpacing: letterSpacing,
+                      fontFamily: fontFamily,
+                      justify: justify,
+                      fontWeight: fontWeight,
+                      reviewCounts: reviewCounts,
+                      onReviewTap: onReviewTap,
+                    ),
+                  ),
+                  if (!showFooter)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Center(
+                        child: Text(
+                          _buildPageIndicator(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: textColor.withValues(alpha: 0.4),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
+          if (showFooter)
+            ReaderPageTipBar(
+              padding: EdgeInsets.fromLTRB(
+                chrome.footerPaddingLeft,
+                chrome.footerPaddingTop,
+                chrome.footerPaddingRight,
+                chrome.footerPaddingBottom,
+              ),
+              leftTip: chrome.tipFooterLeft,
+              middleTip: chrome.tipFooterMiddle,
+              rightTip: chrome.tipFooterRight,
+              tipContext: tipContext,
+              textColor: textColor,
+              showDivider: chrome.showFooterLine,
+              dividerOnTop: true,
+            ),
         ],
       ),
     );

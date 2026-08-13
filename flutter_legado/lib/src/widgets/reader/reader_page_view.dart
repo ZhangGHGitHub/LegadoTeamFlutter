@@ -17,6 +17,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/instant_scroll_physics.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/paragraph_layout_engine.dart';
+import 'reader_page_chrome.dart';
 import 'reader_text_content.dart';
 
 /// 阅读器内容区（分页 + 5 种翻页模式）
@@ -48,6 +49,9 @@ class ReaderPageView extends ConsumerStatefulWidget {
   final double marginBottom;
   final double marginLeft;
   final double marginRight;
+
+  /// 页眉/页脚提示与标题样式（对标 ReadView PageView）
+  final ReaderPageChromeConfig pageChrome;
 
   // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
 
@@ -99,6 +103,7 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.marginBottom = 24,
     this.marginLeft = 20,
     this.marginRight = 20,
+    this.pageChrome = const ReaderPageChromeConfig(),
     this.selectText = true,
     this.noAnimScroll = false,
     this.textBold = 0,
@@ -149,6 +154,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   // [UI-fix v2.0.3 | 2026-08-06] 分页缓存键新增页面边距 — Qoder
   String _paginatedMargins = '';
+  String _paginatedPageChrome = '';
 
   // [UI-fix v2.0.5 | 2026-08-10] 双页模式分页状态：当前分页是否双栏
   // （档位/宽高比/翻页模式变化时重新分页）— Reasonix
@@ -416,6 +422,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             justify != _paginatedJustify ||
             fontFamily != _paginatedFontFamily ||
             margins != _paginatedMargins ||
+            widget.pageChrome.layoutKey != _paginatedPageChrome ||
             sysPaddingKey != _paginatedSysPadding ||
             doublePage != _paginatedDoublePage ||
             widget.useZhLayout != _paginatedUseZhLayout ||
@@ -440,20 +447,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 实测样式合并 DefaultTextStyle（与渲染侧 Text 的主题字体一致，
     // 避免字体度量差异引入像素级偏差）
     final baseStyle = DefaultTextStyle.of(context).style;
-    final indicatorPainter = TextPainter(
-      text: TextSpan(
-        text: '0/0',
-        style: baseStyle.merge(const TextStyle(fontSize: 11)),
-      ),
-      textDirection: TextDirection.ltr,
-      textScaler: textScaler,
-    )..layout();
-    final footerHeight = 8 + indicatorPainter.height;
-    indicatorPainter.dispose();
+    final chrome = widget.pageChrome;
+    final headerBlock = ReaderPageLayoutMetrics.headerBlockHeight(context, chrome);
+    final footerBlock = ReaderPageLayoutMetrics.footerBlockHeight(context, chrome);
     final availableHeight = screenSize.height -
         padding.top -
         padding.bottom -
-        footerHeight -
+        headerBlock -
+        footerBlock -
         widget.marginTop -
         widget.marginBottom;
 
@@ -462,19 +463,25 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     var firstPageHeight = availableHeight;
     final chapterTitle = state.currentChapter?.title;
     if (chapterTitle != null) {
-      final titlePainter = TextPainter(
-        text: TextSpan(
-          text: chapterTitle,
-          style: baseStyle.merge(TextStyle(
-            fontSize: fontSize + 4,
-            fontWeight: FontWeight.bold,
-          )),
-        ),
-        textDirection: TextDirection.ltr,
-        textScaler: textScaler,
-      )..layout(maxWidth: availableWidth);
-      firstPageHeight = availableHeight - titlePainter.height - 20;
-      titlePainter.dispose();
+      final showTitle = chrome.titleMode.clamp(0, 2) != 2;
+      if (showTitle) {
+        final titlePainter = TextPainter(
+          text: TextSpan(
+            text: chapterTitle,
+            style: baseStyle.merge(TextStyle(
+              fontSize: fontSize + chrome.titleSize,
+              fontWeight: FontWeight.bold,
+            )),
+          ),
+          textDirection: TextDirection.ltr,
+          textScaler: textScaler,
+        )..layout(maxWidth: availableWidth);
+        firstPageHeight = availableHeight -
+            titlePainter.height -
+            chrome.titleTopSpacing -
+            chrome.titleBottomSpacing;
+        titlePainter.dispose();
+      }
       // 极端小窗口兼底：首页至少容纳一行正文
       final minHeight = fontSize * lineHeight;
       if (firstPageHeight < minHeight) firstPageHeight = minHeight;
@@ -517,6 +524,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedJustify = justify;
     _paginatedFontFamily = fontFamily;
     _paginatedMargins = margins;
+    _paginatedPageChrome = widget.pageChrome.layoutKey;
     _paginatedSysPadding = sysPaddingKey;
     _paginatedDoublePage = doublePage;
     _paginatedUseZhLayout = widget.useZhLayout;
@@ -1013,6 +1021,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       pageIndex: safeIndex,
       totalPages: _paginatedPages.length,
       chapterTitle: state.currentChapter?.title,
+      pageChrome: widget.pageChrome,
+      tipContext: _buildTipContext(
+        state,
+        safeIndex,
+        _paginatedPages.length,
+        globalIndex,
+      ),
       fontSize: state.fontSize,
       lineHeight: state.lineHeight,
       paragraphSpacing: widget.paragraphSpacing,
@@ -1044,6 +1059,25 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
       reviewCounts: widget.reviewCounts,
       onReviewTap: widget.onReviewTap,
+    );
+  }
+
+  ReaderTipContext _buildTipContext(
+    ReaderState state,
+    int pageIndex,
+    int totalPages,
+    int? globalIndex,
+  ) {
+    return ReaderTipContext(
+      bookName: state.currentBook?.name ?? '',
+      chapterTitle: state.currentChapter?.title ?? '',
+      pageIndex: pageIndex,
+      totalPages: totalPages,
+      globalPageIndex: globalIndex,
+      globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
+      readProgress: state.readingProgress,
+      chapterIndex: state.currentChapterIndex,
+      chapterCount: state.chapters.length,
     );
   }
 

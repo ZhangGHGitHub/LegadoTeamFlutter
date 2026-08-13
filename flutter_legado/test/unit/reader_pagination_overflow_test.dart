@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/widgets/paragraph_layout_engine.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_page_chrome.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
 
 /// [UI-fix v2.0.4 | 2026-08-08] 分页高度回归测试 — Qoder
@@ -10,6 +11,8 @@ import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
 /// 必须与渲染容器（ReaderTypographicPage：首页标题块 + Expanded 正文 +
 /// 页码指示页脚）严格一致。按 reader_page_view._paginateIfNeeded 的同一
 /// 套算法计算首页/后续页容量，满页正文渲染不得出现溢出异常。
+const _defaultChrome = ReaderPageChromeConfig();
+
 void main() {
   const fontSize = 22.0;
   const lineHeight = 1.8;
@@ -20,21 +23,12 @@ void main() {
   const marginRight = 20.0;
   const chapterTitle = '第一章 满页正文分页高度回归';
 
-  /// 与 reader_page_view._paginateIfNeeded 同参：实测页脚高度
-  double measureFooterHeight(BuildContext context) {
-    final baseStyle = DefaultTextStyle.of(context).style;
-    final painter = TextPainter(
-      text: TextSpan(
-        text: '0/0',
-        style: baseStyle.merge(const TextStyle(fontSize: 11)),
-      ),
-      textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
-    final h = 8 + painter.height;
-    painter.dispose();
-    return h;
-  }
+
+  double measureHeaderBlock(BuildContext context) =>
+      ReaderPageLayoutMetrics.headerBlockHeight(context, _defaultChrome);
+
+  double measureFooterBlock(BuildContext context) =>
+      ReaderPageLayoutMetrics.footerBlockHeight(context, _defaultChrome);
 
   /// 与 reader_page_view._paginateIfNeeded 同参：实测首页标题块高度
   double measureTitleBlockHeight(BuildContext context, double maxWidth) {
@@ -42,8 +36,8 @@ void main() {
     final painter = TextPainter(
       text: TextSpan(
         text: chapterTitle,
-        style: baseStyle.merge(const TextStyle(
-          fontSize: fontSize + 4,
+        style: baseStyle.merge(TextStyle(
+          fontSize: fontSize + _defaultChrome.titleSize, // titleSize 默认 0
           fontWeight: FontWeight.bold,
         )),
       ),
@@ -72,9 +66,13 @@ void main() {
             builder: (context) {
               final size = MediaQuery.of(context).size;
               final availableWidth = size.width - marginLeft - marginRight;
-              final footerHeight = measureFooterHeight(context);
-              final availableHeight =
-                  size.height - footerHeight - marginTop - marginBottom;
+              final headerBlock = measureHeaderBlock(context);
+              final footerBlock = measureFooterBlock(context);
+              final availableHeight = size.height -
+                  headerBlock -
+                  footerBlock -
+                  marginTop -
+                  marginBottom;
               final firstPageHeight = availableHeight -
                   measureTitleBlockHeight(context, availableWidth);
 
@@ -141,8 +139,11 @@ void main() {
           builder: (context) {
             final size = MediaQuery.of(context).size;
             final availableWidth = size.width - marginLeft - marginRight;
+            final headerBlock = measureHeaderBlock(context);
+            final footerBlock = measureFooterBlock(context);
             availableHeight = size.height -
-                measureFooterHeight(context) -
+                headerBlock -
+                footerBlock -
                 marginTop -
                 marginBottom;
             firstPageHeight = availableHeight -
