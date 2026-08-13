@@ -34,9 +34,8 @@ jobs:
         working-directory: flutter_legado
         run: flutter pub get
 
-      # ── 运行集成冒烟测试 ──
-      # flutter test integration_test -d windows 会构建 Windows 桌面应用并执行测试
+      # ── 运行 FFI 冒烟（仅 ffi_smoke；不含需外网书源的 e2e_search_read）──
       # DLL 搜索路径：cwd/../rust/target/debug/legado_ffi.dll（由 RustApi._resolveFfiLibrary 自动发现）
       - name: 运行 FFI 集成冒烟测试
         working-directory: flutter_legado
-        run: flutter test integration_test -d windows
+        run: flutter test integration_test/ffi_smoke_test.dart -d windows
