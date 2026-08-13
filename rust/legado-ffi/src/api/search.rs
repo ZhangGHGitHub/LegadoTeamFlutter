@@ -1676,6 +1676,48 @@ mod tests {
         assert_eq!(results[0].book_name, "有书名");
     }
 
+    // ─── T6: CSS 提取 + @js: 链求值 bookUrl（对齐原版 splitSourceRule）───
+    #[test]
+    fn test_parse_search_book_url_css_js_chain() {
+        let html = r#"<html><body>
+            <div class="book-item">
+                <a class="name" href="/novel/42">书名</a>
+                <span class="author">作者</span>
+            </div>
+        </body></html>"#;
+
+        let source = make_source_with_rules(
+            ".book-item",
+            ".name",
+            ".author",
+            // 先取 href，再经 JS 拼接绝对路径（黑岩等 JS 链书源形态）
+            r#".name@href@js:'https://www.example.com'+result"#,
+            "",
+            "",
+            "",
+        );
+
+        let results = parse_search_response(html, "https://www.example.com", &source).unwrap();
+
+        #[cfg(feature = "quickjs")]
+        {
+            assert_eq!(results.len(), 1);
+            assert_eq!(
+                results[0].book_url,
+                "https://www.example.com/novel/42",
+                "CSS@js 链应产出非空绝对 bookUrl"
+            );
+            assert!(!results[0].book_url.is_empty());
+        }
+
+        #[cfg(not(feature = "quickjs"))]
+        {
+            // 无 quickjs：链中 JS 段降级，bookUrl 空则回退书源主页
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].book_url, "https://www.example.com");
+        }
+    }
+
     // ─── 测试 9: @js: 搜索规则注入（quickjs 启用时生效，否则降级）───────────────
 
     #[test]
