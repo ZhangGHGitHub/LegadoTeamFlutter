@@ -689,6 +689,15 @@ Future<String> httpGet({required String url}) =>
 Future<String> httpPost({required String url, required String body}) =>
     RustLib.instance.api.crateFfiFfiHttpPost(url: url, body: body);
 
+/// HTTP GET 二进制响应（返回 JSON：status/bodyBase64/url）
+Future<String> httpGetBytes({
+  required String url,
+  required String headersJson,
+}) => RustLib.instance.api.crateFfiFfiHttpGetBytes(
+  url: url,
+  headersJson: headersJson,
+);
+
 /// 图片下载 + imageDecode 解码（返回 JSON：{ base64, len }）
 ///
 /// 对齐原版 ImageUtils.decodeImageStream：漫画/图片站图片 bytes 经

@@ -103,6 +103,39 @@ pub fn clear_cookie(url: &str) -> LegadoResult<()> {
     Ok(())
 }
 
+/// HTTP GET 二进制响应（F3-14，经共享 legado-net 客户端）
+///
+/// 返回 JSON：`{"status": int, "bodyBase64": string, "url": string}`。
+/// `headers_json` 为空串时不附加请求头；否则为 JSON 对象字符串。
+pub fn http_get_bytes(url: &str, headers_json: &str) -> LegadoResult<String> {
+    use std::collections::HashMap;
+
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(LegadoError::Internal("url 不能为空".into()));
+    }
+    let headers: Option<HashMap<String, String>> = if headers_json.trim().is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_str(headers_json)
+                .map_err(|e| LegadoError::Internal(format!("headersJson 解析失败: {e}")))?,
+        )
+    };
+    let response = crate::runtime::block_on(async {
+        let client = crate::http_state::shared_client()?;
+        client.get_raw(url, headers).await
+    })?;
+    serde_json::to_string(&serde_json::json!({
+        "status": response.status,
+        "bodyBase64": STANDARD.encode(&response.body),
+        "url": response.url,
+    }))
+    .map_err(LegadoError::Serialization)
+}
+
 /// 启动时恢复 hosts 映射（由 db_open 调用，尽力而为）
 ///
 /// 读回 `config:customHosts`：非空时应用到网络层（失败仅记日志）；

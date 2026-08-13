@@ -952,6 +952,11 @@ pub mod ffi {
         }))?)
     }
 
+    /// HTTP GET 二进制响应（返回 JSON：status/bodyBase64/url）
+    pub fn http_get_bytes(url: String, headers_json: String) -> Result<String, BridgeError> {
+        Ok(crate::api::net_api::http_get_bytes(&url, &headers_json)?)
+    }
+
     /// 图片下载 + imageDecode 解码（返回 JSON：{ base64, len }）
     ///
     /// 对齐原版 ImageUtils.decodeImageStream：漫画/图片站图片 bytes 经
