@@ -19,6 +19,7 @@ class MainActivity : FlutterActivity() {
     private var autoTaskJobChannel: MethodChannel? = null
     private var initialDeepLink: String? = null
     private var pendingAutoTaskDue = false
+    private var pendingAutoTaskMinimize = false
 
     companion object {
         private const val CHANNEL_WEBVIEW = "legado/webview"
@@ -94,6 +95,7 @@ class MainActivity : FlutterActivity() {
         if (pendingAutoTaskDue) {
             pendingAutoTaskDue = false
             autoTaskJobChannel?.invokeMethod("onJobDue", null)
+            maybeMinimizeAfterAutoTask()
         }
     }
 
@@ -102,6 +104,8 @@ class MainActivity : FlutterActivity() {
         initialDeepLink = intent?.dataString
         pendingAutoTaskDue =
             intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false) == true
+        pendingAutoTaskMinimize =
+            intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_MINIMIZE, false) == true
         applyThemeStatusBarColor()
     }
 
@@ -113,8 +117,23 @@ class MainActivity : FlutterActivity() {
             deepLinkChannel?.invokeMethod("onLink", link)
         }
         if (intent.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false)) {
+            pendingAutoTaskMinimize =
+                intent.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_MINIMIZE, false)
             autoTaskJobChannel?.invokeMethod("onJobDue", null)
                 ?: run { pendingAutoTaskDue = true }
+            maybeMinimizeAfterAutoTask()
+        }
+    }
+
+    /** Job 冷启动拉起时尽快退到后台，减少打扰（F2） */
+    private fun maybeMinimizeAfterAutoTask() {
+        if (!pendingAutoTaskMinimize) return
+        pendingAutoTaskMinimize = false
+        window.decorView.post {
+            try {
+                moveTaskToBack(true)
+            } catch (_: Exception) {
+            }
         }
     }
 

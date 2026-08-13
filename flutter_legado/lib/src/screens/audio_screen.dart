@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:saf/saf.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -847,8 +849,15 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
 
   Future<void> _pickAudioCacheFolder() async {
     try {
-      const channel = MethodChannel('legado/file_picker');
-      final uri = await channel.invokeMethod<String>('pickDirectory');
+      // 优先 SAF v2（持久化写权限）；失败再降级 MethodChannel
+      String? uri;
+      try {
+        final dir = await Saf().pickDirectory(writePermission: true);
+        uri = dir?.uri;
+      } catch (_) {
+        const channel = MethodChannel('legado/file_picker');
+        uri = await channel.invokeMethod<String>('pickDirectory');
+      }
       if (uri == null || uri.isEmpty) return;
       await ref.read(bookApiProvider).setConfig(kAudioCacheTreeUriKey, uri);
       if (mounted) _snack('已选择缓存目录');
@@ -909,9 +918,19 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   Future<void> _cacheAudioRange(int fromIndex, int toIndex) async {
     final api = ref.read(bookApiProvider);
     final bookUrl = widget.effectiveBookUrl;
-    final base = await getApplicationSupportDirectory();
-    final dir = Directory('${base.path}${Platform.pathSeparator}audio_cache');
-    if (!dir.existsSync()) dir.createSync(recursive: true);
+    // F1：优先写入用户自选 SAF DocumentFile tree；无 tree 时回退应用 audio_cache
+    final treeUri = (await api.getConfig(kAudioCacheTreeUriKey))?.trim() ?? '';
+    final useSaf = treeUri.isNotEmpty && Platform.isAndroid;
+    Directory? fallbackDir;
+    if (!useSaf) {
+      final base = await getApplicationSupportDirectory();
+      fallbackDir =
+          Directory('${base.path}${Platform.pathSeparator}audio_cache');
+      if (!fallbackDir.existsSync()) {
+        fallbackDir.createSync(recursive: true);
+      }
+    }
+    final saf = useSaf ? Saf() : null;
     var okCount = 0;
     for (var i = fromIndex; i <= toIndex; i++) {
       try {
@@ -920,15 +939,27 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         if (url.isEmpty || !url.startsWith('http')) continue;
         final resp = await http.get(Uri.parse(url));
         if (resp.statusCode < 200 || resp.statusCode >= 300) continue;
-        final file = File(
-          '${dir.path}${Platform.pathSeparator}${bookUrl.hashCode}_$i.audio',
-        );
-        await file.writeAsBytes(resp.bodyBytes, flush: true);
+        final name = '${bookUrl.hashCode}_$i.audio';
+        if (saf != null) {
+          await saf.writeFileBytes(
+            treeUri,
+            name,
+            'application/octet-stream',
+            Uint8List.fromList(resp.bodyBytes),
+            overwrite: true,
+          );
+        } else {
+          final file = File(
+            '${fallbackDir!.path}${Platform.pathSeparator}$name',
+          );
+          await file.writeAsBytes(resp.bodyBytes, flush: true);
+        }
         okCount++;
       } catch (_) {}
     }
     if (mounted) {
-      _snack(okCount > 0 ? '已缓存 $okCount 章到本地目录' : '未缓存到可用章节');
+      final where = useSaf ? '所选缓存目录' : '应用本地目录';
+      _snack(okCount > 0 ? '已缓存 $okCount 章到$where' : '未缓存到可用章节');
     }
   }
 

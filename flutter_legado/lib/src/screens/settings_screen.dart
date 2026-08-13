@@ -228,7 +228,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: () => Navigator.pushNamed(context, AppRoutes.autoTasks),
               ),
               // [UI-fix 2026-08-13] P1-16：JobScheduler + AutoTaskJobService 真后台已接通；
-              // 冷启动无 FlutterEngine 时 Job 会拉起 MainActivity 再执行 — Auto
+              // F2：优先无头引擎 / 已有通道；否则拉起 MainActivity（NO_ANIMATION）并尽快 moveTaskToBack — Auto
               SwitchListTile(
                 secondary: const Icon(Icons.autorenew),
                 title: const Text('定时任务服务'),

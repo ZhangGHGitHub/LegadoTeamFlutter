@@ -2,6 +2,9 @@ package io.legado.flutter
 
 import android.app.Activity
 import android.content.Intent
+import android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+import android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 import android.net.Uri
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -11,7 +14,7 @@ import io.flutter.plugin.common.MethodChannel
  *
  * 支持方法：
  * - pickFile: 选择文件（支持指定 MIME 类型过滤）
- * - pickDirectory: 选择目录（SAF DocumentTree）
+ * - pickDirectory: 选择目录（SAF DocumentTree，持久化读写权限）
  */
 class FilePickerBridge {
 
@@ -21,6 +24,7 @@ class FilePickerBridge {
     }
 
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingActivity: Activity? = null
 
     fun handleMethodCall(call: MethodCall, result: MethodChannel.Result, activity: Activity) {
         when (call.method) {
@@ -42,6 +46,7 @@ class FilePickerBridge {
             return
         }
         pendingResult = result
+        pendingActivity = activity
 
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -60,6 +65,7 @@ class FilePickerBridge {
             activity.startActivityForResult(intent, REQUEST_CODE_PICK_FILE)
         } catch (e: Exception) {
             pendingResult = null
+            pendingActivity = null
             result.error("PICK_ERROR", "Failed to open file picker: ${e.message}", null)
         }
     }
@@ -70,23 +76,33 @@ class FilePickerBridge {
             return
         }
         pendingResult = result
+        pendingActivity = activity
 
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                FLAG_GRANT_READ_URI_PERMISSION or
+                    FLAG_GRANT_WRITE_URI_PERMISSION or
+                    FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+        }
 
         try {
             activity.startActivityForResult(intent, REQUEST_CODE_PICK_DIR)
         } catch (e: Exception) {
             pendingResult = null
+            pendingActivity = null
             result.error("PICK_ERROR", "Failed to open directory picker: ${e.message}", null)
         }
     }
 
     fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         val result = pendingResult ?: return
+        val activity = pendingActivity
 
         when (requestCode) {
             REQUEST_CODE_PICK_FILE -> {
                 pendingResult = null
+                pendingActivity = null
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     val uri = data.data
                     if (uri != null) {
@@ -101,9 +117,24 @@ class FilePickerBridge {
             }
             REQUEST_CODE_PICK_DIR -> {
                 pendingResult = null
+                pendingActivity = null
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     val treeUri = data.data
                     if (treeUri != null) {
+                        // 持久化读写权限，供听书缓存等后续 DocumentFile 落盘
+                        if (activity != null) {
+                            val takeFlags = (data.flags and
+                                (FLAG_GRANT_READ_URI_PERMISSION or FLAG_GRANT_WRITE_URI_PERMISSION))
+                            try {
+                                activity.contentResolver.takePersistableUriPermission(
+                                    treeUri,
+                                    takeFlags or FLAG_GRANT_READ_URI_PERMISSION or
+                                        FLAG_GRANT_WRITE_URI_PERMISSION
+                                )
+                            } catch (_: SecurityException) {
+                                // 部分 provider 不支持 persistable；仍返回 URI 供当次会话使用
+                            }
+                        }
                         result.success(treeUri.toString())
                     } else {
                         result.error("NO_DIR", "No directory selected", null)

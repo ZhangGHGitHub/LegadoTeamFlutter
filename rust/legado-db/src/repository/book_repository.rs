@@ -314,6 +314,52 @@ impl<'a> BookRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
         Ok(())
     }
+
+    /// 同名同作者冲突时：迁移 chapters/相关表的 bookUrl，再替换 books 行（保目录）
+    fn remap_book_url_preserving_chapters(
+        &self,
+        old_url: &str,
+        item: &Book,
+    ) -> LegadoResult<()> {
+        let new_url = &item.book_url;
+        if old_url == new_url {
+            // 防御：同 URL 不应进入冲突路径，直接 REPLACE 字段
+            return self.insert_replace(item);
+        }
+        // 临时关闭 FK，避免迁移瞬间外键失败；删除旧行时也不会 CASCADE 清 chapters
+        self.conn
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .map_err(|e| LegadoError::Database(format!("关闭外键失败: {e}")))?;
+        let result = (|| -> LegadoResult<()> {
+            self.conn
+                .execute(
+                    "UPDATE chapters SET bookUrl = ?1 WHERE bookUrl = ?2",
+                    params![new_url, old_url],
+                )
+                .map_err(|e| LegadoError::Database(format!("迁移 chapters 失败: {e}")))?;
+            let _ = self.conn.execute(
+                "UPDATE highlights SET bookUrl = ?1 WHERE bookUrl = ?2",
+                params![new_url, old_url],
+            );
+            let _ = self.conn.execute(
+                "UPDATE cached_chapters SET book_url = ?1 WHERE book_url = ?2",
+                params![new_url, old_url],
+            );
+            let _ = self.conn.execute(
+                "UPDATE download_tasks SET book_url = ?1 WHERE book_url = ?2",
+                params![new_url, old_url],
+            );
+            self.conn
+                .execute("DELETE FROM books WHERE bookUrl = ?1", params![old_url])
+                .map_err(|e| LegadoError::Database(format!("删除冲突书籍失败: {e}")))?;
+            self.insert_replace(item)?;
+            Ok(())
+        })();
+        self.conn
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|e| LegadoError::Database(format!("恢复外键失败: {e}")))?;
+        result
+    }
 }
 
 impl<'a> Repository<Book> for BookRepository<'a> {
@@ -366,6 +412,14 @@ impl<'a> Repository<Book> for BookRepository<'a> {
             // 行已存在：原地全列 UPDATE，新值覆盖语义与原 INSERT OR REPLACE
             // 一致；UPDATE 不删旧行，不会误触发 chapters 级联删除。
             return self.update(item);
+        }
+        // D5：二级索引 (name,author) 冲突预检——避免 INSERT OR REPLACE
+        // 删掉另一 bookUrl 行并 CASCADE 清空其 chapters。
+        if let Some(conflict) = self.find_by_name_author(&item.name, &item.author)? {
+            if conflict.book_url != item.book_url {
+                self.remap_book_url_preserving_chapters(&conflict.book_url, item)?;
+                return Ok(());
+            }
         }
         self.insert_replace(item)
     }
@@ -762,6 +816,51 @@ mod tests {
             ch_repo.find_by_book_url("u1").unwrap().len(),
             2,
             "重复插入不得触发 chapters 外键级联删除"
+        );
+    }
+
+    /// D5 / §5.14-10：同名同作者不同 bookUrl 插入时预检迁移，目录不丢
+    #[test]
+    fn test_insert_name_author_conflict_keeps_chapters() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookRepository::new(conn);
+        let book = make_book("https://old.example/book", "同名书", "同作者");
+        repo.insert(&book).unwrap();
+
+        let ch_repo = crate::BookChapterRepository::new(conn);
+        let chapters: Vec<legado_core::models::BookChapter> = (0..2)
+            .map(|i| legado_core::models::BookChapter {
+                url: format!("old/ch{i}"),
+                title: format!("第{i}章"),
+                book_url: "https://old.example/book".to_string(),
+                base_url: "https://old.example/book".to_string(),
+                index: i,
+                ..legado_core::models::BookChapter::default()
+            })
+            .collect();
+        ch_repo.insert_batch(&chapters).unwrap();
+        assert_eq!(
+            ch_repo
+                .find_by_book_url("https://old.example/book")
+                .unwrap()
+                .len(),
+            2
+        );
+
+        let replacement = make_book("https://new.example/book", "同名书", "同作者");
+        repo.insert(&replacement).unwrap();
+
+        assert_eq!(repo.count().unwrap(), 1);
+        assert!(repo.find_by_url("https://old.example/book").unwrap().is_none());
+        assert!(repo.find_by_url("https://new.example/book").unwrap().is_some());
+        assert_eq!(
+            ch_repo
+                .find_by_book_url("https://new.example/book")
+                .unwrap()
+                .len(),
+            2,
+            "name+author 冲突预检必须保留 chapters"
         );
     }
 }

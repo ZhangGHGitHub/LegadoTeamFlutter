@@ -220,4 +220,11 @@ mod tests {
         assert!(is_js_true("yes"));
         assert!(is_js_true("1"));
     }
+
+    /// F3：无书时 callBackBtn 应报错（副作用队列不泄漏）
+    #[test]
+    fn call_back_btn_missing_book_errors() {
+        let err = source_call_back_btn("clickCustomButton", "missing://book", None, None, 0);
+        assert!(err.is_err());
+    }
 }
