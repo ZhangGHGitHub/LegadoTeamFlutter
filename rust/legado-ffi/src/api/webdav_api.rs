@@ -169,6 +169,49 @@ pub fn webdav_download(config_json: &str, path: &str) -> LegadoResult<String> {
         .map_err(|e| legado_core::LegadoError::Internal(format!("Invalid UTF-8: {e}")))
 }
 
+/// 从 WebDAV 下载二进制到本地文件（API_CONTRACT §2.28，P1-5）
+///
+/// 镜像 [`webdav_upload_file`]：将远端字节写入 `local_file_path`。
+pub fn webdav_download_file(
+    config_json: &str,
+    path: &str,
+    local_file_path: &str,
+) -> LegadoResult<()> {
+    let config: WebDavConfig = serde_json::from_str(config_json)
+        .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
+    let client = WebDavClient::new(config);
+
+    let rt = tokio::runtime::Handle::try_current().unwrap_or_else(|_| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("legado-webdav-fallback")
+            .thread_stack_size(8 * 1024 * 1024)
+            .build()
+            .unwrap()
+            .handle()
+            .clone()
+    });
+    let bytes = rt.block_on(client.get(path))?;
+
+    if let Some(parent) = std::path::Path::new(local_file_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                legado_core::LegadoError::Io(std::io::Error::new(
+                    e.kind(),
+                    format!("创建父目录失败: {parent:?}: {e}"),
+                ))
+            })?;
+        }
+    }
+    std::fs::write(local_file_path, bytes).map_err(|e| {
+        legado_core::LegadoError::Io(std::io::Error::new(
+            e.kind(),
+            format!("写入本地文件失败: {local_file_path}: {e}"),
+        ))
+    })?;
+    Ok(())
+}
+
 /// 删除 WebDAV 远程文件
 pub fn webdav_delete(config_json: &str, path: &str) -> LegadoResult<()> {
     let config: WebDavConfig = serde_json::from_str(config_json)

@@ -25,6 +25,7 @@
 | 2026-08-13 | **DB schema 结构对齐专项落地**（台账称「schema v102」，代码版本号 **103→104**，因 102/103 已分别用于 cached_chapters 复合索引与 book_sources.variable）：rssArticles/rssStars/readRecord 主键重建；rssReadRecords/httpTTS（原 http_tts）/search_keywords 结构对齐 Room v95；rssSources 去掉 enableCookieJar 冗余列；coverRules 纳入建表清单。无新 FFI；Repository 列名随表结构适配。残留：rule_subs/dict_rules/keyboard_assists 表名仍为 snake_case（见台账 §4.2.1） |
 | 2026-08-13 | **D1**：SCHEMA 104→105，`ruleSubs`/`dictRules`/`keyboardAssists` 对齐 Room 表名列名（Migration104To105） |
 | 2026-08-13 | **F4**：封面规则 CRUD 加法式新增——`getCoverRule` / `saveCoverRule` / `deleteCoverRule`（§2.4，对齐原版 `BookCover` + `CoverRuleConfigDialog`） |
+| 2026-08-13 | **F5**：`setMcpPort` 对齐原版 LAN（`0.0.0.0`）+ `jsSourceApiToken` 启动前置 + `X-Legado-Token` 鉴权（§2.22） |
 
 ---
 
@@ -345,9 +346,9 @@
 | `stopServer()` | 无 | `Future<void>` | 停止服务器 |
 | `getServerStatus()` | 无 | `Future<String>` | 获取服务器状态 |
 | `setServerPort(int port)` | port | `Future<void>` | 设置服务器端口 |
-| `setMcpPort(int port)` | port: 独立 MCP 服务端口（合法区间 1024–65530，对齐原版 NumberPicker 取值；缺省语义默认 1236，对齐原版 `AppConfig.mcpPort` 默认值，未配置时 UI 对话框预填 1236 落实该缺省语义）；port ≤ 0 = 停止独立 MCP 服务 | `Future<void>` | 启动/停止独立 MCP 服务端口（**对齐原版独立端口方案**，见下方决策说明）。独立端口启动后提供与既有 Web 端口挂载的 `/mcp/tools`（GET）/ `/mcp/call`（POST）等价能力（同一套 MCP 工具与调用入口，零新增工具）；**并存策略**：独立端口开启时保持 Web 端口 `/mcp/*` 挂载不变（兼容既有消费方），二者共用同一 AppState/工具实现。端口配置需持久化（caches 表 `config:` 前缀键 `mcpPort`，与既有配置语义一致）。错误码：Internal（端口绑定失败，如端口被占用）；Internal（端口越界，合法区间 1024..65530，Task #76 Med2）。既有 `startServer` / `stopServer` / `getServerStatus` / `setServerPort` 签名保持不变，本方法为加法式新增（台账 §5.13-6，第四批后置项，Task #72） |
+| `setMcpPort(int port)` | port: 独立 MCP 服务端口（合法区间 1024–65530，对齐原版 NumberPicker 取值；缺省语义默认 1236，对齐原版 `AppConfig.mcpPort` 默认值，未配置时 UI 对话框预填 1236 落实该缺省语义）；port ≤ 0 = 停止独立 MCP 服务 | `Future<void>` | 启动/停止独立 MCP 服务端口（**对齐原版独立端口方案**，见下方决策说明）。独立端口启动后提供与既有 Web 端口挂载的 `/mcp/tools`（GET）/ `/mcp/call`（POST）等价能力（同一套 MCP 工具与调用入口，零新增工具）；**并存策略**：独立端口开启时保持 Web 端口 `/mcp/*` 挂载不变（兼容既有消费方），二者共用同一 AppState/工具实现。端口配置需持久化（caches 表 `config:` 前缀键 `mcpPort`，与既有配置语义一致）。**F5（2026-08-13）**：监听 `0.0.0.0`（LAN 可达，对齐原版）；启动前置要求 `config:jsSourceApiToken` 非空（否则 Internal）；独立端口 `/mcp/*` 请求须带请求头 `X-Legado-Token`（大小写不敏感）与配置 token 字节级相等，否则 401。错误码：Internal（端口绑定失败 / 越界 / token 未设置）。既有 `startServer` / `stopServer` / `getServerStatus` / `setServerPort` 签名保持不变，本方法为加法式新增（台账 §5.13-6，第四批后置项，Task #72） |
 
-> ℹ️ **mcpPort 决策说明（台账 §5.13-6，Task #72）**：调研原版 `McpService.kt`——其为**独立前台服务**，ktor CIO embeddedServer 绑定 0.0.0.0 独立端口（`AppConfig.mcpPort` 默认 1236，合法区间 1024..65530，越界回落 1236），与 Web 服务（`WebService` + `webPort`）完全分离；启动前置条件为 `jsSourceApiToken` 非空（否则报错停服），端口变更后运行中服务自动重启。本轨现状：MCP 20 工具经 `legado-server` handlers/mcp.rs 挂载于 Web 服务端口（routes.rs `/mcp/tools` / `/mcp/call`，`server_api.rs` 仅有 server_start/stop/status）。**决策：对齐原版采用独立端口方案，新增 `setMcpPort`，不复用 `setServerPort`**。理由：① 复用 `setServerPort` 会把 MCP 与整个 Web/API 服务绑死于同一端口，无法表达原版「MCP 服务独立启停」（port ≤ 0 停止 MCP 但保留 Web 服务）的语义；② 原版 mcpPort/webPort 为两个独立配置项，复用将造成契约语义歧义；③ 独立端口实施仅需复用既有 `create_router`/MCP handlers 在第二端口监听（同进程内），代价可控，未达「显著更低」门槛，不触发改选条件。差异说明：原版独立 MCP 端口为 MCP 协议端点（configureMcp + token 鉴权 + 局域网 Host/Origin 白名单），本轨以 REST 形式（`/mcp/tools` / `/mcp/call`）提供等价工具能力；token/访问控制语义由 Rust 轨实施时沿用既有 MCP handlers 方案，不在本契约冻结范围。差异：原版越界回落 1236，本契约改为报错（UI 内联区间校验前置拦截，Task #76 Med2）。
+> ℹ️ **mcpPort 决策说明（台账 §5.13-6，Task #72；F5 补齐）**：调研原版 `McpService.kt`——其为**独立前台服务**，ktor CIO embeddedServer 绑定 **0.0.0.0** 独立端口（`AppConfig.mcpPort` 默认 1236，合法区间 1024..65530），与 Web 服务完全分离；启动前置条件为 `jsSourceApiToken` 非空；请求经 `X-Legado-Token` 鉴权 + Host/Origin 白名单。本轨：`setMcpPort` 独立端口 + REST `/mcp/tools`/`/mcp/call`；**F5 已对齐** LAN 绑定、`jsSourceApiToken` 启动前置与 `X-Legado-Token` 校验。差异：原版另有 Host/Origin 白名单（本轨暂以 token 为访问控制主防线）；原版越界回落 1236，本契约改为报错（UI 内联区间校验前置拦截）。
 
 ### 2.23 书籍格式解析（3 个方法）
 

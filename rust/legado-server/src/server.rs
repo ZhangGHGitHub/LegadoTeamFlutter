@@ -3,14 +3,23 @@
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+
+use axum::body::Body;
+use axum::extract::Request;
+use axum::http::{header::HeaderName, StatusCode};
+use axum::middleware::{from_fn, Next};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use tokio::sync::Mutex;
 
+use crate::handlers;
 use crate::routes::create_router;
 use crate::state::AppState;
-use crate::handlers;
 use legado_core::download_manager::DownloadManager;
+
+/// 对齐原版 `McpAccess.TOKEN_HEADER`
+const MCP_TOKEN_HEADER: &str = "x-legado-token";
 
 /// 服务器配置
 pub struct ServerConfig {
@@ -50,37 +59,72 @@ pub async fn start_server(config: ServerConfig) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-/// 独立 MCP 服务专用路由（Task #73/76，契约 §2.22.5）
+/// 独立 MCP 服务专用路由（Task #73/76 + F5，契约 §2.22.5）
 ///
 /// 暴露面收敛：仅挂载 MCP 端点 `/mcp/tools`（GET）/ `/mcp/call`（POST）
-/// 与健康检查 `/health`，**不复用** [`create_router`] 全量路由（避免
-/// 完整 /api 写路由暴露在独立端口上）；与 Web 端口共用同一套
-/// MCP handlers 实现，零新增工具。
-fn create_mcp_router(state: Arc<AppState>) -> Router {
+/// 与健康检查 `/health`，**不复用** [`create_router`] 全量路由。
+/// F5：`/mcp/*` 经 `X-Legado-Token` 鉴权（对齐原版）；`/health` 免鉴权便于探测。
+fn create_mcp_router(state: Arc<AppState>, expected_token: Arc<String>) -> Router {
+    let token_for_layer = Arc::clone(&expected_token);
     Router::new()
         .route("/mcp/tools", get(handlers::mcp::get_tools))
         .route("/mcp/call", post(handlers::mcp::call_tool))
-        .route("/health", get(|| async { Json(serde_json::json!({"status":"ok"})) }))
+        .route(
+            "/health",
+            get(|| async { Json(serde_json::json!({"status": "ok"})) }),
+        )
+        .layer(from_fn(move |req: Request<Body>, next: Next| {
+            let token = Arc::clone(&token_for_layer);
+            async move {
+                // /health 免鉴权（探测）；/mcp/* 要求 X-Legado-Token
+                if req.uri().path() == "/health" {
+                    return next.run(req).await;
+                }
+                mcp_token_middleware(token, req, next).await
+            }
+        }))
         .with_state(state)
 }
 
-/// 启动独立 MCP 服务（Task #73，契约 §2.22.5 `setMcpPort` 独立端口方案）
+async fn mcp_token_middleware(
+    expected: Arc<String>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let header_name = HeaderName::from_static(MCP_TOKEN_HEADER);
+    let actual = request
+        .headers()
+        .get(&header_name)
+        .and_then(|v| v.to_str().ok());
+    if !matches_js_source_api_token(expected.as_str(), actual) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "MCP token invalid or missing",
+        )
+            .into_response();
+    }
+    next.run(request).await
+}
+
+/// 对齐原版 `BookSourceController.matchesJsSourceApiToken`（字节级相等）
+fn matches_js_source_api_token(expected: &str, actual: Option<&str>) -> bool {
+    if expected.is_empty() {
+        return false;
+    }
+    match actual {
+        Some(a) => a.as_bytes() == expected.as_bytes(),
+        None => false,
+    }
+}
+
+/// 启动独立 MCP 服务（Task #73 / F5，契约 §2.22.5 `setMcpPort`）
 ///
-/// 对齐原版 `McpService.kt` 独立前台服务形态：与 Web 服务完全分离，
-/// 在调用方已绑定的监听器上服务。仅挂载专用 MCP 路由
-/// （[`create_mcp_router`]：`/mcp/tools` + `/mcp/call` + `/health`），
-/// 与 Web 端口挂载的 MCP 端点能力等价，零新增工具。
-///
-/// 安全边界（Task #76）：监听器由调用方绑定到 **本机回环地址
-/// 127.0.0.1**（对齐既有 server_start 安全边界）；局域网可达与
-/// token 鉴权属后续契约批次（契约 L323 已声明不在冻结范围）。
-///
-/// 监听器由调用方预先绑定，便于同步获得端口占用等绑定失败错误；
-/// 数据库由调用方预先初始化（Task #76：初始化失败同步报错，
-/// 不进入服务任务），与主应用同一 DB 文件（WAL 并发安全）。
+/// 对齐原版 `McpService.kt`：调用方绑定 **0.0.0.0**；`expected_token` 非空
+/// （由 `jsSourceApiToken` 注入）；`/mcp/*` 校验 `X-Legado-Token`。
 pub async fn serve_mcp(
     listener: tokio::net::TcpListener,
     db: legado_db::Database,
+    expected_token: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
         db: Mutex::new(db),
@@ -88,7 +132,7 @@ pub async fn serve_mcp(
         download_manager: Mutex::new(DownloadManager::new(3)),
     });
 
-    let router = create_mcp_router(state);
+    let router = create_mcp_router(state, Arc::new(expected_token));
 
     let addr = listener.local_addr()?;
     tracing::info!("Legado standalone MCP service listening on {}", addr);
@@ -101,6 +145,14 @@ pub async fn serve_mcp(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_matches_js_source_api_token() {
+        assert!(!matches_js_source_api_token("", Some("x")));
+        assert!(!matches_js_source_api_token("secret", None));
+        assert!(!matches_js_source_api_token("secret", Some("wrong")));
+        assert!(matches_js_source_api_token("secret", Some("secret")));
+    }
 
     #[test]
     fn test_default_config() {

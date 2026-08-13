@@ -301,8 +301,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 title: const Text('MCP 服务'),
                 subtitle: Text(
                   _mcpService && _mcpPort > 0
-                      ? '独立 MCP 端口 $_mcpPort（细调见其他设置）'
-                      : '独立 MCP 工具服务（默认端口 1236）',
+                      ? 'LAN 端口 $_mcpPort（需 Token；细调见其他设置）'
+                      : 'LAN MCP（默认 1236；需先配置 JS 书源 API Token）',
                 ),
                 value: _mcpService,
                 onChanged: _mcpServiceBusy ? null : _toggleMcpService,

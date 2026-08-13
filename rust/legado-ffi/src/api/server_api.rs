@@ -170,8 +170,8 @@ static MCP_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// - 端口变更自动重启（先停旧再启新，abort 后等待旧监听器释放，
 ///   同端口重启不冲突，Task #76 M1）；端口绑定失败（如占用）
 ///   同步报 `Internal` 错误；
-/// - 安全边界（Task #76 C1）：仅监听本机回环 127.0.0.1；局域网可达与
-///   token 鉴权属后续契约批次（契约 L323 已声明不在冻结范围）；
+/// - F5：监听 `0.0.0.0`（LAN 可达，对齐原版 McpService）；启动前置要求
+///   `config:jsSourceApiToken` 非空；独立端口 `/mcp/*` 校验 `X-Legado-Token`；
 /// - 要求数据库已初始化（先 db_open），独立服务与主应用复用同一
 ///   DB 文件（WAL 并发安全）；DB 未初始化返回 `Internal` 可读错误；
 /// - 成功后持久化到 caches 表 `config:mcpPort`。
@@ -221,6 +221,18 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
         LegadoError::Internal("独立 MCP 服务启动失败：DB 路径未记录，请先调用 db_open".into())
     })?;
 
+    // F5：对齐原版 — jsSourceApiToken 非空才允许启动
+    let token = crate::api::config_api::get_config("jsSourceApiToken")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if token.is_empty() {
+        return Err(LegadoError::Internal(
+            "独立 MCP 服务启动失败：请先在其他设置中配置 JS 书源 API Token（jsSourceApiToken）"
+                .into(),
+        ));
+    }
+
     // 端口变更自动重启：先停旧服务（abort 后等待旧监听器释放）
     mcp_stop_internal();
 
@@ -232,17 +244,16 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
 
     let runtime = get_server_runtime();
 
-    // 预绑定端口（本机回环 127.0.0.1，Task #76 C1）：同步获取绑定失败
-    // （如端口被占用），对齐契约「错误码：Internal（端口绑定失败）」语义
+    // F5：绑定 0.0.0.0（LAN 可达，对齐原版 McpService）
     let listener = runtime
-        .block_on(tokio::net::TcpListener::bind(("127.0.0.1", port as u16)))
+        .block_on(tokio::net::TcpListener::bind(("0.0.0.0", port as u16)))
         .map_err(|e| {
             LegadoError::Internal(format!("独立 MCP 服务端口 {} 绑定失败: {e}", port))
         })?;
 
     // 复用既有 server 启动模式：同 runtime 内 spawn，句柄可中止
     let handle = runtime.spawn(async move {
-        if let Err(e) = legado_server::server::serve_mcp(listener, db).await {
+        if let Err(e) = legado_server::server::serve_mcp(listener, db, token).await {
             eprintln!("MCP server error: {e}");
         }
         MCP_RUNNING.store(false, Ordering::SeqCst);
@@ -359,10 +370,16 @@ mod tests {
 
     /// 取一个空闲端口（先绑 :0 再释放，随机端口策略避免 CI 冲突）
     fn pick_free_port() -> u16 {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);
         port
+    }
+
+    /// F5：测试启动前写入 jsSourceApiToken
+    fn ensure_mcp_token() {
+        crate::api::config_api::set_config("jsSourceApiToken", "test-mcp-token")
+            .expect("写入测试 token");
     }
 
     /// 为独立 MCP 服务设置临时 DB 文件路径（Task #76 C2：避免 cwd 残留
@@ -410,12 +427,29 @@ mod tests {
         assert!(set_mcp_port(-1).is_ok());
     }
 
+    /// F5：token 未设置时拒绝启动
+    #[test]
+    fn test_mcp_requires_js_source_api_token() {
+        let _g = MCP_TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let db_path = setup_temp_db_path();
+        let _ = crate::api::config_api::set_config("jsSourceApiToken", "");
+        let port = pick_free_port() as i32;
+        let err = set_mcp_port(port).unwrap_err();
+        assert!(
+            err.to_string().contains("Token") || err.to_string().contains("token"),
+            "应提示需配置 token: {err}"
+        );
+        cleanup_temp_db(&db_path);
+    }
+
     /// 启停状态机 + 端口变更自动重启 + 持久化（随机端口避免 CI 冲突）
     #[test]
     fn test_mcp_start_restart_stop_state_machine() {
         let _g = MCP_TEST_LOCK.lock().unwrap();
         let _db_guard = crate::db_state::ensure_test_db();
         let db_path = setup_temp_db_path();
+        ensure_mcp_token();
 
         let port1 = pick_free_port() as i32;
         set_mcp_port(port1).expect("首次启动应成功");
@@ -449,6 +483,7 @@ mod tests {
         let _g = MCP_TEST_LOCK.lock().unwrap();
         let _db_guard = crate::db_state::ensure_test_db();
         let db_path = setup_temp_db_path();
+        ensure_mcp_token();
 
         let port = pick_free_port() as i32;
         set_mcp_port(port).expect("首次启动应成功");
@@ -468,8 +503,9 @@ mod tests {
         let _g = MCP_TEST_LOCK.lock().unwrap();
         let _db_guard = crate::db_state::ensure_test_db();
         let db_path = setup_temp_db_path();
-        // 持续占用一个回环端口（与 set_mcp_port 的 127.0.0.1 绑定同地址）
-        let blocker = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        ensure_mcp_token();
+        // 占用 0.0.0.0 端口（与 set_mcp_port F5 绑定同地址族）
+        let blocker = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
         let port = blocker.local_addr().unwrap().port() as i32;
 
         let result = set_mcp_port(port);
