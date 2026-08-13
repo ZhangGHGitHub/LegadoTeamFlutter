@@ -228,8 +228,9 @@
 每项任务完成后必须满足：
 
 ```bash
-# Rust 侧
-cargo test                    # 全量测试通过
+# Rust 侧（JS 书源须 quickjs feature，见 rust/README.md）
+cargo test --workspace --exclude legado-ffi
+cargo test -p legado-ffi --features quickjs   # FFI + JS 全量（CI 同口径）
 cargo clippy -- -D warnings   # 零警告
 cargo fmt --check             # 格式一致
 

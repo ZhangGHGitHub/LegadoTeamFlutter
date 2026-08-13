@@ -34,7 +34,7 @@
 
 > 🎉 **Rust 重构主体已全部完成**：168/168 原子任务完成。
 >
-> ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 内置词典为小规模静态数据（契约达标、覆盖为占位级）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 getAudioChapterMedia/scanLocalBooks/parseTxt 为死代码 fallback（已在 rust_api.dart 注释标注，保留契约面）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
+> ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 内置词典为小规模静态数据（契约达标、覆盖为占位级）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 **getAudioChapterMedia 为在用真实 FFI**（audio_notifier/audio_screen 接线）；scanLocalBooks/parseTxt 仍为死代码 fallback（rust_api.dart 注释标注）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
 
 ### 📊 测试统计（2026-08-05 实测）
 

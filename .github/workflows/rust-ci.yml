@@ -26,10 +26,6 @@ jobs:
       - name: Cargo test (quickjs)
         working-directory: rust
         run: cargo test -p legado-js --features quickjs
-      # legado-ffi 单独走 quickjs 构建 + JS 书源解析冒烟（其余步骤对 ffi --exclude）
-      - name: Cargo build legado-ffi (quickjs)
+      - name: Cargo test legado-ffi full (quickjs)
         working-directory: rust
-        run: cargo build -p legado-ffi --features quickjs
-      - name: Cargo test legado-ffi JS executor smoke (quickjs)
-        working-directory: rust
-        run: cargo test -p legado-ffi --features quickjs js_executor
+        run: cargo test -p legado-ffi --features quickjs

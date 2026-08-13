@@ -98,21 +98,21 @@
 - **涉及文件**：`rust/README.md`（构建命令补 `--features quickjs`）、`docs/REFACTORING_REMAINING_PLAN.md` 质量门禁（`cargo test` → `cargo test -p legado-ffi --features quickjs`）、`rust/legado-js/Cargo.toml`（评估默认 feature 或保留并在文档显著警示）
 - **实施要点**：文档明确「不带 quickjs 的构建 = JS 书源全不可用（Stub 降级）」；质量门禁命令统一。
 - **验收**：按文档命令可复现全量测试通过；README 无误导性构建指引。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅
 
 ### F2-5 `[CI]` rust-ci 补 legado-ffi 全量测试覆盖
 - **来源**：P1-5（P0-1 回归 CI 无感知的根因）
 - **涉及文件**：`.github/workflows/rust-ci.yml`
 - **实施要点**：新增 job `cargo test -p legado-ffi --features quickjs`（全量，非 js_executor 子集）；clippy 覆盖 legado-ffi（或单独 job 处理现有 warning）。
 - **验收**：CI 全量跑 legado-ffi 测试；本次 P0-1 类回归可被 CI 拦截。
-- **工作量**：S ｜ **前置**：F1-1（否则 CI 必红）
+- **工作量**：S ｜ **前置**：F1-1（否则 CI 必红）｜ **状态**：✅
 
 ### F2-6 `[工程]` .cargo/config.toml 跨平台修复
 - **来源**：P1-6
 - **涉及文件**：`rust/.cargo/config.toml`
 - **实施要点**：移除仓库级 Windows NDK 路径与 `replace-with = "ustc"` 镜像绑定；本机 NDK 配置移到用户级 `%USERPROFILE%\.cargo\config.toml` 或 CI 环境变量注入。
 - **验收**：ubuntu CI 可交叉编译 Android target；Windows 本机构建不受影响。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅
 
 ### F2-7 `[Rust]` 阅读统计子系统处理
 - **来源**：P1-7（需先决策 D1）
@@ -147,14 +147,14 @@
 - **涉及文件**：`docs/README.md:37`
 - **实施要点**：将 `getAudioChapterMedia` 从「死代码 fallback」清单移除，改为「在用真实 FFI（音频书取址链路）」；仅保留 scanLocalBooks/parseTxt 死代码标注。
 - **验收**：README 口径与代码事实一致，不会再误导清理决策。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅
 
 ### F2-12 `[工程]` .qoder/agents/builtin 还原
 - **来源**：P1-12
 - **涉及文件**：`.qoder/agents/builtin/{code-reviewer,full-stack-engineer,qa,researcher,ui-operator}.md`
 - **实施要点**：`git checkout -- <5 文件>` 还原为产品版本；若确需项目定制，创建到 `.qoder/agents/`（非 builtin）。
 - **验收**：5 文件工作树恢复干净；`git status` 无 builtin 改动。
-- **工作量**：S ｜ **前置**：无
+- **工作量**：S ｜ **前置**：无 ｜ **状态**：✅
 
 ---
 

@@ -66,9 +66,16 @@ cargo build --release  # release
 ```
 
 ### 运行测试
+
+> **重要**：JS 书源依赖 QuickJS。默认 `cargo test` **不带** `quickjs` feature 时，`legado-ffi` 中依赖 JS 引擎的用例会失败或降级为 Stub（书源 JS 全不可用）。质量门禁须使用：
+
 ```bash
-cargo test
+cargo test --workspace --exclude legado-ffi   # 非 FFI crate 全量
+cargo test -p legado-ffi --features quickjs   # FFI + JS 引擎全量（CI 同口径）
+cargo test -p legado-js --features quickjs    # JS 引擎单 crate
 ```
+
+不带 `--features quickjs` 的 `cargo build` 产物可编译，但**无法执行书源 JS 规则**（AnalyzeUrl `@js:`、正文 jsLib 等）。
 
 ### 代码格式化 & Lint
 ```bash
