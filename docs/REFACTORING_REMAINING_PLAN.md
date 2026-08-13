@@ -1101,6 +1101,8 @@ flutter test                  # 全量测试通过
 |--------|-----|------|------|
 | — | （工程项已空） | — | 页内 java/source、cacheMode、ownText、编译缓存已于 v1.46 销记 |
 
+**本轮已销（2026-08-14 v1.47，v2.0.45）**：发现点号索引 / 思路客 nextTocUrl+HTML 缓存+AnalyzeRule 复用 / 发现 @js 分类 / `refresh_toc` NOT_SHELF / 误入书架 UI；发现页 Flexbox+LegadoAppBar（见 EXPLORE_UI_ALIGN_2026-08-14.md）。commits：`6bb18abb9`–`a56182f64`。
+
 **本轮已销（2026-08-13 v1.46）**：Android 原生 Backstage `java`/`source`/`cache` JavascriptInterface + `cacheFirst`→`LOAD_CACHE_ELSE_NETWORK`；Jsoup `ownText`/`textNodes` 对齐；AnalyzeRule `string_rule_cache` 编译缓存；`@webjs` UTF-8 切片卫生 + `{$.key}` 二次求值。
 
 **本轮已销（2026-08-13 v1.45）**：完整 DOM WebView 通道（webview_channel + FFI + WebViewBridgeListener；`@webjs`/正文 webJs/`java.webView*`）；JS 次要重载（cacheFirst 参数、downloadFile 双参、getFile、unArchiveFile、timeFormatUTC 毫秒偏移）；checkRedirect 可观测性。
@@ -1115,12 +1117,13 @@ flutter test                  # 全量测试通过
 
 
 
-**文档版本**: 1.46  
-**最后更新**: 2026-08-13  
+**文档版本**: 1.47  
+**最后更新**: 2026-08-14  
 **维护人**: Qoder  
 **最后修改**: Auto（Cursor）
 
 **版本记录**：
+- ✅ **v1.47（2026-08-14）发现/信息页链路 + 误入书架闭合（v2.0.45）**：点号索引、思路客 nextTocUrl/HTML 缓存/AnalyzeRule 复用、发现 @js、NOT_SHELF、渐进加载、目录并行、Flexbox/LegadoAppBar。见 CHANGELOG 2.0.45 + SOURCE_DIFF §7 + RESIDUAL B1/B2。
 - ✅ **v1.46（2026-08-13）SOURCE_DIFF 纯工程收口**：页内 java/source/cache 注入；Android cacheMode；ownText；AnalyzeRule 编译缓存。§5.15 工程项清空，仅剩 A\*。验证：legado-parser 207；x86_64 so + 5556 冒烟。
 - ✅ **v1.45（2026-08-13）SOURCE_DIFF DOM WebView + JS 次要重载**：`webview_channel`/`webviewRequestStream`；`@webjs`/正文 webJs DOM 优先+无头回退；webView cacheFirst、downloadFile 双参、getFile、unArchiveFile、timeFormatUTC(sh=ms)；checkRedirect 日志。近似：页内 java/source 注入、Flutter cacheMode。验证：见本轮 commit + 5556 冒烟。
 - ✅ **v1.44（2026-08-13）SOURCE_DIFF 开放项续销**：preciseSearch Dart/FRB；reGetBook/refreshTocUrl；setRedirectUrl + isUrl/unescape；`@webjs` 无头；ConfigMap；DownloadService/upload 标 N/A；§5.15 收窄为 DOM WebView / 次要重载。验证：`30c48ded2` 修 Android quickjs 编译；x86_64 so 重编；5556 冒烟 5/5 PASS。
@@ -1174,3 +1177,4 @@ flutter test                  # 全量测试通过
 日期：2026-08-06  
 修订：Auto（Cursor）｜ 2026-08-13（v1.43：旁证台账 / SCHEMA105 / F4–F6 / T6 / PackageInfo / §5.15 SOURCE_DIFF backlog）
 修订：Auto（Cursor）｜ 2026-08-13（v1.45：DOM WebView 通道 + JS 次要重载 + checkRedirect；§5.15 收窄）
+修订：Auto（Cursor）｜ 2026-08-14（v1.47：v2.0.45 发现/信息页 + NOT_SHELF 销记）

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.45] - 2026-08-14
+
+### Added
+- [UI] 书籍信息页渐进加载：发现/搜索元数据先上屏，后台补全详情与目录（`9eeb3c364`）
+- [UI] 目录页并行加载、顶栏进度条与列表底线文案（`cc4b23204`）
+- [UI] 发现页对齐原版 Flexbox 分类布局、书源行样式与 iOS 分组列表视觉（`594c5e1cb` / `f10dcffbc` / `cd88582ed`）
+
+### Fixed
+- [Rust] 思路客等信息页/发现卡顿：详情页 HTML 短缓存、目录 AnalyzeRule 复用、nextTocUrl 分页与 CSS 自匹配（`deca82748`）
+- [Rust] 发现列表点号索引（如 `$[0].books`）未解析导致只显示 1 本书（`6bb18abb9`）
+- [Rust] 发现 @js 分类解析：上下文注入；已知 tocUrl 跳过详情页（`b6707c1c8`）
+- [Rust][UI] 发现页分类解析回归：@js 上下文注入与空缓存重试（`2207e207e`）
+- [Rust] `refresh_toc` 占位落库打 `NOT_SHELF`，避免仅拉目录污染书架（`fafc65782`）
+- [UI] 修复仅浏览详情/目录误入书架（`1fd863406`）
+- [UI] 发现页分类 Chip 对齐 Android Flexbox 网格，修复展开 chevron 浅色不可见（`cd88582ed`）
+- [UI] Tab 根页误显返回按钮；统一 `LegadoAppBar` 导航（`a56182f64`）
+
+### Notes
+- 阅读器日夜切换联动全局 ThemeMode 已于 **2.0.44** 交付（`e5610e651`），本批无重复改动
+- 发现页 UI 对齐说明见 `docs/EXPLORE_UI_ALIGN_2026-08-14.md`
+
+编写者：Auto（Cursor）｜ 2026-08-14
+
 ## [2.0.44] - 2026-08-13
 
 ### Fixed

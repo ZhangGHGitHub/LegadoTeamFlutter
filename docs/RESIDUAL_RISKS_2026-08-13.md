@@ -3,7 +3,8 @@
 依据五类残留风险清单执行收口。状态：`✅` 已闭合 / `🟡` 部分 / `⏳` 进行中 / `⛔` 仍需用户素材 / `N/A` 不做。
 
 编写者：Auto（Cursor）｜ 2026-08-13  
-修订：Auto｜2026-08-13（D1/F4/F5/F6/T6/Doc3/6 收口）
+修订：Auto｜2026-08-13（D1/F4/F5/F6/T6/Doc3/6 收口）  
+修订：Auto（Cursor）｜ 2026-08-14（v2.0.45：误入书架 / refresh_toc NOT_SHELF 闭合）
 
 ---
 
@@ -33,6 +34,8 @@
 | F7 | 禁止本地段评当 ruleReview | ✅ | BookApi 本地 CRUD @Deprecated |
 | F9 | 缓存导出模板/WebDAV | ✅ | 复核已接线（335fcb11c） |
 | T6 | bookUrl JS 路径 | ✅ | CSS→`@js:` 链单测覆盖（quickjs）；空 bookUrl 回退书源主页已落地 |
+| B1 | 仅浏览详情/目录误入书架 | ✅ | UI 不落库 + Rust `NOT_SHELF` 占位；`1fd863406` / `fafc65782` |
+| B2 | `refresh_toc` 占位污染书架 | ✅ | 同 B1；`fafc65782` |
 | Doc3/4/6 | §5.13 / 定时服务 / QUIC 销记 | ✅ | Doc4 定时服务已销；Doc3：§5.13-7/10 与 F4/F5 对齐销记，余项为故意后置（Cronet/WebView/直链/视频）；Doc6：QUIC 按用户决策已移除（N/A） |
 | A* | 环境验收项 | ⛔ | 见 USER_TEST 阻塞 12；附复现命令 |
 
@@ -106,3 +109,4 @@ $adb = "D:\Android\platform-tools\adb.exe"
 | `[UI]` | F6 shareLayout 日夜双配置 |
 | `[Rust]` | T6 bookUrl CSS@js 链单测 |
 | `[docs]` | 本表 D1/F4–F6/T6/Doc3/6 销账 |
+| `[docs]` | v2.0.45 B1/B2 误入书架 + refresh_toc NOT_SHELF 销记 |
