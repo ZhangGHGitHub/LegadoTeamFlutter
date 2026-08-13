@@ -445,14 +445,40 @@ mod quickjs_engine {
         /// 编译成功返回 `Ok(())`，语法错误时返回携带异常信息（message + stack，
         /// stack 中含 `:<行号>:` 线索）的 `Err`。用于 JS 单文件书源语法校验（#479）。
         ///
+        /// 独立 Runtime 施加与 [`SandboxConfig::default`] 一致的 **5s 超时**与 **16MB 内存**
+        /// 上限（F3-2），病态输入限时返回而非挂起。
+        ///
         /// 注 1：rquickjs 未暴露 `JS_EVAL_FLAG_COMPILE_ONLY` 原生入口，
         /// `Function(code)` 构造器是等价的"只编译不执行"公开方案。
         /// 注 2：沙箱会替换全局 `Function` 构造器，故此处创建独立的纯上下文；
         /// 检查过程不执行待检代码，无沙箱逃逸风险。
         pub fn check_syntax(&self, code: &str) -> Result<(), String> {
+            use crate::sandbox::SandboxConfig;
+
+            let limits = SandboxConfig::default();
+
             // 独立纯上下文：不经沙箱注册，保留原生 Function 构造器
             let runtime = rquickjs::Runtime::new()
                 .map_err(|e| format!("语法检查引擎创建失败: {}", e))?;
+            runtime.set_memory_limit(limits.max_memory_bytes);
+
+            let epoch = Instant::now();
+            let timeout_ns = limits.max_execution_time.as_nanos() as u64;
+            let deadline_ns = Arc::new(AtomicU64::new(timeout_ns));
+            let interrupted = Arc::new(AtomicBool::new(false));
+            let d = deadline_ns.clone();
+            let i = interrupted.clone();
+            let e = epoch;
+            runtime.set_interrupt_handler(Some(Box::new(move || {
+                let now_ns = e.elapsed().as_nanos() as u64;
+                if now_ns > d.load(Ordering::SeqCst) {
+                    i.store(true, Ordering::SeqCst);
+                    true
+                } else {
+                    false
+                }
+            })));
+
             let context = rquickjs::Context::full(&runtime)
                 .map_err(|e| format!("语法检查上下文创建失败: {}", e))?;
             context.with(|ctx| Self::check_syntax_in_ctx(&ctx, code))
@@ -603,7 +629,7 @@ pub use quickjs_engine::QuickJsEngine;
 mod quickjs_tests {
     use super::*;
     use crate::sandbox::SandboxConfig;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     fn make_engine() -> QuickJsEngine {
         QuickJsEngine::new(SandboxConfig::permissive()).expect("Failed to create QuickJsEngine")
@@ -888,6 +914,27 @@ mod quickjs_tests {
         let result = engine.eval("[1,2,3].map(x => x * 10).join(',')");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "10,20,30");
+    }
+
+    #[test]
+    fn test_check_syntax_valid_and_invalid() {
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        assert!(engine.check_syntax("var a = 1;").is_ok());
+        let err = engine.check_syntax("var a = ;").unwrap_err();
+        assert!(!err.is_empty(), "syntax error should carry message");
+    }
+
+    #[test]
+    fn test_check_syntax_deep_nesting_does_not_hang() {
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let deep = "{".repeat(8000) + &"}".repeat(8000);
+        let start = Instant::now();
+        let result = engine.check_syntax(&deep);
+        assert!(
+            start.elapsed() < Duration::from_secs(6),
+            "deep nesting syntax check should finish within timeout window"
+        );
+        assert!(result.is_err(), "deeply nested braces should not pass: {result:?}");
     }
 
     #[test]
