@@ -5,6 +5,7 @@ export 'book.dart';
 export 'book_chapter.dart';
 export 'book_source.dart';
 export 'cover_candidate.dart';
+export 'manga_config.dart';
 export 'misc.dart';
 export 'reading_stats_today.dart';
 export 'rss_article.dart';

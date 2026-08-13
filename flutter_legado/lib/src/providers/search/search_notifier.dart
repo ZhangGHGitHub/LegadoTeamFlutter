@@ -168,7 +168,11 @@ class SearchNotifier extends Notifier<SearchState> {
           }
           final books = (batch['books'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>()
-              .map((e) => SearchResult.fromSearchBook(SearchBook.fromJson(e)));
+              .map((e) => SearchResult.fromSearchBook(
+                    SearchBook.fromJson(e),
+                    // Rust 流式批次附加 hasReadRecord（#424）
+                    hasReadRecord: e['hasReadRecord'] == true,
+                  ));
           // 按 书名+作者+书源 去重后进入累积表；展示前由 applyPrecisionSearch
           // 按书名+作者聚合多 origin（对齐原版 mergeItems.addOrigin）
           for (final r in books) {

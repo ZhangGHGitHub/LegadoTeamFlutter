@@ -16,10 +16,14 @@ class SearchResult {
   /// 单源命中时通常仅含 [book.origin]；mergeItems 聚合后可含多个书源 URL。
   final Set<String> origins;
 
+  /// 是否有阅读记录（Rust 流式搜索附加 `hasReadRecord`，对齐原版橙点）
+  final bool hasReadRecord;
+
   const SearchResult({
     required this.book,
     this.sourceName = '',
     Set<String>? origins,
+    this.hasReadRecord = false,
   }) : origins = origins ?? const {};
 
   /// 有效来源数（对齐原版 `origins.size` / `bv_originCount`）
@@ -39,11 +43,13 @@ class SearchResult {
     Book? book,
     String? sourceName,
     Set<String>? origins,
+    bool? hasReadRecord,
   }) {
     return SearchResult(
       book: book ?? this.book,
       sourceName: sourceName ?? this.sourceName,
       origins: origins ?? this.origins,
+      hasReadRecord: hasReadRecord ?? this.hasReadRecord,
     );
   }
 
@@ -51,14 +57,22 @@ class SearchResult {
   SearchResult withAddedOrigin(SearchResult other) {
     final next = {...effectiveOrigins, ...other.effectiveOrigins};
     if (other.book.origin.isNotEmpty) next.add(other.book.origin);
-    return copyWith(origins: next);
+    return copyWith(
+      origins: next,
+      // 任一来源有阅读记录即保留标识
+      hasReadRecord: hasReadRecord || other.hasReadRecord,
+    );
   }
 
-  factory SearchResult.fromSearchBook(SearchBook sb) {
+  factory SearchResult.fromSearchBook(
+    SearchBook sb, {
+    bool hasReadRecord = false,
+  }) {
     final origin = sb.origin;
     return SearchResult(
       sourceName: sb.originName,
       origins: origin.isEmpty ? const {} : {origin},
+      hasReadRecord: hasReadRecord,
       book: Book(
         bookUrl: sb.bookUrl,
         tocUrl: sb.tocUrl,

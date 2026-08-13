@@ -19,7 +19,7 @@ mixin _$SearchState {
   /// 当前搜索关键词
   String get keyword => throw _privateConstructorUsedError;
 
-  /// 搜索结果列表（searchBooks 返回，已按书源聚合）
+  /// 搜索结果列表（已按书名+作者聚合，对齐原版 mergeItems）
   List<SearchResult> get results => throw _privateConstructorUsedError;
 
   /// 是否正在搜索
@@ -252,10 +252,10 @@ class _$SearchStateImpl implements _SearchState {
   @JsonKey()
   final String keyword;
 
-  /// 搜索结果列表（searchBooks 返回，已按书源聚合）
+  /// 搜索结果列表（已按书名+作者聚合，对齐原版 mergeItems）
   final List<SearchResult> _results;
 
-  /// 搜索结果列表（searchBooks 返回，已按书源聚合）
+  /// 搜索结果列表（已按书名+作者聚合，对齐原版 mergeItems）
   @override
   @JsonKey()
   List<SearchResult> get results {
@@ -396,7 +396,7 @@ abstract class _SearchState implements SearchState {
   String get keyword;
   @override
 
-  /// 搜索结果列表（searchBooks 返回，已按书源聚合）
+  /// 搜索结果列表（已按书名+作者聚合，对齐原版 mergeItems）
   List<SearchResult> get results;
   @override
 

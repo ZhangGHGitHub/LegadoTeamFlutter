@@ -33,8 +33,5 @@ flutter_legado/.pub-cache/
 flutter_legado/.pub/
 !flutter_legado/pubspec.yaml
 
-# Generated
-flutter_legado/lib/src/bridge/frb_generated.dart
-flutter_legado/lib/src/bridge/frb_generated.io.dart
-flutter_legado/lib/src/bridge/frb_generated.web.dart
+# Android jniLibs 由构建脚本生成，不入库；FRB 生成的 Dart 绑定需入库，供 CI analyze/test 解析 RustLib
 flutter_legado/android/app/src/main/jniLibs/

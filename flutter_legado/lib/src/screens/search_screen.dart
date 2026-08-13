@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
@@ -17,7 +18,10 @@ import '../widgets/search_filter_panel.dart';
 ///
 /// 状态由 [SearchNotifier]（Riverpod）管理；加书架过渡期仍用 BookshelfProvider。
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  /// 初始搜索词（对齐原版 SearchActivity.start(context, query)）
+  final String? initialQuery;
+
+  const SearchScreen({super.key, this.initialQuery});
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -28,19 +32,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _focusNode = FocusNode();
   // 精准搜索开关（对标原版 menu_precision_search，展示层精确书名过滤）
   bool _precision = false;
+  // 标识读过的书籍（对标原版 AppConfig.showSearchReadRecord）
+  bool _showReadRecord = false;
+  static const _prefsShowReadRecord = 'showSearchReadRecord';
   // [UI-fix v2.0.3 | 2026-08-07] 锚定菜单定位键：分组 PopupMenu 锚定三点按钮下方 — Qoder
   final _menuButtonKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialQuery?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _searchController.text = initial;
+    }
     // 对齐原版：打开搜索页默认不显示上次结果（新 ViewModel 语义，不 auto-search）。
     // Riverpod 禁止在 widget 生命周期内同步修改 provider，
     // 按官方建议延迟到微任务执行。
     Future.microtask(() {
-      if (mounted) {
-        ref.read(searchNotifierProvider.notifier).resetForOpen();
+      if (!mounted) return;
+      ref.read(searchNotifierProvider.notifier).resetForOpen();
+      final q = widget.initialQuery?.trim();
+      if (q != null && q.isNotEmpty) {
+        ref.read(searchNotifierProvider.notifier).setInput(q);
+        ref.read(searchNotifierProvider.notifier).search(q);
       }
+    });
+    // 恢复「标识读过的书籍」偏好
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      setState(() {
+        _showReadRecord = prefs.getBool(_prefsShowReadRecord) ?? false;
+      });
     });
   }
 
@@ -152,7 +174,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 }
                 break;
               case 'readRecord':
-                _todo(context, '显示搜索记录');
+                // P1-3：对标原版「标识读过的书籍」（show_search_read_record）
+                setState(() => _showReadRecord = !_showReadRecord);
+                SharedPreferences.getInstance().then((prefs) {
+                  prefs.setBool(_prefsShowReadRecord, _showReadRecord);
+                });
                 break;
               case 'sources':
                 Navigator.pushNamed(context, '/sources');
@@ -176,7 +202,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               checked: _precision,
               child: const Text('精准搜索'),
             ),
-            const PopupMenuItem(value: 'readRecord', child: Text('显示搜索记录')),
+            // 对标原版 show_search_read_record：「标识读过的书籍」
+            CheckedPopupMenuItem(
+              value: 'readRecord',
+              checked: _showReadRecord,
+              child: const Text('标识读过的书籍'),
+            ),
             const PopupMenuItem(value: 'sources', child: Text('书源管理')),
             const PopupMenuItem(value: 'scope', child: Text('分组或书源')),
             const PopupMenuItem(value: 'log', child: Text('日志')),
@@ -332,13 +363,34 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            BookCover(
-              coverUrl: book.coverUrl,
-              width: 80,
-              height: 110,
-              // iOS 风格圆角封面
-              borderRadius: 10,
-              sourceOrigin: book.origin,
+            // 封面 + 阅读记录橙点（对标原版 ivReadRecord）
+            Stack(
+              children: [
+                BookCover(
+                  coverUrl: book.coverUrl,
+                  width: 80,
+                  height: 110,
+                  borderRadius: 10,
+                  sourceOrigin: book.origin,
+                ),
+                if (_showReadRecord && result.hasReadRecord)
+                  Positioned(
+                    right: 4,
+                    top: 4,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF9800),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colorScheme.surface,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -464,11 +516,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   /// 未移植功能提示
-  void _todo(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$feature」后续版本支持')),
-    );
-  }
 
   /// [UI-fix v2.0.3 | 2026-08-07] 原版锚定菜单方式的分组选择：
   /// 对齐 SearchActivity.onMenuOpened——「全部书源」+ 各分组（当前选中带勾选），
