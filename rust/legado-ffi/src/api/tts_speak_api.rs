@@ -58,7 +58,7 @@ pub fn tts_speak(text: &str, engine_url: &str, speed: f64) -> LegadoResult<TtsSp
     let result = tts_speak::speak_text(&engine_url, text, speed, &cache_dir, |url| {
         // 同步签名适配：FFI 调用线程内 block_on 共享 tokio runtime（同 rss.rs 模式）
         let raw = crate::runtime::block_on(async {
-            let client = crate::http_state::shared_client();
+            let client = crate::http_state::shared_client()?;
             client.get_raw(url, None).await
         })?;
         Ok(SpeakResponse {

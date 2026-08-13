@@ -221,7 +221,7 @@ async fn explore_books_async(
     }
 
     // 发起 HTTP 请求（复用进程共享客户端单例）
-    let client = crate::http_state::shared_client();
+    let client = crate::http_state::shared_client()?;
 
     // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
     let mut headers = source_headers.clone().unwrap_or_default();

@@ -202,7 +202,7 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
     }
 
     let articles = runtime::block_on(async {
-        let client = crate::http_state::shared_client();
+        let client = crate::http_state::shared_client()?;
         let response = client.get(&feed_url, None).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(
