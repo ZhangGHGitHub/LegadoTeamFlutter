@@ -453,10 +453,13 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
         let book_repo = legado_db::BookRepository::new(db.connection());
         match book_repo.find_by_url(book_url)? {
             None => {
+                // Task#125：占位落库须打 NOT_SHELF，对齐原版 readBook 临时书 /
+                // 书架 list_books 过滤；否则「仅浏览/拉目录」会污染书架。
                 let book = legado_core::models::Book {
                     book_url: book_url.to_string(),
                     origin: source_url.to_string(),
                     origin_name: source.book_source_name.clone(),
+                    book_type: legado_core::models::book::book_type::NOT_SHELF,
                     ..legado_core::models::Book::default()
                 };
                 book_repo.insert(&book)?;
@@ -909,6 +912,34 @@ mod tests {
         let _db_guard = setup_db_and_source("https://other.example.com");
         let err = refresh_toc("https://x.com/book", "https://nonexistent.example.com").unwrap_err();
         assert!(err.to_string().contains("书源不存在"));
+    }
+
+    /// refresh_toc 占位落库须打 NOT_SHELF，书架 list 不可见（Task#125）
+    #[test]
+    fn test_refresh_toc_placeholder_not_on_shelf() {
+        use legado_core::models::book::book_type;
+        use legado_db::BookRepository;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://placeholder-not-shelf.example.com/book/1";
+
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            let book = legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: "https://src.example.com".to_string(),
+                origin_name: "测试书源".to_string(),
+                book_type: book_type::NOT_SHELF,
+                ..legado_core::models::Book::default()
+            };
+            book_repo.insert(&book)?;
+            let saved = book_repo.find_by_url(book_url)?.unwrap();
+            assert_ne!(saved.book_type & book_type::NOT_SHELF, 0);
+            let shelf = book_repo.find_all_in_shelf()?;
+            assert!(!shelf.iter().any(|b| b.book_url == book_url));
+            Ok(())
+        })
+        .unwrap();
     }
 
     /// 网络测试：需要真实网络访问，CI 中忽略
