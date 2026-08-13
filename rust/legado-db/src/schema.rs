@@ -19,9 +19,10 @@ use legado_core::{LegadoError, LegadoResult};
 /// - v104：台账「schema v102 结构对齐专项」落地（版本号避开已被占用的 102/103）：
 ///   rssArticles/rssStars 主键重建、readRecord 主键重建、rssReadRecords/httpTTS
 ///   结构对齐 Room v95、rssSources 去掉 enableCookieJar 冗余列、search_keywords
-///   对齐 word/usage/lastUseTime、coverRules 纳入建表清单。rule_subs/dict_rules/
-///   keyboard_assists 表名重命名留残（见台账 §4.2.1）
-pub const SCHEMA_VERSION: u32 = 104;
+///   对齐 word/usage/lastUseTime、coverRules 纳入建表清单。
+/// - v105：D1 — ruleSubs/dictRules/keyboardAssists 对齐 Room 表名列名
+///   （Migration104To105；清理 snake_case 旧表残留）
+pub const SCHEMA_VERSION: u32 = 105;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -64,7 +65,7 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
     conn.execute_batch(CREATE_CHAPTER_REVIEWS)
         .map_err(|e| LegadoError::Database(format!("创建 chapter_reviews 表失败: {e}")))?;
     conn.execute_batch(CREATE_RULE_SUBS)
-        .map_err(|e| LegadoError::Database(format!("创建 rule_subs 表失败: {e}")))?;
+        .map_err(|e| LegadoError::Database(format!("创建 ruleSubs 表失败: {e}")))?;
     conn.execute_batch(CREATE_CACHES)
         .map_err(|e| LegadoError::Database(format!("创建 caches 表失败: {e}")))?;
     conn.execute_batch(CREATE_HTTP_TTS)
@@ -72,9 +73,9 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
     conn.execute_batch(CREATE_USERS)
         .map_err(|e| LegadoError::Database(format!("创建 users 表失败: {e}")))?;
     conn.execute_batch(CREATE_DICT_RULES)
-        .map_err(|e| LegadoError::Database(format!("创建 dict_rules 表失败: {e}")))?;
+        .map_err(|e| LegadoError::Database(format!("创建 dictRules 表失败: {e}")))?;
     conn.execute_batch(CREATE_KEYBOARD_ASSISTS)
-        .map_err(|e| LegadoError::Database(format!("创建 keyboard_assists 表失败：{e}")))?;
+        .map_err(|e| LegadoError::Database(format!("创建 keyboardAssists 表失败：{e}")))?;
     conn.execute_batch(CREATE_COVER_RULES)
         .map_err(|e| LegadoError::Database(format!("创建 coverRules 表失败: {e}")))?;
     conn.execute_batch(CREATE_DOWNLOAD_TASKS)
@@ -497,23 +498,27 @@ CREATE TABLE IF NOT EXISTS chapter_reviews (
 CREATE INDEX IF NOT EXISTS idx_chapter_reviews_book_chapter ON chapter_reviews(book_url, chapter_index);
 ";
 
+/// ruleSubs 表（对齐 Room `RuleSub`；version/isEnabled/createdAt 为 Rust 超集）
+///
+/// Room 列：id/name/url/type/customOrder/autoUpdate/update/updateInterval/
+/// silentUpdate/js/showRule/sourceUrl。`type`：0 书源 / 1 订阅源 / 3 替换规则。
 pub const CREATE_RULE_SUBS: &str = "
-CREATE TABLE IF NOT EXISTS rule_subs (
+CREATE TABLE IF NOT EXISTS ruleSubs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    url TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL DEFAULT '',
-    sub_type TEXT NOT NULL DEFAULT 'bookSource',
-    last_update INTEGER NOT NULL DEFAULT 0,
-    version TEXT DEFAULT '',
-    is_enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL,
-    custom_order INTEGER NOT NULL DEFAULT 0,
-    auto_update INTEGER NOT NULL DEFAULT 0,
-    update_interval INTEGER NOT NULL DEFAULT 0,
-    silent_update INTEGER NOT NULL DEFAULT 0,
+    url TEXT NOT NULL UNIQUE,
+    type INTEGER NOT NULL DEFAULT 0,
+    customOrder INTEGER NOT NULL DEFAULT 0,
+    autoUpdate INTEGER NOT NULL DEFAULT 0,
+    \"update\" INTEGER NOT NULL DEFAULT 0,
+    updateInterval INTEGER NOT NULL DEFAULT 0,
+    silentUpdate INTEGER NOT NULL DEFAULT 0,
     js TEXT,
-    show_rule TEXT,
-    source_url TEXT
+    showRule TEXT,
+    sourceUrl TEXT,
+    version TEXT DEFAULT '',
+    isEnabled INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL DEFAULT 0
 );
 ";
 
@@ -579,25 +584,28 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ";
 
+/// dictRules 表（对齐 Room `DictRule`；id 为 Rust 超集便于既有 id 基 CRUD）
+///
+/// Room 语义主键为 name（UNIQUE）；列：name/urlRule/showRule/enabled/sortNumber。
 pub const CREATE_DICT_RULES: &str = "
-CREATE TABLE IF NOT EXISTS dict_rules (
+CREATE TABLE IF NOT EXISTS dictRules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    url_rule TEXT DEFAULT '',
-    show_rule TEXT DEFAULT '',
-    is_enabled INTEGER NOT NULL DEFAULT 1,
-    sort_order INTEGER NOT NULL DEFAULT 0
+    name TEXT NOT NULL UNIQUE,
+    urlRule TEXT DEFAULT '',
+    showRule TEXT DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    sortNumber INTEGER NOT NULL DEFAULT 0
 );
 ";
 
+/// keyboardAssists 表（对齐 Room `KeyboardAssist`，主键 (type, key)）
 pub const CREATE_KEYBOARD_ASSISTS: &str = "
-CREATE TABLE IF NOT EXISTS keyboard_assists (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    key TEXT NOT NULL,
-    value TEXT DEFAULT '',
-    is_enabled INTEGER NOT NULL DEFAULT 1,
-    sort_order INTEGER NOT NULL DEFAULT 0
+CREATE TABLE IF NOT EXISTS keyboardAssists (
+    type INTEGER NOT NULL DEFAULT 0,
+    key TEXT NOT NULL DEFAULT '',
+    value TEXT NOT NULL DEFAULT '',
+    serialNo INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(type, key)
 );
 ";
 

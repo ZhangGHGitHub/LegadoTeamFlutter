@@ -870,11 +870,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -1023,20 +1023,22 @@ mod tests {
     fn test_fresh_db_reaches_v101_with_deviation_columns() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
         assert!(column_exists(conn, "highlights", "chapterUrl"));
         assert!(column_exists(conn, "readRecord", "author"));
-        // v100: rule_subs 补全 Kotlin RuleSub 字段
-        assert!(column_exists(conn, "rule_subs", "custom_order"));
-        assert!(column_exists(conn, "rule_subs", "auto_update"));
-        assert!(column_exists(conn, "rule_subs", "update_interval"));
-        assert!(column_exists(conn, "rule_subs", "silent_update"));
-        assert!(column_exists(conn, "rule_subs", "js"));
-        assert!(column_exists(conn, "rule_subs", "show_rule"));
-        assert!(column_exists(conn, "rule_subs", "source_url"));
+        // v105: ruleSubs 对齐 Room 列名
+        assert!(column_exists(conn, "ruleSubs", "customOrder"));
+        assert!(column_exists(conn, "ruleSubs", "autoUpdate"));
+        assert!(column_exists(conn, "ruleSubs", "updateInterval"));
+        assert!(column_exists(conn, "ruleSubs", "silentUpdate"));
+        assert!(column_exists(conn, "ruleSubs", "js"));
+        assert!(column_exists(conn, "ruleSubs", "showRule"));
+        assert!(column_exists(conn, "ruleSubs", "sourceUrl"));
+        assert!(table_exists(conn, "dictRules").unwrap());
+        assert!(table_exists(conn, "keyboardAssists").unwrap());
         // v101: 偏离表补列（新建库 CREATE 语句已含全部列）
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "rssArticles", "read"));
@@ -1207,7 +1209,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "readRecord", "lastRead"));
     }
@@ -1464,7 +1466,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
         assert!(column_exists(conn, "book_sources", "variable"));
     }
 }

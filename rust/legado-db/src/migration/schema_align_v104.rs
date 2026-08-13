@@ -909,10 +909,12 @@ mod tests {
         conn.pragma_update(None, "user_version", 103).unwrap();
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 104);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
         assert_eq!(
             primary_key_columns(conn, "rssArticles").unwrap(),
             vec!["origin", "link", "sort"]
         );
+        assert!(table_exists(conn, "dictRules").unwrap());
+        assert!(table_exists(conn, "ruleSubs").unwrap());
     }
 }

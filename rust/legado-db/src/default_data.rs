@@ -81,22 +81,21 @@ impl DefaultDataManager {
                 isEnabled INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY(id)
             );
-            -- D1：写入 Repository 使用的 snake_case 表，禁止再双建 Room 名 dictRules/keyboardAssists
-            CREATE TABLE IF NOT EXISTS dict_rules (
+            -- D1：与 Room / schema.rs 一致，仅建 dictRules/keyboardAssists
+            CREATE TABLE IF NOT EXISTS dictRules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                url_rule TEXT DEFAULT '',
-                show_rule TEXT DEFAULT '',
-                is_enabled INTEGER NOT NULL DEFAULT 1,
-                sort_order INTEGER NOT NULL DEFAULT 0
+                name TEXT NOT NULL UNIQUE,
+                urlRule TEXT DEFAULT '',
+                showRule TEXT DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                sortNumber INTEGER NOT NULL DEFAULT 0
             );
-            CREATE TABLE IF NOT EXISTS keyboard_assists (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT DEFAULT '',
-                is_enabled INTEGER NOT NULL DEFAULT 1,
-                sort_order INTEGER NOT NULL DEFAULT 0
+            CREATE TABLE IF NOT EXISTS keyboardAssists (
+                type INTEGER NOT NULL DEFAULT 0,
+                key TEXT NOT NULL DEFAULT '',
+                value TEXT NOT NULL DEFAULT '',
+                serialNo INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(type, key)
             );
             CREATE TABLE IF NOT EXISTS coverRules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -308,7 +307,7 @@ impl DefaultDataManager {
         // 检查是否已存在
         let exists: bool = conn
             .query_row(
-                "SELECT COUNT(*) FROM dict_rules WHERE name = ?1",
+                "SELECT COUNT(*) FROM dictRules WHERE name = ?1",
                 rusqlite::params![name],
                 |row| row.get::<_, i64>(0),
             )
@@ -321,15 +320,21 @@ impl DefaultDataManager {
 
         let url_rule = item.get("urlRule").and_then(|v| v.as_str()).unwrap_or("");
         let show_rule = item.get("showRule").and_then(|v| v.as_str()).unwrap_or("");
-        let enabled = item.get("enabled").and_then(|v| v.as_i64()).unwrap_or(1);
+        let enabled = item
+            .get("enabled")
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_bool().map(|b| if b { 1 } else { 0 }))
+            })
+            .unwrap_or(1);
         let sort_number = item.get("sortNumber").and_then(|v| v.as_i64()).unwrap_or(0);
 
         conn.execute(
-            "INSERT INTO dict_rules (name, url_rule, show_rule, is_enabled, sort_order)
+            "INSERT INTO dictRules (name, urlRule, showRule, enabled, sortNumber)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![name, url_rule, show_rule, enabled, sort_number],
         )
-        .map_err(|e| format!("插入 dict_rules 失败: {e}"))?;
+        .map_err(|e| format!("插入 dictRules 失败: {e}"))?;
 
         Ok(true)
     }
@@ -386,12 +391,10 @@ impl DefaultDataManager {
             .ok_or("缺少 value 字段")?;
         let assist_type = item.get("type").and_then(|v| v.as_i64()).unwrap_or(0);
 
-        // Room type 映射到 name；写入 keyboard_assists 与 Repository 对齐
-        let name = assist_type.to_string();
         let exists: bool = conn
             .query_row(
-                "SELECT COUNT(*) FROM keyboard_assists WHERE name = ?1 AND key = ?2",
-                rusqlite::params![name, key],
+                "SELECT COUNT(*) FROM keyboardAssists WHERE type = ?1 AND key = ?2",
+                rusqlite::params![assist_type, key],
                 |row| row.get::<_, i64>(0),
             )
             .map(|c| c > 0)
@@ -408,11 +411,11 @@ impl DefaultDataManager {
             .unwrap_or(0);
 
         conn.execute(
-            "INSERT INTO keyboard_assists (name, key, value, is_enabled, sort_order)
-             VALUES (?1, ?2, ?3, 1, ?4)",
-            rusqlite::params![name, key, value, serial_number],
+            "INSERT INTO keyboardAssists (type, key, value, serialNo)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![assist_type, key, value, serial_number],
         )
-        .map_err(|e| format!("插入 keyboard_assists 失败: {e}"))?;
+        .map_err(|e| format!("插入 keyboardAssists 失败: {e}"))?;
 
         Ok(true)
     }
@@ -426,9 +429,9 @@ impl DefaultDataManager {
             DefaultDataType::HttpTts => "DELETE FROM httpTTS WHERE id < 0",
             DefaultDataType::TxtTocRule => "DELETE FROM txtTocRules WHERE id < 0",
             DefaultDataType::RssSources => "DELETE FROM rssSources WHERE sourceGroup = 'legado'",
-            DefaultDataType::DictRules => "DELETE FROM dict_rules WHERE 0",
+            DefaultDataType::DictRules => "DELETE FROM dictRules WHERE 0",
             DefaultDataType::CoverRule => "DELETE FROM coverRules WHERE 0",
-            DefaultDataType::KeyboardAssists => "DELETE FROM keyboard_assists WHERE 0",
+            DefaultDataType::KeyboardAssists => "DELETE FROM keyboardAssists WHERE 0",
         };
         conn.execute(sql, [])
             .map_err(|e| format!("删除默认数据失败: {e}"))

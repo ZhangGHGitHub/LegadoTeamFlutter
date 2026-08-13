@@ -1,19 +1,22 @@
-//! KeyboardAssist Repository - keyboard_assists 表 CRUD
+//! KeyboardAssist Repository - keyboardAssists 表 CRUD
+//!
+//! D1：对齐 Room `KeyboardAssist`（主键 type+key；列 type/key/value/serialNo）。
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// 键盘辅助规则记录
+/// 键盘辅助规则记录（对齐 Room；serde 用 camelCase 便于互读）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct KeyboardAssist {
-    pub id: i64,
-    pub name: String,
+    /// 类型（Room `type`）
+    #[serde(rename = "type")]
+    pub assist_type: i32,
     pub key: String,
     pub value: String,
-    pub is_enabled: bool,
-    pub sort_order: i32,
+    #[serde(rename = "serialNo")]
+    pub serial_no: i32,
 }
 
 /// 键盘辅助规则数据访问层
@@ -26,25 +29,42 @@ impl<'a> KeyboardAssistRepository<'a> {
         Self { conn }
     }
 
-    /// 插入一条键盘辅助规则，返回新 ID
-    pub fn insert(&self, name: &str, key: &str, value: &str) -> LegadoResult<i64> {
+    /// 插入一条键盘辅助规则（INSERT OR REPLACE 按主键 type+key）
+    pub fn insert(&self, assist_type: i32, key: &str, value: &str) -> LegadoResult<()> {
         self.conn
             .execute(
-                "INSERT INTO keyboard_assists (name, key, value, is_enabled, sort_order)
-                 VALUES (?1, ?2, ?3, 1, 0)",
-                params![name, key, value],
+                "INSERT OR REPLACE INTO keyboardAssists (type, key, value, serialNo)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![assist_type, key, value],
             )
             .map_err(|e| LegadoError::Database(format!("插入键盘辅助规则失败: {e}")))?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(())
     }
 
-    /// 获取所有键盘辅助规则（按 sort_order 升序）
+    /// 全字段插入
+    pub fn insert_record(&self, record: &KeyboardAssist) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO keyboardAssists (type, key, value, serialNo)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    record.assist_type,
+                    record.key,
+                    record.value,
+                    record.serial_no
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("插入键盘辅助规则失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 获取所有键盘辅助规则（按 serialNo 升序）
     pub fn find_all(&self) -> LegadoResult<Vec<KeyboardAssist>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, key, value, is_enabled, sort_order
-                 FROM keyboard_assists ORDER BY sort_order ASC",
+                "SELECT type, key, value, serialNo
+                 FROM keyboardAssists ORDER BY serialNo ASC, type ASC, key ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
@@ -56,53 +76,51 @@ impl<'a> KeyboardAssistRepository<'a> {
         Ok(rows)
     }
 
-    /// 按 ID 查询
-    pub fn find_by_id(&self, id: i64) -> LegadoResult<Option<KeyboardAssist>> {
+    /// 按主键查询
+    pub fn find_by_pk(&self, assist_type: i32, key: &str) -> LegadoResult<Option<KeyboardAssist>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, key, value, is_enabled, sort_order
-                 FROM keyboard_assists WHERE id = ?1",
+                "SELECT type, key, value, serialNo
+                 FROM keyboardAssists WHERE type = ?1 AND key = ?2",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
         let result = stmt
-            .query_row(params![id], row_to_keyboard_assist)
+            .query_row(params![assist_type, key], row_to_keyboard_assist)
             .optional()
             .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
         Ok(result)
     }
 
-    /// 更新键盘辅助规则
-    pub fn update(&self, id: i64, name: &str, key: &str, value: &str) -> LegadoResult<bool> {
+    /// 更新（按主键）
+    pub fn update(
+        &self,
+        assist_type: i32,
+        key: &str,
+        value: &str,
+        serial_no: i32,
+    ) -> LegadoResult<bool> {
         let affected = self
             .conn
             .execute(
-                "UPDATE keyboard_assists SET name = ?1, key = ?2, value = ?3 WHERE id = ?4",
-                params![name, key, value, id],
+                "UPDATE keyboardAssists SET value = ?1, serialNo = ?2
+                 WHERE type = ?3 AND key = ?4",
+                params![value, serial_no, assist_type, key],
             )
             .map_err(|e| LegadoError::Database(format!("更新键盘辅助规则失败: {e}")))?;
         Ok(affected > 0)
     }
 
-    /// 删除键盘辅助规则
-    pub fn delete(&self, id: i64) -> LegadoResult<bool> {
-        let affected = self
-            .conn
-            .execute("DELETE FROM keyboard_assists WHERE id = ?1", params![id])
-            .map_err(|e| LegadoError::Database(format!("删除键盘辅助规则失败: {e}")))?;
-        Ok(affected > 0)
-    }
-
-    /// 设置启用/禁用状态
-    pub fn set_enabled(&self, id: i64, enabled: bool) -> LegadoResult<bool> {
+    /// 删除（按主键）
+    pub fn delete(&self, assist_type: i32, key: &str) -> LegadoResult<bool> {
         let affected = self
             .conn
             .execute(
-                "UPDATE keyboard_assists SET is_enabled = ?1 WHERE id = ?2",
-                params![enabled as i32, id],
+                "DELETE FROM keyboardAssists WHERE type = ?1 AND key = ?2",
+                params![assist_type, key],
             )
-            .map_err(|e| LegadoError::Database(format!("设置键盘辅助启用状态失败: {e}")))?;
+            .map_err(|e| LegadoError::Database(format!("删除键盘辅助规则失败: {e}")))?;
         Ok(affected > 0)
     }
 
@@ -111,8 +129,8 @@ impl<'a> KeyboardAssistRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, name, key, value, is_enabled, sort_order
-                 FROM keyboard_assists WHERE key = ?1 ORDER BY sort_order ASC",
+                "SELECT type, key, value, serialNo
+                 FROM keyboardAssists WHERE key = ?1 ORDER BY serialNo ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
@@ -126,14 +144,11 @@ impl<'a> KeyboardAssistRepository<'a> {
 }
 
 fn row_to_keyboard_assist(row: &rusqlite::Row<'_>) -> rusqlite::Result<KeyboardAssist> {
-    let is_enabled: i32 = row.get(4)?;
     Ok(KeyboardAssist {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        key: row.get(2)?,
-        value: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-        is_enabled: is_enabled != 0,
-        sort_order: row.get(5)?,
+        assist_type: row.get(0)?,
+        key: row.get(1)?,
+        value: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        serial_no: row.get(3)?,
     })
 }
 
@@ -145,80 +160,73 @@ mod tests {
     fn test_insert_and_find_all() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = KeyboardAssistRepository::new(db.connection());
-        let id1 = repo.insert("换源", "source", "换源操作").unwrap();
-        let id2 = repo.insert("刷新", "refresh", "刷新目录").unwrap();
-        assert!(id1 > 0);
-        assert!(id2 > id1);
+        repo.insert(0, "source", "换源操作").unwrap();
+        repo.insert(0, "refresh", "刷新目录").unwrap();
 
         let all = repo.find_all().unwrap();
         assert_eq!(all.len(), 2);
     }
 
     #[test]
-    fn test_find_by_id() {
+    fn test_find_by_pk() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = KeyboardAssistRepository::new(db.connection());
-        let id = repo.insert("Test", "test_key", "test_value").unwrap();
+        repo.insert(0, "test_key", "test_value").unwrap();
 
-        let found = repo.find_by_id(id).unwrap();
+        let found = repo.find_by_pk(0, "test_key").unwrap();
         assert!(found.is_some());
         let assist = found.unwrap();
-        assert_eq!(assist.name, "Test");
+        assert_eq!(assist.assist_type, 0);
         assert_eq!(assist.key, "test_key");
         assert_eq!(assist.value, "test_value");
-        assert!(assist.is_enabled);
 
-        assert!(repo.find_by_id(9999).unwrap().is_none());
+        assert!(repo.find_by_pk(0, "missing").unwrap().is_none());
     }
 
     #[test]
     fn test_update() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = KeyboardAssistRepository::new(db.connection());
-        let id = repo.insert("Old", "old_key", "old_val").unwrap();
+        repo.insert(0, "old_key", "old_val").unwrap();
 
-        assert!(repo.update(id, "New", "new_key", "new_val").unwrap());
-        let updated = repo.find_by_id(id).unwrap().unwrap();
-        assert_eq!(updated.name, "New");
-        assert_eq!(updated.key, "new_key");
+        assert!(repo.update(0, "old_key", "new_val", 3).unwrap());
+        let updated = repo.find_by_pk(0, "old_key").unwrap().unwrap();
         assert_eq!(updated.value, "new_val");
+        assert_eq!(updated.serial_no, 3);
 
-        assert!(!repo.update(9999, "X", "x", "x").unwrap());
+        assert!(!repo.update(0, "missing", "x", 0).unwrap());
     }
 
     #[test]
     fn test_delete() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = KeyboardAssistRepository::new(db.connection());
-        let id = repo.insert("ToDelete", "del_key", "del_val").unwrap();
+        repo.insert(0, "del_key", "del_val").unwrap();
 
-        assert!(repo.delete(id).unwrap());
-        assert!(!repo.delete(id).unwrap());
+        assert!(repo.delete(0, "del_key").unwrap());
+        assert!(!repo.delete(0, "del_key").unwrap());
         assert!(repo.find_all().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_set_enabled() {
-        let db = crate::init_in_memory_database().unwrap();
-        let repo = KeyboardAssistRepository::new(db.connection());
-        let id = repo.insert("Toggle", "toggle_key", "toggle_val").unwrap();
-
-        assert!(repo.set_enabled(id, false).unwrap());
-        let assist = repo.find_by_id(id).unwrap().unwrap();
-        assert!(!assist.is_enabled);
-
-        assert!(repo.set_enabled(id, true).unwrap());
-        let assist = repo.find_by_id(id).unwrap().unwrap();
-        assert!(assist.is_enabled);
     }
 
     #[test]
     fn test_find_by_key() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = KeyboardAssistRepository::new(db.connection());
-        repo.insert("A1", "search", "搜索A").unwrap();
-        repo.insert("A2", "search", "搜索B").unwrap();
-        repo.insert("B1", "other", "其他").unwrap();
+        repo.insert_record(&KeyboardAssist {
+            assist_type: 0,
+            key: "search".into(),
+            value: "搜索A".into(),
+            serial_no: 0,
+        })
+        .unwrap();
+        repo.insert_record(&KeyboardAssist {
+            assist_type: 1,
+            key: "search".into(),
+            value: "搜索B".into(),
+            serial_no: 1,
+        })
+        .unwrap();
+        repo.insert(0, "other", "其他").unwrap();
 
         let results = repo.find_by_key("search").unwrap();
         assert_eq!(results.len(), 2);
