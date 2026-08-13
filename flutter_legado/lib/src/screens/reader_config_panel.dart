@@ -11,6 +11,11 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/system_brightness.dart';
+import '../widgets/reader/reader_padding_config_sheet.dart';
+import '../widgets/reader/reader_tip_config_sheet.dart';
+
+/// 边距区域（对标原版 PaddingConfigDialog.Region）
+enum PaddingRegion { header, body, footer }
 
 /// 点击区域可映射的功能
 enum TapAction {
@@ -78,6 +83,34 @@ class ReaderAdvancedConfig {
   double pageMarginBottom;
   double pageMarginLeft;
   double pageMarginRight;
+
+  // [UI-fix v2.0.57 | 2026-08-14] 页眉/页脚边距（对标 ReadBookConfig
+  // headerPadding*/footerPadding*）— Cursor UI
+  double headerPaddingTop;
+  double headerPaddingBottom;
+  double headerPaddingLeft;
+  double headerPaddingRight;
+  double footerPaddingTop;
+  double footerPaddingBottom;
+  double footerPaddingLeft;
+  double footerPaddingRight;
+  bool showHeaderLine;
+  bool showFooterLine;
+
+  // [UI-fix v2.0.57 | 2026-08-14] 阅读提示信息（对标 TipConfigDialog /
+  // ReadTipConfig）— Cursor UI
+  int headerMode;
+  int footerMode;
+  int tipHeaderLeft;
+  int tipHeaderMiddle;
+  int tipHeaderRight;
+  int tipFooterLeft;
+  int tipFooterMiddle;
+  int tipFooterRight;
+  int titleMode;
+  int titleSize;
+  int titleTopSpacing;
+  int titleBottomSpacing;
 
   // 状态栏提示栏
   bool showBattery;
@@ -178,6 +211,28 @@ class ReaderAdvancedConfig {
     this.pageMarginBottom = 24,
     this.pageMarginLeft = 20,
     this.pageMarginRight = 20,
+    this.headerPaddingTop = 0,
+    this.headerPaddingBottom = 0,
+    this.headerPaddingLeft = 16,
+    this.headerPaddingRight = 16,
+    this.footerPaddingTop = 6,
+    this.footerPaddingBottom = 6,
+    this.footerPaddingLeft = 16,
+    this.footerPaddingRight = 16,
+    this.showHeaderLine = false,
+    this.showFooterLine = true,
+    this.headerMode = 0,
+    this.footerMode = 0,
+    this.tipHeaderLeft = 2,
+    this.tipHeaderMiddle = 0,
+    this.tipHeaderRight = 3,
+    this.tipFooterLeft = 1,
+    this.tipFooterMiddle = 0,
+    this.tipFooterRight = 6,
+    this.titleMode = 0,
+    this.titleSize = 0,
+    this.titleTopSpacing = 0,
+    this.titleBottomSpacing = 0,
     this.showBattery = true,
     this.showTime = true,
     this.showProgress = true,
@@ -212,6 +267,31 @@ class ReaderAdvancedConfig {
     if (shareLayout) return 'reader_layout_share_';
     return isNight ? 'reader_layout_night_' : 'reader_layout_day_';
   }
+
+  /// 各区域默认边距（对标 ReadBookConfig.Config 默认值）
+  static Map<PaddingRegion, Map<String, double>> regionDefaultPaddings() => {
+        PaddingRegion.header: {
+          'top': 0,
+          'bottom': 0,
+          'left': 16,
+          'right': 16,
+        },
+        PaddingRegion.body: {
+          'top': 6,
+          'bottom': 6,
+          'left': 16,
+          'right': 16,
+        },
+        PaddingRegion.footer: {
+          'top': 6,
+          'bottom': 6,
+          'left': 16,
+          'right': 16,
+        },
+      };
+
+  static double defaultPaddingFor(PaddingRegion region, String side) =>
+      regionDefaultPaddings()[region]![side]!;
 
   /// 从持久化存储加载
   ///
@@ -290,10 +370,40 @@ class ReaderAdvancedConfig {
           .clamp(0, 2),
       shareLayout: shareLayout,
       customTextColor: prefs.getInt('${_prefix}custom_text_color') ?? 0,
-      pageMarginTop: layoutDouble('margin_top', 24).clamp(0.0, 80.0),
-      pageMarginBottom: layoutDouble('margin_bottom', 24).clamp(0.0, 80.0),
-      pageMarginLeft: layoutDouble('margin_left', 20).clamp(0.0, 80.0),
-      pageMarginRight: layoutDouble('margin_right', 20).clamp(0.0, 80.0),
+      pageMarginTop: layoutDouble('margin_top', 24).clamp(0.0, 400.0),
+      pageMarginBottom: layoutDouble('margin_bottom', 24).clamp(0.0, 400.0),
+      pageMarginLeft: layoutDouble('margin_left', 20).clamp(0.0, 100.0),
+      pageMarginRight: layoutDouble('margin_right', 20).clamp(0.0, 100.0),
+      headerPaddingTop: layoutDouble('header_padding_top', 0).clamp(0.0, 400.0),
+      headerPaddingBottom:
+          layoutDouble('header_padding_bottom', 0).clamp(0.0, 400.0),
+      headerPaddingLeft: layoutDouble('header_padding_left', 16).clamp(0.0, 100.0),
+      headerPaddingRight:
+          layoutDouble('header_padding_right', 16).clamp(0.0, 100.0),
+      footerPaddingTop: layoutDouble('footer_padding_top', 6).clamp(0.0, 400.0),
+      footerPaddingBottom:
+          layoutDouble('footer_padding_bottom', 6).clamp(0.0, 400.0),
+      footerPaddingLeft: layoutDouble('footer_padding_left', 16).clamp(0.0, 100.0),
+      footerPaddingRight:
+          layoutDouble('footer_padding_right', 16).clamp(0.0, 100.0),
+      showHeaderLine: prefs.getBool('${lp}show_header_line') ??
+          prefs.getBool('showHeaderLine') ??
+          false,
+      showFooterLine: prefs.getBool('${lp}show_footer_line') ??
+          prefs.getBool('showFooterLine') ??
+          true,
+      headerMode: (prefs.getInt('headerMode') ?? 0).clamp(0, 2),
+      footerMode: (prefs.getInt('footerMode') ?? 0).clamp(0, 2),
+      tipHeaderLeft: prefs.getInt('tipHeaderLeft') ?? 2,
+      tipHeaderMiddle: prefs.getInt('tipHeaderMiddle') ?? 0,
+      tipHeaderRight: prefs.getInt('tipHeaderRight') ?? 3,
+      tipFooterLeft: prefs.getInt('tipFooterLeft') ?? 1,
+      tipFooterMiddle: prefs.getInt('tipFooterMiddle') ?? 0,
+      tipFooterRight: prefs.getInt('tipFooterRight') ?? 6,
+      titleMode: (prefs.getInt('titleMode') ?? 0).clamp(0, 2),
+      titleSize: (prefs.getInt('titleSize') ?? 0).clamp(0, 20),
+      titleTopSpacing: (prefs.getInt('titleTopSpacing') ?? 0).clamp(0, 100),
+      titleBottomSpacing: (prefs.getInt('titleBottomSpacing') ?? 0).clamp(0, 100),
       showBattery: prefs.getBool('${_prefix}show_battery') ?? true,
       showTime: prefs.getBool('${_prefix}show_time') ?? true,
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
@@ -369,6 +479,30 @@ class ReaderAdvancedConfig {
     await prefs.setDouble('${_prefix}margin_bottom', pageMarginBottom);
     await prefs.setDouble('${_prefix}margin_left', pageMarginLeft);
     await prefs.setDouble('${_prefix}margin_right', pageMarginRight);
+    await prefs.setDouble('${lp}header_padding_top', headerPaddingTop);
+    await prefs.setDouble('${lp}header_padding_bottom', headerPaddingBottom);
+    await prefs.setDouble('${lp}header_padding_left', headerPaddingLeft);
+    await prefs.setDouble('${lp}header_padding_right', headerPaddingRight);
+    await prefs.setDouble('${lp}footer_padding_top', footerPaddingTop);
+    await prefs.setDouble('${lp}footer_padding_bottom', footerPaddingBottom);
+    await prefs.setDouble('${lp}footer_padding_left', footerPaddingLeft);
+    await prefs.setDouble('${lp}footer_padding_right', footerPaddingRight);
+    await prefs.setBool('${lp}show_header_line', showHeaderLine);
+    await prefs.setBool('showHeaderLine', showHeaderLine);
+    await prefs.setBool('${lp}show_footer_line', showFooterLine);
+    await prefs.setBool('showFooterLine', showFooterLine);
+    await prefs.setInt('headerMode', headerMode);
+    await prefs.setInt('footerMode', footerMode);
+    await prefs.setInt('tipHeaderLeft', tipHeaderLeft);
+    await prefs.setInt('tipHeaderMiddle', tipHeaderMiddle);
+    await prefs.setInt('tipHeaderRight', tipHeaderRight);
+    await prefs.setInt('tipFooterLeft', tipFooterLeft);
+    await prefs.setInt('tipFooterMiddle', tipFooterMiddle);
+    await prefs.setInt('tipFooterRight', tipFooterRight);
+    await prefs.setInt('titleMode', titleMode);
+    await prefs.setInt('titleSize', titleSize);
+    await prefs.setInt('titleTopSpacing', titleTopSpacing);
+    await prefs.setInt('titleBottomSpacing', titleBottomSpacing);
     await prefs.setBool('${_prefix}show_battery', showBattery);
     await prefs.setBool('${_prefix}show_time', showTime);
     await prefs.setBool('${_prefix}show_progress', showProgress);
@@ -423,6 +557,28 @@ class ReaderAdvancedConfig {
         pageMarginBottom: pageMarginBottom,
         pageMarginLeft: pageMarginLeft,
         pageMarginRight: pageMarginRight,
+        headerPaddingTop: headerPaddingTop,
+        headerPaddingBottom: headerPaddingBottom,
+        headerPaddingLeft: headerPaddingLeft,
+        headerPaddingRight: headerPaddingRight,
+        footerPaddingTop: footerPaddingTop,
+        footerPaddingBottom: footerPaddingBottom,
+        footerPaddingLeft: footerPaddingLeft,
+        footerPaddingRight: footerPaddingRight,
+        showHeaderLine: showHeaderLine,
+        showFooterLine: showFooterLine,
+        headerMode: headerMode,
+        footerMode: footerMode,
+        tipHeaderLeft: tipHeaderLeft,
+        tipHeaderMiddle: tipHeaderMiddle,
+        tipHeaderRight: tipHeaderRight,
+        tipFooterLeft: tipFooterLeft,
+        tipFooterMiddle: tipFooterMiddle,
+        tipFooterRight: tipFooterRight,
+        titleMode: titleMode,
+        titleSize: titleSize,
+        titleTopSpacing: titleTopSpacing,
+        titleBottomSpacing: titleBottomSpacing,
         showBattery: showBattery,
         showTime: showTime,
         showProgress: showProgress,
@@ -547,7 +703,7 @@ class ReaderConfigPanel extends ConsumerStatefulWidget {
 }
 
 class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
-  late final ReaderAdvancedConfig _config = widget.config.copy();
+  late ReaderAdvancedConfig _config = widget.config.copy();
 
   /// 当前阅读字体显示名（与 FontScreen 持久化键 reader_font_family 同步）
   String _fontLabel = '默认字体';
@@ -598,10 +754,26 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
     final List<Widget> children;
     switch (widget.section) {
       case ReaderConfigSection.margins:
-        children = [_buildPageMargins()];
+        children = [
+          ReaderPaddingConfigSheet(
+            config: _config.copy(),
+            onChanged: (cfg) {
+              _config = cfg.copy();
+              widget.onChanged?.call(_config.copy());
+            },
+          ),
+        ];
         break;
       case ReaderConfigSection.statusBar:
-        children = [_buildStatusBar()];
+        children = [
+          ReaderTipConfigSheet(
+            config: _config.copy(),
+            onChanged: (cfg) {
+              _config = cfg.copy();
+              widget.onChanged?.call(_config.copy());
+            },
+          ),
+        ];
         break;
       case ReaderConfigSection.all:
         children = [
@@ -617,13 +789,38 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           const Divider(),
           _buildTypography(),
           const Divider(),
-          _buildPageMargins(),
+          ListTile(
+            leading: const Icon(Icons.crop_free),
+            title: const Text('页面边距'),
+            subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => ReaderPaddingConfigSheet.show(
+              context,
+              config: _config.copy(),
+              onChanged: (cfg) {
+                _config = cfg.copy();
+                _commit();
+              },
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('阅读提示信息'),
+            subtitle: const Text('页眉页脚提示项与标题样式'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => ReaderTipConfigSheet.show(
+              context,
+              config: _config.copy(),
+              onChanged: (cfg) {
+                _config = cfg.copy();
+                _commit();
+              },
+            ),
+          ),
           const Divider(),
           _buildMoreConfig(),
           const Divider(),
           _buildBrightnessControl(),
-          const Divider(),
-          _buildStatusBar(),
         ];
         break;
     }
@@ -917,71 +1114,6 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
     const labels = ['无缩进', '一字符', '二字符', '三字符'];
     if (v < 0 || v >= labels.length) return '二字符';
     return labels[v];
-  }
-
-  // ===== 页面边距（对标原版 ReadStyleDialog 的四向 padding 调节） =====
-
-  // [UI-fix v2.0.3 | 2026-08-06] 页面边距四向可调，接入分页与渲染 — Qoder
-  Widget _buildPageMargins() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionTitle('页面边距', Icons.crop_free),
-        _marginSlider('顶部', Icons.arrow_upward,
-            _config.pageMarginTop, (v) {
-          _config.pageMarginTop = v;
-          _commit();
-        }),
-        _marginSlider('底部', Icons.arrow_downward,
-            _config.pageMarginBottom, (v) {
-          _config.pageMarginBottom = v;
-          _commit();
-        }),
-        _marginSlider('左侧', Icons.arrow_back,
-            _config.pageMarginLeft, (v) {
-          _config.pageMarginLeft = v;
-          _commit();
-        }),
-        _marginSlider('右侧', Icons.arrow_forward,
-            _config.pageMarginRight, (v) {
-          _config.pageMarginRight = v;
-          _commit();
-        }),
-      ],
-    );
-  }
-
-  Widget _marginSlider(String label, IconData icon, double value,
-      ValueChanged<double> onChanged) {
-    return Row(
-      children: [
-        Icon(icon, size: 16,
-            color: Theme.of(context).colorScheme.onSurfaceVariant),
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 36,
-          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        ),
-        Expanded(
-          child: Slider(
-            value: value,
-            min: 0,
-            max: 80,
-            divisions: 40,
-            label: value.toStringAsFixed(0),
-            onChanged: onChanged,
-          ),
-        ),
-        SizedBox(
-          width: 44,
-          child: Text(
-            '${value.toStringAsFixed(0)}px',
-            textAlign: TextAlign.end,
-            style: Theme.of(context).textTheme.labelMedium,
-          ),
-        ),
-      ],
-    );
   }
 
   // ===== 更多配置（对标原版 MoreConfigDialog） =====
@@ -1558,84 +1690,5 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
         ),
       ],
     );
-  }
-
-  // ===== 状态栏提示栏 =====
-
-  Widget _buildStatusBar() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionTitle('状态栏提示栏', Icons.info_outline),
-        // 实时预览
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              if (_config.showBattery) ...[
-                const Icon(Icons.battery_std, size: 14),
-                const SizedBox(width: 4),
-              ],
-              if (_config.showTime) ...[
-                Text(_nowText(), style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(width: 8),
-              ],
-              const Spacer(),
-              if (_config.showChapterName)
-                Flexible(
-                  child: Text('第一章 · 起始',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall),
-                ),
-              if (_config.showProgress) ...[
-                const SizedBox(width: 8),
-                Text('42.0%', style: Theme.of(context).textTheme.labelSmall),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        _statusToggle('显示电量', Icons.battery_std, _config.showBattery, (v) {
-          _config.showBattery = v;
-          _commit();
-        }),
-        _statusToggle('显示时间', Icons.access_time, _config.showTime, (v) {
-          _config.showTime = v;
-          _commit();
-        }),
-        _statusToggle('显示进度', Icons.pie_chart_outline, _config.showProgress, (v) {
-          _config.showProgress = v;
-          _commit();
-        }),
-        _statusToggle('显示章节名', Icons.bookmark_outline, _config.showChapterName, (v) {
-          _config.showChapterName = v;
-          _commit();
-        }),
-      ],
-    );
-  }
-
-  Widget _statusToggle(String label, IconData icon, bool value, ValueChanged<bool> onChanged) {
-    return CheckboxListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      secondary: Icon(icon, size: 20),
-      title: Text(label),
-      value: value,
-      onChanged: (v) => onChanged(v ?? false),
-    );
-  }
-
-  String _nowText() {
-    final now = DateTime.now();
-    final h = now.hour.toString().padLeft(2, '0');
-    final m = now.minute.toString().padLeft(2, '0');
-    return '$h:$m';
   }
 }
