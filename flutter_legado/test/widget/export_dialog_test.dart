@@ -30,6 +30,9 @@ class FakeExportService extends ExportService {
     required String format,
     required bool includeToc,
     String? encoding,
+    int? startChapter,
+    int? endChapter,
+    String? fileNameTemplate,
   }) async {
     exportCalled = true;
     if (shouldFail) {

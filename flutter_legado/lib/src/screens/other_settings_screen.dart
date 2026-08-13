@@ -28,7 +28,6 @@ import '../bridge/ffi.dart';
 import '../l10n/app_strings.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
-import '../providers/reader/reader_notifier.dart' show ReaderBackground;
 import '../providers/source_check/check_source_notifier.dart';
 import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
@@ -51,17 +50,6 @@ class OtherSettingsScreen extends ConsumerStatefulWidget {
 class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   final SettingsService _settingsService = SettingsService();
   String _localeValue = 'system'; // system / zh / en
-
-  // 默认阅读设置当前值
-  double _fontSize = 18.0;
-  double _lineHeight = 1.6;
-  int _bgColorIndex = 0;
-
-  // 网络设置当前值
-  String _proxyType = 'none'; // none / http / socks5
-  String _proxyHost = '';
-  int _proxyPort = 0;
-  int _timeoutSeconds = 30;
 
   // ===== 主界面分组（对齐原版 auto_refresh 等键）=====
   bool _autoRefresh = false;
@@ -113,8 +101,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   void initState() {
     super.initState();
     _loadLocale();
-    _loadReadSettings();
-    _loadNetworkSettings();
     _loadOtherSettings();
   }
 
@@ -125,21 +111,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     if (_localeValue != 'system') {
       AppStrings.setLocale(_localeValue);
     }
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _loadReadSettings() async {
-    _fontSize = await _settingsService.getFontSize();
-    _lineHeight = await _settingsService.getLineHeight();
-    _bgColorIndex = await _settingsService.getBgColorIndex();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _loadNetworkSettings() async {
-    _proxyType = await _settingsService.getProxyType();
-    _proxyHost = await _settingsService.getProxyHost();
-    _proxyPort = await _settingsService.getProxyPort();
-    _timeoutSeconds = await _settingsService.getRequestTimeout();
     if (mounted) setState(() {});
   }
 
@@ -595,26 +566,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         return AppStrings.langEnglish;
       default:
         return AppStrings.langSystem;
-    }
-  }
-
-  String get _bgColorLabel {
-    if (_bgColorIndex >= 0 && _bgColorIndex < ReaderBackground.labels.length) {
-      return ReaderBackground.labels[_bgColorIndex];
-    }
-    return AppStrings.whiteColor;
-  }
-
-  String get _proxyLabel {
-    switch (_proxyType) {
-      case 'http':
-        return _proxyHost.isEmpty ? 'HTTP' : 'HTTP · $_proxyHost:$_proxyPort';
-      case 'socks5':
-        return _proxyHost.isEmpty
-            ? 'SOCKS5'
-            : 'SOCKS5 · $_proxyHost:$_proxyPort';
-      default:
-        return AppStrings.noProxy;
     }
   }
 
@@ -1191,277 +1142,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     );
   }
 
-  /// 默认阅读设置：字体大小、行距、背景色
-  void _showDefaultReadSettings(BuildContext context) {
-    final messenger = ScaffoldMessenger.of(context);
-    var fontSize = _fontSize;
-    var lineHeight = _lineHeight;
-    var bgIndex = _bgColorIndex;
-
-    showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(AppStrings.readingSettingsTitle),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 字体大小
-                  Text(
-                    '${AppStrings.fontSizeLabel}: ${fontSize.toStringAsFixed(0)}',
-                    style: Theme.of(ctx).textTheme.bodyMedium,
-                  ),
-                  Slider(
-                    value: fontSize,
-                    min: 12,
-                    max: 32,
-                    divisions: 20,
-                    label: fontSize.round().toString(),
-                    onChanged: (v) => setDialogState(() => fontSize = v),
-                  ),
-                  const SizedBox(height: 8),
-                  // 行距
-                  Text(AppStrings.lineHeightLabel,
-                      style: Theme.of(ctx).textTheme.bodyMedium),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final value in const [1.2, 1.6, 2.0, 2.5])
-                        ChoiceChip(
-                          label: Text('${value}x'),
-                          selected: lineHeight == value,
-                          onSelected: (_) =>
-                              setDialogState(() => lineHeight = value),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // 背景色（与阅读器预设保持一致）
-                  Text(AppStrings.bgColor,
-                      style: Theme.of(ctx).textTheme.bodyMedium),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 12,
-                    children:
-                        List.generate(ReaderBackground.presets.length, (i) {
-                      final color = ReaderBackground.presets[i];
-                      final isSelected = bgIndex == i;
-                      return GestureDetector(
-                        onTap: () => setDialogState(() => bgIndex = i),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: isSelected
-                                      ? Theme.of(ctx).colorScheme.primary
-                                      : Theme.of(ctx).colorScheme.outlineVariant,
-                                  width: isSelected ? 3 : 1,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              ReaderBackground.labels[i],
-                              style: Theme.of(ctx).textTheme.labelSmall,
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppStrings.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(AppStrings.save),
-            ),
-          ],
-        ),
-      ),
-    ).then((saved) async {
-      // 进入 .then 回调后第一时间检查 mounted，再 setState/持久化
-      if (saved != true || !mounted) return;
-      setState(() {
-        _fontSize = fontSize;
-        _lineHeight = lineHeight;
-        _bgColorIndex = bgIndex;
-      });
-      await _settingsService.setFontSize(fontSize);
-      await _settingsService.setLineHeight(lineHeight);
-      await _settingsService.setBgColorIndex(bgIndex);
-      messenger.showSnackBar(
-        SnackBar(content: Text(AppStrings.configSaved)),
-      );
-    });
-  }
-
-  /// 代理设置：类型（无/HTTP/SOCKS5）+ 地址 + 端口
-  void _showProxySettings(BuildContext context) {
-    final messenger = ScaffoldMessenger.of(context);
-    var proxyType = _proxyType;
-    final hostController = TextEditingController(text: _proxyHost);
-    final portController = TextEditingController(
-      text: _proxyPort > 0 ? '$_proxyPort' : '',
-    );
-
-    showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(AppStrings.proxySettings),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'none', label: Text('无')),
-                      ButtonSegment(value: 'http', label: Text('HTTP')),
-                      ButtonSegment(value: 'socks5', label: Text('SOCKS5')),
-                    ],
-                    selected: {proxyType},
-                    onSelectionChanged: (selected) =>
-                        setDialogState(() => proxyType = selected.first),
-                  ),
-                  if (proxyType != 'none') ...[
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: hostController,
-                      decoration: const InputDecoration(
-                        labelText: '代理地址',
-                        hintText: '127.0.0.1',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.dns),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: portController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '端口',
-                        hintText: '7890',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.numbers),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppStrings.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(AppStrings.save),
-            ),
-          ],
-        ),
-      ),
-    ).then((saved) async {
-      final host = hostController.text.trim();
-      final port = int.tryParse(portController.text.trim()) ?? 0;
-      hostController.dispose();
-      portController.dispose();
-      // 进入 .then 回调后（控件释放完毕）检查 mounted，再 setState/持久化
-      if (saved != true || !mounted) return;
-
-      if (proxyType != 'none' && (host.isEmpty || port <= 0 || port > 65535)) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('请填写有效的代理地址和端口')),
-        );
-        return;
-      }
-
-      final effectiveHost = proxyType == 'none' ? '' : host;
-      final effectivePort = proxyType == 'none' ? 0 : port;
-      setState(() {
-        _proxyType = proxyType;
-        _proxyHost = effectiveHost;
-        _proxyPort = effectivePort;
-      });
-      await _settingsService.setProxyType(proxyType);
-      await _settingsService.setProxyHost(effectiveHost);
-      await _settingsService.setProxyPort(effectivePort);
-      messenger.showSnackBar(
-        SnackBar(content: Text(AppStrings.configSaved)),
-      );
-    });
-  }
-
-  /// 请求超时设置：5–60 秒滑块
-  void _showTimeoutSettings(BuildContext context) {
-    final messenger = ScaffoldMessenger.of(context);
-    var seconds = _timeoutSeconds.clamp(5, 60).toDouble();
-
-    showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(AppStrings.requestTimeout),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${seconds.round()} ${AppStrings.secondsUnit}',
-                style: Theme.of(ctx).textTheme.titleMedium,
-              ),
-              Slider(
-                value: seconds,
-                min: 5,
-                max: 60,
-                divisions: 55,
-                label: '${seconds.round()}',
-                onChanged: (v) => setDialogState(() => seconds = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppStrings.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(AppStrings.save),
-            ),
-          ],
-        ),
-      ),
-    ).then((saved) async {
-      // 进入 .then 回调后第一时间检查 mounted，再 setState/持久化
-      if (saved != true || !mounted) return;
-      setState(() => _timeoutSeconds = seconds.round());
-      await _settingsService.setRequestTimeout(seconds.round());
-      messenger.showSnackBar(
-        SnackBar(content: Text(AppStrings.configSaved)),
-      );
-    });
-  }
 }
 
 /// 校验书源配置对话框确认结果（回传值而非 controller）
