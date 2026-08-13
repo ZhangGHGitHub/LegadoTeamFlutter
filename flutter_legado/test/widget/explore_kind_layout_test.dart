@@ -23,6 +23,11 @@ void main() {
       const ExploreCategory(title: '儿童', url: '/child', style: cellStyle),
       const ExploreCategory(title: '儿童分类', style: wideStyle),
       const ExploreCategory(title: '故事', url: '/story', style: cellStyle),
+      const ExploreCategory(
+        title: '排行榜',
+        url: '/rank',
+        style: wideStyle,
+      ),
       const ExploreCategory(title: '音乐频道', style: wideStyle),
       const ExploreCategory(title: '流行', url: '/pop', style: cellStyle),
     ];
@@ -38,15 +43,19 @@ void main() {
     expect(find.text('推荐'), findsOneWidget);
     expect(find.text('儿童分类'), findsOneWidget);
     expect(find.text('音乐频道'), findsOneWidget);
+    expect(find.text('排行榜'), findsOneWidget);
 
-    // wide 行应占满可用宽度（Container width: infinity）
-    final wideFinder = find.ancestor(
-      of: find.text('儿童分类'),
-      matching: find.byWidgetPredicate(
-        (w) => w is Container && w.constraints?.maxWidth == double.infinity,
+    // 可点击 wide 行带 chevron（与标题同 Row）
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('排行榜'),
+          matching: find.byType(InkWell),
+        ),
+        matching: find.byIcon(Icons.chevron_right),
       ),
+      findsOneWidget,
     );
-    expect(wideFinder, findsOneWidget);
   });
 
   testWidgets('可点击 cell 项触发 onCategoryTap', (tester) async {
