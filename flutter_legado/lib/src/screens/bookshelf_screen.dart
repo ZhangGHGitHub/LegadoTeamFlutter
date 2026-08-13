@@ -335,9 +335,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     return SliverReorderableList(
       itemCount: shelfBooks.length,
       // onReorderItem 的 newIndex 已按移除项调整，还原为 onReorder 语义后交给 Notifier
-      onReorderItem: (oldIndex, newIndex) {
+      onReorderItem: (oldIndex, newIndex) async {
         if (newIndex > oldIndex) newIndex++;
-        ref
+        await ref
             .read(bookshelfNotifierProvider.notifier)
             .reorderBook(oldIndex, newIndex);
       },

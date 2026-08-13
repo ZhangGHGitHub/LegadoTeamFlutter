@@ -33,6 +33,15 @@ pub fn clear_cache() -> LegadoResult<bool> {
     })
 }
 
+/// 清除指定书籍的章节缓存（对齐原版 BookHelp.clearCache(book) 的 DB 侧语义）
+pub fn clear_book_cache(book_url: &str) -> LegadoResult<i32> {
+    with_database(|db| {
+        let repo = CacheBookRepository::new(db.connection());
+        let deleted = repo.delete_by_book(book_url)?;
+        Ok(deleted as i32)
+    })
+}
+
 /// 获取指定章节的缓存内容（无缓存返回空字符串）
 pub fn get_chapter_cache(book_url: &str, chapter_index: i32) -> LegadoResult<String> {
     with_database(|db| {

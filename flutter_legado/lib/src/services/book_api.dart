@@ -44,6 +44,9 @@ abstract class BookApi {
   /// 批量导入书籍，返回成功导入的数量
   Future<int> importBooks(String jsonArray);
 
+  /// 批量持久化书架拖拽排序
+  Future<void> reorderBooks(List<Map<String, dynamic>> orders);
+
   // ========== 书源操作 ==========
 
   /// 获取所有书源
@@ -594,8 +597,11 @@ abstract class BookApi {
   /// 获取缓存大小
   Future<int> getCacheSize();
 
-  /// 清除缓存
+  /// 清除全部缓存
   Future<void> clearCache();
+
+  /// 清除指定书籍章节缓存，返回删除行数
+  Future<int> clearBookCache(String bookUrl);
 
   /// 获取缓存书籍数量
   Future<int> getCacheBookCount();

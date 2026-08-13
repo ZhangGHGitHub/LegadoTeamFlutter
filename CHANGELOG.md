@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.52] - 2026-08-14
+
+### Added
+- [Rust] 书架拖拽排序持久化 `reorderBooks` FFI + UI 接线（审计 F2-1）
+- [Rust] 按书清缓存 `clearBookCache` FFI + 书籍详情页接线（审计 F2-3）
+
 ## [2.0.51] - 2026-08-14
 
 ### Removed

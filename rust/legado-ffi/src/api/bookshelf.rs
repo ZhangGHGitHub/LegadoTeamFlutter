@@ -93,3 +93,25 @@ pub fn update_reading_progress(
         repo.update(&book)
     })
 }
+
+/// 批量持久化书架排序（JSON 数组：`[{"bookUrl":"...", "order":1}, ...]`）
+///
+/// 对齐原版 `BookAdapter.swap` 结束后 `updateBook(*getItems())` 的 order 写回语义。
+pub fn reorder_books(orders_json: &str) -> LegadoResult<()> {
+    #[derive(serde::Deserialize)]
+    struct BookOrderItem {
+        #[serde(rename = "bookUrl")]
+        book_url: String,
+        order: i32,
+    }
+    let items: Vec<BookOrderItem> = serde_json::from_str(orders_json)
+        .map_err(|e| legado_core::LegadoError::Ffi(format!("排序 JSON 解析失败: {e}")))?;
+    let orders: Vec<(String, i32)> = items
+        .into_iter()
+        .map(|i| (i.book_url, i.order))
+        .collect();
+    with_database(|db| {
+        let repo = BookRepository::new(db.connection());
+        repo.update_orders(&orders)
+    })
+}

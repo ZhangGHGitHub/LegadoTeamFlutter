@@ -196,6 +196,7 @@ void main() {
   group('BookshelfNotifier 展示层状态', () {
     setUp(() {
       when(() => mockApi.getBooks()).thenAnswer((_) async => testBooks);
+      when(() => mockApi.reorderBooks(any())).thenAnswer((_) async {});
       container.read(bookshelfNotifierProvider);
     });
 
@@ -255,7 +256,7 @@ void main() {
       expect(readState().books[1].name, equals('完美世界'));
 
       // 将第 0 本移到第 2 位
-      readNotifier().reorderBook(0, 2);
+      await readNotifier().reorderBook(0, 2);
 
       expect(readState().books[0].name, equals('完美世界'));
       expect(readState().books[1].name, equals('斗破苍穹'));
@@ -268,8 +269,8 @@ void main() {
       await pumpInit();
       final before = readState().books;
 
-      readNotifier().reorderBook(-1, 0);
-      readNotifier().reorderBook(0, 100);
+      await readNotifier().reorderBook(-1, 0);
+      await readNotifier().reorderBook(0, 100);
 
       expect(readState().books, equals(before));
     });

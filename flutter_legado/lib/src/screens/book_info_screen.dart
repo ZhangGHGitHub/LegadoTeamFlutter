@@ -1586,16 +1586,14 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 
   /// 清除缓存（对标 Kotlin BookInfoViewModel.clearCache）
-  ///
-  /// TODO(Rust轨)：原版按书清缓存（BookCacheManager.clear），当前 FFI 仅有
-  /// 全局 cacheClear，暂以全局清理 + 确认对话框降级实现 — Qoder
   Future<void> _clearCache() async {
+    final book = _loadedBook;
+    if (book == null) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('清除缓存'),
-        // 当前 FFI 仅支持全局清缓存（按书清缓存留 Rust 轨补齐）
-        content: const Text('当前仅支持清除全部缓存，是否继续？'),
+        content: Text('确定清除《${book.name}》的章节缓存？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -1610,13 +1608,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await ref.read(bookApiProvider).clearCache();
-      // [Task #55 F4 | 2026-08-10] 清缓存成功后同步清除章级「删除重复
-      // 标题」开关的 SP 镜像键，避免阅读器顶栏开关显示态漂移 — Qoder
+      final deleted =
+          await ref.read(bookApiProvider).clearBookCache(book.bookUrl);
       await CacheService.clearSameTitleRemovedFlags();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('缓存已清除')),
+          SnackBar(content: Text('已清除 $deleted 条章节缓存')),
         );
       }
     } catch (e) {

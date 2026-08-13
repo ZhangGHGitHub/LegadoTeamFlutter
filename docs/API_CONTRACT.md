@@ -89,7 +89,7 @@
 | `initialize()` | 无 | `Future<void>` | 初始化 Rust 运行时和数据库连接 |
 | `getVersion()` | 无 | `Future<String>` | 获取引擎版本号 |
 
-### 2.2 书架操作（9 个方法）
+### 2.2 书架操作（10 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -102,6 +102,7 @@
 | `unTopBook(String bookUrl)` | bookUrl | `Future<void>` | 取消置顶 |
 | `setBookGroup(String bookUrl, int groupId)` | bookUrl, groupId | `Future<void>` | 设置书籍分组 |
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
+| `reorderBooks(List<Map<String, dynamic>> orders)` | orders: `[{bookUrl, order}, ...]` | `Future<void>` | 批量持久化拖拽排序（对齐原版 BookAdapter.swap 后 updateBook） |
 
 ### 2.3 书源操作（24 个方法）
 
@@ -295,12 +296,13 @@
 | `deleteSearchKeyword(String keyword)` | keyword | `Future<void>` | 删除搜索关键词 |
 | `clearSearchHistory()` | 无 | `Future<void>` | 清空搜索历史 |
 
-### 2.16 缓存管理（6 个方法）
+### 2.16 缓存管理（7 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `getCacheSize()` | 无 | `Future<int>` | 获取缓存大小（字节） |
-| `clearCache()` | 无 | `Future<void>` | 清除缓存 |
+| `clearCache()` | 无 | `Future<void>` | 清除全部缓存 |
+| `clearBookCache(String bookUrl)` | bookUrl | `Future<int>` | 清除指定书籍章节缓存，返回删除行数（对齐 BookHelp.clearCache(book)） |
 | `getCacheBookCount()` | 无 | `Future<int>` | 获取缓存书籍数量 |
 | `getCacheChapterCount()` | 无 | `Future<int>` | 获取缓存章节数量 |
 | `clearCacheBefore(int beforeTimestampMs)` | beforeTimestampMs: 毫秒时间戳 | `Future<void>` | 清除指定时间之前的缓存 |
@@ -764,7 +766,7 @@
 | # | 模块 | 方法数 |
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
-| 2 | 书架操作 | 9 |
+| 2 | 书架操作 | 10 |
 | 3 | 书源操作 | 24 |
 | 4 | 搜索操作 | 8 |
 | 5 | RSS 源操作 | 9 |
@@ -778,7 +780,7 @@
 | 13 | RSS 收藏操作 | 4 |
 | 14 | 书籍分组 | 4 |
 | 15 | 搜索历史 | 5 |
-| 16 | 缓存管理 | 6 |
+| 16 | 缓存管理 | 7 |
 | 17 | WebBook 操作 | 6 |
 | 18 | 发现页操作 | 2 |
 | 19 | 规则解析 | 1 |

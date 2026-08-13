@@ -360,6 +360,29 @@ impl<'a> BookRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("恢复外键失败: {e}")))?;
         result
     }
+
+    /// 批量更新书籍排序（对齐原版拖拽排序后 updateBook 持久化 order 字段）
+    pub fn update_orders(&self, orders: &[(String, i32)]) -> LegadoResult<()> {
+        if orders.is_empty() {
+            return Ok(());
+        }
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启排序事务失败: {e}")))?;
+        {
+            let mut stmt = tx
+                .prepare(r#"UPDATE books SET "order" = ?1 WHERE bookUrl = ?2"#)
+                .map_err(|e| LegadoError::Database(format!("准备排序语句失败: {e}")))?;
+            for (book_url, order) in orders {
+                stmt.execute(params![order, book_url])
+                    .map_err(|e| LegadoError::Database(format!("更新排序失败: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交排序事务失败: {e}")))?;
+        Ok(())
+    }
 }
 
 impl<'a> Repository<Book> for BookRepository<'a> {
@@ -560,6 +583,23 @@ mod tests {
             author: author.to_string(),
             ..Book::default()
         }
+    }
+
+    #[test]
+    fn test_update_orders_batch() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        repo.insert(&make_book("https://a.com/1", "A", "作者")).unwrap();
+        repo.insert(&make_book("https://a.com/2", "B", "作者")).unwrap();
+        repo.update_orders(&[
+            ("https://a.com/1".into(), 2),
+            ("https://a.com/2".into(), 1),
+        ])
+        .unwrap();
+        let b1 = repo.find_by_url("https://a.com/1").unwrap().unwrap();
+        let b2 = repo.find_by_url("https://a.com/2").unwrap().unwrap();
+        assert_eq!(b1.order, 2);
+        assert_eq!(b2.order, 1);
     }
 
     #[test]

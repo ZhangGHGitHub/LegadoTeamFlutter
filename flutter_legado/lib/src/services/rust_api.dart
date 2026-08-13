@@ -214,6 +214,10 @@ class RustApi implements BookApi {
   Future<int> importBooks(String jsonArray) =>
       bridge.bookshelfImport(jsonArray: jsonArray);
 
+  /// 批量持久化书架拖拽排序
+  Future<void> reorderBooks(List<Map<String, dynamic>> orders) =>
+      bridge.bookshelfReorderOrders(ordersJson: jsonEncode(orders));
+
   // ========== 书源操作 ==========
 
   /// 获取所有书源
@@ -1305,6 +1309,12 @@ class RustApi implements BookApi {
   /// 清除缓存
   Future<void> clearCache() async {
     await bridge.cacheClear();
+  }
+
+  /// 清除指定书籍章节缓存
+  Future<int> clearBookCache(String bookUrl) async {
+    final deleted = await bridge.cacheClearBook(bookUrl: bookUrl);
+    return deleted.toInt();
   }
 
   /// 获取缓存书籍数量

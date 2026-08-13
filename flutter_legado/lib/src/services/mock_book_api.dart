@@ -345,6 +345,18 @@ class MockBookApi implements BookApi {
     return list.length;
   }
 
+  @override
+  Future<void> reorderBooks(List<Map<String, dynamic>> orders) async {
+    for (final item in orders) {
+      final url = item['bookUrl'] as String?;
+      final order = item['order'] as int?;
+      if (url == null || order == null) continue;
+      final idx = _books.indexWhere((b) => b.bookUrl == url);
+      if (idx >= 0) _books[idx] = _books[idx].copyWith(order: order);
+    }
+    _books.sort((a, b) => a.order.compareTo(b.order));
+  }
+
   // ========== 书源操作 ==========
 
   @override
@@ -1356,6 +1368,9 @@ class MockBookApi implements BookApi {
 
   @override
   Future<void> clearCache() async {}
+
+  @override
+  Future<int> clearBookCache(String bookUrl) async => 0;
 
   @override
   Future<int> getCacheBookCount() async => 3;

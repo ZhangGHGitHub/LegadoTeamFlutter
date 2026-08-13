@@ -77,21 +77,21 @@
 - **涉及文件**：`rust/legado-ffi/src/`（新增排序持久化 FFI）、`docs/API_CONTRACT.md`（契约先行）、`flutter_legado/lib/src/services/book_api.dart` / `rust_api.dart` / `mock_book_api.dart`、`bookshelf_notifier.dart:155-172`、`bookshelf_screen.dart:338-342`
 - **实施要点**：契约登记书籍排序接口（对齐原版 sort 语义）→ Rust 实现（books 表 order 字段持久化）→ FRB codegen（`make gen`）→ UI 接线 reorderBook。
 - **验收**：拖拽排序后重启应用排序保持；契约/双实现同步；`flutter test` 新增排序持久化用例。
-- **工作量**：L ｜ **前置**：无
+- **工作量**：L ｜ **前置**：无 ｜ **状态**：✅（`reorderBooks` FFI + BookshelfNotifier 持久化接线）
 
 ### F2-2 `[双轨]` 换源页三个假开关处理
 - **来源**：P1-2
 - **涉及文件**：`flutter_legado/lib/src/screens/change_source_screen.dart:125-131/375-387`、`rust/legado-ffi/src/api/source_switch.rs`（如需接线）
 - **实施要点**：二选一——① Rust 侧实现 `changeSourceLoadWordCount/LoadInfo/LoadToc` 消费逻辑（对齐原版 search 时加载选项）并接线 `_search()`；② 若原版语义不适用，移除开关并登记说明。不可保留假开关。
 - **验收**：三开关有实际效果或已移除；UI 无误导性控件；契约同步。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：⏸ 阻塞（需 Rust `source_switch_search` 扩展 loadInfo/loadToc/loadWordCount 语义，本批未交付）
 
 ### F2-3 `[双轨]` 按书清缓存 FFI 补齐
 - **来源**：P1-3
 - **涉及文件**：`docs/API_CONTRACT.md`、`rust/legado-ffi/src/api/cache_api.rs`（新增 `clear_book_cache`）、`book_api.dart`/`rust_api.dart`/`mock_book_api.dart`、`book_info_screen.dart:1588-1609`
 - **实施要点**：契约登记 → Rust 实现按 bookUrl 清缓存（对齐 BookCacheManager.clear）→ FRB codegen → UI 移除全局降级对话框。
 - **验收**：详情页「清除缓存」仅清该书；契约/三实现同步；`flutter test` 新增用例。
-- **工作量**：M ｜ **前置**：无
+- **工作量**：M ｜ **前置**：无 ｜ **状态**：✅（`clearBookCache` FFI + 书籍详情页按书清缓存）
 
 ### F2-4 `[文档]` quickjs 构建口径修正
 - **来源**：P1-4（2 个失败测试由此而来）

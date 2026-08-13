@@ -152,11 +152,8 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(error: null);
   }
 
-  /// 拖拽排序：将书籍从 oldIndex 移动到 newIndex
-  ///
-  /// 注意：这是 UI 层拖拽交互的视觉反馈，
-  /// 持久化排序由后续调用 BookApi 完成（TODO: Phase 1.5）
-  void reorderBook(int oldIndex, int newIndex) {
+  /// 拖拽排序：将书籍从 oldIndex 移动到 newIndex 并持久化 order
+  Future<void> reorderBook(int oldIndex, int newIndex) async {
     if (oldIndex < 0 || oldIndex >= state.books.length) return;
     if (newIndex < 0 || newIndex > state.books.length) return;
     if (newIndex > oldIndex) newIndex--;
@@ -164,11 +161,18 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     final books = List<Book>.from(state.books);
     final book = books.removeAt(oldIndex);
     books.insert(newIndex, book);
-    // 更新 order 字段（UI 状态同步）
     final reordered = [
       for (var i = 0; i < books.length; i++) books[i].copyWith(order: i),
     ];
     state = state.copyWith(books: reordered);
+    try {
+      await ref.read(bookApiProvider).reorderBooks([
+        for (final b in reordered) {'bookUrl': b.bookUrl, 'order': b.order},
+      ]);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+      await _loadBooks();
+    }
   }
 
   /// 切换「显示最近阅读」偏好

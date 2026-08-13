@@ -41,6 +41,12 @@ Future<String> bookshelfGet({required String bookUrl}) =>
 Future<int> bookshelfImport({required String jsonArray}) =>
     RustLib.instance.api.crateFfiFfiBookshelfImport(jsonArray: jsonArray);
 
+/// 批量持久化书架排序（JSON 数组：[{"bookUrl":"...", "order":1}, ...]）
+Future<void> bookshelfReorderOrders({required String ordersJson}) => RustLib
+    .instance
+    .api
+    .crateFfiFfiBookshelfReorderOrders(ordersJson: ordersJson);
+
 /// 更新阅读进度
 Future<void> readerUpdateProgress({
   required String bookUrl,
@@ -956,6 +962,10 @@ Future<PlatformInt64> cacheGetSize() =>
 
 /// 清空所有缓存
 Future<bool> cacheClear() => RustLib.instance.api.crateFfiFfiCacheClear();
+
+/// 清除指定书籍的章节缓存，返回删除行数
+Future<int> cacheClearBook({required String bookUrl}) =>
+    RustLib.instance.api.crateFfiFfiCacheClearBook(bookUrl: bookUrl);
 
 /// 获取章节缓存内容
 Future<String> cacheGetChapter({

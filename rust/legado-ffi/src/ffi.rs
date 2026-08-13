@@ -137,6 +137,12 @@ pub mod ffi {
         Ok(crate::api::bookshelf::import_books(&json_array)?)
     }
 
+    /// 批量持久化书架排序（JSON 数组：[{"bookUrl":"...", "order":1}, ...]）
+    pub fn bookshelf_reorder_orders(orders_json: String) -> Result<(), BridgeError> {
+        crate::api::bookshelf::reorder_books(&orders_json)?;
+        Ok(())
+    }
+
     /// 更新阅读进度
     pub fn reader_update_progress(
         book_url: String,
@@ -1294,6 +1300,11 @@ pub mod ffi {
     pub fn cache_clear() -> Result<bool, BridgeError> {
         let ok = crate::api::cache_api::clear_cache()?;
         Ok(ok)
+    }
+
+    /// 清除指定书籍的章节缓存，返回删除行数
+    pub fn cache_clear_book(book_url: String) -> Result<i32, BridgeError> {
+        Ok(crate::api::cache_api::clear_book_cache(&book_url)?)
     }
 
     /// 获取章节缓存内容
