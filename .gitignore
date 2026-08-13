@@ -60,7 +60,10 @@ scripts/_tmp_*
 
 # 本地调试证据与截图（不入库）
 docs/gate_evidence_*/
+docs/__pycache__/
 .reasonix/
 reasonix.toml
 flutter_legado/_*.png
+flutter_legado/crash_last_screenshot.png
+flutter_legado/e2e_local_book.txt
 .qoder/better-harness/
