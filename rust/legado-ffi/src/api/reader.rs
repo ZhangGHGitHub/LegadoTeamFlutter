@@ -365,19 +365,33 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
     // 详情/目录页；用 bookUrl 抓取会把旧源 URL 传给新源解析器导致目录获取失败
     // （用户反馈「目录也获取不到」的根因之一）。tocUrl 为空时回退 bookUrl，
     // 对齐原版 WebBook.getChapterList 以 book.tocUrl 为目录页地址的行为。
-    let fetch_url = existing_book
-        .as_ref()
-        .map(|b| b.toc_url.trim())
-        .filter(|u| !u.is_empty())
-        .map(|u| u.to_string())
-        .unwrap_or_else(|| book_url.to_string());
-
     // 目录更新前钩子（对齐 WebBook.getChapterListAwait(runPerJs=true) → runPreUpdateJs）
-    if let Some(ref book) = existing_book {
+    // 须在计算 fetch_url 之前执行，以便 reGetBook/refreshTocUrl/手写改 book 生效
+    let mut working_book = existing_book.clone();
+    if let Some(ref mut book) = working_book {
         if let Err(e) = crate::api::pre_update::run_pre_update_js(&source, book) {
             eprintln!("[refresh_toc] preUpdateJs: {e}");
+        } else {
+            // 持久化 preUpdateJs / 钩子对 bookUrl·tocUrl·variable 等的改写
+            let _ = with_database(|db| {
+                legado_db::BookRepository::new(db.connection()).update(book)
+            });
         }
     }
+
+    let fetch_url = working_book
+        .as_ref()
+        .map(|b| {
+            let toc = b.toc_url.trim();
+            if !toc.is_empty() {
+                toc.to_string()
+            } else if !b.book_url.trim().is_empty() {
+                b.book_url.clone()
+            } else {
+                book_url.to_string()
+            }
+        })
+        .unwrap_or_else(|| book_url.to_string());
 
     // 2. 使用 WebBookEngine 从网络获取章节列表
     let engine = super::web_book::build_engine();

@@ -533,6 +533,8 @@ impl<'a> RuleAnalyzer<'a> {
             ("regex", &rule[7..])
         } else if lower.starts_with("@js:") {
             ("js", &rule[4..])
+        } else if lower.starts_with("@webjs:") {
+            ("webjs", &rule[7..])
         } else {
             ("", rule)
         }

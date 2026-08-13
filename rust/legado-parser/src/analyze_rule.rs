@@ -36,6 +36,10 @@ pub enum RuleType {
     Regex,
     /// JavaScript 规则执行
     Js,
+    /// WebView JS 规则（对齐原版 `Mode.WebJs` / `@webjs:`）
+    ///
+    /// 重构侧无平台 WebView 时以降级为无头 QuickJS（注入 result/src/html）。
+    WebJs,
     /// 自动检测（根据 @前缀 或内容检测）
     Auto,
 }
@@ -63,6 +67,10 @@ pub struct AnalyzeRule {
     variables: Arc<Mutex<HashMap<String, String>>>,
     /// 本地绑定（对齐原版 `localBindings` / `setLocal`；优先于 variables）
     local_bindings: Arc<Mutex<HashMap<String, String>>>,
+    /// 重定向后最终 URL（对齐原版 `AnalyzeRule.redirectUrl`）
+    ///
+    /// `isUrl` 绝对化时作为 base；默认等于 `base_url`，可由 `set_redirect_url` 更新。
+    redirect_url: String,
 }
 
 impl AnalyzeRule {
@@ -70,6 +78,7 @@ impl AnalyzeRule {
     pub fn new(content: String, base_url: String) -> Self {
         let content_type = Self::detect_content_type(&content);
         let is_json = content_type == RuleType::Json;
+        let redirect_url = base_url.clone();
         Self {
             content,
             base_url,
@@ -83,6 +92,7 @@ impl AnalyzeRule {
             js_bindings: Vec::new(),
             variables: Arc::new(Mutex::new(HashMap::new())),
             local_bindings: Arc::new(Mutex::new(HashMap::new())),
+            redirect_url,
         }
     }
 
@@ -202,6 +212,36 @@ impl AnalyzeRule {
     fn share_variable_store_into(&self, child: &mut AnalyzeRule) {
         child.variables = Arc::clone(&self.variables);
         child.local_bindings = Arc::clone(&self.local_bindings);
+        child.redirect_url = self.redirect_url.clone();
+    }
+
+    /// 设置重定向 URL（对齐原版 `AnalyzeRule.setRedirectUrl`）
+    ///
+    /// data: URL 忽略；非法形态仅打日志并保留原值。返回当前 redirect_url。
+    pub fn set_redirect_url(&mut self, url: &str) -> &str {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            return &self.redirect_url;
+        }
+        if trimmed.to_ascii_lowercase().starts_with("data:") {
+            return &self.redirect_url;
+        }
+        // 对齐原版 `URL(url)`：含 scheme 或 `//` 主机相对即接受
+        let ok = trimmed.contains("://")
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("http:")
+            || trimmed.starts_with("https:");
+        if ok {
+            self.redirect_url = trimmed.to_string();
+        } else {
+            eprintln!("[AnalyzeRule] setRedirectUrl({trimmed}) 非法，忽略");
+        }
+        &self.redirect_url
+    }
+
+    /// 当前重定向 URL（供 isUrl 绝对化）
+    pub fn redirect_url(&self) -> &str {
+        &self.redirect_url
     }
 
     /// 设置 JS 执行器
@@ -259,6 +299,13 @@ impl AnalyzeRule {
     ///   Nhentai 正文 `//script@js:` 等）
     /// - `##regex##replacement` 结果替换（对齐原版 SourceRule.makeUpRule）
     pub fn get_strings(&self, rule: &str) -> LegadoResult<Vec<String>> {
+        self.get_strings_ex(rule, false)
+    }
+
+    /// 获取字符串列表（对齐原版 `getStringList(..., isUrl)`）
+    ///
+    /// `is_url=true` 时将结果按 `redirect_url` 绝对化并去重。
+    pub fn get_strings_ex(&self, rule: &str, is_url: bool) -> LegadoResult<Vec<String>> {
         if rule.is_empty() {
             return Ok(vec![]);
         }
@@ -278,10 +325,15 @@ impl AnalyzeRule {
         // 纯 `@get:{k}` / `http:@get:{k}` 等：makeUpRule 后 Mode.Regex，
         // 求值走 `else -> rule` 直接返回拼装字符串，不再当选择器解析。
         if had_get && !looks_like_extract_rule(&rule_expanded) {
-            return Ok(if rule_expanded.is_empty() {
+            let raw = if rule_expanded.is_empty() {
                 vec![]
             } else {
                 vec![rule_expanded]
+            };
+            return Ok(if is_url {
+                self.absolutize_url_list(raw)
+            } else {
+                raw
             });
         }
 
@@ -309,7 +361,31 @@ impl AnalyzeRule {
                 .map(|s| apply_hash_replace(&s, spec))
                 .collect();
         }
+        if is_url {
+            results = self.absolutize_url_list(results);
+        }
         Ok(results)
+    }
+
+    /// 将相对 URL 列表按 redirect_url 绝对化并去重（对齐原版 isUrl 分支）
+    fn absolutize_url_list(&self, items: Vec<String>) -> Vec<String> {
+        use crate::analyze_url::AnalyzeUrl;
+        let base = if self.redirect_url.is_empty() {
+            self.base_url.as_str()
+        } else {
+            self.redirect_url.as_str()
+        };
+        let mut out = Vec::new();
+        for item in items {
+            // 原版：String 结果先按 `\n` 拆分
+            for line in item.split('\n') {
+                let abs = AnalyzeUrl::get_absolute_url(base, line.trim());
+                if !abs.is_empty() && !out.contains(&abs) {
+                    out.push(abs);
+                }
+            }
+        }
+        out
     }
 
     /// 单步规则（无 `@js:` 链、已剥离 `@put` / `##`）
@@ -352,6 +428,23 @@ impl AnalyzeRule {
             }
         }
 
+        // `@webjs:...`（对齐原版 WebJS_PATTERN / Mode.WebJs）
+        let trimmed = rule.trim_start();
+        if let Some(rest) = trimmed
+            .strip_prefix("@webjs:")
+            .or_else(|| trimmed.strip_prefix("@webJs:"))
+            .or_else(|| {
+                if trimmed.len() > 7 && trimmed[..7].eq_ignore_ascii_case("@webjs:") {
+                    Some(&trimmed[7..])
+                } else {
+                    None
+                }
+            })
+        {
+            let out = self.execute_web_js_rule(rest)?;
+            return Ok(expand_js_json_array_result(vec![out]));
+        }
+
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
 
         match rule_type {
@@ -360,6 +453,10 @@ impl AnalyzeRule {
             RuleType::Json => self.resolve_json_with_inner(actual_rule),
             RuleType::Regex => self.regex_engine.regex_match(&self.content, actual_rule),
             RuleType::Js => self.execute_js_rule_expanded(actual_rule),
+            RuleType::WebJs => {
+                let out = self.execute_web_js_rule(actual_rule)?;
+                Ok(expand_js_json_array_result(vec![out]))
+            }
             RuleType::Auto => {
                 let detected = self.detect_rule_type_for_content(actual_rule);
                 match detected {
@@ -437,15 +534,46 @@ impl AnalyzeRule {
     }
 
     /// 根据规则获取单个字符串（多个结果用换行连接）
+    ///
+    /// 默认 `unescape=true`（对齐原版 `getString` 默认重载）。
     pub fn get_string(&self, rule: &str) -> LegadoResult<String> {
-        let strings = self.get_strings(rule)?;
-        if strings.is_empty() {
-            return Ok(String::new());
+        self.get_string_ex(rule, false, true)
+    }
+
+    /// 获取单个字符串（对齐原版 `getString(rule, unescape)` / `getString(..., isUrl)`）
+    ///
+    /// - `unescape`：含 `&` 时做 HTML4 实体反转义
+    /// - `is_url`：结果绝对化；空结果回退 `base_url`
+    pub fn get_string_ex(
+        &self,
+        rule: &str,
+        is_url: bool,
+        unescape: bool,
+    ) -> LegadoResult<String> {
+        let strings = self.get_strings_ex(rule, false)?;
+        let mut result = if strings.is_empty() {
+            String::new()
+        } else if strings.len() == 1 {
+            strings.into_iter().next().unwrap()
+        } else {
+            strings.join("\n")
+        };
+        if unescape && result.contains('&') {
+            result = legado_core::html_formatter::unescape_html4(&result);
         }
-        if strings.len() == 1 {
-            return Ok(strings.into_iter().next().unwrap());
+        if is_url {
+            if result.trim().is_empty() {
+                return Ok(self.base_url.clone());
+            }
+            use crate::analyze_url::AnalyzeUrl;
+            let base = if self.redirect_url.is_empty() {
+                self.base_url.as_str()
+            } else {
+                self.redirect_url.as_str()
+            };
+            return Ok(AnalyzeUrl::get_absolute_url(base, result.trim()));
         }
-        Ok(strings.join("\n"))
+        Ok(result)
     }
 
     /// 根据规则获取元素 HTML 列表
@@ -796,9 +924,39 @@ impl AnalyzeRule {
             "json" => RuleType::Json,
             "regex" => RuleType::Regex,
             "js" => RuleType::Js,
+            "webjs" => RuleType::WebJs,
             _ => RuleType::Auto,
         };
         (rule_type, actual_rule)
+    }
+
+    /// 无头近似执行 `@webjs:`（对齐原版 `getWebJsResult` 的可落地子集）
+    ///
+    /// 原版走 `BackstageWebView` 完整 DOM；此处以当前 content 为 `result`/`src`/`html`
+    /// 注入 QuickJS 执行脚本。依赖 `document` 的脚本会失败并返回空串（调用方可回退）。
+    fn execute_web_js_rule(&self, js_code: &str) -> LegadoResult<String> {
+        let Some(executor) = self.js_executor.as_ref() else {
+            return Ok(String::new());
+        };
+        let result_lit = serde_json::to_string(&self.content).unwrap_or_else(|_| "\"\"".into());
+        let base_lit = serde_json::to_string(&self.base_url).unwrap_or_else(|_| "\"\"".into());
+        let mut prologue = format!(
+            "globalThis.result = {result_lit};\n\
+             globalThis.src = {result_lit};\n\
+             globalThis.html = {result_lit};\n\
+             globalThis.baseUrl = {base_lit};\n"
+        );
+        for (name, lit) in &self.js_bindings {
+            prologue.push_str(&format!("globalThis.{name} = {lit};\n"));
+        }
+        prologue.push_str(js_code);
+        match executor.execute_js(&prologue) {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                eprintln!("[AnalyzeRule] @webjs 执行失败（无头近似）: {e}");
+                Ok(String::new())
+            }
+        }
     }
 
     /// 根据规则特征和当前内容类型自动检测规则类型
@@ -1616,6 +1774,62 @@ mod tests {
         rule.put("k", "from_put");
         rule.set_local("k", "from_local");
         assert_eq!(rule.get("k"), "from_local");
+    }
+
+    /// setRedirectUrl + isUrl 绝对化
+    #[test]
+    fn test_set_redirect_url_and_is_url() {
+        let mut rule = AnalyzeRule::new(
+            r#"{"path":"/ch/1.html"}"#.into(),
+            "https://example.com/base/".into(),
+        );
+        assert_eq!(rule.redirect_url(), "https://example.com/base/");
+        rule.set_redirect_url("https://cdn.example.com/");
+        assert_eq!(rule.redirect_url(), "https://cdn.example.com/");
+        // data: 忽略
+        rule.set_redirect_url("data:text/html,hi");
+        assert_eq!(rule.redirect_url(), "https://cdn.example.com/");
+
+        let abs = rule.get_string_ex("$.path", true, true).unwrap();
+        assert_eq!(abs, "https://cdn.example.com/ch/1.html");
+
+        let list = rule.get_strings_ex("$.path", true).unwrap();
+        assert_eq!(list, vec!["https://cdn.example.com/ch/1.html"]);
+    }
+
+    /// getString unescape 重载
+    #[test]
+    fn test_get_string_unescape() {
+        let rule = AnalyzeRule::new(
+            r#"{"t":"A&amp;B&lt;C&gt;"}"#.into(),
+            String::new(),
+        );
+        let unescaped = rule.get_string_ex("$.t", false, true).unwrap();
+        assert_eq!(unescaped, "A&B<C>");
+        let raw = rule.get_string_ex("$.t", false, false).unwrap();
+        assert_eq!(raw, "A&amp;B&lt;C&gt;");
+    }
+
+    /// @webjs 无头近似（注入 executor）
+    #[test]
+    fn test_webjs_headless() {
+        struct EchoHtml;
+        impl JsExecutor for EchoHtml {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                if js_code.contains("globalThis.html") {
+                    Ok("<p>from-webjs</p>".into())
+                } else {
+                    Err("unexpected".into())
+                }
+            }
+        }
+        let rule = AnalyzeRule::with_js_executor(
+            "<html><body>x</body></html>".into(),
+            "https://example.com".into(),
+            std::sync::Arc::new(EchoHtml),
+        );
+        let out = rule.get_string("@webjs:return html;").unwrap();
+        assert_eq!(out, "<p>from-webjs</p>");
     }
 
     /// 变量导出 / 注入 JSON（章节 variable 列）

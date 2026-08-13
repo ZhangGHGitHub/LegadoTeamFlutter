@@ -832,7 +832,73 @@ fn register_utility_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // reGetBook() — 仅 preUpdateJs（对齐 AnalyzeRule.reGetBook）
+    mount_dual(
+        java,
+        globals,
+        "reGetBook",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>| -> rquickjs::Result<()> {
+                apply_pre_update_book_json(
+                    &ctx,
+                    crate::host_api::pre_update_hooks::call_re_get_book(),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // refreshTocUrl() — 仅 preUpdateJs（对齐 AnalyzeRule.refreshTocUrl）
+    mount_dual(
+        java,
+        globals,
+        "refreshTocUrl",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>| -> rquickjs::Result<()> {
+                apply_pre_update_book_json(
+                    &ctx,
+                    crate::host_api::pre_update_hooks::call_refresh_toc_url(),
+                )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     Ok(())
+}
+
+/// 将钩子返回的 book JSON 合并进 globalThis.book（对齐原版原地改 Book）
+fn apply_pre_update_book_json<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    result: Result<String, String>,
+) -> rquickjs::Result<()> {
+    let json = result.map_err(|e| rquickjs::Error::FromJs {
+        from: "preUpdateHook",
+        to: "unit",
+        message: Some(e),
+    })?;
+    let updated = json_string_to_object(ctx, &json)?;
+    let globals = ctx.globals();
+    if let Ok(book) = globals.get::<_, rquickjs::Object>("book") {
+        for entry in updated.props::<String, rquickjs::Value>() {
+            let (k, v) = entry?;
+            book.set(k, v)?;
+        }
+    }
+    Ok(())
+}
+
+/// JSON 对象字符串 → QuickJS Object（ConfigMap / preUpdate 共用）
+fn json_string_to_object<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    json: &str,
+) -> rquickjs::Result<rquickjs::Object<'js>> {
+    let globals = ctx.globals();
+    let json_mod: rquickjs::Object = globals.get("JSON")?;
+    let parse: rquickjs::Function = json_mod.get("parse")?;
+    parse.call((json,))
 }
 
 /// 注册网络类 API
@@ -1395,6 +1461,34 @@ fn register_config_apis<'js>(
         "getThemeConfig",
         rquickjs::Function::new(ctx.clone(), || -> String { config_api::get_theme_config() })
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getReadBookConfigMap() -> Object（对齐 JsExtensions.getReadBookConfigMap）
+    mount_dual(
+        java,
+        globals,
+        "getReadBookConfigMap",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>| -> rquickjs::Result<rquickjs::Object<'js>> {
+                json_string_to_object(&ctx, &config_api::get_read_book_config())
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getThemeConfigMap() -> Object（对齐 JsExtensions.getThemeConfigMap）
+    mount_dual(
+        java,
+        globals,
+        "getThemeConfigMap",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>| -> rquickjs::Result<rquickjs::Object<'js>> {
+                json_string_to_object(&ctx, &config_api::get_theme_config())
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // getThemeMode() -> String

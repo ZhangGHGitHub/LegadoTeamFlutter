@@ -15,6 +15,7 @@ pub mod config_api;
 pub mod cookie_store;
 pub mod crypto_api;
 pub mod current_source;
+pub mod pre_update_hooks;
 pub mod encoding;
 pub mod env;
 pub mod file_utils;
