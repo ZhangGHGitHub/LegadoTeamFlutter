@@ -122,14 +122,16 @@ jobs:
           echo "" > $GITHUB_WORKSPACE/app/src/main/assets/18PlusList.txt
 
       - name: Release APK Sign
+        if: ${{ secrets.RELEASE_KEY_STORE != '' }}
         run: |
-          echo "设置签名文件"
-          echo "给apk增加签名"
-          cp $GITHUB_WORKSPACE/.github/workflows/legado.jks $GITHUB_WORKSPACE/app/legado.jks
-          sed '$a\RELEASE_STORE_FILE=./legado.jks'          $GITHUB_WORKSPACE/gradle.properties -i
-          sed '$a\RELEASE_KEY_ALIAS=legado'                 $GITHUB_WORKSPACE/gradle.properties -i
-          sed '$a\RELEASE_STORE_PASSWORD=gedoor_legado'     $GITHUB_WORKSPACE/gradle.properties -i
-          sed '$a\RELEASE_KEY_PASSWORD=gedoor_legado'       $GITHUB_WORKSPACE/gradle.properties -i
+          echo "设置签名文件（secrets 注入，不入库 legado.jks）"
+          echo "${{ secrets.RELEASE_KEY_STORE }}" | base64 --decode > $GITHUB_WORKSPACE/app/legado.jks
+          {
+            echo "RELEASE_STORE_FILE=./legado.jks"
+            echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}"
+            echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}"
+            echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}"
+          } >> $GITHUB_WORKSPACE/gradle.properties
 
       - name: Run Unit Tests
         if: ${{ matrix.type == 'release' }}

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.49] - 2026-08-14
+
+### Fixed
+- [Rust] 词典 data: URI 查词：`AnalyzeUrl` 对 data: 载荷豁免 page/angle 替换，修复 `#def` 等 CSS showRule 提取为空（审计 F1-1）
+- [UI] 删除孤儿 `reading_stats_screen.dart` 及 l10n 死条目，恢复 `flutter analyze` 0 error（审计 F1-2）
+- [工程] 移除入库 `legado.jks`，`.gitignore` 覆盖 `*.jks`/`*.keystore`，test.yml 改 secrets 注入（审计 F1-3，D6=B）
+
 ## [2.0.48] - 2026-08-14
 
 ### Fixed

@@ -35,3 +35,7 @@ flutter_legado/.pub/
 
 # Android jniLibs 由构建脚本生成，不入库；FRB 生成的 Dart 绑定需入库，供 CI analyze/test 解析 RustLib
 flutter_legado/android/app/src/main/jniLibs/
+
+# 签名密钥不入库（CI 经 secrets 注入）
+*.jks
+*.keystore
