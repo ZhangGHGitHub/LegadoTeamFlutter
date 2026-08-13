@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - [UI] 阅读页顶栏标题与系统状态栏（电量/时间）重叠：edge-to-edge 下 SafeArea 的 padding.top 为 0，改用 viewPadding.top 避让；ReadMenu 展开时强制显示状态栏（对标原版 upSystemUiVisibility）；正文 viewport 与分页扣减同步，切换工具栏时 layout 稳定
+- [工程] 冒烟脚本进程检测改为 pidof 轮询 + 安装后 force-stop 冷启动，消除 5558「进程未找到」误报
 
 ## [2.0.63] - 2026-08-14
 

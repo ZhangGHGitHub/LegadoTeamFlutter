@@ -95,13 +95,23 @@ Write-Host "==> adb install -r ..."
 if ($fail -gt 0) { exit 1 }
 
 # ---- 4. 启动应用 ----
+# 安装会 force-stop 旧进程；清 logcat + 冷启动，避免误判旧会话 UI/日志
+& $adb -s $Device logcat -c 2>$null | Out-Null
+& $adb -s $Device shell am force-stop $Package 2>$null | Out-Null
 # 注：应用已在顶层运行时 am start 会输出 Warning（正常场景），stderr 丢弃避免中断
 & $adb -s $Device shell am start -n "$Package/$Activity" 2>$null | Out-Null
-Start-Sleep -Seconds 12
 
-# ---- 5. 进程存活检查 ----
-$proc = & $adb -s $Device shell "ps -A | grep $Package"
-if ($proc -match $Package) { Pass "应用进程存活（$($proc.Trim())）" }
+# ---- 5. 进程存活检查（轮询 pidof，冷启动/重装后 12s 固定等待易误判）----
+$procLine = $null
+for ($i = 0; $i -lt 30; $i++) {
+  Start-Sleep -Seconds 1
+  $appPid = (& $adb -s $Device shell pidof $Package 2>$null).Trim()
+  if ($appPid -match '^\d+') {
+    $procLine = (& $adb -s $Device shell "ps -A | grep $Package" 2>$null)
+    if ($procLine -match $Package) { break }
+  }
+}
+if ($procLine -match $Package) { Pass "应用进程存活（$($procLine.Trim())）" }
 else { Fail "应用进程未找到（启动失败或被杀死）" }
 
 # ---- 6. 崩溃日志检查 ----
