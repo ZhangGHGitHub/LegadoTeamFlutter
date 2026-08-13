@@ -36,15 +36,15 @@
 >
 > ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 内置词典为小规模静态数据（契约达标、覆盖为占位级）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 **getAudioChapterMedia 为在用真实 FFI**（audio_notifier/audio_screen 接线）；scanLocalBooks/parseTxt 仍为死代码 fallback（rust_api.dart 注释标注）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
 
-### 📊 测试统计（2026-08-05 实测）
+### 📊 测试统计（2026-08-14 实测，质量门禁口径）
 
 | 模块 | 测试数 |
 |------|--------|
-| Rust（workspace 全 crate） | workspace 默认 2283 + quickjs feature 547 |
-| Flutter | 1087 |
-| **总计** | **约 3400**（以实测为准：2026-08-05 全量回归零失败） |
+| Rust `legado-ffi --features quickjs` | **311 passed**（CI/AGENTS.md 门禁；含 JS 书源链路） |
+| Flutter `flutter test` | **1171 passed** |
+| **合计（门禁子集）** | **约 1482** |
 
-> 2026-08-05 全量回归实测：Rust workspace 2283 + quickjs feature 547 + Flutter 1087，零失败；flutter analyze 0 issues。（缺口清单清零批次新增测试统计待回归更新）
+> 全 workspace `cargo test --workspace` 含未启用 quickjs 的 crate 子集，与书源 JS 门禁口径不同；**以 `cargo test -p legado-ffi --features quickjs` + `flutter test` 为准**（审计 F2-4/F3-11）。
 
 ### 🔄 进行中项
 
