@@ -781,6 +781,15 @@ mod tests {
         assert_eq!(result, vec!["测试书籍"]);
     }
 
+    /// 词典 showRule `#def`（dict_api test_lookup_show_rule_css 同构 HTML）
+    #[test]
+    fn test_get_text_dict_def_id() {
+        let html = r#"<html><body><p id='def'>n. 测试释义</p></body></html>"#;
+        let parser = HtmlParser::new();
+        let result = parser.get_text(html, "#def").unwrap();
+        assert_eq!(result, vec!["n. 测试释义"], "实际: {result:?}");
+    }
+
     #[test]
     fn test_get_text_empty_selector() {
         let parser = HtmlParser::new();

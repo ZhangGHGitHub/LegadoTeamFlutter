@@ -264,11 +264,13 @@ impl AnalyzeUrl {
         // 4. 替换 {key} 变量（含管道）
         instance.rule_url = Self::replace_brace_vars(&instance.rule_url, variables);
 
-        // 5. 替换 <key> 变量
-        instance.rule_url = Self::replace_angle_vars(&instance.rule_url, variables);
+        // 5. 替换 <key> 变量（data: URI 载荷可含 HTML 标签，须豁免）
+        if !Self::is_data_uri_rule(&instance.rule_url) {
+            instance.rule_url = Self::replace_angle_vars(&instance.rule_url, variables);
+        }
 
-        // 6. 替换分页参数
-        if page > 0 {
+        // 6. 替换分页参数（data: URI 同理豁免 `<...>` 页码列表语义）
+        if page > 0 && !Self::is_data_uri_rule(&instance.rule_url) {
             instance.replace_page(page as u32);
         }
 
@@ -306,7 +308,9 @@ impl AnalyzeUrl {
 
         // 2. 替换页码（含 {{page}} / 页码列表 / {page}）
         if let Some(p) = page {
-            self.replace_page(p);
+            if !Self::is_data_uri_rule(&self.rule_url) {
+                self.replace_page(p);
+            }
         }
 
         // 3. 解析 URL 和选项
@@ -757,6 +761,11 @@ impl AnalyzeUrl {
             }
         }
         out
+    }
+
+    /// data: URI 规则豁免分页/角度变量替换（载荷段可含 HTML 标签）
+    fn is_data_uri_rule(rule: &str) -> bool {
+        rule.trim().starts_with("data:")
     }
 
     /// 从 URL 中分离 URL 和 JSON 选项
@@ -2240,5 +2249,19 @@ mod tests {
         assert!(url.is_data_uri());
         let bytes = url.get_byte_array_if_data_uri().unwrap();
         assert_eq!(bytes, b"<html>");
+    }
+
+    /// data: URI 含 HTML 标签时，page=1 不得误走 `<...>` 页码列表替换
+    #[test]
+    fn test_data_uri_html_payload_not_mangled_by_page_replace() {
+        let vars = HashMap::new();
+        let template = "data:text/html;charset=utf-8,<html><body><p id='def'>n. 测试释义</p></body></html>";
+        let url = AnalyzeUrl::parse(template, &vars, 1).unwrap();
+        let bytes = url.get_byte_array_if_data_uri().unwrap();
+        let body = String::from_utf8_lossy(&bytes);
+        assert_eq!(
+            body,
+            "<html><body><p id='def'>n. 测试释义</p></body></html>"
+        );
     }
 }

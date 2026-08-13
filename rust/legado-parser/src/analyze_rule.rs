@@ -2065,6 +2065,15 @@ mod tests {
         );
     }
 
+    /// 词典 showRule `#def`：单 `#` ID 选择器不得被 ## 替换语法误拆
+    #[test]
+    fn test_dict_show_rule_def_id_selector() {
+        let html = r#"<html><body><p id='def'>n. 测试释义</p></body></html>"#;
+        let rule = AnalyzeRule::new(html.to_string(), String::new());
+        let out = rule.get_string("#def").unwrap();
+        assert_eq!(out, "n. 测试释义", "实际: {out:?}");
+    }
+
     /// ## 替换：搜索 kind 等规则
     #[test]
     fn test_hash_replace_after_jsonpath() {
