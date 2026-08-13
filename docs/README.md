@@ -49,7 +49,7 @@
 ### 🔄 进行中项
 
 - **残留风险收口（2026-08-13）**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)（D1/F1–F7/T6 等多数已闭合；**A\*** 环境验收仍 ⛔）；主台账 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) v1.43。
-- **源码兼容 backlog**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) / REMAINING **§5.15**（主路径 P0/P1 已销；残留完整 DOM WebView / 次要 JS 重载）。
+- **源码兼容 backlog**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) / REMAINING **§5.15**（工程项已空；仅剩 A\* 实网/素材验收）。
 - **schema**：v104 + **v105**（Migration104To105，ruleSubs/dictRules/keyboardAssists Room 对齐）已落地。
 
 ### 👥 各轨负责人与分支
@@ -94,7 +94,7 @@
 | --- | --- |
 | [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) | 重构剩余工作计划（P0-P3 遗留任务清单与执行顺序；§5.15 SOURCE_DIFF backlog） |
 | [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) | 残留风险销账表（工程收口；A* 仍 ⛔） |
-| [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) | 源码级差异审计（仍开放 P0/P1 书源兼容缺口） |
+| [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) | 源码级差异审计（工程开放项已销；仅剩 A\*） |
 | [GAP_AUDIT_2026-08-12.md](GAP_AUDIT_2026-08-12.md) | 原版 vs 重构缺口审计 |
 | [USER_TEST_RESULTS_2026-08-13.md](USER_TEST_RESULTS_2026-08-13.md) | 5556 全量门禁实测 |
 

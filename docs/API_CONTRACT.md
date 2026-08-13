@@ -28,7 +28,8 @@
 | 2026-08-13 | **F5**：`setMcpPort` 对齐原版 LAN（`0.0.0.0`）+ `jsSourceApiToken` 启动前置 + `X-Legado-Token` 鉴权（§2.22） |
 | 2026-08-13 | **SOURCE_DIFF P0-1**：`@put:`/`@get:`/`setLocal` 变量系统落地——`AnalyzeRule` 会话变量 + 章节 `WebChapter.variable` / `BookChapter.variable` 透传；**无新 FFI 方法**（既有 webbook/reader JSON 加法式字段） |
 | 2026-08-13 | **SOURCE_DIFF P0-2/4**：加法式新增 `preciseSearch`（§2.4，对齐 `WebBook.preciseSearchAwait`）；`refreshToc` 接线 `runPreUpdateJs`（TocRule.preUpdateJs，无新 FFI） |
-| 2026-08-13 | **SOURCE_DIFF P1 DOM WebView**：加法式新增 `webviewRequestStream` / `webviewSubmit` / `webviewCancel` / `webviewPending`（§2.3）：对齐 `BackstageWebView` 挂起-唤醒；Flutter 订阅后 `@webjs`/正文 webJs/`java.webView*` 走真实 DOM。近似边界：页内 `java`/`source` JavascriptInterface 未注入；`cacheFirst` 在 Flutter WebView 无 cacheMode。附录合计随 codegen +4 |
+| 2026-08-13 | **SOURCE_DIFF P1 DOM WebView**：加法式新增 `webviewRequestStream` / `webviewSubmit` / `webviewCancel` / `webviewPending`（§2.3）：对齐 `BackstageWebView` 挂起-唤醒；Flutter 订阅后 `@webjs`/正文 webJs/`java.webView*` 走真实 DOM。附录合计随 codegen +4 |
+| 2026-08-13 | **SOURCE_DIFF 纯工程收口（无新 FFI）**：Android 原生 `backstageEval` 落地页内 `java`/`source`/`cache` JavascriptInterface + `cacheFirst`→`LOAD_CACHE_ELSE_NETWORK`；Rust `ownText`/`string_rule_cache`。契约语义边界更新，方法表不变 |
 
 ---
 
@@ -140,7 +141,7 @@
 >
 > ℹ️ **验证码交互通道（Task #90）**：Rust 侧 `ffi::verification_request_stream / verification_submit / verification_cancel / verification_pending`（核心实现 `legado-core/src/verification_channel.rs`，对齐 Kotlin `SourceVerificationHelp` + `JsExtensions.getVerificationCode/startBrowserAwait`）。JS 书源经宿主 API 钩子挂起等待（std condvar 阻塞 JS 工作线程，不占用 tokio runtime，默认超时 5 分钟对齐 Kotlin）；同书源并发请求经航班去重共享结果（空 source_url 匿名请求不去重）；`use_browser` 一律降级为图片验证码（桌面端无 WebView）。`verificationSubmit` 无论 code 是否为空都唤醒等待方（对齐 Kotlin `setResult`），空值由等待侧报「验证结果为空」；`verificationCancel` 等价 Kotlin `checkResult`（空结果唤醒）；超时返回「source verification timed out」。订阅事件流时先回放当前进行中的请求。冻结契约保持不变，本组方法为加法式新增。
 >
-> ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**近似边界**：DOM `document`/`window`/`window.result` 可用；WebView 页内 `java`/`source` JavascriptInterface 未注入；`cacheFirst` 在 webview_flutter 无 cacheMode（日志记录）。加法式新增。
+> ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**Android**：`PlatformBridgeService`→原生 `legado/webview.backstageEval`：`cacheFirst`→`WebSettings.LOAD_CACHE_ELSE_NETWORK`；`isRule`+html 时注入 `java`/`source`/`cache` JavascriptInterface（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。非 Android 回退 `webview_flutter`（无 cacheMode）。加法式新增。
 
 ### 2.4 搜索操作（8 个方法）
 

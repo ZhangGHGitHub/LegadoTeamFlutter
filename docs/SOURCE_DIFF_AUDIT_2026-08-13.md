@@ -13,7 +13,7 @@
 | UI Activity 层 | 49 个原版 Activity vs 63 个重构 Screen | ✅ 全部有对应 |
 | UI Dialog 层 | 70+ 个原版 Dialog vs 重构 Widget/Dialog | ✅ 约 85% 覆盖 |
 | 解析核心 AnalyzeRule | 40+ 方法逐函数 | ⚠️ 约 90%（本轮 isUrl/unescape/setRedirectUrl/@webjs） |
-| AnalyzeByJSoup | 8 方法 | ✅ 约 90%+（含 `@html`；ownText 近似） |
+| AnalyzeByJSoup | 8 方法 | ✅ 约 95%+（含 `@html`；ownText 对齐 Jsoup） |
 | AnalyzeUrl | 60+ 方法/getter | ⚠️ 约 90% |
 | JsExtensions（java 桥） | 120+ 方法 | ⚠️ 约 95%（含 ConfigMap） |
 | 响应层 legado-net | LegadoResponse/RawResponse/cookie/rate_limit/webdav/cover | ⚠️ 约 85% |
@@ -49,7 +49,7 @@
 5. ~~**`getWebJsResult`（规则级 Mode.WebJs）**~~ → **✅ DOM 通道 + 无头回退（2026-08-13）**
    - Flutter 订阅 `webviewRequestStream` 时走真实 BackstageWebView DOM（`window.result`/`document`）
    - 无订阅者回退无头 QuickJS（`result`/`src`/`html`/`baseUrl`）
-   - **近似边界**：WebView 页内 `java`/`source` JavascriptInterface 未注入；`cacheFirst` 无 Flutter cacheMode
+   - Android：原生 `backstageEval` 注入 `java`/`source`/`cache` JavascriptInterface；`cacheFirst`→`LOAD_CACHE_ELSE_NETWORK`
 
 6. ~~**`setRedirectUrl`**~~ → **✅ 已落地（2026-08-13）**
    - `AnalyzeRule::set_redirect_url` + `redirect_url`；`isUrl` 绝对化使用该 base
@@ -83,11 +83,11 @@
 ### 3.1 AnalyzeRule（约 90%→更高）
 
 - ✅ get_string/get_strings/get_elements/… / `@put`/`@get`/setLocal / setRedirectUrl / isUrl·unescape / `@webjs` DOM 通道+无头回退
-- ⚠️ 编译缓存层仍缺；WebView 页内 java/source 注入仍缺
+- ✅ 编译缓存层（`string_rule_cache`，对齐 `stringRuleCache`）；Android 页内 java/source/cache 注入
 
 ### 3.2 AnalyzeByJSoup（约 85%→更高）
 
-- ✅ `@html`/`html`/`all`；⚠️ ownText 仍近似
+- ✅ `@html`/`html`/`all`；✅ ownText 对齐 Jsoup（仅直接文本子节点）
 
 ### 3.3 AnalyzeUrl（约 90%）
 
@@ -97,7 +97,7 @@
 
 - ✅ getReadBookConfigMap/getThemeConfigMap；reGetBook/refreshTocUrl（preUpdate 门控）
 - ✅ webView `cacheFirst` 参数、downloadFile 双参（含 hex 废弃重载）、getFile 对象、unArchiveFile 别名、openVideoPlayer isFloat、timeFormatUTC（`sh`=毫秒偏移）
-- ⚠️ cacheFirst 在 Flutter WebView 无 cacheMode（日志近似）
+- ✅ Android `cacheFirst`→原生 `WebSettings.LOAD_CACHE_ELSE_NETWORK`（非 Android 回退路径仍无 cacheMode）
 
 ### 3.5–3.8
 
@@ -120,7 +120,7 @@
 3. ~~P1 `sourceRegex`+`webJs` / `imageStyle`~~ ✅
 4. ~~P1 getWebJsResult（无头）/ setRedirectUrl / isUrl·unescape~~ ✅
 5. ~~P2 ConfigMap~~ ✅；DownloadService 形态 N/A；upload N/A
-6. 残留：AnalyzeRule 编译缓存、ownText 近似、A\* 实网验收；DOM 页内 java/source 注入
+6. ~~残留：AnalyzeRule 编译缓存、ownText、DOM 页内 java/source~~ ✅；仅剩 A\* 实网验收
 
 ---
 
@@ -132,21 +132,23 @@
 | P0-2 `preciseSearch` | ✅ Rust+FFI+Dart FRB | `099b5ebc7` + 本轮 |
 | P0-4 `runPreUpdateJs` + reGetBook/refreshTocUrl | ✅ | `099b5ebc7` + 本轮 |
 | P0-3 checkRedirect 可观测性 | ✅ | 本轮 `check_redirect_log` |
-| P1-5 `@webjs` / 正文 webJs DOM | ✅（页内 java/source 仍近似） | 本轮 webview_channel + WebViewBridgeListener |
+| P1-5 `@webjs` / 正文 webJs DOM | ✅（含页内 java/source） | webview_channel + 原生 backstageEval |
 | P1-6 `setRedirectUrl` | ✅ | 本轮 |
 | P1-7 isUrl·unescape | ✅ | 本轮 |
 | P1-9/10 imageStyle/sourceRegex·webJs | ✅ | `6b1eb163c`/`e05746a4c` |
 | P1-11 upload | N/A | 直链边界 |
 | P2-12 DownloadService | 形态 N/A | downloadFile + url_launcher |
 | P2-13 ConfigMap | ✅ | 本轮 |
-| §3.4 JS 次要重载 | ✅（cacheFirst 形态近似） | 本轮 |
+| §3.4 JS 次要重载 | ✅（Android cacheMode 真落地） | 本轮 |
+| ownText / AnalyzeRule 编译缓存 | ✅ | 本轮 html.rs + string_rule_cache |
 | §4.2 过时注释 | ✅ | 本轮 |
 | Cronet / 直链上传产品入口 | N/A | GAP / RESIDUAL |
-| Android x86_64 so + 5556 冒烟 | ✅ 本轮 | `build-android.ps1 -Targets x86_64`；`emulator_smoke_test.ps1 -Device emulator-5556` **5/5 PASS** |
+| Android x86_64 so + 5556 冒烟 | ✅ 本轮 | `build-android.ps1 -Targets x86_64`；`emulator_smoke_test.ps1 -Device emulator-5556` |
 
-**本轮终态仍开放（勿销）**：WebView 页内 `java`/`source` JavascriptInterface；AnalyzeRule 编译缓存；ownText 近似；A\* 素材验收。
+**本轮终态仍开放（勿销）**：A\* 素材/实网验收（不得由模拟器冒烟销账）。
 
 编写者：Reasonix ｜ 2026-08-13（源码级只读审计）  
 修订：Auto（Cursor）｜ 2026-08-13（实现销记 P0/P1/P2 开放项；DownloadService/upload 标 N/A）  
 修订：Auto（Cursor）｜ 2026-08-13（补编译修复 `30c48ded2` + 5556 冒烟证据）  
-修订：Auto（Cursor）｜ 2026-08-13（DOM WebView 通道 + JS 次要重载 + checkRedirect）
+修订：Auto（Cursor）｜ 2026-08-13（DOM WebView 通道 + JS 次要重载 + checkRedirect）  
+修订：Auto（Cursor）｜ 2026-08-13（页内 java/source + cacheMode + ownText + 编译缓存；§5.15 仅剩 A\*）
