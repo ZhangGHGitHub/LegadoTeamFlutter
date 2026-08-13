@@ -14,7 +14,8 @@ param(
   [string]$Device = "emulator-5556",
   [switch]$SkipBuild,
   [switch]$CheckUI,
-  [string]$FlutterDir = "D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado",
+  # 默认相对仓库根目录 flutter_legado/；可用 -FlutterDir 或环境变量 LEGADO_FLUTTER_DIR 覆盖
+  [string]$FlutterDir = "",
   # 注意：与 android/app/build.gradle.kts 的 applicationId 保持同步
   #（2026-08-10 确认当前为 io.legado.flutter_legado，勿用旧包名 com.legado.legado_flutter）
   [string]$Package = "io.legado.flutter_legado",
@@ -28,6 +29,15 @@ param(
 # 警告属正常场景）
 $ErrorActionPreference = "Continue"
 $pass = 0; $fail = 0
+
+# ---- 解析 Flutter 工程目录（F4-1：去硬编码，相对 scripts/ 定位仓库）----
+if (-not $FlutterDir) {
+  $FlutterDir = $env:LEGADO_FLUTTER_DIR
+}
+if (-not $FlutterDir) {
+  $FlutterDir = Join-Path (Split-Path $PSScriptRoot -Parent) "flutter_legado"
+}
+$FlutterDir = (Resolve-Path $FlutterDir -ErrorAction Stop).Path
 
 function Pass([string]$msg) { $script:pass++; Write-Host "[PASS] $msg" -ForegroundColor Green }
 function Fail([string]$msg) { $script:fail++; Write-Host "[FAIL] $msg" -ForegroundColor Red }
