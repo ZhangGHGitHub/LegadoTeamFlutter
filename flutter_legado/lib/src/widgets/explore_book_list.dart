@@ -10,12 +10,86 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/explore/explore_show_notifier.dart';
+import '../providers/providers.dart';
 import '../routes.dart';
+import '../utils/source_login_entry.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/list_footer.dart';
 import '../widgets/loading_indicator.dart';
+
+/// 登录引导错误视图（书源需登录时展示，提供「去登录」主按钮与重试）
+///
+/// apple-ui-designer：系统灰阶卡片、明确的主次按钮层级、克制的错误文案。
+/// — DeepSeek Harness + UI（2026-08-14 发现页修复 R4）
+class _LoginRequiredView extends ConsumerWidget {
+  final String message;
+  final BookSource? source;
+  final VoidCallback onRetry;
+
+  const _LoginRequiredView({
+    required this.message,
+    required this.source,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_outline_rounded, size: 44, color: colorScheme.tertiary),
+            const SizedBox(height: 12),
+            Text(
+              '书源需要登录',
+              style: textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message.isNotEmpty ? message : '登录后即可浏览该分类内容',
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OutlinedButton(
+                  onPressed: onRetry,
+                  child: const Text('重试'),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: source == null
+                      ? null
+                      : () async {
+                          final ok =
+                              await showSourceLogin(context, ref, source!);
+                          if (ok && context.mounted) {
+                            onRetry();
+                          }
+                        },
+                  child: const Text('去登录'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// 发现分类书籍列表（自管理滚动分页）
 class ExploreBookList extends ConsumerStatefulWidget {
@@ -88,6 +162,16 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     }
 
     if (state.error != null && state.books.isEmpty) {
+      final err = state.error!;
+      // 登录错误（Rust LoginRequired）→ 提供「去登录」引导 — 发现页修复 R4
+      if (err.startsWith('LOGIN_REQUIRED:')) {
+        return _LoginRequiredView(
+          message: err.replaceFirst('LOGIN_REQUIRED:', ''),
+          source: state.source,
+          onRetry: () =>
+              ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+        );
+      }
       return ErrorView(
         message: state.error!,
         onRetry: () =>

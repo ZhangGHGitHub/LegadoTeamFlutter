@@ -59,18 +59,23 @@ class ExploreShowNotifier
         replace: replace,
       );
 
+      // 无新书（空页或整页全重复）→ 没有更多（对齐原版 adapter 数不变即 noMore）；
+      // 有增量 → 推进页码 — 发现页修复 C2
+      final noNew = replace ? newBooks.isEmpty : merged.length == state.books.length;
       state = state.copyWith(
         books: merged,
         isLoading: false,
-        hasMore: newBooks.isNotEmpty,
-        displayPage: newBooks.isEmpty ? state.displayPage : fetchPage,
-        page: newBooks.isEmpty ? fetchPage : fetchPage + 1,
+        hasMore: !noNew,
+        displayPage: noNew ? state.displayPage : fetchPage,
+        page: noNew ? fetchPage : fetchPage + 1,
       );
     } catch (e) {
+      // 错误后保留 hasMore，使「点击重试」可用（对齐原版 fail() 不清 hasMore，
+      // 可滚动/点击重试）— 发现页修复 C1
+      final mapped = _mapError(e);
       state = state.copyWith(
-        error: '加载失败：${_mapError(e)}',
+        error: mapped,
         isLoading: false,
-        hasMore: false,
       );
     }
   }
@@ -149,7 +154,16 @@ class ExploreShowNotifier
 
   /// 统一错误映射
   String _mapError(Object e) {
-    if (e is BridgeError) return e.message;
+    if (e is BridgeError) {
+      // 登录错误（Rust 1012 LoginRequired）：标记前缀供 UI 提供「去登录」引导 — R4
+      final msg = e.message;
+      if (msg.contains('需要登录') ||
+          msg.contains('LoginRequired') ||
+          msg.contains('未登录')) {
+        return 'LOGIN_REQUIRED:$msg';
+      }
+      return msg;
+    }
     return e.toString();
   }
 }

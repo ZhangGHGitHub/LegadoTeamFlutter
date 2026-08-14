@@ -157,7 +157,7 @@ void main() {
       expect(readState().books.length, equals(4));
     });
 
-    test('加载失败设置错误并停止', () async {
+    test('加载失败设置错误并保留 hasMore（可重试）', () async {
       when(() => mockApi.exploreFetchBooks(any(), any(), any()))
           .thenThrow(Exception('网络超时'));
 
@@ -165,7 +165,8 @@ void main() {
       await pumpInit();
 
       expect(readState().error, contains('网络超时'));
-      expect(readState().hasMore, isFalse);
+      // 错误后保留 hasMore，使「点击重试」可用（发现页修复 C1，对齐原版 fail()）
+      expect(readState().hasMore, isTrue);
       expect(readState().isLoading, isFalse);
     });
 
