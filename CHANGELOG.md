@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.78] - 2026-08-14
+
+### Fixed
+- [Rust] 发现分类 ERROR 根治：聚合源 jsLib 含 Rhino Packages.* 时前缀截断丢失后部函数（getConfig/getServerHost 未定义）；新增 sanitize 预处理（移除 Rhino 特有行）后完整加载 jsLib，保留全部函数定义。验证：legado-ffi 331/0
+
 ## [2.0.77] - 2026-08-14
 
 ### Fixed

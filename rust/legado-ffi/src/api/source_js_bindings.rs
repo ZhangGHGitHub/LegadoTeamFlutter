@@ -84,7 +84,27 @@ pub fn js_lib_explore_fallback(js_lib: &str) -> String {
     parts.join("\n")
 }
 
-/// explore/callback 上下文加载 jsLib：完整 → QuickJS 前缀 → 仅 host 声明
+/// 移除 jsLib 中 Rhino 特有行（`importClass`/`importPackage`/`Packages.` 行首），
+/// 使 QuickJS 可**完整**加载 jsLib 并保留全部函数定义（含截断点之后的
+/// `getConfig`/`getServerHost` 等）— 发现页修复（书山聚合等聚合源 ERROR）
+pub fn sanitize_js_lib_for_quickjs(js_lib: &str) -> String {
+    let mut out = String::with_capacity(js_lib.len() + 64);
+    for line in js_lib.lines() {
+        let t = line.trim_start();
+        if t.starts_with("importClass(")
+            || t.starts_with("importPackage(")
+            || t.starts_with("Packages.")
+        {
+            out.push_str("// [legado] Rhino 特有行已移除（QuickJS 兼容）\n");
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// explore/callback 上下文加载 jsLib：完整 → sanitize 后完整 → QuickJS 前缀 → 仅 host 声明
 #[cfg(feature = "quickjs")]
 pub fn load_js_lib_for_explore(
     guard: &legado_js::QuickJsEngine,
@@ -96,18 +116,26 @@ pub fn load_js_lib_for_explore(
         return;
     };
 
-    // 聚合源 jsLib 常在尾部含 Rhino `Packages.*`，QuickJS 整文件解析失败会导致
-    // 首部 `var host` 也不执行；explore 优先加载 QuickJS 兼容前缀。
+    // 1) 完整 jsLib（QuickJS 兼容时最佳，全部函数可用）
+    if guard.eval(lib).is_ok() {
+        return;
+    }
+
+    // 2) 移除 Rhino 特有行后完整加载：聚合源 jsLib 尾部常含 `Packages.*`，
+    //    整文件解析失败导致首部变量也不执行；sanitize 后保留全部函数定义
+    let sanitized = sanitize_js_lib_for_quickjs(lib);
+    if !sanitized.trim().is_empty() && guard.eval(&sanitized).is_ok() {
+        eprintln!("[explore] jsLib 完整加载失败，已 sanitize 后加载（保留函数定义）");
+        return;
+    }
+
+    // 3) 前缀降级（host 声明 + 前缀内顶层函数）
     let prefix = js_lib_quickjs_prefix(lib);
     if !prefix.is_empty() {
         match guard.eval(&prefix) {
             Ok(_) => return,
             Err(e) => eprintln!("[explore] jsLib 前缀加载失败: {e}"),
         }
-    }
-
-    if guard.eval(lib).is_ok() {
-        return;
     }
 
     let fallback = js_lib_explore_fallback(lib);
@@ -362,6 +390,18 @@ function foo() { return host[0]; }"#;
         assert!(prefix.contains("function ok"));
         assert!(!prefix.contains("Packages"));
         assert!(!prefix.contains("function bad"));
+    }
+
+    /// sanitize 应移除 Rhino 特有行但保留全部函数定义（含 Packages 行之后的
+    /// getConfig 等）— 发现页修复（书山聚合等聚合源 ERROR）
+    #[test]
+    fn test_sanitize_js_lib_keeps_functions_after_packages() {
+        let lib = "var host = [];\nimportClass(Packages.java.util.HashMap);\nfunction getConfig(){return {};}\nfunction getServerHost(){return 'https://a.test';}\n";
+        let cleaned = sanitize_js_lib_for_quickjs(lib);
+        assert!(!cleaned.contains("importClass"), "Rhino importClass 行应移除");
+        assert!(cleaned.contains("function getConfig"), "getConfig 定义应保留");
+        assert!(cleaned.contains("function getServerHost"), "getServerHost 定义应保留");
+        assert!(cleaned.contains("var host"), "host 声明应保留");
     }
 }
 
