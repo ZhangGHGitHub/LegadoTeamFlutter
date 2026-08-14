@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.79] - 2026-08-14
+
+### Fixed
+- [Rust] 聚合源发现分类 ERROR 根治（书山/番茄等）：① JS 引擎 eval 改非严格模式（rquickjs 默认 strict=true，裸调用函数 this=undefined → 书山 jsLib let {source}=this 报 Cannot convert；对齐 Rhino 非严格 this=globalThis）；② jsLib 加载 sanitize 预处理（移除 Rhino importClass/Packages 行）后完整加载保留全部函数（getConfig/getServerHost 等）；③ exploreUrl 经 Function 参数执行。验证：legado-ffi 334/0、workspace 全量通过
+
 ## [2.0.78] - 2026-08-14
 
 ### Fixed
