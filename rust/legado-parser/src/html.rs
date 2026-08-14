@@ -138,6 +138,217 @@ fn apply_dot_index<'a>(elements: Vec<ElementRef<'a>>, index: &DotIndex) -> Vec<E
     }
 }
 
+/// jsoup 伪类（scraper/selectors 不支持的文本/位置/子选择器伪类）
+#[derive(Debug, Clone)]
+enum JsoupPseudo {
+    Contains(String),
+    ContainsOwn(String),
+    ContainsWholeText(String),
+    Matches(String),
+    MatchesOwn(String),
+    Has(String),
+    Eq(usize),
+    Lt(usize),
+    Gt(usize),
+    First,
+    Last,
+}
+
+/// 元素完整文本（对齐 jsoup text()，含子孙文本）
+fn full_text_of(elem: ElementRef<'_>) -> String {
+    elem.text().collect::<Vec<_>>().join(" ")
+}
+
+/// 去掉参数两端的成对引号（jsoup 允许 :contains('text') 或 :contains("text")）
+fn unquote(s: &str) -> String {
+    let t = s.trim();
+    let b = t.as_bytes();
+    if t.len() >= 2 {
+        let a = b[0];
+        let z = b[t.len() - 1];
+        if (a == 39 && z == 39) || (a == b'"' && z == b'"') {
+            return t[1..t.len() - 1].to_string();
+        }
+    }
+    t.to_string()
+}
+
+/// 读取平衡括号（含引号保护），返回（参数内容, 消费字节数含右括号）
+/// 引号内 ')' 不计深度；兼容 :has(.a:not(.b)) 的嵌套括号。
+fn read_balanced_quoted(s: &str) -> Option<(String, usize)> {
+    let bytes = s.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut out = String::new();
+    while i < bytes.len() {
+        let b = bytes[i];
+        let ch = s[i..].chars().next().unwrap();
+        let clen = ch.len_utf8();
+        if let Some(q) = quote {
+            if b == q {
+                quote = None;
+            }
+            out.push(ch);
+            i += clen;
+            continue;
+        }
+        match b {
+            b'"' | 39 => {
+                quote = Some(b);
+                out.push(ch);
+                i += clen;
+            }
+            b'(' => {
+                depth += 1;
+                out.push(ch);
+                i += clen;
+            }
+            b')' => {
+                if depth == 0 {
+                    return Some((out, i + clen));
+                }
+                depth -= 1;
+                out.push(ch);
+                i += clen;
+            }
+            _ => {
+                out.push(ch);
+                i += clen;
+            }
+        }
+    }
+    None
+}
+
+/// 识别单个 jsoup 伪类，返回（伪类, 消费字节数）；非 jsoup 伪类返回 None
+fn consume_jsoup_pseudo(rest: &str) -> Option<(JsoupPseudo, usize)> {
+    let after = &rest[1..];
+    let textual: [(&str, fn(String) -> JsoupPseudo); 6] = [
+        ("containsOwn(", |s| JsoupPseudo::ContainsOwn(s)),
+        ("containsWholeText(", |s| JsoupPseudo::ContainsWholeText(s)),
+        ("contains(", |s| JsoupPseudo::Contains(s)),
+        ("matchesOwn(", |s| JsoupPseudo::MatchesOwn(s)),
+        ("matches(", |s| JsoupPseudo::Matches(s)),
+        ("has(", |s| JsoupPseudo::Has(s)),
+    ];
+    for (name, ctor) in textual {
+        if let Some(arg_after) = after.strip_prefix(name) {
+            let (arg, inner) = read_balanced_quoted(arg_after)?;
+            return Some((ctor(arg), 1 + name.len() + inner));
+        }
+    }
+    let indexed: [(&str, fn(usize) -> JsoupPseudo); 3] = [
+        ("eq(", JsoupPseudo::Eq),
+        ("lt(", JsoupPseudo::Lt),
+        ("gt(", JsoupPseudo::Gt),
+    ];
+    for (name, ctor) in indexed {
+        if let Some(arg_after) = after.strip_prefix(name) {
+            let end = arg_after.find(')')?;
+            let n: usize = arg_after[..end].trim().parse().ok()?;
+            return Some((ctor(n), 1 + name.len() + end + 1));
+        }
+    }
+    for word in ["first", "last"] {
+        if let Some(tail) = after.strip_prefix(word) {
+            let next = tail.as_bytes().first().copied();
+            let boundary = next.map_or(true, |b| {
+                b.is_ascii_whitespace() || b == b'>' || b == b'+' || b == b'~' || b == b','
+            });
+            if boundary {
+                let pseudo = if word == "first" {
+                    JsoupPseudo::First
+                } else {
+                    JsoupPseudo::Last
+                };
+                return Some((pseudo, 1 + word.len()));
+            }
+        }
+    }
+    None
+}
+
+/// 从选择器串中剥离 jsoup 伪类，返回（干净选择器, 伪类列表）
+///
+/// 仅识别 scraper/selectors 不支持的 jsoup 特有伪类；其余 `:`（CSS 伪类
+/// 如 :nth-child/:not、Legado 点号区间 dd.2:3 已被 split_dot_index 提前消费）
+/// 原样保留，避免误伤。
+fn split_jsoup_pseudos(selector: &str) -> (String, Vec<JsoupPseudo>) {
+    let bytes = selector.as_bytes();
+    let mut out = String::with_capacity(selector.len());
+    let mut pseudos: Vec<JsoupPseudo> = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b':' {
+            if let Some((pseudo, consumed)) = consume_jsoup_pseudo(&selector[i..]) {
+                pseudos.push(pseudo);
+                i += consumed;
+                continue;
+            }
+        }
+        let ch = selector[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    (out, pseudos)
+}
+
+/// 对已匹配元素按顺序应用 jsoup 伪类过滤
+fn apply_jsoup_pseudos<'a>(matched: &mut Vec<ElementRef<'a>>, pseudos: &[JsoupPseudo]) {
+    for p in pseudos {
+        match p {
+            JsoupPseudo::Contains(s) => {
+                let needle = unquote(s).to_lowercase();
+                matched.retain(|e| full_text_of(*e).to_lowercase().contains(&needle));
+            }
+            JsoupPseudo::ContainsOwn(s) => {
+                let needle = unquote(s).to_lowercase();
+                matched.retain(|e| own_text_of(*e).to_lowercase().contains(&needle));
+            }
+            JsoupPseudo::ContainsWholeText(s) => {
+                let needle = unquote(s).to_lowercase();
+                matched.retain(|e| full_text_of(*e).trim().to_lowercase() == needle);
+            }
+            JsoupPseudo::Matches(s) => {
+                let pat = unquote(s);
+                if let Ok(re) = regex::Regex::new(&pat) {
+                    matched.retain(|e| re.is_match(&full_text_of(*e)));
+                }
+            }
+            JsoupPseudo::MatchesOwn(s) => {
+                let pat = unquote(s);
+                if let Ok(re) = regex::Regex::new(&pat) {
+                    matched.retain(|e| re.is_match(&own_text_of(*e)));
+                }
+            }
+            JsoupPseudo::Has(sel) => {
+                if let Ok(sub) = Selector::parse(&sel) {
+                    matched.retain(|e| e.select(&sub).next().is_some());
+                }
+            }
+            JsoupPseudo::Eq(n) => {
+                *matched = matched.get(*n).copied().into_iter().collect();
+            }
+            JsoupPseudo::Lt(n) => matched.truncate(*n),
+            JsoupPseudo::Gt(n) => {
+                if matched.len() > *n {
+                    let tail: Vec<ElementRef> = matched.iter().skip(*n).copied().collect();
+                    *matched = tail;
+                } else {
+                    matched.clear();
+                }
+            }
+            JsoupPseudo::First => {
+                *matched = matched.iter().take(1).copied().collect();
+            }
+            JsoupPseudo::Last => {
+                *matched = matched.iter().rev().take(1).copied().collect();
+            }
+        }
+    }
+}
+
 /// HTML 解析器
 pub struct HtmlParser;
 
@@ -324,11 +535,13 @@ impl HtmlParser {
                 .unwrap_or_default();
         }
 
-        let Ok(selector) = Selector::parse(selector_str) else {
+        let (clean_selector, pseudos) = split_jsoup_pseudos(selector_str);
+        let Ok(selector) = Selector::parse(&clean_selector) else {
             return vec![];
         };
 
         let mut matched: Vec<ElementRef> = document.select(&selector).collect();
+        apply_jsoup_pseudos(&mut matched, &pseudos);
         if let Some(ref idx) = dot_index {
             matched = apply_dot_index(matched, idx);
         }
@@ -356,7 +569,8 @@ impl HtmlParser {
         if owned.is_empty() {
             return parents.to_vec();
         }
-        let Ok(selector) = Selector::parse(&owned) else {
+        let (clean, pseudos) = split_jsoup_pseudos(&owned);
+        let Ok(selector) = Selector::parse(&clean) else {
             return vec![];
         };
 
@@ -371,6 +585,7 @@ impl HtmlParser {
                 next.push(child);
             }
         }
+        apply_jsoup_pseudos(&mut next, &pseudos);
         if let Some(ref idx) = dot_index {
             // 索引是相对于「每个父节点下的匹配结果」还是「全局合并列表」？
             // 原版 AnalyzeByJSoup 链式 @ 时，每一级对单个 element 调用 getElementsSingle，
@@ -385,6 +600,7 @@ impl HtmlParser {
                     kids.push(*elem);
                 }
                 kids.extend(elem.select(&selector));
+                apply_jsoup_pseudos(&mut kids, &pseudos);
                 kids = apply_dot_index(kids, idx);
                 per_parent.extend(kids);
             }
@@ -413,11 +629,13 @@ impl HtmlParser {
         let first_rule = sub_rules[0].trim();
         let (first_no_index, first_index) = split_dot_index(first_rule);
         let first_owned = Self::normalize_jsoup_selector(&first_no_index);
-        let Ok(first_selector) = Selector::parse(&first_owned) else {
+        let (first_clean, first_pseudos) = split_jsoup_pseudos(&first_owned);
+        let Ok(first_selector) = Selector::parse(&first_clean) else {
             return vec![];
         };
 
         let mut current_elements: Vec<ElementRef> = document.select(&first_selector).collect();
+        apply_jsoup_pseudos(&mut current_elements, &first_pseudos);
         if let Some(ref idx) = first_index {
             current_elements = apply_dot_index(current_elements, idx);
         }
@@ -475,38 +693,42 @@ impl HtmlParser {
                     }
                 }
             }
-        } else if Selector::parse(selector_str).is_err() {
-            // 选择器无效：可能是默认提取关键字（如 "text"、"html"）
-            if let Some(mode) = Self::bare_extract_mode(selector_str) {
+        } else {
+            let (last_clean, last_pseudos) = split_jsoup_pseudos(selector_str);
+            if Selector::parse(&last_clean).is_err() {
+                // 选择器无效：可能是默认提取关键字（如 "text"、"html"）
+                if let Some(mode) = Self::bare_extract_mode(selector_str) {
+                    for elem in &current_elements {
+                        if let Some(text) = self.extract_from_element(*elem, mode, "") {
+                            if !text.is_empty() {
+                                items.push(text);
+                            }
+                        }
+                    }
+                    return items;
+                }
+                // 也可能是属性名（如 "href"、"src"）
+                // 将最后一段视为属性名，从当前元素提取该属性（属性路径去重）
                 for elem in &current_elements {
-                    if let Some(text) = self.extract_from_element(*elem, mode, "") {
-                        if !text.is_empty() {
+                    if let Some(text) = self.extract_from_element(*elem, "attr", selector_str) {
+                        if !text.is_empty() && !items.contains(&text) {
                             items.push(text);
                         }
                     }
                 }
-                return items;
-            }
-            // 也可能是属性名（如 "href"、"src"）
-            // 将最后一段视为属性名，从当前元素提取该属性（属性路径去重）
-            for elem in &current_elements {
-                if let Some(text) = self.extract_from_element(*elem, "attr", selector_str) {
-                    if !text.is_empty() && !items.contains(&text) {
-                        items.push(text);
+            } else {
+                let selector = Selector::parse(&last_clean).unwrap();
+                for elem in &current_elements {
+                    let mut kids: Vec<ElementRef> = elem.select(&selector).collect();
+                    apply_jsoup_pseudos(&mut kids, &last_pseudos);
+                    if let Some(ref idx) = last_index {
+                        kids = apply_dot_index(kids, idx);
                     }
-                }
-            }
-        } else {
-            let selector = Selector::parse(selector_str).unwrap();
-            for elem in &current_elements {
-                let mut kids: Vec<ElementRef> = elem.select(&selector).collect();
-                if let Some(ref idx) = last_index {
-                    kids = apply_dot_index(kids, idx);
-                }
-                for child in kids {
-                    if let Some(text) = self.extract_from_element(child, extract_mode, &attr_name) {
-                        if !text.is_empty() && !items.contains(&text) {
-                            items.push(text);
+                    for child in kids {
+                        if let Some(text) = self.extract_from_element(child, extract_mode, &attr_name) {
+                            if !text.is_empty() && !items.contains(&text) {
+                                items.push(text);
+                            }
                         }
                     }
                 }
@@ -772,6 +994,49 @@ mod tests {
         assert_eq!(result[0], "第一章");
         assert_eq!(result[1], "第二章");
         assert_eq!(result[2], "第三章");
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_contains() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "a.item:contains('第二章')").unwrap();
+        assert_eq!(result, vec!["第二章"]);
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_has() {
+        let parser = HtmlParser::new();
+        let result = parser.get_elements(SAMPLE_HTML, "div:has(.author)").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("作者名"));
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_eq_and_index() {
+        let parser = HtmlParser::new();
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:eq(1)").unwrap(),
+            vec!["第二章"]
+        );
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:lt(2)").unwrap(),
+            vec!["第一章", "第二章"]
+        );
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:first").unwrap(),
+            vec!["第一章"]
+        );
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:last").unwrap(),
+            vec!["第三章"]
+        );
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_matches() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "a.item:matches('第.章')").unwrap();
+        assert_eq!(result, vec!["第一章", "第二章", "第三章"]);
     }
 
     #[test]
