@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
+import '../providers/explore/explore_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
@@ -20,7 +21,6 @@ import '../routes.dart';
 import '../utils/source_login_entry.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
-import '../widgets/loading_indicator.dart';
 import 'code_edit_screen.dart';
 
 /// 书源编辑页面
@@ -95,16 +95,13 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   bool _customButton = false;
   int _bookSourceType = 0;
 
-  // 测试
-  final _testKeywordCtrl = TextEditingController();
-  bool _testing = false;
-  List<SearchResult> _testResults = [];
-  String? _testError;
-
   /// 被编辑书源既有的自定义变量（评审 C1：表单不含 variable 字段，
   /// 保存时透传此值避免编辑任意书源一次即抹掉已设置的源变量；
   /// 粘贴/扫码/全屏编辑回填时随 _populateFields 同步更新）
   String _preservedVariable = '';
+
+  /// 被编辑书源的原始对象（表单未展示字段透传，保存不丢数据）
+  BookSource? _originalSource;
 
   bool get isNew => widget.sourceUrl == null && widget.source == null;
 
@@ -124,134 +121,128 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   /// 书源类型（对标原版 sp_type / @array/source_type）
   static const _typeLabels = ['文本', '音频', '图片', '文件', '视频'];
 
-  // ─── 基本信息字段 ───────────────────────────────────────
+  // ─── 基本信息字段（对齐原版 BookSourceEditActivity sourceEntities 顺序/标签） ───
   static const _basicFields = [
-    _Field('bookSourceName', '书源名称', required: true, maxLines: 1),
-    _Field('bookSourceUrl', '书源 URL', required: true, maxLines: 1),
-    _Field('bookSourceGroup', '分组', maxLines: 1),
-    _Field('header', '请求头', hint: 'JSON 格式', maxLines: 3),
-    _Field('loginUrl', '登录 URL', maxLines: 3),
-    _Field('loginUi', '登录UI', maxLines: 4, hint: '登录表单 JSON，如 [{"name":"账号","type":"text"}]'),
-    _Field('bookSourceComment', '备注', maxLines: 3),
+    _Field('bookSourceUrl', '源 URL（sourceUrl）', required: true, maxLines: 1),
+    _Field('bookSourceName', '源名称（sourceName）', required: true, maxLines: 1),
+    _Field('bookSourceGroup', '源分组（sourceGroup）', maxLines: 1),
+    _Field('bookSourceComment', '源注释（sourceComment）', maxLines: 3),
+    _Field('loginUrl', '登录 URL(loginUrl)', maxLines: 3),
+    _Field('loginUi', '登录 UI（loginUi）', maxLines: 4),
+    _Field('loginCheckJs', '登录检查 JS（loginCheckJs）', maxLines: 4),
+    _Field('coverDecodeJs', '封面解密（coverDecodeJs）', maxLines: 4),
+    _Field('bookUrlPattern', '书籍 URL 正则（bookUrlPattern）', maxLines: 2),
+    _Field('header', '请求头（header）', hint: 'JSON 格式', maxLines: 3),
+    _Field('variableComment', '变量说明(variableComment)', maxLines: 2),
+    _Field('concurrentRate', '并发率（concurrentRate）', maxLines: 1),
+    _Field('jsLib', 'jsLib', maxLines: 8),
   ];
 
-  // ─── 搜索规则字段 ───────────────────────────────────────
+  // ─── 搜索规则字段（对齐原版 searchEntities 顺序/标签） ──────────
   static const _searchFields = [
     _Field(
       'searchUrl',
-      '搜索 URL',
+      '搜索地址（url）',
       maxLines: 1,
       hint: '例如：https://example.com/search?q=searchKey',
     ),
-    _Field('s_checkKeyWord', '校验关键字'),
-    _Field('s_bookList', '书籍列表'),
-    _Field('s_name', '书名'),
-    _Field('s_author', '作者'),
-    _Field('s_intro', '简介'),
-    _Field('s_kind', '分类'),
-    _Field('s_lastChapter', '最新章节'),
-    _Field('s_updateTime', '更新时间'),
-    _Field('s_bookUrl', '书籍 URL'),
-    _Field('s_coverUrl', '封面 URL'),
-    _Field('s_wordCount', '字数'),
+    _Field('s_checkKeyWord', '校验关键字（checkKeyWord）'),
+    _Field('s_bookList', '书籍列表规则（bookList）'),
+    _Field('s_name', '书名规则（name）'),
+    _Field('s_author', '作者规则（author）'),
+    _Field('s_kind', '分类规则（kind）'),
+    _Field('s_wordCount', '字数规则（wordCount）'),
+    _Field('s_lastChapter', '最新章节规则（lastChapter）'),
+    _Field('s_intro', '简介规则（intro）'),
+    _Field('s_coverUrl', '封面规则（coverUrl）'),
+    _Field('s_bookUrl', '详情页 URL 规则（bookUrl）'),
   ];
 
-  // ─── 发现规则字段 ───────────────────────────────────────
+  // ─── 发现规则字段（对齐原版 exploreEntities 顺序/标签） ──────────
   static const _exploreFields = [
     _Field(
       'exploreUrl',
-      '发现 URL',
+      '发现地址规则（url）',
       maxLines: 3,
       hint: '例如：分类名::https://example.com/sort\n或 url 形式',
     ),
-    _Field('e_bookList', '书籍列表'),
-    _Field('e_name', '书名'),
-    _Field('e_author', '作者'),
-    _Field('e_intro', '简介'),
-    _Field('e_kind', '分类'),
-    _Field('e_lastChapter', '最新章节'),
-    _Field('e_updateTime', '更新时间'),
-    _Field('e_bookUrl', '书籍 URL'),
-    _Field('e_coverUrl', '封面 URL'),
-    _Field('e_wordCount', '字数'),
+    _Field('e_bookList', '书籍列表规则（bookList）'),
+    _Field('e_name', '书名规则（name）'),
+    _Field('e_author', '作者规则（author）'),
+    _Field('e_kind', '分类规则（kind）'),
+    _Field('e_wordCount', '字数规则（wordCount）'),
+    _Field('e_lastChapter', '最新章节规则（lastChapter）'),
+    _Field('e_intro', '简介规则（intro）'),
+    _Field('e_coverUrl', '封面规则（coverUrl）'),
+    _Field('e_bookUrl', '详情页 URL 规则（bookUrl）'),
   ];
 
-  // ─── 详情规则字段 ───────────────────────────────────────
+  // ─── 详情规则字段（对齐原版 infoEntities 顺序/标签） ─────────────
   static const _infoFields = [
-    _Field('i_init', '初始化'),
-    _Field('i_name', '书名'),
-    _Field('i_author', '作者'),
-    _Field('i_intro', '简介'),
-    _Field('i_kind', '分类'),
-    _Field('i_lastChapter', '最新章节'),
-    _Field('i_updateTime', '更新时间'),
-    _Field('i_coverUrl', '封面 URL'),
-    _Field('i_tocUrl', '目录 URL'),
-    _Field('i_wordCount', '字数'),
-    _Field('i_canReName', '修改书名'),
-    _Field('i_downloadUrls', '下载 URL'),
+    _Field('i_init', '预处理规则（bookInfoInit）'),
+    _Field('i_name', '书名规则（name）'),
+    _Field('i_author', '作者规则（author）'),
+    _Field('i_kind', '分类规则（kind）'),
+    _Field('i_wordCount', '字数规则（wordCount）'),
+    _Field('i_lastChapter', '最新章节规则（lastChapter）'),
+    _Field('i_intro', '简介规则（intro）'),
+    _Field('i_coverUrl', '封面规则（coverUrl）'),
+    _Field('i_tocUrl', '目录 URL 规则（tocUrl）'),
+    _Field('i_canReName', '允许修改书名作者（canReName）'),
+    _Field('i_downloadUrls', '下载URL规则(downloadUrls)'),
   ];
 
-  // ─── 目录规则字段 ───────────────────────────────────────
+  // ─── 目录规则字段（对齐原版 tocEntities 顺序/标签） ─────────────
   static const _tocFields = [
-    _Field('t_preUpdateJs', '列表预处理 JS'),
-    _Field('t_chapterList', '章节列表'),
-    _Field('t_chapterName', '章节名称'),
-    _Field('t_chapterUrl', '章节 URL'),
-    _Field('t_formatJs', '名称格式化 JS'),
-    _Field('t_isVolume', '卷标识'),
-    _Field('t_isVip', 'VIP 标识'),
-    _Field('t_isPay', '付费标识'),
-    _Field('t_updateTime', '更新时间'),
-    _Field('t_nextTocUrl', '下一页 URL'),
+    _Field('t_preUpdateJs', '更新之前 JS（preUpdateJs）'),
+    _Field('t_chapterList', '目录列表规则（chapterList）'),
+    _Field('t_chapterName', '章节名称规则（ChapterName）'),
+    _Field('t_chapterUrl', '章节 URL 规则（chapterUrl）'),
+    _Field('t_formatJs', '格式化规则(formatJs)'),
+    _Field('t_isVolume', 'Volume 标识（isVolume）'),
+    _Field('t_updateTime', '章节信息（ChapterInfo）'),
+    _Field('t_isVip', 'VIP 标识（isVip）'),
+    _Field('t_isPay', '购买标识（isPay）'),
+    _Field('t_nextTocUrl', '目录下一页规则（nextTocUrl）'),
   ];
 
-  // ─── 内容规则字段 ───────────────────────────────────────
+  // ─── 正文规则字段（对齐原版 contentEntities 顺序/标签） ──────────
   static const _contentFields = [
-    _Field('c_content', '正文内容', maxLines: 3),
-    _Field('c_subContent', '子正文'),
-    _Field('c_title', '标题'),
-    _Field('c_nextContentUrl', '下一页 URL'),
-    _Field('c_webJs', 'Web JS', maxLines: 4),
-    _Field('c_sourceRegex', '资源正则'),
-    _Field('c_replaceRegex', '替换正则'),
-    _Field('c_imageStyle', '图片样式'),
-    _Field('c_imageDecode', '图片解码'),
-    _Field('c_payAction', '付费操作'),
-    _Field('c_callBackJs', '回调 JS'),
+    _Field('c_content', '正文规则（content）', maxLines: 3),
+    _Field('c_nextContentUrl', '正文下一页 URL 规则（nextContentUrl）'),
+    _Field('c_subContent', '副文规则（subContent）'),
+    _Field('c_replaceRegex', '替换规则（replaceRegex）', maxLines: 4),
+    _Field('c_title', '标题（title）'),
+    _Field('c_sourceRegex', '资源正则（sourceRegex）'),
+    _Field('c_imageStyle', '图片样式（imageStyle）'),
+    _Field('c_imageDecode', '图片解密（imageDecode）'),
+    _Field('c_webJs', 'WebView JS（webJs）', maxLines: 4),
+    _Field('c_payAction', '购买操作（payAction）'),
+    _Field('c_callBackJs', '回调操作（callBackJs）'),
   ];
 
-  // ─── 评论规则字段 ───────────────────────────────────────
+  // ─── 段评规则字段（对齐原版 reviewEntities 顺序/标签） ───────────
   static const _reviewFields = [
-    _Field('r_reviewUrl', '段评 URL'),
-    _Field('r_avatarRule', '头像规则'),
-    _Field('r_contentRule', '内容规则'),
-    _Field('r_postTimeRule', '发布时间规则'),
-    _Field('r_reviewQuoteUrl', '评论引用 URL'),
-    _Field('r_voteUpUrl', '点赞 URL'),
-    _Field('r_voteDownUrl', '点踩 URL'),
-    _Field('r_postReviewUrl', '发表评论 URL'),
-    _Field('r_postQuoteUrl', '发表引用 URL'),
-    _Field('r_deleteUrl', '删除 URL'),
-    _Field('r_reviewSummaryUrl', '评论摘要 URL'),
-    _Field('r_summaryListRule', '摘要列表规则'),
-    _Field('r_summaryParagraphIndexRule', '摘要段落索引规则'),
-    _Field('r_summaryParagraphDataRule', '摘要段落数据规则'),
-    _Field('r_summaryCountRule', '摘要数量规则'),
-    _Field('r_reviewDetailUrl', '评论详情 URL'),
-    _Field('r_reviewDetailNextPageUrl', '评论详情下一页 URL'),
-    _Field('r_detailListRule', '详情列表规则'),
-    _Field('r_detailIdRule', '详情 ID 规则'),
-    _Field('r_detailAvatarRule', '详情头像规则'),
-    _Field('r_detailNameRule', '详情昵称规则'),
-    _Field('r_detailBadgeRule', '详情徽章规则'),
-    _Field('r_detailContentRule', '详情内容规则'),
-    _Field('r_replyListRule', '回复列表规则'),
-    _Field('r_replyIdRule', '回复 ID 规则'),
-    _Field('r_replyAvatarRule', '回复头像规则'),
-    _Field('r_replyNameRule', '回复昵称规则'),
-    _Field('r_replyBadgeRule', '回复徽章规则'),
-    _Field('r_replyContentRule', '回复内容规则'),
+    _Field('r_reviewSummaryUrl', '段评统计 URL（reviewSummaryUrl）'),
+    _Field('r_summaryListRule', '段评统计列表（summaryListRule）'),
+    _Field('r_summaryParagraphIndexRule', '段落索引（summaryParagraphIndexRule）'),
+    _Field('r_summaryCountRule', '段评数量（summaryCountRule）'),
+    _Field('r_summaryParagraphDataRule', '段落数据（summaryParagraphDataRule）'),
+    _Field('r_reviewDetailUrl', '段评详情 URL（reviewDetailUrl）'),
+    _Field('r_reviewDetailNextPageUrl', '段评下一页 URL（reviewDetailNextPageUrl）'),
+    _Field('r_detailListRule', '段评详情列表（detailListRule）'),
+    _Field('r_detailIdRule', '段评 ID（detailIdRule）'),
+    _Field('r_detailAvatarRule', '头像（detailAvatarRule）'),
+    _Field('r_detailNameRule', '昵称（detailNameRule）'),
+    _Field('r_detailBadgeRule', '徽章（detailBadgeRule）'),
+    _Field('r_detailContentRule', '评论内容协议（detailContentRule）', maxLines: 3),
+    _Field('r_reviewQuoteUrl', '段评回复URL（reviewQuoteUrl）'),
+    _Field('r_replyListRule', '子评论列表（replyListRule）'),
+    _Field('r_replyIdRule', '子评论 ID（replyIdRule）'),
+    _Field('r_replyAvatarRule', '子评论头像（replyAvatarRule）'),
+    _Field('r_replyNameRule', '子评论昵称（replyNameRule）'),
+    _Field('r_replyBadgeRule', '子评论徽章（replyBadgeRule）'),
+    _Field('r_replyContentRule', '子评论内容协议（replyContentRule）', maxLines: 3),
   ];
 
   @override
@@ -319,6 +310,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   void _populateFields(BookSource source) {
     final values = _sourceToValues(source);
     values.forEach((key, value) => _ctrl(key).text = value);
+    // 保存原始书源：_buildSource 时透传表单未展示字段（updateTime 等），
+    // 避免保存一次编辑即抹掉既有规则数据（「修改后生效且不丢数据」）
+    _originalSource = source;
     // 评审 C1：同步记录既有 variable，_buildSource 时透传不抹掉
     _preservedVariable = source.variable;
     _enabled = source.enabled;
@@ -340,7 +334,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     for (final node in _focusNodes.values) {
       node.dispose();
     }
-    _testKeywordCtrl.dispose();
     super.dispose();
   }
 
@@ -354,50 +347,53 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     final cr = source.ruleContent;
     final rr = source.ruleReview;
     return {
-      // 基本信息
-      'bookSourceName': source.bookSourceName,
+      // 基本信息（对齐原版 sourceEntities）
       'bookSourceUrl': source.bookSourceUrl,
+      'bookSourceName': source.bookSourceName,
       'bookSourceGroup': v(source.bookSourceGroup),
-      'header': v(source.header),
+      'bookSourceComment': v(source.bookSourceComment),
       'loginUrl': v(source.loginUrl),
       'loginUi': v(source.loginUi),
-      'bookSourceComment': v(source.bookSourceComment),
+      'loginCheckJs': v(source.loginCheckJs),
+      'coverDecodeJs': v(source.coverDecodeJs),
+      'bookUrlPattern': v(source.bookUrlPattern),
+      'header': v(source.header),
+      'variableComment': v(source.variableComment),
+      'concurrentRate': v(source.concurrentRate),
+      'jsLib': v(source.jsLib),
       // 搜索规则
       'searchUrl': v(source.searchUrl),
       's_checkKeyWord': v(sr?.checkKeyWord),
       's_bookList': v(sr?.bookList),
       's_name': v(sr?.name),
       's_author': v(sr?.author),
-      's_intro': v(sr?.intro),
       's_kind': v(sr?.kind),
-      's_lastChapter': v(sr?.lastChapter),
-      's_updateTime': v(sr?.updateTime),
-      's_bookUrl': v(sr?.bookUrl),
-      's_coverUrl': v(sr?.coverUrl),
       's_wordCount': v(sr?.wordCount),
+      's_lastChapter': v(sr?.lastChapter),
+      's_intro': v(sr?.intro),
+      's_coverUrl': v(sr?.coverUrl),
+      's_bookUrl': v(sr?.bookUrl),
       // 发现规则
       'exploreUrl': v(source.exploreUrl),
       'e_bookList': v(er?.bookList),
       'e_name': v(er?.name),
       'e_author': v(er?.author),
-      'e_intro': v(er?.intro),
       'e_kind': v(er?.kind),
-      'e_lastChapter': v(er?.lastChapter),
-      'e_updateTime': v(er?.updateTime),
-      'e_bookUrl': v(er?.bookUrl),
-      'e_coverUrl': v(er?.coverUrl),
       'e_wordCount': v(er?.wordCount),
+      'e_lastChapter': v(er?.lastChapter),
+      'e_intro': v(er?.intro),
+      'e_coverUrl': v(er?.coverUrl),
+      'e_bookUrl': v(er?.bookUrl),
       // 详情规则
       'i_init': v(ir?.init),
       'i_name': v(ir?.name),
       'i_author': v(ir?.author),
-      'i_intro': v(ir?.intro),
       'i_kind': v(ir?.kind),
+      'i_wordCount': v(ir?.wordCount),
       'i_lastChapter': v(ir?.lastChapter),
-      'i_updateTime': v(ir?.updateTime),
+      'i_intro': v(ir?.intro),
       'i_coverUrl': v(ir?.coverUrl),
       'i_tocUrl': v(ir?.tocUrl),
-      'i_wordCount': v(ir?.wordCount),
       'i_canReName': v(ir?.canReName),
       'i_downloadUrls': v(ir?.downloadUrls),
       // 目录规则
@@ -407,38 +403,28 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       't_chapterUrl': v(tr?.chapterUrl),
       't_formatJs': v(tr?.formatJs),
       't_isVolume': v(tr?.isVolume),
+      't_updateTime': v(tr?.updateTime),
       't_isVip': v(tr?.isVip),
       't_isPay': v(tr?.isPay),
-      't_updateTime': v(tr?.updateTime),
       't_nextTocUrl': v(tr?.nextTocUrl),
-      // 内容规则
+      // 正文规则
       'c_content': v(cr?.content),
-      'c_subContent': v(cr?.subContent),
-      'c_title': v(cr?.title),
       'c_nextContentUrl': v(cr?.nextContentUrl),
-      'c_webJs': v(cr?.webJs),
-      'c_sourceRegex': v(cr?.sourceRegex),
+      'c_subContent': v(cr?.subContent),
       'c_replaceRegex': v(cr?.replaceRegex),
+      'c_title': v(cr?.title),
+      'c_sourceRegex': v(cr?.sourceRegex),
       'c_imageStyle': v(cr?.imageStyle),
       'c_imageDecode': v(cr?.imageDecode),
+      'c_webJs': v(cr?.webJs),
       'c_payAction': v(cr?.payAction),
       'c_callBackJs': v(cr?.callBackJs),
-      // 评论规则
-      'r_reviewUrl': v(rr?.reviewUrl),
-      'r_avatarRule': v(rr?.avatarRule),
-      'r_contentRule': v(rr?.contentRule),
-      'r_postTimeRule': v(rr?.postTimeRule),
-      'r_reviewQuoteUrl': v(rr?.reviewQuoteUrl),
-      'r_voteUpUrl': v(rr?.voteUpUrl),
-      'r_voteDownUrl': v(rr?.voteDownUrl),
-      'r_postReviewUrl': v(rr?.postReviewUrl),
-      'r_postQuoteUrl': v(rr?.postQuoteUrl),
-      'r_deleteUrl': v(rr?.deleteUrl),
+      // 段评规则（对齐原版 reviewEntities）
       'r_reviewSummaryUrl': v(rr?.reviewSummaryUrl),
       'r_summaryListRule': v(rr?.summaryListRule),
       'r_summaryParagraphIndexRule': v(rr?.summaryParagraphIndexRule),
-      'r_summaryParagraphDataRule': v(rr?.summaryParagraphDataRule),
       'r_summaryCountRule': v(rr?.summaryCountRule),
+      'r_summaryParagraphDataRule': v(rr?.summaryParagraphDataRule),
       'r_reviewDetailUrl': v(rr?.reviewDetailUrl),
       'r_reviewDetailNextPageUrl': v(rr?.reviewDetailNextPageUrl),
       'r_detailListRule': v(rr?.detailListRule),
@@ -447,6 +433,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       'r_detailNameRule': v(rr?.detailNameRule),
       'r_detailBadgeRule': v(rr?.detailBadgeRule),
       'r_detailContentRule': v(rr?.detailContentRule),
+      'r_reviewQuoteUrl': v(rr?.reviewQuoteUrl),
       'r_replyListRule': v(rr?.replyListRule),
       'r_replyIdRule': v(rr?.replyIdRule),
       'r_replyAvatarRule': v(rr?.replyAvatarRule),
@@ -457,15 +444,26 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   }
 
   /// 从控制器收集字段，构建 [BookSource]。
+  ///
+  /// 对齐原版 BookSourceEditActivity.getSource：
+  /// - 表单字段按 key 覆盖（空串 → null，即清空字段保存）；
+  /// - 表单未展示的字段（updateTime 等）从 [_originalSource] 透传，
+  ///   避免保存一次编辑即丢失既有规则数据。
   BookSource _buildSource() {
     // 文本（trim 后）
     String t(String key) => _ctrl(key).text.trim();
-    // 可空文本：空串归一为 null
+    // 可空文本：空串归一为 null（对齐原版 takeIf { isNotBlank }）
     String? n(String key) => t(key).isEmpty ? null : t(key);
 
+    final orig = _originalSource;
+    final oSr = orig?.ruleSearch;
+    final oEr = orig?.ruleExplore;
+    final oIr = orig?.ruleBookInfo;
+    final oRr = orig?.ruleReview;
+
     return BookSource(
-      bookSourceName: t('bookSourceName'),
       bookSourceUrl: t('bookSourceUrl'),
+      bookSourceName: t('bookSourceName'),
       bookSourceGroup: n('bookSourceGroup'),
       bookSourceType: _bookSourceType,
       enabled: _enabled,
@@ -475,7 +473,13 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       header: n('header'),
       loginUrl: n('loginUrl'),
       loginUi: n('loginUi'),
+      loginCheckJs: n('loginCheckJs'),
+      coverDecodeJs: n('coverDecodeJs'),
+      bookUrlPattern: n('bookUrlPattern'),
       bookSourceComment: n('bookSourceComment'),
+      variableComment: n('variableComment'),
+      concurrentRate: n('concurrentRate'),
+      jsLib: n('jsLib'),
       // 评审 C1：透传被编辑书源既有 variable（表单不编辑此字段，
       // 避免保存时把已设置的源变量抹掉为空串）
       variable: _preservedVariable,
@@ -487,13 +491,14 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
         bookList: n('s_bookList'),
         name: n('s_name'),
         author: n('s_author'),
-        intro: n('s_intro'),
         kind: n('s_kind'),
-        lastChapter: n('s_lastChapter'),
-        updateTime: n('s_updateTime'),
-        bookUrl: n('s_bookUrl'),
-        coverUrl: n('s_coverUrl'),
         wordCount: n('s_wordCount'),
+        lastChapter: n('s_lastChapter'),
+        intro: n('s_intro'),
+        coverUrl: n('s_coverUrl'),
+        bookUrl: n('s_bookUrl'),
+        // 表单未展示字段透传（原版编辑页同样不展示 updateTime）
+        updateTime: oSr?.updateTime,
       ),
       // 发现规则
       exploreUrl: n('exploreUrl'),
@@ -501,28 +506,28 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
         bookList: n('e_bookList'),
         name: n('e_name'),
         author: n('e_author'),
-        intro: n('e_intro'),
         kind: n('e_kind'),
-        lastChapter: n('e_lastChapter'),
-        updateTime: n('e_updateTime'),
-        bookUrl: n('e_bookUrl'),
-        coverUrl: n('e_coverUrl'),
         wordCount: n('e_wordCount'),
+        lastChapter: n('e_lastChapter'),
+        intro: n('e_intro'),
+        coverUrl: n('e_coverUrl'),
+        bookUrl: n('e_bookUrl'),
+        updateTime: oEr?.updateTime,
       ),
       // 详情规则
       ruleBookInfo: BookInfoRule(
         init: n('i_init'),
         name: n('i_name'),
         author: n('i_author'),
-        intro: n('i_intro'),
         kind: n('i_kind'),
+        wordCount: n('i_wordCount'),
         lastChapter: n('i_lastChapter'),
-        updateTime: n('i_updateTime'),
+        intro: n('i_intro'),
         coverUrl: n('i_coverUrl'),
         tocUrl: n('i_tocUrl'),
-        wordCount: n('i_wordCount'),
         canReName: n('i_canReName'),
         downloadUrls: n('i_downloadUrls'),
+        updateTime: oIr?.updateTime,
       ),
       // 目录规则
       ruleToc: TocRule(
@@ -532,43 +537,42 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
         chapterUrl: n('t_chapterUrl'),
         formatJs: n('t_formatJs'),
         isVolume: n('t_isVolume'),
+        updateTime: n('t_updateTime'),
         isVip: n('t_isVip'),
         isPay: n('t_isPay'),
-        updateTime: n('t_updateTime'),
         nextTocUrl: n('t_nextTocUrl'),
       ),
-      // 内容规则
+      // 正文规则
       ruleContent: ContentRule(
         content: n('c_content'),
-        subContent: n('c_subContent'),
-        title: n('c_title'),
         nextContentUrl: n('c_nextContentUrl'),
-        webJs: n('c_webJs'),
-        sourceRegex: n('c_sourceRegex'),
+        subContent: n('c_subContent'),
         replaceRegex: n('c_replaceRegex'),
+        title: n('c_title'),
+        sourceRegex: n('c_sourceRegex'),
         imageStyle: n('c_imageStyle'),
         imageDecode: n('c_imageDecode'),
+        webJs: n('c_webJs'),
         payAction: n('c_payAction'),
         callBackJs: n('c_callBackJs'),
       ),
-      // 评论规则
+      // 段评规则（对齐原版：仅编辑 reviewEntities 展示字段，其余透传）
       ruleReview: ReviewRule(
         enabled: _reviewEnabled,
-        reviewUrl: n('r_reviewUrl'),
-        avatarRule: n('r_avatarRule'),
-        contentRule: n('r_contentRule'),
-        postTimeRule: n('r_postTimeRule'),
-        reviewQuoteUrl: n('r_reviewQuoteUrl'),
-        voteUpUrl: n('r_voteUpUrl'),
-        voteDownUrl: n('r_voteDownUrl'),
-        postReviewUrl: n('r_postReviewUrl'),
-        postQuoteUrl: n('r_postQuoteUrl'),
-        deleteUrl: n('r_deleteUrl'),
+        reviewUrl: oRr?.reviewUrl,
+        avatarRule: oRr?.avatarRule,
+        contentRule: oRr?.contentRule,
+        postTimeRule: oRr?.postTimeRule,
+        voteUpUrl: oRr?.voteUpUrl,
+        voteDownUrl: oRr?.voteDownUrl,
+        postReviewUrl: oRr?.postReviewUrl,
+        postQuoteUrl: oRr?.postQuoteUrl,
+        deleteUrl: oRr?.deleteUrl,
         reviewSummaryUrl: n('r_reviewSummaryUrl'),
         summaryListRule: n('r_summaryListRule'),
         summaryParagraphIndexRule: n('r_summaryParagraphIndexRule'),
-        summaryParagraphDataRule: n('r_summaryParagraphDataRule'),
         summaryCountRule: n('r_summaryCountRule'),
+        summaryParagraphDataRule: n('r_summaryParagraphDataRule'),
         reviewDetailUrl: n('r_reviewDetailUrl'),
         reviewDetailNextPageUrl: n('r_reviewDetailNextPageUrl'),
         detailListRule: n('r_detailListRule'),
@@ -577,6 +581,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
         detailNameRule: n('r_detailNameRule'),
         detailBadgeRule: n('r_detailBadgeRule'),
         detailContentRule: n('r_detailContentRule'),
+        reviewQuoteUrl: n('r_reviewQuoteUrl'),
         replyListRule: n('r_replyListRule'),
         replyIdRule: n('r_replyIdRule'),
         replyAvatarRule: n('r_replyAvatarRule'),
@@ -587,6 +592,15 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     );
   }
 
+  /// 保存成功后刷新发现页书源缓存（对齐原版 setResult(RESULT_OK) 语义：
+  /// 上层页面感知书源变更，立即反映新名称/开关等，避免内存旧对象
+  /// 再次打开编辑页把已保存修改回退）
+  void _afterSaveRefresh() {
+    try {
+      ref.read(exploreNotifierProvider.notifier).refresh();
+    } catch (_) {}
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -595,6 +609,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       final source = _buildSource();
       final notifier = ref.read(sourceNotifierProvider.notifier);
       await notifier.saveSource(source);
+      _afterSaveRefresh();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -609,42 +624,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _testSource() async {
-    final keyword = _testKeywordCtrl.text.trim();
-    if (keyword.isEmpty) return;
-
-    setState(() {
-      _testing = true;
-      _testResults = [];
-      _testError = null;
-    });
-
-    try {
-      final source = _buildSource();
-      // 先保存书源以便搜索
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      await notifier.saveSource(source);
-
-      if (!mounted) return;
-      final api = ref.read(bookApiProvider);
-      final results = await api.searchBooks(
-        keyword,
-        sourceUrls: [source.bookSourceUrl],
-      );
-      if (!mounted) return;
-      setState(() {
-        _testResults = results;
-        _testing = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _testError = e.toString();
-        _testing = false;
-      });
     }
   }
 
@@ -694,6 +673,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     try {
       final source = _buildSource();
       await ref.read(sourceNotifierProvider.notifier).saveSource(source);
+      _afterSaveRefresh();
       if (!mounted) return;
       final search = ref.read(searchNotifierProvider.notifier);
       search.clearAllFilter();
@@ -741,6 +721,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     try {
       final source = _buildSource();
       await ref.read(sourceNotifierProvider.notifier).saveSource(source);
+      _afterSaveRefresh();
       if (!mounted) return;
       final srcComment = (source.variableComment ?? '').trim();
       final comment = srcComment.isNotEmpty
@@ -917,6 +898,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       final source = _buildSource();
       final notifier = ref.read(sourceNotifierProvider.notifier);
       await notifier.saveSource(source);
+      _afterSaveRefresh();
       if (!mounted) return;
       Navigator.of(context).pushNamed(
         AppRoutes.sourceDebug,
@@ -991,7 +973,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 8,
+      // 对齐原版 7 个 Tab：基本/搜索/发现/详情/目录/正文/段评
+      //（原版「调试源」为顶栏菜单，非 Tab）
+      length: 7,
       child: Scaffold(
         appBar: LegadoAppBar(
           title: Text(isNew ? '新建书源' : '编辑书源'),
@@ -1006,7 +990,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
               Tab(text: '目录'),
               Tab(text: '正文'),
               Tab(text: '段评'),
-              Tab(text: '调试'),
             ],
           ),
           actions: [
@@ -1107,7 +1090,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
                     _buildFormTab(_tocFields),
                     _buildFormTab(_contentFields),
                     _buildFormTab(_reviewFields),
-                    _buildTestTab(),
                   ],
                 ),
               ),
@@ -1118,8 +1100,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     );
   }
 
-  /// 可折叠「设置」面板（对标原版 BookSourceEditActivity 顶部设置区：
-  /// 类型下拉 + 启用/发现/CookieJar/段评/事件监听/定制按钮）
+  /// 可折叠「设置」面板（对齐原版 BookSourceEditActivity 顶部设置区：
+  /// 收起态标题显示摘要「类型 | 启用 | 发现 | CookieJar | 段评 |
+  /// 事件监听 | 定制按钮」，展开显示类型下拉 + 开关）
   Widget _buildSettingsPanel() {
     final colorScheme = Theme.of(context).colorScheme;
     Widget checkChip(String label, bool value, ValueChanged<bool> onChanged) {
@@ -1136,14 +1119,39 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       );
     }
 
+    // 摘要（对齐原版 tvOptionsSummary：类型 + 勾选开关 join(" | ")）
+    final summaryParts = <String>[_typeLabels[_bookSourceType]];
+    void addSummary(String label, bool checked) {
+      if (checked) summaryParts.add(label);
+    }
+
+    addSummary('启用', _enabled);
+    addSummary('发现', _enabledExplore);
+    addSummary('CookieJar', _cookieJar);
+    addSummary('段评', _reviewEnabled);
+    addSummary('事件监听', _eventListener);
+    addSummary('定制按钮', _customButton);
+    final summary = summaryParts.join(' | ');
+
     return ExpansionTile(
-      // 默认收起，优先展示表单字段（此前默认展开占掉半屏，基本信息被挤出首屏）
+      // 默认收起，优先展示表单字段；收起态显示摘要（对齐原版紧凑设置行）
       initiallyExpanded: false,
       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
       shape: const Border(),
       collapsedShape: const Border(),
-      title: const Text('设置',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      title: Text(
+        '设置',
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        summary,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
@@ -1219,72 +1227,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
                   : null
             : null,
       ),
-    );
-  }
-
-  Widget _buildTestTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _testKeywordCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '测试关键词',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('测试'),
-                onPressed: _testing ? null : _testSource,
-              ),
-            ],
-          ),
-        ),
-        if (_testing)
-          const Expanded(child: LoadingIndicator(message: '测试中...'))
-        else if (_testError != null)
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  '测试失败：$_testError',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            ),
-          )
-        else if (_testResults.isEmpty)
-          const Expanded(child: Center(child: Text('输入关键词测试书源搜索功能')))
-        else
-          Expanded(
-            child: ListView.separated(
-              itemCount: _testResults.length,
-              separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
-              itemBuilder: (context, index) {
-                final result = _testResults[index];
-                return ListTile(
-                  leading: const Icon(Icons.book),
-                  title: Text(result.book.name),
-                  subtitle: Text(result.book.author),
-                  trailing: Text(
-                    result.book.latestChapterTitle ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
     );
   }
 }

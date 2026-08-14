@@ -63,7 +63,7 @@ void main() {
   }
 
   group('SourceEditScreen 多 Tab 结构', () {
-    testWidgets('新建模式渲染 8 个规则 Tab', (tester) async {
+    testWidgets('新建模式渲染 7 个规则 Tab（对齐原版，调试为顶栏菜单）', (tester) async {
       await pumpEdit(tester);
 
       expect(find.text('新建书源'), findsOneWidget);
@@ -77,7 +77,6 @@ void main() {
         '目录',
         '正文',
         '段评',
-        '调试',
       ]) {
         expect(
           find.descendant(of: tabBar, matching: find.text(label)),
@@ -106,22 +105,22 @@ void main() {
         find.descendant(of: find.byType(TabBar), matching: find.text('发现')),
       );
       await tester.pumpAndSettle();
-      expect(find.widgetWithText(TextFormField, '发现 URL'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, '发现地址规则（url）'), findsOneWidget);
 
       // 详情规则
       await tester.tap(
         find.descendant(of: find.byType(TabBar), matching: find.text('详情')),
       );
       await tester.pumpAndSettle();
-      expect(find.widgetWithText(TextFormField, '目录 URL'), findsOneWidget);
-      expect(find.widgetWithText(TextFormField, '修改书名'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, '目录 URL 规则（tocUrl）'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, '允许修改书名作者（canReName）'), findsOneWidget);
 
       // 段评规则
       await tester.tap(
         find.descendant(of: find.byType(TabBar), matching: find.text('段评')),
       );
       await tester.pumpAndSettle();
-      expect(find.widgetWithText(TextFormField, '段评 URL'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, '段评统计 URL（reviewSummaryUrl）'), findsOneWidget);
     });
   });
 
@@ -132,8 +131,8 @@ void main() {
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
-      expect(find.text('请输入书源名称'), findsOneWidget);
-      expect(find.text('请输入书源 URL'), findsOneWidget);
+      expect(find.text('请输入源名称（sourceName）'), findsOneWidget);
+      expect(find.text('请输入源 URL（sourceUrl）'), findsOneWidget);
       verifyNever(() => mockApi.addBookSource(any()));
     });
 
@@ -144,11 +143,11 @@ void main() {
       await pumpEdit(tester);
 
       await tester.enterText(
-        find.widgetWithText(TextFormField, '书源名称 *'),
+        find.widgetWithText(TextFormField, '源名称（sourceName） *'),
         '测试书源',
       );
       await tester.enterText(
-        find.widgetWithText(TextFormField, '书源 URL *'),
+        find.widgetWithText(TextFormField, '源 URL（sourceUrl） *'),
         'https://test.com',
       );
       await tester.tap(find.text('保存'));
@@ -176,7 +175,7 @@ void main() {
         exploreUrl: '分类::https://edit.com/sort',
         ruleExplore: ExploreRule(bookList: '.explore-list', name: '.e-name'),
         ruleBookInfo: BookInfoRule(init: '.init', tocUrl: '.toc'),
-        ruleReview: ReviewRule(enabled: true, reviewUrl: '.review'),
+        ruleReview: ReviewRule(enabled: true, reviewSummaryUrl: '.review-summary'),
       );
       when(() => mockApi.getBookSources()).thenAnswer((_) async => [source]);
       // 预加载书源到 notifier 状态
@@ -210,7 +209,7 @@ void main() {
         find.descendant(of: find.byType(TabBar), matching: find.text('段评')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('.review'), findsOneWidget);
+      expect(find.text('.review-summary'), findsOneWidget);
       // 段评开关已迁至顶部设置面板（CheckboxListTile）并回填为开启；
       // 面板默认收起，先展开再断言
       await tester.tap(find.text('设置'));

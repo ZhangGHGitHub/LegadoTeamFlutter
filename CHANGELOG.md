@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.83] - 2026-08-14
+
+### Fixed
+- [UI] 编辑书源页按原版 BookSourceEditActivity 重构（内容显示与修改生效对齐）：
+  - 基本信息 13 字段全量对齐原版顺序/标签：源 URL/源名称/源分组/源注释/登录 URL/登录 UI/登录检查 JS/封面解密/书籍 URL 正则/请求头/变量说明/并发率/jsLib（新增 6 个此前缺失字段：loginCheckJs/coverDecodeJs/bookUrlPattern/variableComment/concurrentRate/jsLib）
+  - 搜索/发现/详情/目录/正文/段评六个规则 Tab 字段集合、顺序、标签全部对齐原版（移除原版不展示的 updateTime 行；段评改为原版 20 行：统计/详情/回复三组）
+  - Tab 8→7：移除「调试」Tab（原版调试源为顶栏菜单）
+  - 设置面板对齐原版紧凑摘要行：「设置 + 文本 | 启用 | 发现 | CookieJar | 段评 | 事件监听 | 定制按钮」
+  - 修改生效保障：保存时从原书源透传表单未展示字段（updateTime/段评其余字段等），编辑一次不再丢数据；保存后自动刷新发现页书源缓存，改名/开关立即反映到发现页（此前内存旧对象会再次打开编辑页把已存修改回退）
+  - 验证：模拟器实测改名 ShuShanNew→ShuShanNew2 保存后发现页立即更新、冷启动持久、重开编辑页回填正确
+
 ## [2.0.82] - 2026-08-14
 
 ### Fixed

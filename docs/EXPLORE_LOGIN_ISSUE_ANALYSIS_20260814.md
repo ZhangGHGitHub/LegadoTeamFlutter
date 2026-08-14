@@ -177,7 +177,15 @@ ew Function 内 eval 执行（独立词法作用域，对齐 Rhino 每次 evalJS
 - [x] 子代理 A：原版行为基准（loginCheckJs 语义 / 登录入口 / 解析内核差异 / ExploreKind type 枚举 / 双页码机制）
 - [x] 子代理 B：重构内容审计（**10 项解析差异：A1-A6 P1 + A7-A9/B/C/D P2**，§3.1）
 - [x] 子代理 C：登录链路完整对比（R1 四断裂点 + 手动登录无读取方）
-### 七、编辑页 / 登录表单修复（v2.0.82，2026-08-14，用户实测反馈）
+
+### 八、编辑书源页按原版重构（v2.0.83，2026-08-14，用户实测反馈）
+
+用户反馈：编辑页有信息了但与原版显示不一致，且要求修改必须生效。对照原版 BookSourceEditActivity.kt（sourceEntities/searchEntities/exploreEntities/infoEntities/tocEntities/contentEntities/reviewEntities 全部 EditEntity 列表 + values-zh 标签）逐项重构：
+
+1. **字段集合/顺序/标签对齐**：基本 Tab 13 字段（含此前缺失的 loginCheckJs/coverDecodeJs/bookUrlPattern/variableComment/concurrentRate/jsLib）；搜索/发现/详情移除原版不展示的 updateTime 行并按原版顺序排列；段评 Tab 改为原版 20 行（summary 5 + detail 8 + quote/reply 7），其余 ReviewRule 字段（reviewUrl/avatarRule/vote 等）原版编辑页也不展示；Tab 8→7（原版无「调试」Tab，调试源为顶栏菜单）。
+2. **设置面板**：收起态显示原版摘要「设置 + 文本 | 启用 | 发现 | CookieJar | 段评 | 事件监听 | 定制按钮」。
+3. **修改生效（关键修复）**：① _buildSource 从被编辑书源透传表单未展示字段（updateTime、段评未展示行），此前每次保存会把这些字段清空——编辑一次即丢数据；② 保存成功后 _afterSaveRefresh 刷新发现页书源缓存（xploreNotifierProvider.refresh），此前发现页内存持有旧对象，保存后再次打开编辑页显示旧值、再保存会把已改值回退（复现：改名保存 → 重开编辑页仍显示旧名）。
+4. **实测**：改名 ShuShanNew → ShuShanNew2，保存后发现页**立即**显示新名、冷启动后持久、重开编辑页回填正确；SQL 恢复原书源名「📚书山聚合」。### 七、编辑页 / 登录表单修复（v2.0.82，2026-08-14，用户实测反馈）
 
 **编辑书源空表单**：发现页书源菜单「编辑」经 pushNamed(sourceEdit, arguments: source) 传完整 BookSource，但路由 sourceEdit: (_) => const SourceEditScreen() 忽略参数 → 打开即空白（「没有任何书源信息」）。修复：路由接参 + SourceEditScreen.source 参数即时回填；sourceUrl 直达入口（阅读页/听书页）在 notifier 内存列表未命中时兜底从 API 拉取；设置面板默认收起（原版为紧凑单行设置），基本字段首屏可见。
 
