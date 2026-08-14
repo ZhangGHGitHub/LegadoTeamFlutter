@@ -270,6 +270,9 @@ try {{ return JSON.stringify(__r); }} catch (e) {{ return String(__r); }}
             .eval(&wrapped)
             .map_err(|e| LegadoError::JsEngine(format!("exploreUrl JS 执行失败: {e}")))?;
 
+        sync_login_cache_from_js(&tag);
+        sync_info_map_from_js(&*guard, &tag)?;
+
         Ok(result.trim().to_string())
     })
 }
@@ -306,43 +309,25 @@ fn bootstrap_explore_js_context(
         }
     }
 
-    let setup = explore_js_context_setup(source)?;
+    let setup = crate::api::source_js_bindings::book_source_js_setup_script(source)?;
     guard
         .eval(&setup)
         .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 上下文初始化失败: {e}")))?;
     Ok(())
 }
 
-/// 发现页 JS 上下文初始化脚本（source + infoMap + baseUrl + java 书源别名）
+/// explore JS 执行后把 variable_store 中的登录缓存写回 DB
 #[cfg(feature = "quickjs")]
-fn explore_js_context_setup(source: &BookSource) -> LegadoResult<String> {
-    let tag = source.book_source_url.clone();
-    let source_json = serde_json::to_string(source)?;
-    let base_url_json = serde_json::to_string(&tag)?;
-    let info_map = explore_info_map::snapshot(&tag).unwrap_or_default();
-    let info_map_json = serde_json::to_string(&info_map).unwrap_or_else(|_| "{}".to_string());
-
-    Ok(format!(
-        r#"
-var baseUrl = {base_url_json};
-var __srcData = {source_json};
-var source = Object.assign({{}}, __srcData);
-source.get = function(k) {{ return get('v_' + baseUrl + '_' + k) || ''; }};
-source.put = function(k, v) {{ put('v_' + baseUrl + '_' + k, String(v)); return v; }};
-source.getVariable = function() {{ return getVariable('sourceVariable_' + baseUrl) || ''; }};
-source.setVariable = function(v) {{ setVariable('sourceVariable_' + baseUrl, String(v)); return v; }};
-var sourceApi = source;
-// 对齐 Android BaseSource.evalJS：java = BookSource（非裸全局 variable_store）
-java.get = function(k) {{ return source.get(k); }};
-java.put = function(k, v) {{ return source.put(k, v); }};
-java.getVariable = function() {{ return source.getVariable(); }};
-java.setVariable = function(v) {{ return source.setVariable(v); }};
-var infoMap = {info_map_json};
-"#,
-        base_url_json = base_url_json,
-        source_json = source_json,
-        info_map_json = info_map_json,
-    ))
+fn sync_login_cache_from_js(source_url: &str) {
+    use legado_js::host_api::variable_store;
+    let header_key = format!("loginHeader_{source_url}");
+    if let Ok(Some(v)) = variable_store::get_variable(&header_key) {
+        let _ = crate::api::source_login_cache::put_login_header(source_url, &v);
+    }
+    let info_key = format!("userInfo_{source_url}");
+    if let Ok(Some(v)) = variable_store::get_variable(&info_key) {
+        let _ = crate::api::source_login_cache::put_login_info(source_url, &v);
+    }
 }
 
 /// action 执行后将 JS infoMap 写回 Rust 存储
@@ -404,6 +389,7 @@ fn eval_explore_action_js(
                 .map_err(|e| LegadoError::JsEngine(format!("explore action JS 执行失败: {e}")))?;
 
             sync_info_map_from_js(&*guard, &tag)?;
+            sync_login_cache_from_js(&tag);
 
             let refresh_explore = ui_action_queue::take_refresh_explore_requested();
             let actions = ui_action_queue::end_collect();
@@ -761,6 +747,46 @@ if(source.get('mode')!=='audio'){throw new Error('source.get failed');}
         assert_eq!(categories.len(), 1);
         assert_eq!(categories[0].title, "线路");
         assert_eq!(categories[0].r#type, "select");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_parse_url_js_aggregate_explore_kinds() {
+        use crate::api::source_login_cache;
+        let main_js = r#"
+function exploreKinds() {
+  var mode = java.get('mode') || '小说';
+  var header = source.getLoginHeader();
+  if (header) java.put('hasHeader', '1');
+  infoMap['模式'] = mode;
+  return [
+    {title: '线路', type: 'select', chars: ['线路A','线路B'], style: {layout_flexBasisPercent: 0.5}},
+    {title: '模式', type: 'select', chars: ['小说','听书'], url: ''},
+    {title: '登录番茄', type: 'button', action: "java.refreshExplore()"},
+    {title: mode + '榜', type: 'url', url: '/rank/hot'}
+  ];
+}
+"#;
+        let source = BookSource {
+            book_source_url: "https://dahuiwolf.test".to_string(),
+            book_source_name: "大灰狼模拟".to_string(),
+            main_js: Some(main_js.to_string()),
+            login_url: Some("function login(){return true;}".to_string()),
+            ..BookSource::default()
+        };
+        source_login_cache::put_login_header(
+            &source.book_source_url,
+            r#"{"Authorization":"Bearer x"}"#,
+        )
+        .unwrap();
+        let source_json = serde_json::to_string(&source).unwrap();
+        let json = explore_parse_url("@js:exploreKinds()", &source_json).unwrap();
+        let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
+        assert!(categories.len() >= 4, "categories: {json}");
+        assert_eq!(categories[0].title, "线路");
+        assert_eq!(categories[0].r#type, "select");
+        assert_eq!(categories[2].title, "登录番茄");
+        assert_eq!(categories[2].r#type, "button");
     }
 
     #[test]
