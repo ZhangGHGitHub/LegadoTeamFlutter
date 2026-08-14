@@ -79,6 +79,34 @@ class ExploreKindLayout extends StatelessWidget {
     final columns = (1.0 / basis).round().clamp(1, 12);
     return (maxWidth - _kChipGap * (columns - 1)) / columns;
   }
+
+  static void _showExploreErrorDialog(BuildContext context, String message) {
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('ERROR'),
+        content: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: SelectableText(
+              message,
+              style: CupertinoTheme.of(ctx).textTheme.textStyle.copyWith(
+                    fontSize: 13,
+                    color: CupertinoColors.label.resolveFrom(ctx),
+                  ),
+            ),
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ExploreKindItem extends ConsumerWidget {
@@ -133,7 +161,16 @@ class _ExploreKindItem extends ConsumerWidget {
         category: category,
         width: width,
         onTap: category.hasUrl
-            ? () => onCategoryTap?.call(category.title, category.url!)
+            ? () {
+                if (category.title.startsWith('ERROR:')) {
+                  ExploreKindLayout._showExploreErrorDialog(
+                    context,
+                    category.url ?? category.title,
+                  );
+                  return;
+                }
+                onCategoryTap?.call(category.title, category.url!);
+              }
             : null,
       ),
     };

@@ -427,7 +427,7 @@ void main() {
           )).called(1);
     });
 
-    test('解析失败时缓存空分类（静默失败）', () async {
+    test('解析失败时展示 ERROR 分类（对齐 Android）', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
       when(() => mockApi.exploreParseUrl(
             any(),
@@ -438,11 +438,13 @@ void main() {
 
       await readNotifier().loadCategories(source);
 
-      expect(readState().categoriesFor('https://s1.com'), isEmpty);
+      final categories = readState().categoriesFor('https://s1.com');
+      expect(categories, hasLength(1));
+      expect(categories!.first.title, startsWith('ERROR:'));
       expect(readState().isLoadingCategories('https://s1.com'), isFalse);
     });
 
-    test('空缓存失败后可重试（非幂等阻塞）', () async {
+    test('ERROR 缓存失败后可重试（非幂等阻塞）', () async {
       when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
       var calls = 0;
       when(() => mockApi.exploreParseUrl(
@@ -459,7 +461,7 @@ void main() {
       await pumpInit();
 
       await readNotifier().loadCategories(source);
-      expect(readState().categoriesFor('https://s1.com'), isEmpty);
+      expect(readState().categoriesFor('https://s1.com')!.first.title, startsWith('ERROR:'));
 
       await readNotifier().loadCategories(source);
       expect(readState().categoriesFor('https://s1.com'), hasLength(1));

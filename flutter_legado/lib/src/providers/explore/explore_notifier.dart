@@ -86,11 +86,11 @@ class ExploreNotifier extends Notifier<ExploreState> {
       }
       return;
     }
-    // 已缓存（非空）或正在加载：幂等返回；空缓存允许重试（对齐 Android 可刷新发现）
+    // 已缓存（非空）或正在加载：幂等返回；空/ERROR 缓存允许重试（对齐 Android 可刷新发现）
     final cached = state.categoriesCache[url];
     if (!force &&
         (state.loadingCategories.contains(url) ||
-            (cached != null && cached.isNotEmpty))) {
+            (cached != null && cached.isNotEmpty && !_isErrorOnlyCache(cached)))) {
       return;
     }
     state = state.copyWith(
@@ -107,10 +107,19 @@ class ExploreNotifier extends Notifier<ExploreState> {
         categoriesCache: {...state.categoriesCache, url: categories},
         loadingCategories: {...state.loadingCategories}..remove(url),
       );
-    } catch (_) {
-      // 解析失败：缓存空分类（对齐原实现静默失败）
+    } catch (e) {
+      // 解析失败：展示 ERROR 行（对齐 Android ExploreKind ERROR:）
+      final msg = _mapError(e);
       state = state.copyWith(
-        categoriesCache: {...state.categoriesCache, url: const []},
+        categoriesCache: {
+          ...state.categoriesCache,
+          url: [
+            ExploreCategory(
+              title: 'ERROR:$msg',
+              url: msg,
+            ),
+          ],
+        },
         loadingCategories: {...state.loadingCategories}..remove(url),
       );
     }
@@ -155,6 +164,12 @@ class ExploreNotifier extends Notifier<ExploreState> {
   String _mapError(Object e) {
     if (e is BridgeError) return e.message;
     return e.toString();
+  }
+
+  /// ERROR 分类缓存视为可重试（对标 Android clearExploreKindsCache）
+  bool _isErrorOnlyCache(List<ExploreCategory> categories) {
+    return categories.length == 1 &&
+        categories.first.title.startsWith('ERROR:');
   }
 
   /// 为 toggle/select 控件初始化 infoMap 默认值（对标 Android ExploreAdapter）
