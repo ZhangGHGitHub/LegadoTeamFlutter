@@ -158,6 +158,78 @@ impl AesCrypto {
         Ok(ct.to_vec())
     }
 
+    /// AES-ECB 解密（NoPadding；密文长度须为 16 的倍数）
+    pub fn decrypt_ecb_nopadding(key: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use aes::{Aes128, Aes192, Aes256};
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockDecryptMut, KeyInit};
+
+        type EcbDec128 = ecb::Decryptor<Aes128>;
+        type EcbDec192 = ecb::Decryptor<Aes192>;
+        type EcbDec256 = ecb::Decryptor<Aes256>;
+
+        if !data.len().is_multiple_of(AES_BLOCK_SIZE) {
+            return Err(LegadoError::Parser(format!(
+                "AES/ECB/NoPadding ciphertext length must be multiple of {}, got {}",
+                AES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let pt = match key.len() {
+            16 => EcbDec128::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            24 => EcbDec192::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            32 => EcbDec256::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("AES", n, &[16, 24, 32])),
+        };
+        Ok(pt.to_vec())
+    }
+
+    /// AES-ECB 加密（NoPadding；明文长度须为 16 的倍数）
+    pub fn encrypt_ecb_nopadding(key: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use aes::{Aes128, Aes192, Aes256};
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockEncryptMut, KeyInit};
+
+        type EcbEnc128 = ecb::Encryptor<Aes128>;
+        type EcbEnc192 = ecb::Encryptor<Aes192>;
+        type EcbEnc256 = ecb::Encryptor<Aes256>;
+
+        if !data.len().is_multiple_of(AES_BLOCK_SIZE) {
+            return Err(LegadoError::Parser(format!(
+                "AES/ECB/NoPadding plaintext length must be multiple of {}, got {}",
+                AES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let ct = match key.len() {
+            16 => EcbEnc128::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            24 => EcbEnc192::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            32 => EcbEnc256::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("AES", n, &[16, 24, 32])),
+        };
+        Ok(ct.to_vec())
+    }
+
     /// AES-ECB 解密（PKCS7 填充）
     pub fn decrypt_ecb(key: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
         use aes::{Aes128, Aes192, Aes256};
@@ -445,9 +517,7 @@ pub fn symmetric_decrypt(
                 }
                 "ECB" => {
                     if nopad {
-                        Err(LegadoError::Parser(
-                            "AES/ECB/NoPadding not implemented".to_string(),
-                        ))
+                        AesCrypto::decrypt_ecb_nopadding(key, data)
                     } else {
                         AesCrypto::decrypt_ecb(key, data)
                     }
@@ -495,9 +565,7 @@ pub fn symmetric_encrypt(
                 }
                 "ECB" => {
                     if nopad {
-                        Err(LegadoError::Parser(
-                            "AES/ECB/NoPadding not implemented".to_string(),
-                        ))
+                        AesCrypto::encrypt_ecb_nopadding(key, data)
                     } else {
                         AesCrypto::encrypt_ecb(key, data)
                     }
@@ -592,6 +660,19 @@ mod tests {
 
         let ct = AesCrypto::encrypt_ecb(&key, &plaintext).expect("encrypt");
         assert_eq!(&ct[..16], &expected_ct[..]);
+    }
+
+    #[test]
+    fn test_aes_ecb_nopadding_roundtrip() {
+        let key = b"0123456789abcdef"; // AES-128
+        let plaintext = b"legado ecb test!"; // 恰好 16 字节
+        let ct = AesCrypto::encrypt_ecb_nopadding(key, plaintext).expect("encrypt");
+        assert_eq!(ct.len(), 16);
+        let pt = AesCrypto::decrypt_ecb_nopadding(key, &ct).expect("decrypt");
+        assert_eq!(&pt, plaintext);
+        // 经 symmetric_decrypt 分派路径
+        let via = symmetric_decrypt("AES/ECB/NoPadding", key, None, &ct).expect("dispatch");
+        assert_eq!(via, plaintext);
     }
 
     // ---- DES ----
