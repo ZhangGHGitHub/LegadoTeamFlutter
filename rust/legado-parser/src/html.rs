@@ -36,18 +36,140 @@ fn own_text_of(elem: ElementRef<'_>) -> String {
 ///
 /// 例：`a.0`、`dd.1`、`span.0`、`dd.2:3`、`li.-1`
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct RangeIdx {
+    start: Option<i32>,
+    end: Option<i32>,
+    step: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct DotIndex {
-    /// `.` 选取 / `!` 排除
+    /// `.`/`!`/`[!` 排除，否则选取
     exclude: bool,
-    /// 已按应用顺序排列的下标（支持负数）
+    /// 单个下标（支持负数）
     indices: Vec<i32>,
+    /// 区间（`a:b[:step]`，含 `[-1:0]` 反向）
+    ranges: Vec<RangeIdx>,
+}
+
+/// 解析可选整数（空串/无 → None）
+fn parse_opt_i32(s: Option<&str>) -> Option<i32> {
+    s.and_then(|t| {
+        let t = t.trim();
+        if t.is_empty() {
+            None
+        } else {
+            t.parse::<i32>().ok()
+        }
+    })
+}
+
+/// 解析 `[...]` 括号索引（规则以 `]` 结尾）
+///
+/// 支持 `[n]`、`[n,m]`、`[!n,m]`、`[a:b]`、`[a:b:step]`、`[-1:0]` 反向。
+fn split_bracket_index(rule: &str) -> Option<(String, DotIndex)> {
+    let open = rule.rfind('[')?;
+    let base = rule[..open].trim();
+    let inner = rule[open + 1..rule.len() - 1].trim();
+    let mut exclude = false;
+    let body = if let Some(b) = inner.strip_prefix('!') {
+        exclude = true;
+        b.trim()
+    } else {
+        inner
+    };
+
+    let mut indices = Vec::new();
+    let mut ranges = Vec::new();
+    for part in body.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if part.contains(':') {
+            let mut seg = part.split(':');
+            let start = parse_opt_i32(seg.next());
+            let end = parse_opt_i32(seg.next());
+            let step = parse_opt_i32(seg.next()).unwrap_or(1);
+            if step != 0 {
+                ranges.push(RangeIdx { start, end, step });
+            }
+        } else if let Ok(n) = part.parse::<i32>() {
+            indices.push(n);
+        }
+    }
+    if indices.is_empty() && ranges.is_empty() {
+        return None;
+    }
+    Some((
+        base.to_string(),
+        DotIndex {
+            exclude,
+            indices,
+            ranges,
+        },
+    ))
+}
+
+/// 解析负下标为实际索引（越界返回 None）
+fn resolve_single(it: i32, len: i32) -> Option<usize> {
+    if it >= 0 && it < len {
+        Some(it as usize)
+    } else if it < 0 && len >= -it {
+        Some((it + len) as usize)
+    } else {
+        None
+    }
+}
+
+/// 展开区间为实际索引（含 `[-1:0]` 反向）
+fn resolve_range(r: &RangeIdx, len: i32) -> Vec<usize> {
+    let v = |o: Option<i32>, default: i32| -> i32 {
+        match o {
+            None => default,
+            Some(s) => {
+                if s < 0 {
+                    len + s
+                } else {
+                    s
+                }
+            }
+        }
+    };
+    let start = v(r.start, 0);
+    let end = v(r.end, len - 1);
+    let step = if r.step == 0 { 1 } else { r.step.abs() };
+    let mut out = Vec::new();
+    let mut i = start;
+    if start <= end {
+        while i <= end {
+            if i >= 0 && i < len {
+                out.push(i as usize);
+            }
+            i += step;
+        }
+    } else {
+        while i >= end {
+            if i >= 0 && i < len {
+                out.push(i as usize);
+            }
+            i -= step;
+        }
+    }
+    out
 }
 
 /// 从规则末尾拆出点号索引；无索引时返回 `(rule, None)`
 fn split_dot_index(rule: &str) -> (String, Option<DotIndex>) {
     let rus = rule.trim();
-    if rus.is_empty() || rus.ends_with(']') {
-        // `]` 结尾走 [] 索引写法，此处不处理
+    if rus.is_empty() {
+        return (rus.to_string(), None);
+    }
+    // G9：`[...]` 括号索引
+    if rus.ends_with(']') {
+        if let Some((base, idx)) = split_bracket_index(rus) {
+            return (base, Some(idx));
+        }
         return (rus.to_string(), None);
     }
 
@@ -99,6 +221,7 @@ fn split_dot_index(rule: &str) -> (String, Option<DotIndex>) {
                     Some(DotIndex {
                         exclude: rl == '!',
                         indices,
+                        ranges: vec![],
                     }),
                 );
             }
@@ -119,14 +242,14 @@ fn apply_dot_index<'a>(elements: Vec<ElementRef<'a>>, index: &DotIndex) -> Vec<E
     let len = elements.len() as i32;
     let mut resolved: Vec<usize> = Vec::new();
     for &it in &index.indices {
-        let idx = if it >= 0 && it < len {
-            Some(it as usize)
-        } else if it < 0 && len >= -it {
-            Some((it + len) as usize)
-        } else {
-            None
-        };
-        if let Some(i) = idx {
+        if let Some(i) = resolve_single(it, len) {
+            if !resolved.contains(&i) {
+                resolved.push(i);
+            }
+        }
+    }
+    for r in &index.ranges {
+        for i in resolve_range(r, len) {
             if !resolved.contains(&i) {
                 resolved.push(i);
             }
@@ -1065,6 +1188,22 @@ mod tests {
     }
 
     #[test]
+    fn test_bracket_index() {
+        let parser = HtmlParser::new();
+        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[0]").unwrap(), vec!["第一章"]);
+        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[2]").unwrap(), vec!["第三章"]);
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item[0,2]").unwrap(),
+            vec!["第一章", "第三章"]
+        );
+        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[-1]").unwrap(), vec!["第三章"]);
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item[!1]").unwrap(),
+            vec!["第一章", "第三章"]
+        );
+    }
+
+    #[test]
     fn test_get_text_by_id() {
         let parser = HtmlParser::new();
         let result = parser.get_text(SAMPLE_HTML, "#title").unwrap();
@@ -1377,7 +1516,8 @@ mod tests {
                 "a".into(),
                 Some(DotIndex {
                     exclude: false,
-                    indices: vec![0]
+                    indices: vec![0],
+                    ranges: vec![]
                 })
             )
         );
@@ -1387,7 +1527,8 @@ mod tests {
                 "dd".into(),
                 Some(DotIndex {
                     exclude: false,
-                    indices: vec![2, 3]
+                    indices: vec![2, 3],
+                    ranges: vec![]
                 })
             )
         );
@@ -1399,7 +1540,8 @@ mod tests {
                 "li".into(),
                 Some(DotIndex {
                     exclude: true,
-                    indices: vec![-1]
+                    indices: vec![-1],
+                    ranges: vec![]
                 })
             )
         );
