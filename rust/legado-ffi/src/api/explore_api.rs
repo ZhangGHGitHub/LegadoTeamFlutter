@@ -496,6 +496,12 @@ async fn explore_books_async(
         )));
     }
 
+    // loginCheckJs 登录检测（对齐原版 WebBook.exploreBookAwait:148-172 +
+    // web_book::RealBookSourceFetcher::execute_login_check 双路径）：
+    // 未登录上抛 LoginRequired，由 UI 引导登录，避免把登录页/验证页当正常内容解析。
+    // — DeepSeek Harness + Bridge（2026-08-14 发现页修复 R3）
+    explore_login_check(source, &response.body, &response.url, response.status)?;
+
     let body = response.body;
 
     // 对齐原版 BookList：explore.bookList 为空时回退 search 规则
@@ -516,7 +522,18 @@ async fn explore_books_async(
             .unwrap_or("")
     };
 
-    let base_url = final_url.clone();
+    // `-`/`+` 前缀（对齐原版 BookList.kt:90-96）：`-` 反转结果、`+` 剥离前缀 — A6
+    let mut reverse = false;
+    let mut book_list_rule = book_list_rule.to_string();
+    if book_list_rule.starts_with('-') {
+        reverse = true;
+        book_list_rule = book_list_rule[1..].to_string();
+    } else if book_list_rule.starts_with('+') {
+        book_list_rule = book_list_rule[1..].to_string();
+    }
+
+    // 重定向后的最终 URL 作为 base（对齐原版 WebBook.kt:173-181 用 res.url）— A5
+    let base_url = response.url.clone();
     let t_parse = std::time::Instant::now();
     let analyzer =
         crate::js_executor::construct_analyzer(body, base_url.clone(), &source.book_source_url);
@@ -524,7 +541,9 @@ async fn explore_books_async(
     let elements = if book_list_rule.is_empty() {
         vec![analyzer.content().to_string()]
     } else {
-        analyzer.get_elements(book_list_rule).unwrap_or_default()
+        analyzer
+            .get_elements(&book_list_rule)
+            .unwrap_or_default()
     };
 
     // 规则提到循环外；单一 AnalyzeRule + setContent 复用（对齐原版 BookList）
@@ -567,23 +586,38 @@ async fn explore_books_async(
     } else {
         explore_rule.and_then(|r| r.kind.as_deref()).unwrap_or("")
     };
+    let word_count_rule = if use_search_fallback {
+        search_rule
+            .and_then(|r| r.word_count.as_deref())
+            .unwrap_or("")
+    } else {
+        explore_rule
+            .and_then(|r| r.word_count.as_deref())
+            .unwrap_or("")
+    };
 
     let mut elem_analyzer =
         crate::js_executor::construct_analyzer(String::new(), base_url.clone(), &source.book_source_url);
 
     let mut results = Vec::with_capacity(elements.len().min(50));
-    for elem in elements.iter().take(50) {
+    for elem in elements.iter() {
         elem_analyzer.set_content(elem.clone());
 
         let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
         if name.is_empty() {
             continue;
         }
-
-        let author = elem_analyzer.get_string(author_rule).unwrap_or_default();
+        // 书名/作者清洗（对齐原版 BookHelp.formatBookName/formatBookAuthor）— A2
+        let name = format_book_name(&name);
+        if name.is_empty() {
+            continue;
+        }
+        let author = format_book_author(&elem_analyzer.get_string(author_rule).unwrap_or_default());
         let book_url_raw = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
+        // bookUrl 规则解析为空时回退当前页（对齐原版 BookList.kt:282-284 +
+        // AnalyzeRule.kt:369-375 的 isUrl=true 空值回退 baseUrl；与 search.rs:934-938 一致）— A4
         let book_url = if book_url_raw.is_empty() {
-            String::new()
+            base_url.clone()
         } else {
             AnalyzeUrl::get_absolute_url(&base_url, &book_url_raw)
         };
@@ -600,7 +634,8 @@ async fn explore_books_async(
             if v.is_empty() {
                 None
             } else {
-                Some(v)
+                // 简介净化（对齐原版 HtmlFormatter.formatIntro 去标签）— A3
+                Some(format_intro(&v))
             }
         };
         let latest_chapter = {
@@ -628,6 +663,14 @@ async fn explore_books_async(
             }
         };
 
+        // 字数格式化（对齐原版 wordCountFormat；与搜索路径一致）— A7
+        let word_count = {
+            let v = elem_analyzer
+                .get_string(word_count_rule)
+                .unwrap_or_default();
+            super::search::word_count_format(&v)
+        };
+
         results.push(WebSearchResult {
             name,
             author,
@@ -637,8 +680,12 @@ async fn explore_books_async(
             latest_chapter,
             source_url: source.book_source_url.clone(),
             kind,
-            word_count: None,
+            word_count,
         });
+    }
+    // `-` 前缀反转（对齐原版 BookList.kt:145-147）— A6
+    if reverse {
+        results.reverse();
     }
     eprintln!(
         "[explore] parse {} books from {} elements in {:?}",
@@ -648,6 +695,202 @@ async fn explore_books_async(
     );
 
     Ok(results)
+}
+
+/// explore 链路 loginCheckJs 登录检测（双路径）
+///
+/// 对齐原版 `WebBook.exploreBookAwait`（WebBook.kt:148-172）与
+/// `web_book::RealBookSourceFetcher::execute_login_check`：
+/// - 成功路径：正常响应 eval 判定未登录 → 构造 errResponse(500) 二次 eval
+///   （JS 可自动登录并返回新响应）→ 仍未登录则上抛 `LoginRequired`
+/// - JS 环境不兼容（依赖 java.* 等）→ 降级放行，避免阻断
+/// — DeepSeek Harness + Bridge（2026-08-14 发现页修复 R3）
+fn explore_login_check(
+    source: &BookSource,
+    response_body: &str,
+    response_url: &str,
+    response_code: u16,
+) -> LegadoResult<()> {
+    let login_check_js = match &source.login_check_js {
+        Some(js) if !js.trim().is_empty() => js,
+        _ => return Ok(()), // 无 loginCheckJs 配置，跳过
+    };
+
+    match crate::js_executor::execute_login_check_js(
+        login_check_js,
+        response_body,
+        response_url,
+        response_code,
+        &source.book_source_url,
+    ) {
+        Ok(()) => Ok(()),
+        Err(crate::js_executor::LoginCheckError::NotLoggedIn(msg)) => {
+            let err_body = format!("HTTP/1.1 500 Internal Server Error\n\n{msg}");
+            match crate::js_executor::execute_login_check_js(
+                login_check_js,
+                &err_body,
+                response_url,
+                500,
+                &source.book_source_url,
+            ) {
+                Ok(()) => Ok(()),
+                Err(crate::js_executor::LoginCheckError::NotLoggedIn(_)) => {
+                    Err(LegadoError::LoginRequired(
+                        "书源需要登录，请先在书源菜单中登录后重试".into(),
+                    ))
+                }
+                Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
+                    eprintln!(
+                        "[explore] loginCheckJs errResponse 路径执行失败（降级放行）: {e}"
+                    );
+                    Ok(())
+                }
+            }
+        }
+        Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
+            eprintln!("[explore] loginCheckJs 执行失败（环境不兼容，降级放行）: {e}");
+            Ok(())
+        }
+    }
+}
+
+// ─── 字段清洗（对齐原版 BookHelp / HtmlFormatter） ────────────────────────────
+
+/// 书名清洗（对齐原版 `BookHelp.formatBookName`：去「 作者xxx」「 xx 著」后缀）— A2
+fn format_book_name(name: &str) -> String {
+    let re = regex::Regex::new(r"\s+作\s*者.*|\s+\S+\s+著");
+    let cleaned = match re {
+        Ok(re) => re.replace_all(name, "").into_owned(),
+        Err(_) => name.to_string(),
+    };
+    cleaned.trim().to_string()
+}
+
+/// 作者清洗（对齐原版 `BookHelp.formatBookAuthor`：去「作者:xxx」前缀、「 xx 著」后缀）— A2
+fn format_book_author(author: &str) -> String {
+    let re = regex::Regex::new(r"^\s*作\s*者[:：\s]+|\s+著");
+    let cleaned = match re {
+        Ok(re) => re.replace_all(author, "").into_owned(),
+        Err(_) => author.to_string(),
+    };
+    cleaned.trim().to_string()
+}
+
+/// 简介净化（对齐原版 `HtmlFormatter.formatIntro` 的可见行为：去 HTML 标签、
+/// 解码常见实体、压缩空白）— A3
+fn format_intro(raw: &str) -> String {
+    if raw.is_empty() {
+        return String::new();
+    }
+    // 去标签（含 <br>/<p> 等块级转空格）
+    let no_tag = regex::Regex::new(r"<[^>]+>")
+        .map(|re| re.replace_all(raw, " ").into_owned())
+        .unwrap_or_else(|_| raw.to_string());
+    // 常见实体解码
+    let decoded = no_tag
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    // 压缩空白
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// ─── 字段清洗 / 登录检测测试（发现页修复 R3/A2/A3/A6） ────────────────────────
+
+#[cfg(test)]
+mod field_clean_tests {
+    use super::*;
+
+    #[test]
+    fn test_format_book_name_strips_author_suffix() {
+        assert_eq!(format_book_name("斗破苍穹 作者天蚕土豆"), "斗破苍穹");
+        assert_eq!(format_book_name("凡人修仙传 忘语 著"), "凡人修仙传");
+        assert_eq!(format_book_name("  神墓  "), "神墓");
+    }
+
+    #[test]
+    fn test_format_book_author_strips_prefix_suffix() {
+        assert_eq!(format_book_author("作者:天蚕土豆"), "天蚕土豆");
+        assert_eq!(format_book_author("作者： 忘语"), "忘语");
+        assert_eq!(format_book_author("天蚕土豆 著"), "天蚕土豆");
+        assert_eq!(format_book_author("  猫腻  "), "猫腻");
+    }
+
+    #[test]
+    fn test_format_intro_strips_html() {
+        assert_eq!(
+            format_intro("<p>简介内容</p><br/>第二段 &amp; 特殊字符"),
+            "简介内容 第二段 & 特殊字符"
+        );
+        assert_eq!(format_intro(""), "");
+    }
+
+    #[test]
+    fn test_reverse_prefix_flag_semantics() {
+        // `-` 前缀剥离 + reverse 标记（A6）
+        let mut rule = "-.list@css:li".to_string();
+        let mut reverse = false;
+        if rule.starts_with('-') {
+            reverse = true;
+            rule = rule[1..].to_string();
+        }
+        assert!(reverse);
+        assert_eq!(rule, ".list@css:li");
+
+        // `+` 前缀仅剥离
+        let mut rule2 = "+.list@css:li".to_string();
+        let mut reverse2 = false;
+        if rule2.starts_with('-') {
+            reverse2 = true;
+            rule2 = rule2[1..].to_string();
+        } else if rule2.starts_with('+') {
+            rule2 = rule2[1..].to_string();
+        }
+        assert!(!reverse2);
+        assert_eq!(rule2, ".list@css:li");
+    }
+}
+
+#[cfg(all(test, feature = "quickjs"))]
+mod login_check_tests {
+    use super::*;
+    use legado_core::models::BookSource;
+
+    fn source_with_login_check(js: &str) -> BookSource {
+        serde_json::from_str::<BookSource>(&serde_json::json!({
+            "bookSourceUrl": "https://login-explore.example.com",
+            "bookSourceName": "登录探索测试",
+            "loginCheckJs": js,
+        }).to_string())
+        .unwrap()
+    }
+
+    #[test]
+    fn test_explore_login_check_not_logged_in_raises() {
+        // loginCheckJs 返回 "false"（未登录）→ 二次 errResponse(500) eval 仍 false
+        // → 上抛 LoginRequired
+        let source = source_with_login_check("false;");
+        let err = explore_login_check(&source, "<html>登录页</html>", "https://a.com/explore", 200)
+            .unwrap_err();
+        assert!(matches!(err, LegadoError::LoginRequired(_)));
+    }
+
+    #[test]
+    fn test_explore_login_check_no_config_skips() {
+        let source = BookSource::default();
+        let r = explore_login_check(&source, "<html>x</html>", "https://a.com", 200);
+        assert!(r.is_ok(), "无 loginCheckJs 配置应跳过检测");
+    }
+
+    #[test]
+    fn test_explore_login_check_logged_in_ok() {
+        let source = source_with_login_check("true;");
+        let r = explore_login_check(&source, "<html>正常页</html>", "https://a.com/explore", 200);
+        assert!(r.is_ok(), "已登录应放行");
+    }
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────

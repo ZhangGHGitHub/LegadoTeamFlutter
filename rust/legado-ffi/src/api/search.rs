@@ -1002,7 +1002,9 @@ pub(crate) fn book_type_of_source(source_type: i32) -> i32 {
 
 /// 字数格式化（对齐原版 `StringUtils.wordCountFormat(String)`：
 /// 纯数字 >10000 → 「x.x万字」；>0 → 「n字」；非数字原样；空/<=0 → None）
-fn word_count_format(raw: &str) -> Option<String> {
+///
+/// `pub(crate)`：explore 链路复用（发现页修复 A7）。— DeepSeek Harness + Bridge
+pub(crate) fn word_count_format(raw: &str) -> Option<String> {
     let t = raw.trim();
     if t.is_empty() {
         return None;
