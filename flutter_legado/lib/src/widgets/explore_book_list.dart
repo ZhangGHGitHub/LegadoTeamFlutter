@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/explore/explore_show_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
@@ -319,16 +320,36 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   }
 }
 
-class _BookItem extends StatelessWidget {
+class _BookItem extends ConsumerWidget {
   final SearchBook book;
   final VoidCallback onTap;
 
   const _BookItem({super.key, required this.book, required this.onTap});
 
+  /// 是否已在书架（对齐原版 ExploreShowViewModel.isInBookShelf 三元匹配：
+  /// 「名-作者」/「名」（作者空退化）/「bookUrl」）— 发现页修复 R5
+  bool _isInShelf(List<Book> shelfBooks) {
+    final name = book.name.trim();
+    final author = book.author.trim();
+    if (name.isEmpty && book.bookUrl.isEmpty) return false;
+    return shelfBooks.any((b) {
+      if (b.bookUrl == book.bookUrl) return true;
+      final bn = b.name.trim();
+      final ba = b.author.trim();
+      if (author.isNotEmpty && ba.isNotEmpty) {
+        return '$bn-$ba' == '$name-$author';
+      }
+      return author.isEmpty && ba.isEmpty && bn == name;
+    });
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final inShelf = ref.watch(
+      bookshelfNotifierProvider.select((s) => _isInShelf(s.books)),
+    );
 
     return Material(
       color: Colors.transparent,
@@ -350,15 +371,30 @@ class _BookItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      book.name,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w500,
-                        height: 1.2,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            book.name,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: colorScheme.onSurface,
+                              fontWeight: FontWeight.w500,
+                              height: 1.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // 在架标记（对齐原版 ivInBookshelf；轻量系统灰阶角标）— R5
+                        if (inShelf) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.check_circle,
+                            size: 15,
+                            color: colorScheme.tertiary,
+                          ),
+                        ],
+                      ],
                     ),
                     if (book.author.isNotEmpty) ...[
                       const SizedBox(height: 4),

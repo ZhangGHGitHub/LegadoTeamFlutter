@@ -1,4 +1,6 @@
 // ExploreShowScreen 页码控件 widget 测试
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -67,5 +69,54 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('选择页码'), findsOneWidget);
+  });
+
+  testWidgets('顶栏「加入书架」按钮批量导入已加载书籍（R5）', (tester) async {
+    when(() => mockApi.importBooks(any())).thenAnswer((_) async => 2);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: const MaterialApp(
+          home: ExploreShowScreen(args: args),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 批量入架按钮存在
+    expect(find.byIcon(Icons.playlist_add), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.playlist_add));
+    await tester.pumpAndSettle();
+
+    // 调用 importBooks 且传入 2 本书
+    final captured = verify(() => mockApi.importBooks(captureAny())).captured;
+    expect(captured, hasLength(1));
+    final jsonArray = captured.single as String;
+    final decoded = jsonDecode(jsonArray) as List;
+    expect(decoded.length, equals(2));
+    expect(find.text('已加入书架 2 本'), findsOneWidget);
+  });
+
+  testWidgets('无已加载书籍时点「加入书架」提示', (tester) async {
+    when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+        .thenAnswer((_) async => <SearchBook>[]);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: const MaterialApp(
+          home: ExploreShowScreen(args: args),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.playlist_add));
+    await tester.pumpAndSettle();
+
+    expect(find.text('没有已加载的书籍'), findsOneWidget);
+    verifyNever(() => mockApi.importBooks(any()));
   });
 }
