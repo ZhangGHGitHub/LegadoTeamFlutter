@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.77] - 2026-08-14
+
+### Fixed
+- [UI] 登录红屏修复：全局 TabBarTheme.tabAlignment=start 对非 scrollable TabBar 断言失败（TabAlignment.start is only valid for scrollable tab bars）；登录页（SourceLoginScreen）与应用日志页（AppLogScreen）TabBar 显式 tabAlignment: fill（对齐 toc_screen 既有处理），新增渲染回归测试。验证：flutter 1185 全过
+
 ## [2.0.76] - 2026-08-14
 
 ### Fixed
