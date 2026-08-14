@@ -101,12 +101,40 @@ impl RealBookSourceFetcher {
         Ok(Self { client })
     }
 
-    /// 解析书源 header 字段为请求头
+    /// 解析书源 header 字段为请求头（含登录头与 JS Cookie 合并）
+    ///
+    /// 对齐原版 `BaseSource.getHeaderMap(hasLoginHeader=true)`：
+    /// 1. 书源静态 `header` 字段（JSON map）
+    /// 2. 合并 `source_login_cache::get_login_header`（登录后保存的 loginHeader，
+    ///    覆盖同名键，对齐原版 putAll 顺序 loginHeader 在后）
+    /// 3. 合并 JS `java.setCookie` 写入的全局 Cookie（GLOBAL_COOKIES）——
+    ///    仅当尚无 Cookie 头时设置，保证 JS 侧登录 Cookie 随请求发送
+    ///    （对齐原版 CookieStore 单存储自动附加语义）— DeepSeek Harness + Bridge
     fn parse_source_headers(source: &BookSource) -> Option<HashMap<String, String>> {
-        source
+        let mut headers: HashMap<String, String> = source
             .header
             .as_ref()
-            .and_then(|h| serde_json::from_str::<HashMap<String, String>>(h).ok())
+            .and_then(|h| serde_json::from_str(h).ok())
+            .unwrap_or_default();
+
+        if let Some(login_header_json) =
+            crate::api::source_login_cache::get_login_header(&source.book_source_url)
+        {
+            if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
+                headers.extend(map);
+            }
+        }
+
+        let js_cookie = legado_js::host_api::cookie_store::get_cookie(&source.book_source_url);
+        if !js_cookie.is_empty() && !headers.contains_key("Cookie") {
+            headers.insert("Cookie".to_string(), js_cookie);
+        }
+
+        if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        }
     }
 
     /// 根据 AnalyzeUrl 解析结果发起 HTTP 请求，返回响应体文本

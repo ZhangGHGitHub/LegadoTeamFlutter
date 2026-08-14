@@ -434,6 +434,37 @@ pub mod ffi {
         )?)
     }
 
+    /// 保存书源登录用户信息（对齐原版 `BaseSource.putLoginInfo` →
+    /// CacheManager `userInfo_<key>`；V2 login 命令与手动登录共用）
+    ///
+    /// `source_url` — 书源 URL；`info_json` — 用户信息 JSON（原样存储）
+    pub fn source_put_login_info(source_url: String, info_json: String) -> Result<(), BridgeError> {
+        crate::api::source_login_cache::put_login_info(&source_url, &info_json)?;
+        Ok(())
+    }
+
+    /// 保存书源登录头（对齐原版 `BaseSource.putLoginHeader` →
+    /// CacheManager `loginHeader_<key>`，请求路径自动合并）
+    ///
+    /// `source_url` — 书源 URL；`header_json` — header map JSON（如 `{"Cookie":"..."}`）
+    pub fn source_put_login_header(
+        source_url: String,
+        header_json: String,
+    ) -> Result<(), BridgeError> {
+        crate::api::source_login_cache::put_login_header(&source_url, &header_json)?;
+        Ok(())
+    }
+
+    /// 读取书源登录用户信息（`userInfo_<key>`），无则返回空字符串
+    pub fn source_get_login_info(source_url: String) -> Result<String, BridgeError> {
+        Ok(crate::api::source_login_cache::get_login_info(&source_url).unwrap_or_default())
+    }
+
+    /// 读取书源登录头（`loginHeader_<key>`），无则返回空字符串
+    pub fn source_get_login_header(source_url: String) -> Result<String, BridgeError> {
+        Ok(crate::api::source_login_cache::get_login_header(&source_url).unwrap_or_default())
+    }
+
     // ─── 搜索 ─────────────────────────────────────────────────
 
     /// 搜索书籍（返回 JSON 数组）

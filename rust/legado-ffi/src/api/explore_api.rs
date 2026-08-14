@@ -310,17 +310,10 @@ fn bootstrap_explore_js_context(
 }
 
 /// explore JS 执行后把 variable_store 中的登录缓存写回 DB
+/// （公共实现见 [`crate::api::source_login_cache::sync_login_cache_from_js`]）
 #[cfg(feature = "quickjs")]
 fn sync_login_cache_from_js(source_url: &str) {
-    use legado_js::host_api::variable_store;
-    let header_key = format!("loginHeader_{source_url}");
-    if let Ok(Some(v)) = variable_store::get_variable(&header_key) {
-        let _ = crate::api::source_login_cache::put_login_header(source_url, &v);
-    }
-    let info_key = format!("userInfo_{source_url}");
-    if let Ok(Some(v)) = variable_store::get_variable(&info_key) {
-        let _ = crate::api::source_login_cache::put_login_info(source_url, &v);
-    }
+    crate::api::source_login_cache::sync_login_cache_from_js(source_url);
 }
 
 /// action 执行后将 JS infoMap 写回 Rust 存储
@@ -440,11 +433,29 @@ async fn explore_books_async(
     url: &str,
     page: i32,
 ) -> LegadoResult<Vec<WebSearchResult>> {
-    // 解析书源 header
-    let source_headers: Option<HashMap<String, String>> = source
+    // 解析书源 header（对齐原版 getHeaderMap(hasLoginHeader=true)：
+    // 静态 header + loginHeader 覆盖 + JS setCookie 全局 Cookie 兜底）— DeepSeek Harness + Bridge
+    let mut source_headers: HashMap<String, String> = source
         .header
         .as_ref()
-        .and_then(|h| serde_json::from_str(h).ok());
+        .and_then(|h| serde_json::from_str(h).ok())
+        .unwrap_or_default();
+    if let Some(login_header_json) =
+        crate::api::source_login_cache::get_login_header(&source.book_source_url)
+    {
+        if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
+            source_headers.extend(map);
+        }
+    }
+    let js_cookie = legado_js::host_api::cookie_store::get_cookie(&source.book_source_url);
+    if !js_cookie.is_empty() && !source_headers.contains_key("Cookie") {
+        source_headers.insert("Cookie".to_string(), js_cookie);
+    }
+    let source_headers = if source_headers.is_empty() {
+        None
+    } else {
+        Some(source_headers)
+    };
 
     // 规则书源路径
     let info_map = explore_info_map::snapshot(&source.book_source_url).unwrap_or_default();

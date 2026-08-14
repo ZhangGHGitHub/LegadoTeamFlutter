@@ -74,6 +74,13 @@ fn json_param_to_string(value: &serde_json::Value) -> String {
 /// - `user_input_json` — [`LoginActionV2Request`] JSON（action/stateJson/formJson）
 ///
 /// JS 返回 null/undefined（无命令）时返回空字符串。
+///
+/// **登录结果持久化**（对齐 Kotlin `SourceLoginV2Delegate.dispatch`：
+/// `command.loginJson?.let { source.putLoginInfo(it) }`）：
+/// 返回命令含 `login` 时自动把 login JSON 写入 `source_login_cache`
+/// （`userInfo_<url>`），并同步 JS `variable_store` 中写入的
+/// `loginHeader_<url>`/`userInfo_<url>`，保证后续请求可消费登录态。
+/// — DeepSeek Harness + Bridge
 pub fn eval_login_action_v2(source_json: &str, user_input_json: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
     let request: LoginActionV2Request = serde_json::from_str(user_input_json)?;
@@ -82,6 +89,17 @@ pub fn eval_login_action_v2(source_json: &str, user_input_json: &str) -> LegadoR
     let result = eval_with_quickjs(&source, |eval_js| {
         login_ui_v2::eval_login_action_v2(&source, &request.action, &state, &form, eval_js)
     })?;
+
+    // 1) login 命令 → putLoginInfo 落库（对齐 SourceLoginV2Delegate.kt:268-274）
+    if let Some(json) = result.as_deref() {
+        let command = login_ui_v2::parse_action_result(Some(json));
+        if let Some(login_json) = command.login_json {
+            crate::api::source_login_cache::put_login_info(&source.book_source_url, &login_json)?;
+        }
+    }
+    // 2) 同步 JS variable_store → source_login_cache（loginHeader/userInfo）
+    crate::api::source_login_cache::sync_login_cache_from_js(&source.book_source_url);
+
     Ok(result.unwrap_or_default())
 }
 
@@ -248,6 +266,33 @@ mod tests {
         let command = login_ui_v2::parse_action_result(Some(&raw));
         assert!(command.login_json.unwrap().contains("+86138-tk"));
         assert!(command.close);
+    }
+
+    /// login 命令应自动落库 userInfo（对齐 SourceLoginV2Delegate.putLoginInfo）
+    /// — DeepSeek Harness + Bridge
+    #[test]
+    fn test_eval_login_action_v2_persists_login_info() {
+        let source_url = "https://login-v2.example.com";
+        crate::api::source_login_cache::remove_login_info(source_url).unwrap();
+
+        let source_json = v2_source_json();
+        let raw = eval_login_action_v2(
+            &source_json,
+            r#"{"action":"submit","stateJson":{"phone":"+86138"},"formJson":{}}"#,
+        )
+        .unwrap();
+        let command = login_ui_v2::parse_action_result(Some(&raw));
+        assert!(command.close, "submit 应返回 close");
+
+        // login 命令应已写入 source_login_cache（userInfo_<url>）
+        let info = crate::api::source_login_cache::get_login_info(source_url);
+        assert!(info.is_some(), "login 命令应自动落库 userInfo_<url>");
+        assert!(
+            info.as_deref().unwrap().contains("+86138-tk"),
+            "落库内容应为 login JSON"
+        );
+
+        crate::api::source_login_cache::remove_login_info(source_url).unwrap();
     }
 
     #[test]

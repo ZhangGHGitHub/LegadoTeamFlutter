@@ -104,6 +104,31 @@ pub fn remove_login_info(source_url: &str) -> LegadoResult<()> {
     delete_cached(&user_info_key(source_url))
 }
 
+/// 从 JS `variable_store` 同步登录缓存（对齐原版 `evalJS` 中
+/// `putLoginHeader`/`putLoginInfo` 写 CacheManager 的语义）
+///
+/// 书源 JS 经 `java.putLoginHeader(x)`/`java.putLoginInfo(x)` 写入
+/// `loginHeader_<url>`/`userInfo_<url>` 变量；本函数将其落库到
+/// `source_login_cache`（内存 + DB），使请求路径可合并登录头。
+/// 非 quickjs 构建下 variable_store 不可用，静默跳过。
+///
+/// 复用方：explore 分类 JS 执行后（explore_api）、登录 V2 动作执行后
+/// （source_login_v2_api），保证 JS 侧登录结果不丢失。— DeepSeek Harness + Bridge
+pub fn sync_login_cache_from_js(source_url: &str) {
+    #[cfg(feature = "quickjs")]
+    {
+        use legado_js::host_api::variable_store;
+        let header_key = format!("loginHeader_{source_url}");
+        if let Ok(Some(v)) = variable_store::get_variable(&header_key) {
+            let _ = put_login_header(source_url, &v);
+        }
+        let info_key = format!("userInfo_{source_url}");
+        if let Ok(Some(v)) = variable_store::get_variable(&info_key) {
+            let _ = put_login_info(source_url, &v);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
