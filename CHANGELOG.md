@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.89] - 2026-08-14
+
+### Fixed
+- [UI] 编辑书源页标题「编辑书源」显示不全（用户反馈只显示「编辑」）：
+  - 根因：窄屏/系统字体放大时 AppBar 标题空间被 4 个操作按钮挤压，20sp 标题放不下被省略
+  - 修复：① 顶栏操作按钮触控区 48→40dp（visualDensity compact），标题空间增加约 32dp；② LegadoAppBar 标题统一 FittedBox 自适应缩放兜底——空间充足时保持 20sp 原版字号，极端窄屏/超大字体时完整显示不截断（实测 font_scale 1.3 与 1.0 下标题均 4 字完整）
+- [Tool] parity 忽略名单补「编辑内容/保存」（actions 压缩属有意调整）
+- 验证：flutter analyze 0 错误、flutter test 1188 全过、编辑页自动比对 MATCH、双模拟器冒烟 5/5
+
 ## [2.0.88] - 2026-08-14
 
 ### Fixed

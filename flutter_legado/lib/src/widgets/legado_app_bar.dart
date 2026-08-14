@@ -93,16 +93,20 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
-  /// 标题防截断保护：Text 标题强制单行 + 省略号，避免窄屏/系统字体
-  /// 放大时 AppBar 标题出现「半个字」的难看截断（正常空间下不生效）
+  /// 标题防截断保护：Text 标题单行 + FittedBox 自适应缩放，
+  /// 窄屏/系统字体放大时完整显示标题（不出现半个字/省略号）；
+  /// 空间充足时字号不变（20sp 与原版一致）
   Widget? _safeTitle(Widget? title) {
     if (title is Text) {
-      return Text(
-        title.data ?? '',
-        style: title.style,
-        textAlign: title.textAlign,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title.data ?? '',
+          style: title.style,
+          textAlign: title.textAlign,
+          maxLines: 1,
+        ),
       );
     }
     return title;

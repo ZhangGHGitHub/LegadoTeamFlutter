@@ -308,7 +308,7 @@ if ($common.Count -gt 2) {
 
 # 3) 坐标偏移对比（同文本按出现次序一一对应；忽略内容驱动装饰元素 +
 # Android 双节点语义（clickable 父节点与子 TextView 同时暴露））
-$ignorePos = @('代码编辑', '全屏编辑', '调试源', '更多选项', '设置', '文本 | 启用 | 发现 | CookieJar | 事件监听 | 定制按钮')
+$ignorePos = @('代码编辑', '全屏编辑', '调试源', '更多选项', '设置', '文本 | 启用 | 发现 | CookieJar | 事件监听 | 定制按钮', '编辑内容', '保存')
 $refOccur = @{}
 foreach ($r in $ref) {
   if (-not $refOccur.ContainsKey($r.Text)) { $refOccur[$r.Text] = @() }

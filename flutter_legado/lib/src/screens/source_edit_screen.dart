@@ -1085,18 +1085,23 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
           IconButton(
             icon: const Icon(Icons.code),
             tooltip: '编辑内容',
+            // 压缩触控区 48→40dp：给标题留出更多空间（字体放大时标题
+            // 保持原版字号完整显示，避免截断/缩放）
+            visualDensity: VisualDensity.compact,
             onPressed: _showFullscreenEdit,
           ),
           // 保存（对齐原版 menu_save：仅图标，无文字）
           IconButton(
             icon: const Icon(Icons.save),
             tooltip: '保存',
+            visualDensity: VisualDensity.compact,
             onPressed: _saving ? null : _save,
           ),
           // 调试源（对齐原版 menu_debug_source，图标位）
           IconButton(
             icon: const Icon(Icons.bug_report),
             tooltip: '调试源',
+            visualDensity: VisualDensity.compact,
             onPressed: _saving ? null : _debugSource,
           ),
           // overflow 菜单（对齐原版 source_edit.xml 折叠项顺序/内容）
@@ -1106,6 +1111,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
             builder: (btnContext) => IconButton(
               icon: const Icon(Icons.more_vert),
               tooltip: '更多选项',
+              visualDensity: VisualDensity.compact,
               onPressed: () => _showOverflowMenu(btnContext),
             ),
           ),
@@ -1330,6 +1336,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
                             ),
                             Text(
                               summary,
+                              // 对齐原版 tv_options_summary：单行省略
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
