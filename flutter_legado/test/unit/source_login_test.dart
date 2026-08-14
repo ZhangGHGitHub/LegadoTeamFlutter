@@ -39,30 +39,35 @@ void main() {
       expect(state.isSaving, isFalse);
     });
 
-    test('load 解析已保存的登录信息', () async {
-      final saved = jsonEncode({
-        'token': 'abc123',
-        'cookies': [
-          {'name': 'sid', 'value': 'xyz'},
-        ],
-        'headers': [
-          {'name': 'X-Token', 'value': 'h1'},
-        ],
-      });
-      when(() => mockApi.getConfig(any())).thenAnswer((_) async => saved);
+    test('load 解析 source_login_cache 保存的登录信息', () async {
+      when(() => mockApi.getLoginInfo('https://a.com'))
+          .thenAnswer((_) async => jsonEncode({'token': 'abc123'}));
+      when(() => mockApi.getLoginHeader('https://a.com')).thenAnswer(
+        (_) async => jsonEncode({
+          'X-Token': 'h1',
+          'Cookie': 'sid=xyz; theme=dark',
+        }),
+      );
 
       await readNotifier().load('https://a.com');
 
       final state = readState();
       expect(state.isLoading, isFalse);
       expect(state.token, equals('abc123'));
-      expect(state.cookies.single.name, equals('sid'));
-      expect(state.cookies.single.value, equals('xyz'));
+      expect(state.cookies.length, equals(2));
+      expect(state.cookies.first.name, equals('sid'));
+      expect(state.cookies.first.value, equals('xyz'));
       expect(state.headers.single.name, equals('X-Token'));
-      verify(() => mockApi.getConfig('source_login_https://a.com')).called(1);
+      expect(state.headers.single.value, equals('h1'));
+      verify(() => mockApi.getLoginInfo('https://a.com')).called(1);
+      verify(() => mockApi.getLoginHeader('https://a.com')).called(1);
     });
 
-    test('load 无已保存数据时保持空', () async {
+    test('load 无已保存数据时保持空（含旧 config 键回退迁移）', () async {
+      when(() => mockApi.getLoginInfo('https://a.com'))
+          .thenAnswer((_) async => '');
+      when(() => mockApi.getLoginHeader('https://a.com'))
+          .thenAnswer((_) async => '');
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
 
       await readNotifier().load('https://a.com');
@@ -72,6 +77,32 @@ void main() {
       expect(state.token, equals(''));
       expect(state.cookies, isEmpty);
       expect(state.headers, isEmpty);
+    });
+
+    test('load 回退旧 config 键（历史数据迁移）', () async {
+      when(() => mockApi.getLoginInfo('https://a.com'))
+          .thenAnswer((_) async => '');
+      when(() => mockApi.getLoginHeader('https://a.com'))
+          .thenAnswer((_) async => '');
+      when(() => mockApi.getConfig('source_login_https://a.com'))
+          .thenAnswer(
+        (_) async => jsonEncode({
+          'token': 'old-tok',
+          'cookies': [
+            {'name': 'sid', 'value': 'old'},
+          ],
+          'headers': [
+            {'name': 'X-Old', 'value': 'v'},
+          ],
+        }),
+      );
+
+      await readNotifier().load('https://a.com');
+
+      final state = readState();
+      expect(state.token, equals('old-tok'));
+      expect(state.cookies.single.name, equals('sid'));
+      expect(state.headers.single.name, equals('X-Old'));
     });
 
     test('addCookie/removeCookie 维护 Cookie 列表', () {
@@ -107,26 +138,41 @@ void main() {
       expect(state.headers, isEmpty);
     });
 
-    test('save 经 setConfig 写入 Rust 配置库', () async {
+    test('save 经 putLoginInfo/putLoginHeader 写入 source_login_cache', () async {
+      when(() => mockApi.putLoginInfo(any(), any()))
+          .thenAnswer((_) async {});
+      when(() => mockApi.putLoginHeader(any(), any()))
+          .thenAnswer((_) async {});
       when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
       final n = readNotifier();
       n.setToken('tok');
       n.addCookie('sid', 'xyz');
+      n.addHeader('X-Token', 'h1');
 
       await n.save(sourceUrl: 'https://a.com', sourceName: 'A源');
 
-      final captured = verify(
-        () => mockApi.setConfig('source_login_https://a.com', captureAny()),
+      // loginHeader：headers + Cookie 合并
+      final headerCaptured = verify(
+        () => mockApi.putLoginHeader('https://a.com', captureAny()),
       ).captured.single as String;
-      final decoded = jsonDecode(captured) as Map<String, dynamic>;
-      expect(decoded['sourceUrl'], equals('https://a.com'));
-      expect(decoded['token'], equals('tok'));
-      expect((decoded['cookies'] as List).single['name'], equals('sid'));
+      final headerDecoded = jsonDecode(headerCaptured) as Map<String, dynamic>;
+      expect(headerDecoded['X-Token'], equals('h1'));
+      expect(headerDecoded['Cookie'], equals('sid=xyz'));
+
+      // userInfo：token 落库
+      final infoCaptured = verify(
+        () => mockApi.putLoginInfo('https://a.com', captureAny()),
+      ).captured.single as String;
+      final infoDecoded = jsonDecode(infoCaptured) as Map<String, dynamic>;
+      expect(infoDecoded['token'], equals('tok'));
+
       expect(readState().isSaving, isFalse);
     });
 
     test('save 异常时重新抛出并清除 isSaving', () async {
-      when(() => mockApi.setConfig(any(), any()))
+      when(() => mockApi.putLoginHeader(any(), any()))
+          .thenAnswer((_) async {});
+      when(() => mockApi.putLoginInfo(any(), any()))
           .thenThrow(Exception('写入失败'));
 
       await expectLater(

@@ -405,6 +405,26 @@ class RustApi implements BookApi {
         ),
       );
 
+  /// 保存书源登录用户信息（对齐原版 BaseSource.putLoginInfo → userInfo_<key>）
+  @override
+  Future<void> putLoginInfo(String sourceUrl, String infoJson) =>
+      bridge.sourcePutLoginInfo(sourceUrl: sourceUrl, infoJson: infoJson);
+
+  /// 保存书源登录头（对齐原版 BaseSource.putLoginHeader → loginHeader_<key>）
+  @override
+  Future<void> putLoginHeader(String sourceUrl, String headerJson) =>
+      bridge.sourcePutLoginHeader(sourceUrl: sourceUrl, headerJson: headerJson);
+
+  /// 读取书源登录用户信息（无则空串）
+  @override
+  Future<String> getLoginInfo(String sourceUrl) =>
+      bridge.sourceGetLoginInfo(sourceUrl: sourceUrl);
+
+  /// 读取书源登录头（无则空串）
+  @override
+  Future<String> getLoginHeader(String sourceUrl) =>
+      bridge.sourceGetLoginHeader(sourceUrl: sourceUrl);
+
   // ========== 验证码交互通道（Task #90） ==========
 
   /// 订阅验证码请求事件流（长期存活）

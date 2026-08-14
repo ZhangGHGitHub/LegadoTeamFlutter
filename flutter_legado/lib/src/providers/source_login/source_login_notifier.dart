@@ -13,36 +13,119 @@ export 'source_login_state.dart';
 /// 书源登录页 Riverpod Notifier
 ///
 /// 职责严格限定（对齐 UI_RESTRUCTURE_PLAN.md §0.2 铁律）：
-/// - 登录凭据（Token/Cookies/Headers）经 BookApi.getConfig/setConfig 持久化到
-///   Rust 配置库，键为 `source_login_<sourceUrl>`，不再使用 SharedPreferences。
+/// - 登录凭据经 BookApi.putLoginInfo/putLoginHeader 持久化到 Rust
+///   `source_login_cache`（`userInfo_<url>` / `loginHeader_<url>`），
+///   请求路径自动合并 loginHeader（对齐原版 BaseSource.getHeaderMap 语义）。
+///   —— 2026-08-14 发现页修复 R1：原 config 键 `source_login_<url>` 无消费方，
+///   已改存 source_login_cache（旧 config 键数据在 load 时回退迁移）。
 /// - 管理 UI 状态（loading/saving/error + 凭据列表）。
 /// - 不含任何业务逻辑（凭据仅为透传存储）。
 class SourceLoginNotifier extends Notifier<SourceLoginState> {
-  /// 配置键前缀
+  /// 旧配置键前缀（历史数据回退迁移用）
   static const _keyPrefix = 'source_login_';
 
   @override
   SourceLoginState build() => const SourceLoginState();
 
   /// 加载指定书源已保存的登录信息
+  ///
+  /// 优先读 `source_login_cache`（userInfo_/loginHeader_）；为空时回退
+  /// 旧 config 键 `source_login_<url>`（历史数据迁移）。
   Future<void> load(String sourceUrl) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final raw =
-          await ref.read(bookApiProvider).getConfig(_keyPrefix + sourceUrl);
-      if (raw == null || raw.isEmpty) {
+      final api = ref.read(bookApiProvider);
+      var infoJson = await api.getLoginInfo(sourceUrl);
+      var headerJson = await api.getLoginHeader(sourceUrl);
+      if (infoJson.isEmpty && headerJson.isEmpty) {
+        // 回退旧 config 键（历史数据迁移）
+        final raw = await api.getConfig(_keyPrefix + sourceUrl);
+        if (raw != null && raw.isNotEmpty) {
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          final migratedToken = data['token'] as String? ?? '';
+          final migratedHeaders = <String, String>{
+            for (final e in _parseEntries(data['headers'])) e.name: e.value,
+          };
+          final cookieStr = _parseEntries(data['cookies'])
+              .map((e) => '${e.name}=${e.value}')
+              .join('; ');
+          if (cookieStr.isNotEmpty) migratedHeaders['Cookie'] = cookieStr;
+          if (migratedToken.isNotEmpty) {
+            infoJson = jsonEncode({'token': migratedToken});
+          }
+          headerJson = jsonEncode(migratedHeaders);
+        }
+      }
+      if (infoJson.isEmpty && headerJson.isEmpty) {
         state = state.copyWith(isLoading: false);
         return;
       }
-      final data = jsonDecode(raw) as Map<String, dynamic>;
       state = state.copyWith(
-        token: data['token'] as String? ?? '',
-        cookies: _parseEntries(data['cookies']),
-        headers: _parseEntries(data['headers']),
+        token: _extractToken(infoJson),
+        cookies: _extractCookies(headerJson),
+        headers: _extractHeaders(headerJson),
         isLoading: false,
       );
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isLoading: false);
+    }
+  }
+
+  /// 从 userInfo JSON 提取 token（含 token 字段则取之，否则原样作为 token）
+  String _extractToken(String infoJson) {
+    if (infoJson.isEmpty) return '';
+    try {
+      final info = jsonDecode(infoJson);
+      if (info is Map<String, dynamic> && info['token'] is String) {
+        return info['token'] as String;
+      }
+      return infoJson;
+    } catch (_) {
+      return infoJson;
+    }
+  }
+
+  /// 从 loginHeader JSON 拆出 Cookie 键值对列表
+  List<LoginKeyValue> _extractCookies(String headerJson) {
+    if (headerJson.isEmpty) return const [];
+    try {
+      final map = jsonDecode(headerJson) as Map<String, dynamic>;
+      final cookieStr = map.entries
+          .firstWhere(
+            (e) => e.key.toLowerCase() == 'cookie',
+            orElse: () => const MapEntry('', ''),
+          )
+          .value
+          .toString();
+      if (cookieStr.isEmpty) return const [];
+      return cookieStr
+          .split(';')
+          .map((pair) => pair.trim())
+          .where((pair) => pair.contains('='))
+          .map((pair) {
+            final idx = pair.indexOf('=');
+            return LoginKeyValue(
+              name: pair.substring(0, idx).trim(),
+              value: pair.substring(idx + 1).trim(),
+            );
+          })
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 从 loginHeader JSON 提取非 Cookie 的 header 键值对列表
+  List<LoginKeyValue> _extractHeaders(String headerJson) {
+    if (headerJson.isEmpty) return const [];
+    try {
+      final map = jsonDecode(headerJson) as Map<String, dynamic>;
+      return map.entries
+          .where((e) => e.key.toLowerCase() != 'cookie')
+          .map((e) => LoginKeyValue(name: e.key, value: e.value.toString()))
+          .toList();
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -84,30 +167,43 @@ class SourceLoginNotifier extends Notifier<SourceLoginState> {
     state = state.copyWith(token: '', cookies: [], headers: []);
   }
 
-  /// 保存登录信息到 Rust 配置库
+  /// 保存登录信息到 Rust `source_login_cache`
+  ///
+  /// - token → `userInfo_<url>`（putLoginInfo，供 JS getLoginInfo 读取）
+  /// - headers + Cookie → `loginHeader_<url>`（putLoginHeader，请求路径自动合并，
+  ///   对齐原版 BaseSource.putLoginHeader 语义）
   ///
   /// 失败时抛出异常，由 UI 侧展示错误提示。
+  /// — DeepSeek Harness + UI（2026-08-14 发现页修复 R1）
   Future<void> save({
     required String sourceUrl,
     required String sourceName,
   }) async {
     state = state.copyWith(isSaving: true, error: null);
     try {
-      final data = {
-        'sourceUrl': sourceUrl,
-        'sourceName': sourceName,
-        'token': state.token,
-        'cookies': state.cookies
-            .map((e) => {'name': e.name, 'value': e.value})
-            .toList(),
-        'headers': state.headers
-            .map((e) => {'name': e.name, 'value': e.value})
-            .toList(),
-        'savedAt': DateTime.now().toIso8601String(),
+      final api = ref.read(bookApiProvider);
+
+      // loginHeader：手动 headers + Cookie 合并（对齐原版 putLoginHeader map 格式）
+      final headerMap = <String, String>{
+        for (final e in state.headers)
+          if (e.name.isNotEmpty) e.name: e.value,
       };
-      await ref
-          .read(bookApiProvider)
-          .setConfig(_keyPrefix + sourceUrl, jsonEncode(data));
+      final cookieStr = state.cookies
+          .map((e) => '${e.name}=${e.value}')
+          .join('; ');
+      if (cookieStr.isNotEmpty) {
+        headerMap['Cookie'] = cookieStr;
+      }
+      await api.putLoginHeader(sourceUrl, jsonEncode(headerMap));
+
+      // userInfo：token 落库（对齐原版 putLoginInfo）
+      await api.putLoginInfo(sourceUrl, jsonEncode({'token': state.token}));
+
+      // 清理旧 config 键（迁移完成）
+      try {
+        await api.setConfig(_keyPrefix + sourceUrl, '');
+      } catch (_) {}
+
       state = state.copyWith(isSaving: false);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isSaving: false);

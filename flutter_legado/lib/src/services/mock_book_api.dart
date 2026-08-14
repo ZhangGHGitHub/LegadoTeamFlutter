@@ -43,6 +43,9 @@ class MockBookApi implements BookApi {
   final Map<String, String> _configs = {};
   final Map<String, List<BookChapter>> _chaptersCache = {};
   final Map<String, Map<int, String>> _contentCache = {};
+  // 登录凭据内存态（sourceLogin 手动登录/登录缓存，USE_MOCK 开发模式用）
+  final Map<String, String> _mockLoginInfo = {};
+  final Map<String, String> _mockLoginHeader = {};
 
   int _nextId = 1;
 
@@ -597,6 +600,25 @@ class MockBookApi implements BookApi {
     String userInputJson,
   ) async =>
       '{"close":true}';
+
+  @override
+  Future<void> putLoginInfo(String sourceUrl, String infoJson) async {
+    // Mock：内存态保存，供 USE_MOCK 开发模式联调
+    _mockLoginInfo[sourceUrl] = infoJson;
+  }
+
+  @override
+  Future<void> putLoginHeader(String sourceUrl, String headerJson) async {
+    _mockLoginHeader[sourceUrl] = headerJson;
+  }
+
+  @override
+  Future<String> getLoginInfo(String sourceUrl) async =>
+      _mockLoginInfo[sourceUrl] ?? '';
+
+  @override
+  Future<String> getLoginHeader(String sourceUrl) async =>
+      _mockLoginHeader[sourceUrl] ?? '';
 
   // ========== 验证码交互通道（Task #90） ==========
 
