@@ -1935,6 +1935,24 @@ fn register_misc_apis<'js>(
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
+    mount_dual(
+        java,
+        globals,
+        "refreshExplore",
+        rquickjs::Function::new(ctx.clone(), || {
+            crate::host_api::ui_action_queue::source_login_ext::refresh_explore();
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+    mount_dual(
+        java,
+        globals,
+        "reLoginView",
+        rquickjs::Function::new(ctx.clone(), || {
+            crate::host_api::ui_action_queue::source_login_ext::refresh_explore();
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
 
     // startBrowser(url, title?, html?) -> String（桥接载荷）
     // 对应 Kotlin: startBrowser(url, title, html?)

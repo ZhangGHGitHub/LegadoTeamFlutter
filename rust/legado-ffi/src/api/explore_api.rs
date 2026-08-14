@@ -12,9 +12,52 @@ use legado_core::models::BookSource;
 use legado_core::web_book::WebSearchResult;
 use legado_core::{LegadoError, LegadoResult};
 use legado_parser::AnalyzeUrl;
+use serde::Serialize;
 
 use crate::api::explore_info_map;
 use crate::runtime;
+
+/// 发现控件 action 执行结果（camelCase JSON）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreEvalActionResult {
+    pub raw: String,
+    pub actions: Vec<serde_json::Value>,
+    pub refresh_explore: bool,
+}
+
+/// 执行发现页 button/toggle/select/text 的 action JS（对标 Android evalButtonClick）
+pub fn explore_eval_action(source_json: &str, action_js: &str) -> LegadoResult<String> {
+    let source: BookSource = serde_json::from_str(source_json)?;
+    #[cfg(feature = "quickjs")]
+    {
+        let result = eval_explore_action_js(action_js, &source)?;
+        return serde_json::to_string(&result).map_err(LegadoError::Serialization);
+    }
+    #[cfg(not(feature = "quickjs"))]
+    {
+        let _ = (source_json, action_js, source);
+        Err(LegadoError::JsEngine(
+            "QuickJS engine not enabled. Build with --features quickjs".into(),
+        ))
+    }
+}
+
+/// 执行发现页 viewName 动态标题 JS（对标 Android evalUiJs）
+pub fn explore_eval_ui_js(source_json: &str, js_str: &str) -> LegadoResult<String> {
+    let source: BookSource = serde_json::from_str(source_json)?;
+    #[cfg(feature = "quickjs")]
+    {
+        return eval_explore_ui_js(js_str, &source);
+    }
+    #[cfg(not(feature = "quickjs"))]
+    {
+        let _ = (source_json, js_str, source);
+        Err(LegadoError::JsEngine(
+            "QuickJS engine not enabled. Build with --features quickjs".into(),
+        ))
+    }
+}
 
 /// 写入发现 infoMap 键值（对标 Android ExploreAdapter toggle/select）
 pub fn explore_info_map_put(source_url: &str, key: &str, value: &str) -> LegadoResult<()> {
@@ -208,7 +251,6 @@ fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
 
     with_current_source_tag(&tag, || {
-        // 对齐原版：每次 eval 前先加载 jsLib（失败降级，部分混淆 jsLib 依赖 Rhino）
         if let Some(lib) = source.js_lib.as_deref() {
             let lib = lib.trim();
             if !lib.is_empty() {
@@ -218,28 +260,7 @@ fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
             }
         }
 
-        let source_json = serde_json::to_string(source)?;
-        let base_url_json = serde_json::to_string(&tag)?;
-        let info_map = explore_info_map::snapshot(&tag).unwrap_or_default();
-        let info_map_json = serde_json::to_string(&info_map).unwrap_or_else(|_| "{}".to_string());
-
-        // 对齐 Android BaseSource.evalJS：java 全局已注册；source 须含 get/put/getVariable/setVariable
-        let setup = format!(
-            r#"
-var baseUrl = {base_url_json};
-var __srcData = {source_json};
-var source = Object.assign({{}}, __srcData);
-source.get = function(k) {{ return get('v_' + baseUrl + '_' + k) || ''; }};
-source.put = function(k, v) {{ put('v_' + baseUrl + '_' + k, String(v)); return v; }};
-source.getVariable = function() {{ return getVariable('sourceVariable_' + baseUrl) || ''; }};
-source.setVariable = function(v) {{ setVariable('sourceVariable_' + baseUrl, String(v)); return v; }};
-var infoMap = {info_map_json};
-"#,
-            base_url_json = base_url_json,
-            source_json = source_json,
-            info_map_json = info_map_json,
-        );
-
+        let setup = explore_js_context_setup(source)?;
         guard
             .eval(&setup)
             .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 上下文初始化失败: {e}")))?;
@@ -249,6 +270,157 @@ var infoMap = {info_map_json};
             .map_err(|e| LegadoError::JsEngine(format!("exploreUrl JS 执行失败: {e}")))?;
 
         Ok(result.trim().to_string())
+    })
+}
+
+/// 发现页 JS 上下文初始化脚本（source + infoMap + baseUrl）
+#[cfg(feature = "quickjs")]
+fn explore_js_context_setup(source: &BookSource) -> LegadoResult<String> {
+    let tag = source.book_source_url.clone();
+    let source_json = serde_json::to_string(source)?;
+    let base_url_json = serde_json::to_string(&tag)?;
+    let info_map = explore_info_map::snapshot(&tag).unwrap_or_default();
+    let info_map_json = serde_json::to_string(&info_map).unwrap_or_else(|_| "{}".to_string());
+
+    Ok(format!(
+        r#"
+var baseUrl = {base_url_json};
+var __srcData = {source_json};
+var source = Object.assign({{}}, __srcData);
+source.get = function(k) {{ return get('v_' + baseUrl + '_' + k) || ''; }};
+source.put = function(k, v) {{ put('v_' + baseUrl + '_' + k, String(v)); return v; }};
+source.getVariable = function() {{ return getVariable('sourceVariable_' + baseUrl) || ''; }};
+source.setVariable = function(v) {{ setVariable('sourceVariable_' + baseUrl, String(v)); return v; }};
+var infoMap = {info_map_json};
+"#,
+        base_url_json = base_url_json,
+        source_json = source_json,
+        info_map_json = info_map_json,
+    ))
+}
+
+/// action 执行后将 JS infoMap 写回 Rust 存储
+#[cfg(feature = "quickjs")]
+fn sync_info_map_from_js(
+    guard: &legado_js::QuickJsEngine,
+    source_url: &str,
+) -> LegadoResult<()> {
+    use legado_js::JsEngine;
+    let sync_script = r#"
+(function() {
+  try {
+    if (typeof infoMap !== 'object' || infoMap === null) return '{}';
+    var out = {};
+    for (var k in infoMap) {
+      if (!Object.prototype.hasOwnProperty.call(infoMap, k)) continue;
+      if (typeof infoMap[k] === 'function') continue;
+      out[k] = String(infoMap[k]);
+    }
+    return JSON.stringify(out);
+  } catch (e) {
+    return '{}';
+  }
+})()
+"#;
+    let json = guard
+        .eval(sync_script)
+        .map_err(|e| LegadoError::JsEngine(format!("infoMap 同步失败: {e}")))?;
+    let map: std::collections::HashMap<String, String> =
+        serde_json::from_str(json.trim()).unwrap_or_default();
+    for (k, v) in map {
+        let _ = explore_info_map::put(source_url, &k, &v);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "quickjs")]
+fn eval_explore_action_js(
+    action_js: &str,
+    source: &BookSource,
+) -> LegadoResult<ExploreEvalActionResult> {
+    use legado_js::JsEngine;
+    use legado_js::host_api::current_source::with_current_source_tag;
+    use legado_js::host_api::ui_action_queue;
+
+    let tag = source.book_source_url.clone();
+    let engine = crate::js_executor::fresh_engine(&tag)?;
+    let guard = engine
+        .lock()
+        .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
+
+    ui_action_queue::begin_collect();
+    let result = (|| -> LegadoResult<ExploreEvalActionResult> {
+        with_current_source_tag(&tag, || {
+            if let Some(lib) = source.js_lib.as_deref() {
+                let lib = lib.trim();
+                if !lib.is_empty() {
+                    if let Err(e) = guard.eval(lib) {
+                        eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
+                    }
+                }
+            }
+
+            let setup = explore_js_context_setup(source)?;
+            guard
+                .eval(&setup)
+                .map_err(|e| LegadoError::JsEngine(format!("explore action 上下文初始化失败: {e}")))?;
+
+            let raw = guard
+                .eval(action_js)
+                .map_err(|e| LegadoError::JsEngine(format!("explore action JS 执行失败: {e}")))?;
+
+            sync_info_map_from_js(&*guard, &tag)?;
+
+            let refresh_explore = ui_action_queue::take_refresh_explore_requested();
+            let actions = ui_action_queue::end_collect();
+            Ok(ExploreEvalActionResult {
+                raw,
+                actions,
+                refresh_explore,
+            })
+        })
+    })();
+
+    match result {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            ui_action_queue::discard_collect();
+            ui_action_queue::take_refresh_explore_requested();
+            Err(e)
+        }
+    }
+}
+
+#[cfg(feature = "quickjs")]
+fn eval_explore_ui_js(js_str: &str, source: &BookSource) -> LegadoResult<String> {
+    use legado_js::JsEngine;
+    use legado_js::host_api::current_source::with_current_source_tag;
+
+    let tag = source.book_source_url.clone();
+    let engine = crate::js_executor::fresh_engine(&tag)?;
+    let guard = engine
+        .lock()
+        .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
+
+    with_current_source_tag(&tag, || {
+        if let Some(lib) = source.js_lib.as_deref() {
+            let lib = lib.trim();
+            if !lib.is_empty() {
+                if let Err(e) = guard.eval(lib) {
+                    eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
+                }
+            }
+        }
+
+        let setup = explore_js_context_setup(source)?;
+        guard
+            .eval(&setup)
+            .map_err(|e| LegadoError::JsEngine(format!("explore ui 上下文初始化失败: {e}")))?;
+
+        guard
+            .eval(js_str)
+            .map(|s| s.trim().to_string())
+            .map_err(|e| LegadoError::JsEngine(format!("explore ui JS 执行失败: {e}")))
     })
 }
 

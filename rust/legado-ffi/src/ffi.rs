@@ -1096,6 +1096,28 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 执行发现页控件 action JS（返回 ExploreEvalActionResult JSON）
+    pub fn explore_eval_action(
+        source_json: String,
+        action_js: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::explore_api::explore_eval_action(
+            &source_json,
+            &action_js,
+        )?)
+    }
+
+    /// 执行发现页 viewName 动态标题 JS
+    pub fn explore_eval_ui_js(
+        source_json: String,
+        js_str: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::explore_api::explore_eval_ui_js(
+            &source_json,
+            &js_str,
+        )?)
+    }
+
     // ─── 规则解析 ─────────────────────────────────────────────
 
     /// 使用规则解析内容，返回 JSON 格式的结果

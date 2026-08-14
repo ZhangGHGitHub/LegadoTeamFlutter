@@ -15,11 +15,13 @@ use std::sync::Mutex;
 use serde_json::Value;
 
 static COLLECTING: AtomicBool = AtomicBool::new(false);
+static REFRESH_EXPLORE: AtomicBool = AtomicBool::new(false);
 static QUEUE: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 
 /// 开启收集并清空旧队列（对齐一次 `callBackBtn` 会话）
 pub fn begin_collect() {
     COLLECTING.store(true, Ordering::SeqCst);
+    REFRESH_EXPLORE.store(false, Ordering::SeqCst);
     if let Ok(mut q) = QUEUE.lock() {
         q.clear();
     }
@@ -59,6 +61,17 @@ pub fn end_collect() -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// 发现页 `java.refreshExplore` / `reLoginView` 是否被请求
+pub fn take_refresh_explore_requested() -> bool {
+    REFRESH_EXPLORE.swap(false, Ordering::SeqCst)
+}
+
+fn request_refresh_explore() {
+    if is_collecting() {
+        REFRESH_EXPLORE.store(true, Ordering::SeqCst);
+    }
+}
+
 /// 丢弃队列并关闭收集（求值失败时调用）
 pub fn discard_collect() {
     COLLECTING.store(false, Ordering::SeqCst);
@@ -90,6 +103,11 @@ pub mod source_login_ext {
 
     pub fn clear_tts_cache() {
         push_action(json!({ "action": "clearTtsCache" }));
+    }
+
+    /// 对齐 Kotlin `SourceLoginJsExtensions.refreshExplore` / `reLoginView`
+    pub fn refresh_explore() {
+        super::request_refresh_explore();
     }
 }
 

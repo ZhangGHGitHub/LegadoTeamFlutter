@@ -18,7 +18,7 @@
 | 2026-08-13 | P2-4 续：恢复忽略项其余键——备份 JSON 注入 `appPrefs`，恢复时按 BackupConfig.keyIsNotIgnore 过滤（readConfig/themeMode/themeConfig/coverConfig/bookshelfLayout/showRss/threadCount）；无新 FFI |
 | 2026-08-13 | P2-1：底栏皮肤最小可用——纯 Flutter（`archive` zip 导入 + PrefKeys.bottomBarSkin）；**无新 FFI** |
 | 2026-08-12 | P1-14 加法式新增——`looksLikeCurl` / `curlToAnalyzeUrl` / `analyzeUrlToCurl`（§2.3 书源操作）：对齐原版 `CurlAnalyzeUrlConverter`；Rust 复用 `legado-parser::curl_converter`。附录合计 241→244，BookApi 口径 232→235 |
-| 2026-08-14 | **F3-20**：BookApi 补 5 项延迟封装，§3 待 UI 封装清单清零；BookApi **252** 方法 |
+| 2026-08-14 | **发现页控件 action**：加法式 `exploreEvalAction` / `exploreEvalUiJs`（§2.18）；`java.refreshExplore` 经 ui_action_queue 回传 `refreshExplore` 标志 |
 | 2026-08-14 | **F3-17**：加法式 `rssListReadRecordsByOrigin`（§2.35）；**F3-10** 契约全面同步至 BookApi **247** 方法、附录 **251** |
 | 2026-08-14 | **F3-14**：加法式新增 `httpGetBytes`（§2.20）；UI 层 8 处裸 `http.get` 收敛至 Bridge；附录 244→245，BookApi 233→234 |
 | 2026-08-14 | **F3-5**：§1.6 登记 9 个 FFI 非 Result 导出豁免（只读/哨兵语义，不改签名） |
@@ -364,12 +364,16 @@
 
 > ℹ️ **流式 Debug.Callback（2026-08-13）**：Rust 侧 `ffi::debug_book_source_stream / debug_book_source_cancel`（实现 `legado-ffi/src/api/source_debug_api.rs`），复用既有 `webbook*` / `exploreFetchBooks` 链路推送逐步日志与字段摘要（`JsSourceDebugFormatter` 风格）。冻结 `webbook*` 契约不变，本组为加法式新增。
 
-### 2.18 发现页操作（2 个方法）
+### 2.18 发现页操作（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `exploreParseUrl(String exploreUrl)` | exploreUrl | `Future<List<ExploreCategory>>` | 解析 exploreUrl 为分类列表 |
+| `exploreParseUrl(String exploreUrl, {String sourceJson})` | exploreUrl；`@js:` 须传 sourceJson | `Future<List<ExploreCategory>>` | 解析 exploreUrl 为分类列表（含 type/action/chars/style） |
 | `exploreFetchBooks(String sourceJson, String url, int page)` | sourceJson, url, page | `Future<List<SearchBook>>` | 抓取发现分类的书籍列表 |
+| `exploreInfoMapPut(String sourceUrl, String key, String value)` | sourceUrl, key, value | `Future<void>` | toggle/select/text 写入 infoMap |
+| `exploreInfoMapEnsureDefault(String sourceUrl, String key, String defaultValue)` | sourceUrl, key, defaultValue | `Future<void>` | infoMap 键不存在时写入默认值 |
+| `exploreEvalAction({required String sourceJson, required String actionJs})` | sourceJson, actionJs | `Future<Map>` | 执行发现控件 action JS；返回 `{raw, actions, refreshExplore}`（对标 evalButtonClick + java 中途 UI） |
+| `exploreEvalUiJs({required String sourceJson, required String jsStr})` | sourceJson, jsStr | `Future<String>` | 执行 viewName 动态标题 JS（对标 evalUiJs） |
 
 ### 2.19 规则解析（1 个方法）
 
