@@ -1127,6 +1127,13 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 读取发现 infoMap 快照（JSON 对象字符串；供 UI 回显 toggle/select/text
+    /// 已存值，对齐原版 InfoMap 持久化语义）— 发现页修复 B①
+    pub fn explore_info_map_snapshot(source_url: String) -> Result<String, BridgeError> {
+        let map = crate::api::explore_info_map::snapshot(&source_url)?;
+        Ok(serde_json::to_string(&map).map_err(BridgeError::from)?)
+    }
+
     /// 执行发现页控件 action JS（返回 ExploreEvalActionResult JSON）
     pub fn explore_eval_action(
         source_json: String,
