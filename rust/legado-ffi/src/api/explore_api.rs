@@ -599,6 +599,15 @@ async fn explore_books_async(
     let mut elem_analyzer =
         crate::js_executor::construct_analyzer(String::new(), base_url.clone(), &source.book_source_url);
 
+    // A9：列表规则无命中时回退按详情页单本解析（对齐原版 BookList.kt:100-108
+    // collections 空 → getInfoItem 用 ruleBookInfo 整页解析；详情页直连场景）
+    if elements.is_empty() {
+        if let Some(book) = parse_explore_as_single_book(source, &analyzer, &base_url) {
+            return Ok(vec![book]);
+        }
+        return Ok(Vec::new());
+    }
+
     let mut results = Vec::with_capacity(elements.len().min(50));
     for elem in elements.iter() {
         elem_analyzer.set_content(elem.clone());
@@ -758,6 +767,77 @@ fn explore_login_check(
 
 // ─── 字段清洗（对齐原版 BookHelp / HtmlFormatter） ────────────────────────────
 
+/// 详情页单本回退解析（A9）：explore 列表规则无命中时，用 ruleBookInfo
+/// 从整页解析单本书（对齐原版 BookList.getInfoItem 的 explore 直连场景）。
+/// 解析不到书名返回 None。— DeepSeek Harness + Bridge
+fn parse_explore_as_single_book(
+    source: &BookSource,
+    analyzer: &legado_parser::AnalyzeRule,
+    base_url: &str,
+) -> Option<WebSearchResult> {
+    let info_rule = source.rule_book_info.as_ref()?;
+    let rule_name = info_rule.name.as_deref().unwrap_or("");
+    let rule_author = info_rule.author.as_deref().unwrap_or("");
+    let rule_cover = info_rule.cover_url.as_deref().unwrap_or("");
+    let rule_intro = info_rule.intro.as_deref().unwrap_or("");
+    let rule_kind = info_rule.kind.as_deref().unwrap_or("");
+    let rule_word_count = info_rule.word_count.as_deref().unwrap_or("");
+
+    let name = format_book_name(&analyzer.get_string(rule_name).unwrap_or_default());
+    if name.is_empty() {
+        return None;
+    }
+    let author = format_book_author(&analyzer.get_string(rule_author).unwrap_or_default());
+    // BookInfoRule 无 bookUrl 字段：详情页直连场景 bookUrl 即当前页 URL
+    //（对齐原版 BookList.getInfoItem 空规则回退 baseUrl）— A9
+    let book_url = base_url.to_string();
+    let cover_url = {
+        let v = analyzer.get_string(rule_cover).unwrap_or_default();
+        if v.is_empty() {
+            None
+        } else {
+            Some(AnalyzeUrl::get_absolute_url(base_url, &v))
+        }
+    };
+    let intro = {
+        let v = analyzer.get_string(rule_intro).unwrap_or_default();
+        if v.is_empty() {
+            None
+        } else {
+            Some(format_intro(&v))
+        }
+    };
+    let kind = {
+        let v = analyzer.get_string(rule_kind).unwrap_or_default();
+        if v.is_empty() {
+            None
+        } else {
+            Some(
+                v.split('\n')
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            )
+        }
+    };
+    let word_count = super::search::word_count_format(
+        &analyzer.get_string(rule_word_count).unwrap_or_default(),
+    );
+
+    Some(WebSearchResult {
+        name,
+        author,
+        book_url,
+        cover_url,
+        intro,
+        latest_chapter: None,
+        source_url: source.book_source_url.clone(),
+        kind,
+        word_count,
+        book_type: super::search::book_type_of_source(source.book_source_type),
+    })
+}
+
 /// 书名清洗（对齐原版 `BookHelp.formatBookName`：去「 作者xxx」「 xx 著」后缀）— A2
 fn format_book_name(name: &str) -> String {
     let re = regex::Regex::new(r"\s+作\s*者.*|\s+\S+\s+著");
@@ -853,6 +933,40 @@ mod field_clean_tests {
         }
         assert!(!reverse2);
         assert_eq!(rule2, ".list@css:li");
+    }
+
+    /// A9：explore 列表规则无命中时按详情页单本回退解析（对齐原版 getInfoItem）
+    #[test]
+    fn test_parse_explore_as_single_book() {
+        use legado_parser::AnalyzeRule;
+        let source = serde_json::from_str::<BookSource>(&serde_json::json!({
+            "bookSourceUrl": "https://detail.example.com",
+            "ruleBookInfo": {
+                "name": "#bookname@text",
+                "author": ".author@text",
+                "intro": ".intro@html"
+            }
+        }).to_string())
+        .unwrap();
+        let html = r#"<html><body>
+            <h1 id="bookname">斗破苍穹 作者天蚕土豆</h1>
+            <span class="author">作者:天蚕土豆</span>
+            <div class="intro"><p>简介内容</p><br/>第二段</div>
+        </body></html>"#;
+        let analyzer = AnalyzeRule::new(
+            html.to_string(),
+            "https://detail.example.com/book/1".to_string(),
+        );
+        let book = parse_explore_as_single_book(
+            &source,
+            &analyzer,
+            "https://detail.example.com/book/1",
+        )
+        .expect("详情页回退应解析出单本");
+        assert_eq!(book.name, "斗破苍穹");
+        assert_eq!(book.author, "天蚕土豆");
+        assert_eq!(book.book_url, "https://detail.example.com/book/1");
+        assert_eq!(book.intro.as_deref(), Some("简介内容 第二段"));
     }
 }
 
