@@ -1790,6 +1790,11 @@ class RustApi implements BookApi {
       wordCount: pick('wordCount', 'word_count'),
       latestChapterTitle: pick('latestChapterTitle', 'latest_chapter'),
       tocUrl: pick('tocUrl', 'toc_url') ?? '',
+      // 类型位标记（Rust WebSearchResult 序列化键为 type；漫画/听书/视频源
+      // 据此分流阅读器，缺省 0=文本）— 发现页修复 A8
+      bookType: e['type'] is int
+          ? e['type'] as int
+          : (int.tryParse(e['type']?.toString() ?? '') ?? 0),
     );
   }
 
