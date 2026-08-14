@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -147,6 +147,9 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
         title: Text('登录 - ${widget.sourceName}'),
         bottom: TabBar(
           controller: _tabController,
+          // 全局 tabBarTheme 设了 TabAlignment.start，仅可滚动 TabBar 合法；
+          // 非 scrollable 须显式 fill（对齐 toc_screen 处理）— 登录红屏修复
+          tabAlignment: TabAlignment.fill,
           tabs: const [
             Tab(text: '手动输入'),
             Tab(text: '登录链接'),

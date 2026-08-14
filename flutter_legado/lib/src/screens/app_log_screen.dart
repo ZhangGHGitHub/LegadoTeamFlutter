@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -115,6 +115,9 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
+          // 全局 tabBarTheme 设了 TabAlignment.start，仅可滚动 TabBar 合法；
+          // 非 scrollable 须显式 fill（对齐 toc_screen 处理）— 登录红屏修复
+          tabAlignment: TabAlignment.fill,
           tabs: _tabLabels.map((label) => Tab(text: label)).toList(),
         ),
         actions: [
