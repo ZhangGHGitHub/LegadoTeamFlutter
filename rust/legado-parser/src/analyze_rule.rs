@@ -609,7 +609,8 @@ impl AnalyzeRule {
         let strings = self.get_strings_ex(rule, false)?;
         let mut result = if strings.is_empty() {
             String::new()
-        } else if strings.len() == 1 {
+        } else if strings.len() == 1 || is_url {
+            // G14：isUrl 单值取首元素（对齐原版 AnalyzeByJSoup.getString0）
             strings.into_iter().next().unwrap()
         } else {
             strings.join("\n")
@@ -732,6 +733,11 @@ impl AnalyzeRule {
         // 误走 HTML 解析器 → 目录 0 章（51漫画 chapterList 实测）— Reasonix
         if rule.trim_start().starts_with("<js>") {
             return self.get_strings_single_step(rule);
+        }
+
+        // G10：`:` 前缀 allInOne 正则（对齐原版 splitSourceRule(allInOne=true)）
+        if let Some(regex_rule) = rule.trim_start().strip_prefix(':') {
+            return self.regex_extract(regex_rule.trim_start());
         }
 
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
@@ -1054,6 +1060,10 @@ impl AnalyzeRule {
 
     /// 解析规则前缀，返回 (规则类型, 去掉前缀后的规则)
     fn resolve_rule_type(rule: &str) -> (RuleType, &str) {
+        // G7：@@ 前缀强制 Default(CSS) 并剥 2 字符（对齐原版 SourceRule.init）
+        if let Some(r) = rule.strip_prefix("@@") {
+            return (RuleType::Css, r);
+        }
         let (prefix, actual_rule) = RuleAnalyzer::parse_rule_prefix(rule);
         let rule_type = match prefix {
             "css" => RuleType::Css,
@@ -1646,6 +1656,36 @@ mod tests {
         // 多级正则链：先筛 A[0-9]B（只保留 A1B/A2B），再提取 [0-9]+
         let result = rule.get_strings(r"@regex:A[0-9]+B && [0-9]+").unwrap();
         assert_eq!(result, vec!["1", "2"]);
+    }
+
+    #[test]
+    fn test_at_at_prefix_forces_css() {
+        // G7：@@ 前缀剥 2 字符 + 强制 CSS
+        let rule = AnalyzeRule::new(
+            r#"<span class="item">test</span>"#.to_string(),
+            String::new(),
+        );
+        let result = rule.get_strings("@@.item").unwrap();
+        assert_eq!(result, vec!["test"]);
+    }
+
+    #[test]
+    fn test_all_in_one_regex_colon_prefix() {
+        // G10：: 前缀 allInOne 正则（getElements 路径）
+        let rule = AnalyzeRule::new("a1b a2b c3d".to_string(), String::new());
+        let result = rule.get_elements(":a[0-9]b").unwrap();
+        assert_eq!(result, vec!["a1b", "a2b"]);
+    }
+
+    #[test]
+    fn test_is_url_takes_first_element() {
+        // G14：isUrl 多匹配取首元素（对齐 getString0）
+        let rule = AnalyzeRule::new(
+            r#"<a href="/a">1</a><a href="/b">2</a>"#.to_string(),
+            "http://x.com".to_string(),
+        );
+        let result = rule.get_string_ex("a@href", true, true).unwrap();
+        assert_eq!(result, "http://x.com/a");
     }
 
     #[test]
