@@ -432,6 +432,39 @@ class _BookItem extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                    // 分类标签（对齐原版 ExploreShowAdapter llKind；轻量灰阶 chip）— R5
+                    if (book.kind != null && book.kind!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        children: [
+                          for (final k in book.kind!
+                              .split(',')
+                              .map((e) => e.trim())
+                              .where((e) => e.isNotEmpty)
+                              .take(4))
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.onSurface
+                                    .withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                k,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
