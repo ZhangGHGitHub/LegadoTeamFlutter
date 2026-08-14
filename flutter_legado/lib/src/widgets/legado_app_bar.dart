@@ -93,6 +93,21 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
+  /// 标题防截断保护：Text 标题强制单行 + 省略号，避免窄屏/系统字体
+  /// 放大时 AppBar 标题出现「半个字」的难看截断（正常空间下不生效）
+  Widget? _safeTitle(Widget? title) {
+    if (title is Text) {
+      return Text(
+        title.data ?? '',
+        style: title.style,
+        textAlign: title.textAlign,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    return title;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bg = backgroundColor ??
@@ -111,7 +126,7 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
     return AppBar(
       leading: _buildLeading(context),
       automaticallyImplyLeading: false,
-      title: title,
+      title: _safeTitle(title),
       actions: actions,
       flexibleSpace: flexibleSpace,
       bottom: bottom,

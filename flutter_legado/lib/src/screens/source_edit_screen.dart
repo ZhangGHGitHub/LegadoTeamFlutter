@@ -1074,7 +1074,12 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: LegadoAppBar(
-        title: Text(isNew ? '新建书源' : '编辑书源'),
+        // 标题字号 20sp 与原版 ToolbarTitle 一致；防极端设备字号缩放截断
+        title: Text(
+          isNew ? '新建书源' : '编辑书源',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           // 全屏代码编辑（对齐原版 menu_fullscreen_edit → 编辑内容，图标位）
           IconButton(
@@ -1448,7 +1453,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
               borderSide: BorderSide(color: colorScheme.primary, width: 1),
             ),
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+            // 水平 12dp 内容边距（对齐原版 item_source_edit CodeView
+            // paddingHorizontal=12dp：字段贴边但内容文字留 12dp 内边距）
+            contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             suffixIconConstraints:
                 const BoxConstraints(minWidth: 36, minHeight: 36),
             suffixIcon: field.maxLines >= 2

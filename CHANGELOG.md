@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.88] - 2026-08-14
+
+### Fixed
+- [UI] 书源编辑页内容左右补 12dp 内边距（对齐原版 item_source_edit CodeView paddingHorizontal=12dp：字段贴边但内容文字留 12dp 内边距），修复用户反馈「中间内容左右两侧没有边距」
+- [UI] 顶栏标题防截断保护：LegadoAppBar 对 Text 标题统一单行 + 省略号，避免窄屏/系统字体放大时标题出现半个字（标题字号已核对与原版 ToolbarTitle 一致 20sp，模拟器实测「编辑书源」完整显示 160px 与原版相同）
+- 验证：flutter analyze 0 错误、flutter test 1188 全过、编辑页自动比对仍 MATCH
+
 ## [2.0.87] - 2026-08-14
 
 ### Fixed
