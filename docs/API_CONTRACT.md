@@ -376,6 +376,7 @@
 | `exploreFetchBooks(String sourceJson, String url, int page)` | sourceJson, url, page | `Future<List<SearchBook>>` | 抓取发现分类的书籍列表 |
 | `exploreInfoMapPut(String sourceUrl, String key, String value)` | sourceUrl, key, value | `Future<void>` | toggle/select/text 写入 infoMap |
 | `exploreInfoMapEnsureDefault(String sourceUrl, String key, String defaultValue)` | sourceUrl, key, defaultValue | `Future<void>` | infoMap 键不存在时写入默认值 |
+| `exploreInfoMapSnapshot(String sourceUrl)` | sourceUrl | `Future<String>` | 读取 infoMap 快照（JSON 对象；UI 回显 toggle/select/text 已存值，对齐原版 InfoMap 持久化）。加法式新增（2026-08-14 发现页修复 B①） |
 | `exploreEvalAction({required String sourceJson, required String actionJs})` | sourceJson, actionJs | `Future<Map>` | 执行发现控件 action JS；返回 `{raw, actions, refreshExplore}`（对标 evalButtonClick + java 中途 UI） |
 | `exploreEvalUiJs({required String sourceJson, required String jsStr})` | sourceJson, jsStr | `Future<String>` | 执行 viewName 动态标题 JS（对标 evalUiJs） |
 

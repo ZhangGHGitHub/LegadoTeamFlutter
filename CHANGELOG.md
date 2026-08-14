@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.76] - 2026-08-14
+
+### Fixed
+- [Rust][UI] 发现控件 infoMap 回显 + 分类解析 ERROR 行（B）：toggle/select/text 初始值读回 infoMap 已存值（新增 exploreInfoMapSnapshot FFI，契约 §2.18 登记）；JSON 解析失败产出 ERROR 分类行（对齐原版 exploreKinds）。验证：legado-ffi explore 23/23、flutter 1180 全过
+
 ## [2.0.75] - 2026-08-14
 
 ### Added
