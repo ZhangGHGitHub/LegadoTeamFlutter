@@ -8,6 +8,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -43,11 +44,12 @@ class ExploreBookList extends ConsumerStatefulWidget {
 
 class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   final _scrollController = ScrollController();
+  bool _loadingPrevious = false;
 
   @override
   void initState() {
     super.initState();
-    // 监听滚动，触底加载更多
+    // 监听滚动：触底加载下一页、到顶加载上一页（对标 Android scrollToBottom/scrollToTop）
     _scrollController.addListener(_onScroll);
   }
 
@@ -58,11 +60,33 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     super.dispose();
   }
 
-  /// 滚动监听：触底加载更多（对标 Android scrollToBottom）
+  /// 滚动监听：触底加载更多、到顶加载上一页
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 200) {
       ref.read(exploreShowNotifierProvider(widget.args).notifier).loadMore();
+    } else if (position.pixels <= position.minScrollExtent + 40 &&
+        position.userScrollDirection == ScrollDirection.reverse) {
+      _tryLoadPreviousPage();
+    }
+  }
+
+  Future<void> _tryLoadPreviousPage() async {
+    final state = ref.read(exploreShowNotifierProvider(widget.args));
+    if (_loadingPrevious || state.isLoading || state.displayPage <= 1) return;
+    _loadingPrevious = true;
+    final prevCount = state.books.length;
+    await ref
+        .read(exploreShowNotifierProvider(widget.args).notifier)
+        .loadPreviousPage();
+    if (!mounted) return;
+    _loadingPrevious = false;
+    final newCount =
+        ref.read(exploreShowNotifierProvider(widget.args)).books.length;
+    final added = newCount - prevCount;
+    if (added > 0 && _scrollController.hasClients) {
+      // 保持视口位置（对标 Android scrollToPositionWithOffset）
+      _scrollController.jumpTo(_scrollController.offset + added * 72.0);
     }
   }
 
@@ -107,19 +131,26 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
             child: ListView.builder(
               controller: _scrollController,
               padding: widget.padding,
-              // +1 用于底部加载指示器
-              itemCount: state.books.length + 1,
+              // +2：顶/底部分页指示
+              itemCount: state.books.length + 2,
               itemBuilder: (context, index) {
-                // 底部加载指示器
-                if (index == state.books.length) {
+                // 顶部分页指示（上一页）
+                if (index == 0) {
+                  return _buildLoadPreviousIndicator(state);
+                }
+
+                // 底部分页指示（下一页）
+                if (index == state.books.length + 1) {
                   return _buildLoadMoreIndicator(args, state);
                 }
 
-                final book = state.books[index];
-                // 稳定 ValueKey（bookUrl）+ RepaintBoundary 隔离列表项重绘区域
+                final book = state.books[index - 1];
+                final dedupeKey =
+                    exploreBookDedupeKey(book, listIndex: index - 1);
+                // 稳定 ValueKey + RepaintBoundary 隔离列表项重绘区域
                 return RepaintBoundary(
                   child: _BookItem(
-                    key: ValueKey(book.bookUrl),
+                    key: ValueKey(dedupeKey),
                     book: book,
                     onTap: () => _showBookInfo(book),
                   ),
@@ -129,6 +160,30 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 顶部分页指示（对标 Android loadMoreViewTop）
+  Widget _buildLoadPreviousIndicator(ExploreShowState state) {
+    if (state.displayPage <= 1) {
+      return const SizedBox(height: 8);
+    }
+    if (state.isLoading && state.books.isNotEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Text(
+          '上滑加载上一页',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      ),
     );
   }
 

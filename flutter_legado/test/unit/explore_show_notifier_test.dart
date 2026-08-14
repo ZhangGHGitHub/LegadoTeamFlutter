@@ -105,9 +105,25 @@ void main() {
       await pumpInit();
 
       expect(readState().books.length, equals(5));
+      expect(readState().displayPage, equals(1));
       expect(readState().page, equals(2));
       expect(readState().hasMore, isTrue);
       expect(readState().isLoading, isFalse);
+    });
+
+    test('空 bookUrl 时仍保留全部书籍（name+author 去重）', () async {
+      final books = [
+        const SearchBook(bookUrl: '', name: '书A', author: '作者1'),
+        const SearchBook(bookUrl: '', name: '书B', author: '作者2'),
+        const SearchBook(bookUrl: '', name: '书C', author: '作者3'),
+      ];
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((_) async => books);
+
+      spawn();
+      await pumpInit();
+
+      expect(readState().books.length, equals(3));
     });
 
     test('返回空列表时 hasMore 设为 false', () async {
@@ -196,9 +212,28 @@ void main() {
 
       await readNotifier().refresh();
 
+      expect(readState().displayPage, equals(1));
       expect(readState().page, equals(2));
       expect(readState().hasMore, isTrue);
       expect(readState().error, isNull);
+    });
+
+    test('skipToPage 跳页后仅展示目标页数据', () async {
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        return makeBooks(3, startId: page * 10);
+      });
+
+      spawn();
+      await pumpInit();
+      expect(readState().displayPage, equals(1));
+
+      await readNotifier().skipToPage(3);
+
+      expect(readState().displayPage, equals(3));
+      expect(readState().books.length, equals(3));
+      expect(readState().books.first.name, equals('书籍30'));
     });
   });
 }

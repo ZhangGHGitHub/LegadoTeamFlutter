@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../providers/explore/explore_show_notifier.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
+import '../widgets/explore_page_control.dart';
 
 // 重新导出路由参数，供 routes.dart 通过本文件引用 ExploreShowArgs
 export '../providers/explore/explore_show_notifier.dart' show ExploreShowArgs;
@@ -50,7 +51,10 @@ class ExploreShowScreen extends ConsumerWidget {
     );
 
     return Scaffold(
-      appBar: LegadoAppBar(title: Text(title)),
+      appBar: LegadoAppBar(
+        title: Text(title),
+        actions: [ExplorePageControl(args: args)],
+      ),
       body: ExploreBookList(args: args),
     );
   }

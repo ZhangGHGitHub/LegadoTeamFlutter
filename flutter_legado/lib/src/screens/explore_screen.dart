@@ -26,6 +26,7 @@ import '../utils/responsive.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
 import '../widgets/explore_kind_layout.dart';
+import '../widgets/explore_page_control.dart';
 import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/loading_indicator.dart';
@@ -216,9 +217,32 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                   subtitle: '展开左侧书源并点击分类，在此浏览书籍',
                   simple: true,
                 )
-              : ExploreBookList(
-                  key: ValueKey(_selectedCategory),
-                  args: _selectedCategory!,
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _selectedCategory!.categoryName,
+                              style: Theme.of(context).textTheme.titleMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          ExplorePageControl(args: _selectedCategory!),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ExploreBookList(
+                        key: ValueKey(_selectedCategory),
+                        args: _selectedCategory!,
+                      ),
+                    ),
+                  ],
                 ),
         ),
       ],

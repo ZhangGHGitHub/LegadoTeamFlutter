@@ -41,7 +41,7 @@ class ExploreShowArgs {
 /// 职责边界（对齐 UI_RESTRUCTURE_PLAN.md §0.3 与 ExploreShowViewModel.kt）：
 /// - [source] / [categoryName] / [categoryUrl]：分类页面入参
 /// - [books]：累积的书籍列表（对标 Android books LinkedHashSet 去重）
-/// - [page] / [isLoading] / [hasMore] / [error]：分页加载状态
+/// - [page] / [displayPage] / [isLoading] / [hasMore] / [error]：分页加载状态
 @freezed
 class ExploreShowState with _$ExploreShowState {
   const factory ExploreShowState({
@@ -57,8 +57,11 @@ class ExploreShowState with _$ExploreShowState {
     /// 已加载的书籍列表（累积去重）
     @Default([]) List<SearchBook> books,
 
-    /// 当前页码（从 1 开始）
+    /// 下一待抓取页码（对标 Android ExplorePaginationState.nextPage）
     @Default(1) int page,
+
+    /// 当前展示页码（对标 Android pageLiveData，0 表示尚未完成首次加载）
+    @Default(0) int displayPage,
 
     /// 是否正在加载
     @Default(false) bool isLoading,
@@ -69,6 +72,18 @@ class ExploreShowState with _$ExploreShowState {
     /// 错误信息
     String? error,
   }) = _ExploreShowState;
+}
+
+/// 发现列表去重键（对标 Android SearchBook equals 以 bookUrl 为主；
+/// bookUrl 为空时回退 name+author，避免全部折叠为 1 条）
+String exploreBookDedupeKey(SearchBook book, {int? listIndex}) {
+  if (book.bookUrl.isNotEmpty) return 'u:${book.bookUrl}';
+  final author = book.author.trim();
+  if (author.isNotEmpty) return 'na:${book.name}|$author';
+  if (book.name.isNotEmpty) {
+    return 'n:${book.name}|${listIndex ?? 0}';
+  }
+  return 'i:${listIndex ?? 0}';
 }
 
 /// 发现分类书籍展示扩展

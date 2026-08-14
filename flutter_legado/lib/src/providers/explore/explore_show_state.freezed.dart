@@ -28,8 +28,11 @@ mixin _$ExploreShowState {
   /// 已加载的书籍列表（累积去重）
   List<SearchBook> get books => throw _privateConstructorUsedError;
 
-  /// 当前页码（从 1 开始）
+  /// 下一待抓取页码（对标 Android ExplorePaginationState.nextPage）
   int get page => throw _privateConstructorUsedError;
+
+  /// 当前展示页码（对标 Android pageLiveData，0 表示尚未完成首次加载）
+  int get displayPage => throw _privateConstructorUsedError;
 
   /// 是否正在加载
   bool get isLoading => throw _privateConstructorUsedError;
@@ -57,6 +60,7 @@ abstract class $ExploreShowStateCopyWith<$Res> {
       String categoryUrl,
       List<SearchBook> books,
       int page,
+      int displayPage,
       bool isLoading,
       bool hasMore,
       String? error});
@@ -82,6 +86,7 @@ class _$ExploreShowStateCopyWithImpl<$Res, $Val extends ExploreShowState>
     Object? categoryUrl = null,
     Object? books = null,
     Object? page = null,
+    Object? displayPage = null,
     Object? isLoading = null,
     Object? hasMore = null,
     Object? error = freezed,
@@ -106,6 +111,10 @@ class _$ExploreShowStateCopyWithImpl<$Res, $Val extends ExploreShowState>
       page: null == page
           ? _value.page
           : page // ignore: cast_nullable_to_non_nullable
+              as int,
+      displayPage: null == displayPage
+          ? _value.displayPage
+          : displayPage // ignore: cast_nullable_to_non_nullable
               as int,
       isLoading: null == isLoading
           ? _value.isLoading
@@ -149,6 +158,7 @@ abstract class _$$ExploreShowStateImplCopyWith<$Res>
       String categoryUrl,
       List<SearchBook> books,
       int page,
+      int displayPage,
       bool isLoading,
       bool hasMore,
       String? error});
@@ -173,6 +183,7 @@ class __$$ExploreShowStateImplCopyWithImpl<$Res>
     Object? categoryUrl = null,
     Object? books = null,
     Object? page = null,
+    Object? displayPage = null,
     Object? isLoading = null,
     Object? hasMore = null,
     Object? error = freezed,
@@ -197,6 +208,10 @@ class __$$ExploreShowStateImplCopyWithImpl<$Res>
       page: null == page
           ? _value.page
           : page // ignore: cast_nullable_to_non_nullable
+              as int,
+      displayPage: null == displayPage
+          ? _value.displayPage
+          : displayPage // ignore: cast_nullable_to_non_nullable
               as int,
       isLoading: null == isLoading
           ? _value.isLoading
@@ -223,6 +238,7 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
       this.categoryUrl = '',
       final List<SearchBook> books = const [],
       this.page = 1,
+      this.displayPage = 0,
       this.isLoading = false,
       this.hasMore = true,
       this.error})
@@ -254,10 +270,15 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
     return EqualUnmodifiableListView(_books);
   }
 
-  /// 当前页码（从 1 开始）
+  /// 下一待抓取页码（对标 Android ExplorePaginationState.nextPage）
   @override
   @JsonKey()
   final int page;
+
+  /// 当前展示页码（对标 Android pageLiveData，0 表示尚未完成首次加载）
+  @override
+  @JsonKey()
+  final int displayPage;
 
   /// 是否正在加载
   @override
@@ -275,7 +296,7 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
 
   @override
   String toString() {
-    return 'ExploreShowState(source: $source, categoryName: $categoryName, categoryUrl: $categoryUrl, books: $books, page: $page, isLoading: $isLoading, hasMore: $hasMore, error: $error)';
+    return 'ExploreShowState(source: $source, categoryName: $categoryName, categoryUrl: $categoryUrl, books: $books, page: $page, displayPage: $displayPage, isLoading: $isLoading, hasMore: $hasMore, error: $error)';
   }
 
   @override
@@ -290,6 +311,8 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
                 other.categoryUrl == categoryUrl) &&
             const DeepCollectionEquality().equals(other._books, _books) &&
             (identical(other.page, page) || other.page == page) &&
+            (identical(other.displayPage, displayPage) ||
+                other.displayPage == displayPage) &&
             (identical(other.isLoading, isLoading) ||
                 other.isLoading == isLoading) &&
             (identical(other.hasMore, hasMore) || other.hasMore == hasMore) &&
@@ -304,6 +327,7 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
       categoryUrl,
       const DeepCollectionEquality().hash(_books),
       page,
+      displayPage,
       isLoading,
       hasMore,
       error);
@@ -323,6 +347,7 @@ abstract class _ExploreShowState implements ExploreShowState {
       final String categoryUrl,
       final List<SearchBook> books,
       final int page,
+      final int displayPage,
       final bool isLoading,
       final bool hasMore,
       final String? error}) = _$ExploreShowStateImpl;
@@ -345,8 +370,12 @@ abstract class _ExploreShowState implements ExploreShowState {
   List<SearchBook> get books;
   @override
 
-  /// 当前页码（从 1 开始）
+  /// 下一待抓取页码（对标 Android ExplorePaginationState.nextPage）
   int get page;
+  @override
+
+  /// 当前展示页码（对标 Android pageLiveData，0 表示尚未完成首次加载）
+  int get displayPage;
   @override
 
   /// 是否正在加载

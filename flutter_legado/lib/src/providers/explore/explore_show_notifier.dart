@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../models/models.dart';
 import '../providers.dart';
 import 'explore_show_state.dart';
 
@@ -16,14 +17,14 @@ export 'explore_show_state.dart';
 ///
 /// 职责严格限定（对齐 ExploreShowViewModel.kt）：
 /// - 调用 BookApi.exploreFetchBooks → 接收纯数据 → 累积去重更新 State
-/// - 管理分页状态（page/hasMore/loading/error）
+/// - 管理分页状态（page/displayPage/hasMore/loading/error）
 /// - 禁止包含业务计算（书籍抓取/解析由 Rust 完成）
 class ExploreShowNotifier
     extends AutoDisposeFamilyNotifier<ExploreShowState, ExploreShowArgs> {
   @override
   ExploreShowState build(ExploreShowArgs arg) {
     // 延迟到 build() 返回后执行首次加载
-    Future.microtask(fetchBooks);
+    Future.microtask(() => fetchBooks());
     return ExploreShowState(
       source: arg.source,
       categoryName: arg.categoryName,
@@ -31,15 +32,16 @@ class ExploreShowNotifier
     );
   }
 
-  /// 抓取当前页书籍并累积去重（对标 Android ExploreShowViewModel.explore）
+  /// 抓取当前 [state.page] 页书籍（对标 Android ExploreShowViewModel.explore）
   ///
-  /// 加载当前页数据并累积到列表中，成功后 page++；
-  /// 返回空列表时认为没有更多数据（hasMore = false）。
-  Future<void> fetchBooks() async {
+  /// [prepend] 为 true 时将新页插入列表头部（上滑加载上一页）；
+  /// [replace] 为 true 时替换整表（跳页后首次加载）。
+  Future<void> fetchBooks({bool prepend = false, bool replace = false}) async {
     if (state.isLoading || !state.hasMore) return;
     final source = state.source;
     if (source == null || state.categoryUrl.isEmpty) return;
 
+    final fetchPage = state.page;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final api = ref.read(bookApiProvider);
@@ -47,24 +49,22 @@ class ExploreShowNotifier
       final newBooks = await api.exploreFetchBooks(
         sourceJson,
         state.categoryUrl,
-        state.page,
+        fetchPage,
       );
 
-      // 去重添加（对标 Android books LinkedHashSet）
-      final existingUrls = state.books.map((b) => b.bookUrl).toSet();
-      final merged = [...state.books];
-      for (final book in newBooks) {
-        if (!existingUrls.contains(book.bookUrl)) {
-          merged.add(book);
-          existingUrls.add(book.bookUrl);
-        }
-      }
+      final merged = _mergeBooks(
+        state.books,
+        newBooks,
+        prepend: prepend,
+        replace: replace,
+      );
 
       state = state.copyWith(
         books: merged,
         isLoading: false,
         hasMore: newBooks.isNotEmpty,
-        page: newBooks.isEmpty ? state.page : state.page + 1,
+        displayPage: newBooks.isEmpty ? state.displayPage : fetchPage,
+        page: newBooks.isEmpty ? fetchPage : fetchPage + 1,
       );
     } catch (e) {
       state = state.copyWith(
@@ -75,14 +75,77 @@ class ExploreShowNotifier
     }
   }
 
+  /// 加载指定上一页（对标 Android scrollToTop → explore(oldPage)）
+  Future<void> loadPreviousPage() async {
+    if (state.isLoading || state.displayPage <= 1) return;
+    final prevPage = state.displayPage - 1;
+    state = state.copyWith(page: prevPage, hasMore: true, error: null);
+    await fetchBooks(prepend: true);
+  }
+
+  /// 跳转到指定页（对标 Android skipPage + explore）
+  Future<void> skipToPage(int targetPage) async {
+    if (targetPage <= 0 || state.isLoading) return;
+    state = state.copyWith(
+      books: [],
+      page: targetPage,
+      displayPage: targetPage,
+      hasMore: true,
+      error: null,
+    );
+    await fetchBooks(replace: true);
+  }
+
   /// 刷新（清空重新加载，对标 Android 下拉刷新）
   Future<void> refresh() async {
-    state = state.copyWith(books: [], page: 1, hasMore: true, error: null);
-    await fetchBooks();
+    state = state.copyWith(
+      books: [],
+      page: 1,
+      displayPage: 0,
+      hasMore: true,
+      error: null,
+    );
+    await fetchBooks(replace: true);
   }
 
   /// 加载下一页（上滑触底时调用）
   Future<void> loadMore() => fetchBooks();
+
+  List<SearchBook> _mergeBooks(
+    List<SearchBook> existing,
+    List<SearchBook> incoming, {
+    required bool prepend,
+    required bool replace,
+  }) {
+    if (replace) {
+      return List<SearchBook>.from(incoming);
+    }
+
+    final keys = <String>{};
+    final merged = <SearchBook>[];
+
+    void addBook(SearchBook book, int index) {
+      final key = exploreBookDedupeKey(book, listIndex: index);
+      if (keys.add(key)) merged.add(book);
+    }
+
+    if (prepend) {
+      for (var i = 0; i < incoming.length; i++) {
+        addBook(incoming[i], i);
+      }
+      for (var i = 0; i < existing.length; i++) {
+        addBook(existing[i], incoming.length + i);
+      }
+    } else {
+      for (var i = 0; i < existing.length; i++) {
+        addBook(existing[i], i);
+      }
+      for (var i = 0; i < incoming.length; i++) {
+        addBook(incoming[i], existing.length + i);
+      }
+    }
+    return merged;
+  }
 
   /// 统一错误映射
   String _mapError(Object e) {

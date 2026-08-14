@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.65] - 2026-08-14
+
+### Fixed
+- [UI] 发现分类列表仅显示 1 本书：`bookUrl` 为空时去重键回退为「书名+作者」，不再全部折叠为一条
+- [UI] 发现分类列表补齐右上角「第 X 页」与页码选择器、上滑加载上一页/下滑加载下一页，对齐 Android ExploreShowActivity 分页交互
+
 ## [2.0.64] - 2026-08-14
 
 ### Fixed
