@@ -440,7 +440,8 @@ void main() {
 
       final categories = readState().categoriesFor('https://s1.com');
       expect(categories, hasLength(1));
-      expect(categories!.first.title, startsWith('ERROR:'));
+      expect(categories!.first.title, 'ERROR');
+      expect(categories.first.url, contains('解析失败'));
       expect(readState().isLoadingCategories('https://s1.com'), isFalse);
     });
 
@@ -461,7 +462,7 @@ void main() {
       await pumpInit();
 
       await readNotifier().loadCategories(source);
-      expect(readState().categoriesFor('https://s1.com')!.first.title, startsWith('ERROR:'));
+      expect(readState().categoriesFor('https://s1.com')!.first.title, 'ERROR');
 
       await readNotifier().loadCategories(source);
       expect(readState().categoriesFor('https://s1.com'), hasLength(1));

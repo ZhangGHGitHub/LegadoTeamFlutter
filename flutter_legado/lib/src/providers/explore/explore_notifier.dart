@@ -109,13 +109,13 @@ class ExploreNotifier extends Notifier<ExploreState> {
       );
     } catch (e) {
       // 解析失败：展示 ERROR 行（对齐 Android ExploreKind ERROR:）
-      final msg = _mapError(e);
+      final msg = _formatExploreError(e);
       state = state.copyWith(
         categoriesCache: {
           ...state.categoriesCache,
           url: [
             ExploreCategory(
-              title: 'ERROR:$msg',
+              title: 'ERROR',
               url: msg,
             ),
           ],
@@ -168,8 +168,26 @@ class ExploreNotifier extends Notifier<ExploreState> {
 
   /// ERROR 分类缓存视为可重试（对标 Android clearExploreKindsCache）
   bool _isErrorOnlyCache(List<ExploreCategory> categories) {
-    return categories.length == 1 &&
-        categories.first.title.startsWith('ERROR:');
+    if (categories.length != 1) return false;
+    final t = categories.first.title;
+    return t == 'ERROR' || t.startsWith('ERROR:');
+  }
+
+  /// 剥离 FFI/Rust 包装前缀，弹窗展示完整 JS 错误
+  String _formatExploreError(Object e) {
+    var msg = _mapError(e);
+    const prefixes = [
+      'JS engine error: ',
+      'exploreUrl JS 执行失败: ',
+      'exploreUrl mainJs 加载失败: ',
+      'exploreUrl 上下文初始化失败: ',
+    ];
+    for (final p in prefixes) {
+      if (msg.startsWith(p)) {
+        msg = msg.substring(p.length).trim();
+      }
+    }
+    return msg.isEmpty ? _mapError(e) : msg;
   }
 
   /// 为 toggle/select 控件初始化 infoMap 默认值（对标 Android ExploreAdapter）

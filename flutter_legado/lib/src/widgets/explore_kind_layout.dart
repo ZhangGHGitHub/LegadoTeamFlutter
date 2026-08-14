@@ -81,27 +81,43 @@ class ExploreKindLayout extends StatelessWidget {
   }
 
   static void _showExploreErrorDialog(BuildContext context, String message) {
+    final label = CupertinoColors.label.resolveFrom(context);
+    final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
     showCupertinoDialog<void>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('ERROR'),
+        title: Text(
+          '发现分类加载失败',
+          style: TextStyle(
+            color: label,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         content: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.only(top: 10),
             child: SelectableText(
               message,
-              style: CupertinoTheme.of(ctx).textTheme.textStyle.copyWith(
-                    fontSize: 13,
-                    color: CupertinoColors.label.resolveFrom(ctx),
-                  ),
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: secondary,
+              ),
             ),
           ),
         ),
         actions: [
           CupertinoDialogAction(
-            isDefaultAction: true,
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('确定'),
+            child: Text(
+              '确定',
+              style: TextStyle(
+                color: label,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -162,7 +178,7 @@ class _ExploreKindItem extends ConsumerWidget {
         width: width,
         onTap: category.hasUrl
             ? () {
-                if (category.title.startsWith('ERROR:')) {
+                if (category.title == 'ERROR' || category.title.startsWith('ERROR:')) {
                   ExploreKindLayout._showExploreErrorDialog(
                     context,
                     category.url ?? category.title,

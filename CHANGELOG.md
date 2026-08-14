@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.70] - 2026-08-14
+
+### Fixed
+- [Rust] 大灰狼 exploreUrl JS 执行失败：补齐 `source/java` 的 `getLoginHeader`/`putLoginInfo`/`login`/`getLoginInfoMap` 等 BaseSource API；infoMap 可写 Proxy；登录缓存读写与聚合源 `exploreKinds()` 回归测试
+- [UI] 发现 ERROR 弹窗完整展示 JS 错误、去蓝字/红条，Apple 灰阶确定按钮
+
 ## [2.0.69] - 2026-08-14
 
 ### Fixed
