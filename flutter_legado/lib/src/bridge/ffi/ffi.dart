@@ -266,6 +266,38 @@ Future<String> sourceLoginActionV2({
   userInputJson: userInputJson,
 );
 
+/// 保存书源登录用户信息（对齐原版 `BaseSource.putLoginInfo` →
+/// CacheManager `userInfo_<key>`；V2 login 命令与手动登录共用）
+///
+/// `source_url` — 书源 URL；`info_json` — 用户信息 JSON（原样存储）
+Future<void> sourcePutLoginInfo({
+  required String sourceUrl,
+  required String infoJson,
+}) => RustLib.instance.api.crateFfiFfiSourcePutLoginInfo(
+  sourceUrl: sourceUrl,
+  infoJson: infoJson,
+);
+
+/// 保存书源登录头（对齐原版 `BaseSource.putLoginHeader` →
+/// CacheManager `loginHeader_<key>`，请求路径自动合并）
+///
+/// `source_url` — 书源 URL；`header_json` — header map JSON（如 `{"Cookie":"..."}`）
+Future<void> sourcePutLoginHeader({
+  required String sourceUrl,
+  required String headerJson,
+}) => RustLib.instance.api.crateFfiFfiSourcePutLoginHeader(
+  sourceUrl: sourceUrl,
+  headerJson: headerJson,
+);
+
+/// 读取书源登录用户信息（`userInfo_<key>`），无则返回空字符串
+Future<String> sourceGetLoginInfo({required String sourceUrl}) =>
+    RustLib.instance.api.crateFfiFfiSourceGetLoginInfo(sourceUrl: sourceUrl);
+
+/// 读取书源登录头（`loginHeader_<key>`），无则返回空字符串
+Future<String> sourceGetLoginHeader({required String sourceUrl}) =>
+    RustLib.instance.api.crateFfiFfiSourceGetLoginHeader(sourceUrl: sourceUrl);
+
 /// 搜索书籍（返回 JSON 数组）
 ///
 /// `keyword` — 搜索关键词
@@ -823,6 +855,13 @@ Future<void> exploreInfoMapEnsureDefault({
   key: key,
   defaultValue: defaultValue,
 );
+
+/// 读取发现 infoMap 快照（JSON 对象字符串；供 UI 回显 toggle/select/text
+/// 已存值，对齐原版 InfoMap 持久化语义）— 发现页修复 B①
+Future<String> exploreInfoMapSnapshot({required String sourceUrl}) => RustLib
+    .instance
+    .api
+    .crateFfiFfiExploreInfoMapSnapshot(sourceUrl: sourceUrl);
 
 /// 执行发现页控件 action JS（返回 ExploreEvalActionResult JSON）
 Future<String> exploreEvalAction({
