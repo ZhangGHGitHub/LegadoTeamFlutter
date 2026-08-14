@@ -69,4 +69,53 @@ void main() {
     // 无右栏占位提示（单栏）
     expect(find.text('选择发现分类'), findsNothing);
   });
+
+  testWidgets('长按书源行弹出完整菜单（编辑/置顶/登录/搜索/刷新/删除）', (tester) async {
+    // 带 loginUrl 的书源 → 显示「登录」菜单项（对齐原版 hasLoginUrl 条件）
+    final loginSource = const BookSource(
+      bookSourceUrl: 'https://login.com',
+      bookSourceName: '登录源B',
+      exploreUrl: '分类::https://login.com/explore',
+      loginUrl: 'https://login.com/login',
+    );
+    when(() => mockApi.getBookSources())
+        .thenAnswer((_) async => [...sources, loginSource]);
+
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('登录源B'));
+    await tester.pumpAndSettle();
+
+    // 六项菜单齐全（发现页修复 R2，对齐原版 ExploreAdapter.showMenu）
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('置顶'), findsOneWidget);
+    expect(find.text('登录'), findsOneWidget);
+    expect(find.text('搜索'), findsOneWidget);
+    expect(find.text('刷新'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+  });
+
+  testWidgets('无登录配置的书源菜单不显示登录项（hasLoginUrl 条件）', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('发现源A'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('置顶'), findsOneWidget);
+    expect(find.text('登录'), findsNothing);
+    expect(find.text('搜索'), findsOneWidget);
+    expect(find.text('刷新'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+  });
 }

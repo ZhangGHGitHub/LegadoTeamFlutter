@@ -124,12 +124,25 @@ class AppRoutes {
         search: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           String? initialQuery;
+          List<String>? sourceUrls;
           if (args is String) {
             initialQuery = args;
-          } else if (args is Map && args['query'] is String) {
-            initialQuery = args['query'] as String;
+          } else if (args is Map) {
+            if (args['query'] is String) {
+              initialQuery = args['query'] as String;
+            }
+            // 发现页「搜索」入口：预选指定书源（发现页修复 R2）
+            if (args['sourceUrl'] is String) {
+              sourceUrls = [args['sourceUrl'] as String];
+            } else if (args['sourceUrls'] is List) {
+              sourceUrls =
+                  (args['sourceUrls'] as List).whereType<String>().toList();
+            }
           }
-          return SearchScreen(initialQuery: initialQuery);
+          return SearchScreen(
+            initialQuery: initialQuery,
+            initialSourceUrls: sourceUrls,
+          );
         },
         sources: (_) => const SourceScreen(),
         sourceEdit: (_) => const SourceEditScreen(),

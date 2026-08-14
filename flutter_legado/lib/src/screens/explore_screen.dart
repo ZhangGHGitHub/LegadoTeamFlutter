@@ -1,4 +1,4 @@
-﻿/// 书源探索页面（ExploreScreen）
+/// 书源探索页面（ExploreScreen）
 ///
 /// 参考 Android 原版 ExploreFragment.kt 实现
 /// 核心功能：
@@ -21,9 +21,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/explore/explore_notifier.dart';
+import '../providers/providers.dart';
 import '../routes.dart';
 import '../screens/explore_show_screen.dart';
 import '../utils/responsive.dart';
+import '../utils/source_login_entry.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
 import '../widgets/explore_kind_layout.dart';
@@ -292,6 +294,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                   );
                 },
                 onUninstall: () => _onUninstall(source.bookSourceUrl),
+                onTop: () => _onTopSource(source),
+                onLogin: () => _onLoginSource(source),
+                onSearch: () => _onSearchSource(source),
+                onRefresh: () =>
+                    ref.read(exploreNotifierProvider.notifier).reloadCategories(source),
                 onCategoryTap: (categoryName, categoryUrl) {
                   _openExploreShow(source, categoryName, categoryUrl, isTablet);
                 },
@@ -334,6 +341,56 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       );
     }
   }
+
+  /// 书源置顶（对齐原版 ExploreViewModel.topSource：
+  /// customOrder = 当前最小 order - 1，置顶到最前）— 发现页修复 R2
+  Future<void> _onTopSource(BookSource source) async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final sources = await api.getBookSources();
+      var minOrder = 0;
+      for (final s in sources) {
+        if (s.customOrder < minOrder) minOrder = s.customOrder;
+      }
+      final updated = source.copyWith(customOrder: minOrder - 1);
+      await api.updateBookSource(updated);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已置顶'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('置顶失败: $e')),
+      );
+    }
+  }
+
+  /// 书源登录（统一入口：V2 动态对话框 / 手动凭据页）— 发现页修复 R2
+  Future<void> _onLoginSource(BookSource source) async {
+    final ok = await showSourceLogin(context, ref, source);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('登录成功'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  /// 按指定书源搜索（对齐原版 ExploreAdapter "search" → SearchActivity.start）— R2
+  void _onSearchSource(BookSource source) {
+    Navigator.pushNamed(
+      context,
+      AppRoutes.search,
+      arguments: {'sourceUrl': source.bookSourceUrl},
+    );
+  }
 }
 
 /// 书源列表项：iOS 分组卡片标题行 + 展开分类 inset list
@@ -341,6 +398,10 @@ class _SourceItem extends ConsumerStatefulWidget {
   final BookSource source;
   final VoidCallback onEdit;
   final VoidCallback onUninstall;
+  final VoidCallback onTop;
+  final VoidCallback onLogin;
+  final VoidCallback onSearch;
+  final VoidCallback onRefresh;
   final bool isTablet;
   final ValueNotifier<int>? collapseSignal;
   final Duration expandDuration;
@@ -350,6 +411,10 @@ class _SourceItem extends ConsumerStatefulWidget {
     required this.source,
     required this.onEdit,
     required this.onUninstall,
+    required this.onTop,
+    required this.onLogin,
+    required this.onSearch,
+    required this.onRefresh,
     required this.isTablet,
     required this.expandDuration,
     this.collapseSignal,
@@ -467,11 +532,18 @@ class _SourceItemState extends ConsumerState<_SourceItem>
   Future<void> _showItemMenu() async {
     final box = context.findRenderObject() as RenderBox?;
     final pos = box != null ? box.localToGlobal(Offset.zero) : Offset.zero;
+    // 书源行菜单（对齐原版 ExploreAdapter.showMenu 六项：
+    // 编辑/置顶/登录(hasLoginUrl 条件)/搜索/刷新/删除）— 发现页修复 R2
     final action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
       items: [
         const PopupMenuItem(value: 'edit', child: Text('编辑')),
+        const PopupMenuItem(value: 'top', child: Text('置顶')),
+        if (_hasLoginUrl)
+          const PopupMenuItem(value: 'login', child: Text('登录')),
+        const PopupMenuItem(value: 'search', child: Text('搜索')),
+        const PopupMenuItem(value: 'refresh', child: Text('刷新')),
         PopupMenuItem(
           value: 'uninstall',
           child: Text(
@@ -485,9 +557,28 @@ class _SourceItemState extends ConsumerState<_SourceItem>
     switch (action) {
       case 'edit':
         widget.onEdit();
+      case 'top':
+        widget.onTop();
+      case 'login':
+        widget.onLogin();
+      case 'search':
+        widget.onSearch();
+      case 'refresh':
+        widget.onRefresh();
       case 'uninstall':
         widget.onUninstall();
     }
+  }
+
+  /// 是否有登录入口（对齐原版 BookSourcePart.hasLoginUrl SQL 计算列：
+  /// loginUrl 非空，或 mainJs + loginUi 非空且非 `[]`）— R2
+  bool get _hasLoginUrl {
+    final s = widget.source;
+    final loginUrl = (s.loginUrl ?? '').trim();
+    if (loginUrl.isNotEmpty) return true;
+    final mainJs = (s.mainJs ?? '').trim();
+    final loginUi = (s.loginUi ?? '').replaceAll(RegExp(r'\s'), '');
+    return mainJs.isNotEmpty && loginUi.isNotEmpty && loginUi != '[]';
   }
 
   void _toggleExpand() {

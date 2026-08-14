@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -22,7 +22,11 @@ class SearchScreen extends ConsumerStatefulWidget {
   /// 初始搜索词（对齐原版 SearchActivity.start(context, query)）
   final String? initialQuery;
 
-  const SearchScreen({super.key, this.initialQuery});
+  /// 预选书源 URL 列表（对齐原版 SearchActivity.start(context, bookSource)：
+  /// 从发现页「搜索」菜单进入时按指定书源搜索）— 发现页修复 R2
+  final List<String>? initialSourceUrls;
+
+  const SearchScreen({super.key, this.initialQuery, this.initialSourceUrls});
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -52,6 +56,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(searchNotifierProvider.notifier).resetForOpen();
+      // 预选书源（发现页「搜索」入口指定书源）
+      final sourceUrls = widget.initialSourceUrls;
+      if (sourceUrls != null && sourceUrls.isNotEmpty) {
+        for (final url in sourceUrls) {
+          ref.read(searchNotifierProvider.notifier).toggleSource(url);
+        }
+      }
       final q = widget.initialQuery?.trim();
       if (q != null && q.isNotEmpty) {
         ref.read(searchNotifierProvider.notifier).setInput(q);
