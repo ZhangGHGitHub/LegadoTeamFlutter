@@ -200,6 +200,95 @@ pub fn build_search_url_with_lib(
     AnalyzeUrl::new(&url_with_key, Some(keyword), Some(page_u32), source_tag, None)
 }
 
+/// 构建发现分类 URL（对标 Android WebBook.exploreBookAwait + infoMap）
+///
+/// 携带书源 infoMap 与 jsLib，支持 `{{infoMap['key']}}` / `{{page}}` 等模板。
+pub fn build_explore_url(
+    template: &str,
+    page: i32,
+    source_tag: &str,
+    info_map: &HashMap<String, String>,
+    js_lib: Option<&str>,
+) -> AnalyzeUrl {
+    let page_u32 = page.max(1) as u32;
+    let mut variables = HashMap::new();
+    variables.insert("page".to_string(), page.to_string());
+    variables.insert("baseUrl".to_string(), source_tag.to_string());
+    for (k, v) in info_map {
+        variables.insert(k.clone(), v.clone());
+        variables.insert(format!("infoMap.{k}"), v.clone());
+    }
+    let info_json =
+        serde_json::to_string(info_map).unwrap_or_else(|_| "{}".to_string());
+    variables.insert("__infoMapJson".to_string(), info_json);
+
+    if template.contains("{{") || template.contains("<js>") || template.contains("@js:") {
+        if let Ok(analyzed) =
+            explore_url_with_js(template, &variables, page, source_tag, js_lib)
+        {
+            return analyzed;
+        }
+    }
+    AnalyzeUrl::new(template, None, Some(page_u32), source_tag, None)
+}
+
+/// quickjs 启用：发现 URL 模板 JS 求值（注入 infoMap 对象）
+#[cfg(feature = "quickjs")]
+fn explore_url_with_js(
+    template: &str,
+    variables: &HashMap<String, String>,
+    page: i32,
+    source_tag: &str,
+    js_lib: Option<&str>,
+) -> legado_core::LegadoResult<AnalyzeUrl> {
+    let info_json = variables
+        .get("__infoMapJson")
+        .cloned()
+        .unwrap_or_else(|| "{}".to_string());
+    let executor =
+        ExploreInfoMapJsExecutor::new(source_tag, js_lib.map(|s| s.to_string()), info_json);
+    AnalyzeUrl::parse_with_js(template, variables, page, &executor)
+}
+
+#[cfg(not(feature = "quickjs"))]
+fn explore_url_with_js(
+    template: &str,
+    variables: &HashMap<String, String>,
+    page: i32,
+    _source_tag: &str,
+    _js_lib: Option<&str>,
+) -> legado_core::LegadoResult<AnalyzeUrl> {
+    AnalyzeUrl::parse(template, variables, page)
+}
+
+/// 发现 URL JS 执行器：每次求值前注入 `var infoMap = {...}`
+#[cfg(feature = "quickjs")]
+struct ExploreInfoMapJsExecutor {
+    inner: QuickJsExecutor,
+    info_map_json: String,
+}
+
+#[cfg(feature = "quickjs")]
+impl ExploreInfoMapJsExecutor {
+    fn new(source_tag: &str, js_lib: Option<String>, info_map_json: String) -> Self {
+        Self {
+            inner: QuickJsExecutor::new(source_tag).with_js_lib(js_lib),
+            info_map_json,
+        }
+    }
+}
+
+#[cfg(feature = "quickjs")]
+impl legado_parser::JsExecutor for ExploreInfoMapJsExecutor {
+    fn execute_js(&self, js_code: &str) -> Result<String, String> {
+        let wrapped = format!(
+            "var infoMap = {};\n{}",
+            self.info_map_json, js_code
+        );
+        self.inner.execute_js(&wrapped)
+    }
+}
+
 /// quickjs 启用：用 QuickJS 引擎求值 `{{expression}}`
 #[cfg(feature = "quickjs")]
 fn search_url_with_js(

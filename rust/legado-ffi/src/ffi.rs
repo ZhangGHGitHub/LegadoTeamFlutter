@@ -1072,6 +1072,30 @@ pub mod ffi {
         )?)
     }
 
+    /// 写入发现 infoMap 键值（toggle/select 控件）
+    pub fn explore_info_map_put(
+        source_url: String,
+        key: String,
+        value: String,
+    ) -> Result<(), BridgeError> {
+        crate::api::explore_api::explore_info_map_put(&source_url, &key, &value)?;
+        Ok(())
+    }
+
+    /// 初始化发现 infoMap 默认值
+    pub fn explore_info_map_ensure_default(
+        source_url: String,
+        key: String,
+        default_value: String,
+    ) -> Result<(), BridgeError> {
+        crate::api::explore_api::explore_info_map_ensure_default(
+            &source_url,
+            &key,
+            &default_value,
+        )?;
+        Ok(())
+    }
+
     // ─── 规则解析 ─────────────────────────────────────────────
 
     /// 使用规则解析内容，返回 JSON 格式的结果

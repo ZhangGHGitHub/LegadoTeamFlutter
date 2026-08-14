@@ -13,9 +13,22 @@ use legado_core::web_book::WebSearchResult;
 use legado_core::{LegadoError, LegadoResult};
 use legado_parser::AnalyzeUrl;
 
+use crate::api::explore_info_map;
 use crate::runtime;
 
-// ─── 公开 API 函数 ─────────────────────────────────────────────────────────────
+/// 写入发现 infoMap 键值（对标 Android ExploreAdapter toggle/select）
+pub fn explore_info_map_put(source_url: &str, key: &str, value: &str) -> LegadoResult<()> {
+    explore_info_map::put(source_url, key, value)
+}
+
+/// 初始化发现 infoMap 默认值（键不存在时写入）
+pub fn explore_info_map_ensure_default(
+    source_url: &str,
+    key: &str,
+    default_value: &str,
+) -> LegadoResult<()> {
+    explore_info_map::ensure_default(source_url, key, default_value)
+}
 
 /// 解析 exploreUrl 为分类列表
 ///
@@ -24,9 +37,41 @@ use crate::runtime;
 ///
 /// 返回 `ExploreCategory` JSON 数组字符串
 pub fn explore_parse_url(explore_url: &str, source_json: &str) -> LegadoResult<String> {
-    let rule_str = resolve_explore_rule_str(explore_url, source_json)?;
+    let source = parse_source_for_explore_optional(source_json)?;
+    let rule_str = resolve_explore_rule_str(explore_url, source_json, source.as_ref())?;
     let categories: Vec<ExploreCategory> = parse_explore_url(&rule_str);
+    if let Some(src) = source.as_ref() {
+        init_info_map_defaults(&src.book_source_url, &categories);
+    }
     serde_json::to_string(&categories).map_err(LegadoError::Serialization)
+}
+
+/// 为 toggle/select 分类初始化 infoMap 默认值
+fn init_info_map_defaults(source_url: &str, categories: &[ExploreCategory]) {
+    for cat in categories {
+        if cat.r#type != "toggle" && cat.r#type != "select" {
+            continue;
+        }
+        let chars: Vec<&str> = cat
+            .chars
+            .as_ref()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|v| v.as_deref())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if chars.is_empty() {
+            continue;
+        }
+        let default = cat
+            .default_value
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(chars[0]);
+        let _ = explore_info_map::ensure_default(source_url, &cat.title, default);
+    }
 }
 
 /// 抓取发现分类的书籍列表
@@ -80,7 +125,11 @@ pub fn explore_fetch_books(source_json: &str, url: &str, page: i32) -> LegadoRes
 // ─── exploreUrl @js: 解析 ─────────────────────────────────────────────────────
 
 /// 将 exploreUrl 解析为可分类的规则字符串（对标 Android exploreKinds）
-fn resolve_explore_rule_str(explore_url: &str, source_json: &str) -> LegadoResult<String> {
+fn resolve_explore_rule_str(
+    explore_url: &str,
+    source_json: &str,
+    source: Option<&BookSource>,
+) -> LegadoResult<String> {
     let trimmed = explore_url.trim();
     if trimmed.is_empty() {
         return Ok(String::new());
@@ -92,7 +141,10 @@ fn resolve_explore_rule_str(explore_url: &str, source_json: &str) -> LegadoResul
         if js_code.is_empty() {
             return Ok(String::new());
         }
-        let source = parse_source_for_explore(source_json)?;
+        let source = match source.cloned() {
+            Some(s) => s,
+            None => parse_source_for_explore(source_json)?,
+        };
         return eval_explore_js(js_code, &source);
     }
 
@@ -101,11 +153,23 @@ fn resolve_explore_rule_str(explore_url: &str, source_json: &str) -> LegadoResul
         if js_code.is_empty() {
             return Ok(String::new());
         }
-        let source = parse_source_for_explore(source_json)?;
+        let source = match source.cloned() {
+            Some(s) => s,
+            None => parse_source_for_explore(source_json)?,
+        };
         return eval_explore_js(&js_code, &source);
     }
 
     Ok(trimmed.to_string())
+}
+
+fn parse_source_for_explore_optional(source_json: &str) -> LegadoResult<Option<BookSource>> {
+    if source_json.trim().is_empty() {
+        return Ok(None);
+    }
+    serde_json::from_str(source_json)
+        .map(Some)
+        .map_err(LegadoError::Serialization)
 }
 
 fn parse_source_for_explore(source_json: &str) -> LegadoResult<BookSource> {
@@ -156,6 +220,8 @@ fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
 
         let source_json = serde_json::to_string(source)?;
         let base_url_json = serde_json::to_string(&tag)?;
+        let info_map = explore_info_map::snapshot(&tag).unwrap_or_default();
+        let info_map_json = serde_json::to_string(&info_map).unwrap_or_else(|_| "{}".to_string());
 
         // 对齐 Android BaseSource.evalJS：java 全局已注册；source 须含 get/put/getVariable/setVariable
         let setup = format!(
@@ -167,10 +233,11 @@ source.get = function(k) {{ return get('v_' + baseUrl + '_' + k) || ''; }};
 source.put = function(k, v) {{ put('v_' + baseUrl + '_' + k, String(v)); return v; }};
 source.getVariable = function() {{ return getVariable('sourceVariable_' + baseUrl) || ''; }};
 source.setVariable = function(v) {{ setVariable('sourceVariable_' + baseUrl, String(v)); return v; }};
-var infoMap = {{}};
+var infoMap = {info_map_json};
 "#,
             base_url_json = base_url_json,
             source_json = source_json,
+            info_map_json = info_map_json,
         );
 
         guard
@@ -206,13 +273,14 @@ async fn explore_books_async(
         .as_ref()
         .and_then(|h| serde_json::from_str(h).ok());
 
-    // 使用 AnalyzeUrl 解析分类 URL（处理页码替换等）
-    let analyze_url = AnalyzeUrl::new(
+    // 规则书源路径
+    let info_map = explore_info_map::snapshot(&source.book_source_url).unwrap_or_default();
+    let analyze_url = crate::js_executor::build_explore_url(
         url,
-        None,
-        Some(page.max(1) as u32),
+        page,
         &source.book_source_url,
-        source_headers.clone(),
+        &info_map,
+        source.js_lib.as_deref(),
     );
 
     let final_url = analyze_url.url().to_string();

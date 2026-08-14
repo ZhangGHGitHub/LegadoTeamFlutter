@@ -18,6 +18,7 @@ pub mod cover_api;
 pub mod dict_api;
 pub mod download_api;
 pub mod explore_api;
+pub mod explore_info_map;
 pub mod highlight_api;
 pub mod http_tts_api;
 pub mod image_api;
