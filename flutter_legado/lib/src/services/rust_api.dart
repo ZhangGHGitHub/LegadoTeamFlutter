@@ -1743,6 +1743,11 @@ class RustApi implements BookApi {
         defaultValue: defaultValue,
       );
 
+  /// 读取发现 infoMap 快照（JSON 对象字符串）— 发现页修复 B①
+  @override
+  Future<String> exploreInfoMapSnapshot(String sourceUrl) =>
+      bridge.exploreInfoMapSnapshot(sourceUrl: sourceUrl);
+
   @override
   Future<Map<String, dynamic>> exploreEvalAction({
     required String sourceJson,

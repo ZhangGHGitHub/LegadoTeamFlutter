@@ -1584,6 +1584,10 @@ class MockBookApi implements BookApi {
   }
 
   @override
+  Future<String> exploreInfoMapSnapshot(String sourceUrl) async =>
+      jsonEncode(_exploreInfoMaps[sourceUrl] ?? const <String, String>{});
+
+  @override
   Future<Map<String, dynamic>> exploreEvalAction({
     required String sourceJson,
     required String actionJs,

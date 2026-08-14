@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/providers.dart';
 import 'explore_kind_action.dart';
+
+/// 读取 infoMap 已存值（B① 回显：toggle/select/text 初始显示与 Rust 请求
+/// 实际使用的 infoMap 值一致；读不到返回 null）— DeepSeek Harness + UI
+Future<String?> _loadStoredInfoMapValue(
+  WidgetRef ref,
+  String sourceUrl,
+  String key,
+) async {
+  try {
+    final json =
+        await ref.read(bookApiProvider).exploreInfoMapSnapshot(sourceUrl);
+    final map = jsonDecode(json);
+    if (map is Map<String, dynamic>) {
+      final v = map[key]?.toString();
+      return (v != null && v.isNotEmpty) ? v : null;
+    }
+  } catch (_) {}
+  return null;
+}
 
 /// 按 [FlexChildStyle.layoutFlexBasisPercent] 将分类项排布为全宽行 / 网格 Chip。
 class ExploreKindLayout extends StatelessWidget {
@@ -423,6 +443,21 @@ class _ToggleChipState extends ConsumerState<_ToggleChip> {
     final defaultValue = widget.category.defaultValue ?? _chars.first;
     _index = _chars.indexOf(defaultValue);
     if (_index < 0) _index = 0;
+    // 回显 infoMap 已存值（对齐原版 ExploreAdapter 读 infoMap[title]）— B①
+    _loadStoredValue();
+  }
+
+  Future<void> _loadStoredValue() async {
+    final stored = await _loadStoredInfoMapValue(
+      ref,
+      widget.sourceUrl,
+      widget.category.title,
+    );
+    if (stored == null || !mounted) return;
+    final idx = _chars.indexOf(stored);
+    if (idx >= 0 && idx != _index) {
+      setState(() => _index = idx);
+    }
   }
 
   Future<void> _afterValueChanged() async {
@@ -532,6 +567,21 @@ class _SelectChipState extends ConsumerState<_SelectChip> {
     final defaultValue = widget.category.defaultValue ?? _chars.first;
     _index = _chars.indexOf(defaultValue);
     if (_index < 0) _index = 0;
+    // 回显 infoMap 已存值（对齐原版 ExploreAdapter 读 infoMap[title]）— B①
+    _loadStoredValue();
+  }
+
+  Future<void> _loadStoredValue() async {
+    final stored = await _loadStoredInfoMapValue(
+      ref,
+      widget.sourceUrl,
+      widget.category.title,
+    );
+    if (stored == null || !mounted) return;
+    final idx = _chars.indexOf(stored);
+    if (idx >= 0 && idx != _index) {
+      setState(() => _index = idx);
+    }
   }
 
   Future<void> _onPick(int next) async {
@@ -723,6 +773,18 @@ class _TextChipState extends ConsumerState<_TextChip> {
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
+    // 回显 infoMap 已存值（对齐原版 ExploreAdapter 读 infoMap[title]）— B①
+    _loadStoredValue();
+  }
+
+  Future<void> _loadStoredValue() async {
+    final stored = await _loadStoredInfoMapValue(
+      ref,
+      widget.sourceUrl,
+      widget.category.title,
+    );
+    if (stored == null || !mounted) return;
+    _controller.text = stored;
   }
 
   @override

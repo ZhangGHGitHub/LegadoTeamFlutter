@@ -767,6 +767,10 @@ abstract class BookApi {
     String defaultValue,
   );
 
+  /// 读取发现 infoMap 快照（JSON 对象；UI 回显 toggle/select/text 已存值，
+  /// 对齐原版 InfoMap 持久化语义）。加法式新增（2026-08-14 发现页修复 B①）。
+  Future<String> exploreInfoMapSnapshot(String sourceUrl);
+
   /// 执行发现页控件 action JS（对标 Android evalButtonClick）
   ///
   /// 返回 map：`raw` / `actions` / `refreshExplore`。
