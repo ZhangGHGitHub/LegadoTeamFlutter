@@ -466,9 +466,8 @@ async fn explore_books_async(
     let analyze_url = crate::js_executor::build_explore_url(
         url,
         page,
-        &source.book_source_url,
+        &source,
         &info_map,
-        source.js_lib.as_deref(),
     );
 
     let final_url = analyze_url.url().to_string();
@@ -539,8 +538,24 @@ async fn explore_books_async(
     // 重定向后的最终 URL 作为 base（对齐原版 WebBook.kt:173-181 用 res.url）— A5
     let base_url = response.url.clone();
     let t_parse = std::time::Instant::now();
-    let analyzer =
-        crate::js_executor::construct_analyzer(body, base_url.clone(), &source.book_source_url);
+
+    // 书山聚合等聚合源 bookList `<js>` 脚本依赖 jsLib 函数（getSessionId 等）与
+    // 书源上下文（source/cookie）；注入 sanitize 后的 jsLib + setup（对齐
+    // bootstrap_explore_js_context 的加载策略）。此前 analyzer 无 jsLib →
+    // getSessionId ReferenceError → 空列表「暂无书籍」。— DeepSeek Harness + Bridge
+    let js_lib_sanitized = source
+        .js_lib
+        .as_deref()
+        .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
+    let explore_setup =
+        crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+    let analyzer = crate::js_executor::construct_analyzer_with_source_context(
+        body,
+        base_url.clone(),
+        &source.book_source_url,
+        js_lib_sanitized.as_deref(),
+        explore_setup.clone(),
+    );
 
     let elements = if book_list_rule.is_empty() {
         vec![analyzer.content().to_string()]
@@ -600,8 +615,13 @@ async fn explore_books_async(
             .unwrap_or("")
     };
 
-    let mut elem_analyzer =
-        crate::js_executor::construct_analyzer(String::new(), base_url.clone(), &source.book_source_url);
+    let mut elem_analyzer = crate::js_executor::construct_analyzer_with_source_context(
+        String::new(),
+        base_url.clone(),
+        &source.book_source_url,
+        js_lib_sanitized.as_deref(),
+        explore_setup,
+    );
 
     // A9：列表规则无命中时回退按详情页单本解析（对齐原版 BookList.kt:100-108
     // collections 空 → getInfoItem 用 ruleBookInfo 整页解析；详情页直连场景）
@@ -1096,6 +1116,25 @@ function getServerHost() { return 'https://a.test'; }
             !out.contains("Cannot convert"),
             "getServerHost 裸调用应可用，实际: {out}"
         );
+
+        // 阶段 3：完整 exploreUrl 执行（剥离 <js> 标签）
+        let explore_url = src.get("exploreUrl").and_then(|u| u.as_str()).unwrap_or("");
+        let js = if explore_url.trim_start().starts_with("<js>") {
+            let start = explore_url.find("<js>").map(|i| i + 4).unwrap_or(0);
+            let end = explore_url.rfind("</js>").unwrap_or(explore_url.len());
+            &explore_url[start..end]
+        } else {
+            explore_url
+        };
+        let r3 = eval_explore_js(js, &source);
+        match &r3 {
+            Ok(o) => eprintln!(
+                "[真实 jsLib] 阶段3 完整 exploreUrl OK: {}",
+                o.chars().take(150).collect::<String>()
+            ),
+            Err(e) => eprintln!("[真实 jsLib] 阶段3 完整 exploreUrl 失败: {e}"),
+        }
+        // 完整脚本含网络请求，允许失败（模拟器环境），仅打印诊断
     }
 
     /// 探测 QuickJS eval 的 this 语义（裸调用函数 this / 顶层 this / Function 构造）
@@ -1116,6 +1155,105 @@ function getServerHost() { return 'https://a.test'; }
             .eval("var __h = new Function('var __i = function(){ return typeof this; }; return __i();'); __h();")
             .unwrap_or_default();
         eprintln!("[this 语义] 顶层={top}, 裸调用={bare}, Function={fnctor}, Function内裸调用={fnctor2}");
+    }
+
+    /// 书山聚合空列表根因回归：bookList `<js>` 脚本依赖 jsLib（getSessionId）+
+    /// 书源 setup（source/cookie）。验证 analyzer 注入 sanitize jsLib + setup 后
+    /// `$.data[*]` 复合规则可解析出书籍。— DeepSeek Harness + Bridge
+    #[test]
+    fn test_shushan_booklist_js_with_jslib_and_setup() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| n.contains("书山"))
+        }) else {
+            eprintln!("未找到书山聚合源，跳过");
+            return;
+        };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let book_list_rule = source
+            .rule_explore
+            .as_ref()
+            .and_then(|r| r.book_list.as_deref())
+            .expect("书山 ruleExplore.bookList 缺失");
+
+        // 合成 read_recommend 响应（cell_view.book_data 含 2 本）
+        let body = serde_json::json!({
+            "code": 0,
+            "message": "SUCCESS",
+            "data": {
+                "cell_view": {
+                    "cell_name": "推荐榜",
+                    "book_data": [
+                        {
+                            "book_name": "斗破苍穹测试",
+                            "author": "天蚕土豆",
+                            "abstract": "三十年河东",
+                            "thumb_url": "https://img.test/1.jpg",
+                            "book_url": "https://v1.vossc.com/detail?book_id=123"
+                        },
+                        {
+                            "book_name": "凡人修仙传测试",
+                            "author": "忘语",
+                            "abstract": "修仙路",
+                            "thumb_url": "https://img.test/2.jpg",
+                            "book_url": "https://v1.vossc.com/detail?book_id=456"
+                        }
+                    ]
+                }
+            }
+        })
+        .to_string();
+        let base = "https://v1.vossc.com/read_recommend?session=";
+
+        let lib = source.js_lib.as_deref().expect("书山 jsLib 缺失");
+        let sanitized = crate::api::source_js_bindings::sanitize_js_lib_for_quickjs(lib);
+        let setup = crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let analyzer = crate::js_executor::construct_analyzer_with_source_context(
+            body,
+            base.to_string(),
+            &source.book_source_url,
+            Some(&sanitized),
+            setup,
+        );
+        let elements = analyzer
+            .get_elements(book_list_rule)
+            .unwrap_or_else(|e| panic!("bookList 规则解析失败: {e}"));
+        assert_eq!(
+            elements.len(),
+            2,
+            "应解析出 2 本书，实际: {elements:?}"
+        );
+
+        let name_rule = source
+            .rule_explore
+            .as_ref()
+            .and_then(|r| r.name.as_deref())
+            .unwrap_or("");
+        let mut elem_analyzer = crate::js_executor::construct_analyzer_with_source_context(
+            String::new(),
+            base.to_string(),
+            &source.book_source_url,
+            Some(&sanitized),
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        elem_analyzer.set_content(elements[0].clone());
+        let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
+        assert_eq!(name, "斗破苍穹测试", "书名规则解析失败: {name}");
     }
 }
 

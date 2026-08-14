@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.80] - 2026-08-14
+
+### Fixed
+- [Rust] 书山聚合分类列表「暂无书籍」根治：ruleExplore.bookList `<js>` 脚本首行调用 jsLib 函数 getSessionId()，而 explore 列表解析 analyzer 未注入 jsLib/setup → ReferenceError 被吞 → 空列表。新增 construct_analyzer_with_source_context（sanitize jsLib + 书源 setup source/cookie），explore 两个 analyzer 构造点接入；回归测试用真实书山 jsLib + 合成 read_recommend 响应验证解析出书籍。验证：legado-ffi 335/0
+
 ## [2.0.79] - 2026-08-14
 
 ### Fixed

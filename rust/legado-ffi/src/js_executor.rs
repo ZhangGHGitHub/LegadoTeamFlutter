@@ -62,6 +62,40 @@ pub fn construct_analyzer_with_js_lib(
     AnalyzeRule::new(content, base_url)
 }
 
+/// 构造规则解析器：注入书源 jsLib + 书源上下文 setup（source/cookie 绑定）
+///
+/// 发现页书籍列表解析专用：聚合源（书山聚合等）的 ruleExplore.bookList
+/// `<js>` 脚本无条件调用 jsLib 函数（getSessionId/getServerHost 等），
+/// 且部分函数 `let { source, cookie } = this` 依赖书源上下文；此前
+/// [`construct_analyzer`] 仅注入空 jsLib（无 setup），`getSessionId is
+/// not defined` ReferenceError → 列表解析失败 →「暂无书籍」。
+/// — DeepSeek Harness + Bridge（2026-08-14 发现页修复：书山空列表）
+#[cfg(feature = "quickjs")]
+pub fn construct_analyzer_with_source_context(
+    content: String,
+    base_url: String,
+    source_tag: &str,
+    js_lib: Option<&str>,
+    setup_script: Option<String>,
+) -> AnalyzeRule {
+    let executor = QuickJsExecutor::new(source_tag)
+        .with_js_lib(js_lib.map(|s| s.to_string()))
+        .with_setup_script(setup_script);
+    AnalyzeRule::with_js_executor(content, base_url, std::sync::Arc::new(executor))
+}
+
+/// 非 quickjs 构建下的降级实现
+#[cfg(not(feature = "quickjs"))]
+pub fn construct_analyzer_with_source_context(
+    content: String,
+    base_url: String,
+    _source_tag: &str,
+    _js_lib: Option<&str>,
+    _setup_script: Option<String>,
+) -> AnalyzeRule {
+    AnalyzeRule::new(content, base_url)
+}
+
 /// 执行 loginCheckJs 登录检测脚本
 ///
 /// 将 HTTP 响应上下文以 `result` 绑定注入 JS 环境，
@@ -202,18 +236,21 @@ pub fn build_search_url_with_lib(
 
 /// 构建发现分类 URL（对标 Android WebBook.exploreBookAwait + infoMap）
 ///
-/// 携带书源 infoMap 与 jsLib，支持 `{{infoMap['key']}}` / `{{page}}` 等模板。
+/// 携带书源 infoMap、jsLib 与**书源上下文 setup**（source/cookie 方法），
+/// 支持 `{{infoMap['key']}}` / `{{page}}` / jsLib 函数（getSessionId 等
+/// 依赖 `this.source`/`this.cookie`）等模板 — 发现页修复（书山书籍 URL）
 pub fn build_explore_url(
     template: &str,
     page: i32,
-    source_tag: &str,
+    source: &legado_core::models::BookSource,
     info_map: &HashMap<String, String>,
-    js_lib: Option<&str>,
 ) -> AnalyzeUrl {
+    let source_tag = source.book_source_url.clone();
+    let js_lib = source.js_lib.as_deref();
     let page_u32 = page.max(1) as u32;
     let mut variables = HashMap::new();
     variables.insert("page".to_string(), page.to_string());
-    variables.insert("baseUrl".to_string(), source_tag.to_string());
+    variables.insert("baseUrl".to_string(), source_tag.clone());
     for (k, v) in info_map {
         variables.insert(k.clone(), v.clone());
         variables.insert(format!("infoMap.{k}"), v.clone());
@@ -222,17 +259,25 @@ pub fn build_explore_url(
         serde_json::to_string(info_map).unwrap_or_else(|_| "{}".to_string());
     variables.insert("__infoMapJson".to_string(), info_json);
 
+    // 书源上下文 setup 脚本（source/cookie 绑定 + BookSource 方法）
+    let setup_script = crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+
     if template.contains("{{") || template.contains("<js>") || template.contains("@js:") {
-        if let Ok(analyzed) =
-            explore_url_with_js(template, &variables, page, source_tag, js_lib)
-        {
+        if let Ok(analyzed) = explore_url_with_js(
+            template,
+            &variables,
+            page,
+            &source_tag,
+            js_lib,
+            setup_script,
+        ) {
             return analyzed;
         }
     }
-    AnalyzeUrl::new(template, None, Some(page_u32), source_tag, None)
+    AnalyzeUrl::new(template, None, Some(page_u32), &source_tag, None)
 }
 
-/// quickjs 启用：发现 URL 模板 JS 求值（注入 infoMap 对象）
+/// quickjs 启用：发现 URL 模板 JS 求值（注入 infoMap 对象 + 书源 setup）
 #[cfg(feature = "quickjs")]
 fn explore_url_with_js(
     template: &str,
@@ -240,13 +285,18 @@ fn explore_url_with_js(
     page: i32,
     source_tag: &str,
     js_lib: Option<&str>,
+    setup_script: Option<String>,
 ) -> legado_core::LegadoResult<AnalyzeUrl> {
     let info_json = variables
         .get("__infoMapJson")
         .cloned()
         .unwrap_or_else(|| "{}".to_string());
-    let executor =
-        ExploreInfoMapJsExecutor::new(source_tag, js_lib.map(|s| s.to_string()), info_json);
+    let executor = ExploreInfoMapJsExecutor::new(
+        source_tag,
+        js_lib.map(|s| s.to_string()),
+        info_json,
+        setup_script,
+    );
     AnalyzeUrl::parse_with_js(template, variables, page, &executor)
 }
 
@@ -257,11 +307,13 @@ fn explore_url_with_js(
     page: i32,
     _source_tag: &str,
     _js_lib: Option<&str>,
+    _setup_script: Option<String>,
 ) -> legado_core::LegadoResult<AnalyzeUrl> {
     AnalyzeUrl::parse(template, variables, page)
 }
 
-/// 发现 URL JS 执行器：每次求值前注入 `var infoMap = {...}`
+/// 发现 URL JS 执行器：每次求值前注入 `var infoMap = {...}` 与书源
+/// 上下文 setup（source/cookie 方法，URL 模板 jsLib 函数依赖）
 #[cfg(feature = "quickjs")]
 struct ExploreInfoMapJsExecutor {
     inner: QuickJsExecutor,
@@ -270,9 +322,16 @@ struct ExploreInfoMapJsExecutor {
 
 #[cfg(feature = "quickjs")]
 impl ExploreInfoMapJsExecutor {
-    fn new(source_tag: &str, js_lib: Option<String>, info_map_json: String) -> Self {
+    fn new(
+        source_tag: &str,
+        js_lib: Option<String>,
+        info_map_json: String,
+        setup_script: Option<String>,
+    ) -> Self {
         Self {
-            inner: QuickJsExecutor::new(source_tag).with_js_lib(js_lib),
+            inner: QuickJsExecutor::new(source_tag)
+                .with_js_lib(js_lib)
+                .with_setup_script(setup_script),
             info_map_json,
         }
     }
@@ -330,6 +389,10 @@ mod quickjs_impl {
         source_tag: String,
         /// 书源 jsLib（共享库代码，执行前先加载，对齐原版每次 eval 前注入）
         js_lib: Option<String>,
+        /// 书源上下文 setup 脚本（source/cookie/__mountBookSourceApi 等，
+        /// 供 URL 模板 {{js}} 里 jsLib 函数 `this.source`/`this.cookie`
+        /// 访问）— 发现页修复（书山聚合书籍 URL session 缺失）
+        setup_script: Option<String>,
     }
 
     impl QuickJsExecutor {
@@ -338,6 +401,7 @@ mod quickjs_impl {
             Self {
                 source_tag: source_tag.to_string(),
                 js_lib: None,
+                setup_script: None,
             }
         }
 
@@ -347,6 +411,12 @@ mod quickjs_impl {
         /// 引用 jsLib 定义（Reload/getHosts 等），不注入则 URL 构建失败
         pub fn with_js_lib(mut self, js_lib: Option<String>) -> Self {
             self.js_lib = js_lib;
+            self
+        }
+
+        /// 携带书源上下文 setup 脚本（source/cookie 绑定 + BookSource 方法）
+        pub fn with_setup_script(mut self, setup_script: Option<String>) -> Self {
+            self.setup_script = setup_script;
             self
         }
     }
@@ -379,6 +449,13 @@ mod quickjs_impl {
                     if let Some(lib) = &self.js_lib {
                         if let Err(e) = legado_js::JsEngine::eval(&engine, lib) {
                             eprintln!("[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}", self.source_tag);
+                        }
+                    }
+                    // 书源上下文 setup（source/cookie 绑定；URL 模板 jsLib
+                    // 函数 this.source/this.cookie 依赖）— 发现页修复
+                    if let Some(setup) = &self.setup_script {
+                        if let Err(e) = legado_js::JsEngine::eval(&engine, setup) {
+                            eprintln!("[legado-ffi] 书源 {} setup 加载失败（降级继续）: {e}", self.source_tag);
                         }
                     }
                     // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
