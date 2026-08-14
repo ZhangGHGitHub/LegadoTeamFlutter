@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.73] - 2026-08-14
+
+### Added
+- [UI] 发现页书源行菜单补齐六项（编辑/置顶/登录/搜索/刷新/删除，对齐原版 ExploreAdapter）：登录项按 hasLoginUrl 条件显示；登录统一入口 showSourceLogin（V2 动态对话框 LoginV2Dialog 自 book_info_screen 提取为公共组件 + 手动凭据页分流）；「搜索」预选指定书源进入搜索页。验证：flutter 1178 全过
+
 ## [2.0.72] - 2026-08-14
 
 ### Fixed
