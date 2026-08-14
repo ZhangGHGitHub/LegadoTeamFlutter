@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.86] - 2026-08-14
+
+### Fixed
+- [UI] 书源管理页行对齐原版（自动比对工具发现的批量差异）：
+  - 行标题补分组标签（如「📚书山聚合 (聚合书源)」，对齐原版行内分组标注）
+  - 启用开关补 ON/OFF 文字（对齐原版 swt_enabled 行内 ON 文本）
+  - 发现角标补语义标签「标志:发现已启用/未启用」、更多按钮 tooltip 改「更多菜单」（对齐原版内容描述）
+  - 底部「全选 0/n」改「全选（0/n）」（对齐原版全角括号计数文案）
+- [Tool] scripts/ui_parity_compare.ps1 增强：支持多界面批量比对（bookshelf/discover/source_manage/source_edit/source_login）、修正原版 dump 抓取顺序（此前两伤 dump 均为重构版导致「vs 自己」恒 MATCH）、多行合并节点按行拆分对比、括号/空白归一化、数据差异忽略名单。验证：编辑页/书架/发现 MATCH；书源管理行修复后模拟器实测渲染正确
+
 ## [2.0.85] - 2026-08-14
 
 ### Fixed

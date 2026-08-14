@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -332,13 +332,12 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             children: [
-              // 全选/取消全选（带当前进度 n/m，对标原版计数文案）
+              // 全选/取消全选（带当前进度 n/m，对齐原版「全选（0/968）」）
               barButton(
                 icon: state.isAllSelected
                     ? Icons.check_box
                     : Icons.check_box_outline_blank,
-                label:
-                    '全选 ${state.selectedCount}/$filteredCount',
+                label: '全选（${state.selectedCount}/$filteredCount）',
                 onPressed: () {
                   final notifier =
                       ref.read(sourceNotifierProvider.notifier);
@@ -686,17 +685,40 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            // 源名（对标 cb_book_source 文本 16sp）+ 校验消息副标题
+            // 源名（对标原版 cb_book_source 文本 16sp）+ 分组标签
+            //（对齐原版行内分组标注，如「懒人听书app本地源（同人） (同人书源)」）
+            // + 校验消息副标题
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    source.bookSourceName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style:
-                        TextStyle(fontSize: 16, color: colorScheme.onSurface),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          source.bookSourceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      if ((source.bookSourceGroup ?? '').trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Text(
+                            '(${source.bookSourceGroup!.trim()})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   if (checkMessage != null)
                     Text(
@@ -713,12 +735,26 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                 ],
               ),
             ),
-            // 启用开关（对标 swt_enabled）
-            Switch(
-              value: source.enabled,
-              onChanged: (_) => ref
-                  .read(sourceNotifierProvider.notifier)
-                  .toggleSource(source.bookSourceUrl),
+            // 启用开关（对标 swt_enabled + 原版行内 ON 文字）
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  source.enabled ? 'ON' : 'OFF',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: source.enabled
+                        ? AppColors.iosGreenLight
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Switch(
+                  value: source.enabled,
+                  onChanged: (_) => ref
+                      .read(sourceNotifierProvider.notifier)
+                      .toggleSource(source.bookSourceUrl),
+                ),
+              ],
             ),
             // 编辑图标（对标 iv_edit）
             IconButton(
@@ -740,7 +776,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.more_vert, size: 20),
-                  tooltip: '更多选项',
+                  // 对齐原版内容描述「更多菜单」
+                  tooltip: '更多菜单',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _showSourceMenu(context, source),
                 ),
@@ -748,15 +785,21 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      // 发现启用=系统绿；有发现但未启用=系统红
-                      decoration: BoxDecoration(
-                        color: source.enabledExplore
-                            ? AppColors.iosGreenLight
-                            : AppColors.iosRedLight,
-                        shape: BoxShape.circle,
+                    child: Semantics(
+                      // 对齐原版「标志:发现已启用」内容描述
+                      label: source.enabledExplore
+                          ? '标志:发现已启用'
+                          : '标志:发现未启用',
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        // 发现启用=系统绿；有发现但未启用=系统红
+                        decoration: BoxDecoration(
+                          color: source.enabledExplore
+                              ? AppColors.iosGreenLight
+                              : AppColors.iosRedLight,
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
                   ),
@@ -798,12 +841,31 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    source.bookSourceName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 16, color: colorScheme.onSurface),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          source.bookSourceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 16, color: colorScheme.onSurface),
+                        ),
+                      ),
+                      if ((source.bookSourceGroup ?? '').trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Text(
+                            '(${source.bookSourceGroup!.trim()})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   if (checkMessage != null)
                     Text(
@@ -820,12 +882,26 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                 ],
               ),
             ),
-            // 启用开关（对标 swt_enabled）
-            Switch(
-              value: source.enabled,
-              onChanged: (_) => ref
-                  .read(sourceNotifierProvider.notifier)
-                  .toggleSource(source.bookSourceUrl),
+            // 启用开关（对标 swt_enabled + 原版行内 ON 文字）
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  source.enabled ? 'ON' : 'OFF',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: source.enabled
+                        ? AppColors.iosGreenLight
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Switch(
+                  value: source.enabled,
+                  onChanged: (_) => ref
+                      .read(sourceNotifierProvider.notifier)
+                      .toggleSource(source.bookSourceUrl),
+                ),
+              ],
             ),
             // 编辑图标（对标 iv_edit）
             IconButton(
