@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.71] - 2026-08-14
+
+### Fixed
+- [Rust] 大灰狼发现页 `host is not defined`：对齐 Android `evalJS` 注入 `cookie`/`cache`/`sourceUrl`；jsLib 分段加载并在失败时从 jsLib 提取 `host` 数组兜底；补 host 回归测试
+
 ## [2.0.70] - 2026-08-14
 
 ### Fixed

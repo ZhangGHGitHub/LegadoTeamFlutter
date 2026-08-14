@@ -285,14 +285,7 @@ fn bootstrap_explore_js_context(
 ) -> LegadoResult<()> {
     use legado_js::JsEngine;
 
-    if let Some(lib) = source.js_lib.as_deref() {
-        let lib = lib.trim();
-        if !lib.is_empty() {
-            if let Err(e) = guard.eval(lib) {
-                eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
-            }
-        }
-    }
+    crate::api::source_js_bindings::load_js_lib_for_explore(guard, source.js_lib.as_deref());
 
     // JS 单文件书源：exploreUrl @js: 常调用 mainJs 内定义的函数
     if source.is_js_source() {
@@ -787,6 +780,93 @@ function exploreKinds() {
         assert_eq!(categories[0].r#type, "select");
         assert_eq!(categories[2].title, "登录番茄");
         assert_eq!(categories[2].r#type, "button");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_parse_url_js_host_from_jslib() {
+        let js_lib = r#"var host = ['https://api.dahuiwolf.test','https://backup.test'];
+function getArguments(open_argument, key) {
+  try { open_argument = JSON.parse(open_argument); } catch (e) { open_argument = { server: host[0] }; }
+  return key ? open_argument[key] : open_argument;
+}
+function createFilter(title, chars, current, key, flex) {
+  return { title: title, type: 'select', chars: chars, url: '', style: { layout_flexBasisPercent: flex } };
+}"#;
+        let explore_url = r#"<js>
+var open_argument = source.getVariable();
+if (!open_argument || open_argument == '') {
+  var initData = { tab: '小说', server: host[0], sources: '番茄' };
+  source.setVariable(JSON.stringify(initData));
+}
+var base_url = getArguments(open_argument, 'server') || host[0];
+var qtsj = [];
+qtsj.push(createFilter('线路', host, base_url, 'server', 1));
+JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
+</js>"#;
+        let source = BookSource {
+            book_source_url: "大灰狼融合VIP5.0".to_string(),
+            book_source_name: "大灰狼模拟".to_string(),
+            js_lib: Some(js_lib.to_string()),
+            explore_url: Some(explore_url.to_string()),
+            ..BookSource::default()
+        };
+        let source_json = serde_json::to_string(&source).unwrap();
+        let json = explore_parse_url(explore_url, &source_json).unwrap();
+        let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
+        assert!(
+            categories.len() >= 2,
+            "应解析出 selector + 榜单，实际: {json}"
+        );
+        assert_eq!(categories[0].title, "线路");
+        assert_eq!(categories[0].r#type, "select");
+        assert!(
+            categories[1].title.contains("https://api.dahuiwolf.test"),
+            "榜单标题应含 host[0]: {}",
+            categories[1].title
+        );
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_parse_url_dahuiwolf_from_env() {
+        let Ok(explore_url) = std::env::var("DAHUI_EXPLORE_URL") else {
+            return;
+        };
+        let Ok(source_json) = std::env::var("DAHUI_SOURCE_JSON") else {
+            return;
+        };
+        let json = explore_parse_url(&explore_url, &source_json).unwrap_or_else(|e| {
+            panic!("大灰狼 explore 解析失败: {e}");
+        });
+        assert!(
+            !json.contains("host is not defined"),
+            "不应含 host 错误: {json}"
+        );
+        let categories: Vec<ExploreCategory> =
+            serde_json::from_str(&json).unwrap_or_else(|e| panic!("JSON 解析失败: {e} | {json}"));
+        assert!(!categories.is_empty(), "分类为空: {json}");
+        if let Some(err) = categories.iter().find(|c| c.title == "ERROR") {
+            panic!(
+                "ERROR 分类: {}",
+                err.url.as_deref().unwrap_or("")
+            );
+        }
+        let has_selector = categories.iter().any(|c| {
+            c.title.contains("线路")
+                || c.title.contains("模式")
+                || c.r#type == "select"
+        });
+        if !has_selector {
+            let login_only = !categories.is_empty()
+                && categories
+                    .iter()
+                    .all(|c| c.title.contains("登录") || c.url.as_deref().unwrap_or("").contains("startBrowser"));
+            assert!(
+                login_only,
+                "应含 selector/线路/模式，或未登录时的登录入口，实际: {json}"
+            );
+        }
     }
 
     #[test]
