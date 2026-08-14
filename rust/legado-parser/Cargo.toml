@@ -16,3 +16,4 @@ base64 = { workspace = true }
 md-5 = "0.10"
 urlencoding = "2"
 encoding_rs = "0.8"
+jsonpath-rust = "0.7"

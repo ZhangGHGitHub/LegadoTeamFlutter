@@ -1915,6 +1915,7 @@ dependencies = [
  "base64",
  "ego-tree",
  "encoding_rs",
+ "jsonpath-rust",
  "legado-core",
  "md-5",
  "regex",
