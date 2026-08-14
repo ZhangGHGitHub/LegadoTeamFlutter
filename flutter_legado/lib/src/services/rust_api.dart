@@ -1699,6 +1699,30 @@ class RustApi implements BookApi {
         .toList();
   }
 
+  @override
+  Future<void> exploreInfoMapPut(
+    String sourceUrl,
+    String key,
+    String value,
+  ) =>
+      bridge.exploreInfoMapPut(
+        sourceUrl: sourceUrl,
+        key: key,
+        value: value,
+      );
+
+  @override
+  Future<void> exploreInfoMapEnsureDefault(
+    String sourceUrl,
+    String key,
+    String defaultValue,
+  ) =>
+      bridge.exploreInfoMapEnsureDefault(
+        sourceUrl: sourceUrl,
+        key: key,
+        defaultValue: defaultValue,
+      );
+
   /// 将发现分类返回的 WebSearchResult 归一化为 SearchBook。
   /// 兼容 snake_case 与 camelCase 两种键名；origin/originName 用所属书源补齐，
   /// 避免 Rust 侧字段命名差异导致 origin 丢失（未入库书详情页无法联网取目录/封面）。

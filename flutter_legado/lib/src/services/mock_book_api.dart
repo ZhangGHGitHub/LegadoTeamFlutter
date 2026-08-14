@@ -1540,6 +1540,27 @@ class MockBookApi implements BookApi {
     });
   }
 
+  final Map<String, Map<String, String>> _exploreInfoMaps = {};
+
+  @override
+  Future<void> exploreInfoMapPut(
+    String sourceUrl,
+    String key,
+    String value,
+  ) async {
+    _exploreInfoMaps.putIfAbsent(sourceUrl, () => {})[key] = value;
+  }
+
+  @override
+  Future<void> exploreInfoMapEnsureDefault(
+    String sourceUrl,
+    String key,
+    String defaultValue,
+  ) async {
+    final map = _exploreInfoMaps.putIfAbsent(sourceUrl, () => {});
+    map.putIfAbsent(key, () => defaultValue);
+  }
+
   // ========== 规则解析 ==========
 
   @override

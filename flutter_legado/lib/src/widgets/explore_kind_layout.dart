@@ -1,29 +1,31 @@
 /// 发现分类 Flexbox 布局（对标 Android ExploreAdapter + FlexboxLayout）
 ///
-/// 分类 Chip 对齐原版 item_fillet_text + bg_fillet_btn：浅灰圆角、按 flexBasisPercent 网格换行。
+/// 支持 url / toggle / select / button / text 控件类型；
+/// toggle/select 写入 Rust infoMap，保证与原版请求 URL 一致。
 library;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/providers.dart';
 
 /// 按 [FlexChildStyle.layoutFlexBasisPercent] 将分类项排布为全宽行 / 网格 Chip。
-///
-/// - `layoutFlexBasisPercent >= 1`：独占一行（分组标题或可点击全宽 Chip）
-/// - `0 < layoutFlexBasisPercent < 1`：按百分比宽度并排（如 0.25 → 4 列，0.33 → 3 列）
-/// - 默认（-1）：自适应宽 Chip，连续默认项自动换行
 class ExploreKindLayout extends StatelessWidget {
   const ExploreKindLayout({
     super.key,
+    required this.sourceUrl,
     required this.categories,
     this.onCategoryTap,
   });
 
+  final String sourceUrl;
   final List<ExploreCategory> categories;
   final void Function(String title, String url)? onCategoryTap;
 
-  /// 对标 Android item_fillet_text 圆角（16dp）
-  static const _kChipRadius = 16.0;
+  static const _kChipRadius = 10.0;
   static const _kChipGap = 6.0;
 
   @override
@@ -38,14 +40,14 @@ class ExploreKindLayout extends StatelessWidget {
         for (final category in categories) {
           final style = category.effectiveStyle;
           if (style.layoutWrapBefore && children.isNotEmpty) {
-            // 对标 Flexbox layout_wrapBefore：强制换行
             children.add(SizedBox(width: maxWidth, height: 0));
           }
           children.add(
-            _KindChip(
+            _ExploreKindItem(
+              sourceUrl: sourceUrl,
               category: category,
               width: _chipWidth(maxWidth, style),
-              onTap: onCategoryTap,
+              onCategoryTap: onCategoryTap,
             ),
           );
         }
@@ -59,7 +61,6 @@ class ExploreKindLayout extends StatelessWidget {
     );
   }
 
-  /// 计算 Chip 宽度（对标 FlexboxLayout.LayoutParams.flexBasisPercent）
   static double? _chipWidth(double maxWidth, FlexChildStyle style) {
     final basis = style.layoutFlexBasisPercent;
     if (basis >= 1.0) return maxWidth;
@@ -70,77 +71,117 @@ class ExploreKindLayout extends StatelessWidget {
   }
 }
 
-// ─── 单个 Chip（对标 bg_fillet_btn / item_fillet_text）────────────────────
+class _ExploreKindItem extends ConsumerWidget {
+  const _ExploreKindItem({
+    required this.sourceUrl,
+    required this.category,
+    this.width,
+    this.onCategoryTap,
+  });
 
-class _KindChip extends StatefulWidget {
-  const _KindChip({
+  final String sourceUrl;
+  final ExploreCategory category;
+  final double? width;
+  final void Function(String title, String url)? onCategoryTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return switch (category.type) {
+      'toggle' => _ToggleChip(
+        sourceUrl: sourceUrl,
+        category: category,
+        width: width,
+      ),
+      'select' => _SelectChip(
+        sourceUrl: sourceUrl,
+        category: category,
+        width: width,
+      ),
+      'button' => _StaticChip(
+        category: category,
+        width: width,
+        onTap: null,
+      ),
+      'text' => _StaticChip(
+        category: category,
+        width: width,
+        onTap: null,
+        muted: true,
+      ),
+      _ => _StaticChip(
+        category: category,
+        width: width,
+        onTap: category.hasUrl
+            ? () => onCategoryTap?.call(category.title, category.url!)
+            : null,
+      ),
+    };
+  }
+}
+
+class _StaticChip extends StatefulWidget {
+  const _StaticChip({
     required this.category,
     this.width,
     this.onTap,
+    this.muted = false,
   });
 
   final ExploreCategory category;
   final double? width;
-  final void Function(String title, String url)? onTap;
+  final VoidCallback? onTap;
+  final bool muted;
 
   @override
-  State<_KindChip> createState() => _KindChipState();
+  State<_StaticChip> createState() => _StaticChipState();
 }
 
-class _KindChipState extends State<_KindChip> {
+class _StaticChipState extends State<_StaticChip> {
   bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final hasUrl = widget.category.hasUrl;
-    final justify = widget.category.effectiveStyle.layoutJustifySelf;
+    final hasTap = widget.onTap != null;
 
-    // 对标 Android btn_bg_press / btn_bg_press_2
-    final fill = _pressed && hasUrl
-        ? colorScheme.onSurface.withValues(alpha: 0.16)
-        : colorScheme.onSurface.withValues(alpha: 0.10);
-
-    final textAlign = _textAlignFor(justify);
-    final alignment = switch (justify) {
-      'flex_start' || 'start' => Alignment.centerLeft,
-      'flex_end' || 'end' => Alignment.centerRight,
-      'center' => Alignment.center,
-      _ => Alignment.center,
-    };
+    final fill = _pressed && hasTap
+        ? colorScheme.onSurface.withValues(alpha: 0.14)
+        : colorScheme.onSurface.withValues(alpha: widget.muted ? 0.06 : 0.10);
 
     final label = Container(
       width: widget.width,
-      constraints: const BoxConstraints(minHeight: 32),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      constraints: const BoxConstraints(minHeight: 34),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: fill,
         borderRadius: BorderRadius.circular(ExploreKindLayout._kChipRadius),
       ),
-      alignment: alignment,
+      alignment: Alignment.center,
       child: Text(
         widget.category.title,
         style: theme.textTheme.bodyMedium?.copyWith(
-          color: colorScheme.onSurface,
+          color: widget.muted
+              ? colorScheme.onSurfaceVariant
+              : colorScheme.onSurface,
           fontSize: 14,
+          fontWeight: hasTap ? FontWeight.w500 : FontWeight.w400,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        textAlign: textAlign,
+        textAlign: TextAlign.center,
       ),
     );
 
-    if (!hasUrl) return label;
+    if (!hasTap) return label;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () =>
-            widget.onTap?.call(widget.category.title, widget.category.url!),
+        onTap: widget.onTap,
         onHighlightChanged: (v) => setState(() => _pressed = v),
         borderRadius: BorderRadius.circular(ExploreKindLayout._kChipRadius),
-        splashColor: colorScheme.primary.withValues(alpha: 0.08),
+        splashColor: colorScheme.onSurface.withValues(alpha: 0.06),
         highlightColor: Colors.transparent,
         child: label,
       ),
@@ -148,13 +189,244 @@ class _KindChipState extends State<_KindChip> {
   }
 }
 
-TextAlign _textAlignFor(String justify) {
-  return switch (justify) {
-    'flex_start' || 'start' => TextAlign.start,
-    'flex_end' || 'end' => TextAlign.end,
-    'center' => TextAlign.center,
-    _ => TextAlign.center,
-  };
+class _ToggleChip extends ConsumerStatefulWidget {
+  const _ToggleChip({
+    required this.sourceUrl,
+    required this.category,
+    this.width,
+  });
+
+  final String sourceUrl;
+  final ExploreCategory category;
+  final double? width;
+
+  @override
+  ConsumerState<_ToggleChip> createState() => _ToggleChipState();
+}
+
+class _ToggleChipState extends ConsumerState<_ToggleChip> {
+  late List<String> _chars;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _chars = widget.category.chars?.where((c) => c.isNotEmpty).toList() ??
+        ['', ''];
+    final defaultValue = widget.category.defaultValue ?? _chars.first;
+    _index = _chars.indexOf(defaultValue);
+    if (_index < 0) _index = 0;
+  }
+
+  Future<void> _cycle() async {
+    setState(() => _index = (_index + 1) % _chars.length);
+    final value = _chars[_index];
+    await ref.read(bookApiProvider).exploreInfoMapPut(
+          widget.sourceUrl,
+          widget.category.title,
+          value,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final value = _chars[_index];
+    final label = '$value${widget.category.title}';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _cycle,
+        borderRadius: BorderRadius.circular(ExploreKindLayout._kChipRadius),
+        splashColor: colorScheme.onSurface.withValues(alpha: 0.06),
+        child: Container(
+          width: widget.width,
+          constraints: const BoxConstraints(minHeight: 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: colorScheme.onSurface.withValues(alpha: 0.10),
+            borderRadius:
+                BorderRadius.circular(ExploreKindLayout._kChipRadius),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectChip extends ConsumerStatefulWidget {
+  const _SelectChip({
+    required this.sourceUrl,
+    required this.category,
+    this.width,
+  });
+
+  final String sourceUrl;
+  final ExploreCategory category;
+  final double? width;
+
+  @override
+  ConsumerState<_SelectChip> createState() => _SelectChipState();
+}
+
+class _SelectChipState extends ConsumerState<_SelectChip> {
+  late List<String> _chars;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _chars = widget.category.chars?.where((c) => c.isNotEmpty).toList() ??
+        ['', ''];
+    final defaultValue = widget.category.defaultValue ?? _chars.first;
+    _index = _chars.indexOf(defaultValue);
+    if (_index < 0) _index = 0;
+  }
+
+  Future<void> _onPick(int next) async {
+    if (next == _index) return;
+    setState(() => _index = next);
+    await ref.read(bookApiProvider).exploreInfoMapPut(
+          widget.sourceUrl,
+          widget.category.title,
+          _chars[next],
+        );
+  }
+
+  Future<void> _showPicker() async {
+    var picked = _index;
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (ctx) => Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.category.title,
+                          style: Theme.of(ctx).textTheme.titleSmall,
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          '完成',
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: 216,
+                  child: CupertinoPicker(
+                    scrollController:
+                        FixedExtentScrollController(initialItem: picked),
+                    itemExtent: 36,
+                    onSelectedItemChanged: (i) => picked = i,
+                    children: _chars
+                        .map((c) => Center(child: Text(c)))
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _onPick(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final value = _chars[_index];
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _showPicker,
+        borderRadius: BorderRadius.circular(ExploreKindLayout._kChipRadius),
+        splashColor: colorScheme.onSurface.withValues(alpha: 0.06),
+        child: Container(
+          width: widget.width,
+          constraints: const BoxConstraints(minHeight: 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: colorScheme.onSurface.withValues(alpha: 0.10),
+            borderRadius:
+                BorderRadius.circular(ExploreKindLayout._kChipRadius),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  '${widget.category.title} · $value',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(
+                Icons.unfold_more,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// [ExploreCategory] 布局辅助

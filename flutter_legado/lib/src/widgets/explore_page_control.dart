@@ -1,6 +1,6 @@
 /// 发现分类列表页码控件（对标 Android ExploreShowActivity menuPage）
 ///
-/// 右上角「第 X 页」按钮 + 页码选择对话框（对标 NumberPickerDialog）。
+/// iOS 风格：中性灰文案 + Cupertino 滚轮选页，无系统蓝强调。
 library;
 
 import 'package:flutter/cupertino.dart';
@@ -26,16 +26,20 @@ class ExplorePageControl extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(exploreShowNotifierProvider(args));
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final pageLabel = state.displayPage > 0 ? state.displayPage : 1;
 
-    return TextButton(
+    return CupertinoButton(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      minimumSize: const Size(0, 36),
       onPressed: state.isLoading
           ? null
-          : () => _showPagePicker(context, ref, pageLabel),
+          : () => _showPagePicker(context, ref, pageLabel, colorScheme, theme),
       child: Text(
         '第 $pageLabel 页',
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.primary,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -46,58 +50,98 @@ class ExplorePageControl extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     int currentPage,
+    ColorScheme colorScheme,
+    ThemeData theme,
   ) async {
     var picked = currentPage.clamp(1, maxPage);
-    await showModalBottomSheet<void>(
+    await showCupertinoModalPopup<void>(
       context: context,
-      showDragHandle: true,
       builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '选择页码',
-                        style: Theme.of(sheetContext).textTheme.titleMedium,
+        return Material(
+          color: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                    child: Row(
+                      children: [
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          onPressed: () => Navigator.pop(sheetContext),
+                          child: Text(
+                            '取消',
+                            style: TextStyle(color: colorScheme.onSurface),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            '选择页码',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.titleSmall,
+                          ),
+                        ),
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            ref
+                                .read(
+                                    exploreShowNotifierProvider(args).notifier)
+                                .skipToPage(picked);
+                          },
+                          child: Text(
+                            '确定',
+                            style: TextStyle(
+                              color: colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    height: 216,
+                    child: CupertinoPicker(
+                      scrollController: FixedExtentScrollController(
+                        initialItem: picked - 1,
+                      ),
+                      itemExtent: 36,
+                      onSelectedItemChanged: (index) => picked = index + 1,
+                      children: List.generate(
+                        maxPage,
+                        (i) => Center(
+                          child: Text(
+                            '第 ${i + 1} 页',
+                            style: theme.textTheme.bodyLarge,
+                          ),
+                        ),
                       ),
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(sheetContext),
-                      child: const Text('取消'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(sheetContext);
-                        ref
-                            .read(exploreShowNotifierProvider(args).notifier)
-                            .skipToPage(picked);
-                      },
-                      child: const Text('确定'),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(
-                height: 216,
-                child: CupertinoPicker(
-                  scrollController: FixedExtentScrollController(
-                    initialItem: picked - 1,
                   ),
-                  itemExtent: 36,
-                  onSelectedItemChanged: (index) => picked = index + 1,
-                  children: List.generate(
-                    maxPage,
-                    (i) => Center(child: Text('第 ${i + 1} 页')),
-                  ),
-                ),
+                  const SizedBox(height: 8),
+                ],
               ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         );
       },

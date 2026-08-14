@@ -733,6 +733,16 @@ abstract class BookApi {
     int page,
   );
 
+  /// 写入发现 infoMap（toggle/select 控件，对标 Android InfoMap）
+  Future<void> exploreInfoMapPut(String sourceUrl, String key, String value);
+
+  /// 初始化发现 infoMap 默认值（键不存在时写入）
+  Future<void> exploreInfoMapEnsureDefault(
+    String sourceUrl,
+    String key,
+    String defaultValue,
+  );
+
   // ========== 规则解析 ==========
 
   /// 使用规则解析内容

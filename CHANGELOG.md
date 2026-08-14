@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.66] - 2026-08-14
+
+### Fixed
+- [Rust] 发现分类榜单与原版不一致：补齐 infoMap 持久化与 `build_explore_url`（含 `{{infoMap}}` / JS 模板），抓取时携带与 Android 相同的 infoMap 上下文
+- [UI] 发现分类支持 toggle/select 控件并同步 infoMap，避免未选榜单类型时请求错误 URL
+- [UI] 发现分类列表 Apple 风重做：页码/按钮去蓝色强调，Cupertino 选页 sheet，iOS 列表分隔与灰阶层次
+
 ## [2.0.65] - 2026-08-14
 
 ### Fixed

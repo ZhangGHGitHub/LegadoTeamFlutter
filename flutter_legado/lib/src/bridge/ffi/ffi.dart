@@ -802,6 +802,28 @@ Future<String> exploreFetchBooks({
   page: page,
 );
 
+/// 写入发现 infoMap 键值（toggle/select 控件）
+Future<void> exploreInfoMapPut({
+  required String sourceUrl,
+  required String key,
+  required String value,
+}) => RustLib.instance.api.crateFfiFfiExploreInfoMapPut(
+  sourceUrl: sourceUrl,
+  key: key,
+  value: value,
+);
+
+/// 初始化发现 infoMap 默认值
+Future<void> exploreInfoMapEnsureDefault({
+  required String sourceUrl,
+  required String key,
+  required String defaultValue,
+}) => RustLib.instance.api.crateFfiFfiExploreInfoMapEnsureDefault(
+  sourceUrl: sourceUrl,
+  key: key,
+  defaultValue: defaultValue,
+);
+
 /// 使用规则解析内容，返回 JSON 格式的结果
 Future<String> parseRule({
   required String content,

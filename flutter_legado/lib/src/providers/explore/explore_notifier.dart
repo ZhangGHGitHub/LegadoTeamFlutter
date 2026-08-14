@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
+import '../../services/book_api.dart';
 import '../providers.dart';
 import 'explore_state.dart';
 
@@ -99,6 +100,7 @@ class ExploreNotifier extends Notifier<ExploreState> {
         exploreUrl,
         sourceJson: jsonEncode(source.toJson()),
       );
+      await _initExploreInfoMapDefaults(api, source.bookSourceUrl, categories);
       state = state.copyWith(
         categoriesCache: {...state.categoriesCache, url: categories},
         loadingCategories: {...state.loadingCategories}..remove(url),
@@ -140,6 +142,25 @@ class ExploreNotifier extends Notifier<ExploreState> {
   String _mapError(Object e) {
     if (e is BridgeError) return e.message;
     return e.toString();
+  }
+
+  /// 为 toggle/select 控件初始化 infoMap 默认值（对标 Android ExploreAdapter）
+  Future<void> _initExploreInfoMapDefaults(
+    BookApi api,
+    String sourceUrl,
+    List<ExploreCategory> categories,
+  ) async {
+    for (final category in categories) {
+      if (category.type != 'toggle' && category.type != 'select') continue;
+      final chars = category.chars;
+      if (chars == null || chars.isEmpty) continue;
+      final defaultValue = category.defaultValue ?? chars.first;
+      await api.exploreInfoMapEnsureDefault(
+        sourceUrl,
+        category.title,
+        defaultValue,
+      );
+    }
   }
 }
 

@@ -1,11 +1,35 @@
 // ExploreKindLayout widget 测试：style 驱动的 wide/cell 布局
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/widgets/explore_kind_layout.dart';
 
+import '../mocks/mocks.dart';
+
 void main() {
+  late MockRustApi mockApi;
+
+  setUpAll(registerFallbacks);
+
+  setUp(() {
+    mockApi = MockRustApi();
+    when(() => mockApi.exploreInfoMapPut(any(), any(), any()))
+        .thenAnswer((_) async {});
+    when(() => mockApi.exploreInfoMapEnsureDefault(any(), any(), any()))
+        .thenAnswer((_) async {});
+  });
+
+  Widget wrap(Widget child) => ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: MaterialApp(home: Scaffold(body: child)),
+      );
+
+  const sourceUrl = 'https://explore-layout.test';
   const cellStyle = FlexChildStyle(
     layoutFlexGrow: 1,
     layoutFlexBasisPercent: 0.25,
@@ -33,12 +57,13 @@ void main() {
     ];
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 360,
-              child: ExploreKindLayout(categories: categories),
+      wrap(
+        Center(
+          child: SizedBox(
+            width: 360,
+            child: ExploreKindLayout(
+              sourceUrl: sourceUrl,
+              categories: categories,
             ),
           ),
         ),
@@ -50,10 +75,8 @@ void main() {
     expect(find.text('音乐频道'), findsOneWidget);
     expect(find.text('排行榜'), findsOneWidget);
 
-    // 分类 Chip 不使用 chevron（对齐 Android item_fillet_text）
     expect(find.byIcon(Icons.chevron_right), findsNothing);
 
-    // 4 个 0.25 cell 首行应同宽
     Size cellSize(String title) => tester.getSize(find.ancestor(
           of: find.text(title),
           matching: find.byType(InkWell),
@@ -63,7 +86,6 @@ void main() {
     expect(w0, closeTo(w1, 1));
     expect(w0, closeTo(84.5, 2));
 
-    // wide 项 Container 应占满 360 宽
     final wideChip = find.ancestor(
       of: find.text('排行榜'),
       matching: find.byType(InkWell),
@@ -74,18 +96,17 @@ void main() {
   testWidgets('可点击 cell 项触发 onCategoryTap', (tester) async {
     String? tappedTitle;
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ExploreKindLayout(
-            categories: const [
-              ExploreCategory(
-                title: '玄幻',
-                url: '/xh',
-                style: cellStyle,
-              ),
-            ],
-            onCategoryTap: (title, url) => tappedTitle = title,
-          ),
+      wrap(
+        ExploreKindLayout(
+          sourceUrl: sourceUrl,
+          categories: const [
+            ExploreCategory(
+              title: '玄幻',
+              url: '/xh',
+              style: cellStyle,
+            ),
+          ],
+          onCategoryTap: (title, url) => tappedTitle = title,
         ),
       ),
     );

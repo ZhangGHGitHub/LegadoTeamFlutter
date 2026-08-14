@@ -50,6 +50,18 @@ class ExploreCategory {
   /// 控件类型：url / text / button / toggle / select
   final String type;
 
+  /// button/toggle/select 的 JS action
+  final String? action;
+
+  /// toggle/select 可选值列表
+  final List<String>? chars;
+
+  /// toggle/select 默认值
+  final String? defaultValue;
+
+  /// 动态标题 JS 或字面量
+  final String? viewName;
+
   /// Flexbox 布局样式（wide/cell 等，对标 FlexChildStyle）
   final FlexChildStyle? style;
 
@@ -57,14 +69,31 @@ class ExploreCategory {
     required this.title,
     this.url,
     this.type = 'url',
+    this.action,
+    this.chars,
+    this.defaultValue,
+    this.viewName,
     this.style,
   });
 
   factory ExploreCategory.fromJson(Map<String, dynamic> json) {
+    final rawChars = json['chars'];
+    List<String>? chars;
+    if (rawChars is List) {
+      chars = rawChars
+          .map((e) => e?.toString())
+          .whereType<String>()
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
     return ExploreCategory(
       title: json['title'] as String? ?? '',
       url: _parseOptionalString(json['url']),
       type: json['type'] as String? ?? 'url',
+      action: _parseOptionalString(json['action']),
+      chars: chars?.isEmpty ?? true ? null : chars,
+      defaultValue: _parseOptionalString(json['default']),
+      viewName: _parseOptionalString(json['viewName']),
       style: json['style'] is Map<String, dynamic>
           ? FlexChildStyle.fromJson(json['style'] as Map<String, dynamic>)
           : null,
@@ -75,6 +104,10 @@ class ExploreCategory {
         'title': title,
         if (url != null) 'url': url,
         if (type != 'url') 'type': type,
+        if (action != null) 'action': action,
+        if (chars != null) 'chars': chars,
+        if (defaultValue != null) 'default': defaultValue,
+        if (viewName != null) 'viewName': viewName,
         if (style != null) 'style': style!.toJson(),
       };
 

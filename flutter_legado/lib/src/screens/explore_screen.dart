@@ -220,14 +220,25 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 4, 6),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: colorScheme.outlineVariant
+                                .withValues(alpha: 0.45),
+                          ),
+                        ),
+                      ),
                       child: Row(
                         children: [
                           Expanded(
                             child: Text(
                               _selectedCategory!.categoryName,
-                              style: Theme.of(context).textTheme.titleMedium,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -240,6 +251,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       child: ExploreBookList(
                         key: ValueKey(_selectedCategory),
                         args: _selectedCategory!,
+                        padding: const EdgeInsets.only(bottom: 8),
                       ),
                     ),
                   ],
@@ -525,6 +537,7 @@ class _SourceItemState extends ConsumerState<_SourceItem>
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: ExploreKindLayout(
+        sourceUrl: sourceUrl,
         categories: categories,
         onCategoryTap: widget.onCategoryTap,
       ),
