@@ -34,6 +34,14 @@ pub struct WebSearchResult {
     /// 字数（对标 Kotlin SearchBook.wordCount）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub word_count: Option<String>,
+    /// 书籍类型位标记（对标 Kotlin SearchBook.type / BookType；
+    /// 0=文本，漫画/听书/视频源据此分流阅读器）— 发现页修复 A8
+    #[serde(default, skip_serializing_if = "is_zero", rename = "type")]
+    pub book_type: i32,
+}
+
+fn is_zero(v: &i32) -> bool {
+    *v == 0
 }
 
 /// 章节信息
@@ -395,6 +403,7 @@ impl WebSearchResult {
             source_url: source_url.into(),
             kind: None,
             word_count: None,
+            book_type: 0,
         }
     }
 }

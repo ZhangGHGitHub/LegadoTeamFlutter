@@ -577,6 +577,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 source_url: source.book_source_url.clone(),
                 kind,
                 word_count,
+                // 类型位标记（对齐原版 BookType；漫画/听书/视频源分流）— A8
+                book_type: crate::api::search::book_type_of_source(source.book_source_type),
             });
         }
 
@@ -1872,6 +1874,7 @@ fn info_to_search_result(info: WebBookInfo, source_url: &str) -> WebSearchResult
         cover_url: info.cover_url,
         intro: info.intro,
         latest_chapter: info.last_chapter,
+        book_type: 0, // 详情页直连：类型由书架 Book 决定 — A8
         source_url: source_url.to_string(),
         kind: info.kind,
         word_count: info.word_count,
@@ -1965,6 +1968,12 @@ pub(crate) fn convert_js_search_results(
                 source_url: source_url.to_string(),
                 kind,
                 word_count,
+                // JS 书源类型位：脚本可显式返回 type（兼容），缺省 0 — A8
+                book_type: v
+                    .get("type")
+                    .and_then(|t| t.as_i64())
+                    .map(|t| t as i32)
+                    .unwrap_or(0),
             })
         })
         .collect()

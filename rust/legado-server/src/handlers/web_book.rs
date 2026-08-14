@@ -302,6 +302,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 source_url: source.book_source_url.clone(),
                 kind,
                 word_count,
+                // server 端点非类型分流主链路，恒 0（文本）；app 内 explore 走
+                // legado-ffi book_type_of_source 填充（发现页修复 A8）
+                book_type: 0,
             });
         }
 

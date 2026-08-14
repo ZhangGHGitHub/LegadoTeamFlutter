@@ -681,6 +681,8 @@ async fn explore_books_async(
             source_url: source.book_source_url.clone(),
             kind,
             word_count,
+            // 书籍类型位标记（对齐原版 BookType；漫画/听书/视频源分流）— A8
+            book_type: super::search::book_type_of_source(source.book_source_type),
         });
     }
     // `-` 前缀反转（对齐原版 BookList.kt:145-147）— A6
