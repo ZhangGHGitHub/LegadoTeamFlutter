@@ -507,7 +507,7 @@ impl AnalyzeRule {
             RuleType::Css => self.html_parser.get_text(&self.content, actual_rule),
             RuleType::Xpath => self.xpath_parser.parse_xpath(&self.content, actual_rule),
             RuleType::Json => self.resolve_json_with_inner(actual_rule),
-            RuleType::Regex => self.regex_engine.regex_match(&self.content, actual_rule),
+            RuleType::Regex => self.regex_extract(actual_rule),
             RuleType::Js => self.execute_js_rule_expanded(actual_rule),
             RuleType::WebJs => {
                 let out = self.execute_web_js_rule(actual_rule)?;
@@ -518,7 +518,7 @@ impl AnalyzeRule {
                 match detected {
                     RuleType::Json => self.resolve_json_with_inner(actual_rule),
                     RuleType::Xpath => self.xpath_parser.parse_xpath(&self.content, actual_rule),
-                    RuleType::Regex => self.regex_engine.regex_match(&self.content, actual_rule),
+                    RuleType::Regex => self.regex_extract(actual_rule),
                     _ => self.html_parser.get_text(&self.content, actual_rule),
                 }
             }
@@ -755,6 +755,28 @@ impl AnalyzeRule {
     pub fn get_attr(&self, rule: &str, attr: &str) -> LegadoResult<Vec<String>> {
         let (_, actual_rule) = Self::resolve_rule_type(rule);
         self.html_parser.get_attr(&self.content, actual_rule, attr)
+    }
+
+    /// 正则提取（含多级 `&&` 链，对齐 AnalyzeByRegex.getElement/getElements）
+    ///
+    /// `rule1&&rule2`：rule1 在原文上筛取全部完整匹配并拼接，再交给 rule2；
+    /// 末级返回所有完整匹配（group 0）。单级时退化为普通 regex_match。
+    fn regex_extract(&self, rule: &str) -> LegadoResult<Vec<String>> {
+        let patterns: Vec<&str> = rule
+            .split("&&")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if patterns.len() <= 1 {
+            return self.regex_engine.regex_match(&self.content, rule);
+        }
+        let groups = self
+            .regex_engine
+            .regex_chain_match_all(&self.content, &patterns)?;
+        Ok(groups
+            .into_iter()
+            .map(|g| g.first().cloned().unwrap_or_default())
+            .collect())
     }
 
     /// 正则匹配获取捕获组
@@ -1616,6 +1638,14 @@ mod tests {
         );
         let result = rule.get_strings("@json:$.name").unwrap();
         assert_eq!(result, vec!["test"]);
+    }
+
+    #[test]
+    fn test_regex_chain_get_strings() {
+        let rule = AnalyzeRule::new("A1B A2B C3D".to_string(), String::new());
+        // 多级正则链：先筛 A[0-9]B（只保留 A1B/A2B），再提取 [0-9]+
+        let result = rule.get_strings(r"@regex:A[0-9]+B && [0-9]+").unwrap();
+        assert_eq!(result, vec!["1", "2"]);
     }
 
     #[test]
