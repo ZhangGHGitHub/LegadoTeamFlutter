@@ -22,6 +22,18 @@ void main() {
         .thenAnswer((_) async {});
     when(() => mockApi.exploreInfoMapEnsureDefault(any(), any(), any()))
         .thenAnswer((_) async {});
+    when(() => mockApi.exploreEvalAction(
+          sourceJson: any(named: 'sourceJson'),
+          actionJs: any(named: 'actionJs'),
+        )).thenAnswer((_) async => {
+          'raw': '',
+          'actions': <dynamic>[],
+          'refreshExplore': false,
+        });
+    when(() => mockApi.exploreEvalUiJs(
+          sourceJson: any(named: 'sourceJson'),
+          jsStr: any(named: 'jsStr'),
+        )).thenAnswer((invocation) async => invocation.namedArguments[#jsStr] as String);
   });
 
   Widget wrap(Widget child) => ProviderScope(
@@ -30,6 +42,7 @@ void main() {
       );
 
   const sourceUrl = 'https://explore-layout.test';
+  const sourceJson = '{"bookSourceUrl":"https://explore-layout.test"}';
   const cellStyle = FlexChildStyle(
     layoutFlexGrow: 1,
     layoutFlexBasisPercent: 0.25,
@@ -63,6 +76,7 @@ void main() {
             width: 360,
             child: ExploreKindLayout(
               sourceUrl: sourceUrl,
+              sourceJson: sourceJson,
               categories: categories,
             ),
           ),
@@ -99,6 +113,7 @@ void main() {
       wrap(
         ExploreKindLayout(
           sourceUrl: sourceUrl,
+          sourceJson: sourceJson,
           categories: const [
             ExploreCategory(
               title: '玄幻',
@@ -114,5 +129,32 @@ void main() {
     await tester.tap(find.text('玄幻'));
     await tester.pump();
     expect(tappedTitle, '玄幻');
+  });
+
+  testWidgets('button 控件点击触发 exploreEvalAction', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        ExploreKindLayout(
+          sourceUrl: sourceUrl,
+          sourceJson: sourceJson,
+          categories: const [
+            ExploreCategory(
+              title: '登录番茄',
+              type: 'button',
+              action: 'java.refreshExplore()',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('登录番茄'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    verify(() => mockApi.exploreEvalAction(
+          sourceJson: sourceJson,
+          actionJs: 'java.refreshExplore()',
+        )).called(1);
   });
 }

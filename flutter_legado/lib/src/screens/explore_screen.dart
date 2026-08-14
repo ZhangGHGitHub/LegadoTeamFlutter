@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
@@ -538,8 +539,12 @@ class _SourceItemState extends ConsumerState<_SourceItem>
       padding: const EdgeInsets.only(top: 8),
       child: ExploreKindLayout(
         sourceUrl: sourceUrl,
+        sourceJson: jsonEncode(widget.source.toJson()),
         categories: categories,
         onCategoryTap: widget.onCategoryTap,
+        onRefreshCategories: () => ref
+            .read(exploreNotifierProvider.notifier)
+            .reloadCategories(widget.source),
       ),
     );
   }

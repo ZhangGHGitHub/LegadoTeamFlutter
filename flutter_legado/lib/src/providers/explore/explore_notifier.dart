@@ -72,7 +72,8 @@ class ExploreNotifier extends Notifier<ExploreState> {
   ///
   /// 对齐 Android ExploreAdapter 分类标签加载逻辑。
   /// 已缓存或正在加载时直接返回，避免重复请求。
-  Future<void> loadCategories(BookSource source) async {
+  /// [force] 为 true 时强制重新解析（对标 refreshExplore / clearExploreKindsCache）
+  Future<void> loadCategories(BookSource source, {bool force = false}) async {
     final url = source.bookSourceUrl;
     final exploreUrl = source.exploreUrl;
     // 无 exploreUrl：缓存空分类，避免重复判断
@@ -87,8 +88,9 @@ class ExploreNotifier extends Notifier<ExploreState> {
     }
     // 已缓存（非空）或正在加载：幂等返回；空缓存允许重试（对齐 Android 可刷新发现）
     final cached = state.categoriesCache[url];
-    if (state.loadingCategories.contains(url) ||
-        (cached != null && cached.isNotEmpty)) {
+    if (!force &&
+        (state.loadingCategories.contains(url) ||
+            (cached != null && cached.isNotEmpty))) {
       return;
     }
     state = state.copyWith(
@@ -112,6 +114,17 @@ class ExploreNotifier extends Notifier<ExploreState> {
         loadingCategories: {...state.loadingCategories}..remove(url),
       );
     }
+  }
+
+  /// 强制刷新书源发现分类（对标 Android refreshExplore + clearExploreKindsCache）
+  Future<void> reloadCategories(BookSource source) async {
+    final url = source.bookSourceUrl;
+    state = state.copyWith(
+      categoriesCache: Map<String, List<ExploreCategory>>.from(
+        state.categoriesCache,
+      )..remove(url),
+    );
+    await loadCategories(source, force: true);
   }
 
   /// 卸载书源（对齐 ExploreFragment.deleteSource，CRUD 透传）

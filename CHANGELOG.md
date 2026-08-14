@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.68] - 2026-08-14
+
+### Fixed
+- [Rust] 发现页补齐 `exploreEvalAction` / `exploreEvalUiJs` FFI，注入 infoMap + `java.refreshExplore`，对齐 Android ExploreAdapter 按钮/下拉 action 与中途 UI
+- [UI] 发现分类渲染 button/select/toggle/text 控件并联动 action；选择变更或登录后 `reloadCategories` 刷新榜单分类
+
 ## [2.0.67] - 2026-08-14
 
 ### Fixed

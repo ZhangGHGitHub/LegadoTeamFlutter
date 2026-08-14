@@ -494,5 +494,33 @@ void main() {
       expect(captured[1], contains('"bookSourceUrl"'));
       expect(captured[1], contains('https://js.example.com'));
     });
+
+    test('reloadCategories 强制重新解析', () async {
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
+      when(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).thenAnswer(
+        (_) async => const [ExploreCategory(title: '榜单', url: '/rank')],
+      );
+      when(() => mockApi.exploreInfoMapEnsureDefault(any(), any(), any()))
+          .thenAnswer((_) async {});
+      container.read(exploreNotifierProvider);
+      await pumpInit();
+
+      const source = BookSource(
+        bookSourceUrl: 'https://reload.test',
+        bookSourceName: '刷新测试',
+        enabledExplore: true,
+        exploreUrl: '@js:[]',
+      );
+      await readNotifier().loadCategories(source);
+      await readNotifier().reloadCategories(source);
+
+      verify(() => mockApi.exploreParseUrl(
+            any(),
+            sourceJson: any(named: 'sourceJson'),
+          )).called(2);
+    });
   });
 }

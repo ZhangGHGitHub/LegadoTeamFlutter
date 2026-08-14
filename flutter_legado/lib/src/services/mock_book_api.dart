@@ -1561,6 +1561,25 @@ class MockBookApi implements BookApi {
     map.putIfAbsent(key, () => defaultValue);
   }
 
+  @override
+  Future<Map<String, dynamic>> exploreEvalAction({
+    required String sourceJson,
+    required String actionJs,
+  }) async {
+    return {
+      'raw': '',
+      'actions': <dynamic>[],
+      'refreshExplore': actionJs.contains('refreshExplore'),
+    };
+  }
+
+  @override
+  Future<String> exploreEvalUiJs({
+    required String sourceJson,
+    required String jsStr,
+  }) async =>
+      jsStr;
+
   // ========== 规则解析 ==========
 
   @override

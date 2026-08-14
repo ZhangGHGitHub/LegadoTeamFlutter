@@ -743,6 +743,20 @@ abstract class BookApi {
     String defaultValue,
   );
 
+  /// 执行发现页控件 action JS（对标 Android evalButtonClick）
+  ///
+  /// 返回 map：`raw` / `actions` / `refreshExplore`。
+  Future<Map<String, dynamic>> exploreEvalAction({
+    required String sourceJson,
+    required String actionJs,
+  });
+
+  /// 执行发现页 viewName 动态标题 JS（对标 Android evalUiJs）
+  Future<String> exploreEvalUiJs({
+    required String sourceJson,
+    required String jsStr,
+  });
+
   // ========== 规则解析 ==========
 
   /// 使用规则解析内容

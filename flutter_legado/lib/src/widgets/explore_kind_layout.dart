@@ -1,8 +1,11 @@
 /// 发现分类 Flexbox 布局（对标 Android ExploreAdapter + FlexboxLayout）
 ///
 /// 支持 url / toggle / select / button / text 控件类型；
-/// toggle/select 写入 Rust infoMap，保证与原版请求 URL 一致。
+/// toggle/select 写入 Rust infoMap，button/text 调用 exploreEvalAction；
+/// java.refreshExplore 触发分类重载。
 library;
+
+import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -11,19 +14,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import 'explore_kind_action.dart';
 
 /// 按 [FlexChildStyle.layoutFlexBasisPercent] 将分类项排布为全宽行 / 网格 Chip。
 class ExploreKindLayout extends StatelessWidget {
   const ExploreKindLayout({
     super.key,
     required this.sourceUrl,
+    required this.sourceJson,
     required this.categories,
     this.onCategoryTap,
+    this.onRefreshCategories,
   });
 
   final String sourceUrl;
+  final String sourceJson;
   final List<ExploreCategory> categories;
   final void Function(String title, String url)? onCategoryTap;
+  final Future<void> Function()? onRefreshCategories;
 
   static const _kChipRadius = 10.0;
   static const _kChipGap = 6.0;
@@ -45,9 +53,11 @@ class ExploreKindLayout extends StatelessWidget {
           children.add(
             _ExploreKindItem(
               sourceUrl: sourceUrl,
+              sourceJson: sourceJson,
               category: category,
               width: _chipWidth(maxWidth, style),
               onCategoryTap: onCategoryTap,
+              onRefreshCategories: onRefreshCategories,
             ),
           );
         }
@@ -74,39 +84,50 @@ class ExploreKindLayout extends StatelessWidget {
 class _ExploreKindItem extends ConsumerWidget {
   const _ExploreKindItem({
     required this.sourceUrl,
+    required this.sourceJson,
     required this.category,
     this.width,
     this.onCategoryTap,
+    this.onRefreshCategories,
   });
 
   final String sourceUrl;
+  final String sourceJson;
   final ExploreCategory category;
   final double? width;
   final void Function(String title, String url)? onCategoryTap;
+  final Future<void> Function()? onRefreshCategories;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (category.type) {
       'toggle' => _ToggleChip(
         sourceUrl: sourceUrl,
+        sourceJson: sourceJson,
         category: category,
         width: width,
+        onRefreshCategories: onRefreshCategories,
       ),
       'select' => _SelectChip(
         sourceUrl: sourceUrl,
+        sourceJson: sourceJson,
         category: category,
         width: width,
+        onRefreshCategories: onRefreshCategories,
       ),
-      'button' => _StaticChip(
+      'button' => _ButtonChip(
+        sourceUrl: sourceUrl,
+        sourceJson: sourceJson,
         category: category,
         width: width,
-        onTap: null,
+        onRefreshCategories: onRefreshCategories,
       ),
-      'text' => _StaticChip(
+      'text' => _TextChip(
+        sourceUrl: sourceUrl,
+        sourceJson: sourceJson,
         category: category,
         width: width,
-        onTap: null,
-        muted: true,
+        onRefreshCategories: onRefreshCategories,
       ),
       _ => _StaticChip(
         category: category,
@@ -125,12 +146,14 @@ class _StaticChip extends StatefulWidget {
     this.width,
     this.onTap,
     this.muted = false,
+    this.label,
   });
 
   final ExploreCategory category;
   final double? width;
   final VoidCallback? onTap;
   final bool muted;
+  final String? label;
 
   @override
   State<_StaticChip> createState() => _StaticChipState();
@@ -144,6 +167,7 @@ class _StaticChipState extends State<_StaticChip> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final hasTap = widget.onTap != null;
+    final text = widget.label ?? widget.category.title;
 
     final fill = _pressed && hasTap
         ? colorScheme.onSurface.withValues(alpha: 0.14)
@@ -159,7 +183,7 @@ class _StaticChipState extends State<_StaticChip> {
       ),
       alignment: Alignment.center,
       child: Text(
-        widget.category.title,
+        text,
         style: theme.textTheme.bodyMedium?.copyWith(
           color: widget.muted
               ? colorScheme.onSurfaceVariant
@@ -189,16 +213,145 @@ class _StaticChipState extends State<_StaticChip> {
   }
 }
 
-class _ToggleChip extends ConsumerStatefulWidget {
-  const _ToggleChip({
+class _DynamicLabel extends ConsumerStatefulWidget {
+  const _DynamicLabel({
+    required this.sourceJson,
+    required this.category,
+    required this.fallback,
+    required this.builder,
+  });
+
+  final String sourceJson;
+  final ExploreCategory category;
+  final String fallback;
+  final Widget Function(String label) builder;
+
+  @override
+  ConsumerState<_DynamicLabel> createState() => _DynamicLabelState();
+}
+
+class _DynamicLabelState extends ConsumerState<_DynamicLabel> {
+  late String _label;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _label = _resolveInitialLabel();
+    _loadDynamicLabel();
+  }
+
+  String _resolveInitialLabel() {
+    final literal = ExploreKindActionRunner.literalViewName(widget.category.viewName);
+    if (literal != null) return literal;
+    return widget.fallback;
+  }
+
+  Future<void> _loadDynamicLabel() async {
+    final viewName = widget.category.viewName;
+    if (viewName == null || ExploreKindActionRunner.literalViewName(viewName) != null) {
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final text = await ref.read(bookApiProvider).exploreEvalUiJs(
+            sourceJson: widget.sourceJson,
+            jsStr: viewName,
+          );
+      if (!mounted) return;
+      setState(() {
+        _label = text.isEmpty ? 'null' : text;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _label = 'err';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return widget.builder(widget.fallback);
+    }
+    return widget.builder(_label);
+  }
+}
+
+class _ButtonChip extends ConsumerStatefulWidget {
+  const _ButtonChip({
     required this.sourceUrl,
+    required this.sourceJson,
     required this.category,
     this.width,
+    this.onRefreshCategories,
   });
 
   final String sourceUrl;
+  final String sourceJson;
   final ExploreCategory category;
   final double? width;
+  final Future<void> Function()? onRefreshCategories;
+
+  @override
+  ConsumerState<_ButtonChip> createState() => _ButtonChipState();
+}
+
+class _ButtonChipState extends ConsumerState<_ButtonChip> {
+  bool _busy = false;
+
+  Future<void> _onTap() async {
+    final action = widget.category.action?.trim();
+    if (action == null || action.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await ExploreKindActionRunner.runAction(
+        ref: ref,
+        sourceJson: widget.sourceJson,
+        action: action,
+        onRefreshCategories: widget.onRefreshCategories,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAction =
+        widget.category.action != null && widget.category.action!.trim().isNotEmpty;
+
+    return _DynamicLabel(
+      sourceJson: widget.sourceJson,
+      category: widget.category,
+      fallback: widget.category.title,
+      builder: (label) => _StaticChip(
+        category: widget.category,
+        width: widget.width,
+        label: _busy ? '$label…' : label,
+        onTap: hasAction && !_busy ? _onTap : null,
+      ),
+    );
+  }
+}
+
+class _ToggleChip extends ConsumerStatefulWidget {
+  const _ToggleChip({
+    required this.sourceUrl,
+    required this.sourceJson,
+    required this.category,
+    this.width,
+    this.onRefreshCategories,
+  });
+
+  final String sourceUrl;
+  final String sourceJson;
+  final ExploreCategory category;
+  final double? width;
+  final Future<void> Function()? onRefreshCategories;
 
   @override
   ConsumerState<_ToggleChip> createState() => _ToggleChipState();
@@ -207,6 +360,7 @@ class _ToggleChip extends ConsumerStatefulWidget {
 class _ToggleChipState extends ConsumerState<_ToggleChip> {
   late List<String> _chars;
   late int _index;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -218,14 +372,32 @@ class _ToggleChipState extends ConsumerState<_ToggleChip> {
     if (_index < 0) _index = 0;
   }
 
-  Future<void> _cycle() async {
-    setState(() => _index = (_index + 1) % _chars.length);
+  Future<void> _afterValueChanged() async {
     final value = _chars[_index];
     await ref.read(bookApiProvider).exploreInfoMapPut(
           widget.sourceUrl,
           widget.category.title,
           value,
         );
+    final action = widget.category.action?.trim();
+    if (action == null || action.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await ExploreKindActionRunner.runAction(
+        ref: ref,
+        sourceJson: widget.sourceJson,
+        action: action,
+        onRefreshCategories: widget.onRefreshCategories,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _cycle() async {
+    if (_busy) return;
+    setState(() => _index = (_index + 1) % _chars.length);
+    await _afterValueChanged();
   }
 
   @override
@@ -233,36 +405,44 @@ class _ToggleChipState extends ConsumerState<_ToggleChip> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final value = _chars[_index];
-    final label = '$value${widget.category.title}';
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: _cycle,
-        borderRadius: BorderRadius.circular(ExploreKindLayout._kChipRadius),
-        splashColor: colorScheme.onSurface.withValues(alpha: 0.06),
-        child: Container(
-          width: widget.width,
-          constraints: const BoxConstraints(minHeight: 34),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: colorScheme.onSurface.withValues(alpha: 0.10),
+    return _DynamicLabel(
+      sourceJson: widget.sourceJson,
+      category: widget.category,
+      fallback: widget.category.title,
+      builder: (title) {
+        final label = '$value$title';
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _busy ? null : _cycle,
             borderRadius:
                 BorderRadius.circular(ExploreKindLayout._kChipRadius),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurface,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+            splashColor: colorScheme.onSurface.withValues(alpha: 0.06),
+            child: Container(
+              width: widget.width,
+              constraints: const BoxConstraints(minHeight: 34),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: colorScheme.onSurface.withValues(alpha: 0.10),
+                borderRadius:
+                    BorderRadius.circular(ExploreKindLayout._kChipRadius),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                _busy ? '$label…' : label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -270,13 +450,17 @@ class _ToggleChipState extends ConsumerState<_ToggleChip> {
 class _SelectChip extends ConsumerStatefulWidget {
   const _SelectChip({
     required this.sourceUrl,
+    required this.sourceJson,
     required this.category,
     this.width,
+    this.onRefreshCategories,
   });
 
   final String sourceUrl;
+  final String sourceJson;
   final ExploreCategory category;
   final double? width;
+  final Future<void> Function()? onRefreshCategories;
 
   @override
   ConsumerState<_SelectChip> createState() => _SelectChipState();
@@ -285,6 +469,7 @@ class _SelectChip extends ConsumerStatefulWidget {
 class _SelectChipState extends ConsumerState<_SelectChip> {
   late List<String> _chars;
   late int _index;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -297,17 +482,37 @@ class _SelectChipState extends ConsumerState<_SelectChip> {
   }
 
   Future<void> _onPick(int next) async {
-    if (next == _index) return;
+    if (next == _index || _busy) return;
     setState(() => _index = next);
+    final value = _chars[next];
     await ref.read(bookApiProvider).exploreInfoMapPut(
           widget.sourceUrl,
           widget.category.title,
-          _chars[next],
+          value,
         );
+    final action = widget.category.action?.trim();
+    if (action == null || action.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await ExploreKindActionRunner.runAction(
+        ref: ref,
+        sourceJson: widget.sourceJson,
+        action: action,
+        onRefreshCategories: widget.onRefreshCategories,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _showPicker() async {
+    if (_busy) return;
     var picked = _index;
+    final titleLabel = ExploreKindActionRunner.literalViewName(
+          widget.category.viewName,
+        ) ??
+        widget.category.title;
+
     await showCupertinoModalPopup<void>(
       context: context,
       builder: (ctx) => Material(
@@ -340,7 +545,7 @@ class _SelectChipState extends ConsumerState<_SelectChip> {
                     children: [
                       Expanded(
                         child: Text(
-                          widget.category.title,
+                          titleLabel,
                           style: Theme.of(ctx).textTheme.titleSmall,
                         ),
                       ),
@@ -387,42 +592,145 @@ class _SelectChipState extends ConsumerState<_SelectChip> {
     final colorScheme = theme.colorScheme;
     final value = _chars[_index];
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: _showPicker,
-        borderRadius: BorderRadius.circular(ExploreKindLayout._kChipRadius),
-        splashColor: colorScheme.onSurface.withValues(alpha: 0.06),
-        child: Container(
-          width: widget.width,
-          constraints: const BoxConstraints(minHeight: 34),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: colorScheme.onSurface.withValues(alpha: 0.10),
+    return _DynamicLabel(
+      sourceJson: widget.sourceJson,
+      category: widget.category,
+      fallback: widget.category.title,
+      builder: (title) {
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _busy ? null : _showPicker,
             borderRadius:
                 BorderRadius.circular(ExploreKindLayout._kChipRadius),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: Text(
-                  '${widget.category.title} · $value',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontSize: 14,
+            splashColor: colorScheme.onSurface.withValues(alpha: 0.06),
+            child: Container(
+              width: widget.width,
+              constraints: const BoxConstraints(minHeight: 34),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: colorScheme.onSurface.withValues(alpha: 0.10),
+                borderRadius:
+                    BorderRadius.circular(ExploreKindLayout._kChipRadius),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _busy ? '$title · $value…' : '$title · $value',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                  Icon(
+                    Icons.unfold_more,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ],
               ),
-              Icon(
-                Icons.unfold_more,
-                size: 16,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ],
+            ),
           ),
+        );
+      },
+    );
+  }
+}
+
+class _TextChip extends ConsumerStatefulWidget {
+  const _TextChip({
+    required this.sourceUrl,
+    required this.sourceJson,
+    required this.category,
+    this.width,
+    this.onRefreshCategories,
+  });
+
+  final String sourceUrl;
+  final String sourceJson;
+  final ExploreCategory category;
+  final double? width;
+  final Future<void> Function()? onRefreshCategories;
+
+  @override
+  ConsumerState<_TextChip> createState() => _TextChipState();
+}
+
+class _TextChipState extends ConsumerState<_TextChip> {
+  final _controller = TextEditingController();
+  Timer? _debounce;
+  String? _lastSubmitted;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    final text = _controller.text;
+    ref.read(bookApiProvider).exploreInfoMapPut(
+          widget.sourceUrl,
+          widget.category.title,
+          text,
+        );
+    final action = widget.category.action?.trim();
+    if (action == null || action.isEmpty) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 600), () async {
+      if (_lastSubmitted == text) return;
+      _lastSubmitted = text;
+      await ExploreKindActionRunner.runAction(
+        ref: ref,
+        sourceJson: widget.sourceJson,
+        action: action,
+        onRefreshCategories: widget.onRefreshCategories,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final hint = ExploreKindActionRunner.literalViewName(widget.category.viewName) ??
+        widget.category.title;
+
+    return Container(
+      width: widget.width,
+      constraints: const BoxConstraints(minHeight: 34),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: colorScheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(ExploreKindLayout._kChipRadius),
+      ),
+      child: TextField(
+        controller: _controller,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface,
+          fontSize: 14,
+        ),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontSize: 14,
+          ),
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         ),
       ),
     );

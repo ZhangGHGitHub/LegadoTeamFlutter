@@ -824,6 +824,24 @@ Future<void> exploreInfoMapEnsureDefault({
   defaultValue: defaultValue,
 );
 
+/// 执行发现页控件 action JS（返回 ExploreEvalActionResult JSON）
+Future<String> exploreEvalAction({
+  required String sourceJson,
+  required String actionJs,
+}) => RustLib.instance.api.crateFfiFfiExploreEvalAction(
+  sourceJson: sourceJson,
+  actionJs: actionJs,
+);
+
+/// 执行发现页 viewName 动态标题 JS
+Future<String> exploreEvalUiJs({
+  required String sourceJson,
+  required String jsStr,
+}) => RustLib.instance.api.crateFfiFfiExploreEvalUiJs(
+  sourceJson: sourceJson,
+  jsStr: jsStr,
+);
+
 /// 使用规则解析内容，返回 JSON 格式的结果
 Future<String> parseRule({
   required String content,

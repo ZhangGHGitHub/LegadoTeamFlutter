@@ -1723,6 +1723,25 @@ class RustApi implements BookApi {
         defaultValue: defaultValue,
       );
 
+  @override
+  Future<Map<String, dynamic>> exploreEvalAction({
+    required String sourceJson,
+    required String actionJs,
+  }) async {
+    final json = await bridge.exploreEvalAction(
+      sourceJson: sourceJson,
+      actionJs: actionJs,
+    );
+    return _decodeMap(json, 'exploreEvalAction');
+  }
+
+  @override
+  Future<String> exploreEvalUiJs({
+    required String sourceJson,
+    required String jsStr,
+  }) =>
+      bridge.exploreEvalUiJs(sourceJson: sourceJson, jsStr: jsStr);
+
   /// 将发现分类返回的 WebSearchResult 归一化为 SearchBook。
   /// 兼容 snake_case 与 camelCase 两种键名；origin/originName 用所属书源补齐，
   /// 避免 Rust 侧字段命名差异导致 origin 丢失（未入库书详情页无法联网取目录/封面）。
