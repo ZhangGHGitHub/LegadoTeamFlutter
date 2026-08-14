@@ -44,16 +44,16 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 - **计划驱动**：每阶段开发前先审查计划与进度文档（docs/ 下 REFACTORING_PLAN.md / REFACTORING_REMAINING_PLAN.md 等），确认进度符合度后按 P0/P1/P2 优先级顺序执行
 - **UI 层职责边界**：UI 层只做界面渲染、交互与状态管理，不含业务逻辑；数据经 Rust Bridge 获取；遵循 UI 层与底层分离原则
 - **文档存放**：新建计划/报告/交接类 `.md` 必须放 `docs/`；根目录仅保留 README.md、CHANGELOG.md、LICENSE、AGENTS.md 等约定文件
-- **全中文规范**：汇报、commit 说明、代码注释全部使用中文
+- **全中文规范**：汇报、代码注释全部使用中文；commit 描述/正文使用中文（类型/作用域按约定式提交用英文小写）
 - **l10n 范围（D5=B，F4-7）**：维持中文主语言；UI 文案以 `AppStrings`/硬编码中文为主，不推进全面国际化；新增页面沿用中文，英文仅保留系统 locale 切换入口（其他设置页语言项）
 
 ## Git 纪律与版本控制
 
 - 每次改动验证通过后立即 commit 到本地；阶段性成果须 commit 并 push
-- 跨轨（Rust/UI）改动须分批提交，并使用 `[Rust]` / `[UI]` 前缀标注
+- **提交信息必须遵循约定式提交（Conventional Commits）**：`<类型>[作用域]: <中文描述>`，类型用 `fix`/`feat`/`docs`/`refactor`/`test`/`chore` 等英文小写，作用域用 `ui`/`rust`/`tool`（替代旧式 `[UI]`/`[Rust]`/`[Tool]` 前缀，如 `fix(ui): ...`、`fix(rust): ...`）；`fix` 必须在正文说明根因、脚注关联 `Fixes #编号`；描述 ≤72 字符、正文行 ≤100 字符、不得混用类型、不得用模糊描述；详细规则见 `.qoder/rules/legado-dev-conventions.md`「Git 提交规范」章节
 - 分支策略：`feature/rust-*` 与 `feature/ui-*` 独立开发，集成使用 `integration/*` 分支；仅从当前 HEAD 创建规范分支，不得改动已提交历史
 - 署名规范：UI 层代码署名「— 子代理名称 + UI」，Bridge 层代码署名「— 子代理名称 + Bridge」，文档末尾附编写者署名与日期
-- 批次修复按 pubspec 版本 patch 递增（如 2.0.0+2 → 2.0.1+3），每批同步更新 CHANGELOG，记录版本号与贡献者
+- 批次修复按 pubspec 版本 patch 递增（如 2.0.0+2 → 2.0.1+3），每批同步更新 CHANGELOG，记录版本号与贡献者；版本号记录于 CHANGELOG 与提交正文，commit subject 不带版本号
 - 进度文档（docs/ 下）须与 git 提交记录保持同步，任务编号不得重叠
 
 ## 验证与交付流程
