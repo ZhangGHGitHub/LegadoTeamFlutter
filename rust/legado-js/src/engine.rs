@@ -776,6 +776,68 @@ mod quickjs_tests {
         assert_eq!(result, "hello");
     }
 
+    /// Rhino `Packages` Java 桥模拟层：常用类子集（String/Base64/UUID/md5Hex）
+    /// 注入后可被七猫四合一等书源 jsLib 正常调用。
+    #[test]
+    fn test_packages_shim_common_classes() {
+        let engine = make_engine();
+        let js = r#"
+          (function () {
+            var bytes = new Packages.java.lang.String('hello').getBytes('UTF-8');
+            var b64 = Packages.android.util.Base64.encodeToString(bytes, 0);
+            var uuid = Packages.java.util.UUID.randomUUID().toString();
+            var md5 = Packages.cn.hutool.crypto.digest.DigestUtil.md5Hex('hello');
+            var cut = Packages.java.util.Arrays.copyOfRange(bytes, 0, 2);
+            return JSON.stringify({b64: b64, uuidLen: uuid.length, md5: md5, cut: String(cut[0]) + ',' + String(cut[1])});
+          })()
+        "#;
+        let result = engine.eval(js).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["b64"], "aGVsbG8=", "Base64.encodeToString 应输出字节数组的 Base64");
+        assert_eq!(parsed["uuidLen"], 36, "UUID 应为标准 36 位格式");
+        assert_eq!(
+            parsed["md5"],
+            "5d41402abc4b2a76b9719d911017c592",
+            "md5Hex 应对齐 java.md5Encode"
+        );
+        assert_eq!(parsed["cut"], "104,101", "copyOfRange 应切片字节");
+    }
+
+    /// Rhino `Packages.javax.crypto.Cipher` 字节级 AES-CBC/PKCS5 解密
+    /// （七猫章节/榜单密文解密流程：Base64.decode → copyOfRange 取 IV 与
+    /// 密文 → SecretKeySpec + IvParameterSpec + Cipher.init(2) + doFinal）。
+    #[test]
+    fn test_packages_shim_cipher_aes_cbc_decrypt() {
+        use base64::Engine;
+        let engine = make_engine();
+        let key = b"0123456789abcdef";
+        let iv = b"fedcba9876543210";
+        let plain = "七猫章节内容";
+        let ct =
+            legado_core::crypto::AesCrypto::encrypt_cbc(key, iv, plain.as_bytes()).unwrap();
+        let mut payload = Vec::new();
+        payload.extend_from_slice(iv);
+        payload.extend_from_slice(&ct);
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&payload);
+        let js = format!(
+            r#"
+        (function () {{
+          var raw = Packages.android.util.Base64.decode('{b64}', 0);
+          var iv = Packages.java.util.Arrays.copyOfRange(raw, 0, 16);
+          var enc = Packages.java.util.Arrays.copyOfRange(raw, 16, raw.length);
+          var key = new Packages.javax.crypto.spec.SecretKeySpec(new Packages.java.lang.String('0123456789abcdef').getBytes('UTF-8'), 'AES');
+          var ivSpec = new Packages.javax.crypto.spec.IvParameterSpec(iv);
+          var cipher = Packages.javax.crypto.Cipher.getInstance('AES/CBC/PKCS5Padding');
+          cipher.init(2, key, ivSpec);
+          var out = cipher.doFinal(enc);
+          return Packages.java.lang.String(out, 'UTF-8');
+        }})()
+        "#
+        );
+        let result = engine.eval(&js).unwrap();
+        assert_eq!(result, plain, "Packages.Cipher.doFinal 应解出明文");
+    }
+
     #[test]
     fn test_host_api_hex_encode_decode() {
         let engine = make_engine();

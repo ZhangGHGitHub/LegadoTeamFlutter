@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.91] - 2026-08-15
+
+### Fixed
+- [Rust] 发现页七猫四合一本地版报错修复（用户反馈获取不到内容）：
+  - **Rhino `Packages` Java 桥模拟层**：七猫 jsLib(587KB)依赖 `Packages`（AES 密文解密/Base64/MD5/UUID/String.getBytes），QuickJS 无 Java 桥报 `Packages is not defined`。注入 `Packages` 全局模拟层（java.lang.String / java.util.UUID|Arrays / android.util.Base64 / cn.hutool.DigestUtil.md5Hex / javax.crypto.Cipher → 新增 `java.aesDecryptBytes` 字节级 AES-CBC/ECB 解密 + `java.base64EncodeBytes` 绑定）
+  - **java.ajax 支持原版「url,{json}」格式**：七猫 `java.ajax("https://...?,{\"method\":...,\"headers\":...}")` 此前解析失败返回 [ERROR]；现逗号前为 URL、逗号后 option JSON，返回**纯响应体文本**（对齐原版 JsExtensions.ajax 返回 body；七猫 qmParse 直接 JSON.parse）
+  - **tokio 嵌套 runtime panic**：探索/搜索 async 上下文内执行 JS → java.ajax 嵌套启动 runtime 报 `Cannot start a runtime from within a runtime`；`runtime_bridge::block_on` 检测已在 runtime 内时改用 `block_in_place` 让出 worker 后驱动 legado-js runtime
+  - 实测：七猫「推荐榜」正常加载书籍列表（重生之都市天尊、封神…）
+- 新增测试：Packages 常用类 + AES-CBC 字节解密端到端、ajax「url,{json}」格式
+- 验证：cargo test legado-js 485 全过、legado-ffi 337 全过、冒烟 5/5、模拟器实测七猫内容正常
+
 ## [2.0.90] - 2026-08-14
 
 ### Fixed

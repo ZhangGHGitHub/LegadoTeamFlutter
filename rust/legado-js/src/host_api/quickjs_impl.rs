@@ -1,4 +1,4 @@
-﻿//! QuickJS 宿主 API 注册实现
+//! QuickJS 宿主 API 注册实现
 //!
 //! 在 `quickjs` feature 启用时，将 Legado 提供的宿主函数
 //! 注册到 rquickjs 的全局上下文中，供 JS 脚本直接调用。
@@ -79,6 +79,91 @@ pub fn register_all_apis<'js>(
         .set("java", java)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
+    // Rhino `Packages` Java 桥模拟层（QuickJS 无 Java 桥）：常用子集
+    // 映射到 java.* 宿主绑定——七猫四合一等书源 jsLib 用 Packages 做
+    // AES 密文解密 / Base64 / MD5 / UUID / String.getBytes，
+    // 缺失时报 `Packages is not defined`（2026-08-15 用户反馈七猫报错）
+    inject_packages_shim(&ctx)?;
+
+    Ok(())
+}
+
+/// 注入 Rhino `Packages` Java 桥模拟层（QuickJS 全局）
+///
+/// 覆盖七猫四合一等书源 jsLib 用到的 Java 类常用子集：
+/// - `java.lang.String` — toString/getBytes(charset)/new String(bytes, charset)
+/// - `java.util.UUID.randomUUID` / `java.util.Arrays.copyOfRange`
+/// - `android.util.Base64` — decode(→Uint8Array)/encodeToString
+/// - `cn.hutool.crypto.digest.DigestUtil.md5Hex`
+/// - `javax.crypto.spec.SecretKeySpec|IvParameterSpec` + `javax.crypto.Cipher`
+///   （init/doFinal → `java.aesDecryptBytes` 字节级 AES-CBC/ECB 解密）
+#[cfg(feature = "quickjs")]
+fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError> {
+    let shim = r#"
+(function () {
+  function toU8(x) { return (x instanceof Uint8Array) ? x : new Uint8Array(x); }
+  function toJsonBytes(u8) { var a = []; for (var i = 0; i < u8.length; i++) a.push(u8[i]); return JSON.stringify(a); }
+  function fromJsonBytes(json) { return new Uint8Array(JSON.parse(json)); }
+  function JSString(s) {
+    return {
+      toString: function () { return s; },
+      valueOf: function () { return s; },
+      getBytes: function (charset) { return fromJsonBytes(java.strToBytes(s, charset || 'UTF-8')); }
+    };
+  }
+  function JavaString() {
+    var a0 = arguments.length > 0 ? arguments[0] : undefined;
+    var isBytes = (a0 instanceof Uint8Array) || Array.isArray(a0);
+    if (arguments.length >= 2 && isBytes) { return java.bytesToStr(toJsonBytes(toU8(a0)), String(arguments[1])); }
+    if (arguments.length === 1 && isBytes) { return java.bytesToStr(toJsonBytes(toU8(a0)), 'UTF-8'); }
+    return JSString(String(arguments[0]));
+  }
+  function uuidV4() {
+    var d = new Uint8Array(16);
+    for (var i = 0; i < 16; i++) d[i] = Math.floor(Math.random() * 256);
+    d[6] = (d[6] & 0x0f) | 0x40; d[8] = (d[8] & 0x3f) | 0x80;
+    var h = '';
+    for (var i = 0; i < 16; i++) h += (d[i] < 16 ? '0' : '') + d[i].toString(16);
+    return h.substr(0, 8) + '-' + h.substr(8, 4) + '-' + h.substr(12, 4) + '-' + h.substr(16, 4) + '-' + h.substr(20);
+  }
+  globalThis.Packages = {
+    java: {
+      lang: { String: JavaString },
+      util: {
+        UUID: { randomUUID: function () { return { toString: function () { return uuidV4(); } }; } },
+        Arrays: { copyOfRange: function (a, from, to) { return toU8(a).slice(from, to); } }
+      }
+    },
+    android: { util: { Base64: {
+      decode: function (s, flags) { return java.base64DecodeToByteArray(String(s), flags || 0); },
+      encodeToString: function (bytes, flags) { return java.base64EncodeBytes(toU8(bytes)); }
+    } } },
+    cn: { hutool: { crypto: { digest: { DigestUtil: { md5Hex: function (s) { return java.md5Encode(String(s)); } } } } } },
+    javax: { crypto: {
+      spec: {
+        SecretKeySpec: function (key, algo) { return { key: toU8(key), algo: algo }; },
+        IvParameterSpec: function (iv) { return { iv: toU8(iv) }; }
+      },
+      Cipher: {
+        getInstance: function (transformation) {
+          var t = String(transformation);
+          return {
+            init: function (mode, key, ivSpec) { this._mode = mode; this._key = key; this._iv = ivSpec; },
+            doFinal: function (data) {
+              var key = this._key ? toU8(this._key.key) : null;
+              var iv = this._iv ? toU8(this._iv.iv) : null;
+              return java.aesDecryptBytes(toU8(data), key, iv, t);
+            }
+          };
+        }
+      }
+    } }
+  };
+})();
+"#;
+    let _: rquickjs::Value = ctx
+        .eval(shim)
+        .map_err(|e| LegadoError::JsEngine(format!("Packages 模拟层注入失败: {e}")))?;
     Ok(())
 }
 
@@ -318,6 +403,21 @@ fn register_encoding_apis<'js>(
             |bytes_json: String, charset: Opt<String>| -> String {
                 encoding::bytes_to_str(&bytes_json, charset.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // base64EncodeBytes(bytes) -> String（字节数组 → Base64）
+    // Packages 模拟层 android.util.Base64.encodeToString 依赖
+    mount_dual(
+        java,
+        globals,
+        "base64EncodeBytes",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |bytes: rquickjs::TypedArray<u8>| -> String {
+                encoding::base64_encode_bytes(bytes.as_ref())
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1160,6 +1260,48 @@ fn register_crypto_apis<'js>(
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
 ) -> Result<(), LegadoError> {
+    // aesDecryptBytes(data, key, iv?, transformation?) -> Uint8Array
+    // 字节级 AES 解密（Rhino `Packages.javax.crypto.Cipher.doFinal` 模拟层依赖；
+    // 七猫四合一等书源 jsLib 用 Packages 解密章节/榜单 AES-CBC 密文，
+    // key/iv/data 均为字节数组，与字符串级 aesDecrypt 不同）
+    mount_dual(
+        java,
+        globals,
+        "aesDecryptBytes",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             data: rquickjs::TypedArray<u8>,
+             key: rquickjs::TypedArray<u8>,
+             iv: Opt<rquickjs::TypedArray<u8>>,
+             transformation: Opt<String>| -> rquickjs::Result<rquickjs::Value<'js>> {
+                use rquickjs::IntoJs;
+                let t = transformation
+                    .0
+                    .unwrap_or_else(|| "AES/CBC/PKCS5Padding".to_string());
+                let key_b: Vec<u8> = key.as_bytes().unwrap_or(&[]).to_vec();
+                let data_b: Vec<u8> = data.as_bytes().unwrap_or(&[]).to_vec();
+                let iv_b: Option<Vec<u8>> =
+                    iv.0.map(|a| a.as_bytes().unwrap_or(&[]).to_vec());
+                let plain = legado_core::crypto::symmetric_decrypt(
+                    &t,
+                    &key_b,
+                    iv_b.as_deref(),
+                    &data_b,
+                )
+                .map_err(|e| rquickjs::Error::FromJs {
+                    from: "Uint8Array",
+                    to: "Uint8Array",
+                    message: Some(e.to_string()),
+                })?;
+                let arr: rquickjs::TypedArray<u8> =
+                    rquickjs::TypedArray::new(ctx.clone(), plain)?;
+                arr.into_js(&ctx)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // aesEncrypt(data, key, iv?) -> String
     mount_dual(
         java,

@@ -33,7 +33,16 @@ pub fn get_runtime() -> &'static Runtime {
 /// 此函数只能在非 tokio worker 线程中调用（即 JS 专用 OS 线程）。
 /// 在 tokio worker 中调用 block_on 会导致死锁。
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    get_runtime().block_on(future)
+    match tokio::runtime::Handle::try_current() {
+        // 已在 tokio runtime 内（探索/搜索等 async 上下文内执行书源 JS →
+        // java.ajax 等网络调用）：用 block_in_place 让出当前 worker 后
+        // 再驱动 legado-js runtime，避免嵌套 Runtime::block_on 触发
+        // "Cannot start a runtime from within a runtime"（七猫四合一书源
+        // 点分类报错根因；要求外层 runtime 为 multi-thread，legado-ffi
+        // runtime 满足）。— DeepSeek Harness + Bridge（2026-08-15）
+        Ok(_) => tokio::task::block_in_place(|| get_runtime().block_on(future)),
+        Err(_) => get_runtime().block_on(future),
+    }
 }
 
 #[cfg(test)]

@@ -114,12 +114,35 @@ pub fn http_head(url: &str) -> Result<String, String> {
     })
 }
 
-/// ajax(options_json) → 通用 AJAX 请求，返回 HttpResponse JSON
+/// ajax(options) → 通用 AJAX 请求
 ///
-/// 支持通过 JSON 配置 method / url / headers / body / timeout_ms。
-/// 对应 Kotlin 端 `ajax(url)` 和 `connect(url, header, timeout)` 的通用版本。
-pub fn ajax(options_json: &str) -> Result<String, String> {
-    let opts: HttpOptions = serde_json::from_str(options_json)
+/// 支持两种输入（对齐原版 JsExtensions.ajax）：
+/// 1. 标准 JSON：`{"url":..., "method":..., "headers":..., "body":...}` → 返回 HttpResponse JSON
+/// 2. 原版「url,{json}」格式（七猫四合一等书源）：
+///    `https://api?... ,{"method":"GET","headers":{...}}` → 返回**纯响应体文本**
+///    （原版 ajax 返回 StrResponse.body；七猫 qmParse 直接 JSON.parse 响应体）
+pub fn ajax(input: &str) -> Result<String, String> {
+    let input = input.trim();
+    // 原版「url,{json}」格式：不以 `{` 开头且含 `,{`，逗号前为 URL、逗号后为 option JSON
+    if !input.starts_with('{') {
+        if let Some(comma) = input.find(",{") {
+            let url_part = input[..comma].trim();
+            let option_part = &input[comma + 1..];
+            if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(option_part) {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert(
+                        "url".to_string(),
+                        serde_json::Value::String(url_part.to_string()),
+                    );
+                    if let Ok(opts) = serde_json::from_value::<HttpOptions>(v) {
+                        return ajax_request_body(&opts);
+                    }
+                }
+            }
+        }
+    }
+    // 标准 JSON 输入
+    let opts: HttpOptions = serde_json::from_str(input)
         .map_err(|e| format!("ajax parse options error: {}", e))?;
 
     if opts.url.is_empty() {
@@ -141,7 +164,7 @@ pub fn ajax(options_json: &str) -> Result<String, String> {
         let request = LegadoRequest {
             url: opts.url.clone(),
             method,
-            headers: opts.headers.unwrap_or_default(),
+            headers: opts.headers.clone().unwrap_or_default(),
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
@@ -158,6 +181,35 @@ pub fn ajax(options_json: &str) -> Result<String, String> {
         };
 
         serde_json::to_string(&result).map_err(|e| format!("ajax serialize error: {}", e))
+    })
+}
+
+/// 「url,{json}」格式请求，返回**纯响应体文本**（对齐原版 JsExtensions.ajax 返回
+/// StrResponse.body；七猫 qmParse 等直接 JSON.parse 响应体）
+fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
+    if opts.url.is_empty() {
+        return Err("ajax: url is required".to_string());
+    }
+    let timeout = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+    let method_str = opts.method.as_deref().unwrap_or("GET").to_uppercase();
+    let method = match method_str.as_str() {
+        "GET" | "POST" | "HEAD" | "PUT" | "DELETE" => Method::from_str_loose(&method_str),
+        other => return Err(format!("ajax: unsupported method '{}'", other)),
+    };
+    block_on(async {
+        let client = build_client_with_timeout(timeout)?;
+        let request = LegadoRequest {
+            url: opts.url.clone(),
+            method,
+            headers: opts.headers.clone().unwrap_or_default(),
+            body: opts.body.clone(),
+            timeout: Some(std::time::Duration::from_millis(timeout)),
+        };
+        let resp = client
+            .send(&request)
+            .await
+            .map_err(|e| format!("ajax request error: {}", e))?;
+        Ok(resp.body)
     })
 }
 
@@ -378,6 +430,22 @@ mod tests {
             if resp.status_code == 200 {
                 assert!(!resp.body.is_empty());
             }
+        }
+    }
+
+    /// 原版「url,{json}」格式（七猫四合一等书源 java.ajax("url,{json}")）：
+    /// 逗号前 URL + 逗号后 option JSON，应解析成功并返回**纯响应体文本**。
+    #[test]
+    fn test_ajax_url_option_format_returns_body() {
+        let input = r#"https://httpbin.org/get,{"method":"GET","headers":{"Accept":"application/json"}}"#;
+        let result = ajax(input);
+        if let Ok(body) = result {
+            let head: String = body.chars().take(80).collect();
+            assert!(
+                body.trim_start().starts_with('{'),
+                "应返回纯响应体文本(JSON)，而非 HttpResponse 包装: {}",
+                head
+            );
         }
     }
 
