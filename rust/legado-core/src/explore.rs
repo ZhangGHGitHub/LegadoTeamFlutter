@@ -146,8 +146,14 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
                 })
                 .collect();
         }
-        // JSON 形态但解析失败：勿降级为纯文本（避免整段 JSON 被拆成垃圾分类）
-        return vec![];
+        // JSON 形态但解析失败：对齐原版 exploreKinds 失败追加
+        // `ExploreKind("ERROR:${msg}", stackTrace)`（BookSourceExtensions.kt:97-100），
+        // UI 渲染为红色 ERROR 分类行，点击可查看详情 — 发现页修复 B②
+        return vec![ExploreCategory {
+            title: "ERROR:探索分类 JSON 解析失败".to_string(),
+            url: Some(trimmed.chars().take(500).collect()),
+            ..Default::default()
+        }];
     }
 
     // 纯文本格式：按 \n 或 && 分隔，每条按 :: 分割为 标题::URL
@@ -238,6 +244,20 @@ mod tests {
         assert!((style0.layout_flex_basis_percent - 1.0).abs() < f32::EPSILON);
         let style1 = result[1].style.as_ref().unwrap();
         assert!((style1.layout_flex_basis_percent - 0.25).abs() < f32::EPSILON);
+    }
+
+    /// JSON 形态但解析失败 → 产出 ERROR 分类（对齐原版 exploreKinds 失败追加，
+    /// UI 渲染红色 ERROR 行可点击查看详情）— 发现页修复 B②
+    #[test]
+    fn test_parse_explore_url_json_invalid_yields_error_category() {
+        let result = parse_explore_url(r#"[{"title":"玄幻""#);
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].title.starts_with("ERROR:"),
+            "解析失败应产出 ERROR 分类，实际: {}",
+            result[0].title
+        );
+        assert!(result[0].url.is_some(), "ERROR 分类 url 应携带详情");
     }
 
     #[test]
