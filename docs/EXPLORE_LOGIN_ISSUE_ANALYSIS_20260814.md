@@ -180,7 +180,17 @@ ew Function 内 eval 执行（独立词法作用域，对齐 Rhino 每次 evalJS
 
 
 
-### 十、编辑页输入框与字段导航条样式对齐（v2.0.85，2026-08-14，用户反馈）
+
+### 十一、UI 对齐自动比对工具（scripts/ui_parity_compare.ps1，2026-08-14）
+
+用户提出「UI 细节能否全自动修改」。实现自动化的「检测 + 验证」环节（代码修改仍由编码 Agent 批量执行）：
+- 用法：.\scripts\ui_parity_compare.ps1 -Device emulator-5556 -NavigateTo source_edit——自动启动原版（com.legado.app.release）与重构版（io.legado.flutter_legado），导航到指定界面（内置 source_edit 导航：发现页→长按书山聚合→编辑），分别抓取 uiautomator 语义树，归一化后对比：
+  - 缺失节点（原版有、重构版无）/ 多余节点（重构版有、原版无）
+  - 文本顺序差异
+  - 坐标偏移（>24px，装饰性图标列入忽略名单）
+- 输出：	mp_debug/parity/<screen>_diff.txt + 控制台摘要；退出码 0=MATCH / 1=DIFF（可作 CI 门禁）。
+- 实测：编辑页自动比对 = MATCH（双方 26 个语义节点文本/顺序/坐标一致）。
+- 局限：语义树不覆盖纯视觉差异（颜色/间距/字号/圆角），需截图人工比对或扩展像素对比；代码修改仍需 Agent 依据 diff 批量实施（不再逐条人工反馈）。### 十、编辑页输入框与字段导航条样式对齐（v2.0.85，2026-08-14，用户反馈）
 
 1. **输入框去背景**：全局 inputDecorationTheme（iOS 灰色圆角填充框）在编辑页字段覆盖为 illed=false + InputBorder.none（无框无背景），对齐原版 TextInputLayout 无框输入。
 2. **补分割线**：字段底部 UnderlineInputBorder 半像素灰线（聚焦变主色），对齐原版 Material 下划线（用户反馈「缺分割线」）。
