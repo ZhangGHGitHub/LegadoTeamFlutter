@@ -358,6 +358,8 @@ impl AnalyzeRule {
         } else {
             compiled.rule_no_put.clone()
         };
+        // 2.5) 展开规则体内 `{{js}}`（非 $）内嵌 JS
+        let rule_expanded = self.expand_js_refs(&rule_expanded)?;
         // 纯 `@get:{k}` / `http:@get:{k}` 等：makeUpRule 后 Mode.Regex，
         // 求值走 `else -> rule` 直接返回拼装字符串，不再当选择器解析。
         if compiled.has_get_marker && !looks_like_extract_rule(&rule_expanded) {
@@ -826,6 +828,89 @@ impl AnalyzeRule {
             self.get(key)
         })
         .into_owned()
+    }
+
+    /// 从 `{{` 起始的串里找匹配的 `}}` 结尾（返回含结尾 `}}` 的字节长度）
+    fn find_double_brace_end(s: &str) -> Option<usize> {
+        let bytes = s.as_bytes();
+        if bytes.len() < 2 || bytes[0] != b'{' || bytes[1] != b'{' {
+            return None;
+        }
+        let mut depth = 0i32;
+        let mut i = 2usize;
+        let mut quote: Option<u8> = None;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if let Some(q) = quote {
+                if b == q {
+                    quote = None;
+                }
+                i += 1;
+                continue;
+            }
+            match b {
+                b'"' | 39 => {
+                    quote = Some(b);
+                    i += 1;
+                }
+                b'{' => {
+                    depth += 1;
+                    i += 1;
+                }
+                b'}' => {
+                    if depth == 0 && bytes.get(i + 1) == Some(&b'}') {
+                        return Some(i + 2);
+                    }
+                    depth = depth.saturating_sub(1);
+                    i += 1;
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+        }
+        None
+    }
+
+    /// 展开规则体内 `{{js}}`（非 `$`/`@` 开头的双花括号 JS 内嵌，
+    /// 对齐 makeUpRule 的 jsRuleType 分支）
+    ///
+    /// `{{\$...}}` 是 Rust 新增的 JSONPath 内嵌语义，此处跳过，交给
+    /// process_inner_rules；`@get:{k}` 已由 expand_get_refs 先行处理。
+    fn expand_js_refs(&self, rule: &str) -> LegadoResult<String> {
+        if !rule.contains("{{") {
+            return Ok(rule.to_string());
+        }
+        let mut out = String::with_capacity(rule.len());
+        let mut i = 0usize;
+        let bytes = rule.as_bytes();
+        while i < bytes.len() {
+            if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{') {
+                if let Some(full_len) = Self::find_double_brace_end(&rule[i..]) {
+                    let inner = rule[i + 2..i + full_len - 2].trim();
+                    if inner.starts_with('$') || inner.starts_with('@') {
+                        // JSONPath / 其它规则前缀：原样保留
+                        out.push_str(&rule[i..i + full_len]);
+                    } else {
+                        let js_result = self.execute_js_rule(inner)?;
+                        let val = if js_result.is_empty() {
+                            String::new()
+                        } else if js_result.len() == 1 {
+                            js_result[0].clone()
+                        } else {
+                            js_result.join("\n")
+                        };
+                        out.push_str(&val);
+                    }
+                    i += full_len;
+                    continue;
+                }
+            }
+            let ch = rule[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+        Ok(out)
     }
 
     // --- 内部方法 ---
@@ -1312,7 +1397,10 @@ impl AnalyzeRule {
 fn compile_source_rule(rule: &str) -> CompiledSourceRule {
     let (rule_no_put, put_map) = extract_put_rules(rule);
     let has_get_marker = rule_no_put.to_ascii_lowercase().contains("@get:");
-    let pre_hash = if has_get_marker || rule_no_put.trim().is_empty() {
+    // `{{js}}` 内嵌需在编译后运行时展开（依赖 JS executor），故含 `{{` 的
+    // 规则不预拆 ##/js 链，留待 get_strings_ex 内 expand_js_refs 展开后再现场编译
+    //（否则预拆得到的 core_rule 仍含未展开的 `{{js}}`，替换被丢弃）。
+    let pre_hash = if has_get_marker || rule_no_put.trim().is_empty() || rule_no_put.contains("{{") {
         None
     } else {
         Some(compile_hash_and_chain(&rule_no_put))
@@ -1973,6 +2061,21 @@ mod tests {
             AnalyzeRule::with_js_executor("some content".to_string(), String::new(), executor);
         let result = rule.get_strings("@js:result").unwrap();
         assert_eq!(result, vec!["执行结果"]);
+    }
+
+    #[test]
+    fn test_rule_inline_js_substitution() {
+        // G11：规则体内 {{js}}（非 $）→ JS 结果拼进规则再求值
+        let executor = Arc::new(MockJsExecutor {
+            result: ".item".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            r#"<div class="item">正文</div>"#.to_string(),
+            String::new(),
+            executor,
+        );
+        let result = rule.get_strings("{{sel()}}").unwrap();
+        assert_eq!(result, vec!["正文"]);
     }
 
     /// `<js>...</js>\n$[*]` 复合规则：JS 返回 JSON 数组字符串，JSONPath 后缀拆解
