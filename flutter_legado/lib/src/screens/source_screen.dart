@@ -284,32 +284,31 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       Color? color,
     }) {
       final effective = color ?? colorScheme.onSurface;
-      return Expanded(
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 22, color: onPressed == null
-                    ? effective.withValues(alpha: 0.35)
-                    : effective),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: onPressed == null
-                        ? effective.withValues(alpha: 0.35)
-                        : effective,
-                  ),
+      // 不包 Expanded：宽度由调用处控制（全选 Expanded / 反选删除固定宽）
+      return InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 22, color: onPressed == null
+                  ? effective.withValues(alpha: 0.35)
+                  : effective),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: onPressed == null
+                      ? effective.withValues(alpha: 0.35)
+                      : effective,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       );
@@ -329,50 +328,61 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          // 对齐原版 SelectActionBar：paddingLeft 16dp / paddingRight 8dp，
+          // 全选 weight=1 占剩余、反选/删除内容宽（min 72dp）、更多 36dp 图标
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
           child: Row(
             children: [
               // 全选/取消全选（带当前进度 n/m，对齐原版「全选（0/968）」）
-              barButton(
-                icon: state.isAllSelected
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
-                label: '全选（${state.selectedCount}/$filteredCount）',
-                onPressed: () {
-                  final notifier =
-                      ref.read(sourceNotifierProvider.notifier);
-                  if (!state.batchMode) notifier.enterBatchMode();
-                  if (state.isAllSelected) {
-                    notifier.deselectAll();
-                  } else {
-                    notifier.selectAll();
-                  }
-                },
+              Expanded(
+                child: barButton(
+                  icon: state.isAllSelected
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
+                  label: '全选（${state.selectedCount}/$filteredCount）',
+                  onPressed: () {
+                    final notifier =
+                        ref.read(sourceNotifierProvider.notifier);
+                    if (!state.batchMode) notifier.enterBatchMode();
+                    if (state.isAllSelected) {
+                      notifier.deselectAll();
+                    } else {
+                      notifier.selectAll();
+                    }
+                  },
+                ),
               ),
-              // 反选
-              barButton(
-                icon: Icons.flip,
-                label: '反选',
-                onPressed: state.filteredSources.isEmpty
-                    ? null
-                    : () {
-                        final notifier =
-                            ref.read(sourceNotifierProvider.notifier);
-                        if (!state.batchMode) notifier.enterBatchMode();
-                        notifier.revertSelection();
-                      },
+              // 反选（对齐原版 btn_revert_selection：minWidth 72dp + margin）
+              SizedBox(
+                width: 82,
+                child: barButton(
+                  icon: Icons.flip,
+                  label: '反选',
+                  onPressed: state.filteredSources.isEmpty
+                      ? null
+                      : () {
+                          final notifier =
+                              ref.read(sourceNotifierProvider.notifier);
+                          if (!state.batchMode) notifier.enterBatchMode();
+                          notifier.revertSelection();
+                        },
+                ),
               ),
               // 删除（危险操作标红，对标原版 delete）
-              barButton(
-                icon: Icons.delete_outline,
-                label: '删除',
-                color: colorScheme.error,
-                onPressed: state.selectedCount == 0
-                    ? null
-                    : () => _handleBatchAction(context, 'delete'),
+              SizedBox(
+                width: 82,
+                child: barButton(
+                  icon: Icons.delete_outline,
+                  label: '删除',
+                  color: colorScheme.error,
+                  onPressed: state.selectedCount == 0
+                      ? null
+                      : () => _handleBatchAction(context, 'delete'),
+                ),
               ),
               // 更多选项（book_source_sel.xml 全量选择操作菜单）
-              Expanded(
+              SizedBox(
+                width: 36,
                 child: PopupMenuButton<String>(
                   tooltip: '更多选项',
                   enabled: state.selectedCount > 0,
@@ -682,7 +692,10 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         notifier.toggleSelection(source.bookSourceUrl);
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        // 对齐原版 item_book_source 行高（137px ≈ 68.5dp）：
+        // padding 14dp×2 + 内容（开关/图标按钮 ~40dp），
+        // 行高由内容自然撑起
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
             // 源名（对标原版 cb_book_source 文本 16sp）+ 分组标签
@@ -750,6 +763,9 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                 ),
                 Switch(
                   value: source.enabled,
+                  // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，
+                  // 避免 Material 默认 48dp 把整行撑高）
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   onChanged: (_) => ref
                       .read(sourceNotifierProvider.notifier)
                       .toggleSource(source.bookSourceUrl),
@@ -897,6 +913,9 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                 ),
                 Switch(
                   value: source.enabled,
+                  // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，
+                  // 避免 Material 默认 48dp 把整行撑高）
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   onChanged: (_) => ref
                       .read(sourceNotifierProvider.notifier)
                       .toggleSource(source.bookSourceUrl),

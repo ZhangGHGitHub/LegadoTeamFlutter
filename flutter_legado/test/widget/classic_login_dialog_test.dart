@@ -99,7 +99,7 @@ void main() {
   testWidgets('渲染输入框与按钮网格', (tester) async {
     await pumpDialog(tester, source());
 
-    expect(find.text('登录 - 书山聚合测试'), findsOneWidget);
+    expect(find.text('登录 书山聚合测试'), findsOneWidget);
     expect(find.text('邮箱'), findsOneWidget);
     expect(find.text('密码'), findsOneWidget);
     expect(find.text('⭕账号登录'), findsOneWidget);
@@ -135,7 +135,7 @@ void main() {
     await pumpDialog(tester, source());
 
     await tester.enterText(find.widgetWithText(TextField, '邮箱'), 'a@b.com');
-    await tester.tap(find.byTooltip('确认登录'));
+    await tester.tap(find.byTooltip('确认'));
     await tester.pumpAndSettle();
 
     // putLoginInfo 已保存表单 JSON

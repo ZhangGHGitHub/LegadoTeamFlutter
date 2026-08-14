@@ -1,5 +1,36 @@
 # 重构版发现页问题排查报告（2026-08-14）
 
+## 十一、UI 对齐自动比对批量修复（v2.0.87，2026-08-14）
+
+用 `scripts/ui_parity_compare.ps1`（自动导航原版/重构版到 5 个界面抓取语义树对比）一次性跑出全部差异并批量修复：
+
+### 1. 编辑书源页（自动比对 MATCH）
+- **dp/px 混淆根因**：Flutter 布局数值单位即 dp，此前把原版 XML 的 dp 值当 2 倍像素写（48dp 写成 96），导致设置卡片/TabBar/字段导航条整体偏高 48px（模拟器 2x 密度下 96dp=192px vs 原版 48dp=96px）。全部按原版 dp 值修正：设置卡片 header minHeight 48dp、TabLayout 36dp、field_nav 48dp，实测 TabBar/字段导航条/表单字段 y 与原版一致。
+- 设置卡片改自定义 header（对齐原版 options_header：minHeight 48dp、paddingStart 12/End 4、内层 paddingVertical 4、「设置」16sp + 摘要 12sp 单行 + 40dp 展开箭头）；语义节点文案对齐原版「设置, 摘要, 展开/收起」。
+- 字段导航条每项固定 72dp 等宽、去水平 padding（对齐原版 scrollable TabLayout tabMinWidth 72dp、贴边 x=0）；表单字段去水平 padding 贴边（原版 RecyclerView 无 padding + item TextInputLayout match_parent）。
+
+### 2. 书源管理页
+- 行高对齐：padding 14dp×2 + Switch 压缩（materialTapTargetSize.shrinkWrap），行距 137px 与原版一致（此前 Material Switch 48dp 把行撑到 162px）。
+- 底部操作栏对齐原版 SelectActionBar：全选 weight=1（Expanded）、反选/删除固定 82dp、更多 36dp 图标、paddingLeft 16/Right 8；全选 x=32 与原版一致。
+
+### 3. 经典登录表单（书山聚合）
+- **按钮顺序修复**：此前把全部按钮收集到表单末尾统一渲染，导致顺序错乱、按钮被推出视口（dump 只有前 2 个输入框）。改为按 loginUi 数组原序逐行渲染（对齐原版 SourceLoginV2Delegate buildViews rows.forEach），按钮按 basisPercent 同行（Wrap 模拟 Flexbox 换行）。实测 13 个按钮全部可见、坐标与原版一致（Δx40 为按钮宽度百分比算法差异）。
+- **toggle 行不渲染**：原版 when 无 toggle 分支直接跳过；此前我们渲染 toggle 导致「❤️段评开关/🖐SVG大小」多余并占用视口。
+- 标题「登录 <源名>」、右上「确认」对齐原版；去掉原版没有的左上关闭按钮（返回键关闭仍持久化登录信息，PopScope 对齐 onDismiss）。
+- 按钮/输入框补 Semantics 标签（无障碍 + uiautomator 可感知，双节点映射）。
+
+### 4. 工具修复
+- 修正 `@($null)` 产生 1 元素 null 数组导致未匹配节点误报「重构(, )」的 bug。
+- 忽略名单补充：Android 双节点语义（clickable 父节点与子 TextView 同时暴露）、TextField label 不进 uiautomator（邮箱/密码/自定义源站）、输入值（test@example.com/密码点）、登录表单 toggle 行、书源数据差异（PO18小说 等）。
+
+### 5. 剩余已知噪音（非 UI 缺陷）
+- bookshelf/discover：两侧书架书、书源列表不同（数据差异）；'书架' 底部导航 vs 顶部标题（Flutter 底部导航语义）。
+- source_manage 底部栏：竖排 icon+text 按钮（iOS 风格）vs 原版横排文本，y/x 差 10-58px。
+- source_login：Dialog.fullscreen AppBar 标题/确认位置（原版 AlertDialog 顶部）、按钮宽度百分比算法（原版 Flexbox 内容宽 vs 我们的 basisPercent 0.4 默认）。
+- 验证：flutter analyze 0 错误、flutter test 1188 全过、编辑页 MATCH、冒烟 5/5。
+
+---
+
 > **排查性质**：只读源码对比排查。未修改任何代码、未提交任何变更。
 > **排查对象**：重构版发现页（`flutter_legado` explore 系列 + `rust/legado-ffi/src/api/explore_api.rs` + 登录链路）vs 原版 Android。
 > **用户报告**：① 同样的书源内容与原版不一致；② 功能不一致；③ 无法登录。

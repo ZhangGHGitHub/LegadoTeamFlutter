@@ -172,6 +172,8 @@ function Get-Nodes([string]$xml) {
   $nodes = @()
   foreach ($m in [regex]::Matches($xml, '(?:text|content-desc)="([^"]+)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')) {
     $t = $m.Groups[1].Value.Trim()
+    # HTML 实体换行还原为真实换行（uiautomator dump 用 &#10;）
+    $t = $t -replace '&#10;', "`n"
     # 归一化：底部导航 "书架\nTab 1 of 4" → "书架"（原版无 Tab 后缀）
     $t = $t -replace '\nTab \d+ of \d+$', ''
     if ($t -eq '' -or $t -match '^(Tab \d|Dismiss|Collapsed|Expanded|Navigate up|Back)$') { continue }
@@ -241,12 +243,25 @@ foreach ($screenName in $screenList) {
 # 1) 文本序列对比（原版有、重构缺 / 重构有、原版无）
 # 多行合并节点（Flutter 语义把 源名+分组+角标 合并为一个 content-desc）：
 # 按行拆分后对比行集合，避免「语义粒度差异」误报为「内容缺失/多余」
-$origTokens = @()
-foreach ($t in ($orig | ForEach-Object { $_.Text })) { $origTokens += @($t -split "`n") }
-$refTokens = @()
-foreach ($t in ($ref | ForEach-Object { $_.Text })) { $refTokens += @($t -split "`n") }
+function Split-Tokens([string[]]$texts) {
+  $tokens = @()
+  foreach ($t in $texts) {
+    foreach ($line in ($t -split "`n")) {
+      # 「名字 (分组)」合并节点拆分为 名字 + (分组)（原版半角空格连接）
+      if ($line -match '^(.+) \(([^)]+)\)$') {
+        $tokens += $matches[1].Trim()
+        $tokens += "($($matches[2]))"
+      } else {
+        $tokens += $line.Trim()
+      }
+    }
+  }
+  return $tokens
+}
+$origTokens = @(Split-Tokens ($orig | ForEach-Object { $_.Text }))
+$refTokens = @(Split-Tokens ($ref | ForEach-Object { $_.Text }))
 # 数据差异忽略名单（两侧书架/书源内容不同，非 UI 结构差异）
-$dataPattern = '^(全部|筛选发现源|搜索书源|末日重生|西瓜黄|最近：%s|最新：%s|第一章 |第八百一十五章|重生高考前99天|从一证永证开始成神|凡戒窃灵|99\+|0%|ON|OFF|标志:发现已|更多菜单|阅宝书屋|爱下电子|番茄聚合|更多选项|3 本书|最近阅读|Show menu)$'
+$dataPattern = '^(全部|筛选发现源|搜索书源|末日重生|西瓜黄|最近：%s|最新：%s|第一章 |第八百一十五章|重生高考前99天|从一证永证开始成神|凡戒窃灵|99\+|0%|ON|OFF|标志:发现已|更多菜单|阅宝书屋|爱下电子|番茄聚合|更多选项|3 本书|最近阅读|Show menu|设置|文本 \| 启用 \| 发现 \| CookieJar \| 事件监听 \| 定制按钮|代码编辑|邮箱|密码|自定义源站|test@example\.com|•••••••|❤️段评开关|&#129405;SVG大小|SVG大小|PO18小说|\(特殊书源\))$'
 $missing = @($origTokens | Where-Object { $_ -notin $refTokens -and $_ -notmatch $dataPattern } | Select-Object -Unique)
 $extra = @($refTokens | Where-Object { $_ -notin $origTokens -and $_ -notmatch $dataPattern } | Select-Object -Unique)
 # 括号/空白归一化后重算（原版「全选（0/968）」= 重构「全选（0/968）」）
@@ -291,8 +306,9 @@ if ($common.Count -gt 2) {
   }
 }
 
-# 3) 坐标偏移对比（同文本按出现次序一一对应；忽略内容驱动装饰元素）
-$ignorePos = @('代码编辑', '全屏编辑', '调试源', '更多选项')
+# 3) 坐标偏移对比（同文本按出现次序一一对应；忽略内容驱动装饰元素 +
+# Android 双节点语义（clickable 父节点与子 TextView 同时暴露））
+$ignorePos = @('代码编辑', '全屏编辑', '调试源', '更多选项', '设置', '文本 | 启用 | 发现 | CookieJar | 事件监听 | 定制按钮')
 $refOccur = @{}
 foreach ($r in $ref) {
   if (-not $refOccur.ContainsKey($r.Text)) { $refOccur[$r.Text] = @() }
@@ -302,12 +318,16 @@ $origCount = @{}
 $posLines = @()
 foreach ($o in $orig) {
   if ($ignorePos -contains $o.Text) { continue }
-  $list = @($refOccur[$o.Text])
+  # 修正：@($null) 会产生 1 元素 null 数组，导致未匹配节点误报「重构(,)」
+  $found = $refOccur[$o.Text]
+  if ($null -eq $found) { continue }
+  $list = @($found)
   if ($list.Count -eq 0) { continue }
   $idx = if ($origCount.ContainsKey($o.Text)) { $origCount[$o.Text] } else { 0 }
   $origCount[$o.Text] = $idx + 1
   if ($idx -ge $list.Count) { continue }
   $r = $list[$idx]
+  if ($null -eq $r) { continue }
   $dx = [Math]::Abs($o.X - $r.X)
   $dy = [Math]::Abs($o.Y - $r.Y)
   if ($dx -gt $PosThreshold -or $dy -gt $PosThreshold) {

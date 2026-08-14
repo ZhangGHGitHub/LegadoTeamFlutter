@@ -112,6 +112,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
   final Map<String, String> _fieldLabels = {};
 
   // 开关状态（非文本字段，对标原版可折叠「设置」面板）
+  bool _settingsExpanded = false;
   bool _enabled = true;
   bool _enabledExplore = true;
   bool _reviewEnabled = false;
@@ -1111,19 +1112,29 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
           children: [
             // 对齐原版布局顺序：设置卡片 → Tab 栏 → 字段导航条 → 表单
             _buildSettingsPanel(),
-            TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              // 页签文案对齐原版 source_tab_* 短标签
-              tabs: const [
-                Tab(text: '基本'),
-                Tab(text: '搜索'),
-                Tab(text: '发现'),
-                Tab(text: '详情'),
-                Tab(text: '目录'),
-                Tab(text: '正文'),
-                Tab(text: '段评'),
-              ],
+            // 对齐原版 tab_layout：高度 36dp + 滚动页签 + 主色指示线
+            SizedBox(
+              height: 36,
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+                labelStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                unselectedLabelStyle: const TextStyle(fontSize: 14),
+                // 页签文案对齐原版 source_tab_* 短标签
+                tabs: const [
+                  Tab(text: '基本'),
+                  Tab(text: '搜索'),
+                  Tab(text: '发现'),
+                  Tab(text: '详情'),
+                  Tab(text: '目录'),
+                  Tab(text: '正文'),
+                  Tab(text: '段评'),
+                ],
+              ),
             ),
             _buildFieldNav(),
             Expanded(
@@ -1164,49 +1175,54 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
         ? _selectedNavField
         : fields.firstOrNull?.key;
     return Container(
-      height: 44,
+      // 对齐原版 field_nav：TabLayout 高度 48dp，无水平 padding（贴边），
+      // 每个字段项等宽 72dp（对齐原版 scrollable TabLayout tabMinWidth）
+      height: 48,
       color: colorScheme.surfaceContainerLow,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
         children: [
           for (final field in fields)
-            InkWell(
-              onTap: () => _focusField(field.key),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      field.label.replaceAll(
-                        RegExp(r'（.*）|\(.*\)'),
-                        '',
+            SizedBox(
+              width: 72,
+              child: InkWell(
+                onTap: () => _focusField(field.key),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        field.label.replaceAll(
+                          RegExp(r'（.*）|\(.*\)'),
+                          '',
+                        ),
+                        // 显式行高 1.0：48dp 栏高内文本+指示线不溢出
+                        //（部分测试字体行高偏大）
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.0,
+                          fontWeight: field.key == selected
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          color: field.key == selected
+                              ? colorScheme.primary
+                              : colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: field.key == selected
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                        color: field.key == selected
-                            ? colorScheme.primary
-                            : colorScheme.onSurfaceVariant,
+                      const SizedBox(height: 3),
+                      // 选中指示线（对齐原版 TabLayout 选中项主色横线）
+                      Container(
+                        height: 2,
+                        width: 26,
+                        decoration: BoxDecoration(
+                          color: field.key == selected
+                              ? colorScheme.primary
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    // 选中指示线（对齐原版 TabLayout 选中项主色横线）
-                    Container(
-                      height: 2,
-                      width: 26,
-                      decoration: BoxDecoration(
-                        color: field.key == selected
-                            ? colorScheme.primary
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(1),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1271,79 +1287,120 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
       color: colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        initiallyExpanded: false,
-        tilePadding: const EdgeInsets.only(left: 12, right: 4),
-        childrenPadding: EdgeInsets.zero,
-        shape: const Border(),
-        collapsedShape: const Border(),
-        title: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '设置',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: colorScheme.onSurface,
-              ),
-            ),
-          ),
-        ),
-        subtitle: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            summary,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-            child: Row(
-              children: [
-                Text('类型：', style: TextStyle(color: colorScheme.onSurface)),
-                const SizedBox(width: 8),
-                DropdownButton<int>(
-                  value: _bookSourceType,
-                  isDense: true,
-                  onChanged: (v) => setState(() => _bookSourceType = v ?? 0),
-                  items: [
-                    for (var i = 0; i < _typeLabels.length; i++)
-                      DropdownMenuItem(value: i, child: Text(_typeLabels[i])),
+          // 收起态 header：对齐原版 options_header（minHeight 48dp、
+          // paddingStart 12dp / paddingEnd 4dp、内层 paddingVertical 4dp、
+          // 「设置」16sp + 摘要 12sp 单行 + 展开箭头 40dp）
+          InkWell(
+            onTap: () =>
+                setState(() => _settingsExpanded = !_settingsExpanded),
+            // Semantics：合并节点文案对齐原版「设置, 摘要, 展开/收起」
+            child: Semantics(
+              label:
+                  '设置, $summary, ${_settingsExpanded ? '收起' : '展开'}',
+              button: true,
+              excludeSemantics: true,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12, right: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '设置',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
+                            Text(
+                              summary,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(
+                          _settingsExpanded
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          size: 24,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ],
+              ),
+            ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-            child: Wrap(
-              children: [
-                checkChip('启用', _enabled, (v) => _enabled = v),
-                checkChip('发现', _enabledExplore, (v) => _enabledExplore = v),
-                checkChip('CookieJar', _cookieJar, (v) => _cookieJar = v),
-                checkChip('段评', _reviewEnabled, (v) => _reviewEnabled = v),
-                checkChip('事件监听', _eventListener, (v) => _eventListener = v),
-                checkChip('定制按钮', _customButton, (v) => _customButton = v),
-              ],
+          if (_settingsExpanded) ...[
+            // 展开内容：对齐原版 options_content（类型行 minHeight 48dp +
+            // Flexbox 勾选框，paddingHorizontal 12/8、paddingBottom 4）
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Text('类型：', style: TextStyle(color: colorScheme.onSurface)),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: _bookSourceType,
+                    isDense: true,
+                    onChanged: (v) => setState(() => _bookSourceType = v ?? 0),
+                    items: [
+                      for (var i = 0; i < _typeLabels.length; i++)
+                        DropdownMenuItem(value: i, child: Text(_typeLabels[i])),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              child: Wrap(
+                children: [
+                  checkChip('启用', _enabled, (v) => _enabled = v),
+                  checkChip('发现', _enabledExplore, (v) => _enabledExplore = v),
+                  checkChip('CookieJar', _cookieJar, (v) => _cookieJar = v),
+                  checkChip('段评', _reviewEnabled, (v) => _reviewEnabled = v),
+                  checkChip('事件监听', _eventListener, (v) => _eventListener = v),
+                  checkChip('定制按钮', _customButton, (v) => _customButton = v),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   /// 通用表单 Tab：按字段列表构建 [TextFormField]
+  /// 水平无 padding（对齐原版 RecyclerView 无 padding + item 贴边）
   Widget _buildFormTab(List<_Field> fields, {List<Widget> leading = const []}) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
       children: [...leading, for (final field in fields) _buildField(field)],
     );
   }

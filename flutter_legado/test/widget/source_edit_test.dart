@@ -128,7 +128,7 @@ void main() {
     testWidgets('必填字段为空时阻止保存并提示', (tester) async {
       await pumpEdit(tester);
 
-      await tester.tap(find.text('保存'));
+      await tester.tap(find.byTooltip('保存'));
       await tester.pumpAndSettle();
 
       expect(find.text('请输入源名称（sourceName）'), findsOneWidget);
@@ -150,7 +150,7 @@ void main() {
         find.widgetWithText(TextFormField, '源 URL（sourceUrl） *'),
         'https://test.com',
       );
-      await tester.tap(find.text('保存'));
+      await tester.tap(find.byTooltip('保存'));
       await tester.pumpAndSettle();
 
       expect(find.text('书源已创建'), findsOneWidget);

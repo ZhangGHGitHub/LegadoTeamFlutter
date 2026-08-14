@@ -348,14 +348,18 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Dialog.fullscreen(
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('登录 - ${source.bookSourceName}'),
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: '关闭',
-            onPressed: () => _close(),
-          ),
+      // 返回键/手势关闭时持久化登录信息（对齐原版 onDismiss）
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _close();
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            // 对齐原版 SourceLoginDialog 标题「登录 <源名>」；
+            // 无左上关闭按钮（原版仅右上 确认 + 更多选项）
+            automaticallyImplyLeading: false,
+            title: Text('登录 ${source.bookSourceName}'),
           actions: [
             if (_busy)
               const Padding(
@@ -370,7 +374,8 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
               ),
             IconButton(
               icon: const Icon(Icons.check),
-              tooltip: '确认登录',
+              // 对齐原版顶栏「确认」
+              tooltip: '确认',
               onPressed: _busy ? null : _onConfirm,
             ),
             PopupMenuButton<String>(
@@ -386,6 +391,7 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
           ],
         ),
         body: _buildBody(colorScheme),
+        ),
       ),
     );
   }
@@ -410,45 +416,39 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
       return const Center(child: Text('该书源未配置登录表单'));
     }
 
-    // 输入类行全宽纵向排列；按钮/toggle 按原版 Flexbox basisPercent 网格
-    final buttons = <LoginRowUi>[];
-    final children = <Widget>[];
-    for (final row in _rows) {
-      if (row.type == 'button' || row.type == 'toggle') {
-        buttons.add(row);
-      } else {
-        children.add(_buildRow(row, colorScheme));
-      }
-    }
-    if (buttons.isNotEmpty) {
-      children.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              const gap = 12.0;
-              final maxWidth = constraints.maxWidth;
-              return Wrap(
-                spacing: gap,
-                runSpacing: 12,
-                children: [
-                  for (final row in buttons)
+    // 对齐原版 SourceLoginV2Delegate：按 loginUi 数组原序逐行渲染，
+    // 文本框/下拉全宽独占一行，按钮按 basisPercent 比例同行（Flexbox
+    // 换行语义），按钮不后置收集（否则顺序错乱、被推到视口外）；
+    // toggle 行原版 when 无分支直接跳过，此处同样不渲染
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 12.0;
+        final maxWidth = constraints.maxWidth;
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+          children: [
+            Wrap(
+              spacing: gap,
+              runSpacing: 12,
+              children: [
+                for (final row in _rows)
+                  if (row.type == 'button')
                     SizedBox(
                       width: row.fullWidth
                           ? maxWidth
                           : (maxWidth - gap) * row.flexBasisPercent.clamp(0.2, 0.9),
                       child: _buildGridButton(row, colorScheme),
+                    )
+                  else if (row.type != 'toggle')
+                    SizedBox(
+                      width: maxWidth,
+                      child: _buildRow(row, colorScheme),
                     ),
-                ],
-              );
-            },
-          ),
-        ),
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: children,
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -457,28 +457,37 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
     if (row.type == 'toggle') {
       final current = _picked[row.name] ?? '';
       final name = _displayName(row);
-      return FilledButton.tonal(
-        onPressed: _busy
-            ? null
-            : () {
-                final chars =
-                    row.chars.isNotEmpty ? row.chars : const ['开', '关'];
-                final idx = chars.indexOf(current);
-                final next = chars[(idx + 1) % chars.length];
-                setState(() => _picked[row.name] = next);
-                if (row.action.trim().isNotEmpty) {
-                  _onButtonTap(row);
-                }
-              },
-        child: Text(current.isEmpty ? name : '$current $name'),
+      // Semantics：按钮名进无障碍树（对齐原版原生按钮，uiautomator 可感知）
+      return Semantics(
+        label: current.isEmpty ? name : '$current $name',
+        button: true,
+        child: FilledButton.tonal(
+          onPressed: _busy
+              ? null
+              : () {
+                  final chars =
+                      row.chars.isNotEmpty ? row.chars : const ['开', '关'];
+                  final idx = chars.indexOf(current);
+                  final next = chars[(idx + 1) % chars.length];
+                  setState(() => _picked[row.name] = next);
+                  if (row.action.trim().isNotEmpty) {
+                    _onButtonTap(row);
+                  }
+                },
+          child: Text(current.isEmpty ? name : '$current $name'),
+        ),
       );
     }
-    return FilledButton.tonal(
-      onPressed: _busy ? null : () => _onButtonTap(row),
-      child: Text(
-        _displayName(row),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+    return Semantics(
+      label: _displayName(row),
+      button: true,
+      child: FilledButton.tonal(
+        onPressed: _busy ? null : () => _onButtonTap(row),
+        child: Text(
+          _displayName(row),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }
@@ -487,40 +496,46 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
     switch (row.type) {
       case 'text':
       case 'password':
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: TextField(
-            controller: _controllers.putIfAbsent(
-              row.name,
-              TextEditingController.new,
-            ),
-            obscureText: row.type == 'password',
-            decoration: InputDecoration(
-              labelText: _displayName(row),
-              border: const OutlineInputBorder(),
+        return Semantics(
+          label: _displayName(row),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: TextField(
+              controller: _controllers.putIfAbsent(
+                row.name,
+                TextEditingController.new,
+              ),
+              obscureText: row.type == 'password',
+              decoration: InputDecoration(
+                labelText: _displayName(row),
+                border: const OutlineInputBorder(),
+              ),
             ),
           ),
         );
       case 'select':
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: DropdownButtonFormField<String>(
-            initialValue: _picked[row.name],
-            decoration: InputDecoration(
-              labelText: _displayName(row),
-              border: const OutlineInputBorder(),
+        return Semantics(
+          label: _displayName(row),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: DropdownButtonFormField<String>(
+              initialValue: _picked[row.name],
+              decoration: InputDecoration(
+                labelText: _displayName(row),
+                border: const OutlineInputBorder(),
+              ),
+              items: [
+                for (final c in row.chars)
+                  DropdownMenuItem(value: c, child: Text(c)),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _picked[row.name] = v);
+                if (row.action.trim().isNotEmpty) {
+                  _onButtonTap(row);
+                }
+              },
             ),
-            items: [
-              for (final c in row.chars)
-                DropdownMenuItem(value: c, child: Text(c)),
-            ],
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => _picked[row.name] = v);
-              if (row.action.trim().isNotEmpty) {
-                _onButtonTap(row);
-              }
-            },
           ),
         );
       default:

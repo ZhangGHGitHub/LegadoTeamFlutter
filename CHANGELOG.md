@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.87] - 2026-08-14
+
+### Fixed
+- [UI] 编辑书源页尺寸全面对齐原版（自动比对定位的批量差异）：
+  - 修正 dp/px 混淆根因：Flutter 数值单位即 dp，此前把原版 XML 的 48dp 写成 96 导致设置卡片/TabBar/字段导航条整体偏高 48px；现按原版 48dp/36dp/48dp 对齐，TabBar、字段导航条、表单字段位置全部与原版一致（自动比对 MATCH）
+  - 设置卡片改用自定义 header（对齐原版 options_header：minHeight 48dp、padding 12/4、摘要单行 + 展开箭头），语义节点文案对齐原版「设置, 摘要, 展开」
+  - 字段导航条每项固定 72dp 等宽 + 无水平 padding（对齐原版 scrollable TabLayout tabMinWidth），表单字段去水平 padding 贴边（对齐原版 RecyclerView 无 padding）
+- [UI] 书源管理页：行高对齐原版（padding 14dp×2 + 压缩 Switch 触控高度，行距 137px 一致）；底部操作栏对齐原版 SelectActionBar 结构（全选 weight=1、反选/删除固定宽 82dp、更多 36dp 图标、paddingLeft 16/Right 8）
+- [UI] 经典登录表单（书山聚合）：
+  - 按钮按 loginUi 数组原序逐行渲染（此前统一后置收集导致顺序错乱、按钮被推出视口）
+  - toggle 行不渲染（对齐原版 SourceLoginV2Delegate when 无 toggle 分支）
+  - 标题「登录 <源名>」、右上「确认」对齐原版，去掉原版没有的左上关闭按钮（返回键关闭仍持久化登录信息）
+  - 按钮/输入框补 Semantics 标签（无障碍 + uiautomator 可感知）
+- [Tool] scripts/ui_parity_compare.ps1：修正 @($null) 产生 1 元素 null 数组导致未匹配节点误报「重构(, )」的 bug；忽略名单补充登录表单标签/输入值/Android 双节点语义等噪音
+- 验证：flutter analyze 0 错误、flutter test 1188 全过、自动比对编辑页 MATCH（书源管理/登录仅剩数据与视觉风格噪音）、冒烟 5/5
+
 ## [2.0.86] - 2026-08-14
 
 ### Fixed
