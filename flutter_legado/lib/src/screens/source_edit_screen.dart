@@ -70,9 +70,27 @@ class _Field {
   });
 }
 
-class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
+class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
+
+  /// Tab 控制器（对齐原版 TabLayout：设置卡片在 Tab 上方，字段导航条在下方）
+  late final TabController _tabController = TabController(
+    length: 7,
+    vsync: this,
+  )..addListener(() {
+      if (_tabController.indexIsChanging) return;
+      if (_lastFieldNavTab != _tabController.index) {
+        setState(() => _lastFieldNavTab = _tabController.index);
+      }
+    });
+
+  /// 字段导航条当前 Tab（跟随主 Tab 切换）
+  int _lastFieldNavTab = 0;
+
+  /// 字段 GlobalKey（字段导航条跳转定位）
+  final Map<String, GlobalKey> _fieldKeys = {};
 
   /// 首次帮助已展示标志（对标原版 LocalConfig.ruleHelpVersionIsLast）
   static const _ruleHelpShownKey = 'source_rule_help_shown';
@@ -328,6 +346,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     for (final controller in _ctrls.values) {
       controller.dispose();
     }
@@ -627,6 +646,100 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     }
   }
 
+  /// overflow 菜单项（对齐原版 source_edit.xml 顺序/内容；紧凑行高使 12 项
+  /// 菜单在顶栏下方完整展示而不被屏幕底边顶回覆盖顶栏）
+  List<PopupMenuEntry<String>> _buildMenuItems() {
+    const itemHeight = 44.0;
+    return [
+      // 登录（对齐 menu_login：仅在配置了登录 URL 时显示）
+      if (_ctrl('loginUrl').text.trim().isNotEmpty)
+        const PopupMenuItem(
+          value: 'login',
+          height: itemHeight,
+          child: Text('登录'),
+        ),
+      const PopupMenuItem(
+        value: 'search',
+        height: itemHeight,
+        child: Text('搜索'),
+      ),
+      const PopupMenuItem(
+        value: 'clear_cookie',
+        height: itemHeight,
+        child: Text('清除Cookie'),
+      ),
+      CheckedPopupMenuItem(
+        value: 'auto_complete',
+        height: itemHeight,
+        checked: _autoComplete,
+        child: const Text('自动补全'),
+      ),
+      const PopupMenuItem(
+        value: 'copy_source',
+        height: itemHeight,
+        child: Text('拷贝源'),
+      ),
+      const PopupMenuItem(
+        value: 'paste_source',
+        height: itemHeight,
+        child: Text('粘贴源'),
+      ),
+      const PopupMenuItem(
+        value: 'set_source_variable',
+        height: itemHeight,
+        child: Text('设置源变量'),
+      ),
+      const PopupMenuItem(
+        value: 'import_qr',
+        height: itemHeight,
+        child: Text('二维码导入'),
+      ),
+      const PopupMenuItem(
+        value: 'share_qr',
+        height: itemHeight,
+        child: Text('二维码分享'),
+      ),
+      const PopupMenuItem(
+        value: 'share_str',
+        height: itemHeight,
+        child: Text('字符串分享'),
+      ),
+      const PopupMenuItem(
+        value: 'log',
+        height: itemHeight,
+        child: Text('日志'),
+      ),
+      const PopupMenuItem(
+        value: 'help',
+        height: itemHeight,
+        child: Text('帮助'),
+      ),
+    ];
+  }
+
+  /// 在按钮下方弹出更多选项菜单（对齐原版：菜单在顶栏按钮下方、右对齐，
+  /// 不覆盖顶栏操作按钮；底部留边使超长菜单滚动展示而非上移顶回工具栏）
+  Future<void> _showOverflowMenu(BuildContext anchor) async {
+    final overlay = Overlay.of(anchor).context.findRenderObject()! as RenderBox;
+    const top = 156.0;
+    const bottom = 48.0;
+    const menuWidth = 300.0;
+    final position = RelativeRect.fromLTRB(
+      overlay.size.width - menuWidth - 8,
+      top,
+      8,
+      bottom,
+    );
+    final value = await showMenu<String>(
+      context: anchor,
+      position: position,
+      items: _buildMenuItems(),
+    );
+    if (value != null) {
+      await _handleMenu(value);
+    }
+  }
+
   /// overflow 菜单分流（对标原版 source_edit.xml 折叠项）
   Future<void> _handleMenu(String value) async {
     switch (value) {
@@ -658,8 +771,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       case 'log':
         // [UI-FIX v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
         Navigator.pushNamed(context, AppRoutes.appLog);
-      case 'json_edit':
-        await _showJsonEdit();
       case 'help':
         _showHelp();
     }
@@ -947,162 +1058,136 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     focus.requestFocus();
   }
 
-  /// 整体 JSON 编辑（保留原 Flutter 便利能力，入口改到 overflow）
-  Future<void> _showJsonEdit() async {
-    final text = await showDialog<String>(
-      context: context,
-      builder: (_) => _FullscreenJsonEditDialog(
-        initialText: const JsonEncoder.withIndent(
-          '  ',
-        ).convert(_buildSource().toJson()),
-      ),
-    );
-    if (text == null || !mounted) return;
-    try {
-      final source = BookSource.fromJson(
-        jsonDecode(text) as Map<String, dynamic>,
-      );
-      _populateFields(source);
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('JSON 格式错误，未应用修改')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      // 对齐原版 7 个 Tab：基本/搜索/发现/详情/目录/正文/段评
-      //（原版「调试源」为顶栏菜单，非 Tab）
-      length: 7,
-      child: Scaffold(
-        appBar: LegadoAppBar(
-          title: Text(isNew ? '新建书源' : '编辑书源'),
-          bottom: const TabBar(
-            isScrollable: true,
-            // 页签文案对齐原版 source_tab_* 短标签
-            tabs: [
-              Tab(text: '基本'),
-              Tab(text: '搜索'),
-              Tab(text: '发现'),
-              Tab(text: '详情'),
-              Tab(text: '目录'),
-              Tab(text: '正文'),
-              Tab(text: '段评'),
-            ],
+    return Scaffold(
+      appBar: LegadoAppBar(
+        title: Text(isNew ? '新建书源' : '编辑书源'),
+        actions: [
+          // 全屏代码编辑（对齐原版 menu_fullscreen_edit → 编辑内容，图标位）
+          IconButton(
+            icon: const Icon(Icons.code),
+            tooltip: '编辑内容',
+            onPressed: _showFullscreenEdit,
           ),
-          actions: [
-            // 全屏代码编辑（对标原版 menu_fullscreen_edit → CodeEdit，需聚焦字段）
-            IconButton(
-              icon: const Icon(Icons.code),
-              tooltip: '全屏编辑',
-              onPressed: _showFullscreenEdit,
-            ),
-            // 调试源（对标原版 menu_debug_source，always）
-            IconButton(
-              icon: const Icon(Icons.bug_report),
-              tooltip: '调试源',
-              onPressed: _saving ? null : _debugSource,
-            ),
-            // 保存（对标原版 menu_save，always）
-            TextButton.icon(
-              // AppBar 为 primary 底色，TextButton 默认 primary 前景会蓝底蓝字不可见，
-              // 显式使用 onPrimary（白）对齐 AppBar 前景色。
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              ),
-              icon: const Icon(Icons.save),
-              label: const Text('保存'),
-              onPressed: _saving ? null : _save,
-            ),
-            // overflow 菜单（对标原版 source_edit.xml 折叠项）
-            PopupMenuButton<String>(
+          // 保存（对齐原版 menu_save：仅图标，无文字）
+          IconButton(
+            icon: const Icon(Icons.save),
+            tooltip: '保存',
+            onPressed: _saving ? null : _save,
+          ),
+          // 调试源（对齐原版 menu_debug_source，图标位）
+          IconButton(
+            icon: const Icon(Icons.bug_report),
+            tooltip: '调试源',
+            onPressed: _saving ? null : _debugSource,
+          ),
+          // overflow 菜单（对齐原版 source_edit.xml 折叠项顺序/内容）
+          // 用 showMenu 显式锚定在按钮下方（AppBar 内 PopupMenuButton 的
+          // 弹出层会覆盖顶栏按钮，与原版「菜单在按钮下方」不一致）
+          Builder(
+            builder: (btnContext) => IconButton(
+              icon: const Icon(Icons.more_vert),
               tooltip: '更多选项',
-              // 菜单在顶栏下方展开，不覆盖顶栏
-              position: PopupMenuPosition.under,
-              onSelected: _handleMenu,
-              itemBuilder: (_) => [
-                // 登录（对标 menu_login：仅在配置了登录 URL 时显示）
-                if (_ctrl('loginUrl').text.trim().isNotEmpty)
-                  const PopupMenuItem(
-                    value: 'login',
-                    child: Text('登录'),
-                  ),
-                const PopupMenuItem(value: 'search', child: Text('搜索')),
-                const PopupMenuItem(
-                  value: 'clear_cookie',
-                  child: Text('清除Cookie'),
-                ),
-                CheckedPopupMenuItem(
-                  value: 'auto_complete',
-                  checked: _autoComplete,
-                  child: const Text('自动补全'),
-                ),
-                const PopupMenuItem(
-                  value: 'copy_source',
-                  child: Text('拷贝源'),
-                ),
-                const PopupMenuItem(
-                  value: 'paste_source',
-                  child: Text('粘贴源'),
-                ),
-                const PopupMenuItem(
-                  value: 'set_source_variable',
-                  child: Text('设置源变量'),
-                ),
-                const PopupMenuItem(
-                  value: 'import_qr',
-                  child: Text('二维码导入'),
-                ),
-                const PopupMenuItem(
-                  value: 'share_qr',
-                  child: Text('二维码分享'),
-                ),
-                const PopupMenuItem(
-                  value: 'share_str',
-                  child: Text('字符串分享'),
-                ),
-                const PopupMenuItem(value: 'log', child: Text('日志')),
-                const PopupMenuItem(
-                  value: 'json_edit',
-                  child: Text('JSON编辑'),
-                ),
-                const PopupMenuItem(value: 'help', child: Text('帮助')),
+              onPressed: () => _showOverflowMenu(btnContext),
+            ),
+          ),
+        ],
+      ),
+      body: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            // 对齐原版布局顺序：设置卡片 → Tab 栏 → 字段导航条 → 表单
+            _buildSettingsPanel(),
+            TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              // 页签文案对齐原版 source_tab_* 短标签
+              tabs: const [
+                Tab(text: '基本'),
+                Tab(text: '搜索'),
+                Tab(text: '发现'),
+                Tab(text: '详情'),
+                Tab(text: '目录'),
+                Tab(text: '正文'),
+                Tab(text: '段评'),
               ],
+            ),
+            _buildFieldNav(),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildFormTab(_basicFields),
+                  _buildFormTab(_searchFields),
+                  _buildFormTab(_exploreFields),
+                  _buildFormTab(_infoFields),
+                  _buildFormTab(_tocFields),
+                  _buildFormTab(_contentFields),
+                  _buildFormTab(_reviewFields),
+                ],
+              ),
             ),
           ],
         ),
-        body: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              // 可折叠「设置」面板（对标原版：类型 + 启用/发现/CookieJar/
-              // 段评/事件监听/定制按钮）
-              _buildSettingsPanel(),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    _buildFormTab(_basicFields),
-                    _buildFormTab(_searchFields),
-                    _buildFormTab(_exploreFields),
-                    _buildFormTab(_infoFields),
-                    _buildFormTab(_tocFields),
-                    _buildFormTab(_contentFields),
-                    _buildFormTab(_reviewFields),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
 
-  /// 可折叠「设置」面板（对齐原版 BookSourceEditActivity 顶部设置区：
-  /// 收起态标题显示摘要「类型 | 启用 | 发现 | CookieJar | 段评 |
-  /// 事件监听 | 定制按钮」，展开显示类型下拉 + 开关）
+  /// 字段导航条（对齐原版 field_nav：当前 Tab 字段名横向滚动条，点击跳转聚焦）
+  Widget _buildFieldNav() {
+    final fields = switch (_lastFieldNavTab) {
+      1 => _searchFields,
+      2 => _exploreFields,
+      3 => _infoFields,
+      4 => _tocFields,
+      5 => _contentFields,
+      6 => _reviewFields,
+      _ => _basicFields,
+    };
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 40,
+      color: colorScheme.surfaceContainerLow,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        children: [
+          for (final field in fields)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: ActionChip(
+                visualDensity: VisualDensity.compact,
+                label: Text(
+                  field.label.replaceAll(RegExp(r'（.*）|\(.*\)'), ''),
+                  style: const TextStyle(fontSize: 12),
+                ),
+                onPressed: () => _focusField(field.key),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 字段导航条点击：滚动到字段并聚焦
+  void _focusField(String key) {
+    final fieldKey = _fieldKeys[key];
+    final context = fieldKey?.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+    _focus(key).requestFocus();
+  }
+
+  /// 可折叠「设置」卡片（对齐原版 options_card：卡片在 Tab 栏上方；
+  /// 收起态显示「设置」+ 摘要「类型 | 启用 | 发现 | CookieJar | 段评 |
+  /// 事件监听 | 定制按钮」+ 展开箭头；展开显示 类型：下拉 + 开关）
   Widget _buildSettingsPanel() {
     final colorScheme = Theme.of(context).colorScheme;
     Widget checkChip(String label, bool value, ValueChanged<bool> onChanged) {
@@ -1112,7 +1197,10 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
-          title: Text(label, style: const TextStyle(fontSize: 14)),
+          title: Text(
+            label,
+            style: const TextStyle(fontSize: 14),
+          ),
           value: value,
           onChanged: (v) => setState(() => onChanged(v ?? false)),
         ),
@@ -1133,162 +1221,132 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     addSummary('定制按钮', _customButton);
     final summary = summaryParts.join(' | ');
 
-    return ExpansionTile(
-      // 默认收起，优先展示表单字段；收起态显示摘要（对齐原版紧凑设置行）
-      initiallyExpanded: false,
-      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-      shape: const Border(),
-      collapsedShape: const Border(),
-      title: Text(
-        '设置',
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text(
-        summary,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          color: colorScheme.onSurfaceVariant,
-        ),
-      ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-          child: Row(
-            children: [
-              Text('类型', style: TextStyle(color: colorScheme.onSurface)),
-              const SizedBox(width: 8),
-              DropdownButton<int>(
-                value: _bookSourceType,
-                isDense: true,
-                onChanged: (v) => setState(() => _bookSourceType = v ?? 0),
-                items: [
-                  for (var i = 0; i < _typeLabels.length; i++)
-                    DropdownMenuItem(value: i, child: Text(_typeLabels[i])),
-                ],
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        tilePadding: const EdgeInsets.only(left: 12, right: 4),
+        childrenPadding: EdgeInsets.zero,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '设置',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: colorScheme.onSurface,
               ),
-            ],
+            ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Wrap(
-            children: [
-              checkChip('启用', _enabled, (v) => _enabled = v),
-              checkChip('发现', _enabledExplore, (v) => _enabledExplore = v),
-              checkChip('CookieJar', _cookieJar, (v) => _cookieJar = v),
-              checkChip('段评', _reviewEnabled, (v) => _reviewEnabled = v),
-              checkChip('事件监听', _eventListener, (v) => _eventListener = v),
-              checkChip('定制按钮', _customButton, (v) => _customButton = v),
-            ],
+        subtitle: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            summary,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
-        const Divider(height: 1),
-      ],
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            child: Row(
+              children: [
+                Text('类型：', style: TextStyle(color: colorScheme.onSurface)),
+                const SizedBox(width: 8),
+                DropdownButton<int>(
+                  value: _bookSourceType,
+                  isDense: true,
+                  onChanged: (v) => setState(() => _bookSourceType = v ?? 0),
+                  items: [
+                    for (var i = 0; i < _typeLabels.length; i++)
+                      DropdownMenuItem(value: i, child: Text(_typeLabels[i])),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+            child: Wrap(
+              children: [
+                checkChip('启用', _enabled, (v) => _enabled = v),
+                checkChip('发现', _enabledExplore, (v) => _enabledExplore = v),
+                checkChip('CookieJar', _cookieJar, (v) => _cookieJar = v),
+                checkChip('段评', _reviewEnabled, (v) => _reviewEnabled = v),
+                checkChip('事件监听', _eventListener, (v) => _eventListener = v),
+                checkChip('定制按钮', _customButton, (v) => _customButton = v),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   /// 通用表单 Tab：按字段列表构建 [TextFormField]
   Widget _buildFormTab(List<_Field> fields, {List<Widget> leading = const []}) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [...leading, for (final field in fields) _buildField(field)],
     );
   }
 
   /// 构建单个表单字段
+  ///
+  /// 对齐原版 item_source_edit：默认单行（minLines=1），输入/内容增长时
+  /// 展开到 [field.maxLines]；标签灰字（secondaryText 语义，非聚焦主色）
   Widget _buildField(_Field field) {
     _fieldLabels[field.key] = field.label;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextFormField(
-        controller: _ctrl(field.key),
-        focusNode: _focus(field.key),
-        maxLines: field.maxLines,
-        decoration: InputDecoration(
-          labelText: field.required ? '${field.label} *' : field.label,
-          hintText: field.hint,
-          border: const OutlineInputBorder(),
-          suffixIcon: field.maxLines >= 2
-              ? IconButton(
-                  tooltip: '代码编辑',
-                  icon: const Icon(Icons.code, size: 20),
-                  onPressed: () => _openCodeEditForField(
-                    field.key,
-                    title: field.label,
-                  ),
-                )
+    final colorScheme = Theme.of(context).colorScheme;
+    return KeyedSubtree(
+      key: _fieldKeys.putIfAbsent(field.key, GlobalKey.new),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: TextFormField(
+          controller: _ctrl(field.key),
+          focusNode: _focus(field.key),
+          minLines: 1,
+          maxLines: field.maxLines,
+          decoration: InputDecoration(
+            labelText: field.required ? '${field.label} *' : field.label,
+            labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+            hintText: field.hint,
+            border: const OutlineInputBorder(),
+            isDense: true,
+            suffixIcon: field.maxLines >= 2
+                ? IconButton(
+                    tooltip: '代码编辑',
+                    icon: const Icon(Icons.code, size: 20),
+                    onPressed: () => _openCodeEditForField(
+                      field.key,
+                      title: field.label,
+                    ),
+                  )
+                : null,
+          ),
+          validator: field.required
+              ? (value) => (value == null || value.trim().isEmpty)
+                    ? '请输入${field.label}'
+                    : null
               : null,
         ),
-        validator: field.required
-            ? (value) => (value == null || value.trim().isEmpty)
-                  ? '请输入${field.label}'
-                  : null
-            : null,
       ),
     );
   }
 }
-/// 全屏 JSON 编辑对话框：controller 生命周期绑定对话框子树，
-/// 随子树卸载统一释放（避免退场动画期间 dispose 引发框架断言）
-class _FullscreenJsonEditDialog extends StatefulWidget {
-  final String initialText;
-
-  const _FullscreenJsonEditDialog({required this.initialText});
-
-  @override
-  State<_FullscreenJsonEditDialog> createState() =>
-      _FullscreenJsonEditDialogState();
-}
-
-class _FullscreenJsonEditDialogState
-    extends State<_FullscreenJsonEditDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialText);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog.fullscreen(
-      child: Scaffold(
-        appBar: LegadoAppBar(
-          title: const Text('全屏编辑'),
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: '关闭',
-            onPressed: () => Navigator.pop(context),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, _controller.text),
-              child: const Text('应用'),
-            ),
-          ],
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(12),
-          child: TextField(
-            controller: _controller,
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 
 /// 源变量对话框（自持 controller，对齐 book_info_screen._VariableDialog）
 class _SourceVariableDialog extends StatefulWidget {

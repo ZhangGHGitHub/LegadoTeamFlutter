@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.84] - 2026-08-14
+
+### Fixed
+- [UI] 编辑书源页 UI 细节对齐原版（用户实测反馈 9 项）：
+  - 顶栏：标题「编辑书源」完整显示；操作按钮改为原版图标序「编辑内容 → 保存 → 调试源 → 更多选项」（保存仅图标无文字）；Tab 栏从顶栏移至正文（设置卡片下方，对齐原版 TabLayout 位置）
+  - 新增字段导航条（对齐原版 field_nav）：当前 Tab 字段名横向滚动条，点击跳转聚焦字段
+  - 设置面板改为原版卡片样式（圆角卡片 + 「设置」16sp + 摘要 12sp 灰字 + 展开箭头），位于 Tab 栏上方
+  - 文本框默认单行收起（minLines=1，内容增长展开到 maxLines），标签灰字（secondaryText 语义）
+  - 更多选项改为 showMenu 显式锚定：菜单在顶栏按钮**下方**右对齐展开（PopupMenuButton 在 AppBar 内弹出层会覆盖顶栏按钮），紧凑行高使 12 项完整展示不顶回；菜单内容按原版 source_edit.xml 顺序（登录/搜索/清除Cookie/自动补全/拷贝源/粘贴源/设置源变量/二维码导入/二维码分享/字符串分享/日志/帮助，移除原版没有的 JSON编辑）
+  - 验证：flutter 1188 全过、冒烟 5/5×2、模拟器实测菜单 y168（工具栏下方）与顶栏/设置卡/Tab/字段条布局对齐原版
+
 ## [2.0.83] - 2026-08-14
 
 ### Fixed

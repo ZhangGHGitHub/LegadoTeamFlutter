@@ -178,7 +178,19 @@ ew Function 内 eval 执行（独立词法作用域，对齐 Rhino 每次 evalJS
 - [x] 子代理 B：重构内容审计（**10 项解析差异：A1-A6 P1 + A7-A9/B/C/D P2**，§3.1）
 - [x] 子代理 C：登录链路完整对比（R1 四断裂点 + 手动登录无读取方）
 
-### 八、编辑书源页按原版重构（v2.0.83，2026-08-14，用户实测反馈）
+
+### 九、编辑书源页 UI 细节对齐（v2.0.84，2026-08-14，用户实测反馈 9 项）
+
+逐项对照原版 BookSourceEditActivity 实测 dump（含坐标）修复：
+1. **标题显示不全**：保存按钮由 TextButton（占宽）改为原版图标位，标题「编辑书源」恢复完整显示。
+2. **操作按钮顺序**：原版 source_edit.xml = 编辑内容(menu_fullscreen_edit) → 保存 → 调试源 → 更多选项；改为图标序（保存仅图标无文字）。
+3. **Tab 位置**：原版布局顺序 = TitleBar → options_card(设置) → tab_layout(7 Tab) → field_nav → RecyclerView；TabBar 从顶栏移至正文、置于设置卡片下方。
+4. **缺一个选择项（字段导航条）**：新增 field_nav 对齐——当前 Tab 字段名横向滚动条（源 URL/源名称/…），点击 Scrollable.ensureVisible + 聚焦。
+5. **文字颜色**：设置标题 16sp onSurface、摘要 12sp onSurfaceVariant、字段标签灰字（secondaryText 语义）。
+6. **文本框全部展开**：字段 minLines=1（默认单行收起，内容增长展开到 maxLines）；isDense。
+7. **更多选项覆盖按钮**：AppBar 内 PopupMenuButton 弹出层（无论 under/默认）实测都覆盖顶栏按钮；改 showMenu 显式 RelativeRect 锚定顶栏下缘（top=156）+ 紧凑行高（44）使 12 项在工具栏下方完整展示（实测首项 y168，原版 y170）。
+8. **更多选项内容不一致**：按原版 source_edit.xml 顺序 登录/搜索/清除Cookie/自动补全/拷贝源/粘贴源/设置源变量/二维码导入/二维码分享/字符串分享/日志/帮助，移除原版没有的「JSON编辑」。
+9. **设置卡片样式**：圆角 Card + 摘要行，位于 Tab 上方。### 八、编辑书源页按原版重构（v2.0.83，2026-08-14，用户实测反馈）
 
 用户反馈：编辑页有信息了但与原版显示不一致，且要求修改必须生效。对照原版 BookSourceEditActivity.kt（sourceEntities/searchEntities/exploreEntities/infoEntities/tocEntities/contentEntities/reviewEntities 全部 EditEntity 列表 + values-zh 标签）逐项重构：
 
