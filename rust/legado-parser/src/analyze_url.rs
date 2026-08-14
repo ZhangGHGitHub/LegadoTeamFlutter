@@ -24,7 +24,7 @@ use base64::Engine;
 use md5::{Digest, Md5};
 use regex::Regex;
 
-use legado_core::LegadoResult;
+use legado_core::{LegadoError, LegadoResult};
 
 use crate::analyze_rule::JsExecutor;
 
@@ -1013,10 +1013,23 @@ impl AnalyzeUrl {
     /// - 用 JS 引擎执行表达式，将结果替换回 URL
     /// - 支持 `@result` 引用上一步结果
     pub fn analyze_js(rule: &str, js_executor: &dyn JsExecutor) -> String {
+        Self::analyze_js_with_error(rule, js_executor).0
+    }
+
+    /// [`Self::analyze_js`] 的错误感知版本：JS 执行失败时返回
+    /// `(保留原始文本, Some(错误信息))`，供 `parse_with_js` 上抛
+    /// 真实错误（懒人听书未配置登录会话时 lrtsResolveSession 抛
+    /// 「请先登录…」；此前静默保留 `@js:` 文本会被当 URL 请求 →
+    /// HTTP 404 误导）。
+    pub fn analyze_js_with_error(
+        rule: &str,
+        js_executor: &dyn JsExecutor,
+    ) -> (String, Option<String>) {
         // 匹配 <js>...</js> 或 @js:... 模式
         let js_re = Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap();
 
         let mut result = rule.to_string();
+        let mut first_err: Option<String> = None;
         let mut start = 0;
         let rule_chars = rule;
 
@@ -1045,8 +1058,11 @@ impl AnalyzeUrl {
                 Ok(js_result) => {
                     result = js_result;
                 }
-                Err(_) => {
-                    // JS 执行失败，保留原始结果
+                Err(e) => {
+                    // JS 执行失败：保留原始结果，但记录首个错误供上抛
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
                 }
             }
 
@@ -1061,7 +1077,7 @@ impl AnalyzeUrl {
             }
         }
 
-        result
+        (result, first_err)
     }
 
     /// 使用 JS 执行器解析 URL 模板（增强版 parse）
@@ -1074,8 +1090,15 @@ impl AnalyzeUrl {
         page: i32,
         js_executor: &dyn JsExecutor,
     ) -> LegadoResult<Self> {
-        // 1. 先执行 @js:/<js> 内嵌 JS
-        let processed = Self::analyze_js(template, js_executor);
+        // 1. 先执行 @js:/<js> 内嵌 JS（失败上抛真实错误：懒人听书
+        //    未配置登录会话时 lrtsResolveSession 抛「请先登录…」；
+        //    静默保留 @js: 文本会被当 URL 请求 → HTTP 404 误导）
+        let (processed, js_err) = Self::analyze_js_with_error(template, js_executor);
+        if let Some(err) = js_err {
+            return Err(LegadoError::Internal(format!(
+                "URL 模板 JS 执行失败: {err}"
+            )));
+        }
 
         // 2. 处理 {{expression}} 内嵌表达式（用 JS 执行复杂表达式）
         let processed = Self::replace_inner_expressions_with_js(&processed, variables, js_executor);

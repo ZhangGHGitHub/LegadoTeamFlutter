@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.90] - 2026-08-14
+
+### Fixed
+- [Rust] 发现页懒人听书分类报 http 404（用户反馈）根因链修复：
+  - 分类 URL 为 `@js:` 脚本时 JS 执行失败被**静默回退字面量 URL**（`legado-parser` `analyze_js` 吞错 + `build_explore_url` fallback），把 `@js:` 脚本文本拼进请求 → `https://m.lrts.me/@js:...` → HTTP 404 误导；改为**错误上抛**（`analyze_js_with_error` + `build_explore_url` 返回 Result），显示真实原因
+  - 分类 URL 脚本引用 `page` 全局变量缺失 → `page is not defined`；`ExploreInfoMapJsExecutor` 补注入 `var page = N` / `var baseUrl`（对齐原版 evalJS put("page")）
+  - 懒人听书未配置抓包会话时 jsLib `lrtsResolveSession` 抛「本书源不含内置账号」——现按原版提示显示「分类加载失败：本书源不含内置账号，请先在书源登录中填写本人抓包的 8 项会话参数」
+- [UI] 探索页错误文案清理：去掉 `Internal error: ` 前缀与 JS 堆栈（`_mapError`）
+- 新增回归测试：`@js:` URL 脚本抛错应传播真实错误（不 fallback）；page 变量注入后 JS 正常执行
+- 验证：cargo test legado-ffi 337 全过、flutter test 1188 全过、双模拟器冒烟 5/5、模拟器实测懒人听书报错文案正确
+
 ## [2.0.89] - 2026-08-14
 
 ### Fixed

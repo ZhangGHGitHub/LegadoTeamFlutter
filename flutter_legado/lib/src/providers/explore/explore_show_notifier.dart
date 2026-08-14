@@ -162,7 +162,12 @@ class ExploreShowNotifier
           msg.contains('未登录')) {
         return 'LOGIN_REQUIRED:$msg';
       }
-      return msg;
+      // 去掉 Rust LegadoError::Internal 的「Internal error: 」前缀，
+      // 文案直接面向用户（懒人听书未配置会话 → 「分类加载失败：…请先登录…」）
+      var clean = msg.replaceFirst('Internal error: ', '');
+      final atIdx = clean.indexOf(' (at ');
+      if (atIdx > 0) clean = clean.substring(0, atIdx);
+      return clean;
     }
     return e.toString();
   }

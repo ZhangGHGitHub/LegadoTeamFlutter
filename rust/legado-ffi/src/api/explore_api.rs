@@ -468,7 +468,19 @@ async fn explore_books_async(
         page,
         &source,
         &info_map,
-    );
+    )
+    // 分类 URL 脚本执行失败上抛真实错误（懒人听书未配置会话时
+    // lrtsResolveSession 抛「请先登录…」；此前静默回退字面量 URL
+    // 导致 HTTP 404 误导用户）。提取最内层 JS 错误，去掉
+    // Internal/URL 模板 等包装前缀与堆栈行，文案对齐原版提示。
+    .map_err(|e| {
+        let msg = e.to_string();
+        let core = msg.rsplit("JS engine error: ").next().unwrap_or(&msg);
+        // 取首行并去掉 JS 堆栈 `(at ...` 尾部，文案对齐原版提示
+        let first_line = core.lines().next().unwrap_or(core).trim();
+        let clean = first_line.split(" (at ").next().unwrap_or(first_line).trim();
+        LegadoError::Internal(format!("分类加载失败：{clean}"))
+    })?;
 
     let final_url = analyze_url.url().to_string();
     if final_url.is_empty() {

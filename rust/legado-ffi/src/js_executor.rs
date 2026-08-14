@@ -244,7 +244,7 @@ pub fn build_explore_url(
     page: i32,
     source: &legado_core::models::BookSource,
     info_map: &HashMap<String, String>,
-) -> AnalyzeUrl {
+) -> legado_core::LegadoResult<AnalyzeUrl> {
     let source_tag = source.book_source_url.clone();
     let js_lib = source.js_lib.as_deref();
     let page_u32 = page.max(1) as u32;
@@ -263,21 +263,24 @@ pub fn build_explore_url(
     let setup_script = crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
 
     if template.contains("{{") || template.contains("<js>") || template.contains("@js:") {
-        if let Ok(analyzed) = explore_url_with_js(
+        // JS 求值失败**上抛真实错误**（对齐原版：懒人听书等需登录会话的
+        // 书源未配置时 lrtsResolveSession 抛「请先登录…」应原样提示用户；
+        // 此前静默回退字面量 URL 会把 @js: 脚本文本拼进请求 → HTTP 404
+        // 误导（2026-08-14 用户反馈懒人听书发现页 http404））
+        return explore_url_with_js(
             template,
             &variables,
             page,
             &source_tag,
             js_lib,
             setup_script,
-        ) {
-            return analyzed;
-        }
+        );
     }
-    AnalyzeUrl::new(template, None, Some(page_u32), &source_tag, None)
+    Ok(AnalyzeUrl::new(template, None, Some(page_u32), &source_tag, None))
 }
 
-/// quickjs 启用：发现 URL 模板 JS 求值（注入 infoMap 对象 + 书源 setup）
+/// quickjs 启用：发现 URL 模板 JS 求值（注入 infoMap 对象 + page/baseUrl
+/// 全局变量 + 书源 setup）
 #[cfg(feature = "quickjs")]
 fn explore_url_with_js(
     template: &str,
@@ -296,6 +299,8 @@ fn explore_url_with_js(
         js_lib.map(|s| s.to_string()),
         info_json,
         setup_script,
+        page,
+        source_tag,
     );
     AnalyzeUrl::parse_with_js(template, variables, page, &executor)
 }
@@ -312,12 +317,17 @@ fn explore_url_with_js(
     AnalyzeUrl::parse(template, variables, page)
 }
 
-/// 发现 URL JS 执行器：每次求值前注入 `var infoMap = {...}` 与书源
-/// 上下文 setup（source/cookie 方法，URL 模板 jsLib 函数依赖）
+/// 发现 URL JS 执行器：每次求值前注入 `var infoMap = {...}`、`var page = N`、
+/// `var baseUrl = '...'` 与书源上下文 setup（source/cookie 方法，
+/// URL 模板 jsLib 函数依赖）。page/baseUrl 对齐原版 evalJS 注入的
+/// 全局变量——懒人听书等分类 URL 脚本 `Number(page||1)` 直接引用 page，
+/// 缺失会报 `page is not defined`（2026-08-14 懒人听书发现页报错）。
 #[cfg(feature = "quickjs")]
 struct ExploreInfoMapJsExecutor {
     inner: QuickJsExecutor,
     info_map_json: String,
+    page: i32,
+    base_url: String,
 }
 
 #[cfg(feature = "quickjs")]
@@ -327,12 +337,16 @@ impl ExploreInfoMapJsExecutor {
         js_lib: Option<String>,
         info_map_json: String,
         setup_script: Option<String>,
+        page: i32,
+        base_url: &str,
     ) -> Self {
         Self {
             inner: QuickJsExecutor::new(source_tag)
                 .with_js_lib(js_lib)
                 .with_setup_script(setup_script),
             info_map_json,
+            page,
+            base_url: base_url.to_string(),
         }
     }
 }
@@ -341,8 +355,12 @@ impl ExploreInfoMapJsExecutor {
 impl legado_parser::JsExecutor for ExploreInfoMapJsExecutor {
     fn execute_js(&self, js_code: &str) -> Result<String, String> {
         let wrapped = format!(
-            "var infoMap = {};\n{}",
-            self.info_map_json, js_code
+            "var infoMap = {};\nvar page = {};\nvar baseUrl = {};\n{}",
+            self.info_map_json,
+            self.page,
+            serde_json::to_string(&self.base_url)
+                .unwrap_or_else(|_| "\"\"".to_string()),
+            js_code
         );
         self.inner.execute_js(&wrapped)
     }
@@ -726,6 +744,66 @@ mod tests {
             u.url()
         );
         println!("encodeURI url={}", u.url());
+    }
+
+    /// 懒人听书场景回归（2026-08-14 用户反馈发现页 http404）：
+    /// 分类 URL 为 `@js:` 脚本且 jsLib 抛错（未配置登录会话时
+    /// lrtsResolveSession 抛「本书源不含内置账号，请先登录…」），
+    /// build_explore_url 应**上抛真实 JS 错误**，而非静默回退字面量 URL
+    /// （回退会把 @js: 脚本文本拼进请求 → https://host/@js:... → HTTP 404 误导）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_build_explore_url_js_error_propagates_not_fallback() {
+        use std::collections::HashMap;
+        let source_json = r#"{
+            "bookSourceUrl": "https://m.lrts.me",
+            "bookSourceName": "懒人听书",
+            "jsLib": "function lrtsUrl(){ throw new Error('本书源不含内置账号，请先在书源登录中填写会话参数'); }",
+            "exploreUrl": "[{title:'推荐',url:'@js:\\nvar out=lrtsUrl();out;'}]"
+        }"#;
+        let source: legado_core::models::BookSource =
+            serde_json::from_str(source_json).unwrap();
+        let info_map = HashMap::new();
+        let result = build_explore_url(
+            "@js:\nvar out=lrtsUrl();out;",
+            1,
+            &source,
+            &info_map,
+        );
+        let err = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("JS 抛错应返回 Err 而非回退字面量 URL"),
+        };
+        assert!(
+            err.contains("书源登录") || err.contains("请先"),
+            "错误应包含 JS 抛出的真实信息（引导用户登录）: {err}"
+        );
+    }
+
+    /// 懒人听书分类 URL 脚本 `Number(page||1)` 直接引用 `page` 全局变量：
+    /// build_explore_url 执行 JS 前应注入 `var page = N`（对齐原版 evalJS
+    /// put("page")），否则报 `page is not defined`（2026-08-14 实测）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_build_explore_url_js_page_variable_injected() {
+        use std::collections::HashMap;
+        let source_json = r#"{
+            "bookSourceUrl": "https://m.lrts.me",
+            "bookSourceName": "懒人听书",
+            "jsLib": "function lrtsUrl(java,source,path,params){ return 'https://m.lrts.me'+path+'?p='+(page||1); }",
+            "exploreUrl": "[]"
+        }"#;
+        let source: legado_core::models::BookSource =
+            serde_json::from_str(source_json).unwrap();
+        let result = build_explore_url(
+            "@js:lrtsUrl(java,source,'/api',{})",
+            2,
+            &source,
+            &HashMap::new(),
+        );
+        assert!(result.is_ok(), "page 变量注入后 JS 应成功执行");
+        let url = result.unwrap().url().to_string();
+        assert!(url.contains("p=2"), "page=2 应注入 JS 全局: {url}");
     }
 
 }
