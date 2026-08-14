@@ -634,7 +634,10 @@ async fn explore_books_async(
 
     let mut results = Vec::with_capacity(elements.len().min(50));
     for elem in elements.iter() {
-        elem_analyzer.set_content(elem.clone());
+        // 列表元素按结构化对象写入（JSON 元素 → result 注入为对象，
+        // 书山 bookUrl `result.source` 等属性访问依赖；HTML 元素自动
+        // 回退字符串）— DeepSeek Harness + Bridge
+        elem_analyzer.set_element_content(elem.clone());
 
         let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
         if name.is_empty() {
@@ -1251,9 +1254,29 @@ function getServerHost() { return 'https://a.test'; }
             Some(&sanitized),
             crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
         );
-        elem_analyzer.set_content(elements[0].clone());
+        elem_analyzer.set_element_content(elements[0].clone());
         let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
         assert_eq!(name, "斗破苍穹测试", "书名规则解析失败: {name}");
+
+        // bookUrl `<js>` 规则：元素模式下 result 注入为对象，
+        // `result.source`/`result.book_url` 属性访问可用，产出非空且
+        // 每本书各异的 detailsUrl（否则回退 baseUrl → 去重折叠成 1 条）
+        let book_url_rule = source
+            .rule_explore
+            .as_ref()
+            .and_then(|r| r.book_url.as_deref())
+            .unwrap_or("");
+        let mut urls = std::collections::HashSet::new();
+        for elem in &elements {
+            elem_analyzer.set_element_content(elem.clone());
+            let u = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
+            assert!(
+                !u.is_empty() && u.starts_with("data:detailsUrl;base64,"),
+                "bookUrl 规则应产出 detailsUrl，实际: {u:?}"
+            );
+            urls.insert(u);
+        }
+        assert_eq!(urls.len(), elements.len(), "每本书 bookUrl 应唯一: {urls:?}");
     }
 }
 

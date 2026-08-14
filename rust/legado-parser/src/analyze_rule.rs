@@ -56,6 +56,11 @@ pub struct AnalyzeRule {
     cached_content_type: Option<RuleType>,
     /// 内容是否为 JSON 的快速标志
     is_json: bool,
+    /// 内容为「结构化列表元素」（JSONPath 元素循环写入）：
+    /// execute_js_rule 注入 `result` 时按解析后的 JSON 对象注入
+    /// （对齐原版 Kotlin getElements JSON 模式返回 Map 对象 →
+    /// 规则 `result.source`/`result.book_url` 属性访问可用）。
+    json_element_mode: bool,
     /// 可选的 JS 执行器（通过回调注入模式解决跨 crate 循环依赖）
     js_executor: Option<Arc<dyn JsExecutor>>,
     /// JS 执行时的注入上下文（对齐原版 AnalyzeRule.evalJS bindings：
@@ -90,6 +95,7 @@ impl AnalyzeRule {
             regex_engine: RegexEngine::new(),
             cached_content_type: Some(content_type),
             is_json,
+            json_element_mode: false,
             js_executor: None,
             js_bindings: Vec::new(),
             variables: Arc::new(Mutex::new(HashMap::new())),
@@ -276,6 +282,20 @@ impl AnalyzeRule {
         let content_type = Self::detect_content_type(&self.content);
         self.is_json = content_type == RuleType::Json;
         self.cached_content_type = Some(content_type);
+    }
+
+    /// 设置「结构化列表元素」内容（对齐原版 Kotlin `getElements` JSON
+    /// 模式返回 Map 对象后 `AnalyzeRule().setContent(item)` 的语义）
+    ///
+    /// 与 [`Self::set_content`] 相同，但额外标记元素模式：JS 规则执行时
+    /// `result` 按**解析后的 JSON 对象**注入（对象/数组；解析失败或
+    /// 非对象内容仍按字符串注入）——书山 bookUrl `<js>` 规则
+    /// `result.source`/`result.book_url` 属性访问依赖对象语义，字符串
+    /// 注入取不到字段 → detail={} → 所有书 bookUrl 相同 → 列表按
+    /// bookUrl 去重折叠成 1 条。— DeepSeek Harness + Bridge（2026-08-14）
+    pub fn set_element_content(&mut self, content: String) {
+        self.json_element_mode = true;
+        self.set_content(content);
     }
 
     /// 内容是否为 JSON
@@ -816,7 +836,22 @@ impl AnalyzeRule {
                 // 书源 jsLib 若已声明 let/const result，var 同名声明抛
                 // SyntaxError（redeclaration）。globalThis 属性赋值两者
                 // 皆可：严格模式合法、不构成重复声明 — Reasonix
-                prologue.push_str(&format!("globalThis.result = {content_json};\n"));
+                // ③ JSON 列表元素模式：result 按解析后的对象注入
+                // （对齐原版 getElements 返回 Map 对象 → `result.source`
+                // 属性访问；书山 bookUrl 等规则依赖，字符串注入取不到
+                // 字段 → 所有书 bookUrl 相同 → 去重折叠成 1 条）。
+                // — DeepSeek Harness + Bridge（2026-08-14 去重折叠修复）
+                let result_literal = if self.json_element_mode {
+                    match serde_json::from_str::<serde_json::Value>(&self.content) {
+                        Ok(v) if v.is_object() || v.is_array() => {
+                            serde_json::to_string(&v).unwrap_or_else(|_| content_json.clone())
+                        }
+                        _ => content_json.clone(),
+                    }
+                } else {
+                    content_json.clone()
+                };
+                prologue.push_str(&format!("globalThis.result = {result_literal};\n"));
                 prologue.push_str(&format!("globalThis.src = {content_json};\n"));
             }
             if let Ok(base_json) = serde_json::to_string(&self.base_url) {
@@ -838,7 +873,24 @@ impl AnalyzeRule {
                      }}\n"
                 ));
             }
-            let wrapped = format!("{prologue}{js_code}");
+            let wrapped = {
+                // 规则 JS 经 Function 内 eval 执行：**独立词法作用域**。
+                // 规则顶层 `let/const` 声明（如书山 bookUrl 规则的
+                // `let source = result.source`）此前与 jsLib/setup 预置的
+                // 全局 `var`（var source/hosts 等）处于同一 QuickJS 全局
+                // 词法环境 → "redeclaration of 'source'" SyntaxError →
+                // 规则结果被 unwrap_or_default 吞成空 → bookUrl 回退
+                // baseUrl → 列表按 bookUrl 去重折叠成 1 条（个性推荐
+                // 只剩一本）。对齐 Rhino 每次 evalJS 独立作用域语义；
+                // Function 体非严格，裸调用 this=globalThis 与顶层 eval
+                // 一致（书山 jsLib getSessionId 等 `let { source } = this`）。
+                // — DeepSeek Harness + Bridge（2026-08-14 书山去重折叠修复）
+                let code_json = serde_json::to_string(js_code)
+                    .unwrap_or_else(|_| "\"\"".to_string());
+                format!(
+                    "{prologue}\nnew Function('__legadoCode', 'return eval(__legadoCode);')({code_json})"
+                )
+            };
             match executor.execute_js(&wrapped) {
                 Ok(result) => Ok(normalize_js_rule_result(result)),
                 Err(e) => Err(legado_core::LegadoError::JsEngine(format!(
@@ -1729,6 +1781,35 @@ mod tests {
             recorded[0].contains(", all;") || recorded[0].contains(" all,"),
             "prologue 须含 var all: {}",
             recorded[0]
+        );
+    }
+
+    /// 元素模式下 result 按解析后的 JSON 对象注入（对齐原版 getElements
+    /// JSON 模式返回 Map 对象 → 规则 `result.source` 属性访问可用；
+    /// 书山 bookUrl `<js>` 规则依赖，字符串注入取不到字段）。
+    #[test]
+    fn test_set_element_content_injects_result_as_object() {
+        let executor = Arc::new(RecordingJsExecutor::new());
+        let mut rule = AnalyzeRule::with_js_executor(
+            String::new(),
+            "https://example.com".to_string(),
+            executor.clone(),
+        );
+        rule.set_element_content(r#"{"source":"番茄小说","book_url":"https://x/1"}"#.to_string());
+        rule.get_strings("@js:result.source").unwrap();
+        let recorded = executor.executed.lock().unwrap().clone();
+        assert_eq!(recorded.len(), 1);
+        let code = &recorded[0];
+        assert!(
+            code.contains(
+                r#"globalThis.result = {"book_url":"https://x/1","source":"番茄小说"};"#
+            ),
+            "元素模式 result 应按解析后的对象注入（键排序后）: {code}"
+        );
+        // src 仍为原始字符串
+        assert!(
+            code.contains(r#"globalThis.src = "{\"source\":\"番茄小说\",\"book_url\":\"https://x/1\"}";"#),
+            "src 应保持字符串注入: {code}"
         );
     }
 

@@ -940,7 +940,7 @@ impl RealBookSourceFetcher {
         let mut chapters = Vec::with_capacity(elements.len());
         for (index, elem) in elements.iter().enumerate() {
             elem_analyzer.clear_variables();
-            elem_analyzer.set_content(elem.clone());
+            elem_analyzer.set_element_content(elem.clone());
 
             let mut title = elem_analyzer.get_string(name_rule).unwrap_or_default();
             let raw_url_probe = elem_analyzer.get_string(url_rule).unwrap_or_default();
@@ -1054,7 +1054,7 @@ impl RealBookSourceFetcher {
                     for (i, elem) in page_elements.iter().enumerate() {
                         elem_analyzer.clear_variables();
                         elem_analyzer.set_base_url(base.clone());
-                        elem_analyzer.set_content(elem.clone());
+                        elem_analyzer.set_element_content(elem.clone());
                         let mut title =
                             elem_analyzer.get_string(name_rule).unwrap_or_default();
                         let raw_url_probe =
@@ -1165,7 +1165,7 @@ impl RealBookSourceFetcher {
                             let mut page_chs = Vec::with_capacity(page_elements.len());
                             for (i, el) in page_elements.iter().enumerate() {
                                 elem.clear_variables();
-                                elem.set_content(el.clone());
+                                elem.set_element_content(el.clone());
                                 let mut title = elem.get_string(&name_r).unwrap_or_default();
                                 let raw = elem.get_string(&url_r).unwrap_or_default();
                                 if title.is_empty() && raw.is_empty() {

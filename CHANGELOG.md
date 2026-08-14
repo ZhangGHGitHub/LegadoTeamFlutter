@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.81] - 2026-08-14
+
+### Fixed
+- [Rust] 书山聚合「个性推荐只剩一本」根治（去重折叠）：bookUrl `<js>` 规则顶层 `let source = result.source` 与 setup/jsLib 全局 var source 冲突 → redeclaration SyntaxError → bookUrl 回退 baseUrl → 30 本书同 URL → 按 bookUrl 去重折叠成 1 条。两层修复：① 规则 JS 改经 Function 内 eval 执行（独立词法作用域，对齐 Rhino 每次 evalJS 独立作用域）；② 列表元素按解析后的 JSON 对象注入 result（对齐原版 getElements JSON 模式返回 Map 对象，`result.source` 属性访问可用；新增 AnalyzeRule.set_element_content，explore/search/目录元素循环接入）。验证：legado-parser 217/0、legado-ffi 335/0、workspace 全量通过
+
 ## [2.0.80] - 2026-08-14
 
 ### Fixed

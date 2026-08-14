@@ -903,12 +903,16 @@ fn parse_search_response(
     // 对每个元素解析各字段
     let mut results = Vec::new();
     for element_html in &elements {
-        let item_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
-            element_html.clone(),
+        // 列表元素按结构化对象写入（JSON 元素 → result 注入为对象，
+        // `result.source` 等属性访问；HTML 元素自动回退字符串）
+        // — DeepSeek Harness + Bridge
+        let mut item_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            String::new(),
             base_url.to_string(),
             &source.book_source_url,
             source.js_lib.as_deref(),
         );
+        item_analyzer.set_element_content(element_html.clone());
 
         // 提取书名（必填，无书名则跳过）
         let book_name = eval_field_string(&item_analyzer, rule_search.name.as_deref());
