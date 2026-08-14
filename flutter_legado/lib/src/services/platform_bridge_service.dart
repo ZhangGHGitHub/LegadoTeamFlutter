@@ -193,6 +193,18 @@ class PlatformBridgeService {
         // TTS 缓存目录由 RustApi 初始化；此处仅提示（对齐 toast 成功）
         _showSnackBar('已清除朗读缓存');
         return '';
+      case 'toast':
+        // java.toast 可见提示（对齐原版 appCtx.toastOnUi；登录表单
+        // 「正在登录/登录成功/请先填写账号密码」等消息）— DeepSeek Harness + UI
+        _showSnackBar((payload['message'] ?? '').toString());
+        return '';
+      case 'longToast':
+        // java.longToast 长停留提示（对齐原版 longToastOnUi）
+        _showSnackBar(
+          (payload['message'] ?? '').toString(),
+          duration: const Duration(seconds: 5),
+        );
+        return '';
       default:
         return '';
     }
@@ -645,9 +657,11 @@ class PlatformBridgeService {
   }
 
   /// 全局 SnackBar（经 navigatorKey 上下文）
-  void _showSnackBar(String message) {
+  void _showSnackBar(String message, {Duration duration = const Duration(seconds: 4)}) {
     final context = navigatorKey.currentContext;
     if (context == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: duration),
+    );
   }
 }

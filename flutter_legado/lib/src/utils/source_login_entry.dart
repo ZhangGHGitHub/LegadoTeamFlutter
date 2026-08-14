@@ -6,19 +6,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../screens/source_login_screen.dart';
+import '../widgets/classic_login_dialog.dart';
 import '../widgets/login_v2_dialog.dart';
 
 /// 书源登录统一入口（发现页/详情页/书源管理共用）
 ///
-/// 按 `loginUi` 是否 V2 动态协议分流（对齐原版 `SourceLoginActivity`：
-/// hasLoginForm → 动态/表单对话框，否则 WebView/手动凭据页）：
-/// - V2：`LoginV2Dialog`（rows 动态渲染，loginActionV2 驱动，登录结果由
-///   Rust 侧自动落库 source_login_cache）
-/// - 非 V2：`SourceLoginScreen`（手动 Token/Cookies/Headers，存
+/// 按原版 `SourceLoginActivity` 分流（对齐 2026-08-14 登录表单修复）：
+/// - loginUi 为 V2 动态状态协议 → `LoginV2Dialog`（rows 动态渲染，
+///   loginActionV2 驱动，登录结果由 Rust 侧自动落库 source_login_cache）
+/// - loginUi 为经典 JSON 行协议（hasLoginForm，如书山聚合的
+///   邮箱/密码 + 按钮表单）→ `ClassicLoginDialog`（对齐 SourceLoginDialog：
+///   ✓ 保存并 login.apply(this)、按钮动作 result 绑定表单 JSON、
+///   java.toast 可见提示）
+/// - 无 loginUi → `SourceLoginScreen`（手动 Token/Cookies/Headers，存
 ///   source_login_cache）
 ///
-/// 返回是否登录成功（V2 对话框 login/close 或手动页保存完成）。
-/// — DeepSeek Harness + UI（2026-08-14 发现页修复 R2）
+/// 返回是否登录成功（V2 对话框 login/close、经典表单 ✓、手动页保存完成）。
+/// — DeepSeek Harness + UI（2026-08-14 发现页修复 R2 / 登录表单对齐）
 Future<bool> showSourceLogin(
   BuildContext context,
   WidgetRef ref,
@@ -26,6 +30,8 @@ Future<bool> showSourceLogin(
 ) async {
   final api = ref.read(bookApiProvider);
   final sourceJson = jsonEncode(source.toJson());
+
+  // 1) V2 动态状态协议
   var isV2 = false;
   try {
     isV2 = await api.isLoginUiV2(sourceJson);
@@ -33,7 +39,6 @@ Future<bool> showSourceLogin(
     debugPrint('loginUiV2 判定失败: $e');
   }
   if (!context.mounted) return false;
-
   if (isV2) {
     final ok = await showDialog<bool>(
       context: context,
@@ -46,7 +51,18 @@ Future<bool> showSourceLogin(
     return ok == true;
   }
 
-  // 旧版协议：手动凭据登录页（WebView 外链 + 手动 Cookie/Header/Token）
+  // 2) 经典 loginUi 表单（对齐原版 hasLoginForm → SourceLoginDialog）
+  final loginUi = source.loginUi?.trim() ?? '';
+  if (loginUi.isNotEmpty && loginUi != '[]') {
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ClassicLoginDialog(api: api, source: source),
+    );
+    return ok == true;
+  }
+
+  // 3) 无表单：手动凭据登录页（WebView 外链 + 手动 Cookie/Header/Token）
   final saved = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
       builder: (_) => SourceLoginScreen(

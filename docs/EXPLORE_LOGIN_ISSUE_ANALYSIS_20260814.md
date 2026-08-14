@@ -177,6 +177,15 @@ ew Function 内 eval 执行（独立词法作用域，对齐 Rhino 每次 evalJS
 - [x] 子代理 A：原版行为基准（loginCheckJs 语义 / 登录入口 / 解析内核差异 / ExploreKind type 枚举 / 双页码机制）
 - [x] 子代理 B：重构内容审计（**10 项解析差异：A1-A6 P1 + A7-A9/B/C/D P2**，§3.1）
 - [x] 子代理 C：登录链路完整对比（R1 四断裂点 + 手动登录无读取方）
+### 七、编辑页 / 登录表单修复（v2.0.82，2026-08-14，用户实测反馈）
+
+**编辑书源空表单**：发现页书源菜单「编辑」经 pushNamed(sourceEdit, arguments: source) 传完整 BookSource，但路由 sourceEdit: (_) => const SourceEditScreen() 忽略参数 → 打开即空白（「没有任何书源信息」）。修复：路由接参 + SourceEditScreen.source 参数即时回填；sourceUrl 直达入口（阅读页/听书页）在 notifier 内存列表未命中时兜底从 API 拉取；设置面板默认收起（原版为紧凑单行设置），基本字段首屏可见。
+
+**登录界面与原版不一致**：书山聚合 loginUi 为**经典 JSON 行协议**（83 行：邮箱/密码 + 账号登录/注册/退出/切换书源等按钮），非 V2。此前 showSourceLogin 仅按 V2 分流，非 V2 一律落手动 Token/Cookies 页 → 与原版 SourceLoginDialog 完全不符。修复：新增 ClassicLoginDialog——解析 loginUi 行（text/password/select/button/toggle + style.basisPercent 网格布局）；按钮动作经 xploreEvalAction 执行（组合脚本 globalThis.result = 表单JSON + loginUrl JS + action，对齐原版 valJS("\n") { put("result", result) }）；顶栏 ✓ 保存登录信息（putLoginInfo）并 login.apply(this)（对齐 menu_ok → login(source)）；⋮ 菜单（查看/删除登录头、清除登录信息、日志）；关闭时持久化（对齐 onDismiss）。分流顺序：V2 → 经典表单（loginUi 非空）→ 手动凭据页。
+
+**登录提示不可见**：java.toast 此前仅写 stderr（无 UI），登录动作的「正在登录/请先填写账号和密码并点击✓保存后登录」等提示与原版不一致。修复：misc_api::toast/long_toast 在 ui_action_queue 收集开启时入队 {"action":"toast/longToast"}，Flutter PlatformBridgeService.dispatchPayload 回放为 SnackBar（4s/5s）。实测：点「⭕账号登录」底部弹出「❌ 请先填写账号和密码并点击✓保存后登录」（书山 login() JS 原文）。
+
+**关于「刷新后底部提示未登录」**：该提示来自书山 exploreUrl JS 的 java.toast("番茄登录已过期，请重新登录") / java.toast("您还未登录番茄账号，无法同步数据")（未登录番茄账号时每次展开/刷新发现分类都会触发）。原版行为一致（Android Toast 底部弹出）。本次已让登录表单的 toast 可见且可登录（登录后书山账号相关功能可用）；探索页刷新路径的 toast 暂未接通（需 exploreParseUrl FFI 返回 actions，契约变更另立任务），当前与「原版可见」的差异仅在于探索页刷新 toast 不显示。
 
 **三路子代理全部收敛，排查完成。**
 

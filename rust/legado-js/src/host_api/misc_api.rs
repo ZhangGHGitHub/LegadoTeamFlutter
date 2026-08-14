@@ -127,21 +127,33 @@ pub fn to_url(path: &str, query: &str) -> String {
     format!("{}{}{}", path, separator, query)
 }
 
-/// toast - 日志输出（弹窗提示的替代）
+/// toast - 日志输出 + UI 队列（对齐原版 appCtx.toastOnUi 的可见提示）
 ///
 /// 对应 Kotlin: `toast(msg)` -> appCtx.toastOnUi(...)
-/// 在 Rust 侧输出到 stderr 日志
+/// 收集开启时入队 `{"action":"toast","message":...}` 由 Flutter 展示
+/// SnackBar（登录表单「正在登录/登录成功/请先填写账号密码」等提示与
+/// 原版一致可见）；未收集时仅输出 stderr 日志。
+/// — DeepSeek Harness + Bridge（2026-08-14 登录消息对齐）
 pub fn toast(msg: &str) -> String {
     eprintln!("[TOAST] {}", msg);
+    crate::host_api::ui_action_queue::push_action(serde_json::json!({
+        "action": "toast",
+        "message": msg,
+    }));
     msg.to_string()
 }
 
-/// longToast - 长提示（日志输出替代）
+/// longToast - 长提示（UI 队列 + 日志输出替代）
 ///
 /// 对应 Kotlin: `longToast(msg)` -> appCtx.longToastOnUi("${getTag()}: ${msg}")
-/// 与现有 toast 处理方式保持一致：stderr 输出 + 原样返回
+/// 与 toast 一致入队 UI 动作（Flutter 侧长停留 SnackBar）；未收集时
+/// 仅输出 stderr 日志。
 pub fn long_toast(msg: &str) -> String {
     eprintln!("[LONG_TOAST] {}", msg);
+    crate::host_api::ui_action_queue::push_action(serde_json::json!({
+        "action": "longToast",
+        "message": msg,
+    }));
     msg.to_string()
 }
 

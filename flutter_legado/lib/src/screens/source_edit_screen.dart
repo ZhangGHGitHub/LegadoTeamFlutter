@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -17,11 +17,11 @@ import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../routes.dart';
+import '../utils/source_login_entry.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/loading_indicator.dart';
 import 'code_edit_screen.dart';
-import 'source_login_screen.dart';
 
 /// 书源编辑页面
 ///
@@ -33,7 +33,11 @@ class SourceEditScreen extends ConsumerStatefulWidget {
   /// 书源 URL（编辑模式），null 表示新建
   final String? sourceUrl;
 
-  const SourceEditScreen({super.key, this.sourceUrl});
+  /// 书源对象（发现页编辑入口直接传入，避免依赖 notifier 已加载
+  /// 内存书源列表导致空表单）— DeepSeek Harness + UI（2026-08-14）
+  final BookSource? source;
+
+  const SourceEditScreen({super.key, this.sourceUrl, this.source});
 
   @override
   ConsumerState<SourceEditScreen> createState() => _SourceEditScreenState();
@@ -102,7 +106,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   /// 粘贴/扫码/全屏编辑回填时随 _populateFields 同步更新）
   String _preservedVariable = '';
 
-  bool get isNew => widget.sourceUrl == null;
+  bool get isNew => widget.sourceUrl == null && widget.source == null;
 
   /// 按 key 惰性获取控制器
   TextEditingController _ctrl(String key) =>
@@ -126,7 +130,8 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     _Field('bookSourceUrl', '书源 URL', required: true, maxLines: 1),
     _Field('bookSourceGroup', '分组', maxLines: 1),
     _Field('header', '请求头', hint: 'JSON 格式', maxLines: 3),
-    _Field('loginUrl', '登录 URL', maxLines: 1),
+    _Field('loginUrl', '登录 URL', maxLines: 3),
+    _Field('loginUi', '登录UI', maxLines: 4, hint: '登录表单 JSON，如 [{"name":"账号","type":"text"}]'),
     _Field('bookSourceComment', '备注', maxLines: 3),
   ];
 
@@ -252,7 +257,12 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   @override
   void initState() {
     super.initState();
-    if (!isNew) {
+    // 直接传入书源对象（发现页编辑入口）时立即回填，不走内存列表查找
+    final source = widget.source;
+    if (source != null) {
+      _populateFields(source);
+      setState(() {});
+    } else if (!isNew) {
       _loadSource();
     }
     // 对标原版 BookSourceEditActivity.onPostCreate：
@@ -276,11 +286,32 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   }
 
   void _loadSource() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final notifier = ref.read(sourceNotifierProvider.notifier);
-      final source = notifier.getSource(widget.sourceUrl!);
+      var source = notifier.getSource(widget.sourceUrl!);
+      // 内存书源列表未加载/不含该源（阅读页、听书页等直达入口）：
+      // 兜底从 API 直接拉取，避免空表单（「编辑页没有任何书源信息」根因）
+      if (source == null) {
+        try {
+          final api = ref.read(bookApiProvider);
+          final sources = await api.getBookSources();
+          for (final s in sources) {
+            if (s.bookSourceUrl == widget.sourceUrl) {
+              source = s;
+              break;
+            }
+          }
+        } catch (e) {
+          debugPrint('SourceEdit 兜底加载书源失败: $e');
+        }
+      }
+      if (!mounted) return;
       if (source != null) {
         _populateFields(source);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('未找到书源，可能已被删除')),
+        );
       }
     });
   }
@@ -329,6 +360,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       'bookSourceGroup': v(source.bookSourceGroup),
       'header': v(source.header),
       'loginUrl': v(source.loginUrl),
+      'loginUi': v(source.loginUi),
       'bookSourceComment': v(source.bookSourceComment),
       // 搜索规则
       'searchUrl': v(source.searchUrl),
@@ -442,6 +474,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       customButton: _customButton,
       header: n('header'),
       loginUrl: n('loginUrl'),
+      loginUi: n('loginUi'),
       bookSourceComment: n('bookSourceComment'),
       // 评审 C1：透传被编辑书源既有 variable（表单不编辑此字段，
       // 避免保存时把已设置的源变量抹掉为空串）
@@ -761,19 +794,14 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     );
   }
 
-  /// 登录（对标原版 menu_login → SourceLoginActivity）
+  /// 登录（对标原版 menu_login → SourceLoginActivity：
+  /// hasLoginForm → 登录表单对话框；否则 WebView/手动凭据页）
   void _openLogin() {
     final loginUrl = _ctrl('loginUrl').text.trim();
-    if (loginUrl.isEmpty) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SourceLoginScreen(
-          sourceUrl: _ctrl('bookSourceUrl').text.trim(),
-          sourceName: _ctrl('bookSourceName').text.trim(),
-          loginUrl: loginUrl,
-        ),
-      ),
-    );
+    if (loginUrl.isEmpty && _ctrl('loginUi').text.trim().isEmpty) return;
+    // 统一登录入口（V2 动态对话框 / 经典 loginUi 表单 / 手动凭据页）
+    // — DeepSeek Harness + UI（2026-08-14 登录表单对齐）
+    showSourceLogin(context, ref, _buildSource());
   }
 
   /// 拷贝源（对标原版 menu_copy_source：JSON 写入剪贴板）
@@ -1109,7 +1137,8 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     }
 
     return ExpansionTile(
-      initiallyExpanded: true,
+      // 默认收起，优先展示表单字段（此前默认展开占掉半屏，基本信息被挤出首屏）
+      initiallyExpanded: false,
       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
       shape: const Border(),
       collapsedShape: const Border(),

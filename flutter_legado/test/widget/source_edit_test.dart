@@ -93,8 +93,10 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await pumpEdit(tester);
 
-      // 设置面板（对标原版：启用/发现/CookieJar/段评/事件监听/定制按钮）
+      // 设置面板默认收起（优先展示表单字段）；展开后可见开关
       expect(find.text('设置'), findsOneWidget);
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
       expect(find.text('CookieJar'), findsOneWidget);
       expect(find.text('事件监听'), findsOneWidget);
       expect(find.text('定制按钮'), findsOneWidget);
@@ -209,7 +211,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('.review'), findsOneWidget);
-      // 段评开关已迁至顶部设置面板（CheckboxListTile）并回填为开启
+      // 段评开关已迁至顶部设置面板（CheckboxListTile）并回填为开启；
+      // 面板默认收起，先展开再断言
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
       final reviewCheck = tester.widget<CheckboxListTile>(
         find.widgetWithText(CheckboxListTile, '段评'),
       );

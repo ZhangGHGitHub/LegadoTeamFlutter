@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.82] - 2026-08-14
+
+### Fixed
+- [UI] 编辑书源空表单根治：sourceEdit 路由忽略 BookSource 参数（发现页编辑入口打开即空白 →「没有任何书源信息」）；路由接参 + SourceEditScreen 增加 source 参数即时回填 + sourceUrl 入口 API 兜底加载；设置面板默认收起（对齐原版紧凑设置行，基本字段首屏可见）；新增登录UI 字段、loginUrl 多行
+- [UI] 经典 loginUi 登录表单（对齐原版 SourceLoginDialog，书山聚合等经典 JSON 行协议）：邮箱/密码等字段 + basisPercent 按钮网格（账号登录/注册/退出/切换书源等 83 行全渲染）；按钮动作经 exploreEvalAction 执行（loginUrl JS + result 绑定表单 JSON）；✓ 保存登录信息并 login.apply(this)；⋮ 查看/删除登录头、清除登录信息、日志；关闭时持久化表单；已存登录信息回填
+- [Rust] java.toast/longToast 接入 ui_action_queue（收集开启时入队 → Flutter SnackBar）：登录表单「正在登录/请先填写账号和密码/登录成功」等提示与原版一致可见（此前仅 stderr 不可见）
+- 验证：legado-js 482/0、flutter 测试全过（新增 classic_login_dialog 3 项 + source_edit 更新）、模拟器 5556 实测编辑页回填/登录表单渲染/按钮动作 toast/登录信息持久化回填
+
 ## [2.0.81] - 2026-08-14
 
 ### Fixed

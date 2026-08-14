@@ -145,7 +145,12 @@ class AppRoutes {
           );
         },
         sources: (_) => const SourceScreen(),
-        sourceEdit: (_) => const SourceEditScreen(),
+        sourceEdit: (context) {
+          // 发现页编辑入口传入完整 BookSource 对象；未传入则新建
+          //（此前忽略 arguments → 打开空表单，「编辑页没有书源信息」根因）
+          final args = ModalRoute.of(context)?.settings.arguments;
+          return SourceEditScreen(source: args is BookSource ? args : null);
+        },
         exploreShow: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           final exploreArgs = args is ExploreShowArgs ? args : null;
