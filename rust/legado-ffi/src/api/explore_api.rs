@@ -255,14 +255,16 @@ fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
 
         let encoded = serde_json::to_string(js_code)
             .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 脚本编码失败: {e}")))?;
-        // eval 对标 Android Rhino：多语句时返回最后一条表达式的值
+        // 执行方式对齐 Android Rhino 的 this 语义（书山聚合等聚合源 ERROR 根治）：
+        // - rquickjs ctx.eval 为严格模式，裸调用函数 this=undefined，
+        //   书山 jsLib 函数常用 `let { source } = this` → Cannot convert...；
+        // - `new Function` 构造体非严格：代码经**参数**传入（避免字符串转义
+        //   拼接问题），函数体内直接 eval → 非严格 → 裸调用函数
+        //   this=globalThis（var source/java 已挂全局）✅；
+        // - `getConfig.call(this)` 显式调用 this=全局，source 可用 ✅。
+        // — DeepSeek Harness + Bridge（发现页修复）
         let wrapped = format!(
-            r#"(function() {{
-var __r = eval({encoded});
-if (__r === null || __r === undefined) return '';
-if (typeof __r === 'string') return String(__r).trim();
-try {{ return JSON.stringify(__r); }} catch (e) {{ return String(__r); }}
-}})()"#,
+            r#"new Function('__legadoCode', 'var __r = eval(__legadoCode); if (__r === null || __r === undefined) return ""; if (typeof __r === "string") return String(__r).trim(); try {{ return JSON.stringify(__r); }} catch (e) {{ return String(__r); }}')({encoded})"#,
             encoded = encoded
         );
 
@@ -303,9 +305,11 @@ fn bootstrap_explore_js_context(
     }
 
     let setup = crate::api::source_js_bindings::book_source_js_setup_script(source)?;
-    guard
-        .eval(&setup)
-        .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 上下文初始化失败: {e}")))?;
+    if let Err(e) = guard.eval(&setup) {
+        return Err(LegadoError::JsEngine(format!(
+            "exploreUrl 上下文初始化失败: {e}"
+        )));
+    }
     Ok(())
 }
 
@@ -1006,6 +1010,112 @@ mod login_check_tests {
         let source = source_with_login_check("true;");
         let r = explore_login_check(&source, "<html>正常页</html>", "https://a.com/explore", 200);
         assert!(r.is_ok(), "已登录应放行");
+    }
+
+    /// 复现：jsLib 函数体内含 Rhino Packages（try-catch 合法语法）+ 后部
+    /// getConfig 定义——exploreUrl 应能访问 getConfig（发现页 ERROR 排查）
+    #[test]
+    fn test_explore_js_lib_get_config_visible() {
+        let source = serde_json::from_str::<BookSource>(&serde_json::json!({
+            "bookSourceUrl": "https://jslib-explore.example.com",
+            "bookSourceName": "jsLib 测试",
+            "jsLib": r#"
+function checkEnv() {
+    try { new Packages.io.foo.Bar(''); } catch (e) { return false; }
+    return true;
+}
+function getConfig() { return { host: 'https://a.test', gender: 'boy' }; }
+function getServerHost() { return 'https://a.test'; }
+"#,
+        }).to_string())
+        .unwrap();
+
+        // exploreUrl 调用 jsLib 函数（getConfig/getServerHost；@js: 前缀已剥离）
+        let url = "JSON.stringify({c:getConfig.call(this),h:getServerHost()})";
+        let result = eval_explore_js(url, &source);
+        let out = result.unwrap_or_else(|e| panic!("exploreUrl 执行失败: {e}"));
+        assert!(
+            out.contains("https://a.test"),
+            "getConfig/getServerHost 应可见，实际: {out}"
+        );
+    }
+
+    /// 真实书山聚合 jsLib（47263 字节，含函数体内 Packages）验证 getConfig 可见。
+    /// 依赖设备导出文件，文件缺失时跳过（本地验证用）。
+    #[test]
+    fn test_explore_real_jslib_get_config_visible() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| n.contains("书山"))
+        }) else {
+            eprintln!("未找到书山聚合源，跳过");
+            return;
+        };
+        let Some(js_lib) = src.get("jsLib").and_then(|l| l.as_str()) else {
+            eprintln!("书山 jsLib 缺失，跳过");
+            return;
+        };
+        let source = serde_json::from_str::<BookSource>(
+            &serde_json::to_string(src).unwrap(),
+        )
+        .unwrap();
+
+        // 阶段 1：jsLib 加载后 getConfig/getServerHost/source 均应可见
+        let probe = "typeof getConfig + '|' + typeof getServerHost + '|' + typeof source";
+        let r1 = eval_explore_js(probe, &source);
+        eprintln!("[真实 jsLib] 阶段1 typeof 探测: {:?}", r1);
+        if let Ok(o) = r1 {
+            assert!(
+                o.contains("function|function|object"),
+                "jsLib 应完整加载（getConfig/getServerHost/source 均可见），实际: {o}"
+            );
+        } else {
+            panic!("jsLib 加载/探测失败: {:?}", r1);
+        }
+
+        // 阶段 2：调用 getServerHost（裸调用，验证非严格 this 语义）
+        let url = "JSON.stringify(getServerHost())";
+        let result = eval_explore_js(url, &source);
+        let out = result.unwrap_or_else(|e| panic!("真实 jsLib getServerHost 调用失败: {e}"));
+        eprintln!("[真实 jsLib] 阶段2 getServerHost: {out}");
+        assert!(
+            !out.contains("Cannot convert"),
+            "getServerHost 裸调用应可用，实际: {out}"
+        );
+    }
+
+    /// 探测 QuickJS eval 的 this 语义（裸调用函数 this / 顶层 this / Function 构造）
+    #[test]
+    fn test_eval_this_semantics() {
+        use legado_js::JsEngine;
+        let tag = "this-semantics-test";
+        let engine = crate::js_executor::fresh_engine(tag).unwrap();
+        let guard = engine.lock().unwrap();
+        let top = guard.eval("typeof this").unwrap_or_default();
+        let bare = guard
+            .eval("var __f = function(){ return typeof this; }; __f();")
+            .unwrap_or_default();
+        let fnctor = guard
+            .eval("var __g = new Function('return typeof this'); __g();")
+            .unwrap_or_default();
+        let fnctor2 = guard
+            .eval("var __h = new Function('var __i = function(){ return typeof this; }; return __i();'); __h();")
+            .unwrap_or_default();
+        eprintln!("[this 语义] 顶层={top}, 裸调用={bare}, Function={fnctor}, Function内裸调用={fnctor2}");
     }
 }
 

@@ -84,6 +84,25 @@ pub fn js_lib_explore_fallback(js_lib: &str) -> String {
     parts.join("\n")
 }
 
+/// 非严格模式执行 JS 代码（对齐 Android Rhino 的 this 语义）
+///
+/// rquickjs `ctx.eval` 为严格模式：脚本内定义的函数裸调用时
+/// `this=undefined`，书山等聚合源 jsLib 函数常用 `let { source } = this`
+/// 访问书源 → `Cannot convert undefined or null to object`。
+/// 经 `new Function` 参数传入 + 函数体内 `eval` 执行：代码在**非严格**
+/// 作用域定义/执行，裸调用函数 `this=globalThis`（var source/java 已挂
+/// 全局）✅ — 发现页修复（书山聚合等聚合源 ERROR）
+#[cfg(feature = "quickjs")]
+pub fn eval_js_non_strict(
+    guard: &legado_js::QuickJsEngine,
+    code: &str,
+) -> Result<String, String> {
+    use legado_js::JsEngine;
+    let encoded = serde_json::to_string(code).map_err(|e| e.to_string())?;
+    let wrapped = format!("new Function('__legadoCode', 'eval(__legadoCode);')({encoded})");
+    guard.eval(&wrapped).map_err(|e| e.to_string())
+}
+
 /// 移除 jsLib 中 Rhino 特有行（`importClass`/`importPackage`/`Packages.` 行首），
 /// 使 QuickJS 可**完整**加载 jsLib 并保留全部函数定义（含截断点之后的
 /// `getConfig`/`getServerHost` 等）— 发现页修复（书山聚合等聚合源 ERROR）
@@ -116,7 +135,8 @@ pub fn load_js_lib_for_explore(
         return;
     };
 
-    // 1) 完整 jsLib（QuickJS 兼容时最佳，全部函数可用）
+    // 1) 完整 jsLib（引擎 eval 已非严格：全局可见 + 函数裸调用 this=globalThis，
+    //    对齐 Rhino 语义；书山等聚合源函数 `let { source } = this` 可用）
     if guard.eval(lib).is_ok() {
         return;
     }

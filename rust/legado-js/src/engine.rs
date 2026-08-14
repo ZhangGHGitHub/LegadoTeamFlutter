@@ -536,10 +536,20 @@ mod quickjs_engine {
         fn eval(&self, code: &str) -> LegadoResult<String> {
             self.reset_deadline();
             self.context.with(|ctx| {
+                // 非严格模式（对齐 Android Rhino 书源生态）：
+                // rquickjs 默认 EvalOptions.strict=true，脚本内函数裸调用时
+                // this=undefined，书山等聚合源 jsLib 函数常用 `let { source } = this`
+                // 访问书源 → Cannot convert undefined or null to object；
+                // 非严格下裸调用 this=globalThis（source/java 已挂全局）✅
+                // — DeepSeek Harness + Bridge（发现页修复：书山聚合 ERROR 根治）
+                // non-exhaustive struct：Default 后逐字段修改（rquickjs 限制）
+                let mut options = rquickjs::context::EvalOptions::default();
+                options.strict = false;
+                options.global = true;
                 // 异常消息提取：rquickjs 的 Display 仅输出 "Exception generated
                 // by QuickJS"（泛化），真实 message 需从 ctx.catch() 取（对齐
                 // 原版 Rhino 异常文案，便于书源规则排错）— Reasonix
-                match ctx.eval::<rquickjs::Value, _>(code) {
+                match ctx.eval_with_options::<rquickjs::Value, _>(code, options) {
                     Ok(result) => Ok(Self::result_to_string(&ctx, &result)),
                     Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
                 }
@@ -554,7 +564,11 @@ mod quickjs_engine {
             self.reset_deadline();
             self.context.with(|ctx| {
                 Self::inject_bindings(&ctx, bindings)?;
-                match ctx.eval::<rquickjs::Value, _>(code) {
+                // non-exhaustive struct：Default 后逐字段修改（rquickjs 限制）
+                let mut options = rquickjs::context::EvalOptions::default();
+                options.strict = false;
+                options.global = true;
+                match ctx.eval_with_options::<rquickjs::Value, _>(code, options) {
                     Ok(result) => Ok(Self::result_to_string(&ctx, &result)),
                     Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
                 }
@@ -565,7 +579,11 @@ mod quickjs_engine {
             self.reset_deadline();
             self.context.with(|ctx| {
                 Self::inject_bindings(&ctx, bindings)?;
-                let result: rquickjs::Value = match ctx.eval(code) {
+                // non-exhaustive struct：Default 后逐字段修改（rquickjs 限制）
+                let mut options = rquickjs::context::EvalOptions::default();
+                options.strict = false;
+                options.global = true;
+                let result: rquickjs::Value = match ctx.eval_with_options(code, options) {
                     Ok(v) => v,
                     Err(_) => {
                         return Err(LegadoError::JsEngine(Self::take_exception_message(&ctx)))
