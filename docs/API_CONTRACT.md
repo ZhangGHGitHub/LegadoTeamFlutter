@@ -140,7 +140,7 @@
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 | `reorderBooks(List<Map<String, dynamic>> orders)` | orders: `[{bookUrl, order}, ...]` | `Future<void>` | 批量持久化拖拽排序（对齐原版 BookAdapter.swap 后 updateBook） |
 
-### 2.3 书源操作（25 个方法）
+### 2.3 书源操作（29 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -157,6 +157,10 @@
 | `sourceIsLoginUiV2(String sourceJson)` | sourceJson: BookSource JSON | `Future<bool>` | 判定登录 UI 是否为 V2 动态状态协议（#402/#488，加法式新增） |
 | `sourceLoginUiV2(String sourceJson, String stateJson)` | sourceJson, stateJson（首次传 `"{}"`） | `Future<String>` | 执行 loginUi v2 脚本，返回动态 UI 描述 JSON `{"rows":[RowUi...]}`（#402，加法式新增） |
 | `sourceLoginActionV2(String sourceJson, String userInputJson)` | sourceJson, userInputJson | `Future<String>` | 执行 loginAction v2 动作，返回命令 JSON（state/error/login/close）（#402，加法式新增） |
+| `sourcePutLoginInfo(String sourceUrl, String infoJson)` | sourceUrl, infoJson: 用户信息 JSON | `Future<void>` | 保存书源登录用户信息（对齐原版 `BaseSource.putLoginInfo` → `userInfo_<key>`；V2 login 命令自动落库 + 手动登录共用）。加法式新增（2026-08-14 发现页修复 R1） |
+| `sourcePutLoginHeader(String sourceUrl, String headerJson)` | sourceUrl, headerJson: header map JSON（如 `{"Cookie":"..."}`） | `Future<void>` | 保存书源登录头（对齐原版 `BaseSource.putLoginHeader` → `loginHeader_<key>`；请求路径自动合并）。加法式新增（2026-08-14 发现页修复 R1） |
+| `sourceGetLoginInfo(String sourceUrl)` | sourceUrl | `Future<String>` | 读取书源登录用户信息（`userInfo_<key>`），无则空串。加法式新增（2026-08-14 发现页修复 R1） |
+| `sourceGetLoginHeader(String sourceUrl)` | sourceUrl | `Future<String>` | 读取书源登录头（`loginHeader_<key>`），无则空串。加法式新增（2026-08-14 发现页修复 R1） |
 | `checkSource(String sourceJson, {String? configJson})` | sourceJson: BookSource JSON；configJson(可选): 校验配置 JSON | `Future<Map<String, dynamic>>` | 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测），返回 CheckResult JSON（Task #87，加法式新增） |
 | `checkSourcesStream(List<String> sourceUrls, {String? configJson})` | sourceUrls: 待校验书源 URL 列表（空列表=全部书源）；configJson(可选) | `Stream<Map<String, dynamic>>` | 批量校验书源（串行逐个回推进度，对齐 Kotlin CheckSourceService），每条为 CheckProgress JSON（Task #87，加法式新增） |
 | `cancelCheckSources()` | 无 | `Future<void>` | 取消正在进行的批量书源校验（Task #87，加法式新增） |

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.72] - 2026-08-14
+
+### Fixed
+- [Rust][UI] 书源登录链路打通（发现页问题排查 R1）：① V2 loginActionV2 返回 `login` 命令时自动落库 `userInfo_<url>`（对齐原版 SourceLoginV2Delegate.putLoginInfo）；② 新增 `sourcePutLoginInfo/sourcePutLoginHeader/sourceGetLoginInfo/sourceGetLoginHeader` FFI 并登记契约 §2.3；③ 手动登录凭据改存 source_login_cache（`loginHeader_<url>`/`userInfo_<url>`），替代无消费方的 `source_login_<url>` config 键，旧数据 load 时回退迁移；④ 请求路径（搜索/详情/目录/正文/发现）合并 loginHeader + JS setCookie 全局 Cookie（对齐原版 getHeaderMap(hasLoginHeader=true)）。验证：legado-ffi quickjs 全量 + flutter 1176 全过
+
 ## [2.0.71] - 2026-08-14
 
 ### Fixed
