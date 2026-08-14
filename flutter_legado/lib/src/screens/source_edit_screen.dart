@@ -82,12 +82,19 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
   )..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_lastFieldNavTab != _tabController.index) {
-        setState(() => _lastFieldNavTab = _tabController.index);
+        setState(() {
+          _lastFieldNavTab = _tabController.index;
+          // 切换主 Tab 后字段导航条选中回到该 Tab 首字段
+          _selectedNavField = null;
+        });
       }
     });
 
   /// 字段导航条当前 Tab（跟随主 Tab 切换）
   int _lastFieldNavTab = 0;
+
+  /// 字段导航条当前选中字段（对齐原版 field_nav 选中项主色指示线）
+  String? _selectedNavField;
 
   /// 字段 GlobalKey（字段导航条跳转定位）
   final Map<String, GlobalKey> _fieldKeys = {};
@@ -132,6 +139,10 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
     () => FocusNode()..addListener(() {
       if (_focusNodes[key]?.hasFocus == true) {
         _focusedFieldKey = key;
+        // 字段获得焦点时同步字段导航条选中（高亮指示线跟随）
+        if (_selectedNavField != key) {
+          if (mounted) setState(() => _selectedNavField = key);
+        }
       }
     }),
   );
@@ -1135,7 +1146,8 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
     );
   }
 
-  /// 字段导航条（对齐原版 field_nav：当前 Tab 字段名横向滚动条，点击跳转聚焦）
+  /// 字段导航条（对齐原版 field_nav：当前 Tab 字段名横向滚动条，
+  /// 选中字段下方显示主色高亮指示线，点击跳转聚焦）
   Widget _buildFieldNav() {
     final fields = switch (_lastFieldNavTab) {
       1 => _searchFields,
@@ -1147,23 +1159,55 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
       _ => _basicFields,
     };
     final colorScheme = Theme.of(context).colorScheme;
+    // 选中字段：焦点字段优先，无焦点时默认首个字段（对齐原版默认高亮首项）
+    final selected = fields.any((f) => f.key == _selectedNavField)
+        ? _selectedNavField
+        : fields.firstOrNull?.key;
     return Container(
-      height: 40,
+      height: 44,
       color: colorScheme.surfaceContainerLow,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         children: [
           for (final field in fields)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: ActionChip(
-                visualDensity: VisualDensity.compact,
-                label: Text(
-                  field.label.replaceAll(RegExp(r'（.*）|\(.*\)'), ''),
-                  style: const TextStyle(fontSize: 12),
+            InkWell(
+              onTap: () => _focusField(field.key),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      field.label.replaceAll(
+                        RegExp(r'（.*）|\(.*\)'),
+                        '',
+                      ),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: field.key == selected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        color: field.key == selected
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    // 选中指示线（对齐原版 TabLayout 选中项主色横线）
+                    Container(
+                      height: 2,
+                      width: 26,
+                      decoration: BoxDecoration(
+                        color: field.key == selected
+                            ? colorScheme.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  ],
                 ),
-                onPressed: () => _focusField(field.key),
               ),
             ),
         ],
@@ -1306,15 +1350,21 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
 
   /// 构建单个表单字段
   ///
-  /// 对齐原版 item_source_edit：默认单行（minLines=1），输入/内容增长时
-  /// 展开到 [field.maxLines]；标签灰字（secondaryText 语义，非聚焦主色）
+  /// 对齐原版 item_source_edit（TextInputLayout + CodeView）：
+  /// - 无边框框、无背景填充（全局主题的灰色圆角填充框在此覆盖为透明，
+  ///   与原版一致）；仅标签（灰字小号）在上、输入内容在下
+  /// - 字段底部保留细分割线（Material 下划线样式，对齐原版 TextInputLayout
+  ///   默认分隔线；聚焦时变主色）
+  /// - 默认单行（minLines=1），输入/内容增长时展开到 [field.maxLines]
   Widget _buildField(_Field field) {
     _fieldLabels[field.key] = field.label;
     final colorScheme = Theme.of(context).colorScheme;
+    final separator = Theme.of(context).dividerTheme.color ??
+        colorScheme.outlineVariant;
     return KeyedSubtree(
       key: _fieldKeys.putIfAbsent(field.key, GlobalKey.new),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.only(bottom: 6),
         child: TextFormField(
           controller: _ctrl(field.key),
           focusNode: _focus(field.key),
@@ -1322,10 +1372,28 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
           maxLines: field.maxLines,
           decoration: InputDecoration(
             labelText: field.required ? '${field.label} *' : field.label,
-            labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+            labelStyle: TextStyle(
+              color: colorScheme.onSurfaceVariant,
+              fontSize: 13,
+            ),
             hintText: field.hint,
-            border: const OutlineInputBorder(),
+            hintStyle: TextStyle(
+              color: colorScheme.onSurfaceVariant,
+              fontSize: 14,
+            ),
+            // 无框无背景（对齐原版 TextInputLayout，仅底部细分割线）
+            filled: false,
+            border: InputBorder.none,
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: separator, width: 0.5),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: colorScheme.primary, width: 1),
+            ),
             isDense: true,
+            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+            suffixIconConstraints:
+                const BoxConstraints(minWidth: 36, minHeight: 36),
             suffixIcon: field.maxLines >= 2
                 ? IconButton(
                     tooltip: '代码编辑',

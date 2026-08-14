@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.85] - 2026-08-14
+
+### Fixed
+- [UI] 编辑书源页输入框样式对齐原版（apple-ui-designer / 用户反馈）：
+  - 输入框移除全局主题的灰色圆角填充框（filled=false + 无边框），对齐原版 TextInputLayout 无框输入
+  - 字段底部保留细分割线（UnderlineInputBorder 半像素灰线，聚焦时变主色——对齐原版 Material 下划线）
+  - 字段导航条选中项下方渲染主色高亮指示线（对齐原版 TabLayout 选中项指示线，实测原版 R229 G57 B53 红/重构版主题色 2px 横线；焦点字段跟随，默认高亮首个字段）
+  - 验证：flutter 1188 全过、冒烟 5/5×2、模拟器像素采样确认 源URL 下方高亮横线与原版位置一致
+
 ## [2.0.84] - 2026-08-14
 
 ### Fixed
