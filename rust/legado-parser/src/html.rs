@@ -7,6 +7,16 @@ use scraper::{ElementRef, Html, Selector};
 
 use crate::rule_analyzer::RuleAnalyzer;
 
+/// 去除 <script>/<style> 块（对齐 jsoup getResultLast 的 "html" 分支）
+static SCRIPT_STYLE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+
+fn strip_script_style(html: &str) -> String {
+    let re = SCRIPT_STYLE_RE.get_or_init(|| {
+        regex::Regex::new(r"(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>").unwrap()
+    });
+    re.replace_all(html, "").into_owned()
+}
+
 /// 对齐 Jsoup `Element.ownText()`：仅汇总本元素的直接文本子节点，
 /// 不含子孙元素内文本（与 `text()` 全树文本不同）。
 fn own_text_of(elem: ElementRef<'_>) -> String {
@@ -765,7 +775,10 @@ impl HtmlParser {
             }
             // 对齐 Jsoup Element.ownText()：仅本元素直接文本，不含子孙元素文本
             "ownText" => own_text_of(elem),
-            "html" => elem.html(),
+            "html" => {
+                let h = elem.html();
+                strip_script_style(&h)
+            }
             "all" => elem.html(),
             "attr" => elem.value().attr(attr_name).map(|v| v.to_string())?,
             _ => {
@@ -818,7 +831,7 @@ impl HtmlParser {
             "textNodes" => Some("textNodes"),
             "ownText" => Some("ownText"),
             "html" => Some("html"),
-            "allText" => Some("all"),
+            "all" => Some("all"),
             _ => None,
         }
     }
@@ -1037,6 +1050,18 @@ mod tests {
         let parser = HtmlParser::new();
         let result = parser.get_text(SAMPLE_HTML, "a.item:matches('第.章')").unwrap();
         assert_eq!(result, vec!["第一章", "第二章", "第三章"]);
+    }
+
+    #[test]
+    fn test_html_mode_strips_script_style() {
+        let parser = HtmlParser::new();
+        let html = r#"<div class="c">正文<script>alert(1)</script><style>.x{}</style>结尾</div>"#;
+        let result = parser.get_text(html, ".c@html").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(!result[0].contains("<script"));
+        assert!(!result[0].contains("<style"));
+        assert!(result[0].contains("正文"));
+        assert!(result[0].contains("结尾"));
     }
 
     #[test]
