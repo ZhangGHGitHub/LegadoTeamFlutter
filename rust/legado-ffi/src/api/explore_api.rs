@@ -251,29 +251,69 @@ fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
 
     with_current_source_tag(&tag, || {
-        if let Some(lib) = source.js_lib.as_deref() {
-            let lib = lib.trim();
-            if !lib.is_empty() {
-                if let Err(e) = guard.eval(lib) {
-                    eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
-                }
-            }
-        }
+        bootstrap_explore_js_context(&guard, source)?;
 
-        let setup = explore_js_context_setup(source)?;
-        guard
-            .eval(&setup)
-            .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 上下文初始化失败: {e}")))?;
+        let encoded = serde_json::to_string(js_code)
+            .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 脚本编码失败: {e}")))?;
+        // eval 对标 Android Rhino：多语句时返回最后一条表达式的值
+        let wrapped = format!(
+            r#"(function() {{
+var __r = eval({encoded});
+if (__r === null || __r === undefined) return '';
+if (typeof __r === 'string') return String(__r).trim();
+try {{ return JSON.stringify(__r); }} catch (e) {{ return String(__r); }}
+}})()"#,
+            encoded = encoded
+        );
 
         let result = guard
-            .eval(js_code)
+            .eval(&wrapped)
             .map_err(|e| LegadoError::JsEngine(format!("exploreUrl JS 执行失败: {e}")))?;
 
         Ok(result.trim().to_string())
     })
 }
 
-/// 发现页 JS 上下文初始化脚本（source + infoMap + baseUrl）
+/// 加载 jsLib / mainJs 并注入 explore 上下文（source/infoMap/java 对齐 Android evalJS）
+#[cfg(feature = "quickjs")]
+fn bootstrap_explore_js_context(
+    guard: &legado_js::QuickJsEngine,
+    source: &BookSource,
+) -> LegadoResult<()> {
+    use legado_js::JsEngine;
+
+    if let Some(lib) = source.js_lib.as_deref() {
+        let lib = lib.trim();
+        if !lib.is_empty() {
+            if let Err(e) = guard.eval(lib) {
+                eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
+            }
+        }
+    }
+
+    // JS 单文件书源：exploreUrl @js: 常调用 mainJs 内定义的函数
+    if source.is_js_source() {
+        if let Some(main_js) = source.main_js.as_deref() {
+            let main_js = main_js.trim();
+            if !main_js.is_empty() {
+                if let Err(e) = guard.eval(main_js) {
+                    eprintln!("[explore] mainJs 加载失败: {e}");
+                    return Err(LegadoError::JsEngine(format!(
+                        "exploreUrl mainJs 加载失败: {e}"
+                    )));
+                }
+            }
+        }
+    }
+
+    let setup = explore_js_context_setup(source)?;
+    guard
+        .eval(&setup)
+        .map_err(|e| LegadoError::JsEngine(format!("exploreUrl 上下文初始化失败: {e}")))?;
+    Ok(())
+}
+
+/// 发现页 JS 上下文初始化脚本（source + infoMap + baseUrl + java 书源别名）
 #[cfg(feature = "quickjs")]
 fn explore_js_context_setup(source: &BookSource) -> LegadoResult<String> {
     let tag = source.book_source_url.clone();
@@ -291,6 +331,12 @@ source.get = function(k) {{ return get('v_' + baseUrl + '_' + k) || ''; }};
 source.put = function(k, v) {{ put('v_' + baseUrl + '_' + k, String(v)); return v; }};
 source.getVariable = function() {{ return getVariable('sourceVariable_' + baseUrl) || ''; }};
 source.setVariable = function(v) {{ setVariable('sourceVariable_' + baseUrl, String(v)); return v; }};
+var sourceApi = source;
+// 对齐 Android BaseSource.evalJS：java = BookSource（非裸全局 variable_store）
+java.get = function(k) {{ return source.get(k); }};
+java.put = function(k, v) {{ return source.put(k, v); }};
+java.getVariable = function() {{ return source.getVariable(); }};
+java.setVariable = function(v) {{ return source.setVariable(v); }};
 var infoMap = {info_map_json};
 "#,
         base_url_json = base_url_json,
@@ -351,19 +397,7 @@ fn eval_explore_action_js(
     ui_action_queue::begin_collect();
     let result = (|| -> LegadoResult<ExploreEvalActionResult> {
         with_current_source_tag(&tag, || {
-            if let Some(lib) = source.js_lib.as_deref() {
-                let lib = lib.trim();
-                if !lib.is_empty() {
-                    if let Err(e) = guard.eval(lib) {
-                        eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
-                    }
-                }
-            }
-
-            let setup = explore_js_context_setup(source)?;
-            guard
-                .eval(&setup)
-                .map_err(|e| LegadoError::JsEngine(format!("explore action 上下文初始化失败: {e}")))?;
+            bootstrap_explore_js_context(&guard, source)?;
 
             let raw = guard
                 .eval(action_js)
@@ -403,19 +437,7 @@ fn eval_explore_ui_js(js_str: &str, source: &BookSource) -> LegadoResult<String>
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
 
     with_current_source_tag(&tag, || {
-        if let Some(lib) = source.js_lib.as_deref() {
-            let lib = lib.trim();
-            if !lib.is_empty() {
-                if let Err(e) = guard.eval(lib) {
-                    eprintln!("[explore] jsLib 加载失败（降级继续）: {e}");
-                }
-            }
-        }
-
-        let setup = explore_js_context_setup(source)?;
-        guard
-            .eval(&setup)
-            .map_err(|e| LegadoError::JsEngine(format!("explore ui 上下文初始化失败: {e}")))?;
+        bootstrap_explore_js_context(&guard, source)?;
 
         guard
             .eval(js_str)
@@ -718,6 +740,27 @@ if(source.get('k')!=='v'){throw new Error('source.get/put failed');}
         let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
         assert_eq!(categories.len(), 1);
         assert_eq!(categories[0].title, "OK");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_parse_url_js_java_get_put() {
+        let source = BookSource {
+            book_source_url: "https://explore-java.test".to_string(),
+            book_source_name: "java.get".to_string(),
+            ..BookSource::default()
+        };
+        let source_json = serde_json::to_string(&source).unwrap();
+        let explore_url = r#"@js:
+java.put('mode','audio');
+if(java.get('mode')!=='audio'){throw new Error('java.get failed');}
+if(source.get('mode')!=='audio'){throw new Error('source.get failed');}
+[{title:'线路',type:'select',url:'',style:{layout_flexBasisPercent:0.5}}]"#;
+        let json = explore_parse_url(explore_url, &source_json).unwrap();
+        let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
+        assert_eq!(categories.len(), 1);
+        assert_eq!(categories[0].title, "线路");
+        assert_eq!(categories[0].r#type, "select");
     }
 
     #[test]

@@ -177,6 +177,9 @@ foreach ($key in $SelectedKeys) {
     $envVar = $triple -replace "-", "_"
     [System.Environment]::SetEnvironmentVariable("CC_$envVar", (Join-Path $ToolchainBin $ccName), "Process")
     [System.Environment]::SetEnvironmentVariable("AR_$envVar", (Join-Path $ToolchainBin "llvm-ar.exe"), "Process")
+    $linkerVar = "CARGO_TARGET_$($envVar.ToUpper())_LINKER"
+    [System.Environment]::SetEnvironmentVariable($linkerVar, (Join-Path $ToolchainBin $ccName), "Process")
+    [System.Environment]::SetEnvironmentVariable("CARGO_TARGET_$($envVar.ToUpper())_AR", (Join-Path $ToolchainBin "llvm-ar.exe"), "Process")
 
     Write-Host ""
     Write-Host ">> Building $triple ($($info.abi))..." -ForegroundColor Yellow

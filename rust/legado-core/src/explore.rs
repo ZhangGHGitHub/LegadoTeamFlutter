@@ -146,6 +146,8 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
                 })
                 .collect();
         }
+        // JSON 形态但解析失败：勿降级为纯文本（避免整段 JSON 被拆成垃圾分类）
+        return vec![];
     }
 
     // 纯文本格式：按 \n 或 && 分隔，每条按 :: 分割为 标题::URL
