@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.74] - 2026-08-14
+
+### Fixed
+- [UI] 发现页分页错误态与登录引导（C/R4）：错误后保留 hasMore 使「点击重试」可用（对齐原版 fail()）；整页全重复判定 noMore；登录错误（LoginRequired）展示「去登录」引导（统一入口 showSourceLogin）+ 重试。验证：flutter 1178 全过
+
 ## [2.0.73] - 2026-08-14
 
 ### Added
