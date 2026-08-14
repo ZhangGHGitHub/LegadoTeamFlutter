@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.75] - 2026-08-14
+
+### Added
+- [UI] 发现列表在架标记 + 顶栏批量加入书架（R5）：列表项按「名-作者/名/bookUrl」三元匹配显示在架角标（对齐原版 ivInBookshelf）；顶栏「加入书架」按钮批量导入已加载书籍（对齐 menuAddLoadedBooks）。验证：flutter 1180 全过
+
 ## [2.0.74] - 2026-08-14
 
 ### Fixed
