@@ -53,9 +53,31 @@ fi
 
 echo ""
 echo ">> Copying .so files to Flutter jniLibs..."
+
+# 读取 FRB content hash
+CONTENT_HASH=""
+if [ -f "legado-ffi/src/frb_generated.rs" ]; then
+    CONTENT_HASH=$(grep -oP 'FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH:\s*i32\s*=\s*\K-?\d+' legado-ffi/src/frb_generated.rs | head -1)
+    echo "FRB content hash: $CONTENT_HASH"
+fi
+
+write_meta() {
+    local so_path="$1"
+    if [ -n "$CONTENT_HASH" ]; then
+        python3 -c "
+import json, datetime
+meta = {'contentHash': int($CONTENT_HASH), 'mode': '$MODE', 'builtAt': datetime.datetime.now().isoformat()}
+open('${so_path}.meta', 'w').write(json.dumps(meta, separators=(',', ':')))
+"
+    fi
+}
+
 cp "target/aarch64-linux-android/$FLAG/liblegado_ffi.so"          "$FLUTTER_JNI/arm64-v8a/"
+write_meta "$FLUTTER_JNI/arm64-v8a/liblegado_ffi.so"
 cp "target/armv7-linux-androideabi/$FLAG/liblegado_ffi.so"        "$FLUTTER_JNI/armeabi-v7a/"
+write_meta "$FLUTTER_JNI/armeabi-v7a/liblegado_ffi.so"
 cp "target/x86_64-linux-android/$FLAG/liblegado_ffi.so"           "$FLUTTER_JNI/x86_64/"
+write_meta "$FLUTTER_JNI/x86_64/liblegado_ffi.so"
 
 echo ""
 echo "Build complete! .so files copied to $FLUTTER_JNI"

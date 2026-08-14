@@ -115,7 +115,27 @@ cargo clippy --all-targets -- -D warnings
 .\scripts\build-android.ps1 -Mode debug # debug
 ```
 
-脚本会编译 `legado-ffi` 并将生成的 `.so` 文件复制到 `flutter_legado/android/app/src/main/jniLibs/`。
+脚本会编译 `legado-ffi` 并将生成的 `.so` 文件复制到 `flutter_legado/android/app/src/main/jniLibs/`，同时写入 `liblegado_ffi.so.meta`（content hash 标记，供校验脚本与 Gradle 使用）。
+
+### 校验与自动同步（根治 content hash 失配）
+
+构建 APK 前会自动校验 Dart 侧 `rustContentHash` 与 jniLibs 中 `.so` 是否同步：
+
+```powershell
+# 仅校验（失败时打印可复制命令）
+.\rust\scripts\verify-ffi-android.ps1
+
+# 失配时自动重编
+.\rust\scripts\verify-ffi-android.ps1 -AutoBuild -Mode debug -Targets "aarch64,x86_64"
+```
+
+**推荐统一入口**（校验 + 编译 + 打包 + 安装）：
+
+```powershell
+.\flutter_legado\scripts\build-apk.ps1
+```
+
+Gradle `preBuild` 也会执行 `verifyRustFfiLibs`；纯 Dart UI 开发者可设置 `LEGADO_SKIP_RUST_BUILD=1` 或使用 `--dart-define=USE_MOCK=true`。
 
 ---
 

@@ -87,6 +87,36 @@ class _FfiErrorApp extends StatelessWidget {
 
   const _FfiErrorApp({required this.error});
 
+  String get _fixHint {
+    final lower = error.toLowerCase();
+    final isHashMismatch = lower.contains('content hash') ||
+        lower.contains('out-of-sync') ||
+        lower.contains('rustcontenthash');
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      if (isHashMismatch) {
+        return 'Android 上 Rust .so 与当前 Dart 桥接代码不同步（content hash 失配）。\n\n'
+            '请在仓库根目录执行：\n'
+            '.\\rust\\scripts\\build-android.ps1 -Mode debug -Targets "aarch64,x86_64"\n\n'
+            '或使用统一入口：\n'
+            '.\\flutter_legado\\scripts\\build-apk.ps1\n\n'
+            '然后重新构建并安装 APK。';
+      }
+      return '请确认已构建 Android Rust FFI 动态库：\n'
+          '.\\rust\\scripts\\build-android.ps1 -Mode debug\n'
+          '然后执行 flutter build apk --debug 并重新安装。';
+    }
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      return '请使用开发脚本启动（会自动重编译 DLL）：\n'
+          '.\\flutter_legado\\scripts\\run-windows.ps1\n\n'
+          '或手动：cd rust && cargo build -p legado-ffi --features quickjs';
+    }
+
+    return '请确认已构建 Rust FFI 动态库，然后重新运行应用。\n'
+        '纯 UI 开发可使用：flutter run --dart-define=USE_MOCK=true';
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -114,11 +144,9 @@ class _FfiErrorApp extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  '请确认已构建 Rust FFI 动态库：\n'
-                  'cd rust && cargo build -p legado-ffi\n'
-                  '然后重新运行应用',
-                  style: TextStyle(fontSize: 14, color: Colors.white70),
+                Text(
+                  _fixHint,
+                  style: const TextStyle(fontSize: 14, color: Colors.white70),
                   textAlign: TextAlign.center,
                 ),
               ],

@@ -1,13 +1,63 @@
 name: Flutter CI
 on:
   push:
-    paths: ['flutter_legado/**']
+    paths: ['flutter_legado/**', 'rust/**']
   pull_request:
-    paths: ['flutter_legado/**']
+    paths: ['flutter_legado/**', 'rust/**']
 
 jobs:
+  android-ffi-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android NDK
+        run: |
+          sdkmanager "ndk;27.0.12077973"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/27.0.12077973" >> $GITHUB_ENV
+          echo "NDK_TOOLCHAIN=${ANDROID_SDK_ROOT}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64" >> $GITHUB_ENV
+      - name: Configure Cargo for Android
+        run: |
+          mkdir -p ${HOME}/.cargo
+          cat >> ${HOME}/.cargo/config.toml << 'EOF'
+          [target.aarch64-linux-android]
+          linker = "${{ env.NDK_TOOLCHAIN }}/bin/aarch64-linux-android21-clang"
+          rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+          [target.x86_64-linux-android]
+          linker = "${{ env.NDK_TOOLCHAIN }}/bin/x86_64-linux-android21-clang"
+          rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+          EOF
+      - name: Build Rust FFI for Android (debug, aarch64+x86_64)
+        working-directory: rust
+        run: |
+          cargo build --target aarch64-linux-android -p legado-ffi --features quickjs
+          cargo build --target x86_64-linux-android -p legado-ffi --features quickjs
+      - name: Copy .so to jniLibs with meta
+        working-directory: rust
+        run: |
+          JNILIBS="../flutter_legado/android/app/src/main/jniLibs"
+          mkdir -p "$JNILIBS/arm64-v8a" "$JNILIBS/x86_64"
+          cp target/aarch64-linux-android/debug/liblegado_ffi.so "$JNILIBS/arm64-v8a/"
+          cp target/x86_64-linux-android/debug/liblegado_ffi.so "$JNILIBS/x86_64/"
+          HASH=$(grep -oP 'FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH:\s*i32\s*=\s*\K-?\d+' legado-ffi/src/frb_generated.rs | head -1)
+          for abi in arm64-v8a x86_64; do
+            python3 -c "import json,datetime; json.dump({'contentHash': int('$HASH'), 'mode': 'debug', 'builtAt': datetime.datetime.now().isoformat()}, open('$JNILIBS/$abi/liblegado_ffi.so.meta','w'), separators=(',',':'))"
+          done
+      - name: Verify FFI content hash sync
+        working-directory: rust
+        run: chmod +x scripts/verify-ffi-android.sh && ./scripts/verify-ffi-android.sh debug "aarch64,x86_64"
+
   analyze:
     runs-on: ubuntu-latest
+    needs: android-ffi-sync
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2

@@ -56,14 +56,37 @@ Legado Flutter 重构采用 **Rust 核心引擎 + Flutter 跨平台 UI** 架构�
 
 ### 3.2 已知坑：content hash 不匹配
 
-每次 codegen 会重新计算双侧 content hash。若 codegen 后未重编译 Rust DLL，旧 DLL 中嵌入的 hash 与新生成的 Dart 侧 hash 不一致，启动即报：
+每次 codegen 会重新计算双侧 content hash。若 codegen 后未重编译 Rust DLL/.so，旧二进制中嵌入的 hash 与新生成的 Dart 侧 hash 不一致，启动即报：
 
 ```
 Content hash on Dart side (X) is different from Rust side (Y),
 indicating out-of-sync code
 ```
 
-**正确做法**：codegen 与 `cargo build -p legado-ffi` 绑定为原子操作（Makefile `gen` 目标已实现）。
+**根治方案（2026-08-14 工程化）**：不再依赖手工记忆重编 jniLibs，构建链自动校验 hash：
+
+| 入口 | 行为 |
+|------|------|
+| `flutter build apk` / Gradle `preBuild` | `verifyRustFfiLibs` 任务校验 `arm64-v8a` + `x86_64` 的 `.so` 与 `frb_generated.dart` hash；失配则**构建失败**并打印可复制命令 |
+| `rust/scripts/verify-ffi-android.ps1 -AutoBuild` | 校验失败时自动调用 `build-android.ps1` 重编 |
+| `flutter_legado/scripts/build-apk.ps1` | 构建前自动 verify + AutoBuild |
+| `scripts/emulator_smoke_test.ps1` | 冒烟前自动 verify + AutoBuild |
+| 纯 Dart UI 开发 | `flutter run --dart-define=USE_MOCK=true`（无需 .so） |
+| 临时跳过（不推荐） | 环境变量 `LEGADO_SKIP_RUST_BUILD=1` |
+
+**唯一正确 Android 构建流程（Windows）**：
+
+```powershell
+# 推荐：统一入口（自动校验 hash + 交叉编译 + 打包）
+.\flutter_legado\scripts\build-apk.ps1
+
+# 或分步：
+.\rust\scripts\build-android.ps1 -Mode debug -Targets "aarch64,x86_64"
+cd flutter_legado
+flutter build apk --debug
+```
+
+**正确做法（Rust 轨 codegen 后）**：codegen 与 `cargo build -p legado-ffi` 绑定为原子操作（Makefile `gen` 目标已实现）；Android 侧额外执行 `build-android.ps1` 同步 jniLibs。
 
 ### 3.3 UI 轨禁区
 

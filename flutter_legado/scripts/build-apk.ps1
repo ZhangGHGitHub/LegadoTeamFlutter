@@ -28,6 +28,7 @@ $FlutterDir = Split-Path -Parent $PSScriptRoot
 $RootDir = Split-Path -Parent $FlutterDir
 $RustDir = Join-Path $RootDir "rust"
 $BuildScript = Join-Path $RustDir "scripts\build-android.ps1"
+$VerifyScript = Join-Path $RustDir "scripts\verify-ffi-android.ps1"
 $JniLibsDir = Join-Path $FlutterDir "android\app\src\main\jniLibs"
 
 $Mode = if ($Release) { "release" } else { "debug" }
@@ -49,26 +50,41 @@ if ($Clean) {
     Write-Host "--- [1/5] Clean skipped ---" -ForegroundColor DarkGray
 }
 
-# ========== Step 2: Rust 交叉编译 ==========
+# ========== Step 2: Rust 交叉编译 / FFI 校验 ==========
 if ($SkipRust) {
     Write-Host "--- [2/5] Rust build skipped ---" -ForegroundColor DarkGray
-    # 验证 .so 是否存在
-    $soExists = (Test-Path "$JniLibsDir\x86_64\liblegado_ffi.so") -or
-                (Test-Path "$JniLibsDir\arm64-v8a\liblegado_ffi.so")
-    if (-not $soExists) {
-        Write-Host "WARNING: jniLibs 中无 .so 文件，APK 将无法在 Android 上运行！" -ForegroundColor Red
-        Write-Host "Remove -SkipRust to build Rust FFI." -ForegroundColor Red
+    if (Test-Path $VerifyScript) {
+        & $VerifyScript -Mode $Mode -Targets $Targets
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: jniLibs 与 FRB content hash 不同步！请去掉 -SkipRust 重编。" -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        # 回退：仅检查 .so 是否存在
+        $soExists = (Test-Path "$JniLibsDir\x86_64\liblegado_ffi.so") -or
+                    (Test-Path "$JniLibsDir\arm64-v8a\liblegado_ffi.so")
+        if (-not $soExists) {
+            Write-Host "WARNING: jniLibs 中无 .so 文件，APK 将无法在 Android 上运行！" -ForegroundColor Red
+            Write-Host "Remove -SkipRust to build Rust FFI." -ForegroundColor Red
+        }
     }
 } else {
-    Write-Host "--- [2/5] Building Rust FFI (cross-compile) ---" -ForegroundColor Yellow
-    if (-not (Test-Path $BuildScript)) {
+    Write-Host "--- [2/5] Verifying / building Rust FFI ---" -ForegroundColor Yellow
+    if (Test-Path $VerifyScript) {
+        & $VerifyScript -Mode $Mode -Targets $Targets -AutoBuild
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Rust FFI verify/build failed!" -ForegroundColor Red
+            exit 1
+        }
+    } elseif (-not (Test-Path $BuildScript)) {
         Write-Host "ERROR: Build script not found: $BuildScript" -ForegroundColor Red
         exit 1
-    }
-    & $BuildScript -Mode $Mode -Targets $Targets
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: Rust cross-compilation failed!" -ForegroundColor Red
-        exit 1
+    } else {
+        & $BuildScript -Mode $Mode -Targets $Targets
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Rust cross-compilation failed!" -ForegroundColor Red
+            exit 1
+        }
     }
     Write-Host ""
 }

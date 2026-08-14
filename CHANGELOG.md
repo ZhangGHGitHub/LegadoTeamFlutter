@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.67] - 2026-08-14
+
+### Fixed
+- [工程] 根治 Android「引擎初始化失败」（content hash 失配）：新增 `verify-ffi-android` 校验脚本、Gradle `preBuild` hash 门禁、`build-apk`/冒烟脚本自动同步 jniLibs；启动页按平台显示可复制修复命令
+
 ## [2.0.66] - 2026-08-14
 
 ### Fixed

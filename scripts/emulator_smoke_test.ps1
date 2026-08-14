@@ -70,10 +70,21 @@ Pass "设备 $Device 在线"
 
 # ---- 2. 构建 APK ----
 $apk = Join-Path $FlutterDir "build\app\outputs\flutter-apk\app-debug.apk"
+$verifyScript = Join-Path (Split-Path $PSScriptRoot -Parent) "rust\scripts\verify-ffi-android.ps1"
 if ($SkipBuild) {
   if (-not (Test-Path $apk)) { Fail "跳过构建但 APK 不存在：$apk"; exit 1 }
   Pass "跳过构建，复用已有 APK"
 } else {
+  # 构建前校验/自动同步 jniLibs（根治 content hash 失配）
+  if (Test-Path $verifyScript) {
+    Write-Host "==> 校验 Android FFI content hash ..."
+    & $verifyScript -Mode debug -Targets "aarch64,x86_64" -AutoBuild
+    if ($LASTEXITCODE -ne 0) {
+      Fail "FFI 校验失败，无法继续构建（exit=$LASTEXITCODE）"
+      exit 1
+    }
+    Pass "FFI content hash 校验通过"
+  }
   Write-Host "==> flutter build apk --debug ..."
   Push-Location $FlutterDir
   try {
