@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/explore/explore_show_notifier.dart';
-import '../providers/providers.dart';
 import '../routes.dart';
 import '../utils/source_login_entry.dart';
 import '../widgets/book_cover.dart';
