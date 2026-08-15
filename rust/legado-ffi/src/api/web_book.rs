@@ -197,6 +197,20 @@ impl RealBookSourceFetcher {
             Some(headers)
         };
 
+        // data: URI 优先：不发起网络请求，直接解码内容（书山 bookUrl =
+        // `data:detailsUrl;base64,<base64 JSON>,{"type":"susan"}` 形态）。
+        // 对齐原版：data URI 请求返回其 base64 解码字节；type 非空时再 hex 编码
+        //（书山 ruleBookInfo.init 用 java.hexDecodeToString(result) 还原 JSON）。
+        if analyze_url.is_data_uri() {
+            if let Some(bytes) = analyze_url.get_byte_array_if_data_uri() {
+                if analyze_url.response_type().is_some() {
+                    return Ok(hex_encode(&bytes));
+                }
+                return Ok(String::from_utf8_lossy(&bytes).to_string());
+            }
+            return Err(LegadoError::Internal("data: URI 内容解码失败".into()));
+        }
+
         // G12: response_type（如 "hex"）→ 原始字节 hex 编码返回（对齐原版
         // AnalyzeUrl.getStrResponse 的 type!=null 分支：HexUtil.encodeHexStr(getByteArrayAwait)）
         if analyze_url.response_type().is_some() {
