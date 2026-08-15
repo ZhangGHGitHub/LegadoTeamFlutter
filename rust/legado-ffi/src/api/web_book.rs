@@ -279,15 +279,16 @@ impl RealBookSourceFetcher {
         source_headers: Option<&HashMap<String, String>>,
         use_page_cache: bool,
     ) -> LegadoResult<String> {
+        // data: URI（书山 bookUrl 形态）优先处理、不读缓存（缓存可能是修复前
+        // 写入的旧 body，非 hex → hexDecodeToString 失败 → [ERROR]）
+        if let Some(result) = fetch_data_uri_content(url) {
+            return result;
+        }
         if use_page_cache {
             if let Some(cached) = cache_get_page_body(url) {
                 eprintln!("[web_book] page body cache hit: {url}");
                 return Ok(cached);
             }
-        }
-        // data: URI（书山 bookUrl 形态）不发起网络请求，直接解码
-        if let Some(result) = fetch_data_uri_content(url) {
-            return result;
         }
         let headers_opt = source_headers.cloned();
         let response = self.client.get(url, headers_opt).await?;
@@ -2501,6 +2502,25 @@ mod tests {
         // 空关键词应返回解析错误（engine 层校验）
         let err = webbook_search(&make_source_json(), "", 1).unwrap_err();
         assert!(err.to_string().contains("搜索关键词不能为空"));
+    }
+
+    #[test]
+    fn test_fetch_data_uri_shushan_format() {
+        use base64::Engine;
+        let detail = r#"{"source":"书山聚合","url":"https://v1.vossc.com/detail?book_id=123"}"#;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(detail);
+        let url = format!(r#"data:detailsUrl;base64,{},{{"type":"susan"}}"#, b64);
+        let result = fetch_data_uri_content(&url);
+        match result {
+            Some(Ok(body)) => {
+                eprintln!("body 前 120: {}", &body[..body.len().min(120)]);
+                // 验证是否合法 hex（仅 0-9a-f 且长度为偶数）
+                let hex_ok = body.len() % 2 == 0
+                    && body.bytes().all(|b| b.is_ascii_hexdigit());
+                eprintln!("合法 hex: {}", hex_ok);
+            }
+            other => eprintln!("fetch_data_uri_content = {:?}", other.map(|r| r.map(|b| b.len()))),
+        }
     }
 
     #[test]
