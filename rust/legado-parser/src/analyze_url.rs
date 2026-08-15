@@ -44,6 +44,7 @@ pub struct UrlOption {
     pub body: Option<String>,
     pub charset: Option<String>,
     pub content_type: Option<String>,
+    pub response_type: Option<String>,
     pub retry: u32,
     pub timeout: Option<u64>,
     pub proxy: Option<String>,
@@ -823,7 +824,9 @@ impl AnalyzeUrl {
             }
 
             if let Some(t) = obj.get("type").and_then(|v| v.as_str()) {
-                option.content_type = Some(t.to_string());
+                // 对齐原版 AnalyzeUrl.type：URL 选项 ,{"type":"hex"} 表示
+                // 响应体为原始字节的 hex 编码，而非 content_type（Content-Type 头）。
+                option.response_type = Some(t.to_string());
             }
 
             if let Some(r) = obj.get("retry").and_then(|v| v.as_u64()) {
@@ -904,8 +907,8 @@ impl AnalyzeUrl {
             self.body = option.body;
         }
         self.charset = option.charset;
-        if option.content_type.is_some() {
-            self.content_type = option.content_type;
+        if option.response_type.is_some() {
+            self.response_type = option.response_type;
         }
         self.retry = option.retry;
         self.timeout = option.timeout;
@@ -2040,6 +2043,20 @@ mod tests {
             None,
         );
         assert_eq!(url.server_id(), Some(42));
+    }
+
+    #[test]
+    fn test_url_option_type_maps_response_type() {
+        // G12：URL 选项 ,{"type":"hex"} → response_type（而非 content_type）
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/api,{"type":"hex"}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert_eq!(url.response_type(), Some("hex"));
+        assert_eq!(url.content_type(), None);
     }
 
     // --- 20. JS 内嵌执行 (analyze_js) ---

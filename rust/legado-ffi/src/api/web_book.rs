@@ -88,6 +88,17 @@ fn cache_put_page_body(url: &str, body: &str) {
 
 /// 真实书源数据抓取器
 ///
+/// 字节数组 → 小写 hex 字符串（对齐 Kotlin HexUtil.encodeHexStr）
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push(HEX[(b >> 4) as usize] as char);
+        s.push(HEX[(b & 0xf) as usize] as char);
+    }
+    s
+}
+
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
 /// 实现完整的搜索→详情→目录→正文链路（对标 Kotlin WebBook 对象）。
 pub struct RealBookSourceFetcher {
@@ -156,6 +167,20 @@ impl RealBookSourceFetcher {
         } else {
             Some(headers)
         };
+
+        // G12: response_type（如 "hex"）→ 原始字节 hex 编码返回（对齐原版
+        // AnalyzeUrl.getStrResponse 的 type!=null 分支：HexUtil.encodeHexStr(getByteArrayAwait)）
+        if analyze_url.response_type().is_some() {
+            let raw = self.client.get_raw(url, headers_opt.clone()).await?;
+            if !raw.is_success() {
+                return Err(LegadoError::Network(format!(
+                    "HTTP {} for {}",
+                    raw.status, url
+                )));
+            }
+            check_redirect_log(url, &raw.url);
+            return Ok(hex_encode(&raw.body));
+        }
 
         let response = match analyze_url.method() {
             RequestMethod::Post => {
