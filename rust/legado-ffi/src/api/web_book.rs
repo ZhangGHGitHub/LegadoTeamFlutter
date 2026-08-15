@@ -984,11 +984,12 @@ impl RealBookSourceFetcher {
             chapter_list_rule = stripped;
         }
 
-        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+        let analyzer = crate::js_executor::construct_analyzer_with_source_context(
             toc_body,
             toc_url.clone(),
             &source.book_source_url,
             source.js_lib.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         )
         .with_js_binding(
             "book",
@@ -1022,12 +1023,14 @@ impl RealBookSourceFetcher {
 
         // 对齐原版 BookChapterList：单一 AnalyzeRule + setContent(item) 循环，
         // 复用 stringRuleCache / JsExecutor，避免每章新建解析器（数百章时差一个数量级）。
-        let mut elem_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
-            String::new(),
-            toc_url.clone(),
-            &source.book_source_url,
-            source.js_lib.as_deref(),
-        );
+        let mut elem_analyzer =
+            crate::js_executor::construct_analyzer_with_source_context(
+                String::new(),
+                toc_url.clone(),
+                &source.book_source_url,
+                source.js_lib.as_deref(),
+                crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+            );
 
         let t_parse = std::time::Instant::now();
         let mut chapters = Vec::with_capacity(elements.len());
@@ -1129,12 +1132,15 @@ impl RealBookSourceFetcher {
                     let page_body = self
                         .fetch_simple_cached(&next_url, source_headers.as_ref(), true)
                         .await?;
-                    let page_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
-                        page_body,
-                        next_url.clone(),
-                        &source.book_source_url,
-                        source.js_lib.as_deref(),
-                    );
+                    let page_analyzer =
+                        crate::js_executor::construct_analyzer_with_source_context(
+                            page_body,
+                            next_url.clone(),
+                            &source.book_source_url,
+                            source.js_lib.as_deref(),
+                            crate::api::source_js_bindings::book_source_js_setup_script(source)
+                                .ok(),
+                        );
                     let page_elements = if chapter_list_rule.is_empty() {
                         vec![page_analyzer.content().to_string()]
                     } else {
