@@ -423,6 +423,18 @@ fn register_encoding_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // hexDecodeToString(hex) -> String（书山聚合等源把 hex 编码响应还原为 JSON；
+    // 对应 Kotlin HexUtil.decodeHexStr / hexDecodeToString）
+    mount_dual(
+        java,
+        globals,
+        "hexDecodeToString",
+        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+            encoding::hex_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     Ok(())
 }
 
