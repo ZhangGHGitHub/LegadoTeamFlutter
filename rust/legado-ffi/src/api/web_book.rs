@@ -7,7 +7,7 @@
 //! 实现完整的搜索→详情→目录→正文链路。
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use legado_core::models::BookSource;
@@ -18,6 +18,7 @@ use legado_core::web_book::{
 use legado_core::{LegadoError, LegadoResult};
 use legado_js::js_source::js_source_book::JsSourceBookOrchestrator;
 use legado_js::JsSourceConfig;
+use legado_net::rate_limit::IntervalRateLimiter;
 use legado_net::LegadoClient;
 use legado_parser::{compile_regex_safe, AnalyzeUrl, RequestMethod};
 
@@ -97,6 +98,34 @@ fn hex_encode(bytes: &[u8]) -> String {
         s.push(HEX[(b & 0xf) as usize] as char);
     }
     s
+}
+
+/// G4：每源固定窗口限流缓存（键=书源 URL，跨请求保持窗口状态）
+static RATE_LIMITERS: OnceLock<Mutex<HashMap<String, Arc<IntervalRateLimiter>>>> =
+    OnceLock::new();
+
+/// 按书源 concurrentRate 获取访问许可（对齐 Kotlin ConcurrentRateLimiter.withLimit）
+///
+/// 每源限流器缓存在全局 map 中，跨请求保持固定窗口状态（否则窗口起点每次
+/// 重置 = 永不生效）。
+async fn acquire_source_rate_limit(source: &BookSource) {
+    let rate = source.concurrent_rate.as_deref().unwrap_or("").trim();
+    if rate.is_empty() || rate == "0" {
+        return;
+    }
+    let Some(limiter) = IntervalRateLimiter::parse(rate) else {
+        return;
+    };
+    let map = RATE_LIMITERS.get_or_init(|| Mutex::new(HashMap::new()));
+    let limiter = {
+        let mut guard = map.lock().unwrap();
+        Arc::clone(
+            guard
+                .entry(source.book_source_url.clone())
+                .or_insert_with(|| Arc::new(limiter)),
+        )
+    };
+    limiter.acquire().await;
 }
 
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
@@ -447,6 +476,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         query: &str,
         page: i32,
     ) -> LegadoResult<Vec<WebSearchResult>> {
+        acquire_source_rate_limit(source).await;
         let search_url = source.search_url.as_deref().unwrap_or("");
         if search_url.is_empty() {
             return Err(LegadoError::Internal("书源未配置 searchUrl".into()));
@@ -616,6 +646,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         source: &BookSource,
         book_url: &str,
     ) -> LegadoResult<WebBookInfo> {
+        acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求书籍详情页（写入短时缓存，供紧随其后的 get_chapters 复用）
@@ -656,6 +687,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
     }
 
     async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String> {
+        acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求章节页面
@@ -799,6 +831,7 @@ impl RealBookSourceFetcher {
         known_toc_url: Option<&str>,
         book_name_hint: Option<&str>,
     ) -> LegadoResult<Vec<WebChapter>> {
+        acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
         let t0 = std::time::Instant::now();
 
