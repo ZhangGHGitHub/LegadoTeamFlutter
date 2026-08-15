@@ -114,8 +114,32 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
   function JavaString() {
     var a0 = arguments.length > 0 ? arguments[0] : undefined;
     var isBytes = (a0 instanceof Uint8Array) || Array.isArray(a0);
-    if (arguments.length >= 2 && isBytes) { return java.bytesToStr(toJsonBytes(toU8(a0)), String(arguments[1])); }
-    if (arguments.length === 1 && isBytes) { return java.bytesToStr(toJsonBytes(toU8(a0)), 'UTF-8'); }
+    // 注意：调用方以 `new Packages.java.lang.String(...)` 使用本构造器，
+    // JS `new` 语义下若显式 return 原始值（字符串），表达式结果为 this
+    // 空对象 → String(this) = "[object Object]"（2026-08-15 七猫正文
+    // [object Object] 根因）。bytes 分支必须返回 JSString **对象**，
+    // 让 new 保留对象，toString/valueOf 再取回明文字符串。
+    // Java String(byte[], offset, length, charset) 重载（qmDecodeTextBytes
+    // 用 `new String(bytes, 0, headSize, 'ISO-8859-1')` 做编码探测头）：
+    // 取子数组按 charset 解码，而非把 offset 当 charset 名。
+    if (arguments.length >= 4 && isBytes) {
+      var off4 = Number(arguments[1]) || 0;
+      var len4 = Number(arguments[2]) || 0;
+      var sub4 = toU8(a0).slice(off4, off4 + len4);
+      var r4 = java.bytesToStr(toJsonBytes(sub4), String(arguments[3]));
+      return JSString(String(r4));
+    }
+    if (arguments.length === 3 && isBytes) {
+      var off3 = Number(arguments[1]) || 0;
+      var len3 = Number(arguments[2]) || 0;
+      var sub3 = toU8(a0).slice(off3, off3 + len3);
+      return JSString(String(java.bytesToStr(toJsonBytes(sub3), 'UTF-8')));
+    }
+    if (arguments.length >= 2 && isBytes) {
+      var r = java.bytesToStr(toJsonBytes(toU8(a0)), String(arguments[1]));
+      return JSString(String(r));
+    }
+    if (arguments.length === 1 && isBytes) { return JSString(String(java.bytesToStr(toJsonBytes(toU8(a0)), 'UTF-8'))); }
     return JSString(String(arguments[0]));
   }
   function uuidV4() {
@@ -2725,6 +2749,48 @@ decryptImage(result);
             .eval("java.bytesToStr('[72,101,108,108,111]')")
             .unwrap();
         assert_eq!(result, "Hello");
+    }
+
+    // 七猫正文 [object Object] 回归（2026-08-15）：`new Packages.java.lang.String
+    // (bytes, charset)` 在 JS `new` 语义下，构造器显式 return 原始值（字符串）时
+    // 表达式结果为 this 空对象 → String(this)="[object Object]"；bytes 分支必须
+    // 返回 JSString 对象，toString/valueOf 再取回明文。含 4 参数重载
+    // String(bytes, offset, length, charset)（qmDecodeTextBytes 编码探测头）。
+    #[test]
+    fn test_packages_java_string_new_bytes_returns_plaintext() {
+        let engine = make_engine();
+        // 2 参数：new String(bytes, 'UTF-8') → String(...) 应为明文而非 [object Object]
+        let result = engine
+            .eval(
+                "String(new Packages.java.lang.String(new Uint8Array([72,101,108,108,111]), 'UTF-8'))",
+            )
+            .unwrap();
+        assert_eq!(
+            result, "Hello",
+            "new String(bytes, charset) 应返回明文，实际: {result}"
+        );
+        // 4 参数：new String(bytes, offset, length, charset) 取子数组解码
+        let result = engine
+            .eval(
+                "String(new Packages.java.lang.String(new Uint8Array([0,72,101,108,108,111,0]), 1, 5, 'UTF-8'))",
+            )
+            .unwrap();
+        assert_eq!(
+            result, "Hello",
+            "4 参数重载应取 [offset, offset+length) 子数组解码，实际: {result}"
+        );
+        // 1 参数（非 bytes）：new String('text') 保持字符串语义
+        let result = engine
+            .eval("String(new Packages.java.lang.String('abc'))")
+            .unwrap();
+        assert_eq!(result, "abc");
+        // getBytes 仍可用（new 保留 JSString 对象）
+        let result = engine
+            .eval(
+                "String(new Packages.java.lang.String('abc').getBytes('UTF-8').length)",
+            )
+            .unwrap();
+        assert_eq!(result, "3");
     }
 
     #[test]

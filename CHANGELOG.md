@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.92] - 2026-08-15
+
+### Fixed
+- [Rust] 七猫四合一本地版目录/正文获取不到（用户反馈，续 v2.0.91 发现页修复）：
+  - **正文 `[object Object]` 根因——`Packages.java.lang.String(bytes, charset)` 的 JS `new` 语义**：jsLib `qmDecodeTextBytes` 用 `String(new Packages.java.lang.String(解密字节, 'UTF-8'))` 解码；shim 构造器 bytes 分支显式 `return r`(原始字符串)，JS `new` 语义下表达式结果为 this 空对象 → `String(this)`="[object Object]" → 正文内容丢失。修复：bytes 分支返回 **JSString 对象**(toString/valueOf 取回明文)，并补 4 参数重载 `String(bytes, offset, length, charset)`(qmDecodeTextBytes 编码探测头按子数组解码，不再把 offset 当 charset 名)
+  - **目录 0 章根因——QuickJS 沙箱 16MB 内存上限**：七猫 chapter-list 返回 1279 章，qmToc JS 生成每章完整请求 option(约 1.6MB JSON 数组)，`ctx.json_stringify` 成功但 `JsString::to_string()`(JS_ToCStringLen)在 QuickJS 堆接近 16MB 上限时分配失败返回 null → 规则结果丢失 → 「暂无章节」。修复：书源 JS 引擎内存上限 16MB→64MB(对齐 permissive)，另在 `js_value_from_rquickjs` 对 to_string 失败回退 CString 路径
+  - **详情页「未知作者/共 0 章」**：未在架在线书阅读返回后 reload 时，`widget.book`(发现列表瘦壳)直接覆盖 DB 完整记录；新增 `_mergeDbBook` 用 DB 记录补全空字段(author/tocUrl/章节数)，路由实时字段优先
+  - **详情页 tocUrl 权威值优先**：`_mergeWebInfo` 用详情解析出的 toc_url 优先于 book.tocUrl(发现列表默认=bookUrl)
+  - 实测：剑来(1279 章目录+正文「二月二，龙抬头…」)、全民转职(232 章目录+正文)全部正常；详情页作者/目录/简介完整
+- 新增测试：JavaString new 语义回归(2 参数/4 参数/1 参数/getBytes)、大 JSON 数组序列化(1279 元素含中文与长 URL)
+- 验证：cargo test --workspace --features quickjs 全过(legado-js 488、legado-ffi 337)、flutter test 1188 全过、双模拟器冒烟 5/5
+
 ## [2.0.91] - 2026-08-15
 
 ### Fixed

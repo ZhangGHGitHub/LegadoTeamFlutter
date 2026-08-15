@@ -128,6 +128,13 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       var book = (!inShelf && widget.book != null)
           ? widget.book!
           : (dbBook ?? widget.book);
+      // [fix 2026-08-15] 未在架在线书阅读返回后 reload：dbBook 已含落库时的
+      // 完整详情元数据（author/tocUrl/章节数等），而 widget.book 仅是发现列表
+      // 带入的瘦壳（author 等字段为空）→ 直接覆盖会显示「未知作者/共 0 章」。
+      // 用 dbBook 补全 widget.book 的空字段，保留路由实时字段优先。
+      if (!inShelf && book != null && dbBook != null) {
+        book = _mergeDbBook(book, dbBook);
+      }
       var chapters =
           url.isEmpty ? <BookChapter>[] : await api.getChapters(url);
       // 书源查询一次即复用：既供菜单条件项判定，也供下方联网补全传参
@@ -319,6 +326,32 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     return null;
   }
 
+  /// 未在架在线书：DB 记录补全路由带入瘦壳的空字段（author/tocUrl/章节数等）。
+  /// 路由实时字段（如最新章标题）优先保留；DB 非空字段仅填空。
+  Book _mergeDbBook(Book book, Book dbBook) {
+    return book.copyWith(
+      coverUrl: (book.coverUrl?.isNotEmpty ?? false)
+          ? book.coverUrl
+          : dbBook.coverUrl,
+      intro: (book.intro?.isNotEmpty ?? false)
+          ? book.intro
+          : dbBook.intro,
+      tocUrl: book.tocUrl.isNotEmpty ? book.tocUrl : dbBook.tocUrl,
+      wordCount: (book.wordCount?.isNotEmpty ?? false)
+          ? book.wordCount
+          : dbBook.wordCount,
+      latestChapterTitle:
+          (book.latestChapterTitle?.isNotEmpty ?? false)
+              ? book.latestChapterTitle
+              : dbBook.latestChapterTitle,
+      kind: (book.kind?.isNotEmpty ?? false) ? book.kind : dbBook.kind,
+      author: book.author.isNotEmpty ? book.author : dbBook.author,
+      totalChapterNum: book.totalChapterNum > 0
+          ? book.totalChapterNum
+          : dbBook.totalChapterNum,
+    );
+  }
+
   /// 合并 webbookInfo 返回的详情到 book（WebBookInfo 为 snake_case，需手动映射，
   /// 不能直接 Book.fromJson 否则 cover_url/toc_url 等丢失）；仅补全当前缺失字段。
   Book _mergeWebInfo(Book book, String infoJson) {
@@ -341,7 +374,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     return book.copyWith(
       coverUrl: hasCover ? book.coverUrl : pick('cover_url'),
       intro: hasIntro ? book.intro : pick('intro'),
-      tocUrl: book.tocUrl.isNotEmpty ? book.tocUrl : (tocUrl ?? book.tocUrl),
+      // [fix 2026-08-15] tocUrl 用详情解析出的权威值优先（七猫发现列表
+      // book.tocUrl 默认=bookUrl，详情 qmBookInfo 生成真实 chapter-list URL）
+      tocUrl: tocUrl ?? book.tocUrl,
       wordCount: hasWord ? book.wordCount : pick('word_count'),
       latestChapterTitle: hasLast ? book.latestChapterTitle : pick('last_chapter'),
       kind: hasKind ? book.kind : pick('kind'),

@@ -448,7 +448,15 @@ mod quickjs_impl {
             // 新作用域，重构版对齐：用完即弃，规避跨调用全局污染。
             // 代价：jsLib 每次重载（一般较小，可接受）— Reasonix
             let engine = legado_js::QuickJsEngine::new(
-                legado_js::sandbox::SandboxConfig::default().with_allow_script_run(true),
+                legado_js::sandbox::SandboxConfig::default()
+                    .with_allow_script_run(true)
+                    // [fix 2026-08-15] 内存上限 16MB → 64MB：七猫等书源 jsLib
+                    // 大(587KB) + 目录/列表 JS 返回超大 JSON 数组(1279 章 ×
+                    // 完整请求 option 约 1.6MB),QuickJS 堆接近 16MB 上限时
+                    // JS_ToCStringLen 分配失败返回 null → 规则结果丢失 →
+                    // 目录 0 章（剑来「暂无章节」2026-08-15 用户反馈）。
+                    // 对齐 SandboxConfig::permissive 的 64MB。
+                    .with_memory_limit(64 * 1024 * 1024),
             )
             .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
             // 绑定当前书源上下文（供 getVerificationCode 等宿主钩子识别书源，
@@ -494,7 +502,10 @@ pub fn fresh_engine(
     _source_tag: &str,
 ) -> legado_core::LegadoResult<std::sync::Arc<std::sync::Mutex<legado_js::QuickJsEngine>>> {
     let engine = legado_js::QuickJsEngine::new(
-        legado_js::sandbox::SandboxConfig::default().with_allow_script_run(true),
+        legado_js::sandbox::SandboxConfig::default()
+            .with_allow_script_run(true)
+            // 同上：大 jsLib/大 JSON 结果需 64MB（七猫目录 2026-08-15）
+            .with_memory_limit(64 * 1024 * 1024),
     )?;
     Ok(std::sync::Arc::new(std::sync::Mutex::new(engine)))
 }

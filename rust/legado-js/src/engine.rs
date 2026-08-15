@@ -257,7 +257,20 @@ mod quickjs_engine {
         } else if val.is_array() || val.is_object() {
             match ctx.json_stringify(val.clone()) {
                 Ok(Some(js_str)) => {
-                    JsValue::String(js_str.to_string().unwrap_or_else(|_| "null".to_string()))
+                    // to_string() 用 str::from_utf8 严格校验：QuickJS 对含未配对
+                    // 代理对等内容的字符串,JS_ToCStringLen 产出的 UTF-8 可能无效
+                    // → Err("QuickJS library created a unknown error") → 上层拿到
+                    // "null",规则结果丢失（七猫目录 0 章 2026-08-15）。CString
+                    // 的 as_str() 用 from_utf8_unchecked 绕过校验；QuickJS 保证
+                    // 字符串内存有效性，仅可能含替换符，不影响 JSON 文本完整性。
+                    let s = match js_str.to_string() {
+                        Ok(s) => s,
+                        Err(_) => js_str
+                            .to_cstring()
+                            .map(|c| c.as_str().to_string())
+                            .unwrap_or_else(|_| "null".to_string()),
+                    };
+                    JsValue::String(s)
                 }
                 Ok(None) => JsValue::Null,
                 Err(_) => JsValue::String("null".to_string()),
@@ -660,6 +673,67 @@ mod quickjs_tests {
         assert_eq!(result, "3");
     }
 
+    // 剑来目录 0 章排查（2026-08-15）：qmToc 返回 1279 元素数组,JS 层
+    // JSON.stringify 成功,但 engine 层 ctx.json_stringify 返回 Ok(None)/"null"。
+    // 本地复现:构造类似结构的大数组,验证 json_stringify 行为。
+    #[test]
+    fn test_json_stringify_large_array() {
+        let engine = make_engine();
+        // 1279 元素对象数组,每个含 title/info/url(URL 含长 JSON option,模拟七猫)
+        let js = r#"
+        (function () {
+          var list = [];
+          for (var i = 0; i < 1279; i++) {
+            list.push({title: '第一章 惊蛰' + i, info: '字数 2964', url: 'https://x.com/c?id=' + i + ',{"m":"GET"}'});
+          }
+          return list;
+        })()
+        "#;
+        let result = engine.eval(js).unwrap();
+        assert!(
+            result.starts_with('['),
+            "1279 元素大 JSON 数组应序列化,实际: {} (len={})",
+            &result[..result.len().min(120)],
+            result.len()
+        );
+        eprintln!("large array stringify ok, len={}", result.len());
+    }
+
+    // 剑来目录 0 章根因复现（2026-08-15）：真实七猫 toc_body 的 url 字段含
+    // 完整请求 option JSON(含反斜杠转义/长 base64/中文),JSON.stringify 结果
+    // 字符串经 JsString::to_string()(JS_ToCStringLen)转换失败 → "null"。
+    // 用真实 toc_body 数据验证 result_to_string 对数组的处理。
+    #[test]
+    fn test_json_stringify_real_qimao_toc() {
+        let engine = make_engine();
+        // 从真实 toc_body 提取部分 chapter_lists,构造与 qmToc 相同结构的数组
+        // （title/info/url,url 为含 option JSON 的长字符串）
+        let real_body = r#"{"data":{"id":"143170","type":"chapter_lists","chapter_lists":[{"id":"36898237","content_md5":"715537d66863c86429847eae70865cad","index":"1","title":"第一章 惊蛰","words":"2964","chapter_sort":1},{"id":"36907398","content_md5":"7e94455902f57d45246bec934100989a","index":"2","title":"第二章 开门","words":"3222","chapter_sort":2}]}}"#;
+        let js = format!(
+            r#"
+        (function () {{
+          var raw = {real_body};
+          var data = raw.data;
+          var list = [];
+          for (var i = 0; i < 1279; i++) {{
+            var x = data.chapter_lists[i % data.chapter_lists.length];
+            var url = 'https://api-ks.wtzw.com/api/v1/chapter/content?chapterId=' + x.id + '&id=143170&sign=abc,{{"method":"GET","headers":{{"authorization":"eyJhbGciOiJSUzI1NiIsImNyaXQiOlsiaXNzIiwianRpIiwiaWF0IiwiZXhwIl0sImtpZCI6IjE1MzEyMDM3NjkiLCJ0eXAiOiJKV1QifQ.eyJleHAiOjE3ODkzNDU1MDAsImlhdCI6MTc4Njc1MzUwMCwiaXNzIjoiaHR0cHM6Ly94aWFvc2h1by53dHp3LmNvbS9hcGkvdjEvbG9naW4vdG91cmlzdCIsImp0aSI6InRvdXJpc3QifQ.signature","app-version":"80400","application-id":"com.kmxs.reader","channel":"qm-guanfang_lf","platform":"android","qm-params":"cLGSpqYpCH5A5HwH5w5OEkxuy2TCENTBEG2HTZ5garMH5w5uCR1paHWHTo5pqNzpzNxtqR2pI4QNI-MAaMrNIp2th0UAIG5NlR5AqHENaHjHzk2uz2Tp3U1paHWHTHwgT4wAI0UgIKngh0rgTuxNqfU4lkxgyFLNIGz4q0eNIN-pTo-phFYAhG2gy4wAIHepTHrgzo-pq0MNIpTH5w5BqoTHTZ5gIHWNT9WgT9WgT4WgI9WgqH5taGeBERL4lRUmqF5A5HYNT2zgz4EAhNxpyfM4q4nH5w5OE2etCp2O5HWHT0LH5w5OyxDBzfQByRlpqw5A5GNH5w54CswCEp2O5HWHTKwNI9wH5w5mqU2m3HWH5HjHzUDpyRjHTZ5gTgnghu33e4lFLHjHSuj45U1BqR1HTZ5H5w5uln5tCR1paHWHT-lAq4LpTOYglo-phkxpT05taGTBy22BSFQmqF5A5HYNT2zgz4EAhNxpyfM4q4nH5w54SGxBzF5A5G3pqkQm3HjHzUxmlf5A5G3pqkQm3HjHzY2uoJ2BS45A5HnHSM","reg":"","sign":"02eb844e0ef7c85f1f4640a61d7afbaa","user-agent":"webviewversion/0"}}';
+            list.push({{title: x.title, info: '字数 ' + x.words, url: url}});
+          }}
+          return list;
+        }})()
+        "#
+        );
+        let result = engine.eval(&js).unwrap();
+        assert!(
+            result.starts_with('['),
+            "真实七猫结构数组应序列化,实际: {} (len={})",
+            &result[..result.len().min(120)],
+            result.len()
+        );
+        eprintln!("real qimao array stringify ok, len={}", result.len());
+    }
+
     #[test]
     fn test_eval_string() {
         let engine = make_engine();
@@ -830,7 +904,7 @@ mod quickjs_tests {
           var cipher = Packages.javax.crypto.Cipher.getInstance('AES/CBC/PKCS5Padding');
           cipher.init(2, key, ivSpec);
           var out = cipher.doFinal(enc);
-          return Packages.java.lang.String(out, 'UTF-8');
+          return String(Packages.java.lang.String(out, 'UTF-8'));
         }})()
         "#
         );

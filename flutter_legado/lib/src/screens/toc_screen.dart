@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -303,7 +303,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
         bookName: _book.name,
       );
       return BookOpenUtils.parseWebChapters(chJson, _book.bookUrl);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('webbookChapters 错误: ${_errMsg(e)}');
       return const [];
     }
   }
