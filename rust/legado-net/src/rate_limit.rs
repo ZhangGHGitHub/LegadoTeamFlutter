@@ -177,6 +177,112 @@ impl Middleware for DomainRateLimitMiddleware {
     }
 }
 
+/// 固定窗口间隔限流器（对齐 Kotlin ConcurrentRateLimiter）
+///
+/// 解析书源 `concurrentRate` 字段：
+/// - `"N/interval"`：每 `interval` 毫秒窗口内最多 `N` 次访问
+/// - 纯 `"N"`：每 `N` 毫秒最多 1 次（accessLimit=1, interval=N）
+/// - 空 / `"0"` / 非法 → 不限流（`parse` 返回 None）
+#[derive(Debug)]
+pub struct IntervalRateLimiter {
+    state: Mutex<IntervalState>,
+}
+
+#[derive(Debug)]
+struct IntervalState {
+    window_start: Option<std::time::Instant>,
+    frequency: u32,
+    access_limit: u32,
+    interval: Duration,
+}
+
+impl IntervalRateLimiter {
+    /// 按 concurrentRate 字符串解析；空/"0"/非法返回 None
+    pub fn parse(concurrent_rate: &str) -> Option<Self> {
+        let rate = concurrent_rate.trim();
+        if rate.is_empty() || rate == "0" {
+            return None;
+        }
+        if let Some(idx) = rate.find('/') {
+            let access_limit: u32 = rate[..idx].trim().parse().ok()?;
+            let interval_ms: u64 = rate[idx + 1..].trim().parse().ok()?;
+            if access_limit == 0 || interval_ms == 0 {
+                return None;
+            }
+            Some(Self::new(access_limit, interval_ms))
+        } else {
+            let interval_ms: u64 = rate.parse().ok()?;
+            if interval_ms == 0 {
+                return None;
+            }
+            Some(Self::new(1, interval_ms))
+        }
+    }
+
+    /// 直接以 access_limit / interval 毫秒构造
+    pub fn new(access_limit: u32, interval_ms: u64) -> Self {
+        Self {
+            state: Mutex::new(IntervalState {
+                window_start: None,
+                frequency: 0,
+                access_limit,
+                interval: Duration::from_millis(interval_ms),
+            }),
+        }
+    }
+
+    /// 计算本次访问需等待的毫秒（0=放行），并推进固定窗口状态
+    fn next_wait_ms(&self) -> u64 {
+        let mut s = self.state.lock().unwrap();
+        let now = std::time::Instant::now();
+        match s.window_start {
+            None => {
+                s.window_start = Some(now);
+                s.frequency = 1;
+                0
+            }
+            Some(start) => {
+                if now >= start + s.interval {
+                    // 窗口已结束 → 重置
+                    s.window_start = Some(now);
+                    s.frequency = 1;
+                    0
+                } else if s.frequency < s.access_limit {
+                    s.frequency += 1;
+                    0
+                } else {
+                    // 超限 → 等待到窗口结束
+                    (start + s.interval)
+                        .saturating_duration_since(now)
+                        .as_millis() as u64
+                }
+            }
+        }
+    }
+
+    /// 异步获取访问许可（超限时 sleep 直到放行）
+    pub async fn acquire(&self) {
+        loop {
+            let wait_ms = self.next_wait_ms();
+            if wait_ms == 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+        }
+    }
+
+    /// 同步获取访问许可（阻塞线程直到放行）
+    pub fn acquire_blocking(&self) {
+        loop {
+            let wait_ms = self.next_wait_ms();
+            if wait_ms == 0 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(wait_ms));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +292,35 @@ mod tests {
         let limiter = RateLimiter::new(5);
         assert_eq!(limiter.max_concurrent(), 5);
         assert_eq!(limiter.available_permits(), 5);
+    }
+
+    #[test]
+    fn test_interval_limiter_parse() {
+        assert!(IntervalRateLimiter::parse("").is_none());
+        assert!(IntervalRateLimiter::parse("0").is_none());
+        assert!(IntervalRateLimiter::parse("abc").is_none());
+        assert!(IntervalRateLimiter::parse("0/1000").is_none());
+        let l = IntervalRateLimiter::parse("5/1000").unwrap();
+        {
+            let s = l.state.lock().unwrap();
+            assert_eq!(s.access_limit, 5);
+            assert_eq!(s.interval, Duration::from_millis(1000));
+        }
+        let l = IntervalRateLimiter::parse("500").unwrap();
+        {
+            let s = l.state.lock().unwrap();
+            assert_eq!(s.access_limit, 1);
+            assert_eq!(s.interval, Duration::from_millis(500));
+        }
+    }
+
+    #[test]
+    fn test_interval_limiter_window_throttles() {
+        let l = IntervalRateLimiter::new(3, 10_000);
+        assert_eq!(l.next_wait_ms(), 0); // 第 1 次放行
+        assert_eq!(l.next_wait_ms(), 0); // 第 2 次放行
+        assert_eq!(l.next_wait_ms(), 0); // 第 3 次放行
+        assert!(l.next_wait_ms() > 0); // 第 4 次超限需等待
     }
 
     #[tokio::test]
