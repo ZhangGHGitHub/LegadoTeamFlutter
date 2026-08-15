@@ -100,6 +100,23 @@ fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
+/// 若 URL 是 data: URI（可能带 `,{...}` 请求选项，如书山
+/// `data:detailsUrl;base64,<b64>,{"type":"susan"}`），返回其解码内容：
+/// - type 非空 → hex 编码字节（书山 init JS 用 java.hexDecodeToString 还原）
+/// - 否则 → UTF-8 文本
+fn fetch_data_uri_content(url: &str) -> Option<LegadoResult<String>> {
+    let parsed = AnalyzeUrl::parse(url, &std::collections::HashMap::new(), 1).ok()?;
+    if !parsed.is_data_uri() {
+        return None;
+    }
+    let bytes = parsed.get_byte_array_if_data_uri()?;
+    if parsed.response_type().is_some() {
+        Some(Ok(hex_encode(&bytes)))
+    } else {
+        Some(Ok(String::from_utf8_lossy(&bytes).to_string()))
+    }
+}
+
 /// G4：每源固定窗口限流缓存（键=书源 URL，跨请求保持窗口状态）
 static RATE_LIMITERS: OnceLock<Mutex<HashMap<String, Arc<IntervalRateLimiter>>>> =
     OnceLock::new();
@@ -267,6 +284,10 @@ impl RealBookSourceFetcher {
                 eprintln!("[web_book] page body cache hit: {url}");
                 return Ok(cached);
             }
+        }
+        // data: URI（书山 bookUrl 形态）不发起网络请求，直接解码
+        if let Some(result) = fetch_data_uri_content(url) {
+            return result;
         }
         let headers_opt = source_headers.cloned();
         let response = self.client.get(url, headers_opt).await?;
