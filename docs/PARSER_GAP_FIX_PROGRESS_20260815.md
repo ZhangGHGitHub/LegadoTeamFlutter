@@ -5,11 +5,11 @@
 
 ## 一、结论速览
 
-- 已完成 **11/15**，全部通过 `cargo test -p legado-ffi --features quickjs`（337/0 基线）逐项回归。
+- 已完成 **12/15**，全部通过 `cargo test -p legado-ffi --features quickjs`（337/0 基线）逐项回归。
 - 分支：`feature/rust-parser-gap-fix`，10 个提交（约定式提交 `fix(rust):`）。
-- 剩余 4 项（G4/G5/G8/G12）均为**深层机制或受并发文件制约**，非单点替换，见 §三精确诊断。
+- 剩余 3 项（G4/G8/G12）均为**深层机制或受并发文件制约**，非单点替换，见 §三精确诊断。
 
-## 二、已完成（11/15）
+## 二、已完成（12/15）
 
 | 编号 | 内容 | 提交 | 测试 |
 |---|---|---|---|
@@ -23,8 +23,10 @@
 | G13 | `html` 提取剥离 script/style + `all` 关键字修正 | 34c11fcc4 | legado-parser 233 |
 | G14 | isUrl 多匹配取首元素（对齐 getString0） | d08fa47d4 | legado-parser 232 |
 | G15 | AES/ECB/NoPadding 加解密 | dce9a252a | legado-core 全绿 |
+| G11 | 规则体内 {{js}}（非$）内嵌 JS 替换 | 631f4b134 | legado-parser 235 |
+| G5 | 目录章节标题 formatJs 格式化（对齐 BookChapterList） | d044642bf | legado-ffi 337/0 |
 
-## 三、剩余 5 项精确诊断
+## 三、剩余 3 项精确诊断（G4/G8/G12）
 
 ### G4 concurrentRate（P1，legado-net）
 - **语义**：原版 `ConcurrentRateLimiter(source)` 解析 `"N/毫秒"`（访问数/间隔）做**节流**，或纯 `N` 做并发上限；`withLimit{}` 包裹请求（AnalyzeUrl.getStrResponse + JsExtensions.http/api/ajax）。
