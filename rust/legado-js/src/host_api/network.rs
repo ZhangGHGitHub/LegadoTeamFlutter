@@ -17,6 +17,19 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 /// ajaxAll 有界并发数
 const AJAX_ALL_CONCURRENCY: usize = 4;
 
+/// body 反序列化：兼容字符串、对象/数组（书山聚合等源 `url,{json}` 的
+/// body 是嵌套对象，须转 JSON 字符串，否则 serde 解析失败 → ajax 返回 [ERROR]）
+fn de_body<'de, D>(de: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Option::<serde_json::Value>::deserialize(de)?;
+    Ok(v.map(|b| match b {
+        serde_json::Value::String(s) => s,
+        other => other.to_string(),
+    }))
+}
+
 /// HTTP 请求选项（用于 `ajax` 通用接口）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HttpOptions {
@@ -29,8 +42,8 @@ pub struct HttpOptions {
     /// 请求头
     #[serde(default)]
     pub headers: Option<HashMap<String, String>>,
-    /// 请求体（POST/PUT 时使用）
-    #[serde(default)]
+    /// 请求体（POST/PUT 时使用；兼容字符串或 JSON 对象/数组）
+    #[serde(default, deserialize_with = "de_body")]
     pub body: Option<String>,
     /// 超时毫秒数
     #[serde(default)]
@@ -182,6 +195,29 @@ pub fn ajax(input: &str) -> Result<String, String> {
 
         serde_json::to_string(&result).map_err(|e| format!("ajax serialize error: {}", e))
     })
+}
+
+#[cfg(test)]
+mod http_options_tests {
+    use super::*;
+
+    #[test]
+    fn test_body_accepts_object() {
+        // 书山目录：url,{"method":"POST","body":{...对象...}}
+        let opts: HttpOptions = serde_json::from_str(
+            r#"{"method":"POST","url":"https://v1.vossc.com/catalog","body":{"source":"书山","url":"x","name":"n","tab":"novel"}}"#,
+        )
+        .unwrap();
+        assert!(opts.body.as_deref().unwrap().contains("source"));
+        assert!(opts.body.as_deref().unwrap().contains("书山"));
+    }
+
+    #[test]
+    fn test_body_accepts_string() {
+        let opts: HttpOptions =
+            serde_json::from_str(r#"{"method":"POST","body":"key=val"}"#).unwrap();
+        assert_eq!(opts.body.as_deref(), Some("key=val"));
+    }
 }
 
 /// 「url,{json}」格式请求，返回**纯响应体文本**（对齐原版 JsExtensions.ajax 返回
