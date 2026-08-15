@@ -425,12 +425,17 @@ fn register_encoding_apis<'js>(
 
     // hexDecodeToString(hex) -> String（书山聚合等源把 hex 编码响应还原为 JSON；
     // 对应 Kotlin HexUtil.decodeHexStr / hexDecodeToString）
+    // 容错：输入非合法 hex 时**原样返回**（书山 toc_body 可能是 hex 或已解码文本；
+    // 绝不可返回 "[ERROR]..." 前缀——会被 JS 当源码执行报 syntax error）
     mount_dual(
         java,
         globals,
         "hexDecodeToString",
         rquickjs::Function::new(ctx.clone(), |s: String| -> String {
-            encoding::hex_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
+            match encoding::hex_decode(&s) {
+                Ok(v) => v,
+                Err(_) => s,
+            }
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
