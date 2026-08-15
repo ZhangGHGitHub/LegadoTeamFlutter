@@ -892,15 +892,22 @@ impl AnalyzeRule {
                         // JSONPath / 其它规则前缀：原样保留
                         out.push_str(&rule[i..i + full_len]);
                     } else {
-                        let js_result = self.execute_js_rule(inner)?;
-                        let val = if js_result.is_empty() {
-                            String::new()
-                        } else if js_result.len() == 1 {
-                            js_result[0].clone()
-                        } else {
-                            js_result.join("\n")
-                        };
-                        out.push_str(&val);
+                        // 仅在 eval 成功且结果非空时替换；失败/为空时**保留原文**——
+                        // 恢复 G11 前的直通行为：模板可能依赖书源 jsLib/上下文或由
+                        // 上层（URL 构建 / web_book）按正确绑定再解析，例如书山聚合
+                        // ruleBookInfo 的 `{{getSecretKey()}}`、`{{"\n"+"\u200b"}}`
+                        //（此前被替换成空串导致书籍详情/简介被破坏）。
+                        match self.execute_js_rule(inner) {
+                            Ok(js_result) if !js_result.is_empty() => {
+                                let val = if js_result.len() == 1 {
+                                    js_result[0].clone()
+                                } else {
+                                    js_result.join("\n")
+                                };
+                                out.push_str(&val);
+                            }
+                            _ => out.push_str(&rule[i..i + full_len]),
+                        }
                     }
                     i += full_len;
                     continue;
@@ -2076,6 +2083,20 @@ mod tests {
         );
         let result = rule.get_strings("{{sel()}}").unwrap();
         assert_eq!(result, vec!["正文"]);
+    }
+
+    #[test]
+    fn test_expand_js_refs_keeps_literal_on_failure() {
+        // G11 回归：{{非$}} eval 失败/为空时必须保留原文（书山 ruleBookInfo
+        // 的 {{getSecretKey()}} / {{"\n"+"\u200b"}} 依赖 jsLib 或上层再解析，
+        // 不能被替换成空串破坏规则）
+        let rule = AnalyzeRule::new("content".to_string(), String::new());
+        // 无 JS 执行器 → execute_js_rule 返回空 → 保留字面量
+        let out = rule.expand_js_refs("abc{{foo()}}def").unwrap();
+        assert_eq!(out, "abc{{foo()}}def");
+        // {{$...}} JSONPath 内嵌同样原样保留
+        let out2 = rule.expand_js_refs("x={{$.book_url##[|]}}&y=1").unwrap();
+        assert_eq!(out2, "x={{$.book_url##[|]}}&y=1");
     }
 
     /// `<js>...</js>\n$[*]` 复合规则：JS 返回 JSON 数组字符串，JSONPath 后缀拆解
