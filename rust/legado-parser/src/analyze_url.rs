@@ -773,9 +773,23 @@ impl AnalyzeUrl {
     fn split_url_option(rule: &str) -> (String, Option<String>) {
         let rule = rule.trim();
 
-        // data: URI 豁免：对齐原版 AnalyzeUrl.kt 先经 dataUriRegex 判定，
-        // data 段本身可能以 `,{...}` 开头（如 JSON 内容），不可误判为请求选项
         if rule.starts_with("data:") {
+            // data: URI 选项分离：**仅 base64 形态**（meta 含 `;base64`）才尝试
+            // 分离 `,{...}` 请求选项——base64 数据段不含逗号，选项必在其后
+            //（书山 bookUrl = `data:detailsUrl;base64,<b64>,{"type":"susan"}`）。
+            // 非 base64 形态（如 `data:application/json,{...}`）data 内容本身
+            // 可能是 JSON 对象，整体视为数据、不分离，避免误切。
+            let meta_end = rule.find(',').unwrap_or(rule.len());
+            let meta = &rule[5..meta_end];
+            let is_b64 = meta.split(';').any(|s| s.trim() == "base64");
+            if is_b64 {
+                if let Some(comma_pos) = rule.rfind(',') {
+                    let after = rule[comma_pos + 1..].trim();
+                    if after.starts_with('{') && after.ends_with('}') {
+                        return (rule[..comma_pos].to_string(), Some(after.to_string()));
+                    }
+                }
+            }
             return (rule.to_string(), None);
         }
 
@@ -2043,6 +2057,20 @@ mod tests {
             None,
         );
         assert_eq!(url.server_id(), Some(42));
+    }
+
+    #[test]
+    fn test_data_uri_with_option_is_data_uri() {
+        // 书山 bookUrl 形态：data:detailsUrl;base64,<base64JSON>,{"type":"susan"}
+        let url = r#"data:detailsUrl;base64,eyJ1cmwiOiJodHRwczovL3YxLnZvc3NjLmNvbS9kZXRhaWwifQ==,{"type":"susan"}"#;
+        let parsed = AnalyzeUrl::parse(url, &HashMap::new(), 1).unwrap();
+        eprintln!("url_no_query=<{}> url=<{}>", parsed.url_no_query(), parsed.url());
+        assert!(parsed.is_data_uri(), "is_data_uri 应为 true");
+        let bytes = parsed.get_byte_array_if_data_uri().unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            r#"{"url":"https://v1.vossc.com/detail"}"#
+        );
     }
 
     #[test]
