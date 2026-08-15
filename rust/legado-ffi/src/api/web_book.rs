@@ -1229,7 +1229,7 @@ impl RealBookSourceFetcher {
         }
 
         // B3.4 去重 + 反转管线（对标 Kotlin BookChapterList 双反转去重逻辑，去重键为 url）
-        let chapters = if reverse {
+        let mut chapters = if reverse {
             // "-" 前缀：先去重（保留首次），再反转
             let mut deduped = dedupe_first_by_url(chapters);
             deduped.reverse();
@@ -1238,6 +1238,39 @@ impl RealBookSourceFetcher {
             // 默认：等价于 Kotlin reverse→去重→reverse，即去重保留最后一次出现、保持原顺序
             dedupe_last_by_url(chapters)
         };
+
+        // B3.5 formatJs 标题格式化（对齐 Kotlin BookChapterList.analyzeChapterList：
+        //      对每章以 bindings {index(1-based)/title/chapter/gInt=0} eval(formatJs)，
+        //      结果改写 bookChapter.title）
+        let format_js = toc_rule
+            .and_then(|r| r.format_js.as_deref())
+            .unwrap_or("")
+            .trim();
+        if !format_js.is_empty() && !chapters.is_empty() {
+            for (i, ch) in chapters.iter_mut().enumerate() {
+                let chapter_json =
+                    serde_json::to_string(&*ch).unwrap_or_else(|_| "{}".to_string());
+                let title_json = serde_json::to_string(&ch.title)
+                    .unwrap_or_else(|_| "\"\"".to_string());
+                let index_json = serde_json::to_string(&(i as i32 + 1)).unwrap();
+                let mut fa = crate::js_executor::construct_analyzer_with_js_lib(
+                    String::new(),
+                    toc_url.clone(),
+                    &source.book_source_url,
+                    source.js_lib.as_deref(),
+                );
+                fa.add_js_binding("index", &index_json);
+                fa.add_js_binding("title", &title_json);
+                fa.add_js_binding("chapter", &chapter_json);
+                fa.add_js_binding("gInt", "0");
+                let new_title = fa
+                    .get_string(&format!("@js:{format_js}"))
+                    .unwrap_or_default();
+                if !new_title.is_empty() {
+                    ch.title = new_title;
+                }
+            }
+        }
 
         Ok(chapters)
     }
