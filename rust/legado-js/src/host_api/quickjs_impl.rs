@@ -267,7 +267,11 @@ fn register_encoding_apis<'js>(
         globals,
         "hexDecode",
         rquickjs::Function::new(ctx.clone(), |s: String| -> String {
-            encoding::hex_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
+            // 容错：非合法 hex 原样返回（书山等源可能传入已解码文本）
+            match encoding::hex_decode(&s) {
+                Ok(v) => v,
+                Err(_) => s,
+            }
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
