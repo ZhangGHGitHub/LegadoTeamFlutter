@@ -13,6 +13,7 @@ pub mod chinese_utils;
 pub mod concurrency_api;
 pub mod config_api;
 pub mod cookie_store;
+pub mod device_id;
 pub mod crypto_api;
 pub mod current_source;
 pub mod pre_update_hooks;

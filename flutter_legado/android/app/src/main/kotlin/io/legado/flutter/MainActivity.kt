@@ -42,6 +42,7 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL_MEDIA_SESSION = "legado/media_session"
         private const val CHANNEL_DEEP_LINK = "legado/deep_link"
         private const val CHANNEL_SYSTEM_BAR = "legado/system_bar"
+        private const val CHANNEL_DEVICE_ID = "legado/device_id"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -115,6 +116,23 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_SYSTEM_BAR)
             .setMethodCallHandler { call, result ->
                 handleSystemBarCall(call, result)
+            }
+
+        // 设备 ID 通道：返回 Settings.Secure.ANDROID_ID（书山聚合等源
+        // 登录登记设备 + 正文 X-Device-Id 校验；对齐原版 AppConst.androidId）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_DEVICE_ID)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getAndroidId" -> {
+                        @Suppress("DEPRECATION")
+                        val id = android.provider.Settings.Secure.getString(
+                            contentResolver,
+                            android.provider.Settings.Secure.ANDROID_ID
+                        )
+                        result.success(id ?: "")
+                    }
+                    else -> result.notImplemented()
+                }
             }
     }
 

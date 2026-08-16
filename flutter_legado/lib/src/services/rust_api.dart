@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart'
     show ExternalLibrary;
@@ -37,7 +38,25 @@ class RustApi implements BookApi {
     // [UI-fix v2.0.2 | 2026-08-06] TTS 缓存目录初始化接线 — QoderCN
     await _initTtsCacheDir();
 
+    // 注入真实设备 ID（书山聚合等源登录登记设备 + 正文 X-Device-Id 校验；
+    // 对齐原版 AppConst.androidId = Settings.Secure.ANDROID_ID）
+    await _injectDeviceId();
+
     _initialized = true;
+  }
+
+  /// 读取系统 ANDROID_ID 并注入 Rust（书山正文解密依赖设备匹配）
+  Future<void> _injectDeviceId() async {
+    try {
+      const channel = MethodChannel('legado/device_id');
+      final androidId = await channel.invokeMethod<String>('getAndroidId');
+      if (androidId != null && androidId.isNotEmpty) {
+        await bridge.setDeviceId(deviceId: androidId);
+        debugPrint('[RustApi] 设备 ID 注入完成：$androidId');
+      }
+    } catch (e) {
+      debugPrint('[RustApi] 设备 ID 注入失败：$e');
+    }
   }
 
   /// 设置 TTS 音频缓存目录（应用初始化时调用）— QoderCN

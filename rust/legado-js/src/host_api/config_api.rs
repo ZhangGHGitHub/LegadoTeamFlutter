@@ -71,13 +71,19 @@ pub fn get_web_view_ua() -> String {
 
 /// 获取 Android ID（设备标识）
 ///
-/// 对应 Kotlin: `androidId()` -> AppConst.androidId
-/// 在 Rust 侧返回一个基于随机 UUID 的稳定 ID
+/// 对应 Kotlin: `androidId()` -> AppConst.androidId（Settings.Secure.ANDROID_ID）
+/// 优先用 Flutter 侧注入的真实设备 ID（书山聚合等源登录时登记该设备、
+/// 正文请求需携带匹配的 X-Device-Id 才返回明文）；未注入时回退伪随机 ID。
+/// — 书山正文修复
 pub fn get_android_id() -> String {
     use std::sync::OnceLock;
     static DEVICE_ID: OnceLock<String> = OnceLock::new();
     DEVICE_ID
         .get_or_init(|| {
+            // 优先使用 Flutter 注入的真实设备 ID
+            if let Some(v) = crate::host_api::device_id::device_id() {
+                return v;
+            }
             // 生成一个稳定的伪设备 ID
             format!(
                 "{:016x}",

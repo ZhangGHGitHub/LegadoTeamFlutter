@@ -74,6 +74,14 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 注入真实设备 ID（Android Settings.Secure.ANDROID_ID）
+    ///
+    /// 书山聚合等源登录时登记该设备，正文请求需携带匹配的 X-Device-Id
+    /// 才返回明文；Flutter 侧启动时读取系统 ANDROID_ID 后调用。
+    pub fn set_device_id(device_id: String) {
+        legado_js::host_api::device_id::set_device_id(&device_id);
+    }
+
     /// 获取版本号
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()

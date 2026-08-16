@@ -10,6 +10,13 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// 初始化 Legado 运行时（首次调用时创建 tokio runtime）
 Future<void> init() => RustLib.instance.api.crateFfiFfiInit();
 
+/// 注入真实设备 ID（Android Settings.Secure.ANDROID_ID）
+///
+/// 书山聚合等源登录时登记该设备，正文请求需携带匹配的 X-Device-Id
+/// 才返回明文；Flutter 侧启动时读取系统 ANDROID_ID 后调用。
+Future<void> setDeviceId({required String deviceId}) =>
+    RustLib.instance.api.crateFfiFfiSetDeviceId(deviceId: deviceId);
+
 /// 获取版本号
 Future<String> version() => RustLib.instance.api.crateFfiFfiVersion();
 
