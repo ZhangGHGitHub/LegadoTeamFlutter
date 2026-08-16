@@ -376,6 +376,35 @@ if (__loginInfoSeed) {{
   put(__userInfoKey(), String(__loginInfoSeed));
 }}
 
+// 执行书源 header 规则（对齐 Android BaseSource.getHeaderMap）：@js:/<js>
+// 求值 → JSON 解析 → 写入全局请求头（java.putGlobalHeaders），java.ajax 自动
+// 携带书山聚合固定 X-Novel-Token 等认证头（原版 AnalyzeUrl(source) 每次请求
+// 都解析 header 规则；setup 阶段求值一次即可覆盖静态/登录态头）
+try {{
+  var __headerRule = String(source.header || '');
+  var __headerJs = null;
+  if (__headerRule.indexOf('@js:') === 0) {{
+    __headerJs = __headerRule.substring(4);
+  }} else if (__headerRule.indexOf('<js>') === 0) {{
+    var __hend = __headerRule.lastIndexOf('<');
+    __headerJs = __hend > 4 ? __headerRule.substring(4, __hend) : __headerRule.substring(4);
+  }}
+  if (__headerJs) {{
+    var __headerFn = new Function('return (' + __headerJs + ');');
+    var __headerResult = __headerFn.call({{ source: source, cookie: cookie, java: java }});
+    var __headerJson = String(__headerResult);
+    var __headerMap = JSON.parse(__headerJson);
+    if (__headerMap && typeof __headerMap === 'object') {{
+      java.putGlobalHeaders(__headerJson);
+    }}
+  }} else if (__headerRule) {{
+    var __hmap = JSON.parse(__headerRule);
+    if (__hmap && typeof __hmap === 'object') {{
+      java.putGlobalHeaders(__headerRule);
+    }}
+  }}
+}} catch (__he) {{}}
+
 // 大灰狼等聚合源：host 定义在 jsLib；若 jsLib 未成功加载则注入提取的 host 数组
 if (typeof host === 'undefined') {{
   {host_fallback}

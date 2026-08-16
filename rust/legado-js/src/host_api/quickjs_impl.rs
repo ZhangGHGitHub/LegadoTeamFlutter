@@ -1143,6 +1143,30 @@ fn register_network_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // putGlobalHeaders(headers_json) -> bool
+    // 书源 header @js 规则执行结果写入全局请求头（按当前书源 tag 隔离），
+    // java.ajax 自动携带（对齐 AnalyzeUrl.getHeaderMap；书山固定 X-Novel-Token）
+    mount_dual(
+        java,
+        globals,
+        "putGlobalHeaders",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |headers_json: String| -> bool {
+                match serde_json::from_str::<std::collections::HashMap<String, String>>(&headers_json) {
+                    Ok(map) => {
+                        let tag =
+                            crate::host_api::current_source::current_source_tag().unwrap_or_default();
+                        crate::host_api::global_headers::put_headers(&tag, map);
+                        true
+                    }
+                    Err(_) => false,
+                }
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // ajaxAll(urls_json) -> String（JSON 数组，并发请求多个 URL）
     // 对应 Kotlin: ajaxAll(urlList: Array<String>): Array<StrResponse>
     mount_dual(

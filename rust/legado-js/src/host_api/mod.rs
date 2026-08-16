@@ -20,6 +20,7 @@ pub mod encoding;
 pub mod env;
 pub mod file_utils;
 pub mod font_api;
+pub mod global_headers;
 pub mod html_format;
 #[cfg(feature = "quickjs")]
 pub mod html_parse;

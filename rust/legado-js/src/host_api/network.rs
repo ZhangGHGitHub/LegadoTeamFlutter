@@ -220,8 +220,18 @@ mod http_options_tests {
     }
 }
 
-/// 合并书源会话 Cookie（GLOBAL_COOKIES，书山登录/setCookie 写入的 X-Novel-Token 等）
+/// 合并书源请求头与会话 Cookie（对齐 Android AnalyzeUrl(source).getHeaderMap）
+///
+/// - 全局请求头（GLOBAL_HEADERS）：setup 阶段执行书源 header @js 规则后经
+///   java.putGlobalHeaders 写入（书山聚合固定 X-Novel-Token 等），按当前书源
+///   tag 隔离；JS 显式传入的 headers 优先。
+/// - 全局会话 Cookie（GLOBAL_COOKIES）：书山登录/setCookie 写入的 X-Novel-Token 等。
 fn merge_global_cookie(mut headers: HashMap<String, String>) -> HashMap<String, String> {
+    if let Some(tag) = crate::host_api::current_source::current_source_tag() {
+        for (k, v) in crate::host_api::global_headers::headers_for(&tag) {
+            headers.entry(k).or_insert(v);
+        }
+    }
     if !headers.contains_key("Cookie") {
         let c = crate::host_api::cookie_store::all_cookies();
         if !c.is_empty() {
