@@ -352,6 +352,24 @@ var infoMap = new Proxy(__infoData, {{
 var __loginHeaderSeed = {login_header_seed};
 if (__loginHeaderSeed) {{
   put(__loginHeaderKey(), String(__loginHeaderSeed));
+  // 同步登录认证头到全局 Cookie（供 java.ajax 自动携带书山 X-Novel-Token 等）
+  try {{
+    var __lh = __loginHeaderSeed;
+    if (typeof __lh === 'string') __lh = JSON.parse(__lh);
+    if (__lh && typeof __lh === 'object') {{
+      for (var __k in __lh) {{
+        if (!Object.prototype.hasOwnProperty.call(__lh, __k)) continue;
+        var __v = String(__lh[__k]);
+        if (!__v) continue;
+        var __lk = String(__k).toLowerCase();
+        if (__lk === 'cookie') {{
+          java.setCookie(baseUrl, __v);
+        }} else if (__lk.indexOf('token') >= 0 || __lk.indexOf('session') >= 0 || __lk.indexOf('auth') >= 0) {{
+          java.setCookie(baseUrl, __k + '=' + __v);
+        }}
+      }}
+    }}
+  }} catch (e) {{}}
 }}
 var __loginInfoSeed = {login_info_seed};
 if (__loginInfoSeed) {{

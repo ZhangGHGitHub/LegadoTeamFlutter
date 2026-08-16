@@ -48,6 +48,21 @@ pub fn clear_cookies(tag: &str) {
     store.remove(tag);
 }
 
+/// 合并全部 tag 的 Cookie（供 java.ajax 请求自动携带书源会话）
+pub fn all_cookies() -> String {
+    let store = GLOBAL_COOKIES.lock().unwrap();
+    store
+        .iter()
+        .flat_map(|(_, cookies)| {
+            cookies
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 /// clearAllCookies() — 清除所有 Cookie
 pub fn clear_all_cookies() {
     let mut store = GLOBAL_COOKIES.lock().unwrap();

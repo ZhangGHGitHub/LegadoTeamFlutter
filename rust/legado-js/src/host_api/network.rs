@@ -177,7 +177,7 @@ pub fn ajax(input: &str) -> Result<String, String> {
         let request = LegadoRequest {
             url: opts.url.clone(),
             method,
-            headers: opts.headers.clone().unwrap_or_default(),
+            headers: merge_global_cookie(opts.headers.clone().unwrap_or_default()),
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
@@ -220,6 +220,17 @@ mod http_options_tests {
     }
 }
 
+/// 合并书源会话 Cookie（GLOBAL_COOKIES，书山登录/setCookie 写入的 X-Novel-Token 等）
+fn merge_global_cookie(mut headers: HashMap<String, String>) -> HashMap<String, String> {
+    if !headers.contains_key("Cookie") {
+        let c = crate::host_api::cookie_store::all_cookies();
+        if !c.is_empty() {
+            headers.insert("Cookie".to_string(), c);
+        }
+    }
+    headers
+}
+
 /// 「url,{json}」格式请求，返回**纯响应体文本**（对齐原版 JsExtensions.ajax 返回
 /// StrResponse.body；七猫 qmParse 等直接 JSON.parse 响应体）
 fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
@@ -237,7 +248,7 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
         let request = LegadoRequest {
             url: opts.url.clone(),
             method,
-            headers: opts.headers.clone().unwrap_or_default(),
+            headers: merge_global_cookie(opts.headers.clone().unwrap_or_default()),
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
