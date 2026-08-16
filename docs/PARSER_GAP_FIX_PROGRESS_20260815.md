@@ -152,3 +152,28 @@ exploreUrl `<js>/@js:` 模板解析全部通过（4/4 OK）。
 - batch scan 结果：scanned=30 ok=23 empty=3 failed=4（failed 均为网络层 timeout/403/504，源侧）。
 
 编写者：DeepSeek Harness ｜ 2026-08-17
+
+
+
+---
+
+## 九、搜索批量扫描第二轮引擎缺口修复（2026-08-17，120 源扫描）
+
+### 背景
+扩展批量扫描到 120 个 type-0 文本书源，发现 {{...}} 跨行模板与 java.get/post/head（jsoup Response 语义）两类缺口。
+
+### 修复清单
+
+| # | 修复点 | 原版对齐依据 | 文件 | 效果 |
+|---|---|---|---|---|
+| 1 | web_book.rs search() URL 构建改用 build_search_url_with_setup（携带 jsLib + setup；此前无 setup → {{source.getKey()}} 类模板残留 → HTTP 404） | AnalyzeUrl evalJS source 绑定 | web_book.rs | 企鹅小说等源 URL 构建 |
+| 2 | {{...}} 模板正则加 (?s) 跨行（企鹅小说块含换行，原 . 不匹配 → 残留） | AnalyzeUrl.replaceKeyPageJs 平衡组 | analyze_url.rs | 企鹅小说 0→15 |
+| 3 | setup 补 source.getKey()/getUrl() = bookSourceUrl | BaseSource.getKey() = bookSourceUrl | source_js_bindings.rs | 新笔趣阁等 @js: 块 |
+| 4 | java.get/post/head jsoup Connection.Response 语义桥（.header(name)/.headers(name)→数组/.body()/.statusCode()）；setup 的 __mountBookSourceApi(java) 覆盖 java.get → setup 后重新注入（RESPONSE_BRIDGE_JS 常量） | JsExtensions.get(url,headers): Connection.Response | quickjs_impl.rs / js_executor.rs | 新笔趣阁 0→22 |
+| 5 | cookie.removeCookie 补齐（Rust 绑定 + setup cookie 对象），返回空串（对齐 Kotlin Unit→null→空；返回 true 会被内联成 /true/search/ → 404） | CookieStore.removeCookie(url): Unit | quickjs_impl.rs / source_js_bindings.rs | 企鹅小说 URL 干净 |
+
+### 回归测试
+- test_qiexs_search_diag（15 条）、test_xbqgxs_search_diag（22 条）新增断言回归。
+- batch scan 剩余 empty 均为源侧（书旗规则过时/一笔阁站点无结果/完本神站需登录）。
+
+编写者：DeepSeek Harness ｜ 2026-08-17

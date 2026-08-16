@@ -167,6 +167,60 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     Ok(())
 }
 
+
+/// 注入 java.get/post/head 的 jsoup Connection.Response 语义桥
+///
+/// 原版 JsExtensions.get(url, headers) 返回 jsoup Connection.Response，
+/// 书源 @js: URL 模板常用 .header('Location') / .headers('Location')[0]
+/// 拦截重定向。Rust 侧 java.get 单参绑定为变量表读取（原版无单参 get），
+/// post/head 返回完整响应 JSON 字符串而非对象——JS 桥覆盖为对象语义：
+/// 双参 get → 网络 GET Response；单参 get → 委托原生变量读取（兼容保留）。
+/// — 新笔趣阁/新落秋/笔趣阁zdzn/天悦小说 搜索修复（2026-08-17）
+#[cfg(feature = "quickjs")]
+pub const RESPONSE_BRIDGE_JS: &str = r#"
+(function () {
+  function __resp(jsonStr) {
+    var r = null;
+    try { r = JSON.parse(jsonStr); } catch (e) { r = null; }
+    var h = (r && r.headers) || {};
+    return {
+      header: function (name) {
+        var lk = String(name).toLowerCase();
+        for (var k in h) { if (String(k).toLowerCase() === lk) return h[k]; }
+        return null;
+      },
+      headers: function (name) {
+        var v = this.header(name);
+        return v === null ? [] : [v];
+      },
+      body: function () { return (r && r.body) || ''; },
+      statusCode: function () { return r ? r.status_code : 0; },
+      headersMap: function () { return h; }
+    };
+  }
+  var __nativeGetVariable = java.get;
+  var __nativeConnect = java.connect;
+  var __nativePost = java.post;
+  var __nativeHead = java.head;
+  java.get = function (url, headers) {
+    if (arguments.length >= 2) {
+      var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+      return __resp(__nativeConnect(String(url), 'GET', hs));
+    }
+    return __nativeGetVariable(String(url));
+  };
+  java.post = function (url, body, headers) {
+    var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+    return __resp(__nativePost(String(url), String(body), hs));
+  };
+  java.head = function (url, headers) {
+    var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+    return __resp(__nativeHead(String(url), hs));
+  };
+})();
+"#;
+
+
 /// 注册编解码类 API
 ///
 /// 对应 Kotlin 端 `JsEncodeUtils` + `JsExtensions` 中的编解码方法。
@@ -1290,6 +1344,22 @@ fn register_cookie_apis<'js>(
         rquickjs::Function::new(ctx.clone(), |tag: String| -> bool {
             cookie_store::clear_cookies(&tag);
             true
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // removeCookie(tag) -> String（对齐原版 CookieStore.removeCookie(url)
+    // 返回 Unit → Rhino null → evalJS 兜底空串；若返回 bool true 会被
+    // @js: URL 模板 {{url=source.getKey();cookie.removeCookie(url)}} 内联
+    // 成 /true/search/ → 404（企鹅小说实测）。删除该域全部 cookie。
+    // — 2026-08-17
+    mount_dual(
+        java,
+        globals,
+        "removeCookie",
+        rquickjs::Function::new(ctx.clone(), |tag: String| -> String {
+            cookie_store::clear_cookies(&tag);
+            String::new()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;

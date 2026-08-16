@@ -500,6 +500,14 @@ mod quickjs_impl {
                             eprintln!("[legado-ffi] 书源 {} setup 加载失败（降级继续）: {e}", self.source_tag);
                         }
                     }
+                    // java.get/post/head jsoup Response 语义桥（setup 的
+                    // __mountBookSourceApi(java) 会按原版语义把 java.get 覆盖为
+                    // 变量读取 → 双参网络 get 丢失；此处 setup 之后重新注入桥，
+                    // 双参调度：2 参 = 网络 GET Response，1 参 = 变量读取）
+                    // — 新笔趣阁等 @js: 重定向拦截源搜索修复（2026-08-17）
+                    if let Err(e) = legado_js::JsEngine::eval(&engine, legado_js::host_api::quickjs_impl::RESPONSE_BRIDGE_JS) {
+                        eprintln!("[legado-ffi] 书源 {} Response 桥重新注入失败（降级继续）: {e}", self.source_tag);
+                    }
                     // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
                     legado_js::JsEngine::eval(&engine, js_code).map_err(|e| e.to_string())
                 },

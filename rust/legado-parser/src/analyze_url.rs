@@ -371,7 +371,7 @@ impl AnalyzeUrl {
             return template.to_string();
         }
 
-        let re = Regex::new(r"\{\{(.+?)\}\}").unwrap();
+        let re = Regex::new(r"(?s)\{\{(.+?)\}\}").unwrap();
         re.replace_all(template, |caps: &regex::Captures| {
             let expr = caps[1].trim();
             // 简单变量名直接替换
@@ -1250,7 +1250,7 @@ impl AnalyzeUrl {
             return template.to_string();
         }
 
-        let re = Regex::new(r"\{\{(.+?)\}\}").unwrap();
+        let re = Regex::new(r"(?s)\{\{(.+?)\}\}").unwrap();
         re.replace_all(template, |caps: &regex::Captures| {
             let expr = caps[1].trim();
             // 简单变量名直接替换

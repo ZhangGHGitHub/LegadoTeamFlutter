@@ -229,7 +229,8 @@ var cookie = {{
     return java.getCookie(String(url), String(key));
   }},
   setCookie: function(url, value) {{ return java.setCookie(String(url), String(value)); }},
-  clearCookies: function(url) {{ return java.clearCookies(String(url)); }}
+  clearCookies: function(url) {{ return java.clearCookies(String(url)); }},
+  removeCookie: function(url) {{ return java.removeCookie(String(url)); }}
 }};
 var cache = {{
   get: function(k) {{ return get(String(k)) || null; }},
@@ -248,6 +249,9 @@ function __sourceVariableKey() {{ return 'sourceVariable_' + sourceUrl; }}
 
 function __mountBookSourceApi(obj) {{
   obj.get = function(k) {{ return get(__sourceVarKey(k)) || ''; }};
+  // 对齐原版 BaseSource.getKey() = bookSourceUrl（新笔趣阁等源 searchUrl @js: 块用 source.getKey()）
+  obj.getKey = function() {{ return sourceUrl; }};
+  obj.getUrl = function() {{ return sourceUrl; }};
   obj.put = function(k, v) {{ put(__sourceVarKey(k), String(v)); return v; }};
   obj.getVariable = function() {{ return get(__sourceVariableKey()) || ''; }};
   obj.setVariable = function(v) {{ setVariable(__sourceVariableKey(), String(v)); return v; }};

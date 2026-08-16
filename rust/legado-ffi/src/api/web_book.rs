@@ -539,13 +539,19 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let source_headers = Self::parse_source_headers(source);
 
-        // 1. 解析搜索 URL 模板（`{{JS表达式}}` 模板经 JS 引擎求值渲染，
-        //    纯字面模板走旧版路径；见 js_executor::build_search_url）
-        let analyze_url = crate::js_executor::build_search_url(
+        // 1. 解析搜索 URL 模板（`{{JS表达式}}` / `@js:` 模板经 JS 引擎求值渲染，
+        //    纯字面模板走旧版路径；见 js_executor::build_search_url_with_setup）
+        //    必须携带 jsLib + 书源上下文 setup：searchUrl 里 `{{source.getKey()}}`
+        //    （爱下电子）或 `{{url=source.getKey();...}}`（企鹅小说/笔下文学）
+        //    依赖 source 绑定，缺 setup → 模板原样残留 → HTTP 404 误导
+        //    （2026-08-17 批量扫描 120 源发现）
+        let analyze_url = crate::js_executor::build_search_url_with_setup(
             search_url,
             query,
             page,
             &source.book_source_url,
+            source.js_lib.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
 
         // 2. 发起 HTTP 请求
@@ -2623,7 +2629,7 @@ mod tests {
                     eprintln!("[scan-fail] {} | {} | {}", name, url, e.to_string().chars().take(120).collect::<String>());
                 }
             }
-            if scanned >= 30 { break; }
+            if scanned >= 120 { break; }
         }
         eprintln!("[scan-summary] scanned={} ok={} empty={} failed={}", scanned, ok, empty, failed);
     }
@@ -2827,6 +2833,107 @@ mod tests {
         }
     }
 
+
+    /// 企鹅小说 setup 依赖搜索验证（2026-08-17）：searchUrl 用
+    /// `{{url=source.getKey();...}}`，缺 setup 时模板残留 → HTTP 404
+    #[test]
+    fn test_qiexs_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("企鹅小说"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        // 直接构造 AnalyzeUrl 看中间态
+        let exec = crate::js_executor::QuickJsExecutor::new(&source.book_source_url)
+            .with_js_lib(source.js_lib.as_deref().map(|s| s.to_string()))
+            .with_setup_script(crate::api::source_js_bindings::book_source_js_setup_script(&source).ok());
+        let vars = std::collections::HashMap::from([
+            ("key".to_string(), "一念".to_string()),
+            ("page".to_string(), "1".to_string()),
+            ("baseUrl".to_string(), source.book_source_url.clone()),
+            ("searchKey".to_string(), "一念".to_string()),
+        ]);
+        let parsed = crate::legado_parser::AnalyzeUrl::parse_with_js(
+            source.search_url.as_deref().unwrap_or(""),
+            &vars,
+            1,
+            &exec,
+        );
+        match &parsed {
+            Ok(u) => eprintln!("[qiexs] parse_with_js OK: {}", u.url()),
+            Err(err) => eprintln!("[qiexs] parse_with_js ERR: {:?}", err),
+        }
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[qiexs] search 结果数: {}", list.len());
+                assert!(list.len() > 0, "企鹅小说搜索应有结果，实际 {}", list.len());
+                for it in list.iter().take(3) {
+                    eprintln!("[qiexs]   -> {} | {}", it.name, it.book_url);
+                }
+            }
+            Err(err) => panic!("[qiexs] search 失败: {:?}", err),
+        }
+    }
+
+    /// 新笔趣阁 @js: 重定向拦截搜索验证（2026-08-17）：searchUrl 用
+    /// java.get(su,{}).headers('Location')[0] 需 jsoup Response 语义桥
+    #[test]
+    fn test_xbqgxs_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("新笔趣阁") && s.get("bookSourceUrl").and_then(|u| u.as_str()).is_some_and(|u| u.contains("xbqgxs")))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        // 直接执行 @js: 块看错误
+        let exec = crate::js_executor::QuickJsExecutor::new(&source.book_source_url)
+            .with_js_lib(source.js_lib.as_deref().map(|s| s.to_string()))
+            .with_setup_script(crate::api::source_js_bindings::book_source_js_setup_script(&source).ok());
+        let vars = std::collections::HashMap::from([
+            ("key".to_string(), "一念".to_string()),
+            ("page".to_string(), "1".to_string()),
+            ("baseUrl".to_string(), source.book_source_url.clone()),
+        ]);
+        let parsed = crate::legado_parser::AnalyzeUrl::parse_with_js(
+            source.search_url.as_deref().unwrap_or(""),
+            &vars,
+            1,
+            &exec,
+        );
+        match &parsed {
+            Ok(u) => eprintln!("[xbqgxs] parse_with_js OK: {}", u.url().chars().take(150).collect::<String>()),
+            Err(err) => eprintln!("[xbqgxs] parse_with_js ERR: {:?}", err),
+        }
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[xbqgxs] search 结果数: {}", list.len());
+                assert!(list.len() > 0, "新笔趣阁搜索应有结果，实际 {}", list.len());
+                for it in list.iter().take(3) {
+                    eprintln!("[xbqgxs]   -> {} | {}", it.name, it.book_url);
+                }
+            }
+            Err(err) => panic!("[xbqgxs] search 失败: {:?}", err),
+        }
+    }
 
     use legado_core::models::rule::ContentRule;
 
