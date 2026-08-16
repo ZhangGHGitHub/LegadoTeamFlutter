@@ -458,13 +458,17 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final chrome = widget.pageChrome;
     final headerBlock = ReaderPageLayoutMetrics.headerBlockHeight(context, chrome);
     final footerBlock = ReaderPageLayoutMetrics.footerBlockHeight(context, chrome);
+    // 预留 4px 保险余量：TextPainter 测量与 Text 实际渲染存在亚像素差
+    //（基线/字距舍入），满页正文底部 RenderFlex 溢出 3px（书山等长正文
+    // 复现）— 2026-08-17
     final availableHeight = screenSize.height -
         statusBarTop -
         sysPadding.bottom -
         headerBlock -
         footerBlock -
         widget.marginTop -
-        widget.marginBottom;
+        widget.marginBottom -
+        4.0;
 
     // 首页标题块高度（与渲染侧 pageIndex==0 分支同参：标题按
     // availableWidth 换行实测 + 20 底部间距）
