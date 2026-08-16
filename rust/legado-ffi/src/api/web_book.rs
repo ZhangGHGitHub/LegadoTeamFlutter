@@ -2459,6 +2459,14 @@ mod tests {
         });
         let b64_detail = base64::engine::general_purpose::STANDARD.encode(detail.to_string());
         let book_url = format!(r#"data:detailsUrl;base64,{},{{"type":"susan"}}"#, b64_detail);
+        // 真实番茄书（5556 模拟器书架导出）：验证登录后正文返回明文
+        let real_book_url = std::fs::read_to_string("C:/Users/Public/real_bookurl.txt")
+            .unwrap_or_default();
+        let book_url = if !real_book_url.trim().is_empty() {
+            real_book_url.trim().to_string()
+        } else {
+            book_url
+        };
         let source_json = serde_json::to_string(&source).unwrap();
         // 注入设备 ID（对齐 Flutter 启动时 RustApi._injectDeviceId）
         legado_js::host_api::device_id::set_device_id("62d8d4fb53e19733");
@@ -2512,6 +2520,7 @@ mod tests {
                 "is_vip": false,
             })
             .to_string();
+
             let content = webbook_content(&source_json, &ch_json);
             match content {
                 Ok(c) => {

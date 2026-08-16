@@ -783,11 +783,21 @@ impl AnalyzeUrl {
             let meta = &rule[5..meta_end];
             let is_b64 = meta.split(';').any(|s| s.trim() == "base64");
             if is_b64 {
-                if let Some(comma_pos) = rule.rfind(',') {
-                    let after = rule[comma_pos + 1..].trim();
-                    if after.starts_with('{') && after.ends_with('}') {
-                        return (rule[..comma_pos].to_string(), Some(after.to_string()));
-                    }
+                // base64 数据段之后紧跟 `,{...}` 才是选项（bookUrl/detailsUrl/
+                // chapterUrl 形态）。**不能用 rfind(',')**：选项 JSON 内部（如书山
+                // chapterUrl 的 `{"type":"susan","js":"..."}`）含逗号，
+                // rfind 会切到选项内部导致 base64 段混入选项 → decode 失败。
+                // 改为找 base64 段后的第一个 `,{`（base64 字符集无逗号）。
+                let data_start = meta_end + 1;
+                let b64_part = &rule[data_start..];
+                let b64_len = b64_part
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='))
+                    .unwrap_or(b64_part.len());
+                // base64 段尾是 `,{...}` 选项分隔逗号：跳过逗号再校验 JSON 形态
+                let after = b64_part[b64_len..].trim_start_matches(',').trim();
+                if after.starts_with('{') && after.ends_with('}') {
+                    let url_part_end = data_start + b64_len;
+                    return (rule[..url_part_end].to_string(), Some(after.to_string()));
                 }
             }
             return (rule.to_string(), None);
@@ -1415,6 +1425,23 @@ impl AnalyzeUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 书山真实章节 data URI 解析回归（2026-08-17）
+    #[test]
+    fn test_parse_data_uri_shushan_chapter_real() {
+        let raw = std::fs::read_to_string("C:/Users/Public/real_bookurl.txt").unwrap_or_default();
+        let url = raw.trim();
+        if url.is_empty() {
+            eprintln!("real_bookurl.txt 缺失，跳过");
+            return;
+        }
+        let parsed = AnalyzeUrl::parse(url, &std::collections::HashMap::new(), 1).unwrap();
+        assert!(parsed.is_data_uri(), "应识别为 data URI");
+        let bytes = parsed.get_byte_array_if_data_uri()
+            .unwrap_or_else(|| panic!("get_byte_array 失败, url_no_query={}", parsed.url_no_query().chars().take(120).collect::<String>()));
+        let s = String::from_utf8_lossy(&bytes);
+        assert!(s.contains("source"), "解码内容应为 JSON: {}", s.chars().take(80).collect::<String>());
+    }
 
     // --- 1. 简单变量替换 ---
     #[test]
