@@ -209,6 +209,23 @@ pub fn build_search_url_with_lib(
     source_tag: &str,
     js_lib: Option<&str>,
 ) -> AnalyzeUrl {
+    build_search_url_with_setup(template, keyword, page, source_tag, js_lib, None)
+}
+
+/// 构建搜索 URL（携带书源 jsLib + 书源上下文 setup）
+///
+/// 对齐原版 AnalyzeUrl.kt evalJS：搜索模板 `{{source.getKey()}}` 等依赖
+/// source/cookie 绑定（爱下电子等源 searchUrl 用 `{{source.getKey()}}/search`）；
+/// 仅注入 jsLib 无 setup → source 未定义 → URL 构建失败 → 搜索结果为空。
+/// — 聚合/上下文书源搜索修复（2026-08-17）
+pub fn build_search_url_with_setup(
+    template: &str,
+    keyword: &str,
+    page: i32,
+    source_tag: &str,
+    js_lib: Option<&str>,
+    setup_script: Option<String>,
+) -> AnalyzeUrl {
     let page_u32 = page.max(1) as u32;
     // 含任一 JS 语法（{{表达式}} / <js> 内嵌 / @js: 前缀）都走 JS 求值路径：
     // [UI-fix 2026-08-10 | Reasonix] <js>/@js: 模板此前落入旧版字面路径，
@@ -224,7 +241,7 @@ pub fn build_search_url_with_lib(
         variables.insert("baseUrl".to_string(), source_tag.to_string());
         variables.insert("searchKey".to_string(), keyword.to_string());
         if let Ok(analyzed) =
-            search_url_with_js(&pre, &variables, page, source_tag, js_lib)
+            search_url_with_js(&pre, &variables, page, source_tag, js_lib, setup_script)
         {
             return analyzed;
         }
@@ -367,6 +384,9 @@ impl legado_parser::JsExecutor for ExploreInfoMapJsExecutor {
 }
 
 /// quickjs 启用：用 QuickJS 引擎求值 `{{expression}}`
+///
+/// 注入书源上下文 setup（source/cookie 绑定）——搜索模板 `{{source.getKey()}}`
+/// 等依赖（爱下电子等源）；对齐原版 AnalyzeUrl.kt evalJS 的 source 绑定。
 #[cfg(feature = "quickjs")]
 fn search_url_with_js(
     template: &str,
@@ -374,8 +394,11 @@ fn search_url_with_js(
     page: i32,
     source_tag: &str,
     js_lib: Option<&str>,
+    setup_script: Option<String>,
 ) -> legado_core::LegadoResult<AnalyzeUrl> {
-    let executor = QuickJsExecutor::new(source_tag).with_js_lib(js_lib.map(|s| s.to_string()));
+    let executor = QuickJsExecutor::new(source_tag)
+        .with_js_lib(js_lib.map(|s| s.to_string()))
+        .with_setup_script(setup_script);
     AnalyzeUrl::parse_with_js(template, variables, page, &executor)
 }
 
@@ -387,6 +410,7 @@ fn search_url_with_js(
     page: i32,
     _source_tag: &str,
     _js_lib: Option<&str>,
+    _setup_script: Option<String>,
 ) -> legado_core::LegadoResult<AnalyzeUrl> {
     AnalyzeUrl::parse(template, variables, page)
 }

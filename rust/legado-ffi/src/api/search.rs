@@ -785,13 +785,18 @@ pub(crate) async fn search_single_source(
     let key = keyword.to_string();
     let build_base = source.book_source_url.clone();
     let source_lib = source.js_lib.clone();
+    // 书源上下文 setup：搜索模板 `{{source.getKey()}}` 等依赖 source/cookie
+    // 绑定（爱下电子等源）——对齐原版 AnalyzeUrl.kt evalJS source 绑定
+    let search_setup =
+        crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
     let analyze_url = tokio::task::spawn_blocking(move || {
-        crate::js_executor::build_search_url_with_lib(
+        crate::js_executor::build_search_url_with_setup(
             &template,
             &key,
             1,
             &build_base,
             source_lib.as_deref(),
+            search_setup,
         )
     })
     .await

@@ -1254,14 +1254,11 @@ impl AnalyzeRule {
         }
 
         // 2. 根据缓存的内容类型推断（快速路径）
+        // 对齐原版 AnalyzeRule.kt:680：isJSON → Mode.Json——JSON 内容下
+        // 非显式 @CSS:/@@ 前缀的规则一律按 JsonPath 解析（丁丁小说 `.data[*]`、
+        // 书旗 `.data` 等无 $ 前缀 JSON 列表规则依赖；此前误判 CSS → 空结果）。
         if self.is_json {
-            // 内容是 JSON，规则看起来不像 CSS 时，使用 JsonPath
-            // （以标签名/类名/ID 选择器开头的规则仍按 CSS 处理，
-            // 避免 `span.user@text` 等 CSS 规则被误路由到 JsonPath）
-            if !rule.contains('<') && !rule.contains('>') && !Self::looks_like_css_selector(rule)
-            {
-                return RuleType::Json;
-            }
+            return RuleType::Json;
         } else if let Some(ref ct) = self.cached_content_type {
             if *ct == RuleType::Xpath {
                 return RuleType::Xpath;

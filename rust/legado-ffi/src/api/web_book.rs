@@ -589,18 +589,32 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.book_list.as_deref())
             .unwrap_or("");
 
-        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+        // 书山等聚合源搜索规则依赖书源上下文（jsLib + setup：bookList/bookUrl
+        // 的 @js: 块用 source.getKey 等）——对齐原版 BookList 的 AnalyzeRule
+        // with source。此前仅 jsLib 无 setup → source 未定义 → 空结果。
+        let search_lib = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
+        let analyzer = crate::js_executor::construct_analyzer_with_source_context(
             body.clone(),
             base_url.clone(),
             &source.book_source_url,
-            source.js_lib.as_deref(),
+            search_lib.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
 
+        eprintln!("[search-diag] body 前120: {:?}", body.chars().take(120).collect::<String>());
+        eprintln!("[search-diag] book_list_rule: {:?} is_json: {}",
+            book_list_rule.chars().take(40).collect::<String>(),
+            analyzer.is_json()
+        );
         let elements = if book_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
         } else {
             analyzer.get_elements(book_list_rule).unwrap_or_default()
         };
+        eprintln!("[search-diag] elements: {}", elements.len());
 
         // 4.5 列表为空且未配置 bookUrlPattern 时，回退按详情页解析（对标 Kotlin BookList “列表为空,按详情页解析”）
         if elements.is_empty() && !has_pattern {
@@ -640,14 +654,24 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let mut results = Vec::new();
         for elem in elements.iter().take(50) {
-            let elem_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            let mut elem_analyzer = crate::js_executor::construct_analyzer_with_source_context(
                 elem.clone(),
                 base_url.clone(),
                 &source.book_source_url,
-                source.js_lib.as_deref(),
+                search_lib.as_deref(),
+                crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
             );
+            // 元素模式：JSON 列表元素按对象注入 result（`.data[*]` 等
+            // 规则产出的元素为 JSON 对象，`name: novelName` 裸键访问依赖
+            // result 对象语义；缺省字符串注入 → 字段取空 → 搜索 0 结果）
+            elem_analyzer.set_element_content(elem.clone());
 
             let name = eval_rule_string(&elem_analyzer, name_rule).unwrap_or_default();
+            eprintln!("[search-diag] name_rule={:?} name={:?} elem前80={:?}",
+                name_rule.chars().take(30).collect::<String>(),
+                name.chars().take(30).collect::<String>(),
+                elem.chars().take(80).collect::<String>()
+            );
             if name.is_empty() {
                 continue;
             }
@@ -2551,6 +2575,284 @@ mod tests {
         }
     }
 
+    /// 批量搜索扫描（2026-08-17）：遍历 fixture 文本源跑 webbook_search，
+    /// 报告失败/空结果——定位「原版可用、重构版不行」的书源候选。
+    #[test]
+    fn test_batch_search_scan_text_sources() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let mut scanned = 0;
+        let mut ok = 0;
+        let mut empty = 0;
+        let mut failed = 0;
+        for src in sources.iter() {
+            let st = src.get("bookSourceType").and_then(|v| v.as_i64()).unwrap_or(0);
+            if st != 0 { continue; }
+            let name = src.get("bookSourceName").and_then(|n| n.as_str()).unwrap_or("");
+            let url = src.get("bookSourceUrl").and_then(|n| n.as_str()).unwrap_or("");
+            if !url.contains("://") { continue; }
+            let Ok(source) =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap())
+            else {
+                continue;
+            };
+            if source.rule_search.as_ref().and_then(|r| r.book_list.as_deref()).unwrap_or("").is_empty() {
+                continue;
+            }
+            scanned += 1;
+            let source_json = serde_json::to_string(&source).unwrap();
+            match webbook_search(&source_json, "一念", 1) {
+                Ok(s) => {
+                    let arr: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+                    if arr.is_empty() {
+                        empty += 1;
+                        eprintln!("[scan-empty] {} | {}", name, url);
+                    } else {
+                        ok += 1;
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    eprintln!("[scan-fail] {} | {} | {}", name, url, e.to_string().chars().take(120).collect::<String>());
+                }
+            }
+            if scanned >= 30 { break; }
+        }
+        eprintln!("[scan-summary] scanned={} ok={} empty={} failed={}", scanned, ok, empty, failed);
+    }
+
+    /// 爱下电子搜索专项诊断（2026-08-17）：searchUrl 用 {{source.getKey()}}，
+    /// 验证 setup 注入后 URL 构建与响应。
+    #[test]
+    fn test_aixdzs_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("爱下电子") && !n.contains("（繁）"))
+        }) else { eprintln!("未找到爱下电子"); return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let tpl = source.search_url.as_deref().unwrap_or("").to_string();
+        eprintln!("[aixdzs] searchUrl 模板: {}", tpl.chars().take(150).collect::<String>());
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            &tpl,
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup,
+        );
+        eprintln!("[aixdzs] 构建 URL: {}", au.url().chars().take(200).collect::<String>());
+        eprintln!("[aixdzs] method: {:?} body: {:?}", au.method(), au.body());
+    }
+
+    /// 丁丁小说/一笔阁搜索专项诊断（2026-08-17）
+    #[test]
+    fn test_dingding_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        for name_kw in ["丁丁小说", "一笔阁"] {
+            let Some(src) = sources.iter().find(|s| {
+                s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains(name_kw) && !n.contains("（繁）"))
+            }) else { eprintln!("未找到 {name_kw}"); continue; };
+            let source =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+            let source_json = serde_json::to_string(&source).unwrap();
+            match webbook_search(&source_json, "一念", 1) {
+                Ok(s) => {
+                    let arr: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+                    eprintln!("[{name_kw}] 结果 {} 条: {:?}", arr.len(), arr.first().map(|v| v.get("name").cloned().unwrap_or_default()));
+                }
+                Err(e) => eprintln!("[{name_kw}] 失败: {}", e.to_string().chars().take(200).collect::<String>()),
+            }
+        }
+    }
+
+    /// 丁丁小说响应诊断（2026-08-17）：打印响应体与 bookList 解析
+    #[test]
+    fn test_dingding_response_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("丁丁小说") && !n.contains("（繁）"))
+        }) else { eprintln!("未找到"); return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup,
+        );
+        eprintln!("[dingding] URL: {} method: {:?}", au.url(), au.method());
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let headers = crate::api::web_book::RealBookSourceFetcher::parse_source_headers(&source);
+        let body = crate::runtime::block_on(fetcher.fetch_simple(&au.url(), headers.as_ref()))
+            .unwrap_or_default();
+        eprintln!("[dingding] 响应体前300: {}", body.chars().take(300).collect::<String>());
+        let bl = source.rule_search.as_ref().and_then(|r| r.book_list.as_deref()).unwrap_or("");
+        eprintln!("[dingding] bookList 规则: {}", bl.chars().take(100).collect::<String>());
+    }
+
+    /// 丁丁响应完整字段（2026-08-17）：打印 data[0] 全部键
+    #[test]
+    fn test_dingding_fields_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("丁丁小说") && !n.contains("（繁）"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup,
+        );
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let headers = crate::api::web_book::RealBookSourceFetcher::parse_source_headers(&source);
+        let body = crate::runtime::block_on(fetcher.fetch_simple(&au.url(), headers.as_ref()))
+            .unwrap_or_default();
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+            let first = v.get("data").and_then(|d| d.as_array()).and_then(|a| a.first());
+            if let Some(f) = first {
+                eprintln!("[dingding] data[0] 键: {:?}", f.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                eprintln!("[dingding] data[0] 前400: {}", f.to_string().chars().take(400).collect::<String>());
+            } else { eprintln!("[dingding] data 为空或非数组"); }
+        } else { eprintln!("[dingding] 响应非 JSON"); }
+    }
+
+
+    /// 一笔阁 HTML 响应诊断（2026-08-17）
+    #[test]
+    fn test_yibige_response_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("一笔阁") && !n.contains("（繁）"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup,
+        );
+        eprintln!("[yibige] URL: {}", au.url());
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let headers = crate::api::web_book::RealBookSourceFetcher::parse_source_headers(&source);
+        let body = crate::runtime::block_on(fetcher.fetch_simple(&au.url(), headers.as_ref()))
+            .unwrap_or_default();
+        eprintln!("[yibige] 响应体前500: {}", body.chars().take(500).collect::<String>());
+        eprintln!("[yibige] 含 sone: {}", body.contains("sone"));
+        eprintln!("[yibige] 长度: {}", body.len());
+    }
+
+
+    /// 一笔阁响应内容诊断（2026-08-17）
+    #[test]
+    fn test_yibige_content_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("一笔阁") && !n.contains("（繁）"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup,
+        );
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let headers = crate::api::web_book::RealBookSourceFetcher::parse_source_headers(&source);
+        let body = crate::runtime::block_on(fetcher.fetch_simple(&au.url(), headers.as_ref()))
+            .unwrap_or_default();
+        for kw in ["搜索结果", "没有找到", "novel", "list", "error"] {
+            eprintln!("[yibige] 含 {}: {}", kw, body.to_lowercase().contains(&kw.to_lowercase()));
+        }
+        let mut idx = 0;
+        let mut count = 0;
+        while let Some(p) = body[idx..].find("<a") {
+            let start = idx + p;
+            let seg = &body[start..(start + 200).min(body.len())];
+            let end_tag = seg.find(">").map(|e| e + 1).unwrap_or(0);
+            let text = &seg[end_tag..(end_tag + 40).min(seg.len())];
+            eprintln!("[yibige] a标签{}: {}", count, text.chars().take(40).collect::<String>());
+            count += 1;
+            if count >= 8 { break; }
+            idx = start + 10;
+        }
+    }
+
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {
@@ -3494,7 +3796,7 @@ mod tests {
 
     #[test]
     fn test_apply_content_web_hooks_source_regex() {
-        use legado_core::models::rule::ContentRule;
+
         let html = r#"<a href="https://cdn.example.com/v.mp4">play</a>"#;
         let rule = ContentRule {
             source_regex: Some(r".*\.mp4.*".into()),

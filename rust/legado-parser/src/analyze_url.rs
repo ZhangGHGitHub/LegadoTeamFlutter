@@ -813,9 +813,56 @@ impl AnalyzeUrl {
         (rule.to_string(), None)
     }
 
-    /// 解析 URL 选项 JSON
+    /// GSON 宽松 JSON 兼容：把**字符串字面量**的单引号替换为双引号
+    ///（`'{"a":1}'` → `"{\"a\":1}"`）。状态机：遇到单引号时进入
+    /// 单引号字符串，直到下一个未转义单引号结束；期间把边界单引号写为
+    /// 双引号、内容原样。对齐原版 UrlOption 的 GSON lenient 解析。
+    fn lenient_json_strings(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let chars: Vec<char> = s.chars().collect();
+        let mut i = 0;
+        let mut in_single = false;
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '\'' {
+                if !in_single {
+                    in_single = true;
+                    out.push('"');
+                } else {
+                    in_single = false;
+                    out.push('"');
+                }
+            } else if c == '\\' && in_single && i + 1 < chars.len() {
+                out.push(c);
+                out.push(chars[i + 1]);
+                i += 1;
+            } else if c == '"' && in_single {
+                // 单引号字符串内的双引号：转义为 \"（对齐 GSON lenient）
+                out.push('\\');
+                out.push('"');
+            } else {
+                out.push(c);
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// 解析 URL 选项 JSON（对齐原版 GSONStrict → GSON 宽松回退）
+    ///
+    /// 原版 AnalyzeUrl.kt:240-246：GSONStrict 解析失败后用 GSON 宽松解析
+    ///（GSON 接受单引号字符串——爱下电子等源选项 body 为
+    /// `'{"searchTerms":...}'` 单引号包裹）。serde_json 严格模式会失败
+    /// → 选项全丢（method 变 GET、body 空）→ 搜索/详情请求错误。
     fn parse_url_option(json_str: &str) -> Result<UrlOption, serde_json::Error> {
-        let value: serde_json::Value = serde_json::from_str(json_str)?;
+        let value = match serde_json::from_str::<serde_json::Value>(json_str) {
+            Ok(v) => v,
+            Err(_) => {
+                // 宽松回退：单引号字符串值 → 双引号（GSON lenient 语义）
+                let lenient = Self::lenient_json_strings(json_str);
+                serde_json::from_str::<serde_json::Value>(&lenient)?
+            }
+        };
 
         let mut option = UrlOption::default();
 
@@ -1441,6 +1488,15 @@ mod tests {
             .unwrap_or_else(|| panic!("get_byte_array 失败, url_no_query={}", parsed.url_no_query().chars().take(120).collect::<String>()));
         let s = String::from_utf8_lossy(&bytes);
         assert!(s.contains("source"), "解码内容应为 JSON: {}", s.chars().take(80).collect::<String>());
+    }
+
+    /// 爱下电子式单引号 body 选项宽松解析（对齐原版 GSON lenient）
+    #[test]
+    fn test_lenient_json_single_quote_body() {
+        let raw = "{\"body\": '{\"searchTerms\":\"{{key}}\"}', \"method\": \"POST\"}";
+        let option = super::AnalyzeUrl::parse_url_option(raw).unwrap();
+        assert_eq!(option.method, Some(super::RequestMethod::Post));
+        assert!(option.body.as_deref().unwrap_or("").contains("searchTerms"));
     }
 
     // --- 1. 简单变量替换 ---
