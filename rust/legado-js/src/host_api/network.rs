@@ -177,7 +177,10 @@ pub fn ajax(input: &str) -> Result<String, String> {
         let request = LegadoRequest {
             url: opts.url.clone(),
             method,
-            headers: merge_global_cookie(opts.headers.clone().unwrap_or_default()),
+            headers: ensure_json_content_type(
+                merge_global_cookie(opts.headers.clone().unwrap_or_default()),
+                &opts.body,
+            ),
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
@@ -241,6 +244,27 @@ fn merge_global_cookie(mut headers: HashMap<String, String>) -> HashMap<String, 
     headers
 }
 
+/// 对齐原版 AnalyzeUrl POST 分支：body 非空且未显式指定 Content-Type 时按
+/// JSON 发送（postJson(body)）——书山 /details、/catalog 等服务端校验
+/// Content-Type，缺省返回「缺少必要参数」（curl 实测 application/json 必带）
+fn ensure_json_content_type(
+    mut headers: HashMap<String, String>,
+    body: &Option<String>,
+) -> HashMap<String, String> {
+    let has_body = body.as_deref().is_some_and(|b| !b.is_empty());
+    if has_body
+        && !headers
+            .keys()
+            .any(|k| k.eq_ignore_ascii_case("content-type"))
+    {
+        headers.insert(
+            "Content-Type".to_string(),
+            "application/json;charset=UTF-8".to_string(),
+        );
+    }
+    headers
+}
+
 /// 「url,{json}」格式请求，返回**纯响应体文本**（对齐原版 JsExtensions.ajax 返回
 /// StrResponse.body；七猫 qmParse 等直接 JSON.parse 响应体）
 fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
@@ -258,7 +282,10 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
         let request = LegadoRequest {
             url: opts.url.clone(),
             method,
-            headers: merge_global_cookie(opts.headers.clone().unwrap_or_default()),
+            headers: ensure_json_content_type(
+                merge_global_cookie(opts.headers.clone().unwrap_or_default()),
+                &opts.body,
+            ),
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };

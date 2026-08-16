@@ -388,18 +388,37 @@ impl RealBookSourceFetcher {
         existing_author: &str,
     ) -> WebBookInfo {
         let info_rule = source.rule_book_info.as_ref();
-        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+        // 书山等聚合源 init 规则依赖 jsLib（getServerHost）与书源上下文 setup
+        // （java.ajax 需携带 header 规则注入的 X-Novel-Token）；jsLib 须 sanitize
+        //（去 Rhino Packages 行），否则 init 失败 → tocUrl 规则 result 缺
+        // source/book_url → /catalog 请求「无效书源」。— 书山目录修复
+        let js_lib_sanitized = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
+        let mut analyzer = crate::js_executor::construct_analyzer_with_source_context(
             body,
             book_url.to_string(),
             &source.book_source_url,
-            source.js_lib.as_deref(),
+            js_lib_sanitized.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
 
-        // 详情页 init（对齐 BookInfo：先执行 init 规则写入 @put 变量，再解析字段）
+        // 详情页 init（对齐原版 BookInfo.analyzeBookInfo：执行 init 规则后
+        // setContent(getElement(init)) —— init 结果作为后续字段规则的新 content。
+        // 书山聚合 init 把 data:URI 的 hex detail JSON 转成 /details 响应（含
+        // source/book_url/title），tocUrl 规则依赖该 result；仅执行不更新
+        // content 会导致 tocUrl 产出 {"tab":"novel"} 空 catalog。— 书山目录修复
         if let Some(init_rule) = info_rule.and_then(|r| r.init.as_deref()) {
             let init_rule = init_rule.trim();
             if !init_rule.is_empty() {
-                let _ = analyzer.get_string(init_rule);
+                if let Ok(init_result) = analyzer.get_string(init_rule) {
+                    if !init_result.is_empty() {
+                        // 对象语义注入：tocUrl 等后续规则访问 result.source 等
+                        // 字段需要 JSON 对象（对齐原版 getElements(init) Map）
+                        analyzer.set_element_content(init_result);
+                    }
+                }
             }
         }
 
@@ -869,6 +888,14 @@ impl RealBookSourceFetcher {
     ) -> LegadoResult<Vec<WebChapter>> {
         acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
+        // 书山聚合等聚合源详情/目录 `<js>` 脚本依赖 jsLib 函数（getServerHost 等）
+        // 与书源上下文 setup；jsLib 需 sanitize（去 Rhino 特有 Packages 行）后注入，
+        // 否则 init 规则失败 → tocUrl 规则 result 缺 source/book_url → /catalog
+        // 请求「无效书源」。— 书山目录修复
+        let js_lib_sanitized = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
         let t0 = std::time::Instant::now();
 
         let info_rule = source.rule_book_info.as_ref();
@@ -893,12 +920,15 @@ impl RealBookSourceFetcher {
                     .await?;
                 Self::execute_login_check(source, &info_body, book_url, 200)?;
                 if book_name.is_empty() {
-                    let info_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
-                        info_body.clone(),
-                        book_url.to_string(),
-                        &source.book_source_url,
-                        source.js_lib.as_deref(),
-                    );
+                    let info_analyzer =
+                        crate::js_executor::construct_analyzer_with_source_context(
+                            info_body.clone(),
+                            book_url.to_string(),
+                            &source.book_source_url,
+                            js_lib_sanitized.as_deref(),
+                            crate::api::source_js_bindings::book_source_js_setup_script(source)
+                                .ok(),
+                        );
                     book_name = info_rule
                         .and_then(|r| r.name.as_deref())
                         .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
@@ -929,12 +959,27 @@ impl RealBookSourceFetcher {
             // 1.5 loginCheckJs 登录检测
             Self::execute_login_check(source, &info_body, book_url, 200)?;
 
-            let info_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            let mut info_analyzer = crate::js_executor::construct_analyzer_with_source_context(
                 info_body.clone(),
                 book_url.to_string(),
                 &source.book_source_url,
-                source.js_lib.as_deref(),
+                js_lib_sanitized.as_deref(),
+                crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
             );
+
+            // 1.6 详情页 init（对齐原版 analyzeBookInfo：init 结果 setContent 后
+            // 再解析字段；书山聚合 init 把 data:URI hex detail JSON 转为
+            // /details 响应，tocUrl 规则依赖其中的 source/book_url/title）
+            if let Some(init_rule) = info_rule.and_then(|r| r.init.as_deref()) {
+                let init_rule = init_rule.trim();
+                if !init_rule.is_empty() {
+                    if let Ok(init_result) = info_analyzer.get_string(init_rule) {
+                        if !init_result.is_empty() {
+                            info_analyzer.set_element_content(init_result);
+                        }
+                    }
+                }
+            }
 
             let raw_toc = info_rule
                 .and_then(|r| r.toc_url.as_deref())
@@ -971,14 +1016,6 @@ impl RealBookSourceFetcher {
         };
 
         // 3. B3.4 反转标记：chapterList 规则以 "-" 前缀表示倒序，"+" 前缀仅为标记（对标 Kotlin BookChapterList）
-        // 书山聚合等聚合源 toc `<js>` 脚本依赖 jsLib 函数（getSessionId/getServerHost 等）
-        // 与书源上下文 setup；jsLib 需 sanitize（去 Rhino 特有 Packages 行）后注入，
-        // 否则 setup 中 header 规则引用的 getSecretKey 未定义 → java.ajax 缺
-        // X-Novel-Token → /catalog 认证失败「无效书源」。— 书山目录修复
-        let js_lib_sanitized = source
-            .js_lib
-            .as_deref()
-            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
         let toc_rule = source.rule_toc.as_ref();
         let raw_list_rule = toc_rule
             .and_then(|r| r.chapter_list.as_deref())
@@ -2380,6 +2417,59 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
 mod tests {
     use super::*;
     use legado_core::models::book_source::book_source_type;
+
+    /// 书山聚合目录回归：真实书源 + 真实 data: URI bookUrl 调 webbook_chapters。
+    /// 覆盖链路：data:URI hex 解码 → init 规则 java.ajax(/details)（带书源
+    /// header 规则 X-Novel-Token + JSON Content-Type）→ tocUrl 规则产出
+    /// catalogUrl → chapterList java.ajax(/catalog) → 章节列表。
+    /// — 书山目录修复（2026-08-17）
+    #[test]
+    fn test_shushan_real_toc_repro() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| n.contains("书山"))
+        }) else {
+            eprintln!("未找到书山聚合源，跳过");
+            return;
+        };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        use base64::Engine;
+        let detail_url = "http://www.shukuge.com/book/117256/";
+        let b64_url = base64::engine::general_purpose::STANDARD.encode(detail_url);
+        let detail = serde_json::json!({
+            "source": "书库阁",
+            "url": b64_url,
+            "name": "一念永恒测试",
+        });
+        let b64_detail = base64::engine::general_purpose::STANDARD.encode(detail.to_string());
+        let book_url = format!(r#"data:detailsUrl;base64,{},{{"type":"susan"}}"#, b64_detail);
+        let source_json = serde_json::to_string(&source).unwrap();
+        let result = webbook_chapters(&source_json, &book_url, "", "");
+        match result {
+            Ok(s) => {
+                let arr: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+                eprintln!("[repro] 目录 {} 章", arr.len());
+                assert!(arr.len() > 5, "书山目录应 >5 章，实际 {}", arr.len());
+            }
+            Err(e) => panic!("[repro] 书山目录失败: {e}"),
+        }
+    }
+
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {
