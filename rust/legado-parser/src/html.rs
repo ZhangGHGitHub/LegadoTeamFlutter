@@ -159,7 +159,40 @@ fn resolve_range(r: &RangeIdx, len: i32) -> Vec<usize> {
     out
 }
 
-/// 从规则末尾拆出点号索引；无索引时返回 `(rule, None)`
+/// 表格标签片段 → 包裹 HTML（保留片段结构供标准解析）
+///
+/// HTML5 标准解析（html5ever/scraper）在 body 上下文外遇到 tr/td/tbody
+/// 等会直接丢弃；jsoup（原版）宽容保留。元素 outerHTML 再解析时（如
+/// class.BOX@tr!0 提取的 tr 元素串交给 tag.td.2@a@text 子规则）必须保留
+/// 表格结构才能选中 td/tr。— Reasonix 2026-08-17
+fn wrap_table_fragment(html: &str, trimmed: &str) -> Option<String> {
+    let mut s = trimmed;
+    while s.starts_with("<!--") {
+        if let Some(end) = s.find("-->") {
+            s = &s[end + 3..];
+            s = s.trim_start();
+        } else {
+            break;
+        }
+    }
+    if s.starts_with("<tr") || s.starts_with("<th") {
+        Some(format!("<table><tbody>{html}</tbody></table>"))
+    } else if s.starts_with("<td") {
+        Some(format!("<table><tbody><tr>{html}</tr></tbody></table>"))
+    } else if s.starts_with("<tbody")
+        || s.starts_with("<thead")
+        || s.starts_with("<tfoot")
+        || s.starts_with("<caption")
+        || s.starts_with("<colgroup")
+        || s.starts_with("<col")
+    {
+        Some(format!("<table>{html}</table>"))
+    } else {
+        None
+    }
+}
+
+/// 从规则末尾拆出点号索引；无索引时返回 (rule, None)
 fn split_dot_index(rule: &str) -> (String, Option<DotIndex>) {
     let rus = rule.trim();
     if rus.is_empty() {
@@ -516,7 +549,17 @@ impl HtmlParser {
             return Ok(vec![]);
         }
 
-        let document = Html::parse_document(html);
+        // 表格标签片段解析：tr/td/tbody 等片段在 HTML5 标准解析下会被丢弃
+        // （body 上下文外非法；scraper 0.22 parse_fragment 固定 body 上下文
+        // 同样丢弃），而原版 jsoup 宽容保留。元素 outerHTML 再解析的场景
+        // （class.BOX@tr!0 提取的 <tr> 元素串交给 tag.td.2@a@text 子规则）
+        // 必须保留表格结构 → 用 table/tbody 包裹后标准解析。— Reasonix 2026-08-17
+        let trimmed = html.trim_start();
+        let document = if let Some(wrapped) = wrap_table_fragment(html, trimmed) {
+            Html::parse_document(&wrapped)
+        } else {
+            Html::parse_document(html)
+        };
 
         // 对标 Kotlin AnalyzeByJSoup：规则本身就是默认提取关键字时，
         // 不做选择器匹配，直接对当前内容（片段根元素）执行提取
@@ -1047,7 +1090,11 @@ impl HtmlParser {
         let is_tag_name = COMMON_TAG_NAMES.contains(&last);
 
         // 判断最后一段是否为提取模式/属性名（而非 CSS 选择器）
+        // 含 '!' 的是标签+排除索引语法（如 'tr!0' = tr 元素排除第一个，
+        // 原版 77读书网 'class.BOX@tr!0' 搜索规则），不是属性名——
+        // 此前被误判为提取后缀 → 属性提取空 → 搜索 0 结果（2026-08-17）。
         let is_extraction_suffix = !is_tag_name
+            && !last.contains('!')
             && (matches!(
                 last,
                 "text"

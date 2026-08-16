@@ -122,3 +122,33 @@ exploreUrl `<js>/@js:` 模板解析全部通过（4/4 OK）。
 
 编写者：DeepSeek Harness ｜ 2026-08-17
 
+
+
+---
+
+
+## 八、搜索批量扫描引擎缺口修复（2026-08-17 第二轮，30 源扫描 ok 20→23）
+
+### 背景
+按用户目标「原版可用、重构版不行」批量扫描 30 个 type-0 文本书源（fixture
+`tmp_debug/e2e_5558/sources_device.json`，5558 原版同源），发现 4 个引擎级缺口。
+
+### 修复清单（全部对齐 Android 原版，通用适用）
+
+| # | 修复点 | 原版对齐依据 | 文件 | 效果 |
+|---|---|---|---|---|
+| 1 | bookUrlPattern 匹配改为全匹配：原 Regex::is_match（find 语义）把 m.qibuge.com/s.php 误判为命中 m.qibuge.com 正则 → 搜索结果页被当详情页直连 → 0 结果。锚定 ^(?:pattern)$ 对齐 Kotlin baseUrl.matches(regex) | BookList.kt:64 baseUrl.matches(it.toRegex()) | web_book.rs matches_book_url_pattern | 七步阁 0→50 |
+| 2 | @ 链最后一段含 ! 索引（如 tr!0）被误判为属性提取后缀（不含 . # [ 等即判属性名）→ class.BOX@tr!0 属性提取空 → 0 结果 | AnalyzeByJSoup @ 链 tag+!n 排除索引语义 | html.rs resolve_at_chain 增加 !last.contains('!') | 77读书网 0→50 |
+| 3 | 表格标签片段（tr/td/tbody 元素 outerHTML 再解析）被 html5ever 标准解析丢弃（body 上下文外非法），jsoup 宽容保留 → 子规则 tag.td.2@a@text 选不到 td → 字段空 | jsoup 片段解析宽容语义 | html.rs 新增 wrap_table_fragment（table/tbody 包裹后标准解析） | 77读书网字段提取 |
+| 4 | @js:/<js> URL 模板执行未注入 key/page/baseUrl 变量（对齐原版 evalJS bindings）→ 淘小说 @js: md5 签名块 key is not defined → URL 构建失败被 if let Ok 静默回退字面 URL | AnalyzeUrl.kt evalJS bindings 注入 key/page/baseUrl | analyze_url.rs js_variable_prologue 前导声明注入 | 淘小说 0→10 |
+
+### 实证结论（源侧问题，非引擎缺口）
+- 书旗小说本地源（同人）：.[?(@.bookName)]||.[?(@.title)] 规则期望根数组，当前接口返回 {data:[...]} 根对象——jayway（原版同库）对根对象过滤器同样返回空（本地 jayway 2.10.0 实测 A1=[]），原版同样 0 结果，源规则过时。
+- 一笔阁：站点对「一念」返回无结果页（python 实测 20112B 不含关键字），非引擎问题。
+- 完本神站（登录）：需登录书源，未配置会话。
+
+### 回归测试
+- test_qibuge_search_diag / test_77shuku_search_diag / test_taoxiaoshuo_search_diag：真实书源完整链路断言（结果数 > 0），跑批扫同 fixture。
+- batch scan 结果：scanned=30 ok=23 empty=3 failed=4（failed 均为网络层 timeout/403/504，源侧）。
+
+编写者：DeepSeek Harness ｜ 2026-08-17

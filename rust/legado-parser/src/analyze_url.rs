@@ -1087,7 +1087,7 @@ impl AnalyzeUrl {
     /// - 用 JS 引擎执行表达式，将结果替换回 URL
     /// - 支持 `@result` 引用上一步结果
     pub fn analyze_js(rule: &str, js_executor: &dyn JsExecutor) -> String {
-        Self::analyze_js_with_error(rule, js_executor).0
+        Self::analyze_js_with_error(rule, js_executor, &Default::default()).0
     }
 
     /// [`Self::analyze_js`] 的错误感知版本：JS 执行失败时返回
@@ -1095,12 +1095,37 @@ impl AnalyzeUrl {
     /// 真实错误（懒人听书未配置登录会话时 lrtsResolveSession 抛
     /// 「请先登录…」；此前静默保留 `@js:` 文本会被当 URL 请求 →
     /// HTTP 404 误导）。
+    /// 将变量集构建为 JS 前导声明（对齐原版 evalJS 的 bindings 注入：
+    /// key/page/baseUrl 等以作用域变量形式对 @js:/<js> 块可见 —
+    /// 淘小说 searchUrl @js: 块引用 key 变量，此前未注入 → key is not
+    /// defined → URL 构建失败 → 搜索 0 结果（2026-08-17））
+    fn js_variable_prologue(variables: &std::collections::HashMap<String, String>) -> String {
+        let mut prologue = String::new();
+        for (name, value) in variables {
+            // 仅注入合法 JS 标识符（infoMap['x'] 等复合键跳过）
+            let mut chars = name.chars();
+            let valid = chars
+                .next()
+                .is_some_and(|c| c == '_' || c == '$' || c.is_ascii_alphabetic())
+                && chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric());
+            if !valid {
+                continue;
+            }
+            if let Ok(lit) = serde_json::to_string(value) {
+                prologue.push_str(&format!("var {name} = {lit};\n"));
+            }
+        }
+        prologue
+    }
+
     pub fn analyze_js_with_error(
         rule: &str,
         js_executor: &dyn JsExecutor,
+        variables: &std::collections::HashMap<String, String>,
     ) -> (String, Option<String>) {
         // 匹配 <js>...</js> 或 @js:... 模式
         let js_re = Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap();
+        let var_prologue = Self::js_variable_prologue(variables);
 
         let mut result = rule.to_string();
         let mut first_err: Option<String> = None;
@@ -1127,8 +1152,11 @@ impl AnalyzeUrl {
                 .map(|m| m.as_str())
                 .unwrap_or("");
 
+            // 变量前导 + JS 代码一并执行（对齐原版 evalJS bindings 注入）
+            let code_with_vars = format!("{var_prologue}{js_code}");
+
             // 执行 JS 并获取结果
-            match js_executor.execute_js(js_code) {
+            match js_executor.execute_js(&code_with_vars) {
                 Ok(js_result) => {
                     result = js_result;
                 }
@@ -1167,7 +1195,7 @@ impl AnalyzeUrl {
         // 1. 先执行 @js:/<js> 内嵌 JS（失败上抛真实错误：懒人听书
         //    未配置登录会话时 lrtsResolveSession 抛「请先登录…」；
         //    静默保留 @js: 文本会被当 URL 请求 → HTTP 404 误导）
-        let (processed, js_err) = Self::analyze_js_with_error(template, js_executor);
+        let (processed, js_err) = Self::analyze_js_with_error(template, js_executor, variables);
         if let Some(err) = js_err {
             return Err(LegadoError::Internal(format!(
                 "URL 模板 JS 执行失败: {err}"
