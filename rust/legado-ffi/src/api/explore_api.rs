@@ -1343,6 +1343,58 @@ function getServerHost() { return 'https://a.test'; }
             "书山 header 规则执行后应写入固定 X-Novel-Token: {headers:?}"
         );
     }
+
+    /// 通用聚合源回归（2026-08-17）：大灰狼融合/七猫四合一/番茄聚合等聚合源
+    /// 与书山同机制（jsLib + setup + header 规则）——探索 URL 模板解析不应
+    /// 因 jsLib/setup 缺失而报错；header @js 规则应可执行。
+    #[test]
+    fn test_aggregate_sources_common_explore_and_header() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let targets = ["大灰狼", "七猫四合一", "番茄聚合", "书山"];
+        for name_kw in targets {
+            let Some(src) = sources.iter().find(|s| {
+                s.get("bookSourceName")
+                    .and_then(|n| n.as_str())
+                    .is_some_and(|n| n.contains(name_kw))
+            }) else {
+                eprintln!("未找到 {name_kw} 源，跳过");
+                continue;
+            };
+            let source =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap())
+                .unwrap();
+            let lib = source.js_lib.as_deref().unwrap_or("");
+            let sanitized = crate::api::source_js_bindings::sanitize_js_lib_for_quickjs(lib);
+            let setup = crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+            let analyzer = crate::js_executor::construct_analyzer_with_source_context(
+                String::new(),
+                source.book_source_url.clone(),
+                &source.book_source_url,
+                Some(&sanitized),
+                setup,
+            );
+            let _ = analyzer.get_string("{{1+1}}");
+            if let Some(explore) = source.explore_url.as_deref() {
+                let url = explore.trim();
+                if url.starts_with("@js:") || url.starts_with("<js>") {
+                    let _ = analyzer.get_string(url);
+                }
+            }
+            eprintln!("[aggregate-common] {name_kw} setup+explore OK");
+        }
+    }
 }
 
 

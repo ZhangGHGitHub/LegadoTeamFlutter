@@ -80,3 +80,45 @@
 - G12 已完整落地：type 映射 response_type + get_raw 字节 + hex 编码（a26c8eecb）。
 - 合计 14/15 完成；仅剩 G8 规则体内跨步 $n（极罕见），其常见形态（## 替换里的 $n）已由 apply_hash_replace 的 Rust 正则原生 replace 覆盖。
 - A* 实网验收矩阵见 §四，待真实书源环境执行。
+
+---
+
+## 七、聚合书源链路修复（2026-08-17，书山聚合回归 + 通用性验证）
+
+### 背景
+用户实测：书山聚合（susan 聚合源）目录与正文失败。
+排查后发现这是**聚合书源通用链路**的多层缺口（非书山特判），逐层修复并做跨源验证。
+
+### 修复清单（全部对齐 Android 原版解析逻辑，通用适用）
+
+| # | 修复点 | 原版对齐依据 | 提交 | 通用性 |
+|---|---|---|---|---|
+| 1 | data URI 选项分离：base64 段后 `,{...}` 用 b64 边界定位（原 rfind(',') 切进选项内部 JSON 逗号） | AnalyzeUrl.splitUrlOption | f54b25ec7 | 所有 data:bookUrl/catalogUrl/chapterUrl 形态 |
+| 2 | java.ajax 携带书源 header 规则执行结果（X-Novel-Token 等固定认证头） | BaseSource.getHeaderMap | 229871c9b | 所有带 header 规则的书源 |
+| 3 | 详情/目录 analyzer 注入 sanitize 后 jsLib + 书源上下文 setup | JsSource.evalJS 注入 jsLib + source 绑定 | 84b0879b5/dabf05e9a | 所有依赖 jsLib 的 `<js>` 规则 |
+| 4 | init 规则执行后 set_element_content（对象语义，tocUrl 依赖 result.source/book_url） | BookInfo setContent(getElement(init)) | dabf05e9a | 所有带 init 规则的书源 |
+| 5 | java.ajax POST body：JSON 形态自动 Content-Type=application/json；表单形态保持 form-urlencoded | AnalyzeUrl POST 分支 postJson/postForm | dabf05e9a/7d222c0c2 | 所有 POST 书源 |
+| 6 | 真实设备 ID 注入（ANDROID_ID → java.androidId()） | AppConst.androidId | 40bf90ad2 | 所有用 androidId 的书源 |
+| 7 | V1 登录：getLoginInfoMap 返回真实 Map（原包装对象致下标访问失效） | BaseSource.getLoginInfoMap(): MutableMap | 7d222c0c2 | 所有 V1 loginUi 书源 |
+| 8 | 登录缓存键用 sourceUrl（原 baseUrl 导致详情 URL 与书源 URL 键错位） | getKey() = bookSourceUrl | 7d222c0c2 | 所有登录书源 |
+| 9 | globalThis 注入 source/cookie/java（jsLib let {source}=this 解构） | Rhino evalJS 顶层 this | 7d222c0c2 | 所有 jsLib 用 this 解构的聚合源 |
+| 10 | 正文 analyzer 用书源上下文且不覆盖 source 字符串绑定 | BookContent.analyzeContent 用 AnalyzeRule(with source) | d15544aa2 | 所有正文规则依赖 source.getLoginHeader 等的源 |
+| 11 | 正文底部 RenderFlex 溢出 3px：分页高度预留 4px + ClipRect | —（渲染层防亚像素差） | 339798d16 | 所有分页阅读 |
+
+### 通用性验证
+
+新增 test_aggregate_sources_common_explore_and_header 回归：遍历真实书源 fixture 中的
+**大灰狼融合 / 七猫四合一 / 番茄聚合 / 书山** 四个聚合源，验证 setup + sanitize jsLib +
+exploreUrl `<js>/@js:` 模板解析全部通过（4/4 OK）。
+
+模拟器 5556 实测：书山目录 1056 章 + 正文 15 页正常（登录后明文）；
+大灰狼聚合发现页分类正常渲染。
+
+### 与书山相关的源侧特性（非引擎缺口，需源配置）
+
+- 书山 /content 需 X-Api-Key: base64(loginHeader) 才返回明文（未登录返回密文）——登录后自动满足。
+- 书山 /details、/catalog 需 JSON Content-Type——引擎已按 body 形态自动设置。
+- 书山正文规则版本检查块会 eval 整段 loginUrl（自更新检查），不影响结果。
+
+编写者：DeepSeek Harness ｜ 2026-08-17
+
