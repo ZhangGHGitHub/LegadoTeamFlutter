@@ -749,7 +749,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let mut body = self
             .fetch_simple(&chapter.url, source_headers.as_ref())
             .await?;
-
+    
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &body, &chapter.url, 200)?;
 
@@ -795,6 +795,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 神漫画等内容 JS 依赖 chapter.index + book.totalChapterNum
         let total_chapters = infer_total_chapter_num(&body, chapter);
 
+        // 书山等聚合源正文依赖书源上下文 setup（header 规则注入 + loginHeader）
+        let content_setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
         let (first_content, next_urls) = parse_content_page_with_bindings(
             body,
             content_rule_str,
@@ -803,6 +806,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             &source.book_source_url,
             is_media,
             source.js_lib.as_deref(),
+            content_setup.clone(),
             Some(&chapter.title),
             Some(chapter.index),
             Some(total_chapters),
@@ -823,6 +827,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             next_url_rule,
             is_media,
             source.js_lib.as_deref(),
+            content_setup.clone(),
             Some(chapter_title.as_str()),
             Some(chapter_index),
             Some(total_chapters),
@@ -1644,6 +1649,7 @@ fn parse_content_page_with_js_lib(
         source_url,
         is_media,
         js_lib,
+        None, // setup_script：测试/旧调用无书源上下文
         chapter_title,
         None,
         None,
@@ -1664,22 +1670,32 @@ fn parse_content_page_with_bindings(
     source_url: &str,
     is_media: bool,
     js_lib: Option<&str>,
+    setup_script: Option<String>,
     chapter_title: Option<&str>,
     chapter_index: Option<i32>,
     book_total_chapter_num: Option<i32>,
     chapter_variable_json: Option<&str>,
 ) -> (String, Vec<String>) {
-    let mut analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+    // 书山等聚合源正文规则依赖书源上下文（getSecretKey → source.getLoginHeader、
+    // getServerHost/deviceType → jsLib）与 header 规则注入（java.ajax 携带
+    // X-Novel-Token/X-Api-Key）；construct_analyzer_with_js_lib 仅有 jsLib 无
+    // setup → source 绑定为 URL 字符串 → getSecretKey 取不到 loginHeader →
+    // X-Api-Key 空 → 正文密文。— 书山正文修复（2026-08-17）
+    let js_lib_sanitized = js_lib
+        .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
+    let mut analyzer = crate::js_executor::construct_analyzer_with_source_context(
         body,
         page_url.to_string(),
         source_url,
-        js_lib,
+        js_lib_sanitized.as_deref(),
+        setup_script,
     );
-    // 注入原版 evalJS bindings：source/chapter/title/book（result/src/baseUrl
-    // 由 AnalyzeRule.execute_js_rule 自动注入）——漫画/视频书源正文 JS
-    // 依赖这些变量（如 `chapter.title`、`chapter.index`、`book.totalChapterNum`）。
-    analyzer = analyzer
-        .with_js_binding("source", &serde_json::to_string(source_url).unwrap_or_default());
+    // 注入原版 evalJS bindings：chapter/title/book（result/src/baseUrl 由
+    // AnalyzeRule.execute_js_rule 自动注入）——漫画/视频书源正文 JS 依赖
+    // 这些变量（如 `chapter.title`、`chapter.index`、`book.totalChapterNum`）。
+    // 注意：**不再覆盖 source 绑定** —— setup 已把 source 绑定为书源对象
+    //（书山 getSecretKey → source.getLoginHeader 依赖）；此前绑定为 URL 字符串
+    // 导致 getLoginHeader undefined → X-Api-Key 空 → 正文密文。— 书山正文修复
     let title = chapter_title.unwrap_or("");
     let t_json = serde_json::to_string(title).unwrap_or_else(|_| "\"\"".to_string());
     let idx = chapter_index.unwrap_or(0);
@@ -1761,6 +1777,7 @@ async fn fetch_paginated_content<F, Fut>(
     next_url_rule: &str,
     is_media: bool,
     js_lib: Option<&str>,
+    setup_script: Option<String>,
     chapter_title: Option<&str>,
     chapter_index: Option<i32>,
     book_total_chapter_num: Option<i32>,
@@ -1796,6 +1813,7 @@ where
                             source_url,
                             is_media,
                             js_lib,
+                            setup_script.clone(),
                             chapter_title,
                             chapter_index,
                             book_total_chapter_num,
@@ -1829,6 +1847,7 @@ where
                     source_url,
                     is_media,
                     js_lib,
+                    setup_script.clone(),
                     chapter_title,
                     chapter_index,
                     book_total_chapter_num,
@@ -3032,8 +3051,10 @@ mod tests {
             "https://example.com",
             ".content@html",
             ".next@href",
+
               false,
               None,
+              None, // setup_script
               None,
               None,
               None,
@@ -3067,8 +3088,10 @@ mod tests {
               "https://example.com",
               ".content@html",
               "",
+
               false,
               None,
+              None, // setup_script
               None,
               None,
               None,
@@ -3112,8 +3135,10 @@ mod tests {
             "https://example.com",
             ".content@html",
             ".next@href&&.alt@href",
+
             false,
             None,
+            None, // setup_script
             None,
             None,
             None,
@@ -3156,8 +3181,10 @@ mod tests {
             "https://example.com",
             ".content@html",
             ".next@href",
+
             false,
             None,
+            None, // setup_script
             None,
             None,
             None,
