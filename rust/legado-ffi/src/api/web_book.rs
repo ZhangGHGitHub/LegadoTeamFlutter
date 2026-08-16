@@ -2449,6 +2449,7 @@ mod tests {
         let source =
             serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
         use base64::Engine;
+        // 书库阁书（目录+正文链路回归；正文为 VIP 提示文本，非空即可）
         let detail_url = "http://www.shukuge.com/book/117256/";
         let b64_url = base64::engine::general_purpose::STANDARD.encode(detail_url);
         let detail = serde_json::json!({
@@ -2459,14 +2460,66 @@ mod tests {
         let b64_detail = base64::engine::general_purpose::STANDARD.encode(detail.to_string());
         let book_url = format!(r#"data:detailsUrl;base64,{},{{"type":"susan"}}"#, b64_detail);
         let source_json = serde_json::to_string(&source).unwrap();
+        // 注入设备 ID（对齐 Flutter 启动时 RustApi._injectDeviceId）
+        legado_js::host_api::device_id::set_device_id("62d8d4fb53e19733");
+        // V1 登录回归：书山 login() 在书源上下文执行 → putLoginHeader(api_key)
+        // → sync 落库 → 正文请求携带 X-Api-Key 返回明文
+        crate::api::source_login_cache::put_login_info(
+            &source.book_source_url,
+            r#"{"邮箱":"512824117@qq.com","密码":"zgh5201214"}"#,
+        )
+        .unwrap();
+        let login_out = match crate::api::source_login_v1_api::eval_login_v1(&source_json, "login") {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("[repro] V1 登录执行错误: {e}");
+                String::new()
+            }
+        };
+        eprintln!(
+            "[repro] V1 登录结果: {}",
+            login_out.chars().take(80).collect::<String>()
+        );
+        let lh = crate::api::source_login_cache::get_login_header(&source.book_source_url)
+            .unwrap_or_default();
+        eprintln!(
+            "[repro] loginHeader: {}",
+            lh.chars().take(60).collect::<String>()
+        );
+        assert!(
+            !lh.is_empty() && lh != "null",
+            "书山 V1 登录应写入 loginHeader(api_key): {lh:?}"
+        );
         let result = webbook_chapters(&source_json, &book_url, "", "");
-        match result {
+        let chapters: Vec<serde_json::Value> = match result {
             Ok(s) => {
                 let arr: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
                 eprintln!("[repro] 目录 {} 章", arr.len());
                 assert!(arr.len() > 5, "书山目录应 >5 章，实际 {}", arr.len());
+                arr
             }
             Err(e) => panic!("[repro] 书山目录失败: {e}"),
+        };
+        // 正文回归：取第一章 data:chapterUrl 调 webbook_content
+        let first = chapters.first().cloned().unwrap_or_default();
+        let ch_url = first.get("url").and_then(|u| u.as_str()).unwrap_or("");
+        eprintln!("[repro] 第一章 url 前缀: {}", &ch_url[..ch_url.len().min(120)]);
+        if !ch_url.is_empty() {
+            let ch_json = serde_json::json!({
+                "url": ch_url,
+                "title": first.get("title").and_then(|t| t.as_str()).unwrap_or(""),
+                "index": 0,
+                "is_vip": false,
+            })
+            .to_string();
+            let content = webbook_content(&source_json, &ch_json);
+            match content {
+                Ok(c) => {
+                    eprintln!("[repro] 正文前120: {}", c.chars().take(120).collect::<String>());
+                    assert!(c.trim().len() > 50, "正文应非空，实际 {}", c.trim().len());
+                }
+                Err(e) => panic!("[repro] 书山正文失败: {e}"),
+            }
         }
     }
 

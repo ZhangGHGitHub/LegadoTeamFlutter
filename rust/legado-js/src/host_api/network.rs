@@ -246,21 +246,36 @@ fn merge_global_cookie(mut headers: HashMap<String, String>) -> HashMap<String, 
 
 /// 对齐原版 AnalyzeUrl POST 分支：body 非空且未显式指定 Content-Type 时按
 /// JSON 发送（postJson(body)）——书山 /details、/catalog 等服务端校验
-/// Content-Type，缺省返回「缺少必要参数」（curl 实测 application/json 必带）
+/// Content-Type，缺省返回「缺少必要参数」（curl 实测 application/json 必带）。
+/// 仅当 body 是 JSON 形态（{/[ 开头）才设 JSON Content-Type：书山 /login 等
+/// 表单接口（email=..&password=..）若被标 JSON 会解析出空字段（实测
+/// 「邮箱和密码不能为空」），须保持默认 application/x-www-form-urlencoded。
 fn ensure_json_content_type(
     mut headers: HashMap<String, String>,
     body: &Option<String>,
 ) -> HashMap<String, String> {
-    let has_body = body.as_deref().is_some_and(|b| !b.is_empty());
-    if has_body
-        && !headers
-            .keys()
-            .any(|k| k.eq_ignore_ascii_case("content-type"))
-    {
-        headers.insert(
-            "Content-Type".to_string(),
-            "application/json;charset=UTF-8".to_string(),
-        );
+    let has_ct = headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("content-type"));
+    if has_ct {
+        return headers;
+    }
+    if let Some(b) = body {
+        let t = b.trim_start();
+        if t.starts_with('{') || t.starts_with('[') {
+            // JSON 形态 body：对齐原版 postJson(body)
+            headers.insert(
+                "Content-Type".to_string(),
+                "application/json;charset=UTF-8".to_string(),
+            );
+        } else if t.contains('=') && !t.contains(' ') {
+            // 表单形态 body（email=..&password=..）：显式 form-urlencoded，
+            // 避免 reqwest 自动 text/plain 导致服务端解析空字段
+            headers.insert(
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
+            );
+        }
     }
     headers
 }

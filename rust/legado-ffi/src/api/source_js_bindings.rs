@@ -237,10 +237,14 @@ var cache = {{
   remove: function(k) {{ removeVariable(String(k)); return true; }}
 }};
 
-function __sourceVarKey(k) {{ return 'v_' + baseUrl + '_' + k; }}
-function __loginHeaderKey() {{ return 'loginHeader_' + baseUrl; }}
-function __userInfoKey() {{ return 'userInfo_' + baseUrl; }}
-function __sourceVariableKey() {{ return 'sourceVariable_' + baseUrl; }}
+// 对齐原版 getKey() = bookSourceUrl：登录缓存键用 sourceUrl 而非请求 baseUrl
+//（书山 bookUrl 为 data: URI 或详情页 URL，与书源 URL 不同；此前用 baseUrl
+// 导致 putLoginHeader 写入 loginHeader_<详情URL> 而读取 loginHeader_<书源URL>
+// 错位 → getSecretKey 取不到 api_key → 正文密文）。— 书山正文修复
+function __sourceVarKey(k) {{ return 'v_' + sourceUrl + '_' + k; }}
+function __loginHeaderKey() {{ return 'loginHeader_' + sourceUrl; }}
+function __userInfoKey() {{ return 'userInfo_' + sourceUrl; }}
+function __sourceVariableKey() {{ return 'sourceVariable_' + sourceUrl; }}
 
 function __mountBookSourceApi(obj) {{
   obj.get = function(k) {{ return get(__sourceVarKey(k)) || ''; }};
@@ -284,14 +288,16 @@ function __mountBookSourceApi(obj) {{
     if (raw) {{
       try {{ data = JSON.parse(raw) || {{}}; }} catch (e) {{ data = {{}}; }}
     }}
-    return {{
-      get: function(k) {{ return data[k] || null; }},
-      put: function(k, v) {{
-        data[k] = String(v);
-        obj.putLoginInfo(JSON.stringify(data));
-        return v;
-      }}
+    // 对齐原版 Kotlin getLoginInfoMap(): MutableMap<String,String> ——
+    // 直接返回真实对象（书山 login() 用 `loginInfo['邮箱']` 下标访问；
+    // 此前返回 {{get,put}} 包装对象导致下标访问 undefined → 登录空凭据）
+    data.get = function(k) {{ return this[k] ?? null; }};
+    data.put = function(k, v) {{
+      this[k] = String(v);
+      obj.putLoginInfo(JSON.stringify(this));
+      return v;
     }};
+    return data;
   }};
 
   obj.hasLogin = function() {{
@@ -409,6 +415,15 @@ try {{
 if (typeof host === 'undefined') {{
   {host_fallback}
 }}
+
+// 对齐 Android evalJS 顶层 this（Rhino ScriptableObject 含 source/cookie/java）：
+// 书山聚合等 jsLib 函数 `let {{java, source, cookie}} = this` 解构全局 this
+// （QuickJS 非严格模式 = globalThis）；仅挂载局部变量时解构得 undefined →
+// getSecretKey() 取不到 loginHeader → X-Api-Key 空 → 正文密文。— 书山正文修复
+globalThis.source = source;
+globalThis.cookie = cookie;
+globalThis.java = java;
+globalThis.sourceApi = sourceApi;
 
 // jsLib setArguments uses Rhino this.source
 if (typeof setArguments === 'function') {{
