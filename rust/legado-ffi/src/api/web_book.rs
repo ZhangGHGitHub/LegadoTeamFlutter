@@ -971,6 +971,14 @@ impl RealBookSourceFetcher {
         };
 
         // 3. B3.4 反转标记：chapterList 规则以 "-" 前缀表示倒序，"+" 前缀仅为标记（对标 Kotlin BookChapterList）
+        // 书山聚合等聚合源 toc `<js>` 脚本依赖 jsLib 函数（getSessionId/getServerHost 等）
+        // 与书源上下文 setup；jsLib 需 sanitize（去 Rhino 特有 Packages 行）后注入，
+        // 否则 setup 中 header 规则引用的 getSecretKey 未定义 → java.ajax 缺
+        // X-Novel-Token → /catalog 认证失败「无效书源」。— 书山目录修复
+        let js_lib_sanitized = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
         let toc_rule = source.rule_toc.as_ref();
         let raw_list_rule = toc_rule
             .and_then(|r| r.chapter_list.as_deref())
@@ -989,7 +997,7 @@ impl RealBookSourceFetcher {
             toc_body,
             toc_url.clone(),
             &source.book_source_url,
-            source.js_lib.as_deref(),
+            js_lib_sanitized.as_deref(),
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         )
         .with_js_binding(
@@ -1029,7 +1037,7 @@ impl RealBookSourceFetcher {
                 String::new(),
                 toc_url.clone(),
                 &source.book_source_url,
-                source.js_lib.as_deref(),
+                js_lib_sanitized.as_deref(),
                 crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
             );
 
@@ -1138,7 +1146,7 @@ impl RealBookSourceFetcher {
                             page_body,
                             next_url.clone(),
                             &source.book_source_url,
-                            source.js_lib.as_deref(),
+                            js_lib_sanitized.as_deref(),
                             crate::api::source_js_bindings::book_source_js_setup_script(source)
                                 .ok(),
                         );
@@ -1357,7 +1365,7 @@ impl RealBookSourceFetcher {
                     String::new(),
                     toc_url.clone(),
                     &source.book_source_url,
-                    source.js_lib.as_deref(),
+                    js_lib_sanitized.as_deref(),
                 );
                 fa.add_js_binding("index", &index_json);
                 fa.add_js_binding("title", &title_json);
