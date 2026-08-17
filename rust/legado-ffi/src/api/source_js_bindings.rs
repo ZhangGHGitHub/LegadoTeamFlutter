@@ -252,6 +252,10 @@ function __mountBookSourceApi(obj) {{
   // 对齐原版 BaseSource.getKey() = bookSourceUrl（新笔趣阁等源 searchUrl @js: 块用 source.getKey()）
   obj.getKey = function() {{ return sourceUrl; }};
   obj.getUrl = function() {{ return sourceUrl; }};
+  // Rhino 将 Kotlin getKey() 暴露为 key 属性：新落秋/天悦等源 @js: 块用 source.key
+  obj.key = sourceUrl;
+  obj.url = sourceUrl;
+  obj.bookSourceUrl = sourceUrl;
   obj.put = function(k, v) {{ put(__sourceVarKey(k), String(v)); return v; }};
   obj.getVariable = function() {{ return get(__sourceVariableKey()) || ''; }};
   obj.setVariable = function(v) {{ setVariable(__sourceVariableKey(), String(v)); return v; }};

@@ -154,6 +154,14 @@ pub fn ajax(input: &str) -> Result<String, String> {
             }
         }
     }
+    // 普通 URL 输入（对齐原版 ajax(url) 语义）：不含 ",{" 的裸 URL
+    // 直接 GET 并返回纯响应体文本（新落秋/笔趣阁zdzn 等源 @js: 块
+    // java.ajax(source.key+"/user/search.html?q="+key) 依赖）
+    // — 2026-08-17
+    if !input.starts_with('{') {
+        let opts = HttpOptions { url: input.to_string(), ..Default::default() };
+        return ajax_request_body(&opts);
+    }
     // 标准 JSON 输入
     let opts: HttpOptions = serde_json::from_str(input)
         .map_err(|e| format!("ajax parse options error: {}", e))?;
@@ -385,6 +393,53 @@ pub fn connect_full(
             headers: resp.headers,
         };
         serde_json::to_string(&result).map_err(|e| format!("connect serialize error: {}", e))
+    })
+}
+
+/// connectNR(url, method?, headers?, body?) → 完整响应 JSON（不跟随重定向）
+///
+/// 对齐原版 JsExtensions.get/post/head 的 jsoup 语义（.followRedirects(false)）：
+/// 拦截重定向场景（天悦小说 java.post(...).header("Location")）必须拿到
+/// 302 响应的 Location 头；跟随重定向后头信息丢失 → header 返回 null。
+/// — 2026-08-17
+pub fn connect_no_redirect(
+    url: &str,
+    method: Option<&str>,
+    headers_json: Option<&str>,
+    body: Option<&str>,
+) -> Result<String, String> {
+    let method_str = method.unwrap_or("GET").to_uppercase();
+    let method = match method_str.as_str() {
+        "GET" | "POST" | "HEAD" | "PUT" | "DELETE" => Method::from_str_loose(&method_str),
+        other => return Err(format!("connectNR: unsupported method '{}'", other)),
+    };
+    let headers: HashMap<String, String> = headers_json
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    block_on(async {
+        let config = LegadoClientConfig {
+            follow_redirects: false,
+            ..LegadoClientConfig::default()
+        };
+        let client = LegadoClient::new(config)
+            .map_err(|e| format!("connectNR client error: {}", e))?;
+        let request = LegadoRequest {
+            url: url.to_string(),
+            method,
+            headers,
+            body: body.map(|s| s.to_string()),
+            timeout: Some(std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS)),
+        };
+        let resp = client
+            .send(&request)
+            .await
+            .map_err(|e| format!("connectNR request error: {}", e))?;
+        let result = HttpResponse {
+            status_code: resp.status,
+            body: resp.body,
+            headers: resp.headers,
+        };
+        serde_json::to_string(&result).map_err(|e| format!("connectNR serialize error: {}", e))
     })
 }
 

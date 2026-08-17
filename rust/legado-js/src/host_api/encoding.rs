@@ -127,6 +127,27 @@ mod impl_encoding {
         utf8_percent_encode(input, NON_ALPHANUMERIC).to_string()
     }
 
+    /// 按指定字符集 URI 编码（对齐 Kotlin encodeURI(str, enc)）
+    ///
+    /// 燃文等源 `java.encodeURI(String(key), "UTF8")` 双参调用依赖；
+    /// 非 UTF-8 字符集（GBK 等）先经 encoding_rs 转码再百分号编码。
+    /// — 2026-08-17
+    pub fn encode_uri_charset(input: &str, charset: &str) -> String {
+        let lower = charset.to_ascii_lowercase().replace('-', "").replace('_', "");
+        if lower == "utf8" || lower == "utf" {
+            return encode_uri(input);
+        }
+        if lower == "gbk" || lower == "gb2312" || lower == "gb18030" {
+            let (bytes, _, _) = encoding_rs::GBK.encode(input);
+            return bytes
+                .iter()
+                .map(|b| format!("%{:02X}", b))
+                .collect::<String>();
+        }
+        // 未知字符集：回退 UTF-8
+        encode_uri(input)
+    }
+
     /// encodeURIComponent 语义编码（对齐 JS 标准 / Kotlin encodeURIComponent）
     ///
     /// [UI-fix 2026-08-10 | Reasonix] 新增：percent-encode 除 `A-Za-z0-9-_.!~*'()`

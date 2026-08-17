@@ -1253,12 +1253,19 @@ impl AnalyzeUrl {
         let re = Regex::new(r"(?s)\{\{(.+?)\}\}").unwrap();
         re.replace_all(template, |caps: &regex::Captures| {
             let expr = caps[1].trim();
-            // 简单变量名直接替换
+            // 简单变量名：先查 variables，未命中再求值 JS 全局（jsLib 定义的
+            // 全局变量如得间小说 `host`：{{host}} 需从 JS 作用域取，仅查 map
+            // 得空串 → URL 残缺 → 搜索失败）— 2026-08-17
             if expr
                 .chars()
                 .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
             {
-                variables.get(expr).cloned().unwrap_or_default()
+                if let Some(v) = variables.get(expr) {
+                    v.clone()
+                } else {
+                    // 求值 JS 全局变量（jsLib 已执行定义；不存在 → undefined → 空串）
+                    js_executor.execute_js(expr).unwrap_or_default()
+                }
             } else {
                 // 复杂表达式：用 JS 引擎执行
                 // 先构建变量注入前缀（纯整数以数字注入，对齐原版 page 数值语义，

@@ -199,7 +199,7 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
     };
   }
   var __nativeGetVariable = java.get;
-  var __nativeConnect = java.connect;
+  var __nativeConnect = java.connectNR;
   var __nativePost = java.post;
   var __nativeHead = java.head;
   java.get = function (url, headers) {
@@ -339,14 +339,21 @@ fn register_encoding_apis<'js>(
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // encodeURI(str) -> String
+    // encodeURI(str, enc?) -> String（对齐原版双参重载：燃文等源
+    // java.encodeURI(String(key), "UTF8") 依赖；缺第二参默认 UTF-8）
     mount_dual(
         java,
         globals,
         "encodeURI",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
-            encoding::encode_uri(&s)
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |s: String, enc: Opt<String>| -> String {
+                match enc.0 {
+                    Some(e) => encoding::encode_uri_charset(&s, &e),
+                    None => encoding::encode_uri(&s),
+                }
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1253,6 +1260,27 @@ fn register_network_apis<'js>(
                     headers.0.as_deref(),
                     body.0.as_deref(),
                     timeout_ms.0.map(|t| t as u64),
+                )
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // connectNR(url, method?, headers?, body?) -> String（完整响应 JSON，不跟随重定向）
+    // 对齐原版 jsoup followRedirects(false)：java.get/post/head 拦截重定向需读 Location 头
+    mount_dual(
+        java,
+        globals,
+        "connectNR",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, method: Opt<String>, headers: Opt<String>, body: Opt<String>| -> String {
+                network::connect_no_redirect(
+                    &url,
+                    method.0.as_deref(),
+                    headers.0.as_deref(),
+                    body.0.as_deref(),
                 )
                 .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },

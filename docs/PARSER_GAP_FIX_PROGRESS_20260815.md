@@ -177,3 +177,31 @@ exploreUrl `<js>/@js:` 模板解析全部通过（4/4 OK）。
 - batch scan 剩余 empty 均为源侧（书旗规则过时/一笔阁站点无结果/完本神站需登录）。
 
 编写者：DeepSeek Harness ｜ 2026-08-17
+
+
+---
+
+## 十、搜索批量扫描第三轮引擎缺口修复（2026-08-17，{{host}} 全局变量等）
+
+### 修复清单
+
+| # | 修复点 | 原版对齐依据 | 文件 | 效果 |
+|---|---|---|---|---|
+| 1 | {{...}} 简单变量名未命中 variables 时求值 JS 全局（jsLib 定义的 host 等；得间小说 {{host}} 此前得空串 → URL 残缺） | AnalyzeUrl.replaceKeyPageJs evalJS 全局作用域 | analyze_url.rs | 得间小说 0→20 |
+| 2 | java.ajax 支持普通 URL 输入（返回纯 body 文本；新落秋/zdzn 等源 java.ajax(url) 依赖） | JsExtensions.ajax(url): StrResponse.body | network.rs | 新落秋等 URL 构建 |
+| 3 | java.connectNR 不跟随重定向（jsoup followRedirects(false) 语义；java.get/post/head 拦截重定向需读 Location 头） | JsExtensions.get/post 用 jsoup .followRedirects(false) | network.rs / quickjs_impl.rs | 天悦 Location 头 |
+| 4 | setup source.key/url/bookSourceUrl 别名（Rhino 将 Kotlin getKey() 暴露为 key 属性） | BaseSource.getKey() | source_js_bindings.rs | 新落秋/天悦 @js: 块 |
+| 5 | java.encodeURI 双参重载（str, enc；燃文 java.encodeURI(key,"UTF8") 依赖；支持 GBK） | JsExtensions.encodeURI(str, enc) | quickjs_impl.rs / encoding.rs | 燃文 URL 构建 |
+
+### 源侧限制实证（非引擎缺口）
+- 新落秋/笔趣阁zdzn/燃文：引擎链路全部正确（31 变量提取 + md5 sign + POST），站点 IP 限频（搜索太频繁请 3 秒后再试）——python 直接请求同样受限，原版同 IP 同受限。
+- 天悦小说：站点 WAF 需 Referer（书源 header 配置），原版 jsoup 同样不带书源 header 到 java.post。
+- 繁星四月/九九藏书/苦瓜书盘（e/search 体系）：站点对「一念」返回无结果提示页（信息提示：没有找到相关数据）。
+- 书旗本地源：规则期望根数组，接口返回 {data:[...]}（jayway 2.10.0 实证原版同样 0 结果）。
+
+### 回归测试
+- test_dejian_diag：{{host}} 全局变量断言（URL 含 wechat.idejian.com + 20 条结果）。
+- 既有 5 个搜索回归（qiexs/qibuge/xbqgxs/77shuku/taoxiaoshuo）+ 书山目录 1058 章全通过。
+- 注：legado-js test_ajax_url_option_format_returns_body 依赖 httpbin.org（当前 503 外部故障），与本次改动无关。
+
+编写者：DeepSeek Harness ｜ 2026-08-17

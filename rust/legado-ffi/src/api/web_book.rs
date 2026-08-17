@@ -2935,6 +2935,75 @@ mod tests {
         }
     }
 
+    /// 新落秋/笔趣阁zdzn/天悦小说 @js 网络源回归（2026-08-17）
+    #[test]
+    fn test_js_network_sources_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        for needle in ["新落秋", "天悦小说", "笔趣阁zdzn"] {
+            let Some(src) = sources.iter().find(|s| {
+                s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains(needle))
+            }) else { continue; };
+            let source =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+            let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+            let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+            match results {
+                Ok(list) => eprintln!("[jsnet] {} -> {} 条", needle, list.len()),
+                Err(err) => eprintln!("[jsnet] {} -> 失败: {}", needle, err.to_string().chars().take(120).collect::<String>()),
+            }
+        }
+    }
+
+
+
+    /// 得间小说 {{host}} 全局变量回归（2026-08-17）：jsLib 定义 host，{{host}} 需 JS 求值
+    #[test]
+    fn test_dejian_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("得间小说")) && s.get("bookSourceUrl").and_then(|u| u.as_str()).is_some_and(|u| u.contains("idejian"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        eprintln!("[dejian] URL: {}", au.url());
+        assert!(au.url().contains("wechat.idejian.com"), "得间 URL 应含 host，实际 {}", au.url());
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[dejian] search 结果数: {}", list.len());
+                for it in list.iter().take(3) {
+                    eprintln!("[dejian]   -> {} | {}", it.name, it.book_url);
+                }
+            }
+            Err(err) => eprintln!("[dejian] search 失败: {:?}", err),
+        }
+    }
+
+
+
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {
