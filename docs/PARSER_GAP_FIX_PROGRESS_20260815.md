@@ -205,3 +205,29 @@ exploreUrl `<js>/@js:` 模板解析全部通过（4/4 OK）。
 - 注：legado-js test_ajax_url_option_format_returns_body 依赖 httpbin.org（当前 503 外部故障），与本次改动无关。
 
 编写者：DeepSeek Harness ｜ 2026-08-17
+---
+
+## 十一、HTML 响应字符集自动解码（2026-08-17，七步阁目录/正文 GBK）
+
+### 根因与修复
+
+七步阁搜索 URL 显式设置 `charset=gbk`，因此搜索正常；详情、目录、正文 URL 无该选项，`web_book` 的
+`fetch_simple_cached` 直接使用 reqwest UTF-8 文本响应，GBK 字节已在该阶段不可逆替换为乱码。
+
+对齐原版 `OkHttpUtils.ResponseBody.text(encode)`：
+
+1. URL 选项的显式 charset 优先；
+2. 其次读取 HTTP `Content-Type` 的 charset；
+3. 最后从 HTML 前 16 KiB 的 meta charset / http-equiv content-type 检测；
+4. 使用 `AnalyzeUrl::decode_response_bytes` 在原始字节阶段解码。
+
+`fetch_url`（详情/目录 POST 或 GET）和 `fetch_simple_cached`（目录/正文 GET）均改为读取原始字节后统一解码，
+不做七步阁特判。
+
+### 回归
+
+- `test_decode_web_response_gbk_meta_and_header`：GBK meta、Content-Type、显式 UrlOption charset 优先级。
+- `test_qibuge_catalog_and_content_gbk`：真实七步阁完整链路通过：
+  搜索书名“**一念善！一念恶！我为万魂之主**”、目录首章“**第21章 耳刮子**”、正文均无替换字符。
+
+编写者：DeepSeek Harness ｜ 2026-08-17

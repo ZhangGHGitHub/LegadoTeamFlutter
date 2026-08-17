@@ -22,6 +22,37 @@ use legado_net::rate_limit::IntervalRateLimiter;
 use legado_net::LegadoClient;
 use legado_parser::{compile_regex_safe, AnalyzeUrl, RequestMethod};
 
+/// 对齐原版 OkHttpUtils.ResponseBody.text：显式 charset 优先，随后 HTTP 头，最后 HTML meta。
+fn decode_web_response(bytes: &[u8], headers: &HashMap<String, String>, explicit: Option<&str>) -> String {
+    let charset = explicit.filter(|s| !s.trim().is_empty()).map(str::to_string)
+        .or_else(|| charset_from_content_type(headers))
+        .or_else(|| charset_from_html_meta(bytes));
+    AnalyzeUrl::decode_response_bytes(bytes, charset.as_deref())
+}
+
+fn charset_from_content_type(headers: &HashMap<String, String>) -> Option<String> {
+    let value = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("content-type"))?.1;
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find("charset=")? + 8;
+    let value = value[start..].trim();
+    let value = value.trim_start_matches(['\"', '\'']);
+    let charset = value.split([';', ' ', '\"', '\'']).next().unwrap_or("");
+    (!charset.is_empty()).then(|| charset.to_string())
+}
+
+fn charset_from_html_meta(bytes: &[u8]) -> Option<String> {
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(16 * 1024)]);
+    let lower = head.to_ascii_lowercase();
+    let start = lower.find("charset")? + 7;
+    let tail = &head[start..];
+    let tail_lower = &lower[start..];
+    let equal = tail_lower.find('=')?;
+    let value = tail[equal + 1..].trim();
+    let value = value.trim_start_matches(['\"', '\'']);
+    let charset = value.split([';', ' ', '\"', '\'', '>']).next().unwrap_or("");
+    (!charset.is_empty()).then(|| charset.to_string())
+}
+
 use crate::runtime;
 
 /// 详情/目录短时 HTML 缓存（对齐原版 Book.infoHtml / Book.tocHtml 进程内复用）
@@ -242,12 +273,15 @@ impl RealBookSourceFetcher {
             return Ok(hex_encode(&raw.body));
         }
 
+        // 原始字节响应：对齐原版 ResponseBody.text()，避免目录/正文 HTML 的
+        // meta charset=gbk 在 reqwest UTF-8 默认解码后不可逆乱码（七步阁等）。
         let response = match analyze_url.method() {
             RequestMethod::Post => {
-                let body = analyze_url.request_body();
-                self.client.post(url, body, headers_opt).await?
+                self.client
+                    .post_raw(url, analyze_url.request_body(), headers_opt)
+                    .await?
             }
-            _ => self.client.get(url, headers_opt).await?,
+            _ => self.client.get_raw(url, headers_opt).await?,
         };
 
         if !response.is_success() {
@@ -259,7 +293,11 @@ impl RealBookSourceFetcher {
         // 对齐 Kotlin WebBook.checkRedirect（Debug.log 可观测性）
         check_redirect_log(url, &response.url);
 
-        Ok(response.body)
+        Ok(decode_web_response(
+            &response.body,
+            &response.headers,
+            analyze_url.charset(),
+        ))
     }
 
     /// 直接 GET 一个 URL（用于章节内容等简单场景）
@@ -291,7 +329,9 @@ impl RealBookSourceFetcher {
             }
         }
         let headers_opt = source_headers.cloned();
-        let response = self.client.get(url, headers_opt).await?;
+        // 简单 GET 同样必须保留字节至 charset 检测结束：正文/目录 URL 通常
+        // 没有显式 UrlOption.charset，只能依赖响应头或 HTML meta。
+        let response = self.client.get_raw(url, headers_opt).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(
                 "HTTP {} for {}",
@@ -299,10 +339,11 @@ impl RealBookSourceFetcher {
             )));
         }
         check_redirect_log(url, &response.url);
+        let body = decode_web_response(&response.body, &response.headers, None);
         if use_page_cache {
-            cache_put_page_body(url, &response.body);
+            cache_put_page_body(url, &body);
         }
-        Ok(response.body)
+        Ok(body)
     }
 
     /// 执行 loginCheckJs 登录检测（规则路径增强）
@@ -2577,6 +2618,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_decode_web_response_gbk_meta_and_header() {
+        let mut meta_headers = HashMap::new();
+        let (html, _, _) = encoding_rs::GBK.encode(r#"<html><head><meta charset="gbk"></head><body>目录章节</body></html>"#);
+        assert!(decode_web_response(&html, &meta_headers, None).contains("目录章节"));
+
+        let mut header_headers = HashMap::new();
+        header_headers.insert("Content-Type".to_string(), "text/html; charset=gbk".to_string());
+        let (plain, _, _) = encoding_rs::GBK.encode("正文内容");
+        assert_eq!(decode_web_response(&plain, &header_headers, None), "正文内容");
+
+        meta_headers.insert("Content-Type".to_string(), "text/html; charset=utf-8".to_string());
+        assert_eq!(decode_web_response(&plain, &meta_headers, Some("gbk")), "正文内容");
+    }
+
     /// 批量搜索扫描（2026-08-17）：遍历 fixture 文本源跑 webbook_search，
     /// 报告失败/空结果——定位「原版可用、重构版不行」的书源候选。
     #[test]
@@ -2686,6 +2742,45 @@ mod tests {
             }
             Err(err) => panic!("[qibuge] search 失败: {:?}", err),
         }
+    }
+
+    /// 七步阁 GBK 目录/正文回归：详情页 meta charset=gbk 必须在简单 GET 路径正确解码。
+    #[test]
+    fn test_qibuge_catalog_and_content_gbk() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("七步阁"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let source_json = serde_json::to_string(&source).unwrap();
+        let search = webbook_search(&source_json, "一念", 1).expect("七步阁搜索失败");
+        let books: Vec<serde_json::Value> = serde_json::from_str(&search).unwrap();
+        let first = books.first().expect("七步阁搜索应有结果");
+        let book_url = first.get("book_url").and_then(|v| v.as_str()).expect("缺少 book_url");
+        let book_name = first.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(!book_name.contains('�'), "搜索书名乱码: {book_name}");
+
+        let info = webbook_info(&source_json, book_url).expect("七步阁详情失败");
+        let info: serde_json::Value = serde_json::from_str(&info).unwrap();
+        let toc_url = info.get("toc_url").and_then(|v| v.as_str()).unwrap_or("");
+        let chapters = webbook_chapters(&source_json, book_url, toc_url, book_name).expect("七步阁目录失败");
+        let chapters: Vec<serde_json::Value> = serde_json::from_str(&chapters).unwrap();
+        let first_chapter = chapters.first().expect("七步阁目录应有章节");
+        let chapter_title = first_chapter.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(!chapter_title.is_empty() && !chapter_title.contains('�'), "目录标题乱码: {chapter_title:?}");
+
+        let content = webbook_content(&source_json, &first_chapter.to_string()).expect("七步阁正文失败");
+        assert!(content.chars().count() > 30, "正文过短: {}", content.chars().count());
+        assert!(!content.contains('�'), "正文乱码: {}", content.chars().take(120).collect::<String>());
+        eprintln!("[qibuge-gbk] 书名={book_name}，目录首章={chapter_title}，正文前80={}", content.chars().take(80).collect::<String>());
     }
 
     /// 77读书网 搜索诊断（2026-08-17）：站点返回 47KB 含结果，规则 class.BOX@tr!0 解析为 0
