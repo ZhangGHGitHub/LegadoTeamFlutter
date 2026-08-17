@@ -3097,8 +3097,6 @@ mod tests {
         }
     }
 
-
-
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {

@@ -691,8 +691,27 @@ impl AnalyzeUrl {
             .unwrap_or(encoding_rs::UTF_8)
     }
 
+    /// 判断表单分量是否已经符合原版 encodedForm 规则。
+    fn is_encoded_form_component(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'*' | b'-' | b'.' | b'_' => i += 1,
+                b'%' if i + 2 < bytes.len() && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit() => i += 3,
+                _ => return false,
+            }
+        }
+        true
+    }
+
     /// 表单分量编码（对齐 Java `URLEncoder`：字母数字 `.-*_` 原样，空格→`+`，其余 `%XX`）
     fn percent_encode_form_component(value: &str, charset: Option<&str>) -> String {
+        // 原版无显式 charset 时逐分量保留已有合法 %HH 编码；苦瓜书盘等
+        // 书源 body 自带 %2C/%E6...，重复编码会变成 %252C/%25E6... -> 空结果。
+        if charset.is_none() && Self::is_encoded_form_component(value) {
+            return value.to_string();
+        }
         let enc = match charset {
             Some(cs) if Self::is_non_utf8_charset(Some(cs)) => Self::encoding_for_label(cs),
             _ => encoding_rs::UTF_8,
@@ -1840,6 +1859,17 @@ mod tests {
             url.headers().get("Content-Type").map(|s| s.as_str()),
             Some("application/x-www-form-urlencoded")
         );
+    }
+
+    /// 已编码表单分量保持原样（对齐原版 NetworkUtils.encodedForm）。
+    #[test]
+    fn test_preencoded_post_form_preserved() {
+        let url = AnalyzeUrl::parse(
+            r#"https://kgbook.com/e/search/index.php,{"method":"POST","body":"keyboard=一念&show=title%2Cbooksay%2Cbookwriter&submit=%E6%90%9C%E7%B4%A2"}"#,
+            &HashMap::new(),
+            1,
+        ).unwrap();
+        assert_eq!(url.request_body(), "keyboard=%E4%B8%80%E5%BF%B5&show=title%2Cbooksay%2Cbookwriter&submit=%E6%90%9C%E7%B4%A2");
     }
 
     // --- 8. 绝对 URL 拼接 ---

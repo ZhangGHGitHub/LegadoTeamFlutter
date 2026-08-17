@@ -231,3 +231,25 @@ exploreUrl `<js>/@js:` 模板解析全部通过（4/4 OK）。
   搜索书名“**一念善！一念恶！我为万魂之主**”、目录首章“**第21章 耳刮子**”、正文均无替换字符。
 
 编写者：DeepSeek Harness ｜ 2026-08-17
+
+---
+
+## 十二、预编码 POST 表单分量保持原样（2026-08-17，苦瓜书盘）
+
+### 根因
+
+原版 `AnalyzeUrl.encodeParams` 对无显式 charset 的 POST 表单逐个分量调用 `NetworkUtils.encodedForm`：
+已有合法 `%HH` 编码的分量保持原样。重构版此前只对 query 做了该保护，form body 将书源已有
+`%2C`、`%E6...` 再编码为 `%252C`、`%25E6...`，导致苦瓜书盘搜索请求参数改变。
+
+### 修复
+
+`AnalyzeUrl.percent_encode_form_component` 在无显式 charset 时保留只含表单安全字符和合法 `%HH`
+序列的分量；含中文的 `keyboard` 仍按 UTF-8 编码，已有 `show`/`submit` 编码保持不变。
+
+### 回归
+
+- `test_preencoded_post_form_preserved`：验证 `keyboard=一念&show=title%2C...&submit=%E6...` 的最终请求体。
+- 苦瓜书盘实网诊断确认请求体由 `%252C` 修复为 `%2C`，服务端响应包含 `id="slist"`。
+
+编写者：DeepSeek Harness ｜ 2026-08-17
