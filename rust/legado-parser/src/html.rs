@@ -1623,4 +1623,19 @@ mod tests {
         let last = parser.get_text(html, "dd.4@a@text").unwrap();
         assert_eq!(last, vec!["第131章"]);
     }
+
+    #[test]
+    fn test_attr_ends_with_property_content() {
+        // 书书等详情规则：`[property$=book_name]@content` 对齐 jsoup 属性后缀匹配
+        let html = r#"<meta property="og:novel:book_name" content="一念永恒"><meta property="og:novel:author" content="耳根">"#;
+        let parser = HtmlParser::new();
+        let name = parser
+            .get_attr(html, r#"[property$=book_name]"#, "content")
+            .unwrap();
+        assert_eq!(name, vec!["一念永恒"], "{name:?}");
+        let via_at = parser
+            .get_text(html, r#"[property$=book_name]@content"#)
+            .unwrap();
+        assert_eq!(via_at, vec!["一念永恒"], "{via_at:?}");
+    }
 }

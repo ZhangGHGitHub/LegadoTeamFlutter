@@ -226,11 +226,24 @@ impl RealBookSourceFetcher {
     }
 
     /// 根据 AnalyzeUrl 解析结果发起 HTTP 请求，返回响应体文本
+    #[allow(dead_code)] // 诊断测试仍走此包装；搜索主路径用 fetch_page
     async fn fetch_url(
         &self,
         analyze_url: &AnalyzeUrl,
         source_headers: Option<&HashMap<String, String>>,
     ) -> LegadoResult<String> {
+        Ok(self
+            .fetch_page(analyze_url, source_headers)
+            .await?
+            .body)
+    }
+
+    /// 对齐 Kotlin `AnalyzeUrl.getStrResponseAwait`：正文 + 重定向后最终 URL（`StrResponse.url`）
+    async fn fetch_page(
+        &self,
+        analyze_url: &AnalyzeUrl,
+        source_headers: Option<&HashMap<String, String>>,
+    ) -> LegadoResult<FetchedPage> {
         let url = analyze_url.url();
         if url.is_empty() {
             return Err(LegadoError::Internal("AnalyzeUrl 解析后 URL 为空".into()));
@@ -251,10 +264,15 @@ impl RealBookSourceFetcher {
         //（书山 ruleBookInfo.init 用 java.hexDecodeToString(result) 还原 JSON）。
         if analyze_url.is_data_uri() {
             if let Some(bytes) = analyze_url.get_byte_array_if_data_uri() {
-                if analyze_url.response_type().is_some() {
-                    return Ok(hex_encode(&bytes));
-                }
-                return Ok(String::from_utf8_lossy(&bytes).to_string());
+                let body = if analyze_url.response_type().is_some() {
+                    hex_encode(&bytes)
+                } else {
+                    String::from_utf8_lossy(&bytes).to_string()
+                };
+                return Ok(FetchedPage {
+                    body,
+                    final_url: url.to_string(),
+                });
             }
             return Err(LegadoError::Internal("data: URI 内容解码失败".into()));
         }
@@ -270,7 +288,15 @@ impl RealBookSourceFetcher {
                 )));
             }
             check_redirect_log(url, &raw.url);
-            return Ok(hex_encode(&raw.body));
+            let final_url = if raw.url.is_empty() {
+                url.to_string()
+            } else {
+                raw.url.clone()
+            };
+            return Ok(FetchedPage {
+                body: hex_encode(&raw.body),
+                final_url,
+            });
         }
 
         // 原始字节响应：对齐原版 ResponseBody.text()，避免目录/正文 HTML 的
@@ -292,12 +318,20 @@ impl RealBookSourceFetcher {
         }
         // 对齐 Kotlin WebBook.checkRedirect（Debug.log 可观测性）
         check_redirect_log(url, &response.url);
+        let final_url = if response.url.is_empty() {
+            url.to_string()
+        } else {
+            response.url.clone()
+        };
 
-        Ok(decode_web_response(
-            &response.body,
-            &response.headers,
-            analyze_url.charset(),
-        ))
+        Ok(FetchedPage {
+            body: decode_web_response(
+                &response.body,
+                &response.headers,
+                analyze_url.charset(),
+            ),
+            final_url,
+        })
     }
 
     /// 直接 GET 一个 URL（用于章节内容等简单场景）
@@ -601,15 +635,20 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             )));
         }
 
-        // 2. 发起 HTTP 请求
-        let body = self
-            .fetch_url(&analyze_url, source_headers.as_ref())
+        // 2. 发起 HTTP 请求。baseUrl 必须用重定向后最终 URL
+        //    （对齐 Kotlin WebBook.search → BookList.analyzeBookList(baseUrl = res.url)）。
+        //    书书小说等会把搜索 302 到书籍页；若仍用请求 URL，bookList 空列表回退
+        //    会把 search.php 当成 bookUrl，详情规则也解不出书名 → 搜索 0 条。
+        let fetched = self
+            .fetch_page(&analyze_url, source_headers.as_ref())
             .await?;
+        let body = fetched.body;
+        let request_url = analyze_url.url().to_string();
+        let base_url = fetched.final_url;
 
         // 2.5 loginCheckJs 登录检测（规则路径增强）
-        Self::execute_login_check(source, &body, analyze_url.url(), 200)?;
+        Self::execute_login_check(source, &body, &base_url, 200)?;
 
-        let base_url = analyze_url.url().to_string();
         let search_rule = source.rule_search.as_ref();
 
         // 3. bookUrlPattern 详情页直连（B1.1，对标 Kotlin BookList `baseUrl.matches(bookUrlPattern)`）
@@ -662,6 +701,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         } else {
             analyzer.get_elements(book_list_rule).unwrap_or_default()
         };
+        eprintln!(
+            "[web_book] search request={request_url} base={base_url} elements={}",
+            elements.len()
+        );
 
         // 4.5 列表为空且未配置 bookUrlPattern 时，回退按详情页解析（对标 Kotlin BookList “列表为空,按详情页解析”）
         if elements.is_empty() && !has_pattern {
@@ -1508,6 +1551,12 @@ fn infer_total_chapter_num(body: &str, chapter: &WebChapter) -> i32 {
         }
     }
     chapter.index.saturating_add(1)
+}
+
+/// 抓取结果：响应体 + 最终 URL（对标 Kotlin `StrResponse.body` / `StrResponse.url`）
+struct FetchedPage {
+    body: String,
+    final_url: String,
 }
 
 /// 对齐 Kotlin `WebBook.checkRedirect`：请求 URL 与最终 URL 不同时打日志
@@ -3300,27 +3349,28 @@ mod tests {
         let source =
             serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
         let source_json = serde_json::to_string(&source).unwrap();
-        let mut book_url = String::from("http://www.shushun.cc/read_81/");
-        let mut book_name = String::from("一念");
-        match webbook_search(&source_json, "一念", 1) {
+        match webbook_search(&source_json, "斗破", 1) {
             Ok(s) => {
                 let books: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
                 eprintln!("[shushu] 搜索 {} 条", books.len());
                 if let Some(first) = books.first() {
-                    if let Some(u) = first.get("book_url").and_then(|v| v.as_str()) {
-                        if !u.is_empty() {
-                            book_url = u.to_string();
-                        }
-                    }
-                    if let Some(n) = first.get("name").and_then(|v| v.as_str()) {
-                        if !n.is_empty() {
-                            book_name = n.to_string();
-                        }
-                    }
+                    eprintln!(
+                        "[shushu] 首条 name={} url={}",
+                        first.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        first.get("book_url").and_then(|v| v.as_str()).unwrap_or("")
+                    );
                 }
+                assert!(
+                    !books.is_empty(),
+                    "书书小说搜索「斗破」应有列表结果，实际 {}",
+                    books.len()
+                );
             }
-            Err(e) => eprintln!("[shushu] 搜索失败（改走已知书 URL）: {e}"),
+            Err(e) => panic!("书书搜索失败: {e}"),
         }
+        // 目录/正文仍走已知 allInOne 书页（与搜索关键词无关）
+        let book_url = String::from("http://www.shushun.cc/read_81/");
+        let book_name = String::from("一念永恒");
         eprintln!("[shushu] 书={book_name} url={book_url}");
         let info = webbook_info(&source_json, &book_url).unwrap_or_default();
         let info: serde_json::Value = serde_json::from_str(&info).unwrap_or_default();
@@ -3673,6 +3723,36 @@ mod tests {
         );
         // tocUrl 规则为空时回退 book_url
         assert_eq!(info.toc_url, "https://example.com/book/1");
+    }
+
+    #[test]
+    fn test_parse_book_info_og_property_suffix() {
+        use legado_core::models::rule::BookInfoRule;
+        let source = BookSource {
+            book_source_url: "http://www.shushun.cc".into(),
+            rule_book_info: Some(BookInfoRule {
+                name: Some("[property$=book_name]@content".into()),
+                author: Some("[property$=author]@content".into()),
+                ..BookInfoRule::default()
+            }),
+            ..BookSource::default()
+        };
+        let html = r#"<html><head>
+<meta property="og:novel:book_name" content="一念永恒">
+<meta property="og:novel:author" content="耳根">
+</head></html>"#;
+        let info = RealBookSourceFetcher::parse_book_info_from_body(
+            &source,
+            html.into(),
+            "http://www.shushun.cc/read_81/",
+            "http://www.shushun.cc/read_81/",
+            true,
+            "",
+            "",
+        );
+        assert_eq!(info.name, "一念永恒");
+        assert_eq!(info.author, "耳根");
+        assert_eq!(info.book_url, "http://www.shushun.cc/read_81/");
     }
 
     // ─── 缺口① nextContentUrl 分页测试（审计 2026-08-06） ─────────────

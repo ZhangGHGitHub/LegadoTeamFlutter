@@ -36,6 +36,7 @@
 | 2026-08-13 | **SOURCE_DIFF 纯工程收口（无新 FFI）**：Android 原生 `backstageEval` 落地页内 `java`/`source`/`cache` JavascriptInterface + `cacheFirst`→`LOAD_CACHE_ELSE_NETWORK`；Rust `ownText`/`string_rule_cache`。契约语义边界更新，方法表不变 |
 | 2026-08-18 | **书源搜索 parity（无新 FFI）**：QuickJS 宿主补齐 `org.jsoup.Jsoup` 模拟（`java.jsoupAttr/jsoupText/jsoupHtml`）+ 引擎创建时注入 `java.get/post/head` Response 桥（`connectNR`/`followRedirects(false)`，对齐 JsExtensions）；`@js`/`<js>` searchUrl 求值失败禁止字面回退；`AnalyzeUrl`/`ajax` 纠正书源 `#tag` 后缀把 path/query 拼进 fragment 的假 URL。方法表不变 |
 | 2026-08-18 | **G8 `$n` 跨步分组（无新 FFI）**：allInOne 正则 `getElements`（`:` 前缀）在有捕获组时把 `[全文,$1,$2,…]` 编成 JSON 数组元素；`getString("$2")` / `$1##…` 对齐原版 `SourceRule.makeUpRule` 用前序捕获组回填。覆盖书书小说/笔下文学/若夏等目录规则。方法表不变 |
+| 2026-08-19 | **搜索 baseUrl=重定向最终 URL（无新 FFI）**：`webbookSearch` 对齐 `WebBook.search` 的 `baseUrl = res.url`；搜索 302 到详情页时按空列表回退解析 `ruleBookInfo`。方法表不变 |
 
 ---
 

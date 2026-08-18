@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.95] - 2026-08-19
+
+### Fixed
+- [Rust] 搜索 `baseUrl` 对齐原版重定向后最终 URL（`WebBook.search` → `res.url`）：
+  - 根因：Rust 用请求 URL 当 `baseUrl`，搜索 302 到书籍页时 `bookUrl`/详情规则对不上
+  - 现 `fetch_page` 返回 `StrResponse.url`；空列表且无 `bookUrlPattern` 仍按详情回退
+  - 实测：书书小说搜索「斗破」4 条（首条斗破苍穹）；「一念」站点会 302 且无 og:property，原版同样搜不出书名
+
 ## [2.0.94] - 2026-08-19
 
 ### Fixed
