@@ -3274,6 +3274,87 @@ mod tests {
         }
     }
 
+    /// 书书小说 allInOne `$1/$2` 目录回归（G8）
+    #[test]
+    fn test_shushu_all_in_one_toc_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| n.contains("书书小说"))
+        }) else {
+            eprintln!("[shushu] 未找到书源");
+            return;
+        };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let source_json = serde_json::to_string(&source).unwrap();
+        let mut book_url = String::from("http://www.shushun.cc/read_81/");
+        let mut book_name = String::from("一念");
+        match webbook_search(&source_json, "一念", 1) {
+            Ok(s) => {
+                let books: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+                eprintln!("[shushu] 搜索 {} 条", books.len());
+                if let Some(first) = books.first() {
+                    if let Some(u) = first.get("book_url").and_then(|v| v.as_str()) {
+                        if !u.is_empty() {
+                            book_url = u.to_string();
+                        }
+                    }
+                    if let Some(n) = first.get("name").and_then(|v| v.as_str()) {
+                        if !n.is_empty() {
+                            book_name = n.to_string();
+                        }
+                    }
+                }
+            }
+            Err(e) => eprintln!("[shushu] 搜索失败（改走已知书 URL）: {e}"),
+        }
+        eprintln!("[shushu] 书={book_name} url={book_url}");
+        let info = webbook_info(&source_json, &book_url).unwrap_or_default();
+        let info: serde_json::Value = serde_json::from_str(&info).unwrap_or_default();
+        let toc_url = info.get("toc_url").and_then(|v| v.as_str()).unwrap_or("");
+        let chapters = webbook_chapters(&source_json, &book_url, toc_url, &book_name)
+            .expect("书书小说目录应成功");
+        let chapters: Vec<serde_json::Value> = serde_json::from_str(&chapters).unwrap();
+        eprintln!("[shushu] 目录 {} 章", chapters.len());
+        assert!(
+            chapters.len() >= 2,
+            "书书小说 allInOne $n 目录过少: {}",
+            chapters.len()
+        );
+        let first_ch = chapters.first().unwrap();
+        let title = first_ch.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(!title.is_empty() && title != "$2", "章名未回填: {title}");
+        let ch_url = first_ch.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            !ch_url.is_empty() && !ch_url.contains("$1"),
+            "章 URL 未回填: {ch_url}"
+        );
+        match webbook_content(&source_json, &first_ch.to_string()) {
+            Ok(c) => eprintln!(
+                "[shushu] 正文 {} 字 前80={}",
+                c.chars().count(),
+                c.chars().take(80).collect::<String>()
+            ),
+            Err(e) => eprintln!(
+                "[shushu] 正文失败: {}",
+                e.to_string().chars().take(160).collect::<String>()
+            ),
+        }
+    }
+
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {

@@ -360,6 +360,31 @@ impl AnalyzeRule {
         };
         // 2.5) 展开规则体内 `{{js}}`（非 $）内嵌 JS
         let rule_expanded = self.expand_js_refs(&rule_expanded)?;
+        // G8：allInOne 正则 getElements 把捕获组编成 JSON 字符串数组；
+        // 子规则 `$1`/`$2` 对齐 SourceRule.makeUpRule（result 为 List）回填，
+        // 然后走 Mode.Regex 的 `else -> rule`（字面结果 + ## 替换）。
+        if let Some(groups) = parse_regex_group_list(&self.content) {
+            if rule_has_group_ref(&rule_expanded) {
+                let assembled = makeup_group_refs(&rule_expanded, &groups);
+                let (core, spec) = split_hash_replace(&assembled);
+                let mut results = if core.is_empty() {
+                    vec![]
+                } else {
+                    vec![core]
+                };
+                if let Some(spec) = spec.as_ref() {
+                    results = results
+                        .into_iter()
+                        .map(|s| apply_hash_replace(&s, spec))
+                        .collect();
+                }
+                return Ok(if is_url {
+                    self.absolutize_url_list(results)
+                } else {
+                    results
+                });
+            }
+        }
         // 纯 `@get:{k}` / `http:@get:{k}` 等：makeUpRule 后 Mode.Regex，
         // 求值走 `else -> rule` 直接返回拼装字符串，不再当选择器解析。
         if compiled.has_get_marker && !looks_like_extract_rule(&rule_expanded) {
@@ -738,8 +763,9 @@ impl AnalyzeRule {
         }
 
         // G10：`:` 前缀 allInOne 正则（对齐原版 splitSourceRule(allInOne=true)）
+        // 有捕获组时序列化 [g0,g1,…] JSON，供 G8 `$n` 回填（书书小说等）
         if let Some(regex_rule) = rule.trim_start().strip_prefix(':') {
-            return self.regex_extract(regex_rule.trim_start());
+            return self.regex_extract_all_in_one(regex_rule.trim_start());
         }
 
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
@@ -784,6 +810,30 @@ impl AnalyzeRule {
         Ok(groups
             .into_iter()
             .map(|g| g.first().cloned().unwrap_or_default())
+            .collect())
+    }
+
+    /// allInOne 正则 getElements：对齐 AnalyzeByRegex.getElements
+    ///
+    /// 末级每个匹配产出 `[全文, $1, $2, …]`；多于一组捕获时编成 JSON
+    /// 数组字符串，使后续 `get_string("$2")` 可跨步回填。无捕获组仍返回
+    /// 全文（保持 G10 `test_all_in_one_regex_colon_prefix`）。
+    fn regex_extract_all_in_one(&self, rule: &str) -> LegadoResult<Vec<String>> {
+        let patterns: Vec<&str> = rule
+            .split("&&")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let groups_list = if patterns.len() <= 1 {
+            self.regex_engine.regex_match_groups(&self.content, rule)?
+        } else {
+            self.regex_engine
+                .regex_chain_match_all(&self.content, &patterns)?
+        };
+        Ok(groups_list
+            .into_iter()
+            .map(|g| encode_regex_element_groups(&g))
+            .filter(|s| !s.is_empty())
             .collect())
     }
 
@@ -1518,6 +1568,58 @@ fn looks_like_extract_rule(rule: &str) -> bool {
         || t.contains("<js>")
 }
 
+/// allInOne 元素编码：有捕获组时为 JSON 字符串数组，否则全文
+fn encode_regex_element_groups(groups: &[String]) -> String {
+    if groups.len() <= 1 {
+        return groups.first().cloned().unwrap_or_default();
+    }
+    serde_json::to_string(groups).unwrap_or_else(|_| groups[0].clone())
+}
+
+/// 从 allInOne 元素内容还原捕获组列表（必须是全字符串 JSON 数组）
+fn parse_regex_group_list(content: &str) -> Option<Vec<String>> {
+    let trimmed = content.trim();
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    let arr = v.as_array()?;
+    if arr.is_empty() || !arr.iter().all(|x| x.is_string()) {
+        return None;
+    }
+    Some(
+        arr.iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect(),
+    )
+}
+
+/// 是否含跨步 `$n`（1-99）；排除 `$.` / `$[` / `${` JSONPath/模板
+fn rule_has_group_ref(rule: &str) -> bool {
+    let b = rule.as_bytes();
+    let mut i = 0;
+    while i + 1 < b.len() {
+        if b[i] == b'$' && b[i + 1].is_ascii_digit() {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// 对齐 makeUpRule：`$n` 取前序正则捕获组（group 0 为全文）
+fn makeup_group_refs(rule: &str, groups: &[String]) -> String {
+    let mut out = rule.to_string();
+    for n in (1..=99).rev() {
+        let token = format!("${n}");
+        if out.contains(&token) {
+            let val = groups.get(n).map(|s| s.as_str()).unwrap_or("");
+            out = out.replace(&token, val);
+        }
+    }
+    out
+}
+
 /// 解析 `@put` 对象：兼容规范 JSON 与书源惯用非规范形态
 /// `{chapter_id:$.chapter_id}` / `{n:"css",a:"css2"}`
 fn parse_put_json_object(raw: &str) -> HashMap<String, String> {
@@ -1767,6 +1869,31 @@ mod tests {
         let rule = AnalyzeRule::new("a1b a2b c3d".to_string(), String::new());
         let result = rule.get_elements(":a[0-9]b").unwrap();
         assert_eq!(result, vec!["a1b", "a2b"]);
+    }
+
+    #[test]
+    fn test_g8_all_in_one_group_refs() {
+        // 书书小说：chapterList allInOne + chapterName=$2 + chapterUrl=$1##章节目录
+        let html = r#"<dl><dd><a href="/read/12.html">第一章 开端</a></dd><dd><a href="/read/13.html">章节目录</a></dd></dl>"#;
+        let rule = AnalyzeRule::new(html.to_string(), "http://www.shushun.cc".to_string());
+        let elems = rule
+            .get_elements(r#":<dd><a href="([^"]*)[^>]*>([^<]*)"#)
+            .unwrap();
+        assert_eq!(elems.len(), 2, "应匹配两章: {elems:?}");
+        let mut item = AnalyzeRule::new(elems[0].clone(), "http://www.shushun.cc".to_string());
+        item.set_element_content(elems[0].clone());
+        assert_eq!(item.get_string("$2").unwrap(), "第一章 开端");
+        assert_eq!(
+            item.get_string_ex("$1##章节目录", true, true).unwrap(),
+            "http://www.shushun.cc/read/12.html"
+        );
+        let mut skip = AnalyzeRule::new(elems[1].clone(), "http://www.shushun.cc".to_string());
+        skip.set_element_content(elems[1].clone());
+        assert_eq!(skip.get_string("$2").unwrap(), "章节目录");
+        assert_eq!(
+            skip.get_string("$1").unwrap(),
+            "/read/13.html"
+        );
     }
 
     #[test]

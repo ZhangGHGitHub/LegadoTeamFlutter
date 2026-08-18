@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.94] - 2026-08-19
+
+### Fixed
+- [Rust] G8 allInOne 正则跨步 `$n` 分组回填落地（CHANGELOG 2.0.92 已记语义，本版提交代码）：
+  - `:` 前缀 `getElements` 有捕获组时按 AnalyzeByRegex 产出 `[全文,$1,$2,…]` JSON 元素
+  - `getString("$2")` / `$1##…` 对齐 `SourceRule.makeUpRule` 用前序捕获组拼装，再走 `##` 替换
+  - 覆盖书书小说 / 笔下文学 / 若夏等目录规则
+  - 实测：书书小说 `http://www.shushun.cc/read_81/` 目录 1323 章、正文 1905 字；`test_g8_all_in_one_group_refs` 与 G10 allInOne 回归通过
+
 ## [2.0.93] - 2026-08-18
 
 ### Fixed
