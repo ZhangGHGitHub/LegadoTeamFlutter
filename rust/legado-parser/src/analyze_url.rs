@@ -553,6 +553,8 @@ impl AnalyzeUrl {
 
         // 拼接绝对 URL
         self.url = Self::get_absolute_url(&self.base_url, &url_part);
+        // 书源 `#tag` 唯一后缀：JS `getKey()+path` 易把 path/query 拼进 fragment
+        self.url = Self::normalize_book_source_tag_url(&self.url);
         self.url_no_query = self.url.clone();
 
         // 解析 JSON 选项
@@ -1095,6 +1097,31 @@ impl AnalyzeUrl {
     fn normalize_base_url_for_join(base: &str) -> &str {
         let without_opt = base.split(',').next().unwrap_or(base).trim();
         without_opt.split('#').next().unwrap_or(without_opt).trim()
+    }
+
+    /// 纠正书源 `#tag` 后缀被 JS 字符串拼接污染的绝对 URL
+    ///
+    /// 书源 `bookSourceUrl` 常用 `#🎃`/`#pb1101` 作唯一后缀。规则里
+    /// `source.getKey() + "/search" + "?q="` 会得到
+    /// `http://host#🎃/search?q=`——Java URL/Jsoup 发请求时丢弃整个
+    /// fragment，查询串丢失。此处把 fragment 内误拼的 `/path` 或 `?query`
+    /// 提回权威 URL；纯 tag 则去掉 fragment（对齐 Jsoup 忽略 fragment）。
+    pub fn normalize_book_source_tag_url(url: &str) -> String {
+        let Some(hash) = url.find('#') else {
+            return url.to_string();
+        };
+        let base = &url[..hash];
+        let frag = &url[hash + 1..];
+        if frag.is_empty() {
+            return base.to_string();
+        }
+        if frag.starts_with('/') || frag.starts_with('?') {
+            return format!("{base}{frag}");
+        }
+        if let Some(pos) = frag.find(['/', '?']) {
+            return format!("{base}{}", &frag[pos..]);
+        }
+        base.to_string()
     }
 
     // ========== JS 内嵌执行 ==========
@@ -1906,6 +1933,19 @@ mod tests {
         assert_eq!(
             AnalyzeUrl::get_absolute_url("http://www.dongtanxs.com##", "/search?q=1"),
             "http://www.dongtanxs.com/search?q=1"
+        );
+        // JS 把 path/query 拼进 #tag fragment 后须提回权威 URL
+        assert_eq!(
+            AnalyzeUrl::normalize_book_source_tag_url("http://www.yxgxs.org#🎃?searchkey=一念"),
+            "http://www.yxgxs.org?searchkey=一念"
+        );
+        assert_eq!(
+            AnalyzeUrl::normalize_book_source_tag_url("http://www.yxgxs.org#🎃/search.php?q=1"),
+            "http://www.yxgxs.org/search.php?q=1"
+        );
+        assert_eq!(
+            AnalyzeUrl::normalize_book_source_tag_url("http://www.yxgxs.org#🎃"),
+            "http://www.yxgxs.org"
         );
     }
 

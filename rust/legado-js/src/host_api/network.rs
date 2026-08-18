@@ -66,6 +66,33 @@ fn parse_headers(headers_json: Option<&str>) -> Option<HashMap<String, String>> 
     headers_json.and_then(|s| serde_json::from_str::<HashMap<String, String>>(s).ok())
 }
 
+/// 请求前规范化 URL：去掉/纠正书源 `#tag` 后缀（对齐 Jsoup 忽略 fragment，
+/// 并修复 `getKey()+path` 把 path/query 拼进 fragment 的假 URL）
+fn sanitize_request_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    // 复用 AnalyzeUrl 同一套规范化，避免 ajax/connectNR 与搜索主链路行为分叉
+    legado_parser::AnalyzeUrl::normalize_book_source_tag_url(trimmed)
+}
+
+/// POST 有 body 时若缺 Content-Type，补 form-urlencoded（对齐 Jsoup.requestBody）
+fn ensure_form_content_type(headers: &mut HashMap<String, String>, has_body: bool) {
+    if !has_body {
+        return;
+    }
+    let has_ct = headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("content-type"));
+    if !has_ct {
+        headers.insert(
+            "Content-Type".to_string(),
+            "application/x-www-form-urlencoded".to_string(),
+        );
+    }
+}
+
 /// 构建共享 LegadoClient（使用默认配置）
 ///
 /// 后续可从 HostEnv 注入配置。
@@ -169,6 +196,10 @@ pub fn ajax(input: &str) -> Result<String, String> {
     if opts.url.is_empty() {
         return Err("ajax: url is required".to_string());
     }
+    let url = sanitize_request_url(&opts.url);
+    if url.is_empty() {
+        return Err("ajax: url is required".to_string());
+    }
 
     let timeout = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
     let method_str = opts.method.as_deref().unwrap_or("GET").to_uppercase();
@@ -183,7 +214,7 @@ pub fn ajax(input: &str) -> Result<String, String> {
         let client = build_client_with_timeout(timeout)?;
 
         let request = LegadoRequest {
-            url: opts.url.clone(),
+            url,
             method,
             headers: ensure_json_content_type(
                 merge_global_cookie(opts.headers.clone().unwrap_or_default()),
@@ -294,6 +325,10 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
     if opts.url.is_empty() {
         return Err("ajax: url is required".to_string());
     }
+    let url = sanitize_request_url(&opts.url);
+    if url.is_empty() {
+        return Err("ajax: url is required".to_string());
+    }
     let timeout = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
     let method_str = opts.method.as_deref().unwrap_or("GET").to_uppercase();
     let method = match method_str.as_str() {
@@ -303,7 +338,7 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
     block_on(async {
         let client = build_client_with_timeout(timeout)?;
         let request = LegadoRequest {
-            url: opts.url.clone(),
+            url,
             method,
             headers: ensure_json_content_type(
                 merge_global_cookie(opts.headers.clone().unwrap_or_default()),
@@ -413,9 +448,12 @@ pub fn connect_no_redirect(
         "GET" | "POST" | "HEAD" | "PUT" | "DELETE" => Method::from_str_loose(&method_str),
         other => return Err(format!("connectNR: unsupported method '{}'", other)),
     };
-    let headers: HashMap<String, String> = headers_json
+    let url = sanitize_request_url(url);
+    let mut headers: HashMap<String, String> = headers_json
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default();
+    let body_owned = body.map(|s| s.to_string());
+    ensure_form_content_type(&mut headers, body_owned.as_ref().is_some_and(|b| !b.is_empty()));
     block_on(async {
         let config = LegadoClientConfig {
             follow_redirects: false,
@@ -424,10 +462,10 @@ pub fn connect_no_redirect(
         let client = LegadoClient::new(config)
             .map_err(|e| format!("connectNR client error: {}", e))?;
         let request = LegadoRequest {
-            url: url.to_string(),
+            url,
             method,
             headers,
-            body: body.map(|s| s.to_string()),
+            body: body_owned,
             timeout: Some(std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS)),
         };
         let resp = client

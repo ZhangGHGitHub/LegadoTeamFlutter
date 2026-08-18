@@ -594,6 +594,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             source.js_lib.as_deref(),
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
+        if analyze_url.url().starts_with("legado-js-error://") {
+            return Err(LegadoError::Internal(format!(
+                "searchUrl JS 求值失败: {}",
+                analyze_url.url()
+            )));
+        }
 
         // 2. 发起 HTTP 请求
         let body = self
@@ -2690,6 +2696,113 @@ mod tests {
         eprintln!("[scan-summary] scanned={} ok={} empty={} failed={}", scanned, ok, empty, failed);
     }
 
+    /// 扩展扫描：跳过前 120 个 type-0，再扫 200 个，写出 empty/failed 清单供对照原版。
+    #[test]
+    fn test_batch_search_scan_extended_wave2() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let out_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_parity/scan_wave2.jsonl"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let mut skip = 0usize;
+        let mut scanned = 0usize;
+        let mut ok = 0usize;
+        let mut empty = 0usize;
+        let mut failed = 0usize;
+        let mut lines: Vec<String> = Vec::new();
+        for src in sources.iter() {
+            let st = src.get("bookSourceType").and_then(|v| v.as_i64()).unwrap_or(0);
+            if st != 0 {
+                continue;
+            }
+            let name = src
+                .get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .unwrap_or("");
+            let url = src
+                .get("bookSourceUrl")
+                .and_then(|n| n.as_str())
+                .unwrap_or("");
+            if !url.contains("://") {
+                continue;
+            }
+            let Ok(source) =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap())
+            else {
+                continue;
+            };
+            if source
+                .rule_search
+                .as_ref()
+                .and_then(|r| r.book_list.as_deref())
+                .unwrap_or("")
+                .is_empty()
+            {
+                continue;
+            }
+            if skip < 120 {
+                skip += 1;
+                continue;
+            }
+            scanned += 1;
+            let source_json = serde_json::to_string(&source).unwrap();
+            let (status, detail, count) = match webbook_search(&source_json, "一念", 1) {
+                Ok(s) => {
+                    let arr: Vec<serde_json::Value> =
+                        serde_json::from_str(&s).unwrap_or_default();
+                    if arr.is_empty() {
+                        empty += 1;
+                        ("empty", String::new(), 0usize)
+                    } else {
+                        ok += 1;
+                        ("ok", String::new(), arr.len())
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    (
+                        "fail",
+                        e.to_string().chars().take(160).collect::<String>(),
+                        0usize,
+                    )
+                }
+            };
+            if status != "ok" {
+                eprintln!("[wave2-{}] {} | {} | {}", status, name, url, detail);
+            }
+            lines.push(
+                serde_json::json!({
+                    "status": status,
+                    "name": name,
+                    "url": url,
+                    "count": count,
+                    "detail": detail,
+                })
+                .to_string(),
+            );
+            if scanned >= 200 {
+                break;
+            }
+        }
+        let _ = std::fs::write(out_path, lines.join("\n"));
+        eprintln!(
+            "[wave2-summary] scanned={} ok={} empty={} failed={} out={}",
+            scanned, ok, empty, failed, out_path
+        );
+    }
+
     /// 七步阁 GBK POST 搜索回归（2026-08-17）：bookUrlPattern 全匹配修复
     /// （m.qibuge.com 正则不得命中 /s.php 搜索页 URL）
     #[test]
@@ -3094,6 +3207,70 @@ mod tests {
                 }
             }
             Err(err) => eprintln!("[dejian] search 失败: {:?}", err),
+        }
+    }
+
+    /// org.jsoup + java.post(connectNR) 回归：云霄/键盘/天涯书库 searchUrl @js
+    #[test]
+    fn test_jsoup_post_redirect_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let needles = ["云霄小说", "键盘小说", "天涯书库", "玄幻文学"];
+        for needle in needles {
+            let Some(src) = sources.iter().find(|s| {
+                s.get("bookSourceName")
+                    .and_then(|n| n.as_str())
+                    .is_some_and(|n| n.contains(needle))
+            }) else {
+                eprintln!("[jsoup-diag] 未找到书源: {needle}");
+                continue;
+            };
+            let source =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+            let setup =
+                crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+            let au = crate::js_executor::build_search_url_with_setup(
+                source.search_url.as_deref().unwrap_or(""),
+                "一念",
+                1,
+                &source.book_source_url,
+                source.js_lib.as_deref(),
+                setup,
+            );
+            eprintln!("[{needle}] URL: {}", au.url());
+            assert!(
+                !au.url().contains("@js:") && !au.url().contains("<js>"),
+                "{needle} searchUrl JS 未渲染: {}",
+                au.url()
+            );
+            assert!(
+                !au.url().starts_with("legado-js-error://"),
+                "{needle} JS 求值失败: {}",
+                au.url()
+            );
+            assert!(
+                !au.url().ends_with("/null") && !au.url().contains("/null?"),
+                "{needle} Location 拦截失败落 /null: {}",
+                au.url()
+            );
+            let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+            match crate::runtime::block_on(fetcher.search(&source, "一念", 1)) {
+                Ok(list) => eprintln!("[{needle}] search 结果数: {}", list.len()),
+                Err(err) => eprintln!(
+                    "[{needle}] search 失败: {}",
+                    err.to_string().chars().take(160).collect::<String>()
+                ),
+            }
         }
     }
 

@@ -84,7 +84,31 @@ pub fn register_all_apis<'js>(
     // AES 密文解密 / Base64 / MD5 / UUID / String.getBytes，
     // 缺失时报 `Packages is not defined`（2026-08-15 用户反馈七猫报错）
     inject_packages_shim(&ctx)?;
+    // Rhino org.jsoup.Jsoup 包导入模拟（云霄/键盘等 searchUrl @js 依赖）
+    inject_jsoup_shim(&ctx)?;
+    // java.get/post/head → connectNR（followRedirects=false）+ Response 对象
+    // 必须在引擎创建时注入：否则书源 `java.post(...).header('location')` 会打到
+    // 原生 post（跟随重定向 / headers 对象无法转 String）→ Location 丢失落 /null
+    inject_response_bridge(&ctx)?;
 
+    Ok(())
+}
+
+/// 注入 `org.jsoup.Jsoup` 全局（及 Packages.org.jsoup）
+#[cfg(feature = "quickjs")]
+fn inject_jsoup_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError> {
+    let _: rquickjs::Value = ctx
+        .eval(JSOUP_BRIDGE_JS)
+        .map_err(|e| LegadoError::JsEngine(format!("Jsoup 模拟层注入失败: {e}")))?;
+    Ok(())
+}
+
+/// 注入 java.get/post/head Response 语义桥
+#[cfg(feature = "quickjs")]
+fn inject_response_bridge<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError> {
+    let _: rquickjs::Value = ctx
+        .eval(RESPONSE_BRIDGE_JS)
+        .map_err(|e| LegadoError::JsEngine(format!("Response 桥注入失败: {e}")))?;
     Ok(())
 }
 
@@ -200,8 +224,6 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
   }
   var __nativeGetVariable = java.get;
   var __nativeConnect = java.connectNR;
-  var __nativePost = java.post;
-  var __nativeHead = java.head;
   java.get = function (url, headers) {
     if (arguments.length >= 2) {
       var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
@@ -209,14 +231,57 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
     }
     return __nativeGetVariable(String(url));
   };
+  // 对齐原版 JsExtensions.post/head：followRedirects(false)。
+  // 天涯书库等源 java.post(...).header('location') 拦截 302；若跟随重定向则
+  // Location 丢失 → String(null) → 请求落到 /null。
   java.post = function (url, body, headers) {
     var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
-    return __resp(__nativePost(String(url), String(body), hs));
+    return __resp(__nativeConnect(String(url), 'POST', hs, String(body)));
   };
   java.head = function (url, headers) {
     var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
-    return __resp(__nativeHead(String(url), hs));
+    return __resp(__nativeConnect(String(url), 'HEAD', hs));
   };
+})();
+"#;
+
+/// Rhino `org.jsoup.Jsoup` 模拟层（云霄小说/键盘小说/玄幻文学等 searchUrl
+/// `@js:` 块直接调用 `org.jsoup.Jsoup.parse(html).select(...).attr(...)`）。
+/// QuickJS 无 Java 包导入；经 `java.jsoupAttr/jsoupText` 宿主桥对齐 Jsoup 常用子集。
+#[cfg(feature = "quickjs")]
+pub const JSOUP_BRIDGE_JS: &str = r#"
+(function () {
+  function __els(html, css) {
+    return {
+      attr: function (name) { return java.jsoupAttr(String(html), String(css), String(name)); },
+      text: function () { return java.jsoupText(String(html), String(css)); },
+      html: function () { return java.jsoupHtml(String(html), String(css)); },
+      first: function () { return this; },
+      select: function (sub) {
+        var next = String(css || '') + ' ' + String(sub || '');
+        return __els(html, next.trim());
+      },
+      toString: function () { return java.jsoupHtml(String(html), String(css)); }
+    };
+  }
+  var Jsoup = {
+    parse: function (html) {
+      var h = String(html == null ? '' : html);
+      return {
+        select: function (css) { return __els(h, String(css || '')); },
+        body: function () { return __els(h, 'body'); },
+        toString: function () { return h; }
+      };
+    }
+  };
+  globalThis.org = globalThis.org || {};
+  globalThis.org.jsoup = globalThis.org.jsoup || {};
+  globalThis.org.jsoup.Jsoup = Jsoup;
+  if (globalThis.Packages) {
+    globalThis.Packages.org = globalThis.Packages.org || {};
+    globalThis.Packages.org.jsoup = globalThis.Packages.org.jsoup || {};
+    globalThis.Packages.org.jsoup.Jsoup = Jsoup;
+  }
 })();
 "#;
 
@@ -1747,6 +1812,37 @@ fn register_html_parse_apis<'js>(
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
+    // java.jsoupAttr(html, css, attr) — org.jsoup.Jsoup 模拟层底层
+    java.set(
+        "jsoupAttr",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: String, css: String, attr: String| -> String {
+                html_parse::jsoup_attr(&html, &css, &attr)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    java.set(
+        "jsoupText",
+        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> String {
+            html_parse::jsoup_text(&html, &css)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    java.set(
+        "jsoupHtml",
+        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> String {
+            html_parse::jsoup_html(&html, &css)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
     Ok(())
 }
 
@@ -2626,6 +2722,44 @@ mod tests {
         // 只验证 java.httpGet 存在且是函数，不实际调用
         let result = engine.eval("typeof java.httpGet").unwrap();
         assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_connectnr_passes_body() {
+        let engine = make_engine();
+        // java.connectNR 四参须把 body 传到宿主；丢 body 时帝国 CMS 返回 200 提示页无 Location
+        let js = r#"
+var url = 'https://tianyashuku.net/e/search/index.php';
+var body = 'show=title,writer&keyboard=%E4%B8%80%E5%BF%B5&tbname=bookname&tempid=1';
+var hs = JSON.stringify({'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'});
+var raw = java.connectNR(url, 'POST', hs, body);
+var r = JSON.parse(raw);
+JSON.stringify({status: r.status_code, loc: (r.headers.location||r.headers.Location||null), bodyLen: (r.body||'').length});
+"#;
+        let result = engine.eval(js).expect("eval");
+        eprintln!("connectNR arity result: {}", result);
+        assert!(
+            result.contains("\"status\":302") || result.contains("result/?searchid"),
+            "got {result}"
+        );
+    }
+
+    #[test]
+    fn test_response_bridge_post_location() {
+        let engine = make_engine();
+        let js = r#"
+var url = 'https://tianyashuku.net/e/search/index.php';
+var body = 'show=title,writer&keyboard=%E4%B8%80%E5%BF%B5&tbname=bookname&tempid=1';
+var hs = {'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'};
+var loc = java.post(url, body, hs).header('location');
+String(loc);
+"#;
+        let result = engine.eval(js).expect("eval");
+        eprintln!("bridge post loc: {}", result);
+        assert!(
+            result.contains("searchid") || result.contains("result"),
+            "got {result}"
+        );
     }
 
     #[test]

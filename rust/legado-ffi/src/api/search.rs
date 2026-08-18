@@ -801,6 +801,12 @@ pub(crate) async fn search_single_source(
     })
     .await
     .map_err(|e| LegadoError::Internal(format!("搜索 URL 构建任务异常: {e}")))?;
+    if analyze_url.url().starts_with("legado-js-error://") {
+        return Err(LegadoError::Internal(format!(
+            "searchUrl JS 求值失败: {}",
+            analyze_url.url()
+        )));
+    }
 
     // 3. 合并请求头：书源全局 header + AnalyzeUrl 提取的 header
     let mut headers = parse_header_option(source.header.as_deref()).unwrap_or_default();

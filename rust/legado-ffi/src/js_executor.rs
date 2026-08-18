@@ -240,15 +240,57 @@ pub fn build_search_url_with_setup(
         variables.insert("page".to_string(), page.to_string());
         variables.insert("baseUrl".to_string(), source_tag.to_string());
         variables.insert("searchKey".to_string(), keyword.to_string());
-        if let Ok(analyzed) =
-            search_url_with_js(&pre, &variables, page, source_tag, js_lib, setup_script)
-        {
-            return analyzed;
+        match search_url_with_js(&pre, &variables, page, source_tag, js_lib, setup_script) {
+            Ok(analyzed) => return analyzed,
+            Err(e) => {
+                // @js:/<js> 主模板失败时禁止字面回退（否则会把脚本文本当 URL
+                // → HTTP 404/403，云霄小说/键盘小说/玄幻文学等实测）。
+                // 对齐 explore_url_with_js：JS 失败上抛语义；此处返回类型仍为
+                // AnalyzeUrl，用明确错误占位 URL 让上层 fetch 失败可辨。
+                let trimmed = template.trim_start();
+                let js_primary = trimmed.starts_with("@js:")
+                    || trimmed.starts_with("<js>")
+                    || template.contains("<js>");
+                if js_primary {
+                    eprintln!(
+                        "[build_search_url] @js/<js> 求值失败，拒绝字面回退: {}",
+                        e.to_string().chars().take(200).collect::<String>()
+                    );
+                    return AnalyzeUrl::new(
+                        &format!(
+                            "legado-js-error://search?e={}",
+                            urlencoding_lite(&e.to_string())
+                        ),
+                        Some(keyword),
+                        Some(page_u32),
+                        source_tag,
+                        None,
+                    );
+                }
+                eprintln!(
+                    "[build_search_url] JS 模板求值失败，回退字面路径: {}",
+                    e.to_string().chars().take(160).collect::<String>()
+                );
+            }
         }
     }
     // 旧版路径：字面占位符替换 + AnalyzeUrl::new
     let url_with_key = template.replace("{{key}}", keyword).replace("{key}", keyword);
     AnalyzeUrl::new(&url_with_key, Some(keyword), Some(page_u32), source_tag, None)
+}
+
+/// 极简 URL 编码（仅错误消息占位，避免引入额外依赖）
+fn urlencoding_lite(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes().take(180) {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 /// 构建发现分类 URL（对标 Android WebBook.exploreBookAwait + infoMap）
@@ -507,6 +549,11 @@ mod quickjs_impl {
                     // — 新笔趣阁等 @js: 重定向拦截源搜索修复（2026-08-17）
                     if let Err(e) = legado_js::JsEngine::eval(&engine, legado_js::host_api::quickjs_impl::RESPONSE_BRIDGE_JS) {
                         eprintln!("[legado-ffi] 书源 {} Response 桥重新注入失败（降级继续）: {e}", self.source_tag);
+                    }
+                    // org.jsoup.Jsoup 在引擎创建时已注入；setup 可能覆盖全局，
+                    // 再补一次保证 searchUrl @js 块可见。
+                    if let Err(e) = legado_js::JsEngine::eval(&engine, legado_js::host_api::quickjs_impl::JSOUP_BRIDGE_JS) {
+                        eprintln!("[legado-ffi] 书源 {} Jsoup 桥重新注入失败（降级继续）: {e}", self.source_tag);
                     }
                     // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
                     legado_js::JsEngine::eval(&engine, js_code).map_err(|e| e.to_string())
