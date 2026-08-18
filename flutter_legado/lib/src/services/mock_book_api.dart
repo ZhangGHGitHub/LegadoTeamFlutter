@@ -757,7 +757,11 @@ class MockBookApi implements BookApi {
     bool loadInfo = false,
     bool loadToc = false,
     bool loadWordCount = false,
+    bool forceRefresh = false,
   }) async {
+    // forceRefresh 仅真实后端消费；Mock 忽略
+    // ignore: unused_local_variable
+    final _ = forceRefresh;
     const srcNames = ['消消乐听书', '笔趣阁', '起点中文网'];
     const srcUrls = [
       'https://www.kaixin7days.com',

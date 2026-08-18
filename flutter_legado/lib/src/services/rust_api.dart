@@ -575,12 +575,14 @@ class RustApi implements BookApi {
     bool loadInfo = false,
     bool loadToc = false,
     bool loadWordCount = false,
+    bool forceRefresh = false,
   }) async {
     final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
     final optionsJson = jsonEncode({
       'loadInfo': loadInfo,
       'loadToc': loadToc,
       'loadWordCount': loadWordCount,
+      'forceRefresh': forceRefresh,
     });
     final json = await bridge.sourceSwitchSearch(
       bookName: bookName,

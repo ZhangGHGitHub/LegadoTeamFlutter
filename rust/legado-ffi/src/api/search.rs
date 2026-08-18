@@ -169,6 +169,10 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     let index = ReadRecordIndex::load();
     annotate_results(&mut results, &index);
 
+    // 一次性搜索同样落库（对齐 SearchModel.insert），供换源复用
+    let core_books: Vec<_> = results.iter().cloned().map(result_to_search_book).collect();
+    persist_search_books(&core_books);
+
     Ok(results)
 }
 
@@ -429,11 +433,15 @@ where
             // 批次推送前附加阅读记录标识
             annotate_results(&mut books, &read_record_index);
 
+            // 对齐原版 SearchModel：逐源 insert searchBooks，供换源 getDbSearchBooks 复用
+            let core_books: Vec<_> = books.iter().cloned().map(result_to_search_book).collect();
+            persist_search_books(&core_books);
+
             let batch = SearchSourceBatch {
                 source_index: outcome.index,
                 source_url: outcome.source_url,
                 source_name: outcome.source_name,
-                books: books.into_iter().map(result_to_search_book).collect(),
+                books: core_books,
                 error,
                 finished_count: outcome.finished_count,
                 total_count: outcome.total_count,
@@ -582,7 +590,7 @@ pub(crate) fn result_to_search_book(r: SearchResult) -> CoreSearchBook {
         word_count: r.word_count,
         latest_chapter_title: r.latest_chapter,
         toc_url: String::new(),
-        time: 0,
+        time: chrono_now_ms(),
         variable: None,
         origin_order: 0,
         chapter_word_count_text: None,
@@ -592,6 +600,28 @@ pub(crate) fn result_to_search_book(r: SearchResult) -> CoreSearchBook {
         has_read_record: r.has_read_record,
         read_record_author: r.read_record_author,
     }
+}
+
+/// 将搜索命中写入 searchBooks（对齐原版 `appDb.searchBookDao.insert`）
+///
+/// 失败静默（单条 FK/锁冲突不阻断搜索主流程）；DB 未初始化时跳过。
+fn persist_search_books(books: &[CoreSearchBook]) {
+    if books.is_empty() || !crate::db_state::is_initialized() {
+        return;
+    }
+    let _ = crate::db_state::with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        let _ = repo.insert_all(books);
+        Ok(())
+    });
+}
+
+fn chrono_now_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 // ─── 阅读记录标识（对齐上游 ReadRecordIndex，#424）─────────────────────
@@ -925,14 +955,20 @@ fn parse_search_response(
         );
         item_analyzer.set_element_content(element_html.clone());
 
-        // 提取书名（必填，无书名则跳过）
-        let book_name = eval_field_string(&item_analyzer, rule_search.name.as_deref());
+        // 提取书名（必填，无书名则跳过）；清洗对齐原版 BookHelp.formatBookName
+        let book_name = legado_core::book_help::format_book_name(&eval_field_string(
+            &item_analyzer,
+            rule_search.name.as_deref(),
+        ));
         if book_name.is_empty() {
             continue;
         }
 
-        // 提取作者
-        let author = eval_field_string(&item_analyzer, rule_search.author.as_deref());
+        // 提取作者（清洗对齐原版 BookHelp.formatBookAuthor）
+        let author = legado_core::book_help::format_book_author(&eval_field_string(
+            &item_analyzer,
+            rule_search.author.as_deref(),
+        ));
 
         // 提取分类（部分失败不致整条丢弃，对齐原版逐字段 try/catch 语义）
         let kind = eval_field_optional(&item_analyzer, rule_search.kind.as_deref());
@@ -1289,6 +1325,39 @@ mod tests {
         assert_eq!(results[1].book_name, "凡人修仙传");
         assert_eq!(results[1].author, "忘语");
         assert_eq!(results[1].book_url, "https://www.example.com/book/2");
+    }
+
+    /// 搜索解析须清洗书名/作者（对齐 BookList + BookHelp），否则 mergeItems 聚合键分裂
+    #[test]
+    fn test_parse_search_formats_name_author() {
+        let html = r#"<html><body>
+            <div class="book-item">
+                <a class="name" href="/book/1">斗破苍穹 作者天蚕土豆</a>
+                <span class="author">作者：天蚕土豆</span>
+            </div>
+            <div class="book-item">
+                <a class="name" href="/book/2">斗破苍穹</a>
+                <span class="author">天蚕土豆 著</span>
+            </div>
+        </body></html>"#;
+
+        let source = make_source_with_rules(
+            ".book-item",
+            ".name@text",
+            ".author@text",
+            "a@href",
+            "img@src",
+            ".intro@text",
+            ".latest@text",
+        );
+
+        let results =
+            parse_search_response(html, "https://www.example.com/search?q=test", &source).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].book_name, "斗破苍穹");
+        assert_eq!(results[0].author, "天蚕土豆");
+        assert_eq!(results[1].book_name, "斗破苍穹");
+        assert_eq!(results[1].author, "天蚕土豆");
     }
 
     // ─── 测试 1.1: bookUrl 规则为空时回退 baseUrl（对齐原版 BookList.kt）───

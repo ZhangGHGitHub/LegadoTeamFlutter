@@ -27,6 +27,7 @@ pub mod audio_preload;
 pub mod audio_skip_policy;
 pub mod app_log;
 pub mod auto_task;
+pub mod book_help;
 pub mod cache_book;
 pub mod chinese_convert;
 pub mod content_help;

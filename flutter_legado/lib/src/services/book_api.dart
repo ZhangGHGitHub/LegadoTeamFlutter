@@ -273,6 +273,7 @@ abstract class BookApi {
     bool loadInfo = false,
     bool loadToc = false,
     bool loadWordCount = false,
+    bool forceRefresh = false,
   });
 
   /// 搜索书籍封面候选列表

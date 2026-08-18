@@ -35,6 +35,7 @@
 | 2026-08-13 | **SOURCE_DIFF P1 DOM WebView**：加法式新增 `webviewRequestStream` / `webviewSubmit` / `webviewCancel` / `webviewPending`（§2.3）：对齐 `BackstageWebView` 挂起-唤醒；Flutter 订阅后 `@webjs`/正文 webJs/`java.webView*` 走真实 DOM。附录合计随 codegen +4 |
 | 2026-08-13 | **SOURCE_DIFF 纯工程收口（无新 FFI）**：Android 原生 `backstageEval` 落地页内 `java`/`source`/`cache` JavascriptInterface + `cacheFirst`→`LOAD_CACHE_ELSE_NETWORK`；Rust `ownText`/`string_rule_cache`。契约语义边界更新，方法表不变 |
 | 2026-08-18 | **书源搜索 parity（无新 FFI）**：QuickJS 宿主补齐 `org.jsoup.Jsoup` 模拟（`java.jsoupAttr/jsoupText/jsoupHtml`）+ 引擎创建时注入 `java.get/post/head` Response 桥（`connectNR`/`followRedirects(false)`，对齐 JsExtensions）；`@js`/`<js>` searchUrl 求值失败禁止字面回退；`AnalyzeUrl`/`ajax` 纠正书源 `#tag` 后缀把 path/query 拼进 fragment 的假 URL。方法表不变 |
+| 2026-08-18 | **G8 `$n` 跨步分组（无新 FFI）**：allInOne 正则 `getElements`（`:` 前缀）在有捕获组时把 `[全文,$1,$2,…]` 编成 JSON 数组元素；`getString("$2")` / `$1##…` 对齐原版 `SourceRule.makeUpRule` 用前序捕获组回填。覆盖书书小说/笔下文学/若夏等目录规则。方法表不变 |
 
 ---
 
@@ -195,7 +196,7 @@
 | `searchMulti(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Future<List<Map<String, dynamic>>>` | 多源并行搜索 |
 | `searchMultiStream(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Stream<Map<String, dynamic>>` | 多源渐进式（流式）搜索：每完成一个书源即推送一个批次，无需等待最慢书源 |
 | `cancelSearch()` | 无 | `Future<void>` | 取消搜索 |
-| `searchSource(String bookName, String author, {List<String>? sourceUrls, bool loadInfo = false, bool loadToc = false, bool loadWordCount = false})` | bookName, author, sourceUrls(可选), loadInfo, loadToc, loadWordCount | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点（留项#12/Task #131：`sourceUrls` 为加法式新增可选参数，null/空=搜全部启用源，兼容既有调用） |
+| `searchSource(String bookName, String author, {List<String>? sourceUrls, bool loadInfo = false, bool loadToc = false, bool loadWordCount = false, bool forceRefresh = false})` | bookName, author, sourceUrls(可选), loadInfo, loadToc, loadWordCount, forceRefresh | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点（留项#12/Task #131：`sourceUrls` 为加法式新增可选参数，null/空=搜全部启用源；`forceRefresh` 默认 false 优先复用 searchBooks） |
 | `searchCover(String bookName)` | bookName | `Future<List<Map<String, dynamic>>>` | 搜索书籍封面候选列表：复用多书源搜索提取封面 URL，每项字段 `url` / `width` / `height`（未知尺寸填 0），无候选返回空列表 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
 | `searchCoverRules(String name)` | name: 书名（作为规则搜索关键词，对齐原版 `BookCover.searchCover(book)` 传 `book.name` 语义） | `Future<String>` | 按书名执行 coverRules 表中全部启用规则搜封面（JS 搜索规则语义对齐原版 `BookCover.searchCover` 链路），返回候选封面 URL **裸 JSON Array**（遵守 §1.4 铁律）；无启用规则/无候选返回空数组（非异常）；单规则失败隔离（记日志跳过，不阻断其余规则）。错误码：Internal（coverRules 规则数据读取失败）（台账 §5.13-10，第四批后置项，Task #72，加法式新增） |
@@ -210,6 +211,8 @@
 > ℹ️ `searchSource` 分组 config 原生过滤（留项#12 增强，Task #145，**零签名变更**）：Rust 侧 `source_switch::resolve_switch_sources` 内部读取 config `searchGroup`（键名对齐原版 `AppConfig.searchGroup`，UI setConfig 已通），非空时对齐原版 `getEnabledPartByGroup` 的 `SOURCE_GROUP_MEMBERSHIP_FILTER` SQL 语义过滤：分组字段按 `,`/`;`/`，`/`；` 规范化拆分、逐组名 trim 后与目标分组精确相等匹配（非子串）；空分组=全部启用源。过滤后零结果由 UI 弹「xx分组搜索结果为空，是否切换到全部分组」对话框（对标 ChangeChapterSourceDialog L90-97，确认后清空 searchGroup 重搜）。
 >
 > ℹ️ `searchSource` 换源高级选项（审计 F2-2，**加法式新增**）：Rust 侧 `ffi::source_switch_search` 第四参 `options_json` 为 JSON 对象 `{loadInfo,loadToc,loadWordCount}`；Dart `searchSource` 三命名参数编码传入。空串/缺省时 Rust 回退读取 config `changeSourceLoadInfo`/`changeSourceLoadToc`/`changeSourceLoadWordCount`（键名对齐原版 AppConfig）。`loadInfo` 触发详情页补全；`loadToc`/`loadWordCount` 触发目录抓取；`loadWordCount` 另试读末章正文计字数并按原版 `wordCountComparator` 排序。返回 `matches[]` 项新增可选字段 `chapter_word_count_text` / `chapter_word_count` / `respond_time` / `origin_order`（snake_case）。
+
+> ℹ️ `searchSource` 复用搜索缓存（**加法式**，`forceRefresh`）：对齐原版 `ChangeBookSourceViewModel` 先 `getDbSearchBooks` 再条件 `startSearch`。搜索流式/一次性结果写入 `searchBooks` 表；换源默认读库复用（`forceRefresh=false`），「刷新列表」等传 `forceRefresh=true` 才强制全量网络重搜。Dart `searchSource` / 换源页进入默认不二次搜索。
 >
 > ℹ️ `searchMultiStream`：Rust 侧 `ffi::search_multi_stream(query, source_urls_json, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），每完成一个书源推送一个 `SearchSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `books[]` / `error?` / `finished_count` / `total_count` / `is_last`。冻结契约 `searchMulti` 保持不变，本方法为加法式新增。
 >

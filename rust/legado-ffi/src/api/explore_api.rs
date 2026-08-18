@@ -879,22 +879,12 @@ fn parse_explore_as_single_book(
 
 /// 书名清洗（对齐原版 `BookHelp.formatBookName`：去「 作者xxx」「 xx 著」后缀）— A2
 fn format_book_name(name: &str) -> String {
-    let re = regex::Regex::new(r"\s+作\s*者.*|\s+\S+\s+著");
-    let cleaned = match re {
-        Ok(re) => re.replace_all(name, "").into_owned(),
-        Err(_) => name.to_string(),
-    };
-    cleaned.trim().to_string()
+    legado_core::book_help::format_book_name(name)
 }
 
 /// 作者清洗（对齐原版 `BookHelp.formatBookAuthor`：去「作者:xxx」前缀、「 xx 著」后缀）— A2
 fn format_book_author(author: &str) -> String {
-    let re = regex::Regex::new(r"^\s*作\s*者[:：\s]+|\s+著");
-    let cleaned = match re {
-        Ok(re) => re.replace_all(author, "").into_owned(),
-        Err(_) => author.to_string(),
-    };
-    cleaned.trim().to_string()
+    legado_core::book_help::format_book_author(author)
 }
 
 /// 简介净化（对齐原版 `HtmlFormatter.formatIntro` 的可见行为：去 HTML 标签、
