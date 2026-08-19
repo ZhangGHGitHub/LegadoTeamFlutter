@@ -1164,6 +1164,36 @@ impl AnalyzeUrl {
         prologue
     }
 
+    /// URL 模板 `<js>`/`@js:` 前导：包装全局 `eval`，使 URI 字面量在
+    /// QuickJS 下可回退为原字符串。
+    ///
+    /// 书源常见模式 `eval(String(Reload('...')))`：远端/库函数可能直接返回
+    /// `https://...` 裸 URL。Rhino 解析为 label+comment（常得 `undefined`）；
+    /// QuickJS 则抛 `unexpected token`，导致 searchUrl 整段失败。
+    /// 仅在 eval 抛错且入参为 URI 形态时回退原串，合法 JS 仍走原生 eval。
+    fn js_eval_uri_fallback_prologue() -> &'static str {
+        r#"(function(){
+  var __legadoNativeEval = globalThis.eval;
+  if (typeof __legadoNativeEval !== 'function') return;
+  if (globalThis.__legadoEvalUriFallback) return;
+  globalThis.__legadoEvalUriFallback = true;
+  globalThis.eval = function(code) {
+    try {
+      return __legadoNativeEval(code);
+    } catch (err) {
+      if (typeof code === 'string') {
+        var t = code.replace(/^\s+|\s+$/g, '');
+        if (/^(https?:|ftp:|data:|legado:|file:|\/\/)/i.test(t) || t.charAt(0) === '/') {
+          return code;
+        }
+      }
+      throw err;
+    }
+  };
+})();
+"#
+    }
+
     pub fn analyze_js_with_error(
         rule: &str,
         js_executor: &dyn JsExecutor,
@@ -1172,6 +1202,7 @@ impl AnalyzeUrl {
         // 匹配 <js>...</js> 或 @js:... 模式
         let js_re = Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap();
         let var_prologue = Self::js_variable_prologue(variables);
+        let eval_prologue = Self::js_eval_uri_fallback_prologue();
 
         let mut result = rule.to_string();
         let mut first_err: Option<String> = None;
@@ -1198,8 +1229,9 @@ impl AnalyzeUrl {
                 .map(|m| m.as_str())
                 .unwrap_or("");
 
-            // 变量前导 + JS 代码一并执行（对齐原版 evalJS bindings 注入）
-            let code_with_vars = format!("{var_prologue}{js_code}");
+            // 变量前导 + URI-eval 兼容包装 + JS 代码一并执行
+            // （对齐原版 evalJS bindings；并覆盖 QuickJS 对裸 URL eval 的差异）
+            let code_with_vars = format!("{var_prologue}{eval_prologue}{js_code}");
 
             // 执行 JS 并获取结果
             match js_executor.execute_js(&code_with_vars) {
@@ -2327,6 +2359,99 @@ mod tests {
         // 没有 JS 标记，原样返回
         let result = AnalyzeUrl::analyze_js("https://example.com/page", &executor);
         assert_eq!(result, "https://example.com/page");
+    }
+
+    /// Recording Mock：断言注入了 URI-eval 兼容前导，并模拟回退/报错语义
+    ///（不引入 quickjs；生产 prologue 字符串由 analyze_js_with_error 拼入脚本）。
+    struct UriEvalCompatRecordingExecutor {
+        last_code: std::sync::Mutex<String>,
+    }
+
+    impl UriEvalCompatRecordingExecutor {
+        fn new() -> Self {
+            Self {
+                last_code: std::sync::Mutex::new(String::new()),
+            }
+        }
+
+        fn last_code(&self) -> String {
+            self.last_code.lock().unwrap().clone()
+        }
+    }
+
+    impl crate::analyze_rule::JsExecutor for UriEvalCompatRecordingExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            *self.last_code.lock().unwrap() = js_code.to_string();
+            // 生产路径必须注入兼容包装，否则本 mock 直接失败
+            if !js_code.contains("__legadoEvalUriFallback")
+                || !js_code.contains("__legadoNativeEval")
+            {
+                return Err("缺少 URI-eval 兼容前导".to_string());
+            }
+            // 裸 URI：eval(String(Reload('https://...'))) → 兼容包装回退原串
+            if let Some(start) = js_code.find("Reload('") {
+                let rest = &js_code[start + "Reload('".len()..];
+                if let Some(end) = rest.find("')") {
+                    let url = &rest[..end];
+                    if url.starts_with("http://") || url.starts_with("https://") {
+                        return Ok(url.to_string());
+                    }
+                }
+            }
+            // 非 URI 非法 eval：包装不得吞错，须向上返回
+            if js_code.contains("eval('@@@not-a-uri')") {
+                return Err("unexpected token in expression".to_string());
+            }
+            Err("mock 未识别的脚本".to_string())
+        }
+    }
+
+    /// parser 层：`eval(String(Reload('https://...')))` 裸 URI 回退（非仅 ffi 间接覆盖）
+    #[test]
+    fn test_analyze_js_eval_reload_bare_uri_fallback() {
+        let executor = UriEvalCompatRecordingExecutor::new();
+        let template =
+            "<js>eval(String(Reload('https://api.example.com/search?q=test')))</js>";
+        let (out, err) =
+            AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        assert!(err.is_none(), "裸 URI 回退不应报错: {err:?}");
+        let code = executor.last_code();
+        assert!(
+            code.contains("__legadoEvalUriFallback") && code.contains("__legadoNativeEval"),
+            "应注入 URI-eval 兼容前导: {code}"
+        );
+        assert!(
+            code.contains("Reload('https://api.example.com/search?q=test')"),
+            "应保留原 Reload 调用: {code}"
+        );
+        assert_eq!(out, "https://api.example.com/search?q=test");
+    }
+
+    /// 边界：非 URI 的非法 eval 仍返回错误，兼容包装不得吞掉
+    #[test]
+    fn test_analyze_js_eval_non_uri_error_not_swallowed() {
+        let executor = UriEvalCompatRecordingExecutor::new();
+        let template = "<js>eval('@@@not-a-uri')</js>";
+        let (_out, err) =
+            AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        let err = err.expect("非 URI 非法 eval 应保留错误");
+        assert!(
+            err.contains("unexpected token"),
+            "应透传引擎/模拟错误而非静默成功: {err}"
+        );
+        let code = executor.last_code();
+        assert!(
+            code.contains("__legadoEvalUriFallback"),
+            "即使失败路径也应已注入兼容前导: {code}"
+        );
+        // parse_with_js 须上抛，禁止当成功 URL
+        let parsed =
+            AnalyzeUrl::parse_with_js(template, &HashMap::new(), 1, &executor);
+        assert!(
+            parsed.is_err(),
+            "非 URI 非法 eval 经 parse_with_js 应失败: {}",
+            parsed.err().map(|e| e.to_string()).unwrap_or_default()
+        );
     }
 
     // --- 21. parse_with_js ---
