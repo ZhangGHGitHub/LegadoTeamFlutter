@@ -2753,6 +2753,15 @@ mod tests {
     }
 
     #[test]
+    fn test_response_headers_map_and_list_bridge() {
+        let engine = make_engine();
+        engine.eval(r#"java.get = function(){ return ''; }; java.connectNR = function(){ return JSON.stringify({status_code:302,body:'',headers:{Location:'https://final.example/r'},url:'https://start.example'}); };"#).unwrap();
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        let result = engine.eval(r#"JSON.stringify({map:java.get('https://x',{}).headers().Location,list:java.get('https://x',{}).headers('location')[0],missing:java.get('https://x',{}).headers('missing').length})"#).unwrap();
+        assert_eq!(result, r#"{"map":"https://final.example/r","list":"https://final.example/r","missing":0}"#);
+    }
+
+    #[test]
     fn test_connect_str_response_raw_request_url_bridge() {
         let engine = make_engine();
         engine.eval(r#"java.connect = function(){ return JSON.stringify({status_code:200,body:'ok',headers:{},url:'https://final.example/result'}); };"#).unwrap();

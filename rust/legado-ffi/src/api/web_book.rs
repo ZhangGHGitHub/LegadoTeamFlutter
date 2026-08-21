@@ -2714,7 +2714,7 @@ mod tests {
         assert_eq!(decode_web_response(&plain, &spaced_header, None), "正文内容");
 
         let (single_quote, _, _) = encoding_rs::GBK.encode(
-            "<html><head><meta charset=GBK></head><body>单引号</body></html>",
+            r#"<html><head><meta charset='GBK'></head><body>单引号</body></html>"#,
         );
         assert!(decode_web_response(&single_quote, &HashMap::new(), None).contains("单引号"));
 
@@ -2727,9 +2727,10 @@ mod tests {
         assert_eq!(charset_from_html_meta(fake), None);
     }
 
-    /// 批量搜索扫描（2026-08-17）：遍历 fixture 文本源跑 webbook_search，
-    /// 报告失败/空结果——定位「原版可用、重构版不行」的书源候选。
+    /// 批量搜索扫描（2026-08-17）：人工实网诊断，不作为 CI 回归门禁。
+    /// fixture/源站网络波动时只输出统计；需手工运行并对照原版。
     #[test]
+    #[ignore = "外部 fixture 与源站网络诊断，非确定性 CI 测试"]
     fn test_batch_search_scan_text_sources() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -2784,8 +2785,9 @@ mod tests {
         eprintln!("[scan-summary] scanned={} ok={} empty={} failed={}", scanned, ok, empty, failed);
     }
 
-    /// 扩展扫描：跳过前 120 个 type-0，再扫 200 个，写出 empty/failed 清单供对照原版。
+    /// 扩展扫描：跳过前 120 个 type-0，再扫 200 个，供人工对照原版。
     #[test]
+    #[ignore = "外部源站批量诊断，非确定性 CI 测试"]
     fn test_batch_search_scan_extended_wave2() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),

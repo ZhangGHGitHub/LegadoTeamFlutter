@@ -633,9 +633,10 @@ mod tests {
         }
     }
 
-    /// 原版「url,{json}」格式（七猫四合一等书源 java.ajax("url,{json}")）：
-    /// 逗号前 URL + 逗号后 option JSON，应解析成功并返回**纯响应体文本**。
+    /// 原版「url,{json}」格式外网诊断：依赖 httpbin.org，不能作为离线 CI 门禁。
+    /// URL option 解析由本地 AnalyzeUrl/JS bridge 回归覆盖。
     #[test]
+    #[ignore = "依赖 httpbin.org，外部 503/验证页会改变响应体格式"]
     fn test_ajax_url_option_format_returns_body() {
         let input = r#"https://httpbin.org/get,{"method":"GET","headers":{"Accept":"application/json"}}"#;
         let result = ajax(input);

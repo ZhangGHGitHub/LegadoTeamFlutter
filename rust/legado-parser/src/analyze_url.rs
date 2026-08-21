@@ -719,8 +719,9 @@ impl AnalyzeUrl {
             _ => encoding_rs::UTF_8,
         };
         if enc == encoding_rs::UTF_8 {
-            // urlencoding 用 %20；表单惯例为空格→+
-            return urlencoding::encode(value).replace("%20", "+");
+            // 对齐 Java URLEncoder：A-Za-z0-9.*-_ 原样、空格→+；urlencoding::encode
+            // 会把 * 编为 %2A，和原版不一致（混合表单分量如 a*b,c 会改变签名）。
+            return Self::percent_encode_bytes_form(value.as_bytes());
         }
         let (bytes, _, _) = enc.encode(value);
         Self::percent_encode_bytes_form(&bytes)
@@ -1929,6 +1930,24 @@ mod tests {
             1,
         ).unwrap();
         assert_eq!(url.request_body(), "keyboard=%E4%B8%80%E5%BF%B5&show=title%2Cbooksay%2Cbookwriter&submit=%E6%90%9C%E7%B4%A2");
+    }
+
+    /// UTF-8 表单编码保留 Java URLEncoder 的 *，且逗号正常百分号编码。
+    #[test]
+    fn test_utf8_form_matches_java_urlencoder_safe_set() {
+        let url = AnalyzeUrl::parse(
+            r#"https://example.com/post,{"method":"POST","body":"value=a*b,c~ d"}"#,
+            &HashMap::new(),
+            1,
+        ).unwrap();
+        assert_eq!(url.request_body(), "value=a*b%2Cc%7E+d");
+
+        let safe = AnalyzeUrl::parse(
+            r#"https://example.com/post,{"method":"POST","body":"value=a-b_c.d"}"#,
+            &HashMap::new(),
+            1,
+        ).unwrap();
+        assert_eq!(safe.request_body(), "value=a-b_c.d");
     }
 
     // --- 8. 绝对 URL 拼接 ---
