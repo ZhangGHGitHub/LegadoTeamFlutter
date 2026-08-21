@@ -3326,6 +3326,22 @@ url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
         assert!(!au.url().starts_with("legado-js-error://"), "趣书 JS 不应失败: {}", au.url());
     }
 
+    /// 天涯书库真实规则：source.key + java.post().header(location) 必须可构建搜索 URL。
+    #[test]
+    #[ignore = "外部重定向源诊断，离线 Response bridge 契约覆盖"]
+    fn test_tianyashuku_search_url_diag() {
+        let raw = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json")).unwrap();
+        let serde_json::Value::Array(sources) = serde_json::from_str::<serde_json::Value>(&raw).unwrap() else { return; };
+        let src = sources.iter().find(|s| s.get("bookSourceUrl").and_then(|v| v.as_str()).is_some_and(|u| u.contains("tianyashuku.net"))).unwrap();
+        let source = serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap(), "一念", 1, &source.book_source_url,
+            source.js_lib.as_deref(), crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        assert!(!au.url().contains("undefined"), "天涯 URL 不应含 undefined: {}", au.url());
+        assert!(!au.url().starts_with("legado-js-error://"), "天涯 JS 不应失败: {}", au.url());
+    }
+
     /// org.jsoup + java.post(connectNR) 回归：云霄/键盘/天涯书库 searchUrl @js
     #[test]
     fn test_jsoup_post_redirect_search_diag() {
