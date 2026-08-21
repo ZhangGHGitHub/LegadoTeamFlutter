@@ -244,12 +244,21 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
     };
   }
   java.connect = function (url, arg2, arg3, arg4, arg5) {
-    var method = (typeof arg2 === 'string' && /^(GET|POST|HEAD|PUT|DELETE)$/i.test(arg2)) ? arg2 : undefined;
-    var headers = method ? arg3 : arg2;
-    var body = method ? arg4 : undefined;
-    var timeout = method ? arg5 : arg3;
-    var hs = headers == null ? undefined : (typeof headers === 'string' ? headers : JSON.stringify(headers));
-    return __strResponse(__nativeConnectFull(String(url), method, hs, body, timeout));
+    // rquickjs Opt<T> 不能接收显式 undefined；必须按实参数量调用原生函数。
+    if (arguments.length <= 1) return __strResponse(__nativeConnectFull(String(url)));
+    var isMethod = typeof arg2 === 'string' && /^(GET|POST|HEAD|PUT|DELETE)$/i.test(arg2);
+    if (!isMethod) {
+      var headerOnly = typeof arg2 === 'string' ? arg2 : JSON.stringify(arg2 || {});
+      var timeoutOnly = arg3 == null ? undefined : arg3;
+      return timeoutOnly === undefined
+        ? __strResponse(__nativeConnectFull(String(url), 'GET', headerOnly))
+        : __strResponse(__nativeConnectFull(String(url), 'GET', headerOnly, undefined, timeoutOnly));
+    }
+    var hs = arg3 == null ? undefined : (typeof arg3 === 'string' ? arg3 : JSON.stringify(arg3));
+    if (arguments.length === 2) return __strResponse(__nativeConnectFull(String(url), arg2));
+    if (arguments.length === 3) return __strResponse(__nativeConnectFull(String(url), arg2, hs));
+    if (arguments.length === 4) return __strResponse(__nativeConnectFull(String(url), arg2, hs, String(arg4)));
+    return __strResponse(__nativeConnectFull(String(url), arg2, hs, String(arg4), arg5));
   };
   globalThis.connect = java.connect;
   java.get = function (url, headers) {

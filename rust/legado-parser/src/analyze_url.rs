@@ -1230,9 +1230,12 @@ impl AnalyzeUrl {
                 .map(|m| m.as_str())
                 .unwrap_or("");
 
-            // 变量前导 + URI-eval 兼容包装 + JS 代码一并执行
-            // （对齐原版 evalJS bindings；并覆盖 QuickJS 对裸 URL eval 的差异）
-            let code_with_vars = format!("{var_prologue}{eval_prologue}{js_code}");
+            // 变量前导 + 当前 result 绑定 + URI-eval 兼容包装。原版
+            // AnalyzeUrl.evalJS(jsStr, result) 会把前一段 URL/规则文本绑定为
+            // JS 变量 result；趣书等 `URL,{json}\n@js` 规则通过
+            // String(result) 从前缀构造重定向后的分页 URL。
+            let result_lit = serde_json::to_string(&result).unwrap_or_else(|_| "\"\"".to_string());
+            let code_with_vars = format!("{var_prologue}var result = {result_lit};\n{eval_prologue}{js_code}");
 
             // 执行 JS 并获取结果
             match js_executor.execute_js(&code_with_vars) {
@@ -2471,6 +2474,17 @@ mod tests {
             "非 URI 非法 eval 经 parse_with_js 应失败: {}",
             parsed.err().map(|e| e.to_string()).unwrap_or_default()
         );
+    }
+
+    /// 内嵌 @js/<js> 必须注入前一段 result（对齐 Kotlin evalJS(js, result)）。
+    #[test]
+    fn test_inline_js_receives_previous_result_binding() {
+        let executor = EchoJsExecutor;
+        let template = "https://example.com/e/search/index.php,{\"method\":\"POST\"}\n@js:String(result)";
+        let (out, err) = AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        assert!(err.is_none(), "JS 不应失败: {err:?}");
+        assert!(out.contains("var result = \"https://example.com/e/search/index.php,{\\\"method\\\":\\\"POST\\\"}"), "应注入完整 URL option 前缀: {out}");
+        assert!(!out.contains("var result = \"@js:"), "result 不应绑定 JS 块自身: {out}");
     }
 
     // --- 21. parse_with_js ---

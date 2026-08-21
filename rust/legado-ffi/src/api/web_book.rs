@@ -3306,6 +3306,25 @@ url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
         assert!(!au.url().starts_with("legado-js-error://"), "趣书 JS 不应失败: {}", au.url());
     }
 
+    /// 趣书网吧 real source：java.connect(...).raw().request().url() 不能再产出 undefined。
+    #[test]
+    fn test_qushu123_connect_search_diag() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json");
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw) else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceUrl").and_then(|v| v.as_str()).is_some_and(|u| u.contains("qushu123.com"))
+        }) else { return; };
+        let source = serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""), "一念", 1, &source.book_source_url,
+            source.js_lib.as_deref(), crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        eprintln!("[qushu123] url={}", au.url());
+        assert!(!au.url().contains("undefined"), "趣书 URL 不应含 undefined: {}", au.url());
+        assert!(!au.url().starts_with("legado-js-error://"), "趣书 JS 不应失败: {}", au.url());
+    }
+
     /// org.jsoup + java.post(connectNR) 回归：云霄/键盘/天涯书库 searchUrl @js
     #[test]
     fn test_jsoup_post_redirect_search_diag() {
