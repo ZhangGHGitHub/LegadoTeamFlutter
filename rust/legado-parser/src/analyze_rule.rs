@@ -490,14 +490,17 @@ impl AnalyzeRule {
                 let js_result = self.execute_js_rule(js_code)?;
                 // `</js>` 之后若有 JSONPath 后缀（如 `\n$[*]`），对 JS 结果拆解
                 let suffix = rule[end + "</js>".len()..].trim();
-                if suffix.starts_with("$") && !suffix.is_empty() {
-                    // JS 结果为单元素（JSON 数组字符串）或多元素，逐一对
-                    // JSONPath 求值后拼接（对齐原版 getElements 多元素语义）
-                    // 注意：此处保留完整 JSON 数组字符串，勿提前 expand——
-                    // `$[*]` 需对根数组求值（51漫画 chapterList）。
+                let json_suffix = suffix
+                    .strip_prefix("@json:")
+                    .or_else(|| suffix.strip_prefix("@JSON:"))
+                    .unwrap_or(suffix);
+                if json_suffix.starts_with("$") && !json_suffix.is_empty() {
+                    // JS 结果为单元素（JSON/JSONP 解包字符串）或多元素，逐一按
+                    // JSONPath 求值。必须兼容 `</js>\n@json:$..bookinfo[*]`
+                    // （红薯小说 JSONP）以及既有 `</js>\n$[*]`（51漫画）。
                     let mut out = Vec::new();
                     for item in &js_result {
-                        if let Ok(v) = self.json_parser.parse_jsonpath(item, suffix) {
+                        if let Ok(v) = self.json_parser.parse_jsonpath(item, json_suffix) {
                             out.extend(v);
                         }
                     }
@@ -977,6 +980,15 @@ impl AnalyzeRule {
     /// 如果已注入 JsExecutor，则调用其执行 JS 代码；
     /// 否则降级返回空结果。
     fn execute_js_rule(&self, js_code: &str) -> LegadoResult<Vec<String>> {
+        // JS 规则体中的 {{$.field}} / {$.field} 必须在 eval 前按当前 JSON
+        // 元素展开。红薯小说 ruleBookUrl 使用 @js + {{$.bid}}；此前该
+        // 占位符作为字符串字面量进入 JS，最终 bookUrl 保留 {{$.bid}}。
+        let js_code_owned = if js_code.contains("{$") {
+            self.process_inner_rules(js_code)?
+        } else {
+            js_code.to_string()
+        };
+        let js_code = js_code_owned.as_str();
         if let Some(executor) = &self.js_executor {
             // 注入原版 evalJS bindings 语义：result/src/baseUrl 自动注入，
             // 附加变量（chapter/title/source 等）按调用方补充。
@@ -2254,6 +2266,35 @@ mod tests {
         );
         let t = title_rule.get_string("$.title").unwrap();
         assert_eq!(t, "第1话");
+    }
+
+    /// @js 规则中 {{$.field}} 必须在执行前按当前 JSON 元素展开。
+    #[test]
+    fn test_js_rule_expands_json_inner_placeholder() {
+        let executor = Arc::new(RecordingJsExecutor::new());
+        let rule = AnalyzeRule::with_js_executor(
+            r#"{"bid":"116554"}"#.to_string(),
+            String::new(),
+            executor.clone(),
+        );
+        let _ = rule.execute_js_rule("'https://x/bid/{{$.bid}}'").unwrap();
+        let executed = executor.executed.lock().unwrap().join("\n");
+        assert!(executed.contains("116554"), "应展开 bid: {executed}");
+        assert!(!executed.contains("{{$.bid}}"), "占位符不应残留: {executed}");
+    }
+
+    /// JSONP/JSON 书源可在 <js> 解包后使用 @json: 后缀继续提取。
+    #[test]
+    fn test_js_tag_with_at_json_suffix() {
+        let executor = Arc::new(MockJsExecutor {
+            result: r#"{"bookinfo":[{"catename":"红薯书"},{"catename":"第二本"}]}"#.to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor("jsonp".to_string(), String::new(), executor);
+        let result = rule.get_elements("<js>unwrapJsonp(result)</js>
+@json:$..bookinfo[*]").unwrap();
+        assert_eq!(result.len(), 2);
+        let first = AnalyzeRule::new(result[0].clone(), String::new());
+        assert_eq!(first.get_string("$.catename").unwrap(), "红薯书");
     }
 
     /// `<js>` 无 JSONPath 后缀：保持原语义（直接返回 JS 结果）

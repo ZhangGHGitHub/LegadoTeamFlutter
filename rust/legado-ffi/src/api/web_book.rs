@@ -3488,6 +3488,21 @@ url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
         }
     }
 
+    /// 红薯小说 JSONP 人工实网诊断：离线 @json 后缀和 JSON 占位符回归覆盖核心语义。
+    #[test]
+    #[ignore = "外部源站 JSONP 诊断，非确定性 CI 测试"]
+    fn test_hongshu_jsonp_search_diag() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json");
+        let raw = std::fs::read_to_string(path).unwrap();
+        let serde_json::Value::Array(sources) = serde_json::from_str::<serde_json::Value>(&raw).unwrap() else { return; };
+        let src = sources.iter().find(|s| s.get("bookSourceUrl").and_then(|v| v.as_str()) == Some("https://g.hongshu.com/")).unwrap();
+        let source = serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let source_json = serde_json::to_string(&source).unwrap();
+        let result = webbook_search(&source_json, "一念", 1);
+        eprintln!("[hongshu] result={:?}", result.as_ref().map(|s| s.chars().take(500).collect::<String>()));
+        assert!(result.is_ok(), "红薯搜索请求失败: {:?}", result.err());
+    }
+
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {
