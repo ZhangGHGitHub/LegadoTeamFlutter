@@ -5,14 +5,14 @@
 
 ## 一、结论速览
 
-- 已完成 **14/15**（G8 罕见形态待定），通过 `cargo test` 逐项回归（parser 248、ffi 374、js 493）。
+- 解析缺口 **G1-G15 已完成 15/15**；G8 跨步 `$n` 已由 `a779e1520` 落地。注意：这仅表示解析缺口实现完成，不代表整体重构、分支集成或 A* 验收完成。
 - 分支：`feature/rust-parser-gap-fix`，本轮搜索 parity 工作新增 6 个提交（§七-§十二），合计 20+ 提交。
 - 本轮搜索批量扫描：120 源 ok=93（77.5%），剩余 empty/failed 全部确认为**源侧限制**（限频/WAF/无结果/登录）。
 - 已修复 8 个「原版可用、重构版不行」的典型书源：七步阁、77读书网、淘小说、企鹅小说、新笔趣阁、得间小说、苦瓜书盘、七步阁目录/正文 GBK。
 - 5558 已安装最新 APK（含全部修复），5556 冒烟 PASSED。
 - **下一阶段重点**：扩展扫描至 809 个文本源中的更多批次，逐个排查剩余「原版可用」源。
 
-## 二、已完成（14/15）
+## 二、已完成（15/15）
 
 | 编号 | 内容 | 提交 | 测试 |
 |---|---|---|---|
@@ -28,8 +28,9 @@
 | G15 | AES/ECB/NoPadding 加解密 | dce9a252a | legado-core 全绿 |
 | G11 | 规则体内 {{js}}（非$）内嵌 JS 替换 | 631f4b134 | legado-parser 235 |
 | G5 | 目录章节标题 formatJs 格式化（对齐 BookChapterList） | d044642bf | legado-ffi 337/0 |
+| G8 | allInOne 正则跨步 `$n` 捕获组回填（含目录链路） | a779e1520 | parser/ffi 回归 |
 
-## 三、剩余 3 项精确诊断（G4/G8/G12）
+## 三、历史诊断（G4/G8/G12 均已落地，保留设计依据）
 
 ### G4 concurrentRate（P1，legado-net）
 - **语义**：原版 `ConcurrentRateLimiter(source)` 解析 `"N/毫秒"`（访问数/间隔）做**节流**，或纯 `N` 做并发上限；`withLimit{}` 包裹请求（AnalyzeUrl.getStrResponse + JsExtensions.http/api/ajax）。
@@ -43,8 +44,8 @@
 
 ### G8 $n 分组引用（P2，analyze_rule.rs）
 - **语义**：`SourceRule.splitRegex` 把规则按 `$1..$99` 拆成「字面片段 + 分组引用」，`makeUpRule(result)` 逆行重建时用**前序 SourceRule 的捕获组 List** 代入 `result[n]`。
-- **现状**：Rust 无 `ruleType/ruleParam` 多段重建运行时，`$n` 全仓零命中。
-- **改法**：需移植 splitRegex 分解 + makeUpRule 重建（含 JS/getRuleType 分支），属小架构级补全，非单点替换。
+- **现状（已完成）**：`a779e1520` 已补齐 allInOne 正则跨步 `$n` 捕获组回填、目录链路接线及回归；该条不再是待开发项。
+- **实现**：`AnalyzeRule` 保存前序捕获组并在后续步骤重建 `$1..$99`，FFI 目录解析同步传递状态。
 
 ### G11 规则内 `{{expr}}`（P2，analyze_rule.rs）
 - **语义**：`makeUpRule` 的 jsRuleType 分支：`{{js}}` → evalJS（引用 result）。
@@ -81,7 +82,7 @@
 
 - G4 已完整落地：IntervalRateLimiter 元语（e8b63147a）+ 每源接线（ca6b87063）。
 - G12 已完整落地：type 映射 response_type + get_raw 字节 + hex 编码（a26c8eecb）。
-- 合计 14/15 完成；仅剩 G8 规则体内跨步 $n（极罕见），其常见形态（## 替换里的 $n）已由 apply_hash_replace 的 Rust 正则原生 replace 覆盖。
+- G8 已由 `a779e1520` 完整落地；G1-G15 合计 15/15 完成。整体重构仍受 server 空实现、分支集成、FFI 流运行时证明和 A* 外部验收约束。
 - A* 实网验收矩阵见 §四，待真实书源环境执行。
 
 ---
@@ -256,3 +257,30 @@ exploreUrl `<js>/@js:` 模板解析全部通过（4/4 OK）。
 - 苦瓜书盘实网诊断确认请求体由 `%252C` 修复为 `%2C`，服务端响应包含 `id="slist"`。
 
 编写者：DeepSeek Harness ｜ 2026-08-17
+
+---
+
+## 十三、wave2 搜索扫描与 StrResponse 桥补齐（2026-08-20）
+
+### 扫描结果
+
+扩展扫描跳过前 120 个文本源，再扫描 200 个：`ok=151 / empty=26 / failed=23`。
+多数 failed 为站点 401/403/404/522/timeout；其中趣书、Xpicvid、言情小说暴露通用引擎信号：
+`java.connect(...).raw().request().url()` 在重构版无 StrResponse 对象链，导致 URL 出现 `undefined` 或 `legado-js-error://`。
+
+### 修复
+
+1. `HttpResponse` 增加最终 `url` 字段；connect/NR/head/post 返回最终 URL。
+2. `RESPONSE_BRIDGE_JS` 为 `java.connect` 提供原版 `StrResponse` 兼容对象：`.body`、`.raw().request().url()`、`.raw().code()`、`.raw().headers()`。
+3. `Connection.Response.headers()` 同时支持无参返回 Map、有参返回值列表；趣书使用无参 Map 读取 `Location/location`，此前固定返回空数组导致 `/undefined`。
+4. charset 检测改为解析 `<meta>` 属性，仅接受 `charset` 属性或 `http-equiv=content-type` + `content`，支持 `charset = GBK`、大小写和引号；正文/脚本中的伪 charset 不再误判。
+5. 外部 WAF/限频测试标记人工诊断；得间 `{{host}}` 改为离线严格 URL 契约，避免源站波动伪装 CI 回归。
+
+### 回归
+
+- `test_connect_str_response_raw_request_url_bridge`：离线验证 `.body` 和 `.raw().request().url()`。
+- `test_connect_str_response_search_url_no_undefined`：趣书实网诊断（ignore）。
+- `test_decode_web_response_gbk_meta_and_header`：charset 空白/大小写/http-equiv/伪文本边界。
+- `test_dejian_diag`：离线验证 jsLib 全局 `host` 生成完整 URL。
+
+编写者：DeepSeek Harness ｜ 2026-08-20

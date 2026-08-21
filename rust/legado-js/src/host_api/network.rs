@@ -59,6 +59,9 @@ pub struct HttpResponse {
     pub body: String,
     /// 响应头
     pub headers: HashMap<String, String>,
+    /// 最终 URL（connect/StrResponse raw.request.url 兼容）
+    #[serde(default)]
+    pub url: String,
 }
 
 /// 从 JSON 字符串解析请求头
@@ -233,6 +236,7 @@ pub fn ajax(input: &str) -> Result<String, String> {
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
 
         serde_json::to_string(&result).map_err(|e| format!("ajax serialize error: {}", e))
@@ -426,6 +430,7 @@ pub fn connect_full(
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
         serde_json::to_string(&result).map_err(|e| format!("connect serialize error: {}", e))
     })
@@ -476,6 +481,7 @@ pub fn connect_no_redirect(
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
         serde_json::to_string(&result).map_err(|e| format!("connectNR serialize error: {}", e))
     })
@@ -507,6 +513,7 @@ pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
         serde_json::to_string(&result).map_err(|e| format!("head serialize error: {}", e))
     })
@@ -542,6 +549,7 @@ pub fn post_full(
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
         serde_json::to_string(&result).map_err(|e| format!("post serialize error: {}", e))
     })

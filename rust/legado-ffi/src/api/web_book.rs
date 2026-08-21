@@ -31,28 +31,50 @@ fn decode_web_response(bytes: &[u8], headers: &HashMap<String, String>, explicit
 }
 
 fn charset_from_content_type(headers: &HashMap<String, String>) -> Option<String> {
-    let value = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("content-type"))?.1;
+    let value = headers.iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        .map(|(_, value)| value.as_str())?;
+    extract_charset_assignment(value)
+}
+
+fn extract_charset_assignment(value: &str) -> Option<String> {
     let lower = value.to_ascii_lowercase();
-    let start = lower.find("charset=")? + 8;
-    let value = value[start..].trim();
-    let value = value.trim_start_matches(['\"', '\'']);
-    let charset = value.split([';', ' ', '\"', '\'']).next().unwrap_or("");
+    let start = lower.find("charset")? + 7;
+    let tail = &value[start..];
+    let equal = tail.find('=')?;
+    let value = tail[equal + 1..].trim();
+    let value = value.trim_start_matches(['"', '\'']);
+    let charset = value.split([';', ' ', '"', '\'']).next().unwrap_or("");
     (!charset.is_empty()).then(|| charset.to_string())
 }
 
 fn charset_from_html_meta(bytes: &[u8]) -> Option<String> {
     let head = String::from_utf8_lossy(&bytes[..bytes.len().min(16 * 1024)]);
-    let lower = head.to_ascii_lowercase();
-    let start = lower.find("charset")? + 7;
-    let tail = &head[start..];
-    let tail_lower = &lower[start..];
-    let equal = tail_lower.find('=')?;
-    let value = tail[equal + 1..].trim();
-    let value = value.trim_start_matches(['\"', '\'']);
-    let charset = value.split([';', ' ', '\"', '\'', '>']).next().unwrap_or("");
-    (!charset.is_empty()).then(|| charset.to_string())
+    let meta_re = regex::Regex::new(r##"(?is)<meta\b[^>]*>"##).ok()?;
+    let attr_re = regex::Regex::new(
+        r##"(?is)([a-z_:][a-z0-9_:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))"##,
+    ).ok()?;
+    for tag in meta_re.find_iter(&head).map(|m| m.as_str()) {
+        let mut attrs: HashMap<String, String> = HashMap::new();
+        for caps in attr_re.captures_iter(tag) {
+            let name = caps.get(1).map(|m| m.as_str().to_ascii_lowercase()).unwrap_or_default();
+            let value = caps.get(2).or_else(|| caps.get(3)).or_else(|| caps.get(4))
+                .map(|m| m.as_str().to_string()).unwrap_or_default();
+            attrs.insert(name, value);
+        }
+        if let Some(charset) = attrs.get("charset").filter(|v| !v.trim().is_empty()) {
+            return Some(charset.trim().to_string());
+        }
+        let is_content_type = attrs.get("http-equiv")
+            .is_some_and(|v| v.eq_ignore_ascii_case("content-type"));
+        if is_content_type {
+            if let Some(cs) = attrs.get("content").and_then(|v| extract_charset_assignment(v)) {
+                return Some(cs);
+            }
+        }
+    }
+    None
 }
-
 use crate::runtime;
 
 /// 详情/目录短时 HTML 缓存（对齐原版 Book.infoHtml / Book.tocHtml 进程内复用）
@@ -2686,6 +2708,23 @@ mod tests {
 
         meta_headers.insert("Content-Type".to_string(), "text/html; charset=utf-8".to_string());
         assert_eq!(decode_web_response(&plain, &meta_headers, Some("gbk")), "正文内容");
+
+        let mut spaced_header = HashMap::new();
+        spaced_header.insert("content-type".to_string(), "text/html; Charset = GBK".to_string());
+        assert_eq!(decode_web_response(&plain, &spaced_header, None), "正文内容");
+
+        let (single_quote, _, _) = encoding_rs::GBK.encode(
+            "<html><head><meta charset=GBK></head><body>单引号</body></html>",
+        );
+        assert!(decode_web_response(&single_quote, &HashMap::new(), None).contains("单引号"));
+
+        let (http_equiv, _, _) = encoding_rs::GBK.encode(
+            r#"<html><head><meta http-equiv="Content-Type" content="text/html; charset = gbk"></head><body>兼容声明</body></html>"#,
+        );
+        assert!(decode_web_response(&http_equiv, &HashMap::new(), None).contains("兼容声明"));
+
+        let fake = b"<html><body><script>var charset = gbk;</script>plain utf8</body></html>";
+        assert_eq!(charset_from_html_meta(fake), None);
     }
 
     /// 批量搜索扫描（2026-08-17）：遍历 fixture 文本源跑 webbook_search，
@@ -3192,8 +3231,9 @@ mod tests {
         }
     }
 
-    /// 新落秋/笔趣阁zdzn/天悦小说 @js 网络源回归（2026-08-17）
+    /// 新落秋/笔趣阁zdzn/天悦小说人工实网诊断：源站存在 IP 限频/WAF，不作为 CI 回归。
     #[test]
+    #[ignore = "外部源站限频/WAF，手工诊断专用"]
     fn test_js_network_sources_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3220,43 +3260,48 @@ mod tests {
 
 
 
-    /// 得间小说 {{host}} 全局变量回归（2026-08-17）：jsLib 定义 host，{{host}} 需 JS 求值
+    /// 得间小说 {{host}} 全局变量离线回归：jsLib 定义 host，{{host}} 需 JS 求值。
     #[test]
     fn test_dejian_diag() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../tmp_debug/e2e_5558/sources_device.json"
-        );
-        let Ok(raw) = std::fs::read_to_string(path) else { return; };
-        let Ok(serde_json::Value::Array(sources)) =
-            serde_json::from_str::<serde_json::Value>(&raw)
-        else { return; };
-        let Some(src) = sources.iter().find(|s| {
-            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("得间小说")) && s.get("bookSourceUrl").and_then(|u| u.as_str()).is_some_and(|u| u.contains("idejian"))
-        }) else { return; };
-        let source =
-            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let source = BookSource {
+            book_source_url: "https://wechat.idejian.com##".to_string(),
+            book_source_name: "得间小说".to_string(),
+            js_lib: Some("type = 'wechat'; host = 'https://' + type + '.idejian.com/api/' + type;".to_string()),
+            search_url: Some("{{host}}/search/do?keyword={{key}}&page={{page}}".to_string()),
+            ..BookSource::default()
+        };
         let au = crate::js_executor::build_search_url_with_setup(
-            source.search_url.as_deref().unwrap_or(""),
-            "一念",
-            1,
-            &source.book_source_url,
-            source.js_lib.as_deref(),
-            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+            source.search_url.as_deref().unwrap(), "一念", 1, &source.book_source_url,
+            source.js_lib.as_deref(), crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
         );
-        eprintln!("[dejian] URL: {}", au.url());
-        assert!(au.url().contains("wechat.idejian.com"), "得间 URL 应含 host，实际 {}", au.url());
-        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
-        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
-        match results {
-            Ok(list) => {
-                eprintln!("[dejian] search 结果数: {}", list.len());
-                for it in list.iter().take(3) {
-                    eprintln!("[dejian]   -> {} | {}", it.name, it.book_url);
-                }
-            }
-            Err(err) => eprintln!("[dejian] search 失败: {:?}", err),
-        }
+        assert_eq!(
+            au.url(),
+            "https://wechat.idejian.com/api/wechat/search/do?keyword=%E4%B8%80%E5%BF%B5&page=1"
+        );
+    }
+
+    /// java.connect StrResponse.raw().request().url() 实网诊断：趣书源站重定向不稳定。
+    #[test]
+    #[ignore = "外部源站重定向，离线契约由 legado-js bridge test 覆盖"]
+    fn test_connect_str_response_search_url_no_undefined() {
+        let source = BookSource {
+            book_source_url: "https://qubook.org".to_string(),
+            book_source_name: "趣书".to_string(),
+            search_url: Some(r#"@js:
+burl = source.getKey();
+url = burl + "/e/search/";
+body = "show=title%2Cnewstext&keyboard=" + key;
+$ = java.post(url + "index.php", body, {}).headers();
+uri = $.Location || $.location;
+url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
+            ..BookSource::default()
+        };
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap(), "一念", 1, &source.book_source_url,
+            None, crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        assert!(!au.url().contains("undefined"), "趣书 URL 不应含 undefined: {}", au.url());
+        assert!(!au.url().starts_with("legado-js-error://"), "趣书 JS 不应失败: {}", au.url());
     }
 
     /// org.jsoup + java.post(connectNR) 回归：云霄/键盘/天涯书库 searchUrl @js

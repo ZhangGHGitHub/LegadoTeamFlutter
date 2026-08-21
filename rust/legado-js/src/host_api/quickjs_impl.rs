@@ -214,6 +214,7 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
         return null;
       },
       headers: function (name) {
+        if (arguments.length === 0) return h;
         var v = this.header(name);
         return v === null ? [] : [v];
       },
@@ -224,6 +225,33 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
   }
   var __nativeGetVariable = java.get;
   var __nativeConnect = java.connectNR;
+  var __nativeConnectFull = java.connect;
+  function __strResponse(jsonStr) {
+    var r = null;
+    try { r = JSON.parse(jsonStr); } catch (e) { r = null; }
+    var finalUrl = (r && r.url) || '';
+    var raw = {
+      request: function () {
+        return { url: function () { return finalUrl; } };
+      },
+      code: function () { return r ? r.status_code : 0; },
+      headers: function () { return (r && r.headers) || {}; }
+    };
+    return {
+      body: (r && r.body) || '',
+      raw: function () { return raw; },
+      callTime: function () { return 0; }
+    };
+  }
+  java.connect = function (url, arg2, arg3, arg4, arg5) {
+    var method = (typeof arg2 === 'string' && /^(GET|POST|HEAD|PUT|DELETE)$/i.test(arg2)) ? arg2 : undefined;
+    var headers = method ? arg3 : arg2;
+    var body = method ? arg4 : undefined;
+    var timeout = method ? arg5 : arg3;
+    var hs = headers == null ? undefined : (typeof headers === 'string' ? headers : JSON.stringify(headers));
+    return __strResponse(__nativeConnectFull(String(url), method, hs, body, timeout));
+  };
+  globalThis.connect = java.connect;
   java.get = function (url, headers) {
     if (arguments.length >= 2) {
       var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
@@ -2722,6 +2750,15 @@ mod tests {
         // 只验证 java.httpGet 存在且是函数，不实际调用
         let result = engine.eval("typeof java.httpGet").unwrap();
         assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_connect_str_response_raw_request_url_bridge() {
+        let engine = make_engine();
+        engine.eval(r#"java.connect = function(){ return JSON.stringify({status_code:200,body:'ok',headers:{},url:'https://final.example/result'}); };"#).unwrap();
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        let result = engine.eval(r#"JSON.stringify({body:java.connect('https://start.example').body,url:java.connect('https://start.example').raw().request().url()})"#).unwrap();
+        assert_eq!(result, r#"{"body":"ok","url":"https://final.example/result"}"#);
     }
 
     #[test]
