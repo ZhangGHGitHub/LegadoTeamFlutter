@@ -3306,8 +3306,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
         assert!(!au.url().starts_with("legado-js-error://"), "趣书 JS 不应失败: {}", au.url());
     }
 
-    /// 趣书网吧 real source：java.connect(...).raw().request().url() 不能再产出 undefined。
+    /// 趣书网吧人工实网诊断：依赖 fixture 与外部重定向；离线 result 绑定契约见 parser 测试。
     #[test]
+    #[ignore = "外部源站/fixture 诊断，非确定性 CI 测试"]
     fn test_qushu123_connect_search_diag() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json");
         let Ok(raw) = std::fs::read_to_string(path) else { return; };
