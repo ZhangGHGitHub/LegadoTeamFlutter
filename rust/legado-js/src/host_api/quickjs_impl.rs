@@ -84,7 +84,31 @@ pub fn register_all_apis<'js>(
     // AES 密文解密 / Base64 / MD5 / UUID / String.getBytes，
     // 缺失时报 `Packages is not defined`（2026-08-15 用户反馈七猫报错）
     inject_packages_shim(&ctx)?;
+    // Rhino org.jsoup.Jsoup 包导入模拟（云霄/键盘等 searchUrl @js 依赖）
+    inject_jsoup_shim(&ctx)?;
+    // java.get/post/head → connectNR（followRedirects=false）+ Response 对象
+    // 必须在引擎创建时注入：否则书源 `java.post(...).header('location')` 会打到
+    // 原生 post（跟随重定向 / headers 对象无法转 String）→ Location 丢失落 /null
+    inject_response_bridge(&ctx)?;
 
+    Ok(())
+}
+
+/// 注入 `org.jsoup.Jsoup` 全局（及 Packages.org.jsoup）
+#[cfg(feature = "quickjs")]
+fn inject_jsoup_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError> {
+    let _: rquickjs::Value = ctx
+        .eval(JSOUP_BRIDGE_JS)
+        .map_err(|e| LegadoError::JsEngine(format!("Jsoup 模拟层注入失败: {e}")))?;
+    Ok(())
+}
+
+/// 注入 java.get/post/head Response 语义桥
+#[cfg(feature = "quickjs")]
+fn inject_response_bridge<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError> {
+    let _: rquickjs::Value = ctx
+        .eval(RESPONSE_BRIDGE_JS)
+        .map_err(|e| LegadoError::JsEngine(format!("Response 桥注入失败: {e}")))?;
     Ok(())
 }
 
@@ -191,6 +215,138 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     Ok(())
 }
 
+
+/// 注入 java.get/post/head 的 jsoup Connection.Response 语义桥
+///
+/// 原版 JsExtensions.get(url, headers) 返回 jsoup Connection.Response，
+/// 书源 @js: URL 模板常用 .header('Location') / .headers('Location')[0]
+/// 拦截重定向。Rust 侧 java.get 单参绑定为变量表读取（原版无单参 get），
+/// post/head 返回完整响应 JSON 字符串而非对象——JS 桥覆盖为对象语义：
+/// 双参 get → 网络 GET Response；单参 get → 委托原生变量读取（兼容保留）。
+/// — 新笔趣阁/新落秋/笔趣阁zdzn/天悦小说 搜索修复（2026-08-17）
+#[cfg(feature = "quickjs")]
+pub const RESPONSE_BRIDGE_JS: &str = r#"
+(function () {
+  function __resp(jsonStr) {
+    var r = null;
+    try { r = JSON.parse(jsonStr); } catch (e) { r = null; }
+    var h = (r && r.headers) || {};
+    return {
+      header: function (name) {
+        var lk = String(name).toLowerCase();
+        for (var k in h) { if (String(k).toLowerCase() === lk) return h[k]; }
+        return null;
+      },
+      headers: function (name) {
+        if (arguments.length === 0) return h;
+        var v = this.header(name);
+        return v === null ? [] : [v];
+      },
+      body: function () { return (r && r.body) || ''; },
+      statusCode: function () { return r ? r.status_code : 0; },
+      headersMap: function () { return h; }
+    };
+  }
+  var __nativeGetVariable = java.get;
+  var __nativeConnect = java.connectNR;
+  var __nativeConnectFull = java.connect;
+  function __strResponse(jsonStr) {
+    var r = null;
+    try { r = JSON.parse(jsonStr); } catch (e) { r = null; }
+    var finalUrl = (r && r.url) || '';
+    var raw = {
+      request: function () {
+        return { url: function () { return finalUrl; } };
+      },
+      code: function () { return r ? r.status_code : 0; },
+      headers: function () { return (r && r.headers) || {}; }
+    };
+    return {
+      body: (r && r.body) || '',
+      raw: function () { return raw; },
+      callTime: function () { return 0; }
+    };
+  }
+  java.connect = function (url, arg2, arg3, arg4, arg5) {
+    // rquickjs Opt<T> 不能接收显式 undefined；必须按实参数量调用原生函数。
+    if (arguments.length <= 1) return __strResponse(__nativeConnectFull(String(url)));
+    var isMethod = typeof arg2 === 'string' && /^(GET|POST|HEAD|PUT|DELETE)$/i.test(arg2);
+    if (!isMethod) {
+      var headerOnly = typeof arg2 === 'string' ? arg2 : JSON.stringify(arg2 || {});
+      var timeoutOnly = arg3 == null ? undefined : arg3;
+      return timeoutOnly === undefined
+        ? __strResponse(__nativeConnectFull(String(url), 'GET', headerOnly))
+        : __strResponse(__nativeConnectFull(String(url), 'GET', headerOnly, undefined, timeoutOnly));
+    }
+    var hs = arg3 == null ? undefined : (typeof arg3 === 'string' ? arg3 : JSON.stringify(arg3));
+    if (arguments.length === 2) return __strResponse(__nativeConnectFull(String(url), arg2));
+    if (arguments.length === 3) return __strResponse(__nativeConnectFull(String(url), arg2, hs));
+    if (arguments.length === 4) return __strResponse(__nativeConnectFull(String(url), arg2, hs, String(arg4)));
+    return __strResponse(__nativeConnectFull(String(url), arg2, hs, String(arg4), arg5));
+  };
+  globalThis.connect = java.connect;
+  java.get = function (url, headers) {
+    if (arguments.length >= 2) {
+      var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+      return __resp(__nativeConnect(String(url), 'GET', hs));
+    }
+    return __nativeGetVariable(String(url));
+  };
+  // 对齐原版 JsExtensions.post/head：followRedirects(false)。
+  // 天涯书库等源 java.post(...).header('location') 拦截 302；若跟随重定向则
+  // Location 丢失 → String(null) → 请求落到 /null。
+  java.post = function (url, body, headers) {
+    var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+    return __resp(__nativeConnect(String(url), 'POST', hs, String(body)));
+  };
+  java.head = function (url, headers) {
+    var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+    return __resp(__nativeConnect(String(url), 'HEAD', hs));
+  };
+})();
+"#;
+
+/// Rhino `org.jsoup.Jsoup` 模拟层（云霄小说/键盘小说/玄幻文学等 searchUrl
+/// `@js:` 块直接调用 `org.jsoup.Jsoup.parse(html).select(...).attr(...)`）。
+/// QuickJS 无 Java 包导入；经 `java.jsoupAttr/jsoupText` 宿主桥对齐 Jsoup 常用子集。
+#[cfg(feature = "quickjs")]
+pub const JSOUP_BRIDGE_JS: &str = r#"
+(function () {
+  function __els(html, css) {
+    return {
+      attr: function (name) { return java.jsoupAttr(String(html), String(css), String(name)); },
+      text: function () { return java.jsoupText(String(html), String(css)); },
+      html: function () { return java.jsoupHtml(String(html), String(css)); },
+      first: function () { return this; },
+      select: function (sub) {
+        var next = String(css || '') + ' ' + String(sub || '');
+        return __els(html, next.trim());
+      },
+      toString: function () { return java.jsoupHtml(String(html), String(css)); }
+    };
+  }
+  var Jsoup = {
+    parse: function (html) {
+      var h = String(html == null ? '' : html);
+      return {
+        select: function (css) { return __els(h, String(css || '')); },
+        body: function () { return __els(h, 'body'); },
+        toString: function () { return h; }
+      };
+    }
+  };
+  globalThis.org = globalThis.org || {};
+  globalThis.org.jsoup = globalThis.org.jsoup || {};
+  globalThis.org.jsoup.Jsoup = Jsoup;
+  if (globalThis.Packages) {
+    globalThis.Packages.org = globalThis.Packages.org || {};
+    globalThis.Packages.org.jsoup = globalThis.Packages.org.jsoup || {};
+    globalThis.Packages.org.jsoup.Jsoup = Jsoup;
+  }
+})();
+"#;
+
+
 /// 注册编解码类 API
 ///
 /// 对应 Kotlin 端 `JsEncodeUtils` + `JsExtensions` 中的编解码方法。
@@ -291,7 +447,11 @@ fn register_encoding_apis<'js>(
         globals,
         "hexDecode",
         rquickjs::Function::new(ctx.clone(), |s: String| -> String {
-            encoding::hex_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
+            // 容错：非合法 hex 原样返回（书山等源可能传入已解码文本）
+            match encoding::hex_decode(&s) {
+                Ok(v) => v,
+                Err(_) => s,
+            }
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -305,14 +465,21 @@ fn register_encoding_apis<'js>(
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // encodeURI(str) -> String
+    // encodeURI(str, enc?) -> String（对齐原版双参重载：燃文等源
+    // java.encodeURI(String(key), "UTF8") 依赖；缺第二参默认 UTF-8）
     mount_dual(
         java,
         globals,
         "encodeURI",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
-            encoding::encode_uri(&s)
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |s: String, enc: Opt<String>| -> String {
+                match enc.0 {
+                    Some(e) => encoding::encode_uri_charset(&s, &e),
+                    None => encoding::encode_uri(&s),
+                }
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -444,6 +611,23 @@ fn register_encoding_apis<'js>(
                 encoding::base64_encode_bytes(bytes.as_ref())
             },
         )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // hexDecodeToString(hex) -> String（书山聚合等源把 hex 编码响应还原为 JSON；
+    // 对应 Kotlin HexUtil.decodeHexStr / hexDecodeToString）
+    // 容错：输入非合法 hex 时**原样返回**（书山 toc_body 可能是 hex 或已解码文本；
+    // 绝不可返回 "[ERROR]..." 前缀——会被 JS 当源码执行报 syntax error）
+    mount_dual(
+        java,
+        globals,
+        "hexDecodeToString",
+        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+            match encoding::hex_decode(&s) {
+                Ok(v) => v,
+                Err(_) => s,
+            }
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1146,6 +1330,30 @@ fn register_network_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // putGlobalHeaders(headers_json) -> bool
+    // 书源 header @js 规则执行结果写入全局请求头（按当前书源 tag 隔离），
+    // java.ajax 自动携带（对齐 AnalyzeUrl.getHeaderMap；书山固定 X-Novel-Token）
+    mount_dual(
+        java,
+        globals,
+        "putGlobalHeaders",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |headers_json: String| -> bool {
+                match serde_json::from_str::<std::collections::HashMap<String, String>>(&headers_json) {
+                    Ok(map) => {
+                        let tag =
+                            crate::host_api::current_source::current_source_tag().unwrap_or_default();
+                        crate::host_api::global_headers::put_headers(&tag, map);
+                        true
+                    }
+                    Err(_) => false,
+                }
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // ajaxAll(urls_json) -> String（JSON 数组，并发请求多个 URL）
     // 对应 Kotlin: ajaxAll(urlList: Array<String>): Array<StrResponse>
     mount_dual(
@@ -1178,6 +1386,27 @@ fn register_network_apis<'js>(
                     headers.0.as_deref(),
                     body.0.as_deref(),
                     timeout_ms.0.map(|t| t as u64),
+                )
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // connectNR(url, method?, headers?, body?) -> String（完整响应 JSON，不跟随重定向）
+    // 对齐原版 jsoup followRedirects(false)：java.get/post/head 拦截重定向需读 Location 头
+    mount_dual(
+        java,
+        globals,
+        "connectNR",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: String, method: Opt<String>, headers: Opt<String>, body: Opt<String>| -> String {
+                network::connect_no_redirect(
+                    &url,
+                    method.0.as_deref(),
+                    headers.0.as_deref(),
+                    body.0.as_deref(),
                 )
                 .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -1269,6 +1498,22 @@ fn register_cookie_apis<'js>(
         rquickjs::Function::new(ctx.clone(), |tag: String| -> bool {
             cookie_store::clear_cookies(&tag);
             true
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // removeCookie(tag) -> String（对齐原版 CookieStore.removeCookie(url)
+    // 返回 Unit → Rhino null → evalJS 兜底空串；若返回 bool true 会被
+    // @js: URL 模板 {{url=source.getKey();cookie.removeCookie(url)}} 内联
+    // 成 /true/search/ → 404（企鹅小说实测）。删除该域全部 cookie。
+    // — 2026-08-17
+    mount_dual(
+        java,
+        globals,
+        "removeCookie",
+        rquickjs::Function::new(ctx.clone(), |tag: String| -> String {
+            cookie_store::clear_cookies(&tag);
+            String::new()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -1624,6 +1869,37 @@ fn register_html_parse_apis<'js>(
                 html_parse::get_strings(css, m_content, src)
             },
         )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.jsoupAttr(html, css, attr) — org.jsoup.Jsoup 模拟层底层
+    java.set(
+        "jsoupAttr",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: String, css: String, attr: String| -> String {
+                html_parse::jsoup_attr(&html, &css, &attr)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    java.set(
+        "jsoupText",
+        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> String {
+            html_parse::jsoup_text(&html, &css)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    java.set(
+        "jsoupHtml",
+        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> String {
+            html_parse::jsoup_html(&html, &css)
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -2507,6 +2783,62 @@ mod tests {
         // 只验证 java.httpGet 存在且是函数，不实际调用
         let result = engine.eval("typeof java.httpGet").unwrap();
         assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_response_headers_map_and_list_bridge() {
+        let engine = make_engine();
+        engine.eval(r#"java.get = function(){ return ''; }; java.connectNR = function(){ return JSON.stringify({status_code:302,body:'',headers:{Location:'https://final.example/r'},url:'https://start.example'}); };"#).unwrap();
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        let result = engine.eval(r#"JSON.stringify({map:java.get('https://x',{}).headers().Location,list:java.get('https://x',{}).headers('location')[0],missing:java.get('https://x',{}).headers('missing').length})"#).unwrap();
+        assert_eq!(result, r#"{"map":"https://final.example/r","list":"https://final.example/r","missing":0}"#);
+    }
+
+    #[test]
+    fn test_connect_str_response_raw_request_url_bridge() {
+        let engine = make_engine();
+        engine.eval(r#"java.connect = function(){ return JSON.stringify({status_code:200,body:'ok',headers:{},url:'https://final.example/result'}); };"#).unwrap();
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        let result = engine.eval(r#"JSON.stringify({body:java.connect('https://start.example').body,url:java.connect('https://start.example').raw().request().url()})"#).unwrap();
+        assert_eq!(result, r#"{"body":"ok","url":"https://final.example/result"}"#);
+    }
+
+    #[test]
+    fn test_connectnr_passes_body() {
+        let engine = make_engine();
+        // java.connectNR 四参须把 body 传到宿主；丢 body 时帝国 CMS 返回 200 提示页无 Location
+        let js = r#"
+var url = 'https://tianyashuku.net/e/search/index.php';
+var body = 'show=title,writer&keyboard=%E4%B8%80%E5%BF%B5&tbname=bookname&tempid=1';
+var hs = JSON.stringify({'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'});
+var raw = java.connectNR(url, 'POST', hs, body);
+var r = JSON.parse(raw);
+JSON.stringify({status: r.status_code, loc: (r.headers.location||r.headers.Location||null), bodyLen: (r.body||'').length});
+"#;
+        let result = engine.eval(js).expect("eval");
+        eprintln!("connectNR arity result: {}", result);
+        assert!(
+            result.contains("\"status\":302") || result.contains("result/?searchid"),
+            "got {result}"
+        );
+    }
+
+    #[test]
+    fn test_response_bridge_post_location() {
+        let engine = make_engine();
+        let js = r#"
+var url = 'https://tianyashuku.net/e/search/index.php';
+var body = 'show=title,writer&keyboard=%E4%B8%80%E5%BF%B5&tbname=bookname&tempid=1';
+var hs = {'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'};
+var loc = java.post(url, body, hs).header('location');
+String(loc);
+"#;
+        let result = engine.eval(js).expect("eval");
+        eprintln!("bridge post loc: {}", result);
+        assert!(
+            result.contains("searchid") || result.contains("result"),
+            "got {result}"
+        );
     }
 
     #[test]

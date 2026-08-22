@@ -11,7 +11,6 @@ import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/search/search_notifier.dart';
-import 'package:flutter_legado/src/providers/search/search_state.dart';
 
 import '../mocks/mocks.dart';
 
@@ -935,6 +934,30 @@ void main() {
       // 多源条排在单源 contains 之前（equal 桶内按 origins 降序）
       expect(out.last.book.name, equals('一人之下番外'));
       expect(out.last.originsCount, equals(1));
+    });
+
+    test('作者字段带「作者：」前缀时与纯作者名聚合为一条（对齐 formatBookAuthor）',
+        () {
+      final results = [
+        mk('斗破苍穹', '天蚕土豆', origin: 'https://a.com'),
+        mk('斗破苍穹', '作者：天蚕土豆', origin: 'https://b.com'),
+        mk('斗破苍穹', '作者: 天蚕土豆', origin: 'https://c.com'),
+        mk('斗破苍穹 作者天蚕土豆', '天蚕土豆', origin: 'https://d.com'),
+      ];
+
+      final out = applyPrecisionSearch(results, '斗破苍穹');
+
+      expect(out, hasLength(1));
+      expect(out.single.book.name, equals('斗破苍穹'));
+      expect(out.single.book.author, equals('天蚕土豆'));
+      expect(out.single.originsCount, equals(4));
+    });
+
+    test('formatBookName / formatBookAuthor 对齐 AppPattern', () {
+      expect(formatBookName('斗破苍穹 作者天蚕土豆'), equals('斗破苍穹'));
+      expect(formatBookName('凡人修仙传 忘语 著'), equals('凡人修仙传'));
+      expect(formatBookAuthor('作者：天蚕土豆'), equals('天蚕土豆'));
+      expect(formatBookAuthor('天蚕土豆 著'), equals('天蚕土豆'));
     });
 
     test('多源条按 originsCount 降序（同桶）', () {

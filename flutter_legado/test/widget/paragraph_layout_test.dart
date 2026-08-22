@@ -2,6 +2,7 @@
 /// 
 /// 覆盖所有核心功能：避头尾规则、段落分割、样式配置、
 /// 字符宽度缓存、两端对齐计算、边界条件
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

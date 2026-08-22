@@ -155,19 +155,22 @@ class ReaderTypographicPage extends StatelessWidget {
                       ),
                     ),
                   Expanded(
-                    child: ReaderTextContent(
-                      pageInfo: info,
-                      fontSize: fontSize,
-                      lineHeight: lineHeight,
-                      paragraphSpacing: paragraphSpacing,
-                      textColor: textColor,
-                      selectText: selectText,
-                      letterSpacing: letterSpacing,
-                      fontFamily: fontFamily,
-                      justify: justify,
-                      fontWeight: fontWeight,
-                      reviewCounts: reviewCounts,
-                      onReviewTap: onReviewTap,
+                    child: ClipRect(
+                      // 防分页测量与渲染亚像素差导致的行溢出条纹
+                      child: ReaderTextContent(
+                        pageInfo: info,
+                        fontSize: fontSize,
+                        lineHeight: lineHeight,
+                        paragraphSpacing: paragraphSpacing,
+                        textColor: textColor,
+                        selectText: selectText,
+                        letterSpacing: letterSpacing,
+                        fontFamily: fontFamily,
+                        justify: justify,
+                        fontWeight: fontWeight,
+                        reviewCounts: reviewCounts,
+                        onReviewTap: onReviewTap,
+                      ),
                     ),
                   ),
                   if (!showFooter)

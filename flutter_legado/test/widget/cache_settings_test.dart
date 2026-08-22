@@ -104,7 +104,7 @@ void main() {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
-                      value: 0,
+                      initialValue: 0,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.schedule),
@@ -198,7 +198,7 @@ void main() {
                     const Text('自动过期策略'),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
-                      value: 0,
+                      initialValue: 0,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.schedule),

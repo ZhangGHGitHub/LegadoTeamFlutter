@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 
@@ -232,11 +232,12 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
                   case 'debug':
                     _save(debug: true);
                   case 'copy_all':
+                    final messenger = ScaffoldMessenger.of(context);
                     await Clipboard.setData(
                       ClipboardData(text: _controller.text),
                     );
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      messenger.showSnackBar(
                         const SnackBar(content: Text('已复制全部')),
                       );
                     }

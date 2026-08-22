@@ -7,7 +7,6 @@ use crate::error::ApiError;
 use crate::state::AppState;
 use axum::extract::State;
 use axum::Json;
-use legado_core::search_engine::{MultiSourceSearcher, NoopSourceSearcher, SearchConfig};
 use legado_db::repository::Repository;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -32,25 +31,6 @@ pub struct SearchResultItem {
     pub cover_url: Option<String>,
 }
 
-/// 多源搜索请求体
-#[derive(Debug, Deserialize)]
-pub struct MultiSearchRequest {
-    pub keyword: String,
-    /// 书源 URL 列表（为空则搜索所有启用源）
-    pub source_urls: Option<Vec<String>>,
-    /// 单源超时（秒），默认 10
-    pub timeout_secs: Option<u64>,
-    /// 每源最大结果数，默认 20
-    pub max_results_per_source: Option<usize>,
-}
-
-/// 多源搜索结果
-#[derive(Debug, Serialize)]
-pub struct MultiSearchResult {
-    pub results: Vec<legado_core::search_engine::SearchResult>,
-    pub total: usize,
-    pub keyword: String,
-}
 
 /// POST /api/search — 搜索书籍
 ///
@@ -89,44 +69,6 @@ pub async fn search_books(
     })))
 }
 
-/// POST /api/search/multi — 多源并行搜索
-///
-/// 使用 MultiSourceSearcher 框架并行搜索多个书源，返回聚合结果。
-/// 当前使用 NoopSourceSearcher 占位，网络实现待 legado-net 完善后替换。
-pub async fn search_multi(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<MultiSearchRequest>,
-) -> Result<Json<MultiSearchResult>, ApiError> {
-    // 重置取消标志
-    state.search_cancelled.store(false, Ordering::SeqCst);
-
-    let config = SearchConfig {
-        query: req.keyword.clone(),
-        timeout_secs: req.timeout_secs.unwrap_or(10),
-        max_results_per_source: req.max_results_per_source.unwrap_or(20),
-    };
-
-    // 获取待搜索书源（简化：从数据库加载启用的书源）
-    let sources = {
-        let db = state.db.lock().await;
-        let repo = legado_db::repository::book_source_repository::BookSourceRepository::new(
-            db.connection(),
-        );
-        repo.find_enabled().unwrap_or_default()
-    };
-
-    // 使用 NoopSourceSearcher 占位（网络实现待 legado-net 完善后替换）
-    let searcher = MultiSourceSearcher::new(NoopSourceSearcher);
-    let cancel = Arc::clone(&state.search_cancelled);
-    let results = searcher.search(config, sources, cancel).await;
-    let total = results.len();
-
-    Ok(Json(MultiSearchResult {
-        results,
-        total,
-        keyword: req.keyword,
-    }))
-}
 
 /// POST /api/search/cancel — 取消正在进行的搜索
 pub async fn cancel_search(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
@@ -233,58 +175,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_search_multi_returns_ok() {
-        let state = make_test_state();
-        let app = create_router(state);
-
-        let body = serde_json::to_string(&json!({
-            "keyword": "斗破苍穹"
-        }))
-        .unwrap();
-
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/api/search/multi")
-                    .header("Content-Type", "application/json")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn test_search_multi_with_options() {
-        let state = make_test_state();
-        let app = create_router(state);
-
-        let body = serde_json::to_string(&json!({
-            "keyword": "凡人修仙传",
-            "timeout_secs": 5,
-            "max_results_per_source": 10
-        }))
-        .unwrap();
-
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/api/search/multi")
-                    .header("Content-Type", "application/json")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
     async fn test_cancel_search() {
         let state = make_test_state();
         let app = create_router(state);
@@ -312,5 +202,38 @@ mod tests {
         // 触发取消
         state.search_cancelled.store(true, Ordering::SeqCst);
         assert!(state.search_cancelled.load(Ordering::SeqCst));
+    }
+
+    /// P0-3：/api/search/multi 已下线（Noop 空实现），路由应返回 404 而非空成功。
+    /// 防止 "生产路由 + Noop 实现 + 200 即通过" 回归。
+    #[tokio::test]
+    async fn test_search_multi_route_removed() {
+        let state = make_test_state();
+        let app = create_router(state);
+
+        let body = serde_json::to_string(&json!({
+            "keyword": "斗破苍穹"
+        }))
+        .unwrap();
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/search/multi")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // 路由已下线：不再是 200 空成功。POST 落到静态文件 fallback 返回 405，
+        // 无 fallback 时为 404；两者都满足"客户端错误、非成功"。断言 4xx 更稳健。
+        assert!(
+            resp.status().is_client_error(),
+            "/api/search/multi 应已下线（4xx），实际 {}",
+            resp.status()
+        );
     }
 }

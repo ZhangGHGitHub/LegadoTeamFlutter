@@ -434,7 +434,7 @@ class _ReviewDetailSheetState extends State<ReviewDetailSheet> {
                           imageUrl: item.imageUrl!,
                           height: 120,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                          errorWidget: (_, _, _) => const SizedBox.shrink(),
                         ),
                       ),
                     ],
@@ -517,8 +517,8 @@ class _ReviewDetailSheetState extends State<ReviewDetailSheet> {
         width: 32,
         height: 32,
         fit: BoxFit.cover,
-        errorWidget: (_, __, ___) => placeholder,
-        placeholder: (_, __) => placeholder,
+        errorWidget: (_, _, _) => placeholder,
+        placeholder: (_, _) => placeholder,
       ),
     );
   }

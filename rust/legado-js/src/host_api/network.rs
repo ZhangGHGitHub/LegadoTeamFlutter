@@ -17,6 +17,19 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 /// ajaxAll 有界并发数
 const AJAX_ALL_CONCURRENCY: usize = 4;
 
+/// body 反序列化：兼容字符串、对象/数组（书山聚合等源 `url,{json}` 的
+/// body 是嵌套对象，须转 JSON 字符串，否则 serde 解析失败 → ajax 返回 [ERROR]）
+fn de_body<'de, D>(de: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Option::<serde_json::Value>::deserialize(de)?;
+    Ok(v.map(|b| match b {
+        serde_json::Value::String(s) => s,
+        other => other.to_string(),
+    }))
+}
+
 /// HTTP 请求选项（用于 `ajax` 通用接口）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HttpOptions {
@@ -29,8 +42,8 @@ pub struct HttpOptions {
     /// 请求头
     #[serde(default)]
     pub headers: Option<HashMap<String, String>>,
-    /// 请求体（POST/PUT 时使用）
-    #[serde(default)]
+    /// 请求体（POST/PUT 时使用；兼容字符串或 JSON 对象/数组）
+    #[serde(default, deserialize_with = "de_body")]
     pub body: Option<String>,
     /// 超时毫秒数
     #[serde(default)]
@@ -46,11 +59,41 @@ pub struct HttpResponse {
     pub body: String,
     /// 响应头
     pub headers: HashMap<String, String>,
+    /// 最终 URL（connect/StrResponse raw.request.url 兼容）
+    #[serde(default)]
+    pub url: String,
 }
 
 /// 从 JSON 字符串解析请求头
 fn parse_headers(headers_json: Option<&str>) -> Option<HashMap<String, String>> {
     headers_json.and_then(|s| serde_json::from_str::<HashMap<String, String>>(s).ok())
+}
+
+/// 请求前规范化 URL：去掉/纠正书源 `#tag` 后缀（对齐 Jsoup 忽略 fragment，
+/// 并修复 `getKey()+path` 把 path/query 拼进 fragment 的假 URL）
+fn sanitize_request_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    // 复用 AnalyzeUrl 同一套规范化，避免 ajax/connectNR 与搜索主链路行为分叉
+    legado_parser::AnalyzeUrl::normalize_book_source_tag_url(trimmed)
+}
+
+/// POST 有 body 时若缺 Content-Type，补 form-urlencoded（对齐 Jsoup.requestBody）
+fn ensure_form_content_type(headers: &mut HashMap<String, String>, has_body: bool) {
+    if !has_body {
+        return;
+    }
+    let has_ct = headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("content-type"));
+    if !has_ct {
+        headers.insert(
+            "Content-Type".to_string(),
+            "application/x-www-form-urlencoded".to_string(),
+        );
+    }
 }
 
 /// 构建共享 LegadoClient（使用默认配置）
@@ -141,11 +184,23 @@ pub fn ajax(input: &str) -> Result<String, String> {
             }
         }
     }
+    // 普通 URL 输入（对齐原版 ajax(url) 语义）：不含 ",{" 的裸 URL
+    // 直接 GET 并返回纯响应体文本（新落秋/笔趣阁zdzn 等源 @js: 块
+    // java.ajax(source.key+"/user/search.html?q="+key) 依赖）
+    // — 2026-08-17
+    if !input.starts_with('{') {
+        let opts = HttpOptions { url: input.to_string(), ..Default::default() };
+        return ajax_request_body(&opts);
+    }
     // 标准 JSON 输入
     let opts: HttpOptions = serde_json::from_str(input)
         .map_err(|e| format!("ajax parse options error: {}", e))?;
 
     if opts.url.is_empty() {
+        return Err("ajax: url is required".to_string());
+    }
+    let url = sanitize_request_url(&opts.url);
+    if url.is_empty() {
         return Err("ajax: url is required".to_string());
     }
 
@@ -162,9 +217,12 @@ pub fn ajax(input: &str) -> Result<String, String> {
         let client = build_client_with_timeout(timeout)?;
 
         let request = LegadoRequest {
-            url: opts.url.clone(),
+            url,
             method,
-            headers: opts.headers.clone().unwrap_or_default(),
+            headers: ensure_json_content_type(
+                merge_global_cookie(opts.headers.clone().unwrap_or_default()),
+                &opts.body,
+            ),
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
@@ -178,16 +236,101 @@ pub fn ajax(input: &str) -> Result<String, String> {
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
 
         serde_json::to_string(&result).map_err(|e| format!("ajax serialize error: {}", e))
     })
 }
 
+#[cfg(test)]
+mod http_options_tests {
+    use super::*;
+
+    #[test]
+    fn test_body_accepts_object() {
+        // 书山目录：url,{"method":"POST","body":{...对象...}}
+        let opts: HttpOptions = serde_json::from_str(
+            r#"{"method":"POST","url":"https://v1.vossc.com/catalog","body":{"source":"书山","url":"x","name":"n","tab":"novel"}}"#,
+        )
+        .unwrap();
+        assert!(opts.body.as_deref().unwrap().contains("source"));
+        assert!(opts.body.as_deref().unwrap().contains("书山"));
+    }
+
+    #[test]
+    fn test_body_accepts_string() {
+        let opts: HttpOptions =
+            serde_json::from_str(r#"{"method":"POST","body":"key=val"}"#).unwrap();
+        assert_eq!(opts.body.as_deref(), Some("key=val"));
+    }
+}
+
+/// 合并书源请求头与会话 Cookie（对齐 Android AnalyzeUrl(source).getHeaderMap）
+///
+/// - 全局请求头（GLOBAL_HEADERS）：setup 阶段执行书源 header @js 规则后经
+///   java.putGlobalHeaders 写入（书山聚合固定 X-Novel-Token 等），按当前书源
+///   tag 隔离；JS 显式传入的 headers 优先。
+/// - 全局会话 Cookie（GLOBAL_COOKIES）：书山登录/setCookie 写入的 X-Novel-Token 等。
+fn merge_global_cookie(mut headers: HashMap<String, String>) -> HashMap<String, String> {
+    if let Some(tag) = crate::host_api::current_source::current_source_tag() {
+        for (k, v) in crate::host_api::global_headers::headers_for(&tag) {
+            headers.entry(k).or_insert(v);
+        }
+    }
+    if !headers.contains_key("Cookie") {
+        let c = crate::host_api::cookie_store::all_cookies();
+        if !c.is_empty() {
+            headers.insert("Cookie".to_string(), c);
+        }
+    }
+    headers
+}
+
+/// 对齐原版 AnalyzeUrl POST 分支：body 非空且未显式指定 Content-Type 时按
+/// JSON 发送（postJson(body)）——书山 /details、/catalog 等服务端校验
+/// Content-Type，缺省返回「缺少必要参数」（curl 实测 application/json 必带）。
+/// 仅当 body 是 JSON 形态（{/[ 开头）才设 JSON Content-Type：书山 /login 等
+/// 表单接口（email=..&password=..）若被标 JSON 会解析出空字段（实测
+/// 「邮箱和密码不能为空」），须保持默认 application/x-www-form-urlencoded。
+fn ensure_json_content_type(
+    mut headers: HashMap<String, String>,
+    body: &Option<String>,
+) -> HashMap<String, String> {
+    let has_ct = headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("content-type"));
+    if has_ct {
+        return headers;
+    }
+    if let Some(b) = body {
+        let t = b.trim_start();
+        if t.starts_with('{') || t.starts_with('[') {
+            // JSON 形态 body：对齐原版 postJson(body)
+            headers.insert(
+                "Content-Type".to_string(),
+                "application/json;charset=UTF-8".to_string(),
+            );
+        } else if t.contains('=') && !t.contains(' ') {
+            // 表单形态 body（email=..&password=..）：显式 form-urlencoded，
+            // 避免 reqwest 自动 text/plain 导致服务端解析空字段
+            headers.insert(
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
+            );
+        }
+    }
+    headers
+}
+
 /// 「url,{json}」格式请求，返回**纯响应体文本**（对齐原版 JsExtensions.ajax 返回
 /// StrResponse.body；七猫 qmParse 等直接 JSON.parse 响应体）
 fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
     if opts.url.is_empty() {
+        return Err("ajax: url is required".to_string());
+    }
+    let url = sanitize_request_url(&opts.url);
+    if url.is_empty() {
         return Err("ajax: url is required".to_string());
     }
     let timeout = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
@@ -199,9 +342,12 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
     block_on(async {
         let client = build_client_with_timeout(timeout)?;
         let request = LegadoRequest {
-            url: opts.url.clone(),
+            url,
             method,
-            headers: opts.headers.clone().unwrap_or_default(),
+            headers: ensure_json_content_type(
+                merge_global_cookie(opts.headers.clone().unwrap_or_default()),
+                &opts.body,
+            ),
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
@@ -284,8 +430,60 @@ pub fn connect_full(
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
         serde_json::to_string(&result).map_err(|e| format!("connect serialize error: {}", e))
+    })
+}
+
+/// connectNR(url, method?, headers?, body?) → 完整响应 JSON（不跟随重定向）
+///
+/// 对齐原版 JsExtensions.get/post/head 的 jsoup 语义（.followRedirects(false)）：
+/// 拦截重定向场景（天悦小说 java.post(...).header("Location")）必须拿到
+/// 302 响应的 Location 头；跟随重定向后头信息丢失 → header 返回 null。
+/// — 2026-08-17
+pub fn connect_no_redirect(
+    url: &str,
+    method: Option<&str>,
+    headers_json: Option<&str>,
+    body: Option<&str>,
+) -> Result<String, String> {
+    let method_str = method.unwrap_or("GET").to_uppercase();
+    let method = match method_str.as_str() {
+        "GET" | "POST" | "HEAD" | "PUT" | "DELETE" => Method::from_str_loose(&method_str),
+        other => return Err(format!("connectNR: unsupported method '{}'", other)),
+    };
+    let url = sanitize_request_url(url);
+    let mut headers: HashMap<String, String> = headers_json
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    let body_owned = body.map(|s| s.to_string());
+    ensure_form_content_type(&mut headers, body_owned.as_ref().is_some_and(|b| !b.is_empty()));
+    block_on(async {
+        let config = LegadoClientConfig {
+            follow_redirects: false,
+            ..LegadoClientConfig::default()
+        };
+        let client = LegadoClient::new(config)
+            .map_err(|e| format!("connectNR client error: {}", e))?;
+        let request = LegadoRequest {
+            url,
+            method,
+            headers,
+            body: body_owned,
+            timeout: Some(std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS)),
+        };
+        let resp = client
+            .send(&request)
+            .await
+            .map_err(|e| format!("connectNR request error: {}", e))?;
+        let result = HttpResponse {
+            status_code: resp.status,
+            body: resp.body,
+            headers: resp.headers,
+            url: resp.url,
+        };
+        serde_json::to_string(&result).map_err(|e| format!("connectNR serialize error: {}", e))
     })
 }
 
@@ -315,6 +513,7 @@ pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
         serde_json::to_string(&result).map_err(|e| format!("head serialize error: {}", e))
     })
@@ -350,6 +549,7 @@ pub fn post_full(
             status_code: resp.status,
             body: resp.body,
             headers: resp.headers,
+            url: resp.url,
         };
         serde_json::to_string(&result).map_err(|e| format!("post serialize error: {}", e))
     })
@@ -433,9 +633,10 @@ mod tests {
         }
     }
 
-    /// 原版「url,{json}」格式（七猫四合一等书源 java.ajax("url,{json}")）：
-    /// 逗号前 URL + 逗号后 option JSON，应解析成功并返回**纯响应体文本**。
+    /// 原版「url,{json}」格式外网诊断：依赖 httpbin.org，不能作为离线 CI 门禁。
+    /// URL option 解析由本地 AnalyzeUrl/JS bridge 回归覆盖。
     #[test]
+    #[ignore = "依赖 httpbin.org，外部 503/验证页会改变响应体格式"]
     fn test_ajax_url_option_format_returns_body() {
         let input = r#"https://httpbin.org/get,{"method":"GET","headers":{"Accept":"application/json"}}"#;
         let result = ajax(input);

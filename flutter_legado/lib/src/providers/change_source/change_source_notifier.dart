@@ -36,6 +36,7 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     bool loadInfo = false,
     bool loadToc = false,
     bool loadWordCount = false,
+    bool forceRefresh = false,
   }) async {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
@@ -69,6 +70,7 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
               loadInfo: loadInfo,
               loadToc: loadToc,
               loadWordCount: loadWordCount,
+              forceRefresh: forceRefresh,
             )
           : await api.searchSource(
               bookName,
@@ -77,6 +79,7 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
               loadInfo: loadInfo,
               loadToc: loadToc,
               loadWordCount: loadWordCount,
+              forceRefresh: forceRefresh,
             );
       final matches = raw.map(SourceMatch.fromJson).toList();
       state = state.copyWith(results: matches, isLoading: false);

@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
@@ -13,7 +13,6 @@ import '../routes.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
-import '../widgets/ios_widgets.dart';
 import 'code_edit_screen.dart';
 
 /// 编辑字段定义（key 与 RssSource JSON 字段名一致）

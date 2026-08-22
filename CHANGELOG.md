@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.96] - 2026-08-19
+
+### Fixed
+- [Rust] 搜索 `baseUrl` 对齐原版重定向后最终 URL（`WebBook.search` → `res.url`）：
+  - 根因：Rust 用请求 URL 当 `baseUrl`，搜索 302 到书籍页时 `bookUrl`/详情规则对不上
+  - 现 `fetch_page` 返回 `StrResponse.url`；空列表且无 `bookUrlPattern` 仍按详情回退
+  - 实测：书书小说搜索「斗破」4 条（首条斗破苍穹）；「一念」站点会 302 且无 og:property，原版同样搜不出书名
+
+## [2.0.95] - 2026-08-19
+
+### Fixed
+- [Rust] G8 allInOne 正则跨步 `$n` 分组回填落地（CHANGELOG 2.0.93 已记语义，本版提交代码）：
+  - `:` 前缀 `getElements` 有捕获组时按 AnalyzeByRegex 产出 `[全文,$1,$2,…]` JSON 元素
+  - `getString("$2")` / `$1##…` 对齐 `SourceRule.makeUpRule` 用前序捕获组拼装，再走 `##` 替换
+  - 覆盖书书小说 / 笔下文学 / 若夏等目录规则
+  - 实测：书书小说 `http://www.shushun.cc/read_81/` 目录 1323 章、正文 1905 字；`test_g8_all_in_one_group_refs` 与 G10 allInOne 回归通过
+
+## [2.0.94] - 2026-08-18
+
+### Fixed
+- [UI]+[Rust] 搜索同源徽标偏少 + 换源二次全量搜索（对照原版 3.26080322「快速书源 / 斗破苍穹」）：
+  - **根因 1（聚合键）**：搜索解析未走 `BookHelp.formatBookName/Author`，「作者：天蚕土豆」等变体无法按 name+author 合并；现 Rust 解析清洗 + Dart `applyPrecisionSearch` 同步清洗。实测列表条数约 **1327→117**（合并生效）
+  - **根因 2（换源）**：原版先 `getDbSearchBooks` 复用搜索落库；重构始终全量 `searchSource`。现搜索批次写入 `searchBooks`，换源默认读库；`forceRefresh=true` 才强制重搜
+  - **仍差**：本机 emulator-5558 顶条同源约 **9**（DB exact 8），原版约 **120**——剩余主要在单源搜索成功率/网络/解析 parity，**不以完全 120 验收**
+  - 回归：`test_parse_search_formats_name_author`、DB `change_source_by_group`、Flutter 作者前缀聚合；契约登记 `forceRefresh`
+
+## [2.0.93] - 2026-08-18
+
+### Fixed
+- [Rust] G8 allInOne 正则跨步 `$n` 分组回填（书书小说目录原版有章、重构章名为空）：
+  - `:` 前缀 `getElements` 有捕获组时按 AnalyzeByRegex 产出 `[全文,$1,$2,…]` JSON 元素
+  - `getString("$2")` / `$1##…` 对齐 `SourceRule.makeUpRule` 用前序捕获组拼装，再走 `##` 替换
+  - 实测：书书小说 `http://www.shushun.cc/read_81/` 目录 1323 章、正文 1905 字；七步阁目录/正文回归仍过
+
 ## [2.0.92] - 2026-08-15
 
 ### Fixed

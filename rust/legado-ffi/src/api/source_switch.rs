@@ -22,6 +22,9 @@ pub struct SwitchSearchOptions {
     pub load_toc: bool,
     #[serde(default, rename = "loadWordCount")]
     pub load_word_count: bool,
+    /// 强制网络重搜（对齐原版换源「刷新列表」/startSearch；默认 false 优先复用 searchBooks）
+    #[serde(default, rename = "forceRefresh")]
+    pub force_refresh: bool,
 }
 
 impl SwitchSearchOptions {
@@ -59,6 +62,22 @@ pub fn search_alternative_sources(
     options_json: &str,
 ) -> LegadoResult<SourceSwitchResponse> {
     let options = resolve_switch_options(options_json);
+
+    // 对齐原版 ChangeBookSourceViewModel.searchDataFlow：
+    // 先 getDbSearchBooks；非空则直接展示，仅空列表或强制刷新才全量搜索。
+    if !options.force_refresh {
+        if let Some(matches) = try_load_change_source_from_db(book_name, author, &options) {
+            return Ok(SourceSwitchResponse {
+                book_name: book_name.to_string(),
+                author: author.to_string(),
+                matches,
+            });
+        }
+    } else {
+        // 强制刷新：清掉该书旧 searchBooks，避免与新结果混杂
+        clear_search_books_for_change(book_name, author);
+    }
+
     let sources = resolve_switch_sources(source_urls_json)?;
     if sources.is_empty() {
         return Ok(SourceSwitchResponse {
@@ -120,6 +139,82 @@ pub fn search_alternative_sources(
         author: author.to_string(),
         matches,
     })
+}
+
+/// 从 searchBooks 表加载换源候选（对齐 getDbSearchBooks）
+///
+/// 有结果时返回 Some；无结果/DB 未初始化/读失败返回 None（回退网络搜索）。
+fn try_load_change_source_from_db(
+    book_name: &str,
+    author: &str,
+    options: &SwitchSearchOptions,
+) -> Option<Vec<SourceMatch>> {
+    if !crate::db_state::is_initialized() {
+        return None;
+    }
+    let check_author = crate::api::config_api::get_config("changeSourceCheckAuthor")
+        .map(|v| v.trim() == "true")
+        .unwrap_or(false);
+    let search_group = crate::api::config_api::get_config("searchGroup")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let author_filter = if check_author { author } else { "" };
+
+    let books = crate::db_state::with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        repo.change_source_by_group(book_name, author_filter, &search_group)
+    })
+    .ok()?;
+
+    if books.is_empty() {
+        return None;
+    }
+
+    let candidates: Vec<SearchCandidate> = books
+        .into_iter()
+        .map(|b| SearchCandidate {
+            source_url: b.origin,
+            source_name: b.origin_name,
+            book_url: b.book_url,
+            book_name: b.name,
+            author: b.author,
+            latest_chapter: b.latest_chapter_title,
+            word_count: b.word_count,
+            chapter_word_count_text: b.chapter_word_count_text,
+            chapter_word_count: b.chapter_word_count,
+            respond_time: b.respond_time,
+            origin_order: b.origin_order,
+        })
+        .collect();
+
+    // 读库路径不再二次过滤（SQL 已按名/作者/分组筛过）；直接评分排序
+    let matches = SourceMatcher::rank_candidates_with_options(
+        candidates,
+        book_name,
+        author,
+        options.load_word_count,
+    );
+    if matches.is_empty() {
+        None
+    } else {
+        Some(matches)
+    }
+}
+
+fn clear_search_books_for_change(book_name: &str, author: &str) {
+    if !crate::db_state::is_initialized() {
+        return;
+    }
+    let check_author = crate::api::config_api::get_config("changeSourceCheckAuthor")
+        .map(|v| v.trim() == "true")
+        .unwrap_or(false);
+    let author_filter = if check_author { author } else { "" };
+    let _ = crate::db_state::with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        let _ = repo.clear_by_name_author(book_name, author_filter);
+        Ok(())
+    });
 }
 
 /// 切换到新书源
@@ -353,6 +448,7 @@ pub(crate) fn resolve_switch_options(options_json: &str) -> SwitchSearchOptions 
         load_info: config_flag("changeSourceLoadInfo"),
         load_toc: config_flag("changeSourceLoadToc"),
         load_word_count: config_flag("changeSourceLoadWordCount"),
+        force_refresh: false,
     }
 }
 

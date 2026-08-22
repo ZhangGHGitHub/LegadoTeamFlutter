@@ -358,6 +358,33 @@ impl AnalyzeRule {
         } else {
             compiled.rule_no_put.clone()
         };
+        // 2.5) 展开规则体内 `{{js}}`（非 $）内嵌 JS
+        let rule_expanded = self.expand_js_refs(&rule_expanded)?;
+        // G8：allInOne 正则 getElements 把捕获组编成 JSON 字符串数组；
+        // 子规则 `$1`/`$2` 对齐 SourceRule.makeUpRule（result 为 List）回填，
+        // 然后走 Mode.Regex 的 `else -> rule`（字面结果 + ## 替换）。
+        if let Some(groups) = parse_regex_group_list(&self.content) {
+            if rule_has_group_ref(&rule_expanded) {
+                let assembled = makeup_group_refs(&rule_expanded, &groups);
+                let (core, spec) = split_hash_replace(&assembled);
+                let mut results = if core.is_empty() {
+                    vec![]
+                } else {
+                    vec![core]
+                };
+                if let Some(spec) = spec.as_ref() {
+                    results = results
+                        .into_iter()
+                        .map(|s| apply_hash_replace(&s, spec))
+                        .collect();
+                }
+                return Ok(if is_url {
+                    self.absolutize_url_list(results)
+                } else {
+                    results
+                });
+            }
+        }
         // 纯 `@get:{k}` / `http:@get:{k}` 等：makeUpRule 后 Mode.Regex，
         // 求值走 `else -> rule` 直接返回拼装字符串，不再当选择器解析。
         if compiled.has_get_marker && !looks_like_extract_rule(&rule_expanded) {
@@ -463,14 +490,17 @@ impl AnalyzeRule {
                 let js_result = self.execute_js_rule(js_code)?;
                 // `</js>` 之后若有 JSONPath 后缀（如 `\n$[*]`），对 JS 结果拆解
                 let suffix = rule[end + "</js>".len()..].trim();
-                if suffix.starts_with("$") && !suffix.is_empty() {
-                    // JS 结果为单元素（JSON 数组字符串）或多元素，逐一对
-                    // JSONPath 求值后拼接（对齐原版 getElements 多元素语义）
-                    // 注意：此处保留完整 JSON 数组字符串，勿提前 expand——
-                    // `$[*]` 需对根数组求值（51漫画 chapterList）。
+                let json_suffix = suffix
+                    .strip_prefix("@json:")
+                    .or_else(|| suffix.strip_prefix("@JSON:"))
+                    .unwrap_or(suffix);
+                if json_suffix.starts_with("$") && !json_suffix.is_empty() {
+                    // JS 结果为单元素（JSON/JSONP 解包字符串）或多元素，逐一按
+                    // JSONPath 求值。必须兼容 `</js>\n@json:$..bookinfo[*]`
+                    // （红薯小说 JSONP）以及既有 `</js>\n$[*]`（51漫画）。
                     let mut out = Vec::new();
                     for item in &js_result {
-                        if let Ok(v) = self.json_parser.parse_jsonpath(item, suffix) {
+                        if let Ok(v) = self.json_parser.parse_jsonpath(item, json_suffix) {
                             out.extend(v);
                         }
                     }
@@ -507,7 +537,7 @@ impl AnalyzeRule {
             RuleType::Css => self.html_parser.get_text(&self.content, actual_rule),
             RuleType::Xpath => self.xpath_parser.parse_xpath(&self.content, actual_rule),
             RuleType::Json => self.resolve_json_with_inner(actual_rule),
-            RuleType::Regex => self.regex_engine.regex_match(&self.content, actual_rule),
+            RuleType::Regex => self.regex_extract(actual_rule),
             RuleType::Js => self.execute_js_rule_expanded(actual_rule),
             RuleType::WebJs => {
                 let out = self.execute_web_js_rule(actual_rule)?;
@@ -518,7 +548,7 @@ impl AnalyzeRule {
                 match detected {
                     RuleType::Json => self.resolve_json_with_inner(actual_rule),
                     RuleType::Xpath => self.xpath_parser.parse_xpath(&self.content, actual_rule),
-                    RuleType::Regex => self.regex_engine.regex_match(&self.content, actual_rule),
+                    RuleType::Regex => self.regex_extract(actual_rule),
                     _ => self.html_parser.get_text(&self.content, actual_rule),
                 }
             }
@@ -609,7 +639,8 @@ impl AnalyzeRule {
         let strings = self.get_strings_ex(rule, false)?;
         let mut result = if strings.is_empty() {
             String::new()
-        } else if strings.len() == 1 {
+        } else if strings.len() == 1 || is_url {
+            // G14：isUrl 单值取首元素（对齐原版 AnalyzeByJSoup.getString0）
             strings.into_iter().next().unwrap()
         } else {
             strings.join("\n")
@@ -734,6 +765,12 @@ impl AnalyzeRule {
             return self.get_strings_single_step(rule);
         }
 
+        // G10：`:` 前缀 allInOne 正则（对齐原版 splitSourceRule(allInOne=true)）
+        // 有捕获组时序列化 [g0,g1,…] JSON，供 G8 `$n` 回填（书书小说等）
+        if let Some(regex_rule) = rule.trim_start().strip_prefix(':') {
+            return self.regex_extract_all_in_one(regex_rule.trim_start());
+        }
+
         let (rule_type, actual_rule) = Self::resolve_rule_type(rule);
 
         match rule_type {
@@ -755,6 +792,52 @@ impl AnalyzeRule {
     pub fn get_attr(&self, rule: &str, attr: &str) -> LegadoResult<Vec<String>> {
         let (_, actual_rule) = Self::resolve_rule_type(rule);
         self.html_parser.get_attr(&self.content, actual_rule, attr)
+    }
+
+    /// 正则提取（含多级 `&&` 链，对齐 AnalyzeByRegex.getElement/getElements）
+    ///
+    /// `rule1&&rule2`：rule1 在原文上筛取全部完整匹配并拼接，再交给 rule2；
+    /// 末级返回所有完整匹配（group 0）。单级时退化为普通 regex_match。
+    fn regex_extract(&self, rule: &str) -> LegadoResult<Vec<String>> {
+        let patterns: Vec<&str> = rule
+            .split("&&")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if patterns.len() <= 1 {
+            return self.regex_engine.regex_match(&self.content, rule);
+        }
+        let groups = self
+            .regex_engine
+            .regex_chain_match_all(&self.content, &patterns)?;
+        Ok(groups
+            .into_iter()
+            .map(|g| g.first().cloned().unwrap_or_default())
+            .collect())
+    }
+
+    /// allInOne 正则 getElements：对齐 AnalyzeByRegex.getElements
+    ///
+    /// 末级每个匹配产出 `[全文, $1, $2, …]`；多于一组捕获时编成 JSON
+    /// 数组字符串，使后续 `get_string("$2")` 可跨步回填。无捕获组仍返回
+    /// 全文（保持 G10 `test_all_in_one_regex_colon_prefix`）。
+    fn regex_extract_all_in_one(&self, rule: &str) -> LegadoResult<Vec<String>> {
+        let patterns: Vec<&str> = rule
+            .split("&&")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let groups_list = if patterns.len() <= 1 {
+            self.regex_engine.regex_match_groups(&self.content, rule)?
+        } else {
+            self.regex_engine
+                .regex_chain_match_all(&self.content, &patterns)?
+        };
+        Ok(groups_list
+            .into_iter()
+            .map(|g| encode_regex_element_groups(&g))
+            .filter(|s| !s.is_empty())
+            .collect())
     }
 
     /// 正则匹配获取捕获组
@@ -800,6 +883,96 @@ impl AnalyzeRule {
         .into_owned()
     }
 
+    /// 从 `{{` 起始的串里找匹配的 `}}` 结尾（返回含结尾 `}}` 的字节长度）
+    fn find_double_brace_end(s: &str) -> Option<usize> {
+        let bytes = s.as_bytes();
+        if bytes.len() < 2 || bytes[0] != b'{' || bytes[1] != b'{' {
+            return None;
+        }
+        let mut depth = 0i32;
+        let mut i = 2usize;
+        let mut quote: Option<u8> = None;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if let Some(q) = quote {
+                if b == q {
+                    quote = None;
+                }
+                i += 1;
+                continue;
+            }
+            match b {
+                b'"' | 39 => {
+                    quote = Some(b);
+                    i += 1;
+                }
+                b'{' => {
+                    depth += 1;
+                    i += 1;
+                }
+                b'}' => {
+                    if depth == 0 && bytes.get(i + 1) == Some(&b'}') {
+                        return Some(i + 2);
+                    }
+                    depth = depth.saturating_sub(1);
+                    i += 1;
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+        }
+        None
+    }
+
+    /// 展开规则体内 `{{js}}`（非 `$`/`@` 开头的双花括号 JS 内嵌，
+    /// 对齐 makeUpRule 的 jsRuleType 分支）
+    ///
+    /// `{{\$...}}` 是 Rust 新增的 JSONPath 内嵌语义，此处跳过，交给
+    /// process_inner_rules；`@get:{k}` 已由 expand_get_refs 先行处理。
+    fn expand_js_refs(&self, rule: &str) -> LegadoResult<String> {
+        if !rule.contains("{{") {
+            return Ok(rule.to_string());
+        }
+        let mut out = String::with_capacity(rule.len());
+        let mut i = 0usize;
+        let bytes = rule.as_bytes();
+        while i < bytes.len() {
+            if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{') {
+                if let Some(full_len) = Self::find_double_brace_end(&rule[i..]) {
+                    let inner = rule[i + 2..i + full_len - 2].trim();
+                    if inner.starts_with('$') || inner.starts_with('@') {
+                        // JSONPath / 其它规则前缀：原样保留
+                        out.push_str(&rule[i..i + full_len]);
+                    } else {
+                        // 仅在 eval 成功且结果非空时替换；失败/为空时**保留原文**——
+                        // 恢复 G11 前的直通行为：模板可能依赖书源 jsLib/上下文或由
+                        // 上层（URL 构建 / web_book）按正确绑定再解析，例如书山聚合
+                        // ruleBookInfo 的 `{{getSecretKey()}}`、`{{"\n"+"\u200b"}}`
+                        //（此前被替换成空串导致书籍详情/简介被破坏）。
+                        match self.execute_js_rule(inner) {
+                            Ok(js_result) if !js_result.is_empty() => {
+                                let val = if js_result.len() == 1 {
+                                    js_result[0].clone()
+                                } else {
+                                    js_result.join("\n")
+                                };
+                                out.push_str(&val);
+                            }
+                            _ => out.push_str(&rule[i..i + full_len]),
+                        }
+                    }
+                    i += full_len;
+                    continue;
+                }
+            }
+            let ch = rule[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+        Ok(out)
+    }
+
     // --- 内部方法 ---
 
     /// 执行 JS 规则
@@ -807,6 +980,15 @@ impl AnalyzeRule {
     /// 如果已注入 JsExecutor，则调用其执行 JS 代码；
     /// 否则降级返回空结果。
     fn execute_js_rule(&self, js_code: &str) -> LegadoResult<Vec<String>> {
+        // JS 规则体中的 {{$.field}} / {$.field} 必须在 eval 前按当前 JSON
+        // 元素展开。红薯小说 ruleBookUrl 使用 @js + {{$.bid}}；此前该
+        // 占位符作为字符串字面量进入 JS，最终 bookUrl 保留 {{$.bid}}。
+        let js_code_owned = if js_code.contains("{$") {
+            self.process_inner_rules(js_code)?
+        } else {
+            js_code.to_string()
+        };
+        let js_code = js_code_owned.as_str();
         if let Some(executor) = &self.js_executor {
             // 注入原版 evalJS bindings 语义：result/src/baseUrl 自动注入，
             // 附加变量（chapter/title/source 等）按调用方补充。
@@ -1032,6 +1214,10 @@ impl AnalyzeRule {
 
     /// 解析规则前缀，返回 (规则类型, 去掉前缀后的规则)
     fn resolve_rule_type(rule: &str) -> (RuleType, &str) {
+        // G7：@@ 前缀强制 Default(CSS) 并剥 2 字符（对齐原版 SourceRule.init）
+        if let Some(r) = rule.strip_prefix("@@") {
+            return (RuleType::Css, r);
+        }
         let (prefix, actual_rule) = RuleAnalyzer::parse_rule_prefix(rule);
         let rule_type = match prefix {
             "css" => RuleType::Css,
@@ -1130,14 +1316,11 @@ impl AnalyzeRule {
         }
 
         // 2. 根据缓存的内容类型推断（快速路径）
+        // 对齐原版 AnalyzeRule.kt:680：isJSON → Mode.Json——JSON 内容下
+        // 非显式 @CSS:/@@ 前缀的规则一律按 JsonPath 解析（丁丁小说 `.data[*]`、
+        // 书旗 `.data` 等无 $ 前缀 JSON 列表规则依赖；此前误判 CSS → 空结果）。
         if self.is_json {
-            // 内容是 JSON，规则看起来不像 CSS 时，使用 JsonPath
-            // （以标签名/类名/ID 选择器开头的规则仍按 CSS 处理，
-            // 避免 `span.user@text` 等 CSS 规则被误路由到 JsonPath）
-            if !rule.contains('<') && !rule.contains('>') && !Self::looks_like_css_selector(rule)
-            {
-                return RuleType::Json;
-            }
+            return RuleType::Json;
         } else if let Some(ref ct) = self.cached_content_type {
             if *ct == RuleType::Xpath {
                 return RuleType::Xpath;
@@ -1280,7 +1463,10 @@ impl AnalyzeRule {
 fn compile_source_rule(rule: &str) -> CompiledSourceRule {
     let (rule_no_put, put_map) = extract_put_rules(rule);
     let has_get_marker = rule_no_put.to_ascii_lowercase().contains("@get:");
-    let pre_hash = if has_get_marker || rule_no_put.trim().is_empty() {
+    // `{{js}}` 内嵌需在编译后运行时展开（依赖 JS executor），故含 `{{` 的
+    // 规则不预拆 ##/js 链，留待 get_strings_ex 内 expand_js_refs 展开后再现场编译
+    //（否则预拆得到的 core_rule 仍含未展开的 `{{js}}`，替换被丢弃）。
+    let pre_hash = if has_get_marker || rule_no_put.trim().is_empty() || rule_no_put.contains("{{") {
         None
     } else {
         Some(compile_hash_and_chain(&rule_no_put))
@@ -1392,6 +1578,58 @@ fn looks_like_extract_rule(rule: &str) -> bool {
         || t.starts_with("@@")
         || t.contains("@js:")
         || t.contains("<js>")
+}
+
+/// allInOne 元素编码：有捕获组时为 JSON 字符串数组，否则全文
+fn encode_regex_element_groups(groups: &[String]) -> String {
+    if groups.len() <= 1 {
+        return groups.first().cloned().unwrap_or_default();
+    }
+    serde_json::to_string(groups).unwrap_or_else(|_| groups[0].clone())
+}
+
+/// 从 allInOne 元素内容还原捕获组列表（必须是全字符串 JSON 数组）
+fn parse_regex_group_list(content: &str) -> Option<Vec<String>> {
+    let trimmed = content.trim();
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    let arr = v.as_array()?;
+    if arr.is_empty() || !arr.iter().all(|x| x.is_string()) {
+        return None;
+    }
+    Some(
+        arr.iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect(),
+    )
+}
+
+/// 是否含跨步 `$n`（1-99）；排除 `$.` / `$[` / `${` JSONPath/模板
+fn rule_has_group_ref(rule: &str) -> bool {
+    let b = rule.as_bytes();
+    let mut i = 0;
+    while i + 1 < b.len() {
+        if b[i] == b'$' && b[i + 1].is_ascii_digit() {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// 对齐 makeUpRule：`$n` 取前序正则捕获组（group 0 为全文）
+fn makeup_group_refs(rule: &str, groups: &[String]) -> String {
+    let mut out = rule.to_string();
+    for n in (1..=99).rev() {
+        let token = format!("${n}");
+        if out.contains(&token) {
+            let val = groups.get(n).map(|s| s.as_str()).unwrap_or("");
+            out = out.replace(&token, val);
+        }
+    }
+    out
 }
 
 /// 解析 `@put` 对象：兼容规范 JSON 与书源惯用非规范形态
@@ -1616,6 +1854,69 @@ mod tests {
         );
         let result = rule.get_strings("@json:$.name").unwrap();
         assert_eq!(result, vec!["test"]);
+    }
+
+    #[test]
+    fn test_regex_chain_get_strings() {
+        let rule = AnalyzeRule::new("A1B A2B C3D".to_string(), String::new());
+        // 多级正则链：先筛 A[0-9]B（只保留 A1B/A2B），再提取 [0-9]+
+        let result = rule.get_strings(r"@regex:A[0-9]+B && [0-9]+").unwrap();
+        assert_eq!(result, vec!["1", "2"]);
+    }
+
+    #[test]
+    fn test_at_at_prefix_forces_css() {
+        // G7：@@ 前缀剥 2 字符 + 强制 CSS
+        let rule = AnalyzeRule::new(
+            r#"<span class="item">test</span>"#.to_string(),
+            String::new(),
+        );
+        let result = rule.get_strings("@@.item").unwrap();
+        assert_eq!(result, vec!["test"]);
+    }
+
+    #[test]
+    fn test_all_in_one_regex_colon_prefix() {
+        // G10：: 前缀 allInOne 正则（getElements 路径）
+        let rule = AnalyzeRule::new("a1b a2b c3d".to_string(), String::new());
+        let result = rule.get_elements(":a[0-9]b").unwrap();
+        assert_eq!(result, vec!["a1b", "a2b"]);
+    }
+
+    #[test]
+    fn test_g8_all_in_one_group_refs() {
+        // 书书小说：chapterList allInOne + chapterName=$2 + chapterUrl=$1##章节目录
+        let html = r#"<dl><dd><a href="/read/12.html">第一章 开端</a></dd><dd><a href="/read/13.html">章节目录</a></dd></dl>"#;
+        let rule = AnalyzeRule::new(html.to_string(), "http://www.shushun.cc".to_string());
+        let elems = rule
+            .get_elements(r#":<dd><a href="([^"]*)[^>]*>([^<]*)"#)
+            .unwrap();
+        assert_eq!(elems.len(), 2, "应匹配两章: {elems:?}");
+        let mut item = AnalyzeRule::new(elems[0].clone(), "http://www.shushun.cc".to_string());
+        item.set_element_content(elems[0].clone());
+        assert_eq!(item.get_string("$2").unwrap(), "第一章 开端");
+        assert_eq!(
+            item.get_string_ex("$1##章节目录", true, true).unwrap(),
+            "http://www.shushun.cc/read/12.html"
+        );
+        let mut skip = AnalyzeRule::new(elems[1].clone(), "http://www.shushun.cc".to_string());
+        skip.set_element_content(elems[1].clone());
+        assert_eq!(skip.get_string("$2").unwrap(), "章节目录");
+        assert_eq!(
+            skip.get_string("$1").unwrap(),
+            "/read/13.html"
+        );
+    }
+
+    #[test]
+    fn test_is_url_takes_first_element() {
+        // G14：isUrl 多匹配取首元素（对齐 getString0）
+        let rule = AnalyzeRule::new(
+            r#"<a href="/a">1</a><a href="/b">2</a>"#.to_string(),
+            "http://x.com".to_string(),
+        );
+        let result = rule.get_string_ex("a@href", true, true).unwrap();
+        assert_eq!(result, "http://x.com/a");
     }
 
     #[test]
@@ -1905,6 +2206,35 @@ mod tests {
         assert_eq!(result, vec!["执行结果"]);
     }
 
+    #[test]
+    fn test_rule_inline_js_substitution() {
+        // G11：规则体内 {{js}}（非 $）→ JS 结果拼进规则再求值
+        let executor = Arc::new(MockJsExecutor {
+            result: ".item".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            r#"<div class="item">正文</div>"#.to_string(),
+            String::new(),
+            executor,
+        );
+        let result = rule.get_strings("{{sel()}}").unwrap();
+        assert_eq!(result, vec!["正文"]);
+    }
+
+    #[test]
+    fn test_expand_js_refs_keeps_literal_on_failure() {
+        // G11 回归：{{非$}} eval 失败/为空时必须保留原文（书山 ruleBookInfo
+        // 的 {{getSecretKey()}} / {{"\n"+"\u200b"}} 依赖 jsLib 或上层再解析，
+        // 不能被替换成空串破坏规则）
+        let rule = AnalyzeRule::new("content".to_string(), String::new());
+        // 无 JS 执行器 → execute_js_rule 返回空 → 保留字面量
+        let out = rule.expand_js_refs("abc{{foo()}}def").unwrap();
+        assert_eq!(out, "abc{{foo()}}def");
+        // {{$...}} JSONPath 内嵌同样原样保留
+        let out2 = rule.expand_js_refs("x={{$.book_url##[|]}}&y=1").unwrap();
+        assert_eq!(out2, "x={{$.book_url##[|]}}&y=1");
+    }
+
     /// `<js>...</js>\n$[*]` 复合规则：JS 返回 JSON 数组字符串，JSONPath 后缀拆解
     ///
     /// 对齐 51漫画 chapterList（`JSON.stringify(d)` + `$[*]`）：JS 结果
@@ -1936,6 +2266,35 @@ mod tests {
         );
         let t = title_rule.get_string("$.title").unwrap();
         assert_eq!(t, "第1话");
+    }
+
+    /// @js 规则中 {{$.field}} 必须在执行前按当前 JSON 元素展开。
+    #[test]
+    fn test_js_rule_expands_json_inner_placeholder() {
+        let executor = Arc::new(RecordingJsExecutor::new());
+        let rule = AnalyzeRule::with_js_executor(
+            r#"{"bid":"116554"}"#.to_string(),
+            String::new(),
+            executor.clone(),
+        );
+        let _ = rule.execute_js_rule("'https://x/bid/{{$.bid}}'").unwrap();
+        let executed = executor.executed.lock().unwrap().join("\n");
+        assert!(executed.contains("116554"), "应展开 bid: {executed}");
+        assert!(!executed.contains("{{$.bid}}"), "占位符不应残留: {executed}");
+    }
+
+    /// JSONP/JSON 书源可在 <js> 解包后使用 @json: 后缀继续提取。
+    #[test]
+    fn test_js_tag_with_at_json_suffix() {
+        let executor = Arc::new(MockJsExecutor {
+            result: r#"{"bookinfo":[{"catename":"红薯书"},{"catename":"第二本"}]}"#.to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor("jsonp".to_string(), String::new(), executor);
+        let result = rule.get_elements("<js>unwrapJsonp(result)</js>
+@json:$..bookinfo[*]").unwrap();
+        assert_eq!(result.len(), 2);
+        let first = AnalyzeRule::new(result[0].clone(), String::new());
+        assert_eq!(first.get_string("$.catename").unwrap(), "红薯书");
     }
 
     /// `<js>` 无 JSONPath 后缀：保持原语义（直接返回 JS 结果）

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart'
     show ExternalLibrary;
@@ -37,7 +38,25 @@ class RustApi implements BookApi {
     // [UI-fix v2.0.2 | 2026-08-06] TTS 缓存目录初始化接线 — QoderCN
     await _initTtsCacheDir();
 
+    // 注入真实设备 ID（书山聚合等源登录登记设备 + 正文 X-Device-Id 校验；
+    // 对齐原版 AppConst.androidId = Settings.Secure.ANDROID_ID）
+    await _injectDeviceId();
+
     _initialized = true;
+  }
+
+  /// 读取系统 ANDROID_ID 并注入 Rust（书山正文解密依赖设备匹配）
+  Future<void> _injectDeviceId() async {
+    try {
+      const channel = MethodChannel('legado/device_id');
+      final androidId = await channel.invokeMethod<String>('getAndroidId');
+      if (androidId != null && androidId.isNotEmpty) {
+        await bridge.setDeviceId(deviceId: androidId);
+        debugPrint('[RustApi] 设备 ID 注入完成：$androidId');
+      }
+    } catch (e) {
+      debugPrint('[RustApi] 设备 ID 注入失败：$e');
+    }
   }
 
   /// 设置 TTS 音频缓存目录（应用初始化时调用）— QoderCN
@@ -405,12 +424,12 @@ class RustApi implements BookApi {
         ),
       );
 
-  /// 保存书源登录用户信息（对齐原版 BaseSource.putLoginInfo → userInfo_<key>）
+  /// 保存书源登录用户信息（对齐原版 BaseSource.putLoginInfo → `userInfo_<key>`）
   @override
   Future<void> putLoginInfo(String sourceUrl, String infoJson) =>
       bridge.sourcePutLoginInfo(sourceUrl: sourceUrl, infoJson: infoJson);
 
-  /// 保存书源登录头（对齐原版 BaseSource.putLoginHeader → loginHeader_<key>）
+  /// 保存书源登录头（对齐原版 BaseSource.putLoginHeader → `loginHeader_<key>`）
   @override
   Future<void> putLoginHeader(String sourceUrl, String headerJson) =>
       bridge.sourcePutLoginHeader(sourceUrl: sourceUrl, headerJson: headerJson);
@@ -556,12 +575,14 @@ class RustApi implements BookApi {
     bool loadInfo = false,
     bool loadToc = false,
     bool loadWordCount = false,
+    bool forceRefresh = false,
   }) async {
     final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
     final optionsJson = jsonEncode({
       'loadInfo': loadInfo,
       'loadToc': loadToc,
       'loadWordCount': loadWordCount,
+      'forceRefresh': forceRefresh,
     });
     final json = await bridge.sourceSwitchSearch(
       bookName: bookName,
@@ -2138,7 +2159,7 @@ class RustApi implements BookApi {
   /// engineUrl 模板原样透传——占位符替换（{{speakText}}/{{text}}/
   /// {{speakSpeed}}/{{speed}}）、HTTP 音频拉取、Content-Type 校验与
   /// MD5 文件缓存均由 Rust 侧完成，Dart 不再预替换模板。
-  /// 返回语义保持 Future<void>（调用方 AudioNotifier.play 不消费返回值）；
+  /// 返回语义保持 `Future<void>`（调用方 AudioNotifier.play 不消费返回值）；
   /// 合成产物 audioPath 由 Rust 缓存落盘，供后续本地播放接线。
   /// ttsSpeak 异常时降级为原探活逻辑（模板替换 + http.get），
   /// 保持 audio_notifier 既有 try/catch 保护语义不变。

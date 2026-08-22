@@ -119,8 +119,8 @@ class RuleSubNotifier extends Notifier<RuleSubState> {
   }
 
   /// 拖拽排序持久化（对标原版 swap + upOrder：按新顺序重写 customOrder）
+  /// [newIndex] 为 onReorderItem 已调整的目标索引（移除后列表中的插入位置）。
   Future<void> reorder(int oldIndex, int newIndex) async {
-    if (oldIndex < newIndex) newIndex -= 1;
     final subs = List<RuleSub>.of(state.subs);
     final moved = subs.removeAt(oldIndex);
     subs.insert(newIndex, moved);

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -276,8 +276,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       return ReorderableListView.builder(
         padding: const EdgeInsets.only(bottom: 88),
         itemCount: groups.length,
-        onReorder: (oldIndex, newIndex) {
-          if (newIndex > oldIndex) newIndex--;
+        onReorderItem: (oldIndex, newIndex) {
           final list = [...groups];
           final item = list.removeAt(oldIndex);
           list.insert(newIndex, item);

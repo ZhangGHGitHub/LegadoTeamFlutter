@@ -229,7 +229,8 @@ var cookie = {{
     return java.getCookie(String(url), String(key));
   }},
   setCookie: function(url, value) {{ return java.setCookie(String(url), String(value)); }},
-  clearCookies: function(url) {{ return java.clearCookies(String(url)); }}
+  clearCookies: function(url) {{ return java.clearCookies(String(url)); }},
+  removeCookie: function(url) {{ return java.removeCookie(String(url)); }}
 }};
 var cache = {{
   get: function(k) {{ return get(String(k)) || null; }},
@@ -237,13 +238,24 @@ var cache = {{
   remove: function(k) {{ removeVariable(String(k)); return true; }}
 }};
 
-function __sourceVarKey(k) {{ return 'v_' + baseUrl + '_' + k; }}
-function __loginHeaderKey() {{ return 'loginHeader_' + baseUrl; }}
-function __userInfoKey() {{ return 'userInfo_' + baseUrl; }}
-function __sourceVariableKey() {{ return 'sourceVariable_' + baseUrl; }}
+// 对齐原版 getKey() = bookSourceUrl：登录缓存键用 sourceUrl 而非请求 baseUrl
+//（书山 bookUrl 为 data: URI 或详情页 URL，与书源 URL 不同；此前用 baseUrl
+// 导致 putLoginHeader 写入 loginHeader_<详情URL> 而读取 loginHeader_<书源URL>
+// 错位 → getSecretKey 取不到 api_key → 正文密文）。— 书山正文修复
+function __sourceVarKey(k) {{ return 'v_' + sourceUrl + '_' + k; }}
+function __loginHeaderKey() {{ return 'loginHeader_' + sourceUrl; }}
+function __userInfoKey() {{ return 'userInfo_' + sourceUrl; }}
+function __sourceVariableKey() {{ return 'sourceVariable_' + sourceUrl; }}
 
 function __mountBookSourceApi(obj) {{
   obj.get = function(k) {{ return get(__sourceVarKey(k)) || ''; }};
+  // 对齐原版 BaseSource.getKey() = bookSourceUrl（新笔趣阁等源 searchUrl @js: 块用 source.getKey()）
+  obj.getKey = function() {{ return sourceUrl; }};
+  obj.getUrl = function() {{ return sourceUrl; }};
+  // Rhino 将 Kotlin getKey() 暴露为 key 属性：新落秋/天悦等源 @js: 块用 source.key
+  obj.key = sourceUrl;
+  obj.url = sourceUrl;
+  obj.bookSourceUrl = sourceUrl;
   obj.put = function(k, v) {{ put(__sourceVarKey(k), String(v)); return v; }};
   obj.getVariable = function() {{ return get(__sourceVariableKey()) || ''; }};
   obj.setVariable = function(v) {{ setVariable(__sourceVariableKey(), String(v)); return v; }};
@@ -284,14 +296,16 @@ function __mountBookSourceApi(obj) {{
     if (raw) {{
       try {{ data = JSON.parse(raw) || {{}}; }} catch (e) {{ data = {{}}; }}
     }}
-    return {{
-      get: function(k) {{ return data[k] || null; }},
-      put: function(k, v) {{
-        data[k] = String(v);
-        obj.putLoginInfo(JSON.stringify(data));
-        return v;
-      }}
+    // 对齐原版 Kotlin getLoginInfoMap(): MutableMap<String,String> ——
+    // 直接返回真实对象（书山 login() 用 `loginInfo['邮箱']` 下标访问；
+    // 此前返回 {{get,put}} 包装对象导致下标访问 undefined → 登录空凭据）
+    data.get = function(k) {{ return this[k] ?? null; }};
+    data.put = function(k, v) {{
+      this[k] = String(v);
+      obj.putLoginInfo(JSON.stringify(this));
+      return v;
     }};
+    return data;
   }};
 
   obj.hasLogin = function() {{
@@ -352,16 +366,72 @@ var infoMap = new Proxy(__infoData, {{
 var __loginHeaderSeed = {login_header_seed};
 if (__loginHeaderSeed) {{
   put(__loginHeaderKey(), String(__loginHeaderSeed));
+  // 同步登录认证头到全局 Cookie（供 java.ajax 自动携带书山 X-Novel-Token 等）
+  try {{
+    var __lh = __loginHeaderSeed;
+    if (typeof __lh === 'string') __lh = JSON.parse(__lh);
+    if (__lh && typeof __lh === 'object') {{
+      for (var __k in __lh) {{
+        if (!Object.prototype.hasOwnProperty.call(__lh, __k)) continue;
+        var __v = String(__lh[__k]);
+        if (!__v) continue;
+        var __lk = String(__k).toLowerCase();
+        if (__lk === 'cookie') {{
+          java.setCookie(baseUrl, __v);
+        }} else if (__lk.indexOf('token') >= 0 || __lk.indexOf('session') >= 0 || __lk.indexOf('auth') >= 0) {{
+          java.setCookie(baseUrl, __k + '=' + __v);
+        }}
+      }}
+    }}
+  }} catch (e) {{}}
 }}
 var __loginInfoSeed = {login_info_seed};
 if (__loginInfoSeed) {{
   put(__userInfoKey(), String(__loginInfoSeed));
 }}
 
+// 执行书源 header 规则（对齐 Android BaseSource.getHeaderMap）：@js:/<js>
+// 求值 → JSON 解析 → 写入全局请求头（java.putGlobalHeaders），java.ajax 自动
+// 携带书山聚合固定 X-Novel-Token 等认证头（原版 AnalyzeUrl(source) 每次请求
+// 都解析 header 规则；setup 阶段求值一次即可覆盖静态/登录态头）
+try {{
+  var __headerRule = String(source.header || '');
+  var __headerJs = null;
+  if (__headerRule.indexOf('@js:') === 0) {{
+    __headerJs = __headerRule.substring(4);
+  }} else if (__headerRule.indexOf('<js>') === 0) {{
+    var __hend = __headerRule.lastIndexOf('<');
+    __headerJs = __hend > 4 ? __headerRule.substring(4, __hend) : __headerRule.substring(4);
+  }}
+  if (__headerJs) {{
+    var __headerFn = new Function('return (' + __headerJs + ');');
+    var __headerResult = __headerFn.call({{ source: source, cookie: cookie, java: java }});
+    var __headerJson = String(__headerResult);
+    var __headerMap = JSON.parse(__headerJson);
+    if (__headerMap && typeof __headerMap === 'object') {{
+      java.putGlobalHeaders(__headerJson);
+    }}
+  }} else if (__headerRule) {{
+    var __hmap = JSON.parse(__headerRule);
+    if (__hmap && typeof __hmap === 'object') {{
+      java.putGlobalHeaders(__headerRule);
+    }}
+  }}
+}} catch (__he) {{}}
+
 // 大灰狼等聚合源：host 定义在 jsLib；若 jsLib 未成功加载则注入提取的 host 数组
 if (typeof host === 'undefined') {{
   {host_fallback}
 }}
+
+// 对齐 Android evalJS 顶层 this（Rhino ScriptableObject 含 source/cookie/java）：
+// 书山聚合等 jsLib 函数 `let {{java, source, cookie}} = this` 解构全局 this
+// （QuickJS 非严格模式 = globalThis）；仅挂载局部变量时解构得 undefined →
+// getSecretKey() 取不到 loginHeader → X-Api-Key 空 → 正文密文。— 书山正文修复
+globalThis.source = source;
+globalThis.cookie = cookie;
+globalThis.java = java;
+globalThis.sourceApi = sourceApi;
 
 // jsLib setArguments uses Rhino this.source
 if (typeof setArguments === 'function') {{

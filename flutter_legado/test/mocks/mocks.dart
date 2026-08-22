@@ -2,6 +2,7 @@
 ///
 /// 使用 mocktail 生成 RustApi / AudioService / http.Client 的 mock 实例，
 /// 供 Providers / Services 层测试使用。
+library;
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 

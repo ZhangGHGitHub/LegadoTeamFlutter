@@ -344,7 +344,7 @@ impl SourceChecker {
             }
         };
 
-        let url = self.build_search_url(search_url, &self.config.keyword);
+        let url = self.build_search_url(search_url, &self.effective_keyword(source));
 
         // 发起请求
         let resp = match self
@@ -392,8 +392,8 @@ impl SourceChecker {
             .as_ref()
             .ok_or_else(|| "no searchUrl defined".to_string())?;
 
-        // 替换搜索关键词占位符
-        let url = self.build_search_url(search_url, &self.config.keyword);
+        // 替换搜索关键词占位符（优先书源 checkKeyWord，回落默认）
+        let url = self.build_search_url(search_url, &self.effective_keyword(source));
 
         let resp = self
             .client
@@ -452,6 +452,29 @@ impl SourceChecker {
         }
 
         Ok(())
+    }
+
+    /// 书源校验关键字（对齐 Kotlin BookSource.getCheckKeyword）
+    ///
+    /// 优先用书源 `ruleSearch.checkKeyWord`（排除空白/URL/规则符），
+    /// 否则回落配置默认关键字。
+    fn effective_keyword(&self, source: &BookSource) -> String {
+        if let Some(kw) = source
+            .rule_search
+            .as_ref()
+            .and_then(|r| r.check_key_word.as_deref())
+        {
+            let kw = kw.trim();
+            if !kw.is_empty()
+                && !kw.contains("http")
+                && !kw.contains("::")
+                && !kw.contains("++")
+                && !kw.contains("--")
+            {
+                return kw.to_string();
+            }
+        }
+        self.config.keyword.clone()
     }
 
     /// 构造搜索 URL：替换 {key} 和 {searchKey} 占位符
@@ -870,6 +893,34 @@ mod tests {
         let checker = SourceChecker::with_config(Arc::new(client), config);
         assert_eq!(checker.config.keyword, "自定义");
         assert!(!checker.config.check_toc);
+    }
+
+    #[test]
+    fn test_effective_keyword_uses_source_override() {
+        use legado_core::models::rule::SearchRule;
+        let checker = make_checker();
+
+        // 无 checkKeyWord → 回落默认
+        let default_src = make_test_source();
+        assert_eq!(checker.effective_keyword(&default_src), checker.config.keyword);
+
+        // 有效 checkKeyWord → 覆盖默认
+        let mut src = make_test_source();
+        src.rule_search = Some(SearchRule {
+            check_key_word: Some("斗破苍穹".to_string()),
+            ..SearchRule::default()
+        });
+        assert_eq!(checker.effective_keyword(&src), "斗破苍穹");
+
+        // 含 http / 规则符 → 视为无效，回落默认
+        for bad in ["http://x", "a::b", "a++b", "a--b", ""] {
+            let mut s = make_test_source();
+            s.rule_search = Some(SearchRule {
+                check_key_word: Some(bad.to_string()),
+                ..SearchRule::default()
+            });
+            assert_eq!(checker.effective_keyword(&s), checker.config.keyword);
+        }
     }
 
     #[test]

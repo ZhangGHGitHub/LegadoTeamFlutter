@@ -44,6 +44,7 @@ pub struct UrlOption {
     pub body: Option<String>,
     pub charset: Option<String>,
     pub content_type: Option<String>,
+    pub response_type: Option<String>,
     pub retry: u32,
     pub timeout: Option<u64>,
     pub proxy: Option<String>,
@@ -370,7 +371,7 @@ impl AnalyzeUrl {
             return template.to_string();
         }
 
-        let re = Regex::new(r"\{\{(.+?)\}\}").unwrap();
+        let re = Regex::new(r"(?s)\{\{(.+?)\}\}").unwrap();
         re.replace_all(template, |caps: &regex::Captures| {
             let expr = caps[1].trim();
             // 简单变量名直接替换
@@ -552,6 +553,8 @@ impl AnalyzeUrl {
 
         // 拼接绝对 URL
         self.url = Self::get_absolute_url(&self.base_url, &url_part);
+        // 书源 `#tag` 唯一后缀：JS `getKey()+path` 易把 path/query 拼进 fragment
+        self.url = Self::normalize_book_source_tag_url(&self.url);
         self.url_no_query = self.url.clone();
 
         // 解析 JSON 选项
@@ -690,15 +693,35 @@ impl AnalyzeUrl {
             .unwrap_or(encoding_rs::UTF_8)
     }
 
+    /// 判断表单分量是否已经符合原版 encodedForm 规则。
+    fn is_encoded_form_component(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'*' | b'-' | b'.' | b'_' => i += 1,
+                b'%' if i + 2 < bytes.len() && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit() => i += 3,
+                _ => return false,
+            }
+        }
+        true
+    }
+
     /// 表单分量编码（对齐 Java `URLEncoder`：字母数字 `.-*_` 原样，空格→`+`，其余 `%XX`）
     fn percent_encode_form_component(value: &str, charset: Option<&str>) -> String {
+        // 原版无显式 charset 时逐分量保留已有合法 %HH 编码；苦瓜书盘等
+        // 书源 body 自带 %2C/%E6...，重复编码会变成 %252C/%25E6... -> 空结果。
+        if charset.is_none() && Self::is_encoded_form_component(value) {
+            return value.to_string();
+        }
         let enc = match charset {
             Some(cs) if Self::is_non_utf8_charset(Some(cs)) => Self::encoding_for_label(cs),
             _ => encoding_rs::UTF_8,
         };
         if enc == encoding_rs::UTF_8 {
-            // urlencoding 用 %20；表单惯例为空格→+
-            return urlencoding::encode(value).replace("%20", "+");
+            // 对齐 Java URLEncoder：A-Za-z0-9.*-_ 原样、空格→+；urlencoding::encode
+            // 会把 * 编为 %2A，和原版不一致（混合表单分量如 a*b,c 会改变签名）。
+            return Self::percent_encode_bytes_form(value.as_bytes());
         }
         let (bytes, _, _) = enc.encode(value);
         Self::percent_encode_bytes_form(&bytes)
@@ -772,9 +795,33 @@ impl AnalyzeUrl {
     fn split_url_option(rule: &str) -> (String, Option<String>) {
         let rule = rule.trim();
 
-        // data: URI 豁免：对齐原版 AnalyzeUrl.kt 先经 dataUriRegex 判定，
-        // data 段本身可能以 `,{...}` 开头（如 JSON 内容），不可误判为请求选项
         if rule.starts_with("data:") {
+            // data: URI 选项分离：**仅 base64 形态**（meta 含 `;base64`）才尝试
+            // 分离 `,{...}` 请求选项——base64 数据段不含逗号，选项必在其后
+            //（书山 bookUrl = `data:detailsUrl;base64,<b64>,{"type":"susan"}`）。
+            // 非 base64 形态（如 `data:application/json,{...}`）data 内容本身
+            // 可能是 JSON 对象，整体视为数据、不分离，避免误切。
+            let meta_end = rule.find(',').unwrap_or(rule.len());
+            let meta = &rule[5..meta_end];
+            let is_b64 = meta.split(';').any(|s| s.trim() == "base64");
+            if is_b64 {
+                // base64 数据段之后紧跟 `,{...}` 才是选项（bookUrl/detailsUrl/
+                // chapterUrl 形态）。**不能用 rfind(',')**：选项 JSON 内部（如书山
+                // chapterUrl 的 `{"type":"susan","js":"..."}`）含逗号，
+                // rfind 会切到选项内部导致 base64 段混入选项 → decode 失败。
+                // 改为找 base64 段后的第一个 `,{`（base64 字符集无逗号）。
+                let data_start = meta_end + 1;
+                let b64_part = &rule[data_start..];
+                let b64_len = b64_part
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='))
+                    .unwrap_or(b64_part.len());
+                // base64 段尾是 `,{...}` 选项分隔逗号：跳过逗号再校验 JSON 形态
+                let after = b64_part[b64_len..].trim_start_matches(',').trim();
+                if after.starts_with('{') && after.ends_with('}') {
+                    let url_part_end = data_start + b64_len;
+                    return (rule[..url_part_end].to_string(), Some(after.to_string()));
+                }
+            }
             return (rule.to_string(), None);
         }
 
@@ -788,9 +835,56 @@ impl AnalyzeUrl {
         (rule.to_string(), None)
     }
 
-    /// 解析 URL 选项 JSON
+    /// GSON 宽松 JSON 兼容：把**字符串字面量**的单引号替换为双引号
+    ///（`'{"a":1}'` → `"{\"a\":1}"`）。状态机：遇到单引号时进入
+    /// 单引号字符串，直到下一个未转义单引号结束；期间把边界单引号写为
+    /// 双引号、内容原样。对齐原版 UrlOption 的 GSON lenient 解析。
+    fn lenient_json_strings(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let chars: Vec<char> = s.chars().collect();
+        let mut i = 0;
+        let mut in_single = false;
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '\'' {
+                if !in_single {
+                    in_single = true;
+                    out.push('"');
+                } else {
+                    in_single = false;
+                    out.push('"');
+                }
+            } else if c == '\\' && in_single && i + 1 < chars.len() {
+                out.push(c);
+                out.push(chars[i + 1]);
+                i += 1;
+            } else if c == '"' && in_single {
+                // 单引号字符串内的双引号：转义为 \"（对齐 GSON lenient）
+                out.push('\\');
+                out.push('"');
+            } else {
+                out.push(c);
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// 解析 URL 选项 JSON（对齐原版 GSONStrict → GSON 宽松回退）
+    ///
+    /// 原版 AnalyzeUrl.kt:240-246：GSONStrict 解析失败后用 GSON 宽松解析
+    ///（GSON 接受单引号字符串——爱下电子等源选项 body 为
+    /// `'{"searchTerms":...}'` 单引号包裹）。serde_json 严格模式会失败
+    /// → 选项全丢（method 变 GET、body 空）→ 搜索/详情请求错误。
     fn parse_url_option(json_str: &str) -> Result<UrlOption, serde_json::Error> {
-        let value: serde_json::Value = serde_json::from_str(json_str)?;
+        let value = match serde_json::from_str::<serde_json::Value>(json_str) {
+            Ok(v) => v,
+            Err(_) => {
+                // 宽松回退：单引号字符串值 → 双引号（GSON lenient 语义）
+                let lenient = Self::lenient_json_strings(json_str);
+                serde_json::from_str::<serde_json::Value>(&lenient)?
+            }
+        };
 
         let mut option = UrlOption::default();
 
@@ -823,7 +917,9 @@ impl AnalyzeUrl {
             }
 
             if let Some(t) = obj.get("type").and_then(|v| v.as_str()) {
-                option.content_type = Some(t.to_string());
+                // 对齐原版 AnalyzeUrl.type：URL 选项 ,{"type":"hex"} 表示
+                // 响应体为原始字节的 hex 编码，而非 content_type（Content-Type 头）。
+                option.response_type = Some(t.to_string());
             }
 
             if let Some(r) = obj.get("retry").and_then(|v| v.as_u64()) {
@@ -904,8 +1000,8 @@ impl AnalyzeUrl {
             self.body = option.body;
         }
         self.charset = option.charset;
-        if option.content_type.is_some() {
-            self.content_type = option.content_type;
+        if option.response_type.is_some() {
+            self.response_type = option.response_type;
         }
         self.retry = option.retry;
         self.timeout = option.timeout;
@@ -1004,6 +1100,31 @@ impl AnalyzeUrl {
         without_opt.split('#').next().unwrap_or(without_opt).trim()
     }
 
+    /// 纠正书源 `#tag` 后缀被 JS 字符串拼接污染的绝对 URL
+    ///
+    /// 书源 `bookSourceUrl` 常用 `#🎃`/`#pb1101` 作唯一后缀。规则里
+    /// `source.getKey() + "/search" + "?q="` 会得到
+    /// `http://host#🎃/search?q=`——Java URL/Jsoup 发请求时丢弃整个
+    /// fragment，查询串丢失。此处把 fragment 内误拼的 `/path` 或 `?query`
+    /// 提回权威 URL；纯 tag 则去掉 fragment（对齐 Jsoup 忽略 fragment）。
+    pub fn normalize_book_source_tag_url(url: &str) -> String {
+        let Some(hash) = url.find('#') else {
+            return url.to_string();
+        };
+        let base = &url[..hash];
+        let frag = &url[hash + 1..];
+        if frag.is_empty() {
+            return base.to_string();
+        }
+        if frag.starts_with('/') || frag.starts_with('?') {
+            return format!("{base}{frag}");
+        }
+        if let Some(pos) = frag.find(['/', '?']) {
+            return format!("{base}{}", &frag[pos..]);
+        }
+        base.to_string()
+    }
+
     // ========== JS 内嵌执行 ==========
 
     /// 处理 `@js:...` 和 `<js>...</js>` 内嵌 JS 执行
@@ -1013,7 +1134,7 @@ impl AnalyzeUrl {
     /// - 用 JS 引擎执行表达式，将结果替换回 URL
     /// - 支持 `@result` 引用上一步结果
     pub fn analyze_js(rule: &str, js_executor: &dyn JsExecutor) -> String {
-        Self::analyze_js_with_error(rule, js_executor).0
+        Self::analyze_js_with_error(rule, js_executor, &Default::default()).0
     }
 
     /// [`Self::analyze_js`] 的错误感知版本：JS 执行失败时返回
@@ -1021,12 +1142,68 @@ impl AnalyzeUrl {
     /// 真实错误（懒人听书未配置登录会话时 lrtsResolveSession 抛
     /// 「请先登录…」；此前静默保留 `@js:` 文本会被当 URL 请求 →
     /// HTTP 404 误导）。
+    /// 将变量集构建为 JS 前导声明（对齐原版 evalJS 的 bindings 注入：
+    /// key/page/baseUrl 等以作用域变量形式对 @js:/<js> 块可见 —
+    /// 淘小说 searchUrl @js: 块引用 key 变量，此前未注入 → key is not
+    /// defined → URL 构建失败 → 搜索 0 结果（2026-08-17））
+    fn js_variable_prologue(variables: &std::collections::HashMap<String, String>) -> String {
+        let mut prologue = String::new();
+        for (name, value) in variables {
+            // 仅注入合法 JS 标识符（infoMap['x'] 等复合键跳过）
+            let mut chars = name.chars();
+            let valid = chars
+                .next()
+                .is_some_and(|c| c == '_' || c == '$' || c.is_ascii_alphabetic())
+                && chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric());
+            if !valid {
+                continue;
+            }
+            if let Ok(lit) = serde_json::to_string(value) {
+                prologue.push_str(&format!("var {name} = {lit};\n"));
+            }
+        }
+        prologue
+    }
+
+    /// URL 模板 `<js>`/`@js:` 前导：包装全局 `eval`，使 URI 字面量在
+    /// QuickJS 下可回退为原字符串。
+    ///
+    /// 书源常见模式 `eval(String(Reload('...')))`：远端/库函数可能直接返回
+    /// `https://...` 裸 URL。Rhino 解析为 label+comment（常得 `undefined`）；
+    /// QuickJS 则抛 `unexpected token`，导致 searchUrl 整段失败。
+    /// 仅在 eval 抛错且入参为 URI 形态时回退原串，合法 JS 仍走原生 eval。
+    fn js_eval_uri_fallback_prologue() -> &'static str {
+        r#"(function(){
+  var __legadoNativeEval = globalThis.eval;
+  if (typeof __legadoNativeEval !== 'function') return;
+  if (globalThis.__legadoEvalUriFallback) return;
+  globalThis.__legadoEvalUriFallback = true;
+  globalThis.eval = function(code) {
+    try {
+      return __legadoNativeEval(code);
+    } catch (err) {
+      if (typeof code === 'string') {
+        var t = code.replace(/^\s+|\s+$/g, '');
+        if (/^(https?:|ftp:|data:|legado:|file:|\/\/)/i.test(t) || t.charAt(0) === '/') {
+          return code;
+        }
+      }
+      throw err;
+    }
+  };
+})();
+"#
+    }
+
     pub fn analyze_js_with_error(
         rule: &str,
         js_executor: &dyn JsExecutor,
+        variables: &std::collections::HashMap<String, String>,
     ) -> (String, Option<String>) {
         // 匹配 <js>...</js> 或 @js:... 模式
         let js_re = Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap();
+        let var_prologue = Self::js_variable_prologue(variables);
+        let eval_prologue = Self::js_eval_uri_fallback_prologue();
 
         let mut result = rule.to_string();
         let mut first_err: Option<String> = None;
@@ -1053,8 +1230,15 @@ impl AnalyzeUrl {
                 .map(|m| m.as_str())
                 .unwrap_or("");
 
+            // 变量前导 + 当前 result 绑定 + URI-eval 兼容包装。原版
+            // AnalyzeUrl.evalJS(jsStr, result) 会把前一段 URL/规则文本绑定为
+            // JS 变量 result；趣书等 `URL,{json}\n@js` 规则通过
+            // String(result) 从前缀构造重定向后的分页 URL。
+            let result_lit = serde_json::to_string(&result).unwrap_or_else(|_| "\"\"".to_string());
+            let code_with_vars = format!("{var_prologue}var result = {result_lit};\n{eval_prologue}{js_code}");
+
             // 执行 JS 并获取结果
-            match js_executor.execute_js(js_code) {
+            match js_executor.execute_js(&code_with_vars) {
                 Ok(js_result) => {
                     result = js_result;
                 }
@@ -1093,7 +1277,7 @@ impl AnalyzeUrl {
         // 1. 先执行 @js:/<js> 内嵌 JS（失败上抛真实错误：懒人听书
         //    未配置登录会话时 lrtsResolveSession 抛「请先登录…」；
         //    静默保留 @js: 文本会被当 URL 请求 → HTTP 404 误导）
-        let (processed, js_err) = Self::analyze_js_with_error(template, js_executor);
+        let (processed, js_err) = Self::analyze_js_with_error(template, js_executor, variables);
         if let Some(err) = js_err {
             return Err(LegadoError::Internal(format!(
                 "URL 模板 JS 执行失败: {err}"
@@ -1148,15 +1332,22 @@ impl AnalyzeUrl {
             return template.to_string();
         }
 
-        let re = Regex::new(r"\{\{(.+?)\}\}").unwrap();
+        let re = Regex::new(r"(?s)\{\{(.+?)\}\}").unwrap();
         re.replace_all(template, |caps: &regex::Captures| {
             let expr = caps[1].trim();
-            // 简单变量名直接替换
+            // 简单变量名：先查 variables，未命中再求值 JS 全局（jsLib 定义的
+            // 全局变量如得间小说 `host`：{{host}} 需从 JS 作用域取，仅查 map
+            // 得空串 → URL 残缺 → 搜索失败）— 2026-08-17
             if expr
                 .chars()
                 .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
             {
-                variables.get(expr).cloned().unwrap_or_default()
+                if let Some(v) = variables.get(expr) {
+                    v.clone()
+                } else {
+                    // 求值 JS 全局变量（jsLib 已执行定义；不存在 → undefined → 空串）
+                    js_executor.execute_js(expr).unwrap_or_default()
+                }
             } else {
                 // 复杂表达式：用 JS 引擎执行
                 // 先构建变量注入前缀（纯整数以数字注入，对齐原版 page 数值语义，
@@ -1398,6 +1589,32 @@ impl AnalyzeUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 书山真实章节 data URI 解析回归（2026-08-17）
+    #[test]
+    fn test_parse_data_uri_shushan_chapter_real() {
+        let raw = std::fs::read_to_string("C:/Users/Public/real_bookurl.txt").unwrap_or_default();
+        let url = raw.trim();
+        if url.is_empty() {
+            eprintln!("real_bookurl.txt 缺失，跳过");
+            return;
+        }
+        let parsed = AnalyzeUrl::parse(url, &std::collections::HashMap::new(), 1).unwrap();
+        assert!(parsed.is_data_uri(), "应识别为 data URI");
+        let bytes = parsed.get_byte_array_if_data_uri()
+            .unwrap_or_else(|| panic!("get_byte_array 失败, url_no_query={}", parsed.url_no_query().chars().take(120).collect::<String>()));
+        let s = String::from_utf8_lossy(&bytes);
+        assert!(s.contains("source"), "解码内容应为 JSON: {}", s.chars().take(80).collect::<String>());
+    }
+
+    /// 爱下电子式单引号 body 选项宽松解析（对齐原版 GSON lenient）
+    #[test]
+    fn test_lenient_json_single_quote_body() {
+        let raw = "{\"body\": '{\"searchTerms\":\"{{key}}\"}', \"method\": \"POST\"}";
+        let option = super::AnalyzeUrl::parse_url_option(raw).unwrap();
+        assert_eq!(option.method, Some(super::RequestMethod::Post));
+        assert!(option.body.as_deref().unwrap_or("").contains("searchTerms"));
+    }
 
     // --- 1. 简单变量替换 ---
     #[test]
@@ -1707,6 +1924,35 @@ mod tests {
         );
     }
 
+    /// 已编码表单分量保持原样（对齐原版 NetworkUtils.encodedForm）。
+    #[test]
+    fn test_preencoded_post_form_preserved() {
+        let url = AnalyzeUrl::parse(
+            r#"https://kgbook.com/e/search/index.php,{"method":"POST","body":"keyboard=一念&show=title%2Cbooksay%2Cbookwriter&submit=%E6%90%9C%E7%B4%A2"}"#,
+            &HashMap::new(),
+            1,
+        ).unwrap();
+        assert_eq!(url.request_body(), "keyboard=%E4%B8%80%E5%BF%B5&show=title%2Cbooksay%2Cbookwriter&submit=%E6%90%9C%E7%B4%A2");
+    }
+
+    /// UTF-8 表单编码保留 Java URLEncoder 的 *，且逗号正常百分号编码。
+    #[test]
+    fn test_utf8_form_matches_java_urlencoder_safe_set() {
+        let url = AnalyzeUrl::parse(
+            r#"https://example.com/post,{"method":"POST","body":"value=a*b,c~ d"}"#,
+            &HashMap::new(),
+            1,
+        ).unwrap();
+        assert_eq!(url.request_body(), "value=a*b%2Cc%7E+d");
+
+        let safe = AnalyzeUrl::parse(
+            r#"https://example.com/post,{"method":"POST","body":"value=a-b_c.d"}"#,
+            &HashMap::new(),
+            1,
+        ).unwrap();
+        assert_eq!(safe.request_body(), "value=a-b_c.d");
+    }
+
     // --- 8. 绝对 URL 拼接 ---
     #[test]
     fn test_absolute_url() {
@@ -1741,6 +1987,19 @@ mod tests {
         assert_eq!(
             AnalyzeUrl::get_absolute_url("http://www.dongtanxs.com##", "/search?q=1"),
             "http://www.dongtanxs.com/search?q=1"
+        );
+        // JS 把 path/query 拼进 #tag fragment 后须提回权威 URL
+        assert_eq!(
+            AnalyzeUrl::normalize_book_source_tag_url("http://www.yxgxs.org#🎃?searchkey=一念"),
+            "http://www.yxgxs.org?searchkey=一念"
+        );
+        assert_eq!(
+            AnalyzeUrl::normalize_book_source_tag_url("http://www.yxgxs.org#🎃/search.php?q=1"),
+            "http://www.yxgxs.org/search.php?q=1"
+        );
+        assert_eq!(
+            AnalyzeUrl::normalize_book_source_tag_url("http://www.yxgxs.org#🎃"),
+            "http://www.yxgxs.org"
         );
     }
 
@@ -2042,6 +2301,34 @@ mod tests {
         assert_eq!(url.server_id(), Some(42));
     }
 
+    #[test]
+    fn test_data_uri_with_option_is_data_uri() {
+        // 书山 bookUrl 形态：data:detailsUrl;base64,<base64JSON>,{"type":"susan"}
+        let url = r#"data:detailsUrl;base64,eyJ1cmwiOiJodHRwczovL3YxLnZvc3NjLmNvbS9kZXRhaWwifQ==,{"type":"susan"}"#;
+        let parsed = AnalyzeUrl::parse(url, &HashMap::new(), 1).unwrap();
+        eprintln!("url_no_query=<{}> url=<{}>", parsed.url_no_query(), parsed.url());
+        assert!(parsed.is_data_uri(), "is_data_uri 应为 true");
+        let bytes = parsed.get_byte_array_if_data_uri().unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            r#"{"url":"https://v1.vossc.com/detail"}"#
+        );
+    }
+
+    #[test]
+    fn test_url_option_type_maps_response_type() {
+        // G12：URL 选项 ,{"type":"hex"} → response_type（而非 content_type）
+        let url = AnalyzeUrl::new(
+            r#"https://example.com/api,{"type":"hex"}"#,
+            None,
+            None,
+            "",
+            None,
+        );
+        assert_eq!(url.response_type(), Some("hex"));
+        assert_eq!(url.content_type(), None);
+    }
+
     // --- 20. JS 内嵌执行 (analyze_js) ---
 
     /// 测试用 Mock JS 执行器
@@ -2094,6 +2381,110 @@ mod tests {
         // 没有 JS 标记，原样返回
         let result = AnalyzeUrl::analyze_js("https://example.com/page", &executor);
         assert_eq!(result, "https://example.com/page");
+    }
+
+    /// Recording Mock：断言注入了 URI-eval 兼容前导，并模拟回退/报错语义
+    ///（不引入 quickjs；生产 prologue 字符串由 analyze_js_with_error 拼入脚本）。
+    struct UriEvalCompatRecordingExecutor {
+        last_code: std::sync::Mutex<String>,
+    }
+
+    impl UriEvalCompatRecordingExecutor {
+        fn new() -> Self {
+            Self {
+                last_code: std::sync::Mutex::new(String::new()),
+            }
+        }
+
+        fn last_code(&self) -> String {
+            self.last_code.lock().unwrap().clone()
+        }
+    }
+
+    impl crate::analyze_rule::JsExecutor for UriEvalCompatRecordingExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            *self.last_code.lock().unwrap() = js_code.to_string();
+            // 生产路径必须注入兼容包装，否则本 mock 直接失败
+            if !js_code.contains("__legadoEvalUriFallback")
+                || !js_code.contains("__legadoNativeEval")
+            {
+                return Err("缺少 URI-eval 兼容前导".to_string());
+            }
+            // 裸 URI：eval(String(Reload('https://...'))) → 兼容包装回退原串
+            if let Some(start) = js_code.find("Reload('") {
+                let rest = &js_code[start + "Reload('".len()..];
+                if let Some(end) = rest.find("')") {
+                    let url = &rest[..end];
+                    if url.starts_with("http://") || url.starts_with("https://") {
+                        return Ok(url.to_string());
+                    }
+                }
+            }
+            // 非 URI 非法 eval：包装不得吞错，须向上返回
+            if js_code.contains("eval('@@@not-a-uri')") {
+                return Err("unexpected token in expression".to_string());
+            }
+            Err("mock 未识别的脚本".to_string())
+        }
+    }
+
+    /// parser 层：`eval(String(Reload('https://...')))` 裸 URI 回退（非仅 ffi 间接覆盖）
+    #[test]
+    fn test_analyze_js_eval_reload_bare_uri_fallback() {
+        let executor = UriEvalCompatRecordingExecutor::new();
+        let template =
+            "<js>eval(String(Reload('https://api.example.com/search?q=test')))</js>";
+        let (out, err) =
+            AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        assert!(err.is_none(), "裸 URI 回退不应报错: {err:?}");
+        let code = executor.last_code();
+        assert!(
+            code.contains("__legadoEvalUriFallback") && code.contains("__legadoNativeEval"),
+            "应注入 URI-eval 兼容前导: {code}"
+        );
+        assert!(
+            code.contains("Reload('https://api.example.com/search?q=test')"),
+            "应保留原 Reload 调用: {code}"
+        );
+        assert_eq!(out, "https://api.example.com/search?q=test");
+    }
+
+    /// 边界：非 URI 的非法 eval 仍返回错误，兼容包装不得吞掉
+    #[test]
+    fn test_analyze_js_eval_non_uri_error_not_swallowed() {
+        let executor = UriEvalCompatRecordingExecutor::new();
+        let template = "<js>eval('@@@not-a-uri')</js>";
+        let (_out, err) =
+            AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        let err = err.expect("非 URI 非法 eval 应保留错误");
+        assert!(
+            err.contains("unexpected token"),
+            "应透传引擎/模拟错误而非静默成功: {err}"
+        );
+        let code = executor.last_code();
+        assert!(
+            code.contains("__legadoEvalUriFallback"),
+            "即使失败路径也应已注入兼容前导: {code}"
+        );
+        // parse_with_js 须上抛，禁止当成功 URL
+        let parsed =
+            AnalyzeUrl::parse_with_js(template, &HashMap::new(), 1, &executor);
+        assert!(
+            parsed.is_err(),
+            "非 URI 非法 eval 经 parse_with_js 应失败: {}",
+            parsed.err().map(|e| e.to_string()).unwrap_or_default()
+        );
+    }
+
+    /// 内嵌 @js/<js> 必须注入前一段 result（对齐 Kotlin evalJS(js, result)）。
+    #[test]
+    fn test_inline_js_receives_previous_result_binding() {
+        let executor = EchoJsExecutor;
+        let template = "https://example.com/e/search/index.php,{\"method\":\"POST\"}\n@js:String(result)";
+        let (out, err) = AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        assert!(err.is_none(), "JS 不应失败: {err:?}");
+        assert!(out.contains("var result = \"https://example.com/e/search/index.php,{\\\"method\\\":\\\"POST\\\"}"), "应注入完整 URL option 前缀: {out}");
+        assert!(!out.contains("var result = \"@js:"), "result 不应绑定 JS 块自身: {out}");
     }
 
     // --- 21. parse_with_js ---

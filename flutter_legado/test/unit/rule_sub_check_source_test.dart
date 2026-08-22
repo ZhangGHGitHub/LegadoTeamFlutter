@@ -8,6 +8,7 @@
 /// - CheckSourceNotifier：初始状态 / 关键词持久化 / 空列表守卫 / clearMessages
 /// - SourceNotifier.addGroupToUrls：校验失效分组回写（指定 URL、
 ///   已有分组跳过、不退出批量模式）
+library;
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'

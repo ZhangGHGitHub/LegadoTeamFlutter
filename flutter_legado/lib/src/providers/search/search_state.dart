@@ -78,6 +78,9 @@ extension SearchStateDisplay on SearchState {
 ///    contains(name|author 包含) → other；precision 时丢弃 other；
 /// 3. 各桶内按 `origins.size` 降序。
 ///
+/// 聚合键使用 [formatBookName]/[formatBookAuthor]（对齐原版 BookList 解析后
+/// 再 merge；否则「作者：天蚕土豆」与「天蚕土豆」会拆成多条，徽标偏少）。
+///
 /// [UI-fix v2.0.31 | 2026-08-11] 此前仅分桶、按 origin 分行，用户体感
 /// 「源少/噪声大」；现对齐原版同书多源聚合 — Auto
 List<SearchResult> applyPrecisionSearch(
@@ -93,18 +96,23 @@ List<SearchResult> applyPrecisionSearch(
   final other = <String, SearchResult>{};
 
   void mergeInto(Map<String, SearchResult> bucket, SearchResult item) {
-    final mapKey = '${item.book.name}\u0000${item.book.author}';
+    final name = formatBookName(item.book.name);
+    final author = formatBookAuthor(item.book.author);
+    final mapKey = '$name\u0000$author';
+    final normalized = (name != item.book.name || author != item.book.author)
+        ? item.copyWith(book: item.book.copyWith(name: name, author: author))
+        : item;
     final existing = bucket[mapKey];
     if (existing == null) {
-      bucket[mapKey] = item.copyWith(origins: {...item.effectiveOrigins});
+      bucket[mapKey] = normalized.copyWith(origins: {...normalized.effectiveOrigins});
     } else {
-      bucket[mapKey] = existing.withAddedOrigin(item);
+      bucket[mapKey] = existing.withAddedOrigin(normalized);
     }
   }
 
   for (final r in results) {
-    final name = r.book.name;
-    final author = r.book.author;
+    final name = formatBookName(r.book.name);
+    final author = formatBookAuthor(r.book.author);
     final kind = r.book.kind ?? '';
     if (name == key || author == key) {
       mergeInto(equal, r);
@@ -129,4 +137,18 @@ List<SearchResult> applyPrecisionSearch(
     ...sortedBucket(contains),
     if (keepOther) ...sortedBucket(other),
   ];
+}
+
+/// 书名清洗（对齐原版 `BookHelp.formatBookName` / `AppPattern.nameRegex`）
+String formatBookName(String name) {
+  return name
+      .replaceAll(RegExp(r'\s+作\s*者.*|\s+\S+\s+著'), '')
+      .trim();
+}
+
+/// 作者清洗（对齐原版 `BookHelp.formatBookAuthor` / `AppPattern.authorRegex`）
+String formatBookAuthor(String author) {
+  return author
+      .replaceAll(RegExp(r'^\s*作\s*者[:：\s]+|\s+著'), '')
+      .trim();
 }

@@ -1,6 +1,7 @@
 /// ReplaceRuleNotifier 单元测试
 ///
 /// 覆盖：load/addRule/updateRule/deleteRule/setEnabled/moveUp/moveDown
+library;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -85,7 +86,7 @@ void main() {
       var notifyCount = 0;
       container.listen(
         replaceRuleNotifierProvider,
-        (_, __) => notifyCount++,
+        (_, _) => notifyCount++,
       );
 
       await readNotifier().load();
@@ -238,7 +239,7 @@ void main() {
       var notified = false;
       container.listen(
         replaceRuleNotifierProvider,
-        (_, __) => notified = true,
+        (_, _) => notified = true,
       );
       readNotifier().moveUp(1);
       expect(notified, isTrue);

@@ -66,7 +66,6 @@ fn api_routes() -> Router<Arc<AppState>> {
             post(handlers::source_update::execute_update),
         )
         .route("/search", post(handlers::search::search_books))
-        .route("/search/multi", post(handlers::search::search_multi))
         .route("/search/cancel", post(handlers::search::cancel_search))
         // WebBook 书源规则驱动链路
         .route("/webbook/search", post(handlers::web_book::search_books))

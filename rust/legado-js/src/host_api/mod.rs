@@ -13,6 +13,7 @@ pub mod chinese_utils;
 pub mod concurrency_api;
 pub mod config_api;
 pub mod cookie_store;
+pub mod device_id;
 pub mod crypto_api;
 pub mod current_source;
 pub mod pre_update_hooks;
@@ -20,6 +21,7 @@ pub mod encoding;
 pub mod env;
 pub mod file_utils;
 pub mod font_api;
+pub mod global_headers;
 pub mod html_format;
 #[cfg(feature = "quickjs")]
 pub mod html_parse;

@@ -7,7 +7,7 @@
 //! 实现完整的搜索→详情→目录→正文链路。
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use legado_core::models::BookSource;
@@ -18,9 +18,63 @@ use legado_core::web_book::{
 use legado_core::{LegadoError, LegadoResult};
 use legado_js::js_source::js_source_book::JsSourceBookOrchestrator;
 use legado_js::JsSourceConfig;
+use legado_net::rate_limit::IntervalRateLimiter;
 use legado_net::LegadoClient;
 use legado_parser::{compile_regex_safe, AnalyzeUrl, RequestMethod};
 
+/// 对齐原版 OkHttpUtils.ResponseBody.text：显式 charset 优先，随后 HTTP 头，最后 HTML meta。
+fn decode_web_response(bytes: &[u8], headers: &HashMap<String, String>, explicit: Option<&str>) -> String {
+    let charset = explicit.filter(|s| !s.trim().is_empty()).map(str::to_string)
+        .or_else(|| charset_from_content_type(headers))
+        .or_else(|| charset_from_html_meta(bytes));
+    AnalyzeUrl::decode_response_bytes(bytes, charset.as_deref())
+}
+
+fn charset_from_content_type(headers: &HashMap<String, String>) -> Option<String> {
+    let value = headers.iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        .map(|(_, value)| value.as_str())?;
+    extract_charset_assignment(value)
+}
+
+fn extract_charset_assignment(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find("charset")? + 7;
+    let tail = &value[start..];
+    let equal = tail.find('=')?;
+    let value = tail[equal + 1..].trim();
+    let value = value.trim_start_matches(['"', '\'']);
+    let charset = value.split([';', ' ', '"', '\'']).next().unwrap_or("");
+    (!charset.is_empty()).then(|| charset.to_string())
+}
+
+fn charset_from_html_meta(bytes: &[u8]) -> Option<String> {
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(16 * 1024)]);
+    let meta_re = regex::Regex::new(r##"(?is)<meta\b[^>]*>"##).ok()?;
+    let attr_re = regex::Regex::new(
+        r##"(?is)([a-z_:][a-z0-9_:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))"##,
+    ).ok()?;
+    for tag in meta_re.find_iter(&head).map(|m| m.as_str()) {
+        let mut attrs: HashMap<String, String> = HashMap::new();
+        for caps in attr_re.captures_iter(tag) {
+            let name = caps.get(1).map(|m| m.as_str().to_ascii_lowercase()).unwrap_or_default();
+            let value = caps.get(2).or_else(|| caps.get(3)).or_else(|| caps.get(4))
+                .map(|m| m.as_str().to_string()).unwrap_or_default();
+            attrs.insert(name, value);
+        }
+        if let Some(charset) = attrs.get("charset").filter(|v| !v.trim().is_empty()) {
+            return Some(charset.trim().to_string());
+        }
+        let is_content_type = attrs.get("http-equiv")
+            .is_some_and(|v| v.eq_ignore_ascii_case("content-type"));
+        if is_content_type {
+            if let Some(cs) = attrs.get("content").and_then(|v| extract_charset_assignment(v)) {
+                return Some(cs);
+            }
+        }
+    }
+    None
+}
 use crate::runtime;
 
 /// 详情/目录短时 HTML 缓存（对齐原版 Book.infoHtml / Book.tocHtml 进程内复用）
@@ -88,6 +142,62 @@ fn cache_put_page_body(url: &str, body: &str) {
 
 /// 真实书源数据抓取器
 ///
+/// 字节数组 → 小写 hex 字符串（对齐 Kotlin HexUtil.encodeHexStr）
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push(HEX[(b >> 4) as usize] as char);
+        s.push(HEX[(b & 0xf) as usize] as char);
+    }
+    s
+}
+
+/// 若 URL 是 data: URI（可能带 `,{...}` 请求选项，如书山
+/// `data:detailsUrl;base64,<b64>,{"type":"susan"}`），返回其解码内容：
+/// - type 非空 → hex 编码字节（书山 init JS 用 java.hexDecodeToString 还原）
+/// - 否则 → UTF-8 文本
+fn fetch_data_uri_content(url: &str) -> Option<LegadoResult<String>> {
+    let parsed = AnalyzeUrl::parse(url, &std::collections::HashMap::new(), 1).ok()?;
+    if !parsed.is_data_uri() {
+        return None;
+    }
+    let bytes = parsed.get_byte_array_if_data_uri()?;
+    if parsed.response_type().is_some() {
+        Some(Ok(hex_encode(&bytes)))
+    } else {
+        Some(Ok(String::from_utf8_lossy(&bytes).to_string()))
+    }
+}
+
+/// G4：每源固定窗口限流缓存（键=书源 URL，跨请求保持窗口状态）
+static RATE_LIMITERS: OnceLock<Mutex<HashMap<String, Arc<IntervalRateLimiter>>>> =
+    OnceLock::new();
+
+/// 按书源 concurrentRate 获取访问许可（对齐 Kotlin ConcurrentRateLimiter.withLimit）
+///
+/// 每源限流器缓存在全局 map 中，跨请求保持固定窗口状态（否则窗口起点每次
+/// 重置 = 永不生效）。
+async fn acquire_source_rate_limit(source: &BookSource) {
+    let rate = source.concurrent_rate.as_deref().unwrap_or("").trim();
+    if rate.is_empty() || rate == "0" {
+        return;
+    }
+    let Some(limiter) = IntervalRateLimiter::parse(rate) else {
+        return;
+    };
+    let map = RATE_LIMITERS.get_or_init(|| Mutex::new(HashMap::new()));
+    let limiter = {
+        let mut guard = map.lock().unwrap();
+        Arc::clone(
+            guard
+                .entry(source.book_source_url.clone())
+                .or_insert_with(|| Arc::new(limiter)),
+        )
+    };
+    limiter.acquire().await;
+}
+
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
 /// 实现完整的搜索→详情→目录→正文链路（对标 Kotlin WebBook 对象）。
 pub struct RealBookSourceFetcher {
@@ -138,11 +248,24 @@ impl RealBookSourceFetcher {
     }
 
     /// 根据 AnalyzeUrl 解析结果发起 HTTP 请求，返回响应体文本
+    #[allow(dead_code)] // 诊断测试仍走此包装；搜索主路径用 fetch_page
     async fn fetch_url(
         &self,
         analyze_url: &AnalyzeUrl,
         source_headers: Option<&HashMap<String, String>>,
     ) -> LegadoResult<String> {
+        Ok(self
+            .fetch_page(analyze_url, source_headers)
+            .await?
+            .body)
+    }
+
+    /// 对齐 Kotlin `AnalyzeUrl.getStrResponseAwait`：正文 + 重定向后最终 URL（`StrResponse.url`）
+    async fn fetch_page(
+        &self,
+        analyze_url: &AnalyzeUrl,
+        source_headers: Option<&HashMap<String, String>>,
+    ) -> LegadoResult<FetchedPage> {
         let url = analyze_url.url();
         if url.is_empty() {
             return Err(LegadoError::Internal("AnalyzeUrl 解析后 URL 为空".into()));
@@ -157,12 +280,56 @@ impl RealBookSourceFetcher {
             Some(headers)
         };
 
+        // data: URI 优先：不发起网络请求，直接解码内容（书山 bookUrl =
+        // `data:detailsUrl;base64,<base64 JSON>,{"type":"susan"}` 形态）。
+        // 对齐原版：data URI 请求返回其 base64 解码字节；type 非空时再 hex 编码
+        //（书山 ruleBookInfo.init 用 java.hexDecodeToString(result) 还原 JSON）。
+        if analyze_url.is_data_uri() {
+            if let Some(bytes) = analyze_url.get_byte_array_if_data_uri() {
+                let body = if analyze_url.response_type().is_some() {
+                    hex_encode(&bytes)
+                } else {
+                    String::from_utf8_lossy(&bytes).to_string()
+                };
+                return Ok(FetchedPage {
+                    body,
+                    final_url: url.to_string(),
+                });
+            }
+            return Err(LegadoError::Internal("data: URI 内容解码失败".into()));
+        }
+
+        // G12: response_type（如 "hex"）→ 原始字节 hex 编码返回（对齐原版
+        // AnalyzeUrl.getStrResponse 的 type!=null 分支：HexUtil.encodeHexStr(getByteArrayAwait)）
+        if analyze_url.response_type().is_some() {
+            let raw = self.client.get_raw(url, headers_opt.clone()).await?;
+            if !raw.is_success() {
+                return Err(LegadoError::Network(format!(
+                    "HTTP {} for {}",
+                    raw.status, url
+                )));
+            }
+            check_redirect_log(url, &raw.url);
+            let final_url = if raw.url.is_empty() {
+                url.to_string()
+            } else {
+                raw.url.clone()
+            };
+            return Ok(FetchedPage {
+                body: hex_encode(&raw.body),
+                final_url,
+            });
+        }
+
+        // 原始字节响应：对齐原版 ResponseBody.text()，避免目录/正文 HTML 的
+        // meta charset=gbk 在 reqwest UTF-8 默认解码后不可逆乱码（七步阁等）。
         let response = match analyze_url.method() {
             RequestMethod::Post => {
-                let body = analyze_url.request_body();
-                self.client.post(url, body, headers_opt).await?
+                self.client
+                    .post_raw(url, analyze_url.request_body(), headers_opt)
+                    .await?
             }
-            _ => self.client.get(url, headers_opt).await?,
+            _ => self.client.get_raw(url, headers_opt).await?,
         };
 
         if !response.is_success() {
@@ -173,8 +340,20 @@ impl RealBookSourceFetcher {
         }
         // 对齐 Kotlin WebBook.checkRedirect（Debug.log 可观测性）
         check_redirect_log(url, &response.url);
+        let final_url = if response.url.is_empty() {
+            url.to_string()
+        } else {
+            response.url.clone()
+        };
 
-        Ok(response.body)
+        Ok(FetchedPage {
+            body: decode_web_response(
+                &response.body,
+                &response.headers,
+                analyze_url.charset(),
+            ),
+            final_url,
+        })
     }
 
     /// 直接 GET 一个 URL（用于章节内容等简单场景）
@@ -194,6 +373,11 @@ impl RealBookSourceFetcher {
         source_headers: Option<&HashMap<String, String>>,
         use_page_cache: bool,
     ) -> LegadoResult<String> {
+        // data: URI（书山 bookUrl 形态）优先处理、不读缓存（缓存可能是修复前
+        // 写入的旧 body，非 hex → hexDecodeToString 失败 → [ERROR]）
+        if let Some(result) = fetch_data_uri_content(url) {
+            return result;
+        }
         if use_page_cache {
             if let Some(cached) = cache_get_page_body(url) {
                 eprintln!("[web_book] page body cache hit: {url}");
@@ -201,7 +385,9 @@ impl RealBookSourceFetcher {
             }
         }
         let headers_opt = source_headers.cloned();
-        let response = self.client.get(url, headers_opt).await?;
+        // 简单 GET 同样必须保留字节至 charset 检测结束：正文/目录 URL 通常
+        // 没有显式 UrlOption.charset，只能依赖响应头或 HTML meta。
+        let response = self.client.get_raw(url, headers_opt).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(
                 "HTTP {} for {}",
@@ -209,10 +395,11 @@ impl RealBookSourceFetcher {
             )));
         }
         check_redirect_log(url, &response.url);
+        let body = decode_web_response(&response.body, &response.headers, None);
         if use_page_cache {
-            cache_put_page_body(url, &response.body);
+            cache_put_page_body(url, &body);
         }
-        Ok(response.body)
+        Ok(body)
     }
 
     /// 执行 loginCheckJs 登录检测（规则路径增强）
@@ -298,34 +485,35 @@ impl RealBookSourceFetcher {
         existing_author: &str,
     ) -> WebBookInfo {
         let info_rule = source.rule_book_info.as_ref();
-        // 详情解析注入书源上下文 setup（source/java 全局）：七猫四合一等书源
-        // jsLib 的 qmBookInfo→qmGetUrl→qmLogin 依赖 `source` 读取登录态 token，
-        // construct_analyzer_with_js_lib 仅注入 jsLib 无 setup → qmBookInfo 抛
-        // 「七猫运行上下文缺少 source/java」→ init 失败 → tocUrl 缺失（详情页
-        // 「未知作者/共0章」、目录空，2026-08-15 用户反馈）
-        let setup_script =
-            crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+        // 书山等聚合源 init 规则依赖 jsLib（getServerHost）与书源上下文 setup
+        // （java.ajax 需携带 header 规则注入的 X-Novel-Token）；jsLib 须 sanitize
+        //（去 Rhino Packages 行），否则 init 失败 → tocUrl 规则 result 缺
+        // source/book_url → /catalog 请求「无效书源」。— 书山目录修复
+        let js_lib_sanitized = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
         let mut analyzer = crate::js_executor::construct_analyzer_with_source_context(
             body,
             book_url.to_string(),
             &source.book_source_url,
-            source.js_lib.as_deref(),
-            setup_script,
+            js_lib_sanitized.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
 
-        // 详情页 init（对齐原版 BookInfo.analyzeBookInfo：
-        // `analyzeRule.getString(init)?.let { result = it }`）——
-        // **init 执行结果必须回写为解析内容**：七猫 qmBookInfo 生成的真实
-        // chapter-list toc_url 在 init 结果里，不回写则后续 `data.toc_url`
-        // 解析到**原始详情响应**的 toc_url 字段（reader/detail=详情页自身）
-        // → 目录请求详情页而非 chapter-list → 「暂无章节」
-        //（2026-08-15 用户反馈，此前 `let _ = get_string(init)` 丢弃结果）
+        // 详情页 init（对齐原版 BookInfo.analyzeBookInfo：执行 init 规则后
+        // setContent(getElement(init)) —— init 结果作为后续字段规则的新 content。
+        // 书山聚合 init 把 data:URI 的 hex detail JSON 转成 /details 响应（含
+        // source/book_url/title），tocUrl 规则依赖该 result；仅执行不更新
+        // content 会导致 tocUrl 产出 {"tab":"novel"} 空 catalog。— 书山目录修复
         if let Some(init_rule) = info_rule.and_then(|r| r.init.as_deref()) {
             let init_rule = init_rule.trim();
             if !init_rule.is_empty() {
                 if let Ok(init_result) = analyzer.get_string(init_rule) {
                     if !init_result.is_empty() {
-                        analyzer.set_content(init_result);
+                        // 对象语义注入：tocUrl 等后续规则访问 result.source 等
+                        // 字段需要 JSON 对象（对齐原版 getElements(init) Map）
+                        analyzer.set_element_content(init_result);
                     }
                 }
             }
@@ -440,6 +628,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         query: &str,
         page: i32,
     ) -> LegadoResult<Vec<WebSearchResult>> {
+        acquire_source_rate_limit(source).await;
         let search_url = source.search_url.as_deref().unwrap_or("");
         if search_url.is_empty() {
             return Err(LegadoError::Internal("书源未配置 searchUrl".into()));
@@ -447,24 +636,41 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let source_headers = Self::parse_source_headers(source);
 
-        // 1. 解析搜索 URL 模板（`{{JS表达式}}` 模板经 JS 引擎求值渲染，
-        //    纯字面模板走旧版路径；见 js_executor::build_search_url）
-        let analyze_url = crate::js_executor::build_search_url(
+        // 1. 解析搜索 URL 模板（`{{JS表达式}}` / `@js:` 模板经 JS 引擎求值渲染，
+        //    纯字面模板走旧版路径；见 js_executor::build_search_url_with_setup）
+        //    必须携带 jsLib + 书源上下文 setup：searchUrl 里 `{{source.getKey()}}`
+        //    （爱下电子）或 `{{url=source.getKey();...}}`（企鹅小说/笔下文学）
+        //    依赖 source 绑定，缺 setup → 模板原样残留 → HTTP 404 误导
+        //    （2026-08-17 批量扫描 120 源发现）
+        let analyze_url = crate::js_executor::build_search_url_with_setup(
             search_url,
             query,
             page,
             &source.book_source_url,
+            source.js_lib.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
+        if analyze_url.url().starts_with("legado-js-error://") {
+            return Err(LegadoError::Internal(format!(
+                "searchUrl JS 求值失败: {}",
+                analyze_url.url()
+            )));
+        }
 
-        // 2. 发起 HTTP 请求
-        let body = self
-            .fetch_url(&analyze_url, source_headers.as_ref())
+        // 2. 发起 HTTP 请求。baseUrl 必须用重定向后最终 URL
+        //    （对齐 Kotlin WebBook.search → BookList.analyzeBookList(baseUrl = res.url)）。
+        //    书书小说等会把搜索 302 到书籍页；若仍用请求 URL，bookList 空列表回退
+        //    会把 search.php 当成 bookUrl，详情规则也解不出书名 → 搜索 0 条。
+        let fetched = self
+            .fetch_page(&analyze_url, source_headers.as_ref())
             .await?;
+        let body = fetched.body;
+        let request_url = analyze_url.url().to_string();
+        let base_url = fetched.final_url;
 
         // 2.5 loginCheckJs 登录检测（规则路径增强）
-        Self::execute_login_check(source, &body, analyze_url.url(), 200)?;
+        Self::execute_login_check(source, &body, &base_url, 200)?;
 
-        let base_url = analyze_url.url().to_string();
         let search_rule = source.rule_search.as_ref();
 
         // 3. bookUrlPattern 详情页直连（B1.1，对标 Kotlin BookList `baseUrl.matches(bookUrlPattern)`）
@@ -497,11 +703,19 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.book_list.as_deref())
             .unwrap_or("");
 
-        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+        // 书山等聚合源搜索规则依赖书源上下文（jsLib + setup：bookList/bookUrl
+        // 的 @js: 块用 source.getKey 等）——对齐原版 BookList 的 AnalyzeRule
+        // with source。此前仅 jsLib 无 setup → source 未定义 → 空结果。
+        let search_lib = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
+        let analyzer = crate::js_executor::construct_analyzer_with_source_context(
             body.clone(),
             base_url.clone(),
             &source.book_source_url,
-            source.js_lib.as_deref(),
+            search_lib.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
 
         let elements = if book_list_rule.is_empty() {
@@ -509,6 +723,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         } else {
             analyzer.get_elements(book_list_rule).unwrap_or_default()
         };
+        eprintln!(
+            "[web_book] search request={request_url} base={base_url} elements={}",
+            elements.len()
+        );
 
         // 4.5 列表为空且未配置 bookUrlPattern 时，回退按详情页解析（对标 Kotlin BookList “列表为空,按详情页解析”）
         if elements.is_empty() && !has_pattern {
@@ -548,12 +766,17 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let mut results = Vec::new();
         for elem in elements.iter().take(50) {
-            let elem_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            let mut elem_analyzer = crate::js_executor::construct_analyzer_with_source_context(
                 elem.clone(),
                 base_url.clone(),
                 &source.book_source_url,
-                source.js_lib.as_deref(),
+                search_lib.as_deref(),
+                crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
             );
+            // 元素模式：JSON 列表元素按对象注入 result（`.data[*]` 等
+            // 规则产出的元素为 JSON 对象，`name: novelName` 裸键访问依赖
+            // result 对象语义；缺省字符串注入 → 字段取空 → 搜索 0 结果）
+            elem_analyzer.set_element_content(elem.clone());
 
             let name = eval_rule_string(&elem_analyzer, name_rule).unwrap_or_default();
             if name.is_empty() {
@@ -609,6 +832,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         source: &BookSource,
         book_url: &str,
     ) -> LegadoResult<WebBookInfo> {
+        acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求书籍详情页
@@ -659,6 +883,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
     }
 
     async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String> {
+        acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
 
         // 1. 请求章节页面（章节 URL 可能是「url,{json}」带请求选项的格式，
@@ -674,7 +899,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let mut body = self
             .fetch_url(&analyze_chapter, source_headers.as_ref())
             .await?;
-
+    
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &body, &chapter.url, 200)?;
 
@@ -720,6 +945,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 神漫画等内容 JS 依赖 chapter.index + book.totalChapterNum
         let total_chapters = infer_total_chapter_num(&body, chapter);
 
+        // 书山等聚合源正文依赖书源上下文 setup（header 规则注入 + loginHeader）
+        let content_setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
         let (first_content, next_urls) = parse_content_page_with_bindings(
             body,
             content_rule_str,
@@ -728,6 +956,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             Some(source),
             is_media,
             source.js_lib.as_deref(),
+            content_setup.clone(),
             Some(&chapter.title),
             Some(chapter.index),
             Some(total_chapters),
@@ -748,6 +977,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             next_url_rule,
             is_media,
             source.js_lib.as_deref(),
+            content_setup.clone(),
             Some(chapter_title.as_str()),
             Some(chapter_index),
             Some(total_chapters),
@@ -811,7 +1041,16 @@ impl RealBookSourceFetcher {
         known_toc_url: Option<&str>,
         book_name_hint: Option<&str>,
     ) -> LegadoResult<Vec<WebChapter>> {
+        acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
+        // 书山聚合等聚合源详情/目录 `<js>` 脚本依赖 jsLib 函数（getServerHost 等）
+        // 与书源上下文 setup；jsLib 需 sanitize（去 Rhino 特有 Packages 行）后注入，
+        // 否则 init 规则失败 → tocUrl 规则 result 缺 source/book_url → /catalog
+        // 请求「无效书源」。— 书山目录修复
+        let js_lib_sanitized = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
         let t0 = std::time::Instant::now();
 
         let info_rule = source.rule_book_info.as_ref();
@@ -850,16 +1089,14 @@ impl RealBookSourceFetcher {
                     .await?;
                 Self::execute_login_check(source, &info_body, book_url, 200)?;
                 if book_name.is_empty() {
-                    let setup_script =
-                        crate::api::source_js_bindings::book_source_js_setup_script(source)
-                            .ok();
                     let info_analyzer =
                         crate::js_executor::construct_analyzer_with_source_context(
                             info_body.clone(),
                             book_url.to_string(),
                             &source.book_source_url,
-                            source.js_lib.as_deref(),
-                            setup_script,
+                            js_lib_sanitized.as_deref(),
+                            crate::api::source_js_bindings::book_source_js_setup_script(source)
+                                .ok(),
                         );
                     book_name = info_rule
                         .and_then(|r| r.name.as_deref())
@@ -912,25 +1149,23 @@ impl RealBookSourceFetcher {
             // 1.5 loginCheckJs 登录检测
             Self::execute_login_check(source, &info_body, book_url, 200)?;
 
-            let setup_script =
-                crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
             let mut info_analyzer = crate::js_executor::construct_analyzer_with_source_context(
                 info_body.clone(),
                 book_url.to_string(),
                 &source.book_source_url,
-                source.js_lib.as_deref(),
-                setup_script,
+                js_lib_sanitized.as_deref(),
+                crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
             );
 
-            // 与详情解析一致：init 执行结果回写内容（七猫 qmBookInfo 生成的
-            // chapter-list toc_url 在 init 结果里，不回写则 raw_toc 解析到
-            // 原始详情响应的 reader/detail → 目录请求详情页 → 「暂无章节」）
+            // 1.6 详情页 init（对齐原版 analyzeBookInfo：init 结果 setContent 后
+            // 再解析字段；书山聚合 init 把 data:URI hex detail JSON 转为
+            // /details 响应，tocUrl 规则依赖其中的 source/book_url/title）
             if let Some(init_rule) = info_rule.and_then(|r| r.init.as_deref()) {
                 let init_rule = init_rule.trim();
                 if !init_rule.is_empty() {
                     if let Ok(init_result) = info_analyzer.get_string(init_rule) {
                         if !init_result.is_empty() {
-                            info_analyzer.set_content(init_result);
+                            info_analyzer.set_element_content(init_result);
                         }
                     }
                 }
@@ -995,16 +1230,12 @@ impl RealBookSourceFetcher {
             chapter_list_rule = stripped;
         }
 
-        // qmToc 生成章节 URL 依赖 qmGetUrl→qmLogin（source 上下文），
-        // 与详情解析同样必须注入 setup
-        let setup_script =
-            crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
         let analyzer = crate::js_executor::construct_analyzer_with_source_context(
             toc_body,
             toc_url.clone(),
             &source.book_source_url,
-            source.js_lib.as_deref(),
-            setup_script.clone(),
+            js_lib_sanitized.as_deref(),
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         )
         .with_js_binding(
             "book",
@@ -1038,13 +1269,14 @@ impl RealBookSourceFetcher {
 
         // 对齐原版 BookChapterList：单一 AnalyzeRule + setContent(item) 循环，
         // 复用 stringRuleCache / JsExecutor，避免每章新建解析器（数百章时差一个数量级）。
-        let mut elem_analyzer = crate::js_executor::construct_analyzer_with_source_context(
-            String::new(),
-            toc_url.clone(),
-            &source.book_source_url,
-            source.js_lib.as_deref(),
-            setup_script,
-        );
+        let mut elem_analyzer =
+            crate::js_executor::construct_analyzer_with_source_context(
+                String::new(),
+                toc_url.clone(),
+                &source.book_source_url,
+                js_lib_sanitized.as_deref(),
+                crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+            );
 
         let t_parse = std::time::Instant::now();
         let mut chapters = Vec::with_capacity(elements.len());
@@ -1146,12 +1378,15 @@ impl RealBookSourceFetcher {
                     let page_body = self
                         .fetch_simple_cached(&next_url, source_headers.as_ref(), true)
                         .await?;
-                    let page_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
-                        page_body,
-                        next_url.clone(),
-                        &source.book_source_url,
-                        source.js_lib.as_deref(),
-                    );
+                    let page_analyzer =
+                        crate::js_executor::construct_analyzer_with_source_context(
+                            page_body,
+                            next_url.clone(),
+                            &source.book_source_url,
+                            js_lib_sanitized.as_deref(),
+                            crate::api::source_js_bindings::book_source_js_setup_script(source)
+                                .ok(),
+                        );
                     let page_elements = if chapter_list_rule.is_empty() {
                         vec![page_analyzer.content().to_string()]
                     } else {
@@ -1339,7 +1574,7 @@ impl RealBookSourceFetcher {
         }
 
         // B3.4 去重 + 反转管线（对标 Kotlin BookChapterList 双反转去重逻辑，去重键为 url）
-        let chapters = if reverse {
+        let mut chapters = if reverse {
             // "-" 前缀：先去重（保留首次），再反转
             let mut deduped = dedupe_first_by_url(chapters);
             deduped.reverse();
@@ -1348,6 +1583,39 @@ impl RealBookSourceFetcher {
             // 默认：等价于 Kotlin reverse→去重→reverse，即去重保留最后一次出现、保持原顺序
             dedupe_last_by_url(chapters)
         };
+
+        // B3.5 formatJs 标题格式化（对齐 Kotlin BookChapterList.analyzeChapterList：
+        //      对每章以 bindings {index(1-based)/title/chapter/gInt=0} eval(formatJs)，
+        //      结果改写 bookChapter.title）
+        let format_js = toc_rule
+            .and_then(|r| r.format_js.as_deref())
+            .unwrap_or("")
+            .trim();
+        if !format_js.is_empty() && !chapters.is_empty() {
+            for (i, ch) in chapters.iter_mut().enumerate() {
+                let chapter_json =
+                    serde_json::to_string(&*ch).unwrap_or_else(|_| "{}".to_string());
+                let title_json = serde_json::to_string(&ch.title)
+                    .unwrap_or_else(|_| "\"\"".to_string());
+                let index_json = serde_json::to_string(&(i as i32 + 1)).unwrap();
+                let mut fa = crate::js_executor::construct_analyzer_with_js_lib(
+                    String::new(),
+                    toc_url.clone(),
+                    &source.book_source_url,
+                    js_lib_sanitized.as_deref(),
+                );
+                fa.add_js_binding("index", &index_json);
+                fa.add_js_binding("title", &title_json);
+                fa.add_js_binding("chapter", &chapter_json);
+                fa.add_js_binding("gInt", "0");
+                let new_title = fa
+                    .get_string(&format!("@js:{format_js}"))
+                    .unwrap_or_default();
+                if !new_title.is_empty() {
+                    ch.title = new_title;
+                }
+            }
+        }
 
         Ok(chapters)
     }
@@ -1369,6 +1637,12 @@ fn infer_total_chapter_num(body: &str, chapter: &WebChapter) -> i32 {
         }
     }
     chapter.index.saturating_add(1)
+}
+
+/// 抓取结果：响应体 + 最终 URL（对标 Kotlin `StrResponse.body` / `StrResponse.url`）
+struct FetchedPage {
+    body: String,
+    final_url: String,
 }
 
 /// 对齐 Kotlin `WebBook.checkRedirect`：请求 URL 与最终 URL 不同时打日志
@@ -1576,6 +1850,7 @@ fn parse_content_page_with_js_lib(
         None,
         is_media,
         js_lib,
+        None, // setup_script：测试/旧调用无书源上下文
         chapter_title,
         None,
         None,
@@ -1596,37 +1871,38 @@ fn parse_content_page_with_bindings(
     source: Option<&BookSource>,
     is_media: bool,
     js_lib: Option<&str>,
+    setup_script: Option<String>,
     chapter_title: Option<&str>,
     chapter_index: Option<i32>,
     book_total_chapter_num: Option<i32>,
     chapter_variable_json: Option<&str>,
 ) -> (String, Vec<String>) {
-    // 正文解析注入书源上下文 setup（source/java 全局）：七猫四合一等书源
-    // ruleContent qmReadContent→qmNovelContent 依赖 source（qmReaderType/
-    // qmCommentsAllowed/qmCommentConfig 读登录态），仅注入 jsLib 或字符串
-    // source 会抛错/取默认 → 正文异常；无 source 上下文（测试/分页降级）时
-    // 退回旧行为（仅 jsLib）
+    // 书山等聚合源正文规则依赖书源上下文（getSecretKey → source.getLoginHeader、
+    // getServerHost/deviceType → jsLib）与 header 规则注入（java.ajax 携带
+    // X-Novel-Token/X-Api-Key）；construct_analyzer_with_js_lib 仅有 jsLib 无
+    // setup → source 绑定为 URL 字符串 → getSecretKey 取不到 loginHeader →
+    // X-Api-Key 空 → 正文密文。— 书山正文修复（2026-08-17）
+    let js_lib_sanitized = js_lib
+        .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
     let mut analyzer = if let Some(src) = source {
-        let setup_script =
-            crate::api::source_js_bindings::book_source_js_setup_script(src).ok();
         crate::js_executor::construct_analyzer_with_source_context(
             body,
             page_url.to_string(),
             &src.book_source_url,
-            js_lib,
+            js_lib_sanitized.as_deref(),
             setup_script,
         )
     } else {
+        // 无书源上下文（测试/分页降级）：退回旧行为（仅 jsLib）
         crate::js_executor::construct_analyzer_with_js_lib(
             body,
             page_url.to_string(),
             "",
-            js_lib,
+            js_lib_sanitized.as_deref(),
         )
     };
-    // 注入原版 evalJS bindings：chapter/title/book（result/src/baseUrl
-    // 由 AnalyzeRule.execute_js_rule 自动注入；source 由 setup 绑定真实书源对象，
-    // 不再以字符串覆盖）——漫画/视频书源正文 JS 依赖这些变量
+    // 注入原版 evalJS bindings：chapter/title/book（result/src/baseUrl 由
+    // AnalyzeRule.execute_js_rule 自动注入）——漫画/视频书源正文 JS 依赖这些变量
     // （如 `chapter.title`、`chapter.index`、`book.totalChapterNum`）。
     let title = chapter_title.unwrap_or("");
     let t_json = serde_json::to_string(title).unwrap_or_else(|_| "\"\"".to_string());
@@ -1709,6 +1985,7 @@ async fn fetch_paginated_content<F, Fut>(
     next_url_rule: &str,
     is_media: bool,
     js_lib: Option<&str>,
+    setup_script: Option<String>,
     chapter_title: Option<&str>,
     chapter_index: Option<i32>,
     book_total_chapter_num: Option<i32>,
@@ -1744,6 +2021,7 @@ where
                             None,
                             is_media,
                             js_lib,
+                            setup_script.clone(),
                             chapter_title,
                             chapter_index,
                             book_total_chapter_num,
@@ -1777,6 +2055,7 @@ where
                     None,
                     is_media,
                     js_lib,
+                    setup_script.clone(),
                     chapter_title,
                     chapter_index,
                     book_total_chapter_num,
@@ -1984,9 +2263,16 @@ fn optional_field(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> Option<S
 
 /// 判断 URL 是否命中 bookUrlPattern 正则（对标 Kotlin `baseUrl.matches(it.toRegex())`）
 ///
+/// Kotlin `String.matches(regex)` 要求整个字符串匹配正则，等价于将书源正则
+/// 锚定为 `^(?:pattern)$`；Rust `Regex::is_match` 是部分匹配（find 语义），
+/// 会把 `m.qibuge.com/s.php` 误判为命中 `(https?://)?(www.)?m.qibuge.com`
+/// 而错误进入"详情页直连"分支，导致搜索结果页被当详情页解析 → 搜索 0 结果。
+/// 修复：锚定后全匹配（与 Kotlin matches 语义一致）。
+///
 /// 正则非法/编译失败（compile_regex_safe 栈溢出防护）时静默返回 false，不影响主流程。
 fn matches_book_url_pattern(pattern: &str, url: &str) -> bool {
-    compile_regex_safe(pattern)
+    let anchored = format!("^(?:{})$", pattern);
+    compile_regex_safe(&anchored)
         .map(|re| re.is_match(url))
         .unwrap_or(false)
 }
@@ -2365,6 +2651,929 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
 mod tests {
     use super::*;
     use legado_core::models::book_source::book_source_type;
+
+    /// 书山聚合目录回归：真实书源 + 真实 data: URI bookUrl 调 webbook_chapters。
+    /// 覆盖链路：data:URI hex 解码 → init 规则 java.ajax(/details)（带书源
+    /// header 规则 X-Novel-Token + JSON Content-Type）→ tocUrl 规则产出
+    /// catalogUrl → chapterList java.ajax(/catalog) → 章节列表。
+    /// — 书山目录修复（2026-08-17）
+    #[test]
+    fn test_shushan_real_toc_repro() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| n.contains("书山"))
+        }) else {
+            eprintln!("未找到书山聚合源，跳过");
+            return;
+        };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        use base64::Engine;
+        // 书库阁书（目录+正文链路回归；正文为 VIP 提示文本，非空即可）
+        let detail_url = "http://www.shukuge.com/book/117256/";
+        let b64_url = base64::engine::general_purpose::STANDARD.encode(detail_url);
+        let detail = serde_json::json!({
+            "source": "书库阁",
+            "url": b64_url,
+            "name": "一念永恒测试",
+        });
+        let b64_detail = base64::engine::general_purpose::STANDARD.encode(detail.to_string());
+        let book_url = format!(r#"data:detailsUrl;base64,{},{{"type":"susan"}}"#, b64_detail);
+        // 真实番茄书（5556 模拟器书架导出）：验证登录后正文返回明文
+        let real_book_url = std::fs::read_to_string("C:/Users/Public/real_bookurl.txt")
+            .unwrap_or_default();
+        let book_url = if !real_book_url.trim().is_empty() {
+            real_book_url.trim().to_string()
+        } else {
+            book_url
+        };
+        let source_json = serde_json::to_string(&source).unwrap();
+        // 注入设备 ID（对齐 Flutter 启动时 RustApi._injectDeviceId）
+        legado_js::host_api::device_id::set_device_id("62d8d4fb53e19733");
+        // V1 登录回归：书山 login() 在书源上下文执行 → putLoginHeader(api_key)
+        // → sync 落库 → 正文请求携带 X-Api-Key 返回明文
+        crate::api::source_login_cache::put_login_info(
+            &source.book_source_url,
+            r#"{"邮箱":"512824117@qq.com","密码":"zgh5201214"}"#,
+        )
+        .unwrap();
+        let login_out = match crate::api::source_login_v1_api::eval_login_v1(&source_json, "login") {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("[repro] V1 登录执行错误: {e}");
+                String::new()
+            }
+        };
+        eprintln!(
+            "[repro] V1 登录结果: {}",
+            login_out.chars().take(80).collect::<String>()
+        );
+        let lh = crate::api::source_login_cache::get_login_header(&source.book_source_url)
+            .unwrap_or_default();
+        eprintln!(
+            "[repro] loginHeader: {}",
+            lh.chars().take(60).collect::<String>()
+        );
+        assert!(
+            !lh.is_empty() && lh != "null",
+            "书山 V1 登录应写入 loginHeader(api_key): {lh:?}"
+        );
+        let result = webbook_chapters(&source_json, &book_url, "", "");
+        let chapters: Vec<serde_json::Value> = match result {
+            Ok(s) => {
+                let arr: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+                eprintln!("[repro] 目录 {} 章", arr.len());
+                assert!(arr.len() > 5, "书山目录应 >5 章，实际 {}", arr.len());
+                arr
+            }
+            Err(e) => panic!("[repro] 书山目录失败: {e}"),
+        };
+        // 正文回归：取第一章 data:chapterUrl 调 webbook_content
+        let first = chapters.first().cloned().unwrap_or_default();
+        let ch_url = first.get("url").and_then(|u| u.as_str()).unwrap_or("");
+        eprintln!("[repro] 第一章 url 前缀: {}", &ch_url[..ch_url.len().min(120)]);
+        if !ch_url.is_empty() {
+            let ch_json = serde_json::json!({
+                "url": ch_url,
+                "title": first.get("title").and_then(|t| t.as_str()).unwrap_or(""),
+                "index": 0,
+                "is_vip": false,
+            })
+            .to_string();
+
+            let content = webbook_content(&source_json, &ch_json);
+            match content {
+                Ok(c) => {
+                    eprintln!("[repro] 正文前120: {}", c.chars().take(120).collect::<String>());
+                    assert!(c.trim().len() > 50, "正文应非空，实际 {}", c.trim().len());
+                }
+                Err(e) => panic!("[repro] 书山正文失败: {e}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_decode_web_response_gbk_meta_and_header() {
+        let mut meta_headers = HashMap::new();
+        let (html, _, _) = encoding_rs::GBK.encode(r#"<html><head><meta charset="gbk"></head><body>目录章节</body></html>"#);
+        assert!(decode_web_response(&html, &meta_headers, None).contains("目录章节"));
+
+        let mut header_headers = HashMap::new();
+        header_headers.insert("Content-Type".to_string(), "text/html; charset=gbk".to_string());
+        let (plain, _, _) = encoding_rs::GBK.encode("正文内容");
+        assert_eq!(decode_web_response(&plain, &header_headers, None), "正文内容");
+
+        meta_headers.insert("Content-Type".to_string(), "text/html; charset=utf-8".to_string());
+        assert_eq!(decode_web_response(&plain, &meta_headers, Some("gbk")), "正文内容");
+
+        let mut spaced_header = HashMap::new();
+        spaced_header.insert("content-type".to_string(), "text/html; Charset = GBK".to_string());
+        assert_eq!(decode_web_response(&plain, &spaced_header, None), "正文内容");
+
+        let (single_quote, _, _) = encoding_rs::GBK.encode(
+            r#"<html><head><meta charset='GBK'></head><body>单引号</body></html>"#,
+        );
+        assert!(decode_web_response(&single_quote, &HashMap::new(), None).contains("单引号"));
+
+        let (http_equiv, _, _) = encoding_rs::GBK.encode(
+            r#"<html><head><meta http-equiv="Content-Type" content="text/html; charset = gbk"></head><body>兼容声明</body></html>"#,
+        );
+        assert!(decode_web_response(&http_equiv, &HashMap::new(), None).contains("兼容声明"));
+
+        let fake = b"<html><body><script>var charset = gbk;</script>plain utf8</body></html>";
+        assert_eq!(charset_from_html_meta(fake), None);
+    }
+
+    /// 批量搜索扫描（2026-08-17）：人工实网诊断，不作为 CI 回归门禁。
+    /// fixture/源站网络波动时只输出统计；需手工运行并对照原版。
+    #[test]
+    #[ignore = "外部 fixture 与源站网络诊断，非确定性 CI 测试"]
+    fn test_batch_search_scan_text_sources() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let mut scanned = 0;
+        let mut ok = 0;
+        let mut empty = 0;
+        let mut failed = 0;
+        for src in sources.iter() {
+            let st = src.get("bookSourceType").and_then(|v| v.as_i64()).unwrap_or(0);
+            if st != 0 { continue; }
+            let name = src.get("bookSourceName").and_then(|n| n.as_str()).unwrap_or("");
+            let url = src.get("bookSourceUrl").and_then(|n| n.as_str()).unwrap_or("");
+            if !url.contains("://") { continue; }
+            let Ok(source) =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap())
+            else {
+                continue;
+            };
+            if source.rule_search.as_ref().and_then(|r| r.book_list.as_deref()).unwrap_or("").is_empty() {
+                continue;
+            }
+            scanned += 1;
+            let source_json = serde_json::to_string(&source).unwrap();
+            match webbook_search(&source_json, "一念", 1) {
+                Ok(s) => {
+                    let arr: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+                    if arr.is_empty() {
+                        empty += 1;
+                        eprintln!("[scan-empty] {} | {}", name, url);
+                    } else {
+                        ok += 1;
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    eprintln!("[scan-fail] {} | {} | {}", name, url, e.to_string().chars().take(120).collect::<String>());
+                }
+            }
+            if scanned >= 120 { break; }
+        }
+        eprintln!("[scan-summary] scanned={} ok={} empty={} failed={}", scanned, ok, empty, failed);
+    }
+
+    /// 扩展扫描：跳过前 120 个 type-0，再扫 200 个，供人工对照原版。
+    #[test]
+    #[ignore = "外部源站批量诊断，非确定性 CI 测试"]
+    fn test_batch_search_scan_extended_wave2() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let out_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_parity/scan_wave2.jsonl"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            eprintln!("sources_device.json 缺失，跳过");
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let mut skip = 0usize;
+        let mut scanned = 0usize;
+        let mut ok = 0usize;
+        let mut empty = 0usize;
+        let mut failed = 0usize;
+        let mut lines: Vec<String> = Vec::new();
+        for src in sources.iter() {
+            let st = src.get("bookSourceType").and_then(|v| v.as_i64()).unwrap_or(0);
+            if st != 0 {
+                continue;
+            }
+            let name = src
+                .get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .unwrap_or("");
+            let url = src
+                .get("bookSourceUrl")
+                .and_then(|n| n.as_str())
+                .unwrap_or("");
+            if !url.contains("://") {
+                continue;
+            }
+            let Ok(source) =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap())
+            else {
+                continue;
+            };
+            if source
+                .rule_search
+                .as_ref()
+                .and_then(|r| r.book_list.as_deref())
+                .unwrap_or("")
+                .is_empty()
+            {
+                continue;
+            }
+            if skip < 120 {
+                skip += 1;
+                continue;
+            }
+            scanned += 1;
+            let source_json = serde_json::to_string(&source).unwrap();
+            let (status, detail, count) = match webbook_search(&source_json, "一念", 1) {
+                Ok(s) => {
+                    let arr: Vec<serde_json::Value> =
+                        serde_json::from_str(&s).unwrap_or_default();
+                    if arr.is_empty() {
+                        empty += 1;
+                        ("empty", String::new(), 0usize)
+                    } else {
+                        ok += 1;
+                        ("ok", String::new(), arr.len())
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    (
+                        "fail",
+                        e.to_string().chars().take(160).collect::<String>(),
+                        0usize,
+                    )
+                }
+            };
+            if status != "ok" {
+                eprintln!("[wave2-{}] {} | {} | {}", status, name, url, detail);
+            }
+            lines.push(
+                serde_json::json!({
+                    "status": status,
+                    "name": name,
+                    "url": url,
+                    "count": count,
+                    "detail": detail,
+                })
+                .to_string(),
+            );
+            if scanned >= 200 {
+                break;
+            }
+        }
+        let _ = std::fs::write(out_path, lines.join("\n"));
+        eprintln!(
+            "[wave2-summary] scanned={} ok={} empty={} failed={} out={}",
+            scanned, ok, empty, failed, out_path
+        );
+    }
+
+    /// 七步阁 GBK POST 搜索回归（2026-08-17）：bookUrlPattern 全匹配修复
+    /// （m.qibuge.com 正则不得命中 /s.php 搜索页 URL）
+    #[test]
+    fn test_qibuge_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("七步阁"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup,
+        );
+        eprintln!("[qibuge] request_body: {:?}", au.request_body());
+        eprintln!("[qibuge] request_body={:?} encoded_form={:?} headers={:?}", au.request_body(), au.encoded_form(), au.headers());
+        eprintln!("[qibuge] URL: {} method: {:?} body: {:?} charset: {:?}",
+            au.url(), au.method(), au.body(), au.charset());
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let headers = crate::api::web_book::RealBookSourceFetcher::parse_source_headers(&source);
+        eprintln!("[qibuge] source_headers: {:?}", headers);
+        let body = crate::runtime::block_on(fetcher.fetch_url(&au, headers.as_ref()))
+            .unwrap_or_default();
+        eprintln!("[qibuge] 响应体前300: {}", body.chars().take(300).collect::<String>());
+        eprintln!("[qibuge] 长度: {}", body.len());
+        eprintln!("[qibuge] has_sone: {}", body.contains("sone"));
+        eprintln!("[qibuge] 全文: {}", body.chars().take(1500).collect::<String>());
+        // 完整 search 链路验证
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[qibuge] search 结果数: {}", list.len());
+                assert!(list.len() > 0, "七步阁搜索应有结果，实际 {}", list.len());
+                for it in list.iter().take(5) {
+                    eprintln!("[qibuge]   -> {} | {} | {}", it.name, it.author, it.book_url);
+                }
+            }
+            Err(err) => panic!("[qibuge] search 失败: {:?}", err),
+        }
+    }
+
+    /// 七步阁 GBK 目录/正文回归：详情页 meta charset=gbk 必须在简单 GET 路径正确解码。
+    #[test]
+    fn test_qibuge_catalog_and_content_gbk() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("七步阁"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let source_json = serde_json::to_string(&source).unwrap();
+        let search = webbook_search(&source_json, "一念", 1).expect("七步阁搜索失败");
+        let books: Vec<serde_json::Value> = serde_json::from_str(&search).unwrap();
+        let first = books.first().expect("七步阁搜索应有结果");
+        let book_url = first.get("book_url").and_then(|v| v.as_str()).expect("缺少 book_url");
+        let book_name = first.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(!book_name.contains('�'), "搜索书名乱码: {book_name}");
+
+        let info = webbook_info(&source_json, book_url).expect("七步阁详情失败");
+        let info: serde_json::Value = serde_json::from_str(&info).unwrap();
+        let toc_url = info.get("toc_url").and_then(|v| v.as_str()).unwrap_or("");
+        let chapters = webbook_chapters(&source_json, book_url, toc_url, book_name).expect("七步阁目录失败");
+        let chapters: Vec<serde_json::Value> = serde_json::from_str(&chapters).unwrap();
+        let first_chapter = chapters.first().expect("七步阁目录应有章节");
+        let chapter_title = first_chapter.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(!chapter_title.is_empty() && !chapter_title.contains('�'), "目录标题乱码: {chapter_title:?}");
+
+        let content = webbook_content(&source_json, &first_chapter.to_string()).expect("七步阁正文失败");
+        assert!(content.chars().count() > 30, "正文过短: {}", content.chars().count());
+        assert!(!content.contains('�'), "正文乱码: {}", content.chars().take(120).collect::<String>());
+        eprintln!("[qibuge-gbk] 书名={book_name}，目录首章={chapter_title}，正文前80={}", content.chars().take(80).collect::<String>());
+    }
+
+    /// 77读书网 搜索诊断（2026-08-17）：站点返回 47KB 含结果，规则 class.BOX@tr!0 解析为 0
+    #[test]
+    fn test_77shuku_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("77读书"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup.clone(),
+        );
+        eprintln!("[77] URL: {} method: {:?} headers: {:?}", au.url(), au.method(), au.headers());
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let headers = crate::api::web_book::RealBookSourceFetcher::parse_source_headers(&source);
+        let body = crate::runtime::block_on(fetcher.fetch_url(&au, headers.as_ref()))
+            .unwrap_or_default();
+        eprintln!("[77] 长度: {} 含一念: {}", body.len(), body.contains("一念"));
+        eprintln!("[77] 含BOX: {} 含table: {} 含tr: {}",
+            body.contains("BOX"), body.contains("<table"), body.contains("<tr"));
+        let analyzer = crate::js_executor::construct_analyzer_with_source_context(
+            body.clone(),
+            au.url().to_string(),
+            &source.book_source_url,
+            None,
+            setup.clone(),
+        );
+        for probe in ["class.BOX@tr!0", "table@tr!0", "table@tr", "css(table tr)", "css(tr)", "tr", "tag.tr", "class.BOX", "css(.BOX)", "css(table)", "class.BOX@tr", "class.BOX@table@tr", "table@tr!0@", "tag.table@tag.tr!0", "tag.table@tag.tr"].iter() {
+            let n = analyzer.get_elements(probe).unwrap_or_default().len();
+            eprintln!("[77] probe {probe:?} -> {n}");
+        }
+        if let Some(i) = body.find("BOX") {
+            eprintln!("[77] BOX 上下文: {:?}", body[i.saturating_sub(80)..(i + 300).min(body.len())].chars().collect::<String>());
+        }
+        // 字段级诊断：第一个元素的 name/author/bookUrl 提取
+        let elems77 = analyzer.get_elements("class.BOX@tr!0").unwrap_or_default();
+        if let Some(elem) = elems77.get(0) {
+            let mut ea = crate::js_executor::construct_analyzer_with_source_context(
+                elem.clone(),
+                au.url().to_string(),
+                &source.book_source_url,
+                None,
+                setup.clone(),
+            );
+            ea.set_element_content(elem.clone());
+            let rn = ea.get_string_ex("tag.td.2@a@text", false, false);
+            let rb = ea.get_string_ex("tag.td.2@a@href", true, false);
+            eprintln!("[77] elem0 name={:?} bookUrl={:?}", rn, rb);
+            for probe in ["tag.td.2@a@text", "tag.td@a@text", "td.2@a@text", "td@a@text", "tag.td.2", "css(td:eq(2) a)", "a.0@text", "css(a)", "tag.a@text", "tag.td@tag.a@text", "tag.td.2@tag.a@text"] {
+                let v = ea.get_string_ex(probe, false, false).unwrap_or_default();
+                eprintln!("[77]   probe {probe:?} -> {:?}", v.chars().take(30).collect::<String>());
+            }
+            eprintln!("[77] elem0 前200: {:?}", elem.chars().take(200).collect::<String>());
+        }
+        assert!(elems77.len() > 0, "77读书网 bookList 应解析出元素，实际 {}", elems77.len());
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[77] search 结果数: {}", list.len());
+                assert!(list.len() > 0, "77读书网搜索应有结果，实际 {}", list.len());
+                for it in list.iter().take(3) {
+                    eprintln!("[77]   -> {} | {}", it.name, it.book_url);
+                }
+            }
+            Err(err) => panic!("[77] search 失败: {:?}", err),
+        }
+    }
+
+    /// 淘小说 @js md5 签名搜索诊断（2026-08-17）
+    #[test]
+    fn test_taoxiaoshuo_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("淘小说"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let setup =
+            crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""),
+            "一念",
+            1,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            setup,
+        );
+        eprintln!("[taoxs] URL: {}", au.url());
+        // 直接测试 @js: 块执行（绕过静默回退）
+        let exec = crate::js_executor::QuickJsExecutor::new(&source.book_source_url)
+            .with_js_lib(source.js_lib.as_deref().map(|s| s.to_string()))
+            .with_setup_script(crate::api::source_js_bindings::book_source_js_setup_script(&source).ok());
+        let js_code = source.search_url.as_deref().unwrap_or("").trim_start_matches("@js:").trim_start();
+        eprintln!("[taoxs] js_code 前150: {:?}", js_code.chars().take(150).collect::<String>());
+        let vars = std::collections::HashMap::from([("key".to_string(), "一念".to_string()), ("page".to_string(), "1".to_string())]);
+        let parsed = crate::legado_parser::AnalyzeUrl::parse_with_js(
+            source.search_url.as_deref().unwrap_or(""),
+            &vars,
+            1,
+            &exec,
+        );
+        match parsed {
+            Ok(u) => eprintln!("[taoxs] parse_with_js OK: {}", u.url()),
+            Err(err) => eprintln!("[taoxs] parse_with_js ERR: {:?}", err),
+        }
+        eprintln!("[taoxs] method: {:?} headers: {:?}", au.method(), au.headers());
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let headers = crate::api::web_book::RealBookSourceFetcher::parse_source_headers(&source);
+        let body = crate::runtime::block_on(fetcher.fetch_url(&au, headers.as_ref()))
+            .unwrap_or_default();
+        eprintln!("[taoxs] 响应长度: {} 前200: {:?}", body.len(), body.chars().take(200).collect::<String>());
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[taoxs] search 结果数: {}", list.len());
+                assert!(list.len() > 0, "淘小说搜索应有结果，实际 {}", list.len());
+                for it in list.iter().take(3) {
+                    eprintln!("[taoxs]   -> {} | {}", it.name, it.book_url);
+                }
+            }
+            Err(err) => panic!("[taoxs] search 失败: {:?}", err),
+        }
+    }
+
+
+    /// 企鹅小说 setup 依赖搜索验证（2026-08-17）：searchUrl 用
+    /// `{{url=source.getKey();...}}`，缺 setup 时模板残留 → HTTP 404
+    #[test]
+    fn test_qiexs_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("企鹅小说"))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        // 直接构造 AnalyzeUrl 看中间态
+        let exec = crate::js_executor::QuickJsExecutor::new(&source.book_source_url)
+            .with_js_lib(source.js_lib.as_deref().map(|s| s.to_string()))
+            .with_setup_script(crate::api::source_js_bindings::book_source_js_setup_script(&source).ok());
+        let vars = std::collections::HashMap::from([
+            ("key".to_string(), "一念".to_string()),
+            ("page".to_string(), "1".to_string()),
+            ("baseUrl".to_string(), source.book_source_url.clone()),
+            ("searchKey".to_string(), "一念".to_string()),
+        ]);
+        let parsed = crate::legado_parser::AnalyzeUrl::parse_with_js(
+            source.search_url.as_deref().unwrap_or(""),
+            &vars,
+            1,
+            &exec,
+        );
+        match &parsed {
+            Ok(u) => eprintln!("[qiexs] parse_with_js OK: {}", u.url()),
+            Err(err) => eprintln!("[qiexs] parse_with_js ERR: {:?}", err),
+        }
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[qiexs] search 结果数: {}", list.len());
+                assert!(list.len() > 0, "企鹅小说搜索应有结果，实际 {}", list.len());
+                for it in list.iter().take(3) {
+                    eprintln!("[qiexs]   -> {} | {}", it.name, it.book_url);
+                }
+            }
+            Err(err) => panic!("[qiexs] search 失败: {:?}", err),
+        }
+    }
+
+    /// 新笔趣阁 @js: 重定向拦截搜索验证（2026-08-17）：searchUrl 用
+    /// java.get(su,{}).headers('Location')[0] 需 jsoup Response 语义桥
+    #[test]
+    fn test_xbqgxs_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains("新笔趣阁") && s.get("bookSourceUrl").and_then(|u| u.as_str()).is_some_and(|u| u.contains("xbqgxs")))
+        }) else { return; };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        // 直接执行 @js: 块看错误
+        let exec = crate::js_executor::QuickJsExecutor::new(&source.book_source_url)
+            .with_js_lib(source.js_lib.as_deref().map(|s| s.to_string()))
+            .with_setup_script(crate::api::source_js_bindings::book_source_js_setup_script(&source).ok());
+        let vars = std::collections::HashMap::from([
+            ("key".to_string(), "一念".to_string()),
+            ("page".to_string(), "1".to_string()),
+            ("baseUrl".to_string(), source.book_source_url.clone()),
+        ]);
+        let parsed = crate::legado_parser::AnalyzeUrl::parse_with_js(
+            source.search_url.as_deref().unwrap_or(""),
+            &vars,
+            1,
+            &exec,
+        );
+        match &parsed {
+            Ok(u) => eprintln!("[xbqgxs] parse_with_js OK: {}", u.url().chars().take(150).collect::<String>()),
+            Err(err) => eprintln!("[xbqgxs] parse_with_js ERR: {:?}", err),
+        }
+        let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+        let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+        match results {
+            Ok(list) => {
+                eprintln!("[xbqgxs] search 结果数: {}", list.len());
+                assert!(list.len() > 0, "新笔趣阁搜索应有结果，实际 {}", list.len());
+                for it in list.iter().take(3) {
+                    eprintln!("[xbqgxs]   -> {} | {}", it.name, it.book_url);
+                }
+            }
+            Err(err) => panic!("[xbqgxs] search 失败: {:?}", err),
+        }
+    }
+
+    /// 新落秋/笔趣阁zdzn/天悦小说人工实网诊断：源站存在 IP 限频/WAF，不作为 CI 回归。
+    #[test]
+    #[ignore = "外部源站限频/WAF，手工诊断专用"]
+    fn test_js_network_sources_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else { return; };
+        for needle in ["新落秋", "天悦小说", "笔趣阁zdzn"] {
+            let Some(src) = sources.iter().find(|s| {
+                s.get("bookSourceName").and_then(|n| n.as_str()).is_some_and(|n| n.contains(needle))
+            }) else { continue; };
+            let source =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+            let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+            let results = crate::runtime::block_on(fetcher.search(&source, "一念", 1));
+            match results {
+                Ok(list) => eprintln!("[jsnet] {} -> {} 条", needle, list.len()),
+                Err(err) => eprintln!("[jsnet] {} -> 失败: {}", needle, err.to_string().chars().take(120).collect::<String>()),
+            }
+        }
+    }
+
+
+
+    /// 得间小说 {{host}} 全局变量离线回归：jsLib 定义 host，{{host}} 需 JS 求值。
+    #[test]
+    fn test_dejian_diag() {
+        let source = BookSource {
+            book_source_url: "https://wechat.idejian.com##".to_string(),
+            book_source_name: "得间小说".to_string(),
+            js_lib: Some("type = 'wechat'; host = 'https://' + type + '.idejian.com/api/' + type;".to_string()),
+            search_url: Some("{{host}}/search/do?keyword={{key}}&page={{page}}".to_string()),
+            ..BookSource::default()
+        };
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap(), "一念", 1, &source.book_source_url,
+            source.js_lib.as_deref(), crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        assert_eq!(
+            au.url(),
+            "https://wechat.idejian.com/api/wechat/search/do?keyword=%E4%B8%80%E5%BF%B5&page=1"
+        );
+    }
+
+    /// java.connect StrResponse.raw().request().url() 实网诊断：趣书源站重定向不稳定。
+    #[test]
+    #[ignore = "外部源站重定向，离线契约由 legado-js bridge test 覆盖"]
+    fn test_connect_str_response_search_url_no_undefined() {
+        let source = BookSource {
+            book_source_url: "https://qubook.org".to_string(),
+            book_source_name: "趣书".to_string(),
+            search_url: Some(r#"@js:
+burl = source.getKey();
+url = burl + "/e/search/";
+body = "show=title%2Cnewstext&keyboard=" + key;
+$ = java.post(url + "index.php", body, {}).headers();
+uri = $.Location || $.location;
+url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
+            ..BookSource::default()
+        };
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap(), "一念", 1, &source.book_source_url,
+            None, crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        assert!(!au.url().contains("undefined"), "趣书 URL 不应含 undefined: {}", au.url());
+        assert!(!au.url().starts_with("legado-js-error://"), "趣书 JS 不应失败: {}", au.url());
+    }
+
+    /// 趣书网吧人工实网诊断：依赖 fixture 与外部重定向；离线 result 绑定契约见 parser 测试。
+    #[test]
+    #[ignore = "外部源站/fixture 诊断，非确定性 CI 测试"]
+    fn test_qushu123_connect_search_diag() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json");
+        let Ok(raw) = std::fs::read_to_string(path) else { return; };
+        let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw) else { return; };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceUrl").and_then(|v| v.as_str()).is_some_and(|u| u.contains("qushu123.com"))
+        }) else { return; };
+        let source = serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap_or(""), "一念", 1, &source.book_source_url,
+            source.js_lib.as_deref(), crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        eprintln!("[qushu123] url={}", au.url());
+        assert!(!au.url().contains("undefined"), "趣书 URL 不应含 undefined: {}", au.url());
+        assert!(!au.url().starts_with("legado-js-error://"), "趣书 JS 不应失败: {}", au.url());
+    }
+
+    /// 天涯书库真实规则：source.key + java.post().header(location) 必须可构建搜索 URL。
+    #[test]
+    #[ignore = "外部重定向源诊断，离线 Response bridge 契约覆盖"]
+    fn test_tianyashuku_search_url_diag() {
+        let raw = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json")).unwrap();
+        let serde_json::Value::Array(sources) = serde_json::from_str::<serde_json::Value>(&raw).unwrap() else { return; };
+        let src = sources.iter().find(|s| s.get("bookSourceUrl").and_then(|v| v.as_str()).is_some_and(|u| u.contains("tianyashuku.net"))).unwrap();
+        let source = serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let au = crate::js_executor::build_search_url_with_setup(
+            source.search_url.as_deref().unwrap(), "一念", 1, &source.book_source_url,
+            source.js_lib.as_deref(), crate::api::source_js_bindings::book_source_js_setup_script(&source).ok(),
+        );
+        assert!(!au.url().contains("undefined"), "天涯 URL 不应含 undefined: {}", au.url());
+        assert!(!au.url().starts_with("legado-js-error://"), "天涯 JS 不应失败: {}", au.url());
+    }
+
+    /// org.jsoup + java.post(connectNR) 回归：云霄/键盘/天涯书库 searchUrl @js
+    #[test]
+    fn test_jsoup_post_redirect_search_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let needles = ["云霄小说", "键盘小说", "天涯书库", "玄幻文学"];
+        for needle in needles {
+            let Some(src) = sources.iter().find(|s| {
+                s.get("bookSourceName")
+                    .and_then(|n| n.as_str())
+                    .is_some_and(|n| n.contains(needle))
+            }) else {
+                eprintln!("[jsoup-diag] 未找到书源: {needle}");
+                continue;
+            };
+            let source =
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+            let setup =
+                crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
+            let au = crate::js_executor::build_search_url_with_setup(
+                source.search_url.as_deref().unwrap_or(""),
+                "一念",
+                1,
+                &source.book_source_url,
+                source.js_lib.as_deref(),
+                setup,
+            );
+            eprintln!("[{needle}] URL: {}", au.url());
+            assert!(
+                !au.url().contains("@js:") && !au.url().contains("<js>"),
+                "{needle} searchUrl JS 未渲染: {}",
+                au.url()
+            );
+            assert!(
+                !au.url().starts_with("legado-js-error://"),
+                "{needle} JS 求值失败: {}",
+                au.url()
+            );
+            assert!(
+                !au.url().ends_with("/null") && !au.url().contains("/null?"),
+                "{needle} Location 拦截失败落 /null: {}",
+                au.url()
+            );
+            let fetcher = crate::api::web_book::RealBookSourceFetcher::new().unwrap();
+            match crate::runtime::block_on(fetcher.search(&source, "一念", 1)) {
+                Ok(list) => eprintln!("[{needle}] search 结果数: {}", list.len()),
+                Err(err) => eprintln!(
+                    "[{needle}] search 失败: {}",
+                    err.to_string().chars().take(160).collect::<String>()
+                ),
+            }
+        }
+    }
+
+    /// 书书小说 allInOne `$1/$2` 目录回归（G8）
+    #[test]
+    fn test_shushu_all_in_one_toc_diag() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tmp_debug/e2e_5558/sources_device.json"
+        );
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let Ok(serde_json::Value::Array(sources)) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+        else {
+            return;
+        };
+        let Some(src) = sources.iter().find(|s| {
+            s.get("bookSourceName")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| n.contains("书书小说"))
+        }) else {
+            eprintln!("[shushu] 未找到书源");
+            return;
+        };
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let source_json = serde_json::to_string(&source).unwrap();
+        match webbook_search(&source_json, "斗破", 1) {
+            Ok(s) => {
+                let books: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+                eprintln!("[shushu] 搜索 {} 条", books.len());
+                if let Some(first) = books.first() {
+                    eprintln!(
+                        "[shushu] 首条 name={} url={}",
+                        first.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        first.get("book_url").and_then(|v| v.as_str()).unwrap_or("")
+                    );
+                }
+                assert!(
+                    !books.is_empty(),
+                    "书书小说搜索「斗破」应有列表结果，实际 {}",
+                    books.len()
+                );
+            }
+            Err(e) => panic!("书书搜索失败: {e}"),
+        }
+        // 目录/正文仍走已知 allInOne 书页（与搜索关键词无关）
+        let book_url = String::from("http://www.shushun.cc/read_81/");
+        let book_name = String::from("一念永恒");
+        eprintln!("[shushu] 书={book_name} url={book_url}");
+        let info = webbook_info(&source_json, &book_url).unwrap_or_default();
+        let info: serde_json::Value = serde_json::from_str(&info).unwrap_or_default();
+        let toc_url = info.get("toc_url").and_then(|v| v.as_str()).unwrap_or("");
+        let chapters = webbook_chapters(&source_json, &book_url, toc_url, &book_name)
+            .expect("书书小说目录应成功");
+        let chapters: Vec<serde_json::Value> = serde_json::from_str(&chapters).unwrap();
+        eprintln!("[shushu] 目录 {} 章", chapters.len());
+        assert!(
+            chapters.len() >= 2,
+            "书书小说 allInOne $n 目录过少: {}",
+            chapters.len()
+        );
+        let first_ch = chapters.first().unwrap();
+        let title = first_ch.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(!title.is_empty() && title != "$2", "章名未回填: {title}");
+        let ch_url = first_ch.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            !ch_url.is_empty() && !ch_url.contains("$1"),
+            "章 URL 未回填: {ch_url}"
+        );
+        match webbook_content(&source_json, &first_ch.to_string()) {
+            Ok(c) => eprintln!(
+                "[shushu] 正文 {} 字 前80={}",
+                c.chars().count(),
+                c.chars().take(80).collect::<String>()
+            ),
+            Err(e) => eprintln!(
+                "[shushu] 正文失败: {}",
+                e.to_string().chars().take(160).collect::<String>()
+            ),
+        }
+    }
+
+    /// 红薯小说 JSONP 人工实网诊断：离线 @json 后缀和 JSON 占位符回归覆盖核心语义。
+    #[test]
+    #[ignore = "外部源站 JSONP 诊断，非确定性 CI 测试"]
+    fn test_hongshu_jsonp_search_diag() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json");
+        let raw = std::fs::read_to_string(path).unwrap();
+        let serde_json::Value::Array(sources) = serde_json::from_str::<serde_json::Value>(&raw).unwrap() else { return; };
+        let src = sources.iter().find(|s| s.get("bookSourceUrl").and_then(|v| v.as_str()) == Some("https://g.hongshu.com/")).unwrap();
+        let source = serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
+        let source_json = serde_json::to_string(&source).unwrap();
+        let result = webbook_search(&source_json, "一念", 1);
+        eprintln!("[hongshu] result={:?}", result.as_ref().map(|s| s.chars().take(500).collect::<String>()));
+        assert!(result.is_ok(), "红薯搜索请求失败: {:?}", result.err());
+    }
+
     use legado_core::models::rule::ContentRule;
 
     fn make_source_json() -> String {
@@ -2495,6 +3704,25 @@ mod tests {
         // 空关键词应返回解析错误（engine 层校验）
         let err = webbook_search(&make_source_json(), "", 1).unwrap_err();
         assert!(err.to_string().contains("搜索关键词不能为空"));
+    }
+
+    #[test]
+    fn test_fetch_data_uri_shushan_format() {
+        use base64::Engine;
+        let detail = r#"{"source":"书山聚合","url":"https://v1.vossc.com/detail?book_id=123"}"#;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(detail);
+        let url = format!(r#"data:detailsUrl;base64,{},{{"type":"susan"}}"#, b64);
+        let result = fetch_data_uri_content(&url);
+        match result {
+            Some(Ok(body)) => {
+                eprintln!("body 前 120: {}", &body[..body.len().min(120)]);
+                // 验证是否合法 hex（仅 0-9a-f 且长度为偶数）
+                let hex_ok = body.len() % 2 == 0
+                    && body.bytes().all(|b| b.is_ascii_hexdigit());
+                eprintln!("合法 hex: {}", hex_ok);
+            }
+            other => eprintln!("fetch_data_uri_content = {:?}", other.map(|r| r.map(|b| b.len()))),
+        }
     }
 
     #[test]
@@ -2664,6 +3892,36 @@ mod tests {
         );
         // tocUrl 规则为空时回退 book_url
         assert_eq!(info.toc_url, "https://example.com/book/1");
+    }
+
+    #[test]
+    fn test_parse_book_info_og_property_suffix() {
+        use legado_core::models::rule::BookInfoRule;
+        let source = BookSource {
+            book_source_url: "http://www.shushun.cc".into(),
+            rule_book_info: Some(BookInfoRule {
+                name: Some("[property$=book_name]@content".into()),
+                author: Some("[property$=author]@content".into()),
+                ..BookInfoRule::default()
+            }),
+            ..BookSource::default()
+        };
+        let html = r#"<html><head>
+<meta property="og:novel:book_name" content="一念永恒">
+<meta property="og:novel:author" content="耳根">
+</head></html>"#;
+        let info = RealBookSourceFetcher::parse_book_info_from_body(
+            &source,
+            html.into(),
+            "http://www.shushun.cc/read_81/",
+            "http://www.shushun.cc/read_81/",
+            true,
+            "",
+            "",
+        );
+        assert_eq!(info.name, "一念永恒");
+        assert_eq!(info.author, "耳根");
+        assert_eq!(info.book_url, "http://www.shushun.cc/read_81/");
     }
 
     // ─── 缺口① nextContentUrl 分页测试（审计 2026-08-06） ─────────────
@@ -2846,8 +4104,10 @@ mod tests {
             "https://example.com",
             ".content@html",
             ".next@href",
+
               false,
               None,
+              None, // setup_script
               None,
               None,
               None,
@@ -2881,8 +4141,10 @@ mod tests {
               "https://example.com",
               ".content@html",
               "",
+
               false,
               None,
+              None, // setup_script
               None,
               None,
               None,
@@ -2926,8 +4188,10 @@ mod tests {
             "https://example.com",
             ".content@html",
             ".next@href&&.alt@href",
+
             false,
             None,
+            None, // setup_script
             None,
             None,
             None,
@@ -2970,8 +4234,10 @@ mod tests {
             "https://example.com",
             ".content@html",
             ".next@href",
+
             false,
             None,
+            None, // setup_script
             None,
             None,
             None,
@@ -3281,7 +4547,7 @@ mod tests {
 
     #[test]
     fn test_apply_content_web_hooks_source_regex() {
-        use legado_core::models::rule::ContentRule;
+
         let html = r#"<a href="https://cdn.example.com/v.mp4">play</a>"#;
         let rule = ContentRule {
             source_regex: Some(r".*\.mp4.*".into()),

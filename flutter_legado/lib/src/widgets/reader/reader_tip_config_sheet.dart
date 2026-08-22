@@ -55,7 +55,7 @@ class ReaderTipConfigSheet extends ConsumerStatefulWidget {
 }
 
 class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
-  late ReaderAdvancedConfig _config = widget.config.copy();
+  late final ReaderAdvancedConfig _config = widget.config.copy();
 
   static const _tipOptions = [
     ReadTipOption(0, '无'),

@@ -237,7 +237,7 @@ VideoPlayTarget resolveVideoPlayTarget({
   Map<String, String> sourceHeaders = const {},
 }) {
   final prepared = prepareVideoContent(content);
-  final headersFor = (Map<String, String> optionHeaders) => mergeVideoHeaders(
+  Map<String, String> headersFor(Map<String, String> optionHeaders) => mergeVideoHeaders(
         sourceHeaders: sourceHeaders,
         optionHeaders: optionHeaders,
         referer: chapterUrl,

@@ -136,7 +136,10 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   /// [UI-fix v2.0.3 | 2026-08-08] 留项#12（Task #145）：Rust 侧已原生读取
   /// searchGroup config 过滤；搜索完成后分组过滤零结果时弹
   /// 「是否切换到全部分组」对话框（对标 ChangeChapterSourceDialog L90-97） — Qoder
-  Future<void> _search() async {
+  ///
+  /// [forceRefresh] false（进入页默认）：优先复用搜索阶段写入的 searchBooks
+  /// （对齐原版 getDbSearchBooks）；true（刷新列表）：强制网络重搜。
+  Future<void> _search({bool forceRefresh = false}) async {
     await ref
         .read(changeSourceNotifierProvider.notifier)
         .search(
@@ -146,6 +149,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           loadInfo: _loadInfo,
           loadToc: _loadToc,
           loadWordCount: _loadWordCount,
+          forceRefresh: forceRefresh,
         );
     if (!mounted) return;
     final state = ref.read(changeSourceNotifierProvider);
@@ -254,7 +258,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '重新搜索',
-            onPressed: state.isLoading || _stopped ? null : _search,
+            onPressed: state.isLoading || _stopped
+                ? null
+                : () => _search(forceRefresh: true),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 高级选项菜单（对标 change_source.xml）— Qoder
           PopupMenuButton<String>(
@@ -348,7 +354,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       ),
       body: _buildBody(state),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: state.isLoading || _stopped ? null : _search,
+        onPressed: state.isLoading || _stopped
+            ? null
+            : () => _search(forceRefresh: true),
         icon: const Icon(Icons.search),
         label: const Text('搜索'),
       ),
@@ -369,8 +377,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
         // 对标 menu_source_manage → SourceActivity
         Navigator.pushNamed(context, AppRoutes.sources);
       case 'refreshList':
-        // 对标 menu_refresh_list：重新搜索并刷新列表
-        if (!_stopped) await _search();
+        // 对标 menu_refresh_list：强制网络重搜（对齐 startSearch）
+        if (!_stopped) await _search(forceRefresh: true);
       case 'checkAuthor':
         // 对标 menu_check_author（AppConfig.changeSourceCheckAuthor）
         setState(() => _checkAuthor = !_checkAuthor);
@@ -379,17 +387,17 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
         // 对标 menu_load_word_count（AppConfig.changeSourceLoadWordCount）
         setState(() => _loadWordCount = !_loadWordCount);
         await _persistBool('changeSourceLoadWordCount', _loadWordCount);
-        if (_loadWordCount && !_stopped) await _search();
+        if (_loadWordCount && !_stopped) await _search(forceRefresh: true);
       case 'loadInfo':
         // 对标 menu_load_info（AppConfig.changeSourceLoadInfo）
         setState(() => _loadInfo = !_loadInfo);
         await _persistBool('changeSourceLoadInfo', _loadInfo);
-        if (_loadInfo && !_stopped) await _search();
+        if (_loadInfo && !_stopped) await _search(forceRefresh: true);
       case 'loadToc':
         // 对标 menu_load_toc（AppConfig.changeSourceLoadToc）
         setState(() => _loadToc = !_loadToc);
         await _persistBool('changeSourceLoadToc', _loadToc);
-        if (_loadToc && !_stopped) await _search();
+        if (_loadToc && !_stopped) await _search(forceRefresh: true);
       case 'group':
         await _showGroupPicker();
       case 'close':
@@ -416,7 +424,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     try {
       await ref.read(bookApiProvider).setConfig('searchGroup', selected);
     } catch (_) {}
-    if (!_stopped) await _search();
+    if (!_stopped) await _search(forceRefresh: true);
   }
 
   Widget _groupRadio(BuildContext ctx, String value, String label) {
@@ -448,7 +456,12 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       return const LoadingIndicator(message: '正在搜索可替换书源...');
     }
     if (state.error != null && results.isEmpty) {
-      return ErrorView(message: state.error!, onRetry: _search);
+      return ErrorView(
+        message: state.error!,
+        onRetry: () {
+          _search(forceRefresh: true);
+        },
+      );
     }
     if (results.isEmpty) {
       final colorScheme = Theme.of(context).colorScheme;
@@ -468,7 +481,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       );
     }
     return RefreshIndicator(
-      onRefresh: _search,
+      onRefresh: () => _search(forceRefresh: true),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

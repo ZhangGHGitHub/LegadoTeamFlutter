@@ -284,19 +284,28 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
       builder: (dialogContext) => SimpleDialog(
         title: const Text('选择朗读引擎'),
         children: [
-          for (final engine in engines)
-            RadioListTile<String>(
-              title: Text(engine.name),
-              value: engine.name,
-              groupValue: currentName,
-              onChanged: (_) {
-                Navigator.pop(dialogContext);
-                ref
-                    .read(audioNotifierProvider.notifier)
-                    .updateConfig(engineUrl: '${engine.name},${engine.url}');
-                _snack('已切换引擎：${engine.name}');
-              },
+          RadioGroup<String>(
+            groupValue: currentName,
+            onChanged: (v) {
+              if (v == null) return;
+              final engine = engines.firstWhere((e) => e.name == v);
+              Navigator.pop(dialogContext);
+              ref
+                  .read(audioNotifierProvider.notifier)
+                  .updateConfig(engineUrl: '${engine.name},${engine.url}');
+              _snack('已切换引擎：${engine.name}');
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final engine in engines)
+                  RadioListTile<String>(
+                    title: Text(engine.name),
+                    value: engine.name,
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );

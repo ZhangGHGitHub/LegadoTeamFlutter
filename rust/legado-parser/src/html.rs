@@ -7,6 +7,16 @@ use scraper::{ElementRef, Html, Selector};
 
 use crate::rule_analyzer::RuleAnalyzer;
 
+/// 去除 <script>/<style> 块（对齐 jsoup getResultLast 的 "html" 分支）
+static SCRIPT_STYLE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+
+fn strip_script_style(html: &str) -> String {
+    let re = SCRIPT_STYLE_RE.get_or_init(|| {
+        regex::Regex::new(r"(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>").unwrap()
+    });
+    re.replace_all(html, "").into_owned()
+}
+
 /// 对齐 Jsoup `Element.ownText()`：仅汇总本元素的直接文本子节点，
 /// 不含子孙元素内文本（与 `text()` 全树文本不同）。
 fn own_text_of(elem: ElementRef<'_>) -> String {
@@ -26,18 +36,173 @@ fn own_text_of(elem: ElementRef<'_>) -> String {
 ///
 /// 例：`a.0`、`dd.1`、`span.0`、`dd.2:3`、`li.-1`
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct DotIndex {
-    /// `.` 选取 / `!` 排除
-    exclude: bool,
-    /// 已按应用顺序排列的下标（支持负数）
-    indices: Vec<i32>,
+struct RangeIdx {
+    start: Option<i32>,
+    end: Option<i32>,
+    step: i32,
 }
 
-/// 从规则末尾拆出点号索引；无索引时返回 `(rule, None)`
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DotIndex {
+    /// `.`/`!`/`[!` 排除，否则选取
+    exclude: bool,
+    /// 单个下标（支持负数）
+    indices: Vec<i32>,
+    /// 区间（`a:b[:step]`，含 `[-1:0]` 反向）
+    ranges: Vec<RangeIdx>,
+}
+
+/// 解析可选整数（空串/无 → None）
+fn parse_opt_i32(s: Option<&str>) -> Option<i32> {
+    s.and_then(|t| {
+        let t = t.trim();
+        if t.is_empty() {
+            None
+        } else {
+            t.parse::<i32>().ok()
+        }
+    })
+}
+
+/// 解析 `[...]` 括号索引（规则以 `]` 结尾）
+///
+/// 支持 `[n]`、`[n,m]`、`[!n,m]`、`[a:b]`、`[a:b:step]`、`[-1:0]` 反向。
+fn split_bracket_index(rule: &str) -> Option<(String, DotIndex)> {
+    let open = rule.rfind('[')?;
+    let base = rule[..open].trim();
+    let inner = rule[open + 1..rule.len() - 1].trim();
+    let mut exclude = false;
+    let body = if let Some(b) = inner.strip_prefix('!') {
+        exclude = true;
+        b.trim()
+    } else {
+        inner
+    };
+
+    let mut indices = Vec::new();
+    let mut ranges = Vec::new();
+    for part in body.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if part.contains(':') {
+            let mut seg = part.split(':');
+            let start = parse_opt_i32(seg.next());
+            let end = parse_opt_i32(seg.next());
+            let step = parse_opt_i32(seg.next()).unwrap_or(1);
+            if step != 0 {
+                ranges.push(RangeIdx { start, end, step });
+            }
+        } else if let Ok(n) = part.parse::<i32>() {
+            indices.push(n);
+        }
+    }
+    if indices.is_empty() && ranges.is_empty() {
+        return None;
+    }
+    Some((
+        base.to_string(),
+        DotIndex {
+            exclude,
+            indices,
+            ranges,
+        },
+    ))
+}
+
+/// 解析负下标为实际索引（越界返回 None）
+fn resolve_single(it: i32, len: i32) -> Option<usize> {
+    if it >= 0 && it < len {
+        Some(it as usize)
+    } else if it < 0 && len >= -it {
+        Some((it + len) as usize)
+    } else {
+        None
+    }
+}
+
+/// 展开区间为实际索引（含 `[-1:0]` 反向）
+fn resolve_range(r: &RangeIdx, len: i32) -> Vec<usize> {
+    let v = |o: Option<i32>, default: i32| -> i32 {
+        match o {
+            None => default,
+            Some(s) => {
+                if s < 0 {
+                    len + s
+                } else {
+                    s
+                }
+            }
+        }
+    };
+    let start = v(r.start, 0);
+    let end = v(r.end, len - 1);
+    let step = if r.step == 0 { 1 } else { r.step.abs() };
+    let mut out = Vec::new();
+    let mut i = start;
+    if start <= end {
+        while i <= end {
+            if i >= 0 && i < len {
+                out.push(i as usize);
+            }
+            i += step;
+        }
+    } else {
+        while i >= end {
+            if i >= 0 && i < len {
+                out.push(i as usize);
+            }
+            i -= step;
+        }
+    }
+    out
+}
+
+/// 表格标签片段 → 包裹 HTML（保留片段结构供标准解析）
+///
+/// HTML5 标准解析（html5ever/scraper）在 body 上下文外遇到 tr/td/tbody
+/// 等会直接丢弃；jsoup（原版）宽容保留。元素 outerHTML 再解析时（如
+/// class.BOX@tr!0 提取的 tr 元素串交给 tag.td.2@a@text 子规则）必须保留
+/// 表格结构才能选中 td/tr。— Reasonix 2026-08-17
+fn wrap_table_fragment(html: &str, trimmed: &str) -> Option<String> {
+    let mut s = trimmed;
+    while s.starts_with("<!--") {
+        if let Some(end) = s.find("-->") {
+            s = &s[end + 3..];
+            s = s.trim_start();
+        } else {
+            break;
+        }
+    }
+    if s.starts_with("<tr") || s.starts_with("<th") {
+        Some(format!("<table><tbody>{html}</tbody></table>"))
+    } else if s.starts_with("<td") {
+        Some(format!("<table><tbody><tr>{html}</tr></tbody></table>"))
+    } else if s.starts_with("<tbody")
+        || s.starts_with("<thead")
+        || s.starts_with("<tfoot")
+        || s.starts_with("<caption")
+        || s.starts_with("<colgroup")
+        || s.starts_with("<col")
+    {
+        Some(format!("<table>{html}</table>"))
+    } else {
+        None
+    }
+}
+
+/// 从规则末尾拆出点号索引；无索引时返回 (rule, None)
 fn split_dot_index(rule: &str) -> (String, Option<DotIndex>) {
     let rus = rule.trim();
-    if rus.is_empty() || rus.ends_with(']') {
-        // `]` 结尾走 [] 索引写法，此处不处理
+    if rus.is_empty() {
+        return (rus.to_string(), None);
+    }
+    // G9：`[...]` 括号索引
+    if rus.ends_with(']') {
+        if let Some((base, idx)) = split_bracket_index(rus) {
+            return (base, Some(idx));
+        }
         return (rus.to_string(), None);
     }
 
@@ -89,6 +254,7 @@ fn split_dot_index(rule: &str) -> (String, Option<DotIndex>) {
                     Some(DotIndex {
                         exclude: rl == '!',
                         indices,
+                        ranges: vec![],
                     }),
                 );
             }
@@ -109,14 +275,14 @@ fn apply_dot_index<'a>(elements: Vec<ElementRef<'a>>, index: &DotIndex) -> Vec<E
     let len = elements.len() as i32;
     let mut resolved: Vec<usize> = Vec::new();
     for &it in &index.indices {
-        let idx = if it >= 0 && it < len {
-            Some(it as usize)
-        } else if it < 0 && len >= -it {
-            Some((it + len) as usize)
-        } else {
-            None
-        };
-        if let Some(i) = idx {
+        if let Some(i) = resolve_single(it, len) {
+            if !resolved.contains(&i) {
+                resolved.push(i);
+            }
+        }
+    }
+    for r in &index.ranges {
+        for i in resolve_range(r, len) {
             if !resolved.contains(&i) {
                 resolved.push(i);
             }
@@ -135,6 +301,217 @@ fn apply_dot_index<'a>(elements: Vec<ElementRef<'a>>, index: &DotIndex) -> Vec<E
             .into_iter()
             .filter_map(|i| elements.get(i).copied())
             .collect()
+    }
+}
+
+/// jsoup 伪类（scraper/selectors 不支持的文本/位置/子选择器伪类）
+#[derive(Debug, Clone)]
+enum JsoupPseudo {
+    Contains(String),
+    ContainsOwn(String),
+    ContainsWholeText(String),
+    Matches(String),
+    MatchesOwn(String),
+    Has(String),
+    Eq(usize),
+    Lt(usize),
+    Gt(usize),
+    First,
+    Last,
+}
+
+/// 元素完整文本（对齐 jsoup text()，含子孙文本）
+fn full_text_of(elem: ElementRef<'_>) -> String {
+    elem.text().collect::<Vec<_>>().join(" ")
+}
+
+/// 去掉参数两端的成对引号（jsoup 允许 :contains('text') 或 :contains("text")）
+fn unquote(s: &str) -> String {
+    let t = s.trim();
+    let b = t.as_bytes();
+    if t.len() >= 2 {
+        let a = b[0];
+        let z = b[t.len() - 1];
+        if (a == 39 && z == 39) || (a == b'"' && z == b'"') {
+            return t[1..t.len() - 1].to_string();
+        }
+    }
+    t.to_string()
+}
+
+/// 读取平衡括号（含引号保护），返回（参数内容, 消费字节数含右括号）
+/// 引号内 ')' 不计深度；兼容 :has(.a:not(.b)) 的嵌套括号。
+fn read_balanced_quoted(s: &str) -> Option<(String, usize)> {
+    let bytes = s.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut out = String::new();
+    while i < bytes.len() {
+        let b = bytes[i];
+        let ch = s[i..].chars().next().unwrap();
+        let clen = ch.len_utf8();
+        if let Some(q) = quote {
+            if b == q {
+                quote = None;
+            }
+            out.push(ch);
+            i += clen;
+            continue;
+        }
+        match b {
+            b'"' | 39 => {
+                quote = Some(b);
+                out.push(ch);
+                i += clen;
+            }
+            b'(' => {
+                depth += 1;
+                out.push(ch);
+                i += clen;
+            }
+            b')' => {
+                if depth == 0 {
+                    return Some((out, i + clen));
+                }
+                depth -= 1;
+                out.push(ch);
+                i += clen;
+            }
+            _ => {
+                out.push(ch);
+                i += clen;
+            }
+        }
+    }
+    None
+}
+
+/// 识别单个 jsoup 伪类，返回（伪类, 消费字节数）；非 jsoup 伪类返回 None
+fn consume_jsoup_pseudo(rest: &str) -> Option<(JsoupPseudo, usize)> {
+    let after = &rest[1..];
+    let textual: [(&str, fn(String) -> JsoupPseudo); 6] = [
+        ("containsOwn(", |s| JsoupPseudo::ContainsOwn(s)),
+        ("containsWholeText(", |s| JsoupPseudo::ContainsWholeText(s)),
+        ("contains(", |s| JsoupPseudo::Contains(s)),
+        ("matchesOwn(", |s| JsoupPseudo::MatchesOwn(s)),
+        ("matches(", |s| JsoupPseudo::Matches(s)),
+        ("has(", |s| JsoupPseudo::Has(s)),
+    ];
+    for (name, ctor) in textual {
+        if let Some(arg_after) = after.strip_prefix(name) {
+            let (arg, inner) = read_balanced_quoted(arg_after)?;
+            return Some((ctor(arg), 1 + name.len() + inner));
+        }
+    }
+    let indexed: [(&str, fn(usize) -> JsoupPseudo); 3] = [
+        ("eq(", JsoupPseudo::Eq),
+        ("lt(", JsoupPseudo::Lt),
+        ("gt(", JsoupPseudo::Gt),
+    ];
+    for (name, ctor) in indexed {
+        if let Some(arg_after) = after.strip_prefix(name) {
+            let end = arg_after.find(')')?;
+            let n: usize = arg_after[..end].trim().parse().ok()?;
+            return Some((ctor(n), 1 + name.len() + end + 1));
+        }
+    }
+    for word in ["first", "last"] {
+        if let Some(tail) = after.strip_prefix(word) {
+            let next = tail.as_bytes().first().copied();
+            let boundary = next.map_or(true, |b| {
+                b.is_ascii_whitespace() || b == b'>' || b == b'+' || b == b'~' || b == b','
+            });
+            if boundary {
+                let pseudo = if word == "first" {
+                    JsoupPseudo::First
+                } else {
+                    JsoupPseudo::Last
+                };
+                return Some((pseudo, 1 + word.len()));
+            }
+        }
+    }
+    None
+}
+
+/// 从选择器串中剥离 jsoup 伪类，返回（干净选择器, 伪类列表）
+///
+/// 仅识别 scraper/selectors 不支持的 jsoup 特有伪类；其余 `:`（CSS 伪类
+/// 如 :nth-child/:not、Legado 点号区间 dd.2:3 已被 split_dot_index 提前消费）
+/// 原样保留，避免误伤。
+fn split_jsoup_pseudos(selector: &str) -> (String, Vec<JsoupPseudo>) {
+    let bytes = selector.as_bytes();
+    let mut out = String::with_capacity(selector.len());
+    let mut pseudos: Vec<JsoupPseudo> = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b':' {
+            if let Some((pseudo, consumed)) = consume_jsoup_pseudo(&selector[i..]) {
+                pseudos.push(pseudo);
+                i += consumed;
+                continue;
+            }
+        }
+        let ch = selector[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    (out, pseudos)
+}
+
+/// 对已匹配元素按顺序应用 jsoup 伪类过滤
+fn apply_jsoup_pseudos<'a>(matched: &mut Vec<ElementRef<'a>>, pseudos: &[JsoupPseudo]) {
+    for p in pseudos {
+        match p {
+            JsoupPseudo::Contains(s) => {
+                let needle = unquote(s).to_lowercase();
+                matched.retain(|e| full_text_of(*e).to_lowercase().contains(&needle));
+            }
+            JsoupPseudo::ContainsOwn(s) => {
+                let needle = unquote(s).to_lowercase();
+                matched.retain(|e| own_text_of(*e).to_lowercase().contains(&needle));
+            }
+            JsoupPseudo::ContainsWholeText(s) => {
+                let needle = unquote(s).to_lowercase();
+                matched.retain(|e| full_text_of(*e).trim().to_lowercase() == needle);
+            }
+            JsoupPseudo::Matches(s) => {
+                let pat = unquote(s);
+                if let Ok(re) = regex::Regex::new(&pat) {
+                    matched.retain(|e| re.is_match(&full_text_of(*e)));
+                }
+            }
+            JsoupPseudo::MatchesOwn(s) => {
+                let pat = unquote(s);
+                if let Ok(re) = regex::Regex::new(&pat) {
+                    matched.retain(|e| re.is_match(&own_text_of(*e)));
+                }
+            }
+            JsoupPseudo::Has(sel) => {
+                if let Ok(sub) = Selector::parse(&sel) {
+                    matched.retain(|e| e.select(&sub).next().is_some());
+                }
+            }
+            JsoupPseudo::Eq(n) => {
+                *matched = matched.get(*n).copied().into_iter().collect();
+            }
+            JsoupPseudo::Lt(n) => matched.truncate(*n),
+            JsoupPseudo::Gt(n) => {
+                if matched.len() > *n {
+                    let tail: Vec<ElementRef> = matched.iter().skip(*n).copied().collect();
+                    *matched = tail;
+                } else {
+                    matched.clear();
+                }
+            }
+            JsoupPseudo::First => {
+                *matched = matched.iter().take(1).copied().collect();
+            }
+            JsoupPseudo::Last => {
+                *matched = matched.iter().rev().take(1).copied().collect();
+            }
+        }
     }
 }
 
@@ -172,7 +549,17 @@ impl HtmlParser {
             return Ok(vec![]);
         }
 
-        let document = Html::parse_document(html);
+        // 表格标签片段解析：tr/td/tbody 等片段在 HTML5 标准解析下会被丢弃
+        // （body 上下文外非法；scraper 0.22 parse_fragment 固定 body 上下文
+        // 同样丢弃），而原版 jsoup 宽容保留。元素 outerHTML 再解析的场景
+        // （class.BOX@tr!0 提取的 <tr> 元素串交给 tag.td.2@a@text 子规则）
+        // 必须保留表格结构 → 用 table/tbody 包裹后标准解析。— Reasonix 2026-08-17
+        let trimmed = html.trim_start();
+        let document = if let Some(wrapped) = wrap_table_fragment(html, trimmed) {
+            Html::parse_document(&wrapped)
+        } else {
+            Html::parse_document(html)
+        };
 
         // 对标 Kotlin AnalyzeByJSoup：规则本身就是默认提取关键字时，
         // 不做选择器匹配，直接对当前内容（片段根元素）执行提取
@@ -324,11 +711,13 @@ impl HtmlParser {
                 .unwrap_or_default();
         }
 
-        let Ok(selector) = Selector::parse(selector_str) else {
+        let (clean_selector, pseudos) = split_jsoup_pseudos(selector_str);
+        let Ok(selector) = Selector::parse(&clean_selector) else {
             return vec![];
         };
 
         let mut matched: Vec<ElementRef> = document.select(&selector).collect();
+        apply_jsoup_pseudos(&mut matched, &pseudos);
         if let Some(ref idx) = dot_index {
             matched = apply_dot_index(matched, idx);
         }
@@ -356,7 +745,8 @@ impl HtmlParser {
         if owned.is_empty() {
             return parents.to_vec();
         }
-        let Ok(selector) = Selector::parse(&owned) else {
+        let (clean, pseudos) = split_jsoup_pseudos(&owned);
+        let Ok(selector) = Selector::parse(&clean) else {
             return vec![];
         };
 
@@ -371,6 +761,7 @@ impl HtmlParser {
                 next.push(child);
             }
         }
+        apply_jsoup_pseudos(&mut next, &pseudos);
         if let Some(ref idx) = dot_index {
             // 索引是相对于「每个父节点下的匹配结果」还是「全局合并列表」？
             // 原版 AnalyzeByJSoup 链式 @ 时，每一级对单个 element 调用 getElementsSingle，
@@ -385,6 +776,7 @@ impl HtmlParser {
                     kids.push(*elem);
                 }
                 kids.extend(elem.select(&selector));
+                apply_jsoup_pseudos(&mut kids, &pseudos);
                 kids = apply_dot_index(kids, idx);
                 per_parent.extend(kids);
             }
@@ -413,11 +805,13 @@ impl HtmlParser {
         let first_rule = sub_rules[0].trim();
         let (first_no_index, first_index) = split_dot_index(first_rule);
         let first_owned = Self::normalize_jsoup_selector(&first_no_index);
-        let Ok(first_selector) = Selector::parse(&first_owned) else {
+        let (first_clean, first_pseudos) = split_jsoup_pseudos(&first_owned);
+        let Ok(first_selector) = Selector::parse(&first_clean) else {
             return vec![];
         };
 
         let mut current_elements: Vec<ElementRef> = document.select(&first_selector).collect();
+        apply_jsoup_pseudos(&mut current_elements, &first_pseudos);
         if let Some(ref idx) = first_index {
             current_elements = apply_dot_index(current_elements, idx);
         }
@@ -475,38 +869,42 @@ impl HtmlParser {
                     }
                 }
             }
-        } else if Selector::parse(selector_str).is_err() {
-            // 选择器无效：可能是默认提取关键字（如 "text"、"html"）
-            if let Some(mode) = Self::bare_extract_mode(selector_str) {
+        } else {
+            let (last_clean, last_pseudos) = split_jsoup_pseudos(selector_str);
+            if Selector::parse(&last_clean).is_err() {
+                // 选择器无效：可能是默认提取关键字（如 "text"、"html"）
+                if let Some(mode) = Self::bare_extract_mode(selector_str) {
+                    for elem in &current_elements {
+                        if let Some(text) = self.extract_from_element(*elem, mode, "") {
+                            if !text.is_empty() {
+                                items.push(text);
+                            }
+                        }
+                    }
+                    return items;
+                }
+                // 也可能是属性名（如 "href"、"src"）
+                // 将最后一段视为属性名，从当前元素提取该属性（属性路径去重）
                 for elem in &current_elements {
-                    if let Some(text) = self.extract_from_element(*elem, mode, "") {
-                        if !text.is_empty() {
+                    if let Some(text) = self.extract_from_element(*elem, "attr", selector_str) {
+                        if !text.is_empty() && !items.contains(&text) {
                             items.push(text);
                         }
                     }
                 }
-                return items;
-            }
-            // 也可能是属性名（如 "href"、"src"）
-            // 将最后一段视为属性名，从当前元素提取该属性（属性路径去重）
-            for elem in &current_elements {
-                if let Some(text) = self.extract_from_element(*elem, "attr", selector_str) {
-                    if !text.is_empty() && !items.contains(&text) {
-                        items.push(text);
+            } else {
+                let selector = Selector::parse(&last_clean).unwrap();
+                for elem in &current_elements {
+                    let mut kids: Vec<ElementRef> = elem.select(&selector).collect();
+                    apply_jsoup_pseudos(&mut kids, &last_pseudos);
+                    if let Some(ref idx) = last_index {
+                        kids = apply_dot_index(kids, idx);
                     }
-                }
-            }
-        } else {
-            let selector = Selector::parse(selector_str).unwrap();
-            for elem in &current_elements {
-                let mut kids: Vec<ElementRef> = elem.select(&selector).collect();
-                if let Some(ref idx) = last_index {
-                    kids = apply_dot_index(kids, idx);
-                }
-                for child in kids {
-                    if let Some(text) = self.extract_from_element(child, extract_mode, &attr_name) {
-                        if !text.is_empty() && !items.contains(&text) {
-                            items.push(text);
+                    for child in kids {
+                        if let Some(text) = self.extract_from_element(child, extract_mode, &attr_name) {
+                            if !text.is_empty() && !items.contains(&text) {
+                                items.push(text);
+                            }
                         }
                     }
                 }
@@ -543,7 +941,10 @@ impl HtmlParser {
             }
             // 对齐 Jsoup Element.ownText()：仅本元素直接文本，不含子孙元素文本
             "ownText" => own_text_of(elem),
-            "html" => elem.html(),
+            "html" => {
+                let h = elem.html();
+                strip_script_style(&h)
+            }
             "all" => elem.html(),
             "attr" => elem.value().attr(attr_name).map(|v| v.to_string())?,
             _ => {
@@ -596,7 +997,7 @@ impl HtmlParser {
             "textNodes" => Some("textNodes"),
             "ownText" => Some("ownText"),
             "html" => Some("html"),
-            "allText" => Some("all"),
+            "all" => Some("all"),
             _ => None,
         }
     }
@@ -689,7 +1090,11 @@ impl HtmlParser {
         let is_tag_name = COMMON_TAG_NAMES.contains(&last);
 
         // 判断最后一段是否为提取模式/属性名（而非 CSS 选择器）
+        // 含 '!' 的是标签+排除索引语法（如 'tr!0' = tr 元素排除第一个，
+        // 原版 77读书网 'class.BOX@tr!0' 搜索规则），不是属性名——
+        // 此前被误判为提取后缀 → 属性提取空 → 搜索 0 结果（2026-08-17）。
         let is_extraction_suffix = !is_tag_name
+            && !last.contains('!')
             && (matches!(
                 last,
                 "text"
@@ -772,6 +1177,77 @@ mod tests {
         assert_eq!(result[0], "第一章");
         assert_eq!(result[1], "第二章");
         assert_eq!(result[2], "第三章");
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_contains() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "a.item:contains('第二章')").unwrap();
+        assert_eq!(result, vec!["第二章"]);
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_has() {
+        let parser = HtmlParser::new();
+        let result = parser.get_elements(SAMPLE_HTML, "div:has(.author)").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("作者名"));
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_eq_and_index() {
+        let parser = HtmlParser::new();
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:eq(1)").unwrap(),
+            vec!["第二章"]
+        );
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:lt(2)").unwrap(),
+            vec!["第一章", "第二章"]
+        );
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:first").unwrap(),
+            vec!["第一章"]
+        );
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item:last").unwrap(),
+            vec!["第三章"]
+        );
+    }
+
+    #[test]
+    fn test_jsoup_pseudo_matches() {
+        let parser = HtmlParser::new();
+        let result = parser.get_text(SAMPLE_HTML, "a.item:matches('第.章')").unwrap();
+        assert_eq!(result, vec!["第一章", "第二章", "第三章"]);
+    }
+
+    #[test]
+    fn test_html_mode_strips_script_style() {
+        let parser = HtmlParser::new();
+        let html = r#"<div class="c">正文<script>alert(1)</script><style>.x{}</style>结尾</div>"#;
+        let result = parser.get_text(html, ".c@html").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(!result[0].contains("<script"));
+        assert!(!result[0].contains("<style"));
+        assert!(result[0].contains("正文"));
+        assert!(result[0].contains("结尾"));
+    }
+
+    #[test]
+    fn test_bracket_index() {
+        let parser = HtmlParser::new();
+        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[0]").unwrap(), vec!["第一章"]);
+        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[2]").unwrap(), vec!["第三章"]);
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item[0,2]").unwrap(),
+            vec!["第一章", "第三章"]
+        );
+        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[-1]").unwrap(), vec!["第三章"]);
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item[!1]").unwrap(),
+            vec!["第一章", "第三章"]
+        );
     }
 
     #[test]
@@ -1087,7 +1563,8 @@ mod tests {
                 "a".into(),
                 Some(DotIndex {
                     exclude: false,
-                    indices: vec![0]
+                    indices: vec![0],
+                    ranges: vec![]
                 })
             )
         );
@@ -1097,7 +1574,8 @@ mod tests {
                 "dd".into(),
                 Some(DotIndex {
                     exclude: false,
-                    indices: vec![2, 3]
+                    indices: vec![2, 3],
+                    ranges: vec![]
                 })
             )
         );
@@ -1109,7 +1587,8 @@ mod tests {
                 "li".into(),
                 Some(DotIndex {
                     exclude: true,
-                    indices: vec![-1]
+                    indices: vec![-1],
+                    ranges: vec![]
                 })
             )
         );
@@ -1143,5 +1622,20 @@ mod tests {
 
         let last = parser.get_text(html, "dd.4@a@text").unwrap();
         assert_eq!(last, vec!["第131章"]);
+    }
+
+    #[test]
+    fn test_attr_ends_with_property_content() {
+        // 书书等详情规则：`[property$=book_name]@content` 对齐 jsoup 属性后缀匹配
+        let html = r#"<meta property="og:novel:book_name" content="一念永恒"><meta property="og:novel:author" content="耳根">"#;
+        let parser = HtmlParser::new();
+        let name = parser
+            .get_attr(html, r#"[property$=book_name]"#, "content")
+            .unwrap();
+        assert_eq!(name, vec!["一念永恒"], "{name:?}");
+        let via_at = parser
+            .get_text(html, r#"[property$=book_name]@content"#)
+            .unwrap();
+        assert_eq!(via_at, vec!["一念永恒"], "{via_at:?}");
     }
 }

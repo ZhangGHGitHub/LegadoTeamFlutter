@@ -4,6 +4,7 @@
 /// - AutoTask 模型：fromJson/toJson/copyWith/taskTypeLabel/_defaultScript
 /// - AutoTaskNotifier：loadTasks/createTask/toggleTask/deleteTask/runNow
 /// - FFI 方法：buildBookUpdateTask/updateCronBatch/normalizeScript 等
+library;
 import 'dart:convert';
 import 'dart:io';
 
@@ -27,7 +28,7 @@ void main() {
     return List.generate(
       count,
       (i) => {
-        'id': '${idStart}${i + 1}',
+        'id': '$idStart${i + 1}',
         'name': 'Task${i + 1}',
         'taskType': i == 0 ? 'backup' : 'refreshToc',
         'cron': '0 * * * *',

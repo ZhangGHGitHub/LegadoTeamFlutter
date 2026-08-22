@@ -5,6 +5,7 @@
 /// - 长内容多页
 /// - 超长段落跨页拆分
 /// - 设置变化导致重新分页
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,7 +66,7 @@ void main() {
     test('每页高度不超过页面限制', () {
       final content = List.generate(
         20,
-        (i) => '段落$i：' + '测试文字' * 30,
+        (i) => '段落$i：${'测试文字' * 30}',
       ).join('\n\n');
       const pageHeight = 300.0;
       final pages = engine.paginateChapter(content, 300.0, pageHeight);
@@ -218,7 +219,7 @@ void main() {
     test('页面高度影响总页数', () {
       final content = List.generate(
         10,
-        (i) => '段落$i：' + '内容' * 50,
+        (i) => '段落$i：${'内容' * 50}',
       ).join('\n\n');
       final shortPages = engine.paginateChapter(content, 300.0, 200.0);
       final tallPages = engine.paginateChapter(content, 300.0, 800.0);
@@ -294,7 +295,7 @@ void main() {
         config: const ParagraphConfig(fontSize: 16.0, lineHeight: 1.5),
         context: _FakeBuildContext(),
       );
-      final content = List.generate(5, (i) => '段落$i：' + '文字' * 30).join('\n\n');
+      final content = List.generate(5, (i) => '段落$i：${'文字' * 30}').join('\n\n');
 
       final pages = engine.paginateChapter(content, 300.0, 400.0);
       final lastPage = engine.layoutChapter(content, 300.0, 400.0);

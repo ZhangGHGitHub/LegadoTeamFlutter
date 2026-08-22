@@ -1832,6 +1832,7 @@ name = "legado-ffi"
 version = "0.2.0"
 dependencies = [
  "base64",
+ "encoding_rs",
  "flutter_rust_bridge",
  "futures",
  "legado-book",
@@ -1915,6 +1916,7 @@ dependencies = [
  "base64",
  "ego-tree",
  "encoding_rs",
+ "jsonpath-rust",
  "legado-core",
  "md-5",
  "regex",

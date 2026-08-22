@@ -217,6 +217,30 @@ pub fn get_elements<'js>(
     get_element(ctx, css, src)
 }
 
+/// `java.jsoupAttr(html, css, attr)` → 首个匹配元素的属性（对齐 Jsoup Elements.attr）
+pub fn jsoup_attr(html: &str, css: &str, attr: &str) -> String {
+    snapshots_from_html(html, css)
+        .first()
+        .and_then(|s| s.attr(attr))
+        .unwrap_or_default()
+}
+
+/// `java.jsoupText(html, css)` → 首个匹配元素文本
+pub fn jsoup_text(html: &str, css: &str) -> String {
+    snapshots_from_html(html, css)
+        .first()
+        .map(|s| s.text.clone())
+        .unwrap_or_default()
+}
+
+/// `java.jsoupHtml(html, css)` → 首个匹配元素 innerHTML
+pub fn jsoup_html(html: &str, css: &str) -> String {
+    snapshots_from_html(html, css)
+        .first()
+        .map(|s| s.inner.clone())
+        .unwrap_or_default()
+}
+
 /// `java.getString(css, mContent)` → 首条文本/属性（mContent 空=当前 src）
 ///
 /// 支持 `selector@attr` 链（如 `.btn-read@href` 取属性，对齐原版

@@ -218,14 +218,12 @@ class _StaticChip extends StatefulWidget {
     required this.category,
     this.width,
     this.onTap,
-    this.muted = false,
     this.label,
   });
 
   final ExploreCategory category;
   final double? width;
   final VoidCallback? onTap;
-  final bool muted;
   final String? label;
 
   @override
@@ -244,7 +242,7 @@ class _StaticChipState extends State<_StaticChip> {
 
     final fill = _pressed && hasTap
         ? colorScheme.onSurface.withValues(alpha: 0.14)
-        : colorScheme.onSurface.withValues(alpha: widget.muted ? 0.06 : 0.10);
+        : colorScheme.onSurface.withValues(alpha: 0.10);
 
     final label = Container(
       width: widget.width,
@@ -258,9 +256,7 @@ class _StaticChipState extends State<_StaticChip> {
       child: Text(
         text,
         style: theme.textTheme.bodyMedium?.copyWith(
-          color: widget.muted
-              ? colorScheme.onSurfaceVariant
-              : colorScheme.onSurface,
+          color: colorScheme.onSurface,
           fontSize: 14,
           fontWeight: hasTap ? FontWeight.w500 : FontWeight.w400,
         ),

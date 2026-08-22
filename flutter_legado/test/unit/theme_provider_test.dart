@@ -97,7 +97,7 @@ void main() {
       createContainer();
       await pumpInit(); // 先完成自动加载，避免其通知计入
       var notified = 0;
-      container.listen(themeNotifierProvider, (_, __) => notified++);
+      container.listen(themeNotifierProvider, (_, _) => notified++);
       await readNotifier().setThemeMode(ThemeMode.dark);
       expect(notified, equals(1));
     });
@@ -106,7 +106,7 @@ void main() {
       createContainer();
       await pumpInit();
       var notified = 0;
-      container.listen(themeNotifierProvider, (_, __) => notified++);
+      container.listen(themeNotifierProvider, (_, _) => notified++);
       await readNotifier().setThemeMode(ThemeMode.system); // 与默认相同
       expect(notified, equals(0));
     });
@@ -142,7 +142,7 @@ void main() {
       createContainer();
       await pumpInit();
       var notified = 0;
-      container.listen(themeNotifierProvider, (_, __) => notified++);
+      container.listen(themeNotifierProvider, (_, _) => notified++);
       await readNotifier().setFontScale(10);
       expect(notified, equals(1));
     });

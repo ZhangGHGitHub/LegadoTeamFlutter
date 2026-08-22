@@ -74,6 +74,14 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 注入真实设备 ID（Android Settings.Secure.ANDROID_ID）
+    ///
+    /// 书山聚合等源登录时登记该设备，正文请求需携带匹配的 X-Device-Id
+    /// 才返回明文；Flutter 侧启动时读取系统 ANDROID_ID 后调用。
+    pub fn set_device_id(device_id: String) {
+        legado_js::host_api::device_id::set_device_id(&device_id);
+    }
+
     /// 获取版本号
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
@@ -431,6 +439,25 @@ pub mod ffi {
         Ok(crate::api::source_login_v2_api::eval_login_action_v2(
             &source_json,
             &user_input_json,
+        )?)
+    }
+
+    /// 执行书源 V1 登录动作（对齐原版 `BaseSource.login()`）
+    ///
+    /// 书山聚合等 V1 源：loginUrl 为 JS 脚本（定义 login()），loginUi 为表单
+    /// JSON；本函数在书源完整上下文（sanitize jsLib + setup + header 规则）
+    /// 执行 `loginJs + login.apply({source,cookie,java})`，登录成功后
+    /// `source.putLoginHeader(api_key)` 写入的 loginHeader 自动同步落库，
+    /// 后续 java.ajax 正文请求携带 X-Api-Key 返回明文。
+    ///
+    /// `source_json` — BookSource JSON；`action` — 按钮动作（默认 `login`）
+    pub fn source_login_v1(
+        source_json: String,
+        action: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::source_login_v1_api::eval_login_v1(
+            &source_json,
+            &action,
         )?)
     }
 

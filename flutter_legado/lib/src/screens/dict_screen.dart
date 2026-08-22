@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -326,7 +326,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                       .read(dictNotifierProvider.notifier)
                       .importDefaultRules();
                   setDialogState(() {});
-                  if (context.mounted) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('已导入 $n 条原版默认词典规则')),
                     );

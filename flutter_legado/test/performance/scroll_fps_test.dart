@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+// ScrollCacheExtent 定义在渲染层（rendering/viewport.dart），widgets/material 未导出
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// §4.4 性能基线 —— 列表滚动 FPS 基准测试
@@ -25,8 +27,7 @@ void main() {
         home: Scaffold(
           body: ListView.builder(
             // 与生产代码一致的预缓存范围
-            cacheExtent: 300,
-            itemCount: items.length,
+            scrollCacheExtent: ScrollCacheExtent.pixels(300), itemCount: items.length,
             itemBuilder: (context, index) {
               // 与 search_screen/rss_articles_screen 一致：
               // RepaintBoundary 隔离 + 稳定 ValueKey
@@ -95,8 +96,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ListView.builder(
-            cacheExtent: 300,
-            itemCount: items.length,
+            scrollCacheExtent: ScrollCacheExtent.pixels(300), itemCount: items.length,
             itemBuilder: (context, index) {
               final item = _ListItem(
                 key: ValueKey(items[index]),
