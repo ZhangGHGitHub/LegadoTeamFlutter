@@ -70,27 +70,33 @@ Rust `users` ≠ Room `servers`；远程服务器列表走 Flutter `SettingsServ
 
 ---
 
-## A 类环境项复现命令（仍需用户素材）
+## A* 验收矩阵（P2-4 登记，2026-08-22）
+
+> **口径**：待验收 ≠ 工程未实现——每行「工程证据」列记录已落地的实现/测试依据；验收需真实环境素材，**不得以模拟器冒烟销账**（设计使然，非缺陷）。验收通过后在本表销账并附证据。
 
 ```powershell
 $adb = "D:\Android\platform-tools\adb.exe"
-# 深链（系统 VIEW，非 -n 组件）
-& $adb -s emulator-5556 shell am start -a android.intent.action.VIEW -d "legado://booksource/import?src=https://example.com/sources.json"
+# 深链（2026-08-22 已验证）：5556 上 io.legado.flutter_legado 与原版 com.legado.app.release 并存且均注册 legado://，
+# 裸 VIEW 会触发系统选择器（ResolverActivity）→ 验收必须显式组件定向
+& $adb -s emulator-5556 shell am start -a android.intent.action.VIEW -d "legado://booksource/import?src=https://example.com/sources.json" -n io.legado.flutter_legado/io.legado.flutter.MainActivity
 # MCP 端口探测（LAN 绑定后本机可见）
 & $adb -s emulator-5556 shell "ss -ltn | grep 1236 || netstat -ltn | grep 1236"
 # 冒烟
 .\scripts\emulator_smoke_test.ps1 -Device emulator-5556 -SkipBuild -CheckUI
 ```
 
-| 项 | 状态 | 素材 |
-|---|---|---|
-| A1 WebDAV 实网 | ⛔ 仍需用户素材 | 有效 WebDAV 账号 |
-| A2 听书流媒体+片头/SAF | ⛔ 仍需用户素材 | 音频书源 |
-| A3 真机媒体键/焦点 | ⛔ 仍需用户素材 | 真机 |
-| A4 漫画/视频 | ⛔ 仍需用户素材 | 样例书 |
-| A5 段评 ruleReview | ⛔ 仍需用户素材 | 含 ruleReview 源 |
-| A9 深链 VIEW | ⏳ 可 adb 自测 | 见上命令 |
-| A10 皮肤 zip | ⛔ 仍需用户素材 | 皮肤 zip |
+| # | 项 | 状态 | 素材 | 负责人 | 工程证据（待验收 ≠ 未实现） | 验收命令 / 方法 |
+|---|---|---|---|---|---|---|
+| A1 | WebDAV 实网 | ⛔ 待验收 | 有效 WebDAV 账号 | 用户 | `webdav.rs` 已实现（重试循环不变量断言，P2-5 D1），单测在位；未实测真实 WebDAV 服务 | 应用内备份/恢复到 WebDAV → 往返一致性 |
+| A2 | 听书流媒体+片头/SAF | ⛔ 待验收 | 音频书源 | 用户 | TTS/音频管线 + Job headless + SAF 落盘路径已实现；未用真实音频源走完整链路 | 播放音频书 → 后台续播 → SAF 落盘 |
+| A3 | 真机媒体键/焦点 | ⛔ 待验收 | 真机 | 用户 | 媒体键/焦点处理逻辑已实现（模拟器无硬件媒体键）；参照侧原版 `MediaButtonReceiver` 在位 | 真机按媒体键 → 验证切章与焦点切换 |
+| A4 | 漫画/视频 | ⛔ 待验收 | 样例漫画书/视频书 | 用户 | 图片/视频渲染路径已实现（翻页、缩放、全屏）；未用样例书走全路径 | 打开样例漫画/视频书 → 翻页/缩放/全屏 |
+| A5 | 段评 ruleReview | ⛔ 待验收 | 含 ruleReview 源 | 用户 | 段评实现已落地（本地 Deprecated + 远端通道）；未用真实 ruleReview 源验证 | 打开带段评书 → 显示/交互 |
+| A9 | 深链 VIEW | ✅ **已验证 2026-08-22** | 无 | 自测（主代理） | `am start -n io.legado.flutter_legado/io.legado.flutter.MainActivity` 启动成功，`mCurrentFocus` 确认 Flutter MainActivity 前台处理；发现 5556 并存原版且双方注册 scheme → 裸 VIEW 触发系统选择器（已记入命令块） | 见上命令块（显式组件定向） |
+| A10 | 皮肤 zip | ⛔ 待验收 | 皮肤 zip 文件 | 用户 | 皮肤导入路径已实现；未用真实皮肤包验证 | 导入皮肤 zip → 应用生效 |
+| V1 | 验证码实网 | ⛔ 待验收 | 触发验证码的书源 | 用户 | JS 钩子 `getVerificationCode`/`startBrowserAwait` + FFI 事件流/提交/取消（Task #90，契约 §2.3）已交付；`CaptchaInfo` 被动检测在位；未实网端到端 | 登录含验证码源 → 弹窗识别填入 → 成功 |
+| V2 | 登录倒计时 | ⛔ 待验收 | 含 loginUi 倒计时源 | 用户 | 登录倒计时 UI/逻辑已实现（USER_TEST H10：阻塞于素材，非缺陷）；未用真实源验证 | 打开 loginUi 倒计时源 → 自动刷新 |
+| V3 | 外链确认 | ⛔ 待验收 | 触发外链跳转的书源 | 用户 | 外链确认弹窗路径已实现（GAP_AUDIT UI 检查 OK）；未实网触发 | 触发外链跳转 → 弹窗确认/取消 → 流程继续 |
 
 ---
 
