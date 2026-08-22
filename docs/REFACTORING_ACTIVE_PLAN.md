@@ -21,9 +21,9 @@
 | Flutter + Rust 主链 | 主体完成 | Rust FFI、BookApi/RustApi/MockBookApi、Dart 阅读器排版链已存在 |
 | 解析 parity | G8 已完成；当前分支还有搜索 parity 及书源修复 | 当前分支提交 `a779e1520`、`e74c2a6db`；见 `PARSER_GAP_FIX_PROGRESS_20260815.md` |
 | FFI CI | 已配置 QuickJS 全量测试 | `.github/workflows/rust-ci.yml:26-31` |
-| 主线集成 | 未完成 | `feature/rust-parser-gap-fix` 相对 `master` 为落后 2、领先 49 |
+| 主线集成 | 进行中（P0-2） | `feature/rust-parser-gap-fix` 相对 `master` 为落后 2、领先 61；merge-tree 预检仅 3 个内容冲突（CHANGELOG.md、flutter_legado/pubspec.yaml、rust/legado-ffi/src/api/web_book.rs） |
 | 真实环境 | 未完成 | A*：WebDAV、媒体源、真机按键、ruleReview、皮肤等仍需素材 |
-| 本轮验证 | 未完成 | Rust target 写入权限可由临时目录规避；Flutter analyze 在不同尝试中分别得到 84 issues 或长时间无输出，仍不可复现通过 |
+| 本轮验证 | 可复现通过 | Rust `os error 5` 以独立 CARGO_TARGET_DIR 规避；flutter analyze 3.3s 可复现（0 errors / 0 warnings / 78 info），flutter test +1190 全过；Rust 分 crate 门禁：parser 249/0、js 494/0、ffi 355/0（27 ignored）、server 170/0 |
 
 ### 2026-08-19 执行进度
 
@@ -37,12 +37,15 @@
 
 - P0-3 已关闭（方案 B）：移除 Server `/api/search/multi` Noop 空实现路由，新增 4xx 防回归测试；`cargo test -p legado-server` 170/0。详见 P0-3 小节。
 - P0-1 Flutter 门禁恢复可复现并通过：`flutter analyze` 不再挂起，3.3s；6 个 warning 已由 Cursor 清理并经主代理独立复核降为 `0 errors / 0 warnings / 78 info`（余为 info lint）；`flutter test` 全部通过 `+1190`。此前挂起为环境问题，现已可复现（`f5c29d036`、`f5e5862fa`）。
+- P0-1 关闭：Rust 与 Flutter 门禁在当前 HEAD 均可复现通过。证据：Rust 分 crate parser 249/0、js 494/0、ffi 355/0（27 ignored）、server 170/0；flutter analyze `0 errors / 0 warnings / 78 info`（3.3s）、flutter test +1190 全过。
+- P0-2 预检（merge-tree 干跑）：master 多出的 2 个提交为 `75593d26c`（七猫目录/正文修复）与 `25bab662c`（git 规范文档）；内容冲突仅 3 处：CHANGELOG.md、flutter_legado/pubspec.yaml、rust/legado-ffi/src/api/web_book.rs；js_executor.rs、quickjs_impl.rs 等可自动合并。
+- 进行中：Cursor 清理剩余 78 个 info lint（完成后由主代理独立复核再提交）；P0-2 合流在 lint 清理落地后正式启动。
 
 ## 三、执行顺序
 
 ### P0：先恢复可交付性
 
-#### P0-1 恢复可复现质量门禁
+#### P0-1 恢复可复现质量门禁（已关闭 2026-08-20）
 
 **问题**：本轮 Rust 测试在写 `rust/target/debug/.fingerprint/.../lib-legado_net` 时返回 Windows `os error 5`；Flutter analyze 无输出挂起。
 
@@ -136,3 +139,4 @@
 新增计划、报告、交接文档必须放在 `docs/`；历史材料只允许放在 `docs/过期文档/`，不得再创建新的日期版计划散落在根目录。
 
 编写者：Codex ｜ 2026-08-19
+修订：主代理 ｜ 2026-08-20（P0-1 关闭；P0-2 merge-tree 预检与进度记录）
