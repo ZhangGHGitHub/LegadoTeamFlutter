@@ -59,7 +59,7 @@
 | D4 | `flutter_legado/lib/src/screens/about_screen.dart:100` | 关于页 Markdown 资产缺失时回退内置文本（避免假功能），UI 兜底 |
 | D5 | `flutter_legado/lib/src/screens/qrcode_screen.dart:202` | 相机预览占位组件（桌面端无相机时的降级提示 UI），平台能力兜底 |
 
-> 备注：Dart lib 内其余含「占位」字样的命中均为 UI 骨架屏/占位图/占位符文案等界面概念，不属桩范畴，未列入。lib 内未检出任何 // TODO / FIXME 标记。
+> 备注：Dart lib 内其余含「占位」字样的命中均为 UI 骨架屏/占位图/占位符文案等界面概念，不属桩范畴，未列入。lib 内仅有 2 处 `TODO(§6.4)` 书架真实数据替换标记（mock_book_api.dart:29/:62，P2-3 跟踪中），无其它 TODO/FIXME 标记。
 
 ## 三、「全局零桩声明」定位与替代口径
 
