@@ -150,6 +150,7 @@ pub trait BookSourceFetcher: Send + Sync {
 ///
 /// 通过 `VecDeque` 存储预设响应，每次调用按序消费。
 /// 测试代码可预先通过 `push_*` 方法注入返回值。
+#[cfg(test)]
 #[derive(Default)]
 pub struct MockBookSourceFetcher {
     search_results: std::sync::Mutex<Vec<LegadoResult<Vec<WebSearchResult>>>>,
@@ -158,6 +159,7 @@ pub struct MockBookSourceFetcher {
     content_results: std::sync::Mutex<Vec<LegadoResult<String>>>,
 }
 
+#[cfg(test)]
 impl MockBookSourceFetcher {
     pub fn new() -> Self {
         Self::default()
@@ -196,6 +198,7 @@ impl MockBookSourceFetcher {
     }
 }
 
+#[cfg(test)]
 impl BookSourceFetcher for MockBookSourceFetcher {
     async fn search(
         &self,
