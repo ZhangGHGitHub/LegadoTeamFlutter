@@ -36,7 +36,7 @@
 ### 2026-08-20 执行进度
 
 - P0-3 已关闭（方案 B）：移除 Server `/api/search/multi` Noop 空实现路由，新增 4xx 防回归测试；`cargo test -p legado-server` 170/0。详见 P0-3 小节。
-- P0-1 Flutter 门禁恢复可复现并通过：`flutter analyze` 不再挂起，3.3s，`0 errors / 6 warnings / 78 info`（均 lint，无编译阻断）；`flutter test` 全部通过 `+1190`（23s）。此前挂起为环境问题，现已可复现。
+- P0-1 Flutter 门禁恢复可复现并通过：`flutter analyze` 不再挂起，3.3s；6 个 warning 已由 Cursor 清理并经主代理独立复核降为 `0 errors / 0 warnings / 78 info`（余为 info lint）；`flutter test` 全部通过 `+1190`。此前挂起为环境问题，现已可复现（`f5c29d036`、`f5e5862fa`）。
 
 ## 三、执行顺序
 
