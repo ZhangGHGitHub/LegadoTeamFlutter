@@ -53,7 +53,7 @@
 - P1-3 关闭：`6cbcea4f3`（test(ui): 新增 API 契约自动校验测试并同步文档计数基线）——新增 `api_contract_test.dart` 7 项程序化校验（BookApi⊆RustApi/MockBookApi、公共额外方法钉死、§1.7 等价对登记、§2.x 声明数==实际行、附录双射镜像、文档总数==程序化计数）；同步 API_CONTRACT.md 18 处（§1.7 登录等价对×4、章节计数×6、附录行×6、合计 251→263、BookApi 252→260）。门禁：契约测试 7/7 绿、analyze 0 issues、flutter test +1209 全过。
 - P1 全部关闭：P1-1（`577e4ce04`，真实 DLL 8/8）、P1-2（`58b48484d`）、P1-3（`6cbcea4f3`）、P1-4（`e759bdd06`）。
 - P2 进行中：P2-1 已关闭（`d1186c711`），P2-2 已关闭（`3b61f0883`，书架模糊搜索共享服务统一 Server 双入口），P2-5 已关闭（`9b645eab3`，桩/Fallback 四分类登记 + 零桩声明废止），P2-4 已关闭（`cb81703fd`，A* 验收矩阵登记 + A9 深链自测验证）；P2-3 口径登记（`856b9d322`，书架 JSON 待用户素材）——唯一余项为用户素材。
-- P3 进行中：P3-1 已关闭（`961a2d353`）；P3-2 MockBookSourceFetcher 下沉 test、P3-3 dict_state 内置词典核验（分析完成，待派发卫生批次）。
+- P3 进行中：P3-1 已关闭（`961a2d353`）；P3-2 MockBookSourceFetcher 下沉 cfg(test)、P3-3 词典注释与四分类台账更正（分析完成：生产路径无静态内置词典，查询直达 Rust FFI）——卫生批次已派发 Cursor 执行中。
 
 ## 三、执行顺序
 
