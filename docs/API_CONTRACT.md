@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-08-22 | **P1-3 契约自动校验**：新增 `test/unit/api_contract_test.dart` 程序化交叉校验（BookApi⊆RustApi/MockBookApi、§2.x 各节声明数、附录镜像、计数口径）；§1.7 补登录四方法命名等价对（`getLoginHeader` / `getLoginInfo` / `putLoginHeader` / `putLoginInfo`）；修正 6 处章节标题计数（2.3/2.5/2.9/2.18/2.41/2.43）+ 6 行附录计数；附录合计 251→**263**，BookApi 口径 252→**260** |
 | 2026-08-01 | 契约初版冻结（v1.0） |
 | 2026-08-10 | 第二批后置项 FFI 冻结：三个加法式新增——`shrinkDatabase`（§2.16 缓存管理）/ `webdavUploadFile`（§2.28 WebDAV 云同步）/ `toggleSameTitleRemoved`（§2.9 阅读器操作），契约合计方法数 174→177（Task #50） |
 | 2026-08-10 | 第三批后置项 FFI 冻结：两个加法式新增——`setSourceVariable`（§2.3 书源操作）/ `getBookmarksByBook`（§2.7 书签操作，书签作者维度查询）+ `book_sources` 表补 `variable` 列 schema 迁移预告（SCHEMA_VERSION 102→103，幂等迁移），契约合计方法数 225→227（Task #63） |
@@ -100,7 +101,7 @@
 
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 
-以下 8 对 Dart `BookApi` 方法名与契约/FFI 登记名不一致，语义等价，计数时勿重复：
+以下 12 对 Dart `BookApi` 方法名与契约/FFI 登记名不一致，语义等价，计数时勿重复：
 
 | BookApi（Dart） | 契约 §2.x / FFI 登记名 |
 |-----------------|------------------------|
@@ -112,14 +113,18 @@
 | `loginActionV2` | `sourceLoginActionV2`（§2.3） |
 | `listCachedChapterUrls` | `cacheListCachedChapterUrls`（§2.43.5） |
 | `getCachedChapter` | `cacheGetChapter`（§2.16 / §2.41） |
+| `getLoginHeader` | `sourceGetLoginHeader`（§2.3） |
+| `getLoginInfo` | `sourceGetLoginInfo`（§2.3） |
+| `putLoginHeader` | `sourcePutLoginHeader`（§2.3） |
+| `putLoginInfo` | `sourcePutLoginInfo`（§2.3） |
 
 ---
 
 ## 2. 方法清单
 
-> 共 **43 个模块**（§2.1–§2.43）；以 `flutter_legado/lib/src/services/book_api.dart` 程序化计数
-> 为基准，BookApi 接口当前共 **252 个方法**（2026-08-14 F3-20 补 backupList/bookGroupSetShow/httpTtsSetEnabled/ttsSpeak/ttsSetCacheDir 5）。
-> 附录 §2.1–§2.43 行合计 **251**；扣除尚未封装进 BookApi 的 FFI 5 个（§2.43 缓存下载等，见附录口径）+ 命名等价闭合 = **252**（F3-20 后 §3 待封装清单清零，BookApi 已含原 §2.41/§2.42 待封装 5 项）。
+> 共 **41 个方法模块**（§2.1–§2.43，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
+> BookApi 接口当前共 **260 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.1–§2.43 行合计 **263** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -143,7 +148,7 @@
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 | `reorderBooks(List<Map<String, dynamic>> orders)` | orders: `[{bookUrl, order}, ...]` | `Future<void>` | 批量持久化拖拽排序（对齐原版 BookAdapter.swap 后 updateBook） |
 
-### 2.3 书源操作（29 个方法）
+### 2.3 书源操作（32 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -219,7 +224,7 @@
 >
 > ℹ️ **封面规则搜索（台账 §5.13-10，Task #72）**：原版实现为单条封面规则配置——Kotlin `BookCover.searchCover(book)` 读取 `CoverRule(enable, searchUrl, coverRule)`（用户配置存 CacheManager，缺省回退 `DefaultData.coverRule`，UI 入口 `CoverRuleConfigDialog`），以 `AnalyzeUrl(searchUrl, book.name)` 发起搜索请求，再经 `AnalyzeRule.getString(coverRule, isUrl=true)` 提取封面 URL。本轨差异与对齐方案：规则载体为 `legado-db` 既有 `coverRules` 表（`id` / `name` / `rule` / `enable`，默认数据注入已就位），执行全部 `enable=1` 规则；规则执行复用既有书源搜索/JS 执行基础设施（`legado-net` HTTP 抓取 + `legado-parser`/quickjs 规则解析链路，与 `dictLookup` 字典规则执行同模式），`rule` 文本承载 searchUrl 与提取规则（具体内联格式由 Rust 轨实施时按表内既有数据确定）；单规则失败隔离不阻断其余；与既有 `searchCover`（多书源搜索提取封面）互补并存、互不影响。冻结契约保持不变，本方法为加法式新增。
 
-### 2.5 RSS 源操作（10 个方法）
+### 2.5 RSS 源操作（11 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -269,7 +274,7 @@
 | `deleteReplaceRule(int id)` | id | `Future<void>` | 删除替换规则 |
 | `setReplaceRuleEnabled(int id, bool enabled)` | id, enabled | `Future<void>` | 启用/禁用替换规则 |
 
-### 2.9 阅读器操作（10 个方法）
+### 2.9 阅读器操作（12 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -373,7 +378,7 @@
 
 > ℹ️ **流式 Debug.Callback（2026-08-13）**：Rust 侧 `ffi::debug_book_source_stream / debug_book_source_cancel`（实现 `legado-ffi/src/api/source_debug_api.rs`），复用既有 `webbook*` / `exploreFetchBooks` 链路推送逐步日志与字段摘要（`JsSourceDebugFormatter` 风格）。冻结 `webbook*` 契约不变，本组为加法式新增。
 
-### 2.18 发现页操作（6 个方法）
+### 2.18 发现页操作（7 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -622,7 +627,7 @@
 | `txtSearchInChapter(String path, String query, int chapterIndex, {bool caseSensitive = false, int maxResults = 50})` | path, query, chapterIndex（0 起） | `Future<List<Map<String, dynamic>>>` | 指定章节内搜索，返回格式同上 |
 | `txtSearchCount(String path, String query, {bool caseSensitive = false})` | path, query | `Future<int>` | 匹配总数计数（不返回完整结果，供 UI 显示） |
 
-### 2.41 契约外已实现 FFI 补登记（2026-08-06 审计，5 个）
+### 2.41 契约外已实现 FFI 补登记（2026-08-06 审计，5 个方法）
 
 > 以下函数已在 `rust/legado-ffi/src/ffi.rs` 实现并生成 Dart 绑定（`ffi.dart`），但此前未登记本契约（违反 §1.2「新增 API 须同步更新文档」），本节为补登记（承接 REMAINING_PLAN §4.2.2 P1-3）。其中多数尚未封装进 `BookApi` 抽象层，UI 封装计划见 §3「待 UI 封装清单」。
 >
@@ -653,7 +658,7 @@
 | `ttsSpeak({required String text, required String engineUrl, double speed = 1.0})` | text: 朗读文本，engineUrl: 引擎 URL 模板，speed: 语速 | `Future<Map<String, dynamic>>` | TTS 真实合成。返回字段（camelCase）：`audioPath: String`（本地音频文件绝对路径）/ `fromCache: bool`（是否缓存命中）/ `contentType: String`（音频 MIME 类型）。服务器返回 json/text 时以响应体文本抛出 BridgeError |
 | `ttsSetCacheDir(String path)` | path: 缓存目录绝对路径 | `Future<bool>` | 设置 TTS 音频缓存目录（全局生效） |
 
-### 2.43 缓存写/购买/批量下载/导出扩展（Task #136 R5+R6+R7+R8，7 个方法）
+### 2.43 缓存写/购买/批量下载/导出扩展（Task #136 R5+R6+R7+R8，8 个方法）
 
 > Task #136 合并批次，均为**加法式**新增（不改既有签名/行为）。仅走 frb 主链路（`ffi.rs`），
 > 旧式 C ABI（`bridge.rs`）已按 Task #136 R12 冻结新增并标注 DEPRECATED，故本批不在 C ABI 面暴露。
@@ -826,22 +831,22 @@
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 10 |
-| 3 | 书源操作 | 25 |
+| 3 | 书源操作 | 32 |
 | 4 | 搜索操作 | 12 |
-| 5 | RSS 源操作 | 10 |
+| 5 | RSS 源操作 | 11 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 7 |
 | 8 | 替换规则操作 | 6 |
-| 9 | 阅读器操作 | 10 |
+| 9 | 阅读器操作 | 12 |
 | 10 | 配置操作 | 4 |
-| 11 | 备份操作 | 2 |
+| 11 | 备份操作 | 3 |
 | 12 | 阅读记录 | 5 |
 | 13 | RSS 收藏操作 | 4 |
 | 14 | 书籍分组 | 4 |
 | 15 | 搜索历史 | 5 |
 | 16 | 缓存管理 | 8 |
 | 17 | WebBook 操作 | 6 |
-| 18 | 发现页操作 | 2 |
+| 18 | 发现页操作 | 7 |
 | 19 | 规则解析 | 1 |
 | 20 | 网络操作 | 5 |
 | 21 | JS 引擎 | 2 |
@@ -864,20 +869,12 @@
 | 40 | 本地 TXT 全文搜索 | 4 |
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
-| 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 7 |
-| | **合计（§2.1–§2.43 附录行合计）** | **251** |
+| 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
+| | **合计（§2.1–§2.43 附录行合计）** | **263** |
 
-> 口径说明（F3-10，2026-08-14 校准；基准 = `book_api.dart` 程序化计数 **247**）：
-> - **与 BookApi 闭合**：附录行合计 251 − 尚未封装进 BookApi 的 FFI 10 个
->   （行 41 的 `backupList` / `bookGroupSetShow` / `httpTtsSetEnabled` 3 个、行 42 TTS 管线 2 个、
->   行 43 的 `cacheDownloadStart` / `cacheDownloadProgress` / `cacheDownloadCancel` / `cacheDownloadList` /
->   `bookExportWithOptions` 5 个，待 UI 封装，见 §3「待 UI 封装清单」）= 241；
->   − 行 41 中 `dictLookup` 已在 BookApi 实现但附录重复计数 1 = 240；
->   + §1.7 命名等价 8 对中 BookApi 侧 7 个已在 §2.x 表格计数、仅 `dictLookup` 见上行 = **247**。
->   第四批 3 项（`setCustomHosts` / `setMcpPort` / `searchCoverRules`）均为 BookApi 封装口径方法；
->   2026-08-12 再加 `webdavDownloadFile` 1 + `clearCookie` 1 + curl 三方法 3（230 + 5 = 235）；
->   2026-08-13 加 `reviewGetSummary` / `reviewGetDetail` 2；2026-08-14 F3-15 移除本地 CRUD 4 → **233**。
-> - 本表行数已逐行与各 §2.x 章节标题对齐：行 3 按 §2.3 表格实际 24 行（含 `setSourceVariable` / `clearCookie` / curl 三方法）；
->   行 7 按 §2.7 标题修正为 7（原 6 + 第三批 `getBookmarksByBook` 1）；行 30 按 §2.30 标题为 **3**（reviewGetReplies/Summary/Detail）；
->   行 4 按 §2.4 标题为 8（原 7 + 第四批 `searchCoverRules` 1）；行 20 按 §2.20 标题为 3（原 2 + 第四批 `setCustomHosts` 1）；
->   行 22 按 §2.22 标题为 5（原 4 + 第四批 `setMcpPort` 1）。
+> 口径说明（2026-08-15，`test/unit/api_contract_test.dart` 程序化计数校准，取代人工统计）：
+> - 附录行合计 **263** = §2.x 实际方法行总数；其中与 BookApi 同名 249、§1.7 命名等价对的 FFI 登记名 8
+>   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
+>   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
+> - BookApi 代码计数 **260** = 249 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
