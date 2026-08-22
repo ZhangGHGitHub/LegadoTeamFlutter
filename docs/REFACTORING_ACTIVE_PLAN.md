@@ -23,7 +23,7 @@
 | FFI CI | 已配置 QuickJS 全量测试 | `.github/workflows/rust-ci.yml:26-31` |
 | 主线集成 | 已关闭（P0-2，2026-08-22） | 合并提交 `81ad6e220`（父提交：master `75593d26c` + feature `5cf56a89c`）；3 处内容冲突全部解决；FRB codegen 重新生成补全 source_login_v1 绑定；全量门禁与双模拟器冒烟通过 |
 | 真实环境 | 未完成 | A*：WebDAV、媒体源、真机按键、ruleReview、皮肤等仍需素材 |
-| 本轮验证 | 可复现通过（`6cbcea4f3`，2026-08-22） | Rust `cargo test --workspace --features quickjs`：parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0（`81ad6e220` 起 Rust 侧无变更）；flutter analyze 0 issues；flutter test +1209 全过 |
+| 本轮验证 | 可复现通过（`577e4ce04`，2026-08-22） | Rust `cargo test --workspace --features quickjs`：parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0（`81ad6e220` 起 Rust 侧无变更）；flutter analyze 0 issues；flutter test +1217 全过 |
 
 ### 2026-08-19 执行进度
 
@@ -51,7 +51,7 @@
 - 工具修复：build-android.ps1 的 rustup target add 在目标已装时向 stderr 输出 info 行，EAP=Stop 下误判为异常中止构建；改为与 cargo 块相同的 EAP 临时降级 + $LASTEXITCODE 判定。
 - P1-2 关闭：`58b48484d`（fix(ui): AutoTask 保存原始 script 防止 action 丢失）——根因 toJson 按 taskType 生成占位脚本，新增 script 字段与 effectiveScript、旧 JSON 双向兼容，补 12 项 round-trip/导入/fallback 单测。
 - P1-3 关闭：`6cbcea4f3`（test(ui): 新增 API 契约自动校验测试并同步文档计数基线）——新增 `api_contract_test.dart` 7 项程序化校验（BookApi⊆RustApi/MockBookApi、公共额外方法钉死、§1.7 等价对登记、§2.x 声明数==实际行、附录双射镜像、文档总数==程序化计数）；同步 API_CONTRACT.md 18 处（§1.7 登录等价对×4、章节计数×6、附录行×6、合计 251→263、BookApi 252→260）。门禁：契约测试 7/7 绿、analyze 0 issues、flutter test +1209 全过。
-- 进行中：P1-1 FRB StreamSink 运行时验证（Cursor，逐流真实 DLL 证据）。P1-4 已关闭（`e759bdd06`）。
+- P1 全部关闭：P1-1（`577e4ce04`，真实 DLL 8/8）、P1-2（`58b48484d`）、P1-3（`6cbcea4f3`）、P1-4（`e759bdd06`）。
 
 ## 三、执行顺序
 
@@ -97,13 +97,15 @@
 
 ### P1：跨轨契约和用户可见语义
 
-#### P1-1 验证 FRB StreamSink 生成链路
+#### P1-1 验证 FRB StreamSink 生成链路（已关闭 2026-08-22）
 
 **问题**：生成代码中存在 StreamSink<String> 的 `unimplemented`/`UnimplementedError` 分支。静态代码不能证明其可达性。
 
 **行动**：列出所有 StreamSink FFI 方法，在真实 DLL/so、非 Mock 模式下逐个验证订阅、事件、正常结束和取消；不得手改生成文件。若可达，修正源 API 或 codegen 配置后原子重生成、重编译、替换二进制。
 
 **关闭条件**：每个流 API 有运行时证据和回归测试，或有生成器不可达性说明及版本固定证据。
+
+**关闭记录（2026-08-22）**：提交 `577e4ce04`（test(ui): P1-1 验证 FRB StreamSink 流生成链路（真实 DLL），— Cursor Bridge）。新增 `test/ffi/ffi_stream_sink_runtime_test.dart`（277 行，8 项）：直接加载 `rust/target/debug/legado_ffi.dll`（quickjs 构建、非 Mock）+ 隔离临时 DB；5 个 StreamSink 流 API 逐个验证订阅/事件接收/正常结束；sourceCheck/debugBookSource 覆盖取消路径（wire 调用 + 干净结束 + 新一轮重置）；verification/webview 长期存活流验证 pending/submit/cancel 配套通道。UnimplementedError 分支不可达性四重证据：静态零调用点（decode 方向符号仅存定义、DcoCodec 实例化 0）+ sink 单向传入 Rust + 版本固定（pubspec 2.11.1 / lock sha256 / Cargo.toml =2.11.1 / codegenVersion 校验）+ 运行时（真实 DLL 8/8 全过，若可达必然抛 UnimplementedError）。门禁经主代理独立复跑：analyze 0 issues、flutter test +1217 全绿、cargo 三段 exit 0。已知行为：FRB RustStreamSink 长期存活流空闲时 cancel Future 不完成（应用代码不得 await 该取消，已记入测试注释）；kDefaultExternalLibraryLoaderConfig.ioDirectory 与工作区布局不符（rust_api.dart 显式搜索规避，既有项）。
 
 #### P1-2 修复 AutoTask 原始 action 丢失（已关闭 2026-08-22）
 

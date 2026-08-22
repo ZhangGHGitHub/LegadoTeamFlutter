@@ -41,14 +41,14 @@
 | 模块 | 最近记录 |
 |------|----------|
 | Rust `cargo test --workspace --features quickjs` | **parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0**（2026-08-22，`81ad6e220`；此后 Rust 侧无变更） |
-| Flutter `flutter analyze` | **0 issues**（2026-08-22，`6cbcea4f3`） |
-| Flutter `flutter test` | **+1209 全过**（2026-08-22，`6cbcea4f3`；含 P1-3 新增契约校验测试 7 项） |
+| Flutter `flutter analyze` | **0 issues**（2026-08-22，`577e4ce04`） |
+| Flutter `flutter test` | **+1217 全过**（2026-08-22，`577e4ce04`；含 P1-3 契约校验 7 项 + P1-1 真实 DLL 流验证 8 项） |
 
-> 上表为当前 HEAD `6cbcea4f3`（2026-08-22，P1-3 契约自动校验）的可复现门禁结果：Rust 数字沿用 P0-2 合流 `81ad6e220`（此后 Rust 侧无变更），Flutter test +1209 含 P1-3 新增 7 项契约校验。双模拟器冒烟（emulator-5554 / emulator-5556，后者为 AVD legado_5558 用户验收机）于 P0-2 合流时双双通过。当前执行计划见 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md)。
+> 上表为当前 HEAD `577e4ce04`（2026-08-22，P1-1 真实 DLL 流验证）的可复现门禁结果：Rust 数字沿用 P0-2 合流 `81ad6e220`（此后 Rust 侧无变更），Flutter test +1217 含 P1-3 契约校验 7 项与 P1-1 真实 DLL 流验证 8 项。双模拟器冒烟（emulator-5554 / emulator-5556，后者为 AVD legado_5558 用户验收机）于 P0-2 合流时双双通过。当前执行计划见 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md)。
 
 ### 🔄 进行中项
 
-- **当前执行计划**：见 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md)。P0 三项已全部关闭（P0-1 质量门禁 2026-08-20、P0-2 parser/search 分支合流 2026-08-22、P0-3 Server 多源搜索空实现 2026-08-20）；P1 进展：P1-2 AutoTask action 保真已关闭（`58b48484d`）、P1-3 API 契约自动校验已关闭（`6cbcea4f3`，新增 `api_contract_test.dart` 7 项校验 + 文档计数同步）；进行中：P1-1 FRB 流运行时验证、P1-4 状态口径统一。
+- **当前执行计划**：见 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md)。P0 三项已全部关闭（P0-1 质量门禁 2026-08-20、P0-2 parser/search 分支合流 2026-08-22、P0-3 Server 多源搜索空实现 2026-08-20）；P1 四项已全部关闭：P1-1 FRB 流真实 DLL 验证（`577e4ce04`，8/8）、P1-2 AutoTask action 保真（`58b48484d`）、P1-3 API 契约自动校验（`6cbcea4f3`，7 项校验 + 文档计数同步）、P1-4 状态口径统一（`e759bdd06`）。
 - **残余风险与用户验收**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)，A\* 环境验收仍需真实素材，不能替代工程门禁。
 - **源码兼容与解析 parity**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) 和 [PARSER_GAP_FIX_PROGRESS_20260815.md](PARSER_GAP_FIX_PROGRESS_20260815.md)。
 - **历史计划与报告**：统一保存在 [过期文档](过期文档/README.md)，不作为当前任务来源。
