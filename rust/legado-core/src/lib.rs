@@ -53,6 +53,8 @@ pub mod reader_state;
 pub mod regex_safe;
 pub mod review;
 pub mod search_engine;
+/// 书架模糊搜索服务（Server REST 与 MCP 工具共享，P2-2）
+pub mod shelf_search;
 pub mod source_lock;
 pub mod source_login;
 pub mod source_matcher;

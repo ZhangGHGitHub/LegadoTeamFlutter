@@ -44,13 +44,11 @@ pub async fn search_books(
     let repo = legado_db::repository::book_repository::BookRepository::new(db.connection());
     let all_books = repo.find_all()?;
 
-    let keyword_lower = req.keyword.to_lowercase();
-    let results: Vec<Value> = all_books
-        .into_iter()
-        .filter(|book| {
-            book.name.to_lowercase().contains(&keyword_lower)
-                || book.author.to_lowercase().contains(&keyword_lower)
-        })
+    // 匹配语义委托共享服务（P2-2，与 MCP search_books 同一实现）；
+    // 响应组装保持本入口原有字段与包装不变。
+    let matched = legado_core::shelf_search::match_shelf_books(&all_books, &req.keyword);
+    let results: Vec<Value> = matched
+        .iter()
         .map(|book| {
             json!({
                 "book_url": book.book_url,

@@ -401,14 +401,9 @@ async fn call_search_books(
     let repo = legado_db::BookRepository::new(conn);
 
     let all_books = repo.find_all().map_err(db_err)?;
-    let query_lower = query.to_lowercase();
-    let matched: Vec<&legado_core::models::Book> = all_books
-        .iter()
-        .filter(|b| {
-            b.name.to_lowercase().contains(&query_lower)
-                || b.author.to_lowercase().contains(&query_lower)
-        })
-        .collect();
+    // 匹配语义委托共享服务（P2-2，与 REST /api/search 同一实现）；
+    // MCP 响应字段（origin/latest_chapter）保持本入口原有组装不变。
+    let matched = legado_core::shelf_search::match_shelf_books(&all_books, query);
 
     let results: Vec<serde_json::Value> = matched
         .iter()
