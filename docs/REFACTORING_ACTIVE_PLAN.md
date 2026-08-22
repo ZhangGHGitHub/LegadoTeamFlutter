@@ -1,6 +1,6 @@
 # Legado 后续重构执行计划（Active）
 
-> 版本：2026-08-19
+> 版本：2026-08-22
 >
 > 本文是当前重构开放项的唯一执行计划。历史阶段计划、审计报告和已完成批次仅作为证据保存在 `docs/过期文档/`，不得重新作为当前任务来源。
 >
@@ -23,7 +23,7 @@
 | FFI CI | 已配置 QuickJS 全量测试 | `.github/workflows/rust-ci.yml:26-31` |
 | 主线集成 | 已关闭（P0-2，2026-08-22） | 合并提交 `81ad6e220`（父提交：master `75593d26c` + feature `5cf56a89c`）；3 处内容冲突全部解决；FRB codegen 重新生成补全 source_login_v1 绑定；全量门禁与双模拟器冒烟通过 |
 | 真实环境 | 未完成 | A*：WebDAV、媒体源、真机按键、ruleReview、皮肤等仍需素材 |
-| 本轮验证 | 可复现通过（`81ad6e220`，2026-08-22） | Rust `cargo test --workspace --features quickjs`：parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0；flutter analyze 0 issues；flutter test +1190 全过 |
+| 本轮验证 | 可复现通过（`6cbcea4f3`，2026-08-22） | Rust `cargo test --workspace --features quickjs`：parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0（`81ad6e220` 起 Rust 侧无变更）；flutter analyze 0 issues；flutter test +1209 全过 |
 
 ### 2026-08-19 执行进度
 
@@ -49,6 +49,9 @@
 - 合流后全量门禁：Rust parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0；flutter analyze 0 issues；flutter test +1190 全过。
 - 冒烟：本轮模拟器端口分配为 5554/5556（对应 AVD legado_5556 / legado_5558，第三实例受同机限制无法再开）；emulator-5554（子代理测试机）6/6 通过，emulator-5556（用户验收机，AVD legado_5558）6/6 通过含 -CheckUI 书架元素检查。
 - 工具修复：build-android.ps1 的 rustup target add 在目标已装时向 stderr 输出 info 行，EAP=Stop 下误判为异常中止构建；改为与 cargo 块相同的 EAP 临时降级 + $LASTEXITCODE 判定。
+- P1-2 关闭：`58b48484d`（fix(ui): AutoTask 保存原始 script 防止 action 丢失）——根因 toJson 按 taskType 生成占位脚本，新增 script 字段与 effectiveScript、旧 JSON 双向兼容，补 12 项 round-trip/导入/fallback 单测。
+- P1-3 关闭：`6cbcea4f3`（test(ui): 新增 API 契约自动校验测试并同步文档计数基线）——新增 `api_contract_test.dart` 7 项程序化校验（BookApi⊆RustApi/MockBookApi、公共额外方法钉死、§1.7 等价对登记、§2.x 声明数==实际行、附录双射镜像、文档总数==程序化计数）；同步 API_CONTRACT.md 18 处（§1.7 登录等价对×4、章节计数×6、附录行×6、合计 251→263、BookApi 252→260）。门禁：契约测试 7/7 绿、analyze 0 issues、flutter test +1209 全过。
+- 进行中：P1-1 FRB StreamSink 运行时验证（Cursor，逐流真实 DLL 证据）；P1-4 状态口径统一（本条目即其落地）。
 
 ## 三、执行顺序
 
@@ -102,7 +105,7 @@
 
 **关闭条件**：每个流 API 有运行时证据和回归测试，或有生成器不可达性说明及版本固定证据。
 
-#### P1-2 修复 AutoTask 原始 action 丢失
+#### P1-2 修复 AutoTask 原始 action 丢失（已关闭 2026-08-22）
 
 **问题**：`AutoTask.toJson` 按 taskType 生成占位 script；在列表失败的降级路径中，真实 action 可能丢失，影响书名+作者匹配和任务导入。
 
@@ -110,13 +113,17 @@
 
 **关闭条件**：任务创建、导出、导入、列表失败降级均保留真实 action，不再用展示模型覆盖执行脚本。
 
-#### P1-3 让 API 契约可自动校验
+**关闭记录（2026-08-22）**：提交 `58b48484d`。根因：toJson 按 taskType 生成占位 script，复杂 JSON action 在创建/导出/导入/findBookUpdateTask fallback 路径丢失；新增 script 字段与 effectiveScript（展示与执行载荷分离），fromJson/toJson 双向兼容旧 JSON；12 项 round-trip/导入/fallback 单测全过，flutter test +1202。
+
+#### P1-3 让 API 契约可自动校验（已关闭 2026-08-22）
 
 **问题**：`API_CONTRACT.md` 仍记录 BookApi 252、附录 251，而当前源码统计为 BookApi 261、RustApi override 262。
 
 **行动**：补一致性脚本/测试，比较 BookApi、RustApi、MockBookApi 方法集合和契约表项；明确 RustApi 多出的包装/兼容方法；更新契约正文、附录、变更记录。
 
 **关闭条件**：新增 API 若缺 BookApi、RustApi、Mock 或契约条目，CI 失败；总数由脚本生成或校验，不再人工猜测。
+
+**关闭记录（2026-08-22）**：提交 `6cbcea4f3`。新增 `flutter_legado/test/unit/api_contract_test.dart`（7 项校验，行扫描解析器，无正则依赖）；RustApi 公共额外方法钉死为 {toString}、MockBookApi 无额外公共方法；API_CONTRACT.md 同步 18 处：§1.7 补 4 对登录等价对、6 处章节标题计数（2.3/2.5/2.9/2.18/2.41/2.43）、附录 6 行计数，合计 251→263、BookApi 声明 252→260（程序化基线）。门禁：契约测试 7/7、analyze 0 issues、flutter test +1209。
 
 #### P1-4 统一状态入口
 

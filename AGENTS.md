@@ -32,7 +32,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 3. [docs/UI_FIX_PLAN.md](docs/UI_FIX_PLAN.md) — UI 修复的权威执行依据（四步文档研读流程）
 4. [docs/API_CONTRACT.md](docs/API_CONTRACT.md) — FFI API 契约（跨轨变更必须先冻结契约）
 5. [docs/design_system.md](docs/design_system.md) — 设计系统
-6. [docs/REFACTORING_PLAN.md](docs/REFACTORING_PLAN.md) 与 [docs/REFACTORING_REMAINING_PLAN.md](docs/REFACTORING_REMAINING_PLAN.md) — 重构计划与剩余项
+6. [docs/REFACTORING_ACTIVE_PLAN.md](docs/REFACTORING_ACTIVE_PLAN.md) — 当前唯一后续重构执行计划（历史阶段计划见 docs/过期文档/）
 
 ## 关键约束
 
@@ -41,7 +41,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 - **FFI 变更**：修改 Rust/Dart FFI 边界前，先更新 `docs/API_CONTRACT.md` 契约，再实施代码；跨轨阻塞项须 Rust 轨先行交付契约；契约修改需双方（Qoder/QoderCN）确认；Mock 数据使用从原 Android 应用抓取的真实 JSON
 - **重构红线**：本项目为重构项目，禁止新增 Android 原版不存在的创意功能；发现偏离项（如推荐算法、阅读统计等）必须清理，一切以不偏离重构核心为目标
 - **执行边界**：不得超范围删除或修改文件，删除/修改代码前必须先确认范围无误
-- **计划驱动**：每阶段开发前先审查计划与进度文档（docs/ 下 REFACTORING_PLAN.md / REFACTORING_REMAINING_PLAN.md 等），确认进度符合度后按 P0/P1/P2 优先级顺序执行
+- **计划驱动**：每阶段开发前先审查当前执行计划（docs/REFACTORING_ACTIVE_PLAN.md，唯一开放项台账；历史计划已归档 docs/过期文档/），确认进度符合度后按 P0/P1/P2 优先级顺序执行
 - **UI 层职责边界**：UI 层只做界面渲染、交互与状态管理，不含业务逻辑；数据经 Rust Bridge 获取；遵循 UI 层与底层分离原则
 - **文档存放**：新建计划/报告/交接类 `.md` 必须放 `docs/`；根目录仅保留 README.md、CHANGELOG.md、LICENSE、AGENTS.md 等约定文件
 - **全中文规范**：汇报、代码注释全部使用中文；commit 描述/正文使用中文（类型/作用域按约定式提交用英文小写）
