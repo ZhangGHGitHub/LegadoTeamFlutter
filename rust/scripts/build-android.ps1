@@ -162,9 +162,15 @@ if (Test-Path $FrbRs) {
 
 $triples = $SelectedKeys | ForEach-Object { $AllTargets[$_].triple }
 Write-Host ">> Ensuring Rust targets installed..." -ForegroundColor Yellow
+# rustup 将 "info: component ... is up to date" 写到 stderr，EAP=Stop 下会误判为异常；
+# 与下方 cargo 构建块相同：临时降为 Continue，仅凭 $LASTEXITCODE 判定成败。
+$rustupPrevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 rustup target add $triples
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to install Rust targets"
+$rustupExit = $LASTEXITCODE
+$ErrorActionPreference = $rustupPrevEAP
+if ($rustupExit -ne 0) {
+    Write-Error "Failed to install Rust targets (exit=$rustupExit)"
     exit 1
 }
 
