@@ -19,6 +19,12 @@ class AutoTask {
   final String? lastRunAt;
   final String? lastResult;
 
+  /// 可执行脚本 / 原始 action 载荷（与 [taskType] 展示字段分离）
+  ///
+  /// 书籍更新等复杂任务 script 为 JSON action；简单任务可为空，
+  /// [toJson] 时按 [taskType] 生成占位脚本以兼容旧数据与服务端校验。
+  final String? script;
+
   const AutoTask({
     required this.id,
     required this.name,
@@ -27,6 +33,7 @@ class AutoTask {
     this.isEnabled = true,
     this.lastRunAt,
     this.lastResult,
+    this.script,
   });
 
   /// 从 JSON 构建（兼容 Dart 风格与服务端 AutoTaskRule 风格字段）
@@ -41,7 +48,14 @@ class AutoTask {
           json['isEnabled'] as bool? ?? json['enable'] as bool? ?? true,
       lastRunAt: _parseLastRunAt(json['lastRunAt']),
       lastResult: json['lastResult'] as String?,
+      script: _parseScript(json['script']),
     );
+  }
+
+  /// 解析 script：空字符串视为未设置（旧数据无 script 字段时走 taskType 兜底）
+  static String? _parseScript(dynamic value) {
+    if (value is String && value.isNotEmpty) return value;
+    return null;
   }
 
   /// 解析 lastRunAt：服务端返回毫秒时间戳（int），也可能是字符串
@@ -68,15 +82,19 @@ class AutoTask {
 
   /// 转为 JSON（服务端 AutoTaskRule 兼容格式）
   ///
-  /// 服务端 run 端点要求 `script` 非空，按任务类型生成占位脚本。
+  /// 优先输出已保存的 [script]；无 script 时按 [taskType] 生成占位脚本
+  /// （兼容旧 JSON 与服务端 run 端点非空校验）。
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
         'enable': isEnabled,
         'cron': cron,
         'comment': taskType,
-        'script': _defaultScript,
+        'script': effectiveScript,
       };
+
+  /// 实际可执行脚本：有存盘载荷用存盘值，否则按 taskType 生成占位脚本
+  String get effectiveScript => script ?? _defaultScript;
 
   /// 按任务类型生成占位脚本（服务端校验非空即视为可执行）
   String get _defaultScript {
@@ -101,6 +119,7 @@ class AutoTask {
     bool? isEnabled,
     String? lastRunAt,
     String? lastResult,
+    String? script,
   }) {
     return AutoTask(
       id: id ?? this.id,
@@ -110,6 +129,7 @@ class AutoTask {
       isEnabled: isEnabled ?? this.isEnabled,
       lastRunAt: lastRunAt ?? this.lastRunAt,
       lastResult: lastResult ?? this.lastResult,
+      script: script ?? this.script,
     );
   }
 

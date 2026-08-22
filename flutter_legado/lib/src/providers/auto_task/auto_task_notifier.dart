@@ -481,12 +481,9 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   ///
   /// 优先按 ID 精确匹配，其次按书名 + 作者匹配。未找到返回 null。
   ///
-  /// [fix Task#45 | 2026-08-09] 匹配输入改为从 DB 读全量规则：
-  /// AutoTask 模型不保存 script，toJson 按 taskType 生成占位脚本，
-  /// Rust 侧 generated_book_identity 要求带 generatedBy 标记的真实
-  /// action，占位脚本永远解析失败导致「书名+作者」分支恒失效
-  /// （换源后 bookUrl 变化时会重复建任务）。list 失败时退化为模型
-  /// 序列化输入，至少保留 ID 精确匹配分支可用 — Qoder
+  /// [fix Task#45 | 2026-08-09] 匹配输入改为从 DB 读全量规则；
+  /// list 失败时退化为 state.tasks 序列化（[AutoTask] 已保存 script，
+  /// toJson 保留真实 action，书名+作者匹配可用）— Qoder
   Future<Map<String, dynamic>?> findBookUpdateTask({
     required String bookUrl,
     required String bookName,

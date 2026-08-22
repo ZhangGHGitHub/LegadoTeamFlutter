@@ -126,6 +126,18 @@ void main() {
       expect(json['script'], equals('refreshToc()'));
     });
 
+    test('toJson 保留已保存 script', () {
+      const savedScript = '({"bookUrl":"http://a.com","generatedBy":"bookUpdate"})';
+      final task = AutoTask.fromJson({
+        'id': 't2',
+        'name': 'Book Update',
+        'comment': 'refreshToc',
+        'cron': '0 */6 * * *',
+        'script': savedScript,
+      });
+      expect(task.toJson()['script'], equals(savedScript));
+    });
+
     test('taskTypeLabel 返回中文标签', () {
       expect(const AutoTask(id: '', name: '', taskType: 'refreshToc', cron: '').taskTypeLabel, equals('刷新目录'));
       expect(const AutoTask(id: '', name: '', taskType: 'updateSources', cron: '').taskTypeLabel, equals('更新书源'));
@@ -211,6 +223,42 @@ void main() {
   });
 
   group('AutoTaskNotifier createTask', () {
+    test('创建时 POST body 保留 script', () async {
+      const bookScript =
+          '({"type":"refreshToc","bookUrl":"http://book/1","generatedBy":"bookUpdate"})';
+      String? postedBody;
+      final client = MockClient((request) async {
+        if (request.method == 'POST') {
+          postedBody = request.body;
+          return http.Response('', 201);
+        }
+        return http.Response(jsonEncode([
+          {
+            'id': '1',
+            'name': 'Book Task',
+            'comment': 'refreshToc',
+            'cron': '0 */6 * * *',
+            'script': bookScript,
+          },
+        ]), 200);
+      });
+      final c = restContainer(client);
+
+      final task = AutoTask.fromJson({
+        'id': '1',
+        'name': 'Book Task',
+        'comment': 'refreshToc',
+        'cron': '0 */6 * * *',
+        'script': bookScript,
+      });
+      await readNotifier(c).createTask(task);
+
+      expect(postedBody, isNotNull);
+      final body = jsonDecode(postedBody!) as Map<String, dynamic>;
+      expect(body['script'], equals(bookScript));
+      expect(readState(c).error, isNull);
+    });
+
     test('创建成功后静默刷新', () async {
       var requestCount = 0;
       final client = MockClient((request) async {
@@ -394,6 +442,57 @@ void main() {
 
       final result = await readNotifier(container).nextDueAt(cron: '0 0 3 * * *');
       expect(result, equals(1735689600000));
+    });
+
+    test('findBookUpdateTask list 失败时 fallback 保留 script', () async {
+      const bookScript =
+          '({"type":"refreshToc","bookUrl":"http://book/1","bookName":"测试书",'
+          '"bookAuthor":"作者A","generatedBy":"bookUpdate"})';
+      final expected = {'id': 'book_update:abc', 'name': '更新', 'script': bookScript};
+
+      when(() => mockApi.autoTaskListRules()).thenThrow(Exception('FFI list failed'));
+
+      final client = MockClient((request) async {
+        if (request.method == 'GET') {
+          // content-type application/json → Response 用 utf8 编码 body
+          // （无头时默认 latin1，中文会抛 ArgumentError）
+          return http.Response(jsonEncode([
+            {
+              'id': 'book_update:abc',
+              'name': '更新',
+              'comment': 'refreshToc',
+              'cron': '0 */6 * * *',
+              'script': bookScript,
+            },
+          ]), 200, headers: {'content-type': 'application/json'});
+        }
+        return http.Response('[]', 200, headers: {'content-type': 'application/json'});
+      });
+      final c = ffiContainer(client, mockApi);
+
+      // 经 REST 降级加载，fromJson 应保留 script
+      await readNotifier(c).loadTasks();
+      expect(readState(c).tasks.first.script, equals(bookScript));
+
+      when(() => mockApi.autoTaskFindBookUpdateTask(
+            tasksJson: any(named: 'tasksJson'),
+            bookUrl: any(named: 'bookUrl'),
+            bookName: any(named: 'bookName'),
+            bookAuthor: any(named: 'bookAuthor'),
+          )).thenAnswer((invocation) async {
+        final tasksJson = invocation.namedArguments[#tasksJson] as String;
+        final list = jsonDecode(tasksJson) as List;
+        expect(list.length, equals(1));
+        expect(list[0]['script'], equals(bookScript));
+        return expected;
+      });
+
+      final result = await readNotifier(c).findBookUpdateTask(
+        bookUrl: 'http://book/1',
+        bookName: '测试书',
+        bookAuthor: '作者A',
+      );
+      expect(result, equals(expected));
     });
   });
 }
