@@ -51,7 +51,7 @@
 - 工具修复：build-android.ps1 的 rustup target add 在目标已装时向 stderr 输出 info 行，EAP=Stop 下误判为异常中止构建；改为与 cargo 块相同的 EAP 临时降级 + $LASTEXITCODE 判定。
 - P1-2 关闭：`58b48484d`（fix(ui): AutoTask 保存原始 script 防止 action 丢失）——根因 toJson 按 taskType 生成占位脚本，新增 script 字段与 effectiveScript、旧 JSON 双向兼容，补 12 项 round-trip/导入/fallback 单测。
 - P1-3 关闭：`6cbcea4f3`（test(ui): 新增 API 契约自动校验测试并同步文档计数基线）——新增 `api_contract_test.dart` 7 项程序化校验（BookApi⊆RustApi/MockBookApi、公共额外方法钉死、§1.7 等价对登记、§2.x 声明数==实际行、附录双射镜像、文档总数==程序化计数）；同步 API_CONTRACT.md 18 处（§1.7 登录等价对×4、章节计数×6、附录行×6、合计 251→263、BookApi 252→260）。门禁：契约测试 7/7 绿、analyze 0 issues、flutter test +1209 全过。
-- 进行中：P1-1 FRB StreamSink 运行时验证（Cursor，逐流真实 DLL 证据）；P1-4 状态口径统一（本条目即其落地）。
+- 进行中：P1-1 FRB StreamSink 运行时验证（Cursor，逐流真实 DLL 证据）。P1-4 已关闭（`e759bdd06`）。
 
 ## 三、执行顺序
 
@@ -125,13 +125,15 @@
 
 **关闭记录（2026-08-22）**：提交 `6cbcea4f3`。新增 `flutter_legado/test/unit/api_contract_test.dart`（7 项校验，行扫描解析器，无正则依赖）；RustApi 公共额外方法钉死为 {toString}、MockBookApi 无额外公共方法；API_CONTRACT.md 同步 18 处：§1.7 补 4 对登录等价对、6 处章节标题计数（2.3/2.5/2.9/2.18/2.41/2.43）、附录 6 行计数，合计 251→263、BookApi 声明 252→260（程序化基线）。门禁：契约测试 7/7、analyze 0 issues、flutter test +1209。
 
-#### P1-4 统一状态入口
+#### P1-4 统一状态入口（已关闭 2026-08-22）
 
 **问题**：`docs/README.md` 测试数字和当前分支成果滞后；旧剩余计划同时出现“全部完成”和大量开放项。
 
 **行动**：`docs/README.md` 只保留完成基线、Active 计划、残余风险和当前验证入口；`REFACTORING_REMAINING_PLAN.md` 标为历史归档；所有新任务只进入本文。
 
 **关闭条件**：任一当前文档不会把过期测试数字或历史开放项当作当前状态；链接全部指向有效文件。
+
+**关闭记录（2026-08-22）**：提交 `e759bdd06`。docs/README.md 只保留完成基线、Active 计划、残余风险与当前验证入口（测试统计更新至 `6cbcea4f3`：flutter test +1209、analyze 0 issues，Rust 数字沿用 `81ad6e220`）；REFACTORING_REMAINING_PLAN.md 已归档 docs/过期文档/（AGENTS.md 计划路由同步收敛至本文）；四份当前文档链接审计全部指向有效文件。
 
 ### P2：技术债、边界和外部验收
 
