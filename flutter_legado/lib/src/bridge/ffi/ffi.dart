@@ -273,6 +273,23 @@ Future<String> sourceLoginActionV2({
   userInputJson: userInputJson,
 );
 
+/// 执行书源 V1 登录动作（对齐原版 `BaseSource.login()`）
+///
+/// 书山聚合等 V1 源：loginUrl 为 JS 脚本（定义 login()），loginUi 为表单
+/// JSON；本函数在书源完整上下文（sanitize jsLib + setup + header 规则）
+/// 执行 `loginJs + login.apply({source,cookie,java})`，登录成功后
+/// `source.putLoginHeader(api_key)` 写入的 loginHeader 自动同步落库，
+/// 后续 java.ajax 正文请求携带 X-Api-Key 返回明文。
+///
+/// `source_json` — BookSource JSON；`action` — 按钮动作（默认 `login`）
+Future<String> sourceLoginV1({
+  required String sourceJson,
+  required String action,
+}) => RustLib.instance.api.crateFfiFfiSourceLoginV1(
+  sourceJson: sourceJson,
+  action: action,
+);
+
 /// 保存书源登录用户信息（对齐原版 `BaseSource.putLoginInfo` →
 /// CacheManager `userInfo_<key>`；V2 login 命令与手动登录共用）
 ///
