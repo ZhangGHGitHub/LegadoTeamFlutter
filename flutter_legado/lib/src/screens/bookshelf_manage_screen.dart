@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -14,7 +14,6 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bookshelf_manage/bookshelf_manage_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
-import '../services/settings_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';

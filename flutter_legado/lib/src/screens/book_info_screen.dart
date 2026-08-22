@@ -194,12 +194,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               final results = await Future.wait([infoFuture, tocFuture]);
               debugPrint('[BookInfo] 并行 info+toc ${tParallel.elapsedMilliseconds}ms');
               try {
-                b = _mergeWebInfo(b, results[0] as String);
+                b = _mergeWebInfo(b, results[0]);
               } catch (e) {
                 debugPrint('webbookInfo 补全失败: ${_errMsg(e)}');
               }
               chapters = BookOpenUtils.parseWebChapters(
-                results[1] as String,
+                results[1],
                 b.bookUrl,
               );
             } else {

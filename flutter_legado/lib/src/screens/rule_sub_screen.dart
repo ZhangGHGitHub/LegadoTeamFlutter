@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
@@ -9,7 +9,6 @@ import '../services/bridge_http.dart';
 import '../providers/providers.dart';
 
 import '../models/models.dart';
-import '../providers/providers.dart';
 import '../providers/rule_sub/rule_sub_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../services/source_import_service.dart' show SourcePreview;
