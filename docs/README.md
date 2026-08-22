@@ -30,27 +30,28 @@
 - **高亮体系数据层**：DB v99 迁移对齐上游 + highlights/highlightRules 表 + Repository + FFI 11 方法（一期完成）
 - **E2E 遗留修复闭环**：E2E 会话遗留 6 文件全部处置提交（b3aa3fa~32fb823）
 - **跨轨阻塞四连解除**：MOBI 完整解析（HUFF/CDIC + INDX/TAGX + KF8(AZW3) + NCX/封面，d994a4fdb）/ 书源校验 FFI（sourceCheck/sourceCheckStream/sourceCheckCancel，86c299923）/ 规则订阅全链路（schema v100 + FFI 7 方法，94b257390）/ 验证码交互通道（JS 钩子 + FFI 事件流 + 提交回传，6f5614e24）
-- **缺口清单清零批次**（2026-08-05，Task #162~#168）：图片书 PDF 导出（对齐 #483）/ RSA-SM2 非对称加密 JS API / txt_search frb 主链路 / 繁简转换 FFI 透传 / DB v101 偏离表补列 / unzip 断线修复 + JS 零星 API / unrar 降级处置，缺口清单 7 项全部清零（详见 docs/REFACTORING_REMAINING_PLAN.md §4.2.4）
+- **缺口清单清零批次**（2026-08-05，Task #162~#168）：图片书 PDF 导出（对齐 #483）/ RSA-SM2 非对称加密 JS API / txt_search frb 主链路 / 繁简转换 FFI 透传 / DB v101 偏离表补列 / unzip 断线修复 + JS 零星 API / unrar 降级处置，缺口清单 7 项全部清零（详见过期文档/REFACTORING_REMAINING_PLAN.md §4.2.4）
 
-> 🎉 **Rust 重构主体已全部完成**：168/168 原子任务完成。
+> ⚠️ **Rust 重构主体阶段已完成**：历史任务记录为 168/168；当前分支仍有未合流项、服务端搜索空实现、FFI 流运行时验证和 A* 外部验收，当前状态以 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md) 为准。
 >
-> ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 内置词典为小规模静态数据（契约达标、覆盖为占位级）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 **getAudioChapterMedia 为在用真实 FFI**（audio_notifier/audio_screen 接线）；scanLocalBooks/parseTxt 仍为死代码 fallback（rust_api.dart 注释标注）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
+> ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 内置词典为小规模静态数据（契约达标、覆盖为占位级）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 **getAudioChapterMedia 为在用真实 FFI**（audio_notifier/audio_screen 接线）；scanLocalBooks/parseTxt 仍为死代码 fallback（rust_api.dart 注释标注）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](过期文档/REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
 
-### 📊 测试统计（2026-08-14 实测，质量门禁口径）
+### 📊 测试统计（当前 HEAD 门禁）
 
-| 模块 | 测试数 |
-|------|--------|
-| Rust `legado-ffi --features quickjs` | **311 passed**（CI/AGENTS.md 门禁；含 JS 书源链路） |
-| Flutter `flutter test` | **1171 passed** |
-| **合计（门禁子集）** | **约 1482** |
+| 模块 | 最近记录 |
+|------|----------|
+| Rust `cargo test --workspace --features quickjs` | **parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0**（2026-08-22，`81ad6e220`） |
+| Flutter `flutter analyze` | **0 issues**（2026-08-22） |
+| Flutter `flutter test` | **+1190 全过**（2026-08-22） |
 
-> 全 workspace `cargo test --workspace` 含未启用 quickjs 的 crate 子集，与书源 JS 门禁口径不同；**以 `cargo test -p legado-ffi --features quickjs` + `flutter test` 为准**（审计 F2-4/F3-11）。
+> 上表为集成分支 `integration/rust-parser-gap-fix` HEAD `81ad6e220`（P0-2 合流，2026-08-22）的可复现门禁结果；双模拟器冒烟（emulator-5554 / emulator-5556，后者为 AVD legado_5558 用户验收机）均通过。当前执行计划见 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md)。
 
 ### 🔄 进行中项
 
-- **残留风险收口（2026-08-13）**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)（D1/F1–F7/T6 等多数已闭合；**A\*** 环境验收仍 ⛔）；主台账 [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) v1.43。
-- **源码兼容 backlog**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) / REMAINING **§5.15**（工程项已空；仅剩 A\* 实网/素材验收）。
-- **schema**：v104 + **v105**（Migration104To105，ruleSubs/dictRules/keyboardAssists Room 对齐）已落地。
+- **当前执行计划**：见 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md)。P0 三项已全部关闭（P0-1 质量门禁 2026-08-20、P0-2 parser/search 分支合流 2026-08-22、P0-3 Server 多源搜索空实现 2026-08-20）；当前焦点为 P1：FRB 流运行时验证、AutoTask action 保真、API 契约自动校验和状态口径统一。
+- **残余风险与用户验收**：见 [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md)，A\* 环境验收仍需真实素材，不能替代工程门禁。
+- **源码兼容与解析 parity**：见 [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) 和 [PARSER_GAP_FIX_PROGRESS_20260815.md](PARSER_GAP_FIX_PROGRESS_20260815.md)。
+- **历史计划与报告**：统一保存在 [过期文档](过期文档/README.md)，不作为当前任务来源。
 
 ### 👥 各轨负责人与分支
 
@@ -85,18 +86,19 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [REFACTORING_FIX_REPORT.md](REFACTORING_FIX_REPORT.md) | 重构修正执行报告 |
-| [TASK_76_SUMMARY.md](TASK_76_SUMMARY.md) | Task #76：自动化测试覆盖率提升最终总结 |
+| [REFACTORING_PROGRESS_DEEP_AUDIT_20260819.md](REFACTORING_PROGRESS_DEEP_AUDIT_20260819.md) | 最新重构深度审计与计划修订依据 |
+| [REFACTORING_FIX_REPORT.md](过期文档/REFACTORING_FIX_REPORT.md) | 历史重构修正报告（已归档） |
+| [TASK_76_SUMMARY.md](过期文档/TASK_76_SUMMARY.md) | 历史测试覆盖率总结（已归档） |
 
 ### 计划类
 
 | 文档 | 说明 |
 | --- | --- |
-| [REFACTORING_REMAINING_PLAN.md](REFACTORING_REMAINING_PLAN.md) | 重构剩余工作计划（P0-P3 遗留任务清单与执行顺序；§5.15 SOURCE_DIFF backlog） |
-| [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) | 残留风险销账表（工程收口；A* 仍 ⛔） |
-| [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) | 源码级差异审计（工程开放项已销；仅剩 A\*） |
-| [GAP_AUDIT_2026-08-12.md](GAP_AUDIT_2026-08-12.md) | 原版 vs 重构缺口审计 |
-| [USER_TEST_RESULTS_2026-08-13.md](USER_TEST_RESULTS_2026-08-13.md) | 5556 全量门禁实测 |
+| [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md) | 当前唯一后续重构执行计划与开放项台账 |
+| [RESIDUAL_RISKS_2026-08-13.md](RESIDUAL_RISKS_2026-08-13.md) | 残余风险与 A* 外部验收矩阵 |
+| [SOURCE_DIFF_AUDIT_2026-08-13.md](SOURCE_DIFF_AUDIT_2026-08-13.md) | 源码级差异证据 |
+| [PARSER_GAP_FIX_PROGRESS_20260815.md](PARSER_GAP_FIX_PROGRESS_20260815.md) | 解析 parity 进度与交接 |
+| [过期文档/README.md](过期文档/README.md) | 历史阶段计划、审计与用户验收材料归档 |
 
 ### 规范类
 

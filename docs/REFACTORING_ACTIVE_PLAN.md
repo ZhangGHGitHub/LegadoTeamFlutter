@@ -21,9 +21,9 @@
 | Flutter + Rust 主链 | 主体完成 | Rust FFI、BookApi/RustApi/MockBookApi、Dart 阅读器排版链已存在 |
 | 解析 parity | G8 已完成；当前分支还有搜索 parity 及书源修复 | 当前分支提交 `a779e1520`、`e74c2a6db`；见 `PARSER_GAP_FIX_PROGRESS_20260815.md` |
 | FFI CI | 已配置 QuickJS 全量测试 | `.github/workflows/rust-ci.yml:26-31` |
-| 主线集成 | 进行中（P0-2） | `feature/rust-parser-gap-fix` 相对 `master` 为落后 2、领先 61；merge-tree 预检仅 3 个内容冲突（CHANGELOG.md、flutter_legado/pubspec.yaml、rust/legado-ffi/src/api/web_book.rs） |
+| 主线集成 | 已关闭（P0-2，2026-08-22） | 合并提交 `81ad6e220`（父提交：master `75593d26c` + feature `5cf56a89c`）；3 处内容冲突全部解决；FRB codegen 重新生成补全 source_login_v1 绑定；全量门禁与双模拟器冒烟通过 |
 | 真实环境 | 未完成 | A*：WebDAV、媒体源、真机按键、ruleReview、皮肤等仍需素材 |
-| 本轮验证 | 可复现通过 | Rust `os error 5` 以独立 CARGO_TARGET_DIR 规避；flutter analyze 3.3s 可复现（0 errors / 0 warnings / 78 info），flutter test +1190 全过；Rust 分 crate 门禁：parser 249/0、js 494/0、ffi 355/0（27 ignored）、server 170/0 |
+| 本轮验证 | 可复现通过（`81ad6e220`，2026-08-22） | Rust `cargo test --workspace --features quickjs`：parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0；flutter analyze 0 issues；flutter test +1190 全过 |
 
 ### 2026-08-19 执行进度
 
@@ -40,6 +40,15 @@
 - P0-1 关闭：Rust 与 Flutter 门禁在当前 HEAD 均可复现通过。证据：Rust 分 crate parser 249/0、js 494/0、ffi 355/0（27 ignored）、server 170/0；flutter analyze `0 errors / 0 warnings / 78 info`（3.3s）、flutter test +1190 全过。
 - P0-2 预检（merge-tree 干跑）：master 多出的 2 个提交为 `75593d26c`（七猫目录/正文修复）与 `25bab662c`（git 规范文档）；内容冲突仅 3 处：CHANGELOG.md、flutter_legado/pubspec.yaml、rust/legado-ffi/src/api/web_book.rs；js_executor.rs、quickjs_impl.rs 等可自动合并。
 - 进行中：Cursor 清理剩余 78 个 info lint（完成后由主代理独立复核再提交）；P0-2 合流在 lint 清理落地后正式启动。
+
+### 2026-08-22 执行进度
+
+- Lint 清理由主代理自行完成并提交 `5cf56a89c`（78 info → flutter analyze 0 issues）；Cursor 连续两次续期超时，不再依赖其执行。
+- P0-2 合流落地：集成分支 `integration/rust-parser-gap-fix`，合并提交 `81ad6e220`（父提交 master `75593d26c` + feature `5cf56a89c`）。3 处内容冲突解决：web_book.rs（12 个 hunk，取 feature 侧 sanitize/set_element_content，parse_content_page_with_bindings 保留 master 签名并注入 sanitize）、pubspec.yaml（2.0.96+98）、CHANGELOG.md（master [2.0.92] 保留在底部，feature 块顺延为 [2.0.93]~[2.0.96]）。
+- FRB codegen 同步：重新生成 frb_generated.rs / frb_generated.dart，补全 feature 侧新增的 source_login_v1 绑定（feature 分支产物滞后，content hash -52126686 → 28124110）；Android .so（aarch64/x86_64）重建后 verify-ffi-android PASSED。
+- 合流后全量门禁：Rust parser 249/0、js 497/0 + 2 ignored、ffi 355/0 + 27 ignored、server 171/0；flutter analyze 0 issues；flutter test +1190 全过。
+- 冒烟：本轮模拟器端口分配为 5554/5556（对应 AVD legado_5556 / legado_5558，第三实例受同机限制无法再开）；emulator-5554（子代理测试机）6/6 通过，emulator-5556（用户验收机，AVD legado_5558）6/6 通过含 -CheckUI 书架元素检查。
+- 工具修复：build-android.ps1 的 rustup target add 在目标已装时向 stderr 输出 info 行，EAP=Stop 下误判为异常中止构建；改为与 cargo 块相同的 EAP 临时降级 + $LASTEXITCODE 判定。
 
 ## 三、执行顺序
 
@@ -58,7 +67,7 @@
 
 **关闭条件**：`cargo test -p legado-ffi --features quickjs`、`flutter analyze`、`flutter test` 在当前集成 HEAD 可复现通过；失败时记录真实失败，不得标绿。
 
-#### P0-2 合流 parser/search parity 分支
+#### P0-2 合流 parser/search parity 分支（已关闭 2026-08-22）
 
 **问题**：当前分支包含 G1-G15、书山和搜索 parity 修复，但尚未合入 master；master 另有 2 个提交。
 
@@ -70,6 +79,8 @@
 4. 合流后更新 `docs/README.md` 与本计划的 HEAD/测试基线。
 
 **关闭条件**：集成分支包含双方提交；全量门禁通过；发布构建使用同一批 codegen、Rust 二进制和 Dart 绑定。
+
+**关闭记录（2026-08-22）**：合并提交 `81ad6e220` 同时包含 master（七猫 v2.0.92 + git 规范文档）与 feature（G1-G15、书山、搜索 parity、lint 清理）双方提交；全量门禁在合流后 HEAD 可复现通过（见「本轮验证」行）；同一批 codegen/二进制/绑定：frb_generated 双端重新生成（content hash 28124110）→ Android .so 双 ABI 重建 → verify-ffi-android PASSED → APK 构建安装冒烟双机通过。后续将集成分支合回 master。
 
 #### P0-3 修复或下线 Server 多源搜索空实现（已关闭 2026-08-20，方案 B）
 
@@ -140,3 +151,4 @@
 
 编写者：Codex ｜ 2026-08-19
 修订：主代理 ｜ 2026-08-20（P0-1 关闭；P0-2 merge-tree 预检与进度记录）
+修订：主代理 ｜ 2026-08-22（P0-2 合流关闭：合并提交 81ad6e220、codegen 同步、门禁与冒烟基线更新）
