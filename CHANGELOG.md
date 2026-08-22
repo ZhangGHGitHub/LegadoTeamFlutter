@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.97] - 2026-08-22
+
+### Added
+- [UI] 规则订阅管理页（对标原版 RuleSubActivity，P3-1）：
+  - 列表（类型标签 + 名称 + URL，customOrder 排序）+ 拖拽排序持久化
+  - 新增/编辑表单：类型/名称/URL/自动更新/静默更新/更新间隔，联动逻辑对齐原版（开自动默认 24h、间隔归零联动禁用、URL 空与重复校验）
+  - 启用切换 / 更多菜单（检查更新、应用更新并展示 success/itemsAdded/itemsUpdated/itemsRemoved 结果）/ 删除确认
+  - 点击条目按订阅类型打开书源/订阅源/替换规则导入确认流程
+  - 入口接入订阅源管理页溢出菜单（对标原版 RssFragment 头部「规则订阅」条目）
+  - 数据全部经 BookApi ruleSub* 七方法（契约 §2.39）；Mock 双轨自动生效；单测覆盖排序加载/去重/保存/删除/重排/启用切换
+
 ## [2.0.96] - 2026-08-19
 
 ### Fixed

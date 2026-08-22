@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -280,6 +280,16 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
               value: 'import_default',
               child:
                   _MenuRow(icon: Icons.auto_fix_high, label: '导入默认规则'),
+            ),
+            // 规则订阅入口（对标原版 RssFragment 列表头部
+            // 「规则订阅」header item → RuleSubActivity；Flutter 侧
+            // 统一收进溢出菜单，iOS 菜单惯例）
+            const PopupMenuItem(
+              value: 'rule_sub',
+              child: _MenuRow(
+                icon: Icons.rss_feed_outlined,
+                label: '规则订阅',
+              ),
             ),
             const PopupMenuItem(
               value: 'help',
@@ -777,6 +787,9 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
         await _importFromQrCode();
       case 'import_default':
         await _importDefault();
+      case 'rule_sub':
+        // 对标原版 RssFragment 头部入口 → RuleSubActivity
+        await Navigator.of(context).pushNamed(AppRoutes.ruleSub);
       case 'help':
         _showHelpSheet();
     }
