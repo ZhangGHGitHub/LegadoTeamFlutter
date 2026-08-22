@@ -220,185 +220,6 @@ pub struct ZhLayoutResult {
     pub line_count: usize,
 }
 
-/// 执行中文断行计算
-///
-/// 移植自 Kotlin ZhLayout.kt init 块中的断行算法
-///
-/// # 参数
-/// - `widths`: 每个字符的测量宽度
-/// - `available_width`: 可用排版宽度
-/// - `indent_size`: 首行缩进字符数
-/// - `cn_char_width`: 中文字符参考宽度（用于判断标点是否可压缩）
-pub fn zh_layout(
-    widths: &[f64],
-    available_width: f64,
-    indent_size: usize,
-    cn_char_width: f64,
-) -> ZhLayoutResult {
-    let default_capacity = 10;
-    let mut line_start_arr: Vec<usize> = vec![0; default_capacity];
-    let mut line_width_arr: Vec<f64> = vec![0.0; default_capacity];
-
-    let mut line = 0usize;
-    let mut line_w = 0.0f64;
-    let mut cw_pre = 0.0f64;
-
-    #[allow(clippy::explicit_counter_loop)]
-    for index in 0..widths.len() {
-        let cw = widths[index];
-        let mut break_line = false;
-        line_w += cw;
-        let mut offset = 0.0f64;
-        let mut break_char_cnt = 0usize;
-
-        if line_w > available_width {
-            // 获取当前字符和前一字符（用于标点判断）
-            let cur_char = char_from_index(index);
-            let prev_char = if index >= 1 { char_from_index(index - 1) } else { '\0' };
-            let prev2_char = if index >= 2 { char_from_index(index - 2) } else { '\0' };
-
-            /* 禁止在行尾的标点处理 */
-            #[allow(unused_assignments)]
-            let mut break_mod = BreakMod::Normal;
-            if index >= 1 && is_pre_panc(prev_char) {
-                if index >= 2 && is_pre_panc(prev2_char) {
-                    break_mod = BreakMod::Cps2;
-                } else {
-                    break_mod = BreakMod::BreakOneChar;
-                }
-            }
-            /* 禁止在行首的标点处理 */
-            else if is_post_panc(cur_char) {
-                if index >= 1 && is_post_panc(prev_char) {
-                    break_mod = BreakMod::Cps1;
-                } else if index >= 2 && is_pre_panc(prev2_char) {
-                    break_mod = BreakMod::Cps3;
-                } else {
-                    break_mod = BreakMod::BreakOneChar;
-                }
-            } else {
-                break_mod = BreakMod::Normal;
-            }
-
-            /* 判断特殊情况是否需要重新检查 */
-            let mut re_check = false;
-            let mut break_index = 0usize;
-            if break_mod == BreakMod::Cps1
-                && (in_compressible(widths[index], cn_char_width)
-                    || in_compressible(widths[index - 1], cn_char_width))
-            {
-                re_check = true;
-            }
-            if break_mod == BreakMod::Cps2
-                && (in_compressible(widths[index - 1], cn_char_width)
-                    || in_compressible(widths[index - 2], cn_char_width))
-            {
-                re_check = true;
-            }
-            if break_mod == BreakMod::Cps3
-                && (in_compressible(widths[index], cn_char_width)
-                    || in_compressible(widths[index - 2], cn_char_width))
-            {
-                re_check = true;
-            }
-            if break_mod > BreakMod::BreakMoreChar
-                && index < widths.len() - 1
-                && is_post_panc(char_from_index(index + 1))
-            {
-                re_check = true;
-            }
-
-            /* 特殊标点回退查找安全分割点 */
-            let mut break_length = 0usize;
-            if re_check && index > 2 {
-                let start_pos = if line == 0 { indent_size } else { line_start_arr[line] };
-                break_mod = BreakMod::Normal;
-                let mut i = index;
-                loop {
-                    if i == index {
-                        break_index = 0;
-                        cw_pre = 0.0;
-                    } else {
-                        break_index += 1;
-                        break_length += 1;
-                        cw_pre += widths[i];
-                    }
-                    let ci = char_from_index(i);
-                    let ci_prev = if i >= 1 { char_from_index(i - 1) } else { '\0' };
-                    if !is_post_panc(ci) && !is_pre_panc(ci_prev) {
-                        break_mod = BreakMod::BreakMoreChar;
-                        break;
-                    }
-                    if i <= 1 + start_pos {
-                        break;
-                    }
-                    i -= 1;
-                }
-            }
-
-            match break_mod {
-                BreakMod::Normal => {
-                    offset = cw;
-                    ensure_capacity(&mut line_start_arr, &mut line_width_arr, line + 1);
-                    line_start_arr[line + 1] = index;
-                    break_char_cnt = 1;
-                }
-                BreakMod::BreakOneChar => {
-                    offset = cw + cw_pre;
-                    ensure_capacity(&mut line_start_arr, &mut line_width_arr, line + 1);
-                    line_start_arr[line + 1] = index.saturating_sub(1);
-                    break_char_cnt = 2;
-                }
-                BreakMod::BreakMoreChar => {
-                    offset = cw + cw_pre;
-                    ensure_capacity(&mut line_start_arr, &mut line_width_arr, line + 1);
-                    line_start_arr[line + 1] = index.saturating_sub(break_length);
-                    break_char_cnt = break_index + 1;
-                }
-                BreakMod::Cps1 | BreakMod::Cps2 | BreakMod::Cps3 => {
-                    offset = 0.0;
-                    ensure_capacity(&mut line_start_arr, &mut line_width_arr, line + 1);
-                    line_start_arr[line + 1] = index + 1;
-                    break_char_cnt = 0;
-                }
-            }
-            break_line = true;
-        }
-
-        /* 当前行写满情况下的断行 */
-        if break_line {
-            line_width_arr[line] = line_w - offset;
-            line_w = offset;
-            line += 1;
-            ensure_capacity(&mut line_start_arr, &mut line_width_arr, line + 1);
-        }
-
-        /* 已到最后一个字符 */
-        if index == widths.len() - 1 {
-            if !break_line {
-                offset = 0.0;
-                ensure_capacity(&mut line_start_arr, &mut line_width_arr, line + 1);
-                line_start_arr[line + 1] = index + 1;
-                line_width_arr[line] = line_w - offset;
-                line_w = offset;
-                line += 1;
-            } else if break_char_cnt > 0 {
-                ensure_capacity(&mut line_start_arr, &mut line_width_arr, line + 1);
-                line_start_arr[line + 1] = line_start_arr[line] + break_char_cnt;
-                line_width_arr[line] = line_w;
-                line += 1;
-            }
-        }
-        cw_pre = cw;
-    }
-
-    ZhLayoutResult {
-        line_starts: line_start_arr[..line + 1].to_vec(),
-        line_widths: line_width_arr[..line].to_vec(),
-        line_count: line,
-    }
-}
-
 /// 计算两端对齐的额外字间距
 ///
 /// 移植自 TextChapterLayout.kt addCharsToLineMiddle:
@@ -429,14 +250,6 @@ fn is_pre_panc(c: char) -> bool {
 fn in_compressible(width: f64, cn_char_width: f64) -> bool {
     width < cn_char_width
 }
-
-/// 从索引获取字符（用于标点判断）
-/// 注意：这里使用全局字符表，实际使用时应传入文本
-fn char_from_index(_index: usize) -> char {
-    // 占位实现：实际断行时应传入文本字符数组
-    '\0'
-}
-
 fn ensure_capacity(line_starts: &mut Vec<usize>, line_widths: &mut Vec<f64>, needed: usize) {
     if needed >= line_starts.len() {
         let new_len = needed + 10;
@@ -917,5 +730,32 @@ mod tests {
         for c in POST_PANC.iter() {
             assert!(!PRE_PANC.contains(c), "Overlap found: {}", c);
         }
+    }
+
+    /// P2-1 防回归守卫：旧布局占位入口必须保持移除
+    ///
+    /// 旧断行入口 `zh_layout`（无文本入参）依赖恒空占位
+    /// `char_from_index`（恒返回 '\0'），导致标点感知完全失效、
+    /// 恒按普通字符断行；已由带真实文本输入的 [`zh_layout_text`]
+    /// 取代并删除（全工作区/FFI/Dart 绑定面均无消费者）。
+    /// 本测试锁定两个符号不再出现于本文件：调用已删除符号在 Rust
+    /// 层面本会编译失败，此处额外拦截「重新粘贴旧实现」类回归。
+    #[test]
+    fn test_legacy_placeholder_entries_removed() {
+        // 以编译期拼接构造匹配串，避免 include_str! 扫到测试自身字面量造成自匹配
+        let legacy_stub = concat!("fn ", "char_from_index");
+        let legacy_entry = concat!("pub fn zh_", "layout(");
+        let live_entry = concat!("pub fn zh_", "layout_text(");
+        let source = include_str!("layout.rs");
+        assert!(
+            !source.contains(legacy_stub),
+            "char_from_index 空占位不得回潮（标点判断须走 zh_layout_text 的真实文本输入）"
+        );
+        assert!(
+            !source.contains(legacy_entry),
+            "无文本入参的旧断行入口 zh_layout 已移除，请使用 zh_layout_text"
+        );
+        // 唯一的文本断行入口必须仍在导出面上
+        assert!(source.contains(live_entry));
     }
 }
