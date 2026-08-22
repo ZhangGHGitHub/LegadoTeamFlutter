@@ -94,6 +94,14 @@ $adb = "D:\Android\platform-tools\adb.exe"
 
 ---
 
+## 其他待素材项（P2 登记，2026-08-22）
+
+| 项 | 状态 | 素材 / 行动 |
+|---|---|---|
+| Mock 书架真实数据 | ⛔ 仍需用户素材 | 脱敏 Android 书架导出 JSON，替换 `mock_book_api.dart` 占位书籍（TODO §6.4）。口径：**部分真实样本**——书源/RSS/TTS 为原 Android `defaultData/` 真实资产，书架为调试占位 |
+
+---
+
 ## 批次 commits（随进度追加）
 
 | 前缀 | 说明 |

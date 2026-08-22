@@ -141,7 +141,7 @@
 
 - **P2-1 Rust 旧布局入口**：核对 `layout.rs:232-326` 的 `char_from_index` 空实现是否有消费者；无消费者则删除/私有化，有消费者则改为真实文本输入并测试。Flutter 主阅读链仍以 Dart 排版为准。
 - **P2-2 搜索实现统一**：P0-3 完成后抽取 Server/FFI 共享搜索服务，避免两套入口长期分叉。
-- **P2-3 Mock 样本口径**：书源/RSS/TTS 使用真实默认资产，但书架仍为占位数据；改文档为“部分真实样本”，后续补脱敏 Android 书架 JSON。
+- **P2-3 Mock 样本口径**（进行中）：书源/RSS/TTS 使用真实默认资产，但书架仍为占位数据；改文档为“部分真实样本”，后续补脱敏 Android 书架 JSON。进展（2026-08-22）：口径已登记 RESIDUAL_RISKS「其他待素材项」（核实 `mock_book_api.dart` L12-29/L58-63：书源/RSS/TTS = 原 Android defaultData 真实资产，书架 = 占位 TODO §6.4）；脱敏 Android 书架导出 JSON 待用户素材。
 - **P2-4 A* 验收矩阵**：WebDAV、音频/漫画/视频、ruleReview、真机媒体键、皮肤 zip、验证码等逐项登记素材、负责人、命令和证据；待验收不等同工程未实现，也不能销账为完成。
 - **P2-5 生成代码和 feature fallback**：按“生产路径/Mock/feature-disabled/生成器不可达”分类治理，取消全局零桩声明。
 
