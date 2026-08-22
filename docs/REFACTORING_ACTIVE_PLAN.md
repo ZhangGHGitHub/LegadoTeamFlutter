@@ -33,6 +33,10 @@
 - Flutter `analyze` 曾由 Cursor 得到 `84 issues`，主 Agent 后续复跑超过 10 分钟无输出；`flutter test` 尚未完成。
 - P0-1 尚未关闭，P0-2 分支合流暂不启动。Cursor 当前因使用额度耗尽无法接收下一项实现任务。
 
+### 2026-08-20 执行进度
+
+- P0-3 已关闭（方案 B）：移除 Server `/api/search/multi` Noop 空实现路由，新增 4xx 防回归测试；`cargo test -p legado-server` 170/0。详见 P0-3 小节。
+
 ## 三、执行顺序
 
 ### P0：先恢复可交付性
@@ -63,18 +67,15 @@
 
 **关闭条件**：集成分支包含双方提交；全量门禁通过；发布构建使用同一批 codegen、Rust 二进制和 Dart 绑定。
 
-#### P0-3 修复或下线 Server 多源搜索空实现
+#### P0-3 修复或下线 Server 多源搜索空实现（已关闭 2026-08-20，方案 B）
 
-**问题**：`rust/legado-server/src/handlers/search.rs:92-121` 的 `/api/search/multi` 直接使用 `NoopSourceSearcher`，返回成功但空结果；测试只断言 HTTP 200。
+**问题**：`/api/search/multi` 直接使用 `NoopSourceSearcher`，返回成功但空结果；测试只断言 HTTP 200。
 
-**行动**：先记录决策：
+**决策**：方案 B（下线路由）。全仓检索确认无客户端调用该 HTTP 路由；`flutter_legado` 的 `search_multi` 是 FFI 桥同名函数，真实多源搜索走 `legado-ffi::api::search`（`WebSourceSearcher`）。Server 依赖 `legado-core`/`legado-net` 但不依赖 `legado-ffi`（会循环依赖），方案 A 需下沉搜索核心、超出本轮范围，故下线路由。
 
-- 方案 A：抽取可复用的真实搜索服务，让 Server 与 FFI 使用同一实现；
-- 方案 B：该路由不属于当前产品边界，移除公开路由、客户端调用和相关测试。
+**实施**：移除 `/search/multi` 路由、`search_multi` handler、`MultiSearchRequest`/`MultiSearchResult`；删除仅断言 200 的两个测试；新增 `test_search_multi_route_removed` 断言 4xx 防回归。
 
-禁止继续保留“生产路由 + Noop 实现 + 200 即通过”的组合。
-
-**关闭条件**：真实或明确 N/A；测试注入可控书源并断言结果、错误、超时和取消语义；入口行为与 FFI 不再分叉。
+**证据**：`cargo test -p legado-server` 170/0 + doctest；`cargo check -p legado-server -p legado-ffi --features quickjs` 无错误。`MultiSourceSearcher` 仍由 FFI 以真实 `WebSourceSearcher` 使用；`NoopSourceSearcher` 仅余 `legado-core` 内部单测引用。入口行为与 FFI 不再分叉。
 
 ### P1：跨轨契约和用户可见语义
 
