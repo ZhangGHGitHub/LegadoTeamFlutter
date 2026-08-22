@@ -53,7 +53,7 @@
 - P1-3 关闭：`6cbcea4f3`（test(ui): 新增 API 契约自动校验测试并同步文档计数基线）——新增 `api_contract_test.dart` 7 项程序化校验（BookApi⊆RustApi/MockBookApi、公共额外方法钉死、§1.7 等价对登记、§2.x 声明数==实际行、附录双射镜像、文档总数==程序化计数）；同步 API_CONTRACT.md 18 处（§1.7 登录等价对×4、章节计数×6、附录行×6、合计 251→263、BookApi 252→260）。门禁：契约测试 7/7 绿、analyze 0 issues、flutter test +1209 全过。
 - P1 全部关闭：P1-1（`577e4ce04`，真实 DLL 8/8）、P1-2（`58b48484d`）、P1-3（`6cbcea4f3`）、P1-4（`e759bdd06`）。
 - P2 进行中：P2-1 已关闭（`d1186c711`），P2-2 已关闭（`3b61f0883`，书架模糊搜索共享服务统一 Server 双入口），P2-5 已关闭（`9b645eab3`，桩/Fallback 四分类登记 + 零桩声明废止），P2-4 已关闭（`cb81703fd`，A* 验收矩阵登记 + A9 深链自测验证）；P2-3 口径登记（`856b9d322`，书架 JSON 待用户素材）——唯一余项为用户素材。
-- P3 进行中：P3-1 规则订阅管理页 UI（FFI Task #89 已交付，纯 UI 轨）、P3-2 MockBookSourceFetcher 下沉 test、P3-3 dict_state 内置词典核验。
+- P3 进行中：P3-1 已关闭（`961a2d353`）；P3-2 MockBookSourceFetcher 下沉 test、P3-3 dict_state 内置词典核验（分析完成，待派发卫生批次）。
 
 ## 三、执行顺序
 
@@ -155,7 +155,8 @@
 
 > P0/P1/P2 工程项全部关闭后的下一批。依据：AUDIT_FIX_ASSIGNMENT §2.1 旧阻塞项经复核——ruleSub FFI 已由 Task #89 交付（契约 §2.39，7 方法），剩余缺口为 **Flutter 管理页 UI**；另两项为 P2-5 审计标记的后续卫生项。
 
-- **P3-1 规则订阅管理页 UI**：对标原版 `app/.../ui/rss/subscription/RuleSubActivity.kt`（入口 `RssFragment.kt:136` 菜单）；FFI/契约已交付（Task #89：ruleSubList/Save/Delete/SetEnabled/UpdateOrder/CheckUpdate/ApplyUpdate，API_CONTRACT §2.39），纯 UI 轨实现列表/新增编辑/删除/启用切换/拖拽排序/检查更新/应用更新 + 入口接入；UI 必须用 apple-ui-designer 技能。
+- **P3-1 规则订阅管理页 UI**（已关闭 2026-08-22）：对标原版 `app/.../ui/rss/subscription/RuleSubActivity.kt`（入口 `RssFragment.kt:136` 菜单）；FFI/契约已由 Task #89 交付（ruleSubList/Save/Delete/SetEnabled/UpdateOrder/CheckUpdate/ApplyUpdate，API_CONTRACT §2.39）。盘点发现：页面本体（`rule_sub_screen.dart` 778 行 / `rule_sub_notifier.dart` / `models/rule_sub.dart` / 路由 `/rule_sub` / 单测）已随此前批次（`8fd3a91af~5cf56a89c`）交付入库，唯一缺口 = 入口未接入。
+  - **关闭记录（2026-08-22）**：提交 `961a2d353`（feat(ui)：规则订阅管理页入口接入订阅源管理菜单，署名「— Cursor UI」，版本 2.0.97+99 + CHANGELOG）。入口对标原版 RssFragment 头部条目 → Flutter 侧 `RssSourceManageScreen` 溢出菜单「规则订阅」（置于「导入默认规则」与「帮助」之间）→ `AppRoutes.ruleSub`（routes.dart L39/L72/L165，路由无需改动）。页面功能清单核验：customOrder 列表 / 拖拽重排（乐观更新+失败回滚）/ 表单联动（自动更新间隔，对齐原版）/ URL 校验 + findDuplicate 重复检查 / 删除确认 / 启用 Switch / 检查与应用更新 / 按类型导入。独立复验：flutter analyze 0 issues；flutter test +1217 全绿；冒烟 -SkipBuild PASSED EXIT=0（emulator-5556）。注：该提交顺带移除 rss_source_manage_screen.dart 首行 BOM（对 Dart 无影响）；并实证确认 Dart switch 无 fall-through，既有无 break 的 case 模式安全。
 - **P3-2 MockBookSourceFetcher 下沉 test 模块**（P2-5 后续）：`rust/legado-core/src/web_book.rs:154` pub 未挂 cfg(test)，当前仅测试消费 → 下沉至 cfg(test)/tests 模块，防生产误消费；保留现有 26 处 in-file 引用与测试行为不变。
 - **P3-3 dict_state 内置词典消费核验**（P2-5 D3 后续）：FFI `dict_lookup` 已交付且在用（dict_notifier 走 BookApi）；核验 `flutter_legado/lib/src/providers/dict/dict_state.dart:10` 静态词典是死 fallback 还是真实降级路径——死则移除，活则保留 + 登记四分类文档。
 
@@ -177,3 +178,4 @@
 编写者：Codex ｜ 2026-08-19
 修订：主代理 ｜ 2026-08-20（P0-1 关闭；P0-2 merge-tree 预检与进度记录）
 修订：主代理 ｜ 2026-08-22（P0-2 合流关闭：合并提交 81ad6e220、codegen 同步、门禁与冒烟基线更新）
+修订：主代理 ｜ 2026-08-22（P3-1 关闭：入口接入 `961a2d353`，独立复验通过）
