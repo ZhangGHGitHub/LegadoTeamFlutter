@@ -34,7 +34,7 @@
 
 > ⚠️ **Rust 重构主体阶段已完成**：历史任务记录为 168/168；当前分支仍有未合流项、服务端搜索空实现、FFI 流运行时验证和 A* 外部验收，当前状态以 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md) 为准。
 >
-> ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 内置词典为小规模静态数据（契约达标、覆盖为占位级）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 **getAudioChapterMedia 为在用真实 FFI**（audio_notifier/audio_screen 接线）；scanLocalBooks/parseTxt 仍为死代码 fallback（rust_api.dart 注释标注）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](过期文档/REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
+> ⚠️ **口径修正（批次3治理，Task #118，2026-08-06）**：早期「零 TODO/桩实现」声明与源码不符，已废止。实际口径：① 生产路径无内置词典，查询走 Rust FFI dict_lookup（原「小规模静态数据」口径过时已更正）；② legado-server 正文端点、subContent/contentRule.replaceRegex 等为 P2 待补项；③ Dart 侧 **getAudioChapterMedia 为在用真实 FFI**（audio_notifier/audio_screen 接线）；scanLocalBooks/parseTxt 仍为死代码 fallback（rust_api.dart 注释标注）；④ platform.rs 5 个死代码桩已于本批次删除。详见 [REFACTORING_REMAINING_PLAN.md](过期文档/REFACTORING_REMAINING_PLAN.md) §4.2.3 与 §5.7。
 
 ### 📊 测试统计（当前 HEAD 门禁）
 

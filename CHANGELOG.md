@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.98] - 2026-08-22
+
+### Fixed
+- [UI] 词典过时注释与四分类台账更正（Rust 契约已落地）：
+  - 核验结论：Flutter 生产路径无静态内置词典——DictNotifier.lookup → BookApi.dictLookup → Rust FFI dict_lookup（dict_api.rs 真实规则执行，带单测）；Mock `_mockDict` 为合法 B 类测试夹具；「静态占位数据」说法来自契约冻结前的过时注释
+  - dict_state.dart L10 注释更正：词典查询经 BookApi.dictLookup 委托 Rust FFI dict_lookup；本状态仅承载规则与查询结果
+  - STUB_FALLBACK_CLASSIFICATION D3 行与易误标项、docs/README.md 口径①同步更正（生产路径无内置词典，查询走 Rust FFI）
+- Contributor: Cursor UI
+
 ## [2.0.97] - 2026-08-22
 
 ### Added

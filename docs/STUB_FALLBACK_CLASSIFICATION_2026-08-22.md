@@ -55,7 +55,7 @@
 |---|---|---|
 | D1 | `rust/legado-net/src/webdav.rs:828` | 重试循环每条路径必 return 或 sleep 后 continue，循环出口不可达；unreachable!() 为循环不变量防御断言，非桩 |
 | D2 | `flutter_legado/lib/main.dart:96/:110`、`screens/qrcode_screen.dart:32`、`app.dart:168` | kIsWeb / defaultTargetPlatform 平台条件分支（崩溃指引文案、扫码可用性、封面 URL 判定），平台差异化生产逻辑 |
-| D3 | `flutter_legado/lib/src/providers/dict/dict_state.dart:10` | 本地内置静态词典数据（源码自述「真实词典查询待 Rust 契约」）——**生产路径内的已知降级数据点**，契约达标后应替换；docs/README.md L37 口径修正①即指此项 |
+| D3 | `flutter_legado/lib/src/providers/dict/dict_state.dart:10` | 核验（2026-08-22）：生产路径无静态内置词典，查询直达 Rust FFI dict_lookup；原注释过时已修；Mock _mockDict 为 B 类夹具 |
 | D4 | `flutter_legado/lib/src/screens/about_screen.dart:100` | 关于页 Markdown 资产缺失时回退内置文本（避免假功能），UI 兜底 |
 | D5 | `flutter_legado/lib/src/screens/qrcode_screen.dart:202` | 相机预览占位组件（桌面端无相机时的降级提示 UI），平台能力兜底 |
 
@@ -80,7 +80,7 @@
 
 ## 四、误归类提示与风险备注
 
-1. **易误标项**：dict_state.dart:10 内置静态词典易被标为 Mock——实为**生产路径的设计内降级数据**（D3），双轨规范下合法，但属唯一「覆盖为占位级」的功能数据点，建议随 Rust 词典契约排期替换。
+1. **易误标项**：dict_state.dart:10 原注释称「本地内置词典为静态占位数据」已过时——核验（2026-08-22）：生产路径无静态内置词典，查询直达 Rust FFI dict_lookup；原注释过时已修；Mock _mockDict 为 B 类夹具。
 2. **MockBookSourceFetcher 未挂 cfg(test)**（web_book.rs L154 pub）：当前仅测试消费，无风险；若未来被生产代码引用将绕过真实网络层，建议后续批次评估是否下沉至 test 模块（本轮不改行为，仅登记）。
 3. P1-1 已论证的 FRB StreamSink 解码方向不可达（A1/A2/A3）在真实 DLL 上有运行时证据（test/ffi/ffi_stream_sink_runtime_test.dart 8 项全过）。
 

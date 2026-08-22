@@ -7,7 +7,7 @@ part 'dict_state.freezed.dart';
 /// 字典查询页状态
 ///
 /// 由 [DictNotifier] 管理：在线词典规则经 BookApi.getConfig/setConfig 持久化，
-/// 本地内置词典为静态占位数据（真实词典查询待 Rust 契约）。
+/// 词典查询经 BookApi.dictLookup 委托 Rust FFI dict_lookup；本状态仅承载规则与查询结果。
 @freezed
 class DictState with _$DictState {
   const factory DictState({
