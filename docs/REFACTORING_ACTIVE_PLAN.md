@@ -52,6 +52,7 @@
 - P1-2 关闭：`58b48484d`（fix(ui): AutoTask 保存原始 script 防止 action 丢失）——根因 toJson 按 taskType 生成占位脚本，新增 script 字段与 effectiveScript、旧 JSON 双向兼容，补 12 项 round-trip/导入/fallback 单测。
 - P1-3 关闭：`6cbcea4f3`（test(ui): 新增 API 契约自动校验测试并同步文档计数基线）——新增 `api_contract_test.dart` 7 项程序化校验（BookApi⊆RustApi/MockBookApi、公共额外方法钉死、§1.7 等价对登记、§2.x 声明数==实际行、附录双射镜像、文档总数==程序化计数）；同步 API_CONTRACT.md 18 处（§1.7 登录等价对×4、章节计数×6、附录行×6、合计 251→263、BookApi 252→260）。门禁：契约测试 7/7 绿、analyze 0 issues、flutter test +1209 全过。
 - P1 全部关闭：P1-1（`577e4ce04`，真实 DLL 8/8）、P1-2（`58b48484d`）、P1-3（`6cbcea4f3`）、P1-4（`e759bdd06`）。
+- P2 进行中：P2-1 已关闭（`d1186c711`，移除旧布局占位入口 + 源级守卫）；P2-3 口径登记（`856b9d322`，书架 JSON 待用户素材）；P2-4/P2-5 排队。
 
 ## 三、执行顺序
 
@@ -139,7 +140,8 @@
 
 ### P2：技术债、边界和外部验收
 
-- **P2-1 Rust 旧布局入口**：核对 `layout.rs:232-326` 的 `char_from_index` 空实现是否有消费者；无消费者则删除/私有化，有消费者则改为真实文本输入并测试。Flutter 主阅读链仍以 Dart 排版为准。
+- **P2-1 Rust 旧布局入口**（已关闭 2026-08-22）：核对 `layout.rs:232-326` 的 `char_from_index` 空实现是否有消费者；无消费者则删除/私有化，有消费者则改为真实文本输入并测试。Flutter 主阅读链仍以 Dart 排版为准。
+  - **关闭记录（2026-08-22）**：提交 `d1186c711`（refactor(rust): 移除旧布局占位入口 zh_layout 与 char_from_index，— Cursor Bridge）。消费者检索经主代理独立复核：`zh_layout` 全 Rust 工作区零引用；FFI 导出面无暴露；Dart 绑定面无 crateFfi*Layout/charFromIndex（唯一命中为 Dart 本地排版模块 `zh_layout.dart`，按约束未动）。处置：删除共 187 行（根因：旧入口无文本入参、标点判断依赖恒空占位而恒退化为普通断行，属死代码）；新增源级守卫 `test_legacy_placeholder_entries_removed`（`include_str!` + `concat!` 编译期拼接防自匹配，锁定两符号不回潮且 `zh_layout_text` 保持导出）。门禁独立复跑：analyze 0 issues、flutter test +1217 全绿、cargo 三段 exit 0（SEG1 曾观测一次与 Flutter 全套并行负载下的瞬态失败，单独重跑各段全绿含 legado-core 789/0）。
 - **P2-2 搜索实现统一**：P0-3 完成后抽取 Server/FFI 共享搜索服务，避免两套入口长期分叉。
 - **P2-3 Mock 样本口径**（进行中）：书源/RSS/TTS 使用真实默认资产，但书架仍为占位数据；改文档为“部分真实样本”，后续补脱敏 Android 书架 JSON。进展（2026-08-22）：口径已登记 RESIDUAL_RISKS「其他待素材项」（核实 `mock_book_api.dart` L12-29/L58-63：书源/RSS/TTS = 原 Android defaultData 真实资产，书架 = 占位 TODO §6.4）；脱敏 Android 书架导出 JSON 待用户素材。
 - **P2-4 A* 验收矩阵**：WebDAV、音频/漫画/视频、ruleReview、真机媒体键、皮肤 zip、验证码等逐项登记素材、负责人、命令和证据；待验收不等同工程未实现，也不能销账为完成。
