@@ -52,7 +52,7 @@
 - P1-2 关闭：`58b48484d`（fix(ui): AutoTask 保存原始 script 防止 action 丢失）——根因 toJson 按 taskType 生成占位脚本，新增 script 字段与 effectiveScript、旧 JSON 双向兼容，补 12 项 round-trip/导入/fallback 单测。
 - P1-3 关闭：`6cbcea4f3`（test(ui): 新增 API 契约自动校验测试并同步文档计数基线）——新增 `api_contract_test.dart` 7 项程序化校验（BookApi⊆RustApi/MockBookApi、公共额外方法钉死、§1.7 等价对登记、§2.x 声明数==实际行、附录双射镜像、文档总数==程序化计数）；同步 API_CONTRACT.md 18 处（§1.7 登录等价对×4、章节计数×6、附录行×6、合计 251→263、BookApi 252→260）。门禁：契约测试 7/7 绿、analyze 0 issues、flutter test +1209 全过。
 - P1 全部关闭：P1-1（`577e4ce04`，真实 DLL 8/8）、P1-2（`58b48484d`）、P1-3（`6cbcea4f3`）、P1-4（`e759bdd06`）。
-- P2 进行中：P2-1 已关闭（`d1186c711`），P2-2 已关闭（`3b61f0883`，书架模糊搜索共享服务统一 Server 双入口），P2-5 已关闭（`9b645eab3`，桩/Fallback 四分类登记 + 零桩声明废止）；P2-3 口径登记（`856b9d322`，书架 JSON 待用户素材）；P2-4 排队。
+- P2 进行中：P2-1 已关闭（`d1186c711`），P2-2 已关闭（`3b61f0883`，书架模糊搜索共享服务统一 Server 双入口），P2-5 已关闭（`9b645eab3`，桩/Fallback 四分类登记 + 零桩声明废止），P2-4 已关闭（`cb81703fd`，A* 验收矩阵登记 + A9 深链自测验证）；P2-3 口径登记（`856b9d322`，书架 JSON 待用户素材）——唯一余项为用户素材。
 
 ## 三、执行顺序
 
@@ -145,7 +145,8 @@
 - **P2-2 搜索实现统一**（已关闭 2026-08-22）：P0-3 完成后抽取 Server/FFI 共享搜索服务，避免两套入口长期分叉。
   - **关闭记录（2026-08-22）**：提交 `3b61f0883`（refactor(rust): 抽取书架模糊搜索共享服务统一 Server 双入口）。调研结论经主代理复核：FFI 网络多源搜索本已基于 MultiSourceSearcher 单一框架无分叉；真正分叉点是 Server REST /api/search 与 MCP 工具 search_books 各自内联同一书架模糊匹配谓词（书名/作者小写 contains），响应组装漂移（REST: intro/cover_url+total 包装；MCP: origin/latest_chapter + -32602 错误语义）。处置：新增 `legado_core::shelf_search::match_shelf_books` 纯函数服务（5 条单测），双入口委托、各自响应组装与错误语义逐字保留；FFI API 表面零改动（无 codegen/Dart 绑定触发，4 文件 +103/−15）。门禁独立复跑：cargo 三段 exit 0（core 794 / server 170 / js 497 / ffi 355）、analyze 0 issues、flutter test +1217 全绿。
 - **P2-3 Mock 样本口径**（进行中）：书源/RSS/TTS 使用真实默认资产，但书架仍为占位数据；改文档为“部分真实样本”，后续补脱敏 Android 书架 JSON。进展（2026-08-22）：口径已登记 RESIDUAL_RISKS「其他待素材项」（核实 `mock_book_api.dart` L12-29/L58-63：书源/RSS/TTS = 原 Android defaultData 真实资产，书架 = 占位 TODO §6.4）；脱敏 Android 书架导出 JSON 待用户素材。
-- **P2-4 A* 验收矩阵**：WebDAV、音频/漫画/视频、ruleReview、真机媒体键、皮肤 zip、验证码等逐项登记素材、负责人、命令和证据；待验收不等同工程未实现，也不能销账为完成。
+- **P2-4 A* 验收矩阵**（已关闭 2026-08-22）：WebDAV、音频/漫画/视频、ruleReview、真机媒体键、皮肤 zip、验证码等逐项登记素材、负责人、命令和证据；待验收不等同工程未实现，也不能销账为完成。
+  - **关闭记录（2026-08-22）**：矩阵登记于 `RESIDUAL_RISKS_2026-08-13.md` §A* 验收矩阵（提交 `cb81703fd`）——10 项逐项（A1-A5、A9、A10 + V1 验证码实网 / V2 登录倒计时 / V3 外链确认），每行含素材/负责人/工程证据/验收命令。同日自测：**A9 深链 VIEW 已验证**（显式组件 `am start -n io.legado.flutter_legado/io.legado.flutter.MainActivity` 启动成功 + mCurrentFocus 确认）；并发现 emulator-5556 并存原版 `com.legado.app.release` 且双方注册 legado:// scheme，裸 VIEW 触发系统选择器（已记入命令块）。其余 9 项 ⛔ 待用户素材，不得以模拟器冒烟销账。
 - **P2-5 生成代码和 feature fallback**（已关闭 2026-08-22）：按“生产路径/Mock/feature-disabled/生成器不可达”分类治理，取消全局零桩声明。
   - **关闭记录（2026-08-22）**：提交 `9b645eab3`（docs: 新增桩/Fallback/Mock 四分类登记，审计轮，零行为代码改动）。登记于 `docs/STUB_FALLBACK_CLASSIFICATION_2026-08-22.md`：生成器不可达 6 组（FRB StreamSink 解码方向 + wire 分发默认臂 + Pde 同步分发器 + 32 个 freezed 私有构造守卫）、Mock 9 组（USE_MOCK 双轨开关 + cfg(test) 测试夹具/设计内空实现）、quickjs 门控 182 处 cfg 归并 3 组（主代理复核计数准确）、生产路径防御/降级 5 组；不存在未登记的功能性空实现。全局零桩声明（原文在已归档 PROJECT_AUDIT_REPORT.md:14/:169/:219）废止，改用四分类可核查口径，新增桩/fallback 必须同步登记；归档文件已加历史注记。误归类提示：dict_state 内置词典 = 生产路径降级数据（非 Mock）；MockBookSourceFetcher pub 未挂 cfg(test)、当前仅测试消费（已核实），后续批次评估下沉 test 模块。
 
