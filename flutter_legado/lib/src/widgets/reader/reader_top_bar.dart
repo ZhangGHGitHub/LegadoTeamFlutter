@@ -330,22 +330,29 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
       builder: (dialogContext) => SimpleDialog(
         title: const Text('图片样式'),
         children: [
-          for (final entry in options.entries)
-            RadioListTile<String?>(
-              title: Text(entry.value),
-              value: entry.key,
-              groupValue: current,
-              onChanged: (v) {
-                Navigator.pop(dialogContext);
-                if (v != current) {
-                  unawaited(_updateBookConfig(
-                    context,
-                    ref,
-                    (c) => c.copyWith(imageStyle: v),
-                  ));
-                }
-              },
+          RadioGroup<String?>(
+            groupValue: current,
+            onChanged: (v) {
+              Navigator.pop(dialogContext);
+              if (v != current) {
+                unawaited(_updateBookConfig(
+                  context,
+                  ref,
+                  (c) => c.copyWith(imageStyle: v),
+                ));
+              }
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final entry in options.entries)
+                  RadioListTile<String?>(
+                    title: Text(entry.value),
+                    value: entry.key,
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );

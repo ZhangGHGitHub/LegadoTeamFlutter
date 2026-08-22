@@ -3,6 +3,7 @@
 /// 覆盖：exportBooks/exportSources/exportSelectedSources/
 ///       exportAllSourcesFormatted/importSources/fullBackup/
 ///       parseBackup/restoreSourcesFromBackup/serializeSources
+library;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';

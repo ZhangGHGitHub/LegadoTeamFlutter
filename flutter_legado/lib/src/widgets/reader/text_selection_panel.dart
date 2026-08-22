@@ -341,7 +341,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
               const SizedBox(height: 8),
               ValueListenableBuilder<Color>(
                 valueListenable: selectedColor,
-                builder: (_, current, __) => Row(
+                builder: (_, current, _) => Row(
                   children: [
                     for (final c in kHighlightColors)
                       Padding(

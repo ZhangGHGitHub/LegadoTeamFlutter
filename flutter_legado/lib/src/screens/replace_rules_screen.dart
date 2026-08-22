@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -254,9 +254,8 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     }
     return ReorderableListView.builder(
       itemCount: rules.length,
-      onReorder: (oldIndex, newIndex) {
+      onReorderItem: (oldIndex, newIndex) {
         // 简单的排序处理
-        if (oldIndex < newIndex) newIndex--;
         if (oldIndex < newIndex) {
           for (var i = oldIndex; i < newIndex; i++) {
             provider.moveDown(i);

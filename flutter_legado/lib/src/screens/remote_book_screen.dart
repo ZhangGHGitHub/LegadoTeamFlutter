@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -304,80 +304,81 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                       ),
                     ),
                     const Divider(height: 1),
-                    RadioListTile<int>(
-                      value: SettingsService.defaultRemoteServerId,
+                    RadioGroup<int>(
                       groupValue: state.serverId,
-                      title: const Text('默认'),
-                      subtitle: const Text('使用备份设置中的 WebDAV（books/）'),
                       onChanged: (v) async {
                         if (v == null) return;
                         await notifier.selectServer(v);
                         if (ctx.mounted) Navigator.pop(ctx);
                       },
-                    ),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(context).height * 0.45,
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: state.servers.length,
-                        itemBuilder: (_, i) {
-                          final s = state.servers[i];
-                          return RadioListTile<int>(
-                            value: s.id,
-                            groupValue: state.serverId,
-                            title: Text(s.name.isEmpty ? s.url : s.name),
-                            subtitle: Text(s.url, maxLines: 1),
-                            secondary: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit_outlined),
-                                  onPressed: () async {
-                                    final edited =
-                                        await _editServerDialog(existing: s);
-                                    if (edited != null) {
-                                      await notifier.saveServer(edited);
-                                    }
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline),
-                                  onPressed: () async {
-                                    final ok = await showDialog<bool>(
-                                      context: context,
-                                      builder: (d) => AlertDialog(
-                                        title: const Text('删除'),
-                                        content: const Text('确认删除该服务器？'),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(d, false),
-                                            child: const Text('取消'),
-                                          ),
-                                          FilledButton(
-                                            onPressed: () =>
-                                                Navigator.pop(d, true),
-                                            child: const Text('删除'),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                    if (ok == true) {
-                                      await notifier.deleteServer(s.id);
-                                    }
-                                  },
-                                ),
-                              ],
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          RadioListTile<int>(
+                            value: SettingsService.defaultRemoteServerId,
+                            title: const Text('默认'),
+                            subtitle: const Text('使用备份设置中的 WebDAV（books/）'),
+                          ),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: MediaQuery.sizeOf(context).height * 0.45,
                             ),
-                            onChanged: (v) async {
-                              if (v == null) return;
-                              await notifier.selectServer(v);
-                              if (ctx.mounted) Navigator.pop(ctx);
-                            },
-                          );
-                        },
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: state.servers.length,
+                              itemBuilder: (_, i) {
+                                final s = state.servers[i];
+                                return RadioListTile<int>(
+                                  value: s.id,
+                                  title: Text(s.name.isEmpty ? s.url : s.name),
+                                  subtitle: Text(s.url, maxLines: 1),
+                                  secondary: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.edit_outlined),
+                                        onPressed: () async {
+                                          final edited =
+                                              await _editServerDialog(existing: s);
+                                          if (edited != null) {
+                                            await notifier.saveServer(edited);
+                                          }
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline),
+                                        onPressed: () async {
+                                          final ok = await showDialog<bool>(
+                                            context: context,
+                                            builder: (d) => AlertDialog(
+                                              title: const Text('删除'),
+                                              content: const Text('确认删除该服务器？'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(d, false),
+                                                  child: const Text('取消'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(d, true),
+                                                  child: const Text('删除'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (ok == true) {
+                                            await notifier.deleteServer(s.id);
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 8),

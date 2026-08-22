@@ -6,6 +6,7 @@
 /// 注意：Riverpod 仅在 state 实际变化时通知监听者（不同于 ChangeNotifier
 /// 每次 notifyListeners 必发），故「触发通知」用例改用 container.listen
 /// 并先制造真实状态变化再断言。
+library;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';

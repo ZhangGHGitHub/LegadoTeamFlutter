@@ -121,7 +121,7 @@ class ReaderPageChromeConfig {
       '${showHeaderLine}_${showFooterLine}_'
       '${tipHeaderLeft}_${tipHeaderMiddle}_${tipHeaderRight}_'
       '${tipFooterLeft}_${tipFooterMiddle}_${tipFooterRight}_'
-      '${titleMode}_${titleSize}_${titleTopSpacing}_${titleBottomSpacing}';
+      '${titleMode}_${titleSize}_${titleTopSpacing}_$titleBottomSpacing';
 
   bool get showPageHeader {
     switch (headerMode.clamp(0, 2)) {

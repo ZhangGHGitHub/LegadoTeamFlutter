@@ -53,7 +53,7 @@ class ReaderPaddingConfigSheet extends ConsumerStatefulWidget {
 
 class _ReaderPaddingConfigSheetState
     extends ConsumerState<ReaderPaddingConfigSheet> {
-  late ReaderAdvancedConfig _config = widget.config.copy();
+  late final ReaderAdvancedConfig _config = widget.config.copy();
   PaddingRegion _region = PaddingRegion.body;
   bool _lockLr = false;
 

@@ -2,6 +2,7 @@
 ///
 /// 验证 Rust FFI 返回的 ImportResult{success, book, error} JSON
 /// 能被正确解析为 Book 实体，且错误情况正确处理。
+library;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';

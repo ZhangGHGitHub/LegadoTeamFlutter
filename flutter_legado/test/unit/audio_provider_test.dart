@@ -233,7 +233,7 @@ void main() {
     test('loadChapters 触发通知', () async {
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => []);
       var notifyCount = 0;
-      container.listen(audioNotifierProvider, (_, __) => notifyCount++);
+      container.listen(audioNotifierProvider, (_, _) => notifyCount++);
 
       await readNotifier().loadChapters('https://book.com/1');
       // loading → idle 至少两次状态变更
@@ -453,7 +453,7 @@ void main() {
 
     test('setMode 触发通知', () {
       var notified = false;
-      container.listen(audioNotifierProvider, (_, __) => notified = true);
+      container.listen(audioNotifierProvider, (_, _) => notified = true);
       readNotifier().setMode(AudioPlayMode.singleLoop);
       expect(notified, isTrue);
     });
@@ -535,7 +535,7 @@ void main() {
 
     test('updateConfig 触发通知', () {
       var notified = false;
-      container.listen(audioNotifierProvider, (_, __) => notified = true);
+      container.listen(audioNotifierProvider, (_, _) => notified = true);
       readNotifier().updateConfig(speed: 1.2);
       expect(notified, isTrue);
     });

@@ -104,7 +104,7 @@ void main() {
     test('loadSources 触发状态更新（loading→data 至少两次）', () async {
       when(() => mockApi.getRssSources()).thenAnswer((_) async => []);
       var notifyCount = 0;
-      container.listen(rssNotifierProvider, (_, __) => notifyCount++);
+      container.listen(rssNotifierProvider, (_, _) => notifyCount++);
 
       await readNotifier().loadSources();
       expect(notifyCount, greaterThanOrEqualTo(2));
@@ -263,7 +263,7 @@ void main() {
       await readNotifier().selectSource(source);
 
       var notified = false;
-      container.listen(rssNotifierProvider, (_, __) => notified = true);
+      container.listen(rssNotifierProvider, (_, _) => notified = true);
       readNotifier().clearSelectedSource();
       expect(notified, isTrue);
     });
@@ -280,7 +280,7 @@ void main() {
       expect(readState().error, isNotNull);
 
       var notified = false;
-      container.listen(rssNotifierProvider, (_, __) => notified = true);
+      container.listen(rssNotifierProvider, (_, _) => notified = true);
       readNotifier().clearError();
       expect(notified, isTrue);
     });
@@ -394,7 +394,7 @@ void main() {
 
     test('setGroup 状态变更触发监听', () {
       var notified = false;
-      container.listen(rssNotifierProvider, (_, __) => notified = true);
+      container.listen(rssNotifierProvider, (_, _) => notified = true);
       readNotifier().setGroup('科技');
       expect(notified, isTrue);
     });

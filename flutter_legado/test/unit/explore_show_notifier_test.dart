@@ -53,7 +53,7 @@ void main() {
 
   /// 触发 Notifier 创建并维持订阅（autoDispose 需保持监听才不被销毁）
   ProviderSubscription<ExploreShowState> spawn([ExploreShowArgs a = args]) =>
-      container.listen(exploreShowNotifierProvider(a), (_, __) {});
+      container.listen(exploreShowNotifierProvider(a), (_, _) {});
 
   ExploreShowState readState([ExploreShowArgs a = args]) =>
       container.read(exploreShowNotifierProvider(a));

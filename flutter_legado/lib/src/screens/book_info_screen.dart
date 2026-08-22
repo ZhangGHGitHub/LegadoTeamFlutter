@@ -1231,7 +1231,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             ),
           ),
           // [UI-fix v2.0.3 | 2026-08-08] lint：null-aware 元素语法与 build_runner 内置分析器不兼容，用 if-element 等价表达 — Qoder
-          if (action != null) action,
+          ?action,
         ],
       ),
     );

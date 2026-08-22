@@ -131,7 +131,7 @@ void main() {
 
     test('saveConfig 触发状态变更通知', () async {
       var notified = false;
-      container.listen(syncNotifierProvider, (_, __) => notified = true);
+      container.listen(syncNotifierProvider, (_, _) => notified = true);
       await readNotifier().saveConfig('url', 'user', 'pass', '/dir/');
       expect(notified, isTrue);
     });
@@ -174,7 +174,7 @@ void main() {
 
     test('loadConfig 触发状态变更通知', () async {
       var notified = false;
-      container.listen(syncNotifierProvider, (_, __) => notified = true);
+      container.listen(syncNotifierProvider, (_, _) => notified = true);
       await readNotifier().loadConfig();
       expect(notified, isTrue);
     });

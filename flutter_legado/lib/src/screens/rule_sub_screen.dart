@@ -86,7 +86,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       // 原版 RecyclerView + ItemTouchHelper 拖拽排序
       buildDefaultDragHandles: true,
       itemCount: subs.length,
-      onReorder: (oldIndex, newIndex) =>
+      onReorderItem: (oldIndex, newIndex) =>
           ref.read(ruleSubNotifierProvider.notifier).reorder(oldIndex, newIndex),
       itemBuilder: (context, index) {
         final sub = subs[index];
@@ -344,7 +344,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
           .importService
           .fetchSourcesFromUrl(sub.url);
     } catch (e) {
-      if (mounted && Navigator.of(context).canPop()) {
+      if (context.mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
@@ -352,7 +352,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       );
       return;
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
     Navigator.of(context).pop(); // 关闭加载指示
 
     if (sources.isEmpty) {
@@ -388,7 +388,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     try {
       items = await _fetchJsonArray(sub.url);
     } catch (e) {
-      if (mounted && Navigator.of(context).canPop()) {
+      if (context.mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
@@ -396,7 +396,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       );
       return;
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
     Navigator.of(context).pop(); // 关闭加载指示
 
     if (items.isEmpty) {
@@ -417,7 +417,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     } catch (_) {
       localSources = [];
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final ok = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -444,7 +444,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     try {
       items = await _fetchJsonArray(sub.url);
     } catch (e) {
-      if (mounted && Navigator.of(context).canPop()) {
+      if (context.mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
@@ -452,7 +452,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       );
       return;
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
     Navigator.of(context).pop(); // 关闭加载指示
 
     if (items.isEmpty) {
@@ -473,7 +473,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     } catch (_) {
       localRules = [];
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final count = await Navigator.of(context).push<int>(
       MaterialPageRoute(
@@ -623,7 +623,7 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
           children: [
             // 类型下拉（对标 sp_type：书源/订阅源/替换规则）
             DropdownButtonFormField<String>(
-              value: _type,
+              initialValue: _type,
               decoration: const InputDecoration(labelText: '类型'),
               items: const [
                 DropdownMenuItem(

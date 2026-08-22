@@ -424,12 +424,12 @@ class RustApi implements BookApi {
         ),
       );
 
-  /// 保存书源登录用户信息（对齐原版 BaseSource.putLoginInfo → userInfo_<key>）
+  /// 保存书源登录用户信息（对齐原版 BaseSource.putLoginInfo → `userInfo_<key>`）
   @override
   Future<void> putLoginInfo(String sourceUrl, String infoJson) =>
       bridge.sourcePutLoginInfo(sourceUrl: sourceUrl, infoJson: infoJson);
 
-  /// 保存书源登录头（对齐原版 BaseSource.putLoginHeader → loginHeader_<key>）
+  /// 保存书源登录头（对齐原版 BaseSource.putLoginHeader → `loginHeader_<key>`）
   @override
   Future<void> putLoginHeader(String sourceUrl, String headerJson) =>
       bridge.sourcePutLoginHeader(sourceUrl: sourceUrl, headerJson: headerJson);
@@ -2159,7 +2159,7 @@ class RustApi implements BookApi {
   /// engineUrl 模板原样透传——占位符替换（{{speakText}}/{{text}}/
   /// {{speakSpeed}}/{{speed}}）、HTTP 音频拉取、Content-Type 校验与
   /// MD5 文件缓存均由 Rust 侧完成，Dart 不再预替换模板。
-  /// 返回语义保持 Future<void>（调用方 AudioNotifier.play 不消费返回值）；
+  /// 返回语义保持 `Future<void>`（调用方 AudioNotifier.play 不消费返回值）；
   /// 合成产物 audioPath 由 Rust 缓存落盘，供后续本地播放接线。
   /// ttsSpeak 异常时降级为原探活逻辑（模板替换 + http.get），
   /// 保持 audio_notifier 既有 try/catch 保护语义不变。
