@@ -81,7 +81,7 @@
 ## 四、误归类提示与风险备注
 
 1. **易误标项**：dict_state.dart:10 原注释称「本地内置词典为静态占位数据」已过时——核验（2026-08-22）：生产路径无静态内置词典，查询直达 Rust FFI dict_lookup；原注释过时已修；Mock _mockDict 为 B 类夹具。
-2. **MockBookSourceFetcher 未挂 cfg(test)**（web_book.rs L154 pub）：当前仅测试消费，无风险；若未来被生产代码引用将绕过真实网络层，建议后续批次评估是否下沉至 test 模块（本轮不改行为，仅登记）。
+2. **MockBookSourceFetcher 已下沉 cfg(test)（P3-2，2026-08-23）**：web_book.rs 三个顶层项（struct/inherent impl/trait impl）加 `#[cfg(test)]`（提交 `b75426da3`），生产构建不再编译该 Mock；登记关闭。
 3. P1-1 已论证的 FRB StreamSink 解码方向不可达（A1/A2/A3）在真实 DLL 上有运行时证据（test/ffi/ffi_stream_sink_runtime_test.dart 8 项全过）。
 
 ---
