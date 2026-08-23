@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.99] - 2026-08-23
+
+### Fixed
+- [UI] 搜索页对齐 Android 原版 15 项功能缺口（批次 A，纯 UI + 已有 FFI）：
+  1. 搜索中停止 FAB（mini FAB，点击 stop() 保留已出结果）
+  2. 输入变更停搜（onChanged 触发 stop）
+  3. 聚焦叠显输入帮助（有结果时重聚焦显示历史/联想层）
+  4. 历史项长按删除（deleteHistoryItem + SnackBar）
+  5. 清空历史二次确认（AlertDialog）
+  6. 分组多选（PopupMenu CheckBox 式 toggleGroup）
+  7. 书源改单选（RadioListTile，selectedSourceUrls 最多 1 个）
+  8. 空结果智能引导弹窗（筛选范围空结果时提示关精准搜/切全部分组）
+  9. 顶部进度条 + FAB 旁浮动 x/y
+  10. 新结果自动滚顶（ScrollController animateTo(0)）
+  11. 提交后收起键盘（onSubmitted/箭头按钮 unfocus）
+  12. 返回先失焦（PopScope）
+  13. 精准搜索偏好持久化（getConfig/setConfig precisionSearch）
+  14. clearResults 补 Rust 取消（BookApi.cancelSearch）
+  15. initialGroups 路由参数（routes args['groups']）
+- Contributor: Cursor UI
+
 ## [2.0.98] - 2026-08-22
 
 ### Fixed

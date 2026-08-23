@@ -315,13 +315,18 @@ void main() {
           readState().selectedSourceUrls, isNot(contains('https://source1.com')));
     });
 
-    test('toggleSource 支持多个书源', () async {
+    test('toggleSource 书源单选：选第二个替换第一个（对齐原版 RadioButton）', () async {
       container.read(searchNotifierProvider);
       await pumpInit();
 
       readNotifier().toggleSource('https://a.com');
       readNotifier().toggleSource('https://b.com');
-      expect(readState().selectedSourceUrls.length, equals(2));
+      // 单选语义：仅保留最新选中的书源，长度恒为 1
+      expect(readState().selectedSourceUrls.length, equals(1));
+      expect(readState().selectedSourceUrls, contains('https://b.com'));
+      expect(
+          readState().selectedSourceUrls,
+          isNot(contains('https://a.com')));
     });
 
     test('clearSourceFilter 清空所有书源过滤', () async {

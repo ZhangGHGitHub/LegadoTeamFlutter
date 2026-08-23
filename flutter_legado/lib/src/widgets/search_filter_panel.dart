@@ -6,14 +6,14 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
 
-/// 搜索范围筛选面板（书源多选）
+/// 搜索范围筛选面板（书源单选）
 ///
 /// [UI-fix v2.0.3 | 2026-08-07] 分组选择改由搜索页锚定 PopupMenu 承担
 /// （对齐原版溢出菜单分组列表：点选即生效、无需确定），本面板仅保留
-/// 书源多选 Tab；弹窗初始高度由 0.6 加大至 0.9，避免列表截断 — Qoder
+/// 书源单选 Tab；弹窗初始高度由 0.6 加大至 0.9，避免列表截断 — Qoder
 ///
-/// 对齐安卓端 SearchScopeDialog 的书源多选模式（Checkbox 多选 + 确定生效），
-/// 筛选状态由 [SearchNotifier]（Riverpod）管理。
+/// 对齐安卓端 SearchScopeDialog 的书源单选模式（RadioButton selectSource），
+/// 筛选状态由 [SearchNotifier]（Riverpod）管理。 — Cursor UI
 class SearchFilterPanel extends ConsumerStatefulWidget {
   const SearchFilterPanel({super.key});
 
@@ -111,7 +111,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
               ),
             ),
             const SizedBox(height: 12),
-            // 标题行（[UI-fix v2.0.3 | 2026-08-07] 分组 Tab 移除后仅余书源多选）— Qoder
+            // 标题行（[UI-fix v2.0.3 | 2026-08-07] 分组 Tab 移除后仅余书源单选）— Qoder
             Row(
               children: [
                 Text('选择书源', style: Theme.of(context).textTheme.titleMedium),
@@ -124,7 +124,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                           .clearAllFilter();
                       Navigator.pop(context);
                     },
-                    child: const Text('清除全部'),
+                    child: const Text('全部书源'),
                   ),
               ],
             ),
@@ -166,7 +166,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                       : _buildSourceList(state),
             ),
             const SizedBox(height: 8),
-            // 确定按钮（书源多选批量生效）
+            // 确定按钮（书源单选确认关闭）
             SizedBox(
               width: double.infinity,
               child: FilledButton(
@@ -180,39 +180,13 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
     );
   }
 
-  /// 统计信息行（书源多选）
+  /// 统计信息行（书源单选）
   Widget _buildStatsRow(SearchState state) {
-    return Row(
-      children: [
-        Text(
-          '已选择 ${state.selectedSourceUrls.length} / ${_sources.length} 个书源',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const Spacer(),
-        TextButton(
-          onPressed: () {
-            final notifier = ref.read(searchNotifierProvider.notifier);
-            // 全选/取消全部书源
-            if (state.selectedSourceUrls.length == _sources.length) {
-              notifier.clearSourceFilter();
-            } else {
-              for (final source in _sources) {
-                if (!state.selectedSourceUrls
-                    .contains(source.bookSourceUrl)) {
-                  notifier.toggleSource(source.bookSourceUrl);
-                }
-              }
-            }
-          },
-          child: Text(_isAllSelected(state) ? '取消全选' : '全选'),
-        ),
-      ],
+    final selected = state.selectedSourceUrls.length;
+    return Text(
+      selected > 0 ? '已选择 1 个书源' : '未选择书源（搜索全部）',
+      style: Theme.of(context).textTheme.bodySmall,
     );
-  }
-
-  bool _isAllSelected(SearchState state) {
-    return _sources.isNotEmpty &&
-        state.selectedSourceUrls.length == _sources.length;
   }
 
   /// 错误视图
@@ -235,7 +209,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
     );
   }
 
-  /// 书源列表（对齐安卓端 SearchScopeDialog 的书源多选模式）
+  /// 书源列表（对齐安卓端 SearchScopeDialog 的书源单选模式）— Cursor UI
   Widget _buildSourceList(SearchState state) {
     final filteredSources = _filteredSources;
     if (filteredSources.isEmpty) {
@@ -253,22 +227,25 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
       );
     }
 
-    return ListView.builder(
-      itemCount: filteredSources.length,
-      itemBuilder: (context, index) {
-        final source = filteredSources[index];
-        final isSelected =
-            state.selectedSourceUrls.contains(source.bookSourceUrl);
-        return CheckboxListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          value: isSelected,
-          onChanged: (value) {
-            ref
-                .read(searchNotifierProvider.notifier)
-                .toggleSource(source.bookSourceUrl);
-          },
-          title: Text(
+    // 书源单选：Flutter ≥3.32 RadioGroup 祖先管理选中态（原 groupValue/onChanged 已废弃）
+    return RadioGroup<String?>(
+      groupValue: state.selectedSourceUrls.isEmpty
+          ? null
+          : state.selectedSourceUrls.first,
+      onChanged: (value) {
+        if (value != null) {
+          ref.read(searchNotifierProvider.notifier).toggleSource(value);
+        }
+      },
+      child: ListView.builder(
+        itemCount: filteredSources.length,
+        itemBuilder: (context, index) {
+          final source = filteredSources[index];
+          return RadioListTile<String?>(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            value: source.bookSourceUrl,
+            title: Text(
             source.bookSourceName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -280,15 +257,10 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-          ),
-          secondary: Icon(
-            isSelected ? Icons.check_circle : Icons.circle_outlined,
-            color: isSelected
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
   }
 }

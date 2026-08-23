@@ -125,6 +125,7 @@ class AppRoutes {
           final args = ModalRoute.of(context)?.settings.arguments;
           String? initialQuery;
           List<String>? sourceUrls;
+          List<String>? initialGroups;
           if (args is String) {
             initialQuery = args;
           } else if (args is Map) {
@@ -138,10 +139,16 @@ class AppRoutes {
               sourceUrls =
                   (args['sourceUrls'] as List).whereType<String>().toList();
             }
+            // 路由 groups 参数：预选搜索分组（对齐原版 receiptIntent searchScope）
+            if (args['groups'] is List) {
+              initialGroups =
+                  (args['groups'] as List).whereType<String>().toList();
+            }
           }
           return SearchScreen(
             initialQuery: initialQuery,
             initialSourceUrls: sourceUrls,
+            initialGroups: initialGroups,
           );
         },
         sources: (_) => const SourceScreen(),

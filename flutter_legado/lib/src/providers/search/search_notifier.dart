@@ -97,6 +97,17 @@ class SearchNotifier extends Notifier<SearchState> {
     }
   }
 
+  /// 删除单条搜索历史（对齐原版 HistoryKeyAdapter 长按删除）
+  Future<void> deleteHistoryItem(String keyword) async {
+    final history = [...state.searchHistory]..remove(keyword);
+    state = state.copyWith(searchHistory: history);
+    try {
+      await ref.read(bookApiProvider).deleteSearchKeyword(keyword);
+    } catch (e) {
+      debugPrint('删除搜索历史项失败: $e');
+    }
+  }
+
   /// 更新输入框实时文本（驱动联想过滤，见 [SearchState.suggestions]）
   void setInput(String text) {
     if (state.inputText == text) return;
@@ -221,6 +232,15 @@ class SearchNotifier extends Notifier<SearchState> {
     }
   }
 
+  /// 停止搜索（对齐原版 SearchViewModel.stop / fb_start_stop）
+  ///
+  /// 保留已出结果，仅取消后台搜索并将 [isLoading] 置 false。
+  Future<void> stop() async {
+    if (!state.isLoading) return;
+    await _cancelActiveSearch();
+    state = state.copyWith(isLoading: false);
+  }
+
   /// 解析搜索范围：将分组和书源选择合并为最终的 sourceUrls 列表
   /// 返回 null 表示搜索全部书源
   Future<List<String>?> _resolveSearchSources() async {
@@ -321,6 +341,10 @@ class SearchNotifier extends Notifier<SearchState> {
     _searchSeq++;
     _searchSub?.cancel();
     _searchSub = null;
+    // 异步取消 Rust 侧孤儿搜索，失败不阻断 UI — Cursor UI
+    unawaited(ref.read(bookApiProvider).cancelSearch().catchError((e) {
+      debugPrint('清空结果取消搜索失败: $e');
+    }));
     _keepOther = true;
     state = state.copyWith(
       keyword: '',
@@ -356,15 +380,16 @@ class SearchNotifier extends Notifier<SearchState> {
 
   // ===== 书源筛选 =====
 
-  /// 切换书源选中状态
+  /// 切换书源选中状态（单选：对齐原版 SearchScopeDialog rb_source + RadioButton）
   void toggleSource(String sourceUrl) {
-    final next = {...state.selectedSourceUrls};
-    if (next.contains(sourceUrl)) {
-      next.remove(sourceUrl);
+    if (state.selectedSourceUrls.contains(sourceUrl)) {
+      state = state.copyWith(selectedSourceUrls: {});
     } else {
-      next.add(sourceUrl);
+      state = state.copyWith(
+        selectedSourceUrls: {sourceUrl},
+        selectedGroups: {},
+      );
     }
-    state = state.copyWith(selectedSourceUrls: next);
     unawaited(_persistSearchScope());
   }
 
