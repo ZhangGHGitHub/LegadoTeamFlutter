@@ -1,15 +1,17 @@
 # 搜索页 parity 批次 B 设计草案（跨轨 FFI）
 
 **日期**: 2026-08-22 ｜ **编写者**: Qoder（主代理）
-**状态**: 草案——待批次 A（纯 UI 15 项）验收落地后，契约节并入 API_CONTRACT.md 并冻结，再进入 Rust 实施
+**状态**: 批次 A 已落地（2.0.99+101，commit `3a866106c`）。本文档为批次 B 设计依据；缺口编号以 `docs/SEARCH_PAGE_PARITY_REPORT_2026-08-23.md` §3 规范号为准
 
-## 1. 范围（审计缺口 #3/#4/#6/#8/#14，跨轨部分）
+## 1. 范围（缺口 G-B-01..G-B-05，跨轨部分；规范号见 SEARCH_PAGE_PARITY_REPORT_2026-08-23.md §3）
 
 | # | 能力 | 原版参照（已核验 file:line） |
 |---|------|------------------------------|
-| B-1 | 分页：hasMore + searchPage++（「下一页」FAB play 态） | SearchModel.kt L40/L73-75/L81/L122；SearchActivity fb_start_stop L284-298 |
-| B-2 | 暂停/恢复：软暂停 workingState 门控（状态保留、进度保留） | SearchModel.kt L45/L98/L227-233 |
-| B-3 | 书架前缀联想 + 在架绿点（搜索页输入帮助层与结果项标记） | SearchActivity upHistory L389-424；SearchViewModel isInBookShelf |
+| G-B-01 | 分页 page 参数透传：searchPage++（新 key → page=1） | SearchModel.kt L73-75；SearchActivity fb_start_stop L284-298 |
+| G-B-02 | hasMore 判定 + FAB play 态（idle+hasMore → 下一页） | SearchModel.kt L40/L81/L122；SearchActivity searchFinally L429-449 |
+| G-B-03 | 滚动到底自动加载下一页（纯 UI 接线，与 G-B-01/02 同 FFI 能力） | SearchActivity L260-281；scrollToBottom L362-372 |
+| G-B-04 | 暂停/恢复：软暂停 workingState 门控（状态保留、进度保留） | SearchModel.kt L45/L98/L227-233；SearchActivity L330-338 |
+| G-B-05 | 书架实时搜索 + 在架绿点 + 在架同名仅填充分支（输入帮助层与结果项标记） | SearchActivity upHistory L389-424、L516-532；SearchViewModel isInBookShelf L90-116 |
 
 ## 2. 原版语义要点（实现基准）
 
@@ -32,7 +34,7 @@
 ## 4. Dart 侧改动点
 
 - rust_api.rs codegen 重新生成（FRB）+ BookApi / MockBookApi 抽象与假实现（契约三处同步铁律）
-- search_notifier：searchPage/hasMore/isPaused 状态；FAB play 态接线（批次 A 已留停止态，play 态本批补）
+- search_notifier：searchPage/hasMore/isPaused 状态；FAB play 态接线（批次 A 已留停止态，play 态本批补）；滚动到底自动触发下一页（G-B-03，纯 UI）
 - 输入帮助层书架前缀查询 + 在架绿点：**已确认纯 UI，无新 FFI**。BookApi.getBooks()（book_api.dart L21）已有全量书架。原版匹配语义（SearchViewModel.kt L90-116 已核验）：书架键集 = 每本 isNotShelf=false 的书生成 {「name-author」, name, bookUrl} 三键；搜索结果 isInBookShelf = (author 非空 ? 「name-author」 : name) ∈ 键集 || bookUrl ∈ 键集。Flutter 侧：getBooks() 构建 Set<String>，前缀联想按 name/author startsWith 过滤
 
 ## 5. 契约变更分类（API_CONTRACT.md 并入时）
