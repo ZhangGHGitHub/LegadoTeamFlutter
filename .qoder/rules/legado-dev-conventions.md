@@ -145,6 +145,7 @@ Fixes #239
 Windows环境下，中文字符在某些工具中可能出现编码问题：
 - Git diff 显示乱码（如"无动画"显示为"无动?"）
 - 某些终端工具无法正确显示中文注释
+- **agent edit/write 文件工具会剥离 UTF-8 BOM**：编辑带 BOM 的文件后 BOM 丢失，Windows PowerShell 5.1 按 GBK 解码 → 中文乱码 → .ps1 脚本解析失败（2026-08-23 emulator_smoke_test.ps1 实证）。恢复方法见下
 
 ### 识别方法
 - 运行 `git diff` 查看变更
@@ -156,6 +157,7 @@ Windows环境下，中文字符在某些工具中可能出现编码问题：
 2. **如果内容正确但显示错误** - 可以继续工作，这是显示问题
 3. **如果内容也损坏** - 使用 `git checkout HEAD` 恢复文件
 4. **考虑替代工具** - 如使用Python脚本进行文件修改
+5. **恢复被剥离的 BOM**（.ps1 等 PowerShell 脚本必需）：`$b=[System.IO.File]::ReadAllBytes($p); $n=New-Object byte[] ($b.Length+3); [Array]::Copy([byte[]](239,187,191),0,$n,0,3); [Array]::Copy($b,0,$n,3,$b.Length); [System.IO.File]::WriteAllBytes($p,$n)`
 
 ## 🛠️ 工具使用指南
 
