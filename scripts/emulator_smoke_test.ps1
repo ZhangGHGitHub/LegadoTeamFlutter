@@ -105,6 +105,14 @@ Write-Host "==> adb install -r ..."
 }
 if ($fail -gt 0) { exit 1 }
 
+# ---- 3.1 校验已装版本与 pubspec 一致（防 -SkipBuild 静默复用陈旧 APK）----
+$pubVer = ((Select-String -Path "$FlutterDir\pubspec.yaml" -Pattern '^version:\s*(\S+)' | Select-Object -First 1).Matches[0].Groups[1].Value -split '\+')[0]
+$instOut = & $adb -s $Device shell dumpsys package $Package 2>$null
+$instVer = ($instOut | Select-String 'versionName=([0-9.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
+if ($instVer -ne $pubVer) { Fail "版本不一致：已装=$instVer，pubspec=$pubVer（APK 可能陈旧——去掉 -SkipBuild 重新构建）" }
+else { Pass "已装版本与 pubspec 一致（$instVer）" }
+if ($fail -gt 0) { exit 1 }
+
 # ---- 4. 启动应用 ----
 # 安装会 force-stop 旧进程；清 logcat + 冷启动，避免误判旧会话 UI/日志
 & $adb -s $Device logcat -c 2>$null | Out-Null
