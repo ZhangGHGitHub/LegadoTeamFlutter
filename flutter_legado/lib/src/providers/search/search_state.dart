@@ -41,6 +41,22 @@ class SearchState with _$SearchState {
 
     /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）
     @Default('') String inputText,
+
+    /// 活动搜索会话的当前页码（批次B G-B-01：新关键词 → 重置为 1；
+    /// 同关键词续页 → searchPage++，对齐原版 SearchModel.searchPage）
+    @Default(1) int searchPage,
+
+    /// 是否有下一页（批次B G-B-02：当前页非空批次的 OR，Rust 侧 has_more
+    /// 累积字段；新搜索开始时乐观置 true，每批事件覆写）
+    @Default(false) bool hasMore,
+
+    /// 软挂起态（批次B G-B-04：仅门控未派发书源，已派发任务继续；
+    /// 对齐原版 repeatOnLifecycle(RESUMED) → viewModel.pause/resume）
+    @Default(false) bool isPaused,
+
+    /// 用户手动停止了本次搜索（对齐原版 SearchActivity.isManualStopSearch）：
+    /// 抑制 play FAB 与滚动自动加载，直至新关键词搜索重置
+    @Default(false) bool isManualStop,
   }) = _SearchState;
 }
 

@@ -47,6 +47,22 @@ mixin _$SearchState {
   /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）
   String get inputText => throw _privateConstructorUsedError;
 
+  /// 活动搜索会话的当前页码（批次B G-B-01：新关键词 → 重置为 1；
+  /// 同关键词续页 → searchPage++，对齐原版 SearchModel.searchPage）
+  int get searchPage => throw _privateConstructorUsedError;
+
+  /// 是否有下一页（批次B G-B-02：当前页非空批次的 OR，Rust 侧 has_more
+  /// 累积字段；新搜索开始时乐观置 true，每批事件覆写）
+  bool get hasMore => throw _privateConstructorUsedError;
+
+  /// 软挂起态（批次B G-B-04：仅门控未派发书源，已派发任务继续；
+  /// 对齐原版 repeatOnLifecycle(RESUMED) → viewModel.pause/resume）
+  bool get isPaused => throw _privateConstructorUsedError;
+
+  /// 用户手动停止了本次搜索（对齐原版 SearchActivity.isManualStopSearch）：
+  /// 抑制 play FAB 与滚动自动加载，直至新关键词搜索重置
+  bool get isManualStop => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $SearchStateCopyWith<SearchState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -68,7 +84,11 @@ abstract class $SearchStateCopyWith<$Res> {
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
       List<String> searchHistory,
-      String inputText});
+      String inputText,
+      int searchPage,
+      bool hasMore,
+      bool isPaused,
+      bool isManualStop});
 }
 
 /// @nodoc
@@ -94,6 +114,10 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
     Object? selectedGroups = null,
     Object? searchHistory = null,
     Object? inputText = null,
+    Object? searchPage = null,
+    Object? hasMore = null,
+    Object? isPaused = null,
+    Object? isManualStop = null,
   }) {
     return _then(_value.copyWith(
       keyword: null == keyword
@@ -136,6 +160,22 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
           ? _value.inputText
           : inputText // ignore: cast_nullable_to_non_nullable
               as String,
+      searchPage: null == searchPage
+          ? _value.searchPage
+          : searchPage // ignore: cast_nullable_to_non_nullable
+              as int,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isPaused: null == isPaused
+          ? _value.isPaused
+          : isPaused // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isManualStop: null == isManualStop
+          ? _value.isManualStop
+          : isManualStop // ignore: cast_nullable_to_non_nullable
+              as bool,
     ) as $Val);
   }
 }
@@ -158,7 +198,11 @@ abstract class _$$SearchStateImplCopyWith<$Res>
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
       List<String> searchHistory,
-      String inputText});
+      String inputText,
+      int searchPage,
+      bool hasMore,
+      bool isPaused,
+      bool isManualStop});
 }
 
 /// @nodoc
@@ -182,6 +226,10 @@ class __$$SearchStateImplCopyWithImpl<$Res>
     Object? selectedGroups = null,
     Object? searchHistory = null,
     Object? inputText = null,
+    Object? searchPage = null,
+    Object? hasMore = null,
+    Object? isPaused = null,
+    Object? isManualStop = null,
   }) {
     return _then(_$SearchStateImpl(
       keyword: null == keyword
@@ -224,6 +272,22 @@ class __$$SearchStateImplCopyWithImpl<$Res>
           ? _value.inputText
           : inputText // ignore: cast_nullable_to_non_nullable
               as String,
+      searchPage: null == searchPage
+          ? _value.searchPage
+          : searchPage // ignore: cast_nullable_to_non_nullable
+              as int,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isPaused: null == isPaused
+          ? _value.isPaused
+          : isPaused // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isManualStop: null == isManualStop
+          ? _value.isManualStop
+          : isManualStop // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -241,7 +305,11 @@ class _$SearchStateImpl implements _SearchState {
       final Set<String> selectedSourceUrls = const <String>{},
       final Set<String> selectedGroups = const <String>{},
       final List<String> searchHistory = const [],
-      this.inputText = ''})
+      this.inputText = '',
+      this.searchPage = 1,
+      this.hasMore = false,
+      this.isPaused = false,
+      this.isManualStop = false})
       : _results = results,
         _selectedSourceUrls = selectedSourceUrls,
         _selectedGroups = selectedGroups,
@@ -327,9 +395,33 @@ class _$SearchStateImpl implements _SearchState {
   @JsonKey()
   final String inputText;
 
+  /// 活动搜索会话的当前页码（批次B G-B-01：新关键词 → 重置为 1；
+  /// 同关键词续页 → searchPage++，对齐原版 SearchModel.searchPage）
+  @override
+  @JsonKey()
+  final int searchPage;
+
+  /// 是否有下一页（批次B G-B-02：当前页非空批次的 OR，Rust 侧 has_more
+  /// 累积字段；新搜索开始时乐观置 true，每批事件覆写）
+  @override
+  @JsonKey()
+  final bool hasMore;
+
+  /// 软挂起态（批次B G-B-04：仅门控未派发书源，已派发任务继续；
+  /// 对齐原版 repeatOnLifecycle(RESUMED) → viewModel.pause/resume）
+  @override
+  @JsonKey()
+  final bool isPaused;
+
+  /// 用户手动停止了本次搜索（对齐原版 SearchActivity.isManualStopSearch）：
+  /// 抑制 play FAB 与滚动自动加载，直至新关键词搜索重置
+  @override
+  @JsonKey()
+  final bool isManualStop;
+
   @override
   String toString() {
-    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, searchedCount: $searchedCount, totalCount: $totalCount, error: $error, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory, inputText: $inputText)';
+    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, searchedCount: $searchedCount, totalCount: $totalCount, error: $error, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory, inputText: $inputText, searchPage: $searchPage, hasMore: $hasMore, isPaused: $isPaused, isManualStop: $isManualStop)';
   }
 
   @override
@@ -353,7 +445,14 @@ class _$SearchStateImpl implements _SearchState {
             const DeepCollectionEquality()
                 .equals(other._searchHistory, _searchHistory) &&
             (identical(other.inputText, inputText) ||
-                other.inputText == inputText));
+                other.inputText == inputText) &&
+            (identical(other.searchPage, searchPage) ||
+                other.searchPage == searchPage) &&
+            (identical(other.hasMore, hasMore) || other.hasMore == hasMore) &&
+            (identical(other.isPaused, isPaused) ||
+                other.isPaused == isPaused) &&
+            (identical(other.isManualStop, isManualStop) ||
+                other.isManualStop == isManualStop));
   }
 
   @override
@@ -368,7 +467,11 @@ class _$SearchStateImpl implements _SearchState {
       const DeepCollectionEquality().hash(_selectedSourceUrls),
       const DeepCollectionEquality().hash(_selectedGroups),
       const DeepCollectionEquality().hash(_searchHistory),
-      inputText);
+      inputText,
+      searchPage,
+      hasMore,
+      isPaused,
+      isManualStop);
 
   @JsonKey(ignore: true)
   @override
@@ -388,7 +491,11 @@ abstract class _SearchState implements SearchState {
       final Set<String> selectedSourceUrls,
       final Set<String> selectedGroups,
       final List<String> searchHistory,
-      final String inputText}) = _$SearchStateImpl;
+      final String inputText,
+      final int searchPage,
+      final bool hasMore,
+      final bool isPaused,
+      final bool isManualStop}) = _$SearchStateImpl;
 
   @override
 
@@ -431,6 +538,26 @@ abstract class _SearchState implements SearchState {
 
   /// 输入框实时文本（用于联想过滤，区别于已提交的 [keyword]）
   String get inputText;
+  @override
+
+  /// 活动搜索会话的当前页码（批次B G-B-01：新关键词 → 重置为 1；
+  /// 同关键词续页 → searchPage++，对齐原版 SearchModel.searchPage）
+  int get searchPage;
+  @override
+
+  /// 是否有下一页（批次B G-B-02：当前页非空批次的 OR，Rust 侧 has_more
+  /// 累积字段；新搜索开始时乐观置 true，每批事件覆写）
+  bool get hasMore;
+  @override
+
+  /// 软挂起态（批次B G-B-04：仅门控未派发书源，已派发任务继续；
+  /// 对齐原版 repeatOnLifecycle(RESUMED) → viewModel.pause/resume）
+  bool get isPaused;
+  @override
+
+  /// 用户手动停止了本次搜索（对齐原版 SearchActivity.isManualStopSearch）：
+  /// 抑制 play FAB 与滚动自动加载，直至新关键词搜索重置
+  bool get isManualStop;
   @override
   @JsonKey(ignore: true)
   _$$SearchStateImplCopyWith<_$SearchStateImpl> get copyWith =>

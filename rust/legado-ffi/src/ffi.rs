@@ -561,17 +561,31 @@ pub mod ffi {
     ///
     /// `query` — 搜索关键词
     /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
+    /// `page` — 页码（批次B G-B-01 透传；Dart 侧同关键词翻页递增、新关键词重置为 1）
     /// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
     pub async fn search_multi_stream(
         query: String,
         source_urls_json: String,
+        page: i32,
         sink: StreamSink<String>,
     ) -> Result<(), BridgeError> {
-        crate::api::search::run_multi_stream(query, source_urls_json, |batch| {
+        crate::api::search::run_multi_stream(query, source_urls_json, page, |batch| {
             sink.add(batch).map_err(|e| e.to_string())
         })
         .await;
         Ok(())
+    }
+
+    /// 暂停正在进行的流式搜索（软挂起，批次B G-B-04）
+    ///
+    /// 仅拦截尚未派发的书源；已派发任务继续完成。状态/进度保留。
+    pub fn search_pause() {
+        crate::api::search::pause_search();
+    }
+
+    /// 恢复已暂停的流式搜索（批次B G-B-04）
+    pub fn search_resume() {
+        crate::api::search::resume_search();
     }
 
     // ─── 阅读 ─────────────────────────────────────────────────

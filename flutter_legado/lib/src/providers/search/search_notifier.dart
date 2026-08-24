@@ -42,6 +42,13 @@ class SearchNotifier extends Notifier<SearchState> {
   /// build 层直接消费 state.results，避免每帧全量分桶卡顿 — Reasonix
   bool _keepOther = true;
 
+  /// 会话级原始累积表（跨页去重；批次B G-B-01：同关键词续页 APPEND，
+  /// 新关键词/清空时重置）— Cursor UI
+  final _accumulated = <SearchResult>[];
+
+  /// 会话级去重键集（书名+作者+书源，与 [_accumulated] 同步维护）— Cursor UI
+  final _seenKeys = <String>{};
+
   @override
   SearchState build() {
     // 延迟到 build() 返回后加载历史 + 恢复搜索范围（对齐原版 AppConfig.searchScope）
@@ -138,6 +145,11 @@ class SearchNotifier extends Notifier<SearchState> {
     await _cancelActiveSearch();
     final seq = ++_searchSeq;
 
+    // G-B-01：新关键词 → 会话重置（页码归 1、累积表清空）；
+    // G-B-02：hasMore 乐观置 true（对齐原版 SearchViewModel L135，
+    // 首页完成后由批次 has_more 覆写）；isManualStop 复位（原版 onQueryTextSubmit L203）
+    _accumulated.clear();
+    _seenKeys.clear();
     state = state.copyWith(
       keyword: trimmed,
       isLoading: true,
@@ -145,6 +157,10 @@ class SearchNotifier extends Notifier<SearchState> {
       results: const [],
       searchedCount: 0,
       totalCount: 0,
+      searchPage: 1,
+      hasMore: true,
+      isPaused: false,
+      isManualStop: false,
     );
     await addToHistory(trimmed);
     if (seq != _searchSeq) return;
@@ -160,12 +176,61 @@ class SearchNotifier extends Notifier<SearchState> {
         );
         return;
       }
-      final seen = <String>{};
-      final accumulated = <SearchResult>[];
-      _searchSub = ref
-          .read(bookApiProvider)
-          .searchMultiStream(trimmed, sourceUrls: sourceUrls)
-          .listen(
+      _attachSearchStream(trimmed, 1, sourceUrls, seq);
+    } catch (e) {
+      if (seq != _searchSeq) return;
+      state = state.copyWith(error: _mapError(e), isLoading: false);
+    }
+  }
+
+  /// 加载下一页（批次B G-B-01/G-B-02：对齐原版 SearchActivity FAB play +
+  /// scrollToBottom → viewModel.search("")，同 searchId → page++）
+  ///
+  /// 守卫：非加载中、非手动停止、hasMore 为真、关键词非空；
+  /// 结果 APPEND（不清空累积表），对齐原版同会话跨页累积语义。
+  Future<void> loadNextPage() async {
+    final s = state;
+    if (s.isLoading || s.isManualStop || !s.hasMore) return;
+    final keyword = s.keyword.trim();
+    if (keyword.isEmpty) return;
+
+    // G-B-01：同关键词续页 → page++（原版 SearchModel.searchPage++）
+    final nextPage = s.searchPage + 1;
+    final seq = ++_searchSeq;
+    state = state.copyWith(
+      searchPage: nextPage,
+      isLoading: true,
+      error: null,
+    );
+
+    try {
+      final sourceUrls = await _resolveSearchSources();
+      if (seq != _searchSeq) return;
+      if (sourceUrls != null && sourceUrls.isEmpty) {
+        state = state.copyWith(
+          error: '所选筛选范围内无有效书源，请调整筛选条件',
+          isLoading: false,
+        );
+        return;
+      }
+      _attachSearchStream(keyword, nextPage, sourceUrls, seq);
+    } catch (e) {
+      if (seq != _searchSeq) return;
+      state = state.copyWith(error: _mapError(e), isLoading: false);
+    }
+  }
+
+  /// 订阅逐源流（新搜索 / 续页共用；批次B：page 参数透传 Rust 侧）
+  void _attachSearchStream(
+    String keyword,
+    int page,
+    List<String>? sourceUrls,
+    int seq,
+  ) {
+    _searchSub = ref
+        .read(bookApiProvider)
+        .searchMultiStream(keyword, sourceUrls: sourceUrls, page: page)
+        .listen(
         (batch) {
           if (seq != _searchSeq) return;
           // [UI-fix v2.0.11 | 2026-08-10] 消费批次 error（对齐原版 SearchModel：
@@ -187,23 +252,26 @@ class SearchNotifier extends Notifier<SearchState> {
                     // Rust 流式批次附加 hasReadRecord（#424）
                     hasReadRecord: e['hasReadRecord'] == true,
                   ));
-          // 按 书名+作者+书源 去重后进入累积表；展示前由 applyPrecisionSearch
+          // 按 书名+作者+书源 去重后进入会话级累积表（批次B：跨页 APPEND，
+          // 键集不清空直至新关键词/清空）；展示前由 applyPrecisionSearch
           // 按书名+作者聚合多 origin（对齐原版 mergeItems.addOrigin）
           for (final r in books) {
             final key = '${r.book.name}|${r.book.author}|${r.book.origin}';
-            if (seen.add(key)) accumulated.add(r);
+            if (_seenKeys.add(key)) _accumulated.add(r);
           }
           // [UI-fix v2.0.31 | 2026-08-11] 分桶 + 同书多源聚合，徽章显示
           // originsCount（对齐原版 bv_originCount）— Auto
           final sorted = applyPrecisionSearch(
-            accumulated,
-            trimmed,
+            _accumulated,
+            keyword,
             keepOther: _keepOther,
           );
           state = state.copyWith(
             results: sorted,
             searchedCount: (batch['finished_count'] as int?) ?? 0,
             totalCount: (batch['total_count'] as int?) ?? 0,
+            // G-B-02：消费批次 has_more（Rust 侧当前页非空批次的累积 OR）
+            hasMore: (batch['has_more'] as bool?) ?? state.hasMore,
           );
         },
         onError: (Object e) {
@@ -213,13 +281,10 @@ class SearchNotifier extends Notifier<SearchState> {
         onDone: () {
           if (seq != _searchSeq) return;
           _searchSub = null;
-          state = state.copyWith(isLoading: false);
+          // 流结束（含挂起期间已派发任务全部完成）→ 清软挂起态
+          state = state.copyWith(isLoading: false, isPaused: false);
         },
       );
-    } catch (e) {
-      if (seq != _searchSeq) return;
-      state = state.copyWith(error: _mapError(e), isLoading: false);
-    }
   }
 
   /// 取消进行中的搜索（对齐原版 searchModel.cancelSearch）
@@ -237,11 +302,38 @@ class SearchNotifier extends Notifier<SearchState> {
 
   /// 停止搜索（对齐原版 SearchViewModel.stop / fb_start_stop）
   ///
-  /// 保留已出结果，仅取消后台搜索并将 [isLoading] 置 false。
+  /// 保留已出结果，仅取消后台搜索并将 [isLoading] 置 false；
+  /// 同时置 [isManualStop]（原版 isManualStopSearch：抑制 play FAB 与
+  /// 滚动自动加载，直至新关键词搜索复位）。
   Future<void> stop() async {
     if (!state.isLoading) return;
     await _cancelActiveSearch();
-    state = state.copyWith(isLoading: false);
+    state = state.copyWith(isLoading: false, isManualStop: true);
+  }
+
+  /// 软暂停搜索（批次B G-B-04：对齐原版 repeatOnLifecycle(RESUMED) →
+  /// viewModel.pause()，app 退后台时调用）
+  ///
+  /// Rust 侧仅门控未派发书源，已派发任务继续跑完；进度/状态保留。
+  Future<void> pauseSearch() async {
+    if (!state.isLoading || state.isPaused) return;
+    try {
+      await ref.read(bookApiProvider).pauseSearch();
+    } catch (e) {
+      debugPrint('暂停搜索失败: $e');
+    }
+    state = state.copyWith(isPaused: true);
+  }
+
+  /// 恢复软暂停的搜索（对齐原版 viewModel.resume()，app 回前台时调用）
+  Future<void> resumeSearch() async {
+    if (!state.isPaused) return;
+    try {
+      await ref.read(bookApiProvider).resumeSearch();
+    } catch (e) {
+      debugPrint('恢复搜索失败: $e');
+    }
+    state = state.copyWith(isPaused: false);
   }
 
   /// 解析搜索范围：将分组和书源选择合并为最终的 sourceUrls 列表
@@ -349,6 +441,9 @@ class SearchNotifier extends Notifier<SearchState> {
       debugPrint('清空结果取消搜索失败: $e');
     }));
     _keepOther = true;
+    // 批次B：会话级累积表与分页态随清空重置
+    _accumulated.clear();
+    _seenKeys.clear();
     state = state.copyWith(
       keyword: '',
       results: [],
@@ -356,6 +451,10 @@ class SearchNotifier extends Notifier<SearchState> {
       isLoading: false,
       searchedCount: 0,
       totalCount: 0,
+      searchPage: 1,
+      hasMore: false,
+      isPaused: false,
+      isManualStop: false,
     );
   }
 
@@ -370,6 +469,9 @@ class SearchNotifier extends Notifier<SearchState> {
     _searchSub?.cancel();
     _searchSub = null;
     _keepOther = true;
+    // 批次B：会话级累积表与分页态随页面重开重置（新 ViewModel 语义）
+    _accumulated.clear();
+    _seenKeys.clear();
     state = state.copyWith(
       keyword: '',
       inputText: '',
@@ -378,6 +480,10 @@ class SearchNotifier extends Notifier<SearchState> {
       isLoading: false,
       searchedCount: 0,
       totalCount: 0,
+      searchPage: 1,
+      hasMore: false,
+      isPaused: false,
+      isManualStop: false,
     );
   }
 

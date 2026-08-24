@@ -251,16 +251,31 @@ abstract class BookApi {
   /// 与 [searchMulti]（一次性返回全部）不同：每完成一个书源即推送一个批次，
   /// UI 侧可逐源渲染，无需等待最慢书源。流在所有书源完成后自然结束。
   ///
+  /// [page] — 页码（批次B G-B-01）：同关键词翻页递增、新关键词重置为 1；
+  /// 默认 1（一次性搜索场景）。
+  ///
   /// 每个元素为一个书源批次 Map，字段：
   /// `source_index` / `source_url` / `source_name` / `books`(List) /
-  /// `error`(String?) / `finished_count` / `total_count` / `is_last`。
+  /// `error`(String?) / `finished_count` / `total_count` / `is_last` /
+  /// `has_more`(bool) — 累积值：任一已推送批次非空即 true（G-B-02，
+  /// 对齐原版 SearchModel hasMore OR 语义），驱动 UI 底部自动加载。
   Stream<Map<String, dynamic>> searchMultiStream(
     String query, {
     List<String>? sourceUrls,
+    int page = 1,
   });
 
   /// 取消搜索
   Future<void> cancelSearch();
+
+  /// 暂停正在进行的流式搜索（软挂起，批次B G-B-04）
+  ///
+  /// 仅拦截尚未派发的书源；已派发任务继续完成。状态/进度保留，
+  /// 可经 [resumeSearch] 恢复。对齐原版 workingState 门控语义。
+  Future<void> pauseSearch();
+
+  /// 恢复已暂停的流式搜索（批次B G-B-04）
+  Future<void> resumeSearch();
 
   /// 搜索可替换的书源
   ///

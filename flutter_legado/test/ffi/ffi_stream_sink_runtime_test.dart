@@ -262,6 +262,7 @@ void main() {
       final r = await _collect(bridge.searchMultiStream(
         query: '测试关键词',
         sourceUrlsJson: jsonEncode([fakeUrl]),
+        page: 1,
       ));
       expect(r.error, isNull);
       expect(r.completed, isTrue);

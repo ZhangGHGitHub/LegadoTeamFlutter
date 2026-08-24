@@ -1,7 +1,7 @@
 # 搜索页 parity 批次 B 设计草案（跨轨 FFI）
 
 **日期**: 2026-08-22 ｜ **编写者**: Qoder（主代理）
-**状态**: 批次 A 已落地（2.0.99+101，commit `3a866106c`）。本文档为批次 B 设计依据；缺口编号以 `docs/SEARCH_PAGE_PARITY_REPORT_2026-08-23.md` §3 规范号为准
+**状态**: 批次 A/B 已落地（A=2.0.99+101 commit `3a866106c`；B=2.0.99+103，G-B-01~05 全部实施）。缺口编号以 `docs/SEARCH_PAGE_PARITY_REPORT_2026-08-23.md` §3 规范号为准
 
 ## 1. 范围（缺口 G-B-01..G-B-05，跨轨部分；规范号见 SEARCH_PAGE_PARITY_REPORT_2026-08-23.md §3）
 

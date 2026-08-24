@@ -709,6 +709,7 @@ class MockBookApi implements BookApi {
   Stream<Map<String, dynamic>> searchMultiStream(
     String query, {
     List<String>? sourceUrls,
+    int page = 1,
   }) async* {
     const srcNames = ['消消乐听书', '笔趣阁', '起点中文网'];
     const srcUrls = [
@@ -742,12 +743,21 @@ class MockBookApi implements BookApi {
         'finished_count': i + 1,
         'total_count': total,
         'is_last': i == total - 1,
+        // 批次B G-B-02：Mock 批次恒有下一页（非末批语义），与 Rust has_more 累积值对齐
+        'has_more': true,
       };
     }
   }
 
   @override
   Future<void> cancelSearch() async {}
+
+  // 批次B G-B-04：Mock 无真实并发调度，暂停/恢复为空操作（保持接口一致性）
+  @override
+  Future<void> pauseSearch() async {}
+
+  @override
+  Future<void> resumeSearch() async {}
 
   @override
   Future<List<Map<String, dynamic>>> searchSource(

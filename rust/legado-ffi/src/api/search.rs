@@ -27,6 +27,11 @@ use crate::runtime;
 /// 全局搜索取消标志
 static SEARCH_CANCELLED: AtomicBool = AtomicBool::new(false);
 
+/// 全局搜索暂停标志（软挂起：仅拦未派发书源，已派发任务继续完成）
+///
+/// 对齐原版 `SearchModel` workingState 门控语义（批次B G-B-04）。
+static SEARCH_PAUSED: AtomicBool = AtomicBool::new(false);
+
 /// 多源搜索并发上限
 ///
 /// 对齐原版 `SearchModel` 固定线程池语义：
@@ -102,7 +107,7 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
         query: &str,
         max_results: usize,
     ) -> Vec<SearchCandidate> {
-        match search_single_source(&self.client, source, query).await {
+        match search_single_source(&self.client, source, query, 1).await {
             Ok(results) => results
                 .into_iter()
                 .take(max_results)
@@ -151,7 +156,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
             move |source: BookSource| {
                 let client = client.clone();
                 let keyword = keyword_owned.clone();
-                async move { search_single_source(&client, &source, &keyword).await }
+                async move { search_single_source(&client, &source, &keyword, 1).await }
             },
             |outcome| {
                 if let Ok(mut items) = outcome.result {
@@ -199,7 +204,7 @@ pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> Legad
     let hit = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         for source in sources {
-            let items = match search_single_source(&client, &source, &name_owned).await {
+            let items = match search_single_source(&client, &source, &name_owned, 1).await {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!(
@@ -303,6 +308,19 @@ pub fn cancel_search() {
     SEARCH_CANCELLED.store(true, Ordering::SeqCst);
 }
 
+/// 暂停正在进行的流式搜索（软挂起，批次B G-B-04）
+///
+/// 仅拦截尚未派发单源任务的书源；已派发任务继续完成。
+/// 状态/进度全部保留，可经 [`resume_search`] 恢复。
+pub fn pause_search() {
+    SEARCH_PAUSED.store(true, Ordering::SeqCst);
+}
+
+/// 恢复已暂停的流式搜索（批次B G-B-04）
+pub fn resume_search() {
+    SEARCH_PAUSED.store(false, Ordering::SeqCst);
+}
+
 // ─── 封面搜索 ──────────────────────────────────────────────────────────────────
 
 /// 封面候选项
@@ -377,6 +395,10 @@ pub struct SearchSourceBatch {
     pub total_count: usize,
     /// 是否为最后一个批次（finished_count == total_count 时为 true）
     pub is_last: bool,
+    /// 是否还有下一页可加载（累积值：任一已推送批次非空即 true，
+    /// 对齐原版 SearchModel `hasMore = hasMore || items.isNotEmpty()`；批次B G-B-02）
+    #[serde(default)]
+    pub has_more: bool,
 }
 
 /// 多源渐进式（流式）搜索驱动器
@@ -391,12 +413,14 @@ pub struct SearchSourceBatch {
 ///
 /// 配合 `cancel_search()` 可提前中止。供 flutter_rust_bridge 的 `StreamSink`
 /// 绑定使用（在 ffi.rs 中将 `on_batch` 接到 `sink.add`）。
-pub async fn run_multi_stream<F>(query: String, source_urls_json: String, mut on_batch: F)
+pub async fn run_multi_stream<F>(query: String, source_urls_json: String, page: i32, mut on_batch: F)
 where
     F: FnMut(String) -> Result<(), String>,
 {
     // 重置取消标志
     SEARCH_CANCELLED.store(false, Ordering::SeqCst);
+    // 新搜索从非暂停状态开始（暂停标志作用于单次流式搜索，批次B G-B-04）
+    SEARCH_PAUSED.store(false, Ordering::SeqCst);
 
     // 书源加载失败时以空流结束（Dart 侧表现为无结果）
     let sources = load_search_sources(&source_urls_json).unwrap_or_default();
@@ -415,6 +439,10 @@ where
     // 一次性构建阅读记录索引，逐批附加标识（对齐 ReadRecordIndex 思路）
     let read_record_index = ReadRecordIndex::load();
 
+    // hasMore 累积（批次B G-B-02）：任一已推送批次非空 → true
+    // 对齐原版 SearchModel `hasMore = hasMore || items.isNotEmpty()` 语义
+    let mut has_more_acc = false;
+
     drive_source_batches(
         sources,
         SEARCH_CONCURRENCY,
@@ -422,7 +450,8 @@ where
         move |source: BookSource| {
             let client = client.clone();
             let query = query.clone();
-            async move { search_single_source(&client, &source, &query).await }
+            // 页码透传（批次B G-B-01）：同关键词翻页递增、新关键词重置为 1
+            async move { search_single_source(&client, &source, &query, page).await }
         },
         |outcome| {
             let (mut books, error) = match outcome.result {
@@ -437,6 +466,11 @@ where
             let core_books: Vec<_> = books.iter().cloned().map(result_to_search_book).collect();
             persist_search_books(&core_books);
 
+            // hasMore 累积（原版语义：非空批次的 OR；失败/空批次不贡献）
+            if !books.is_empty() {
+                has_more_acc = true;
+            }
+
             let batch = SearchSourceBatch {
                 source_index: outcome.index,
                 source_url: outcome.source_url,
@@ -446,6 +480,7 @@ where
                 finished_count: outcome.finished_count,
                 total_count: outcome.total_count,
                 is_last: outcome.is_last,
+                has_more: has_more_acc,
             };
 
             let json = serde_json::to_string(&batch).map_err(|e| e.to_string())?;
@@ -519,6 +554,20 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
                     )
                 }
             };
+            // 暂停门控（批次B G-B-04）：暂停期间挂起尚未派发的书源，
+            // 已派发任务继续完成；对齐原版 workingState 门控语义。
+            // 挂起等待时同步检查取消标志——已取消则直接放弃该源。
+            while SEARCH_PAUSED.load(Ordering::SeqCst) {
+                if SEARCH_CANCELLED.load(Ordering::SeqCst) {
+                    return (
+                        index,
+                        source_url,
+                        source_name,
+                        Err(LegadoError::Network("搜索已取消".into())),
+                    );
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
             // 单源超时 + panic 隔离（catch_unwind 保证单源崩溃不传染）
             let outcome = tokio::time::timeout(
                 per_source_timeout,
@@ -792,10 +841,11 @@ pub(crate) async fn search_single_source(
     client: &LegadoClient,
     source: &BookSource,
     keyword: &str,
+    page: i32,
 ) -> LegadoResult<Vec<SearchResult>> {
     // JS 书源分派
     if source.is_js_source() {
-        return search_js_source(source, keyword).await;
+        return search_js_source(source, keyword, page).await;
     }
 
     // 1. 获取搜索 URL 模板
@@ -823,7 +873,8 @@ pub(crate) async fn search_single_source(
         crate::js_executor::build_search_url_with_setup(
             &template,
             &key,
-            1,
+            // 页码透传（批次B G-B-01）：原硬编码 page=1，现由调用方传入
+            page,
             &build_base,
             source_lib.as_deref(),
             search_setup,
@@ -1162,6 +1213,7 @@ fn ensure_default_user_agent(headers: &mut HashMap<String, String>) {
 async fn search_js_source(
     source: &BookSource,
     keyword: &str,
+    page: i32,
 ) -> LegadoResult<Vec<SearchResult>> {
     let source_clone = source.clone();
     let key = keyword.to_string();
@@ -1171,7 +1223,8 @@ async fn search_js_source(
         let mut orch = orchestrator.ok_or_else(|| {
             LegadoError::Internal("JS 书源缺少 mainJs".into())
         })?;
-        orch.search(&source_clone, &key, 1)
+        // 页码透传（批次B G-B-01）：原硬编码 page=1，现由调用方传入
+        orch.search(&source_clone, &key, page)
     })
     .await
     .map_err(|e| LegadoError::Internal(format!("JS 搜索任务异常: {e}")))?
@@ -2722,7 +2775,7 @@ mod tests {
             let outcome = crate::runtime::block_on(async {
                 tokio::time::timeout(
                     SEARCH_SOURCE_TIMEOUT,
-                    search_single_source(&client, &src, kw),
+                    search_single_source(&client, &src, kw, 1),
                 )
                 .await
             });
@@ -2895,7 +2948,7 @@ mod tests {
             let outcome = crate::runtime::block_on(async {
                 tokio::time::timeout(
                     SEARCH_SOURCE_TIMEOUT,
-                    search_single_source(&client, &src, kw),
+                    search_single_source(&client, &src, kw, 1),
                 )
                 .await
             });

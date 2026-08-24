@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -7,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/search/search_notifier.dart';
 import '../routes.dart';
 import '../widgets/book_cover.dart';
@@ -42,7 +45,9 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
+class _SearchScreenState
+    extends ConsumerState<SearchScreen>
+    with WidgetsBindingObserver {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _resultsScrollController = ScrollController();
@@ -65,6 +70,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    // 批次B G-B-04：监听 app 生命周期（原版 repeatOnLifecycle(RESUMED)）
+    WidgetsBinding.instance.addObserver(this);
     _focusNode.addListener(_onFocusChanged);
     final initial = widget.initialQuery?.trim();
     if (initial != null && initial.isNotEmpty) {
@@ -142,11 +149,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // 对齐原版 SearchActivity 销毁 → scope.cancel()：离开页面取消进行中的搜索，
+    // 避免 Rust 侧流在后台继续消耗资源（批次B G-B-04 配套）— Cursor UI
+    if (ref.read(searchNotifierProvider).isLoading) {
+      unawaited(ref.read(searchNotifierProvider.notifier).stop());
+    }
     _focusNode.removeListener(_onFocusChanged);
     _searchController.dispose();
     _focusNode.dispose();
     _resultsScrollController.dispose();
     super.dispose();
+  }
+
+  /// app 退后台软挂起 / 回前台恢复（批次B G-B-04：对齐原版
+  /// repeatOnLifecycle(RESUMED) → viewModel.pause()/resume()）— Cursor UI
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    final state = ref.read(searchNotifierProvider);
+    final notifier = ref.read(searchNotifierProvider.notifier);
+    if (lifecycleState == AppLifecycleState.paused &&
+        state.isLoading &&
+        !state.isPaused) {
+      unawaited(notifier.pauseSearch());
+    } else if (lifecycleState == AppLifecycleState.resumed && state.isPaused) {
+      unawaited(notifier.resumeSearch());
+    }
   }
 
   @override
@@ -207,7 +235,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             Expanded(child: _buildBody(context, state)),
           ],
         ),
-        floatingActionButton: state.isLoading ? _buildStopFab(context, state) : null,
+        // 批次B G-B-02：搜索中=stop；空闲且 hasMore=play（原版 fb_start_stop + searchFinally）
+        floatingActionButton: state.isLoading
+            ? _buildStopFab(context, state)
+            : (state.hasMore &&
+                    !state.isManualStop &&
+                    state.error == null &&
+                    state.keyword.isNotEmpty)
+                ? _buildNextPageFab()
+                : null,
       ),
     );
   }
@@ -239,6 +275,38 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
       ],
     );
+  }
+
+  /// 下一页 FAB（批次B G-B-02：原版 searchFinally → Icons.play_arrow，
+  /// 点击 = 同关键词续页 loadNextPage）— Cursor UI
+  Widget _buildNextPageFab() {
+    return FloatingActionButton.small(
+      onPressed: () => ref.read(searchNotifierProvider.notifier).loadNextPage(),
+      tooltip: '加载下一页',
+      child: const Icon(Icons.play_arrow),
+    );
+  }
+
+  /// 滚动到底自动加载（批次B G-B-03：原版 SearchActivity 滚动监听）
+  ///
+  /// 原版语义：触底 && !isSearchLiveData && hasMore && !isManualStopSearch
+  /// → viewModel.search("")（同 searchId → page++）。返回 false 不拦截滚动。
+  bool _onResultsScroll(ScrollNotification notification) {
+    if (notification is! ScrollUpdateNotification) return false;
+    final controller = _resultsScrollController;
+    if (!controller.hasClients) return false;
+    final position = controller.position;
+    // 触底判定（1px 容差，对齐原版 canScrollVertically(1)==false）
+    if (position.pixels < position.maxScrollExtent - 1.0) return false;
+    final state = ref.read(searchNotifierProvider);
+    if (!state.isLoading &&
+        !state.isManualStop &&
+        state.hasMore &&
+        state.error == null &&
+        state.keyword.isNotEmpty) {
+      ref.read(searchNotifierProvider.notifier).loadNextPage();
+    }
+    return false;
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
@@ -413,9 +481,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // [UI-fix v2.0.10 | 2026-08-10] — Reasonix
     final results = state.results;
 
+    // [批次B G-B-05] 书架实时数据（对标原版 appDb.bookDao.flowAll 响应式流）：
+    // 在此 watch，进入搜索页即加载书架；增删/刷新时输入帮助层「书架」节与
+    // 结果项绿点实时重绘
+    final shelfBooks = ref.watch(bookshelfNotifierProvider).books;
+    final shelfKeys = _shelfKeySet(shelfBooks);
+
     // 有结果时重新聚焦 → 叠加输入帮助层（对标原版 ll_input_help）
     if (state.hasResults && _showInputHelp) {
-      return _buildSearchHistory(context, state);
+      return _buildSearchHistory(context, state, shelfBooks);
     }
 
     if (state.isLoading && !state.hasResults) {
@@ -447,7 +521,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
 
     if (!state.hasResults) {
-      return _buildSearchHistory(context, state);
+      return _buildSearchHistory(context, state, shelfBooks);
     }
 
     return Column(
@@ -511,16 +585,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         // 结果列表
         Expanded(
-          // 不 keepAlive：滚出可视区即 dispose，取消排队中的封面解密
-          child: ListView.separated(
-            controller: _resultsScrollController,
-            itemCount: results.length,
-            addAutomaticKeepAlives: false,
-            separatorBuilder: (_, _) => const Divider(height: 1, indent: 88),
-            itemBuilder: (context, index) {
-              final result = results[index];
-              return _buildResultItem(context, result);
-            },
+          child: NotificationListener<ScrollNotification>(
+            // 批次B G-B-03：触底自动加载下一页（原版 scrollToBottom）
+            onNotification: _onResultsScroll,
+            // 不 keepAlive：滚出可视区即 dispose，取消排队中的封面解密
+            child: ListView.separated(
+              controller: _resultsScrollController,
+              itemCount: results.length,
+              addAutomaticKeepAlives: false,
+              separatorBuilder: (_, _) => const Divider(height: 1, indent: 88),
+              itemBuilder: (context, index) {
+                final result = results[index];
+                return _buildResultItem(context, result, shelfKeys);
+              },
+            ),
           ),
         ),
       ],
@@ -529,8 +607,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   /// 搜索结果项（对标原版 item_search.xml：80x110 封面 + 书名 16sp +
   /// 作者/最新章节 12sp + 简介 3 行 + 右上角来源徽标）
-  Widget _buildResultItem(BuildContext context, SearchResult result) {
+  Widget _buildResultItem(
+      BuildContext context, SearchResult result, Set<String> shelfKeys) {
     final book = result.book;
+    // [批次B G-B-05] 在架判定（原版 SearchViewModel.kt L110-116 键集语义）
+    final inShelf = _isInBookshelf(book, shelfKeys);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final infoStyle = theme.textTheme.bodySmall?.copyWith(fontSize: 12);
@@ -566,7 +647,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   borderRadius: 10,
                   sourceOrigin: book.origin,
                 ),
-                if (_showReadRecord && result.hasReadRecord)
+                // 原版 SearchAdapter L122：橙点（阅读记录）与绿点（在架）互斥
+                if (_showReadRecord && !inShelf && result.hasReadRecord)
                   Positioned(
                     right: 4,
                     top: 4,
@@ -590,9 +672,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 书名 16sp + 右侧同源数徽标（对标 tv_name + bv_originCount）
+                  // 书名 16sp + 在架绿点 + 右侧同源数徽标
+                  // （对标 item_search.xml：iv_in_bookshelf 为 tv_name 行首 8dp 绿色圆点）
                   Row(
                     children: [
+                      if (inShelf) ...[
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF43A047), // md_green_600
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Expanded(
                         child: Text(
                           book.name,
@@ -860,12 +954,52 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return a.containsAll(b);
   }
 
+  // ===== [批次B G-B-05] 书架实时匹配（对标原版 SearchViewModel.kt L88-116）=====
+
+  /// 构建书架键集（原版 SearchViewModel.kt L88-97：每本在架书生成三个键
+  /// {「书名-作者」, 书名, bookUrl}；notShelf 临时书不参与，对标 filterNot isNotShelf）
+  Set<String> _shelfKeySet(List<Book> books) {
+    final keys = <String>{};
+    for (final book in books) {
+      if ((book.bookType & BookType.notShelf) != 0) continue;
+      keys.add('${book.name}-${book.author}');
+      keys.add(book.name);
+      keys.add(book.bookUrl);
+    }
+    return keys;
+  }
+
+  /// 在架判定（原版 SearchViewModel.kt L110-116：key = 作者非空 ? 「书名-作者」 : 书名；
+  /// key ∈ 键集 || bookUrl ∈ 键集 即命中）
+  bool _isInBookshelf(Book book, Set<String> keys) {
+    final key = book.author.isNotEmpty
+        ? '${book.name}-${book.author}'
+        : book.name;
+    return keys.contains(key) || keys.contains(book.bookUrl);
+  }
+
+  /// 书架实时搜索建议（原版 BookDao.flowSearch L83：name/author LIKE '%key%' 子串匹配）
+  List<Book> _shelfSuggest(String key, List<Book> books) {
+    if (key.isEmpty) return const [];
+    return books
+        .where((b) => (b.bookType & BookType.notShelf) == 0 &&
+            (b.name.contains(key) || b.author.contains(key)))
+        .toList();
+  }
+
   /// 搜索历史/联想区（无结果时显示，对标安卓原版「输入帮助」区域）
   ///
   /// 输入为空时展示全部历史；输入非空时展示前缀联想词（[SearchState.suggestions]）。
-  Widget _buildSearchHistory(BuildContext context, SearchState state) {
+  /// [批次B G-B-05] 书架实时搜索（对标原版 upHistory L389-424）：输入非空时按
+  /// 书名/作者子串过滤在架书籍显示「书架」节，点击直达书籍详情页。
+  Widget _buildSearchHistory(
+      BuildContext context, SearchState state, List<Book> shelfBooks) {
     final suggestions = state.suggestions;
-    if (state.searchHistory.isEmpty) {
+    // 书架实时搜索（原版 BookDao.flowSearch L83：name/author LIKE '%key%'）：
+    // 输入为空或无匹配 → 隐藏本节（原版 tvBookShow/rvBookshelfSearch gone）
+    final shelfMatches = _shelfSuggest(_searchController.text.trim(), shelfBooks);
+
+    if (state.searchHistory.isEmpty && shelfMatches.isEmpty) {
       // 安卓原版：无历史时显示纯灰字提示
       return const EmptyState(
         icon: Icons.search,
@@ -874,80 +1008,174 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
+    final hasHistory = state.searchHistory.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              Text(
-                AppStrings.searchHistory,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _confirmClearHistory,
-                icon: const Icon(Icons.delete_outline, size: 18),
-                label: Text(AppStrings.clearHistory),
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: suggestions.isEmpty
-                // 联想无匹配（原版：联想列表为空时隐藏历史项）
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 24),
-                    child: Center(
-                      child: Text(
-                        '无匹配的历史关键词',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                      ),
-                    ),
-                  )
-                : Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: suggestions.map((keyword) {
-                      return GestureDetector(
-                        onLongPress: () async {
-                          await ref
-                              .read(searchNotifierProvider.notifier)
-                              .deleteHistoryItem(keyword);
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('已删除「$keyword」')),
-                          );
-                        },
-                        child: ActionChip(
-                          label: Text(keyword),
-                          onPressed: () {
-                            _searchController.text = keyword;
-                            ref
-                                .read(searchNotifierProvider.notifier)
-                                .setInput(keyword);
-                            FocusScope.of(context).unfocus();
-                            ref
-                                .read(searchNotifierProvider.notifier)
-                                .search(keyword);
-                          },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // [批次B G-B-05] 书架实时搜索节（对标原版 tvBookShow + rvBookshelfSearch）
+                if (shelfMatches.isNotEmpty)
+                  ..._buildShelfSuggestSection(context, shelfMatches),
+                if (hasHistory) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Row(
+                      children: [
+                        Text(
+                          AppStrings.searchHistory,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
-                      );
-                    }).toList(),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: _confirmClearHistory,
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: Text(AppStrings.clearHistory),
+                        ),
+                      ],
+                    ),
                   ),
+                  suggestions.isEmpty
+                      // 联想无匹配（原版：联想列表为空时隐藏历史项）
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 24),
+                          child: Center(
+                            child: Text(
+                              '无匹配的历史关键词',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                        )
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: suggestions.map((keyword) {
+                            return GestureDetector(
+                              onLongPress: () async {
+                                await ref
+                                    .read(searchNotifierProvider.notifier)
+                                    .deleteHistoryItem(keyword);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('已删除「$keyword」')),
+                                );
+                              },
+                              child: ActionChip(
+                                label: Text(keyword),
+                                onPressed: () => _onHistoryChipTapped(
+                                    context, keyword, shelfBooks),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                ],
+              ],
+            ),
           ),
         ),
       ],
     );
+  }
+
+  /// [批次B G-B-05] 书架实时搜索节（对标原版 tvBookShow 标签 + rvBookshelfSearch 列表）
+  ///
+  /// 点击 → 直达书籍详情页（原版 showBookInfo(book)）；行 = 封面 + 书名/作者。
+  List<Widget> _buildShelfSuggestSection(BuildContext context, List<Book> books) {
+    final theme = Theme.of(context);
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Text(
+          '书架',
+          style: theme.textTheme.titleSmall
+              ?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ),
+      for (final book in books)
+        InkWell(
+          onTap: () => Navigator.pushNamed(context, AppRoutes.bookInfo,
+              arguments: book),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                BookCover(
+                  coverUrl: book.coverUrl,
+                  width: 40,
+                  height: 56,
+                  borderRadius: 6,
+                  sourceOrigin: book.origin,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        book.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      if (book.author.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            book.author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
+  }
+
+  /// 历史关键词点击（对标原版 SearchActivity.searchHistory L516-532）
+  ///
+  /// [批次B G-B-05] 在架同名仅填充分支：
+  /// ① 输入已等于该关键词 → 直接搜索；
+  /// ② 无书名与关键词完全相同的在架书 → 填入并搜索；
+  /// ③ 否则（存在同名书）→ 仅填入输入框，不自动搜索。
+  void _onHistoryChipTapped(
+      BuildContext context, String keyword, List<Book> shelfBooks) {
+    final current = _searchController.text.trim();
+    if (current != keyword) {
+      _searchController.text = keyword;
+      ref.read(searchNotifierProvider.notifier).setInput(keyword);
+    }
+    FocusScope.of(context).unfocus();
+    // 原版 findByName 查全表；Flutter 书架数据源（list_books）已排除
+    // notShelf 临时书，等价于「无同名真实在架书」判定
+    final hasShelfSameName = shelfBooks.any((b) => b.name == keyword);
+    if (current == keyword || !hasShelfSameName) {
+      ref.read(searchNotifierProvider.notifier).search(keyword);
+    }
   }
 
   /// 清空历史二次确认（对齐原版 alertClearHistory L550-557）— Cursor UI

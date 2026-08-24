@@ -385,14 +385,25 @@ Future<String> searchCover({required String bookName}) =>
 ///
 /// `query` — 搜索关键词
 /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
+/// `page` — 页码（批次B G-B-01 透传；Dart 侧同关键词翻页递增、新关键词重置为 1）
 /// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
 Stream<String> searchMultiStream({
   required String query,
   required String sourceUrlsJson,
+  required int page,
 }) => RustLib.instance.api.crateFfiFfiSearchMultiStream(
   query: query,
   sourceUrlsJson: sourceUrlsJson,
+  page: page,
 );
+
+/// 暂停正在进行的流式搜索（软挂起，批次B G-B-04）
+///
+/// 仅拦截尚未派发的书源；已派发任务继续完成。状态/进度保留。
+Future<void> searchPause() => RustLib.instance.api.crateFfiFfiSearchPause();
+
+/// 恢复已暂停的流式搜索（批次B G-B-04）
+Future<void> searchResume() => RustLib.instance.api.crateFfiFfiSearchResume();
 
 /// 获取书籍的章节列表（JSON）
 Future<String> readerGetChapters({required String bookUrl}) =>

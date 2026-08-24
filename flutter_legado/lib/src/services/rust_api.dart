@@ -546,20 +546,30 @@ class RustApi implements BookApi {
   /// 多源渐进式（流式）搜索
   ///
   /// 每完成一个书源即推送一个批次 Map（字段见 [BookApi.searchMultiStream]）。
+  /// [page] — 页码透传（批次B G-B-01：同关键词翻页递增、新关键词重置为 1）。
   @override
   Stream<Map<String, dynamic>> searchMultiStream(
     String query, {
     List<String>? sourceUrls,
+    int page = 1,
   }) {
     final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
     return bridge
-        .searchMultiStream(query: query, sourceUrlsJson: urlsJson)
+        .searchMultiStream(query: query, sourceUrlsJson: urlsJson, page: page)
         .map((batch) => _decodeMap(batch, 'searchMultiStream'));
   }
 
   /// 取消搜索
   @override
   Future<void> cancelSearch() => bridge.searchCancel();
+
+  /// 暂停正在进行的流式搜索（软挂起，批次B G-B-04）
+  @override
+  Future<void> pauseSearch() => bridge.searchPause();
+
+  /// 恢复已暂停的流式搜索（批次B G-B-04）
+  @override
+  Future<void> resumeSearch() => bridge.searchResume();
 
   /// 搜索可替换的书源
   ///

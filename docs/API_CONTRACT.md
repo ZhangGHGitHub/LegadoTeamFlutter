@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-08-24 | **搜索 parity 批次B FFI 冻结**：breaking——`searchMultiStream` Rust 签名 `ffi::search_multi_stream` 新增 `page: i32` 入参（页码透传，双轨评审记录：两轨均归我方 + 用户已批准批次B范围）；加法式——`pauseSearch()` / `resumeSearch()`（软暂停门控，SEARCH_PAUSED，仅拦未派发书源）+ 批次事件 `has_more` 字段（累积非空判定）。§2.4 方法数 12→14，附录合计 263→**265**，BookApi 口径 260→**262** |
 | 2026-08-22 | **P1-3 契约自动校验**：新增 `test/unit/api_contract_test.dart` 程序化交叉校验（BookApi⊆RustApi/MockBookApi、§2.x 各节声明数、附录镜像、计数口径）；§1.7 补登录四方法命名等价对（`getLoginHeader` / `getLoginInfo` / `putLoginHeader` / `putLoginInfo`）；修正 6 处章节标题计数（2.3/2.5/2.9/2.18/2.41/2.43）+ 6 行附录计数；附录合计 251→**263**，BookApi 口径 252→**260** |
 | 2026-08-01 | 契约初版冻结（v1.0） |
 | 2026-08-10 | 第二批后置项 FFI 冻结：三个加法式新增——`shrinkDatabase`（§2.16 缓存管理）/ `webdavUploadFile`（§2.28 WebDAV 云同步）/ `toggleSameTitleRemoved`（§2.9 阅读器操作），契约合计方法数 174→177（Task #50） |
@@ -123,7 +124,7 @@
 ## 2. 方法清单
 
 > 共 **41 个方法模块**（§2.1–§2.43，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **260 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> BookApi 接口当前共 **262 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
 > 附录 §2.1–§2.43 行合计 **263** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
@@ -193,15 +194,17 @@
 >
 > ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**Android**：`PlatformBridgeService`→原生 `legado/webview.backstageEval`：`cacheFirst`→`WebSettings.LOAD_CACHE_ELSE_NETWORK`；`isRule`+html 时注入 `java`/`source`/`cache` JavascriptInterface（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。非 Android 回退 `webview_flutter`（无 cacheMode）。加法式新增。
 
-### 2.4 搜索操作（12 个方法）
+### 2.4 搜索操作（14 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `searchBooks(String keyword, {List<String>? sourceUrls})` | keyword, sourceUrls(可选) | `Future<List<SearchResult>>` | 搜索书籍 |
 | `preciseSearch(String name, String author, {List<String>? sourceUrls})` | name, author, sourceUrls(可选) | `Future<SearchBook>` | 精确搜索（对齐 `WebBook.preciseSearchAwait`）：启用源中搜书名，返回首个 name+author 完全匹配的 SearchBook JSON；未命中抛错（SOURCE_DIFF P0-2） |
 | `searchMulti(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Future<List<Map<String, dynamic>>>` | 多源并行搜索 |
-| `searchMultiStream(String query, {List<String>? sourceUrls})` | query, sourceUrls(可选) | `Stream<Map<String, dynamic>>` | 多源渐进式（流式）搜索：每完成一个书源即推送一个批次，无需等待最慢书源 |
-| `cancelSearch()` | 无 | `Future<void>` | 取消搜索 |
+| `searchMultiStream(String query, {List<String>? sourceUrls, int page = 1})` | query, sourceUrls(可选), page(默认 1) | `Stream<Map<String, dynamic>>` | 多源渐进式（流式）搜索：每完成一个书源即推送一个批次，无需等待最慢书源；批次事件含 `has_more` 字段（累积值）。**批次B breaking**：新增 `page` 入参透传（同关键词翻页 searchPage++，新关键词重置为 1，对齐原版 SearchModel.kt L73-75） |
+| `cancelSearch()` | 无 | `Future<void>` | 取消搜索（硬取消，批次A） |
+| `pauseSearch()` | 无 | `Future<void>` | 暂停流式搜索（软挂起：未派发书源挂起、已派发任务继续完成；状态/进度保留，可 resume。G-B-04，对齐原版 workingState 门控语义 SearchModel.kt L45/L98/L227-233） |
+| `resumeSearch()` | 无 | `Future<void>` | 恢复已暂停的流式搜索（G-B-04） |
 | `searchSource(String bookName, String author, {List<String>? sourceUrls, bool loadInfo = false, bool loadToc = false, bool loadWordCount = false, bool forceRefresh = false})` | bookName, author, sourceUrls(可选), loadInfo, loadToc, loadWordCount, forceRefresh | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点（留项#12/Task #131：`sourceUrls` 为加法式新增可选参数，null/空=搜全部启用源；`forceRefresh` 默认 false 优先复用 searchBooks） |
 | `searchCover(String bookName)` | bookName | `Future<List<Map<String, dynamic>>>` | 搜索书籍封面候选列表：复用多书源搜索提取封面 URL，每项字段 `url` / `width` / `height`（未知尺寸填 0），无候选返回空列表 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
@@ -220,7 +223,7 @@
 
 > ℹ️ `searchSource` 复用搜索缓存（**加法式**，`forceRefresh`）：对齐原版 `ChangeBookSourceViewModel` 先 `getDbSearchBooks` 再条件 `startSearch`。搜索流式/一次性结果写入 `searchBooks` 表；换源默认读库复用（`forceRefresh=false`），「刷新列表」等传 `forceRefresh=true` 才强制全量网络重搜。Dart `searchSource` / 换源页进入默认不二次搜索。
 >
-> ℹ️ `searchMultiStream`：Rust 侧 `ffi::search_multi_stream(query, source_urls_json, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），每完成一个书源推送一个 `SearchSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `books[]` / `error?` / `finished_count` / `total_count` / `is_last`。冻结契约 `searchMulti` 保持不变，本方法为加法式新增。
+> ℹ️ `searchMultiStream`：Rust 侧 `ffi::search_multi_stream(query, source_urls_json, page, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），每完成一个书源推送一个 `SearchSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `books[]` / `error?` / `finished_count` / `total_count` / `is_last` / `has_more`（累积值：任一已推送批次非空即 true，对齐原版 SearchModel `hasMore = hasMore || items.isNotEmpty()` 语义）。**批次B breaking 变更**（双轨评审记录：本重构 Rust/Flutter 两轨均归我方所有 + 用户已批准批次B范围）：签名新增 `page: i32` 入参——页码透传至 `build_search_url_with_setup` 第三参及 JS 书源 `orch.search`（原硬编码 page=1），Dart 侧同关键词翻页传 `searchPage++`、新关键词重置为 1。加法式新增：`pauseSearch()` / `resumeSearch()`——Rust 侧 `SEARCH_PAUSED` 门控位于单源派发前（信号量 permit 后、search_one 前；已派发任务继续完成、未派发书源挂起，状态/进度全部保留），新搜索开始时自动解除暂停。冻结契约 `searchMulti` / `cancelSearch` 保持不变。
 >
 > ℹ️ **封面规则搜索（台账 §5.13-10，Task #72）**：原版实现为单条封面规则配置——Kotlin `BookCover.searchCover(book)` 读取 `CoverRule(enable, searchUrl, coverRule)`（用户配置存 CacheManager，缺省回退 `DefaultData.coverRule`，UI 入口 `CoverRuleConfigDialog`），以 `AnalyzeUrl(searchUrl, book.name)` 发起搜索请求，再经 `AnalyzeRule.getString(coverRule, isUrl=true)` 提取封面 URL。本轨差异与对齐方案：规则载体为 `legado-db` 既有 `coverRules` 表（`id` / `name` / `rule` / `enable`，默认数据注入已就位），执行全部 `enable=1` 规则；规则执行复用既有书源搜索/JS 执行基础设施（`legado-net` HTTP 抓取 + `legado-parser`/quickjs 规则解析链路，与 `dictLookup` 字典规则执行同模式），`rule` 文本承载 searchUrl 与提取规则（具体内联格式由 Rust 轨实施时按表内既有数据确定）；单规则失败隔离不阻断其余；与既有 `searchCover`（多书源搜索提取封面）互补并存、互不影响。冻结契约保持不变，本方法为加法式新增。
 
@@ -832,7 +835,7 @@
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 10 |
 | 3 | 书源操作 | 32 |
-| 4 | 搜索操作 | 12 |
+| 4 | 搜索操作 | 14 |
 | 5 | RSS 源操作 | 11 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 7 |
@@ -870,11 +873,11 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
-| | **合计（§2.1–§2.43 附录行合计）** | **263** |
+| | **合计（§2.1–§2.43 附录行合计）** | **265** |
 
 > 口径说明（2026-08-15，`test/unit/api_contract_test.dart` 程序化计数校准，取代人工统计）：
-> - 附录行合计 **263** = §2.x 实际方法行总数；其中与 BookApi 同名 249、§1.7 命名等价对的 FFI 登记名 8
+> - 附录行合计 **265** = §2.x 实际方法行总数；其中与 BookApi 同名 251、§1.7 命名等价对的 FFI 登记名 8
 >   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **260** = 249 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **262** = 251 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

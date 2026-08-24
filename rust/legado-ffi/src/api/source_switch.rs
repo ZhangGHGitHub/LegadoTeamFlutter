@@ -406,7 +406,8 @@ async fn search_for_switch(
     source: &BookSource,
     keyword: &str,
 ) -> LegadoResult<Vec<SearchCandidate>> {
-    let results = crate::api::search::search_single_source(client, source, keyword).await?;
+    // 换源候选搜索固定第 1 页（批次B：search_single_source 新增 page 参数，一次性场景传 1）
+    let results = crate::api::search::search_single_source(client, source, keyword, 1).await?;
     let candidates = results
         .into_iter()
         // Task #21 修复：过滤掉未解析出详情页 URL 的候选。空 book_url 无法用于

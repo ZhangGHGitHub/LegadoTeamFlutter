@@ -450,12 +450,15 @@ pub type FfiSearchBatchCallback =
 /// 同步阻塞直到所有书源完成；每完成一个书源即通过 `callback` 推送一个批次 JSON。
 /// 与 `ffi_search_multi`（一次性返回）互补，供原生 C 消费者逐源渲染。
 ///
+/// `page` — 页码（批次B G-B-01 透传；C 消费者翻页时递增传入）。
+///
 /// # Safety
 /// `callback` 可能从后台工作线程调用，调用方须保证其线程安全；`user_data` 原样透传。
 #[no_mangle]
 pub unsafe extern "C" fn ffi_search_multi_stream(
     query: *const c_char,
     source_urls_json: *const c_char,
+    page: std::ffi::c_int,
     callback: FfiSearchBatchCallback,
     user_data: *mut std::ffi::c_void,
 ) -> *mut c_char {
@@ -463,7 +466,7 @@ pub unsafe extern "C" fn ffi_search_multi_stream(
         let q = c_char_to_str(query)?.to_string();
         let urls = c_char_to_str(source_urls_json)?.to_string();
 
-        crate::runtime::block_on(crate::api::search::run_multi_stream(q, urls, |batch| {
+        crate::runtime::block_on(crate::api::search::run_multi_stream(q, urls, page as i32, |batch| {
             if let Ok(cs) = CString::new(batch) {
                 unsafe { callback(cs.as_ptr(), user_data) };
             }
@@ -472,6 +475,18 @@ pub unsafe extern "C" fn ffi_search_multi_stream(
 
         Ok::<_, LegadoError>("ok".to_string())
     }))
+}
+
+/// 暂停正在进行的流式搜索（软挂起，批次B G-B-04）
+#[no_mangle]
+pub extern "C" fn ffi_search_pause() {
+    crate::api::search::pause_search();
+}
+
+/// 恢复已暂停的流式搜索（批次B G-B-04）
+#[no_mangle]
+pub extern "C" fn ffi_search_resume() {
+    crate::api::search::resume_search();
 }
 
 // ─── 阅读 FFI 函数 ──────────────────────────────────────────

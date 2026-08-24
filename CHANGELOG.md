@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [2.0.99] - 2026-08-23
 
 ### Fixed
+- [UI+Rust] 搜索页对齐 Android 原版（批次 B，G-B-01~05）：
+  1. 多页搜索透传（searchMultiStream +page/has_more，FFI 契约更新，破坏性变更已注记）
+  2. hasMore OR 规则（任一来源仍有下一页即可续载）+ FAB 三态（停止/播放/下一页）
+  3. 滚动到底自动加载下一页（对齐原版 RecyclerView 加载更多）
+  4. 生命周期驱动的软挂起/恢复（pause 仅门控未送达结果，对齐原版 onPause/onResume）
+  5. 书架实时搜索：输入帮助层「书架」节（书名/作者子串匹配、点击直达详情）、结果项在架绿点（与橙色阅读记录点互斥）、历史同名关键词仅填充分支
+- Contributor: Cursor UI + Bridge
+
+## [2.0.99] - 2026-08-23
+
+### Fixed
 - [UI] 搜索页溢出菜单与搜索范围对话框对齐原版（批次 A2）：
   1. 溢出菜单长按 tooltip「Show menu」→ 显式中文「更多选项」（PopupMenuButton.tooltip）
   2. 溢出菜单动态分组节（对标原版 onMenuOpened：当前范围勾选条目 / 全部书源 / 其他分组，点按=单选替换或清除，进入时预载+返回书源管理后刷新）
