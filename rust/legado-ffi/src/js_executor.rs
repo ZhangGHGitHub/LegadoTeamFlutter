@@ -149,9 +149,9 @@ pub fn execute_login_check_js(
          code: function() {{ return __result_code; }} }};\n\
          {js_code}"
     );
-    let eval_result = executor.execute_js(&wrapped_code).map_err(|e| {
-        LoginCheckError::JsFailed(format!("loginCheckJs 执行失败: {e}"))
-    })?;
+    let eval_result = executor
+        .execute_js(&wrapped_code)
+        .map_err(|e| LoginCheckError::JsFailed(format!("loginCheckJs 执行失败: {e}")))?;
 
     // 检测返回值：如果 JS 返回明确的错误指示，视为登录失败
     //（eval 返回值经 JSON 序列化，字符串字面量会带引号如 "false"，
@@ -189,12 +189,7 @@ pub fn execute_login_check_js(
 ///   或回退旧版字面替换路径，纯 `{key}`/`{page}`/`searchKey` 模板行为不变（回归保护）。
 ///
 /// `source_tag` 传书源 URL，用于引擎池分桶与 base URL 拼接。
-pub fn build_search_url(
-    template: &str,
-    keyword: &str,
-    page: i32,
-    source_tag: &str,
-) -> AnalyzeUrl {
+pub fn build_search_url(template: &str, keyword: &str, page: i32, source_tag: &str) -> AnalyzeUrl {
     build_search_url_with_lib(template, keyword, page, source_tag, None)
 }
 
@@ -275,8 +270,16 @@ pub fn build_search_url_with_setup(
         }
     }
     // 旧版路径：字面占位符替换 + AnalyzeUrl::new
-    let url_with_key = template.replace("{{key}}", keyword).replace("{key}", keyword);
-    AnalyzeUrl::new(&url_with_key, Some(keyword), Some(page_u32), source_tag, None)
+    let url_with_key = template
+        .replace("{{key}}", keyword)
+        .replace("{key}", keyword);
+    AnalyzeUrl::new(
+        &url_with_key,
+        Some(keyword),
+        Some(page_u32),
+        source_tag,
+        None,
+    )
 }
 
 /// 极简 URL 编码（仅错误消息占位，避免引入额外依赖）
@@ -314,8 +317,7 @@ pub fn build_explore_url(
         variables.insert(k.clone(), v.clone());
         variables.insert(format!("infoMap.{k}"), v.clone());
     }
-    let info_json =
-        serde_json::to_string(info_map).unwrap_or_else(|_| "{}".to_string());
+    let info_json = serde_json::to_string(info_map).unwrap_or_else(|_| "{}".to_string());
     variables.insert("__infoMapJson".to_string(), info_json);
 
     // 书源上下文 setup 脚本（source/cookie 绑定 + BookSource 方法）
@@ -335,7 +337,13 @@ pub fn build_explore_url(
             setup_script,
         );
     }
-    Ok(AnalyzeUrl::new(template, None, Some(page_u32), &source_tag, None))
+    Ok(AnalyzeUrl::new(
+        template,
+        None,
+        Some(page_u32),
+        &source_tag,
+        None,
+    ))
 }
 
 /// quickjs 启用：发现 URL 模板 JS 求值（注入 infoMap 对象 + page/baseUrl
@@ -417,8 +425,7 @@ impl legado_parser::JsExecutor for ExploreInfoMapJsExecutor {
             "var infoMap = {};\nvar page = {};\nvar baseUrl = {};\n{}",
             self.info_map_json,
             self.page,
-            serde_json::to_string(&self.base_url)
-                .unwrap_or_else(|_| "\"\"".to_string()),
+            serde_json::to_string(&self.base_url).unwrap_or_else(|_| "\"\"".to_string()),
             js_code
         );
         self.inner.execute_js(&wrapped)
@@ -507,66 +514,96 @@ mod quickjs_impl {
 
     impl JsExecutor for QuickJsExecutor {
         fn execute_js(&self, js_code: &str) -> Result<String, String> {
-            // 每次执行用**独立新引擎**（而非池复用）：书源规则常用顶层
-            // `const/let` 声明（51漫画 `const scripts`），同一引擎第二次
-            // 执行同一规则必报 "redeclaration of 'scripts'"（QuickJS 全局
-            // 词法环境残留，实测 SECOND ERR）。原版 Rhino 每次 evalJS 用
-            // 新作用域，重构版对齐：用完即弃，规避跨调用全局污染。
-            // 代价：jsLib 每次重载（一般较小，可接受）— Reasonix
-            let engine = legado_js::QuickJsEngine::new(
-                legado_js::sandbox::SandboxConfig::default()
-                    .with_allow_script_run(true)
-                    // [fix 2026-08-15] 内存上限 16MB → 64MB：七猫等书源 jsLib
-                    // 大(587KB) + 目录/列表 JS 返回超大 JSON 数组(1279 章 ×
-                    // 完整请求 option 约 1.6MB),QuickJS 堆接近 16MB 上限时
-                    // JS_ToCStringLen 分配失败返回 null → 规则结果丢失 →
-                    // 目录 0 章（剑来「暂无章节」2026-08-15 用户反馈）。
-                    // 对齐 SandboxConfig::permissive 的 64MB。
-                    .with_memory_limit(64 * 1024 * 1024),
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            use std::sync::{Mutex, OnceLock};
+            static LEXICAL: OnceLock<Mutex<std::collections::HashSet<u64>>> = OnceLock::new();
+            let hash = {
+                let mut h = DefaultHasher::new();
+                js_code.hash(&mut h);
+                h.finish()
+            };
+            let lexical = LEXICAL.get_or_init(|| Mutex::new(std::collections::HashSet::new()));
+            let is_lexical = lexical.lock().map(|s| s.contains(&hash)).unwrap_or(false);
+            let run_fresh = || -> Result<String, String> {
+                let engine = legado_js::QuickJsEngine::new(
+                    legado_js::sandbox::SandboxConfig::default()
+                        .with_allow_script_run(true)
+                        .with_memory_limit(64 * 1024 * 1024),
+                )
+                .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
+                legado_js::host_api::current_source::with_current_source_tag(
+                    &self.source_tag,
+                    || {
+                        if let Some(lib) = &self.js_lib {
+                            if let Err(e) = legado_js::JsEngine::eval(&engine, lib) {
+                                eprintln!(
+                                    "[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}",
+                                    self.source_tag
+                                );
+                            }
+                        }
+                        if let Some(setup) = &self.setup_script {
+                            if let Err(e) = legado_js::JsEngine::eval(&engine, setup) {
+                                eprintln!(
+                                    "[legado-ffi] 书源 {} setup 加载失败（降级继续）: {e}",
+                                    self.source_tag
+                                );
+                            }
+                        }
+                        if let Err(e) = legado_js::JsEngine::eval(
+                            &engine,
+                            legado_js::host_api::quickjs_impl::RESPONSE_BRIDGE_JS,
+                        ) {
+                            eprintln!(
+                                "[legado-ffi] 书源 {} Response 桥重新注入失败（降级继续）: {e}",
+                                self.source_tag
+                            );
+                        }
+                        if let Err(e) = legado_js::JsEngine::eval(
+                            &engine,
+                            legado_js::host_api::quickjs_impl::JSOUP_BRIDGE_JS,
+                        ) {
+                            eprintln!(
+                                "[legado-ffi] 书源 {} Jsoup 桥重新注入失败（降级继续）: {e}",
+                                self.source_tag
+                            );
+                        }
+                        legado_js::JsEngine::eval(&engine, js_code).map_err(|e| e.to_string())
+                    },
+                )
+            };
+            if is_lexical {
+                return run_fresh();
+            }
+            let key = format!("executor:{}", self.source_tag);
+            let (cached, _) = legado_js::engine_cache::get_or_create(
+                &key,
+                self.js_lib.as_deref(),
+                self.setup_script.as_deref(),
+                None,
             )
-            .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
-            // 绑定当前书源上下文（供 getVerificationCode 等宿主钩子识别书源，
-            // 对齐 Kotlin JsExtensions.getSource()），eval 结束后恢复
-            legado_js::host_api::current_source::with_current_source_tag(
+            .map_err(|e| e.to_string())?;
+            let result = legado_js::host_api::current_source::with_current_source_tag(
                 &self.source_tag,
                 || {
-                    // 执行前先加载书源 jsLib（对齐原版 JsSource 每次调用前
-                    // eval jsLib；jsLib 通常为纯函数定义，重复 eval 幂等）。
-                    // jsLib 求值失败**降级为警告而非阻断**：部分书源（如
-                    // favcomic 混淆 jsLib）依赖 Android Rhino 特有全局
-                    //（Packages Java 桥等），QuickJS 无法完整执行；正文
-                    // 规则多为不依赖 jsLib 的纯正则/CSS，阻断会致正文全空
-                    //（2026-08-11 实测回归）。失败仅记日志，后续 JS 规则
-                    // 引用缺失函数时自然报 ReferenceError 可排错 — Reasonix
-                    if let Some(lib) = &self.js_lib {
-                        if let Err(e) = legado_js::JsEngine::eval(&engine, lib) {
-                            eprintln!("[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}", self.source_tag);
-                        }
-                    }
-                    // 书源上下文 setup（source/cookie 绑定；URL 模板 jsLib
-                    // 函数 this.source/this.cookie 依赖）— 发现页修复
-                    if let Some(setup) = &self.setup_script {
-                        if let Err(e) = legado_js::JsEngine::eval(&engine, setup) {
-                            eprintln!("[legado-ffi] 书源 {} setup 加载失败（降级继续）: {e}", self.source_tag);
-                        }
-                    }
-                    // java.get/post/head jsoup Response 语义桥（setup 的
-                    // __mountBookSourceApi(java) 会按原版语义把 java.get 覆盖为
-                    // 变量读取 → 双参网络 get 丢失；此处 setup 之后重新注入桥，
-                    // 双参调度：2 参 = 网络 GET Response，1 参 = 变量读取）
-                    // — 新笔趣阁等 @js: 重定向拦截源搜索修复（2026-08-17）
-                    if let Err(e) = legado_js::JsEngine::eval(&engine, legado_js::host_api::quickjs_impl::RESPONSE_BRIDGE_JS) {
-                        eprintln!("[legado-ffi] 书源 {} Response 桥重新注入失败（降级继续）: {e}", self.source_tag);
-                    }
-                    // org.jsoup.Jsoup 在引擎创建时已注入；setup 可能覆盖全局，
-                    // 再补一次保证 searchUrl @js 块可见。
-                    if let Err(e) = legado_js::JsEngine::eval(&engine, legado_js::host_api::quickjs_impl::JSOUP_BRIDGE_JS) {
-                        eprintln!("[legado-ffi] 书源 {} Jsoup 桥重新注入失败（降级继续）: {e}", self.source_tag);
-                    }
-                    // JsEngine::eval 返回 LegadoResult<String>，统一转为 Result<String, String>
-                    legado_js::JsEngine::eval(&engine, js_code).map_err(|e| e.to_string())
+                    cached
+                        .lock()
+                        .map_err(|_| "JS 引擎锁中毒".to_string())
+                        .and_then(|engine| {
+                            legado_js::JsEngine::eval(&*engine, js_code).map_err(|e| e.to_string())
+                        })
                 },
-            )
+            );
+            match result {
+                Err(e) if e.contains("redeclaration") || e.contains("already declared") => {
+                    if let Ok(mut set) = lexical.lock() {
+                        set.insert(hash);
+                    }
+                    run_fresh()
+                }
+                other => other,
+            }
         }
     }
 }
@@ -650,6 +687,63 @@ mod tests {
         assert_eq!(r2, "101");
     }
 
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_lib_persists_across_independent_executes() {
+        use legado_parser::JsExecutor;
+        let _guard = legado_js::engine_cache::TEST_LOCK.lock().unwrap();
+        legado_js::engine_cache::clear_for_tests();
+        let lib = Some("function persisted(){ return 'ok'; }".to_string());
+        let first = QuickJsExecutor::new("persist_tag").with_js_lib(lib.clone());
+        let second = QuickJsExecutor::new("persist_tag").with_js_lib(lib);
+        assert_eq!(first.execute_js("persisted()").unwrap(), "ok");
+        assert_eq!(second.execute_js("persisted()").unwrap(), "ok");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_redeclaration_falls_back_to_fresh_engine() {
+        use legado_parser::JsExecutor;
+        let _guard = legado_js::engine_cache::TEST_LOCK.lock().unwrap();
+        legado_js::engine_cache::clear_for_tests();
+        let executor = QuickJsExecutor::new("redeclaration_tag");
+        let script = "const regression_value = 41; regression_value + 1";
+        assert_eq!(executor.execute_js(script).unwrap(), "42");
+        assert_eq!(executor.execute_js(script).unwrap(), "42");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_completion_value_is_preserved_on_fast_path() {
+        use legado_parser::JsExecutor;
+        let _guard = legado_js::engine_cache::TEST_LOCK.lock().unwrap();
+        legado_js::engine_cache::clear_for_tests();
+        let executor = QuickJsExecutor::new("completion_tag");
+        assert_eq!(executor.execute_js("1 + 2").unwrap(), "3");
+        assert_eq!(executor.execute_js("var x = 7; result = x").unwrap(), "7");
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_cache_lru_evicts_oldest_source() {
+        use legado_parser::JsExecutor;
+        let _guard = legado_js::engine_cache::TEST_LOCK.lock().unwrap();
+        legado_js::engine_cache::clear_for_tests();
+        for i in 0..8 {
+            let tag = format!("lru_tag_{i}");
+            let lib = format!("function marker(){{ return {i}; }}");
+            let executor = QuickJsExecutor::new(&tag).with_js_lib(Some(lib));
+            assert_eq!(executor.execute_js("marker()").unwrap(), i.to_string());
+        }
+        let newest = QuickJsExecutor::new("lru_tag_7")
+            .with_js_lib(Some("function marker(){ return 7; }".into()));
+        assert_eq!(newest.execute_js("marker()").unwrap(), "7");
+        let oldest = QuickJsExecutor::new("lru_tag_0")
+            .with_js_lib(Some("function marker(){ return 0; }".into()));
+        assert_eq!(oldest.execute_js("marker()").unwrap(), "0");
+        assert_eq!(legado_js::engine_cache::len_for_tests(), 8);
+    }
+
     /// F3-6：fresh_engine 每次独立，全局变量不跨调用串扰
     #[cfg(feature = "quickjs")]
     #[test]
@@ -677,7 +771,9 @@ mod tests {
     #[test]
     fn test_build_search_url_js_template_render() {
         let template = "https://www.sto66.com/search/{{encodeURIComponent(key)}}{{page > 1 ? '/' + page : ''}}.html";
-        let u1 = build_search_url(template, "重生高考前99天", 1, "sto66_test").url().to_string();
+        let u1 = build_search_url(template, "重生高考前99天", 1, "sto66_test")
+            .url()
+            .to_string();
         assert!(!u1.contains("{{"), "模板应被完整渲染: {u1}");
         assert!(
             u1.contains("%E9%87%8D%E7%94%9F%E9%AB%98%E8%80%83%E5%89%8D99%E5%A4%A9"),
@@ -685,7 +781,9 @@ mod tests {
         );
         assert!(u1.ends_with(".html"), "page=1 分页应渲染为空串: {u1}");
 
-        let u2 = build_search_url(template, "99", 2, "sto66_test").url().to_string();
+        let u2 = build_search_url(template, "99", 2, "sto66_test")
+            .url()
+            .to_string();
         assert!(!u2.contains("{{"), "模板应被完整渲染: {u2}");
         assert!(u2.contains("/2.html"), "page=2 分页应渲染为 '/2': {u2}");
     }
@@ -697,17 +795,10 @@ mod tests {
     #[test]
     fn test_build_search_url_with_js_lib() {
         let lib = "function Reload(url) { return url; }";
-        let template =
-            "<js>eval(String(Reload('https://api.example.com/search?q=test')))</js>";
-        let u = build_search_url_with_lib(
-            template,
-            "都市",
-            1,
-            "lib_source_test",
-            Some(lib),
-        )
-        .url()
-        .to_string();
+        let template = "<js>eval(String(Reload('https://api.example.com/search?q=test')))</js>";
+        let u = build_search_url_with_lib(template, "都市", 1, "lib_source_test", Some(lib))
+            .url()
+            .to_string();
         assert!(
             u.contains("https://api.example.com/search?q=test"),
             "jsLib 注入后 Reload 应可调用: {u}"
@@ -719,11 +810,10 @@ mod tests {
     fn test_build_search_url_js_block_template() {
         // <js> 内嵌 JS 模板（不含 {{}}）也应走 JS 求值路径（此前被当字面路径）
         let template = "<js>var q = 'novel'; q + '-search'</js>";
-        let u = build_search_url(template, "k", 1, "jsblock_test").url().to_string();
-        assert!(
-            u.contains("novel-search"),
-            "<js> 模板应被 JS 求值渲染: {u}"
-        );
+        let u = build_search_url(template, "k", 1, "jsblock_test")
+            .url()
+            .to_string();
+        assert!(u.contains("novel-search"), "<js> 模板应被 JS 求值渲染: {u}");
     }
 
     #[cfg(feature = "quickjs")]
@@ -737,35 +827,56 @@ mod tests {
             "lib_analyzer_test",
             Some(lib),
         );
-        let result = analyzer
-            .get_string("@js:getHosts()")
-            .unwrap_or_default();
+        let result = analyzer.get_string("@js:getHosts()").unwrap_or_default();
         assert_eq!(result, "https://api.host.example");
     }
 
     /// 纯字面模板回归：`{key}`/`{{key}}`/`searchKey` 行为不变。
     #[test]
     fn test_build_search_url_literal_regression() {
-        let u1 = build_search_url("https://example.com/search?q={key}", "斗破苍穹", 1, "lit_test")
-            .url()
-            .to_string();
+        let u1 = build_search_url(
+            "https://example.com/search?q={key}",
+            "斗破苍穹",
+            1,
+            "lit_test",
+        )
+        .url()
+        .to_string();
         assert!(u1.contains("斗破苍穹") || u1.contains("%E6%96%97"), "{u1}");
 
-        let u2 = build_search_url("https://example.com/search?q=searchKey", "rust", 1, "lit_test")
-            .url()
-            .to_string();
+        let u2 = build_search_url(
+            "https://example.com/search?q=searchKey",
+            "rust",
+            1,
+            "lit_test",
+        )
+        .url()
+        .to_string();
         assert!(u2.contains("rust"), "{u2}");
 
-        let u3 = build_search_url("https://example.com/search?q={{key}}", "三体", 1, "lit_test")
-            .url()
-            .to_string();
+        let u3 = build_search_url(
+            "https://example.com/search?q={{key}}",
+            "三体",
+            1,
+            "lit_test",
+        )
+        .url()
+        .to_string();
         assert!(u3.contains("三体") || u3.contains("%E4%B8%89"), "{u3}");
 
         // `{{baseUrl}}` 简单变量直接查找（对齐原版 evalJS baseUrl 绑定）
-        let u4 = build_search_url("https://example.com/r?u={{baseUrl}}", "k", 1, "https://src.example")
-            .url()
-            .to_string();
-        assert!(u4.contains("https%3A%2F%2Fsrc.example") || u4.contains("https://src.example"), "{u4}");
+        let u4 = build_search_url(
+            "https://example.com/r?u={{baseUrl}}",
+            "k",
+            1,
+            "https://src.example",
+        )
+        .url()
+        .to_string();
+        assert!(
+            u4.contains("https%3A%2F%2Fsrc.example") || u4.contains("https://src.example"),
+            "{u4}"
+        );
     }
 
     // [UI-fix v2.0.8 | 2026-08-10] loginCheckJs 对象语义与判定分类 — Reasonix
@@ -787,7 +898,10 @@ mod tests {
         // url()/code() 方法同样可调用
         let js2 = "if (result.url().indexOf('login') >= 0 || result.code() === 200) { 'false' } else { 'ok' }";
         let r3 = execute_login_check_js(js2, "b", "http://login.example", 200, "lit_test");
-        assert!(matches!(r3, Err(LoginCheckError::NotLoggedIn(_))), "实际: {r3:?}");
+        assert!(
+            matches!(r3, Err(LoginCheckError::NotLoggedIn(_))),
+            "实际: {r3:?}"
+        );
     }
 
     #[cfg(feature = "quickjs")]
@@ -795,13 +909,19 @@ mod tests {
     fn login_check_js_plain_false_and_error_classify() {
         // 纯 'false' 返回值判定未登录
         let r = execute_login_check_js("'false'", "body", "http://x", 200, "lit_test");
-        assert!(matches!(r, Err(LoginCheckError::NotLoggedIn(_))), "实际: {r:?}");
+        assert!(
+            matches!(r, Err(LoginCheckError::NotLoggedIn(_))),
+            "实际: {r:?}"
+        );
         // 正常返回值通过
         let r2 = execute_login_check_js("'true'", "body", "http://x", 200, "lit_test");
         assert!(r2.is_ok(), "实际: {r2:?}");
         // 语法错误归类为 JsFailed（环境/脚本问题，非登录判定）
         let r3 = execute_login_check_js("function {{", "body", "http://x", 200, "lit_test");
-        assert!(matches!(r3, Err(LoginCheckError::JsFailed(_))), "实际: {r3:?}");
+        assert!(
+            matches!(r3, Err(LoginCheckError::JsFailed(_))),
+            "实际: {r3:?}"
+        );
     }
 
     #[test]
@@ -851,15 +971,9 @@ mod tests {
             "jsLib": "function lrtsUrl(){ throw new Error('本书源不含内置账号，请先在书源登录中填写会话参数'); }",
             "exploreUrl": "[{title:'推荐',url:'@js:\\nvar out=lrtsUrl();out;'}]"
         }"#;
-        let source: legado_core::models::BookSource =
-            serde_json::from_str(source_json).unwrap();
+        let source: legado_core::models::BookSource = serde_json::from_str(source_json).unwrap();
         let info_map = HashMap::new();
-        let result = build_explore_url(
-            "@js:\nvar out=lrtsUrl();out;",
-            1,
-            &source,
-            &info_map,
-        );
+        let result = build_explore_url("@js:\nvar out=lrtsUrl();out;", 1, &source, &info_map);
         let err = match result {
             Err(e) => e.to_string(),
             Ok(_) => panic!("JS 抛错应返回 Err 而非回退字面量 URL"),
@@ -883,8 +997,7 @@ mod tests {
             "jsLib": "function lrtsUrl(java,source,path,params){ return 'https://m.lrts.me'+path+'?p='+(page||1); }",
             "exploreUrl": "[]"
         }"#;
-        let source: legado_core::models::BookSource =
-            serde_json::from_str(source_json).unwrap();
+        let source: legado_core::models::BookSource = serde_json::from_str(source_json).unwrap();
         let result = build_explore_url(
             "@js:lrtsUrl(java,source,'/api',{})",
             2,
@@ -895,5 +1008,4 @@ mod tests {
         let url = result.unwrap().url().to_string();
         assert!(url.contains("p=2"), "page=2 应注入 JS 全局: {url}");
     }
-
 }

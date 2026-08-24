@@ -135,18 +135,26 @@ impl JsSourceEngine {
     /// 使用 QuickJS 真实引擎创建（启用 quickjs feature 时）
     #[cfg(feature = "quickjs")]
     pub fn new_quickjs(config: JsSourceConfig) -> Result<Self, legado_core::LegadoError> {
-        let sandbox_config = SandboxConfig::default();
-        let engine = QuickJsEngine::new(sandbox_config)?;
         let source_tag = Some(config.source_url.clone());
+        let cache_key = format!("mainjs:{}:{}", config.source_url, config.main_js);
+        let (pooled_engine, main_js_status) = crate::engine_cache::get_or_create(
+            &cache_key,
+            config.js_lib.as_deref(),
+            None,
+            Some(&config.main_js),
+        )?;
+        // 构建时 mainJs eval 失败（如顶层引用注入变量）→ 不标记 loaded，
+        // 首次 invoke 走既有带 bindings 重评路径（与旧实现错误语义一致）。
+        let main_js_loaded = !matches!(main_js_status, Some(false));
         Ok(Self {
-            engine: Some(Box::new(engine)),
+            engine: None,
             engine_pool: None,
-            pooled_engine: None,
+            pooled_engine: Some(pooled_engine),
             config,
             source_tag,
             scope_manager: None,
             script_cache: HashMap::new(),
-            main_js_loaded: false,
+            main_js_loaded,
         })
     }
 

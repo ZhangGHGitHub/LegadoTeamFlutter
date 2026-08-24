@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.105] - 2026-08-25
+
+### Fixed
+- [Rust] 搜索/书籍详情 JS 执行性能回归（根因）：QuickJsExecutor / JsSourceEngine 每次 JS 执行新建 QuickJS 引擎并重复 eval jsLib（最大 587KB）+ setup + Response/Jsoup bridge，而原版 AnalyzeRule.kt L891–936 = 单共享 RhinoScriptEngine + 编译脚本缓存（scriptCache.getOrPutLimit(jsStr, 16)，LRU 16）且 jsLib 只 eval 一次。新增 engine_cache.rs 进程级按书源缓存引擎（key=executor:source_tag / mainjs:source_url:main_js，LRU cap 8，指纹变化重建；jsLib/setup/RESPONSE_BRIDGE_JS/JSOUP_BRIDGE_JS/mainJs 构建时一次性 eval）；含顶层 const/let 的脚本继续走新引擎路径（lexical hash-set 标记 + redeclaration 错误回落新引擎重试），其余走缓存快路径；completion-value / non-strict / 64MB 内存上限 / 每次 eval 截止时间语义保持。mainJs 编排器沙箱与 executor 路径对齐（16MB→64MB、allow_script_run），main_js_loaded 改按构建期 eval 实际结果判定（失败回落既有 bindings 重评路径）。实测 debug n=30：中位 1084µs/eval → 2µs（-99.8%）
+- Contributor: Cursor
+
 ## [2.0.104] - 2026-08-24
 
 ### Fixed

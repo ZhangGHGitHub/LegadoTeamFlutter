@@ -22,6 +22,8 @@
 //! ```
 
 pub mod engine;
+#[cfg(feature = "quickjs")]
+pub mod engine_cache;
 pub mod engine_pool;
 pub mod host_api;
 pub mod js_source;
