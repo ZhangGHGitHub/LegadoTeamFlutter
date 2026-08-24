@@ -51,6 +51,12 @@ class _SearchScreenState
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _resultsScrollController = ScrollController();
+  // [fix v2.0.102] 构造期捕获 notifier 实例：riverpod 在 state.dispose() 执行前
+  // 已将 element 标记为 disposed，dispose 内任何 ref.read 都会抛
+  // 「Cannot use ref after the widget was disposed」；state getter 为 protected，
+  // 故另存最近一次 build 的 state 供 dispose 判断 isLoading — Qoder UI
+  late final SearchNotifier _searchNotifier;
+  SearchState? _lastBuiltState;
   // 精准搜索开关（对标原版 menu_precision_search，展示层精确书名过滤）
   bool _precision = false;
   // 标识读过的书籍（对标原版 AppConfig.showSearchReadRecord）
@@ -70,6 +76,7 @@ class _SearchScreenState
   @override
   void initState() {
     super.initState();
+    _searchNotifier = ref.read(searchNotifierProvider.notifier);
     // 批次B G-B-04：监听 app 生命周期（原版 repeatOnLifecycle(RESUMED)）
     WidgetsBinding.instance.addObserver(this);
     _focusNode.addListener(_onFocusChanged);
@@ -152,14 +159,21 @@ class _SearchScreenState
     WidgetsBinding.instance.removeObserver(this);
     // 对齐原版 SearchActivity 销毁 → scope.cancel()：离开页面取消进行中的搜索，
     // 避免 Rust 侧流在后台继续消耗资源（批次B G-B-04 配套）— Cursor UI
-    if (ref.read(searchNotifierProvider).isLoading) {
-      unawaited(ref.read(searchNotifierProvider.notifier).stop());
-    }
+    // [fix v2.0.102] dispose 内不可用 ref（riverpod unmount 时序），改用捕获实例 — Qoder UI
+    // [fix v2.0.102] stop() 会同步写 provider 状态，触发 build 中注册的 ref.listen
+    // 监听器（_updateInputHelpVisibility → ref.read）；unmount 期间 element 已
+    // deactivate（context.mounted=false）→ "Cannot use ref after disposed"。
+    // 故经 microtask 延迟到 unmount 全部完成后执行：此时 riverpod 已关闭本
+    // element 的 listen 订阅，状态回写不再回调任何 UI 监听器。— Qoder UI
+    final shouldStop = _lastBuiltState?.isLoading ?? false;
     _focusNode.removeListener(_onFocusChanged);
     _searchController.dispose();
     _focusNode.dispose();
     _resultsScrollController.dispose();
     super.dispose();
+    if (shouldStop) {
+      Future.microtask(() => unawaited(_searchNotifier.stop()));
+    }
   }
 
   /// app 退后台软挂起 / 回前台恢复（批次B G-B-04：对齐原版
@@ -180,6 +194,7 @@ class _SearchScreenState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(searchNotifierProvider);
+    _lastBuiltState = state;
 
     ref.listen<SearchState>(searchNotifierProvider, (prev, next) {
       if (prev == null) return;
@@ -187,9 +202,16 @@ class _SearchScreenState
       if (!prev.isLoading && next.isLoading) {
         _searchSessionId++;
       }
-      // 新批次到达时滚顶（对齐原版 AdapterDataObserver scrollToPosition(0)）
-      if (next.hasResults &&
-          (next.isLoading || next.results.length != prev.results.length)) {
+      // 新搜索开始时滚顶（对齐原版 AdapterDataObserver.onItemRangeInserted：
+      // 仅当条目插入于 positionStart == 0 —— 即新关键词结果重置重填时滚顶；
+      // 流式增量批次与续页追加的 positionStart > 0，不触发）。
+      // [2026-08-24] 旧条件在加载中任何长度变化都滚顶：节流增量渲染每 150ms flush
+      // 都会 animateTo(0) → 页面被反复拉回顶部、无法滚动。改为仅在「新搜索开始」
+      // （isLoading false→true 且关键词变化或结果已清空）时触发。— Qoder UI
+      final isNewSearch = !prev.isLoading &&
+          next.isLoading &&
+          (prev.keyword != next.keyword || next.results.isEmpty);
+      if (isNewSearch) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_resultsScrollController.hasClients) {
             _resultsScrollController.animateTo(

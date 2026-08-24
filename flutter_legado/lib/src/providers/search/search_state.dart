@@ -141,10 +141,19 @@ List<SearchResult> applyPrecisionSearch(
     }
   }
 
+  // 稳定排序：origins 数相同保持到达顺序（对齐原版 Kotlin sortedByDescending
+  // 的稳定语义；Dart List.sort 不稳定，须以索引作平局裁决，否则同计数结果乱序）
+  // — Qoder UI [fix v2.0.102]
   List<SearchResult> sortedBucket(Map<String, SearchResult> bucket) {
-    final list = bucket.values.toList()
-      ..sort((a, b) => b.originsCount.compareTo(a.originsCount));
-    return list;
+    final values = bucket.values.toList();
+    final indexed = <(int, SearchResult)>[
+      for (var i = 0; i < values.length; i++) (i, values[i]),
+    ];
+    indexed.sort((a, b) {
+      final byCount = b.$2.originsCount.compareTo(a.$2.originsCount);
+      return byCount != 0 ? byCount : a.$1.compareTo(b.$1);
+    });
+    return indexed.map((e) => e.$2).toList();
   }
 
   return [

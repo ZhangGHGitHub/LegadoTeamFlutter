@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.102] - 2026-08-24
+
+### Fixed
+- [UI] 搜索页「强制回到最上方、无法向下滑动」（三个根因）：
+  1. 流式增量批次拉回顶部：移植版在结果数量任意变化时都滚顶；原版 AdapterDataObserver.onItemRangeInserted 仅在 positionStart==0（新搜索重置）时 scrollToPosition(0)，增量追加从不滚动 —— ref.listen 增加 isNewSearch 门控对齐
+  2. dispose 崩溃 "Cannot use ref after the widget was disposed"：riverpod unmount 先执行 State.dispose() 再关闭 element 监听，stop() 同步写状态触发 build 注册的 ref.listen（_updateInputHelpVisibility → ref.read）—— stop() 延迟到 super.dispose() 之后的微任务（此时监听已关闭）
+  3. 排序对齐：Dart List.sort 不稳定 vs 原版 Kotlin sortedByDescending 稳定 —— applyPrecisionSearch.sortedBucket 增加索引决胜，同分结果顺序与原版一致
+- Contributor: Qoder UI
+
 ## [2.0.101] - 2026-08-24
 
 ### Fixed
