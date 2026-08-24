@@ -241,6 +241,7 @@ mod tests {
             chapter_word_count: -1,
             respond_time: -1,
             origin_order: 0,
+            book_score: 0,
         }
     }
 

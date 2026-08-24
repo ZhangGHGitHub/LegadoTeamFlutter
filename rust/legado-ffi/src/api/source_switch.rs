@@ -134,6 +134,8 @@ pub fn search_alternative_sources(
         options.load_word_count,
     );
 
+    persist_switch_matches(&matches);
+
     Ok(SourceSwitchResponse {
         book_name: book_name.to_string(),
         author: author.to_string(),
@@ -185,6 +187,7 @@ fn try_load_change_source_from_db(
             chapter_word_count: b.chapter_word_count,
             respond_time: b.respond_time,
             origin_order: b.origin_order,
+            book_score: b.book_score,
         })
         .collect();
 
@@ -426,6 +429,7 @@ async fn search_for_switch(
             chapter_word_count: -1,
             respond_time: -1,
             origin_order: source.custom_order,
+            book_score: 0,
         })
         .collect();
     Ok(candidates)
@@ -512,7 +516,11 @@ async fn enrich_one_switch_candidate(
 
     if options.load_info {
         if let Ok(info) = engine.get_book_info(source, &book_url).await {
-            if candidate.latest_chapter.as_ref().is_none_or(|s| s.is_empty()) {
+            if candidate
+                .latest_chapter
+                .as_ref()
+                .is_none_or(|s| s.is_empty())
+            {
                 candidate.latest_chapter = info.last_chapter;
             }
             if candidate.word_count.as_ref().is_none_or(|s| s.is_empty()) {
@@ -576,17 +584,120 @@ async fn apply_word_count_sample(
         }
         Err(e) => (
             -1,
-            format!(
-                "[{}] {}\n获取字数失败：{}",
-                chapter_index + 1,
-                title,
-                e
-            ),
+            format!("[{}] {}\n获取字数失败：{}", chapter_index + 1, title, e),
         ),
     };
     candidate.chapter_word_count = count;
     candidate.chapter_word_count_text = Some(text);
     candidate.respond_time = start.elapsed().as_millis() as i32;
+}
+
+/// 换源网络结果落库（对齐原版 searchSuccess → insert）
+fn persist_switch_matches(matches: &[SourceMatch]) {
+    if matches.is_empty() || !crate::db_state::is_initialized() {
+        return;
+    }
+    use legado_core::models::SearchBook;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let books: Vec<SearchBook> = matches
+        .iter()
+        .map(|m| SearchBook {
+            book_url: m.book_url.clone(),
+            origin: m.source_url.clone(),
+            origin_name: m.source_name.clone(),
+            name: m.book_name.clone(),
+            author: m.author.clone(),
+            word_count: m.word_count.clone(),
+            latest_chapter_title: m.latest_chapter.clone(),
+            time: now,
+            origin_order: m.origin_order,
+            chapter_word_count_text: m.chapter_word_count_text.clone(),
+            chapter_word_count: m.chapter_word_count,
+            respond_time: m.respond_time,
+            book_score: m.book_score,
+            ..SearchBook::default()
+        })
+        .collect();
+    let _ = crate::db_state::with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        let _ = repo.insert_all(&books);
+        Ok(())
+    });
+}
+
+/// 更新换源列表项用户评分（-1/0/1）
+///
+/// 对齐原版 `SourceConfig.setBookScore`：持久化书维度评分并同步书源聚合分。
+pub fn update_search_book_score(book_url: &str, score: i32) -> LegadoResult<()> {
+    let book_url = book_url.trim();
+    if book_url.is_empty() {
+        return Err(LegadoError::Database("bookUrl 不能为空".into()));
+    }
+    if score < -1 || score > 1 {
+        return Err(LegadoError::Database("评分仅允许 -1/0/1".into()));
+    }
+    if !crate::db_state::is_initialized() {
+        return Err(LegadoError::Database("数据库未初始化".into()));
+    }
+    crate::db_state::with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        let pre = repo
+            .find_by_book_url(book_url)?
+            .map(|b| b.book_score)
+            .unwrap_or(0);
+        let affected = repo.update_book_score(book_url, score)?;
+        if affected == 0 {
+            return Err(LegadoError::Database(format!(
+                "searchBooks 中不存在 bookUrl={book_url}"
+            )));
+        }
+        if let Some(book) = repo.find_by_book_url(book_url)? {
+            sync_source_score_delta(&book.origin, pre, score);
+        }
+        Ok(())
+    })
+}
+
+/// 删除换源列表项（按 bookUrl）
+pub fn delete_search_book(book_url: &str) -> LegadoResult<()> {
+    let book_url = book_url.trim();
+    if book_url.is_empty() {
+        return Err(LegadoError::Database("bookUrl 不能为空".into()));
+    }
+    if !crate::db_state::is_initialized() {
+        return Err(LegadoError::Database("数据库未初始化".into()));
+    }
+    crate::db_state::with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        let affected = repo.delete_by_book_url(book_url)?;
+        if affected == 0 {
+            return Err(LegadoError::Database(format!(
+                "searchBooks 中不存在 bookUrl={book_url}"
+            )));
+        }
+        Ok(())
+    })
+}
+
+/// 同步书源聚合评分（对标 SourceConfig.setBookScore 对 origin 键的增量更新）
+fn sync_source_score_delta(origin: &str, pre_score: i32, new_score: i32) {
+    let delta = if pre_score != 0 {
+        new_score - pre_score
+    } else {
+        new_score
+    };
+    if delta == 0 {
+        return;
+    }
+    let cur = crate::api::config_api::get_config(origin)
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(0);
+    let _ = crate::api::config_api::set_config(origin, &(cur + delta).to_string());
 }
 
 #[cfg(test)]
@@ -641,7 +752,11 @@ mod tests {
         let from_empty_str = resolve_switch_sources("").expect("空串解析失败");
         let from_empty_array = resolve_switch_sources("[]").expect("空数组解析失败");
         assert_eq!(from_empty_str.len(), enabled.len(), "空串应搜全部启用源");
-        assert_eq!(from_empty_array.len(), enabled.len(), "空数组应搜全部启用源");
+        assert_eq!(
+            from_empty_array.len(),
+            enabled.len(),
+            "空数组应搜全部启用源"
+        );
     }
 
     /// Task #145（留项#12）：分组包含判定纯语义单测
@@ -728,8 +843,7 @@ mod tests {
         crate::api::source::import_sources(&json).expect("导入书源失败");
 
         let enabled = source_api::list_enabled_sources().expect("列出启用书源失败");
-        crate::api::config_api::set_config("searchGroup", "   ")
-            .expect("设置 searchGroup 失败");
+        crate::api::config_api::set_config("searchGroup", "   ").expect("设置 searchGroup 失败");
         let filtered = resolve_switch_sources("[]").expect("分组过滤解析失败");
         assert_eq!(filtered.len(), enabled.len(), "纯空白分组应等同全部分组");
         crate::api::config_api::set_config("searchGroup", "").expect("清空 searchGroup 失败");
@@ -892,7 +1006,11 @@ mod tests {
 
         let json = switch_book_source(old_url, new_source, new_book_url).unwrap();
         let decoded: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded["bookUrl"].as_str(), Some(old_url), "返回 bookUrl 应保持稳定");
+        assert_eq!(
+            decoded["bookUrl"].as_str(),
+            Some(old_url),
+            "返回 bookUrl 应保持稳定"
+        );
     }
 
     /// Task #21 回归：换源目标详情页 URL 为空时应提前返回可读错误，
@@ -904,8 +1022,12 @@ mod tests {
     #[test]
     fn test_switch_book_source_rejects_empty_new_book_url() {
         for empty in ["", "   ", "\t\n"] {
-            let err = switch_book_source("https://any-book.example.com/1", "https://any-src.example.com", empty)
-                .expect_err("空 new_book_url 应返回错误");
+            let err = switch_book_source(
+                "https://any-book.example.com/1",
+                "https://any-src.example.com",
+                empty,
+            )
+            .expect_err("空 new_book_url 应返回错误");
             let msg = err.to_string();
             assert!(
                 msg.contains("详情页 URL 为空"),

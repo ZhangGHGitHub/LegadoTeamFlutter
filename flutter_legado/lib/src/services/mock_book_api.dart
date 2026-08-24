@@ -67,7 +67,8 @@ class MockBookApi implements BookApi {
         name: '斗破苍穹',
         author: '天蚕土豆',
         kind: '玄幻',
-        coverUrl: 'https://www.biquge.com.cn/files/article/image/6/6909/6909s.jpg',
+        coverUrl:
+            'https://www.biquge.com.cn/files/article/image/6/6909/6909s.jpg',
         intro: '讲述了天才少年萧炎在创造了家族史上空前绝后的修炼纪录后突然成了废人，在药老的帮助下一步步走向巅峰的故事。',
         latestChapterTitle: '第一千六百四十八章 大结局',
         latestChapterTime: 1630656684531,
@@ -99,7 +100,8 @@ class MockBookApi implements BookApi {
       ),
       Book(
         bookUrl: 'mock://book/3',
-        tocUrl: 'https://www.kaixin7days.com/book-service/bookMgt/getAllChapterByBookId',
+        tocUrl:
+            'https://www.kaixin7days.com/book-service/bookMgt/getAllChapterByBookId',
         name: '三体',
         author: '刘慈欣',
         kind: '科幻',
@@ -123,14 +125,16 @@ class MockBookApi implements BookApi {
       final chapters = <BookChapter>[];
       final contents = <int, String>{};
       for (var j = 0; j < 10; j++) {
-        chapters.add(BookChapter(
-          title: '第${j + 1}章 ${_mockChapterTitles[j]}',
-          bookUrl: bookUrl,
-          url: 'mock://chapter/$bookUrl/$j',
-          index: j,
-          start: j * 2000,
-          end: (j + 1) * 2000,
-        ));
+        chapters.add(
+          BookChapter(
+            title: '第${j + 1}章 ${_mockChapterTitles[j]}',
+            bookUrl: bookUrl,
+            url: 'mock://chapter/$bookUrl/$j',
+            index: j,
+            start: j * 2000,
+            end: (j + 1) * 2000,
+          ),
+        );
         contents[j] = _generateMockContent(i, j);
       }
       _chaptersCache[bookUrl] = chapters;
@@ -147,8 +151,10 @@ class MockBookApi implements BookApi {
         bookSourceType: 1, // 音频源
         enabled: true,
         enabledExplore: true,
-        exploreUrl: '玄幻::https://www.kaixin7days.com/book-service/bookMgt/getAllBookByCategroyId\n都市::https://www.kaixin7days.com/book-service/bookMgt/getAllBookByCategroyId',
-        searchUrl: 'https://www.kaixin7days.com/book-service/bookMgt/findBookName,{"method":"POST","body":{"title": "searchKey","pageNum": 1,"pageSize": 100}}',
+        exploreUrl:
+            '玄幻::https://www.kaixin7days.com/book-service/bookMgt/getAllBookByCategroyId\n都市::https://www.kaixin7days.com/book-service/bookMgt/getAllBookByCategroyId',
+        searchUrl:
+            'https://www.kaixin7days.com/book-service/bookMgt/findBookName,{"method":"POST","body":{"title": "searchKey","pageNum": 1,"pageSize": 100}}',
         customOrder: 0,
         lastUpdateTime: 1630656684531,
         respondTime: 180000,
@@ -161,7 +167,8 @@ class MockBookApi implements BookApi {
         bookSourceType: 0, // 文本源
         enabled: true,
         enabledExplore: true,
-        exploreUrl: '玄幻::https://www.biquge.com.cn/xuanhuan/\n仙侠::https://www.biquge.com.cn/xianxia/\n都市::https://www.biquge.com.cn/dushi/',
+        exploreUrl:
+            '玄幻::https://www.biquge.com.cn/xuanhuan/\n仙侠::https://www.biquge.com.cn/xianxia/\n都市::https://www.biquge.com.cn/dushi/',
         searchUrl: 'https://www.biquge.com.cn/s?q=searchKey',
         customOrder: 1,
         lastUpdateTime: 1630656684531,
@@ -175,7 +182,8 @@ class MockBookApi implements BookApi {
         bookSourceType: 0,
         enabled: false, // 需登录，默认禁用
         enabledExplore: true,
-        exploreUrl: '热门::https://www.qidian.com/rank/hotsales/\n新书::https://www.qidian.com/rank/newbook/',
+        exploreUrl:
+            '热门::https://www.qidian.com/rank/hotsales/\n新书::https://www.qidian.com/rank/newbook/',
         searchUrl: 'https://www.qidian.com/so/searchKey/',
         customOrder: 2,
         lastUpdateTime: 1630656684531,
@@ -189,7 +197,8 @@ class MockBookApi implements BookApi {
       RssSource(
         sourceUrl: 'https://www.yuque.com/legado',
         sourceName: '使用说明',
-        sourceIcon: 'https://cdn.jsdelivr.net/gh/gedoor/legado@master/app/src/main/res/mipmap-hdpi/ic_launcher.png',
+        sourceIcon:
+            'https://cdn.jsdelivr.net/gh/gedoor/legado@master/app/src/main/res/mipmap-hdpi/ic_launcher.png',
         sourceGroup: 'legado',
         enabled: true,
         singleUrl: true,
@@ -199,7 +208,8 @@ class MockBookApi implements BookApi {
       RssSource(
         sourceUrl: 'snssdk1128://user/profile/562564899806367',
         sourceName: '小说拾遗',
-        sourceIcon: 'http://mmbiz.qpic.cn/mmbiz_png/hpfMV8hEuL2eS6vnCxvTzoOiaCAibV6exBzJWq9xMic9xDg3YXAick87tsfafic0icRwkQ5ibV0bJ84JtSuxhPuEDVquA/0?wx_fmt=png',
+        sourceIcon:
+            'http://mmbiz.qpic.cn/mmbiz_png/hpfMV8hEuL2eS6vnCxvTzoOiaCAibV6exBzJWq9xMic9xDg3YXAick87tsfafic0icRwkQ5ibV0bJ84JtSuxhPuEDVquA/0?wx_fmt=png',
         sourceGroup: 'legado',
         enabled: true,
         singleUrl: true,
@@ -219,7 +229,8 @@ class MockBookApi implements BookApi {
       RssSource(
         sourceUrl: 'https://www.lanzout.com/b0bw8jwoh',
         sourceName: '烏雲净化',
-        sourceIcon: 'https://cdn.jsdelivr.net/gh/gedoor/legado@master/app/src/main/res/mipmap-hdpi/ic_launcher.png',
+        sourceIcon:
+            'https://cdn.jsdelivr.net/gh/gedoor/legado@master/app/src/main/res/mipmap-hdpi/ic_launcher.png',
         sourceGroup: 'legado',
         enabled: true,
         singleUrl: true,
@@ -233,24 +244,23 @@ class MockBookApi implements BookApi {
       HttpTts(
         id: -100,
         name: '1.百度',
-        url: 'http://tts.baidu.com/text2audio,{"method": "POST","body": "tex={{java.encodeURI(java.encodeURI(speakText))}}&spd={{(speakSpeed + 5) / 10 + 4}}&per=3&cuid=baidu_speech_demo&idx=1&cod=2&lan=zh&ctp=1&pdt=160&vol=5&aue=6&pit=5&_res_tag_=audio"}',
+        url:
+            'http://tts.baidu.com/text2audio,{"method": "POST","body": "tex={{java.encodeURI(java.encodeURI(speakText))}}&spd={{(speakSpeed + 5) / 10 + 4}}&per=3&cuid=baidu_speech_demo&idx=1&cod=2&lan=zh&ctp=1&pdt=160&vol=5&aue=6&pit=5&_res_tag_=audio"}',
         contentType: 'audio/wav',
       ),
       HttpTts(
         id: -29,
         name: '2.阿里云语音',
-        url: 'https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/tts,{"method": "POST","body": {"appkey":"{{source.getLoginInfoMap().get(\'AppKey\')}}","text":"{{speakText}}","format":"mp3","volume":100,"speech_rate":{{String((speakSpeed) * 20 - 400)}} }}',
+        url:
+            'https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/tts,{"method": "POST","body": {"appkey":"{{source.getLoginInfoMap().get(\'AppKey\')}}","text":"{{speakText}}","format":"mp3","volume":100,"speech_rate":{{String((speakSpeed) * 20 - 400)}} }}',
         contentType: 'audio/mpeg',
       ),
     ]);
 
     // 默认分组
-    _bookGroups.add(BookGroup(
-      groupId: 1,
-      groupName: '科幻',
-      order: 0,
-      show: true,
-    ));
+    _bookGroups.add(
+      BookGroup(groupId: 1, groupName: '科幻', order: 0, show: true),
+    );
   }
 
   static const _mockChapterTitles = [
@@ -377,7 +387,9 @@ class MockBookApi implements BookApi {
 
   @override
   Future<void> updateBookSource(BookSource source) async {
-    final idx = _sources.indexWhere((s) => s.bookSourceUrl == source.bookSourceUrl);
+    final idx = _sources.indexWhere(
+      (s) => s.bookSourceUrl == source.bookSourceUrl,
+    );
     if (idx >= 0) _sources[idx] = source;
   }
 
@@ -447,8 +459,8 @@ class MockBookApi implements BookApi {
     final trimmed = text.trim();
     if (trimmed.isEmpty) throw Exception('[CURL_EMPTY_INPUT]');
     final comma = RegExp(r'\s*,\s*\{').firstMatch(trimmed);
-    final url =
-        (comma == null ? trimmed : trimmed.substring(0, comma.start)).trim();
+    final url = (comma == null ? trimmed : trimmed.substring(0, comma.start))
+        .trim();
     if (url.isEmpty) throw Exception('[CURL_MISSING_URL]');
     var follow = true;
     if (comma != null) {
@@ -458,7 +470,6 @@ class MockBookApi implements BookApi {
     final quoted = url.contains('?') || url.contains(' ') ? "'$url'" : url;
     return follow ? 'curl -g -L $quoted' : 'curl -g $quoted';
   }
-
 
   @override
   Future<void> deleteBookSource(String sourceUrl) async {
@@ -525,21 +536,21 @@ class MockBookApi implements BookApi {
 
   /// 构造 Mock 的 CheckResult（四步全部通过，无验证码/重定向）
   Map<String, dynamic> _mockCheckResult(String sourceUrl) => {
-        'source_url': sourceUrl,
-        'search_ok': true,
-        'toc_ok': true,
-        'content_ok': true,
-        'search_error': null,
-        'toc_error': null,
-        'content_error': null,
-        'total_time_ms': 321,
-        'captcha': {
-          'detected': false,
-          'captcha_type': null,
-          'matched_keyword': null,
-        },
-        'redirect': null,
-      };
+    'source_url': sourceUrl,
+    'search_ok': true,
+    'toc_ok': true,
+    'content_ok': true,
+    'search_error': null,
+    'toc_error': null,
+    'content_error': null,
+    'total_time_ms': 321,
+    'captcha': {
+      'detected': false,
+      'captcha_type': null,
+      'matched_keyword': null,
+    },
+    'redirect': null,
+  };
 
   @override
   Future<Map<String, dynamic>> checkSource(
@@ -567,8 +578,9 @@ class MockBookApi implements BookApi {
     final total = urls.length;
     for (var i = 0; i < total; i++) {
       await Future.delayed(const Duration(milliseconds: 200));
-      final matches =
-          _sources.where((s) => s.bookSourceUrl == urls[i]).toList();
+      final matches = _sources
+          .where((s) => s.bookSourceUrl == urls[i])
+          .toList();
       final name = matches.isEmpty ? urls[i] : matches.first.bookSourceName;
       yield {
         'index': i,
@@ -595,10 +607,7 @@ class MockBookApi implements BookApi {
       '{"rows":[]}';
 
   @override
-  Future<String> loginActionV2(
-    String sourceJson,
-    String userInputJson,
-  ) async =>
+  Future<String> loginActionV2(String sourceJson, String userInputJson) async =>
       '{"close":true}';
 
   @override
@@ -667,7 +676,8 @@ class MockBookApi implements BookApi {
           bookUrl: 'mock://search/$keyword/$i',
           name: '$keyword 相关书籍${i + 1}',
           author: '作者${i + 1}',
-          coverUrl: 'https://www.biquge.com.cn/files/article/image/${i + 1}.jpg',
+          coverUrl:
+              'https://www.biquge.com.cn/files/article/image/${i + 1}.jpg',
           intro: '这是搜索"$keyword"的第${i + 1}条结果简介。',
           latestChapterTitle: '最新章节',
           origin: 'https://www.kaixin7days.com',
@@ -698,11 +708,14 @@ class MockBookApi implements BookApi {
     List<String>? sourceUrls,
   }) async {
     const srcNames = ['消消乐听书', '笔趣阁', '起点中文网'];
-    return List.generate(3, (i) => {
-      'source': srcNames[i],
-      'count': 5,
-      'results': <Map<String, dynamic>>[],
-    });
+    return List.generate(
+      3,
+      (i) => {
+        'source': srcNames[i],
+        'count': 5,
+        'results': <Map<String, dynamic>>[],
+      },
+    );
   }
 
   @override
@@ -725,20 +738,23 @@ class MockBookApi implements BookApi {
         'source_index': i,
         'source_url': srcUrls[i],
         'source_name': srcNames[i],
-        'books': List.generate(2, (j) => {
-          'origin': srcUrls[i],
-          'originName': srcNames[i],
-          // 源级 BookType（对齐原版 getBookType：text=8/audio=32）
-          'type': i == 0 ? 32 : 8,
-          'name': '$query 相关书籍${i * 2 + j + 1}',
-          'author': '作者${i * 2 + j + 1}',
-          'bookUrl': 'mock://search/$query/${i}_$j',
-          'kind': i == 0 ? '都市,轻松' : '玄幻,热血',
-          'wordCount': '${(i * 2 + j + 1) * 12}万字',
-          'latestChapterTitle': '最新章节',
-          'intro': '渐进搜索“$query”的结果。',
-          'coverUrl': null,
-        }),
+        'books': List.generate(
+          2,
+          (j) => {
+            'origin': srcUrls[i],
+            'originName': srcNames[i],
+            // 源级 BookType（对齐原版 getBookType：text=8/audio=32）
+            'type': i == 0 ? 32 : 8,
+            'name': '$query 相关书籍${i * 2 + j + 1}',
+            'author': '作者${i * 2 + j + 1}',
+            'bookUrl': 'mock://search/$query/${i}_$j',
+            'kind': i == 0 ? '都市,轻松' : '玄幻,热血',
+            'wordCount': '${(i * 2 + j + 1) * 12}万字',
+            'latestChapterTitle': '最新章节',
+            'intro': '渐进搜索“$query”的结果。',
+            'coverUrl': null,
+          },
+        ),
         'error': null,
         'finished_count': i + 1,
         'total_count': total,
@@ -779,22 +795,23 @@ class MockBookApi implements BookApi {
       'https://www.qidian.com',
     ];
     // 对齐 Rust `SourceMatch` 的 snake_case 序列化（按 score 降序，Rust 侧已排序）
-    final all = List.generate(3, (i) => {
-      'source_url': srcUrls[i],
-      'source_name': srcNames[i],
-      'book_url': 'mock://switch/$bookName/$i',
-      'book_name': bookName,
-      'author': author,
-      'latest_chapter': '最新章节${i + 1}',
-      'word_count': '${100 + i * 50}万字',
-      'score': 90.0 - i * 10,
-    });
+    final all = List.generate(
+      3,
+      (i) => {
+        'source_url': srcUrls[i],
+        'source_name': srcNames[i],
+        'book_url': 'mock://switch/$bookName/$i',
+        'book_name': bookName,
+        'author': author,
+        'latest_chapter': '最新章节${i + 1}',
+        'word_count': '${100 + i * 50}万字',
+        'score': 90.0 - i * 10,
+      },
+    );
     // [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：模拟 sourceUrls 过滤语义，
     // 非空列表时仅返回指定书源的候选 — QoderCN
     if (sourceUrls != null && sourceUrls.isNotEmpty) {
-      return all
-          .where((m) => sourceUrls.contains(m['source_url']))
-          .toList();
+      return all.where((m) => sourceUrls.contains(m['source_url'])).toList();
     }
     return all;
   }
@@ -805,11 +822,14 @@ class MockBookApi implements BookApi {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     // 按书名生成确定性候选封面（占位数据，字段对齐 Rust `CoverCandidate`）
     final base = bookName.hashCode.abs();
-    return List.generate(5, (i) => {
-      'url': 'https://picsum.photos/seed/${base + i}/240/320',
-      'width': 240,
-      'height': 320,
-    });
+    return List.generate(
+      5,
+      (i) => {
+        'url': 'https://picsum.photos/seed/${base + i}/240/320',
+        'width': 240,
+        'height': 320,
+      },
+    );
   }
 
   @override
@@ -819,6 +839,18 @@ class MockBookApi implements BookApi {
     String newBookUrl,
   ) async {
     return newBookUrl;
+  }
+
+  final Map<String, int> _searchBookScores = {};
+
+  @override
+  Future<void> updateSearchBookScore(String bookUrl, int score) async {
+    _searchBookScores[bookUrl] = score;
+  }
+
+  @override
+  Future<void> deleteSearchBook(String bookUrl) async {
+    _searchBookScores.remove(bookUrl);
   }
 
   // ========== RSS 源操作 ==========
@@ -941,10 +973,7 @@ class MockBookApi implements BookApi {
     int? limit,
   ]) async {
     final l = limit ?? 100;
-    return _rssReadRecords
-        .where((r) => r['origin'] == origin)
-        .take(l)
-        .toList();
+    return _rssReadRecords.where((r) => r['origin'] == origin).take(l).toList();
   }
 
   // ========== 本地书籍操作 ==========
@@ -953,7 +982,10 @@ class MockBookApi implements BookApi {
   Future<Book> importLocalBook(String filePath) async {
     final book = Book(
       bookUrl: 'file://$filePath',
-      name: filePath.split(RegExp(r'[/\\]')).last.replaceAll(RegExp(r'\.\w+$'), ''),
+      name: filePath
+          .split(RegExp(r'[/\\]'))
+          .last
+          .replaceAll(RegExp(r'\.\w+$'), ''),
       author: '本地导入',
       bookType: BookType.local,
     );
@@ -964,8 +996,18 @@ class MockBookApi implements BookApi {
   @override
   Future<List<Map<String, dynamic>>> scanLocalBooks(String dirPath) async {
     return [
-      {'path': '$dirPath/book1.txt', 'name': 'book1.txt', 'size': 102400, 'lastModified': DateTime.now().toIso8601String()},
-      {'path': '$dirPath/book2.epub', 'name': 'book2.epub', 'size': 2048000, 'lastModified': DateTime.now().toIso8601String()},
+      {
+        'path': '$dirPath/book1.txt',
+        'name': 'book1.txt',
+        'size': 102400,
+        'lastModified': DateTime.now().toIso8601String(),
+      },
+      {
+        'path': '$dirPath/book2.epub',
+        'name': 'book2.epub',
+        'size': 2048000,
+        'lastModified': DateTime.now().toIso8601String(),
+      },
     ];
   }
 
@@ -1038,9 +1080,9 @@ class MockBookApi implements BookApi {
     int maxResults = 50,
   }) async {
     if (query.isEmpty) return [];
-    return _mockTxtSearchResults(query)
-        .where((r) => r['chapter_index'] == chapterIndex)
-        .toList();
+    return _mockTxtSearchResults(
+      query,
+    ).where((r) => r['chapter_index'] == chapterIndex).toList();
   }
 
   @override
@@ -1096,8 +1138,9 @@ class MockBookApi implements BookApi {
   }
 
   @override
-  Future<List<Bookmark>> searchBookmarks(String keyword) async =>
-      _bookmarks.where((b) => b.content.contains(keyword) || b.bookText.contains(keyword)).toList();
+  Future<List<Bookmark>> searchBookmarks(String keyword) async => _bookmarks
+      .where((b) => b.content.contains(keyword) || b.bookText.contains(keyword))
+      .toList();
 
   // ========== 替换规则操作 ==========
 
@@ -1129,7 +1172,9 @@ class MockBookApi implements BookApi {
   @override
   Future<void> setReplaceRuleEnabled(int id, bool enabled) async {
     final idx = _replaceRules.indexWhere((r) => r.id == id);
-    if (idx >= 0) _replaceRules[idx] = _replaceRules[idx].copyWith(isEnabled: enabled);
+    if (idx >= 0) {
+      _replaceRules[idx] = _replaceRules[idx].copyWith(isEnabled: enabled);
+    }
   }
 
   // ========== 阅读器操作 ==========
@@ -1194,8 +1239,10 @@ class MockBookApi implements BookApi {
   }
 
   @override
-  Future<List<BookChapter>> refreshToc(String bookUrl, String sourceUrl) async =>
-      _chaptersCache[bookUrl] ?? [];
+  Future<List<BookChapter>> refreshToc(
+    String bookUrl,
+    String sourceUrl,
+  ) async => _chaptersCache[bookUrl] ?? [];
 
   /// 繁简转换类型 Mock 持久化键（与 Rust 侧配置键同名）
   static const _chineseConvertKey = 'chineseConverterType';
@@ -1239,7 +1286,10 @@ class MockBookApi implements BookApi {
   }
 
   @override
-  Future<bool> canRemoveSameTitle(String chapterTitle, String rawContent) async {
+  Future<bool> canRemoveSameTitle(
+    String chapterTitle,
+    String rawContent,
+  ) async {
     if (chapterTitle.isEmpty || rawContent.isEmpty) return false;
     return rawContent.trimLeft().startsWith(chapterTitle);
   }
@@ -1291,11 +1341,7 @@ class MockBookApi implements BookApi {
     final hit = _mockDict[key];
     if (hit != null) return hit;
     // 未收录词：返回空 definitions（非异常，对齐契约）
-    return {
-      'word': key,
-      'phonetic': '',
-      'definitions': <String>[],
-    };
+    return {'word': key, 'phonetic': '', 'definitions': <String>[]};
   }
 
   // ========== 备份操作 ==========
@@ -1395,7 +1441,10 @@ class MockBookApi implements BookApi {
       _searchHistory.take(limit).toList();
 
   @override
-  Future<List<String>> searchHistoryByPrefix(String prefix, {int limit = 20}) async {
+  Future<List<String>> searchHistoryByPrefix(
+    String prefix, {
+    int limit = 20,
+  }) async {
     return _searchHistory
         .where((k) => k.word.startsWith(prefix))
         .take(limit)
@@ -1458,11 +1507,14 @@ class MockBookApi implements BookApi {
 
   @override
   Future<int> cacheDownloadStart(
-      String bookUrl, int startChapter, int endChapter) async =>
-      1;
+    String bookUrl,
+    int startChapter,
+    int endChapter,
+  ) async => 1;
 
   @override
-  Future<String> cacheDownloadProgress(int taskId) async => '{"taskId":$taskId,"status":"completed","total":0,"completed":0,"failed":0}';
+  Future<String> cacheDownloadProgress(int taskId) async =>
+      '{"taskId":$taskId,"status":"completed","total":0,"completed":0,"failed":0}';
 
   @override
   Future<bool> cacheDownloadCancel(int taskId) async => true;
@@ -1476,8 +1528,7 @@ class MockBookApi implements BookApi {
   Future<({String kind, String value})> chapterPayAction({
     required String bookUrl,
     required int chapterIndex,
-  }) async =>
-      (kind: 'none', value: '');
+  }) async => (kind: 'none', value: '');
 
   @override
   Future<Map<String, dynamic>> sourceCallBackBtn({
@@ -1486,19 +1537,21 @@ class MockBookApi implements BookApi {
     int? chapterIndex,
     String? result,
     int bookType = 0,
-  }) async =>
-      {
-        'invoked': false,
-        'jsTrue': false,
-        'raw': '',
-        'actions': <dynamic>[],
-      };
+  }) async => {
+    'invoked': false,
+    'jsTrue': false,
+    'raw': '',
+    'actions': <dynamic>[],
+  };
 
   // ========== WebBook 操作 ==========
 
   @override
-  Future<String> webbookSearch(String sourceJson, String query, int page) async =>
-      jsonEncode([]);
+  Future<String> webbookSearch(
+    String sourceJson,
+    String query,
+    int page,
+  ) async => jsonEncode([]);
 
   @override
   Future<String> webbookInfo(String sourceJson, String bookUrl) async =>
@@ -1510,8 +1563,7 @@ class MockBookApi implements BookApi {
     String bookUrl, {
     String tocUrl = '',
     String bookName = '',
-  }) async =>
-      jsonEncode([]);
+  }) async => jsonEncode([]);
 
   @override
   Future<String> webbookContent(String sourceJson, String chapterJson) async =>
@@ -1522,18 +1574,9 @@ class MockBookApi implements BookApi {
     String sourceUrl,
     String key,
   ) async* {
-    yield {
-      'state': 1,
-      'msg': '[00:00.000] ⇒开始搜索关键字:$key',
-    };
-    yield {
-      'state': 1,
-      'msg': '[00:00.010] 书源 URL: $sourceUrl',
-    };
-    yield {
-      'state': 1000,
-      'msg': '[00:00.020] ︽Mock 调试完成',
-    };
+    yield {'state': 1, 'msg': '[00:00.000] ⇒开始搜索关键字:$key'};
+    yield {'state': 1, 'msg': '[00:00.010] 书源 URL: $sourceUrl'};
+    yield {'state': 1000, 'msg': '[00:00.020] ︽Mock 调试完成'};
   }
 
   @override
@@ -1617,14 +1660,16 @@ class MockBookApi implements BookApi {
   Future<String> exploreEvalUiJs({
     required String sourceJson,
     required String jsStr,
-  }) async =>
-      jsStr;
+  }) async => jsStr;
 
   // ========== 规则解析 ==========
 
   @override
-  Future<String> parseRule(String content, String rule, String ruleType) async =>
-      content;
+  Future<String> parseRule(
+    String content,
+    String rule,
+    String ruleType,
+  ) async => content;
 
   // ========== 网络操作 ==========
 
@@ -1758,28 +1803,38 @@ class MockBookApi implements BookApi {
 
   @override
   Future<List<BookChapter>> parseTxt(String filePath) async {
-    return List.generate(5, (i) => BookChapter(
-      title: '第${i + 1}章',
-      bookUrl: filePath,
-      index: i,
-      start: i * 1000,
-      end: (i + 1) * 1000,
-    ));
+    return List.generate(
+      5,
+      (i) => BookChapter(
+        title: '第${i + 1}章',
+        bookUrl: filePath,
+        index: i,
+        start: i * 1000,
+        end: (i + 1) * 1000,
+      ),
+    );
   }
 
   @override
   Future<List<BookChapter>> parseEpub(String filePath) async {
-    return List.generate(8, (i) => BookChapter(
-      title: 'Chapter ${i + 1}',
-      bookUrl: filePath,
-      index: i,
-      start: i * 2000,
-      end: (i + 1) * 2000,
-    ));
+    return List.generate(
+      8,
+      (i) => BookChapter(
+        title: 'Chapter ${i + 1}',
+        bookUrl: filePath,
+        index: i,
+        start: i * 2000,
+        end: (i + 1) * 2000,
+      ),
+    );
   }
 
   @override
-  Future<String> exportBook(String bookUrl, String format, String outDir) async {
+  Future<String> exportBook(
+    String bookUrl,
+    String format,
+    String outDir,
+  ) async {
     return '$outDir/export_mock.$format';
   }
 
@@ -1842,8 +1897,11 @@ class MockBookApi implements BookApi {
     required String text,
     required String engineUrl,
     double speed = 1.0,
-  }) async =>
-      {'audioPath': '', 'fromCache': false, 'contentType': 'audio/mpeg'};
+  }) async => {
+    'audioPath': '',
+    'fromCache': false,
+    'contentType': 'audio/mpeg',
+  };
 
   @override
   Future<bool> ttsSetCacheDir(String path) async => true;
@@ -1863,8 +1921,8 @@ class MockBookApi implements BookApi {
     final mediaUrl = isVolume
         ? ''
         : ((chapter.resourceUrl?.trim().isNotEmpty ?? false)
-            ? chapter.resourceUrl!.trim()
-            : chapter.url.trim());
+              ? chapter.resourceUrl!.trim()
+              : chapter.url.trim());
     return {
       'chapterIndex': chapterIndex,
       'title': chapter.title,
@@ -1899,7 +1957,11 @@ class MockBookApi implements BookApi {
       jsonEncode([]);
 
   @override
-  Future<void> webdavUpload(String configJson, String path, String data) async {}
+  Future<void> webdavUpload(
+    String configJson,
+    String path,
+    String data,
+  ) async {}
 
   /// WebDAV 本地文件上传（契约 §2.28.6，Task #50）
   ///
@@ -1978,7 +2040,10 @@ class MockBookApi implements BookApi {
 
   @override
   Future<String> reviewGetDetail(
-      String sourceJson, String requestJson, int page) async {
+    String sourceJson,
+    String requestJson,
+    int page,
+  ) async {
     return jsonEncode({
       'items': [
         {
@@ -2006,7 +2071,10 @@ class MockBookApi implements BookApi {
 
   @override
   Future<String> reviewGetReplies(
-      String sourceJson, String requestJson, int page) async {
+    String sourceJson,
+    String requestJson,
+    int page,
+  ) async {
     // Mock 返回两条示例回复，便于 UI 轨联调段评回复弹窗
     return jsonEncode({
       'items': [
@@ -2055,11 +2123,7 @@ class MockBookApi implements BookApi {
     required bool includeToc,
     String optionsJson = '',
   }) async {
-    return bookExport(
-      bookUrl: bookUrl,
-      format: format,
-      includeToc: includeToc,
-    );
+    return bookExport(bookUrl: bookUrl, format: format, includeToc: includeToc);
   }
 
   @override
@@ -2106,7 +2170,9 @@ class MockBookApi implements BookApi {
     final rules = (jsonDecode(rulesJson) as List<dynamic>)
         .map((e) => (e as Map).cast<String, dynamic>())
         .toList();
-    final ids = (jsonDecode(idsJson) as List<dynamic>).map((e) => e.toString()).toList();
+    final ids = (jsonDecode(idsJson) as List<dynamic>)
+        .map((e) => e.toString())
+        .toList();
     for (final rule in rules) {
       if (ids.contains(rule['id']?.toString())) {
         rule['cron'] = cron;
@@ -2201,7 +2267,9 @@ class MockBookApi implements BookApi {
   }
 
   @override
-  Future<Map<String, dynamic>?> autoTaskFindRuleById({required String id}) async {
+  Future<Map<String, dynamic>?> autoTaskFindRuleById({
+    required String id,
+  }) async {
     try {
       return _mockAutoTaskRules.firstWhere((r) => r['id'] == id);
     } catch (_) {
@@ -2262,8 +2330,11 @@ class MockBookApi implements BookApi {
   };
 
   @override
-  Future<List<String>> archiveListZipFiles({required String zipPath}) async =>
-      ['book1.txt', 'book2.epub', 'readme.md'];
+  Future<List<String>> archiveListZipFiles({required String zipPath}) async => [
+    'book1.txt',
+    'book2.epub',
+    'readme.md',
+  ];
 
   @override
   Future<List<String>> archiveListRarFiles({
@@ -2274,21 +2345,14 @@ class MockBookApi implements BookApi {
   @override
   Future<Map<String, dynamic>> archiveDetectEncoding({
     required String filePath,
-  }) async => {
-    'encoding': 'UTF-8',
-    'has_bom': false,
-    'confidence': 'high',
-  };
+  }) async => {'encoding': 'UTF-8', 'has_bom': false, 'confidence': 'high'};
 
   @override
   Future<Map<String, dynamic>> archiveConvertEncoding({
     required String filePath,
     required String fromEncoding,
     required String toEncoding,
-  }) async => {
-    'success': true,
-    'output_path': '$filePath.converted',
-  };
+  }) async => {'success': true, 'output_path': '$filePath.converted'};
 
   @override
   Future<bool> archiveIsArchive({required String filePath}) async {
@@ -2340,11 +2404,12 @@ class MockBookApi implements BookApi {
 
   @override
   Future<String> highlightListByBook({required String bookUrl}) async {
-    final items = _mockHighlights.values
-        .where((h) => h['bookUrl'] == bookUrl)
-        .toList()
-      ..sort((a, b) =>
-          ((a['time'] as num?) ?? 0).compareTo((b['time'] as num?) ?? 0));
+    final items =
+        _mockHighlights.values.where((h) => h['bookUrl'] == bookUrl).toList()
+          ..sort(
+            (a, b) =>
+                ((a['time'] as num?) ?? 0).compareTo((b['time'] as num?) ?? 0),
+          );
     return _highlightListJson(items);
   }
 
@@ -2353,12 +2418,17 @@ class MockBookApi implements BookApi {
     required String bookUrl,
     required int chapterIndex,
   }) async {
-    final items = _mockHighlights.values
-        .where((h) =>
-            h['bookUrl'] == bookUrl && h['chapterIndex'] == chapterIndex)
-        .toList()
-      ..sort((a, b) =>
-          ((a['time'] as num?) ?? 0).compareTo((b['time'] as num?) ?? 0));
+    final items =
+        _mockHighlights.values
+            .where(
+              (h) =>
+                  h['bookUrl'] == bookUrl && h['chapterIndex'] == chapterIndex,
+            )
+            .toList()
+          ..sort(
+            (a, b) =>
+                ((a['time'] as num?) ?? 0).compareTo((b['time'] as num?) ?? 0),
+          );
     return _highlightListJson(items);
   }
 
@@ -2366,11 +2436,11 @@ class MockBookApi implements BookApi {
   Future<String> highlightSearch({required String keyword}) async {
     final key = keyword.toLowerCase();
     final items = _mockHighlights.values
-        .where((h) =>
-            ((h['bookText'] as String?) ?? '')
-                .toLowerCase()
-                .contains(key) ||
-            ((h['note'] as String?) ?? '').toLowerCase().contains(key))
+        .where(
+          (h) =>
+              ((h['bookText'] as String?) ?? '').toLowerCase().contains(key) ||
+              ((h['note'] as String?) ?? '').toLowerCase().contains(key),
+        )
         .toList();
     return _highlightListJson(items);
   }
@@ -2382,8 +2452,11 @@ class MockBookApi implements BookApi {
   @override
   Future<String> highlightRuleList() async {
     final items = _mockHighlightRules.values.toList()
-      ..sort((a, b) => ((a['sortOrder'] as num?) ?? 0)
-          .compareTo((b['sortOrder'] as num?) ?? 0));
+      ..sort(
+        (a, b) => ((a['sortOrder'] as num?) ?? 0).compareTo(
+          (b['sortOrder'] as num?) ?? 0,
+        ),
+      );
     return _highlightListJson(items);
   }
 
@@ -2409,15 +2482,18 @@ class MockBookApi implements BookApi {
     required String bookName,
     required String origin,
   }) async {
-    final items = _mockHighlightRules.values.where((r) {
-      final enabled = (r['isEnabled'] as bool?) ?? false;
-      if (!enabled) return false;
-      final scope = r['scope'] as String?;
-      if (scope == null || scope.isEmpty) return true;
-      return scope.contains(bookName) || scope.contains(origin);
-    }).toList()
-      ..sort((a, b) => ((a['sortOrder'] as num?) ?? 0)
-          .compareTo((b['sortOrder'] as num?) ?? 0));
+    final items =
+        _mockHighlightRules.values.where((r) {
+          final enabled = (r['isEnabled'] as bool?) ?? false;
+          if (!enabled) return false;
+          final scope = r['scope'] as String?;
+          if (scope == null || scope.isEmpty) return true;
+          return scope.contains(bookName) || scope.contains(origin);
+        }).toList()..sort(
+          (a, b) => ((a['sortOrder'] as num?) ?? 0).compareTo(
+            (b['sortOrder'] as num?) ?? 0,
+          ),
+        );
     return _highlightListJson(items);
   }
 
@@ -2428,7 +2504,10 @@ class MockBookApi implements BookApi {
   final Map<String, List<Map<String, dynamic>>> _appLogs = {};
 
   @override
-  Future<void> appLogPush({required String level, required String message}) async {
+  Future<void> appLogPush({
+    required String level,
+    required String message,
+  }) async {
     if (message.isEmpty) return; // 对齐 Kotlin put 的空消息短路
     final bucket = _appLogs.putIfAbsent(level, () => <Map<String, dynamic>>[]);
     bucket.insert(0, {
@@ -2458,10 +2537,10 @@ class MockBookApi implements BookApi {
   @override
   Future<String> appLogExport() async {
     // 时间升序导出（对齐 #543），截断 64_000 字符
-    final all = _appLogs.values
-        .expand((entries) => entries)
-        .toList()
-      ..sort((a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int));
+    final all = _appLogs.values.expand((entries) => entries).toList()
+      ..sort(
+        (a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int),
+      );
     final buffer = StringBuffer();
     for (final entry in all) {
       buffer.writeln(
@@ -2481,8 +2560,9 @@ class MockBookApi implements BookApi {
   @override
   Future<List<Map<String, dynamic>>> ruleSubList() async {
     final list = _ruleSubs.map((e) => Map<String, dynamic>.from(e)).toList()
-      ..sort((a, b) => (a['customOrder'] as int).compareTo(
-          b['customOrder'] as int));
+      ..sort(
+        (a, b) => (a['customOrder'] as int).compareTo(b['customOrder'] as int),
+      );
     return list;
   }
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.106] - 2026-08-25
+
+### Fixed
+- [UI+Rust] 换源页 UI 对齐原版 ChangeBookSourceDialog（逐项对照，红线清理）：① 列表项加 👍/👎 用户评分（Red A200 / Blue A200 对标原版；增量 FFI updateSearchBookScore / deleteSearchBook + searchBooks.bookScore v106 迁移 + searchSource 响应 book_score，source_matcher 排序 book_score 优先于匹配分，同步书源聚合分 sync_source_score_delta 对齐 SourceConfig.setBookScore）；② 移除自创「匹配分」数字角标（原版不存在的创意功能 = 重构红线项）；③ 长按列表项五项菜单（置顶 / 置底 / 编辑书源 / 禁用书源 / 删除，对标 ChangeBookSourceAdapter；删除当前源自动切换下一候选）；④ 底部栏：当前源标签（点按滚动定位）+ 滚到顶部/底部按钮（hasClients 改点按时判定而非构建时）；⑤ 标题布局 title=书名 + subtitle=作者（取代单行「换源 - 书名」）。API_CONTRACT.md §2.4 16 方法 / 合计 267
+- Contributor: Cursor UI + Bridge
+
 ## [2.0.105] - 2026-08-25
 
 ### Fixed

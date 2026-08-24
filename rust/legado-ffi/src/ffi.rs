@@ -356,9 +356,7 @@ pub mod ffi {
     /// 回传；关闭对话框调 [`verification_cancel`]。流在 sink 关闭后结束。
     ///
     /// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
-    pub async fn verification_request_stream(
-        sink: StreamSink<String>,
-    ) -> Result<(), BridgeError> {
+    pub async fn verification_request_stream(sink: StreamSink<String>) -> Result<(), BridgeError> {
         crate::api::verification_api::run_verification_request_stream(|event| {
             sink.add(event).map_err(|e| e.to_string())
         })
@@ -371,14 +369,18 @@ pub mod ffi {
     /// `key` — 请求事件中的 resultKey；`code` — 用户输入的验证码。
     /// 返回是否命中进行中的请求。
     pub fn verification_submit(key: String, code: String) -> Result<bool, BridgeError> {
-        Ok(crate::api::verification_api::submit_verification_result(&key, &code))
+        Ok(crate::api::verification_api::submit_verification_result(
+            &key, &code,
+        ))
     }
 
     /// 取消验证码请求（对齐 Kotlin `checkResult`：UI 关闭对话框未提交）
     ///
     /// 以空结果唤醒等待方（等待侧报「验证结果为空」，对齐 Kotlin 语义）。
     pub fn verification_cancel(key: String) -> Result<bool, BridgeError> {
-        Ok(crate::api::verification_api::cancel_verification_request(&key))
+        Ok(crate::api::verification_api::cancel_verification_request(
+            &key,
+        ))
     }
 
     /// 当前进行中的验证码请求列表（JSON 数组，供拉取式消费/调试）
@@ -396,9 +398,7 @@ pub mod ffi {
     /// `override_url_regex` / `cache_first` / `delay_time` / `is_rule` /
     /// `result` / `created_at_ms`。订阅时先回放进行中请求。
     /// UI 执行后经 [`webview_submit`] 回传；超时/取消调 [`webview_cancel`]。
-    pub async fn webview_request_stream(
-        sink: StreamSink<String>,
-    ) -> Result<(), BridgeError> {
+    pub async fn webview_request_stream(sink: StreamSink<String>) -> Result<(), BridgeError> {
         crate::api::webview_api::run_webview_request_stream(|event| {
             sink.add(event).map_err(|e| e.to_string())
         })
@@ -408,7 +408,9 @@ pub mod ffi {
 
     /// 提交 WebView 执行结果，唤醒 Rust 等待方
     pub fn webview_submit(key: String, result: String) -> Result<bool, BridgeError> {
-        Ok(crate::api::webview_api::submit_webview_result(&key, &result))
+        Ok(crate::api::webview_api::submit_webview_result(
+            &key, &result,
+        ))
     }
 
     /// 取消 WebView 请求（以空结果唤醒）
@@ -468,10 +470,7 @@ pub mod ffi {
     /// 后续 java.ajax 正文请求携带 X-Api-Key 返回明文。
     ///
     /// `source_json` — BookSource JSON；`action` — 按钮动作（默认 `login`）
-    pub fn source_login_v1(
-        source_json: String,
-        action: String,
-    ) -> Result<String, BridgeError> {
+    pub fn source_login_v1(source_json: String, action: String) -> Result<String, BridgeError> {
         Ok(crate::api::source_login_v1_api::eval_login_v1(
             &source_json,
             &action,
@@ -809,7 +808,11 @@ pub mod ffi {
     /// 统计本地 TXT 文件内关键词匹配总数（不返回完整结果，供 UI 显示计数）
     ///
     /// 对齐 C ABI `ffi_txt_search_count`。
-    pub fn txt_search_count(path: String, query: String, case_sensitive: bool) -> Result<i32, BridgeError> {
+    pub fn txt_search_count(
+        path: String,
+        query: String,
+        case_sensitive: bool,
+    ) -> Result<i32, BridgeError> {
         Ok(crate::api::txt_search_api::txt_search_count(
             &path,
             &query,
@@ -935,8 +938,7 @@ pub mod ffi {
         origin: String,
         limit: Option<i32>,
     ) -> Result<String, BridgeError> {
-        let records =
-            crate::api::rss_read_record_api::list_records_by_origin(&origin, limit)?;
+        let records = crate::api::rss_read_record_api::list_records_by_origin(&origin, limit)?;
         to_json(&records)
     }
 
@@ -1023,6 +1025,18 @@ pub mod ffi {
         )?)
     }
 
+    /// 更新换源列表项用户评分（-1/0/1）
+    pub fn update_search_book_score(book_url: String, score: i32) -> Result<(), BridgeError> {
+        crate::api::source_switch::update_search_book_score(&book_url, score)?;
+        Ok(())
+    }
+
+    /// 删除换源列表项（按 bookUrl）
+    pub fn delete_search_book(book_url: String) -> Result<(), BridgeError> {
+        crate::api::source_switch::delete_search_book(&book_url)?;
+        Ok(())
+    }
+
     // ─── HTTP 工具 ────────────────────────────────────────────
 
     /// HTTP GET 请求，返回 JSON 格式的响应
@@ -1096,7 +1110,10 @@ pub mod ffi {
     ///
     /// `source_json` — BookSource JSON 字符串
     /// `book_url` — 书籍详情页 URL
-    pub async fn webbook_info(source_json: String, book_url: String) -> Result<String, BridgeError> {
+    pub async fn webbook_info(
+        source_json: String,
+        book_url: String,
+    ) -> Result<String, BridgeError> {
         super::run_webbook_blocking("webbook_info", move || {
             crate::api::web_book::webbook_info(&source_json, &book_url)
         })
@@ -1116,12 +1133,7 @@ pub mod ffi {
         book_name: String,
     ) -> Result<String, BridgeError> {
         super::run_webbook_blocking("webbook_chapters", move || {
-            crate::api::web_book::webbook_chapters(
-                &source_json,
-                &book_url,
-                &toc_url,
-                &book_name,
-            )
+            crate::api::web_book::webbook_chapters(&source_json, &book_url, &toc_url, &book_name)
         })
         .await
     }
@@ -1217,10 +1229,7 @@ pub mod ffi {
     }
 
     /// 执行发现页 viewName 动态标题 JS
-    pub fn explore_eval_ui_js(
-        source_json: String,
-        js_str: String,
-    ) -> Result<String, BridgeError> {
+    pub fn explore_eval_ui_js(source_json: String, js_str: String) -> Result<String, BridgeError> {
         Ok(crate::api::explore_api::explore_eval_ui_js(
             &source_json,
             &js_str,
@@ -1558,12 +1567,11 @@ pub mod ffi {
         start_chapter: i32,
         end_chapter: i32,
     ) -> Result<String, BridgeError> {
-        let task_id =
-            crate::api::cache_download_api::cache_download_start(
-                &book_url,
-                start_chapter,
-                end_chapter,
-            )?;
+        let task_id = crate::api::cache_download_api::cache_download_start(
+            &book_url,
+            start_chapter,
+            end_chapter,
+        )?;
         Ok(task_id.to_string())
     }
 
@@ -1594,8 +1602,7 @@ pub mod ffi {
     /// kind=url 时 UI 打开支付页，kind=success 时已清当前章正文缓存。
     /// 需 quickjs 构建（非 quickjs 返回错误）。
     pub fn chapter_pay_action(book_url: String, chapter_index: i32) -> Result<String, BridgeError> {
-        let result =
-            crate::api::pay_action_api::chapter_pay_action(&book_url, chapter_index)?;
+        let result = crate::api::pay_action_api::chapter_pay_action(&book_url, chapter_index)?;
         to_json(&result)
     }
 

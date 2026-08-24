@@ -305,6 +305,12 @@ abstract class BookApi {
     String newBookUrl,
   );
 
+  /// 更新换源列表项用户评分（-1/0/1，对标原版 SourceConfig 书维度评分）
+  Future<void> updateSearchBookScore(String bookUrl, int score);
+
+  /// 删除换源列表项（按 bookUrl，对标换源页长按「删除」）
+  Future<void> deleteSearchBook(String bookUrl);
+
   // ========== RSS 源操作 ==========
 
   /// 获取所有 RSS 源
@@ -687,7 +693,11 @@ abstract class BookApi {
   /// start/end 为 0-based 章节索引含端点），返回 taskId
   /// [UI-fix v2.0.16 | 2026-08-10] 此前 UI 仅走 downloadAddTask（只登记
   /// 内存任务不执行下载，cached_chapters 永不写入→目录页图标不更新）— Reasonix
-  Future<int> cacheDownloadStart(String bookUrl, int startChapter, int endChapter);
+  Future<int> cacheDownloadStart(
+    String bookUrl,
+    int startChapter,
+    int endChapter,
+  );
 
   /// 查询批量下载任务进度（返回任务 JSON：taskId/status/total/completed/failed）
   Future<String> cacheDownloadProgress(int taskId);
@@ -1048,7 +1058,10 @@ abstract class BookApi {
   ///
   /// 返回 JSON `{"items":[...],"nextPageUrl":String?,"hasReplyUrl":bool}`。
   Future<String> reviewGetDetail(
-      String sourceJson, String requestJson, int page);
+    String sourceJson,
+    String requestJson,
+    int page,
+  );
 
   /// 按需加载段评回复（上游 #519）
   ///
@@ -1061,7 +1074,10 @@ abstract class BookApi {
   ///   reviewId/paraIndex/paraData/chapterUrl/replyUrl 字段
   /// - `page`: 回复页码（从 1 开始）
   Future<String> reviewGetReplies(
-      String sourceJson, String requestJson, int page);
+    String sourceJson,
+    String requestJson,
+    int page,
+  );
 
   // ========== 书籍导出 ==========
 
@@ -1112,9 +1128,7 @@ abstract class BookApi {
   });
 
   /// 执行任务协议
-  Future<Map<String, dynamic>> autoTaskExecute({
-    required String protocolJson,
-  });
+  Future<Map<String, dynamic>> autoTaskExecute({required String protocolJson});
 
   /// 带任务 ID 执行任务协议
   Future<Map<String, dynamic>> autoTaskExecuteWithId({
@@ -1140,10 +1154,7 @@ abstract class BookApi {
   });
 
   /// 解析 cron 表达式计算下次执行时间
-  Future<int> autoTaskNextDueAt({
-    required String cron,
-    required int fromMs,
-  });
+  Future<int> autoTaskNextDueAt({required String cron, required int fromMs});
 
   // ========== 自动任务数据库 CRUD ==========
 
@@ -1165,10 +1176,7 @@ abstract class BookApi {
   // ========== 音频播放模式（audio FFI） ==========
 
   /// 将播放模式写入 readConfig JSON
-  Future<String> audioWithPlayMode({
-    String? readConfig,
-    required int playMode,
-  });
+  Future<String> audioWithPlayMode({String? readConfig, required int playMode});
 
   /// 解析听书书籍
   Future<Map<String, dynamic>?> audioResolvePlayBook({

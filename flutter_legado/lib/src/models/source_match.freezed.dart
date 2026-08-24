@@ -12,7 +12,8 @@ part of 'source_match.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
+  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
+);
 
 SourceMatch _$SourceMatchFromJson(Map<String, dynamic> json) {
   return _SourceMatch.fromJson(json);
@@ -66,6 +67,10 @@ mixin _$SourceMatch {
   @JsonKey(name: 'origin_order')
   int get originOrder => throw _privateConstructorUsedError;
 
+  /// 用户评分（-1 踩 / 0 无 / 1 赞，对标原版 SourceConfig 书维度评分）
+  @JsonKey(name: 'book_score')
+  int get bookScore => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $SourceMatchCopyWith<SourceMatch> get copyWith =>
@@ -75,22 +80,25 @@ mixin _$SourceMatch {
 /// @nodoc
 abstract class $SourceMatchCopyWith<$Res> {
   factory $SourceMatchCopyWith(
-          SourceMatch value, $Res Function(SourceMatch) then) =
-      _$SourceMatchCopyWithImpl<$Res, SourceMatch>;
+    SourceMatch value,
+    $Res Function(SourceMatch) then,
+  ) = _$SourceMatchCopyWithImpl<$Res, SourceMatch>;
   @useResult
-  $Res call(
-      {@JsonKey(name: 'source_url') String sourceUrl,
-      @JsonKey(name: 'source_name') String sourceName,
-      @JsonKey(name: 'book_url') String bookUrl,
-      @JsonKey(name: 'book_name') String bookName,
-      String author,
-      @JsonKey(name: 'latest_chapter') String? latestChapter,
-      @JsonKey(name: 'word_count') String? wordCount,
-      double score,
-      @JsonKey(name: 'chapter_word_count_text') String? chapterWordCountText,
-      @JsonKey(name: 'chapter_word_count') int chapterWordCount,
-      @JsonKey(name: 'respond_time') int respondTime,
-      @JsonKey(name: 'origin_order') int originOrder});
+  $Res call({
+    @JsonKey(name: 'source_url') String sourceUrl,
+    @JsonKey(name: 'source_name') String sourceName,
+    @JsonKey(name: 'book_url') String bookUrl,
+    @JsonKey(name: 'book_name') String bookName,
+    String author,
+    @JsonKey(name: 'latest_chapter') String? latestChapter,
+    @JsonKey(name: 'word_count') String? wordCount,
+    double score,
+    @JsonKey(name: 'chapter_word_count_text') String? chapterWordCountText,
+    @JsonKey(name: 'chapter_word_count') int chapterWordCount,
+    @JsonKey(name: 'respond_time') int respondTime,
+    @JsonKey(name: 'origin_order') int originOrder,
+    @JsonKey(name: 'book_score') int bookScore,
+  });
 }
 
 /// @nodoc
@@ -118,57 +126,65 @@ class _$SourceMatchCopyWithImpl<$Res, $Val extends SourceMatch>
     Object? chapterWordCount = null,
     Object? respondTime = null,
     Object? originOrder = null,
+    Object? bookScore = null,
   }) {
-    return _then(_value.copyWith(
-      sourceUrl: null == sourceUrl
-          ? _value.sourceUrl
-          : sourceUrl // ignore: cast_nullable_to_non_nullable
-              as String,
-      sourceName: null == sourceName
-          ? _value.sourceName
-          : sourceName // ignore: cast_nullable_to_non_nullable
-              as String,
-      bookUrl: null == bookUrl
-          ? _value.bookUrl
-          : bookUrl // ignore: cast_nullable_to_non_nullable
-              as String,
-      bookName: null == bookName
-          ? _value.bookName
-          : bookName // ignore: cast_nullable_to_non_nullable
-              as String,
-      author: null == author
-          ? _value.author
-          : author // ignore: cast_nullable_to_non_nullable
-              as String,
-      latestChapter: freezed == latestChapter
-          ? _value.latestChapter
-          : latestChapter // ignore: cast_nullable_to_non_nullable
-              as String?,
-      wordCount: freezed == wordCount
-          ? _value.wordCount
-          : wordCount // ignore: cast_nullable_to_non_nullable
-              as String?,
-      score: null == score
-          ? _value.score
-          : score // ignore: cast_nullable_to_non_nullable
-              as double,
-      chapterWordCountText: freezed == chapterWordCountText
-          ? _value.chapterWordCountText
-          : chapterWordCountText // ignore: cast_nullable_to_non_nullable
-              as String?,
-      chapterWordCount: null == chapterWordCount
-          ? _value.chapterWordCount
-          : chapterWordCount // ignore: cast_nullable_to_non_nullable
-              as int,
-      respondTime: null == respondTime
-          ? _value.respondTime
-          : respondTime // ignore: cast_nullable_to_non_nullable
-              as int,
-      originOrder: null == originOrder
-          ? _value.originOrder
-          : originOrder // ignore: cast_nullable_to_non_nullable
-              as int,
-    ) as $Val);
+    return _then(
+      _value.copyWith(
+            sourceUrl: null == sourceUrl
+                ? _value.sourceUrl
+                : sourceUrl // ignore: cast_nullable_to_non_nullable
+                      as String,
+            sourceName: null == sourceName
+                ? _value.sourceName
+                : sourceName // ignore: cast_nullable_to_non_nullable
+                      as String,
+            bookUrl: null == bookUrl
+                ? _value.bookUrl
+                : bookUrl // ignore: cast_nullable_to_non_nullable
+                      as String,
+            bookName: null == bookName
+                ? _value.bookName
+                : bookName // ignore: cast_nullable_to_non_nullable
+                      as String,
+            author: null == author
+                ? _value.author
+                : author // ignore: cast_nullable_to_non_nullable
+                      as String,
+            latestChapter: freezed == latestChapter
+                ? _value.latestChapter
+                : latestChapter // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            wordCount: freezed == wordCount
+                ? _value.wordCount
+                : wordCount // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            score: null == score
+                ? _value.score
+                : score // ignore: cast_nullable_to_non_nullable
+                      as double,
+            chapterWordCountText: freezed == chapterWordCountText
+                ? _value.chapterWordCountText
+                : chapterWordCountText // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            chapterWordCount: null == chapterWordCount
+                ? _value.chapterWordCount
+                : chapterWordCount // ignore: cast_nullable_to_non_nullable
+                      as int,
+            respondTime: null == respondTime
+                ? _value.respondTime
+                : respondTime // ignore: cast_nullable_to_non_nullable
+                      as int,
+            originOrder: null == originOrder
+                ? _value.originOrder
+                : originOrder // ignore: cast_nullable_to_non_nullable
+                      as int,
+            bookScore: null == bookScore
+                ? _value.bookScore
+                : bookScore // ignore: cast_nullable_to_non_nullable
+                      as int,
+          )
+          as $Val,
+    );
   }
 }
 
@@ -176,23 +192,26 @@ class _$SourceMatchCopyWithImpl<$Res, $Val extends SourceMatch>
 abstract class _$$SourceMatchImplCopyWith<$Res>
     implements $SourceMatchCopyWith<$Res> {
   factory _$$SourceMatchImplCopyWith(
-          _$SourceMatchImpl value, $Res Function(_$SourceMatchImpl) then) =
-      __$$SourceMatchImplCopyWithImpl<$Res>;
+    _$SourceMatchImpl value,
+    $Res Function(_$SourceMatchImpl) then,
+  ) = __$$SourceMatchImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call(
-      {@JsonKey(name: 'source_url') String sourceUrl,
-      @JsonKey(name: 'source_name') String sourceName,
-      @JsonKey(name: 'book_url') String bookUrl,
-      @JsonKey(name: 'book_name') String bookName,
-      String author,
-      @JsonKey(name: 'latest_chapter') String? latestChapter,
-      @JsonKey(name: 'word_count') String? wordCount,
-      double score,
-      @JsonKey(name: 'chapter_word_count_text') String? chapterWordCountText,
-      @JsonKey(name: 'chapter_word_count') int chapterWordCount,
-      @JsonKey(name: 'respond_time') int respondTime,
-      @JsonKey(name: 'origin_order') int originOrder});
+  $Res call({
+    @JsonKey(name: 'source_url') String sourceUrl,
+    @JsonKey(name: 'source_name') String sourceName,
+    @JsonKey(name: 'book_url') String bookUrl,
+    @JsonKey(name: 'book_name') String bookName,
+    String author,
+    @JsonKey(name: 'latest_chapter') String? latestChapter,
+    @JsonKey(name: 'word_count') String? wordCount,
+    double score,
+    @JsonKey(name: 'chapter_word_count_text') String? chapterWordCountText,
+    @JsonKey(name: 'chapter_word_count') int chapterWordCount,
+    @JsonKey(name: 'respond_time') int respondTime,
+    @JsonKey(name: 'origin_order') int originOrder,
+    @JsonKey(name: 'book_score') int bookScore,
+  });
 }
 
 /// @nodoc
@@ -200,8 +219,9 @@ class __$$SourceMatchImplCopyWithImpl<$Res>
     extends _$SourceMatchCopyWithImpl<$Res, _$SourceMatchImpl>
     implements _$$SourceMatchImplCopyWith<$Res> {
   __$$SourceMatchImplCopyWithImpl(
-      _$SourceMatchImpl _value, $Res Function(_$SourceMatchImpl) _then)
-      : super(_value, _then);
+    _$SourceMatchImpl _value,
+    $Res Function(_$SourceMatchImpl) _then,
+  ) : super(_value, _then);
 
   @pragma('vm:prefer-inline')
   @override
@@ -218,76 +238,85 @@ class __$$SourceMatchImplCopyWithImpl<$Res>
     Object? chapterWordCount = null,
     Object? respondTime = null,
     Object? originOrder = null,
+    Object? bookScore = null,
   }) {
-    return _then(_$SourceMatchImpl(
-      sourceUrl: null == sourceUrl
-          ? _value.sourceUrl
-          : sourceUrl // ignore: cast_nullable_to_non_nullable
-              as String,
-      sourceName: null == sourceName
-          ? _value.sourceName
-          : sourceName // ignore: cast_nullable_to_non_nullable
-              as String,
-      bookUrl: null == bookUrl
-          ? _value.bookUrl
-          : bookUrl // ignore: cast_nullable_to_non_nullable
-              as String,
-      bookName: null == bookName
-          ? _value.bookName
-          : bookName // ignore: cast_nullable_to_non_nullable
-              as String,
-      author: null == author
-          ? _value.author
-          : author // ignore: cast_nullable_to_non_nullable
-              as String,
-      latestChapter: freezed == latestChapter
-          ? _value.latestChapter
-          : latestChapter // ignore: cast_nullable_to_non_nullable
-              as String?,
-      wordCount: freezed == wordCount
-          ? _value.wordCount
-          : wordCount // ignore: cast_nullable_to_non_nullable
-              as String?,
-      score: null == score
-          ? _value.score
-          : score // ignore: cast_nullable_to_non_nullable
-              as double,
-      chapterWordCountText: freezed == chapterWordCountText
-          ? _value.chapterWordCountText
-          : chapterWordCountText // ignore: cast_nullable_to_non_nullable
-              as String?,
-      chapterWordCount: null == chapterWordCount
-          ? _value.chapterWordCount
-          : chapterWordCount // ignore: cast_nullable_to_non_nullable
-              as int,
-      respondTime: null == respondTime
-          ? _value.respondTime
-          : respondTime // ignore: cast_nullable_to_non_nullable
-              as int,
-      originOrder: null == originOrder
-          ? _value.originOrder
-          : originOrder // ignore: cast_nullable_to_non_nullable
-              as int,
-    ));
+    return _then(
+      _$SourceMatchImpl(
+        sourceUrl: null == sourceUrl
+            ? _value.sourceUrl
+            : sourceUrl // ignore: cast_nullable_to_non_nullable
+                  as String,
+        sourceName: null == sourceName
+            ? _value.sourceName
+            : sourceName // ignore: cast_nullable_to_non_nullable
+                  as String,
+        bookUrl: null == bookUrl
+            ? _value.bookUrl
+            : bookUrl // ignore: cast_nullable_to_non_nullable
+                  as String,
+        bookName: null == bookName
+            ? _value.bookName
+            : bookName // ignore: cast_nullable_to_non_nullable
+                  as String,
+        author: null == author
+            ? _value.author
+            : author // ignore: cast_nullable_to_non_nullable
+                  as String,
+        latestChapter: freezed == latestChapter
+            ? _value.latestChapter
+            : latestChapter // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        wordCount: freezed == wordCount
+            ? _value.wordCount
+            : wordCount // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        score: null == score
+            ? _value.score
+            : score // ignore: cast_nullable_to_non_nullable
+                  as double,
+        chapterWordCountText: freezed == chapterWordCountText
+            ? _value.chapterWordCountText
+            : chapterWordCountText // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        chapterWordCount: null == chapterWordCount
+            ? _value.chapterWordCount
+            : chapterWordCount // ignore: cast_nullable_to_non_nullable
+                  as int,
+        respondTime: null == respondTime
+            ? _value.respondTime
+            : respondTime // ignore: cast_nullable_to_non_nullable
+                  as int,
+        originOrder: null == originOrder
+            ? _value.originOrder
+            : originOrder // ignore: cast_nullable_to_non_nullable
+                  as int,
+        bookScore: null == bookScore
+            ? _value.bookScore
+            : bookScore // ignore: cast_nullable_to_non_nullable
+                  as int,
+      ),
+    );
   }
 }
 
 /// @nodoc
 @JsonSerializable()
 class _$SourceMatchImpl implements _SourceMatch {
-  const _$SourceMatchImpl(
-      {@JsonKey(name: 'source_url') this.sourceUrl = '',
-      @JsonKey(name: 'source_name') this.sourceName = '',
-      @JsonKey(name: 'book_url') this.bookUrl = '',
-      @JsonKey(name: 'book_name') this.bookName = '',
-      this.author = '',
-      @JsonKey(name: 'latest_chapter') this.latestChapter,
-      @JsonKey(name: 'word_count') this.wordCount,
-      this.score = 0.0,
-      @JsonKey(name: 'chapter_word_count_text') this.chapterWordCountText,
-      @JsonKey(name: 'chapter_word_count') this.chapterWordCount = -1,
-      @JsonKey(name: 'respond_time') this.respondTime = -1,
-      @JsonKey(name: 'origin_order') this.originOrder = 0});
+  const _$SourceMatchImpl({
+    @JsonKey(name: 'source_url') this.sourceUrl = '',
+    @JsonKey(name: 'source_name') this.sourceName = '',
+    @JsonKey(name: 'book_url') this.bookUrl = '',
+    @JsonKey(name: 'book_name') this.bookName = '',
+    this.author = '',
+    @JsonKey(name: 'latest_chapter') this.latestChapter,
+    @JsonKey(name: 'word_count') this.wordCount,
+    this.score = 0.0,
+    @JsonKey(name: 'chapter_word_count_text') this.chapterWordCountText,
+    @JsonKey(name: 'chapter_word_count') this.chapterWordCount = -1,
+    @JsonKey(name: 'respond_time') this.respondTime = -1,
+    @JsonKey(name: 'origin_order') this.originOrder = 0,
+    @JsonKey(name: 'book_score') this.bookScore = 0,
+  });
 
   factory _$SourceMatchImpl.fromJson(Map<String, dynamic> json) =>
       _$$SourceMatchImplFromJson(json);
@@ -352,9 +381,14 @@ class _$SourceMatchImpl implements _SourceMatch {
   @JsonKey(name: 'origin_order')
   final int originOrder;
 
+  /// 用户评分（-1 踩 / 0 无 / 1 赞，对标原版 SourceConfig 书维度评分）
+  @override
+  @JsonKey(name: 'book_score')
+  final int bookScore;
+
   @override
   String toString() {
-    return 'SourceMatch(sourceUrl: $sourceUrl, sourceName: $sourceName, bookUrl: $bookUrl, bookName: $bookName, author: $author, latestChapter: $latestChapter, wordCount: $wordCount, score: $score, chapterWordCountText: $chapterWordCountText, chapterWordCount: $chapterWordCount, respondTime: $respondTime, originOrder: $originOrder)';
+    return 'SourceMatch(sourceUrl: $sourceUrl, sourceName: $sourceName, bookUrl: $bookUrl, bookName: $bookName, author: $author, latestChapter: $latestChapter, wordCount: $wordCount, score: $score, chapterWordCountText: $chapterWordCountText, chapterWordCount: $chapterWordCount, respondTime: $respondTime, originOrder: $originOrder, bookScore: $bookScore)';
   }
 
   @override
@@ -382,25 +416,29 @@ class _$SourceMatchImpl implements _SourceMatch {
             (identical(other.respondTime, respondTime) ||
                 other.respondTime == respondTime) &&
             (identical(other.originOrder, originOrder) ||
-                other.originOrder == originOrder));
+                other.originOrder == originOrder) &&
+            (identical(other.bookScore, bookScore) ||
+                other.bookScore == bookScore));
   }
 
   @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
-      runtimeType,
-      sourceUrl,
-      sourceName,
-      bookUrl,
-      bookName,
-      author,
-      latestChapter,
-      wordCount,
-      score,
-      chapterWordCountText,
-      chapterWordCount,
-      respondTime,
-      originOrder);
+    runtimeType,
+    sourceUrl,
+    sourceName,
+    bookUrl,
+    bookName,
+    author,
+    latestChapter,
+    wordCount,
+    score,
+    chapterWordCountText,
+    chapterWordCount,
+    respondTime,
+    originOrder,
+    bookScore,
+  );
 
   @JsonKey(ignore: true)
   @override
@@ -410,90 +448,81 @@ class _$SourceMatchImpl implements _SourceMatch {
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$SourceMatchImplToJson(
-      this,
-    );
+    return _$$SourceMatchImplToJson(this);
   }
 }
 
 abstract class _SourceMatch implements SourceMatch {
-  const factory _SourceMatch(
-          {@JsonKey(name: 'source_url') final String sourceUrl,
-          @JsonKey(name: 'source_name') final String sourceName,
-          @JsonKey(name: 'book_url') final String bookUrl,
-          @JsonKey(name: 'book_name') final String bookName,
-          final String author,
-          @JsonKey(name: 'latest_chapter') final String? latestChapter,
-          @JsonKey(name: 'word_count') final String? wordCount,
-          final double score,
-          @JsonKey(name: 'chapter_word_count_text')
-          final String? chapterWordCountText,
-          @JsonKey(name: 'chapter_word_count') final int chapterWordCount,
-          @JsonKey(name: 'respond_time') final int respondTime,
-          @JsonKey(name: 'origin_order') final int originOrder}) =
-      _$SourceMatchImpl;
+  const factory _SourceMatch({
+    @JsonKey(name: 'source_url') final String sourceUrl,
+    @JsonKey(name: 'source_name') final String sourceName,
+    @JsonKey(name: 'book_url') final String bookUrl,
+    @JsonKey(name: 'book_name') final String bookName,
+    final String author,
+    @JsonKey(name: 'latest_chapter') final String? latestChapter,
+    @JsonKey(name: 'word_count') final String? wordCount,
+    final double score,
+    @JsonKey(name: 'chapter_word_count_text')
+    final String? chapterWordCountText,
+    @JsonKey(name: 'chapter_word_count') final int chapterWordCount,
+    @JsonKey(name: 'respond_time') final int respondTime,
+    @JsonKey(name: 'origin_order') final int originOrder,
+    @JsonKey(name: 'book_score') final int bookScore,
+  }) = _$SourceMatchImpl;
 
   factory _SourceMatch.fromJson(Map<String, dynamic> json) =
       _$SourceMatchImpl.fromJson;
 
   @override
-
   /// 书源 URL
   @JsonKey(name: 'source_url')
   String get sourceUrl;
   @override
-
   /// 书源名称
   @JsonKey(name: 'source_name')
   String get sourceName;
   @override
-
   /// 书籍详情页 URL
   @JsonKey(name: 'book_url')
   String get bookUrl;
   @override
-
   /// 书籍名称
   @JsonKey(name: 'book_name')
   String get bookName;
   @override
-
   /// 作者
   String get author;
   @override
-
   /// 最新章节
   @JsonKey(name: 'latest_chapter')
   String? get latestChapter;
   @override
-
   /// 字数信息
   @JsonKey(name: 'word_count')
   String? get wordCount;
   @override
-
   /// 匹配度评分（0.0 ~ 100.0）
   double get score;
   @override
-
   /// 试读章节字数展示
   @JsonKey(name: 'chapter_word_count_text')
   String? get chapterWordCountText;
   @override
-
   /// 试读章节字数（-1=未知）
   @JsonKey(name: 'chapter_word_count')
   int get chapterWordCount;
   @override
-
   /// 取字耗时毫秒
   @JsonKey(name: 'respond_time')
   int get respondTime;
   @override
-
   /// 书源 customOrder
   @JsonKey(name: 'origin_order')
   int get originOrder;
+  @override
+  /// 用户评分（-1 踩 / 0 无 / 1 赞，对标原版 SourceConfig 书维度评分）
+  @JsonKey(name: 'book_score')
+  int get bookScore;
   @override
   @JsonKey(ignore: true)
   _$$SourceMatchImplCopyWith<_$SourceMatchImpl> get copyWith =>

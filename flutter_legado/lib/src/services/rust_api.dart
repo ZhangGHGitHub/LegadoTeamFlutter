@@ -66,8 +66,7 @@ class RustApi implements BookApi {
   Future<void> _initTtsCacheDir() async {
     try {
       final base = await getApplicationSupportDirectory();
-      final dir =
-          Directory('${base.path}${Platform.pathSeparator}tts_cache');
+      final dir = Directory('${base.path}${Platform.pathSeparator}tts_cache');
       if (!dir.existsSync()) {
         dir.createSync(recursive: true);
       }
@@ -103,18 +102,27 @@ class RustApi implements BookApi {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
       searchPaths.add('$exeDir$sep$libName');
       // 从 exe 目录向上 5 级到 flutter_legado/，再找 rust/target
-      final projectFromExe = File(Platform.resolvedExecutable)
-          .parent.parent.parent.parent.parent.path;
+      final projectFromExe = File(
+        Platform.resolvedExecutable,
+      ).parent.parent.parent.parent.parent.path;
       // debug 优先（匹配 flutter run 默认 debug 模式）
-      searchPaths.add('$projectFromExe$sep..${sep}rust${sep}target${sep}debug$sep$libName');
-      searchPaths.add('$projectFromExe$sep..${sep}rust${sep}target${sep}release$sep$libName');
+      searchPaths.add(
+        '$projectFromExe$sep..${sep}rust${sep}target${sep}debug$sep$libName',
+      );
+      searchPaths.add(
+        '$projectFromExe$sep..${sep}rust${sep}target${sep}release$sep$libName',
+      );
     } catch (_) {}
 
     // 策略 2：当前工作目录（flutter run 时通常为 flutter_legado/）
     try {
       final cwd = Directory.current.path;
-      searchPaths.add('$cwd$sep..${sep}rust${sep}target${sep}debug$sep$libName');
-      searchPaths.add('$cwd$sep..${sep}rust${sep}target${sep}release$sep$libName');
+      searchPaths.add(
+        '$cwd$sep..${sep}rust${sep}target${sep}debug$sep$libName',
+      );
+      searchPaths.add(
+        '$cwd$sep..${sep}rust${sep}target${sep}release$sep$libName',
+      );
       // 也检查 cwd 本身是否就是项目根目录
       searchPaths.add('$cwd${sep}rust${sep}target${sep}debug$sep$libName');
       searchPaths.add('$cwd${sep}rust${sep}target${sep}release$sep$libName');
@@ -179,9 +187,7 @@ class RustApi implements BookApi {
   Future<List<Book>> getBooks() async {
     final json = await bridge.bookshelfList();
     final list = _decodeList(json, 'bookApi');
-    return list
-        .map((e) => Book.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return list.map((e) => Book.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   /// 添加书籍到书架
@@ -274,8 +280,9 @@ class RustApi implements BookApi {
   /// 添加书源
   @override
   Future<BookSource> addBookSource(BookSource source) async {
-    final json =
-        await bridge.sourceAdd(sourceJson: jsonEncode(source.toJson()));
+    final json = await bridge.sourceAdd(
+      sourceJson: jsonEncode(source.toJson()),
+    );
     return BookSource.fromJson(_decodeMap(json, 'bookApi'));
   }
 
@@ -307,7 +314,6 @@ class RustApi implements BookApi {
   Future<String> analyzeUrlToCurl(String text) =>
       bridge.analyzeUrlToCurl(text: text);
 
-
   /// 删除书源
   @override
   Future<void> deleteBookSource(String sourceUrl) =>
@@ -335,10 +341,7 @@ class RustApi implements BookApi {
   /// 书源排序（将排序偏好存入配置）
   @override
   Future<void> sortBookSources(int sortKey, bool ascending) async {
-    await bridge.configSet(
-      key: 'source_sort_key',
-      value: sortKey.toString(),
-    );
+    await bridge.configSet(key: 'source_sort_key', value: sortKey.toString());
     await bridge.configSet(
       key: 'source_sort_ascending',
       value: ascending.toString(),
@@ -410,7 +413,10 @@ class RustApi implements BookApi {
   Future<String> loginUiV2(String sourceJson, String stateJson) async =>
       // 平台桥接拦截：脚本可能以 webView 类桥接载荷作为整体返回（Task #114）— QoderCN
       PlatformBridgeService.instance.interceptResult(
-        await bridge.sourceLoginUiV2(sourceJson: sourceJson, stateJson: stateJson),
+        await bridge.sourceLoginUiV2(
+          sourceJson: sourceJson,
+          stateJson: stateJson,
+        ),
       );
 
   /// 执行登录 V2 action 命令（返回命令 JSON：state/error/login/close）
@@ -452,9 +458,9 @@ class RustApi implements BookApi {
   /// 订阅时 Rust 侧先回放当前进行中的请求。
   @override
   Stream<Map<String, dynamic>> verificationRequestStream() {
-    return bridge
-        .verificationRequestStream()
-        .map((item) => _decodeMap(item, 'verificationRequestStream'));
+    return bridge.verificationRequestStream().map(
+      (item) => _decodeMap(item, 'verificationRequestStream'),
+    );
   }
 
   /// 提交验证码结果，唤醒 JS 等待方（对齐 Kotlin `setResult`）
@@ -471,9 +477,9 @@ class RustApi implements BookApi {
 
   @override
   Stream<Map<String, dynamic>> webviewRequestStream() {
-    return bridge
-        .webviewRequestStream()
-        .map((item) => _decodeMap(item, 'webviewRequestStream'));
+    return bridge.webviewRequestStream().map(
+      (item) => _decodeMap(item, 'webviewRequestStream'),
+    );
   }
 
   @override
@@ -500,15 +506,13 @@ class RustApi implements BookApi {
       sourceUrlsJson: urlsJson,
     );
     final list = _decodeList(json, 'bookApi');
-    return list
-        .map((e) {
-          final map = e as Map<String, dynamic>;
-          return SearchResult.fromSearchBook(
-            SearchBook.fromJson(map),
-            hasReadRecord: map['hasReadRecord'] == true,
-          );
-        })
-        .toList();
+    return list.map((e) {
+      final map = e as Map<String, dynamic>;
+      return SearchResult.fromSearchBook(
+        SearchBook.fromJson(map),
+        hasReadRecord: map['hasReadRecord'] == true,
+      );
+    }).toList();
   }
 
   /// 精确搜索（对齐原版 `WebBook.preciseSearchAwait`）
@@ -630,12 +634,21 @@ class RustApi implements BookApi {
     String bookUrl,
     String newSourceUrl,
     String newBookUrl,
-  ) =>
-      bridge.sourceSwitchApply(
-        bookUrl: bookUrl,
-        newSourceUrl: newSourceUrl,
-        newBookUrl: newBookUrl,
-      );
+  ) => bridge.sourceSwitchApply(
+    bookUrl: bookUrl,
+    newSourceUrl: newSourceUrl,
+    newBookUrl: newBookUrl,
+  );
+
+  /// 更新换源列表项用户评分（-1/0/1）
+  @override
+  Future<void> updateSearchBookScore(String bookUrl, int score) =>
+      bridge.updateSearchBookScore(bookUrl: bookUrl, score: score);
+
+  /// 删除换源列表项（按 bookUrl）
+  @override
+  Future<void> deleteSearchBook(String bookUrl) =>
+      bridge.deleteSearchBook(bookUrl: bookUrl);
 
   // ========== RSS 源操作 ==========
 
@@ -652,8 +665,9 @@ class RustApi implements BookApi {
   /// 添加 RSS 源
   @override
   Future<RssSource> addRssSource(RssSource source) async {
-    final json =
-        await bridge.rssAddSource(sourceJson: jsonEncode(source.toJson()));
+    final json = await bridge.rssAddSource(
+      sourceJson: jsonEncode(source.toJson()),
+    );
     return RssSource.fromJson(_decodeMap(json, 'bookApi'));
   }
 
@@ -783,8 +797,10 @@ class RustApi implements BookApi {
     String origin, [
     int? limit,
   ]) async {
-    final json =
-        await bridge.rssListReadRecordsByOrigin(origin: origin, limit: limit);
+    final json = await bridge.rssListReadRecordsByOrigin(
+      origin: origin,
+      limit: limit,
+    );
     final list = _decodeList(json, 'bookApi');
     return list.map((e) => e as Map<String, dynamic>).toList();
   }
@@ -803,8 +819,7 @@ class RustApi implements BookApi {
     }
     final bookMap = result['book'] as Map<String, dynamic>?;
     if (bookMap == null) {
-      throw RustApiException('导入成功但缺少书籍数据',
-          operation: 'importLocalBook');
+      throw RustApiException('导入成功但缺少书籍数据', operation: 'importLocalBook');
     }
     return Book.fromJson(bookMap);
   }
@@ -823,7 +838,9 @@ class RustApi implements BookApi {
     final results = <Map<String, dynamic>>[];
     await for (final entity in dir.list(recursive: true)) {
       if (entity is File) {
-        final ext = entity.path.substring(entity.path.lastIndexOf('.')).toLowerCase();
+        final ext = entity.path
+            .substring(entity.path.lastIndexOf('.'))
+            .toLowerCase();
         if (extensions.contains(ext)) {
           final stat = await entity.stat();
           results.add({
@@ -909,12 +926,11 @@ class RustApi implements BookApi {
     String path,
     String query, {
     bool caseSensitive = false,
-  }) =>
-      bridge.txtSearchCount(
-        path: path,
-        query: query,
-        caseSensitive: caseSensitive,
-      );
+  }) => bridge.txtSearchCount(
+    path: path,
+    query: query,
+    caseSensitive: caseSensitive,
+  );
 
   /// 解码 txt_search 系列返回的 JSON 数组（每项为 TxtSearchResult 对象）
   List<Map<String, dynamic>> _decodeSearchResults(String json) {
@@ -995,8 +1011,7 @@ class RustApi implements BookApi {
 
   /// 删除书签
   @override
-  Future<void> deleteBookmark(int id) =>
-      bridge.bookmarkDelete(bookmarkId: id);
+  Future<void> deleteBookmark(int id) => bridge.bookmarkDelete(bookmarkId: id);
 
   /// 搜索书签
   @override
@@ -1045,15 +1060,14 @@ class RustApi implements BookApi {
 
   /// 更新替换规则
   @override
-  Future<void> updateReplaceRule(ReplaceRule rule) =>
-      bridge.replaceRuleUpdate(
-        ruleId: rule.id,
-        name: rule.name,
-        pattern: rule.pattern,
-        replacement: rule.replacement,
-        isRegex: rule.isRegex,
-        isEnabled: rule.isEnabled,
-      );
+  Future<void> updateReplaceRule(ReplaceRule rule) => bridge.replaceRuleUpdate(
+    ruleId: rule.id,
+    name: rule.name,
+    pattern: rule.pattern,
+    replacement: rule.replacement,
+    isRegex: rule.isRegex,
+    isEnabled: rule.isEnabled,
+  );
 
   /// 删除替换规则
   @override
@@ -1104,10 +1118,16 @@ class RustApi implements BookApi {
   /// 本地书籍直接解析返回；在线书籍自动从网络抓取并返回净化后的正文。
   /// 始终返回纯正文字符串，不返回 JSON 元数据。
   @override
-  Future<String> getChapterContentFull(String bookUrl, int chapterIndex) async =>
+  Future<String> getChapterContentFull(
+    String bookUrl,
+    int chapterIndex,
+  ) async =>
       // 平台桥接拦截：正文规则可能以 webView 类桥接载荷作为整体返回（Task #114）— QoderCN
       PlatformBridgeService.instance.interceptResult(
-        await bridge.readerGetContentFull(bookUrl: bookUrl, chapterIndex: chapterIndex),
+        await bridge.readerGetContentFull(
+          bookUrl: bookUrl,
+          chapterIndex: chapterIndex,
+        ),
       );
 
   /// 从网络获取章节正文（带 DB 缓存）
@@ -1134,15 +1154,14 @@ class RustApi implements BookApi {
     required int chapterIndex,
     required String title,
     required String content,
-  }) async =>
-      bridge.saveChapterContent(
-        bookUrl: bookUrl,
-        chapterIndex: chapterIndex,
-        title: title,
-        content: content,
-        // 空串由 Rust 侧从 DB 章节表回填 chapter_url
-        chapterUrl: '',
-      );
+  }) async => bridge.saveChapterContent(
+    bookUrl: bookUrl,
+    chapterIndex: chapterIndex,
+    title: title,
+    content: content,
+    // 空串由 Rust 侧从 DB 章节表回填 chapter_url
+    chapterUrl: '',
+  );
 
   /// 更新阅读进度
   @override
@@ -1150,12 +1169,11 @@ class RustApi implements BookApi {
     required String bookUrl,
     required int chapterIndex,
     required int chapterPos,
-  }) =>
-      bridge.readerUpdateProgress(
-        bookUrl: bookUrl,
-        chapterIndex: chapterIndex,
-        chapterPos: chapterPos,
-      );
+  }) => bridge.readerUpdateProgress(
+    bookUrl: bookUrl,
+    chapterIndex: chapterIndex,
+    chapterPos: chapterPos,
+  );
 
   /// 从网络刷新书籍目录
   ///
@@ -1202,19 +1220,15 @@ class RustApi implements BookApi {
     String bookUrl,
     int chapterIndex,
     bool enable,
-  ) =>
-      bridge.readerToggleSameTitleRemoved(
-        bookUrl: bookUrl,
-        chapterIndex: chapterIndex,
-        enable: enable,
-      );
+  ) => bridge.readerToggleSameTitleRemoved(
+    bookUrl: bookUrl,
+    chapterIndex: chapterIndex,
+    enable: enable,
+  );
 
   @override
-  Future<bool> getSameTitleRemoved(String bookUrl, int chapterIndex) =>
-      bridge.readerGetSameTitleRemoved(
-        bookUrl: bookUrl,
-        chapterIndex: chapterIndex,
-      );
+  Future<bool> getSameTitleRemoved(String bookUrl, int chapterIndex) => bridge
+      .readerGetSameTitleRemoved(bookUrl: bookUrl, chapterIndex: chapterIndex);
 
   @override
   Future<bool> canRemoveSameTitle(String chapterTitle, String rawContent) =>
@@ -1307,8 +1321,10 @@ class RustApi implements BookApi {
   Future<void> restore(String backupPath) async {
     final file = File(backupPath);
     if (!await file.exists()) {
-      throw RustApiException('Backup file not found: $backupPath',
-          operation: 'restore');
+      throw RustApiException(
+        'Backup file not found: $backupPath',
+        operation: 'restore',
+      );
     }
     await bridge.backupRestore(path: backupPath);
   }
@@ -1455,8 +1471,14 @@ class RustApi implements BookApi {
 
   /// 按前缀搜索历史关键词（用于搜索联想）
   @override
-  Future<List<String>> searchHistoryByPrefix(String prefix, {int limit = 20}) async {
-    final json = await bridge.searchHistoryByPrefix(prefix: prefix, limit: limit);
+  Future<List<String>> searchHistoryByPrefix(
+    String prefix, {
+    int limit = 20,
+  }) async {
+    final json = await bridge.searchHistoryByPrefix(
+      prefix: prefix,
+      limit: limit,
+    );
     final list = _decodeList(json, 'bookApi');
     return list.map((e) => e.toString()).toList();
   }
@@ -1555,9 +1577,15 @@ class RustApi implements BookApi {
   /// [UI-fix v2.0.16 | 2026-08-10] 接通 cacheDownloadStart FFI（真实下载写缓存）— Reasonix
   @override
   Future<int> cacheDownloadStart(
-      String bookUrl, int startChapter, int endChapter) async {
-    final json =
-        await bridge.cacheDownloadStart(bookUrl: bookUrl, startChapter: startChapter, endChapter: endChapter);
+    String bookUrl,
+    int startChapter,
+    int endChapter,
+  ) async {
+    final json = await bridge.cacheDownloadStart(
+      bookUrl: bookUrl,
+      startChapter: startChapter,
+      endChapter: endChapter,
+    );
     final taskId = int.tryParse(json.trim());
     if (taskId == null) {
       throw Exception('缓存任务启动失败: $json');
@@ -1632,10 +1660,13 @@ class RustApi implements BookApi {
     String sourceJson,
     String query,
     int page,
-  ) async =>
-      PlatformBridgeService.instance.interceptResult(
-        await bridge.webbookSearch(sourceJson: sourceJson, query: query, page: page),
-      );
+  ) async => PlatformBridgeService.instance.interceptResult(
+    await bridge.webbookSearch(
+      sourceJson: sourceJson,
+      query: query,
+      page: page,
+    ),
+  );
 
   /// 获取书籍详情
   @override
@@ -1651,21 +1682,23 @@ class RustApi implements BookApi {
     String bookUrl, {
     String tocUrl = '',
     String bookName = '',
-  }) async =>
-      PlatformBridgeService.instance.interceptResult(
-        await bridge.webbookChapters(
-          sourceJson: sourceJson,
-          bookUrl: bookUrl,
-          tocUrl: tocUrl,
-          bookName: bookName,
-        ),
-      );
+  }) async => PlatformBridgeService.instance.interceptResult(
+    await bridge.webbookChapters(
+      sourceJson: sourceJson,
+      bookUrl: bookUrl,
+      tocUrl: tocUrl,
+      bookName: bookName,
+    ),
+  );
 
   /// 获取章节正文
   @override
   Future<String> webbookContent(String sourceJson, String chapterJson) async =>
       PlatformBridgeService.instance.interceptResult(
-        await bridge.webbookContent(sourceJson: sourceJson, chapterJson: chapterJson),
+        await bridge.webbookContent(
+          sourceJson: sourceJson,
+          chapterJson: chapterJson,
+        ),
       );
 
   /// 流式书源调试（对齐 Debug.Callback）
@@ -1673,10 +1706,9 @@ class RustApi implements BookApi {
   Stream<Map<String, dynamic>> debugBookSourceStream(
     String sourceUrl,
     String key,
-  ) =>
-      bridge
-          .debugBookSourceStream(sourceUrl: sourceUrl, key: key)
-          .map((item) => _decodeMap(item, 'debugBookSourceStream'));
+  ) => bridge
+      .debugBookSourceStream(sourceUrl: sourceUrl, key: key)
+      .map((item) => _decodeMap(item, 'debugBookSourceStream'));
 
   /// 取消正在进行的书源调试
   @override
@@ -1738,41 +1770,37 @@ class RustApi implements BookApi {
     try {
       final sm = jsonDecode(sourceJson);
       if (sm is Map) {
-        srcUrl =
-            (sm['bookSourceUrl'] ?? sm['book_source_url'] ?? '').toString();
-        srcName =
-            (sm['bookSourceName'] ?? sm['book_source_name'] ?? '').toString();
+        srcUrl = (sm['bookSourceUrl'] ?? sm['book_source_url'] ?? '')
+            .toString();
+        srcName = (sm['bookSourceName'] ?? sm['book_source_name'] ?? '')
+            .toString();
       }
     } catch (_) {}
     return list
-        .map((e) =>
-            _searchBookFromExplore(e as Map<String, dynamic>, srcUrl, srcName))
+        .map(
+          (e) => _searchBookFromExplore(
+            e as Map<String, dynamic>,
+            srcUrl,
+            srcName,
+          ),
+        )
         .toList();
   }
 
   @override
-  Future<void> exploreInfoMapPut(
-    String sourceUrl,
-    String key,
-    String value,
-  ) =>
-      bridge.exploreInfoMapPut(
-        sourceUrl: sourceUrl,
-        key: key,
-        value: value,
-      );
+  Future<void> exploreInfoMapPut(String sourceUrl, String key, String value) =>
+      bridge.exploreInfoMapPut(sourceUrl: sourceUrl, key: key, value: value);
 
   @override
   Future<void> exploreInfoMapEnsureDefault(
     String sourceUrl,
     String key,
     String defaultValue,
-  ) =>
-      bridge.exploreInfoMapEnsureDefault(
-        sourceUrl: sourceUrl,
-        key: key,
-        defaultValue: defaultValue,
-      );
+  ) => bridge.exploreInfoMapEnsureDefault(
+    sourceUrl: sourceUrl,
+    key: key,
+    defaultValue: defaultValue,
+  );
 
   /// 读取发现 infoMap 快照（JSON 对象字符串）— 发现页修复 B①
   @override
@@ -1795,8 +1823,7 @@ class RustApi implements BookApi {
   Future<String> exploreEvalUiJs({
     required String sourceJson,
     required String jsStr,
-  }) =>
-      bridge.exploreEvalUiJs(sourceJson: sourceJson, jsStr: jsStr);
+  }) => bridge.exploreEvalUiJs(sourceJson: sourceJson, jsStr: jsStr);
 
   /// 将发现分类返回的 WebSearchResult 归一化为 SearchBook。
   /// 兼容 snake_case 与 camelCase 两种键名；origin/originName 用所属书源补齐，
@@ -1814,14 +1841,18 @@ class RustApi implements BookApi {
 
     return SearchBook(
       bookUrl: _absoluteUrl(
-          pick('origin', 'source_url') ?? sourceUrl, pick('bookUrl', 'book_url')),
+        pick('origin', 'source_url') ?? sourceUrl,
+        pick('bookUrl', 'book_url'),
+      ),
       origin: pick('origin', 'source_url') ?? sourceUrl,
       originName: pick('originName', 'source_name') ?? sourceName,
       name: pick('name', 'name') ?? '',
       author: pick('author', 'author') ?? '',
       kind: pick('kind', 'kind'),
       coverUrl: _absoluteUrlOrNull(
-          pick('origin', 'source_url') ?? sourceUrl, pick('coverUrl', 'cover_url')),
+        pick('origin', 'source_url') ?? sourceUrl,
+        pick('coverUrl', 'cover_url'),
+      ),
       intro: pick('intro', 'intro'),
       wordCount: pick('wordCount', 'word_count'),
       latestChapterTitle: pick('latestChapterTitle', 'latest_chapter'),
@@ -1859,11 +1890,7 @@ class RustApi implements BookApi {
 
   /// 使用规则解析内容
   @override
-  Future<String> parseRule(
-    String content,
-    String rule,
-    String ruleType,
-  ) =>
+  Future<String> parseRule(String content, String rule, String ruleType) =>
       bridge.parseRule(content: content, rule: rule, ruleType: ruleType);
 
   // ========== 网络操作 ==========
@@ -1901,7 +1928,10 @@ class RustApi implements BookApi {
   @override
   Future<String> getJsEngineVersion() async {
     try {
-      return await bridge.jsEval(script: 'typeof QuickJS !== "undefined" ? QuickJS.version : "quickjs-ng"');
+      return await bridge.jsEval(
+        script:
+            'typeof QuickJS !== "undefined" ? QuickJS.version : "quickjs-ng"',
+      );
     } catch (_) {
       return 'unknown';
     }
@@ -1991,7 +2021,10 @@ class RustApi implements BookApi {
   Future<List<BookChapter>> parseTxt(String filePath) async {
     final file = File(filePath);
     if (!await file.exists()) {
-      throw RustApiException('File not found: $filePath', operation: 'parseTxt');
+      throw RustApiException(
+        'File not found: $filePath',
+        operation: 'parseTxt',
+      );
     }
     final content = await file.readAsString();
     final lines = content.split('\n');
@@ -2005,26 +2038,30 @@ class RustApi implements BookApi {
     for (var i = 0; i < lines.length; i++) {
       if (chapterPattern.hasMatch(lines[i])) {
         if (i > startIndex) {
-          chapters.add(BookChapter(
-            title: currentTitle,
-            bookUrl: filePath,
-            index: chapters.length,
-            start: startIndex,
-            end: i,
-          ));
+          chapters.add(
+            BookChapter(
+              title: currentTitle,
+              bookUrl: filePath,
+              index: chapters.length,
+              start: startIndex,
+              end: i,
+            ),
+          );
         }
         currentTitle = lines[i].trim();
         startIndex = i;
       }
     }
     // 添加最后一章
-    chapters.add(BookChapter(
-      title: currentTitle,
-      bookUrl: filePath,
-      index: chapters.length,
-      start: startIndex,
-      end: lines.length,
-    ));
+    chapters.add(
+      BookChapter(
+        title: currentTitle,
+        bookUrl: filePath,
+        index: chapters.length,
+        start: startIndex,
+        end: lines.length,
+      ),
+    );
     return chapters;
   }
 
@@ -2054,7 +2091,11 @@ class RustApi implements BookApi {
 
   /// 导出书籍（将章节内容写入文件）
   @override
-  Future<String> exportBook(String bookUrl, String format, String outDir) async {
+  Future<String> exportBook(
+    String bookUrl,
+    String format,
+    String outDir,
+  ) async {
     final book = await getBook(bookUrl);
     final bookName = book?.name ?? 'export';
     final chapters = await getChapters(bookUrl);
@@ -2189,8 +2230,8 @@ class RustApi implements BookApi {
         speed: speed,
       );
       // 解析合成结果（camelCase）：audioPath / fromCache / contentType
-      final result =
-          (jsonDecode(resultJson) as Map<String, dynamic>).cast<String, dynamic>();
+      final result = (jsonDecode(resultJson) as Map<String, dynamic>)
+          .cast<String, dynamic>();
       debugPrint(
         'ttsSpeak 合成完成: audioPath=${result['audioPath']} '
         'fromCache=${result['fromCache']} contentType=${result['contentType']}',
@@ -2228,7 +2269,8 @@ class RustApi implements BookApi {
       engineUrl: engineUrl,
       speed: speed,
     );
-    return (jsonDecode(resultJson) as Map<String, dynamic>).cast<String, dynamic>();
+    return (jsonDecode(resultJson) as Map<String, dynamic>)
+        .cast<String, dynamic>();
   }
 
   /// 设置 TTS 音频缓存目录（F3-20）
@@ -2287,10 +2329,8 @@ class RustApi implements BookApi {
 
   /// WebDAV 上传文件
   @override
-  Future<void> webdavUpload(
-          String configJson, String path, String data) =>
-      bridge.webdavUpload(
-          configJson: configJson, path: path, data: data);
+  Future<void> webdavUpload(String configJson, String path, String data) =>
+      bridge.webdavUpload(configJson: configJson, path: path, data: data);
 
   /// WebDAV 从本地文件路径读取并上传（契约 §2.28.6，Task #50 加法式新增）
   @override
@@ -2298,12 +2338,11 @@ class RustApi implements BookApi {
     String configJson,
     String path,
     String localFilePath,
-  ) =>
-      bridge.webdavUploadFile(
-        configJson: configJson,
-        path: path,
-        localFilePath: localFilePath,
-      );
+  ) => bridge.webdavUploadFile(
+    configJson: configJson,
+    path: path,
+    localFilePath: localFilePath,
+  );
 
   /// WebDAV 下载文件
   @override
@@ -2316,12 +2355,11 @@ class RustApi implements BookApi {
     String configJson,
     String path,
     String localFilePath,
-  ) =>
-      bridge.webdavDownloadFile(
-        configJson: configJson,
-        path: path,
-        localFilePath: localFilePath,
-      );
+  ) => bridge.webdavDownloadFile(
+    configJson: configJson,
+    path: path,
+    localFilePath: localFilePath,
+  );
 
   /// WebDAV 删除远程文件
   @override
@@ -2331,11 +2369,14 @@ class RustApi implements BookApi {
   /// WebDAV 全量同步
   @override
   Future<String> webdavFullSync(
-          String configJson, String localBooks, String localSources) =>
-      bridge.webdavFullSync(
-          configJson: configJson,
-          localBooks: localBooks,
-          localSources: localSources);
+    String configJson,
+    String localBooks,
+    String localSources,
+  ) => bridge.webdavFullSync(
+    configJson: configJson,
+    localBooks: localBooks,
+    localSources: localSources,
+  );
 
   // ========== 下载管理器 ==========
 
@@ -2347,14 +2388,13 @@ class RustApi implements BookApi {
     required String chapterTitle,
     required int chapterIndex,
     int priority = 0,
-  }) =>
-      bridge.downloadAddTask(
-        bookUrl: bookUrl,
-        chapterUrl: chapterUrl,
-        chapterTitle: chapterTitle,
-        chapterIndex: chapterIndex,
-        priority: priority,
-      );
+  }) => bridge.downloadAddTask(
+    bookUrl: bookUrl,
+    chapterUrl: chapterUrl,
+    chapterTitle: chapterTitle,
+    chapterIndex: chapterIndex,
+    priority: priority,
+  );
 
   /// 获取下载统计信息
   @override
@@ -2388,37 +2428,38 @@ class RustApi implements BookApi {
   /// 段评摘要（P2-9）
   @override
   Future<String> reviewGetSummary(String sourceJson, String requestJson) =>
-      bridge.reviewGetSummary(
-        sourceJson: sourceJson,
-        requestJson: requestJson,
-      );
+      bridge.reviewGetSummary(sourceJson: sourceJson, requestJson: requestJson);
 
   /// 段评详情分页（P2-9）
   @override
   Future<String> reviewGetDetail(
-          String sourceJson, String requestJson, int page) =>
-      bridge.reviewGetDetail(
-        sourceJson: sourceJson,
-        requestJson: requestJson,
-        page: page,
-      );
+    String sourceJson,
+    String requestJson,
+    int page,
+  ) => bridge.reviewGetDetail(
+    sourceJson: sourceJson,
+    requestJson: requestJson,
+    page: page,
+  );
 
   /// 按需加载段评回复（上游 #519）
   ///
   /// 返回 JSON 对象字符串 `{"items": [回复列表], "nextPageUrl": String?}`。
   @override
   Future<String> reviewGetReplies(
-          String sourceJson, String requestJson, int page) =>
-      bridge.reviewGetReplies(
-        sourceJson: sourceJson,
-        requestJson: requestJson,
-        page: page,
-      );
+    String sourceJson,
+    String requestJson,
+    int page,
+  ) => bridge.reviewGetReplies(
+    sourceJson: sourceJson,
+    requestJson: requestJson,
+    page: page,
+  );
 
   // ========== 书籍导出 ==========
 
   /// 导出书籍（返回 ExportResult JSON）
-  /// 
+  ///
   /// # 参数
   /// - `bookUrl`: 书籍 URL
   /// - `format`: 导出格式（txt/epub/html）
@@ -2459,10 +2500,7 @@ class RustApi implements BookApi {
     required String bookUrl,
     required String format,
   }) async {
-    final json = await bridge.bookExportInfo(
-      bookUrl: bookUrl,
-      format: format,
-    );
+    final json = await bridge.bookExportInfo(bookUrl: bookUrl, format: format);
     return _decodeMap(json, 'bookApi');
   }
 
@@ -2553,11 +2591,10 @@ class RustApi implements BookApi {
   Future<bool> autoTaskCanRefreshBookToc({
     required bool canUpdate,
     required bool respectCanUpdate,
-  }) =>
-      bridge.autoTaskCanRefreshToc(
-        canUpdate: canUpdate,
-        respectCanUpdate: respectCanUpdate,
-      );
+  }) => bridge.autoTaskCanRefreshToc(
+    canUpdate: canUpdate,
+    respectCanUpdate: respectCanUpdate,
+  );
 
   /// 查找书籍更新任务（返回匹配的 AutoTaskRule JSON，未找到返回 null）
   @override
@@ -2583,10 +2620,7 @@ class RustApi implements BookApi {
     required String cron,
     required int fromMs,
   }) async {
-    final result = await bridge.autoTaskNextDueAt(
-      cron: cron,
-      fromMs: fromMs,
-    );
+    final result = await bridge.autoTaskNextDueAt(cron: cron, fromMs: fromMs);
     return result.toInt();
   }
 
@@ -2620,7 +2654,9 @@ class RustApi implements BookApi {
 
   /// 根据 ID 查询自动任务规则
   @override
-  Future<Map<String, dynamic>?> autoTaskFindRuleById({required String id}) async {
+  Future<Map<String, dynamic>?> autoTaskFindRuleById({
+    required String id,
+  }) async {
     final json = await bridge.autoTaskFindRuleById(id: id);
     if (json.isEmpty || json == 'null') return null;
     return _decodeMap(json, 'bookApi');
@@ -2635,8 +2671,7 @@ class RustApi implements BookApi {
   Future<String> audioWithPlayMode({
     String? readConfig,
     required int playMode,
-  }) =>
-      bridge.audioWithPlayMode(readConfig: readConfig, playMode: playMode);
+  }) => bridge.audioWithPlayMode(readConfig: readConfig, playMode: playMode);
 
   /// 解析听书书籍（返回 Book JSON，未找到返回 null）
   ///
@@ -2782,11 +2817,10 @@ class RustApi implements BookApi {
   Future<String> highlightListByChapter({
     required String bookUrl,
     required int chapterIndex,
-  }) =>
-      bridge.highlightListByChapter(
-        bookUrl: bookUrl,
-        chapterIndex: chapterIndex,
-      );
+  }) => bridge.highlightListByChapter(
+    bookUrl: bookUrl,
+    chapterIndex: chapterIndex,
+  );
 
   /// 全局关键词搜索高亮（BookHighlight 数组 JSON）
   @override
@@ -2816,8 +2850,7 @@ class RustApi implements BookApi {
   Future<String> highlightRuleFindEnabled({
     required String bookName,
     required String origin,
-  }) =>
-      bridge.highlightRuleFindEnabled(bookName: bookName, origin: origin);
+  }) => bridge.highlightRuleFindEnabled(bookName: bookName, origin: origin);
 
   // ========== 规则订阅（rule_sub FFI，Task #89） ==========
 
@@ -2825,9 +2858,10 @@ class RustApi implements BookApi {
   @override
   Future<List<Map<String, dynamic>>> ruleSubList() async {
     final json = await bridge.ruleSubList();
-    return _decodeList(json, 'ruleSubList')
-        .whereType<Map<String, dynamic>>()
-        .toList();
+    return _decodeList(
+      json,
+      'ruleSubList',
+    ).whereType<Map<String, dynamic>>().toList();
   }
 
   /// 新增/更新规则订阅
@@ -2837,15 +2871,11 @@ class RustApi implements BookApi {
 
   /// 删除规则订阅
   @override
-  Future<bool> ruleSubDelete({required int id}) =>
-      bridge.ruleSubDelete(id: id);
+  Future<bool> ruleSubDelete({required int id}) => bridge.ruleSubDelete(id: id);
 
   /// 切换规则订阅启用状态
   @override
-  Future<bool> ruleSubSetEnabled({
-    required int id,
-    required bool enabled,
-  }) =>
+  Future<bool> ruleSubSetEnabled({required int id, required bool enabled}) =>
       bridge.ruleSubSetEnabled(id: id, enabled: enabled);
 
   /// 拖拽排序：按新顺序 ID 列表重写 customOrder

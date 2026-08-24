@@ -166,9 +166,10 @@
   - **行动**：按书源缓存引擎（进程级静态 LRU 淘汰，key=source_tag；jsLib/setup/bridge 建引擎时一次性 eval，保留降级告警语义）；逐脚本分类——含顶层 const/let 的脚本继续走新引擎路径（规避 redeclaration），其余走缓存快路径 + 运行时 redeclaration 错误回落新引擎并标记 lexical；保持 completion-value / non-strict / 64MB 内存上限 / 每次 eval 截止时间语义。双路径适用：QuickJsExecutor（@js: 规则）与 JsSourceEngine::new_quickjs（mainJs 编排器）。
   - **关闭条件**：cargo 三段门禁绿 + 新增回归测试（jsLib 跨 eval 持久、redeclaration 回落、completion-value 不变、LRU 淘汰）；真实书源搜索/详情耗时明显优于修复前；5556 冒烟 PASSED + 5558 用户验收（搜索速度、书架响应）。
   - **关闭记录（2026-08-25）**：批次 A 交付（版本 2.0.105+109，CHANGELOG [2.0.105]，署名「— Cursor」）。新增 `rust/legado-js/src/engine_cache.rs`（进程级按书源缓存引擎：key=executor:source_tag / mainjs:source_url:main_js，LRU cap 8，指纹变化重建；jsLib/setup/RESPONSE_BRIDGE_JS/JSOUP_BRIDGE_JS/mainJs 构建时一次性 eval）+ js_executor.rs lexical hash-set 回落（redeclaration → 标记脚本 + 新引擎重试）+ source_engine.rs main_js_loaded 按构建期 eval 实际结果判定。回归测试：jsLib 跨 eval 持久 / redeclaration 回落 / completion-value 不变 / LRU 淘汰（TEST_LOCK 串行化）。实测 debug n=30：中位 1084µs/eval → 2µs（-99.8%）。独立复验：cargo 三段门禁 EXIT=0（workspace excl ffi / js quickjs 499 pass / ffi quickjs 357 pass + 2 qibuge 环境失败基线）。
-- **P3-5 换源页 UI 对齐原版**（2026-08-25 开启，进行中）：用户反馈——换源界面与原版不一致。对照 ChangeBookSourceDialog.kt（475 行）+ ChangeBookSourceAdapter.kt 与我方 change_source_screen.dart：① 原版列表项有 👍/👎 评分按钮（SearchBook.bookScore 持久化，影响展示）；我方为自创「匹配分」数字角标（原版不存在的创意功能 = 重构红线项，应移除）；② 原版支持长按列表项 → 操作菜单（置顶 / 置底 / 编辑书源 / 禁用书源 / 删除）；我方仅点按切换；③ 原版底部栏：当前源名（点按滚动定位）+ 上/下滚动按钮；我方无；④ 原版 Toolbar = 书名（title）+ 作者（subtitle）；我方单行「换源 - 书名」。
+- **P3-5 换源页 UI 对齐原版**（已关闭 2026-08-25）：用户反馈——换源界面与原版不一致。对照 ChangeBookSourceDialog.kt（475 行）+ ChangeBookSourceAdapter.kt 与我方 change_source_screen.dart：① 原版列表项有 👍/👎 评分按钮（SearchBook.bookScore 持久化，影响展示）；我方为自创「匹配分」数字角标（原版不存在的创意功能 = 重构红线项，应移除）；② 原版支持长按列表项 → 操作菜单（置顶 / 置底 / 编辑书源 / 禁用书源 / 删除）；我方仅点按切换；③ 原版底部栏：当前源名（点按滚动定位）+ 上/下滚动按钮；我方无；④ 原版 Toolbar = 书名（title）+ 作者（subtitle）；我方单行「换源 - 书名」。
   - **行动**：加 👍/👎 评分（含小幅增量 FFI：score 持久化 searchBooks + 响应返回）、长按操作菜单（置顶/置底 = UI 本地重排；编辑书源 = 导航书源管理；禁用/删除 = 增量 FFI deleteSearchBook / disable-by-url，同步更新 API_CONTRACT.md）、底部栏、标题布局；移除自创数字角标。
   - **关闭条件**：flutter analyze/test 绿 + cargo 门禁（新 FFI 方法）+ 5556 冒烟 PASSED + 5558 用户验收（与原版逐项对照）。
+  - **关闭记录（2026-08-25）**：批次 B 交付（版本 2.0.106+110，CHANGELOG [2.0.106]，署名「— Cursor UI + Bridge」）。① 👍/👎 评分（Red A200 / Blue A200）+ 增量 FFI updateSearchBookScore / deleteSearchBook + searchBooks.bookScore v106 迁移 + source_matcher book_score 优先排序 + sync_source_score_delta 书源聚合分；② 移除自创「匹配分」数字角标（红线项）；③ 长按五项菜单（置顶/置底/编辑书源/禁用书源/删除，删当前源自动切下一候选）；④ 底部栏（当前源标签点按滚动定位 + 上/下滚动按钮，hasClients 点按时判定）；⑤ title=书名 + subtitle=作者。独立复验：flutter analyze 0 issues + flutter test 全绿（api_contract_test 程序化校验 §2.4=16 / 合计 267）+ cargo 三段门禁 EXIT=0。
 
 ## 四、文档治理
 
@@ -191,3 +192,4 @@
 修订：主代理 ｜ 2026-08-22（P3-1 关闭：入口接入 `961a2d353`，独立复验通过）
 修订：主代理 ｜ 2026-08-23（P3-2/P3-3 关闭：`b75426da3` / `a73e4a82b`，独立复验通过；STUB 台账 MockBookSourceFetcher 登记项同步关闭）
 修订：主代理 ｜ 2026-08-25（P3-4/P3-5 开启：用户验收反馈——搜索/详情性能回归根因定位 + 换源 UI 对齐清单；两批并行实施，A→B 顺序交付）
+修订：主代理 ｜ 2026-08-25（P3-4 关闭：批次 A `6e04cda43`（版本 2.0.105+109）；P3-5 关闭：批次 B 提交（版本 2.0.106+110），独立复验通过）

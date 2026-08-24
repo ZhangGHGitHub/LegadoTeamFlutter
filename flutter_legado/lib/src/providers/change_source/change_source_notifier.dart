@@ -43,8 +43,7 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     try {
       List<String>? sourceUrls;
       if (group.isNotEmpty) {
-        final sources =
-            await ref.read(bookApiProvider).getEnabledBookSources();
+        final sources = await ref.read(bookApiProvider).getEnabledBookSources();
         sourceUrls = sources
             .where((s) {
               final g = s.bookSourceGroup ?? '';
@@ -102,11 +101,9 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     }
     state = state.copyWith(applyingUrl: match.sourceUrl);
     try {
-      final updatedJson = await ref.read(bookApiProvider).switchSource(
-            bookUrl,
-            match.sourceUrl,
-            match.bookUrl,
-          );
+      final updatedJson = await ref
+          .read(bookApiProvider)
+          .switchSource(bookUrl, match.sourceUrl, match.bookUrl);
       var newBookUrl = match.bookUrl;
       try {
         final decoded = jsonDecode(updatedJson);
@@ -130,6 +127,55 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     if (e is BridgeError) return e.message;
     return e.toString();
   }
+
+  /// 更新换源列表项用户评分（-1/0/1），持久化后同步本地状态
+  Future<void> updateBookScore(String bookUrl, int score) async {
+    await ref.read(bookApiProvider).updateSearchBookScore(bookUrl, score);
+    final results = [...state.results];
+    final idx = results.indexWhere((r) => r.bookUrl == bookUrl);
+    if (idx < 0) return;
+    results[idx] = results[idx].copyWith(bookScore: score);
+    state = state.copyWith(results: results);
+  }
+
+  /// 置顶：本地重排至列表首位（对标原版 topSource）
+  void moveToTop(String bookUrl) {
+    final results = List<SourceMatch>.from(state.results);
+    final idx = results.indexWhere((r) => r.bookUrl == bookUrl);
+    if (idx <= 0) return;
+    final item = results.removeAt(idx);
+    results.insert(0, item);
+    state = state.copyWith(results: results);
+  }
+
+  /// 置底：本地重排至列表末位（对标原版 bottomSource）
+  void moveToBottom(String bookUrl) {
+    final results = List<SourceMatch>.from(state.results);
+    final idx = results.indexWhere((r) => r.bookUrl == bookUrl);
+    if (idx < 0 || idx >= results.length - 1) return;
+    final item = results.removeAt(idx);
+    results.add(item);
+    state = state.copyWith(results: results);
+  }
+
+  /// 禁用书源并从列表移除
+  Future<void> disableAndRemove(SourceMatch match) async {
+    await ref.read(bookApiProvider).disableBookSource(match.sourceUrl);
+    state = state.copyWith(
+      results: state.results.where((r) => r.bookUrl != match.bookUrl).toList(),
+    );
+  }
+
+  /// 删除换源列表项；返回被删项（供 UI 判断是否当前源）
+  Future<SourceMatch?> deleteSearchBookItem(String bookUrl) async {
+    await ref.read(bookApiProvider).deleteSearchBook(bookUrl);
+    final results = List<SourceMatch>.from(state.results);
+    final idx = results.indexWhere((r) => r.bookUrl == bookUrl);
+    if (idx < 0) return null;
+    final removed = results.removeAt(idx);
+    state = state.copyWith(results: results);
+    return removed;
+  }
 }
 
 /// 换源页 Notifier 全局 Provider
@@ -141,5 +187,5 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
 /// ```
 final changeSourceNotifierProvider =
     NotifierProvider<ChangeSourceNotifier, ChangeSourceState>(
-  ChangeSourceNotifier.new,
-);
+      ChangeSourceNotifier.new,
+    );

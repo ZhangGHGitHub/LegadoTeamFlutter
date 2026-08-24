@@ -757,6 +757,19 @@ Future<String> sourceSwitchApply({
   newBookUrl: newBookUrl,
 );
 
+/// 更新换源列表项用户评分（-1/0/1）
+Future<void> updateSearchBookScore({
+  required String bookUrl,
+  required int score,
+}) => RustLib.instance.api.crateFfiFfiUpdateSearchBookScore(
+  bookUrl: bookUrl,
+  score: score,
+);
+
+/// 删除换源列表项（按 bookUrl）
+Future<void> deleteSearchBook({required String bookUrl}) =>
+    RustLib.instance.api.crateFfiFfiDeleteSearchBook(bookUrl: bookUrl);
+
 /// HTTP GET 请求，返回 JSON 格式的响应
 Future<String> httpGet({required String url}) =>
     RustLib.instance.api.crateFfiFfiHttpGet(url: url);

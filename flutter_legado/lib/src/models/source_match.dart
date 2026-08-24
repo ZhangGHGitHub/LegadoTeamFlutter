@@ -46,6 +46,9 @@ class SourceMatch with _$SourceMatch {
 
     /// 书源 customOrder
     @Default(0) @JsonKey(name: 'origin_order') int originOrder,
+
+    /// 用户评分（-1 踩 / 0 无 / 1 赞，对标原版 SourceConfig 书维度评分）
+    @Default(0) @JsonKey(name: 'book_score') int bookScore,
   }) = _SourceMatch;
 
   factory SourceMatch.fromJson(Map<String, dynamic> json) =>

@@ -123,6 +123,7 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
                     chapter_word_count: -1,
                     respond_time: -1,
                     origin_order: source.custom_order,
+                    book_score: 0,
                 })
                 .collect(),
             Err(_) => Vec::new(),
@@ -413,8 +414,12 @@ pub struct SearchSourceBatch {
 ///
 /// 配合 `cancel_search()` 可提前中止。供 flutter_rust_bridge 的 `StreamSink`
 /// 绑定使用（在 ffi.rs 中将 `on_batch` 接到 `sink.add`）。
-pub async fn run_multi_stream<F>(query: String, source_urls_json: String, page: i32, mut on_batch: F)
-where
+pub async fn run_multi_stream<F>(
+    query: String,
+    source_urls_json: String,
+    page: i32,
+    mut on_batch: F,
+) where
     F: FnMut(String) -> Result<(), String>,
 {
     // 重置取消标志
@@ -577,9 +582,7 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
             drop(permit);
             let result = match outcome {
                 Ok(Ok(res)) => res,
-                Ok(Err(_panic)) => {
-                    Err(LegadoError::Network("单源搜索异常（已隔离）".into()))
-                }
+                Ok(Err(_panic)) => Err(LegadoError::Network("单源搜索异常（已隔离）".into())),
                 Err(_) => Err(LegadoError::Network(format!(
                     "搜索超时（{}s）",
                     per_source_timeout.as_secs()
@@ -645,6 +648,7 @@ pub(crate) fn result_to_search_book(r: SearchResult) -> CoreSearchBook {
         chapter_word_count_text: None,
         chapter_word_count: -1,
         respond_time: -1,
+        book_score: 0,
         // 阅读记录标识（由 api::search 批量附加后透传）
         has_read_record: r.has_read_record,
         read_record_author: r.read_record_author,
@@ -712,10 +716,7 @@ impl ReadRecordIndex {
             if decoded.is_empty() {
                 decoded.push(String::new());
             }
-            authors
-                .entry(record.book_name)
-                .or_default()
-                .extend(decoded);
+            authors.entry(record.book_name).or_default().extend(decoded);
         }
         Self { authors }
     }
@@ -867,8 +868,7 @@ pub(crate) async fn search_single_source(
     let source_lib = source.js_lib.clone();
     // 书源上下文 setup：搜索模板 `{{source.getKey()}}` 等依赖 source/cookie
     // 绑定（爱下电子等源）——对齐原版 AnalyzeUrl.kt evalJS source 绑定
-    let search_setup =
-        crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+    let search_setup = crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
     let analyze_url = tokio::task::spawn_blocking(move || {
         crate::js_executor::build_search_url_with_setup(
             &template,
@@ -919,8 +919,7 @@ pub(crate) async fn search_single_source(
                 raw.status
             )));
         }
-        let decoded =
-            AnalyzeUrl::decode_response_bytes(&raw.body, analyze_url.charset());
+        let decoded = AnalyzeUrl::decode_response_bytes(&raw.body, analyze_url.charset());
         (decoded, raw.url)
     } else {
         let response = match analyze_url.method() {
@@ -1025,8 +1024,10 @@ fn parse_search_response(
         let kind = eval_field_optional(&item_analyzer, rule_search.kind.as_deref());
 
         // 提取字数并格式化（对齐原版 wordCountFormat）
-        let word_count =
-            word_count_format(&eval_field_string(&item_analyzer, rule_search.word_count.as_deref()));
+        let word_count = word_count_format(&eval_field_string(
+            &item_analyzer,
+            rule_search.word_count.as_deref(),
+        ));
 
         // 书籍详情页 URL
         let raw_book_url = eval_field_string(&item_analyzer, rule_search.book_url.as_deref());
@@ -1220,15 +1221,13 @@ async fn search_js_source(
 
     let values = tokio::task::spawn_blocking(move || {
         let orchestrator = crate::api::web_book::build_js_orchestrator(&source_clone)?;
-        let mut orch = orchestrator.ok_or_else(|| {
-            LegadoError::Internal("JS 书源缺少 mainJs".into())
-        })?;
+        let mut orch =
+            orchestrator.ok_or_else(|| LegadoError::Internal("JS 书源缺少 mainJs".into()))?;
         // 页码透传（批次B G-B-01）：原硬编码 page=1，现由调用方传入
         orch.search(&source_clone, &key, page)
     })
     .await
-    .map_err(|e| LegadoError::Internal(format!("JS 搜索任务异常: {e}")))?
-    ?;
+    .map_err(|e| LegadoError::Internal(format!("JS 搜索任务异常: {e}")))??;
 
     // 将 serde_json::Value 转换为 SearchResult
     let results = values
@@ -1434,12 +1433,8 @@ mod tests {
             "",
         );
 
-        let results = parse_search_response(
-            html,
-            "https://www.example.com/search?q=test",
-            &source,
-        )
-        .unwrap();
+        let results =
+            parse_search_response(html, "https://www.example.com/search?q=test", &source).unwrap();
 
         assert_eq!(results.len(), 1);
         // 空 bookUrl 回退书源主页（bookSourceUrl），保证条目可打开
@@ -1463,10 +1458,7 @@ mod tests {
     fn test_ensure_default_user_agent_keeps_source_ua() {
         // 书源 header 已配置 UA（含小写键名）时不覆盖
         let mut headers = HashMap::new();
-        headers.insert(
-            "user-agent".to_string(),
-            "CustomMobile/1.0".to_string(),
-        );
+        headers.insert("user-agent".to_string(), "CustomMobile/1.0".to_string());
         ensure_default_user_agent(&mut headers);
         assert_eq!(headers.get("user-agent").unwrap(), "CustomMobile/1.0");
         assert!(headers.keys().all(|k| k != "User-Agent"));
@@ -1525,23 +1517,16 @@ mod tests {
                 author: Some(
                     "@XPath:.//*[contains(@class, 'author')][1]/text()##作者：".to_string(),
                 ),
-                book_url: Some(
-                    "@XPath:.//*[contains(@class, 'bookname')]/a/@href".to_string(),
-                ),
-                intro: Some(
-                    "@XPath:.//*[contains(@class, 'update')]//text()##简介：".to_string(),
-                ),
-                last_chapter: Some(
-                    "@XPath:.//*[contains(@class, 'cat')]//a/text()".to_string(),
-                ),
+                book_url: Some("@XPath:.//*[contains(@class, 'bookname')]/a/@href".to_string()),
+                intro: Some("@XPath:.//*[contains(@class, 'update')]//text()##简介：".to_string()),
+                last_chapter: Some("@XPath:.//*[contains(@class, 'cat')]//a/text()".to_string()),
                 ..SearchRule::default()
             }),
             ..BookSource::default()
         };
 
         let results =
-            parse_search_response(html, "https://www.sto66.com/search/99.html", &source)
-                .unwrap();
+            parse_search_response(html, "https://www.sto66.com/search/99.html", &source).unwrap();
 
         assert!(
             results.len() >= 2,
@@ -1556,7 +1541,10 @@ mod tests {
             results[0].book_url,
             "https://www.sto66.com/book/26zvJv0kmLb9N2oyvORpxn.html"
         );
-        assert_eq!(results[0].latest_chapter, Some("第353章 大结局".to_string()));
+        assert_eq!(
+            results[0].latest_chapter,
+            Some("第353章 大结局".to_string())
+        );
         // ## 替换：简介前缀应被剔除（//text() 多节点按原版以换行连接，trim 后比较）
         assert_eq!(
             results[0].intro.as_deref().map(str::trim),
@@ -1640,31 +1628,36 @@ mod tests {
                     Ok(ref b) => (Some(b.len()), None),
                     Err(ref e) => (None, Some(e.to_string())),
                 };
-                outcomes_c
-                    .lock()
-                    .unwrap()
-                    .push((o.source_url, n, err, o.finished_count, o.total_count));
+                outcomes_c.lock().unwrap().push((
+                    o.source_url,
+                    n,
+                    err,
+                    o.finished_count,
+                    o.total_count,
+                ));
                 Ok(())
             },
         )
         .await;
 
         let got = outcomes.lock().unwrap();
-        assert_eq!(got.len(), 5, "每个书源都应产出一个批次（含失败/超时/panic）");
+        assert_eq!(
+            got.len(),
+            5,
+            "每个书源都应产出一个批次（含失败/超时/panic）"
+        );
         // 成功源结果全部保留
         let ok_books: usize = got.iter().filter_map(|(_, n, _, _, _)| *n).sum();
         assert_eq!(ok_books, 2, "两个成功源各 1 本书应全部保留");
         // 失败/超时/panic 均有错误信息且不阻断其他源
-        assert!(
-            got.iter()
-                .any(|(u, _, e, _, _)| u.contains("fail") && e.is_some())
-        );
+        assert!(got
+            .iter()
+            .any(|(u, _, e, _, _)| u.contains("fail") && e.is_some()));
         assert!(got.iter().any(|(u, _, e, _, _)| u.contains("slow")
             && e.as_deref().is_some_and(|m| m.contains("超时"))));
-        assert!(
-            got.iter()
-                .any(|(u, _, e, _, _)| u.contains("panic") && e.is_some())
-        );
+        assert!(got
+            .iter()
+            .any(|(u, _, e, _, _)| u.contains("panic") && e.is_some()));
         // 进度 total 正确且存在收尾批次（finished == total）
         assert!(got.iter().all(|(_, _, _, _, t)| *t == 5));
         assert!(got.iter().any(|(_, _, _, f, t)| f == t));
@@ -1908,8 +1901,7 @@ mod tests {
         {
             assert_eq!(results.len(), 1);
             assert_eq!(
-                results[0].book_url,
-                "https://www.example.com/novel/42",
+                results[0].book_url, "https://www.example.com/novel/42",
                 "CSS@js 链应产出非空绝对 bookUrl"
             );
             assert!(!results[0].book_url.is_empty());
@@ -1974,8 +1966,7 @@ mod tests {
         );
         let body = "<html><body><p>没有找到相关书籍</p></body></html>";
         let results =
-            parse_search_response(body, "https://www.example.com/search?q=zzz", &source)
-                .unwrap();
+            parse_search_response(body, "https://www.example.com/search?q=zzz", &source).unwrap();
         assert!(results.is_empty(), "无匹配应记 0 条而非 error");
     }
 
@@ -2038,7 +2029,10 @@ mod tests {
         assert_eq!(book_type_of_source(0), book_type::TEXT);
         assert_eq!(book_type_of_source(1), book_type::AUDIO);
         assert_eq!(book_type_of_source(2), book_type::IMAGE);
-        assert_eq!(book_type_of_source(3), book_type::TEXT | book_type::WEB_FILE);
+        assert_eq!(
+            book_type_of_source(3),
+            book_type::TEXT | book_type::WEB_FILE
+        );
         assert_eq!(book_type_of_source(4), book_type::VIDEO);
     }
 
@@ -2429,7 +2423,13 @@ mod tests {
             let raw = std::fs::read_to_string(&path).unwrap();
             let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
             if let Some(obj) = v.as_object_mut() {
-                for k in ["enabled", "enabledExplore", "enabledCookieJar", "eventListener", "customButton"] {
+                for k in [
+                    "enabled",
+                    "enabledExplore",
+                    "enabledCookieJar",
+                    "eventListener",
+                    "customButton",
+                ] {
                     if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
                         obj.insert(k.to_string(), serde_json::json!(n != 0));
                     }
@@ -2449,7 +2449,10 @@ mod tests {
                             Ok(toc) => {
                                 println!("  TOC n={}", toc.chapters.len());
                                 if let Some(ch) = toc.chapters.first() {
-                                    match crate::api::reader::get_chapter_content_full(&b.book_url, ch.index) {
+                                    match crate::api::reader::get_chapter_content_full(
+                                        &b.book_url,
+                                        ch.index,
+                                    ) {
                                         Ok(c) => println!("  CONTENT len={}", c.len()),
                                         Err(e) => println!("  CONTENT err={e}"),
                                     }
@@ -2469,7 +2472,8 @@ mod tests {
     #[ignore = "requires network + tmp_debug/sources.json"]
     fn probe_all_image_sources_batch() {
         let _db = crate::db_state::ensure_test_db();
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug/sources.json");
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp_debug/sources.json");
         let raw = std::fs::read_to_string(&path).expect("sources.json");
         let mut data: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
         let mut img = Vec::new();
@@ -2478,7 +2482,13 @@ mod tests {
                 continue;
             }
             if let Some(obj) = v.as_object_mut() {
-                for k in ["enabled", "enabledExplore", "enabledCookieJar", "eventListener", "customButton"] {
+                for k in [
+                    "enabled",
+                    "enabledExplore",
+                    "enabledCookieJar",
+                    "eventListener",
+                    "customButton",
+                ] {
                     if let Some(n) = obj.get(k).and_then(|x| x.as_i64()) {
                         obj.insert(k.to_string(), serde_json::json!(n != 0));
                     }
@@ -2620,7 +2630,6 @@ mod tests {
         }
     }
 
-
     /// 快速书源（普通小说）分组搜索探针 — 对照原版缺口
     #[cfg(feature = "quickjs")]
     #[test]
@@ -2638,9 +2647,15 @@ mod tests {
                 .get("bookSourceGroup")
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
-            let ty = v.get("bookSourceType").and_then(|x| x.as_i64()).unwrap_or(0);
+            let ty = v
+                .get("bookSourceType")
+                .and_then(|x| x.as_i64())
+                .unwrap_or(0);
             // 快速书源且文本源（type=0）
-            if !group.split(|c| ",;，；".contains(c)).any(|p| p.trim() == "快速书源") {
+            if !group
+                .split(|c| ",;，；".contains(c))
+                .any(|p| p.trim() == "快速书源")
+            {
                 continue;
             }
             if ty != 0 {
@@ -2662,9 +2677,8 @@ mod tests {
             fast.push(v.clone());
         }
         println!("FAST_GROUP_TYPE0_SOURCES={}", fast.len());
-        let _ = crate::api::source::import_sources(
-            &serde_json::Value::Array(fast.clone()).to_string(),
-        );
+        let _ =
+            crate::api::source::import_sources(&serde_json::Value::Array(fast.clone()).to_string());
         let urls: Vec<String> = fast
             .iter()
             .filter_map(|v| {
@@ -2701,7 +2715,10 @@ mod tests {
                 }
                 // 抽样前几条书名
                 for r in exact.iter().take(15) {
-                    println!("EXACT_SAMPLE\t{}\t{}\t{}", r.source_name, r.book_name, r.author);
+                    println!(
+                        "EXACT_SAMPLE\t{}\t{}\t{}",
+                        r.source_name, r.book_name, r.author
+                    );
                 }
             }
             Err(e) => println!("SEARCH_ERR={e}"),
@@ -2728,7 +2745,10 @@ mod tests {
                 .get("bookSourceGroup")
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
-            let ty = v.get("bookSourceType").and_then(|x| x.as_i64()).unwrap_or(0);
+            let ty = v
+                .get("bookSourceType")
+                .and_then(|x| x.as_i64())
+                .unwrap_or(0);
             if !group
                 .split(|c| ",;，；".contains(c))
                 .any(|p| p.trim() == "快速书源")
@@ -2764,9 +2784,7 @@ mod tests {
             let src: BookSource = match serde_json::from_value(v.clone()) {
                 Ok(s) => s,
                 Err(e) => {
-                    *err_counter
-                        .entry(format!("deserialize:{}", e))
-                        .or_default() += 1;
+                    *err_counter.entry(format!("deserialize:{}", e)).or_default() += 1;
                     continue;
                 }
             };
@@ -2816,7 +2834,9 @@ mod tests {
                         .and_then(|r| r.book_list.clone())
                         .unwrap_or_default();
                     if bl.starts_with("class.") {
-                        *err_counter.entry("empty:bookList_class.".into()).or_default() += 1;
+                        *err_counter
+                            .entry("empty:bookList_class.".into())
+                            .or_default() += 1;
                     } else if bl.contains("@js:") || bl.contains("<js>") {
                         *err_counter.entry("empty:bookList_js".into()).or_default() += 1;
                     } else if bl.starts_with("$.") || bl.starts_with("$[") {
@@ -2849,10 +2869,7 @@ mod tests {
             }
         }
         println!("\n==== SUMMARY ====");
-        println!(
-            "ok={ok} exact_origins={exact_origins} total={}",
-            fast.len()
-        );
+        println!("ok={ok} exact_origins={exact_origins} total={}", fast.len());
         println!("top_errors:");
         let mut errs: Vec<_> = err_counter.into_iter().collect();
         errs.sort_by(|a, b| b.1.cmp(&a.1));
@@ -2881,10 +2898,7 @@ mod tests {
         } else if es.contains("403") {
             "http:403".into()
         } else if es.contains("HTTP ") {
-            format!(
-                "http:status:{}",
-                es.chars().take(40).collect::<String>()
-            )
+            format!("http:status:{}", es.chars().take(40).collect::<String>())
         } else if es.contains("connect")
             || es.contains("dns")
             || es.contains("DNS")
@@ -2936,11 +2950,7 @@ mod tests {
                     &src.book_source_url,
                     src.js_lib.as_deref(),
                 );
-                println!(
-                    "URL\t{name}\tcharset={:?}\t{}",
-                    au.charset(),
-                    au.url()
-                );
+                println!("URL\t{name}\tcharset={:?}\t{}", au.charset(), au.url());
                 if au.method() == &RequestMethod::Post {
                     println!("BODY\t{name}\t{}", au.request_body());
                 }
@@ -2959,7 +2969,11 @@ mod tests {
                     if ex > 0 {
                         exact += 1;
                     }
-                    println!("OK\t{name}\tn={}\texact={ex}\tfirst={}", hits.len(), hits[0].book_name);
+                    println!(
+                        "OK\t{name}\tn={}\texact={ex}\tfirst={}",
+                        hits.len(),
+                        hits[0].book_name
+                    );
                 }
                 Ok(Ok(_)) => println!("EMPTY\t{name}"),
                 Ok(Err(e)) => println!("ERR\t{name}\t{e}"),
@@ -3022,10 +3036,7 @@ mod tests {
         match search_books(kw, &urls_json) {
             Ok(list) => {
                 // 与原版聚合对比：仅统计书名含关键词的命中（排除作者误匹配等噪声）
-                let exact: Vec<_> = list
-                    .iter()
-                    .filter(|r| r.book_name.contains(kw))
-                    .collect();
+                let exact: Vec<_> = list.iter().filter(|r| r.book_name.contains(kw)).collect();
                 let mut by_origin: BTreeMap<String, usize> = BTreeMap::new();
                 let mut by_origin_exact: BTreeMap<String, usize> = BTreeMap::new();
                 for r in &list {
@@ -3081,8 +3092,8 @@ mod tests {
     #[ignore = "requires network"]
     fn probe_51_toc_detail() {
         let _db = crate::db_state::ensure_test_db();
-        let path =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug/src_51.json");
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp_debug/src_51.json");
         let raw = std::fs::read_to_string(&path).unwrap();
         let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
         if let Some(obj) = v.as_object_mut() {
@@ -3125,12 +3136,12 @@ mod tests {
         }
     }
 
-
     #[cfg(feature = "quickjs")]
     #[test]
     fn offline_51_chapter_list_from_saved_html() {
         let html = std::fs::read_to_string(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug/comic_2122.html"),
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tmp_debug/comic_2122.html"),
         )
         .expect("html");
         let rule = concat!(
@@ -3172,8 +3183,6 @@ mod tests {
         println!("book_name_rule=>{name:?}");
     }
 
-
-
     #[cfg(feature = "quickjs")]
     #[test]
     #[ignore = "requires network"]
@@ -3182,26 +3191,48 @@ mod tests {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug");
         let raw = std::fs::read_to_string(root.join("sources.json")).unwrap();
         let mut data: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
-        let want = ["漫蛙", "拷贝漫画", "包子漫画（优+）", "爱看漫画", "神漫画", "51漫画"];
+        let want = [
+            "漫蛙",
+            "拷贝漫画",
+            "包子漫画（优+）",
+            "爱看漫画",
+            "神漫画",
+            "51漫画",
+        ];
         for v in &mut data {
-            let n = v.get("bookSourceName").and_then(|x| x.as_str()).unwrap_or("");
-            if !want.contains(&n) { continue; }
+            let n = v
+                .get("bookSourceName")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            if !want.contains(&n) {
+                continue;
+            }
             if let Some(obj) = v.as_object_mut() {
-                for k in ["enabled", "enabledExplore", "enabledCookieJar", "eventListener", "customButton"] {
+                for k in [
+                    "enabled",
+                    "enabledExplore",
+                    "enabledCookieJar",
+                    "eventListener",
+                    "customButton",
+                ] {
                     if let Some(num) = obj.get(k).and_then(|x| x.as_i64()) {
                         obj.insert(k.to_string(), serde_json::json!(num != 0));
                     }
                 }
             }
             let src: legado_core::models::BookSource = serde_json::from_value(v.clone()).unwrap();
-            let _ = crate::api::source::import_sources(&serde_json::json!([src.clone()]).to_string());
+            let _ =
+                crate::api::source::import_sources(&serde_json::json!([src.clone()]).to_string());
             let urls = format!(r#"["{}"]"#, src.book_source_url);
             match search_books("一人之下", &urls) {
-                Ok(list) => println!("REL\t{}\tn={}\turl={}", src.book_source_name, list.len(), src.search_url.as_deref().unwrap_or("")),
+                Ok(list) => println!(
+                    "REL\t{}\tn={}\turl={}",
+                    src.book_source_name,
+                    list.len(),
+                    src.search_url.as_deref().unwrap_or("")
+                ),
                 Err(e) => println!("REL\t{}\terr={e}", src.book_source_name),
             }
         }
     }
-
-
 }

@@ -74,10 +74,20 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
         add_column_if_not_exists(conn, "rssSources", "startHtml", "TEXT")?;
         add_column_if_not_exists(conn, "rssSources", "startStyle", "TEXT")?;
         add_column_if_not_exists(conn, "rssSources", "startJs", "TEXT")?;
-        add_column_if_not_exists(conn, "rssSources", "showWebLog", "INTEGER NOT NULL DEFAULT 0")?;
+        add_column_if_not_exists(
+            conn,
+            "rssSources",
+            "showWebLog",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         add_column_if_not_exists(conn, "rssSources", "type", "INTEGER NOT NULL DEFAULT 0")?;
         add_column_if_not_exists(conn, "rssSources", "preload", "INTEGER NOT NULL DEFAULT 0")?;
-        add_column_if_not_exists(conn, "rssSources", "cacheFirst", "INTEGER NOT NULL DEFAULT 0")?;
+        add_column_if_not_exists(
+            conn,
+            "rssSources",
+            "cacheFirst",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         add_column_if_not_exists(conn, "rssSources", "searchUrl", "TEXT")?;
     }
 
@@ -593,7 +603,12 @@ impl Migration for Migration100To101 {
                 "\"group\"",
                 "TEXT NOT NULL DEFAULT '默认分组'",
             )?;
-            add_column_if_not_exists(conn, "rssArticles", "\"read\"", "INTEGER NOT NULL DEFAULT 0")?;
+            add_column_if_not_exists(
+                conn,
+                "rssArticles",
+                "\"read\"",
+                "INTEGER NOT NULL DEFAULT 0",
+            )?;
             add_column_if_not_exists(conn, "rssArticles", "type", "INTEGER NOT NULL DEFAULT 0")?;
             add_column_if_not_exists(conn, "rssArticles", "durPos", "INTEGER NOT NULL DEFAULT 0")?;
         }
@@ -870,11 +885,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 106);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 106);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -1023,7 +1038,7 @@ mod tests {
     fn test_fresh_db_reaches_v101_with_deviation_columns() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 106);
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
@@ -1209,7 +1224,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 106);
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "readRecord", "lastRead"));
     }
@@ -1375,17 +1390,27 @@ mod tests {
 
         // 僵尸书与孤儿章节被清；正常书与其章节保留
         let zombie: i32 = conn
-            .query_row("SELECT COUNT(*) FROM books WHERE trim(bookUrl)=''", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM books WHERE trim(bookUrl)=''",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(zombie, 0, "空 bookUrl 僵尸书应被清理");
         let orphan: i32 = conn
-            .query_row("SELECT COUNT(*) FROM chapters WHERE trim(bookUrl)=''", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM chapters WHERE trim(bookUrl)=''",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(orphan, 0, "孤儿章节应被清理");
         let ok_books: i32 = conn
-            .query_row("SELECT COUNT(*) FROM books WHERE bookUrl='http://ok.com/1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM books WHERE bookUrl='http://ok.com/1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(ok_books, 1, "正常书不得被误删");
         let ok_ch: i32 = conn
@@ -1466,7 +1491,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 105);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 106);
         assert!(column_exists(conn, "book_sources", "variable"));
     }
 }

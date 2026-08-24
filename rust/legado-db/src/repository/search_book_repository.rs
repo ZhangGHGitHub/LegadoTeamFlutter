@@ -25,8 +25,8 @@ impl<'a> SearchBookRepository<'a> {
                 "INSERT OR REPLACE INTO searchBooks
              (bookUrl, origin, originName, type, name, author, kind, coverUrl,
               intro, wordCount, latestChapterTitle, tocUrl, time, variable,
-              originOrder, chapterWordCountText, chapterWordCount, respondTime)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+              originOrder, chapterWordCountText, chapterWordCount, respondTime, bookScore)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
                 params![
                     book.book_url,
                     book.origin,
@@ -46,6 +46,7 @@ impl<'a> SearchBookRepository<'a> {
                     book.chapter_word_count_text,
                     book.chapter_word_count,
                     book.respond_time,
+                    book.book_score,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入 searchBooks 失败: {e}")))?;
@@ -71,7 +72,7 @@ impl<'a> SearchBookRepository<'a> {
             .prepare(
                 "SELECT bookUrl, origin, originName, type, name, author, kind, coverUrl,
                         intro, wordCount, latestChapterTitle, tocUrl, time, variable,
-                        originOrder, chapterWordCountText, chapterWordCount, respondTime
+                        originOrder, chapterWordCountText, chapterWordCount, respondTime, bookScore
                  FROM searchBooks WHERE name LIKE ?1 ORDER BY originOrder ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -104,7 +105,7 @@ impl<'a> SearchBookRepository<'a> {
                         t1.kind, t1.coverUrl, t1.intro, t1.wordCount, t1.latestChapterTitle,
                         t1.tocUrl, t1.time, t1.variable, t2.customOrder as originOrder,
                         t1.chapterWordCountText, t1.chapterWordCount, t1.respondTime,
-                        t2.bookSourceGroup
+                        t1.bookScore, t2.bookSourceGroup
                  FROM searchBooks AS t1
                  INNER JOIN book_sources AS t2 ON t1.origin = t2.bookSourceUrl
                  WHERE t1.name = ?1
@@ -118,7 +119,7 @@ impl<'a> SearchBookRepository<'a> {
         let books = stmt
             .query_map(params![name, author], |row| {
                 let book = row_to_search_book(row)?;
-                let group_field: String = row.get(18).unwrap_or_default();
+                let group_field: String = row.get(19).unwrap_or_default();
                 Ok((book, group_field))
             })
             .map_err(|e| LegadoError::Database(format!("换源查询失败: {e}")))?
@@ -127,6 +128,51 @@ impl<'a> SearchBookRepository<'a> {
             .map(|(book, _)| book)
             .collect();
         Ok(books)
+    }
+
+    /// 按 bookUrl 删除单条搜索结果（换源页「删除」菜单）
+    pub fn delete_by_book_url(&self, book_url: &str) -> LegadoResult<usize> {
+        let affected = self
+            .conn
+            .execute(
+                "DELETE FROM searchBooks WHERE bookUrl = ?1",
+                params![book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("按 bookUrl 删除 searchBooks 失败: {e}")))?;
+        Ok(affected)
+    }
+
+    /// 更新用户评分（-1/0/1）
+    pub fn update_book_score(&self, book_url: &str, score: i32) -> LegadoResult<usize> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE searchBooks SET bookScore = ?1 WHERE bookUrl = ?2",
+                params![score, book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新 searchBooks.bookScore 失败: {e}")))?;
+        Ok(affected)
+    }
+
+    /// 按 bookUrl 查询单条（更新评分前读取元数据）
+    pub fn find_by_book_url(&self, book_url: &str) -> LegadoResult<Option<SearchBook>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT bookUrl, origin, originName, type, name, author, kind, coverUrl,
+                        intro, wordCount, latestChapterTitle, tocUrl, time, variable,
+                        originOrder, chapterWordCountText, chapterWordCount, respondTime, bookScore
+                 FROM searchBooks WHERE bookUrl = ?1",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备按 bookUrl 查询失败: {e}")))?;
+        let mut rows = stmt
+            .query_map(params![book_url], row_to_search_book)
+            .map_err(|e| LegadoError::Database(format!("按 bookUrl 查询失败: {e}")))?;
+        match rows.next() {
+            Some(Ok(book)) => Ok(Some(book)),
+            Some(Err(e)) => Err(LegadoError::Database(format!("按 bookUrl 行解析失败: {e}"))),
+            None => Ok(None),
+        }
     }
 
     /// 按书名+作者删除（强制换源重搜前清理，对齐 startSearch 删除旧结果）
@@ -175,7 +221,7 @@ fn group_contains(group_field: &str, target: &str) -> bool {
         .any(|g| g == target)
 }
 
-/// 将 rusqlite Row 转换为 SearchBook（前 18 列）
+/// 将 rusqlite Row 转换为 SearchBook（前 19 列）
 fn row_to_search_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchBook> {
     Ok(SearchBook {
         book_url: row.get(0)?,
@@ -196,6 +242,7 @@ fn row_to_search_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchBook> {
         chapter_word_count_text: row.get(15)?,
         chapter_word_count: row.get(16)?,
         respond_time: row.get(17)?,
+        book_score: row.get(18)?,
         // searchBooks 表不存储阅读记录标识（#424 加法式字段，默认 false/None）
         ..Default::default()
     })
@@ -238,7 +285,12 @@ mod tests {
     fn test_insert_and_find_by_keyword() {
         let conn = make_repo_conn();
         let repo = SearchBookRepository::new(&conn);
-        let book = make_book("https://book.example.com/1", "斗破苍穹", "天蚕土豆", "origin1");
+        let book = make_book(
+            "https://book.example.com/1",
+            "斗破苍穹",
+            "天蚕土豆",
+            "origin1",
+        );
         repo.insert(&book).unwrap();
         let results = repo.find_by_keyword("斗破").unwrap();
         assert_eq!(results.len(), 1);

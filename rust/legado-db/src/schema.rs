@@ -22,7 +22,8 @@ use legado_core::{LegadoError, LegadoResult};
 ///   对齐 word/usage/lastUseTime、coverRules 纳入建表清单。
 /// - v105：D1 — ruleSubs/dictRules/keyboardAssists 对齐 Room 表名列名
 ///   （Migration104To105；清理 snake_case 旧表残留）
-pub const SCHEMA_VERSION: u32 = 105;
+/// - v106：searchBooks 补 `bookScore` 列（换源页用户评分 -1/0/1，Migration105To106）
+pub const SCHEMA_VERSION: u32 = 106;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -251,6 +252,7 @@ CREATE TABLE IF NOT EXISTS searchBooks (
     chapterWordCountText TEXT,
     chapterWordCount INTEGER NOT NULL DEFAULT -1,
     respondTime INTEGER NOT NULL DEFAULT -1,
+    bookScore INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(bookUrl),
     FOREIGN KEY(origin) REFERENCES book_sources(bookSourceUrl) ON DELETE CASCADE
 );

@@ -44,6 +44,9 @@ pub struct SearchBook {
     pub chapter_word_count: i32,
     #[serde(default = "default_neg_one", rename = "respondTime")]
     pub respond_time: i32,
+    /// 换源用户评分（-1 踩 / 0 无 / 1 赞，对标原版 SourceConfig 书维度评分）
+    #[serde(default, rename = "bookScore")]
+    pub book_score: i32,
     /// 是否有阅读记录（#424：搜索结果阅读记录标识，加法式字段，
     /// 原版 Kotlin 在 UI 层计算，Flutter 轨由 Rust 侧随 JSON 附加）
     #[serde(default, rename = "hasReadRecord")]

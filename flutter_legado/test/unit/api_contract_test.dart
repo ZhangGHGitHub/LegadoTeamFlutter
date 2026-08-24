@@ -15,9 +15,18 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final bNames = _extractMethods(_read('lib/src/services/book_api.dart'), 'BookApi');
-  final rNames = _extractMethods(_read('lib/src/services/rust_api.dart'), 'RustApi');
-  final mNames = _extractMethods(_read('lib/src/services/mock_book_api.dart'), 'MockBookApi');
+  final bNames = _extractMethods(
+    _read('lib/src/services/book_api.dart'),
+    'BookApi',
+  );
+  final rNames = _extractMethods(
+    _read('lib/src/services/rust_api.dart'),
+    'RustApi',
+  );
+  final mNames = _extractMethods(
+    _read('lib/src/services/mock_book_api.dart'),
+    'MockBookApi',
+  );
 
   final doc = _read('../docs/API_CONTRACT.md');
   final dlines = doc.split('\n');
@@ -36,13 +45,19 @@ void main() {
       }
     }
     hasSec17 = secIdx >= 0;
-    for (int i = secIdx + 1;
-         i < dlines.length && !dlines[i].startsWith('### ') && !dlines[i].startsWith('## ');
-         i++) {
+    for (
+      int i = secIdx + 1;
+      i < dlines.length &&
+          !dlines[i].startsWith('### ') &&
+          !dlines[i].startsWith('## ');
+      i++
+    ) {
       String l = dlines[i];
       if (!l.startsWith('|')) continue;
       final cells = _cells(l);
-      if (cells.length >= 2 && cells[0].length > 1 && cells[0].codeUnitAt(0) == 96) {
+      if (cells.length >= 2 &&
+          cells[0].length > 1 &&
+          cells[0].codeUnitAt(0) == 96) {
         pairs[_strip(cells[0])] = _contractName(cells[1]);
       }
     }
@@ -59,7 +74,15 @@ void main() {
 
     void flush() {
       if (curId != '') {
-        sections.add(_Sec(curId, _normTitle(curTitle), declared, actual, Set<String>.of(rowNames)));
+        sections.add(
+          _Sec(
+            curId,
+            _normTitle(curTitle),
+            declared,
+            actual,
+            Set<String>.of(rowNames),
+          ),
+        );
       }
     }
 
@@ -127,29 +150,50 @@ void main() {
 
     test('BookApi ⊆ RustApi 且 BookApi ⊆ MockBookApi', () {
       expect(bNames, isNotEmpty, reason: '解析器失效：未提取到任何 BookApi 方法');
-      final missingInR = bNames.where((n) => !rNames.contains(n)).toList()..sort();
-      expect(missingInR, isEmpty,
-          reason: '以下 BookApi 方法未在 RustApi 实现：$missingInR');
-      final missingInM = bNames.where((n) => !mNames.contains(n)).toList()..sort();
-      expect(missingInM, isEmpty,
-          reason: '以下 BookApi 方法未在 MockBookApi 实现：$missingInM');
+      final missingInR = bNames.where((n) => !rNames.contains(n)).toList()
+        ..sort();
+      expect(
+        missingInR,
+        isEmpty,
+        reason: '以下 BookApi 方法未在 RustApi 实现：$missingInR',
+      );
+      final missingInM = bNames.where((n) => !mNames.contains(n)).toList()
+        ..sort();
+      expect(
+        missingInM,
+        isEmpty,
+        reason: '以下 BookApi 方法未在 MockBookApi 实现：$missingInM',
+      );
     });
 
     test('公共额外方法钉死：RustApi={toString}，MockBookApi=∅', () {
-      final rExtra = rNames.where((n) => !n.startsWith('_') && !bSet.contains(n)).toList()..sort();
-      expect(rExtra, ['toString'],
-          reason: 'RustApi 公共额外方法集合漂移（新增/删除了 BookApi 之外的公共方法）：$rExtra');
-      final mExtra = mNames.where((n) => !n.startsWith('_') && !bSet.contains(n)).toList()..sort();
+      final rExtra =
+          rNames.where((n) => !n.startsWith('_') && !bSet.contains(n)).toList()
+            ..sort();
+      expect(rExtra, [
+        'toString',
+      ], reason: 'RustApi 公共额外方法集合漂移（新增/删除了 BookApi 之外的公共方法）：$rExtra');
+      final mExtra =
+          mNames.where((n) => !n.startsWith('_') && !bSet.contains(n)).toList()
+            ..sort();
       expect(mExtra, isEmpty, reason: 'MockBookApi 出现 BookApi 之外的公共方法：$mExtra');
     });
 
     test('每个 BookApi 方法都在契约中登记（直接行或 §1.7 等价对）', () {
       final unregistered =
-          bNames.where((n) => !allRowNames.contains(n) && !pairs.containsKey(n)).toList()..sort();
-      expect(unregistered, isEmpty,
-          reason: '以下 BookApi 方法未在 API_CONTRACT.md §2.x 登记（新接口必须先冻结契约）：$unregistered');
+          bNames
+              .where((n) => !allRowNames.contains(n) && !pairs.containsKey(n))
+              .toList()
+            ..sort();
+      expect(
+        unregistered,
+        isEmpty,
+        reason:
+            '以下 BookApi 方法未在 API_CONTRACT.md §2.x 登记（新接口必须先冻结契约）：$unregistered',
+      );
       // §1.7 的契约名侧必须真实存在于 §2.x 行中
-      final phantom = pairs.values.where((v) => !allRowNames.contains(v)).toList()..sort();
+      final phantom =
+          pairs.values.where((v) => !allRowNames.contains(v)).toList()..sort();
       expect(phantom, isEmpty, reason: '§1.7 引用了不存在的契约登记名：$phantom');
     });
 
@@ -164,12 +208,18 @@ void main() {
 
     test('附录与 §2.x 按标题双射镜像，合计行 = 各行之和', () {
       final secTitles = methodSections.map((s) => s.title).toList();
-      expect(secTitles.toSet().length, secTitles.length, reason: '§2.x 方法章节标题重复');
+      expect(
+        secTitles.toSet().length,
+        secTitles.length,
+        reason: '§2.x 方法章节标题重复',
+      );
       final appTitles = appRows.map((r) => r.title).toList();
       expect(appTitles.toSet().length, appTitles.length, reason: '附录行标题重复');
       expect(
-          appTitles.toSet(), secTitles.toSet(),
-          reason: '附录行与 §2.x 方法章节标题不一一对应（新增模块须同步附录）');
+        appTitles.toSet(),
+        secTitles.toSet(),
+        reason: '附录行与 §2.x 方法章节标题不一一对应（新增模块须同步附录）',
+      );
       final mismatched = <String>[];
       for (final s in methodSections) {
         int c = -1;
@@ -179,15 +229,20 @@ void main() {
             break;
           }
         }
-        if (c != s.actual) mismatched.add('${s.title}: 附录 $c / §2.x 实际 ${s.actual}');
+        if (c != s.actual) {
+          mismatched.add('${s.title}: 附录 $c / §2.x 实际 ${s.actual}');
+        }
       }
       expect(mismatched, isEmpty, reason: '附录计数与 §2.x 实际行不一致：$mismatched');
       int sum = 0;
       for (final r in appRows) {
         sum += r.count;
       }
-      expect(statedTotal, sum,
-          reason: '附录合计行（$statedTotal）≠ 附录各行之和（$sum），请更新合计');
+      expect(
+        statedTotal,
+        sum,
+        reason: '附录合计行（$statedTotal）≠ 附录各行之和（$sum），请更新合计',
+      );
     });
 
     test('文档声明的 BookApi 总数 == 程序化计数', () {
@@ -198,8 +253,11 @@ void main() {
           break;
         }
       }
-      expect(docCount, bNames.length,
-          reason: '文档声明 $docCount ≠ book_api.dart 实际 ${bNames.length}，请同步更新文档计数');
+      expect(
+        docCount,
+        bNames.length,
+        reason: '文档声明 $docCount ≠ book_api.dart 实际 ${bNames.length}，请同步更新文档计数',
+      );
     });
   });
 }
@@ -224,14 +282,46 @@ class _AppRow {
 String _read(String p) => File(p).readAsStringSync();
 
 bool _isIdentChar(int c) {
-  return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95;
+  return (c >= 65 && c <= 90) ||
+      (c >= 97 && c <= 122) ||
+      (c >= 48 && c <= 57) ||
+      c == 95;
 }
 
 final List<String> _blockStarts = [
-  'final', 'var', 'return', 'if', 'for', 'while', 'switch', 'case', 'break',
-  'continue', 'throw', 'new', 'import', 'export', 'part', 'class', 'enum',
-  'mixin', 'const', 'true', 'false', 'null', 'async', 'await', 'try',
-  'catch', 'do', 'else', 'required', 'super', 'this', 'operator', 'late',
+  'final',
+  'var',
+  'return',
+  'if',
+  'for',
+  'while',
+  'switch',
+  'case',
+  'break',
+  'continue',
+  'throw',
+  'new',
+  'import',
+  'export',
+  'part',
+  'class',
+  'enum',
+  'mixin',
+  'const',
+  'true',
+  'false',
+  'null',
+  'async',
+  'await',
+  'try',
+  'catch',
+  'do',
+  'else',
+  'required',
+  'super',
+  'this',
+  'operator',
+  'late',
 ];
 
 bool _candidate(String line) {
@@ -269,7 +359,14 @@ List<String> _extractMethods(String src, String className) {
         bad = true;
         break;
       }
-      if (_isIdentChar(c) || c == 60 || c == 62 || c == 91 || c == 93 || c == 42) hasType = true;
+      if (_isIdentChar(c) ||
+          c == 60 ||
+          c == 62 ||
+          c == 91 ||
+          c == 93 ||
+          c == 42) {
+        hasType = true;
+      }
     }
     if (bad || !hasType) continue;
     names.add(name);
@@ -348,7 +445,8 @@ String _strip(String s) {
   while (s.isNotEmpty && (s.codeUnitAt(0) == 96 || s.codeUnitAt(0) == 32)) {
     s = s.substring(1);
   }
-  while (s.isNotEmpty && (s.codeUnitAt(s.length - 1) == 96 || s.codeUnitAt(s.length - 1) == 32)) {
+  while (s.isNotEmpty &&
+      (s.codeUnitAt(s.length - 1) == 96 || s.codeUnitAt(s.length - 1) == 32)) {
     s = s.substring(0, s.length - 1);
   }
   return s;

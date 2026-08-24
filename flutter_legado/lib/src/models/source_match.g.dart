@@ -20,6 +20,7 @@ _$SourceMatchImpl _$$SourceMatchImplFromJson(Map<String, dynamic> json) =>
       chapterWordCount: (json['chapter_word_count'] as num?)?.toInt() ?? -1,
       respondTime: (json['respond_time'] as num?)?.toInt() ?? -1,
       originOrder: (json['origin_order'] as num?)?.toInt() ?? 0,
+      bookScore: (json['book_score'] as num?)?.toInt() ?? 0,
     );
 
 Map<String, dynamic> _$$SourceMatchImplToJson(_$SourceMatchImpl instance) =>
@@ -36,4 +37,5 @@ Map<String, dynamic> _$$SourceMatchImplToJson(_$SourceMatchImpl instance) =>
       'chapter_word_count': instance.chapterWordCount,
       'respond_time': instance.respondTime,
       'origin_order': instance.originOrder,
+      'book_score': instance.bookScore,
     };

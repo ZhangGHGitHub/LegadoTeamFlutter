@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -55,6 +55,7 @@ class ChangeSourceScreen extends ConsumerStatefulWidget {
 }
 
 class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
+  final _scrollController = ScrollController();
   // [UI-fix v2.0.2 | 2026-08-06] 换源页高级选项（对标原版 change_source.xml：
   // 搜索筛选/停止刷新切换/书源管理入口/刷新列表/校验作者开关/加载字数开关/
   // 加载信息开关/加载目录开关/源分组单选/关闭）；开关项持久化于 config，
@@ -81,6 +82,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   @override
   void dispose() {
     _searchFilterCtrl.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -191,38 +193,45 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   }
 
   /// 应用选中的书源
-  Future<void> _applySource(SourceMatch result) async {
+  Future<void> _applySource(
+    SourceMatch result, {
+    bool skipConfirm = false,
+  }) async {
     // 已有切换进行中时不再重复触发
     if (ref.read(changeSourceNotifierProvider).isApplying) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('切换书源'),
-        content: Text('确定要将本书切换到「${result.sourceName}」吗？\n'
-            '切换后将重新获取目录与章节内容。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+    if (!skipConfirm) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('切换书源'),
+          content: Text(
+            '确定要将本书切换到「${result.sourceName}」吗？\n'
+            '切换后将重新获取目录与章节内容。',
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('切换'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('切换'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
 
     try {
       final newBookUrl = await ref
           .read(changeSourceNotifierProvider.notifier)
           .applySource(result, bookUrl: widget.effectiveBookUrl);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已切换到「${result.sourceName}」')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已切换到「${result.sourceName}」')));
       Navigator.pop(context, newBookUrl);
     } catch (e) {
       if (!mounted) return;
@@ -230,30 +239,47 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       // 无信息的「Instance of 'BridgeError'」。改用 .message 暴露 Rust 侧真实
       // 错误（如「新书源未解析到任何章节」），便于用户与排查 — Qoder
       final msg = e is BridgeError ? e.message : e.toString();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('换源失败: $msg')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('换源失败: $msg')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(changeSourceNotifierProvider);
+    final results = _filteredResults(state);
     return Scaffold(
       appBar: LegadoAppBar(
-        title: Text('换源 - ${widget.effectiveBookName}'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.effectiveBookName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (widget.effectiveAuthor.isNotEmpty)
+              Text(
+                widget.effectiveAuthor,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
         actions: [
           // [UI-fix v2.0.2 | 2026-08-06] 搜索筛选入口（对标 menu_screen）— Qoder
           IconButton(
             icon: Icon(
-              _searchFilter.isNotEmpty
-                  ? Icons.filter_alt
-                  : Icons.search,
+              _searchFilter.isNotEmpty ? Icons.filter_alt : Icons.search,
             ),
             tooltip: '搜索筛选',
-            onPressed: () => setState(
-              () => _searchFilterVisible = !_searchFilterVisible,
-            ),
+            onPressed: () =>
+                setState(() => _searchFilterVisible = !_searchFilterVisible),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -285,7 +311,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
               PopupMenuItem(
                 value: 'checkAuthor',
                 child: _menuRow(
-                  icon: _checkAuthor ? Icons.check_box : Icons.check_box_outline_blank,
+                  icon: _checkAuthor
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
                   label: '校验作者',
                 ),
               ),
@@ -301,14 +329,18 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
               PopupMenuItem(
                 value: 'loadInfo',
                 child: _menuRow(
-                  icon: _loadInfo ? Icons.check_box : Icons.check_box_outline_blank,
+                  icon: _loadInfo
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
                   label: '加载信息',
                 ),
               ),
               PopupMenuItem(
                 value: 'loadToc',
                 child: _menuRow(
-                  icon: _loadToc ? Icons.check_box : Icons.check_box_outline_blank,
+                  icon: _loadToc
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
                   label: '加载目录',
                 ),
               ),
@@ -316,9 +348,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                 value: 'group',
                 child: _menuRow(
                   icon: Icons.group_work,
-                  label: _searchGroup.isEmpty
-                      ? '源分组：全部'
-                      : '源分组：$_searchGroup',
+                  label: _searchGroup.isEmpty ? '源分组：全部' : '源分组：$_searchGroup',
                 ),
               ),
               const PopupMenuItem(
@@ -340,8 +370,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                       hintText: '按书源名称筛选',
                       isDense: true,
                       filled: true,
-                      fillColor:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      fillColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
@@ -352,7 +383,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
               )
             : null,
       ),
-      body: _buildBody(state),
+      body: _buildBody(state, results),
+      bottomNavigationBar: _buildBottomBar(state, results),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: state.isLoading || _stopped
             ? null
@@ -439,9 +471,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     );
   }
 
-  Widget _buildBody(ChangeSourceState state) {
-    // [UI-fix v2.0.2 | 2026-08-06] 搜索筛选（对标 menu_screen SearchView：
-    // 客户端按书源名/书名关键字过滤结果列表）— Qoder
+  List<SourceMatch> _filteredResults(ChangeSourceState state) {
     var results = state.results;
     if (_searchFilter.isNotEmpty) {
       results = results
@@ -452,6 +482,247 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           )
           .toList();
     }
+    return results;
+  }
+
+  SourceMatch? _currentSourceItem(List<SourceMatch> results) {
+    for (final r in results) {
+      if (r.sourceUrl == widget.effectiveCurrentSourceUrl) return r;
+    }
+    return null;
+  }
+
+  void _scrollToCurrentSource(List<SourceMatch> results) {
+    final idx = results.indexWhere(
+      (r) => r.sourceUrl == widget.effectiveCurrentSourceUrl,
+    );
+    if (idx < 0 || !_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      idx * 72.0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  Widget _buildBottomBar(ChangeSourceState state, List<SourceMatch> results) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final current = _currentSourceItem(results);
+    final label = current?.sourceName.isNotEmpty == true
+        ? current!.sourceName
+        : (widget.effectiveCurrentSourceUrl.isNotEmpty
+              ? widget.effectiveCurrentSourceUrl
+              : '当前书源');
+
+    return Material(
+      elevation: 8,
+      color: colorScheme.surfaceContainerHighest,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: results.isEmpty
+                      ? null
+                      : () => _scrollToCurrentSource(results),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.vertical_align_top),
+                tooltip: '滚到顶部',
+                onPressed: results.isEmpty
+                    ? null
+                    : () {
+                        // hasClients 在布局 attach 后才为 true，须于点击时判定（构建时为 false）
+                        if (_scrollController.hasClients) {
+                          _scrollController.animateTo(
+                            0,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOut,
+                          );
+                        }
+                      },
+              ),
+              IconButton(
+                icon: const Icon(Icons.vertical_align_bottom),
+                tooltip: '滚到底部',
+                onPressed: results.isEmpty
+                    ? null
+                    : () {
+                        if (_scrollController.hasClients) {
+                          _scrollController.animateTo(
+                            _scrollController.position.maxScrollExtent,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOut,
+                          );
+                        }
+                      },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onThumbUp(SourceMatch item) async {
+    final newScore = item.bookScore > 0 ? 0 : 1;
+    try {
+      await ref
+          .read(changeSourceNotifierProvider.notifier)
+          .updateBookScore(item.bookUrl, newScore);
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is BridgeError ? e.message : e.toString();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('评分失败: $msg')));
+    }
+  }
+
+  Future<void> _onThumbDown(SourceMatch item) async {
+    final newScore = item.bookScore < 0 ? 0 : -1;
+    try {
+      await ref
+          .read(changeSourceNotifierProvider.notifier)
+          .updateBookScore(item.bookUrl, newScore);
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is BridgeError ? e.message : e.toString();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('评分失败: $msg')));
+    }
+  }
+
+  Future<void> _showItemActions(SourceMatch item) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.vertical_align_top),
+              title: const Text('置顶'),
+              onTap: () => Navigator.pop(ctx, 'top'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.vertical_align_bottom),
+              title: const Text('置底'),
+              onTap: () => Navigator.pop(ctx, 'bottom'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('编辑书源'),
+              onTap: () => Navigator.pop(ctx, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.block),
+              title: const Text('禁用书源'),
+              onTap: () => Navigator.pop(ctx, 'disable'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete,
+                color: Theme.of(ctx).colorScheme.error,
+              ),
+              title: Text(
+                '删除',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+              ),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+
+    final notifier = ref.read(changeSourceNotifierProvider.notifier);
+    switch (action) {
+      case 'top':
+        notifier.moveToTop(item.bookUrl);
+      case 'bottom':
+        notifier.moveToBottom(item.bookUrl);
+      case 'edit':
+        Navigator.pushNamed(context, AppRoutes.sources);
+      case 'disable':
+        try {
+          await notifier.disableAndRemove(item);
+        } catch (e) {
+          if (!mounted) return;
+          final msg = e is BridgeError ? e.message : e.toString();
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('禁用失败: $msg')));
+        }
+      case 'delete':
+        await _confirmDeleteItem(item);
+    }
+  }
+
+  Future<void> _confirmDeleteItem(SourceMatch item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除'),
+        content: Text('确定删除「${item.sourceName}」吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final wasCurrent = item.bookUrl == widget.effectiveBookUrl;
+    try {
+      await ref
+          .read(changeSourceNotifierProvider.notifier)
+          .deleteSearchBookItem(item.bookUrl);
+      if (!mounted) return;
+      if (wasCurrent) {
+        final next = ref.read(changeSourceNotifierProvider).results.firstOrNull;
+        if (next != null) {
+          await _applySource(next, skipConfirm: true);
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is BridgeError ? e.message : e.toString();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('删除失败: $msg')));
+    }
+  }
+
+  Widget _buildBody(ChangeSourceState state, List<SourceMatch> results) {
     if (state.isLoading && results.isEmpty) {
       return const LoadingIndicator(message: '正在搜索可替换书源...');
     }
@@ -469,13 +740,27 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 64, color: colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.search_off,
+              size: 64,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 8),
-            Text('未找到可替换的书源',
-                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 16)),
+            Text(
+              '未找到可替换的书源',
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 16,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text('请确认已启用足够的书源后重试',
-                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
+            Text(
+              '请确认已启用足够的书源后重试',
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
           ],
         ),
       );
@@ -489,14 +774,15 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              '找到 ${results.length} 个匹配书源（按匹配度排序）',
+              '找到 ${results.length} 个匹配书源',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           Expanded(
             child: ListView.separated(
+              controller: _scrollController,
               padding: const EdgeInsets.symmetric(vertical: 4),
               itemCount: results.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
@@ -517,99 +803,150 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final isCurrent = item.sourceUrl == widget.effectiveCurrentSourceUrl;
     final isApplying = state.applyingUrl == item.sourceUrl;
+    final score = item.bookScore;
+    final goodActive = score > 0;
+    final badActive = score < 0;
+    const goodColor = Color(0xFFFF5252); // Material Red A200
+    const badColor = Color(0xFF448AFF); // Material Blue A200
 
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: _scoreColor(item.score).withValues(alpha: 0.15),
-        child: Text(
-          item.score.toStringAsFixed(0),
-          style: TextStyle(
-            color: _scoreColor(item.score),
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-        ),
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              item.sourceName.isEmpty ? '未知书源' : item.sourceName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: isCurrent ? colorScheme.primary : null,
+    return InkWell(
+      onTap: isCurrent || state.isApplying ? null : () => _applySource(item),
+      onLongPress: () => _showItemActions(item),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          item.sourceName.isEmpty ? '未知书源' : item.sourceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: isCurrent ? colorScheme.primary : null,
+                          ),
+                        ),
+                      ),
+                      if (isCurrent) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '当前',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (item.latestChapter != null &&
+                      item.latestChapter!.isNotEmpty)
+                    Text(
+                      '最新：${item.latestChapter}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  if (item.wordCount != null && item.wordCount!.isNotEmpty)
+                    Text(
+                      item.wordCount!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.outline,
+                      ),
+                    ),
+                  if (_loadWordCount &&
+                      item.chapterWordCountText != null &&
+                      item.chapterWordCountText!.isNotEmpty)
+                    Text(
+                      item.chapterWordCountText!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.outline,
+                      ),
+                    ),
+                  if (_loadWordCount && item.respondTime >= 0)
+                    Text(
+                      '耗时 ${item.respondTime}ms',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colorScheme.outline,
+                      ),
+                    ),
+                ],
               ),
             ),
-          ),
-          if (isCurrent) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                '当前',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: colorScheme.onPrimaryContainer,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.thumb_up_outlined,
+                    color: goodActive
+                        ? goodColor
+                        : colorScheme.outline.withValues(alpha: 0.6),
+                  ),
+                  tooltip: '赞',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _onThumbUp(item),
                 ),
-              ),
+                IconButton(
+                  icon: Icon(
+                    Icons.thumb_down_outlined,
+                    color: badActive
+                        ? badColor
+                        : colorScheme.outline.withValues(alpha: 0.6),
+                  ),
+                  tooltip: '踩',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _onThumbDown(item),
+                ),
+              ],
             ),
-          ],
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (item.latestChapter != null && item.latestChapter!.isNotEmpty)
-            Text(
-              '最新：${item.latestChapter}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
-            ),
-          if (item.wordCount != null && item.wordCount!.isNotEmpty)
-            Text(
-              item.wordCount!,
-              style: TextStyle(fontSize: 12, color: colorScheme.outline),
-            ),
-          if (_loadWordCount &&
-              item.chapterWordCountText != null &&
-              item.chapterWordCountText!.isNotEmpty)
-            Text(
-              item.chapterWordCountText!,
-              style: TextStyle(fontSize: 12, color: colorScheme.outline),
-            ),
-          if (_loadWordCount && item.respondTime >= 0)
-            Text(
-              '耗时 ${item.respondTime}ms',
-              style: TextStyle(fontSize: 11, color: colorScheme.outline),
-            ),
-        ],
-      ),
-      trailing: isCurrent
-          ? const Icon(Icons.check_circle, size: 20)
-          : isApplying
-              ? const SizedBox(
+            if (isCurrent)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 12),
+                child: Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: colorScheme.primary,
+                ),
+              )
+            else if (isApplying)
+              const Padding(
+                padding: EdgeInsets.only(left: 4, top: 12),
+                child: SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(Icons.chevron_right, color: colorScheme.outline),
-      enabled: !isCurrent && !state.isApplying,
-      onTap: () => _applySource(item),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 12),
+                child: Icon(Icons.chevron_right, color: colorScheme.outline),
+              ),
+          ],
+        ),
+      ),
     );
-  }
-
-  /// 根据匹配度评分返回对应颜色
-  Color _scoreColor(double score) {
-    if (score >= 80) return Colors.green;
-    if (score >= 50) return Colors.orange;
-    return Theme.of(context).colorScheme.onSurfaceVariant;
   }
 }
 
@@ -623,11 +960,7 @@ class _MenuRowStatic extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: [
-        Icon(icon, size: 20),
-        const SizedBox(width: 12),
-        Text(label),
-      ],
+      children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
     );
   }
 }

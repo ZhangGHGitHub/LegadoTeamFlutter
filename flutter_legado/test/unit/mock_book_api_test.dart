@@ -113,15 +113,17 @@ void main() {
     test('setSourceVariable 写入/清除书源变量', () async {
       await api.setSourceVariable('https://www.kaixin7days.com', 'key=value');
       var sources = await api.getBookSources();
-      final src =
-          sources.firstWhere((s) => s.bookSourceUrl == 'https://www.kaixin7days.com');
+      final src = sources.firstWhere(
+        (s) => s.bookSourceUrl == 'https://www.kaixin7days.com',
+      );
       expect(src.variable, 'key=value');
 
       // 空串=清除（对齐 Rust 单列 UPDATE 语义；C1 后 variable 为非空串）
       await api.setSourceVariable('https://www.kaixin7days.com', '');
       sources = await api.getBookSources();
-      final cleared =
-          sources.firstWhere((s) => s.bookSourceUrl == 'https://www.kaixin7days.com');
+      final cleared = sources.firstWhere(
+        (s) => s.bookSourceUrl == 'https://www.kaixin7days.com',
+      );
       expect(cleared.variable, '');
     });
 
@@ -151,7 +153,6 @@ void main() {
       expect(c, contains('https://example.com/book'));
     });
   });
-
 
   group('搜索操作', () {
     test('searchBooks 返回 5 条结果', () async {
@@ -264,25 +265,29 @@ void main() {
 
     // [Task #65] 契约 §2.7 getBookmarksByBook（台账 §5.14-2）
     test('getBookmarksByBook 按书名+作者双键过滤', () async {
-      await api.addBookmark(Bookmark(
-        bookName: '斗破苍穹',
-        bookAuthor: '天蚕土豆',
-        chapterIndex: 1,
-        chapterPos: 50,
-        chapterName: '第2章',
-        bookText: '',
-        content: '命中',
-      ));
+      await api.addBookmark(
+        Bookmark(
+          bookName: '斗破苍穹',
+          bookAuthor: '天蚕土豆',
+          chapterIndex: 1,
+          chapterPos: 50,
+          chapterName: '第2章',
+          bookText: '',
+          content: '命中',
+        ),
+      );
       // 同名不同作者不得混入（对齐原版 bookmarkDao.getByBook）
-      await api.addBookmark(Bookmark(
-        bookName: '斗破苍穹',
-        bookAuthor: '同名作者',
-        chapterIndex: 0,
-        chapterPos: 0,
-        chapterName: '干扰项',
-        bookText: '',
-        content: '',
-      ));
+      await api.addBookmark(
+        Bookmark(
+          bookName: '斗破苍穹',
+          bookAuthor: '同名作者',
+          chapterIndex: 0,
+          chapterPos: 0,
+          chapterName: '干扰项',
+          bookText: '',
+          content: '',
+        ),
+      );
       final hit = await api.getBookmarksByBook('斗破苍穹', '天蚕土豆');
       expect(hit.length, 1);
       expect(hit[0].content, '命中');
@@ -291,7 +296,15 @@ void main() {
     });
 
     test('deleteBookmark 删除后为空', () async {
-      final bm = Bookmark(bookName: '测试', bookAuthor: '', chapterIndex: 0, chapterPos: 0, chapterName: '', bookText: '', content: '');
+      final bm = Bookmark(
+        bookName: '测试',
+        bookAuthor: '',
+        chapterIndex: 0,
+        chapterPos: 0,
+        chapterName: '',
+        bookText: '',
+        content: '',
+      );
       final added = await api.addBookmark(bm);
       await api.deleteBookmark(added.id);
       final list = await api.getAllBookmarks();
@@ -352,7 +365,9 @@ void main() {
 
   group('HTTP TTS', () {
     test('addHttpTts/getHttpTts 读写一致', () async {
-      await api.addHttpTts(HttpTts(name: '测试引擎', url: 'http://tts.example.com'));
+      await api.addHttpTts(
+        HttpTts(name: '测试引擎', url: 'http://tts.example.com'),
+      );
       final list = await api.getHttpTts();
       // 预置 2 个真实 TTS 引擎 + 新增 1 个
       expect(list.length, 3);
@@ -417,7 +432,10 @@ void main() {
 
     test('autoTaskNextDueAt 返回未来时间', () async {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final next = await api.autoTaskNextDueAt(cron: '0 0 8 * * *', fromMs: now);
+      final next = await api.autoTaskNextDueAt(
+        cron: '0 0 8 * * *',
+        fromMs: now,
+      );
       expect(next, greaterThan(now));
     });
   });
@@ -442,7 +460,9 @@ void main() {
 
   group('发现页操作', () {
     test('exploreParseUrl 解析分类', () async {
-      final categories = await api.exploreParseUrl('玄幻::http://a.com\n都市::http://b.com');
+      final categories = await api.exploreParseUrl(
+        '玄幻::http://a.com\n都市::http://b.com',
+      );
       expect(categories.length, 2);
       expect(categories[0].title, '玄幻');
     });
@@ -481,7 +501,9 @@ void main() {
     });
 
     test('audioResolvePlayBook 解析书籍', () async {
-      final result = await api.audioResolvePlayBook(requestedBookUrl: 'mock://book/1');
+      final result = await api.audioResolvePlayBook(
+        requestedBookUrl: 'mock://book/1',
+      );
       expect(result, isNotNull);
       expect(result!['name'], '斗破苍穹');
     });

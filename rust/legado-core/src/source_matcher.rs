@@ -39,6 +39,9 @@ pub struct SourceMatch {
     /// 书源排序权重（对齐 SearchBook.originOrder / BookSource.customOrder）
     #[serde(default)]
     pub origin_order: i32,
+    /// 用户评分（-1 踩 / 0 无 / 1 赞，对标原版 SourceConfig 书维度评分）
+    #[serde(default, rename = "book_score")]
+    pub book_score: i32,
 }
 
 fn default_neg_one() -> i32 {
@@ -74,6 +77,9 @@ pub struct SearchCandidate {
     /// 书源 customOrder
     #[serde(default)]
     pub origin_order: i32,
+    /// 用户评分（-1/0/1）
+    #[serde(default)]
+    pub book_score: i32,
 }
 
 /// 书源匹配器
@@ -105,9 +111,13 @@ impl SourceMatcher {
             Self::sort_by_word_count(&mut matches);
         } else {
             matches.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
+                b.book_score
+                    .cmp(&a.book_score)
+                    .then_with(|| {
+                        b.score
+                            .partial_cmp(&a.score)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
                     .then_with(|| a.origin_order.cmp(&b.origin_order))
             });
         }
@@ -133,18 +143,21 @@ impl SourceMatcher {
             chapter_word_count: c.chapter_word_count,
             respond_time: c.respond_time,
             origin_order: c.origin_order,
+            book_score: c.book_score,
         }
     }
 
     /// 对齐 ChangeBookSourceViewModel.wordCountComparator
     fn sort_by_word_count(matches: &mut [SourceMatch]) {
         matches.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            b.book_score
+                .cmp(&a.book_score)
                 .then_with(|| {
-                    (b.chapter_word_count > 1000).cmp(&(a.chapter_word_count > 1000))
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 })
+                .then_with(|| (b.chapter_word_count > 1000).cmp(&(a.chapter_word_count > 1000)))
                 .then_with(|| {
                     chapter_num_from_text(b.chapter_word_count_text.as_deref())
                         .cmp(&chapter_num_from_text(a.chapter_word_count_text.as_deref()))
@@ -179,11 +192,7 @@ impl SourceMatcher {
                 let mut chars = s.chars();
                 if let (Some(first), Some(last)) = (chars.next(), chars.next_back()) {
                     if first == open && last == close && s.chars().count() > 2 {
-                        let inner: String = s
-                            .chars()
-                            .skip(1)
-                            .take(s.chars().count() - 2)
-                            .collect();
+                        let inner: String = s.chars().skip(1).take(s.chars().count() - 2).collect();
                         s = inner;
                         changed = true;
                         break;
@@ -230,8 +239,7 @@ impl SourceMatcher {
         if ta.is_empty() {
             return true;
         }
-        Self::normalize_author(result_author).contains(&ta)
-            || result_author.contains(&ta)
+        Self::normalize_author(result_author).contains(&ta) || result_author.contains(&ta)
     }
 
     /// Task #25：换源候选硬过滤（对齐原版 ChangeBookSourceViewModel L266-270）。
@@ -357,6 +365,7 @@ mod tests {
                 chapter_word_count: -1,
                 respond_time: -1,
                 origin_order: 0,
+                book_score: 0,
             },
             SearchCandidate {
                 source_url: "s2".into(),
@@ -370,6 +379,7 @@ mod tests {
                 chapter_word_count: -1,
                 respond_time: -1,
                 origin_order: 0,
+                book_score: 0,
             },
         ];
 
@@ -394,6 +404,7 @@ mod tests {
             chapter_word_count: -1,
             respond_time: -1,
             origin_order: 0,
+            book_score: 0,
         };
         assert!(SourceMatcher::is_good_match(&good));
 
@@ -417,14 +428,21 @@ mod tests {
             chapter_word_count: -1,
             respond_time: -1,
             origin_order: 0,
+            book_score: 0,
         }
     }
 
     /// Task #25：作者规范化 — 剥离「作者：」前缀与「 著」后缀
     #[test]
     fn test_normalize_author() {
-        assert_eq!(SourceMatcher::normalize_author("作者：STDe亦寒"), "STDe亦寒");
-        assert_eq!(SourceMatcher::normalize_author("作者: STDe亦寒"), "STDe亦寒");
+        assert_eq!(
+            SourceMatcher::normalize_author("作者：STDe亦寒"),
+            "STDe亦寒"
+        );
+        assert_eq!(
+            SourceMatcher::normalize_author("作者: STDe亦寒"),
+            "STDe亦寒"
+        );
         assert_eq!(SourceMatcher::normalize_author("小桥老树 著"), "小桥老树");
         assert_eq!(SourceMatcher::normalize_author("天蚕土豆"), "天蚕土豆");
         assert_eq!(SourceMatcher::normalize_author("  "), "");
@@ -433,33 +451,58 @@ mod tests {
     /// Task #25：带「作者：」前缀的目标作者与裸作者候选仍计同名同作者高分
     #[test]
     fn test_match_score_with_author_prefix() {
-        let score = SourceMatcher::match_score("灵气复苏", "STDe亦寒", "灵气复苏", "作者：STDe亦寒");
+        let score =
+            SourceMatcher::match_score("灵气复苏", "STDe亦寒", "灵气复苏", "作者：STDe亦寒");
         assert_eq!(score, 80.0);
     }
 
     /// Task #25：书名规范化 — trim + 成对剥离首尾括号，不做模糊匹配
     #[test]
     fn test_normalize_book_name() {
-        assert_eq!(SourceMatcher::normalize_book_name("  灵气复苏 "), "灵气复苏");
+        assert_eq!(
+            SourceMatcher::normalize_book_name("  灵气复苏 "),
+            "灵气复苏"
+        );
         assert_eq!(SourceMatcher::normalize_book_name("(灵气复苏)"), "灵气复苏");
-        assert_eq!(SourceMatcher::normalize_book_name("【灵气复苏】"), "灵气复苏");
-        assert_eq!(SourceMatcher::normalize_book_name("（灵气复苏）"), "灵气复苏");
+        assert_eq!(
+            SourceMatcher::normalize_book_name("【灵气复苏】"),
+            "灵气复苏"
+        );
+        assert_eq!(
+            SourceMatcher::normalize_book_name("（灵气复苏）"),
+            "灵气复苏"
+        );
         // 括号不成对/内部括号/后缀括号不剥离（保守口径，对齐原版 equals）
         assert_eq!(SourceMatcher::normalize_book_name("灵气复苏("), "灵气复苏(");
-        assert_eq!(SourceMatcher::normalize_book_name("灵气(复)苏"), "灵气(复)苏");
-        assert_eq!(SourceMatcher::normalize_book_name("灵气复苏(全集)"), "灵气复苏(全集)");
+        assert_eq!(
+            SourceMatcher::normalize_book_name("灵气(复)苏"),
+            "灵气(复)苏"
+        );
+        assert_eq!(
+            SourceMatcher::normalize_book_name("灵气复苏(全集)"),
+            "灵气复苏(全集)"
+        );
     }
 
     /// Task #25：同名判定 — 规范化后精确相等；空名/异名均不匹配
     #[test]
     fn test_is_same_book_name() {
         assert!(SourceMatcher::is_same_book_name("灵气复苏", "灵气复苏"));
-        assert!(SourceMatcher::is_same_book_name(" 【灵气复苏】 ", "灵气复苏"));
-        assert!(!SourceMatcher::is_same_book_name("侯卫东官场笔记", "灵气复苏"));
+        assert!(SourceMatcher::is_same_book_name(
+            " 【灵气复苏】 ",
+            "灵气复苏"
+        ));
+        assert!(!SourceMatcher::is_same_book_name(
+            "侯卫东官场笔记",
+            "灵气复苏"
+        ));
         assert!(!SourceMatcher::is_same_book_name("", "灵气复苏"));
         assert!(!SourceMatcher::is_same_book_name("灵气复苏", ""));
         // 仅包含关系不算同名（原版 equals 口径）
-        assert!(!SourceMatcher::is_same_book_name("灵气复苏之无敌", "灵气复苏"));
+        assert!(!SourceMatcher::is_same_book_name(
+            "灵气复苏之无敌",
+            "灵气复苏"
+        ));
     }
 
     /// Task #25：作者校验 — 目标作者为空不校验；非空时 contains 判定
@@ -483,14 +526,19 @@ mod tests {
             candidate("s3", "侯卫东官场笔记", "丙作者"),
             candidate("s4", "灵气复苏之无敌", "甲作者"),
         ];
-        let kept = SourceMatcher::filter_for_change(candidates.clone(), "灵气复苏", "甲作者", false);
+        let kept =
+            SourceMatcher::filter_for_change(candidates.clone(), "灵气复苏", "甲作者", false);
         let urls: Vec<&str> = kept.iter().map(|c| c.source_url.as_str()).collect();
         assert_eq!(urls, vec!["s1", "s2"], "仅同名书进入换源列表");
 
         // 校验作者：s2 作者不含目标作者被剔除
         let kept2 = SourceMatcher::filter_for_change(candidates, "灵气复苏", "甲作者", true);
         let urls2: Vec<&str> = kept2.iter().map(|c| c.source_url.as_str()).collect();
-        assert_eq!(urls2, vec!["s1"], "check_author=true 时作者不含目标作者被剔除");
+        assert_eq!(
+            urls2,
+            vec!["s1"],
+            "check_author=true 时作者不含目标作者被剔除"
+        );
     }
 
     /// Task #25：过滤+排序全链 — 同名同作者高分排最前，无关书全部被过滤

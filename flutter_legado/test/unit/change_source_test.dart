@@ -94,13 +94,13 @@ void main() {
 
     /// 构造一条候选结果 Map（snake_case，对齐 Rust SourceMatch）
     Map<String, dynamic> rawMatch(String url, String name, double score) => {
-          'source_url': url,
-          'source_name': name,
-          'book_url': '$url/book',
-          'book_name': '斗破苍穹',
-          'author': '天蚕土豆',
-          'score': score,
-        };
+      'source_url': url,
+      'source_name': name,
+      'book_url': '$url/book',
+      'book_name': '斗破苍穹',
+      'author': '天蚕土豆',
+      'score': score,
+    };
 
     test('初始状态为空', () {
       final state = readState();
@@ -113,10 +113,12 @@ void main() {
     });
 
     test('search 经 BookApi.searchSource 解析为 SourceMatch 列表', () async {
-      when(() => mockApi.searchSource(any(), any())).thenAnswer((_) async => [
-            rawMatch('https://a.com', 'A源', 90),
-            rawMatch('https://b.com', 'B源', 70),
-          ]);
+      when(() => mockApi.searchSource(any(), any())).thenAnswer(
+        (_) async => [
+          rawMatch('https://a.com', 'A源', 90),
+          rawMatch('https://b.com', 'B源', 70),
+        ],
+      );
 
       await readNotifier().search('斗破苍穹', '天蚕土豆');
 
@@ -132,10 +134,12 @@ void main() {
 
     test('search 保持 Rust 返回顺序（不在 Dart 侧重排）', () async {
       // Rust 已按评分降序；此处故意返回升序，验证 Notifier 不重排
-      when(() => mockApi.searchSource(any(), any())).thenAnswer((_) async => [
-            rawMatch('https://low.com', '低分源', 30),
-            rawMatch('https://high.com', '高分源', 95),
-          ]);
+      when(() => mockApi.searchSource(any(), any())).thenAnswer(
+        (_) async => [
+          rawMatch('https://low.com', '低分源', 30),
+          rawMatch('https://high.com', '高分源', 95),
+        ],
+      );
 
       await readNotifier().search('斗破苍穹', '天蚕土豆');
 
@@ -144,8 +148,9 @@ void main() {
     });
 
     test('search 异常时记录 error 并清除加载态', () async {
-      when(() => mockApi.searchSource(any(), any()))
-          .thenThrow(Exception('网络错误'));
+      when(
+        () => mockApi.searchSource(any(), any()),
+      ).thenThrow(Exception('网络错误'));
 
       await readNotifier().search('斗破苍穹', '天蚕土豆');
 
@@ -171,9 +176,9 @@ void main() {
     });
 
     test('applySource 经 BookApi.switchSource 回写并返回新 bookUrl', () async {
-      when(() => mockApi.switchSource(any(), any(), any())).thenAnswer(
-        (_) async => '{"bookUrl":"https://new.com/book/1"}',
-      );
+      when(
+        () => mockApi.switchSource(any(), any(), any()),
+      ).thenAnswer((_) async => '{"bookUrl":"https://new.com/book/1"}');
       const match = SourceMatch(
         sourceUrl: 'https://new.com',
         sourceName: '新源',
@@ -187,16 +192,19 @@ void main() {
 
       expect(newUrl, equals('https://new.com/book/1'));
       expect(readState().applyingUrl, isNull);
-      verify(() => mockApi.switchSource(
-            'https://old.com/book',
-            'https://new.com',
-            'https://new.com/fallback',
-          )).called(1);
+      verify(
+        () => mockApi.switchSource(
+          'https://old.com/book',
+          'https://new.com',
+          'https://new.com/fallback',
+        ),
+      ).called(1);
     });
 
     test('applySource 返回 JSON 无 bookUrl 时回退到候选项 bookUrl', () async {
-      when(() => mockApi.switchSource(any(), any(), any()))
-          .thenAnswer((_) async => '{}');
+      when(
+        () => mockApi.switchSource(any(), any(), any()),
+      ).thenAnswer((_) async => '{}');
       const match = SourceMatch(
         sourceUrl: 'https://new.com',
         sourceName: '新源',
@@ -212,8 +220,9 @@ void main() {
     });
 
     test('applySource 异常时清除 applyingUrl 并重新抛出', () async {
-      when(() => mockApi.switchSource(any(), any(), any()))
-          .thenThrow(Exception('切换失败'));
+      when(
+        () => mockApi.switchSource(any(), any(), any()),
+      ).thenThrow(Exception('切换失败'));
       const match = SourceMatch(sourceUrl: 'https://new.com');
 
       await expectLater(
@@ -225,12 +234,12 @@ void main() {
     });
 
     test('applySource 进行中时再次调用抛出 StateError', () async {
-      when(() => mockApi.switchSource(any(), any(), any())).thenAnswer(
-        (_) async {
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-          return '{}';
-        },
-      );
+      when(() => mockApi.switchSource(any(), any(), any())).thenAnswer((
+        _,
+      ) async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return '{}';
+      });
       const match = SourceMatch(sourceUrl: 'https://new.com');
 
       final f1 = readNotifier().applySource(match, bookUrl: 'https://old.com');
@@ -243,6 +252,59 @@ void main() {
         throwsA(isA<StateError>()),
       );
       await f1;
+    });
+
+    test('updateBookScore 经 BookApi 持久化并更新本地 bookScore', () async {
+      when(
+        () => mockApi.updateSearchBookScore(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => mockApi.searchSource(any(), any()),
+      ).thenAnswer((_) async => [rawMatch('https://a.com', 'A源', 90)]);
+
+      await readNotifier().search('斗破苍穹', '天蚕土豆');
+      final bookUrl = readState().results.first.bookUrl;
+
+      await readNotifier().updateBookScore(bookUrl, 1);
+
+      expect(readState().results.first.bookScore, equals(1));
+      verify(() => mockApi.updateSearchBookScore(bookUrl, 1)).called(1);
+    });
+
+    test('moveToTop / moveToBottom 本地重排', () async {
+      when(() => mockApi.searchSource(any(), any())).thenAnswer(
+        (_) async => [
+          rawMatch('https://a.com', 'A源', 90),
+          rawMatch('https://b.com', 'B源', 70),
+        ],
+      );
+      await readNotifier().search('斗破苍穹', '天蚕土豆');
+
+      final bUrl = readState().results.last.bookUrl;
+      readNotifier().moveToTop(bUrl);
+      expect(readState().results.first.sourceUrl, equals('https://b.com'));
+
+      readNotifier().moveToBottom(bUrl);
+      expect(readState().results.last.sourceUrl, equals('https://b.com'));
+    });
+
+    test('deleteSearchBookItem 移除列表项', () async {
+      when(() => mockApi.deleteSearchBook(any())).thenAnswer((_) async {});
+      when(() => mockApi.searchSource(any(), any())).thenAnswer(
+        (_) async => [
+          rawMatch('https://a.com', 'A源', 90),
+          rawMatch('https://b.com', 'B源', 70),
+        ],
+      );
+      await readNotifier().search('斗破苍穹', '天蚕土豆');
+
+      final removed = await readNotifier().deleteSearchBookItem(
+        readState().results.first.bookUrl,
+      );
+
+      expect(removed, isNotNull);
+      expect(readState().results.length, equals(1));
+      verify(() => mockApi.deleteSearchBook(any())).called(1);
     });
   });
 }
