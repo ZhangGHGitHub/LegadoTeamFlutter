@@ -1,7 +1,7 @@
 name: flutter_legado
 description: "Legado - A reading app powered by Rust + Flutter"
 publish_to: 'none'
-version: 2.0.99+103
+version: 2.0.100+104
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
@@ -54,6 +54,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icons/
+    # 默认书籍封面（对标 Android res/drawable/image_cover_default.jpg）
+    - assets/images/
     # 默认数据（对标 Android assets/defaultData）
     - assets/default_data/
     # 帮助文档（对标 Android assets/web/help/md + storageHelp.md）

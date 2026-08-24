@@ -69,8 +69,9 @@ void main() {
     var tapped = false;
     await tester.pumpWidget(buildTestWidget(onTap: () => tapped = true));
 
-    // 点击封面区域触发 onTap
-    await tester.tap(find.byIcon(Icons.menu_book));
+    // 点击封面区域触发 onTap（无封面 → 默认封面图，对标原版 image_cover_default）
+    // [UI-fix | 2026-08-24] 占位符由 Icon 改为默认封面图 — Qoder UI
+    await tester.tap(find.byType(Image));
     expect(tapped, isTrue);
   });
 
@@ -81,8 +82,9 @@ void main() {
       buildTestWidget(onCoverLongPress: () => coverLongPressed = true),
     );
 
-    // 长按封面区域（占位图标）
-    await tester.longPress(find.byIcon(Icons.menu_book));
+    // 长按封面区域（默认封面图，对标原版 image_cover_default）
+    // [UI-fix | 2026-08-24] 占位符由 Icon 改为默认封面图 — Qoder UI
+    await tester.longPress(find.byType(Image));
     expect(coverLongPressed, isTrue);
   });
 
@@ -101,10 +103,16 @@ void main() {
     expect(infoLongPressed, isTrue);
   });
 
-  testWidgets('BookGridItem shows placeholder icon without cover',
+  testWidgets('BookGridItem shows default cover image without cover',
       (tester) async {
     await tester.pumpWidget(buildTestWidget());
 
-    expect(find.byIcon(Icons.menu_book), findsOneWidget);
+    // 无封面 → 默认封面图（对标原版 image_cover_default.jpg）
+    // [UI-fix | 2026-08-24] 占位符由 Icon 改为默认封面图 — Qoder UI
+    final img = tester.widget<Image>(find.byType(Image));
+    expect(
+      img.image,
+      const AssetImage('assets/images/default_book_cover.jpg'),
+    );
   });
 }

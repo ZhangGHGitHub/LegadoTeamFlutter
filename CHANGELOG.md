@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.100] - 2026-08-24
+
+### Fixed
+- [UI+Rust] 对比原版三处性能/视觉问题：
+  1. 搜索卡顿：节流增量渲染（逐源批次仅追加累积表，results 列表至多每 150ms 重建一次 + 流结束最终聚合；修复逐批次全量重聚合 + 全量替换导致的 UI 卡顿）
+  2. 目录加载卡顿：webbook* FFI 非阻塞化（async + tokio 阻塞线程池 spawn_blocking，对齐原版 WebBook.kt Dispatchers.IO——网络 + quickjs JS 解析不再阻塞 Dart 主 isolate；Dart API 表面不变）
+  3. 默认书籍封面：无封面/加载中/加载失败时显示原版 image_cover_default.jpg（已复制至 assets/images），与原版占位行为一致
+- Contributor: Qoder UI + Bridge
+
 ## [2.0.99] - 2026-08-23
 
 ### Fixed

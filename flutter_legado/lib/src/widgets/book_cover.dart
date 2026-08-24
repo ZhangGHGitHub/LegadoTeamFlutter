@@ -10,7 +10,10 @@ import '../providers/providers.dart';
 import '../services/cover_decode_loader.dart';
 import '../utils/comic_image_utils.dart';
 
-/// 书籍封面组件 — 支持网络图片 + 占位图 + coverDecodeJs 解密
+/// 书籍封面组件 — 支持网络图片 + 默认封面 + coverDecodeJs 解密
+///
+/// 无封面 / 加载中 / 加载失败时显示默认封面图（assets/images/default_book_cover.jpg，
+/// 对标原版 res/drawable/image_cover_default.jpg）。
 ///
 /// 对齐原版 `CoverImageView` + Glide 列表行为：
 /// - 无 `coverDecodeJs`：`CachedNetworkImage` 直连（缩略 memCacheWidth）
@@ -41,7 +44,6 @@ class BookCover extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: SizedBox(
@@ -53,23 +55,20 @@ class BookCover extends ConsumerWidget {
                 width: width,
                 sourceOrigin: sourceOrigin,
                 sourceJson: sourceJson,
-                placeholder: _buildPlaceholder(colorScheme),
+                placeholder: _defaultCover(),
               )
-            : _buildPlaceholder(colorScheme),
+            : _defaultCover(),
       ),
     );
   }
 
-  Widget _buildPlaceholder(ColorScheme colorScheme) {
-    return Container(
-      color: colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          Icons.menu_book,
-          size: width * 0.4,
-          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-      ),
+  /// 默认封面（对标原版 image_cover_default.jpg）：无封面 / 加载中 / 加载失败时显示
+  Widget _defaultCover() {
+    return Image.asset(
+      'assets/images/default_book_cover.jpg',
+      fit: BoxFit.cover,
+      width: width,
+      height: height,
     );
   }
 }
