@@ -2,6 +2,9 @@
 //
 // 覆盖：初始状态/搜索历史（去重置顶截断持久化）/联想（前缀过滤）/书源筛选/分组筛选/
 // search 流式契约（空关键词/正常批次/多源追加去重/进度/异常/trim/sourceUrls 传递/分组解析/多组名/空解析/降级/搜全部）/isEmpty
+// /节流重建（2026-08-24：批次不逐批写 state，流结束最终聚合）
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -789,6 +792,131 @@ void main() {
 
       verify(() => mockApi.searchMultiStream('全部搜索', sourceUrls: null))
           .called(1);
+    });
+  });
+
+  group('SearchNotifier 节流重建（2026-08-24：修复逐批次全量重聚合卡顿）', () {
+    test('节流窗口内批次不触发中间重建，流结束最终聚合', () async {
+      final controller = StreamController<Map<String, dynamic>>();
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => controller.stream);
+
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      // 计数 state 通知（节流目标：批次到达不逐批写 state）— Qoder UI
+      var notifications = 0;
+      final sub = container.listen(searchNotifierProvider, (_, _) {
+        notifications++;
+      });
+      addTearDown(sub.close); // Riverpod ProviderSubscription 用 close 释放
+
+      await readNotifier().search('节流');
+      // 让流订阅挂接完成（search 内部 await 链）
+      await pumpStream(turns: 5);
+      final before = notifications;
+
+      // 3 个批次快速连续到达（150ms 节流窗口内）
+      controller.add(makeBatch(
+        books: [
+          {
+            'name': 'A',
+            'author': '',
+            'bookUrl': 'https://a.com/1',
+            'origin': 'https://a.com',
+            'originName': '源A',
+          },
+        ],
+        finished: 1,
+        total: 3,
+        isLast: false,
+      ));
+      controller.add(makeBatch(
+        books: [
+          {
+            'name': 'B',
+            'author': '',
+            'bookUrl': 'https://b.com/1',
+            'origin': 'https://b.com',
+            'originName': '源B',
+          },
+        ],
+        finished: 2,
+        total: 3,
+        isLast: false,
+      ));
+      controller.add(makeBatch(
+        books: [
+          {
+            'name': 'C',
+            'author': '',
+            'bookUrl': 'https://c.com/1',
+            'origin': 'https://c.com',
+            'originName': '源C',
+          },
+        ],
+        finished: 3,
+        total: 3,
+        isLast: true,
+      ));
+      await pumpStream(turns: 5); // 让事件送达
+
+      // 节流窗口内：无逐批 state 通知、results 尚未回写（防 UI 卡顿）
+      expect(notifications, equals(before),
+          reason: '节流窗口内批次不触发逐批 state 通知');
+      expect(readState().results, isEmpty,
+          reason: '节流窗口内不做中间重建');
+
+      // 流结束 → 最终全量聚合（结果完整、进度对齐）
+      await controller.close();
+      await pumpStream();
+
+      expect(readState().results.length, equals(3));
+      expect(readState().searchedCount, equals(3));
+      expect(readState().totalCount, equals(3));
+      expect(readState().isLoading, isFalse);
+    });
+
+    test('stop() 后节流窗口内的结果也进入 state（最终聚合，保留已出结果）', () async {
+      final controller = StreamController<Map<String, dynamic>>();
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => controller.stream);
+
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().search('stop');
+      await pumpStream(turns: 5);
+
+      // 批次送达（150ms 节流窗口内，尚未回写 state）
+      controller.add(makeBatch(
+        books: [
+          {
+            'name': 'S',
+            'author': '',
+            'bookUrl': 'https://s.com/1',
+            'origin': 'https://s.com',
+            'originName': '源S',
+          },
+        ],
+        finished: 1,
+        total: 5,
+        isLast: false,
+      ));
+      await pumpStream(turns: 2);
+
+      await readNotifier().stop();
+      await pumpStream(turns: 3);
+
+      // stop() 的最终聚合必须把节流窗口内的批次反映到 state.results
+      expect(readState().results.length, equals(1));
+      expect(readState().searchedCount, equals(1));
+      expect(readState().isLoading, isFalse);
+      expect(readState().isManualStop, isTrue);
+
+      await controller.close();
     });
   });
 

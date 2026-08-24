@@ -49,6 +49,20 @@ class SearchNotifier extends Notifier<SearchState> {
   /// 会话级去重键集（书名+作者+书源，与 [_accumulated] 同步维护）— Cursor UI
   final _seenKeys = <String>{};
 
+  /// 结果列表节流重建间隔（2026-08-24：修复逐批次全量重聚合 + 全量替换
+  /// 导致的搜索卡顿；对齐原版增量渲染语义）
+  static const _flushInterval = Duration(milliseconds: 150);
+
+  /// 结果列表节流重建定时器（至多每 [_flushInterval] 触发一次全量
+  /// applyPrecisionSearch + state 回写）— Qoder UI
+  Timer? _resultsFlushTimer;
+
+  /// 待回写的进度字段（批次仅追加累积表，由 [_flushResults] 批量回写，
+  /// 避免每批次一次 state 通知引发整页重建）— Qoder UI
+  int _pendingSearchedCount = 0;
+  int _pendingTotalCount = 0;
+  bool? _pendingHasMore;
+
   @override
   SearchState build() {
     // 延迟到 build() 返回后加载历史 + 恢复搜索范围（对齐原版 AppConfig.searchScope）
@@ -150,6 +164,10 @@ class SearchNotifier extends Notifier<SearchState> {
     // 首页完成后由批次 has_more 覆写）；isManualStop 复位（原版 onQueryTextSubmit L203）
     _accumulated.clear();
     _seenKeys.clear();
+    // [2026-08-24] 重置节流状态（防旧批次定时器/待写字段泄漏进新搜索）— Qoder UI
+    _resultsFlushTimer?.cancel();
+    _resultsFlushTimer = null;
+    _pendingHasMore = null;
     state = state.copyWith(
       keyword: trimmed,
       isLoading: true,
@@ -197,6 +215,11 @@ class SearchNotifier extends Notifier<SearchState> {
     // G-B-01：同关键词续页 → page++（原版 SearchModel.searchPage++）
     final nextPage = s.searchPage + 1;
     final seq = ++_searchSeq;
+    // [2026-08-24] 续页流重置节流状态（旧定时器不得占用新页调度槽位；
+    // _pendingHasMore 归 null → 无新批次信息时保持 state.hasMore 旧语义）— Qoder UI
+    _resultsFlushTimer?.cancel();
+    _resultsFlushTimer = null;
+    _pendingHasMore = null;
     state = state.copyWith(
       searchPage: nextPage,
       isLoading: true,
@@ -259,20 +282,14 @@ class SearchNotifier extends Notifier<SearchState> {
             final key = '${r.book.name}|${r.book.author}|${r.book.origin}';
             if (_seenKeys.add(key)) _accumulated.add(r);
           }
-          // [UI-fix v2.0.31 | 2026-08-11] 分桶 + 同书多源聚合，徽章显示
-          // originsCount（对齐原版 bv_originCount）— Auto
-          final sorted = applyPrecisionSearch(
-            _accumulated,
-            keyword,
-            keepOther: _keepOther,
-          );
-          state = state.copyWith(
-            results: sorted,
-            searchedCount: (batch['finished_count'] as int?) ?? 0,
-            totalCount: (batch['total_count'] as int?) ?? 0,
-            // G-B-02：消费批次 has_more（Rust 侧当前页非空批次的累积 OR）
-            hasMore: (batch['has_more'] as bool?) ?? state.hasMore,
-          );
+          // [2026-08-24] 节流重建：批次仅追加累积表 + 记录待写进度字段，
+          // results 列表至多每 150ms 重建一次（修复逐批次全量重聚合 +
+          // 全量替换导致的 UI 卡顿），流结束做最终全量聚合 — Qoder UI
+          _pendingSearchedCount = (batch['finished_count'] as int?) ?? 0;
+          _pendingTotalCount = (batch['total_count'] as int?) ?? 0;
+          final hasMoreField = batch['has_more'] as bool?;
+          if (hasMoreField != null) _pendingHasMore = hasMoreField;
+          _scheduleResultsFlush(seq);
         },
         onError: (Object e) {
           if (seq != _searchSeq) return;
@@ -281,10 +298,46 @@ class SearchNotifier extends Notifier<SearchState> {
         onDone: () {
           if (seq != _searchSeq) return;
           _searchSub = null;
+          // [2026-08-24] 流结束：取消挂起的节流定时器并做最终全量聚合
+          // （保证最后一批结果不丢失于节流窗口）— Qoder UI
+          _resultsFlushTimer?.cancel();
+          _resultsFlushTimer = null;
+          _flushResults();
           // 流结束（含挂起期间已派发任务全部完成）→ 清软挂起态
           state = state.copyWith(isLoading: false, isPaused: false);
         },
       );
+  }
+
+  /// 节流调度结果列表重建（2026-08-24：修复逐批次全量重聚合 + 全量替换
+  /// 导致的搜索卡顿；对齐原版增量渲染语义）
+  ///
+  /// 逐源批次仅追加 [_accumulated] 并记录待写进度字段；至多每
+  /// [_flushInterval] 触发一次全量 applyPrecisionSearch + state 回写，
+  /// 流结束时由 onDone 做最终聚合。seq 守卫使旧搜索的挂起定时器失效。
+  void _scheduleResultsFlush(int seq) {
+    if (_resultsFlushTimer != null) return; // 已有挂起调度，复用
+    _resultsFlushTimer = Timer(_flushInterval, () {
+      _resultsFlushTimer = null;
+      if (seq == _searchSeq) _flushResults();
+    });
+  }
+
+  /// 将累积表 + 待写进度字段回写 state（节流窗口内至多一次全量聚合）— Qoder UI
+  void _flushResults() {
+    final sorted = applyPrecisionSearch(
+      _accumulated,
+      state.keyword,
+      keepOther: _keepOther,
+    );
+    state = state.copyWith(
+      results: sorted,
+      searchedCount: _pendingSearchedCount,
+      totalCount: _pendingTotalCount,
+      // G-B-02：消费批次 has_more（Rust 侧当前页非空批次的累积 OR）；
+      // 无新批次信息时保持 state.hasMore
+      hasMore: _pendingHasMore ?? state.hasMore,
+    );
   }
 
   /// 取消进行中的搜索（对齐原版 searchModel.cancelSearch）
@@ -307,6 +360,12 @@ class SearchNotifier extends Notifier<SearchState> {
   /// 滚动自动加载，直至新关键词搜索复位）。
   Future<void> stop() async {
     if (!state.isLoading) return;
+    // [2026-08-24] 取消前先做最终聚合：_cancelActiveSearch 会自增 seq，
+    // 使挂起的节流定时器守卫失效——不在此处手动 flush，节流窗口内
+    // 最后一批结果将丢失于 state.results（违背「保留已出结果」语义）— Qoder UI
+    _resultsFlushTimer?.cancel();
+    _resultsFlushTimer = null;
+    _flushResults();
     await _cancelActiveSearch();
     state = state.copyWith(isLoading: false, isManualStop: true);
   }
@@ -440,6 +499,10 @@ class SearchNotifier extends Notifier<SearchState> {
     _searchSeq++;
     _searchSub?.cancel();
     _searchSub = null;
+    // [2026-08-24] 清空时同步重置节流状态（旧定时器已被 seq 守卫失效，显式取消避免悬挂）— Qoder UI
+    _resultsFlushTimer?.cancel();
+    _resultsFlushTimer = null;
+    _pendingHasMore = null;
     // 异步取消 Rust 侧孤儿搜索，失败不阻断 UI — Cursor UI
     unawaited(ref.read(bookApiProvider).cancelSearch().catchError((e) {
       debugPrint('清空结果取消搜索失败: $e');
