@@ -23,6 +23,7 @@ import '../services/book_api.dart';
 import '../services/cache_service.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
+import '../utils/book_info_utils.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/book_progress_utils.dart';
 import '../utils/source_login_entry.dart';
@@ -723,8 +724,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         break;
       case 'canUpdate':
         if (book == null) return;
-        // 对齐原版 menu_can_update：内存切换，仅在架时 saveBook — Cursor UI
-        final toggledCanUpdate = book.copyWith(canUpdate: !book.canUpdate);
+        // 对齐原版 menu_can_update：内存切换，在架时 saveBook；关闭时清除 updateError
+        // — Cursor UI
+        final toggledCanUpdate =
+            applyBookInfoCanUpdateToggle(book, inBookshelf: _inBookshelf);
         setState(() => _loadedBook = toggledCanUpdate);
         if (_inBookshelf) {
           await api.updateBook(toggledCanUpdate);

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.104] - 2026-08-24
+
+### Fixed
+- [UI] BookInfo「自动更新」开关 parity：原版 menu_can_update（BookInfoActivity L408–417）在书在架且关闭 canUpdate 时执行 removeType(BookType.updateError)（位清除，BookExtensions L212），避免书架仍归入「更新失败」分组；移植版仅切换 canUpdate 未清位。新增 BookType.updateError=16 常量与 applyBookInfoCanUpdateToggle 工具函数对齐三种场景（在架关/在架开/未在架）
+- [UI] search_notifier_test 辅助函数消除 use_null_aware_elements lint（条件 map 条目改为后置赋值）
+- Contributor: Cursor UI
+
 ## [2.0.103] - 2026-08-24
 
 ### Fixed

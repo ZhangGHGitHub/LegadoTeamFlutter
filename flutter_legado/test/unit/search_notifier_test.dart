@@ -1129,15 +1129,17 @@ void main() {
       String author, {
       required String origin,
       String? kind,
-    }) =>
-        {
-          'origin': origin,
-          'originName': origin,
-          'name': name,
-          'author': author,
-          if (kind != null) 'kind': kind,
-          'bookUrl': '\$name@\$origin',
-        };
+    }) {
+      final m = {
+        'origin': origin,
+        'originName': origin,
+        'name': name,
+        'author': author,
+        'bookUrl': '\$name@\$origin',
+      };
+      if (kind != null) m['kind'] = kind;
+      return m;
+    }
 
     /// 投影结果集为可比较结构（SearchResult/Book 未重写 ==，直接 equals 会退化为引用比较）
     List<Map<String, Object?>> project(List<SearchResult> rs) => [
