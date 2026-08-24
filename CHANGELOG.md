@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.101] - 2026-08-24
+
+### Fixed
+- [UI] 书详情页（BookInfo）对齐原版 BookInfoActivity（parity 审计 P0/P1）：
+  1. 分享书籍改为 bookUrl#bookJson + JS 回调接管（menu_share_it），未接管回退系统分享
+  2. 拆分长章节菜单仅对本地 txt 可见（Book.isLocalTxt；此前 epub 等也误显示）
+  3. canUpdate/splitLongChapter 内存切换、在架才持久化（menu_can_update/loadBookInfo）
+  4. 封面点击换封面、长按预览大图（ivCover）
+  5. webFile 书「最新：下载中...」并隐藏目录行（upLoading/ll_toc.gone）
+  6. 目录行追加已读百分比（resolveBookInfoReadProgress）；本地书分类标签追加文件大小（upKinds）
+  7. 书名/作者/分类标签点击与长按 → 搜索 + JS 回调（tvName/lbKind/ic_author）
+  8. 来源行点击编辑书源（tvOrigin）；打开目录未在架先落库；分组设置未在架且 groupId>0 时加入书架（upGroup）
+  9. 清除缓存移除确认框（原版无确认）+ clickClearCache JS 回调
+- Contributor: Cursor UI + Qoder UI
+
 ## [2.0.100] - 2026-08-24
 
 ### Fixed

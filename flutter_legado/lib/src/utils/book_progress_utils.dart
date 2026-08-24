@@ -19,3 +19,11 @@ double? bookReadProgress(Book book) {
   final lastChapterIndex = chapterCount - 1;
   return (book.durChapterIndex / lastChapterIndex).clamp(0.0, 1.0);
 }
+
+/// 详情页目录行已读百分比（对齐 BookInfoActivity.resolveBookInfoReadProgress）
+int? bookInfoReadProgressPercent(Book book) {
+  if (book.totalChapterNum <= 1) return null;
+  final progress = bookReadProgress(book);
+  if (progress == null) return null;
+  return (progress * 100).round();
+}

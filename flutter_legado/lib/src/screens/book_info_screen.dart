@@ -24,6 +24,7 @@ import '../services/cache_service.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
 import '../utils/book_open_utils.dart';
+import '../utils/book_progress_utils.dart';
 import '../utils/source_login_entry.dart';
 import '../utils/source_login_prompt.dart';
 import '../widgets/book_cover.dart';
@@ -298,6 +299,21 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   /// 是否在线书籍（非本地、非 WebDAV）——仅在线书才走网络补全链路
   bool _isOnlineBook(Book book) => BookOpenUtils.isOnlineBook(book);
 
+  /// 本地 TXT（对齐原版 Book.isLocalTxt：isLocal && originName 以 .txt 结尾）
+  /// — Cursor UI：拆分长章节菜单仅对本地 txt 可见，此前误用 isLocal 导致 epub 等也显示
+  bool _isLocalTxt(Book book) {
+    if (_isOnlineBook(book)) return false;
+    final name = book.originName.trim();
+    if (name.isNotEmpty) {
+      return name.toLowerCase().endsWith('.txt');
+    }
+    return book.bookUrl.toLowerCase().endsWith('.txt');
+  }
+
+  /// 在线文件书（对齐原版 Book.isWebFile）
+  bool _isWebFileBook(Book book) =>
+      (book.bookType & BookType.webFile) != 0;
+
   /// 元数据是否需要联网补全（封面/简介/目录链接任一缺失）
   bool _needCompleteInfo(Book book) =>
       (book.coverUrl == null || book.coverUrl!.isEmpty) ||
@@ -456,17 +472,22 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               try {
                 final book = _loadedBook;
                 if (book == null) return;
-                final buffer = StringBuffer('《${book.name}》');
-                if (book.author.isNotEmpty) {
-                  buffer.write(' 作者：${book.author}');
+                // 对齐原版 menu_share_it：bookUrl#bookJson + SourceCallBack
+                // — Cursor UI
+                final shareStr =
+                    '${book.bookUrl}#${jsonEncode(book.toJson())}';
+                final api = ref.read(bookApiProvider);
+                final r = await api.sourceCallBackBtn(
+                  event: 'clickShareBook',
+                  bookUrl: book.bookUrl,
+                  bookType: book.bookType,
+                  result: shareStr,
+                );
+                final invoked = r['invoked'] == true;
+                final jsTrue = r['jsTrue'] == true;
+                if (!invoked || !jsTrue) {
+                  await Share.share(shareStr);
                 }
-                final intro = book.customIntro ?? book.intro;
-                if (intro != null && intro.isNotEmpty) {
-                  final shortIntro =
-                      intro.length > 100 ? '${intro.substring(0, 100)}...' : intro;
-                  buffer.write('\n$shortIntro');
-                }
-                await Share.share(buffer.toString());
               } catch (e) {
                 // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
                 debugPrint('分享书籍失败: $e');
@@ -493,7 +514,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               final source = _bookSource;
               final hasSource = source != null;
               final isLocal = book != null && !_isOnlineBook(book);
-              final isLocalTxt = isLocal;
+              final isLocalTxt = book != null && _isLocalTxt(book);
               final hasLogin = (source?.loginUrl ?? '').isNotEmpty;
               final canUpd = book?.canUpdate ?? true;
               return [
@@ -670,6 +691,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         break;
       case 'copyBookUrl':
         if (book != null) {
+          await ref.read(bookApiProvider).sourceCallBackBtn(
+                event: 'clickCopyBookUrl',
+                bookUrl: book.bookUrl,
+                bookType: book.bookType,
+                result: book.bookUrl,
+              );
           await Clipboard.setData(ClipboardData(text: book.bookUrl));
           if (mounted) {
             ScaffoldMessenger.of(
@@ -680,6 +707,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         break;
       case 'copyTocUrl':
         if (book != null) {
+          await ref.read(bookApiProvider).sourceCallBackBtn(
+                event: 'clickCopyTocUrl',
+                bookUrl: book.bookUrl,
+                bookType: book.bookType,
+                result: book.tocUrl,
+              );
           await Clipboard.setData(ClipboardData(text: book.tocUrl));
           if (mounted) {
             ScaffoldMessenger.of(
@@ -689,26 +722,37 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         }
         break;
       case 'canUpdate':
+        if (book == null) return;
+        // 对齐原版 menu_can_update：内存切换，仅在架时 saveBook — Cursor UI
+        final toggledCanUpdate = book.copyWith(canUpdate: !book.canUpdate);
+        setState(() => _loadedBook = toggledCanUpdate);
+        if (_inBookshelf) {
+          await api.updateBook(toggledCanUpdate);
+          if (mounted) _reload();
+        }
+        break;
       case 'splitLongChapter':
         if (book == null) return;
-        if (!_inBookshelf) {
-          _snack('请先加入书架');
-          return;
-        }
-        final Book updated;
-        if (value == 'canUpdate') {
-          updated = book.copyWith(canUpdate: !book.canUpdate);
+        // splitLongChapter 存于 ReadConfig；对齐原版 toggle 后 loadBookInfo 重载目录
+        // — Cursor UI
+        final cfg = book.readConfig ?? const ReadConfig();
+        final toggledSplit = book.copyWith(
+          readConfig: cfg.copyWith(
+            splitLongChapter: !cfg.splitLongChapter,
+          ),
+        );
+        if (_inBookshelf) {
+          await api.updateBook(toggledSplit);
         } else {
-          // splitLongChapter 存于 ReadConfig（对标原版 Book.splitLongChapter）
-          final cfg = book.readConfig ?? const ReadConfig();
-          updated = book.copyWith(
-            readConfig: cfg.copyWith(
-              splitLongChapter: !cfg.splitLongChapter,
-            ),
-          );
+          setState(() => _loadedBook = toggledSplit);
         }
-        await api.updateBook(updated);
-        if (mounted) _reload();
+        if (mounted) {
+          if (!_inBookshelf) {
+            _snack('拆分长章节将在加入书架后生效');
+          } else {
+            _reload();
+          }
+        }
         break;
       case 'log':
         // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
@@ -1120,12 +1164,17 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           elevation: 8,
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          child: BookCover(
-            coverUrl: book.customCoverUrl ?? book.coverUrl,
-            width: 110,
-            height: 160,
-            borderRadius: 10,
-            sourceOrigin: book.origin,
+          child: GestureDetector(
+            // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
+            onTap: () => _openChangeCover(book),
+            onLongPress: () => _previewCover(book),
+            child: BookCover(
+              coverUrl: book.customCoverUrl ?? book.coverUrl,
+              width: 110,
+              height: 160,
+              borderRadius: 10,
+              sourceOrigin: book.origin,
+            ),
           ),
         ),
       ),
@@ -1136,17 +1185,16 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   Widget _buildSummaryPanel(
       BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
-    final latest = (book.latestChapterTitle ?? '').isNotEmpty
-        ? '最新：${book.latestChapterTitle}'
-        : '共 ${book.totalChapterNum} 章';
-    // [UI-fix v2.0.6 | 2026-08-08] 目录行标题对齐原版（当前章节名）+ 字数标签 — Qoder
-    final tocTitle = _tocLoading ? '加载中…' : _resolveTocTitle(book, chapters);
+    final isWebFile = _isWebFileBook(book);
+    final latest = isWebFile
+        ? '最新：下载中...'
+        : ((book.latestChapterTitle ?? '').isNotEmpty
+            ? '最新：${book.latestChapterTitle}'
+            : '共 ${book.totalChapterNum} 章');
+    // 对齐原版 upLoading：加载中 / 失败 / 章节名 + 已读进度 — Cursor UI
+    final tocTitle = _buildTocSummaryText(book, chapters);
     final wordCount = (book.wordCount ?? '').trim();
-    final kinds = (book.kind ?? '')
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final kinds = _buildKindLabels(book);
     return Container(
       decoration: BoxDecoration(
         color: cs.surface,
@@ -1156,18 +1204,28 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
       child: Column(
         children: [
-          // 书名：SF Pro 大标题风格（居中单行，对标 tv_name，行高/负字距提升质感）
-          Text(
-            book.name,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-              height: 1.15,
-              color: cs.onSurface,
+          // 书名行可搜索（对齐原版 tvName 点击/长按 → SearchActivity）
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: GestureDetector(
+              onTap: () => _openSearch(book.name, event: 'clickBookName'),
+              onLongPress: () => _sourceCallBackSearch(
+                'longClickBookName',
+                book.name,
+              ),
+              child: Text(
+                book.name,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                  height: 1.15,
+                  color: cs.onSurface,
+                ),
+              ),
             ),
           ),
           // 标签栏（对标 lb_kind + 字数标签 tv_word_count）
@@ -1195,30 +1253,52 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                     ),
                   ),
                 for (final kind in kinds)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: cs.secondaryContainer.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
+                  GestureDetector(
+                    // 对齐原版 lbKind 点击 → SearchActivity.start(source, kind)
+                    // — Cursor UI
+                    onTap: () => _openSearch(
                       kind,
-                      style: TextStyle(fontSize: 11, color: cs.onSurface),
+                      sourceUrl: book.origin,
+                      event: 'clickBookLabel',
+                    ),
+                    onLongPress: () => _sourceCallBackLabel(
+                      'longClickBookLabel',
+                      kind,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: cs.secondaryContainer.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        kind,
+                        style: TextStyle(fontSize: 11, color: cs.onSurface),
+                      ),
                     ),
                   ),
               ],
             ),
           ],
           const SizedBox(height: 8),
-          // 作者行（对标 ic_author + tv_author）
+          // 作者行（对标 ic_author + tv_author；点击/长按 → 搜索作者）
           _summaryRow(
-              context, Icons.person_outline, book.author.isNotEmpty ? book.author : '未知作者'),
-          // 来源行（对标 ic_web + tv_origin + tv_change_source）
+            context,
+            Icons.person_outline,
+            book.author.isNotEmpty ? book.author : '未知作者',
+            onTap: () => _openSearch(book.author, event: 'clickAuthor'),
+            onLongPress: () => _sourceCallBackSearch(
+              'longClickAuthor',
+              book.author,
+            ),
+          ),
+          // 来源行（对标 ic_web + tv_origin + tv_change_source；点击 → 编辑书源）
           _summaryRow(
             context,
             Icons.language,
             '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
+            onTap: _isOnlineBook(book) ? () => _openSourceEdit(book) : null,
             action: _smallAction(
                 context, '换源', () => _showChangeSourceDialog(book)),
           ),
@@ -1229,16 +1309,14 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           // change_group="Group settings"（点击设置该书所属分组，行为不变） — Qoder
           _summaryRow(context, Icons.groups_outlined, _groupText(book),
               action: _smallAction(context, '设置分组', _showChangeGroup)),
-          // 目录行（对标 ll_toc：ic_folder_open + tv_toc + tv_toc_view）
-          // [UI-fix v2.0.6 | 2026-08-08] 对齐原版：显示当前章节名
-          // （resolveBookInfoTocTitle：durChapterTitle 优先，否则按 durChapterIndex
-          // 取章、末章兜底）+「查看目录」按钮跳独立 TocScreen（不再内嵌章节列表） — Qoder
-          _summaryRow(
-            context,
-            Icons.folder_open,
-            '目录：$tocTitle',
-            action: _smallAction(context, '查看目录', _openTocScreen),
-          ),
+          // 目录行（webFile 书隐藏，对齐原版 ll_toc.gone() — Cursor UI）
+          if (!isWebFile)
+            _summaryRow(
+              context,
+              Icons.folder_open,
+              '目录：$tocTitle',
+              action: _smallAction(context, '查看目录', _openTocScreen),
+            ),
           // 简介（对标 tv_intro_container + tv_intro_toggle）
           _buildIntro(context, book),
         ],
@@ -1247,26 +1325,38 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 
   /// 摘要行（对标原版：18dp 图标 + 6dp 间距 + 13sp 文本 + 可选小按钮）
-  Widget _summaryRow(BuildContext context, IconData icon, String text,
-      {Widget? action}) {
+  Widget _summaryRow(
+    BuildContext context,
+    IconData icon,
+    String text, {
+    Widget? action,
+    VoidCallback? onTap,
+    VoidCallback? onLongPress,
+  }) {
     final cs = Theme.of(context).colorScheme;
     final summaryColor = cs.onSurfaceVariant;
+    Widget label = Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(fontSize: 13, color: summaryColor),
+    );
+    if (onTap != null || onLongPress != null) {
+      label = GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        behavior: HitTestBehavior.opaque,
+        child: label,
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
           Icon(icon, size: 18, color: summaryColor),
           const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: summaryColor),
-            ),
-          ),
-          // [UI-fix v2.0.3 | 2026-08-08] lint：null-aware 元素语法与 build_runner 内置分析器不兼容，用 if-element 等价表达 — Qoder
-          // [批次B 2026-08-12] 复核：?action 仍残留（build_runner regen 时报错），此处落实 if-element — Cursor UI
+          Expanded(child: label),
+          // lint：?action 与 build_runner 内置分析器不兼容，用 if-element 等价表达 — Qoder
           // ignore: use_null_aware_elements
           if (action != null) action,
         ],
@@ -1300,6 +1390,152 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         .map((g) => g.groupName)
         .toList();
     return '分组：${names.isEmpty ? '无' : names.join('，')}';
+  }
+
+  /// 目录行摘要（对齐原版 upLoading + resolveBookInfoReadProgress）— Cursor UI
+  String _buildTocSummaryText(Book book, List<BookChapter> chapters) {
+    if (_tocLoading) return '加载中…';
+    if (chapters.isEmpty) return '加载目录失败';
+    final title = _resolveTocTitle(book, chapters);
+    final percent = bookInfoReadProgressPercent(book);
+    if (percent == null) return title;
+    return '$title  ·  已读: $percent%';
+  }
+
+  /// 分类标签（本地书追加文件大小，对齐原版 upKinds）— Cursor UI
+  List<String> _buildKindLabels(Book book) {
+    final kinds = (book.kind ?? '')
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (!_isOnlineBook(book)) {
+      try {
+        final file = File(book.bookUrl);
+        if (file.existsSync()) {
+          final size = file.lengthSync();
+          if (size > 0) {
+            kinds.add(_formatFileSize(size));
+          }
+        }
+      } catch (_) {}
+    }
+    return kinds;
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  /// 跳转搜索（对齐原版 SearchActivity.start；JS 回调接管时不执行默认搜索）
+  Future<void> _openSearch(
+    String query, {
+    String? sourceUrl,
+    String event = 'clickBookName',
+  }) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    final book = _loadedBook;
+    final handled = await _sourceCallBackSearch(event, q);
+    if (handled || !mounted) return;
+    final args = <String, dynamic>{'query': q};
+    if (sourceUrl != null && sourceUrl.isNotEmpty) {
+      args['sourceUrl'] = sourceUrl;
+    } else if (book != null && _isOnlineBook(book)) {
+      args['sourceUrl'] = book.origin;
+    }
+    await Navigator.pushNamed(context, AppRoutes.search, arguments: args);
+  }
+
+  /// 返回 true 表示 JS 回调已接管，不应再执行默认动作
+  Future<bool> _sourceCallBackSearch(String event, String result) async {
+    final book = _loadedBook;
+    if (book == null || result.trim().isEmpty) return false;
+    try {
+      final r = await ref.read(bookApiProvider).sourceCallBackBtn(
+            event: event,
+            bookUrl: book.bookUrl,
+            bookType: book.bookType,
+            result: result,
+          );
+      final actions = r['actions'];
+      if (actions is List && mounted) {
+        await PlatformBridgeService.instance.dispatchActions(actions);
+      }
+      return r['invoked'] == true && r['jsTrue'] == true;
+    } catch (e) {
+      debugPrint('SourceCallBack $event 失败: $e');
+      return false;
+    }
+  }
+
+  Future<void> _sourceCallBackLabel(String event, String kind) async {
+    await _sourceCallBackSearch(event, kind);
+  }
+
+  /// 编辑书源（对齐原版 tvOrigin → BookSourceEditActivity）
+  Future<void> _openSourceEdit(Book book) async {
+    if (!_isOnlineBook(book)) return;
+    final api = ref.read(bookApiProvider);
+    BookSource? source = _bookSource;
+    if (source == null || source.bookSourceUrl != book.origin) {
+      source = await _findSourceByOrigin(api, book.origin);
+    }
+    if (source == null) {
+      _snack('书源不存在');
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.pushNamed(
+      context,
+      AppRoutes.sourceEdit,
+      arguments: source,
+    );
+    if (mounted) _reload();
+  }
+
+  /// 更换封面（对齐原版 ivCover → ChangeCoverDialog.coverChangeTo）
+  Future<void> _openChangeCover(Book book) async {
+    final result = await Navigator.pushNamed(
+      context,
+      AppRoutes.changeCover,
+      arguments: book,
+    );
+    if (result is! String || result.isEmpty || !mounted) return;
+    final updated = book.copyWith(customCoverUrl: result);
+    setState(() => _loadedBook = updated);
+    if (_inBookshelf) {
+      try {
+        await ref.read(bookApiProvider).updateBook(updated);
+      } catch (e) {
+        debugPrint('保存封面失败: $e');
+      }
+    }
+  }
+
+  /// 封面长按预览（对齐原版 PhotoDialog）
+  Future<void> _previewCover(Book book) async {
+    final url = book.customCoverUrl ?? book.coverUrl;
+    if (url == null || url.isEmpty) return;
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: InteractiveViewer(
+          child: url.startsWith('http')
+              ? CachedNetworkImage(imageUrl: url, fit: BoxFit.contain)
+              : Image.file(File(url), fit: BoxFit.contain),
+        ),
+      ),
+    );
   }
 
   /// 目录行标题（对齐原版 BookInfoActivity.resolveBookInfoTocTitle）：
@@ -1439,11 +1675,25 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 
   /// 打开独立目录页（对齐原版 tv_toc_view → TocActivityResult），
-  /// 返回选中章节 index 后走现有阅读跳转链路
-  /// [UI-fix v2.0.3 | 2026-08-08] 模块 E：目录入口改造 — Qoder
+  /// 未在架时先 saveBook（对齐原版点击目录会保存 book）— Cursor UI
   Future<void> _openTocScreen() async {
     final book = _loadedBook;
     if (book == null) return;
+    if (_chapters.isEmpty) {
+      _snack('目录为空');
+      return;
+    }
+    if (!_inBookshelf) {
+      try {
+        final api = ref.read(bookApiProvider);
+        await api.addBook(
+          book.copyWith(bookType: book.bookType | BookType.notShelf),
+        );
+      } catch (e) {
+        debugPrint('打开目录前保存书籍失败: $e');
+      }
+    }
+    if (!mounted) return;
     final result = await Navigator.pushNamed(
       context,
       AppRoutes.toc,
@@ -1528,7 +1778,18 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       ),
     );
     if (selected == null || !mounted) return;
-    await ref.read(bookApiProvider).updateBook(book.copyWith(group: selected));
+    final updated = book.copyWith(group: selected);
+    // 对齐原版 upGroup：在架 saveBook；未在架且 groupId>0 则 addToBookshelf — Cursor UI
+    if (_inBookshelf) {
+      await ref.read(bookApiProvider).updateBook(updated);
+    } else if (selected > 0) {
+      await ref.read(bookshelfNotifierProvider.notifier).addBook(
+            updated.copyWith(bookType: updated.bookType & ~BookType.notShelf),
+          );
+      if (mounted) setState(() => _inBookshelf = true);
+    } else if (mounted) {
+      setState(() => _loadedBook = updated);
+    }
     if (mounted) _reload();
   }
 
@@ -1595,31 +1856,18 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     }
   }
 
-  /// 清除缓存（对标 Kotlin BookInfoViewModel.clearCache）
+  /// 清除缓存（对标 Kotlin BookInfoViewModel.clearCache；原版无确认框）
   Future<void> _clearCache() async {
     final book = _loadedBook;
     if (book == null) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('清除缓存'),
-        content: Text('确定清除《${book.name}》的章节缓存？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('清除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
     try {
-      final deleted =
-          await ref.read(bookApiProvider).clearBookCache(book.bookUrl);
+      final api = ref.read(bookApiProvider);
+      await api.sourceCallBackBtn(
+        event: 'clickClearCache',
+        bookUrl: book.bookUrl,
+        bookType: book.bookType,
+      );
+      final deleted = await api.clearBookCache(book.bookUrl);
       await CacheService.clearSameTitleRemovedFlags();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

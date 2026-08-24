@@ -206,6 +206,56 @@ void main() {
       expect(find.textContaining('第二章 发展'), findsNothing);
     });
 
+    // 对齐原版 resolveBookInfoReadProgress：目录行附加「已读: X%」— Cursor UI
+    testWidgets('目录行显示已读进度百分比', (tester) async {
+      const bookWithProgress = Book(
+        bookUrl: 'https://src.com/book/1',
+        name: '测试书籍',
+        author: '测试作者',
+        origin: 'https://src.com',
+        originName: '测试源',
+        totalChapterNum: 11,
+        durChapterIndex: 5,
+        durChapterTitle: '第六章',
+      );
+      when(() => mockApi.getBook(any()))
+          .thenAnswer((_) async => bookWithProgress);
+      when(() => mockApi.getChapters(any())).thenAnswer((_) async => const [
+            BookChapter(
+                bookUrl: 'https://src.com/book/1', index: 5, title: '第六章'),
+          ]);
+
+      await tester.pumpWidget(wrap(const BookInfoScreen(book: bookWithProgress)));
+      await tester.pumpAndSettle();
+
+      final progressRow = find.textContaining('已读: 50%');
+      await tester.dragUntilVisible(
+        progressRow,
+        find.byType(CustomScrollView),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+      expect(progressRow, findsWidgets);
+    });
+
+    testWidgets('目录为空时点击「查看目录」提示目录为空', (tester) async {
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => book);
+      when(() => mockApi.getChapters(any())).thenAnswer((_) async => []);
+
+      await tester.pumpWidget(wrap(const BookInfoScreen(book: book)));
+      await tester.pumpAndSettle();
+
+      await tester.dragUntilVisible(
+        find.text('查看目录'),
+        find.byType(CustomScrollView),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('查看目录'));
+      await tester.pumpAndSettle();
+      expect(find.text('目录为空'), findsOneWidget);
+    });
+
     // [UI-fix v2.0.7 | 2026-08-08] 对齐原版简介区：无「简介」标题、无「简介：」
     // 前缀、省略号硬截断改为可展开/收起（右对齐主题色切换） — Qoder
     testWidgets('简介区无「简介」标题与「简介：」前缀，支持展开/收起',
