@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.103] - 2026-08-24
+
+### Fixed
+- [UI] 搜索界面流式搜索中卡死无法操作（根因）：节流 flush 每 150ms 对全量累积表重跑 applyPrecisionSearch（逐书 RegExp 清洗 + 不可变 copyWith 拷贝 + map 重建 + 全量排序），结果数增长至数千时以 6.7Hz 持续分配 → GC 饱和冻结主 isolate。改为增量桶维护：每本书到达时分类 + 归并一次（O(批次)），flush 仅做各桶排序物化 O(k log k)，语义与 applyPrecisionSearch 完全一致（equal→tags→contains→other 分桶序、桶内 originsCount 降序 + 首次到达 seq 稳定平局键、精准模式丢弃 other 桶）
+- [UI] 新增流式增量聚合回归测试 4 项：多批次 ≡ 一次性参考实现深度相等 / 续页 APPEND 跨页累积与同书多源合并 / 精准开关丢弃 other 桶 / 同分跨批次稳定平局序（含 mocktail page: any(named) 桩匹配陷阱注释）
+- Contributor: Qoder UI
+
 ## [2.0.102] - 2026-08-24
 
 ### Fixed

@@ -1121,4 +1121,167 @@ void main() {
       expect(out.last.originsCount, equals(1));
     });
   });
+
+  group('增量聚合桶（2026-08-24：流式路径 ≡ 一次性参考实现）', () {
+    /// 构造批次书籍条目（字段契约同 Rust searchMultiStream books）
+    Map<String, dynamic> b(
+      String name,
+      String author, {
+      required String origin,
+      String? kind,
+    }) =>
+        {
+          'origin': origin,
+          'originName': origin,
+          'name': name,
+          'author': author,
+          if (kind != null) 'kind': kind,
+          'bookUrl': '\$name@\$origin',
+        };
+
+    /// 投影结果集为可比较结构（SearchResult/Book 未重写 ==，直接 equals 会退化为引用比较）
+    List<Map<String, Object?>> project(List<SearchResult> rs) => [
+      for (final r in rs)
+        {
+          'name': r.book.name,
+          'author': r.book.author,
+          'originsCount': r.originsCount,
+          'origins': r.origins.toSet(),
+          'sourceName': r.sourceName,
+        },
+    ];
+
+    test('多批次流式增量聚合 ≡ 一次性 applyPrecisionSearch（分桶/归并/排序全一致）', () async {
+      final books = <Map<String, dynamic>>[
+        // equal 桶：书名 == 关键词（两源合并一条，originsCount=2）
+        b('重生', '土豆', origin: 'https://a.com'),
+        b('重生', '土豆', origin: 'https://b.com'),
+        // contains 桶：书名包含关键词（两源合并一条）
+        b('重生：少年篇', '土豆', origin: 'https://a.com'),
+        b('重生：少年篇', '土豆', origin: 'https://b.com'),
+        // tags 桶：kind 包含关键词
+        b('无关书', '他人', origin: 'https://c.com', kind: '重生,玄幻'),
+        // other 桶：与关键词无关
+        b('噪声书', '路人', origin: 'https://d.com'),
+      ];
+
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+            makeBatch(books: books.sublist(0, 2), finished: 1, total: 3),
+            makeBatch(books: books.sublist(2, 4), finished: 2, total: 3),
+            makeBatch(books: books.sublist(4)), // is_last 默认 true → onDone 最终物化
+          ]));
+
+      await readNotifier().search('重生');
+      await pumpStream();
+
+      final streamed = readState().results;
+      final oneShot = applyPrecisionSearch(
+        books
+            .map((e) => SearchResult.fromSearchBook(SearchBook.fromJson(e)))
+            .toList(),
+        '重生',
+      );
+
+      // 深度投影相等：分桶顺序（equal→tags→contains→other）、同书多源归并、
+      // 桶内 originsCount 降序 —— 增量路径与一次性参考实现逐条一致
+      expect(project(streamed), equals(project(oneShot)));
+      // 显式断言桶间顺序：equal(重生) → tags(无关书) → contains(重生：少年篇) → other(噪声书)
+      expect(streamed.map((r) => r.book.name).toList(),
+          equals(['重生', '无关书', '重生：少年篇', '噪声书']));
+      expect(readState().isLoading, isFalse);
+    });
+
+    test('续页 APPEND：桶跨页累积，同书跨页不同源合并 origins', () async {
+      final page1 = [
+        b('书A', '张三', origin: 'https://a.com'),
+        b('书B', '李四', origin: 'https://b.com'),
+      ];
+      // 第 2 页：新书 C + 书A 的另一来源（跨页合并 → originsCount=2）
+      final page2 = [
+        b('书C', '王五', origin: 'https://c.com'),
+        b('书A', '张三', origin: 'https://d.com'),
+      ];
+
+      // 单桩状态分发：第 1 次调用 → page1 流，第 2 次调用（续页）→ page2 流。
+      // 注意 matcher 必须含 page: any(named: 'page') —— 省略时 mocktail 按默认值
+      // page=1 记录调用，loadNextPage 的 page=2 调用不匹配任何桩 → null cast 错误
+      var streamCalls = 0;
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
+          .thenAnswer((_) {
+            final i = streamCalls++;
+            return Stream.fromIterable(
+                [makeBatch(books: i == 0 ? page1 : page2)]);
+          });
+      await readNotifier().search('书');
+      await pumpStream();
+      expect(readState().results, hasLength(2));
+      expect(readState().isLoading, isFalse);
+      expect(readState().hasMore, isTrue);
+
+      // 续页：第 2 次 searchMultiStream 调用自动取 page2 流
+      await readNotifier().loadNextPage();
+      await pumpStream();
+
+      final rs = readState().results;
+      expect(rs, hasLength(3), reason: '书A/书B/书C 三组，跨页同书合并');
+      expect(rs.map((r) => r.book.name).toSet(), equals({'书A', '书B', '书C'}));
+      final bookA = rs.firstWhere((r) => r.book.name == '书A');
+      expect(bookA.originsCount, equals(2), reason: '跨页两源合并');
+      expect(bookA.origins.toSet(), equals({'https://a.com', 'https://d.com'}));
+    });
+
+    test('精准开关：setPrecision(true) 后重搜丢弃 other 桶（对齐原版 precision）', () async {
+      final books = [
+        b('重生', '土豆', origin: 'https://a.com'), // equal
+        b('噪声书', '路人', origin: 'https://d.com'), // other
+      ];
+      Stream<Map<String, dynamic>> streamOnce() => Stream.fromIterable(
+          [makeBatch(books: books)]);
+
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => streamOnce());
+      await readNotifier().search('重生');
+      await pumpStream();
+      expect(readState().results, hasLength(2), reason: '默认保留 other 桶');
+
+      // 切换精准搜索后重新搜索（对齐 SearchActivity 菜单行为）
+      readNotifier().setPrecision(true);
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => streamOnce());
+      await readNotifier().search('重生');
+      await pumpStream();
+
+      expect(readState().results, hasLength(1));
+      expect(readState().results.first.book.name, equals('重生'));
+    });
+
+    test('稳定平局序：同 originsCount 跨批次按首次到达顺序（对齐 sortedBucket 索引平局）', () async {
+      when(() =>
+              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+          .thenAnswer((_) => Stream.fromIterable([
+            makeBatch(books: [b('测试甲', '甲作者', origin: 'https://1.com')]),
+            makeBatch(books: [b('测试乙', '乙作者', origin: 'https://2.com')]),
+            makeBatch(books: [b('测试丙', '丙作者', origin: 'https://3.com')]),
+          ]));
+
+      await readNotifier().search('测试');
+      await pumpStream();
+
+      // 三者 originsCount 均为 1 → 桶内顺序 = 首次到达序（甲→乙→丙），
+      // 不得因 Dart sort 不稳定而乱序
+      expect(
+          readState()
+              .results
+              .map((r) => r.book.name)
+              .toList(),
+          equals(['测试甲', '测试乙', '测试丙']));
+    });
+  });
 }

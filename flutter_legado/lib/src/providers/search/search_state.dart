@@ -99,6 +99,10 @@ extension SearchStateDisplay on SearchState {
 ///
 /// [UI-fix v2.0.31 | 2026-08-11] 此前仅分桶、按 origin 分行，用户体感
 /// 「源少/噪声大」；现对齐原版同书多源聚合 — Auto
+///
+/// [2026-08-24] 流式搜索路径已改为 SearchNotifier 内的增量桶维护
+/// （_addToBuckets + _materializeResults，每本书仅入桶一次），本函数保留为
+/// 纯函数参考实现（一次性结果集聚合 / 单测基准），语义与增量路径完全一致。
 List<SearchResult> applyPrecisionSearch(
   List<SearchResult> results,
   String key, {

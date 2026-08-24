@@ -42,11 +42,25 @@ class SearchNotifier extends Notifier<SearchState> {
   /// build 层直接消费 state.results，避免每帧全量分桶卡顿 — Reasonix
   bool _keepOther = true;
 
-  /// 会话级原始累积表（跨页去重；批次B G-B-01：同关键词续页 APPEND，
+  /// 会话级增量聚合桶（跨页去重；批次B G-B-01：同关键词续页 APPEND，
   /// 新关键词/清空时重置）— Cursor UI
-  final _accumulated = <SearchResult>[];
+  ///
+  /// [2026-08-24] 由「每次 flush 全量重聚合」改为增量维护：每本书到达时
+  /// 一次性进入所属桶（O(批次)），flush 仅排序 + 物化（O(k log k)）。
+  /// 对齐原版 SearchModel.mergeItems 在后台线程逐批聚合的语义 —— 避免
+  /// 流式期间主 isolate 持续高频执行全量正则清洗 + 不可变对象拷贝
+  /// （数千书 × 6.7Hz）压满 UI 线程导致界面卡死。
+  /// 桶结构与 [applyPrecisionSearch] 一致：equal/tags/contains/other。
+  final _bucketEqual = <String, _AggGroup>{};
+  final _bucketTags = <String, _AggGroup>{};
+  final _bucketContains = <String, _AggGroup>{};
+  final _bucketOther = <String, _AggGroup>{};
 
-  /// 会话级去重键集（书名+作者+书源，与 [_accumulated] 同步维护）— Cursor UI
+  /// 全局到达顺序序号（桶内排序稳定平局键：同 origin 数按首次出现序，
+  /// 对齐 applyPrecisionSearch 的索引平局语义）— Qoder UI
+  int _groupSeq = 0;
+
+  /// 会话级去重键集（书名+作者+书源，与增量桶同步维护）— Cursor UI
   final _seenKeys = <String>{};
 
   /// 结果列表节流重建间隔（2026-08-24：修复逐批次全量重聚合 + 全量替换
@@ -162,7 +176,11 @@ class SearchNotifier extends Notifier<SearchState> {
     // G-B-01：新关键词 → 会话重置（页码归 1、累积表清空）；
     // G-B-02：hasMore 乐观置 true（对齐原版 SearchViewModel L135，
     // 首页完成后由批次 has_more 覆写）；isManualStop 复位（原版 onQueryTextSubmit L203）
-    _accumulated.clear();
+    _bucketEqual.clear();
+    _bucketTags.clear();
+    _bucketContains.clear();
+    _bucketOther.clear();
+    _groupSeq = 0;
     _seenKeys.clear();
     // [2026-08-24] 重置节流状态（防旧批次定时器/待写字段泄漏进新搜索）— Qoder UI
     _resultsFlushTimer?.cancel();
@@ -275,16 +293,17 @@ class SearchNotifier extends Notifier<SearchState> {
                     // Rust 流式批次附加 hasReadRecord（#424）
                     hasReadRecord: e['hasReadRecord'] == true,
                   ));
-          // 按 书名+作者+书源 去重后进入会话级累积表（批次B：跨页 APPEND，
-          // 键集不清空直至新关键词/清空）；展示前由 applyPrecisionSearch
-          // 按书名+作者聚合多 origin（对齐原版 mergeItems.addOrigin）
+          // 按 书名+作者+书源 去重后进入会话级增量桶（批次B：跨页 APPEND，
+          // 键集不清空直至新关键词/清空）；每本书仅到达时分类 + 归并一次
+          // （对齐原版 mergeItems.addOrigin 的逐批后台聚合语义），
+          // flush 不再全量重聚合 — Qoder UI
           for (final r in books) {
             final key = '${r.book.name}|${r.book.author}|${r.book.origin}';
-            if (_seenKeys.add(key)) _accumulated.add(r);
+            if (_seenKeys.add(key)) _addToBuckets(r, keyword);
           }
-          // [2026-08-24] 节流重建：批次仅追加累积表 + 记录待写进度字段，
-          // results 列表至多每 150ms 重建一次（修复逐批次全量重聚合 +
-          // 全量替换导致的 UI 卡顿），流结束做最终全量聚合 — Qoder UI
+          // [2026-08-24] 节流重建：批次仅入桶 + 记录待写进度字段，
+          // results 列表至多每 150ms 物化一次（排序 O(k log k)，无全量
+          // 重聚合），流结束做最终物化 — Qoder UI
           _pendingSearchedCount = (batch['finished_count'] as int?) ?? 0;
           _pendingTotalCount = (batch['total_count'] as int?) ?? 0;
           final hasMoreField = batch['has_more'] as bool?;
@@ -309,12 +328,12 @@ class SearchNotifier extends Notifier<SearchState> {
       );
   }
 
-  /// 节流调度结果列表重建（2026-08-24：修复逐批次全量重聚合 + 全量替换
+  /// 节流调度结果列表物化（2026-08-24：修复逐批次全量重聚合 + 全量替换
   /// 导致的搜索卡顿；对齐原版增量渲染语义）
   ///
-  /// 逐源批次仅追加 [_accumulated] 并记录待写进度字段；至多每
-  /// [_flushInterval] 触发一次全量 applyPrecisionSearch + state 回写，
-  /// 流结束时由 onDone 做最终聚合。seq 守卫使旧搜索的挂起定时器失效。
+  /// 逐源批次仅入桶并记录待写进度字段；至多每 [_flushInterval] 触发一次
+  /// 排序物化 + state 回写（无全量重聚合），流结束时由 onDone 做最终物化。
+  /// seq 守卫使旧搜索的挂起定时器失效。
   void _scheduleResultsFlush(int seq) {
     if (_resultsFlushTimer != null) return; // 已有挂起调度，复用
     _resultsFlushTimer = Timer(_flushInterval, () {
@@ -323,21 +342,69 @@ class SearchNotifier extends Notifier<SearchState> {
     });
   }
 
-  /// 将累积表 + 待写进度字段回写 state（节流窗口内至多一次全量聚合）— Qoder UI
+  /// 物化展示列表（仅排序，不重聚合）：各桶按 origin 数降序 + 到达顺序
+  /// seq 升序作稳定平局键（对齐 applyPrecisionSearch.sortedBucket 的索引
+  /// 平局语义）。替代旧的全量 applyPrecisionSearch —— 每次 flush O(n)
+  /// 正则清洗 + 不可变拷贝churn，是流式期间主 isolate 卡死的根因 — Qoder UI
+  List<SearchResult> _materializeResults() {
+    final out = <SearchResult>[];
+    void addSorted(Map<String, _AggGroup> bucket) {
+      if (bucket.isEmpty) return;
+      final groups = bucket.values.toList();
+      groups.sort((a, b) {
+        final byCount = b.result.originsCount.compareTo(a.result.originsCount);
+        return byCount != 0 ? byCount : a.seq.compareTo(b.seq);
+      });
+      out.addAll(groups.map((g) => g.result));
+    }
+
+    addSorted(_bucketEqual);
+    addSorted(_bucketTags);
+    addSorted(_bucketContains);
+    if (_keepOther) addSorted(_bucketOther);
+    return out;
+  }
+
+  /// 将物化列表 + 待写进度字段回写 state（节流窗口内至多一次排序物化）— Qoder UI
   void _flushResults() {
-    final sorted = applyPrecisionSearch(
-      _accumulated,
-      state.keyword,
-      keepOther: _keepOther,
-    );
     state = state.copyWith(
-      results: sorted,
+      results: _materializeResults(),
       searchedCount: _pendingSearchedCount,
       totalCount: _pendingTotalCount,
       // G-B-02：消费批次 has_more（Rust 侧当前页非空批次的累积 OR）；
       // 无新批次信息时保持 state.hasMore
       hasMore: _pendingHasMore ?? state.hasMore,
     );
+  }
+
+  /// 增量入桶（书籍到达时调用一次；语义与 applyPrecisionSearch.mergeInto
+  /// 完全一致：formatBookName/formatBookAuthor 清洗 → 四分桶分类 →
+  /// 以「清洗后书名+作者」为键去重归并多 origin）。每本书仅执行一次，
+  /// 替代旧 flush 时对全量累积表重复执行的清洗 + 拷贝 — Qoder UI
+  void _addToBuckets(SearchResult r, String key) {
+    final name = formatBookName(r.book.name);
+    final author = formatBookAuthor(r.book.author);
+    final mapKey = '$name\u0000$author';
+    final normalized = (name != r.book.name || author != r.book.author)
+        ? r.copyWith(book: r.book.copyWith(name: name, author: author))
+        : r;
+    final kind = r.book.kind ?? '';
+    final Map<String, _AggGroup> bucket =
+        name == key || author == key
+            ? _bucketEqual
+            : kind.contains(key)
+                ? _bucketTags
+                : name.contains(key) || author.contains(key)
+                    ? _bucketContains
+                    : _bucketOther;
+    final existing = bucket[mapKey];
+    if (existing == null) {
+      bucket[mapKey] = _AggGroup(
+          _groupSeq++,
+          normalized.copyWith(origins: {...normalized.effectiveOrigins}));
+    } else {
+      existing.result = existing.result.withAddedOrigin(normalized);
+    }
   }
 
   /// 取消进行中的搜索（对齐原版 searchModel.cancelSearch）
@@ -508,8 +575,12 @@ class SearchNotifier extends Notifier<SearchState> {
       debugPrint('清空结果取消搜索失败: $e');
     }));
     _keepOther = true;
-    // 批次B：会话级累积表与分页态随清空重置
-    _accumulated.clear();
+    // 批次B：会话级增量桶与分页态随清空重置
+    _bucketEqual.clear();
+    _bucketTags.clear();
+    _bucketContains.clear();
+    _bucketOther.clear();
+    _groupSeq = 0;
     _seenKeys.clear();
     state = state.copyWith(
       keyword: '',
@@ -536,8 +607,12 @@ class SearchNotifier extends Notifier<SearchState> {
     _searchSub?.cancel();
     _searchSub = null;
     _keepOther = true;
-    // 批次B：会话级累积表与分页态随页面重开重置（新 ViewModel 语义）
-    _accumulated.clear();
+    // 批次B：会话级增量桶与分页态随页面重开重置（新 ViewModel 语义）
+    _bucketEqual.clear();
+    _bucketTags.clear();
+    _bucketContains.clear();
+    _bucketOther.clear();
+    _groupSeq = 0;
     _seenKeys.clear();
     state = state.copyWith(
       keyword: '',
@@ -647,3 +722,13 @@ class SearchNotifier extends Notifier<SearchState> {
 final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
   SearchNotifier.new,
 );
+
+/// 增量聚合桶条目（私有）：[seq] 为首次到达的全局序号（排序稳定平局键），
+/// [result] 随后续同书归并更新（withAddedOrigin）。桶表本身在批次回调内
+/// 原地维护，flush 仅读取排序 — Qoder UI
+class _AggGroup {
+  _AggGroup(this.seq, this.result);
+
+  final int seq;
+  SearchResult result;
+}
