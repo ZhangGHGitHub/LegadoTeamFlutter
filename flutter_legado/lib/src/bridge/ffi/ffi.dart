@@ -790,6 +790,8 @@ Future<String> fetchImageWithDecode({
 
 /// 搜索书籍（书源规则驱动，返回 JSON 数组）
 ///
+/// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
+///
 /// `source_json` — BookSource JSON 字符串
 /// `query` — 搜索关键词
 /// `page` — 页码（从 1 开始）
@@ -805,6 +807,8 @@ Future<String> webbookSearch({
 
 /// 获取书籍详情（返回 WebBookInfo JSON）
 ///
+/// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
+///
 /// `source_json` — BookSource JSON 字符串
 /// `book_url` — 书籍详情页 URL
 Future<String> webbookInfo({
@@ -816,6 +820,8 @@ Future<String> webbookInfo({
 );
 
 /// 获取章节列表（返回 JSON 数组）
+///
+/// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
 ///
 /// `source_json` — BookSource JSON 字符串
 /// `book_url` — 书籍详情页 URL
@@ -832,6 +838,8 @@ Future<String> webbookChapters({
 );
 
 /// 获取章节正文内容
+///
+/// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
 ///
 /// `source_json` — BookSource JSON 字符串
 /// `chapter_json` — WebChapter JSON 字符串

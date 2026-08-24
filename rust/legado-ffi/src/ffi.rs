@@ -9,7 +9,7 @@
 //! 运行代码生成:
 //!   cd flutter_legado && flutter_rust_bridge_codegen generate
 
-use legado_core::error::LegadoError;
+use legado_core::error::{LegadoError, LegadoResult};
 
 // ─── BridgeError ──────────────────────────────────────────────
 
@@ -52,6 +52,23 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<String, BridgeError> {
     serde_json::to_string(value).map_err(|e| BridgeError {
         message: format!("JSON serialize error: {e}"),
     })
+}
+
+/// 在阻塞线程池上执行同步 webbook 业务函数（非阻塞 FFI）
+///
+/// 对齐原版 `WebBook.kt` 的 Dispatchers.IO 语义：网络 + quickjs JS 解析在后台线程执行，
+/// FFI 入口立即返回，不阻塞 Dart 主 isolate。
+/// 内部的 block_on 从非 runtime 工作线程发起（阻塞池线程），与既有并发模型一致、无嵌套死锁风险。
+async fn run_webbook_blocking(
+    name: &'static str,
+    f: impl FnOnce() -> LegadoResult<String> + Send + 'static,
+) -> Result<String, BridgeError> {
+    let result = tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| BridgeError {
+            message: format!("{name} 任务异常：{e}"),
+        })?;
+    Ok(result?)
 }
 
 // ─── frb bridge module ────────────────────────────────────────
@@ -1057,59 +1074,72 @@ pub mod ffi {
 
     /// 搜索书籍（书源规则驱动，返回 JSON 数组）
     ///
+    /// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
+    ///
     /// `source_json` — BookSource JSON 字符串
     /// `query` — 搜索关键词
     /// `page` — 页码（从 1 开始）
-    pub fn webbook_search(
+    pub async fn webbook_search(
         source_json: String,
         query: String,
         page: i32,
     ) -> Result<String, BridgeError> {
-        Ok(crate::api::web_book::webbook_search(
-            &source_json,
-            &query,
-            page,
-        )?)
+        super::run_webbook_blocking("webbook_search", move || {
+            crate::api::web_book::webbook_search(&source_json, &query, page)
+        })
+        .await
     }
 
     /// 获取书籍详情（返回 WebBookInfo JSON）
     ///
+    /// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
+    ///
     /// `source_json` — BookSource JSON 字符串
     /// `book_url` — 书籍详情页 URL
-    pub fn webbook_info(source_json: String, book_url: String) -> Result<String, BridgeError> {
-        Ok(crate::api::web_book::webbook_info(&source_json, &book_url)?)
+    pub async fn webbook_info(source_json: String, book_url: String) -> Result<String, BridgeError> {
+        super::run_webbook_blocking("webbook_info", move || {
+            crate::api::web_book::webbook_info(&source_json, &book_url)
+        })
+        .await
     }
 
     /// 获取章节列表（返回 JSON 数组）
     ///
+    /// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
+    ///
     /// `source_json` — BookSource JSON 字符串
     /// `book_url` — 书籍详情页 URL
-    pub fn webbook_chapters(
+    pub async fn webbook_chapters(
         source_json: String,
         book_url: String,
         toc_url: String,
         book_name: String,
     ) -> Result<String, BridgeError> {
-        Ok(crate::api::web_book::webbook_chapters(
-            &source_json,
-            &book_url,
-            &toc_url,
-            &book_name,
-        )?)
+        super::run_webbook_blocking("webbook_chapters", move || {
+            crate::api::web_book::webbook_chapters(
+                &source_json,
+                &book_url,
+                &toc_url,
+                &book_name,
+            )
+        })
+        .await
     }
 
     /// 获取章节正文内容
     ///
+    /// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
+    ///
     /// `source_json` — BookSource JSON 字符串
     /// `chapter_json` — WebChapter JSON 字符串
-    pub fn webbook_content(
+    pub async fn webbook_content(
         source_json: String,
         chapter_json: String,
     ) -> Result<String, BridgeError> {
-        Ok(crate::api::web_book::webbook_content(
-            &source_json,
-            &chapter_json,
-        )?)
+        super::run_webbook_blocking("webbook_content", move || {
+            crate::api::web_book::webbook_content(&source_json, &chapter_json)
+        })
+        .await
     }
 
     // ─── 发现页 ───────────────────────────────────────────────

@@ -8072,7 +8072,7 @@ fn wire__crate__ffi__ffi__webbook_chapters_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "webbook_chapters",
             port: Some(port_),
@@ -8093,16 +8093,20 @@ fn wire__crate__ffi__ffi__webbook_chapters_impl(
             let api_toc_url = <String>::sse_decode(&mut deserializer);
             let api_book_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok = crate::ffi::ffi::webbook_chapters(
-                        api_source_json,
-                        api_book_url,
-                        api_toc_url,
-                        api_book_name,
-                    )?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok = crate::ffi::ffi::webbook_chapters(
+                            api_source_json,
+                            api_book_url,
+                            api_toc_url,
+                            api_book_name,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -8113,7 +8117,7 @@ fn wire__crate__ffi__ffi__webbook_content_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "webbook_content",
             port: Some(port_),
@@ -8132,12 +8136,16 @@ fn wire__crate__ffi__ffi__webbook_content_impl(
             let api_source_json = <String>::sse_decode(&mut deserializer);
             let api_chapter_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok =
-                        crate::ffi::ffi::webbook_content(api_source_json, api_chapter_json)?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::ffi::webbook_content(api_source_json, api_chapter_json)
+                                .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -8148,7 +8156,7 @@ fn wire__crate__ffi__ffi__webbook_info_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "webbook_info",
             port: Some(port_),
@@ -8167,11 +8175,15 @@ fn wire__crate__ffi__ffi__webbook_info_impl(
             let api_source_json = <String>::sse_decode(&mut deserializer);
             let api_book_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok = crate::ffi::ffi::webbook_info(api_source_json, api_book_url)?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::ffi::webbook_info(api_source_json, api_book_url).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -8182,7 +8194,7 @@ fn wire__crate__ffi__ffi__webbook_search_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "webbook_search",
             port: Some(port_),
@@ -8202,12 +8214,16 @@ fn wire__crate__ffi__ffi__webbook_search_impl(
             let api_query = <String>::sse_decode(&mut deserializer);
             let api_page = <i32>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok =
-                        crate::ffi::ffi::webbook_search(api_source_json, api_query, api_page)?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::ffi::webbook_search(api_source_json, api_query, api_page)
+                                .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )

@@ -39,6 +39,7 @@
 | 2026-08-18 | **书源搜索 parity（无新 FFI）**：QuickJS 宿主补齐 `org.jsoup.Jsoup` 模拟（`java.jsoupAttr/jsoupText/jsoupHtml`）+ 引擎创建时注入 `java.get/post/head` Response 桥（`connectNR`/`followRedirects(false)`，对齐 JsExtensions）；`@js`/`<js>` searchUrl 求值失败禁止字面回退；`AnalyzeUrl`/`ajax` 纠正书源 `#tag` 后缀把 path/query 拼进 fragment 的假 URL。方法表不变 |
 | 2026-08-18 | **G8 `$n` 跨步分组（无新 FFI）**：allInOne 正则 `getElements`（`:` 前缀）在有捕获组时把 `[全文,$1,$2,…]` 编成 JSON 数组元素；`getString("$2")` / `$1##…` 对齐原版 `SourceRule.makeUpRule` 用前序捕获组回填。覆盖书书小说/笔下文学/若夏等目录规则。方法表不变 |
 | 2026-08-19 | **搜索 baseUrl=重定向最终 URL（无新 FFI）**：`webbookSearch` 对齐 `WebBook.search` 的 `baseUrl = res.url`；搜索 302 到详情页时按空列表回退解析 `ruleBookInfo`。方法表不变 |
+| 2026-08-24 | **webbook* FFI 非阻塞化（无签名变更）**：Rust 侧 `ffi::webbook_search/info/chapters/content` 改为 `async fn` + tokio 阻塞线程池执行（`spawn_blocking`），对齐原版 `WebBook.kt` Dispatchers.IO 语义——网络 + quickjs JS 解析不再阻塞 Dart 主 isolate（此前 wire 函数同步执行，加载目录卡 UI 数秒）；Dart 侧 API 表面不变（仍 `Future<String>`），codegen 双侧重生成 |
 
 ---
 
@@ -380,6 +381,8 @@
 > ℹ️ **nextContentUrl 分页抓取行为（Task #108 缺口①）**：`webbookContent` 签名不变，行为完善——消费 `contentRule.nextContentUrl` 规则（对标 Kotlin `BookContent.analyzeContent` 分页循环）：解析当前页正文后解析下一页 URL 规则，非空且未重复则继续抓取并按页拼接（`\n` 连接，同 Kotlin `contentList.joinToString("\n")`）；每页正文独立走 HtmlFormatter 净化（按该页 URL 绝对化 img）。防死循环保护：已访问 URL 去重（含首章 URL）+ 最大页数上限 99（原版无显式上限，Rust 轨加法式加固）；nextContentUrl 命中下一章 URL 的截断判定因无状态签名不可得 nextChapterUrl，由 URL 去重与页数上限兜底。音视频源不参与分页净化（同单页行为）。
 
 > ℹ️ **流式 Debug.Callback（2026-08-13）**：Rust 侧 `ffi::debug_book_source_stream / debug_book_source_cancel`（实现 `legado-ffi/src/api/source_debug_api.rs`），复用既有 `webbook*` / `exploreFetchBooks` 链路推送逐步日志与字段摘要（`JsSourceDebugFormatter` 风格）。冻结 `webbook*` 契约不变，本组为加法式新增。
+
+> ℹ️ **webbook* 非阻塞执行（2026-08-24）**：`webbookSearch/webbookInfo/webbookChapters/webbookContent` 四方法在 Rust 阻塞线程池（tokio `spawn_blocking`）执行，对齐原版 `WebBook.kt` Dispatchers.IO 语义；FFI 入口立即返回，网络 + quickjs JS 解析不阻塞 Dart 主 isolate。签名与返回值不变。
 
 ### 2.18 发现页操作（7 个方法）
 
