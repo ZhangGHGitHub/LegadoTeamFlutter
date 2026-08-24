@@ -11,6 +11,9 @@ import 'search_state.dart';
 
 export 'search_state.dart';
 
+/// 书源分组拆分正则（对标原版 AppPattern.splitGroupRegex：[,;，；]）
+final _splitGroupRegex = RegExp(r'[,;，；]');
+
 /// 搜索页 Riverpod Notifier
 ///
 /// 职责严格限定（对齐 UI_RESTRUCTURE_PLAN.md §0.2 铁律 与 SearchViewModel.kt）：
@@ -261,9 +264,9 @@ class SearchNotifier extends Notifier<SearchState> {
         for (final source in allSources) {
           final group = source.bookSourceGroup;
           if (group != null && group.isNotEmpty) {
-            // 书源分组可能包含多个组名（逗号分隔）
+            // 书源分组可能包含多个组名（对标原版 AppPattern.splitGroupRegex）
             final sourceGroups =
-                group.split(RegExp(r'[,，]')).map((g) => g.trim());
+                group.split(_splitGroupRegex).map((g) => g.trim());
             if (sourceGroups.any(groups.contains)) {
               urls.add(source.bookSourceUrl);
             }
@@ -420,6 +423,18 @@ class SearchNotifier extends Notifier<SearchState> {
   void selectGroupExclusive(String group) {
     state = state.copyWith(
       selectedGroups: {group},
+      selectedSourceUrls: {},
+    );
+    unawaited(_persistSearchScope());
+  }
+
+  /// 批量设置分组选择（对齐原版 SearchScopeDialog rb_group CheckBox「确定」）
+  ///
+  /// 原子写入 selectedGroups 并清空书源筛选，避免多次 toggleGroup
+  /// 的中间态被并发 search 读到（与 [selectGroupExclusive] 同根因防护）。
+  void setGroups(List<String> groups) {
+    state = state.copyWith(
+      selectedGroups: {...groups},
       selectedSourceUrls: {},
     );
     unawaited(_persistSearchScope());

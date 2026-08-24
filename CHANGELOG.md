@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.99] - 2026-08-23
+
+### Fixed
+- [UI] 搜索页溢出菜单与搜索范围对话框对齐原版（批次 A2）：
+  1. 溢出菜单长按 tooltip「Show menu」→ 显式中文「更多选项」（PopupMenuButton.tooltip）
+  2. 溢出菜单动态分组节（对标原版 onMenuOpened：当前范围勾选条目 / 全部书源 / 其他分组，点按=单选替换或清除，进入时预载+返回书源管理后刷新）
+  3. 「分组或书源」改 SearchScopeDialog 底部对话框（分组 CheckBox 多选 / 书源 RadioButton 单选 + 名称过滤，底栏 全部书源/取消/确定，对齐原版 tvOk 三分支）
+  4. notifier 新增 setGroups 原子批量分组 API（对标原版 tvOk → selectGroups），补单元测试
+- Contributor: Cursor UI
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 

@@ -13,7 +13,9 @@ import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
-import '../widgets/search_filter_panel.dart';
+
+/// 书源分组拆分正则（对标原版 AppPattern.splitGroupRegex：[,;，；]）
+final _splitGroupRegex = RegExp(r'[,;，；]');
 
 /// 搜索页面
 ///
@@ -56,6 +58,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   int _emptyDialogShownForSession = -1;
   // [UI-fix v2.0.3 | 2026-08-07] 锚定菜单定位键：分组 PopupMenu 锚定三点按钮下方 — Qoder
   final _menuButtonKey = GlobalKey();
+  // 溢出菜单动态分组条目的书源缓存（对标原版 onMenuOpened 每次打开实时查询；
+  // 进入时预载，返回书源管理页后刷新）— Cursor UI
+  List<BookSource>? _menuSources;
 
   @override
   void initState() {
@@ -105,6 +110,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       setState(() => _precision = precision);
       ref.read(searchNotifierProvider.notifier).setPrecision(precision);
     });
+    // 预载溢出菜单动态分组条目所需书源列表（对标原版 onMenuOpened 实时查询）— Cursor UI
+    _refreshMenuSources();
+  }
+
+  /// 刷新溢出菜单用的书源缓存（加载失败时动态分组条目隐藏，静态条目不受影响）
+  Future<void> _refreshMenuSources() async {
+    try {
+      final list = await ref.read(bookApiProvider).getEnabledBookSources();
+      if (!mounted) return;
+      setState(() => _menuSources = list);
+    } catch (_) {
+      // 静默：菜单仍显示静态条目
+    }
   }
 
   /// 聚焦变化时更新输入帮助层显隐
@@ -311,8 +329,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           },
         ),
         // 安卓原版：三点菜单（book_search.xml：精准搜索/显示搜索记录/书源管理/分组或书源/日志）
+        // 显式中文 tooltip：原版无 tooltip 时系统默认提示 Show menu（长按被误读为
+        // "shou menu"），此处对齐用户预期显示「更多选项」— Cursor UI
         PopupMenuButton<String>(
           key: _menuButtonKey,
+          tooltip: '更多选项',
           onSelected: (value) {
             switch (value) {
               case 'precision':
@@ -339,37 +360,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 });
                 break;
               case 'sources':
-                Navigator.pushNamed(context, '/sources');
+                // 返回书源管理页后刷新动态分组条目（原版每次打开实时查询）— Cursor UI
+                Navigator.pushNamed(context, '/sources')
+                    .whenComplete(_refreshMenuSources);
                 break;
               case 'scope':
-                // [UI-fix v2.0.3 | 2026-08-07] 分组选择改原版锚定菜单：
-                // 弹出锚定三点按钮下方的分组 PopupMenu（带勾选、点选即生效
-                // 自动重搜），替代原底部弹窗分组 Tab；书源单选经菜单内
-                // 「书源单选…」入口保留 — Qoder
-                _showGroupScopeMenu();
+                // 搜索范围底部对话框（对齐原版 SearchScopeDialog：rb_group CheckBox
+                // 多选 / rb_source RadioButton 单选 + 名称过滤，全部书源/取消/确定）— Cursor UI
+                _showSearchScopeDialog();
+                break;
+              case '__all_sources__':
+                // 动态分组条目：清空范围=全部书源（原版 menu_1 → update("")）— Cursor UI
+                ref.read(searchNotifierProvider.notifier).clearAllFilter();
+                _autoResearchAfterScopeChange();
+                break;
+              case '__current_source__':
+                // 动态分组条目：当前书源范围，点按清除（原版 remove → ""）— Cursor UI
+                ref.read(searchNotifierProvider.notifier).clearSourceFilter();
+                _autoResearchAfterScopeChange();
                 break;
               case 'log':
                 // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
                 Navigator.pushNamed(context, AppRoutes.appLog);
                 break;
+              default:
+                // 动态分组条目 'group:X'：点已选=取消（原版 remove(title)）、
+                // 点未选=单选替换（原版 update(title)）— Cursor UI
+                if (value.startsWith('group:')) {
+                  final group = value.substring('group:'.length);
+                  final st = ref.read(searchNotifierProvider);
+                  final notifier = ref.read(searchNotifierProvider.notifier);
+                  if (st.selectedGroups.contains(group)) {
+                    notifier.toggleGroup(group);
+                  } else {
+                    notifier.selectGroupExclusive(group);
+                  }
+                  _autoResearchAfterScopeChange();
+                }
             }
           },
-          itemBuilder: (_) => [
-            CheckedPopupMenuItem(
-              value: 'precision',
-              checked: _precision,
-              child: const Text('精准搜索'),
-            ),
-            // 对标原版 show_search_read_record：「标识读过的书籍」
-            CheckedPopupMenuItem(
-              value: 'readRecord',
-              checked: _showReadRecord,
-              child: const Text('标识读过的书籍'),
-            ),
-            const PopupMenuItem(value: 'sources', child: Text('书源管理')),
-            const PopupMenuItem(value: 'scope', child: Text('分组或书源')),
-            const PopupMenuItem(value: 'log', child: Text('日志')),
-          ],
+          itemBuilder: (_) => _buildOverflowMenuItems(),
         ),
       ],
     );
@@ -678,16 +708,95 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return RepaintBoundary(child: tile);
   }
 
-  /// 未移植功能提示
+  /// 溢出菜单条目：5 静态条目 + 动态分组节（对齐原版 onMenuOpened L121-157）
+  ///
+  /// 动态节顺序与原版一致：当前书源（若有，带勾选，点按清空）→ 全部书源
+  ///（无范围时带勾选）→ 全部分组连续排列（已选带勾选/未选无勾选）。
+  /// 原版每次打开菜单重建本节；此处用预载的 [_menuSources] 缓存
+  ///（进入时预载、返回书源管理页后刷新）。
+  /// 自愈：范围非空但已无有效勾选时对标原版 !hasChecked 分支，
+  /// 延迟清空为全部书源（searchScope.update("")）。— Cursor UI
+  List<PopupMenuEntry<String>> _buildOverflowMenuItems() {
+    final state = ref.read(searchNotifierProvider);
+    final items = <PopupMenuEntry<String>>[
+      CheckedPopupMenuItem(
+        value: 'precision',
+        checked: _precision,
+        child: const Text('精准搜索'),
+      ),
+      // 对标原版 show_search_read_record：「标识读过的书籍」
+      CheckedPopupMenuItem(
+        value: 'readRecord',
+        checked: _showReadRecord,
+        child: const Text('标识读过的书籍'),
+      ),
+      const PopupMenuItem(value: 'sources', child: Text('书源管理')),
+      const PopupMenuItem(value: 'scope', child: Text('分组或书源')),
+    ];
+    // 动态分组节（原版 onMenuOpened L121-157）
+    final sources = _menuSources ?? const <BookSource>[];
+    final enabledGroups = _extractGroups(sources);
+    if (state.selectedSourceUrls.isNotEmpty) {
+      items.add(
+        CheckedPopupMenuItem(
+          value: '__current_source__',
+          checked: true,
+          child: Text(_sourceNameOf(sources, state.selectedSourceUrls)),
+        ),
+      );
+    }
+    items.add(
+      CheckedPopupMenuItem(
+        value: '__all_sources__',
+        checked: state.selectedGroups.isEmpty &&
+            state.selectedSourceUrls.isEmpty,
+        child: const Text('全部书源'),
+      ),
+    );
+    for (final group in enabledGroups) {
+      items.add(
+        CheckedPopupMenuItem(
+          value: 'group:$group',
+          checked: state.selectedGroups.contains(group),
+          child: Text(group),
+        ),
+      );
+    }
+    // 自愈（原版 !hasChecked：范围指向已失效分组 → searchScope.update("")）
+    final hasChecked = state.selectedSourceUrls.isNotEmpty ||
+        state.selectedGroups.isEmpty ||
+        enabledGroups.any(state.selectedGroups.contains);
+    if (!hasChecked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(searchNotifierProvider.notifier).clearAllFilter();
+        }
+      });
+    }
+    items.add(const PopupMenuItem(value: 'log', child: Text('日志')));
+    return items;
+  }
 
-  /// [UI-fix v2.0.3 | 2026-08-07] 原版锚定菜单方式的分组选择：
-  /// 对齐 SearchActivity.onMenuOpened——「全部书源」+ 各分组（当前选中带勾选），
-  /// 锚定三点按钮下方弹出；点未选分组=单选替换（原版 update(title)）、
-  /// 点已选分组=取消（原版 remove(title)）、点「全部书源」=清空；
-  /// 点选即生效且有关键词时自动重搜（原版 stateLiveData 观察者行为），
-  /// 无需确定按钮；菜单高度自适应、分组多时自动滚动不截断。
-  /// 「书源单选…」入口保留 SearchFilterPanel 书源单选弹窗 — Qoder
-  Future<void> _showGroupScopeMenu() async {
+  /// 当前选中书源名称（动态菜单条目展示用）
+  String _sourceNameOf(List<BookSource> sources, Set<String> urls) {
+    for (final s in sources) {
+      if (urls.contains(s.bookSourceUrl)) return s.bookSourceName;
+    }
+    return '书源';
+  }
+
+  /// 范围变更后自动重搜（对齐原版 stateLiveData 观察者重搜）
+  void _autoResearchAfterScopeChange() {
+    final st = ref.read(searchNotifierProvider);
+    if (st.keyword.isNotEmpty) {
+      ref.read(searchNotifierProvider.notifier).search(st.keyword);
+    }
+  }
+
+  /// 搜索范围底部对话框（对齐原版 SearchScopeDialog：分组多选 / 书源单选，
+  /// 全部书源 / 取消 / 确定；rb_group → CheckBox、rb_source → RadioButton +
+  /// 名称过滤字段）— Cursor UI
+  Future<void> _showSearchScopeDialog() async {
     List<BookSource> sources;
     try {
       sources = await ref.read(bookApiProvider).getEnabledBookSources();
@@ -699,106 +808,50 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return;
     }
     if (!mounted) return;
-    final groups = _extractGroups(sources);
-    final state = ref.read(searchNotifierProvider);
-
-    // 锚定位置：三点菜单按钮正下方（对标原版溢出菜单锚定顶栏按钮）
-    final buttonBox =
-        _menuButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final overlayBox =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (buttonBox == null || overlayBox == null || !buttonBox.attached) return;
-    final buttonRect = Rect.fromPoints(
-      buttonBox.localToGlobal(Offset.zero, ancestor: overlayBox),
-      buttonBox.localToGlobal(buttonBox.size.bottomRight(Offset.zero),
-          ancestor: overlayBox),
-    );
-    final position =
-        RelativeRect.fromRect(buttonRect, Offset.zero & overlayBox.size);
-
-    final selectedSourceCount = state.selectedSourceUrls.length;
-    final selected = await showMenu<String>(
+    final before = ref.read(searchNotifierProvider);
+    await showModalBottomSheet<void>(
       context: context,
-      position: position,
-      items: [
-        CheckedPopupMenuItem<String>(
-          value: '__all__',
-          checked:
-              state.selectedGroups.isEmpty && selectedSourceCount == 0,
-          child: const Text('全部书源'),
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * 0.75,
+        child: _SearchScopeSheet(
+          sources: sources,
+          initialGroups: {...before.selectedGroups},
+          initialSourceUrl: before.selectedSourceUrls.isNotEmpty
+              ? before.selectedSourceUrls.first
+              : null,
         ),
-        for (final group in groups)
-          CheckedPopupMenuItem<String>(
-            value: 'group:$group',
-            checked: state.selectedGroups.contains(group),
-            child: Text(group),
-          ),
-        const PopupMenuDivider(),
-        PopupMenuItem<String>(
-          value: '__sources__',
-          child: Text(selectedSourceCount > 0
-              ? '书源单选（已选 $selectedSourceCount）'
-              : '书源单选…'),
-        ),
-      ],
+      ),
     );
-    if (!mounted || selected == null) return;
-
-    final notifier = ref.read(searchNotifierProvider.notifier);
-    if (selected == '__sources__') {
-      // 书源单选保留底部弹窗（已加高），关闭后筛选变更且有关键词自动重搜
-      await _showScopePanelAndAutoSearch();
-      return;
-    }
-    if (selected == '__all__') {
-      notifier.clearAllFilter();
-    } else if (selected.startsWith('group:')) {
-      final group = selected.substring('group:'.length);
-      // 分组多选（对齐原版 SearchScopeDialog rb_group + CheckBox）
-      if (state.selectedSourceUrls.isNotEmpty) {
-        notifier.clearSourceFilter();
-      }
-      notifier.toggleGroup(group);
-    } else {
-      return;
-    }
-    // 点选即生效：有关键词时自动重搜（对标原版 scope 变更观察者重搜）
+    if (!mounted) return;
     final after = ref.read(searchNotifierProvider);
-    if (after.keyword.isNotEmpty) {
-      notifier.search(after.keyword);
+    final changed = !_setEquals(before.selectedGroups, after.selectedGroups) ||
+        !_setEquals(before.selectedSourceUrls, after.selectedSourceUrls);
+    // 筛选变更且有关键词时自动重搜（对齐原版 scope 变更观察者重搜）
+    if (changed && after.keyword.isNotEmpty) {
+      ref.read(searchNotifierProvider.notifier).search(after.keyword);
     }
   }
 
-  /// 从书源列表中提取所有不重复的分组名（与 SearchFilterPanel 同逻辑）
+  /// 从书源列表提取全部不重复分组名
+  ///
+  /// 对标原版 BookSourceDao.dealGroups：按 AppPattern.splitGroupRegex
+  ///（[,;，；]）拆分、去重。原版最终按 cnCompare（ICU 简体中文序）排序；
+  /// Flutter 轨无拼音 Collator，采用首现序（与 book_source_group_manage_dialog
+  /// 聚合惯例一致）。
   List<String> _extractGroups(List<BookSource> sources) {
     final groupSet = <String>{};
     for (final source in sources) {
       final group = source.bookSourceGroup;
       if (group != null && group.isNotEmpty) {
-        // 书源分组可能包含多个组名（逗号分隔）
-        final parts = group.split(RegExp(r'[,，]')).map((g) => g.trim());
+        final parts = group.split(_splitGroupRegex).map((g) => g.trim());
         for (final g in parts) {
           if (g.isNotEmpty) groupSet.add(g);
         }
       }
     }
-    return groupSet.toList()..sort();
-  }
-
-  /// 弹出搜索范围面板，关闭后若筛选变更且已有搜索关键词则自动重搜
-  /// （留项#12，Task #131）
-  Future<void> _showScopePanelAndAutoSearch() async {
-    final before = ref.read(searchNotifierProvider);
-    final prevGroups = {...before.selectedGroups};
-    final prevUrls = {...before.selectedSourceUrls};
-    await SearchFilterPanel.show(context);
-    if (!mounted) return;
-    final after = ref.read(searchNotifierProvider);
-    final filterChanged = !_setEquals(prevGroups, after.selectedGroups) ||
-        !_setEquals(prevUrls, after.selectedSourceUrls);
-    if (filterChanged && after.keyword.isNotEmpty) {
-      ref.read(searchNotifierProvider.notifier).search(after.keyword);
-    }
+    return groupSet.toList();
   }
 
   /// 集合相等比较（元素无序）
@@ -975,5 +1028,268 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return '指定书源';
     }
     return '';
+  }
+}
+
+/// 搜索范围底部对话框视图（对齐原版 dialog_search_scope.xml）
+///
+/// 顶部 [分组 | 书源] 分段切换：分组模式 = CheckBox 多选；书源模式 =
+/// RadioButton 单选 + 名称过滤字段。底栏：全部书源（清空为全量）|
+/// 取消 | 确定（按 rb 语义应用）。iOS 风格：底部弹层、系统列表节奏、
+/// 中性灰分段控件、克制的强调色 — Cursor UI
+class _SearchScopeSheet extends ConsumerStatefulWidget {
+  final List<BookSource> sources;
+  final Set<String> initialGroups;
+  final String? initialSourceUrl;
+
+  const _SearchScopeSheet({
+    required this.sources,
+    required this.initialGroups,
+    this.initialSourceUrl,
+  });
+
+  @override
+  ConsumerState<_SearchScopeSheet> createState() => _SearchScopeSheetState();
+}
+
+class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
+  bool _sourceMode = false;
+  late Set<String> _checkedGroups;
+  String? _selectedUrl;
+  final _queryController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 原版默认 rb_source；若当前已是书源范围则保持书源模式（对齐 tvOk 语义）
+    _sourceMode = widget.initialSourceUrl != null;
+    _checkedGroups = {...widget.initialGroups};
+    _selectedUrl = widget.initialSourceUrl;
+  }
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  /// 全部不重复分组名（与 _SearchScreenState._extractGroups 同逻辑：
+  /// splitGroupRegex 拆分 + 首现序去重）
+  List<String> get _groups {
+    final set = <String>{};
+    for (final s in widget.sources) {
+      final group = s.bookSourceGroup;
+      if (group != null && group.isNotEmpty) {
+        for (final part in group.split(_splitGroupRegex).map((p) => p.trim())) {
+          if (part.isNotEmpty) set.add(part);
+        }
+      }
+    }
+    return set.toList();
+  }
+
+  /// 书源模式：按名称过滤（原版 toolbar SearchView 同名行为）
+  List<BookSource> get _filteredSources {
+    final q = _queryController.text.trim().toLowerCase();
+    if (q.isEmpty) return widget.sources;
+    return widget.sources
+        .where((s) => s.bookSourceName.toLowerCase().contains(q))
+        .toList();
+  }
+
+  void _onOk() {
+    final notifier = ref.read(searchNotifierProvider.notifier);
+    if (_sourceMode) {
+      if (_selectedUrl != null) {
+        // 单选替换（原版 selectSource → SearchScope(url)）；未变更则不动作
+        final current = ref.read(searchNotifierProvider).selectedSourceUrls;
+        if (!current.contains(_selectedUrl)) {
+          notifier.toggleSource(_selectedUrl!);
+        }
+      } else {
+        // 原版：selectSource == null → SearchScope(空串) 全量
+        notifier.clearAllFilter();
+      }
+    } else {
+      // 分组多选整体替换（原版 CheckBox 组 → SearchScope(selectGroups)）
+      notifier.setGroups(_checkedGroups.toList());
+    }
+    Navigator.of(context).pop();
+  }
+
+  void _onAllSources() {
+    ref.read(searchNotifierProvider.notifier).clearAllFilter();
+    Navigator.of(context).pop();
+  }
+
+  /// iOS 风格分段按钮（中性灰容器 + 选中白底）
+  Widget _segmentButton(String label, bool selected, VoidCallback onTap) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: Material(
+        color: selected ? Colors.white : Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(7),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected
+                    ? scheme.onSurface
+                    : scheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+          child: Text(
+            '搜索范围',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface,
+            ),
+          ),
+        ),
+        // 分段切换（原版 rg_scope：rb_group / rb_source）
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(
+              children: [
+                _segmentButton('分组', !_sourceMode, () => setState(() {
+                  _sourceMode = false;
+                })),
+                const SizedBox(width: 3),
+                _segmentButton('书源', _sourceMode, () => setState(() {
+                  _sourceMode = true;
+                })),
+              ],
+            ),
+          ),
+        ),
+        if (_sourceMode)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+            child: TextField(
+              controller: _queryController,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: '搜索书源',
+                hintStyle: TextStyle(
+                    fontSize: 14, color: scheme.onSurface.withValues(alpha: 0.5)),
+                prefixIcon: Icon(Icons.search, size: 20,
+                    color: scheme.onSurface.withValues(alpha: 0.5)),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
+                filled: true,
+                fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              ),
+            ),
+          ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: _sourceMode
+                ? RadioGroup<String>(
+                    groupValue: _selectedUrl,
+                    onChanged: (v) => setState(() {
+                      _selectedUrl = v;
+                    }),
+                    child: Column(
+                      children: [
+                        for (final s in _filteredSources)
+                          RadioListTile<String>(
+                            value: s.bookSourceUrl,
+                            title: Text(s.bookSourceName),
+                          ),
+                        if (_filteredSources.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Center(
+                              child: Text('无匹配书源', style: TextStyle(
+                                  color:
+                                      scheme.onSurface.withValues(alpha: 0.5))),
+                            ),
+                          ),
+                      ],
+                    ),
+                  )
+                : Column(
+                    children: [
+                      for (final g in _groups)
+                        CheckboxListTile(
+                          title: Text(g),
+                          value: _checkedGroups.contains(g),
+                          onChanged: (v) => setState(() {
+                            if (v == true) {
+                              _checkedGroups.add(g);
+                            } else {
+                              _checkedGroups.remove(g);
+                            }
+                          }),
+                        ),
+                      if (_groups.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Center(
+                            child: Text('无分组书源', style: TextStyle(
+                                color: scheme.onSurface.withValues(alpha: 0.5))),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ),
+        // 底栏（原版 tv_all_source / tv_cancel / tv_ok）
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: _onAllSources,
+                child: Text('全部书源', style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.7))),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('取消', style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.7))),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _onOk,
+                child: Text('确定', style: TextStyle(
+                    color: scheme.primary, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

@@ -416,6 +416,18 @@ void main() {
       expect(readState().selectedGroups, equals({'漫画书源'}));
       expect(readState().selectedSourceUrls, isEmpty);
     });
+
+    test('setGroups 批量设置分组并清空书源筛选', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      readNotifier().toggleSource('https://a.com');
+      readNotifier().toggleGroup('都市');
+      readNotifier().setGroups(['玄幻', '漫画书源']);
+
+      expect(readState().selectedGroups, equals({'玄幻', '漫画书源'}));
+      expect(readState().selectedSourceUrls, isEmpty);
+    });
   });
 
   group('SearchNotifier search 方法（mock API）', () {
