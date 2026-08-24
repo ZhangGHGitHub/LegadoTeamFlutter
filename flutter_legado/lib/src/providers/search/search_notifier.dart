@@ -320,7 +320,9 @@ class SearchNotifier extends Notifier<SearchState> {
     try {
       await ref.read(bookApiProvider).pauseSearch();
     } catch (e) {
+      // bridge 失败 → Rust 实际未暂停，不回写 isPaused（防 UI/Rust 状态漂移）
       debugPrint('暂停搜索失败: $e');
+      return;
     }
     state = state.copyWith(isPaused: true);
   }
@@ -331,7 +333,9 @@ class SearchNotifier extends Notifier<SearchState> {
     try {
       await ref.read(bookApiProvider).resumeSearch();
     } catch (e) {
+      // bridge 失败 → Rust 实际仍暂停，不回写 isPaused（防 UI/Rust 状态漂移）
       debugPrint('恢复搜索失败: $e');
+      return;
     }
     state = state.copyWith(isPaused: false);
   }
