@@ -1,0 +1,21 @@
+opened 书签 -> 51_bookmarks
+opened 关于 -> 52_about
+opened 文件管理 -> 53_files
+opened 书签 -> 51_bookmarks
+opened 关于 -> 52_about
+opened 文件管理 -> 53_files
+opened 书签 -> 51_bookmarks
+opened 关于 -> 52_about
+opened 文件管理 -> 53_files
+opened 书签 -> 51_bookmarks
+opened 关于 -> 52_about
+opened 文件管理 -> 53_files
+opened 书签 -> 51_bookmarks
+opened 关于 -> 52_about
+opened 文件管理 -> 53_files
+orig_bookshelf: 全部 | 末日重生 | 814 | 西瓜黄 | 第一章 末日中的宅男 | 第八百一十五章 重生日庆典（大结局）
+orig_discover:    筛选发现源 | 懒人听书app本地源（同人） | 七猫四合一本地版（同人） | 书旗小说本地源（同人） | 绅士漫画（下拉） | &#128218;书山聚合 | &#127813; 番茄小说聚合API | PO18小说 | 读了小说 | 爱丽丝书屋 | 阅宝书屋 | 爱下电子 | 番茄聚合
+orig_rss:    订阅 | 规则订阅 | 使用说明 | 小说拾遗 | Meow云 | 烏雲净化
+orig_mine: 我的 | 书源管理 | 新建、导入、编辑或管理书源 | 定时任务 | 管理按计划执行的 JavaScript 任务 | 运行定时任务 | 重启后保留计划；Android 可能延后实际执行时间 | OFF | TXT 目录规则 | 配置 TXT 目录规则 | 替换净化 | 配置替换净化规则 | 字典规则 | 配置字典规则 | 主题模式 | 选择主题模式 | 跟随系统
+orig_read_record: 我的 | 书源管理 | 新建、导入、编辑或管理书源 | 定时任务 | 管理按计划执行的 JavaScript 任务 | 运行定时任务 | 重启后保留计划；Android 可能延后实际执行时间 | OFF | TXT 目录规则 | 配置 TXT 目录规则 | 替换净化 | 配置替换净化规则 | 字典规则 | 配置字典规则 | 主题模式 | 选择主题模式 | 跟随系统
+orig_remote: 我的 | 书源管理 | 新建、导入、编辑或管理书源 | 定时任务 | 管理按计划执行的 JavaScript 任务 | 运行定时任务 | 重启后保留计划；Android 可能延后实际执行时间 | OFF | TXT 目录规则 | 配置 TXT 目录规则 | 替换净化 | 配置替换净化规则 | 字典规则 | 配置字典规则 | 主题模式 | 选择主题模式 | 跟随系统
