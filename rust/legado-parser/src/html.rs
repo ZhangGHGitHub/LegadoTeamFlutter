@@ -390,7 +390,8 @@ fn read_balanced_quoted(s: &str) -> Option<(String, usize)> {
 /// 识别单个 jsoup 伪类，返回（伪类, 消费字节数）；非 jsoup 伪类返回 None
 fn consume_jsoup_pseudo(rest: &str) -> Option<(JsoupPseudo, usize)> {
     let after = &rest[1..];
-    let textual: [(&str, fn(String) -> JsoupPseudo); 6] = [
+    type TextualPseudo<'a> = (&'a str, fn(String) -> JsoupPseudo);
+    let textual: [TextualPseudo<'_>; 6] = [
         ("containsOwn(", |s| JsoupPseudo::ContainsOwn(s)),
         ("containsWholeText(", |s| JsoupPseudo::ContainsWholeText(s)),
         ("contains(", |s| JsoupPseudo::Contains(s)),
@@ -404,7 +405,8 @@ fn consume_jsoup_pseudo(rest: &str) -> Option<(JsoupPseudo, usize)> {
             return Some((ctor(arg), 1 + name.len() + inner));
         }
     }
-    let indexed: [(&str, fn(usize) -> JsoupPseudo); 3] = [
+    type IndexedPseudo<'a> = (&'a str, fn(usize) -> JsoupPseudo);
+    let indexed: [IndexedPseudo<'_>; 3] = [
         ("eq(", JsoupPseudo::Eq),
         ("lt(", JsoupPseudo::Lt),
         ("gt(", JsoupPseudo::Gt),
@@ -419,7 +421,7 @@ fn consume_jsoup_pseudo(rest: &str) -> Option<(JsoupPseudo, usize)> {
     for word in ["first", "last"] {
         if let Some(tail) = after.strip_prefix(word) {
             let next = tail.as_bytes().first().copied();
-            let boundary = next.map_or(true, |b| {
+            let boundary = next.is_none_or(|b| {
                 b.is_ascii_whitespace() || b == b'>' || b == b'+' || b == b'~' || b == b','
             });
             if boundary {
@@ -489,7 +491,7 @@ fn apply_jsoup_pseudos<'a>(matched: &mut Vec<ElementRef<'a>>, pseudos: &[JsoupPs
                 }
             }
             JsoupPseudo::Has(sel) => {
-                if let Ok(sub) = Selector::parse(&sel) {
+                if let Ok(sub) = Selector::parse(sel) {
                     matched.retain(|e| e.select(&sub).next().is_some());
                 }
             }

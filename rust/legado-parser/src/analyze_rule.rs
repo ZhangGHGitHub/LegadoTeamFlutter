@@ -1331,22 +1331,6 @@ impl AnalyzeRule {
         RuleType::Css
     }
 
-    /// 判断规则是否形似 CSS 选择器（用于 JSON 内容下的规则类型仲裁）
-    ///
-    /// 仅依据强 CSS 特征判定，避免误伤无 `$` 前缀的 JsonPath 规则（如 `data.list`）：
-    /// - 以 `.` 类选择器或 `#` ID 选择器开头
-    /// - 含 Legado 取值后缀 `@text` / `@html` / `@href` / `@src`
-    fn looks_like_css_selector(rule: &str) -> bool {
-        let head = rule.split_whitespace().next().unwrap_or("");
-        if matches!(head.chars().next(), Some('.') | Some('#')) {
-            return true;
-        }
-        rule.contains("@text")
-            || rule.contains("@html")
-            || rule.contains("@href")
-            || rule.contains("@src")
-    }
-
     /// 获取缓存的内容类型
     pub fn content_type(&self) -> RuleType {
         if let Some(ref cached) = self.cached_content_type {

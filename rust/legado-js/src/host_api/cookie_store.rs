@@ -52,8 +52,8 @@ pub fn clear_cookies(tag: &str) {
 pub fn all_cookies() -> String {
     let store = GLOBAL_COOKIES.lock().unwrap();
     store
-        .iter()
-        .flat_map(|(_, cookies)| {
+        .values()
+        .flat_map(|cookies| {
             cookies
                 .iter()
                 .map(|(k, v)| format!("{}={}", k, v))
