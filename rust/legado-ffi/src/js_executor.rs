@@ -537,10 +537,31 @@ mod quickjs_impl {
                     || {
                         if let Some(lib) = &self.js_lib {
                             if let Err(e) = legado_js::JsEngine::eval(&engine, lib) {
-                                eprintln!(
-                                    "[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}",
-                                    self.source_tag
-                                );
+                                // 仅对语法错误尝试 Rhino 宽容语法归一化后重试一次（与 engine_cache
+                                // 缓存路径一致；对齐原版 corejs-Rhino 宽松解析——B 站 jsLib 的
+                                // let 参数影子重声明、data..item_null 双点笔误等）；运行时错误按原样降级。
+                                if engine.check_syntax(lib).is_err() {
+                                    let (normalized, changed) =
+                                        legado_js::jslib_normalize::normalize(lib);
+                                    if changed
+                                        && legado_js::JsEngine::eval(&engine, &normalized).is_ok()
+                                    {
+                                        eprintln!(
+                                            "[legado-ffi] 书源 {} jsLib 经 Rhino 宽容语法归一化后加载成功（原错误: {e}）",
+                                            self.source_tag
+                                        );
+                                    } else {
+                                        eprintln!(
+                                            "[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}",
+                                            self.source_tag
+                                        );
+                                    }
+                                } else {
+                                    eprintln!(
+                                        "[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}",
+                                        self.source_tag
+                                    );
+                                }
                             }
                         }
                         if let Some(setup) = &self.setup_script {

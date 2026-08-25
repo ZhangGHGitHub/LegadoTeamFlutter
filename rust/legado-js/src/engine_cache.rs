@@ -59,16 +59,50 @@ fn init_engine(
         if code.is_empty() {
             continue;
         }
-        if let Err(e) = engine.eval(code) {
-            eprintln!(
-                "[legado-js] 缓存引擎 {} {} 加载失败（降级继续）: {}",
-                key, name, e
-            );
-            if name == "mainJs" {
-                main_js_ok = Some(false);
+        match engine.eval(code) {
+            Ok(_) => {
+                if name == "mainJs" {
+                    main_js_ok = Some(true);
+                }
             }
-        } else if name == "mainJs" {
-            main_js_ok = Some(true);
+            Err(first_err) => {
+                // 区分语法错误与运行时错误：仅对语法错误尝试 Rhino 宽容语法归一化后重试一次
+                // （对齐原版 corejs-Rhino 的宽松解析，如 B 站 jsLib 的 let 参数影子重声明、
+                // data..item_null 双点笔误）；运行时错误按原样降级（原版 evaluateJsLib
+                // 无 catch，语义一致）。
+                let mut recovered = false;
+                if engine.check_syntax(code).is_err() {
+                    let (normalized, changed) = crate::jslib_normalize::normalize(code);
+                    if changed {
+                        match engine.eval(&normalized) {
+                            Ok(_) => {
+                                eprintln!(
+                                    "[legado-js] 缓存引擎 {} {} 经 Rhino 宽容语法归一化后加载成功（原错误: {}）",
+                                    key, name, first_err
+                                );
+                                recovered = true;
+                            }
+                            Err(e2) => eprintln!(
+                                "[legado-js] 缓存引擎 {} {} 归一化后仍失败（降级继续）: {}",
+                                key, name, e2
+                            ),
+                        }
+                    }
+                }
+                if recovered {
+                    if name == "mainJs" {
+                        main_js_ok = Some(true);
+                    }
+                } else {
+                    eprintln!(
+                        "[legado-js] 缓存引擎 {} {} 加载失败（降级继续）: {}",
+                        key, name, first_err
+                    );
+                    if name == "mainJs" {
+                        main_js_ok = Some(false);
+                    }
+                }
+            }
         }
     }
     Ok((Arc::new(Mutex::new(engine)), main_js_ok))

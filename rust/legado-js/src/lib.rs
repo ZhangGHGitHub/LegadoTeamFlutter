@@ -26,6 +26,7 @@ pub mod engine;
 pub mod engine_cache;
 pub mod engine_pool;
 pub mod host_api;
+pub mod jslib_normalize;
 pub mod js_source;
 pub mod sandbox;
 pub mod scope;
