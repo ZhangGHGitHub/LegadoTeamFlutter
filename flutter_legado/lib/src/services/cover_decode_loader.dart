@@ -45,8 +45,18 @@ class CoverDecodeLoader {
   static final LinkedHashMap<String, Uint8List> _bytesCache =
       LinkedHashMap<String, Uint8List>();
 
-  /// origin → patched sourceJson；空串表示无需解密
-  static final Map<String, String> _patchedSourceByOrigin = {};
+  /// 书源注册表：origin → patched sourceJson（空串=无需解密）。
+  ///
+  /// 整表一次 FFI（对齐原版 BookSourceRepository 内存语义）：滚动时新 origin
+  /// 进视口只读内存，避免逐 origin 触发全量 getBookSources（每次约 590KB
+  /// FFI + 主 isolate 解码，是搜索结果页滚动卡顿的根因之一）。
+  static Map<String, String>? _sourceRegistry;
+
+  /// 注册表加载中的 Future（并发首请共享同一次 FFI）
+  static Future<Map<String, String>>? _registryLoading;
+
+  /// 注册表加载代际（防止旧 finally 清掉新一次的在途标记）
+  static int _registryGeneration = 0;
 
   /// cacheKey → 已进入 FFI 的 Future（仅 fetch 开始后注册，避免取消污染）
   static final Map<String, Future<Uint8List?>> _inflight = {};
@@ -96,35 +106,59 @@ class CoverDecodeLoader {
     String? sourceJson,
     String? sourceOrigin,
   }) async {
+    final origin = sourceOrigin?.trim() ?? '';
     if (sourceJson != null && sourceJson.isNotEmpty) {
       final patched = patchSourceJsonForCoverDecode(sourceJson);
-      if (patched != null &&
-          sourceOrigin != null &&
-          sourceOrigin.isNotEmpty) {
-        _patchedSourceByOrigin[sourceOrigin] = patched;
+      if (patched != null && origin.isNotEmpty) {
+        _sourceRegistry?[origin] = patched;
       }
       return patched;
     }
-    final origin = sourceOrigin?.trim() ?? '';
     if (origin.isEmpty) return '';
-    final cached = _patchedSourceByOrigin[origin];
-    if (cached != null) return cached;
     try {
-      final sources = await api.getBookSources();
-      for (final s in sources) {
-        if (s.bookSourceUrl == origin) {
-          final patched =
-              patchSourceJsonForCoverDecode(jsonEncode(s.toJson())) ?? '';
-          _patchedSourceByOrigin[origin] = patched;
-          return patched;
-        }
-      }
-      _patchedSourceByOrigin[origin] = '';
-      return '';
+      final reg = await _ensureSourceRegistry(api);
+      return reg[origin] ?? '';
     } catch (e) {
       debugPrint('封面书源解析失败: $e');
       return null;
     }
+  }
+
+  /// 确保注册表已加载：已加载直接返回；并发首请共享同一次 FFI。
+  static Future<Map<String, String>> _ensureSourceRegistry(BookApi api) {
+    final loaded = _sourceRegistry;
+    if (loaded != null) return Future.value(loaded);
+    final loading = _registryLoading;
+    if (loading != null) return loading;
+    final gen = ++_registryGeneration;
+    final fut = () async {
+      try {
+        final sources = await api.getBookSources();
+        final reg = <String, String>{};
+        for (final s in sources) {
+          reg[s.bookSourceUrl] =
+              patchSourceJsonForCoverDecode(jsonEncode(s.toJson())) ?? '';
+        }
+        _sourceRegistry = reg;
+        return reg;
+      } finally {
+        // 仅当仍是最新一次加载时清在途标记（成功则后续经 _sourceRegistry
+        // 短路；失败则允许重试）
+        if (gen == _registryGeneration) {
+          _registryLoading = null;
+        }
+      }
+    }();
+    _registryLoading = fut;
+    return fut;
+  }
+
+  /// 书源数据变更（增/删/改/导入/同步）后调用，使注册表失效。
+  ///
+  /// 由 [RustApi] 的各变更方法统一触发；对齐原版 BookSourceRepository
+  /// 「内存列表随 DB 变更即时刷新」的语义。
+  static void invalidateSourceRegistry() {
+    _sourceRegistry = null;
   }
 
   /// 是否需要走 FFI（coverDecodeJs 或复合 URL）
@@ -356,7 +390,9 @@ class CoverDecodeLoader {
   @visibleForTesting
   static void clearForTest() {
     _bytesCache.clear();
-    _patchedSourceByOrigin.clear();
+    _sourceRegistry = null;
+    _registryLoading = null;
+    ++_registryGeneration;
     _inflight.clear();
     _active = 0;
     while (_waitQueue.isNotEmpty) {
@@ -367,7 +403,7 @@ class CoverDecodeLoader {
 
   @visibleForTesting
   static void seedPatchedSource(String origin, String patchedJson) {
-    _patchedSourceByOrigin[origin] = patchedJson;
+    (_sourceRegistry ??= {})[origin] = patchedJson;
   }
 }
 

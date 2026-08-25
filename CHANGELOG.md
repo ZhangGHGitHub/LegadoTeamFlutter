@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.107] - 2026-08-25
+
+### Fixed
+- [Tool] 搜索结果页书籍加载慢（根因·实测）：模拟器校验脚本以 `-Mode debug` 编译 Rust FFI —— DEBUG .so 在设备端性能约为 release 的 1/10（favcomic 解析 C≈12s vs ≈1s；get_elements(36 items) 73ms vs 8ms；单字段 ~60ms vs ~5ms），导致批次A引擎缓存节省（~80ms/源）完全不可见。`scripts/emulator_smoke_test.ps1` 改以 release 编译 .so（Dart APK 本身仍为 debug，迭代速度不变）
+- [UI] 搜索结果页上下滑动卡死（根因·实测）：CoverDecodeLoader 仅按单 origin 缓存 patched JSON，每个新 origin 进视口即触发一次全量 getBookSources() FFI（~590KB / 500 源 + 主 isolate jsonDecode + 500×BookSource.fromJson），N 个新源 = N 次卡顿。改为内存书源注册表：整表一次 FFI（对齐原版 BookSourceRepository 内存语义），后续 origin 全部命中内存；RustApi 七个变更方法（add/update/setVariable/delete/enable/disable/import）统一失效，对齐原版「内存列表随 DB 变更即时刷新」语义
+- Contributor: Cursor UI + Tool
+
 ## [2.0.106] - 2026-08-25
 
 ### Fixed

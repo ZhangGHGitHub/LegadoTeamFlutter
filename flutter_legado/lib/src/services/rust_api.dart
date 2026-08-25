@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import 'book_api.dart';
+import 'cover_decode_loader.dart';
 import 'platform_bridge_service.dart';
 
 /// Rust FFI 统一访问层
@@ -283,21 +284,29 @@ class RustApi implements BookApi {
     final json = await bridge.sourceAdd(
       sourceJson: jsonEncode(source.toJson()),
     );
+    CoverDecodeLoader.invalidateSourceRegistry();
     return BookSource.fromJson(_decodeMap(json, 'bookApi'));
   }
 
   /// 更新书源
   @override
-  Future<void> updateBookSource(BookSource source) =>
-      bridge.sourceUpdate(sourceJson: jsonEncode(source.toJson()));
+  Future<void> updateBookSource(BookSource source) async {
+    await bridge.sourceUpdate(sourceJson: jsonEncode(source.toJson()));
+    CoverDecodeLoader.invalidateSourceRegistry();
+  }
 
   /// 设置书源自定义变量（契约 §2.3，台账 §5.11-3，Task #65）
   ///
   /// 直通 set_source_variable FFI（单列 UPDATE，空串=清除）；
   /// 书源不存在/写入失败由 Rust 侧抛 BridgeError — Qoder
   @override
-  Future<void> setSourceVariable(String sourceUrl, String variable) =>
-      bridge.setSourceVariable(sourceUrl: sourceUrl, variable: variable);
+  Future<void> setSourceVariable(String sourceUrl, String variable) async {
+    await bridge.setSourceVariable(
+      sourceUrl: sourceUrl,
+      variable: variable,
+    );
+    CoverDecodeLoader.invalidateSourceRegistry();
+  }
 
   /// 清除 Cookie（契约 §2.3 clearCookie，对齐原版 CookieStore.removeCookie）
   @override
@@ -316,23 +325,32 @@ class RustApi implements BookApi {
 
   /// 删除书源
   @override
-  Future<void> deleteBookSource(String sourceUrl) =>
-      bridge.sourceDelete(sourceUrl: sourceUrl);
+  Future<void> deleteBookSource(String sourceUrl) async {
+    await bridge.sourceDelete(sourceUrl: sourceUrl);
+    CoverDecodeLoader.invalidateSourceRegistry();
+  }
 
   /// 启用书源
   @override
-  Future<void> enableBookSource(String sourceUrl) =>
-      bridge.sourceEnable(sourceUrl: sourceUrl);
+  Future<void> enableBookSource(String sourceUrl) async {
+    await bridge.sourceEnable(sourceUrl: sourceUrl);
+    CoverDecodeLoader.invalidateSourceRegistry();
+  }
 
   /// 禁用书源
   @override
-  Future<void> disableBookSource(String sourceUrl) =>
-      bridge.sourceDisable(sourceUrl: sourceUrl);
+  Future<void> disableBookSource(String sourceUrl) async {
+    await bridge.sourceDisable(sourceUrl: sourceUrl);
+    CoverDecodeLoader.invalidateSourceRegistry();
+  }
 
   /// 批量导入书源，返回成功导入的数量
   @override
-  Future<int> importBookSources(String jsonArray) =>
-      bridge.sourceImport(jsonArray: jsonArray);
+  Future<int> importBookSources(String jsonArray) async {
+    final count = await bridge.sourceImport(jsonArray: jsonArray);
+    CoverDecodeLoader.invalidateSourceRegistry();
+    return count;
+  }
 
   /// 导出所有书源为 JSON 数组
   @override

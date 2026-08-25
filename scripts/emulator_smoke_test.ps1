@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # 模拟器冒烟测试脚本（Legado Flutter 轨）
 # 流程：构建 debug APK → 安装到指定模拟器 → 启动应用 →
 #       进程存活检查 → 崩溃日志检查 →（可选）UI 元素冒烟
@@ -78,7 +78,9 @@ if ($SkipBuild) {
   # 构建前校验/自动同步 jniLibs（根治 content hash 失配）
   if (Test-Path $verifyScript) {
     Write-Host "==> 校验 Android FFI content hash ..."
-    & $verifyScript -Mode debug -Targets "aarch64,x86_64" -AutoBuild
+    # .so 必须用 release 编译：debug 构建的 Rust 侧性能约为 release 的 1/10
+    # （实测 favcomic 解析 C≈12s vs ≈1s），会污染性能结论；Dart APK 本身仍为 debug。
+    & $verifyScript -Mode release -Targets "aarch64,x86_64" -AutoBuild
     if ($LASTEXITCODE -ne 0) {
       Fail "FFI 校验失败，无法继续构建（exit=$LASTEXITCODE）"
       exit 1
