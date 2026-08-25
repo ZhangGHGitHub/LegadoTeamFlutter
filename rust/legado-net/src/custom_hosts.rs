@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 use reqwest::dns::{Addrs, Name, Resolving, Resolve};
 
@@ -150,19 +151,27 @@ impl Default for CustomHostsResolver {
 
 impl Resolve for CustomHostsResolver {
     fn resolve(&self, name: Name) -> Resolving {
+        let host = name.as_str().to_string();
         // 命中映射：直接返回 IP 列表
         if let Some(ips) = lookup_ips(name.as_str()) {
+            // 命中 hosts 映射的解析为纯内存查表，耗时计 0
+            crate::timing::record_dns(
+                &host,
+                Duration::ZERO,
+                ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect(),
+            );
             let addrs: Addrs =
                 Box::new(ips.into_iter().map(|ip| SocketAddr::new(ip, 0)));
             return Box::pin(async move { Ok(addrs) });
         }
         // 未命中：回落系统 DNS（端口传 0，解析结果端口由 hyper 按 URL 替换）
-        let host = name.as_str().to_string();
         Box::pin(async move {
+            let t0 = Instant::now();
             let resolved: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0u16))
                 .await
                 .map_err(|e| format!("系统 DNS 解析失败: {host}: {e}"))?
                 .collect();
+            crate::timing::record_dns(&host, t0.elapsed(), resolved.clone());
             let addrs: Addrs = Box::new(resolved.into_iter());
             Ok(addrs)
         })

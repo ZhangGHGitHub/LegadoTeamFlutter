@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use reqwest::redirect::Policy;
 use reqwest::ClientBuilder;
@@ -514,6 +514,8 @@ impl LegadoClient {
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<reqwest::Response, reqwest::Error>>,
     {
+        let t0 = Instant::now();
+
         // 限流：获取域名许可（在整个重试期间持有）
         let _permit = if let Some(ref limiter) = self.domain_rate_limiter {
             let domain = crate::rate_limit::extract_domain(url);
@@ -531,7 +533,16 @@ impl LegadoClient {
             factory().await.map_err(map_reqwest_error)?
         };
 
-        self.collect_response(raw_response, url).await
+        // 分段计时：TTFB=发送到收到响应头；对端地址用于判断 IPv4/IPv6
+        let ttfb = t0.elapsed();
+        let remote = raw_response.remote_addr();
+
+        let response = self.collect_response(raw_response, url).await?;
+
+        let body_dur = t0.elapsed() - ttfb;
+        crate::timing::emit_request(url, ttfb, body_dur, remote);
+
+        Ok(response)
     }
 
     /// 收集响应数据并保存 Cookie

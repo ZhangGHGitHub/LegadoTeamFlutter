@@ -33,6 +33,7 @@ pub mod rss;
 pub mod rule_update_client;
 pub mod source_checker;
 pub mod ssl_config;
+pub mod timing;
 pub mod url_template;
 pub mod user_agent;
 pub mod verification;
