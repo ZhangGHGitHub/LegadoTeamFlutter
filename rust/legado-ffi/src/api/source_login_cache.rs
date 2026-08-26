@@ -114,10 +114,11 @@ pub fn remove_login_info(source_url: &str) -> LegadoResult<()> {
 ///
 /// 复用方：explore 分类 JS 执行后（explore_api）、登录 V2 动作执行后
 /// （source_login_v2_api），保证 JS 侧登录结果不丢失。— DeepSeek Harness + Bridge
-pub fn sync_login_cache_from_js(source_url: &str) {
+pub fn sync_login_cache_from_js(_source_url: &str) {
     #[cfg(feature = "quickjs")]
     {
         use legado_js::host_api::variable_store;
+        let source_url = _source_url;
         let header_key = format!("loginHeader_{source_url}");
         if let Ok(Some(v)) = variable_store::get_variable(&header_key) {
             let _ = put_login_header(source_url, &v);

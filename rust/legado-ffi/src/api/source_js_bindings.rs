@@ -175,6 +175,7 @@ pub fn load_js_lib_for_explore(
 }
 
 /// host 兜底脚本：jsLib 全失败时尽量提供 `host[0]`
+#[cfg(feature = "quickjs")]
 fn explore_host_fallback_script(source: &BookSource) -> String {
     if let Some(decl) = source
         .js_lib

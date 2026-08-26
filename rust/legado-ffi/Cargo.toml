@@ -32,3 +32,12 @@ encoding_rs = "0.8"
 [features]
 default = []
 quickjs = ["legado-js/quickjs"]
+
+# 调试 example 依赖 quickjs 路径的 QuickJsExecutor：无 quickjs 构建时跳过编译
+[[example]]
+name = "dbg_build_url"
+required-features = ["quickjs"]
+
+[[example]]
+name = "dbg_jslib"
+required-features = ["quickjs"]

@@ -2661,6 +2661,7 @@ mod tests {
     /// catalogUrl → chapterList java.ajax(/catalog) → 章节列表。
     /// — 书山目录修复（2026-08-17）
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_shushan_real_toc_repro() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -2970,6 +2971,7 @@ mod tests {
     /// 七步阁 GBK POST 搜索回归（2026-08-17）：bookUrlPattern 全匹配修复
     /// （m.qibuge.com 正则不得命中 /s.php 搜索页 URL）
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_qibuge_search_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3023,6 +3025,7 @@ mod tests {
 
     /// 七步阁 GBK 目录/正文回归：详情页 meta charset=gbk 必须在简单 GET 路径正确解码。
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_qibuge_catalog_and_content_gbk() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3144,6 +3147,7 @@ mod tests {
 
     /// 淘小说 @js md5 签名搜索诊断（2026-08-17）
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_taoxiaoshuo_search_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3209,6 +3213,7 @@ mod tests {
     /// 企鹅小说 setup 依赖搜索验证（2026-08-17）：searchUrl 用
     /// `{{url=source.getKey();...}}`，缺 setup 时模板残留 → HTTP 404
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_qiexs_search_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3260,6 +3265,7 @@ mod tests {
     /// 新笔趣阁 @js: 重定向拦截搜索验证（2026-08-17）：searchUrl 用
     /// java.get(su,{}).headers('Location')[0] 需 jsoup Response 语义桥
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_xbqgxs_search_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3338,6 +3344,7 @@ mod tests {
 
     /// 得间小说 {{host}} 全局变量离线回归：jsLib 定义 host，{{host}} 需 JS 求值。
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_dejian_diag() {
         let source = BookSource {
             book_source_url: "https://wechat.idejian.com##".to_string(),
@@ -3418,6 +3425,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
 
     /// org.jsoup + java.post(connectNR) 回归：云霄/键盘/天涯书库 searchUrl @js
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_jsoup_post_redirect_search_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -4430,6 +4438,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
     // jsLib 定义的函数；正文解析必须注入 jsLib，否则 JS 抛错 → 正文为空。
 
     #[test]
+    #[cfg(feature = "quickjs")]
     fn test_parse_content_page_with_js_lib_resolves_lib_function() {
         // 原版语义：jsLib 的 Reload(url) 网络加载远端 JS 代码串并返回，
         // 模板 `<js>eval(String(Reload('...')))</js>` 执行该代码取回 URL 字面量
@@ -4474,6 +4483,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#.to_string()),
 
     /// 离线：伪七猫 play HTML + @js 规则应抽出 m3u8
     #[test]
+    #[cfg(feature = "quickjs")]
     fn qmao_js_rule_extracts_m3u8_from_saved_html() {
         let html_path = concat!(
             env!("CARGO_MANIFEST_DIR"),

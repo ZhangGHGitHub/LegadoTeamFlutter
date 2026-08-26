@@ -16,7 +16,9 @@ use base64::Engine as _;
 use legado_core::models::BookSource;
 use legado_core::LegadoError;
 use legado_core::LegadoResult;
+#[cfg(feature = "quickjs")]
 use legado_js::JsEngine;
+#[cfg(feature = "quickjs")]
 use legado_js::JsValue;
 
 /// 默认 Chrome UA（与搜索链路一致，避免图片 CDN 按 UA 拒请求）
