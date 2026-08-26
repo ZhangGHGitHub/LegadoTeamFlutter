@@ -229,7 +229,7 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
     let has_explore_url = source
         .explore_url
         .as_ref()
-        .map_or(false, |s| !s.trim().is_empty());
+        .is_some_and(|s| !s.trim().is_empty());
     if has_explore_url && probe_of("explore") != "fn" {
         return Err(LegadoError::JsEngine(
             "JS源声明了 exploreUrl,缺少配对的 explore 函数".to_string(),
@@ -238,7 +238,7 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
 
     // loginUi 函数 / loginUi 数据二选一及配对
     if probe_of("loginUiFn") == "fn" {
-        if source.login_ui.as_ref().map_or(false, |s| !s.trim().is_empty()) {
+        if source.login_ui.as_ref().is_some_and(|s| !s.trim().is_empty()) {
             return Err(LegadoError::JsEngine(
                 "loginUi 函数与 config.loginUi 数据只能二选一".to_string(),
             ));
@@ -249,7 +249,7 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
             ));
         }
         source.login_ui = Some(LOGIN_UI_MARKER.to_string());
-    } else if source.login_ui.as_ref().map_or(false, |s| !s.trim().is_empty())
+    } else if source.login_ui.as_ref().is_some_and(|s| !s.trim().is_empty())
         && probe_of("login") != "fn"
     {
         return Err(LegadoError::JsEngine(

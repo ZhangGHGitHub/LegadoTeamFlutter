@@ -198,7 +198,7 @@ pub fn rsa_decrypt_segmented(
     data: &[u8],
 ) -> Result<Vec<u8>, String> {
     let k = priv_key.size();
-    if k == 0 || data.len() % k != 0 {
+    if k == 0 || !data.len().is_multiple_of(k) {
         return Err(format!(
             "Ciphertext length {} is not a multiple of RSA key size {}",
             data.len(),
@@ -261,7 +261,7 @@ pub fn rsa_public_decrypt_segmented(
         return Err("Public key decryption only supports PKCS1Padding".to_string());
     }
     let k = pub_key.size();
-    if k == 0 || data.len() % k != 0 {
+    if k == 0 || !data.len().is_multiple_of(k) {
         return Err(format!(
             "Ciphertext length {} is not a multiple of RSA key size {}",
             data.len(),
@@ -463,12 +463,10 @@ fn decrypt_from_text(
         b64_decode_lenient(s),
         hex::decode(s.trim()).map_err(|e| e.to_string()),
     ];
-    for cand in candidates {
-        if let Ok(bytes) = cand {
-            match st.borrow_mut().decrypt(use_public, &bytes) {
-                Ok(pt) => return Ok(pt),
-                Err(e) => last_err = e,
-            }
+    for bytes in candidates.into_iter().flatten() {
+        match st.borrow_mut().decrypt(use_public, &bytes) {
+            Ok(pt) => return Ok(pt),
+            Err(e) => last_err = e,
         }
     }
     Err(last_err)

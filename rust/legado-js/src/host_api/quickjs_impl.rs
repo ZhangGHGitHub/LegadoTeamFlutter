@@ -83,13 +83,13 @@ pub fn register_all_apis<'js>(
     // 映射到 java.* 宿主绑定——七猫四合一等书源 jsLib 用 Packages 做
     // AES 密文解密 / Base64 / MD5 / UUID / String.getBytes，
     // 缺失时报 `Packages is not defined`（2026-08-15 用户反馈七猫报错）
-    inject_packages_shim(&ctx)?;
+    inject_packages_shim(ctx)?;
     // Rhino org.jsoup.Jsoup 包导入模拟（云霄/键盘等 searchUrl @js 依赖）
-    inject_jsoup_shim(&ctx)?;
+    inject_jsoup_shim(ctx)?;
     // java.get/post/head → connectNR（followRedirects=false）+ Response 对象
     // 必须在引擎创建时注入：否则书源 `java.post(...).header('location')` 会打到
     // 原生 post（跟随重定向 / headers 对象无法转 String）→ Location 丢失落 /null
-    inject_response_bridge(&ctx)?;
+    inject_response_bridge(ctx)?;
 
     Ok(())
 }
@@ -2585,7 +2585,7 @@ fn register_archive_apis<'js>(
 /// - 绝对 URL → 经 legado-net 下载 ZIP 字节
 /// - 本地存在的文件路径 → 直接读取
 /// - 其余按十六进制字符串解码
-/// 失败时记录日志并返回空串（对齐 Kotlin `log("getZipContent 未发现内容")` + `return ""`）
+///   失败时记录日志并返回空串（对齐 Kotlin `log("getZipContent 未发现内容")` + `return ""`）
 fn get_zip_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> String {
     let bytes = match resolve_zip_bytes(url) {
         Ok(b) => b,

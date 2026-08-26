@@ -512,7 +512,7 @@ mod quickjs_engine {
             let _ = globals.remove::<&str>("__legado_syntax_check__");
             match result {
                 Ok(_) => Ok(()),
-                Err(_) => Err(Self::take_exception_message(&ctx)),
+                Err(_) => Err(Self::take_exception_message(ctx)),
             }
         }
 

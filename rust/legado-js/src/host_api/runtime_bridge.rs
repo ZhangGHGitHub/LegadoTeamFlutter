@@ -15,7 +15,7 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 /// 是搜索崩溃（regex-syntax 深递归击穿 worker 栈）的主要宿主。
 /// 改为 Builder 显式配置：worker 栈扩到 8MB（对齐原版 JVM 线程栈水位）
 /// + thread_name 便于崩溃诊断。tokio blocking 池为按需创建无法配置栈，
-/// 其风险由 regex_safe 非递归预检兜底。
+///   其风险由 regex_safe 非递归预检兜底。
 pub fn get_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| {
         Builder::new_multi_thread()

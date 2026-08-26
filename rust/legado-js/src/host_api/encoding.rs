@@ -133,7 +133,7 @@ mod impl_encoding {
     /// 非 UTF-8 字符集（GBK 等）先经 encoding_rs 转码再百分号编码。
     /// — 2026-08-17
     pub fn encode_uri_charset(input: &str, charset: &str) -> String {
-        let lower = charset.to_ascii_lowercase().replace('-', "").replace('_', "");
+        let lower = charset.to_ascii_lowercase().replace(['-', '_'], "");
         if lower == "utf8" || lower == "utf" {
             return encode_uri(input);
         }
