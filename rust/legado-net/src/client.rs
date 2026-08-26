@@ -745,6 +745,64 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
+    /// 连接池复用验证：同一 host 的两次顺序请求应命中同一条 TCP 连接（keep-alive）
+    ///
+    /// 本地最小 HTTP/1.1 监听器统计 accept 次数：reqwest 池生效时 2 请求 → 仅 1
+    /// accept；若每次新建连接则 2 accepts。该测试保证「共享客户端 + keep-alive」
+    /// 在重复搜索时确实省去 connect+TLS（docs/LEGADO_NET_TIMING_2026-08-25.md §七）。
+    #[tokio::test]
+    async fn test_connection_pool_reuses_keep_alive() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accepts = Arc::new(AtomicUsize::new(0));
+        let server_accepts = accepts.clone();
+
+        // 最小 HTTP/1.1 服务器：读请求头 → 200 keep-alive 响应；同一 socket 继续等下一个请求
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            while let Ok((mut sock, _)) = listener.accept().await {
+                server_accepts.fetch_add(1, Ordering::SeqCst);
+                let mut head: Vec<u8> = Vec::new();
+                loop {
+                    head.clear();
+                    // 逐字节读到 \r\n\r\n（GET 无请求体）
+                    loop {
+                        let mut b = [0u8; 1];
+                        let n = match sock.read(&mut b).await {
+                            Ok(n) => n,
+                            Err(_) => return,
+                        };
+                        if n == 0 {
+                            return; // 客户端已关闭
+                        }
+                        head.push(b[0]);
+                        if head.ends_with(b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok";
+                    if sock.write_all(resp).await.is_err() {
+                        return;
+                    }
+                }
+            }
+        });
+
+        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        let r1 = client.get(&format!("http://{addr}/r1"), None).await;
+        let r2 = client.get(&format!("http://{addr}/r2"), None).await;
+        assert!(r1.is_ok() && r2.is_ok());
+
+        assert_eq!(
+            accepts.load(Ordering::SeqCst),
+            1,
+            "两次顺序请求应复用同一条 keep-alive 连接（仅一次 accept）"
+        );
+        drop(server);
+    }
+
     #[test]
     fn test_default_config() {
         let cfg = LegadoClientConfig::default();

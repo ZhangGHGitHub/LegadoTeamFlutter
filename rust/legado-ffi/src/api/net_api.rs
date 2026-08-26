@@ -26,6 +26,11 @@ pub fn set_custom_hosts(hosts_json: &str) -> LegadoResult<()> {
     // 应用到 legado-net 全局映射（resolver 实时读取，即时生效）
     legado_net::apply_custom_hosts(hosts_json)?;
 
+    // 重建共享客户端：reqwest 连接池按 host 名缓存 keep-alive 空闲连接，hosts 变更后
+    // 池中旧连接仍指向旧 IP（直至空闲超时），期间请求会打到错误地址。重建后新连接
+    // 一律经更新后的映射重解析；在途请求持有旧客户端 Arc clone，不受影响。
+    crate::http_state::reset_shared_client();
+
     // 持久化（宽容失败：DB 未初始化/写入失败仅记日志）
     if crate::db_state::is_initialized() {
         if let Err(e) =
@@ -237,6 +242,23 @@ mod tests {
 
         let err = clear_cookie("  ").unwrap_err();
         assert!(matches!(err, LegadoError::Internal(_)));
+    }
+
+    /// hosts 变更后共享客户端必须重建（池化连接不得继续指向旧 IP）
+    #[test]
+    fn test_set_custom_hosts_rebuilds_shared_client() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let before = crate::http_state::shared_client().unwrap();
+        set_custom_hosts(r#"{"reset-pool.test": "10.9.9.9"}"#).unwrap();
+        let after = crate::http_state::shared_client().unwrap();
+        assert!(
+            !std::sync::Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
+            "hosts 变更后共享客户端应重建（避免池化连接指向旧 IP）"
+        );
+        // 收尾：清除映射
+        set_custom_hosts("").unwrap();
     }
 
     /// 非法 JSON：报 Internal 错误且不落库

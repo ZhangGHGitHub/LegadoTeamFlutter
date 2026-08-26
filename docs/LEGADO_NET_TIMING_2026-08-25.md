@@ -65,10 +65,10 @@
 4. **慢源画像**：TTFB >2s 的四个源（23.224.101.30 / ukuzy.com / hongniuziyuan.com / wm.your0tube.com）+ qmao.net 1.26s，均为远端服务端慢；最快 novelfm 104ms。bilibili wbi search API 自身 TTFB ~630ms。
 5. **http:80 明文源**：两个 Ares 系 IP 直连（port 80）TTFB 403/2440ms，无 TLS 开销仍慢 → 服务端问题。
 
-## 五、下一步候选（未实施）
+## 五、下一步候选
 
-- 验证 reqwest 连接池跨批次复用情况（若每次搜索新建 Client，keep-alive 失效会放大 TTFB）；
-- 对 TTFB 持续 >5s 的源评估超时上限与并发度调优（现有域名限流器已在重试期间持有许可）；
+- ~~验证 reqwest 连接池跨批次复用情况~~ → **已验证**：搜索链路统一走 `http_state::shared_client()` 进程级单例（Phase 1b），keep-alive 生效；hermetic 回归测试见 §七。
+- ~~对 TTFB 持续 >5s 的源评估超时上限与并发度调优~~ → **已评估，无需改动**：`SEARCH_CONCURRENCY=9`、`SEARCH_SOURCE_TIMEOUT=30s`，实测全部源在 19.5s 内完成（未触超时）；>2s TTFB 为远端服务端延迟，客户端侧无可压缩空间。
 - 慢源清单可反馈书源质量分（非代码问题，属数据侧治理）。
 
 ## 六、验证状态
@@ -76,5 +76,31 @@
 - `cargo clippy -p legado-net -- -D warnings` ✅
 - `cargo test -p legado-net`：230 passed（含 timing 模块 4 个单测）✅
 - `cargo check -p legado-ffi --features quickjs --examples`（timing_video_search 示例）✅
+
+## 七、连接池复用验证与 hosts 陈旧连接修复（同日追加）
+
+### 7.1 复用链路确认
+
+搜索链路（`run_multi_stream` / `multi_source_search` / 单源搜索）统一经
+`http_state::shared_client()` 取进程级共享 `LegadoClient`（Phase 1b 单例，Arc clone、
+同一 reqwest 连接池 + CookieStore）。因此**重复搜索同 host 时 keep-alive 连接可复用**，
+省去 connect + TLS 握手（实测 TCP 探针量级：27–30ms）。
+
+### 7.2 Hermetic 回归测试
+
+`legado-net::client::tests::test_connection_pool_reuses_keep_alive`：本地最小 HTTP/1.1
+监听器统计 accept 次数——同一客户端对同 host 发两次顺序请求，断言**仅 1 次 accept**
+（第二请求复用池内 keep-alive 连接）。防止未来配置变更悄悄破坏复用。
+
+### 7.3 hosts × 连接池陈旧连接修复
+
+**根因**：reqwest 池按 **host 名**缓存空闲连接。运行时 `set_custom_hosts` 改某域名 IP 后，
+pool 中旧连接仍指向旧 IP（直至空闲超时），期间请求打到错误地址——resolver 虽实时读全局映射，
+但只对**新连接**生效。
+
+**修复**：`net_api::set_custom_hosts` 在 `apply_custom_hosts` 成功后调用
+`http_state::reset_shared_client()` 重建客户端与连接池。在途请求持有旧客户端 Arc clone 不受影响；
+CookieStore 重建时从 DB（持久层）重载，无丢失。回归测试：
+`test_set_custom_hosts_rebuilds_shared_client`。
 
 编写者：主代理 ｜ 2026-08-25
