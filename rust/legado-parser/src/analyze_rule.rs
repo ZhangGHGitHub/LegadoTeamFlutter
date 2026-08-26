@@ -622,6 +622,81 @@ impl AnalyzeRule {
     /// 根据规则获取单个字符串（多个结果用换行连接）
     ///
     /// 默认 `unescape=true`（对齐原版 `getString` 默认重载）。
+    /// 批量字段提取（搜索列表逐元素字段）：纯 CSS 规则共享一次 HTML 解析，
+    /// 其余规则走原单规则路径。语义与逐个调用 `get_string` 完全一致，仅避免
+    /// 同一内容被重复全量 parse（原版 AnalyzeByJSoup 对 Element 对象不重复
+    /// parse；此前 100 条 × ~7 字段 ≈ 700 次解析 → yeudusk 35s 触发 30s 超时）。
+    /// — 2026-08-18 搜索速度修复
+    pub fn get_strings_batch(&self, rules: Vec<&str>) -> Vec<LegadoResult<String>> {
+        let mut results: Vec<Option<LegadoResult<String>>> = (0..rules.len())
+            .map(|_| None)
+            .collect();
+        let mut css: Vec<(usize, String)> = Vec::new();
+
+        for (i, rule) in rules.iter().enumerate() {
+            if rule.is_empty() {
+                continue;
+            }
+            if let Some(actual) = self.batchable_css_rule(rule) {
+                css.push((i, actual));
+            } else {
+                results[i] = Some(self.get_string(rule));
+            }
+        }
+
+        if !css.is_empty() {
+            let refs: Vec<&str> = css.iter().map(|(_, a)| a.as_str()).collect();
+            let batch = self.html_parser.get_multi(&self.content, &refs);
+            for ((idx, _), res) in css.iter().zip(batch) {
+                results[*idx] = Some(res.map(Self::css_vec_to_string));
+            }
+        }
+
+        results
+            .into_iter()
+            .map(|r| r.unwrap_or_else(|| Ok(String::new())))
+            .collect()
+    }
+
+    /// 判断规则能否并入 CSS 批量路径：须为纯 CSS 提取（无变量/替换/JS 链等
+    /// 特殊语法），且解析后落到 CSS 分支。返回实际选择器（剥前缀后）。
+    fn batchable_css_rule(&self, rule: &str) -> Option<String> {
+        if rule.contains("@put:")
+            || rule.contains("@get:")
+            || rule.contains("##")
+            || rule.contains("<js>")
+            || rule.contains("@js:")
+            || rule.contains("extract@js")
+            || rule.contains("@webjs:")
+        {
+            return None;
+        }
+        let (rule_type, actual) = Self::resolve_rule_type(rule);
+        match rule_type {
+            RuleType::Css => Some(actual.to_string()),
+            RuleType::Auto if self.detect_rule_type_for_content(actual) == RuleType::Css => {
+                Some(actual.to_string())
+            }
+            _ => None,
+        }
+    }
+
+    /// CSS 选择结果 Vec→String（对齐 `get_string_ex(rule, is_url=false, unescape=true)`）：
+    /// 单值取首元素、多值 `\n` 连接、含 `&` 时 HTML4 实体反转义。
+    fn css_vec_to_string(v: Vec<String>) -> String {
+        let mut result = if v.is_empty() {
+            String::new()
+        } else if v.len() == 1 {
+            v.into_iter().next().unwrap()
+        } else {
+            v.join("\n")
+        };
+        if result.contains('&') {
+            result = legado_core::html_formatter::unescape_html4(&result);
+        }
+        result
+    }
+
     pub fn get_string(&self, rule: &str) -> LegadoResult<String> {
         self.get_string_ex(rule, false, true)
     }
@@ -875,7 +950,7 @@ impl AnalyzeRule {
 
     /// 将规则中的 `@get:{key}` 替换为已存变量（对齐 makeUpRule getRuleType）
     fn expand_get_refs(&self, rule: &str) -> String {
-        let re = regex::Regex::new(r"(?i)@get:\{([^}]+)\}").unwrap();
+        let re = re_get_ref();
         re.replace_all(rule, |caps: &regex::Captures| {
             let key = caps.get(1).map(|m| m.as_str()).unwrap_or("");
             self.get(key)
@@ -1156,7 +1231,7 @@ impl AnalyzeRule {
 
         // 1) 优先处理双花括号 {{$.path}}
         if current.contains("{{$") {
-            let re = regex::Regex::new(r"\{\{(\$[^}]*)\}\}").unwrap();
+            let re = re_js_inner();
             let mut out = String::with_capacity(current.len());
             let mut last = 0;
             for cap in re.captures_iter(&current) {
@@ -1524,13 +1599,43 @@ fn expand_js_json_array_result(results: Vec<String>) -> Vec<String> {
     }
 }
 
-/// 分离 `@put:{...}`（对齐 `splitPutRule` / `putPattern`）
-///
-/// 返回 (剥离后主规则, putMap)。putMap 的 value 仍是待求值规则字符串。
+// ─── 规则编译热路径正则：进程级静态缓存 ────────────────────────────────
+//
+// 对齐原版 Kotlin `AnalyzeRule` 类级预编译正则常量。此前每次调用现场
+// `Regex::new`，debug 构建实测 ~15ms/条 × 4 ≈ 60ms/规则 —— 搜索列表每条目
+// 新建 analyzer → 7 字段全量重编译 → yeudusk 100 条目 ≈ 42s > 30s 超时。
+// 缓存后首条之后 0ms（2026-08-15 探针 probe_re/probe_parse v5 数据）。
+
+/// `@get:{key}` 引用展开正则
+fn re_get_ref() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?i)@get:\{([^}]+)\}").unwrap())
+}
+
+/// `{{$.path}}` JsonPath 内嵌正则
+fn re_js_inner() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"\{\{(\$[^}]*)\}\}").unwrap())
+}
+
+/// `@put:{...}` 剥离正则
+fn re_put() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?i)@put:(\{[^}]+?\})").unwrap())
+}
+
+/// `<js>...</js>|@js:...` 链拆分正则（原版 JS_PATTERN）
+fn re_js_chain() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap()
+    })
+}
+
 /// 神漫画 `$.chapter_name@put:{chapter_id:$.chapter_id}` 若不剥离，
 /// JsonPath 整串失败 → 章名空 → get_chapters 跳过 → 目录为空。
 fn extract_put_rules(rule: &str) -> (String, HashMap<String, String>) {
-    let re = regex::Regex::new(r"(?i)@put:(\{[^}]+?\})").unwrap();
+    let re = re_put();
     let mut put_map = HashMap::new();
     for cap in re.captures_iter(rule) {
         if let Some(json_body) = cap.get(1) {
@@ -1688,7 +1793,7 @@ fn split_top_level_commas(s: &str) -> Vec<&str> {
 ///
 /// `@js:` 贪婪吃到末尾（与 Java `[\w\W]*` 一致），故通常至多一段尾部 JS。
 fn split_js_chain_steps(rule: &str) -> Vec<JsChainStep<'_>> {
-    let re = regex::Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap();
+    let re = re_js_chain();
     let mut steps = Vec::new();
     let mut start = 0;
     for cap in re.captures_iter(rule) {
@@ -2566,5 +2671,63 @@ mod tests {
         let els = analyzer.get_elements(rule).expect("get_elements");
         assert_eq!(els.len(), 2, "els={els:?}");
         assert!(els[0].contains("第1话") || els[0].contains("/ch/1"), "{}", els[0]);
+    }
+
+    /// `get_strings_batch` 与逐字段 `get_string` 结果必须一致（CSS 共享 parse + 非 CSS 回退）
+    #[test]
+    fn test_get_strings_batch_matches_per_field() {
+        // HTML 元素（yeudusk 列表项形态）：纯 CSS 规则走共享 parse
+        let elem = r#"<div class="c-row"><span class="c-subject">武动乾坤</span><ul class="c-tag"><li>玄幻魔法</li><li>连载</li><li>天蚕土豆</li></ul><a href="/book/123/"></a></div>"#;
+        let rules: Vec<&str> = vec![
+            "class.c-subject@text",
+            "class.c-tag@li.0@text",
+            "class.c-tag@li.2@text",
+            ".c-row@a@href",
+        ];
+
+        // 旧路径：逐字段 get_string（每字段独立 parse）
+        let mut old_rule = AnalyzeRule::new(String::new(), "http://example.com".into());
+        old_rule.set_element_content(elem.to_string());
+        let old_vals: Vec<String> = rules
+            .iter()
+            .map(|r| old_rule.get_string(r).unwrap_or_default())
+            .collect();
+
+        // 新路径：批量（一次 parse）
+        let mut new_rule = AnalyzeRule::new(String::new(), "http://example.com".into());
+        new_rule.set_element_content(elem.to_string());
+        let new_vals: Vec<String> = new_rule
+            .get_strings_batch(rules.clone())
+            .into_iter()
+            .map(|r| r.unwrap_or_default())
+            .collect();
+
+        assert_eq!(old_vals, vec!["武动乾坤", "玄幻魔法", "天蚕土豆", "/book/123/"]);
+        assert_eq!(new_vals, old_vals, "batch 与逐字段结果必须一致");
+    }
+
+    /// `get_strings_batch` 对 JSON 内容 + JsonPath 规则走回退路径且结果正确
+    #[test]
+    fn test_get_strings_batch_json_fallback() {
+        let content = r#"{"name":"斗破苍穹","author":"天蚕土豆","url":"/book/1"}"#;
+        let rules: Vec<&str> = vec!["$.name", "$.author", "$.url"];
+
+        let mut old_rule = AnalyzeRule::new(String::new(), String::new());
+        old_rule.set_content(content.to_string());
+        let old_vals: Vec<String> = rules
+            .iter()
+            .map(|r| old_rule.get_string(r).unwrap_or_default())
+            .collect();
+
+        let mut new_rule = AnalyzeRule::new(String::new(), String::new());
+        new_rule.set_content(content.to_string());
+        let new_vals: Vec<String> = new_rule
+            .get_strings_batch(rules.clone())
+            .into_iter()
+            .map(|r| r.unwrap_or_default())
+            .collect();
+
+        assert_eq!(old_vals, vec!["斗破苍穹", "天蚕土豆", "/book/1"]);
+        assert_eq!(new_vals, old_vals);
     }
 }

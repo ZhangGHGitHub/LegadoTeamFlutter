@@ -19,7 +19,7 @@ use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::read_record_repository::decode_read_record_authors;
 use legado_db::ReadRecordRepository;
 use legado_net::LegadoClient;
-use legado_parser::{AnalyzeRule, AnalyzeUrl, RequestMethod};
+use legado_parser::{AnalyzeUrl, RequestMethod};
 
 use crate::api::source as source_api;
 use crate::runtime;
@@ -34,13 +34,19 @@ static SEARCH_PAUSED: AtomicBool = AtomicBool::new(false);
 
 /// 多源搜索并发上限
 ///
-/// 对齐原版 `SearchModel` 固定线程池语义：
-/// `min(AppConfig.threadCount 默认 32, AppConst.MAX_THREAD 9)` = 9。
-/// 避免数百书源无限制并发 spawn 导致 socket/连接池耗尽、整体长时间阻塞。
-pub(crate) const SEARCH_CONCURRENCY: usize = 9;
+/// 对齐原版 `SearchModel` **有效并发**语义：`mapParallelSafe(AppConfig.threadCount)`，
+/// threadCount 默认 32（用户可配置）。原版的固定线程池 `min(threadCount, MAX_THREAD=9)`
+/// 只限制执行协程的线程数——OkHttp 异步 I/O 等待响应时不占线程，故真实并发搜索数
+/// = threadCount（32），而非线程池大小。2026-08-25 实测对比（快速组 219/236 源）：
+/// 原版 ~100s 收敛 vs 本引擎 335–352s，根因即并发数差异。
+pub(crate) const SEARCH_CONCURRENCY: usize = 32;
 
 /// 单源搜索超时（对齐原版 `SearchModel` `withTimeout(30000)`）
 pub(crate) const SEARCH_SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
+
+// 注：曾试验「CPU 阶段限流 9 并发」信号量（对齐原版 MAX_THREAD=9）——B8 实测对超时
+// 零改善（ok=49/128 超时），根因实为规则编译正则逐次重建 + 列表字段重复解析
+// （2026-08-27 探针定位，已修），限流遂撤销：单源 CPU 工作降至毫秒级后无争用必要。
 
 /// 搜索结果项
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -512,7 +518,9 @@ pub(crate) struct SourceBatchOutcome {
 /// 多源并发搜索驱动器（严格对齐原版 `SearchModel` 语义）
 ///
 /// - **限流并发**：信号量将同时进行的单源搜索限制为 `concurrency`
-///   （对应原版固定线程池 `min(threadCount, MAX_THREAD)`）；
+///   （对齐原版 `mapParallelSafe(AppConfig.threadCount 默认 32)` 的有效并发；
+///   原版固定线程池 `min(threadCount, MAX_THREAD=9)` 仅限制执行线程数，
+///   OkHttp 异步 I/O 不占线程，真实并发 = threadCount）；
 /// - **单源超时**：每源包裹 `per_source_timeout`（对应原版 `withTimeout(30000)`）；
 /// - **异常隔离**：单源 Err/超时/任务 panic 均转为错误结果批次，
 ///   不中断整体（对应原版 `mapParallelSafe` 单源异常不外溢）；
@@ -844,6 +852,9 @@ pub(crate) async fn search_single_source(
     keyword: &str,
     page: i32,
 ) -> LegadoResult<Vec<SearchResult>> {
+    // 阶段计时诊断（LEGADO_SEARCH_PHASE_TIMING=1）：定位单源 30s 超时挂起阶段
+    let phase_on = std::env::var("LEGADO_SEARCH_PHASE_TIMING").is_ok();
+    let t_phase = std::time::Instant::now();
     // JS 书源分派
     if source.is_js_source() {
         return search_js_source(source, keyword, page).await;
@@ -882,6 +893,13 @@ pub(crate) async fn search_single_source(
     })
     .await
     .map_err(|e| LegadoError::Internal(format!("搜索 URL 构建任务异常: {e}")))?;
+    if phase_on {
+        eprintln!(
+            "[phase] url_build={}ms src={}",
+            t_phase.elapsed().as_millis(),
+            source.book_source_url
+        );
+    }
     if analyze_url.url().starts_with("legado-js-error://") {
         return Err(LegadoError::Internal(format!(
             "searchUrl JS 求值失败: {}",
@@ -937,13 +955,28 @@ pub(crate) async fn search_single_source(
         }
         (response.body, response.url)
     };
+    if phase_on {
+        eprintln!(
+            "[phase] http={}ms src={}",
+            t_phase.elapsed().as_millis(),
+            source.book_source_url
+        );
+    }
 
     // 5. 使用 AnalyzeRule 解析搜索结果（同步解析同样移入阻塞线程，
     //    灾难性正则/超大页面不会阻塞 runtime，单源超时可中断）
     let source_clone = source.clone();
-    tokio::task::spawn_blocking(move || parse_search_response(&body, &final_url, &source_clone))
+    let parsed = tokio::task::spawn_blocking(move || parse_search_response(&body, &final_url, &source_clone))
         .await
-        .map_err(|e| LegadoError::Internal(format!("搜索解析任务异常: {e}")))?
+        .map_err(|e| LegadoError::Internal(format!("搜索解析任务异常: {e}")))?;
+    if phase_on {
+        eprintln!(
+            "[phase] total={}ms src={}",
+            t_phase.elapsed().as_millis(),
+            source.book_source_url
+        );
+    }
+    parsed
 }
 
 /// 构建搜索 URL
@@ -1006,32 +1039,50 @@ fn parse_search_response(
         );
         item_analyzer.set_element_content(element_html.clone());
 
+        // 批量字段提取：纯 CSS 规则共享一次 HTML 解析（搜索速度修复 2026-08-18，
+        // 此前每字段各自全量 parse → yeudusk 35s 超时）；语义与逐字段 get_string
+        // 完全一致。索引序：0 name / 1 author / 2 kind / 3 word_count /
+        // 4 book_url / 5 cover / 6 intro / 7 last_chapter。
+        let field_rules: Vec<&str> = vec![
+            rule_search.name.as_deref().unwrap_or(""),
+            rule_search.author.as_deref().unwrap_or(""),
+            rule_search.kind.as_deref().unwrap_or(""),
+            rule_search.word_count.as_deref().unwrap_or(""),
+            rule_search.book_url.as_deref().unwrap_or(""),
+            rule_search.cover_url.as_deref().unwrap_or(""),
+            rule_search.intro.as_deref().unwrap_or(""),
+            rule_search.last_chapter.as_deref().unwrap_or(""),
+        ];
+        let fields = item_analyzer.get_strings_batch(field_rules);
+        let fields_str: Vec<String> = fields
+            .into_iter()
+            .map(|r| r.unwrap_or_default())
+            .collect();
+        let field_str = |i: usize| -> String {
+            fields_str.get(i).cloned().unwrap_or_default()
+        };
+
         // 提取书名（必填，无书名则跳过）；清洗对齐原版 BookHelp.formatBookName
-        let book_name = legado_core::book_help::format_book_name(&eval_field_string(
-            &item_analyzer,
-            rule_search.name.as_deref(),
-        ));
+        let book_name = legado_core::book_help::format_book_name(&field_str(0));
         if book_name.is_empty() {
             continue;
         }
 
         // 提取作者（清洗对齐原版 BookHelp.formatBookAuthor）
-        let author = legado_core::book_help::format_book_author(&eval_field_string(
-            &item_analyzer,
-            rule_search.author.as_deref(),
-        ));
+        let author = legado_core::book_help::format_book_author(&field_str(1));
 
         // 提取分类（部分失败不致整条丢弃，对齐原版逐字段 try/catch 语义）
-        let kind = eval_field_optional(&item_analyzer, rule_search.kind.as_deref());
+        let kind = if field_str(2).is_empty() {
+            None
+        } else {
+            Some(field_str(2))
+        };
 
         // 提取字数并格式化（对齐原版 wordCountFormat）
-        let word_count = word_count_format(&eval_field_string(
-            &item_analyzer,
-            rule_search.word_count.as_deref(),
-        ));
+        let word_count = word_count_format(&field_str(3));
 
         // 书籍详情页 URL
-        let raw_book_url = eval_field_string(&item_analyzer, rule_search.book_url.as_deref());
+        let raw_book_url = field_str(4);
         // [UI-fix 2026-08-10 | Reasonix] 对齐原版 BookList.kt:282-284 +
         // AnalyzeRule.kt:369-375：bookUrl 规则解析为空时回退书源主页
         // （bookSourceUrl），避免 book_url 为空导致结果条目无法打开
@@ -1042,7 +1093,7 @@ fn parse_search_response(
         };
 
         // 提取封面 URL
-        let raw_cover = eval_field_string(&item_analyzer, rule_search.cover_url.as_deref());
+        let raw_cover = field_str(5);
         let cover_url = if raw_cover.is_empty() {
             None
         } else {
@@ -1050,11 +1101,18 @@ fn parse_search_response(
         };
 
         // 提取简介
-        let intro = eval_field_optional(&item_analyzer, rule_search.intro.as_deref());
+        let intro = if field_str(6).is_empty() {
+            None
+        } else {
+            Some(field_str(6))
+        };
 
         // 提取最新章节
-        let latest_chapter =
-            eval_field_optional(&item_analyzer, rule_search.last_chapter.as_deref());
+        let latest_chapter = if field_str(7).is_empty() {
+            None
+        } else {
+            Some(field_str(7))
+        };
 
         results.push(SearchResult {
             source_url: source.book_source_url.clone(),
@@ -1127,29 +1185,6 @@ pub(crate) fn word_count_format(raw: &str) -> Option<String> {
         Ok(n) if n > 0 => Some(format!("{n}字")),
         Ok(_) => None,
         Err(_) => Some(t.to_string()),
-    }
-}
-
-/// 从 AnalyzeRule 中获取字段值（无结果返回空串）
-///
-/// 对标原版 `AnalyzeRule.getString(sourceRule)`：规则支持 Kotlin SourceRule 的
-/// `##replaceRegex##replacement` 替换语法（复用 web_book::eval_rule_string）。
-fn eval_field_string(analyzer: &AnalyzeRule, rule: Option<&str>) -> String {
-    match rule {
-        Some(r) if !r.is_empty() => {
-            super::web_book::eval_rule_string(analyzer, r).unwrap_or_default()
-        }
-        _ => String::new(),
-    }
-}
-
-/// 从 AnalyzeRule 中获取字段（返回 Option<String>），支持 `##` 替换语法
-fn eval_field_optional(analyzer: &AnalyzeRule, rule: Option<&str>) -> Option<String> {
-    let val = eval_field_string(analyzer, rule);
-    if val.is_empty() {
-        None
-    } else {
-        Some(val)
     }
 }
 

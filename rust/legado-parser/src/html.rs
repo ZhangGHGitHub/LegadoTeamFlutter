@@ -525,6 +525,25 @@ impl HtmlParser {
         Self
     }
 
+    /// 把 HTML 字符串解析为文档（含表格片段包裹逻辑）。
+    ///
+    /// 注意：scraper 的 `Html` 非 Send（内部 tendril NonAtomic<Cell>），
+    /// 因此不能跨调用持久缓存；同内容多规则复用走 `get_multi`（单次解析、
+    /// 多次选择，文档在本次调用内瞬态存在）。— 2026-08-18 搜索速度修复
+    fn parse_doc(&self, html: &str) -> Html {
+        // 表格标签片段解析：tr/td/tbody 等片段在 HTML5 标准解析下会被丢弃
+        // （body 上下文外非法；scraper 0.22 parse_fragment 固定 body 上下文
+        // 同样丢弃），而原版 jsoup 宽容保留。元素 outerHTML 再解析的场景
+        // （class.BOX@tr!0 提取的 <tr> 元素串交给 tag.td.2@a@text 子规则）
+        // 必须保留表格结构 → 用 table/tbody 包裹后标准解析。— Reasonix 2026-08-17
+        let trimmed = html.trim_start();
+        if let Some(wrapped) = wrap_table_fragment(html, trimmed) {
+            Html::parse_document(&wrapped)
+        } else {
+            Html::parse_document(html)
+        }
+    }
+
     /// 解析 HTML 并使用 CSS 选择器获取文本内容列表
     pub fn parse_html(&self, html: &str, css_selector: &str) -> LegadoResult<Vec<String>> {
         self.get_text(html, css_selector)
@@ -551,17 +570,37 @@ impl HtmlParser {
             return Ok(vec![]);
         }
 
-        // 表格标签片段解析：tr/td/tbody 等片段在 HTML5 标准解析下会被丢弃
-        // （body 上下文外非法；scraper 0.22 parse_fragment 固定 body 上下文
-        // 同样丢弃），而原版 jsoup 宽容保留。元素 outerHTML 再解析的场景
-        // （class.BOX@tr!0 提取的 <tr> 元素串交给 tag.td.2@a@text 子规则）
-        // 必须保留表格结构 → 用 table/tbody 包裹后标准解析。— Reasonix 2026-08-17
-        let trimmed = html.trim_start();
-        let document = if let Some(wrapped) = wrap_table_fragment(html, trimmed) {
-            Html::parse_document(&wrapped)
-        } else {
-            Html::parse_document(html)
-        };
+        let document = self.parse_doc(html);
+        self.select_from_doc(&document, css_selector, default_mode)
+    }
+
+    /// 单次解析、多规则提取（同内容批量字段）：文档只 parse 一次，
+    /// 每条规则的选择语义与 `get_content(.., "text")` 完全一致。
+    ///
+    /// 搜索列表逐元素字段（name/author/kind/…）走此路径后，每元素从
+    /// ~7 次全量 DOM parse 降为 1 次（对齐原版 AnalyzeByJSoup 对 Element
+    /// 对象不重复 parse 的行为）。— 2026-08-18 搜索速度修复
+    pub fn get_multi(&self, html: &str, rules: &[&str]) -> Vec<LegadoResult<Vec<String>>> {
+        if rules.is_empty() {
+            return Vec::new();
+        }
+        let document = self.parse_doc(html);
+        rules
+            .iter()
+            .map(|r| self.select_from_doc(&document, r, "text"))
+            .collect()
+    }
+
+    /// 在已解析文档上执行 CSS 选择（get_content 的选择主体）
+    fn select_from_doc(
+        &self,
+        document: &Html,
+        css_selector: &str,
+        default_mode: &str,
+    ) -> LegadoResult<Vec<String>> {
+        if css_selector.is_empty() {
+            return Ok(vec![]);
+        }
 
         // 对标 Kotlin AnalyzeByJSoup：规则本身就是默认提取关键字时，
         // 不做选择器匹配，直接对当前内容（片段根元素）执行提取
@@ -600,10 +639,10 @@ impl HtmlParser {
 
             let items = if is_single {
                 // 单级：直接在文档上选择
-                self.extract_from_doc(&document, rule, default_mode)
+                self.extract_from_doc(document, rule, default_mode)
             } else {
                 // 多级链式选择器：逐级下钻（不重复解析 HTML）
-                self.extract_chained(&document, &effective_rules, default_mode, last_is_attr)
+                self.extract_chained(document, &effective_rules, default_mode, last_is_attr)
             };
 
             if !items.is_empty() {
@@ -972,7 +1011,7 @@ impl HtmlParser {
             return Ok(vec![]);
         }
 
-        let document = Html::parse_document(html);
+        let document = self.parse_doc(html);
         let selector = Selector::parse(css_selector).map_err(|e| {
             legado_core::LegadoError::Parser(format!("Invalid CSS selector: {:?}", e))
         })?;

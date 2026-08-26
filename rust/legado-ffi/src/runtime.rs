@@ -27,6 +27,11 @@ pub fn get_runtime() -> &'static Runtime {
             )
             .thread_name("legado-ffi-worker")
             .thread_stack_size(8 * 1024 * 1024)
+            // 阻塞池扩容（2026-08-27 搜索速度对比实测）：spawn_blocking 承载单源
+            // URL 构建 JS + 解析（regex/JS），默认 10 线程在 SEARCH_CONCURRENCY=32
+            // 下排队 ~20s，排队时间计入单源 30s 超时 → 79 个 HTTP <1s 完成的源被误判超时。
+            // 64 ≥ 2×并发上限（32 URL 构建 + 32 解析），保证搜索负载下无排队积压。
+            .max_blocking_threads(64)
             .build()
             .expect("Failed to create tokio runtime")
     })
