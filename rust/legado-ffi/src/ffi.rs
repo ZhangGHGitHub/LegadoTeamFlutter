@@ -77,6 +77,7 @@ async fn run_webbook_blocking(
 ///
 /// 所有 `pub fn` 会被 frb codegen 自动生成为 Dart 方法。
 /// 复杂类型通过 JSON String 传递，避免 frb 为外部类型生成绑定。
+#[allow(clippy::needless_question_mark)] // frb codegen 生成的桥接代码触发，非手写问题
 #[flutter_rust_bridge::frb]
 pub mod ffi {
     use super::to_json;

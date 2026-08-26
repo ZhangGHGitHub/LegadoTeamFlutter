@@ -368,7 +368,7 @@ const SEARCH_GROUP_CONFIG_KEY: &str = "searchGroup";
 /// 对齐原版 `ChangeBookSourceViewModel` L197-206：
 /// - `searchGroup` 为空（trim 后）= 不过滤，搜全部启用源；
 /// - 非空时仅保留分组字段包含该分组的源（`getEnabledPartByGroup` 语义）。
-/// config 读取失败时按空分组处理（不误伤全量搜索）。
+///   config 读取失败时按空分组处理（不误伤全量搜索）。
 fn filter_sources_by_search_group(sources: Vec<BookSource>) -> Vec<BookSource> {
     let group = crate::api::config_api::get_config(SEARCH_GROUP_CONFIG_KEY).unwrap_or_default();
     let target = group.trim();
@@ -637,7 +637,7 @@ pub fn update_search_book_score(book_url: &str, score: i32) -> LegadoResult<()> 
     if book_url.is_empty() {
         return Err(LegadoError::Database("bookUrl 不能为空".into()));
     }
-    if score < -1 || score > 1 {
+    if !(-1..=1).contains(&score) {
         return Err(LegadoError::Database("评分仅允许 -1/0/1".into()));
     }
     if !crate::db_state::is_initialized() {

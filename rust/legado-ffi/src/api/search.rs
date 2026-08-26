@@ -952,6 +952,7 @@ pub(crate) async fn search_single_source(
 /// 模板（如 `{{encodeURIComponent(key)}}`、`{{page > 1 ? '/' + page : ''}}`），
 /// 然后通过 AnalyzeUrl 解析 URL 选项（method/headers/body 等）。
 /// 统一委托 [`crate::js_executor::build_search_url`]，与调试/搜索路径共用同一模板渲染语义。
+#[cfg(test)]
 fn build_search_url(template: &str, keyword: &str, source: &BookSource) -> AnalyzeUrl {
     crate::js_executor::build_search_url(template, keyword, 1, &source.book_source_url)
 }

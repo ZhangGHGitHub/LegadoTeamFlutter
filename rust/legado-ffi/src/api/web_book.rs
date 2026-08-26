@@ -1780,7 +1780,7 @@ fn sniff_source_regex_url(body: &str, source_regex: &str) -> Option<String> {
     // 3) 裸 http(s) 子串
     let bare = regex::Regex::new(r#"https?://[^\s"'<>]+"#).ok()?;
     for m in bare.find_iter(body) {
-        let u = m.as_str().trim_end_matches(|c| matches!(c, ')' | ']' | ',' | ';'));
+        let u = m.as_str().trim_end_matches([')', ']', ',', ';']);
         if re.is_match(u) {
             return Some(u.to_string());
         }
@@ -1832,12 +1832,13 @@ fn parse_content_page(
 /// [UI-fix 2026-08-10 | Reasonix] 正文解析注入书源 jsLib：漫画/视频/音频源
 /// ruleContent 常以 `<js>`/`@js:` 引用 jsLib 定义的函数（Reload/getHosts 等），
 /// 此前不注入 → 正文 JS 抛错 → 正文为空（「搜到书但正文图片不显示/无法播放」）。
+#[cfg(test)]
 fn parse_content_page_with_js_lib(
     body: String,
     content_rule_str: &str,
     next_url_rule: &str,
     page_url: &str,
-    source_url: &str,
+    _source_url: &str,
     is_media: bool,
     js_lib: Option<&str>,
     chapter_title: Option<&str>,
@@ -1863,6 +1864,7 @@ fn parse_content_page_with_js_lib(
 /// 神漫画等内容规则依赖：
 /// `index=parseInt(chapter.index); num=parseInt(book.totalChapterNum);`
 /// 此前仅注入 title → ReferenceError/NaN → 正文空。— Reasonix
+#[allow(clippy::too_many_arguments)] // 分页解析参数集与 Kotlin analyzeContent 对齐，暂不拆结构体
 fn parse_content_page_with_bindings(
     body: String,
     content_rule_str: &str,
@@ -1976,11 +1978,12 @@ fn parse_content_page_with_bindings(
 /// - 防死循环保护：已访问 URL 去重（含首章 URL）+ 最大页数上限
 ///
 /// `fetch_page` 可注入，便于单测以脚本化响应验证多页拼接（不走真实网络）。
+#[allow(clippy::too_many_arguments)] // 分页抓取参数集与正文解析链对齐，暂不拆结构体
 async fn fetch_paginated_content<F, Fut>(
     first_content: String,
     next_urls: Vec<String>,
     chapter_url: &str,
-    source_url: &str,
+    _source_url: &str,
     content_rule_str: &str,
     next_url_rule: &str,
     is_media: bool,

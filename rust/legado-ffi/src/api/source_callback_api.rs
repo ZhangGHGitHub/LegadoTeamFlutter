@@ -135,10 +135,10 @@ fn eval_call_back_js(
     use legado_js::{JsEngine, JsValue};
 
     legado_js::host_api::ui_action_queue::begin_collect();
-    let engine = crate::js_executor::fresh_engine(&source.book_source_url).map_err(|e| {
-        legado_js::host_api::ui_action_queue::discard_collect();
-        e
-    })?;
+    let engine = crate::js_executor::fresh_engine(&source.book_source_url)
+        .inspect_err(|_e| {
+            legado_js::host_api::ui_action_queue::discard_collect();
+        })?;
     let guard = engine.lock().map_err(|e| {
         legado_js::host_api::ui_action_queue::discard_collect();
         LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}"))
@@ -165,7 +165,7 @@ fn eval_call_back_js(
         Ok(raw) => Ok(raw),
         Err(e) => {
             legado_js::host_api::ui_action_queue::discard_collect();
-            Err(e.into())
+            Err(e)
         }
     }
 }

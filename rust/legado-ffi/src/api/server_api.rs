@@ -214,7 +214,7 @@ fn mcp_state_lock() -> std::sync::MutexGuard<'static, ()> {
 /// restore_mcp_port 复用本函数绕过 persist，避免启动时重复写配置）
 fn mcp_start_internal(port: i32) -> LegadoResult<()> {
     // 合法区间校验（对齐原版 1024..65530 NumberPicker 取值）
-    if port < MCP_PORT_MIN || port > MCP_PORT_MAX {
+    if !(MCP_PORT_MIN..=MCP_PORT_MAX).contains(&port) {
         return Err(LegadoError::Internal(format!(
             "MCP 端口 {} 越界：合法区间为 {MCP_PORT_MIN}..{MCP_PORT_MAX}（对齐原版）",
             port

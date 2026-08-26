@@ -466,7 +466,7 @@ pub unsafe extern "C" fn ffi_search_multi_stream(
         let q = c_char_to_str(query)?.to_string();
         let urls = c_char_to_str(source_urls_json)?.to_string();
 
-        crate::runtime::block_on(crate::api::search::run_multi_stream(q, urls, page as i32, |batch| {
+        crate::runtime::block_on(crate::api::search::run_multi_stream(q, urls, page, |batch| {
             if let Ok(cs) = CString::new(batch) {
                 unsafe { callback(cs.as_ptr(), user_data) };
             }
@@ -723,7 +723,7 @@ pub extern "C" fn ffi_rss_clear_read_records() -> *mut c_char {
 /// 获取 RSS 已读记录总数
 #[no_mangle]
 pub extern "C" fn ffi_rss_read_record_count() -> *mut c_char {
-    to_ffi_response(catch_unwind(|| crate::api::rss_read_record_api::count()))
+    to_ffi_response(catch_unwind(crate::api::rss_read_record_api::count))
 }
 
 /// 获取 RSS 已读记录列表
@@ -1842,7 +1842,7 @@ pub unsafe extern "C" fn ffi_auto_task_next_due_at(cron: *const c_char, from_ms:
 /// 列出所有自动任务规则（返回 AutoTaskRule 数组 JSON）
 #[no_mangle]
 pub extern "C" fn ffi_auto_task_list_rules() -> *mut c_char {
-    to_ffi_response(catch_unwind(|| crate::api::auto_task_api::list_rules_db()))
+    to_ffi_response(catch_unwind(crate::api::auto_task_api::list_rules_db))
 }
 
 /// 创建自动任务规则（rule_json 为 AutoTaskRule JSON，返回任务 ID）
@@ -1892,7 +1892,7 @@ pub unsafe extern "C" fn ffi_auto_task_find_rule_by_id(id: *const c_char) -> *mu
 /// 获取规则订阅列表（返回 RuleSub 数组 JSON，按 customOrder 排序）
 #[no_mangle]
 pub extern "C" fn ffi_rule_sub_list() -> *mut c_char {
-    to_ffi_response(catch_unwind(|| crate::api::rule_sub_api::list_subs_db()))
+    to_ffi_response(catch_unwind(crate::api::rule_sub_api::list_subs_db))
 }
 
 /// 保存规则订阅（sub_json 为 RuleSub JSON，返回是否成功）

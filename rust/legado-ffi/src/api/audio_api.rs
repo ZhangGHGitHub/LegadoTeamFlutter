@@ -11,7 +11,8 @@ use legado_core::cache_book::CachedChapter;
 use legado_core::models::Book;
 use legado_core::web_book::WebChapter;
 use legado_core::{LegadoError, LegadoResult};
-use legado_db::repository::Repository;
+#[cfg(test)]
+use legado_db::repository::Repository; // 测试模块的 Book/BookChapter Repository::insert 需要此 trait
 use legado_db::{
     BookChapterRepository, BookRepository, BookSourceRepository, CacheBookRepository,
     CacheRepository,

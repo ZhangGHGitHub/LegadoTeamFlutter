@@ -32,7 +32,7 @@ pub fn explore_eval_action(source_json: &str, action_js: &str) -> LegadoResult<S
     #[cfg(feature = "quickjs")]
     {
         let result = eval_explore_action_js(action_js, &source)?;
-        return serde_json::to_string(&result).map_err(LegadoError::Serialization);
+        serde_json::to_string(&result).map_err(LegadoError::Serialization)
     }
     #[cfg(not(feature = "quickjs"))]
     {
@@ -48,7 +48,7 @@ pub fn explore_eval_ui_js(source_json: &str, js_str: &str) -> LegadoResult<Strin
     let source: BookSource = serde_json::from_str(source_json)?;
     #[cfg(feature = "quickjs")]
     {
-        return eval_explore_ui_js(js_str, &source);
+        eval_explore_ui_js(js_str, &source)
     }
     #[cfg(not(feature = "quickjs"))]
     {
@@ -273,7 +273,7 @@ fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
             .map_err(|e| LegadoError::JsEngine(format!("exploreUrl JS 执行失败: {e}")))?;
 
         sync_login_cache_from_js(&tag);
-        sync_info_map_from_js(&*guard, &tag)?;
+        sync_info_map_from_js(&guard, &tag)?;
 
         Ok(result.trim().to_string())
     })
@@ -370,26 +370,24 @@ fn eval_explore_action_js(
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
 
     ui_action_queue::begin_collect();
-    let result = (|| -> LegadoResult<ExploreEvalActionResult> {
-        with_current_source_tag(&tag, || {
-            bootstrap_explore_js_context(&guard, source)?;
+    let result = with_current_source_tag(&tag, || {
+        bootstrap_explore_js_context(&guard, source)?;
 
-            let raw = guard
-                .eval(action_js)
-                .map_err(|e| LegadoError::JsEngine(format!("explore action JS 执行失败: {e}")))?;
+        let raw = guard
+            .eval(action_js)
+            .map_err(|e| LegadoError::JsEngine(format!("explore action JS 执行失败: {e}")))?;
 
-            sync_info_map_from_js(&*guard, &tag)?;
-            sync_login_cache_from_js(&tag);
+        sync_info_map_from_js(&guard, &tag)?;
+        sync_login_cache_from_js(&tag);
 
-            let refresh_explore = ui_action_queue::take_refresh_explore_requested();
-            let actions = ui_action_queue::end_collect();
-            Ok(ExploreEvalActionResult {
-                raw,
-                actions,
-                refresh_explore,
-            })
+        let refresh_explore = ui_action_queue::take_refresh_explore_requested();
+        let actions = ui_action_queue::end_collect();
+        Ok(ExploreEvalActionResult {
+            raw,
+            actions,
+            refresh_explore,
         })
-    })();
+    });
 
     match result {
         Ok(v) => Ok(v),
@@ -466,7 +464,7 @@ async fn explore_books_async(
     let analyze_url = crate::js_executor::build_explore_url(
         url,
         page,
-        &source,
+        source,
         &info_map,
     )
     // 分类 URL 脚本执行失败上抛真实错误（懒人听书未配置会话时
@@ -754,7 +752,7 @@ async fn explore_books_async(
 /// - 成功路径：正常响应 eval 判定未登录 → 构造 errResponse(500) 二次 eval
 ///   （JS 可自动登录并返回新响应）→ 仍未登录则上抛 `LoginRequired`
 /// - JS 环境不兼容（依赖 java.* 等）→ 降级放行，避免阻断
-/// — DeepSeek Harness + Bridge（2026-08-14 发现页修复 R3）
+///   — DeepSeek Harness + Bridge（2026-08-14 发现页修复 R3）
 fn explore_login_check(
     source: &BookSource,
     response_body: &str,
@@ -1090,7 +1088,7 @@ function getServerHost() { return 'https://a.test'; }
             eprintln!("未找到书山聚合源，跳过");
             return;
         };
-        let Some(js_lib) = src.get("jsLib").and_then(|l| l.as_str()) else {
+        let Some(_js_lib) = src.get("jsLib").and_then(|l| l.as_str()) else {
             eprintln!("书山 jsLib 缺失，跳过");
             return;
         };

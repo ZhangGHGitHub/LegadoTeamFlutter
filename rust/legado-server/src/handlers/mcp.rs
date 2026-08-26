@@ -1026,8 +1026,10 @@ fn eval_js_blocking(js: &str, base_url: &str, timeout_sec: i64) -> Result<Option
     use legado_js::QuickJsEngine;
 
     // 沙箱配置：以 timeout_sec 作为脚本最大执行时间（超时后中断脚本）
-    let mut sandbox = SandboxConfig::default();
-    sandbox.max_execution_time = std::time::Duration::from_secs(timeout_sec as u64);
+    let sandbox = SandboxConfig {
+        max_execution_time: std::time::Duration::from_secs(timeout_sec as u64),
+        ..Default::default()
+    };
     let engine =
         QuickJsEngine::new(sandbox).map_err(|e| format!("JS 引擎初始化失败: {e}"))?;
     // 绑定书源运行时身份（对齐 Kotlin 书源 evalJS 的环境变量）

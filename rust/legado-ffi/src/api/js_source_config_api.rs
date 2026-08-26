@@ -14,9 +14,9 @@ use legado_core::LegadoResult;
 /// `content` — 完整 JS 书源脚本文本
 pub fn js_source_extract(content: &str) -> LegadoResult<String> {
     let source = legado_js::js_source::js_source_config::extract(content)?;
-    Ok(serde_json::to_string(&source).map_err(|e| {
+    serde_json::to_string(&source).map_err(|e| {
         legado_core::LegadoError::JsEngine(format!("BookSource 序列化失败: {e}"))
-    })?)
+    })
 }
 
 /// JS 语法检查，返回 SyntaxCheckResult JSON（valid/message/line）
@@ -24,9 +24,9 @@ pub fn js_source_extract(content: &str) -> LegadoResult<String> {
 /// `content` — 待检查的 JS 脚本文本
 pub fn js_source_syntax_check(content: &str) -> LegadoResult<String> {
     let result = legado_js::js_source::js_source_config::syntax_check(content);
-    Ok(serde_json::to_string(&result).map_err(|e| {
+    serde_json::to_string(&result).map_err(|e| {
         legado_core::LegadoError::JsEngine(format!("语法检查结果序列化失败: {e}"))
-    })?)
+    })
 }
 
 /// 写回顶层配置对象的 lastUpdateTime，返回替换后的脚本文本

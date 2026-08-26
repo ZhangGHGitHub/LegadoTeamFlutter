@@ -257,8 +257,7 @@ fn debug_book_source_sync(source_url: &str, key: &str, session_id: u64) {
         true,
     );
 
-    if key.starts_with("--") {
-        let chapter_url = &key[2..];
+    if let Some(chapter_url) = key.strip_prefix("--") {
         log_debug(
             Some(source_url),
             &format!("⇒开始访正文页:{chapter_url}"),
@@ -266,8 +265,7 @@ fn debug_book_source_sync(source_url: &str, key: &str, session_id: u64) {
             true,
         );
         content_debug(source_url, &source_json, chapter_url, "调试", session_id);
-    } else if key.starts_with("++") {
-        let toc_url = &key[2..];
+    } else if let Some(toc_url) = key.strip_prefix("++") {
         log_debug(
             Some(source_url),
             &format!("⇒开始访目录页:{toc_url}"),
