@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.108] - 2026-08-27
+
+### Fixed
+- [UI] 书源搜索错误日志被静默丢弃（根因）：search_notifier 以 level:'error' 推送 per-source 搜索错误，Rust AppLog FFI 仅接受 message/crash/http（log_api.rs parse_level），非法级别返回 Err 后被 catchError 吞掉，应用日志「消息」tab 恒为空、无法排查书源失败。改为 message 级（对齐原版 AppLog.put 无级别过滤的留痕语义）
+- Contributor: Qoder UI
+
 ## [2.0.107] - 2026-08-25
 
 ### Fixed

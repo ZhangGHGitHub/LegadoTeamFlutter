@@ -283,7 +283,8 @@ class SearchNotifier extends Notifier<SearchState> {
             // 日志写入失败不阻断搜索主流程（对齐原版 AppLog.put 尽力而为语义）
             unawaited(ref
                 .read(bookApiProvider)
-                .appLogPush(level: 'error', message: '书源搜索出错\n$srcName: $batchError')
+                // Rust AppLog 三级（message/crash/http），'error' 非法会被 FFI 丢弃 — Qoder
+                .appLogPush(level: 'message', message: '书源搜索出错\n$srcName: $batchError')
                 .catchError((_) {}));
           }
           final books = (batch['books'] as List<dynamic>? ?? const [])
