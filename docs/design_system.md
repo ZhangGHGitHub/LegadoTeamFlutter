@@ -1,9 +1,9 @@
 # Legado Flutter 设计规范文档
 
-> 数据来源：`flutter_legado/lib/src/theme/app_colors.dart`、`app_typography.dart`、`app_theme.dart`
-> Token 来源基准：iOS Human Interface Guidelines 系统色（亮/暗两套），语义槽位与 Android 原版一一对应
+> 数据来源：`flutter_legado/lib/src/theme/`（迁移完成后为 `app_theme.dart` + `md3_colors.dart`）
+> Token 来源基准：Material Design 3 官方指南（12 套内置命名主题 × 亮/暗 tonal 配对），语义槽位与 Android 原版一一对应
 >
-> **定位说明（2026-08-05 更新）**：本文档描述当前主题 Token 体系，作为 UI 实现的统一依据。项目对齐标准为：**界面功能与交互流程对齐 Android 原版，UI 视觉风格自由**——当前视觉语言已切换为 iOS 体系，本文档中的色值/字号等可随设计演进更新，修改 Token 时需同步更新本档与代码实现，保持单一事实源。
+> **定位说明（2026-08-28 更新）**：本文档描述当前主题 Token 体系，作为 UI 实现的统一依据。项目对齐标准为：**界面功能与交互流程对齐 Android 原版，UI 视觉风格自由**——UI 开发遵循 Material Design 官方指南（Material Design 3 Expressive，apple-ui-designer 技能降为可选参考），视觉语言正按 `docs/UI_MD3_PLAN.md` 由 iOS 体系迁移至 MD3 体系；本文档中的色值/字号等可随设计演进更新，修改 Token 时需同步更新本档与代码实现，保持单一事实源（MD3 迁移完成后本档为 MD3 token 单一事实源）。
 
 ---
 

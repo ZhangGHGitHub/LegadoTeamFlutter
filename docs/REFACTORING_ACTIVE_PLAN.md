@@ -186,6 +186,7 @@
 | `RESIDUAL_RISKS_2026-08-13.md` | A* 和工程残余风险 |
 | `SOURCE_DIFF_AUDIT_2026-08-13.md` | 原版源码差异证据 |
 | `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` | 搜索速度与结果一致性当前修复计划 |
+| `UI_MD3_PLAN.md` | Flutter UI 视觉迁移至 MD3 Expressive 的当前执行计划（UI 轨独立推进，不涉 Rust/FFI） |
 | `PARSER_GAP_FIX_PROGRESS_20260815.md` | 解析 parity 交接与证据 |
 | `过期文档/README.md` | 历史文档目录和替代关系 |
 
@@ -200,3 +201,4 @@
 修订：主代理 ｜ 2026-08-25（P3-4 关闭：批次 A `6e04cda43`（版本 2.0.105+109）；P3-5 关闭：批次 B 提交（版本 2.0.106+110），独立复验通过）
 修订：主代理 ｜ 2026-08-25（P3-4 第二阶段关闭：双根因批次 C `83ff6a8a8`（版本 2.0.107+111）——debug .so + CoverDecodeLoader 整表注册表；冒烟脚本补 UTF-8 BOM（PS5.1 GBK 解码根因）；两级模拟器验证 5556/5558 全 PASSED）
 修订：Codex ｜ 2026-08-28（P3-6 开放：搜索主路径与原版深度源码审查，专项修复计划和验收矩阵登记）
+修订：Qoder UI ｜ 2026-08-28（治理步骤：UI 开发规范由 apple-ui-designer 技能切换为 Material Design 3 官方指南，AGENTS/design_system/本档三处同步，据 UI_MD3_PLAN.md 第十四节独立 commit；P3-6 搜索 parity 修复仍由后端轨并行推进，互不干扰）

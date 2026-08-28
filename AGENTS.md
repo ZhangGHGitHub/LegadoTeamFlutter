@@ -36,7 +36,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 ## 关键约束
 
-- **原版对齐**：功能实现逻辑必须参照 Android 原版源码（功能基准：`com.legado.app.release` 3.26081008）；界面功能、页面结构与交互流程必须与原版保持一致；**UI 视觉风格允许自由改变**（配色、字体、设计语言等不受原版约束，2026-08-05 用户确认），且 UI 开发必须使用 apple-ui-designer 技能
+- **原版对齐**：功能实现逻辑必须参照 Android 原版源码（功能基准：`com.legado.app.release` 3.26081008）；界面功能、页面结构与交互流程必须与原版保持一致；**UI 视觉风格允许自由改变**（配色、字体、设计语言等不受原版约束，2026-08-05 用户确认），且 UI 开发遵循 Material Design 官方指南（Material Design 3 Expressive，执行计划见 docs/UI_MD3_PLAN.md；apple-ui-designer 技能降为可选参考，2026-08-28 用户授权治理步骤）
 - **双轨并存**：旧 Android 代码暂不删除，保持双轨并存；Rust 核心逻辑 + Flutter UI 为新架构
 - **FFI 变更**：修改 Rust/Dart FFI 边界前，先更新 `docs/API_CONTRACT.md` 契约，再实施代码；跨轨阻塞项须 Rust 轨先行交付契约；契约修改需双方（Qoder/QoderCN）确认；Mock 数据使用从原 Android 应用抓取的真实 JSON
 - **重构红线**：本项目为重构项目，禁止新增 Android 原版不存在的创意功能；发现偏离项（如推荐算法、阅读统计等）必须清理，一切以不偏离重构核心为目标
