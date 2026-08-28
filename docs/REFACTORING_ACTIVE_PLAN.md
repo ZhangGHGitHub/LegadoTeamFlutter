@@ -173,6 +173,8 @@
   - **关闭条件**：flutter analyze/test 绿 + cargo 门禁（新 FFI 方法）+ 5556 冒烟 PASSED + 5558 用户验收（与原版逐项对照）。
   - **关闭记录（2026-08-25）**：批次 B 交付（版本 2.0.106+110，CHANGELOG [2.0.106]，署名「— Cursor UI + Bridge」）。① 👍/👎 评分（Red A200 / Blue A200）+ 增量 FFI updateSearchBookScore / deleteSearchBook + searchBooks.bookScore v106 迁移 + source_matcher book_score 优先排序 + sync_source_score_delta 书源聚合分；② 移除自创「匹配分」数字角标（红线项）；③ 长按五项菜单（置顶/置底/编辑书源/禁用书源/删除，删当前源自动切下一候选）；④ 底部栏（当前源标签点按滚动定位 + 上/下滚动按钮，hasClients 点按时判定）；⑤ title=书名 + subtitle=作者。独立复验：flutter analyze 0 issues + flutter test 全绿（api_contract_test 程序化校验 §2.4=16 / 合计 267）+ cargo 三段门禁 EXIT=0。
 
+- **P3-6 搜索速度与结果一致性修复**（开放，2026-08-28）：源码审查确认 Flutter 主搜索走 `run_multi_stream -> search_single_source`，未复用较完整的规则搜索实现，导致登录检查、详情页回退、书源上下文 JS、单源去重等原版语义存在分叉；同时存在取消残留任务、入口语义不统一和 `originOrder=0` 风险。先完成离线原版响应夹具、QuickJS 产物 feature 核验和双包同库基线，再按“统一单源执行器 → 会话级取消 → 过滤/聚合/持久化一致性 → 性能剖析”实施。详细验收矩阵、依赖顺序与非目标见 `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md`。本项未实施，不得以已有审计文档或当前未提交代码宣称已关闭。
+
 ## 四、文档治理
 
 | 文档 | 当前职责 |
@@ -183,6 +185,7 @@
 | `TWO_TRACK_DEV_SPEC.md` | 双轨与 codegen 纪律 |
 | `RESIDUAL_RISKS_2026-08-13.md` | A* 和工程残余风险 |
 | `SOURCE_DIFF_AUDIT_2026-08-13.md` | 原版源码差异证据 |
+| `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` | 搜索速度与结果一致性当前修复计划 |
 | `PARSER_GAP_FIX_PROGRESS_20260815.md` | 解析 parity 交接与证据 |
 | `过期文档/README.md` | 历史文档目录和替代关系 |
 
@@ -196,3 +199,4 @@
 修订：主代理 ｜ 2026-08-25（P3-4/P3-5 开启：用户验收反馈——搜索/详情性能回归根因定位 + 换源 UI 对齐清单；两批并行实施，A→B 顺序交付）
 修订：主代理 ｜ 2026-08-25（P3-4 关闭：批次 A `6e04cda43`（版本 2.0.105+109）；P3-5 关闭：批次 B 提交（版本 2.0.106+110），独立复验通过）
 修订：主代理 ｜ 2026-08-25（P3-4 第二阶段关闭：双根因批次 C `83ff6a8a8`（版本 2.0.107+111）——debug .so + CoverDecodeLoader 整表注册表；冒烟脚本补 UTF-8 BOM（PS5.1 GBK 解码根因）；两级模拟器验证 5556/5558 全 PASSED）
+修订：Codex ｜ 2026-08-28（P3-6 开放：搜索主路径与原版深度源码审查，专项修复计划和验收矩阵登记）
