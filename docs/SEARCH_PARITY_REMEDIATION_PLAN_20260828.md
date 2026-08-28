@@ -109,7 +109,7 @@ Flutter 展示层
 
 **关闭条件**：取消后的排队源不发请求；在飞任务被终止或其结果绝不再进入状态、落库或流；压力测试稳定通过。
 
-**状态（2026-08-28）**：✅ 已完成并提交（07bd63089）。方案=当前会话注册表（无 FFI 签名变更）：每次搜索创建 SearchSession{cancel,paused}，无参 cancel/pause/resume 定位当前会话；新搜索取代并取消上一会话防残留。drive_source_batches 改为按完成顺序收集（FuturesUnordered），派发前/获许可后二次检查取消。压力测试 test_search_session_isolation_a_then_b 通过（A 已取消→0 请求，B 全新→全执行）；cargo test -p legado-ffi = 312 passed / 0 failed。
+**状态（2026-08-28，复审后修订）**：⚠️ **原「✅ 已完成」声明已撤回**——初审 `07bd63089` 的驱动器取消时仅丢弃 `FuturesUnordered`（分离而非中止在飞任务），且压力测试 `test_search_session_isolation_a_then_b` 是「预取消 A 再启 B」，未测真实重叠。**复审整改（本轮）**：① `drive_source_batches` 重写为有界派发（≤concurrency 在飞、完成即派下一个）+ 取消/sink 关闭时显式 abort_all + drain；② serialize/persist/sink.add 前会话级复检「未取消且仍当前」；③ `clear_current_session_if_same`（Arc::ptr_eq）防 A 清理误清 B。新增真实重叠 / sink-Err / 注册清理安全测试（A 运行中被取代→排队源 0 请求、在飞结果不交付 on_source、B 干净执行）。cargo test -p legado-ffi = **314 passed / 0 failed**。**端到端（真机「搜索中停止并立即重搜」重叠场景 @5556/5558）仍未验证**——P0-3 单元层已闭环，e2e 待补后方可关闭。
 
 ### P1-1：统一过滤、聚合、排序和持久化契约
 
@@ -269,7 +269,7 @@ Flutter 展示层
 
 **状态**：P1-1 项 3（S4）**已完成并验证**。整体计划仍开放（P0-2 S0 网络项 + P0-3 / P1-1 其余项待推进）。
 
-### 7.6 P0-1.4 / P0-2 S0：双包真实搜索基线（「斗破苍穹」）——重构版端到端验证通过（2026-08-28）
+### 7.6 P0-1.4 / P0-2 S0：双包真实搜索基线（「斗破苍穹」）——单包观察记录（复审后修订，原「端到端验证通过」已撤回）
 
 **背景与解锁**：环境本轮全解锁（adb + emulator-5556/5558 在线 + 网络通）。取真实书源包 `https://www.yckceo.com/yuedu/shuyuans/json/id/1248.json`（996 源），查询「斗破苍穹」。两 app（重构版 `io.legado.flutter_legado` v2.0.109 @5556、原版 `com.legado.app.release` v3.26082504 @5558）均已装且命中**同一 ~236 源集**（进度均达 231/236），构成 P0-1.4 双包基线。
 
@@ -296,6 +296,6 @@ Flutter 展示层
 | bookUrlPattern 详情判定 | `BookList.kt:62-81` | 否——通用：正则识别搜索结果是否为详情页 |
 | 空列表详情回退 | `BookList.kt:100-108` | 否——通用：列表为空且无 bookUrlPattern 时按详情页解析 |
 
-**状态**：P0-1.4 双包基线 + S0 **通用搜索路径验证通过**。S0 四个子项（loginCheckJs 成功/失败双路径 / HTTP 重定向最终 URL / bookUrlPattern 详情判定 / 空列表详情回退）**标记为 DEFERRED**——用户确认暂无法测试（缺带对应特性的定向书源：需登录源、302 跳转源、列表空但详情存在源等），**后续补测**。P0-2 其余部分关闭，按计划推进 P0-3。整体计划仍开放。
+**状态（复审后修订）**：⚠️ **原「P0-1.4 双包基线 + S0 通用搜索路径验证通过」声明已撤回**——实为**单包观察完成**（仅重构版 5556 达终态；原版 5558 当时仍在逐源下载封面，未达终态），且所附截图/PNG/XML 为**书架页/启动页侧证，非搜索结果页证据**，不能证明两包返回相同搜索结果。**双包基线（两端各自完成、同库同网、逐项字段 + origins + 稳定排序对比）与四项 S0（loginCheckJs 成功/失败 / HTTP 重定向最终 URL / bookUrlPattern 详情判定 / 空列表详情回退）均未关闭**。P0-2 **不得**据此标记完成；须先补齐双包基线证据方可推进。整体计划仍开放。
 
 *实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 离线可验证部分：S1 source 上下文 + S2 前缀/去重/intro/kind + S6 multi_source_search 驱动器对齐 + P1-1 项 3 originOrder 透传（提前落地）+ P0-1.4/P0-2 S0 双包真实搜索基线「斗破苍穹」验证）*
