@@ -230,4 +230,21 @@ Flutter 展示层
 
 **状态**：P0-2 **纯离线可验证部分已全部落地并验证——S1（source/cookie JS 上下文）+ S2 字段级（前缀 + 去重 + intro 净化 + kind 逗号分隔）**；仅剩依赖真实响应的 S0 行为（详情页判定 / 空列表回退 / loginCheckJs / 重定向最终 URL）待 P0-1.4 双包基线解锁。整体计划仍开放。
 
-*实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 离线可验证部分：S1 source 上下文 + S2 前缀/去重/intro/kind）*
+### 7.4 P0-2：multi_source_search 委托统一执行器，三入口驱动器对齐（2026-08-28）
+
+**关键发现**：三个 Rust 搜索入口的**解析器早已统一**——`search_books` / `run_multi_stream` / `multi_source_search` 全部经 `search_single_source` → `parse_search_response`（共享解析）。残留分叉仅在**驱动器层（S6）**：`multi_source_search` 曾走独立的 `MultiSourceSearcher`/`WebSourceSearcher`——10s **全局**超时、20 条/源截断、跨源去重 + 相关性排序；而 `search_books` / `run_multi_stream` 用 `drive_source_batches`（有界并发 32、每源 30s、无截断）。此分叉违反计划约束 #5（不得以全局 10s 替代每源 30s、不得引入未验证截断）。
+
+**整改动作（已提交 `22a8df7d9`）**：
+
+| 项 | 说明 |
+|---|---|
+| multi_source_search 委托 | 改为 `drive_source_batches` + `search_single_source`（与 search_books **同构**），移除独立驱动器与本地取消监听任务 |
+| 聚合职责下沉 | 跨源去重 / 相关性排序下沉至 Flutter，对齐原版 `SearchModel`：Rust 出原始单源结果、UI 按 mergeItems 聚合 |
+| FFI 契约 | `AnnotatedCandidate` JSON 字段结构**保持不变**；`relevance_score` 恒为 0.0（统一执行器不做跨源排序，聚合是 Flutter 职责） |
+| 依赖清理 | 移除 search.rs 对 `MultiSourceSearcher` / `SearchConfig` 的 import（仅单测仍引用 `WebSourceSearcher`，保留其实现供测试） |
+
+**验证**：`cargo build -p legado-ffi` 通过；legado-ffi lib 全量测试 **非 quickjs 309 passed / quickjs 367 passed，0 failed**（无回归）。Flutter analyze 在本环境启动挂起（工具/网络问题，与本次 Rust-only 改动无关）——本改动不改 Dart、不改 FFI 签名、不改 JSON 结构，Dart 侧契约不受影响。
+
+**状态**：P0-2 **S6 驱动器层已对齐**（三入口共用 `drive_source_batches` + `search_single_source`）。仍未标记完成——按 §五.5 需 S0 网络行为（详情页判定 / 空列表回退 / loginCheckJs / 重定向最终 URL）+ 两级模拟器冒烟后方可关闭。整体计划仍开放。
+
+*实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 离线可验证部分：S1 source 上下文 + S2 前缀/去重/intro/kind + S6 multi_source_search 驱动器对齐）*
