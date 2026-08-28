@@ -109,12 +109,11 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
     return Scaffold(
       appBar: LegadoAppBar(
         title: const Text('应用日志'),
-        // AppBar 内 TabBar 必须白色系前景（设计规范 §5.1 / 既往缺陷模式）
+        // [MD3 Batch 6] 前景走全局 tabBarTheme（onSurface/onSurfaceVariant +
+        // primary 指示器），与 M3 AppBar surface 背景配对（原白色系前瞻
+        // 在 iOS 深色 AppBar 时期成立，M3 化后不可见）
         bottom: TabBar(
           controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
           // 全局 tabBarTheme 设了 TabAlignment.start，仅可滚动 TabBar 合法；
           // 非 scrollable 须显式 fill（对齐 toc_screen 处理）— 登录红屏修复
           tabAlignment: TabAlignment.fill,

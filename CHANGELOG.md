@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.116] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 6（docs/UI_MD3_PLAN.md）：设置长尾/admin/misc 收尾 + 全域复核。域审计确认 9 屏（settings/other_settings/webdav_settings/cache_settings/file_manage/auto_task/app_log/about/import/archive_import_dialog）已基于 colorScheme token 与 Ios* 组件继承 MD3；「我的」页 iOS 彩色图标底移除，统一走 IosListTile MD3 tonal 容器（primaryContainer/onPrimaryContainer）；app_log 页内 TabBar 白色系前景改走全局 tabBarTheme（M3 surface AppBar 下白字不可见）；12×亮暗 WCAG AA 对比度复核由 test/unit/md3_palette_test.dart 全矩阵自动化覆盖（Batch 0 已落地）。版本 2.0.116+120
+- Contributor: Qoder UI
+
 ## [2.0.115] - 2026-08-28
 
 ### Changed

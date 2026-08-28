@@ -9,7 +9,6 @@ import '../routes.dart';
 import '../services/auto_task_scheduler.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
-import '../theme/app_colors.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -181,7 +180,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 IosListTile(
                   icon: Icons.library_books,
-                  iconBackground: AppColors.iosBlueLight,
                   title: '书源管理',
                   subtitle: '新建、导入、编辑或管理书源',
                   showDisclosure: true,
@@ -189,7 +187,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.schedule,
-                  iconBackground: AppColors.iosOrangeLight,
                   title: '定时任务',
                   subtitle: '管理按计划执行的 JavaScript 任务',
                   showDisclosure: true,
@@ -210,7 +207,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.toc,
-                  iconBackground: AppColors.iosTealLight,
                   title: 'TXT 目录规则',
                   subtitle: '配置 TXT 目录规则',
                   showDisclosure: true,
@@ -219,7 +215,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.find_replace,
-                  iconBackground: AppColors.iosRedLight,
                   title: '替换净化',
                   subtitle: '配置替换净化规则',
                   showDisclosure: true,
@@ -228,7 +223,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.translate,
-                  iconBackground: AppColors.iosIndigoLight,
                   title: '字典规则',
                   subtitle: '配置字典规则',
                   showDisclosure: true,
@@ -236,7 +230,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.brightness_6,
-                  iconBackground: AppColors.iosPurpleLight,
                   title: '主题模式',
                   subtitle: '选择主题模式',
                   value: _themeModeLabel(themeMode),
@@ -295,7 +288,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 IosListTile(
                   icon: Icons.backup,
-                  iconBackground: AppColors.iosGreenLight,
                   title: '备份与恢复',
                   subtitle: 'WebDav 设置/导入旧版本数据',
                   showDisclosure: true,
@@ -304,7 +296,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.palette_outlined,
-                  iconBackground: AppColors.iosPinkLight,
                   title: '主题设置',
                   subtitle: '与界面/颜色相关的一些设置',
                   showDisclosure: true,
@@ -313,7 +304,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.tune,
-                  iconBackground: AppColors.iosBrownLight,
                   title: '其他设置',
                   subtitle: '与功能相关的一些设置',
                   showDisclosure: true,
@@ -330,7 +320,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 IosListTile(
                   icon: Icons.bookmark,
-                  iconBackground: AppColors.iosOrangeLight,
                   title: '书签',
                   subtitle: '所有书签',
                   showDisclosure: true,
@@ -339,7 +328,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.history,
-                  iconBackground: AppColors.iosTealLight,
                   title: '阅读记录',
                   subtitle: '阅读时间记录',
                   showDisclosure: true,
@@ -348,7 +336,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.folder_outlined,
-                  iconBackground: AppColors.iosBrownLight,
                   title: '文件管理',
                   subtitle: '管理私有文件夹的文件',
                   showDisclosure: true,
@@ -357,14 +344,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 IosListTile(
                   icon: Icons.info_outline,
-                  iconBackground: AppColors.iosBlueLight,
                   title: '关于',
                   showDisclosure: true,
                   onTap: () => Navigator.pushNamed(context, AppRoutes.about),
                 ),
                 IosListTile(
                   icon: Icons.exit_to_app,
-                  iconBackground: AppColors.iosRedLight,
                   title: '退出',
                   onTap: _confirmExit,
                 ),
