@@ -271,7 +271,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     _colorTile(PrefKeys.cBBackground, '底部操作栏颜色', colors),
                     IosListTile(
                       icon: Icons.wallpaper,
-                      iconBackground: Colors.green,
                       title: '背景图片',
                       subtitle: _bgImage.isEmpty ? '未设置' : _bgImage,
                       showDisclosure: true,
@@ -288,7 +287,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                     IosListTile(
                       icon: Icons.save_outlined,
-                      iconBackground: Colors.blue,
                       title: '保存白天主题',
                       subtitle: '将当前白天颜色保存到主题列表',
                       showDisclosure: true,
@@ -309,7 +307,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         isNight: true),
                     IosListTile(
                       icon: Icons.wallpaper,
-                      iconBackground: Colors.green,
                       title: '背景图片',
                       subtitle: _bgImageNight.isEmpty ? '未设置' : _bgImageNight,
                       showDisclosure: true,
@@ -327,7 +324,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                     IosListTile(
                       icon: Icons.save_outlined,
-                      iconBackground: Colors.blue,
                       title: '保存夜间主题',
                       subtitle: '将当前夜间颜色保存到主题列表',
                       showDisclosure: true,
@@ -353,7 +349,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final value = colors.valueOf(key);
     return IosListTile(
       icon: Icons.palette_outlined,
-      iconBackground: isNight ? Colors.indigo : Colors.orange,
       title: title,
       value: value == null ? '默认' : null,
       trailing: value == null

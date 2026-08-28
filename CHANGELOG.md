@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.119] - 2026-08-28
+
+### Changed
+- [UI] MD3 全量清点（用户复核指令）：按源码对账 65 屏/路由/三级菜单，确认无缺失页面；清出并修复最后的 iOS 残留——①explore_kind_layout 发现分类加载失败弹窗 CupertinoAlertDialog → M3 AlertDialog（dialogTheme 继承）；②explore_kind_layout 字符选择与 explore_page_control 页码选择两处 CupertinoPicker 底部弹层 → 新增共享组件 md3_picker_sheet.dart（showModalBottomSheet 走 bottomSheetTheme + ListWheelScrollView 轮式选择，M3 时间选择器同款轮式语义）；③theme_config/other_settings/welcome_config 三页共 9 处 iconBackground 彩色图标底（Colors.green/blue/teal/indigo/orange 硬编码）清除，统一走 IosListTile 的 MD3 tonal 容器；④welcome_config Colors.grey 说明文字 → onSurfaceVariant token
+- [Test] 门禁：flutter analyze 0 issues、flutter test 1300 全绿。登记保留项：manga_config_sheet 的 CupertinoSlidingSegmentedControl 属漫画阅读器沉浸域配置面板（计划「沉浸式屏 Sheet 不改」排除）；reader 域 CupertinoColors/白黑系与 source_debug/rss_source_debug 调试日志级别语义色为已登记功能例外。版本 2.0.119+123
+- Contributor: Qoder UI
+
 ## [2.0.118] - 2026-08-28
 
 ### Changed

@@ -174,11 +174,15 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                         _settings.setIntPref(PrefKeys.welcomeShowTime, ms);
                       },
                     ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
                         '设为 0 则跳过闪屏直接进入主页',
-                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                        // [MD3 全量清点] Colors.grey → onSurfaceVariant token
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ]),
@@ -198,7 +202,6 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                   IosGroup(children: [
                     IosListTile(
                       icon: Icons.wallpaper_outlined,
-                      iconBackground: Colors.teal,
                       title: '背景图片',
                       subtitle: _imageDay.isEmpty ? '选择图片' : _imageDay,
                       showDisclosure: true,
@@ -227,7 +230,6 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                   IosGroup(children: [
                     IosListTile(
                       icon: Icons.wallpaper_outlined,
-                      iconBackground: Colors.indigo,
                       title: '背景图片',
                       subtitle: _imageNight.isEmpty ? '选择图片' : _imageNight,
                       showDisclosure: true,

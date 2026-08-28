@@ -8,7 +8,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -16,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/providers.dart';
 import 'explore_kind_action.dart';
+import 'md3_picker_sheet.dart';
 
 /// 读取 infoMap 已存值（B① 回显：toggle/select/text 初始显示与 Rust 请求
 /// 实际使用的 infoMap 值一致；读不到返回 null）— DeepSeek Harness + UI
@@ -101,43 +101,23 @@ class ExploreKindLayout extends StatelessWidget {
   }
 
   static void _showExploreErrorDialog(BuildContext context, String message) {
-    final label = CupertinoColors.label.resolveFrom(context);
-    final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
-    showCupertinoDialog<void>(
+    // [MD3 全量清点] 原 CupertinoAlertDialog（iOS 三级菜单）→ M3 AlertDialog，
+    // 前景走全局 dialogTheme（surfaceContainerHigh + 28dp 圆角 + TextTheme）
+    showDialog<void>(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(
-          '发现分类加载失败',
-          style: TextStyle(
-            color: label,
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: SelectableText(
-              message,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.45,
-                color: secondary,
+      builder: (ctx) => AlertDialog(
+        title: const Text('发现分类加载失败'),
+        content: SelectableText(
+          message,
+          style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
               ),
-            ),
-          ),
         ),
         actions: [
-          CupertinoDialogAction(
+          TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              '确定',
-              style: TextStyle(
-                color: label,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: const Text('确定'),
           ),
         ],
       ),
@@ -606,82 +586,19 @@ class _SelectChipState extends ConsumerState<_SelectChip> {
 
   Future<void> _showPicker() async {
     if (_busy) return;
-    var picked = _index;
     final titleLabel = ExploreKindActionRunner.literalViewName(
           widget.category.viewName,
         ) ??
         widget.category.title;
 
-    await showCupertinoModalPopup<void>(
+    final picked = await showMd3WheelPickerSheet(
       context: context,
-      builder: (ctx) => Material(
-        color: Colors.transparent,
-        child: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(ctx).colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 8),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(ctx)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          titleLabel,
-                          style: Theme.of(ctx).textTheme.titleSmall,
-                        ),
-                      ),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: () => Navigator.pop(ctx),
-                        child: Text(
-                          '完成',
-                          style: TextStyle(
-                            color: Theme.of(ctx).colorScheme.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  height: 216,
-                  child: CupertinoPicker(
-                    scrollController:
-                        FixedExtentScrollController(initialItem: picked),
-                    itemExtent: 36,
-                    onSelectedItemChanged: (i) => picked = i,
-                    children: _chars
-                        .map((c) => Center(child: Text(c)))
-                        .toList(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        ),
-      ),
+      title: titleLabel,
+      itemCount: _chars.length,
+      initialIndex: _index,
+      itemBuilder: (ctx, i) => Text(_chars[i]),
     );
-    if (!mounted) return;
+    if (!mounted || picked == null) return;
     await _onPick(picked);
   }
 

@@ -203,7 +203,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
             IosGroup(children: [
               IosListTile(
                 icon: Icons.language,
-                iconBackground: Colors.blue,
                 title: '语言',
                 value: _localeLabel,
                 showDisclosure: true,
@@ -254,7 +253,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               IosListTile(
                 icon: Icons.home_outlined,
-                iconBackground: Colors.teal,
                 title: '默认主页',
                 value: _homePageLabel(mainPrefs.defaultHomePage),
                 showDisclosure: true,
