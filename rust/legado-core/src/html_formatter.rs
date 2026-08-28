@@ -62,6 +62,43 @@ static NAMED_ENTITY_RE: LazyLock<Regex> =
 static NUMERIC_ENTITY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"&#([xX]?)([0-9a-fA-F]+);").unwrap());
 
+// ─── 简介格式化正则（对标 Kotlin HtmlFormatter.formatIntro / formatText）───────
+
+/// `&nbsp;` 连续 → 单空格（原版 nbspRegex `"(&nbsp;)+"`）
+static INTRO_NBSP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(&nbsp;)+").unwrap());
+
+/// `&ensp;` / `&emsp;` → 空格（原版 espRegex）
+static INTRO_ESP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(&ensp;|&emsp;)").unwrap());
+
+/// 不可见字符：thinsp/zwnj/zwj 实体 + 字面量 U+2009/U+200C/U+200D → 删除（原版 noPrintRegex）
+static INTRO_NOPRINT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(&thinsp;|&zwnj;|&zwj;|\x{2009}|\x{200C}|\x{200D})").unwrap()
+});
+
+/// 块级/换行标签 → `\n`（原版 wrapHtmlRegex：div|p|br|hr|h\d|article|dd|dl）
+static INTRO_WRAP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"</?(?:div|p|br|hr|h\d|article|dd|dl)[^>]*>").unwrap());
+
+/// HTML 注释 → 删除（原版 commentRegex）
+static INTRO_COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<!--[^>]*-->").unwrap());
+
+/// 其他 HTML 标签（含 img）→ 删除（原版 otherHtmlRegex，简介不保留图片）。
+/// 原版 `</?[a-zA-Z]+(?=[ >])[^<>]*>` 用前瞻断言要求标签名后紧跟空格或 `>`；
+/// Rust regex crate 不支持 look-around，等价改写为「可选 (空格 + 属性) 组」：
+/// `<span>` 与 `<span class="x">` 均匹配，`<3div>`（非字母）不匹配。
+static INTRO_OTHER_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"</?[a-zA-Z]+( [^<>]*)?>").unwrap());
+
+/// `\s*\n+\s*` → `\n`（原版 indent1Regex，paragraphIndent=""）
+static INTRO_INDENT1_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*\n+\s*").unwrap());
+
+/// `^[\n\s]+` → ""（原版 indent2Regex，paragraphIndent=""）
+static INTRO_INDENT2_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\n\s]+").unwrap());
+
+/// `[\n\s]+$` → ""（原版 lastRegex）
+static INTRO_LAST_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\n\s]+$").unwrap());
+
 // ─── 公共接口 ─────────────────────────────────────────────────────────────────
 
 /// 清理 HTML 标签但保留 `<img>` 标签
@@ -142,6 +179,28 @@ pub fn unescape_html4(text: &str) -> String {
     });
 
     text.to_string()
+}
+
+/// 简介 HTML 净化（对标 Kotlin `HtmlFormatter.formatIntro`）。
+///
+/// 搜索/详情页 intro 字段专用：块级标签转换行、删注释与其他标签（含 img）、
+/// 折叠多余空白。与正文 [`format_keep_img`]（保留 `<img>`）区分——简介为纯文本，
+/// 不保留图片。paragraphIndent 为空（不缩进段落），逐步骤对齐原版 `formatText`：
+/// nbsp/esp→空格、不可见字符删除、块级标签→`\n`、注释删除、其他标签删除、空白折叠。
+pub fn format_intro(html: &str) -> String {
+    if html.is_empty() {
+        return String::new();
+    }
+    let t = INTRO_NBSP_RE.replace_all(html, " ");
+    let t = INTRO_ESP_RE.replace_all(&t, " ");
+    let t = INTRO_NOPRINT_RE.replace_all(&t, "");
+    let t = INTRO_WRAP_RE.replace_all(&t, "\n");
+    let t = INTRO_COMMENT_RE.replace_all(&t, "");
+    let t = INTRO_OTHER_TAG_RE.replace_all(&t, "");
+    let t = INTRO_INDENT1_RE.replace_all(&t, "\n");
+    let t = INTRO_INDENT2_RE.replace_all(&t, "");
+    let t = INTRO_LAST_RE.replace_all(&t, "");
+    t.to_string()
 }
 
 // ─── 内部辅助 ─────────────────────────────────────────────────────────────────
@@ -568,5 +627,44 @@ mod tests {
             url,
             r#"https://cdn.example.com/a.webp,{"headers":{"Referer":"https://cdn.example.com/"}}"#
         );
+    }
+
+    // ─── format_intro（对标 Kotlin HtmlFormatter.formatIntro）─────────────────
+
+    #[test]
+    fn test_format_intro_block_tags_to_newline() {
+        let html = "<p>第一段</p><p>第二段</p>";
+        assert_eq!(format_intro(html), "第一段\n第二段");
+    }
+
+    #[test]
+    fn test_format_intro_strips_inline_tags() {
+        // 简介不保留任何标签（含 img），仅留文本
+        let html = r#"<span class="i">正文内容</span>"#;
+        assert_eq!(format_intro(html), "正文内容");
+    }
+
+    #[test]
+    fn test_format_intro_removes_comments() {
+        let html = "<!--secret--><div>可见文本</div>";
+        assert_eq!(format_intro(html), "可见文本");
+    }
+
+    #[test]
+    fn test_format_intro_collapses_extra_newlines() {
+        let html = "<p>a</p>\n\n<p>b</p>";
+        assert_eq!(format_intro(html), "a\nb");
+    }
+
+    #[test]
+    fn test_format_intro_leading_nbsp_stripped() {
+        // 连续 &nbsp; → 单空格，再由 indent2 规则去除前导空白
+        let html = "&nbsp;&nbsp;hello world";
+        assert_eq!(format_intro(html), "hello world");
+    }
+
+    #[test]
+    fn test_format_intro_empty() {
+        assert_eq!(format_intro(""), "");
     }
 }

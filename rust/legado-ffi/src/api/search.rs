@@ -1104,11 +1104,12 @@ fn parse_search_response(
             Some(resolve_url(&raw_cover, base_url))
         };
 
-        // 提取简介
+        // 提取简介（对齐原版 BookList.kt:260 `HtmlFormatter.formatIntro`：块级标签→换行、
+        // 删注释与其他标签（含 img）、折叠空白；与正文 format_keep_img 保留 img 区分）
         let intro = if field_str(6).is_empty() {
             None
         } else {
-            Some(field_str(6))
+            Some(legado_core::html_formatter::format_intro(&field_str(6)))
         };
 
         // 提取最新章节
