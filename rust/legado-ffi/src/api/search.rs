@@ -636,6 +636,17 @@ pub(crate) struct SourceBatchOutcome {
 /// - **暂停**：门控发生在派发下一个源之前（调度层），未请求源不占用任何并发许可；已派发任务继续
 ///   完成（软挂起，对齐原版 SearchModel workingState 调度前门控）。
 /// - **超时**：单源搜索超过 `per_source_timeout` 判为超时错误。
+/// 取消等待：取消标志置位后立即返回（轮询 50ms）。
+/// 用于 select! 中断阻塞的 set.next()，使取消/会话替换能及时唤醒收集循环并 abort 在飞任务。
+async fn wait_cancelled(cancel: &Arc<AtomicBool>) {
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 pub(crate) async fn drive_source_batches<F, Fut, G>(
     sources: Vec<BookSource>,
     concurrency: usize,
@@ -727,10 +738,14 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
             break 'collect;
         }
 
-        // 按完成顺序取下一个结果
-        let joined = match set.next().await {
-            Some(j) => j,
-            None => break 'collect,
+        // 按完成顺序取下一个结果；与取消竞争 —— 取消置位后立即唤醒并 abort 在飞任务，
+        // 不再等待最快下一个自然完成（否则在飞请求最长可能持续至单源超时）。
+        let joined = tokio::select! {
+            j = set.next() => match j {
+                Some(j) => j,
+                None => break 'collect,
+            },
+            _ = wait_cancelled(cancel) => break 'collect,
         };
         // P0-3 复审 7.2：取消 / sink 关闭后不再把在飞结果交付 on_source（防旧会话残留）
         if cancel.load(Ordering::SeqCst) {
@@ -2141,6 +2156,79 @@ mod tests {
         assert_eq!(a_delivered.load(Ordering::SeqCst), 0, "A 取消后在飞结果不应进入 on_source/流");
         // B：全新会话 → 全部执行，不受 A 影响（会话隔离）
         assert_eq!(b_started.load(Ordering::SeqCst), 5, "B 应全部执行（会话隔离，A 未污染 B）");
+    }
+
+    // ─── 取消即时唤醒（P0-3 强化）：取消置位时收集循环正阻塞在 set.next()，
+    //     必须立即 abort 在飞任务并返回，而不昏等待最快下一个自然完成。
+    #[tokio::test]
+    async fn test_drive_cancel_wakes_blocked_collect_promptly() {
+        use std::sync::atomic::AtomicUsize;
+
+        // 在飞任务永不自行完成：阻塞在 Notify 上（模拟长连接）
+        let started = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let search_one = {
+            let g = Arc::clone(&gate);
+            let c = Arc::clone(&started);
+            move |_s: BookSource| {
+                let g = Arc::clone(&g);
+                let cc = Arc::clone(&c);
+                async move {
+                    cc.fetch_add(1, Ordering::SeqCst);
+                    g.notified().await; // 测试中永不放开
+                    Ok(Vec::new())
+                }
+            }
+        };
+        let session = Arc::new(SearchSession::new());
+        let delivered = Arc::new(AtomicUsize::new(0));
+        let delivered_c = Arc::clone(&delivered);
+        let sc = Arc::clone(&session);
+        let sources: Vec<BookSource> = (1..=4)
+            .map(|i| BookSource {
+                book_source_url: format!("https://x{i}.example.com"),
+                ..BookSource::default()
+            })
+            .collect();
+        let drive = tokio::spawn(async move {
+            drive_source_batches(
+                sources,
+                2,
+                Duration::from_secs(30),
+                &sc.cancel,
+                &sc.paused,
+                search_one,
+                |_o| {
+                    delivered_c.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await;
+        });
+
+        // 等 2 个在飞（concurrency=2，后 2 源排队）
+        for _ in 0..400 {
+            if started.load(Ordering::SeqCst) >= 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(started.load(Ordering::SeqCst), 2, "应有 2 个在飞源");
+
+        session.cancel.store(true, Ordering::SeqCst);
+        // 取消必须即时（≤600ms）唤醒收集循环；在飞任务永不自然完成，
+        // 若旧实现（等 set.next()）则永远超时。
+        tokio::time::timeout(Duration::from_millis(600), drive)
+            .await
+            .expect("取消应即时中止收集循环")
+            .expect("drive 不应 panic");
+        assert_eq!(
+            delivered.load(Ordering::SeqCst),
+            0,
+            "取消后不应交付任何批次"
+        );
+        // 被 abort 的任务 future 已 drop，通知无人接收也应安全
+        gate.notify_waiters();
     }
 
     // ─── P0-3 sink 关闭入口（复审 7.3）：on_source 返回 Err → 驱动器中止剩余源、abort 在飞 ──
