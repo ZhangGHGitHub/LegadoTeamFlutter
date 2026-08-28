@@ -1,0 +1,65 @@
+{
+  "keyword": "s0e",
+  "expected": {
+    "order": [
+      "书甲",
+      "书乙",
+      "书丙",
+      "书丁",
+      "书戊"
+    ],
+    "note": "s5 login_required 失败、s6 空结果 → 共 5 项;延迟递增保证到达序=稳定序"
+  },
+  "refactored": {
+    "device": "emulator-5556",
+    "app": "refactored",
+    "import_ok": true,
+    "first_result_s": 5.2,
+    "all_names_at_s": null,
+    "results": [
+      "书甲",
+      "书丙",
+      "书丁",
+      "书乙"
+    ],
+    "server": {
+      "requests_per_source": {
+        "s0": 1,
+        "s1": 2,
+        "s2": 1,
+        "s3": 1,
+        "s4": 1,
+        "s5": 1,
+        "s6": 1
+      },
+      "end_results": {
+        "done": 7,
+        "redirected": 1
+      },
+      "aborted": 0
+    },
+    "scope": null
+  },
+  "original": {
+    "device": "emulator-5558",
+    "app": "original",
+    "import_ok": true,
+    "first_result_s": null,
+    "all_names_at_s": null,
+    "results": [],
+    "server": {
+      "requests_per_source": {},
+      "end_results": {},
+      "aborted": 0
+    },
+    "scope": "全部书源(未圈定);夹具 7 源 +2..14s 确定性完成"
+  },
+  "parity": {
+    "refactored_set_match": false,
+    "refactored_order_match": false,
+    "original_set_match": false,
+    "original_order_match": false,
+    "two_package_results_identical": false,
+    "per_source_requests_identical": false
+  }
+}

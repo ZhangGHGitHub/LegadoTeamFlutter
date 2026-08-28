@@ -299,3 +299,55 @@ Flutter 展示层
 **状态（复审后修订）**：⚠️ **原「P0-1.4 双包基线 + S0 通用搜索路径验证通过」声明已撤回**——实为**单包观察完成**（仅重构版 5556 达终态；原版 5558 当时仍在逐源下载封面，未达终态），且所附截图/PNG/XML 为**书架页/启动页侧证，非搜索结果页证据**，不能证明两包返回相同搜索结果。**双包基线（两端各自完成、同库同网、逐项字段 + origins + 稳定排序对比）与四项 S0（loginCheckJs 成功/失败 / HTTP 重定向最终 URL / bookUrlPattern 详情判定 / 空列表详情回退）均未关闭**。P0-2 **不得**据此标记完成；须先补齐双包基线证据方可推进。整体计划仍开放。
 
 *实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 离线可验证部分：S1 source 上下文 + S2 前缀/去重/intro/kind + S6 multi_source_search 驱动器对齐 + P1-1 项 3 originOrder 透传（提前落地）+ P0-1.4/P0-2 S0 双包真实搜索基线「斗破苍穹」验证）*
+
+---
+
+## 八、续作执行记录（2026-08-29）：P0-3 收尾完成 + S0-B/S0-E 落地 + S0-C 部分完成
+
+**执行 HEAD 基线**：交接文档 2924d95a2 之后续作；本节各提交见下。设备：emulator-5556/5558（x86_64）。
+
+### 8.1 flutter test 2 失败定性（交接文档 §四.1 第 3 项）——已闭合
+
+- 根因：UI 轨 a08394d5d（08-27）改 search_notifier 日志级别 error→message 未同步测试断言；e630b3e28（P0-3）时点测试文件仍为 error 断言，失败在 P0-3 之前即确定性存在。
+- 已由 UI 轨 5dd95d315（08-28 21:02）修复；当前 HEAD 全量 flutter test 通过。**与 P0-3/Rust 无关。**
+
+### 8.2 P0-3 实机 e2e（§7.7.6）——双机 7/7 通过
+
+受控夹具方案：`scripts/s0c_server.py`/`scripts/s0_fixture_server.py`（本地延迟服务器 + 40 确定性夹具源）+ `scripts/e2e_p03_cancel_research.py`（盲操作驱动，ADBKeyboard/组件定向深链/实体解码）。证据归档 `docs/evidence/search_parity_20260829/`。
+
+- emulator-5556：verdict 7/7 pass（a_max_concurrent=32、停止后零补位派发、32/32 在飞连接中止、重搜 40 源各恰一次、终态渲染 5 结果、停止 FAB 消失、终态后零请求）。
+- emulator-5558：同场景 7/7 pass（同上）。
+- 过程中发现并修复两个真实缺陷：
+  - `c5f82a854 fix(rust)`：drive_source_batches 收集循环阻塞于 set.next()，取消置位后仍需等下一自然完成（最长 30s）才 abort 在飞；改为 wait_cancelled(50ms) 与 set.next() 在 tokio::select! 竞速，取消即时 abort_all+drain。新增 test_drive_cancel_wakes_blocked_collect_promptly。
+  - `91e40dfad fix(ui)`：_cancelActiveSearch 先 await 流订阅拆除（实测可达 6.5s）后才置 Rust 取消标志，期间 drive 循环仍派发排队源（e2e 观察停止后 6.5s 补位请求）；调换为先 cancelSearch 后拆订阅。
+
+### 8.3 系统性风险（必须记录）：FFI 未变更时 .so 陈旧不可被现有校验发现
+
+本轮实测发现：jniLibs 的 liblegado_ffi.so 停留在 08-27 09:38 构建（pre-P0-3），而 08-28 21:14 安装的 APK 打包了该陈旧 .so——因为 build/verify 链基于 FRB content hash（仅反映 FFI 签名），P0-3/S0-E 均未改签名 → 校验恒通过、构建恒跳过。**整改**：后续 Rust 行为变更后必须强制重跑 build-android.ps1 并对产物做版本字符串抽查（如 grep 「非 2xx HTTP」）；本节所有设备验证均以重建后 .so 执行。另：G4 的 mod.rs 引用行曾被 511a0bb52 误提交而 source_rate_limit.rs 未跟踪，导致干净树编译失败，已由 bb521c366 成组补齐（G4 自洽）。
+
+### 8.4 S0-E 主路径收敛（§四.S0-E）——已完成，commit 4330acaf9
+
+search_single_source/parse_search_response 对齐原版：loginCheckJs（WebBook.kt:74-98 三路径）、bookUrlPattern 详情直连（BookList.kt:62-81）、空列表详情回退（100-108 双条件）、bookUrl 空回退最终 URL（281-284）、去重键改 bookUrl 单键（SearchBook.kt:65）、非 2xx 不折叠错误（AnalyzeUrl.kt:499-534）。FFI 签名不变；web_book 四辅助函数 pub(crate) 复用。s0e_tests 8 项 + 既有测试更新。workspace 2474 passed / 0 failed；QuickJS lib 389/0。
+
+### 8.5 S0-B 四类离线夹具（§四.S0-B）——已完成，commit 511a0bb52
+
+`rust/legado-ffi/tests/fixtures/search_s0/` 七场景（login_check_pass/required、redirect_final_url、book_url_pattern_hit/miss、empty_list_detail_fallback/unparseable），每场景六件套齐全；`s0_fixture_tests.rs` 本地夹具服务器 + **主生产执行器 search_single_source** 消费断言（非纯解析单测）。expected_original.json 为 WebBook.kt/BookList.kt 语义推导基准；跨包原版实测闭环见 8.6 限制。
+
+### 8.6 S0-C 双包同夹具终态对比（§四.S0-C）——重构端完整、原版端自动化未闭环（保持 DEFERRED，不标绿）
+
+已达成：重构端（5556）7 夹具源逐源确定性证据（requests_per_source s0..s6 各 1、s1 302 跟随、全部 done）+ 终态 5 结果渲染（书甲/书丙/书乙/书丁 可见 + 计数 5；s5 登录拦截、s6 空结果语义正确）——S0-E 四项语义在真实主路径上得到验证（ref_final.xml 归档）。
+
+未达成（保持 DEFERRED 的原因）：原版端（5558）搜索已多次确定性命中 7 夹具源（中间轮次服务器日志：逐源 2/4/6/8/10/12/14s 全 done，与重构端一致），但其结果列表 UI 采集与「分组圈定」自动化未闭环——原版导入未落自定义分组（自定义源分组需对话框二次填写，已实现但时序不稳）、搜索范围对话框按钮为「确认」且分组列表不含 S0C 时自动化无法可靠圈定；下轮续作建议直接采用已验证的手动路径（ADBKeyboard 输入 + 历史词条提交 + 滚动采集），或先行以 run-as/root 之外的导出手段固化原版结果。
+
+**结论：P0-2 S0 仍未关闭（原版端终态证据缺口），四项 S0 子项的 Rust 主路径侧已具备夹具级验证；不宣称 parity 已达成。**
+
+### 8.7 验证门禁汇总（2026-08-29）
+
+- cargo test（workspace 非 QuickJS）：2474 passed / 0 failed
+- cargo test -p legado-ffi --lib --features quickjs：389 passed / 0 failed
+- flutter analyze：No issues；flutter test 全量通过（仅一次 loading_overlay_test 全量时序型偶发，单测复验 5/5 通过，属 UI 轨域）
+- 5556 冒烟：7/7 PASSED（2.0.121，含 S0-E .so）
+- P0-3 实机 e2e：5556 与 5558 各 7/7（verdict 归档）
+- S0-C：重构端通过、原版端未闭环（见 8.6）
+
+**编写者**：Qoder + Bridge ｜ 2026-08-29

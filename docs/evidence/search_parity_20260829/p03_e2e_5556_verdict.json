@@ -1,0 +1,63 @@
+{
+  "pass": true,
+  "checks": {
+    "a_inflight_bounded": true,
+    "a_gap_zero_new_requests": true,
+    "b_all_sources_once": true,
+    "no_requests_after_b_end": true,
+    "a_aborted_evidence": true,
+    "ui_stop_fab_gone": true,
+    "ui_b_results_present": true
+  },
+  "detail": {
+    "a_max_concurrent": 32,
+    "a_distinct_srcs": 32,
+    "a_srcs": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "a_aborted": 32,
+    "a_done": 0,
+    "gap_srcs": [],
+    "b_distinct_srcs": 40,
+    "b_total_requests": 40,
+    "after_end_requests": 0,
+    "b_result_names_seen": 2,
+    "timeline": {
+      "A_SUBMIT": 1787936795.976,
+      "A_STOP_TAP": 1787936800.124,
+      "A_STOP_FAB_GONE": 1.0,
+      "B_SUBMIT": 1787936809.272
+    }
+  }
+}
