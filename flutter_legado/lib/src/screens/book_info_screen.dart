@@ -1177,6 +1177,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               height: 160,
               borderRadius: 10,
               sourceOrigin: book.origin,
+              // Hero 封面过渡目的端（书架列表项同名 tag）
+              heroTag: 'cover:${book.bookUrl}',
             ),
           ),
         ),

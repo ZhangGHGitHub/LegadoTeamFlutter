@@ -22,6 +22,7 @@ import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../routes.dart';
 import '../services/settings_service.dart';
+import '../theme/md3_colors.dart';
 import '../widgets/ios_widgets.dart';
 
 /// 主题设置页面（对齐原版 ThemeConfigFragment）
@@ -152,6 +153,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 32),
                 children: [
+                  // === 内置主题（UI_MD3_PLAN.md Batch 1：12 套 MD3 preset
+                  // 选择器，paletteId 持久化；与下方自定义主题并存，自定义
+                  // 已应用 4 色优先——第九节并存模型） ===
+                  const IosSectionHeader('内置主题'),
+                  _BuiltinPaletteGrid(
+                    selectedId: themeState.paletteId,
+                    onSelected: themeNotifier.setPaletteId,
+                  ),
                   // === 通用（对齐原版顶部未分组项；主题模式仅在「我的」枢纽）===
                   IosGroup(children: [
                     IosListTile(
@@ -251,8 +260,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                   ]),
 
-                  // === 白天（对齐原版 day category）===
-                  const IosSectionHeader('白天'),
+                  // === 自定义主题·白天（对齐原版 day category，themeConfigList
+                  // 功能完整保留——UI_MD3_PLAN.md 第九节） ===
+                  const IosSectionHeader('自定义主题 · 白天'),
                   IosGroup(children: [
                     _colorTile(PrefKeys.cPrimary, '主色调', colors),
                     _colorTile(PrefKeys.cAccent, '强调色', colors),
@@ -286,8 +296,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                   ]),
 
-                  // === 夜间（对齐原版 night category）===
-                  const IosSectionHeader('夜间'),
+                  // === 自定义主题·夜间（对齐原版 night category）===
+                  const IosSectionHeader('自定义主题 · 夜间'),
                   IosGroup(children: [
                     _colorTile(PrefKeys.cNPrimary, '主色调', colors,
                         isNight: true),
@@ -1233,6 +1243,168 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
                 )
               : const Text('确定'),
         ),
+      ],
+    );
+  }
+}
+
+/// 内置 MD3 调色板选择网格（UI_MD3_PLAN.md Batch 1「内置 12 主题」区）
+///
+/// 每张卡片左半为亮色预览、右半为暗色预览（tonal 配对），底部显示
+/// 中文主题名；选中项描边 + 调色板主色对勾。点按经 [ThemeNotifier]
+/// 全局实时生效并持久化 paletteId。
+class _BuiltinPaletteGrid extends StatelessWidget {
+  final String selectedId;
+  final ValueChanged<String> onSelected;
+
+  const _BuiltinPaletteGrid({
+    required this.selectedId,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      crossAxisCount: 4,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 0.82,
+      children: [
+        for (final palette in Md3Palettes.all)
+          _PaletteCard(
+            palette: palette,
+            selected: palette.id == selectedId,
+            onSelected: () => onSelected(palette.id),
+          ),
+      ],
+    );
+  }
+}
+
+/// 单张调色板预览卡片
+class _PaletteCard extends StatelessWidget {
+  final Md3Palette palette;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  const _PaletteCard({
+    required this.palette,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final light = Color(palette.light.surface);
+    final dark = Color(palette.dark.surface);
+    final primary = Color(palette.light.primary);
+    final secondary = Color(palette.light.secondary);
+    final tertiary = Color(palette.light.tertiary);
+
+    return InkWell(
+      onTap: onSelected,
+      borderRadius: BorderRadius.circular(12),
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: selected ? primary : scheme.outlineVariant,
+                  width: selected ? 2 : 1,
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              // 左亮右暗：展示该套调色板的 tonal 亮暗配对
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ColoredBox(
+                      color: light,
+                      child: Center(
+                        child: _PaletteDots(
+                          primary: primary,
+                          secondary: secondary,
+                          tertiary: tertiary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ColoredBox(
+                      color: dark,
+                      child: Center(
+                        child: _PaletteDots(
+                          primary: primary,
+                          secondary: secondary,
+                          tertiary: tertiary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (selected) ...[
+                Icon(Icons.check_circle, size: 14, color: primary),
+                const SizedBox(width: 2),
+              ],
+              Flexible(
+                child: Text(
+                  palette.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: selected ? primary : scheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 预览色点行（primary/secondary/tertiary 三点示意）
+class _PaletteDots extends StatelessWidget {
+  final Color primary;
+  final Color secondary;
+  final Color tertiary;
+
+  const _PaletteDots({
+    required this.primary,
+    required this.secondary,
+    required this.tertiary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final color in [primary, secondary, tertiary]) ...[
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
       ],
     );
   }

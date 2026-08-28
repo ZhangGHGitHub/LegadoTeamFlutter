@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.112] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 2（docs/UI_MD3_PLAN.md）：书架/书籍域收尾。域审计确认 12 屏与 book_cover/book_grid_item/book_list_item/chapter_tile 组件已全面基于 colorScheme token 与 Ios* 共享组件（Batch 0 改造后自动继承 MD3），无 iOS 专属视觉残留；bookshelf 分组 TabBar 去硬编码白色前景改走全局 tabBarTheme（M3 surface 背景下白字不可见）；toc 书签滑动删除图标 Colors.white → colorScheme.onError。版本 2.0.112+116
+- Contributor: Qoder UI
+
+## [2.0.111] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 1（docs/UI_MD3_PLAN.md）：主框架 + 主题选择器。引入 material_symbols_icons ^4.2960（Material Symbols 可变字体，FILL 轴做选中态）；home_screen 底栏默认图标由内置 SVG 切换为 Material Symbols rounded（四 tab，选中 fill=1，labelBehavior 走 M3 标准），底栏皮肤用户图路径完整保留；legado_app_bar 返回箭头 M3 化（主 Tab 根页 LargeTitle 随各 Tab 所属批次落地）；theme_config 新增「内置主题」12 套调色板选择网格（亮暗双色预览 + 选中描边，paletteId 即时生效并持久化），原白天/夜间分组更名「自定义主题 · 白天/夜间」并存；Hero 封面过渡基础设施：BookCover 增 heroTag（约定 cover:<bookUrl>），bookshelf/book_info 两端接通
+- [Test] theme_config_test 迁移：新增内置主题网格渲染/点按切换用例，通用项断言改为先滚动，分组名对齐双区结构
+- Contributor: Qoder UI
+
 ## [2.0.110] - 2026-08-28
 
 ### Changed

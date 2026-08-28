@@ -44,6 +44,8 @@ class BookListItem extends StatelessWidget {
               height: 90,
               borderRadius: 4,
               sourceOrigin: book.origin,
+              // Hero 封面过渡（书架↔详情，key=book url）
+              heroTag: 'cover:${book.bookUrl}',
             ),
             const SizedBox(width: 10),
             Expanded(

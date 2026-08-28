@@ -20,6 +20,9 @@ class BookGridItem extends StatelessWidget {
   /// 书源 origin（封面 coverDecodeJs）
   final String? sourceOrigin;
 
+  /// Hero 过渡标签（书架↔详情封面过渡，约定 `cover:<book url>`）
+  final String? heroTag;
+
   /// 未读章节数（>0 时显示右上角角标）
   final int unreadNum;
 
@@ -40,6 +43,7 @@ class BookGridItem extends StatelessWidget {
     required this.title,
     this.coverUrl,
     this.sourceOrigin,
+    this.heroTag,
     this.unreadNum = 0,
     this.progress,
     this.onTap,
@@ -87,6 +91,7 @@ class BookGridItem extends StatelessWidget {
                             : 110,
                         borderRadius: 0,
                         sourceOrigin: sourceOrigin,
+                        heroTag: heroTag,
                       ),
                       // 未读角标（对标 bv_unread，右上角）
                       if (unreadNum > 0)

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
@@ -157,26 +157,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
   }
 
-  /// 构建底栏项（皮肤图优先，否则未选中/选中双色 SVG）
+  /// 构建底栏项（皮肤图优先；无皮肤时用 Material Symbols 默认 glyph，
+  /// 选中态 FILL=1——UI_MD3_PLAN.md Batch 1）
   NavigationDestination _destination(
     BuildContext context,
-    String assetName,
+    IconData symbol,
     String label, {
     String? skinSlot,
     String activeSkin = '',
   }) {
     Widget fallbackIcon({required bool selected}) {
-      return SvgPicture.asset(
-        'assets/icons/${assetName}_${selected ? 's' : 'e'}.svg',
-        width: 24,
-        height: 24,
-        colorFilter: ColorFilter.mode(
-          selected
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.onSurfaceVariant,
-          BlendMode.srcIn,
-        ),
-      );
+      return Icon(symbol, size: 24, fill: selected ? 1 : 0);
     }
 
     if (activeSkin.isEmpty || skinSlot == null) {
@@ -279,7 +270,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         bottomNavigationBar: NavigationBar(
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          // labelBehavior 缺省走主题（alwaysShow，M3 标准）；
+          // 双击重选 300ms / 两段式退出 2000ms 交互不变（home_navigation_test 守护）
           selectedIndex: currentIndex,
           onDestinationSelected: (index) => _onDestinationSelected(tabs, index),
           destinations: [
@@ -287,28 +279,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               switch (tab) {
                 _HomeTab.bookshelf => _destination(
                     context,
-                    'ic_bottom_books',
+                    Symbols.menu_book_rounded,
                     AppStrings.bookshelf,
                     skinSlot: 'bookshelf',
                     activeSkin: activeSkin,
                   ),
                 _HomeTab.explore => _destination(
                     context,
-                    'ic_bottom_explore',
+                    Symbols.explore_rounded,
                     AppStrings.discover,
                     skinSlot: 'home',
                     activeSkin: activeSkin,
                   ),
                 _HomeTab.rss => _destination(
                     context,
-                    'ic_bottom_rss_feed',
+                    Symbols.feed_rounded,
                     AppStrings.rss,
                     skinSlot: 'notes',
                     activeSkin: activeSkin,
                   ),
                 _HomeTab.my => _destination(
                     context,
-                    'ic_bottom_person',
+                    Symbols.person_rounded,
                     AppStrings.my,
                     skinSlot: 'settings',
                     activeSkin: activeSkin,

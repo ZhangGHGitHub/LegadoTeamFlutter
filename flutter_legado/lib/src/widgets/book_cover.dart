@@ -32,6 +32,10 @@ class BookCover extends ConsumerWidget {
   /// 已序列化的书源 JSON（优先于 [sourceOrigin] 查询）
   final String? sourceJson;
 
+  /// Hero 过渡标签（书架↔详情封面过渡，UI_MD3_PLAN.md Batch 1；
+  /// 约定 `cover:<book url>`，空/null 不启用 Hero）
+  final String? heroTag;
+
   const BookCover({
     super.key,
     this.coverUrl,
@@ -40,11 +44,12 @@ class BookCover extends ConsumerWidget {
     this.borderRadius = 4,
     this.sourceOrigin,
     this.sourceJson,
+    this.heroTag,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ClipRRect(
+    Widget cover = ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: SizedBox(
         width: width,
@@ -60,6 +65,11 @@ class BookCover extends ConsumerWidget {
             : _defaultCover(),
       ),
     );
+    final tag = heroTag;
+    if (tag != null && tag.isNotEmpty) {
+      cover = Hero(tag: tag, child: cover);
+    }
+    return cover;
   }
 
   /// 默认封面（对标原版 image_cover_default.jpg）：无封面 / 加载中 / 加载失败时显示

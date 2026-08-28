@@ -127,11 +127,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         controller: controller,
         isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
         tabAlignment: TabAlignment.start,
-        // [审计修复 §3.1] AppBar 内 TabBar 必须显式白色系前景，
-        // 否则继承全局 tabBarTheme 的 primary 色与 AppBar 背景同色不可见 — Qoder
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.white70,
-        indicatorColor: Colors.white,
+        // [MD3 Batch 2] 前景走全局 tabBarTheme（onSurface/onSurfaceVariant +
+        // primary 指示器），与 M3 AppBar surface 背景配对，不再硬编码白色
         tabs: state.groups.map((g) => Tab(text: g.groupName)).toList(),
       );
     }
@@ -361,6 +358,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       title: book.name,
       coverUrl: book.customCoverUrl ?? book.coverUrl,
       sourceOrigin: book.origin,
+      // Hero 封面过渡（书架↔详情，key=book url）
+      heroTag: 'cover:${book.bookUrl}',
       unreadNum: unreadChapterNum(book),
       progress: bookReadProgress(book),
       onTap: () => _openBook(context, ref, book),
