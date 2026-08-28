@@ -7,7 +7,7 @@
 //! 实现完整的搜索→详情→目录→正文链路。
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use legado_core::models::BookSource;
@@ -18,7 +18,6 @@ use legado_core::web_book::{
 use legado_core::{LegadoError, LegadoResult};
 use legado_js::js_source::js_source_book::JsSourceBookOrchestrator;
 use legado_js::JsSourceConfig;
-use legado_net::rate_limit::IntervalRateLimiter;
 use legado_net::LegadoClient;
 use legado_parser::{compile_regex_safe, AnalyzeUrl, RequestMethod};
 
@@ -170,33 +169,7 @@ fn fetch_data_uri_content(url: &str) -> Option<LegadoResult<String>> {
     }
 }
 
-/// G4：每源固定窗口限流缓存（键=书源 URL，跨请求保持窗口状态）
-static RATE_LIMITERS: OnceLock<Mutex<HashMap<String, Arc<IntervalRateLimiter>>>> =
-    OnceLock::new();
-
-/// 按书源 concurrentRate 获取访问许可（对齐 Kotlin ConcurrentRateLimiter.withLimit）
-///
-/// 每源限流器缓存在全局 map 中，跨请求保持固定窗口状态（否则窗口起点每次
-/// 重置 = 永不生效）。
-async fn acquire_source_rate_limit(source: &BookSource) {
-    let rate = source.concurrent_rate.as_deref().unwrap_or("").trim();
-    if rate.is_empty() || rate == "0" {
-        return;
-    }
-    let Some(limiter) = IntervalRateLimiter::parse(rate) else {
-        return;
-    };
-    let map = RATE_LIMITERS.get_or_init(|| Mutex::new(HashMap::new()));
-    let limiter = {
-        let mut guard = map.lock().unwrap();
-        Arc::clone(
-            guard
-                .entry(source.book_source_url.clone())
-                .or_insert_with(|| Arc::new(limiter)),
-        )
-    };
-    limiter.acquire().await;
-}
+use crate::api::source_rate_limit::acquire_source_rate_limit;
 
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
 /// 实现完整的搜索→详情→目录→正文链路（对标 Kotlin WebBook 对象）。
@@ -407,7 +380,7 @@ impl RealBookSourceFetcher {
     /// 参考 Kotlin WebBook.kt 四链路中的 loginCheckJs 双路径模式：
     /// - 成功路径：HTTP 响应正常时 evalJS(loginCheckJs)
     /// - 无配置时静默跳过，不影响现有逻辑
-    fn execute_login_check(
+    pub(crate) fn execute_login_check(
         source: &BookSource,
         response_body: &str,
         response_url: &str,
@@ -475,7 +448,7 @@ impl RealBookSourceFetcher {
     /// - **coverUrl 绝对化**：基于 `redirect_url` 转绝对 URL。
     /// - **tocUrl**：绝对化，空时回退 `book_url`。
     /// - **kind / wordCount** 字段提取。
-    fn parse_book_info_from_body(
+    pub(crate) fn parse_book_info_from_body(
         source: &BookSource,
         body: String,
         book_url: &str,
@@ -2273,7 +2246,7 @@ fn optional_field(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> Option<S
 /// 修复：锚定后全匹配（与 Kotlin matches 语义一致）。
 ///
 /// 正则非法/编译失败（compile_regex_safe 栈溢出防护）时静默返回 false，不影响主流程。
-fn matches_book_url_pattern(pattern: &str, url: &str) -> bool {
+pub(crate) fn matches_book_url_pattern(pattern: &str, url: &str) -> bool {
     let anchored = format!("^(?:{})$", pattern);
     compile_regex_safe(&anchored)
         .map(|re| re.is_match(url))

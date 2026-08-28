@@ -1012,6 +1012,8 @@ pub(crate) async fn search_single_source(
     keyword: &str,
     page: i32,
 ) -> LegadoResult<Vec<SearchResult>> {
+    // G4：书源 concurrentRate 固定窗口节流（对齐 Kotlin ConcurrentRateLimiter）
+    crate::api::source_rate_limit::acquire_source_rate_limit(source).await;
 
     // 阶段计时诊断（LEGADO_SEARCH_PHASE_TIMING=1）：定位单源 30s 超时挂起阶段
     let phase_on = std::env::var("LEGADO_SEARCH_PHASE_TIMING").is_ok();
@@ -1083,7 +1085,9 @@ pub(crate) async fn search_single_source(
 
     // 4. 发送 HTTP 请求
     // charset=gbk 等：原始字节 + 指定编码解码，避免书名乱码导致精确匹配失败。— Reasonix
-    let (body, final_url) = if analyze_url.needs_charset_decode() {
+    // [S0-E | AnalyzeUrl.kt:499-534] 对齐原版：不校验 HTTP 状态码，
+    // 非 2xx 响应体仍进入解析（通常得空列表），仅日志留痕。
+    let (body, final_url, resp_code) = if analyze_url.needs_charset_decode() {
         let raw = match analyze_url.method() {
             RequestMethod::Post => {
                 client
@@ -1093,13 +1097,10 @@ pub(crate) async fn search_single_source(
             _ => client.get_raw(analyze_url.url(), headers_opt).await?,
         };
         if !(200..300).contains(&raw.status) {
-            return Err(LegadoError::Network(format!(
-                "搜索请求失败: HTTP {}",
-                raw.status
-            )));
+            eprintln!("[search] 非 2xx HTTP {} url={}", raw.status, analyze_url.url());
         }
         let decoded = AnalyzeUrl::decode_response_bytes(&raw.body, analyze_url.charset());
-        (decoded, raw.url)
+        (decoded, raw.url, raw.status)
     } else {
         let response = match analyze_url.method() {
             RequestMethod::Post => {
@@ -1109,12 +1110,9 @@ pub(crate) async fn search_single_source(
             _ => client.get(analyze_url.url(), headers_opt).await?,
         };
         if !response.is_success() {
-            return Err(LegadoError::Network(format!(
-                "搜索请求失败: HTTP {}",
-                response.status
-            )));
+            eprintln!("[search] 非 2xx HTTP {} url={}", response.status, analyze_url.url());
         }
-        (response.body, response.url)
+        (response.body, response.url, response.status)
     };
     if phase_on {
         eprintln!(
@@ -1124,6 +1122,15 @@ pub(crate) async fn search_single_source(
         );
     }
 
+    // [S0-E | WebBook.kt:74-98] loginCheckJs：成功响应先 eval；未登录 →
+    // errResponse(500) 二次 eval；仍需登录 → LoginRequired 上抛（原版错误吞吐：
+    // 单源失败静默不中断其他源）。JS 环境不兼容降级放行（与 web_book 路径一致）。
+    crate::api::web_book::RealBookSourceFetcher::execute_login_check(
+        source,
+        &body,
+        &final_url,
+        resp_code,
+    )?;
     // 5. 使用 AnalyzeRule 解析搜索结果（同步解析同样移入阻塞线程，
     //    灾难性正则/超大页面不会阻塞 runtime，单源超时可中断）
     let source_clone = source.clone();
@@ -1159,10 +1166,38 @@ fn parse_search_response(
     base_url: &str,
     source: &BookSource,
 ) -> LegadoResult<Vec<SearchResult>> {
-    let rule_search = match source.rule_search.as_ref() {
-        Some(r) => r,
-        None => return Ok(Vec::new()),
-    };
+    // [S0-E | BookList.kt:62-81] bookUrlPattern 详情页直连（原版在列表解析前判定，
+    // baseUrl = 重定向后最终 URL 整串全匹配）：命中则按详情页规则解析单条结果。
+    let has_pattern = source
+        .book_url_pattern
+        .as_deref()
+        .is_some_and(|p| !p.trim().is_empty());
+    if has_pattern
+        && crate::api::web_book::matches_book_url_pattern(
+            source.book_url_pattern.as_deref().unwrap_or(""),
+            base_url,
+        )
+    {
+        let info = crate::api::web_book::RealBookSourceFetcher::parse_book_info_from_body(
+            source,
+            body.to_string(),
+            base_url,
+            base_url,
+            true,
+            "",
+            "",
+        );
+        return Ok(if info.name.is_empty() {
+            vec![]
+        } else {
+            vec![web_info_to_search_result(info, source)]
+        });
+    }
+
+    // [S0-E | BookList.kt:84-96] ruleSearch 缺失 → 空规则（bookList 空 → getElements
+    // 得空集合 → 走下方空列表回退），不再提前返回、也不再把整个响应体当单条元素。
+    let default_rule_search = legado_core::models::rule::SearchRule::default();
+    let rule_search = source.rule_search.as_ref().unwrap_or(&default_rule_search);
 
     // 创建顶层 AnalyzeRule（quickjs 启用时注入 JS 执行器，使 @js: 搜索规则生效；
     // 2026-08-10 起同时注入书源 jsLib，模板引用的 Reload/getHosts 等库函数可用）
@@ -1186,14 +1221,32 @@ fn parse_search_response(
         rule_search.book_list.as_deref().unwrap_or(""),
     );
     let elements = if book_list_rule.is_empty() {
-        // 无 bookList 规则：尝试将整个响应作为单条结果解析
-        vec![body.to_string()]
+        // [S0-E] 对齐原版 getElements("")：空规则得空集合（随后走空列表回退）
+        Vec::new()
     } else {
         analyzer.get_elements(&book_list_rule).unwrap_or_default()
     };
 
     if elements.is_empty() {
-        return Ok(Vec::new());
+        // [S0-E | BookList.kt:100-108] 空列表详情回退：原版双条件 —— 列表为空
+        // 且未配置 bookUrlPattern 才回退；pattern 已配置但不命中 → 直接返回空。
+        if has_pattern {
+            return Ok(Vec::new());
+        }
+        let info = crate::api::web_book::RealBookSourceFetcher::parse_book_info_from_body(
+            source,
+            body.to_string(),
+            base_url,
+            base_url,
+            true,
+            "",
+            "",
+        );
+        return Ok(if info.name.is_empty() {
+            vec![]
+        } else {
+            vec![web_info_to_search_result(info, source)]
+        });
     }
 
     // 对每个元素解析各字段
@@ -1262,8 +1315,10 @@ fn parse_search_response(
         // [UI-fix 2026-08-10 | Reasonix] 对齐原版 BookList.kt:282-284 +
         // AnalyzeRule.kt:369-375：bookUrl 规则解析为空时回退书源主页
         // （bookSourceUrl），避免 book_url 为空导致结果条目无法打开
+        // [S0-E | BookList.kt:281-284] bookUrl 规则为空时回退 baseUrl（最终搜索页
+        // URL，重定向后），而非书源主页 —— 对齐原版 getSearchItem 回退语义。
         let book_url = if raw_book_url.is_empty() {
-            source.book_source_url.clone()
+            base_url.to_string()
         } else {
             resolve_url(&raw_book_url, base_url)
         };
@@ -1321,6 +1376,31 @@ fn parse_search_response(
     Ok(results)
 }
 
+/// [S0-E] 详情页解析结果 → 搜索项（bookUrlPattern 直连 / 空列表回退共用，
+/// 对齐原版 `Book.getInfoItem` 产出 SearchBook 的字段映射）
+fn web_info_to_search_result(
+    info: legado_core::web_book::WebBookInfo,
+    source: &BookSource,
+) -> SearchResult {
+    SearchResult {
+        source_url: source.book_source_url.clone(),
+        source_name: source.book_source_name.clone(),
+        book_name: info.name,
+        author: info.author,
+        book_url: info.book_url,
+        latest_chapter: info.last_chapter,
+        intro: info.intro,
+        cover_url: info.cover_url,
+        kind: info.kind,
+        word_count: info.word_count,
+        // 原版 getInfoItem 带入 bookSource.getBookType()（BookList.kt:173）
+        book_type: book_type_of_source(source.book_source_type),
+        origin_order: source.custom_order,
+        has_read_record: false,
+        read_record_author: None,
+    }
+}
+
 /// [P0-2 S2 | BookList.kt:90-96] 拆分 bookList 规则的 `+`/`-` 前缀。
 /// `-`：最终结果逆序（reverse=true），规则体去前缀；`+`：本版本仅去前缀、无额外行为。
 /// 返回 (清洗后的规则, reverse 标志)。原版在 getElements 前剥离、dedup 后按 reverse 反转。
@@ -1334,17 +1414,15 @@ fn split_book_list_prefix(rule: &str) -> (String, bool) {
     (rule.to_string(), false)
 }
 
-/// [P0-2 S2 | BookList.kt:142-144] 按书籍标识去重（原版 LinkedHashSet<SearchBook>
+/// [S0-E | BookList.kt:142-144 + SearchBook.kt:65] 按书籍标识去重（原版 LinkedHashSet<SearchBook> 语义，保留首次出现）
 /// 语义，保留首次出现）。键 = 书源 + 书名 + bookUrl：同源同详情页视为重复；不同书名不误伤。
 fn dedup_search_results_keep_first(items: Vec<SearchResult>) -> Vec<SearchResult> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(items.len());
     for it in items {
-        let key = (
-            it.source_url.clone(),
-            it.book_name.clone(),
-            it.book_url.clone(),
-        );
+            // [S0-E | SearchBook.kt:65 + BookList.kt:142-144] 去重键 = bookUrl 单键
+            //（原版 LinkedHashSet<SearchBook>，equals 仅比较 bookUrl；单源内 origin 恒定）
+            let key = it.book_url.clone();
         if seen.insert(key) {
             out.push(it);
         }
@@ -1400,15 +1478,15 @@ mod p0_2_s2_tests {
     fn test_dedup_keeps_first_occurrence() {
         let items = vec![
             mk_result("s1", "A", "u1"),
-            mk_result("s1", "A", "u1"), // 重复（同源+同名+同 url）
+            mk_result("s1", "A", "u1"), // 重复（同 bookUrl）
             mk_result("s1", "B", "u2"),
-            mk_result("s2", "A", "u1"), // 不同源，保留
+            mk_result("s2", "A", "u1"), // [S0-E] 原版 SearchBook.equals 仅比较 bookUrl
+                                        //（SearchBook.kt:65）→ 同 bookUrl 不同源亦去重
         ];
         let d = dedup_search_results_keep_first(items);
-        assert_eq!(d.len(), 3);
+        assert_eq!(d.len(), 2);
         assert_eq!(d[0].book_name, "A");
         assert_eq!(d[1].book_name, "B");
-        assert_eq!(d[2].source_url, "s2");
     }
 
     #[test]
@@ -1430,6 +1508,182 @@ mod p0_2_s2_tests {
         assert_eq!(dedup_search_results_keep_first(Vec::new()).len(), 0);
     }
 }
+
+/// [S0-E] 主搜索路径原版语义收敛测试：bookUrlPattern 直连 / 空列表详情回退 /
+/// bookUrl 空回退 / bookUrl 单键去重 / loginCheckJs（quickjs）
+#[cfg(test)]
+mod s0e_tests {
+    use super::*;
+    use crate::api::web_book::RealBookSourceFetcher;
+    use legado_core::models::rule::{BookInfoRule, SearchRule};
+
+    fn mk_source(
+        book_url: &str,
+        pattern: Option<&str>,
+        login_js: Option<&str>,
+        rule_search: Option<SearchRule>,
+    ) -> BookSource {
+        BookSource {
+            book_source_url: book_url.to_string(),
+            book_source_name: "S0E-源".to_string(),
+            book_url_pattern: pattern.map(|p| p.to_string()),
+            login_check_js: login_js.map(|p| p.to_string()),
+            rule_search,
+            rule_book_info: Some(BookInfoRule {
+                name: Some(".title".to_string()),
+                author: Some(".author".to_string()),
+                ..Default::default()
+            }),
+            ..BookSource::default()
+        }
+    }
+
+    fn list_rules(book_list: &str) -> Option<SearchRule> {
+        Some(SearchRule {
+            book_list: Some(book_list.to_string()),
+            name: Some(".name".to_string()),
+            author: Some(".author".to_string()),
+            book_url: Some("a@href".to_string()),
+            ..Default::default()
+        })
+    }
+
+    fn mk(source_url: &str, name: &str, book_url: &str) -> SearchResult {
+        SearchResult {
+            source_url: source_url.to_string(),
+            source_name: "S0E-源".to_string(),
+            book_name: name.to_string(),
+            author: String::new(),
+            book_url: book_url.to_string(),
+            latest_chapter: None,
+            intro: None,
+            cover_url: None,
+            kind: None,
+            word_count: None,
+            book_type: 0,
+            origin_order: 0,
+            has_read_record: false,
+            read_record_author: None,
+        }
+    }
+
+    const LIST_BODY: &str = r#"<html><body>
+        <div class="book-item"><a class="name" href="/book/1">列表书A</a><span class="author">作者A</span></div>
+        </body></html>"#;
+    const DETAIL_BODY: &str = r#"<html><body>
+        <div class="title">直连书名</div><div class="author">直连作者</div>
+        </body></html>"#;
+
+    /// BookList.kt:62-81：搜索 URL 命中 bookUrlPattern → 详情页直连单条
+    #[test]
+    fn test_s0e_pattern_direct_hit_parses_detail() {
+        let source = mk_source(
+            "https://ex.com",
+            Some(r#"^https://ex\.com/book/\d+$"#),
+            None,
+            list_rules(".book-item"),
+        );
+        let results = parse_search_response(
+            DETAIL_BODY,
+            "https://ex.com/book/123",
+            &source,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1, "命中 pattern 应按详情解析出单条");
+        assert_eq!(results[0].book_name, "直连书名");
+        assert_eq!(results[0].book_url, "https://ex.com/book/123");
+        assert_eq!(results[0].author, "直连作者");
+    }
+
+    /// BookList.kt:62-81：pattern 存在但不命中 → 继续走列表解析
+    #[test]
+    fn test_s0e_pattern_miss_continues_list_parse() {
+        let source = mk_source(
+            "https://ex.com",
+            Some(r#"^https://ex\.com/book/\d+$"#),
+            None,
+            list_rules(".book-item"),
+        );
+        let results = parse_search_response(
+            LIST_BODY,
+            "https://ex.com/search?kw=x",
+            &source,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1, "pattern 不命中应正常走列表解析");
+        assert_eq!(results[0].book_name, "列表书A");
+    }
+
+    /// BookList.kt:100-108：列表空且未配置 pattern → 按详情页规则回退一次
+    #[test]
+    fn test_s0e_empty_list_falls_back_to_detail() {
+        let source = mk_source("https://ex.com", None, None, list_rules(".none"));
+        let results = parse_search_response(DETAIL_BODY, "https://ex.com/s", &source).unwrap();
+        assert_eq!(results.len(), 1, "空列表应回退详情解析");
+        assert_eq!(results[0].book_name, "直连书名");
+        assert_eq!(results[0].book_url, "https://ex.com/s", "回退 bookUrl=baseUrl");
+    }
+
+    /// BookList.kt:100-108：pattern 已配置但不命中且列表空 → 不回退、返回空
+    #[test]
+    fn test_s0e_empty_list_with_pattern_no_fallback() {
+        let source = mk_source(
+            "https://ex.com",
+            Some(r#"^https://ex\.com/book/\d+$"#),
+            None,
+            list_rules(".none"),
+        );
+        let results =
+            parse_search_response(LIST_BODY, "https://ex.com/search?kw=x", &source).unwrap();
+        assert!(results.is_empty(), "pattern 不命中且列表空 → 直接空结果");
+    }
+
+    /// SearchBook.kt:65：去重键 = bookUrl 单键（同名同 URL 不重复、同 URL 不同名也去重）
+    #[test]
+    fn test_s0e_dedup_key_is_book_url_only() {
+        let items = vec![
+            mk("s1", "甲", "https://ex.com/b/1"),
+            mk("s1", "乙", "https://ex.com/b/1"), // 同 URL 不同名 → 去重
+        ];
+        let d = dedup_search_results_keep_first(items);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].book_name, "甲", "保留首次出现");
+    }
+
+    /// WebBook.kt:74-98：loginCheckJs 通过（quickjs）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_s0e_login_check_pass() {
+        let source = mk_source("https://ex.com", None, Some("result.code() == 200"), None);
+        RealBookSourceFetcher::execute_login_check(&source, "ok", "https://ex.com/s", 200)
+            .expect("code 200 应通过");
+    }
+
+    /// WebBook.kt:88-90：首检未登录 + errResponse 二次 eval 仍未登录 → LoginRequired
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_s0e_login_check_required() {
+        let source = mk_source("https://ex.com", None, Some("false"), None);
+        let err = RealBookSourceFetcher::execute_login_check(&source, "b", "https://ex.com/s", 200)
+            .expect_err("false 应判定未登录");
+        assert!(matches!(err, LegadoError::LoginRequired(_)));
+    }
+
+    /// WebBook.kt:91-97：errResponse 路径 JS「自动登录」恢复 → 放行
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_s0e_login_check_err_path_recovers() {
+        let source = mk_source(
+            "https://ex.com",
+            None,
+            Some("result.code() == 200 ? 'false' : 'ok'"),
+            None,
+        );
+        RealBookSourceFetcher::execute_login_check(&source, "b", "https://ex.com/s", 200)
+            .expect("errResponse 二次 eval 返回非 false 应放行");
+    }
+}
+
 
 /// BookType 位标志（对齐原版 `io.legado.app.constant.BookType`）
 pub(crate) mod book_type {
@@ -1819,8 +2073,8 @@ mod tests {
             parse_search_response(html, "https://www.example.com/search?q=test", &source).unwrap();
 
         assert_eq!(results.len(), 1);
-        // 空 bookUrl 回退书源主页（bookSourceUrl），保证条目可打开
-        assert_eq!(results[0].book_url, "https://www.example.com");
+        // [S0-E] 空 bookUrl 回退 baseUrl（=传入的最终搜索页 URL，BookList.kt:281-284）
+        assert_eq!(results[0].book_url, "https://www.example.com/search?q=test");
     }
 
     // ─── 测试 1.2: 请求头缺 UA 时补充 Chrome UA ───────────────────────────────
