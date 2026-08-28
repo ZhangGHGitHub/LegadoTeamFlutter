@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import '../widgets/md3_heatmap_calendar.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -168,10 +169,42 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     return RefreshIndicator(
       onRefresh: () => ref.read(readRecordNotifierProvider.notifier).load(),
       child: ListView.separated(
-        itemCount: state.records.length,
+        itemCount: state.records.length + 1,
         separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
         itemBuilder: (context, index) {
-          final item = state.records[index];
+          // [阅读热力图] 默认收起的可选区块（用户授权新增，AGENTS 红线
+          // 2026-08-29 口径）：counts 模式 = 当日阅读书籍数
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+                title: Text(
+                  '阅读热力图',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                subtitle: Text(
+                  '近一年每日阅读书籍数',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+                children: [
+                  Md3HeatmapCalendar(
+                    dailyCounts: Md3HeatmapCalendar.aggregateDailyBookCount(
+                      state.records.map(
+                        (r) => (bookName: r.bookName, lastRead: r.lastRead),
+                      ),
+                    ),
+                    endDate: DateTime.now(),
+                  ),
+                ],
+              ),
+            );
+          }
+          final item = state.records[index - 1];
           return _ReadRecordTile(
             item: item,
             lastReadText: _formatDate(item.lastRead),

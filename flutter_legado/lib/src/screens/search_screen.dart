@@ -286,8 +286,9 @@ class _SearchScreenState
               color: theme.colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
-              '${state.searchedCount}/${state.totalCount}',
+            // [翻滚数字] 浮动进度卡同步翻滚
+            child: Md3AnimatedTextLine(
+              text: '${state.searchedCount}/${state.totalCount}',
               style: theme.textTheme.labelSmall,
             ),
           ),
@@ -536,10 +537,12 @@ class _SearchScreenState
     }
 
     if (state.isEmpty || (_precision && results.isEmpty)) {
+      // [颜文字彩蛋] 搜索无结果空态（用户授权新增，对齐参考 EmptyMessage）
       return EmptyState(
         icon: Icons.search_off,
         title: AppStrings.noResults,
         subtitle: AppStrings.noResultsHint,
+        kaomoji: true,
       );
     }
 
@@ -554,16 +557,17 @@ class _SearchScreenState
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Text(
-                '${AppStrings.search}: ${results.length}',
+              // [翻滚数字] 结果计数变化时向上翻滚（参考 AnimatedTextLine）
+              Md3AnimatedTextLine(
+                text: '${AppStrings.search}: ${results.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               // 渐进搜索进度（对齐原版 x/y；搜索中且已有结果时展示）
               if (state.isLoading && state.totalCount > 0)
                 Padding(
                   padding: const EdgeInsets.only(left: 8),
-                  child: Text(
-                    '${state.searchedCount}/${state.totalCount}',
+                  child: Md3AnimatedTextLine(
+                    text: '${state.searchedCount}/${state.totalCount}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),

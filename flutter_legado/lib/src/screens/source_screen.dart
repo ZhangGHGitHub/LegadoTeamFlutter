@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -66,9 +67,13 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
     });
   }
 
+  /// 长列表快速滚动条联动控制器（对齐原版 FastScroller）
+  final ScrollController _listController = ScrollController();
+
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _listController.dispose();
     super.dispose();
   }
 
@@ -621,30 +626,39 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         }
         rows.add(_SourceListRow.item(source));
       }
-      return ListView.builder(
-        itemCount: rows.length,
+      // [快速滚动条] 千级书源列表右侧拖拽定位（对齐原版 FastScroller）
+      return Md3FastScroller(
+        controller: _listController,
+        child: ListView.builder(
+          controller: _listController,
+          itemCount: rows.length,
+          itemBuilder: (context, index) {
+            final row = rows[index];
+            if (row.isHeader) {
+              return _buildDomainHeader(context, row.header!);
+            }
+            final source = row.source!;
+            return state.batchMode
+                ? _buildBatchSourceItem(context, source, state)
+                : _buildSourceItem(context, source);
+          },
+        ),
+      );
+    }
+
+    return Md3FastScroller(
+      controller: _listController,
+      child: ListView.separated(
+        controller: _listController,
+        itemCount: sources.length,
+        separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
         itemBuilder: (context, index) {
-          final row = rows[index];
-          if (row.isHeader) {
-            return _buildDomainHeader(context, row.header!);
-          }
-          final source = row.source!;
+          final source = sources[index];
           return state.batchMode
               ? _buildBatchSourceItem(context, source, state)
               : _buildSourceItem(context, source);
         },
-      );
-    }
-
-    return ListView.separated(
-      itemCount: sources.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
-      itemBuilder: (context, index) {
-        final source = sources[index];
-        return state.batchMode
-            ? _buildBatchSourceItem(context, source, state)
-            : _buildSourceItem(context, source);
-      },
+      ),
     );
   }
 
