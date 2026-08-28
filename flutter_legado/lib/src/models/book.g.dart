@@ -118,6 +118,6 @@ Map<String, dynamic> _$$BookImplToJson(_$BookImpl instance) =>
       'order': instance.order,
       'originOrder': instance.originOrder,
       'variable': instance.variable,
-      'readConfig': instance.readConfig,
+      'readConfig': instance.readConfig?.toJson(),
       'syncTime': instance.syncTime,
     };

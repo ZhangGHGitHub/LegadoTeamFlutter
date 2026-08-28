@@ -268,7 +268,7 @@ Map<String, dynamic> _$$ExploreKindImplToJson(_$ExploreKindImpl instance) =>
       'chars': instance.chars,
       'default': instance.defaultValue,
       'viewName': instance.viewName,
-      'style': instance.style,
+      'style': instance.style?.toJson(),
     };
 
 _$RowUiImpl _$$RowUiImplFromJson(Map<String, dynamic> json) => _$RowUiImpl(
@@ -292,5 +292,5 @@ Map<String, dynamic> _$$RowUiImplToJson(_$RowUiImpl instance) =>
       'chars': instance.chars,
       'default': instance.defaultValue,
       'viewName': instance.viewName,
-      'style': instance.style,
+      'style': instance.style?.toJson(),
     };
