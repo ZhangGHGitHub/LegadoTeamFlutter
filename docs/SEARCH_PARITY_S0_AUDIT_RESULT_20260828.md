@@ -278,5 +278,96 @@ P0-2 S0 只有同时满足以下条件才可关闭：
 | 空列表详情回退 | DEFERRED | 缺定向夹具 |
 | 速度根因“逐源下载封面” | 未证实 | 缺分段计时 |
 
+## 七、P0-3 取消、超时与并发专项复审（2026-08-28）
+
+**审计对象**：`07bd63089`（会话级取消/暂停与 `drive_source_batches` 改造）、`6a7d8e8b4`（P0-3 完成记录）。
+
+**审计结论**：会话级令牌替换全局静态标志的根因修复方向正确，且没有 FFI 签名变更；但 P0-3 当前只能标记为“代码部分完成、待修复和复测”，不能满足原计划的关闭条件，也不能标为完成。
+
+本审计在当前工作树执行了针对性测试：
+
+```text
+cargo test -p legado-ffi test_search_session_isolation_a_then_b --lib
+结果：1 passed，0 failed（当前工作树另有 328 项被过滤）
+```
+
+该测试通过仅证明“预先取消的会话不会执行 `search_one`，独立的新会话可以执行”；它不证明真实的重叠搜索、任务中止或旧结果隔离。
+
+### 7.1 已确认的正向改动
+
+1. `SearchSession { cancel, paused }` 与 `CURRENT_SEARCH_SESSION` 消除了旧全局 `SEARCH_CANCELLED/SEARCH_PAUSED` 被新搜索重置的直接根因。`search_books`、`multi_source_search`、`run_multi_stream` 均在启动时注册新会话并取消旧会话。
+2. `drive_source_batches` 在派发前和获得许可后均检查会话级取消标志。对尚未真正执行 `search_one` 的排队源，这是必要的防请求保障。
+3. 单源超时继续采用每源 `30s`，与 Android 原版 `SearchModel.startSearch` 的 `withTimeout(30000L)` 对齐；单源异常仍不会中断其他源。
+4. `SWITCH_SOURCE_TIMEOUT` 被 `source_switch.rs` 使用，语义属于换源的原版 `60s` 超时对齐，不是 P0-3 的功能性回归；但它不应与 P0-3 取消改动混在同一原子提交中。
+
+### 7.2 P0 阻塞问题：取消不会终止已创建任务
+
+`drive_source_batches` 在 `search.rs:613-674` 为所有书源立即调用 `tokio::spawn`，只是让它们在 semaphore 上排队。取消或 sink 关闭后，`search.rs:682-710` 仅 `break` 收集循环；代码没有调用 `JoinHandle::abort`、`JoinSet::abort_all` 或等价机制。
+
+丢弃 `FuturesUnordered<JoinHandle<_>>` 不会取消 Tokio 已 `spawn` 的任务，而是分离它们。结果是：
+
+- 大书源包仍会创建与书源数相同的排队任务，不符合原计划“只创建受控数量在飞任务，或取消时显式 abort 已创建任务”；
+- sink 关闭后，排队任务仍会继续等待 semaphore；虽然二次检查通常阻止它们发 HTTP，但任务和等待链没有被真正清理；
+- 暂停时，已拿到 permit 的任务会在 `while paused` 中持有并发许可，和原版 `SearchModel.kt:88-102` 在调度前等待 `workingState` 的门控位置不一致。
+
+**修改意见（按原版调度语义做最小重构）**：不要继续“每源一个 `tokio::spawn` + semaphore 排队”。将 `sources` 作为待派发队列，仅保持最多 `SEARCH_CONCURRENCY` 个 `JoinHandle`/future：每有一个完成才派下一个。取消、sink 关闭或会话被替换时，显式 `abort_all` 并 drain 已启动 handle；暂停检查应发生在派出下一个源之前，不应让未请求源占用 permit。此项仅收敛资源与取消语义，不改变原版的并发数、30 秒超时、逐源回调或 UI 行为。
+
+### 7.3 P0 阻塞问题：现有压力测试未覆盖报告声称的根因
+
+`test_search_session_isolation_a_then_b` 在 `search.rs:1984-2057` 中先将 A 的 `cancel` 设为 `true`，完整等待 A 返回后才创建并运行 B。测试没有：
+
+- 调用 `register_current_session` 或 `run_multi_stream`，因此没有验证当前会话注册表；
+- 让 A 已有至少一个在飞/排队任务时启动 B；
+- 断言 B 启动后 A 的排队源没有请求、在飞源被中止或其结果被丢弃；
+- 验证 A 的结果不会进入 Stream、`searchBooks` 或 Flutter 状态。
+
+它验证的是“预取消”而不是“搜索 A 被搜索 B 取代”，不能作为该提交所述根因的压力回归测试。
+
+**修改意见**：新增真实重叠测试，顺序必须固定为：
+
+1. 启动 A，使用可控 `search_one` 使第一批源进入阻塞点，同时保留其余源排队；
+2. 通过生产入口或等价会话注册逻辑启动 B，断言 A 的会话被取消；
+3. 放开 A 的在飞源，断言 A 不再产生回调、流事件、持久化写入，且 A 后续排队源的请求计数为 `0`；
+4. 断言 B 全部源按自身会话执行，结果与 A 的来源/进度不混杂；
+5. 重复覆盖显式停止、sink 回调返回 `Err`、页面销毁等三种取消入口。
+
+### 7.4 P1 风险：取消检查与落库/推流之间存在竞争窗口
+
+驱动器只在取到完成任务后于 `search.rs:682-685` 检查一次取消。若在该检查之后、新搜索注册会话之前或 `on_source` 执行期间发生取消，`run_multi_stream` 的回调仍可能在 `search.rs:536-559` 调用 `persist_search_books` 并向 sink 写入旧批次。
+
+另一个一次性入口风险更直接：`search_books` 即使驱动器因取消退出，仍会在 `search.rs:223-230` 对已累积的旧结果批量 `persist_search_books`。新搜索已经启动时，这会污染供换源复用的 `searchBooks` 数据。
+
+**修改意见**：
+
+1. 将会话身份传入/闭包捕获至落库与推流前的最后一道门；在序列化、持久化、`sink.add` 前再次确认“该会话未取消且仍为当前会话”。
+2. 一次性入口在 `drive_source_batches` 返回后、任何 `annotate_results` 和 `persist_search_books` 前检查会话状态；已取消则直接返回取消结果或丢弃累积结果，语义以原版取消后不再接收结果为准。
+3. 先以纯内存持久化替身写回归测试，证明 B 注册后 A 的写入次数为 `0`，再接真实数据库集成测试。
+
+### 7.5 P1 风险：当前会话注册表没有生命周期清理
+
+`CURRENT_SEARCH_SESSION` 只在启动新搜索时覆盖，正常结束、加载源失败、HTTP 客户端创建失败或取消结束时都没有“仅当仍是自己才清空”的清理。完成后的无参 `cancel_search/pause_search/resume_search` 因而仍指向已结束会话，调试和后续状态判断会失真。
+
+**修改意见**：新增 `clear_current_session_if_same(&session)`，以 `Arc::ptr_eq` 防止 A 结束时误清除已启动的 B；在三个生产入口的所有退出路径执行。补充 A 完成后 B 已启动、A 的清理不会清掉 B 的测试。
+
+### 7.6 提交范围与文档更正
+
+1. `SWITCH_SOURCE_TIMEOUT` 是 G4/换源范围，建议在尚未对外集成时从 `07bd63089` 拆出到独立 `fix(rust)` 或 `refactor(rust)` 提交；保留其已有消费者，不得为了整理提交而破坏 `source_switch.rs` 编译。
+2. `6a7d8e8b4` 中“P0-3 已完成”的状态应更正为“待修复：会话级令牌已落地，取消任务中止、竞态隔离与真实重叠压力测试未通过验收”。
+3. 同一文档内关于 P0-1.4/P0-2 S0“验证通过”的表述继续与本审计第 1 至 6 节冲突，必须一并更正为“单包观察完成、双包基线与四项 S0 仍未关闭”。
+4. `source_rate_limit` 相关未暂存改动与 P0-3 提交应继续隔离；后续任何 P0-3 验证须记录所测 HEAD，避免把当前工作树 G4 行为归因给 `07bd63089`。
+
+### 7.7 P0-3 重新关闭条件
+
+P0-3 仅在以下条件全部满足时才可关闭：
+
+1. 调度器在任何时刻只维持受控数量的在飞任务，或取消/sink 关闭时显式终止并等待已创建任务；
+2. A 运行中被 B 替换的压力测试证明：A 的排队源不请求、在飞结果不进入流/状态/数据库，B 不受 A 污染；
+3. 显式停止、sink 关闭、页面销毁三条取消入口均有同等断言；
+4. 暂停不会让未请求源占用并发许可，并与原版调度前 `workingState` 门控一致；
+5. 注册表生命周期清理不会误清新会话；
+6. Rust 非 QuickJS/QuickJS 全量门禁、Flutter `analyze`/`test`、5556 冒烟通过；再完成“搜索中停止并立即重新搜索”的 5556 实机验证。用户验收前按项目流程在 5558 执行同样的取消与重搜场景。
+
+**当前 P0-3 状态**：阻塞，待上述修复和复测；不得推进为“已完成”。
+
 **编写者**：主 Agent 代码审查
 **日期**：2026-08-28
