@@ -1,18 +1,43 @@
 //! 搜索书源全量扫描诊断工具（真实网络，逐源记录成功/空/失败）
 //!
-//! 用法: cargo run --example scan_search_sources -- <db_copy_path> <query> <report_json_path>
+//! 用法: cargo run --example scan_search_sources -- <db_path> <query|@query_file> <report_json> [urls_json_file]
 
 use std::time::Instant;
+
+fn read_query_arg(arg: &str) -> String {
+    if let Some(path) = arg.strip_prefix('@') {
+        std::fs::read_to_string(path).unwrap_or_else(|e| {
+            eprintln!("读取 query 文件失败: {e}");
+            std::process::exit(2);
+        })
+    } else {
+        arg.to_string()
+    }
+    .trim()
+    .to_string()
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
-        eprintln!("用法: scan_search_sources <db_copy_path> <query> <report_json_path>");
+        eprintln!("用法: scan_search_sources <db_path> <query|@query_file> <report_json> [urls_json_file]");
         std::process::exit(2);
     }
     let db_path = args[1].clone();
-    let query = args[2].clone();
+    let query = read_query_arg(&args[2]);
+    if query.is_empty() {
+        eprintln!("query 为空");
+        std::process::exit(2);
+    }
     let report_path = args[3].clone();
+    let urls_json = if args.len() >= 5 {
+        std::fs::read_to_string(&args[4]).unwrap_or_else(|e| {
+            eprintln!("读取 urls json 失败: {e}");
+            String::new()
+        })
+    } else {
+        String::new()
+    };
 
     // 初始化数据库（与 App 启动同路径：record_db_path + init_database）
     legado_ffi::db_state::record_db_path(&db_path);
@@ -49,8 +74,9 @@ fn main() {
     let mut err_count = 0usize;
     let mut total_books = 0usize;
 
+    let query_for_stream = query.clone();
     legado_ffi::runtime::block_on(async {
-        legado_ffi::api::search::run_multi_stream(query, String::new(), 1, |batch_json| {
+        legado_ffi::api::search::run_multi_stream(query_for_stream, urls_json, 1, |batch_json| {
             let v: serde_json::Value = serde_json::from_str(&batch_json).unwrap_or_default();
             let name = v["source_name"].as_str().unwrap_or("").to_string();
             let url = v["source_url"].as_str().unwrap_or("").to_string();
@@ -82,12 +108,51 @@ fn main() {
     );
 
     let mut err_kinds: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut cat_ok = 0usize;
+    let mut cat_empty = 0usize;
+    let mut cat_http = 0usize;
+    let mut cat_timeout = 0usize;
+    let mut cat_js = 0usize;
+    let mut cat_parser = 0usize;
+    let mut cat_other = 0usize;
+
+    fn classify_error(err: &str) -> &'static str {
+        let e = err.to_lowercase();
+        if e.contains("超时") || e.contains("timeout") {
+            "timeout"
+        } else if e.contains("http") || e.contains("403") || e.contains("404") || e.contains("500") {
+            "http_error"
+        } else if e.contains("js") || e.contains("quickjs") || e.contains("legado-js") {
+            "js_error"
+        } else if e.contains("解析") || e.contains("parser") || e.contains("规则") {
+            "parser_error"
+        } else {
+            "other_error"
+        }
+    }
+
     for r in &recs {
         if let Some(e) = &r.error {
             let key: String = e.chars().take(60).collect();
             *err_kinds.entry(key.clone()).or_default() += 1;
+            match classify_error(e) {
+                "timeout" => cat_timeout += 1,
+                "http_error" => cat_http += 1,
+                "js_error" => cat_js += 1,
+                "parser_error" => cat_parser += 1,
+                _ => cat_other += 1,
+            }
+        } else if r.books == 0 {
+            cat_empty += 1;
+        } else {
+            cat_ok += 1;
         }
     }
+    cat_ok = ok_count; // 与流式计数一致
+    cat_empty = empty_count;
+
+    println!("===== 分类汇总 ===== ok={} empty={} http={} timeout={} js={} parser={} other={}",
+        cat_ok, cat_empty, cat_http, cat_timeout, cat_js, cat_parser, cat_other);
     println!("===== 错误分类（前 60 字符聚合，Top25）=====");
     for (k, c) in err_kinds.iter().take(25) {
         println!("{} x {}", c, k);
@@ -105,7 +170,22 @@ fn main() {
             })
         })
         .collect();
-    if let Err(e) = std::fs::write(&report_path, serde_json::to_string_pretty(&report).unwrap()) {
+    if let Err(e) = std::fs::write(&report_path, serde_json::to_string_pretty(&serde_json::json!({
+        "query": query,
+        "summary": {
+            "total_sources": recs.len(),
+            "ok": cat_ok,
+            "empty": cat_empty,
+            "http_error": cat_http,
+            "timeout": cat_timeout,
+            "js_error": cat_js,
+            "parser_error": cat_parser,
+            "other_error": cat_other,
+            "total_books": total_books,
+            "wall_s": wall,
+        },
+        "sources": report,
+    })).unwrap()) {
         eprintln!("报告写入失败: {e}");
     }
     println!("报告已写入: {}", report_path);

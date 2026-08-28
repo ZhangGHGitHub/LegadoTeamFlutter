@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use futures::stream::{self, StreamExt};
+
 use legado_core::models::{BookChapter, BookSource};
 use legado_core::source_matcher::{SearchCandidate, SourceMatch, SourceMatcher};
 use legado_core::web_book::WebChapter;
@@ -87,24 +89,35 @@ pub fn search_alternative_sources(
         });
     }
 
-    // 使用 tokio runtime 并行搜索
+    // 并行搜索（对齐 SearchModel.mapParallelSafe：限流并发 + 单源超时 60s）
+    let book_name_for_search = book_name.to_string();
     let sources_for_search = sources.clone();
     let candidates = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
 
-        let mut handles = Vec::new();
-        for source in sources_for_search {
-            let client = client.clone();
-            let keyword = book_name.to_string();
-            handles.push(tokio::spawn(async move {
-                search_for_switch(&client, &source, &keyword).await
-            }));
-        }
-
         let mut all_candidates: Vec<SearchCandidate> = Vec::new();
-        for handle in handles {
-            if let Ok(Ok(mut items)) = handle.await {
-                all_candidates.append(&mut items);
+        let outcomes: Vec<_> = stream::iter(sources_for_search)
+            .map(|source| {
+                let client = client.clone();
+                let keyword = book_name_for_search.clone();
+                async move {
+                    let url = source.book_source_url.clone();
+                    let result = tokio::time::timeout(
+                        crate::api::search::SWITCH_SOURCE_TIMEOUT,
+                        search_for_switch(&client, &source, &keyword),
+                    )
+                    .await;
+                    (url, result)
+                }
+            })
+            .buffer_unordered(crate::api::search::SEARCH_CONCURRENCY)
+            .collect()
+            .await;
+
+        for (_url, joined) in outcomes {
+            match joined {
+                Ok(Ok(mut items)) => all_candidates.append(&mut items),
+                _ => {}
             }
         }
         Ok::<_, LegadoError>(all_candidates)
@@ -161,11 +174,23 @@ fn try_load_change_source_from_db(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let author_filter = if check_author { author } else { "" };
+    let author_filter = if check_author {
+        legado_core::book_help::format_book_author(author)
+    } else {
+        String::new()
+    };
+    let normalized_name = legado_core::book_help::format_book_name(book_name);
+    log::info!(
+        "换源读库: name={} normalized={} author_filter={} searchGroup={}",
+        book_name,
+        normalized_name,
+        author_filter,
+        search_group
+    );
 
     let books = crate::db_state::with_database(|db| {
         let repo = legado_db::SearchBookRepository::new(db.connection());
-        repo.change_source_by_group(book_name, author_filter, &search_group)
+        repo.change_source_by_group(&normalized_name, &author_filter, &search_group)
     })
     .ok()?;
 
@@ -212,10 +237,15 @@ fn clear_search_books_for_change(book_name: &str, author: &str) {
     let check_author = crate::api::config_api::get_config("changeSourceCheckAuthor")
         .map(|v| v.trim() == "true")
         .unwrap_or(false);
-    let author_filter = if check_author { author } else { "" };
+    let author_filter = if check_author {
+        legado_core::book_help::format_book_author(author)
+    } else {
+        String::new()
+    };
+    let normalized_name = legado_core::book_help::format_book_name(book_name);
     let _ = crate::db_state::with_database(|db| {
         let repo = legado_db::SearchBookRepository::new(db.connection());
-        let _ = repo.clear_by_name_author(book_name, author_filter);
+        let _ = repo.clear_by_name_author(&normalized_name, &author_filter);
         Ok(())
     });
 }
