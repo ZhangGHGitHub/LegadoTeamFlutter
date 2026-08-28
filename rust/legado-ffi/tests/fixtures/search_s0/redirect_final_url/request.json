@@ -1,0 +1,18 @@
+{
+  "keyword": "S0E",
+  "page": 1,
+  "method": "GET",
+  "headers": {},
+  "serve": [
+    {
+      "path": "/start",
+      "status": 302,
+      "redirectLocation": "http://127.0.0.1:{PORT}/final/search"
+    },
+    {
+      "path": "/final/search",
+      "status": 200,
+      "bodyFrom": "response.bin"
+    }
+  ]
+}

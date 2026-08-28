@@ -1,0 +1,8 @@
+[
+  {
+    "status": 302,
+    "from": "http://127.0.0.1:{PORT}/start",
+    "to": "http://127.0.0.1:{PORT}/final/search",
+    "note": "OkHttp/reqwest 跟随;BookList.analyzeBookList(baseUrl=res.url) 用最终 URL 解析"
+  }
+]

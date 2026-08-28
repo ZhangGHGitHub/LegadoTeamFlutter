@@ -1,0 +1,13 @@
+{
+  "keyword": "S0E",
+  "page": 1,
+  "method": "GET",
+  "headers": {},
+  "serve": [
+    {
+      "path": "/search",
+      "status": 200,
+      "bodyFrom": "response.bin"
+    }
+  ]
+}

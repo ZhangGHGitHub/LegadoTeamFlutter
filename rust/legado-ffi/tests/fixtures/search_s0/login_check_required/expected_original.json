@@ -1,0 +1,4 @@
+{
+  "kind": "login_required",
+  "note": "首检 false → errResponse(500) 二次 eval 仍 false → LoginRequired 上抛(WebBook.kt:88-94);单源静默失败不中断其他源"
+}

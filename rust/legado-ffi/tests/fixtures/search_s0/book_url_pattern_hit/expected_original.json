@@ -1,0 +1,12 @@
+{
+  "kind": "ok",
+  "count": 1,
+  "results": [
+    {
+      "name": "直连书名",
+      "author": "直连作者",
+      "bookUrl": "{BASE}/search?kw=S0E"
+    }
+  ],
+  "note": "搜索页 URL 整串匹配详情正则(BookList.kt:62-81)→ 不走列表,按详情规则单条"
+}

@@ -1,0 +1,12 @@
+{
+  "kind": "ok",
+  "count": 1,
+  "results": [
+    {
+      "name": "直连书名",
+      "author": "直连作者",
+      "bookUrl": "{BASE}/search?kw=S0E"
+    }
+  ],
+  "note": "bookList 空且未配置 pattern(BookList.kt:100-108 双条件)→ 详情规则回退一次;回退 bookUrl = 完整最终 URL(含查询串)"
+}

@@ -46,6 +46,7 @@ pub mod source_check_api;
 pub mod source_debug_api;
 pub mod source_login_v1_api;
 pub mod source_login_v2_api;
+pub mod source_rate_limit;
 pub mod source_switch;
 pub mod txt_search_api;
 pub mod tts_speak_api;
@@ -53,3 +54,7 @@ pub mod verification_api;
 pub mod webview_api;
 pub mod web_book;
 pub mod webdav_api;
+
+/// [S0-B] 四类离线响应夹具消费测试（仅测试编译；夹具见 tests/fixtures/search_s0/）
+#[cfg(test)]
+mod s0_fixture_tests;

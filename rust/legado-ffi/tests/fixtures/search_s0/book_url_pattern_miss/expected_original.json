@@ -1,0 +1,12 @@
+{
+  "kind": "ok",
+  "count": 1,
+  "results": [
+    {
+      "name": "夺宝奇兵",
+      "author": "作者甲",
+      "bookUrl": "{BASE}/book/1"
+    }
+  ],
+  "note": "pattern 存在但搜索 URL(/list)不命中 → 继续列表解析(BookList.kt:81 后续)"
+}

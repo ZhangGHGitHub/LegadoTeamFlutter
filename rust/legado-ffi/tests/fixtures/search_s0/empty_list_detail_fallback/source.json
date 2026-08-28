@@ -1,0 +1,18 @@
+{
+  "bookSourceUrl": "https://s0e.fixture",
+  "bookSourceName": "S0E-夹具源",
+  "bookSourceGroup": "S0E",
+  "bookSourceType": 0,
+  "enabled": true,
+  "searchUrl": "http://127.0.0.1:{PORT}/search?kw={{key}}",
+  "ruleSearch": {
+    "bookList": ".none",
+    "name": ".name",
+    "author": ".author",
+    "bookUrl": ".name@href"
+  },
+  "ruleBookInfo": {
+    "name": ".title",
+    "author": ".author"
+  }
+}

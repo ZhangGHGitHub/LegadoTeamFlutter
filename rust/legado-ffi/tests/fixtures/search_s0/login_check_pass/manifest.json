@@ -1,0 +1,10 @@
+{
+  "scenario": "login_check_pass",
+  "encoding": "utf-8",
+  "response_sha256": "7E48EC89324E82E1521E7A9F4B25F458E381975214E3F45CD311F8CFEB806686",
+  "fixture_version": 1,
+  "created": "2026-08-28",
+  "sanitized": true,
+  "sanitization_note": "纯合成响应,不含任何真实站点数据;URL 指向本地夹具服务器",
+  "expected_source": "hand-derived from Kotlin WebBook.kt:74-98 / BookList.kt:62-108 (com.legado.app.release 3.26081008) semantics; cross-package validation against original app planned in S0-C"
+}

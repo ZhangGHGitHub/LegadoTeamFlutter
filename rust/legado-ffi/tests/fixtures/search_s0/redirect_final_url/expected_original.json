@@ -1,0 +1,13 @@
+{
+  "kind": "ok",
+  "count": 1,
+  "results": [
+    {
+      "name": "夺宝奇兵",
+      "author": "作者甲",
+      "bookUrl": "{BASE}/book/1"
+    }
+  ],
+  "baseUrlIsFinalUrl": true,
+  "note": "相对链接 /book/1 必须相对最终 URL(/final/search 的 origin)绝对化"
+}
