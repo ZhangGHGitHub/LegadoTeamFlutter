@@ -49,16 +49,17 @@ class Md3HeatmapCalendar extends StatelessWidget {
   }
 
   /// 5 级配色：0 无记录 → surfaceContainerHighest；1~4+ → primary 阶梯
+  /// （level1 起点抬至 0.4，避免暗色主题下与底灰不可分）
   Color _colorForLevel(int level, ColorScheme scheme, Color base) {
     switch (level) {
       case 0:
         return scheme.surfaceContainerHighest;
       case 1:
-        return base.withValues(alpha: 0.25);
+        return base.withValues(alpha: 0.4);
       case 2:
-        return base.withValues(alpha: 0.45);
+        return base.withValues(alpha: 0.6);
       case 3:
-        return base.withValues(alpha: 0.7);
+        return base.withValues(alpha: 0.8);
       default:
         return base;
     }
