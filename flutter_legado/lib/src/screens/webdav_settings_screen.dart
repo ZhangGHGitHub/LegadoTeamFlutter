@@ -392,7 +392,6 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 IosListTile(
                   title: 'WebDAV 服务器地址',
                   subtitle: _url.isEmpty ? '输入你的服务器地址' : _url,
-                  showDisclosure: true,
                   onTap: () => _editTextPref(
                     title: 'WebDAV 服务器地址',
                     initial: _url,
@@ -403,7 +402,6 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 IosListTile(
                   title: 'WebDAV 账号',
                   subtitle: _user.isEmpty ? '输入你的 WebDAV 账号' : _user,
-                  showDisclosure: true,
                   onTap: () => _editTextPref(
                     title: 'WebDAV 账号',
                     initial: _user,
@@ -413,7 +411,6 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 IosListTile(
                   title: 'WebDAV 密码',
                   subtitle: _pass.isEmpty ? '输入你的密码' : '*' * _pass.length,
-                  showDisclosure: true,
                   onTap: () => _editTextPref(
                     title: 'WebDAV 密码',
                     initial: _pass,
@@ -424,7 +421,6 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 IosListTile(
                   title: '子目录',
                   subtitle: _dir.isEmpty ? 'legado' : _dir,
-                  showDisclosure: true,
                   onTap: () => _editTextPref(
                     title: '子目录',
                     initial: _dir,
@@ -435,7 +431,6 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 IosListTile(
                   title: '设备名称',
                   subtitle: _device.isEmpty ? '用于区分不同设备的备份' : _device,
-                  showDisclosure: true,
                   onTap: () => _editTextPref(
                     title: '设备名称',
                     initial: _device,
@@ -466,13 +461,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   title: '备份路径',
                   subtitle:
                       _backupPath.isEmpty ? '请选择备份路径' : _backupPath,
-                  showDisclosure: true,
                   onTap: _busy ? null : _pickBackupPath,
                 ),
                 IosListTile(
                   title: '备份',
                   subtitle: '本地和 WebDav 一起备份',
-                  showDisclosure: true,
                   onTap: _busy ? null : _doLocalBackup,
                 ),
                 // 短按 WebDAV 优先；长按本地恢复
@@ -481,14 +474,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   child: IosListTile(
                     title: '恢复',
                     subtitle: '优先从 WebDav 恢复，长按从本地恢复',
-                    showDisclosure: true,
                     onTap: _busy ? null : _doRestore,
                   ),
                 ),
                 IosListTile(
                   title: '恢复忽略列表',
                   subtitle: '恢复时忽略一些内容不恢复，方便不同手机配置不同',
-                  showDisclosure: true,
                   onTap: _busy ? null : _showRestoreIgnore,
                 ),
                 SwitchListTile(

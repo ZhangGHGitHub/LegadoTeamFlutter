@@ -146,20 +146,23 @@ class IosGroup extends StatelessWidget {
   }
 }
 
-/// MD3 列表项：图标 + 标题 +（可选副标题）+ 尾部（值 / 开关 / 箭头）。
+/// MD3 列表项：图标 + 标题 +（可选副标题）+ 尾部（值 / 开关）。
 ///
 /// 对 [ListTile] 的薄封装，统一 leading 图标容器为 MD3 tonal 圆角方块
 /// （primaryContainer 底 + onPrimaryContainer 图标，可经参数覆写）。
+/// [MD3 全量清点 P2] 移除 iOS 式行尾展开箭头（原版 Android 列表无行尾
+/// 「>」，与参考仓库一致）；行是否可点由 onTap 存在性决定。
 class IosListTile extends StatelessWidget {
-  /// 可选；嵌套设置页常见无图标行（对齐系统 Preferences）
+  /// 可选；嵌套设置页常见无图标行
   final IconData? icon;
   final Color? iconColor;
   final Color? iconBackground;
   final String title;
   final String? subtitle;
   final Widget? trailing;
+
+  /// 尾部值文本（如「默认」），与自定义 [trailing] 互斥（trailing 优先）
   final String? value;
-  final bool showDisclosure;
   final VoidCallback? onTap;
 
   const IosListTile({
@@ -171,7 +174,6 @@ class IosListTile extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.value,
-    this.showDisclosure = false,
     this.onTap,
   });
 
@@ -185,26 +187,11 @@ class IosListTile extends StatelessWidget {
     final fg = iconColor ?? scheme.onPrimaryContainer;
 
     Widget? trailing = this.trailing;
-    if (trailing == null && (value != null || showDisclosure)) {
-      trailing = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (value != null)
-            Text(
-              value!,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          if (showDisclosure)
-            Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-        ],
+    if (trailing == null && value != null) {
+      trailing = Text(
+        value!,
+        style: theme.textTheme.bodyMedium
+            ?.copyWith(color: scheme.onSurfaceVariant),
       );
     }
 

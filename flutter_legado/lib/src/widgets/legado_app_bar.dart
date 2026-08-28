@@ -181,6 +181,25 @@ SystemUiOverlayStyle _legadoSystemOverlay(BuildContext context) {
   );
 }
 
+/// LargeTitle 子树字阶覆写（P1：对齐参考风格 24dp）
+///
+/// Flutter 的 SliverAppBar.large 展开态硬编码取 textTheme.headlineMedium
+/// （28dp），参考仓库 Compose M3 LargeTopAppBar 为 headlineSmall（24dp）。
+/// 此处以子树级 Theme 把 headlineMedium 映射为 headlineSmall——仅影响
+/// 头部 sliver 内部（工具栏走 titleLarge 不受影响），展开/折叠动画完整。
+Widget _largeTitleThemeOverride(BuildContext context, Widget child) {
+  final theme = Theme.of(context);
+  return Theme(
+    data: theme.copyWith(
+      textTheme: theme.textTheme.copyWith(
+        headlineMedium: theme.textTheme.headlineSmall
+            ?.apply(color: theme.colorScheme.onSurface),
+      ),
+    ),
+    child: child,
+  );
+}
+
 /// 主 Tab 根页可折叠 LargeTitle 头部 sliver（UI_MD3_PLAN.md Batch 1 顶栏决策）
 ///
 /// - [large] 为 true（页面有文字标题，如「书架」无分组、「我的」）时使用
@@ -209,12 +228,16 @@ class LegadoTabRootHeaderSliver extends StatelessWidget {
   Widget build(BuildContext context) {
     final overlay = _legadoSystemOverlay(context);
     if (large) {
-      return SliverAppBar.large(
-        automaticallyImplyLeading: false,
-        title: title,
-        actions: actions,
-        titleSpacing: titleSpacing,
-        systemOverlayStyle: overlay,
+      // [P1] headlineMedium→headlineSmall 子树覆写：展开大标题 28→24dp
+      return _largeTitleThemeOverride(
+        context,
+        SliverAppBar.large(
+          automaticallyImplyLeading: false,
+          title: title,
+          actions: actions,
+          titleSpacing: titleSpacing,
+          systemOverlayStyle: overlay,
+        ),
       );
     }
     return SliverAppBar(
@@ -246,16 +269,20 @@ class LegadoLargeTitleScroll extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return NestedScrollView(
-      headerSliverBuilder: (context, innerBoxIsScrolled) => [
-        SliverAppBar.large(
-          automaticallyImplyLeading: false,
-          title: title,
-          actions: actions,
-          systemOverlayStyle: _legadoSystemOverlay(context),
-        ),
-      ],
-      body: body,
+    // [P1] headlineMedium→headlineSmall 子树覆写：展开大标题 28→24dp
+    return _largeTitleThemeOverride(
+      context,
+      NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverAppBar.large(
+            automaticallyImplyLeading: false,
+            title: title,
+            actions: actions,
+            systemOverlayStyle: _legadoSystemOverlay(context),
+          ),
+        ],
+        body: body,
+      ),
     );
   }
 }

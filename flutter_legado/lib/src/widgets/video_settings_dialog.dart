@@ -132,7 +132,6 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
                       '${s.pressSpeedFactor.toStringAsFixed(1)}x',
                       style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
-                    trailing: const Icon(Icons.chevron_right),
                     onTap: () => _editPressSpeed(s),
                   ),
                 ],

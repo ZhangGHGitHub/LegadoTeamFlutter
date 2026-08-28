@@ -20,6 +20,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -202,10 +203,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
             // ===== 语言（对齐原版 language，无独立 category）=====
             IosGroup(children: [
               IosListTile(
-                icon: Icons.language,
+                icon: Symbols.language_rounded,
                 title: '语言',
                 value: _localeLabel,
-                showDisclosure: true,
                 onTap: () => _showLocalePicker(context),
               ),
             ]),
@@ -252,10 +252,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 onChanged: (v) => mainPrefsNotifier.setShowRss(v),
               ),
               IosListTile(
-                icon: Icons.home_outlined,
+                icon: Symbols.home_rounded,
                 title: '默认主页',
                 value: _homePageLabel(mainPrefs.defaultHomePage),
-                showDisclosure: true,
                 onTap: () => _showHomePagePicker(mainPrefs, mainPrefsNotifier),
               ),
             ]),
@@ -268,13 +267,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 subtitle:
                     '本地密码用来对备份的敏感信息加密和解密,如需在不同设备之间同步,本地密码需一致.',
                 value: _localPassword.isEmpty ? '未设置' : '已设置',
-                showDisclosure: true,
                 onTap: _showLocalPasswordDialog,
               ),
               IosListTile(
                 title: '用户代理',
                 subtitle: _userAgent.isEmpty ? '默认' : _userAgent,
-                showDisclosure: true,
                 onTap: _showUserAgentDialog,
               ),
               IosListTile(
@@ -282,7 +279,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 subtitle: _customHostsSummary.isEmpty
                     ? '域名到IP的映射'
                     : _customHostsSummary,
-                showDisclosure: true,
                 onTap: _showCustomHostsDialog,
               ),
               SwitchListTile(
@@ -299,13 +295,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 subtitle: _defaultBookTreeUri.isEmpty
                     ? '从其它应用打开的书籍保存位置'
                     : _defaultBookTreeUri,
-                showDisclosure: true,
                 onTap: _showBookTreeUriDialog,
               ),
               IosListTile(
                 title: '源编辑框最大行数',
                 value: '$_sourceEditMaxLine',
-                showDisclosure: true,
                 onTap: () => _editIntPref(
                   title: '源编辑框最大行数',
                   key: PrefKeys.sourceEditMaxLine,
@@ -318,7 +312,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               IosListTile(
                 title: '校验设置',
                 subtitle: _checkSourceConfigSummary,
-                showDisclosure: true,
                 onTap: _showCheckSourceConfigDialog,
               ),
               SwitchListTile(
@@ -333,7 +326,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               IosListTile(
                 title: '图片绘制缓存',
                 subtitle: '当前最大缓存 $_bitmapCacheSize MB',
-                showDisclosure: true,
                 onTap: () => _editIntPref(
                   title: '图片绘制缓存（MB）',
                   key: PrefKeys.bitmapCacheSize,
@@ -346,7 +338,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               IosListTile(
                 title: '漫画保留数量',
                 subtitle: '保留已读章节数量 $_imageRetainNum',
-                showDisclosure: true,
                 onTap: () => _editIntPref(
                   title: '漫画保留数量',
                   key: PrefKeys.imageRetainNum,
@@ -359,7 +350,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               IosListTile(
                 title: '预下载',
                 subtitle: '预先下载 $_preDownloadNum 章正文',
-                showDisclosure: true,
                 onTap: () => _editIntPref(
                   title: '预下载章节数量',
                   key: PrefKeys.preDownloadNum,
@@ -446,19 +436,16 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               IosListTile(
                 title: '视频设置',
                 subtitle: '自动播放、全屏播放等配置',
-                showDisclosure: true,
                 onTap: () => showVideoSettingsDialog(context),
               ),
               IosListTile(
                 title: 'Web 端口',
                 subtitle: '当前端口 $_webPort',
-                showDisclosure: true,
                 onTap: _showWebPortDialog,
               ),
               IosListTile(
                 title: 'MCP 端口',
                 subtitle: _mcpPort > 0 ? '当前端口 $_mcpPort' : '当前端口 0（已停止）',
-                showDisclosure: true,
                 onTap: _showMcpPortDialog,
               ),
               IosListTile(
@@ -466,31 +453,26 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 subtitle: _jsSourceApiToken.isEmpty
                     ? 'MCP、纯 JS、书源写入、搜索和调试接口均需要'
                     : '已配置',
-                showDisclosure: true,
                 onTap: _editJsSourceApiToken,
               ),
               IosListTile(
                 title: '清理缓存',
                 subtitle: '清除已下载书籍和字体缓存',
-                showDisclosure: true,
                 onTap: _cleanCache,
               ),
               IosListTile(
                 title: '清除 WebView 数据',
                 subtitle: '清除内置浏览器所有数据',
-                showDisclosure: true,
                 onTap: _clearWebViewData,
               ),
               IosListTile(
                 title: '压缩数据库',
                 subtitle: '减小数据库文件的大小',
-                showDisclosure: true,
                 onTap: _shrinkDatabase,
               ),
               IosListTile(
                 title: '更新和搜索线程数（太多会卡顿）',
                 value: '$_threadCount',
-                showDisclosure: true,
                 onTap: () => _editIntPref(
                   title: '线程数量',
                   key: PrefKeys.threadCount,
@@ -1121,7 +1103,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final isSelected = value == _localeValue;
     return ListTile(
       leading: Icon(
-        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+        isSelected ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
         color: isSelected ? Theme.of(ctx).colorScheme.primary : null,
       ),
       title: Text(label),

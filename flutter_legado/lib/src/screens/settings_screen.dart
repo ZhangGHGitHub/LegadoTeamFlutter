@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -164,7 +165,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: Text(AppStrings.my),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             tooltip: '帮助',
             onPressed: _showHelp,
           ),
@@ -178,24 +179,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 separatorIndent: 62,
                 children: [
                   IosListTile(
-                    icon: Icons.library_books,
+                    icon: Symbols.library_books_rounded,
                     title: '书源管理',
                     subtitle: '新建、导入、编辑或管理书源',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.sources),
                   ),
                   IosListTile(
-                    icon: Icons.schedule,
+                    icon: Symbols.schedule_rounded,
                     title: '定时任务',
                     subtitle: '管理按计划执行的 JavaScript 任务',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.autoTasks),
                   ),
                   SwitchListTile(
                     secondary: Icon(
-                      Icons.autorenew,
+                      Symbols.autorenew_rounded,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     title: const Text('运行定时任务'),
@@ -204,34 +203,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onChanged: _toggleAutoTaskService,
                   ),
                   IosListTile(
-                    icon: Icons.toc,
+                    icon: Symbols.toc_rounded,
                     title: 'TXT 目录规则',
                     subtitle: '配置 TXT 目录规则',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.txtTocRules),
                   ),
                   IosListTile(
-                    icon: Icons.find_replace,
+                    icon: Symbols.find_replace_rounded,
                     title: '替换净化',
                     subtitle: '配置替换净化规则',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.replaceRules),
                   ),
                   IosListTile(
-                    icon: Icons.translate,
+                    icon: Symbols.translate_rounded,
                     title: '字典规则',
                     subtitle: '配置字典规则',
-                    showDisclosure: true,
                     onTap: () => Navigator.pushNamed(context, AppRoutes.dict),
                   ),
                   IosListTile(
-                    icon: Icons.brightness_6,
+                    icon: Symbols.brightness_6_rounded,
                     title: '主题模式',
                     subtitle: '选择主题模式',
                     value: _themeModeLabel(themeMode),
-                    showDisclosure: true,
                     onTap: () => _showThemePicker(context),
                   ),
                   SwitchListTile(
@@ -242,7 +237,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : Icon(
-                            Icons.language,
+                            Symbols.language_rounded,
                             color: Theme.of(
                               context,
                             ).colorScheme.onSurfaceVariant,
@@ -264,7 +259,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : Icon(
-                            Icons.cable,
+                            Symbols.cable_rounded,
                             color: Theme.of(
                               context,
                             ).colorScheme.onSurfaceVariant,
@@ -287,26 +282,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 separatorIndent: 62,
                 children: [
                   IosListTile(
-                    icon: Icons.backup,
+                    icon: Symbols.backup_rounded,
                     title: '备份与恢复',
                     subtitle: 'WebDav 设置/导入旧版本数据',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.webdavSettings),
                   ),
                   IosListTile(
-                    icon: Icons.palette_outlined,
+                    icon: Symbols.palette_rounded,
                     title: '主题设置',
                     subtitle: '与界面/颜色相关的一些设置',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.themeConfig),
                   ),
                   IosListTile(
-                    icon: Icons.tune,
+                    icon: Symbols.tune_rounded,
                     title: '其他设置',
                     subtitle: '与功能相关的一些设置',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.otherSettings),
                   ),
@@ -319,37 +311,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 separatorIndent: 62,
                 children: [
                   IosListTile(
-                    icon: Icons.bookmark,
+                    icon: Symbols.bookmark_rounded,
                     title: '书签',
                     subtitle: '所有书签',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.bookmarks),
                   ),
                   IosListTile(
-                    icon: Icons.history,
+                    icon: Symbols.history_rounded,
                     title: '阅读记录',
                     subtitle: '阅读时间记录',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.readRecord),
                   ),
                   IosListTile(
-                    icon: Icons.folder_outlined,
+                    icon: Symbols.folder_rounded,
                     title: '文件管理',
                     subtitle: '管理私有文件夹的文件',
-                    showDisclosure: true,
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.fileManage),
                   ),
                   IosListTile(
-                    icon: Icons.info_outline,
+                    icon: Symbols.info_rounded,
                     title: '关于',
-                    showDisclosure: true,
                     onTap: () => Navigator.pushNamed(context, AppRoutes.about),
                   ),
                   IosListTile(
-                    icon: Icons.exit_to_app,
+                    icon: Symbols.logout_rounded,
                     title: '退出',
                     onTap: _confirmExit,
                   ),
@@ -403,7 +391,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 final selected = mode == currentMode;
                 return ListTile(
                   leading: Icon(
-                    selected ? Icons.check_circle : Icons.circle_outlined,
+                    selected ? Symbols.check_circle_rounded : Symbols.radio_button_unchecked_rounded,
                     color: selected ? Theme.of(ctx).colorScheme.primary : null,
                   ),
                   title: Text(_getThemeLabel(mode)),

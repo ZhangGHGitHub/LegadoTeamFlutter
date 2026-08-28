@@ -625,7 +625,6 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
               leading: const Icon(Icons.tune, size: 20),
               title: const Text('朗读引擎'),
               subtitle: const Text('管理 HTTP TTS 朗读引擎'),
-              trailing: const Icon(Icons.chevron_right),
               onTap: () =>
                   Navigator.pushNamed(context, AppRoutes.readAloudConfig),
             ),

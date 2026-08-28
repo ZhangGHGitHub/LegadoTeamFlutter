@@ -938,11 +938,6 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               )
-            else
-              Padding(
-                padding: const EdgeInsets.only(left: 4, top: 12),
-                child: Icon(Icons.chevron_right, color: colorScheme.outline),
-              ),
           ],
         ),
       ),

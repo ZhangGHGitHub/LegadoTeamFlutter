@@ -204,7 +204,6 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       icon: Icons.wallpaper_outlined,
                       title: '背景图片',
                       subtitle: _imageDay.isEmpty ? '选择图片' : _imageDay,
-                      showDisclosure: true,
                       onTap: () => _pickImage(dark: false),
                     ),
                     SwitchListTile.adaptive(
@@ -232,7 +231,6 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       icon: Icons.wallpaper_outlined,
                       title: '背景图片',
                       subtitle: _imageNight.isEmpty ? '选择图片' : _imageNight,
-                      showDisclosure: true,
                       onTap: () => _pickImage(dark: true),
                     ),
                     SwitchListTile.adaptive(

@@ -1413,9 +1413,8 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
           child: Text(
             '搜索范围',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
+            // [P1b] 17/w600 硬编码收敛至字阶 titleMedium（M3 区块标题）
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: scheme.onSurface,
             ),
           ),

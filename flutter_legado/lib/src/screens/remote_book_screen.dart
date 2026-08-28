@@ -203,7 +203,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                   ? const Text('文件夹')
                                   : Text(_formatSize(item.size)),
                               trailing: item.isDir
-                                  ? const Icon(Icons.chevron_right)
+                                  ? null
                                   : item.isOnBookShelf
                                       ? Icon(Icons.check_circle,
                                           color: theme.colorScheme.primary)

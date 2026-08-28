@@ -325,7 +325,6 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: const Icon(Icons.chevron_right, size: 18),
       onTap: () => _jumpToResult(match),
     );
   }

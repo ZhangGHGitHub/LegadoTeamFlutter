@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.122] - 2026-08-28
+
+### Changed
+- [UI] 风格细节对齐批次（用户批准 P1+P2+P3，功能零变更）：**P1 大标题 28→24**——Flutter SliverAppBar.large 展开态硬编码 headlineMedium(28)，参考仓库 Compose M3 LargeTopAppBar 为 headlineSmall(24)，经子树级 Theme 覆写（headlineMedium→headlineSmall.apply(onSurface)，仅影响头部 sliver 内部、工具栏 titleLarge 与展开/折叠动画不受影响）；**P2 移除 iOS 式行尾展开箭头**——IosListTile 删除 showDisclosure 机制（64 处实参清理）+ 11 处直接 Icons.chevron_right（bookshelf 最近阅读/audio/change_source/remote_book 文件夹行/import×3/search_content/theme_config 色块行与列表行/video_settings_dialog/explore_book_list），原版 Android 列表无行尾箭头，属消除既有偏差；**P3 设置枢纽图标 Symbols 试点**——settings/other_settings/theme_config 三页全部图标换 Material Symbols rounded（约 30 种映射，library_books/menu_book、exit_to_app/logout 等）；P1b 搜索范围区块标题 17/w600 → titleMedium（book_info 书名 22 w700 与 font 字号预览 18 判定为内容元素保留）
+- [Test] 门禁：flutter analyze 0 issues、flutter test 1308 全绿。保留：explore 展开旋转指示与 file_manage 面包屑分隔箭头（功能语义）；reader 域 5 处（计划排除）。版本 2.0.122+126
+- Contributor: Qoder UI
+
 ## [2.0.121] - 2026-08-28
 
 ### Changed

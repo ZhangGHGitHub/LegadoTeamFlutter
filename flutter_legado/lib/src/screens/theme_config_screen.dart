@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -168,13 +169,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: _androidOnly,
                       value: _launcherIconLabels[
                           _launcherIcons.indexOf(_launcherIcon).clamp(0, 6)],
-                      showDisclosure: true,
                       onTap: _showLauncherIconPicker,
                     ),
                     IosListTile(
                       title: '启动界面样式',
                       subtitle: '设定显示时间，更改背景图片，是否显示文字等',
-                      showDisclosure: true,
                       onTap: () {
                         Navigator.of(context)
                             .pushNamed(AppRoutes.welcomeConfig);
@@ -205,32 +204,27 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     IosListTile(
                       title: '导航栏阴影',
                       subtitle: '当前阴影大小（elevation）：$_barElevation',
-                      showDisclosure: true,
                       onTap: _showBarElevationDialog,
                     ),
                     IosListTile(
                       title: '字体大小',
                       subtitle: themeState.fontScaleLabel,
-                      showDisclosure: true,
                       onTap: () => _showFontScalePicker(
                           context, themeState, themeNotifier),
                     ),
                     IosListTile(
                       title: '封面设置',
                       subtitle: '通用封面规则及默认封面样式',
-                      showDisclosure: true,
                       onTap: _showCoverConfigDialog,
                     ),
                     IosListTile(
                       title: '主题列表',
                       subtitle: '使用、保存、导入或分享主题',
-                      showDisclosure: true,
                       onTap: _showThemeListDialog,
                     ),
                     IosListTile(
                       title: '底栏图集',
                       subtitle: '导入 zip 自定义底栏图标',
-                      showDisclosure: true,
                       onTap: () => Navigator.pushNamed(
                         context,
                         AppRoutes.bottomBarSkin,
@@ -270,10 +264,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         isBackground: true),
                     _colorTile(PrefKeys.cBBackground, '底部操作栏颜色', colors),
                     IosListTile(
-                      icon: Icons.wallpaper,
+                      icon: Symbols.wallpaper_rounded,
                       title: '背景图片',
                       subtitle: _bgImage.isEmpty ? '未设置' : _bgImage,
-                      showDisclosure: true,
                       onTap: () => _showBgImageDialog(PrefKeys.bgImage),
                     ),
                     SwitchListTile(
@@ -286,10 +279,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       },
                     ),
                     IosListTile(
-                      icon: Icons.save_outlined,
+                      icon: Symbols.save_rounded,
                       title: '保存白天主题',
                       subtitle: '将当前白天颜色保存到主题列表',
-                      showDisclosure: true,
                       onTap: () => _saveTheme(isNight: false),
                     ),
                   ]),
@@ -306,10 +298,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     _colorTile(PrefKeys.cNBBackground, '底部操作栏颜色', colors,
                         isNight: true),
                     IosListTile(
-                      icon: Icons.wallpaper,
+                      icon: Symbols.wallpaper_rounded,
                       title: '背景图片',
                       subtitle: _bgImageNight.isEmpty ? '未设置' : _bgImageNight,
-                      showDisclosure: true,
                       onTap: () => _showBgImageDialog(PrefKeys.bgImageN),
                     ),
                     SwitchListTile(
@@ -323,10 +314,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       },
                     ),
                     IosListTile(
-                      icon: Icons.save_outlined,
+                      icon: Symbols.save_rounded,
                       title: '保存夜间主题',
                       subtitle: '将当前夜间颜色保存到主题列表',
-                      showDisclosure: true,
                       onTap: () => _saveTheme(isNight: true),
                     ),
                   ]),
@@ -348,7 +338,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }) {
     final value = colors.valueOf(key);
     return IosListTile(
-      icon: Icons.palette_outlined,
+      icon: Symbols.palette_rounded,
       title: title,
       value: value == null ? '默认' : null,
       trailing: value == null
@@ -367,14 +357,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
               ],
             ),
-      showDisclosure: value == null,
       onTap: () => _showColorPicker(
         key,
         title,
@@ -556,7 +540,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('封面规则'),
                 subtitle: const Text('配置搜索 URL 与提取规则，可按书名测试'),
-                trailing: const Icon(Icons.chevron_right),
                 onTap: _showCoverRuleConfigDialog,
               ),
             ],
@@ -626,12 +609,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       final isNight = item['isNight'] == true;
                       return ListTile(
                         leading: Icon(
-                          isNight ? Icons.dark_mode : Icons.light_mode,
+                          isNight ? Symbols.dark_mode_rounded : Symbols.light_mode_rounded,
                         ),
                         title: Text('${item['name'] ?? '未命名'}'),
                         subtitle: Text(isNight ? '夜间主题' : '白天主题'),
                         trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
+                          icon: const Icon(Symbols.delete_rounded),
                           onPressed: () async {
                             list = List.of(list)..removeAt(index);
                             await _settings.setStringPref(
@@ -1193,7 +1176,7 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
                                 children: [
                                   IconButton(
                                     icon: const Icon(
-                                      Icons.image_outlined,
+                                      Symbols.image_rounded,
                                       size: 18,
                                     ),
                                     tooltip: '预览',
@@ -1201,7 +1184,7 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
                                     onPressed: () => _preview(url),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.copy, size: 18),
+                                    icon: const Icon(Symbols.content_copy_rounded, size: 18),
                                     tooltip: '复制',
                                     visualDensity: VisualDensity.compact,
                                     onPressed: () => _copy(url),
@@ -1351,7 +1334,7 @@ class _PaletteCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (selected) ...[
-                Icon(Icons.check_circle, size: 14, color: primary),
+                Icon(Symbols.check_circle_rounded, size: 14, color: primary),
                 const SizedBox(width: 2),
               ],
               Flexible(

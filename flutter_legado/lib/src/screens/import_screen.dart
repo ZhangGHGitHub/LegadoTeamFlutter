@@ -396,7 +396,6 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
               leading: const Icon(Icons.storage),
               title: Text(_displayName(root.path)),
               subtitle: Text(root.path, maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: const Icon(Icons.chevron_right),
               onTap: () => _enterDir(root),
             ),
           ),
@@ -408,8 +407,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     return ListTile(
       leading: Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
       title: Text(_displayName(dir.path)),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => _enterDir(dir),
+            onTap: () => _enterDir(dir),
     );
   }
 
@@ -431,8 +429,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text('${ext.toUpperCase()} · ${_formatSize(size)}'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openArchiveImport(path),
+                        onTap: () => _openArchiveImport(path),
           );
         },
       );

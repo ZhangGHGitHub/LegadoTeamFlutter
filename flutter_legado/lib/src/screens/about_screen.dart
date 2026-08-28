@@ -202,7 +202,6 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                 IosListTile(
                   title: '开发人员',
                   subtitle: 'gedoor、Invinciblelee 和 Xwite 等，详情请在 GitHub 中查看',
-                  showDisclosure: true,
                   onTap: () => _launch(_contributorsUrl),
                 ),
                 IosListTile(
@@ -210,7 +209,6 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                   subtitle: _appVersion.isEmpty
                       ? '版本 …'
                       : '版本 $_appVersion',
-                  showDisclosure: true,
                   onTap: _showUpdateLog,
                 ),
                 IosListTile(
@@ -222,7 +220,6 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : null,
-                  showDisclosure: !_checkingUpdate,
                   onTap: _checkingUpdate ? null : _checkUpdate,
                 ),
               ],
@@ -232,28 +229,23 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
               children: [
                 IosListTile(
                   title: '崩溃日志',
-                  showDisclosure: true,
                   onTap: () =>
                       Navigator.pushNamed(context, AppRoutes.appLog),
                 ),
                 IosListTile(
                   title: '保存日志',
-                  showDisclosure: true,
                   onTap: _saveLog,
                 ),
                 IosListTile(
                   title: '创建堆转储',
-                  showDisclosure: true,
                   onTap: _createHeapDumpPlaceholder,
                 ),
                 IosListTile(
                   title: '用户隐私与协议',
-                  showDisclosure: true,
                   onTap: () => _launch(_privacyUrl),
                 ),
                 IosListTile(
                   title: '开源许可',
-                  showDisclosure: true,
                   onTap: () => showLicensePage(
                     context: context,
                     applicationName: '阅读',
@@ -263,7 +255,6 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                 ),
                 IosListTile(
                   title: '免责声明',
-                  showDisclosure: true,
                   onTap: _showDisclaimer,
                 ),
               ],

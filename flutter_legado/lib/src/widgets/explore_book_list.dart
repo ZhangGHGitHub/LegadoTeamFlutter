@@ -467,11 +467,6 @@ class _BookItem extends ConsumerWidget {
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
-              ),
             ],
           ),
         ),

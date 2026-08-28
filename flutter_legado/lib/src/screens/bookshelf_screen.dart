@@ -313,8 +313,6 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                       color: colorScheme.onSurfaceVariant,
                     ),
               ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, size: 16, color: colorScheme.onSurfaceVariant),
             ],
           ),
         ),
