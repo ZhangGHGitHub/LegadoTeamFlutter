@@ -1075,11 +1075,14 @@ fn parse_search_response(
         // 提取作者（清洗对齐原版 BookHelp.formatBookAuthor）
         let author = legado_core::book_help::format_book_author(&field_str(1));
 
-        // 提取分类（部分失败不致整条丢弃，对齐原版逐字段 try/catch 语义）
+        // 提取分类（部分失败不致整条丢弃，对齐原版逐字段 try/catch 语义）。
+        // 多标签按原版 BookList.kt:230 `getStringList(ruleKind)?.joinToString(",")` 用逗号分隔：
+        // 批量路径 css_vec_to_string 已把多匹配以 \n 连接，此处将 \n 换为 ,（等价于 joinToString(",")，
+        // 复用共享 CSS 解析、零额外 parse，不回退 2026-08-18 搜索提速）。
         let kind = if field_str(2).is_empty() {
             None
         } else {
-            Some(field_str(2))
+            Some(field_str(2).replace('\n', ","))
         };
 
         // 提取字数并格式化（对齐原版 wordCountFormat）
@@ -2178,6 +2181,38 @@ mod tests {
         assert!(second.kind.is_none());
         assert!(second.word_count.is_none());
         assert_eq!(second.book_type, book_type::IMAGE);
+    }
+
+    /// kind 多标签：多个匹配元素按原版 `getStringList().joinToString(",")` 用逗号分隔（BookList.kt:230）
+    #[test]
+    fn test_parse_kind_multi_match_joined_with_comma() {
+        let mut source = make_source_with_rules(
+            ".book-item",
+            ".name",
+            ".author",
+            ".name@href",
+            ".cover@src",
+            ".intro",
+            ".last",
+        );
+        if let Some(r) = source.rule_search.as_mut() {
+            r.kind = Some(".kind".into());
+        }
+        // 单个 book-item 内含 3 个 .kind 元素 → kind 规则多匹配
+        let html = r#"<html><body>
+            <div class="book-item">
+                <a class="name" href="/b/1">书A</a>
+                <span class="author">作者</span>
+                <span class="kind">科幻</span>
+                <span class="kind">都市</span>
+                <span class="kind">玄幻</span>
+            </div>
+        </body></html>"#;
+        let results =
+            parse_search_response(html, "https://www.example.com/search", &source).unwrap();
+        assert_eq!(results.len(), 1);
+        // 3 个 kind 元素 → 原版 joinToString(",") → 逗号分隔（而非 \n）
+        assert_eq!(results[0].kind.as_deref(), Some("科幻,都市,玄幻"));
     }
 
     /// bookType 判定对齐原版 `BookSource.getBookType()`
