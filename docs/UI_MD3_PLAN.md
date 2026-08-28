@@ -21,6 +21,7 @@
 | Batch 5 | RSS/音视频/缓存域（shadow token / FAB onPrimaryContainer） | `0356e8efd` |
 | Batch 6 | 设置长尾（我的页去 iOS 彩色图标底 / app_log TabBar token 化）+ 全域复核 | `c8cc3d824` |
 | 收尾 | 验收矩阵自动化 + 2 个溢出修复（palette 卡片/error_view）+ 文档同步 + .tmp_net 清理 | 见 CHANGELOG [2.0.117] |
+| 全量清点（用户复核指令） | 65 屏/路由/三级菜单对账确认无缺失；修复最后的 iOS 残留（CupertinoAlertDialog×1、CupertinoPicker 弹层×2、彩色图标底×9、Colors.grey×1）；manga_config_sheet 登记为阅读器沉浸域排除 | 见 CHANGELOG [2.0.118][2.0.119] |
 
 **第十三节验收矩阵落地口径**：
 - token 对比度：`test/unit/md3_palette_test.dart`（22 不透明组合 ≥ AA 4.5 + elink 3.95/AA-large 例外 + transparent 豁免）✓
