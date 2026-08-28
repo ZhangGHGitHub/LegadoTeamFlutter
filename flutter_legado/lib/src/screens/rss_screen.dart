@@ -290,7 +290,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.10),
+                      color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.10),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -356,7 +356,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.10),
+                    color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.10),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),

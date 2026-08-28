@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.115] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 5（docs/UI_MD3_PLAN.md）：RSS/音视频/缓存域收尾。域审计确认 9 屏（rss/rss_articles/rss_article_detail/rss_favorites/video/audio/read_aloud_config/cache_download/offline_cache）已基于 colorScheme token 与 Ios* 组件继承 MD3；rss 卡片阴影 Colors.black → colorScheme.shadow token（对齐 book_grid_item 先例）；audio 播放 FAB 加载圈 Colors.white → onPrimaryContainer（FAB 已走 M3 primaryContainer 底）；video 黑底白控件为播放覆盖层功能例外保留。版本 2.0.115+119
+- Contributor: Qoder UI
+
 ## [2.0.114] - 2026-08-28
 
 ### Changed

@@ -522,12 +522,14 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           }
         },
         child: provider.isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 24,
                 height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  // [MD3 Batch 5] FAB 已走 M3 primaryContainer 底，
+                  // 加载圈前景对齐 onPrimaryContainer（原硬编码白色）
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
               )
             : Icon(
