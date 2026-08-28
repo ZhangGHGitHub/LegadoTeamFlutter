@@ -136,6 +136,107 @@ SearchNotifier
 
 性能报告应同时给出中位数、P95、完成源数和失败分类；不得通过减少源数、缩短超时、只统计首批或截断结果制造性能数字。
 
+### P0-2-S0-E：主搜索路径的具体改造方向
+
+本节是后续实现建议，不代表本轮已实施。改动前必须冻结夹具预期和 FFI 影响范围；任何一项失败都不得切换 Flutter 主入口。
+
+#### 1. 收敛为唯一的单源规则执行器
+
+目标是让 `run_multi_stream`、`search_books`、`multi_source_search` 和换源场景共享同一个单源语义，而不是复制 `WebBook` 的业务分支。
+
+建议在 `rust/legado-ffi/src/api/search.rs` 所在 crate 内抽取私有执行器，例如：
+
+```text
+execute_search_source(client, source, keyword, page, session)
+  -> build_search_url_with_setup
+  -> fetch_search_response
+  -> apply_login_check
+  -> resolve_final_base_url
+  -> classify_direct_detail_or_list
+  -> parse_list_or_fallback_to_detail
+  -> normalize_and_dedup_single_source
+  -> SourceSearchOutcome { results, status, timings }
+```
+
+具体约束：
+
+1. `search_single_source` 只保留限流、会话取消、单源超时和对该执行器的调用；不得继续直接调用简化的 `parse_search_response` 形成第二套规则语义。
+2. `web_book.rs` 中已验证的纯规则逻辑应下沉为无状态私有帮助函数，或由新执行器复用；不要把 `RealBookSourceFetcher`、缓存和详情页 I/O 整体耦合进批量搜索。
+3. 解析结果必须保留真实 `source_url`、`book_url`、`origin_order`、最终 `base_url` 和错误分类；禁止 UI 用默认值推测来源或详情 URL。
+4. `run_multi_stream` 仍是 Flutter 的唯一生产入口。`search_books`、`multi_source_search` 若保留，只允许调整批次收集方式，不能覆盖单源结果、超时、去重或排序语义。
+
+#### 2. 严格实现原版 S0 行为顺序
+
+针对每个单源搜索请求，建议固定以下顺序并通过夹具锁定：
+
+1. 以书源上下文构建 `searchUrl`，保留请求方法、请求体、headers、charset 和 cookie。
+2. 发起请求并保存请求 URL、HTTP 状态、响应字节和最终 URL；非 2xx 不能被无条件折叠为“空结果”。
+3. 对成功响应和原版等价的错误/登录响应运行 `loginCheckJs`；区分“无需登录”“需要登录”“JS 执行失败”“网络失败”。
+4. 使用最终 URL 作为解析 `baseUrl`。封面、详情、分页和相对链接都必须相对于最终 URL 绝对化。
+5. 若最终 URL 命中 `bookUrlPattern`，按详情页规则生成单条搜索结果，不再强行按列表解析。
+6. 否则按 `ruleSearch.bookList` 提取元素，并先处理 `+`/`-` 前缀，再解析字段、规范化 URL 和按单源 `bookUrl` 保序去重。
+7. 当列表为空且未配置或未命中 `bookUrlPattern` 时，按详情页规则尝试一次；详情关键字段不足时返回明确的 `empty` 或 `parser_error`，不得伪造书籍。
+8. 只有单源语义完成后，才由 Flutter 按原版 `mergeItems` 做跨源聚合；Rust 不得重新引入相关性排序或跨源截断。
+
+#### 3. 错误分类、取消和超时建议
+
+现有“返回空 `Vec`”的路径应逐步收敛为可观察结果，建议内部使用：
+
+```text
+SourceSearchOutcome
+  results: Vec<SearchResult>
+  status: ok | empty | http_error | timeout | login_required |
+          js_error | parser_error | cancelled
+  request_url: String
+  final_url: Option<String>
+  timings: { url_build, http, login_check, parse, total }
+```
+
+该结构可以保持 crate 内私有；只有必要的进度、结果和诊断摘要才经 FFI 输出。这样既不改变 Flutter 的展示职责，也能避免把 `login_required`、JS 错误和真实空结果混为一类。
+
+取消建议与 S0 改造分开提交：会话创建时生成独立取消令牌；调度器只维护受控数量在飞任务；获取并发许可后再次检查取消；取消时终止排队任务，并阻止在飞任务向 Stream、数据库和 UI 继续写入。单源 30 秒超时与限流等待是否计入超时必须显式配置并以原版实测为准，不能依赖全局 10 秒总超时。
+
+#### 4. FFI、Flutter 和数据层边界
+
+1. P0-2 S0 原则上不新增 Flutter 业务逻辑。Flutter 只接收批次、单源状态和标准化结果，继续负责加载态、停止操作、同书聚合与渲染。
+2. 若为错误分类、最终 URL 或诊断字段扩展 FFI DTO，必须先更新 `docs/API_CONTRACT.md`，列明字段是否对 UI 可见、兼容默认值和旧 APK/旧数据库迁移策略，再生成绑定。
+3. `searchBooks` 持久化前应保存真实 `origin`、`originOrder`、`bookUrl`；不要以书名精确匹配的单表计数代替最终聚合统计。
+4. 封面加载必须从搜索关键路径分离。是否下载封面、何时解码、是否命中缓存应有独立计时，不能作为“原版搜索慢”的推测性归因。
+
+#### 5. 夹具、单元测试和双包验收的落地顺序
+
+建议将样本固定在 `rust/legado-ffi/tests/fixtures/search_s0/`，每个场景使用同名目录：
+
+```text
+<scenario>/
+  source.json             # 最小脱敏书源
+  request.json            # keyword、page、headers、初始 URL
+  response.bin            # 保留原始编码的响应
+  redirect_chain.json     # 无跳转时为空数组
+  expected_original.json  # 原版抓取的标准化预期
+  manifest.json           # SHA-256、编码、来源时间、脱敏说明
+```
+
+每个夹具至少有三类断言：
+
+1. Rust 单元测试：主搜索单源执行器输出字段、条数、`status`、最终 URL 和保序去重与 `expected_original.json` 相同。
+2. Rust 集成测试：`run_multi_stream`、`search_books`、`multi_source_search` 在相同输入下得到同一最终集合与来源数；流式只允许到达时间不同。
+3. Flutter 测试：模拟 Rust 流最后一批和错误分类，断言不丢批、不把 `login_required` 渲染为成功空列表，聚合后来源数与夹具一致。
+
+随后再做两台模拟器验收：先在 5556 运行改造 APK，再在 5558 原版运行相同书源快照和关键词。两端均到终态后导出同一结构的 JSON/CSV；比较程序应直接读取该结构并输出差异，而不是通过截图和人工转录决定是否通过。
+
+#### 6. 提交拆分、回退和验收门
+
+建议按以下顺序分提交，避免网络行为、调度和 UI 同时变化导致不可定位：
+
+1. `test(rust)`：加入脱敏响应夹具和原版预期，先让当前主路径暴露差异；
+2. `refactor(rust)`：抽取唯一单源执行器，不改变 FFI JSON；
+3. `fix(rust)`：依次接入最终 URL、`loginCheckJs`、`bookUrlPattern`、空列表详情回退，每项附对应夹具；
+4. `test(rust)`：三入口一致性、取消和错误分类测试；
+5. 必要时单独提交 `docs` 与 FFI 契约、生成绑定、Flutter 展示调整。
+
+每个步骤的最低门槛是：相关夹具测试为绿、既有 Rust QuickJS/非 QuickJS 测试无回归、Flutter `analyze`/`test` 通过、5556 冒烟通过。涉及用户验收前，再执行 5558 冒烟和双包终态对比。任何字段、条数、错误分类或排序发生未解释差异时，立即保留旧主入口或通过 feature gate 回退，不将差异归因于网络后继续关闭事项。
+
 ## 五、关闭条件
 
 P0-2 S0 只有同时满足以下条件才可关闭：
