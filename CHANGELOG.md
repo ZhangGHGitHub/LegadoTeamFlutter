@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.120] - 2026-08-28
+
+### Changed
+- [UI] 登录域原版对齐审计与重构（用户授权「不一致可重构」）：逐分支对照原版 ui/login/（SourceLoginActivity/SourceLoginDialog/SourceLoginV2Delegate/WebViewLoginFragment）——V2 动态状态协议分支（isLoginUiV2 → LoginV2Dialog）与经典 loginUi 表单分支（hasLoginForm → ClassicLoginDialog：select/toggle/button 类型、action js、✓login()、查看/删除登录头、清除登录信息、日志、关闭暂存草稿）确认与原版一致；**无表单分支重构**：原版为内置 WebViewLoginFragment（系统 CookieManager 自动持久化，用户无感），我方原为外部浏览器 + 手动复制 Cookie，本次对齐——新增 CookieBridge.kt（原生通道 legado/cookie 读 android.webkit.CookieManager，Windows 桌面优雅降级空串）+ WebViewLoginScreen（内置 WebView 打开 loginUrl 绝对化 + 书源 header 附加头，页面加载开始/结束自动同步 Cookie 落库 loginHeader，顶栏「检测」重载校验后返回，非 http(s) 跳转转外部打开，手动凭据页降级为菜单次级入口能力保留）
+- [Test] 新增 webview_login_header_test（书源 header JSON/kv/空/非法四分支解析）；全量门禁 flutter analyze 0 issues、flutter test 1304 全绿。登记跨轨待办（需 Rust 契约，本轮不动）：V1 动态 loginUi JS 渲染（renderLoginUi/java.addRowUi 绑定）、viewName JS 表达式求值、text 行 action 联动、按钮长按 isLongClick；rssSource/httpTts/autoTask 源登录入口未接（现仅 BookSource 调用方）。版本 2.0.120+124
+- Contributor: Qoder UI
+
 ## [2.0.119] - 2026-08-28
 
 ### Changed

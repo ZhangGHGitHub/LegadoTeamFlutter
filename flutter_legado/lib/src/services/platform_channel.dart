@@ -22,6 +22,9 @@ class PlatformChannel {
   static const MethodChannel notification =
       MethodChannel('legado/notification');
 
+  /// Cookie 通道：WebView 登录页读取系统 CookieManager
+  static const MethodChannel cookie = MethodChannel('legado/cookie');
+
   /// 事件通道：用于接收原生层的流式事件
   static const EventChannel eventChannel =
       EventChannel('io.legado.app/events');
@@ -53,6 +56,20 @@ class PlatformChannel {
   /// 关闭并销毁 WebView
   static Future<void> closeWebView() async {
     await webview.invokeMethod('close');
+  }
+
+  // ─── Cookie 方法 ──────────────────────────────────────────────
+
+  /// 读取指定 url 的 Cookie 串（无则空串）。
+  ///
+  /// 对齐原版 WebViewLoginFragment 的 CookieManager.getCookie 链路；
+  /// 非 Android 平台/通道未注册时降级返回空串（调用方须容错）。
+  static Future<String> getCookie(String url) async {
+    try {
+      return await cookie.invokeMethod<String>('getCookie', {'url': url}) ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 
   // ─── TTS 方法 ─────────────────────────────────────────────────

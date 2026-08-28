@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
-import '../screens/source_login_screen.dart';
+import '../screens/webview_login_screen.dart';
 import '../widgets/classic_login_dialog.dart';
 import '../widgets/login_v2_dialog.dart';
 
@@ -18,8 +18,9 @@ import '../widgets/login_v2_dialog.dart';
 ///   邮箱/密码 + 按钮表单）→ `ClassicLoginDialog`（对齐 SourceLoginDialog：
 ///   ✓ 保存并 login.apply(this)、按钮动作 result 绑定表单 JSON、
 ///   java.toast 可见提示）
-/// - 无 loginUi → `SourceLoginScreen`（手动 Token/Cookies/Headers，存
-///   source_login_cache）
+/// - 无 loginUi → **WebViewLoginScreen**（对齐原版 WebViewLoginFragment：
+///   内置 WebView 打开 loginUrl，系统 CookieManager 经 CookieBridge 通道
+///   自动落库 loginHeader；手动凭据页降级为其菜单次级入口，能力保留）
 ///
 /// 返回是否登录成功（V2 对话框 login/close、经典表单 ✓、手动页保存完成）。
 /// — DeepSeek Harness + UI（2026-08-14 发现页修复 R2 / 登录表单对齐）
@@ -62,13 +63,18 @@ Future<bool> showSourceLogin(
     return ok == true;
   }
 
-  // 3) 无表单：手动凭据登录页（WebView 外链 + 手动 Cookie/Header/Token）
+  // 3) 无表单：内置 WebView 登录（对齐原版 WebViewLoginFragment：内置
+  //    WebView 打开 loginUrl，系统 CookieManager 经 CookieBridge 通道自动
+  //    落库 loginHeader；手动 Cookie/Header/Token 页降级为其菜单次级入口，
+  //    能力保留）
   final saved = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
-      builder: (_) => SourceLoginScreen(
+      builder: (_) => WebViewLoginScreen(
+        api: api,
         sourceUrl: source.bookSourceUrl,
         sourceName: source.bookSourceName,
-        loginUrl: source.loginUrl,
+        loginUrl: source.loginUrl ?? '',
+        header: source.header,
       ),
     ),
   );

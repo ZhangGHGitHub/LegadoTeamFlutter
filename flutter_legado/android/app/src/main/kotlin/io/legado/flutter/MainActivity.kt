@@ -19,6 +19,7 @@ class MainActivity : FlutterActivity() {
     private val ttsBridge = TtsBridge()
     private val filePickerBridge = FilePickerBridge()
     private val mediaSessionBridge = MediaSessionBridge()
+    private val cookieBridge = CookieBridge()
 
     private var deepLinkChannel: MethodChannel? = null
     private var autoTaskJobChannel: MethodChannel? = null
@@ -43,6 +44,7 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL_DEEP_LINK = "legado/deep_link"
         private const val CHANNEL_SYSTEM_BAR = "legado/system_bar"
         private const val CHANNEL_DEVICE_ID = "legado/device_id"
+        private const val CHANNEL_COOKIE = "legado/cookie"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -64,6 +66,13 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_FILE_PICKER)
             .setMethodCallHandler { call, result ->
                 filePickerBridge.handleMethodCall(call, result, this)
+            }
+
+        // 注册 Cookie 通道（WebView 登录页读取系统 CookieManager，对齐
+        // 原版 WebViewLoginFragment 的 CookieManager.getCookie 链路）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_COOKIE)
+            .setMethodCallHandler { call, result ->
+                cookieBridge.handleMethodCall(call, result, this)
             }
 
         // 注册通知通道
