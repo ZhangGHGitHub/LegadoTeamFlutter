@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [搜索 parity 批次 2026-08-29]（P0-3 收尾 + S0-B/S0-E；Rust 行为批次,版本号随发布批次定版）
+
+### Fixed
+- [Rust] P0-3 强化:c5f82a854——drive_source_batches 收集循环阻塞于 set.next() 时取消不可观察,取消置位后最长等 30s 才 abort 在飞;改为 wait_cancelled(50ms) 与 set.next() 在 tokio::select! 竞速,取消即时 abort_all+drain。test_drive_cancel_wakes_blocked_collect_promptly 锁定
+- [UI] 91e40dfad——搜索取消先调 Rust cancelSearch 置会话标志(≤50ms 生效)再拆 frb 流订阅;此前先拆流(实测可达 6.5s)导致取消延迟、排队源仍被派发
+- [Rust] bb521c366——补齐 G4 限速模块文件与接线,修复 511a0bb52 起干净树编译缺文件(误提交 mod.rs 引用而模块文件未跟踪)
+
+### Changed
+- [Rust] S0-E 4330acaf9——主搜索路径收敛原版 WebBook 语义:loginCheckJs 三路径(WebBook.kt:74-98)、bookUrlPattern 详情直连(BookList.kt:62-81)、空列表详情回退(100-108)、bookUrl 空回退最终 URL(281-284)、去重键改 bookUrl 单键(SearchBook.kt:65)、非 2xx 不折叠错误(AnalyzeUrl.kt:499-534);FFI 签名不变,web_book 四辅助函数 pub(crate) 复用
+- [Test] S0-B 511a0bb52——tests/fixtures/search_s0/ 七场景夹具(六件套,脱敏+SHA-256)+ s0_fixture_tests 主生产执行器消费断言(本地夹具服务器);workspace 2474 passed/0 failed、QuickJS lib 389/0
+- [Docs] 5c56338d9——计划文档 §8 续作台账 + 实机 e2e 双机 verdict/服务器日志证据归档 docs/evidence/search_parity_20260829/;系统性风险登记:FFI 未变更时 .so 陈旧不可被 FRB hash 校验发现
+- [Tool] e2e_p03_cancel_research.py(实机取消重搜 e2e,双机 7/7)+ s0c_server.py/s0c_compare.py(S0-C 双包对比工具,原版端自动化待续)
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.122] - 2026-08-28
 
 ### Changed
@@ -80,6 +95,97 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - [UI] MD3 迁移 Batch 1（docs/UI_MD3_PLAN.md）：主框架 + 主题选择器。引入 material_symbols_icons ^4.2960（Material Symbols 可变字体，FILL 轴做选中态）；home_screen 底栏默认图标由内置 SVG 切换为 Material Symbols rounded（四 tab，选中 fill=1，labelBehavior 走 M3 标准），底栏皮肤用户图路径完整保留；legado_app_bar 返回箭头 M3 化（主 Tab 根页 LargeTitle 随各 Tab 所属批次落地）；theme_config 新增「内置主题」12 套调色板选择网格（亮暗双色预览 + 选中描边，paletteId 即时生效并持久化），原白天/夜间分组更名「自定义主题 · 白天/夜间」并存；Hero 封面过渡基础设施：BookCover 增 heroTag（约定 cover:<bookUrl>），bookshelf/book_info 两端接通
 - [Test] theme_config_test 迁移：新增内置主题网格渲染/点按切换用例，通用项断言改为先滚动，分组名对齐双区结构
+- Contributor: Qoder UI
+
+## [2.0.109] - 2026-08-27
+
+### Fixed
+- [Rust] 搜索 parity 审计落地：主搜索 `search_single_source` 接入书源 `concurrentRate` 固定窗口节流（G4，抽取 `source_rate_limit` 与 web_book 共用）；换源网络路径改 `buffer_unordered(SEARCH_CONCURRENCY)` + 60s 单源超时（对齐原版 ChangeBookSourceViewModel）；换源读库对书名/作者做 `format_book_name/author` 归一化并打日志，修复主搜索落库与换源精确匹配键不一致导致二次全量搜索
+- [Tool] 新增 `scripts/search_probe.ps1`（批量探针 + 失败分类）与 `scripts/e2e_search_compare.ps1`（5558 双包 DB 统计模板）；审计报告 `docs/SEARCH_PARITY_AUDIT_20260827.md`
+- Contributor: Cursor Agent
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
 - Contributor: Qoder UI
 
 ## [2.0.110] - 2026-08-28
