@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.121] - 2026-08-28
+
+### Changed
+- [UI] MD3 Expressive 加载动画补齐（用户复核指令「加载动画参考风格目标」）：新增 Md3LoadingIndicator 波浪加载环（参考 Compose Material3 Expressive LoadingIndicator 视觉签名——环形半径正弦波调制 + 幅度呼吸 + 相位流动，CustomPainter 自绘，主色 token）；LoadingIndicator/LoadingOverlay 页面级加载统一接入（书架/发现/订阅/源加载等全部消费点自动升级），遮罩改 onSurface 24% + surfaceContainerHigh 卡片化容器；系统「减少动画」偏好下退化为静态 240° 弧；Semantics 语义标签进无障碍树。操作级小指示器（按钮内 spinner 等）维持 M3 标准圆形（Expressive 参考同款用法）
+- [Test] 新增 md3_loading_indicator_test（渲染/语义/减少动画退化/多帧稳定/message 展示/遮罩结构）；loading_overlay_test 断言迁移至波浪环。全量门禁 flutter analyze 0 issues、flutter test 1308 全绿。版本 2.0.121+125
+- Contributor: Qoder UI
+
 ## [2.0.120] - 2026-08-28
 
 ### Changed

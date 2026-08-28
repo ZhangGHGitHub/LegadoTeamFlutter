@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_legado/src/widgets/loading_overlay.dart';
+import 'package:flutter_legado/src/widgets/md3_loading_indicator.dart';
 
 void main() {
   Widget buildTestWidget({
@@ -28,14 +29,15 @@ void main() {
   testWidgets('LoadingOverlay shows indicator when isLoading', (tester) async {
     await tester.pumpWidget(buildTestWidget(isLoading: true));
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // [MD3 Expressive] 加载指示器升级为波浪环
+    expect(find.byType(Md3LoadingIndicator), findsOneWidget);
   });
 
   testWidgets('LoadingOverlay hides indicator when not loading',
       (tester) async {
     await tester.pumpWidget(buildTestWidget(isLoading: false));
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(Md3LoadingIndicator), findsNothing);
   });
 
   testWidgets('LoadingOverlay shows message when provided', (tester) async {
