@@ -201,6 +201,27 @@ Flutter 展示层
 - 佐证：Android 侧 RAR 本就桩化（`archive_utils.rs`：`import_rar_file`/`list_rar_book_files` 在 Android 直接返回 `Err("Android 平台暂不支持 RAR")`），故 `rar` crate 对 Android **无实际功能贡献**，却拖垮 32 位 JS 构建。
 - **决策点（需确认，超出纯搜索范围，属书源/书籍格式依赖治理）**：① 将 `rar`（及同类非 JS 归档依赖）从 quickjs feature 拆出为独立可选 feature → armeabi-v7a 可装 JS 引擎；或 ② 接受并显式声明 armeabi-v7a 为「无 JS」遗留 ABI，甚至不再随 APK 分发 armeabi-v7a（现代设备多为 64 位）。任一方向都需双轨确认后改 `legado-js/Cargo.toml` feature 结构。
 
-**状态**：P0-1.3 **三方一致性对 arm64/x86_64 通过、对 armeabi-v7a 不通过（根因已定位，属平台/依赖限制）**；降级已由 `.meta.quickjs` 机读化（不再静默）。P0-1 步骤 1–2（固化离线夹具）与步骤 4（双包基线）仍待实施，故 **P0-2 尚未解锁**。
+**状态**：P0-1.3 **三方一致性对 arm64/x86_64 通过、对 armeabi-v7a 不通过（根因已定位，属平台/依赖限制）**；降级已由 `.meta.quickjs` 机读化（不再静默）。P0-1 步骤 1–2（固化离线夹具）与步骤 4（双包基线）仍待实施。
 
-*实施记录编写者：Reasonix ｜ 2026-08-28*
+### 7.3 P0-2 前置：纯离线可验证的 S2 行为已落地（2026-08-28，进行中）
+
+**解锁判定**：§五.1 改主解析器的门槛为「未确认 QuickJS feature **或** 没有夹具时不改」。当前两者均已满足——QuickJS 已确认（P0-1.3）、规则一致性夹具已存在（`search.rs` 40 个既有单测覆盖解析器当前行为）。因此可**先行落地纯离线、无需网络/模拟器即可验证的 S2 行为**；而依赖网络的 S0 行为（loginCheckJs / 重定向最终 URL / 空列表详情页回退）仍须待 P0-1.4 双包基线后再并入主路径。
+
+**已实现并验证（对齐 `BookList.kt`，逐条注明出处）**：
+
+| S2 行为 | 原版出处 | Rust 落地 | 验证 |
+|---|---|---|---|
+| bookList `-`/`+` 前缀（`-` 逆序、`+` 仅去前缀） | `BookList.kt:90-96,145-147` | `split_book_list_prefix()`：get_elements 前剥离、dedup 后按 reverse 反转 | 3 个单测（minus / plus / no-prefix） |
+| 结果去重（LinkedHashSet 语义，保留首次出现） | `BookList.kt:142-144` | `dedup_search_results_keep_first()`：键 = 书源 + 书名 + bookUrl（同源同详情页视为重复，不同书名不误伤） | 2 个单测（保序 / 去重 / 空表） |
+
+**验证结果**：新增 5 个单测全绿；既有解析器单测（`test_parse_html_search_results`、`test_parse_json_search_results`、`test_parse_fields_complete_and_partial_failure_isolated`、`test_parse_skips_items_without_name`、`test_parse_html_book_url_empty_falls_back_to_base`、`test_parse_search_formats_name_author`、`test_parse_no_match_is_zero_success`）与异步并发/超时单测（`test_drive_source_batches_isolation_concurrency_timeout`、`test_drive_timeout_effective_for_blocking_parse`）全绿——**去重/逆序未改变任何既有夹具的结果数，零回归**。
+
+**尚未并入主路径的 S0/S2 行为（待 P0-1.4 双包基线后实施）**：
+- bookUrlPattern 详情页判定 + getInfoItem（`BookList.kt:62-81`）
+- 空列表详情页回退（`BookList.kt:100-108`）
+- loginCheckJs / HTTP 重定向最终 URL（S0，需真实响应验证）
+- kind 多标签 `joinToString(",")`、intro `formatIntro`、bookUrl 空值回退 `baseUrl`（字段级 S2，逐条比对后并入）
+
+**状态**：P0-2 **已就纯离线可验证的 S2 行为（前缀 + 去重）落地并验证**；网络相关 S0 行为与其余字段级 S2 待双包基线解锁。整体计划仍开放。
+
+*实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 S2 前置）*

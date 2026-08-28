@@ -1013,12 +1013,16 @@ fn parse_search_response(
     );
 
     // 获取书籍列表元素
-    let book_list_rule = rule_search.book_list.as_deref().unwrap_or("");
+    // [P0-2 S2 | BookList.kt:90-96] 剥离 bookList 规则的 `+`/`-` 前缀：
+    // `-` 表示最终结果逆序（reverse），`+` 本版本仅去前缀、无额外行为。
+    let (book_list_rule, reverse) = split_book_list_prefix(
+        rule_search.book_list.as_deref().unwrap_or(""),
+    );
     let elements = if book_list_rule.is_empty() {
         // 无 bookList 规则：尝试将整个响应作为单条结果解析
         vec![body.to_string()]
     } else {
-        analyzer.get_elements(book_list_rule).unwrap_or_default()
+        analyzer.get_elements(&book_list_rule).unwrap_or_default()
     };
 
     if elements.is_empty() {
@@ -1132,7 +1136,123 @@ fn parse_search_response(
         });
     }
 
+    // [P0-2 S2 | BookList.kt:142-147] 去重（LinkedHashSet 语义，保留首次出现）后按
+    // `-` 前缀逆序。键 = 书源 + 书名 + bookUrl：同源同详情页视为重复，不同书名不误伤。
+    let mut results = dedup_search_results_keep_first(results);
+    if reverse {
+        results.reverse();
+    }
+
     Ok(results)
+}
+
+/// [P0-2 S2 | BookList.kt:90-96] 拆分 bookList 规则的 `+`/`-` 前缀。
+/// `-`：最终结果逆序（reverse=true），规则体去前缀；`+`：本版本仅去前缀、无额外行为。
+/// 返回 (清洗后的规则, reverse 标志)。原版在 getElements 前剥离、dedup 后按 reverse 反转。
+fn split_book_list_prefix(rule: &str) -> (String, bool) {
+    if let Some(rest) = rule.strip_prefix('-') {
+        return (rest.to_string(), true);
+    }
+    if let Some(rest) = rule.strip_prefix('+') {
+        return (rest.to_string(), false);
+    }
+    (rule.to_string(), false)
+}
+
+/// [P0-2 S2 | BookList.kt:142-144] 按书籍标识去重（原版 LinkedHashSet<SearchBook>
+/// 语义，保留首次出现）。键 = 书源 + 书名 + bookUrl：同源同详情页视为重复；不同书名不误伤。
+fn dedup_search_results_keep_first(items: Vec<SearchResult>) -> Vec<SearchResult> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(items.len());
+    for it in items {
+        let key = (
+            it.source_url.clone(),
+            it.book_name.clone(),
+            it.book_url.clone(),
+        );
+        if seen.insert(key) {
+            out.push(it);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod p0_2_s2_tests {
+    use super::*;
+
+    fn mk_result(source: &str, name: &str, book_url: &str) -> SearchResult {
+        SearchResult {
+            source_url: source.to_string(),
+            source_name: "src".into(),
+            book_name: name.to_string(),
+            author: String::new(),
+            book_url: book_url.to_string(),
+            latest_chapter: None,
+            intro: None,
+            cover_url: None,
+            kind: None,
+            word_count: None,
+            book_type: 0,
+            has_read_record: false,
+            read_record_author: None,
+        }
+    }
+
+    #[test]
+    fn test_split_book_list_prefix_minus_reverses() {
+        let (rule, reverse) = split_book_list_prefix("-.bookbox");
+        assert_eq!(rule, ".bookbox");
+        assert!(reverse);
+    }
+
+    #[test]
+    fn test_split_book_list_prefix_plus_strips_only() {
+        let (rule, reverse) = split_book_list_prefix("+.bookbox");
+        assert_eq!(rule, ".bookbox");
+        assert!(!reverse);
+    }
+
+    #[test]
+    fn test_split_book_list_prefix_no_prefix_unchanged() {
+        let (rule, reverse) = split_book_list_prefix(".bookbox");
+        assert_eq!(rule, ".bookbox");
+        assert!(!reverse);
+    }
+
+    #[test]
+    fn test_dedup_keeps_first_occurrence() {
+        let items = vec![
+            mk_result("s1", "A", "u1"),
+            mk_result("s1", "A", "u1"), // 重复（同源+同名+同 url）
+            mk_result("s1", "B", "u2"),
+            mk_result("s2", "A", "u1"), // 不同源，保留
+        ];
+        let d = dedup_search_results_keep_first(items);
+        assert_eq!(d.len(), 3);
+        assert_eq!(d[0].book_name, "A");
+        assert_eq!(d[1].book_name, "B");
+        assert_eq!(d[2].source_url, "s2");
+    }
+
+    #[test]
+    fn test_dedup_preserves_order_and_empty() {
+        let items = vec![
+            mk_result("s", "X", "u1"),
+            mk_result("s", "Y", "u2"),
+            mk_result("s", "Z", "u3"),
+        ];
+        let d = dedup_search_results_keep_first(items);
+        assert_eq!(
+            d.iter().map(|r| r.book_name.clone()).collect::<Vec<_>>(),
+            vec![
+                "X".to_string(),
+                "Y".to_string(),
+                "Z".to_string()
+            ]
+        );
+        assert_eq!(dedup_search_results_keep_first(Vec::new()).len(), 0);
+    }
 }
 
 /// BookType 位标志（对齐原版 `io.legado.app.constant.BookType`）
