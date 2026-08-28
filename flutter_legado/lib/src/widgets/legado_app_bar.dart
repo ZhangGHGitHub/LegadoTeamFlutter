@@ -168,3 +168,94 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
     return Size.fromHeight(h);
   }
 }
+
+/// 系统栏样式：按 AppBar 背景明暗计算（浅底深图标 / 深底浅图标）
+SystemUiOverlayStyle _legadoSystemOverlay(BuildContext context) {
+  final bg = Theme.of(context).appBarTheme.backgroundColor ??
+      Theme.of(context).colorScheme.surface;
+  final isLight = ThemeData.estimateBrightnessForColor(bg) == Brightness.light;
+  return SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: isLight ? Brightness.dark : Brightness.light,
+    statusBarBrightness: isLight ? Brightness.light : Brightness.dark,
+  );
+}
+
+/// 主 Tab 根页可折叠 LargeTitle 头部 sliver（UI_MD3_PLAN.md Batch 1 顶栏决策）
+///
+/// - [large] 为 true（页面有文字标题，如「书架」无分组、「我的」）时使用
+///   SliverAppBar.large：展开 152dp 大标题，滚动折叠为标准 M3 AppBar（tonal
+///   抬升），跳顶/复位时随滚动位置自然展开；
+/// - 为 false（title 槽为分组 TabBar 等功能控件，保持原版嵌入结构）时使用
+///   pinned SliverAppBar，工具栏高度与交互不变。
+///
+/// 发现/订阅两根页的顶栏为原版 view_search 嵌入式搜索框（无标题文字），
+/// 不适用 LargeTitle，继续使用 [LegadoAppBar]；子页同样用 [LegadoAppBar]。
+class LegadoTabRootHeaderSliver extends StatelessWidget {
+  final Widget title;
+  final List<Widget>? actions;
+  final bool large;
+  final double? titleSpacing;
+
+  const LegadoTabRootHeaderSliver({
+    super.key,
+    required this.title,
+    this.actions,
+    required this.large,
+    this.titleSpacing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final overlay = _legadoSystemOverlay(context);
+    if (large) {
+      return SliverAppBar.large(
+        automaticallyImplyLeading: false,
+        title: title,
+        actions: actions,
+        titleSpacing: titleSpacing,
+        systemOverlayStyle: overlay,
+      );
+    }
+    return SliverAppBar(
+      pinned: true,
+      automaticallyImplyLeading: false,
+      title: title,
+      actions: actions,
+      titleSpacing: titleSpacing,
+      systemOverlayStyle: overlay,
+    );
+  }
+}
+
+/// 静态标题根页的可折叠 LargeTitle 装配（NestedScrollView）
+///
+/// body 保持原滚动结构不变（内层 ListView/CustomScrollView 均可），
+/// 头部为 SliverAppBar.large。用于「我的」等无复杂顶栏状态的根页。
+class LegadoLargeTitleScroll extends StatelessWidget {
+  final Widget title;
+  final List<Widget>? actions;
+  final Widget body;
+
+  const LegadoLargeTitleScroll({
+    super.key,
+    required this.title,
+    this.actions,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return NestedScrollView(
+      headerSliverBuilder: (context, innerBoxIsScrolled) => [
+        SliverAppBar.large(
+          automaticallyImplyLeading: false,
+          title: title,
+          actions: actions,
+          systemOverlayStyle: _legadoSystemOverlay(context),
+        ),
+      ],
+      body: body,
+    );
+  }
+}

@@ -107,69 +107,81 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   @override
   Widget build(BuildContext context) {
-    // 安卓原版书架页无 FAB：添加书籍入口在顶栏溢出菜单
+    final state = ref.watch(bookshelfNotifierProvider);
+    // [MD3 LargeTitle | UI_MD3_PLAN.md Batch 1] 主内容态：app bar 以 sliver
+    // 形式并入下方 CustomScrollView（无分组=可折叠 LargeTitle，跳顶时随
+    // 滚动复位；有分组=pinned TabBar 头，保持原版嵌入结构）；
+    // 加载/错误/空态保留标准 LegadoAppBar。
+    final plainAppBar = (state.isLoading && state.books.isEmpty) ||
+        (state.error != null && state.books.isEmpty) ||
+        state.isEmpty;
     return Scaffold(
-      appBar: _buildAppBar(context, ref),
+      appBar: plainAppBar ? _buildAppBar(context, ref) : null,
       body: _buildBody(context, ref),
     );
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context, WidgetRef ref) {
     final state = ref.watch(bookshelfNotifierProvider);
-    // 对标原版 BookshelfFragment1：多分组时 TitleBar 通过 contentLayout
-    // 把可滚动 TabLayout 嵌入 Toolbar 内容区，与右侧菜单图标同一行，
-    // 而不是作为 bottom 置于顶栏下方第二行（会导致顶栏过高且左右错位）
-    Widget title = Text(AppStrings.bookshelf);
-    if (state.hasGroupTabs) {
-      final controller = _ensureTabController(state.groups.length);
-      _syncTabControllerIndex(state.selectedGroupIndex);
-      title = TabBar(
-        controller: controller,
-        isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
-        tabAlignment: TabAlignment.start,
-        // [MD3 Batch 2] 前景走全局 tabBarTheme（onSurface/onSurfaceVariant +
-        // primary 指示器），与 M3 AppBar surface 背景配对，不再硬编码白色
-        tabs: state.groups.map((g) => Tab(text: g.groupName)).toList(),
-      );
-    }
     return LegadoAppBar(
-      title: title,
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.search),
-          tooltip: AppStrings.search,
-          onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
-        ),
-        // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「书架布局」
-        PopupMenuButton<String>(
-          onSelected: (value) => _handleMenuAction(context, ref, value),
-          itemBuilder: (_) => [
-            // 对齐安卓原版 main_bookshelf.xml 溢出菜单
-            PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
-            const PopupMenuDivider(),
-            PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
-            const PopupMenuItem(value: 'remote', child: Text('添加远程书籍')),
-            const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
-            const PopupMenuDivider(),
-            PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
-            const PopupMenuItem(value: 'offline_cache', child: Text('离线缓存')),
-            PopupMenuItem(value: 'groups', child: Text('分组管理')),
-            const PopupMenuItem(value: 'layout', child: Text('书架布局')),
-            const PopupMenuDivider(),
-            // 分组展示模式切换（Flutter 扩展）
-            PopupMenuItem(value: 'group_none', child: _buildGroupModeItem(ref, GroupMode.none, '不分组')),
-            PopupMenuItem(value: 'group_source', child: _buildGroupModeItem(ref, GroupMode.bySource, '按来源分组')),
-            PopupMenuItem(value: 'group_group', child: _buildGroupModeItem(ref, GroupMode.byGroup, '按分组显示')),
-            const PopupMenuDivider(),
-            const PopupMenuItem(value: 'export_list', child: Text('导出书单')),
-            const PopupMenuItem(value: 'import_list', child: Text('导入书单')),
-            const PopupMenuItem(value: 'log', child: Text('日志')),
-            const PopupMenuDivider(),
-            PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
-          ],
-        ),
-      ],
+      title: state.hasGroupTabs
+          ? _buildGroupTabBar(state)
+          : Text(AppStrings.bookshelf),
+      actions: _buildAppBarActions(context, ref),
     );
+  }
+
+  /// 分组 TabBar（对标原版 BookshelfFragment1：可滚动 TabLayout 嵌入
+  /// Toolbar 内容区，与右侧菜单图标同一行）
+  Widget _buildGroupTabBar(BookshelfState state) {
+    final controller = _ensureTabController(state.groups.length);
+    _syncTabControllerIndex(state.selectedGroupIndex);
+    return TabBar(
+      controller: controller,
+      isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
+      tabAlignment: TabAlignment.start,
+      // [MD3 Batch 2] 前景走全局 tabBarTheme（onSurface/onSurfaceVariant +
+      // primary 指示器），与 M3 AppBar surface 背景配对，不再硬编码白色
+      tabs: state.groups.map((g) => Tab(text: g.groupName)).toList(),
+    );
+  }
+
+  List<Widget> _buildAppBarActions(BuildContext context, WidgetRef ref) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.search),
+        tooltip: AppStrings.search,
+        onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
+      ),
+      // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「书架布局」
+      PopupMenuButton<String>(
+        onSelected: (value) => _handleMenuAction(context, ref, value),
+        itemBuilder: (_) => [
+          // 对齐安卓原版 main_bookshelf.xml 溢出菜单
+          PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
+          const PopupMenuDivider(),
+          PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
+          const PopupMenuItem(value: 'remote', child: Text('添加远程书籍')),
+          const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
+          const PopupMenuDivider(),
+          PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
+          const PopupMenuItem(value: 'offline_cache', child: Text('离线缓存')),
+          PopupMenuItem(value: 'groups', child: Text('分组管理')),
+          const PopupMenuItem(value: 'layout', child: Text('书架布局')),
+          const PopupMenuDivider(),
+          // 分组展示模式切换（Flutter 扩展）
+          PopupMenuItem(value: 'group_none', child: _buildGroupModeItem(ref, GroupMode.none, '不分组')),
+          PopupMenuItem(value: 'group_source', child: _buildGroupModeItem(ref, GroupMode.bySource, '按来源分组')),
+          PopupMenuItem(value: 'group_group', child: _buildGroupModeItem(ref, GroupMode.byGroup, '按分组显示')),
+          const PopupMenuDivider(),
+          const PopupMenuItem(value: 'export_list', child: Text('导出书单')),
+          const PopupMenuItem(value: 'import_list', child: Text('导入书单')),
+          const PopupMenuItem(value: 'log', child: Text('日志')),
+          const PopupMenuDivider(),
+          PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
+        ],
+      ),
+    ];
   }
 
   Widget _buildBody(BuildContext context, WidgetRef ref) {
@@ -200,6 +212,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       child: CustomScrollView(
         controller: _scrollController,
         slivers: [
+          // [MD3 LargeTitle] 可折叠头部：无分组=SliverAppBar.large（跳顶时
+          // 随滚动自然复位）；有分组=pinned TabBar 头（原版嵌入结构）
+          LegadoTabRootHeaderSliver(
+            large: !state.hasGroupTabs,
+            title: state.hasGroupTabs
+                ? _buildGroupTabBar(state)
+                : Text(AppStrings.bookshelf),
+            actions: _buildAppBarActions(context, ref),
+          ),
           if (state.showStats) _buildStatsSliver(context, state),
           if (state.showRecentReading) _buildRecentReadingSliver(context, ref, state),
           // 分组模式：渲染分组头 + 分组内容

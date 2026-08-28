@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.118] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 B1 遗留项销账：主 Tab 根页可折叠 LargeTitle（版本 2.0.118+122）。新增 LegadoTabRootHeaderSliver/LegadoLargeTitleScroll（legado_app_bar.dart）：书架主内容态将 app bar 以 sliver 并入 CustomScrollView——无分组用 SliverAppBar.large（152dp 展开大标题，滚动折叠为标准 M3 AppBar，跳顶随滚动自然复位）、有分组用 pinned SliverAppBar 承载分组 TabBar（保持原版嵌入结构与工具栏高度）；「我的」经 NestedScrollView+SliverAppBar.large 装配；「发现」「订阅」顶栏为原版 view_search 嵌入式搜索框（无标题文字），按原版对齐红线维持既有顶栏并在计划文档登记口径。加载/错误/空态保留标准 LegadoAppBar
+- [Test] settings_test 迁移 LargeTitle 断言：标题 find.text('我的') 双实例（展开/折叠 title 共存）改 findsWidgets；滚动定位改 dragUntilVisible 指定内层 ListView + 回拖脱离 pinned 头部遮挡区
+- [Test] 两级冒烟补跑（后端轨释放模拟器后）：emulator-5556 冒烟 PASSED 7/7（含 B1–B6 全部内容 + LargeTitle）；emulator-5558 -CheckUI PASSED 8/8（书架/发现/订阅/我的元素齐全、无崩溃、版本 2.0.117 安装校验）。UI_MD3_PLAN.md 实施状态同步销账。版本 2.0.118+122
+- Contributor: Qoder UI
+
 ## [2.0.117] - 2026-08-28
 
 ### Changed

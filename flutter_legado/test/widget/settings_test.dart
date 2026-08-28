@@ -46,6 +46,16 @@ void main() {
     );
   }
 
+  /// [MD3 LargeTitle] 页面改为 NestedScrollView（外层折叠头 + 内层 ListView），
+  /// 滚动定位需指定内层 ListView 视图
+  Future<void> dragTo(WidgetTester tester, String text) {
+    return tester.dragUntilVisible(
+      find.text(text),
+      find.byType(ListView),
+      const Offset(0, -100),
+    );
+  }
+
   group('SettingsScreen 枢纽菜单', () {
     testWidgets('渲染顶部管理入口与设置/其他分组', (tester) async {
       await tester.pumpWidget(wrap(const SettingsScreen()));
@@ -59,14 +69,15 @@ void main() {
       expect(find.text('字典规则'), findsOneWidget);
       expect(find.text('主题模式'), findsOneWidget);
 
-      expect(find.text('我的'), findsOneWidget);
+      expect(find.text('我的'), findsWidgets,
+          reason: 'SliverAppBar.large 展开大标题与折叠工具栏标题同时存在');
       expect(find.text('设置', skipOffstage: false), findsOneWidget);
 
-      await tester.scrollUntilVisible(find.text('备份与恢复'), 100);
+      await dragTo(tester, '备份与恢复');
       await tester.pumpAndSettle();
       expect(find.text('备份与恢复'), findsOneWidget);
 
-      await tester.scrollUntilVisible(find.text('主题设置'), 100);
+      await dragTo(tester, '主题设置');
       await tester.pumpAndSettle();
       expect(find.text('主题设置'), findsOneWidget);
       expect(find.text('其他设置'), findsOneWidget);
@@ -80,7 +91,7 @@ void main() {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(find.text('关于'), 100);
+      await dragTo(tester, '关于');
       await tester.pumpAndSettle();
 
       expect(find.text('书签'), findsOneWidget);
@@ -98,7 +109,11 @@ void main() {
         ThemeMode.system,
       );
 
-      // 点标题「主题模式」（subtitle「选择主题模式」同屏，勿用模糊 finder）
+      // 点标题「主题模式」（subtitle「选择主题模式」同屏，勿用模糊 finder）；
+      // LargeTitle 展开占高，先滚动到可见区，再回拖使其离开 pinned 头部遮挡区
+      await dragTo(tester, '主题模式');
+      await tester.drag(find.byType(ListView), const Offset(0, 140));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('主题模式'));
       await tester.pumpAndSettle();
 
@@ -122,7 +137,8 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(find.text('备份与恢复'), 100);
+      await dragTo(tester, '备份与恢复');
+      await tester.drag(find.byType(ListView), const Offset(0, 140));
       await tester.pumpAndSettle();
       await tester.tap(find.text('备份与恢复'));
       await tester.pumpAndSettle();

@@ -30,9 +30,9 @@
 - 语义/触控目标：底栏 ≥48dp + 调色板中文标签语义化 ✓
 
 **遗留项（如实登记）**：
-1. **主 Tab 根页可折叠 LargeTitle** 未实施——需重构书架（分组 TabBar 嵌入顶栏）/发现/订阅/我的四页滚动结构，与多选批量模式、响应式双栏存在交互耦合，建议独立批次实施并走两级模拟器验收；
+1. ~~主 Tab 根页可折叠 LargeTitle~~ **已实施（2026-08-28，版本 2.0.118+122）**：「书架」（无分组时）与「我的」采用 SliverAppBar.large（152dp 展开大标题，滚动折叠为标准 M3 AppBar，跳顶随滚动复位；书架有分组时为 pinned TabBar 头保持原版嵌入结构）；「发现」「订阅」两根页的顶栏为原版 view_search 嵌入式搜索框（无标题文字），按原版对齐红线不适用 LargeTitle，维持既有顶栏——已在 `LegadoTabRootHeaderSliver`/`LegadoLargeTitleScroll` 文档注释与本节登记口径；
 2. Material You 动态取色：按计划即为后续批次（需 Android seed-color 平台通道）；
-3. Batch 1–6 的模拟器冒烟未单独执行——emulator-5556/5558 被搜索 parity 后端轨（SEARCH_PARITY_HANDOVER_20260828.md）占用为 P0-3 e2e 实验环境，为避免互相干扰而并入用户验收流程（Batch 0 冒烟已 PASSED 7/7）。
+3. Batch 1–6 的模拟器冒烟未单独执行——emulator-5556/5558 被搜索 parity 后端轨（SEARCH_PARITY_HANDOVER_20260828.md）占用为 P0-3 e2e 实验环境，为避免互相干扰而并入用户验收流程（Batch 0 冒烟已 PASSED 7/7）。**2026-08-28 补跑：后端轨释放模拟器后，LargeTitle 批次已在 5556 冒烟 + 5558 -CheckUI 验证（结果见 CHANGELOG [2.0.118]）。**
 
 ---
 
