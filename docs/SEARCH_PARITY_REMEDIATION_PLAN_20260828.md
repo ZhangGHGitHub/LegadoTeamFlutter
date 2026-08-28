@@ -209,24 +209,25 @@ Flutter 展示层
 
 **已实现并验证（对齐 `BookList.kt`，逐条注明出处）**：
 
-| S2 行为 | 原版出处 | Rust 落地 | 验证 |
-|---|---|---|---|
-| bookList `-`/`+` 前缀（`-` 逆序、`+` 仅去前缀） | `BookList.kt:90-96,145-147` | `split_book_list_prefix()`：get_elements 前剥离、dedup 后按 reverse 反转 | 3 个单测（minus / plus / no-prefix） |
-| 结果去重（LinkedHashSet 语义，保留首次出现） | `BookList.kt:142-144` | `dedup_search_results_keep_first()`：键 = 书源 + 书名 + bookUrl（同源同详情页视为重复，不同书名不误伤） | 2 个单测（保序 / 去重 / 空表） |
-| intro 简介净化（块级标签→换行、删其他标签含 img、折叠空白） | `BookList.kt:260` + `HtmlFormatter.formatIntro` | `html_formatter::format_intro()`：9 步纯字符串净化，逐条对标原版 formatText；parse_search_response intro 字段套用 | 6 个单测（块级/内联标签/注释/换行折叠/nbsp/空） |
-| kind 多标签逗号分隔 | `BookList.kt:230` `getStringList(...).joinToString(",")` | parse_search_response kind 字段将批量 `\n` 连接串换为 `,`（等价 joinToString(",")，**复用共享 CSS 解析、零额外 parse**） | 1 个单测（3 元素 → "科幻,都市,玄幻"） |
+| 行为 | 类别 | 原版出处 | Rust 落地 | 验证 |
+|---|---|---|---|---|
+| bookList `-`/`+` 前缀（`-` 逆序、`+` 仅去前缀） | S2 | `BookList.kt:90-96,145-147` | `split_book_list_prefix()`：get_elements 前剥离、dedup 后按 reverse 反转 | 3 个单测（minus / plus / no-prefix） |
+| 结果去重（LinkedHashSet 语义，保留首次出现） | S2 | `BookList.kt:142-144` | `dedup_search_results_keep_first()`：键 = 书源 + 书名 + bookUrl（同源同详情页视为重复，不同书名不误伤） | 2 个单测（保序 / 去重 / 空表） |
+| intro 简介净化（块级标签→换行、删其他标签含 img、折叠空白） | S2 | `BookList.kt:260` + `HtmlFormatter.formatIntro` | `html_formatter::format_intro()`：9 步纯字符串净化，逐条对标原版 formatText；parse_search_response intro 字段套用 | 6 个单测（块级/内联标签/注释/换行折叠/nbsp/空） |
+| kind 多标签逗号分隔 | S2 | `BookList.kt:230` `getStringList(...).joinToString(",")` | parse_search_response kind 字段将批量 `\n` 连接串换为 `,`（等价 joinToString(",")，**复用共享 CSS 解析、零额外 parse**） | 1 个单测（3 元素 → "科幻,都市,玄幻"） |
+| source/cookie JS 上下文（搜索规则可用 `source.getKey()` 等） | S1 | `AnalyzeRule(ruleData, bookSource)` + `BaseSource.getKey()` | parse_search_response 顶层+元素级 AnalyzeRule 改用 `construct_analyzer_with_source_context`，注入 `book_source_js_setup_script(source)`（source/cookie/cache 绑定 + BookSource 方法）；复用发现页已验证构造器 | 1 个单测（name=`@js:String(source.getKey())` → bookSourceUrl，quickjs 下断言） |
 
-**验证结果**：新增 12 个单测全绿（5 前缀+去重、6 intro 净化、1 kind 逗号分隔）；既有解析器单测与异步并发/超时单测全绿——**去重/逆序/intro/kind 未改变任何既有夹具的结果数，零回归**。
+**验证结果**：新增 13 个单测全绿——非 quickjs 构建 12 个（5 前缀+去重、6 intro 净化、1 kind 逗号分隔）+ quickjs 构建 1 个（S1 source 上下文）；既有解析器单测与异步并发/超时单测全绿，**quickjs 全量搜索+js_executor 66 测试零回归、非 quickjs 39 测试零回归**。
 
 > 关键修正：kind join(",") 曾误判为「需移出共享 CSS 批量单独 parse、会回退 2026-08-18 提速」；实为 `css_vec_to_string` 已把多匹配以 `\n` 连接，直接重连分隔符即可，**零性能成本**。
 
-**尚未并入主路径的 S0/S2 行为（需真实响应/模拟器验证）**：
+**尚未并入主路径的 S0 行为（需真实响应/模拟器验证）**：
 - bookUrlPattern 详情页判定 + getInfoItem（`BookList.kt:62-81`）
 - 空列表详情页回退（`BookList.kt:100-108`）
-- loginCheckJs / HTTP 重定向最终 URL（S0）
+- loginCheckJs / HTTP 重定向最终 URL
 
 > 注：bookUrl 空值回退 `baseUrl`（`BookList.kt:282-284`）**早已实现**（parse_search_response 中 raw_book_url 为空时回退 `source.book_source_url`），非待办。
 
-**状态**：P0-2 **纯离线可验证的 S2 字段级行为已全部落地并验证（前缀 + 去重 + intro 净化 + kind 逗号分隔）**；剩余 S0/详情页回退需真实响应与双包基线解锁。整体计划仍开放。
+**状态**：P0-2 **纯离线可验证部分已全部落地并验证——S1（source/cookie JS 上下文）+ S2 字段级（前缀 + 去重 + intro 净化 + kind 逗号分隔）**；仅剩依赖真实响应的 S0 行为（详情页判定 / 空列表回退 / loginCheckJs / 重定向最终 URL）待 P0-1.4 双包基线解锁。整体计划仍开放。
 
-*实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 S2 前置：前缀/去重/intro）*
+*实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 离线可验证部分：S1 source 上下文 + S2 前缀/去重/intro/kind）*
