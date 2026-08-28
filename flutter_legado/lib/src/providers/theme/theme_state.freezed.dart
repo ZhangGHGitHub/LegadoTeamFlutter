@@ -22,6 +22,9 @@ mixin _$ThemeState {
   /// 字体缩放原始值（0 = 跟随系统；8~16 → 0.8x~1.6x）
   int get fontScaleRaw => throw _privateConstructorUsedError;
 
+  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退 WH）
+  String get paletteId => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $ThemeStateCopyWith<ThemeState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -33,7 +36,7 @@ abstract class $ThemeStateCopyWith<$Res> {
           ThemeState value, $Res Function(ThemeState) then) =
       _$ThemeStateCopyWithImpl<$Res, ThemeState>;
   @useResult
-  $Res call({ThemeMode themeMode, int fontScaleRaw});
+  $Res call({ThemeMode themeMode, int fontScaleRaw, String paletteId});
 }
 
 /// @nodoc
@@ -51,6 +54,7 @@ class _$ThemeStateCopyWithImpl<$Res, $Val extends ThemeState>
   $Res call({
     Object? themeMode = null,
     Object? fontScaleRaw = null,
+    Object? paletteId = null,
   }) {
     return _then(_value.copyWith(
       themeMode: null == themeMode
@@ -61,6 +65,10 @@ class _$ThemeStateCopyWithImpl<$Res, $Val extends ThemeState>
           ? _value.fontScaleRaw
           : fontScaleRaw // ignore: cast_nullable_to_non_nullable
               as int,
+      paletteId: null == paletteId
+          ? _value.paletteId
+          : paletteId // ignore: cast_nullable_to_non_nullable
+              as String,
     ) as $Val);
   }
 }
@@ -73,7 +81,7 @@ abstract class _$$ThemeStateImplCopyWith<$Res>
       __$$ThemeStateImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({ThemeMode themeMode, int fontScaleRaw});
+  $Res call({ThemeMode themeMode, int fontScaleRaw, String paletteId});
 }
 
 /// @nodoc
@@ -89,6 +97,7 @@ class __$$ThemeStateImplCopyWithImpl<$Res>
   $Res call({
     Object? themeMode = null,
     Object? fontScaleRaw = null,
+    Object? paletteId = null,
   }) {
     return _then(_$ThemeStateImpl(
       themeMode: null == themeMode
@@ -99,6 +108,10 @@ class __$$ThemeStateImplCopyWithImpl<$Res>
           ? _value.fontScaleRaw
           : fontScaleRaw // ignore: cast_nullable_to_non_nullable
               as int,
+      paletteId: null == paletteId
+          ? _value.paletteId
+          : paletteId // ignore: cast_nullable_to_non_nullable
+              as String,
     ));
   }
 }
@@ -107,7 +120,9 @@ class __$$ThemeStateImplCopyWithImpl<$Res>
 
 class _$ThemeStateImpl implements _ThemeState {
   const _$ThemeStateImpl(
-      {this.themeMode = ThemeMode.system, this.fontScaleRaw = 0});
+      {this.themeMode = ThemeMode.system,
+      this.fontScaleRaw = 0,
+      this.paletteId = 'wh'});
 
   /// 主题模式（亮/暗/跟随系统）
   @override
@@ -119,9 +134,14 @@ class _$ThemeStateImpl implements _ThemeState {
   @JsonKey()
   final int fontScaleRaw;
 
+  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退 WH）
+  @override
+  @JsonKey()
+  final String paletteId;
+
   @override
   String toString() {
-    return 'ThemeState(themeMode: $themeMode, fontScaleRaw: $fontScaleRaw)';
+    return 'ThemeState(themeMode: $themeMode, fontScaleRaw: $fontScaleRaw, paletteId: $paletteId)';
   }
 
   @override
@@ -132,11 +152,14 @@ class _$ThemeStateImpl implements _ThemeState {
             (identical(other.themeMode, themeMode) ||
                 other.themeMode == themeMode) &&
             (identical(other.fontScaleRaw, fontScaleRaw) ||
-                other.fontScaleRaw == fontScaleRaw));
+                other.fontScaleRaw == fontScaleRaw) &&
+            (identical(other.paletteId, paletteId) ||
+                other.paletteId == paletteId));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, themeMode, fontScaleRaw);
+  int get hashCode =>
+      Object.hash(runtimeType, themeMode, fontScaleRaw, paletteId);
 
   @JsonKey(ignore: true)
   @override
@@ -147,7 +170,9 @@ class _$ThemeStateImpl implements _ThemeState {
 
 abstract class _ThemeState implements ThemeState {
   const factory _ThemeState(
-      {final ThemeMode themeMode, final int fontScaleRaw}) = _$ThemeStateImpl;
+      {final ThemeMode themeMode,
+      final int fontScaleRaw,
+      final String paletteId}) = _$ThemeStateImpl;
 
   @override
 
@@ -157,6 +182,10 @@ abstract class _ThemeState implements ThemeState {
 
   /// 字体缩放原始值（0 = 跟随系统；8~16 → 0.8x~1.6x）
   int get fontScaleRaw;
+  @override
+
+  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退 WH）
+  String get paletteId;
   @override
   @JsonKey(ignore: true)
   _$$ThemeStateImplCopyWith<_$ThemeStateImpl> get copyWith =>

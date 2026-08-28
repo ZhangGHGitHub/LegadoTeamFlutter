@@ -1,154 +1,160 @@
 import 'package:flutter/material.dart';
 
-/// 应用字体排版定义（Apple / iOS 设计体系）
+/// 应用字体排版定义（Material Design 3 字阶）
 ///
-/// 字阶对齐 iOS Human Interface Guidelines 的 Dynamic Type 规格。
-/// iOS 使用 SF Pro（本文件不指定 fontFamily，运行时自动取系统字体：
-/// iOS 上即 SF Pro，Android 上为 Roboto），重点还原字号 / 字重 / 行高层级。
+/// 字阶对齐 Material Design 3 官方 type scale（2021 版 M3 规范）。
+/// 不指定 fontFamily——运行时跟随系统字体（UI_MD3_PLAN.md 第三节：
+/// 字体跟随系统），重点固化字号 / 字重 / 行高 / 字距层级。
 ///
-/// 语义槽位与原版保持一致（保证既有引用不破坏），另补充 iOS 完整字阶常量。
+/// 语义槽位与原版保持一致（保证既有引用不破坏）。
 class AppTypography {
   AppTypography._();
 
   // ============================================================
-  // iOS Dynamic Type 字号常量
+  // M3 字阶常量（字号 / 行高）
   // ============================================================
 
-  /// Large Title（34pt）—— 大标题导航
-  static const double displaySize = 34.0;
+  /// Display Large（57/64）
+  static const double displaySize = 57.0;
 
-  /// Title 1（28pt）
-  static const double largeTitleSize = 28.0;
+  /// Display Medium（45/52）
+  static const double displayMediumSize = 45.0;
 
-  /// Title 2（22pt）
-  static const double title2Size = 22.0;
+  /// Display Small（36/44）
+  static const double displaySmallSize = 36.0;
 
-  /// Title 3（20pt）
-  static const double titleSize = 20.0;
+  /// Headline Large（32/40）
+  static const double headlineLargeSize = 32.0;
 
-  /// Headline（17pt，semibold）
-  static const double headlineSize = 17.0;
+  /// Headline Medium（28/36）
+  static const double headlineMediumSize = 28.0;
 
-  /// Body（17pt）
-  static const double bodySize = 17.0;
+  /// Headline Small（24/32）
+  static const double headlineSize = 24.0;
 
-  /// Callout（16pt）
-  static const double calloutSize = 16.0;
+  /// Title Large（22/28）
+  static const double titleSize = 22.0;
 
-  /// Subheadline（15pt）
-  static const double labelSize = 15.0;
+  /// Title Medium（16/24，w500）
+  static const double titleMediumSize = 16.0;
 
-  /// Footnote（13pt）
-  static const double footnoteSize = 13.0;
+  /// Title Small（14/20，w500）
+  static const double titleSmallSize = 14.0;
 
-  /// Caption 1（12pt）
-  static const double captionSize = 12.0;
+  /// Body Large（16/24）
+  static const double bodySize = 16.0;
 
-  /// Caption 2（11pt）
-  static const double caption2Size = 11.0;
+  /// Body Medium（14/20）
+  static const double bodyMediumSize = 14.0;
+
+  /// Body Small（12/16）
+  static const double bodySmallSize = 12.0;
+
+  /// Label Large（14/20，w500）
+  static const double labelLargeSize = 14.0;
+
+  /// Label Medium（12/16，w500）
+  static const double labelSize = 12.0;
+
+  /// Label Small（11/16，w500）
+  static const double captionSize = 11.0;
 
   // ============================================================
-  // 行高常量（iOS 行距比例）
+  // M3 TextTheme 构建（不含颜色——由 ColorScheme 经 ThemeData 统一着色；
+  // 不指定 fontFamily，跟随系统）
   // ============================================================
 
-  /// 标题行高（≈ 1.21）
-  static const double headingLineHeight = 1.21;
-
-  /// 正文行高（≈ 1.47）
-  static const double bodyLineHeight = 1.47;
-
-  /// 辅助文字行高（≈ 1.38）
-  static const double labelLineHeight = 1.38;
-
-  // ============================================================
-  // M3 TextTheme 构建（映射到 iOS 字阶）
-  // ============================================================
-
-  /// 亮色 TextTheme
+  /// 亮色 TextTheme（M3 type scale）
   static const TextTheme lightTextTheme = TextTheme(
     displayLarge: TextStyle(
-      fontSize: displaySize,
-      fontWeight: FontWeight.w700,
-      height: headingLineHeight,
-      letterSpacing: -0.4,
+      fontSize: 57,
+      fontWeight: FontWeight.w400,
+      height: 64 / 57,
+      letterSpacing: -0.25,
     ),
     displayMedium: TextStyle(
-      fontSize: largeTitleSize,
-      fontWeight: FontWeight.w700,
-      height: headingLineHeight,
-      letterSpacing: 0.0,
+      fontSize: 45,
+      fontWeight: FontWeight.w400,
+      height: 52 / 45,
+      letterSpacing: 0,
     ),
     displaySmall: TextStyle(
-      fontSize: title2Size,
-      fontWeight: FontWeight.w600,
-      height: headingLineHeight,
-      letterSpacing: 0.37,
+      fontSize: 36,
+      fontWeight: FontWeight.w400,
+      height: 44 / 36,
+      letterSpacing: 0,
+    ),
+    headlineLarge: TextStyle(
+      fontSize: 32,
+      fontWeight: FontWeight.w400,
+      height: 40 / 32,
+      letterSpacing: 0,
     ),
     headlineMedium: TextStyle(
-      fontSize: titleSize,
-      fontWeight: FontWeight.w600,
-      height: headingLineHeight,
-      letterSpacing: 0.38,
+      fontSize: 28,
+      fontWeight: FontWeight.w400,
+      height: 36 / 28,
+      letterSpacing: 0,
     ),
     headlineSmall: TextStyle(
-      fontSize: headlineSize,
-      fontWeight: FontWeight.w600,
-      height: 1.29,
-      letterSpacing: -0.41,
+      fontSize: 24,
+      fontWeight: FontWeight.w400,
+      height: 32 / 24,
+      letterSpacing: 0,
     ),
     titleLarge: TextStyle(
-      fontSize: titleSize,
-      fontWeight: FontWeight.w600,
-      height: headingLineHeight,
-      letterSpacing: 0.38,
+      fontSize: 22,
+      fontWeight: FontWeight.w400,
+      height: 28 / 22,
+      letterSpacing: 0,
     ),
     titleMedium: TextStyle(
-      fontSize: bodySize,
+      fontSize: 16,
       fontWeight: FontWeight.w500,
-      height: 1.35,
-      letterSpacing: -0.41,
+      height: 24 / 16,
+      letterSpacing: 0.15,
     ),
     titleSmall: TextStyle(
-      fontSize: labelSize,
+      fontSize: 14,
       fontWeight: FontWeight.w500,
-      height: 1.33,
-      letterSpacing: -0.24,
+      height: 20 / 14,
+      letterSpacing: 0.1,
     ),
     bodyLarge: TextStyle(
-      fontSize: bodySize,
+      fontSize: 16,
       fontWeight: FontWeight.w400,
-      height: bodyLineHeight,
-      letterSpacing: -0.41,
+      height: 24 / 16,
+      letterSpacing: 0.5,
     ),
     bodyMedium: TextStyle(
-      fontSize: calloutSize,
+      fontSize: 14,
       fontWeight: FontWeight.w400,
-      height: 1.31,
-      letterSpacing: -0.32,
+      height: 20 / 14,
+      letterSpacing: 0.25,
     ),
     bodySmall: TextStyle(
-      fontSize: labelSize,
+      fontSize: 12,
       fontWeight: FontWeight.w400,
-      height: 1.33,
-      letterSpacing: -0.24,
+      height: 16 / 12,
+      letterSpacing: 0.4,
     ),
     labelLarge: TextStyle(
-      fontSize: bodySize,
+      fontSize: 14,
       fontWeight: FontWeight.w500,
-      height: 1.29,
-      letterSpacing: -0.41,
+      height: 20 / 14,
+      letterSpacing: 0.1,
     ),
     labelMedium: TextStyle(
-      fontSize: footnoteSize,
-      fontWeight: FontWeight.w400,
-      height: 1.38,
-      letterSpacing: -0.08,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      height: 16 / 12,
+      letterSpacing: 0.5,
     ),
     labelSmall: TextStyle(
-      fontSize: caption2Size,
-      fontWeight: FontWeight.w400,
-      height: 1.18,
-      letterSpacing: 0.07,
+      fontSize: 11,
+      fontWeight: FontWeight.w500,
+      height: 16 / 11,
+      letterSpacing: 0.5,
     ),
   );
 

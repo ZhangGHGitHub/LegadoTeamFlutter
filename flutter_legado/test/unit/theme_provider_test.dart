@@ -128,8 +128,7 @@ void main() {
     });
   });
 
-  group('ThemeNotifier 字体缩放', () {
-    test('setFontScale 更新状态并持久化', () async {
+  group('ThemeNotifier 字体缩放', () {    test('setFontScale 更新状态并持久化', () async {
       createContainer();
       await pumpInit();
       await readNotifier().setFontScale(14);
@@ -183,6 +182,56 @@ void main() {
       expect(readState().fontScaleLabel, equals('当前字体大小：1.0'));
       await readNotifier().setFontScale(15);
       expect(readState().fontScaleLabel, equals('当前字体大小：1.5'));
+    });
+  });
+
+  group('ThemeNotifier 内置 MD3 调色板（UI_MD3_PLAN.md Batch 0）', () {
+    test('默认调色板为 wh', () {
+      createContainer();
+      expect(readState().paletteId, equals('wh'));
+    });
+
+    test('build 自动读取已保存的调色板 id', () async {
+      createContainer({'app_palette_id': 'koharu'});
+      await pumpInit();
+      expect(readState().paletteId, equals('koharu'));
+    });
+
+    test('setPaletteId 更新状态并持久化', () async {
+      createContainer();
+      await pumpInit();
+      await readNotifier().setPaletteId('sora');
+      expect(readState().paletteId, equals('sora'));
+      expect(await SettingsService().getPaletteId(), equals('sora'));
+    });
+
+    test('setPaletteId 相同值不触发通知', () async {
+      createContainer();
+      await pumpInit();
+      var notified = 0;
+      container.listen(themeNotifierProvider, (_, _) => notified++);
+      await readNotifier().setPaletteId('wh');
+      expect(notified, equals(0));
+    });
+
+    test('加载完成前设置调色板：以用户操作为准，不被旧持久化值覆盖', () async {
+      // 回归：ThemeNotifier.build() 经微任务异步加载，若加载 await 序列
+      // 完成晚于用户 setPaletteId，旧持久化值（默认 wh）曾把新状态覆盖回。
+      createContainer();
+      container.read(themeNotifierProvider); // 触发 build()，调度加载微任务
+      await readNotifier().setPaletteId('koharu');
+      await Future.delayed(Duration.zero);
+      await Future.delayed(Duration.zero);
+      expect(readState().paletteId, equals('koharu'));
+    });
+
+    test('加载完成前切换主题模式：以用户操作为准（同上竞态回归）', () async {
+      createContainer();
+      container.read(themeNotifierProvider);
+      await readNotifier().setThemeMode(ThemeMode.dark);
+      await Future.delayed(Duration.zero);
+      await Future.delayed(Duration.zero);
+      expect(readState().themeMode, equals(ThemeMode.dark));
     });
   });
 }

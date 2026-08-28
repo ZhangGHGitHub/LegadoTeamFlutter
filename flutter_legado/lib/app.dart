@@ -13,6 +13,7 @@ import 'src/services/auto_task_scheduler.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/theme/app_theme.dart';
+import 'src/theme/md3_colors.dart';
 import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/system_bar_binder.dart';
@@ -69,10 +70,17 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     final themeColors = ref.watch(themeColorsProvider);
     Color? c(int? argb) => argb != null ? Color(argb) : null;
 
+    // [MD3 Batch 0 | 2026-08-28] 按 paletteId 装配内置 MD3 调色板
+    //（默认 WH；自定义 themeConfigList 4 色仍可叠加，自定义已应用色优先
+    // 于内置 palette role——UI_MD3_PLAN.md 第九节并存模型） — Qoder UI
+    final palette = Md3Palettes.byId(themeState.paletteId);
+
     // P1-8：有背景图时 Scaffold 透明，露出全局壁纸层（对齐原版
     // BaseActivity.upBackgroundImage → decorView.background）
     final lightTheme = _withOptionalTransparentScaffold(
-      AppTheme.lightCustom(
+      AppTheme.palette(
+        brightness: Brightness.light,
+        palette: palette,
         primary: c(themeColors.primary),
         accent: c(themeColors.accent),
         background: c(themeColors.background),
@@ -81,7 +89,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       themeColors.bgImage,
     );
     final darkTheme = _withOptionalTransparentScaffold(
-      AppTheme.darkCustom(
+      AppTheme.palette(
+        brightness: Brightness.dark,
+        palette: palette,
         primary: c(themeColors.primaryNight),
         accent: c(themeColors.accentNight),
         background: c(themeColors.backgroundNight),

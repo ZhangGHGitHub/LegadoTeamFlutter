@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
-/// iOS 风格分组列表组件库
+/// MD3 风格分组列表组件库（Batch 0 集中改造，UI_MD3_PLAN.md 第八节）
 ///
-/// 提供 iOS Settings 风格的「分组背景 + 白色圆角卡片 + hairline 分隔」构件，
-/// 供各页面在保持功能一致的前提下统一视觉。
+/// 提供分组设置页的「tonal 表面背景 + 大圆角分组容器 + outlineVariant
+/// 分隔」构件。类名沿用 Ios* 前缀（消费屏零改动继承改造），视觉已切换
+/// 为 MD3 token：分组容器走 cardTheme（tonal surfaceContainer 层次），
+/// 图标容器 primaryContainer，拖拽把手对齐 M3 drag handle 规格。
 ///
 /// 典型用法：
 /// ```dart
@@ -16,8 +18,8 @@ import 'package:flutter/material.dart';
 ///   ],
 /// )
 /// ```
-
-/// 分组列表外层容器：使用 Scaffold 的分组背景色并留出左右安全边距。
+///
+/// 分组列表外层容器：使用 Scaffold 的表面背景色并留出左右安全边距。
 class IosGroupedBody extends StatelessWidget {
   /// 子 Widget（通常为 Column / ListView，内容自带滚动则用 [child]）
   final Widget child;
@@ -43,7 +45,7 @@ class IosGroupedBody extends StatelessWidget {
   }
 }
 
-/// 分组标题：iOS 风格的灰色小标题（位于卡片上方）。
+/// 分组标题：MD3 风格的小标题（labelMedium / onSurfaceVariant，位于容器上方）。
 class IosSectionHeader extends StatelessWidget {
   final String text;
   final EdgeInsets padding;
@@ -58,7 +60,7 @@ class IosSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // 含中文/混排标题保持原样（避免「WebDav 设置」→「WEBDAV 设置」）；
-    // 纯拉丁短标题仍用大写，贴近 iOS Settings section 习惯。
+    // 纯拉丁短标题仍用大写。
     final hasCjk = RegExp(r'[\u4e00-\u9fff]').hasMatch(text);
     final label = hasCjk ? text : text.toUpperCase();
     return Padding(
@@ -100,9 +102,10 @@ class IosSectionFooter extends StatelessWidget {
   }
 }
 
-/// 白色圆角分组卡片：在 children 之间绘制 hairline 分隔线。
+/// tonal 圆角分组容器：在 children 之间绘制 outlineVariant 分隔线。
 ///
-/// [separatorIndent] 为分隔线左侧缩进（对齐 iOS：有 leading 图标时约 56）。
+/// 容器视觉由 cardTheme 驱动（tonal surfaceContainer 层次 + Expressive
+/// 大圆角）；[separatorIndent] 为分隔线左侧缩进（有 leading 图标时约 56）。
 class IosGroup extends StatelessWidget {
   final List<Widget> children;
   final double separatorIndent;
@@ -143,9 +146,10 @@ class IosGroup extends StatelessWidget {
   }
 }
 
-/// iOS 风格列表项：图标 + 标题 +（可选副标题）+ 尾部（值 / 开关 / 箭头）。
+/// MD3 列表项：图标 + 标题 +（可选副标题）+ 尾部（值 / 开关 / 箭头）。
 ///
-/// 对 [ListTile] 的薄封装，统一 leading 图标容器为 iOS 圆角色块。
+/// 对 [ListTile] 的薄封装，统一 leading 图标容器为 MD3 tonal 圆角方块
+/// （primaryContainer 底 + onPrimaryContainer 图标，可经参数覆写）。
 class IosListTile extends StatelessWidget {
   /// 可选；嵌套设置页常见无图标行（对齐系统 Preferences）
   final IconData? icon;
@@ -175,7 +179,10 @@ class IosListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final bg = iconBackground ?? scheme.primary;
+    // MD3 tonal 图标容器：默认 primaryContainer 底 + onPrimaryContainer 图标，
+    // 屏幕显式传入 iconBackground/iconColor 时以传入值为准
+    final bg = iconBackground ?? scheme.primaryContainer;
+    final fg = iconColor ?? scheme.onPrimaryContainer;
 
     Widget? trailing = this.trailing;
     if (trailing == null && (value != null || showDisclosure)) {
@@ -194,7 +201,7 @@ class IosListTile extends StatelessWidget {
               child: Icon(
                 Icons.chevron_right,
                 size: 20,
-                color: scheme.outlineVariant,
+                color: scheme.onSurfaceVariant,
               ),
             ),
         ],
@@ -205,15 +212,14 @@ class IosListTile extends StatelessWidget {
       leading: icon == null
           ? null
           : Container(
-              width: 30,
-              height: 30,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: bg,
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              // [审计修复 §3.3] 兜底前景改用 onPrimary Token（与默认 primary 背景配对） — Qoder
-              child: Icon(icon, size: 19, color: iconColor ?? scheme.onPrimary),
+              child: Icon(icon, size: 19, color: fg),
             ),
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle!) : null,
@@ -223,7 +229,7 @@ class IosListTile extends StatelessWidget {
   }
 }
 
-/// iOS 抓取指示条（Bottom Sheet 顶部短横条）。
+/// MD3 拖拽把手（Bottom Sheet 顶部短横条，对齐 M3 drag handle 规格）。
 class IosGrabber extends StatelessWidget {
   const IosGrabber({super.key});
 
@@ -231,11 +237,11 @@ class IosGrabber extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      width: 36,
-      height: 5,
+      width: 32,
+      height: 4,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.outlineVariant,
-        borderRadius: BorderRadius.circular(2.5),
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        borderRadius: BorderRadius.circular(2),
       ),
     );
   }

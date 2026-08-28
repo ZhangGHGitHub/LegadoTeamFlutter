@@ -260,4 +260,21 @@ void main() {
       expect(result!.millisecondsSinceEpoch, equals(now.millisecondsSinceEpoch));
     });
   });
+
+  group('SettingsService 内置 MD3 调色板（UI_MD3_PLAN.md Batch 0）', () {
+    test('默认调色板为 wh', () async {
+      expect(await service.getPaletteId(), equals('wh'));
+    });
+
+    test('设置并读取调色板 id', () async {
+      await service.setPaletteId('koharu');
+      expect(await service.getPaletteId(), equals('koharu'));
+    });
+
+    test('重复设置取最后值', () async {
+      await service.setPaletteId('sora');
+      await service.setPaletteId('gr');
+      expect(await service.getPaletteId(), equals('gr'));
+    });
+  });
 }

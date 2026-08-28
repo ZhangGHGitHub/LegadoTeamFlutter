@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../theme/md3_colors.dart';
+
 /// 阅读设置持久化服务
 class SettingsService {
   static const _keyFontSize = 'reader_font_size';
@@ -13,6 +15,9 @@ class SettingsService {
   static const _keyBrightness = 'reader_brightness';
   static const _keyThemeMode = 'app_theme_mode';
   static const _keyFontScale = 'app_font_scale';
+  // [MD3 Batch 0 | 2026-08-28] 内置 MD3 调色板 id（UI_MD3_PLAN.md 第九节：
+  // SharedPreferences 本地持久化，非 Rust FFI，免 API_CONTRACT 变更） — Qoder UI
+  static const _keyPaletteId = 'app_palette_id';
   static const _keyLocale = 'app_locale';
   static const _keyShowBookshelfRecentReading = 'bookshelf_show_recent_reading';
   static const _keyShowBookshelfStats = 'bookshelf_show_stats';
@@ -213,6 +218,28 @@ class SettingsService {
       await prefs.setInt(_keyFontScale, value);
     } catch (e) {
       debugPrint('SettingsService.setFontScale 异常: $e');
+    }
+  }
+
+  // ===== 内置 MD3 调色板 =====
+
+  /// 内置 MD3 调色板 id（对应 [Md3Palettes] 的 id；未知值由 byId 回退 WH）
+  Future<String> getPaletteId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyPaletteId) ?? Md3Palettes.defaultId;
+    } catch (e) {
+      debugPrint('SettingsService.getPaletteId 异常: $e');
+      return Md3Palettes.defaultId;
+    }
+  }
+
+  Future<void> setPaletteId(String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyPaletteId, value);
+    } catch (e) {
+      debugPrint('SettingsService.setPaletteId 异常: $e');
     }
   }
 

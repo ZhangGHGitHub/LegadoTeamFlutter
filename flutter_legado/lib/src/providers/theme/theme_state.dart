@@ -8,6 +8,8 @@ part 'theme_state.freezed.dart';
 /// 对齐 Android 原版 ThemeConfigFragment：
 /// - [themeMode]：主题模式（亮/暗/跟随系统），驱动 MaterialApp.themeMode 全局实时切换
 /// - [fontScaleRaw]：字体缩放原始值（0 = 跟随系统；8~16 → 0.8x~1.6x，对齐 PreferKey.fontScale）
+/// - [paletteId]：内置 MD3 调色板 id（UI_MD3_PLAN.md Batch 0，默认 WH；
+///   与用户自定义 themeConfigList 并存，自定义已应用色优先 — 第九节）
 @freezed
 class ThemeState with _$ThemeState {
   const factory ThemeState({
@@ -16,6 +18,9 @@ class ThemeState with _$ThemeState {
 
     /// 字体缩放原始值（0 = 跟随系统；8~16 → 0.8x~1.6x）
     @Default(0) int fontScaleRaw,
+
+    /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退 WH）
+    @Default('wh') String paletteId,
   }) = _ThemeState;
 }
 

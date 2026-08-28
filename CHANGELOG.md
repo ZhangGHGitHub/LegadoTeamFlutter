@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.110] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 0（docs/UI_MD3_PLAN.md）：主题地基切换 Material Design 3 Expressive。新增 `lib/src/theme/md3_colors.dart`（12 套内置调色板 × 亮/暗 47 role，逐字取自 legado-with-MD3@6dc29722，`tool/gen_md3_colors.py` 生成）；`app_theme`/`app_typography` 重写为 M3 type scale + Expressive 大圆角组件主题（卡片 20 / 弹窗 28 / 按钮 StadiumBorder）；`ios_widgets` 集中改造为 MD3 token（消费屏零改动继承）；`paletteId`（SharedPreferences `app_palette_id`，默认 wh，自定义 themeConfigList 4 色并存且优先）；ThemeNotifier 启动加载竞态守卫（加载完成前的用户操作不被旧持久化值覆盖）；`docs/design_system.md` 重写为 MD3 token 单一事实源。版本 2.0.110+114
+- [Test] 新增 `test/unit/md3_palette_test.dart`：12 套调色板锚点守护 + 11 套不透明 × 亮/暗 WCAG AA 4.5 对比度全矩阵（elink onSecondaryContainer 3.95 按 AA-large 3.0 登记例外）；theme_provider/settings_service 测试扩展 paletteId 读写与加载竞态回归；同步 search_notifier_test 日志级别断言（a08394d5d 遗留未更新）。门禁：flutter analyze 0 issues、flutter test 1284 全绿
+- Contributor: Qoder UI
+
 ## [2.0.108] - 2026-08-27
 
 ### Fixed
