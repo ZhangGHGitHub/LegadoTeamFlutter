@@ -23,40 +23,51 @@ class ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: colorScheme.error),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
+    // [MD3 验收矩阵修复] 内容超高（1.6x 字体缩放 + 长错误信息）时滚动，
+    // 常规高度下保持居中——md3_acceptance_matrix_test 抓获 321px 溢出
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline, size: 64, color: colorScheme.error),
+                    const SizedBox(height: 16),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    if (onRetry != null) ...[
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试'),
+                      ),
+                    ],
+                    if (onSecondaryAction != null) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: onSecondaryAction,
+                        icon: Icon(secondaryActionIcon ?? Icons.swap_horiz),
+                        label: Text(secondaryActionLabel ?? '换源'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-            if (onRetry != null) ...[
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
-              ),
-            ],
-            if (onSecondaryAction != null) ...[
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: onSecondaryAction,
-                icon: Icon(secondaryActionIcon ?? Icons.swap_horiz),
-                label: Text(secondaryActionLabel ?? '换源'),
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

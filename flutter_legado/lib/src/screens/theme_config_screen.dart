@@ -1391,21 +1391,26 @@ class _PaletteDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final color in [primary, secondary, tertiary]) ...[
-          Container(
-            width: 10,
-            height: 10,
-            margin: const EdgeInsets.symmetric(horizontal: 1.5),
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
+    // FittedBox 兜底：极窄单元格（小屏/4 列网格半卡 ~37dp）下色点行
+    // 39px 会溢出 2.8px（md3_acceptance_matrix_test 抓获）
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final color in [primary, secondary, tertiary]) ...[
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

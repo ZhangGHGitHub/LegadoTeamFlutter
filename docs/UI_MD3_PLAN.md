@@ -6,6 +6,36 @@
 
 ---
 
+## 〇、实施状态（2026-08-28 更新）
+
+**B0–B6 七批次全部落地**，门禁均为 `flutter analyze 0 issues + flutter test 全绿`；运行时验证见下。
+
+| 批次 | 内容 | 提交 |
+|---|---|---|
+| 治理步骤（第十四节） | AGENTS/design_system/Active Plan 三处规范切换 MD3 | `63c197d59` |
+| Batch 0 | md3_colors 12 套调色板（P1-5 生成器+校验）/ M3 主题装配 / ios_widgets 集中改造 / paletteId / design_system 重写 | `281951dd0` |
+| Batch 1 | Material Symbols 引入 / home 底栏 / theme_config 内置主题双区 / Hero 基础设施 | `024208d49`（含 B2） |
+| Batch 2 | 书架/书籍域 token 收尾（TabBar 前景 / toc 滑删 onError） | `024208d49` |
+| Batch 3 | 搜索/发现/浏览域（M3 segmented 视觉 / association onPrimary） | `8d4554f60` |
+| Batch 4 | 源编辑/调试域（js 编辑区 token 化 + 功能色例外登记） | `a58415b94` |
+| Batch 5 | RSS/音视频/缓存域（shadow token / FAB onPrimaryContainer） | `0356e8efd` |
+| Batch 6 | 设置长尾（我的页去 iOS 彩色图标底 / app_log TabBar token 化）+ 全域复核 | `c8cc3d824` |
+| 收尾 | 验收矩阵自动化 + 2 个溢出修复（palette 卡片/error_view）+ 文档同步 + .tmp_net 清理 | 见 CHANGELOG [2.0.117] |
+
+**第十三节验收矩阵落地口径**：
+- token 对比度：`test/unit/md3_palette_test.dart`（22 不透明组合 ≥ AA 4.5 + elink 3.95/AA-large 例外 + transparent 豁免）✓
+- 关键页 golden：**以渲染矩阵替代**（`test/widget/md3_acceptance_matrix_test.dart`：theme_config/home/settings/search × WH/koharu/sora × 亮暗）。理由：golden 二进制基线在 Windows 开发 / Linux CI 双平台字体渲染下脆弱；截图验收改由模拟器 `-CheckUI` 流程承担
+- 断点：矩阵测试用主流机型逻辑视口（360×753dp）；响应式双栏由既有 `responsive_test`/`explore_screen_dual_pane_test`/`bookshelf_grid_responsive_test` 守护 ✓
+- 字体缩放：0.8x/1.6x 边界渲染无溢出 ✓（并修复 error_view 超高溢出）
+- 语义/触控目标：底栏 ≥48dp + 调色板中文标签语义化 ✓
+
+**遗留项（如实登记）**：
+1. **主 Tab 根页可折叠 LargeTitle** 未实施——需重构书架（分组 TabBar 嵌入顶栏）/发现/订阅/我的四页滚动结构，与多选批量模式、响应式双栏存在交互耦合，建议独立批次实施并走两级模拟器验收；
+2. Material You 动态取色：按计划即为后续批次（需 Android seed-color 平台通道）；
+3. Batch 1–6 的模拟器冒烟未单独执行——emulator-5556/5558 被搜索 parity 后端轨（SEARCH_PARITY_HANDOVER_20260828.md）占用为 P0-3 e2e 实验环境，为避免互相干扰而并入用户验收流程（Batch 0 冒烟已 PASSED 7/7）。
+
+---
+
 ## 一、背景与定位
 
 Legado 为 Rust + Flutter 跨平台阅读器，与 Android 原版双轨对齐。当前 `flutter_legado/` 视觉语言为 **iOS HIG**（2026-08-05 回退自 M3）。本计划切换为 **Material Design 3 Expressive**，对齐参考仓库视觉签名。

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.117] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移收尾（docs/UI_MD3_PLAN.md）：验收矩阵自动化 + 真实缺陷修复。新增 test/widget/md3_acceptance_matrix_test.dart（15 项：theme_config/home/settings/search × WH/koharu/sora × 亮暗渲染矩阵、0.8x/1.6x 字体缩放边界、底栏触控目标 ≥48dp、调色板语义标签）；golden 基线以渲染矩阵替代（跨平台字体差异使 golden 脆弱，截图验收并入模拟器 -CheckUI 流程）；修复矩阵抓获的 2 个真实溢出：theme_config 调色板卡片色点行窄格溢出 2.8px（FittedBox 兜底）、error_view 1.6x 缩放长信息溢出 321px（改滚动布局）；UI_MD3_PLAN.md 增补「实施状态」（B0–B6 全落地 + 遗留项登记：LargeTitle/Material You/冒烟并入验收）；清理 .tmp_net 研究产物（色数据已固化 md3_colors.dart + 校验测试）。版本 2.0.117+121
+- [Test] 全量门禁：flutter analyze 0 issues、flutter test 1300 全绿（+15 验收矩阵）
+- Contributor: Qoder UI
+
 ## [2.0.116] - 2026-08-28
 
 ### Changed
