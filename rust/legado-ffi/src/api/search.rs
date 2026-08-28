@@ -1005,11 +1005,17 @@ fn parse_search_response(
 
     // 创建顶层 AnalyzeRule（quickjs 启用时注入 JS 执行器，使 @js: 搜索规则生效；
     // 2026-08-10 起同时注入书源 jsLib，模板引用的 Reload/getHosts 等库函数可用）
-    let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+    // [P0-2 S1 | BookList.kt AnalyzeRule(ruleData, bookSource)] 追加书源上下文 setup
+    // （source/cookie 绑定 + BookSource 方法），使搜索规则中 `{{source.getKey()}}`、
+    // jsLib 函数 `let { source, cookie } = this` 等依赖生效——对齐发现页已用的
+    // construct_analyzer_with_source_context（此前搜索主路径仅注入 jsLib，无 setup）。
+    let setup_script = crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+    let analyzer = crate::js_executor::construct_analyzer_with_source_context(
         body.to_string(),
         base_url.to_string(),
         &source.book_source_url,
         source.js_lib.as_deref(),
+        setup_script.clone(),
     );
 
     // 获取书籍列表元素
@@ -1035,11 +1041,13 @@ fn parse_search_response(
         // 列表元素按结构化对象写入（JSON 元素 → result 注入为对象，
         // `result.source` 等属性访问；HTML 元素自动回退字符串）
         // — DeepSeek Harness + Bridge
-        let mut item_analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+        // [P0-2 S1] 与顶层一致：注入书源上下文 setup（source/cookie），使元素级 JS 规则可用
+        let mut item_analyzer = crate::js_executor::construct_analyzer_with_source_context(
             String::new(),
             base_url.to_string(),
             &source.book_source_url,
             source.js_lib.as_deref(),
+            setup_script.clone(),
         );
         item_analyzer.set_element_content(element_html.clone());
 
@@ -2110,7 +2118,44 @@ mod tests {
         }
     }
 
-    // ─── 测试 fix32: 无匹配/字段完整/多媒体识别 ───────────────────────
+    /// P0-2 S1：搜索主路径须建立 source/cookie JS 上下文（对齐原版 AnalyzeRule(ruleData, bookSource)）。
+    /// name 规则 `@js:String(source.getKey())` 引用书源上下文——此前搜索仅注入 jsLib（无 setup），
+    /// `source is not defined` ReferenceError → 字段降级为空；现经 construct_analyzer_with_source_context
+    /// 注入 setup，source.getKey() = bookSourceUrl（对齐 BaseSource.getKey()）。
+    #[test]
+    fn test_parse_search_source_context_available() {
+        let html = r#"<html><body>
+            <div class="book-item"><span class="author">作者</span></div>
+        </body></html>"#;
+
+        let mut source = make_source_with_rules(
+            ".book-item",
+            "@js:String(source.getKey())",
+            ".author",
+            "",
+            "",
+            "",
+            "",
+        );
+        // bookSourceUrl 即 source.getKey() 返回值（对齐原版 BaseSource.getKey()）
+        source.book_source_url = "https://src.example.com".to_string();
+
+        let results = parse_search_response(html, "https://www.example.com", &source).unwrap();
+
+        #[cfg(feature = "quickjs")]
+        {
+            assert_eq!(results.len(), 1, "quickjs：source 上下文应可用，@js: 规则执行");
+            assert_eq!(results[0].book_name, "https://src.example.com");
+        }
+
+        #[cfg(not(feature = "quickjs"))]
+        {
+            // 未启用 quickjs：@js: 规则降级为空 → 书名为空该条目被跳过
+            assert!(results.is_empty());
+        }
+    }
+
+    // ─── 测试 fix32: 无匹配/字段完整/多媒体识别 ──────────────
 
     /// 无匹配：bookList 匹配为空 → 记 0 条 success（非 error、不挂起，对齐原版空列表语义）
     #[test]
