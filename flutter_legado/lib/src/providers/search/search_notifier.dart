@@ -409,16 +409,21 @@ class SearchNotifier extends Notifier<SearchState> {
   }
 
   /// 取消进行中的搜索（对齐原版 searchModel.cancelSearch）
+  ///
+  /// [P0-3 强化] 先调 Rust `cancelSearch` 置会话取消标志（同步生效，drive 循环
+  /// ≤50ms 内 abort 在飞任务），再拆除流订阅——此前先 `await _searchSub?.cancel()`
+  /// （frb 流拆除耗时可达数秒），取消标志滞后落地，期间 drive 循环仍在派发
+  /// 排队源（实机 e2e 观察到停止后 6.5s 仍有补位请求）。
   Future<void> _cancelActiveSearch() async {
     _searchSeq++;
-    await _searchSub?.cancel();
-    _searchSub = null;
     try {
       await ref.read(bookApiProvider).cancelSearch();
     } catch (e) {
       // 取消失败不阻断新搜索
       debugPrint('取消搜索失败: $e');
     }
+    await _searchSub?.cancel();
+    _searchSub = null;
   }
 
   /// 停止搜索（对齐原版 SearchViewModel.stop / fb_start_stop）
