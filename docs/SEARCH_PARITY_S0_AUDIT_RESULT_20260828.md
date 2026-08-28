@@ -5,6 +5,20 @@
 **审计结论**：P0-1.4 双包基线未完成；P0-2 S0 通用搜索路径不能标记为通过；不允许据此关闭 P0-2 或解锁后续阶段。
 **代码变更**：本审计未修改任何代码。
 
+## 重构对齐原则
+
+本项目是 Android 原版的 Rust + Flutter 重构。本文件的“修改方向”只允许把原版已存在的搜索行为迁移到当前生产调用链；不允许借搜索修复新增产品功能、改变页面结构或自创排序、推荐、统计、筛选和提示语义。
+
+| 重构对象 | Android 原版基准 | 当前重构落点 | 允许的修改 | 明确禁止 |
+|---|---|---|---|---|
+| 单源请求及登录检查 | `WebBook.kt:50-99` | `search.rs:936-1069` | 复用相同的 URL 构建、请求、成功/错误响应 `loginCheckJs` 与最终 URL 语义 | 新建另一套登录流程、UI 登录提示或更改原版错误吞吐规则 |
+| 详情页/列表判定 | `BookList.kt:62-109` | `search.rs:1086-1165` | 移植 `bookUrlPattern` 命中详情、空列表详情回退 | 自定义启发式详情识别、以结果数猜测详情页 |
+| 列表解析与单源去重 | `BookList.kt:84-147` | `search.rs:1111-1165` | 对齐 `+`/`-` 前缀、字段规则、首次保留去重和逆序 | 修改书源规则含义、引入每源截断或相关性排序 |
+| 搜索调度与进度 | `SearchModel.kt:79-140` | `search.rs:586-935`、Flutter `search_notifier.dart:169-320` | 对齐每源 30 秒、取消、逐源完成和静默单源失败 | 全局短超时、缩减源数、用 UI 停止渲染替代取消请求 |
+| 跨源聚合与展示 | `SearchModel.kt:144` 起的 `mergeItems` | `search_notifier.dart:297-312` | 保持现有 Flutter 分桶/聚合向原版收敛 | 在 Rust 引入新的推荐/评分/相关性策略，或增加原版没有的 UI 功能 |
+
+若原版没有可定位的源码行为、原始响应夹具或用户明确的双轨确认，该项不得写入 P0-2 的实现范围。
+
 ## 一、结论摘要
 
 本轮材料最多证明：重构版在 `emulator-5556` 上曾完成一次真实关键词搜索，且现场观察到“斗破苍穹”、作者、部分简介和章节信息。它不能证明以下任一项：
@@ -138,13 +152,13 @@ SearchNotifier
 
 ### P0-2-S0-E：主搜索路径的具体改造方向
 
-本节是后续实现建议，不代表本轮已实施。改动前必须冻结夹具预期和 FFI 影响范围；任何一项失败都不得切换 Flutter 主入口。
+本节是后续实现建议，不代表本轮已实施。每一项均以“原版已有语义 + 当前重构缺口”为前提；改动前必须冻结夹具预期和 FFI 影响范围。任何一项失败都不得切换 Flutter 主入口。
 
 #### 1. 收敛为唯一的单源规则执行器
 
-目标是让 `run_multi_stream`、`search_books`、`multi_source_search` 和换源场景共享同一个单源语义，而不是复制 `WebBook` 的业务分支。
+原版基准是 `SearchModel.startSearch` 对每个书源调用唯一的 `WebBook.searchBookAwait`，再由 `BookList.analyzeBookList` 完成单源语义。本轮目标仅是让当前 `run_multi_stream`、`search_books`、`multi_source_search` 和换源场景复用这套既有语义，不是创造新的搜索框架，也不是复制整个 Android `WebBook` 对象。
 
-建议在 `rust/legado-ffi/src/api/search.rs` 所在 crate 内抽取私有执行器，例如：
+建议在 `rust/legado-ffi/src/api/search.rs` 所在 crate 内，将当前 `search_single_source` 补齐为唯一的私有单源执行器；可复用 `web_book.rs` 已有的纯解析辅助逻辑，但不得改变外部搜索 API。例如：
 
 ```text
 execute_search_source(client, source, keyword, page, session)
@@ -161,13 +175,13 @@ execute_search_source(client, source, keyword, page, session)
 具体约束：
 
 1. `search_single_source` 只保留限流、会话取消、单源超时和对该执行器的调用；不得继续直接调用简化的 `parse_search_response` 形成第二套规则语义。
-2. `web_book.rs` 中已验证的纯规则逻辑应下沉为无状态私有帮助函数，或由新执行器复用；不要把 `RealBookSourceFetcher`、缓存和详情页 I/O 整体耦合进批量搜索。
+2. `web_book.rs` 中已存在且与原版一一对应的纯规则逻辑可下沉为无状态私有帮助函数，或由主执行器复用；不要把 `RealBookSourceFetcher`、缓存和详情页 I/O 整体耦合进批量搜索。
 3. 解析结果必须保留真实 `source_url`、`book_url`、`origin_order`、最终 `base_url` 和错误分类；禁止 UI 用默认值推测来源或详情 URL。
 4. `run_multi_stream` 仍是 Flutter 的唯一生产入口。`search_books`、`multi_source_search` 若保留，只允许调整批次收集方式，不能覆盖单源结果、超时、去重或排序语义。
 
 #### 2. 严格实现原版 S0 行为顺序
 
-针对每个单源搜索请求，建议固定以下顺序并通过夹具锁定：
+以下顺序直接来自 `WebBook.searchBookAwait` 的请求/登录/重定向顺序与 `BookList.analyzeBookList` 的详情/列表/回退顺序，建议逐步移植并通过夹具锁定：
 
 1. 以书源上下文构建 `searchUrl`，保留请求方法、请求体、headers、charset 和 cookie。
 2. 发起请求并保存请求 URL、HTTP 状态、响应字节和最终 URL；非 2xx 不能被无条件折叠为“空结果”。
@@ -180,7 +194,7 @@ execute_search_source(client, source, keyword, page, session)
 
 #### 3. 错误分类、取消和超时建议
 
-现有“返回空 `Vec`”的路径应逐步收敛为可观察结果，建议内部使用：
+现有“返回空 `Vec`”的路径应逐步收敛为可观察结果。为避免把诊断能力误做成产品功能，建议仅在 Rust crate 内以内部结果记录状态和耗时；不要求新增页面、用户提示、统计功能或新的公开 FFI 模型。例如：
 
 ```text
 SourceSearchOutcome
@@ -192,20 +206,20 @@ SourceSearchOutcome
   timings: { url_build, http, login_check, parse, total }
 ```
 
-该结构可以保持 crate 内私有；只有必要的进度、结果和诊断摘要才经 FFI 输出。这样既不改变 Flutter 的展示职责，也能避免把 `login_required`、JS 错误和真实空结果混为一类。
+该结构可以保持 crate 内私有；默认沿用原版“单源失败静默、日志留痕”的展示语义。只有现有批次字段能够承载且确有原版等价物时，才经 FFI 输出诊断摘要。这样既不改变 Flutter 的展示职责，也能避免把 `login_required`、JS 错误和真实空结果混为一类。
 
 取消建议与 S0 改造分开提交：会话创建时生成独立取消令牌；调度器只维护受控数量在飞任务；获取并发许可后再次检查取消；取消时终止排队任务，并阻止在飞任务向 Stream、数据库和 UI 继续写入。单源 30 秒超时与限流等待是否计入超时必须显式配置并以原版实测为准，不能依赖全局 10 秒总超时。
 
 #### 4. FFI、Flutter 和数据层边界
 
-1. P0-2 S0 原则上不新增 Flutter 业务逻辑。Flutter 只接收批次、单源状态和标准化结果，继续负责加载态、停止操作、同书聚合与渲染。
+1. P0-2 S0 不新增 Flutter 业务逻辑。Flutter 继续只接收既有搜索流批次，负责原版已有的加载态、停止操作、同书聚合与渲染；不得为诊断字段添加新的用户入口、弹窗或统计页。
 2. 若为错误分类、最终 URL 或诊断字段扩展 FFI DTO，必须先更新 `docs/API_CONTRACT.md`，列明字段是否对 UI 可见、兼容默认值和旧 APK/旧数据库迁移策略，再生成绑定。
 3. `searchBooks` 持久化前应保存真实 `origin`、`originOrder`、`bookUrl`；不要以书名精确匹配的单表计数代替最终聚合统计。
 4. 封面加载必须从搜索关键路径分离。是否下载封面、何时解码、是否命中缓存应有独立计时，不能作为“原版搜索慢”的推测性归因。
 
 #### 5. 夹具、单元测试和双包验收的落地顺序
 
-建议将样本固定在 `rust/legado-ffi/tests/fixtures/search_s0/`，每个场景使用同名目录：
+建议将仅用于还原原版行为的脱敏样本固定在 `rust/legado-ffi/tests/fixtures/search_s0/`，每个场景使用同名目录：
 
 ```text
 <scenario>/
@@ -217,7 +231,7 @@ SourceSearchOutcome
   manifest.json           # SHA-256、编码、来源时间、脱敏说明
 ```
 
-每个夹具至少有三类断言：
+每个夹具至少有三类断言。断言以原版已抓取的标准化结果为唯一基准，不以重构版当前输出反推期望：
 
 1. Rust 单元测试：主搜索单源执行器输出字段、条数、`status`、最终 URL 和保序去重与 `expected_original.json` 相同。
 2. Rust 集成测试：`run_multi_stream`、`search_books`、`multi_source_search` 在相同输入下得到同一最终集合与来源数；流式只允许到达时间不同。
@@ -227,7 +241,7 @@ SourceSearchOutcome
 
 #### 6. 提交拆分、回退和验收门
 
-建议按以下顺序分提交，避免网络行为、调度和 UI 同时变化导致不可定位：
+建议按以下顺序分提交，避免网络行为、调度和 UI 同时变化导致不可定位。每个提交只补一个原版已有语义：
 
 1. `test(rust)`：加入脱敏响应夹具和原版预期，先让当前主路径暴露差异；
 2. `refactor(rust)`：抽取唯一单源执行器，不改变 FFI JSON；
@@ -235,7 +249,7 @@ SourceSearchOutcome
 4. `test(rust)`：三入口一致性、取消和错误分类测试；
 5. 必要时单独提交 `docs` 与 FFI 契约、生成绑定、Flutter 展示调整。
 
-每个步骤的最低门槛是：相关夹具测试为绿、既有 Rust QuickJS/非 QuickJS 测试无回归、Flutter `analyze`/`test` 通过、5556 冒烟通过。涉及用户验收前，再执行 5558 冒烟和双包终态对比。任何字段、条数、错误分类或排序发生未解释差异时，立即保留旧主入口或通过 feature gate 回退，不将差异归因于网络后继续关闭事项。
+每个步骤的最低门槛是：相关夹具测试为绿、既有 Rust QuickJS/非 QuickJS 测试无回归、Flutter `analyze`/`test` 通过、5556 冒烟通过。涉及用户验收前，再执行 5558 冒烟和双包终态对比。任何字段、条数、错误分类或排序发生未解释差异时，立即保留旧主入口或通过 feature gate 回退，不将差异归因于网络后继续关闭事项。没有原版源码与夹具依据的“优化”必须移出本专项，另行审查。
 
 ## 五、关闭条件
 
