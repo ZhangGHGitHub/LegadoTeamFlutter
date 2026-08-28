@@ -175,6 +175,9 @@ if ($rustupExit -ne 0) {
 }
 
 $BuiltSo = @{}
+# S7/P0-1.3：记录每个 ABI 是否真正以 quickjs feature 构建（回退到无 quickjs 时为 $false），
+# 写入 .meta 供「构建命令 / Cargo feature / 产物符号」三方一致性校验，杜绝静默降级。
+$QuickJsUsed = @{}
 
 foreach ($key in $SelectedKeys) {
     $info   = $AllTargets[$key]
@@ -199,6 +202,8 @@ foreach ($key in $SelectedKeys) {
         cargo build --target $triple -p legado-ffi --features quickjs 2>&1
     }
     $buildExit = $LASTEXITCODE
+    # S7：本 ABI 是否成功以 quickjs feature 构建（下方回退到无 quickjs 时保持 $false）
+    $QuickJsUsed[$key] = ($buildExit -eq 0)
     $ErrorActionPreference = $prevEAP
 
     if ($buildExit -ne 0 -and $null -ne $ContentHash) {
@@ -255,6 +260,7 @@ foreach ($key in $SelectedKeys) {
         $meta = [ordered]@{
             contentHash = $ContentHash
             mode        = $Mode
+            quickjs     = [bool]$QuickJsUsed[$key]
             builtAt     = (Get-Date).ToString("o")
         }
         ($meta | ConvertTo-Json -Compress) | Set-Content "$dstFile.meta" -Encoding UTF8 -NoNewline

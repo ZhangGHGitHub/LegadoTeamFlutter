@@ -162,4 +162,45 @@ Flutter 展示层
 - 未检查最终 APK 的 Cargo feature，故 QuickJS 为高风险待证实项，不是已确认线上故障。
 - 当前工作树含未提交搜索改动；后续实施前必须重新记录 HEAD、diff 和书源数据版本。
 
-编写者：Codex ｜ 2026-08-28
+## 七、P0-1 实施记录（2026-08-28，进行中）
+
+### 7.1 基线记录（对应 §六.4：实施前必须重新记录 HEAD / diff / 书源数据版本）
+
+| 项 | 值 |
+|---|---|
+| HEAD | `3db639ddc`（full `3db639ddc03f1c470e2c802b0c67ddbc7a89ce62`） |
+| 工作树未提交改动 | 7 files changed, 149 insertions(+), 52 deletions(-)：G4 书源 `concurrentRate` 固定窗口节流重构（新增 `rust/legado-ffi/src/api/source_rate_limit.rs`；`search_single_source` / `web_book.rs` / `source_switch.rs` 接入），换源并发 `buffer_unordered(32)` + 单源 60s 超时 + DB 键 `format_book_name/author` |
+| 书源数据版本 | 仓库根目录**无规范脱敏快照 .db**（仅存在调试用 `tmp_*.db` / `.tmp_*_live.db`）；探针与 E2E 依赖从 emulator-5558 `run-as io.legado.app.debug` 拉取的 `legado.db`（见审计文档 §8）。**结论：P0-1 步骤 1–2 的固化夹具尚未落地，需在下一步建立。** |
+
+### 7.2 P0-1 步骤 3：QuickJS feature「构建命令 / Cargo feature / 产物符号」三方一致性校验
+
+| 校验腿 | 证据 | 结论 |
+|---|---|---|
+| 构建命令 | `rust/scripts/build-android.ps1` release/debug 均执行 `cargo build ... -p legado-ffi --features quickjs`；**但含静默回退**——quickjs 构建失败时重试「无 quickjs」并仍产出 .so（原脚本无任何标记） | 命令存在，但有降级路径 |
+| Cargo feature | `rust/legado-js/Cargo.toml`：`quickjs` 为可选 feature（`default = []`），opt-in；rquickjs 0.9 编译 QuickJS C 代码 | 已定义、非默认 |
+| 产物符号（当前 `flutter_legado/android/app/src/main/jniLibs/`） | 见下表 | **不一致** |
+
+当前三个 ABI 的 `.so` 实测：
+
+| ABI | contentHash | builtAt | rquickjs / js_execute 符号 | 体积 | quickjs？ |
+|---|---|---|---|---|---|
+| arm64-v8a | 1432806422 | 2026-08-27 | ✓ 存在 | 38.1 MB | 是 |
+| x86_64 | 1432806422 | 2026-08-27 | ✓ 存在 | 38.0 MB | 是 |
+| **armeabi-v7a** | **1734781793** | **2026-08-15** | **✗ 缺失** | **23.9 MB** | **否（陈旧）** |
+
+**发现（S7 已证实，非推测）**：`armeabi-v7a/liblegado_ffi.so` 为**陈旧产物**——FRB `contentHash` 与其余两 ABI 不同、构建时间早 12 天、体积少约 14 MB，且二进制内无 `rquickjs` / `js_execute` 符号。即 v7 设备实际运行的是旧代码 + **无 JS 引擎**，`@js` 规则会静默返回空结果（正是 S7 描述的风险）。三方一致性校验对 armeabi-v7a **不通过**。
+
+**整改动作（本轮）**：
+1. `rust/scripts/build-android.ps1` 增加 `.meta.quickjs` 字段并逐 ABI 记录 `$QuickJsUsed`，使「产物是否含 quickjs」可机读、杜绝静默降级复发（已改，语法校验通过）。
+2. 以加固后的脚本重建 armeabi-v7a（`--features quickjs`），使三 ABI 与当前代码一致 → P0-1.3 三方一致性达成。NDK `D:\Android\ndk\28.2.13676358` 已就绪，armv7 clang/llvm-ar 工具链确认存在。
+
+**重建结果与根因（已证实）**：以加固脚本重建 armeabi-v7a 时，`--features quickjs` 构建在 **`rar` crate（v0.4.0）编译阶段失败**——32 位 armv7 上 `u64: ToUsize` 未实现（`nom::take::<u64>` 要求 size 类型可转 usize，32 位平台 u64 不满足）。脚本静默回退到「无 quickjs」并产出 .so。复验：新 armv7 `.meta` = `contentHash=1432806422`（已与其余两 ABI **一致**）、`quickjs=false`、无 `rquickjs`/`js_execute` 符号。
+
+即根因不是「忘了重建」，而是：**当前 quickjs feature 集合含 `rar` crate，而 `rar` 无法在 32 位 armv7 编译 → armeabi-v7a 根本装不进 JS 引擎**；旧脚本的静默回退把这一平台限制掩盖成了「普通书源能搜到」。
+
+- 佐证：Android 侧 RAR 本就桩化（`archive_utils.rs`：`import_rar_file`/`list_rar_book_files` 在 Android 直接返回 `Err("Android 平台暂不支持 RAR")`），故 `rar` crate 对 Android **无实际功能贡献**，却拖垮 32 位 JS 构建。
+- **决策点（需确认，超出纯搜索范围，属书源/书籍格式依赖治理）**：① 将 `rar`（及同类非 JS 归档依赖）从 quickjs feature 拆出为独立可选 feature → armeabi-v7a 可装 JS 引擎；或 ② 接受并显式声明 armeabi-v7a 为「无 JS」遗留 ABI，甚至不再随 APK 分发 armeabi-v7a（现代设备多为 64 位）。任一方向都需双轨确认后改 `legado-js/Cargo.toml` feature 结构。
+
+**状态**：P0-1.3 **三方一致性对 arm64/x86_64 通过、对 armeabi-v7a 不通过（根因已定位，属平台/依赖限制）**；降级已由 `.meta.quickjs` 机读化（不再静默）。P0-1 步骤 1–2（固化离线夹具）与步骤 4（双包基线）仍待实施，故 **P0-2 尚未解锁**。
+
+*实施记录编写者：Reasonix ｜ 2026-08-28*
