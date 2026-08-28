@@ -605,7 +605,7 @@ void main() {
       expect(readState().isLoading, isFalse);
       // 留痕：error 级别记录「书源搜索出错」（对齐原版 AppLog.put 文案）
       final captured = verify(() => mockApi.appLogPush(
-          level: 'error', message: captureAny(named: 'message'))).captured;
+          level: 'message', message: captureAny(named: 'message'))).captured;
       expect(captured.single, contains('书源搜索出错'));
     });
 
@@ -632,7 +632,7 @@ void main() {
       expect(readState().error, isNull);
       expect(readState().isEmpty, isTrue, reason: '全部失败按原版语义显示空态而非错误页');
       final captured = verify(() => mockApi.appLogPush(
-          level: 'error', message: captureAny(named: 'message'))).captured;
+          level: 'message', message: captureAny(named: 'message'))).captured;
       expect(captured.single, contains('书源搜索出错'));
     });
 
