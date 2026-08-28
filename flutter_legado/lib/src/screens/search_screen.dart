@@ -1372,12 +1372,15 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
     Navigator.of(context).pop();
   }
 
-  /// iOS 风格分段按钮（中性灰容器 + 选中白底）
+  /// 分段按钮（MD3 SegmentedButton 视觉：选中 secondaryContainer 底 +
+  /// onSecondaryContainer 前景，未选中透明底）
   Widget _segmentButton(String label, bool selected, VoidCallback onTap) {
     final scheme = Theme.of(context).colorScheme;
     return Expanded(
       child: Material(
-        color: selected ? Colors.white : Colors.transparent,
+        color: selected
+            ? scheme.secondaryContainer
+            : Colors.transparent,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(7),
@@ -1390,8 +1393,8 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
                 fontSize: 14,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                 color: selected
-                    ? scheme.onSurface
-                    : scheme.onSurface.withValues(alpha: 0.7),
+                    ? scheme.onSecondaryContainer
+                    : scheme.onSurfaceVariant,
               ),
             ),
           ),

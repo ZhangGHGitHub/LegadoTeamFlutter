@@ -147,7 +147,11 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                   ),
                   child: Center(
                     child: index < currentIndex
-                        ? const Icon(Icons.check, size: 16, color: Colors.white)
+                        ? Icon(
+                            Icons.check,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          )
                         : Text(
                             '${index + 1}',
                             style: TextStyle(
@@ -156,7 +160,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                                   ? FontWeight.bold
                                   : FontWeight.normal,
                               color: isActive
-                                  ? Colors.white
+                                  ? Theme.of(context).colorScheme.onPrimary
                                   : Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.113] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 3（docs/UI_MD3_PLAN.md）：搜索/发现/浏览域收尾。域审计确认 8 屏（search/search_content/explore/explore_show/dict/association/browser/qrcode）与组件（search_bar_widget/search_filter_panel/tag_chip/source_card/explore_kind_*）已基于 colorScheme token（tag_chip 即 M3 chip 形制：secondaryContainer/onSecondaryContainer），无 iOS 专属视觉残留；search 源筛选分段按钮 iOS 白底选中态改为 M3 segmented 视觉（secondaryContainer/onSecondaryContainer）；association 步骤指示圆点前景 Colors.white → onPrimary token。版本 2.0.113+117
+- Contributor: Qoder UI
+
 ## [2.0.112] - 2026-08-28
 
 ### Changed
