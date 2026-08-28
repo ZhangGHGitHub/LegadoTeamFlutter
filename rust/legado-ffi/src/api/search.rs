@@ -75,6 +75,9 @@ pub struct SearchResult {
     /// BookType 位标志（对齐原版 `bookSource.getBookType()`，源级多媒体类型）
     #[serde(default)]
     pub book_type: i32,
+    /// 书源手动排序编号（对齐原版 BookList.kt:215 originOrder = customOrder；[P0-2 S4] 此前 DTO 转换恒写 0）
+    #[serde(default, rename = "originOrder")]
+    pub origin_order: i32,
     /// 是否有阅读记录（对齐上游 `SearchViewModel.hasReadRecord`，
     /// 加法式字段：无记录时恒为 false）
     #[serde(default, rename = "hasReadRecord")]
@@ -657,7 +660,8 @@ pub(crate) fn result_to_search_book(r: SearchResult) -> CoreSearchBook {
         toc_url: String::new(),
         time: chrono_now_ms(),
         variable: None,
-        origin_order: 0,
+        // [P0-2 S4] 透传真实书源排序（原恒写 0，违反数据契约约束 #4）
+        origin_order: r.origin_order,
         chapter_word_count_text: None,
         chapter_word_count: -1,
         respond_time: -1,
@@ -1147,6 +1151,8 @@ fn parse_search_response(
             kind,
             word_count,
             book_type: book_type_of_source(source.book_source_type),
+            // [P0-2 S4 | BookList.kt:215] originOrder = source.customOrder（真实书源排序，非默认 0）
+            origin_order: source.custom_order,
             // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
             has_read_record: false,
             read_record_author: None,
@@ -1211,6 +1217,7 @@ mod p0_2_s2_tests {
             kind: None,
             word_count: None,
             book_type: 0,
+            origin_order: 0,
             has_read_record: false,
             read_record_author: None,
         }
@@ -1447,6 +1454,8 @@ async fn search_js_source(
                     .and_then(|w| w.as_str())
                     .and_then(word_count_format),
                 book_type: book_type_of_source(source.book_source_type),
+                // [P0-2 S4 | BookList.kt:215] originOrder = source.customOrder（真实书源排序，非默认 0）
+                origin_order: source.custom_order,
                 // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
                 has_read_record: false,
                 read_record_author: None,
@@ -1497,6 +1506,54 @@ mod tests {
     // ─── 测试 1: HTML 搜索结果解析 ────────────────────────────────────────────
 
     #[test]
+    fn test_parse_origin_order_from_custom_order() {
+        // [P0-2 S4 | BookList.kt:215] originOrder 必须来自 source.customOrder（非默认 0）
+        let html = r#"<html><body>
+            <div class="book-item">
+                <a class="name" href="/book/1">斗破苍穹</a>
+                <span class="author">天蚕土豆</span>
+            </div>
+        </body></html>"#;
+        let mut source = make_source_with_rules(
+            ".book-item",
+            ".name",
+            ".author",
+            ".name@href",
+            ".cover@src",
+            ".intro",
+            ".last",
+        );
+        source.custom_order = 7;
+        let results = parse_search_response(html, "https://www.example.com/search?q=test", &source)
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].origin_order, 7);
+    }
+
+    #[test]
+    fn test_result_to_search_book_preserves_origin_order() {
+        // [P0-2 S4] DTO 转换必须透传真实 originOrder（原恒写 0）
+        let r = SearchResult {
+            source_url: "https://s.example.com".into(),
+            source_name: "src".into(),
+            book_name: "book".into(),
+            author: "a".into(),
+            book_url: "https://s.example.com/b/1".into(),
+            latest_chapter: None,
+            intro: None,
+            cover_url: None,
+            kind: None,
+            word_count: None,
+            book_type: 0,
+            origin_order: 5,
+            has_read_record: false,
+            read_record_author: None,
+        };
+        let core = result_to_search_book(r);
+        assert_eq!(core.origin_order, 5);
+    }
+
+#[test]
     fn test_parse_html_search_results() {
         let html = r#"<html><body>
             <div class="book-item">
@@ -1778,6 +1835,7 @@ mod tests {
                         kind: None,
                         word_count: None,
                         book_type: book_type::TEXT,
+                        origin_order: 0,
                         has_read_record: false,
                         read_record_author: None,
                     }])
@@ -2344,6 +2402,7 @@ mod tests {
             kind: None,
             word_count: None,
             book_type: book_type::TEXT,
+            origin_order: 0,
             has_read_record: false,
             read_record_author: None,
         }
@@ -2517,6 +2576,7 @@ mod tests {
             kind: None,
             word_count: None,
             book_type: book_type::TEXT,
+            origin_order: 0,
             has_read_record: false,
             read_record_author: None,
         }

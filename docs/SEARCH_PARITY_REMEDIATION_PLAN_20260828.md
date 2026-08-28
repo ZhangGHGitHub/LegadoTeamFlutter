@@ -247,4 +247,24 @@ Flutter 展示层
 
 **状态**：P0-2 **S6 驱动器层已对齐**（三入口共用 `drive_source_batches` + `search_single_source`）。仍未标记完成——按 §五.5 需 S0 网络行为（详情页判定 / 空列表回退 / loginCheckJs / 重定向最终 URL）+ 两级模拟器冒烟后方可关闭。整体计划仍开放。
 
-*实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 离线可验证部分：S1 source 上下文 + S2 前缀/去重/intro/kind + S6 multi_source_search 驱动器对齐）*
+### 7.5 P1-1 项 3（提前落地）：originOrder 透传书源 customOrder（2026-08-28，已完成）
+
+**背景与判定**：S4（§一 L43 / §三 P1-1 项 3）是**数据契约字段 bug**——`result_to_search_book()` 曾把 `origin_order` 恒写为 `0`，而原版 `BookList.kt:215` 写入 `source.customOrder`（真实书源排序）。该项**不依赖网络/模拟器、不改 FFI 签名与 JSON 结构**（CoreSearchBook schema 早已含 originOrder），是纯离线可验证的低风险整改；且它直接补齐 §二「带 sourceUrl、sourceName、originOrder 的标准 SearchBook」的统一单源输出契约。故在 P0-2 网络项解锁前**提前落地**，透明标注为 P1-1 项 3（不越 §五 阶段门：不动主解析器调度、不引入未验证行为）。
+
+**整改动作**：
+
+| 项 | 说明 |
+|---|---|
+| SearchResult 加字段 | FFI 内部 DTO `SearchResult` 增 `origin_order: i32`（serde rename `originOrder`，`#[serde(default)]`） |
+| HTML 解析路径 | `parse_search_response` 写入 `origin_order: source.custom_order`（对齐 `BookList.kt:215`） |
+| JS 解析路径 | `search_js_source` 同写入 `source.custom_order`（P0-2 项 4：JS 源共用管线，两路径一致） |
+| DTO 转换（根因） | `result_to_search_book()` 由 `origin_order: 0` → `r.origin_order`（不再回写 0） |
+| 测试构造 | 4 处单测 SearchResult 构造补 `origin_order`（编译完整性） |
+
+**验证**：新增 2 个单测——① `test_parse_origin_order_from_custom_order`（source.customOrder=7 → parse 结果 origin_order==7，对齐 `BookList.kt:215`）；② `test_result_to_search_book_preserves_origin_order`（SearchResult{origin_order:5} → CoreSearchBook.origin_order==5，证 DTO 不再回写 0）。legado-ffi lib 全量：**非 quickjs 311 passed / quickjs 369 passed，0 failed**（较 7.4 各 +2，无回归）。
+
+**契约影响**：FFI JSON schema **不变**（CoreSearchBook 早已含 originOrder；API_CONTRACT.md L226 已记录换源 `matches[].origin_order`）——本项为**取值修正**而非新增字段。
+
+**状态**：P1-1 项 3（S4）**已完成并验证**。整体计划仍开放（P0-2 S0 网络项 + P0-3 / P1-1 其余项待推进）。
+
+*实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 离线可验证部分：S1 source 上下文 + S2 前缀/去重/intro/kind + S6 multi_source_search 驱动器对齐 + P1-1 项 3 originOrder 透传（提前落地））*
