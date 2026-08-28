@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import 'md3_animated_text_line.dart';
@@ -48,7 +50,8 @@ class _EmptyStateState extends State<EmptyState> {
     '(｡•́︿•̀｡)',
   ];
 
-  late String _face = (_faces..shuffle()).first;
+  late String _face =
+      _faces[Random().nextInt(_faces.length)];
 
   @override
   Widget build(BuildContext context) {
@@ -80,8 +83,14 @@ class _EmptyStateState extends State<EmptyState> {
             children: [
               InkWell(
                 borderRadius: BorderRadius.circular(12),
-                onTap: () =>
-                    setState(() => _face = (_faces..shuffle()).first),
+                onTap: () => setState(() {
+                  // 池内随机换一个（与当前不同）
+                  var next = _face;
+                  while (next == _face) {
+                    next = _faces[Random().nextInt(_faces.length)];
+                  }
+                  _face = next;
+                }),
                 child: Padding(
                   padding: const EdgeInsets.all(8),
                   child: Md3AnimatedTextLine(
