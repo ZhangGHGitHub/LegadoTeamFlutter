@@ -214,17 +214,19 @@ Flutter 展示层
 | bookList `-`/`+` 前缀（`-` 逆序、`+` 仅去前缀） | `BookList.kt:90-96,145-147` | `split_book_list_prefix()`：get_elements 前剥离、dedup 后按 reverse 反转 | 3 个单测（minus / plus / no-prefix） |
 | 结果去重（LinkedHashSet 语义，保留首次出现） | `BookList.kt:142-144` | `dedup_search_results_keep_first()`：键 = 书源 + 书名 + bookUrl（同源同详情页视为重复，不同书名不误伤） | 2 个单测（保序 / 去重 / 空表） |
 | intro 简介净化（块级标签→换行、删其他标签含 img、折叠空白） | `BookList.kt:260` + `HtmlFormatter.formatIntro` | `html_formatter::format_intro()`：9 步纯字符串净化，逐条对标原版 formatText；parse_search_response intro 字段套用 | 6 个单测（块级/内联标签/注释/换行折叠/nbsp/空） |
+| kind 多标签逗号分隔 | `BookList.kt:230` `getStringList(...).joinToString(",")` | parse_search_response kind 字段将批量 `\n` 连接串换为 `,`（等价 joinToString(",")，**复用共享 CSS 解析、零额外 parse**） | 1 个单测（3 元素 → "科幻,都市,玄幻"） |
 
-**验证结果**：新增 11 个单测全绿（5 前缀+去重、6 intro 净化）；既有解析器单测与异步并发/超时单测全绿——**去重/逆序/intro 净化未改变任何既有夹具的结果数，零回归**。
+**验证结果**：新增 12 个单测全绿（5 前缀+去重、6 intro 净化、1 kind 逗号分隔）；既有解析器单测与异步并发/超时单测全绿——**去重/逆序/intro/kind 未改变任何既有夹具的结果数，零回归**。
 
-**尚未并入主路径的 S0/S2 行为**：
-- **kind 多标签 `joinToString(",")`**（`BookList.kt:230`）：需将 kind 规则移出共享 CSS 批量解析（`get_multi`）单独取列表再 join，会回退 2026-08-18 的搜索提速（避免全字段重复 parse），**属性能/正确性权衡，待下轮设计决策**。
-- bookUrlPattern 详情页判定 + getInfoItem（`BookList.kt:62-81`）——需真实响应验证
-- 空列表详情页回退（`BookList.kt:100-108`）——需真实响应验证
-- loginCheckJs / HTTP 重定向最终 URL（S0，需真实响应验证）
+> 关键修正：kind join(",") 曾误判为「需移出共享 CSS 批量单独 parse、会回退 2026-08-18 提速」；实为 `css_vec_to_string` 已把多匹配以 `\n` 连接，直接重连分隔符即可，**零性能成本**。
+
+**尚未并入主路径的 S0/S2 行为（需真实响应/模拟器验证）**：
+- bookUrlPattern 详情页判定 + getInfoItem（`BookList.kt:62-81`）
+- 空列表详情页回退（`BookList.kt:100-108`）
+- loginCheckJs / HTTP 重定向最终 URL（S0）
 
 > 注：bookUrl 空值回退 `baseUrl`（`BookList.kt:282-284`）**早已实现**（parse_search_response 中 raw_book_url 为空时回退 `source.book_source_url`），非待办。
 
-**状态**：P0-2 **已就纯离线可验证的 S2 行为（前缀 + 去重 + intro 净化）落地并验证**；kind join(",")（性能权衡）与网络相关 S0/详情页行为待双包基线解锁。整体计划仍开放。
+**状态**：P0-2 **纯离线可验证的 S2 字段级行为已全部落地并验证（前缀 + 去重 + intro 净化 + kind 逗号分隔）**；剩余 S0/详情页回退需真实响应与双包基线解锁。整体计划仍开放。
 
 *实施记录编写者：Reasonix ｜ 2026-08-28（P0-1.3 校验 + P0-2 S2 前置：前缀/去重/intro）*
