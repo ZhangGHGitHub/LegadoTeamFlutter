@@ -362,7 +362,11 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        // [MD3 Batch 4] 编辑区底色 token 化（原硬编码白色，
+                        // 暗色主题下刺眼且与 code_edit 的 token 方案不一致）
+                        color: cs.surfaceContainerHighest.withValues(
+                          alpha: 0.55,
+                        ),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: TextField(

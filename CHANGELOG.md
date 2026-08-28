@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.114] - 2026-08-28
+
+### Changed
+- [UI] MD3 迁移 Batch 4（docs/UI_MD3_PLAN.md）：源编辑/调试/开发域收尾。域审计确认 16 屏（source/source_edit/source_debug/code_edit/js_source_edit/rule_sub/replace_rules 及 import_confirm/txt_toc_rules/source_login/highlight_rules + RSS 源管理四屏）已基于 colorScheme token 与 Ios* 组件继承 MD3；js_source_edit 编辑区白底 token 化（surfaceContainerHighest，对齐 code_edit 方案，修复暗色主题刺眼）；登记功能色例外：source_screen 启用状态红绿语义（对齐原版）、source_debug 日志色块选中白字（深色 shade 配对注释）、source_edit QR 白底（可扫性）、replace_rules 着色头部半透明输入（onPrimary 配对）。版本 2.0.114+118
+- Contributor: Qoder UI
+
 ## [2.0.113] - 2026-08-28
 
 ### Changed
