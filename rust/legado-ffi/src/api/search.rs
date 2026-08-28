@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use futures::StreamExt;
 
 use legado_core::models::{BookSource, SearchBook as CoreSearchBook};
-use legado_core::search_engine::{MultiSourceSearcher, SearchConfig};
 use legado_core::source_matcher::SearchCandidate;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::read_record_repository::decode_read_record_authors;
@@ -251,7 +250,7 @@ pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> Legad
 ///
 /// 返回 JSON 字符串格式的搜索结果数组。
 pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<String> {
-    // 重置取消标志
+    // 重置取消标志（对齐 run_multi_stream：新搜索从非取消状态开始）
     SEARCH_CANCELLED.store(false, Ordering::SeqCst);
 
     let sources = load_search_sources(source_urls_json)?;
@@ -259,33 +258,39 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
         return Ok("[]".to_string());
     }
 
-    let config = SearchConfig {
-        query: query.to_string(),
-        timeout_secs: 10,
-        max_results_per_source: 20,
-    };
-
-    let results = runtime::block_on(async {
+    // 委托统一单源执行器（drive_source_batches + search_single_source），与
+    // search_books / run_multi_stream 共享同一并发/超时/解析语义：有界并发
+    // SEARCH_CONCURRENCY、每源 SEARCH_SOURCE_TIMEOUT(30s)、无截断。原
+    // MultiSourceSearcher/WebSourceSearcher 独立驱动器的 10s 全局超时、20 条
+    // 截断与跨源去重/相关性排序已移除——聚合排序下沉至 Flutter，对齐原版
+    // SearchModel「Rust 出原始单源结果、UI 按 mergeItems 聚合」。
+    let query_owned = query.to_string();
+    let results: Vec<SearchResult> = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
-
-        let searcher = MultiSourceSearcher::new(WebSourceSearcher::new(client));
-        let cancel = Arc::new(AtomicBool::new(false));
-        // 桥接全局取消标志
-        let cancel_inner = Arc::clone(&cancel);
-        let _monitor = tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                if SEARCH_CANCELLED.load(Ordering::SeqCst) {
-                    cancel_inner.store(true, Ordering::SeqCst);
-                    break;
+        let mut all_results: Vec<SearchResult> = Vec::new();
+        drive_source_batches(
+            sources,
+            SEARCH_CONCURRENCY,
+            SEARCH_SOURCE_TIMEOUT,
+            move |source: BookSource| {
+                let client = client.clone();
+                let query = query_owned.clone();
+                async move { search_single_source(&client, &source, &query, 1).await }
+            },
+            |outcome| {
+                if let Ok(mut items) = outcome.result {
+                    all_results.append(&mut items);
                 }
-            }
-        });
-        Ok::<_, LegadoError>(searcher.search(config, sources, cancel).await)
+                Ok(())
+            },
+        )
+        .await;
+        Ok::<_, LegadoError>(all_results)
     })?;
 
-    // 批量附加阅读记录标识后序列化（不修改 core 的 SearchResult 结构，
-    // 通过加法式 DTO 扩展输出 JSON）
+    // 批量附加阅读记录标识后序列化（不修改 core 的 SearchResult 结构，通过加法式
+    // DTO 扩展输出 JSON）。统一执行器不做跨源去重/相关性排序（聚合下沉至 Flutter），
+    // 故 relevance_score 恒为 0。
     let index = ReadRecordIndex::load();
     let annotated: Vec<AnnotatedCandidate> = results
         .into_iter()
@@ -300,7 +305,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
                 source_url: c.source_url,
                 source_name: c.source_name,
                 book_url: c.book_url,
-                relevance_score: c.relevance_score,
+                relevance_score: 0.0,
                 has_read_record: has_record,
                 read_record_author: record_author,
             }
