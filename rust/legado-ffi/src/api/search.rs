@@ -23,13 +23,50 @@ use legado_parser::{AnalyzeUrl, RequestMethod};
 use crate::api::source as source_api;
 use crate::runtime;
 
-/// 全局搜索取消标志
-static SEARCH_CANCELLED: AtomicBool = AtomicBool::new(false);
-
-/// 全局搜索暂停标志（软挂起：仅拦未派发书源，已派发任务继续完成）
+/// 搜索会话级取消/暂停令牌（P0-3：由全局静态改为会话级，隔离重叠搜索）
 ///
-/// 对齐原版 `SearchModel` workingState 门控语义（批次B G-B-04）。
-static SEARCH_PAUSED: AtomicBool = AtomicBool::new(false);
+/// 每次搜索创建独立会话；旧搜索的在飞任务持有自己的令牌引用，新搜索启动
+/// 不再重置旧会话的取消状态 —— 消除「旧搜索残留」（此前全局 `SEARCH_CANCELLED`
+/// 被新搜索重置，导致已取消搜索的在飞任务复活并污染后续搜索）。
+#[derive(Debug)]
+pub(crate) struct SearchSession {
+    /// 取消标志：停止 / 页面销毁 / sink 关闭 / 新搜索取代均置位以终止本会话
+    pub cancel: Arc<AtomicBool>,
+    /// 暂停标志（软挂起：仅拦未派发书源，已派发任务继续完成）
+    /// 对齐原版 `SearchModel` workingState 门控语义（批次B G-B-04）。
+    pub paused: Arc<AtomicBool>,
+}
+
+impl SearchSession {
+    fn new() -> Self {
+        Self {
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+/// 当前活跃搜索会话（供无参 FFI `cancel_search`/`pause_search`/`resume_search` 定位）
+///
+/// 新搜索启动时取代并取消上一会话；`std::sync::Mutex` 仅短暂持有、不跨 await。
+static CURRENT_SEARCH_SESSION: std::sync::Mutex<Option<Arc<SearchSession>>> =
+    std::sync::Mutex::new(None);
+
+/// 注册当前会话：先取消上一会话（若存在且不同），再置为本会话（新搜索取代旧搜索）
+fn register_current_session(session: &Arc<SearchSession>) {
+    let mut guard = CURRENT_SEARCH_SESSION.lock().unwrap();
+    if let Some(prev) = guard.as_ref() {
+        if !Arc::ptr_eq(prev, session) {
+            prev.cancel.store(true, Ordering::SeqCst); // 新搜索取代 → 终止旧会话，防残留
+        }
+    }
+    *guard = Some(Arc::clone(session));
+}
+
+/// 取当前会话（无参 FFI 定位目标）
+fn current_session() -> Option<Arc<SearchSession>> {
+    CURRENT_SEARCH_SESSION.lock().unwrap().clone()
+}
 
 /// 多源搜索并发上限
 ///
@@ -155,6 +192,9 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     // 限流并发 + 单源超时 + 异常隔离（对齐原版 SearchModel 线程池语义），
     // 逐源完成后累积结果；失败源跳过不阻断整体。
     let keyword_owned = keyword.to_string();
+    // P0-3：为本次搜索创建独立会话（取代并取消上一会话），不再重置全局标志
+    let session = Arc::new(SearchSession::new());
+    register_current_session(&session);
     let mut results = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         let mut all_results: Vec<SearchResult> = Vec::new();
@@ -162,6 +202,8 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
             sources,
             SEARCH_CONCURRENCY,
             SEARCH_SOURCE_TIMEOUT,
+            &session.cancel,
+            &session.paused,
             move |source: BookSource| {
                 let client = client.clone();
                 let keyword = keyword_owned.clone();
@@ -253,8 +295,9 @@ pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> Legad
 ///
 /// 返回 JSON 字符串格式的搜索结果数组。
 pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<String> {
-    // 重置取消标志（对齐 run_multi_stream：新搜索从非取消状态开始）
-    SEARCH_CANCELLED.store(false, Ordering::SeqCst);
+    // P0-3：为本次搜索创建独立会话（取代并取消上一会话），不再重置全局标志
+    let session = Arc::new(SearchSession::new());
+    register_current_session(&session);
 
     let sources = load_search_sources(source_urls_json)?;
     if sources.is_empty() {
@@ -274,7 +317,9 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
         drive_source_batches(
             sources,
             SEARCH_CONCURRENCY,
-            SEARCH_SOURCE_TIMEOUT,
+                SEARCH_SOURCE_TIMEOUT,
+                &session.cancel,
+                &session.paused,
             move |source: BookSource| {
                 let client = client.clone();
                 let query = query_owned.clone();
@@ -318,22 +363,28 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
     serde_json::to_string(&annotated).map_err(LegadoError::Serialization)
 }
 
-/// 取消正在进行的搜索
+/// 取消正在进行的搜索（P0-3：作用于当前会话，不再全局污染后续搜索）
 pub fn cancel_search() {
-    SEARCH_CANCELLED.store(true, Ordering::SeqCst);
+    if let Some(s) = current_session() {
+        s.cancel.store(true, Ordering::SeqCst);
+    }
 }
 
-/// 暂停正在进行的流式搜索（软挂起，批次B G-B-04）
+/// 暂停正在进行的流式搜索（软挂起，批次B G-B-04；作用于当前会话）
 ///
 /// 仅拦截尚未派发单源任务的书源；已派发任务继续完成。
 /// 状态/进度全部保留，可经 [`resume_search`] 恢复。
 pub fn pause_search() {
-    SEARCH_PAUSED.store(true, Ordering::SeqCst);
+    if let Some(s) = current_session() {
+        s.paused.store(true, Ordering::SeqCst);
+    }
 }
 
-/// 恢复已暂停的流式搜索（批次B G-B-04）
+/// 恢复已暂停的流式搜索（批次B G-B-04；作用于当前会话）
 pub fn resume_search() {
-    SEARCH_PAUSED.store(false, Ordering::SeqCst);
+    if let Some(s) = current_session() {
+        s.paused.store(false, Ordering::SeqCst);
+    }
 }
 
 // ─── 封面搜索 ──────────────────────────────────────────────────────────────────
@@ -436,10 +487,9 @@ pub async fn run_multi_stream<F>(
 ) where
     F: FnMut(String) -> Result<(), String>,
 {
-    // 重置取消标志
-    SEARCH_CANCELLED.store(false, Ordering::SeqCst);
-    // 新搜索从非暂停状态开始（暂停标志作用于单次流式搜索，批次B G-B-04）
-    SEARCH_PAUSED.store(false, Ordering::SeqCst);
+    // P0-3：为本次搜索创建独立会话（取代并取消上一会话），不再重置全局标志
+    let session = Arc::new(SearchSession::new());
+    register_current_session(&session);
 
     // 书源加载失败时以空流结束（Dart 侧表现为无结果）
     let sources = load_search_sources(&source_urls_json).unwrap_or_default();
@@ -466,6 +516,8 @@ pub async fn run_multi_stream<F>(
         sources,
         SEARCH_CONCURRENCY,
         SEARCH_SOURCE_TIMEOUT,
+        &session.cancel,
+        &session.paused,
         move |source: BookSource| {
             let client = client.clone();
             let query = query.clone();
@@ -523,22 +575,20 @@ pub(crate) struct SourceBatchOutcome {
     pub is_last: bool,
 }
 
-/// 多源并发搜索驱动器（严格对齐原版 `SearchModel` 语义）
+/// 驱动一批书源搜索：并发受限（信号量上限 `concurrency`）、单源超时、取消/暂停会话级门控。
 ///
-/// - **限流并发**：信号量将同时进行的单源搜索限制为 `concurrency`
-///   （对齐原版 `mapParallelSafe(AppConfig.threadCount 默认 32)` 的有效并发；
-///   原版固定线程池 `min(threadCount, MAX_THREAD=9)` 仅限制执行线程数，
-///   OkHttp 异步 I/O 不占线程，真实并发 = threadCount）；
-/// - **单源超时**：每源包裹 `per_source_timeout`（对应原版 `withTimeout(30000)`）；
-/// - **异常隔离**：单源 Err/超时/任务 panic 均转为错误结果批次，
-///   不中断整体（对应原版 `mapParallelSafe` 单源异常不外溢）；
-/// - **渐进回调**：每完成一个书源调用一次 `on_source`（附 finished/total 进度），
-///   返回 `Err` 时提前终止（如 sink 已关闭）；
-/// - **取消**：循环内检查全局 `SEARCH_CANCELLED`。
+/// - **隔离**：单源失败/panic 不影响其他源（各自 catch_unwind）。
+/// - **并发**：信号量限制同时在跑的单源任务数 ≤ `concurrency`。
+/// - **超时**：单源搜索超过 `per_source_timeout` 判为超时错误；限流等待（acquire_owned）
+///   不计入该超时（对齐原版线程池排队语义：等 worker 不算请求耗时）。
+/// - **取消/暂停（P0-3）**：由会话级令牌门控（非全局静态），新搜索不再重置旧会话；
+///   获得许可后二次检查取消 → 已取消的排队源不发请求；sink 关闭亦置位取消。
 pub(crate) async fn drive_source_batches<F, Fut, G>(
     sources: Vec<BookSource>,
     concurrency: usize,
     per_source_timeout: Duration,
+    cancel: &Arc<AtomicBool>,
+    paused: &Arc<AtomicBool>,
     search_one: F,
     mut on_source: G,
 ) where
@@ -553,17 +603,27 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
     if total == 0 {
         return;
     }
+
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
     let search_one = Arc::new(search_one);
 
-    let mut tasks = Vec::with_capacity(total);
+    // 并发受限：每个书源一个任务，acquire_owned 排队（上限 concurrency）；FuturesUnordered 按完成顺序产出
+    let mut set = futures::stream::FuturesUnordered::new();
+
     for (index, source) in sources.into_iter().enumerate() {
         let semaphore = Arc::clone(&semaphore);
         let search_one = Arc::clone(&search_one);
-        tasks.push(tokio::spawn(async move {
+        let cancel = Arc::clone(cancel);
+        let paused = Arc::clone(paused);
+        set.push(tokio::spawn(async move {
             let source_url = source.book_source_url.clone();
             let source_name = source.book_source_name.clone();
-            // 限流并发：获取许可后才真正发起搜索（等价原版线程池排队）
+
+            // 派发前检查取消（P0-3：会话级，避免旧搜索残留）
+            if cancel.load(Ordering::SeqCst) {
+                return (index, source_url, source_name, Err(LegadoError::Network("搜索已取消".into())));
+            }
+
             let permit = match semaphore.acquire_owned().await {
                 Ok(p) => p,
                 Err(_) => {
@@ -575,47 +635,55 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
                     )
                 }
             };
-            // 暂停门控（批次B G-B-04）：暂停期间挂起尚未派发的书源，
-            // 已派发任务继续完成；对齐原版 workingState 门控语义。
-            // 挂起等待时同步检查取消标志——已取消则直接放弃该源。
-            while SEARCH_PAUSED.load(Ordering::SeqCst) {
-                if SEARCH_CANCELLED.load(Ordering::SeqCst) {
-                    return (
-                        index,
-                        source_url,
-                        source_name,
-                        Err(LegadoError::Network("搜索已取消".into())),
-                    );
+
+            // 获得许可后二次检查取消（P0-3 item2：已取消的排队源不发请求）
+            if cancel.load(Ordering::SeqCst) {
+                drop(permit);
+                return (index, source_url, source_name, Err(LegadoError::Network("搜索已取消".into())));
+            }
+
+            // 暂停门控（软挂起，P0-3：会话级 paused）
+            while paused.load(Ordering::SeqCst) {
+                if cancel.load(Ordering::SeqCst) {
+                    drop(permit);
+                    return (index, source_url, source_name, Err(LegadoError::Network("搜索已取消".into())));
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
-            // 单源超时 + panic 隔离（catch_unwind 保证单源崩溃不传染）
+
             let outcome = tokio::time::timeout(
                 per_source_timeout,
                 AssertUnwindSafe(search_one(source)).catch_unwind(),
             )
             .await;
-            drop(permit);
+            drop(permit); // 释放并发窗口（P0-3：取消任务亦及时归还许可）
+
             let result = match outcome {
-                Ok(Ok(res)) => res,
-                Ok(Err(_panic)) => Err(LegadoError::Network("单源搜索异常（已隔离）".into())),
-                Err(_) => Err(LegadoError::Network(format!(
+                Ok(Ok(r)) => r,
+                Ok(Err(p)) => Err(LegadoError::Network(format!(
+                    "单源搜索崩溃: {:?}（已隔离，不影响其他源）",
+                    p
+                ))),
+                Err(_elapsed) => Err(LegadoError::Network(format!(
                     "搜索超时（{}s）",
                     per_source_timeout.as_secs()
                 ))),
             };
+
             (index, source_url, source_name, result)
         }));
     }
 
-    let mut set = futures::stream::FuturesUnordered::from_iter(tasks);
+    // 按完成顺序推送；取消/sink 关闭即停止收集（P0-3 item2：剩余结果不再进入流）
     let mut finished: usize = 0;
     while let Some(joined) = set.next().await {
         finished += 1;
-        if SEARCH_CANCELLED.load(Ordering::SeqCst) {
+
+        // 会话级取消检查（P0-3 item2：取消后 abort 剩余任务，结果不再进入流）
+        if cancel.load(Ordering::SeqCst) {
             break;
         }
-        // 任务级 JoinError 兑底隔离（正常路径已被 catch_unwind 覆盖）
+
         let (index, source_url, source_name, result) = match joined {
             Ok(v) => v,
             Err(e) => (
@@ -625,6 +693,7 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
                 Err(LegadoError::Network(format!("搜索任务异常: {e}"))),
             ),
         };
+
         let outcome = SourceBatchOutcome {
             index,
             source_url,
@@ -634,7 +703,10 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
             total_count: total,
             is_last: finished >= total,
         };
+
         if on_source(outcome).is_err() {
+            // sink 关闭 → 置位会话取消 + abort 剩余任务（P0-3 item2）
+            cancel.store(true, Ordering::SeqCst);
             break;
         }
     }
@@ -855,12 +927,16 @@ pub(crate) fn load_search_sources(source_urls_json: &str) -> LegadoResult<Vec<Bo
 ///
 /// Task #16 P1：改为 `pub(crate)` 供换源场景（source_switch.rs）复用，
 /// 使换源候选拿到真实的详情页 book_url（而非搜索结果页 URL）。
+/// 换源单源搜索超时（对齐原版 ChangeBookSourceViewModel `withTimeout(60000)`）
+pub(crate) const SWITCH_SOURCE_TIMEOUT: Duration = Duration::from_secs(60);
+
 pub(crate) async fn search_single_source(
     client: &LegadoClient,
     source: &BookSource,
     keyword: &str,
     page: i32,
 ) -> LegadoResult<Vec<SearchResult>> {
+
     // 阶段计时诊断（LEGADO_SEARCH_PHASE_TIMING=1）：定位单源 30s 超时挂起阶段
     let phase_on = std::env::var("LEGADO_SEARCH_PHASE_TIMING").is_ok();
     let t_phase = std::time::Instant::now();
@@ -1853,6 +1929,8 @@ mod tests {
             sources,
             2,
             Duration::from_millis(500),
+            &std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            &std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             search_one,
             move |o| {
                 let (n, err) = match o.result {
@@ -1898,6 +1976,82 @@ mod tests {
             "最大并发 {} 超过上限 2",
             max_active.load(Ordering::SeqCst)
         );
+    }
+    // ─── P0-3 压力测试：已取消会话 A 不产生请求，新会话 B 全部执行（会话隔离）──
+    #[tokio::test]
+    async fn test_search_session_isolation_a_then_b() {
+        use std::sync::atomic::AtomicUsize;
+
+        // ── 搜索 A：已取消的会话 → 所有源在派发前被拦，不发请求 ──
+        let a_started = Arc::new(AtomicUsize::new(0));
+        let session_a = Arc::new(SearchSession::new());
+        session_a.cancel.store(true, Ordering::SeqCst); // A 已取消
+
+        let search_one_a = {
+            let counter = Arc::clone(&a_started);
+            move |_source: BookSource| {
+                let c = Arc::clone(&counter);
+                async move {
+                    c.fetch_add(1, Ordering::SeqCst); // 若执行到这说明取消拦截失效
+                    Ok(Vec::new())
+                }
+            }
+        };
+
+        let sources_a: Vec<BookSource> = (1..=5)
+            .map(|i| BookSource {
+                book_source_url: format!("https://a{i}.example.com"),
+                ..BookSource::default()
+            })
+            .collect();
+        drive_source_batches(
+            sources_a,
+            32,
+            Duration::from_secs(30),
+            &session_a.cancel,
+            &session_a.paused,
+            search_one_a,
+            |_o| Ok(()),
+        )
+        .await;
+
+        // A：已取消 → 0 个源真正执行（全部在派发前被拦，不发请求）
+        assert_eq!(a_started.load(Ordering::SeqCst), 0, "已取消会话 A 不应发起任何请求");
+
+        // ── 搜索 B：新会话（未取消）→ 全部执行，不受 A 影响 ──
+        let b_started = Arc::new(AtomicUsize::new(0));
+        let session_b = Arc::new(SearchSession::new()); // B 全新，cancel=false
+
+        let search_one_b = {
+            let counter = Arc::clone(&b_started);
+            move |_source: BookSource| {
+                let c = Arc::clone(&counter);
+                async move {
+                    c.fetch_add(1, Ordering::SeqCst);
+                    Ok(Vec::new())
+                }
+            }
+        };
+
+        let sources_b: Vec<BookSource> = (1..=5)
+            .map(|i| BookSource {
+                book_source_url: format!("https://b{i}.example.com"),
+                ..BookSource::default()
+            })
+            .collect();
+        drive_source_batches(
+            sources_b,
+            32,
+            Duration::from_secs(30),
+            &session_b.cancel,
+            &session_b.paused,
+            search_one_b,
+            |_o| Ok(()),
+        )
+        .await;
+
+        // B：全部执行（会话隔离 —— A 的取消不影响 B）
+        assert_eq!(b_started.load(Ordering::SeqCst), 5, "B 应全部执行（会话隔离，A 未污染 B）");
     }
 
     // ─── 测试 2: JSON 搜索结果解析 ────────────────────────────────────────────
@@ -2363,6 +2517,8 @@ mod tests {
             sources,
             1,
             Duration::from_millis(300),
+            &std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            &std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             |_source| async {
                 // 模拟修复后实现：同步长计算移入阻塞线程（await 点可中断）
                 tokio::task::spawn_blocking(|| {
