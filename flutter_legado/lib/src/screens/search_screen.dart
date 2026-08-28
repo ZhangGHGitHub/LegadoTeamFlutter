@@ -16,6 +16,7 @@ import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/md3_animated_text_line.dart';
 
 /// 书源分组拆分正则（对标原版 AppPattern.splitGroupRegex：[,;，；]）
 final _splitGroupRegex = RegExp(r'[,;，；]');
@@ -720,35 +721,41 @@ class _SearchScreenState
                           ),
                         ),
                       ),
-                      // 同源数徽标：对齐原版红数字；单源时显示书源名便于辨认
+                      // 同源数徽标（对齐参考仓库 TextCard + AnimatedTextLine：
+                      // surfaceContainer 底 + 4dp 圆角中性角标，聚合搜索流式
+                      // 返回时数字向上翻滚 +1；单源显示书源名便于辨认）
                       Container(
                         margin: const EdgeInsets.only(left: 8),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 4, vertical: 2),
                         decoration: BoxDecoration(
-                          color: result.originsCount > 1
-                              ? colorScheme.primary
-                              : colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(6),
+                          color: colorScheme.surfaceContainer,
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text(
-                          result.originsCount > 1
-                              ? '${result.originsCount}'
-                              : (result.sourceName.isNotEmpty
-                                  ? result.sourceName
-                                  : '1'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: result.originsCount > 1
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                            color: result.originsCount > 1
-                                ? colorScheme.onPrimary
-                                : colorScheme.onPrimaryContainer,
-                          ),
-                        ),
+                        child: result.originsCount > 1
+                            ? Md3AnimatedTextLine(
+                                text: '${result.originsCount}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: colorScheme.onSurface,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                              )
+                            : Text(
+                                result.sourceName.isNotEmpty
+                                    ? result.sourceName
+                                    : '1',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
                       ),
                     ],
                   ),
