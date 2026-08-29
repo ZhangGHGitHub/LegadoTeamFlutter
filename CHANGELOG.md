@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [GitHub CI 收敛批次 2026-08-30]（仓库治理，不涉应用功能）
+
+### Changed
+- [CI] fork（LegadoTeamFlutter）master 修复三处持续 workflow 错误：Sync Upstream 每日失败（上游 gedoor/legado 仅剩 main 分支，fetch master 恒 404；且其自动同步上游安卓源码与「安卓源码不上传 GitHub」指令冲突，已删除）；flutter-ci android-ffi-sync 工具链错误（rustup --default-toolchain none 后直接编译报 E0463，改 dtolnay/rust-toolchain@stable + android targets）；test.yml 被 GitHub 判无效文件（job 级 if 引用 secrets 上下文 + 8-25 注释缩进混乱）产生 0 秒失败 run
+- [CI] 据用户指令「安卓源码部分不上传 GitHub」收敛远端视图：app/ 与 modules/（约 2540 文件）解除跟踪并从远端树移除（本地磁盘保留参照）；删除全部安卓构建工作流（test/BetaRelease/release/cronet/web/TestRelease）与 legado.jks 签名密钥；GitHub 仅保留 Flutter CI（含修复）/Rust CI（含 fmt+quickjs clippy 门禁）/Integration Smoke/Flutter Release 及轻量工具流
+- [Docs] 本地 .gitignore 新增 /app/ 与 /modules/ 不上传名单；历史提交仍含安卓源码旧快照，彻底清除需 filter-repo 重写（另行授权）
+
+- Contributor: Qoder + Bridge
+
 ## [搜索/换源 parity 审计修复批次 2026-08-29]（版本 2.0.127+132）
 
 ### Fixed

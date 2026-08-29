@@ -213,6 +213,7 @@
 修订：主代理 ｜ 2026-08-25（P3-4 第二阶段关闭：双根因批次 C `83ff6a8a8`（版本 2.0.107+111）——debug .so + CoverDecodeLoader 整表注册表；冒烟脚本补 UTF-8 BOM（PS5.1 GBK 解码根因）；两级模拟器验证 5556/5558 全 PASSED）
 修订：Codex ｜ 2026-08-28（P3-6 开放：搜索主路径与原版深度源码审查，专项修复计划和验收矩阵登记）
 修订：Qoder UI ｜ 2026-08-28（治理步骤：UI 开发规范由 apple-ui-designer 技能切换为 Material Design 3 官方指南，AGENTS/design_system/本档三处同步，据 UI_MD3_PLAN.md 第十四节独立 commit；P3-6 搜索 parity 修复仍由后端轨并行推进，互不干扰）
+修订：Qoder + Bridge ｜ 2026-08-30（GitHub CI 收敛：修复 fork 三处持续 workflow 错误（Sync Upstream 每日失败/flutter-ci 工具链 E0463/test.yml 无效文件 0 秒失败）；按用户指令「安卓源码不上传 GitHub」解除 app/modules 跟踪并从远端树移除、删除全部安卓工作流，本地 .gitignore 登记不上传名单）
 修订：Qoder + Bridge ｜ 2026-08-29（搜索/换源 parity 审计 D1-D6 修复：分组分隔符全集/换源候选不再剔除空 bookUrl/multi_source_search 落库/JS 源 precision filter/筛选框书名口径/同名判定字面全等，据 SEARCH_CHANGE_SOURCE_PARITY_AUDIT_20260829.md，版本 2.0.127+132）
 修订：Qoder + Bridge ｜ 2026-08-29（热力图每日时长契约交付：readRecordDaily 聚合表 + readRecordDailyList FFI（API_CONTRACT §2.12）+ putReadRecord 写路径增量聚合 + Dart 三层绑定；U 侧 UI_MD3_PLAN 登记项销记）
 修订：Qoder UI ｜ 2026-08-28（MD3 UI 迁移 B0–B6 七批次完成：主题地基/12 套内置调色板/主框架/六功能域 token 收尾/验收矩阵自动化，版本 2.0.110–2.0.117，详见 UI_MD3_PLAN.md「实施状态」；遗留 LargeTitle 与 Material You 动态取色已登记，模拟器冒烟并入用户验收）
