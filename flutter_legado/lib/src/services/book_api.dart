@@ -605,6 +605,11 @@ abstract class BookApi {
   /// 清空阅读记录
   Future<void> clearReadRecords();
 
+  /// 按年查询每日阅读时长列表（热力图"每日时长"模式数据源）
+  ///
+  /// 对齐 API_CONTRACT `readRecordDailyList`；返回 `[{date, seconds}]`（按日期升序）。
+  Future<List<Map<String, dynamic>>> readRecordDailyList(int year);
+
   // ========== RSS 收藏操作 ==========
 
   /// 获取所有 RSS 收藏

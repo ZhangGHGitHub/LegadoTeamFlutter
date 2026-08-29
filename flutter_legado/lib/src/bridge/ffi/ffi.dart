@@ -1057,6 +1057,8 @@ Future<String> readRecordList() =>
     RustLib.instance.api.crateFfiFfiReadRecordList();
 
 /// 添加/更新阅读记录，返回阅读时长
+///
+/// [体检 P3-6 阶段四] api 层同步累加当日 readRecordDaily（热力图"每日时长"数据源）。
 Future<PlatformInt64> readRecordUpsert({
   required String bookName,
   required PlatformInt64 readTime,
@@ -1064,6 +1066,12 @@ Future<PlatformInt64> readRecordUpsert({
   bookName: bookName,
   readTime: readTime,
 );
+
+/// 按年查询每日阅读时长列表（热力图"每日时长"模式数据源）
+///
+/// 返回 JSON：`[{"date":"2026-08-29","seconds":3600},...]`（按日期升序）。
+Future<String> readRecordDailyList({required int year}) =>
+    RustLib.instance.api.crateFfiFfiReadRecordDailyList(year: year);
 
 /// 删除阅读记录
 Future<bool> readRecordDelete({required String bookName}) =>

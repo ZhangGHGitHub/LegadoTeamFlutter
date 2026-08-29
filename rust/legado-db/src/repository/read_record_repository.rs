@@ -297,6 +297,60 @@ impl<'a> ReadRecordRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("计数查询失败: {e}")))?;
         Ok(count)
     }
+
+    // ─── [热力图每日时长契约] 每日时长聚合（热力图"每日时长"模式数据源）────────
+
+    /// 确保 readRecordDaily 表存在（CREATE TABLE IF NOT EXISTS，无数据迁移需求）
+    fn ensure_daily_table(&self) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS readRecordDaily (\
+                 date TEXT PRIMARY KEY,\
+                 durationSeconds INTEGER NOT NULL DEFAULT 0)",
+                [],
+            )
+            .map_err(|e| LegadoError::Database(format!("创建 readRecordDaily 表失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 向指定日期累计阅读秒数（增量 upsert）
+    ///
+    /// 日期格式：`YYYY-MM-DD`（本地时区）。
+    /// 由 FFI `read_record_upsert` 自动调用，无需 Dart 侧额外调用。
+    pub fn add_daily_seconds(&self, date: &str, seconds: i64) -> LegadoResult<()> {
+        self.ensure_daily_table()?;
+        self.conn
+            .execute(
+                "INSERT INTO readRecordDaily (date, durationSeconds) VALUES (?1, ?2)\
+                 ON CONFLICT(date) DO UPDATE SET durationSeconds = durationSeconds + ?2",
+                params![date, seconds],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新每日阅读时长失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 按年查询每日阅读时长列表（热力图"每日时长"模式数据源）
+    ///
+    /// 返回按日期升序排列的 (date, durationSeconds) 对。
+    pub fn list_daily_year(&self, year: i32) -> LegadoResult<Vec<(String, i64)>> {
+        self.ensure_daily_table()?;
+        let prefix = format!("{year:04}-%");
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT date, durationSeconds FROM readRecordDaily \
+                 WHERE date LIKE ?1 ORDER BY date ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备每日时长查询失败: {e}")))?;
+        let rows = stmt
+            .query_map(params![prefix], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| LegadoError::Database(format!("查询每日时长失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
 }
 
 use rusqlite::OptionalExtension;
@@ -558,5 +612,40 @@ mod tests {
         assert!(repo.update_last_read("书B", 77).unwrap());
         assert_eq!(repo.get_record("书B").unwrap().unwrap().last_read, 77);
         assert!(!repo.update_last_read("不存在", 1).unwrap());
+    }
+
+    /// [热力图每日时长契约] add_daily_seconds：同日多次累加，按日累计
+    #[test]
+    fn test_daily_add_accumulates_same_date() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.add_daily_seconds("2026-08-29", 600).unwrap();
+        repo.add_daily_seconds("2026-08-29", 900).unwrap();
+        let rows = repo.list_daily_year(2026).unwrap();
+        assert_eq!(rows, vec![("2026-08-29".to_string(), 1500)]);
+    }
+
+    /// [热力图每日时长契约] list_daily_year：跨年隔离 + 日期升序
+    #[test]
+    fn test_daily_list_year_filter_and_order() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.add_daily_seconds("2026-01-02", 100).unwrap();
+        repo.add_daily_seconds("2026-08-29", 300).unwrap();
+        repo.add_daily_seconds("2025-12-31", 999).unwrap();
+
+        let rows = repo.list_daily_year(2026).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("2026-01-02".to_string(), 100),
+                ("2026-08-29".to_string(), 300),
+            ]
+        );
+        let rows_2025 = repo.list_daily_year(2025).unwrap();
+        assert_eq!(rows_2025, vec![("2025-12-31".to_string(), 999)]);
+        assert!(repo.list_daily_year(2024).unwrap().is_empty());
     }
 }

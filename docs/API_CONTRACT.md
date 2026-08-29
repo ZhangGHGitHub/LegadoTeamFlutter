@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-08-29 | **热力图每日时长聚合契约**（U 侧 UI_MD3_PLAN 登记）：加法式——`readRecordDailyList(int year)`（§2.12 阅读记录组，返回 `[{date, seconds}]` 日期升序）；`putReadRecord` 写路径增量累加当日 readRecordDaily（新 readRecordDaily 表：date TEXT PK + durationSeconds，增量 > 0 入账，本地时区）。§2.12 方法数 5→**6**，附录合计 267→**268**，BookApi 口径 264→**265** |
 | 2026-08-25 | **P3-5 换源页 parity**：加法式——`updateSearchBookScore` / `deleteSearchBook`（§2.4 搜索组，对标原版 SourceConfig 书维度评分与换源长按删除）；`searchSource` 返回 `matches[]` 项新增 `book_score`（-1/0/1）。§2.4 方法数 14→**16**，附录合计 265→**267**，BookApi 口径 262→**264** |
 | 2026-08-24 | **搜索 parity 批次B FFI 冻结**：breaking——`searchMultiStream` Rust 签名 `ffi::search_multi_stream` 新增 `page: i32` 入参（页码透传，双轨评审记录：两轨均归我方 + 用户已批准批次B范围）；加法式——`pauseSearch()` / `resumeSearch()`（软暂停门控，SEARCH_PAUSED，仅拦未派发书源）+ 批次事件 `has_more` 字段（累积非空判定）。§2.4 方法数 12→14，附录合计 263→**265**，BookApi 口径 260→**262** |
 | 2026-08-22 | **P1-3 契约自动校验**：新增 `test/unit/api_contract_test.dart` 程序化交叉校验（BookApi⊆RustApi/MockBookApi、§2.x 各节声明数、附录镜像、计数口径）；§1.7 补登录四方法命名等价对（`getLoginHeader` / `getLoginInfo` / `putLoginHeader` / `putLoginInfo`）；修正 6 处章节标题计数（2.3/2.5/2.9/2.18/2.41/2.43）+ 6 行附录计数；附录合计 251→**263**，BookApi 口径 252→**260** |
@@ -126,8 +127,8 @@
 ## 2. 方法清单
 
 > 共 **41 个方法模块**（§2.1–§2.43，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **264 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.1–§2.43 行合计 **267** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> BookApi 接口当前共 **265 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.1–§2.43 行合计 **268** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -319,15 +320,16 @@
 | `restore(String backupPath)` | backupPath | `Future<void>` | 恢复数据。**P2-4（2026-08-13）**：UI 先读 `SettingsService.restoreIgnore`；`localBook` 预过滤备份 JSON 本地书；其余 ignore 键在应用备份内 `appPrefs` 时经 `RestoreIgnorePrefs.keyIsNotIgnore` 跳过（对齐 BackupConfig）；再调用本方法恢复业务表（无需改 FFI 签名） |
 | `importOldData(String dirPath)` | dirPath：含旧版备份文件的目录 | `Future<String>`（统计 JSON） | **P2-4（2026-08-13）**：对齐原版 `ImportOldData.importUri`。读取目录下 `myBookShelf.json` / `myBookSource.json` / `myBookReplaceRule.json`（缺文件不致命，计入 `messages`）；书架字段映射（`noteUrl`→`bookUrl`、`bookInfoBean.*` 等）；书源经 `toNewRule`/`toNewUrl`/`toNewUrls`/`uaToHeader` 迁到 3.x 规则结构；替换规则兼容新格式或旧字段（`regex`/`replaceSummary`/`useTo`/`enable`/`serialNumber`）。已存在 `bookUrl` 的书跳过。返回 JSON：`{books, bookSources, replaceRules, messages: string[]}` |
 
-### 2.12 阅读记录（5 个方法）
+### 2.12 阅读记录（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `getReadRecords()` | 无 | `Future<List<ReadRecord>>` | 获取所有阅读记录 |
-| `putReadRecord(ReadRecord record)` | record: ReadRecord 对象 | `Future<void>` | 更新阅读记录 |
+| `putReadRecord(ReadRecord record)` | record: ReadRecord 对象 | `Future<void>` | 更新阅读记录；**（热力图每日时长契约，2026-08-29）**写路径同步累加当日 readRecordDaily（增量 = 新 readTime − 旧 readTime，仅增量 > 0 入账，本地时区 YYYY-MM-DD） |
 | `deleteReadRecord(String bookName)` | bookName | `Future<void>` | 删除阅读记录 |
 | `clearReadRecords()` | 无 | `Future<void>` | 清空阅读记录 |
 | `recordReadingTime(String bookName, int seconds)` | bookName, seconds | `Future<void>` | 记录阅读时长（对齐原版 ReadRecord，非统计子系统） |
+| `readRecordDailyList(int year)` | year：年份 | `Future<List<Map<String, dynamic>>>`（`[{date, seconds}]`，日期升序） | **新增（热力图每日时长契约，2026-08-29，U 侧 UI_MD3_PLAN 登记）**：按年查询每日阅读秒数（readRecordDaily 表：`date TEXT PK` + `durationSeconds INTEGER`，懒建表无迁移）；由 `putReadRecord` 写路径自动累加，UI 轨热力图「每日时长」配色模式数据源 |
 
 ### 2.13 RSS 收藏操作（4 个方法）
 
@@ -768,6 +770,7 @@
 | `txtSearch` / `txtSearchRegex` / `txtSearchInChapter` / `txtSearchCount`（新增，Task #98 缺口#4） | 见 §2.40 方法清单 | 本地 TXT 全文搜索接入 frb 主链路：既有 C ABI 4 函数的 frb 暴露（包装 legado-book TxtSearch 引擎，纯文本/正则/章节内搜索 + 匹配计数，返回裸 JSON Array），供搜索页内“搜本地书正文”场景调用，UI 由 UI 轨后续接入 | 2026-08-05 | ✅ 已完成 |
 | `setChineseConvertType` / `getChineseConvertType`（新增，Task #100） | 见 §2.9 方法清单 | 繁简转换 FFI 透传：reader.rs 硬编码 `chinese_convert: None` 改为读取持久化配置（键 `chineseConverterType`，0/1/2 → None/t2s/s2t），新增 set/get 接口；章节标题在展示路径补齐 t2s/s2t（对齐 Kotlin getDisplayTitle）；阅读器样式面板控件由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `ttsSpeak` / `ttsSetCacheDir`（新增，Task #113 缺口②） | 见 §2.42 方法清单 | TTS 真实合成管线：url 模板替换（speakText/speakSpeed）→ HTTP 拉取音频二进制（legado-net 新增 get_raw）→ Content-Type 校验 → MD5 命名本地缓存（命中免请求）；请 UI 轨将 `audioSpeak`（§2.26）的 `http.get` 探活 fallback 改接 `ttsSpeak`，音频播放器播放返回的 `audioPath` | 2026-08-06 | ✅ 已完成 |
+| `readRecordDailyList`（新增，热力图「每日时长」） | `int year` | `Future<List<Map<String, dynamic>>>`（`[{date, seconds}]` 日期升序；写路径 `putReadRecord` 自动累加当日增量，见 §2.12） | 2026-08-29 | ✅ 已完成 |
 
 #### 待 UI 封装清单（2026-08-06 审计：7 个 bridge 绑定已实现未被 UI 层封装）
 
@@ -849,7 +852,7 @@
 | 9 | 阅读器操作 | 12 |
 | 10 | 配置操作 | 4 |
 | 11 | 备份操作 | 3 |
-| 12 | 阅读记录 | 5 |
+| 12 | 阅读记录 | 6 |
 | 13 | RSS 收藏操作 | 4 |
 | 14 | 书籍分组 | 4 |
 | 15 | 搜索历史 | 5 |
@@ -879,11 +882,11 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
-| | **合计（§2.1–§2.43 附录行合计）** | **267** |
+| | **合计（§2.1–§2.43 附录行合计）** | **268** |
 
 > 口径说明（2026-08-15，`test/unit/api_contract_test.dart` 程序化计数校准，取代人工统计）：
-> - 附录行合计 **267** = §2.x 实际方法行总数；其中与 BookApi 同名 253、§1.7 命名等价对的 FFI 登记名 8
+> - 附录行合计 **268** = §2.x 实际方法行总数；其中与 BookApi 同名 254、§1.7 命名等价对的 FFI 登记名 8
 >   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **264** = 253 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **265** = 254 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

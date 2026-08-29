@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [热力图每日时长契约批次 2026-08-29]（版本 2.0.126+131）
+
+### Added
+- [Rust] readRecordDaily 每日时长聚合（U 侧 UI_MD3_PLAN 登记需求）：legado-db 新增日聚合表 readRecordDaily（date TEXT PK + durationSeconds INTEGER，懒建表无迁移）+ add_daily_seconds/list_daily_year；api 层 putReadRecord 写路径单作用域增量聚合（增量 = 新 readTime − 旧 readTime，仅 > 0 入账，本地时区 YYYY-MM-DD）；新增 readRecordDailyList(year) FFI 查询（返回 [{date, seconds}] 日期升序）
+- [Bridge] FRB 绑定重生成（frb_generated.rs/.dart + ffi.dart readRecordDailyList）；BookApi 抽象 + RustApi/MockBookApi 双实现补齐（API_CONTRACT §2.12 阅读记录 5→6 方法）
+- [Docs] API_CONTRACT §2.12 登记 + §3 UI 需求登记区销记；UI_MD3_PLAN 热力图登记项交付注记；REFACTORING_ACTIVE_PLAN 修订行
+
+### Test
+- [Test] legado-db daily 2 项（同日多次累加/跨年隔离升序）；legado-ffi upsert 联动 1 项（全量/增量入账 + get_read_time）——api 层直测即生产路径（bridge.rs 手工桥与 FRB 面同源）
+- Contributor: Qoder + Bridge
+
 ## [搜索 parity 批次 2026-08-29]（P0-3 收尾 + S0-B/S0-E；Rust 行为批次,版本号随发布批次定版）
 
 ### Fixed

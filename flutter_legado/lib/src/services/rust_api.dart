@@ -1397,6 +1397,13 @@ class RustApi implements BookApi {
     await bridge.readRecordClear();
   }
 
+  /// 按年查询每日阅读时长列表（热力图"每日时长"模式数据源）
+  @override
+  Future<List<Map<String, dynamic>>> readRecordDailyList(int year) async {
+    final json = await bridge.readRecordDailyList(year: year);
+    return _decodeList(json, 'bookApi').cast<Map<String, dynamic>>();
+  }
+
   // ========== RSS 收藏操作 ==========
 
   /// 获取所有 RSS 收藏

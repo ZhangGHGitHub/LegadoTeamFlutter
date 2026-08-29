@@ -1388,6 +1388,9 @@ class MockBookApi implements BookApi {
     _readRecords.clear();
   }
 
+  @override
+  Future<List<Map<String, dynamic>>> readRecordDailyList(int year) async => const [];
+
   // ========== RSS 收藏操作 ==========
 
   @override

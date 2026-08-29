@@ -35,7 +35,7 @@
 2. Material You 动态取色：按计划即为后续批次（需 Android seed-color 平台通道）；
 3. Batch 1–6 的模拟器冒烟未单独执行——emulator-5556/5558 被搜索 parity 后端轨（SEARCH_PARITY_HANDOVER_20260828.md）占用为 P0-3 e2e 实验环境，为避免互相干扰而并入用户验收流程（Batch 0 冒烟已 PASSED 7/7）。**2026-08-28 补跑：后端轨释放模拟器后，LargeTitle 批次已在 5556 冒烟 + 5558 -CheckUI 验证（结果见 CHANGELOG [2.0.118]）。**
 4. ~~内页图标 Symbols 全量化~~ **已完成（2026-08-29，版本 2.0.125+130）**：非 reader 域全部图标（73 文件、513 处 Symbols）100% 换用 Material Symbols rounded（177 种映射，`_outlined/_outline` 剥离、copy/paste → content_copy/content_paste 等 2 处特例）；reader 域 106 处按计划保留经典 Icons；7 个测试文件的图标断言同步迁移。
-5. **热力图「每日时长」模式 Rust 契约待办**（2026-08-29 登记，用户确认登记即可）：现有 `ReadRecord` 仅含 lastRead 时间戳 + 累计时长，无逐日时长；热力图已按 counts 模式（当日阅读书籍数）落地。若需「每日时长」配色模式，需 Rust 轨先行交付日聚合契约（如 `readRecordDaily`），届时按 API_CONTRACT 双轨流程冻结后实施——UI 轨不擅动后端。**2026-08-28 补跑：后端轨释放模拟器后，LargeTitle 批次已在 5556 冒烟 + 5558 -CheckUI 验证（结果见 CHANGELOG [2.0.118]）。**
+5. **热力图「每日时长」模式 Rust 契约待办**（2026-08-29 登记，用户确认登记即可）：现有 `ReadRecord` 仅含 lastRead 时间戳 + 累计时长，无逐日时长；热力图已按 counts 模式（当日阅读书籍数）落地。若需「每日时长」配色模式，需 Rust 轨先行交付日聚合契约（如 `readRecordDaily`），届时按 API_CONTRACT 双轨流程冻结后实施——UI 轨不擅动后端。**2026-08-29 交付（后端轨）：`readRecordDailyList(year)` FFI 已冻结登记（API_CONTRACT §2.12）并生成 Dart 绑定（BookApi/RustApi/MockBookApi 三层就位）；`putReadRecord` 写路径自动累加当日增量秒数（readRecordDaily 表，增量=新−旧、仅>0 入账）；UI 轨可直接经 `BookApi.readRecordDailyList(year)` 取 `[{date, seconds}]` 接「每日时长」配色模式。****2026-08-28 补跑：后端轨释放模拟器后，LargeTitle 批次已在 5556 冒烟 + 5558 -CheckUI 验证（结果见 CHANGELOG [2.0.118]）。**
 
 ---
 

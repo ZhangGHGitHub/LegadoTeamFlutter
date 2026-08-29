@@ -1418,9 +1418,28 @@ pub mod ffi {
     }
 
     /// 添加/更新阅读记录，返回阅读时长
+    ///
+    /// [热力图每日时长契约] api 层同步累加当日 readRecordDaily（热力图"每日时长"数据源）。
     pub fn read_record_upsert(book_name: String, read_time: i64) -> Result<i64, BridgeError> {
         let rt = crate::api::read_record_api::upsert_read_record(&book_name, read_time)?;
         Ok(rt)
+    }
+
+    /// 按年查询每日阅读时长列表（热力图"每日时长"模式数据源）
+    ///
+    /// 返回 JSON：`[{"date":"2026-08-29","seconds":3600},...]`（按日期升序）。
+    pub fn read_record_daily_list(year: i32) -> Result<String, BridgeError> {
+        let db = crate::db_state::with_database(|db| {
+            let repo = legado_db::repository::read_record_repository::ReadRecordRepository::new(
+                db.connection(),
+            );
+            repo.list_daily_year(year)
+        })?;
+        let items: Vec<serde_json::Value> = db
+            .into_iter()
+            .map(|(date, seconds)| serde_json::json!({"date": date, "seconds": seconds}))
+            .collect();
+        Ok(serde_json::to_string(&items)?)
     }
 
     /// 删除阅读记录
