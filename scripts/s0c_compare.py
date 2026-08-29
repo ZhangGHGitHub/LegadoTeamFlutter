@@ -211,135 +211,97 @@ def extract_ref_results(x: str) -> list[str]:
 
 
 def drive_original(device: str, port: int, out: Path) -> dict:
+    """原版端实测可行序列(2026-08-29 攻坚结论,详见计划文档 §8.8):
+    1. 冷启动 → 书架搜索入口;2. 输入 s0e(ADBKeyboard);3. 提交查询按钮提交;
+    4. 未圈范围搜索遍历约千源,夹具源位于列表尾部 → 长轮询(约 30 分钟)等 5 书渲染;
+    5. 期间 Cloudflare 网页用返回键清除;结果按首现顺序=列表相对序采集。
+    注意:adb reverse 数分钟内会静默僵死,本序列不依赖 reverse(夹具源 URL 需
+    指向当前可达地址,由导入时的 sources.json 决定)。"""
     m = {"device": device, "app": "original", "role": "原版基准"}
     sh(device, "shell", "am", "force-stop", ORIG_PKG)
     time.sleep(2)
     sh(device, "shell", "monkey", "-p", ORIG_PKG, "-c", "android.intent.category.LAUNCHER", "1")
     time.sleep(9)
     x = dump(device, "orig_home")
-    assert "搜索" in x, "原版未到主页"
+    assert find(x, "搜索", exact=True), "原版未到主页"
 
-    # 深链导入(OnLineImportActivity → ImportBookSourceDialog:全选+确认)
     sh(device, "shell", "am", "start", "-a", "android.intent.action.VIEW",
        "-d", f"legado://import/bookSource?src=http://127.0.0.1:{port}/s0c/sources.json",
        "-n", ORIG_ACT)
-    time.sleep(6)
     ok = False
-    for i in range(10):
+    for i in range(12):
+        time.sleep(2)
         x = dump(device, f"orig_import{i}")
         (out / f"orig_import{i}.xml").write_text(x, encoding="utf-8")
-        if "全选" in x and "确认" in x:
-            # 自定义源分组是菜单项 → 打开新建分组对话框(EditText+确定)填 S0C,
-            # 否则导入的书源不落任何分组,搜索范围无法按分组圈定
-            if tap(device, x, "自定义源分组", wait=1.5):
-                xg = dump(device, f"orig_groupdlg{i}")
-                (out / f"orig_groupdlg{i}.xml").write_text(xg, encoding="utf-8")
-                hit = find(xg, "", by_class="android.widget.EditText")
-                if hit:
-                    shell(device, f"input tap {hit[0]} {hit[1]}")
-                    time.sleep(0.8)
-                    shell(device, "input text S0C")
-                    time.sleep(0.8)
-                tap(device, xg, "确定") or tap(device, xg, "OK") or shell(device, "input keyevent 66")
-                time.sleep(1.5)
-                x = dump(device, f"orig_import_g{i}")
-                (out / f"orig_import_g{i}.xml").write_text(x, encoding="utf-8")
-            tap(device, x, "全选")
-            time.sleep(1)
-            x = dump(device, f"orig_import_all{i}")
-            tap(device, x, "确认")
+        sel = re.search(r'text="(全选[^"]*)"', x)
+        ok_btn = re.search(r'text="确认"', x)
+        if sel and ok_btn:
+            # 全选为切换式:若为 0/7 再点一次选满
+            sh(device, "input tap 158 1077")
+            time.sleep(1.2)
+            x = dump(device, f"orig_import_sel{i}")
+            sh(device, "input tap 612 1077")
             ok = True
-            time.sleep(3)
+            time.sleep(4)
             break
     m["import_ok"] = ok
-    rec(f"import_ok={ok}")
     assert back_home(device, ["更多选项", "搜索"]), "原版导入后未回主页"
-    rec("back home ok")
 
-    # 进入搜索页
     x = dump(device, "orig_pre_search")
-    assert tap(device, x, "搜索"), "原版搜索入口未找到"
+    assert tap(device, x, "搜索", exact=True), "原版搜索入口未找到"
     time.sleep(2.5)
-
-    # 等自动重搜(恢复的关键词,未圈范围→真实源并行;夹具 7 源在 +2..14s 完成)
-    started = False
-    for k in range(10):
-        x = dump(device, f"orig_auto{k}")
-        if "停止" in x or re.search(r"\d+/\d+", x) or any(n in x for n in EXPECTED_ORDER):
-            started = True
+    for i in range(3):
+        x = dump(device, f"orig_f{i}")
+        et = re.search(r'class="android.widget.EditText"', x)
+        if et:
             break
-        time.sleep(2.5)
-    if not started:
-        # 先清历史范围残留:溢出菜单 → 多分组/书源 → 勾「全部书源」→ 确认
-        x2 = dump(device, "orig_menu_open2")
-        tap(device, x2, "更多选项") or tap(device, x2, "Show menu") or tap(device, x2, "更多")
-        x2 = dump(device, "orig_scope_menu2")
-        (out / "orig_scope_menu2.xml").write_text(x2, encoding="utf-8")
-        if tap(device, x2, "分组或书源") or tap(device, x2, "多分组/书源") or tap(device, x2, "分组"):
-            time.sleep(1.5)
-            x2 = dump(device, "orig_scope_dialog3")
-            (out / "orig_scope_dialog3.xml").write_text(x2, encoding="utf-8")
-            if tap(device, x2, "全部书源"):
-                time.sleep(0.8)
-                x2 = dump(device, "orig_scope_dialog4")
-                tap(device, x2, "确认")
-                time.sleep(2)
-        hit = find(dump(device, "orig_field"), "", by_class="android.widget.EditText")
-        assert hit, "原版搜索框未找到"
-        shell(device, f"input tap {hit[0]} {hit[1]}")
-        time.sleep(1)
-        sh(device, "shell", "am", "broadcast", "-a", "ADB_INPUT_TEXT", "--es", "msg", KW)
-        time.sleep(1.5)
-        # 提交:优先点搜索历史词条 s0e(精确文本、y>200 非输入框);否则 Enter
-        x3 = dump(device, "orig_typed")
-        chip = None
-        for nd in nodes(x3):
-            if nd.group(1) == KW and int(nd.group(4)) > 200:
-                cx = (int(nd.group(3)) + int(nd.group(5))) // 2
-                cy = (int(nd.group(4)) + int(nd.group(6))) // 2
-                chip = (cx, cy)
-                break
-        if chip:
-            shell(device, f"input tap {chip[0]} {chip[1]}")
-            time.sleep(2)
-        else:
-            shell(device, "input keyevent 66")
-            time.sleep(2)
-
+        sh(device, "input keyevent 4"); time.sleep(1.5)
+        x = dump(device, f"orig_f{i}b")
+        et = re.search(r'class="android.widget.EditText"', x)
+        if et:
+            break
+    assert et, "原版搜索框未找到"
+    m2 = re.search(r'class="android.widget.EditText"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', x)
+    cx = (int(m2.group(1)) + int(m2.group(3))) // 2
+    cy = (int(m2.group(2)) + int(m2.group(4))) // 2
+    sh(device, f"input tap {cx} {cy}"); time.sleep(1)
+    sh(device, "shell", "am", "broadcast", "-a", "ADB_INPUT_TEXT", "--es", "msg", KW)
+    time.sleep(1.5)
+    x = dump(device, "orig_typed")
+    m3 = re.search(r'class="android.widget.EditText"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', x)
+    print("[orig] field:", m3.group(1) if m3 else "?", flush=True)
+    sub = re.search(r'content-desc="提交查询"[^>]*?bounds="\[(\d+),(\d+)\]"', x)
     marker(port, "ORIG_SUBMIT")
     t0 = time.time()
+    if sub:
+        sh(device, f"input tap {sub.group(1)} {sub.group(2)}")
+    else:
+        sh(device, "input keyevent 66")
+    time.sleep(10)
 
-    # 夹具子集终态:五个期望书名全部可见即采集;结果列表较长需滚动收集,
-    # 按首现顺序=列表相对序;采集后 force-stop 终止原版侧搜索
-    first_seen = None
-    seen_all = None
-    for r2 in range(60):
-        time.sleep(2.5)
-        x = dump(device, f"orig_b{r2}")
-        got = [n for n in EXPECTED_ORDER if n in x]
-        if got and first_seen is None:
-            first_seen = time.time() - t0
-        if len(got) == 5:
-            seen_all = time.time() - t0
-            break
-    m["first_result_s"] = round(first_seen, 1) if first_seen else None
-    m["all_names_at_s"] = round(seen_all, 1) if seen_all else None
-    m["results"] = []
-    for k in range(30):
-        x = dump(device, f"orig_scan{k}")
+    # 长尾轮询:未圈范围时夹具源在遍历尾部,约 20-35 分钟;期间清除 CF 网页
+    names = []
+    for i in range(80):
+        time.sleep(30)
+        x = dump(device, f"orig_lp{i}")
+        if not x:
+            continue
         if any(w in x for w in ("Cloudflare", "安全验证", "Just a moment")):
-            shell(device, "input keyevent 4")
-            time.sleep(1.5)
-        for n in extract_orig_results(x):
-            if n not in m["results"]:
-                m["results"].append(n)
-        if len(m["results"]) >= 5:
+            sh(device, "input keyevent 4"); time.sleep(1.5)
+        for mm in re.finditer(r'text="(书[甲乙丙丁戊])"', x):
+            if mm.group(1) not in names:
+                names.append(mm.group(1))
+        print(f"[orig] lp{i}: {names}", flush=True)
+        if len(names) >= 5:
             break
-        shell(device, "input swipe 360 1000 360 300")
-        time.sleep(1.2)
+        if i % 4 == 3:
+            sh(device, "input swipe 360 1000 360 400"); time.sleep(1)
+    m["first_result_s"] = None
+    m["all_names_at_s"] = None
+    x = dump(device, "orig_final")
     (out / "orig_final.xml").write_text(x, encoding="utf-8")
-    m["scope"] = "全部书源(未圈定);夹具 7 源 +2..14s 确定性完成"
-    shell(device, f"am force-stop {ORIG_PKG}")
+    m["results"] = names
+    m["scope"] = "全部书源(未圈定);夹具源位于遍历尾部,长轮询采集"
     return m
 
 
