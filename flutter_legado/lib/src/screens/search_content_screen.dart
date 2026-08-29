@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
@@ -219,7 +220,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
         title: Text('搜索正文', style: Theme.of(context).textTheme.titleMedium),
         actions: [
           if (_searching)
-            IconButton(icon: const Icon(Icons.close), onPressed: _cancelSearch),
+            IconButton(icon: const Icon(Symbols.close_rounded), onPressed: _cancelSearch),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
@@ -233,11 +234,11 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
               decoration: InputDecoration(
                 isDense: true,
                 hintText: '在《${widget.effectiveBookName}》中搜索...',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                prefixIcon: const Icon(Symbols.search_rounded, size: 20),
                 suffixIcon: _controller.text.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
+                        icon: const Icon(Symbols.close_rounded, size: 18),
                         onPressed: () {
                           _controller.clear();
                           setState(() {
@@ -279,7 +280,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
     }
     if (_results.isEmpty) {
       return EmptyState(
-        icon: Icons.search_off,
+        icon: Symbols.search_off_rounded,
         title: AppStrings.noResults,
         subtitle: '未找到「$_query」相关内容',
       );
@@ -332,7 +333,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   Widget _buildHistory() {
     if (_history.isEmpty) {
       return EmptyState(
-        icon: Icons.history,
+        icon: Symbols.history_rounded,
         title: AppStrings.searchHistory,
         subtitle: '输入关键词开始搜索正文',
       );
@@ -358,7 +359,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           children: [
             for (final word in _history)
               ActionChip(
-                avatar: const Icon(Icons.history, size: 16),
+                avatar: const Icon(Symbols.history_rounded, size: 16),
                 label: Text(word),
                 onPressed: () {
                   _controller.text = word;

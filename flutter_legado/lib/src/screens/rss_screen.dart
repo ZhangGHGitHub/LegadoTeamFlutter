@@ -1,5 +1,6 @@
 ﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -106,11 +107,11 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               fillColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-              prefixIcon: Icon(Icons.search,
+              prefixIcon: Icon(Symbols.search_rounded,
                   size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
               suffixIcon: _searchKey.isNotEmpty
                   ? IconButton(
-                      icon: Icon(Icons.clear,
+                      icon: Icon(Symbols.close_rounded,
                           size: 18,
                           color: Theme.of(context).colorScheme.onSurfaceVariant),
                       onPressed: () {
@@ -131,7 +132,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           // 安卓原版顶栏 4 个功能入口：阅读记录/收藏/分组/订阅源管理
           // （原版 menu_read_record 打开阅读记录对话框，非独立页面）
           IconButton(
-            icon: const Icon(Icons.history),
+            icon: const Icon(Symbols.history_rounded),
             tooltip: '阅读记录',
             onPressed: () => showDialog<void>(
               context: context,
@@ -139,14 +140,14 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.star_outline),
+            icon: const Icon(Symbols.star_rounded),
             tooltip: '收藏',
             onPressed: () => Navigator.pushNamed(context, AppRoutes.rssFavorites),
           ),
           // 分组筛选：对齐原版 RssFragment 的分组菜单（ic_groups 图标，linkedSetOf 保序聚合）
           PopupMenuButton<String?>(
             tooltip: '分组',
-            icon: const Icon(Icons.groups),
+            icon: const Icon(Symbols.groups_rounded),
             onSelected: (group) => notifier.setGroup(group),
             itemBuilder: (context) => [
               const PopupMenuItem<String?>(
@@ -163,7 +164,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           // 原版 menu_rss_config：齿轮图标即订阅源管理入口，
           // 返回后刷新源列表
           IconButton(
-            icon: const Icon(Icons.settings_outlined),
+            icon: const Icon(Symbols.settings_rounded),
             tooltip: '订阅源管理',
             onPressed: () async {
               await Navigator.pushNamed(context, AppRoutes.rssSourceManage);
@@ -224,7 +225,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                       Positioned.fill(
                         child: IgnorePointer(
                           child: EmptyState(
-                            icon: Icons.rss_feed,
+                            icon: Symbols.rss_feed_rounded,
                             title: emptyMsg,
                             simple: true,
                           ),
@@ -304,7 +305,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
-                    Icons.subscriptions_outlined,
+                    Symbols.subscriptions_rounded,
                     size: 26,
                     color: colorScheme.primary,
                   ),

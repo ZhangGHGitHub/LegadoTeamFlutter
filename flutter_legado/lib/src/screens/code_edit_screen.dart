@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 
@@ -205,14 +206,14 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
         appBar: LegadoAppBar(
           title: Text(widget.title),
           leading: IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(Symbols.close_rounded),
             onPressed: _handlePop,
           ),
           actions: [
             if (widget.writable && widget.showDebugSource)
               IconButton(
                 tooltip: '调试',
-                icon: const Icon(Icons.bug_report_outlined),
+                icon: const Icon(Symbols.bug_report_rounded),
                 onPressed: () => _save(debug: true),
               ),
             if (widget.writable)
@@ -276,12 +277,12 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
                       IconButton(
                         tooltip: '下一个',
                         onPressed: _findNext,
-                        icon: const Icon(Icons.keyboard_arrow_down),
+                        icon: const Icon(Symbols.keyboard_arrow_down_rounded),
                       ),
                       IconButton(
                         tooltip: '关闭',
                         onPressed: () => setState(() => _showFind = false),
-                        icon: const Icon(Icons.close),
+                        icon: const Icon(Symbols.close_rounded),
                       ),
                     ],
                   ),

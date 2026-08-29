@@ -1,5 +1,6 @@
 ﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -49,7 +50,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
       appBar: LegadoAppBar(
         title: Text(widget.source.sourceName),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new),
+          icon: const Icon(Symbols.arrow_back_ios_new_rounded),
           onPressed: () {
             notifier.clearSelectedSource();
             Navigator.pop(context);
@@ -57,7 +58,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             tooltip: '刷新',
             onPressed: () => notifier.refreshArticles(),
           ),
@@ -99,7 +100,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
 
           if (state.articles.isEmpty) {
             return const EmptyState(
-              icon: Icons.article_outlined,
+              icon: Symbols.article_rounded,
               title: '暂无文章',
               subtitle: '下拉刷新获取最新内容',
             );
@@ -196,7 +197,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                       color: colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(Icons.image_not_supported,
+                    child: Icon(Symbols.image_not_supported_rounded,
                         color: colorScheme.onSurfaceVariant.withAlpha(128)),
                   ),
                 ),
@@ -209,7 +210,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                   color: colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.article,
+                child: Icon(Symbols.article_rounded,
                     color: colorScheme.onSurfaceVariant.withAlpha(128)),
               ),
             const SizedBox(width: 12),
@@ -243,7 +244,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(Icons.schedule,
+                      Icon(Symbols.schedule_rounded,
                           size: 12, color: colorScheme.onSurfaceVariant),
                       const SizedBox(width: 4),
                       Text(
@@ -254,7 +255,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                       ),
                       if (isRead) ...[
                         const SizedBox(width: 8),
-                        Icon(Icons.check_circle_outline,
+                        Icon(Symbols.check_circle_rounded,
                             size: 12, color: colorScheme.primary),
                         const SizedBox(width: 2),
                         Text(
@@ -327,7 +328,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                       errorWidget: (_, _, _) => Container(
                         color: colorScheme.surfaceContainerHighest,
                         child: Icon(
-                          Icons.image_not_supported,
+                          Symbols.image_not_supported_rounded,
                           color: colorScheme.onSurfaceVariant.withAlpha(128),
                         ),
                       ),
@@ -335,7 +336,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                   : Container(
                       color: colorScheme.surfaceContainerHighest,
                       child: Icon(
-                        Icons.article,
+                        Symbols.article_rounded,
                         color: colorScheme.onSurfaceVariant.withAlpha(128),
                       ),
                     ),

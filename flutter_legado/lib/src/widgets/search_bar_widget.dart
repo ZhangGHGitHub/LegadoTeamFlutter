@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 /// 搜索栏组件 — 带清除按钮和提交回调的搜索栏
 class SearchBarWidget extends StatefulWidget {
@@ -62,7 +63,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
       child: Row(
         children: [
           const SizedBox(width: 16),
-          Icon(Icons.search, size: 20, color: colorScheme.onSurfaceVariant),
+          Icon(Symbols.search_rounded, size: 20, color: colorScheme.onSurfaceVariant),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
@@ -80,7 +81,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
           ),
           if (_hasText)
             IconButton(
-              icon: const Icon(Icons.close, size: 20),
+              icon: const Icon(Symbols.close_rounded, size: 20),
               onPressed: _handleClear,
               color: colorScheme.onSurfaceVariant,
             )

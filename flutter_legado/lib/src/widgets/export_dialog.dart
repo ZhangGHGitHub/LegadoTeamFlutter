@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../models/models.dart';
 import '../services/export_service.dart';
 import '../services/book_api.dart';
@@ -321,7 +322,7 @@ class _ExportDialogState extends State<ExportDialog> {
             ),
             child: Row(
               children: [
-                Icon(Icons.folder_open,
+                Icon(Symbols.folder_open_rounded,
                     size: 20, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
@@ -336,7 +337,7 @@ class _ExportDialogState extends State<ExportDialog> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Icon(Icons.arrow_forward_ios, size: 14),
+                const Icon(Symbols.arrow_forward_ios_rounded, size: 14),
               ],
             ),
           ),
@@ -427,7 +428,7 @@ class _ExportDialogState extends State<ExportDialog> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.folder_special,
+                    Icon(Symbols.folder_special_rounded,
                         size: 20, color: Theme.of(context).primaryIconTheme.color),
                     const SizedBox(width: 8),
                     Text(

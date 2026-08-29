@@ -1,5 +1,6 @@
 ﻿import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import '../widgets/legado_app_bar.dart';
@@ -78,18 +79,18 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_outlined),
+              leading: const Icon(Symbols.photo_rounded),
               title: const Text('选择图片'),
               onTap: () => Navigator.pop(ctx, 'select'),
             ),
             if (current.isNotEmpty)
               ListTile(
-                leading: const Icon(Icons.delete_outline),
+                leading: const Icon(Symbols.delete_rounded),
                 title: const Text('删除'),
                 onTap: () => Navigator.pop(ctx, 'delete'),
               ),
             ListTile(
-              leading: const Icon(Icons.close),
+              leading: const Icon(Symbols.close_rounded),
               title: const Text('取消'),
               onTap: () => Navigator.pop(ctx),
             ),
@@ -201,7 +202,7 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                   const IosSectionHeader('白天'),
                   IosGroup(children: [
                     IosListTile(
-                      icon: Icons.wallpaper_outlined,
+                      icon: Symbols.wallpaper_rounded,
                       title: '背景图片',
                       subtitle: _imageDay.isEmpty ? '选择图片' : _imageDay,
                       onTap: () => _pickImage(dark: false),
@@ -228,7 +229,7 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                   const IosSectionHeader('夜间'),
                   IosGroup(children: [
                     IosListTile(
-                      icon: Icons.wallpaper_outlined,
+                      icon: Symbols.wallpaper_rounded,
                       title: '背景图片',
                       subtitle: _imageNight.isEmpty ? '选择图片' : _imageNight,
                       onTap: () => _pickImage(dark: true),

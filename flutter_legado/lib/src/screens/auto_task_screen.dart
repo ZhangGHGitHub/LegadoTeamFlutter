@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -211,7 +212,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.error_outline,
+                  Icon(Symbols.error_rounded,
                       size: 48, color: Theme.of(context).colorScheme.error),
                   const SizedBox(height: 8),
                   Text(state.error!,
@@ -232,7 +233,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.schedule, size: 64,
+                  Icon(Symbols.schedule_rounded, size: 64,
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
                   const SizedBox(height: 8),
                   Text('暂无定时任务',
@@ -264,7 +265,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddTaskDialog(context),
-        child: const Icon(Icons.add),
+        child: const Icon(Symbols.add_rounded),
       ),
     );
   }
@@ -274,16 +275,16 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     final IconData icon;
     switch (task.taskType) {
       case 'refreshToc':
-        icon = Icons.refresh;
+        icon = Symbols.refresh_rounded;
         break;
       case 'updateSources':
-        icon = Icons.update;
+        icon = Symbols.update_rounded;
         break;
       case 'backup':
-        icon = Icons.backup;
+        icon = Symbols.backup_rounded;
         break;
       default:
-        icon = Icons.schedule;
+        icon = Symbols.schedule_rounded;
     }
 
     return ListTile(
@@ -295,7 +296,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           const SizedBox(height: 2),
           Row(
             children: [
-              Icon(Icons.schedule, size: 12,
+              Icon(Symbols.schedule_rounded, size: 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(width: 4),
               Text('cron: ${task.cron}',
@@ -422,7 +423,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.play_arrow),
+              leading: const Icon(Symbols.play_arrow_rounded),
               title: const Text('立即运行'),
               subtitle: Text(task.name),
               onTap: () {
@@ -435,7 +436,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
             ),
             // P2-7：调试（对标原版 AutoTaskDebugActivity）
             ListTile(
-              leading: const Icon(Icons.bug_report_outlined),
+              leading: const Icon(Symbols.bug_report_rounded),
               title: const Text('调试'),
               subtitle: const Text('执行并查看结果日志'),
               onTap: () {
@@ -444,7 +445,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit),
+              leading: const Icon(Symbols.edit_rounded),
               title: const Text('编辑任务'),
               onTap: () {
                 Navigator.pop(ctx);
@@ -452,7 +453,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               },
             ),
             ListTile(
-              leading: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
+              leading: Icon(Symbols.delete_rounded, color: Theme.of(context).colorScheme.error),
               title: Text('删除任务',
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
               onTap: () {

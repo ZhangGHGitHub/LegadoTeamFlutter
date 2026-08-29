@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -268,22 +269,22 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
           IconButton(
             tooltip: '语法检查',
             onPressed: _loading || _saving ? null : _checkSyntaxOnly,
-            icon: const Icon(Icons.spellcheck_outlined),
+            icon: const Icon(Symbols.spellcheck_rounded),
           ),
           IconButton(
             tooltip: '代码编辑',
             onPressed: _loading || _saving ? null : _openCodeEdit,
-            icon: const Icon(Icons.code),
+            icon: const Icon(Symbols.code_rounded),
           ),
           IconButton(
             tooltip: 'cURL 转换',
             onPressed: _loading || _saving ? null : _openCurl,
-            icon: const Icon(Icons.swap_horiz),
+            icon: const Icon(Symbols.swap_horiz_rounded),
           ),
           IconButton(
             tooltip: '调试',
             onPressed: _saving ? null : () => _save(openDebug: true),
-            icon: const Icon(Icons.bug_report_outlined),
+            icon: const Icon(Symbols.bug_report_rounded),
           ),
           TextButton(
             onPressed: _saving ? null : () => _save(),
@@ -329,7 +330,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.warning_amber_rounded,
+                              Symbols.warning_amber_rounded,
                               size: 18,
                               color: Color(0xFFF9A825),
                             ),

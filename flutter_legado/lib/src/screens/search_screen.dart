@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -295,19 +296,19 @@ class _SearchScreenState
         FloatingActionButton.small(
           onPressed: () => ref.read(searchNotifierProvider.notifier).stop(),
           tooltip: '停止搜索',
-          child: const Icon(Icons.stop),
+          child: const Icon(Symbols.stop_rounded),
         ),
       ],
     );
   }
 
-  /// 下一页 FAB（批次B G-B-02：原版 searchFinally → Icons.play_arrow，
+  /// 下一页 FAB（批次B G-B-02：原版 searchFinally → Symbols.play_arrow_rounded，
   /// 点击 = 同关键词续页 loadNextPage）— Cursor UI
   Widget _buildNextPageFab() {
     return FloatingActionButton.small(
       onPressed: () => ref.read(searchNotifierProvider.notifier).loadNextPage(),
       tooltip: '加载下一页',
-      child: const Icon(Icons.play_arrow),
+      child: const Icon(Symbols.play_arrow_rounded),
     );
   }
 
@@ -356,13 +357,13 @@ class _SearchScreenState
             fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-            prefixIcon: const Icon(Icons.search, size: 20),
+            prefixIcon: const Icon(Symbols.search_rounded, size: 20),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
                         minWidth: 32, minHeight: 32),
-                    icon: const Icon(Icons.clear, size: 20),
+                    icon: const Icon(Symbols.close_rounded, size: 20),
                     onPressed: () {
                       _searchController.clear();
                       ref.read(searchNotifierProvider.notifier).clearResults();
@@ -410,7 +411,7 @@ class _SearchScreenState
       actions: [
         // 安卓原版：右侧「>」图标提交搜索
         IconButton(
-          icon: const Icon(Icons.arrow_forward),
+          icon: const Icon(Symbols.arrow_forward_rounded),
           tooltip: AppStrings.search,
           onPressed: () {
             final text = _searchController.text.trim();
@@ -539,7 +540,7 @@ class _SearchScreenState
     if (state.isEmpty || (_precision && results.isEmpty)) {
       // [颜文字彩蛋] 搜索无结果空态（用户授权新增，对齐参考 EmptyMessage）
       return EmptyState(
-        icon: Icons.search_off,
+        icon: Symbols.search_off_rounded,
         title: AppStrings.noResults,
         subtitle: AppStrings.noResultsHint,
         kaomoji: true,
@@ -576,7 +577,7 @@ class _SearchScreenState
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ActionChip(
-                    avatar: const Icon(Icons.folder, size: 16),
+                    avatar: const Icon(Symbols.folder_rounded, size: 16),
                     // 展示实际分组名（粘性可见），点击清除并重搜
                     label: Text(state.selectedGroups.length == 1
                         ? state.selectedGroups.first
@@ -594,7 +595,7 @@ class _SearchScreenState
                 ),
               if (state.selectedSourceUrls.isNotEmpty)
                 ActionChip(
-                  avatar: const Icon(Icons.filter_list, size: 16),
+                  avatar: const Icon(Symbols.filter_list_rounded, size: 16),
                   label: Text(
                       '${state.selectedSourceUrls.length} ${AppStrings.sources}'),
                   onPressed: () {
@@ -1035,7 +1036,7 @@ class _SearchScreenState
     if (state.searchHistory.isEmpty && shelfMatches.isEmpty) {
       // 安卓原版：无历史时显示纯灰字提示
       return const EmptyState(
-        icon: Icons.search,
+        icon: Symbols.search_rounded,
         title: '搜索书名、作者',
         simple: true,
       );
@@ -1069,7 +1070,7 @@ class _SearchScreenState
                         const Spacer(),
                         TextButton.icon(
                           onPressed: _confirmClearHistory,
-                          icon: const Icon(Icons.delete_outline, size: 18),
+                          icon: const Icon(Symbols.delete_rounded, size: 18),
                           label: Text(AppStrings.clearHistory),
                         ),
                       ],
@@ -1462,7 +1463,7 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
                 hintText: '搜索书源',
                 hintStyle: TextStyle(
                     fontSize: 14, color: scheme.onSurface.withValues(alpha: 0.5)),
-                prefixIcon: Icon(Icons.search, size: 20,
+                prefixIcon: Icon(Symbols.search_rounded, size: 20,
                     color: scheme.onSurface.withValues(alpha: 0.5)),
                 border: InputBorder.none,
                 isDense: true,

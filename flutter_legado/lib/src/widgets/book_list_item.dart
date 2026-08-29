@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../models/models.dart';
 import '../utils/book_progress_utils.dart';
@@ -74,7 +75,7 @@ class BookListItem extends StatelessWidget {
                   ),
                   // 作者 + 更新时间行（对标 iv_author + tv_author + tv_last_update_time）
                   _SummaryRow(
-                    icon: Icons.person_outline,
+                    icon: Symbols.person_rounded,
                     text: book.author,
                     style: summaryStyle,
                     trailing: book.latestChapterTime > 0
@@ -88,14 +89,14 @@ class BookListItem extends StatelessWidget {
                   // 阅读进度行（对标 iv_read + tv_read：显示当前阅读章节）
                   if ((book.durChapterTitle ?? '').isNotEmpty)
                     _SummaryRow(
-                      icon: Icons.history,
+                      icon: Symbols.history_rounded,
                       text: book.durChapterTitle!,
                       style: summaryStyle,
                     ),
                   // 最新章节行 + 百分比（对标 iv_last + tv_last + tv_read_percent）
                   if ((book.latestChapterTitle ?? '').isNotEmpty)
                     _SummaryRow(
-                      icon: Icons.last_page,
+                      icon: Symbols.last_page_rounded,
                       text: book.latestChapterTitle!,
                       style: summaryStyle,
                       trailing: progress != null

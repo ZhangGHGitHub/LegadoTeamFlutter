@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/providers/providers.dart';
@@ -91,7 +92,7 @@ void main() {
   testWidgets('新增表单包含原版字段且保存传递 pattern', (tester) async {
     await pumpScreen(tester);
 
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(Symbols.add_rounded));
     await tester.pumpAndSettle();
 
     expect(find.text('新增高亮规则'), findsOneWidget);
@@ -120,7 +121,7 @@ void main() {
         .thenAnswer((_) async => jsonEncode([sampleRule]));
     await pumpScreen(tester);
 
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(Symbols.delete_rounded));
     await tester.pumpAndSettle();
 
     // 确认对话框（对标原版 sure_del）

@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 import 'package:url_launcher/url_launcher.dart';
@@ -103,7 +104,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
         title: const Text('RSS 收藏'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             tooltip: '刷新',
             onPressed: _load,
           ),
@@ -122,7 +123,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     }
     if (_stars.isEmpty) {
       return const EmptyState(
-        icon: Icons.star_outline_rounded,
+        icon: Symbols.star_outline_rounded,
         title: '暂无收藏文章',
         subtitle: '浏览 RSS 文章时点亮星标即可收藏',
       );
@@ -231,7 +232,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Icon(Icons.schedule,
+                          Icon(Symbols.schedule_rounded,
                               size: 14, color: colorScheme.outline),
                           const SizedBox(width: 4),
                           Text(
@@ -248,7 +249,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
               ),
               const SizedBox(width: 8),
               IconButton(
-                icon: Icon(Icons.star_rounded, color: colorScheme.secondary),
+                icon: Icon(Symbols.star_rounded, color: colorScheme.secondary),
                 tooltip: '取消收藏',
                 onPressed: () => _unstar(star),
               ),

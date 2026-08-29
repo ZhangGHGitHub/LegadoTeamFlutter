@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -356,7 +357,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         title: const Text('备份与恢复'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             tooltip: '帮助',
             onPressed: _showHelp,
           ),

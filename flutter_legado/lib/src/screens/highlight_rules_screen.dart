@@ -1,6 +1,7 @@
 ﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -100,7 +101,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
         actions: [
           // 对标 menu_add_highlight_rule
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Symbols.add_rounded),
             tooltip: '新增规则',
             onPressed: () => _edit(null),
           ),
@@ -115,7 +116,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
         }
         if (state.rules.isEmpty) {
           return const EmptyState(
-            icon: Icons.format_paint_outlined,
+            icon: Symbols.format_paint_rounded,
             title: '暂无高亮规则',
             subtitle: '点击右上角「+」新增自动高亮规则',
           );
@@ -227,7 +228,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
               },
             ),
             IconButton(
-              icon: Icon(Icons.delete_outline,
+              icon: Icon(Symbols.delete_rounded,
                   size: 20, color: cs.onSurfaceVariant),
               tooltip: '删除',
               visualDensity: VisualDensity.compact,

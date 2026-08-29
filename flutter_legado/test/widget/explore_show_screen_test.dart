@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
@@ -84,9 +85,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // 批量入架按钮存在
-    expect(find.byIcon(Icons.playlist_add), findsOneWidget);
+    expect(find.byIcon(Symbols.playlist_add_rounded), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.playlist_add));
+    await tester.tap(find.byIcon(Symbols.playlist_add_rounded));
     await tester.pumpAndSettle();
 
     // 调用 importBooks 且传入 2 本书
@@ -112,7 +113,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.playlist_add));
+    await tester.tap(find.byIcon(Symbols.playlist_add_rounded));
     await tester.pumpAndSettle();
 
     expect(find.text('没有已加载的书籍'), findsOneWidget);

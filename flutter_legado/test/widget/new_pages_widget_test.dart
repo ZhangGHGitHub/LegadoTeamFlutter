@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -70,7 +71,7 @@ void main() {
       await tester.pumpWidget(wrap(const BookshelfManageScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(Icons.refresh), findsWidgets);
+      expect(find.byIcon(Symbols.refresh_rounded), findsWidgets);
     });
 
     testWidgets('勾选书籍后显示底部操作栏（删除/分组/置顶）', (tester) async {
@@ -163,8 +164,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.byIcon(Icons.refresh), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.more_vert));
+      expect(find.byIcon(Symbols.refresh_rounded), findsOneWidget);
+      await tester.tap(find.byIcon(Symbols.more_vert_rounded));
       await tester.pumpAndSettle();
       expect(find.text('服务器配置'), findsOneWidget);
     });
@@ -186,7 +187,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      await tester.tap(find.byIcon(Icons.history));
+      await tester.tap(find.byIcon(Symbols.history_rounded));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
@@ -205,7 +206,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      await tester.tap(find.byIcon(Icons.history));
+      await tester.tap(find.byIcon(Symbols.history_rounded));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 

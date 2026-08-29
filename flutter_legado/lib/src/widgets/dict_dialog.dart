@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -96,7 +97,7 @@ class _DictDialogState extends ConsumerState<DictDialog>
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Symbols.close_rounded),
                   tooltip: '关闭',
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -189,7 +190,7 @@ class _DictDialogState extends ConsumerState<DictDialog>
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: () => _launchOnline(rule),
-            icon: const Icon(Icons.open_in_browser),
+            icon: const Icon(Symbols.open_in_browser_rounded),
             label: const Text('打开在线词典'),
           ),
         ],

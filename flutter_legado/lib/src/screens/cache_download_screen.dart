@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
@@ -125,7 +126,7 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
         actions: [
           IconButton(
             tooltip: '刷新',
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             onPressed: _refresh,
           ),
         ],
@@ -153,7 +154,7 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.download_done, size: 64, color: cs.outlineVariant),
+          Icon(Symbols.download_done_rounded, size: 64, color: cs.outlineVariant),
           const SizedBox(height: 12),
           const Text('暂无缓存下载任务'),
           const SizedBox(height: 4),
@@ -178,7 +179,7 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
     };
     return ListTile(
       leading: Icon(
-        task.isRunning ? Icons.cloud_download : Icons.cloud_done,
+        task.isRunning ? Symbols.cloud_download_rounded : Symbols.cloud_done_rounded,
         color: color,
       ),
       title: Text(

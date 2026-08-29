@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -39,7 +40,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
         title: const Text('书签'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search),
+            icon: const Icon(Symbols.search_rounded),
             onPressed: () => _showSearchDialog(context),
           ),
         ],
@@ -58,7 +59,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 48,
+            Icon(Symbols.error_rounded, size: 48,
                 color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 16),
             Text(state.error!, textAlign: TextAlign.center),
@@ -76,7 +77,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.bookmark_border, size: 64,
+            Icon(Symbols.bookmark_border_rounded, size: 64,
                 color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
             Text(
@@ -218,7 +219,7 @@ class _BookmarkTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.bookmark, size: 16,
+                  Icon(Symbols.bookmark_rounded, size: 16,
                       color: theme.colorScheme.primary),
                   const SizedBox(width: 6),
                   Expanded(
@@ -237,7 +238,7 @@ class _BookmarkTile extends StatelessWidget {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(Icons.menu_book, size: 14,
+                  Icon(Symbols.menu_book_rounded, size: 14,
                       color: theme.colorScheme.outline),
                   const SizedBox(width: 4),
                   Expanded(

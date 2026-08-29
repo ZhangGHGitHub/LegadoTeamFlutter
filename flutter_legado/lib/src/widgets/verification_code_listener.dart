@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -189,7 +190,7 @@ class _VerificationCodeDialogState
           ),
           Builder(
             builder: (btnContext) => IconButton(
-              icon: const Icon(Icons.more_vert, size: 20),
+              icon: const Icon(Symbols.more_vert_rounded, size: 20),
               tooltip: '更多选项',
               visualDensity: VisualDensity.compact,
               onPressed: () => _showSourceMenu(btnContext),

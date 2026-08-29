@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -53,7 +54,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         title: const Text('规则订阅'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Symbols.add_rounded),
             tooltip: '新增订阅',
             onPressed: () => _showEditDialog(context, null),
           ),
@@ -75,7 +76,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     }
     if (state.subs.isEmpty) {
       return const EmptyState(
-        icon: Icons.rss_feed_outlined,
+        icon: Symbols.rss_feed_rounded,
         title: '暂无订阅',
         subtitle: '点击右上角「新增订阅」添加书源/订阅源/替换规则订阅',
       );
@@ -162,14 +163,14 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
               ),
               // 编辑图标（对标 iv_edit）
               IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 20),
+                icon: const Icon(Symbols.edit_rounded, size: 20),
                 tooltip: '编辑',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _showEditDialog(context, sub),
               ),
               // 更多图标（对标 iv_menu_more）
               IconButton(
-                icon: const Icon(Icons.more_vert, size: 20),
+                icon: const Icon(Symbols.more_vert_rounded, size: 20),
                 tooltip: '更多选项',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _showSubMenu(context, sub),
@@ -191,17 +192,17 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.system_update_alt),
+              leading: const Icon(Symbols.system_update_alt_rounded),
               title: const Text('检查更新'),
               onTap: () => Navigator.pop(ctx, 'check_update'),
             ),
             ListTile(
-              leading: const Icon(Icons.download),
+              leading: const Icon(Symbols.download_rounded),
               title: const Text('应用更新'),
               onTap: () => Navigator.pop(ctx, 'apply_update'),
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline, color: colorScheme.error),
+              leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
               title:
                   Text('删除', style: TextStyle(color: colorScheme.error)),
               onTap: () => Navigator.pop(ctx, 'delete'),

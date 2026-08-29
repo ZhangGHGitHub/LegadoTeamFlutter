@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -44,7 +45,7 @@ class _LoginRequiredView extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_outline_rounded, size: 44, color: colorScheme.tertiary),
+            Icon(Symbols.lock_outline_rounded, size: 44, color: colorScheme.tertiary),
             const SizedBox(height: 12),
             Text(
               '书源需要登录',
@@ -181,7 +182,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
 
     if (state.books.isEmpty) {
       return const EmptyState(
-        icon: Icons.explore_outlined,
+        icon: Symbols.explore_rounded,
         title: '暂无书籍',
         subtitle: '该分类下没有找到书籍',
       );
@@ -388,7 +389,7 @@ class _BookItem extends ConsumerWidget {
                         if (inShelf) ...[
                           const SizedBox(width: 6),
                           Icon(
-                            Icons.check_circle,
+                            Symbols.check_circle_rounded,
                             size: 15,
                             color: colorScheme.tertiary,
                           ),

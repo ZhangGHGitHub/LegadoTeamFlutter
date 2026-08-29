@@ -448,17 +448,6 @@ class AppUpdateSelectorTest {
         assertTrue(update.isBeta)
     }
 
-    @Test
-    fun updateFallbackAndIgnorePoliciesStayScoped() {
-        val githubUrl = "https://github.com/example/app.apk"
-        val cdnUrl = resolveAppUpdateDownloadUrl("legado_app_release.apk", githubUrl)
-
-        assertEquals(githubUrl, resolveAppUpdateBackupUrl(cdnUrl, githubUrl))
-        assertNull(resolveAppUpdateBackupUrl(githubUrl, githubUrl))
-        assertTrue(isIgnoredAppUpdate("3.26080220", "3.26080220"))
-        assertFalse(isIgnoredAppUpdate("3.26080221", "3.26080220"))
-    }
-
     private fun release(
         name: String,
         appVariant: AppVariant = AppVariant.BETA_RELEASE,

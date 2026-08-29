@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -511,7 +512,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
         child: Scaffold(
           appBar: LegadoAppBar(
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
+              icon: const Icon(Symbols.arrow_back_rounded),
               onPressed: _tryExit,
             ),
             title: Text(_isEdit ? '编辑订阅源' : '新建订阅源'),
@@ -536,7 +537,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.science_outlined),
+                    : const Icon(Symbols.science_rounded),
                 onPressed: _testing ? null : _test,
               ),
               // 溢出菜单（对标原版 source_edit.xml 精简版）
@@ -718,7 +719,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
           suffixIcon: spec.maxLines >= 2
               ? IconButton(
                   tooltip: '代码编辑',
-                  icon: const Icon(Icons.code, size: 20),
+                  icon: const Icon(Symbols.code_rounded, size: 20),
                   onPressed: () => _openCodeEdit(spec.key, spec.label),
                 )
               : null,

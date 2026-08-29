@@ -4,6 +4,7 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/offline_cache_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -84,7 +85,7 @@ void main() {
     // 本地书进度行显示「本地书籍」（原版 isLocal 短路）
     expect(find.text('本地书籍'), findsOneWidget);
     // 在线书有播放下载按钮，本地书无；导出按钮每本一个
-    expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
+    expect(find.byIcon(Symbols.play_circle_rounded), findsOneWidget);
     expect(find.widgetWithText(TextButton, '导出'), findsNWidgets(2));
   });
 
@@ -100,7 +101,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.play_circle_outline));
+    await tester.tap(find.byIcon(Symbols.play_circle_rounded));
     await tester.pump();
 
     verify(() => mockApi.cacheDownloadStart('u1', 0, 9)).called(1);
@@ -178,10 +179,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('下载中 4/10'), findsOneWidget);
-    expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
+    expect(find.byIcon(Symbols.stop_circle_rounded), findsOneWidget);
 
     when(() => mockApi.cacheDownloadCancel(7)).thenAnswer((_) async => true);
-    await tester.tap(find.byIcon(Icons.stop_circle_outlined));
+    await tester.tap(find.byIcon(Symbols.stop_circle_rounded));
     await tester.pump();
 
     verify(() => mockApi.cacheDownloadCancel(7)).called(1);

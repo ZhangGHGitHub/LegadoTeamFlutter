@@ -2,6 +2,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -458,14 +459,14 @@ class _VideoScreenState extends State<VideoScreen> {
                 actions: [
                   if (widget.book != null && _chapters.isNotEmpty) ...[
                     IconButton(
-                      icon: const Icon(Icons.skip_previous),
+                      icon: const Icon(Symbols.skip_previous_rounded),
                       tooltip: '上一集',
                       onPressed: _chapterIndex > 0
                           ? () => _switchChapter(-1)
                           : null,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.skip_next),
+                      icon: const Icon(Symbols.skip_next_rounded),
                       tooltip: '下一集',
                       onPressed: _chapterIndex < _chapters.length - 1
                           ? () => _switchChapter(1)
@@ -474,7 +475,7 @@ class _VideoScreenState extends State<VideoScreen> {
                   ],
                   // P2-15：视频设置（对标原版 menu_config_settings → SettingsDialog）
                   IconButton(
-                    icon: const Icon(Icons.settings_outlined),
+                    icon: const Icon(Symbols.settings_rounded),
                     tooltip: '播放设置',
                     onPressed: () async {
                       final updated = await showVideoSettingsDialog(context);
@@ -484,7 +485,7 @@ class _VideoScreenState extends State<VideoScreen> {
                     },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.fullscreen),
+                    icon: const Icon(Symbols.fullscreen_rounded),
                     tooltip: '全屏',
                     onPressed: _toggleFullScreen,
                   ),
@@ -497,7 +498,7 @@ class _VideoScreenState extends State<VideoScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline,
+                      const Icon(Symbols.error_rounded,
                           size: 64, color: Colors.red),
                       const SizedBox(height: 16),
                       Text('视频加载失败',
@@ -509,7 +510,7 @@ class _VideoScreenState extends State<VideoScreen> {
                       const SizedBox(height: 16),
                       ElevatedButton.icon(
                         onPressed: _retryPlayback,
-                        icon: const Icon(Icons.refresh),
+                        icon: const Icon(Symbols.refresh_rounded),
                         label: const Text('重试'),
                       ),
                     ],
@@ -542,7 +543,7 @@ class _VideoScreenState extends State<VideoScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(
-                                  Icons.error_outline,
+                                  Symbols.error_rounded,
                                   size: 64,
                                   color: Colors.red,
                                 ),
@@ -561,7 +562,7 @@ class _VideoScreenState extends State<VideoScreen> {
                                 const SizedBox(height: 16),
                                 ElevatedButton.icon(
                                   onPressed: _retryPlayback,
-                                  icon: const Icon(Icons.refresh),
+                                  icon: const Icon(Symbols.refresh_rounded),
                                   label: const Text('重试'),
                                 ),
                               ],
@@ -660,7 +661,7 @@ class _VideoScreenState extends State<VideoScreen> {
           iconSize: 64,
           color: Colors.white,
           icon: Icon(
-            _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+            _controller.value.isPlaying ? Symbols.pause_rounded : Symbols.play_arrow_rounded,
           ),
           onPressed: () {
             setState(() {
@@ -714,7 +715,7 @@ class _VideoScreenState extends State<VideoScreen> {
                 children: [
                   IconButton(
                     icon: Icon(
-                      value.isPlaying ? Icons.pause : Icons.play_arrow,
+                      value.isPlaying ? Symbols.pause_rounded : Symbols.play_arrow_rounded,
                       color: _isFullScreen ? Colors.white : null,
                     ),
                     onPressed: () {
@@ -747,8 +748,8 @@ class _VideoScreenState extends State<VideoScreen> {
                   IconButton(
                     icon: Icon(
                       _isFullScreen
-                          ? Icons.fullscreen_exit
-                          : Icons.fullscreen,
+                          ? Symbols.fullscreen_exit_rounded
+                          : Symbols.fullscreen_rounded,
                       color: _isFullScreen ? Colors.white : null,
                     ),
                     tooltip: _isFullScreen ? '退出全屏' : '全屏',

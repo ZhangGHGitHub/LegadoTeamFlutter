@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -295,12 +296,12 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
               fillColor: theme.colorScheme.onPrimary.withValues(alpha: 0.15),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-              prefixIcon: Icon(Icons.search,
+              prefixIcon: Icon(Symbols.search_rounded,
                   size: 20,
                   color: theme.colorScheme.onPrimary.withValues(alpha: 0.7)),
               suffixIcon: _filter.isNotEmpty
                   ? IconButton(
-                      icon: Icon(Icons.clear,
+                      icon: Icon(Symbols.close_rounded,
                           size: 18,
                           color: theme.colorScheme.onPrimary
                               .withValues(alpha: 0.7)),
@@ -328,7 +329,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                 child: Row(
                   children: [
                     if (_openInfoByTitle) ...[
-                      Icon(Icons.check,
+                      Icon(Symbols.check_rounded,
                           size: 16,
                           color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 6),
@@ -419,7 +420,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     }
     if (state.books.isEmpty) {
       return const EmptyState(
-        icon: Icons.library_books_outlined,
+        icon: Symbols.library_books_rounded,
         title: '书架为空',
         subtitle: '请先在书架添加书籍',
       );
@@ -432,7 +433,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
             .toList();
     if (books.isEmpty) {
       return const EmptyState(
-        icon: Icons.search_off,
+        icon: Symbols.search_off_rounded,
         title: '无匹配书籍',
         subtitle: '试试其他关键词',
       );
@@ -517,7 +518,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           ),
           // 删除按钮（对标原版 tv_delete）
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
+            icon: const Icon(Symbols.delete_rounded, size: 20),
             tooltip: '删除',
             visualDensity: VisualDensity.compact,
             onPressed: () => _confirmDeleteSingle(book),

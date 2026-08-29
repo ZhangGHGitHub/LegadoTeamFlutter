@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -1083,7 +1084,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
         actions: [
           // 全屏代码编辑（对齐原版 menu_fullscreen_edit → 编辑内容，图标位）
           IconButton(
-            icon: const Icon(Icons.code),
+            icon: const Icon(Symbols.code_rounded),
             tooltip: '编辑内容',
             // 压缩触控区 48→40dp：给标题留出更多空间（字体放大时标题
             // 保持原版字号完整显示，避免截断/缩放）
@@ -1092,14 +1093,14 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
           ),
           // 保存（对齐原版 menu_save：仅图标，无文字）
           IconButton(
-            icon: const Icon(Icons.save),
+            icon: const Icon(Symbols.save_rounded),
             tooltip: '保存',
             visualDensity: VisualDensity.compact,
             onPressed: _saving ? null : _save,
           ),
           // 调试源（对齐原版 menu_debug_source，图标位）
           IconButton(
-            icon: const Icon(Icons.bug_report),
+            icon: const Icon(Symbols.bug_report_rounded),
             tooltip: '调试源',
             visualDensity: VisualDensity.compact,
             onPressed: _saving ? null : _debugSource,
@@ -1109,7 +1110,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
           // 弹出层会覆盖顶栏按钮，与原版「菜单在按钮下方」不一致）
           Builder(
             builder: (btnContext) => IconButton(
-              icon: const Icon(Icons.more_vert),
+              icon: const Icon(Symbols.more_vert_rounded),
               tooltip: '更多选项',
               visualDensity: VisualDensity.compact,
               onPressed: () => _showOverflowMenu(btnContext),
@@ -1355,8 +1356,8 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
                         padding: const EdgeInsets.all(8),
                         child: Icon(
                           _settingsExpanded
-                              ? Icons.expand_less
-                              : Icons.expand_more,
+                              ? Symbols.expand_less_rounded
+                              : Symbols.expand_more_rounded,
                           size: 24,
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -1468,7 +1469,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
             suffixIcon: field.maxLines >= 2
                 ? IconButton(
                     tooltip: '代码编辑',
-                    icon: const Icon(Icons.code, size: 20),
+                    icon: const Icon(Symbols.code_rounded, size: 20),
                     onPressed: () => _openCodeEditForField(
                       field.key,
                       title: field.label,

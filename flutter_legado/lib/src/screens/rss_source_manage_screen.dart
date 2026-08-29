@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -190,13 +191,13 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
             fillColor: colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-            prefixIcon: Icon(Icons.search,
+            prefixIcon: Icon(Symbols.search_rounded,
                 size: 20, color: colorScheme.onSurfaceVariant),
             prefixIconConstraints:
                 const BoxConstraints(minWidth: 36, minHeight: 36),
             suffixIcon: _keyword.isNotEmpty
                 ? IconButton(
-                    icon: Icon(Icons.clear,
+                    icon: Icon(Symbols.close_rounded,
                         size: 18, color: colorScheme.onSurfaceVariant),
                     onPressed: () {
                       _searchCtrl.clear();
@@ -215,7 +216,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       actions: [
         // 分组菜单（对标原版 rss_source.xml menu_group 子菜单）
         PopupMenuButton<String>(
-          icon: const Icon(Icons.groups),
+          icon: const Icon(Symbols.groups_rounded),
           tooltip: '分组',
           position: PopupMenuPosition.under,
           onSelected: _handleGroupAction,
@@ -262,24 +263,24 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
           itemBuilder: (_) => [
             const PopupMenuItem(
               value: 'new',
-              child: _MenuRow(icon: Icons.add, label: '新增订阅源'),
+              child: _MenuRow(icon: Symbols.add_rounded, label: '新增订阅源'),
             ),
             const PopupMenuItem(
               value: 'import_file',
-              child: _MenuRow(icon: Icons.download, label: '本地导入'),
+              child: _MenuRow(icon: Symbols.download_rounded, label: '本地导入'),
             ),
             const PopupMenuItem(
               value: 'import_url',
-              child: _MenuRow(icon: Icons.cloud_download, label: '网络导入'),
+              child: _MenuRow(icon: Symbols.cloud_download_rounded, label: '网络导入'),
             ),
             const PopupMenuItem(
               value: 'import_qr',
-              child: _MenuRow(icon: Icons.qr_code, label: '二维码导入'),
+              child: _MenuRow(icon: Symbols.qr_code_rounded, label: '二维码导入'),
             ),
             const PopupMenuItem(
               value: 'import_default',
               child:
-                  _MenuRow(icon: Icons.auto_fix_high, label: '导入默认规则'),
+                  _MenuRow(icon: Symbols.auto_fix_high_rounded, label: '导入默认规则'),
             ),
             // 规则订阅入口（对标原版 RssFragment 列表头部
             // 「规则订阅」header item → RuleSubActivity；Flutter 侧
@@ -287,13 +288,13 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
             const PopupMenuItem(
               value: 'rule_sub',
               child: _MenuRow(
-                icon: Icons.rss_feed_outlined,
+                icon: Symbols.rss_feed_rounded,
                 label: '规则订阅',
               ),
             ),
             const PopupMenuItem(
               value: 'help',
-              child: _MenuRow(icon: Icons.help_outline, label: '帮助'),
+              child: _MenuRow(icon: Symbols.help_rounded, label: '帮助'),
             ),
           ],
         ),
@@ -305,7 +306,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
   PreferredSizeWidget _buildBatchAppBar() {
     return LegadoAppBar(
       leading: IconButton(
-        icon: const Icon(Icons.close),
+        icon: const Icon(Symbols.close_rounded),
         tooltip: '退出批量模式',
         onPressed: _exitBatch,
       ),
@@ -384,8 +385,8 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
             children: [
               barButton(
                 icon: _isAllSelected
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
+                    ? Symbols.check_box_rounded
+                    : Symbols.check_box_outline_blank_rounded,
                 label: '全选 ${_selected.length}/$filteredCount',
                 onPressed: () {
                   setState(() {
@@ -400,7 +401,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
                 },
               ),
               barButton(
-                icon: Icons.flip,
+                icon: Symbols.flip_rounded,
                 label: '反选',
                 onPressed: _filtered.isEmpty
                     ? null
@@ -418,7 +419,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
                       },
               ),
               barButton(
-                icon: Icons.delete_outline,
+                icon: Symbols.delete_rounded,
                 label: '删除',
                 color: colorScheme.error,
                 onPressed: _selected.isEmpty
@@ -436,7 +437,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.more_horiz,
+                          Symbols.more_horiz_rounded,
                           size: 22,
                           color: _selected.isEmpty
                               ? colorScheme.onSurface
@@ -501,7 +502,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
     final list = _filtered;
     if (list.isEmpty) {
       return EmptyState(
-        icon: Icons.rss_feed,
+        icon: Symbols.rss_feed_rounded,
         title: _sources.isEmpty ? '暂无订阅源' : '没有匹配的订阅源',
         subtitle: _sources.isEmpty
             ? '点击右上角菜单「新增订阅源」或导入订阅源'
@@ -588,13 +589,13 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
               onChanged: (_) => _toggleSource(source),
             ),
             IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 20),
+              icon: const Icon(Symbols.edit_rounded, size: 20),
               tooltip: '编辑',
               visualDensity: VisualDensity.compact,
               onPressed: () => _openEdit(source),
             ),
             IconButton(
-              icon: const Icon(Icons.more_vert, size: 20),
+              icon: const Icon(Symbols.more_vert_rounded, size: 20),
               tooltip: '更多选项',
               visualDensity: VisualDensity.compact,
               onPressed: () => _showSourceMenu(source),
@@ -676,17 +677,17 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
               child: IosGrabber(),
             ),
             ListTile(
-              leading: const Icon(Icons.vertical_align_top),
+              leading: const Icon(Symbols.vertical_align_top_rounded),
               title: const Text('置顶'),
               onTap: () => Navigator.pop(ctx, 'top'),
             ),
             ListTile(
-              leading: const Icon(Icons.vertical_align_bottom),
+              leading: const Icon(Symbols.vertical_align_bottom_rounded),
               title: const Text('置底'),
               onTap: () => Navigator.pop(ctx, 'bottom'),
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline, color: colorScheme.error),
+              leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
               title:
                   Text('删除', style: TextStyle(color: colorScheme.error)),
               onTap: () => Navigator.pop(ctx, 'delete'),

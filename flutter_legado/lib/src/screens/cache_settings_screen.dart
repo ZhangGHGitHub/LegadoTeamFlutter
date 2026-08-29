@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
@@ -189,7 +190,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
             children: [
               Expanded(
                 child: _buildStatCard(
-                  icon: Icons.storage,
+                  icon: Symbols.storage_rounded,
                   label: '总大小',
                   value: CacheService.formatSize(_totalSize),
                 ),
@@ -197,7 +198,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _buildStatCard(
-                  icon: Icons.menu_book,
+                  icon: Symbols.menu_book_rounded,
                   label: '书籍数量',
                   value: '$_bookCount',
                 ),
@@ -205,7 +206,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _buildStatCard(
-                  icon: Icons.article,
+                  icon: Symbols.article_rounded,
                   label: '章节数量',
                   value: '$_chapterCount',
                 ),
@@ -266,7 +267,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
             initialValue: _expireDays,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.schedule),
+              prefixIcon: Icon(Symbols.schedule_rounded),
               labelText: '缓存过期时间',
             ),
             items: _expireOptions.map((option) {
@@ -315,7 +316,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(
-                      Icons.cleaning_services,
+                      Symbols.cleaning_services_rounded,
                       color: Theme.of(context).colorScheme.error,
                     ),
               label: Text(

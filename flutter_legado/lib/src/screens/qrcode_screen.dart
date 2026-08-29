@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -105,13 +106,13 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   IconData _typeIcon(_ScanResultType type) {
     switch (type) {
       case _ScanResultType.legadoUrl:
-        return Icons.link;
+        return Symbols.link_rounded;
       case _ScanResultType.httpUrl:
-        return Icons.cloud_outlined;
+        return Symbols.cloud_rounded;
       case _ScanResultType.sourceJson:
-        return Icons.data_object;
+        return Symbols.data_object_rounded;
       case _ScanResultType.text:
-        return Icons.text_snippet_outlined;
+        return Symbols.text_snippet_rounded;
     }
   }
 
@@ -157,7 +158,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
               hintText: '粘贴或输入二维码内容：书源 URL / legado:// 链接 / 书源 JSON / 口令',
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
-                icon: const Icon(Icons.paste),
+                icon: const Icon(Symbols.content_paste_rounded),
                 tooltip: '从剪贴板粘贴',
                 onPressed: _pasteFromClipboard,
               ),
@@ -168,7 +169,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
           FilledButton.icon(
             onPressed:
                 (_rawContent?.isNotEmpty ?? false) ? _confirm : null,
-            icon: const Icon(Icons.check),
+            icon: const Icon(Symbols.check_rounded),
             label: const Text('使用该内容'),
           ),
           if (_rawContent != null && _rawContent!.isNotEmpty) ...[
@@ -213,9 +214,9 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
           Stack(
             alignment: Alignment.center,
             children: [
-              Icon(Icons.qr_code_scanner, size: 72,
+              Icon(Symbols.qr_code_scanner_rounded, size: 72,
                   color: theme.colorScheme.outline),
-              Icon(Icons.cameraswitch_outlined, size: 24,
+              Icon(Symbols.cameraswitch_rounded, size: 24,
                   color: theme.colorScheme.outline),
             ],
           ),
@@ -241,7 +242,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.videocam_off, size: 48, color: theme.colorScheme.outline),
+          Icon(Symbols.videocam_off_rounded, size: 48, color: theme.colorScheme.outline),
           const SizedBox(height: 12),
           Text('相机启动失败', style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),

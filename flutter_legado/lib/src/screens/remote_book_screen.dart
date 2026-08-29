@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -77,16 +78,17 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
           title: const Text('远程书籍'),
           actions: [
             IconButton(
-              icon: const Icon(Icons.help_outline),
+              icon: const Icon(Symbols.help_rounded),
               tooltip: '帮助',
               onPressed: () => showHelp(context, HelpAssets.webDavBookHelp),
             ),
             IconButton(
               tooltip: '刷新',
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Symbols.refresh_rounded),
               onPressed: state.isLoading ? null : () => notifier.refresh(),
             ),
             PopupMenuButton<String>(
+              icon: const Icon(Symbols.more_vert_rounded),
               onSelected: (v) async {
                 switch (v) {
                   case 'server':
@@ -135,7 +137,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                       tooltip: '返回上级',
                       onPressed:
                           state.dirStack.isEmpty ? null : () => notifier.goBackDir(),
-                      icon: const Icon(Icons.arrow_back),
+                      icon: const Icon(Symbols.arrow_back_rounded),
                     ),
                     Expanded(
                       child: Text(
@@ -155,7 +157,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                 controller: _searchCtrl,
                 decoration: const InputDecoration(
                   hintText: '筛选 • 远程书籍',
-                  prefixIcon: Icon(Icons.search),
+                  prefixIcon: Icon(Symbols.search_rounded),
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -192,8 +194,8 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                             return ListTile(
                               leading: Icon(
                                 item.isDir
-                                    ? Icons.folder_outlined
-                                    : Icons.menu_book_outlined,
+                                    ? Symbols.folder_rounded
+                                    : Symbols.menu_book_rounded,
                                 color: item.isOnBookShelf
                                     ? theme.colorScheme.primary
                                     : null,
@@ -205,7 +207,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                               trailing: item.isDir
                                   ? null
                                   : item.isOnBookShelf
-                                      ? Icon(Icons.check_circle,
+                                      ? Icon(Symbols.check_circle_rounded,
                                           color: theme.colorScheme.primary)
                                       : Checkbox(
                                           value: selected,
@@ -294,7 +296,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                       ),
                       trailing: IconButton(
                         tooltip: '添加',
-                        icon: const Icon(Icons.add),
+                        icon: const Icon(Symbols.add_rounded),
                         onPressed: () async {
                           final created = await _editServerDialog();
                           if (created != null) {
@@ -336,7 +338,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.edit_outlined),
+                                        icon: const Icon(Symbols.edit_rounded),
                                         onPressed: () async {
                                           final edited =
                                               await _editServerDialog(existing: s);
@@ -346,7 +348,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                         },
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.delete_outline),
+                                        icon: const Icon(Symbols.delete_rounded),
                                         onPressed: () async {
                                           final ok = await showDialog<bool>(
                                             context: context,

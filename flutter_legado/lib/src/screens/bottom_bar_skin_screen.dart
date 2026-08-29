@@ -2,6 +2,7 @@
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -30,7 +31,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
         actions: [
           IconButton(
             tooltip: '导入',
-            icon: const Icon(Icons.file_upload_outlined),
+            icon: const Icon(Symbols.file_upload_rounded),
             onPressed: () => _import(context, notifier),
           ),
         ],
@@ -44,8 +45,8 @@ class BottomBarSkinScreen extends ConsumerWidget {
                 ListTile(
                   leading: Icon(
                     state.active.isEmpty
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_off,
+                        ? Symbols.radio_button_checked_rounded
+                        : Symbols.radio_button_unchecked_rounded,
                   ),
                   title: const Text('系统默认'),
                   onTap: () => notifier.setActive(''),
@@ -54,12 +55,12 @@ class BottomBarSkinScreen extends ConsumerWidget {
                   ListTile(
                     leading: Icon(
                       state.active == name
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_off,
+                          ? Symbols.radio_button_checked_rounded
+                          : Symbols.radio_button_unchecked_rounded,
                     ),
                     title: Text(name),
                     trailing: IconButton(
-                      icon: const Icon(Icons.more_horiz),
+                      icon: const Icon(Symbols.more_horiz_rounded),
                       onPressed: () => _showItemMenu(context, notifier, name),
                     ),
                     onTap: () => notifier.setActive(name),
@@ -132,7 +133,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
             if (path != null)
               Image.file(File(path), width: 28, height: 28, fit: BoxFit.contain)
             else
-              const Icon(Icons.image_not_supported_outlined, size: 28),
+              const Icon(Symbols.image_not_supported_rounded, size: 28),
             const SizedBox(height: 4),
             Text(
               BottomBarSkinFormat.slotLabels[slot] ?? slot,
@@ -216,22 +217,22 @@ class BottomBarSkinScreen extends ConsumerWidget {
               enabled: false,
             ),
             ListTile(
-              leading: const Icon(Icons.edit_outlined),
+              leading: const Icon(Symbols.edit_rounded),
               title: const Text('编辑'),
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
             ListTile(
-              leading: const Icon(Icons.file_download_outlined),
+              leading: const Icon(Symbols.file_download_rounded),
               title: const Text('导出'),
               onTap: () => Navigator.pop(ctx, 'export'),
             ),
             ListTile(
-              leading: const Icon(Icons.share_outlined),
+              leading: const Icon(Symbols.share_rounded),
               title: const Text('分享'),
               onTap: () => Navigator.pop(ctx, 'share'),
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline),
+              leading: const Icon(Symbols.delete_rounded),
               title: const Text('删除'),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),

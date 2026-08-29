@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
@@ -72,7 +73,7 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.check, size: 18),
+                : const Icon(Symbols.check_rounded, size: 18),
             label: const Text('保存'),
           ),
           const SizedBox(width: 8),

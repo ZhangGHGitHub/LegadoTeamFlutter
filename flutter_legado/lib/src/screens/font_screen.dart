@@ -2,6 +2,7 @@
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -173,7 +174,7 @@ class _FontScreenState extends State<FontScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.file_download_outlined),
+                : const Icon(Symbols.file_download_rounded),
             tooltip: '导入 .ttf / .otf 字体',
             onPressed: _importing ? null : _importFont,
           ),
@@ -236,7 +237,7 @@ class _FontScreenState extends State<FontScreen> {
     final selected = _currentFamily == font.family;
     return ListTile(
       leading: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        selected ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
         color: selected ? theme.colorScheme.primary : theme.colorScheme.outline,
       ),
       title: Text(

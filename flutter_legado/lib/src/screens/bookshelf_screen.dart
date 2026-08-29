@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -149,7 +150,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   List<Widget> _buildAppBarActions(BuildContext context, WidgetRef ref) {
     return [
       IconButton(
-        icon: const Icon(Icons.search),
+        icon: const Icon(Symbols.search_rounded),
         tooltip: AppStrings.search,
         onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
       ),
@@ -201,7 +202,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (state.isEmpty) {
       // 安卓原版：纯居中灰字空状态
       return EmptyState(
-        icon: Icons.library_books,
+        icon: Symbols.library_books_rounded,
         title: AppStrings.emptyBookshelf,
         simple: true,
       );
@@ -497,7 +498,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     return Row(
       children: [
         Icon(
-          current == mode ? Icons.radio_button_checked : Icons.radio_button_off,
+          current == mode ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
           size: 20,
         ),
         const SizedBox(width: 12),

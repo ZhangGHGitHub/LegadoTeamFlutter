@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -133,13 +134,13 @@ class _HelpScreenState extends State<HelpScreen> {
             actions: [
               if (_sections.isNotEmpty)
                 IconButton(
-                  icon: const Icon(Icons.list_alt_outlined),
+                  icon: const Icon(Symbols.list_alt_rounded),
                   tooltip: '目录',
                   onPressed: () =>
                       _scaffoldKey.currentState?.openEndDrawer(),
                 ),
               IconButton(
-                icon: const Icon(Icons.code_outlined),
+                icon: const Icon(Symbols.code_rounded),
                 tooltip: '源码',
                 onPressed: _markdown == null ? null : _openSourceView,
               ),

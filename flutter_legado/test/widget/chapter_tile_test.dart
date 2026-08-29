@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_legado/src/widgets/chapter_tile.dart';
 
 void main() {
@@ -35,13 +36,13 @@ void main() {
   testWidgets('ChapterTile shows play icon when isCurrent', (tester) async {
     await tester.pumpWidget(buildTestWidget(isCurrent: true));
 
-    expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+    expect(find.byIcon(Symbols.play_arrow_rounded), findsOneWidget);
   });
 
   testWidgets('ChapterTile hides play icon when not current', (tester) async {
     await tester.pumpWidget(buildTestWidget(isCurrent: false));
 
-    expect(find.byIcon(Icons.play_arrow), findsNothing);
+    expect(find.byIcon(Symbols.play_arrow_rounded), findsNothing);
   });
 
   testWidgets('ChapterTile onTap callback works', (tester) async {

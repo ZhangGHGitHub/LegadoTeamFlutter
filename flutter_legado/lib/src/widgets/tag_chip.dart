@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 /// 标签组件 — 可点击/可删除的标签
 class TagChip extends StatelessWidget {
@@ -49,7 +50,7 @@ class TagChip extends StatelessWidget {
                 GestureDetector(
                   onTap: onDeleted,
                   child: Icon(
-                    Icons.close,
+                    Symbols.close_rounded,
                     size: 16,
                     color: fgColor,
                   ),

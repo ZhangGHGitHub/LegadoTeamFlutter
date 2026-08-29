@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
@@ -161,13 +162,13 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
         title: const Text('书源调试'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             tooltip: '帮助',
             onPressed: () => showHelp(context, HelpAssets.debugHelp),
           ),
           // 清除日志按钮
           IconButton(
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Symbols.delete_rounded),
             tooltip: '清空日志',
             onPressed: _logs.isEmpty
                 ? null
@@ -189,7 +190,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                     labelText: '书源 URL',
                     hintText: '输入要调试的书源地址',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.link),
+                    prefixIcon: Icon(Symbols.link_rounded),
                     isDense: true,
                   ),
                 ),
@@ -203,7 +204,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                           labelText: '搜索关键词',
                           hintText: '关键词 / URL / ++目录 / --正文',
                           border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.search),
+                          prefixIcon: Icon(Symbols.search_rounded),
                           isDense: true,
                         ),
                         onSubmitted: (_) => _runDebug(),
@@ -218,7 +219,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.play_arrow),
+                          : const Icon(Symbols.play_arrow_rounded),
                       label: Text(_running ? '停止' : '调试'),
                     ),
                   ],
@@ -232,7 +233,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Row(
               children: [
-                const Icon(Icons.filter_alt_outlined, size: 18),
+                const Icon(Symbols.filter_alt_rounded, size: 18),
                 const SizedBox(width: 6),
                 // 全选/取消全选按钮
                 TextButton(
@@ -478,13 +479,13 @@ enum _DebugLogLevel {
   IconData get icon {
     switch (this) {
       case _DebugLogLevel.info:
-        return Icons.info_outline;
+        return Symbols.info_rounded;
       case _DebugLogLevel.success:
-        return Icons.check_circle_outline;
+        return Symbols.check_circle_rounded;
       case _DebugLogLevel.warn:
-        return Icons.warning_amber_outlined;
+        return Symbols.warning_amber_rounded;
       case _DebugLogLevel.error:
-        return Icons.error_outline;
+        return Symbols.error_rounded;
     }
   }
 }

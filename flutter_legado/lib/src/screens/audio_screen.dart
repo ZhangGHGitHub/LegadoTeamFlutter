@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:saf/saf.dart';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -165,7 +166,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
               // 预设时间选项
               ..._kPresetMinutes.map(
                 (minutes) => ListTile(
-                  leading: const Icon(Icons.timer_outlined),
+                  leading: const Icon(Symbols.timer_rounded),
                   title: Text('$minutes 分钟'),
                   onTap: () {
                     Navigator.pop(sheetContext);
@@ -175,7 +176,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
               ),
               // 自定义时长
               ListTile(
-                leading: const Icon(Icons.edit_outlined),
+                leading: const Icon(Symbols.edit_rounded),
                 title: Row(
                   children: [
                     const Text('自定义'),
@@ -227,7 +228,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           // 定时停止按钮
           _buildTimerButton(),
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Symbols.settings_rounded),
             onPressed: () => setState(() => _showSettings = !_showSettings),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml：
@@ -280,7 +281,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
+            Icon(Symbols.error_rounded, size: 64, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 16),
             Text(provider.errorMessage ?? '加载失败'),
             const SizedBox(height: 16),
@@ -320,7 +321,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   Widget _buildTimerButton() {
     return IconButton(
       icon: Icon(
-        _isTimerActive ? Icons.timer : Icons.timer_outlined,
+        _isTimerActive ? Symbols.timer_rounded : Symbols.timer_rounded,
         color: _isTimerActive ? Theme.of(context).colorScheme.error : null,
       ),
       tooltip: _isTimerActive ? '取消定时' : '定时停止',
@@ -341,7 +342,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.timer, size: 18, color: Theme.of(context).colorScheme.error),
+          Icon(Symbols.timer_rounded, size: 18, color: Theme.of(context).colorScheme.error),
           const SizedBox(width: 6),
           Text(
             '定时停止 ${_formatCountdown(_remainingSeconds)}',
@@ -354,7 +355,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           const SizedBox(width: 12),
           GestureDetector(
             onTap: _cancelTimer,
-            child: Icon(Icons.close, size: 18, color: Theme.of(context).colorScheme.error),
+            child: Icon(Symbols.close_rounded, size: 18, color: Theme.of(context).colorScheme.error),
           ),
         ],
       ),
@@ -369,7 +370,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       child: Column(
         children: [
           Icon(
-            provider.isPlaying ? Icons.graphic_eq_rounded : Icons.headphones_rounded,
+            provider.isPlaying ? Symbols.graphic_eq_rounded : Symbols.headphones_rounded,
             size: 44,
             color: scheme.primary,
           ),
@@ -485,7 +486,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           const SizedBox(width: 16),
           // 上一章
           IconButton(
-            icon: const Icon(Icons.skip_previous),
+            icon: const Icon(Symbols.skip_previous_rounded),
             iconSize: 36,
             onPressed: provider.hasPrevious
                 ? ref.read(audioNotifierProvider.notifier).previous
@@ -497,7 +498,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           const SizedBox(width: 16),
           // 下一章
           IconButton(
-            icon: const Icon(Icons.skip_next),
+            icon: const Icon(Symbols.skip_next_rounded),
             iconSize: 36,
             onPressed: provider.hasNext
                 ? ref.read(audioNotifierProvider.notifier).next
@@ -533,7 +534,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
                 ),
               )
             : Icon(
-                provider.isPlaying ? Icons.pause : Icons.play_arrow,
+                provider.isPlaying ? Symbols.pause_rounded : Symbols.play_arrow_rounded,
                 size: 32,
               ),
       ),
@@ -622,7 +623,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.tune, size: 20),
+              leading: const Icon(Symbols.tune_rounded, size: 20),
               title: const Text('朗读引擎'),
               subtitle: const Text('管理 HTTP TTS 朗读引擎'),
               onTap: () =>
@@ -645,7 +646,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         final isCurrent = index == provider.currentIndex;
         return ListTile(
           leading: isCurrent
-              ? Icon(Icons.play_circle, color: Theme.of(context).primaryColor)
+              ? Icon(Symbols.play_circle_rounded, color: Theme.of(context).primaryColor)
               : Text('${index + 1}'),
           title: Text(
             chapter.title,
@@ -671,7 +672,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            mediaReady ? Icons.headphones : Icons.info_outline,
+            mediaReady ? Symbols.headphones_rounded : Symbols.info_rounded,
             size: 16,
             color: mediaReady ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -693,11 +694,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   IconData _modeIcon(AudioPlayMode mode) {
     switch (mode) {
       case AudioPlayMode.sequential:
-        return Icons.arrow_forward;
+        return Symbols.arrow_forward_rounded;
       case AudioPlayMode.singleLoop:
-        return Icons.repeat_one;
+        return Symbols.repeat_one_rounded;
       case AudioPlayMode.shuffle:
-        return Icons.shuffle;
+        return Symbols.shuffle_rounded;
     }
   }
 

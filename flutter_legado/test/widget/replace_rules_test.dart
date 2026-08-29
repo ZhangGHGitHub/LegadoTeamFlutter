@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
@@ -45,7 +46,7 @@ void main() {
       await pumpScreen(tester);
 
       // 打开新建表单
-      await tester.tap(find.byIcon(Icons.add));
+      await tester.tap(find.byIcon(Symbols.add_rounded));
       await tester.pumpAndSettle();
 
       expect(find.text('添加替换规则'), findsOneWidget);
@@ -71,7 +72,7 @@ void main() {
       ).thenAnswer((inv) async => inv.positionalArguments[0] as ReplaceRule);
       await pumpScreen(tester);
 
-      await tester.tap(find.byIcon(Icons.add));
+      await tester.tap(find.byIcon(Symbols.add_rounded));
       await tester.pumpAndSettle();
 
       // 表单字段顺序：名称/分组/匹配模式/替换为/作用范围/排除范围/超时

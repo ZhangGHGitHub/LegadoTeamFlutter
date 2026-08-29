@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -157,7 +158,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Symbols.delete_rounded),
             tooltip: '清空',
             onPressed: _clear,
           ),
@@ -181,7 +182,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.save),
+                : const Icon(Symbols.save_rounded),
             label: const Text('保存登录信息'),
           ),
         ),
@@ -218,7 +219,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
             dense: true,
             title: Text('${entry.$2.name} = ${entry.$2.value}'),
             trailing: IconButton(
-              icon: const Icon(Icons.close),
+              icon: const Icon(Symbols.close_rounded),
               onPressed: () => ref
                   .read(sourceLoginNotifierProvider.notifier)
                   .removeCookie(entry.$1),
@@ -240,7 +241,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
             dense: true,
             title: Text('${entry.$2.name}: ${entry.$2.value}'),
             trailing: IconButton(
-              icon: const Icon(Icons.close),
+              icon: const Icon(Symbols.close_rounded),
               onPressed: () => ref
                   .read(sourceLoginNotifierProvider.notifier)
                   .removeHeader(entry.$1),
@@ -285,7 +286,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
         ),
         const SizedBox(width: 8),
         IconButton.filled(
-          icon: const Icon(Icons.add),
+          icon: const Icon(Symbols.add_rounded),
           onPressed: onAdd,
         ),
       ],
@@ -301,7 +302,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.open_in_browser, size: 64),
+            const Icon(Symbols.open_in_browser_rounded, size: 64),
             const SizedBox(height: 16),
             Text(
               url == null || url.isEmpty ? '该书源未配置登录链接' : url,
@@ -311,7 +312,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _openLoginUrl,
-              icon: const Icon(Icons.launch),
+              icon: const Icon(Symbols.launch_rounded),
               label: const Text('在浏览器中打开'),
             ),
             const SizedBox(height: 12),

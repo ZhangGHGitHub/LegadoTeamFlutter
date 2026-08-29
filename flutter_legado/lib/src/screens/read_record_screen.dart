@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/md3_heatmap_calendar.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -162,7 +163,7 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     }
     if (state.records.isEmpty) {
       return EmptyState(
-        icon: Icons.history,
+        icon: Symbols.history_rounded,
         title: state.searchQuery.isEmpty ? '暂无阅读记录' : '未找到匹配的记录',
       );
     }

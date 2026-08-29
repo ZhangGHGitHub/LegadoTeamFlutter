@@ -34,7 +34,7 @@
 1. ~~主 Tab 根页可折叠 LargeTitle~~ **已实施（2026-08-28，版本 2.0.118+122）**：「书架」（无分组时）与「我的」采用 SliverAppBar.large（152dp 展开大标题，滚动折叠为标准 M3 AppBar，跳顶随滚动复位；书架有分组时为 pinned TabBar 头保持原版嵌入结构）；「发现」「订阅」两根页的顶栏为原版 view_search 嵌入式搜索框（无标题文字），按原版对齐红线不适用 LargeTitle，维持既有顶栏——已在 `LegadoTabRootHeaderSliver`/`LegadoLargeTitleScroll` 文档注释与本节登记口径；
 2. Material You 动态取色：按计划即为后续批次（需 Android seed-color 平台通道）；
 3. Batch 1–6 的模拟器冒烟未单独执行——emulator-5556/5558 被搜索 parity 后端轨（SEARCH_PARITY_HANDOVER_20260828.md）占用为 P0-3 e2e 实验环境，为避免互相干扰而并入用户验收流程（Batch 0 冒烟已 PASSED 7/7）。**2026-08-28 补跑：后端轨释放模拟器后，LargeTitle 批次已在 5556 冒烟 + 5558 -CheckUI 验证（结果见 CHANGELOG [2.0.118]）。**
-4. **内页图标 Symbols 全量化**（第三节图标项收尾）：计划要求图标统一 Material Symbols；当前底栏（B1）+ 设置枢纽试点（P3，约 30 种映射）已落地，内页约 600+ 处经典 `Icons.*` 待全量替换——P3 试点观感经用户确认后放行全库扫。
+4. ~~内页图标 Symbols 全量化~~ **已完成（2026-08-29，版本 2.0.125+130）**：非 reader 域全部图标（73 文件、513 处 Symbols）100% 换用 Material Symbols rounded（177 种映射，`_outlined/_outline` 剥离、copy/paste → content_copy/content_paste 等 2 处特例）；reader 域 106 处按计划保留经典 Icons；7 个测试文件的图标断言同步迁移。
 5. **热力图「每日时长」模式 Rust 契约待办**（2026-08-29 登记，用户确认登记即可）：现有 `ReadRecord` 仅含 lastRead 时间戳 + 累计时长，无逐日时长；热力图已按 counts 模式（当日阅读书籍数）落地。若需「每日时长」配色模式，需 Rust 轨先行交付日聚合契约（如 `readRecordDaily`），届时按 API_CONTRACT 双轨流程冻结后实施——UI 轨不擅动后端。**2026-08-28 补跑：后端轨释放模拟器后，LargeTitle 批次已在 5556 冒烟 + 5558 -CheckUI 验证（结果见 CHANGELOG [2.0.118]）。**
 
 ---

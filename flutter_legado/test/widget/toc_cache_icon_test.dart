@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,9 +15,9 @@ import '../mocks/mocks.dart';
 /// [UI-fix v2.0.6 | 2026-08-08] Task #22：目录页章节缓存状态云图标测试 — Qoder
 ///
 /// 对齐原版 item_chapter_list 的 iv_toc_cache：
-/// - 当前阅读章（durChapterIndex）→ 对勾高亮（Icons.check）
-/// - 已缓存章（chapter_url ∈ listCachedChapterUrls）→ 实心云（Icons.cloud_done）
-/// - 未缓存章 → 空心云（Icons.cloud_outlined）
+/// - 当前阅读章（durChapterIndex）→ 对勾高亮（Symbols.check_rounded）
+/// - 已缓存章（chapter_url ∈ listCachedChapterUrls）→ 实心云（Symbols.cloud_done_rounded）
+/// - 未缓存章 → 空心云（Symbols.cloud_rounded）
 ///
 /// 缓存态数据经 BookApi.listCachedChapterUrls（Rust cache_list_cached_chapter_urls
 /// FFI 查询 cached_chapters 表），本测试以 mock 返回已缓存 url 集合，确定性覆盖三分支。
@@ -83,10 +84,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // 当前阅读章（第一章）→ 对勾
-    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(find.byIcon(Symbols.check_rounded), findsOneWidget);
     // 已缓存章（第二章）→ 实心云
-    expect(find.byIcon(Icons.cloud_done), findsOneWidget);
+    expect(find.byIcon(Symbols.cloud_done_rounded), findsOneWidget);
     // 未缓存章（第三章）→ 空心云
-    expect(find.byIcon(Icons.cloud_outlined), findsOneWidget);
+    expect(find.byIcon(Symbols.cloud_rounded), findsOneWidget);
   });
 }

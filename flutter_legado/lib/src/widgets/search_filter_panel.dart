@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -134,10 +135,10 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
               controller: _searchController,
               decoration: InputDecoration(
                 hintText: '搜索...',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                prefixIcon: const Icon(Symbols.search_rounded, size: 20),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, size: 20),
+                        icon: const Icon(Symbols.close_rounded, size: 20),
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _searchQuery = '');
@@ -195,7 +196,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline,
+          Icon(Symbols.error_rounded,
               size: 48, color: Theme.of(context).colorScheme.error),
           const SizedBox(height: 8),
           Text('加载失败', style: Theme.of(context).textTheme.bodyMedium),
@@ -217,7 +218,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off,
+            Icon(Symbols.search_off_rounded,
                 size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 8),
             Text('未找到匹配的书源',

@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -48,12 +49,12 @@ It was a dark and stormy night.''';
         title: const Text('TXT 目录规则'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             tooltip: '帮助',
             onPressed: () => showHelp(context, HelpAssets.txtTocRuleHelp),
           ),
           IconButton(
-            icon: const Icon(Icons.restore),
+            icon: const Icon(Symbols.restore_rounded),
             tooltip: '导入默认',
             onPressed: () async {
               final n = await ref
@@ -66,7 +67,7 @@ It was a dark and stormy night.''';
             },
           ),
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Symbols.add_rounded),
             tooltip: '添加规则',
             onPressed: () => _showRuleForm(context),
           ),
@@ -82,7 +83,7 @@ It was a dark and stormy night.''';
     }
     if (state.rules.isEmpty) {
       return const EmptyState(
-        icon: Icons.format_list_numbered_rounded,
+        icon: Symbols.format_list_numbered_rounded,
         title: '暂无目录规则',
         subtitle: '点击右上角 + 添加识别章节标题的正则规则',
       );
@@ -409,10 +410,10 @@ class _RuleTile extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        _actionChip(context, Icons.play_arrow_rounded, '测试',
+                        _actionChip(context, Symbols.play_arrow_rounded, '测试',
                             onTest),
                         const SizedBox(width: 8),
-                        _actionChip(context, Icons.delete_outline_rounded,
+                        _actionChip(context, Symbols.delete_outline_rounded,
                             '删除', onDelete),
                       ],
                     ),

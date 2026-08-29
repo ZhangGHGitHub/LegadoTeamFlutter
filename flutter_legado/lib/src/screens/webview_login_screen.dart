@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -188,7 +189,7 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
               ),
             ),
           IconButton(
-            icon: const Icon(Icons.fact_check_outlined),
+            icon: const Icon(Symbols.fact_check_rounded),
             tooltip: '检测',
             onPressed: _checking ? null : _verify,
           ),

@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -150,7 +151,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Icons.delete_outline,
+              leading: Icon(Symbols.delete_rounded,
                   color: Theme.of(ctx).colorScheme.error),
               title: Text(
                 '删除',
@@ -220,10 +221,10 @@ class _FileManageScreenState extends State<FileManageScreen> {
               filled: true,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-              prefixIcon: const Icon(Icons.search, size: 20),
+              prefixIcon: const Icon(Symbols.search_rounded, size: 20),
               suffixIcon: _filter.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear, size: 18),
+                      icon: const Icon(Symbols.close_rounded, size: 18),
                       onPressed: () => _searchCtrl.clear(),
                     )
                   : null,
@@ -266,7 +267,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         itemCount: _subDocs.length + 1,
-        separatorBuilder: (_, _) => Icon(Icons.chevron_right,
+        separatorBuilder: (_, _) => Icon(Symbols.chevron_right_rounded,
             size: 18, color: cs.onSurfaceVariant),
         itemBuilder: (context, index) {
           final label = index == 0
@@ -299,7 +300,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
 
     if (files.isEmpty && atRoot) {
       return const EmptyState(
-        icon: Icons.folder_outlined,
+        icon: Symbols.folder_rounded,
         title: '当前目录为空',
         simple: true,
       );
@@ -312,7 +313,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
         // 非根目录首项为「..」（对标 dirParent 项）
         if (!atRoot && index == 0) {
           return ListTile(
-            leading: const Icon(Icons.drive_folder_upload_outlined),
+            leading: const Icon(Symbols.drive_folder_upload_rounded),
             title: const Text('..'),
             onTap: _gotoLastDir,
           );
@@ -322,7 +323,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
         final name = _baseName(entity.path);
         return ListTile(
           leading: Icon(
-            isDir ? Icons.folder : Icons.insert_drive_file_outlined,
+            isDir ? Symbols.folder_rounded : Symbols.insert_drive_file_rounded,
             color: isDir ? cs.primary : cs.onSurfaceVariant,
           ),
           title: Text(

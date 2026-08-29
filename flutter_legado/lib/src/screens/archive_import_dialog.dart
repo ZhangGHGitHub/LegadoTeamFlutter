@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:path_provider/path_provider.dart';
@@ -398,7 +399,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
+            Icon(Symbols.error_rounded, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 8),
             Text('加载失败', style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 4),
@@ -495,7 +496,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.manage_search, size: 20),
+              : const Icon(Symbols.manage_search_rounded, size: 20),
           tooltip: '检测编码',
         ),
       ],

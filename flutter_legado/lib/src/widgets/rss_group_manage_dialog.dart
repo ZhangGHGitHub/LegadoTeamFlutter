@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -221,7 +222,7 @@ class _RssGroupManageDialogState extends ConsumerState<RssGroupManageDialog> {
             ),
           // 新增分组（对标原版 group_manage.xml menu_add）
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Symbols.add_rounded),
             tooltip: '添加分组',
             visualDensity: VisualDensity.compact,
             onPressed: _busy ? null : _addGroup,
@@ -249,7 +250,7 @@ class _RssGroupManageDialogState extends ConsumerState<RssGroupManageDialog> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          icon: const Icon(Symbols.edit_rounded, size: 20),
                           tooltip: '重命名',
                           visualDensity: VisualDensity.compact,
                           onPressed: _busy ? null : () => _rename(group),
@@ -257,7 +258,7 @@ class _RssGroupManageDialogState extends ConsumerState<RssGroupManageDialog> {
                         // 删除（对标原版 tv_del）
                         IconButton(
                           icon: Icon(
-                            Icons.delete_outline,
+                            Symbols.delete_rounded,
                             size: 20,
                             color: Theme.of(context).colorScheme.error,
                           ),

@@ -1,5 +1,6 @@
 ﻿import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -75,7 +76,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
         title: const Text('关联导入'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.qr_code_scanner),
+            icon: const Icon(Symbols.qr_code_scanner_rounded),
             tooltip: '扫码导入',
             onPressed: () async {
               final navigator = Navigator.of(context);
@@ -93,7 +94,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             tooltip: '重置',
             onPressed: () =>
                 ref.read(associationNotifierProvider.notifier).reset(),
@@ -148,7 +149,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                   child: Center(
                     child: index < currentIndex
                         ? Icon(
-                            Icons.check,
+                            Symbols.check_rounded,
                             size: 16,
                             color: Theme.of(context).colorScheme.onPrimary,
                           )
@@ -200,13 +201,13 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   /// 步骤 1：选择导入类型
   Widget _buildSelectTypeStep(BuildContext context, AssociationState state) {
     final types = [
-      (ImportType.bookSource, Icons.menu_book, '书源', '导入网络书源规则'),
-      (ImportType.rssSource, Icons.rss_feed, 'RSS 源', '导入 RSS 订阅源'),
-      (ImportType.replaceRule, Icons.find_replace, '替换规则', '导入内容替换规则'),
-      (ImportType.theme, Icons.palette, '主题配置', '导入应用主题配置'),
-      (ImportType.httpTts, Icons.record_voice_over, 'HTTP TTS', '导入在线朗读引擎'),
-      (ImportType.dictRule, Icons.menu_book_outlined, '字典规则', '导入在线词典规则'),
-      (ImportType.txtTocRule, Icons.article_outlined, 'TXT 目录规则', '导入本地 TXT 分章规则'),
+      (ImportType.bookSource, Symbols.menu_book_rounded, '书源', '导入网络书源规则'),
+      (ImportType.rssSource, Symbols.rss_feed_rounded, 'RSS 源', '导入 RSS 订阅源'),
+      (ImportType.replaceRule, Symbols.find_replace_rounded, '替换规则', '导入内容替换规则'),
+      (ImportType.theme, Symbols.palette_rounded, '主题配置', '导入应用主题配置'),
+      (ImportType.httpTts, Symbols.record_voice_over_rounded, 'HTTP TTS', '导入在线朗读引擎'),
+      (ImportType.dictRule, Symbols.menu_book_rounded, '字典规则', '导入在线词典规则'),
+      (ImportType.txtTocRule, Symbols.article_rounded, 'TXT 目录规则', '导入本地 TXT 分章规则'),
     ];
 
     return ListView(
@@ -267,7 +268,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                     ),
                     if (isSelected)
                       Icon(
-                        Icons.check_circle,
+                        Symbols.check_circle_rounded,
                         color: Theme.of(context).colorScheme.primary,
                       ),
                   ],
@@ -289,10 +290,10 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   /// 步骤 2：输入来源
   Widget _buildInputSourceStep(BuildContext context, AssociationState state) {
     final sources = [
-      (ImportSource.url, Icons.link, 'URL', '从网络地址导入'),
-      (ImportSource.file, Icons.file_open, '文件', '从本地文件导入'),
-      (ImportSource.clipboard, Icons.content_paste, '剪贴板', '从剪贴板内容导入'),
-      (ImportSource.qrCode, Icons.qr_code_scanner, '扫码', '扫描二维码导入（预留）'),
+      (ImportSource.url, Symbols.link_rounded, 'URL', '从网络地址导入'),
+      (ImportSource.file, Symbols.file_open_rounded, '文件', '从本地文件导入'),
+      (ImportSource.clipboard, Symbols.content_paste_rounded, '剪贴板', '从剪贴板内容导入'),
+      (ImportSource.qrCode, Symbols.qr_code_scanner_rounded, '扫码', '扫描二维码导入（预留）'),
     ];
 
     return ListView(
@@ -357,7 +358,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                     ),
                     if (isSelected)
                       Icon(
-                        Icons.check_circle,
+                        Symbols.check_circle_rounded,
                         color: Theme.of(context).colorScheme.primary,
                       ),
                   ],
@@ -374,7 +375,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
             decoration: const InputDecoration(
               labelText: '书源 URL',
               hintText: 'https://example.com/sources.json',
-              prefixIcon: Icon(Icons.link),
+              prefixIcon: Icon(Symbols.link_rounded),
               border: OutlineInputBorder(),
             ),
             keyboardType: TextInputType.url,
@@ -395,7 +396,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
             child: Row(
               children: [
                 Icon(
-                  Icons.error_outline,
+                  Symbols.error_rounded,
                   color: Theme.of(context).colorScheme.error,
                   size: 20,
                 ),
@@ -454,7 +455,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.error_outline,
+                Symbols.error_rounded,
                 size: 48,
                 color: Theme.of(context).colorScheme.error,
               ),
@@ -482,7 +483,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.inbox_outlined,
+              Symbols.inbox_rounded,
               size: 64,
               color: Theme.of(context).colorScheme.outline,
             ),
@@ -513,7 +514,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
           child: Row(
             children: [
               Icon(
-                Icons.info_outline,
+                Symbols.info_rounded,
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
               const SizedBox(width: 12),
@@ -556,7 +557,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                 flex: 2,
                 child: FilledButton.icon(
                   onPressed: () => _confirmImport(context),
-                  icon: const Icon(Icons.download),
+                  icon: const Icon(Symbols.download_rounded),
                   label: Text('确认导入 (${state.previewCount})'),
                 ),
               ),
@@ -624,8 +625,8 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
           children: [
             Icon(
               result != null && result.failed == 0
-                  ? Icons.check_circle_outline
-                  : Icons.warning_amber_outlined,
+                  ? Symbols.check_circle_rounded
+                  : Symbols.warning_amber_rounded,
               size: 64,
               color: result != null && result.failed == 0
                   ? Colors.green

@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -237,7 +238,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
             : '内置浏览器'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             tooltip: '刷新',
             onPressed: embedded != null || _currentUrl != null
                 ? _refresh
@@ -290,7 +291,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               onSubmitted: _navigate,
               decoration: InputDecoration(
                 isDense: true,
-                prefixIcon: const Icon(Icons.public, size: 20),
+                prefixIcon: const Icon(Symbols.public_rounded, size: 20),
                 hintText: '输入网址，如 https://example.com',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(20),
@@ -317,12 +318,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Symbols.arrow_back_rounded),
             tooltip: '后退',
             onPressed: _canGoBack ? _goBack : null,
           ),
           IconButton(
-            icon: const Icon(Icons.arrow_forward),
+            icon: const Icon(Symbols.arrow_forward_rounded),
             tooltip: '前进',
             onPressed: _canGoForward ? _goForward : null,
           ),
@@ -344,7 +345,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.travel_explore, size: 64,
+          Icon(Symbols.travel_explore_rounded, size: 64,
               color: theme.colorScheme.outline),
           const SizedBox(height: 16),
           Text('输入网址开始浏览', style: theme.textTheme.bodyLarge),
@@ -374,7 +375,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.language, size: 20,
+                    Icon(Symbols.language_rounded, size: 20,
                         color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
@@ -385,7 +386,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     ),
                     const Spacer(),
                     TextButton.icon(
-                      icon: const Icon(Icons.open_in_browser, size: 18),
+                      icon: const Icon(Symbols.open_in_browser_rounded, size: 18),
                       label: const Text('外部打开'),
                       onPressed: () => _openExternal(url),
                     ),
@@ -422,7 +423,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           runSpacing: 8,
           children: _jsSnippets.entries
               .map((e) => ActionChip(
-                    avatar: const Icon(Icons.copy, size: 16),
+                    avatar: const Icon(Symbols.content_copy_rounded, size: 16),
                     label: Text(e.key),
                     onPressed: () => _copySnippet(e.key, e.value),
                   ))
@@ -443,13 +444,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
         Row(
           children: [
             OutlinedButton.icon(
-              icon: const Icon(Icons.clear, size: 18),
+              icon: const Icon(Symbols.close_rounded, size: 18),
               label: const Text('清空结果'),
               onPressed: () => _jsResultController.clear(),
             ),
             const SizedBox(width: 8),
             OutlinedButton.icon(
-              icon: const Icon(Icons.paste, size: 18),
+              icon: const Icon(Symbols.content_paste_rounded, size: 18),
               label: const Text('粘贴'),
               onPressed: () async {
                 final data = await Clipboard.getData(Clipboard.kTextPlain);

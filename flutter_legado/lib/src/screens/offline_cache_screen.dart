@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -344,7 +345,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
         actions: [
           IconButton(
             tooltip: '刷新',
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             onPressed: () => _refresh(),
           ),
           PopupMenuButton<String>(
@@ -385,7 +386,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.cloud_off, size: 64, color: cs.outlineVariant),
+          Icon(Symbols.cloud_off_rounded, size: 64, color: cs.outlineVariant),
           const SizedBox(height: 12),
           const Text('书架暂无书籍'),
           const SizedBox(height: 4),
@@ -454,8 +455,8 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
               tooltip: entry.task != null ? '停止下载' : '开始缓存',
               icon: Icon(
                 entry.task != null
-                    ? Icons.stop_circle_outlined
-                    : Icons.play_circle_outline,
+                    ? Symbols.stop_circle_rounded
+                    : Symbols.play_circle_rounded,
                 size: 28,
               ),
               color: entry.task != null ? cs.error : cs.primary,

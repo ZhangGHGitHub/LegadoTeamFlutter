@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
@@ -120,12 +121,12 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
         title: const Text('朗读引擎'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             tooltip: '帮助',
             onPressed: () => showHelp(context, HelpAssets.httpTtsHelp),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             tooltip: '刷新',
             onPressed: _loadEngines,
           ),
@@ -133,7 +134,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addOrEditEngine(),
-        icon: const Icon(Icons.add),
+        icon: const Icon(Symbols.add_rounded),
         label: const Text('添加引擎'),
       ),
       body: _loading
@@ -143,7 +144,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.record_voice_over_outlined,
+                      Icon(Symbols.record_voice_over_rounded,
                           size: 64, color: theme.colorScheme.outline),
                       const SizedBox(height: 16),
                       Text(
@@ -172,7 +173,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                       child: ListTile(
                         leading: CircleAvatar(
                           backgroundColor: theme.colorScheme.primaryContainer,
-                          child: Icon(Icons.record_voice_over,
+                          child: Icon(Symbols.record_voice_over_rounded,
                               color: theme.colorScheme.onPrimaryContainer),
                         ),
                         title: Text(engine.name),
@@ -185,12 +186,12 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.edit, size: 20),
+                              icon: const Icon(Symbols.edit_rounded, size: 20),
                               tooltip: '编辑',
                               onPressed: () => _addOrEditEngine(engine),
                             ),
                             IconButton(
-                              icon: Icon(Icons.delete_outline,
+                              icon: Icon(Symbols.delete_rounded,
                                   size: 20, color: theme.colorScheme.error),
                               tooltip: '删除',
                               onPressed: () => _deleteEngine(engine),

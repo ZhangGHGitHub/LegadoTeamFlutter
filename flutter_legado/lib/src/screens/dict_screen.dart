@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -68,12 +69,12 @@ class _DictScreenState extends ConsumerState<DictScreen> {
         title: const Text('字典查询'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             tooltip: '帮助',
             onPressed: () => showHelp(context, HelpAssets.dictRuleHelp),
           ),
           IconButton(
-            icon: const Icon(Icons.rule_folder_outlined),
+            icon: const Icon(Symbols.rule_folder_rounded),
             tooltip: '词典规则管理',
             onPressed: _showRuleManager,
           ),
@@ -102,7 +103,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _search(),
               decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: const Icon(Symbols.search_rounded),
                 hintText: '输入单词查询释义',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -148,7 +149,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.menu_book, size: 64, color: theme.colorScheme.outline),
+          Icon(Symbols.menu_book_rounded, size: 64, color: theme.colorScheme.outline),
           const SizedBox(height: 16),
           Text('输入单词开始查询', style: theme.textTheme.bodyLarge),
           const SizedBox(height: 8),
@@ -211,7 +212,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.circle, size: 6,
+                    Icon(Symbols.circle_rounded, size: 6,
                         color: theme.colorScheme.primary),
                     const SizedBox(width: 10),
                     Expanded(child: Text(d, style: theme.textTheme.bodyLarge)),
@@ -231,7 +232,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Icon(Icons.search_off, size: 40,
+            Icon(Symbols.search_off_rounded, size: 40,
                 color: theme.colorScheme.outline),
             const SizedBox(height: 8),
             Text(
@@ -264,7 +265,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
             runSpacing: 8,
             children: state.rules
                 .map((rule) => ActionChip(
-                      avatar: const Icon(Icons.open_in_new, size: 16),
+                      avatar: const Icon(Symbols.open_in_new_rounded, size: 16),
                       label: Text(rule.name),
                       onPressed: () => _launchOnline(rule),
                     ))
@@ -307,7 +308,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 20),
+                            icon: const Icon(Symbols.delete_rounded, size: 20),
                             onPressed: () async {
                               await ref
                                   .read(dictNotifierProvider.notifier)

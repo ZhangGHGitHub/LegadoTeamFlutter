@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 
 import '../services/bottom_bar_skin_format.dart';
@@ -206,7 +207,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                             f,
                             fit: BoxFit.contain,
                             errorBuilder: (_, error, stack) =>
-                                const Icon(Icons.broken_image_outlined),
+                                const Icon(Symbols.broken_image_rounded),
                           ),
                         ),
                       );
@@ -229,11 +230,11 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
         height: 44,
         fit: BoxFit.contain,
         errorBuilder: (_, error, stack) =>
-            const Icon(Icons.broken_image_outlined, size: 28),
+            const Icon(Symbols.broken_image_rounded, size: 28),
       );
     }
     return Icon(
-      Icons.add,
+      Symbols.add_rounded,
       size: 28,
       color: Theme.of(context).colorScheme.outline,
     );

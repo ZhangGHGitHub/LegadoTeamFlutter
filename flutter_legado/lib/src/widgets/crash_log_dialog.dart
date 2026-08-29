@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../services/crash_log_service.dart';
 
@@ -69,7 +70,7 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
 
     return AlertDialog(
       icon: Icon(
-        Icons.error_outline,
+        Symbols.error_rounded,
         color: colorScheme.error,
         size: 32,
       ),
@@ -85,7 +86,7 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
               Row(
                 children: [
                   Icon(
-                    Icons.schedule,
+                    Symbols.schedule_rounded,
                     size: 16,
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -126,8 +127,8 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
                     },
                     icon: Icon(
                       _showDetails
-                          ? Icons.expand_less
-                          : Icons.expand_more,
+                          ? Symbols.expand_less_rounded
+                          : Symbols.expand_more_rounded,
                       size: 18,
                     ),
                     label: Text(_showDetails ? '收起详情' : '查看详情'),

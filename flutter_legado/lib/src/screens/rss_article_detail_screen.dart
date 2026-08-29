@@ -2,6 +2,7 @@
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -311,7 +312,7 @@ $htmlContent
         actions: [
           // [UI-fix v2.0.2 | 2026-08-06] 收藏入口（对标原版 menu_rss_star）— Qoder
           IconButton(
-            icon: Icon(_isStarred ? Icons.star : Icons.star_border),
+            icon: Icon(_isStarred ? Symbols.star_rounded : Symbols.star_rounded),
             tooltip: _isStarred ? '取消收藏' : '收藏',
             onPressed: _starBusy ? null : _toggleStar,
           ),
@@ -319,18 +320,18 @@ $htmlContent
           if (_isWebViewSupported && html != null)
             IconButton(
               icon: Icon(
-                _useWebView ? Icons.article_outlined : Icons.web,
+                _useWebView ? Symbols.article_rounded : Symbols.web_rounded,
               ),
               tooltip: _useWebView ? '切换为纯文本' : '切换为 WebView',
               onPressed: _toggleViewMode,
             ),
           IconButton(
-            icon: const Icon(Icons.open_in_browser),
+            icon: const Icon(Symbols.open_in_browser_rounded),
             tooltip: '在浏览器中打开',
             onPressed: _openInBrowser,
           ),
           IconButton(
-            icon: const Icon(Icons.share),
+            icon: const Icon(Symbols.share_rounded),
             tooltip: '分享',
             onPressed: () async {
               final uri = Uri.tryParse(widget.article.url);
@@ -393,7 +394,7 @@ $htmlContent
             children: [
               if (widget.article.pubDate != null &&
                   widget.article.pubDate!.isNotEmpty) ...[
-                Icon(Icons.schedule,
+                Icon(Symbols.schedule_rounded,
                     size: 14, color: colorScheme.onSurfaceVariant),
                 const SizedBox(width: 4),
                 Flexible(
@@ -407,7 +408,7 @@ $htmlContent
               ],
               if (widget.sourceName.isNotEmpty) ...[
                 const SizedBox(width: 12),
-                Icon(Icons.rss_feed,
+                Icon(Symbols.rss_feed_rounded,
                     size: 14, color: colorScheme.onSurfaceVariant),
                 const SizedBox(width: 4),
                 Flexible(
@@ -489,7 +490,7 @@ $htmlContent
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline,
+              Icon(Symbols.error_rounded,
                   size: 48, color: colorScheme.error),
               const SizedBox(height: 12),
               Text(
@@ -511,7 +512,7 @@ $htmlContent
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _toggleViewMode,
-                icon: const Icon(Icons.article),
+                icon: const Icon(Symbols.article_rounded),
                 label: const Text('切换为纯文本'),
               ),
             ],
@@ -560,7 +561,7 @@ $htmlContent
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline,
+                  Icon(Symbols.info_rounded,
                       size: 16, color: theme.colorScheme.onSurfaceVariant),
                   const SizedBox(width: 8),
                   Expanded(
@@ -588,7 +589,7 @@ $htmlContent
             Center(
               child: FilledButton.icon(
                 onPressed: _openInBrowser,
-                icon: const Icon(Icons.open_in_new),
+                icon: const Icon(Symbols.open_in_new_rounded),
                 label: const Text('查看原文链接'),
               ),
             ),
@@ -606,7 +607,7 @@ $htmlContent
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.article_outlined,
+            Icon(Symbols.article_rounded,
                 size: 64, color: colorScheme.onSurfaceVariant.withAlpha(100)),
             const SizedBox(height: 12),
             Text(
@@ -618,7 +619,7 @@ $htmlContent
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: _openInBrowser,
-              icon: const Icon(Icons.open_in_browser),
+              icon: const Icon(Symbols.open_in_browser_rounded),
               label: const Text('在浏览器中查看原文'),
             ),
           ],

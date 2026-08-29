@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -272,13 +273,13 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       leading: _currentDir == null
           ? null
           : IconButton(
-              icon: const Icon(Icons.arrow_upward),
+              icon: const Icon(Symbols.arrow_upward_rounded),
               onPressed: _goUp,
             ),
       actions: [
         // 远程书籍导入入口（对标原版 RemoteBookActivity）
         IconButton(
-          icon: const Icon(Icons.link),
+          icon: const Icon(Symbols.link_rounded),
           tooltip: '远程导入',
           onPressed: () =>
               Navigator.pushNamed(context, AppRoutes.remoteBooks),
@@ -286,7 +287,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         if (_currentDir != null)
           IconButton(
             icon: Icon(
-              _allVisibleSelected ? Icons.check_box : Icons.check_box_outline_blank,
+              _allVisibleSelected ? Symbols.check_box_rounded : Symbols.check_box_outline_blank_rounded,
             ),
             tooltip: '全选',
             onPressed: _visibleFiles.isEmpty ? null : _toggleSelectAll,
@@ -333,7 +334,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       child: Row(
         children: [
-          Icon(Icons.folder_open, size: 16, color: Theme.of(context).colorScheme.primary),
+          Icon(Symbols.folder_open_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -354,7 +355,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     }
     if (_error != null) {
       return EmptyState(
-        icon: Icons.error_outline,
+        icon: Symbols.error_rounded,
         title: AppStrings.error,
         subtitle: _error,
         action: FilledButton(
@@ -369,7 +370,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     }
     if (_dirs.isEmpty && _visibleFiles.isEmpty) {
       return EmptyState(
-        icon: Icons.folder_off,
+        icon: Symbols.folder_off_rounded,
         title: '当前目录没有可导入的书籍',
         subtitle: '切换格式过滤或返回上级目录',
       );
@@ -393,7 +394,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         for (final root in _roots)
           Card(
             child: ListTile(
-              leading: const Icon(Icons.storage),
+              leading: const Icon(Symbols.storage_rounded),
               title: Text(_displayName(root.path)),
               subtitle: Text(root.path, maxLines: 1, overflow: TextOverflow.ellipsis),
               onTap: () => _enterDir(root),
@@ -405,7 +406,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Widget _buildDirTile(Directory dir) {
     return ListTile(
-      leading: Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
+      leading: Icon(Symbols.folder_rounded, color: Theme.of(context).colorScheme.primary),
       title: Text(_displayName(dir.path)),
             onTap: () => _enterDir(dir),
     );
@@ -422,7 +423,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         builder: (context, snap) {
           final size = snap.data?.size ?? 0;
           return ListTile(
-            leading: Icon(Icons.folder_zip, color: Theme.of(context).colorScheme.secondary),
+            leading: Icon(Symbols.folder_zip_rounded, color: Theme.of(context).colorScheme.secondary),
             title: Text(
               _displayName(path),
               maxLines: 1,
@@ -501,20 +502,20 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   IconData _iconForFormat(String ext) {
     switch (ext) {
       case 'epub':
-        return Icons.menu_book;
+        return Symbols.menu_book_rounded;
       case 'txt':
-        return Icons.description;
+        return Symbols.description_rounded;
       case 'pdf':
-        return Icons.picture_as_pdf;
+        return Symbols.picture_as_pdf_rounded;
       case 'mobi':
       case 'azw3':
-        return Icons.auto_stories;
+        return Symbols.auto_stories_rounded;
       case 'zip':
       case 'rar':
       case '7z':
-        return Icons.folder_zip;
+        return Symbols.folder_zip_rounded;
       default:
-        return Icons.insert_drive_file;
+        return Symbols.insert_drive_file_rounded;
     }
   }
 
@@ -538,7 +539,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         padding: const EdgeInsets.all(12),
         child: FilledButton.icon(
           onPressed: count == 0 ? null : _startImport,
-          icon: const Icon(Icons.file_download),
+          icon: const Icon(Symbols.download_rounded),
           label: Text(count == 0 ? '未选择书籍' : '放入书架 ($count)'),
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(48),

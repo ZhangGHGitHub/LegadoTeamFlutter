@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -87,7 +88,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                 color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.6),
               ),
               prefixIcon: Icon(
-                Icons.search,
+                Symbols.search_rounded,
                 size: 20,
                 color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
               ),
@@ -107,7 +108,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           PopupMenuButton<String?>(
             tooltip: '分组筛选',
             icon: Icon(
-              _groupFilter == null ? Icons.filter_list : Icons.filter_alt,
+              _groupFilter == null ? Symbols.filter_list_rounded : Symbols.filter_alt_rounded,
             ),
             onSelected: (v) => setState(() => _groupFilter = v),
             itemBuilder: (_) => [
@@ -130,7 +131,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           ),
           // P2-12：分组管理（对标原版 menu_group_manage → GroupManageDialog）
           IconButton(
-            icon: const Icon(Icons.folder_outlined),
+            icon: const Icon(Symbols.folder_rounded),
             tooltip: '分组管理',
             onPressed: () => _showGroupManage(context, state.rules),
           ),
@@ -138,7 +139,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           // （对标原版 ReplaceRuleActivity menu_import：本地/网络/二维码均已接通） — Qoder
           PopupMenuButton<String>(
             tooltip: '导入',
-            icon: const Icon(Icons.file_download_outlined),
+            icon: const Icon(Symbols.file_download_rounded),
             onSelected: _handleImportMenu,
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'local', child: Text('本地导入')),
@@ -148,17 +149,17 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 批量模式入口 — Qoder
           IconButton(
-            icon: const Icon(Icons.checklist),
+            icon: const Icon(Symbols.checklist_rounded),
             tooltip: '批量操作',
             onPressed: () => setState(() => _batchMode = true),
           ),
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             tooltip: '帮助',
             onPressed: () => showHelp(context, HelpAssets.replaceRuleHelp),
           ),
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Symbols.add_rounded),
             onPressed: () => _showRuleForm(context),
           ),
         ],
@@ -174,7 +175,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.error_outline,
+                    Symbols.error_rounded,
                     size: 48,
                     color: Theme.of(context).colorScheme.error,
                   ),
@@ -195,7 +196,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.find_replace,
+                    Symbols.find_replace_rounded,
                     size: 64,
                     color: Theme.of(context).colorScheme.outline,
                   ),
@@ -372,14 +373,14 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   PreferredSizeWidget _buildBatchAppBar() {
     return LegadoAppBar(
       leading: IconButton(
-        icon: const Icon(Icons.close),
+        icon: const Icon(Symbols.close_rounded),
         tooltip: '退出批量模式',
         onPressed: _exitBatch,
       ),
       title: Text('已选择 ${_selected.length} 项'),
       actions: [
         IconButton(
-          icon: const Icon(Icons.select_all),
+          icon: const Icon(Symbols.select_all_rounded),
           tooltip: '全选',
           onPressed: () {
             final state = ref.read(replaceRuleNotifierProvider);
@@ -880,7 +881,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                 ReorderableDragStartListener(
                   index: index,
                   child: Icon(
-                    Icons.drag_handle,
+                    Symbols.drag_handle_rounded,
                     color: theme.colorScheme.outline,
                   ),
                 ),
@@ -921,7 +922,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                 // 编辑（对标 iv_edit）
                 IconButton(
                   icon: Icon(
-                    Icons.edit_outlined,
+                    Symbols.edit_rounded,
                     size: 20,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -932,7 +933,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                 // 更多菜单（对标 iv_menu_more）
                 PopupMenuButton<String>(
                   icon: Icon(
-                    Icons.more_vert,
+                    Symbols.more_vert_rounded,
                     size: 20,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

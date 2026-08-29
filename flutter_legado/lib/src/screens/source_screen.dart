@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter/services.dart';
@@ -120,7 +121,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             fillColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-            prefixIcon: Icon(Icons.search,
+            prefixIcon: Icon(Symbols.search_rounded,
                 size: 20,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
             // 压缩前缀图标占位，为提示文字腾出完整显示空间
@@ -130,7 +131,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             ),
             suffixIcon: state.filterKeyword.isNotEmpty
                 ? IconButton(
-                    icon: Icon(Icons.clear,
+                    icon: Icon(Symbols.close_rounded,
                         size: 18,
                         color: Theme.of(context).colorScheme.onSurfaceVariant),
                     onPressed: () {
@@ -153,7 +154,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       actions: [
         // 安卓原版 book_source.xml：排序按钮常驻顶栏（action_sort）
         PopupMenuButton<String>(
-          icon: const Icon(Icons.sort),
+          icon: const Icon(Symbols.sort_rounded),
           tooltip: '排序',
           // 菜单在顶栏下方展开，不覆盖顶栏
           position: PopupMenuPosition.under,
@@ -162,7 +163,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         ),
         // 安卓原版：分组按钮常驻顶栏（menu_group 子菜单）
         PopupMenuButton<String>(
-          icon: const Icon(Icons.groups),
+          icon: const Icon(Symbols.groups_rounded),
           tooltip: '分组',
           // 菜单在顶栏下方展开，不覆盖顶栏
           position: PopupMenuPosition.under,
@@ -223,35 +224,35 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             // 对标原版 book_source.xml 溢出菜单（JS 书源编辑器未移植前隐藏入口，避免假菜单）
             const PopupMenuItem(
               value: 'new',
-              child: _MenuRow(icon: Icons.add, label: '新建书源'),
+              child: _MenuRow(icon: Symbols.add_rounded, label: '新建书源'),
             ),
             const PopupMenuItem(
               value: 'new_js',
-              child: _MenuRow(icon: Icons.code, label: '新建 JS 书源'),
+              child: _MenuRow(icon: Symbols.code_rounded, label: '新建 JS 书源'),
             ),
             const PopupMenuItem(
               value: 'import_file',
-              child: _MenuRow(icon: Icons.download, label: '本地导入'),
+              child: _MenuRow(icon: Symbols.download_rounded, label: '本地导入'),
             ),
             const PopupMenuItem(
               value: 'import_url',
               child:
-                  _MenuRow(icon: Icons.cloud_download, label: '网络导入'),
+                  _MenuRow(icon: Symbols.cloud_download_rounded, label: '网络导入'),
             ),
             const PopupMenuItem(
               value: 'import_qr',
-              child: _MenuRow(icon: Icons.qr_code, label: '二维码导入'),
+              child: _MenuRow(icon: Symbols.qr_code_rounded, label: '二维码导入'),
             ),
             PopupMenuItem(
               value: 'group_by_domain',
               child: _MenuRow(
-                icon: Icons.domain,
+                icon: Symbols.domain_rounded,
                 label: _groupByDomain ? '按域名分组显示 ✓' : '按域名分组显示',
               ),
             ),
             const PopupMenuItem(
               value: 'help',
-              child: _MenuRow(icon: Icons.help_outline, label: '帮助'),
+              child: _MenuRow(icon: Symbols.help_rounded, label: '帮助'),
             ),
           ],
         ),
@@ -266,7 +267,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       BuildContext context, SourceState state) {
     return LegadoAppBar(
       leading: IconButton(
-        icon: const Icon(Icons.close),
+        icon: const Icon(Symbols.close_rounded),
         tooltip: '退出批量模式',
         onPressed: () =>
             ref.read(sourceNotifierProvider.notifier).exitBatchMode(),
@@ -342,8 +343,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
               Expanded(
                 child: barButton(
                   icon: state.isAllSelected
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
+                      ? Symbols.check_box_rounded
+                      : Symbols.check_box_outline_blank_rounded,
                   label: '全选（${state.selectedCount}/$filteredCount）',
                   onPressed: () {
                     final notifier =
@@ -361,7 +362,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
               SizedBox(
                 width: 82,
                 child: barButton(
-                  icon: Icons.flip,
+                  icon: Symbols.flip_rounded,
                   label: '反选',
                   onPressed: state.filteredSources.isEmpty
                       ? null
@@ -377,7 +378,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
               SizedBox(
                 width: 82,
                 child: barButton(
-                  icon: Icons.delete_outline,
+                  icon: Symbols.delete_rounded,
                   label: '删除',
                   color: colorScheme.error,
                   onPressed: state.selectedCount == 0
@@ -399,7 +400,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.more_horiz,
+                          Symbols.more_horiz_rounded,
                           size: 22,
                           color: state.selectedCount == 0
                               ? colorScheme.onSurface
@@ -586,7 +587,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                 )
               else
                 IconButton(
-                  icon: const Icon(Icons.close, size: 18),
+                  icon: const Icon(Symbols.close_rounded, size: 18),
                   tooltip: '关闭校验结果',
                   visualDensity: VisualDensity.compact,
                   onPressed: () {
@@ -606,7 +607,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   Widget _buildSourceList(BuildContext context, List<BookSource> sources) {
     if (sources.isEmpty) {
       return const EmptyState(
-        icon: Icons.library_books_outlined,
+        icon: Symbols.library_books_rounded,
         title: '暂无书源',
         subtitle: '点击右上角菜单「新建书源」新建，或导入书源',
       );
@@ -788,7 +789,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             ),
             // 编辑图标（对标 iv_edit）
             IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 20),
+              icon: const Icon(Symbols.edit_rounded, size: 20),
               tooltip: '编辑',
               visualDensity: VisualDensity.compact,
               onPressed: () {
@@ -805,7 +806,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             Stack(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.more_vert, size: 20),
+                  icon: const Icon(Symbols.more_vert_rounded, size: 20),
                   // 对齐原版内容描述「更多菜单」
                   tooltip: '更多菜单',
                   visualDensity: VisualDensity.compact,
@@ -938,7 +939,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             ),
             // 编辑图标（对标 iv_edit）
             IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 20),
+              icon: const Icon(Symbols.edit_rounded, size: 20),
               tooltip: '编辑',
               visualDensity: VisualDensity.compact,
               onPressed: () {
@@ -954,7 +955,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
             Stack(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.more_vert, size: 20),
+                  icon: const Icon(Symbols.more_vert_rounded, size: 20),
                   tooltip: '更多选项',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _showSourceMenu(context, source),
@@ -1005,35 +1006,35 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
                 child: IosGrabber(),
               ),
               ListTile(
-                leading: const Icon(Icons.vertical_align_top),
+                leading: const Icon(Symbols.vertical_align_top_rounded),
                 title: const Text('置顶'),
                 enabled: manualSort,
                 onTap: () => Navigator.pop(ctx, 'top'),
               ),
               ListTile(
-                leading: const Icon(Icons.vertical_align_bottom),
+                leading: const Icon(Symbols.vertical_align_bottom_rounded),
                 title: const Text('置底'),
                 enabled: manualSort,
                 onTap: () => Navigator.pop(ctx, 'bottom'),
               ),
               if (hasLoginUrl)
                 ListTile(
-                  leading: const Icon(Icons.person_outline),
+                  leading: const Icon(Symbols.person_rounded),
                   title: const Text('登录'),
                   onTap: () => Navigator.pop(ctx, 'login'),
                 ),
               ListTile(
-                leading: const Icon(Icons.search),
+                leading: const Icon(Symbols.search_rounded),
                 title: const Text('搜索'),
                 onTap: () => Navigator.pop(ctx, 'search'),
               ),
               ListTile(
-                leading: const Icon(Icons.bug_report_outlined),
+                leading: const Icon(Symbols.bug_report_rounded),
                 title: const Text('调试'),
                 onTap: () => Navigator.pop(ctx, 'debug'),
               ),
               ListTile(
-                leading: Icon(Icons.delete_outline, color: colorScheme.error),
+                leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
                 title: Text('删除',
                     style: TextStyle(color: colorScheme.error)),
                 onTap: () => Navigator.pop(ctx, 'delete'),
@@ -1041,8 +1042,8 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
               if (hasExplore)
                 ListTile(
                   leading: Icon(source.enabledExplore
-                      ? Icons.explore_off_outlined
-                      : Icons.explore_outlined),
+                      ? Symbols.explore_off_rounded
+                      : Symbols.explore_rounded),
                   title:
                       Text(source.enabledExplore ? '禁用发现' : '启用发现'),
                   onTap: () => Navigator.pop(ctx, 'toggle_explore'),
@@ -1178,7 +1179,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         child: Row(
           children: [
             Icon(
-              selected ? Icons.check : null,
+              selected ? Symbols.check_rounded : null,
               size: 18,
               color: Theme.of(context).colorScheme.primary,
             ),
@@ -1195,7 +1196,7 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
         child: Row(
           children: [
             Icon(
-              state.sortAscending ? null : Icons.check,
+              state.sortAscending ? null : Symbols.check_rounded,
               size: 18,
               color: Theme.of(context).colorScheme.primary,
             ),

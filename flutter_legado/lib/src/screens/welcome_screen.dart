@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -218,7 +219,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                   alignment: const Alignment(0, 0.35),
                   child: showIcon
                       ? Icon(
-                          Icons.menu_book_rounded,
+                          Symbols.menu_book_rounded,
                           size: 120,
                           color: accent,
                         )

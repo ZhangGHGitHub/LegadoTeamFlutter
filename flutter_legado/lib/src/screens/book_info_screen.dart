@@ -5,6 +5,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -437,7 +438,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           // 编辑：仅在架书籍显示（对标原版 editMenuItem.isVisible = inBookshelf）
           if (_inBookshelf)
             IconButton(
-              icon: const Icon(Icons.edit_outlined),
+              icon: const Icon(Symbols.edit_rounded),
               tooltip: '编辑书籍信息',
               onPressed: () async {
                 try {
@@ -467,7 +468,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               },
             ),
           IconButton(
-            icon: const Icon(Icons.ios_share),
+            icon: const Icon(Symbols.ios_share_rounded),
             tooltip: '分享',
             onPressed: () async {
               try {
@@ -502,7 +503,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           ),
           if (_bookSource?.customButton == true)
             IconButton(
-              icon: const Icon(Icons.extension_outlined),
+              icon: const Icon(Symbols.extension_rounded),
               tooltip: '自定义',
               onPressed: _onCustomButton,
             ),
@@ -1290,7 +1291,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           // 作者行（对标 ic_author + tv_author；点击/长按 → 搜索作者）
           _summaryRow(
             context,
-            Icons.person_outline,
+            Symbols.person_rounded,
             book.author.isNotEmpty ? book.author : '未知作者',
             onTap: () => _openSearch(book.author, event: 'clickAuthor'),
             onLongPress: () => _sourceCallBackSearch(
@@ -1301,24 +1302,24 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           // 来源行（对标 ic_web + tv_origin + tv_change_source；点击 → 编辑书源）
           _summaryRow(
             context,
-            Icons.language,
+            Symbols.language_rounded,
             '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
             onTap: _isOnlineBook(book) ? () => _openSourceEdit(book) : null,
             action: _smallAction(
                 context, '换源', () => _showChangeSourceDialog(book)),
           ),
           // 最新行（对标 ic_book_last + tv_lasted）
-          _summaryRow(context, Icons.menu_book_outlined, latest),
+          _summaryRow(context, Symbols.menu_book_rounded, latest),
           // 分组行（对标 ic_groups + tv_group + tv_change_group）
           // [UI-fix v2.0.6 | 2026-08-08] 按钮文案「换组」→「设置分组」对齐原版
           // change_group="Group settings"（点击设置该书所属分组，行为不变） — Qoder
-          _summaryRow(context, Icons.groups_outlined, _groupText(book),
+          _summaryRow(context, Symbols.groups_rounded, _groupText(book),
               action: _smallAction(context, '设置分组', _showChangeGroup)),
           // 目录行（webFile 书隐藏，对齐原版 ll_toc.gone() — Cursor UI）
           if (!isWebFile)
             _summaryRow(
               context,
-              Icons.folder_open,
+              Symbols.folder_open_rounded,
               '目录：$tocTitle',
               action: _smallAction(context, '查看目录', _openTocScreen),
             ),

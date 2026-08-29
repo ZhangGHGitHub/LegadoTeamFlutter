@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_legado/src/widgets/tag_chip.dart';
 
 void main() {
@@ -34,14 +35,14 @@ void main() {
       (tester) async {
     await tester.pumpWidget(buildTestWidget(onDeleted: () {}));
 
-    expect(find.byIcon(Icons.close), findsOneWidget);
+    expect(find.byIcon(Symbols.close_rounded), findsOneWidget);
   });
 
   testWidgets('TagChip hides delete icon when onDeleted is null',
       (tester) async {
     await tester.pumpWidget(buildTestWidget());
 
-    expect(find.byIcon(Icons.close), findsNothing);
+    expect(find.byIcon(Symbols.close_rounded), findsNothing);
   });
 
   testWidgets('TagChip onTap callback works', (tester) async {
@@ -56,7 +57,7 @@ void main() {
     var deleted = false;
     await tester.pumpWidget(buildTestWidget(onDeleted: () => deleted = true));
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(Symbols.close_rounded));
     expect(deleted, isTrue);
   });
 }

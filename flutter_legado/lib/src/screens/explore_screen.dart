@@ -15,6 +15,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -100,7 +101,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                   prefixIcon: Icon(
-                    Icons.search,
+                    Symbols.search_rounded,
                     size: 20,
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -111,7 +112,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
                           icon: Icon(
-                            Icons.clear,
+                            Symbols.close_rounded,
                             size: 18,
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -145,7 +146,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             actions: [
               PopupMenuButton<String>(
                 tooltip: '分组',
-                icon: const Icon(Icons.groups_outlined),
+                icon: const Icon(Symbols.groups_rounded),
                 onSelected: (group) {
                   ref.read(exploreNotifierProvider.notifier).selectGroup(group);
                   setState(() => _selectedCategory = null);
@@ -187,7 +188,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     final bookSources = state.filteredBookSources;
     if (bookSources.isEmpty) {
       return const EmptyState(
-        icon: Icons.library_books_outlined,
+        icon: Symbols.library_books_rounded,
         title: '当前没有发现源！',
         simple: true,
       );
@@ -215,7 +216,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           flex: 3,
           child: _selectedCategory == null
               ? const EmptyState(
-                  icon: Icons.explore_outlined,
+                  icon: Symbols.explore_rounded,
                   title: '选择发现分类',
                   subtitle: '展开左侧书源并点击分类，在此浏览书籍',
                   simple: true,
@@ -504,7 +505,7 @@ class _SourceItemState extends ConsumerState<_SourceItem>
                           duration: widget.expandDuration,
                           curve: Curves.easeInOut,
                           child: Icon(
-                            Icons.chevron_right,
+                            Symbols.chevron_right_rounded,
                             size: 20,
                             color: colorScheme.onSurfaceVariant,
                           ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -217,7 +218,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
         actions: [
           PopupMenuButton<_GroupSort>(
             tooltip: '排序方式',
-            icon: const Icon(Icons.sort),
+            icon: const Icon(Symbols.sort_rounded),
             onSelected: (s) => setState(() => _sort = s),
             itemBuilder: (_) => [
               _sortItem(_GroupSort.order, '按排序值'),
@@ -231,7 +232,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showEditDialog(),
         tooltip: '新建分组',
-        child: const Icon(Icons.add),
+        child: const Icon(Symbols.add_rounded),
       ),
     );
   }
@@ -242,7 +243,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       child: Row(
         children: [
           Icon(
-            _sort == value ? Icons.radio_button_checked : Icons.radio_button_off,
+            _sort == value ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
             size: 20,
           ),
           const SizedBox(width: 8),
@@ -256,7 +257,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     if (_loading) return const LoadingIndicator(message: '加载分组...');
     if (_error != null) {
       return EmptyState(
-        icon: Icons.error_outline,
+        icon: Symbols.error_rounded,
         title: AppStrings.error,
         subtitle: _error,
         action: FilledButton(onPressed: _loadGroups, child: Text(AppStrings.retry)),
@@ -264,7 +265,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     }
     if (_groups.isEmpty) {
       return EmptyState(
-        icon: Icons.folder_special,
+        icon: Symbols.folder_special_rounded,
         title: '还没有分组',
         subtitle: '点击右下角按钮创建第一个分组',
       );

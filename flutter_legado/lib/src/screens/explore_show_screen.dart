@@ -12,6 +12,7 @@ library;
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -89,7 +90,7 @@ class ExploreShowScreen extends ConsumerWidget {
       return Scaffold(
         appBar: LegadoAppBar(title: const Text('')),
         body: const EmptyState(
-          icon: Icons.explore_outlined,
+          icon: Symbols.explore_rounded,
           title: '参数错误',
           subtitle: '缺少发现分类参数',
         ),
@@ -109,7 +110,7 @@ class ExploreShowScreen extends ConsumerWidget {
           // 系统图标按钮，次级层级）— 发现页修复 R5
           IconButton(
             tooltip: '加入书架',
-            icon: const Icon(Icons.playlist_add),
+            icon: const Icon(Symbols.playlist_add_rounded),
             onPressed: () => _addLoadedBooksToShelf(context, ref, args),
           ),
           ExplorePageControl(args: args),

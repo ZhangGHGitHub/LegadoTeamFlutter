@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import '../screens/home_screen.dart';
@@ -8,7 +9,7 @@ import '../screens/home_screen.dart';
 /// 对齐 Android [TitleBar] / 子 Activity `displayHomeAsUp` 语义：
 ///
 /// - **主 Tab 内页**（[HomeScreen] 子树）：不显示返回（原版 Fragment 无 Up）
-/// - **独立 push 子页**：左侧 M3 返回（[Icons.arrow_back]）
+/// - **独立 push 子页**：左侧 M3 返回（[Symbols.arrow_back_rounded]）
 /// - **禁止** Material 默认 `automaticallyImplyLeading` 误注入返回
 ///
 /// 传入 [leading] 时完全尊重调用方（批量模式关闭钮、文件浏览上级等）。
@@ -88,7 +89,7 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (leading != null) return leading;
     if (!shouldShowBack(context, showBack: showBack)) return null;
     return IconButton(
-      icon: const Icon(Icons.arrow_back),
+      icon: const Icon(Symbols.arrow_back_rounded),
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       onPressed: () => Navigator.maybePop(context),
     );

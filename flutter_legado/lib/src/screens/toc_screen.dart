@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -555,7 +556,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             : Text(_book.name.isNotEmpty ? _book.name : '目录'),
         actions: [
           IconButton(
-            icon: Icon(_searching ? Icons.close : Icons.search),
+            icon: Icon(_searching ? Symbols.close_rounded : Symbols.search_rounded),
             tooltip: _searching ? '关闭搜索' : '搜索',
             onPressed: _toggleSearch,
           ),
@@ -606,7 +607,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
+            Icon(Symbols.error_rounded,
                 size: 48, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 16),
             Text(_chaptersError!, textAlign: TextAlign.center),
@@ -700,11 +701,11 @@ class _TocScreenState extends ConsumerState<TocScreen>
       BuildContext context, BookChapter chapter, bool isCurrent) {
     final cs = Theme.of(context).colorScheme;
     if (isCurrent) {
-      return Icon(Icons.check, size: 18, color: cs.primary);
+      return Icon(Symbols.check_rounded, size: 18, color: cs.primary);
     }
     final cached = _cachedChapterUrls.contains(chapter.url);
     return Icon(
-      cached ? Icons.cloud_done : Icons.cloud_outlined,
+      cached ? Symbols.cloud_done_rounded : Symbols.cloud_rounded,
       size: 18,
       color: cached ? cs.primary : cs.onSurfaceVariant,
     );
@@ -741,7 +742,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.vertical_align_top),
+              icon: const Icon(Symbols.vertical_align_top_rounded),
               tooltip: '跳转顶部',
               onPressed: () {
                 if (_tocScrollController.hasClients) {
@@ -750,7 +751,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
               },
             ),
             IconButton(
-              icon: const Icon(Icons.vertical_align_bottom),
+              icon: const Icon(Symbols.vertical_align_bottom_rounded),
               tooltip: '跳转底部',
               onPressed: () {
                 if (_tocScrollController.hasClients) {
@@ -777,7 +778,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
+            Icon(Symbols.error_rounded,
                 size: 48, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 16),
             Text(state.error!, textAlign: TextAlign.center),
@@ -806,7 +807,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.bookmark_border,
+            Icon(Symbols.bookmark_border_rounded,
                 size: 64, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
             Text(query.isEmpty ? '暂无书签' : '未找到匹配的书签'),
@@ -827,7 +828,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 20),
             child: Icon(
-              Icons.delete,
+              Symbols.delete_rounded,
               color: Theme.of(context).colorScheme.onError,
             ),
           ),
@@ -864,7 +865,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             children: [
               Row(
                 children: [
-                  Icon(Icons.bookmark,
+                  Icon(Symbols.bookmark_rounded,
                       size: 16, color: theme.colorScheme.primary),
                   const SizedBox(width: 6),
                   Expanded(
@@ -944,7 +945,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
+            Icon(Symbols.error_rounded,
                 size: 48, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 16),
             Text(_highlightsError!, textAlign: TextAlign.center),
@@ -972,7 +973,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.border_color_outlined,
+            Icon(Symbols.border_color_rounded,
                 size: 64, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
             Text(query.isEmpty ? '暂无标注' : '未找到匹配的标注'),
@@ -1007,7 +1008,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             children: [
               Row(
                 children: [
-                  Icon(Icons.border_color,
+                  Icon(Symbols.border_color_rounded,
                       size: 16, color: theme.colorScheme.primary),
                   const SizedBox(width: 6),
                   Expanded(

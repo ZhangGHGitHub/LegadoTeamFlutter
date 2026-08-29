@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -275,14 +276,14 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           // [UI-fix v2.0.2 | 2026-08-06] 搜索筛选入口（对标 menu_screen）— Qoder
           IconButton(
             icon: Icon(
-              _searchFilter.isNotEmpty ? Icons.filter_alt : Icons.search,
+              _searchFilter.isNotEmpty ? Symbols.filter_alt_rounded : Symbols.search_rounded,
             ),
             tooltip: '搜索筛选',
             onPressed: () =>
                 setState(() => _searchFilterVisible = !_searchFilterVisible),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             tooltip: '重新搜索',
             onPressed: state.isLoading || _stopped
                 ? null
@@ -296,24 +297,24 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
               PopupMenuItem(
                 value: 'startStop',
                 child: _menuRow(
-                  icon: _stopped ? Icons.play_arrow : Icons.stop,
+                  icon: _stopped ? Symbols.play_arrow_rounded : Symbols.stop_rounded,
                   label: _stopped ? '继续刷新' : '停止刷新',
                 ),
               ),
               PopupMenuItem(
                 value: 'sourceManage',
-                child: _menuRow(icon: Icons.settings, label: '书源管理'),
+                child: _menuRow(icon: Symbols.settings_rounded, label: '书源管理'),
               ),
               PopupMenuItem(
                 value: 'refreshList',
-                child: _menuRow(icon: Icons.refresh, label: '刷新列表'),
+                child: _menuRow(icon: Symbols.refresh_rounded, label: '刷新列表'),
               ),
               PopupMenuItem(
                 value: 'checkAuthor',
                 child: _menuRow(
                   icon: _checkAuthor
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
+                      ? Symbols.check_box_rounded
+                      : Symbols.check_box_outline_blank_rounded,
                   label: '校验作者',
                 ),
               ),
@@ -321,8 +322,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                 value: 'loadWordCount',
                 child: _menuRow(
                   icon: _loadWordCount
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
+                      ? Symbols.check_box_rounded
+                      : Symbols.check_box_outline_blank_rounded,
                   label: '加载字数',
                 ),
               ),
@@ -330,8 +331,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                 value: 'loadInfo',
                 child: _menuRow(
                   icon: _loadInfo
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
+                      ? Symbols.check_box_rounded
+                      : Symbols.check_box_outline_blank_rounded,
                   label: '加载信息',
                 ),
               ),
@@ -339,21 +340,21 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                 value: 'loadToc',
                 child: _menuRow(
                   icon: _loadToc
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
+                      ? Symbols.check_box_rounded
+                      : Symbols.check_box_outline_blank_rounded,
                   label: '加载目录',
                 ),
               ),
               PopupMenuItem(
                 value: 'group',
                 child: _menuRow(
-                  icon: Icons.group_work,
+                  icon: Symbols.group_work_rounded,
                   label: _searchGroup.isEmpty ? '源分组：全部' : '源分组：$_searchGroup',
                 ),
               ),
               const PopupMenuItem(
                 value: 'close',
-                child: _MenuRowStatic(icon: Icons.close, label: '关闭'),
+                child: _MenuRowStatic(icon: Symbols.close_rounded, label: '关闭'),
               ),
             ],
           ),
@@ -389,7 +390,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
         onPressed: state.isLoading || _stopped
             ? null
             : () => _search(forceRefresh: true),
-        icon: const Icon(Icons.search),
+        icon: const Icon(Symbols.search_rounded),
         label: const Text('搜索'),
       ),
     );
@@ -463,7 +464,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     final isSelected = _searchGroup == value;
     return ListTile(
       leading: Icon(
-        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+        isSelected ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
         color: isSelected ? Theme.of(ctx).colorScheme.primary : null,
       ),
       title: Text(label),
@@ -546,7 +547,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.vertical_align_top),
+                icon: const Icon(Symbols.vertical_align_top_rounded),
                 tooltip: '滚到顶部',
                 onPressed: results.isEmpty
                     ? null
@@ -562,7 +563,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                       },
               ),
               IconButton(
-                icon: const Icon(Icons.vertical_align_bottom),
+                icon: const Icon(Symbols.vertical_align_bottom_rounded),
                 tooltip: '滚到底部',
                 onPressed: results.isEmpty
                     ? null
@@ -622,28 +623,28 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.vertical_align_top),
+              leading: const Icon(Symbols.vertical_align_top_rounded),
               title: const Text('置顶'),
               onTap: () => Navigator.pop(ctx, 'top'),
             ),
             ListTile(
-              leading: const Icon(Icons.vertical_align_bottom),
+              leading: const Icon(Symbols.vertical_align_bottom_rounded),
               title: const Text('置底'),
               onTap: () => Navigator.pop(ctx, 'bottom'),
             ),
             ListTile(
-              leading: const Icon(Icons.edit),
+              leading: const Icon(Symbols.edit_rounded),
               title: const Text('编辑书源'),
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
             ListTile(
-              leading: const Icon(Icons.block),
+              leading: const Icon(Symbols.block_rounded),
               title: const Text('禁用书源'),
               onTap: () => Navigator.pop(ctx, 'disable'),
             ),
             ListTile(
               leading: Icon(
-                Icons.delete,
+                Symbols.delete_rounded,
                 color: Theme.of(ctx).colorScheme.error,
               ),
               title: Text(
@@ -741,7 +742,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.search_off,
+              Symbols.search_off_rounded,
               size: 64,
               color: colorScheme.onSurfaceVariant,
             ),
@@ -898,7 +899,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
               children: [
                 IconButton(
                   icon: Icon(
-                    Icons.thumb_up_outlined,
+                    Symbols.thumb_up_rounded,
                     color: goodActive
                         ? goodColor
                         : colorScheme.outline.withValues(alpha: 0.6),
@@ -909,7 +910,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                 ),
                 IconButton(
                   icon: Icon(
-                    Icons.thumb_down_outlined,
+                    Symbols.thumb_down_rounded,
                     color: badActive
                         ? badColor
                         : colorScheme.outline.withValues(alpha: 0.6),
@@ -924,7 +925,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
               Padding(
                 padding: const EdgeInsets.only(left: 4, top: 12),
                 child: Icon(
-                  Icons.check_circle,
+                  Symbols.check_circle_rounded,
                   size: 20,
                   color: colorScheme.primary,
                 ),

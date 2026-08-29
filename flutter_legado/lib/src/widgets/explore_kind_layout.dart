@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -644,7 +645,7 @@ class _SelectChipState extends ConsumerState<_SelectChip> {
                     ),
                   ),
                   Icon(
-                    Icons.unfold_more,
+                    Symbols.unfold_more_rounded,
                     size: 16,
                     color: colorScheme.onSurfaceVariant,
                   ),

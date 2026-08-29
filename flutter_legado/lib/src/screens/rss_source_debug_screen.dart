@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -136,7 +137,7 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
         title: const Text('RSS 源调试'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Symbols.delete_rounded),
             tooltip: '清空日志',
             onPressed:
                 _logs.isEmpty ? null : () => setState(() => _logs.clear()),
@@ -157,7 +158,7 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
                       labelText: 'RSS 源 URL',
                       hintText: '输入要调试的 RSS 源地址',
                       border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.rss_feed),
+                      prefixIcon: Icon(Symbols.rss_feed_rounded),
                       isDense: true,
                     ),
                     onSubmitted: (_) => _runDebug(),
@@ -172,7 +173,7 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.play_arrow),
+                      : const Icon(Symbols.play_arrow_rounded),
                   label: Text(_running ? '运行中' : '调试'),
                 ),
               ],
@@ -184,7 +185,7 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Row(
               children: [
-                const Icon(Icons.filter_alt_outlined, size: 18),
+                const Icon(Symbols.filter_alt_rounded, size: 18),
                 const SizedBox(width: 6),
                 for (final level in _DebugLogLevel.values)
                   Padding(

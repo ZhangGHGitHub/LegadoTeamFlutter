@@ -3,6 +3,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -143,7 +144,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
         title: const Text('更换封面'),
         actions: [
           TextButton.icon(
-            icon: const Icon(Icons.photo_library_outlined),
+            icon: const Icon(Symbols.photo_library_rounded),
             label: const Text('本地'),
             onPressed: _pickLocal,
           ),
@@ -153,7 +154,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton.icon(
-            icon: const Icon(Icons.check_rounded),
+            icon: const Icon(Symbols.check_rounded),
             label: const Text('使用该封面'),
             onPressed: _selectedUrl == null ? null : _confirm,
             style: FilledButton.styleFrom(
@@ -252,12 +253,12 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
         controller: _searchController,
         decoration: InputDecoration(
           hintText: '输入书名搜索封面',
-          prefixIcon: const Icon(Icons.search),
+          prefixIcon: const Icon(Symbols.search_rounded),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(24),
           ),
           suffixIcon: IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Symbols.refresh_rounded),
             onPressed: coverState.isSearching ? null : _searchCovers,
           ),
         ),
@@ -377,7 +378,7 @@ class _CandidateTile extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  Icons.check,
+                  Symbols.check_rounded,
                   size: 16,
                   color: colorScheme.onPrimary,
                 ),

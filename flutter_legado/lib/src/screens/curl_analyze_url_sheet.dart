@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -168,7 +169,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                       IconButton(
                         tooltip: '关闭',
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
+                        icon: const Icon(Symbols.close_rounded),
                       ),
                       Expanded(
                         child: Text(
@@ -188,7 +189,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                                 height: 20,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.swap_horiz),
+                            : const Icon(Symbols.swap_horiz_rounded),
                       ),
                     ],
                   ),
@@ -200,12 +201,12 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                       ButtonSegment(
                         value: true,
                         label: Text('cURL → URL'),
-                        icon: Icon(Icons.arrow_forward, size: 16),
+                        icon: Icon(Symbols.arrow_forward_rounded, size: 16),
                       ),
                       ButtonSegment(
                         value: false,
                         label: Text('URL → cURL'),
-                        icon: Icon(Icons.arrow_back, size: 16),
+                        icon: Icon(Symbols.arrow_back_rounded, size: 16),
                       ),
                     ],
                     selected: {_curlToAnalyze},

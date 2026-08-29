@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../models/models.dart';
 import '../routes.dart';
@@ -373,7 +374,7 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
                 ),
               ),
             IconButton(
-              icon: const Icon(Icons.check),
+              icon: const Icon(Symbols.check_rounded),
               // 对齐原版顶栏「确认」
               tooltip: '确认',
               onPressed: _busy ? null : _onConfirm,
