@@ -396,6 +396,12 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
         return Ok("[]".to_string());
     }
 
+    // [审计 D3 | SearchModel.insert] 一次性入口同样落库 searchBooks，供换源
+    // getDbSearchBooks 复用（search_books 已有同款；当前 UI 只用流式主路径，
+    // 此处对齐原版"两入口均落库"语义，防后续调用方换源 DB 缓存偏少）
+    let core_books: Vec<_> = results.iter().cloned().map(result_to_search_book).collect();
+    persist_search_books(&core_books);
+
     // 批量附加阅读记录标识后序列化（不修改 core 的 SearchResult 结构，通过加法式
     // DTO 扩展输出 JSON）。统一执行器不做跨源去重/相关性排序（聚合下沉至 Flutter），
     // 故 relevance_score 恒为 0。
@@ -1049,7 +1055,20 @@ pub(crate) async fn search_single_source(
     let t_phase = std::time::Instant::now();
     // JS 书源分派
     if source.is_js_source() {
-        return search_js_source(source, keyword, page).await;
+        let mut results = search_js_source(source, keyword, page).await?;
+        // [审计 D4 | WebBook.kt:47 + JsSourceBook.kt:29-37] 原版把 precision
+        // filter 传入 JsSourceBook.searchAwait，JS 源结果同样受三字段"或"
+        // 语义约束，不得绕过
+        results.retain(|r| {
+            precision_filter_match(
+                precision,
+                keyword,
+                &r.book_name,
+                &r.author,
+                r.kind.as_deref(),
+            )
+        });
+        return Ok(results);
     }
 
     // 1. 获取搜索 URL 模板

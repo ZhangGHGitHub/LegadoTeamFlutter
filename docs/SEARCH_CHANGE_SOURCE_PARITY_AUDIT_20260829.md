@@ -98,4 +98,17 @@ v7a 的 `.so` 无 QuickJS（REFACTOR_DEFECT_AUDIT_20260828.md §一.1，`liblega
 
 ---
 
+## 七、修复记录（2026-08-29 同日落地）
+
+| 项 | 处置 | 落点 |
+|---|---|---|
+| D1 | ✅ 已修复 | Dart 两处分隔符补齐 `,;，；`（change_source_notifier.dart / change_source_screen.dart）+ 分组过滤回归测试 |
+| D2 | ✅ 已修复（按审计建议"保留展示 + 点击兜底报错"） | source_switch.rs 移除空 book_url 过滤；解析层 S0-E 已有 baseUrl 回退 |
+| D3 | ✅ 已修复 | multi_source_search 补 persist_search_books（审计所称 search_books 不落库已过时——其 273 行已有同款） |
+| D4 | ✅ 已修复 | search_single_source JS 分支结果应用 precision_filter_match |
+| D5 | ✅ 已修复 | _filteredResults 只按 bookName contains |
+| D6 | ✅ 已修复 | is_same_book_name 改 trim 后字面全等（删除 normalize_book_name）；换源读库改原样书名查询 |
+| E1 | 维持既有决策 | v7a 保留降级（用户已确认），rquickjs 升级另立上游议题 |
+| E2 | 测试纪律 | 双包对比时按 §六 流程执行，不属代码修复 |
+
 编写者：GLM-5.3-Flash ｜ 2026-08-29

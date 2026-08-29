@@ -178,18 +178,19 @@ fn try_load_change_source_from_db(
     } else {
         String::new()
     };
-    let normalized_name = legado_core::book_help::format_book_name(book_name);
+    // [审计 D6 | ChangeBookSourceViewModel.kt:603-625] 原版 getDbSearchBooks 以
+    // 原样 book.name 查询（不做归一化）；库内书名在解析期已经 formatBookName，
+    // 查询参数不再二次归一化
     log::info!(
-        "换源读库: name={} normalized={} author_filter={} searchGroup={}",
+        "换源读库: name={} author_filter={} searchGroup={}",
         book_name,
-        normalized_name,
         author_filter,
         search_group
     );
 
     let books = crate::db_state::with_database(|db| {
         let repo = legado_db::SearchBookRepository::new(db.connection());
-        repo.change_source_by_group(&normalized_name, &author_filter, &search_group)
+        repo.change_source_by_group(book_name, &author_filter, &search_group)
     })
     .ok()?;
 
@@ -443,10 +444,10 @@ async fn search_for_switch(
         crate::api::search::search_single_source(client, source, keyword, 1, false).await?;
     let candidates = results
         .into_iter()
-        // Task #21 修复：过滤掉未解析出详情页 URL 的候选。空 book_url 无法用于
-        // switch_book_source/refresh_toc 定位书籍，若进入换源列表被用户选中，
-        // 会以空 URL 调用解析器抛 "bookUrl不能为空"。此处从源头剔除无效候选。
-        .filter(|r| !r.book_url.trim().is_empty())
+        // [审计 D2 | BookList.kt:281-284] 原版对 bookUrl 解析为空的条目回退
+        // baseUrl 后照常入列表（不剔除）；解析层（search.rs S0-E）已实现同一
+        // 回退，此处不再按空 book_url 过滤——空 URL 候选保留展示，点击切换时
+        // 由 switch_book_source 兜底报错。
         .map(|r| SearchCandidate {
             source_url: r.source_url,
             source_name: r.source_name,

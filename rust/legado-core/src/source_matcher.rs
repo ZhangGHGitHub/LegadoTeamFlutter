@@ -167,50 +167,16 @@ impl SourceMatcher {
         });
     }
 
-    /// Task #25：书名规范化比较 — 对齐原版换源硬过滤的比较口径。
+    /// Task #25：书名同名判定（换源硬过滤口径）——trim 后**字面全等**。
     ///
-    /// 原版 `ChangeBookSourceViewModel.search` L268-269 的过滤条件为
-    /// `fName == name`（Kotlin String equals），但不同书源返回的书名常带
-    /// 首尾空白与整体包裹的装饰括号（如「《斗破苍穹》」「【斗破苍穹】」）。
-    /// 为对齐原版「同名才进换源列表」语义且不过度发散：trim 空白后成对剥离
-    /// 首尾包裹括号（后缀括号如「灵气复苏(全集)」不剥离），不做任何模糊/
-    /// 相似度匹配。
-    pub fn normalize_book_name(name: &str) -> String {
-        const PAIRS: [(char, char); 7] = [
-            ('(', ')'),
-            ('（', '）'),
-            ('[', ']'),
-            ('【', '】'),
-            ('〔', '〕'),
-            ('《', '》'),
-            ('〈', '〉'),
-        ];
-        let mut s = name.trim().to_string();
-        loop {
-            let mut changed = false;
-            for (open, close) in PAIRS {
-                let mut chars = s.chars();
-                if let (Some(first), Some(last)) = (chars.next(), chars.next_back()) {
-                    if first == open && last == close && s.chars().count() > 2 {
-                        let inner: String = s.chars().skip(1).take(s.chars().count() - 2).collect();
-                        s = inner;
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        s.trim().to_string()
-    }
-
-    /// Task #25：书名同名判定（换源硬过滤口径）：规范化后**精确相等**。
-    /// 对齐原版 `fName == name`；书名任一为空视为不匹配。
+    /// 对齐原版 `ChangeBookSourceViewModel.search` L268-269 的 `fName == name`
+    /// （Kotlin String equals）：不做括号剥离等归一化（审计 D6——归一化更宽，
+    /// 带副标题装饰括号的候选原版会丢弃）。两侧书名在解析期均已过
+    /// formatBookName（原版 BookList.kt:220 / 本项目 book_help），trim 仅为
+    /// 防御；书名任一为空视为不匹配。
     pub fn is_same_book_name(result_name: &str, target_name: &str) -> bool {
-        let rn = Self::normalize_book_name(result_name);
-        let tn = Self::normalize_book_name(target_name);
+        let rn = result_name.trim();
+        let tn = target_name.trim();
         !rn.is_empty() && !tn.is_empty() && rn == tn
     }
 
@@ -456,40 +422,18 @@ mod tests {
         assert_eq!(score, 80.0);
     }
 
-    /// Task #25：书名规范化 — trim + 成对剥离首尾括号，不做模糊匹配
-    #[test]
-    fn test_normalize_book_name() {
-        assert_eq!(
-            SourceMatcher::normalize_book_name("  灵气复苏 "),
-            "灵气复苏"
-        );
-        assert_eq!(SourceMatcher::normalize_book_name("(灵气复苏)"), "灵气复苏");
-        assert_eq!(
-            SourceMatcher::normalize_book_name("【灵气复苏】"),
-            "灵气复苏"
-        );
-        assert_eq!(
-            SourceMatcher::normalize_book_name("（灵气复苏）"),
-            "灵气复苏"
-        );
-        // 括号不成对/内部括号/后缀括号不剥离（保守口径，对齐原版 equals）
-        assert_eq!(SourceMatcher::normalize_book_name("灵气复苏("), "灵气复苏(");
-        assert_eq!(
-            SourceMatcher::normalize_book_name("灵气(复)苏"),
-            "灵气(复)苏"
-        );
-        assert_eq!(
-            SourceMatcher::normalize_book_name("灵气复苏(全集)"),
-            "灵气复苏(全集)"
-        );
-    }
-
-    /// Task #25：同名判定 — 规范化后精确相等；空名/异名均不匹配
+    /// Task #25：同名判定 — trim 后字面全等（原版 equals 口径，审计 D6 收紧：
+    /// 不做括号剥离归一化）；空名/异名/装饰括号名均不匹配
     #[test]
     fn test_is_same_book_name() {
         assert!(SourceMatcher::is_same_book_name("灵气复苏", "灵气复苏"));
-        assert!(SourceMatcher::is_same_book_name(
+        // trim 仅防首尾空白；整体包裹括号属于不同书名，原版亦丢弃
+        assert!(!SourceMatcher::is_same_book_name(
             " 【灵气复苏】 ",
+            "灵气复苏"
+        ));
+        assert!(!SourceMatcher::is_same_book_name(
+            "《灵气复苏》",
             "灵气复苏"
         ));
         assert!(!SourceMatcher::is_same_book_name(
@@ -516,8 +460,8 @@ mod tests {
         assert!(!SourceMatcher::author_matches("", "张三"));
     }
 
-    /// Task #25：换源硬过滤 — 同名书保留、毫不相关的错书被剔除；
-    /// check_author=true 时作者不含目标作者的也被剔除
+    /// Task #25：换源硬过滤 — 同名书保留、毫不相关的错书与装饰括号名被剔除
+    /// （审计 D6 收紧为字面全等）；check_author=true 时作者不含目标作者的也被剔除
     #[test]
     fn test_filter_for_change_same_name_only() {
         let candidates = vec![
@@ -529,9 +473,9 @@ mod tests {
         let kept =
             SourceMatcher::filter_for_change(candidates.clone(), "灵气复苏", "甲作者", false);
         let urls: Vec<&str> = kept.iter().map(|c| c.source_url.as_str()).collect();
-        assert_eq!(urls, vec!["s1", "s2"], "仅同名书进入换源列表");
+        assert_eq!(urls, vec!["s1"], "仅字面同名书进入换源列表");
 
-        // 校验作者：s2 作者不含目标作者被剔除
+        // 校验作者：作者不含目标作者被剔除
         let kept2 = SourceMatcher::filter_for_change(candidates, "灵气复苏", "甲作者", true);
         let urls2: Vec<&str> = kept2.iter().map(|c| c.source_url.as_str()).collect();
         assert_eq!(

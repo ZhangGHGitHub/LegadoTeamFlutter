@@ -48,8 +48,10 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
             .where((s) {
               final g = s.bookSourceGroup ?? '';
               if (g.trim().isEmpty) return false;
+              // [审计 D1 | SearchBookDao.kt:13-32] 分组分隔符全集 ,;，；，
+              // 与原版 splitGroupRegex 对齐（仅逗号会漏分号分组的源）
               return g
-                  .split(RegExp(r'[,，]'))
+                  .split(RegExp(r'[,;，；]'))
                   .map((e) => e.trim())
                   .contains(group);
             })

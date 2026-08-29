@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [搜索/换源 parity 审计修复批次 2026-08-29]（版本 2.0.127+132）
+
+### Fixed
+- [UI] 审计 D1——换源分组过滤分隔符补齐 `,;，；` 全集（change_source_notifier.dart 预过滤 + change_source_screen.dart 分组聚合，对齐原版 splitGroupRegex/SearchBookDao.kt:13-32）：分号分组的书源不再被 Dart 预过滤整源丢弃，Rust source_group_contains（四分隔符齐全）不再被架空
+- [Rust] 审计 D2——换源候选剔除"无详情页 URL"条目移除（source_switch.rs）：原版 BookList.kt:281-284 对 bookUrl 空条目回退 baseUrl 照常入列表；解析层 S0-E 已有同款回退，空 URL 候选保留展示、点击切换时由 switch_book_source 兜底报错
+- [Rust] 审计 D3——multi_source_search 一次性入口补落库 searchBooks（search_books 已有同款；对齐原版 SearchModel 两入口均落库，防后续调用方换源 DB 缓存偏少）
+- [Rust] 审计 D4——JS 书源结果应用 precision filter（search.rs，原版 WebBook.kt:47 把 filter 传入 JsSourceBook.searchAwait）：精准搜索开启时 JS 源不再多出未过滤条目
+- [UI] 审计 D5——换源筛选框只按书名 contains（ChangeBookSourceViewModel.kt:184），移除源名匹配
+- [Rust] 审计 D6——换源同名判定收紧为 trim 后字面全等（source_matcher.rs 删除 normalize_book_name 括号归一化，对齐原版 fName == name equals）；换源读库改原样书名查询（ChangeBookSourceViewModel.kt:603-625），库内书名解析期已 formatBookName，不再二次归一化
+
+### Test
+- [Test] 新增 D1 分组过滤回归测试（分号/全角逗号组名的源必须进入 sourceUrls）；source_matcher 同名判定测试迁移至字面全等口径。门禁：workspace 2482/0、quickjs 397/0、flutter analyze 0 issues、flutter test 1313 全绿
+- Contributor: Qoder + Bridge
+
 ## [热力图每日时长契约批次 2026-08-29]（版本 2.0.126+131）
 
 ### Added

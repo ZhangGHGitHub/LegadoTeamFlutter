@@ -131,6 +131,42 @@ void main() {
       expect(state.results.first.score, equals(90));
       verify(() => mockApi.searchSource('斗破苍穹', '天蚕土豆')).called(1);
     });
+    test('分组搜索：分号/全角逗号组名的源不被 Dart 预过滤剔除（审计 D1）', () async {
+      when(() => mockApi.getEnabledBookSources()).thenAnswer(
+        (_) async => const [
+          BookSource(
+            bookSourceUrl: 'https://semi.com',
+            bookSourceName: '分号源',
+            bookSourceGroup: '玄幻;都市',
+          ),
+          BookSource(
+            bookSourceUrl: 'https://plain.com',
+            bookSourceName: '全角逗号源',
+            bookSourceGroup: '玄幻，都市',
+          ),
+        ],
+      );
+      when(
+        () => mockApi.searchSource(
+          any(),
+          any(),
+          sourceUrls: any(named: 'sourceUrls'),
+        ),
+      ).thenAnswer((_) async => []);
+
+      await readNotifier().search('斗破苍穹', '天蚕土豆', group: '玄幻');
+
+      final captured =
+          verify(
+            () => mockApi.searchSource(
+              any(),
+              any(),
+              sourceUrls: captureAny(named: 'sourceUrls'),
+            ),
+          ).captured.single as List<String>;
+      // 分号（;）与全角逗号（，）分组的源都必须进入 sourceUrls
+      expect(captured, containsAll(['https://semi.com', 'https://plain.com']));
+    });
 
     test('search 保持 Rust 返回顺序（不在 Dart 侧重排）', () async {
       // Rust 已按评分降序；此处故意返回升序，验证 Notifier 不重排

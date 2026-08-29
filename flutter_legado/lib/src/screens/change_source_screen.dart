@@ -110,7 +110,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     } catch (_) {}
     try {
       // 源分组从启用书源的 bookSourceGroup 字段聚合（对标原版
-      // flowEnabledGroups），逗号分隔多分组展开
+      // flowEnabledGroups）；[审计 D1] 分组分隔符全集 ,;，；，对齐原版
+      // splitGroupRegex（仅英文逗号会漏分号分组的组名）
       final sources = await api.getBookSources();
       final groups = <String>{};
       for (final s in sources) {
@@ -118,7 +119,10 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
         final g = s.bookSourceGroup ?? '';
         if (g.trim().isEmpty) continue;
         groups.addAll(
-          g.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty),
+          g
+              .split(RegExp(r'[,;，；]'))
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty),
         );
       }
       if (mounted) setState(() => _groups = groups.toList()..sort());
@@ -475,12 +479,10 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   List<SourceMatch> _filteredResults(ChangeSourceState state) {
     var results = state.results;
     if (_searchFilter.isNotEmpty) {
+      // [审计 D5 | ChangeBookSourceViewModel.kt:184] 原版筛选只按书名
+      // contains，不含源名匹配
       results = results
-          .where(
-            (r) =>
-                r.sourceName.contains(_searchFilter) ||
-                r.bookName.contains(_searchFilter),
-          )
+          .where((r) => r.bookName.contains(_searchFilter))
           .toList();
     }
     return results;
