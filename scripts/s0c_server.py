@@ -204,7 +204,7 @@ def main():
     args = ap.parse_args()
     PORT = args.port
     LOG_FP = Path(args.log).open('w', encoding='utf-8')
-    srv = Server(('127.0.0.1', PORT), Handler)
+    srv = Server(('0.0.0.0', PORT), Handler)
     log_event('server_start', port=PORT, mode='s0c')
     try:
         srv.serve_forever(poll_interval=0.2)
