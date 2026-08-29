@@ -219,8 +219,10 @@ Android manifest 中唯一的 `<service>` 是 `AutoTaskJobService`；`MediaSessi
 
 ### E. 复查后的处理顺序（维持正文 §七，微调）
 
-1. P0 两条（§一.1 v7a quickjs 决策、§一.2 后台播放前台服务）——发版前必须；
-2. P1 三条功能缺口（§二.4 字体反爬、§二.5 Custom JS、§二.6 PROPFIND）；
+1. ~~P0 两条~~ **跟进完成（2026-08-29）**：
+   - §一.1 v7a quickjs：实测构建确认 `rquickjs-sys 0.9.0` 无 armv7 绑定且 bindgen 回退产物 32 位不兼容（E0277 u64:ToUsize）——**决策：发布矩阵显式剔除 v7a JS**（v7a .so 维持降级模式 + .meta 机读标注 + flutter-ci verify 告警，不阻断）；rquickjs 升级/补绑定为独立上游议题另行跟进。
+   - §一.2 前台服务：已实现（`405e82a413`）——PlaybackForegroundService（mediaPlayback 类型）+ MediaSessionBridge 播放态驱动启停 + manifest 注册与权限；冒烟构建/安装/存活/无崩溃通过。**闭环**。
+2. P1 三条功能缺口（§二.4 字体反爬、§二.5 Custom JS、§二.6 PROPFIND）——**§二.5/§二.6 已修复**（`bde0dddfa2` execute_auto_task_js 真实执行；`de4a69d3ea` PROPFIND 前缀无关解析，legado-net 232/0）；§二.4 cmap 按 §七 建议为下一批次。
 3. 把 §8.3 整改令落成 CI 强制步骤 + `.gitignore` 补规则（配合在途 screens 批次，及时提交）。
 
 ---
