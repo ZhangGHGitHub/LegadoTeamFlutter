@@ -11,7 +11,9 @@ use legado_core::{LegadoError, LegadoResult};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 
-const MAX_ENTRIES: usize = 8;
+// [体检 §三.14] 与 SEARCH_CONCURRENCY=32 对齐:多源跨源并发时避免 LRU 抖动
+// (缓存外的源每次 eval 仍需重挂 587KB jsLib,批次 A 收益会被打折)
+const MAX_ENTRIES: usize = 32;
 type SharedEngine = Arc<Mutex<QuickJsEngine>>;
 struct Entry {
     engine: SharedEngine,

@@ -1,0 +1,114 @@
+diff --git a/app/src/main/java/io/legado/app/constant/AppLog.kt b/app/src/main/java/io/legado/app/constant/AppLog.kt
+index 845e1a414..8177f18e8 100644
+--- a/app/src/main/java/io/legado/app/constant/AppLog.kt
++++ b/app/src/main/java/io/legado/app/constant/AppLog.kt
+@@ -6,6 +6,7 @@ import io.legado.app.help.config.AppConfig
+ import io.legado.app.utils.LogUtils
+ import io.legado.app.utils.toastOnUi
+ import splitties.init.appCtx
++import java.io.File
+ 
+ object AppLog {
+ 
+@@ -61,4 +62,29 @@ object AppLog {
+         }
+     }
+ 
++    /**
++     * 关联 ID 失败诊断：与 [put] 共用内存环形缓冲，消息携带 [correlationId]，
++     * 便于把 触发 → 边界/决策 → 失败/恢复 → 结果 链关联起来；
++     * 当 [AppConfig.recordLog] 开启时追加写入 filesDir/logs/js-source.log（默认关闭，行为与现有日志一致）。
++     */
++    fun putCorrelated(
++        correlationId: String,
++        message: String?,
++        throwable: Throwable? = null,
++    ) {
++        put("[$correlationId] $message", throwable)
++        if (AppConfig.recordLog) {
++            try {
++                val logFile = File(appCtx.filesDir, "logs/js-source.log")
++                logFile.parentFile?.mkdirs()
++                logFile.appendText(
++                    "[${System.currentTimeMillis()}] [$correlationId] $message"
++                        + (throwable?.let { "\n${it.stackTraceToString()}" } ?: "") + "\n"
++                )
++            } catch (_: Exception) {
++                // 持久化失败不影响主流程
++            }
++        }
++    }
++
+ }
+\ No newline at end of file
+diff --git a/app/src/main/java/io/legado/app/model/jsSource/JsSourceConfig.kt b/app/src/main/java/io/legado/app/model/jsSource/JsSourceConfig.kt
+index 0f4e3384c..a4c3f54a8 100644
+--- a/app/src/main/java/io/legado/app/model/jsSource/JsSourceConfig.kt
++++ b/app/src/main/java/io/legado/app/model/jsSource/JsSourceConfig.kt
+@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
+ import com.script.ScriptBindings
+ import com.script.rhino.RhinoInterruptError
+ import com.script.rhino.RhinoScriptEngine
++import io.legado.app.constant.AppLog
+ import io.legado.app.constant.BookSourceType
+ import io.legado.app.data.entities.BookSource
+ import io.legado.app.exception.NoStackTraceException
+@@ -34,6 +35,7 @@ object JsSourceConfig {
+     )
+ 
+     fun extract(text: String, coroutineContext: CoroutineContext? = null): BookSource {
++        val correlationId = "JsSourceConfig-${System.currentTimeMillis()}"
+         try {
+             return extractInternal(text, coroutineContext)
+         } catch (error: CancellationException) {
+@@ -41,6 +43,10 @@ object JsSourceConfig {
+         } catch (error: RhinoInterruptError) {
+             val cancellation = error.cause as? CancellationException
+             if (cancellation != null) throw cancellation
++            AppLog.putCorrelated(correlationId, "JS源配置解析被中断", error)
++            throw error
++        } catch (error: Exception) {
++            AppLog.putCorrelated(correlationId, "JS源配置解析失败", error)
+             throw error
+         }
+     }
+diff --git a/app/src/main/java/io/legado/app/model/jsSource/JsSourceEngine.kt b/app/src/main/java/io/legado/app/model/jsSource/JsSourceEngine.kt
+index 36c179ca0..275928c10 100644
+--- a/app/src/main/java/io/legado/app/model/jsSource/JsSourceEngine.kt
++++ b/app/src/main/java/io/legado/app/model/jsSource/JsSourceEngine.kt
+@@ -6,6 +6,7 @@ import com.script.ScriptBindings
+ import com.script.buildScriptBindings
+ import com.script.rhino.RhinoContext
+ import com.script.rhino.RhinoScriptEngine
++import io.legado.app.constant.AppLog
+ import io.legado.app.data.entities.BaseSource
+ import io.legado.app.data.entities.BookSource
+ import io.legado.app.exception.NoStackTraceException
+@@ -44,13 +45,21 @@ class JsSourceEngine(
+ 
+     /** 调用顶层函数并归一化返回值;函数缺失抛出明确错误 */
+     fun callFunction(name: String, args: List<Pair<String, Any?>>): String? {
+-        val scope = buildScope(args)
+-        if (ScriptableObject.getProperty(scope, name) !is JsFunction) {
+-            throw NoStackTraceException("JS源缺少函数 $name")
++        val correlationId = "${source.getKey()}-$name-${System.currentTimeMillis()}"
++        try {
++            val scope = buildScope(args)
++            if (ScriptableObject.getProperty(scope, name) !is JsFunction) {
++                throw NoStackTraceException("JS源缺少函数 $name")
++            }
++            val callExpr = "$name(${args.joinToString(", ") { it.first }})"
++            val raw = compile(callExpr).eval(scope, coroutineContext)
++            return normalizeJsResult(raw, coroutineContext)
++        } catch (error: CancellationException) {
++            throw error
++        } catch (error: Exception) {
++            AppLog.putCorrelated(correlationId, "JS源函数 $name 调用失败", error)
++            throw error
+         }
+-        val callExpr = "$name(${args.joinToString(", ") { it.first }})"
+-        val raw = compile(callExpr).eval(scope, coroutineContext)
+-        return normalizeJsResult(raw, coroutineContext)
+     }
+ 
+     /** 调用可选顶层函数:缺失返回 null(单次 eval,不做 hasFunction 预探测) */

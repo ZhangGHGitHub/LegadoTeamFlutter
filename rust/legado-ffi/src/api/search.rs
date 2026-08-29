@@ -54,7 +54,9 @@ static CURRENT_SEARCH_SESSION: std::sync::Mutex<Option<Arc<SearchSession>>> =
 
 /// 注册当前会话：先取消上一会话（若存在且不同），再置为本会话（新搜索取代旧搜索）
 fn register_current_session(session: &Arc<SearchSession>) {
-    let mut guard = CURRENT_SEARCH_SESSION.lock().unwrap();
+    let mut guard = CURRENT_SEARCH_SESSION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if let Some(prev) = guard.as_ref() {
         if !Arc::ptr_eq(prev, session) {
             prev.cancel.store(true, Ordering::SeqCst); // 新搜索取代 → 终止旧会话，防残留
@@ -65,17 +67,23 @@ fn register_current_session(session: &Arc<SearchSession>) {
 
 /// 取当前会话（无参 FFI 定位目标）
 fn current_session() -> Option<Arc<SearchSession>> {
-    CURRENT_SEARCH_SESSION.lock().unwrap().clone()
+    CURRENT_SEARCH_SESSION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// 判断给定会话是否仍为当前会话（Arc::ptr_eq；供取消/持久化前复检，防旧会话残留写入）
 fn is_current_session(session: &Arc<SearchSession>) -> bool {
-    matches!(CURRENT_SEARCH_SESSION.lock().unwrap().as_ref(), Some(cur) if Arc::ptr_eq(cur, session))
+    matches!(CURRENT_SEARCH_SESSION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()).as_ref(), Some(cur) if Arc::ptr_eq(cur, session))
 }
 
 /// 若当前会话仍是给定会话则清除（防 A 的清理误清已启动的 B；三入口所有退出路径调用）
 fn clear_current_session_if_same(session: &Arc<SearchSession>) {
-    let mut guard = CURRENT_SEARCH_SESSION.lock().unwrap();
+    let mut guard = CURRENT_SEARCH_SESSION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if let Some(cur) = guard.as_ref() {
         if Arc::ptr_eq(cur, session) { *guard = None; }
     }

@@ -67,3 +67,19 @@ flutter_legado/_*.png
 flutter_legado/crash_last_screenshot.png
 flutter_legado/e2e_local_book.txt
 .qoder/better-harness/
+
+# 本地调试临时产物(体检报告 §四.15:不入库,防误提交书源快照/base64 转储)
+.tmp_*
+.shot_*
+*_b64.txt
+.s0_booksource.json
+.e2e_*/
+rust/_p03_*
+rust/timing_book_out*
+rust/.tmp_*
+rust/_*.txt
+.claude/settings.local.json
+.ui_*.xml
+*.bak_p03
+rust/legado-ffi/timing_*_out.txt
+flutter_legado/test_out.txt
