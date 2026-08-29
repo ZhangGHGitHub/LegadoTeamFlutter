@@ -215,13 +215,18 @@ object AudioPlay : CoroutineScope by MainScope() {
         postEvent(EventBus.PLAY_MODE_CHANGED, playMode)
     }
 
-    fun upData(book: Book) {
-        val playbackChanged = AudioPlay.book?.bookUrl != book.bookUrl ||
-                durChapterIndex != book.durChapterIndex
-        if (playbackChanged) {
-            stopPlay()
+    fun upData(book: Book, preserveProgress: Boolean) {
+        val playbackChanged = synchronized(this) {
+            if (preserveProgress && AudioPlay.book?.bookUrl == book.bookUrl) {
+                book.durChapterIndex = durChapterIndex
+                book.durChapterPos = durChapterPos
+            }
+            val changed = AudioPlay.book?.bookUrl != book.bookUrl ||
+                    durChapterIndex != book.durChapterIndex
+            if (changed) stopPlay()
+            AudioPlay.book = book
+            changed
         }
-        AudioPlay.book = book
         chapterSize = appDb.bookChapterDao.getChapterCount(book.bookUrl)
         simulatedChapterSize = if (book.readSimulating()) {
             book.simulatedTotalChapterNum()
@@ -286,13 +291,10 @@ object AudioPlay : CoroutineScope by MainScope() {
         kotlin.runCatching { readTimeWrite?.get() }.onFailure {
             AppLog.put("保存听书时长失败\n${it.localizedMessage}", it)
         }
-        readTimeTracker.setRecord(
-            ReadRecord(
-                bookName = book.name,
-                author = book.author,
-                readTime = appDb.readRecordDao.getReadTime(book.name) ?: 0,
-            )
-        )
+        val record = ReadRecord(bookName = book.name, author = book.author)
+        record.readTime = appDb.readRecordDao
+            .getReadTime(record.deviceId, record.bookName) ?: 0
+        readTimeTracker.setRecord(record)
         if (resumeIfPlaying && AudioPlayService.isPlaying) {
             markReadTimeStart()
         }

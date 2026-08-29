@@ -4,10 +4,10 @@
 import type { webReadConfig } from '@/web'
 import ajax from './axios'
 import {
-  clearSourceApiToken,
+  bindSourceApiTokenEndpoint,
   getSourceApiToken,
   requestSourceApiToken,
-  sourceApiTokenWebSocketProtocol,
+  sourceApiTokenWebSocketProtocols,
 } from './sourceToken'
 import type {
   BaseBook,
@@ -18,12 +18,17 @@ import type {
   ReviewSummary,
   SeachBook,
 } from '@/book'
-import type { Source } from '@/source'
+import type { BookSoure, Source } from '@/source'
 
 export type LeagdoApiResponse<T> = {
   isSuccess: boolean
   errorMsg: string
   data: T
+}
+
+export type LegacyReviewSession = {
+  id: string
+  nonce: string
 }
 
 export let legado_http_entry_point = ''
@@ -42,9 +47,10 @@ export const setApiEntryPoint = (
   http_entry_point: string,
   webSocket_entry_point: string,
 ) => {
-  legado_http_entry_point = new URL(http_entry_point).toString()
+  const nextHttpEntryPoint = new URL(http_entry_point).toString()
+  bindSourceApiTokenEndpoint(nextHttpEntryPoint)
+  legado_http_entry_point = nextHttpEntryPoint
   legado_webSocket_entry_point = new URL(webSocket_entry_point).toString()
-  clearSourceApiToken()
   ajax.defaults.baseURL = legado_http_entry_point
 }
 
@@ -139,10 +145,31 @@ const getReviewReplies = (
     },
   })
 
+const openLegacyReview = (
+  bookUrl: string,
+  chapterIndex: number,
+  src: string,
+) =>
+  ajax.post<LeagdoApiResponse<LegacyReviewSession>>('openLegacyReview', {
+    url: bookUrl,
+    index: chapterIndex,
+    src,
+  })
+
+const runLegacyReview = (id: string, script: string) =>
+  ajax.post<LeagdoApiResponse<string>>('runLegacyReview', { id, script })
+
+const getLegacyReviewPageUrl = (session: LegacyReviewSession) => {
+  const url = new URL('legacyReviewPage', legado_http_entry_point)
+  url.searchParams.set('id', session.id)
+  url.searchParams.set('nonce', session.nonce)
+  return url.toString()
+}
+
 // webSocket
 const search = (
   searchKey: string,
-  token: string,
+  token: string | undefined,
   onReceive: (data: SeachBook[]) => void,
   onFinish: () => void,
   onAuthFailure?: () => void,
@@ -155,7 +182,7 @@ const search = (
   }
   const socket = new WebSocket(
     new URL('searchBook', legado_webSocket_entry_point),
-    ['legado', sourceApiTokenWebSocketProtocol(token)],
+    sourceApiTokenWebSocketProtocols(token),
   )
   socket.onerror = event => {
     reportHandshakeFailure()
@@ -201,6 +228,12 @@ const saveSource = (data: Source) =>
     ? ajax.post<LeagdoApiResponse<string>>('saveBookSource', data)
     : ajax.post<LeagdoApiResponse<string>>('saveRssSource', data)
 
+const saveJsSource = (script: string, openedSourceUrl?: string) =>
+  ajax.post<LeagdoApiResponse<BookSoure>>('saveJsSource', script, {
+    params: { openedSourceUrl },
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  })
+
 const saveSources = (data: Source[]) =>
   isBookSource
     ? ajax.post<LeagdoApiResponse<Source[]>>('saveBookSources', data)
@@ -224,12 +257,8 @@ const debug = async (
     legado_webSocket_entry_point,
   )
 
-  const socket = new WebSocket(url, [
-    'legado',
-    sourceApiTokenWebSocketProtocol(token),
-  ])
+  const socket = new WebSocket(url, sourceApiTokenWebSocketProtocols(token))
   socket.onerror = event => {
-    clearSourceApiToken()
     wsOnError?.call(socket, event)
   }
   socket.onopen = () => {
@@ -245,8 +274,7 @@ const debug = async (
     wsOnMessage?.call(socket, event)
   }
 
-  socket.onclose = event => {
-    if (event.code === 1008) clearSourceApiToken()
+  socket.onclose = () => {
     onFinish()
   }
 }
@@ -296,6 +324,9 @@ export default {
   getReviewSummary,
   getReviewDetail,
   getReviewReplies,
+  openLegacyReview,
+  runLegacyReview,
+  getLegacyReviewPageUrl,
   search,
   saveBook,
   deleteBook,
@@ -303,6 +334,7 @@ export default {
   getSources,
   saveSources,
   saveSource,
+  saveJsSource,
   deleteSource,
   debug,
 

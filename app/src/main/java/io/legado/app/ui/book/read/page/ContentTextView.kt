@@ -218,6 +218,20 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         pageOffset = 0
     }
 
+    fun isAtChapterTop(): Boolean {
+        return textPage.index == 0 && pageOffset == 0
+    }
+
+    fun restorePageOffset(chapterPos: Int) {
+        val line = textPage.lines.firstOrNull { it.chapterPosition == chapterPos }
+            ?: textPage.lines.firstOrNull {
+                chapterPos in it.chapterPosition..<it.chapterPosition + it.charSize
+            }
+            ?: return
+        if (line === textPage.lines.firstOrNull()) return
+        scroll((ChapterProvider.paddingTop - line.lineTop).toInt())
+    }
+
     /**
      * 长按
      */
@@ -226,12 +240,12 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         y: Float,
         select: (textPos: TextPos) -> Unit,
     ) {
-        val highlightActionByLongPress = AppConfig.highlightActionByLongPress
+        val highlightActionTrigger = AppConfig.highlightActionTrigger
         touch(x, y) { relativeOffset, textPos, textPage, textLine, column ->
             when (column) {
                 is ImageColumn -> callBack.onImageLongPress(x, y, column.src)
                 is TextColumn -> {
-                    if (highlightActionByLongPress && column.highlightStyle != null &&
+                    if (highlightActionTrigger == "longPress" && column.highlightStyle != null &&
                         notifyHighlightClick(column, textPos, textPage, textLine, relativeOffset)
                     ) return@touch
                     if (!selectAble) return@touch
@@ -241,7 +255,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 is TextHtmlColumn -> {
                     if (
                         column.highlightStyle != null &&
-                        (highlightActionByLongPress || column.linkUrl != null) &&
+                        (highlightActionTrigger == "longPress" || column.linkUrl != null) &&
                         notifyHighlightClick(column, textPos, textPage, textLine, relativeOffset)
                     ) return@touch
                     if (!selectAble) return@touch
@@ -266,7 +280,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         } else {
             false
         }
-        val highlightActionByLongPress = AppConfig.highlightActionByLongPress
+        val highlightActionTrigger = AppConfig.highlightActionTrigger
         var handled = false
         touch(x, y) { relativeOffset, textPos, textPage, textLine, column ->
             when (column) {
@@ -334,7 +348,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                             putExtra("uri", linkUrl)
                         }
                         handled = true
-                    } else if (!highlightActionByLongPress && column.highlightStyle != null) {
+                    } else if (highlightActionTrigger != "longPress" && column.highlightStyle != null) {
                         handled = notifyHighlightClick(
                             column,
                             textPos,
@@ -345,7 +359,9 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                     }
                 }
 
-                is TextColumn -> if (!highlightActionByLongPress && column.highlightStyle != null) {
+                is TextColumn -> if (highlightActionTrigger != "longPress" &&
+                    column.highlightStyle != null
+                ) {
                     handled = notifyHighlightClick(
                         column,
                         textPos,
@@ -568,6 +584,15 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         return visiblePage
     }
 
+    fun getReadPosition(): Pair<Int, TextLine>? {
+        if (textPage.isMsgPage) return null
+        val offset = relativeOffset(0)
+        val line = textPage.lines.firstOrNull { it.isVisible(offset) }
+            ?: textPage.lines.lastOrNull()
+            ?: return null
+        return textPage.chapterIndex to line
+    }
+
     fun getReadAloudPos(): Pair<Int, TextLine>? {
         var relativeOffset: Float
         for (relativePos in 0..2) {
@@ -716,7 +741,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
             val page = relativePage(relativePos)
             if (page.lines.isEmpty() || page.isMsgPage) continue
             val chapter = page.getTextChapter()
-            if (!chapter.isForBook(ReadBook.book)) {
+            if (chapter.isTransient || !chapter.isForBook(ReadBook.book)) {
                 page.lines.forEach { line ->
                     line.columns.forEach { column ->
                         if (column is TextBaseColumn) column.highlightStyle = null
@@ -738,7 +763,8 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                         it.start,
                         it.end,
                         it.style,
-                        it.applyToTitle
+                        it.applyToTitle,
+                        it.applyToBody
                     )
                 }
                 .toList()
@@ -882,6 +908,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         line: TextLine,
         relativeOffset: Float
     ): Boolean {
+        if (AppConfig.highlightActionTrigger == "off") return false
         val x = column.start + callBack.imgBgPaddingStart
         val y = line.lineTop + relativeOffset + callBack.headerHeight
         highlightAt(column, textPos, page)?.let {
@@ -1028,7 +1055,7 @@ internal fun highlightRuleIdAtColumn(
     columnEnd: Int,
     isTitle: Boolean
 ): Long? = matches.lastOrNull {
-    (!isTitle || it.applyToTitle) &&
+    (if (isTitle) it.applyToTitle else it.applyToBody) &&
             highlightRangeIntersects(columnStart, columnEnd, it.start, it.end)
 }?.ruleId
 

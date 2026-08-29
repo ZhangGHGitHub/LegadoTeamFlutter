@@ -97,6 +97,7 @@ import io.legado.app.help.webView.WebViewPool
 import io.legado.app.help.webView.WebViewPool.BLANK_HTML
 import io.legado.app.help.webView.WebViewPool.DATA_HTML
 import io.legado.app.help.webView.toWebViewRequestConfig
+import io.legado.app.help.webView.shouldInjectPreloadJs
 import io.legado.app.model.Download
 import kotlinx.coroutines.Dispatchers.IO
 import java.lang.ref.WeakReference
@@ -104,10 +105,16 @@ import splitties.systemservices.powerManager
 import java.net.URLDecoder
 import androidx.core.graphics.createBitmap
 
+internal fun shouldPreserveRssArticleOnRefresh(
+    ruleDescription: String?,
+    ruleContent: String?,
+) = ruleContent.isNullOrBlank() || !ruleDescription.isNullOrBlank()
+
 /**
  * rss阅读界面
  */
-class ReadRssActivity : VMBaseActivity<ActivityRssReadBinding, ReadRssViewModel>(),
+class ReadRssActivity :
+    VMBaseActivity<ActivityRssReadBinding, ReadRssViewModel>(showOpenMenuIcon = false),
     RssFavoritesDialog.Callback {
 
     override val binding by viewBinding(ActivityRssReadBinding::inflate)
@@ -141,7 +148,15 @@ class ReadRssActivity : VMBaseActivity<ActivityRssReadBinding, ReadRssViewModel>
             refreshNameList.add(it)
         }
         viewModel.rssArticle?.let {
-            start(this@ReadRssActivity,true, it.origin, it.title, it.link)
+            if (shouldPreserveRssArticleOnRefresh(
+                    viewModel.rssSource?.ruleDescription,
+                    viewModel.rssSource?.ruleContent,
+                )
+            ) {
+                start(this@ReadRssActivity, it.origin, it.title, it.link, it.sort)
+            } else {
+                start(this@ReadRssActivity, true, it.origin, it.title, it.link)
+            }
         } ?: run {
             viewModel.initData(intent)
         }
@@ -690,6 +705,10 @@ class ReadRssActivity : VMBaseActivity<ActivityRssReadBinding, ReadRssViewModel>
                 }
                 val body = res.body
                 val contentType = body.contentType()
+                if (!shouldInjectPreloadJs(contentType, res.header("Content-Disposition"))) {
+                    res.close()
+                    return null
+                }
                 val mimeType = contentType?.toString()?.substringBefore(";") ?: "text/html"
                 val charset = contentType?.charset() ?: Charsets.UTF_8
                 val charsetSre = charset.name()

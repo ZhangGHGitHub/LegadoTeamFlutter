@@ -10,6 +10,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -28,6 +29,48 @@ class JsSourceConfigTest {
         function getChapters(book) { return []; }
         function getContent(chapter, book) { return "content"; }
     """.trimIndent()
+
+    @Test
+    fun `review capability ignores comments and requires both functions`() {
+        assertFalse(
+            JsSourceConfig.declaresReviewFunctions(
+                "/* function getReviewSummary() {} function getReviewDetail() {} */"
+            )
+        )
+        assertFalse(
+            JsSourceConfig.declaresReviewFunctions("function getReviewSummary() {}")
+        )
+        assertTrue(
+            JsSourceConfig.declaresReviewFunctions(
+                "function getReviewSummary() {} function getReviewDetail() {}"
+            )
+        )
+        assertTrue(
+            JsSourceConfig.declaresReviewFunctions(
+                "var getReviewSummary = function() {}; " +
+                    "var getReviewDetail = function() {};"
+            )
+        )
+    }
+
+    @Test
+    fun `review reply capability ignores comments and accepts a top level function`() {
+        assertFalse(
+            JsSourceConfig.declaresReviewRepliesFunction(
+                "/* function getReviewReplies() {} */"
+            )
+        )
+        assertTrue(
+            JsSourceConfig.declaresReviewRepliesFunction(
+                "function getReviewReplies() {}"
+            )
+        )
+        assertTrue(
+            JsSourceConfig.declaresReviewRepliesFunction(
+                "var getReviewReplies = function() {};"
+            )
+        )
+    }
 
     @Test
     fun `extracts metadata and keeps full script`() {
@@ -327,17 +370,21 @@ class JsSourceConfigTest {
     }
 
     @Test
-    fun `review functions are accepted as a pair`() {
+    fun `review functions accept optional paged replies`() {
         val source = JsSourceConfig.extract(
             validScript + "\n" + """
                 function getReviewSummary(chapter, book) { return []; }
                 function getReviewDetail(chapter, book, paraIndex, paraData, page) {
                     return { items: [] };
                 }
+                function getReviewReplies(chapter, book, paraIndex, paraData, reviewId, page) {
+                    return { items: [] };
+                }
             """.trimIndent()
         )
 
         assertTrue(source.mainJs.orEmpty().contains("getReviewSummary"))
+        assertTrue(JsSourceReview.hasReviewRepliesCapability(source))
     }
 
     @Test
@@ -379,6 +426,26 @@ class JsSourceConfigTest {
                 var getReviewDetail = {};
             """.trimIndent(),
             "getReviewSummary",
+        )
+    }
+
+    @Test
+    fun `review replies require the review function pair`() {
+        assertExtractError(
+            validScript + "\nfunction getReviewReplies() { return { items: [] }; }",
+            "getReviewSummary/getReviewDetail",
+        )
+    }
+
+    @Test
+    fun `review replies property must be a function`() {
+        assertExtractError(
+            validScript + "\n" + """
+                function getReviewSummary() { return []; }
+                function getReviewDetail() { return { items: [] }; }
+                var getReviewReplies = [];
+            """.trimIndent(),
+            "getReviewReplies",
         )
     }
 

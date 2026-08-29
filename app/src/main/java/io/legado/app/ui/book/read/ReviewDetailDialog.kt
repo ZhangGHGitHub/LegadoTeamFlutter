@@ -1,10 +1,14 @@
 package io.legado.app.ui.book.read
 
 import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.ShapeDrawable
 import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import android.util.Size
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -20,7 +24,12 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
+import com.bumptech.glide.request.target.Target
 import com.google.android.flexbox.FlexboxLayout
 import io.legado.app.R
 import io.legado.app.base.BaseDialogFragment
@@ -157,6 +166,7 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
             return oldItem.isReply == newItem.isReply &&
                     oldItem.parentKey == newItem.parentKey &&
                     oldItem.name == newItem.name &&
+                    oldItem.replyToName == newItem.replyToName &&
                     oldItem.content == newItem.content &&
                     oldItem.time == newItem.time &&
                     oldItem.avatar == newItem.avatar &&
@@ -180,6 +190,16 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
             attributes = attr
         }
         applyDialogHeightRatio(lastHeightRatio)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        adapter.upResumed(true)
+    }
+
+    override fun onPause() {
+        adapter.upResumed(false)
+        super.onPause()
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
@@ -225,6 +245,7 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
             binding.toolBar.addView(countView, lp)
         }
         binding.toolBar.setNavigationIcon(R.drawable.ic_baseline_close)
+        binding.toolBar.setNavigationContentDescription(R.string.close)
         binding.toolBar.navigationIcon?.setTint(getCompatColor(R.color.secondaryText))
         binding.toolBar.setNavigationOnClickListener { dismiss() }
         setupHeightDrag()
@@ -438,7 +459,7 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
                     items = result.items,
                     nextPageUrl = result.nextPageUrl,
                     hasNextPageRule = true,
-                    hasReplyUrl = false,
+                    hasReplyUrl = JsSourceReview.hasReviewRepliesCapability(source),
                     source = source,
                 )
             }
@@ -553,11 +574,28 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
         renderUiItems()
         Coroutine.async(lifecycleScope, IO, start = CoroutineStart.LAZY) {
             val source = ReadBook.bookSource ?: return@async null
-            if (source.getKey() != sourceKey || source.isJsSource()) return@async null
+            if (source.getKey() != sourceKey) return@async null
             val book = ReadBook.book ?: return@async null
             if (book.bookUrl != bookUrl) return@async null
             val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex)
                 ?: return@async null
+            if (source.isJsSource()) {
+                if (source.mainJs.hashCode() != ruleHash) return@async null
+                val replies = JsSourceReview.getReviewRepliesAwait(
+                    source = source,
+                    book = book,
+                    chapter = chapter,
+                    paragraphIndex = paragraphNum,
+                    paragraphData = paragraphData,
+                    reviewId = reviewId,
+                    page = page,
+                ) ?: return@async null
+                return@async ReplyResult(
+                    replies = replies,
+                    page = page,
+                    source = source,
+                )
+            }
             val rule = source.ruleReview ?: return@async null
             if (!rule.enabled || rule.hashCode() != ruleHash) return@async null
             val replyUrlRule = rule.reviewQuoteUrl?.takeIf { it.isNotBlank() }
@@ -621,7 +659,9 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
             } else {
                 val replies = mergeReplies(current.replies, result.replies)
                 detailItems[currentIndex] = current.copy(replies = replies)
-                if (current.replyCount != null && replies.size >= current.replyCount) {
+                if (replies.size == current.replies.size ||
+                    current.replyCount != null && replies.size >= current.replyCount
+                ) {
                     replyExhaustedParentKeys.add(parentKey)
                 }
             }
@@ -642,6 +682,8 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
             append(if (isReply) "r" else "m")
             append('|')
             append(item.name.orEmpty())
+            append('|')
+            append(item.replyToName.orEmpty())
             append('|')
             append(item.content.orEmpty())
             append('|')
@@ -729,6 +771,7 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
         val id: String?,
         val avatar: String?,
         val name: String?,
+        val replyToName: String?,
         val badges: List<String>,
         val content: String?,
         val imageUrl: String?,
@@ -750,7 +793,8 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
 
             val loadedReplyCount = item.replies.size
             val totalReplyCount = max(item.replyCount ?: 0, loadedReplyCount)
-            val isExpanded = expandedReplyParentKeys.contains(parentKey)
+            val isExpanded = loadedReplyCount > 0 ||
+                    expandedReplyParentKeys.contains(parentKey)
             val canLoadMore = hasReplyUrl &&
                     !item.id.isNullOrBlank() &&
                     !replyExhaustedParentKeys.contains(parentKey) &&
@@ -775,6 +819,7 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
                     id = null,
                     avatar = null,
                     name = null,
+                    replyToName = null,
                     badges = emptyList(),
                     content = null,
                     imageUrl = null,
@@ -801,6 +846,7 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
         id = id,
         avatar = avatar,
         name = name,
+        replyToName = replyToName,
         badges = badges,
         content = content,
         imageUrl = imageUrl,
@@ -830,6 +876,8 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
 
     private inner class ReviewAdapter(context: Context) :
         RecyclerAdapter<ReviewUiItem, ItemReviewCommentBinding>(context) {
+
+        private val imageSizes = HashMap<String, Size>()
 
         override fun getViewBinding(parent: ViewGroup): ItemReviewCommentBinding {
             return ItemReviewCommentBinding.inflate(inflater, parent, false)
@@ -913,31 +961,29 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
             val primaryColor = context.getCompatColor(R.color.primaryText)
             val secondaryColor = context.getCompatColor(R.color.secondaryText)
             val contentColor = context.getCompatColor(R.color.reviewContentText)
+            binding.llBadges.visibility = if (item.badges.isEmpty()) View.GONE else View.VISIBLE
+            bindBadges(binding.llBadges, item.badges)
+            binding.tvName.text = item.name.orEmpty()
+            binding.tvName.visibility = if (item.name.isNullOrBlank()) View.GONE else View.VISIBLE
+            binding.tvName.setTextColor(primaryColor)
             if (item.isReply) {
-                binding.tvName.gone()
-                binding.llBadges.gone()
-                val name = item.name.orEmpty().trim()
                 val content = item.content.orEmpty().trim()
+                val replyToName = item.replyToName.orEmpty().trim()
                 binding.tvContent.text = when {
-                    name.isEmpty() -> content
-                    content.isEmpty() -> name
+                    content.isEmpty() || replyToName.isEmpty() -> content
                     else -> SpannableStringBuilder().apply {
-                        append(name)
+                        val prefix = "回复 $replyToName："
+                        append(prefix)
                         setSpan(
                             ForegroundColorSpan(secondaryColor),
                             0,
-                            name.length,
+                            prefix.length,
                             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                         )
-                        append("  ")
                         append(content)
                     }
                 }
             } else {
-                binding.tvName.text = item.name.orEmpty()
-                binding.tvName.visibility = if (item.name.isNullOrBlank()) View.GONE else View.VISIBLE
-                binding.tvName.setTextColor(primaryColor)
-                binding.llBadges.visibility = if (item.badges.isEmpty()) View.GONE else View.VISIBLE
                 binding.tvContent.text = item.content.orEmpty()
             }
             val hasText = binding.tvContent.text?.isNotBlank() == true
@@ -948,23 +994,17 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
             tvContentLp.topMargin = if (item.isReply) 0 else 4.dpToPx()
             binding.tvContent.layoutParams = tvContentLp
 
-            if (item.imageUrl.isNullOrBlank()) {
-                binding.ivMedia.gone()
-            } else {
-                binding.ivMedia.visible()
-                ImageLoader.load(context, item.imageUrl)
-                    .apply(sourceImageOptions)
-                    .into(binding.ivMedia)
-            }
+            bindReviewImage(binding, item.imageUrl)
 
             bindAudioState(binding, item)
 
             binding.tvTime.text = item.time.orEmpty()
             binding.tvTime.visibility = if (item.time.isNullOrBlank()) View.GONE else View.VISIBLE
-            if (!item.isReply) {
+            val likeCount = item.likeCount
+            val showLikeArea = !item.isReply || (likeCount != null && likeCount > 0)
+            if (showLikeArea) {
                 binding.ivLike.visible()
                 binding.llLikeArea.visible()
-                val likeCount = item.likeCount
                 if (likeCount != null && likeCount > 0) {
                     binding.tvLikeCount.text = likeCount.toString()
                     binding.tvLikeCount.visible()
@@ -977,9 +1017,55 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
                 binding.llLikeArea.gone()
             }
 
-            if (!item.isReply) {
-                bindBadges(binding.llBadges, item.badges)
+        }
+
+        private fun bindReviewImage(binding: ItemReviewCommentBinding, imageUrl: String?) {
+            val imageView = binding.ivMedia
+            Glide.with(context).clear(imageView)
+            imageView.setImageDrawable(null)
+            imageView.updateLayoutParams<ViewGroup.LayoutParams> {
+                height = ViewGroup.LayoutParams.WRAP_CONTENT
             }
+            if (imageUrl.isNullOrBlank()) {
+                imageView.gone()
+                return
+            }
+
+            val imageRequest = ImageLoader.load(context, imageUrl)
+                .apply(sourceImageOptions)
+                .addListener(object : RequestListener<Drawable> {
+                    override fun onLoadFailed(
+                        e: GlideException?,
+                        model: Any?,
+                        target: Target<Drawable>,
+                        isFirstResource: Boolean
+                    ): Boolean = false
+
+                    override fun onResourceReady(
+                        resource: Drawable,
+                        model: Any,
+                        target: Target<Drawable>?,
+                        dataSource: DataSource,
+                        isFirstResource: Boolean
+                    ): Boolean {
+                        val width = resource.intrinsicWidth
+                        val height = resource.intrinsicHeight
+                        if (width > 0 && height > 0) {
+                            imageSizes[imageUrl] = Size(width, height)
+                        }
+                        return false
+                    }
+                })
+            imageSizes[imageUrl]?.let { size ->
+                val placeholder = ShapeDrawable().apply {
+                    intrinsicWidth = size.width
+                    intrinsicHeight = size.height
+                    paint.color = Color.TRANSPARENT
+                }
+                imageRequest.placeholder(placeholder).error(placeholder)
+            }
+            imageView.visible()
+            imageRequest.into(imageView)
         }
 
         override fun registerListener(holder: ItemViewHolder, binding: ItemReviewCommentBinding) {
@@ -988,17 +1074,7 @@ class ReviewDetailDialog() : BaseDialogFragment(R.layout.dialog_recycler_view) {
                 if (item.itemType == TYPE_MORE) {
                     if (item.isLoading) return@setOnClickListener
                     val parentKey = item.parentKey ?: return@setOnClickListener
-                    val detail = mainItemIndexByKey[parentKey]
-                        ?.let { detailItems.getOrNull(it) }
-                        ?: return@setOnClickListener
-                    if (detail.replies.isNotEmpty() &&
-                        !expandedReplyParentKeys.contains(parentKey)
-                    ) {
-                        expandedReplyParentKeys.add(parentKey)
-                        renderUiItems()
-                    } else {
-                        loadReplies(parentKey)
-                    }
+                    loadReplies(parentKey)
                 }
             }
             binding.ivMedia.setOnClickListener {

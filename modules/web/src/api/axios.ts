@@ -19,6 +19,8 @@ const protectedSourcePaths = new Set([
   'saveReplaceRule',
   'deleteReplaceRule',
   'testReplaceRule',
+  'openLegacyReview',
+  'runLegacyReview',
 ])
 
 const ajax = axios.create({
@@ -37,7 +39,7 @@ ajax.interceptors.request.use(async config => {
   const endpoint = path.split('/').filter(Boolean).pop() || ''
   if (protectedSourcePaths.has(endpoint)) {
     const token = getSourceApiToken() || (await requestSourceApiToken())
-    config.headers.set('X-Legado-Token', token)
+    if (token) config.headers.set('X-Legado-Token', token)
   }
   return config
 })

@@ -12,6 +12,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.update
 import io.legado.app.model.jsSource.JsSourceEngine
 import io.legado.app.model.localBook.LocalBook
 import io.legado.app.model.webBook.WebBook
@@ -165,10 +166,7 @@ object AutoTaskProtocol {
             }
         ) { chapter ->
             if (!BookHelp.hasContent(book, chapter)) {
-                val content = WebBook.getContentAwait(bookSource, book, chapter)
-                if (!BookHelp.hasContent(book, chapter)) {
-                    BookHelp.saveContent(bookSource, book, chapter, content)
-                }
+                WebBook.getContentAwait(bookSource, book, chapter)
                 check(BookHelp.hasContent(book, chapter)) {
                     "Failed to cache ${book.name.ifBlank { book.bookUrl }}: ${chapter.title}"
                 }
@@ -235,7 +233,7 @@ object AutoTaskProtocol {
         appDb.runInTransaction {
             appDb.bookChapterDao.delByBook(book.bookUrl)
             appDb.bookChapterDao.insert(*chapters.toTypedArray())
-            appDb.bookDao.update(book)
+            book.update()
         }
         coroutineContext.ensureActive()
         return chapters

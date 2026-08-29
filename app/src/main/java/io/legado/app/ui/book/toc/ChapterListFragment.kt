@@ -69,7 +69,7 @@ class ChapterListFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_chapt
         ivChapterBottom.setColorFilter(foreground, PorterDuff.Mode.SRC_IN)
         initRecyclerView()
         initView()
-        viewModel.bookData.observe(this@ChapterListFragment) {
+        viewModel.bookData.observe(viewLifecycleOwner) {
             initBook(it)
         }
     }
@@ -124,6 +124,7 @@ class ChapterListFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_chapt
         pendingAudioCacheChanges.clear()
         tocListState.clear()
         chapterList = emptyList()
+        adapter.clearDisplayTitle()
         adapter.setItems(emptyList())
         val normalizedSearchKey = viewModel.searchKey?.takeIf { it.isNotBlank() }
         currentSearchKey = normalizedSearchKey
@@ -136,6 +137,8 @@ class ChapterListFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_chapt
                 chapters = chapters,
                 reverseOrder = book.getReverseToc(),
                 resetCollapse = true,
+                defaultExpanded = book.getTocExpanded(),
+                currentChapterIndex = durChapterIndex,
             )
             adapter.setItems(
                 if (normalizedSearchKey == null) {
@@ -226,6 +229,8 @@ class ChapterListFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_chapt
                         chapters = chapters,
                         reverseOrder = reverseOrder,
                         resetCollapse = resetCollapse,
+                        defaultExpanded = currentBook.getTocExpanded(),
+                        currentChapterIndex = durChapterIndex,
                     )
                 }
                 submitChapterItems(
@@ -241,6 +246,8 @@ class ChapterListFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_chapt
                         chapters = chapters,
                         reverseOrder = reverseOrder,
                         resetCollapse = resetCollapse,
+                        defaultExpanded = currentBook.getTocExpanded(),
+                        currentChapterIndex = durChapterIndex,
                     )
                 }
                 submitChapterItems(

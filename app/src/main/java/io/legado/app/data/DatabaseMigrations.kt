@@ -7,6 +7,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import io.legado.app.constant.AppConst
 import io.legado.app.constant.BookSourceType
 import io.legado.app.constant.BookType
+import io.legado.app.help.book.isLegacyPersistedCoverPath
+import java.util.UUID
 
 object DatabaseMigrations {
 
@@ -20,6 +22,7 @@ object DatabaseMigrations {
             migration_31_32, migration_32_33, migration_33_34, migration_34_35,
             migration_35_36, migration_36_37, migration_37_38, migration_38_39,
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
+            migration_100_101,
         )
     }
 
@@ -37,6 +40,30 @@ object DatabaseMigrations {
     private val migration_11_12 = object : Migration(11, 12) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE rssSources ADD style TEXT ")
+        }
+    }
+
+    private val migration_100_101 = object : Migration(100, 101) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE highlightRules ADD COLUMN uuid TEXT NOT NULL DEFAULT ''"
+            )
+            val statement = db.compileStatement(
+                "UPDATE highlightRules SET uuid = ? WHERE id = ?"
+            )
+            db.query("SELECT id FROM highlightRules").use { cursor ->
+                while (cursor.moveToNext()) {
+                    statement.clearBindings()
+                    statement.bindString(1, UUID.randomUUID().toString())
+                    statement.bindLong(2, cursor.getLong(0))
+                    statement.executeUpdateDelete()
+                }
+            }
+            statement.close()
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS index_highlightRules_uuid " +
+                    "ON highlightRules(uuid)"
+            )
         }
     }
 
@@ -462,6 +489,31 @@ object DatabaseMigrations {
                 ) = 1
                 """.trimIndent()
             )
+        }
+    }
+
+    @Suppress("ClassName")
+    class Migration_101_102 : AutoMigrationSpec {
+        override fun onPostMigrate(db: SupportSQLiteDatabase) {
+            val update = db.compileStatement(
+                """update books set persistedCoverUrl = ?, customCoverUrl = null
+                where bookUrl = ? and customCoverUrl is ? and persistedCoverUrl is null"""
+            )
+            db.query(
+                "select bookUrl, customCoverUrl from books where customCoverUrl is not null"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val bookUrl = cursor.getString(0)
+                    val customCoverUrl = cursor.getString(1)
+                    if (!isLegacyPersistedCoverPath(customCoverUrl)) continue
+                    update.clearBindings()
+                    update.bindString(1, customCoverUrl)
+                    update.bindString(2, bookUrl)
+                    update.bindString(3, customCoverUrl)
+                    update.executeUpdateDelete()
+                }
+            }
+            update.close()
         }
     }
 

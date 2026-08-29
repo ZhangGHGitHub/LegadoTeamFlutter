@@ -12,7 +12,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.widget.FrameLayout
-import androidx.activity.addCallback
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -92,9 +91,6 @@ abstract class BaseActivity<VB : ViewBinding>(
             findViewById<TitleBar>(R.id.title_bar)
                 ?.onMultiWindowModeChanged(isInMultiWindowMode, fullScreen)
         }
-        onBackPressedDispatcher.addCallback(this) {
-            finish()
-        }
         observeLiveBus()
         onActivityCreated(savedInstanceState)
     }
@@ -118,9 +114,14 @@ abstract class BaseActivity<VB : ViewBinding>(
 
     final override fun onCreateOptionsMenu(menu: Menu): Boolean {
         val bool = onCompatCreateOptionsMenu(menu)
-        menu.applyTint(this, toolBarTheme)
         val titleBar: TitleBar? = findViewById<TitleBar>(R.id.title_bar)
             ?: findViewById(R.id.titleBar)
+        menu.applyTint(
+            this,
+            toolBarTheme,
+            transparentBar = titleBar?.usesTransparentForeground == true
+        )
+        titleBar?.applyForegroundColor()
         titleBar?.toolbar?.installActivityOverflowMenu()
         return bool
     }
@@ -138,9 +139,19 @@ abstract class BaseActivity<VB : ViewBinding>(
             onPrepareMenu = { toolbarMenu -> onPrepareOptionsMenu(toolbarMenu) },
             onOpenCustomMenu = { toolbarMenu ->
                 onMenuOpened(Window.FEATURE_OPTIONS_PANEL, toolbarMenu)
+            },
+            onShowCustomMenu = { anchor, toolbarMenu ->
+                onShowActivityOverflowMenu(anchor, toolbarMenu)
             }
         )
     }
+
+    /**
+     * Gives an activity a chance to render its own overflow menu.
+     *
+     * Returning true means the shared popup has already been shown.
+     */
+    open fun onShowActivityOverflowMenu(anchor: View, menu: Menu): Boolean = false
 
     final override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == android.R.id.home) {

@@ -25,6 +25,21 @@ class ReviewRuleParserTest {
     )
 
     @Test
+    fun `summary configuration requires every lookup rule`() {
+        val rule = ReviewRule(
+            enabled = true,
+            reviewSummaryUrl = "https://example.com/reviews",
+            summaryListRule = "$.items",
+            summaryParagraphIndexRule = "$.index",
+            summaryCountRule = "$.count",
+        )
+
+        assertEquals("https://example.com/reviews", rule.configuredSummaryUrl())
+        rule.summaryCountRule = null
+        assertEquals(null, rule.configuredSummaryUrl())
+    }
+
+    @Test
     fun `parses JSON summary returned as a native array`() {
         val result = ReviewRuleParser.parseSummary(
             body = """
@@ -72,7 +87,7 @@ class ReviewRuleParserTest {
                           "avatar": "/reply.png",
                           "name": "Bob",
                           "badges": "reader|top",
-                          "content": "Reply"
+                          "content": "{\"text\":\"Reply\",\"replyToName\":\"Alice\",\"likeCount\":3}"
                         }
                       ]
                     },
@@ -126,13 +141,37 @@ class ReviewRuleParserTest {
                 assertEquals("r1", id)
                 assertEquals("https://example.com/reply.png", avatar)
                 assertEquals("Bob", name)
+                assertEquals("Alice", replyToName)
                 assertEquals(listOf("reader", "top"), badges)
                 assertEquals("Reply", content)
-                assertEquals(null, likeCount)
+                assertEquals(3, likeCount)
                 assertEquals(null, replyCount)
             }
         }
         assertEquals("{\"other\":\"kept\"}", result.items[1].content)
+    }
+
+    @Test
+    fun `declarative detail preserves 64-bit numeric ids`() {
+        val result = ReviewRuleParser.parseDetailPage(
+            body = """{"items":[{"id":1051979893439332353,"content":"评论"}]}""",
+            rule = ReviewRule(
+                detailListRule = "$.items",
+                detailIdRule = "$.id",
+                detailContentRule = "$.content",
+            ),
+            nextPageRule = null,
+            baseUrl = chapter.url,
+            source = source,
+            book = book,
+            chapter = chapter,
+            context = EmptyCoroutineContext,
+            paraIndex = "1",
+            paraData = "",
+            page = "1",
+        )
+
+        assertEquals("1051979893439332353", result.items.single().id)
     }
 
     @Test
@@ -147,7 +186,7 @@ class ReviewRuleParserTest {
                         "avatar": "/reply.png",
                         "name": "Bob",
                         "badges": ["reader", "top"],
-                        "content": "{\"text\":\"Reply\",\"img\":\"/reply.jpg\",\"time\":\"now\"}"
+                        "content": "{\"text\":\"Reply\",\"replyToName\":\"Alice\",\"img\":\"/reply.jpg\",\"time\":\"now\",\"likeCount\":4}"
                       }
                     ]
                   }
@@ -175,10 +214,12 @@ class ReviewRuleParserTest {
             assertEquals("r1", id)
             assertEquals("https://example.com/reply.png", avatar)
             assertEquals("Bob", name)
+            assertEquals("Alice", replyToName)
             assertEquals(listOf("reader", "top"), badges)
             assertEquals("Reply", content)
             assertEquals("https://example.com/reply.jpg", imageUrl)
             assertEquals("now", time)
+            assertEquals(4, likeCount)
             assertTrue(this.replies.isEmpty())
         }
     }
@@ -289,7 +330,7 @@ class ReviewRuleParserTest {
                 detailNameRule = "$.UserName",
                 detailBadgeRule = "$.TitleInfoList[*].TitleImage",
                 detailContentRule = contentRule,
-                replyListRule = "$.replyList[*]",
+                replyListRule = "replyList",
                 replyIdRule = "$.Id",
                 replyNameRule = "$.UserName",
                 replyBadgeRule = "$.TitleInfoList[*].TitleImage",
@@ -320,6 +361,30 @@ class ReviewRuleParserTest {
                 assertTrue(badges.isEmpty())
             }
         }
+    }
+
+    @Test
+    fun `detail JavaScript list fields execute against native objects`() {
+        val result = ReviewRuleParser.parseDetailPage(
+            body = """{"items":[{"name":"Alice","badges":["author","vip"],"content":"Hello"}]}""",
+            rule = ReviewRule(
+                detailListRule = "@js:JSON.parse(result).items",
+                detailNameRule = "@js:result.name",
+                detailBadgeRule = "@js:result.badges",
+                detailContentRule = "@js:result.content",
+            ),
+            nextPageRule = null,
+            baseUrl = chapter.url,
+            source = source,
+            book = book,
+            chapter = chapter,
+            context = EmptyCoroutineContext,
+            paraIndex = "1",
+            paraData = "0",
+            page = "1",
+        )
+
+        assertEquals(listOf("author", "vip"), result.items.single().badges)
     }
 
     @Test

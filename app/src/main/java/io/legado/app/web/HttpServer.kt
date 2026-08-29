@@ -21,6 +21,7 @@ import okio.Pipe
 import okio.buffer
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.net.URI
 
 class HttpServer(port: Int) : NanoHTTPD(port) {
     private val assetsWeb = AssetsWeb("web")
@@ -32,10 +33,11 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
         val ct = ContentType(session.headers["content-type"]).tryUTF8()
         session.headers["content-type"] = ct.contentTypeHeader
         var uri = session.uri
+        val logQuery = if (uri == "/legacyReviewPage") "<redacted>" else session.queryParameterString
 
         val startAt = System.currentTimeMillis()
         LogUtils.d(TAG) {
-            "${session.method.name} - $uri - ${session.queryParameterString} - Start($startAt)"
+            "${session.method.name} - $uri - $logQuery - Start($startAt)"
         }
 
         try {
@@ -78,7 +80,10 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
                             when (uri) {
                                 "/saveBookSource" -> BookSourceController.saveSource(postData)
                                 "/saveBookSources" -> BookSourceController.saveSources(postData)
-                                "/saveJsSource" -> BookSourceController.saveJsSource(postData)
+                                "/saveJsSource" -> BookSourceController.saveJsSource(
+                                    postData,
+                                    session.parameters["openedSourceUrl"]?.firstOrNull(),
+                                )
                                 "/deleteBookSources" -> BookSourceController.deleteSources(postData)
                                 "/saveBook" -> BookController.saveBook(postData)
                                 "/deleteBook" -> BookController.deleteBook(postData)
@@ -88,6 +93,11 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
                                     files,
                                 )
                                 "/saveReadConfig" -> BookController.saveWebReadConfig(postData)
+                                "/openLegacyReview" -> ReviewController.openLegacyReview(
+                                    postData,
+                                    session.headers["origin"],
+                                )
+                                "/runLegacyReview" -> ReviewController.runLegacyReview(postData)
                                 "/saveRssSource" -> RssSourceController.saveSource(postData)
                                 "/saveRssSources" -> RssSourceController.saveSources(postData)
                                 "/deleteRssSources" -> RssSourceController.deleteSources(postData)
@@ -102,6 +112,12 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
 
                 Method.GET -> {
                     val parameters = session.parameters
+                    if (uri == "/legacyReviewPage") {
+                        return legacyReviewPageResponse(
+                            ReviewController.getLegacyReviewPage(parameters),
+                            session.headers["origin"],
+                        )
+                    }
                     val requestError = if (
                         uri in PROTECTED_HTTP_LOG_READ_ROUTES &&
                         !BookSourceController.hasValidJsSourceApiToken(session.headers)
@@ -117,6 +133,8 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
                         returnData = when (uri) {
                             "/getBookSource" -> BookSourceController.getSource(parameters)
                             "/getBookSources" -> BookSourceController.sources
+                            "/getJsSourceApiTokenRequired" ->
+                                BookSourceController.isJsSourceApiTokenRequired
                             "/getHttpLogs" -> HttpLogController.getLogs(parameters)
                             "/getHttpLog" -> HttpLogController.getLog(parameters)
                             "/getBookshelf" -> BookController.bookshelf
@@ -188,14 +206,14 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
                 response.closeConnection(true)
             }
             LogUtils.d(TAG) {
-                "${session.method.name} - $uri - ${session.queryParameterString} - End($startAt)"
+                "${session.method.name} - $uri - $logQuery - End($startAt)"
             }
             return response
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             LogUtils.d(TAG) {
-                "${session.method.name} - $uri - ${session.queryParameterString} - Error End($startAt)\n$e\n${e.stackTraceStr}"
+                "${session.method.name} - $uri - $logQuery - Error End($startAt)\n$e\n${e.stackTraceStr}"
             }
             return newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
@@ -216,7 +234,15 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
             "default-src 'self' data: blob:; " +
                 "script-src 'self'; style-src 'self' 'unsafe-inline'; " +
                 "img-src * data: blob:; font-src 'self' data: http: https:; " +
-                "connect-src * ws: wss:; object-src 'none'; base-uri 'self'"
+                "connect-src * ws: wss:; frame-src 'self' http: https:; " +
+                "object-src 'none'; base-uri 'self'"
+        private const val LEGACY_REVIEW_RESOURCE_POLICY =
+            "default-src 'none'; " +
+                "script-src 'unsafe-inline' 'unsafe-eval'; " +
+                "style-src 'unsafe-inline'; img-src http: https: data: blob:; " +
+                "media-src http: https: data: blob:; font-src http: https: data:; " +
+                "connect-src 'none'; object-src 'none'; base-uri http: https:; " +
+                "form-action 'none'"
         private val PROTECTED_SOURCE_WRITE_ROUTES = setOf(
             "/saveBookSource",
             "/saveBookSources",
@@ -227,6 +253,8 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
             "/saveReplaceRule",
             "/deleteReplaceRule",
             "/testReplaceRule",
+            "/openLegacyReview",
+            "/runLegacyReview",
         )
         private val PROTECTED_HTTP_LOG_READ_ROUTES = setOf(
             "/getHttpLogs",
@@ -237,12 +265,62 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
     private fun Response.addWebHeaders(origin: String?, uri: String) {
         addHeader("X-Content-Type-Options", "nosniff")
         origin?.let { addHeader("Access-Control-Allow-Origin", it) }
-        if (uri in PROTECTED_HTTP_LOG_READ_ROUTES) {
+        if (
+            uri in PROTECTED_HTTP_LOG_READ_ROUTES ||
+            uri == "/getJsSourceApiTokenRequired"
+        ) {
             addHeader("Cache-Control", "no-store")
         }
         if (uri.startsWith("/vue/") && uri.endsWith(".html")) {
+            addHeader("Cache-Control", "no-cache")
             addHeader("Content-Security-Policy", VUE_CONTENT_SECURITY_POLICY)
         }
+    }
+
+    private fun legacyReviewPageResponse(
+        page: ReviewController.LegacyReviewWebPage?,
+        origin: String?,
+    ): Response {
+        val protectedHtml = page?.html?.let {
+            val meta = "<meta http-equiv=\"Content-Security-Policy\" " +
+                "content=\"$LEGACY_REVIEW_RESOURCE_POLICY\">"
+            val head = it.indexOf("<head", ignoreCase = true)
+            val headEnd = if (head >= 0) it.indexOf('>', head) else -1
+            if (headEnd >= 0) it.substring(0, headEnd + 1) + meta + it.substring(headEnd + 1)
+            else meta + it
+        }
+        return if (protectedHtml == null) {
+            newFixedLengthResponse(
+                Response.Status.NOT_FOUND,
+                "text/plain; charset=utf-8",
+                "旧评论会话无效或已过期"
+            )
+        } else {
+            newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", protectedHtml)
+        }.apply {
+            addWebHeaders(origin, "/legacyReviewPage")
+            addHeader("Cache-Control", "no-store")
+            addHeader("Referrer-Policy", "no-referrer")
+            addHeader(
+                "Content-Security-Policy",
+                "sandbox allow-scripts allow-modals; $LEGACY_REVIEW_RESOURCE_POLICY; " +
+                    "frame-ancestors ${allowedFrameAncestor(page?.frameOrigin)}"
+            )
+        }
+    }
+
+    private fun allowedFrameAncestor(origin: String?): String {
+        val uri = origin?.let { runCatching { URI(it) }.getOrNull() } ?: return "'self'"
+        if (uri.scheme !in setOf("http", "https") ||
+            uri.rawAuthority.isNullOrBlank() ||
+            !uri.rawUserInfo.isNullOrBlank() ||
+            !uri.rawPath.isNullOrBlank() ||
+            uri.rawQuery != null ||
+            uri.rawFragment != null
+        ) {
+            return "'self'"
+        }
+        return "${uri.scheme}://${uri.rawAuthority}"
     }
 
 }

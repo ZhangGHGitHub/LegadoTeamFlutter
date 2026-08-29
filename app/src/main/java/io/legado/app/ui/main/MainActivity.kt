@@ -288,6 +288,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                             if (isIgnoredAppUpdate(it.tagName, LocalConfig.ignoreUpdateVersion)) {
                                 return@onSuccess
                             }
+                            if (supportFragmentManager.isStateSaved) return@onSuccess
                             showDialogFragment(
                                 UpdateDialog(it)
                             )
@@ -374,11 +375,18 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             val lastBackupFile =
                 withContext(IO) { AppWebDav.lastBackUp().getOrNull() } ?: return@launch
             if (lastBackupFile.lastModify - LocalConfig.lastBackup > DateUtils.MINUTE_IN_MILLIS) {
-                LocalConfig.lastBackup = lastBackupFile.lastModify
                 alert(R.string.restore, R.string.webdav_after_local_restore_confirm) {
-                    cancelButton()
+                    cancelButton {
+                        LocalConfig.lastBackup = maxOf(
+                            LocalConfig.lastBackup,
+                            lastBackupFile.lastModify,
+                        )
+                    }
                     okButton {
-                        viewModel.restoreWebDav(lastBackupFile.displayName)
+                        viewModel.restoreWebDav(
+                            lastBackupFile.displayName,
+                            lastBackupFile.lastModify,
+                        )
                     }
                 }
             }

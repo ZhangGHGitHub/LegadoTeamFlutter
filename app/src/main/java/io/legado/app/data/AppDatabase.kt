@@ -74,7 +74,7 @@ val appDb by lazy {
 }
 
 @Database(
-    version = 99,
+    version = 104,
     exportSchema = true,
     entities = [Book::class, BookGroup::class, BookSource::class, BookChapter::class,
         ReplaceRule::class, SearchBook::class, SearchKeyword::class, Cookie::class,
@@ -139,7 +139,11 @@ val appDb by lazy {
         AutoMigration(from = 95, to = 96),
         AutoMigration(from = 96, to = 97, spec = DatabaseMigrations.Migration_96_97::class),
         AutoMigration(from = 97, to = 98),
-        AutoMigration(from = 98, to = 99, spec = DatabaseMigrations.Migration_98_99::class)
+        AutoMigration(from = 98, to = 99, spec = DatabaseMigrations.Migration_98_99::class),
+        AutoMigration(from = 99, to = 100),
+        AutoMigration(from = 101, to = 102, spec = DatabaseMigrations.Migration_101_102::class),
+        AutoMigration(from = 102, to = 103),
+        AutoMigration(from = 103, to = 104)
     ]
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -174,6 +178,7 @@ abstract class AppDatabase : RoomDatabase() {
         const val DATABASE_NAME = "legado.db"
 
         const val BOOK_TABLE_NAME = "books"
+        const val BOOK_GROUP_TABLE_NAME = "book_groups"
         const val BOOK_SOURCE_TABLE_NAME = "book_sources"
         const val RSS_SOURCE_TABLE_NAME = "rssSources"
 

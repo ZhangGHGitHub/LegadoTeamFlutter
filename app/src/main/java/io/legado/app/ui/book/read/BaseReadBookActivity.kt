@@ -2,10 +2,12 @@ package io.legado.app.ui.book.read
 
 import android.annotation.SuppressLint
 import android.app.DatePickerDialog
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -17,10 +19,13 @@ import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppConst.charsets
 import io.legado.app.constant.PreferKey
+import io.legado.app.data.entities.Book
 import io.legado.app.databinding.ActivityBookReadBinding
 import io.legado.app.databinding.DialogDownloadChoiceBinding
 import io.legado.app.databinding.DialogEditTextBinding
 import io.legado.app.databinding.DialogSimulatedReadingBinding
+import io.legado.app.help.book.cacheLocalUri
+import io.legado.app.help.book.savePreservingCustomCoverUrl
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
@@ -30,6 +35,7 @@ import io.legado.app.lib.theme.ThemeStore
 import io.legado.app.lib.theme.bottomBackground
 import io.legado.app.model.CacheBook
 import io.legado.app.model.ReadBook
+import io.legado.app.model.localBook.LocalBook
 import io.legado.app.ui.book.read.config.BgTextConfigDialog
 import io.legado.app.ui.book.read.config.ClickActionConfigDialog
 import io.legado.app.ui.book.read.config.PaddingConfigDialog
@@ -48,6 +54,31 @@ import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+
+@SuppressLint("InflateParams", "SetTextI18n")
+fun Context.showBookDownloadDialog(book: Book) {
+    alert(titleResource = R.string.offline_cache) {
+        val alertBinding = DialogDownloadChoiceBinding
+            .inflate(LayoutInflater.from(this@showBookDownloadDialog))
+            .apply {
+                editStart.setText((book.durChapterIndex + 1).toString())
+                editEnd.setText(book.totalChapterNum.toString())
+            }
+        customView { alertBinding.root }
+        okButton {
+            alertBinding.run {
+                val start = editStart.text!!.toString().let {
+                    if (it.isEmpty()) 0 else it.toInt()
+                }
+                val end = editEnd.text!!.toString().let {
+                    if (it.isEmpty()) book.totalChapterNum else it.toInt()
+                }
+                CacheBook.start(this@showBookDownloadDialog, book, start - 1, end - 1)
+            }
+        }
+        cancelButton()
+    }
+}
 
 /**
  * 阅读界面
@@ -71,8 +102,10 @@ abstract class BaseReadBookActivity :
         it.uri?.let { uri ->
             ReadBook.book?.let { book ->
                 FileDoc.fromUri(uri, true).find(book.originName)?.let { doc ->
-                    book.bookUrl = doc.uri.toString()
-                    book.save()
+                    AppConfig.importBookPath = uri.toString()
+                    LocalBook.withParserCacheInvalidated(book) {
+                        book.cacheLocalUri(doc.uri)
+                    }
                     viewModel.loadChapterList(book)
                 } ?: ReadBook.upMsg("找不到文件")
             }
@@ -263,29 +296,8 @@ abstract class BaseReadBookActivity :
         }
     }
 
-    @SuppressLint("InflateParams", "SetTextI18n")
     fun showDownloadDialog() {
-        ReadBook.book?.let { book ->
-            alert(titleResource = R.string.offline_cache) {
-                val alertBinding = DialogDownloadChoiceBinding.inflate(layoutInflater).apply {
-                    editStart.setText((book.durChapterIndex + 1).toString())
-                    editEnd.setText(book.totalChapterNum.toString())
-                }
-                customView { alertBinding.root }
-                okButton {
-                    alertBinding.run {
-                        val start = editStart.text!!.toString().let {
-                            if (it.isEmpty()) 0 else it.toInt()
-                        }
-                        val end = editEnd.text!!.toString().let {
-                            if (it.isEmpty()) book.totalChapterNum else it.toInt()
-                        }
-                        CacheBook.start(this@BaseReadBookActivity, book, start - 1, end - 1)
-                    }
-                }
-                cancelButton()
-            }
-        }
+        ReadBook.book?.let { showBookDownloadDialog(it) }
     }
 
     fun showSimulatedReading() {
@@ -335,7 +347,7 @@ abstract class BaseReadBookActivity :
                     book.setDailyChapters(num)
                     book.setStartChapter(start)
                     book.setReadSimulating(enabled)
-                    book.save()
+                    book.savePreservingCustomCoverUrl()
                     ReadBook.clearTextChapter()
                     viewModel.initData(intent)
                 }

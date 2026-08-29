@@ -74,6 +74,18 @@ class BottomWebViewDialogLifecycleContractTest {
     }
 
     @Test
+    fun `source is loaded before the initial request`() {
+        val onViewCreated = section("override fun onViewCreated", "private fun initWebView")
+
+        val loadSource = onViewCreated.indexOf("appDb.bookSourceDao.getBookSource(sourceKey)")
+        val analyzeUrl = onViewCreated.indexOf("AnalyzeUrl(url, source = source")
+        val request = onViewCreated.indexOf("analyzeUrl.getStrResponseAwait()")
+        assertTrue(loadSource >= 0)
+        assertTrue(analyzeUrl > loadSource)
+        assertTrue(request > analyzeUrl)
+    }
+
+    @Test
     fun `bottom sheet references follow the current dialog`() {
         val fields = section("private val binding", "private val displayMetrics")
 
@@ -87,6 +99,20 @@ class BottomWebViewDialogLifecycleContractTest {
         assertTrue(fields.contains("BottomSheetBehavior.from(sheet)"))
         assertFalse(fields.contains("private val bottomSheet by lazy"))
         assertFalse(fields.contains("private val behavior by lazy"))
+    }
+
+    @Test
+    fun `sheet state follows size layout request`() {
+        val setConfig = section("private fun setConfig", "private fun reapplyConfiguredHeight")
+        val widthChange = setConfig.indexOf("params.width = width")
+        val heightChange = setConfig.indexOf("params.height = height")
+        val requestLayout = setConfig.indexOf("sheet.layoutParams = params")
+        val applyState = setConfig.indexOf("behaviorSpec.state?.let { behavior?.state = it }")
+
+        assertTrue(widthChange >= 0)
+        assertTrue(heightChange >= 0)
+        assertTrue(requestLayout > heightChange)
+        assertTrue(applyState > requestLayout)
     }
 
     private fun section(startMarker: String, endMarker: String): String {

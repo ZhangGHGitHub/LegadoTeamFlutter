@@ -369,8 +369,11 @@ object CacheBook {
                 start = CoroutineStart.LAZY,
                 executeContext = context
             ).onSuccess { content ->
+                val imageContent = BookHelp.getContent(book, chapter) ?: content
+                BookHelp.saveImages(bookSource, book, chapter, imageContent, 1)
+                val currentContent = BookHelp.getContent(book, chapter) ?: imageContent
                 onSuccess(chapter)
-                downloadFinish(chapter, content)
+                downloadFinish(chapter, currentContent)
             }.onError {
                 onPreError(chapter, it)
                 //出现错误等待一秒后重新加入待下载列表
@@ -393,10 +396,11 @@ object CacheBook {
             }
             try {
                 val content = WebBook.getContentAwait(bookSource, book, chapter)
+                val currentContent = BookHelp.getContent(book, chapter) ?: content
                 onSuccess(chapter)
                 ReadBook.downloadedChapters.add(chapter.index)
                 ReadBook.downloadFailChapters.remove(chapter.index)
-                return content
+                return currentContent
             } catch (e: CancellationException) {
                 onReadCancel(chapter.index)
                 throw e
@@ -415,7 +419,8 @@ object CacheBook {
             scope: CoroutineScope,
             chapter: BookChapter,
             semaphore: Semaphore?,
-            resetPageOffset: Boolean = false
+            resetPageOffset: Boolean = false,
+            readPositionVersion: Long? = null,
         ) {
             if (onDownloadSet.contains(chapter.index)) {
                 return
@@ -431,18 +436,35 @@ object CacheBook {
                 executeContext = IO,
                 semaphore = semaphore
             ).onSuccess { content ->
+                val currentContent = BookHelp.getContent(book, chapter) ?: content
                 onSuccess(chapter)
                 ReadBook.downloadedChapters.add(chapter.index)
                 ReadBook.downloadFailChapters.remove(chapter.index)
-                downloadFinish(chapter, content, resetPageOffset)
+                downloadFinish(
+                    chapter,
+                    currentContent,
+                    resetPageOffset,
+                    readPositionVersion = readPositionVersion,
+                )
             }.onError {
                 onReadError(chapter, it)
                 ReadBook.downloadFailChapters[chapter.index] =
                     (ReadBook.downloadFailChapters[chapter.index] ?: 0) + 1
-                downloadFinish(chapter, "获取正文失败\n${it.localizedMessage}", resetPageOffset)
+                downloadFinish(
+                    chapter,
+                    "获取正文失败\n${it.localizedMessage}",
+                    resetPageOffset,
+                    readPositionVersion = readPositionVersion,
+                )
             }.onCancel {
                 onReadCancel(chapter.index)
-                downloadFinish(chapter, "download canceled", resetPageOffset, true)
+                downloadFinish(
+                    chapter,
+                    "download canceled",
+                    resetPageOffset,
+                    true,
+                    readPositionVersion = readPositionVersion,
+                )
             }.onFinally {
                 postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
             }.start()
@@ -452,13 +474,15 @@ object CacheBook {
             chapter: BookChapter,
             content: String,
             resetPageOffset: Boolean = false,
-            canceled: Boolean = false
+            canceled: Boolean = false,
+            readPositionVersion: Long? = null,
         ) {
             if (ReadBook.book?.bookUrl == book.bookUrl) {
                 ReadBook.contentLoadFinish(
                     book, chapter, content,
                     resetPageOffset = resetPageOffset,
-                    canceled = canceled
+                    canceled = canceled,
+                    readPositionVersion = readPositionVersion,
                 )
             }
         }

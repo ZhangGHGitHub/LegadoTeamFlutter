@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import androidx.annotation.Keep
-import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.Transformation
@@ -51,6 +50,10 @@ object BookCover {
         private set
     var drawBookAuthor = true
         private set
+    var drawBookNameHorizontal = false
+        private set
+    var keepPunctuation = false
+        private set
     lateinit var defaultDrawable: Drawable
         private set
 
@@ -72,6 +75,8 @@ object BookCover {
             drawBookAuthor = appCtx.getPrefBoolean(PreferKey.coverShowAuthor, true)
             path = appCtx.getPrefString(PreferKey.defaultCover)
         }
+        drawBookNameHorizontal = appCtx.getPrefBoolean(PreferKey.coverHorizontal, false)
+        keepPunctuation = appCtx.getPrefBoolean(PreferKey.coverKeepPunctuation, false)
         defaultDrawable = runCatching {
             BitmapUtils.decodeBitmap(path!!, 600, 900)!!.toDrawable(appCtx.resources)
         }.getOrDefault(appCtx.resources.getDrawable(R.drawable.image_cover_default, null))
@@ -159,16 +164,13 @@ object BookCover {
         path: String?,
         loadOnlyWifi: Boolean = false,
         sourceOrigin: String? = null,
-    ): RequestBuilder<File?> {
+    ): RequestBuilder<File> {
         var options = RequestOptions().set(OkHttpModelLoader.loadOnlyWifiOption, loadOnlyWifi)
             .set(OkHttpModelLoader.mangaOption, true)
         if (sourceOrigin != null) {
             options = options.set(OkHttpModelLoader.sourceOriginOption, sourceOrigin)
         }
-        return Glide.with(context)
-            .downloadOnly()
-            .apply(options)
-            .load(path)
+        return ImageLoader.loadFile(context, path).apply(options)
     }
 
     /**

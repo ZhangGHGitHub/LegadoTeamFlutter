@@ -16,6 +16,7 @@ import org.htmlunit.corejs.javascript.Parser
 import org.htmlunit.corejs.javascript.Scriptable
 import org.htmlunit.corejs.javascript.ScriptableObject
 import org.htmlunit.corejs.javascript.ast.FunctionCall
+import org.htmlunit.corejs.javascript.ast.FunctionNode
 import org.htmlunit.corejs.javascript.ast.Name
 import org.htmlunit.corejs.javascript.ast.NumberLiteral
 import org.htmlunit.corejs.javascript.ast.ObjectLiteral
@@ -28,6 +29,8 @@ object JsSourceConfig {
 
     private const val CONFIG_PROPERTY = "config"
     private const val LEGACY_CONFIG_PROPERTY = "source"
+    private val reviewFunctionNames = setOf("getReviewSummary", "getReviewDetail")
+    private val reviewReplyFunctionNames = setOf("getReviewReplies")
 
     val requiredFunctions = listOf("search", "getChapters", "getContent")
     private val fileSourceRequiredFunctions = listOf("search", "getBookInfo")
@@ -52,6 +55,38 @@ object JsSourceConfig {
             if (cancellation != null) throw cancellation
             throw error
         }
+    }
+
+    fun declaresReviewFunctions(text: String): Boolean {
+        return declaresTopLevelFunctions(text, reviewFunctionNames)
+    }
+
+    fun declaresReviewRepliesFunction(text: String): Boolean {
+        return declaresTopLevelFunctions(text, reviewReplyFunctionNames)
+    }
+
+    private fun declaresTopLevelFunctions(text: String, names: Set<String>): Boolean {
+        val declared = hashSetOf<String>()
+        val root = runCatching { Parser().parse(text, null, 1) }.getOrNull() ?: return false
+        root.visit { node ->
+            when (node) {
+                is FunctionNode -> if (
+                    node.enclosingFunction == null && node.name in names
+                ) {
+                    declared.add(node.name)
+                }
+
+                is VariableInitializer -> if (
+                    node.enclosingFunction == null && node.initializer is FunctionNode
+                ) {
+                    (node.target as? Name)?.identifier
+                        ?.takeIf { it in names }
+                        ?.let(declared::add)
+                }
+            }
+            declared.size < names.size
+        }
+        return declared.containsAll(names)
     }
 
     private fun extractInternal(
@@ -114,13 +149,18 @@ object JsSourceConfig {
         }
         val reviewSummary = ScriptableObject.getProperty(scope, "getReviewSummary")
         val reviewDetail = ScriptableObject.getProperty(scope, "getReviewDetail")
+        val reviewReplies = ScriptableObject.getProperty(scope, "getReviewReplies")
         val declaresReviewSummary = reviewSummary !== Scriptable.NOT_FOUND
         val declaresReviewDetail = reviewDetail !== Scriptable.NOT_FOUND
+        val declaresReviewReplies = reviewReplies !== Scriptable.NOT_FOUND
         if (declaresReviewSummary && reviewSummary !is Function) {
             throw NoStackTraceException("JS源 getReviewSummary 必须是函数")
         }
         if (declaresReviewDetail && reviewDetail !is Function) {
             throw NoStackTraceException("JS源 getReviewDetail 必须是函数")
+        }
+        if (declaresReviewReplies && reviewReplies !is Function) {
+            throw NoStackTraceException("JS源 getReviewReplies 必须是函数")
         }
         if (declaresReviewSummary && !declaresReviewDetail) {
             throw NoStackTraceException("JS源声明了 getReviewSummary,缺少配对的 getReviewDetail 函数")
@@ -128,9 +168,17 @@ object JsSourceConfig {
         if (declaresReviewDetail && !declaresReviewSummary) {
             throw NoStackTraceException("JS源声明了 getReviewDetail,缺少配对的 getReviewSummary 函数")
         }
+        if (declaresReviewReplies && (!declaresReviewSummary || !declaresReviewDetail)) {
+            throw NoStackTraceException(
+                "JS源声明了 getReviewReplies,缺少配对的 getReviewSummary/getReviewDetail 函数"
+            )
+        }
         source.mainJs = text
         if (declaresReviewSummary) {
             JsSourceReview.rememberReviewCapability(source, enabled = true)
+        }
+        if (declaresReviewReplies) {
+            JsSourceReview.rememberReviewRepliesCapability(source, enabled = true)
         }
         return source
     }

@@ -41,7 +41,16 @@ class AudioEpisodeUnitTest {
         assertTrue(activity.contains("AudioPlay.durChapterIndex + 1"))
         assertTrue(activity.contains("binding.tvChapterIndex.visible()"))
         assertTrue(activity.contains("binding.tvChapterIndex.gone()"))
-        assertEquals(2, Regex("AudioPlay\\.upData\\(book\\)").findAll(viewModel).count())
+        assertEquals(
+            1,
+            Regex("AudioPlay\\.upData\\(book, preserveProgress = true\\)")
+                .findAll(viewModel).count(),
+        )
+        assertEquals(
+            1,
+            Regex("AudioPlay\\.upData\\(book, preserveProgress = false\\)")
+                .findAll(viewModel).count(),
+        )
         assertTrue(
             Regex(
                 "SleepTimerDialog\\.newInstance\\(\\s*" +
@@ -69,6 +78,28 @@ class AudioEpisodeUnitTest {
                     "else R\\.string\\.sleep_timer_chapters"
             ).containsMatchIn(dialog)
         )
+    }
+
+    @Test
+    fun lyricPlayerWaitsForLayoutBeforeLoading() {
+        val source = projectFile(
+            "src/main/java/io/legado/app/ui/book/audio/AudioPlayActivity.kt"
+        ).readText()
+        val upLyric = source.substringAfter("override fun upLyric(lyric: String?)")
+            .substringBefore("override fun upLyricP(position: Int)")
+        val invisible = upLyric.indexOf("lyricViewX.invisible()")
+        val layout = upLyric.indexOf("lyricViewX.doOnLayout")
+        val widthGuard = upLyric.indexOf("view.width <= 32.dpToPx()")
+        val retry = upLyric.indexOf("view.doOnNextLayout(::loadLyricWhenWide)")
+        val load = upLyric.indexOf("lyricViewX.loadLyric(lyric)")
+        val visible = upLyric.indexOf("lyricViewX.visible()")
+
+        assertTrue(invisible >= 0)
+        assertTrue(layout > invisible)
+        assertTrue(widthGuard >= 0)
+        assertTrue(retry > widthGuard)
+        assertTrue(load > widthGuard)
+        assertTrue(visible > load)
     }
 
     private fun chineseString(name: String) = stringValue("values-zh", name)
