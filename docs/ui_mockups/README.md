@@ -12,6 +12,16 @@
 - 08_reader_day.svg：阅读器（日间）
 - 09_reader_night.svg：阅读器（夜间）
 - 10_source_manage.svg：书源管理
+- 01_bookshelf_v2.svg：书架精修单屏稿
+- 02_discovery_v2.svg：发现精修单屏稿
+- 03_rss_v2.svg：RSS 精修单屏稿
+- 04_my_v2.svg：我的精修单屏稿
+- 05_search_v2.svg：搜索精修单屏稿
+- 06_book_detail_v2.svg：书籍详情精修单屏稿
+- 07_toc_v2.svg：目录精修单屏稿
+- 08_reader_day_v2.svg：阅读器日间精修单屏稿
+- 09_reader_night_v2.svg：阅读器夜间精修单屏稿
+- 10_source_manage_v2.svg：书源管理精修单屏稿
 - 00_m3_refined_gallery.svg：10 个界面精修总览（用于快速验收）
 
 每张单屏图为 390×844 竖屏手机画板，含系统状态栏；总览图为 1200×900。稿件已按精修文档补足 M3 语义色、组件层级、状态提示、昼夜阅读对比和可访问文字。当前会话未提供内置 image_gen，且未配置 OPENAI_API_KEY，因此使用可复现 SVG 作为高保真交付图。
