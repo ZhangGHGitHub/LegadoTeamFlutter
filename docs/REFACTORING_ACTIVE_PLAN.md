@@ -179,6 +179,7 @@
 - ✅ **已完成**：离线原版响应夹具（S0-B，`511a0bb52`，七场景+主执行器消费测试）；统一单源执行器收敛（S0-E，`4330acaf9`，loginCheckJs/pattern 直连/空列表回退/bookUrl 回退/去重键/非 2xx 六项对齐）；会话级取消收尾（P0-3，`c5f82a854`+`91e40dfad`，双机实机 e2e 7/7，verdict 归档）；G4 修复（`bb521c366`）。
 - ⛔ **未完成（标记）**：**S0-C 原版端终态证据采集**——5558(LDPlayer) 环境阻断（adb reverse 数分钟内静默僵死、设备→主机直达被防火墙拦截、原版 release 无 run-as、debug 变体缺 mavenLocal 构件），已三轮攻坚未闭环；续作三路径与实测窗口数据见该计划 §8.8。S0-C 未闭合前 P0-2 S0 与 P0-1.4 保持 DEFERRED。
 - ✅ **阶段三已完成（2026-08-29）**：过滤/持久化一致性——precision filter 解析期对齐原版（`837516a08`，precision_filter_match 三字段或语义 + parse_search_response_ex，应用点=列表循环/pattern 直连/空列表回退，FFI 签名零变更经配置读取，p3f_tests 5 项；workspace 2479/0）。聚合一致性此前已由 fix34 批次对齐。
+- ✅ **上游安卓源码同步完成（2026-08-29）**：upstream(LegadoTeam/legado) 506 提交(#397→#1072,v3.26.082823,cronet 152.0.7977.54) 已合入集成分支 `integration/upstream-3.26.082823`（合并提交 `6314f5b215`,161 冲突全部取上游版——本地安卓侧=#543 纯快照无本地修改需保留,README 取双轨版）。门禁：`assembleRelease -Pksp.incremental=false` BUILD SUCCESSFUL（R8 处理新 htmlunit MethodHandle;debug 变体 D8 在 minSdk 23 下无法 dex 新 htmlunit,上游 CI 亦仅构建 release）;`testAppReleaseUnitTest` 1809 中 1807 通过（2 个符号链接测试为 Windows 环境差异,上游 CI 为 Linux）;flutter_legado/rust 零触及。**合回 master 待 UI 轨提交其 49 个未提交文件后执行**（当前 checkout/merge 均会覆盖其 WIP,按协作规则避让）。
 - ▶️ **剩余**：仅性能剖析（S0-D）——关闭条件依赖双包同基线分段计时，受 S0-C 原版端环境阻断约束，待环境问题解决后执行（分段计时探针 LEGADO_SEARCH_PHASE_TIMING 已存在）。
 
 
