@@ -83,3 +83,10 @@ rust/_*.txt
 *.bak_p03
 rust/legado-ffi/timing_*_out.txt
 flutter_legado/test_out.txt
+
+# ── 安卓源码不上传 GitHub（2026-08-30 用户指令）────────────────
+# 原版安卓工程（app/ 与 modules/）仅保留在本地磁盘作参照，不进入版本
+# 跟踪与远程推送；已用 git rm --cached 解除跟踪。如需恢复跟踪：
+# git add -f app modules 并删除下方两行。
+/app/
+/modules/
