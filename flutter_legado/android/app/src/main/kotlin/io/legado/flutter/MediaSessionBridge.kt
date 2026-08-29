@@ -1,6 +1,7 @@
 package io.legado.flutter
 
 import android.annotation.SuppressLint
+import android.app.PendingIntent
 import android.content.Context
 import android.os.PowerManager
 import android.media.AudioAttributes
@@ -41,10 +42,17 @@ import io.flutter.plugin.common.MethodChannel
  */
 class MediaSessionBridge {
 
+    companion object {
+        /// [体检 §一.2] 当前活跃桥(前台服务构建媒体通知时读取 session token)
+        @Volatile
+        var active: MediaSessionBridge? = null
+    }
+
     private var mediaSession: MediaSessionCompat? = null
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var methodChannel: MethodChannel? = null
+    private var appContext: Context? = null
 
     /// 焦点丢失前是否正在播放（用于恢复判断）
     private var needResumeOnAudioFocusGain = false
@@ -190,6 +198,8 @@ class MediaSessionBridge {
      * 初始化 MediaSession（复刻原版 initMediaSession）
      */
     private fun initMediaSession(context: Context, result: MethodChannel.Result) {
+        active = this
+        appContext = context.applicationContext
         if (mediaSession != null) {
             result.success(true)
             return
@@ -315,6 +325,19 @@ class MediaSessionBridge {
                 .setState(playbackState, position, 1f)
                 .build()
         )
+
+        // [体检 §一.2] 播放态变化同步前台服务:playing→启动保活,stopped→停止
+        val ctx = appContext ?: return
+        val intent = android.content.Intent(ctx, PlaybackForegroundService::class.java).apply {
+            putExtra(PlaybackForegroundService.EXTRA_STATE, state)
+        }
+        if (state == "stopped") {
+            ctx.stopService(intent)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ctx.startForegroundService(intent)
+        } else {
+            ctx.startService(intent)
+        }
     }
 
     /**
@@ -339,6 +362,14 @@ class MediaSessionBridge {
     /**
      * 释放所有资源
      */
+    /// [体检 §一.2] 前台服务读取:会话 token / 元数据 / 内容 intent
+    fun sessionToken(): MediaSessionCompat.Token? = mediaSession?.sessionToken
+
+    fun currentMetadata(): MediaMetadataCompat? = mediaSession?.controller?.metadata
+
+    fun contentIntent(): PendingIntent? =
+        mediaSession?.controller?.sessionActivity
+
     fun release() {
         // 放弃焦点
         audioManager?.let { am ->
@@ -357,6 +388,11 @@ class MediaSessionBridge {
             release()
         }
         mediaSession = null
+        active = null
+        appContext?.let { ctx ->
+            ctx.stopService(android.content.Intent(ctx, PlaybackForegroundService::class.java))
+            appContext = null
+        }
 
         needResumeOnAudioFocusGain = false
         isPlaying = false
