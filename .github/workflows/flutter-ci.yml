@@ -53,7 +53,11 @@ jobs:
           done
       - name: Verify FFI content hash sync
         working-directory: rust
-        run: chmod +x scripts/verify-ffi-android.sh && ./scripts/verify-ffi-android.sh debug "aarch64,x86_64"
+        run: |
+          chmod +x scripts/verify-ffi-android.sh
+          ./scripts/verify-ffi-android.sh debug "aarch64,x86_64"
+          # 体检§三.10+§8.3:扩展校验范围——v7a(当前 quickjs:false 需人工决策)与 release 模式
+          ./scripts/verify-ffi-android.sh release "aarch64,armv7,x86_64" || echo "::warning::release/v7a FFI 校验未通过(见体检§一.1/§8.3),需按计划处理"
 
   analyze:
     runs-on: ubuntu-latest
