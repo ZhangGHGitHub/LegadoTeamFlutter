@@ -153,7 +153,7 @@ async fn run_scenario(scenario: &str) -> (Expected, String, Expected) {
     let source: BookSource = serde_json::from_str(&source_json).unwrap();
 
     let client = shared_client().expect("共享 HTTP 客户端");
-    let outcome = search_single_source(&client, &source, &request.keyword, 1).await;
+    let outcome = search_single_source(&client, &source, &request.keyword, 1, false).await;
 
     let base = format!("http://127.0.0.1:{port}");
     // 期望中的 {BASE} 占位替换为实际夹具服务器地址

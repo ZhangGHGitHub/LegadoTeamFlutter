@@ -165,7 +165,10 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
         query: &str,
         max_results: usize,
     ) -> Vec<SearchCandidate> {
-        match search_single_source(&self.client, source, query, 1).await {
+        let precision = crate::api::config_api::get_config("precisionSearch")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+match search_single_source(&self.client, source, query, 1, precision).await {
             Ok(results) => results
                 .into_iter()
                 .take(max_results)
@@ -201,6 +204,9 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     if sources.is_empty() {
         return Ok(Vec::new());
     }
+let precision = crate::api::config_api::get_config("precisionSearch")
+        .map(|v| v == "true")
+        .unwrap_or(false);
 
     // 限流并发 + 单源超时 + 异常隔离（对齐原版 SearchModel 线程池语义），
     // 逐源完成后累积结果；失败源跳过不阻断整体。
@@ -222,7 +228,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
             move |source: BookSource| {
                 let client = client.clone();
                 let keyword = keyword_owned.clone();
-                async move { search_single_source(&client, &source, &keyword, 1).await }
+async move { search_single_source(&client, &source, &keyword, 1, precision).await }
             },
             |outcome| {
                 // 7.4：累积前复检会话未取消且仍为当前（防旧会话批次进入累积）
@@ -281,7 +287,7 @@ pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> Legad
     let hit = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         for source in sources {
-            let items = match search_single_source(&client, &source, &name_owned, 1).await {
+let items = match search_single_source(&client, &source, &name_owned, 1, false).await {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!(
@@ -330,6 +336,9 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
         clear_current_session_if_same(&session); // 7.5：空源早退亦清理会话
         return Ok("[]".to_string());
     }
+let precision = crate::api::config_api::get_config("precisionSearch")
+        .map(|v| v == "true")
+        .unwrap_or(false);
 
     // 委托统一单源执行器（drive_source_batches + search_single_source），与
     // search_books / run_multi_stream 共享同一并发/超时/解析语义：有界并发
@@ -352,7 +361,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
             move |source: BookSource| {
                 let client = client.clone();
                 let query = query_owned.clone();
-                async move { search_single_source(&client, &source, &query, 1).await }
+async move { search_single_source(&client, &source, &query, 1, precision).await }
             },
             |outcome| {
                 // 7.4：累积前复检会话未取消且仍为当前（防旧会话批次进入累积）
@@ -555,6 +564,9 @@ pub async fn run_multi_stream<F>(
     let mut has_more_acc = false;
     // 7.4：on_source 复检用（会话身份），避免旧会话批次进入持久化/流
     let session_cb = Arc::clone(&session);
+let precision = crate::api::config_api::get_config("precisionSearch")
+        .map(|v| v == "true")
+        .unwrap_or(false);
 
     drive_source_batches(
         sources,
@@ -566,7 +578,7 @@ pub async fn run_multi_stream<F>(
             let client = client.clone();
             let query = query.clone();
             // 页码透传（批次B G-B-01）：同关键词翻页递增、新关键词重置为 1
-            async move { search_single_source(&client, &source, &query, page).await }
+async move { search_single_source(&client, &source, &query, page, precision).await }
         },
         |outcome| {
             // 7.4：序列化/持久化/sink.add 前复检会话未取消且仍为当前（防旧会话残留写入）
@@ -1011,6 +1023,7 @@ pub(crate) async fn search_single_source(
     source: &BookSource,
     keyword: &str,
     page: i32,
+    precision: bool,
 ) -> LegadoResult<Vec<SearchResult>> {
     // G4：书源 concurrentRate 固定窗口节流（对齐 Kotlin ConcurrentRateLimiter）
     crate::api::source_rate_limit::acquire_source_rate_limit(source).await;
@@ -1161,10 +1174,24 @@ fn build_search_url(template: &str, keyword: &str, source: &BookSource) -> Analy
 /// 解析搜索响应（HTML 或 JSON）
 ///
 /// 使用书源的 `rule_search` 规则解析响应体为结构化搜索结果。
+/// [P3-6 阶段三] 测试/默认入口:precision 关闭(全通过)
 fn parse_search_response(
     body: &str,
     base_url: &str,
     source: &BookSource,
+) -> LegadoResult<Vec<SearchResult>> {
+    parse_search_response_ex(body, base_url, source, false, "")
+}
+
+/// [P3-6 阶段三 | SearchModel.kt:106-113 + BookList.kt:236-238] 带 precision filter 的解析:
+/// precision 开启时,解析期逐条按 name/author/kind contains(key) 过滤(对齐原版
+/// SearchModel 传入 WebBook 的 filter 闭包与 getSearchItem/getInfoItem 的调用点)。
+fn parse_search_response_ex(
+    body: &str,
+    base_url: &str,
+    source: &BookSource,
+    precision: bool,
+    key: &str,
 ) -> LegadoResult<Vec<SearchResult>> {
     // [S0-E | BookList.kt:62-81] bookUrlPattern 详情页直连（原版在列表解析前判定，
     // baseUrl = 重定向后最终 URL 整串全匹配）：命中则按详情页规则解析单条结果。
@@ -1190,7 +1217,12 @@ fn parse_search_response(
         return Ok(if info.name.is_empty() {
             vec![]
         } else {
-            vec![web_info_to_search_result(info, source)]
+            let item = web_info_to_search_result(info, source);
+            // [P3-6 阶段三 | BookList.kt:184-190] getInfoItem 同样受 filter 约束
+            if !precision_filter_match(precision, key, &item.book_name, &item.author, item.kind.as_deref()) {
+                return Ok(vec![]);
+            }
+            vec![item]
         });
     }
 
@@ -1245,7 +1277,12 @@ fn parse_search_response(
         return Ok(if info.name.is_empty() {
             vec![]
         } else {
-            vec![web_info_to_search_result(info, source)]
+            let item = web_info_to_search_result(info, source);
+            // [P3-6 阶段三 | BookList.kt:184-190] getInfoItem 同样受 filter 约束
+            if !precision_filter_match(precision, key, &item.book_name, &item.author, item.kind.as_deref()) {
+                return Ok(vec![]);
+            }
+            vec![item]
         });
     }
 
@@ -1306,6 +1343,12 @@ fn parse_search_response(
         } else {
             Some(field_str(2).replace('\n', ","))
         };
+
+        // [P3-6 阶段三 | BookList.kt:236-238] precision filter:原版在 getSearchItem
+        // 中以 (name, author, kind) 调用 filter,不命中即丢弃该条(precision 关闭时全通过)。
+        if !precision_filter_match(precision, key, &book_name, &author, kind.as_deref()) {
+            continue;
+        }
 
         // 提取字数并格式化（对齐原版 wordCountFormat）
         let word_count = word_count_format(&field_str(3));
@@ -1375,6 +1418,22 @@ fn parse_search_response(
 
     Ok(results)
 }
+
+/// [P3-6 阶段三 | SearchModel.kt:106-113] 原版 precision filter 谓词:
+/// `!precision || name.contains(key) || author.contains(key) || kind?.contains(key) == true`
+fn precision_filter_match(
+    precision: bool,
+    key: &str,
+    name: &str,
+    author: &str,
+    kind: Option<&str>,
+) -> bool {
+    !precision
+        || name.contains(key)
+        || author.contains(key)
+        || kind.map(|k| k.contains(key)).unwrap_or(false)
+}
+
 
 /// [S0-E] 详情页解析结果 → 搜索项（bookUrlPattern 直连 / 空列表回退共用，
 /// 对齐原版 `Book.getInfoItem` 产出 SearchBook 的字段映射）
@@ -3761,7 +3820,7 @@ mod tests {
             let outcome = crate::runtime::block_on(async {
                 tokio::time::timeout(
                     SEARCH_SOURCE_TIMEOUT,
-                    search_single_source(&client, &src, kw, 1),
+                    search_single_source(&client, &src, kw, 1, false),
                 )
                 .await
             });
@@ -3926,7 +3985,7 @@ mod tests {
             let outcome = crate::runtime::block_on(async {
                 tokio::time::timeout(
                     SEARCH_SOURCE_TIMEOUT,
-                    search_single_source(&client, &src, kw, 1),
+                    search_single_source(&client, &src, kw, 1, false),
                 )
                 .await
             });
@@ -4202,5 +4261,71 @@ mod tests {
                 Err(e) => println!("REL\t{}\terr={e}", src.book_source_name),
             }
         }
+    }
+}
+
+
+/// [P3-6 阶段三] precision filter(解析期逐条过滤)测试
+#[cfg(test)]
+mod p3f_tests {
+    use super::*;
+    use legado_core::models::rule::SearchRule;
+
+    fn parse_with(precision: bool, key: &str) -> Vec<SearchResult> {
+        let html = r#"<html><body>
+            <div class="book-item"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span><span class="kind">玄幻</span></div>
+            <div class="book-item"><a class="name" href="/b/2">凡人修仙传</a><span class="author">忘语</span><span class="kind">仙侠</span></div>
+        </body></html>"#;
+        let source = BookSource {
+            book_source_url: "https://p3f.example.com".to_string(),
+            book_source_name: "P3F-源".to_string(),
+            rule_search: Some(SearchRule {
+                book_list: Some(".book-item".to_string()),
+                name: Some(".name".to_string()),
+                author: Some(".author".to_string()),
+                kind: Some(".kind".to_string()),
+                book_url: Some(".name@href".to_string()),
+                ..Default::default()
+            }),
+            ..BookSource::default()
+        };
+        parse_search_response_ex(html, "https://p3f.example.com/s?kw=x", &source, precision, key)
+            .unwrap()
+    }
+
+    /// SearchModel.kt:106-113:precision 开启 → 仅保留 name/author/kind contains(key) 的条目
+    #[test]
+    fn test_p3f_precision_filters_non_matching() {
+        let results = parse_with(true, "斗破");
+        assert_eq!(results.len(), 1, "仅保留 name 含关键词的条目");
+        assert_eq!(results[0].book_name, "斗破苍穹");
+    }
+
+    #[test]
+    fn test_p3f_precision_off_keeps_all() {
+        let results = parse_with(false, "斗破");
+        assert_eq!(results.len(), 2, "precision 关闭全通过");
+    }
+
+    /// author 或 kind 命中同样保留(原版 filter 三字段或语义)
+    #[test]
+    fn test_p3f_precision_author_match_kept() {
+        let results = parse_with(true, "忘语");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].book_name, "凡人修仙传");
+    }
+
+    #[test]
+    fn test_p3f_precision_kind_match_kept() {
+        let results = parse_with(true, "仙侠");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].book_name, "凡人修仙传");
+    }
+
+    /// 无任何字段命中 → 全部丢弃
+    #[test]
+    fn test_p3f_precision_no_match_drops_all() {
+        let results = parse_with(true, "雪中悍刀行");
+        assert!(results.is_empty());
     }
 }
