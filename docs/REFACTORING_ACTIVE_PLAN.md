@@ -178,7 +178,8 @@
 **进度更新（2026-08-29）**：按 `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §8 执行。
 - ✅ **已完成**：离线原版响应夹具（S0-B，`511a0bb52`，七场景+主执行器消费测试）；统一单源执行器收敛（S0-E，`4330acaf9`，loginCheckJs/pattern 直连/空列表回退/bookUrl 回退/去重键/非 2xx 六项对齐）；会话级取消收尾（P0-3，`c5f82a854`+`91e40dfad`，双机实机 e2e 7/7，verdict 归档）；G4 修复（`bb521c366`）。
 - ⛔ **未完成（标记）**：**S0-C 原版端终态证据采集**——5558(LDPlayer) 环境阻断（adb reverse 数分钟内静默僵死、设备→主机直达被防火墙拦截、原版 release 无 run-as、debug 变体缺 mavenLocal 构件），已三轮攻坚未闭环；续作三路径与实测窗口数据见该计划 §8.8。S0-C 未闭合前 P0-2 S0 与 P0-1.4 保持 DEFERRED。
-- ▶️ **下一阶段（本批次）**：过滤/聚合/持久化一致性（原版 precision filter 传入逐源解析 vs 我方事后过滤的语义对齐等），见该计划与本次实施记录。
+- ✅ **阶段三已完成（2026-08-29）**：过滤/持久化一致性——precision filter 解析期对齐原版（`837516a08`，precision_filter_match 三字段或语义 + parse_search_response_ex，应用点=列表循环/pattern 直连/空列表回退，FFI 签名零变更经配置读取，p3f_tests 5 项；workspace 2479/0）。聚合一致性此前已由 fix34 批次对齐。
+- ▶️ **剩余**：仅性能剖析（S0-D）——关闭条件依赖双包同基线分段计时，受 S0-C 原版端环境阻断约束，待环境问题解决后执行（分段计时探针 LEGADO_SEARCH_PHASE_TIMING 已存在）。
 
 
 ## 四、文档治理

@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file.
 - [Docs] 5c56338d9——计划文档 §8 续作台账 + 实机 e2e 双机 verdict/服务器日志证据归档 docs/evidence/search_parity_20260829/;系统性风险登记:FFI 未变更时 .so 陈旧不可被 FRB hash 校验发现
 - [Tool] e2e_p03_cancel_research.py(实机取消重搜 e2e,双机 7/7)+ s0c_server.py/s0c_compare.py(S0-C 双包对比工具,原版端自动化待续)
 
+- [Rust] P3-6 阶段三 `837516a08`——precision filter 解析期对齐原版（SearchModel.kt:106-113 三字段或语义,列表/pattern 直连/空列表回退三处应用点,FFI 签名零变更经配置读取,p3f_tests 5 项）；持久化与 hasMore 语义随解析期过滤自动对齐。workspace 2479 passed/0 failed、QuickJS lib 393/0
+- [Docs] 台账标记 S0-C 原版端为唯一未完成项（环境阻断,续作路径 §8.8）+ P3-6 阶段三完成登记（`939bb5f70`）
 - Contributor: Qoder + Bridge
 
 ## [2.0.122] - 2026-08-28
