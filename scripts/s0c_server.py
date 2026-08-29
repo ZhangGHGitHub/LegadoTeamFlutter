@@ -60,16 +60,18 @@ HTML_EMPTY = b'<html><body><p>not found</p></body></html>'
 DELAY = {i: 1.0 * (2 * i + 2) for i in range(7)}  # 2,4,6,8,10,12,14
 
 
+URL_HOST = '127.0.0.1'
+
 def build_sources(port: int) -> list[dict]:
     """7 个书源;127.0.0.1 形式配合 adb reverse,双包同构。"""
     def s(i, path, **extra):
         base = {
-            'bookSourceUrl': f'http://127.0.0.1:{port}/s0c/home/{i}',
+            'bookSourceUrl': f'http://{URL_HOST}:{port}/s0c/home/{i}',
             'bookSourceName': f'S0C-S{i}',
             'bookSourceGroup': 'S0C',
             'bookSourceType': 0,
             'enabled': True,
-            'searchUrl': f'http://127.0.0.1:{port}/s0c/s{i}/{path}?kw={{{{key}}}}',
+            'searchUrl': f'http://{URL_HOST}:{port}/s0c/s{i}/{path}?kw={{{{key}}}}',
             'ruleSearch': {
                 'bookList': '.book-item',
                 'name': '.name',
@@ -140,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
                 body, ctype = html_list('书甲', '作者甲', 10), 'text/html'
             elif i == 1:
                 if seg[3] == 'start':
-                    loc = f'http://127.0.0.1:{PORT}/s0c/s1/final?kw={kw}'
+                    loc = f'http://{URL_HOST}:{PORT}/s0c/s1/final?kw={kw}'
                     self.send_response(302)
                     self.send_header('Location', loc)
                     self.send_header('Content-Length', '0')
@@ -201,8 +203,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', type=int, default=8090)
     ap.add_argument('--log', required=True)
+    ap.add_argument('--url-host', default='127.0.0.1')
     args = ap.parse_args()
     PORT = args.port
+    globals()['URL_HOST'] = args.url_host
     LOG_FP = Path(args.log).open('w', encoding='utf-8')
     srv = Server(('0.0.0.0', PORT), Handler)
     log_event('server_start', port=PORT, mode='s0c')

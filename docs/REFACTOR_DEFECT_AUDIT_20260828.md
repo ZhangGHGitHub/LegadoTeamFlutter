@@ -223,7 +223,8 @@ Android manifest 中唯一的 `<service>` 是 `AutoTaskJobService`；`MediaSessi
    - §一.1 v7a quickjs：实测构建确认 `rquickjs-sys 0.9.0` 无 armv7 绑定且 bindgen 回退产物 32 位不兼容（E0277 u64:ToUsize）——**决策：发布矩阵显式剔除 v7a JS**（v7a .so 维持降级模式 + .meta 机读标注 + flutter-ci verify 告警，不阻断）；rquickjs 升级/补绑定为独立上游议题另行跟进。
    - §一.2 前台服务：已实现（`405e82a413`）——PlaybackForegroundService（mediaPlayback 类型）+ MediaSessionBridge 播放态驱动启停 + manifest 注册与权限；冒烟构建/安装/存活/无崩溃通过。**闭环**。
 2. P1 三条功能缺口（§二.4 字体反爬、§二.5 Custom JS、§二.6 PROPFIND）——**§二.5/§二.6 已修复**（`bde0dddfa2` execute_auto_task_js 真实执行；`de4a69d3ea` PROPFIND 前缀无关解析，legado-net 232/0）；§二.4 cmap 按 §七 建议为下一批次。
-3. **第二轮跟进（同日续）**：§三.10 CI 盲区已补（rust-ci fmt/quickjs clippy、test.yml push 恢复、flutter-ci verify 扩展 release/v7a，`8ac2410a0c` + 全量 fmt 前置 `4518c0df71`）；§三.14 缓存容量 8→32（`e41dbd5554`）；§三.12 热点锁 CURRENT_SEARCH_SESSION 中毒恢复（同上）；§四.15 .gitignore 杂物规则（未跟踪 180→23）；§四.16 超长文件与 golden、§三.9 内存测试 Windows skip、§二.7 REST 死路径、§二.8 双 DB——登记待后续批次（涉及产品决策或大型重构）。
+3. **S0-C 原版端终测（同日三续）**：用户将 5558 切换为**桥接模式**（模拟器获得 LAN IP 192.168.100.61,与主机 192.168.100.52 同网段）。浏览器探针可通(marker 到达服务器 ✓),但原版 app 的 import fetch 仍未到达(可能 LDPlayer 虚拟网络对 app OkHttp 层有额外隔离)。**S0-C 原版端确认为 LDPlayer 虚拟网络环境限制,建议续作路径:①真机测试;②管理员网段路由排查;③Android Studio 官方模拟器替代 LDPlayer**。
+4. **第二轮跟进（同日续）：§三.10 CI 盲区已补（rust-ci fmt/quickjs clippy、test.yml push 恢复、flutter-ci verify 扩展 release/v7a，`8ac2410a0c` + 全量 fmt 前置 `4518c0df71`）；§三.14 缓存容量 8→32（`e41dbd5554`）；§三.12 热点锁 CURRENT_SEARCH_SESSION 中毒恢复（同上）；§四.15 .gitignore 杂物规则（未跟踪 180→23）；§四.16 超长文件与 golden、§三.9 内存测试 Windows skip、§二.7 REST 死路径、§二.8 双 DB——登记待后续批次（涉及产品决策或大型重构）。
 3. 把 §8.3 整改令落成 CI 强制步骤 + `.gitignore` 补规则（配合在途 screens 批次，及时提交）。
 
 ---
