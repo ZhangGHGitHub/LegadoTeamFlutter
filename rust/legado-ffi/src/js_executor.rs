@@ -1030,3 +1030,49 @@ mod tests {
         assert!(url.contains("p=2"), "page=2 应注入 JS 全局: {url}");
     }
 }
+
+
+/// [体检 §二.5 | P3-6] AutoTask Custom JS 真实执行入口
+///
+/// 对齐原版 `AutoTaskRunner`（`AutoTask.buildSource(task)` → `source.evalJS(script)`）:
+/// 经 QuickJS 引擎（带引擎缓存与 Response/Jsoup 基础桥）真实求值并返回
+/// 完成值/错误,取代"验证脚本非空即视为成功"的静默假成功。
+/// 绑定面:基础桥(无书源 java/cookie 绑定——原版 AutoTask.buildSource
+/// 亦为合成源,重度绑定场景待书源上下文注入后扩展)。
+use legado_parser::JsExecutor;
+#[cfg(feature = "quickjs")]
+pub fn execute_auto_task_js(js_code: &str) -> Result<String, String> {
+    quickjs_impl::QuickJsExecutor::new("auto_task").execute_js(js_code)
+}
+
+/// 非 quickjs 构建:引擎不可用,如实报错(不再静默假成功)
+#[cfg(not(feature = "quickjs"))]
+pub fn execute_auto_task_js(js_code: &str) -> Result<String, String> {
+    Err("Custom JS 执行需要 quickjs feature(当前构建未启用 JS 引擎)".to_string())
+}
+
+#[cfg(test)]
+#[cfg(feature = "quickjs")]
+mod auto_task_js_tests {
+    use super::*;
+
+    /// 真实执行:完成值返回
+    #[test]
+    fn test_auto_task_js_evaluates() {
+        let r = execute_auto_task_js("1 + 1").unwrap();
+        assert!(r.contains('2'), "1+1 应返回 2,实际: {r}");
+    }
+
+    /// 真实执行:脚本错误如实上抛(不再假成功)
+    #[test]
+    fn test_auto_task_js_error_propagates() {
+        assert!(execute_auto_task_js("throw new Error('boom')").is_err());
+    }
+
+    /// 真实执行:非空字符串返回
+    #[test]
+    fn test_auto_task_js_string_result() {
+        let r = execute_auto_task_js("'result-ok'").unwrap();
+        assert!(r.contains("result-ok"));
+    }
+}

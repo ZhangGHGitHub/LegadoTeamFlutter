@@ -6,6 +6,7 @@
 //! 对应 Kotlin 原版 `AutoTask` / `AutoTaskRunner` / `AutoTaskSchedulePolicy`。
 
 use legado_core::auto_task::{
+    TaskAction,
     build_book_update_task as core_build_book_update_task,
     can_refresh_book_toc as core_can_refresh_book_toc,
     find_book_update_task as core_find_book_update_task, normalize_script as core_normalize_script,
@@ -77,6 +78,31 @@ pub fn execute_task(
 ) -> LegadoResult<legado_core::auto_task::TaskResult> {
     let protocol = TaskProtocol::from_json(protocol_json)
         .map_err(legado_core::LegadoError::Parser)?;
+    // [体检 §二.5 | P3-6] Custom JS 真实执行:对齐原版 AutoTaskRunner
+    // （AutoTask.buildSource(task) → source.evalJS(script))——经 QuickJS 引擎
+    // 求值并返回真实结果/错误,不再"验证脚本非空即视为成功"。
+    if matches!(protocol.action, TaskAction::Custom(_)) {
+        let js = match &protocol.action {
+            TaskAction::Custom(js) => js.clone(),
+            _ => unreachable!(),
+        };
+        let started = std::time::Instant::now();
+        let (success, message) = match crate::js_executor::execute_auto_task_js(&js) {
+            Ok(v) => (true, v),
+            Err(e) => (false, e),
+        };
+        let duration_ms = started.elapsed().as_millis() as u64;
+        let details = Some(format!("[{}] Elapsed: {}ms
+- {}",
+            if success { "OK" } else { "FAIL" }, duration_ms, message));
+        return Ok(legado_core::auto_task::TaskResult {
+            task_id: task_id.map(|s| s.to_string()).unwrap_or_default(),
+            success,
+            message,
+            duration_ms,
+            details,
+        });
+    }
     Ok(match task_id {
         Some(id) => AutoTaskRunner::execute_with_id(&protocol, id),
         None => AutoTaskRunner::execute(&protocol),
