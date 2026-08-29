@@ -1,13 +1,15 @@
 name: Test Build
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - '**'
-      - '!**/ISSUE_TEMPLATE/**'
-      - '!**/modules/web/**'
+  # [2026-08-30] 安卓源码不上传 GitHub：仓库内 app/ 为冻结快照，停用 push 触发的安卓 Test Build，
+  # 避免 Flutter/Rust 推送连带重型安卓构建。恢复时取消注释并删除本说明。
+  # push:
+  #   branches:
+  #     - master
+  #   paths:
+  #     - '**'
+  #     - '!**/ISSUE_TEMPLATE/**'
+  #     - '!**/modules/web/**'
   pull_request:
     paths-ignore:
       - '**/modules/web/**'
