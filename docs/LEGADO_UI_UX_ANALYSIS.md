@@ -84,3 +84,50 @@
 效果图位于 docs/ui_mockups/，文件名与清单一一对应。
 
 — Codex + UI，2026-08-29
+
+## 目录索引
+
+1. 源码证据与视觉基线
+2. 主要界面清单
+3. 界面功能与布局分析
+4. M3 设计落地建议
+5. 📐 精修补充
+   - M3 Design Token：LEGADO_M3_TOKEN_SPEC.md
+   - 状态与空态：LEGADO_UI_STATE_SPEC.md
+   - 组件映射：LEGADO_M3_COMPONENT_MAPPING.md
+   - 微动效：LEGADO_UI_MOTION_SPEC.md
+   - 无障碍：LEGADO_UI_ACCESSIBILITY_SPEC.md
+
+## 📐 精修补充
+
+本节汇总精修交付物，原有界面分析内容保持不变。所有补充均以 app/src/main 为源码范围；M3 推荐值与源码推断在各专项文档中逐项标注。
+
+### 5.1 M3 Design Token 完整化
+
+完整日间/夜间 ColorScheme、Type Scale、spacing、corner、elevation 及组件映射见 [LEGADO_M3_TOKEN_SPEC.md](LEGADO_M3_TOKEN_SPEC.md)。源码依据：app/src/main/res/values/colors.xml、colors_material_design.xml、dimens.xml、styles.xml；M3 依据：Material 3 Color Roles、Type Scale、Shape/Elevation 规范。
+
+### 5.2 状态与空态
+
+10 个界面的空态、加载态、错误态、边界态、交互反馈见 [LEGADO_UI_STATE_SPEC.md](LEGADO_UI_STATE_SPEC.md)。源码依据：对应 fragment/activity/item XML、RefreshProgressBar、RecyclerView、ReadView；M3 依据：Loading/Progress、Snackbar、Banner、overscroll、state-layer 推荐。
+
+### 5.3 组件映射
+
+逐元素 Android 控件到 M3 组件的映射见 [LEGADO_M3_COMPONENT_MAPPING.md](LEGADO_M3_COMPONENT_MAPPING.md)。源码依据：app/src/main/res/layout、res/menu、res/values 和 app/src/main/java/io/legado/app/ui；M3 依据：TopAppBar、NavigationBar、Card、SearchBar、Chip、Button、FAB、ListItem、Dialog、BottomSheet 等组件规范。
+
+### 5.4 微动效
+
+Tab 指示器、书架布局切换、搜索展开/收起、阅读工具栏、翻页、FAB、卡片 ripple 的时长、缓动、触发和可中断性见 [LEGADO_UI_MOTION_SPEC.md](LEGADO_UI_MOTION_SPEC.md)。源码依据：app/src/main/res/anim、animator，以及 ReadBookActivity.kt、ReadView.kt、PageDelegate.kt、MainActivity.kt；M3 依据：Material Motion standard/emphasized easing、State Layer、reduced motion。
+
+### 5.5 无障碍清单
+
+颜色对比度、48dp 触摸目标、contentDescription、200% 字体缩放和 TalkBack/键盘焦点顺序见 [LEGADO_UI_ACCESSIBILITY_SPEC.md](LEGADO_UI_ACCESSIBILITY_SPEC.md)。源码依据：布局控件尺寸、contentDescription、clickable/focusable、ReadView 自绘节点；规范依据：WCAG 2.1 AA 与 Android Accessibility 指南。
+
+### 5.6 精修项验收状态
+
+| 精修项 | 状态 | 交付物 | 源码依据标注 | M3 依据标注 |
+|---|---|---|---|---|
+| M3 Design Token | 已完成 | LEGADO_M3_TOKEN_SPEC.md | 已标注 | 已标注 |
+| 状态与空态 | 已完成 | LEGADO_UI_STATE_SPEC.md | 已标注 | 已标注 |
+| 组件映射表 | 已完成 | LEGADO_M3_COMPONENT_MAPPING.md | 已标注 | 已标注 |
+| 微动效规格 | 已完成 | LEGADO_UI_MOTION_SPEC.md | 已标注 | 已标注 |
+| 无障碍清单 | 已完成 | LEGADO_UI_ACCESSIBILITY_SPEC.md | 已标注 | WCAG/Android 已标注 |
