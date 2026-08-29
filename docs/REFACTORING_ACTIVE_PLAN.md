@@ -182,7 +182,7 @@
 - ✅ **上游安卓源码同步完成（2026-08-29）**：upstream(LegadoTeam/legado) 506 提交(#397→#1072,v3.26.082823,cronet 152.0.7977.54) 已合入集成分支 `integration/upstream-3.26.082823`（合并提交 `6314f5b215`,161 冲突全部取上游版——本地安卓侧=#543 纯快照无本地修改需保留,README 取双轨版）。门禁：`assembleRelease -Pksp.incremental=false` BUILD SUCCESSFUL（R8 处理新 htmlunit MethodHandle;debug 变体 D8 在 minSdk 23 下无法 dex 新 htmlunit,上游 CI 亦仅构建 release）;`testAppReleaseUnitTest` 1809 中 1807 通过（2 个符号链接测试为 Windows 环境差异,上游 CI 为 Linux）;flutter_legado/rust 零触及。**合回 master 待 UI 轨提交其 49 个未提交文件后执行**（当前 checkout/merge 均会覆盖其 WIP,按协作规则避让）。
 - ✅ **体检缺陷修复跟进（2026-08-29 续）**：REFACTOR_DEFECT_AUDIT 18 项中已闭环 9 项（§一.2 前台服务 `405e82a413`、§二.5 Custom JS `bde0dddfa2`、§二.6 PROPFIND `de4a69d3ea`、§三.10 CI 补强 `8ac2410a0c`、§三.12 热点锁、§三.14 缓存容量、§四.15 .gitignore、§五 口径 2 项）+ 上游 506 提交同步（集成分支待 UI 轨 WIP 提交后合回 master）。**仍开放**：§一.1 v7a（决策已登记：发布矩阵剔除 v7a JS）、§二.4 cmap（下一批次）、§二.7/§二.8（REST 通道产品决策）、§三.9、§四.16、S0-C 原版端（环境）、S0-D。
 ✅ **体检缺陷修复跟进（2026-08-29 续2）**：§一.1 v7a 决策=保留降级 v7a（原版支持 ARM32,剔除会断装;后续可评估 boa 补齐）;§二.7 REST 删除=对齐原版(原版无 REST 层,数据直查 DB;REST 属新增功能违反重构红线,整批删除约 150 行);§三.10 CI 补强已提交。
-- ✅ **体检修复跟进决策（2026-08-29 用户确认）**：v7a=保留降级(原版支持 ARM32,不剔除);§二.7 REST 死路径=整批删除(原版无 REST 层,红线对齐);§一.1 v7a=保留降级(原版支持 ARM32);S0-C 原版端=LDPlayer 桥接模式浏览器可达但 app OkHttp 仍隔离,需真机/AS 模拟器。
+- ✅ **体检修复跟进决策（2026-08-29 用户确认）**：v7a=保留降级(原版支持 ARM32,不剔除);§二.7 REST 死路径=整批删除(原版无 REST 层,红线对齐);§一.1 v7a=保留降级(原版支持 ARM32);S0-C 原版端=LDPlayer 桥接模式浏览器可达但搜索不调度夹具源(千真实源阻塞遍历),需 debug 原版 run-as 或禁用真实源。
 - ▶️ **剩余**：仅性能剖析（S0-D）——关闭条件依赖双包同基线分段计时，受 S0-C 原版端环境阻断约束，待环境问题解决后执行（分段计时探针 LEGADO_SEARCH_PHASE_TIMING 已存在）。
 
 

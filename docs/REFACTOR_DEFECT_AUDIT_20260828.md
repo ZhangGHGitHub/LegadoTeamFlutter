@@ -224,6 +224,7 @@ Android manifest 中唯一的 `<service>` 是 `AutoTaskJobService`；`MediaSessi
    - §一.2 前台服务：已实现（`405e82a413`）——PlaybackForegroundService（mediaPlayback 类型）+ MediaSessionBridge 播放态驱动启停 + manifest 注册与权限；冒烟构建/安装/存活/无崩溃通过。**闭环**。
 2. P1 三条功能缺口（§二.4 字体反爬、§二.5 Custom JS、§二.6 PROPFIND）——**§二.5/§二.6 已修复**（`bde0dddfa2` execute_auto_task_js 真实执行；`de4a69d3ea` PROPFIND 前缀无关解析，legado-net 232/0）；§二.4 cmap 按 §七 建议为下一批次。
 3. **S0-C 原版端终测（同日三续）**：用户将 5558 切换为**桥接模式**（模拟器获得 LAN IP 192.168.100.61,与主机 192.168.100.52 同网段）。浏览器探针可通(marker 到达服务器 ✓),但原版 app 的 import fetch 仍未到达(可能 LDPlayer 虚拟网络对 app OkHttp 层有额外隔离)。**S0-C 原版端确认为 LDPlayer 虚拟网络环境限制,建议续作路径:①真机测试;②管理员网段路由排查;③Android Studio 官方模拟器替代 LDPlayer**。
+4. **S0-C 原版端桥接模式终测（同日四续）**：桥接模式下浏览器探针可达 ✓,原版端导入探针可达 ✓(sources_json 落日志),但原版端**搜索从未调度夹具源请求**——根因:未圈范围搜索需遍历约千真实源(多数超时),夹具 7 源排列表尾部,遍历耗时远超 UI 自动化采集窗口。**结论:S0-C 原版端在 LDPlayer + 原版 release + 盲操作约束下无法自动化闭环。** 续作必需:①构建 debug 原版(需补 mavenLocal 构件)以 run-as 直导 DB;②或禁用全部真实源仅保留夹具源后重搜;③或使用 Android Studio 官方模拟器(支持 10.0.2.2 主机别名)。
 4. **第二轮跟进（同日续）：§三.10 CI 盲区已补（rust-ci fmt/quickjs clippy、test.yml push 恢复、flutter-ci verify 扩展 release/v7a，`8ac2410a0c` + 全量 fmt 前置 `4518c0df71`）；§三.14 缓存容量 8→32（`e41dbd5554`）；§三.12 热点锁 CURRENT_SEARCH_SESSION 中毒恢复（同上）；§四.15 .gitignore 杂物规则（未跟踪 180→23）；§四.16 超长文件与 golden、§三.9 内存测试 Windows skip、§二.7 REST 死路径、§二.8 双 DB——登记待后续批次（涉及产品决策或大型重构）。
 3. 把 §8.3 整改令落成 CI 强制步骤 + `.gitignore` 补规则（配合在途 screens 批次，及时提交）。
 
