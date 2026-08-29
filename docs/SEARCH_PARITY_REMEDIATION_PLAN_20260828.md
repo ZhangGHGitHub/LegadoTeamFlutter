@@ -362,3 +362,4 @@ search_single_source/parse_search_response 对齐原版：loginCheckJs（WebBook
 4. **本轮最终状态**：原版端搜索可发起并运行（真实源结果可见,UI dump 证据）,但因 reverse 僵死与多次状态切换叠加,**夹具 7 源的逐源请求与 5 结果的终态采集未能在同一轮完成**。S0-C 原版端保持未闭合;续作按本节 1-3 的序列执行（先重挂 reverse 并立即提交,全程用 content-desc 定位,避免坐标硬编码）。
 
 **编写者**：Qoder + Bridge ｜ 2026-08-29
+5. **实测补充（同日）**：adb server 重启后 reverse 可短暂恢复（设备侧监听 :1F9B 经 /proc/net/tcp 确认）,但窗口仅约 1-2 分钟即再次僵死;原版端「导航+输入+提交」全程约 30-60s,理论可入窗,实测仍偶发超窗。续作建议:①脚本化全程压入单窗口并预留重试;②或改用模拟器 NAT 直连（主机 0.0.0.0 绑定已就绪,但 Windows 防火墙对远端网段入站需管理员放行 8095 端口）;③或为原版模块补齐 mavenLocal 的 htmlunit-core-js:5.3.0-legado.3 构件后构建 debug 变体（run-as 可直接导库,彻底绕开 UI 自动化）。
