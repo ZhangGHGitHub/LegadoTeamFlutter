@@ -659,8 +659,8 @@ pub(crate) struct SourceBatchOutcome {
 /// - **暂停**：门控发生在派发下一个源之前（调度层），未请求源不占用任何并发许可；已派发任务继续
 ///   完成（软挂起，对齐原版 SearchModel workingState 调度前门控）。
 /// - **超时**：单源搜索超过 `per_source_timeout` 判为超时错误。
-/// 取消等待：取消标志置位后立即返回（轮询 50ms）。
-/// 用于 select! 中断阻塞的 set.next()，使取消/会话替换能及时唤醒收集循环并 abort 在飞任务。
+// 取消等待——取消标志置位后立即返回（轮询 50ms），
+// 用于 select! 中断阻塞的 set.next()，使取消/会话替换能及时唤醒收集循环并 abort 在飞任务。
 async fn wait_cancelled(cancel: &Arc<AtomicBool>) {
     loop {
         if cancel.load(Ordering::SeqCst) {
@@ -1161,15 +1161,16 @@ pub(crate) async fn search_single_source(
 
     // [S0-E | WebBook.kt:74-98] loginCheckJs：成功响应先 eval；未登录 →
     // errResponse(500) 二次 eval；仍需登录 → LoginRequired 上抛（原版错误吞吐：
-    // 单源失败静默不中断其他源）。JS 环境不兼容降级放行（与 web_book 路径一致）。
+    //   单源失败静默不中断其他源）。JS 环境不兼容降级放行（与 web_book 路径一致）。
     crate::api::web_book::RealBookSourceFetcher::execute_login_check(
         source, &body, &final_url, resp_code,
     )?;
     // 5. 使用 AnalyzeRule 解析搜索结果（同步解析同样移入阻塞线程，
     //    灾难性正则/超大页面不会阻塞 runtime，单源超时可中断）
     let source_clone = source.clone();
+    let keyword_owned = keyword.to_string();
     let parsed = tokio::task::spawn_blocking(move || {
-        parse_search_response(&body, &final_url, &source_clone)
+        parse_search_response_ex(&body, &final_url, &source_clone, precision, &keyword_owned)
     })
     .await
     .map_err(|e| LegadoError::Internal(format!("搜索解析任务异常: {e}")))?;
@@ -1194,6 +1195,7 @@ fn build_search_url(template: &str, keyword: &str, source: &BookSource) -> Analy
     crate::js_executor::build_search_url(template, keyword, 1, &source.book_source_url)
 }
 
+#[allow(dead_code)]
 /// 解析搜索响应（HTML 或 JSON）
 ///
 /// 使用书源的 `rule_search` 规则解析响应体为结构化搜索结果。

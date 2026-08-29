@@ -115,9 +115,8 @@ pub fn search_alternative_sources(
             .await;
 
         for (_url, joined) in outcomes {
-            match joined {
-                Ok(Ok(mut items)) => all_candidates.append(&mut items),
-                _ => {}
+            if let Ok(Ok(mut items)) = joined {
+                all_candidates.append(&mut items);
             }
         }
         Ok::<_, LegadoError>(all_candidates)
