@@ -181,7 +181,11 @@ impl<'a> HighlightRuleRepository<'a> {
     /// 按书籍查找启用的规则（对齐 DAO `findEnabledByBook`）
     ///
     /// scope 为空/NULL 的规则全局生效；否则 scope 包含书名或书源名时生效。
-    pub fn find_enabled_by_book(&self, name: &str, origin: &str) -> LegadoResult<Vec<HighlightRule>> {
+    pub fn find_enabled_by_book(
+        &self,
+        name: &str,
+        origin: &str,
+    ) -> LegadoResult<Vec<HighlightRule>> {
         let mut stmt = self
             .conn
             .prepare(&format!(
@@ -364,10 +368,7 @@ mod tests {
         let repo = HighlightRuleRepository::new(db.connection());
         repo.insert(&make_rule("旧规则", "old", 0)).unwrap();
 
-        let new_rules = vec![
-            make_rule("新规则1", "n1", 0),
-            make_rule("新规则2", "n2", 1),
-        ];
+        let new_rules = vec![make_rule("新规则1", "n1", 0), make_rule("新规则2", "n2", 1)];
         repo.replace_all(&new_rules).unwrap();
         let all = repo.find_all().unwrap();
         assert_eq!(all.len(), 2);

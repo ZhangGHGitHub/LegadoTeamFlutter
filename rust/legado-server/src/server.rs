@@ -97,11 +97,7 @@ async fn mcp_token_middleware(
         .get(&header_name)
         .and_then(|v| v.to_str().ok());
     if !matches_js_source_api_token(expected.as_str(), actual) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            "MCP token invalid or missing",
-        )
-            .into_response();
+        return (StatusCode::UNAUTHORIZED, "MCP token invalid or missing").into_response();
     }
     next.run(request).await
 }

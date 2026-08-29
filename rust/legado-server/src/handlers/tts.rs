@@ -186,14 +186,12 @@ pub async fn synthesize_by_id(
     let engine_url = {
         let db = state.db.lock().await;
         let repo = HttpTtsRepository::new(db.connection());
-        let engine = repo
-            .find_by_id(req.engine_id)?
-            .ok_or_else(|| {
-                ApiError(LegadoError::Internal(format!(
-                    "TTS 引擎不存在: id={}",
-                    req.engine_id
-                )))
-            })?;
+        let engine = repo.find_by_id(req.engine_id)?.ok_or_else(|| {
+            ApiError(LegadoError::Internal(format!(
+                "TTS 引擎不存在: id={}",
+                req.engine_id
+            )))
+        })?;
         if !engine.is_enabled {
             return Err(ApiError(LegadoError::Internal(format!(
                 "TTS 引擎已禁用: id={}",

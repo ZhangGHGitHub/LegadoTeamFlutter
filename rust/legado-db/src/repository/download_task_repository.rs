@@ -133,7 +133,7 @@ impl<'a> Repository<DownloadTask> for DownloadTaskRepository<'a> {
 
 fn row_to_download_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTask> {
     use legado_core::models::DownloadStatus;
-    
+
     let status_int: i32 = row.get(5)?;
     let status = match status_int {
         0 => DownloadStatus::Pending,
@@ -166,8 +166,14 @@ fn row_to_download_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTas
         fail_count: row.get(11)?,
         last_retry_at: row.get(12)?,
         next_retry_at: row.get(13)?,
-        downloaded_bytes: row.get::<_, Option<i64>>(14).unwrap_or(Some(0)).unwrap_or(0),
-        max_retry_count: row.get::<_, Option<i64>>(15).unwrap_or(Some(3)).unwrap_or(3) as u32,
+        downloaded_bytes: row
+            .get::<_, Option<i64>>(14)
+            .unwrap_or(Some(0))
+            .unwrap_or(0),
+        max_retry_count: row
+            .get::<_, Option<i64>>(15)
+            .unwrap_or(Some(3))
+            .unwrap_or(3) as u32,
     })
 }
 

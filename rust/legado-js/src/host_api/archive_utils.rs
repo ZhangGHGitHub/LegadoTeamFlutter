@@ -183,8 +183,7 @@ pub fn unrar_file(rar_path: &str, output_path: Option<&str>) -> Result<String, S
         }
     };
 
-    fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("Failed to create output dir: {e}"))?;
+    fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create output dir: {e}"))?;
 
     // rar crate 仅支持文件路径入参；空密码表示无加密
     rar::Archive::extract_all(rar_path, &out_dir, "")
@@ -206,9 +205,8 @@ pub fn unrar_file(_rar_path: &str, _output_path: Option<&str>) -> Result<String,
 #[cfg(feature = "quickjs")]
 pub fn seven_z_entry_bytes(seven_z_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, String> {
     let cursor = std::io::Cursor::new(seven_z_bytes);
-    let mut reader =
-        sevenz_rust2::SevenZReader::new(cursor, sevenz_rust2::Password::empty())
-            .map_err(|e| format!("Invalid 7z archive: {e}"))?;
+    let mut reader = sevenz_rust2::SevenZReader::new(cursor, sevenz_rust2::Password::empty())
+        .map_err(|e| format!("Invalid 7z archive: {e}"))?;
     reader
         .read_file(entry_name)
         .map_err(|e| format!("Entry '{entry_name}' not found in 7z: {e}"))
@@ -232,17 +230,16 @@ pub fn rar_entry_bytes(rar_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, St
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let dir = std::env::temp_dir().join(format!("legado_rar_entry_{}_{}", std::process::id(), nanos));
+    let dir =
+        std::env::temp_dir().join(format!("legado_rar_entry_{}_{}", std::process::id(), nanos));
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
 
     let result = (|| -> Result<Vec<u8>, String> {
         let rar_file = dir.join("data.rar");
-        fs::write(&rar_file, rar_bytes)
-            .map_err(|e| format!("Failed to write temp RAR: {e}"))?;
+        fs::write(&rar_file, rar_bytes).map_err(|e| format!("Failed to write temp RAR: {e}"))?;
 
         let out_dir = dir.join("out");
-        fs::create_dir_all(&out_dir)
-            .map_err(|e| format!("Failed to create extract dir: {e}"))?;
+        fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create extract dir: {e}"))?;
 
         let rar_path = rar_file
             .to_str()
@@ -490,18 +487,22 @@ mod tests {
     /// 内容为 "Hello RAR World!"（由 scripts/gen_rar5_fixture.py 按 RAR5 格式规范构造）
     #[cfg(feature = "quickjs")]
     const RAR5_HELLO: &[u8] = &[
-        0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0xc5, 0x1a, 0x33, 0x32, 0x03, 0x01,
-        0x00, 0x00, 0xe4, 0xf8, 0x02, 0x48, 0x16, 0x02, 0x02, 0x10, 0x04, 0x10, 0x20, 0xec,
-        0x68, 0x08, 0x45, 0x00, 0x01, 0x09, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78,
-        0x74, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x52, 0x41, 0x52, 0x20, 0x57, 0x6f, 0x72,
-        0x6c, 0x64, 0x21, 0x19, 0xb2, 0x3a, 0x35, 0x03, 0x05, 0x00, 0x00,
+        0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0xc5, 0x1a, 0x33, 0x32, 0x03, 0x01, 0x00,
+        0x00, 0xe4, 0xf8, 0x02, 0x48, 0x16, 0x02, 0x02, 0x10, 0x04, 0x10, 0x20, 0xec, 0x68, 0x08,
+        0x45, 0x00, 0x01, 0x09, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74, 0x48, 0x65,
+        0x6c, 0x6c, 0x6f, 0x20, 0x52, 0x41, 0x52, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64, 0x21, 0x19,
+        0xb2, 0x3a, 0x35, 0x03, 0x05, 0x00, 0x00,
     ];
 
     #[test]
     #[cfg(feature = "quickjs")]
     fn test_rar_entry_bytes_rar5_basic() {
         let content = rar_entry_bytes(RAR5_HELLO, "hello.txt");
-        assert!(content.is_ok(), "rar_entry_bytes failed: {:?}", content.err());
+        assert!(
+            content.is_ok(),
+            "rar_entry_bytes failed: {:?}",
+            content.err()
+        );
         assert_eq!(content.unwrap(), b"Hello RAR World!");
 
         // 不存在的条目应报错
@@ -525,7 +526,11 @@ mod tests {
 
         // 默认输出目录：同目录下去掉扩展名的文件夹
         let result2 = unrar_file(rar_path.to_str().unwrap(), None);
-        assert!(result2.is_ok(), "unrar_file default out failed: {:?}", result2.err());
+        assert!(
+            result2.is_ok(),
+            "unrar_file default out failed: {:?}",
+            result2.err()
+        );
         assert!(Path::new(&result2.unwrap()).join("hello.txt").exists());
 
         let _ = fs::remove_dir_all(&dir);
@@ -542,7 +547,11 @@ mod tests {
 
         // 读取存在的条目
         let content = seven_z_entry_bytes(&bytes, "chapter.txt");
-        assert!(content.is_ok(), "seven_z_entry_bytes failed: {:?}", content.err());
+        assert!(
+            content.is_ok(),
+            "seven_z_entry_bytes failed: {:?}",
+            content.err()
+        );
         assert_eq!(
             String::from_utf8(content.unwrap()).unwrap(),
             "第七章 内容文本"

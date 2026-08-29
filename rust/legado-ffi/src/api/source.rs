@@ -144,7 +144,10 @@ mod tests {
 
         // 书源不存在 → Internal 错误
         let err = set_source_variable("https://task63-not-exist.example.com", "x").unwrap_err();
-        assert!(matches!(err, LegadoError::Internal(_)), "书源不存在应报 Internal");
+        assert!(
+            matches!(err, LegadoError::Internal(_)),
+            "书源不存在应报 Internal"
+        );
 
         // 清理测试书源
         delete_source(url).unwrap();

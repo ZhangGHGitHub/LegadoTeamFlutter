@@ -192,8 +192,10 @@ impl<'a> BookRepository<'a> {
         if let Some(obj) = config.as_object_mut() {
             obj.insert(
                 "playSpeed".to_string(),
-                serde_json::Value::Number(serde_json::Number::from_f64(f64::from(play_speed))
-                    .unwrap_or_else(|| serde_json::Number::from(1))),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(f64::from(play_speed))
+                        .unwrap_or_else(|| serde_json::Number::from(1)),
+                ),
             );
         }
 
@@ -316,11 +318,7 @@ impl<'a> BookRepository<'a> {
     }
 
     /// 同名同作者冲突时：迁移 chapters/相关表的 bookUrl，再替换 books 行（保目录）
-    fn remap_book_url_preserving_chapters(
-        &self,
-        old_url: &str,
-        item: &Book,
-    ) -> LegadoResult<()> {
+    fn remap_book_url_preserving_chapters(&self, old_url: &str, item: &Book) -> LegadoResult<()> {
         let new_url = &item.book_url;
         if old_url == new_url {
             // 防御：同 URL 不应进入冲突路径，直接 REPLACE 字段
@@ -589,13 +587,12 @@ mod tests {
     fn test_update_orders_batch() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = BookRepository::new(db.connection());
-        repo.insert(&make_book("https://a.com/1", "A", "作者")).unwrap();
-        repo.insert(&make_book("https://a.com/2", "B", "作者")).unwrap();
-        repo.update_orders(&[
-            ("https://a.com/1".into(), 2),
-            ("https://a.com/2".into(), 1),
-        ])
-        .unwrap();
+        repo.insert(&make_book("https://a.com/1", "A", "作者"))
+            .unwrap();
+        repo.insert(&make_book("https://a.com/2", "B", "作者"))
+            .unwrap();
+        repo.update_orders(&[("https://a.com/1".into(), 2), ("https://a.com/2".into(), 1)])
+            .unwrap();
         let b1 = repo.find_by_url("https://a.com/1").unwrap().unwrap();
         let b2 = repo.find_by_url("https://a.com/2").unwrap().unwrap();
         assert_eq!(b1.order, 2);
@@ -743,7 +740,12 @@ mod tests {
 
         repo.update_audio_play_speed("u1", 1.75).unwrap();
 
-        let rc = repo.find_by_url("u1").unwrap().unwrap().read_config.unwrap();
+        let rc = repo
+            .find_by_url("u1")
+            .unwrap()
+            .unwrap()
+            .read_config
+            .unwrap();
         assert!((rc.play_speed - 1.75).abs() < f32::EPSILON);
         assert!(rc.reverse_toc);
         assert_eq!(rc.play_mode, 2);
@@ -760,7 +762,12 @@ mod tests {
 
         repo.update_audio_play_speed("u1", 2.0).unwrap();
 
-        let rc = repo.find_by_url("u1").unwrap().unwrap().read_config.unwrap();
+        let rc = repo
+            .find_by_url("u1")
+            .unwrap()
+            .unwrap()
+            .read_config
+            .unwrap();
         assert!((rc.play_speed - 2.0).abs() < f32::EPSILON);
         assert!(rc.use_global_audio_skip);
     }
@@ -892,8 +899,14 @@ mod tests {
         repo.insert(&replacement).unwrap();
 
         assert_eq!(repo.count().unwrap(), 1);
-        assert!(repo.find_by_url("https://old.example/book").unwrap().is_none());
-        assert!(repo.find_by_url("https://new.example/book").unwrap().is_some());
+        assert!(repo
+            .find_by_url("https://old.example/book")
+            .unwrap()
+            .is_none());
+        assert!(repo
+            .find_by_url("https://new.example/book")
+            .unwrap()
+            .is_some());
         assert_eq!(
             ch_repo
                 .find_by_book_url("https://new.example/book")

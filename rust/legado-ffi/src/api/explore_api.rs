@@ -151,10 +151,8 @@ pub fn explore_fetch_books(source_json: &str, url: &str, page: i32) -> LegadoRes
             .await
             .map_err(|e| LegadoError::Internal(format!("JS 发现任务异常: {e}")))?
         })?;
-        let results = crate::api::web_book::convert_js_search_results(
-            values,
-            &source.book_source_url,
-        );
+        let results =
+            crate::api::web_book::convert_js_search_results(values, &source.book_source_url);
         return serde_json::to_string(&results).map_err(LegadoError::Serialization);
     }
 
@@ -241,8 +239,8 @@ fn extract_js_tag_body(s: &str) -> String {
 /// 执行 exploreUrl 内嵌 JS（对标 Android runScriptWithContext + evalJS + infoMap）
 #[cfg(feature = "quickjs")]
 fn eval_explore_js(js_code: &str, source: &BookSource) -> LegadoResult<String> {
-    use legado_js::JsEngine;
     use legado_js::host_api::current_source::with_current_source_tag;
+    use legado_js::JsEngine;
 
     let tag = source.book_source_url.clone();
     let engine = crate::js_executor::fresh_engine(&tag)?;
@@ -322,10 +320,7 @@ fn sync_login_cache_from_js(source_url: &str) {
 
 /// action 执行后将 JS infoMap 写回 Rust 存储
 #[cfg(feature = "quickjs")]
-fn sync_info_map_from_js(
-    guard: &legado_js::QuickJsEngine,
-    source_url: &str,
-) -> LegadoResult<()> {
+fn sync_info_map_from_js(guard: &legado_js::QuickJsEngine, source_url: &str) -> LegadoResult<()> {
     use legado_js::JsEngine;
     let sync_script = r#"
 (function() {
@@ -359,9 +354,9 @@ fn eval_explore_action_js(
     action_js: &str,
     source: &BookSource,
 ) -> LegadoResult<ExploreEvalActionResult> {
-    use legado_js::JsEngine;
     use legado_js::host_api::current_source::with_current_source_tag;
     use legado_js::host_api::ui_action_queue;
+    use legado_js::JsEngine;
 
     let tag = source.book_source_url.clone();
     let engine = crate::js_executor::fresh_engine(&tag)?;
@@ -401,8 +396,8 @@ fn eval_explore_action_js(
 
 #[cfg(feature = "quickjs")]
 fn eval_explore_ui_js(js_str: &str, source: &BookSource) -> LegadoResult<String> {
-    use legado_js::JsEngine;
     use legado_js::host_api::current_source::with_current_source_tag;
+    use legado_js::JsEngine;
 
     let tag = source.book_source_url.clone();
     let engine = crate::js_executor::fresh_engine(&tag)?;
@@ -461,24 +456,23 @@ async fn explore_books_async(
 
     // 规则书源路径
     let info_map = explore_info_map::snapshot(&source.book_source_url).unwrap_or_default();
-    let analyze_url = crate::js_executor::build_explore_url(
-        url,
-        page,
-        source,
-        &info_map,
-    )
-    // 分类 URL 脚本执行失败上抛真实错误（懒人听书未配置会话时
-    // lrtsResolveSession 抛「请先登录…」；此前静默回退字面量 URL
-    // 导致 HTTP 404 误导用户）。提取最内层 JS 错误，去掉
-    // Internal/URL 模板 等包装前缀与堆栈行，文案对齐原版提示。
-    .map_err(|e| {
-        let msg = e.to_string();
-        let core = msg.rsplit("JS engine error: ").next().unwrap_or(&msg);
-        // 取首行并去掉 JS 堆栈 `(at ...` 尾部，文案对齐原版提示
-        let first_line = core.lines().next().unwrap_or(core).trim();
-        let clean = first_line.split(" (at ").next().unwrap_or(first_line).trim();
-        LegadoError::Internal(format!("分类加载失败：{clean}"))
-    })?;
+    let analyze_url = crate::js_executor::build_explore_url(url, page, source, &info_map)
+        // 分类 URL 脚本执行失败上抛真实错误（懒人听书未配置会话时
+        // lrtsResolveSession 抛「请先登录…」；此前静默回退字面量 URL
+        // 导致 HTTP 404 误导用户）。提取最内层 JS 错误，去掉
+        // Internal/URL 模板 等包装前缀与堆栈行，文案对齐原版提示。
+        .map_err(|e| {
+            let msg = e.to_string();
+            let core = msg.rsplit("JS engine error: ").next().unwrap_or(&msg);
+            // 取首行并去掉 JS 堆栈 `(at ...` 尾部，文案对齐原版提示
+            let first_line = core.lines().next().unwrap_or(core).trim();
+            let clean = first_line
+                .split(" (at ")
+                .next()
+                .unwrap_or(first_line)
+                .trim();
+            LegadoError::Internal(format!("分类加载失败：{clean}"))
+        })?;
 
     let final_url = analyze_url.url().to_string();
     if final_url.is_empty() {
@@ -557,8 +551,7 @@ async fn explore_books_async(
         .js_lib
         .as_deref()
         .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
-    let explore_setup =
-        crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+    let explore_setup = crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
     let analyzer = crate::js_executor::construct_analyzer_with_source_context(
         body,
         base_url.clone(),
@@ -570,9 +563,7 @@ async fn explore_books_async(
     let elements = if book_list_rule.is_empty() {
         vec![analyzer.content().to_string()]
     } else {
-        analyzer
-            .get_elements(&book_list_rule)
-            .unwrap_or_default()
+        analyzer.get_elements(&book_list_rule).unwrap_or_default()
     };
 
     // 规则提到循环外；单一 AnalyzeRule + setContent 复用（对齐原版 BookList）
@@ -587,14 +578,22 @@ async fn explore_books_async(
         explore_rule.and_then(|r| r.author.as_deref()).unwrap_or("")
     };
     let book_url_rule = if use_search_fallback {
-        search_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
+        search_rule
+            .and_then(|r| r.book_url.as_deref())
+            .unwrap_or("")
     } else {
-        explore_rule.and_then(|r| r.book_url.as_deref()).unwrap_or("")
+        explore_rule
+            .and_then(|r| r.book_url.as_deref())
+            .unwrap_or("")
     };
     let cover_url_rule = if use_search_fallback {
-        search_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
+        search_rule
+            .and_then(|r| r.cover_url.as_deref())
+            .unwrap_or("")
     } else {
-        explore_rule.and_then(|r| r.cover_url.as_deref()).unwrap_or("")
+        explore_rule
+            .and_then(|r| r.cover_url.as_deref())
+            .unwrap_or("")
     };
     let intro_rule = if use_search_fallback {
         search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("")
@@ -782,15 +781,11 @@ fn explore_login_check(
                 &source.book_source_url,
             ) {
                 Ok(()) => Ok(()),
-                Err(crate::js_executor::LoginCheckError::NotLoggedIn(_)) => {
-                    Err(LegadoError::LoginRequired(
-                        "书源需要登录，请先在书源菜单中登录后重试".into(),
-                    ))
-                }
+                Err(crate::js_executor::LoginCheckError::NotLoggedIn(_)) => Err(
+                    LegadoError::LoginRequired("书源需要登录，请先在书源菜单中登录后重试".into()),
+                ),
                 Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
-                    eprintln!(
-                        "[explore] loginCheckJs errResponse 路径执行失败（降级放行）: {e}"
-                    );
+                    eprintln!("[explore] loginCheckJs errResponse 路径执行失败（降级放行）: {e}");
                     Ok(())
                 }
             }
@@ -857,9 +852,8 @@ fn parse_explore_as_single_book(
             )
         }
     };
-    let word_count = super::search::word_count_format(
-        &analyzer.get_string(rule_word_count).unwrap_or_default(),
-    );
+    let word_count =
+        super::search::word_count_format(&analyzer.get_string(rule_word_count).unwrap_or_default());
 
     Some(WebSearchResult {
         name,
@@ -966,14 +960,17 @@ mod field_clean_tests {
     #[test]
     fn test_parse_explore_as_single_book() {
         use legado_parser::AnalyzeRule;
-        let source = serde_json::from_str::<BookSource>(&serde_json::json!({
-            "bookSourceUrl": "https://detail.example.com",
-            "ruleBookInfo": {
-                "name": "#bookname@text",
-                "author": ".author@text",
-                "intro": ".intro@html"
-            }
-        }).to_string())
+        let source = serde_json::from_str::<BookSource>(
+            &serde_json::json!({
+                "bookSourceUrl": "https://detail.example.com",
+                "ruleBookInfo": {
+                    "name": "#bookname@text",
+                    "author": ".author@text",
+                    "intro": ".intro@html"
+                }
+            })
+            .to_string(),
+        )
         .unwrap();
         let html = r#"<html><body>
             <h1 id="bookname">斗破苍穹 作者天蚕土豆</h1>
@@ -984,12 +981,9 @@ mod field_clean_tests {
             html.to_string(),
             "https://detail.example.com/book/1".to_string(),
         );
-        let book = parse_explore_as_single_book(
-            &source,
-            &analyzer,
-            "https://detail.example.com/book/1",
-        )
-        .expect("详情页回退应解析出单本");
+        let book =
+            parse_explore_as_single_book(&source, &analyzer, "https://detail.example.com/book/1")
+                .expect("详情页回退应解析出单本");
         assert_eq!(book.name, "斗破苍穹");
         assert_eq!(book.author, "天蚕土豆");
         assert_eq!(book.book_url, "https://detail.example.com/book/1");
@@ -1003,11 +997,14 @@ mod login_check_tests {
     use legado_core::models::BookSource;
 
     fn source_with_login_check(js: &str) -> BookSource {
-        serde_json::from_str::<BookSource>(&serde_json::json!({
-            "bookSourceUrl": "https://login-explore.example.com",
-            "bookSourceName": "登录探索测试",
-            "loginCheckJs": js,
-        }).to_string())
+        serde_json::from_str::<BookSource>(
+            &serde_json::json!({
+                "bookSourceUrl": "https://login-explore.example.com",
+                "bookSourceName": "登录探索测试",
+                "loginCheckJs": js,
+            })
+            .to_string(),
+        )
         .unwrap()
     }
 
@@ -1039,10 +1036,11 @@ mod login_check_tests {
     /// getConfig 定义——exploreUrl 应能访问 getConfig（发现页 ERROR 排查）
     #[test]
     fn test_explore_js_lib_get_config_visible() {
-        let source = serde_json::from_str::<BookSource>(&serde_json::json!({
-            "bookSourceUrl": "https://jslib-explore.example.com",
-            "bookSourceName": "jsLib 测试",
-            "jsLib": r#"
+        let source = serde_json::from_str::<BookSource>(
+            &serde_json::json!({
+                "bookSourceUrl": "https://jslib-explore.example.com",
+                "bookSourceName": "jsLib 测试",
+                "jsLib": r#"
 function checkEnv() {
     try { new Packages.io.foo.Bar(''); } catch (e) { return false; }
     return true;
@@ -1050,7 +1048,9 @@ function checkEnv() {
 function getConfig() { return { host: 'https://a.test', gender: 'boy' }; }
 function getServerHost() { return 'https://a.test'; }
 "#,
-        }).to_string())
+            })
+            .to_string(),
+        )
         .unwrap();
 
         // exploreUrl 调用 jsLib 函数（getConfig/getServerHost；@js: 前缀已剥离）
@@ -1075,8 +1075,7 @@ function getServerHost() { return 'https://a.test'; }
             eprintln!("sources_device.json 缺失，跳过");
             return;
         };
-        let Ok(serde_json::Value::Array(sources)) =
-            serde_json::from_str::<serde_json::Value>(&raw)
+        let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
             return;
         };
@@ -1092,10 +1091,8 @@ function getServerHost() { return 'https://a.test'; }
             eprintln!("书山 jsLib 缺失，跳过");
             return;
         };
-        let source = serde_json::from_str::<BookSource>(
-            &serde_json::to_string(src).unwrap(),
-        )
-        .unwrap();
+        let source =
+            serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
 
         // 阶段 1：jsLib 加载后 getConfig/getServerHost/source 均应可见
         let probe = "typeof getConfig + '|' + typeof getServerHost + '|' + typeof source";
@@ -1157,7 +1154,9 @@ function getServerHost() { return 'https://a.test'; }
         let fnctor2 = guard
             .eval("var __h = new Function('var __i = function(){ return typeof this; }; return __i();'); __h();")
             .unwrap_or_default();
-        eprintln!("[this 语义] 顶层={top}, 裸调用={bare}, Function={fnctor}, Function内裸调用={fnctor2}");
+        eprintln!(
+            "[this 语义] 顶层={top}, 裸调用={bare}, Function={fnctor}, Function内裸调用={fnctor2}"
+        );
     }
 
     /// 书山聚合空列表根因回归：bookList `<js>` 脚本依赖 jsLib（getSessionId）+
@@ -1173,8 +1172,7 @@ function getServerHost() { return 'https://a.test'; }
             eprintln!("sources_device.json 缺失，跳过");
             return;
         };
-        let Ok(serde_json::Value::Array(sources)) =
-            serde_json::from_str::<serde_json::Value>(&raw)
+        let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
             return;
         };
@@ -1236,11 +1234,7 @@ function getServerHost() { return 'https://a.test'; }
         let elements = analyzer
             .get_elements(book_list_rule)
             .unwrap_or_else(|e| panic!("bookList 规则解析失败: {e}"));
-        assert_eq!(
-            elements.len(),
-            2,
-            "应解析出 2 本书，实际: {elements:?}"
-        );
+        assert_eq!(elements.len(), 2, "应解析出 2 本书，实际: {elements:?}");
 
         let name_rule = source
             .rule_explore
@@ -1276,7 +1270,11 @@ function getServerHost() { return 'https://a.test'; }
             );
             urls.insert(u);
         }
-        assert_eq!(urls.len(), elements.len(), "每本书 bookUrl 应唯一: {urls:?}");
+        assert_eq!(
+            urls.len(),
+            elements.len(),
+            "每本书 bookUrl 应唯一: {urls:?}"
+        );
     }
 
     /// 书山聚合 header 规则注入回归：setup 应执行书源 header @js 规则
@@ -1292,8 +1290,7 @@ function getServerHost() { return 'https://a.test'; }
             eprintln!("sources_device.json 缺失，跳过");
             return;
         };
-        let Ok(serde_json::Value::Array(sources)) =
-            serde_json::from_str::<serde_json::Value>(&raw)
+        let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
             return;
         };
@@ -1308,7 +1305,10 @@ function getServerHost() { return 'https://a.test'; }
         let source =
             serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
         let header_rule = source.header.clone().unwrap_or_default();
-        assert!(header_rule.contains("@js:"), "书山 header 应为 @js 动态规则");
+        assert!(
+            header_rule.contains("@js:"),
+            "书山 header 应为 @js 动态规则"
+        );
 
         let lib = source.js_lib.as_deref().expect("书山 jsLib 缺失");
         let sanitized = crate::api::source_js_bindings::sanitize_js_lib_for_quickjs(lib);
@@ -1345,8 +1345,7 @@ function getServerHost() { return 'https://a.test'; }
             eprintln!("sources_device.json 缺失，跳过");
             return;
         };
-        let Ok(serde_json::Value::Array(sources)) =
-            serde_json::from_str::<serde_json::Value>(&raw)
+        let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
             return;
         };
@@ -1361,8 +1360,7 @@ function getServerHost() { return 'https://a.test'; }
                 continue;
             };
             let source =
-                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap())
-                .unwrap();
+                serde_json::from_str::<BookSource>(&serde_json::to_string(src).unwrap()).unwrap();
             let lib = source.js_lib.as_deref().unwrap_or("");
             let sanitized = crate::api::source_js_bindings::sanitize_js_lib_for_quickjs(lib);
             let setup = crate::api::source_js_bindings::book_source_js_setup_script(&source).ok();
@@ -1384,7 +1382,6 @@ function getServerHost() { return 'https://a.test'; }
         }
     }
 }
-
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
 
@@ -1414,10 +1411,7 @@ mod tests {
         let categories: Vec<ExploreCategory> = serde_json::from_str(&json).unwrap();
         assert_eq!(categories.len(), 2);
         assert_eq!(categories[0].title, "都市");
-        assert_eq!(
-            categories[0].url,
-            Some("http://example.com/a".to_string())
-        );
+        assert_eq!(categories[0].url, Some("http://example.com/a".to_string()));
         let style0 = categories[0].style.as_ref().unwrap();
         assert!((style0.layout_flex_basis_percent - 1.0).abs() < f32::EPSILON);
         let style1 = categories[1].style.as_ref().unwrap();
@@ -1594,21 +1588,17 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
             serde_json::from_str(&json).unwrap_or_else(|e| panic!("JSON 解析失败: {e} | {json}"));
         assert!(!categories.is_empty(), "分类为空: {json}");
         if let Some(err) = categories.iter().find(|c| c.title == "ERROR") {
-            panic!(
-                "ERROR 分类: {}",
-                err.url.as_deref().unwrap_or("")
-            );
+            panic!("ERROR 分类: {}", err.url.as_deref().unwrap_or(""));
         }
-        let has_selector = categories.iter().any(|c| {
-            c.title.contains("线路")
-                || c.title.contains("模式")
-                || c.r#type == "select"
-        });
+        let has_selector = categories
+            .iter()
+            .any(|c| c.title.contains("线路") || c.title.contains("模式") || c.r#type == "select");
         if !has_selector {
             let login_only = !categories.is_empty()
-                && categories
-                    .iter()
-                    .all(|c| c.title.contains("登录") || c.url.as_deref().unwrap_or("").contains("startBrowser"));
+                && categories.iter().all(|c| {
+                    c.title.contains("登录")
+                        || c.url.as_deref().unwrap_or("").contains("startBrowser")
+                });
             assert!(
                 login_only,
                 "应含 selector/线路/模式，或未登录时的登录入口，实际: {json}"
@@ -1646,7 +1636,11 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
             None,
         );
         assert_eq!(analyze.url(), "http://www.silukezw.com/list1/1.html");
-        assert!(!analyze.url().contains('{'), "URL 不得残留花括号占位: {}", analyze.url());
+        assert!(
+            !analyze.url().contains('{'),
+            "URL 不得残留花括号占位: {}",
+            analyze.url()
+        );
     }
 
     /// 网络回归：思路客发现「玄幻」页码展开后应 HTTP 成功并解析到书名
@@ -1707,10 +1701,7 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
                     !msg.contains("{1}"),
                     "失败信息不得含未替换占位 {{1}}: {msg}"
                 );
-                assert!(
-                    !msg.contains("404"),
-                    "页码未替换导致的 404 回归: {msg}"
-                );
+                assert!(!msg.contains("404"), "页码未替换导致的 404 回归: {msg}");
                 panic!("网络/解析失败（非占位符问题）: {msg}");
             }
         }

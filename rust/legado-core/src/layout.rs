@@ -175,20 +175,13 @@ impl LayoutEngine {
 /// 不能出现在行首的标点（后置标点）
 ///
 /// 对应 Kotlin ZhLayout.postPanc
-static POST_PANC: LazyLock<HashSet<char>> = LazyLock::new(|| {
-    "，。：？！、”’）》}】)>].,?!,:」；;"
-        .chars()
-        .collect()
-});
+static POST_PANC: LazyLock<HashSet<char>> =
+    LazyLock::new(|| "，。：？！、”’）》}】)>].,?!,:」；;".chars().collect());
 
 /// 不能出现在行末的标点（前置标点）
 ///
 /// 对应 Kotlin ZhLayout.prePanc
-static PRE_PANC: LazyLock<HashSet<char>> = LazyLock::new(|| {
-    "“（《【‘(<[{「"
-        .chars()
-        .collect()
-});
+static PRE_PANC: LazyLock<HashSet<char>> = LazyLock::new(|| "“（《【‘(<[{「".chars().collect());
 
 /// 断行模式
 ///
@@ -224,11 +217,7 @@ pub struct ZhLayoutResult {
 ///
 /// 移植自 TextChapterLayout.kt addCharsToLineMiddle:
 /// `residualWidth = visibleWidth - desiredWidth; d = residualWidth / gapCount`
-pub fn justify_letter_spacing(
-    line_width: f64,
-    available_width: f64,
-    char_count: usize,
-) -> f64 {
+pub fn justify_letter_spacing(line_width: f64, available_width: f64, char_count: usize) -> f64 {
     if char_count <= 1 || line_width >= available_width {
         return 0.0;
     }
@@ -341,7 +330,11 @@ pub fn zh_layout_text(
 
             let mut break_length = 0usize;
             if re_check && index > 2 {
-                let start_pos = if line == 0 { indent_size } else { line_start_arr[line] };
+                let start_pos = if line == 0 {
+                    indent_size
+                } else {
+                    line_start_arr[line]
+                };
                 break_mod = BreakMod::Normal;
                 let mut i = index;
                 loop {

@@ -264,8 +264,7 @@ pub fn from_old_books(json: &str, existing: &std::collections::HashSet<String>) 
         } else {
             0
         };
-        let is_audio =
-            json_str(&item, "bookInfoBean.bookSourceType").as_deref() == Some("AUDIO");
+        let is_audio = json_str(&item, "bookInfoBean.bookSourceType").as_deref() == Some("AUDIO");
         let book_type_val = local
             | if is_audio {
                 book_type::AUDIO
@@ -316,12 +315,11 @@ pub fn from_old_book_source(item: &Value) -> Result<BookSource, String> {
         .ok_or_else(|| "格式错误：缺少 bookSourceUrl".to_string())?;
     let explore_url = to_new_urls(json_str(item, "ruleFindUrl").as_deref());
     let enabled_explore = !explore_url.as_ref().map(|s| s.is_empty()).unwrap_or(true);
-    let book_source_type =
-        if json_str(item, "bookSourceType").as_deref() == Some("AUDIO") {
-            book_source_type::AUDIO
-        } else {
-            book_source_type::TEXT
-        };
+    let book_source_type = if json_str(item, "bookSourceType").as_deref() == Some("AUDIO") {
+        book_source_type::AUDIO
+    } else {
+        book_source_type::TEXT
+    };
 
     let mut content = to_new_rule(json_str(item, "ruleBookContent").as_deref()).unwrap_or_default();
     if content.starts_with('$') && !content.starts_with("$.") {
@@ -468,10 +466,7 @@ mod tests {
             migrated.as_deref(),
             Some("https://example.com/a\nhttps://example.com/b")
         );
-        assert!(!migrated
-            .unwrap()
-            .lines()
-            .any(|l| l == "null"));
+        assert!(!migrated.unwrap().lines().any(|l| l == "null"));
     }
 
     #[test]

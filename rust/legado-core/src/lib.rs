@@ -21,11 +21,11 @@
 //! }
 //! ```
 
+pub mod app_log;
 pub mod audio;
 pub mod audio_cache;
 pub mod audio_preload;
 pub mod audio_skip_policy;
-pub mod app_log;
 pub mod auto_task;
 pub mod book_help;
 pub mod cache_book;
@@ -63,9 +63,9 @@ pub mod toc_updater;
 pub mod tts_speak;
 pub mod types;
 pub mod verification_channel;
-pub mod webview_channel;
 pub mod video_state;
 pub mod web_book;
+pub mod webview_channel;
 
 pub use error::{LegadoError, LegadoResult};
 pub use regex_safe::{

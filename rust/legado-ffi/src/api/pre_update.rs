@@ -48,9 +48,7 @@ fn run_pre_update_js_inner(source: &BookSource, book: &mut Book, js: &str) -> Le
         let book_cell = Arc::clone(&book_cell);
         let source = source_owned.clone();
         Arc::new(Mutex::new(move || {
-            let mut b = book_cell
-                .lock()
-                .map_err(|_| "book 锁失败".to_string())?;
+            let mut b = book_cell.lock().map_err(|_| "book 锁失败".to_string())?;
             re_get_book_native(&source, &mut b).map_err(|e| e.to_string())?;
             serde_json::to_string(&*b).map_err(|e| e.to_string())
         }))
@@ -60,9 +58,7 @@ fn run_pre_update_js_inner(source: &BookSource, book: &mut Book, js: &str) -> Le
         let book_cell = Arc::clone(&book_cell);
         let source = source_owned.clone();
         Arc::new(Mutex::new(move || {
-            let mut b = book_cell
-                .lock()
-                .map_err(|_| "book 锁失败".to_string())?;
+            let mut b = book_cell.lock().map_err(|_| "book 锁失败".to_string())?;
             refresh_toc_url_native(&source, &mut b).map_err(|e| e.to_string())?;
             serde_json::to_string(&*b).map_err(|e| e.to_string())
         }))
@@ -123,9 +119,8 @@ fn re_get_book_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> 
 #[cfg(feature = "quickjs")]
 fn refresh_toc_url_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> {
     let engine = crate::api::web_book::build_engine()?;
-    let info = crate::runtime::block_on(async {
-        engine.get_book_info(source, &book.book_url).await
-    })?;
+    let info =
+        crate::runtime::block_on(async { engine.get_book_info(source, &book.book_url).await })?;
     apply_web_info_to_book(book, &info);
     Ok(())
 }

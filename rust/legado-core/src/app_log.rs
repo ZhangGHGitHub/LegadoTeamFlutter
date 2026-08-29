@@ -140,7 +140,12 @@ impl AppLogStore {
 
     /// 获取指定级别的日志列表（最新在前，对齐 Kotlin `AppLog.logs`）
     pub fn logs(&self, level: LogLevel) -> Vec<LogEntry> {
-        self.buffers[level.index()].lock().unwrap().iter().cloned().collect()
+        self.buffers[level.index()]
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// 指定级别的日志条数
@@ -356,14 +361,22 @@ mod tests {
         for i in 0..(MAX_LOGS_PER_LEVEL + 10) {
             store.push(LogLevel::Http, format!("req-{i}"));
         }
-        assert_eq!(store.len(LogLevel::Http), MAX_LOGS_PER_LEVEL, "超容量应环形淘汰");
+        assert_eq!(
+            store.len(LogLevel::Http),
+            MAX_LOGS_PER_LEVEL,
+            "超容量应环形淘汰"
+        );
         let logs = store.logs(LogLevel::Http);
         assert_eq!(
             logs[0].message,
             format!("req-{}", MAX_LOGS_PER_LEVEL + 9),
             "队首应为最新条目"
         );
-        assert_eq!(logs.last().unwrap().message, "req-10", "最旧的 10 条应被淘汰");
+        assert_eq!(
+            logs.last().unwrap().message,
+            "req-10",
+            "最旧的 10 条应被淘汰"
+        );
     }
 
     #[test]
@@ -414,7 +427,11 @@ mod tests {
         assert_eq!(store.len(LogLevel::Message), MAX_LOGS_PER_LEVEL);
         // 所有保留条目必须来自合法写入（前缀匹配），无脏数据
         for entry in store.logs(LogLevel::Message) {
-            assert!(entry.message.starts_with('t'), "条目应来自并发写入: {}", entry.message);
+            assert!(
+                entry.message.starts_with('t'),
+                "条目应来自并发写入: {}",
+                entry.message
+            );
         }
     }
 
@@ -483,13 +500,22 @@ mod tests {
     #[test]
     fn test_format_timestamp_ms() {
         // 2024-08-05 00:00:00.000 UTC = 1722816000000
-        assert_eq!(format_timestamp_ms(1_722_816_000_000), "2024-08-05 00:00:00.000");
+        assert_eq!(
+            format_timestamp_ms(1_722_816_000_000),
+            "2024-08-05 00:00:00.000"
+        );
         // 1970-01-01 00:00:00.123 UTC
         assert_eq!(format_timestamp_ms(123), "1970-01-01 00:00:00.123");
         // 2026-02-28 23:59:59.999 UTC（非闰年 2 月最后一天，次日即 3-1）
-        assert_eq!(format_timestamp_ms(1_772_323_199_999), "2026-02-28 23:59:59.999");
+        assert_eq!(
+            format_timestamp_ms(1_772_323_199_999),
+            "2026-02-28 23:59:59.999"
+        );
         // 闰年 2024-02-29
-        assert_eq!(format_timestamp_ms(1_709_164_800_000), "2024-02-29 00:00:00.000");
+        assert_eq!(
+            format_timestamp_ms(1_709_164_800_000),
+            "2024-02-29 00:00:00.000"
+        );
     }
 
     #[test]

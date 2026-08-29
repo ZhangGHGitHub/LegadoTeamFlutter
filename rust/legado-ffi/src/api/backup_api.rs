@@ -212,10 +212,7 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
                 match source_repo.insert(&source) {
                     Ok(()) => stats.book_sources += 1,
                     Err(e) => {
-                        log::warn!(
-                            "恢复书源失败（已跳过）: {} - {e}",
-                            source.book_source_url
-                        )
+                        log::warn!("恢复书源失败（已跳过）: {} - {e}", source.book_source_url)
                     }
                 }
             }

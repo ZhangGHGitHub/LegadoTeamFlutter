@@ -6,12 +6,11 @@
 //! 对应 Kotlin 原版 `AutoTask` / `AutoTaskRunner` / `AutoTaskSchedulePolicy`。
 
 use legado_core::auto_task::{
-    TaskAction,
     build_book_update_task as core_build_book_update_task,
     can_refresh_book_toc as core_can_refresh_book_toc,
     find_book_update_task as core_find_book_update_task, normalize_script as core_normalize_script,
     update_cron_batch as core_update_cron_batch, AutoTaskExporter, AutoTaskRule, AutoTaskRunner,
-    AutoTaskSchedulePolicy, TaskProtocol,
+    AutoTaskSchedulePolicy, TaskAction, TaskProtocol,
 };
 use legado_core::models::AutoTaskRule as AutoTaskRuleModel;
 use legado_core::LegadoResult;
@@ -61,9 +60,12 @@ pub fn prepare_imported_tasks(
     imported_json: &str,
 ) -> LegadoResult<Vec<serde_json::Value>> {
     let local_tasks: Vec<AutoTaskRule> = serde_json::from_str(local_tasks_json)?;
-    let imported = AutoTaskExporter::import_json(imported_json)
-        .map_err(legado_core::LegadoError::Parser)?;
-    Ok(AutoTaskExporter::prepare_imported_tasks(&local_tasks, imported))
+    let imported =
+        AutoTaskExporter::import_json(imported_json).map_err(legado_core::LegadoError::Parser)?;
+    Ok(AutoTaskExporter::prepare_imported_tasks(
+        &local_tasks,
+        imported,
+    ))
 }
 
 /// 执行任务协议（对应 Kotlin `AutoTaskRunner.execute`）
@@ -76,8 +78,8 @@ pub fn execute_task(
     protocol_json: &str,
     task_id: Option<&str>,
 ) -> LegadoResult<legado_core::auto_task::TaskResult> {
-    let protocol = TaskProtocol::from_json(protocol_json)
-        .map_err(legado_core::LegadoError::Parser)?;
+    let protocol =
+        TaskProtocol::from_json(protocol_json).map_err(legado_core::LegadoError::Parser)?;
     // [体检 §二.5 | P3-6] Custom JS 真实执行:对齐原版 AutoTaskRunner
     // （AutoTask.buildSource(task) → source.evalJS(script))——经 QuickJS 引擎
     // 求值并返回真实结果/错误,不再"验证脚本非空即视为成功"。
@@ -92,9 +94,13 @@ pub fn execute_task(
             Err(e) => (false, e),
         };
         let duration_ms = started.elapsed().as_millis() as u64;
-        let details = Some(format!("[{}] Elapsed: {}ms
+        let details = Some(format!(
+            "[{}] Elapsed: {}ms
 - {}",
-            if success { "OK" } else { "FAIL" }, duration_ms, message));
+            if success { "OK" } else { "FAIL" },
+            duration_ms,
+            message
+        ));
         return Ok(legado_core::auto_task::TaskResult {
             task_id: task_id.map(|s| s.to_string()).unwrap_or_default(),
             success,
@@ -205,7 +211,12 @@ mod tests {
 
     #[test]
     fn test_prepare_imported_tasks() {
-        let local = vec![build_book_update_task("http://book/1", "测试", "作者", "更新")];
+        let local = vec![build_book_update_task(
+            "http://book/1",
+            "测试",
+            "作者",
+            "更新",
+        )];
         let local_json = serde_json::to_string(&local).unwrap();
         let imported = r#"[{"id":"new1","name":"新任务","script":"x"}]"#;
         let merged = prepare_imported_tasks(&local_json, imported).unwrap();
@@ -238,8 +249,7 @@ mod tests {
     fn test_find_book_update_task() {
         let task = build_book_update_task("http://book/1", "测试", "作者", "更新");
         let tasks_json = serde_json::to_string(&vec![task]).unwrap();
-        let found =
-            find_book_update_task(&tasks_json, "http://book/1", "测试", "作者").unwrap();
+        let found = find_book_update_task(&tasks_json, "http://book/1", "测试", "作者").unwrap();
         assert!(found.is_some());
     }
 

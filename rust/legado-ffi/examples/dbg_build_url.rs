@@ -62,18 +62,42 @@ fn main() {
         // 阶段 B：analyze_js_with_error（@js: 求值）
         let (processed, js_err) =
             legado_parser::AnalyzeUrl::analyze_js_with_error(&template, &executor, &variables);
-        let b_err = js_err.as_ref().map(|e| e.chars().take(300).collect::<String>()).unwrap_or_default();
-        println!("[B] js_err: {:?}", if b_err.is_empty() { "None".to_string() } else { b_err });
+        let b_err = js_err
+            .as_ref()
+            .map(|e| e.chars().take(300).collect::<String>())
+            .unwrap_or_default();
+        println!(
+            "[B] js_err: {:?}",
+            if b_err.is_empty() {
+                "None".to_string()
+            } else {
+                b_err
+            }
+        );
         println!("[B] processed 尾600: {}", {
             let s: String = processed.chars().collect();
-            s.char_indices().skip(s.len().saturating_sub(600)).map(|(_, c)| c).collect::<String>()
+            s.char_indices()
+                .skip(s.len().saturating_sub(600))
+                .map(|(_, c)| c)
+                .collect::<String>()
         });
 
         // 阶段 C：标准 parse
         match legado_parser::AnalyzeUrl::parse(&processed, &variables, 1) {
             Ok(analyzed) => {
-                println!("[C] url(): {}", analyzed.url().chars().take(200).collect::<String>());
-                println!("[C] method(): {:?} body: {}", analyzed.method(), analyzed.request_body().chars().take(200).collect::<String>());
+                println!(
+                    "[C] url(): {}",
+                    analyzed.url().chars().take(200).collect::<String>()
+                );
+                println!(
+                    "[C] method(): {:?} body: {}",
+                    analyzed.method(),
+                    analyzed
+                        .request_body()
+                        .chars()
+                        .take(200)
+                        .collect::<String>()
+                );
             }
             Err(e) => println!("[C] parse 失败: {e}"),
         }
@@ -87,8 +111,15 @@ fn main() {
             js_lib.as_deref(),
             setup,
         );
-        println!("[D] full url(): {}", full.url().chars().take(200).collect::<String>());
-        println!("[D] method(): {:?} body: {}", full.method(), full.request_body().chars().take(300).collect::<String>());
+        println!(
+            "[D] full url(): {}",
+            full.url().chars().take(200).collect::<String>()
+        );
+        println!(
+            "[D] method(): {:?} body: {}",
+            full.method(),
+            full.request_body().chars().take(300).collect::<String>()
+        );
     }
     if found == 0 {
         eprintln!("未找到匹配书源: {name_filter}");

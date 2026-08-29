@@ -35,11 +35,9 @@ impl<'a> HttpTtsRepository<'a> {
         // Room 主键非自增；取 MAX(id)+1（与 Android 导入正 id 共存）
         let next_id: i64 = self
             .conn
-            .query_row(
-                "SELECT COALESCE(MAX(id), 0) + 1 FROM httpTTS",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COALESCE(MAX(id), 0) + 1 FROM httpTTS", [], |row| {
+                row.get(0)
+            })
             .unwrap_or(1);
         self.conn
             .execute(

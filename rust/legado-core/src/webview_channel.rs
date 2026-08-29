@@ -174,7 +174,12 @@ impl WebViewManager {
         let attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
         let mut list: Vec<WebViewRequest> = attempts
             .values()
-            .filter(|a| a.outcome.lock().unwrap_or_else(|e| e.into_inner()).is_none())
+            .filter(|a| {
+                a.outcome
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_none()
+            })
             .map(|a| a.request.clone())
             .collect();
         list.sort_by(|a, b| a.key.cmp(&b.key));

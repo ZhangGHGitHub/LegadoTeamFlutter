@@ -124,14 +124,13 @@ fn verify_import(db: &Database) {
 
     // 列出书源名称
     let mut stmt = conn
-        .prepare("SELECT book_source_name, book_source_group FROM book_sources ORDER BY custom_order")
+        .prepare(
+            "SELECT book_source_name, book_source_group FROM book_sources ORDER BY custom_order",
+        )
         .unwrap();
     let sources = stmt
         .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-            ))
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })
         .unwrap();
 

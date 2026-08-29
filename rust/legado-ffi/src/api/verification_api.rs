@@ -217,7 +217,10 @@ mod tests {
         );
         let key = handle.key().to_string();
         assert!(submit_verification_result(&key, "first"));
-        assert!(!submit_verification_result(&key, "second"), "已结束请求应返回 false");
+        assert!(
+            !submit_verification_result(&key, "second"),
+            "已结束请求应返回 false"
+        );
         assert_eq!(handle.wait(Duration::from_secs(5)).unwrap(), "first");
     }
 

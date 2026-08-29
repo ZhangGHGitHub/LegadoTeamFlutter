@@ -137,8 +137,7 @@ impl DownloadTask {
 
     /// 检查是否已超过最大重试次数（永久失败）
     pub fn is_permanently_failed(&self) -> bool {
-        matches!(self.status, DownloadStatus::Failed(_))
-            && self.fail_count >= self.max_retry_count
+        matches!(self.status, DownloadStatus::Failed(_)) && self.fail_count >= self.max_retry_count
     }
 
     /// 更新已下载字节数（断点续传）
@@ -174,7 +173,7 @@ impl DownloadTask {
         let base_ms: i64 = 1000; // 1 秒起始
         let delay = base_ms.saturating_mul(2i64.saturating_pow(fail_count));
         let actual_delay = delay.min(max_delay_ms);
-        
+
         self.last_retry_at = Some(Self::now_millis());
         self.next_retry_at = Some(self.last_retry_at.unwrap() + actual_delay);
     }

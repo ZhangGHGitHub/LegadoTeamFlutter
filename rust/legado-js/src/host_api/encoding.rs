@@ -517,16 +517,16 @@ mod tests {
     #[test]
     fn test_encode_uri_component_keeps_unreserved() {
         // JS encodeURIComponent 保留 A-Za-z0-9-_.!~*'()
-        assert_eq!(encode_uri_component("abcXYZ012-_.!~*'()"), "abcXYZ012-_.!~*'()");
+        assert_eq!(
+            encode_uri_component("abcXYZ012-_.!~*'()"),
+            "abcXYZ012-_.!~*'()"
+        );
     }
 
     #[test]
     fn test_encode_uri_component_percent_encodes() {
         // 中文 UTF-8 百分号编码
-        assert_eq!(
-            encode_uri_component("重生"),
-            "%E9%87%8D%E7%94%9F"
-        );
+        assert_eq!(encode_uri_component("重生"), "%E9%87%8D%E7%94%9F");
         // 空格与 +（encodeURI 不编码 +，encodeURIComponent 编码）
         assert_eq!(encode_uri_component("a b+c"), "a%20b%2Bc");
         // 保留字符 / ? & = 等全部编码（区别于 encodeURI）

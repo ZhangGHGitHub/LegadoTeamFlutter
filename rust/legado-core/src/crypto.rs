@@ -506,9 +506,8 @@ pub fn symmetric_decrypt(
             let nopad = is_no_padding(&padding);
             match mode.as_str() {
                 "CBC" => {
-                    let iv = iv.ok_or_else(|| {
-                        LegadoError::Parser("AES/CBC requires IV".to_string())
-                    })?;
+                    let iv =
+                        iv.ok_or_else(|| LegadoError::Parser("AES/CBC requires IV".to_string()))?;
                     if nopad {
                         AesCrypto::decrypt_cbc_nopadding(key, iv, data)
                     } else {
@@ -554,9 +553,8 @@ pub fn symmetric_encrypt(
             let nopad = is_no_padding(&padding);
             match mode.as_str() {
                 "CBC" => {
-                    let iv = iv.ok_or_else(|| {
-                        LegadoError::Parser("AES/CBC requires IV".to_string())
-                    })?;
+                    let iv =
+                        iv.ok_or_else(|| LegadoError::Parser("AES/CBC requires IV".to_string()))?;
                     if nopad {
                         AesCrypto::encrypt_cbc_nopadding(key, iv, data)
                     } else {

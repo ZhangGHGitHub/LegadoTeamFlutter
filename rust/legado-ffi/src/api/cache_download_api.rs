@@ -188,11 +188,7 @@ pub fn cache_download_start(
         let mut running: Vec<(u64, &Arc<TaskInner>)> = map
             .iter()
             .filter(|(_, t)| {
-                t.book_url == book_url
-                    && t.status
-                        .lock()
-                        .map(|s| *s == "running")
-                        .unwrap_or(false)
+                t.book_url == book_url && t.status.lock().map(|s| *s == "running").unwrap_or(false)
             })
             .map(|(id, t)| (*id, t))
             .collect();
@@ -201,10 +197,8 @@ pub fn cache_download_start(
         }
     }
 
-    let book_exists = with_database(|db| {
-        BookRepository::new(db.connection()).find_by_url(book_url)
-    })?
-    .is_some();
+    let book_exists =
+        with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))?.is_some();
     if !book_exists {
         return Err(LegadoError::Database(format!("书籍不存在: {book_url}")));
     }
@@ -381,9 +375,9 @@ pub fn cache_download_list() -> LegadoResult<Vec<CacheDownloadTask>> {
     for id in ids {
         if let Some(t) = map.get(&id) {
             out.push(snapshot(id, t));
-        } else if let Ok(Some(json)) = with_database(|db| {
-            CacheRepository::new(db.connection()).get(&persist_key(id))
-        }) {
+        } else if let Ok(Some(json)) =
+            with_database(|db| CacheRepository::new(db.connection()).get(&persist_key(id)))
+        {
             if let Ok(row) = serde_json::from_str::<PersistedTask>(&json) {
                 out.push(CacheDownloadTask {
                     task_id: row.task_id,

@@ -902,7 +902,10 @@ mod tests {
 
         // 无 checkKeyWord → 回落默认
         let default_src = make_test_source();
-        assert_eq!(checker.effective_keyword(&default_src), checker.config.keyword);
+        assert_eq!(
+            checker.effective_keyword(&default_src),
+            checker.config.keyword
+        );
 
         // 有效 checkKeyWord → 覆盖默认
         let mut src = make_test_source();
@@ -1068,7 +1071,10 @@ mod tests {
     #[test]
     fn test_extract_host() {
         assert_eq!(extract_host("https://example.com/path"), "example.com");
-        assert_eq!(extract_host("http://sub.example.com:8080/"), "sub.example.com");
+        assert_eq!(
+            extract_host("http://sub.example.com:8080/"),
+            "sub.example.com"
+        );
         assert_eq!(extract_host("https://EXAMPLE.COM"), "example.com");
     }
 

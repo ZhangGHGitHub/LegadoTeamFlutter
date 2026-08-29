@@ -157,9 +157,7 @@ impl VideoPlayerState {
             return;
         }
         // 约束卷索引范围
-        if self.dur_volume_index < 0
-            || self.dur_volume_index as usize >= self.volumes.len()
-        {
+        if self.dur_volume_index < 0 || self.dur_volume_index as usize >= self.volumes.len() {
             self.dur_volume_index = 0;
         }
         let start_int = self

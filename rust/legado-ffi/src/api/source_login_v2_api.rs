@@ -31,7 +31,11 @@ pub fn is_login_ui_v2(source_json: &str) -> LegadoResult<bool> {
 /// JS 返回 null/undefined 时返回空字符串（对齐 Kotlin 返回 null → 渲染失败提示）。
 pub fn eval_login_ui_v2(source_json: &str, state_json: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
-    let state = if state_json.trim().is_empty() { "{}" } else { state_json };
+    let state = if state_json.trim().is_empty() {
+        "{}"
+    } else {
+        state_json
+    };
     let result = eval_with_quickjs(&source, |eval_js| {
         login_ui_v2::eval_login_ui_v2(&source, state, eval_js)
     })?;
@@ -252,7 +256,8 @@ mod tests {
 
         // noop → 无命令（undefined 规范化为空）
         let raw = eval_login_action_v2(&source_json, r#"{"action":"noop"}"#).unwrap();
-        let command = login_ui_v2::parse_action_result(Some(raw.as_str()).filter(|s| !s.is_empty()));
+        let command =
+            login_ui_v2::parse_action_result(Some(raw.as_str()).filter(|s| !s.is_empty()));
         assert!(command.state_json.is_none());
         assert!(!command.close);
         assert!(!command.malformed);
@@ -323,7 +328,10 @@ mod tests {
         )
         .unwrap();
         let command = login_ui_v2::parse_action_result(Some(&raw));
-        assert_eq!(command.login_json.as_deref(), Some(r#"{"account":"reader"}"#));
+        assert_eq!(
+            command.login_json.as_deref(),
+            Some(r#"{"account":"reader"}"#)
+        );
         assert!(command.close);
     }
 

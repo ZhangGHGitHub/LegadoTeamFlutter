@@ -16,7 +16,10 @@ mod impl_regex_utils {
     /// 对齐原版 Kotlin JsExtensions 行为；绝不 panic）
     fn compile_err(pattern: &str) -> String {
         let head: String = pattern.chars().take(64).collect();
-        format!("Regex compile error: invalid or over-limit pattern: {}", head)
+        format!(
+            "Regex compile error: invalid or over-limit pattern: {}",
+            head
+        )
     }
 
     /// 正则匹配，返回指定捕获组内容

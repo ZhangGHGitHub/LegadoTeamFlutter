@@ -49,7 +49,10 @@ mod tests {
         let hits = match_shelf_books(&books, "斗破");
         assert_eq!(hits.len(), 1);
         // 大写关键词同样命中（不区分大小写）
-        assert_eq!(match_shelf_books(&books, "斗破".to_uppercase().as_str()).len(), 1);
+        assert_eq!(
+            match_shelf_books(&books, "斗破".to_uppercase().as_str()).len(),
+            1
+        );
     }
 
     #[test]

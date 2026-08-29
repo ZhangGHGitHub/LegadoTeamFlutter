@@ -686,7 +686,10 @@ mod tests {
         assert_eq!(ra.elements_type, "%%");
         // 括号内分隔符保护 + 括号后继续拆分
         let mut ra = RuleAnalyzer::new("div[a||b]&&span.c", false);
-        assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["div[a||b]", "span.c"]);
+        assert_eq!(
+            ra.split_rule(&["&&", "||", "%%"]),
+            vec!["div[a||b]", "span.c"]
+        );
         // 圆括号平衡组
         let mut ra = RuleAnalyzer::new("fn(a&&b)||c", false);
         assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["fn(a&&b)", "c"]);
@@ -694,7 +697,10 @@ mod tests {
         let mut ra = RuleAnalyzer::new("x[a[b&&c]]&&y", false);
         assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["x[a[b&&c]]", "y"]);
         // @js: 前缀语义不受影响
-        assert_eq!(RuleAnalyzer::parse_rule_prefix("@js:result"), ("js", "result"));
+        assert_eq!(
+            RuleAnalyzer::parse_rule_prefix("@js:result"),
+            ("js", "result")
+        );
         // 无分隔符单规则
         let mut ra = RuleAnalyzer::new("class.content", false);
         assert_eq!(ra.split_rule(&["&&", "||", "%%"]), vec!["class.content"]);

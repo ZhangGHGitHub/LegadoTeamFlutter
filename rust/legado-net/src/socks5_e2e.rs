@@ -114,7 +114,9 @@ async fn handle_socks5_conn(
     stream.read_exact(&mut req).await?;
     if req[1] != 0x01 {
         // 仅支持 CONNECT
-        stream.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+        stream
+            .write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await?;
         return Ok(());
     }
     let target = match req[3] {
@@ -136,7 +138,9 @@ async fn handle_socks5_conn(
             std::net::Ipv6Addr::from(ip6).to_string()
         }
         _ => {
-            stream.write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+            stream
+                .write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await?;
             return Ok(());
         }
     };
@@ -147,12 +151,16 @@ async fn handle_socks5_conn(
     let mut upstream = match TcpStream::connect(&target_addr).await {
         Ok(s) => s,
         Err(_) => {
-            stream.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+            stream
+                .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await?;
             return Ok(());
         }
     };
     // 应答成功（BND 地址全零即可）
-    stream.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+    stream
+        .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await?;
     stats.lock().await.connected += 1;
 
     // ---- 双向透传 ----
@@ -239,7 +247,9 @@ async fn test_socks5_wrong_credentials_rejected() {
     assert!(
         result.is_err(),
         "错误凭据经 SOCKS5 代理的请求必须失败，实际：{:?}",
-        result.ok().map(|b| String::from_utf8_lossy(&b).into_owned())
+        result
+            .ok()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
     );
 
     // 验证服务器确实拒绝了认证握手（而非连接未发生）

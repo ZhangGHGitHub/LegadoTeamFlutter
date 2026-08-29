@@ -158,9 +158,7 @@ impl<'a> RuleSubRepository<'a> {
 
     /// 查询所有订阅（按 customOrder 升序，同序按 id 升序）
     pub fn find_all(&self) -> LegadoResult<Vec<RuleSubRecord>> {
-        let sql = format!(
-            "SELECT {SELECT_COLS} FROM ruleSubs ORDER BY customOrder ASC, id ASC"
-        );
+        let sql = format!("SELECT {SELECT_COLS} FROM ruleSubs ORDER BY customOrder ASC, id ASC");
         let mut stmt = self
             .conn
             .prepare(&sql)
@@ -241,9 +239,7 @@ impl<'a> RuleSubRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("更新版本失败: {e}")))?;
 
         if affected == 0 {
-            return Err(LegadoError::Database(format!(
-                "未找到 id={id} 的订阅记录"
-            )));
+            return Err(LegadoError::Database(format!("未找到 id={id} 的订阅记录")));
         }
         Ok(())
     }

@@ -482,13 +482,13 @@ mod tests {
     fn test_load_persisted() {
         let mut store = CookieStore::new();
         store.load_persisted(vec![
-            ("example.com".to_string(), "session=abc; theme=dark".to_string()),
+            (
+                "example.com".to_string(),
+                "session=abc; theme=dark".to_string(),
+            ),
             ("other.com".to_string(), "token=xyz".to_string()),
         ]);
         assert_eq!(store.get_cookies("example.com").len(), 2);
-        assert_eq!(
-            store.get_key("other.com", "token"),
-            Some("xyz".to_string())
-        );
+        assert_eq!(store.get_key("other.com", "token"), Some("xyz".to_string()));
     }
 }

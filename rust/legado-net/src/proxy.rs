@@ -638,21 +638,18 @@ mod tests {
 
     #[test]
     fn test_effective_url_inserts_credentials() {
-        let cfg = ProxyConfig::from_url("socks5://127.0.0.1:1080")
-            .with_credentials(ProxyCredentials {
+        let cfg =
+            ProxyConfig::from_url("socks5://127.0.0.1:1080").with_credentials(ProxyCredentials {
                 username: "alice".into(),
                 password: "secret".into(),
             });
-        assert_eq!(
-            cfg.effective_url(),
-            "socks5://alice:secret@127.0.0.1:1080"
-        );
+        assert_eq!(cfg.effective_url(), "socks5://alice:secret@127.0.0.1:1080");
     }
 
     #[test]
     fn test_effective_url_encodes_special_credentials() {
-        let cfg = ProxyConfig::from_url("socks5://127.0.0.1:1080")
-            .with_credentials(ProxyCredentials {
+        let cfg =
+            ProxyConfig::from_url("socks5://127.0.0.1:1080").with_credentials(ProxyCredentials {
                 username: "us@er".into(),
                 password: "p:ss".into(),
             });

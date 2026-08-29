@@ -52,18 +52,14 @@ pub fn persist(source_url: &str, map: &HashMap<String, String>) -> LegadoResult<
 /// 获取书源 infoMap 快照（内存优先，回退 DB）
 pub fn snapshot(source_url: &str) -> LegadoResult<HashMap<String, String>> {
     {
-        let store = memory_store()
-            .read()
-            .unwrap_or_else(|p| p.into_inner());
+        let store = memory_store().read().unwrap_or_else(|p| p.into_inner());
         if let Some(map) = store.get(source_url) {
             return Ok(map.clone());
         }
     }
 
     let loaded = load_from_db(source_url);
-    let mut store = memory_store()
-        .write()
-        .unwrap_or_else(|p| p.into_inner());
+    let mut store = memory_store().write().unwrap_or_else(|p| p.into_inner());
     store.insert(source_url.to_string(), loaded.clone());
     Ok(loaded)
 }
@@ -73,9 +69,7 @@ pub fn put(source_url: &str, key: &str, value: &str) -> LegadoResult<()> {
     let mut map = snapshot(source_url)?;
     map.insert(key.to_string(), value.to_string());
     {
-        let mut store = memory_store()
-            .write()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut store = memory_store().write().unwrap_or_else(|p| p.into_inner());
         store.insert(source_url.to_string(), map.clone());
     }
     persist(source_url, &map)
@@ -86,9 +80,7 @@ pub fn ensure_default(source_url: &str, key: &str, default: &str) -> LegadoResul
     let mut map = snapshot(source_url)?;
     if !map.contains_key(key) {
         map.insert(key.to_string(), default.to_string());
-        let mut store = memory_store()
-            .write()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut store = memory_store().write().unwrap_or_else(|p| p.into_inner());
         store.insert(source_url.to_string(), map.clone());
         persist(source_url, &map)?;
     }
@@ -96,7 +88,11 @@ pub fn ensure_default(source_url: &str, key: &str, default: &str) -> LegadoResul
 }
 
 /// 将 infoMap 展平为 AnalyzeUrl 变量表（含 `infoMap.key` 点号键）
-pub fn variables_for_url(source_url: &str, page: i32, base_url: &str) -> LegadoResult<HashMap<String, String>> {
+pub fn variables_for_url(
+    source_url: &str,
+    page: i32,
+    base_url: &str,
+) -> LegadoResult<HashMap<String, String>> {
     let info_map = snapshot(source_url)?;
     let mut variables = HashMap::new();
     variables.insert("page".to_string(), page.max(1).to_string());

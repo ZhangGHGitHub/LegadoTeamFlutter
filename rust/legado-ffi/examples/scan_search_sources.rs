@@ -43,7 +43,10 @@ fn main() {
     legado_ffi::db_state::record_db_path(&db_path);
     let db = match legado_ffi::legado_db::init_database(&db_path) {
         Ok(d) => d,
-        Err(e) => { eprintln!("DB 打开失败: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("DB 打开失败: {e}");
+            std::process::exit(1);
+        }
     };
     if let Err(e) = legado_ffi::db_state::init_database(db) {
         eprintln!("全局 DB 初始化失败: {e}");
@@ -85,29 +88,49 @@ fn main() {
             let el = t0.elapsed().as_secs_f64();
 
             if err.is_none() {
-                if nbooks > 0 { ok_count += 1; } else { empty_count += 1; }
-            } else { err_count += 1; }
+                if nbooks > 0 {
+                    ok_count += 1;
+                } else {
+                    empty_count += 1;
+                }
+            } else {
+                err_count += 1;
+            }
             total_books += nbooks;
 
-            println!("[{:7.2}s] #{} {} books={} err={}",
+            println!(
+                "[{:7.2}s] #{} {} books={} err={}",
                 el,
                 recs.len() + 1,
                 name,
                 nbooks,
                 err.as_deref().unwrap_or("")
             );
-            recs.push(Rec { name, url, books: nbooks, error: err, elapsed_s: el });
+            recs.push(Rec {
+                name,
+                url,
+                books: nbooks,
+                error: err,
+                elapsed_s: el,
+            });
             Ok(())
         })
         .await;
     });
 
     let wall = t0.elapsed().as_secs_f64();
-    println!("===== 汇总 ===== 总书源={} ok={} empty={} err={} 总书籍={} 墙钟={:.1}s",
-        recs.len(), ok_count, empty_count, err_count, total_books, wall
+    println!(
+        "===== 汇总 ===== 总书源={} ok={} empty={} err={} 总书籍={} 墙钟={:.1}s",
+        recs.len(),
+        ok_count,
+        empty_count,
+        err_count,
+        total_books,
+        wall
     );
 
-    let mut err_kinds: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut err_kinds: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
     let mut cat_ok = 0usize;
     let mut cat_empty = 0usize;
     let mut cat_http = 0usize;
@@ -120,7 +143,8 @@ fn main() {
         let e = err.to_lowercase();
         if e.contains("超时") || e.contains("timeout") {
             "timeout"
-        } else if e.contains("http") || e.contains("403") || e.contains("404") || e.contains("500") {
+        } else if e.contains("http") || e.contains("403") || e.contains("404") || e.contains("500")
+        {
             "http_error"
         } else if e.contains("js") || e.contains("quickjs") || e.contains("legado-js") {
             "js_error"
@@ -151,8 +175,10 @@ fn main() {
     cat_ok = ok_count; // 与流式计数一致
     cat_empty = empty_count;
 
-    println!("===== 分类汇总 ===== ok={} empty={} http={} timeout={} js={} parser={} other={}",
-        cat_ok, cat_empty, cat_http, cat_timeout, cat_js, cat_parser, cat_other);
+    println!(
+        "===== 分类汇总 ===== ok={} empty={} http={} timeout={} js={} parser={} other={}",
+        cat_ok, cat_empty, cat_http, cat_timeout, cat_js, cat_parser, cat_other
+    );
     println!("===== 错误分类（前 60 字符聚合，Top25）=====");
     for (k, c) in err_kinds.iter().take(25) {
         println!("{} x {}", c, k);
@@ -170,22 +196,26 @@ fn main() {
             })
         })
         .collect();
-    if let Err(e) = std::fs::write(&report_path, serde_json::to_string_pretty(&serde_json::json!({
-        "query": query,
-        "summary": {
-            "total_sources": recs.len(),
-            "ok": cat_ok,
-            "empty": cat_empty,
-            "http_error": cat_http,
-            "timeout": cat_timeout,
-            "js_error": cat_js,
-            "parser_error": cat_parser,
-            "other_error": cat_other,
-            "total_books": total_books,
-            "wall_s": wall,
-        },
-        "sources": report,
-    })).unwrap()) {
+    if let Err(e) = std::fs::write(
+        &report_path,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "query": query,
+            "summary": {
+                "total_sources": recs.len(),
+                "ok": cat_ok,
+                "empty": cat_empty,
+                "http_error": cat_http,
+                "timeout": cat_timeout,
+                "js_error": cat_js,
+                "parser_error": cat_parser,
+                "other_error": cat_other,
+                "total_books": total_books,
+                "wall_s": wall,
+            },
+            "sources": report,
+        }))
+        .unwrap(),
+    ) {
         eprintln!("报告写入失败: {e}");
     }
     println!("报告已写入: {}", report_path);

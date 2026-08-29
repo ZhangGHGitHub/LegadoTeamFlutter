@@ -136,9 +136,7 @@ impl AutoTaskRunner {
         let duration_ms = start.elapsed().as_millis() as u64;
         // 对齐 AutoTaskLogFormatter：供调试 Dialog 分行流式展示
         let details = if success {
-            Some(format!(
-                "[OK] Elapsed: {duration_ms}ms\n- {message}"
-            ))
+            Some(format!("[OK] Elapsed: {duration_ms}ms\n- {message}"))
         } else {
             Some(format!("[FAIL] Elapsed: {duration_ms}ms\n- {message}"))
         };
@@ -167,7 +165,10 @@ impl AutoTaskRunner {
     fn do_cache_chapters(protocol: &TaskProtocol) -> (bool, String) {
         let book_url = protocol.params.get("bookUrl").cloned().unwrap_or_default();
         if book_url.is_empty() {
-            return (false, "cacheChapters requires bookUrl parameter".to_string());
+            return (
+                false,
+                "cacheChapters requires bookUrl parameter".to_string(),
+            );
         }
         // 模拟缓存新增章节（实际需要网络 + 数据库）
         (true, format!("New chapters cached for: {book_url}"))
@@ -422,10 +423,8 @@ impl AutoTaskExporter {
         local_tasks: &[AutoTaskRule],
         imported_tasks: Vec<serde_json::Value>,
     ) -> Vec<serde_json::Value> {
-        let local_by_id: HashMap<&str, &AutoTaskRule> = local_tasks
-            .iter()
-            .map(|t| (t.id.as_str(), t))
-            .collect();
+        let local_by_id: HashMap<&str, &AutoTaskRule> =
+            local_tasks.iter().map(|t| (t.id.as_str(), t)).collect();
 
         let max_order = local_tasks
             .iter()
@@ -525,16 +524,11 @@ impl AutoTaskExporter {
 
 /// 批量更新 cron 表达式（纯逻辑层，返回受影响的 ID 列表）
 /// 对应 Kotlin AutoTask.updateCron + AutoTaskRuleDao.updateCron
-pub fn update_cron_batch(
-    rules: &mut [AutoTaskRule],
-    ids: &[String],
-    cron: &str,
-) -> Vec<String> {
+pub fn update_cron_batch(rules: &mut [AutoTaskRule], ids: &[String], cron: &str) -> Vec<String> {
     if ids.is_empty() {
         return Vec::new();
     }
-    let id_set: std::collections::HashSet<&str> =
-        ids.iter().map(|s| s.as_str()).collect();
+    let id_set: std::collections::HashSet<&str> = ids.iter().map(|s| s.as_str()).collect();
     let mut changed = Vec::new();
     for rule in rules.iter_mut() {
         if id_set.contains(rule.id.as_str()) {
@@ -996,10 +990,8 @@ pub fn build_book_update_tasks(
             )
         })
         .collect();
-    let existing_by_id: HashMap<&str, &AutoTaskRule> = existing_tasks
-        .iter()
-        .map(|t| (t.id.as_str(), t))
-        .collect();
+    let existing_by_id: HashMap<&str, &AutoTaskRule> =
+        existing_tasks.iter().map(|t| (t.id.as_str(), t)).collect();
     let generated_ids: HashSet<&str> = generated.iter().map(|(_, t)| t.id.as_str()).collect();
     // 迁移候选池：ID 不在生成集合中的已有任务
     let mut moved_tasks: Vec<AutoTaskRule> = existing_tasks
@@ -1117,7 +1109,8 @@ impl AutoTaskSharePassphrase {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("Invalid passphrase encoding: {e}"))?;
-        let json = String::from_utf8(bytes).map_err(|e| format!("Invalid passphrase payload: {e}"))?;
+        let json =
+            String::from_utf8(bytes).map_err(|e| format!("Invalid passphrase payload: {e}"))?;
         let value: serde_json::Value =
             serde_json::from_str(&json).map_err(|e| format!("Invalid passphrase JSON: {e}"))?;
         // 包裹式载荷：校验类型码后取 rules
@@ -1631,19 +1624,11 @@ mod tests {
 
     #[test]
     fn test_find_book_update_task_by_id() {
-        let task = build_book_update_task(
-            "https://example.com/book/1",
-            "测试书籍",
-            "作者A",
-            "更新",
-        );
+        let task =
+            build_book_update_task("https://example.com/book/1", "测试书籍", "作者A", "更新");
         let tasks = vec![task];
-        let found = find_book_update_task(
-            &tasks,
-            "https://example.com/book/1",
-            "测试书籍",
-            "作者A",
-        );
+        let found =
+            find_book_update_task(&tasks, "https://example.com/book/1", "测试书籍", "作者A");
         assert!(found.is_some());
         assert_eq!(found.unwrap().name, "更新");
     }
@@ -1651,38 +1636,21 @@ mod tests {
     #[test]
     fn test_find_book_update_task_by_name_author() {
         // 模拟一个 ID 不匹配但书名作者匹配的任务
-        let task = build_book_update_task(
-            "https://old-url.com/book/1",
-            "测试书籍",
-            "作者A",
-            "更新",
-        );
+        let task =
+            build_book_update_task("https://old-url.com/book/1", "测试书籍", "作者A", "更新");
         let tasks = vec![task];
         // 使用不同的 bookUrl 查找，但书名作者相同
-        let found = find_book_update_task(
-            &tasks,
-            "https://new-url.com/book/1",
-            "测试书籍",
-            "作者A",
-        );
+        let found =
+            find_book_update_task(&tasks, "https://new-url.com/book/1", "测试书籍", "作者A");
         assert!(found.is_some());
     }
 
     #[test]
     fn test_find_book_update_task_not_found() {
-        let task = build_book_update_task(
-            "https://example.com/book/1",
-            "测试书籍",
-            "作者A",
-            "更新",
-        );
+        let task =
+            build_book_update_task("https://example.com/book/1", "测试书籍", "作者A", "更新");
         let tasks = vec![task];
-        let found = find_book_update_task(
-            &tasks,
-            "https://other.com/book/2",
-            "其他书籍",
-            "作者B",
-        );
+        let found = find_book_update_task(&tasks, "https://other.com/book/2", "其他书籍", "作者B");
         assert!(found.is_none());
     }
 
@@ -1809,7 +1777,10 @@ mod tests {
 
     #[test]
     fn test_count_new_chapters() {
-        let before = vec![chapter("u1", "第一章", false), chapter("u2", "第二章", false)];
+        let before = vec![
+            chapter("u1", "第一章", false),
+            chapter("u2", "第二章", false),
+        ];
         let after = vec![
             chapter("u1", "第一章", false),
             chapter("u2", "第二章", false),
@@ -1947,9 +1918,8 @@ mod tests {
             book_source("https://a.com/1", "书A", "作者A"),
             book_source("https://b.com/2", "书B", "作者B"),
         ];
-        let tasks = build_book_update_tasks(&books, &[], "0 */6 * * *", |b| {
-            format!("更新{}", b.name)
-        });
+        let tasks =
+            build_book_update_tasks(&books, &[], "0 */6 * * *", |b| format!("更新{}", b.name));
         assert_eq!(tasks.len(), 2);
         // 每本书一个任务，ID 为 book_update: 前缀
         assert!(tasks[0].id.starts_with("book_update:"));
@@ -1981,8 +1951,7 @@ mod tests {
     #[test]
     fn test_build_book_update_tasks_moves_by_name_author() {
         // 书籍 URL 变更（ID 不同），但书名+作者唯一命中旧任务 → 复用旧 ID
-        let old_task =
-            build_book_update_task("https://old.com/1", "书A", "作者A", "旧名");
+        let old_task = build_book_update_task("https://old.com/1", "书A", "作者A", "旧名");
         let mut old = old_task.clone();
         old.enable = false;
         let books = vec![book_source("https://new.com/1", "书A", "作者A")];
@@ -2069,7 +2038,12 @@ mod tests {
 
     #[test]
     fn test_passphrase_decode_with_surrounding_text() {
-        let rules = vec![build_book_update_task("https://a.com/1", "书A", "作者A", "更新")];
+        let rules = vec![build_book_update_task(
+            "https://a.com/1",
+            "书A",
+            "作者A",
+            "更新",
+        )];
         let text = AutoTaskSharePassphrase::encode(&rules);
         // 口令前后带文本（模拟聊天场景）
         let wrapped = format!("快来导入 {} 试试吧", text);

@@ -62,11 +62,7 @@ fn parse_header_map(header: &str) -> HashMap<String, String> {
 /// - 有 imageDecode：每次新建引擎执行（对齐规则路径 v2.0.24，不用 pool）
 /// - jsLib 可选：有则先 eval，失败 eprintln 后仍尝试 decode（勿静默假成功掩盖）
 /// - decode 失败/空结果 → eprintln 可观测，回退原图
-pub fn decode_image_bytes(
-    source: &BookSource,
-    img_url: &str,
-    bytes: &[u8],
-) -> Vec<u8> {
+pub fn decode_image_bytes(source: &BookSource, img_url: &str, bytes: &[u8]) -> Vec<u8> {
     let Some(rule) = source
         .rule_content
         .as_ref()
@@ -91,9 +87,7 @@ pub fn decode_image_bytes(
         ) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!(
-                    "[legado-ffi] imageDecode 引擎创建失败（回退原图）: {e} url={img_url}"
-                );
+                eprintln!("[legado-ffi] imageDecode 引擎创建失败（回退原图）: {e} url={img_url}");
                 return bytes.to_vec();
             }
         };
@@ -119,15 +113,11 @@ pub fn decode_image_bytes(
         ) {
             Ok(decoded) if !decoded.is_empty() => decoded,
             Ok(_) => {
-                eprintln!(
-                    "[legado-ffi] imageDecode 返回空字节（回退原图）url={img_url}"
-                );
+                eprintln!("[legado-ffi] imageDecode 返回空字节（回退原图）url={img_url}");
                 bytes.to_vec()
             }
             Err(e) => {
-                eprintln!(
-                    "[legado-ffi] imageDecode 执行失败（回退原图）: {e} url={img_url}"
-                );
+                eprintln!("[legado-ffi] imageDecode 执行失败（回退原图）: {e} url={img_url}");
                 bytes.to_vec()
             }
         }
@@ -295,9 +285,18 @@ mod tests {
             url,
             "https://cdn.favcomic.net/file/e-media/image/comic/1/1.webp"
         );
-        assert_eq!(headers.get("User-Agent").map(|s| s.as_str()), Some("Mozilla/5.0"));
-        assert_eq!(headers.get("Referer").map(|s| s.as_str()), Some("https://cdn.favcomic.net/"));
-        assert_eq!(headers.get("x-requested-with").map(|s| s.as_str()), Some("XBrowser"));
+        assert_eq!(
+            headers.get("User-Agent").map(|s| s.as_str()),
+            Some("Mozilla/5.0")
+        );
+        assert_eq!(
+            headers.get("Referer").map(|s| s.as_str()),
+            Some("https://cdn.favcomic.net/")
+        );
+        assert_eq!(
+            headers.get("x-requested-with").map(|s| s.as_str()),
+            Some("XBrowser")
+        );
 
         // 扁平 JSON 若不包裹 headers 字段则按 AnalyzeUrl 语义不解析 headers
         //（favcomic 实际使用 {"headers":{...}} 包裹格式，上方已覆盖）
@@ -510,13 +509,11 @@ decryptImage(result);"#;
     #[ignore = "requires network access"]
     fn test_fetch_favcomic_image_decode_real() {
         let _db_guard = crate::db_state::ensure_test_db();
-        let sources_json =
-            std::fs::read_to_string("tests/fixtures/comic_source.json").unwrap();
+        let sources_json = std::fs::read_to_string("tests/fixtures/comic_source.json").unwrap();
         let sources: Vec<serde_json::Value> =
             serde_json::from_str(&sources_json).expect("书源 JSON 数组解析失败");
         let source_json = sources[0].to_string();
-        let src: BookSource =
-            serde_json::from_str(&source_json).expect("书源反序列化失败");
+        let src: BookSource = serde_json::from_str(&source_json).expect("书源反序列化失败");
         crate::api::source::import_sources(&sources_json).expect("导入书源失败");
 
         // 搜索 → 目录 → 正文提取第一张图片 URL
@@ -530,8 +527,7 @@ decryptImage(result);"#;
         let mut img_url = String::new();
         for (_bi, first) in results.iter().enumerate().take(3) {
             println!("===== [book] {} {}", first.book_name, first.book_url);
-            let toc = crate::api::reader::refresh_toc(&first.book_url, &first.source_url)
-                .unwrap();
+            let toc = crate::api::reader::refresh_toc(&first.book_url, &first.source_url).unwrap();
             println!("===== [toc] chapters={}", toc.chapters.len());
             let ch = toc.chapters.first().expect("无章节");
             println!("===== [chapter] {} {}", ch.title, ch.url);
@@ -549,7 +545,10 @@ decryptImage(result);"#;
             };
             if let Ok(html) = raw {
                 if let Some(pos) = html.find("\"images\":") {
-                    let end = html[pos..].find(']').map(|e| pos + e + 1).unwrap_or(pos + 20);
+                    let end = html[pos..]
+                        .find(']')
+                        .map(|e| pos + e + 1)
+                        .unwrap_or(pos + 20);
                     let after = html[end..].chars().take(8).collect::<String>();
                     println!(
                         "===== [images-ctx] webtoon={} after_arr={:?} head={:?}",
@@ -597,8 +596,7 @@ decryptImage(result);"#;
                     let list = diag.get_strings(rule);
                     println!(
                         "===== [parse-diag] {:?}",
-                        list.as_ref()
-                            .map(|v| (v.len(), v.first().map(|s| s.len())))
+                        list.as_ref().map(|v| (v.len(), v.first().map(|s| s.len())))
                     );
                 }
             }
@@ -625,5 +623,4 @@ decryptImage(result);"#;
                 || bytes[0] == 0x47 && bytes[1] == 0x49);
         assert!(is_image, "解码后不是有效图片头");
     }
-
 }

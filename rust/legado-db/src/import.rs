@@ -394,7 +394,9 @@ mod tests {
                 img_url: None,
             })
             .collect();
-        BookChapterRepository::new(conn).insert_batch(&chapters).unwrap();
+        BookChapterRepository::new(conn)
+            .insert_batch(&chapters)
+            .unwrap();
 
         // 再次导入同 bookUrl（书名更新）：章节应保留且字段被覆盖
         let json2 = r#"[{"bookUrl":"https://example.com/book/reimport","name":"Imported Book v2","author":"A","type":0,"group":0}]"#;

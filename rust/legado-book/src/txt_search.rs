@@ -210,8 +210,9 @@ fn build_search_pattern(query: &str, options: &SearchOptions) -> LegadoResult<St
         }
         SearchMode::Regex => {
             // 验证正则合法性（统一安全入口：1KB 上限 + nest_limit + 负缓存）
-            compile_regex_safe(query)
-                .ok_or_else(|| LegadoError::BookParse("无效正则表达式（非法或超限）".to_string()))?;
+            compile_regex_safe(query).ok_or_else(|| {
+                LegadoError::BookParse("无效正则表达式（非法或超限）".to_string())
+            })?;
             query.to_string()
         }
     };

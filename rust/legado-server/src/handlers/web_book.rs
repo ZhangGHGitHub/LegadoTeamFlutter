@@ -284,7 +284,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 }
             };
             let word_count = {
-                let v = elem_analyzer.get_string(word_count_rule).unwrap_or_default();
+                let v = elem_analyzer
+                    .get_string(word_count_rule)
+                    .unwrap_or_default();
                 if v.is_empty() {
                     None
                 } else {
@@ -545,8 +547,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 音频/视频书源获取的是链接，不需要 HTML 格式化
         let is_media = source.book_source_type
             == legado_core::models::book_source::book_source_type::AUDIO
-            || source.book_source_type
-                == legado_core::models::book_source::book_source_type::VIDEO;
+            || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
 
         let (first_content, next_urls) = parse_content_page(
             body,
@@ -1089,7 +1090,13 @@ mod tests {
     fn test_parse_content_page_media_skips_formatting() {
         // 音视频源：正文原样返回，不走 HTML 净化
         let raw = "https://media.example.com/audio/1.mp3";
-        let (content, _) = parse_content_page(raw.to_string(), "", "", "https://example.com/chap/1.html", true);
+        let (content, _) = parse_content_page(
+            raw.to_string(),
+            "",
+            "",
+            "https://example.com/chap/1.html",
+            true,
+        );
         assert_eq!(content, raw);
     }
 
@@ -1098,10 +1105,9 @@ mod tests {
         pages: std::collections::HashMap<String, String>,
     ) -> impl FnMut(
         String,
-    )
-        -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = legado_core::LegadoResult<String>> + Send>,
-        > {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = legado_core::LegadoResult<String>> + Send>,
+    > {
         move |url: String| {
             let body = pages.get(&url).cloned();
             Box::pin(async move {
@@ -1187,8 +1193,7 @@ mod tests {
         );
         pages.insert(
             "https://example.com/chap/2_b.html".to_string(),
-            "<html><body><div class='content'><p>分卷B正文</p></div></body></html>"
-                .to_string(),
+            "<html><body><div class='content'><p>分卷B正文</p></div></body></html>".to_string(),
         );
         // 若递归则需抓 2_c.html，此处故意不提供（验证不递归）
 

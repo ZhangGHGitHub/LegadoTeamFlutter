@@ -19,8 +19,8 @@ pub use highlight::{BookHighlight, HighlightRule};
 pub use rss_source::RssSource;
 
 pub use rule::{
-    row_ui_type, BookInfoRule, BookListRule, ContentRule, ExploreKind, ExploreRule,
-    FlexChildStyle, ReviewRule, RowUi, SearchRule, TocRule,
+    row_ui_type, BookInfoRule, BookListRule, ContentRule, ExploreKind, ExploreRule, FlexChildStyle,
+    ReviewRule, RowUi, SearchRule, TocRule,
 };
 
 pub use misc::{

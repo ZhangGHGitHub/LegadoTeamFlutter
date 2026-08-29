@@ -176,8 +176,7 @@ impl JsSourceMarshaller {
         if trimmed.is_empty() {
             return Err("getBookInfo 返回值为空".to_string());
         }
-        let mut parsed: Value =
-            serde_json::from_str(trimmed).map_err(|e| e.to_string())?;
+        let mut parsed: Value = serde_json::from_str(trimmed).map_err(|e| e.to_string())?;
         if !parsed.is_object() {
             return Err("getBookInfo 返回值不是对象".to_string());
         }
@@ -236,8 +235,10 @@ impl JsSourceMarshaller {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 if !is_volume {
-                    if let Some(url_str) =
-                        ch.get("url").and_then(|v| v.as_str()).map(|s| s.to_string())
+                    if let Some(url_str) = ch
+                        .get("url")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
                     {
                         let absolute = AnalyzeUrl::get_absolute_url(toc_url, &url_str);
                         if let Some(obj) = ch.as_object_mut() {
@@ -318,7 +319,8 @@ mod tests {
     #[test]
     fn test_marshal_book_info_valid() {
         let json = r#"{"name":"测试","author":"作者","intro":"简介"}"#;
-        let info = JsSourceMarshaller::marshal_book_info(json, "https://example.com/book/1").unwrap();
+        let info =
+            JsSourceMarshaller::marshal_book_info(json, "https://example.com/book/1").unwrap();
         assert_eq!(info["name"], "测试");
         assert_eq!(info["author"], "作者");
     }

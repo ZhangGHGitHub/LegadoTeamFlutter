@@ -41,8 +41,8 @@ pub struct EncodingDetectResult {
 /// # 返回
 /// 编码检测结果
 pub fn detect_encoding(file_path: &str) -> LegadoResult<EncodingDetectResult> {
-    let mut file = File::open(file_path)
-        .map_err(|e| LegadoError::BookParse(format!("无法打开文件: {e}")))?;
+    let mut file =
+        File::open(file_path).map_err(|e| LegadoError::BookParse(format!("无法打开文件: {e}")))?;
 
     // 读取前 1024 字节用于检测
     let mut buf = [0u8; 1024];
@@ -342,12 +342,7 @@ mod tests {
             f.write_all(&gbk_bytes).unwrap();
         }
 
-        let out_path = convert_file_encoding(
-            src_path.to_str().unwrap(),
-            "gbk",
-            "utf-8",
-        )
-        .unwrap();
+        let out_path = convert_file_encoding(src_path.to_str().unwrap(), "gbk", "utf-8").unwrap();
 
         // 验证输出文件内容
         let content = fs::read_to_string(&out_path).unwrap();

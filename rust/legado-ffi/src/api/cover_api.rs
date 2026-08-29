@@ -95,9 +95,7 @@ pub fn save_cover_rule(rule_json: &str) -> LegadoResult<bool> {
     let config: CoverRuleConfig = serde_json::from_str(rule_json)
         .map_err(|e| LegadoError::Internal(format!("封面规则 JSON 无效: {e}")))?;
     if config.search_url.trim().is_empty() || config.cover_rule.trim().is_empty() {
-        return Err(LegadoError::Internal(
-            "搜索url和cover规则不能为空".into(),
-        ));
+        return Err(LegadoError::Internal("搜索url和cover规则不能为空".into()));
     }
     if !crate::db_state::is_initialized() {
         return Err(LegadoError::Internal("数据库未初始化".into()));
@@ -160,7 +158,12 @@ pub fn search_cover_rules(name: &str) -> LegadoResult<String> {
             Ok(Some(url)) => urls.push(url),
             Ok(None) => {}
             Err(e) => {
-                log::warn!("封面规则 [{}] 搜索「{}」失败（已跳过）: {}", rule.name, key, e);
+                log::warn!(
+                    "封面规则 [{}] 搜索「{}」失败（已跳过）: {}",
+                    rule.name,
+                    key,
+                    e
+                );
             }
         }
     }
@@ -174,8 +177,8 @@ pub fn search_cover_rules(name: &str) -> LegadoResult<String> {
 /// 返回 `Ok(Some(url))` 命中 / `Ok(None)` 提取为空 / `Err` 失败（由调用方隔离）。
 fn search_one_cover_rule(rule: &CoverRule, key: &str) -> Result<Option<String>, String> {
     // 1. rule JSON 解析（searchUrl + coverRule）
-    let config: CoverRuleConfig = serde_json::from_str(&rule.rule)
-        .map_err(|e| format!("rule JSON 解析失败: {e}"))?;
+    let config: CoverRuleConfig =
+        serde_json::from_str(&rule.rule).map_err(|e| format!("rule JSON 解析失败: {e}"))?;
     let search_url = config.search_url.trim();
     let cover_rule = config.cover_rule.trim();
     if search_url.is_empty() || cover_rule.is_empty() {
@@ -212,10 +215,7 @@ fn search_one_cover_rule(rule: &CoverRule, key: &str) -> Result<Option<String>, 
     }
 
     // 5. isUrl=true 语义：提取结果按 URL 处理，相对路径补全为绝对 URL
-    Ok(Some(AnalyzeUrl::get_absolute_url(
-        analyze_url.url(),
-        raw,
-    )))
+    Ok(Some(AnalyzeUrl::get_absolute_url(analyze_url.url(), raw)))
 }
 
 #[cfg(test)]
@@ -259,7 +259,8 @@ mod tests {
         let default_cfg: CoverRuleConfig = serde_json::from_str(&empty_get).unwrap();
         assert!(!default_cfg.search_url.is_empty());
 
-        let saved = r#"{"enable":true,"searchUrl":"https://s.example/{{key}}","coverRule":"$.cover"}"#;
+        let saved =
+            r#"{"enable":true,"searchUrl":"https://s.example/{{key}}","coverRule":"$.cover"}"#;
         assert!(save_cover_rule(saved).unwrap());
         let got: CoverRuleConfig = serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
         assert!(got.enable);
@@ -267,8 +268,7 @@ mod tests {
         assert_eq!(got.cover_rule, "$.cover");
 
         assert!(delete_cover_rule().unwrap());
-        let after_del: CoverRuleConfig =
-            serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
+        let after_del: CoverRuleConfig = serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
         assert_eq!(after_del.search_url, default_cfg.search_url);
     }
 
@@ -330,10 +330,7 @@ mod tests {
         let json = search_cover_rules("测试书").unwrap();
         let urls: Vec<String> = serde_json::from_str(&json).unwrap();
         assert_eq!(urls.len(), 1);
-        assert_eq!(
-            urls[0],
-            "https://cdn.example.com/cover-测试书.jpg"
-        );
+        assert_eq!(urls[0], "https://cdn.example.com/cover-测试书.jpg");
         clear_cover_rules();
     }
 

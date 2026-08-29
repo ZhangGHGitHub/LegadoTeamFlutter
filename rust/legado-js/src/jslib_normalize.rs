@@ -219,8 +219,7 @@ fn collapse_double_dots(src: &str) -> String {
         // 双点折叠：代码上下文中，恰好两个点且前一有效字符为字母/下划线/$ 或 )/]
         if c == '.' && chars.get(i + 1) == Some(&'.') {
             let third = chars.get(i + 2);
-            let prev_ok = last_code_char
-                .is_some_and(|p| p.is_alphabetic() || p == '_' || p == '$');
+            let prev_ok = last_code_char.is_some_and(|p| p.is_alphabetic() || p == '_' || p == '$');
             if third != Some(&'.') && prev_ok {
                 // 折叠：输出一个点，跳过第二个点
                 out.push('.');
@@ -244,9 +243,25 @@ fn is_regex_start(last: Option<char>) -> bool {
     match last {
         None => true,
         Some(c) => {
-            c == '(' || c == ',' || c == '=' || c == ':' || c == '[' || c == '!' || c == '&'
-                || c == '|' || c == '?' || c == '{' || c == '}' || c == ';' || c == '+'
-                || c == '-' || c == '*' || c == '%' || c == '~' || c == '^' || c == '<'
+            c == '('
+                || c == ','
+                || c == '='
+                || c == ':'
+                || c == '['
+                || c == '!'
+                || c == '&'
+                || c == '|'
+                || c == '?'
+                || c == '{'
+                || c == '}'
+                || c == ';'
+                || c == '+'
+                || c == '-'
+                || c == '*'
+                || c == '%'
+                || c == '~'
+                || c == '^'
+                || c == '<'
                 || c == '>'
         }
     }
@@ -311,9 +326,7 @@ fn rename_shadowed_params(src: &str) -> String {
             }
             // 可选函数名
             if j < n && (chars[j].is_alphabetic() || chars[j] == '_' || chars[j] == '$') {
-                while j < n
-                    && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '$')
-                {
+                while j < n && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '$') {
                     j += 1;
                 }
                 while j < n && chars[j].is_whitespace() {
@@ -588,7 +601,9 @@ fn apply_renames(chars: &[char], plans: &[ShadowPlan]) -> String {
                 out.push('m');
                 let mut tok_end = i + 1;
                 while tok_end < n
-                    && (chars[tok_end].is_alphanumeric() || chars[tok_end] == '_' || chars[tok_end] == '$')
+                    && (chars[tok_end].is_alphanumeric()
+                        || chars[tok_end] == '_'
+                        || chars[tok_end] == '$')
                 {
                     tok_end += 1;
                 }
@@ -776,7 +791,7 @@ fn scan_shadows(
             }
             let mut k = j;
             let mut expect_name = true; // 当前处于“声明名”位置（项首）
-            let mut depth = 0usize;     // 初始化值内的括号深度
+            let mut depth = 0usize; // 初始化值内的括号深度
             while k < end {
                 let ch = chars[k];
                 if (ch == ';' || ch == '\n') && depth == 0 {

@@ -231,7 +231,9 @@ mod tests {
     fn test_filter_comparison() {
         let parser = JsonPathParser::new();
         let json = r#"{"store":{"book":[{"title":"a","price":5},{"title":"b","price":15}]}}"#;
-        let result = parser.parse_jsonpath(json, "$.store.book[?(@.price < 10)].title").unwrap();
+        let result = parser
+            .parse_jsonpath(json, "$.store.book[?(@.price < 10)].title")
+            .unwrap();
         assert_eq!(result, vec!["a"]);
     }
 
@@ -239,7 +241,9 @@ mod tests {
     fn test_filter_equality_string() {
         let parser = JsonPathParser::new();
         let json = r#"{"list":[{"name":"foo","v":1},{"name":"bar","v":2}]}"#;
-        let result = parser.parse_jsonpath(json, "$.list[?(@.name == 'bar')].v").unwrap();
+        let result = parser
+            .parse_jsonpath(json, "$.list[?(@.name == 'bar')].v")
+            .unwrap();
         assert_eq!(result, vec!["2"]);
     }
 

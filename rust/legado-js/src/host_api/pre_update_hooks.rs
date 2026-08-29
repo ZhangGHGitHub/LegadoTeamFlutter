@@ -85,10 +85,7 @@ mod tests {
         let re: PreUpdateHook = Arc::new(Mutex::new(|| Ok(r#"{"bookUrl":"https://a"}"#.into())));
         let rf: PreUpdateHook = Arc::new(Mutex::new(|| Ok(r#"{"tocUrl":"https://t"}"#.into())));
         let (a, b) = with_hooks(re, rf, || {
-            (
-                call_re_get_book().unwrap(),
-                call_refresh_toc_url().unwrap(),
-            )
+            (call_re_get_book().unwrap(), call_refresh_toc_url().unwrap())
         });
         assert!(a.contains("bookUrl"));
         assert!(b.contains("tocUrl"));

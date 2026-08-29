@@ -163,11 +163,9 @@ pub fn download_update_progress(task_id: &str, progress: f64) -> LegadoResult<()
 /// # 返回
 /// 进度值 (0.0 - 1.0)
 pub fn download_get_progress(task_id: &str) -> LegadoResult<f64> {
-    with_manager(|mgr| {
-        match mgr.get_task(task_id) {
-            Some(task) => Ok(task.progress),
-            None => Err(LegadoError::Internal("Task not found".into())),
-        }
+    with_manager(|mgr| match mgr.get_task(task_id) {
+        Some(task) => Ok(task.progress),
+        None => Err(LegadoError::Internal("Task not found".into())),
     })
 }
 
@@ -224,25 +222,25 @@ pub fn download_calculate_preload_indices(
 ) -> LegadoResult<String> {
     with_manager(|mgr| {
         let indices = mgr.calculate_preload_indices(book_url, current_chapter, total_chapters);
-        serde_json::to_string(&indices).map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
+        serde_json::to_string(&indices)
+            .map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
     })
 }
 
 /// 获取重试统计信息
 pub fn download_get_retry_stats(task_id: &str) -> LegadoResult<String> {
-    with_manager(|mgr| {
-        match mgr.get_retry_stats(task_id) {
-            Some(stats) => {
-                let result = serde_json::json!({
-                    "fail_count": stats.fail_count,
-                    "last_retry_at": stats.last_retry_at,
-                    "next_retry_at": stats.next_retry_at,
-                    "degraded": stats.degraded,
-                });
-                serde_json::to_string(&result).map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
-            }
-            None => Err(LegadoError::Internal("Task not found".into())),
+    with_manager(|mgr| match mgr.get_retry_stats(task_id) {
+        Some(stats) => {
+            let result = serde_json::json!({
+                "fail_count": stats.fail_count,
+                "last_retry_at": stats.last_retry_at,
+                "next_retry_at": stats.next_retry_at,
+                "degraded": stats.degraded,
+            });
+            serde_json::to_string(&result)
+                .map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
         }
+        None => Err(LegadoError::Internal("Task not found".into())),
     })
 }
 
@@ -263,9 +261,7 @@ pub fn download_update_bytes(task_id: &str, bytes: i64) -> LegadoResult<()> {
 /// 返回 HTTP Range 请求头值，用于断点续传。
 /// 如果未下载任何字节，返回空字符串。
 pub fn download_get_range_header(task_id: &str) -> LegadoResult<String> {
-    with_manager(|mgr| {
-        Ok(mgr.get_range_header(task_id).unwrap_or_default())
-    })
+    with_manager(|mgr| Ok(mgr.get_range_header(task_id).unwrap_or_default()))
 }
 
 /// 重置断点续传状态（服务端不支持 Range 时调用）
@@ -284,9 +280,7 @@ pub fn download_reset_progress(task_id: &str) -> LegadoResult<()> {
 ///
 /// 当阅读进度达到 80% 时触发预下载。
 pub fn download_should_trigger_preload(reading_progress: f64) -> LegadoResult<bool> {
-    with_manager(|mgr| {
-        Ok(mgr.should_trigger_preload(reading_progress))
-    })
+    with_manager(|mgr| Ok(mgr.should_trigger_preload(reading_progress)))
 }
 
 /// 获取预下载触发阈值
@@ -311,7 +305,8 @@ pub fn download_add_preload_tasks(
 ) -> LegadoResult<String> {
     with_manager(|mgr| {
         let task_ids = mgr.add_preload_tasks(book_url, chapters, base_priority);
-        serde_json::to_string(&task_ids).map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
+        serde_json::to_string(&task_ids)
+            .map_err(|e| LegadoError::Internal(format!("序列化失败：{e}")))
     })
 }
 

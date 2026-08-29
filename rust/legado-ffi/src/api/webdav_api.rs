@@ -102,7 +102,11 @@ pub fn webdav_upload(config_json: &str, path: &str, data: &str) -> LegadoResult<
 /// - 配置解析失败 → Internal
 /// - 文件不存在/读取失败 → Io
 /// - 上传失败（含非 2xx 响应，Task #55 F1）→ Network
-pub fn webdav_upload_file(config_json: &str, path: &str, local_file_path: &str) -> LegadoResult<()> {
+pub fn webdav_upload_file(
+    config_json: &str,
+    path: &str,
+    local_file_path: &str,
+) -> LegadoResult<()> {
     let config: WebDavConfig = serde_json::from_str(config_json)
         .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
 
@@ -240,9 +244,11 @@ pub fn webdav_incremental_sync(
     let manager = BookSyncManager::new(client);
 
     let rt = webdav_runtime_handle()?;
-    let (books, sources, sync_result) = rt.block_on(
-        manager.incremental_sync(local_books_json, local_sources_json, last_sync_time)
-    )?;
+    let (books, sources, sync_result) = rt.block_on(manager.incremental_sync(
+        local_books_json,
+        local_sources_json,
+        last_sync_time,
+    ))?;
 
     serde_json::to_string(&serde_json::json!({
         "books": books,

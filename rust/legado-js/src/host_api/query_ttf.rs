@@ -267,8 +267,18 @@ impl QueryTtf {
     pub fn is_blank_unicode(code: u32) -> bool {
         matches!(
             code,
-            0x0009 | 0x0020 | 0x00A0 | 0x2002 | 0x2003 | 0x2007 | 0x200A | 0x200B | 0x200C
-                | 0x200D | 0x202F | 0x205F
+            0x0009
+                | 0x0020
+                | 0x00A0
+                | 0x2002
+                | 0x2003
+                | 0x2007
+                | 0x200A
+                | 0x200B
+                | 0x200C
+                | 0x200D
+                | 0x202F
+                | 0x205F
         )
     }
 }
@@ -338,8 +348,7 @@ fn parse_cmap(buf: &[u8], cmap_off: usize) -> Result<HashMap<u32, u32>, TtfError
                             ((unicode as i32).wrapping_add(delta)) as u16 as i64
                         } else {
                             // Java 端索引公式（含越界跳过语义）
-                            let g_index = (range_offset / 2) as i64 + unicode as i64
-                                - start as i64
+                            let g_index = (range_offset / 2) as i64 + unicode as i64 - start as i64
                                 + seg as i64
                                 - seg_count as i64;
                             if g_index < 0 || g_index >= glyph_id_array_len as i64 {
@@ -407,7 +416,10 @@ fn parse_glyf(
         }
 
         if number_of_contours > 0 {
-            glyphs[index] = Some(Glyph::Simple(parse_simple_glyph(&mut r, number_of_contours)?));
+            glyphs[index] = Some(Glyph::Simple(parse_simple_glyph(
+                &mut r,
+                number_of_contours,
+            )?));
         } else {
             glyphs[index] = Some(Glyph::Composite(parse_composite_glyph(&mut r)?));
         }
@@ -416,7 +428,10 @@ fn parse_glyf(
 }
 
 /// 解析简单字形（flags + x/y 相对坐标增量），对应 Java 端简单轮廓分支
-fn parse_simple_glyph(r: &mut Reader<'_>, number_of_contours: i16) -> Result<SimpleGlyph, TtfError> {
+fn parse_simple_glyph(
+    r: &mut Reader<'_>,
+    number_of_contours: i16,
+) -> Result<SimpleGlyph, TtfError> {
     let end_pts = r.read_u16_vec(number_of_contours as usize)?;
     let instruction_length = r.read_u16()? as usize;
     // 跳过指令数据
@@ -525,12 +540,11 @@ fn glyph_signature(glyph: &Option<Glyph>) -> Option<String> {
     let glyph = glyph.as_ref()?;
     match glyph {
         Glyph::Simple(s) => {
-            let coords: Vec<String> = s
-                .x
-                .iter()
-                .zip(s.y.iter())
-                .map(|(x, y)| format!("{},{}", x, y))
-                .collect();
+            let coords: Vec<String> =
+                s.x.iter()
+                    .zip(s.y.iter())
+                    .map(|(x, y)| format!("{},{}", x, y))
+                    .collect();
             Some(coords.join("|"))
         }
         Glyph::Composite(list) => {

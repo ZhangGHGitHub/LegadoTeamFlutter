@@ -26,15 +26,13 @@ use std::sync::{Arc, OnceLock, RwLock};
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::{CookiePersistence, LegadoClient, LegadoClientConfig};
 
-fn read_client_slot(
-) -> std::sync::RwLockReadGuard<'static, Option<LegadoClient>> {
+fn read_client_slot() -> std::sync::RwLockReadGuard<'static, Option<LegadoClient>> {
     client_slot()
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn write_client_slot(
-) -> std::sync::RwLockWriteGuard<'static, Option<LegadoClient>> {
+fn write_client_slot() -> std::sync::RwLockWriteGuard<'static, Option<LegadoClient>> {
     client_slot()
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -221,7 +219,10 @@ mod tests {
             client.cookie_persistence().is_some(),
             "DB 已初始化时共享客户端应携带持久化后端"
         );
-        let store = client.cookie_store().read().unwrap_or_else(|e| e.into_inner());
+        let store = client
+            .cookie_store()
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(
             store.get_key("persist-test.com", "session"),
             Some("from_db".to_string()),

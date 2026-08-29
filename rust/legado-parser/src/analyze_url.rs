@@ -205,10 +205,7 @@ impl AnalyzeUrl {
         // （如 `/search?q={{key}}`、`statics/search.aspx?...`）必须拼到书源域名。
         // 变量 `baseUrl` 由 build_search_url 注入；缺省时保持空（绝对 URL 不受影响）。
         // 此前 base_url 恒空 → 相对路径原样发出 → 图片源约半数搜索空结果。— Reasonix
-        let base_url = variables
-            .get("baseUrl")
-            .cloned()
-            .unwrap_or_default();
+        let base_url = variables.get("baseUrl").cloned().unwrap_or_default();
 
         // 确保 {{page}} 在 replace_inner_expressions 阶段可解析（对齐原版 bindings["page"]）
         let owned_vars;
@@ -580,16 +577,12 @@ impl AnalyzeUrl {
                         || self.headers.contains_key("content-type");
                     if !is_json && !is_xml && !has_content_type {
                         // Form body: 按 charset 编码参数（对齐原版 encodeParams + postForm）
-                        self.encoded_form = Some(Self::encode_form_params(
-                            body,
-                            self.charset.as_deref(),
-                        ));
+                        self.encoded_form =
+                            Some(Self::encode_form_params(body, self.charset.as_deref()));
                         // 原版 postForm 使用 application/x-www-form-urlencoded
                         self.headers
                             .entry("Content-Type".to_string())
-                            .or_insert_with(|| {
-                                "application/x-www-form-urlencoded".to_string()
-                            });
+                            .or_insert_with(|| "application/x-www-form-urlencoded".to_string());
                     }
                 }
             }
@@ -597,8 +590,7 @@ impl AnalyzeUrl {
                 if let Some(pos) = self.url.find('?') {
                     let query = self.url[pos + 1..].to_string();
                     // 对齐原版 analyzeQuery：charset=gbk 时按 GBK 百分号编码关键词
-                    let encoded =
-                        Self::encode_query_params(&query, self.charset.as_deref());
+                    let encoded = Self::encode_query_params(&query, self.charset.as_deref());
                     self.encoded_query = Some(encoded.clone());
                     self.parse_query_params(&query);
                     self.url_no_query = self.url[..pos].to_string();
@@ -689,8 +681,7 @@ impl AnalyzeUrl {
 
     /// 解析 charset 标签；未知标签回退 UTF-8
     fn encoding_for_label(charset: &str) -> &'static encoding_rs::Encoding {
-        encoding_rs::Encoding::for_label(charset.trim().as_bytes())
-            .unwrap_or(encoding_rs::UTF_8)
+        encoding_rs::Encoding::for_label(charset.trim().as_bytes()).unwrap_or(encoding_rs::UTF_8)
     }
 
     /// 判断表单分量是否已经符合原版 encodedForm 规则。
@@ -700,7 +691,12 @@ impl AnalyzeUrl {
         while i < bytes.len() {
             match bytes[i] {
                 b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'*' | b'-' | b'.' | b'_' => i += 1,
-                b'%' if i + 2 < bytes.len() && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit() => i += 3,
+                b'%' if i + 2 < bytes.len()
+                    && bytes[i + 1].is_ascii_hexdigit()
+                    && bytes[i + 2].is_ascii_hexdigit() =>
+                {
+                    i += 3
+                }
                 _ => return false,
             }
         }
@@ -813,7 +809,9 @@ impl AnalyzeUrl {
                 let data_start = meta_end + 1;
                 let b64_part = &rule[data_start..];
                 let b64_len = b64_part
-                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='))
+                    .find(|c: char| {
+                        !(c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+                    })
                     .unwrap_or(b64_part.len());
                 // base64 段尾是 `,{...}` 选项分隔逗号：跳过逗号再校验 JSON 形态
                 let after = b64_part[b64_len..].trim_start_matches(',').trim();
@@ -942,9 +940,7 @@ impl AnalyzeUrl {
             if let Some(wv) = obj.get("webView") {
                 option.use_web_view = match wv {
                     serde_json::Value::Bool(b) => *b,
-                    serde_json::Value::String(s) => {
-                        !s.is_empty() && s != "false" && s != "0"
-                    }
+                    serde_json::Value::String(s) => !s.is_empty() && s != "false" && s != "0",
                     serde_json::Value::Null => false,
                     _ => true,
                 };
@@ -1235,7 +1231,8 @@ impl AnalyzeUrl {
             // JS 变量 result；趣书等 `URL,{json}\n@js` 规则通过
             // String(result) 从前缀构造重定向后的分页 URL。
             let result_lit = serde_json::to_string(&result).unwrap_or_else(|_| "\"\"".to_string());
-            let code_with_vars = format!("{var_prologue}var result = {result_lit};\n{eval_prologue}{js_code}");
+            let code_with_vars =
+                format!("{var_prologue}var result = {result_lit};\n{eval_prologue}{js_code}");
 
             // 执行 JS 并获取结果
             match js_executor.execute_js(&code_with_vars) {
@@ -1601,10 +1598,18 @@ mod tests {
         }
         let parsed = AnalyzeUrl::parse(url, &std::collections::HashMap::new(), 1).unwrap();
         assert!(parsed.is_data_uri(), "应识别为 data URI");
-        let bytes = parsed.get_byte_array_if_data_uri()
-            .unwrap_or_else(|| panic!("get_byte_array 失败, url_no_query={}", parsed.url_no_query().chars().take(120).collect::<String>()));
+        let bytes = parsed.get_byte_array_if_data_uri().unwrap_or_else(|| {
+            panic!(
+                "get_byte_array 失败, url_no_query={}",
+                parsed.url_no_query().chars().take(120).collect::<String>()
+            )
+        });
         let s = String::from_utf8_lossy(&bytes);
-        assert!(s.contains("source"), "解码内容应为 JSON: {}", s.chars().take(80).collect::<String>());
+        assert!(
+            s.contains("source"),
+            "解码内容应为 JSON: {}",
+            s.chars().take(80).collect::<String>()
+        );
     }
 
     /// 爱下电子式单引号 body 选项宽松解析（对齐原版 GSON lenient）
@@ -1742,13 +1747,7 @@ mod tests {
 
     #[test]
     fn test_page_overflow_uses_last() {
-        let url = AnalyzeUrl::new(
-            "https://example.com/<p1,p2,p3>",
-            None,
-            Some(10),
-            "",
-            None,
-        );
+        let url = AnalyzeUrl::new("https://example.com/<p1,p2,p3>", None, Some(10), "", None);
         assert_eq!(url.url(), "https://example.com/p3");
     }
 
@@ -1942,14 +1941,16 @@ mod tests {
             r#"https://example.com/post,{"method":"POST","body":"value=a*b,c~ d"}"#,
             &HashMap::new(),
             1,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(url.request_body(), "value=a*b%2Cc%7E+d");
 
         let safe = AnalyzeUrl::parse(
             r#"https://example.com/post,{"method":"POST","body":"value=a-b_c.d"}"#,
             &HashMap::new(),
             1,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(safe.request_body(), "value=a-b_c.d");
     }
 
@@ -1981,7 +1982,10 @@ mod tests {
             "http://www.95dushu.info/modules/article/search.php?ie=gbk&searchkey=x"
         );
         assert_eq!(
-            AnalyzeUrl::get_absolute_url("https://www.bookxuan.com#🎃", "modules/article/search.php"),
+            AnalyzeUrl::get_absolute_url(
+                "https://www.bookxuan.com#🎃",
+                "modules/article/search.php"
+            ),
             "https://www.bookxuan.com/modules/article/search.php"
         );
         assert_eq!(
@@ -2095,10 +2099,7 @@ mod tests {
         assert_eq!(url.url(), "https://example.com/api/search?q=test");
         // 无 path 的 host + 无前导 / 的相对路径（拷贝漫画 statics/...）
         assert_eq!(
-            AnalyzeUrl::get_absolute_url(
-                "https://www.copymanga.site",
-                "statics/search.aspx?key=x"
-            ),
+            AnalyzeUrl::get_absolute_url("https://www.copymanga.site", "statics/search.aspx?key=x"),
             "https://www.copymanga.site/statics/search.aspx?key=x"
         );
     }
@@ -2182,13 +2183,7 @@ mod tests {
     // --- 17. is_data_uri 和 get_byte_array_if_data_uri ---
     #[test]
     fn test_is_data_uri() {
-        let url = AnalyzeUrl::new(
-            "data:text/plain;base64,aGVsbG8=",
-            None,
-            None,
-            "",
-            None,
-        );
+        let url = AnalyzeUrl::new("data:text/plain;base64,aGVsbG8=", None, None, "", None);
         assert!(url.is_data_uri());
         let bytes = url.get_byte_array_if_data_uri().unwrap();
         assert_eq!(bytes, b"hello");
@@ -2306,7 +2301,11 @@ mod tests {
         // 书山 bookUrl 形态：data:detailsUrl;base64,<base64JSON>,{"type":"susan"}
         let url = r#"data:detailsUrl;base64,eyJ1cmwiOiJodHRwczovL3YxLnZvc3NjLmNvbS9kZXRhaWwifQ==,{"type":"susan"}"#;
         let parsed = AnalyzeUrl::parse(url, &HashMap::new(), 1).unwrap();
-        eprintln!("url_no_query=<{}> url=<{}>", parsed.url_no_query(), parsed.url());
+        eprintln!(
+            "url_no_query=<{}> url=<{}>",
+            parsed.url_no_query(),
+            parsed.url()
+        );
         assert!(parsed.is_data_uri(), "is_data_uri 应为 true");
         let bytes = parsed.get_byte_array_if_data_uri().unwrap();
         assert_eq!(
@@ -2432,10 +2431,8 @@ mod tests {
     #[test]
     fn test_analyze_js_eval_reload_bare_uri_fallback() {
         let executor = UriEvalCompatRecordingExecutor::new();
-        let template =
-            "<js>eval(String(Reload('https://api.example.com/search?q=test')))</js>";
-        let (out, err) =
-            AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        let template = "<js>eval(String(Reload('https://api.example.com/search?q=test')))</js>";
+        let (out, err) = AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
         assert!(err.is_none(), "裸 URI 回退不应报错: {err:?}");
         let code = executor.last_code();
         assert!(
@@ -2454,8 +2451,7 @@ mod tests {
     fn test_analyze_js_eval_non_uri_error_not_swallowed() {
         let executor = UriEvalCompatRecordingExecutor::new();
         let template = "<js>eval('@@@not-a-uri')</js>";
-        let (_out, err) =
-            AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
+        let (_out, err) = AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
         let err = err.expect("非 URI 非法 eval 应保留错误");
         assert!(
             err.contains("unexpected token"),
@@ -2467,8 +2463,7 @@ mod tests {
             "即使失败路径也应已注入兼容前导: {code}"
         );
         // parse_with_js 须上抛，禁止当成功 URL
-        let parsed =
-            AnalyzeUrl::parse_with_js(template, &HashMap::new(), 1, &executor);
+        let parsed = AnalyzeUrl::parse_with_js(template, &HashMap::new(), 1, &executor);
         assert!(
             parsed.is_err(),
             "非 URI 非法 eval 经 parse_with_js 应失败: {}",
@@ -2480,11 +2475,15 @@ mod tests {
     #[test]
     fn test_inline_js_receives_previous_result_binding() {
         let executor = EchoJsExecutor;
-        let template = "https://example.com/e/search/index.php,{\"method\":\"POST\"}\n@js:String(result)";
+        let template =
+            "https://example.com/e/search/index.php,{\"method\":\"POST\"}\n@js:String(result)";
         let (out, err) = AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
         assert!(err.is_none(), "JS 不应失败: {err:?}");
         assert!(out.contains("var result = \"https://example.com/e/search/index.php,{\\\"method\\\":\\\"POST\\\"}"), "应注入完整 URL option 前缀: {out}");
-        assert!(!out.contains("var result = \"@js:"), "result 不应绑定 JS 块自身: {out}");
+        assert!(
+            !out.contains("var result = \"@js:"),
+            "result 不应绑定 JS 块自身: {out}"
+        );
     }
 
     // --- 21. parse_with_js ---
@@ -2530,15 +2529,21 @@ mod tests {
         assert!(out.starts_with("重生|2|"), "简单变量应直接替换: {out}");
         let code = &out["重生|2|".len()..];
         assert!(code.contains("var page = 2;"), "page 应以数字注入: {code}");
-        assert!(code.contains("var key = '重生';"), "key 应以字符串注入: {code}");
+        assert!(
+            code.contains("var key = '重生';"),
+            "key 应以字符串注入: {code}"
+        );
     }
 
     // --- 21.2 {{expression}} 求值失败 → 空串（对齐原版 evalJS null → ""） ---
     #[test]
     fn test_inner_expression_fail_to_empty() {
         let vars = HashMap::new();
-        let out =
-            AnalyzeUrl::replace_inner_expressions_with_js("pre{{someFn()}}post", &vars, &FailJsExecutor);
+        let out = AnalyzeUrl::replace_inner_expressions_with_js(
+            "pre{{someFn()}}post",
+            &vars,
+            &FailJsExecutor,
+        );
         assert_eq!(out, "prepost");
     }
 
@@ -2553,10 +2558,16 @@ mod tests {
             extra: HashMap::new(),
         };
 
-        let url =
-            AnalyzeUrl::parse_with_context("https://example.com/search?q={bookName}", &vars, &ctx, 1)
-                .unwrap();
-        assert!(url.url().contains("Rust%E7%BC%96%E7%A8%8B%E6%8C%87%E5%8D%97"));
+        let url = AnalyzeUrl::parse_with_context(
+            "https://example.com/search?q={bookName}",
+            &vars,
+            &ctx,
+            1,
+        )
+        .unwrap();
+        assert!(url
+            .url()
+            .contains("Rust%E7%BC%96%E7%A8%8B%E6%8C%87%E5%8D%97"));
     }
 
     #[test]
@@ -2603,13 +2614,9 @@ mod tests {
             extra,
         };
 
-        let url = AnalyzeUrl::parse_with_context(
-            "https://example.com/api?k={customKey}",
-            &vars,
-            &ctx,
-            1,
-        )
-        .unwrap();
+        let url =
+            AnalyzeUrl::parse_with_context("https://example.com/api?k={customKey}", &vars, &ctx, 1)
+                .unwrap();
         assert!(url.url().contains("k=customValue"));
     }
 
@@ -2669,7 +2676,8 @@ mod tests {
     #[test]
     fn test_data_uri_html_payload_not_mangled_by_page_replace() {
         let vars = HashMap::new();
-        let template = "data:text/html;charset=utf-8,<html><body><p id='def'>n. 测试释义</p></body></html>";
+        let template =
+            "data:text/html;charset=utf-8,<html><body><p id='def'>n. 测试释义</p></body></html>";
         let url = AnalyzeUrl::parse(template, &vars, 1).unwrap();
         let bytes = url.get_byte_array_if_data_uri().unwrap();
         let body = String::from_utf8_lossy(&bytes);

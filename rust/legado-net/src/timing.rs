@@ -151,8 +151,14 @@ pub fn emit_request(url: &str, ttfb: Duration, body: Duration, remote: Option<So
         remote_ip: remote,
     };
 
-    let dns_txt = rt.dns_ms.map(|v| format!("{v:.3}")).unwrap_or_else(|| "na".into());
-    let remote_txt = rt.remote_ip.map(|s| s.to_string()).unwrap_or_else(|| "na".into());
+    let dns_txt = rt
+        .dns_ms
+        .map(|v| format!("{v:.3}"))
+        .unwrap_or_else(|| "na".into());
+    let remote_txt = rt
+        .remote_ip
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "na".into());
     eprintln!(
         "[timing] url={} host={} dns_ms={} dns_v4={} dns_v6={} ttfb_ms={:.3} body_ms={:.3} total_ms={:.3} remote={}",
         rt.url, rt.host, dns_txt, rt.dns_v4, rt.dns_v6, rt.ttfb_ms, rt.body_ms, rt.total_ms, remote_txt,
@@ -233,7 +239,10 @@ mod tests {
     #[test]
     fn test_host_of_valid() {
         assert_eq!(host_of("https://example.com/a?b=1"), "example.com");
-        assert_eq!(host_of("http://text.example.org:8080/x"), "text.example.org");
+        assert_eq!(
+            host_of("http://text.example.org:8080/x"),
+            "text.example.org"
+        );
     }
 
     #[test]

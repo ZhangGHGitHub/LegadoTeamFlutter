@@ -66,9 +66,7 @@ fn value_to_cipher_bytes<'js>(v: &Value<'js>) -> JsResult<Vec<u8>> {
     if let Some(s) = v.as_string() {
         return b64_decode_lenient(&s.to_string()?).map_err(js_err);
     }
-    Err(js_err(
-        "decrypt input must be String(Base64) or Uint8Array",
-    ))
+    Err(js_err("decrypt input must be String(Base64) or Uint8Array"))
 }
 
 /// JS 明文 → 字节：String UTF-8；Uint8Array 原样
@@ -81,9 +79,7 @@ fn value_to_plain_bytes<'js>(v: &Value<'js>) -> JsResult<Vec<u8>> {
             return Ok(bytes.to_vec());
         }
     }
-    Err(js_err(
-        "encrypt input must be String or Uint8Array",
-    ))
+    Err(js_err("encrypt input must be String or Uint8Array"))
 }
 
 /// 对称加密状态（对齐 hutool SymmetricCrypto 持有 key/iv/transformation）
@@ -95,23 +91,13 @@ struct SymState {
 
 impl SymState {
     fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, String> {
-        crypto::symmetric_decrypt(
-            &self.transformation,
-            &self.key,
-            self.iv.as_deref(),
-            data,
-        )
-        .map_err(|e| e.to_string())
+        crypto::symmetric_decrypt(&self.transformation, &self.key, self.iv.as_deref(), data)
+            .map_err(|e| e.to_string())
     }
 
     fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, String> {
-        crypto::symmetric_encrypt(
-            &self.transformation,
-            &self.key,
-            self.iv.as_deref(),
-            data,
-        )
-        .map_err(|e| e.to_string())
+        crypto::symmetric_encrypt(&self.transformation, &self.key, self.iv.as_deref(), data)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -125,8 +111,7 @@ pub fn build_symmetric_crypto_object<'js>(
     iv: Option<&[u8]>,
 ) -> JsResult<Object<'js>> {
     // 预先校验 transformation，失败尽早报错（避免书源侧 cipher.decrypt 才炸）
-    let (algo, mode, _padding) =
-        parse_transformation(transformation).map_err(js_err)?;
+    let (algo, mode, _padding) = parse_transformation(transformation).map_err(js_err)?;
     match algo.as_str() {
         "AES" if mode == "CBC" || mode == "ECB" || mode == "NONE" => {}
         "DES" | "RC4" => {}
@@ -162,14 +147,11 @@ pub fn build_symmetric_crypto_object<'js>(
     // decryptStr(data) -> String
     {
         let st = Rc::clone(&state);
-        let f = Function::new(
-            ctx.clone(),
-            move |data: Value<'js>| -> JsResult<String> {
-                let bytes = value_to_cipher_bytes(&data)?;
-                let pt = st.borrow().decrypt(&bytes).map_err(js_err)?;
-                String::from_utf8(pt).map_err(|e| js_err(format!("UTF-8 decode: {e}")))
-            },
-        )?;
+        let f = Function::new(ctx.clone(), move |data: Value<'js>| -> JsResult<String> {
+            let bytes = value_to_cipher_bytes(&data)?;
+            let pt = st.borrow().decrypt(&bytes).map_err(js_err)?;
+            String::from_utf8(pt).map_err(|e| js_err(format!("UTF-8 decode: {e}")))
+        })?;
         obj.set("decryptStr", f)?;
     }
 
@@ -190,28 +172,22 @@ pub fn build_symmetric_crypto_object<'js>(
     // encryptBase64(data) -> String
     {
         let st = Rc::clone(&state);
-        let f = Function::new(
-            ctx.clone(),
-            move |data: Value<'js>| -> JsResult<String> {
-                let bytes = value_to_plain_bytes(&data)?;
-                let ct = st.borrow().encrypt(&bytes).map_err(js_err)?;
-                Ok(B64.encode(ct))
-            },
-        )?;
+        let f = Function::new(ctx.clone(), move |data: Value<'js>| -> JsResult<String> {
+            let bytes = value_to_plain_bytes(&data)?;
+            let ct = st.borrow().encrypt(&bytes).map_err(js_err)?;
+            Ok(B64.encode(ct))
+        })?;
         obj.set("encryptBase64", f)?;
     }
 
     // encryptHex(data) -> String
     {
         let st = Rc::clone(&state);
-        let f = Function::new(
-            ctx.clone(),
-            move |data: Value<'js>| -> JsResult<String> {
-                let bytes = value_to_plain_bytes(&data)?;
-                let ct = st.borrow().encrypt(&bytes).map_err(js_err)?;
-                Ok(hex::encode(ct))
-            },
-        )?;
+        let f = Function::new(ctx.clone(), move |data: Value<'js>| -> JsResult<String> {
+            let bytes = value_to_plain_bytes(&data)?;
+            let ct = st.borrow().encrypt(&bytes).map_err(js_err)?;
+            Ok(hex::encode(ct))
+        })?;
         obj.set("encryptHex", f)?;
     }
 
@@ -243,13 +219,8 @@ pub fn aes_base64_decode_to_string(
     iv: &str,
 ) -> Result<String, String> {
     let data = b64_decode_lenient(ciphertext_b64)?;
-    let pt = crypto::symmetric_decrypt(
-        transformation,
-        key.as_bytes(),
-        Some(iv.as_bytes()),
-        &data,
-    )
-    .map_err(|e| e.to_string())?;
+    let pt = crypto::symmetric_decrypt(transformation, key.as_bytes(), Some(iv.as_bytes()), &data)
+        .map_err(|e| e.to_string())?;
     String::from_utf8(pt).map_err(|e| format!("UTF-8 decode: {e}"))
 }
 

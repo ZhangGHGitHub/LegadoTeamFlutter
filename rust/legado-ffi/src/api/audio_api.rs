@@ -213,8 +213,7 @@ pub fn get_audio_chapter_media(
     };
 
     let engine = super::web_book::build_engine()?;
-    let content =
-        runtime::block_on(async { engine.get_content(&source, &web_chapter).await })?;
+    let content = runtime::block_on(async { engine.get_content(&source, &web_chapter).await })?;
     let media_url = content.trim().to_string();
     if media_url.is_empty() {
         return Err(LegadoError::ContentEmpty("未获取到资源链接".into()));

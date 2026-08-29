@@ -404,10 +404,7 @@ mod tests {
     /// 同作者去重：仍为纯文本单作者
     #[test]
     fn test_merge_authors_dedup_single() {
-        assert_eq!(
-            merge_read_record_authors("作者A", "作者A"),
-            "作者A"
-        );
+        assert_eq!(merge_read_record_authors("作者A", "作者A"), "作者A");
     }
 
     /// 多作者合并：去重 + 排序 + 前缀编码
@@ -415,10 +412,8 @@ mod tests {
     fn test_merge_authors_multi_sorted() {
         let merged = merge_read_record_authors("作者B", "作者A");
         assert!(merged.starts_with(AUTHORS_PREFIX));
-        let arr: Vec<String> = serde_json::from_str(
-            merged.strip_prefix(AUTHORS_PREFIX).unwrap(),
-        )
-        .unwrap();
+        let arr: Vec<String> =
+            serde_json::from_str(merged.strip_prefix(AUTHORS_PREFIX).unwrap()).unwrap();
         // 排序后的作者集合
         assert_eq!(arr, vec!["作者A".to_string(), "作者B".to_string()]);
     }
@@ -429,10 +424,8 @@ mod tests {
         let set_value = format!("{AUTHORS_PREFIX}[\"作者A\",\"作者B\"]");
         let merged = merge_read_record_authors(&set_value, "作者B");
         // 仍为两个作者，去重后保持集合编码
-        let arr: Vec<String> = serde_json::from_str(
-            merged.strip_prefix(AUTHORS_PREFIX).unwrap(),
-        )
-        .unwrap();
+        let arr: Vec<String> =
+            serde_json::from_str(merged.strip_prefix(AUTHORS_PREFIX).unwrap()).unwrap();
         assert_eq!(arr, vec!["作者A".to_string(), "作者B".to_string()]);
     }
 
@@ -458,10 +451,8 @@ mod tests {
         let record = repo.get_record("同名书").unwrap().unwrap();
         assert_eq!(record.read_time, 200);
         assert!(record.author.starts_with(AUTHORS_PREFIX));
-        let arr: Vec<String> = serde_json::from_str(
-            record.author.strip_prefix(AUTHORS_PREFIX).unwrap(),
-        )
-        .unwrap();
+        let arr: Vec<String> =
+            serde_json::from_str(record.author.strip_prefix(AUTHORS_PREFIX).unwrap()).unwrap();
         assert_eq!(arr, vec!["作者A".to_string(), "作者B".to_string()]);
     }
 
@@ -486,10 +477,7 @@ mod tests {
         let repo = ReadRecordRepository::new(db.connection());
 
         repo.insert_with_author("书", "作者A", 100).unwrap();
-        assert_eq!(
-            repo.get_author("书").unwrap().as_deref(),
-            Some("作者A")
-        );
+        assert_eq!(repo.get_author("书").unwrap().as_deref(), Some("作者A"));
         assert_eq!(repo.get_author("不存在").unwrap(), None);
     }
 

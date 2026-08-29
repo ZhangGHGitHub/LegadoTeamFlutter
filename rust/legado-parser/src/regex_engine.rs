@@ -28,9 +28,8 @@ impl RegexEngine {
             return Ok(vec![]);
         }
 
-        let re = legado_core::compile_regex_safe(pattern).ok_or_else(|| {
-            LegadoError::Parser(format!("Invalid regex pattern: {}", pattern))
-        })?;
+        let re = legado_core::compile_regex_safe(pattern)
+            .ok_or_else(|| LegadoError::Parser(format!("Invalid regex pattern: {}", pattern)))?;
 
         let results: Vec<String> = re.find_iter(text).map(|m| m.as_str().to_string()).collect();
 
@@ -44,9 +43,8 @@ impl RegexEngine {
             return Ok(vec![]);
         }
 
-        let re = legado_core::compile_regex_safe(pattern).ok_or_else(|| {
-            LegadoError::Parser(format!("Invalid regex pattern: {}", pattern))
-        })?;
+        let re = legado_core::compile_regex_safe(pattern)
+            .ok_or_else(|| LegadoError::Parser(format!("Invalid regex pattern: {}", pattern)))?;
 
         let mut results = Vec::new();
 
@@ -249,6 +247,8 @@ mod tests {
                 assert!(bad.is_none(), "非法 pattern 应降级为 None");
             })
             .expect("spawn 失败");
-        handle.join().expect("小栈线程上调用 compile_regex_safe 不应崩溃");
+        handle
+            .join()
+            .expect("小栈线程上调用 compile_regex_safe 不应崩溃");
     }
 }

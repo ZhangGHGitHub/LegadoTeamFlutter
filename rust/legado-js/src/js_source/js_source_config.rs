@@ -157,16 +157,17 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
         .and_then(|v| v.as_str())
         .unwrap_or(CONFIG_PROPERTY)
         .to_string();
-    let raw_json = env.get("json").and_then(|v| v.as_str()).ok_or_else(|| {
-        LegadoError::JsEngine(format!("{} 配置对象无法解析", config_name))
-    })?;
+    let raw_json = env
+        .get("json")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| LegadoError::JsEngine(format!("{} 配置对象无法解析", config_name)))?;
 
     // 3. 解析配置 JSON（对齐 Kotlin GSON.fromJson(json, JsonObject)）
     let mut value: Value = serde_json::from_str(raw_json)
         .map_err(|_| LegadoError::JsEngine(format!("{} 配置对象不是合法对象", config_name)))?;
-    let obj = value.as_object_mut().ok_or_else(|| {
-        LegadoError::JsEngine(format!("{} 配置对象不是合法对象", config_name))
-    })?;
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| LegadoError::JsEngine(format!("{} 配置对象不是合法对象", config_name)))?;
 
     // 4. 剥离规则键（mainJs 由本流程回填，规则体不进入 BookSource 字段）
     for key in STRIPPED_KEYS {
@@ -178,9 +179,8 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
     normalize_login_ui(obj)?;
 
     // 6. 反序列化为 BookSource（lenient 解析，兼容字符串数字等宽松格式）
-    let mut source: BookSource = serde_json::from_value(value).map_err(|_| {
-        LegadoError::JsEngine(format!("{} 配置对象字段类型不符", config_name))
-    })?;
+    let mut source: BookSource = serde_json::from_value(value)
+        .map_err(|_| LegadoError::JsEngine(format!("{} 配置对象字段类型不符", config_name)))?;
 
     // 7. 必备字段校验
     if source.book_source_url.trim().is_empty() {
@@ -218,10 +218,7 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
     };
     for name in required {
         if probe_of(name) != "fn" {
-            return Err(LegadoError::JsEngine(format!(
-                "JS源缺少必备函数 {}",
-                name
-            )));
+            return Err(LegadoError::JsEngine(format!("JS源缺少必备函数 {}", name)));
         }
     }
 
@@ -238,7 +235,11 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
 
     // loginUi 函数 / loginUi 数据二选一及配对
     if probe_of("loginUiFn") == "fn" {
-        if source.login_ui.as_ref().is_some_and(|s| !s.trim().is_empty()) {
+        if source
+            .login_ui
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty())
+        {
             return Err(LegadoError::JsEngine(
                 "loginUi 函数与 config.loginUi 数据只能二选一".to_string(),
             ));
@@ -249,7 +250,10 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
             ));
         }
         source.login_ui = Some(LOGIN_UI_MARKER.to_string());
-    } else if source.login_ui.as_ref().is_some_and(|s| !s.trim().is_empty())
+    } else if source
+        .login_ui
+        .as_ref()
+        .is_some_and(|s| !s.trim().is_empty())
         && probe_of("login") != "fn"
     {
         return Err(LegadoError::JsEngine(
@@ -291,9 +295,7 @@ fn extract_quickjs(text: &str) -> LegadoResult<BookSource> {
 /// 归一化 exploreUrl（对齐 Kotlin normalizeExploreUrl）
 ///
 /// 数组形式：校验每项 title 非空后转为 JSON 字符串；空数组移除该键。
-fn normalize_explore_url(
-    obj: &mut serde_json::Map<String, Value>,
-) -> LegadoResult<()> {
+fn normalize_explore_url(obj: &mut serde_json::Map<String, Value>) -> LegadoResult<()> {
     let element = match obj.get("exploreUrl") {
         Some(v) => v.clone(),
         None => return Ok(()),
@@ -304,10 +306,7 @@ fn normalize_explore_url(
             return Ok(());
         }
         for (index, item) in arr.iter().enumerate() {
-            let title = item
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
             if title.trim().is_empty() {
                 return Err(LegadoError::JsEngine(format!(
                     "exploreUrl 第 {} 项缺少 title",
@@ -325,9 +324,7 @@ fn normalize_explore_url(
 /// 归一化 loginUi（对齐 Kotlin normalizeLoginUi）
 ///
 /// 字符串 `"[]"` 或空数组移除该键；数组形式校验每项 name 后转 JSON 字符串。
-fn normalize_login_ui(
-    obj: &mut serde_json::Map<String, Value>,
-) -> LegadoResult<()> {
+fn normalize_login_ui(obj: &mut serde_json::Map<String, Value>) -> LegadoResult<()> {
     let element = match obj.get("loginUi") {
         Some(v) => v.clone(),
         None => return Ok(()),
@@ -457,10 +454,7 @@ fn fallback_bracket_check(text: &str) -> SyntaxCheckResult {
                     _ => {
                         return SyntaxCheckResult {
                             valid: false,
-                            message: format!(
-                                "括号不匹配（基础检查，未启用 QuickJS）：位置 {}",
-                                i
-                            ),
+                            message: format!("括号不匹配（基础检查，未启用 QuickJS）：位置 {}", i),
                             line: None,
                         }
                     }
@@ -547,12 +541,7 @@ fn find_update_time_ranges(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// 扫描 var/let/const 声明列表，寻找 `config|source = {...}` 并收集区间
-fn scan_declaration(
-    b: &[u8],
-    text: &str,
-    mut i: usize,
-    ranges: &mut Vec<(usize, usize)>,
-) -> usize {
+fn scan_declaration(b: &[u8], text: &str, mut i: usize, ranges: &mut Vec<(usize, usize)>) -> usize {
     let n = b.len();
     loop {
         i = skip_trivia(b, i);
@@ -593,11 +582,7 @@ fn scan_declaration(
 /// 扫描 config/source 对象字面量，收集一级属性中可替换的 lastUpdateTime 值区间
 ///
 /// 返回（对象结束后的位置，收集到的区间列表）
-fn scan_config_object(
-    b: &[u8],
-    text: &str,
-    start: usize,
-) -> (usize, Vec<(usize, usize)>) {
+fn scan_config_object(b: &[u8], text: &str, start: usize) -> (usize, Vec<(usize, usize)>) {
     let n = b.len();
     let mut found: Vec<(usize, usize)> = Vec::new();
     let mut i = start + 1; // 跳过 '{'
@@ -942,7 +927,8 @@ mod tests {
 
     #[test]
     fn stamp_skips_nested_objects() {
-        let text = "var config = {\n  ruleSearch: { lastUpdateTime: 111 },\n  lastUpdateTime: 222\n};";
+        let text =
+            "var config = {\n  ruleSearch: { lastUpdateTime: 111 },\n  lastUpdateTime: 222\n};";
         let out = stamp_last_update_time(text, 999).unwrap();
         assert!(out.contains("lastUpdateTime: 111"), "嵌套不应替换: {}", out);
         assert!(out.contains("lastUpdateTime: 999"), "顶层应替换: {}", out);
@@ -975,7 +961,11 @@ mod tests {
         let out = stamp_last_update_time(text, 7).unwrap();
         assert!(out.contains("note: \"lastUpdateTime: 222\""), "{}", out);
         assert!(out.contains("lastUpdateTime: 7"), "{}", out);
-        assert!(out.contains("// lastUpdateTime: 111"), "注释不应被改动: {}", out);
+        assert!(
+            out.contains("// lastUpdateTime: 111"),
+            "注释不应被改动: {}",
+            out
+        );
     }
 
     // ── syntax_check：语法检查 ──
@@ -1029,7 +1019,8 @@ mod tests {
     #[cfg(feature = "quickjs")]
     #[test]
     fn extract_legacy_source_variable() {
-        let text = "var source = { bookSourceUrl: 'https://legacy.com', bookSourceName: '旧版' };\n\
+        let text =
+            "var source = { bookSourceUrl: 'https://legacy.com', bookSourceName: '旧版' };\n\
                     function search(k) { return k; }\n\
                     function getChapters() { return []; }\n\
                     function getContent() { return ''; }";
@@ -1071,7 +1062,11 @@ mod tests {
                     function explore() { return []; }";
         let src = extract(text).expect("提取应成功");
         let explore = src.explore_url.expect("exploreUrl 应保留");
-        assert!(explore.starts_with('['), "应为 JSON 数组字符串: {}", explore);
+        assert!(
+            explore.starts_with('['),
+            "应为 JSON 数组字符串: {}",
+            explore
+        );
         assert!(explore.contains("热门"), "{}", explore);
     }
 

@@ -399,7 +399,11 @@ mod tests {
 
     #[test]
     fn test_play_mode_ordinal_roundtrip() {
-        for mode in [PlayMode::Sequential, PlayMode::SingleLoop, PlayMode::Shuffle] {
+        for mode in [
+            PlayMode::Sequential,
+            PlayMode::SingleLoop,
+            PlayMode::Shuffle,
+        ] {
             let ord = mode.ordinal();
             assert_eq!(PlayMode::from_ordinal(ord), mode);
         }
@@ -442,12 +446,8 @@ mod tests {
     #[test]
     fn test_resolve_no_url_returns_cached() {
         let cached = Some(("book1".to_string(), "url1".to_string()));
-        let result = resolve_audio_play_book(
-            None,
-            cached,
-            |b| b.1.as_str(),
-            |_| None::<(String, String)>,
-        );
+        let result =
+            resolve_audio_play_book(None, cached, |b| b.1.as_str(), |_| None::<(String, String)>);
         assert!(result.is_some());
         assert_eq!(result.unwrap().0, "book1");
     }

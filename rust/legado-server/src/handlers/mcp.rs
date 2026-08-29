@@ -755,9 +755,7 @@ async fn call_get_bookmarks(
     // 对既有调用方加法式兼容。
     let bookmarks = match book_name {
         Some(name) if !name.is_empty() => match book_author {
-            Some(author) => repo
-                .get_by_book_and_author(name, author)
-                .map_err(db_err)?,
+            Some(author) => repo.get_by_book_and_author(name, author).map_err(db_err)?,
             None => repo.get_by_book(name).map_err(db_err)?,
         },
         _ => repo.find_all().map_err(db_err)?,
@@ -993,9 +991,10 @@ async fn call_eval_js(
     let js = js.to_string();
     let started = std::time::Instant::now();
     // spawn_blocking 包裹同步 JS 求值，避免阻塞/嵌套 runtime
-    let outcome = tokio::task::spawn_blocking(move || eval_js_blocking(&js, &base_url, timeout_sec))
-        .await
-        .map_err(|e| rpc_err(format!("JS 求值任务异常: {e}")))?;
+    let outcome =
+        tokio::task::spawn_blocking(move || eval_js_blocking(&js, &base_url, timeout_sec))
+            .await
+            .map_err(|e| rpc_err(format!("JS 求值任务异常: {e}")))?;
     let elapsed_ms = started.elapsed().as_millis();
 
     match outcome {
@@ -1015,7 +1014,11 @@ async fn call_eval_js(
 
 /// JS 求值的阻塞线程实现（在 spawn_blocking 中执行）
 #[cfg(not(feature = "quickjs"))]
-fn eval_js_blocking(_js: &str, _base_url: &str, _timeout_sec: i64) -> Result<Option<String>, String> {
+fn eval_js_blocking(
+    _js: &str,
+    _base_url: &str,
+    _timeout_sec: i64,
+) -> Result<Option<String>, String> {
     Err("当前构建未启用 quickjs feature，无法执行 JS 脚本（简化版：请使用 cargo build --features quickjs）".to_string())
 }
 
@@ -1030,12 +1033,14 @@ fn eval_js_blocking(js: &str, base_url: &str, timeout_sec: i64) -> Result<Option
         max_execution_time: std::time::Duration::from_secs(timeout_sec as u64),
         ..Default::default()
     };
-    let engine =
-        QuickJsEngine::new(sandbox).map_err(|e| format!("JS 引擎初始化失败: {e}"))?;
+    let engine = QuickJsEngine::new(sandbox).map_err(|e| format!("JS 引擎初始化失败: {e}"))?;
     // 绑定书源运行时身份（对齐 Kotlin 书源 evalJS 的环境变量）
     let bindings: Vec<(&str, legado_js::JsValue)> = vec![
         ("baseUrl", legado_js::JsValue::String(base_url.to_string())),
-        ("sourceUrl", legado_js::JsValue::String(base_url.to_string())),
+        (
+            "sourceUrl",
+            legado_js::JsValue::String(base_url.to_string()),
+        ),
     ];
     let raw = engine
         .eval_with_bindings(js, &bindings)
@@ -1064,7 +1069,10 @@ async fn call_get_cookies(
     let db = state.db.lock().await;
     let conn = db.connection();
     let repo = legado_db::CookieRepository::new(conn);
-    let cookie = repo.get_by_tag(&domain).map_err(db_err)?.unwrap_or_default();
+    let cookie = repo
+        .get_by_tag(&domain)
+        .map_err(db_err)?
+        .unwrap_or_default();
 
     let text = if cookie.trim().is_empty() {
         "（该域名没有 Cookie）".to_string()
@@ -1225,18 +1233,15 @@ async fn call_check_sources(
     };
 
     // 构建校验器（复用 source_checker；失败时以错误结果兜底）
-    let client = legado_net::client::LegadoClient::new(
-        legado_net::client::LegadoClientConfig::default(),
-    )
-    .map_err(|e| rpc_err(format!("创建网络客户端失败: {e}")))?;
+    let client =
+        legado_net::client::LegadoClient::new(legado_net::client::LegadoClientConfig::default())
+            .map_err(|e| rpc_err(format!("创建网络客户端失败: {e}")))?;
     let config = legado_net::source_checker::CheckerConfig {
         keyword: keyword.unwrap_or_else(|| "我的".to_string()),
         ..legado_net::source_checker::CheckerConfig::default()
     };
-    let checker = legado_net::source_checker::SourceChecker::with_config(
-        std::sync::Arc::new(client),
-        config,
-    );
+    let checker =
+        legado_net::source_checker::SourceChecker::with_config(std::sync::Arc::new(client), config);
 
     // 逐个校验（串行，避免并发对书源站点的压力；结果按输入顺序汇总）
     let mut lines = Vec::with_capacity(sources.len());
@@ -1290,24 +1295,78 @@ async fn call_check_sources(
 /// 内容来源确认：Kotlin 端通过 MCP resources 暴露 `assets/web/help/md/*.md`；
 /// Rust 侧以 include_str! 编译期内嵌同一目录的文档，无需运行时资产访问。
 const HELP_DOCS: &[(&str, &str)] = &[
-    ("ExtensionContentType", include_str!("../../../../app/src/main/assets/web/help/md/ExtensionContentType.md")),
-    ("SourceMBookHelp", include_str!("../../../../app/src/main/assets/web/help/md/SourceMBookHelp.md")),
-    ("SourceMRssHelp", include_str!("../../../../app/src/main/assets/web/help/md/SourceMRssHelp.md")),
-    ("appHelp", include_str!("../../../../app/src/main/assets/web/help/md/appHelp.md")),
-    ("autoTaskHelp", include_str!("../../../../app/src/main/assets/web/help/md/autoTaskHelp.md")),
-    ("debugHelp", include_str!("../../../../app/src/main/assets/web/help/md/debugHelp.md")),
-    ("dictRuleHelp", include_str!("../../../../app/src/main/assets/web/help/md/dictRuleHelp.md")),
-    ("httpTTSHelp", include_str!("../../../../app/src/main/assets/web/help/md/httpTTSHelp.md")),
-    ("jsHelp", include_str!("../../../../app/src/main/assets/web/help/md/jsHelp.md")),
-    ("readMenuHelp", include_str!("../../../../app/src/main/assets/web/help/md/readMenuHelp.md")),
-    ("regexHelp", include_str!("../../../../app/src/main/assets/web/help/md/regexHelp.md")),
-    ("replaceRuleHelp", include_str!("../../../../app/src/main/assets/web/help/md/replaceRuleHelp.md")),
-    ("rssRuleHelp", include_str!("../../../../app/src/main/assets/web/help/md/rssRuleHelp.md")),
-    ("ruleHelp", include_str!("../../../../app/src/main/assets/web/help/md/ruleHelp.md")),
-    ("txtTocRuleHelp", include_str!("../../../../app/src/main/assets/web/help/md/txtTocRuleHelp.md")),
-    ("webDavBookHelp", include_str!("../../../../app/src/main/assets/web/help/md/webDavBookHelp.md")),
-    ("webDavHelp", include_str!("../../../../app/src/main/assets/web/help/md/webDavHelp.md")),
-    ("xpathHelp", include_str!("../../../../app/src/main/assets/web/help/md/xpathHelp.md")),
+    (
+        "ExtensionContentType",
+        include_str!("../../../../app/src/main/assets/web/help/md/ExtensionContentType.md"),
+    ),
+    (
+        "SourceMBookHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/SourceMBookHelp.md"),
+    ),
+    (
+        "SourceMRssHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/SourceMRssHelp.md"),
+    ),
+    (
+        "appHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/appHelp.md"),
+    ),
+    (
+        "autoTaskHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/autoTaskHelp.md"),
+    ),
+    (
+        "debugHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/debugHelp.md"),
+    ),
+    (
+        "dictRuleHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/dictRuleHelp.md"),
+    ),
+    (
+        "httpTTSHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/httpTTSHelp.md"),
+    ),
+    (
+        "jsHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/jsHelp.md"),
+    ),
+    (
+        "readMenuHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/readMenuHelp.md"),
+    ),
+    (
+        "regexHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/regexHelp.md"),
+    ),
+    (
+        "replaceRuleHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/replaceRuleHelp.md"),
+    ),
+    (
+        "rssRuleHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/rssRuleHelp.md"),
+    ),
+    (
+        "ruleHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/ruleHelp.md"),
+    ),
+    (
+        "txtTocRuleHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/txtTocRuleHelp.md"),
+    ),
+    (
+        "webDavBookHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/webDavBookHelp.md"),
+    ),
+    (
+        "webDavHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/webDavHelp.md"),
+    ),
+    (
+        "xpathHelp",
+        include_str!("../../../../app/src/main/assets/web/help/md/xpathHelp.md"),
+    ),
 ];
 
 /// 列出应用内帮助文档（#454，对齐 Kotlin 帮助文档 resources，简化为工具）
@@ -1442,7 +1501,11 @@ mod tests {
     #[tokio::test]
     async fn test_eval_js_empty_param() {
         let state = make_test_state();
-        let resp = call_tool(State(state), Json(make_call_req("eval_js", serde_json::json!({"js": "  "})))).await;
+        let resp = call_tool(
+            State(state),
+            Json(make_call_req("eval_js", serde_json::json!({"js": "  "}))),
+        )
+        .await;
         assert!(resp.0.error.is_some());
         assert!(resp.0.error.unwrap().message.contains("js"));
     }
@@ -1452,7 +1515,10 @@ mod tests {
         let state = make_test_state();
         let resp = call_tool(
             State(state),
-            Json(make_call_req("eval_js", serde_json::json!({"js": "1+1", "source_url": "https://missing.com"}))),
+            Json(make_call_req(
+                "eval_js",
+                serde_json::json!({"js": "1+1", "source_url": "https://missing.com"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_some());
@@ -1487,7 +1553,10 @@ mod tests {
         // 读取（子域名 URL 应命中二级域名）
         let resp = call_tool(
             State(state.clone()),
-            Json(make_call_req("get_cookies", serde_json::json!({"url": "https://www.example.com/book"}))),
+            Json(make_call_req(
+                "get_cookies",
+                serde_json::json!({"url": "https://www.example.com/book"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_none());
@@ -1496,7 +1565,10 @@ mod tests {
         // 清除
         let resp = call_tool(
             State(state.clone()),
-            Json(make_call_req("clear_cookies", serde_json::json!({"url": "https://www.example.com"}))),
+            Json(make_call_req(
+                "clear_cookies",
+                serde_json::json!({"url": "https://www.example.com"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_none());
@@ -1505,7 +1577,10 @@ mod tests {
         // 再次读取应为空
         let resp = call_tool(
             State(state),
-            Json(make_call_req("get_cookies", serde_json::json!({"url": "https://example.com"}))),
+            Json(make_call_req(
+                "get_cookies",
+                serde_json::json!({"url": "https://example.com"}),
+            )),
         )
         .await;
         assert!(result_text(&resp.0).contains("没有 Cookie"));
@@ -1515,7 +1590,11 @@ mod tests {
     async fn test_cookies_missing_url_param() {
         let state = make_test_state();
         for tool in ["get_cookies", "clear_cookies"] {
-            let resp = call_tool(State(state.clone()), Json(make_call_req(tool, serde_json::json!({})))).await;
+            let resp = call_tool(
+                State(state.clone()),
+                Json(make_call_req(tool, serde_json::json!({}))),
+            )
+            .await;
             assert!(resp.0.error.is_some());
         }
     }
@@ -1538,7 +1617,10 @@ mod tests {
         // 创建调试会话
         let resp = call_tool(
             State(state.clone()),
-            Json(make_call_req("debug_source", serde_json::json!({"url": "https://src-debug.com", "key": "斗破苍穹"}))),
+            Json(make_call_req(
+                "debug_source",
+                serde_json::json!({"url": "https://src-debug.com", "key": "斗破苍穹"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_none());
@@ -1554,7 +1636,10 @@ mod tests {
         // 查询进度（会话存在）
         let resp = call_tool(
             State(state),
-            Json(make_call_req("get_debug_progress", serde_json::json!({"session_id": session_id}))),
+            Json(make_call_req(
+                "get_debug_progress",
+                serde_json::json!({"session_id": session_id}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_none());
@@ -1568,7 +1653,10 @@ mod tests {
         let state = make_test_state();
         let resp = call_tool(
             State(state),
-            Json(make_call_req("debug_source", serde_json::json!({"url": "https://missing.com", "key": "k"}))),
+            Json(make_call_req(
+                "debug_source",
+                serde_json::json!({"url": "https://missing.com", "key": "k"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_some());
@@ -1580,7 +1668,10 @@ mod tests {
         let state = make_test_state();
         let resp = call_tool(
             State(state),
-            Json(make_call_req("get_debug_progress", serde_json::json!({"session_id": "no_such_session"}))),
+            Json(make_call_req(
+                "get_debug_progress",
+                serde_json::json!({"session_id": "no_such_session"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_some());
@@ -1594,7 +1685,10 @@ mod tests {
         // 空列表报错
         let resp = call_tool(
             State(state.clone()),
-            Json(make_call_req("check_sources", serde_json::json!({"urls": []}))),
+            Json(make_call_req(
+                "check_sources",
+                serde_json::json!({"urls": []}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_some());
@@ -1603,7 +1697,10 @@ mod tests {
         let urls: Vec<String> = (0..51).map(|i| format!("https://s{i}.com")).collect();
         let resp = call_tool(
             State(state.clone()),
-            Json(make_call_req("check_sources", serde_json::json!({"urls": urls}))),
+            Json(make_call_req(
+                "check_sources",
+                serde_json::json!({"urls": urls}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_some());
@@ -1612,7 +1709,10 @@ mod tests {
         // 未找到书源报错
         let resp = call_tool(
             State(state),
-            Json(make_call_req("check_sources", serde_json::json!({"urls": ["https://missing.com"]}))),
+            Json(make_call_req(
+                "check_sources",
+                serde_json::json!({"urls": ["https://missing.com"]}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_some());
@@ -1622,7 +1722,11 @@ mod tests {
     #[tokio::test]
     async fn test_list_help_docs() {
         let state = make_test_state();
-        let resp = call_tool(State(state), Json(make_call_req("list_help_docs", serde_json::json!({})))).await;
+        let resp = call_tool(
+            State(state),
+            Json(make_call_req("list_help_docs", serde_json::json!({}))),
+        )
+        .await;
         assert!(resp.0.error.is_none());
         let text = result_text(&resp.0);
         assert!(text.contains("共 18 篇"));
@@ -1637,7 +1741,10 @@ mod tests {
         // 存在（支持带 .md 后缀与不带）
         let resp = call_tool(
             State(state.clone()),
-            Json(make_call_req("read_help_doc", serde_json::json!({"name": "debugHelp.md"}))),
+            Json(make_call_req(
+                "read_help_doc",
+                serde_json::json!({"name": "debugHelp.md"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_none());
@@ -1646,7 +1753,10 @@ mod tests {
         // 不存在
         let resp = call_tool(
             State(state),
-            Json(make_call_req("read_help_doc", serde_json::json!({"name": "noSuchDoc"}))),
+            Json(make_call_req(
+                "read_help_doc",
+                serde_json::json!({"name": "noSuchDoc"}),
+            )),
         )
         .await;
         assert!(resp.0.error.is_some());

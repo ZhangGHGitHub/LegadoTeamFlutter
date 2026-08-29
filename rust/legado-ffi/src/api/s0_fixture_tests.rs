@@ -22,10 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-const FIXTURE_ROOT: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/search_s0"
-);
+const FIXTURE_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/search_s0");
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,11 +98,7 @@ fn handle_conn(stream: &mut TcpStream, routes: &[Route], root: &str) {
         }
     }
     let head = String::from_utf8_lossy(&buf);
-    let path = head
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .to_string();
+    let path = head.split_whitespace().nth(1).unwrap_or("/").to_string();
     let path_only = path.split('?').next().unwrap_or("/").to_string();
 
     let route = routes.iter().find(|r| r.path == path_only);
@@ -119,7 +112,11 @@ fn handle_conn(stream: &mut TcpStream, routes: &[Route], root: &str) {
                 Some(f) => std::fs::read(format!("{root}/{f}")).unwrap_or_default(),
                 None => Vec::new(),
             };
-            (r.status, "Content-Type: text/html; charset=utf-8\r\n".to_string(), body)
+            (
+                r.status,
+                "Content-Type: text/html; charset=utf-8\r\n".to_string(),
+                body,
+            )
         }
         None => (404, String::new(), b"not found".to_vec()),
     };
@@ -135,10 +132,9 @@ fn handle_conn(stream: &mut TcpStream, routes: &[Route], root: &str) {
 /// 读夹具并跑一个场景：返回（期望, 主执行器实际输出）
 async fn run_scenario(scenario: &str) -> (Expected, String, Expected) {
     let root_dir = format!("{FIXTURE_ROOT}/{scenario}");
-    let request: RequestSpec = serde_json::from_str(
-        &std::fs::read_to_string(format!("{root_dir}/request.json")).unwrap(),
-    )
-    .unwrap();
+    let request: RequestSpec =
+        serde_json::from_str(&std::fs::read_to_string(format!("{root_dir}/request.json")).unwrap())
+            .unwrap();
     let expected: Expected = serde_json::from_str(
         &std::fs::read_to_string(format!("{root_dir}/expected_original.json")).unwrap(),
     )
@@ -158,10 +154,9 @@ async fn run_scenario(scenario: &str) -> (Expected, String, Expected) {
     let base = format!("http://127.0.0.1:{port}");
     // 期望中的 {BASE} 占位替换为实际夹具服务器地址
     let expected_sub = serde_json::from_str::<Expected>(
-        &serde_json::to_string(&expected).unwrap().replace(
-            "{BASE}",
-            &format!("http://127.0.0.1:{port}"),
-        ),
+        &serde_json::to_string(&expected)
+            .unwrap()
+            .replace("{BASE}", &format!("http://127.0.0.1:{port}")),
     )
     .unwrap();
 
@@ -206,7 +201,10 @@ fn assert_matches_expected(expected: &Expected, actual_json: &str) {
     for (i, want) in expected.results.iter().enumerate() {
         assert_eq!(actual["results"][i]["name"], want.name, "第{i}条书名不一致");
         if !want.author.is_empty() {
-            assert_eq!(actual["results"][i]["author"], want.author, "第{i}条作者不一致");
+            assert_eq!(
+                actual["results"][i]["author"], want.author,
+                "第{i}条作者不一致"
+            );
         }
         if !want.book_url.is_empty() {
             assert_eq!(
@@ -216,7 +214,6 @@ fn assert_matches_expected(expected: &Expected, actual_json: &str) {
         }
     }
 }
-
 
 #[tokio::test]
 async fn s0b_redirect_final_url() {

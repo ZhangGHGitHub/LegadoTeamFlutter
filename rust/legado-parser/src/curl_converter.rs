@@ -238,7 +238,11 @@ pub fn parse_curl(text: &str) -> LegadoResult<CurlParseResult> {
             add_referer(&mut request, v)?;
         } else if token.len() > 2 && token.starts_with("-e") {
             add_referer(&mut request, &token[2..])?;
-        } else if token == "-d" || token == "--data" || token == "--data-raw" || token == "--data-binary" {
+        } else if token == "-d"
+            || token == "--data"
+            || token == "--data-raw"
+            || token == "--data-binary"
+        {
             add_body(&mut request, &token, &next_value(&mut index)?)?;
         } else if let Some(v) = token.strip_prefix("--data=") {
             add_body(&mut request, "--data", v)?;
@@ -289,7 +293,10 @@ pub fn parse_curl(text: &str) -> LegadoResult<CurlParseResult> {
         } else if (token.starts_with("-o") || token.starts_with("-w")) && token.len() > 2 {
             // -oxxx / -wxxx 粘连形式，直接忽略
         } else if token.starts_with('-') {
-            return Err(conv_err(CurlErrorReason::UnsupportedOption, option_name(&token)));
+            return Err(conv_err(
+                CurlErrorReason::UnsupportedOption,
+                option_name(&token),
+            ));
         } else {
             set_url(&mut request, &token)?;
         }
@@ -589,7 +596,10 @@ fn tokenize(command: &str) -> LegadoResult<Vec<String>> {
                 }
             }
             if q == '"' && (ch == '$' || ch == '`') {
-                return Err(conv_err(CurlErrorReason::UnsupportedOption, "shell expansion"));
+                return Err(conv_err(
+                    CurlErrorReason::UnsupportedOption,
+                    "shell expansion",
+                ));
             }
             current.push(ch);
             token_started = true;
@@ -625,7 +635,10 @@ fn tokenize(command: &str) -> LegadoResult<Vec<String>> {
                 index += 2;
             }
         } else if ch == '$' || ch == '`' {
-            return Err(conv_err(CurlErrorReason::UnsupportedOption, "shell expansion"));
+            return Err(conv_err(
+                CurlErrorReason::UnsupportedOption,
+                "shell expansion",
+            ));
         } else {
             current.push(ch);
             token_started = true;
@@ -649,7 +662,10 @@ fn tokenize(command: &str) -> LegadoResult<Vec<String>> {
 /// 解析 `-H "Name: value"` 形式的 header
 fn add_header(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
     if value.starts_with('@') {
-        return Err(conv_err(CurlErrorReason::UnsupportedOption, "--header @file"));
+        return Err(conv_err(
+            CurlErrorReason::UnsupportedOption,
+            "--header @file",
+        ));
     }
     let separator = value
         .find(':')
@@ -657,7 +673,11 @@ fn add_header(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
     if separator == 0 {
         return Err(conv_err(CurlErrorReason::InvalidCurl, ""));
     }
-    put_header(request, value[..separator].trim(), value[separator + 1..].trim())
+    put_header(
+        request,
+        value[..separator].trim(),
+        value[separator + 1..].trim(),
+    )
 }
 
 fn add_user_agent(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
@@ -666,7 +686,10 @@ fn add_user_agent(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
 
 fn add_referer(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
     if value.to_ascii_lowercase().ends_with(";auto") {
-        return Err(conv_err(CurlErrorReason::UnsupportedOption, "--referer ;auto"));
+        return Err(conv_err(
+            CurlErrorReason::UnsupportedOption,
+            "--referer ;auto",
+        ));
     }
     if !value.is_empty() {
         put_header(request, "Referer", value)?;
@@ -677,7 +700,10 @@ fn add_referer(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
 fn add_cookie(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
     // 不含 `=` 的值视为 cookie 文件名，不支持
     if value.is_empty() || !value.contains('=') {
-        return Err(conv_err(CurlErrorReason::UnsupportedOption, "--cookie file"));
+        return Err(conv_err(
+            CurlErrorReason::UnsupportedOption,
+            "--cookie file",
+        ));
     }
     put_header(request, "Cookie", value)
 }
@@ -729,7 +755,10 @@ fn normalize_header_name(name: &str) -> LegadoResult<String> {
         "referer" => "Referer".to_string(),
         "accept" => "Accept".to_string(),
         "proxy" | "cookiejar" | "content-length" | "transfer-encoding" => {
-            return Err(conv_err(CurlErrorReason::UnsupportedOption, name.to_string()))
+            return Err(conv_err(
+                CurlErrorReason::UnsupportedOption,
+                name.to_string(),
+            ))
         }
         _ => name.to_string(),
     })
@@ -749,7 +778,10 @@ fn put_default_header(request: &mut CurlRequest, name: &str, value: &str) {
 /// 设置 URL（多 URL 不支持，对齐 Kotlin setUrl）
 fn set_url(request: &mut CurlRequest, value: &str) -> LegadoResult<()> {
     if !request.url.is_empty() {
-        return Err(conv_err(CurlErrorReason::UnsupportedOption, "multiple URLs"));
+        return Err(conv_err(
+            CurlErrorReason::UnsupportedOption,
+            "multiple URLs",
+        ));
     }
     request.url = value.to_string();
     Ok(())
@@ -803,10 +835,7 @@ fn resolve_curl_method(request: &CurlRequest) -> LegadoResult<String> {
     }
     if request.head {
         if !request.body_parts.is_empty()
-            || custom_method
-                .as_ref()
-                .map(|m| m != "HEAD")
-                .unwrap_or(false)
+            || custom_method.as_ref().map(|m| m != "HEAD").unwrap_or(false)
         {
             let detail = custom_method
                 .as_ref()
@@ -817,11 +846,7 @@ fn resolve_curl_method(request: &CurlRequest) -> LegadoResult<String> {
         return Ok("HEAD".to_string());
     }
     if !request.body_parts.is_empty() {
-        if custom_method
-            .as_ref()
-            .map(|m| m != "POST")
-            .unwrap_or(false)
-        {
+        if custom_method.as_ref().map(|m| m != "POST").unwrap_or(false) {
             return Err(conv_err(
                 CurlErrorReason::UnsupportedOption,
                 format!("{} body", custom_method.as_deref().unwrap_or("")),
@@ -1017,9 +1042,10 @@ impl<'a> JsonCursor<'a> {
                 _ => {
                     let start = self.pos;
                     self.advance();
-                    out.push_str(std::str::from_utf8(&self.bytes[start..self.pos]).map_err(
-                        |_| conv_err(CurlErrorReason::InvalidAnalyzeUrl, ""),
-                    )?);
+                    out.push_str(
+                        std::str::from_utf8(&self.bytes[start..self.pos])
+                            .map_err(|_| conv_err(CurlErrorReason::InvalidAnalyzeUrl, ""))?,
+                    );
                 }
             }
         }
@@ -1332,7 +1358,12 @@ mod tests {
 
     /// 断言错误属于指定原因
     fn assert_reason(err: &LegadoError, reason: CurlErrorReason) {
-        assert!(is_curl_error(err, reason), "错误 {:?} 不属于 {:?}", err, reason);
+        assert!(
+            is_curl_error(err, reason),
+            "错误 {:?} 不属于 {:?}",
+            err,
+            reason
+        );
     }
 
     /// 按名称查找 header（忽略大小写，测试辅助）
@@ -1514,7 +1545,10 @@ mod tests {
     fn parse_user_agent_null_marker() {
         // -A '' 表示清除 UA，序列化为 "null" 标记（对齐 Kotlin）
         let r = parse_curl("curl https://example.com -A ''").unwrap();
-        assert_eq!(r.headers, vec![("User-Agent".to_string(), "null".to_string())]);
+        assert_eq!(
+            r.headers,
+            vec![("User-Agent".to_string(), "null".to_string())]
+        );
     }
 
     // ---------- 解析错误测试 ----------
@@ -1734,8 +1768,7 @@ mod tests {
             CurlErrorReason::MissingUrl,
         );
         // 不支持的选项键
-        let err =
-            analyze_url_to_curl("https://example.com,{\"charset\":\"utf-8\"}").unwrap_err();
+        let err = analyze_url_to_curl("https://example.com,{\"charset\":\"utf-8\"}").unwrap_err();
         assert_reason(&err, CurlErrorReason::UnsupportedOption);
         // 不支持的方法
         assert_reason(
@@ -1800,7 +1833,8 @@ mod tests {
     #[test]
     fn roundtrip_curl_struct_curl() {
         // cURL → 结构 → cURL → 结构，两次结构必须一致
-        let src = "curl -X POST 'https://api.example.com/s?a=1' -H 'Content-Type: application/json' \
+        let src =
+            "curl -X POST 'https://api.example.com/s?a=1' -H 'Content-Type: application/json' \
                    -H 'X-T: v' --data-raw '{\"q\":\"书\"}'";
         let r1 = parse_curl(src).unwrap();
         let cmd = to_curl(&CurlRequestParams::from(&r1));

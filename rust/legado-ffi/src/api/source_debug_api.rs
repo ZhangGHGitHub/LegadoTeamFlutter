@@ -16,9 +16,7 @@ use legado_core::{LegadoError, LegadoResult};
 use legado_db::BookSourceRepository;
 use legado_js::js_source::js_source_debug_formatter::JsSourceDebugFormatter;
 
-use crate::api::web_book::{
-    webbook_chapters, webbook_content, webbook_info, webbook_search,
-};
+use crate::api::web_book::{webbook_chapters, webbook_content, webbook_info, webbook_search};
 use crate::db_state::with_database;
 
 /// 调试取消标志
@@ -172,11 +170,8 @@ fn emit_lines(source_url: &str, lines: &[String], state: i32) {
 /// 流式调试书源（对齐 Debug.startDebug）
 ///
 /// `on_log` 返回 Err 表示 sink 已关闭，应停止。
-pub async fn run_debug_book_source_stream<F>(
-    source_url: String,
-    key: String,
-    on_log: F,
-) where
+pub async fn run_debug_book_source_stream<F>(source_url: String, key: String, on_log: F)
+where
     F: FnMut(String) -> Result<(), String> + Send + 'static,
 {
     let on_log = std::sync::Arc::new(Mutex::new(on_log));
@@ -240,12 +235,7 @@ fn debug_book_source_sync(source_url: &str, key: &str, session_id: u64) {
     let source_json = match serde_json::to_string(&source) {
         Ok(j) => j,
         Err(e) => {
-            log_debug(
-                Some(source_url),
-                &format!("书源序列化失败: {e}"),
-                -1,
-                true,
-            );
+            log_debug(Some(source_url), &format!("书源序列化失败: {e}"), -1, true);
             return;
         }
     };
@@ -275,28 +265,13 @@ fn debug_book_source_sync(source_url: &str, key: &str, session_id: u64) {
         toc_then_content(source_url, &source_json, toc_url, session_id);
     } else if key.contains("::") {
         let url = key.split("::").nth(1).unwrap_or("");
-        log_debug(
-            Some(source_url),
-            &format!("⇒开始访问发现页:{url}"),
-            1,
-            true,
-        );
+        log_debug(Some(source_url), &format!("⇒开始访问发现页:{url}"), 1, true);
         explore_debug(source_url, &source_json, url, session_id);
     } else if is_abs_url(key) {
-        log_debug(
-            Some(source_url),
-            &format!("⇒开始访问详情页:{key}"),
-            1,
-            true,
-        );
+        log_debug(Some(source_url), &format!("⇒开始访问详情页:{key}"), 1, true);
         info_toc_content(source_url, &source_json, key, session_id);
     } else {
-        log_debug(
-            Some(source_url),
-            &format!("⇒开始搜索关键字:{key}"),
-            1,
-            true,
-        );
+        log_debug(Some(source_url), &format!("⇒开始搜索关键字:{key}"), 1, true);
         search_debug(source_url, &source_json, key, session_id);
     }
 }
@@ -311,8 +286,7 @@ fn search_debug(source_url: &str, source_json: &str, key: &str, session_id: u64)
             if !still_active(session_id) {
                 return;
             }
-            let results: Vec<serde_json::Value> =
-                serde_json::from_str(&json).unwrap_or_default();
+            let results: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
             if results.is_empty() {
                 log_debug(Some(source_url), "︽未获取到书籍", -1, true);
                 return;
@@ -320,18 +294,13 @@ fn search_debug(source_url: &str, source_json: &str, key: &str, session_id: u64)
             log_debug(Some(source_url), "︽搜索页解析完成", 1, true);
             log_debug(Some(source_url), "", 1, false);
 
-            let first_name = results
-                .first()
-                .and_then(|v| {
-                    v.get("name")
-                        .or_else(|| v.get("book_name"))
-                        .and_then(|x| x.as_str())
-                });
-            let lines = JsSourceDebugFormatter::format_book_list(
-                source_url,
-                results.len(),
-                first_name,
-            );
+            let first_name = results.first().and_then(|v| {
+                v.get("name")
+                    .or_else(|| v.get("book_name"))
+                    .and_then(|x| x.as_str())
+            });
+            let lines =
+                JsSourceDebugFormatter::format_book_list(source_url, results.len(), first_name);
             emit_lines(source_url, &lines, 1);
 
             for (i, item) in results.iter().take(5).enumerate() {
@@ -340,10 +309,7 @@ fn search_debug(source_url: &str, source_json: &str, key: &str, session_id: u64)
                     .or_else(|| item.get("book_name"))
                     .and_then(|x| x.as_str())
                     .unwrap_or("未知");
-                let author = item
-                    .get("author")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("");
+                let author = item.get("author").and_then(|x| x.as_str()).unwrap_or("");
                 let line = if author.is_empty() {
                     format!("  [{i}] {name}")
                 } else {
@@ -382,8 +348,7 @@ fn explore_debug(source_url: &str, source_json: &str, url: &str, session_id: u64
             if !still_active(session_id) {
                 return;
             }
-            let results: Vec<serde_json::Value> =
-                serde_json::from_str(&json).unwrap_or_default();
+            let results: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
             if results.is_empty() {
                 log_debug(Some(source_url), "︽未获取到书籍", -1, true);
                 return;
@@ -457,8 +422,7 @@ fn toc_then_content(source_url: &str, source_json: &str, book_url: &str, session
             if !still_active(session_id) {
                 return;
             }
-            let chapters: Vec<serde_json::Value> =
-                serde_json::from_str(&json).unwrap_or_default();
+            let chapters: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
             if chapters.is_empty() {
                 log_debug(Some(source_url), "︽未获取到目录", -1, true);
                 return;
@@ -544,12 +508,7 @@ fn content_debug_json(
     let chapter_json = match serde_json::to_string(chapter) {
         Ok(j) => j,
         Err(e) => {
-            log_debug(
-                Some(source_url),
-                &format!("章节 JSON 失败: {e}"),
-                -1,
-                true,
-            );
+            log_debug(Some(source_url), &format!("章节 JSON 失败: {e}"), -1, true);
             return;
         }
     };
@@ -563,12 +522,7 @@ fn content_debug_json(
             if content.trim().is_empty() {
                 log_debug(Some(source_url), "︽正文为空", 1, true);
             } else {
-                log_debug(
-                    Some(source_url),
-                    &preview(&content, 400),
-                    1,
-                    true,
-                );
+                log_debug(Some(source_url), &preview(&content, 400), 1, true);
             }
             log_debug(Some(source_url), "︽正文页解析完成", 1000, true);
         }

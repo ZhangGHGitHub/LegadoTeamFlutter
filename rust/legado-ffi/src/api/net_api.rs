@@ -33,9 +33,7 @@ pub fn set_custom_hosts(hosts_json: &str) -> LegadoResult<()> {
 
     // 持久化（宽容失败：DB 未初始化/写入失败仅记日志）
     if crate::db_state::is_initialized() {
-        if let Err(e) =
-            crate::api::config_api::set_config(CUSTOM_HOSTS_CONFIG_KEY, hosts_json)
-        {
+        if let Err(e) = crate::api::config_api::set_config(CUSTOM_HOSTS_CONFIG_KEY, hosts_json) {
             log::warn!("持久化 customHosts 配置失败: {e}");
         }
     } else {
@@ -115,7 +113,7 @@ pub fn clear_cookie(url: &str) -> LegadoResult<()> {
 pub fn http_get_bytes(url: &str, headers_json: &str) -> LegadoResult<String> {
     use std::collections::HashMap;
 
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     let url = url.trim();
     if url.is_empty() {

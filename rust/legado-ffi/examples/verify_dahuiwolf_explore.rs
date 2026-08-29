@@ -41,10 +41,6 @@ fn main() {
     }
     println!("PASS {} categories", cats.len());
     for c in cats.iter().take(12) {
-        println!(
-            " - {} [{}]",
-            c.title,
-            &c.r#type
-        );
+        println!(" - {} [{}]", c.title, &c.r#type);
     }
 }

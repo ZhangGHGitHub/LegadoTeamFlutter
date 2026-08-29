@@ -228,8 +228,12 @@ mod tests {
         assert!(records.is_empty());
 
         for i in 0..5 {
-            repo.mark_read("https://rss.com", &format!("Title{i}"), Some(&format!("link{i}")))
-                .unwrap();
+            repo.mark_read(
+                "https://rss.com",
+                &format!("Title{i}"),
+                Some(&format!("link{i}")),
+            )
+            .unwrap();
         }
 
         let records = repo.list_records(None).unwrap();

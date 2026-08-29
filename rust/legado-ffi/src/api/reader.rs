@@ -45,10 +45,7 @@ pub fn set_chinese_convert_type(convert_type: i32) {
     } else {
         0
     };
-    let _ = crate::api::config_api::set_config(
-        CHINESE_CONVERT_CONFIG_KEY,
-        &normalized.to_string(),
-    );
+    let _ = crate::api::config_api::set_config(CHINESE_CONVERT_CONFIG_KEY, &normalized.to_string());
 }
 
 /// 繁简转换类型 → content_processor 管线方向（None / "t2s" / "s2t"）
@@ -373,9 +370,8 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
             eprintln!("[refresh_toc] preUpdateJs: {e}");
         } else {
             // 持久化 preUpdateJs / 钩子对 bookUrl·tocUrl·variable 等的改写
-            let _ = with_database(|db| {
-                legado_db::BookRepository::new(db.connection()).update(book)
-            });
+            let _ =
+                with_database(|db| legado_db::BookRepository::new(db.connection()).update(book));
         }
     }
 
@@ -574,7 +570,13 @@ fn fetch_chapter_content_inner(
     // 3. 抓取成功后写入 DB 缓存（对齐原版 BookContent.analyzeContent
     //    L207-209 `needSave → BookHelp.saveContent` 的「获取成功即写」时机）。
     //    写失败仅告警不传播——缓存写入失败不得导致阅读获取失败。
-    save_chapter_cache(book_url, chapter_index, chapter_title, chapter_url, &content);
+    save_chapter_cache(
+        book_url,
+        chapter_index,
+        chapter_title,
+        chapter_url,
+        &content,
+    );
 
     // 缓存写入原始正文，返回净化后的正文（透传真实章节标题，使去重复标题生效）
     Ok(apply_content_processing_chapter(
@@ -704,7 +706,13 @@ pub fn apply_content_processing_chapter(
     chapter_title: &str,
     chapter_index: i32,
 ) -> String {
-    apply_content_processing_inner(book_url, raw_content, chapter_title, true, Some(chapter_index))
+    apply_content_processing_inner(
+        book_url,
+        raw_content,
+        chapter_title,
+        true,
+        Some(chapter_index),
+    )
 }
 
 /// 对原始正文应用内容净化但【不应用替换规则】（内容搜索语义）
@@ -788,7 +796,15 @@ fn process_content_with_rules(
     rules: &[ReplaceRule],
     book_name: &str,
 ) -> String {
-    process_content_with_rules_inner(raw_content, chapter_title, rules, book_name, true, None, true)
+    process_content_with_rules_inner(
+        raw_content,
+        chapter_title,
+        rules,
+        book_name,
+        true,
+        None,
+        true,
+    )
 }
 
 /// 净化核心逻辑（纯函数，便于单元测试）：
@@ -1540,8 +1556,7 @@ mod tests {
         with_database(|db| {
             use rusqlite::params;
             let conn = db.connection();
-            let to_db_err =
-                |e| LegadoError::Database(format!("清理测试数据失败: {e}"));
+            let to_db_err = |e| LegadoError::Database(format!("清理测试数据失败: {e}"));
             conn.execute("DELETE FROM chapters WHERE bookUrl = ?1", params![book_url])
                 .map_err(to_db_err)?;
             conn.execute("DELETE FROM books WHERE bookUrl = ?1", params![book_url])

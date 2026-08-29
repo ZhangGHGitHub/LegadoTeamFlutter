@@ -151,9 +151,9 @@ pub fn import_rar_file(
                 }
 
                 // 读取文件内容到内存
-                let (data, next_arc) = arc_with_file
-                    .read()
-                    .map_err(|e| LegadoError::BookParse(format!("解压RAR文件失败 [{base_name}]: {e}")))?;
+                let (data, next_arc) = arc_with_file.read().map_err(|e| {
+                    LegadoError::BookParse(format!("解压RAR文件失败 [{base_name}]: {e}"))
+                })?;
 
                 // 构造安全的输出路径并写入
                 let out_path = safe_output_path(output_dir, &base_name)?;
@@ -177,7 +177,9 @@ pub fn import_rar_file(
     _output_dir: &str,
     _password: Option<&str>,
 ) -> LegadoResult<Vec<String>> {
-    Err(LegadoError::BookParse("Android 平台暂不支持 RAR 解压".to_string()))
+    Err(LegadoError::BookParse(
+        "Android 平台暂不支持 RAR 解压".to_string(),
+    ))
 }
 
 /// 列出 ZIP 压缩包中的书籍文件名（不解压）
@@ -235,8 +237,8 @@ pub fn list_rar_book_files(rar_path: &str, password: Option<&str>) -> LegadoResu
 
     let mut book_files = Vec::new();
     for entry_result in open_arc {
-        let entry = entry_result
-            .map_err(|e| LegadoError::BookParse(format!("读取RAR目录失败: {e}")))?;
+        let entry =
+            entry_result.map_err(|e| LegadoError::BookParse(format!("读取RAR目录失败: {e}")))?;
 
         if entry.is_directory() {
             continue;
@@ -255,7 +257,9 @@ pub fn list_rar_book_files(rar_path: &str, password: Option<&str>) -> LegadoResu
 /// Android 平台不支持 RAR 列表
 #[cfg(target_os = "android")]
 pub fn list_rar_book_files(_rar_path: &str, _password: Option<&str>) -> LegadoResult<Vec<String>> {
-    Err(LegadoError::BookParse("Android 平台暂不支持 RAR 解压".to_string()))
+    Err(LegadoError::BookParse(
+        "Android 平台暂不支持 RAR 解压".to_string(),
+    ))
 }
 
 /// 判断文件是否为压缩包格式

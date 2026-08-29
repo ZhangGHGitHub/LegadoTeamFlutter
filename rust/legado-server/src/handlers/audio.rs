@@ -15,9 +15,7 @@ use legado_core::cache_book::CachedChapter;
 use legado_core::models::book::book_type;
 use legado_core::web_book::WebChapter;
 use legado_core::LegadoError;
-use legado_db::{
-    BookChapterRepository, BookRepository, BookSourceRepository, CacheBookRepository,
-};
+use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository, CacheBookRepository};
 
 /// 获取章节列表请求
 #[derive(Debug, Deserialize)]
@@ -268,9 +266,7 @@ pub async fn get_chapter_media(
         let ch_repo = BookChapterRepository::new(db.connection());
         let chapter = ch_repo
             .find_by_book_url_and_index(&book_url, chapter_index)?
-            .ok_or_else(|| {
-                LegadoError::Database(format!("章节 {chapter_index} 不存在"))
-            })?;
+            .ok_or_else(|| LegadoError::Database(format!("章节 {chapter_index} 不存在")))?;
 
         let resource_url = chapter.resource_url.clone();
 
@@ -289,9 +285,9 @@ pub async fn get_chapter_media(
         }
 
         let book_repo = BookRepository::new(db.connection());
-        let book = book_repo.find_by_url(&book_url)?.ok_or_else(|| {
-            LegadoError::Database(format!("书籍 {book_url} 不存在"))
-        })?;
+        let book = book_repo
+            .find_by_url(&book_url)?
+            .ok_or_else(|| LegadoError::Database(format!("书籍 {book_url} 不存在")))?;
         let source_url = book.origin.clone();
 
         let cache_repo = CacheBookRepository::new(db.connection());
@@ -319,11 +315,7 @@ pub async fn get_chapter_media(
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| chapter.url.trim().to_string());
             return Ok(Json(ChapterMediaResponse {
-                media_url: if media.is_empty() {
-                    None
-                } else {
-                    Some(media)
-                },
+                media_url: if media.is_empty() { None } else { Some(media) },
                 duration_ms: None,
                 title: chapter.title,
                 chapter_index: chapter.index,
@@ -336,9 +328,9 @@ pub async fn get_chapter_media(
         }
 
         let src_repo = BookSourceRepository::new(db.connection());
-        let source = src_repo.find_by_url(&source_url)?.ok_or_else(|| {
-            LegadoError::Database(format!("书源不存在: {source_url}"))
-        })?;
+        let source = src_repo
+            .find_by_url(&source_url)?
+            .ok_or_else(|| LegadoError::Database(format!("书源不存在: {source_url}")))?;
 
         (chapter, source, source_url, resource_url)
     };

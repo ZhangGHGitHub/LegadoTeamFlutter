@@ -301,8 +301,9 @@ mod quickjs_engine {
             JsValue::Bytes(b) => {
                 // 字节数组以 Uint8Array 形式注入（对齐原版 JS 对 byte[] 的操作语义：
                 // imageDecode 等规则直接读写字节下标/长度）— Reasonix 2026-08-11
-                let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), b.clone())
-                    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+                let arr: rquickjs::TypedArray<u8> =
+                    rquickjs::TypedArray::new(ctx.clone(), b.clone())
+                        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
                 Ok(arr.into_value())
             }
             JsValue::Array(items) => {
@@ -471,8 +472,8 @@ mod quickjs_engine {
             let limits = SandboxConfig::default();
 
             // 独立纯上下文：不经沙箱注册，保留原生 Function 构造器
-            let runtime = rquickjs::Runtime::new()
-                .map_err(|e| format!("语法检查引擎创建失败: {}", e))?;
+            let runtime =
+                rquickjs::Runtime::new().map_err(|e| format!("语法检查引擎创建失败: {}", e))?;
             runtime.set_memory_limit(limits.max_memory_bytes);
 
             let epoch = Instant::now();
@@ -505,9 +506,8 @@ mod quickjs_engine {
                 .set("__legado_syntax_check__", code.to_string())
                 .map_err(|e| e.to_string())?;
             // Function 构造器只编译函数体；语法错误时抛出 SyntaxError
-            let result: Result<rquickjs::Value, rquickjs::Error> = ctx.eval(
-                "(function(){ Function(__legado_syntax_check__); return 'ok'; })()",
-            );
+            let result: Result<rquickjs::Value, rquickjs::Error> =
+                ctx.eval("(function(){ Function(__legado_syntax_check__); return 'ok'; })()");
             // 清理临时全局变量
             let _ = globals.remove::<&str>("__legado_syntax_check__");
             match result {
@@ -603,11 +603,9 @@ mod quickjs_engine {
                     }
                 };
                 // 结果必须是 Uint8Array（对齐原版 evalJS 返回 ByteArray 语义）
-                let arr: rquickjs::TypedArray<u8> = result
-                    .get()
-                    .map_err(|e| {
-                        LegadoError::JsEngine(format!("imageDecode 结果不是字节数组: {e}"))
-                    })?;
+                let arr: rquickjs::TypedArray<u8> = result.get().map_err(|e| {
+                    LegadoError::JsEngine(format!("imageDecode 结果不是字节数组: {e}"))
+                })?;
                 let mut buf = vec![0u8; arr.len()];
                 let slice = arr.as_bytes().ok_or_else(|| {
                     LegadoError::JsEngine("读取字节数组失败: 非连续缓冲区".to_string())
@@ -820,7 +818,9 @@ mod quickjs_tests {
             .expect("encodeURIComponent 应已注册到 quickjs 宿主");
         assert_eq!(result, "%E9%87%8D%E7%94%9F");
         // 保留字符集与 JS 标准一致
-        let kept = engine.eval("encodeURIComponent('a-b_c.d!e~f*g(h)i')").unwrap();
+        let kept = engine
+            .eval("encodeURIComponent('a-b_c.d!e~f*g(h)i')")
+            .unwrap();
         assert_eq!(kept, "a-b_c.d!e~f*g(h)i");
     }
 
@@ -867,11 +867,13 @@ mod quickjs_tests {
         "#;
         let result = engine.eval(js).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed["b64"], "aGVsbG8=", "Base64.encodeToString 应输出字节数组的 Base64");
+        assert_eq!(
+            parsed["b64"], "aGVsbG8=",
+            "Base64.encodeToString 应输出字节数组的 Base64"
+        );
         assert_eq!(parsed["uuidLen"], 36, "UUID 应为标准 36 位格式");
         assert_eq!(
-            parsed["md5"],
-            "5d41402abc4b2a76b9719d911017c592",
+            parsed["md5"], "5d41402abc4b2a76b9719d911017c592",
             "md5Hex 应对齐 java.md5Encode"
         );
         assert_eq!(parsed["cut"], "104,101", "copyOfRange 应切片字节");
@@ -887,8 +889,7 @@ mod quickjs_tests {
         let key = b"0123456789abcdef";
         let iv = b"fedcba9876543210";
         let plain = "七猫章节内容";
-        let ct =
-            legado_core::crypto::AesCrypto::encrypt_cbc(key, iv, plain.as_bytes()).unwrap();
+        let ct = legado_core::crypto::AesCrypto::encrypt_cbc(key, iv, plain.as_bytes()).unwrap();
         let mut payload = Vec::new();
         payload.extend_from_slice(iv);
         payload.extend_from_slice(&ct);
@@ -1088,7 +1089,10 @@ mod quickjs_tests {
             start.elapsed() < Duration::from_secs(6),
             "deep nesting syntax check should finish within timeout window"
         );
-        assert!(result.is_err(), "deeply nested braces should not pass: {result:?}");
+        assert!(
+            result.is_err(),
+            "deeply nested braces should not pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1141,8 +1145,7 @@ mod quickjs_tests {
             !obj.contains("Object(0x") && !obj.contains("0x"),
             "对象不得降级为 Debug 地址: {obj}"
         );
-        let parsed_obj: serde_json::Value =
-            serde_json::from_str(&obj).expect("应为合法 JSON 对象");
+        let parsed_obj: serde_json::Value = serde_json::from_str(&obj).expect("应为合法 JSON 对象");
         assert_eq!(parsed_obj["name"], "测试");
         assert_eq!(parsed_obj["id"], 32328);
     }

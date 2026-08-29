@@ -201,7 +201,10 @@ pub fn parse_js_url(url_str: &str, base_url: &str) -> Result<UrlParts, String> {
 
     // host[:port]：仅当冒号后全为数字时视为端口
     let (host, port) = match authority.rfind(':') {
-        Some(i) if i + 1 < authority.len() && authority[i + 1..].chars().all(|c| c.is_ascii_digit()) => {
+        Some(i)
+            if i + 1 < authority.len()
+                && authority[i + 1..].chars().all(|c| c.is_ascii_digit()) =>
+        {
             (authority[..i].to_string(), Some(&authority[i + 1..]))
         }
         _ => (authority.to_string(), None),
@@ -276,7 +279,10 @@ fn resolve_url(url_str: &str, base_url: &str) -> Result<String, String> {
             .split('#')
             .next()
             .unwrap_or("");
-        return Ok(format!("{}://{}{}{}", scheme, authority, base_path, url_str));
+        return Ok(format!(
+            "{}://{}{}{}",
+            scheme, authority, base_path, url_str
+        ));
     }
 
     // 相对路径：拼接 base 的目录部分（对齐 java.net.URL 去掉末段文件名）
@@ -416,7 +422,10 @@ mod tests {
         assert_eq!(parts.origin, "https://ex.com:8080");
         assert_eq!(parts.pathname, "/a/b");
         let params = parts.search_params.unwrap();
-        assert_eq!(params, vec![("x".into(), "1".into()), ("y".into(), "中".into())]);
+        assert_eq!(
+            params,
+            vec![("x".into(), "1".into()), ("y".into(), "中".into())]
+        );
     }
 
     #[test]
@@ -450,7 +459,10 @@ mod tests {
         // '+' 解码为空格（Java URLDecoder 语义），userinfo 被剥离
         let parts = parse_js_url("http://user:pw@ex.com/p?q=a+b", "").unwrap();
         assert_eq!(parts.host, "ex.com");
-        assert_eq!(parts.search_params.unwrap(), vec![("q".into(), "a b".into())]);
+        assert_eq!(
+            parts.search_params.unwrap(),
+            vec![("q".into(), "a b".into())]
+        );
     }
 
     #[test]

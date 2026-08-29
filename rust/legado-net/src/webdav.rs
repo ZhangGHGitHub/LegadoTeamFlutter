@@ -219,10 +219,12 @@ impl WebDavClient {
 
         let xml = response.text().await.ok()?;
         let files = Self::parse_propfind_response(&xml).ok()?;
-        files.first().and_then(|f| match (&f.etag, &f.last_modified) {
-            (Some(etag), Some(modified)) => Some((etag.clone(), modified.clone())),
-            _ => None,
-        })
+        files
+            .first()
+            .and_then(|f| match (&f.etag, &f.last_modified) {
+                (Some(etag), Some(modified)) => Some((etag.clone(), modified.clone())),
+                _ => None,
+            })
     }
 
     /// 条件 PUT：仅当远端 ETag 匹配时才上传（乐观锁）
@@ -494,9 +496,18 @@ impl BookSyncManager {
         }
         let day: u32 = parts[0].parse().ok()?;
         let month = match parts[1] {
-            "Jan" => 1u32, "Feb" => 2, "Mar" => 3, "Apr" => 4,
-            "May" => 5, "Jun" => 6, "Jul" => 7, "Aug" => 8,
-            "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12,
+            "Jan" => 1u32,
+            "Feb" => 2,
+            "Mar" => 3,
+            "Apr" => 4,
+            "May" => 5,
+            "Jun" => 6,
+            "Jul" => 7,
+            "Aug" => 8,
+            "Sep" => 9,
+            "Oct" => 10,
+            "Nov" => 11,
+            "Dec" => 12,
             _ => return None,
         };
         let year: i64 = parts[2].parse().ok()?;
@@ -529,7 +540,9 @@ impl BookSyncManager {
 
     /// 上传书架数据
     pub async fn upload_bookshelf(&self, json_data: &str) -> LegadoResult<()> {
-        self.client.put("bookshelf.json", json_data.as_bytes()).await
+        self.client
+            .put("bookshelf.json", json_data.as_bytes())
+            .await
     }
 
     /// 下载书架数据
@@ -558,8 +571,14 @@ impl BookSyncManager {
         self.client.mkdir("").await.ok();
         self.upload_bookshelf(local_books).await?;
         self.upload_sources(local_sources).await?;
-        let remote_books = self.download_bookshelf().await.unwrap_or_else(|_| local_books.to_string());
-        let remote_sources = self.download_sources().await.unwrap_or_else(|_| local_sources.to_string());
+        let remote_books = self
+            .download_bookshelf()
+            .await
+            .unwrap_or_else(|_| local_books.to_string());
+        let remote_sources = self
+            .download_sources()
+            .await
+            .unwrap_or_else(|_| local_sources.to_string());
         Ok((remote_books, remote_sources))
     }
 
@@ -613,9 +632,12 @@ impl BookSyncManager {
             let has_remote = remote_files.contains_key(file_name);
             let local_modified = last_sync_time.unwrap_or(0);
             let (remote_modified, remote_etag) = if has_remote {
-                self.client.get_file_info(remote_path).await.map_or((0i64, None), |(etag, modif)| {
-                    (Self::parse_rfc1123(&modif).unwrap_or(0), Some(etag))
-                })
+                self.client
+                    .get_file_info(remote_path)
+                    .await
+                    .map_or((0i64, None), |(etag, modif)| {
+                        (Self::parse_rfc1123(&modif).unwrap_or(0), Some(etag))
+                    })
             } else {
                 (0i64, None)
             };
@@ -640,7 +662,10 @@ impl BookSyncManager {
                     path: file_name.to_string(),
                     local_modified,
                     remote_modified,
-                    remote_etag: item.upload_etag.clone().or_else(|| item.download_etag.clone()),
+                    remote_etag: item
+                        .upload_etag
+                        .clone()
+                        .or_else(|| item.download_etag.clone()),
                 });
             }
         }
@@ -656,7 +681,11 @@ impl BookSyncManager {
             };
             if item.should_upload {
                 if let Some(ref data) = item.local_data {
-                    match self.client.conditional_put(upload_path, data.as_bytes(), item.upload_etag.as_deref()).await {
+                    match self
+                        .client
+                        .conditional_put(upload_path, data.as_bytes(), item.upload_etag.as_deref())
+                        .await
+                    {
                         Ok(_) => result.uploaded_count += 1,
                         Err(e) => result.errors.push(format!("上传{}失败: {}", dl_err_msg, e)),
                     }
@@ -724,14 +753,18 @@ impl BookSyncManager {
                 ConflictResolution::KeepRemote => {
                     resolved_files.insert(path.clone(), remote_content);
                     history.push(ConflictResolutionRecord {
-                        path: path.clone(), strategy, resolved_at: now,
+                        path: path.clone(),
+                        strategy,
+                        resolved_at: now,
                         note: "保留远端版本".to_string(),
                     });
                 }
                 ConflictResolution::UseLocal => {
                     resolved_files.insert(path.clone(), local_content);
                     history.push(ConflictResolutionRecord {
-                        path: path.clone(), strategy, resolved_at: now,
+                        path: path.clone(),
+                        strategy,
+                        resolved_at: now,
                         note: "使用本地版本".to_string(),
                     });
                 }
@@ -739,7 +772,9 @@ impl BookSyncManager {
                     let merged = Self::merge_json(&local_content, &remote_content);
                     resolved_files.insert(path.clone(), merged);
                     history.push(ConflictResolutionRecord {
-                        path: path.clone(), strategy, resolved_at: now,
+                        path: path.clone(),
+                        strategy,
+                        resolved_at: now,
                         note: "JSON 字段级合并".to_string(),
                     });
                 }
@@ -755,7 +790,11 @@ impl BookSyncManager {
             }
         }
 
-        Ok(ConflictResolveResult { resolved_files, history, pending_manual })
+        Ok(ConflictResolveResult {
+            resolved_files,
+            history,
+            pending_manual,
+        })
     }
 
     /// JSON 字段级合并：对象逐字段合并，数组合并去重，其他类型远端优先
@@ -816,11 +855,20 @@ impl BookSyncManager {
                 Ok(_) => return Ok(()),
                 Err(e) => {
                     if attempt < max_retries {
-                        log::info!("上传失败 (第 {}/{} 次, {}ms 后重试): {}", attempt + 1, max_retries, delay, e);
+                        log::info!(
+                            "上传失败 (第 {}/{} 次, {}ms 后重试): {}",
+                            attempt + 1,
+                            max_retries,
+                            delay,
+                            e
+                        );
                         tokio::time::sleep(Duration::from_millis(delay)).await;
                         delay = (delay * 2).min(max_delay_ms);
                     } else {
-                        return Err(LegadoError::Network(format!("上传失败，已重试 {} 次: {}", max_retries, e)));
+                        return Err(LegadoError::Network(format!(
+                            "上传失败，已重试 {} 次: {}",
+                            max_retries, e
+                        )));
                     }
                 }
             }
@@ -859,7 +907,9 @@ mod tests {
         let client = WebDavClient::new(config);
         let header = client.auth_header();
         assert!(header.starts_with("Basic "));
-        let decoded = base64::engine::general_purpose::STANDARD.decode(&header[6..]).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&header[6..])
+            .unwrap();
         assert_eq!(String::from_utf8(decoded).unwrap(), "user:pass");
     }
 
@@ -872,7 +922,10 @@ mod tests {
             remote_dir: "/legado/".into(),
         };
         let client = WebDavClient::new(config);
-        assert_eq!(client.full_url("bookshelf.json"), "https://dav.example.com/legado/bookshelf.json");
+        assert_eq!(
+            client.full_url("bookshelf.json"),
+            "https://dav.example.com/legado/bookshelf.json"
+        );
         assert_eq!(client.full_url(""), "https://dav.example.com/legado/");
     }
 
@@ -992,8 +1045,14 @@ mod tests {
 
     #[test]
     fn test_merge_json_invalid() {
-        assert_eq!(BookSyncManager::merge_json("bad", r#"{"k":"v"}"#), r#"{"k":"v"}"#);
-        assert_eq!(BookSyncManager::merge_json(r#"{"k":"v"}"#, "bad"), r#"{"k":"v"}"#);
+        assert_eq!(
+            BookSyncManager::merge_json("bad", r#"{"k":"v"}"#),
+            r#"{"k":"v"}"#
+        );
+        assert_eq!(
+            BookSyncManager::merge_json(r#"{"k":"v"}"#, "bad"),
+            r#"{"k":"v"}"#
+        );
     }
 
     #[test]

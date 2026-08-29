@@ -38,10 +38,8 @@ pub struct PayActionResult {
 /// `book_url` — 书的 bookUrl；`chapter_index` — 待购买章节索引。
 pub fn chapter_pay_action(book_url: &str, chapter_index: i32) -> LegadoResult<PayActionResult> {
     // 1. 取书 + 本地书短路（对齐 Kotlin `if (book.isLocalBook()) return`）
-    let book = with_database(|db| {
-        BookRepository::new(db.connection()).find_by_url(book_url)
-    })?
-    .ok_or_else(|| LegadoError::Database(format!("书籍不存在: {book_url}")))?;
+    let book = with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))?
+        .ok_or_else(|| LegadoError::Database(format!("书籍不存在: {book_url}")))?;
 
     let is_local = book.origin.is_empty()
         || book.origin == book_type::LOCAL_TAG
@@ -58,15 +56,12 @@ pub fn chapter_pay_action(book_url: &str, chapter_index: i32) -> LegadoResult<Pa
         BookChapterRepository::new(db.connection())
             .find_by_book_url_and_index(book_url, chapter_index)
     })?
-    .ok_or_else(|| {
-        LegadoError::Database(format!("章节 {chapter_index} 不存在: {book_url}"))
-    })?;
+    .ok_or_else(|| LegadoError::Database(format!("章节 {chapter_index} 不存在: {book_url}")))?;
 
     // 3. 取书源 payAction
-    let source = with_database(|db| {
-        BookSourceRepository::new(db.connection()).find_by_url(&book.origin)
-    })?
-    .ok_or_else(|| LegadoError::Database(format!("书源不存在: {}", book.origin)))?;
+    let source =
+        with_database(|db| BookSourceRepository::new(db.connection()).find_by_url(&book.origin))?
+            .ok_or_else(|| LegadoError::Database(format!("书源不存在: {}", book.origin)))?;
 
     let pay_action = source
         .rule_content
@@ -89,10 +84,7 @@ pub fn chapter_pay_action(book_url: &str, chapter_index: i32) -> LegadoResult<Pa
                 .delete_by_book_and_chapter_url(book_url, &chapter.url)
         })?;
     }
-    Ok(PayActionResult {
-        kind,
-        value: raw,
-    })
+    Ok(PayActionResult { kind, value: raw })
 }
 
 /// 判定 JS 返回原文的结果类型
@@ -217,8 +209,7 @@ mod tests {
         assert!(result.value.is_empty());
 
         // 清理
-        with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url))
-            .unwrap();
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url)).unwrap();
     }
 
     /// 无 payAction 规则 → "no pay action" 错误（对齐 Kotlin）
@@ -251,10 +242,8 @@ mod tests {
             index: 0,
             ..Default::default()
         };
-        with_database(|db| {
-            BookChapterRepository::new(db.connection()).insert_batch(&[chapter])
-        })
-        .unwrap();
+        with_database(|db| BookChapterRepository::new(db.connection()).insert_batch(&[chapter]))
+            .unwrap();
 
         let err = chapter_pay_action(book_url, 0).unwrap_err();
         assert!(err.to_string().contains("no pay action"));
@@ -301,10 +290,8 @@ mod quickjs_tests {
             index: 1,
             ..Default::default()
         };
-        with_database(|db| {
-            BookChapterRepository::new(db.connection()).insert_batch(&[chapter])
-        })
-        .unwrap();
+        with_database(|db| BookChapterRepository::new(db.connection()).insert_batch(&[chapter]))
+            .unwrap();
     }
 
     fn teardown(source_url: &str, book_url: &str) {

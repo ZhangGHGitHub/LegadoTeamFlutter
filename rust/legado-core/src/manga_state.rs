@@ -292,7 +292,8 @@ impl MangaReaderState {
             0 => {
                 // 约束 page_pos 范围
                 if !chapter.pages.is_empty() {
-                    self.cur_page_pos = self.cur_page_pos.clamp(0, chapter.image_count() as i32 - 1);
+                    self.cur_page_pos =
+                        self.cur_page_pos.clamp(0, chapter.image_count() as i32 - 1);
                 }
                 self.cur_chapter = Some(chapter);
             }
@@ -864,7 +865,8 @@ mod tests {
             "http://b.jpg".to_string(),
             "http://c.jpg".to_string(),
         ];
-        let chapter = MangaChapter::from_urls(0, "第1话".to_string(), "http://ch".to_string(), &urls);
+        let chapter =
+            MangaChapter::from_urls(0, "第1话".to_string(), "http://ch".to_string(), &urls);
         assert_eq!(chapter.image_count(), 3);
         assert_eq!(chapter.loaded_count(), 0);
         assert!(!chapter.is_fully_loaded());

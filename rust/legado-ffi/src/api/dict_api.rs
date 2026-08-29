@@ -207,11 +207,7 @@ pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, Strin
     };
 
     let response = match analyze_url.method() {
-        RequestMethod::Post => {
-            client
-                .post(url, analyze_url.request_body(), headers)
-                .await
-        }
+        RequestMethod::Post => client.post(url, analyze_url.request_body(), headers).await,
         _ => client.get(url, headers).await,
     };
     let response = response.map_err(|e| format!("网络请求失败: {e}"))?;
@@ -270,7 +266,11 @@ fn apply_show_rule(
 /// `result` / `key` 绑定可用；无 quickjs 时 JS 规则降级报错）
 fn build_analyzer(content: &str, base_url: &str, tag: &str, key: &str) -> AnalyzeRule {
     let executor = DictScopeExecutor::new(base_js_executor(tag), key, content);
-    AnalyzeRule::with_js_executor(content.to_string(), base_url.to_string(), Arc::new(executor))
+    AnalyzeRule::with_js_executor(
+        content.to_string(),
+        base_url.to_string(),
+        Arc::new(executor),
+    )
 }
 
 // ─── JS 作用域执行器 ────────────────────────────────────────────
@@ -346,8 +346,7 @@ fn html_to_text(html: &str) -> String {
         Regex::new(r"(?i)<br\s*/?>|</(?:p|div|h[1-6]|li|ul|ol|tr|table|section|blockquote)>")
             .expect("块级标签正则编译失败")
     });
-    let any_re = ANY_TAG_RE
-        .get_or_init(|| Regex::new(r"<[^>]+>").expect("标签剥离正则编译失败"));
+    let any_re = ANY_TAG_RE.get_or_init(|| Regex::new(r"<[^>]+>").expect("标签剥离正则编译失败"));
 
     let s = block_re.replace_all(html, "\n");
     let s = any_re.replace_all(&s, "");
@@ -520,7 +519,11 @@ mod tests {
         let names = with_database(|db| {
             let repo = DictRuleRepository::new(db.connection());
             Ok::<Vec<String>, legado_core::LegadoError>(
-                repo.find_all().unwrap().into_iter().map(|r| r.name).collect(),
+                repo.find_all()
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| r.name)
+                    .collect(),
             )
         })
         .unwrap();

@@ -226,9 +226,8 @@ impl RemoteBookManager {
         for response_block in Self::split_blocks_ci(xml, "response") {
             let href = Self::find_tag_value_ci(&response_block, "href");
             let display_name = Self::find_tag_value_ci(&response_block, "displayname");
-            let content_length =
-                Self::find_tag_value_ci(&response_block, "getcontentlength")
-                    .and_then(|s| s.parse::<u64>().ok());
+            let content_length = Self::find_tag_value_ci(&response_block, "getcontentlength")
+                .and_then(|s| s.parse::<u64>().ok());
             let is_collection = Self::block_has_tag_ci(&response_block, "collection");
 
             let href = match href {
@@ -338,7 +337,9 @@ impl RemoteBookManager {
                 i += 1;
                 continue;
             }
-            let Some(gt) = lower[j..].find('>') else { break };
+            let Some(gt) = lower[j..].find('>') else {
+                break;
+            };
             let gt_abs = j + gt;
             let close_pat = format!("</{full}>");
             let Some(close_rel) = lower[gt_abs..].find(&close_pat) else {
@@ -491,7 +492,11 @@ mod tests {
         let plain_form = d_form.replace("D:", "");
         let custom_form = d_form.replace("D:", "oc:");
 
-        for (name, xml) in [("D:", d_form), ("无前缀", &plain_form), ("自定义", custom_form.as_str())] {
+        for (name, xml) in [
+            ("D:", d_form),
+            ("无前缀", &plain_form),
+            ("自定义", custom_form.as_str()),
+        ] {
             let books = RemoteBookManager::parse_propfind_response(xml, "/dav/books/");
             assert_eq!(books.len(), 1, "{name}: 应解析出 1 个文件");
             assert_eq!(books[0].filename, "novel.epub", "{name}");

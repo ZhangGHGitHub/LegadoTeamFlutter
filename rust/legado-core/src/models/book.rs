@@ -317,8 +317,7 @@ mod tests {
 
     #[test]
     fn test_read_config_use_global_audio_skip_roundtrip() {
-        let rc: ReadConfig =
-            serde_json::from_str(r#"{"useGlobalAudioSkip": true}"#).unwrap();
+        let rc: ReadConfig = serde_json::from_str(r#"{"useGlobalAudioSkip": true}"#).unwrap();
         assert!(rc.use_global_audio_skip);
         let json = serde_json::to_string(&rc).unwrap();
         assert!(json.contains("useGlobalAudioSkip"));

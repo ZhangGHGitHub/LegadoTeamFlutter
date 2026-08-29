@@ -377,7 +377,9 @@ pub unsafe extern "C" fn ffi_verification_submit(
 pub unsafe extern "C" fn ffi_verification_cancel(key: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let key = c_char_to_str(key)?;
-        Ok::<_, LegadoError>(crate::api::verification_api::cancel_verification_request(key))
+        Ok::<_, LegadoError>(crate::api::verification_api::cancel_verification_request(
+            key,
+        ))
     }))
 }
 
@@ -466,12 +468,17 @@ pub unsafe extern "C" fn ffi_search_multi_stream(
         let q = c_char_to_str(query)?.to_string();
         let urls = c_char_to_str(source_urls_json)?.to_string();
 
-        crate::runtime::block_on(crate::api::search::run_multi_stream(q, urls, page, |batch| {
-            if let Ok(cs) = CString::new(batch) {
-                unsafe { callback(cs.as_ptr(), user_data) };
-            }
-            Ok::<(), String>(())
-        }));
+        crate::runtime::block_on(crate::api::search::run_multi_stream(
+            q,
+            urls,
+            page,
+            |batch| {
+                if let Ok(cs) = CString::new(batch) {
+                    unsafe { callback(cs.as_ptr(), user_data) };
+                }
+                Ok::<(), String>(())
+            },
+        ));
 
         Ok::<_, LegadoError>("ok".to_string())
     }))

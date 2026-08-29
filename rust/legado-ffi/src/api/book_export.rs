@@ -14,9 +14,7 @@ use legado_db::repository::book_repository::BookRepository;
 use legado_db::repository::cache_book_repository::CacheBookRepository;
 use legado_parser::AnalyzeUrl;
 
-use crate::api::reader::{
-    apply_content_processing_chapter, chapter_to_local_info, is_local_book,
-};
+use crate::api::reader::{apply_content_processing_chapter, chapter_to_local_info, is_local_book};
 use crate::db_state::with_database;
 
 /// 导出结果
@@ -109,7 +107,9 @@ fn export_book_inner(
                 data_base64: None,
                 file_name: None,
                 mime_type: None,
-                error: Some(format!("不支持的导出格式: {format}，支持 txt/epub/html/pdf")),
+                error: Some(format!(
+                    "不支持的导出格式: {format}，支持 txt/epub/html/pdf"
+                )),
             });
         }
     };
@@ -171,11 +171,8 @@ fn export_book_inner(
         .map(|ch| {
             let raw_content = if local {
                 // 本地书：走解析器读取文件正文（修复仅读缓存导致本地书导出全空的回归）
-                legado_book::LocalBook::get_chapter_content(
-                    book_url,
-                    &chapter_to_local_info(ch),
-                )
-                .unwrap_or_default()
+                legado_book::LocalBook::get_chapter_content(book_url, &chapter_to_local_info(ch))
+                    .unwrap_or_default()
             } else {
                 // 在线书：从缓存取原始正文
                 cached
@@ -186,7 +183,8 @@ fn export_book_inner(
             };
             // 导出内容与阅读器显示对齐：应用替换规则 + 内容净化
             // （含章级「删除重复标题」开关，Task #51）
-            let content = apply_content_processing_chapter(book_url, &raw_content, &ch.title, ch.index);
+            let content =
+                apply_content_processing_chapter(book_url, &raw_content, &ch.title, ch.index);
             // 图片书 PDF 导出（对齐上游 #483）：从正文提取 img 标签，
             // 并相对章节 URL 绝对化（对齐 Kotlin NetworkUtils.getAbsoluteURL）
             let images = if matches!(export_format, ExportFormat::Pdf) {
@@ -241,36 +239,42 @@ fn export_book_inner(
     };
 
     // 执行导出
-    Ok(match BookExporter::export_with(&export_data, &config, fetcher.as_deref()) {
-        Ok(bytes) => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            // R8：文件名模板（{name}/{author} 占位符），缺省 = 现行为 `{书名}.{扩展名}`
-            let file_name = match options.file_name_template.as_deref().filter(|s| !s.trim().is_empty()) {
-                Some(template) => {
-                    let base = template
-                        .replace("{name}", &book.name)
-                        .replace("{author}", &book.author);
-                    format!("{}.{}", base, export_format.extension())
+    Ok(
+        match BookExporter::export_with(&export_data, &config, fetcher.as_deref()) {
+            Ok(bytes) => {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                // R8：文件名模板（{name}/{author} 占位符），缺省 = 现行为 `{书名}.{扩展名}`
+                let file_name = match options
+                    .file_name_template
+                    .as_deref()
+                    .filter(|s| !s.trim().is_empty())
+                {
+                    Some(template) => {
+                        let base = template
+                            .replace("{name}", &book.name)
+                            .replace("{author}", &book.author);
+                        format!("{}.{}", base, export_format.extension())
+                    }
+                    None => format!("{}.{}", book.name, export_format.extension()),
+                };
+                ExportResult {
+                    success: true,
+                    data_base64: Some(b64),
+                    file_name: Some(file_name),
+                    mime_type: Some(export_format.mime_type().to_string()),
+                    error: None,
                 }
-                None => format!("{}.{}", book.name, export_format.extension()),
-            };
-            ExportResult {
-                success: true,
-                data_base64: Some(b64),
-                file_name: Some(file_name),
-                mime_type: Some(export_format.mime_type().to_string()),
-                error: None,
             }
-        }
-        Err(e) => ExportResult {
-            success: false,
-            data_base64: None,
-            file_name: None,
-            mime_type: None,
-            error: Some(format!("导出失败: {e}")),
+            Err(e) => ExportResult {
+                success: false,
+                data_base64: None,
+                file_name: None,
+                mime_type: None,
+                error: Some(format!("导出失败: {e}")),
+            },
         },
-    })
+    )
 }
 
 /// 获取导出预览信息
@@ -339,7 +343,10 @@ mod tests {
     }
 
     /// 在 DB 中注册书籍并解析章节入库（返回串行锁守卫，测试必须绑定到变量）
-    fn register_book_and_chapters(book_url: &str, book_name: &str) -> std::sync::MutexGuard<'static, ()> {
+    fn register_book_and_chapters(
+        book_url: &str,
+        book_name: &str,
+    ) -> std::sync::MutexGuard<'static, ()> {
         let db_guard = crate::db_state::ensure_test_db();
         with_database(|db| {
             let book_repo = BookRepository::new(db.connection());
@@ -378,10 +385,7 @@ mod tests {
         let result = export_book(&path, "txt", false).unwrap();
         let text = decode_export(&result);
         assert!(text.contains("第一章"), "导出应包含章节标题");
-        assert!(
-            text.contains("这是第一章的正文"),
-            "本地书导出正文不应为空"
-        );
+        assert!(text.contains("这是第一章的正文"), "本地书导出正文不应为空");
         assert!(text.contains("这是第二章的正文"));
 
         let _ = std::fs::remove_file(&path);
@@ -409,10 +413,7 @@ mod tests {
 
         let result = export_book(&path, "txt", false).unwrap();
         let text = decode_export(&result);
-        assert!(
-            !text.contains("广告文字"),
-            "导出应已净化（替换规则生效）"
-        );
+        assert!(!text.contains("广告文字"), "导出应已净化（替换规则生效）");
         assert!(text.contains("这是第一章的正文。"), "净化后正文应保留");
 
         // 清理本测试插入的规则
@@ -454,10 +455,7 @@ mod tests {
         } else {
             // 无 CJK 字体环境：错误信息应明确提示字体问题
             let err = result.error.unwrap_or_default();
-            assert!(
-                err.contains("字体"),
-                "导出失败应提示字体问题: {err}"
-            );
+            assert!(err.contains("字体"), "导出失败应提示字体问题: {err}");
         }
 
         let _ = std::fs::remove_file(&path);
@@ -469,7 +467,8 @@ mod tests {
         let path = create_temp_txt("gbk");
         let _db_guard = register_book_and_chapters(&path, "导出测试书GBK");
 
-        let result = export_book_with_options(&path, "txt", false, r#"{"encoding":"GBK"}"#).unwrap();
+        let result =
+            export_book_with_options(&path, "txt", false, r#"{"encoding":"GBK"}"#).unwrap();
         assert!(result.success, "GBK 导出应成功: {:?}", result.error);
 
         use base64::Engine;
@@ -499,9 +498,13 @@ mod tests {
         assert!(!text.contains("这是第一章的正文"), "不应包含范围外章节");
 
         // -1 = 不限（全量）
-        let result =
-            export_book_with_options(&path, "txt", false, r#"{"startChapter":-1,"endChapter":-1}"#)
-                .unwrap();
+        let result = export_book_with_options(
+            &path,
+            "txt",
+            false,
+            r#"{"startChapter":-1,"endChapter":-1}"#,
+        )
+        .unwrap();
         let text = decode_export(&result);
         assert!(text.contains("这是第一章的正文") && text.contains("这是第二章的正文"));
 

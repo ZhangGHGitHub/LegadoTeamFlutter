@@ -75,7 +75,12 @@ mod tests {
         let _db_guard = crate::db_state::ensure_test_db();
 
         // 标记已读
-        mark_read("https://rss.example.com", "Test Article", Some("https://link.com/1")).unwrap();
+        mark_read(
+            "https://rss.example.com",
+            "Test Article",
+            Some("https://link.com/1"),
+        )
+        .unwrap();
 
         // 判断已读
         assert!(is_read("https://link.com/1").unwrap());
@@ -96,7 +101,9 @@ mod tests {
         // 按 origin 列表
         mark_read("https://other.com", "Other", Some("https://link.com/2")).unwrap();
         let by_origin = list_records_by_origin("https://rss.example.com", None).unwrap();
-        assert!(by_origin.iter().all(|r| r.origin == "https://rss.example.com"));
+        assert!(by_origin
+            .iter()
+            .all(|r| r.origin == "https://rss.example.com"));
         assert_eq!(by_origin.len(), 1);
 
         // 清空

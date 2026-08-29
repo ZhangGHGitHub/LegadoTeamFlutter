@@ -133,19 +133,13 @@ impl ReadingProgress {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChapterTransition {
     /// 成功跳转到目标章节
-    Success {
-        from_index: i32,
-        to_index: i32,
-    },
+    Success { from_index: i32, to_index: i32 },
     /// 已到达首章（无法再向前）
     AtFirstChapter,
     /// 已到达末章（无法再向后）
     AtLastChapter,
     /// 目标章节超出范围
-    OutOfBounds {
-        target: i32,
-        total_chapters: i32,
-    },
+    OutOfBounds { target: i32, total_chapters: i32 },
 }
 
 impl ChapterTransition {
@@ -685,9 +679,7 @@ mod tests {
     }
 
     #[allow(unused_comparisons)]
-
     // ─── 阅读模式切换 ─────────────────────────────────────
-
     #[test]
     fn test_set_reading_mode() {
         let mut reader = make_reader(10);
@@ -1083,11 +1075,8 @@ mod tests {
             lines_per_page: Some(3),
             ..LayoutConfig::default()
         };
-        let mut reader = ReaderStateMachine::with_layout_config(
-            "https://example.com/book/1",
-            10,
-            config,
-        );
+        let mut reader =
+            ReaderStateMachine::with_layout_config("https://example.com/book/1", 10, config);
         let content = "这是一段很长的文本内容用来测试分页功能是否正确工作";
         let pages = reader.paginate_and_update(content);
         assert!(!pages.is_empty());
@@ -1148,14 +1137,14 @@ mod tests {
     #[test]
     fn test_preload_state_syncs_on_jump() {
         let mut reader = make_reader(100);
-        reader.preload_state_mut().cache_chapter(
-            crate::read_state::TextChapter {
+        reader
+            .preload_state_mut()
+            .cache_chapter(crate::read_state::TextChapter {
                 index: 50,
                 title: "Ch50".to_string(),
                 content: "content".to_string(),
                 url: "url".to_string(),
-            },
-        );
+            });
         reader.jump_to_chapter(50, 0);
         assert_eq!(reader.preload_state().cur_index(), 50);
     }
@@ -1176,14 +1165,20 @@ mod tests {
         assert!(reader.is_first_chapter());
         assert!(reader.is_last_chapter());
         assert_eq!(reader.next_chapter(), ChapterTransition::AtLastChapter);
-        assert_eq!(reader.prev_chapter(false), ChapterTransition::AtFirstChapter);
+        assert_eq!(
+            reader.prev_chapter(false),
+            ChapterTransition::AtFirstChapter
+        );
     }
 
     #[test]
     fn test_zero_chapter_book() {
         let mut reader = make_reader(0);
         assert_eq!(reader.next_chapter(), ChapterTransition::AtLastChapter);
-        assert_eq!(reader.prev_chapter(false), ChapterTransition::AtFirstChapter);
+        assert_eq!(
+            reader.prev_chapter(false),
+            ChapterTransition::AtFirstChapter
+        );
     }
 
     #[test]

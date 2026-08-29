@@ -844,7 +844,7 @@ fn pdf_regular_candidates() -> Vec<PdfFontCandidate> {
     list.push((font_path(win, "simkai.ttf"), None)); // 楷体
     list.push((font_path(win, "simfang.ttf"), None)); // 仿宋
     list.push((font_path(win, "msyh.ttf"), None)); // 旧版微软雅黑
-    // Linux（文泉驿/思源/Droid 等常见 CJK 字体）
+                                                   // Linux（文泉驿/思源/Droid 等常见 CJK 字体）
     list.push((
         PathBuf::from("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
         Some(0),
@@ -866,10 +866,7 @@ fn pdf_regular_candidates() -> Vec<PdfFontCandidate> {
         Some(0),
     ));
     // macOS
-    list.push((
-        PathBuf::from("/System/Library/Fonts/PingFang.ttc"),
-        Some(0),
-    ));
+    list.push((PathBuf::from("/System/Library/Fonts/PingFang.ttc"), Some(0)));
     list.push((
         PathBuf::from("/System/Library/Fonts/STHeiti Light.ttc"),
         Some(0),
@@ -925,9 +922,11 @@ fn load_pdf_font(candidates: &[PdfFontCandidate]) -> Result<genpdf::fonts::FontD
             return Ok(font);
         }
     }
-    Err("PDF 导出失败：未找到可用的中文字体。请安装 CJK 字体（如微软雅黑、\
+    Err(
+        "PDF 导出失败：未找到可用的中文字体。请安装 CJK 字体（如微软雅黑、\
          文泉驿微米黑、思源黑体），或通过 LEGADO_PDF_FONT 环境变量指定字体文件路径"
-        .to_string())
+            .to_string(),
+    )
 }
 
 /// 向文档追加一个段落元素
@@ -976,9 +975,7 @@ fn extract_ttc_face(data: &[u8], face_index: u32) -> Result<Vec<u8>, String> {
     }
     let num_fonts = read_u32_be(data, 8)?;
     if face_index >= num_fonts {
-        return Err(format!(
-            "TTC 字体面索引越界: {face_index} >= {num_fonts}"
-        ));
+        return Err(format!("TTC 字体面索引越界: {face_index} >= {num_fonts}"));
     }
     // 目标字体面的 sfnt 表目录偏移
     let table_dir = read_u32_be(data, 12 + 4 * face_index as usize)? as usize;
@@ -1418,10 +1415,7 @@ mod tests {
                 assert_eq!(&bytes[0..4], b"%PDF", "PDF 文件头应为 %PDF");
                 // 尾部应含 %%EOF 标记
                 let tail = &bytes[bytes.len().saturating_sub(128)..];
-                assert!(
-                    tail.windows(5).any(|w| w == b"%%EOF"),
-                    "PDF 尾部应含 %%EOF"
-                );
+                assert!(tail.windows(5).any(|w| w == b"%%EOF"), "PDF 尾部应含 %%EOF");
             }
             Err(e) => {
                 eprintln!("跳过 PDF 生成测试（环境无中文字体）: {e}");
@@ -1530,12 +1524,7 @@ mod tests {
             let img = image::RgbaImage::from_pixel(width, height, image::Rgba([255, 0, 0, 128]));
             let encoder = image::codecs::png::PngEncoder::new(&mut buf);
             encoder
-                .encode(
-                    img.as_raw(),
-                    width,
-                    height,
-                    image::ColorType::Rgba8,
-                )
+                .encode(img.as_raw(), width, height, image::ColorType::Rgba8)
                 .unwrap();
         } else {
             let img = image::RgbImage::from_pixel(width, height, image::Rgb([30, 60, 200]));
@@ -1578,7 +1567,11 @@ mod tests {
         let multi = "<img src=\"a.png\"><img src=\"b.png\"><img src=\"c.png\">";
         assert_eq!(
             extract_image_sources(multi),
-            vec!["a.png".to_string(), "b.png".to_string(), "c.png".to_string()]
+            vec![
+                "a.png".to_string(),
+                "b.png".to_string(),
+                "c.png".to_string()
+            ]
         );
 
         // 无图片返回空

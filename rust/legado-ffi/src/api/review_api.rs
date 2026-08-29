@@ -47,14 +47,24 @@ pub fn review_get_summary(source_json: &str, request_json: &str) -> LegadoResult
         .to_string();
     if !rule.enabled
         || summary_url.is_empty()
-        || rule.summary_list_rule.as_deref().unwrap_or("").trim().is_empty()
+        || rule
+            .summary_list_rule
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
         || rule
             .summary_paragraph_index_rule
             .as_deref()
             .unwrap_or("")
             .trim()
             .is_empty()
-        || rule.summary_count_rule.as_deref().unwrap_or("").trim().is_empty()
+        || rule
+            .summary_count_rule
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
     {
         return empty();
     }
@@ -84,7 +94,11 @@ pub fn review_get_summary(source_json: &str, request_json: &str) -> LegadoResult
         .and_then(|h| serde_json::from_str(h).ok());
     let mut headers = source_headers.unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
-    let headers_opt = if headers.is_empty() { None } else { Some(headers) };
+    let headers_opt = if headers.is_empty() {
+        None
+    } else {
+        Some(headers)
+    };
 
     let method = analyze_url.method().clone();
     let post_body = analyze_url.request_body().to_string();
@@ -133,10 +147,7 @@ pub fn review_get_summary(source_json: &str, request_json: &str) -> LegadoResult
         .map_err(LegadoError::Serialization)
 }
 
-fn js_review_get_summary(
-    source: &BookSource,
-    request: &serde_json::Value,
-) -> LegadoResult<String> {
+fn js_review_get_summary(source: &BookSource, request: &serde_json::Value) -> LegadoResult<String> {
     let book: legado_core::models::Book = request
         .get("book")
         .map(|v| serde_json::from_value(v.clone()))
@@ -189,11 +200,7 @@ fn js_review_get_summary(
 ///
 /// # 返回
 /// `{"items":[...],"nextPageUrl":String?,"hasReplyUrl":bool}`
-pub fn review_get_detail(
-    source_json: &str,
-    request_json: &str,
-    page: i32,
-) -> LegadoResult<String> {
+pub fn review_get_detail(source_json: &str, request_json: &str, page: i32) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
     if source.is_js_source() {
         return js_review_get_detail(&source, request_json, page);
@@ -217,7 +224,8 @@ pub fn review_get_detail(
         || detail_content.is_empty()
     {
         return Err(LegadoError::Internal(
-            "段评详情规则缺失（需 enabled/reviewDetailUrl/detailListRule/detailContentRule）".into(),
+            "段评详情规则缺失（需 enabled/reviewDetailUrl/detailListRule/detailContentRule）"
+                .into(),
         ));
     }
 
@@ -281,7 +289,11 @@ pub fn review_get_detail(
         .and_then(|h| serde_json::from_str(h).ok());
     let mut headers = source_headers.unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
-    let headers_opt = if headers.is_empty() { None } else { Some(headers) };
+    let headers_opt = if headers.is_empty() {
+        None
+    } else {
+        Some(headers)
+    };
 
     let method = analyze_url.method().clone();
     let post_body = analyze_url.request_body().to_string();
@@ -320,9 +332,24 @@ pub fn review_get_detail(
         executor,
     );
 
-    let has_reply_url = !rule.review_quote_url.as_deref().unwrap_or("").trim().is_empty()
-        && !rule.reply_list_rule.as_deref().unwrap_or("").trim().is_empty()
-        && !rule.reply_content_rule.as_deref().unwrap_or("").trim().is_empty();
+    let has_reply_url = !rule
+        .review_quote_url
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .is_empty()
+        && !rule
+            .reply_list_rule
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        && !rule
+            .reply_content_rule
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty();
 
     let payload = serde_json::json!({
         "items": detail_page.items,
@@ -373,7 +400,11 @@ fn js_review_get_detail(
 /// 回复条目字段对齐 Kotlin DetailItem：
 /// id/avatar/name/badges/content/imageUrl/audioUrl/time/likeCount/replyCount/replies。
 /// 注：返回为对象包装而非裸数组（含分页 URL），已在 API_CONTRACT.md 登记。
-pub fn review_get_replies(source_json: &str, request_json: &str, page: i32) -> LegadoResult<String> {
+pub fn review_get_replies(
+    source_json: &str,
+    request_json: &str,
+    page: i32,
+) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
 
     // JS 书源分支（Task #134）：复用 JS 编排器调用 getReviewDetail 实现按需加载，
@@ -395,7 +426,9 @@ pub fn review_get_replies(source_json: &str, request_json: &str, page: i32) -> L
     let reply_list_rule = rule.reply_list_rule.as_deref().unwrap_or("").trim();
     let reply_content_rule = rule.reply_content_rule.as_deref().unwrap_or("").trim();
     // 对标 Kotlin hasReplyUrl 判定：enabled + reviewQuoteUrl + replyListRule + replyContentRule
-    if !rule.enabled || quote_url_rule.is_empty() || reply_list_rule.is_empty()
+    if !rule.enabled
+        || quote_url_rule.is_empty()
+        || reply_list_rule.is_empty()
         || reply_content_rule.is_empty()
     {
         return Err(LegadoError::Internal(
@@ -471,11 +504,7 @@ pub fn review_get_replies(source_json: &str, request_json: &str, page: i32) -> L
     let response = crate::runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         match method {
-            RequestMethod::Post => {
-                client
-                    .post(&final_url, &post_body, headers_opt)
-                    .await
-            }
+            RequestMethod::Post => client.post(&final_url, &post_body, headers_opt).await,
             _ => client.get(&final_url, headers_opt).await,
         }
     })
@@ -500,8 +529,7 @@ pub fn review_get_replies(source_json: &str, request_json: &str, page: i32) -> L
     } else {
         response.url.clone()
     };
-    let replies =
-        legado_parser::parse_reply_page_with(&response.body, rule, &base_url, executor)?;
+    let replies = legado_parser::parse_reply_page_with(&response.body, rule, &base_url, executor)?;
 
     // 分页：回复非空时按 page+1 重新渲染 URL 规则得到下一页 URL；
     // 若 URL 不随页码变化（无分页占位符）则返回 null。
@@ -547,7 +575,10 @@ fn js_review_get_replies(
 
     let para_index = request
         .get("paraIndex")
-        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
         .unwrap_or(0) as i32;
     let para_data = request
         .get("paraData")
@@ -694,10 +725,7 @@ mod tests {
         source.main_js = Some("// js source".into());
         let source_json = serde_json::to_string(&source).unwrap();
         let err = review_get_replies(&source_json, "{}", 1).unwrap_err();
-        assert!(
-            !err.to_string().contains("暂不支持"),
-            "降级分支应已移除"
-        );
+        assert!(!err.to_string().contains("暂不支持"), "降级分支应已移除");
     }
 
     #[test]
@@ -760,7 +788,8 @@ mod tests {
                     nextPageUrl: page < 2 ? "more" : null
                 });
             }
-            "#.to_string(),
+            "#
+            .to_string(),
         );
         let source_json = serde_json::to_string(&source).unwrap();
         let request_json = serde_json::json!({

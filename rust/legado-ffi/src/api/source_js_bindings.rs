@@ -30,7 +30,6 @@ pub fn extract_js_lib_host_decl(js_lib: &str) -> Option<String> {
     None
 }
 
-
 /// 截断未闭合的 `{`：Rhino 标记常落在函数体中间，整段 eval 会语法失败
 fn trim_js_to_balanced_prefix(s: &str) -> String {
     let mut depth = 0i32;
@@ -93,10 +92,7 @@ pub fn js_lib_explore_fallback(js_lib: &str) -> String {
 /// 作用域定义/执行，裸调用函数 `this=globalThis`（var source/java 已挂
 /// 全局）✅ — 发现页修复（书山聚合等聚合源 ERROR）
 #[cfg(feature = "quickjs")]
-pub fn eval_js_non_strict(
-    guard: &legado_js::QuickJsEngine,
-    code: &str,
-) -> Result<String, String> {
+pub fn eval_js_non_strict(guard: &legado_js::QuickJsEngine, code: &str) -> Result<String, String> {
     use legado_js::JsEngine;
     let encoded = serde_json::to_string(code).map_err(|e| e.to_string())?;
     let wrapped = format!("new Function('__legadoCode', 'eval(__legadoCode);')({encoded})");
@@ -125,10 +121,7 @@ pub fn sanitize_js_lib_for_quickjs(js_lib: &str) -> String {
 
 /// explore/callback 上下文加载 jsLib：完整 → sanitize 后完整 → QuickJS 前缀 → 仅 host 声明
 #[cfg(feature = "quickjs")]
-pub fn load_js_lib_for_explore(
-    guard: &legado_js::QuickJsEngine,
-    js_lib: Option<&str>,
-) {
+pub fn load_js_lib_for_explore(guard: &legado_js::QuickJsEngine, js_lib: Option<&str>) {
     use legado_js::JsEngine;
 
     let Some(lib) = js_lib.map(str::trim).filter(|s| !s.is_empty()) else {
@@ -177,16 +170,15 @@ pub fn load_js_lib_for_explore(
 /// host 兜底脚本：jsLib 全失败时尽量提供 `host[0]`
 #[cfg(feature = "quickjs")]
 fn explore_host_fallback_script(source: &BookSource) -> String {
-    if let Some(decl) = source
-        .js_lib
-        .as_deref()
-        .and_then(extract_js_lib_host_decl)
-    {
+    if let Some(decl) = source.js_lib.as_deref().and_then(extract_js_lib_host_decl) {
         return decl;
     }
     let url = source.book_source_url.trim();
     if url.starts_with("http://") || url.starts_with("https://") {
-        format!("var host = [{url_json}];", url_json = serde_json::to_string(url).unwrap_or_default())
+        format!(
+            "var host = [{url_json}];",
+            url_json = serde_json::to_string(url).unwrap_or_default()
+        )
     } else {
         "var host = [];".to_string()
     }
@@ -489,9 +481,18 @@ function foo() { return host[0]; }"#;
     fn test_sanitize_js_lib_keeps_functions_after_packages() {
         let lib = "var host = [];\nimportClass(Packages.java.util.HashMap);\nfunction getConfig(){return {};}\nfunction getServerHost(){return 'https://a.test';}\n";
         let cleaned = sanitize_js_lib_for_quickjs(lib);
-        assert!(!cleaned.contains("importClass"), "Rhino importClass 行应移除");
-        assert!(cleaned.contains("function getConfig"), "getConfig 定义应保留");
-        assert!(cleaned.contains("function getServerHost"), "getServerHost 定义应保留");
+        assert!(
+            !cleaned.contains("importClass"),
+            "Rhino importClass 行应移除"
+        );
+        assert!(
+            cleaned.contains("function getConfig"),
+            "getConfig 定义应保留"
+        );
+        assert!(
+            cleaned.contains("function getServerHost"),
+            "getServerHost 定义应保留"
+        );
         assert!(cleaned.contains("var host"), "host 声明应保留");
     }
 }

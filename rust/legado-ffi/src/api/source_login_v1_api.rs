@@ -40,9 +40,8 @@ fn get_login_js(source: &BookSource) -> Option<String> {
 /// 执行后同步 JS 侧写入的登录缓存；返回执行结果（JSON 字符串或空）。
 pub fn eval_login_v1(source_json: &str, action: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
-    let login_js = get_login_js(&source).ok_or_else(|| {
-        LegadoError::JsEngine("书源 loginUrl 缺失或为空".into())
-    })?;
+    let login_js = get_login_js(&source)
+        .ok_or_else(|| LegadoError::JsEngine("书源 loginUrl 缺失或为空".into()))?;
 
     // 对齐原版：`loginJs` + `if(typeof login=='function'){login.apply(this);}`
     // this 绑定为 {source, cookie, java}（setup 语义；书山 login() 内
@@ -53,8 +52,12 @@ pub fn eval_login_v1(source_json: &str, action: &str) -> LegadoResult<String> {
         action.trim().trim_end_matches('(').trim_end_matches(')')
     };
     let script = format!("{login_js}\n")
-        + "if (typeof " + action_name + " == 'function') {"
-        + "  " + action_name + ".apply({ source: source, cookie: cookie, java: java });"
+        + "if (typeof "
+        + action_name
+        + " == 'function') {"
+        + "  "
+        + action_name
+        + ".apply({ source: source, cookie: cookie, java: java });"
         + "}";
 
     // 书源上下文：sanitize jsLib + setup（含 header 规则注入全局请求头）
@@ -106,9 +109,6 @@ mod tests {
             login_url: Some("function login(){ return 1; }".to_string()),
             ..BookSource::default()
         };
-        assert_eq!(
-            get_login_js(&src).unwrap(),
-            "function login(){ return 1; }"
-        );
+        assert_eq!(get_login_js(&src).unwrap(), "function login(){ return 1; }");
     }
 }

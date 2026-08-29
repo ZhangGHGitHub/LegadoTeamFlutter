@@ -21,7 +21,10 @@ pub fn set_device_id(id: &str) {
 
 /// 读取设备 ID（无注入时返回空）
 pub fn device_id() -> Option<String> {
-    device_id_store().read().unwrap_or_else(|p| p.into_inner()).clone()
+    device_id_store()
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
 }
 
 #[cfg(test)]

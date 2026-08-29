@@ -31,7 +31,6 @@ pub struct SearchResultItem {
     pub cover_url: Option<String>,
 }
 
-
 /// POST /api/search — 搜索书籍
 ///
 /// 当前实现：在本地书架中按名称模糊匹配。
@@ -66,7 +65,6 @@ pub async fn search_books(
         "keyword": req.keyword,
     })))
 }
-
 
 /// POST /api/search/cancel — 取消正在进行的搜索
 pub async fn cancel_search(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {

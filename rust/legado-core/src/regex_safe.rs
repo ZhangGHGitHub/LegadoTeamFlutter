@@ -51,12 +51,11 @@ type RegexCacheValue = Result<Arc<Regex>, String>;
 /// 编译结果 LRU 缓存：pattern → Ok(Arc<Regex>)/Err(失败描述)。
 /// 失败结果同样缓存（负缓存），避免病态/非法 pattern 反复触发编译。
 /// 对齐原版 Kotlin `AnalyzeRule.regexCache` 的全局正则缓存设计。
-static REGEX_CACHE: LazyLock<Mutex<LruCache<String, RegexCacheValue>>> =
-    LazyLock::new(|| {
-        Mutex::new(LruCache::new(
-            NonZeroUsize::new(REGEX_CACHE_CAPACITY).expect("容量常量非法"),
-        ))
-    });
+static REGEX_CACHE: LazyLock<Mutex<LruCache<String, RegexCacheValue>>> = LazyLock::new(|| {
+    Mutex::new(LruCache::new(
+        NonZeroUsize::new(REGEX_CACHE_CAPACITY).expect("容量常量非法"),
+    ))
+});
 
 // ─── 诊断日志（Android 路由到 logcat） ─────────────────────
 
@@ -231,7 +230,10 @@ fn compile_pattern_checked(pattern: &str) -> Result<Arc<Regex>, String> {
     // 非递归结构预检：nest_limit 语义的真正等价物（零栈风险）
     let depth = max_nesting_depth(pattern);
     if depth > MAX_REGEX_NEST_DEPTH {
-        let msg = format!("nesting too deep: depth {} > {} limit", depth, MAX_REGEX_NEST_DEPTH);
+        let msg = format!(
+            "nesting too deep: depth {} > {} limit",
+            depth, MAX_REGEX_NEST_DEPTH
+        );
         regex_safe_log(&format!(
             "拒绝病态嵌套 pattern（{}），前64字符: {}",
             msg,
@@ -281,7 +283,9 @@ pub fn compile_fancy_regex_safe(pattern: &str) -> Option<fancy_regex::Regex> {
         return None;
     }
     let owned = pattern.to_string();
-    let compiled = compile_on_stack(SAFE_COMPILE_STACK_SIZE, move || fancy_regex::Regex::new(&owned));
+    let compiled = compile_on_stack(SAFE_COMPILE_STACK_SIZE, move || {
+        fancy_regex::Regex::new(&owned)
+    });
     match compiled {
         Some(Ok(re)) => Some(re),
         Some(Err(e)) => {
@@ -336,11 +340,19 @@ mod tests {
     fn test_max_nesting_depth_escape_and_class_literals() {
         // 转义与字符类内字面量不计嵌套
         assert_eq!(max_nesting_depth(r"\(\(\("), 0, "转义括号不计嵌套");
-        assert_eq!(max_nesting_depth(r"[(\[]"), 1, "字符类内 ( 与转义 \\[ 为字面量，仅 [ 计 1 层");
+        assert_eq!(
+            max_nesting_depth(r"[(\[]"),
+            1,
+            "字符类内 ( 与转义 \\[ 为字面量，仅 [ 计 1 层"
+        );
         assert_eq!(max_nesting_depth(r"(a)(b)(c)"), 1, "平级分组深度为 1");
         assert_eq!(max_nesting_depth(r"((a))"), 2);
         assert_eq!(max_nesting_depth(r"(a[b(c)]d)"), 2, "( 内嵌 [ 深度叠加");
-        assert_eq!(max_nesting_depth(r"[a-[b]]"), 2, "嵌套字符类的类内 [ 计入深度（保守偏严）");
+        assert_eq!(
+            max_nesting_depth(r"[a-[b]]"),
+            2,
+            "嵌套字符类的类内 [ 计入深度（保守偏严）"
+        );
         assert_eq!(max_nesting_depth(""), 0);
     }
 
@@ -396,7 +408,10 @@ mod tests {
         let p = format!("{}a{}", "(".repeat(500), ")".repeat(500));
         assert!(p.len() <= MAX_REGEX_PATTERN_LEN);
         assert_eq!(max_nesting_depth(&p), 500);
-        assert!(compile_regex_safe(&p).is_none(), "500 层分组嵌套应被预检拒绝");
+        assert!(
+            compile_regex_safe(&p).is_none(),
+            "500 层分组嵌套应被预检拒绝"
+        );
         assert!(
             compile_fancy_regex_safe(&p).is_none(),
             "fancy 路径同样应被预检拒绝"
@@ -426,7 +441,9 @@ mod tests {
                 assert_eq!(ok.find("x42y").unwrap().as_str(), "42");
             })
             .expect("spawn 失败");
-        handle.join().expect("2MB 栈线程上调用 compile_regex_safe 不应崩溃");
+        handle
+            .join()
+            .expect("2MB 栈线程上调用 compile_regex_safe 不应崩溃");
     }
 
     #[test]
@@ -471,9 +488,10 @@ mod tests {
         {
             let mut cache = REGEX_CACHE.lock().unwrap();
             for i in 0..(REGEX_CACHE_CAPACITY + 64) {
-                cache.put(format!("__lru_probe_{i}__"), Ok(Arc::new(
-                    Regex::new(r"a").unwrap(),
-                )));
+                cache.put(
+                    format!("__lru_probe_{i}__"),
+                    Ok(Arc::new(Regex::new(r"a").unwrap())),
+                );
             }
             assert!(
                 cache.len() <= REGEX_CACHE_CAPACITY,
@@ -528,6 +546,8 @@ mod tests {
                 assert!(compile_regex_safe(&p).is_none());
             })
             .expect("spawn 失败");
-        handle.join().expect("小栈线程上调用 compile_regex_safe 不应崩溃");
+        handle
+            .join()
+            .expect("小栈线程上调用 compile_regex_safe 不应崩溃");
     }
 }

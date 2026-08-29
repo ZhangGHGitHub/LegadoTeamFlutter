@@ -93,11 +93,7 @@ struct ContentProtocol {
 ///
 /// 按 `summaryListRule` 提取列表，再按 index/count/data 规则填充 maps。
 /// body 为空或必备规则缺失时返回 `None`（对齐 Kotlin 可空返回）。
-pub fn parse_summary(
-    body: &str,
-    rule: &ReviewRule,
-    base_url: &str,
-) -> Option<ReviewSummaryResult> {
+pub fn parse_summary(body: &str, rule: &ReviewRule, base_url: &str) -> Option<ReviewSummaryResult> {
     parse_summary_with(body, rule, base_url, None)
 }
 
@@ -566,7 +562,9 @@ fn parse_int_value(value: &Value) -> Option<i32> {
 
 fn parse_int_str(s: &str) -> Option<i32> {
     let t = s.trim();
-    t.parse::<i32>().ok().or_else(|| t.parse::<f64>().ok().map(|f| f as i32))
+    t.parse::<i32>()
+        .ok()
+        .or_else(|| t.parse::<f64>().ok().map(|f| f as i32))
 }
 
 #[cfg(test)]
@@ -574,7 +572,14 @@ mod tests {
     use super::*;
 
     /// 构造带 reply 规则族的 ReviewRule
-    fn reply_rule(list: &str, id: &str, avatar: &str, name: &str, badge: &str, content: &str) -> ReviewRule {
+    fn reply_rule(
+        list: &str,
+        id: &str,
+        avatar: &str,
+        name: &str,
+        badge: &str,
+        content: &str,
+    ) -> ReviewRule {
         ReviewRule {
             reply_list_rule: Some(list.into()),
             reply_id_rule: Some(id.into()),
@@ -678,10 +683,7 @@ mod tests {
             Some("http://example.com/a/1.jpg")
         );
         // 绝对头像保持原样
-        assert_eq!(
-            replies[1].avatar.as_deref(),
-            Some("http://img.com/2.jpg")
-        );
+        assert_eq!(replies[1].avatar.as_deref(), Some("http://img.com/2.jpg"));
         // 空徽章不产生条目
         assert!(replies[1].badges.is_empty());
         // 回复条目不携带点赞数/回复数

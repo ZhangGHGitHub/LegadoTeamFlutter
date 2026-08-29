@@ -192,18 +192,19 @@ fn migrate_rule_subs(conn: &Connection) -> LegadoResult<()> {
         };
 
         let auto_e = col_bool(conn, "rule_subs", &["autoUpdate", "auto_update"], "0")?;
-        let interval_e =
-            col_int(conn, "rule_subs", &["updateInterval", "update_interval"], "0")?;
-        let silent_e =
-            col_bool(conn, "rule_subs", &["silentUpdate", "silent_update"], "0")?;
+        let interval_e = col_int(
+            conn,
+            "rule_subs",
+            &["updateInterval", "update_interval"],
+            "0",
+        )?;
+        let silent_e = col_bool(conn, "rule_subs", &["silentUpdate", "silent_update"], "0")?;
         let js_e = col_text(conn, "rule_subs", &["js"], "NULL")?;
         let show_e = col_text(conn, "rule_subs", &["showRule", "show_rule"], "NULL")?;
         let source_e = col_text(conn, "rule_subs", &["sourceUrl", "source_url"], "NULL")?;
         let version_e = col_text(conn, "rule_subs", &["version"], "''")?;
-        let enabled_e =
-            col_bool(conn, "rule_subs", &["isEnabled", "is_enabled"], "1")?;
-        let created_e =
-            col_int(conn, "rule_subs", &["createdAt", "created_at"], "0")?;
+        let enabled_e = col_bool(conn, "rule_subs", &["isEnabled", "is_enabled"], "1")?;
+        let created_e = col_int(conn, "rule_subs", &["createdAt", "created_at"], "0")?;
 
         let sql = format!(
             r#"INSERT OR IGNORE INTO ruleSubs (

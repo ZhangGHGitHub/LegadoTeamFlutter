@@ -137,14 +137,8 @@ impl VerificationManager {
         use_browser: bool,
     ) -> VerificationHandle {
         // 锁序约定：attempts → flights（全局一致，避免死锁）
-        let mut attempts = self
-            .attempts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let mut flights = self
-            .flights
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
+        let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
 
         // 航班去重：同书源并发请求共享结果（匿名请求不参与去重，避免跨书源串扰）
         if !source_url.is_empty() {
@@ -256,7 +250,12 @@ impl VerificationManager {
         let attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
         let mut list: Vec<VerificationRequest> = attempts
             .values()
-            .filter(|a| a.outcome.lock().unwrap_or_else(|e| e.into_inner()).is_none())
+            .filter(|a| {
+                a.outcome
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_none()
+            })
             .map(|a| a.request.clone())
             .collect();
         list.sort_by(|a, b| a.key.cmp(&b.key));
@@ -372,7 +371,8 @@ pub fn request_verification_code(
     title: &str,
     use_browser: bool,
 ) -> LegadoResult<String> {
-    let handle = verification_manager().request(source_url, source_name, image_url, title, use_browser);
+    let handle =
+        verification_manager().request(source_url, source_name, image_url, title, use_browser);
     handle.wait(DEFAULT_VERIFICATION_TIMEOUT)
 }
 
@@ -419,8 +419,13 @@ mod tests {
 
         // UI 侧订阅并收到事件
         let rx = mgr.subscribe();
-        let req = rx.recv_timeout(Duration::from_secs(2)).expect("应收到请求事件");
-        assert_eq!(req.key, ready_rx.recv_timeout(Duration::from_secs(2)).unwrap());
+        let req = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("应收到请求事件");
+        assert_eq!(
+            req.key,
+            ready_rx.recv_timeout(Duration::from_secs(2)).unwrap()
+        );
         assert_eq!(req.source_url, "https://source.example.com");
         assert_eq!(req.source_name, "测试源");
         assert_eq!(req.image_url, "https://img.example.com/captcha.png");
@@ -532,7 +537,9 @@ mod tests {
         let handle = mgr.request("https://late.example.com", "", "img", "", false);
         // 晚订阅：应立即回放进行中的请求
         let rx = mgr.subscribe();
-        let req = rx.recv_timeout(Duration::from_secs(1)).expect("应回放进行中请求");
+        let req = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("应回放进行中请求");
         assert_eq!(req.key, handle.key());
         // 收尾清理
         mgr.submit(&req.key, "done");
@@ -572,6 +579,9 @@ mod tests {
         assert_eq!(req.key, handle.key());
         assert!(submit_verification_result(&req.key, "g0"));
         assert_eq!(handle.wait(Duration::from_secs(5)).unwrap(), "g0");
-        assert!(!cancel_verification_request(&req.key), "已结束的请求取消应返回 false");
+        assert!(
+            !cancel_verification_request(&req.key),
+            "已结束的请求取消应返回 false"
+        );
     }
 }

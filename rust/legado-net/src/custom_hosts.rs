@@ -20,7 +20,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
-use reqwest::dns::{Addrs, Name, Resolving, Resolve};
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
 use legado_core::{LegadoError, LegadoResult};
 
@@ -160,8 +160,7 @@ impl Resolve for CustomHostsResolver {
                 Duration::ZERO,
                 ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect(),
             );
-            let addrs: Addrs =
-                Box::new(ips.into_iter().map(|ip| SocketAddr::new(ip, 0)));
+            let addrs: Addrs = Box::new(ips.into_iter().map(|ip| SocketAddr::new(ip, 0)));
             return Box::pin(async move { Ok(addrs) });
         }
         // 未命中：回落系统 DNS（端口传 0，解析结果端口由 hyper 按 URL 替换）
@@ -302,8 +301,8 @@ mod tests {
         // 映射一个不存在的域名到 127.0.0.1
         apply_custom_hosts(r#"{"hosts-e2e.test": "127.0.0.1"}"#).unwrap();
 
-        let client = crate::client::LegadoClient::new(crate::client::LegadoClientConfig::default())
-            .unwrap();
+        let client =
+            crate::client::LegadoClient::new(crate::client::LegadoClientConfig::default()).unwrap();
         let resp = client
             .get(&format!("http://hosts-e2e.test:{}/", addr.port()), None)
             .await
@@ -339,8 +338,8 @@ mod tests {
             }
         });
 
-        let client = crate::client::LegadoClient::new(crate::client::LegadoClientConfig::default())
-            .unwrap();
+        let client =
+            crate::client::LegadoClient::new(crate::client::LegadoClientConfig::default()).unwrap();
         let resp = client
             .get(&format!("http://localhost:{}/", addr.port()), None)
             .await

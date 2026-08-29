@@ -95,10 +95,7 @@ impl<'a> HighlightRepository<'a> {
     pub fn delete_by_book(&self, book_url: &str) -> LegadoResult<i64> {
         let rows = self
             .conn
-            .execute(
-                "DELETE FROM highlights WHERE bookUrl=?1",
-                params![book_url],
-            )
+            .execute("DELETE FROM highlights WHERE bookUrl=?1", params![book_url])
             .map_err(|e| LegadoError::Database(format!("按书籍删除高亮记录失败: {e}")))?;
         Ok(rows as i64)
     }
@@ -239,7 +236,11 @@ impl<'a> HighlightRepository<'a> {
         if times.is_empty() {
             return Ok(0);
         }
-        let placeholders: Vec<String> = times.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
+        let placeholders: Vec<String> = times
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 2))
+            .collect();
         let sql = format!(
             "UPDATE highlights SET chapterUrl = ?1
              WHERE time IN ({}) AND chapterUrl = ''",
@@ -333,8 +334,10 @@ mod tests {
     fn test_insert_and_find_all() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = HighlightRepository::new(db.connection());
-        repo.insert(&make_highlight(1, "bk://1", 0, "文本一")).unwrap();
-        repo.insert(&make_highlight(2, "bk://1", 1, "文本二")).unwrap();
+        repo.insert(&make_highlight(1, "bk://1", 0, "文本一"))
+            .unwrap();
+        repo.insert(&make_highlight(2, "bk://1", 1, "文本二"))
+            .unwrap();
         let all = repo.find_all().unwrap();
         assert_eq!(all.len(), 2);
     }
@@ -343,9 +346,11 @@ mod tests {
     fn test_insert_replace_on_conflict() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = HighlightRepository::new(db.connection());
-        repo.insert(&make_highlight(1, "bk://1", 0, "原文本")).unwrap();
+        repo.insert(&make_highlight(1, "bk://1", 0, "原文本"))
+            .unwrap();
         // 相同主键 time 重复插入应替换
-        repo.insert(&make_highlight(1, "bk://1", 0, "新文本")).unwrap();
+        repo.insert(&make_highlight(1, "bk://1", 0, "新文本"))
+            .unwrap();
         assert_eq!(repo.count().unwrap(), 1);
         let found = repo.find_by_time(1).unwrap().unwrap();
         assert_eq!(found.bookText, "新文本");
@@ -371,8 +376,10 @@ mod tests {
     fn test_search_in_book_and_global() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = HighlightRepository::new(db.connection());
-        repo.insert(&make_highlight(1, "bk://1", 0, "重要内容")).unwrap();
-        repo.insert(&make_highlight(2, "bk://2", 0, "普通内容")).unwrap();
+        repo.insert(&make_highlight(1, "bk://1", 0, "重要内容"))
+            .unwrap();
+        repo.insert(&make_highlight(2, "bk://2", 0, "普通内容"))
+            .unwrap();
 
         // 全局搜索
         let results = repo.search("重要").unwrap();
@@ -447,7 +454,9 @@ mod tests {
         let db = crate::init_in_memory_database().unwrap();
         let repo = HighlightRepository::new(db.connection());
         repo.insert(&make_highlight(1, "bk://1", 0, "a")).unwrap();
-        let updated = repo.update_book_metadata("bk://1", "新书名", "新作者").unwrap();
+        let updated = repo
+            .update_book_metadata("bk://1", "新书名", "新作者")
+            .unwrap();
         assert_eq!(updated, 1);
         let found = repo.find_by_time(1).unwrap().unwrap();
         assert_eq!(found.bookName, "新书名");

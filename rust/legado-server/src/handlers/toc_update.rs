@@ -147,7 +147,11 @@ async fn update_one_toc(
         }
         book.toc_url = info.toc_url.clone();
         // 记录用于落库阶段合并的最新章节信息
-        info_update = Some((info.last_chapter.clone(), info.word_count.clone(), info.toc_url));
+        info_update = Some((
+            info.last_chapter.clone(),
+            info.word_count.clone(),
+            info.toc_url,
+        ));
     }
 
     // 3. 请求目录页解析章节列表
@@ -334,12 +338,9 @@ pub async fn start_toc_update(
             .map(|o| o.new_chapters)
         }
     };
-    tokio::spawn(run_batch(
-        updater,
-        requests,
-        worker,
-        || STOP_FLAG.load(Ordering::SeqCst),
-    ));
+    tokio::spawn(run_batch(updater, requests, worker, || {
+        STOP_FLAG.load(Ordering::SeqCst)
+    }));
 
     Ok((
         StatusCode::OK,
@@ -403,10 +404,7 @@ mod tests {
 
     fn test_router(state: Arc<AppState>) -> Router {
         Router::new()
-            .route(
-                "/api/bookshelf/update-toc/single",
-                post(update_single_toc),
-            )
+            .route("/api/bookshelf/update-toc/single", post(update_single_toc))
             .route("/api/bookshelf/update-toc", post(start_toc_update))
             .route(
                 "/api/bookshelf/update-toc/progress",
@@ -534,7 +532,10 @@ mod tests {
         assert_eq!(json["total"], 2);
         assert_eq!(json["failed"], 2);
         // 错误信息逐本回报
-        assert!(json["results"][0]["error"].as_str().unwrap().contains("书籍不存在"));
+        assert!(json["results"][0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("书籍不存在"));
     }
 
     #[tokio::test]

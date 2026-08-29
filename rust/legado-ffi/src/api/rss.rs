@@ -93,8 +93,7 @@ pub fn import_rss_sources(json_array: &str) -> LegadoResult<i32> {
 /// 导出全部 RSS 源为 JSON 数组（对齐契约 `exportRssSources`）
 pub fn export_rss_sources() -> LegadoResult<String> {
     let sources = list_rss_sources()?;
-    serde_json::to_string(&sources)
-        .map_err(|e| LegadoError::Ffi(format!("RSS 源序列化失败: {e}")))
+    serde_json::to_string(&sources).map_err(|e| LegadoError::Ffi(format!("RSS 源序列化失败: {e}")))
 }
 
 /// 删除默认分组订阅源（`sourceGroup = 'legado'`，对齐 DefaultData.deleteDefault）
@@ -102,10 +101,7 @@ pub fn delete_default_rss_sources() -> LegadoResult<i32> {
     with_database(|db| {
         let conn = db.connection();
         let n = conn
-            .execute(
-                "DELETE FROM rssSources WHERE sourceGroup = 'legado'",
-                [],
-            )
+            .execute("DELETE FROM rssSources WHERE sourceGroup = 'legado'", [])
             .map_err(|e| LegadoError::Database(format!("删除默认 RSS 源失败: {e}")))?;
         Ok(n as i32)
     })

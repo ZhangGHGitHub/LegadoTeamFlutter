@@ -189,12 +189,15 @@ pub fn ajax(input: &str) -> Result<String, String> {
     // java.ajax(source.key+"/user/search.html?q="+key) 依赖）
     // — 2026-08-17
     if !input.starts_with('{') {
-        let opts = HttpOptions { url: input.to_string(), ..Default::default() };
+        let opts = HttpOptions {
+            url: input.to_string(),
+            ..Default::default()
+        };
         return ajax_request_body(&opts);
     }
     // 标准 JSON 输入
-    let opts: HttpOptions = serde_json::from_str(input)
-        .map_err(|e| format!("ajax parse options error: {}", e))?;
+    let opts: HttpOptions =
+        serde_json::from_str(input).map_err(|e| format!("ajax parse options error: {}", e))?;
 
     if opts.url.is_empty() {
         return Err("ajax: url is required".to_string());
@@ -458,14 +461,17 @@ pub fn connect_no_redirect(
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default();
     let body_owned = body.map(|s| s.to_string());
-    ensure_form_content_type(&mut headers, body_owned.as_ref().is_some_and(|b| !b.is_empty()));
+    ensure_form_content_type(
+        &mut headers,
+        body_owned.as_ref().is_some_and(|b| !b.is_empty()),
+    );
     block_on(async {
         let config = LegadoClientConfig {
             follow_redirects: false,
             ..LegadoClientConfig::default()
         };
-        let client = LegadoClient::new(config)
-            .map_err(|e| format!("connectNR client error: {}", e))?;
+        let client =
+            LegadoClient::new(config).map_err(|e| format!("connectNR client error: {}", e))?;
         let request = LegadoRequest {
             url,
             method,
@@ -523,11 +529,7 @@ pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String
 ///
 /// 对应 Kotlin: `post(urlStr, body, headers): Connection.Response`
 /// 返回包含 statusCode / body / headers 的完整响应 JSON。
-pub fn post_full(
-    url: &str,
-    body: &str,
-    headers_json: Option<&str>,
-) -> Result<String, String> {
+pub fn post_full(url: &str, body: &str, headers_json: Option<&str>) -> Result<String, String> {
     let headers: HashMap<String, String> = headers_json
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default();
@@ -638,7 +640,8 @@ mod tests {
     #[test]
     #[ignore = "依赖 httpbin.org，外部 503/验证页会改变响应体格式"]
     fn test_ajax_url_option_format_returns_body() {
-        let input = r#"https://httpbin.org/get,{"method":"GET","headers":{"Accept":"application/json"}}"#;
+        let input =
+            r#"https://httpbin.org/get,{"method":"GET","headers":{"Accept":"application/json"}}"#;
         let result = ajax(input);
         if let Ok(body) = result {
             let head: String = body.chars().take(80).collect();
@@ -762,7 +765,13 @@ mod tests {
     /// 测试 connect_full GET 请求（返回完整响应 JSON）
     #[test]
     fn test_connect_full_get() {
-        let result = connect_full("https://httpbin.org/get", Some("GET"), None, None, Some(10000));
+        let result = connect_full(
+            "https://httpbin.org/get",
+            Some("GET"),
+            None,
+            None,
+            Some(10000),
+        );
         if let Ok(resp_json) = result {
             let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
             if resp.status_code == 200 {

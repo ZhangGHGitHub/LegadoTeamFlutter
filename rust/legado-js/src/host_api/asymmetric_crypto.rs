@@ -99,7 +99,8 @@ fn b64_decode_lenient(s: &str) -> Result<Vec<u8>, String> {
     }
     let pad = (4 - cleaned.len() % 4) % 4;
     let padded = format!("{}{}", cleaned, "=".repeat(pad));
-    B64.decode(&padded).map_err(|e| format!("Invalid Base64 key data: {}", e))
+    B64.decode(&padded)
+        .map_err(|e| format!("Invalid Base64 key data: {}", e))
 }
 
 /// 解析 RSA 公钥：支持 PEM（X.509 SPKI / PKCS#1）与 Base64 DER
@@ -181,9 +182,7 @@ pub fn rsa_encrypt_segmented(
         let enc = match padding {
             RsaPadding::Pkcs1v15 => pub_key.encrypt(&mut rng, Pkcs1v15Encrypt, chunk),
             RsaPadding::OaepSha1 => pub_key.encrypt(&mut rng, Oaep::new::<sha1::Sha1>(), chunk),
-            RsaPadding::OaepSha256 => {
-                pub_key.encrypt(&mut rng, Oaep::new::<sha2::Sha256>(), chunk)
-            }
+            RsaPadding::OaepSha256 => pub_key.encrypt(&mut rng, Oaep::new::<sha2::Sha256>(), chunk),
         }
         .map_err(|e| format!("RSA encrypt failed: {}", e))?;
         out.extend_from_slice(&enc);
@@ -435,7 +434,9 @@ fn value_to_bytes<'js>(v: &rquickjs::Value<'js>) -> rquickjs::Result<Vec<u8>> {
             return Ok(bytes.to_vec());
         }
     }
-    Err(js_err("Cannot convert JS value to bytes (expected String or Uint8Array)"))
+    Err(js_err(
+        "Cannot convert JS value to bytes (expected String or Uint8Array)",
+    ))
 }
 
 /// 将 JS 值转为密文字节：String -> Base64/Hex 解码；Uint8Array -> 原始字节
@@ -448,7 +449,9 @@ fn value_to_cipher_bytes<'js>(v: &rquickjs::Value<'js>) -> rquickjs::Result<Vec<
             return Ok(bytes.to_vec());
         }
     }
-    Err(js_err("Cannot convert JS value to ciphertext bytes (expected String or Uint8Array)"))
+    Err(js_err(
+        "Cannot convert JS value to ciphertext bytes (expected String or Uint8Array)",
+    ))
 }
 
 /// 字符串密文解密：依次按 Base64、Hex 解码尝试解密，返回首个成功结果
@@ -553,7 +556,9 @@ pub fn build_asymmetric_crypto_object<'js>(
         let st = state.clone();
         let f = rquickjs::Function::new(
             ctx.clone(),
-            move |this: rquickjs::function::This<rquickjs::Object<'js>>, key: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+            move |this: rquickjs::function::This<rquickjs::Object<'js>>,
+                  key: String|
+                  -> rquickjs::Result<rquickjs::Object<'js>> {
                 let pk = parse_public_key(&key).map_err(js_err)?;
                 st.borrow_mut().public = Some(pk);
                 Ok(this.0)
@@ -567,7 +572,9 @@ pub fn build_asymmetric_crypto_object<'js>(
         let st = state.clone();
         let f = rquickjs::Function::new(
             ctx.clone(),
-            move |this: rquickjs::function::This<rquickjs::Object<'js>>, key: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+            move |this: rquickjs::function::This<rquickjs::Object<'js>>,
+                  key: String|
+                  -> rquickjs::Result<rquickjs::Object<'js>> {
                 let k = parse_private_key(&key).map_err(js_err)?;
                 st.borrow_mut().private = Some(k);
                 Ok(this.0)
@@ -743,7 +750,9 @@ pub fn build_sign_object<'js>(
         let st = state.clone();
         let f = rquickjs::Function::new(
             ctx.clone(),
-            move |this: rquickjs::function::This<rquickjs::Object<'js>>, key: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+            move |this: rquickjs::function::This<rquickjs::Object<'js>>,
+                  key: String|
+                  -> rquickjs::Result<rquickjs::Object<'js>> {
                 let k = parse_private_key(&key).map_err(js_err)?;
                 st.borrow_mut().private = Some(k);
                 Ok(this.0)
@@ -757,7 +766,9 @@ pub fn build_sign_object<'js>(
         let st = state.clone();
         let f = rquickjs::Function::new(
             ctx.clone(),
-            move |this: rquickjs::function::This<rquickjs::Object<'js>>, key: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+            move |this: rquickjs::function::This<rquickjs::Object<'js>>,
+                  key: String|
+                  -> rquickjs::Result<rquickjs::Object<'js>> {
                 let pk = parse_public_key(&key).map_err(js_err)?;
                 st.borrow_mut().public = Some(pk);
                 Ok(this.0)
@@ -858,7 +869,10 @@ pub fn generate_test_keypair_b64() -> (String, String) {
     let pub_key = RsaPublicKey::from(&priv_key);
     let pub_der = pub_key.to_public_key_der().expect("encode public key");
     let priv_der = priv_key.to_pkcs8_der().expect("encode private key");
-    (B64.encode(pub_der.as_bytes()), B64.encode(priv_der.as_bytes()))
+    (
+        B64.encode(pub_der.as_bytes()),
+        B64.encode(priv_der.as_bytes()),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -879,7 +893,10 @@ mod tests {
 
     #[test]
     fn test_parse_rsa_transformation() {
-        assert_eq!(parse_rsa_transformation("RSA").unwrap(), RsaPadding::Pkcs1v15);
+        assert_eq!(
+            parse_rsa_transformation("RSA").unwrap(),
+            RsaPadding::Pkcs1v15
+        );
         assert_eq!(
             parse_rsa_transformation("RSA/ECB/PKCS1Padding").unwrap(),
             RsaPadding::Pkcs1v15
@@ -981,17 +998,20 @@ mod tests {
     #[test]
     fn test_parse_invalid_key_fails() {
         assert!(parse_public_key("not a key at all!!!").is_err());
-        assert!(parse_private_key(
-            "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----"
-        )
-        .is_err());
+        assert!(
+            parse_private_key("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----")
+                .is_err()
+        );
     }
 
     // ---- 签名验签 ----
 
     #[test]
     fn test_parse_sign_algorithm() {
-        assert_eq!(parse_sign_algorithm("SHA256withRSA").unwrap(), SignAlgo::Sha256);
+        assert_eq!(
+            parse_sign_algorithm("SHA256withRSA").unwrap(),
+            SignAlgo::Sha256
+        );
         assert_eq!(parse_sign_algorithm("sha1withrsa").unwrap(), SignAlgo::Sha1);
         assert_eq!(parse_sign_algorithm("MD5withRSA").unwrap(), SignAlgo::Md5);
         assert!(parse_sign_algorithm("SHA3withRSA").is_err());

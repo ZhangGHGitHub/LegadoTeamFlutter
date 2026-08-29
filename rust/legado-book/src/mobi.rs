@@ -85,7 +85,9 @@ impl Records {
         file.read_to_end(&mut data)
             .map_err(|e| LegadoError::BookParse(format!("读取文件失败: {e}")))?;
         if data.len() < 78 {
-            return Err(LegadoError::BookParse("文件过小，不是有效的 PDB 文件".into()));
+            return Err(LegadoError::BookParse(
+                "文件过小，不是有效的 PDB 文件".into(),
+            ));
         }
         let name = String::from_utf8_lossy(&data[0..32])
             .trim_end_matches('\0')
@@ -225,7 +227,9 @@ const EXTH_TITLE: u32 = 503;
 /// 对照 Kotlin：MobiReader.readMobiEntryHeaders
 fn parse_entry_headers(rec: &[u8]) -> LegadoResult<EntryHeaders> {
     if rec.len() < 16 {
-        return Err(LegadoError::BookParse("Record 0 过小，无 PalmDoc 头".into()));
+        return Err(LegadoError::BookParse(
+            "Record 0 过小，无 PalmDoc 头".into(),
+        ));
     }
     let palmdoc = PalmDocHeader {
         compression: read_u16(rec, 0),
@@ -250,16 +254,25 @@ fn parse_entry_headers(rec: &[u8]) -> LegadoResult<EntryHeaders> {
     let exth_flag = read_u32(rec, 128);
 
     // 尾部标志与 INDX 在扩展头区域（头长度 >= 248 才有）
-    let trailing_flags = if rec.len() >= 248 { read_u32(rec, 240) } else { 0 };
-    let indx_raw = if rec.len() >= 248 { read_u32(rec, 244) } else { u32::MAX };
-    let indx = if indx_raw == u32::MAX { -1 } else { i64::from(indx_raw) };
+    let trailing_flags = if rec.len() >= 248 {
+        read_u32(rec, 240)
+    } else {
+        0
+    };
+    let indx_raw = if rec.len() >= 248 {
+        read_u32(rec, 244)
+    } else {
+        u32::MAX
+    };
+    let indx = if indx_raw == u32::MAX {
+        -1
+    } else {
+        i64::from(indx_raw)
+    };
 
     // 完整书名
     let mut title = String::new();
-    if title_length > 0
-        && title_length < 4096
-        && title_offset + title_length <= rec.len()
-    {
+    if title_length > 0 && title_length < 4096 && title_offset + title_length <= rec.len() {
         title = decode_mobi_text(&rec[title_offset..title_offset + title_length], encoding);
     }
 
@@ -414,7 +427,11 @@ impl MobiBook {
         }
 
         let huff = if headers.palmdoc.compression == 17480 {
-            Some(HuffcdicDecompressor::new(&records, &headers.mobi, kf8_boundary)?)
+            Some(HuffcdicDecompressor::new(
+                &records,
+                &headers.mobi,
+                kf8_boundary,
+            )?)
         } else {
             None
         };
@@ -649,7 +666,8 @@ impl HuffcdicDecompressor {
             let num_entries = read_u32(rec, 8) as usize;
             let code_length = read_u32(rec, 12) as usize;
 
-            let n = (1usize << code_length.min(30)).min(num_entries.saturating_sub(dictionary.len()));
+            let n =
+                (1usize << code_length.min(30)).min(num_entries.saturating_sub(dictionary.len()));
             if header_len + n * 2 > rec.len() {
                 return Err(LegadoError::BookParse("CDIC 指针表越界".into()));
             }
@@ -981,8 +999,15 @@ fn read_index_entry(
 
     /// 中间表示：与 Kotlin Ptagx 对应
     enum Ptagx {
-        Counted { tag: u8, per_count: u32, value_count: u32 },
-        Bytes { tag: u8, value_bytes: u32 },
+        Counted {
+            tag: u8,
+            per_count: u32,
+            value_count: u32,
+        },
+        Bytes {
+            tag: u8,
+            value_bytes: u32,
+        },
     }
 
     let mut ptagxs: Vec<Ptagx> = Vec::new();
@@ -1034,7 +1059,11 @@ fn read_index_entry(
     for ptagx in ptagxs {
         let mut values = Vec::new();
         match ptagx {
-            Ptagx::Counted { tag, per_count, value_count } => {
+            Ptagx::Counted {
+                tag,
+                per_count,
+                value_count,
+            } => {
                 for _ in 0..(value_count * per_count) {
                     values.push(read_varint(buf, &mut pos));
                 }
@@ -1172,14 +1201,30 @@ fn get_ncx(book: &MobiBook) -> Option<Vec<NcxItem>> {
             .and_then(|k| data.cncx.get(k))
             .cloned()
             .unwrap_or_else(|| entry.label.clone());
-        let offset = entry.tag_map.get(&1).and_then(|t| t.values.first()).copied();
+        let offset = entry
+            .tag_map
+            .get(&1)
+            .and_then(|t| t.values.first())
+            .copied();
         let pos = match entry.tag_map.get(&4) {
             Some(t) if t.values.len() >= 2 => Some((t.values[0], t.values[1])),
             _ => None,
         };
-        let heading_level = entry.tag_map.get(&21).and_then(|t| t.values.first()).copied();
-        let parent = entry.tag_map.get(&22).and_then(|t| t.values.first()).copied();
-        let first_child = entry.tag_map.get(&23).and_then(|t| t.values.first()).copied();
+        let heading_level = entry
+            .tag_map
+            .get(&21)
+            .and_then(|t| t.values.first())
+            .copied();
+        let parent = entry
+            .tag_map
+            .get(&22)
+            .and_then(|t| t.values.first())
+            .copied();
+        let first_child = entry
+            .tag_map
+            .get(&23)
+            .and_then(|t| t.values.first())
+            .copied();
         items.push(Flat {
             label,
             offset,
@@ -1283,7 +1328,11 @@ fn read_skel_table(book: &MobiBook, skel_indx: i64) -> LegadoResult<Vec<Skeleton
             .and_then(|t| t.values.first())
             .copied()
             .unwrap_or(0);
-        let tag6 = entry.tag_map.get(&6).map(|t| t.values.clone()).unwrap_or_default();
+        let tag6 = entry
+            .tag_map
+            .get(&6)
+            .map(|t| t.values.clone())
+            .unwrap_or_default();
         skels.push(Skeleton {
             num_frag: tag1,
             offset: tag6.first().copied().unwrap_or(0),
@@ -1305,7 +1354,11 @@ fn read_frag_table(book: &MobiBook, frag_indx: i64) -> LegadoResult<Vec<Fragment
             .and_then(|t| t.values.first())
             .copied()
             .unwrap_or(0);
-        let tag6 = entry.tag_map.get(&6).map(|t| t.values.clone()).unwrap_or_default();
+        let tag6 = entry
+            .tag_map
+            .get(&6)
+            .map(|t| t.values.clone())
+            .unwrap_or_default();
         frags.push(Fragment {
             insert_offset,
             index: tag4,
@@ -1323,7 +1376,11 @@ fn process_kf8_sections(skels: &[Skeleton], frags: &[Fragment]) -> Vec<Kf8Sectio
     for skel in skels {
         let frag_end = frag_cursor + skel.num_frag as usize;
         let section_frags: Vec<Fragment> = frags[frag_cursor..frag_end.min(frags.len())].to_vec();
-        let length = skel.length as usize + section_frags.iter().map(|f| f.length as usize).sum::<usize>();
+        let length = skel.length as usize
+            + section_frags
+                .iter()
+                .map(|f| f.length as usize)
+                .sum::<usize>();
         frag_cursor = frag_end;
         sections.push(Kf8Section {
             skeleton: skel.clone(),
@@ -1538,10 +1595,15 @@ fn chapters_kf8(book: &MobiBook, kf8: &Kf8Header) -> LegadoResult<Vec<ChapterInf
         for item in &flat {
             let Some((fid, off)) = item.pos else { continue };
             // fid → section → 全文偏移
-            let Some(sec) = sections.iter().find(|s| s.linear() && s.frags.iter().any(|f| f.index == fid)) else {
+            let Some(sec) = sections
+                .iter()
+                .find(|s| s.linear() && s.frags.iter().any(|f| f.index == fid))
+            else {
                 continue;
             };
-            let Some(text_start) = sec.text_start else { continue };
+            let Some(text_start) = sec.text_start else {
+                continue;
+            };
             let start = (text_start as i64 + i64::from(off)).min(total);
             let fid_s = format!("{:0>4}", to_base32(fid));
             let off_s = format!("{:0>10}", to_base32(off));
@@ -1610,7 +1672,8 @@ fn html_to_text(html: &str) -> String {
     let mut text = re_script.replace_all(html, "").to_string();
     text = re_style.replace_all(&text, "").to_string();
 
-    let re_block = regex::Regex::new(r"(?i)</?(p|div|h[1-6]|br|hr|li|tr|blockquote|title)[^>]*>").unwrap();
+    let re_block =
+        regex::Regex::new(r"(?i)</?(p|div|h[1-6]|br|hr|li|tr|blockquote|title)[^>]*>").unwrap();
     text = re_block.replace_all(&text, "\n").to_string();
 
     let re_tag = regex::Regex::new(r"<[^>]+>").unwrap();
@@ -2072,7 +2135,7 @@ mod tests {
             let _ = i;
         }
         w32(&mut huff, 16, 1); // table1[0] = 1
-        // table2：32 对 (mincode, maxcode)，码长 1 为 (0,0)
+                               // table2：32 对 (mincode, maxcode)，码长 1 为 (0,0)
         for _ in 0..32 {
             huff.extend_from_slice(&0u32.to_be_bytes());
             huff.extend_from_slice(&0u32.to_be_bytes());
@@ -2140,7 +2203,7 @@ mod tests {
         w32(&mut cdic, 4, 16); // 头长度
         w32(&mut cdic, 8, 2); // numEntries
         w32(&mut cdic, 12, 1); // codeLength → n = min(2, 2) = 2
-        // 指针表（相对数据区）：条目 0 在偏移 4，条目 1 在偏移 7
+                               // 指针表（相对数据区）：条目 0 在偏移 4，条目 1 在偏移 7
         cdic.extend_from_slice(&4u16.to_be_bytes());
         cdic.extend_from_slice(&7u16.to_be_bytes());
         cdic.extend_from_slice(&0x8001u16.to_be_bytes()); // len=1, decompressed=1
@@ -2188,8 +2251,7 @@ mod tests {
         let pdb = build_pdb(&[build_rec0(&spec), data, huff, cdic]);
         let path = write_temp("huff_selfref.mobi", &pdb);
         // 错误可能在 open（预计算文本偏移）或解压阶段报出，两者均可接受
-        let res = MobiBook::open(path.to_str().unwrap())
-            .and_then(|b| b.full_text_bytes());
+        let res = MobiBook::open(path.to_str().unwrap()).and_then(|b| b.full_text_bytes());
         let err = res.unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("嵌套"), "应为深度护栏报错，实际: {msg}");
@@ -2329,14 +2391,7 @@ mod tests {
         let text = b"Hello World!".to_vec();
         let cover = vec![1u8, 2, 3];
 
-        let pdb = build_pdb(&[
-            build_rec0(&spec),
-            text,
-            root,
-            child,
-            cncx,
-            cover.clone(),
-        ]);
+        let pdb = build_pdb(&[build_rec0(&spec), text, root, child, cncx, cover.clone()]);
         let path = write_temp("kf6_ncx.mobi", &pdb);
         let path_str = path.to_str().unwrap();
 

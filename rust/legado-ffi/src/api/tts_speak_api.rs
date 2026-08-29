@@ -43,7 +43,9 @@ pub fn tts_cache_dir() -> PathBuf {
 pub fn set_tts_cache_dir(path: &str) -> LegadoResult<bool> {
     let dir = PathBuf::from(path);
     std::fs::create_dir_all(&dir)?;
-    *tts_cache_dir_slot().write().unwrap_or_else(|p| p.into_inner()) = dir;
+    *tts_cache_dir_slot()
+        .write()
+        .unwrap_or_else(|p| p.into_inner()) = dir;
     Ok(true)
 }
 
@@ -83,13 +85,9 @@ mod tests {
 
     #[test]
     fn test_set_tts_cache_dir_roundtrip() {
-        let _guard = TTS_DIR_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        let dir = std::env::temp_dir().join(format!(
-            "legado_tts_api_dir_test_{}",
-            std::process::id()
-        ));
+        let _guard = TTS_DIR_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let dir =
+            std::env::temp_dir().join(format!("legado_tts_api_dir_test_{}", std::process::id()));
         let dir_str = dir.to_str().unwrap().to_string();
         assert!(set_tts_cache_dir(&dir_str).unwrap());
         assert_eq!(tts_cache_dir(), dir);
@@ -103,14 +101,10 @@ mod tests {
 
     #[test]
     fn test_tts_speak_cache_hit_without_network() {
-        let _guard = TTS_DIR_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let _guard = TTS_DIR_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // 独立缓存目录：预置缓存文件后调用 tts_speak，应命中缓存且不触网
-        let dir = std::env::temp_dir().join(format!(
-            "legado_tts_api_hit_test_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("legado_tts_api_hit_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert!(set_tts_cache_dir(dir.to_str().unwrap()).unwrap());
 
@@ -132,9 +126,7 @@ mod tests {
 
     #[test]
     fn test_tts_speak_empty_text_error() {
-        let _guard = TTS_DIR_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let _guard = TTS_DIR_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let err = tts_speak("  ", "https://tts.example.com/{{text}}", 1.0).unwrap_err();
         assert!(err.to_string().contains("朗读文本为空"));
     }

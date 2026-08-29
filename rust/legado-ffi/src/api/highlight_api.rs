@@ -119,7 +119,10 @@ pub fn highlight_rule_delete(id: i64) -> LegadoResult<bool> {
 }
 
 /// 按书籍查找启用的高亮规则（scope 匹配书名或书源名，空 scope 全局生效）
-pub fn highlight_rule_find_enabled(book_name: &str, origin: &str) -> LegadoResult<Vec<HighlightRule>> {
+pub fn highlight_rule_find_enabled(
+    book_name: &str,
+    origin: &str,
+) -> LegadoResult<Vec<HighlightRule>> {
     with_database(|db| {
         let repo = HighlightRuleRepository::new(db.connection());
         repo.find_enabled_by_book(book_name, origin)
@@ -190,10 +193,7 @@ mod tests {
             );
             highlight_add(&json).unwrap();
         }
-        assert_eq!(
-            highlight_list_by_book("bk://del_test").unwrap().len(),
-            2
-        );
+        assert_eq!(highlight_list_by_book("bk://del_test").unwrap().len(), 2);
         let deleted = highlight_delete_by_book("bk://del_test").unwrap();
         assert_eq!(deleted, 2);
     }

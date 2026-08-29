@@ -68,13 +68,7 @@ pub fn web_view(html: &str, url: &str, js: &str) -> String {
 }
 
 /// webView 完整参数（含 cacheFirst / delayTime）
-pub fn web_view_ex(
-    html: &str,
-    url: &str,
-    js: &str,
-    cache_first: bool,
-    delay_time: i64,
-) -> String {
+pub fn web_view_ex(html: &str, url: &str, js: &str, cache_first: bool, delay_time: i64) -> String {
     run_or_payload(WebViewRequest {
         key: String::new(),
         action: "webView".into(),
@@ -226,13 +220,7 @@ pub fn open_url(url: &str, mime_type: &str) -> String {
 /// 书源标识取自当前线程上下文（[`current_source`]，对齐 Kotlin `getSource()`）。
 pub fn get_verification_code(image_url: &str) -> String {
     let source_url = current_source::current_source_tag().unwrap_or_default();
-    match verification_channel::request_verification_code(
-        &source_url,
-        "",
-        image_url,
-        "",
-        false,
-    ) {
+    match verification_channel::request_verification_code(&source_url, "", image_url, "", false) {
         Ok(code) => code,
         Err(e) => format!("[ERROR] {e}"),
     }
@@ -248,13 +236,7 @@ pub fn get_verification_code(image_url: &str) -> String {
 /// 返回验证码字符串（或 `[ERROR] ...`）。
 pub fn start_browser_await(url: &str, title: &str) -> String {
     let source_url = current_source::current_source_tag().unwrap_or_default();
-    match verification_channel::request_verification_code(
-        &source_url,
-        "",
-        url,
-        title,
-        false,
-    ) {
+    match verification_channel::request_verification_code(&source_url, "", url, title, false) {
         Ok(code) => code,
         Err(e) => format!("[ERROR] {e}"),
     }
@@ -370,7 +352,9 @@ mod tests {
             }
         }
         let key = key.expect("应收到验证码请求事件");
-        assert!(verification_channel::submit_verification_result(&key, "8888"));
+        assert!(verification_channel::submit_verification_result(
+            &key, "8888"
+        ));
         assert_eq!(worker.join().unwrap(), "8888");
     }
 
@@ -399,7 +383,9 @@ mod tests {
             }
         }
         let key = key.expect("应收到降级验证请求事件");
-        assert!(verification_channel::submit_verification_result(&key, "ok-code"));
+        assert!(verification_channel::submit_verification_result(
+            &key, "ok-code"
+        ));
         assert_eq!(worker.join().unwrap(), "ok-code");
     }
 

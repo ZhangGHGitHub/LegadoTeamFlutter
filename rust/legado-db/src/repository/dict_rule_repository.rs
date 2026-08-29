@@ -198,9 +198,8 @@ fn row_to_dict_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<DictRule> {
 
 /// 解析原版默认字典规则 JSON 为 DB 记录
 pub fn default_dict_rules() -> LegadoResult<Vec<DictRule>> {
-    let models: Vec<legado_core::models::DictRule> =
-        serde_json::from_str(DEFAULT_DICT_RULES_JSON)
-            .map_err(|e| LegadoError::Internal(format!("解析原版默认字典规则失败: {e}")))?;
+    let models: Vec<legado_core::models::DictRule> = serde_json::from_str(DEFAULT_DICT_RULES_JSON)
+        .map_err(|e| LegadoError::Internal(format!("解析原版默认字典规则失败: {e}")))?;
     Ok(models
         .into_iter()
         .map(|m| DictRule {
@@ -341,7 +340,9 @@ mod tests {
         assert_eq!(haici_en.url_rule, "https://apii.dict.cn/mini.php?q={{key}}");
         assert_eq!(haici_en.show_rule, "tag.body@all");
         let youdao = &sorted[2];
-        assert!(youdao.url_rule.starts_with("https://m.youdao.com/translate"));
+        assert!(youdao
+            .url_rule
+            .starts_with("https://m.youdao.com/translate"));
         assert!(youdao.url_rule.contains("inputtext={{key}}"));
         let baidu = &sorted[4];
         assert!(baidu.url_rule.starts_with("data:;base64,"));

@@ -215,7 +215,6 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     Ok(())
 }
 
-
 /// 注入 java.get/post/head 的 jsoup Connection.Response 语义桥
 ///
 /// 原版 JsExtensions.get(url, headers) 返回 jsoup Connection.Response，
@@ -346,7 +345,6 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
 })();
 "#;
 
-
 /// 注册编解码类 API
 ///
 /// 对应 Kotlin 端 `JsEncodeUtils` + `JsExtensions` 中的编解码方法。
@@ -408,21 +406,21 @@ fn register_encoding_apis<'js>(
         "base64DecodeToByteArray",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, s: String, flags: Opt<i32>| -> rquickjs::Result<
-                rquickjs::Value<'js>,
-            > {
+            |ctx: rquickjs::Ctx<'js>,
+             s: String,
+             flags: Opt<i32>|
+             -> rquickjs::Result<rquickjs::Value<'js>> {
                 use rquickjs::IntoJs;
                 if s.trim().is_empty() {
                     // 对齐 Kotlin：isNullOrBlank -> null
                     return Ok(rquickjs::Value::new_null(ctx.clone()));
                 }
-                let bytes =
-                    encoding::base64_decode_bytes_with_flags(&s, flags.0.unwrap_or(0))
-                        .map_err(|e| rquickjs::Error::FromJs {
-                            from: "String",
-                            to: "Uint8Array",
-                            message: Some(e),
-                        })?;
+                let bytes = encoding::base64_decode_bytes_with_flags(&s, flags.0.unwrap_or(0))
+                    .map_err(|e| rquickjs::Error::FromJs {
+                        from: "String",
+                        to: "Uint8Array",
+                        message: Some(e),
+                    })?;
                 let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), bytes)?;
                 arr.into_js(&ctx)
             },
@@ -471,15 +469,12 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "encodeURI",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |s: String, enc: Opt<String>| -> String {
-                match enc.0 {
-                    Some(e) => encoding::encode_uri_charset(&s, &e),
-                    None => encoding::encode_uri(&s),
-                }
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |s: String, enc: Opt<String>| -> String {
+            match enc.0 {
+                Some(e) => encoding::encode_uri_charset(&s, &e),
+                None => encoding::encode_uri(&s),
+            }
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -605,12 +600,9 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "base64EncodeBytes",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |bytes: rquickjs::TypedArray<u8>| -> String {
-                encoding::base64_encode_bytes(bytes.as_ref())
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |bytes: rquickjs::TypedArray<u8>| -> String {
+            encoding::base64_encode_bytes(bytes.as_ref())
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -869,19 +861,15 @@ fn register_time_apis<'js>(
         java,
         globals,
         "timeFormatUTC",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |ts: i64, format: String, sh: i32| -> String {
-                // 对齐 Kotlin SimpleTimeZone(sh, "UTC")：sh 为毫秒偏移
-                let fmt = if format.is_empty() {
-                    None
-                } else {
-                    Some(format.as_str())
-                };
-                time_utils::format_time_utc(ts, fmt, sh)
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), |ts: i64, format: String, sh: i32| -> String {
+            // 对齐 Kotlin SimpleTimeZone(sh, "UTC")：sh 为毫秒偏移
+            let fmt = if format.is_empty() {
+                None
+            } else {
+                Some(format.as_str())
+            };
+            time_utils::format_time_utc(ts, fmt, sh).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -978,26 +966,23 @@ fn register_file_apis<'js>(
         java,
         globals,
         "downloadFile",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |arg1: String, arg2: Opt<String>| -> String {
-                match arg2.0.as_deref() {
-                    None => file_utils::download_file(&arg1, None)
-                        .unwrap_or_else(|e| format!("[ERROR] {}", e)),
-                    Some(second)
-                        if second.starts_with("http://")
-                            || second.starts_with("https://")
-                            || second.contains(",{") =>
-                    {
-                        // 废弃重载：content(hex) + url
-                        file_utils::download_file_from_hex(&arg1, second)
-                            .unwrap_or_else(|e| format!("[ERROR] {}", e))
-                    }
-                    Some(file_name) => file_utils::download_file(&arg1, Some(file_name))
-                        .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+        rquickjs::Function::new(ctx.clone(), |arg1: String, arg2: Opt<String>| -> String {
+            match arg2.0.as_deref() {
+                None => file_utils::download_file(&arg1, None)
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+                Some(second)
+                    if second.starts_with("http://")
+                        || second.starts_with("https://")
+                        || second.contains(",{") =>
+                {
+                    // 废弃重载：content(hex) + url
+                    file_utils::download_file_from_hex(&arg1, second)
+                        .unwrap_or_else(|e| format!("[ERROR] {}", e))
                 }
-            },
-        )
+                Some(file_name) => file_utils::download_file(&arg1, Some(file_name))
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+            }
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1337,20 +1322,17 @@ fn register_network_apis<'js>(
         java,
         globals,
         "putGlobalHeaders",
-        rquickjs::Function::new(
-            ctx.clone(),
-            |headers_json: String| -> bool {
-                match serde_json::from_str::<std::collections::HashMap<String, String>>(&headers_json) {
-                    Ok(map) => {
-                        let tag =
-                            crate::host_api::current_source::current_source_tag().unwrap_or_default();
-                        crate::host_api::global_headers::put_headers(&tag, map);
-                        true
-                    }
-                    Err(_) => false,
+        rquickjs::Function::new(ctx.clone(), |headers_json: String| -> bool {
+            match serde_json::from_str::<std::collections::HashMap<String, String>>(&headers_json) {
+                Ok(map) => {
+                    let tag =
+                        crate::host_api::current_source::current_source_tag().unwrap_or_default();
+                    crate::host_api::global_headers::put_headers(&tag, map);
+                    true
                 }
-            },
-        )
+                Err(_) => false,
+            }
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1379,7 +1361,8 @@ fn register_network_apis<'js>(
              method: Opt<String>,
              headers: Opt<String>,
              body: Opt<String>,
-             timeout_ms: Opt<i64>| -> String {
+             timeout_ms: Opt<i64>|
+             -> String {
                 network::connect_full(
                     &url,
                     method.0.as_deref(),
@@ -1543,28 +1526,23 @@ fn register_crypto_apis<'js>(
              data: rquickjs::TypedArray<u8>,
              key: rquickjs::TypedArray<u8>,
              iv: Opt<rquickjs::TypedArray<u8>>,
-             transformation: Opt<String>| -> rquickjs::Result<rquickjs::Value<'js>> {
+             transformation: Opt<String>|
+             -> rquickjs::Result<rquickjs::Value<'js>> {
                 use rquickjs::IntoJs;
                 let t = transformation
                     .0
                     .unwrap_or_else(|| "AES/CBC/PKCS5Padding".to_string());
                 let key_b: Vec<u8> = key.as_bytes().unwrap_or(&[]).to_vec();
                 let data_b: Vec<u8> = data.as_bytes().unwrap_or(&[]).to_vec();
-                let iv_b: Option<Vec<u8>> =
-                    iv.0.map(|a| a.as_bytes().unwrap_or(&[]).to_vec());
-                let plain = legado_core::crypto::symmetric_decrypt(
-                    &t,
-                    &key_b,
-                    iv_b.as_deref(),
-                    &data_b,
-                )
-                .map_err(|e| rquickjs::Error::FromJs {
-                    from: "Uint8Array",
-                    to: "Uint8Array",
-                    message: Some(e.to_string()),
-                })?;
-                let arr: rquickjs::TypedArray<u8> =
-                    rquickjs::TypedArray::new(ctx.clone(), plain)?;
+                let iv_b: Option<Vec<u8>> = iv.0.map(|a| a.as_bytes().unwrap_or(&[]).to_vec());
+                let plain =
+                    legado_core::crypto::symmetric_decrypt(&t, &key_b, iv_b.as_deref(), &data_b)
+                        .map_err(|e| rquickjs::Error::FromJs {
+                            from: "Uint8Array",
+                            to: "Uint8Array",
+                            message: Some(e.to_string()),
+                        })?;
+                let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), plain)?;
                 arr.into_js(&ctx)
             },
         )
@@ -1668,8 +1646,7 @@ fn register_crypto_apis<'js>(
              key: rquickjs::Value<'js>,
              iv: Opt<rquickjs::Value<'js>>|
              -> rquickjs::Result<rquickjs::Object<'js>> {
-                let (key_bytes, iv_bytes) =
-                    symmetric_crypto::parse_key_iv_args(key, iv)?;
+                let (key_bytes, iv_bytes) = symmetric_crypto::parse_key_iv_args(key, iv)?;
                 symmetric_crypto::build_symmetric_crypto_object(
                     ctx,
                     &transformation,
@@ -1690,13 +1667,8 @@ fn register_crypto_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |data: String, key: String, transformation: String, iv: String| -> String {
-                symmetric_crypto::aes_base64_decode_to_string(
-                    &data,
-                    &key,
-                    &transformation,
-                    &iv,
-                )
-                .unwrap_or_else(|e| format!("[ERROR] {e}"))
+                symmetric_crypto::aes_base64_decode_to_string(&data, &key, &transformation, &iv)
+                    .unwrap_or_else(|e| format!("[ERROR] {e}"))
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1711,13 +1683,8 @@ fn register_crypto_apis<'js>(
             ctx.clone(),
             |data: String, key: String, transformation: String, iv: String| -> String {
                 // 非 Base64 原始密文场景较少；与 aesBase64 共用入口时先试 Base64
-                symmetric_crypto::aes_base64_decode_to_string(
-                    &data,
-                    &key,
-                    &transformation,
-                    &iv,
-                )
-                .unwrap_or_else(|e| format!("[ERROR] {e}"))
+                symmetric_crypto::aes_base64_decode_to_string(&data, &key, &transformation, &iv)
+                    .unwrap_or_else(|e| format!("[ERROR] {e}"))
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2166,10 +2133,10 @@ fn register_misc_apis<'js>(
              -> rquickjs::Result<rquickjs::Object<'js>> {
                 let parts = misc_api::parse_js_url(&url_str, base_url.0.as_deref().unwrap_or(""))
                     .map_err(|e| rquickjs::Error::FromJs {
-                        from: "String",
-                        to: "Object<JsURL>",
-                        message: Some(e),
-                    })?;
+                    from: "String",
+                    to: "Object<JsURL>",
+                    message: Some(e),
+                })?;
                 let obj = rquickjs::Object::new(ctx.clone())?;
                 obj.set("host", parts.host)?;
                 obj.set("origin", parts.origin)?;
@@ -2481,8 +2448,7 @@ fn register_archive_apis<'js>(
         if zip_path.is_empty() {
             return String::new();
         }
-        archive_utils::un_archive_file(&zip_path, None)
-            .unwrap_or_else(|e| format!("[ERROR] {}", e))
+        archive_utils::un_archive_file(&zip_path, None).unwrap_or_else(|e| format!("[ERROR] {}", e))
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("unzipFile", unarchive.clone())
@@ -2709,9 +2675,12 @@ fn register_font_apis<'js>(
         java,
         globals,
         "queryTTF",
-        rquickjs::Function::new(ctx.clone(), |data: String, use_cache: Opt<bool>| -> String {
-            font_api::query_ttf(&data, use_cache.0.unwrap_or(true))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |data: String, use_cache: Opt<bool>| -> String {
+                font_api::query_ttf(&data, use_cache.0.unwrap_or(true))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -2735,17 +2704,8 @@ fn register_font_apis<'js>(
         "replaceFont",
         rquickjs::Function::new(
             ctx.clone(),
-            |text: String,
-             error_font: String,
-             correct_font: String,
-             filter: Opt<bool>|
-             -> String {
-                font_api::replace_font(
-                    &text,
-                    &error_font,
-                    &correct_font,
-                    filter.0.unwrap_or(false),
-                )
+            |text: String, error_font: String, correct_font: String, filter: Opt<bool>| -> String {
+                font_api::replace_font(&text, &error_font, &correct_font, filter.0.unwrap_or(false))
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2791,7 +2751,10 @@ mod tests {
         engine.eval(r#"java.get = function(){ return ''; }; java.connectNR = function(){ return JSON.stringify({status_code:302,body:'',headers:{Location:'https://final.example/r'},url:'https://start.example'}); };"#).unwrap();
         engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
         let result = engine.eval(r#"JSON.stringify({map:java.get('https://x',{}).headers().Location,list:java.get('https://x',{}).headers('location')[0],missing:java.get('https://x',{}).headers('missing').length})"#).unwrap();
-        assert_eq!(result, r#"{"map":"https://final.example/r","list":"https://final.example/r","missing":0}"#);
+        assert_eq!(
+            result,
+            r#"{"map":"https://final.example/r","list":"https://final.example/r","missing":0}"#
+        );
     }
 
     #[test]
@@ -2800,7 +2763,10 @@ mod tests {
         engine.eval(r#"java.connect = function(){ return JSON.stringify({status_code:200,body:'ok',headers:{},url:'https://final.example/result'}); };"#).unwrap();
         engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
         let result = engine.eval(r#"JSON.stringify({body:java.connect('https://start.example').body,url:java.connect('https://start.example').raw().request().url()})"#).unwrap();
-        assert_eq!(result, r#"{"body":"ok","url":"https://final.example/result"}"#);
+        assert_eq!(
+            result,
+            r#"{"body":"ok","url":"https://final.example/result"}"#
+        );
     }
 
     #[test]
@@ -2965,12 +2931,8 @@ function decryptImage(src) {
 }
 decryptImage(result);
 "#;
-        let out = JsEngine::eval_bytes(
-            &engine,
-            rule,
-            &[("result", JsValue::Bytes(ct))],
-        )
-        .expect("imageDecode 风格 decrypt 应成功");
+        let out = JsEngine::eval_bytes(&engine, rule, &[("result", JsValue::Bytes(ct))])
+            .expect("imageDecode 风格 decrypt 应成功");
         assert_eq!(out, plain);
         assert_eq!(&out[..2], &[0xFF, 0xD8]);
         let _ = base64::engine::general_purpose::STANDARD.encode(&out);
@@ -3118,9 +3080,7 @@ decryptImage(result);
         assert_eq!(result, "abc");
         // getBytes 仍可用（new 保留 JSString 对象）
         let result = engine
-            .eval(
-                "String(new Packages.java.lang.String('abc').getBytes('UTF-8').length)",
-            )
+            .eval("String(new Packages.java.lang.String('abc').getBytes('UTF-8').length)")
             .unwrap();
         assert_eq!(result, "3");
     }
@@ -3302,8 +3262,8 @@ decryptImage(result);
     #[test]
     fn test_java_replace_font_real_cmap() {
         // 端到端：真实 cmap/glyf 解析，经 JS 契约完成防爬字体替换
-        use base64::Engine;
         use crate::host_api::font_api::tests::{build_minimal_ttf, Segment};
+        use base64::Engine;
         let err_font = build_minimal_ttf(
             &[Segment {
                 start: 0xE001,
@@ -3518,7 +3478,10 @@ decryptImage(result);
         let zip_path = create_zip_for_js(&[("content.txt", content.as_bytes())]);
         let engine = make_engine();
 
-        let code = format!("java.getZipStringContent({}, 'content.txt')", js_str(&zip_path));
+        let code = format!(
+            "java.getZipStringContent({}, 'content.txt')",
+            js_str(&zip_path)
+        );
         let result = engine.eval(&code).unwrap();
         assert_eq!(result, content);
 
@@ -3586,7 +3549,10 @@ decryptImage(result);
         assert_eq!(result, content);
 
         // 不存在的条目返回空串（对齐 Kotlin return ""）
-        let code = format!("java.get7zStringContent({}, 'no.txt')", js_str(&seven_z_path));
+        let code = format!(
+            "java.get7zStringContent({}, 'no.txt')",
+            js_str(&seven_z_path)
+        );
         assert_eq!(engine.eval(&code).unwrap(), "");
 
         let _ = std::fs::remove_dir_all(std::path::Path::new(&seven_z_path).parent().unwrap());
@@ -3657,7 +3623,9 @@ decryptImage(result);
             .unwrap();
         assert_eq!(result, "104,101,108,108,111");
         // 空白输入返回 null（对齐 Kotlin isNullOrBlank -> null）
-        let result = engine.eval("java.base64DecodeToByteArray('') === null").unwrap();
+        let result = engine
+            .eval("java.base64DecodeToByteArray('') === null")
+            .unwrap();
         assert_eq!(result, "true");
     }
 
@@ -3689,7 +3657,9 @@ decryptImage(result);
             "https://ex.com:8080"
         );
         assert_eq!(
-            engine.eval("java.toURL('https://ex.com/a/b').pathname").unwrap(),
+            engine
+                .eval("java.toURL('https://ex.com/a/b').pathname")
+                .unwrap(),
             "/a/b"
         );
         assert_eq!(
@@ -3750,4 +3720,3 @@ decryptImage(result);
         assert_eq!(parsed["type"], "file");
     }
 }
-

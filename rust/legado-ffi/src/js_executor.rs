@@ -1031,7 +1031,6 @@ mod tests {
     }
 }
 
-
 /// [体检 §二.5 | P3-6] AutoTask Custom JS 真实执行入口
 ///
 /// 对齐原版 `AutoTaskRunner`（`AutoTask.buildSource(task)` → `source.evalJS(script)`）:

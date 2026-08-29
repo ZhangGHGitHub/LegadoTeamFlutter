@@ -57,9 +57,8 @@ pub fn source_call_back_btn(
     let book = with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))?
         .ok_or_else(|| LegadoError::Database(format!("书籍不存在: {book_url}")))?;
 
-    let source = with_database(|db| {
-        BookSourceRepository::new(db.connection()).find_by_url(&book.origin)
-    })?;
+    let source =
+        with_database(|db| BookSourceRepository::new(db.connection()).find_by_url(&book.origin))?;
 
     let Some(source) = source else {
         return Ok(SourceCallBackBtnResult {
@@ -97,8 +96,7 @@ pub fn source_call_back_btn(
 
     let chapter = match chapter_index {
         Some(idx) => with_database(|db| {
-            BookChapterRepository::new(db.connection())
-                .find_by_book_url_and_index(book_url, idx)
+            BookChapterRepository::new(db.connection()).find_by_book_url_and_index(book_url, idx)
         })?,
         None => None,
     };
@@ -135,10 +133,9 @@ fn eval_call_back_js(
     use legado_js::{JsEngine, JsValue};
 
     legado_js::host_api::ui_action_queue::begin_collect();
-    let engine = crate::js_executor::fresh_engine(&source.book_source_url)
-        .inspect_err(|_e| {
-            legado_js::host_api::ui_action_queue::discard_collect();
-        })?;
+    let engine = crate::js_executor::fresh_engine(&source.book_source_url).inspect_err(|_e| {
+        legado_js::host_api::ui_action_queue::discard_collect();
+    })?;
     let guard = engine.lock().map_err(|e| {
         legado_js::host_api::ui_action_queue::discard_collect();
         LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}"))

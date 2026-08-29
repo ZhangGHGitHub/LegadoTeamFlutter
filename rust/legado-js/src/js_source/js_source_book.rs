@@ -150,8 +150,7 @@ impl JsSourceBookOrchestrator {
             ],
         )?;
         let json_str = result.unwrap_or_default();
-        let results = JsSourceMarshaller::marshal_search(&json_str)
-            .map_err(LegadoError::Parser)?;
+        let results = JsSourceMarshaller::marshal_search(&json_str).map_err(LegadoError::Parser)?;
         Ok(results)
     }
 
@@ -173,8 +172,7 @@ impl JsSourceBookOrchestrator {
             ],
         )?;
         let json_str = result.unwrap_or_default();
-        let results = JsSourceMarshaller::marshal_search(&json_str)
-            .map_err(LegadoError::Parser)?;
+        let results = JsSourceMarshaller::marshal_search(&json_str).map_err(LegadoError::Parser)?;
         Ok(results)
     }
 
@@ -190,10 +188,9 @@ impl JsSourceBookOrchestrator {
         can_re_name: bool,
     ) -> LegadoResult<MarshalledBookInfo> {
         let book_json = serde_json::to_string(book)?;
-        let call_result = self.engine.call_function_if_exists(
-            "getBookInfo",
-            &[("book", JsValue::String(book_json))],
-        )?;
+        let call_result = self
+            .engine
+            .call_function_if_exists("getBookInfo", &[("book", JsValue::String(book_json))])?;
 
         if call_result.exists {
             if let Some(json_str) = call_result.value {
@@ -230,10 +227,9 @@ impl JsSourceBookOrchestrator {
         book: &Book,
     ) -> LegadoResult<Vec<serde_json::Value>> {
         let book_json = serde_json::to_string(book)?;
-        let result = self.engine.call_function(
-            "getChapters",
-            &[("book", JsValue::String(book_json))],
-        )?;
+        let result = self
+            .engine
+            .call_function("getChapters", &[("book", JsValue::String(book_json))])?;
         let json_str = result.unwrap_or_default();
         let toc_url = if book.toc_url.is_empty() {
             &book.book_url
@@ -562,7 +558,9 @@ mod tests {
             url: "http://example.com/ch1".to_string(),
             ..BookChapter::default()
         };
-        let page = orch.get_review_detail(&book, &chapter, 2, "段落数据", 1).unwrap();
+        let page = orch
+            .get_review_detail(&book, &chapter, 2, "段落数据", 1)
+            .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].name.as_deref(), Some("用户A"));
         // 嵌套回复扁平化

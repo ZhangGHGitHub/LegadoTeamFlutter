@@ -147,11 +147,21 @@ pub fn parse_action_result(json: Option<&str>) -> ActionResult {
     };
     let obj: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
-        Err(_) => return ActionResult { malformed: true, ..Default::default() },
+        Err(_) => {
+            return ActionResult {
+                malformed: true,
+                ..Default::default()
+            }
+        }
     };
     let obj = match &obj {
         serde_json::Value::Object(map) => map,
-        _ => return ActionResult { malformed: true, ..Default::default() },
+        _ => {
+            return ActionResult {
+                malformed: true,
+                ..Default::default()
+            }
+        }
     };
 
     let take = |key: &str| obj.get(key).filter(|v| !v.is_null());
@@ -160,14 +170,22 @@ pub fn parse_action_result(json: Option<&str>) -> ActionResult {
     for key in ["state", "error", "login"] {
         if let Some(v) = take(key) {
             if !v.is_object() {
-                return ActionResult { malformed: true, ..Default::default() };
+                return ActionResult {
+                    malformed: true,
+                    ..Default::default()
+                };
             }
         }
     }
     let close_value = match take("close") {
         Some(v) => match v.as_bool() {
             Some(b) => b,
-            None => return ActionResult { malformed: true, ..Default::default() },
+            None => {
+                return ActionResult {
+                    malformed: true,
+                    ..Default::default()
+                }
+            }
         },
         None => false,
     };
@@ -250,7 +268,11 @@ pub fn get_login_js(source: &BookSource) -> Option<String> {
     if source.is_js_source() {
         return source.main_js.clone();
     }
-    let login_rule = source.login_url.as_deref().map(str::trim).filter(|t| !t.is_empty())?;
+    let login_rule = source
+        .login_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())?;
     extract_inline_js(Some(login_rule)).or_else(|| Some(login_rule.to_string()))
 }
 
@@ -354,7 +376,11 @@ pub fn eval_login_action_v2(
 mod tests {
     use super::*;
 
-    fn source_with(login_ui: Option<&str>, login_url: Option<&str>, main_js: Option<&str>) -> BookSource {
+    fn source_with(
+        login_ui: Option<&str>,
+        login_url: Option<&str>,
+        main_js: Option<&str>,
+    ) -> BookSource {
         BookSource {
             book_source_url: "https://example.com".to_string(),
             book_source_name: "登录测试".to_string(),
@@ -411,7 +437,11 @@ mod tests {
     #[test]
     fn test_get_login_js_main_js_priority() {
         // JS 单文件书源：mainJs 优先
-        let src = source_with(Some(MARKER), Some("https://login.url"), Some("function loginUi(){}"));
+        let src = source_with(
+            Some(MARKER),
+            Some("https://login.url"),
+            Some("function loginUi(){}"),
+        );
         assert_eq!(get_login_js(&src), Some("function loginUi(){}".to_string()));
     }
 
@@ -445,7 +475,10 @@ mod tests {
         assert_eq!(rows.len(), 4);
         assert_eq!(rows[0].key.as_deref(), Some("phone"));
         assert_eq!(rows[0].hint.as_deref(), Some("请输入手机号"));
-        assert_eq!(rows[2].options, Some(vec!["+86".to_string(), "+1".to_string()]));
+        assert_eq!(
+            rows[2].options,
+            Some(vec!["+86".to_string(), "+1".to_string()])
+        );
         assert_eq!(rows[2].value.as_deref(), Some("+86"));
         assert_eq!(rows[3].countdown, Some(60));
     }
@@ -475,11 +508,15 @@ mod tests {
         // text 缺 key → 非法
         assert!(parse_render(Some(r#"{"rows":[{"name":"a","type":"text"}]}"#)).is_none());
         // select 缺 options → 非法
-        assert!(parse_render(Some(r#"{"rows":[{"key":"a","name":"a","type":"select"}]}"#)).is_none());
+        assert!(
+            parse_render(Some(r#"{"rows":[{"key":"a","name":"a","type":"select"}]}"#)).is_none()
+        );
         // button 缺 action → 非法
         assert!(parse_render(Some(r#"{"rows":[{"name":"b","type":"button"}]}"#)).is_none());
         // toggle 类型在 V2 中不支持 → 非法
-        assert!(parse_render(Some(r#"{"rows":[{"key":"a","name":"a","type":"toggle"}]}"#)).is_none());
+        assert!(
+            parse_render(Some(r#"{"rows":[{"key":"a","name":"a","type":"toggle"}]}"#)).is_none()
+        );
     }
 
     #[test]
@@ -525,7 +562,10 @@ mod tests {
             r#"{"error":{"phone":"手机号必填"},"login":{"token":"tk"},"close":true}"#,
         ));
         assert!(!r.malformed);
-        assert_eq!(r.error.as_ref().unwrap().get("phone").unwrap(), "手机号必填");
+        assert_eq!(
+            r.error.as_ref().unwrap().get("phone").unwrap(),
+            "手机号必填"
+        );
         assert_eq!(r.login_json.as_deref(), Some(r#"{"token":"tk"}"#));
         assert!(r.close);
     }
@@ -563,7 +603,10 @@ mod tests {
             resolve_field_value(None, Some("session"), Some("stored")),
             Some("session".to_string())
         );
-        assert_eq!(resolve_field_value(None, None, Some("stored")), Some("stored".to_string()));
+        assert_eq!(
+            resolve_field_value(None, None, Some("stored")),
+            Some("stored".to_string())
+        );
         assert_eq!(resolve_field_value(None, None, None), None);
     }
 
@@ -577,7 +620,10 @@ mod tests {
         let result = eval_login_ui_v2(&src, "{}", &mut |script, bindings| {
             calls.push((
                 script.to_string(),
-                bindings.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                bindings
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
             ));
             Ok(r#"{"rows":[{"key":"account","name":"账号","type":"text"}]}"#.to_string())
         })
@@ -585,20 +631,34 @@ mod tests {
         assert!(result.unwrap().contains("account"));
         // 脚本必须包含登录 JS 与 loginUi 调用表达式
         assert!(calls[0].0.starts_with("function loginUi(s){}"));
-        assert!(calls[0].0.contains("loginUi(JSON.parse(String(__loginState)))"));
+        assert!(calls[0]
+            .0
+            .contains("loginUi(JSON.parse(String(__loginState)))"));
         // 绑定必须携带 __loginState
-        assert_eq!(calls[0].1, vec![("__loginState".to_string(), "{}".to_string())]);
+        assert_eq!(
+            calls[0].1,
+            vec![("__loginState".to_string(), "{}".to_string())]
+        );
     }
 
     #[test]
     fn test_eval_login_action_v2_mock() {
         let src = source_with(Some(MARKER), None, Some("function loginAction(a,s,f){}"));
         let mut captured: Vec<(String, String)> = Vec::new();
-        let result = eval_login_action_v2(&src, "sendCode", r#"{"step":1}"#, r#"{"phone":"138"}"#, &mut |script, bindings| {
-            captured = bindings.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-            assert!(script.contains("loginAction(String(__loginAction)"));
-            Ok(r#"{"close":true}"#.to_string())
-        })
+        let result = eval_login_action_v2(
+            &src,
+            "sendCode",
+            r#"{"step":1}"#,
+            r#"{"phone":"138"}"#,
+            &mut |script, bindings| {
+                captured = bindings
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                assert!(script.contains("loginAction(String(__loginAction)"));
+                Ok(r#"{"close":true}"#.to_string())
+            },
+        )
         .unwrap();
         assert_eq!(result.as_deref(), Some(r#"{"close":true}"#));
         assert_eq!(
@@ -645,7 +705,10 @@ mod tests {
     fn test_row_ui_select_options_serde() {
         let json = r#"{"name":"区号","type":"select","key":"area","options":["+86","+1"]}"#;
         let row: RowUi = serde_json::from_str(json).unwrap();
-        assert_eq!(row.options.unwrap(), vec!["+86".to_string(), "+1".to_string()]);
+        assert_eq!(
+            row.options.unwrap(),
+            vec!["+86".to_string(), "+1".to_string()]
+        );
     }
 
     #[test]

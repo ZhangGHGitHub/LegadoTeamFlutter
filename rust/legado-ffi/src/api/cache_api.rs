@@ -109,9 +109,7 @@ pub fn save_chapter_content(
             let repo = BookChapterRepository::new(db.connection());
             repo.find_by_book_url_and_index(book_url, chapter_index)
         })?
-        .ok_or_else(|| {
-            LegadoError::Database(format!("章节 {chapter_index} 不存在: {book_url}"))
-        })?;
+        .ok_or_else(|| LegadoError::Database(format!("章节 {chapter_index} 不存在: {book_url}")))?;
         (
             if title.is_empty() {
                 ch.title
@@ -198,12 +196,17 @@ pub fn clear_cache_before(before_timestamp: i64) -> LegadoResult<i64> {
         let book_urls: Vec<String> = {
             let mut stmt = conn
                 .prepare("SELECT DISTINCT book_url FROM cached_chapters WHERE cached_at < ?1")
-                .map_err(|e| legado_core::LegadoError::Database(format!("查询待清理书籍失败：{e}")))?;
+                .map_err(|e| {
+                    legado_core::LegadoError::Database(format!("查询待清理书籍失败：{e}"))
+                })?;
             let rows = stmt
                 .query_map(params![before_timestamp], |row| row.get::<_, String>(0))
-                .map_err(|e| legado_core::LegadoError::Database(format!("查询待清理书籍失败：{e}")))?;
-            rows.collect::<Result<Vec<_>, _>>()
-                .map_err(|e| legado_core::LegadoError::Database(format!("查询待清理书籍失败：{e}")))?
+                .map_err(|e| {
+                    legado_core::LegadoError::Database(format!("查询待清理书籍失败：{e}"))
+                })?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| {
+                legado_core::LegadoError::Database(format!("查询待清理书籍失败：{e}"))
+            })?
         };
 
         let deleted = conn
@@ -330,8 +333,22 @@ mod tests {
         let fresh_book = "http://clear-before.example.com/book/fresh";
 
         // 两本书各写一章缓存
-        assert!(save_chapter_content(old_book, 0, "旧章", "旧正文", "http://clear-before.example.com/ch/old0").unwrap());
-        assert!(save_chapter_content(fresh_book, 0, "新章", "新正文", "http://clear-before.example.com/ch/fresh0").unwrap());
+        assert!(save_chapter_content(
+            old_book,
+            0,
+            "旧章",
+            "旧正文",
+            "http://clear-before.example.com/ch/old0"
+        )
+        .unwrap());
+        assert!(save_chapter_content(
+            fresh_book,
+            0,
+            "新章",
+            "新正文",
+            "http://clear-before.example.com/ch/fresh0"
+        )
+        .unwrap());
 
         // 将 old_book 的 cached_at 改为远古时间，fresh_book 保持当前时间
         with_database(|db| {

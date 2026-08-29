@@ -606,7 +606,10 @@ impl HtmlParser {
         // 不做选择器匹配，直接对当前内容（片段根元素）执行提取
         if let Some(mode) = Self::bare_extract_mode(css_selector) {
             let root = document.root_element();
-            let elem = root.select(&Selector::parse("body").unwrap()).next().unwrap_or(root);
+            let elem = root
+                .select(&Selector::parse("body").unwrap())
+                .next()
+                .unwrap_or(root);
             return Ok(self
                 .extract_from_element(elem, mode, "")
                 .map(|t| vec![t])
@@ -777,10 +780,7 @@ impl HtmlParser {
     }
 
     /// 在父元素集合上按单段规则（可含点号索引）选取子元素
-    fn select_step<'a>(
-        parents: &[ElementRef<'a>],
-        rule: &str,
-    ) -> Vec<ElementRef<'a>> {
+    fn select_step<'a>(parents: &[ElementRef<'a>], rule: &str) -> Vec<ElementRef<'a>> {
         let (selector_no_index, dot_index) = split_dot_index(rule.trim());
         let owned = Self::normalize_jsoup_selector(&selector_no_index);
         if owned.is_empty() {
@@ -942,7 +942,9 @@ impl HtmlParser {
                         kids = apply_dot_index(kids, idx);
                     }
                     for child in kids {
-                        if let Some(text) = self.extract_from_element(child, extract_mode, &attr_name) {
+                        if let Some(text) =
+                            self.extract_from_element(child, extract_mode, &attr_name)
+                        {
                             if !text.is_empty() && !items.contains(&text) {
                                 items.push(text);
                             }
@@ -1119,14 +1121,86 @@ impl HtmlParser {
         // [UI-fix 2026-08-10 | Reasonix] 此前 `a` 被误判为属性名 → 漫画书源
         // chapterList `.right_box:nth-child(2)@a` 解析不到章节元素）
         const COMMON_TAG_NAMES: &[&str] = &[
-            "a", "div", "span", "li", "ul", "ol", "p", "img", "h1", "h2", "h3", "h4", "h5",
-            "h6", "table", "tr", "td", "th", "tbody", "thead", "tfoot", "section", "article",
-            "header", "footer", "nav", "button", "input", "select", "option", "form", "label",
-            "em", "strong", "b", "i", "u", "br", "hr", "blockquote", "pre", "code", "iframe",
-            "video", "audio", "source", "canvas", "svg", "body", "html", "main", "aside",
-            "figure", "figcaption", "dl", "dt", "dd", "sub", "sup", "small", "mark", "time",
-            "abbr", "address", "cite", "dfn", "kbd", "q", "samp", "var", "wbr", "map", "area",
-            "object", "embed", "param", "track", "picture", "summary", "details",
+            "a",
+            "div",
+            "span",
+            "li",
+            "ul",
+            "ol",
+            "p",
+            "img",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "table",
+            "tr",
+            "td",
+            "th",
+            "tbody",
+            "thead",
+            "tfoot",
+            "section",
+            "article",
+            "header",
+            "footer",
+            "nav",
+            "button",
+            "input",
+            "select",
+            "option",
+            "form",
+            "label",
+            "em",
+            "strong",
+            "b",
+            "i",
+            "u",
+            "br",
+            "hr",
+            "blockquote",
+            "pre",
+            "code",
+            "iframe",
+            "video",
+            "audio",
+            "source",
+            "canvas",
+            "svg",
+            "body",
+            "html",
+            "main",
+            "aside",
+            "figure",
+            "figcaption",
+            "dl",
+            "dt",
+            "dd",
+            "sub",
+            "sup",
+            "small",
+            "mark",
+            "time",
+            "abbr",
+            "address",
+            "cite",
+            "dfn",
+            "kbd",
+            "q",
+            "samp",
+            "var",
+            "wbr",
+            "map",
+            "area",
+            "object",
+            "embed",
+            "param",
+            "track",
+            "picture",
+            "summary",
+            "details",
         ];
         let is_tag_name = COMMON_TAG_NAMES.contains(&last);
 
@@ -1223,14 +1297,18 @@ mod tests {
     #[test]
     fn test_jsoup_pseudo_contains() {
         let parser = HtmlParser::new();
-        let result = parser.get_text(SAMPLE_HTML, "a.item:contains('第二章')").unwrap();
+        let result = parser
+            .get_text(SAMPLE_HTML, "a.item:contains('第二章')")
+            .unwrap();
         assert_eq!(result, vec!["第二章"]);
     }
 
     #[test]
     fn test_jsoup_pseudo_has() {
         let parser = HtmlParser::new();
-        let result = parser.get_elements(SAMPLE_HTML, "div:has(.author)").unwrap();
+        let result = parser
+            .get_elements(SAMPLE_HTML, "div:has(.author)")
+            .unwrap();
         assert_eq!(result.len(), 1);
         assert!(result[0].contains("作者名"));
     }
@@ -1259,7 +1337,9 @@ mod tests {
     #[test]
     fn test_jsoup_pseudo_matches() {
         let parser = HtmlParser::new();
-        let result = parser.get_text(SAMPLE_HTML, "a.item:matches('第.章')").unwrap();
+        let result = parser
+            .get_text(SAMPLE_HTML, "a.item:matches('第.章')")
+            .unwrap();
         assert_eq!(result, vec!["第一章", "第二章", "第三章"]);
     }
 
@@ -1278,13 +1358,22 @@ mod tests {
     #[test]
     fn test_bracket_index() {
         let parser = HtmlParser::new();
-        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[0]").unwrap(), vec!["第一章"]);
-        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[2]").unwrap(), vec!["第三章"]);
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item[0]").unwrap(),
+            vec!["第一章"]
+        );
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item[2]").unwrap(),
+            vec!["第三章"]
+        );
         assert_eq!(
             parser.get_text(SAMPLE_HTML, ".item[0,2]").unwrap(),
             vec!["第一章", "第三章"]
         );
-        assert_eq!(parser.get_text(SAMPLE_HTML, ".item[-1]").unwrap(), vec!["第三章"]);
+        assert_eq!(
+            parser.get_text(SAMPLE_HTML, ".item[-1]").unwrap(),
+            vec!["第三章"]
+        );
         assert_eq!(
             parser.get_text(SAMPLE_HTML, ".item[!1]").unwrap(),
             vec!["第一章", "第三章"]
@@ -1395,7 +1484,8 @@ mod tests {
     #[test]
     fn test_attr_deduplication() {
         // 属性提取路径保留去重（对标 Kotlin getResultLast else 分支）
-        let html = r#"<div><a href="/x.html">a</a><a href="/x.html">b</a><a href="/y.html">c</a></div>"#;
+        let html =
+            r#"<div><a href="/x.html">a</a><a href="/x.html">b</a><a href="/y.html">c</a></div>"#;
         let parser = HtmlParser::new();
         let result = parser.get_text(html, "a@href").unwrap();
         assert_eq!(result, vec!["/x.html", "/y.html"]);
@@ -1486,10 +1576,7 @@ mod tests {
         </body></html>"#;
         let parser = HtmlParser::new();
         let hrefs = parser.get_text(html, ".page-link@a@href").unwrap();
-        assert!(
-            hrefs.len() >= 2,
-            "应含自身 a 的 href，实际: {hrefs:?}"
-        );
+        assert!(hrefs.len() >= 2, "应含自身 a 的 href，实际: {hrefs:?}");
         assert!(hrefs.iter().any(|h| h.contains("index_2")));
     }
 
@@ -1509,9 +1596,15 @@ mod tests {
           </div>
         </body></html>"#;
         let parser = HtmlParser::new();
-        let elems = parser.get_elements(html, ".right_box:nth-child(2)@a").unwrap();
+        let elems = parser
+            .get_elements(html, ".right_box:nth-child(2)@a")
+            .unwrap();
         assert_eq!(elems.len(), 2, "应解析出 2 个 a 章节元素，实际: {elems:?}");
-        assert!(elems[0].contains("/comic/chapter/1"), "元素应含章节链接: {}", elems[0]);
+        assert!(
+            elems[0].contains("/comic/chapter/1"),
+            "元素应含章节链接: {}",
+            elems[0]
+        );
         // 属性提取语义不受影响（@href 仍是属性）
         let hrefs = parser.get_text(html, ".right_box@a@href").unwrap();
         assert_eq!(hrefs.len(), 2);
@@ -1522,9 +1615,13 @@ mod tests {
     fn test_three_level_chain_src_alt_attr() {
         let parser = HtmlParser::new();
         // src 同为合法 CSS 类型选择器，同样曾被误判
-        let result = parser.get_text(BOOKBOX_HTML, ".bookbox@.bookimg@img@src").unwrap();
+        let result = parser
+            .get_text(BOOKBOX_HTML, ".bookbox@.bookimg@img@src")
+            .unwrap();
         assert_eq!(result, vec!["/cover/1.jpg"]);
-        let result2 = parser.get_text(BOOKBOX_HTML, ".bookbox@.bookimg@img@alt").unwrap();
+        let result2 = parser
+            .get_text(BOOKBOX_HTML, ".bookbox@.bookimg@img@alt")
+            .unwrap();
         assert_eq!(result2, vec!["封面图"]);
     }
 

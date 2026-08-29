@@ -301,7 +301,10 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
     ) -> LegadoResult<Vec<WebSearchResult>> {
         // 校验搜索 URL（JS 书源的 searchUrl 通常为空，豁免校验）
         if !source.is_js_source()
-            && source.search_url.as_ref().is_none_or(|u| u.trim().is_empty())
+            && source
+                .search_url
+                .as_ref()
+                .is_none_or(|u| u.trim().is_empty())
         {
             return Err(LegadoError::Parser("搜索url不能为空".into()));
         }
@@ -326,8 +329,7 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         if book_url.is_empty() {
             // [v2.0.10] 可读文案（原裸「bookUrl不能为空」无上下文）— Reasonix
             return Err(LegadoError::Parser(
-                "书籍详情页地址为空，无法获取详情（该书源搜索/发现规则未解析出详情链接）"
-                    .into(),
+                "书籍详情页地址为空，无法获取详情（该书源搜索/发现规则未解析出详情链接）".into(),
             ));
         }
         self.fetcher.get_book_info(source, book_url).await
@@ -346,8 +348,7 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         if book_url.is_empty() {
             // [v2.0.10] 可读文案（原裸「bookUrl不能为空」无上下文）— Reasonix
             return Err(LegadoError::Parser(
-                "书籍详情页地址为空，无法获取目录（该书源搜索/发现规则未解析出详情链接）"
-                    .into(),
+                "书籍详情页地址为空，无法获取目录（该书源搜索/发现规则未解析出详情链接）".into(),
             ));
         }
         let mut chapters = self.fetcher.get_chapters(source, book_url).await?;

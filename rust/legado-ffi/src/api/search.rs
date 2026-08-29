@@ -69,7 +69,8 @@ fn register_current_session(session: &Arc<SearchSession>) {
 fn current_session() -> Option<Arc<SearchSession>> {
     CURRENT_SEARCH_SESSION
         .lock()
-        .unwrap_or_else(|e| e.into_inner()).clone()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 /// 判断给定会话是否仍为当前会话（Arc::ptr_eq；供取消/持久化前复检，防旧会话残留写入）
@@ -85,7 +86,9 @@ fn clear_current_session_if_same(session: &Arc<SearchSession>) {
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     if let Some(cur) = guard.as_ref() {
-        if Arc::ptr_eq(cur, session) { *guard = None; }
+        if Arc::ptr_eq(cur, session) {
+            *guard = None;
+        }
     }
 }
 
@@ -176,7 +179,7 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
         let precision = crate::api::config_api::get_config("precisionSearch")
             .map(|v| v == "true")
             .unwrap_or(false);
-match search_single_source(&self.client, source, query, 1, precision).await {
+        match search_single_source(&self.client, source, query, 1, precision).await {
             Ok(results) => results
                 .into_iter()
                 .take(max_results)
@@ -212,7 +215,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     if sources.is_empty() {
         return Ok(Vec::new());
     }
-let precision = crate::api::config_api::get_config("precisionSearch")
+    let precision = crate::api::config_api::get_config("precisionSearch")
         .map(|v| v == "true")
         .unwrap_or(false);
 
@@ -236,7 +239,7 @@ let precision = crate::api::config_api::get_config("precisionSearch")
             move |source: BookSource| {
                 let client = client.clone();
                 let keyword = keyword_owned.clone();
-async move { search_single_source(&client, &source, &keyword, 1, precision).await }
+                async move { search_single_source(&client, &source, &keyword, 1, precision).await }
             },
             |outcome| {
                 // 7.4：累积前复检会话未取消且仍为当前（防旧会话批次进入累积）
@@ -295,7 +298,7 @@ pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> Legad
     let hit = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         for source in sources {
-let items = match search_single_source(&client, &source, &name_owned, 1, false).await {
+            let items = match search_single_source(&client, &source, &name_owned, 1, false).await {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!(
@@ -344,7 +347,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
         clear_current_session_if_same(&session); // 7.5：空源早退亦清理会话
         return Ok("[]".to_string());
     }
-let precision = crate::api::config_api::get_config("precisionSearch")
+    let precision = crate::api::config_api::get_config("precisionSearch")
         .map(|v| v == "true")
         .unwrap_or(false);
 
@@ -363,13 +366,13 @@ let precision = crate::api::config_api::get_config("precisionSearch")
         drive_source_batches(
             sources,
             SEARCH_CONCURRENCY,
-                SEARCH_SOURCE_TIMEOUT,
-                &session.cancel,
-                &session.paused,
+            SEARCH_SOURCE_TIMEOUT,
+            &session.cancel,
+            &session.paused,
             move |source: BookSource| {
                 let client = client.clone();
                 let query = query_owned.clone();
-async move { search_single_source(&client, &source, &query, 1, precision).await }
+                async move { search_single_source(&client, &source, &query, 1, precision).await }
             },
             |outcome| {
                 // 7.4：累积前复检会话未取消且仍为当前（防旧会话批次进入累积）
@@ -572,7 +575,7 @@ pub async fn run_multi_stream<F>(
     let mut has_more_acc = false;
     // 7.4：on_source 复检用（会话身份），避免旧会话批次进入持久化/流
     let session_cb = Arc::clone(&session);
-let precision = crate::api::config_api::get_config("precisionSearch")
+    let precision = crate::api::config_api::get_config("precisionSearch")
         .map(|v| v == "true")
         .unwrap_or(false);
 
@@ -586,7 +589,7 @@ let precision = crate::api::config_api::get_config("precisionSearch")
             let client = client.clone();
             let query = query.clone();
             // 页码透传（批次B G-B-01）：同关键词翻页递增、新关键词重置为 1
-async move { search_single_source(&client, &source, &query, page, precision).await }
+            async move { search_single_source(&client, &source, &query, page, precision).await }
         },
         |outcome| {
             // 7.4：序列化/持久化/sink.add 前复检会话未取消且仍为当前（防旧会话残留写入）
@@ -727,7 +730,12 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
 
                 // 派发前防御性取消检查（会话级；派发层已门控，此处兜底）
                 if cancel.load(Ordering::SeqCst) {
-                    return (index, source_url, source_name, Err(LegadoError::Network("搜索已取消".into())));
+                    return (
+                        index,
+                        source_url,
+                        source_name,
+                        Err(LegadoError::Network("搜索已取消".into())),
+                    );
                 }
 
                 let outcome = tokio::time::timeout(
@@ -1118,7 +1126,11 @@ pub(crate) async fn search_single_source(
             _ => client.get_raw(analyze_url.url(), headers_opt).await?,
         };
         if !(200..300).contains(&raw.status) {
-            eprintln!("[search] 非 2xx HTTP {} url={}", raw.status, analyze_url.url());
+            eprintln!(
+                "[search] 非 2xx HTTP {} url={}",
+                raw.status,
+                analyze_url.url()
+            );
         }
         let decoded = AnalyzeUrl::decode_response_bytes(&raw.body, analyze_url.charset());
         (decoded, raw.url, raw.status)
@@ -1131,7 +1143,11 @@ pub(crate) async fn search_single_source(
             _ => client.get(analyze_url.url(), headers_opt).await?,
         };
         if !response.is_success() {
-            eprintln!("[search] 非 2xx HTTP {} url={}", response.status, analyze_url.url());
+            eprintln!(
+                "[search] 非 2xx HTTP {} url={}",
+                response.status,
+                analyze_url.url()
+            );
         }
         (response.body, response.url, response.status)
     };
@@ -1147,17 +1163,16 @@ pub(crate) async fn search_single_source(
     // errResponse(500) 二次 eval；仍需登录 → LoginRequired 上抛（原版错误吞吐：
     // 单源失败静默不中断其他源）。JS 环境不兼容降级放行（与 web_book 路径一致）。
     crate::api::web_book::RealBookSourceFetcher::execute_login_check(
-        source,
-        &body,
-        &final_url,
-        resp_code,
+        source, &body, &final_url, resp_code,
     )?;
     // 5. 使用 AnalyzeRule 解析搜索结果（同步解析同样移入阻塞线程，
     //    灾难性正则/超大页面不会阻塞 runtime，单源超时可中断）
     let source_clone = source.clone();
-    let parsed = tokio::task::spawn_blocking(move || parse_search_response(&body, &final_url, &source_clone))
-        .await
-        .map_err(|e| LegadoError::Internal(format!("搜索解析任务异常: {e}")))?;
+    let parsed = tokio::task::spawn_blocking(move || {
+        parse_search_response(&body, &final_url, &source_clone)
+    })
+    .await
+    .map_err(|e| LegadoError::Internal(format!("搜索解析任务异常: {e}")))?;
     if phase_on {
         eprintln!(
             "[phase] total={}ms src={}",
@@ -1227,7 +1242,13 @@ fn parse_search_response_ex(
         } else {
             let item = web_info_to_search_result(info, source);
             // [P3-6 阶段三 | BookList.kt:184-190] getInfoItem 同样受 filter 约束
-            if !precision_filter_match(precision, key, &item.book_name, &item.author, item.kind.as_deref()) {
+            if !precision_filter_match(
+                precision,
+                key,
+                &item.book_name,
+                &item.author,
+                item.kind.as_deref(),
+            ) {
                 return Ok(vec![]);
             }
             vec![item]
@@ -1257,9 +1278,8 @@ fn parse_search_response_ex(
     // 获取书籍列表元素
     // [P0-2 S2 | BookList.kt:90-96] 剥离 bookList 规则的 `+`/`-` 前缀：
     // `-` 表示最终结果逆序（reverse），`+` 本版本仅去前缀、无额外行为。
-    let (book_list_rule, reverse) = split_book_list_prefix(
-        rule_search.book_list.as_deref().unwrap_or(""),
-    );
+    let (book_list_rule, reverse) =
+        split_book_list_prefix(rule_search.book_list.as_deref().unwrap_or(""));
     let elements = if book_list_rule.is_empty() {
         // [S0-E] 对齐原版 getElements("")：空规则得空集合（随后走空列表回退）
         Vec::new()
@@ -1287,7 +1307,13 @@ fn parse_search_response_ex(
         } else {
             let item = web_info_to_search_result(info, source);
             // [P3-6 阶段三 | BookList.kt:184-190] getInfoItem 同样受 filter 约束
-            if !precision_filter_match(precision, key, &item.book_name, &item.author, item.kind.as_deref()) {
+            if !precision_filter_match(
+                precision,
+                key,
+                &item.book_name,
+                &item.author,
+                item.kind.as_deref(),
+            ) {
                 return Ok(vec![]);
             }
             vec![item]
@@ -1325,13 +1351,8 @@ fn parse_search_response_ex(
             rule_search.last_chapter.as_deref().unwrap_or(""),
         ];
         let fields = item_analyzer.get_strings_batch(field_rules);
-        let fields_str: Vec<String> = fields
-            .into_iter()
-            .map(|r| r.unwrap_or_default())
-            .collect();
-        let field_str = |i: usize| -> String {
-            fields_str.get(i).cloned().unwrap_or_default()
-        };
+        let fields_str: Vec<String> = fields.into_iter().map(|r| r.unwrap_or_default()).collect();
+        let field_str = |i: usize| -> String { fields_str.get(i).cloned().unwrap_or_default() };
 
         // 提取书名（必填，无书名则跳过）；清洗对齐原版 BookHelp.formatBookName
         let book_name = legado_core::book_help::format_book_name(&field_str(0));
@@ -1442,7 +1463,6 @@ fn precision_filter_match(
         || kind.map(|k| k.contains(key)).unwrap_or(false)
 }
 
-
 /// [S0-E] 详情页解析结果 → 搜索项（bookUrlPattern 直连 / 空列表回退共用，
 /// 对齐原版 `Book.getInfoItem` 产出 SearchBook 的字段映射）
 fn web_info_to_search_result(
@@ -1487,9 +1507,9 @@ fn dedup_search_results_keep_first(items: Vec<SearchResult>) -> Vec<SearchResult
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(items.len());
     for it in items {
-            // [S0-E | SearchBook.kt:65 + BookList.kt:142-144] 去重键 = bookUrl 单键
-            //（原版 LinkedHashSet<SearchBook>，equals 仅比较 bookUrl；单源内 origin 恒定）
-            let key = it.book_url.clone();
+        // [S0-E | SearchBook.kt:65 + BookList.kt:142-144] 去重键 = bookUrl 单键
+        //（原版 LinkedHashSet<SearchBook>，equals 仅比较 bookUrl；单源内 origin 恒定）
+        let key = it.book_url.clone();
         if seen.insert(key) {
             out.push(it);
         }
@@ -1566,11 +1586,7 @@ mod p0_2_s2_tests {
         let d = dedup_search_results_keep_first(items);
         assert_eq!(
             d.iter().map(|r| r.book_name.clone()).collect::<Vec<_>>(),
-            vec![
-                "X".to_string(),
-                "Y".to_string(),
-                "Z".to_string()
-            ]
+            vec!["X".to_string(), "Y".to_string(), "Z".to_string()]
         );
         assert_eq!(dedup_search_results_keep_first(Vec::new()).len(), 0);
     }
@@ -1650,12 +1666,8 @@ mod s0e_tests {
             None,
             list_rules(".book-item"),
         );
-        let results = parse_search_response(
-            DETAIL_BODY,
-            "https://ex.com/book/123",
-            &source,
-        )
-        .unwrap();
+        let results =
+            parse_search_response(DETAIL_BODY, "https://ex.com/book/123", &source).unwrap();
         assert_eq!(results.len(), 1, "命中 pattern 应按详情解析出单条");
         assert_eq!(results[0].book_name, "直连书名");
         assert_eq!(results[0].book_url, "https://ex.com/book/123");
@@ -1671,12 +1683,8 @@ mod s0e_tests {
             None,
             list_rules(".book-item"),
         );
-        let results = parse_search_response(
-            LIST_BODY,
-            "https://ex.com/search?kw=x",
-            &source,
-        )
-        .unwrap();
+        let results =
+            parse_search_response(LIST_BODY, "https://ex.com/search?kw=x", &source).unwrap();
         assert_eq!(results.len(), 1, "pattern 不命中应正常走列表解析");
         assert_eq!(results[0].book_name, "列表书A");
     }
@@ -1688,7 +1696,10 @@ mod s0e_tests {
         let results = parse_search_response(DETAIL_BODY, "https://ex.com/s", &source).unwrap();
         assert_eq!(results.len(), 1, "空列表应回退详情解析");
         assert_eq!(results[0].book_name, "直连书名");
-        assert_eq!(results[0].book_url, "https://ex.com/s", "回退 bookUrl=baseUrl");
+        assert_eq!(
+            results[0].book_url, "https://ex.com/s",
+            "回退 bookUrl=baseUrl"
+        );
     }
 
     /// BookList.kt:100-108：pattern 已配置但不命中且列表空 → 不回退、返回空
@@ -1750,7 +1761,6 @@ mod s0e_tests {
             .expect("errResponse 二次 eval 返回非 false 应放行");
     }
 }
-
 
 /// BookType 位标志（对齐原版 `io.legado.app.constant.BookType`）
 pub(crate) mod book_type {
@@ -1997,8 +2007,8 @@ mod tests {
             ".last",
         );
         source.custom_order = 7;
-        let results = parse_search_response(html, "https://www.example.com/search?q=test", &source)
-            .unwrap();
+        let results =
+            parse_search_response(html, "https://www.example.com/search?q=test", &source).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].origin_order, 7);
     }
@@ -2026,7 +2036,7 @@ mod tests {
         assert_eq!(core.origin_order, 5);
     }
 
-#[test]
+    #[test]
     fn test_parse_html_search_results() {
         let html = r#"<html><body>
             <div class="book-item">
@@ -2382,7 +2392,7 @@ mod tests {
         use std::sync::atomic::AtomicUsize;
 
         // A：concurrency=2 → 前 2 源在飞（sleep 阻塞），后 3 源排队
-        let a_started = Arc::new(AtomicUsize::new(0));   // A 已发起请求的源数
+        let a_started = Arc::new(AtomicUsize::new(0)); // A 已发起请求的源数
         let a_delivered = Arc::new(AtomicUsize::new(0)); // A on_source 交付次数（取消后应为 0）
         let session_a = Arc::new(SearchSession::new());
 
@@ -2431,7 +2441,11 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
-        assert_eq!(a_started.load(Ordering::SeqCst), 2, "A 应有 2 个在飞源（concurrency=2）");
+        assert_eq!(
+            a_started.load(Ordering::SeqCst),
+            2,
+            "A 应有 2 个在飞源（concurrency=2）"
+        );
 
         // B：独立会话、未取消，与 A 并发运行；同时置位 A 的取消标志（模拟 register(B) 取消 A，
         // 覆盖显式停止 / 页面销毁入口——二者均置 cancel 标志）
@@ -2472,11 +2486,23 @@ mod tests {
         let _ = drive_b.await; // B：全部执行
 
         // A：排队源（后 3 个）从不发请求 → a_started 恒为 2
-        assert_eq!(a_started.load(Ordering::SeqCst), 2, "A 的排队源在取消后不应发起任何请求");
+        assert_eq!(
+            a_started.load(Ordering::SeqCst),
+            2,
+            "A 的排队源在取消后不应发起任何请求"
+        );
         // A：在飞结果不交付 on_source（取消后 break，未交付任何批次）→ 不进流/状态/落库
-        assert_eq!(a_delivered.load(Ordering::SeqCst), 0, "A 取消后在飞结果不应进入 on_source/流");
+        assert_eq!(
+            a_delivered.load(Ordering::SeqCst),
+            0,
+            "A 取消后在飞结果不应进入 on_source/流"
+        );
         // B：全新会话 → 全部执行，不受 A 影响（会话隔离）
-        assert_eq!(b_started.load(Ordering::SeqCst), 5, "B 应全部执行（会话隔离，A 未污染 B）");
+        assert_eq!(
+            b_started.load(Ordering::SeqCst),
+            5,
+            "B 应全部执行（会话隔离，A 未污染 B）"
+        );
     }
 
     // ─── 取消即时唤醒（P0-3 强化）：取消置位时收集循环正阻塞在 set.next()，
@@ -2597,9 +2623,17 @@ mod tests {
 
         // sink 在第 1 批次后关闭 → cancel 置位，剩余源中止、在飞 abort
         assert!(cancel.load(Ordering::SeqCst), "sink 关闭应置位会话取消");
-        assert_eq!(delivered.load(Ordering::SeqCst), 1, "只交付了 1 个批次即 sink 关闭");
+        assert_eq!(
+            delivered.load(Ordering::SeqCst),
+            1,
+            "只交付了 1 个批次即 sink 关闭"
+        );
         // 只有前 2 源在飞（已派发）；后 4 排队源中止，不执行
-        assert_eq!(started.load(Ordering::SeqCst), 2, "sink 关闭后剩余排队源应中止（只执行了 2 个在飞源）");
+        assert_eq!(
+            started.load(Ordering::SeqCst),
+            2,
+            "sink 关闭后剩余排队源应中止（只执行了 2 个在飞源）"
+        );
     }
 
     // ─── P0-3 会话注册与清理安全（复审 7.5）：register(B) 取消 A；A 的清理不误清 B ──
@@ -2617,9 +2651,15 @@ mod tests {
 
         let b = Arc::new(SearchSession::new());
         register_current_session(&b);
-        assert!(a.cancel.load(Ordering::SeqCst), "注册 B 应取消 A（新搜索取代）");
+        assert!(
+            a.cancel.load(Ordering::SeqCst),
+            "注册 B 应取消 A（新搜索取代）"
+        );
         assert!(is_current_session(&b), "当前会话应为 B");
-        assert!(!is_current_session(&a), "A 不再是当前会话（7.4：A 的 on_source 复检将 early-return，不落库）");
+        assert!(
+            !is_current_session(&a),
+            "A 不再是当前会话（7.4：A 的 on_source 复检将 early-return，不落库）"
+        );
 
         // A 的清理不应误清已启动的 B（Arc::ptr_eq 保护；复审 7.5）
         clear_current_session_if_same(&a);
@@ -2629,7 +2669,6 @@ mod tests {
         clear_current_session_if_same(&b);
         assert!(!is_current_session(&b), "B 的清理应清除当前会话");
     }
-
 
     // ─── 测试 2: JSON 搜索结果解析 ────────────────────────────────────────────
 
@@ -2938,7 +2977,11 @@ mod tests {
 
         #[cfg(feature = "quickjs")]
         {
-            assert_eq!(results.len(), 1, "quickjs：source 上下文应可用，@js: 规则执行");
+            assert_eq!(
+                results.len(),
+                1,
+                "quickjs：source 上下文应可用，@js: 规则执行"
+            );
             assert_eq!(results[0].book_name, "https://src.example.com");
         }
 
@@ -4272,7 +4315,6 @@ mod tests {
     }
 }
 
-
 /// [P3-6 阶段三] precision filter(解析期逐条过滤)测试
 #[cfg(test)]
 mod p3f_tests {
@@ -4297,8 +4339,14 @@ mod p3f_tests {
             }),
             ..BookSource::default()
         };
-        parse_search_response_ex(html, "https://p3f.example.com/s?kw=x", &source, precision, key)
-            .unwrap()
+        parse_search_response_ex(
+            html,
+            "https://p3f.example.com/s?kw=x",
+            &source,
+            precision,
+            key,
+        )
+        .unwrap()
     }
 
     /// SearchModel.kt:106-113:precision 开启 → 仅保留 name/author/kind contains(key) 的条目

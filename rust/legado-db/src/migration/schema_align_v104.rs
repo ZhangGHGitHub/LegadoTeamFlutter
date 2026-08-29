@@ -435,7 +435,12 @@ fn migrate_http_tts(conn: &Connection) -> LegadoResult<()> {
 fn ensure_http_tts_columns(conn: &Connection) -> LegadoResult<()> {
     use crate::migration::add_column_if_not_exists;
     add_column_if_not_exists(conn, "httpTTS", "contentType", "TEXT")?;
-    add_column_if_not_exists(conn, "httpTTS", "pauseDuration", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column_if_not_exists(
+        conn,
+        "httpTTS",
+        "pauseDuration",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     add_column_if_not_exists(conn, "httpTTS", "concurrentRate", "TEXT DEFAULT '0'")?;
     add_column_if_not_exists(conn, "httpTTS", "loginUrl", "TEXT")?;
     add_column_if_not_exists(conn, "httpTTS", "loginUi", "TEXT")?;
@@ -685,16 +690,8 @@ fn rebuild_search_keywords(conn: &Connection) -> LegadoResult<()> {
     let has_keyword = column_exists(conn, "search_keywords", "keyword")?;
     let has_time = column_exists(conn, "search_keywords", "time")?;
     if has_keyword {
-        let time_expr = if has_time {
-            "COALESCE(time, 0)"
-        } else {
-            "0"
-        };
-        let order_by = if has_time {
-            "time DESC"
-        } else {
-            "rowid DESC"
-        };
+        let time_expr = if has_time { "COALESCE(time, 0)" } else { "0" };
+        let order_by = if has_time { "time DESC" } else { "rowid DESC" };
         let sql = format!(
             "INSERT OR IGNORE INTO search_keywords_v104 (word, usage, lastUseTime)
              SELECT keyword, 1, {time_expr}

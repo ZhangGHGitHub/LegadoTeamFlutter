@@ -299,9 +299,7 @@ impl XPathParser {
         let mut out = String::new();
         Self::write_node_xhtml(&mut out, &document.tree.root(), false);
         if out.trim().is_empty() {
-            return Err(LegadoError::Parser(
-                "HTML→XHTML 转换结果为空".into(),
-            ));
+            return Err(LegadoError::Parser("HTML→XHTML 转换结果为空".into()));
         }
         Ok(out)
     }
@@ -499,11 +497,15 @@ mod tests {
             <dd data-num=\"2\"><a href=\"/chapter/2.html\">第二章</a></dd>\
             </div></body></html>";
         // 严格 XML 解析失败（<meta> 无闭合 → HTML5 宽容标签）→ html5ever 回退路径
-        let result = parser.parse_xpath(html, "//*[@id='allchapter']//dd[a]//a/@href").unwrap();
+        let result = parser
+            .parse_xpath(html, "//*[@id='allchapter']//dd[a]//a/@href")
+            .unwrap();
         assert_eq!(result.len(), 2, "带 xmlns 页面的无前缀 XPath 应正常匹配");
         assert!(result.contains(&"/chapter/1.html".to_string()));
         assert!(result.contains(&"/chapter/2.html".to_string()));
-        let dds = parser.parse_xpath(html, "//*[@id='allchapter']//dd").unwrap();
+        let dds = parser
+            .parse_xpath(html, "//*[@id='allchapter']//dd")
+            .unwrap();
         assert_eq!(dds.len(), 2);
     }
 
@@ -539,10 +541,7 @@ mod tests {
 
         // 子规则相对 XPath：在元素外层标记上二次解析
         let name = parser
-            .parse_xpath(
-                &list[0],
-                ".//*[contains(@class, 'bookname')]/a/text()",
-            )
+            .parse_xpath(&list[0], ".//*[contains(@class, 'bookname')]/a/text()")
             .unwrap();
         assert_eq!(name.len(), 1);
         assert!(
@@ -553,10 +552,7 @@ mod tests {
 
         // 属性提取
         let href = parser
-            .parse_xpath(
-                &list[0],
-                ".//*[contains(@class, 'bookname')]/a/@href",
-            )
+            .parse_xpath(&list[0], ".//*[contains(@class, 'bookname')]/a/@href")
             .unwrap();
         assert_eq!(href.len(), 1);
         assert!(href[0].starts_with("/book/"));

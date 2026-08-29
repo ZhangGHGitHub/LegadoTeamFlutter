@@ -242,8 +242,8 @@ mod impl_file_utils {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
         }
-        let bytes = hex::decode(content_hex.trim())
-            .map_err(|e| format!("Hex decode error: {}", e))?;
+        let bytes =
+            hex::decode(content_hex.trim()).map_err(|e| format!("Hex decode error: {}", e))?;
         fs::write(&dest, &bytes).map_err(|e| format!("Write error: {}", e))?;
         // 返回相对路径（对齐 Kotlin substring(cachePath.length)）
         Ok(name)

@@ -1,4 +1,4 @@
-﻿//! HTML 解析桥（java.getElement/getString 等）
+//! HTML 解析桥（java.getElement/getString 等）
 //!
 //! 对齐原版 JsExtensions（AnalyzeRule.evalJS 注入 `bindings["java"] = this`）：
 //! 漫画/图片书源目录与正文规则大量使用
@@ -37,10 +37,7 @@ fn select_outer_htmls(html: &str, css: &str) -> Vec<String> {
         return Vec::new();
     };
     let document = Html::parse_document(html);
-    document
-        .select(&selector)
-        .map(|e| e.html())
-        .collect()
+    document.select(&selector).map(|e| e.html()).collect()
 }
 
 /// 从单个 outerHTML 快照重建元素，提取 innerHTML / text / 属性
@@ -66,11 +63,7 @@ impl ElementSnapshot {
             .and_then(|s| doc.select(s).next())
             .map(|body| body.text().collect::<Vec<_>>().join(""))
             .unwrap_or_default();
-        Self {
-            outer,
-            inner,
-            text,
-        }
+        Self { outer, inner, text }
     }
 
     fn attr(&self, name: &str) -> Option<String> {
@@ -95,7 +88,23 @@ fn split_attr_chain(css: &str) -> (&str, Option<String>) {
         if !before.is_empty()
             && !after.is_empty()
             && !after.contains([' ', '.', '#', '[', '>', ','])
-            && !matches!(after, "a" | "div" | "span" | "li" | "p" | "img" | "script" | "body" | "html" | "ul" | "ol" | "table" | "tr" | "td" | "th")
+            && !matches!(
+                after,
+                "a" | "div"
+                    | "span"
+                    | "li"
+                    | "p"
+                    | "img"
+                    | "script"
+                    | "body"
+                    | "html"
+                    | "ul"
+                    | "ol"
+                    | "table"
+                    | "tr"
+                    | "td"
+                    | "th"
+            )
         {
             return (before, Some(after.to_string()));
         }
@@ -118,9 +127,7 @@ fn select_with_attr(html: &str, css: &str) -> Vec<ElementSnapshot> {
             .map(|s| ElementSnapshot {
                 outer: s.outer.clone(),
                 inner: s.inner.clone(),
-                text: s
-                    .attr(&name)
-                    .unwrap_or_else(|| s.text.clone()),
+                text: s.attr(&name).unwrap_or_else(|| s.text.clone()),
             })
             .collect(),
         None => snaps,
@@ -140,8 +147,8 @@ fn build_element_object<'js>(
     ctx: &Ctx<'js>,
     snap: &ElementSnapshot,
 ) -> Result<rquickjs::Object<'js>, LegadoError> {
-    let obj = rquickjs::Object::new(ctx.clone())
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    let obj =
+        rquickjs::Object::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     // toString() → outerHTML
     let outer_clone = snap.outer.clone();
@@ -174,12 +181,9 @@ fn build_element_object<'js>(
     let outer_snap = snap.outer.clone();
     obj.set(
         "attr",
-        rquickjs::Function::new(
-            ctx.clone(),
-            move |name: String| -> Option<String> {
-                ElementSnapshot::from_outer(outer_snap.clone()).attr(&name)
-            },
-        )
+        rquickjs::Function::new(ctx.clone(), move |name: String| -> Option<String> {
+            ElementSnapshot::from_outer(outer_snap.clone()).attr(&name)
+        })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -198,8 +202,8 @@ pub fn get_element<'js>(
 ) -> Result<rquickjs::Array<'js>, LegadoError> {
     let (selector, _attr) = split_attr_chain(&css);
     let snaps = snapshots_from_html(&src, selector);
-    let arr = rquickjs::Array::new(ctx.clone())
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    let arr =
+        rquickjs::Array::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     for (idx, snap) in snaps.iter().enumerate() {
         let obj = build_element_object(ctx, snap)?;
         arr.set(idx, obj)
@@ -311,12 +315,7 @@ mod tests {
         );
         assert_eq!(s2, "X");
         // @attr 链：取 a 的 href 属性（对齐 51漫画 java.getString(".btn-read@href", src)）
-        let s3 = get_string(
-            "a@href".to_string(),
-            Opt(None),
-            html.to_string(),
-        );
+        let s3 = get_string("a@href".to_string(), Opt(None), html.to_string());
         assert_eq!(s3, "/c/1");
     }
 }
-

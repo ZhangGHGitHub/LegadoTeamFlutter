@@ -11,7 +11,9 @@ use super::rule::{BookInfoRule, ContentRule, ExploreRule, ReviewRule, SearchRule
 fn lenient_i64<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
     match &v {
-        serde_json::Value::Number(n) => n.as_i64().ok_or_else(|| D::Error::custom("数字超出 i64 范围")),
+        serde_json::Value::Number(n) => n
+            .as_i64()
+            .ok_or_else(|| D::Error::custom("数字超出 i64 范围")),
         serde_json::Value::String(s) => s
             .trim()
             .parse::<i64>()
@@ -336,7 +338,8 @@ mod tests {
     #[test]
     fn test_book_source_variable_lenient_deserialize() {
         // 显式 null → 空串（Dart String? toJson 输出 null 的主场景）
-        let json = r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test","variable":null}"#;
+        let json =
+            r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test","variable":null}"#;
         let bs: BookSource = serde_json::from_str(json).unwrap();
         assert_eq!(bs.variable, "");
 
@@ -346,7 +349,8 @@ mod tests {
         assert_eq!(bs.variable, "");
 
         // 正常串原样保留
-        let json = r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test","variable":"abc=1"}"#;
+        let json =
+            r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test","variable":"abc=1"}"#;
         let bs: BookSource = serde_json::from_str(json).unwrap();
         assert_eq!(bs.variable, "abc=1");
 

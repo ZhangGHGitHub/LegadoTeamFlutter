@@ -90,8 +90,7 @@ fn get_server_runtime() -> LegadoResult<&'static Runtime> {
 fn lock_handle_slot(
     slot: &std::sync::Mutex<Option<JoinHandle<()>>>,
 ) -> std::sync::MutexGuard<'_, Option<JoinHandle<()>>> {
-    slot.lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// 启动 legado-server
@@ -260,9 +259,7 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
     // F5：绑定 0.0.0.0（LAN 可达，对齐原版 McpService）
     let listener = runtime
         .block_on(tokio::net::TcpListener::bind(("0.0.0.0", port as u16)))
-        .map_err(|e| {
-            LegadoError::Internal(format!("独立 MCP 服务端口 {} 绑定失败: {e}", port))
-        })?;
+        .map_err(|e| LegadoError::Internal(format!("独立 MCP 服务端口 {} 绑定失败: {e}", port)))?;
 
     // 复用既有 server 启动模式：同 runtime 内 spawn，句柄可中止
     let handle = runtime.spawn(async move {

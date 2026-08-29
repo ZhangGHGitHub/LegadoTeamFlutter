@@ -367,11 +367,7 @@ impl AnalyzeRule {
             if rule_has_group_ref(&rule_expanded) {
                 let assembled = makeup_group_refs(&rule_expanded, &groups);
                 let (core, spec) = split_hash_replace(&assembled);
-                let mut results = if core.is_empty() {
-                    vec![]
-                } else {
-                    vec![core]
-                };
+                let mut results = if core.is_empty() { vec![] } else { vec![core] };
                 if let Some(spec) = spec.as_ref() {
                     results = results
                         .into_iter()
@@ -628,9 +624,8 @@ impl AnalyzeRule {
     /// parse；此前 100 条 × ~7 字段 ≈ 700 次解析 → yeudusk 35s 触发 30s 超时）。
     /// — 2026-08-18 搜索速度修复
     pub fn get_strings_batch(&self, rules: Vec<&str>) -> Vec<LegadoResult<String>> {
-        let mut results: Vec<Option<LegadoResult<String>>> = (0..rules.len())
-            .map(|_| None)
-            .collect();
+        let mut results: Vec<Option<LegadoResult<String>>> =
+            (0..rules.len()).map(|_| None).collect();
         let mut css: Vec<(usize, String)> = Vec::new();
 
         for (i, rule) in rules.iter().enumerate() {
@@ -705,12 +700,7 @@ impl AnalyzeRule {
     ///
     /// - `unescape`：含 `&` 时做 HTML4 实体反转义
     /// - `is_url`：结果绝对化；空结果回退 `base_url`
-    pub fn get_string_ex(
-        &self,
-        rule: &str,
-        is_url: bool,
-        unescape: bool,
-    ) -> LegadoResult<String> {
+    pub fn get_string_ex(&self, rule: &str, is_url: bool, unescape: bool) -> LegadoResult<String> {
         let strings = self.get_strings_ex(rule, false)?;
         let mut result = if strings.is_empty() {
             String::new()
@@ -1142,8 +1132,8 @@ impl AnalyzeRule {
                 // Function 体非严格，裸调用 this=globalThis 与顶层 eval
                 // 一致（书山 jsLib getSessionId 等 `let { source } = this`）。
                 // — DeepSeek Harness + Bridge（2026-08-14 书山去重折叠修复）
-                let code_json = serde_json::to_string(js_code)
-                    .unwrap_or_else(|_| "\"\"".to_string());
+                let code_json =
+                    serde_json::to_string(js_code).unwrap_or_else(|_| "\"\"".to_string());
                 format!(
                     "{prologue}\nnew Function('__legadoCode', 'return eval(__legadoCode);')({code_json})"
                 )
@@ -1525,7 +1515,8 @@ fn compile_source_rule(rule: &str) -> CompiledSourceRule {
     // `{{js}}` 内嵌需在编译后运行时展开（依赖 JS executor），故含 `{{` 的
     // 规则不预拆 ##/js 链，留待 get_strings_ex 内 expand_js_refs 展开后再现场编译
     //（否则预拆得到的 core_rule 仍含未展开的 `{{js}}`，替换被丢弃）。
-    let pre_hash = if has_get_marker || rule_no_put.trim().is_empty() || rule_no_put.contains("{{") {
+    let pre_hash = if has_get_marker || rule_no_put.trim().is_empty() || rule_no_put.contains("{{")
+    {
         None
     } else {
         Some(compile_hash_and_chain(&rule_no_put))
@@ -1627,9 +1618,7 @@ fn re_put() -> &'static regex::Regex {
 /// `<js>...</js>|@js:...` 链拆分正则（原版 JS_PATTERN）
 fn re_js_chain() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| {
-        regex::Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap()
-    })
+    RE.get_or_init(|| regex::Regex::new(r"(?i)<js>([\s\S]*?)</js>|@js:([\s\S]*)").unwrap())
 }
 
 /// 神漫画 `$.chapter_name@put:{chapter_id:$.chapter_id}` 若不剥离，
@@ -1991,10 +1980,7 @@ mod tests {
         let mut skip = AnalyzeRule::new(elems[1].clone(), "http://www.shushun.cc".to_string());
         skip.set_element_content(elems[1].clone());
         assert_eq!(skip.get_string("$2").unwrap(), "章节目录");
-        assert_eq!(
-            skip.get_string("$1").unwrap(),
-            "/read/13.html"
-        );
+        assert_eq!(skip.get_string("$1").unwrap(), "/read/13.html");
     }
 
     #[test]
@@ -2136,16 +2122,35 @@ mod tests {
         .with_js_binding("source", "\"https://manga.example.com\"")
         .with_js_binding("title", "\"第一章\"")
         .with_js_binding("chapter", "{\"title\": \"第一章\"}");
-        rule.get_strings("@js:var m = src.match(/漫画/); result").unwrap();
+        rule.get_strings("@js:var m = src.match(/漫画/); result")
+            .unwrap();
         let recorded = executor.executed.lock().unwrap().clone();
         assert_eq!(recorded.len(), 1);
         let code = &recorded[0];
-        assert!(code.contains("globalThis.result = \"<html>漫画页</html>\";"), "result 注入: {code}");
-        assert!(code.contains("globalThis.src = \"<html>漫画页</html>\";"), "src 注入: {code}");
-        assert!(code.contains("globalThis.baseUrl = \"https://manga.example.com/chapter/1.html\";"), "baseUrl 注入: {code}");
-        assert!(code.contains("globalThis.source = \"https://manga.example.com\";"), "source 注入: {code}");
-        assert!(code.contains("globalThis.title = \"第一章\";"), "title 注入: {code}");
-        assert!(code.contains("globalThis.chapter = {\"title\": \"第一章\"};"), "chapter 注入: {code}");
+        assert!(
+            code.contains("globalThis.result = \"<html>漫画页</html>\";"),
+            "result 注入: {code}"
+        );
+        assert!(
+            code.contains("globalThis.src = \"<html>漫画页</html>\";"),
+            "src 注入: {code}"
+        );
+        assert!(
+            code.contains("globalThis.baseUrl = \"https://manga.example.com/chapter/1.html\";"),
+            "baseUrl 注入: {code}"
+        );
+        assert!(
+            code.contains("globalThis.source = \"https://manga.example.com\";"),
+            "source 注入: {code}"
+        );
+        assert!(
+            code.contains("globalThis.title = \"第一章\";"),
+            "title 注入: {code}"
+        );
+        assert!(
+            code.contains("globalThis.chapter = {\"title\": \"第一章\"};"),
+            "chapter 注入: {code}"
+        );
         assert!(
             code.contains("var d, data, json, list, arr, obj, tmp")
                 && code.contains(", all,")
@@ -2164,7 +2169,8 @@ mod tests {
             executor.clone(),
         );
         // 模拟 MacCMS/视频源惯用 `all = JSON.parse(result)`
-        rule.get_strings("@js:all = JSON.parse(result); all").unwrap();
+        rule.get_strings("@js:all = JSON.parse(result); all")
+            .unwrap();
         let recorded = executor.executed.lock().unwrap().clone();
         assert_eq!(recorded.len(), 1);
         assert!(
@@ -2191,14 +2197,14 @@ mod tests {
         assert_eq!(recorded.len(), 1);
         let code = &recorded[0];
         assert!(
-            code.contains(
-                r#"globalThis.result = {"book_url":"https://x/1","source":"番茄小说"};"#
-            ),
+            code.contains(r#"globalThis.result = {"book_url":"https://x/1","source":"番茄小说"};"#),
             "元素模式 result 应按解析后的对象注入（键排序后）: {code}"
         );
         // src 仍为原始字符串
         assert!(
-            code.contains(r#"globalThis.src = "{\"source\":\"番茄小说\",\"book_url\":\"https://x/1\"}";"#),
+            code.contains(
+                r#"globalThis.src = "{\"source\":\"番茄小说\",\"book_url\":\"https://x/1\"}";"#
+            ),
             "src 应保持字符串注入: {code}"
         );
     }
@@ -2216,12 +2222,16 @@ mod tests {
         let recorded = executor.executed.lock().unwrap().clone();
         assert_eq!(recorded.len(), 1);
         assert!(
-            recorded[0].contains(", len,") || recorded[0].contains(" len,") || recorded[0].contains(", len;"),
+            recorded[0].contains(", len,")
+                || recorded[0].contains(" len,")
+                || recorded[0].contains(", len;"),
             "prologue 须含 var len: {}",
             recorded[0]
         );
         assert!(
-            recorded[0].contains(", jm,") || recorded[0].contains(" jm,") || recorded[0].contains(", jm;"),
+            recorded[0].contains(", jm,")
+                || recorded[0].contains(" jm,")
+                || recorded[0].contains(", jm;"),
             "prologue 须含 var jm: {}",
             recorded[0]
         );
@@ -2233,8 +2243,7 @@ mod tests {
         let executor = Arc::new(MockJsExecutor {
             result: r#"["书名A","书名B"]"#.to_string(),
         });
-        let rule =
-            AnalyzeRule::with_js_executor("{}".to_string(), String::new(), executor);
+        let rule = AnalyzeRule::with_js_executor("{}".to_string(), String::new(), executor);
         let result = rule.get_strings("@js:['书名A','书名B']").unwrap();
         assert_eq!(result, vec!["书名A", "书名B"]);
         // getString：多字符串元素按换行连接（AnalyzeRule.get_string）
@@ -2264,11 +2273,8 @@ mod tests {
         let executor = Arc::new(MockJsExecutor {
             result: r#"[{"title":"第1话"},{"title":"第2话"}]"#.to_string(),
         });
-        let rule = AnalyzeRule::with_js_executor(
-            "<html></html>".to_string(),
-            String::new(),
-            executor,
-        );
+        let rule =
+            AnalyzeRule::with_js_executor("<html></html>".to_string(), String::new(), executor);
         let items = rule
             .get_strings("<js>JSON.stringify(d)</js>\n$[*]")
             .unwrap();
@@ -2369,7 +2375,10 @@ mod tests {
         let _ = rule.execute_js_rule("'https://x/bid/{{$.bid}}'").unwrap();
         let executed = executor.executed.lock().unwrap().join("\n");
         assert!(executed.contains("116554"), "应展开 bid: {executed}");
-        assert!(!executed.contains("{{$.bid}}"), "占位符不应残留: {executed}");
+        assert!(
+            !executed.contains("{{$.bid}}"),
+            "占位符不应残留: {executed}"
+        );
     }
 
     /// JSONP/JSON 书源可在 <js> 解包后使用 @json: 后缀继续提取。
@@ -2379,8 +2388,12 @@ mod tests {
             result: r#"{"bookinfo":[{"catename":"红薯书"},{"catename":"第二本"}]}"#.to_string(),
         });
         let rule = AnalyzeRule::with_js_executor("jsonp".to_string(), String::new(), executor);
-        let result = rule.get_elements("<js>unwrapJsonp(result)</js>
-@json:$..bookinfo[*]").unwrap();
+        let result = rule
+            .get_elements(
+                "<js>unwrapJsonp(result)</js>
+@json:$..bookinfo[*]",
+            )
+            .unwrap();
         assert_eq!(result.len(), 2);
         let first = AnalyzeRule::new(result[0].clone(), String::new());
         assert_eq!(first.get_string("$.catename").unwrap(), "红薯书");
@@ -2392,11 +2405,7 @@ mod tests {
         let executor = Arc::new(MockJsExecutor {
             result: "直接结果".to_string(),
         });
-        let rule = AnalyzeRule::with_js_executor(
-            "x".to_string(),
-            String::new(),
-            executor,
-        );
+        let rule = AnalyzeRule::with_js_executor("x".to_string(), String::new(), executor);
         let result = rule.get_strings("<js>result</js>").unwrap();
         assert_eq!(result, vec!["直接结果"]);
     }
@@ -2440,7 +2449,10 @@ mod tests {
     fn test_parse_put_json_and_apply() {
         let (cleaned, map) = extract_put_rules("$.chapter_name@put:{chapter_id:$.chapter_id}");
         assert_eq!(cleaned, "$.chapter_name");
-        assert_eq!(map.get("chapter_id").map(String::as_str), Some("$.chapter_id"));
+        assert_eq!(
+            map.get("chapter_id").map(String::as_str),
+            Some("$.chapter_id")
+        );
 
         let content = r#"{"chapter_name":"第1话","chapter_id":"99"}"#;
         let rule = AnalyzeRule::new(content.to_string(), String::new());
@@ -2512,10 +2524,7 @@ mod tests {
     /// getString unescape 重载
     #[test]
     fn test_get_string_unescape() {
-        let rule = AnalyzeRule::new(
-            r#"{"t":"A&amp;B&lt;C&gt;"}"#.into(),
-            String::new(),
-        );
+        let rule = AnalyzeRule::new(r#"{"t":"A&amp;B&lt;C&gt;"}"#.into(), String::new());
         let unescaped = rule.get_string_ex("$.t", false, true).unwrap();
         assert_eq!(unescaped, "A&B<C>");
         let raw = rule.get_string_ex("$.t", false, false).unwrap();
@@ -2653,8 +2662,10 @@ mod tests {
         struct JsonArrayExec;
         impl JsExecutor for JsonArrayExec {
             fn execute_js(&self, _js_code: &str) -> Result<String, String> {
-                Ok(r#"[{"title":"第1话","url":"/ch/1"},{"title":"第2话","url":"/ch/2"}]"#
-                    .to_string())
+                Ok(
+                    r#"[{"title":"第1话","url":"/ch/1"},{"title":"第2话","url":"/ch/2"}]"#
+                        .to_string(),
+                )
             }
         }
 
@@ -2670,7 +2681,11 @@ mod tests {
         analyzer.add_js_binding("book", r#"{"name":"测试书"}"#);
         let els = analyzer.get_elements(rule).expect("get_elements");
         assert_eq!(els.len(), 2, "els={els:?}");
-        assert!(els[0].contains("第1话") || els[0].contains("/ch/1"), "{}", els[0]);
+        assert!(
+            els[0].contains("第1话") || els[0].contains("/ch/1"),
+            "{}",
+            els[0]
+        );
     }
 
     /// `get_strings_batch` 与逐字段 `get_string` 结果必须一致（CSS 共享 parse + 非 CSS 回退）
@@ -2702,7 +2717,10 @@ mod tests {
             .map(|r| r.unwrap_or_default())
             .collect();
 
-        assert_eq!(old_vals, vec!["武动乾坤", "玄幻魔法", "天蚕土豆", "/book/123/"]);
+        assert_eq!(
+            old_vals,
+            vec!["武动乾坤", "玄幻魔法", "天蚕土豆", "/book/123/"]
+        );
         assert_eq!(new_vals, old_vals, "batch 与逐字段结果必须一致");
     }
 

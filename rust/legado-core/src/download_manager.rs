@@ -12,7 +12,7 @@ pub use crate::models::DownloadTask;
 #[derive(Debug, Clone)]
 pub enum PreloadStrategy {
     /// 顺序模式：当前章 + 后续 N 章
-    Sequential { 
+    Sequential {
         ahead: usize,  // 后续章节数 (默认 5)
         behind: usize, // 前序章节数 (默认 0)
     },
@@ -26,7 +26,10 @@ pub enum PreloadStrategy {
 
 impl Default for PreloadStrategy {
     fn default() -> Self {
-        Self::Sequential { ahead: 5, behind: 0 }
+        Self::Sequential {
+            ahead: 5,
+            behind: 0,
+        }
     }
 }
 
@@ -163,16 +166,19 @@ impl DownloadManager {
     pub fn fail_task_with_retry(&mut self, task_id: &str, error: String) {
         let now = now_millis();
         let max_retry = self.max_retry_count;
-        
+
         if let Some(mut task) = self.tasks.remove(task_id) {
             task.fail_count += 1;
             task.last_retry_at = Some(now);
             task.max_retry_count = max_retry; // 同步管理器配置
-            
+
             // 超过最大重试次数，标记为永久失败
             if task.fail_count >= max_retry {
                 task.status = DownloadStatus::Failed(error.clone());
-                task.error = Some(format!("永久失败（已重试{}次）：{}", task.fail_count, error));
+                task.error = Some(format!(
+                    "永久失败（已重试{}次）：{}",
+                    task.fail_count, error
+                ));
                 task.next_retry_at = None; // 不再重试
                 task.priority = 1000; // 降级为低优先级
             } else {
@@ -181,15 +187,15 @@ impl DownloadManager {
                 // 计算指数退避时间：1s, 2s, 4s, 8s...
                 let retry_time = now + self.calculate_backoff(task.fail_count);
                 task.next_retry_at = Some(retry_time);
-                
+
                 // 连续失败 3 次后降级
                 if task.fail_count >= 3 {
                     task.priority = 1000;
                 }
             }
-            
+
             self.active_count = self.active_count.saturating_sub(1);
-            
+
             // 重新插入任务
             self.tasks.insert(task_id.to_string(), task);
         }
@@ -328,7 +334,7 @@ impl DownloadManager {
     pub fn next_retryable(&mut self) -> Option<String> {
         let now = now_millis();
         let mut best: Option<(&str, i32)> = None;
-        
+
         for (id, task) in self.tasks.iter() {
             if let DownloadStatus::Failed(_) = &task.status {
                 // 跳过已永久失败的任务
@@ -345,7 +351,7 @@ impl DownloadManager {
                 }
             }
         }
-        
+
         best.map(|(id, _)| id.to_string())
     }
 
@@ -386,7 +392,7 @@ impl DownloadManager {
         };
 
         let mut indices = Vec::new();
-        
+
         // 添加当前章节
         if current_chapter >= 0 && current_chapter < total_chapters {
             indices.push(current_chapter);
@@ -410,13 +416,18 @@ impl DownloadManager {
 
         // 限制最大预下载数量
         indices.truncate(self.preload_config.max_preload_chapters);
-        
+
         // 过滤已下载/正在下载的章节
         indices.retain(|&idx| {
             let task_id = format!("{}_{}", book_url.replace(['/', ':', '?', '&'], "_"), idx);
             self.tasks
                 .get(&task_id)
-                .map(|t| !matches!(t.status, DownloadStatus::Completed | DownloadStatus::Downloading))
+                .map(|t| {
+                    !matches!(
+                        t.status,
+                        DownloadStatus::Completed | DownloadStatus::Downloading
+                    )
+                })
                 .unwrap_or(true)
         });
 
@@ -447,7 +458,7 @@ impl DownloadManager {
         match self.direction_hint {
             Some(ReadDirection::Forward) => (5, 0), // 顺序阅读：后续 5 章
             Some(ReadDirection::Backward) => (0, 5), // 逆序阅读：前序 5 章
-            None => (5, 0), // 默认顺序阅读
+            None => (5, 0),                         // 默认顺序阅读
         }
     }
 
@@ -466,18 +477,18 @@ impl DownloadManager {
         base_priority: i32,
     ) -> Vec<String> {
         let mut task_ids = Vec::new();
-        
+
         for (i, (idx, url, title)) in chapters.iter().enumerate() {
             let task_id = format!("{}_{}", book_url.replace(['/', ':', '?', '&'], "_"), idx);
-            
+
             // 跳过已存在的任务
             if self.tasks.contains_key(&task_id) {
                 continue;
             }
-            
+
             // 预下载任务优先级高于手动触发的任务
             let priority = base_priority - i as i32;
-            
+
             let task = DownloadTask {
                 id: task_id.clone(),
                 book_url: book_url.to_string(),
@@ -496,11 +507,11 @@ impl DownloadManager {
                 downloaded_bytes: 0,
                 max_retry_count: self.max_retry_count,
             };
-            
+
             self.add_task(task);
             task_ids.push(task_id);
         }
-        
+
         task_ids
     }
 }

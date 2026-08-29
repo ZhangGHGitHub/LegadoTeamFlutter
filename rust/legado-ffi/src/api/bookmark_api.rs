@@ -199,6 +199,8 @@ mod tests {
         assert_eq!(a[0].book_author, "作者甲7");
 
         // 作者不匹配 → 空列表
-        assert!(get_bookmarks_by_book("bm_同名书_7", "不存在").unwrap().is_empty());
+        assert!(get_bookmarks_by_book("bm_同名书_7", "不存在")
+            .unwrap()
+            .is_empty());
     }
 }

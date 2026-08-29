@@ -151,7 +151,9 @@ pub fn query_ttf(data: &str, use_cache: bool) -> String {
     };
 
     // 解析字体（cmap + glyf 轮廓签名）
-    let parsed = font_bytes.as_ref().and_then(|bytes| QueryTtf::parse(bytes).ok());
+    let parsed = font_bytes
+        .as_ref()
+        .and_then(|bytes| QueryTtf::parse(bytes).ok());
 
     let handle = serde_json::json!({
         "fontId": cache_key,
@@ -405,7 +407,7 @@ pub mod tests {
         g.extend_from_slice(&be16(10)); // yMax
         g.extend_from_slice(&be16(2)); // endPtsOfContours = [2]
         g.extend_from_slice(&be16(0)); // instructionLength
-        // flags：3 点，短向量正号（x: 0x12, y: 0x24）
+                                       // flags：3 点，短向量正号（x: 0x12, y: 0x24）
         g.extend_from_slice(&[0x12 | 0x24, 0x12 | 0x24, 0x12 | 0x24]);
         let d = variant as u8;
         g.extend_from_slice(&[1 + d, 2 + d, 3 + d]); // x 增量
@@ -683,10 +685,8 @@ pub mod tests {
     #[test]
     fn test_font_disk_cache_roundtrip() {
         // URL 分支的磁盘缓存逻辑（直接调用 load_font_bytes 的缓存路径）
-        let dir = std::env::temp_dir().join(format!(
-            "legado_font_cache_test_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("legado_font_cache_test_{}", std::process::id()));
         set_font_cache_dir(dir.clone());
         let key = sha256_hex(b"https://cached.example.com/font.ttf");
         let cache_path = dir.join(format!("{}.ttf", key));
@@ -701,8 +701,7 @@ pub mod tests {
         );
         std::fs::write(&cache_path, &font).unwrap();
         // 磁盘缓存命中：不触发网络下载
-        let bytes =
-            load_font_bytes("https://cached.example.com/font.ttf", "url", &key).unwrap();
+        let bytes = load_font_bytes("https://cached.example.com/font.ttf", "url", &key).unwrap();
         assert_eq!(bytes, font);
         // 清理
         let _ = std::fs::remove_file(&cache_path);

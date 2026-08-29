@@ -39,7 +39,10 @@ mod tests {
         h.insert("X-Novel-Token".to_string(), "SHUSAN_READ_2025".to_string());
         put_headers(tag, h);
         let got = headers_for(tag);
-        assert_eq!(got.get("X-Novel-Token").map(|s| s.as_str()), Some("SHUSAN_READ_2025"));
+        assert_eq!(
+            got.get("X-Novel-Token").map(|s| s.as_str()),
+            Some("SHUSAN_READ_2025")
+        );
     }
 
     #[test]

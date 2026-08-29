@@ -21,12 +21,10 @@ static STYLE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?is)<style[^>]*>.*?</style\s*>").unwrap());
 
 /// 匹配 HTML 注释
-static COMMENT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)<!--[^>]*?-->").unwrap());
+static COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<!--[^>]*?-->").unwrap());
 
 /// 匹配 <img ...> 标签（含自闭合）
-static IMG_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<img\b[^>]*?/?>").unwrap());
+static IMG_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<img\b[^>]*?/?>").unwrap());
 
 /// 从 img 标签中提取指定属性值
 ///
@@ -47,8 +45,7 @@ static BLOCK_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// 匹配所有 HTML 标签（用于最终清除）
-static ALL_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"</?[a-zA-Z][^<>]*>").unwrap());
+static ALL_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?[a-zA-Z][^<>]*>").unwrap());
 
 /// 合并多个连续换行为单个换行
 static MULTI_NEWLINE_RE: LazyLock<Regex> =
@@ -68,13 +65,11 @@ static NUMERIC_ENTITY_RE: LazyLock<Regex> =
 static INTRO_NBSP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(&nbsp;)+").unwrap());
 
 /// `&ensp;` / `&emsp;` → 空格（原版 espRegex）
-static INTRO_ESP_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(&ensp;|&emsp;)").unwrap());
+static INTRO_ESP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(&ensp;|&emsp;)").unwrap());
 
 /// 不可见字符：thinsp/zwnj/zwj 实体 + 字面量 U+2009/U+200C/U+200D → 删除（原版 noPrintRegex）
-static INTRO_NOPRINT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(&thinsp;|&zwnj;|&zwj;|\x{2009}|\x{200C}|\x{200D})").unwrap()
-});
+static INTRO_NOPRINT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(&thinsp;|&zwnj;|&zwj;|\x{2009}|\x{200C}|\x{200D})").unwrap());
 
 /// 块级/换行标签 → `\n`（原版 wrapHtmlRegex：div|p|br|hr|h\d|article|dd|dl）
 static INTRO_WRAP_RE: LazyLock<Regex> =

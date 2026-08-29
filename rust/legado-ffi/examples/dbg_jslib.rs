@@ -31,7 +31,9 @@ fn main() {
         }
     };
 
-    let bili = sources.iter().find(|s| s.book_source_name.contains("哔哩哔哩"));
+    let bili = sources
+        .iter()
+        .find(|s| s.book_source_name.contains("哔哩哔哩"));
     let Some(bili) = bili else {
         eprintln!("未找到哔哩哔哩书源");
         std::process::exit(1);

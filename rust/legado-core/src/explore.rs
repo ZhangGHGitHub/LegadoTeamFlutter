@@ -225,10 +225,7 @@ mod tests {
         let result = parse_explore_url(input);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].title, "玄幻");
-        assert_eq!(
-            result[0].url,
-            Some("https://example.com/xh".to_string())
-        );
+        assert_eq!(result[0].url, Some("https://example.com/xh".to_string()));
         assert_eq!(result[1].title, "都市");
         assert_eq!(result[1].url, None);
     }

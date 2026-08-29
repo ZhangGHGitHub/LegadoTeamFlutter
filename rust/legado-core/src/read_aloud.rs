@@ -554,7 +554,10 @@ mod tests {
     fn test_normalize_http_tts_pause_duration() {
         assert_eq!(normalize_http_tts_pause_duration(500), 500);
         assert_eq!(normalize_http_tts_pause_duration(-1), 0);
-        assert_eq!(normalize_http_tts_pause_duration(99_999), MAX_HTTP_TTS_PAUSE_MS);
+        assert_eq!(
+            normalize_http_tts_pause_duration(99_999),
+            MAX_HTTP_TTS_PAUSE_MS
+        );
         assert_eq!(normalize_http_tts_pause_duration(0), 0);
     }
 

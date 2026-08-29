@@ -782,7 +782,8 @@ mod tests {
                             break;
                         }
                     }
-                    let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok";
+                    let resp =
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok";
                     if sock.write_all(resp).await.is_err() {
                         return;
                     }
@@ -910,9 +911,9 @@ mod tests {
         // SOCKS5 携带 user:pass 凭据的客户端应构建成功
         //（reqwest socks feature 原生解析代理 URL 中的凭据，不实际连接）
         let cfg = LegadoClientConfig {
-            proxy: Some(crate::proxy::parse_proxy_config(
-                "socks5://alice:secret@127.0.0.1:1080",
-            ).unwrap()),
+            proxy: Some(
+                crate::proxy::parse_proxy_config("socks5://alice:secret@127.0.0.1:1080").unwrap(),
+            ),
             ..Default::default()
         };
         let client = LegadoClient::new(cfg);

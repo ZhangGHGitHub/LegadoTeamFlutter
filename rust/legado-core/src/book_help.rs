@@ -11,9 +11,8 @@ use std::sync::OnceLock;
 /// 对齐 `AppPattern.nameRegex = "\\s+作\\s*者.*|\\s+\\S+\\s+著"`。
 pub fn format_book_name(name: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"\s+作\s*者.*|\s+\S+\s+著").expect("nameRegex 编译失败")
-    });
+    let re =
+        RE.get_or_init(|| Regex::new(r"\s+作\s*者.*|\s+\S+\s+著").expect("nameRegex 编译失败"));
     re.replace_all(name, "").trim().to_string()
 }
 
@@ -22,9 +21,8 @@ pub fn format_book_name(name: &str) -> String {
 /// 对齐 `AppPattern.authorRegex = "^\\s*作\\s*者[:：\\s]+|\\s+著"`。
 pub fn format_book_author(author: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"^\s*作\s*者[:：\s]+|\s+著").expect("authorRegex 编译失败")
-    });
+    let re =
+        RE.get_or_init(|| Regex::new(r"^\s*作\s*者[:：\s]+|\s+著").expect("authorRegex 编译失败"));
     re.replace_all(author, "").trim().to_string()
 }
 
