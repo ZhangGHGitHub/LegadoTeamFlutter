@@ -216,15 +216,20 @@ impl RemoteBookManager {
             .collect())
     }
 
-    /// 解析 PROPFIND XML 响应（简化实现）
+    /// 解析 PROPFIND XML 响应
+    ///
+    /// [体检 §二.6] 命名空间前缀无关:真实 WebDAV 服务器的多_STATUS 前缀五花八门
+    /// (`D:`/`d:`/无前缀/自定义前缀),字符串 `split("<D:response>")` 换一个
+    /// 不按 `D:` 前缀返回的服务器会静默变空。改为按**本地名**扫描(大小写不敏感)。
     fn parse_propfind_response(xml: &str, base_path: &str) -> Vec<RemoteBook> {
         let mut books = Vec::new();
-        // 简单解析：查找 <D:response> 块
-        for response_block in xml.split("<D:response>").skip(1) {
-            let href = Self::extract_xml_value(response_block, "D:href");
-            let display_name = Self::extract_xml_value(response_block, "D:displayname");
-            let content_length = Self::extract_xml_value(response_block, "D:getcontentlength");
-            let is_collection = response_block.contains("<D:collection");
+        for response_block in Self::split_blocks_ci(xml, "response") {
+            let href = Self::find_tag_value_ci(&response_block, "href");
+            let display_name = Self::find_tag_value_ci(&response_block, "displayname");
+            let content_length =
+                Self::find_tag_value_ci(&response_block, "getcontentlength")
+                    .and_then(|s| s.parse::<u64>().ok());
+            let is_collection = Self::block_has_tag_ci(&response_block, "collection");
 
             let href = match href {
                 Some(h) => h,
@@ -244,9 +249,7 @@ impl RemoteBookManager {
                     .to_string()
             });
 
-            let size = content_length
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(0);
+            let size = content_length.unwrap_or(0);
 
             let content_type = if is_collection {
                 "folder".to_string()
@@ -266,13 +269,118 @@ impl RemoteBookManager {
         books
     }
 
-    /// 从 XML 片段中提取标签值
-    fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
-        let open = format!("<{tag}>");
-        let close = format!("</{tag}>");
-        let start = xml.find(&open)? + open.len();
-        let end = xml[start..].find(&close)? + start;
-        Some(xml[start..end].to_string())
+    /// [体检 §二.6] 在 XML 中按**本地名**(忽略命名空间前缀,大小写不敏感)查找
+    /// 第一个匹配标签的文本值。`<D:href>`、`<d:href>`、`<href>` 等同价。
+    fn find_tag_value_ci(xml: &str, local: &str) -> Option<String> {
+        let lower = xml.to_ascii_lowercase();
+        let local_l = local.to_ascii_lowercase();
+        let bytes = lower.as_bytes();
+        let mut i = 0;
+        while i < lower.len() {
+            if bytes[i] != b'<' {
+                i += 1;
+                continue;
+            }
+            // 解析标签名(跳过闭合 '/',容忍前缀 ':'),本地名 = 最后一段
+            let name_start = i + 1;
+            let mut j = name_start;
+            while j < lower.len() {
+                let c = bytes[j];
+                if c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b':' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            let full = &lower[name_start..j];
+            let local_part = full.rsplit(':').next().unwrap_or("");
+            if full.starts_with('/') || local_part != local_l {
+                i += 1;
+                continue;
+            }
+            // open 标签结束 '>'
+            let gt = j + lower[j..].find('>')?;
+            // 对应闭合标签 '</(原全名)>'
+            let close_pat = format!("</{full}>");
+            let close_rel = lower[gt..].find(&close_pat)?;
+            let value = xml[gt + 1..gt + close_rel].trim().to_string();
+            return Some(value);
+        }
+        None
+    }
+
+    /// [体检 §二.6] 按本地名把 XML 切分为各 open..close 块内容(前缀无关)。
+    /// 仅要求块不嵌套同名标签(WebDAV multistatus 的 response 块满足)。
+    fn split_blocks_ci(xml: &str, local: &str) -> Vec<String> {
+        let mut blocks = Vec::new();
+        let lower = xml.to_ascii_lowercase();
+        let local_l = local.to_ascii_lowercase();
+        let bytes = lower.as_bytes();
+        let mut i = 0;
+        while i < lower.len() {
+            if bytes[i] != b'<' {
+                i += 1;
+                continue;
+            }
+            let name_start = i + 1;
+            let mut j = name_start;
+            while j < lower.len() {
+                let c = bytes[j];
+                if c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b':' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            let full = &lower[name_start..j];
+            let local_part = full.rsplit(':').next().unwrap_or("");
+            if full.starts_with('/') || local_part != local_l {
+                i += 1;
+                continue;
+            }
+            let Some(gt) = lower[j..].find('>') else { break };
+            let gt_abs = j + gt;
+            let close_pat = format!("</{full}>");
+            let Some(close_rel) = lower[gt_abs..].find(&close_pat) else {
+                i += 1;
+                continue;
+            };
+            let close_start = gt_abs + close_rel;
+            blocks.push(xml[gt_abs + 1..close_start].to_string());
+            i = close_start;
+        }
+        blocks
+    }
+
+    /// [体检 §二.6] 块内是否存在以 local 为本地名的标签(前缀无关)
+    fn block_has_tag_ci(block: &str, local: &str) -> bool {
+        let lower = block.to_ascii_lowercase();
+        let local_l = local.to_ascii_lowercase();
+        let bytes = lower.as_bytes();
+        let mut i = 0;
+        while i < lower.len() {
+            if bytes[i] != b'<' {
+                i += 1;
+                continue;
+            }
+            let name_start = i + 1;
+            let mut j = name_start;
+            while j < lower.len() {
+                let c = bytes[j];
+                if c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b':' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            let full = &lower[name_start..j];
+            let local_part = full.rsplit(':').next().unwrap_or("");
+            if !full.starts_with('/') && local_part == local_l {
+                return true;
+            }
+            i += 1;
+        }
+        false
     }
 }
 
@@ -357,10 +465,38 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_xml_value() {
-        let xml = "<D:href>/dav/test.txt</D:href>";
-        let val = RemoteBookManager::extract_xml_value(xml, "D:href");
-        assert_eq!(val, Some("/dav/test.txt".to_string()));
+    fn test_find_tag_value_ci_prefix_agnostic() {
+        // [体检 §二.6] 三种前缀形态同价:D: / d: / 无前缀
+        assert_eq!(
+            RemoteBookManager::find_tag_value_ci("<D:href>/a</D:href>", "href"),
+            Some("/a".to_string())
+        );
+        assert_eq!(
+            RemoteBookManager::find_tag_value_ci("<d:href>/a</d:href>", "href"),
+            Some("/a".to_string())
+        );
+        assert_eq!(
+            RemoteBookManager::find_tag_value_ci("<href>/a</href>", "href"),
+            Some("/a".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_propfind_prefix_variants() {
+        // [体检 §二.6] 同一多_STATUS 的 D:/无前缀/自定义前缀三种形态必须等价解析
+        let d_form = r#"<?xml version="1.0"?><D:multistatus>
+            <D:response><D:href>/dav/books/</D:href><D:propstat><D:prop><D:collection/></D:prop></D:propstat></D:response>
+            <D:response><D:href>/dav/books/novel.epub</D:href><D:propstat><D:prop><D:getcontentlength>12345</D:getcontentlength></D:prop></D:propstat></D:response>
+        </D:multistatus>"#;
+        let plain_form = d_form.replace("D:", "");
+        let custom_form = d_form.replace("D:", "oc:");
+
+        for (name, xml) in [("D:", d_form), ("无前缀", &plain_form), ("自定义", custom_form.as_str())] {
+            let books = RemoteBookManager::parse_propfind_response(xml, "/dav/books/");
+            assert_eq!(books.len(), 1, "{name}: 应解析出 1 个文件");
+            assert_eq!(books[0].filename, "novel.epub", "{name}");
+            assert_eq!(books[0].size, 12345, "{name}");
+        }
     }
 
     #[test]
