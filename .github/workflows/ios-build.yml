@@ -86,7 +86,8 @@ jobs:
       - name: Build iOS (device, no codesign)
         working-directory: flutter_legado
         run: |
-          flutter build ios --release --no-codesign
+          set -o pipefail
+          flutter build ios --release --no-codesign --verbose 2>&1 | tee ios_device_build.log
 
       - name: Package unsigned IPA
         working-directory: flutter_legado/build/ios/iphoneos
@@ -95,6 +96,15 @@ jobs:
           cp -r Runner.app Payload/
           zip -qry app-unsigned.ipa Payload
           ls -lh app-unsigned.ipa
+
+      - name: Upload device build log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-build-log
+          path: flutter_legado/ios_device_build.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
