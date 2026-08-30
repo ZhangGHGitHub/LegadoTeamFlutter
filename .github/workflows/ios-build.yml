@@ -70,6 +70,9 @@ jobs:
         run: |
           set -euxo pipefail
           export SDKROOT=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          # bindgen 把 rust 三元组 aarch64-apple-ios-sim 原样传 clang（无效），
+          # 追加合法的 -simulator 三元组覆盖（clang 取最后一个 --target）
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-apple-ios-simulator -isysroot $SDKROOT"
           cargo rustc --release --target aarch64-apple-ios-sim -p legado-ffi --lib --crate-type staticlib --features quickjs
           cp target/aarch64-apple-ios-sim/release/liblegado_ffi.a \
              /tmp/liblegado_ffi_sim.a
