@@ -18,6 +18,7 @@ genpdf = { version = "0.2", features = ["images"] }
 # 图片解码（JPEG/PNG）：与 genpdf 的 image 0.23 依赖统一版本，仅启用所需格式
 image = { version = "0.23", default-features = false, features = ["png", "jpeg"] }
 
-# unrar 在 Android 上无法交叉编译（unrar_sys 包含 Windows 专属代码）
-[target.'cfg(not(target_os = "android"))'.dependencies]
+# unrar 在 Android 上无法交叉编译（unrar_sys 含 Windows 专属代码），
+# iOS 与 Android 同策略排除（对齐 Android 行为基线，免 C++ 运行时链接）
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 unrar = "0.5"
