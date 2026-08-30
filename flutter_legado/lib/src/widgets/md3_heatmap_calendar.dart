@@ -1,14 +1,29 @@
 import 'package:flutter/material.dart';
 
-/// MD3 阅读热力图日历（对齐参考仓库 HeatmapCalendar 的 counts 模式：
-/// GitHub 打卡风格，列=周、行=周一~周日，格子按当日阅读书籍数分 5 级配色）
+/// 热力图配色模式（对齐参考仓库 HeatmapMode）
+enum Md3HeatmapMode {
+  /// 每日阅读时长（秒；数据源 readRecordDailyList，Rust 契约 2026-08-29）
+  duration,
+
+  /// 当日阅读书籍数（数据源记录 lastRead 落日去重）
+  count,
+}
+
+/// MD3 阅读热力图日历（对齐参考仓库 HeatmapCalendar：GitHub 打卡风格，
+/// 列=周、行=周一~周日，格子按 5 级配色）
 ///
-/// 数据语义（诚实口径）：值为「当日有阅读记录的书籍数」（按记录
-/// lastRead 落日去重计数）；「每日时长」语义需 Rust 侧日聚合契约，
-/// 登记为跨轨待办，当前不做。
+/// - [Md3HeatmapMode.duration]：按当日阅读秒数分级（readRecordDailyList）；
+/// - [Md3HeatmapMode.count]：按当日阅读书籍数分级（诚实口径 = lastRead
+///   落日去重）。
 class Md3HeatmapCalendar extends StatelessWidget {
-  /// 日 → 当日阅读书籍数
+  /// 时长模式数据：日 → 当日阅读秒数
+  final Map<DateTime, int> dailySeconds;
+
+  /// 计数模式数据：日 → 当日阅读书籍数
   final Map<DateTime, int> dailyCounts;
+
+  /// 当前配色模式
+  final Md3HeatmapMode mode;
 
   /// 结束日期（含当日，通常为今天）；向前铺满 [weeks] 周
   final DateTime endDate;
@@ -21,7 +36,9 @@ class Md3HeatmapCalendar extends StatelessWidget {
 
   const Md3HeatmapCalendar({
     super.key,
+    required this.dailySeconds,
     required this.dailyCounts,
+    required this.mode,
     required this.endDate,
     this.weeks = 52,
     this.color,
@@ -65,12 +82,29 @@ class Md3HeatmapCalendar extends StatelessWidget {
     }
   }
 
+  /// 时长分级阈值（秒）：0 / <10min / <30min / <60min / ≥60min
+  static int levelForSeconds(int seconds) {
+    if (seconds <= 0) return 0;
+    if (seconds < 600) return 1;
+    if (seconds < 1800) return 2;
+    if (seconds < 3600) return 3;
+    return 4;
+  }
+
+  /// 计数分级：0 / 1 / 2 / 3~4 / ≥5 本
   static int levelForCount(int count) {
     if (count <= 0) return 0;
     if (count == 1) return 1;
     if (count == 2) return 2;
     if (count <= 4) return 3;
     return 4;
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds < 60) return '$seconds 秒';
+    final m = seconds ~/ 60;
+    if (m < 60) return '$m 分钟';
+    return '${m ~/ 60} 小时 ${m % 60} 分';
   }
 
   @override
@@ -89,12 +123,25 @@ class Md3HeatmapCalendar extends StatelessWidget {
       final weekEnd = end.subtract(Duration(days: 7 * w));
       for (var d = 6; d >= 0; d--) {
         final day = weekEnd.subtract(Duration(days: d));
-        cells.add((day, dailyCounts[day] ?? 0));
+        final count = dailyCounts[day] ?? 0;
+        final seconds = dailySeconds[day] ?? 0;
+        final level = mode == Md3HeatmapMode.duration
+            ? levelForSeconds(seconds)
+            : levelForCount(count);
+        cells.add((day, level));
       }
     }
     // 未来日期格子隐藏（弱化为不可见底格）
     final today = DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
+
+    String tooltipFor(DateTime day, int level) {
+      if (day.isAfter(todayDay)) return '';
+      if (mode == Md3HeatmapMode.duration) {
+        return '${day.month}/${day.day} · ${_formatDuration(dailySeconds[day] ?? 0)}';
+      }
+      return '${day.month}/${day.day} · ${dailyCounts[day] ?? 0} 本';
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,16 +160,12 @@ class Md3HeatmapCalendar extends StatelessWidget {
                     for (var r = 0; r < 7; r++)
                       Builder(
                         builder: (context) {
-                          final (day, count) = cells[c * 7 + r];
+                          final (day, level) = cells[c * 7 + r];
                           final isFuture = day.isAfter(todayDay);
-                          final level = levelForCount(count);
                           return Padding(
                             padding: const EdgeInsets.all(1.5),
                             child: Tooltip(
-                              message: isFuture
-                                  ? ''
-                                  : '${day.month}/${day.day}'
-                                      ' · $count 本',
+                              message: tooltipFor(day, level),
                               triggerMode: TooltipTriggerMode.tap,
                               child: Container(
                                 width: 12,
@@ -168,7 +211,9 @@ class Md3HeatmapCalendar extends StatelessWidget {
                 ),
               ),
             Text(
-              '多（格 = 当日阅读书籍数）',
+              mode == Md3HeatmapMode.duration
+                  ? '多（格 = 当日阅读时长）'
+                  : '多（格 = 当日阅读书籍数）',
               style: Theme.of(context)
                   .textTheme
                   .labelSmall

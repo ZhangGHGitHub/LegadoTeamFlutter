@@ -174,7 +174,8 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
         separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
         itemBuilder: (context, index) {
           // [阅读热力图] 默认收起的可选区块（用户授权新增，AGENTS 红线
-          // 2026-08-29 口径）：counts 模式 = 当日阅读书籍数
+          // 2026-08-29 口径）：时长模式 = readRecordDailyList（Rust 契约
+          // 2026-08-29）；计数模式 = 记录 lastRead 落日去重
           if (index == 0) {
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -186,21 +187,14 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 subtitle: Text(
-                  '近一年每日阅读书籍数',
+                  '近一年每日阅读情况',
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
                       ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 children: [
-                  Md3HeatmapCalendar(
-                    dailyCounts: Md3HeatmapCalendar.aggregateDailyBookCount(
-                      state.records.map(
-                        (r) => (bookName: r.bookName, lastRead: r.lastRead),
-                      ),
-                    ),
-                    endDate: DateTime.now(),
-                  ),
+                  _HeatmapSection(records: state.records),
                 ],
               ),
             );
@@ -414,6 +408,105 @@ class _ReadRecordTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// 热力图区块：懒加载每日时长（readRecordDailyList）+ 时长/本数双模式切换
+class _HeatmapSection extends ConsumerStatefulWidget {
+  final List<ReadRecordShow> records;
+
+  const _HeatmapSection({required this.records});
+
+  @override
+  ConsumerState<_HeatmapSection> createState() => _HeatmapSectionState();
+}
+
+class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
+  Md3HeatmapMode _mode = Md3HeatmapMode.duration;
+  Map<DateTime, int>? _dailySeconds;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDaily();
+  }
+
+  Future<void> _loadDaily() async {
+    try {
+      final list = await ref
+          .read(bookApiProvider)
+          .readRecordDailyList(DateTime.now().year);
+      if (!mounted) return;
+      final map = <DateTime, int>{};
+      for (final e in list) {
+        final date = (e['date'] ?? '').toString();
+        final seconds = (e['seconds'] as num?)?.toInt() ?? 0;
+        if (date.isEmpty) continue;
+        final parts = date.split('-');
+        if (parts.length != 3) continue;
+        map[DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+          int.parse(parts[2]),
+        )] = seconds;
+      }
+      setState(() => _dailySeconds = map);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dailyCounts = Md3HeatmapCalendar.aggregateDailyBookCount(
+      widget.records.map(
+        (r) => (bookName: r.bookName, lastRead: r.lastRead),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SegmentedButton<Md3HeatmapMode>(
+          segments: const [
+            ButtonSegment(
+              value: Md3HeatmapMode.duration,
+              label: Text('按时长'),
+              icon: Icon(Symbols.timer_rounded, size: 16),
+            ),
+            ButtonSegment(
+              value: Md3HeatmapMode.count,
+              label: Text('按本数'),
+              icon: Icon(Symbols.menu_book_rounded, size: 16),
+            ),
+          ],
+          selected: {_mode},
+          onSelectionChanged: (selection) =>
+              setState(() => _mode = selection.first),
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_error != null)
+          Text(
+            '每日时长加载失败：$_error',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+          )
+        else
+          Md3HeatmapCalendar(
+            dailySeconds: _dailySeconds ?? const {},
+            dailyCounts: dailyCounts,
+            mode: _dailySeconds == null && _mode == Md3HeatmapMode.duration
+                ? Md3HeatmapMode.count
+                : _mode,
+            endDate: DateTime.now(),
+          ),
+      ],
     );
   }
 }
