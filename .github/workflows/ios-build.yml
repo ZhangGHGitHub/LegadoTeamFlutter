@@ -93,16 +93,15 @@ jobs:
       # Dart 侧运行时 dlsym 查找固定符号 frb_pde_ffi_dispatcher_primary /
       # frb_init_frb_dart_api_dl（并非逐函数的 wire__* 符号）。Release 设备构建
       # 默认 strip 会剥掉符号表导致查不到——必须校验真实符号存在。
+      # 注意：Apple strings 不扫描 Mach-O __LINKEDIT（符号表区），必须用 nm 校验。
       - name: Verify Rust PDE symbols in device binary
         run: |
           set -euxo pipefail
           BIN=flutter_legado/build/ios/iphoneos/Runner.app/Runner
           echo "== symtab 符号总数 =="
           nm "$BIN" 2>/dev/null | wc -l || true
-          echo "== PDE 分发器符号（nm -g）=="
-          nm -g "$BIN" 2>/dev/null | grep -E "frb_pde_ffi_dispatcher_primary|frb_init_frb_dart_api_dl" || true
-          COUNT=$(strings "$BIN" | grep -c "frb_pde_ffi_dispatcher_primary" || true)
-          echo "PDE dispatcher symbols in device binary: $COUNT"
+          COUNT=$(nm -g "$BIN" 2>/dev/null | grep -c "frb_pde_ffi_dispatcher_primary" || true)
+          echo "PDE dispatcher symbols (nm -g): $COUNT"
           if [ "$COUNT" -eq 0 ]; then
             echo "::error::设备二进制缺少 FRB PDE 分发器符号（frb_pde_ffi_dispatcher_primary）——dlsym 运行时查找必然失败；检查 DEAD_CODE_STRIPPING / STRIP_INSTALLED_PRODUCT 是否生效"
             exit 1
@@ -144,8 +143,8 @@ jobs:
         run: |
           set -euxo pipefail
           BIN=flutter_legado/build/ios/iphonesimulator/Runner.app/Runner
-          COUNT=$(strings "$BIN" | grep -c "frb_pde_ffi_dispatcher_primary" || true)
-          echo "PDE dispatcher symbols in simulator binary: $COUNT"
+          COUNT=$(nm -g "$BIN" 2>/dev/null | grep -c "frb_pde_ffi_dispatcher_primary" || true)
+          echo "PDE dispatcher symbols (nm -g): $COUNT"
           if [ "$COUNT" -eq 0 ]; then
             echo "::error::模拟器二进制缺少 FRB PDE 分发器符号（frb_pde_ffi_dispatcher_primary）"
             exit 1
