@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RustFFI'
-  s.version          = '1.0.1'
+  s.version          = '1.0.2'
   s.summary          = 'Rust FFI 静态库（legado-ffi）iOS 静态链接'
   s.description      = 'liblegado_ffi.a 由 .github/workflows/ios-build.yml 预编译并放置到本目录；' \
                        '通过 -force_load 保证 Dart FFI（DynamicLibrary.process）运行时可查符号。'
@@ -16,11 +16,14 @@ Pod::Spec.new do |s|
   s.user_target_xcconfig = {
     # Dart FFI 运行时查符号依赖最终二进制包含全部对象：正常链接只抽取被引用对象，
     # 必须 -force_load 全量载入（PROJECT_DIR = ios/ 目录，路径稳定）。
-    # DEAD_CODE_STRIPPING 必须关闭：Release 真机构建默认开启 -dead_strip，
-    # 会把链接期无引用的 Rust wire 符号裁掉（模拟器 debug 构建不裁剪，
-    # 导致"真机 Rust 引擎初始化失败而模拟器正常"——首个 wire 调用报
-    # Couldn't resolve native function）。
     'OTHER_LDFLAGS' => '$(inherited) -force_load ${PROJECT_DIR}/RustFFI/libliblegado_ffi.a',
-    'DEAD_CODE_STRIPPING' => 'NO'
+    # 三项协同防止符号被"无声裁掉"导致真机 Rust 初始化失败：
+    # 1) 链接期死代码裁剪（会裁掉链接期无引用的 wire 符号）
+    'DEAD_CODE_STRIPPING' => 'NO',
+    # 2) 链接后安装期 strip：Release 默认 STRIP_INSTALLED_PRODUCT=YES 且
+    #    默认样式连全局符号一并剥离——dlsym 运行时查不到（模拟器 debug
+    #    构建无此阶段，即"真机失败而模拟器正常"的根因）
+    'STRIP_INSTALLED_PRODUCT' => 'NO',
+    'STRIP_STYLE' => 'non-global'
   }
 end
