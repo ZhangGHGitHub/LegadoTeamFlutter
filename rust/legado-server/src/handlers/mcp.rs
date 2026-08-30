@@ -1297,75 +1297,75 @@ async fn call_check_sources(
 const HELP_DOCS: &[(&str, &str)] = &[
     (
         "ExtensionContentType",
-        include_str!("../../../../app/src/main/assets/web/help/md/ExtensionContentType.md"),
+        include_str!("../../../assets/web/help/md/ExtensionContentType.md"),
     ),
     (
         "SourceMBookHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/SourceMBookHelp.md"),
+        include_str!("../../../assets/web/help/md/SourceMBookHelp.md"),
     ),
     (
         "SourceMRssHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/SourceMRssHelp.md"),
+        include_str!("../../../assets/web/help/md/SourceMRssHelp.md"),
     ),
     (
         "appHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/appHelp.md"),
+        include_str!("../../../assets/web/help/md/appHelp.md"),
     ),
     (
         "autoTaskHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/autoTaskHelp.md"),
+        include_str!("../../../assets/web/help/md/autoTaskHelp.md"),
     ),
     (
         "debugHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/debugHelp.md"),
+        include_str!("../../../assets/web/help/md/debugHelp.md"),
     ),
     (
         "dictRuleHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/dictRuleHelp.md"),
+        include_str!("../../../assets/web/help/md/dictRuleHelp.md"),
     ),
     (
         "httpTTSHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/httpTTSHelp.md"),
+        include_str!("../../../assets/web/help/md/httpTTSHelp.md"),
     ),
     (
         "jsHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/jsHelp.md"),
+        include_str!("../../../assets/web/help/md/jsHelp.md"),
     ),
     (
         "readMenuHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/readMenuHelp.md"),
+        include_str!("../../../assets/web/help/md/readMenuHelp.md"),
     ),
     (
         "regexHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/regexHelp.md"),
+        include_str!("../../../assets/web/help/md/regexHelp.md"),
     ),
     (
         "replaceRuleHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/replaceRuleHelp.md"),
+        include_str!("../../../assets/web/help/md/replaceRuleHelp.md"),
     ),
     (
         "rssRuleHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/rssRuleHelp.md"),
+        include_str!("../../../assets/web/help/md/rssRuleHelp.md"),
     ),
     (
         "ruleHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/ruleHelp.md"),
+        include_str!("../../../assets/web/help/md/ruleHelp.md"),
     ),
     (
         "txtTocRuleHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/txtTocRuleHelp.md"),
+        include_str!("../../../assets/web/help/md/txtTocRuleHelp.md"),
     ),
     (
         "webDavBookHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/webDavBookHelp.md"),
+        include_str!("../../../assets/web/help/md/webDavBookHelp.md"),
     ),
     (
         "webDavHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/webDavHelp.md"),
+        include_str!("../../../assets/web/help/md/webDavHelp.md"),
     ),
     (
         "xpathHelp",
-        include_str!("../../../../app/src/main/assets/web/help/md/xpathHelp.md"),
+        include_str!("../../../assets/web/help/md/xpathHelp.md"),
     ),
 ];
 
