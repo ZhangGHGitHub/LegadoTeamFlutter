@@ -29,7 +29,7 @@ declare -A ABI_MAP=(
 read_hash() {
     local file="$1"
     local pattern="$2"
-    grep -oP "$pattern" "$file" | head -1 | grep -oP '\-?\d+'
+    grep -oP "$pattern" "$file" | head -1 | grep -oP '\d+$'
 }
 
 DART_HASH="$(read_hash "$DART_FRB" 'rustContentHash\s*=>\s*-?\d+')"
