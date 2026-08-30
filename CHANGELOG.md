@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [iOS 轨 P2-B 原生补齐批次 2026-08-30]（版本 2.0.130+132）
+
+### Added
+- [iOS] 登录 Cookie 捕获：WKWebView Cookie 存于 WKHTTPCookieStore 且 webview_flutter 不暴露读取接口，_syncCookie 加 iOS 分支经 document.cookie 读取（局限：httpOnly 读不到，Android 通道无此限制；注释已注明）——书源 WebView 登录链路 iOS 可用
+- [iOS] 后台听书基础：Info.plist UIBackgroundModes=audio + AppDelegate 配置 AVAudioSession .playback/.spokenAudio（不加 mixWithOthers，对齐 Android 音频焦点独占语义；静音开关不影响朗读、退后台继续播放）
+
+### Closed
+- [iOS] saf 条件化销记：audio_screen.dart（useSaf 含 Platform.isAndroid）与 bookmark_export.dart（仅 Android 走 SAF）既有守卫已覆盖 P2 对照表场景，无需改动
+- [iOS] backstageEval 销记：platform_bridge_service 回退链路本就基于 webview_flutter（iOS=WKWebView 原生可用），无需 flutter_inappwebview
+
+### Remaining（P2-C 待启动）
+- [iOS] 锁屏控制/Now Playing：audio_service 包裹 StreamAudioPlayer（或原生 MPNowPlayingInfoCenter/远程命令），需重构音频播放接入 AudioHandler
+- [iOS] 自动任务 iOS 降级策略（workmanager/BGTaskScheduler 受 OS 约束）
+- [iOS] 逐功能真机走查（朗读出声/通知弹出/深链唤起/退后台续播）
+
+- Contributor: Qoder + Bridge
+
 ## [iOS 轨 P2-A 原生补齐批次 2026-08-30]（版本 2.0.129+132，简单通道五件套）
 
 ### Added
