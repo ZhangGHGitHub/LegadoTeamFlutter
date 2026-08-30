@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [iOS 轨 P2-A 原生补齐批次 2026-08-30]（版本 2.0.129+132，简单通道五件套）
+
+### Added
+- [iOS] P2-A 五通道插件化落地（每条 Android 走既有 Kotlin 桥零回归、iOS 走插件双分支）：TTS（flutter_tts 4.2.5，setSpeed 按 speed/2 折算 AVSpeech 刻度）/ 通知（flutter_local_notifications 18.0.1，下载与阅读状态固定 id 1/2，前台服务通知 iOS 空实现）/ 亮度（screen_brightness 2.1.11，应用窗口亮度）/ 设备号（device_info_plus 11.5.0 identifierForVendor，消除 P1 已知 MissingPluginException 降级项——模拟器实测 IDFV 注入成功）/ 深链（app_links 6.4.1 + Info.plist 注册 legado/yuedu scheme）
+- [CI] iOS Build/Flutter CI/Integration Smoke 三工作流全绿；模拟器冒烟日志确认设备 ID 注入（iOS IDFV）真实工作
+
+### Remaining（P2-B 待启动）
+- [iOS] 后台隐身 WebView JS 求值（backstageEval）+ Cookie 同步：flutter_inappwebview
+- [iOS] 后台听书三件套（前台服务/媒体会话/通知联动）：audio_service 包裹 StreamAudioPlayer
+- [iOS] saf 插件调用点条件化（5+ 页面，file_picker 兜底）
+
+- Contributor: Qoder + Bridge
+
 ## [iOS 轨 P1 里程碑批次 2026-08-30]（版本 2.0.128+132，Flutter+Rust 三端通用）
 
 ### Added
