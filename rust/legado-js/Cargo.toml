@@ -83,10 +83,10 @@ quickjs = [
     "dep:legado-net",
 ]
 
-# [iOS 轨 P1] rquickjs-sys 0.9 预置绑定仅覆盖 android/darwin/linux/windows，
+# [iOS 轨 P1] CI 全平台走 bindgen 运行时生成（linux/macos 自带 libclang；
 # 无 iOS 目标——apple 平台启用 bindgen 运行时生成（CI macOS runner 自带 libclang；
-# 本地 Windows/预生成绑定路径不受影响）
-[target.'cfg(target_vendor = "apple")'.dependencies.rquickjs]
+# 本地 Windows 仍用预生成绑定，无需 LLVM）
+[target.'cfg(not(target_os = "windows"))'.dependencies.rquickjs]
 version = "0.9"
 optional = true
 features = ["bindgen"]
