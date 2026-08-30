@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [iOS 轨 P1 里程碑批次 2026-08-30]（版本 2.0.128+132，Flutter+Rust 三端通用）
+
+### Added
+- [iOS] P1 里程碑达成：ios-build.yml（macos-15）全绿——Rust FFI 真机/模拟器双 target 静态库（quickjs）→ 未签名 ipa artifact（14 天保留）→ iOS 模拟器启动冒烟（书架页截图/进程存活/日志三证据），Rust FFI 静态链接实测工作（初始化 142ms、ttsSetCacheDir ok、DB 打开）
+- [iOS] Dart 侧 _resolveFfiLibrary 增加 iOS 分支：静态链接符号经 ExternalLibrary.process() 查找（FRB 默认 loader 只找 dylib/framework）
+- [iOS] ios/Podfile 初始化 + RustFFI 本地 pod（vendored_libraries + -force_load 全量载入，Dart FFI 运行时查符号依赖最终二进制含全部对象）
+- [CI] 新增 .github/workflows/ios-build.yml（Rust iOS 编译 → Xcode 无签名构建 → Payload 打包 → 模拟器冒烟）
+
+### Fixed
+- [Rust] 解除对 app/ 目录的编译期依赖（安卓源码移出后 CI 编译失败）：dictRules/coverRule 种子 JSON 收入 rust/assets/defaultData/；mcp.rs 的 18 个 web help md 收入 rust/assets/web/help/md/；unrar（C++）与 Android 同策略排除 iOS（archive.rs 降级分支扩为 any(android, ios)）
+- [Rust] legado-js：rquickjs 对 apple 目标启用 bindgen 运行时生成（rquickjs-sys 0.9 预置绑定无 iOS；本地 Windows 预生成绑定路径不变）
+- [CI] rust-toolchain.toml 锁定 1.97.1 导致 cross-target 编译 E0463（target 装在 stable）：ios-build/flutter-ci 改 working-directory rust 内 rustup target add
+- [CI] iOS 构建改 cargo rustc --crate-type staticlib（跳过无用的 cdylib 链接，compiler-rt ___chkstk_darwin 缺失）；模拟器 bindgen 追加 -simulator 三元组覆盖 rust 风格 --target；模拟器构建改 debug（flutter 不支持 simulator+release）
+- [CI] Flutter 版本统一 3.44.8（book_group_screen onReorderItem 需 3.44+；本地即 3.44.8，ios-build/flutter-release 同步）；flutter-ci 补 workflow_dispatch
+
+### Known Issues
+- [iOS] 设备 ID 注入 MissingPluginException（预期内，P2 用 device_info_plus 替换）
+- [iOS] ipa 为未签名，装机需 AltStore/Sideloadly/爱思助手自签（7 天）；正式分发需 $99 开发者账号（待用户决策）
+- [iOS] RAR 漫画不支持（与 Android 基线一致）
+
+- Contributor: Qoder + Bridge
+
 ## [GitHub CI 收敛批次 2026-08-30]（仓库治理，不涉应用功能）
 
 ### Changed
