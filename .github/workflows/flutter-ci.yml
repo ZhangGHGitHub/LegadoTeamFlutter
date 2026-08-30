@@ -49,9 +49,12 @@ jobs:
           # rust/rust-toolchain.toml 锁定 1.97.1：target 必须装进该工具链
           # （dtolnay action 的 targets 装的是 stable，与本工作区编译无关）
           rustup target add aarch64-linux-android x86_64-linux-android
-          # rquickjs-sys 在 CI 走 bindgen 运行时生成，需 NDK bionic sysroot 头文件
-          export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=${{ env.NDK_TOOLCHAIN }}/sysroot"
+          # rquickjs-sys 在 CI 走 bindgen 运行时生成：NDK bionic sysroot +
+          # 三元组专属 asm 头目录（clang 不会自动加 usr/include/<triple>）
+          NDK_SYS="${{ env.NDK_TOOLCHAIN }}/sysroot"
+          export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$NDK_SYS -I$NDK_SYS/usr/include/aarch64-linux-android"
           cargo build --target aarch64-linux-android -p legado-ffi --features quickjs
+          export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$NDK_SYS -I$NDK_SYS/usr/include/x86_64-linux-android"
           cargo build --target x86_64-linux-android -p legado-ffi --features quickjs
       - name: Copy .so to jniLibs with meta
         working-directory: rust
