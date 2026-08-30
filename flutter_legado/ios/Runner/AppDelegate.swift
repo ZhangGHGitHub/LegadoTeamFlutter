@@ -26,7 +26,8 @@ import UIKit
     // [iOS 轨 P2-C] 注册锁屏控制通道（legado/media_session，协议对齐
     // Android MediaSessionBridge.kt）。registry 协议仅暴露 registrar，
     // messenger 经 registrar 取（FlutterPlugin.h FlutterBaseRegistrar）。
-    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NowPlayingBridge")
-    NowPlayingBridge.shared.attach(messenger: registrar.messenger)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NowPlayingBridge") {
+      NowPlayingBridge.shared.attach(messenger: registrar.messenger())
+    }
   }
 }

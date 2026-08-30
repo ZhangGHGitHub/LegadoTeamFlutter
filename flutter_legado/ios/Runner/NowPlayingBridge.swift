@@ -87,15 +87,10 @@ import UIKit
       isPlaying = true
       nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
       nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = positionMs / 1000
-      nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackStatus] =
-        MPNowPlayingPlaybackStatus.playing
     case "paused", "buffering":
       isPlaying = false
       nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
       nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = positionMs / 1000
-      nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackStatus] =
-        state == "buffering" ? MPNowPlayingPlaybackStatus.interrupted
-          : MPNowPlayingPlaybackStatus.paused
     default: // stopped
       clearNowPlaying()
       return
