@@ -31,6 +31,13 @@ jobs:
         with:
           workspaces: rust
 
+      # rustup toolchain install --target 在镜像预装工具链上可能静默漏装目标 std，
+      # 显式补装并留诊断（首跑 E0463 can not find core 根因）
+      - name: Ensure Rust iOS targets
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          rustup target list --installed
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
