@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
 - [iOS] ipa 为未签名，装机需 AltStore/Sideloadly/爱思助手自签（7 天）；正式分发需 $99 开发者账号（待用户决策）
 - [iOS] RAR 漫画不支持（与 Android 基线一致）
 
+- [CI] flutter-ci android-ffi-sync 首次全绿（该 job 自创建以来因 E0463 从未通过，本轮逐层修复后完整跑通）：NDK CC/AR 按 target 显式注入（ring 等 C 依赖）；bindgen NDK bionic sysroot + 三元组 asm 头目录；verify-ffi-android.sh hash 提取修正（i32 的 32 被误抽数致校验恒失败）；FFI 运行时流测试非 Windows 跳过（CI 无 DLL 产物）
+- Contributor: Qoder + Bridge
+
 - Contributor: Qoder + Bridge
 
 ## [GitHub CI 收敛批次 2026-08-30]（仓库治理，不涉应用功能）
