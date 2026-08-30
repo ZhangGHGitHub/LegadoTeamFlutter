@@ -9,8 +9,9 @@ legado-parser = { path = "../legado-parser" }
 
 # rquickjs 是重型依赖（需编译 QuickJS C 代码），设为可选 feature
 # 启用方式: cargo build --features quickjs
-# 注意："bindgen" 需要 libclang；已移除，使用预生成的绑定
+# 注意："bindgen" 需要 libclang；非 apple 平台使用预生成绑定
 rquickjs = { version = "0.9", features = ["parallel", "classes", "properties", "loader", "chrono", "macro"], optional = true }
+
 
 # 编解码与加密 crate（sha2/base64 为字体反爬 cmap 解析必需，非可选；其余随 quickjs feature 启用）
 md-5     = { version = "0.10", features = ["oid"], optional = true }
@@ -81,3 +82,11 @@ quickjs = [
     "dep:tokio",
     "dep:legado-net",
 ]
+
+# [iOS 轨 P1] rquickjs-sys 0.9 预置绑定仅覆盖 android/darwin/linux/windows，
+# 无 iOS 目标——apple 平台启用 bindgen 运行时生成（CI macOS runner 自带 libclang；
+# 本地 Windows/预生成绑定路径不受影响）
+[target.'cfg(target_vendor = "apple")'.dependencies.rquickjs]
+version = "0.9"
+optional = true
+features = ["bindgen"]

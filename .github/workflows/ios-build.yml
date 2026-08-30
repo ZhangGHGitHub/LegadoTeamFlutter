@@ -53,18 +53,26 @@ jobs:
         run: flutter pub get
 
       # ── Rust FFI 静态库（真机 + 模拟器分开构建，不可 lipo 混合）──
-      - name: Build Rust FFI (iOS device + simulator)
+      # rquickjs-sys 对 iOS 无预置绑定，apple 目标走 bindgen 运行时生成，
+      # 需要对应 SDK 的 sysroot（SDKROOT 逐 target 注入）
+      - name: Build Rust FFI (iOS device)
         working-directory: rust
         run: |
           set -euxo pipefail
+          export SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
           cargo build --release --target aarch64-apple-ios -p legado-ffi --features quickjs
-          cargo build --release --target aarch64-apple-ios-sim -p legado-ffi --features quickjs
           mkdir -p ../flutter_legado/ios/RustFFI
           cp target/aarch64-apple-ios/release/liblegado_ffi.a \
              ../flutter_legado/ios/RustFFI/libliblegado_ffi.a
+
+      - name: Build Rust FFI (iOS simulator)
+        working-directory: rust
+        run: |
+          set -euxo pipefail
+          export SDKROOT=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          cargo build --release --target aarch64-apple-ios-sim -p legado-ffi --features quickjs
           cp target/aarch64-apple-ios-sim/release/liblegado_ffi.a \
              /tmp/liblegado_ffi_sim.a
-          ls -lh ../flutter_legado/ios/RustFFI/
 
       # ── 真机未签名 ipa ──
       - name: CocoaPods install
