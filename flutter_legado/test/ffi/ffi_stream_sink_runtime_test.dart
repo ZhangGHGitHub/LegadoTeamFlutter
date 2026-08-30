@@ -96,6 +96,13 @@ Future<_CollectResult> _collect(
 
 void main() {
   setUpAll(() async {
+    // 该测试依赖 Windows 构建的 DLL 产物（rust/target/debug），
+    // CI（ubuntu/macOS）无产物，非 Windows 直接跳过
+    if (!Platform.isWindows) {
+      // ignore: avoid_print
+      print('跳过 FFI 运行时流测试：需要 Windows DLL 产物');
+      return;
+    }
     // 显式加载真实 DLL（非 frb 默认加载逻辑，非 Mock）
     final lib = ExternalLibrary.open(_resolveDll());
     await RustLib.init(externalLibrary: lib);
