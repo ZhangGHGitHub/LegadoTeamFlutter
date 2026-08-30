@@ -34,6 +34,9 @@ jobs:
       # rustup toolchain install --target 在镜像预装工具链上可能静默漏装目标 std，
       # 显式补装并留诊断（首跑 E0463 can not find core 根因）
       - name: Ensure Rust iOS targets
+        # rust/rust-toolchain.toml 锁定 1.97.1：cargo 在 rust/ 下运行时会切换到
+        # 该工具链，target 必须装进它而非 stable——working-directory 触发 toml 解析
+        working-directory: rust
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim
           rustup target list --installed
