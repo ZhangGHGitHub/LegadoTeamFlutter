@@ -17,7 +17,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     env:
-      FLUTTER_VERSION: '3.41.7'
+      FLUTTER_VERSION: '3.44.8'
     steps:
       - uses: actions/checkout@v7
 

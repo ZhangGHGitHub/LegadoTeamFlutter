@@ -38,6 +38,9 @@ jobs:
       - name: Build Rust FFI for Android (debug, aarch64+x86_64)
         working-directory: rust
         run: |
+          # rust/rust-toolchain.toml 锁定 1.97.1：target 必须装进该工具链
+          # （dtolnay action 的 targets 装的是 stable，与本工作区编译无关）
+          rustup target add aarch64-linux-android x86_64-linux-android
           cargo build --target aarch64-linux-android -p legado-ffi --features quickjs
           cargo build --target x86_64-linux-android -p legado-ffi --features quickjs
       - name: Copy .so to jniLibs with meta
