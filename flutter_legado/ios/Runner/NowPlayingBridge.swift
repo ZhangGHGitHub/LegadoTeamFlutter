@@ -158,7 +158,8 @@ import UIKit
     interruptionsObserved = true
     NotificationCenter.default.addObserver(
       forName: AVAudioSession.interruptionNotification,
-      object: AVAudioSession.sharedInstance()
+      object: AVAudioSession.sharedInstance(),
+      queue: .main
     ) { [weak self] notification in
       guard
         let info = notification.userInfo,
