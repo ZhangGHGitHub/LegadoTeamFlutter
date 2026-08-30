@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用图标自适应背景（对齐参考仓库 legado-with-MD3） -->
+    <color name="ic_launcher_background">#2E2D3D</color>
+</resources>
