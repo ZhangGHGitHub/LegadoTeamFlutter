@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [iOS 轨真机 Rust 初始化修复批次 2026-08-31]（版本 2.0.133+134）
+
+### Fixed
+- [iOS] 真机「Rust 引擎初始化失败」根因闭环：FRB 2.11 采用 PDE 分发器架构，Dart 侧运行时 dlsym 查找的是固定符号 frb_pde_ffi_dispatcher_primary / frb_init_frb_dart_api_dl 等（并非逐函数的 wire__* 符号）；Release 设备构建默认剥离符号表——实测修复前 ipa 的 Runner 二进制 nsyms=0、全部 FFI 符号缺失，dlsym 必然失败（模拟器 debug 无 strip 阶段故正常）。链接配置收敛为：-force_load 全量载入 + DEAD_CODE_STRIPPING=NO（防链接期裁掉无引用对象）+ STRIP_INSTALLED_PRODUCT=NO（防链接后剥符号表）
+- [iOS] 移除上一轮误加的 exported_symbols_list 白名单（仅含 `_*`，会把全部 frb_* 导出排除在可执行文件导出区之外——与真机失败同向叠加的第三项有害配置）
+- [CI] 符号校验步骤此前 grep 不存在的 wire__crate__ffi 名称（前两轮"失败"均为检查自身误报，非构建问题）；改为校验真实 PDE 符号并打印 symtab 符号总数作为诊断
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.132] - 2026-08-29
 
 ### Changed

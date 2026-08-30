@@ -89,20 +89,22 @@ jobs:
           set -o pipefail
           flutter build ios --release --no-codesign --verbose 2>&1 | tee ios_device_build.log
 
-      # 防"真机 Rust 引擎初始化失败"回归：Release 设备构建若开启
-      # dead-code stripping 会裁掉 FFI 运行时才查找的 wire 符号
-      - name: Verify Rust symbols in device binary
+      # 防"真机 Rust 引擎初始化失败"回归：FRB 2.11 采用 PDE 分发器架构，
+      # Dart 侧运行时 dlsym 查找固定符号 frb_pde_ffi_dispatcher_primary /
+      # frb_init_frb_dart_api_dl（并非逐函数的 wire__* 符号）。Release 设备构建
+      # 默认 strip 会剥掉符号表导致查不到——必须校验真实符号存在。
+      - name: Verify Rust PDE symbols in device binary
         run: |
           set -euxo pipefail
           BIN=flutter_legado/build/ios/iphoneos/Runner.app/Runner
-          echo "== nm defined globals (wire sample) =="
-          nm -gU "$BIN" 2>/dev/null | grep "wire__crate__ffi" | head -5 || true
-          echo "== symtab size =="
-          size -m "$BIN" 2>/dev/null | grep -iA2 symbol || true
-          COUNT=$(strings "$BIN" | grep -c "wire__crate__ffi" || true)
-          echo "wire symbols in device binary: $COUNT"
+          echo "== symtab 符号总数 =="
+          nm "$BIN" 2>/dev/null | wc -l || true
+          echo "== PDE 分发器符号（nm -g）=="
+          nm -g "$BIN" 2>/dev/null | grep -E "frb_pde_ffi_dispatcher_primary|frb_init_frb_dart_api_dl" || true
+          COUNT=$(strings "$BIN" | grep -c "frb_pde_ffi_dispatcher_primary" || true)
+          echo "PDE dispatcher symbols in device binary: $COUNT"
           if [ "$COUNT" -eq 0 ]; then
-            echo "::error::设备二进制无 Rust wire 符号（DEAD_CODE_STRIPPING 被重新开启或链接配置失效）"
+            echo "::error::设备二进制缺少 FRB PDE 分发器符号（frb_pde_ffi_dispatcher_primary）——dlsym 运行时查找必然失败；检查 DEAD_CODE_STRIPPING / STRIP_INSTALLED_PRODUCT 是否生效"
             exit 1
           fi
 
@@ -138,14 +140,14 @@ jobs:
           cp /tmp/liblegado_ffi_sim.a ios/RustFFI/libliblegado_ffi.a
           flutter build ios --simulator --debug
 
-      - name: Verify Rust symbols in simulator binary
+      - name: Verify Rust PDE symbols in simulator binary
         run: |
           set -euxo pipefail
           BIN=flutter_legado/build/ios/iphonesimulator/Runner.app/Runner
-          COUNT=$(strings "$BIN" | grep -c "wire__crate__ffi" || true)
-          echo "wire symbols in simulator binary: $COUNT"
+          COUNT=$(strings "$BIN" | grep -c "frb_pde_ffi_dispatcher_primary" || true)
+          echo "PDE dispatcher symbols in simulator binary: $COUNT"
           if [ "$COUNT" -eq 0 ]; then
-            echo "::error::模拟器二进制无 Rust wire 符号"
+            echo "::error::模拟器二进制缺少 FRB PDE 分发器符号（frb_pde_ffi_dispatcher_primary）"
             exit 1
           fi
 
