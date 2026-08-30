@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.132] - 2026-08-29
+
+### Changed
+- [UI] 热力图升级「按时长」模式（消费 Rust 契约 readRecordDailyList，API_CONTRACT §2.12 2026-08-29）：阅读记录页热力图新增 时长/本数 双模式切换（SegmentedButton，默认按时长），时长按 0/<10min/<30min/<60min/≥60min 五级配色，Tooltip 展示当日时长格式化；计数模式保留（记录 lastRead 落日去重）
+- [UI] 应用图标替换（用户复核「还是 Flutter 默认图标」）：Android 全套换用参考仓库 legado 图标——各密度 ic_launcher/ic_launcher_round webp + 自适应 anydpi-v26（矢量前景 ic_launcher_foreground + 单色层 + 背景色 #2E2D3D）；Windows runner app_icon.ico 由 192px 源多尺寸生成；iOS 资产未动（iOS 轨活跃中，避免冲突）
+- [Docs] 新增 docs/UI_UPDATE_LOG.md：UI 轨独立更新日志（MD3 迁移全部 17 批次汇总 + 主题系统/设计语言要点/质量守护/待办台账），面向「一次看全 UI 变了什么」
+- [Test] 门禁：flutter analyze 0 issues、flutter test 全绿。版本 2.0.132+133
+- Contributor: Qoder UI
+
 ## [iOS 轨 P2-C 锁屏控制批次 2026-08-31]（版本 2.0.131+132）
 
 ### Added
