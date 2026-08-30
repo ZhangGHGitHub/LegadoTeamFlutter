@@ -93,34 +93,21 @@ jobs:
       # Dart 侧运行时 dlsym 查找固定符号 frb_pde_ffi_dispatcher_primary /
       # frb_init_frb_dart_api_dl（并非逐函数的 wire__* 符号）。Release 设备构建
       # 默认 strip 会剥掉符号表导致查不到——必须校验真实符号存在。
-      # 最终裁判是 dlopen/dlsym 测试程序（与 Dart DynamicLibrary.process 完全同路径）；
-      # nm/strings 仅作诊断（Apple strings 不扫描 __LINKEDIT，nm -g 对部分构建形态有假阴性）。
+      # 注意：Apple strings 不扫描 Mach-O __LINKEDIT，须用 nm；iOS 二进制无法在
+      # macOS 宿主上 dlopen（平台不兼容），dlopen/dlsym 测试不适用。
       - name: Verify Rust PDE symbols in device binary
         run: |
           set -euxo pipefail
           BIN=flutter_legado/build/ios/iphoneos/Runner.app/Runner
           echo "== 诊断：文件与 symtab =="
           ls -lh "$BIN"
-          nm "$BIN" 2>/dev/null | wc -l || true
-          cat > /tmp/dlstest.c <<'EOF'
-          #include <dlfcn.h>
-          #include <stdio.h>
-          int main(int argc, char** argv) {
-            void* h = dlopen(argv[1], RTLD_LAZY);
-            if (!h) { printf("dlopen failed: %s\n", dlerror()); return 2; }
-            const char* names[] = {"frb_pde_ffi_dispatcher_primary", "frb_init_frb_dart_api_dl"};
-            int rc = 0;
-            for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
-              void* p = dlsym(h, names[i]);
-              printf("dlsym %s: %s\n", names[i], p ? "OK" : "NOT FOUND");
-              if (!p) rc = 3;
-            }
-            return rc;
-          }
-          EOF
-          cc /tmp/dlstest.c -o /tmp/dlstest
-          if ! /tmp/dlstest "$BIN"; then
-            echo "::error::设备二进制 dlopen/dlsym 查找 FRB PDE 符号失败——Dart 运行时初始化必然失败；检查 DEAD_CODE_STRIPPING / STRIP_INSTALLED_PRODUCT 是否生效"
+          nm "$BIN" 2>&1 | head -3 || true
+          TOTAL=$(nm "$BIN" 2>/dev/null | wc -l || true)
+          echo "symtab total: $TOTAL"
+          COUNT=$(nm -g "$BIN" 2>/dev/null | grep -c "frb_pde_ffi_dispatcher_primary" || true)
+          echo "PDE dispatcher symbols (nm -g): $COUNT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::设备二进制缺少 FRB PDE 分发器符号——dlsym 运行时查找必然失败；检查 DEAD_CODE_STRIPPING / STRIP_INSTALLED_PRODUCT 是否生效"
             exit 1
           fi
 
@@ -162,26 +149,13 @@ jobs:
           BIN=flutter_legado/build/ios/iphonesimulator/Runner.app/Runner
           echo "== 诊断：文件与 symtab =="
           ls -lh "$BIN"
-          nm "$BIN" 2>/dev/null | wc -l || true
-          cat > /tmp/dlstest.c <<'EOF'
-          #include <dlfcn.h>
-          #include <stdio.h>
-          int main(int argc, char** argv) {
-            void* h = dlopen(argv[1], RTLD_LAZY);
-            if (!h) { printf("dlopen failed: %s\n", dlerror()); return 2; }
-            const char* names[] = {"frb_pde_ffi_dispatcher_primary", "frb_init_frb_dart_api_dl"};
-            int rc = 0;
-            for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
-              void* p = dlsym(h, names[i]);
-              printf("dlsym %s: %s\n", names[i], p ? "OK" : "NOT FOUND");
-              if (!p) rc = 3;
-            }
-            return rc;
-          }
-          EOF
-          cc /tmp/dlstest.c -o /tmp/dlstest
-          if ! /tmp/dlstest "$BIN"; then
-            echo "::error::模拟器二进制 dlopen/dlsym 查找 FRB PDE 符号失败"
+          nm "$BIN" 2>&1 | head -3 || true
+          TOTAL=$(nm "$BIN" 2>/dev/null | wc -l || true)
+          echo "symtab total: $TOTAL"
+          COUNT=$(nm -g "$BIN" 2>/dev/null | grep -c "frb_pde_ffi_dispatcher_primary" || true)
+          echo "PDE dispatcher symbols (nm -g): $COUNT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::模拟器二进制缺少 FRB PDE 分发器符号（诊断见上方 symtab 总数与 nm 首行输出）"
             exit 1
           fi
 
