@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -129,7 +131,27 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
 
   /// 读取系统 Cookie 并落库 loginHeader（对齐原版 onPageStarted/Finished
   /// 的 CookieManager.getCookie → CookieStore.setCookie）
+  ///
+  /// [iOS 轨 P2-B] iOS 的 WKWebView Cookie 存于 WKHTTPCookieStore，
+  /// webview_flutter 不暴露读取接口——经 JS document.cookie 读取
+  /// （局限：httpOnly Cookie 读不到，该类登录态需源在 JS 侧可续期；
+  /// Android 通道含 httpOnly 无此限制）
   Future<void> _syncCookie(String url) async {
+    if (Platform.isIOS) {
+      try {
+        final raw = await _controller
+            .runJavaScriptReturningResult('document.cookie');
+        final cookie = raw.toString();
+        if (cookie.isEmpty || cookie == 'null') return;
+        await widget.api.putLoginHeader(
+          widget.sourceUrl,
+          jsonEncode({'Cookie': cookie}),
+        );
+      } catch (_) {
+        // Cookie 读取/落库失败不阻断页面（对齐原版尽力而为语义）
+      }
+      return;
+    }
     try {
       final cookie = await PlatformChannel.getCookie(url);
       if (cookie.isEmpty) return;
