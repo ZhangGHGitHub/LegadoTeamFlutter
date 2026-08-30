@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [iOS 轨 P2-C 锁屏控制批次 2026-08-31]（版本 2.0.131+132）
+
+### Added
+- [iOS] 锁屏控制/Now Playing：新增 NowPlayingBridge.swift（原生 MPNowPlayingInfoCenter + MPRemoteCommandCenter），通道协议逐方法对齐 Android MediaSessionBridge.kt——锁屏/控制中心/耳机线控的播放、暂停、上下曲、停止经下行 onPlay/onPause/onSkipToNext/onSkipToPrevious/onStop 回调 Flutter（方案上不引入 audio_service，避免与 Android 既有桥冲突及入口重构）
+- [iOS] 系统中断（来电/Siri）经 AVAudioSession interruptionNotification 映射焦点事件（began→lossTransient，ended 按 shouldResume→gain/loss）；setWakeLock iOS 空实现（后台保活由音频会话承担）
+- [iOS] 通道注册经 didInitializeImplicitFlutterEngine 的 pluginRegistry.registrar(forPlugin:).messenger()（registry 协议无 messenger，API 归属经 3.44.8 引擎头文件核实）；NowPlayingBridge.swift 手动注册进 Runner.xcodeproj 四处
+
+### Fixed
+- [iOS] Swift 编译三轮修正：registrar 可空 if-let / messenger() 零参调用 / 删非公 API MPNowPlayingPlaybackStatus（状态由 playbackRate 表达）/ interruption addObserver 显式 queue: .main
+
+### Known Limitations
+- [iOS] 锁屏进度条拖动暂不启用（通道协议无 seek 方向，Android 侧亦无）；封面 Artwork 未接入
+
+- Contributor: Qoder + Bridge
+
 ## [iOS 轨 P2-B 原生补齐批次 2026-08-30]（版本 2.0.130+132）
 
 ### Added

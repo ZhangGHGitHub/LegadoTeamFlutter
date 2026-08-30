@@ -213,6 +213,7 @@
 修订：主代理 ｜ 2026-08-25（P3-4 第二阶段关闭：双根因批次 C `83ff6a8a8`（版本 2.0.107+111）——debug .so + CoverDecodeLoader 整表注册表；冒烟脚本补 UTF-8 BOM（PS5.1 GBK 解码根因）；两级模拟器验证 5556/5558 全 PASSED）
 修订：Codex ｜ 2026-08-28（P3-6 开放：搜索主路径与原版深度源码审查，专项修复计划和验收矩阵登记）
 修订：Qoder UI ｜ 2026-08-28（治理步骤：UI 开发规范由 apple-ui-designer 技能切换为 Material Design 3 官方指南，AGENTS/design_system/本档三处同步，据 UI_MD3_PLAN.md 第十四节独立 commit；P3-6 搜索 parity 修复仍由后端轨并行推进，互不干扰）
+修订：Qoder + Bridge ｜ 2026-08-31（iOS 轨 P2-C 完成：NowPlayingBridge.swift 锁屏控制/远程命令对齐 MediaSessionBridge 协议，中断映射焦点事件，三轮 Swift 编译修正后 iOS Build 全绿；会话各批次汇报汇总落盘 docs/SESSION_REPORTS_20260829-31.md；P2 剩自动任务降级与真机走查，P3 三端收敛待启动；版本 2.0.131+132）
 修订：Qoder + Bridge ｜ 2026-08-30（iOS 轨 P2-B 完成：登录 Cookie iOS 捕获（document.cookie，httpOnly 局限注明）+ 后台听书基础（UIBackgroundModes audio + AVAudioSession playback/spokenAudio）；saf 与 backstageEval 两项销记（既有实现已覆盖）；三工作流全绿；P2-C 待启动：audio_service 锁屏控制/自动任务降级/真机走查；版本 2.0.130+132）
 修订：Qoder + Bridge ｜ 2026-08-30（iOS 轨 P2-A 完成：TTS/通知/亮度/设备号/深链五通道插件化（Android 桥零回归），三工作流全绿，模拟器实测 IDFV 注入；P2-B 待启动：flutter_inappwebview 反爬求值/Cookie、audio_service 后台听书、saf 条件化；版本 2.0.129+132）
 修订：Qoder + Bridge ｜ 2026-08-30（iOS 轨 P1 里程碑达成：ios-build 工作流全绿，未签名 ipa artifact 产出，iOS 模拟器启动到书架（截图证据），Rust FFI 静态链接实测工作；连带修复 rust-toolchain 跨 target E0463（ios-build/flutter-ci）、rquickjs iOS bindgen、app/ 编译期依赖三处、unrar iOS 排除、Flutter 版本统一 3.44.8；P2 原生补齐待启动）
