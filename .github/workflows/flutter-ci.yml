@@ -23,6 +23,8 @@ jobs:
         run: |
           sdkmanager "ndk;27.0.12077973"
           echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/27.0.12077973" >> $GITHUB_ENV
+          # cc-rs 新版读 ANDROID_NDK_ROOT 定位 NDK 编译器（ring 等 C 依赖需要）
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/27.0.12077973" >> $GITHUB_ENV
           echo "NDK_TOOLCHAIN=${ANDROID_SDK_ROOT}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64" >> $GITHUB_ENV
       - name: Configure Cargo for Android
         run: |
@@ -38,6 +40,11 @@ jobs:
           EOF
       - name: Build Rust FFI for Android (debug, aarch64+x86_64)
         working-directory: rust
+        env:
+          CC_aarch64_linux_android: ${{ env.NDK_TOOLCHAIN }}/bin/aarch64-linux-android21-clang
+          AR_aarch64_linux_android: ${{ env.NDK_TOOLCHAIN }}/bin/llvm-ar
+          CC_x86_64_linux_android: ${{ env.NDK_TOOLCHAIN }}/bin/x86_64-linux-android21-clang
+          AR_x86_64_linux_android: ${{ env.NDK_TOOLCHAIN }}/bin/llvm-ar
         run: |
           # rust/rust-toolchain.toml 锁定 1.97.1：target 必须装进该工具链
           # （dtolnay action 的 targets 装的是 stable，与本工作区编译无关）
