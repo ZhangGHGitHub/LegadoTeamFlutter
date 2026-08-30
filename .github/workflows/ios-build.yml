@@ -147,20 +147,23 @@ jobs:
           cd ios && pod install --repo-update && cd ..
           flutter build ios --simulator --debug
 
+      # Flutter DEBUG iOS 构建把主体代码放在 Runner.debug.dylib（Runner 只是
+      # 加载桩，约 150K）——校验须覆盖两者之一含 PDE 符号即可。
       - name: Verify Rust PDE symbols in simulator binary
         run: |
           set -euxo pipefail
-          BIN=flutter_legado/build/ios/iphonesimulator/Runner.app/Runner
-          echo "== 诊断：文件与 symtab =="
-          file "$BIN"
-          ls -lhR flutter_legado/build/ios/iphonesimulator/Runner.app | head -40 || true
-          nm "$BIN" 2>&1 | head -3 || true
-          TOTAL=$(nm "$BIN" 2>/dev/null | wc -l || true)
-          echo "symtab total: $TOTAL"
-          COUNT=$(nm -g "$BIN" 2>/dev/null | grep -c "frb_pde_ffi_dispatcher_primary" || true)
-          echo "PDE dispatcher symbols (nm -g): $COUNT"
-          if [ "$COUNT" -eq 0 ]; then
-            echo "::error::模拟器二进制缺少 FRB PDE 分发器符号（诊断见上方输出）"
+          APPDIR=flutter_legado/build/ios/iphonesimulator/Runner.app
+          echo "== 诊断：候选文件 =="
+          ls -lh "$APPDIR"/Runner "$APPDIR"/Runner.debug.dylib 2>/dev/null || true
+          OK=0
+          for F in "$APPDIR/Runner" "$APPDIR/Runner.debug.dylib"; do
+            [ -f "$F" ] || continue
+            C=$(nm -g "$F" 2>/dev/null | grep -c "frb_pde_ffi_dispatcher_primary" || true)
+            echo "$(basename "$F"): PDE symbols = $C (symtab total $(nm "$F" 2>/dev/null | wc -l))"
+            [ "$C" -ge 1 ] && OK=1
+          done
+          if [ "$OK" != "1" ]; then
+            echo "::error::模拟器构建产物缺少 FRB PDE 分发器符号（Runner 与 Runner.debug.dylib 均无）"
             exit 1
           fi
 
