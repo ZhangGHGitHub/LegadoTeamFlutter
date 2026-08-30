@@ -141,6 +141,10 @@ jobs:
         working-directory: flutter_legado
         run: |
           cp /tmp/liblegado_ffi_sim.a ios/RustFFI/libliblegado_ffi.a
+          # pod install 只在设备构建前跑过一次，ios/Pods/RustFFI/ 里仍是设备 .a；
+          # 换入模拟器 .a 后必须重新 pod install，否则 vendored_libraries 引用过期
+          # 设备库导致平台错配、RustFFI 未被真正链接（Runner 退化成 153K 桩）
+          cd ios && pod install --repo-update && cd ..
           flutter build ios --simulator --debug
 
       - name: Verify Rust PDE symbols in simulator binary
@@ -148,16 +152,26 @@ jobs:
           set -euxo pipefail
           BIN=flutter_legado/build/ios/iphonesimulator/Runner.app/Runner
           echo "== 诊断：文件与 symtab =="
-          ls -lh "$BIN"
+          file "$BIN"
+          ls -lhR flutter_legado/build/ios/iphonesimulator/Runner.app | head -40 || true
           nm "$BIN" 2>&1 | head -3 || true
           TOTAL=$(nm "$BIN" 2>/dev/null | wc -l || true)
           echo "symtab total: $TOTAL"
           COUNT=$(nm -g "$BIN" 2>/dev/null | grep -c "frb_pde_ffi_dispatcher_primary" || true)
           echo "PDE dispatcher symbols (nm -g): $COUNT"
           if [ "$COUNT" -eq 0 ]; then
-            echo "::error::模拟器二进制缺少 FRB PDE 分发器符号（诊断见上方 symtab 总数与 nm 首行输出）"
+            echo "::error::模拟器二进制缺少 FRB PDE 分发器符号（诊断见上方输出）"
             exit 1
           fi
+
+      - name: Upload simulator Runner.app (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-sim-runner-app
+          path: flutter_legado/build/ios/iphonesimulator/Runner.app
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Boot simulator and launch app
         run: |
