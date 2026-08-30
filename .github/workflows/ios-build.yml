@@ -119,7 +119,7 @@ jobs:
         working-directory: flutter_legado
         run: |
           cp /tmp/liblegado_ffi_sim.a ios/RustFFI/libliblegado_ffi.a
-          flutter build ios --simulator --release
+          flutter build ios --simulator --debug
 
       - name: Boot simulator and launch app
         run: |
