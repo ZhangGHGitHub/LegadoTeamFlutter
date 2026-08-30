@@ -165,7 +165,29 @@
 
 ---
 
-## 十一、剩余待办（P3 / 收尾）
+## 十一、真机「Rust 引擎初始化失败」修复（2026-08-31，版本 2.0.133+134）
+
+**根因链（三层，逐层实证）**：
+1. **FRB 2.11 PDE 分发器架构**：Dart 侧运行时 dlsym 查找的是固定符号 `frb_pde_ffi_dispatcher_primary` / `frb_init_frb_dart_api_dl` 等（并非逐函数 `wire__*`）——此前 CI 校验 grep 的 `wire__crate__ffi` 在任何 FRB 2.11 构建中都不存在，前两轮"失败"均为检查自身误报
+2. **Release strip**：设备 Release 构建默认剥离符号表——实测修复前 ipa 的 Runner 仅 7.7M、symtab 为空、PDE 符号字节级缺失；模拟器 debug 无 strip 阶段故一直正常（真机失败而模拟器正常的根因）
+3. **exported_symbols_list 误杀**（第三轮引入）：白名单仅含 `_*`，把全部 `frb_*` 导出排除在可执行文件导出区之外——已移除
+
+**修复**：podspec 收敛为 `-force_load` + `DEAD_CODE_STRIPPING=NO` + `STRIP_INSTALLED_PRODUCT=NO`；CI 校验改用 nm 查真实 PDE 符号（Apple strings 不扫描 Mach-O __LINKEDIT）。
+
+**过程排障（CI 实测多轮）**：
+- dlopen/dlsym 测试程序方案失败——iOS 二进制无法在 macOS 宿主 dlopen（插件 framework 平台不兼容），回退 nm
+- 模拟器校验假阴性真因：Flutter DEBUG iOS 构建主体代码在 `Runner.debug.dylib`（67M），`Runner` 只是约 150K 加载桩——校验改为遍历两者
+- vendored_libraries 副本过期：pod install 只跑一次，换 sim .a 后需重跑（Pods/RustFFI 副本停留在设备 .a）
+
+**验证**：iOS Build 全绿；新 ipa 本地字节级终验 PDE 三符号 PRESENT（旧包 ABSENT）；模拟器冒烟 Rust FFI 工作（IDFV 注入 ok=true、首屏书架截图）。
+
+**提交**：`34cbda778e` → `dce52eebde` → `320e74186f` → `e74240fc0f` → `c90379a2fe` → `70927e7e68`。
+
+**待用户验收**：真机安装新 ipa（CI 产物 `legado-ios-unsigned-ipa`）确认 Rust 引擎初始化通过。
+
+---
+
+## 十二、剩余待办（P3 / 收尾）
 
 - [ ] P2-C 登记落 CHANGELOG/台账/版本递增（本批提交已完成，文档登记为下一提交）
 - [ ] 自动任务 iOS 降级策略（workmanager/BGTaskScheduler 受 OS 约束）
