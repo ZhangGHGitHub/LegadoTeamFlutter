@@ -60,7 +60,7 @@ jobs:
         run: |
           set -euxo pipefail
           export SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
-          cargo build --release --target aarch64-apple-ios -p legado-ffi --features quickjs
+          cargo rustc --release --target aarch64-apple-ios -p legado-ffi --lib --crate-type staticlib --features quickjs
           mkdir -p ../flutter_legado/ios/RustFFI
           cp target/aarch64-apple-ios/release/liblegado_ffi.a \
              ../flutter_legado/ios/RustFFI/libliblegado_ffi.a
@@ -70,7 +70,7 @@ jobs:
         run: |
           set -euxo pipefail
           export SDKROOT=$(xcrun --sdk iphonesimulator --show-sdk-path)
-          cargo build --release --target aarch64-apple-ios-sim -p legado-ffi --features quickjs
+          cargo rustc --release --target aarch64-apple-ios-sim -p legado-ffi --lib --crate-type staticlib --features quickjs
           cp target/aarch64-apple-ios-sim/release/liblegado_ffi.a \
              /tmp/liblegado_ffi_sim.a
 
