@@ -1,0 +1,127 @@
+name: iOS Build
+
+on:
+  push:
+    paths:
+      - 'flutter_legado/**'
+      - 'rust/**'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      FLUTTER_VERSION: '3.41.7'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust (iOS targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: flutter_legado
+        run: flutter pub get
+
+      # ── Rust FFI 静态库（真机 + 模拟器分开构建，不可 lipo 混合）──
+      - name: Build Rust FFI (iOS device + simulator)
+        working-directory: rust
+        run: |
+          set -euxo pipefail
+          cargo build --release --target aarch64-apple-ios -p legado-ffi --features quickjs
+          cargo build --release --target aarch64-apple-ios-sim -p legado-ffi --features quickjs
+          mkdir -p ../flutter_legado/ios/RustFFI
+          cp target/aarch64-apple-ios/release/liblegado_ffi.a \
+             ../flutter_legado/ios/RustFFI/libliblegado_ffi.a
+          cp target/aarch64-apple-ios-sim/release/liblegado_ffi.a \
+             /tmp/liblegado_ffi_sim.a
+          ls -lh ../flutter_legado/ios/RustFFI/
+
+      # ── 真机未签名 ipa ──
+      - name: CocoaPods install
+        working-directory: flutter_legado/ios
+        run: |
+          pod install --repo-update
+
+      - name: Build iOS (device, no codesign)
+        working-directory: flutter_legado
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        working-directory: flutter_legado/build/ios/iphoneos
+        run: |
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -qry app-unsigned.ipa Payload
+          ls -lh app-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: legado-ios-unsigned-ipa
+          path: flutter_legado/build/ios/iphoneos/app-unsigned.ipa
+          retention-days: 14
+          if-no-files-found: error
+
+      # ── 模拟器冒烟（启动到首屏 + 截图回传）──
+      - name: Build iOS (simulator)
+        working-directory: flutter_legado
+        run: |
+          cp /tmp/liblegado_ffi_sim.a ios/RustFFI/libliblegado_ffi.a
+          flutter build ios --simulator --release
+
+      - name: Boot simulator and launch app
+        run: |
+          set -euxo pipefail
+          UDID=$(xcrun simctl list devices available | grep -m1 -oE '[0-9A-F-]{36}')
+          echo "UDID=$UDID" >> $GITHUB_ENV
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" flutter_legado/build/ios/iphonesimulator/Runner.app
+          xcrun simctl launch "$UDID" io.legado.flutterLegado
+          sleep 25
+          xcrun simctl io "$UDID" screenshot smoke_home.png || true
+          # 进程存活检查（启动 25 秒后仍未退出 = 未崩溃）
+          xcrun simctl spawn "$UDID" launchctl list | grep -i flutter || true
+
+      - name: Collect simulator logs
+        if: always()
+        run: |
+          UDID=${{ env.UDID }}
+          if [ -n "$UDID" ]; then
+            xcrun simctl spawn "$UDID" log show --last 3m \
+              --predicate 'processImagePath CONTAINS "Runner"' \
+              > sim_runner.log || true
+            grep -iE "fatal|crash|rust|panicked" sim_runner.log | head -40 > sim_errors.log || true
+          fi
+
+      - name: Upload smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-smoke-evidence
+          path: |
+            smoke_home.png
+            sim_runner.log
+            sim_errors.log
+          retention-days: 14
+          if-no-files-found: warn

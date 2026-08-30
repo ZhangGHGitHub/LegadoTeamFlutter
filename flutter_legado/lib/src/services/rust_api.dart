@@ -83,8 +83,14 @@ class RustApi implements BookApi {
   /// flutter_rust_bridge 生成代码中的 ioDirectory 路径可能不正确（workspace 结构），
   /// 因此这里主动搜索 DLL 并传入 RustLib.init()。
   ExternalLibrary? _resolveFfiLibrary() {
-    // Android/iOS 由系统加载，无需指定路径
-    if (Platform.isAndroid || Platform.isIOS) return null;
+    // Android 由系统加载 liblegado_ffi.so，无需指定路径
+    if (Platform.isAndroid) return null;
+
+    // [iOS 轨 P1] 静态链接：Rust staticlib（-force_load 进 Runner 可执行文件），
+    // 符号经 process() 查找。FRB 默认 loader 只尝试 dylib/framework，不适用。
+    if (Platform.isIOS) {
+      return ExternalLibrary.process(iKnowHowToUseIt: true);
+    }
 
     final String libName;
     if (Platform.isWindows) {
