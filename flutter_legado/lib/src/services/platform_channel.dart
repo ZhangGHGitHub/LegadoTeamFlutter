@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 /// Platform Channel 基础架构
 ///
@@ -74,39 +78,91 @@ class PlatformChannel {
 
   // ─── TTS 方法 ─────────────────────────────────────────────────
 
+  // [iOS 轨 P2] iOS 走 flutter_tts（AVSpeechSynthesizer）；Android 保持
+  // Kotlin TtsBridge 通道不回归；桌面平台维持原行为（调用方容错）。
+  static final FlutterTts _iosTts = () {
+    final tts = FlutterTts();
+    // speak 不等待朗读完成（对齐 Android 通道的异步语义）
+    tts.awaitSpeakCompletion(false);
+    tts.setCompletionHandler(() => _iosSpeaking = false);
+    tts.setCancelHandler(() => _iosSpeaking = false);
+    tts.setErrorHandler((_) => _iosSpeaking = false);
+    return tts;
+  }();
+  static bool _iosSpeaking = false;
+  static bool _iosTtsLangSet = false;
+
   /// 初始化 TTS 引擎
   static Future<bool> initTts() async {
+    if (Platform.isIOS) {
+      try {
+        await _iosTts.setLanguage('zh-CN');
+        _iosTtsLangSet = true;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
     final result = await tts.invokeMethod<bool>('init');
     return result ?? false;
   }
 
   /// 朗读文本
   static Future<void> speak(String text) async {
+    if (Platform.isIOS) {
+      if (!_iosTtsLangSet) await initTts();
+      _iosSpeaking = true;
+      await _iosTts.speak(text);
+      return;
+    }
     await tts.invokeMethod('speak', {'text': text});
   }
 
   /// 停止朗读
   static Future<void> stopSpeak() async {
+    if (Platform.isIOS) {
+      _iosSpeaking = false;
+      await _iosTts.stop();
+      return;
+    }
     await tts.invokeMethod('stop');
   }
 
   /// 设置朗读语言（BCP 47 语言标签，如 "zh-CN"）
   static Future<void> setLanguage(String language) async {
+    if (Platform.isIOS) {
+      await _iosTts.setLanguage(language);
+      _iosTtsLangSet = true;
+      return;
+    }
     await tts.invokeMethod('setLanguage', {'language': language});
   }
 
   /// 设置朗读语速（默认 1.0）
+  ///
+  /// 刻度差异：Android setSpeechRate 1.0 为常速（约 0.5-2.0），
+  /// iOS AVSpeechUtterance.rate 0-1 且 0.5 为常速——iOS 侧按 speed/2 折算。
   static Future<void> setSpeed(double speed) async {
+    if (Platform.isIOS) {
+      final rate = (speed / 2.0).clamp(0.0, 1.0);
+      await _iosTts.setSpeechRate(rate);
+      return;
+    }
     await tts.invokeMethod('setSpeed', {'speed': speed});
   }
 
-  /// 设置朗读音调（默认 1.0）
+  /// 设置朗读音调（默认 1.0；两平台 1.0 均为常速，直接透传）
   static Future<void> setPitch(double pitch) async {
+    if (Platform.isIOS) {
+      await _iosTts.setPitch(pitch.clamp(0.5, 2.0));
+      return;
+    }
     await tts.invokeMethod('setPitch', {'pitch': pitch});
   }
 
   /// 查询是否正在朗读
   static Future<bool> isSpeaking() async {
+    if (Platform.isIOS) return _iosSpeaking;
     final result = await tts.invokeMethod<bool>('isSpeaking');
     return result ?? false;
   }
@@ -129,12 +185,47 @@ class PlatformChannel {
 
   // ─── 通知方法 ─────────────────────────────────────────────────
 
+  // [iOS 轨 P2] iOS 走 flutter_local_notifications（UNUserNotificationCenter）；
+  // Android 保持 NotificationService 通道。固定 id：1=下载 2=阅读状态。
+  static final FlutterLocalNotificationsPlugin _iosNotifications =
+      FlutterLocalNotificationsPlugin();
+  static bool _iosNotifInitialized = false;
+
+  static Future<void> _ensureIosNotifications() async {
+    if (_iosNotifInitialized) return;
+    const darwin = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+    await _iosNotifications.initialize(
+      const InitializationSettings(iOS: darwin),
+    );
+    await _iosNotifications
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: false, sound: false);
+    _iosNotifInitialized = true;
+  }
+
+  static Future<void> _iosShow(int id, String title, String body) async {
+    await _ensureIosNotifications();
+    const details = NotificationDetails(
+      iOS: DarwinNotificationDetails(presentAlert: true, presentSound: false),
+    );
+    await _iosNotifications.show(id, title, body, details);
+  }
+
   /// 显示下载进度通知
   static Future<void> showDownloadProgress({
     required String bookName,
     required int progress,
     required int total,
   }) async {
+    if (Platform.isIOS) {
+      await _iosShow(1, '正在下载：$bookName', '$progress / $total');
+      return;
+    }
     await notification.invokeMethod('showDownloadProgress', {
       'bookName': bookName,
       'progress': progress,
@@ -147,6 +238,10 @@ class PlatformChannel {
     required String bookName,
     String? chapterName,
   }) async {
+    if (Platform.isIOS) {
+      await _iosShow(2, bookName, chapterName ?? '');
+      return;
+    }
     await notification.invokeMethod('showReadingNotification', {
       'bookName': bookName,
       'chapterName': chapterName ?? '',
@@ -155,22 +250,33 @@ class PlatformChannel {
 
   /// 取消指定通知，传 null 取消全部
   static Future<void> cancelNotification([int? id]) async {
+    if (Platform.isIOS) {
+      await _ensureIosNotifications();
+      if (id == null) {
+        await _iosNotifications.cancelAll();
+      } else {
+        await _iosNotifications.cancel(id);
+      }
+      return;
+    }
     await notification.invokeMethod('cancelNotification', {'id': id});
   }
 
-  /// 启动前台服务通知
+  /// 启动前台服务通知（iOS 无前台服务概念，空实现）
   static Future<void> startForegroundService({
     String title = '阅读服务',
     String content = '正在后台运行',
   }) async {
+    if (Platform.isIOS) return;
     await notification.invokeMethod('startForegroundService', {
       'title': title,
       'content': content,
     });
   }
 
-  /// 停止前台服务通知
+  /// 停止前台服务通知（iOS 无前台服务概念，空实现）
   static Future<void> stopForegroundService() async {
+    if (Platform.isIOS) return;
     await notification.invokeMethod('stopForegroundService');
   }
 }

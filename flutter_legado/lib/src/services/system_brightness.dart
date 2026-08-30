@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 
 /// 系统亮度控制
 /// 
@@ -7,8 +10,19 @@ import 'package:flutter/services.dart';
 class SystemBrightness {
   static const MethodChannel _channel = MethodChannel('io.legado.app/brightness');
 
-  /// 获取当前系统亮度 (0.0 - 1.0)
+  /// 获取当前亮度 (0.0 - 1.0)
+  ///
+  /// [iOS 轨 P2] iOS 仅允许应用窗口亮度（系统亮度只读），走
+  /// screen_brightness 插件的 application 接口；Android 保持原通道。
   static Future<double> getBrightness() async {
+    if (Platform.isIOS) {
+      try {
+        return await ScreenBrightness().application;
+      } catch (e) {
+        debugPrint('获取应用亮度失败: $e');
+        return 0.5;
+      }
+    }
     try {
       final int brightness = await _channel.invokeMethod('getSystemBrightness');
       return brightness / 255.0; // Android 返回 0-255，转换为 0.0-1.0
@@ -18,8 +32,16 @@ class SystemBrightness {
     }
   }
 
-  /// 设置系统亮度 (0.0 - 1.0)
+  /// 设置亮度 (0.0 - 1.0)
   static Future<void> setBrightness(double brightness) async {
+    if (Platform.isIOS) {
+      try {
+        await ScreenBrightness().setApplicationScreenBrightness(brightness);
+      } catch (e) {
+        debugPrint('设置应用亮度失败: $e');
+      }
+      return;
+    }
     try {
       final int value = (brightness * 255).round().clamp(0, 255);
       await _channel.invokeMethod('setSystemBrightness', value);
@@ -28,8 +50,9 @@ class SystemBrightness {
     }
   }
 
-  /// 检查是否支持系统亮度调节
+  /// 检查是否支持亮度调节
   static Future<bool> isSupported() async {
+    if (Platform.isIOS) return true; // 应用亮度可调
     try {
       final bool supported = await _channel.invokeMethod('isBrightnessSupported');
       return supported;

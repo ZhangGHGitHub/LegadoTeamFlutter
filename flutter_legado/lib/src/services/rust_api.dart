@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -48,6 +49,20 @@ class RustApi implements BookApi {
 
   /// 读取系统 ANDROID_ID 并注入 Rust（书山正文解密依赖设备匹配）
   Future<void> _injectDeviceId() async {
+    // [iOS 轨 P2] iOS 用 identifierForVendor（ANDROID_ID 通道仅 Android 注册）
+    if (Platform.isIOS) {
+      try {
+        final ios = await DeviceInfoPlugin().iosInfo;
+        final idfv = ios.identifierForVendor;
+        if (idfv != null && idfv.isNotEmpty) {
+          await bridge.setDeviceId(deviceId: idfv);
+          debugPrint('[RustApi] 设备 ID 注入完成（iOS IDFV）：$idfv');
+        }
+      } catch (e) {
+        debugPrint('[RustApi] 设备 ID 注入失败（iOS）：$e');
+      }
+      return;
+    }
     try {
       const channel = MethodChannel('legado/device_id');
       final androidId = await channel.invokeMethod<String>('getAndroidId');
