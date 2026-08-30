@@ -95,6 +95,10 @@ jobs:
         run: |
           set -euxo pipefail
           BIN=flutter_legado/build/ios/iphoneos/Runner.app/Runner
+          echo "== nm defined globals (wire sample) =="
+          nm -gU "$BIN" 2>/dev/null | grep "wire__crate__ffi" | head -5 || true
+          echo "== symtab size =="
+          size -m "$BIN" 2>/dev/null | grep -iA2 symbol || true
           COUNT=$(strings "$BIN" | grep -c "wire__crate__ffi" || true)
           echo "wire symbols in device binary: $COUNT"
           if [ "$COUNT" -eq 0 ]; then

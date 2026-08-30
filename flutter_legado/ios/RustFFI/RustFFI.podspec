@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   s.user_target_xcconfig = {
     # Dart FFI 运行时查符号依赖最终二进制包含全部对象：正常链接只抽取被引用对象，
     # 必须 -force_load 全量载入（PROJECT_DIR = ios/ 目录，路径稳定）。
-    'OTHER_LDFLAGS' => '$(inherited) -force_load ${PROJECT_DIR}/RustFFI/libliblegado_ffi.a',
+    'OTHER_LDFLAGS' => '$(inherited) -force_load ${PROJECT_DIR}/RustFFI/libliblegado_ffi.a -Wl,-exported_symbols_list,${PROJECT_DIR}/RustFFI/exported_symbols.txt',
     # 三项协同防止符号被"无声裁掉"导致真机 Rust 初始化失败：
     # 1) 链接期死代码裁剪（会裁掉链接期无引用的 wire 符号）
     'DEAD_CODE_STRIPPING' => 'NO',
