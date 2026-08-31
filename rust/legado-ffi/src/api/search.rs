@@ -4240,7 +4240,7 @@ mod tests {
     fn offline_51_chapter_list_from_saved_html() {
         let html = std::fs::read_to_string(
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tmp_debug/comic_2122.html"),
+                .join("tests/fixtures/comic_2122.html"),
         )
         .expect("html");
         let rule = concat!(

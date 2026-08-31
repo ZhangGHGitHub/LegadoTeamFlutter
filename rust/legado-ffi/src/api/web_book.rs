@@ -4812,7 +4812,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     fn qmao_js_rule_extracts_m3u8_from_saved_html() {
         let html_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../flutter_legado/_debug_db/qmao_play_full.html"
+            "/tests/fixtures/qmao_play_full.html"
         );
         let html = std::fs::read_to_string(html_path).expect("qmao_play_full.html");
         let json = include_str!("../../tests/fixtures/qmao_min_source.json");
