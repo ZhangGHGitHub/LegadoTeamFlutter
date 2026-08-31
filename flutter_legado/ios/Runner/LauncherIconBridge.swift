@@ -41,16 +41,18 @@ import UIKit
          let data = FileManager.default.contents(atPath: p) {
         diskBytes = data.count
         // PropertyListSerialization 可解析文本与二进制（bplist00）两种格式。
+        // Apple 标准结构：CFBundleAlternateIcons 嵌套在 CFBundleIcons 之内。
         if let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
            let d = obj as? [AnyHashable: Any],
-           let alt = d["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
+           let icons = d["CFBundleIcons"] as? [AnyHashable: Any],
+           let alt = icons["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
           diskAltKeys = alt.keys.map { "\($0)" }.sorted()
         }
       }
-      // 证据 B：infoDictionary（Foundation 运行时读取）——保留为诊断字段，
-      // 用于对照磁盘结果定位上一轮「磁盘完整但运行时为空」的差异来源。
+      // 证据 B：infoDictionary（Foundation 运行时读取）——保留为诊断字段。
       let dict = bundle.infoDictionary ?? [:]
-      let altNS = (dict["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
+      let iconsNS = (dict["CFBundleIcons"] as? [AnyHashable: Any]) ?? [:]
+      let altNS = (iconsNS["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
       result([
         "canSet": names.allSatisfy { diskAltKeys.contains($0) },
         "diskAltKeys": diskAltKeys,
