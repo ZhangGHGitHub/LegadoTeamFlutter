@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.134] - 2026-08-31
+
+### Changed
+- [UI] 应用图标替换收尾——iOS AppIcon 全套（用户复核「iOS 版还是 Flutter 默认图标」）：由 Android 矢量前景 ic_launcher_foreground.xml（猫咪吉祥物 + 粉色圆环 + #2E2D3D 底）自研渲染器 2x 超采样生成 master 1024 + 14 个小尺寸，像素尺寸与 Contents.json 逐一核对通过；画面与 Android 自适应图标实际呈现一致（参考仓库 192px 光栅为自适应图标时代前的旧版式回退图，未采用）
+- [Docs] docs/UI_UPDATE_LOG.md 待办销账：iOS 应用图标完成
+
+### Test
+- 校验：appiconset 文件名/像素尺寸 19/19 OK；纯资产替换无代码变更，Android 侧不受影响；iOS 构建验证随 iOS 轨下次 macOS 构建进行。版本 2.0.134+135
+
+- Contributor: Qoder + UI
+
 ## [iOS 轨真机 Rust 初始化修复批次 2026-08-31]（版本 2.0.133+134）
 
 ### Fixed
