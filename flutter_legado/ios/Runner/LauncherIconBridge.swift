@@ -38,7 +38,7 @@ import UIKit
       var diskAltKeys: [String] = []
       var diskBytes = -1
       if let p = bundle.path(forResource: "Info", ofType: "plist"),
-         let data = FileManager.default.contentsAtPath(p) {
+         let data = FileManager.default.contents(atPath: p) {
         diskBytes = data.count
         // PropertyListSerialization 可解析文本与二进制（bplist00）两种格式。
         if let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
