@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.137] - 2026-08-31
+
+### Fixed
+- [Rust] 漫画/图片源目录与正文获取失败（用户报告「大部分图片源获取不到目录和正文」）：Rust analyze_rule 未实现原版 AnalyzeByJSoup 规则链语义——`<js>` 规则带非 JSONPath 后缀文本时误路由到 JSONPath；`java.*` jsoup 规则前缀被丢弃、CSS 选择器未归一化（class.foo/id.foo/tag.foo → .foo/#foo/foo）、'@' 后链式选择缺失。按原版语义修复：HtmlParser::normalize_jsoup_selector + resolve_element_chain 链式选择 + extract_last 末段文本提取；包子漫画（优）真实网络验证 TOC 815 章、正文图片列表正常。批量诊断同时确认其余多数漫画源失败在站点侧（站点失效/反爬），非本应用代码问题
+- [UI] 错误信息裸显「Instance of 'BridgeError'」：BridgeError 仅含 message 字段且无自定义 toString，直接展示异常对象即输出该字符串。新增共享工具 utils/error_message.dart（errorMessage），15 个文件 18 处裸显点统一改为提取 e.message
+- [UI] iOS 换图标失败笼统提示「当前平台或系统版本不支持更换图标」（用户报告）：LauncherIconService.setIcon 由返回 bool 改为返回 LauncherIconResult，携带原生侧拒绝的真实原因（iOS 每次启动限一次 / Android API<26 / 通道未注册）；主题设置页展示真实错误；新增 iOS 集成测试 launcher_icon_ios_test.dart + CI 执行步骤（校验通道注册与 setAlternateIconName 调用结果）
+
+### Test
+- cargo test --workspace：ffi lib 330 pass，shushu 实时网络 1 env-fail（与基线一致）；cargo test -p legado-js --features quickjs 513 pass；包子漫画（优）真实网络 TOC 815 章 + 正文图片 OK
+- flutter analyze 无问题 + flutter test 1313 全过
+- iOS 运行时验证：CI ios-build.yml 新增 launcher icon 集成测试步骤（首跑校验通道注册与 setAlternateIconName）；版本 2.0.137+138
+
+- Contributor: Qoder + Rust + UI
+
 ## [2.0.136] - 2026-08-31
 
 ### Changed

@@ -474,15 +474,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     setState(() => _launcherIcon = selected);
     await _settings.setStringPref(PrefKeys.launcherIcon, selected);
     // 下发原生侧实际切换（Android setComponentEnabledSetting /
-    // iOS setAlternateIconName）；失败时提示，不阻断偏好保存
-    final ok = await LauncherIconService.setIcon(selected);
+    // iOS setAlternateIconName）；失败时提示真实原因，不阻断偏好保存
+    final result = await LauncherIconService.setIcon(selected);
     if (!mounted) return;
-    if (ok) {
+    if (result.ok) {
       if (LauncherIconService.isIos) {
         _toast('图标已切换，重启应用后生效');
       }
     } else {
-      _toast('当前平台或系统版本不支持更换图标');
+      // 展示原生侧真实错误（如 iOS"本次启动已切换过一次"、Android API<26），
+      // 不再笼统提示"当前平台或系统版本不支持"
+      _toast(result.message ?? '当前平台或系统版本不支持更换图标');
     }
   }
 
