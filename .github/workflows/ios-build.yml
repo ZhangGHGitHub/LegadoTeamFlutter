@@ -167,13 +167,14 @@ jobs:
             exit 1
           fi
 
-      # ── 换图标集成测试（Bug1：iOS setAlternateIconName 运行时取证 + 回归门禁）──
+      # ── 换图标集成测试（Bug1：iOS 运行时取证 + 回归门禁）──
       # 此时 ios/RustFFI/ 中是模拟器 .a 且 pod install 已完成，flutter test
       # 会自行构建测试宿主 app 并在指定模拟器上运行。注意 flutter test -d <UDID>
       # 要求模拟器已 boot（devices available 只是设备定义），故此处先自举启动；
       # 后续「Boot simulator and launch app」步骤的 boot 幂等，不受影响。
-      # 失败时 CI 日志含完整异常类型/code/message（MissingPluginException =
-      # 通道未注册；PlatformException = setAlternateIconName 被拒及 UIKit 原因）。
+      # 门禁 = status 同步方法（通道接线 + Info.plist 变体声明）；真实 set
+      # 仅取证——模拟器 setAlternateIconName completion 不回调（已知限制），
+      # 测试内带超时守护只记录结果，不断言。
       - name: Run launcher icon integration test (iOS simulator)
         working-directory: flutter_legado
         run: |

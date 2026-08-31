@@ -27,6 +27,15 @@ import UIKit
   }
 
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "status" {
+      // 同步应答（不走 UIKit 异步）：集成测试回归门禁。
+      // 能收到此方法 = AppDelegate 通道接线完好；canSet=true = Info.plist
+      // CFBundleAlternateIcons 声明与 AlternateIcons 资源完整。
+      // （set 的 completion 在模拟器上不回调，故门禁不用 set。）
+      let names = (1...6).map { "launcher\($0)" }
+      result(["canSet": UIApplication.shared.canSetApplicationIconsNamed(names)])
+      return
+    }
     guard call.method == "set" else {
       result(FlutterMethodNotImplemented)
       return
