@@ -696,7 +696,9 @@ impl HtmlParser {
     /// Rust 侧若把 `class.comics-card` 直接交给 CSS 解析器，会变成「标签名 class
     /// 与类 comics-card」，对真实 `<div class="comics-card …">` 永远 0 命中，
     /// 表现为大量漫画源 `search:empty`（包子/爱看等）。— Auto 2026-08-11
-    fn normalize_jsoup_selector(rule: &str) -> String {
+    ///
+    /// 供 legado-js 的 java.* HTML 桥复用（java.getElements/getString 的选择段）
+    pub fn normalize_jsoup_selector(rule: &str) -> String {
         let rule = rule.trim();
         if rule.is_empty() {
             return String::new();

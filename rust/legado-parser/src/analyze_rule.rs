@@ -413,10 +413,13 @@ impl AnalyzeRule {
                 )
             };
 
-        // 4) `<js>...</js>`（含 `$[*]` 复合）走单步专用路径，避免被
-        //    通用 JS 链拆成 Js+Extract 后丢失 `$[*]` 拆解语义（51漫画）
-        //    其余 `extract@js:` 走链式（神漫画 chapterUrl / Nhentai 正文）
-        let mut results = if core_rule.trim_start().starts_with("<js>") {
+        // 4) `<js>...</js>`（含 `$[*]` 复合，≤2 步）走单步专用路径，避免被
+        //    通用 JS 链拆成 Js+Extract 后丢失 `$[*]` 拆解语义（51漫画）。
+        //    ≥3 步（JS+提取+JS 交错）走链式逐步执行；其余 `extract@js:`
+        //    同样走链式（神漫画 chapterUrl / Nhentai 正文）
+        let mut results = if core_rule.trim_start().starts_with("<js>")
+            && js_steps_owned.len() <= 2
+        {
             self.get_strings_single_step(&core_rule)?
         } else if js_steps_owned.len() > 1 {
             let borrowed: Vec<JsChainStep<'_>> = js_steps_owned
@@ -501,8 +504,28 @@ impl AnalyzeRule {
                         }
                     }
                     return Ok(out);
+                } else if !suffix.is_empty() {
+                    // 非 JSONPath 后缀（CSS/XPath 等）：对齐原版 splitSourceRule
+                    // 拆成 Js + Extract 两步——提取规则作用于 JS 输出。
+                    // 包子漫画（优）chapterList `<js>java.t2s(result)</js>\n
+                    // class.xxx comics-chapters`：JS 转简体后 CSS 选章节锚点；
+                    // 此前此分支缺失 → 后缀被丢弃 → 整页 HTML 作为唯一「章节」。
+                    let content = if js_result.len() == 1 {
+                        js_result.into_iter().next().unwrap_or_default()
+                    } else {
+                        js_result.join("\n")
+                    };
+                    let mut sub = AnalyzeRule::new(content, self.base_url.clone());
+                    self.share_variable_store_into(&mut sub);
+                    if let Some(exec) = self.js_executor() {
+                        sub.set_js_executor(exec);
+                    }
+                    for (n, v) in &self.js_bindings {
+                        sub.add_js_binding(n, v);
+                    }
+                    return sub.get_strings_single_step(suffix);
                 }
-                // 无 JSONPath 后缀：若 JS 返回 JSON 数组，展开为多元素
+                // 无后缀：若 JS 返回 JSON 数组，展开为多元素
                 // （对齐原版 Mode.Js → NativeArray 作为 List 语义）
                 return Ok(expand_js_json_array_result(js_result));
             }
@@ -747,16 +770,18 @@ impl AnalyzeRule {
             return Ok(vec![]);
         }
         let rule_no_put = self.expand_get_refs(&rule_no_put);
-        // 与 get_strings 对齐：`<js>...</js>`（含 `\n$[*]` 复合后缀）必须走
-        // 单步路径。若先 split_js_chain_steps，会把 `$[*]` 拆成独立 Extract，
-        // 对整页 HTML 做 JSONPath →「JSON parse error」；再被 web_book
-        // `get_elements(...).unwrap_or_default()` 吞成 0 章 →「暂无章节」
-        // （51漫画 chapterList 2026-08-11 复现：站点已无「目录」脚本，走
-        // btn-read 回退本可出 1 章，却因链拆解整链失败）。— Reasonix
-        if rule_no_put.trim_start().starts_with("<js>") {
+        // 与 get_strings 对齐：`<js>...</js>`（含 `\n$[*]` 复合后缀，≤2 步）
+        // 必须走单步路径。若先 split_js_chain_steps，会把 `$[*]` 拆成独立
+        // Extract，对整页 HTML 做 JSONPath →「JSON parse error」；再被
+        // web_book `get_elements(...).unwrap_or_default()` 吞成 0 章 →
+        // 「暂无章节」（51漫画 chapterList 2026-08-11 复现：站点已无「目录」
+        // 脚本，走 btn-read 回退本可出 1 章，却因链拆解整链失败）。— Reasonix
+        // ≥3 步（JS+提取+JS 交错）落入下方通用链式逐步执行。
+        let starts_js_tag = rule_no_put.trim_start().starts_with("<js>");
+        let steps = split_js_chain_steps(&rule_no_put);
+        if starts_js_tag && steps.len() <= 2 {
             return self.get_elements_single_step(&rule_no_put);
         }
-        let steps = split_js_chain_steps(&rule_no_put);
         if steps.len() > 1 {
             // 链式 getElements：首段按元素规则提取，后续 JS 以拼接/单元素为 result
             let mut elems: Vec<String> = Vec::new();
@@ -823,10 +848,41 @@ impl AnalyzeRule {
             return Ok(vec![]);
         }
 
-        // `<js>...</js>` 规则（含 `$[*]` 复合）统一走 get_strings：
-        // resolve_rule_type 可能把 `<js>` 前缀判定为 Auto/Css，导致
-        // 误走 HTML 解析器 → 目录 0 章（51漫画 chapterList 实测）— Reasonix
+        // `<js>...</js>` 规则：JSONPath 后缀（`$[*]` / `@json:$…`）与无后缀统一
+        // 走 get_strings——resolve_rule_type 可能把 `<js>` 前缀判定为 Auto/Css，
+        // 导致误走 HTML 解析器 → 目录 0 章（51漫画 chapterList 实测）— Reasonix
         if rule.trim_start().starts_with("<js>") {
+            // 非 JSONPath 后缀（CSS/XPath 等）：对齐原版 splitSourceRule 拆成
+            // Js + Extract 两步，且提取必须按「元素」语义作用于 JS 输出——
+            // chapterList 需要章节锚点的外层 HTML 供子规则取标题/href。
+            // 包子漫画（优）chapterList `<js>java.t2s(result)</js>\nclass.xxx`：
+            // JS 转简体后 CSS 选章节锚点；此前后缀被丢弃 → 整页 HTML 成为唯一
+            // 「章节」→「目录获取失败」。
+            if let Some(end) = rule.find("</js>") {
+                let suffix = rule[end + "</js>".len()..].trim();
+                let json_suffix = suffix
+                    .strip_prefix("@json:")
+                    .or_else(|| suffix.strip_prefix("@JSON:"))
+                    .unwrap_or(suffix);
+                if !suffix.is_empty() && !json_suffix.starts_with("$") {
+                    let js_code = &rule["<js>".len()..end];
+                    let js_result = self.execute_js_rule(js_code)?;
+                    let content = if js_result.len() == 1 {
+                        js_result.into_iter().next().unwrap_or_default()
+                    } else {
+                        js_result.join("\n")
+                    };
+                    let mut sub = AnalyzeRule::new(content, self.base_url.clone());
+                    self.share_variable_store_into(&mut sub);
+                    if let Some(exec) = self.js_executor() {
+                        sub.set_js_executor(exec);
+                    }
+                    for (n, v) in &self.js_bindings {
+                        sub.add_js_binding(n, v);
+                    }
+                    return sub.get_elements_single_step(suffix);
+                }
+            }
             return self.get_strings_single_step(rule);
         }
 
@@ -2361,6 +2417,38 @@ mod tests {
         );
         let t = title_rule.get_string("$.title").unwrap();
         assert_eq!(t, "第1话");
+    }
+
+    /// `<js>...</js>\nclass.xxx` 复合规则：CSS 后缀按「元素」语义作用于 JS 输出
+    ///
+    /// 对齐包子漫画（优）chapterList（`<js>java.t2s(result)</js>\n
+    /// class.pure-u-1-1 … comics-chapters`）：JS 转简体后 CSS 选章节锚点，
+    /// get_elements 须返回锚点外层 HTML（供子规则取标题/href），
+    /// get_strings 则返回各元素文本 — Reasonix
+    #[test]
+    fn test_js_tag_with_css_suffix() {
+        let executor = Arc::new(MockJsExecutor {
+            result: r#"<html><ul class="comics-chapters"><li><a class="pure-u-1-1 pure-u-sm-1-2 comics-chapters" href="/c/1">第1话</a></li><li><a class="pure-u-1-1 pure-u-sm-1-2 comics-chapters" href="/c/2">第2话</a></li></ul></html>"#
+                .to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            "<html>原目录页（繁体，JS 转简体）</html>".to_string(),
+            "https://baozi.example.com/comic/1".to_string(),
+            executor,
+        );
+        let css_suffix_rule =
+            "<js>java.t2s(result)</js>\nclass.pure-u-1-1 pure-u-sm-1-2 comics-chapters";
+        // 元素语义：chapterList 需要章节锚点的外层 HTML
+        let elems = rule.get_elements(css_suffix_rule).unwrap();
+        assert_eq!(elems.len(), 2, "CSS 后缀应从 JS 输出提取 2 个章节锚点");
+        assert!(
+            elems[0].contains("href=\"/c/1\""),
+            "元素应为外层 HTML: {}",
+            elems[0]
+        );
+        // 文本语义：同一规则经 get_strings 返回各元素文本
+        let texts = rule.get_strings(css_suffix_rule).unwrap();
+        assert_eq!(texts, vec!["第1话", "第2话"]);
     }
 
     /// @js 规则中 {{$.field}} 必须在执行前按当前 JSON 元素展开。

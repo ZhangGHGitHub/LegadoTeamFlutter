@@ -29,15 +29,76 @@ use scraper::{Html, Selector};
 /// CSS 选择：返回匹配元素的 outerHTML 字符串快照列表
 ///
 /// 以 String 快照返回（脱离 scraper 文档生命周期），供 JS 元素对象使用。
+///
+/// 选择段先做 jsoup 前缀归一化（对齐原版 `AnalyzeByJSoup.ElementsSingle`）：
+/// `class.foo` → `.foo`、`tag.foo` → `foo`、`id.foo` → `#foo`，其余原样。
+/// 否则 `class.comic-contain` 会被 CSS 解析器当成「标签 class + 类 comic-contain」
+/// → 永远 0 命中（包子漫画正文 `java.getElements('class.comic-contain@amp-img')`）。
 fn select_outer_htmls(html: &str, css: &str) -> Vec<String> {
     if html.is_empty() || css.trim().is_empty() {
         return Vec::new();
     }
-    let Ok(selector) = Selector::parse(css) else {
+    let normalized = legado_parser::HtmlParser::normalize_jsoup_selector(css);
+    let Ok(selector) = Selector::parse(&normalized) else {
         return Vec::new();
     };
     let document = Html::parse_document(html);
     document.select(&selector).map(|e| e.html()).collect()
+}
+
+/// 链式元素选择（对齐原版 `AnalyzeByJSoup.getElements`）：
+/// 规则按 `@` 拆成多段，每段是一次元素选择，下一步在前一步结果内继续选。
+///
+/// 如 `class.comic-contain@amp-img` → 先选 `.comic-contain`，再在每个内部
+/// 选 `amp-img` 标签（包子漫画正文图片）；单段规则退化为一次 CSS 选择。
+fn resolve_element_chain(html: &str, rule: &str) -> Vec<String> {
+    let segments: Vec<&str> = rule
+        .split('@')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if segments.is_empty() {
+        return Vec::new();
+    }
+    let mut current: Vec<String> = vec![html.to_string()];
+    for seg in &segments {
+        let next: Vec<String> = current
+            .iter()
+            .flat_map(|h| select_outer_htmls(h, seg))
+            .collect();
+        if next.is_empty() {
+            return Vec::new();
+        }
+        current = next;
+    }
+    current
+}
+
+/// 末段提取（对齐原版 `AnalyzeByJSoup.getResultLast`）：
+/// `text`/`ownText`/`textNodes` → 文本；`html`/`all` → outerHTML；其余 → 属性值
+fn extract_last(snaps: &[ElementSnapshot], last: &str) -> Vec<String> {
+    match last {
+        "text" | "ownText" | "textNodes" => snaps
+            .iter()
+            .map(|s| s.text.clone())
+            .filter(|t| !t.is_empty())
+            .collect(),
+        "html" | "all" => snaps
+            .iter()
+            .map(|s| s.outer.clone())
+            .filter(|o| !o.is_empty())
+            .collect(),
+        _ => {
+            let mut out = Vec::new();
+            for s in snaps {
+                let v = s.attr(last).unwrap_or_else(|| s.text.clone());
+                if !v.is_empty() && !out.contains(&v) {
+                    out.push(v);
+                }
+            }
+            out
+        }
+    }
 }
 
 /// 从单个 outerHTML 快照重建元素，提取 innerHTML / text / 属性
@@ -76,70 +137,49 @@ impl ElementSnapshot {
     }
 }
 
-/// 拆分 `css@attr` 链（对齐原版 AnalyzeByJSoup `selector@attr` 语义）：
-/// 末段以 `@` 开头且非 HTML 标签名 → 属性/文本提取；否则整体为 CSS 选择器
-/// 如 `.btn-read@href` → (".btn-read", Some("href"))、`script` → ("script", None)
-fn split_attr_chain(css: &str) -> (&str, Option<String>) {
-    let trimmed = css.trim();
-    if let Some(at_pos) = trimmed.rfind('@') {
-        let after = &trimmed[at_pos + 1..];
-        let before = trimmed[..at_pos].trim();
-        // @ 后是属性名/提取模式（非标签选择器）：href/src/text/html/alt/title 等
-        if !before.is_empty()
-            && !after.is_empty()
-            && !after.contains([' ', '.', '#', '[', '>', ','])
-            && !matches!(
-                after,
-                "a" | "div"
-                    | "span"
-                    | "li"
-                    | "p"
-                    | "img"
-                    | "script"
-                    | "body"
-                    | "html"
-                    | "ul"
-                    | "ol"
-                    | "table"
-                    | "tr"
-                    | "td"
-                    | "th"
-            )
-        {
-            return (before, Some(after.to_string()));
-        }
-    }
-    (trimmed, None)
-}
-
-/// CSS 选择 + 属性/文本提取：返回元素（selector 部分）outerHTML 快照列表
-fn select_with_attr(html: &str, css: &str) -> Vec<ElementSnapshot> {
-    let (selector, attr) = split_attr_chain(css);
-    let snaps = snapshots_from_html(html, selector);
-    match attr {
-        // @text：取元素文本（对齐原版 getResultLast "text" 分支）
-        Some(name) if name == "text" => snaps,
-        // @allText/@ownText/@textNodes 等文本模式：退化为文本
-        Some(name) if matches!(name.as_str(), "allText" | "ownText" | "textNodes") => snaps,
-        // 其他 @ 后缀：属性提取（href/src/data-src 等，对齐原版默认分支）
-        Some(name) => snaps
-            .iter()
-            .map(|s| ElementSnapshot {
-                outer: s.outer.clone(),
-                inner: s.inner.clone(),
-                text: s.attr(&name).unwrap_or_else(|| s.text.clone()),
-            })
-            .collect(),
-        None => snaps,
-    }
-}
-
 /// 从 HTML 快照解析出元素对象（供 select 后的元素转换）
 fn snapshots_from_html(html: &str, css: &str) -> Vec<ElementSnapshot> {
     select_outer_htmls(html, css)
         .into_iter()
         .map(ElementSnapshot::from_outer)
         .collect()
+}
+
+/// getString 链式解析（对齐原版 `AnalyzeByJSoup.getStringList`）：
+/// `@` 拆段后除末段外全部做链式元素选择，末段按提取模式取值；
+/// 无 `@` 时直接 CSS 选择取文本（如 `java.getString("script")`）。
+fn resolve_get_strings(html: &str, css: &str) -> Vec<String> {
+    let segments: Vec<&str> = css
+        .split('@')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if segments.is_empty() {
+        return Vec::new();
+    }
+    if segments.len() == 1 {
+        return snapshots_from_html(html, segments[0])
+            .iter()
+            .map(|s| s.text.clone())
+            .filter(|t| !t.is_empty())
+            .collect();
+    }
+    let mut current: Vec<String> = vec![html.to_string()];
+    for seg in &segments[..segments.len() - 1] {
+        let next: Vec<String> = current
+            .iter()
+            .flat_map(|h| select_outer_htmls(h, seg))
+            .collect();
+        if next.is_empty() {
+            return Vec::new();
+        }
+        current = next;
+    }
+    let snaps: Vec<ElementSnapshot> = current
+        .into_iter()
+        .map(ElementSnapshot::from_outer)
+        .collect();
+    extract_last(&snaps, segments.last().unwrap())
 }
 
 /// 构建带 html()/text()/attr()/toString() 方法的元素 JS 对象
@@ -195,17 +235,20 @@ fn build_element_object<'js>(
 ///
 /// 51漫画等脚本 `Array.from(java.getElement("script"))` 迭代后
 /// 用 `String(e)`（outerHTML）与 `e.html()`（innerHTML）筛选/解析。
+///
+/// `@` 段按原版 `AnalyzeByJSoup.getElements` 做链式元素选择
+/// （包子漫画正文 `class.comic-contain@amp-img`）。
 pub fn get_element<'js>(
     ctx: &Ctx<'js>,
     css: String,
     src: String,
 ) -> Result<rquickjs::Array<'js>, LegadoError> {
-    let (selector, _attr) = split_attr_chain(&css);
-    let snaps = snapshots_from_html(&src, selector);
+    let outs = resolve_element_chain(&src, &css);
     let arr =
         rquickjs::Array::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
-    for (idx, snap) in snaps.iter().enumerate() {
-        let obj = build_element_object(ctx, snap)?;
+    for (idx, outer) in outs.iter().enumerate() {
+        let snap = ElementSnapshot::from_outer(outer.clone());
+        let obj = build_element_object(ctx, &snap)?;
         arr.set(idx, obj)
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     }
@@ -247,18 +290,15 @@ pub fn jsoup_html(html: &str, css: &str) -> String {
 
 /// `java.getString(css, mContent)` → 首条文本/属性（mContent 空=当前 src）
 ///
-/// 支持 `selector@attr` 链（如 `.btn-read@href` 取属性，对齐原版
-/// AnalyzeByJSoup）；纯 `@text` 后缀按文本处理
+/// 支持 `selector@…` 链（如 `.btn-read@href` 取属性、`class.foo@html` 取
+/// outerHTML），对齐原版 AnalyzeByJSoup.getStringList：`@` 段除末段外做
+/// 链式元素选择，末段按 text/html/attr 提取。
 pub fn get_string(css: String, m_content: Opt<String>, src: String) -> String {
     let html = match m_content.0 {
         Some(s) if !s.is_empty() => s,
         _ => src,
     };
-    let snaps = select_with_attr(&html, &css);
-    if snaps.is_empty() {
-        return String::new();
-    }
-    snaps[0].text.clone()
+    resolve_get_strings(&html, &css).join("\n")
 }
 
 /// `java.getStrings(css, mContent)` → 文本/属性列表（换行连接）
@@ -267,13 +307,7 @@ pub fn get_strings(css: String, m_content: Opt<String>, src: String) -> String {
         Some(s) if !s.is_empty() => s,
         _ => src,
     };
-    let snaps = select_with_attr(&html, &css);
-    let texts: Vec<String> = snaps
-        .iter()
-        .map(|s| s.text.clone())
-        .filter(|t| !t.is_empty())
-        .collect();
-    texts.join("\n")
+    resolve_get_strings(&html, &css).join("\n")
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
@@ -317,5 +351,62 @@ mod tests {
         // @attr 链：取 a 的 href 属性（对齐 51漫画 java.getString(".btn-read@href", src)）
         let s3 = get_string("a@href".to_string(), Opt(None), html.to_string());
         assert_eq!(s3, "/c/1");
+    }
+
+    /// 包子漫画正文：`java.getElements('class.comic-contain@amp-img')`
+    /// —— jsoup 前缀归一化 + `@` 段链式元素选择（此前 class. 前缀原样进 CSS
+    /// 解析器 → 0 命中，正文「Content empty」）
+    #[test]
+    fn test_element_chain_jsoup_prefix() {
+        let html = r#"<html><body>
+            <div class="comic-contain">
+                <amp-img src="x" data-src="/img/1.jpg"></amp-img>
+                <amp-img src="x" data-src="/img/2.jpg"></amp-img>
+            </div>
+            <div class="other"><amp-img data-src="/img/3.jpg"></amp-img></div>
+        </body></html>"#;
+        let outs = resolve_element_chain(html, "class.comic-contain@amp-img");
+        assert_eq!(outs.len(), 2);
+        assert!(outs[0].contains("data-src=\"/img/1.jpg\""));
+        // 链式：只在 .comic-contain 内选，.other 里的 amp-img 不入选
+        assert!(!outs.iter().any(|o| o.contains("/img/3.jpg")));
+
+        // get_element 走同一链路；元素对象 attr() 是包子正文 JS 的实际取图路径
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        let attr_val: String = context
+            .with(|ctx| -> Result<String, LegadoError> {
+                let arr = get_element(&ctx, "class.comic-contain@amp-img".into(), html.into())?;
+                assert_eq!(arr.len(), 2);
+                // 元素对象 attr('data-src')——包子正文 JS 的实际取图路径
+                let to_err = |e: rquickjs::Error| LegadoError::JsEngine(e.to_string());
+                let elem: rquickjs::Object = arr.get::<rquickjs::Object>(0).map_err(to_err)?;
+                let attr_fn: rquickjs::Function = elem.get::<_, rquickjs::Function>("attr").map_err(to_err)?;
+                let s: String = attr_fn.call(("data-src",)).map_err(to_err)?;
+                Ok(s)
+            })
+            .unwrap();
+        assert_eq!(attr_val, "/img/1.jpg");
+    }
+
+    /// jsoup 前缀归一化：`id.iframeForVideo@src`（艾格动漫）、
+    /// `class.text-content@html`（单本阅读 @html 模式取 outerHTML）
+    #[test]
+    fn test_get_string_jsoup_prefix_and_html_mode() {
+        let html = r#"<html><body>
+            <iframe id="iframeForVideo" src="/v/1.mp4"></iframe>
+            <div class="text-content"><p>正文段落</p></div>
+        </body></html>"#;
+        // id. 前缀 → #id，@src 取属性
+        let s = get_string("id.iframeForVideo@src".to_string(), Opt(None), html.to_string());
+        assert_eq!(s, "/v/1.mp4");
+        // class. 前缀 + @html 模式 → outerHTML（此前 "html" 被误判为标签名
+        // → 整条规则进 CSS 解析器失败 → 0 结果）
+        let s2 = get_string(
+            "class.text-content@html".to_string(),
+            Opt(None),
+            html.to_string(),
+        );
+        assert!(s2.contains("<p>正文段落</p>"));
     }
 }

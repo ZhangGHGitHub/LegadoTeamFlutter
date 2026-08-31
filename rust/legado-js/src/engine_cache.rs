@@ -179,10 +179,11 @@ pub fn len_for_tests() -> usize {
 mod tests {
     use super::*;
     #[test]
-    fn lru_never_exceeds_eight() {
+    fn lru_never_exceeds_max() {
         let _guard = TEST_LOCK.lock().unwrap();
         clear_for_tests();
-        for i in 0..10 {
+        // 插入量须超过上限才会触发 LRU 逐出（MAX_ENTRIES 8→32 后原 10 条不再越界）
+        for i in 0..(MAX_ENTRIES + 2) {
             let _ = get_or_create(&format!("cache-test-{i}"), None, None, None).unwrap();
         }
         assert_eq!(len_for_tests(), MAX_ENTRIES);
