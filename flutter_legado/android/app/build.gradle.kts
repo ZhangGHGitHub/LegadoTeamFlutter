@@ -18,6 +18,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications 18.x AAR 元数据要求消费者启用 core library desugaring
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -58,6 +60,8 @@ flutter {
 dependencies {
     // AndroidX Media（MediaSessionCompat + 音频焦点管理）
     implementation("androidx.media:media:1.7.0")
+    // core library desugaring（flutter_local_notifications 18.x 强制要求，AGP 8.11）
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
 
 // ========== Rust FFI content hash 校验（根治「引擎初始化失败」）==========
