@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.135] - 2026-08-31
+
+### Changed
+- [UI] 应用图标三端同步为**原版 legado 图标**（用户指令「不要猫咪图标，同步原版图标」）：Android 直接复用原版 app/ 资产逐字节拷贝（mipmap-mdpi~xxxhdpi ic_launcher.png + anydpi-v26 自适应 ic_launcher.xml + drawable/ic_launcher1(_b/_4)），移除参考仓库猫咪矢量全套；iOS AppIcon 由原版自适应矢量（ic_launcher1_b 背景 + ic_launcher1 前景）自研渲染器生成（新增线性渐变填充 + 双圆心圆弧采样），master 1024 + 14 小尺寸；Windows app_icon.ico 同步重生成
+- [Docs] docs/UI_UPDATE_LOG.md 图标条目更新为原版
+
+### Test
+- iOS 尺寸核对 19/19 OK；渲染与原版自适应图标（API 26+ 实际呈现）一致，192px 光栅为旧版式回退图不采用；Android 冒烟验证构建。版本 2.0.135+136
+
+- Contributor: Qoder + UI
+
 ## [2.0.134] - 2026-08-31
 
 ### Changed
