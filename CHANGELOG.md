@@ -5,12 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [2.0.136] - 2026-08-31
 
 ### Changed
-- [UI] 「切换图标」功能落地（对齐原版 change_icon，用户指令「还需要支持 iOS 换图标」）：主题设置页新增入口，7 选项点选即应用——Android 经 setComponentEnabledSetting 启用选中 Launcher1~6 Activity、禁用其余与主入口（API 26+，低于提示不支持）；iOS 经 setAlternateIconName 切换 CFBundleAlternateIcons 变体（重启后生效，选择默认时 cancelAlternateIconSwitch）；Windows 等桌面端无此能力整项隐藏
+- [UI] 「切换图标」功能落地（对齐原版 change_icon，用户指令「还需要支持 iOS 换图标」）：主题设置页新增入口，7 选项点选即应用——Android 经 setComponentEnabledSetting 启用选中 Launcher1~6 Activity、禁用其余与主入口（API 26+，低于提示不支持）；iOS 经 setAlternateIconName 切换 CFBundleAlternateIcons 变体（重启后生效，恢复默认经 setAlternateIconName(nil)）；Windows 等桌面端无此能力整项隐藏
 - [UI] 原版 7 个可切换图标全部同步：Android 侧 launcher1~6 自适应矢量 + drawable 前景/底色逐字节复用原版资产（含 md_yellow_600/md_grey_50 色值）；iOS 侧由自研渲染器生成 7 变体 × 13 尺寸共 78 张 AppIcon PNG 并入 Info.plist CFBundleAlternateIcons
 
 ### Test
 - E2E 实测（emulator-5556）：选图标 3 → resolve-activity 指向 Launcher3、桌面图标变为朱红圆相「书」、经新图标启动应用正常；切回默认 → MainActivity 恢复、桌面图标还原，tile 值与持久化一致
 - flutter analyze 无问题 + 1313 测试全过；冒烟 5556/5558（-CheckUI）双机 PASSED。版本 2.0.136+137
+- iOS Build CI 构建修复（本提交之后追加）：pbxproj AlternateIcons 双重目录路径（f8b2551adb）+ LauncherIconBridge 改用真实 setAlternateIconName API（92106f87d0），CI 33399601642 三工作流全绿
 
 - Contributor: Qoder + UI
 

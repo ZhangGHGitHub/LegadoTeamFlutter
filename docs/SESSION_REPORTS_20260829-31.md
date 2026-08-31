@@ -187,7 +187,18 @@
 
 ---
 
-## 十二、剩余待办（P3 / 收尾）
+## 十二、iOS Build CI 图标功能构建修复（2026-08-31）
+
+切换图标功能提交（`b56f718ddd`，2.0.136+137）引入两处 iOS Build 红，依次修复：
+
+1. **pbxproj 双重目录**（`f8b2551adb`）：78 个备用图标 PBXFileReference 的 `path` 冗余携带 `AlternateIcons/` 前缀，与父组自身的 `path = AlternateIcons` 叠加后，Xcode 解析为不存在的 `ios/Runner/AlternateIcons/AlternateIcons/...`，报 "Build input file cannot be found"。剥离 78 个文件引用的冗余前缀。
+2. **虚构 UIKit API**（`92106f87d0`）：LauncherIconBridge.swift 使用 `cancelAlternateIconSwitch(completionHandler:)` / `setAlternateIconName(_:completionHandler:)`，方法名与形态均不存在于 SDK，Swift 编译失败（该文件在 Windows 侧从未本地编译过）。对照 WordPress-iOS 生产代码核实真实 API：实例方法 `UIApplication.shared.setAlternateIconName(_:completionHandler:)`，传 nil 恢复默认图标（无独立 cancel API）；UIKit 调用统一经 DispatchQueue.main.async 主线程执行。中间提交 `2517951b08` 为对 API 名的错误记忆，被本提交取代。
+
+**验证**：CI 33399601642（iOS Build，含设备构建 + nm PDE 符号校验 + 模拟器冒烟）+ Flutter CI + Integration Smoke 三工作流全绿；Dart 侧 `legado/launcher_icon` channel 契约不变。
+
+---
+
+## 十三、剩余待办（P3 / 收尾）
 
 - [ ] P2-C 登记落 CHANGELOG/台账/版本递增（本批提交已完成，文档登记为下一提交）
 - [ ] 自动任务 iOS 降级策略（workmanager/BGTaskScheduler 受 OS 约束）
