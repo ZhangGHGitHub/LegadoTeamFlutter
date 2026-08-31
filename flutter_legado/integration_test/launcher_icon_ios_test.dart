@@ -7,7 +7,7 @@
 // 回归门禁（断言，CI 必须通过）：
 //   - status 方法可达 → AppDelegate 通道接线完好
 //     （MissingPluginException = 接线断裂）；
-//   - canSet == true → Bundle.main 的 Info.plist CFBundleAlternateIcons
+//   - canSet == true → 已安装 bundle 磁盘 Info.plist 的 CFBundleAlternateIcons
 //     声明 launcher1~6（setAlternateIconName 的前提）。
 //
 // 仅取证（不断言，平台行为随版本/模拟器而异）：
@@ -60,19 +60,25 @@ void main() {
           '（MissingPluginException = AppDelegate 接线断裂）',
     );
     final statusMap = (statusResult as Map?) ?? <Object?, Object?>{};
-    // 诊断证据：altKeys = CFBundleAlternateIcons 实际可见键；bundlePath =
-    // 原生侧读取的 bundle 路径（CI 失败时用于定位 plist 缺失来源）。
+    // 诊断证据（CI 失败时用于定位 plist 缺失来源）：
+    //   diskAltKeys/diskBytes = 已安装 bundle 磁盘 Info.plist 解析结果；
+    //   altKeys/infoDictKeyCount/hasBundleId = infoDictionary 运行时读取，
+    //   与磁盘对照可区分「安装副本缺声明」与「Foundation 运行时读取异常」。
     debugPrint(
-      '[LauncherIconTest] 证据 → altKeys=${statusMap['altKeys']}'
+      '[LauncherIconTest] 证据 → diskAltKeys=${statusMap['diskAltKeys']}'
+      ' diskBytes=${statusMap['diskBytes']}'
+      ' infoDictKeyCount=${statusMap['infoDictKeyCount']}'
+      ' hasBundleId=${statusMap['hasBundleId']}'
+      ' altKeys=${statusMap['altKeys']}'
       ' bundlePath=${statusMap['bundlePath']}',
     );
     final canSet = statusMap['canSet'];
     expect(
       canSet,
       true,
-      reason: 'Info.plist CFBundleAlternateIcons 应声明 launcher1~6；'
-          'canSet=false 且 altKeys=[] → 该 bundle 的 plist 缺声明；'
-          'altKeys 有值但 canSet=false → 键名不匹配',
+      reason: '已安装 bundle 磁盘 Info.plist CFBundleAlternateIcons 应声明 launcher1~6；'
+          'diskAltKeys=[] → 安装副本 plist 缺声明（构建/安装链路问题）；'
+          'diskAltKeys 有值但 canSet=false → 键名不匹配',
     );
 
     // ── 2) 仅取证：真实 set icon1（模拟器 completion 不回调 → 超时守护，不断言）──

@@ -28,19 +28,35 @@ import UIKit
 
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
     if call.method == "status" {
-      // 同步应答（纯 Bundle 读取，无 UIKit 异步）：集成测试回归门禁。
-      // 能收到此方法 = AppDelegate 通道接线完好；canSet=true = Info.plist
-      // CFBundleAlternateIcons 声明 launcher1~6（setAlternateIconName 的前提）。
-      // （UIKit 无公开的同步查询 API；set 的 completion 在模拟器上不回调，
-      // 故门禁不用 set。）
+      // 同步应答（纯 Bundle/文件读取，无 UIKit 异步）：集成测试回归门禁。
+      // canSet = 已安装 bundle 磁盘 Info.plist 声明 launcher1~6
+      // （setAlternateIconName 的直接前提；UIKit 无公开同步查询 API，
+      // set 的 completion 在模拟器上不回调，故门禁不用 set）。
       let bundle = Bundle.main
-      let dict = bundle.infoDictionary ?? [:]
-      // [AnyHashable: Any] 是 NSDictionary 的保底桥接类型（[String: Any]
-      // 强转存在失败风险）；altKeys/bundlePath 为 CI 诊断证据字段。
-      let altNS = (dict["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
       let names = ["launcher1", "launcher2", "launcher3", "launcher4", "launcher5", "launcher6"]
+      // 证据 A：磁盘 Info.plist（安装副本的真实状态）——直接读原始字节并解析。
+      var diskAltKeys: [String] = []
+      var diskBytes = -1
+      if let p = bundle.path(forResource: "Info", ofType: "plist"),
+         let data = FileManager.default.contentsAtPath(p) {
+        diskBytes = data.count
+        // PropertyListSerialization 可解析文本与二进制（bplist00）两种格式。
+        if let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+           let d = obj as? [AnyHashable: Any],
+           let alt = d["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
+          diskAltKeys = alt.keys.map { "\($0)" }.sorted()
+        }
+      }
+      // 证据 B：infoDictionary（Foundation 运行时读取）——保留为诊断字段，
+      // 用于对照磁盘结果定位上一轮「磁盘完整但运行时为空」的差异来源。
+      let dict = bundle.infoDictionary ?? [:]
+      let altNS = (dict["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
       result([
-        "canSet": names.allSatisfy { altNS[$0] != nil },
+        "canSet": names.allSatisfy { diskAltKeys.contains($0) },
+        "diskAltKeys": diskAltKeys,
+        "diskBytes": diskBytes,
+        "infoDictKeyCount": dict.count,
+        "hasBundleId": dict["CFBundleIdentifier"] != nil,
         "altKeys": altNS.keys.map { "\($0)" }.sorted(),
         "bundlePath": bundle.bundlePath,
       ])
