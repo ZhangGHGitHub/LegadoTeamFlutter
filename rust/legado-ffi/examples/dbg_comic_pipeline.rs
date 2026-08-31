@@ -84,36 +84,35 @@ fn main() {
 
     // ── 2) 目录 ──
     let t0 = Instant::now();
-    let chapters_json = match legado_ffi::api::web_book::webbook_chapters(
-        &source_json,
-        &book_url,
-        "",
-        "",
-    ) {
-        Ok(json) => {
-            println!(
-                "[toc] OK {}ms，章节数={}",
-                t0.elapsed().as_millis(),
-                serde_json::from_str::<Vec<serde_json::Value>>(&json)
-                    .map(|v| v.len())
-                    .unwrap_or(0)
-            );
-            json
-        }
-        Err(e) => {
-            println!("[toc] ERR ({}ms): {}", t0.elapsed().as_millis(), e);
-            std::process::exit(1);
-        }
-    };
-    let chapters: Vec<serde_json::Value> =
-        serde_json::from_str(&chapters_json).unwrap_or_default();
+    let chapters_json =
+        match legado_ffi::api::web_book::webbook_chapters(&source_json, &book_url, "", "") {
+            Ok(json) => {
+                println!(
+                    "[toc] OK {}ms，章节数={}",
+                    t0.elapsed().as_millis(),
+                    serde_json::from_str::<Vec<serde_json::Value>>(&json)
+                        .map(|v| v.len())
+                        .unwrap_or(0)
+                );
+                json
+            }
+            Err(e) => {
+                println!("[toc] ERR ({}ms): {}", t0.elapsed().as_millis(), e);
+                std::process::exit(1);
+            }
+        };
+    let chapters: Vec<serde_json::Value> = serde_json::from_str(&chapters_json).unwrap_or_default();
     if chapters.is_empty() {
         eprintln!("[toc] 空章节列表");
         std::process::exit(1);
     }
 
     // ── 3) 正文（第 2 章优先，首章常是目录页/公告）──
-    let ch = if chapters.len() > 1 { &chapters[1] } else { &chapters[0] };
+    let ch = if chapters.len() > 1 {
+        &chapters[1]
+    } else {
+        &chapters[0]
+    };
     println!(
         "[diag] 章节: {} | url={}",
         ch.get("title").and_then(|t| t.as_str()).unwrap_or("?"),

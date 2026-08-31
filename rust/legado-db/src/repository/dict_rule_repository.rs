@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use legado_core::{LegadoError, LegadoResult};
 
 /// 原版默认字典规则 JSON（与 Android assets 逐字节同源，编译期内嵌）
-const DEFAULT_DICT_RULES_JSON: &str =
-    include_str!("../../../assets/defaultData/dictRules.json");
+const DEFAULT_DICT_RULES_JSON: &str = include_str!("../../../assets/defaultData/dictRules.json");
 
 /// 词典规则记录（Rust 字段 snake_case；DB 列为 Room camelCase）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

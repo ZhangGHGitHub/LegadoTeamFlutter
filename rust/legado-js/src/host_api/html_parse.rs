@@ -381,7 +381,8 @@ mod tests {
                 // 元素对象 attr('data-src')——包子正文 JS 的实际取图路径
                 let to_err = |e: rquickjs::Error| LegadoError::JsEngine(e.to_string());
                 let elem: rquickjs::Object = arr.get::<rquickjs::Object>(0).map_err(to_err)?;
-                let attr_fn: rquickjs::Function = elem.get::<_, rquickjs::Function>("attr").map_err(to_err)?;
+                let attr_fn: rquickjs::Function =
+                    elem.get::<_, rquickjs::Function>("attr").map_err(to_err)?;
                 let s: String = attr_fn.call(("data-src",)).map_err(to_err)?;
                 Ok(s)
             })
@@ -398,7 +399,11 @@ mod tests {
             <div class="text-content"><p>正文段落</p></div>
         </body></html>"#;
         // id. 前缀 → #id，@src 取属性
-        let s = get_string("id.iframeForVideo@src".to_string(), Opt(None), html.to_string());
+        let s = get_string(
+            "id.iframeForVideo@src".to_string(),
+            Opt(None),
+            html.to_string(),
+        );
         assert_eq!(s, "/v/1.mp4");
         // class. 前缀 + @html 模式 → outerHTML（此前 "html" 被误判为标签名
         // → 整条规则进 CSS 解析器失败 → 0 结果）

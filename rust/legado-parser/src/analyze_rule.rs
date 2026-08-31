@@ -417,8 +417,7 @@ impl AnalyzeRule {
         //    通用 JS 链拆成 Js+Extract 后丢失 `$[*]` 拆解语义（51漫画）。
         //    ≥3 步（JS+提取+JS 交错）走链式逐步执行；其余 `extract@js:`
         //    同样走链式（神漫画 chapterUrl / Nhentai 正文）
-        let mut results = if core_rule.trim_start().starts_with("<js>")
-            && js_steps_owned.len() <= 2
+        let mut results = if core_rule.trim_start().starts_with("<js>") && js_steps_owned.len() <= 2
         {
             self.get_strings_single_step(&core_rule)?
         } else if js_steps_owned.len() > 1 {

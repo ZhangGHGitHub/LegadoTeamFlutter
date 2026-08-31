@@ -17,8 +17,7 @@ use legado_parser::{AnalyzeRule, AnalyzeUrl};
 use crate::db_state::with_database;
 
 /// 原版默认封面规则（与 Android assets 同源）
-const DEFAULT_COVER_RULE_JSON: &str =
-    include_str!("../../../assets/defaultData/coverRule.json");
+const DEFAULT_COVER_RULE_JSON: &str = include_str!("../../../assets/defaultData/coverRule.json");
 
 /// 主配置行名称（单配置语义，对齐 CoverRuleConfigDialog）
 const PRIMARY_COVER_RULE_NAME: &str = "legadoCoverRule";
